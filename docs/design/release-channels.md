@@ -177,7 +177,20 @@ after candidate blocks stable instead of being repaired there.
 
 The steps are the `hobo deploy` subcommands, run through the `hobo` package's
 own CD composition (`openCdRuntime` with the release topology, as `--yard`
-loads it):
+loads it). That package is built once per run, by the `release-hobo-cli` job
+(`turbo run build --filter=@hobo/hobo...`, `contents: read`, no release
+secret, no Turbo cache another run wrote). It packs the `dist/` of every
+package in turbo's build closure with a manifest naming the commit it was
+built from (`scripts/ci/release-freight-cli.mts pack`), and its `digest`
+output is that archive's sha256. Every release job that runs `hobo deploy`
+(GHCR publish, npm publish, Pages, the tag and GitHub Release jobs) needs
+`release-hobo-cli` to succeed and restores the archive only when its sha256 is
+that digest and its revision is the commit the job checked out; anything else
+fails the job. Building the closure in each of them had run every one past the
+20-minute job limit. The npm job still builds and packs the tarballs it signs
+itself; only the CLI it promotes them with comes from the artifact. The
+release contract's own offline realize proof builds `@hobo/hobo` in that job,
+after restoring the Turbo cache.
 
 1. `freight record`: the manifest names each artifact by sha256 digest, the
    release commit, the run id and the workflow as builder, and a declaration

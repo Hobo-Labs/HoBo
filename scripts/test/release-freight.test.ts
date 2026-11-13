@@ -217,7 +217,11 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(block).toMatch(
 			/HOBO_RELEASE_CD_HOME: \$\{\{ runner\.temp \}\}\/hobo-release-cd\/oci/u,
 		);
-		before(block, "--filter=@hobo/hobo...", "push-release-ghcr-images.mts");
+		before(
+			block,
+			"release-freight-cli.mts restore",
+			"push-release-ghcr-images.mts",
+		);
 		// One image per leg, so one journal per image; promote-stable reads them all.
 		expect(block).toContain(
 			"name: hobo-release-freight-oci-${{ matrix.image_id }}",
@@ -231,8 +235,45 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(block).toMatch(
 			/HOBO_RELEASE_CD_HOME: \$\{\{ runner\.temp \}\}\/hobo-release-cd\/npm/u,
 		);
-		before(block, "--filter=@hobo/hobo...", "publish-npm-sdk.mts");
+		before(block, "release-freight-cli.mts restore", "publish-npm-sdk.mts");
 	});
+
+	// Every release job that runs `hobo deploy` used to build @hobo/hobo itself,
+	// which ran each one past the 20-minute job limit. One job builds it; the
+	// others restore that build, bound to its digest and revision.
+	const consumers = {
+		"release-publish": "push-release-ghcr-images.mts",
+		"release-npm": "publish-npm-sdk.mts",
+		"release-pages": "deploy-site.mts --release-freight",
+		"release-tag": "promote-stable",
+		"release-github": "promote-stable",
+	} as const;
+
+	it("builds the hobo CLI once, with read-only permissions, and publishes its digest", () => {
+		const block = job("release-hobo-cli");
+		before(block, "--filter=@hobo/hobo...", "release-freight-cli.mts pack");
+		before(block, "release-freight-cli.mts pack", "name: hobo-release-cli");
+		expect(block).toContain("digest: ${{ steps.pack.outputs.digest }}");
+		expect(block).toMatch(/permissions:\n\s+contents: read\n\s+steps:/u);
+		expect(block).not.toMatch(/id-token|packages: write|secrets\./u);
+	});
+
+	for (const [name, deploy] of Object.entries(consumers))
+		it(`${name} restores that build instead of building the CLI`, () => {
+			const block = job(name);
+			expect(block).not.toContain("--filter=@hobo/hobo...");
+			expect(block).toMatch(/needs: \[[^\]]*\brelease-hobo-cli\b[^\]]*\]/u);
+			expect(block).toContain("needs.release-hobo-cli.result == 'success'");
+			expect(block).toContain(
+				"HOBO_RELEASE_CLI_DIGEST: ${{ needs.release-hobo-cli.outputs.digest }}",
+			);
+			before(
+				block,
+				"name: hobo-release-cli",
+				"release-freight-cli.mts restore",
+			);
+			before(block, "release-freight-cli.mts restore", deploy);
+		});
 
 	it("publishes npm and GHCR only through hobo deploy promote: no npm publish, no docker push", () => {
 		expect(job("release-npm")).not.toMatch(/--provenance|npmPublishArgs/u);

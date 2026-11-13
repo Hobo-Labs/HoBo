@@ -701,6 +701,12 @@
 					"reason": "uploads a log from a failed CI step; a local run keeps its logs on disk"
 				},
 				{
+					"name": "Turbo cache",
+					"uses": "./.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
+				{
 					"name": "Build the hobo CLI (release Freight realize proof)",
 					"run": "pnpm exec turbo run build --filter=@hobo/hobo... --output-logs=new-only --concurrency=\"${HOBO_TURBO_CONCURRENCY:-1}\"",
 					"local": "run"
@@ -735,13 +741,6 @@
 						"HOBO_CHECK_BASE": "HEAD^1"
 					},
 					"local": "run"
-				},
-				{
-					"name": "Turbo cache",
-					"if": "steps.affected.outputs.image_ids != ''",
-					"uses": "./.github/actions/turbo-cache",
-					"local": "skip",
-					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
 				{
 					"name": "Ensure worker toolchain image",
@@ -782,7 +781,7 @@
 				{
 					"name": "Prune Turbo cache",
 					"id": "turbo-prune",
-					"if": "always() && steps.affected.outputs.image_ids != '' && env.TURBO_TOKEN == ''",
+					"if": "always() && env.TURBO_TOKEN == ''",
 					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
 					"continueOnError": true,
 					"local": "skip",
@@ -790,7 +789,7 @@
 				},
 				{
 					"name": "Save Turbo cache",
-					"if": "always() && steps.affected.outputs.image_ids != '' && steps.turbo-prune.outputs.save != 'false'",
+					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
 					"uses": "./.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
