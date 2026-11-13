@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	adoptDeadline,
 	decide,
+	RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+	RELAY_DEPLOY_JOB_TIMEOUT_MINUTES,
 	RELAY_EXTRA_INPUTS,
 	RELAY_SECRET_STORE_BINDING,
 	relayInputDirs,
@@ -174,7 +185,7 @@ describe("the relay deploy workflow", () => {
 			if (line.includes("vars."))
 				assert.match(
 					line,
-					/vars\.HOBO_CI_(ROUTE|LOCAL_RUNNER|ROUTE_MAX_WAIT_SECONDS|ROUTE_MAX_QUEUED|TRUNK_RUNNER|FLEET_STATE)\b/u,
+					/vars\.HOBO_CI_(ROUTE|LOCAL_RUNNER|ROUTE_MAX_WAIT_SECONDS|ROUTE_MAX_QUEUED|TRUNK_RUNNER)\b/u,
 					line,
 				);
 		assert.doesNotMatch(
@@ -219,7 +230,52 @@ describe("the relay deploy workflow", () => {
 		assert.match(adopt, /exit "\$status"/u);
 		assert.doesNotMatch(adopt, /--adopt[^\n]*\|\| true/u);
 		// The ad-hoc lookup and smoke check are gone: hobo does both, fail closed.
-		assert.doesNotMatch(workflow, /gh api|curl /u);
+		// (The fleet-verdict probe, a separate step, still reads one public URL.)
+		assert.doesNotMatch(workflow, /gh api/u);
+		assert.doesNotMatch(adopt, /curl /u);
+		assert.doesNotMatch(workflow, /curl [^\n]*\/(healthz|readyz)/u);
+	});
+
+	it("fits the deploy job in 20 minutes: the gate's deadline bounds the adoption, the step timeout only backs it up", () => {
+		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
+		assert.ok(deploy, "no deploy job");
+		const jobTimeout = Number(
+			/^ {4}timeout-minutes: (\d+)$/mu.exec(deploy)?.[1],
+		);
+		assert.equal(jobTimeout, RELAY_DEPLOY_JOB_TIMEOUT_MINUTES);
+		assert.ok(jobTimeout <= 20, "every job is capped at 20 minutes");
+		assert.ok(RELAY_DEPLOY_JOB_MARGIN_MINUTES >= 2);
+		// The deadline is counted from the gate's own run, the job's timeout
+		// less the margin.
+		assert.equal(
+			adoptDeadline(Date.UTC(2026, 10, 13, 12)),
+			"2026-11-13T12:17:00.000Z",
+		);
+		const gate = step("Decide whether to deploy");
+		assert.match(gate, /id: gate/u);
+		assert.match(gate, /relay-deploy-gate\.mts/u);
+		const adopt = step("Adopt Vercel's Git deployment of this commit");
+		assert.match(
+			adopt,
+			/ADOPT_DEADLINE: \$\{\{ steps\.gate\.outputs\.deadline \}\}/u,
+		);
+		assert.match(adopt, /--deadline "\$ADOPT_DEADLINE"/u);
+		// The step timeout cannot end the command before its deadline, and no
+		// step may outlast the job.
+		const stepTimeout = Number(/timeout-minutes: (\d+)/u.exec(adopt)?.[1]);
+		assert.ok(
+			stepTimeout >= jobTimeout - RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+			`adopt step timeout ${stepTimeout} would cut the command short of its deadline`,
+		);
+		const steps = workflow.slice(
+			workflow.indexOf("    steps:", workflow.indexOf("\n  deploy:")),
+			workflow.indexOf("\n  app-credentials:"),
+		);
+		for (const match of steps.matchAll(/timeout-minutes: (\d+)/gu))
+			assert.ok(Number(match[1]) <= jobTimeout, match[0]);
+		// The typed reasons a late build or a spent budget end with are named.
+		assert.match(workflow, /HOBO_CI_ADOPT_NOT_READY_IN_BUDGET/u);
+		assert.match(workflow, /HOBO_CI_ADOPT_BUDGET_EXHAUSTED/u);
 	});
 
 	it("verifies at the Yard's production domain, needing no Deployment Protection bypass", () => {
@@ -283,6 +339,94 @@ describe("the relay deploy workflow", () => {
 			workflow.indexOf("Mask the one-time manifest code") <
 				workflow.indexOf("ci app deposit"),
 		);
+	});
+
+	describe("probes the public origin", () => {
+		const name = "Probe the fleet verdict at the public origin";
+
+		/** The step's body check, run as the workflow runs it. */
+		function judge(body: string, repository = "Hobo-Labs/HoBo") {
+			const probe = step(name);
+			const match = /node -e '([^']+)' "\$RUNNER_TEMP\/verdict\.json"/u.exec(
+				probe,
+			);
+			assert.ok(match, "the step judges the answer with one node -e script");
+			const dir = mkdtempSync(join(tmpdir(), "relay-verdict-probe-"));
+			try {
+				const file = join(dir, "verdict.json");
+				writeFileSync(file, body);
+				return spawnSync(process.execPath, ["-e", match[1] ?? "", file], {
+					encoding: "utf8",
+					env: { ...process.env, GITHUB_REPOSITORY: repository },
+				});
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		}
+
+		it("reads the relay's public origin from .hobo/ci.json, not the deployment URL", () => {
+			const probe = step(name);
+			assert.match(probe, /\.hobo\/ci\.json/u);
+			assert.match(probe, /defaultEnvironment/u);
+			assert.match(probe, /relayOrigin/u);
+			assert.match(probe, /https:/u);
+			assert.doesNotMatch(probe, /DEPLOYMENT_URL/u);
+			assert.match(probe, /\/v1\/fleet\/verdicts\/\$\{?repository/u);
+			assert.match(probe, /if: steps\.gate\.outputs\.run == 'true'/u);
+		});
+
+		it("runs after the existing checks, so it reports on what Vercel already deployed", () => {
+			assert.ok(
+				workflow.indexOf(`- name: ${name}`) >
+					workflow.indexOf(
+						"- name: Adopt Vercel's Git deployment of this commit",
+					),
+			);
+			assert.ok(
+				workflow.indexOf(`- name: ${name}`) <
+					workflow.indexOf("  app-credentials:"),
+			);
+		});
+
+		it("is red, naming the rollback order, unless the read answers 200", () => {
+			const probe = step(name);
+			assert.match(probe, /\[ "\$code" != "200" \]/u);
+			assert.match(probe, /::error title=Relay fleet verdict::/u);
+			assert.match(probe, /exit 1/u);
+			assert.match(probe, /6\.10|rollback/iu);
+		});
+
+		it("accepts a verdict for this repository with a blocked object", () => {
+			const open = judge(
+				JSON.stringify({ repository: "hobo-labs/hobo", blocked: {} }),
+			);
+			assert.equal(open.status, 0, open.stderr);
+			const blocked = judge(
+				JSON.stringify({
+					repository: "hobo-labs/hobo",
+					blocked: { hobo: { reason: "no-capacity" } },
+					observedAt: "2026-11-12T11:14:00.000Z",
+				}),
+			);
+			assert.equal(blocked.status, 0, blocked.stderr);
+		});
+
+		it("refuses an answer that is not a verdict for this repository", () => {
+			for (const body of [
+				"",
+				"not json",
+				"[]",
+				JSON.stringify({ blocked: {} }),
+				JSON.stringify({ repository: "other/repo", blocked: {} }),
+				JSON.stringify({ repository: "hobo-labs/hobo" }),
+				JSON.stringify({ repository: "hobo-labs/hobo", blocked: [] }),
+				JSON.stringify({ repository: "hobo-labs/hobo", blocked: null }),
+				JSON.stringify({ status: "config-unavailable" }),
+			]) {
+				const result = judge(body);
+				assert.notEqual(result.status, 0, `accepted ${body}`);
+			}
+		});
 	});
 
 	it("passes the repository's workflow lint, as an approved CI fabric workflow", async () => {

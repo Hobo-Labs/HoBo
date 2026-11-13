@@ -19,8 +19,12 @@ import {
 	type CampTopology,
 	type CdContext,
 	type CredentialResolver,
+	DeltaRecordSchema,
+	type DesiredStateReader,
 	type FreightId,
+	FreightOrigin,
 	type FreightRecord,
+	type FreightSourceRecord,
 	type Outcome,
 	type RealizeInput,
 	type Realizer,
@@ -32,6 +36,7 @@ import {
 	ReconcilerMode,
 	ReconcileStatus,
 	ResourceObservationSchema,
+	type SetResolver,
 	type TelemetrySink,
 	type TopologyReader,
 } from "@hobo/cd";
@@ -50,15 +55,27 @@ import {
 	defaultCdFactories,
 	type FanoutCostAuthority,
 	parseCdComposeConfig,
+	unconfiguredSuites,
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
+import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
 // binds at merge (plan 0024): drift routing is WP7.
 import { createDriftPolicy } from "@hobo/cd/reconcile";
-import type { RunnerHostPorts } from "@hobo/ci-gh-actions/runner-host";
+import { definitionDigest } from "@hobo/cd/sources";
+import {
+	RUNNER_FLEET_BINDLE,
+	RUNNER_HOST_PRODUCT_ID,
+	type RunnerHostPorts,
+	runnerFleetDeclaration,
+	runnerHostIdForCamp,
+	runnerHostRealizationParameters,
+} from "@hobo/ci-gh-actions/runner-host";
 import {
 	createRegistryFromProviders,
+	createResolvedDeploymentSet,
 	type PlannerRegistry,
 	type RegistrableProvider,
+	type ResolvedDeploymentSet,
 } from "@hobo/cloud";
 import type { PolicyPack } from "@hobo/contracts";
 import {
@@ -71,7 +88,10 @@ import {
 } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
 import { agentRealizer } from "./cd-agent.js";
-import { withRunnerHostHealthIngest } from "./cd-agent-runner-host.js";
+import {
+	createRunnerHostVerifySuite,
+	withRunnerHostHealthIngest,
+} from "./cd-agent-runner-host.js";
 import {
 	declaredRailCatalog,
 	loadDeclaredRails,
@@ -349,11 +369,22 @@ export async function openCdRuntime(
 		...(kube?.value.realizer ? { conductor: kube.value.realizer } : undefined),
 		...options.realizers,
 	};
+	// Matching offers each declared Camp kind exactly its own product: the
+	// catalogued publication providers theirs, runner hosts the runner-host
+	// product. Nothing else is offered.
+	const plannerProviders = [
+		...catalogPlannerProviders(catalogCamps),
+		...runnerHostPlannerProviders(await declaredTopology.camps()),
+	];
 	const registry =
 		options.registry ??
-		(catalogCamps.length > 0
-			? createRegistryFromProviders(catalogPlannerProviders(catalogCamps))
+		(plannerProviders.length > 0
+			? createRegistryFromProviders(plannerProviders)
 			: undefined);
+	// A source-discovered Freight with no declaration member names its source
+	// definition (`declaration_hash`); the Bindle's declaration planned with
+	// it is bound to that digest here, never to a digest it does not have.
+	const sourceBound = new WeakMap<object, `sha256:${string}`>();
 	const host: CdHostInputs = {
 		store,
 		railCatalog,
@@ -365,15 +396,22 @@ export async function openCdRuntime(
 			// A Freight's declaration is the Bindle the build stored under its
 			// declaration hash (`hobo build`, D13); planning refuses when absent.
 			registry: registry ?? emptyRegistry(),
-			// The digest `hobo build` records as `declaration_hash` (D13).
-			declarationDigest: (declaration) => canonicalManifestHash(declaration),
+			// The digest `hobo build` records as `declaration_hash` (D13), or the
+			// source definition's for a Bindle declared with its source.
+			declarationDigest: (declaration) =>
+				sourceBound.get(declaration) ?? canonicalManifestHash(declaration),
 			async declaration(freight: FreightRecord) {
 				const bytes = await cd.artifacts.get(
 					freight.manifest?.declarationHash as `sha256:${string}`,
 				);
-				if (!bytes) return undefined;
 				const { parseManifest } = await import("@hobo/bindles");
-				return parseManifest(JSON.parse(new TextDecoder().decode(bytes)));
+				if (bytes)
+					return parseManifest(JSON.parse(new TextDecoder().decode(bytes)));
+				const declared = sourceDeclaredBindle(freight, await cd.sources.list());
+				if (!declared) return undefined;
+				const declaration = parseManifest(declared.declaration);
+				sourceBound.set(declaration, declared.digest);
+				return declaration;
 			},
 			async camp(campId: CampId) {
 				const camp = await topology.camp(campId);
@@ -408,11 +446,23 @@ export async function openCdRuntime(
 		options.onRunnerHostIngestError ?? reportRunnerHostIngestError,
 	);
 	const fanoutCost = options.fanoutCost;
+	const adapters = defaultCdAdapters(host);
 	const cd = composeContinuousDelivery({
 		base,
 		factories,
 		adapters: {
-			...defaultCdAdapters(host),
+			...adapters,
+			// A runner-host row carries the controller its Freight pins.
+			resolver: (scope) =>
+				withRunnerHostRealization(adapters.resolver(scope), scope.desired),
+			// A runner host verifies from its agent's own reports; every other
+			// suite stays fail-closed (no runner is composed for it).
+			suites: (scope) =>
+				createRunnerHostVerifySuite({
+					desired: scope.desired,
+					inventory: scope.inventory,
+					otherwise: adapters.suites?.(scope) ?? unconfiguredSuites(),
+				}),
 			// Fan-out promotions read placed Camps from the recorded decision
 			// and the aggregate gate from these authorities (compose/wire.ts).
 			...(fanoutCost !== undefined
@@ -607,6 +657,215 @@ export function catalogPlannerProviders(
 				},
 			} satisfies RegistrableProvider;
 		});
+}
+
+/**
+ * Planner offerings of the declared runner host Camps (`hobo-ci-runners/<host>`):
+ * each Camp provider offers exactly the runner-host product as a port, so the
+ * runner fleet's declared resource (`{ type: "data.v1", port:
+ * "hobo:hobo-ci.runner-host/v1" }`, `runnerFleetDeclaration`) matches only a
+ * runner host's offering, and the plan row carries the product id the
+ * runner-host realizer acts on. Nothing else is offered.
+ */
+export function runnerHostPlannerProviders(
+	camps: readonly CampTopology[],
+): RegistrableProvider[] {
+	const byProvider = new Map<string, Set<string>>();
+	for (const camp of camps) {
+		if (runnerHostIdForCamp(camp.campId) === undefined) continue;
+		const regions = byProvider.get(camp.provider) ?? new Set<string>();
+		for (const region of camp.regions) regions.add(region);
+		byProvider.set(camp.provider, regions);
+	}
+	const port = RUNNER_HOST_PRODUCT_ID;
+	return [...byProvider.entries()]
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.map(([id, regions]) => ({
+			id,
+			regions: [...regions].sort(),
+			capabilities: [
+				{
+					port,
+					satisfies(request) {
+						if (request.port !== port) return { kind: "none" };
+						return (request.features ?? []).length === 0
+							? { kind: "full" }
+							: { kind: "partial", missing: [...(request.features ?? [])] };
+					},
+					estimateCost() {
+						// The host is the operator's own machine: no metered price.
+						return {
+							marginalPrice: "0",
+							sku: port,
+							unit: "runner-host",
+							pricingStatus: "unknown",
+						};
+					},
+				},
+			],
+			capabilityManifest() {
+				return {
+					providerId: id,
+					published: {},
+					capabilities: {
+						capabilities: [
+							{
+								port,
+								features: [],
+								productId: port,
+								realizedBy: "runner-host realizer (hobo deploy agent run)",
+							},
+						],
+					},
+					cost: { facts: [] },
+				};
+			},
+		}));
+}
+
+/**
+ * The planning declaration of a Bindle declared with its source, for a
+ * Freight that source discovered with no declaration member (its
+ * `declaration_hash` is the source definition's digest, `@hobo/cd/sources`).
+ * Only while the source, as applied now, still has exactly that digest: a
+ * redefined source no longer names this Freight's declaration, and planning
+ * then refuses `planning-declaration-missing` rather than plan it anew.
+ * Today one Bindle is declared this way: the runner fleet's controller.
+ */
+export function sourceDeclaredBindle(
+	freight: FreightRecord,
+	sources: readonly FreightSourceRecord[],
+):
+	| Readonly<{ declaration: CdJsonObject; digest: `sha256:${string}` }>
+	| undefined {
+	const manifest = freight.manifest;
+	if (!manifest || manifest.bindle !== RUNNER_FLEET_BINDLE) return undefined;
+	if (freight.origin !== FreightOrigin.SOURCE_DISCOVERY) return undefined;
+	const source = sources.find((entry) => entry.name === freight.sourceName);
+	if (!source || source.bindle !== manifest.bindle) return undefined;
+	const digest = definitionDigest(source);
+	if (digest !== manifest.declarationHash || !isSha256(digest))
+		return undefined;
+	return { declaration: { ...runnerFleetDeclaration() }, digest };
+}
+
+const isSha256 = (value: string): value is `sha256:${string}` =>
+	/^sha256:[0-9a-f]{64}$/u.test(value);
+
+function resolveRefusal(
+	campId: CampId,
+	code: string,
+	message: string,
+	remediation: string,
+) {
+	return {
+		ok: false as const,
+		reasons: [
+			create(ReasonRecordSchema, {
+				code,
+				message,
+				remediation,
+				subject: campId,
+			}),
+		],
+	};
+}
+
+/**
+ * The Set resolver with each runner-host row bound to the controller its
+ * Freight pins: Matching decides the row (`hobo-ci.runner-host/v1` on the
+ * Camp's provider); its realization parameters are the Freight's own
+ * artifacts (`runnerHostRealizationParameters`: the image by manifest
+ * digest, and each paired release by its bytes' digest). The Delta is
+ * recomputed over the bound Set. A runner-host row for a Camp outside the
+ * runner fleet, or a Freight with no digest-pinned image, is refused; every
+ * other Set passes through unchanged.
+ */
+export function withRunnerHostRealization(
+	inner: SetResolver,
+	desired: DesiredStateReader,
+): SetResolver {
+	const resolver: SetResolver = {
+		async resolve(input, ctx) {
+			const outcome = await inner.resolve(input, ctx);
+			if (!outcome.ok) return outcome;
+			if (input.intent === "down" || input.intent === "depart") return outcome;
+			const planned = outcome.value.resolved;
+			if (
+				!planned.plan.resources.some(
+					(resource) => resource.productId === RUNNER_HOST_PRODUCT_ID,
+				)
+			)
+				return outcome;
+			if (runnerHostIdForCamp(input.campId) === undefined)
+				return resolveRefusal(
+					input.campId,
+					"runner-host-camp-unbound",
+					`Camp ${input.campId} is not a runner host, but its Set resolved a ${RUNNER_HOST_PRODUCT_ID} row`,
+					"Promote the runner fleet's Freight only to its Camps (hobo-ci-runners/<host id>).",
+				);
+			const parameters = runnerHostRealizationParameters(
+				input.freight.manifest?.artifacts ?? [],
+			);
+			if (!parameters)
+				return resolveRefusal(
+					input.campId,
+					"runner-host-image-unresolved",
+					`Freight ${input.freight.freightId} carries no hobo-ci-worker image pinned by @sha256 digest`,
+					"Promote Freight from the runner fleet's source (hobo-ci-runner-image), whose image artifact is pinned by its manifest digest.",
+				);
+			const resolved = createResolvedDeploymentSet({
+				tenant: planned.tenant,
+				environment: planned.environment,
+				campId: planned.campId,
+				plan: {
+					...planned.plan,
+					resources: planned.plan.resources.map((resource) =>
+						resource.productId === RUNNER_HOST_PRODUCT_ID
+							? { ...resource, realizationParameters: { ...parameters } }
+							: resource,
+					),
+				},
+				matches: planned.matches,
+				gatekeeper: planned.gatekeeper,
+				secretRefs: planned.secretRefs,
+				...(planned.progressive !== undefined
+					? { progressive: planned.progressive }
+					: undefined),
+			});
+			const delta = outcome.value.delta;
+			const base = input.base ?? (await desired.current(input.campId));
+			const before = base ? await desired.resolved(base) : undefined;
+			const source =
+				input.sourceCampId && input.sourceCampId !== input.campId
+					? await desired.current(input.sourceCampId)
+					: undefined;
+			const sourceResolved: ResolvedDeploymentSet | undefined = source
+				? await desired.resolved(source)
+				: undefined;
+			return {
+				ok: true as const,
+				value: {
+					resolved,
+					delta: create(DeltaRecordSchema, {
+						...delta,
+						deltaId: deltaIdFor({
+							campId: input.campId,
+							freightId: input.freight.freightId,
+							intent: input.intent,
+							baseSetId: base?.setId ?? "",
+							contentHash: resolved.contentHash,
+						}),
+						changes: diffResolvedSets(before, resolved),
+						infrastructureDiff: sourceResolved
+							? diffResolvedSets(sourceResolved, resolved)
+							: delta.infrastructureDiff,
+					}),
+				},
+			};
+		},
+	};
+	return Object.freeze(resolver);
 }
 
 /** A thrown resolver refusal (or any failure) as a typed code and message. */

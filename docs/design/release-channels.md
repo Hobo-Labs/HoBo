@@ -193,7 +193,27 @@ after candidate blocks stable instead of being repaired there.
 
 The steps are the `hobo deploy` subcommands, run through the `hobo` package's
 own CD composition (`openCdRuntime` with the release topology, as `--yard`
-loads it):
+loads it). That package is built once per run, by the `release-hobo-cli` job
+(`turbo run build --filter=@hobo/hobo...`, `contents: read`, no release
+secret, no Turbo cache another run wrote), and only for a run that publishes
+or promotes (the main train releases, Pages is stale, a release tag, or a
+dispatch that pushes images). It runs on the GitHub-hosted `ubuntu-24.04`
+runner, like the npm job: the npm job runs this CLI while it holds the OIDC
+token whose provenance names a GitHub-hosted builder, so no self-hosted runner
+produces code that runs inside the signing job. It packs the `dist/` of every
+package in turbo's build closure with a manifest naming the commit it was
+built from (`scripts/ci/release-freight-cli.mts pack`), and its `digest`
+output is that archive's sha256. Every release job that runs `hobo deploy`
+(GHCR publish, npm publish, Pages, the tag and GitHub Release jobs) needs
+`release-hobo-cli` to succeed and restores the archive only when its sha256 is
+that digest and its revision is the commit the job checked out; anything else
+fails the job. Building the closure in each of them had run every one past the
+20-minute job limit. The npm job still builds and packs the tarballs it signs
+itself; only the CLI it promotes them with comes from the artifact. The
+pull request's offline realize proof is its own `release-realize` job, which
+restores the Turbo cache, builds `@hobo/hobo` and runs the realize test; the
+release PR gate requires it, so a cache miss on that build never runs the
+release contract's image builds past their limit.
 
 1. `freight record`: the manifest names each artifact by sha256 digest, the
    release commit, the run id and the workflow as builder, and a declaration

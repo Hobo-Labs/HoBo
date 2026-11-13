@@ -453,15 +453,13 @@ a job for a reason other than its own running jobs and no other has a free
 slot. A label that is only busy is not blocked. No count of nodes, slots or
 memory leaves the relay.
 
-**Not built yet: the reporter.** Nothing sends a report today, so the relay
-answers that nothing is blocked. Until the reporter replaces it, workers with
-`HOBO_CI_FLEET_ROUTES=1` in a mesh still keep the older snapshot in the
-repository variable `HOBO_CI_FLEET_STATE` (per fleet label: live healthy
-nodes, how many are trusted, their free slots, and when it was published; one
-elected worker writes it, on a change and at least every two minutes). The
-routing job no longer reads that variable: it reached the job through the
-workflow and an environment variable, was as old as its last write, and
-treated a label with no free slot as refusing.
+**The reporter.** A box relay evaluates the verdict and reports it, signed
+with its node key ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). A relay that
+receives no report answers that nothing is blocked. The older snapshot in the
+repository variable `HOBO_CI_FLEET_STATE`, and the capacity record in
+`HOBO_CI_FLEET_CAPACITY`, are no longer written: no worker publishes them and
+no workflow reads them. Delete the two variables from the repository once the
+workers run this release.
 
 ## Reliability: a node that drops jobs gets fewer
 
@@ -584,7 +582,7 @@ interface.
 | 6 | The advertisement as a protobuf and CUE record (`MeshAdvert`), read as protobuf JSON at the NATS boundary; an older node's advertisement still parses | Done |
 | 8 | Reporting: every node (worker, local runner, relay host) advertises availability, capacity and trust; one list on the relay's HTTP route, its MCP tool and resource, and `hobo ci status`; measured free disk; reliability kept in the node's journal | Done; needs a second box to run for real |
 | 9 | Trust: a per-node Ed25519 identity, signed advertisements, a trusted-key set in the mesh's configuration, `invalid` nodes never ranked | Done. No attestation of what a node runs, no key rotation or revocation list, and the buckets' access control is NATS's, not the mesh's |
-| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | The route, its stores and the routing job's client are done; the reporter is not. The older `HOBO_CI_FLEET_STATE` snapshot is still written and no longer read by routing |
+| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | Done: the route and its stores, the routing job's client, and the box relay's signed reporter. The older `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables are no longer written or read |
 
 A worker with no `HOBO_CI_NATS_URL` behaves exactly as it did. With it and no
 peers, it ranks itself first for every job and takes them all, so turning the
@@ -695,10 +693,9 @@ publisher.
   a new one under its old one.
 - **Per-node write access to the board.** NATS can restrict each node to its
   own key of the nodes bucket; the mesh does not set that up.
-- **One reporter per mesh.** Every worker with the flag writes its own view
-  to `HOBO_CI_FLEET_STATE`, and the fleet verdict's reporter will have the
-  same question: they agree when they see the same board; a partitioned
-  worker would report a smaller mesh until the others overwrite it.
+- **Agreement between reporters.** A label is blocked only when every
+  reporter enrolled for it agrees. A partitioned box that sees a smaller mesh
+  can withhold a block but cannot impose one alone.
 - **Rented providers.** The fleet balancer has a circuit breaker per member
   (healthy or not). The same decayed score could rank rented providers by how
   often their runners arrive; it does not yet.

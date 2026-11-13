@@ -60,6 +60,12 @@ export const RUNNER_RELEASE_ARTIFACTS = Object.freeze({
 	localRunnerRelease: "hobo-ci-local-runner-release",
 } as const);
 export type RunnerReleaseParameter = keyof typeof RUNNER_RELEASE_ARTIFACTS;
+// public-contract: the runner controller product, keyed by the resolver registry and offered to Matching.
+export const RUNNER_HOST_PRODUCT_ID = "hobo-ci.runner-host/v1";
+// public-contract: the one resource the runner fleet's Bindle declares (the plan row a runner-host Set carries).
+export const RUNNER_HOST_RESOURCE = "runner-controller";
+// public-contract: the verify suite the fleet node runs; the Station's runner-host suite answers it.
+export const RUNNER_HOST_VERIFY_SUITE = "hobo-ci.runner-host/serving";
 
 const LOCAL_HOST_LABEL = "hobo-local-host";
 const SERVED_LABELS = [
@@ -97,6 +103,8 @@ const RINGS = ["pilot", "fleet"] as const;
 const PILOT_SOAK_MS = 10 * 60_000;
 /** Above the box worker's two-hour drain (`restart-worker.sh`), so a draining host is not failed. */
 const HOST_PROGRESS_DEADLINE_MS = 3 * 60 * 60_000;
+/** How long after the Set is applied the host is first asked whether it serves it. */
+const VERIFY_WINDOW_MS = 60_000;
 
 export type RunnerHostKind = (typeof HOST_KINDS)[number];
 export type RunnerRing = (typeof RINGS)[number];
@@ -332,6 +340,14 @@ export type RunnerFleetDelivery = Readonly<{
 			placement: string;
 			fromSources: readonly string[];
 			autoPromotion: "AUTO_PROMOTION_NEWEST";
+			strategy: "ROLLOUT_STRATEGY_ALL_AT_ONCE";
+			verification: Readonly<{
+				windowMs: string;
+				requiredObservations: number;
+				progressDeadlineMs: string;
+				failOnNoData: true;
+				suites: readonly Readonly<{ suite: string }>[];
+			}>;
 			fanout: Readonly<{
 				strategy: "FANOUT_STRATEGY_PROGRESSIVE_PER_GROUP";
 				maxConcurrency: number;
@@ -467,6 +483,22 @@ export function runnerFleetDelivery(
 						placement: RUNNER_FLEET_PLACEMENT,
 						fromSources: [RUNNER_IMAGE_SOURCE],
 						autoPromotion: "AUTO_PROMOTION_NEWEST",
+						// A runner host takes no routed traffic: each host swaps its
+						// controller whole, and the fan-out (one host at a time, the
+						// pilot first) is the progressive part. A canary would need a
+						// traffic capability and is refused progressive-unsupported.
+						strategy: "ROLLOUT_STRATEGY_ALL_AT_ONCE",
+						// A host qualifies only on its agent's own observation: the
+						// Set converged at its digest and the host ready (serving,
+						// advert fresh and healthy). Until the agent reports on the
+						// Set the suite is retried, up to the drain-sized deadline.
+						verification: {
+							windowMs: String(VERIFY_WINDOW_MS),
+							requiredObservations: 1,
+							progressDeadlineMs: String(HOST_PROGRESS_DEADLINE_MS),
+							failOnNoData: true,
+							suites: [{ suite: RUNNER_HOST_VERIFY_SUITE }],
+						},
 						fanout: {
 							strategy: "FANOUT_STRATEGY_PROGRESSIVE_PER_GROUP",
 							// One runner host at a time: the fleet keeps taking jobs while it moves.
@@ -485,6 +517,50 @@ export function runnerFleetDelivery(
 				definedBy: DEFINED_BY,
 			},
 		],
+	});
+}
+
+// domain-view: the runner fleet's Bindle declaration (`@hobo/bindles` manifest JSON).
+export type RunnerFleetDeclaration = Readonly<{
+	schema: "hobo.manifest/v1";
+	componentHost: Readonly<{ kind: "oci"; version: "1" }>;
+	resources: Readonly<
+		Record<
+			typeof RUNNER_HOST_RESOURCE,
+			Readonly<{
+				type: "data.v1";
+				port: `hobo:${typeof RUNNER_HOST_PRODUCT_ID}`;
+			}>
+		>
+	>;
+}>;
+
+/**
+ * The planning declaration of the `hobo-ci-runner-fleet` Bindle: one
+ * resource, the runner controller, asking for the runner-host product as its
+ * port (`{ type: "data.v1", port: "hobo:hobo-ci.runner-host/v1" }`), so
+ * Matching places it only on an offering of exactly that product (a runner
+ * host Camp's). Which controller a Set runs is not declared here: it is the
+ * Freight's own artifacts (`runnerHostRealizationParameters`), so one
+ * declaration plans every version.
+ *
+ * The fleet's Freight comes from its source with no declaration member, so
+ * its `declaration_hash` is the source definition's digest; the Station
+ * pairs this declaration with a Freight only while the source, as applied,
+ * still has that digest (`hobo`'s `cd-runtime.ts`).
+ */
+export function runnerFleetDeclaration(): RunnerFleetDeclaration {
+	return Object.freeze({
+		schema: "hobo.manifest/v1",
+		// The controller ships as an OCI image (and, for a process host, a
+		// release paired with it in the same Freight).
+		componentHost: Object.freeze({ kind: "oci", version: "1" }),
+		resources: Object.freeze({
+			[RUNNER_HOST_RESOURCE]: Object.freeze({
+				type: "data.v1",
+				port: `hobo:${RUNNER_HOST_PRODUCT_ID}`,
+			}),
+		}),
 	});
 }
 

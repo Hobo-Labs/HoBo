@@ -346,7 +346,12 @@ function lintAttestedSkips(
 	}
 }
 
-/** npm trusted publishing requires GitHub-hosted runners (release-hobo release-npm only). */
+/**
+ * npm trusted publishing requires GitHub-hosted runners: release-hobo's
+ * release-npm, and release-hobo-cli, which builds the hobo CLI that
+ * release-npm runs while it holds the OIDC token, so a self-hosted runner never
+ * produces code that runs inside the signing job.
+ */
 function isNpmOidcHostedReleaseJob(
 	file: string,
 	jobLine: string,
@@ -355,7 +360,7 @@ function isNpmOidcHostedReleaseJob(
 	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
 	return (
 		file === "release-hobo.yml" &&
-		jobId === "release-npm" &&
+		(jobId === "release-npm" || jobId === "release-hobo-cli") &&
 		runsOn === "ubuntu-24.04"
 	);
 }

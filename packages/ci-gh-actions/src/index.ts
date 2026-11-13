@@ -43,13 +43,6 @@ export {
 	setRelayFailureEvents,
 } from "./failure-log.js";
 export {
-	createFleetCapacityPublisher,
-	type FleetCapacityEvent,
-	type FleetCapacityLog,
-	type FleetCapacityPublisher,
-	type FleetCapacityPublishInput,
-} from "./fleet-capacity.js";
-export {
 	createFleetRoutePublisher,
 	type FleetRouteEvent,
 	type FleetRouteLog,
@@ -58,13 +51,6 @@ export {
 	type FleetRoutePublishInput,
 	writeRepositoryVariable,
 } from "./fleet-routes.js";
-export {
-	createFleetStatePublisher,
-	FLEET_STATE_MAX_AGE_MS,
-	FLEET_STATE_VARIABLE,
-	type FleetStateEvent,
-	type FleetStatePublisher,
-} from "./fleet-state.js";
 export {
 	agreedFleetBlocks,
 	countFleetVerdictAllowance,
@@ -428,7 +414,6 @@ export {
 	MESH_REPORT_MAX_NODES,
 	type MeshReading,
 	meshAdvertJson,
-	meshFleetStateJson,
 	meshNodeReportsForAccount,
 	meshNodeReportsJson,
 	meshNodeReportsMessage,
@@ -552,17 +537,21 @@ export {
 	RUNNER_FLEET_PROVIDER,
 	RUNNER_FLEET_RAIL,
 	RUNNER_FLEET_YARD,
+	RUNNER_HOST_RESOURCE,
+	RUNNER_HOST_VERIFY_SUITE,
 	RUNNER_IMAGE_ARTIFACT,
 	RUNNER_IMAGE_RELEASE_TAG_PATTERN,
 	RUNNER_IMAGE_SOURCE,
 	RUNNER_RELEASE_ARTIFACTS,
 	type RunnerCampObservation,
+	type RunnerFleetDeclaration,
 	type RunnerFleetRail,
 	type RunnerFreightArtifact,
 	type RunnerHost,
 	type RunnerHostKind,
 	type RunnerReleaseParameter,
 	runnerFleetCampObservations,
+	runnerFleetDeclaration,
 	runnerFleetDelivery,
 	runnerFleetRail,
 	runnerFleetTopology,

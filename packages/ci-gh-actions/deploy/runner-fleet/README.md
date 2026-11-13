@@ -54,7 +54,37 @@ new one a host at a time.
   failed host halts the run and rolls back the failed host; a host has 3 hours
   (above the box worker's 2-hour drain) before it counts as failed; the node
   qualifies at 50% of hosts; a host leaving the placement keeps its controller
-  running (`DEPARTURE_ACTION_ORPHAN`).
+  running (`DEPARTURE_ACTION_ORPHAN`). Each host's rollout is
+  `ROLLOUT_STRATEGY_ALL_AT_ONCE`: no traffic is routed to a runner host, so a
+  canary would be refused `progressive-unsupported`; the fan-out is the
+  progressive part. A host qualifies on the verify suite
+  `hobo-ci.runner-host/serving` (`RUNNER_HOST_VERIFY_SUITE`), which the
+  Station answers from the host's own agent: its report of the Set CONVERGED
+  and the host READY passes, a refusal (a failed verify it restored) or an
+  unready host fails, and until the agent reports on the Set the suite is
+  retried up to the 3-hour deadline.
+
+## How promotion resolves a runner host's Set
+
+The fleet's Bindle declares one resource, the runner controller
+(`runnerFleetDeclaration`: `runner-controller`, `{ type: "data.v1", port:
+"hobo:hobo-ci.runner-host/v1" }`), and the Station's CD runtime offers each
+runner host Camp's provider (`self-hosted`) exactly that product
+(`runnerHostPlannerProviders` in [`hobo`'s `cd-runtime.ts`](../../../hobo/src/cd-runtime.ts),
+as publication Camps are offered their resolver product). The fleet's
+Freight is discovered by its source with no declaration member, so its
+`declaration_hash` is the source definition's digest; the runtime pairs the
+Bindle's declaration with such a Freight only while the applied source still
+has that digest (`sourceDeclaredBindle`), and refuses
+`planning-declaration-missing` otherwise (a hand-ingested Freight, a
+redefined source). Matching then places the row on the Camp's own provider,
+and the runtime binds its realization parameters to the Freight's own
+artifacts (`runnerHostRealizationParameters`: the image by manifest digest,
+each paired release by its bytes' digest) and recomputes the Delta over the
+bound Set (`withRunnerHostRealization`). A Freight with no digest-pinned
+image is refused `runner-host-image-unresolved`, and a runner-host row for a
+Camp outside the fleet `runner-host-camp-unbound`. The declaration names no
+version: one declaration plans every version.
 
 ## Fleet health feeds Camp inventory
 
@@ -157,26 +187,29 @@ These are refused, not faked:
   `releaseIndexBase` the Freight carries only the image, and a process host
   refuses `runner-host-release-unresolved` rather than run an image digest
   it cannot verify a release against.
-- **A placed node's promotion does not write the Set yet.** The fan-out runs
-  the pilot group first, one host at a time, and defers a tainted host, but
-  the composed `@hobo/cd` PromotionService has no placed-Camps reader or
-  fan-out aggregate gate (`packages/cd/src/compose/wire.ts`), so the pilot's
-  promotion does not produce the Set its agent converges. The end-to-end
-  proof writes that Set through the desired-state ledger and keeps the
-  fan-out leg as a `todo`.
-- **No Set resolves the controller image yet.** The realizer reads the image
-  from the Set's `hobo-ci.runner-host/v1` plan row (`realizationParameters.image`);
-  the fleet's Bindle has no stored planning declaration or planner product for
-  it, so a promoted Set has no such row and converge refuses
-  `runner-host-image-unresolved`.
 - **A host is placed only after it reports.** A Camp is reachable once its
   agent has reported a reconcile observation, which needs a Set; a fresh host
-  is `hobo.cd/unreachable` until then.
+  is `hobo.cd/unreachable` until then, so its first Set (the controller it
+  runs today) is adopted outside the fan-out. The end-to-end proof writes
+  that first Set through the desired-state ledger; there is no `hobo deploy`
+  command for it yet.
+- **A failed pilot's Set stays desired until newer Freight.** When the agent
+  restores the previous digest after a failed verify, it reports
+  `runner-host-verify-failed` and does not swap to that Set again; the
+  rollout waits for convergence until the 3-hour deadline, then the fan-out
+  halts. The rollout's rollback Delta and the promotion's compensation then
+  overlap (`delta-overlap`, `restore-refused`, in `@hobo/cd`), so the Camp's
+  desired Set stays the failed one while the host serves the restored
+  controller; promoting newer Freight replaces it.
 - **Existing versions have no release tag.** Only a version published after
   this change gets one; the fleet's first Freight is the next image version.
 
 The offline end-to-end proof (enrollment, placement, the pilot-first fan-out
-deferring an unready host, a digest swap and a restored failed verify, with
-the agent's own job ports reading a fake box worker's data directory; and the
-built binary's `agent run` starting its loop on a box worker) is
-[`packages/hobo/test/cd-runner-fleet-delivery.test.ts`](../../../hobo/test/cd-runner-fleet-delivery.test.ts).
+deferring an unready host; a fan-out whose pilot promotion writes the box's
+Set, the agent converging it, the pilot qualifying and the fleet group
+starting; a failed verify restored and halting the fan-out, with each
+agent's own job ports reading a fake worker's data directory; and the built
+binary's `agent run` starting its loop on a box worker) is
+[`packages/hobo/test/cd-runner-fleet-delivery.test.ts`](../../../hobo/test/cd-runner-fleet-delivery.test.ts);
+the planning steps alone are
+[`packages/hobo/test/cd-runtime-runner-host.test.ts`](../../../hobo/test/cd-runtime-runner-host.test.ts).

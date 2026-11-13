@@ -107,6 +107,22 @@ export function relayProductionOrigin(
 	return undefined;
 }
 
+// public-contract: the verification window `--adopt` gives each node: three
+// observations 10 s apart across 30 s. Every attempt must pass, as in the
+// delivery records; only the wait is shorter, so preview and production fit
+// the adopt budget's reserves (ci-relay-adopt.ts RELAY_ADOPT_BUDGET).
+// The progress deadline also bounds the rollout's convergence: production's
+// deployment is READY before it is promoted, so it gives up after 90 s;
+// preview waits there for Vercel's build, so its deadline lies beyond any
+// adopt budget, and the budget, not the rollout, ends a build that is late.
+export const RELAY_ADOPT_VERIFICATION = Object.freeze({
+	windowMs: 30_000,
+	requiredObservations: 3,
+	intervalMs: 10_000,
+	progressDeadlineMs: 90_000,
+	previewProgressDeadlineMs: 25 * 60_000,
+});
+
 /**
  * The relay's delivery records as `--adopt` verifies them: production probes
  * aimed at the production origin, preview verified by the deployment-record
@@ -123,12 +139,24 @@ export function adoptedVerificationRecords(
 			for (const node of copy.nodes) {
 				const spec = node.verification;
 				if (spec === undefined) continue;
+				// Short windows: the adopted checks are deterministic (a commit
+				// match, a 200, a deployment record), so a longer window adds
+				// wait, not evidence, and the whole command must fit its budget.
+				spec.windowMs = BigInt(RELAY_ADOPT_VERIFICATION.windowMs);
+				spec.requiredObservations =
+					RELAY_ADOPT_VERIFICATION.requiredObservations;
+				spec.progressDeadlineMs = BigInt(
+					node.name === "production"
+						? RELAY_ADOPT_VERIFICATION.progressDeadlineMs
+						: RELAY_ADOPT_VERIFICATION.previewProgressDeadlineMs,
+				);
 				if (node.name === "production")
 					for (const probe of spec.probes) {
 						const path = URL.canParse(probe.urlRef)
 							? new URL(probe.urlRef).pathname
 							: `/${probe.name}`;
 						probe.urlRef = `${productionOrigin}${path}`;
+						probe.intervalMs = BigInt(RELAY_ADOPT_VERIFICATION.intervalMs);
 					}
 				else {
 					spec.probes = [];
