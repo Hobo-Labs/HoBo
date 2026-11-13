@@ -46,7 +46,7 @@ export const FLEET_OVERAGE_KINDS = ["hard-stop", "metered", "unknown"] as const;
  */
 export type FleetOverageKind = (typeof FLEET_OVERAGE_KINDS)[number];
 
-// domain-view: the parsed in-process allowance, constructible only through parseFleetFinancialModel; the generated FleetAllowance in backend_fleet_pb.ts is its wire form.
+// domain-view: the parsed in-process allowance, constructible only through parseFleetFinancialModel; the generated FleetAllowance in backend_routing_pb.ts is its wire form.
 export type FleetAllowance = {
 	readonly unit: FleetUsageUnit;
 	/** Included per period (or in total for storage). Absent means unknown. */
@@ -59,7 +59,7 @@ export type FleetAllowance = {
 	readonly meteredMicrosPerUnit: number | undefined;
 };
 
-// domain-view: the parsed in-process model, constructible only through parseFleetFinancialModel; the generated FleetFinancialModel in backend_fleet_pb.ts is its wire form.
+// domain-view: the parsed in-process model, constructible only through parseFleetFinancialModel; the generated FleetFinancialModel in backend_routing_pb.ts is its wire form.
 export type FleetFinancialModel = {
 	readonly backend: string;
 	readonly plan: string;
@@ -213,7 +213,7 @@ export const FLEET_FEASIBILITIES = [
 
 export type FleetFeasibility = (typeof FLEET_FEASIBILITIES)[number];
 
-// domain-view: the in-process ranking entry decideFleet returns; the generated FleetCandidate in backend_fleet_pb.ts is its wire form.
+// domain-view: the in-process ranking entry decideFleet returns; the generated FleetCandidate in backend_routing_pb.ts is its wire form.
 export type FleetCandidate = {
 	readonly backend: string;
 	/** Could be moved to by the action the decision considered. */
@@ -236,7 +236,7 @@ export const FLEET_ACTIONS = ["keep", "hold", "switch", "failover"] as const;
  */
 export type FleetAction = (typeof FLEET_ACTIONS)[number];
 
-// domain-view: the in-process decision decideFleet returns; the generated FleetDecision in backend_fleet_pb.ts is its wire form.
+// domain-view: the in-process decision decideFleet returns; the generated FleetDecision in backend_routing_pb.ts is its wire form.
 export type FleetDecision = {
 	readonly action: FleetAction;
 	/** The epoch of the assignment the decision was made about. */

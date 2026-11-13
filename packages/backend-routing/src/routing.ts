@@ -58,7 +58,7 @@ import type {
 export const FLEET_OFFER_TIERS = ["free", "prepaid", "payg"] as const;
 export type FleetOfferTier = (typeof FLEET_OFFER_TIERS)[number];
 
-// domain-view: the parsed offer, constructible only through parseFleetOffer; the generated FleetOffer in backend_fleet_pb.ts is its wire form.
+// domain-view: the parsed offer, constructible only through parseFleetOffer; the generated FleetOffer in backend_routing_pb.ts is its wire form.
 export type FleetOffer = {
 	readonly model: FleetFinancialModel;
 	readonly tier: FleetOfferTier;
@@ -89,7 +89,7 @@ export function parseFleetOffer(input: FleetOffer): FleetOffer {
 	});
 }
 
-// domain-view: the parsed marks, constructible only through parseFleetRoutingMarks; the generated FleetRoutingMarks in backend_fleet_pb.ts is its wire form.
+// domain-view: the parsed marks, constructible only through parseFleetRoutingMarks; the generated FleetRoutingMarks in backend_routing_pb.ts is its wire form.
 export type FleetRoutingMarks = {
 	/** Leave the active member when it is projected to reach this fraction. */
 	readonly switchAt: number;
@@ -152,7 +152,7 @@ export type FleetRoutingInput = {
 	readonly nowMs: number;
 };
 
-// domain-view: one ranked member as routeFleetByBudget returns it; the generated FleetRouteCandidate in backend_fleet_pb.ts is its wire form.
+// domain-view: one ranked member as routeFleetByBudget returns it; the generated FleetRouteCandidate in backend_routing_pb.ts is its wire form.
 export type FleetRouteCandidate = {
 	readonly backend: string;
 	readonly tier: FleetOfferTier | undefined;
@@ -173,7 +173,7 @@ export const FLEET_ROUTE_ACTIONS = [
 ] as const;
 export type FleetRouteAction = (typeof FLEET_ROUTE_ACTIONS)[number];
 
-// domain-view: routeFleetByBudget's answer; the generated FleetRoute in backend_fleet_pb.ts is its wire form.
+// domain-view: routeFleetByBudget's answer; the generated FleetRoute in backend_routing_pb.ts is its wire form.
 export type FleetRoute = {
 	readonly action: FleetRouteAction;
 	readonly epoch: number;
