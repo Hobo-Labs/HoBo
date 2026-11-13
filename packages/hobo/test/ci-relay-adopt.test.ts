@@ -1,14 +1,17 @@
 // `hobo ci deploy --adopt`: the token-free relay mode. Offline: GitHub's
 // Deployments API answers with recorded shapes from a fake transport, the
-// probes are a fake transport, the clock is injected and the journal is a
-// temporary SQLite file.
+// probes are a fake transport (the production origin answers as the relay's
+// entry does: `/healthz` names its build's commit, `/readyz` its state), the
+// clock is injected and the journal is a temporary SQLite file.
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { CampId, CdContext, FreightId } from "@hobo/cd";
 import { createHoboCli } from "@hobo/cli";
 import type { HttpTransport, TransportRequest } from "@hobo/core";
 import { afterAll, describe, expect, it } from "vitest";
+import { cdPrincipal } from "../src/cd-runtime.js";
 import { createCiCommand } from "../src/ci-command.js";
 import {
 	RELAY_ADOPT_CREDENTIAL_REF,
@@ -16,13 +19,22 @@ import {
 	runCiRelayAdopt,
 } from "../src/ci-relay-adopt.js";
 import { RELAY_DELIVERY_REFUSAL } from "../src/ci-relay-delivery.js";
-import type { JsonValue } from "../src/json.js";
+import {
+	adoptedDeploymentSuites,
+	COMMIT_MISMATCH_STATUS,
+	commitCheckingProbe,
+	RELAY_ADOPTED_DEPLOYMENT_SUITE,
+	relayProductionOrigin,
+} from "../src/ci-relay-verify.js";
+import { isJsonObject, type JsonValue } from "../src/json.js";
 
 const RELAY_DIR = resolve(import.meta.dirname, "../../ci-vercel");
 const SHA = "c".repeat(40);
 const OTHER = "d".repeat(40);
 const TOKEN = "ghs_adopt-test-token";
 const URL_OF_DEPLOYMENT = "https://hobo-ci-git-abc123.vercel.app";
+// The Yard's productionOrigin (packages/ci-vercel/deploy/yard.ts).
+const PRODUCTION = "https://hobo-ci.vercel.app";
 const DEPLOYMENTS = "https://api.github.com/repos/Hobo-Labs/HoBo/deployments";
 
 const homes: string[] = [];
@@ -47,8 +59,24 @@ type Harness = Readonly<{
 	probed: string[];
 	clock: { now: number };
 	githubHttp: HttpTransport;
-	probe: (status?: (url: string) => number) => HttpTransport;
+	probe: (answer?: ProbeAnswer) => HttpTransport;
 }>;
+
+/** What the fake relay answers a probe: a status and a JSON body. */
+type ProbeAnswer = (
+	url: string,
+) => Readonly<{ status: number; body?: JsonValue }>;
+
+/** The relay at its production origin, serving `commit` and ready. */
+const servingRelay =
+	(commit: string = SHA): ProbeAnswer =>
+	(url) => {
+		// Every other origin is behind Deployment Protection.
+		if (!url.startsWith(PRODUCTION)) return { status: 401 };
+		if (url.endsWith("/healthz"))
+			return { status: 200, body: { ok: true, commit } };
+		return { status: 200, body: { ready: true } };
+	};
 
 const READY = [
 	{
@@ -106,10 +134,15 @@ async function harness(fake: GitHubFake = {}): Promise<Harness> {
 			return { status: 404, headers: {}, body: "{}" };
 		},
 		probe:
-			(status = () => 200) =>
+			(answer = servingRelay()) =>
 			async (request) => {
 				probed.push(request.url);
-				return { status: status(request.url), headers: {}, body: "{}" };
+				const { status, body } = answer(request.url);
+				return {
+					status,
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify(body ?? {}),
+				};
 			},
 	};
 }
@@ -144,7 +177,7 @@ function expectReadOnly(h: Harness) {
 }
 
 describe("hobo ci deploy --adopt", () => {
-	it("adopts Vercel's Git deployment of the commit and promotes it preview -> production, verifying its own URL", async () => {
+	it("adopts Vercel's Git deployment of the commit and promotes it preview -> production, verifying the production domain serves it", async () => {
 		const h = await harness();
 		const result = await adopt(h);
 		expect(result.ok, result.message).not.toBe(false);
@@ -166,11 +199,13 @@ describe("hobo ci deploy --adopt", () => {
 		expect(data.delivery.production?.freightId).toBe(
 			data.delivery.preview?.freightId,
 		);
-		// The fail-closed probes, aimed at the adopted deployment.
-		expect(h.probed).toContain(`${URL_OF_DEPLOYMENT}/healthz`);
-		expect(h.probed).toContain(`${URL_OF_DEPLOYMENT}/readyz`);
-		expect(h.probed.every((url) => url.startsWith(URL_OF_DEPLOYMENT))).toBe(
-			true,
+		// The fail-closed probes, aimed at the production domain, never at the
+		// protected per-deployment URL; preview is verified by its record.
+		expect(h.probed).toContain(`${PRODUCTION}/healthz`);
+		expect(h.probed).toContain(`${PRODUCTION}/readyz`);
+		expect(h.probed.every((url) => url.startsWith(PRODUCTION))).toBe(true);
+		expect(isJsonObject(result.data) && result.data.verifiedAt).toBe(
+			PRODUCTION,
 		);
 		// Observe-only: every request a GET of this repository's deployments.
 		expectReadOnly(h);
@@ -244,7 +279,9 @@ describe("hobo ci deploy --adopt", () => {
 	it("records a production verification failure as the promotion's end and changes nothing on Vercel", async () => {
 		const h = await harness();
 		const result = await adopt(h, {
-			probe: h.probe((url) => (url.endsWith("/readyz") ? 503 : 200)),
+			probe: h.probe((url) =>
+				url.endsWith("/readyz") ? { status: 503 } : servingRelay()(url),
+			),
 		});
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe(RELAY_DELIVERY_REFUSAL.verificationFailed);
@@ -261,6 +298,207 @@ describe("hobo ci deploy --adopt", () => {
 		);
 		expectReadOnly(h);
 	}, 120_000);
+});
+
+describe("hobo ci deploy --adopt verification without Deployment Protection", () => {
+	it("probes HOBO_CI_RELAY_URL when it names an origin, else the Yard's productionOrigin", async () => {
+		expect(
+			relayProductionOrigin(
+				{ HOBO_CI_RELAY_URL: "https://relay.example.test/" },
+				PRODUCTION,
+			),
+		).toEqual({
+			origin: "https://relay.example.test",
+			from: "HOBO_CI_RELAY_URL",
+		});
+		expect(
+			relayProductionOrigin(
+				{ HOBO_CI_RELAY_URL: "http://plain.test" },
+				PRODUCTION,
+			)?.origin,
+		).toBe(PRODUCTION);
+		expect(
+			relayProductionOrigin(
+				{ HOBO_CI_RELAY_URL: "https://x.test/path" },
+				undefined,
+			),
+		).toBeUndefined();
+		expect(relayProductionOrigin({}, undefined)).toBeUndefined();
+
+		const h = await harness();
+		const other = "https://relay.example.test";
+		const result = await adopt(h, {
+			env: {
+				HOBO_USER: "relay-adopt-test",
+				GITHUB_TOKEN: TOKEN,
+				HOBO_CI_RELAY_URL: other,
+			},
+			probe: h.probe((url) =>
+				url.startsWith(other)
+					? servingRelay()(url.replace(other, PRODUCTION))
+					: { status: 401 },
+			),
+		});
+		expect(result.ok, result.message).not.toBe(false);
+		expect(h.probed.length).toBeGreaterThan(0);
+		expect(h.probed.every((url) => url.startsWith(other))).toBe(true);
+	}, 120_000);
+
+	it("no longer consults the protected per-deployment URL: its 401 cannot fail or pass anything", async () => {
+		const h = await harness();
+		const result = await adopt(h, {
+			probe: h.probe((url) =>
+				url.startsWith(URL_OF_DEPLOYMENT)
+					? { status: 401 }
+					: servingRelay()(url),
+			),
+		});
+		expect(result.ok, result.message).not.toBe(false);
+		expect(h.probed.some((url) => url.startsWith(URL_OF_DEPLOYMENT))).toBe(
+			false,
+		);
+	}, 120_000);
+
+	it("fails production closed when the production domain serves another commit", async () => {
+		const h = await harness();
+		const result = await adopt(h, { probe: h.probe(servingRelay(OTHER)) });
+		expect(result.ok).toBe(false);
+		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.commitMismatch);
+		expect(result.message).toContain(OTHER);
+		// SAFETY: runCiRelayAdopt returns this shape (see ci-relay-adopt.ts).
+		const data = result.data as {
+			delivery: Record<string, { state: string } | null>;
+			verification: { code: string; remediation: string };
+		};
+		expect(data.delivery.preview?.state).toBe("PROMOTED");
+		expect(["FAILED", "ROLLED_BACK"]).toContain(
+			data.delivery.production?.state,
+		);
+		expect(data.verification.code).toBe(RELAY_ADOPT_REFUSAL.commitMismatch);
+		expectReadOnly(h);
+	}, 120_000);
+
+	it("fails production closed when /healthz names no commit (a build from before it reported one)", async () => {
+		const h = await harness();
+		const result = await adopt(h, {
+			probe: h.probe((url) =>
+				url.endsWith("/healthz")
+					? { status: 200, body: { ok: true } }
+					: servingRelay()(url),
+			),
+		});
+		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.commitMismatch);
+		expect(result.message).toContain("names no commit");
+	}, 120_000);
+
+	it("reports a relay whose /readyz says it is not configured as its own reason, with the remediation", async () => {
+		const h = await harness();
+		const result = await adopt(h, {
+			probe: h.probe((url) =>
+				url.endsWith("/readyz")
+					? {
+							status: 503,
+							body: { ready: false, started: false, state: "not-configured" },
+						}
+					: servingRelay()(url),
+			),
+		});
+		expect(result.ok).toBe(false);
+		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.relayNotConfigured);
+		expect(result.message).toContain("deploy/secret-store.binding.json");
+		expect(result.message).toContain("hobo ci app create --via-workflow");
+	}, 120_000);
+
+	it("reports a relay that started but is not ready by the parts that are not", async () => {
+		const h = await harness();
+		const result = await adopt(h, {
+			probe: h.probe((url) =>
+				url.endsWith("/readyz")
+					? {
+							status: 503,
+							body: {
+								ready: false,
+								configService: true,
+								configStale: false,
+								cache: false,
+								executionHost: true,
+								workers: "starting",
+							},
+						}
+					: servingRelay()(url),
+			),
+		});
+		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.relayNotReady);
+		expect(result.message).toContain("not ready (cache)");
+	}, 120_000);
+
+	it("reads a /healthz for another commit as unhealthy, and passes every other request through", async () => {
+		const seen: string[] = [];
+		const { transport, findings } = commitCheckingProbe(
+			async (request) => {
+				seen.push(request.url);
+				return {
+					status: 200,
+					headers: {},
+					body: JSON.stringify({ ok: true, commit: OTHER }),
+				};
+			},
+			{ origin: PRODUCTION, commit: SHA },
+		);
+		const get = (url: string) =>
+			transport({
+				method: "GET",
+				url,
+				headers: {},
+				timeoutMs: 1000,
+				maxResponseBytes: 1000,
+			});
+		expect((await get(`${PRODUCTION}/healthz`)).status).toBe(
+			COMMIT_MISMATCH_STATUS,
+		);
+		expect(findings().servedCommit).toBe(OTHER);
+		expect((await get("https://elsewhere.test/healthz")).status).toBe(200);
+		expect(seen).toHaveLength(2);
+	});
+
+	it("verifies preview by the deployment record: READY of the Freight's commit, nothing else", async () => {
+		// SAFETY: test ids; the suite reads neither.
+		const campId = "hobo-ci-relay/hobo-ci-relay/preview" as CampId;
+		// SAFETY: as above.
+		const freightId = "freight-1" as FreightId;
+		const ctx: CdContext = {
+			tenant: "t",
+			principal: cdPrincipal({ HOBO_USER: "relay-adopt-test" }),
+			now: () => 0,
+		};
+		const states = ["READY", "COMMIT_MISMATCH", "SUPERSEDED", "BUILDING"];
+		const outcomes = [];
+		for (const state of states) {
+			const suites = adoptedDeploymentSuites({
+				deploymentId: "701",
+				commit: SHA,
+				readyState: async () => state,
+			});
+			outcomes.push(
+				await suites.run(
+					{ suite: RELAY_ADOPTED_DEPLOYMENT_SUITE, campId, freightId },
+					ctx,
+				),
+			);
+		}
+		expect(outcomes.map((outcome) => outcome.ok)).toEqual([
+			true,
+			false,
+			false,
+			false,
+		]);
+		const unknown = await adoptedDeploymentSuites({
+			deploymentId: "701",
+			commit: SHA,
+			readyState: async () => "READY",
+		}).run({ suite: "other", campId, freightId }, ctx);
+		expect(unknown.ok).toBe(false);
+	});
 });
 
 describe("hobo ci deploy --adopt through the ci verb", () => {

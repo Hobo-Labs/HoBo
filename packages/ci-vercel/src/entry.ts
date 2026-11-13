@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { JsonValue } from "@bufbuild/protobuf";
+import { InfisicalError } from "@hobo/adapter-infisical";
 import {
 	ciEventSinkFromEnv,
 	createCiEventEmitter,
@@ -26,6 +27,7 @@ import {
 import {
 	createRelayRuntimeConfigLoader,
 	type RelayConfigSource,
+	RelayRuntimeConfigError,
 	type RelayRuntimeConfigLoader,
 	relayConfigSourceFromEnv,
 } from "./relay-runtime-config.js";
@@ -89,6 +91,67 @@ function configLoader() {
 	return loader;
 }
 
+// public-contract: why `/readyz` says the relay did not start (its `state`).
+export const RELAY_START_STATES = Object.freeze({
+	/** The config service holds no valid relay configuration (yet). */
+	notConfigured: "not-configured",
+	/** The config service refused the relay's identity (OIDC trust). */
+	configServiceDenied: "config-service-denied",
+	/** The config service did not answer. */
+	configServiceUnavailable: "config-service-unavailable",
+	/** Anything else; the log names it. */
+	startFailed: "start-failed",
+} as const);
+export type RelayStartState =
+	(typeof RELAY_START_STATES)[keyof typeof RELAY_START_STATES];
+
+const DENIED_CODES: ReadonlySet<string> = new Set([
+	"jwt-unavailable",
+	"login-denied",
+	"unauthorized",
+	"forbidden",
+]);
+
+/** The relay could not start; `state` is what `/readyz` reports. */
+export class RelayStartError extends Error {
+	readonly state: RelayStartState;
+	constructor(state: RelayStartState) {
+		super(`relay initialization failed (${state})`);
+		this.name = "RelayStartError";
+		this.state = state;
+	}
+}
+
+/** The typed reason a startup failure gives at `/readyz`: a name, never a value. */
+export function relayStartState(error: Error): RelayStartState {
+	if (error instanceof RelayStartError) return error.state;
+	if (error instanceof RelayRuntimeConfigError)
+		return RELAY_START_STATES.notConfigured;
+	if (error instanceof InfisicalError) {
+		if (DENIED_CODES.has(error.code))
+			return RELAY_START_STATES.configServiceDenied;
+		// A binding that fails its parser, or a folder that is not there, is
+		// configuration not yet in place, not an outage.
+		return error.code === "invalid-input" || error.code === "not-found"
+			? RELAY_START_STATES.notConfigured
+			: RELAY_START_STATES.configServiceUnavailable;
+	}
+	return RELAY_START_STATES.startFailed;
+}
+
+/**
+ * The commit this deployment was built from, as Vercel's build reports it
+ * (`VERCEL_GIT_COMMIT_SHA`, a system environment variable of every Git
+ * deployment), or null when it is not a full commit id. `/healthz` reports it
+ * so a verifier can tell which build an origin serves.
+ */
+export function buildCommit(
+	env: Readonly<Record<string, string | undefined>>,
+): string | null {
+	const value = env.VERCEL_GIT_COMMIT_SHA?.trim().toLowerCase() ?? "";
+	return /^[0-9a-f]{40}$/u.test(value) ? value : null;
+}
+
 let startup: ReturnType<typeof composeStatelessRelay> | undefined;
 function application() {
 	startup ??= Promise.resolve()
@@ -110,22 +173,29 @@ function application() {
 				error instanceof Error ? error : undefined,
 			);
 			startup = undefined;
-			throw new Error("relay initialization failed");
+			throw new RelayStartError(
+				error instanceof Error
+					? relayStartState(error)
+					: RELAY_START_STATES.startFailed,
+			);
 		});
 	return startup;
 }
 
 /**
  * Vercel Node Function HTTP entrypoint. `/healthz` answers 200 whatever the
- * relay's state (the process is up); everything else waits for the relay,
- * and answers 503 while it cannot start (`/readyz` says so in its body).
+ * relay's state (the process is up) and names the build's commit; everything
+ * else waits for the relay, and answers 503 while it cannot start (`/readyz`
+ * says so in its body, with a `state` from `RELAY_START_STATES`).
  */
 export function createHttpEntry(
 	load: () => Promise<{
 		origin: string;
 		handle: (request: Request) => Promise<Response>;
 	}>,
+	options: Readonly<{ commit?: string | null }> = {},
 ) {
+	const commit = options.commit ?? null;
 	return async (
 		request: IncomingMessage,
 		response: ServerResponse,
@@ -136,7 +206,7 @@ export function createHttpEntry(
 				"Content-Type": "application/json",
 				"Cache-Control": "no-store",
 			});
-			response.end(JSON.stringify({ ok: true }));
+			response.end(JSON.stringify({ ok: true, commit }));
 			return;
 		}
 		try {
@@ -146,7 +216,7 @@ export function createHttpEntry(
 				handle: app.handle,
 				streams: streamsBody,
 			})(request, response);
-		} catch {
+		} catch (error) {
 			if (response.headersSent) {
 				response.end();
 				return;
@@ -159,9 +229,14 @@ export function createHttpEntry(
 				response.end(
 					JSON.stringify({
 						ready: false,
-						// The relay could not start: the config service, the
-						// configuration or the cache binding; the log names which.
+						// The relay could not start: `state` says whether the
+						// config service holds no configuration, refused the
+						// relay's identity, or did not answer.
 						started: false,
+						state:
+							error instanceof Error
+								? relayStartState(error)
+								: RELAY_START_STATES.startFailed,
 					}),
 				);
 				return;
@@ -171,7 +246,9 @@ export function createHttpEntry(
 		}
 	};
 }
-export const http = createHttpEntry(application);
+export const http = createHttpEntry(application, {
+	commit: buildCommit(process.env),
+});
 
 let queueBindingReported = false;
 /** Emit bounded routing metadata once per instance; message payloads and

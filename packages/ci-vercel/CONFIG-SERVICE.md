@@ -251,10 +251,15 @@ the cache.
 
 **Today the workflow adopts instead** (Vercel's Git integration deploys; no
 deploy token): `hobo ci deploy --adopt` replaces the smoke check with HoBo CD's
-fail-closed verification of the adopted deployment's own URL, `/healthz` for
-preview and `/healthz` and `/readyz` for production, so production is not
-qualified until the folder above is filled and `/readyz` answers 200
-([README](README.md#token-free-relay-mode-hobo-ci-deploy---adopt)).
+fail-closed verification: preview by the deployment's GitHub record (READY, of
+the commit), production at the relay's production domain (the Yard's
+`productionOrigin`, public under Standard Deployment Protection), whose
+`/healthz` must name the commit and whose `/readyz` must answer 200. So
+production is not qualified until the folder above is filled; until then the
+run fails as `HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED` (`/readyz` reports
+`state: "not-configured"`), and a store that refuses the relay identity as
+`HOBO_CI_DEPLOY_RELAY_NOT_READY` (`config-service-denied`), each with its
+remediation ([README](README.md#token-free-relay-mode-hobo-ci-deploy---adopt)).
 
 **`hobo ci deploy` delivers through HoBo CD.** Run with a deploy token
 (by hand, see the [README](README.md#deploying-the-relay-with-hobo)), it

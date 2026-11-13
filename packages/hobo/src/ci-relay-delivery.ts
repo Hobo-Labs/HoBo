@@ -70,6 +70,7 @@ import {
 	ReconcileStatus,
 	type SetRecord,
 	type TelemetrySink,
+	type VerifyPort,
 } from "@hobo/cd";
 import { createCdBaselinePack } from "@hobo/cd/authz";
 import {
@@ -199,6 +200,11 @@ export type RelayDeliveryInput = Readonly<{
 	realization: RelayRealization;
 	/** Transport the verification probes use; bounded fetch when absent. */
 	http?: HttpTransport;
+	/**
+	 * The verify suites a node's verification may declare. Absent, a declared
+	 * suite fails closed (CD's unconfigured runner).
+	 */
+	suites?: VerifyPort;
 	openStore?: CdStoreOpener;
 	/** Delivery records; read from `deploy/delivery.ts` when absent. */
 	records?: DeliveryModule;
@@ -733,51 +739,56 @@ async function deliverWith(
 		relayYardRegistryProvider(input.yard),
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
+	const suites = input.suites;
 	const cd = composeContinuousDelivery({
 		base: { store, tenant: config.tenant, now },
 		factories: defaultCdFactories,
-		adapters: defaultCdAdapters({
-			store,
-			railCatalog,
-			resolvePack: async () => policyPack,
-			packs: async () => [],
-			realizers: {
-				conductor: (scope) => {
-					realizer = relayRealizer({
-						realization: input.realization,
-						freight: (id) => scope.freight.get(id),
-						read: (digest) => scope.artifacts.get(digest),
-						now,
-						observeReadiness: input.wait !== false,
-					});
-					return realizer;
+		adapters: {
+			...defaultCdAdapters({
+				store,
+				railCatalog,
+				resolvePack: async () => policyPack,
+				packs: async () => [],
+				realizers: {
+					conductor: (scope) => {
+						realizer = relayRealizer({
+							realization: input.realization,
+							freight: (id) => scope.freight.get(id),
+							read: (digest) => scope.artifacts.get(digest),
+							now,
+							observeReadiness: input.wait !== false,
+						});
+						return realizer;
+					},
 				},
-			},
-			planning: {
-				registry,
-				declarationDigest: (declaration) => canonicalManifestHash(declaration),
-				async declaration(freight) {
-					const bytes = await cd.artifacts.get(
-						// SAFETY: a Freight's declaration hash is a sha256 digest.
-						freight.manifest?.declarationHash as `sha256:${string}`,
-					);
-					if (!bytes) return undefined;
-					return parseManifest(JSON.parse(new TextDecoder().decode(bytes)));
+				planning: {
+					registry,
+					declarationDigest: (declaration) =>
+						canonicalManifestHash(declaration),
+					async declaration(freight) {
+						const bytes = await cd.artifacts.get(
+							// SAFETY: a Freight's declaration hash is a sha256 digest.
+							freight.manifest?.declarationHash as `sha256:${string}`,
+						);
+						if (!bytes) return undefined;
+						return parseManifest(JSON.parse(new TextDecoder().decode(bytes)));
+					},
+					async camp(campId) {
+						const camp = await topology.camp(campId);
+						if (!camp) return undefined;
+						return {
+							environment: camp.envType,
+							config: camp.regions[0] ? { region: camp.regions[0] } : {},
+						};
+					},
 				},
-				async camp(campId) {
-					const camp = await topology.camp(campId);
-					if (!camp) return undefined;
-					return {
-						environment: camp.envType,
-						config: camp.regions[0] ? { region: camp.regions[0] } : {},
-					};
+				gate: {
+					contracts: async () => ({ deployed: [], candidate: [] }),
+					subject: async () => ({ classifications: [], residency: [] }),
 				},
-			},
-			gate: {
-				contracts: async () => ({ deployed: [], candidate: [] }),
-				subject: async () => ({ classifications: [], residency: [] }),
-			},
-		}),
+			}),
+			...(suites !== undefined ? { suites: () => suites } : undefined),
+		},
 		http,
 		credentials,
 		artifactStore:
