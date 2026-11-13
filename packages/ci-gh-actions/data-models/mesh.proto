@@ -138,23 +138,3 @@ message MeshNodeReports {
   // More nodes were known than one answer lists. `capacity` still covers all.
   bool truncated = 6;
 }
-
-// What the mesh offers one runner label.
-message MeshFleetLabelState {
-  // Live, healthy nodes serving the label, trusted or not: an unlisted node
-  // still picks up a job GitHub hands it. Rejected adverts never count.
-  uint32 nodes = 1;
-  // Of those, the ones whose key the publisher trusts.
-  uint32 trusted_nodes = 2;
-  uint32 free_slots = 3;
-}
-// The snapshot one elected worker publishes to the `HOBO_CI_FLEET_STATE`
-// repository variable. Runner routing read it until it asked the relay for a
-// fleet verdict instead (`fleet_verdict.proto`). It lists exactly the fleet labels
-// the publisher serves, never `hobo-local-host`. Small, and nothing in it is
-// secret.
-message MeshFleetState {
-  // RFC 3339; a reader ignores a snapshot older than five minutes.
-  string published_at = 1;
-  map<string, MeshFleetLabelState> labels = 2;
-}
