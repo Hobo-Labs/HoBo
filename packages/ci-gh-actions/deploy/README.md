@@ -112,7 +112,7 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
-| `HOBO_CI_JOB_POLL_MS` | `5000` | GitHub list-poll interval; minimum 5000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
+| `HOBO_CI_JOB_POLL_MS` | `2000` | GitHub list-poll interval; minimum 2000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
 | `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum distinct merge groups with active leases, grouped by `head_sha`; zero and invalid values are rejected |
 | `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
@@ -124,6 +124,11 @@ non-secret settings:
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
 | `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only; sub-threshold runs LRU-evict unused `hobo-ci-deps:*` images via `scripts/ci-runner-image-gc.mts` after builder prune |
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_TELEMETRY_PATH` | `$HOBO_HOME/ci/deps-build-telemetry.json` | Rolling peak inode/byte consumption recorded after successful deps builds |
+| `HOBO_RELEASE_BUILDER_CACHE_CAP` | `2GB` | `docker builder prune --keep-storage` cap after release OCI builds on shared boxes |
+| `HOBO_CI_DEPS_BUILD_WAIT_MS` | `300000` | Maximum wait in `scripts/ci/wait-deps-build-window.mts` for other job containers before a publisher or PR miss build (both callers also set it explicitly, inside 20-minute jobs); the script leaves its own job container out of the count and does not wait on Docker headroom, which `build-deps.sh` enforces after pruning ([finding 153](../../../docs/ci/findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)) |
+| `HOBO_CI_DEPS_BUILD_WAIT_UNKNOWN_SELF_MS` | `120000` | How long that script waits on job containers when it runs in a container it cannot identify as its own; it then proceeds and logs why; digits only |
+| `HOBO_CI_DEPS_BUILD_WAIT_POLL_MS` | `10000` | Poll interval for the deps build window script; digits only |
 
 One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
 container-start and registration timestamps, and their millisecond deltas. Polled job creation time and total
@@ -374,6 +379,27 @@ For immediate recovery from an unwritable promoted image, stop the daemon, run
 `docker rmi hobo-ci-deps:local`, and restart it. Alternatively set
 `HOBO_CI_DEPS_IMAGE=` (empty) and restart to disable selection and the ensure
 loop. Redeploy the fixed daemon and rebuild the image before re-enabling it.
+
+## Shared Turbo cache server
+
+`turbo-cache/compose.yml` runs the open-source Turborepo remote cache server
+(`ducktors/turborepo-remote-cache`, pinned by digest) with a local volume, so
+every box job, ARC pod and GitHub-hosted runner can replay what another already
+built. It is separate from the relay and optional; nothing uses it until the
+repository has the variable `HOBO_CI_TURBO_API` (the server's URL), the variable
+`TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below).
+
+```sh
+docker compose --env-file /abs/path/to/turbo-cache.env \
+  -f packages/ci-gh-actions/deploy/turbo-cache/compose.yml up -d
+```
+
+The env file sets `HOBO_CI_TURBO_CACHE_TOKEN`, and optionally
+`HOBO_CI_TURBO_CACHE_BIND` (default `127.0.0.1`), `HOBO_CI_TURBO_CACHE_PORT`
+(default `3000`) and `HOBO_CI_TURBO_CACHE_VOLUME`. Keep it outside the checkout.
+To serve ARC pods or another box, bind the private address they reach this host
+on; do not expose it publicly without TLS in front. Fork pull requests receive
+no token, so they neither read nor write the cache.
 
 ## Backup, restore and stop
 

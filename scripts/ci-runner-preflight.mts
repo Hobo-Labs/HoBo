@@ -5,6 +5,9 @@ import {
 	syncMissingMiseTools,
 } from "./lib/ci-runner-contract.mts";
 
+// Always installs only tools `mise ls --current --missing` reports (including a
+// pin bumped in mise.lock before the runner image is rebuilt), so skipping the
+// blanket `mise install --locked` step never fails closed on toolchain drift.
 const sync = syncMissingMiseTools(process.cwd());
 console.log(
 	`${sync.ok ? "ok  " : "ERR "} mise-tool-sync: ${sync.detail} (${sync.elapsedMs} ms)`,

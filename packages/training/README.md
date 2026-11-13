@@ -1,7 +1,7 @@
 # @hobo/training
 
 The **built-in training engine** behind core's `hobo:training-engine` port
-(docs/plans/0017 F26, [ADR-0025](../../docs/design/adr/03-data-plane.md#adr-0025)):
+([ADR-0025](../../docs/design/adr/03-data-plane.md#adr-0025)):
 an OPTO-style iterative optimizer — **propose → score → keep-best** over
 candidate parameter sets (instruction framing + demo subset drawn from the
 request's recorded trajectories) — plus OpenInference-aligned trace capture

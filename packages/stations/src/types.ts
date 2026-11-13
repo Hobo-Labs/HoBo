@@ -29,6 +29,32 @@ export type StationIsolation = Readonly<{
 		| "ephemeral";
 }>;
 
+/** How a Camp converges (plan 0024, D14). Neutral: no engine or cluster vocabulary. */
+export type RailReconcilerMode = "conductor" | "agent" | "publisher";
+
+/**
+ * Neutral delivery policy. `publisher` names a `@hobo/cd-gitops` publisher
+ * target (for example `argo-cd` or `flux`) and is present only in
+ * `publisher` mode. The legacy `engine` field is deprecated on the wire, never
+ * read, and mapped by `neutralRailDeliveryPolicy`.
+ */
+export type RailDeliveryPolicy = Readonly<{
+	reconcilerMode: RailReconcilerMode;
+	publisher?: string;
+	syncMode: "auto" | "manual";
+	prune: boolean;
+}>;
+
+/** A JSON value inside the opaque Rail `delivery` object. */
+export type RailDeliveryValue =
+	| string
+	| number
+	| boolean
+	| null
+	| readonly RailDeliveryValue[]
+	| RailDeliveryObject;
+export type RailDeliveryObject = Readonly<{ [key: string]: RailDeliveryValue }>;
+
 export type RailPolicyEngine = Readonly<{
 	kind: "ts" | "opa" | "cedar";
 	config?: Readonly<Record<string, string>>;
@@ -63,17 +89,19 @@ export type Rail = Readonly<{
 		budgetUsd: number;
 		spendCapUsd: number;
 	}>;
-	deliveryPolicy: Readonly<{
-		engine: "argo" | "in-proc";
-		syncMode: "auto" | "manual";
-		prune: boolean;
-	}>;
+	deliveryPolicy: RailDeliveryPolicy;
 	requiredConnectorKinds: readonly string[];
 	catalogSnapshotPin?: string;
 	approvedProviders: readonly string[];
 	obligationDefaults: readonly string[];
 	guardrailEnvelope: Readonly<Record<string, string>>;
 	metadata: Readonly<Record<string, string>>;
+	/**
+	 * Opaque delivery object (plan 0024, D20). Part of the canonical content and
+	 * the digest; Stations never interprets it. `@hobo/cd` parses it as
+	 * `RailDeliveryRecord`. Absent on Rails published before it existed.
+	 */
+	delivery?: RailDeliveryObject;
 	publishedAt: string;
 }>;
 

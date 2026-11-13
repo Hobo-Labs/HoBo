@@ -1,4 +1,5 @@
 import type { ConnectorRegistry } from "./connector-registry.js";
+import { deliverySubmittedBody } from "./delivery.js";
 import type { BrokerEnvironment } from "./environments.js";
 import { BROKER_EVENTS, type BrokerEvent, brokerEvent } from "./events.js";
 import {
@@ -394,12 +395,14 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			return {
 				ticket,
 				events: [
-					brokerEvent(BROKER_EVENTS.DeliverySubmitted, {
-						requestId: receipt.requestId,
-						brokerId: policies.brokerId,
-						engine: ticket.engine,
-						target: ticket.target,
-					}),
+					brokerEvent(
+						BROKER_EVENTS.DeliverySubmitted,
+						deliverySubmittedBody({
+							requestId: receipt.requestId,
+							brokerId: policies.brokerId,
+							ticket,
+						}),
+					),
 				],
 			};
 		},

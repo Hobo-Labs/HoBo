@@ -40,3 +40,64 @@ package yardworld
 }
 
 #CharacterState: 0 | 1 | 2 | 3 | 4
+
+// ── HoBo CD views (plan 0024 WP19) ──────────────────────────────────────────
+
+#CdResult: "success" | "failure" | "error" | "timeout" | "cancellation" | "skip" | "pending"
+
+#FreightTimelineEntryRecord: {
+	freight_id:  string & =~"^sha256:"
+	run_id:      string & !=""
+	pipeline:    string
+	node:        string
+	camp_id:     string & !=""
+	station_id:  string
+	environment: string
+	result:      #CdResult
+	start_ms:    uint
+	end_ms:      uint
+}
+
+#FreightTimelineRecord: {
+	freight_id: string & =~"^sha256:"
+	entries: [...#FreightTimelineEntryRecord]
+}
+
+#PipelineGraphNodeRecord: {
+	id: string & !=""
+	camps: [...(string & !="")]
+	last_freight_id: string
+	last_result:     #CdResult
+	last_at_ms:      int
+}
+
+#PipelineGraphEdgeRecord: {
+	from:          string & !=""
+	to:            string & !=""
+	freight_count: uint & >=1
+}
+
+#PipelineGraphRecord: {
+	pipeline: string
+	nodes: [...#PipelineGraphNodeRecord]
+	edges: [...#PipelineGraphEdgeRecord]
+}
+
+#FleetTaintRecord: {
+	key:    string & !=""
+	effect: "no_place" | "no_run" | "unspecified"
+}
+
+#FleetCampRowRecord: {
+	camp_id: string & !=""
+	conditions: [string]: "true" | "false" | "unknown" | "unspecified"
+	taints: [...#FleetTaintRecord]
+}
+
+#ComplianceCellRecord: {
+	rail:    string & =~"^sha256:"
+	control: string & !=""
+	mode:    "enforce" | "inform"
+	ratio:   number & >=0 & <=1
+	band:    "ok" | "watch" | "breach"
+}

@@ -10,8 +10,8 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 **Status:** Accepted. Built: the record (`RoutingSlip`), its parsers and
 writer, the committed policy (`runnerRouting`), the dependency-free reader
 and the Git Data API probe
-([plan 0026](../../plans/0026-relay-routing-slips.md), layer 01). Not built:
-the rest of plan 0026 ("Not built" below).
+(layer 01). Not built:
+the rest ("Not built" below).
 **Date:** 2026-11-13
 **Supersedes, for transport:** [ADR-0180](fleet-verdict.md#adr-0180)'s
 hosted verdict read (`GET /v1/fleet/verdicts/{owner}/{repo}` and the signed

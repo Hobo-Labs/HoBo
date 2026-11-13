@@ -11,7 +11,7 @@ import {
 	realizeHelloBindle,
 } from "../../packages/providers/provider-cloudflare/src/index.js";
 
-// The credential-gated LIVE Pulumi lane (docs/plans/0006 item 3-2): realize
+// The credential-gated LIVE Pulumi lane: realize
 // hello-bindle through the real provider lowering, then drive the pinned
 // `pulumi` CLI engine through the same adapter the composed deploy path uses —
 // preview, apply, refresh, destroy — against real Cloudflare. Teardown always

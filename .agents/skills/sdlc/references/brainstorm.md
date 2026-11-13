@@ -34,5 +34,5 @@ idea serves.
 - Named the draft-cascade footprint: which technical proofs, which experience types, which epic.
 - User agrees it is worth planning.
 
-Write the outcome into `docs/plans/<initiative-slug>/sdlc-state.md` (phase: brainstormed,
+Write the outcome into `.sdlc/<initiative-slug>/sdlc-state.md` (phase: brainstormed,
 decisions, kill-log) before moving on.

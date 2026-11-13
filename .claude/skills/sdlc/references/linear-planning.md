@@ -29,13 +29,14 @@ per-type assets — see the draft skill). An issue without runnable acceptance i
 
 ## Mechanics
 
-- Creation is **paced, single-writer** (one save_issue at a time, retry on throttle) — the
-  2026-06-24 burst rate-limit lesson in docs/implementation-plan.md.
+- Creation is **paced, single-writer** (one save_issue at a time, retry on throttle): a burst
+  of creations was rate-limited on 2026-06-24.
 - Create in dependency order so `blockedBy` targets exist; stage M0/acceptance issues block their
   skeletons.
-- If Linear MCP access is unavailable, stage the full scope in `docs/plans/<name>-backlog.md`
-  with an import runbook (established pattern: docs/plans/production-build-backlog.md).
-- Before authoring, read `docs/plans/dispatch-log.md` — recurring failure classes there are
+- If Linear MCP access is unavailable, stage the full scope in `.sdlc/<name>-backlog.md`
+  with an import runbook. `.sdlc/` is ignored by git: a plan or backlog is never committed
+  (AGENTS.md, "Plans are not committed").
+- Before authoring, read `.sdlc/dispatch-log.md` — recurring failure classes there are
   contract defects; fix the template, not just the issue.
 
 Exit: issues exist (or staged); state file updated (phase: captured, issue list).

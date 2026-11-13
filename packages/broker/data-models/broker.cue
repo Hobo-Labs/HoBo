@@ -31,15 +31,27 @@ package data_models
 	quota_used: <=quota_limit
 }
 
+#DeliveryPublisher: {
+	target:      "argo-cd" | "flux"
+	repository?: string & !=""
+}
+
+// Neutral delivery policy (plan 0024, D14). `engine`, `gitops_repo` and
+// `destination_namespace` are deprecated wire fields: accepted, mapped on
+// parse, never read for routing.
 #DeliveryPolicy: {
-	engine:    "argo" | "in-proc"
-	sync_mode: "auto" | "manual"
-	prune:     bool | *false
-	// Dependent constraint: the Argo engine needs a GitOps repo and namespace.
-	if engine == "argo" {
-		gitops_repo:           string & !=""
-		destination_namespace: string & !=""
+	reconciler_mode?: "conductor" | "agent" | "publisher"
+	engine?:          "argo" | "in-proc"
+	sync_mode:        "auto" | "manual" | *"manual"
+	prune:            bool | *false
+	// Dependent constraint: a publisher is named exactly in publisher mode.
+	if reconciler_mode == "publisher" {
+		publisher: #DeliveryPublisher
 	}
+	if reconciler_mode == "conductor" || reconciler_mode == "agent" {
+		publisher?: _|_
+	}
+	publisher?:             #DeliveryPublisher
 	gitops_repo?:           string
 	destination_namespace?: string
 }

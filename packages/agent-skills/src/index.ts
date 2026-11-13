@@ -1,8 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-// The mirrored .agents/skills tree as a distributable module (docs/plans/0017
-// F27). Skills are static markdown content; this module parses them into the
+// The mirrored .agents/skills tree as a distributable module. Skills are static markdown content; this module parses them into the
 // typed manifest a Registry listing serves. Parse, don't validate: the
 // frontmatter lowers onto parsed derived types or throws — no boolean checks
 // over raw strings escape this boundary.

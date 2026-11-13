@@ -7,7 +7,7 @@ tags: [hobo, ci, routing, relay, fleet, route-runner, routing-slip]
 
 # Finding 149: routing slip facts, main on the queue rule, hosted relay down, box on c7ec8d449
 
-The facts [plan 0026](../../plans/0026-relay-routing-slips.md) and
+The facts
 [ADR-0181](../../design/adr/routing-slips.md#adr-0181) start from, each
 checked on 2026-11-13. They are stated once, here.
 

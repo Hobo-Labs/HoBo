@@ -6,7 +6,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// Bundle-manifest ingest (docs/plans/0017 F24): an untrusted, schema-versioned
+// Bundle-manifest ingest: an untrusted, schema-versioned
 // manifest document is parsed — parse, don't validate — into parsed derived
 // types at the boundary; a successful parse produces the command's resulting
 // registry.BundleImported fact body, a failed parse produces typed errors and

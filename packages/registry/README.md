@@ -1,6 +1,6 @@
 # @hobo/registry
 
-The Registry catalog service (docs/plans/0017 F24). The catalog engine —
+The Registry catalog service. The catalog engine —
 provider registration/approval facts, the event-backed planner registry fold,
 and the `registry-catalog` projection — already lives in `@hobo/cloud`
 (`packages/cloud/src/registry/catalog.ts`); this package re-exposes that

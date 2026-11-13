@@ -12,14 +12,13 @@ const DEFAULT_SCAN_PATHS = [
 ];
 
 // Link/anchor integrity holds repo-wide, not just for the design suite — the
-// 2026-07 audit found 63 breaks concentrated in these unscanned dirs
-// (docs/plans/0006 item 2-7). Only checkRelativeLinks runs here: the
+// 2026-07 audit found 63 breaks concentrated in these unscanned dirs.
+// Only checkRelativeLinks runs here: the
 // ADR/SDK/event-family checks assume design-suite vocabulary and would
 // false-positive on prose about external tools (e.g. dspy.* in
 // docs/technologies is DSPy's namespace, not a HoBo event family).
 const LINK_ONLY_SCAN_PATHS = [
 	"docs/technologies",
-	"docs/plans",
 	"docs/competitors",
 	"docs/standards",
 	"docs/patterns",

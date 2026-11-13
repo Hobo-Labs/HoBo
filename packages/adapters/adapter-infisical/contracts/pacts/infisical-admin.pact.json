@@ -303,7 +303,7 @@
 			}
 		},
 		{
-			"description": "The deploy identity trusts GitHub Actions on main",
+			"description": "The deploy identity trusts GitHub Actions on main, by the subject the repository's tokens carry and its pinned ids",
 			"providerState": "identity deploy-identity exists",
 			"request": {
 				"method": "POST",
@@ -316,8 +316,11 @@
 					"oidcDiscoveryUrl": "https://token.actions.githubusercontent.com",
 					"boundIssuer": "https://token.actions.githubusercontent.com",
 					"boundAudiences": "https://github.com/Hobo-Labs",
-					"boundClaims": {},
-					"boundSubject": "repo:Hobo-Labs/HoBo:ref:refs/heads/main",
+					"boundClaims": {
+						"repository_id": "1274791462",
+						"repository_owner_id": "344805935"
+					},
+					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
 					"accessTokenTTL": 3600,
 					"accessTokenMaxTTL": 3600
 				}
@@ -332,6 +335,78 @@
 						"id": "oidc-2",
 						"identityId": "deploy-identity"
 					}
+				}
+			}
+		},
+		{
+			"description": "An existing deploy identity's OIDC trust is replaced in place (connect re-run repairs it)",
+			"providerState": "identity deploy-identity has OIDC Auth",
+			"request": {
+				"method": "PATCH",
+				"path": "/api/v1/auth/oidc-auth/identities/deploy-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"oidcDiscoveryUrl": "https://token.actions.githubusercontent.com",
+					"boundIssuer": "https://token.actions.githubusercontent.com",
+					"boundAudiences": "https://github.com/Hobo-Labs",
+					"boundClaims": {
+						"repository_id": "1274791462",
+						"repository_owner_id": "344805935"
+					},
+					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+					"accessTokenTTL": 3600,
+					"accessTokenMaxTTL": 3600
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityOidcAuth": {
+						"id": "oidc-2",
+						"identityId": "deploy-identity"
+					}
+				}
+			}
+		},
+		{
+			"description": "An identity without OIDC Auth cannot have its trust updated",
+			"providerState": "identity no-oidc-identity has no OIDC Auth",
+			"request": {
+				"method": "PATCH",
+				"path": "/api/v1/auth/oidc-auth/identities/no-oidc-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"oidcDiscoveryUrl": "https://token.actions.githubusercontent.com",
+					"boundIssuer": "https://token.actions.githubusercontent.com",
+					"boundAudiences": "https://github.com/Hobo-Labs",
+					"boundClaims": {
+						"repository_id": "1274791462",
+						"repository_owner_id": "344805935"
+					},
+					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+					"accessTokenTTL": 3600,
+					"accessTokenMaxTTL": 3600
+				}
+			},
+			"response": {
+				"status": 404,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"reqId": "req-404",
+					"statusCode": 404,
+					"message": "OIDC auth method not found",
+					"error": "NotFound"
 				}
 			}
 		},

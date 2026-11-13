@@ -17,11 +17,12 @@ FROM fetch AS install
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 WORKDIR /opt/actions-runner/_hobo_work/HoBo/HoBo
+ENV npm_config_package_import_method=hardlink
 RUN --network=none --mount=type=cache,id=hobo-pnpm-store,target=/pnpm-store,uid=1000,gid=1000 \
   pnpm install --frozen-lockfile --offline --ignore-scripts \
   && pnpm rebuild @ast-grep/cli @bufbuild/buf esbuild protobufjs \
   && find . -type d -name node_modules -prune -exec sh -c \
-    'set -e; for source do target="/opt/hobo-deps/${source#./}"; mkdir -p "$(dirname "$target")"; mv "$source" "$target"; done' sh {} + \
+    'set -e; for source do target="/opt/hobo-deps/${source#./}"; mkdir -p "$(dirname "$target")"; cp -al "$source" "$target"; rm -rf "$source"; done' sh {} + \
   && node --experimental-strip-types scripts/ci/deps-layer-buckets.mts partition \
     /opt/hobo-deps \
     /opt/hobo-deps-buckets \

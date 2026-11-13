@@ -102,7 +102,7 @@ be swapped without touching the brokering pipeline:
 | Policy | `GatePlane` (OPA-shaped request/decision documents) | `@hobo/contracts` policy pack (imported and **run**, not reinvented) | **Rego** via `createOpaGatePlane` — OPA Data API decision at `hobo/broker/decision`, fail-closed (`policy-engine-unavailable`), pinned by `broker_policy_opa.pact.json` |
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
 | Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` prefers `@hobo/pricing` incremental USD when supplied |
-| Delivery | `DeliveryPlane` | `renderArgoApplication` → Argo CD Application documents; `in-proc` executor handoff | `createArgoCdDeliveryPlane` — live Argo CD applications API submission, token via the token broker, fail-closed, pinned by `broker_delivery_argocd.pact.json` |
+| Delivery | `DeliveryPlane` | `createDeliveryPlane` — in-process conductor only; agent/publisher policies fail closed with `delivery-plane-unwired` | `createReconcilerDeliveryPlane({ requestPromotion })` — every receipt is delivered through `@hobo/cd` (plan 0024, D14), fail-closed, pinned by `broker_delivery_cd.pact.json`. GitOps rendering (Argo CD `Application`, Flux `Kustomization`) moved to `@hobo/cd-gitops` |
 | Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `custom` configs | an external connector catalog |
 
 Beyond M0, this package also ships:
@@ -144,7 +144,7 @@ families:
   (structured per-plane reasons), with the Gatekeeper's `policy.Decided` /
   `gatekeeper.Decided` facts appended to the same stream for replay.
 - `broker.ScaleRequested` — spin up/down/zero directives.
-- `broker.DeliverySubmitted` — delivery-plane handoff.
+- `broker.DeliverySubmitted` — delivery-plane handoff. Body schema `hobo.broker.delivery-submitted/v2` (reconciler mode, publisher, promotion id); persisted v1 bodies (`engine: argo | in-proc`) are lifted by `upcastDeliverySubmitted` (golden corpus `test/fixtures/delivery-submitted/`).
 - `connector.Registered` / `connector.Disabled` — connector registry facts.
 
 Query surfaces are event-driven: `foldBrokerDecisions` and
@@ -188,3 +188,28 @@ exercised by `contracts/consumer/broker-resolution-boundary.test.ts`.
 pnpm --filter @hobo/broker test
 pnpm --filter @hobo/broker test:contract:consumer
 ```
+
+## Delivery policy (neutral, plan 0024 D14)
+
+`DeliveryPolicy` names how a Camp converges, never a GitOps engine, cluster or
+namespace:
+
+| Field | Meaning |
+|---|---|
+| `reconciler_mode` | `conductor` (in-process), `agent` (pull agent) or `publisher` (a `@hobo/cd-gitops` publisher). |
+| `publisher` | `{ target: argo-cd \| flux, repository? }`, exactly in `publisher` mode. |
+| `sync_mode`, `prune` | Unchanged. |
+| `engine`, `gitops_repo`, `destination_namespace` | Deprecated wire fields. `engine: argo` maps to the `argo-cd` publisher (its `gitops_repo` becomes `publisher.repository`); `engine: in-proc` maps to `conductor`. `destination_namespace` is never read. |
+
+`DeliveryPolicy.engine` / `DeliveryTicket.engine` survive only as a display
+label (`in-proc`, `agent`, `publisher:<target>`) for existing readers.
+
+## Runbook
+
+| Symptom | Cause | Action |
+|---|---|---|
+| `delivery-plane-unwired` | The policy routes through an agent or publisher but the broker was built without the CD plane. | Compose `createReconcilerDeliveryPlane({ requestPromotion })` (the CD host does this), or set `reconciler_mode: conductor` for local runs. |
+| `delivery-refused` | CD refused the promotion (window, lineage, gate, policy). | Read the reasons and remediation on the error; fix the cause and deliver again (idempotent per receipt). |
+| `delivery-transport-failed` | The CD control plane was unreachable. | Check CD service health; nothing was applied. Retry. |
+| `delivery-fact-unknown` on replay | A persisted `broker.DeliverySubmitted` body has a shape the upcaster does not know. | Add the shape and a golden corpus entry before replaying. |
+| A legacy policy still says `engine: argo` | Pre-D14 configuration. | It keeps working through the `argo-cd` publisher; migrate to `reconciler_mode: publisher` + `publisher.target: argo-cd`. |

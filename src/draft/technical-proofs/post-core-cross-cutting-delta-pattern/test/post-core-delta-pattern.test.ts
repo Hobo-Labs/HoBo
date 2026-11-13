@@ -27,11 +27,10 @@ test("pattern defines the durable post-core cross-cutting capability lane", () =
   ]);
 });
 
-test("implementation plan, design index, and traceability carry the broker delta pattern", () => {
+test("design index and traceability carry the broker delta pattern", () => {
   const result = assertDocsCarryPostCoreDeltaPattern(repoRoot);
 
   assert.deepEqual(result.errors, []);
-  assert.match(result.implementationPlan, /Post-399 Cross-Cutting Capability Deltas/i);
   assert.match(result.designIndex, /meta-cloud-broker\.md/);
   assert.match(result.traceability, /HOBO-521/);
   assert.match(result.traceability, /meta-cloud-broker-scope-contract/);

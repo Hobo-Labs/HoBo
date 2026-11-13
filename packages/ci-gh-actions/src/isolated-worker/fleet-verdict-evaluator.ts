@@ -1,6 +1,6 @@
 /**
- * When the box relay says a fleet label is blocked (ADR-0180; plan 0025,
- * 6.1). Pure: plain values in, a verdict per label out. It never calls
+ * When the box relay says a fleet label is blocked (ADR-0180 amendment,
+ * item 1). Pure: plain values in, a verdict per label out. It never calls
  * `admit`, `availableLowWaterMb` or anything else on the memory admission
  * object, and reads only the host sample it is given.
  *

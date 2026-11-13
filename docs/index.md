@@ -12,10 +12,8 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 |---|---|---|
 | Design suite | [`design/index.md`](./design/index.md) | Canonical product/platform design, ADRs through **ADR-0148** (index: [`design/adr/index.md`](./design/adr/index.md); recent: **ADR-0144** external-spec posture, **ADR-0145** Traits, **ADR-0146** jurisdiction/residency), glossary, event families, traceability, CLI and SDK contracts. |
 | Lineage & credits | [`design/lineage.md`](./design/lineage.md) | The aggregate portrait: every influence with posture, what's borrowed, divergence, and capture link. |
-| Implementation backlog | [`implementation-plan.md`](./implementation-plan.md) | Durable mirror of Linear's subsystem decomposition and issue plan. Linear remains live status source. |
 | Agent tooling | [`agent-tooling.md`](./agent-tooling.md) | Local agent-tooling setup, trust boundaries, data-egress notes, and maintenance expectations. |
 | CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
-| CI layer plan | [`ci/oci-layer-plan.md`](./ci/oci-layer-plan.md) | Phased plan for hermetic, content-keyed checkout and install layers in GHCR plus a box git mirror, with per-job estimates and acceptance criteria. |
 | Fleet enrollment | [`design/fleet-enrollment-design.md`](./design/fleet-enrollment-design.md) | Enrolled execution fleet, strict v2 at-most-once claims, scorecard, and [`fleet-enrollment.yml`](../.github/workflows/fleet-enrollment.yml) CI lane on `hobo` runners (package-relative vitest paths under `@hobo/ci`). |
 | Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How issue-worker automation should interpret design docs and report changes. |
 
@@ -26,7 +24,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | [`../src/draft/`](../src/draft/README.md) | Executable proof/contract packages that make selected design claims testable. |
 | [`competitors/`](./competitors/index.md) | Product and platform positioning references. |
 | [`patterns/`](./patterns/index.md) | Architecture/operations patterns used by HoBo decisions. |
-| [`plans/`](./plans/index.md) | Audit/review logs and improvement plans produced by the `/improve` tooling. |
+| `plans/` | Audit/review logs and improvement plans produced by the `/improve` tooling. |
 | [`standards/`](./standards/index.md) | External standards referenced by design decisions. |
 | [`technologies/`](./technologies/index.md) | Technology notes for adapters, engines, and possible implementation choices. |
 | [`archive/`](./archive/) | Deferred or superseded planning artifacts. |

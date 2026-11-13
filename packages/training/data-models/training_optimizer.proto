@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hobo.training.v1;
 
-// Built-in training-engine records (docs/plans/0017 F26, ADR-0025). These
+// Built-in training-engine records (ADR-0025). These
 // are the engine-side shapes: the optimizer's own configuration and the
 // OpenInference-aligned trace record it emits per OPTO step. The port
 // request/response records (OptimizeRequest, TrainingCandidate, Trajectory)

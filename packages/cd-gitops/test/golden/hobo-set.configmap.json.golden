@@ -1,0 +1,22 @@
+{
+  "apiVersion": "v1",
+  "data": {
+    "resolved.json": "{\"resources\":[{\"name\":\"web\",\"outputs\":{\"replicas\":\"3\"},\"provider\":\"kubernetes\"}],\"schemaVersion\":\"hobo.resolved-set/v1\"}",
+    "set.json": "{\"campId\":\"prod\",\"contentHash\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"createdAt\":\"2026-11-12T11:59:00.000Z\",\"environment\":\"prod\",\"freightId\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"origin\":\"SET_ORIGIN_PROMOTION\",\"planHash\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"resolvedSetDigest\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"schemaVersion\":\"hobo.cd.set/v1\",\"setId\":\"set-prod-7\",\"tenant\":\"acme\"}"
+  },
+  "kind": "ConfigMap",
+  "metadata": {
+    "annotations": {
+      "hobo.dev/camp-id": "prod",
+      "hobo.dev/content-hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "hobo.dev/freight-id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "hobo.dev/set-id": "set-prod-7"
+    },
+    "labels": {
+      "app.kubernetes.io/managed-by": "hobo",
+      "hobo.dev/camp": "camp-prod"
+    },
+    "name": "hobo-set-prod",
+    "namespace": "hobo-system"
+  }
+}

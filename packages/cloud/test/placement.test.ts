@@ -15,7 +15,7 @@ import {
 } from "../src/index.js";
 import { type JsonValue, parseJsonValue } from "../src/json.js";
 
-// E19 placement-constraint vocabulary golden vectors (0015 §B deliverable 2):
+// E19 placement-constraint vocabulary golden vectors:
 // property selectors, affinity/anti-affinity between resource classes, spread,
 // and pickN, each resolved deterministically as hard filters BETWEEN capability
 // negotiation and the untouched lexicographic ranking (ADR-0033/ADR-0088).

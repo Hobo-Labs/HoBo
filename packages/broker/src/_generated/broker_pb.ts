@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file broker.proto.
  */
 export const file_broker: GenFile = /*@__PURE__*/
-  fileDesc("Cgxicm9rZXIucHJvdG8SDmhvYm8uYnJva2VyLnYxIs4BCg9QbGFjZW1lbnRQb2xpY3kSCgoCaWQYASABKAkSEgoKc2NvcGVfa2luZBgCIAEoCRIRCglvYmplY3RpdmUYAyABKAkSGgoScGlubmVkX3Byb3ZpZGVyX2lkGAQgASgJEhkKEWFsbG93ZWRfcHJvdmlkZXJzGAUgAygJEhgKEGRlbmllZF9wcm92aWRlcnMYBiADKAkSFwoPYWxsb3dlZF9yZWdpb25zGAcgAygJEh4KFnJlcXVpcmVfZXhwbGljaXRfY2FtcHMYCCABKAgiqQEKDUJpbGxpbmdQb2xpY3kSDQoFcXVvdGEYASABKAkSEgoKcXVvdGFfdXNlZBgCIAEoDRITCgtxdW90YV9saW1pdBgDIAEoDRISCgpidWRnZXRfdXNkGAQgASgBEhUKDXNwZW5kX2NhcF91c2QYBSABKAESGAoQYnVkZ2V0X3VubGltaXRlZBgGIAEoCBIbChNzcGVuZF9jYXBfdW5saW1pdGVkGAcgASgIInYKDkRlbGl2ZXJ5UG9saWN5Eg4KBmVuZ2luZRgBIAEoCRIRCglzeW5jX21vZGUYAiABKAkSDQoFcHJ1bmUYAyABKAgSEwoLZ2l0b3BzX3JlcG8YBCABKAkSHQoVZGVzdGluYXRpb25fbmFtZXNwYWNlGAUgASgJItwBCg9Db25uZWN0b3JDb25maWcSCgoCaWQYASABKAkSDAoEa2luZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSPwoIc2V0dGluZ3MYBCADKAsyLS5ob2JvLmJyb2tlci52MS5Db25uZWN0b3JDb25maWcuU2V0dGluZ3NFbnRyeRIWCg5jcmVkZW50aWFsX3JlZhgFIAEoCRIPCgdlbmFibGVkGAYgASgIGi8KDVNldHRpbmdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASL9AQoPQnJva2VyUG9saWN5U2V0EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhEKCWJyb2tlcl9pZBgCIAEoCRI7ChJwbGFjZW1lbnRfcG9saWNpZXMYAyADKAsyHy5ob2JvLmJyb2tlci52MS5QbGFjZW1lbnRQb2xpY3kSLgoHYmlsbGluZxgEIAEoCzIdLmhvYm8uYnJva2VyLnYxLkJpbGxpbmdQb2xpY3kSMAoIZGVsaXZlcnkYBSABKAsyHi5ob2JvLmJyb2tlci52MS5EZWxpdmVyeVBvbGljeRIgChhyZXF1aXJlZF9jb25uZWN0b3Jfa2luZHMYBiADKAkiWQoNVG9wb2xvZ3lTY29wZRIRCgliaW5kbGVfaWQYASABKAkSDwoHY2FtcF9pZBgCIAEoCRIPCgd5YXJkX2lkGAMgASgJEhMKC2p1bmN0aW9uX2lkGAQgASgJIloKE1Jlc291cmNlUmVxdWlyZW1lbnQSEwoLcmVzb3VyY2VfaWQYASABKAkSDAoEcG9ydBgCIAEoCRIQCghmZWF0dXJlcxgDIAMoCRIOCgZyZWdpb24YBCABKAki9QEKDUJyb2tlclJlcXVlc3QSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRIsCgVzY29wZRgDIAEoCzIdLmhvYm8uYnJva2VyLnYxLlRvcG9sb2d5U2NvcGUSOQoMcmVxdWlyZW1lbnRzGAQgAygLMiMuaG9iby5icm9rZXIudjEuUmVzb3VyY2VSZXF1aXJlbWVudBIaChJzcGVuZF9lc3RpbWF0ZV91c2QYBSABKAESMwoFZ3Vlc3QYBiABKAsyJC5ob2JvLmJyb2tlci52MS5HdWVzdFJlc29sdXRpb25JbnB1dCLKAQoUR3Vlc3RSZXNvbHV0aW9uSW5wdXQSEQoJcmVjaXBlX2lkGAEgASgJEhcKD3RvcG9sb2d5X2RpZ2VzdBgCIAEoCRIUCgxvZmZlcl9kaWdlc3QYAyABKAkSFgoOY29uc2VudF9kaWdlc3QYBCABKAkSFwoPYm9vdHN0cmFwX2NsYXNzGAUgASgJEiQKHHNwb25zb3JfY29zdF9jYXBfbWlub3JfdW5pdHMYBiABKAMSGQoRbWF4X2NsYWltX2FjdGlvbnMYByABKA0ilwEKEVBsYWNlbWVudERlY2lzaW9uEhMKC3Jlc291cmNlX2lkGAEgASgJEhMKC3Byb3ZpZGVyX2lkGAIgASgJEhUKDWRlZmluaXRpb25faWQYAyABKAkSDgoGcmVnaW9uGAQgASgJEgsKA3NrdRgFIAEoCRIMCgR1bml0GAYgASgJEhYKDm1hcmdpbmFsX3ByaWNlGAcgASgJIrACChFSZXNvbHV0aW9uUmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCWJyb2tlcl9pZBgDIAEoCRIUCgxjYXRhbG9nX2hhc2gYBCABKAkSEwoLcG9saWN5X2hhc2gYBSABKAkSGwoTcGxhY2VtZW50X3BvbGljeV9pZBgGIAEoCRI1CgpwbGFjZW1lbnRzGAcgAygLMiEuaG9iby5icm9rZXIudjEuUGxhY2VtZW50RGVjaXNpb24SEgoKc3RhdGlvbl9pZBgIIAEoCRIRCglyYWlsX2hhc2gYCSABKAkSNgoFZ3Vlc3QYCiABKAsyJy5ob2JvLmJyb2tlci52MS5HdWVzdFJlc29sdXRpb25FdmlkZW5jZSKbBAoXR3Vlc3RSZXNvbHV0aW9uRXZpZGVuY2USEQoJcmVjaXBlX2lkGAEgASgJEhcKD3RvcG9sb2d5X2RpZ2VzdBgCIAEoCRIUCgxvZmZlcl9kaWdlc3QYAyABKAkSFgoOY29uc2VudF9kaWdlc3QYBCABKAkSFgoOZ3Vlc3RfbGVhc2VfaWQYBSABKAkSGAoQbGVhc2VfZXhwaXJlc19hdBgGIAEoCRIXCg9jbGFpbV9idW5kbGVfaWQYByABKAkSFwoPY2xhaW1fYXRvbWljaXR5GAggASgJEhoKEmNsYWltX2FjdGlvbl9jb3VudBgJIAEoDRIfChdlYXJsaWVzdF9jbGFpbV9kZWFkbGluZRgKIAEoCRI6CgpwbGFjZW1lbnRzGAsgAygLMiYuaG9iby5icm9rZXIudjEuR3Vlc3RQbGFjZW1lbnRFdmlkZW5jZRIbChN0cnVzdF9ldmlkZW5jZV9yZWZzGAwgAygJEhgKEGNvbmZvcm1hbmNlX3JlZnMYDSADKAkSGgoSc291cmNlX2Rpc2Nsb3N1cmVzGA4gAygJEhoKEmNyZWRlbnRpYWxfY3VzdG9keRgPIAMoCRIcChR3aWRlbmluZ19kaXNjbG9zdXJlcxgQIAMoCRIkChxzcG9uc29yX2Nvc3RfY2FwX21pbm9yX3VuaXRzGBEgASgDEhYKDmNsZWFudXBfcG9saWN5GBIgASgJIp0CChZHdWVzdFBsYWNlbWVudEV2aWRlbmNlEhMKC3Jlc291cmNlX2lkGAEgASgJEhUKDWRlZmluaXRpb25faWQYAiABKAkSEwoLcmVhbGl6YXRpb24YAyABKAkSFQoNcnVudGltZV9tb2RlbBgEIAEoCRIfChdjYXBhYmlsaXR5X3Byb2ZpbGVfcmVmcxgFIAMoCRIcChRiaW5kaW5nX3Byb2ZpbGVfcmVmcxgGIAMoCRIYChBjb25uZWN0aXZpdHlfcmVmGAcgASgJEhcKD2Jvb3RzdHJhcF9jbGFzcxgIIAEoCRISCgpjbGFpbV9tb2RlGAkgASgJEiUKHWNyZWF0b3JfYXV0aG9yaXR5X2FmdGVyX2NsYWltGAogASgJIj8KD1JlamVjdGlvblJlYXNvbhINCgVwbGFuZRgBIAEoCRIMCgRjb2RlGAIgASgJEg8KB21lc3NhZ2UYAyABKAkiwgEKE1Jlc29sdXRpb25SZWplY3Rpb24SFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRIRCglicm9rZXJfaWQYAyABKAkSEwoLcG9saWN5X2hhc2gYBCABKAkSMAoHcmVhc29ucxgFIAMoCzIfLmhvYm8uYnJva2VyLnYxLlJlamVjdGlvblJlYXNvbhISCgpzdGF0aW9uX2lkGAYgASgJEhEKCXJhaWxfaGFzaBgHIAEoCSKEAQoRQnJva2VyRW52aXJvbm1lbnQSFgoOZW52aXJvbm1lbnRfaWQYASABKAkSGgoSYXBwcm92ZWRfcHJvdmlkZXJzGAIgAygJEhQKDGNhdGFsb2dfaGFzaBgDIAEoCRIQCghhcHByb3ZlZBgEIAEoCBITCgthcHByb3ZlZF9ieRgFIAEoCSJrChNSZXNvbHV0aW9uU2lnbmF0dXJlEhEKCWFsZ29yaXRobRgBIAEoCRIWCg5wdWJsaWNfa2V5X3BlbRgCIAEoCRIRCglzaWduYXR1cmUYAyABKAkSFgoOcGF5bG9hZF9kaWdlc3QYBCABKAkiSgoOU2NhbGVEaXJlY3RpdmUSEwoLcmVzb3VyY2VfaWQYASABKAkSEQoJZGlyZWN0aW9uGAIgASgJEhAKCHJlcGxpY2FzGAMgASgNYgZwcm90bzM");
+  fileDesc("Cgxicm9rZXIucHJvdG8SDmhvYm8uYnJva2VyLnYxIs4BCg9QbGFjZW1lbnRQb2xpY3kSCgoCaWQYASABKAkSEgoKc2NvcGVfa2luZBgCIAEoCRIRCglvYmplY3RpdmUYAyABKAkSGgoScGlubmVkX3Byb3ZpZGVyX2lkGAQgASgJEhkKEWFsbG93ZWRfcHJvdmlkZXJzGAUgAygJEhgKEGRlbmllZF9wcm92aWRlcnMYBiADKAkSFwoPYWxsb3dlZF9yZWdpb25zGAcgAygJEh4KFnJlcXVpcmVfZXhwbGljaXRfY2FtcHMYCCABKAgiqQEKDUJpbGxpbmdQb2xpY3kSDQoFcXVvdGEYASABKAkSEgoKcXVvdGFfdXNlZBgCIAEoDRITCgtxdW90YV9saW1pdBgDIAEoDRISCgpidWRnZXRfdXNkGAQgASgBEhUKDXNwZW5kX2NhcF91c2QYBSABKAESGAoQYnVkZ2V0X3VubGltaXRlZBgGIAEoCBIbChNzcGVuZF9jYXBfdW5saW1pdGVkGAcgASgIIjcKEURlbGl2ZXJ5UHVibGlzaGVyEg4KBnRhcmdldBgBIAEoCRISCgpyZXBvc2l0b3J5GAIgASgJItEBCg5EZWxpdmVyeVBvbGljeRISCgZlbmdpbmUYASABKAlCAhgBEhEKCXN5bmNfbW9kZRgCIAEoCRINCgVwcnVuZRgDIAEoCBIXCgtnaXRvcHNfcmVwbxgEIAEoCUICGAESIQoVZGVzdGluYXRpb25fbmFtZXNwYWNlGAUgASgJQgIYARIXCg9yZWNvbmNpbGVyX21vZGUYBiABKAkSNAoJcHVibGlzaGVyGAcgASgLMiEuaG9iby5icm9rZXIudjEuRGVsaXZlcnlQdWJsaXNoZXIi3AEKD0Nvbm5lY3RvckNvbmZpZxIKCgJpZBgBIAEoCRIMCgRraW5kGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRI/CghzZXR0aW5ncxgEIAMoCzItLmhvYm8uYnJva2VyLnYxLkNvbm5lY3RvckNvbmZpZy5TZXR0aW5nc0VudHJ5EhYKDmNyZWRlbnRpYWxfcmVmGAUgASgJEg8KB2VuYWJsZWQYBiABKAgaLwoNU2V0dGluZ3NFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIv0BCg9Ccm9rZXJQb2xpY3lTZXQSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEQoJYnJva2VyX2lkGAIgASgJEjsKEnBsYWNlbWVudF9wb2xpY2llcxgDIAMoCzIfLmhvYm8uYnJva2VyLnYxLlBsYWNlbWVudFBvbGljeRIuCgdiaWxsaW5nGAQgASgLMh0uaG9iby5icm9rZXIudjEuQmlsbGluZ1BvbGljeRIwCghkZWxpdmVyeRgFIAEoCzIeLmhvYm8uYnJva2VyLnYxLkRlbGl2ZXJ5UG9saWN5EiAKGHJlcXVpcmVkX2Nvbm5lY3Rvcl9raW5kcxgGIAMoCSJZCg1Ub3BvbG9neVNjb3BlEhEKCWJpbmRsZV9pZBgBIAEoCRIPCgdjYW1wX2lkGAIgASgJEg8KB3lhcmRfaWQYAyABKAkSEwoLanVuY3Rpb25faWQYBCABKAkiWgoTUmVzb3VyY2VSZXF1aXJlbWVudBITCgtyZXNvdXJjZV9pZBgBIAEoCRIMCgRwb3J0GAIgASgJEhAKCGZlYXR1cmVzGAMgAygJEg4KBnJlZ2lvbhgEIAEoCSL1AQoNQnJva2VyUmVxdWVzdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEiwKBXNjb3BlGAMgASgLMh0uaG9iby5icm9rZXIudjEuVG9wb2xvZ3lTY29wZRI5CgxyZXF1aXJlbWVudHMYBCADKAsyIy5ob2JvLmJyb2tlci52MS5SZXNvdXJjZVJlcXVpcmVtZW50EhoKEnNwZW5kX2VzdGltYXRlX3VzZBgFIAEoARIzCgVndWVzdBgGIAEoCzIkLmhvYm8uYnJva2VyLnYxLkd1ZXN0UmVzb2x1dGlvbklucHV0IsoBChRHdWVzdFJlc29sdXRpb25JbnB1dBIRCglyZWNpcGVfaWQYASABKAkSFwoPdG9wb2xvZ3lfZGlnZXN0GAIgASgJEhQKDG9mZmVyX2RpZ2VzdBgDIAEoCRIWCg5jb25zZW50X2RpZ2VzdBgEIAEoCRIXCg9ib290c3RyYXBfY2xhc3MYBSABKAkSJAocc3BvbnNvcl9jb3N0X2NhcF9taW5vcl91bml0cxgGIAEoAxIZChFtYXhfY2xhaW1fYWN0aW9ucxgHIAEoDSKXAQoRUGxhY2VtZW50RGVjaXNpb24SEwoLcmVzb3VyY2VfaWQYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkSFQoNZGVmaW5pdGlvbl9pZBgDIAEoCRIOCgZyZWdpb24YBCABKAkSCwoDc2t1GAUgASgJEgwKBHVuaXQYBiABKAkSFgoObWFyZ2luYWxfcHJpY2UYByABKAkisAIKEVJlc29sdXRpb25SZWNlaXB0EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEQoJYnJva2VyX2lkGAMgASgJEhQKDGNhdGFsb2dfaGFzaBgEIAEoCRITCgtwb2xpY3lfaGFzaBgFIAEoCRIbChNwbGFjZW1lbnRfcG9saWN5X2lkGAYgASgJEjUKCnBsYWNlbWVudHMYByADKAsyIS5ob2JvLmJyb2tlci52MS5QbGFjZW1lbnREZWNpc2lvbhISCgpzdGF0aW9uX2lkGAggASgJEhEKCXJhaWxfaGFzaBgJIAEoCRI2CgVndWVzdBgKIAEoCzInLmhvYm8uYnJva2VyLnYxLkd1ZXN0UmVzb2x1dGlvbkV2aWRlbmNlIpsEChdHdWVzdFJlc29sdXRpb25FdmlkZW5jZRIRCglyZWNpcGVfaWQYASABKAkSFwoPdG9wb2xvZ3lfZGlnZXN0GAIgASgJEhQKDG9mZmVyX2RpZ2VzdBgDIAEoCRIWCg5jb25zZW50X2RpZ2VzdBgEIAEoCRIWCg5ndWVzdF9sZWFzZV9pZBgFIAEoCRIYChBsZWFzZV9leHBpcmVzX2F0GAYgASgJEhcKD2NsYWltX2J1bmRsZV9pZBgHIAEoCRIXCg9jbGFpbV9hdG9taWNpdHkYCCABKAkSGgoSY2xhaW1fYWN0aW9uX2NvdW50GAkgASgNEh8KF2VhcmxpZXN0X2NsYWltX2RlYWRsaW5lGAogASgJEjoKCnBsYWNlbWVudHMYCyADKAsyJi5ob2JvLmJyb2tlci52MS5HdWVzdFBsYWNlbWVudEV2aWRlbmNlEhsKE3RydXN0X2V2aWRlbmNlX3JlZnMYDCADKAkSGAoQY29uZm9ybWFuY2VfcmVmcxgNIAMoCRIaChJzb3VyY2VfZGlzY2xvc3VyZXMYDiADKAkSGgoSY3JlZGVudGlhbF9jdXN0b2R5GA8gAygJEhwKFHdpZGVuaW5nX2Rpc2Nsb3N1cmVzGBAgAygJEiQKHHNwb25zb3JfY29zdF9jYXBfbWlub3JfdW5pdHMYESABKAMSFgoOY2xlYW51cF9wb2xpY3kYEiABKAkinQIKFkd1ZXN0UGxhY2VtZW50RXZpZGVuY2USEwoLcmVzb3VyY2VfaWQYASABKAkSFQoNZGVmaW5pdGlvbl9pZBgCIAEoCRITCgtyZWFsaXphdGlvbhgDIAEoCRIVCg1ydW50aW1lX21vZGVsGAQgASgJEh8KF2NhcGFiaWxpdHlfcHJvZmlsZV9yZWZzGAUgAygJEhwKFGJpbmRpbmdfcHJvZmlsZV9yZWZzGAYgAygJEhgKEGNvbm5lY3Rpdml0eV9yZWYYByABKAkSFwoPYm9vdHN0cmFwX2NsYXNzGAggASgJEhIKCmNsYWltX21vZGUYCSABKAkSJQodY3JlYXRvcl9hdXRob3JpdHlfYWZ0ZXJfY2xhaW0YCiABKAkiPwoPUmVqZWN0aW9uUmVhc29uEg0KBXBsYW5lGAEgASgJEgwKBGNvZGUYAiABKAkSDwoHbWVzc2FnZRgDIAEoCSLCAQoTUmVzb2x1dGlvblJlamVjdGlvbhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCWJyb2tlcl9pZBgDIAEoCRITCgtwb2xpY3lfaGFzaBgEIAEoCRIwCgdyZWFzb25zGAUgAygLMh8uaG9iby5icm9rZXIudjEuUmVqZWN0aW9uUmVhc29uEhIKCnN0YXRpb25faWQYBiABKAkSEQoJcmFpbF9oYXNoGAcgASgJIoQBChFCcm9rZXJFbnZpcm9ubWVudBIWCg5lbnZpcm9ubWVudF9pZBgBIAEoCRIaChJhcHByb3ZlZF9wcm92aWRlcnMYAiADKAkSFAoMY2F0YWxvZ19oYXNoGAMgASgJEhAKCGFwcHJvdmVkGAQgASgIEhMKC2FwcHJvdmVkX2J5GAUgASgJImsKE1Jlc29sdXRpb25TaWduYXR1cmUSEQoJYWxnb3JpdGhtGAEgASgJEhYKDnB1YmxpY19rZXlfcGVtGAIgASgJEhEKCXNpZ25hdHVyZRgDIAEoCRIWCg5wYXlsb2FkX2RpZ2VzdBgEIAEoCSJKCg5TY2FsZURpcmVjdGl2ZRITCgtyZXNvdXJjZV9pZBgBIAEoCRIRCglkaXJlY3Rpb24YAiABKAkSEAoIcmVwbGljYXMYAyABKA1iBnByb3RvMw");
 
 /**
  * One placement policy maintained by the broker for one topology scope kind.
@@ -122,14 +122,47 @@ export const BillingPolicySchema: GenMessage<BillingPolicy> = /*@__PURE__*/
   messageDesc(file_broker, 1);
 
 /**
- * Delivery (GitOps) plane configuration; engine "argo" renders Argo CD
- * Application documents, "in-proc" hands the receipt to the local executor.
+ * A @hobo/cd-gitops publisher the delivery plane routes through.
+ *
+ * @generated from message hobo.broker.v1.DeliveryPublisher
+ */
+export type DeliveryPublisher = Message<"hobo.broker.v1.DeliveryPublisher"> & {
+  /**
+   * Publisher target: argo-cd | flux.
+   *
+   * @generated from field: string target = 1;
+   */
+  target: string;
+
+  /**
+   * GitOps repository the publisher commits to, when the policy names one.
+   *
+   * @generated from field: string repository = 2;
+   */
+  repository: string;
+};
+
+/**
+ * Describes the message hobo.broker.v1.DeliveryPublisher.
+ * Use `create(DeliveryPublisherSchema)` to create a new message.
+ */
+export const DeliveryPublisherSchema: GenMessage<DeliveryPublisher> = /*@__PURE__*/
+  messageDesc(file_broker, 2);
+
+/**
+ * Delivery plane configuration (plan 0024, D14). Neutral: every receipt is
+ * delivered through @hobo/cd by a reconciler mode; the broker names no GitOps
+ * engine, cluster or namespace.
  *
  * @generated from message hobo.broker.v1.DeliveryPolicy
  */
 export type DeliveryPolicy = Message<"hobo.broker.v1.DeliveryPolicy"> & {
   /**
-   * @generated from field: string engine = 1;
+   * Deprecated: argo | in-proc. Read only when reconciler_mode is empty, and
+   * then only to map it (argo -> publisher argo-cd, in-proc -> conductor).
+   *
+   * @generated from field: string engine = 1 [deprecated = true];
+   * @deprecated
    */
   engine: string;
 
@@ -146,14 +179,34 @@ export type DeliveryPolicy = Message<"hobo.broker.v1.DeliveryPolicy"> & {
   prune: boolean;
 
   /**
-   * @generated from field: string gitops_repo = 4;
+   * Deprecated: mapped to publisher.repository for a legacy argo engine.
+   *
+   * @generated from field: string gitops_repo = 4 [deprecated = true];
+   * @deprecated
    */
   gitopsRepo: string;
 
   /**
-   * @generated from field: string destination_namespace = 5;
+   * Deprecated: never read.
+   *
+   * @generated from field: string destination_namespace = 5 [deprecated = true];
+   * @deprecated
    */
   destinationNamespace: string;
+
+  /**
+   * conductor | agent | publisher
+   *
+   * @generated from field: string reconciler_mode = 6;
+   */
+  reconcilerMode: string;
+
+  /**
+   * Required exactly when reconciler_mode is publisher.
+   *
+   * @generated from field: hobo.broker.v1.DeliveryPublisher publisher = 7;
+   */
+  publisher?: DeliveryPublisher | undefined;
 };
 
 /**
@@ -161,7 +214,7 @@ export type DeliveryPolicy = Message<"hobo.broker.v1.DeliveryPolicy"> & {
  * Use `create(DeliveryPolicySchema)` to create a new message.
  */
 export const DeliveryPolicySchema: GenMessage<DeliveryPolicy> = /*@__PURE__*/
-  messageDesc(file_broker, 2);
+  messageDesc(file_broker, 3);
 
 /**
  * One connector registration in the broker's connector registry
@@ -208,7 +261,7 @@ export type ConnectorConfig = Message<"hobo.broker.v1.ConnectorConfig"> & {
  * Use `create(ConnectorConfigSchema)` to create a new message.
  */
 export const ConnectorConfigSchema: GenMessage<ConnectorConfig> = /*@__PURE__*/
-  messageDesc(file_broker, 3);
+  messageDesc(file_broker, 4);
 
 /**
  * The full policy state the broker maintains and enforces.
@@ -252,7 +305,7 @@ export type BrokerPolicySet = Message<"hobo.broker.v1.BrokerPolicySet"> & {
  * Use `create(BrokerPolicySetSchema)` to create a new message.
  */
 export const BrokerPolicySetSchema: GenMessage<BrokerPolicySet> = /*@__PURE__*/
-  messageDesc(file_broker, 4);
+  messageDesc(file_broker, 5);
 
 /**
  * The topology scope a brokering request resolves within.
@@ -286,7 +339,7 @@ export type TopologyScope = Message<"hobo.broker.v1.TopologyScope"> & {
  * Use `create(TopologyScopeSchema)` to create a new message.
  */
 export const TopologyScopeSchema: GenMessage<TopologyScope> = /*@__PURE__*/
-  messageDesc(file_broker, 5);
+  messageDesc(file_broker, 6);
 
 /**
  * One resource the request needs placed on some provider capability.
@@ -320,7 +373,7 @@ export type ResourceRequirement = Message<"hobo.broker.v1.ResourceRequirement"> 
  * Use `create(ResourceRequirementSchema)` to create a new message.
  */
 export const ResourceRequirementSchema: GenMessage<ResourceRequirement> = /*@__PURE__*/
-  messageDesc(file_broker, 6);
+  messageDesc(file_broker, 7);
 
 /**
  * A brokering request: place these requirements for this scope.
@@ -367,7 +420,7 @@ export type BrokerRequest = Message<"hobo.broker.v1.BrokerRequest"> & {
  * Use `create(BrokerRequestSchema)` to create a new message.
  */
 export const BrokerRequestSchema: GenMessage<BrokerRequest> = /*@__PURE__*/
-  messageDesc(file_broker, 7);
+  messageDesc(file_broker, 8);
 
 /**
  * What an anonymous or pre-claim caller brings to resolution. Everything here
@@ -425,7 +478,7 @@ export type GuestResolutionInput = Message<"hobo.broker.v1.GuestResolutionInput"
  * Use `create(GuestResolutionInputSchema)` to create a new message.
  */
 export const GuestResolutionInputSchema: GenMessage<GuestResolutionInput> = /*@__PURE__*/
-  messageDesc(file_broker, 8);
+  messageDesc(file_broker, 9);
 
 /**
  * One per-resource placement the broker decided.
@@ -474,7 +527,7 @@ export type PlacementDecision = Message<"hobo.broker.v1.PlacementDecision"> & {
  * Use `create(PlacementDecisionSchema)` to create a new message.
  */
 export const PlacementDecisionSchema: GenMessage<PlacementDecision> = /*@__PURE__*/
-  messageDesc(file_broker, 9);
+  messageDesc(file_broker, 10);
 
 /**
  * The receipt for an accepted resolution: content-addressed against the
@@ -543,7 +596,7 @@ export type ResolutionReceipt = Message<"hobo.broker.v1.ResolutionReceipt"> & {
  * Use `create(ResolutionReceiptSchema)` to create a new message.
  */
 export const ResolutionReceiptSchema: GenMessage<ResolutionReceipt> = /*@__PURE__*/
-  messageDesc(file_broker, 10);
+  messageDesc(file_broker, 11);
 
 /**
  * The claim-relevant facts a receipt must pin so a deployment's ownership
@@ -655,7 +708,7 @@ export type GuestResolutionEvidence = Message<"hobo.broker.v1.GuestResolutionEvi
  * Use `create(GuestResolutionEvidenceSchema)` to create a new message.
  */
 export const GuestResolutionEvidenceSchema: GenMessage<GuestResolutionEvidence> = /*@__PURE__*/
-  messageDesc(file_broker, 11);
+  messageDesc(file_broker, 12);
 
 /**
  * Per-placement realization facts, so a receipt distinguishes a
@@ -722,7 +775,7 @@ export type GuestPlacementEvidence = Message<"hobo.broker.v1.GuestPlacementEvide
  * Use `create(GuestPlacementEvidenceSchema)` to create a new message.
  */
 export const GuestPlacementEvidenceSchema: GenMessage<GuestPlacementEvidence> = /*@__PURE__*/
-  messageDesc(file_broker, 12);
+  messageDesc(file_broker, 13);
 
 /**
  * One machine-readable reason a resolution was rejected, named by the
@@ -754,7 +807,7 @@ export type RejectionReason = Message<"hobo.broker.v1.RejectionReason"> & {
  * Use `create(RejectionReasonSchema)` to create a new message.
  */
 export const RejectionReasonSchema: GenMessage<RejectionReason> = /*@__PURE__*/
-  messageDesc(file_broker, 13);
+  messageDesc(file_broker, 14);
 
 /**
  * The structured rejection for a refused resolution.
@@ -803,7 +856,7 @@ export type ResolutionRejection = Message<"hobo.broker.v1.ResolutionRejection"> 
  * Use `create(ResolutionRejectionSchema)` to create a new message.
  */
 export const ResolutionRejectionSchema: GenMessage<ResolutionRejection> = /*@__PURE__*/
-  messageDesc(file_broker, 14);
+  messageDesc(file_broker, 15);
 
 /**
  * Approved broker input state a resolution validates against: which providers
@@ -844,7 +897,7 @@ export type BrokerEnvironment = Message<"hobo.broker.v1.BrokerEnvironment"> & {
  * Use `create(BrokerEnvironmentSchema)` to create a new message.
  */
 export const BrokerEnvironmentSchema: GenMessage<BrokerEnvironment> = /*@__PURE__*/
-  messageDesc(file_broker, 15);
+  messageDesc(file_broker, 16);
 
 /**
  * Detached Ed25519 signature over a receipt/rejection's canonical JSON form,
@@ -879,7 +932,7 @@ export type ResolutionSignature = Message<"hobo.broker.v1.ResolutionSignature"> 
  * Use `create(ResolutionSignatureSchema)` to create a new message.
  */
 export const ResolutionSignatureSchema: GenMessage<ResolutionSignature> = /*@__PURE__*/
-  messageDesc(file_broker, 16);
+  messageDesc(file_broker, 17);
 
 /**
  * A spin-up/spin-down directive for an already-placed resource.
@@ -910,5 +963,5 @@ export type ScaleDirective = Message<"hobo.broker.v1.ScaleDirective"> & {
  * Use `create(ScaleDirectiveSchema)` to create a new message.
  */
 export const ScaleDirectiveSchema: GenMessage<ScaleDirective> = /*@__PURE__*/
-  messageDesc(file_broker, 17);
+  messageDesc(file_broker, 18);
 

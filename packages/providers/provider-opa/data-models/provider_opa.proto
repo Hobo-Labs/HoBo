@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hobo.provider_opa.v1;
 
-// Wire shapes for the OPA/Rego gate-plane boundary (docs/plans/0017 F30):
+// Wire shapes for the OPA/Rego gate-plane boundary:
 // the Rego decision document the adapter parses and the engine-neutral
 // reason it lowers onto. Design-time contract artifacts.
 

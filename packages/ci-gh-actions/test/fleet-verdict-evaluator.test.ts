@@ -12,7 +12,7 @@ import {
 } from "../src/isolated-worker/host-resource-pressure.js";
 
 /**
- * The pure rule of ADR-0180 (plan 0025, 6.1): a fleet label is blocked only
+ * The pure rule of ADR-0180 (amendment, item 1): a fleet label is blocked only
  * while the box is idle and admission would still refuse a job, and nothing
  * else in the fleet can take it.
  */

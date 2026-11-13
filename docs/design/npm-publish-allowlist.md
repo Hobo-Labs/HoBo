@@ -7,7 +7,7 @@ tags: [hobo, design, npm, publish, ship]
 
 # npm publish allowlist
 
-Ship-remediation WP-D ([`docs/plans/0012-ship-remediation-plan.md`](../plans/0012-ship-remediation-plan.md)). Prepares Target B (developer-tooling / local-first npm) **without** performing a live registry publish.
+Prepares Target B (developer-tooling / local-first npm) **without** performing a live registry publish.
 
 ## Policy summary
 
@@ -69,6 +69,7 @@ Immature, thin, internal, stub, or synthetic packages remain `"private": true` s
 
 - `@hobo/runtime-browser` — substantial browser/OPFS surface; hold until browser install path is productized
 - `@hobo/runtime-wasm` — wasm host; hold until componentize honesty + host maturity
+- HoBo.CD — `@hobo/cd`, `@hobo/cd-gitops`, `@hobo/cd-kube-fleet`, `@hobo/resolver-components`, `@hobo/storage-postgres`. Their manifests carry `publishConfig.access: public` so a later allowlist extension is a one-line change, but none is on the first-publish allowlist: hold until the CD live lanes (Vercel, Cloudflare, Prometheus-backed verification, `kind` for `@hobo/cd-kube-fleet`) have run green with credentials, and, for `@hobo/resolver-components`, until componentize emits real component bytes
 
 ## Dual-bin resolution
 
@@ -92,7 +93,5 @@ File: [`.github/workflows/publish.yml`](../../.github/workflows/publish.yml).
 
 ## Related
 
-- Ship remediation plan: [`docs/plans/0012-ship-remediation-plan.md`](../plans/0012-ship-remediation-plan.md) (WP-D)
-- Gap review: [`docs/plans/0011-ship-readiness-gap-review.md`](../plans/0011-ship-readiness-gap-review.md)
 - Residual human blockers: [`instances/residual-human-blockers-2026-07-30.md`](./instances/residual-human-blockers-2026-07-30.md) (H-E1b)
 - Package namespaces: [`package-namespaces.md`](./package-namespaces.md)
