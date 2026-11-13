@@ -1,6 +1,6 @@
 /**
- * A test double of the authority's HTTP surface (rule 6: L09 builds the real
- * service in the same wave). It maps each route of §6.15 to the one
+ * An in-process stand-in for the authority's HTTP surface, for the demo and
+ * the agent tests (rule 6: L09 builds the real service in the same wave). It maps each route of §6.15 to the one
  * `EnrollmentAuthority` method §7.3 names, authenticates exactly as the
  * service must (`authenticate` over method, URL, `Authorization` and `DPoP`),
  * answers protobuf JSON, and turns a `FleetFailure` into its §7.6 status and a
@@ -45,16 +45,16 @@ import {
 	WorkLogsSchema,
 	WorkStatusSchema,
 	WorkSubmissionRequestSchema,
-} from "../../src/_generated/fleet_pb.js";
-import { FLEET_ERROR_HTTP_STATUS } from "../../src/errors.js";
-import { parseFleetId } from "../../src/ids.js";
+} from "../src/_generated/fleet_pb.js";
+import { FLEET_ERROR_HTTP_STATUS } from "../src/errors.js";
+import { parseFleetId } from "../src/ids.js";
 import type {
 	Clock,
 	EnrollmentAuthority,
 	FleetFailure,
 	Outcome,
 	VerifiedToken,
-} from "../../src/ports.js";
+} from "../src/ports.js";
 
 export const AUTHORITY_ORIGIN = "https://authority.fleet.test";
 
