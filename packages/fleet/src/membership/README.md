@@ -85,17 +85,19 @@ before the device holds an SVID).
   ranking.
 - The device-code refusal for `DUAL` fleets belongs to sign-in: the
   enrollment request does not say which flow minted the person token.
-- `incarnation-stale` (L41): a JWT-SVID or person token carries no
-  incarnation claim (the `CredentialIssuer` is frozen and not this lane's, so
-  no `hobo_inc` claim is added), so `authenticate` compares the verified
-  token's `iat` with the time the current incarnation began: the `issued_at`
-  of the earliest journalled `fleet.TrustRotated` record (stream
-  `fleet-trust`, `data.record`) naming `deps.incarnation`, counted only when
-  it raised the incarnation (above the genesis incarnation 1, or above an
-  earlier journalled record). An earlier `iat` (whole seconds) is
-  `incarnation-stale`; before any restore nothing is. `credentials` applies
-  the same rule again to a caller `authenticate` answered from a token
-  (remembered per `VerifiedToken` object), so a token checked before a
+- `incarnation-stale` (L41, L42): when the verified token carries an
+  `incarnation` claim (L09's `JwtSvidIssuer` mints one), it decides: a claim
+  below `deps.incarnation` is `incarnation-stale`. Otherwise `authenticate`
+  falls back to comparing the token's `iat` with the time the current
+  incarnation began: the `issued_at` of the earliest journalled
+  `fleet.TrustRotated` record (stream `fleet-trust`, `data.record`) naming
+  `deps.incarnation`, counted only when it raised the incarnation (above the
+  genesis incarnation 1, or above an earlier journalled record). An earlier
+  `iat` (whole seconds) is `incarnation-stale`; before any restore nothing
+  is. An issuer's own `incarnation-stale` refusal is passed through as it
+  is, never rewrapped as `unauthenticated`. `credentials` applies the same
+  rule again to a caller `authenticate` answered from a token (its claims
+  remembered per `VerifiedToken` object), so a token checked before a
   restore is refused after it; a SIGN-key-proof caller holds no minted token
   and refreshes. Session tickets are never presented to these routes; the
   NATS callout refuses a ticket of another incarnation (L08).
