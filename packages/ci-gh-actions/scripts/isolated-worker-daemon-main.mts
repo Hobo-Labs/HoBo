@@ -1159,7 +1159,7 @@ try {
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
-	// What the fleet verdict reporter reads of GitHub: the last completed
+	// What the routing slip's decision reads of GitHub: the last completed
 	// poll's jobs on fleet labels, and the jobs runners took lately.
 	const fleetPickups = createFleetPickupMemory();
 	let latestFleetJobs: FleetJobsSeen | undefined;
