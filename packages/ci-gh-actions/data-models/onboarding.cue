@@ -149,6 +149,14 @@ import "list"
 #MeshNodeReports: {mesh: "configured" | "not-configured" | "unreachable", nodes?: [...#MeshNodeReport], capacity?: #MeshCapacitySummary, readAt?: string, requireTrusted?: bool, truncated?: bool}
 #MeshFleetLabelState: {nodes?: int & >=0, trustedNodes?: int & >=0, freeSlots?: int & >=0}
 #MeshFleetState: {publishedAt: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$", labels: {[=~"^[A-Za-z0-9_.-]{1,80}$"]: #MeshFleetLabelState}}
+// The fleet verdict runner routing asks a relay for: the labels new work
+// should stay off, each with one of two reasons. The relay stamps the times.
+#FleetVerdictReason: "no-node" | "no-capacity"
+#FleetVerdictBlock: {reason: #FleetVerdictReason}
+#FleetVerdictBlocked: {[=~"^[a-z0-9][a-z0-9_.-]{0,79}$"]: #FleetVerdictBlock}
+#FleetVerdictTime: string & =~"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$"
+#FleetVerdict: {repository: string & =~"^[a-z0-9][a-z0-9_-]{0,38}/[a-z0-9_.-]{1,100}$", blocked: #FleetVerdictBlocked, observedAt?: #FleetVerdictTime, expiresAt?: #FleetVerdictTime}
+#FleetVerdictReport: {blocked?: #FleetVerdictBlocked, ttlSeconds: int & >=1 & <=300}
 #RelayCacheJobKey: string & =~"^[0-9]{1,16}:[0-9]{1,16}:[0-9]{1,10}$"
 #RelayCacheLeaseId: string & =~"^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 #RelayCacheIntent: {kind: "ci.DispatchRequested" | "ci.RunnerClaimed" | "ci.SandboxCreated", at: string & !=""}
@@ -183,4 +191,4 @@ import "list"
 #RelayCacheAppState:{purpose: "register" | "install", accountId: #RelayCacheAccountId, subject: string & !="", expiresAtMs: number & >0}
 #RelayCacheVerifiedInstallations: {accountId: #RelayCacheAccountId, appId: number & >0, verifiedIds?: [...(number & >0)] & list.MaxItems(100)}
 #RelayCacheProxyMeter: {leaseId: #RelayCacheLeaseId, proxySessionId: string & =~"^sbx_[A-Za-z0-9_-]+$", bytes?: number & >=0, calls?: number & >=0, readAt: string & !=""}
-#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter
+#Onboarding: #JitBootstrapResponse | #OnboardingPrincipal | #OnboardingFile | #OnboardingPlan | #OnboardingApplyResult | #OnboardingOperation | #GithubAppHookAttributes | #GithubAppManifest | #RunnerIntegration | #RelayMcpLease | #RelayMcpJob | #RelayMcpEvent | #RelayMcpLeaseDetail | #RelayMcpEvents | #RelayMcpStatus | #RelayMcpQuarantinedDelivery | #RelayMcpRetry | #MeshAdvert | #MeshTrustConfig | #MeshReliabilityRecord | #MeshNodeReports | #MeshFleetState | #FleetVerdict | #FleetVerdictReport | #RelayCacheLease | #RelayCacheJob | #RelayCacheInflight | #RelayCachePending | #RelayCacheDelivery | #RelayCacheSandboxEgress | #RelayCacheWebhookScan | #RelayCacheQueuedScan | #RelayCacheSealed | #RelayCacheAppState | #RelayCacheVerifiedInstallations | #RelayCacheProxyMeter

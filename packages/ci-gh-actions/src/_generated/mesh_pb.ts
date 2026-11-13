@@ -563,7 +563,8 @@ export const MeshFleetLabelStateSchema: GenMessage<MeshFleetLabelState> = /*@__P
 
 /**
  * The snapshot one elected worker publishes to the `HOBO_CI_FLEET_STATE`
- * repository variable for runner routing. It lists exactly the fleet labels
+ * repository variable. Runner routing read it until it asked the relay for a
+ * fleet verdict instead (`fleet_verdict.proto`). It lists exactly the fleet labels
  * the publisher serves, never `hobo-local-host`. Small, and nothing in it is
  * secret.
  *

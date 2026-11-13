@@ -2,11 +2,6 @@ import { createMemoryMesh, type MeshNode } from "@hobo/ci/mesh";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-	FLEET_STATE_MAX_AGE_SECONDS,
-	fleetStateRefusal,
-	parseFleetState,
-} from "../../../scripts/ci/route-runner.mts";
-import {
 	createFleetStatePublisher,
 	FLEET_STATE_MAX_AGE_MS,
 } from "../src/fleet-state.js";
@@ -151,7 +146,7 @@ describe("fleet state publisher", () => {
 		});
 	});
 
-	it("lists a label nobody serves with zeros, so routing reads it as refusing", async () => {
+	it("lists a fleet label nobody serves with zeros, dated", async () => {
 		const h = setup({ self: { freeSlots: 0, labels: ["hobo"] } });
 		await h.publisher.publish(TARGET);
 		const [value] = h.api.values();
@@ -159,12 +154,9 @@ describe("fleet state publisher", () => {
 			hobo: { nodes: 1, trustedNodes: 1, freeSlots: 0 },
 			"hobo-trunk": { nodes: 0, trustedNodes: 0, freeSlots: 0 },
 		});
-		// What the routing job makes of exactly this value.
-		const read = parseFleetState(value, NOW + 30_000);
-		expect(fleetStateRefusal(read, "hobo")).toContain("no free slot");
-		expect(fleetStateRefusal(read, "hobo-trunk")).toContain("no live node");
-		// A label it does not list is not its to refuse.
-		expect(fleetStateRefusal(read, "hobo-local-host")).toBeUndefined();
+		// Runner routing no longer reads this variable (ADR-0180); the snapshot
+		// is still dated, so anything that does can tell how old it is.
+		expect(Date.parse(JSON.parse(value ?? "").publishedAt)).toBe(NOW);
 	});
 
 	it("writes when what routing reads changes, and otherwise only as a heartbeat", async () => {
@@ -204,7 +196,7 @@ describe("fleet state publisher", () => {
 		]);
 		// The heartbeat keeps a live mesh's snapshot well inside what routing accepts.
 		expect(120_000).toBeLessThan(FLEET_STATE_MAX_AGE_MS);
-		expect(FLEET_STATE_MAX_AGE_MS).toBe(FLEET_STATE_MAX_AGE_SECONDS * 1000);
+		expect(FLEET_STATE_MAX_AGE_MS).toBe(5 * 60_000);
 	});
 
 	it("has one worker write for the mesh: the lowest id that serves a fleet label", async () => {

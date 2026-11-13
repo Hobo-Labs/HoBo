@@ -153,11 +153,12 @@ the result to the repository variable `HOBO_CI_FLEET_ROUTES`:
 ```
 
 The same pass can publish **`HOBO_CI_FLEET_CAPACITY`**: free launch slots on
-the box and on the rest of the mesh, and when the record was written. No
-workflow uses it. The **Route runners** job no longer tries to: judging raw
-capacity in a workflow repeats, outside the relay and its budget, the decision
-this table already is
+the box and on the rest of the mesh, and when the record was written. The
+**Route runners** job does not read it, or this table. Judging raw capacity in
+a workflow repeats, outside the relay, a decision only the relay can make
 ([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
+It asks the relay instead for a fleet verdict: which fleet labels new work
+should stay off right now ([ADR-0180](./adr/fleet-verdict.md#adr-0180)).
 
 A class whose best member is injected, or that has no admitted member, keeps
 the label it has today, because that is where injected capacity can still come
