@@ -7,6 +7,7 @@ is wired to a root `package.json` command and each has a test under
 | Command | Script | What it checks |
 |---|---|---|
 | `pnpm run fleet:vocabulary` | `scripts/check-fleet-vocabulary.mts` | One implementation of each fleet idea (O1): nine rules, each over its own pathspecs, less `scripts/fleet-vocabulary-allow.json` |
+| `pnpm run fleet:docs` | `scripts/check-fleet-docs.mts` | Vocabulary and documents agree (O27): events, ADR mentions, runbooks |
 
 ## `fleet:vocabulary`
 
@@ -30,6 +31,23 @@ exits 1 when any rule finds something and prints one line per finding
 The guard, its allowlist, its test and everything in this directory are never
 scanned, nor is anything under `docs/` or `site/`. An allowlist entry is
 `{ rule, path, reason }`; adding one is a coordinator amendment.
+
+## `fleet:docs`
+
+`node --import tsx scripts/check-fleet-docs.mts [--root=<dir>]` exits 1 and
+prints one line per gap when:
+
+- an event type in `packages/fleet/src/events.ts` is missing from
+  `docs/design/fleet.md`, or from the `fleet.*` row of
+  `docs/design/event-families.md`;
+- an `ADR-NNNN` named in `docs/design/fleet.md` or `docs/design/adr/fleet.md`
+  is not a row of `docs/design/adr/index.md`;
+- a runbook file is missing under `docs/maintenance/fleet/`. The eleven names
+  are `FLEET_RUNBOOKS` in the script: `install-and-upgrade.md`,
+  `enroll-suspend-unlock-revoke.md`, `rotate-keys.md`,
+  `backup-and-restore-drill.md`, `nats-server-loss.md`, `callout-outage.md`,
+  `clone-alarm.md`, `claim-violation-alarm.md`, `witness-outage.md`,
+  `relay-outage.md`, `one-active-fleet-stuck-sealed.md`.
 
 ## Fixtures
 
