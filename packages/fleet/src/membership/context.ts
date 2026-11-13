@@ -8,8 +8,8 @@ import { create, toBinary } from "@bufbuild/protobuf";
 import {
 	type EventInput,
 	type EventPosition,
+	EventStoreError,
 	type JsonObject,
-	OptimisticSequenceConflictError,
 	type PolicyDecision,
 	type PrincipalRef,
 } from "@hobo/core";
@@ -111,7 +111,11 @@ export function createCtx(deps: AuthorityDeps, parts: AuthorityParts): Ctx {
 				});
 				return "appended";
 			} catch (error) {
-				if (error instanceof OptimisticSequenceConflictError) return "conflict";
+				if (
+					error instanceof EventStoreError &&
+					error.code === "OPTIMISTIC_SEQUENCE_CONFLICT"
+				)
+					return "conflict";
 				throw error;
 			}
 		},
