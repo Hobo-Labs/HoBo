@@ -1,0 +1,51 @@
+{
+	"consumer": { "name": "HoboFleetAuthority" },
+	"provider": { "name": "TailscaleAuthKeysApi" },
+	"interactions": [
+		{
+			"description": "create a single-use, pre-authorised, tagged auth key that expires in ten minutes",
+			"request": {
+				"method": "POST",
+				"path": "/api/v2/tailnet/example.com/keys",
+				"headers": { "Content-Type": "application/json" },
+				"body": {
+					"capabilities": {
+						"devices": {
+							"create": {
+								"reusable": false,
+								"ephemeral": false,
+								"preauthorized": true,
+								"tags": ["tag:fleet-ci"]
+							}
+						}
+					},
+					"expirySeconds": 600
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": { "Content-Type": "application/json" },
+				"body": {
+					"id": "kPACT1CNTRL",
+					"key": "tskey-auth-kPACT1CNTRL-pactpactpactpactpactpact",
+					"created": "2026-11-13T10:00:00Z",
+					"expires": "2026-11-13T10:10:00Z",
+					"capabilities": {
+						"devices": {
+							"create": {
+								"reusable": false,
+								"ephemeral": false,
+								"preauthorized": true,
+								"tags": ["tag:fleet-ci"]
+							}
+						}
+					},
+					"description": "hobo fleet dev-0123456789abcdef0123456789abcdef"
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" }
+	}
+}
