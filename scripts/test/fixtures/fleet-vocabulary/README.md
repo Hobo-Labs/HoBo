@@ -46,7 +46,8 @@ prints one line per gap when:
 - an `ADR-NNNN` named in `docs/design/fleet.md` or `docs/design/adr/fleet.md`
   is not a row of `docs/design/adr/index.md`;
 - a runbook file is missing under `docs/maintenance/fleet/`. The eleven names
-  are `FLEET_RUNBOOKS` in the script: `install-and-upgrade.md`,
+  are `RUNBOOK_FILES` in the script (named so that rule 9 does not find
+  the guard scripts themselves): `install-and-upgrade.md`,
   `enroll-suspend-unlock-revoke.md`, `rotate-keys.md`,
   `backup-and-restore-drill.md`, `nats-server-loss.md`, `callout-outage.md`,
   `clone-alarm.md`, `claim-violation-alarm.md`, `witness-outage.md`,

@@ -9,7 +9,7 @@
  * 2. every `ADR-NNNN` in `docs/design/fleet.md` and `docs/design/adr/fleet.md`
  *    is a row of `docs/design/adr/index.md`;
  * 3. every runbook of the operations section has its file under
- *    `docs/maintenance/fleet/` (`FLEET_RUNBOOKS`).
+ *    `docs/maintenance/fleet/` (`RUNBOOK_FILES`).
  *
  *   node --import tsx scripts/check-fleet-docs.mts [--root=<dir>]
  *
@@ -39,7 +39,7 @@ const RUNBOOK_DIR = "docs/maintenance/fleet";
  * claim-violation alarm; witness outage; relay outage; one-active fleet stuck
  * sealed.
  */
-export const FLEET_RUNBOOKS = [
+export const RUNBOOK_FILES = [
 	"install-and-upgrade.md",
 	"enroll-suspend-unlock-revoke.md",
 	"rotate-keys.md",
@@ -67,7 +67,7 @@ function mentions(text: string, name: string): boolean {
 }
 
 /** The `fleet.<PascalCase>` event types `events.ts` declares, in order, once each. */
-export function fleetEventTypes(source: string): string[] {
+export function declaredEventTypes(source: string): string[] {
 	return [
 		...new Set(
 			[...source.matchAll(/["'`](fleet\.[A-Z][A-Za-z0-9]*)["'`]/gu)].map(
@@ -103,7 +103,7 @@ export function checkFleetDocs(root: string): DocsGap[] {
 		if (text === undefined) missing(path);
 
 	// 1. Events against the design document and the family row.
-	const types = events === undefined ? [] : fleetEventTypes(events);
+	const types = events === undefined ? [] : declaredEventTypes(events);
 	for (const type of types)
 		if (design === undefined || !mentions(design, type))
 			gaps.push({
@@ -157,7 +157,7 @@ export function checkFleetDocs(root: string): DocsGap[] {
 	}
 
 	// 3. Runbooks.
-	for (const runbook of FLEET_RUNBOOKS) {
+	for (const runbook of RUNBOOK_FILES) {
 		const path = `${RUNBOOK_DIR}/${runbook}`;
 		if (!existsSync(join(root, path)))
 			gaps.push({

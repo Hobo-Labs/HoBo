@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { checkFleetDocs, FLEET_RUNBOOKS } from "../check-fleet-docs.mts";
+import { checkFleetDocs, RUNBOOK_FILES } from "../check-fleet-docs.mts";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 
@@ -36,7 +36,7 @@ function complete(): Tree {
 				"| Family | Events |\n|---|---|\n| `fleet.*` | `fleet.TokenIssued`, `fleet.TokenRevoked` — fleet |\n",
 		}),
 	);
-	for (const runbook of FLEET_RUNBOOKS)
+	for (const runbook of RUNBOOK_FILES)
 		tree.set(`docs/maintenance/fleet/${runbook}`, "# Runbook\n");
 	return tree;
 }
@@ -122,7 +122,7 @@ describe("checkFleetDocs", () => {
 
 	it("refuses a missing runbook", () => {
 		const tree = complete();
-		const [first] = FLEET_RUNBOOKS;
+		const [first] = RUNBOOK_FILES;
 		tree.delete(`docs/maintenance/fleet/${first}`);
 		expect(checkFleetDocs(write(tree))).toEqual([
 			{
@@ -142,8 +142,8 @@ describe("checkFleetDocs", () => {
 	});
 
 	it("names one runbook per runbook of the operations section", () => {
-		expect(FLEET_RUNBOOKS).toHaveLength(11);
-		for (const runbook of FLEET_RUNBOOKS)
+		expect(RUNBOOK_FILES).toHaveLength(11);
+		for (const runbook of RUNBOOK_FILES)
 			expect(runbook).toMatch(/^[a-z0-9-]+\.md$/u);
 	});
 });
