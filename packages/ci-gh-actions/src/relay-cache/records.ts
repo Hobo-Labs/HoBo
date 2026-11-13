@@ -206,9 +206,19 @@ export function relayCacheKeys(environment: string) {
 			key(
 				`worker-health:${segment(scope, "health scope")}:${segment(component, "component")}`,
 			),
-		/** The fleet verdict a relay keeps for one repository (`owner/name`, lower case). */
-		fleetVerdict: (repository: string) =>
-			key(`fleet-verdict:${segment(repository, "repository")}`),
+		/** One reporter's last fleet verdict report for a repository (`owner/name`, lower case), until it expires. */
+		fleetVerdict: (repository: string, reporterId: string) =>
+			key(
+				`fleet-verdict:${segment(repository, "repository")}:${segment(reporterId, "reporter id")}`,
+			),
+		/** What the relay remembers of one reporter for a repository: a day after its last report. */
+		fleetReporter: (repository: string, reporterId: string) =>
+			key(
+				`fleet-reporter:${segment(repository, "repository")}:${segment(reporterId, "reporter id")}`,
+			),
+		/** A repository's verdict allowance per label: a day from its window's start. */
+		fleetAllowance: (repository: string) =>
+			key(`fleet-allowance:${segment(repository, "repository")}`),
 		/** Ring name (not a key): the ring helper builds `ring:{<name>}:…`. */
 		feedRing: (accountId: string) =>
 			`${prefix}feed:${segment(accountId, "account id")}`,

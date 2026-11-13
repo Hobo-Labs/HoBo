@@ -1,1 +1,1 @@
-{ "blocked": { "hobo": { "reason": "no-capacity" } }, "ttlSeconds": 180 }
+{ "blocked": { "hobo": { "reason": "no-capacity" } }, "ttlSeconds": 180, "mode": "report" }
