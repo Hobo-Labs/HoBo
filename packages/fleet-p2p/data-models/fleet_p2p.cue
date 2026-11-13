@@ -2,7 +2,8 @@
 package data_models
 
 #FleetP2pConfig: {
-	relayUrls: [...string & =~"^https://[^\\s]+$"]
+	// https://, or plain http:// on a loopback address (a development relay).
+	relayUrls: [...string & (=~"^https://[^\\s@]+$" | =~"^http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?(/[^\\s]*)?$")]
 }
 
 // Root definition for fixture vetting.

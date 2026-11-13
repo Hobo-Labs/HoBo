@@ -7,6 +7,7 @@ package hobo.fleet_p2p.v1;
 
 // Where the peer-to-peer transport finds its relays.
 message FleetP2pConfig {
-  // iroh relay URLs, `https://` only.
+  // iroh relay URLs: `https://`, or `http://` on a loopback address (a
+  // relay in development mode). The public relays are never used.
   repeated string relay_urls = 1;
 }

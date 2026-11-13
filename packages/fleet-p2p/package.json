@@ -32,7 +32,8 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
-		"test": "vitest run test/ --passWithNoTests",
-		"test:unit": "vitest run test/ --passWithNoTests"
+		"test": "vitest run test/ --exclude '**/*.integration.test.ts' --passWithNoTests",
+		"test:unit": "vitest run test/ --exclude '**/*.integration.test.ts' --passWithNoTests",
+		"test:integration": "vitest run test/p2p.integration.test.ts"
 	}
 }
