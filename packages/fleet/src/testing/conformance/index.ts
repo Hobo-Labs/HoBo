@@ -1,11 +1,13 @@
-/* oxlint-disable no-unused-vars -- contract commit: entry-point stubs keep their final signatures until a lane implements them. */
 /**
  * Conformance suites (L29): the shared vitest suites every adapter of a fleet
  * port runs against itself. Re-exported by `@hobo/fleet/testing`.
  *
- * Contract commit: every body throws `FleetNotImplemented`; L29 replaces them.
+ * Each `run*` registers one vitest `describe` with one `it` per named
+ * assertion of its suite; call it at the top level of an adapter's test file.
+ * The assertion lists live beside this file, one file per suite, and are
+ * private to this package: its own tests prove each assertion fails a double
+ * broken in exactly that assertion's way (O39).
  */
-import { FleetNotImplemented } from "../../errors.js";
 import type { MemberName } from "../../ids.js";
 import type {
 	AssignmentReplica,
@@ -16,20 +18,28 @@ import type {
 	KeyStore,
 	SandboxDriver,
 } from "../../ports.js";
+import { registerSuite } from "./assertion.js";
+import { BUS_ASSERTIONS } from "./bus.js";
+import { ISOLATION_ASSERTIONS } from "./isolation.js";
+import { JOURNAL_ASSERTIONS } from "./journal.js";
+import { KEYSTORE_ASSERTIONS } from "./keystore.js";
+import { REPLICA_ASSERTIONS } from "./replica.js";
+import { SANDBOX_ASSERTIONS } from "./sandbox.js";
+import { TRANSPORT_ASSERTIONS } from "./transport.js";
 
 export function runBusConformance(make: () => Promise<AuthorityBus>): void {
-	throw new FleetNotImplemented("runBusConformance");
+	registerSuite("bus conformance", BUS_ASSERTIONS, make, 30_000);
 }
 
 export function runTransportConformance(
 	make: () => Promise<readonly [FleetTransport, FleetTransport]>,
 ): void {
-	throw new FleetNotImplemented("runTransportConformance");
+	registerSuite("transport conformance", TRANSPORT_ASSERTIONS, make, 120_000);
 }
 
 /** Logic suite: the driver contract (single use, writeSecret never through argv or env, the fence callback answered on controlUrl, destroy idempotent). The fake driver passes it; it proves nothing about isolation. */
 export function runSandboxConformance(make: () => SandboxDriver): void {
-	throw new FleetNotImplemented("runSandboxConformance");
+	registerSuite("sandbox conformance", SANDBOX_ASSERTIONS, make, 60_000);
 }
 
 /**
@@ -46,21 +56,26 @@ export function runSandboxIsolationProbe(
 		egress: EgressProxyFactory;
 	}>,
 ): void {
-	throw new FleetNotImplemented("runSandboxIsolationProbe");
+	registerSuite(
+		"sandbox isolation probe",
+		ISOLATION_ASSERTIONS,
+		{ make, options },
+		180_000,
+	);
 }
 
 export function runKeyStoreConformance(make: () => KeyStore): void {
-	throw new FleetNotImplemented("runKeyStoreConformance");
+	registerSuite("key store conformance", KEYSTORE_ASSERTIONS, make, 30_000);
 }
 
 export function runReplicaConformance(
 	make: (id: MemberName) => AssignmentReplica,
 ): void {
-	throw new FleetNotImplemented("runReplicaConformance");
+	registerSuite("replica conformance", REPLICA_ASSERTIONS, make, 30_000);
 }
 
 export function runJournalConformance(
 	make: () => Promise<FleetEventStore>,
 ): void {
-	throw new FleetNotImplemented("runJournalConformance");
+	registerSuite("journal conformance", JOURNAL_ASSERTIONS, make, 30_000);
 }
