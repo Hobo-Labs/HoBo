@@ -331,6 +331,32 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		return comparable(a) === comparable(b);
 	}
 
+	/**
+	 * The open Delta a new one may supersede, if any. Only a rollback marker
+	 * qualifies: an open rollback Delta that declares no changes (the rollout
+	 * records intent and target, never a resolved diff), on the same base, being
+	 * replaced by a concrete rollback Delta that does declare its changes. Every
+	 * other overlap stays refused (one in-flight Delta per Camp).
+	 */
+	function supersedable(
+		state: CampSpecState,
+		delta: DeltaRecord,
+	): string | undefined {
+		if (state.openDeltaId === undefined) return undefined;
+		const open = state.deltas.get(state.openDeltaId)?.record;
+		if (
+			open !== undefined &&
+			open.intent === "rollback" &&
+			open.changes.length === 0 &&
+			delta.intent === "rollback" &&
+			!delta.proposal &&
+			delta.changes.length > 0 &&
+			delta.baseSetId === open.baseSetId
+		)
+			return open.deltaId;
+		return undefined;
+	}
+
 	/** Run a spec-stream command, retrying when another writer moved the head. */
 	async function withCas<T>(
 		campId: CampId,
@@ -380,7 +406,8 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 					delta.deltaId,
 				);
 			}
-			if (state.openDeltaId !== undefined) {
+			const superseded = supersedable(state, delta);
+			if (state.openDeltaId !== undefined && superseded === undefined) {
 				return refuse(
 					"delta-overlap",
 					`camp ${campId} already has open delta ${state.openDeltaId}`,
@@ -397,13 +424,33 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			}
 			const changes = await checkChanges(delta, state);
 			if (!changes.ok) return changes;
-			await append(
-				campId,
-				state,
-				[{ type: CD_EVENTS.DeltaOpened, data: encodeDelta(delta) }],
-				ctx,
-			);
+			// Close the superseded rollback marker and open its replacement in one
+			// CAS append, so the Camp never has two open Deltas (D12, I7).
+			const events: EventInput[] = [];
+			if (superseded !== undefined)
+				events.push({
+					type: CD_EVENTS.DeltaRejected,
+					data: encodeDecision(
+						create(DeltaDecisionRecordSchema, {
+							deltaId: superseded,
+							reasons: [
+								reason(
+									"delta-superseded",
+									`rollback delta ${superseded} superseded by rollback delta ${delta.deltaId}`,
+									superseded,
+								),
+							],
+							decidedAt: isoAt(ctx.now()),
+						}),
+					),
+				});
+			events.push({ type: CD_EVENTS.DeltaOpened, data: encodeDelta(delta) });
+			await append(campId, state, events, ctx);
 			deltaCamps.set(delta.deltaId, campId);
+			if (superseded !== undefined)
+				await metric("hobo.cd.sets.deltas_superseded", 1, {
+					"hobo.cd.camp": campId,
+				});
 			await metric("hobo.cd.sets.deltas_opened", 1, {
 				"hobo.cd.camp": campId,
 				"hobo.cd.intent": delta.intent,
