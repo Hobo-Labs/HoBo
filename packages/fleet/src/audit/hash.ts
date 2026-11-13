@@ -40,7 +40,7 @@ export function entryHash(previousHash: string, entry: AuditEntry): string {
 
 const tagOf = Object.prototype.toString;
 
-function isObject<T>(
+export function isObject<T>(
 	value: T,
 ): value is T & { readonly [key: string]: JsonValue } {
 	return (
@@ -51,7 +51,7 @@ function isObject<T>(
 	);
 }
 
-function isString<T>(value: T): value is T & string {
+export function isString<T>(value: T): value is T & string {
 	return tagOf.call(value) === "[object String]";
 }
 
