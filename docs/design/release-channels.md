@@ -25,6 +25,22 @@ It does not build deployment promotion automation, artifact publication, compati
 launch messaging, support ticketing, status-page publication, security attestation, or legal/privacy
 signoff workflows.
 
+## HoBo.CD: Freight is not a release channel
+
+HoBo.CD ([ADR-0182](./adr/01-architecture-core.md#adr-0182) D2; [continuous-delivery.md](./continuous-delivery.md)) names its promotion unit **Freight** precisely to
+avoid this document's vocabulary:
+
+- A **release channel** (`stable`, `beta`, a pinned line) is a moving name
+  that users or Camps subscribe to; it points at different versions over time.
+- **Freight** is one immutable, content-addressed version of one Bindle (or
+  one Rail). It never changes and is never rebuilt; a delivery pipeline decides
+  which Camps it may reach.
+
+The two compose without overlap: a channel can be implemented as a pipeline
+node whose qualified Freight is "what the channel points at", but Freight
+itself carries no channel, and promoting Freight never moves a channel unless
+the channel is defined that way.
+
 ## User And Business Goal
 
 HoBo needs accepted M0 scope for release channels before downstream work can depend on beta, RC, GA,
@@ -151,8 +167,7 @@ what evidence M1 must prove, and which adjacent initiatives own publication or r
 HoBo's own release train (`.github/workflows/release-hobo.yml`) maps the
 release-candidate and GA classes above onto `@hobo/cd` Camps, records every
 artifact as Freight with provenance, and lets the Camps' realizers publish
-(plan 0024,
-[`hobo deploy`](../../packages/hobo/CD.md)).
+([`hobo deploy`](../../packages/hobo/CD.md)).
 
 The topology is delivery-as-code:
 [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)

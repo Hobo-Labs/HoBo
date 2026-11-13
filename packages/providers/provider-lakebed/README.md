@@ -67,7 +67,7 @@ A CLI acknowledgement alone cannot establish serving health, data-transfer safet
 resource retirement or final usage. The common hosting coordinator requires separate
 provider observations for those postconditions.
 
-## Delivery coverage (plan 0024 WP14, I14)
+## Delivery coverage (ADR-0182: I14)
 
 `lakebedResolverRegistry({ host, resolveCredential })` ships one resolver,
 `lakebed.capsule/v1`, over the `LakebedDeployHost` seam (the `lakebed-deploy`

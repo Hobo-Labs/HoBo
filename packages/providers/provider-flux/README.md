@@ -11,7 +11,7 @@ Production apply requires OCI digest, signed webhook, authenticated status/logs,
 
 Live public probes fail closed: unsigned `GET /apps/appregister` must be HTTP ≥400. Timeout or network error is a failure, not a skip.
 
-## Delivery coverage (plan 0024 WP13, I14)
+## Delivery coverage (ADR-0182: I14)
 
 | Export | What it is |
 |---|---|

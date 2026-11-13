@@ -112,3 +112,43 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `training.*` | `training.RunStarted`, `training.Promoted` |
 | `user.*` | `user.Authenticated` |
 | `ws.*` | `ws.Connected`, `ws.Subscribed` |
+
+## HoBo.CD families (`CD_EVENTS`)
+
+Every event name in `CD_EVENTS` (`packages/cd/src/events.ts`, frozen by plan
+0024 Appendix A) is listed here with the `@hobo/cd` module that appends it.
+Stream ids come from `CD_STREAMS` in the same file: desired state on
+`cd-camp-<campId>`, observations on `cd-camp-status-<campId>`, inventory on
+`cd-camp-inventory-<campId>`, compliance on `cd-compliance-<campId>`, and one
+stream per Freight, source, publisher, artifact, pipeline, window, promotion,
+verification, reconciler, Camp set, placement, fan-out and failover. Bodies are
+the protobuf messages in `packages/cd/data-models/cd.proto`. Some families
+(`camp.*`, `delta.*`, `deployment.*`, `env.*`, `pipeline.*`, `policy.*`,
+`rollout.*`, `set.*`) already appear above for other packages; the CD names
+extend them. Design: [continuous-delivery.md](./continuous-delivery.md),
+[ADR-0182](./adr/01-architecture-core.md#adr-0182).
+
+| Family | `CD_EVENTS` names | Appended by (`packages/cd/src/`) |
+|---|---|---|
+| `freight.*` | `freight.Recorded`, `freight.Yanked`, `freight.Qualified`, `freight.Approved`, `freight.Retired` | `freight/` |
+| `source.*` | `source.Defined`, `source.ArtifactDiscovered` | `sources/` |
+| `publisher.*` | `publisher.Trusted` | `ingest/` |
+| `artifact.*` | `artifact.Stored`, `artifact.Deleted` | `artifacts/` |
+| `set.*` | `set.Created` | `sets/` (and `freight/` for a recorded Set) |
+| `delta.*` | `delta.Opened`, `delta.Updated`, `delta.Applied`, `delta.Rejected` | `sets/` |
+| `pipeline.*` | `pipeline.Applied`, `pipeline.FreightAvailable` | `pipelines/` |
+| `window.*` | `window.Defined`, `window.Overridden` | `windows/` |
+| `env.*` | `env.PromoteRequested`, `env.Promoted`, `env.PromoteRolledBack`, `env.PromoteRejected`, `env.PromoteSuperseded`, `env.Cloned`, `env.Expired` | `promotion/` |
+| `verification.*` | `verification.Started`, `verification.Completed` | `verification/` |
+| `rollout.*` | `rollout.Lowered`, `rollout.EvidenceObserved` | `rollout/` (`Lowered`), `verification/` (`EvidenceObserved`) |
+| `reconciler.*` | `reconciler.Enrolled`, `reconciler.Revoked`, `reconciler.EnrollmentRequested`, `reconciler.KeyApproved`, `reconciler.Accepted` | `agent/` (enrollment) |
+| `deployment.*` | `deployment.ReconcileStarted`, `deployment.StatusObserved`, `deployment.Converged`, `deployment.ReconcileBlocked` | `reconcile/` (Camp status stream) |
+| `camp.*` | `camp.StatusChanged`, `camp.Tainted`, `camp.Untainted`, `camp.ManagementChanged`, `camp.Departed` | `inventory/` (`Departed`: `fanout/`) |
+| `campset.*` | `campset.Defined` | `inventory/` |
+| `placement.*` | `placement.Defined`, `placement.ScoresReported`, `placement.Decided` | `placement/` |
+| `fanout.*` | `fanout.Started`, `fanout.Progressed`, `fanout.Halted`, `fanout.Resumed`, `fanout.Completed`, `fanout.RolledBack` | `fanout/` |
+| `failover.*` | `failover.Proposed`, `failover.Started`, `failover.Progressed`, `failover.Completed`, `failover.Refused` | `failover/` |
+| `rebalance.*` | `rebalance.Requested` | `failover/` |
+| `policy.*` | `policy.BindingChanged`, `policy.ShadowDecided` | `posture/` |
+| `compliance.*` | `compliance.Observed`, `compliance.Changed` | `posture/` |
+| `posture.*` | `posture.RemediationProposed` | `posture/` |

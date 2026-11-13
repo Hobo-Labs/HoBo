@@ -22,6 +22,37 @@ The [Vercel package](./packages/ci-vercel/README.md) also runs Vercel CI-tagged
 Turbo checks locally with `pnpm ci:local`; keep hosted CI disabled to avoid
 Vercel CI compute charges.
 
+## HoBo.CD
+
+[HoBo.CD](./packages/cd/README.md) is the delivery sibling of HoBo.CI
+([design](./docs/design/continuous-delivery.md), [ADR-0182](./docs/design/adr/01-architecture-core.md#adr-0182)).
+CI builds artifacts and can be any CI; CD moves immutable **Freight** through a
+pipeline graph of Camps under policy and makes each Camp converge by **pull**.
+
+- **Ingress from any toolset:** Freight sources poll OCI registries, Git hosts
+  (smart-HTTP, no Git binary), package registries and HTTP indexes; any CI can
+  push through OIDC trusted publishing or an in-toto/SLSA attestation.
+  Webhooks only nudge a poll.
+- **Lineage, windows and gates:** Freight reaches an environment only after
+  qualifying upstream, every promotion is a Delta through the Gatekeeper, and
+  change windows hold promotions and stage advances.
+- **Every platform:** fenced per-Camp reconcilers (`conductor`, outbound-only
+  `agent`, or a GitOps `publisher` for Argo CD and Flux) converge through
+  HoBo's resolvers or out-of-tree `hobo:resolver` WASM components.
+- **Verified and reversible:** progressive exposure lowered onto each Camp's
+  real traffic capability, deterministic verification that fails on no data,
+  and rollback as a Delta.
+- **Fleets and policy:** deterministic Placement over Rail-bound Camp sets,
+  group-by-group fan-out under a failure budget, governed failover, Rails
+  delivered INFORM → ENFORCE, and continuous posture with OSCAL results.
+
+Operate it with `hobo deploy`, `hobo serve cd` and `hobo incident`
+(`packages/hobo/CD.md`); runbooks are in [`docs/runbooks/cd/`](./docs/runbooks/cd/index.md).
+SQLite is the default journal; more than one `hobo serve cd` replica needs
+PostgreSQL 16+ (`@hobo/storage-postgres`). HoBo dogfoods it: HoBo CI's hosted
+relay, runner controllers and self-hosted runner fleets are to be delivered by
+HoBo.CD, starting from the Freight sources `@hobo/cd/compose` already declares.
+
 ## Why HoBo exists
 
 Modern app teams still choose between two bad defaults:

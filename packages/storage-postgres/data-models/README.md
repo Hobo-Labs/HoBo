@@ -4,7 +4,7 @@
   `SubscriptionLeaseRecord`, `CheckpointLogRecord`, `CheckpointLogKind`, and
   `StoragePostgresErrorCode`. 64-bit positions and fences are decimal strings.
 - `storage_postgres.cue`: constraints and defaults for the same records. The
-  defaults mirror `CD_DEFAULTS` (plan 0024 A.6).
+  defaults mirror `CD_DEFAULTS`.
 - `buf.yaml` opts the package into codegen (`pnpm run codegen --filter
   packages/storage-postgres`), which writes `src/_generated/storage_postgres_pb.ts`.
 

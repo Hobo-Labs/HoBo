@@ -176,7 +176,7 @@ A closed tab is an orphan requiring reconciliation. Released state requires actu
 worker termination and, unless explicitly retained, partition removal. Stateful moves
 require the app's write-ownership and transfer evidence in addition to those host facts.
 
-## Delivery coverage (plan 0024 WP14, I14)
+## Delivery coverage (ADR-0182: I14)
 
 `browserWasmResolverRegistry()` ships one **observation-only** resolver,
 `browser-wasm.guest/v1`. A guest runs in visitors' browsers, so the part a

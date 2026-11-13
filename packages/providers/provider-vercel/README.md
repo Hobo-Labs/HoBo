@@ -451,7 +451,7 @@ to the provider port. GitHub's records carry no Vercel `dpl_` id, so the id
 adopted is GitHub's record id. Exercised against recorded-shape fixtures only
 (`test/git-integration-adoption.test.ts`).
 
-## Delivery coverage (plan 0024 WP14, I14)
+## Delivery coverage (ADR-0182: I14)
 
 `VERCEL_HOSTING_COVERAGE` (contract `hobo.provider-hosting-coverage/v1`,
 `data-models/hosting_coverage.{proto,cue}`) states, for every catalogued

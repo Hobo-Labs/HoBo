@@ -66,6 +66,8 @@ tags: [hobo, competitors, matrix]
 | **Infracost** | [`infracost.md`](infracost.md) | — | `finops-governance-placement` | `finops-governance-placement` · `infrastructure-from-code` | overlapping | finops, governance, delivery | borrow, benchmark, integrate | mixed | active | 2026-08-20 | pre-v1 |
 | **InsForge** | [`insforge.md`](insforge.md) | — | `backend-data-platforms` | `backend-data-platforms` · `agentic-infrastructure` | adjacent | agent-surface, typed-contracts | benchmark, provider-target | mixed | active | 2026-08-20 | v1 |
 | **Kamal** | [`kamal.md`](kamal.md) | mrsk, kamal deploy | `self-hosted-paas` | `self-hosted-paas` · `delivery-release-gitops` | adjacent | delivery, runtime-portability | benchmark, borrow | mixed | active | 2026-08-20 | v1 |
+| **Kargo** | [`kargo.md`](kargo.md) | akuity-kargo | `delivery-release-gitops` | `delivery-release-gitops` | overlapping | delivery, environments, reconciliation | borrow, benchmark | implemented | active | 2026-11-11 | pre-v1 |
+| **Karmada** | [`karmada.md`](karmada.md) | kubernetes-armada | `hybrid-multicloud-enterprise` | `hybrid-multicloud-enterprise` · `delivery-release-gitops` | overlapping | provider-matching, delivery, reconciliation, environments | borrow, integrate, benchmark | implemented | active | 2026-11-11 | pre-v1 |
 | **Kratix** | [`kratix.md`](kratix.md) | syntasso kratix, ske | `portable-application-models` | `portable-application-models` · `platform-orchestrators` · `delivery-release-gitops` | overlapping | typed-contracts, extensibility, provider-matching, delivery, app-graph | borrow, benchmark, integrate | mixed | active | 2026-08-19 | v1 |
 | **Kubecost** | [`kubecost.md`](kubecost.md) | — | `finops-governance-placement` | `finops-governance-placement` | adjacent | finops, governance, observability | benchmark, integrate, borrow | mixed | active | 2026-08-20 | pre-v1 |
 | **Kubernetes** | [`kubernetes.md`](kubernetes.md) | k8s | `runtime-substrates` | `runtime-substrates` · `portable-application-models` · `hybrid-multicloud-enterprise` | adjacent | reconciliation, runtime-portability, provider-matching, extensibility, governance | adopt, provider-target, borrow, standard | mixed | active | 2026-08-20 | v1 |
@@ -83,6 +85,7 @@ tags: [hobo, competitors, matrix]
 | **Nomad** | [`nomad.md`](nomad.md) | nomad pack, hashicorp nomad | `runtime-substrates` | `runtime-substrates` · `platform-orchestrators` | overlapping | provider-matching, runtime-portability, reconciliation | borrow, provider-target, benchmark | mixed | active | 2026-08-20 | v1 |
 | **Northflank** | [`northflank.md`](northflank.md) | — | `cloud-application-platforms` | `cloud-application-platforms` · `self-hosted-paas` | overlapping | environments, delivery, governance | benchmark | mixed | active | 2026-08-19 | v1 |
 | **Octopus Deploy** | [`octopus-deploy.md`](octopus-deploy.md) | octopus | `delivery-release-gitops` | `delivery-release-gitops` | overlapping | delivery, governance, environments | borrow, benchmark | mixed | active | 2026-08-20 | v1 |
+| **Open Cluster Management** | [`open-cluster-management.md`](open-cluster-management.md) | ocm, red-hat-acm | `hybrid-multicloud-enterprise` | `hybrid-multicloud-enterprise` · `delivery-release-gitops` · `finops-governance-placement` | overlapping | environments, delivery, governance, provider-matching | borrow, integrate, benchmark | implemented | active | 2026-11-11 | pre-v1 |
 | **OpenChoreo** | [`openchoreo.md`](openchoreo.md) | choreo-idp, choreo idp | `platform-orchestrators` | `platform-orchestrators` · `portable-application-models` · `developer-portals-idps` · `delivery-release-gitops` | direct | app-graph, environments, typed-contracts, delivery, governance, wiring | displace, borrow, benchmark | mixed | active | 2026-08-19 | v1 |
 | **OpenCost** | [`opencost.md`](opencost.md) | open cost | `finops-governance-placement` | `finops-governance-placement` | complementary | finops, observability | standard, integrate, borrow | mixed | active | 2026-08-20 | pre-v1 |
 | **OpenShift** | [`openshift.md`](openshift.md) | okd, red hat openshift | `runtime-substrates` | `runtime-substrates` · `hybrid-multicloud-enterprise` · `cloud-application-platforms` | adjacent | runtime-portability, governance, delivery, extensibility | provider-target, benchmark, borrow | mixed | active | 2026-08-20 | v1 |
@@ -208,7 +211,10 @@ Captures are considered stale 180 days after their researched date. Staleness ne
 | [wasmCloud](wasmcloud.md) | 2026-08-20 | contract v1 |
 | [Wasp](wasp.md) | 2026-08-20 | contract v1 |
 | [Alchemy](alchemy.md) | 2026-11-08 | contract v1 |
+| [Kargo](kargo.md) | 2026-11-11 | pre-v1 — rewrite to contract |
+| [Karmada](karmada.md) | 2026-11-11 | pre-v1 — rewrite to contract |
+| [Open Cluster Management](open-cluster-management.md) | 2026-11-11 | pre-v1 — rewrite to contract |
 
-_86 canonical captures across 13 categories; 75 at contract v1._
+_89 canonical captures across 13 categories; 75 at contract v1._
 
 <!-- END GENERATED: competitor-matrix -->

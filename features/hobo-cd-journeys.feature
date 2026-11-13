@@ -1,6 +1,6 @@
 # Promotes the journey semantics of the frozen proofs
 # src/draft/exp-proofs/dx/{devops-canary-rollout,gitops-ci,sre-drift-remediation}-journey-contract
-# (plan 0024 §3) into shipped acceptance features; the proofs stay unedited.
+# into shipped acceptance features; the proofs stay unedited.
 @hobo-cd
 Feature: HoBo.CD delivery journeys
   As a team delivering a Bindle through dev, staging and prod

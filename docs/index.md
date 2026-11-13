@@ -25,6 +25,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | [`competitors/`](./competitors/index.md) | Product and platform positioning references. |
 | [`patterns/`](./patterns/index.md) | Architecture/operations patterns used by HoBo decisions. |
 | `plans/` | Audit/review logs and improvement plans produced by the `/improve` tooling. |
+| [`runbooks/cd/`](./runbooks/cd/index.md) | HoBo.CD operator runbooks, assembled from each `@hobo/cd` module's Runbook section ([design](./design/continuous-delivery.md)). |
 | [`standards/`](./standards/index.md) | External standards referenced by design decisions. |
 | [`technologies/`](./technologies/index.md) | Technology notes for adapters, engines, and possible implementation choices. |
 | [`archive/`](./archive/) | Deferred or superseded planning artifacts. |

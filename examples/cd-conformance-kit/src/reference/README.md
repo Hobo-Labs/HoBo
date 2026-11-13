@@ -14,8 +14,8 @@ exactly one property of the port so you can watch the suite catch it.
 | `common.ts` | Clock, context, typed refusals, sha256 |
 
 The references model each port at its boundary and nothing more. They are
-not `@hobo/cd`. The composed system binds the same harness interfaces once
-the work packages merge (plan 0024 §11).
+not `@hobo/cd`. The composed system (`composeContinuousDelivery`) binds the
+same harness interfaces.
 
 ## Runbook
 

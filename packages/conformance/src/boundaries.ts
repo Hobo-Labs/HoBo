@@ -156,7 +156,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
-	// HoBo.CD (ADR-0178) is the delivery sibling of HoBo.CI and
+	// HoBo.CD (ADR-0182) is the delivery sibling of HoBo.CI and
 	// sits at layer 3 beside it. `@hobo/cd` composes Matching, Gatekeeper,
 	// the Harness and SVIDs through their existing packages; the three
 	// adapters around it (`cd-gitops` publisher, `cd-kube-fleet` transport and
@@ -229,7 +229,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/schema-tools",
 	"packages/stations",
 	"packages/storage-sqlite",
-	// The multi-node EventStore on PostgreSQL 16+ (ADR-0178 D16): the same
+	// The multi-node EventStore on PostgreSQL 16+ (ADR-0182 D16): the same
 	// port as `storage-sqlite`, a different engine.
 	"packages/storage-postgres",
 	"packages/trails",
@@ -392,7 +392,7 @@ export function databaseDriverOf(specifier: string): string | undefined {
  * `data-<engine>` family. `@hobo/storage-sqlite` is the durable EventStore's
  * SQLite binding (ADR-0135): reaching it from an orchestrator is reaching
  * SQLite, whichever package the import names. `@hobo/storage-postgres` is the
- * same port on PostgreSQL (ADR-0178 D16), so it is one engine's storage too.
+ * same port on PostgreSQL (ADR-0182 D16), so it is one engine's storage too.
  */
 const ENGINE_SPECIFIC_STORAGE_PACKAGES = new Set([
 	"packages/storage-sqlite",

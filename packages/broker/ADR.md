@@ -47,7 +47,7 @@ policies, wraps policy enforcement (OPA-shaped), contract enforcement
    and `catalogHash` so decisions replay against the exact policy set and
    catalog that produced them (same discipline as the registry catalog hash
    and the Meta-cloud Broker receipt integrity requirement).
-5. **Delivery through CD** (superseded by plan 0024, D14). The broker no
+5. **Delivery through CD** (superseded by ADR-0182, D14). The broker no
    longer renders GitOps documents. `DeliveryPolicy` is neutral
    (`reconciler_mode`, optional `publisher`) and every accepted receipt is
    handed to `@hobo/cd` as a promotion request

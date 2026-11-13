@@ -1,8 +1,7 @@
 # HoBo CD from the `hobo` binary
 
 `hobo deploy`, `hobo incident status` and `hobo serve cd --port 8791` all run
-against one composition of `@hobo/cd` (`composeContinuousDelivery`, plan 0024
-WP18). There is no second delivery lane and no fixture path except
+against one composition of `@hobo/cd` (`composeContinuousDelivery`). There is no second delivery lane and no fixture path except
 `--simulate`, which is labelled in every result (`data.simulated: true`, reason
 code `simulated` on every observation). None of them needs a Bindle in the
 working directory: they act on the Station's journal and its declared topology.
