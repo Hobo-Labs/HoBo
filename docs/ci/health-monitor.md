@@ -22,8 +22,8 @@ computed and their numbers are not reused.
 | --- | --- |
 | Script (node builtins only, runs straight from a checkout) | [`scripts/ci/ci-health.mts`](../../scripts/ci/ci-health.mts) |
 | Tests and recorded fixtures | `scripts/test/ci-health.test.ts`, `scripts/test/fixtures/ci-health/` |
-| Workflow (every two hours and on dispatch) | [`.github/workflows/ci-health.yml`](../../.github/workflows/ci-health.yml) |
-| Lint allowance: one GitHub-hosted job, `ci-health`, that runs the monitor and nothing else | `scripts/lint-actions.ts` (`lintHealthWorkflow`) |
+| Workflow (every two hours and on dispatch; a push to `main` runs only the transport probe) | [`.github/workflows/ci-health.yml`](../../.github/workflows/ci-health.yml) |
+| Lint allowance: one GitHub-hosted job, `ci-health`, that runs the monitor and nothing else, beside the pinned `routing-slip-probe` job | `scripts/lint-actions.ts` (`lintHealthWorkflow`) |
 
 The workflow holds `actions: read`, `checks: read`, `issues: write`, and `contents: read` for its sparse
 checkout of the monitor; no OIDC token. It needs no `pnpm install`: Node 24 runs the
@@ -78,7 +78,8 @@ climbing from one report to the next ([plan 0026](../plans/0026-relay-routing-sl
 `contents: write` (that job only), writing `refs/hobo/routing-slip-probe` through the same Git Data API calls
 the box relay uses, reading it back as the route job does, and deleting it. It fails when the read-back is
 not a valid slip or the probe ref cannot be deleted, so a GitHub change that breaks the slip's transport
-shows as a failed scheduled run, not as `no routing slip`. It never touches `refs/hobo/routing-slip`.
+shows as a failed run, not as `no routing slip`. It runs on every push to `main` (where it is the only job
+that runs, in its own concurrency group) as well as on the schedule, one probe at a time. It never touches `refs/hobo/routing-slip`.
 
 ## Issues
 

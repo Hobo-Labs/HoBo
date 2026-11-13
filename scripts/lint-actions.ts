@@ -154,6 +154,10 @@ const ROUTING_SLIP_PROBE_JOB = `  routing-slip-probe:
     name: Routing slip transport
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # One probe at a time across push and scheduled runs: they share the ref.
+    concurrency:
+      group: routing-slip-probe
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:

@@ -31,7 +31,7 @@ Each route is a `runner` (one of `runnerRouting.labels`), a `tier` (`fleet`, `lo
 | Lifetime | 10 minutes from issue |
 | Reading | The route job: two GET calls, 3 seconds at most |
 | No usable slip | Missing, expired, for another repository or naming an unknown label: the route job reads GitHub's queue exactly as before, and says why in a `hobo-ci-route-fallback` warning |
-| Monitoring | CI health counts every fallback by reason, and proves the slip's write and read calls every two hours on a probe ref |
+| Monitoring | CI health counts every fallback by reason, and proves the slip's write and read calls on every push to `main` and every two hours on a probe ref |
 | Staying current | The box relay updates itself from `main` every 3 hours when idle, so a committed change to `runnerRouting` reaches it without a manual restart |
 
 ## The balanced route table

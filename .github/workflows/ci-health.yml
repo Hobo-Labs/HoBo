@@ -13,7 +13,11 @@ name: CI health
 # refs/hobo/routing-slip-probe (never the live slip) through the Git Data API
 # calls the box relay uses, reads it back the way the route job does, and
 # deletes it. It alone holds contents: write. Pinned by scripts/lint-actions.ts.
+# It runs on every push to main as well as on the schedule; a push runs only
+# the probe (the monitor keeps its two-hour window).
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "17 */2 * * *"
   workflow_dispatch:
@@ -29,8 +33,10 @@ permissions:
   contents: read
   issues: write
 
+# A push to main runs only the probe, in its own group, so it never replaces a
+# scheduled monitor run that is waiting.
 concurrency:
-  group: ci-health
+  group: ${{ github.event_name == 'push' && 'ci-health-probe' || 'ci-health' }}
   cancel-in-progress: false
 
 env:
@@ -43,6 +49,7 @@ env:
 jobs:
   ci-health:
     name: CI health
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -76,6 +83,10 @@ jobs:
     name: Routing slip transport
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # One probe at a time across push and scheduled runs: they share the ref.
+    concurrency:
+      group: routing-slip-probe
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:

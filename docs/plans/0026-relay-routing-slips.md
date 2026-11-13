@@ -333,11 +333,13 @@ Recorded when layer 05 landed. Everything else is as written above.
   keeps its configured values and is logged (R3).
   `HOBO_CI_CONFIG`/`HOBO_CI_CONFIG_JSON` keep accounts, budgets and
   connections.
-- **The live transport proof runs on CI health's schedule** (every two
-  hours) as its own GitHub-hosted job with `contents: write`, not in a
-  `main`-push workflow: a probe in the main gate would hold a write token in
-  the job that runs repository code, and the health workflow already runs
-  hosted on a timer.
+- **The live transport proof runs in the CI health workflow**, on every push
+  to `main` and on its two-hour schedule, as its own GitHub-hosted job that
+  alone holds `contents: write` and touches only
+  `refs/hobo/routing-slip-probe`; it is not a job of the main gate, which
+  would put a write token beside the jobs that build and test repository
+  code. A push runs only the probe (the monitor job is skipped), in its own
+  concurrency group so it never replaces a waiting scheduled monitor run.
 - **M2's guard** is `scripts/test/routing-name-guard.test.ts`: it fails on a
   `process.env`/`env.` read, a `vars.` reference or a YAML key of any name in
   3.4, over `scripts/`, `packages/ci*`, `.github/` and the templates. The

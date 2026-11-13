@@ -592,6 +592,16 @@ describe("Actions runner policy", () => {
 		);
 		const at = workflow.indexOf("  routing-slip-probe:\n");
 		assert.ok(at > 0, "ci-health.yml runs the routing slip probe");
+		// It runs on every push to main; there only the probe runs, and only
+		// the probe job writes.
+		assert.match(workflow, /^on:\n {2}push:\n {4}branches: \[main\]\n/mu);
+		assert.match(
+			workflow,
+			/^ {2}ci-health:\n {4}name: CI health\n {4}if: github\.event_name != 'push'\n/mu,
+		);
+		const contentsWrite = [...workflow.matchAll(/^\s+contents: write$/gmu)];
+		assert.equal(contentsWrite.length, 1);
+		assert.ok((contentsWrite[0]?.index ?? 0) > at);
 		const job = workflow.slice(at);
 		const health = (probeJob: string) =>
 			lintFile(
