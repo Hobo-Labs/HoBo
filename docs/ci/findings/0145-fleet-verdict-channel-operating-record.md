@@ -13,7 +13,7 @@ the next.
 
 Design: [plan 0025](../../plans/0025-relay-owned-runner-routing.md). Authority:
 [ADR-0180](../../design/adr/fleet-verdict.md#adr-0180-amendment). Runbooks:
-[Fleet verdict operations](../../../packages/ci-vercel/README.md#fleet-verdict-operations). Monitor: the CI health
+[Fleet verdicts (retired)](../../../packages/ci-vercel/README.md#fleet-verdicts-retired). Monitor: the CI health
 monitor, `docs/ci/health-monitor.md` (layer 05 of the stack).
 
 ## Evidence

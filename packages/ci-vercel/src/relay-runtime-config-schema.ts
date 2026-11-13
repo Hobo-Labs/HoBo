@@ -6,7 +6,6 @@
  */
 
 import { createHash, createPrivateKey } from "node:crypto";
-import { parseFleetReporters } from "@hobo/ci-gh-actions";
 import { z } from "zod";
 
 const canonicalKey = z
@@ -127,29 +126,6 @@ const cacheSettings = {
 	HOBO_CI_CACHE_OFFERS_JSON: z.string().min(2).max(16_384).optional(),
 };
 
-/**
- * Fleet verdicts (ADR-0180): who may report (public keys only, parsed whole
- * by the record's own parser), the kill switch, and the daily allowance.
- */
-const fleetVerdictSettings = {
-	HOBO_CI_FLEET_REPORTERS_JSON: z
-		.string()
-		.min(2)
-		.max(16_384)
-		.refine((value) => parseFleetReporters(value) !== undefined, {
-			message: "expected a fleet reporter enrollment",
-		})
-		.optional(),
-	HOBO_CI_FLEET_VERDICT_SERVING: z.enum(["on", "off"]).optional(),
-	HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES: z
-		.string()
-		.regex(/^[1-9]\d{0,3}$/u)
-		.refine((value) => Number(value) <= 1440, {
-			message: "expected at most a day",
-		})
-		.optional(),
-};
-
 /** The onboarding token must be one of the owner's control tokens. */
 function onboardingBinding(
 	value: z.infer<typeof hoboFields>,
@@ -199,7 +175,6 @@ export const RELAY_RUNTIME_CONFIG_SETTINGS = Object.freeze({
 	...appSettings,
 	...relaySecrets,
 	...cacheSettings,
-	...fleetVerdictSettings,
 });
 
 /** The relay's whole runtime configuration as the config service holds it. */
@@ -207,6 +182,20 @@ export const RelayRuntimeConfigSchema = z
 	.object(RELAY_RUNTIME_CONFIG_SETTINGS)
 	.strict()
 	.superRefine(onboardingBinding);
+
+/**
+ * Keys a config service may still hold from a retired feature: the hosted
+ * relay's fleet verdict routes (ADR-0180, retired by ADR-0181 and plan 0026
+ * section 3.9). Their protobuf fields are reserved. The loader drops them
+ * before parsing, so a store that still holds one starts the relay as if it
+ * did not; nothing reads them.
+ */
+export const RETIRED_RELAY_RUNTIME_CONFIG_KEYS: readonly string[] =
+	Object.freeze([
+		"HOBO_CI_FLEET_REPORTERS_JSON",
+		"HOBO_CI_FLEET_VERDICT_SERVING",
+		"HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES",
+	]);
 
 /** Every key the config service may hold for the relay, and nothing else. */
 export const RELAY_RUNTIME_CONFIG_KEYS: readonly string[] = Object.freeze(

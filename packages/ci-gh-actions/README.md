@@ -168,10 +168,14 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/engines/gh-actions/…` | The same routes as the root |
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
-| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)): read by anyone (no query string; the agreed verdict of every reporter enrolled for the repository's account, less any label whose daily allowance is spent), reported by an enrolled reporter's Ed25519 signature (`X-HoBo-Reporter`, `X-HoBo-Sequence`, `X-HoBo-Issued-At`, `X-HoBo-Signature`; no bearer). A refusal names its `reason`: `bad-request`, `unknown-reporter`, `bad-signature`, `clock-skew`, `replayed`, `not-found` or `invalid-report`. Handed to the host's control plane |
-| `GET /v1/fleet/reporters/{owner}/{repo}` | Each enrolled reporter's state and liveness and each label's allowance (`FleetReporterStatusList`), for a GitHub Actions OIDC token from a workflow of that repository (audience: the relay's origin; any event). Handed to the host's control plane |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
+
+No `/v1/fleet/` route is served: the fleet verdict and reporter status routes
+were retired with ADR-0180's hosted transport (ADR-0181,
+[plan 0026](../../docs/plans/0026-relay-routing-slips.md) section 3.9), and
+any such path answers 404. Runner routing reads the box relay's routing slip
+instead.
 
 A delivery is authenticated by GitHub's `X-Hub-Signature-256`, or, when the host
 configures an ingress forward secret, by `X-Hobo-Ingress-Forward` from
@@ -1205,9 +1209,6 @@ the port's 30-day cap.
 | `app:installations:<accountId>`, `app:installation-owner:<installationId>` | `RelayCacheVerifiedInstallations`; owning account id | 24 h | `CacheVerifiedInstallations.bindInstallation` |
 | `invitation:<mac>`, `owner-session:<mac>` | redemption time; `RelayCacheOwnerSession` | until the invitation expires; 10 min | `CacheOwnerBootstrap` |
 | `worker-health:<deployment>:<component>` | `RelayWorkerHealth` (`@hobo/ci-vercel`) | 24 h | `@hobo/ci-vercel`'s `CacheWorkerHealth` |
-| `fleet-verdict:<owner>/<repo>:<reporter id>` | `FleetVerdict`: one reporter's last report as stamped (a shadow report blocks nothing) | Until the report expires (at most 180 s) | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-reporter:<owner>/<repo>:<reporter id>` | `FleetReporterState`: last sequence, mode, last report, per label last blocked and cleared | 24 hours, refreshed on every accepted report | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
-| `fleet-allowance:<owner>/<repo>` | `FleetVerdictAllowance`: per label, the window's start and its blocked seconds | 24 hours from the latest window's start | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
 | `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
 
 ### Helpers on the cache (phase 5)

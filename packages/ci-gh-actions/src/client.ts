@@ -17,21 +17,11 @@ import {
 	RepositorySetupRequestSchema,
 	SnapshotSchema,
 } from "@hobo/ci";
-import {
-	FleetReporterStatusListSchema,
-	FleetVerdictSchema,
-} from "./_generated/fleet_verdict_pb.js";
 import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
 import {
 	OnboardingOperationSchema,
 	OnboardingPrincipalSchema,
 } from "./_generated/onboarding_pb.js";
-import {
-	FLEET_REPORTERS_PATH,
-	FLEET_VERDICTS_PATH,
-	parseFleetReportersPath,
-	parseFleetVerdictPath,
-} from "./fleet-verdict.js";
 
 export {
 	type MeshNodeReport,
@@ -60,18 +50,6 @@ export class CiRelayClientError extends Error {
 }
 function invalid(message: string): never {
 	throw new CiRelayClientError(0, message);
-}
-/** `verdicts/<owner>/<name>`, as the repository was given, once it is a repository. */
-function verdictPath(repository: string): string {
-	if (!parseFleetVerdictPath(`${FLEET_VERDICTS_PATH}${repository}`))
-		invalid("invalid repository");
-	return `verdicts/${repository}`;
-}
-/** `reporters/<owner>/<name>`, as the repository was given, once it is a repository. */
-function reportersPath(repository: string): string {
-	if (!parseFleetReportersPath(`${FLEET_REPORTERS_PATH}${repository}`))
-		invalid("invalid repository");
-	return `reporters/${repository}`;
 }
 function uuid(id: string): void {
 	if (
@@ -168,20 +146,13 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
-		// The account's own routes, or the relay's (its mesh, its fleet
-		// verdicts and reporters), which no account owns.
-		root: "accounts/self" | "mesh" | "fleet" = "accounts/self",
+		// The account's own routes, or the relay's mesh, which no account owns.
+		root: "accounts/self" | "mesh" = "accounts/self",
 		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
 		lenient = false,
-		/** A credential other than the account's, e.g. a workflow's OIDC token. */
-		bearer?: string,
 	): Promise<ProtobufMessage<Desc>> {
 		const headers = new Headers();
-		if (bearer !== undefined) {
-			if (!bearer || /\s/.test(bearer) || bearer.length > 16000)
-				invalid("invalid workflow token");
-			headers.set("Authorization", `Bearer ${bearer}`);
-		} else if (options.ownerSession) {
+		if (options.ownerSession) {
 			headers.set("X-HoBo-Owner-Control", "1");
 		} else {
 			let token: string;
@@ -397,42 +368,6 @@ export function createCiRelayClient(
 				"mesh",
 				// A newer relay may add fields; the nodes are still shown.
 				true,
-			);
-		},
-		/**
-		 * The fleet verdict a relay keeps for one repository (ADR-0180): the
-		 * labels new work should stay off right now. Nothing blocked is the
-		 * answer when it keeps none.
-		 */
-		getFleetVerdict(repository: string) {
-			return request(
-				verdictPath(repository),
-				"GET",
-				FleetVerdictSchema,
-				undefined,
-				undefined,
-				"v1",
-				"fleet",
-				true,
-			);
-		},
-		/**
-		 * What the relay knows of the fleet reporters for one repository
-		 * (ADR-0180): each enrolled reporter's state and liveness, and each
-		 * label's allowance. Asked with an OIDC token from a workflow of that
-		 * repository, whose audience is this relay's origin.
-		 */
-		getFleetReporters(repository: string, oidcToken: string) {
-			return request(
-				reportersPath(repository),
-				"GET",
-				FleetReporterStatusListSchema,
-				undefined,
-				undefined,
-				"v1",
-				"fleet",
-				true,
-				oidcToken,
 			);
 		},
 		getLease(id: string) {

@@ -2,7 +2,6 @@ import {
 	createMemoryMesh,
 	createMemoryMeshConfig,
 	generateMeshIdentity,
-	meshIdentityFromPem,
 	signMeshAdvert,
 } from "@hobo/ci/mesh";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
@@ -12,17 +11,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { relayInstallAssets } from "../src/assets.js";
 import { createCiRelayClient } from "../src/client.js";
-import { signedFleetVerdictRequest } from "../src/fleet-verdict-auth.js";
 import { createMeshNode, type MeshNodesReader } from "../src/mesh-node.js";
 import {
 	meshTrustConfigJson,
 	parseMeshNodeReports,
 } from "../src/mesh-records.js";
 import { createRelayHost } from "../src/relay-host.js";
-import {
-	BOX_1_KEY_PEM,
-	BOX_1_PUBLIC_KEY,
-} from "./fixtures/fleet-reporter-keys.js";
 import { config, NOW, SECRET } from "./fixtures.js";
 
 const READER = "Bearer reader-credential-of-at-least-32-characters";
@@ -71,14 +65,6 @@ async function relay(meshNodes?: MeshNodesReader) {
 		port: 0,
 		tickIntervalMs: 600_000,
 		meshNodes,
-		fleetReporters: [
-			{
-				id: "box-1",
-				publicKey: BOX_1_PUBLIC_KEY,
-				accountId: "account-a",
-				labels: ["hobo", "hobo-trunk"],
-			},
-		],
 	});
 	stops.push(async () => {
 		await service.stop();
@@ -435,34 +421,17 @@ describe("the MCP server's list_mesh_nodes and hobo-ci://mesh/nodes", () => {
 	});
 });
 
-describe("the fleet verdict on a relay host", () => {
-	it("is kept by the host: reported by an enrolled reporter's signature, then read by anyone", async () => {
+describe("the retired fleet verdict routes on a relay host (plan 0026, 3.9)", () => {
+	it("answers 404 for every /v1/fleet/ path, with or without a credential", async () => {
 		const h = await relay();
-		const path = "/v1/fleet/verdicts/org/repo";
-		const read = async () => (await h.get(path)).json();
-		expect(await read()).toEqual({ repository: "org/repo", blocked: {} });
-		const signed = signedFleetVerdictRequest({
-			identity: meshIdentityFromPem(BOX_1_KEY_PEM),
-			reporterId: "box-1",
-			// The host's public origin, whatever address answers.
-			origin: "https://relay.example",
-			repository: "org/repo",
-			body: '{"blocked":{"hobo-trunk":{"reason":"no-node"}},"ttlSeconds":60,"mode":"report"}',
-			issuedAt: new Date().toISOString(),
-			sequence: String(Date.now()),
-		});
-		const reported = await fetch(`${h.base}${signed.path}`, {
-			method: "PUT",
-			headers: signed.headers,
-			body: signed.body,
-		});
-		expect(reported.status).toBe(200);
-		expect((await read()).blocked).toEqual({
-			"hobo-trunk": { reason: "no-node" },
-		});
-		// An account credential, however it is scoped, is not a reporter.
-		expect((await h.get(path, OPERATOR, "PUT")).status).toBe(401);
-		// The host verifies no workflow tokens: its status route says so.
-		expect((await h.get("/v1/fleet/reporters/org/repo")).status).toBe(503);
+		for (const path of [
+			"/v1/fleet/verdicts/x/y",
+			"/v1/fleet/verdicts/org/repo",
+			"/v1/fleet/reporters/org/repo",
+		]) {
+			expect((await h.get(path)).status, path).toBe(404);
+			expect((await h.get(path, OPERATOR)).status, path).toBe(404);
+			expect((await h.get(path, OPERATOR, "PUT")).status, path).toBe(404);
+		}
 	});
 });

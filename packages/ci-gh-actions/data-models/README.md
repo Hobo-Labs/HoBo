@@ -30,25 +30,13 @@ advertisement cannot state its own trust level or carry a private key, and
 that a report's trust level is one of three. `src/mesh-records.ts` is the only
 place these are parsed and written. The routing snapshot the mesh used to
 publish to a repository variable (`MeshFleetState`) is retired: runner routing
-asks the relay for a fleet verdict instead (ADR-0180).
+reads the box relay's routing slip instead (ADR-0181).
 
-`fleet_verdict.proto` owns the fleet verdict runner routing asks a relay for
-(ADR-0180): `FleetVerdict`, the labels new work should stay off with one of
-two reasons each, and `FleetVerdictReport`, what a relay with a view of the
-fleet sends to set it, signed with the reporter's Ed25519 key and carrying
-its `mode` (`shadow` or `report`). The same file owns what the hosted relay
-keeps and shows about reporters: `FleetReporterEnrollments` (who may report,
-public keys only, from `HOBO_CI_FLEET_REPORTERS_JSON`), `FleetReporterState`
-(last sequence, mode, last report, and per label when it last blocked and
-cleared), `FleetVerdictAllowance` (blocked time per label in a 24-hour
-window) and `FleetReporterStatusList`, what the OIDC-guarded status route
-answers. `src/fleet-verdict.ts` is the only place they are parsed and
-written. The `fleet-verdict*` and `fleet-reporter*` fixtures pin that a
-verdict may block nothing, that a report cannot stand longer than 180
-seconds and must name its mode, that a reason outside the two is refused,
-that a capacity figure in a verdict is invalid (none leaves the relay), that
-an enrollment holds no private key, and that a status carries no key at all.
-ADR-0181 supersedes the verdict's transport with the routing slip below.
+`fleet_verdict.proto` (the hosted relay's fleet verdict, its signed reports,
+reporter enrollment, state, allowance and status list; ADR-0180) is retired
+with the hosted verdict routes (ADR-0181, plan 0026 section 3.9): the file,
+its generated code, its CUE definitions and its `fleet-verdict*` and
+`fleet-reporter*` fixtures are gone. The routing slip below carries routing.
 
 `routing_slip.proto` owns the routing slip (ADR-0181): the box relay's
 current routing answer for one repository, one route per class (`pr`, `fork`,
