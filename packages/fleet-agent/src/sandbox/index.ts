@@ -261,7 +261,14 @@ export async function platformCandidates(
 	if (platform === "darwin")
 		return [createMicroVmSandboxDriver(APPLE_CONTAINER_RUNTIME, log)];
 	if (platform !== "linux") return [];
-	const setup = await probeLinuxHost(settings);
+	return linuxDriversFor(await probeLinuxHost(settings), log);
+}
+
+/** The Linux candidates for a probed host, over the agent's own run and image directories. */
+export function linuxDriversFor(
+	setup: HostSetup,
+	log: FleetLog,
+): readonly SandboxDriver[] {
 	const uid = process.getuid?.() ?? 0;
 	const rootful = setup.privilege.mode === "rootful";
 	const home = rootful
