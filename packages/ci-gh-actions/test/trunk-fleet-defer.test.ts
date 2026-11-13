@@ -127,35 +127,50 @@ describe("evaluateMainTrunkFleetDefer", () => {
 		expect(decision.holdReason).toBeUndefined();
 	});
 
-	it("defers when parallel trunk ceiling is reached", () => {
-		const decision = evaluateMainTrunkFleetDefer({
-			jobName: "Main workspace test shard 1",
-			isMainTrunkJob: true,
-			priorWait: undefined,
-			deferMs,
-			nowMs,
-			trunkSlots: 1,
-			parallelTrunkLaunchCapacity: 1,
-			localTrunkReserved: 1,
-			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 1, meshFreeSlots: 1 },
-		});
-		expect(decision.action).toBe("defer");
-	});
-
-	it("does not treat the box as slot-full while memory-parallel trunk launches remain", () => {
-		const decision = evaluateMainTrunkFleetDefer({
+	const parallelInput = (
+		localTrunkReserved: number,
+		parallelTrunkLaunchCapacity: number,
+	) =>
+		({
 			jobName: "Main workspace test shard 2",
 			isMainTrunkJob: true,
 			priorWait: undefined,
 			deferMs,
 			nowMs,
 			trunkSlots: 1,
-			parallelTrunkLaunchCapacity: 3,
-			localTrunkReserved: 1,
+			parallelTrunkLaunchCapacity,
+			localTrunkReserved,
 			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 2, meshFreeSlots: 2 },
-		});
+		}) as const;
+
+	it("treats parallel launch capacity as room beyond what is already reserved", () => {
+		// 1 reserved, room for 1 more: ceiling is 2, so the box is not full.
+		const decision = evaluateMainTrunkFleetDefer(parallelInput(1, 1));
 		expect(decision.action).toBe("hold");
 		expect(decision.holdReason).toBe("no-wait");
+	});
+
+	it("does not call the box full when reservations equal the remaining room", () => {
+		// 3 reserved, room for 3 more: comparing reserved to remaining room would
+		// wrongly report full; the total ceiling is 6.
+		const decision = evaluateMainTrunkFleetDefer(parallelInput(3, 3));
+		expect(decision.action).toBe("hold");
+		expect(decision.holdReason).toBe("no-wait");
+	});
+
+	it("defers to peers once memory has no room left for another trunk launch", () => {
+		// 2 reserved, other jobs fill the box (room 0): ceiling is max(1, 2) = 2.
+		const decision = evaluateMainTrunkFleetDefer(parallelInput(2, 0));
+		expect(decision.action).toBe("defer");
+	});
+
+	it("still holds on no-peer-capacity even when local slots are full", () => {
+		const decision = evaluateMainTrunkFleetDefer({
+			...parallelInput(2, 0),
+			fleetWitness: { hoboFreeSlots: 0, arcFreeSlots: 0, meshFreeSlots: 0 },
+		});
+		expect(decision.action).toBe("hold");
+		expect(decision.holdReason).toBe("no-peer-capacity");
 	});
 
 	it("holds when peer capacity is zero", () => {
