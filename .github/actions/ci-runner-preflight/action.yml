@@ -7,6 +7,14 @@ inputs:
       headless shell in; a GitHub-hosted machine downloads the same pinned one.
     required: false
     default: "false"
+  install-toolchain:
+    description: >-
+      When `false`, skip the blanket `mise install --locked` on runners that
+      already carry the pinned toolchain (for example the fleet image on Main
+      workspace plan). The preflight script still installs, with --locked, only
+      tools mise reports missing, so a pin bumped before an image rebuild self-heals.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -35,6 +43,7 @@ runs:
         HOBO_CI_HOSTED_BROWSER: ${{ inputs.browser }}
       run: bash "${GITHUB_ACTION_PATH}/hosted-toolchain.sh"
     - shell: bash
+      if: inputs.install-toolchain == 'true'
       run: |
         set -euo pipefail
         export MISE_EXPERIMENTAL=1
@@ -42,6 +51,10 @@ runs:
           mise trust ./mise.toml
           mise install --locked
         fi
+    - shell: bash
+      run: |
+        set -euo pipefail
+        export MISE_EXPERIMENTAL=1
         node --no-warnings scripts/ci-runner-preflight.mts
         node --experimental-strip-types scripts/ci/memory-env.mts
         # The live data-engine lane starts database servers beside the job. A job
