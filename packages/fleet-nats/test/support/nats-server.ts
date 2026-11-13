@@ -57,9 +57,10 @@ function openssl(args: readonly string[], cwd: string): void {
 }
 
 /** A CA and a server certificate for 127.0.0.1 and localhost. */
-type Certificates = Readonly<{ ca: string; cert: string; key: string }>;
+export type Certificates = Readonly<{ ca: string; cert: string; key: string }>;
 
-function certificates(dir: string): Certificates {
+/** Writes a throwaway CA and a server certificate signed by it into `dir`. */
+export function certificates(dir: string): Certificates {
 	writeFileSync(
 		join(dir, "san.cnf"),
 		"subjectAltName=IP:127.0.0.1,DNS:localhost\n",

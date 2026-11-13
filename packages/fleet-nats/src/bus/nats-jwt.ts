@@ -317,22 +317,27 @@ export function signingKeysOfAccountJwt(
 	const listed = claims.nats.signing_keys ?? [];
 	if (listed.length === 0) return undefined;
 	const plain: string[] = [];
-	const scoped = {
-		observer: new Array<string>(),
-		executor: new Array<string>(),
-		dispatcher: new Array<string>(),
-	} satisfies Record<DeviceTemplate, string[]>;
+	const roles: Readonly<{ role: DeviceTemplate; key: string }>[] = [];
 	for (const key of listed) {
 		if (!(key instanceof Object)) {
 			plain.push(key);
 			continue;
 		}
-		const template = DEVICE_TEMPLATES.find((name) => name === key.role);
-		if (template === undefined)
+		const role = DEVICE_TEMPLATES.find((name) => name === key.role);
+		if (role === undefined)
 			throw new Error("the published account lists an unknown scoped role");
-		scoped[template].push(key.key);
+		roles.push({ role, key: key.key });
 	}
-	return { account: plain, scoped };
+	const keysOf = (template: DeviceTemplate) =>
+		roles.filter((entry) => entry.role === template).map((entry) => entry.key);
+	return {
+		account: plain,
+		scoped: {
+			observer: keysOf("observer"),
+			executor: keysOf("executor"),
+			dispatcher: keysOf("dispatcher"),
+		},
+	};
 }
 
 /** Throws unless `key` is an account public key; never echoes the value, which could be a seed passed by mistake. */

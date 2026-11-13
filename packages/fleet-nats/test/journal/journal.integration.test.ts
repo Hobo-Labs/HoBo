@@ -3,7 +3,8 @@
  *
  * Runs `runJournalConformance` and the A15 adapter harness of
  * `runEventStoreConformance` on `FLEET_JOURNAL`, plus two replicas racing for
- * one stream through the server's compare-and-set.
+ * one stream through the server's compare-and-set. The server requires TLS
+ * and the store connects with the bus's settings (`HOBO_FLEET_NATS_CA`).
  *
  * The binary is `HOBO_FLEET_NATS_SERVER_BIN`, or `nats-server` on `PATH`. The
  * integration lane provisions it, so with `CI` set a missing binary fails;
@@ -25,6 +26,7 @@ import {
 	type JournalEventStore,
 	openJournalStore,
 } from "../../src/journal/store.js";
+import { certificates } from "../support/nats-server.js";
 import { journalCrashProbe, journalStoreFactory } from "./harness.js";
 
 const binary =
@@ -49,17 +51,38 @@ async function freePort(): Promise<number> {
 	});
 }
 
-type RunningServer = Readonly<{ url: string; stop(): Promise<void> }>;
+type RunningServer = Readonly<{
+	url: string;
+	/** The private CA the server's certificate is signed by. */
+	ca: string;
+	stop(): Promise<void>;
+}>;
 
+/** A JetStream server that requires TLS, its CA trusted through HOBO_FLEET_NATS_CA, as on the bus. */
 async function startServer(): Promise<RunningServer> {
 	const port = await freePort();
 	const store = mkdtempSync(join(tmpdir(), "hobo-fleet-journal-"));
+	const tls = certificates(store);
+	process.env.HOBO_FLEET_NATS_CA = tls.ca;
 	const child: ChildProcess = spawn(
 		binary,
-		["-a", "127.0.0.1", "-p", `${port}`, "-js", "-sd", store],
+		[
+			"-a",
+			"127.0.0.1",
+			"-p",
+			`${port}`,
+			"-js",
+			"-sd",
+			join(store, "js"),
+			"--tls",
+			"--tlscert",
+			tls.cert,
+			"--tlskey",
+			tls.key,
+		],
 		{ stdio: "ignore" },
 	);
-	const url = `nats://127.0.0.1:${port}`;
+	const url = `tls://127.0.0.1:${port}`;
 	const deadline = Date.now() + 15_000;
 	for (;;) {
 		try {
@@ -79,6 +102,7 @@ async function startServer(): Promise<RunningServer> {
 	}
 	return {
 		url,
+		ca: tls.ca,
 		async stop() {
 			const exited = new Promise((resolve) => child.once("exit", resolve));
 			child.kill("SIGTERM");
@@ -174,6 +198,23 @@ if (binary === "") {
 			const held: number[] = [];
 			for await (const event of first.read("race-1")) held.push(event.seq);
 			expect(held).toEqual([1]);
+		}, 30_000);
+
+		it("connects with the bus's TLS settings: without HOBO_FLEET_NATS_CA the private CA is not trusted", async () => {
+			const ca = process.env.HOBO_FLEET_NATS_CA;
+			delete process.env.HOBO_FLEET_NATS_CA;
+			try {
+				await expect(
+					createJournalEventStore({ servers: [url()], credentials: "" }),
+				).rejects.toThrow();
+			} finally {
+				process.env.HOBO_FLEET_NATS_CA = ca;
+			}
+			const store = await createJournalEventStore({
+				servers: [url()],
+				credentials: "",
+			});
+			await store.close?.();
 		}, 30_000);
 
 		it("is what createJournalEventStore returns", async () => {

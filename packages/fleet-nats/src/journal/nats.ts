@@ -39,6 +39,7 @@ import {
 	type NodeConnectionOptions,
 	nanos,
 } from "@nats-io/transport-node";
+import { connectionOptions } from "../bus/connection.js";
 import {
 	JOURNAL_STREAM,
 	JOURNAL_STREAM_CONFIG,
@@ -116,20 +117,37 @@ export type JournalConnectInput = Readonly<{
 	credentials: string;
 }>;
 
-export async function connectJournalTransport(
+/**
+ * The journal's connection options: the bus's (`connectionOptions`), so TLS
+ * is required and the CA named by `HOBO_FLEET_NATS_CA` is trusted exactly as
+ * on the bus. `persistent` keeps reconnecting for the life of the process
+ * (the store); an import fails fast.
+ */
+export function journalConnectionOptions(
 	input: JournalConnectInput,
-): Promise<JournalTransport> {
+	persistent = true,
+): NodeConnectionOptions {
 	if (input.servers.length === 0)
 		throw new TypeError("createJournalEventStore needs at least one server");
-	const options: NodeConnectionOptions = {
-		servers: [...input.servers],
+	const options = connectionOptions({
+		servers: input.servers,
 		name: "hobo-fleet-journal",
-	};
+		persistent,
+	});
 	if (input.credentials !== "")
 		options.authenticator = credsAuthenticator(
 			new TextEncoder().encode(input.credentials),
 		);
-	return journalTransportOver(await connect(options));
+	return options;
+}
+
+export async function connectJournalTransport(
+	input: JournalConnectInput,
+	persistent = true,
+): Promise<JournalTransport> {
+	return journalTransportOver(
+		await connect(journalConnectionOptions(input, persistent)),
+	);
 }
 
 /** The journal transport on an open connection, which it owns from here on (closing it closes the connection). */
