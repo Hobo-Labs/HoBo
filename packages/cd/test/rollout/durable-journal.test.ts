@@ -17,6 +17,8 @@ import {
 import {
 	type DeltaRecord,
 	DeltaRecordSchema,
+	type ReasonRecord,
+	ReasonRecordSchema,
 	ReconcileObservationRecordSchema,
 	ReconcileStatus,
 	RolloutStrategy,
@@ -25,7 +27,7 @@ import {
 	VerificationVerdict,
 } from "../../src/_generated/cd_pb.js";
 import { createHarnessRolloutEngine } from "../../src/adapters/harness.js";
-import { DELTA_SCHEMA } from "../../src/events.js";
+import { CD_EVENTS, CD_STREAMS, DELTA_SCHEMA } from "../../src/events.js";
 import type {
 	CampId,
 	CdContext,
@@ -144,6 +146,17 @@ async function promote(
 
 /** Report the Camp CONVERGED on `set` through the real reconcile transport. */
 async function reportConverged(w: World, set: SetRecord, atMs: number) {
+	await report(w, set, atMs, ReconcileStatus.CONVERGED);
+}
+
+/** Report `status` for `set` through the real reconcile transport. */
+async function report(
+	w: World,
+	set: SetRecord,
+	atMs: number,
+	status: ReconcileStatus,
+	reasons: readonly ReasonRecord[] = [],
+) {
 	// SAFETY: test reconciler ids are opaque strings.
 	const reconcilerId = "rec-1" as ReconcilerId;
 	const claimed = await w.transport.claim({
@@ -161,7 +174,8 @@ async function reportConverged(w: World, set: SetRecord, atMs: number) {
 			setId: set.setId,
 			reconcilerId,
 			fenceToken: lease.fence.toString(10),
-			status: ReconcileStatus.CONVERGED,
+			status,
+			reasons: [...reasons],
 			observedAt: new Date(atMs).toISOString(),
 		}),
 	);
@@ -267,5 +281,132 @@ describe("rollout on a durable SQLite journal", () => {
 		expect(status?.setId).toBe(promoted.setId);
 		expect(status?.status).toBe(ReconcileStatus.CONVERGED);
 		reopened.close();
+	});
+
+	// Runner-fleet rollout regressions (found end to end at a higher layer).
+	async function pilot(time: ReturnType<typeof clock>, journal: SqliteJournal) {
+		const w = world(journal, time.now);
+		const ctx = context(time.now);
+		const previous = await promote(w, "d-previous", PREVIOUS, SHOP_V1, ctx);
+		const promoted = await promote(w, "d-promote", FREIGHT, SHOP_V2, ctx);
+		const planned = await w.orchestrator.plan(
+			{
+				promotion: promotion({
+					targets: [CAMP],
+					freight: FREIGHT,
+					strategy: RolloutStrategy.CANARY,
+				}),
+				obligations: [],
+				verification: spec({ deadlineMs: 3 * 60 * MINUTE }),
+				stagePercents: [],
+				windows: ["prod"],
+			},
+			ctx,
+		);
+		if (!planned.ok) throw new Error("plan refused");
+		// SAFETY: the plan record carries the rollout id plan() minted.
+		const rolloutId = planned.value.rolloutId as RolloutId;
+		const drive = async (minutes: number) => {
+			for (let i = 0; i < minutes; i += 1) {
+				const snapshot = await w.orchestrator.get(rolloutId);
+				if (snapshot?.status === "rolled-back" || snapshot?.status === "failed")
+					return i;
+				time.advance(MINUTE);
+				await w.orchestrator.tick(ctx);
+			}
+			return minutes;
+		};
+		return {
+			w,
+			ctx,
+			previous,
+			promoted,
+			planned: planned.value,
+			rolloutId,
+			drive,
+		};
+	}
+
+	it("a failed pilot's compensation restores the predecessor Set instead of refusing delta-overlap", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-cd-durable-"));
+		dirs.push(dir);
+		const time = clock();
+		const journal = openJournal(join(dir, "journal.sqlite"), time.now);
+		const p = await pilot(time, journal);
+		await reportConverged(p.w, p.promoted, time.now());
+		p.w.verification.script = () => VerificationVerdict.FAIL;
+		await p.w.orchestrator.run(p.planned, p.ctx);
+		await p.drive(20);
+		expect((await p.w.orchestrator.get(p.rolloutId))?.status).toBe(
+			"rolled-back",
+		);
+
+		// The promotion saga's compensation (D12): a concrete rollback Delta to
+		// the predecessor Set, opened while the rollout's rollback Delta is open.
+		const before = await p.w.desired.resolved(p.promoted);
+		const after = await p.w.desired.resolved(p.previous);
+		const restoreId = "delta_promo1compensate0001";
+		const opened = await p.w.desired.open(
+			create(DeltaRecordSchema, {
+				schemaVersion: DELTA_SCHEMA,
+				deltaId: restoreId,
+				campId: CAMP,
+				intent: "rollback",
+				freightId: PREVIOUS,
+				baseSetId: p.promoted.setId,
+				changes: diffResolvedSets(before, after),
+			}),
+			p.ctx,
+		);
+		expect(opened.ok ? [] : opened.reasons.map((r) => r.code)).toEqual([]);
+		const restored = await p.w.desired.apply(
+			{
+				// SAFETY: the Delta id this test just opened.
+				deltaId: restoreId as DeltaId,
+				gateDecisionId: "gate-restore",
+				resolved: after,
+				origin: SetOrigin.ROLLBACK,
+			},
+			p.ctx,
+		);
+		expect(restored.ok).toBe(true);
+		const current = await p.w.desired.current(campId(CAMP));
+		expect(current?.freightId).toBe(PREVIOUS);
+		// The rollout's rollback Delta was closed as superseded, not left open.
+		const spec = await types(journal, CD_STREAMS.campSpec(CAMP));
+		expect(spec.filter((t) => t === CD_EVENTS.DeltaRejected)).toHaveLength(1);
+		journal.close();
+	});
+
+	it("a BLOCKED report fails the Camp promptly instead of waiting out the progress deadline", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-cd-durable-"));
+		dirs.push(dir);
+		const time = clock();
+		const journal = openJournal(join(dir, "journal.sqlite"), time.now);
+		const p = await pilot(time, journal);
+		const blocked = create(ReasonRecordSchema, {
+			code: "runner-image-pull-failed",
+			message: "the runner image could not be pulled",
+			remediation: "Fix the image reference and promote again.",
+			subject: CAMP,
+		});
+		await report(p.w, p.promoted, time.now(), ReconcileStatus.BLOCKED, [
+			blocked,
+		]);
+		await p.w.orchestrator.run(p.planned, p.ctx);
+		const minutes = await p.drive(5);
+		expect(minutes).toBeLessThan(5);
+		const finished = await p.w.orchestrator.get(p.rolloutId);
+		expect(finished?.status).toBe("rolled-back");
+		const codes = finished?.reasons.map((r) => r.code) ?? [];
+		expect(codes[0]).toBe("rollout-camp-blocked");
+		expect(codes).toContain("rollback-delta-opened");
+		expect(finished?.reasons[0]?.remediation).not.toBe("");
+		expect(finished?.reasons[0]?.message).toContain(
+			"the runner image could not be pulled",
+		);
+		// Exposure never moved off zero.
+		expect(p.w.traffic.percents(CAMP).every((pct) => pct === 0)).toBe(true);
+		journal.close();
 	});
 });
