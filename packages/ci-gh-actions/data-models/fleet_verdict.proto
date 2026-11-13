@@ -31,8 +31,98 @@ message FleetVerdict {
 // What a relay with a view of the fleet reports with
 // `PUT /v1/fleet/verdicts/{owner}/{repo}`. It replaces the stored verdict; an
 // empty `blocked` clears it. The reporter repeats it for as long as it holds.
+//
+// The report is signed by the reporter's Ed25519 key (the `X-HoBo-*` headers,
+// ADR-0180); the body carries no credential.
 message FleetVerdictReport {
   map<string, FleetVerdictBlock> blocked = 1;
-  // How long the verdict stands without being repeated: 1 to 300.
+  // How long the verdict stands without being repeated: 1 to 180.
   uint32 ttl_seconds = 2;
+  // `shadow` (kept and shown, never served) or `report` (served when every
+  // enrolled reporter for the label agrees).
+  string mode = 3;
+}
+
+// One reporter the hosted relay accepts reports from, as its runtime
+// configuration (`HOBO_CI_FLEET_REPORTERS_JSON`) lists it: public key only.
+message FleetReporterEnrollment {
+  // `^[A-Za-z0-9_-]{1,64}$`.
+  string id = 1;
+  // The raw Ed25519 public key, base64url without padding (43 characters).
+  string public_key = 2;
+  // The account whose connected repositories it may report for.
+  string account_id = 3;
+  // The fleet labels it serves, and so may block.
+  repeated string labels = 4;
+}
+
+// The whole enrollment: at most 8 reporters per account.
+message FleetReporterEnrollments {
+  repeated FleetReporterEnrollment reporters = 1;
+}
+
+// When the reporter's own reports last changed a label, by the relay's clock.
+message FleetReporterLabelState {
+  // RFC 3339: the first report that blocked the label after it was clear.
+  optional string last_blocked_at = 1;
+  // RFC 3339: the first report that cleared the label after it was blocked.
+  optional string last_cleared_at = 2;
+}
+
+// What the hosted relay remembers of one reporter for one repository, for a
+// day after its last accepted report: enough to refuse a replay and to show
+// whether the reporter is alive.
+message FleetReporterState {
+  // The highest sequence accepted from this reporter for this repository. A
+  // decimal string in JSON, as every 64-bit integer is.
+  uint64 last_sequence = 1;
+  // The mode of the last accepted report: `shadow` or `report`.
+  string mode = 2;
+  // RFC 3339, by the relay's clock.
+  string last_report_at = 3;
+  map<string, FleetReporterLabelState> labels = 4;
+}
+
+// One label's allowance: how long the agreed verdict has blocked it in the
+// current 24-hour window.
+message FleetVerdictLabelAllowance {
+  // RFC 3339: the first counted second of the window.
+  string window_start = 1;
+  uint32 blocked_seconds = 2;
+  // RFC 3339: the last time blocked time was counted, while the label is
+  // blocked. Absent while it is open.
+  optional string last_counted_at = 3;
+}
+
+// The allowance the hosted relay keeps per repository.
+message FleetVerdictAllowance {
+  map<string, FleetVerdictLabelAllowance> labels = 1;
+}
+
+// One enrolled reporter as the status route shows it. Never a key.
+message FleetReporterStatus {
+  string id = 1;
+  repeated string labels = 2;
+  // Its last accepted report has not expired.
+  bool live = 3;
+  // Absent when the relay has accepted nothing from it in the last day.
+  optional FleetReporterState state = 4;
+}
+
+// How much of a label's allowance the current window has used.
+message FleetVerdictAllowanceUse {
+  uint32 used_seconds = 1;
+  // At or over the daily allowance: the label is served open.
+  bool spent = 2;
+  optional string window_start = 3;
+}
+
+// What `GET /v1/fleet/reporters/{owner}/{repo}` answers a workflow of that
+// repository: every reporter enrolled for its account, and the allowance.
+message FleetReporterStatusList {
+  string repository = 1;
+  repeated FleetReporterStatus reporters = 2;
+  map<string, FleetVerdictAllowanceUse> allowance = 3;
+  // The allowance per label per window, in minutes.
+  uint32 daily_block_minutes = 4;
 }
