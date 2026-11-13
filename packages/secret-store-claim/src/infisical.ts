@@ -13,7 +13,10 @@
  *   credential, in a project of its own so the relay's identity can never
  *   read it (Infisical project roles cover the whole project);
  * - identity `hobo-ci-deploy` in it, role viewer, OIDC Auth trusting GitHub
- *   Actions on the repository's default branch.
+ *   Actions on the repository's default branch, by the subject GitHub issues
+ *   for the repository (`github-oidc.ts`: the immutable
+ *   `repo:<owner>@<ownerId>/<repo>@<repoId>` form when the repository uses it)
+ *   and its pinned `repository_id` and `repository_owner_id`.
  *
  * Self-hosted, step by step:
  *
@@ -60,6 +63,7 @@ import {
 	secretStoreClaimItem,
 } from "./claim.js";
 import { SecretStoreError, secretStoreError } from "./errors.js";
+import { type GithubOidcSubject, githubDeployTrust } from "./github-oidc.js";
 
 /** What the relay's store holds, and who may sign in to it. */
 export type RelayStoreLayout = Readonly<{
@@ -77,34 +81,31 @@ export type RelayStoreLayout = Readonly<{
 }>;
 
 /**
- * The relay's layout. Vercel's team-issuer claims and GitHub's default
- * subject and audience are the ones `CONFIG-SERVICE.md` documents.
+ * The relay's layout. Vercel's team-issuer claims and GitHub's subject and
+ * audience are the ones `CONFIG-SERVICE.md` documents; the GitHub subject is
+ * the one the repository's tokens carry (`resolveGithubOidcSubject`), never
+ * formatted here from the repository's name.
  */
 export function relayStoreLayout(input: {
 	readonly vercelTeamSlug: string;
 	readonly vercelTeamId: string;
 	readonly vercelProjectId: string;
 	readonly vercelProjectName?: string;
-	/** `owner/name` on GitHub. */
-	readonly repository: string;
+	/** The subject GitHub issues for the repository, as GitHub said it. */
+	readonly github: GithubOidcSubject;
 	readonly branch?: string;
 }): RelayStoreLayout {
 	const slug = /^[a-z0-9][a-z0-9-]{0,47}$/u;
 	const project = input.vercelProjectName ?? "hobo-ci";
-	const branch = input.branch ?? "main";
-	const [owner] = input.repository.split("/");
 	if (
 		!slug.test(input.vercelTeamSlug) ||
 		!/^team_[A-Za-z0-9]{1,64}$/u.test(input.vercelTeamId) ||
 		!/^prj_[A-Za-z0-9]{1,64}$/u.test(input.vercelProjectId) ||
-		!slug.test(project) ||
-		!/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/u.test(input.repository) ||
-		!/^[A-Za-z0-9._/-]{1,200}$/u.test(branch) ||
-		owner === undefined
+		!slug.test(project)
 	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the relay layout needs a Vercel team slug and id, a project id, and an owner/name repository",
+			"the relay layout needs a Vercel team slug and id, and a project id",
 		);
 	const vercelIssuer = `https://oidc.vercel.com/${input.vercelTeamSlug}`;
 	return Object.freeze({
@@ -126,12 +127,7 @@ export function relayStoreLayout(input: {
 			},
 		},
 		deployIdentity: "hobo-ci-deploy",
-		deployTrust: {
-			issuer: "https://token.actions.githubusercontent.com",
-			audiences: [`https://github.com/${owner}`],
-			subject: `repo:${input.repository}:ref:refs/heads/${branch}`,
-			claims: {},
-		},
+		deployTrust: githubDeployTrust(input.github, input.branch),
 		vercelTeamId: input.vercelTeamId,
 	});
 }
@@ -202,6 +198,7 @@ function bindingOf(input: {
 			vercelTeamId: input.layout.vercelTeamId,
 			claimBundleId: input.claimBundleId,
 			claimState: input.claimState,
+			deployOidcSubject: input.layout.deployTrust.subject,
 		}),
 		{ allowLoopback: input.allowLoopback },
 	);
@@ -466,4 +463,31 @@ export async function attachInfisicalCloud(input: {
 		claimState: "claimed",
 		allowLoopback: input.allowLoopback === true,
 	});
+}
+
+/**
+ * `hobo ci secret-store connect` against a store that already exists: replace
+ * the deploy identity's OIDC trust in place (PATCH), so it matches the
+ * subject the repository's tokens carry now. Creates nothing: no project, no
+ * identity, no second auth method. The owner's own token (INFISICAL_TOKEN,
+ * for this one run) authorizes it; HoBo keeps no credential afterwards.
+ */
+export async function updateDeployIdentityTrust(input: {
+	readonly siteUrl: string;
+	readonly ownerAccessToken: string;
+	readonly deployIdentityId: string;
+	readonly trust: InfisicalOidcTrust;
+	readonly fetch?: typeof fetch;
+}): Promise<void> {
+	try {
+		await createInfisicalAdmin({
+			siteUrl: originOf(input.siteUrl),
+			accessToken: input.ownerAccessToken,
+			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		}).updateOidcAuth(input.deployIdentityId, input.trust);
+	} catch (error) {
+		if (error instanceof Error)
+			return provider(error, "update the deploy identity's OIDC trust");
+		throw error;
+	}
 }

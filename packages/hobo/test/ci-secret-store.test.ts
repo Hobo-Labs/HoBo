@@ -60,6 +60,28 @@ const LAYOUT = {
 	repo: "Hobo-Labs/HoBo",
 };
 
+/**
+ * GitHub's REST API for the relay repository (the pact's shapes in
+ * @hobo/secret-store-claim); every other request goes to the local stand-in.
+ */
+const withGithub: typeof fetch = async (request, init) => {
+	const url = new URL(String(request));
+	if (url.host !== "api.github.com") return fetch(request, init);
+	if (url.pathname === "/repos/Hobo-Labs/HoBo")
+		return Response.json({
+			id: 1274791462,
+			name: "HoBo",
+			owner: { login: "Hobo-Labs", id: 344805935 },
+		});
+	if (url.pathname === "/repos/Hobo-Labs/HoBo/actions/oidc/customization/sub")
+		return Response.json({
+			use_default: true,
+			use_immutable_subject: true,
+			sub_claim_prefix: "repo:Hobo-Labs@344805935/HoBo@1274791462",
+		});
+	return Response.json({ message: "Not Found" }, { status: 404 });
+};
+
 function never(): Promise<string> {
 	throw new Error("this test does not prompt");
 }
@@ -151,8 +173,22 @@ describe("provision → claim open → claim finalize → deploy inputs", () => 
 			prompt: never,
 			now: () => NOW,
 			allowLoopback: true,
+			fetch: withGithub,
 		});
 		expect(provisioned.ok).toBe(true);
+		// The deploy identity trusts the subject GitHub issues for the
+		// repository, with its ids pinned: never the legacy repo:owner/name.
+		expect(
+			stub.identities.find((identity) => identity.name === "hobo-ci-deploy")
+				?.oidc,
+		).toMatchObject({
+			boundSubject:
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+			boundClaims: {
+				repository_id: "1274791462",
+				repository_owner_id: "344805935",
+			},
+		});
 		expect(provisioned.status).toBe("claim_pending");
 		expect(JSON.stringify(provisioned)).not.toMatch(PASSWORD_PATTERN);
 		expect(JSON.stringify(provisioned)).not.toContain("stub-admin-token");

@@ -67,6 +67,7 @@ Infisical's OpenAPI document (<https://app.infisical.com/api/docs/json>, read
 | Create a folder | `POST /api/v1/folders` `{workspaceId, environment, name, path}` |
 | Create a project identity with its role | `POST /api/v1/projects/{projectId}/identities` `{name, roles: [{role}]}` |
 | Trust a workload issuer | `POST /api/v1/auth/oidc-auth/identities/{identityId}` |
+| Replace that trust (repair) | `PATCH /api/v1/auth/oidc-auth/identities/{identityId}` |
 | Delete an identity / probe a token | `DELETE` / `GET /api/v1/identities/{identityId}` (401 = the token is dead) |
 
 `bootstrapInfisicalInstance` and `createInfisicalAdmin` make mutating calls
