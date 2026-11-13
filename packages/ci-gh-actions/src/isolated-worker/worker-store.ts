@@ -22,11 +22,14 @@ export function defaultWorkerDatabasePath(
  * A box worker owns its durable lease journal: a SQLite file
  * (`HOBO_CI_WORKER_DB`), never a shared database. `HOBO_CI_STORE` may only
  * name `sqlite`; the shared Postgres partition option was removed with the
- * hosted relay's database (ADR-0179).
+ * hosted relay's database (ADR-0179). How the box sees jobs is committed
+ * policy (`runnerRouting.box.jobAdmission`, plan 0026, 3.4), never the
+ * environment.
  */
 export function resolveWorkerStorePlan(
 	env: Readonly<Record<string, string | undefined>>,
 	home: string,
+	admission: "pull" | "push" = "pull",
 ): WorkerStorePlan {
 	if ((env.HOBO_CI_STORE || "sqlite") !== "sqlite")
 		throw new Error("HOBO_CI_STORE must be sqlite");
@@ -35,9 +38,8 @@ export function resolveWorkerStorePlan(
 		// Not HOBO_CI_DB: that is the relay's journal, and one SQLite file gets one writer.
 		path: env.HOBO_CI_WORKER_DB || defaultWorkerDatabasePath(env, home),
 	};
-	const admission = env.HOBO_CI_JOB_ADMISSION || "pull";
 	if (admission !== "pull" && admission !== "push")
-		throw new Error("HOBO_CI_JOB_ADMISSION must be pull or push");
+		throw new Error("runnerRouting.box.jobAdmission must be pull or push");
 	const jobPollMs = Number(env.HOBO_CI_JOB_POLL_MS || "5000");
 	if (!Number.isInteger(jobPollMs) || jobPollMs < 5_000 || jobPollMs > 300_000)
 		throw new Error("invalid HOBO_CI_JOB_POLL_MS");

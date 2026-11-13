@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "CI fleet balancing"
-description: "How the HoBo CI relay balances jobs across owned and rented runner providers: per-provider financial models rated by the pricing engine, admission through the shared budget policy, and a published route table for label providers."
+description: "How the HoBo CI relay balances jobs across owned and rented runner providers: per-provider financial models rated by the pricing engine, admission through the shared budget policy, and the box relay's routing slip ahead of the queue."
 tags: [hobo, ci, finops, fleet, design]
 ---
 
@@ -16,9 +16,9 @@ providers, compared on what a job would really cost there, admitted by the same
 [shared budget policy](./shared-budget-policy.md) that governs CI admission.
 
 The code is the `fleet` module of `@hobo/ci`
-([`packages/ci/src/fleet/`](../../packages/ci/src/fleet/)) and the route
-publisher in `@hobo/ci-gh-actions`
-([`fleet-routes.ts`](../../packages/ci-gh-actions/src/fleet-routes.ts)).
+([`packages/ci/src/fleet/`](../../packages/ci/src/fleet/)) and the routing
+slip issuer in `@hobo/ci-gh-actions`
+([`routing-slip-issuer.ts`](../../packages/ci-gh-actions/src/isolated-worker/routing-slip-issuer.ts)).
 Operator steps are in the
 [runner queue guide](../../packages/ci/RUNNER-QUEUE.md).
 
@@ -34,7 +34,8 @@ queued. That splits every provider into one of two kinds.
 
 Injected capacity is the only kind that can rescue a job that is already
 waiting. Label capacity has to be chosen ahead of the queue, so the relay
-publishes its choice where a workflow can read it without running anything.
+writes its choice where a workflow can read it without running anything: the
+routing slip ([ADR-0181](./adr/routing-slips.md#adr-0181)).
 
 ## Financial models
 
@@ -142,43 +143,45 @@ An account without an authored budget policy still goes through the same
 evaluator, under a policy that says exactly what its legacy ceiling said: one
 budget and no other constraint.
 
-## The route table
+## The routing slip (the route table's successor)
 
-After each dispatch pass the relay builds the fleet from the account's
-connected offers and its leases, balances three representative jobs, and writes
-the result to the repository variable `HOBO_CI_FLEET_ROUTES`:
+The relay used to write a route table to the repository variable
+`HOBO_CI_FLEET_ROUTES` after each dispatch pass. That publisher is deleted
+([plan 0026](../plans/0026-relay-routing-slips.md), 3.7): no environment or
+repository variable carries routing (R2), and nothing ever read the table. At
+each start the mesh leader deletes `HOBO_CI_FLEET_ROUTES`, `_STATE`,
+`_CAPACITY` and the five human-set route variables; a 403 (the App's manifest
+does not request repository variables) is logged once and changes nothing,
+since no workflow reads them.
+
+The relay's answer now travels as a **routing slip**
+([ADR-0181](./adr/routing-slips.md#adr-0181)): the message of a parentless
+commit at `refs/hobo/routing-slip`, written by the box relay that leads the
+mesh and read by the **Route runners** job with its own token. Per class
+(`pr`, `fork`, `trunk`, the classes `#FleetRoutes` named) it gives a `runner`,
+a `tier` and a `reason` code, never a figure:
 
 ```json
-{"fork":"hobo","pr":"ubuntu-24.04","trunk":"hobo-trunk"}
+{"pr":{"runner":"hobo","tier":"fleet","reason":"fleet-busy"},
+ "fork":{"runner":"hobo","tier":"fleet","reason":"fleet-busy"},
+ "trunk":{"runner":"ubuntu-24.04","tier":"github","reason":"no-capacity"}}
 ```
 
-The pass writes no other repository variable. A free-slot record it once
-published beside the table, and the mesh's routing snapshot, are retired
-([plan 0025](../plans/0025-relay-owned-runner-routing.md), section 6.8):
-judging raw capacity in a workflow repeats, outside the relay, a decision only
-the relay can make
-([finding 146](../ci/findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)).
-The **Route runners** job reads neither that record nor this table. It asks the
-relay instead for a fleet verdict: which fleet labels new work should stay off
-right now ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). Dispatch still counts
-free slots on the box and the rest of the mesh for its own trunk defer, but
-`@hobo/ci` no longer defines the published record or its CUE shape: the only
-fleet record a repository variable carries is `#FleetRoutes`.
+The fleet is refused for a class only when no live node serves its label
+(`no-node`), when work assigned to it has started nothing for ten minutes
+(`stalled`), or when every node refuses for a reason other than its own
+running jobs and no counted external pool has a free runner (`no-capacity`).
+A busy box is `fleet-busy`, never refused (R4). A pool that cannot be counted
+is unknown and refuses nothing (R3). The slip is written on a change and as a
+three-minute heartbeat, capped at 20 writes a minute and 300 an hour, and
+expires ten minutes after it is issued; with no fresh slip the route job falls
+back to the queue rule. The box's slot split, pools and holds are committed in
+`runnerRouting` (`.hobo/ci.json`), not set on the box.
 
-A class whose best member is injected, or that has no admitted member, keeps
-the label it has today, because that is where injected capacity can still come
-to it.
-A write happens only when the value changes, changes are spaced at least a
-minute apart so the label cannot flap with every freed slot, and a refused or
-failed write is logged and never disturbs admission. Publishing is off unless
-the box daemon runs with `HOBO_CI_FLEET_ROUTES=1`, and the GitHub App needs
-repository **Variables: write**.
-
-The table is computed at most every fifteen seconds per repository, and a
-failed lookup waits the same interval, so the two-second dispatch pass neither
-re-rates the fleet nor retries GitHub on every tick. The published value is
-constrained by `#FleetRoutes` in `packages/ci/data-models/ci.cue`, and the
-repository read and variable writes are in the GitHub App consumer contract.
+The slip does not yet carry the balanced choice between paid label providers
+that the route table computed: its classes say fleet, local box or
+GitHub-hosted. `fleetRouteTable` and `#FleetRoutes` remain in `@hobo/ci` for
+that.
 
 The rate, included minutes and ceiling of each member come from the connected
 offer, which is what the operator observed for this account. Usage that the
@@ -196,8 +199,8 @@ would post for a new offer.
   relay records those jobs from their `workflow_job` events, a route to a paid
   label provider is bounded only by that provider's own spend limit. This must
   be closed before a workflow reads the table for a paid provider.
-- **Workflows do not read `HOBO_CI_FLEET_ROUTES` yet.** Indexing the route
-  table per job class is still outstanding. Jobs that run off the box still
+- **The slip does not name paid label providers.** Routing a class to the
+  provider `fleetRouteTable` ranks first is still outstanding. Jobs that run off the box still
   assume its toolchain image and mounts.
 - **Host drivers for the sandbox providers** (Agent37, Modal, Boat, Daytona,
   E2B, Lizard, Northflank, Freestyle, Blaxel, Cloudflare Sandbox and Runloop).

@@ -28,7 +28,6 @@ import {
 } from "./admission-order.js";
 import type { FleetCapacityWitness } from "./fleet-absorb.js";
 import { fleetPeerAbsorbSlots, fleetWitnessFields } from "./fleet-absorb.js";
-import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -313,12 +312,6 @@ export class HostedRelay {
 			storageAdmission?: WorkerStorageAdmission;
 			/** Per-job byte/inode reservation for storage admission (learned + class budget). */
 			storageJobReserve?: (jobName: string) => WorkerStorageReserve;
-			/**
-			 * Publishes the fleet route table after each dispatch pass. Unset: the
-			 * relay balances nothing ahead of the queue and every job stays on its
-			 * hobo label.
-			 */
-			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
@@ -2011,31 +2004,7 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
-		await this.publishFleetRoutes();
 		return pending.length;
-	}
-	/** One table per connected repository, from the state this pass just left. */
-	private async publishFleetRoutes(): Promise<void> {
-		const publisher = this.options.fleetRoutes;
-		if (!publisher) return;
-		for (const connection of this.options.config.connections) {
-			const account = this.options.config.accounts.find(
-				(entry) => entry.id === connection.accountId,
-			);
-			if (!account) continue;
-			try {
-				await publisher.publish({
-					installationId: connection.installationId,
-					repository: connection.repository,
-					account,
-					leases: () => this.options.store.accountLeases(account.id),
-					isolatedOnly: connection.isolatedOnly,
-					at: this.now(),
-				});
-			} catch {
-				/* Routing ahead of the queue is advisory; admission already ran. */
-			}
-		}
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);

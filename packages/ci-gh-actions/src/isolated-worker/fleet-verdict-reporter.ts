@@ -11,20 +11,21 @@
  * Modes: `off` (no reporter), `shadow` (evaluates, logs and reports with
  * `mode: "shadow"`, which the relay keeps but never serves) and `report`.
  * On drain it sends one last report that blocks nothing, best effort.
+ *
+ * The box daemon no longer wires it (plan 0026, 3.9): the box relay issues
+ * routing slips instead (`routing-slip-issuer.ts`), and its settings, which
+ * came from `HOBO_CI_FLEET_VERDICT_*` environment variables, are gone (R2).
+ * The hosted relay's verdict routes and this reporter go with layer 04.
  */
-import { z } from "zod";
 import {
-	FLEET_VERDICT_MODES,
 	type FleetVerdictMode,
 	fleetVerdictReportJson,
 } from "../fleet-verdict.js";
 import {
-	FLEET_REPORTER_ID,
 	type FleetVerdictSigner,
 	signedFleetVerdictRequest,
 } from "../fleet-verdict-auth.js";
 import {
-	type FleetExternalPool,
 	type FleetVerdictEvaluation,
 	fleetRunnerNamePrefix,
 } from "./fleet-verdict-evaluator.js";
@@ -272,116 +273,3 @@ export function createFleetVerdictReporter(
 export type FleetVerdictReporter = ReturnType<
 	typeof createFleetVerdictReporter
 >;
-
-const Pools = z
-	.array(
-		z
-			.object({
-				labels: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u)).min(1),
-				runnerNamePrefix: z.string().min(1).max(128),
-				maxRunners: z.number().int().min(0).max(10_000),
-			})
-			.strict(),
-	)
-	.max(32);
-
-/** The reporter's box settings (plan 0025, 6.3), parsed once at start. */
-export type FleetVerdictReporterSettings =
-	| Readonly<{ mode: "off" }>
-	| Readonly<{
-			mode: FleetVerdictMode;
-			origin: string;
-			reporterId: string;
-			pools: readonly FleetExternalPool[];
-			minFreeRunners: number;
-			enterMs: number;
-			exitMs: number;
-	  }>;
-
-function holdMs(
-	env: Readonly<Record<string, string | undefined>>,
-	name: string,
-	fallback: number,
-): number {
-	const value = env[name];
-	if (value === undefined || value === "") return fallback;
-	if (!/^\d{1,8}$/u.test(value)) throw new Error(`invalid ${name}`);
-	const ms = Number(value);
-	if (ms < FLEET_VERDICT_SAMPLE_MS || ms > 3_600_000)
-		throw new Error(`invalid ${name}: between 10000 and 3600000 ms`);
-	return ms;
-}
-
-function relayOrigin(value: string | undefined): string {
-	let url: URL;
-	try {
-		url = new URL(value ?? "");
-	} catch {
-		throw new Error("invalid HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN");
-	}
-	if (
-		url.protocol !== "https:" ||
-		url.username ||
-		url.password ||
-		url.search ||
-		url.hash ||
-		(url.pathname !== "/" && url.pathname !== "")
-	)
-		throw new Error(
-			"invalid HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN: an https origin, nothing more",
-		);
-	return url.origin;
-}
-
-/**
- * Reads `HOBO_CI_FLEET_VERDICT_MODE` and the settings it needs. Any invalid
- * value throws, so the daemon refuses to start as it does for its other
- * settings. `meshNodeId` is the reporter id's default when there is a mesh.
- */
-export function parseFleetVerdictReporterSettings(
-	env: Readonly<Record<string, string | undefined>>,
-	meshNodeId: string | undefined,
-): FleetVerdictReporterSettings {
-	const mode = env.HOBO_CI_FLEET_VERDICT_MODE ?? "off";
-	if (mode === "off" || mode === "") return { mode: "off" };
-	const known = FLEET_VERDICT_MODES.find((entry) => entry === mode);
-	if (!known)
-		throw new Error(
-			"invalid HOBO_CI_FLEET_VERDICT_MODE: expected off, shadow or report",
-		);
-	const reporterId = env.HOBO_CI_FLEET_REPORTER_ID || meshNodeId;
-	if (!reporterId)
-		throw new Error(
-			"missing HOBO_CI_FLEET_REPORTER_ID: required when there is no mesh",
-		);
-	if (!FLEET_REPORTER_ID.test(reporterId))
-		throw new Error(
-			"invalid HOBO_CI_FLEET_REPORTER_ID: expected ^[A-Za-z0-9_-]{1,64}$",
-		);
-	let pools: readonly FleetExternalPool[];
-	try {
-		pools = Pools.parse(
-			JSON.parse(env.HOBO_CI_FLEET_EXTERNAL_POOLS_JSON || "[]"),
-		);
-	} catch {
-		throw new Error("invalid HOBO_CI_FLEET_EXTERNAL_POOLS_JSON");
-	}
-	const minimum = env.HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS || "1";
-	if (!/^[1-9]\d{0,3}$/u.test(minimum))
-		throw new Error(
-			"invalid HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS: an integer of at least 1",
-		);
-	return {
-		mode: known,
-		origin: relayOrigin(env.HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN),
-		reporterId,
-		pools,
-		minFreeRunners: Number(minimum),
-		enterMs: holdMs(
-			env,
-			"HOBO_CI_FLEET_VERDICT_ENTER_MS",
-			FLEET_VERDICT_ENTER_MS,
-		),
-		exitMs: holdMs(env, "HOBO_CI_FLEET_VERDICT_EXIT_MS", FLEET_VERDICT_EXIT_MS),
-	};
-}

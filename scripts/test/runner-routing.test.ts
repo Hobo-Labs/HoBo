@@ -5,7 +5,13 @@ import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	LOCAL_HOST_RUNNER_LABEL,
 } from "../../packages/ci/src/fleet-overflow.ts";
-import { parseFleetVerdictReporterSettings } from "../../packages/ci-gh-actions/src/isolated-worker/fleet-verdict-reporter.ts";
+import {
+	DEFAULT_CAPACITY_VOLATILITY_MB,
+	DEFAULT_FLEET_MIN_FREE_RUNNERS,
+	DEFAULT_ROUTING_STALL_MS,
+	DEFAULT_RUNNER_ROUTING,
+	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
+} from "../../packages/ci-gh-actions/src/isolated-worker/box-routing-policy.ts";
 import {
 	FLEET_VERDICT_ENTER_MS,
 	FLEET_VERDICT_EXIT_MS,
@@ -235,18 +241,17 @@ describe("the routing slip, read without dependencies (M4)", () => {
 });
 
 describe("committed runnerRouting equals the code's defaults (M8)", () => {
+	// The box daemon reads runnerRouting from its checkout (plan 0026, 3.4)
+	// and falls back to DEFAULT_RUNNER_ROUTING when the block is absent.
 	const daemon = repoFile(
 		"packages/ci-gh-actions/scripts/isolated-worker-daemon-main.mts",
 	);
-	/** The literal default the daemon falls back to for one environment variable. */
-	const daemonDefault = (name: string): number => {
-		const match = new RegExp(
-			`process\\.env\\.${name} \\?\\? "(\\d+)"`,
-			"u",
-		).exec(daemon);
-		assert.ok(match?.[1], `the daemon has a default for ${name}`);
-		return Number(match[1]);
-	};
+
+	it("box: the daemon reads it from its checkout, and its fallback equals it", () => {
+		assert.ok(committed);
+		assert.match(daemon, /readBoxRoutingPolicy\(checkoutRoot\)/u);
+		assert.deepEqual(committed, DEFAULT_RUNNER_ROUTING);
+	});
 
 	it("route: no pin, the queue limits and the four labels", () => {
 		assert.ok(committed);
@@ -283,22 +288,15 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 
 	it("verdict: the reporter's free-runner floor, hysteresis and pools", () => {
 		assert.ok(committed);
-		const settings = parseFleetVerdictReporterSettings(
-			{
-				HOBO_CI_FLEET_VERDICT_MODE: "shadow",
-				HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN: "https://relay.example",
-				HOBO_CI_FLEET_REPORTER_ID: "box",
-			},
-			undefined,
+		assert.equal(
+			committed.verdict.minFreeRunners,
+			DEFAULT_FLEET_MIN_FREE_RUNNERS,
 		);
-		assert.equal(settings.mode, "shadow");
-		assert.equal(committed.verdict.minFreeRunners, settings.minFreeRunners);
 		assert.equal(committed.verdict.enterMs, FLEET_VERDICT_ENTER_MS);
 		assert.equal(committed.verdict.exitMs, FLEET_VERDICT_EXIT_MS);
-		assert.equal(committed.verdict.enterMs, settings.enterMs);
-		assert.equal(committed.verdict.exitMs, settings.exitMs);
-		assert.deepEqual(committed.externalPools, settings.pools);
-		// No code holds a stall limit yet: plan 0026 (3.3) sets it at ten minutes.
+		assert.deepEqual(committed.externalPools, []);
+		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);
+		// Plan 0026 (3.3) sets the stall limit at ten minutes.
 		assert.equal(committed.verdict.stallMs, 10 * 60_000);
 	});
 
@@ -320,15 +318,12 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		);
 		assert.equal(
 			committed.box.capacityVolatilityMb,
-			daemonDefault("HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB"),
+			DEFAULT_CAPACITY_VOLATILITY_MB,
 		);
-		assert.equal(
-			committed.box.trunkLend,
-			daemonDefault("HOBO_CI_WORKER_TRUNK_LEND"),
-		);
+		assert.equal(committed.box.trunkLend, 0);
 		assert.equal(
 			committed.box.trunkHeadroomFleetDeferMs,
-			daemonDefault("HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS"),
+			DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
 		);
 	});
 

@@ -6,13 +6,12 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from its own SQLite journal. */
 import { toJsonString } from "@bufbuild/protobuf";
+import { ConfigurationSchema, type Lease, parseConfiguration } from "@hobo/ci";
 import {
-	ConfigurationSchema,
-	type Lease,
-	memoryAdmitHeadroom,
-	parseConfiguration,
-} from "@hobo/ci";
-import { createTrustedMeshBoard, meshAdvertRejected } from "@hobo/ci/mesh";
+	createTrustedMeshBoard,
+	meshAdvertRejected,
+	meshLeaderId,
+} from "@hobo/ci/mesh";
 import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
@@ -26,9 +25,7 @@ import {
 	createContainerStallGuard,
 	createDepsImageEnsurer,
 	createFleetPickupMemory,
-	createFleetRoutePublisher,
-	createFleetVerdictReporter,
-	createFleetVerdictSequence,
+	createFleetVerdictHolds,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -46,23 +43,25 @@ import {
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
+	createRoutingSlipIssuer,
+	createRoutingStallWatch,
 	createStoragePeaks,
 	createWorkerMemoryAdmission,
 	createWorkerMesh,
 	createWorkerStorageAdmission,
 	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
 	type DepsImageProcessRequest,
+	decideRoutingSlipClasses,
 	defaultDepsRoot,
 	defaultGitMirrorFallbackRoot,
 	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
 	evaluateFleetVerdict,
 	type FleetJobsSeen,
-	type FleetVerdictReporter,
+	type FleetRunnersView,
 	freeDiskMb,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
-	hostPressureBlocksAdmission,
 	hostResourcePressureLogFields,
 	type IsolatedWorkerStore,
 	isIsolatedContainerOffer,
@@ -75,12 +74,14 @@ import {
 	meshReliabilityJournal,
 	meshReliabilityResetToken,
 	meshSettingsFromEnv,
-	parseFleetVerdictReporterSettings,
 	parseWorkerStopMode,
+	ROUTING_SLIP_SAMPLE_MS,
 	readAvailableMemoryMb,
+	readBoxRoutingPolicy,
 	readHostHealthSample,
 	readHostMemory,
 	readHostResourcePressureSample,
+	readRepositoryRunners,
 	refreshHeldPruneWitnessFromStore,
 	relayTraceSinkFromEnv,
 	resolvedStorageReserve,
@@ -88,6 +89,9 @@ import {
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
+	retireRepositoryVariables,
+	routingEnvironmentNamesSet,
+	runnerRoutingLabels,
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
@@ -247,7 +251,25 @@ function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
 	});
 }
 
-const plan = resolveWorkerStorePlan(process.env, homedir());
+// Routing policy is committed configuration (plan 0026, 3.4; ADR-0181): the
+// `runnerRouting` block of `.hobo/ci.json` in this daemon's own checkout. No
+// environment variable chooses a label, a tier, a pool, a slot split, a limit
+// or a reporter here (R2).
+const checkoutRoot = defaultDepsRoot(import.meta.url);
+const routingPolicy = readBoxRoutingPolicy(checkoutRoot);
+const routing = routingPolicy.policy;
+// The commit this daemon runs, for its start log and every slip it writes.
+const daemonCommit = await exec("git", ["rev-parse", "HEAD"], {
+	cwd: checkoutRoot,
+})
+	.then(({ stdout }) => stdout.trim())
+	.catch(() => "")
+	.then((sha) => (/^[0-9a-f]{40}$/u.test(sha) ? sha : undefined));
+const plan = resolveWorkerStorePlan(
+	process.env,
+	homedir(),
+	routing.box.jobAdmission,
+);
 const appId = required("HOBO_CI_GITHUB_APP_ID");
 const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 	? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
@@ -292,10 +314,26 @@ const webhookSecret =
 // is per process, not a container budget: native code, pnpm/turbo children and page
 // cache must fit in the class too.
 // One slot is reserved for hobo-trunk jobs by default when there are at least two.
-// Shared-label jobs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
-// The offer's concurrency must equal the slot count.
+// Shared-label jobs never borrow it unless runnerRouting.box.trunkLend is 1.
+// The offer's concurrency must equal the slot count, so the box's own offers
+// take it from the committed policy, whatever the configuration says.
 const { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk } =
-	resolveWorkerSlotConfig(process.env);
+	resolveWorkerSlotConfig(routing.box);
+for (const account of configuration.accounts)
+	for (const offer of account.offers)
+		if (
+			isIsolatedContainerOffer(offer) &&
+			offer.providerAccountId === workerAccountId &&
+			offer.concurrency !== slots
+		) {
+			log("hobo_ci_isolated_worker_offer_concurrency", {
+				accountId: account.id,
+				offerId: offer.id,
+				configured: offer.concurrency,
+				slots,
+			});
+			offer.concurrency = slots;
+		}
 const workRoot =
 	process.env.HOBO_CI_WORKER_WORK_ROOT ??
 	join(
@@ -322,15 +360,7 @@ const hostMemMb = Math.min(
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
-const capacityVolatilityMb = Number(
-	process.env.HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB ?? "1024",
-);
-if (
-	!Number.isFinite(capacityVolatilityMb) ||
-	capacityVolatilityMb < 0 ||
-	!Number.isInteger(capacityVolatilityMb)
-)
-	throw new Error("invalid HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB");
+const capacityVolatilityMb = routing.box.capacityVolatilityMb;
 let lastHostPressureLogAt = 0;
 const hostPressureSample = () => readHostResourcePressureSample(Date.now());
 const containerStallGuard = createContainerStallGuard({
@@ -358,23 +388,7 @@ const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	memoryRampMs,
 	availableWindowMs: memoryLowWaterMs,
 });
-const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
-if (trunkLend !== "0" && trunkLend !== "1")
-	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
-const lendTrunkSlots = trunkLend === "1";
-// Off unless set: the relay then keeps HOBO_CI_FLEET_ROUTES current so new jobs
-// can ask a label provider for a runner while the box is full. The App needs
-// repository "Variables: write" for it; a refused write is logged and ignored.
-const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
-if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
-	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
-const publishFleetRoutes = fleetRoutesFlag === "1";
-// The fleet verdict reporter (ADR-0180): off unless HOBO_CI_FLEET_VERDICT_MODE
-// is shadow or report. Its id defaults to the mesh node id when there is a mesh.
-const fleetVerdictSettings = parseFleetVerdictReporterSettings(
-	process.env,
-	plan.admission === "pull" ? meshBootSettings?.nodeId : undefined,
-);
+const lendTrunkSlots = routing.box.trunkLend === 1;
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -840,38 +854,6 @@ try {
 		connections: async () =>
 			(await store.configuration())?.configuration?.connections ?? [],
 	});
-	const fleetRoutes = publishFleetRoutes
-		? createFleetRoutePublisher({
-				github,
-				log,
-				unhealthyOfferIds: (account) => {
-					const bad = new Set<string>();
-					const isolated = account.offers.filter(
-						(offer) =>
-							isIsolatedContainerOffer(offer) &&
-							offer.providerAccountId === workerAccountId,
-					);
-					if (hostHealth.current().state === "critical") {
-						for (const offer of isolated) bad.add(offer.id);
-						return bad;
-					}
-					const availableMb = readAvailableMemoryMb();
-					const pressure = hostPressureSample();
-					if (
-						hostPressureBlocksAdmission(pressure) ||
-						!memoryAdmitHeadroom(
-							availableMb,
-							memoryConfig.classes.heavy,
-							memoryConfig.reserveMb,
-							capacityVolatilityMb,
-						)
-					) {
-						for (const offer of isolated) bad.add(offer.id);
-					}
-					return bad;
-				},
-			})
-		: undefined;
 	const localFleetCapacitySnapshot = async () => {
 		const active = await store.activeLeases();
 		const hoboFreeSlots = localWorkerFreeSlots(slots, active);
@@ -884,15 +866,7 @@ try {
 			arcFreeSlots: Math.max(0, meshFree - hoboFreeSlots),
 		};
 	};
-	const headroomFleetDeferMs = Number(
-		process.env.HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS ?? "45000",
-	);
-	if (
-		!Number.isFinite(headroomFleetDeferMs) ||
-		headroomFleetDeferMs < 1_000 ||
-		!Number.isInteger(headroomFleetDeferMs)
-	)
-		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS");
+	const headroomFleetDeferMs = routing.box.trunkHeadroomFleetDeferMs;
 	const unlaunchedReserveMs = Number(
 		process.env.HOBO_CI_UNLAUNCHED_RESERVE_MS ?? "25000",
 	);
@@ -940,7 +914,6 @@ try {
 		storageAdmission,
 		storageJobReserve,
 		mergeQueuePositions: () => mergeQueueCache.snapshot(),
-		fleetRoutes,
 		headroomFleetDeferMs,
 		unlaunchedReservationRelease: {
 			boundMs: unlaunchedReserveMs,
@@ -1378,6 +1351,8 @@ try {
 	}
 
 	log("hobo_ci_isolated_worker_started", {
+		commit: daemonCommit ?? "unknown",
+		routingPolicy: routingPolicy.source,
 		store: plan.store.kind,
 		admission: plan.admission,
 		publicOrigin,
@@ -1397,7 +1372,6 @@ try {
 		trunkSlots,
 		mergeGroupLeases,
 		lendTrunkSlots,
-		publishFleetRoutes,
 		workRoot,
 		pnpmStoreMounted: pnpmStore !== "",
 		pnpmStorePruneIntervalMs,
@@ -1405,6 +1379,15 @@ try {
 		drainTimeoutMs,
 		stopMode,
 	});
+	// Routing comes from committed policy (plan 0026, 3.4): name, once, any
+	// routing variable still set on the box, so an override that stopped
+	// applying is visible. Never its value.
+	const ignoredRoutingNames = routingEnvironmentNamesSet(process.env);
+	if (ignoredRoutingNames.length > 0)
+		log("hobo_ci_routing_environment_ignored", {
+			names: ignoredRoutingNames.join(","),
+			policy: routingPolicy.source,
+		});
 
 	gcTimer = setInterval(runGc, gcIntervalMs);
 	pollTimer = setInterval(() => {
@@ -1452,13 +1435,19 @@ try {
 	}
 	runDepsImageEnsure();
 
-	// The fleet verdict reporter (ADR-0180; plan 0025, 6.1-6.3). It evaluates
-	// the box every 10 s on its own unreferenced timer and sends signed
-	// reports to the hosted relay; nothing here awaits it.
-	const fleetLabels = trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"];
-	const evaluateFleet = async () => {
+	// The routing slip (plan 0026, 3.2-3.3; ADR-0181). Every 10 s, on its own
+	// unreferenced timer, the mesh leader decides each connected repository's
+	// routing and writes it to refs/hobo/routing-slip when it changes and as a
+	// heartbeat. Nothing in admission, dispatch or the poller awaits it.
+	const fleetLabels =
+		trunkSlots > 0
+			? [routing.labels.fleet, routing.labels.trunk]
+			: [routing.labels.fleet];
+	const evaluateFleet = async (
+		runners: FleetRunnersView | undefined,
+		active: Awaited<ReturnType<typeof store.activeLeases>>,
+	) => {
 		const nowMs = Date.now();
-		const active = await store.activeLeases();
 		const idle =
 			active.length === 0 &&
 			liveLaunchSlotsInUse === 0 &&
@@ -1498,12 +1487,8 @@ try {
 				reserveMb: memoryConfig.reserveMb,
 				volatilityMb: capacityVolatilityMb,
 			},
-			pools:
-				fleetVerdictSettings.mode === "off" ? [] : fleetVerdictSettings.pools,
-			minFreeRunners:
-				fleetVerdictSettings.mode === "off"
-					? 1
-					: fleetVerdictSettings.minFreeRunners,
+			pools: routing.externalPools,
+			minFreeRunners: routing.verdict.minFreeRunners,
 			poll:
 				seen === undefined
 					? undefined
@@ -1515,54 +1500,167 @@ try {
 								startedAtMs: Date.parse(job.startedAt ?? seen.completedAt),
 							})),
 						},
+			runners: { view: runners },
 			mesh: peers,
 			ownLeaseIds,
 			pickups,
 		});
 	};
-	let fleetReporter: FleetVerdictReporter | undefined;
-	if (fleetVerdictSettings.mode === "off")
-		log("hobo_ci_fleet_verdict_state", { mode: "off" });
-	else {
-		// The same key as the mesh's, made on first start if there is none;
-		// its public half is what enrollment lists.
-		const reporterIdentity =
-			meshIdentity ??
-			(await loadMeshIdentity(
-				process.env.HOBO_CI_MESH_KEY_FILE ??
-					join(dirname(plan.store.path), "mesh-node.key"),
-			));
-		fleetReporter = createFleetVerdictReporter({
-			mode: fleetVerdictSettings.mode,
-			reporterId: fleetVerdictSettings.reporterId,
-			origin: fleetVerdictSettings.origin,
-			identity: reporterIdentity,
-			labels: fleetLabels,
-			evaluate: evaluateFleet,
-			repositories: async () => [
-				...new Set(
-					((await store.configuration())?.configuration?.connections ?? []).map(
-						(connection) => connection.repository,
-					),
-				),
-			],
-			sequence: createFleetVerdictSequence(
-				join(dirname(plan.store.path), "fleet-verdict-state.json"),
-			),
-			enterMs: fleetVerdictSettings.enterMs,
-			exitMs: fleetVerdictSettings.exitMs,
-			log,
+	// GitHub's runner list per repository, read only when pools are declared
+	// and no more than every 30 s; a failed read is unknown (R3).
+	const runnerViews = new Map<string, FleetRunnersView | undefined>();
+	const runnerViewReadAt = new Map<string, number>();
+	const readRunners = async (
+		installationId: number,
+		repository: string,
+	): Promise<FleetRunnersView | undefined> => {
+		const nowMs = Date.now();
+		if (routing.externalPools.length === 0)
+			return { readAtMs: nowMs, runners: [] };
+		if (nowMs - (runnerViewReadAt.get(repository) ?? 0) < 30_000)
+			return runnerViews.get(repository);
+		runnerViewReadAt.set(repository, nowMs);
+		const view = await readRepositoryRunners(
+			github,
+			{ installationId, repository },
+			nowMs,
+		);
+		runnerViews.set(repository, view);
+		return view;
+	};
+	const connectedTargets = async () => {
+		const seen = new Map<string, number>();
+		for (const connection of (await store.configuration())?.configuration
+			?.connections ?? [])
+			if (!seen.has(connection.repository))
+				seen.set(connection.repository, connection.installationId);
+		return [...seen].map(([repository, installationId]) => ({
+			repository,
+			installationId,
+		}));
+	};
+	const slipHolds = new Map<
+		string,
+		ReturnType<typeof createFleetVerdictHolds>
+	>();
+	const stallWatch = createRoutingStallWatch({
+		stallMs: routing.verdict.stallMs,
+		startedAtMs: Date.now(),
+	});
+	const labelOfLease = (lease: Lease) =>
+		workerRunnerLabels.get(`${lease.repository}:${lease.jobId}`) ===
+		routing.labels.trunk
+			? routing.labels.trunk
+			: routing.labels.fleet;
+	const decideSlip = async (repository: string) => {
+		const nowMs = Date.now();
+		const target = (await connectedTargets()).find(
+			(entry) => entry.repository === repository,
+		);
+		const active = await store.activeLeases();
+		const evaluation = await evaluateFleet(
+			target ? await readRunners(target.installationId, repository) : undefined,
+			active,
+		);
+		let holds = slipHolds.get(repository);
+		if (!holds) {
+			holds = createFleetVerdictHolds({
+				labels: fleetLabels,
+				enterMs: routing.verdict.enterMs,
+				exitMs: routing.verdict.exitMs,
+			});
+			slipHolds.set(repository, holds);
+		}
+		holds.observe(nowMs, new Set(evaluation.blocked.keys()));
+		// Live nodes serving each label, and which of them have a free slot.
+		const served = new Set<string>();
+		const free = new Set<string>();
+		if (!draining) {
+			for (const label of fleetLabels) served.add(label);
+			if (slots - liveLaunchSlotsInUse > 0)
+				for (const label of fleetLabels) free.add(label);
+		}
+		if (mesh && meshBoard)
+			for (const node of await meshBoard.nodes()) {
+				if (
+					node.id === mesh.self().id ||
+					node.validUntilMs <= nowMs ||
+					meshAdvertRejected(node, nowMs)
+				)
+					continue;
+				for (const label of node.labels) {
+					served.add(label);
+					if (node.healthy && node.freeSlots > 0) free.add(label);
+				}
+			}
+		const stalled = stallWatch.observe(
+			nowMs,
+			active
+				.filter((lease) => lease.repository === repository)
+				.map((lease) => ({
+					id: lease.id,
+					label: labelOfLease(lease),
+					waiting: lease.state === "reserved",
+					started: lease.state === "running",
+					assignedAtMs: Date.parse(lease.createdAt) || nowMs,
+				})),
+		);
+		return decideRoutingSlipClasses({
+			policy: routing,
+			served,
+			refused: holds.blocked(),
+			stalled,
+			full: new Set(fleetLabels.filter((label) => !free.has(label))),
 		});
-		log("hobo_ci_fleet_verdict_state", {
-			mode: fleetVerdictSettings.mode,
-			status: "started",
-			reporterId: fleetVerdictSettings.reporterId,
-			origin: fleetVerdictSettings.origin,
-			labels: fleetLabels.join(","),
-			publicKey: reporterIdentity.publicKey,
+	};
+	const slipNodeId =
+		meshSettings?.nodeId ??
+		hostname()
+			.replace(/[^A-Za-z0-9_-]/g, "-")
+			.slice(0, 64);
+	const slipIssuer = daemonCommit
+		? createRoutingSlipIssuer({
+				github,
+				labels: runnerRoutingLabels(routing),
+				relay: { nodeId: slipNodeId, commit: daemonCommit },
+				// The existing election: the live node with the lowest id leads;
+				// a box without a mesh leads itself.
+				leader: async () =>
+					!mesh || !meshBoard
+						? true
+						: meshLeaderId(
+								await meshBoard.nodes(),
+								Date.now(),
+								mesh.self().id,
+							) === mesh.self().id,
+				targets: connectedTargets,
+				decide: decideSlip,
+				enabled: () => !draining,
+				log,
+				// Once per start, on the leader: delete the retired variables
+				// (plan 0026, 3.7). A 403 is logged once and never retried here.
+				onFirstLead: async () => {
+					for (const target of await connectedTargets())
+						await retireRepositoryVariables(github, {
+							installationId: target.installationId,
+							repository: target.repository,
+							names: routing.retiredVariables,
+							log,
+						});
+				},
+			})
+		: undefined;
+	if (!slipIssuer)
+		log("hobo_ci_slip_leader", {
+			leader: false,
+			nodeId: slipNodeId,
+			reason: "commit-unknown",
 		});
-		fleetReporter.start();
-	}
+	const slipTimer = slipIssuer
+		? setInterval(() => void slipIssuer.tick(), ROUTING_SLIP_SAMPLE_MS)
+		: undefined;
+	slipTimer?.unref();
+	void slipIssuer?.tick();
 
 	let shutdownOnce: Promise<void> | undefined;
 	let runningWorkerContainers = 0;
@@ -1583,8 +1681,8 @@ try {
 			meshDraining = true;
 			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
 			await mesh?.advertise();
-			// One last fleet verdict that blocks nothing, best effort.
-			await fleetReporter?.clear().catch(() => undefined);
+			// No more slips: the last one expires on its own (plan 0026, 4).
+			if (slipTimer) clearInterval(slipTimer);
 			const backgroundKinds = (): (
 				| "tick"
 				| "inbox"
@@ -1693,17 +1791,6 @@ try {
 				});
 			}
 			if (stopMode === "drain") await retiredSweep.drain();
-			if (stopMode === "drain" && fleetRoutes) {
-				// Leaving for good: nobody will keep the route table current, so
-				// every class goes back to its hobo label. A handoff leaves it,
-				// because the successor takes over within seconds.
-				const state = await store.configuration().catch(() => undefined);
-				for (const connection of state?.configuration?.connections ?? [])
-					await fleetRoutes.reset({
-						installationId: connection.installationId,
-						repository: connection.repository,
-					});
-			}
 			await closeStore();
 			await Promise.race([
 				natsMesh?.close().catch(() => undefined),

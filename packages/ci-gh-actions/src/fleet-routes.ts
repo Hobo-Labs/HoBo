@@ -1,315 +1,102 @@
 /**
- * Publishes the fleet's route table where workflows can read it.
+ * Retires the repository variables that used to carry routing (plan 0026,
+ * 3.7; ADR-0181).
  *
- * On every dispatch pass the relay balances the account's connected offers
- * through the budget policy (`@hobo/ci` fleet) and gets, for each class of
- * job, the label a new job should ask for. That table goes into one
- * repository variable. GitHub evaluates `runs-on` before a job is queued, so
- * this is the only moment a label provider can be chosen for it.
+ * Routing travels as a routing slip (`routing-slip.ts`) and committed policy
+ * (`runnerRouting` in `.hobo/ci.json`); no repository variable carries it. The
+ * `HOBO_CI_FLEET_ROUTES` publisher that lived here is gone. What is left is
+ * the delete: at each daemon start the mesh leader sends one
+ * `DELETE /repos/{r}/actions/variables/{name}` per committed
+ * `runnerRouting.retiredVariables` entry.
  *
- * Publishing is never allowed to disturb admission: the table is computed
- * from state the pass already holds, a write happens only when the value
- * changes, changes are spaced out so the label cannot flap with every freed
- * slot, and every failure is logged and swallowed.
+ * - 204 (deleted) and 404 (not there) are success.
+ * - 403 means the App lacks "Variables: write". It is logged once for that
+ *   start, naming the variables, and never retried in that process: nothing
+ *   reads these variables any more, so their presence changes nothing.
+ * - Anything else (a 5xx, a network failure) is logged and left for the next
+ *   start. Nothing here throws.
  */
-
-import {
-	type Account,
-	FLEET_ROUTES_VARIABLE,
-	type FleetRouteTable,
-	fleetAccountExposure,
-	fleetBudgetPolicy,
-	fleetMembersFromAccount,
-	fleetRoutesVariableValue,
-	fleetRouteTable,
-	type Lease,
-} from "@hobo/ci";
-import { z } from "zod";
 import type { GithubTransport } from "./github.js";
-import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 
-export type FleetRouteEvent =
-	| "hobo_ci_fleet_routes_published"
-	| "hobo_ci_fleet_routes_error";
+export type VariableRetireEvent =
+	| "hobo_ci_variable_retired"
+	| "hobo_ci_variable_retire_refused"
+	| "hobo_ci_variable_retire_failed";
 
-export type FleetRouteLog = (
-	event: FleetRouteEvent,
+export type VariableRetireLog = (
+	event: VariableRetireEvent,
 	fields: Readonly<Record<string, string | number | boolean>>,
 ) => void;
 
-export type FleetRoutePublication = Readonly<{
-	value: string;
-	outcome: "unchanged" | "deferred" | "published" | "failed";
-	table: FleetRouteTable;
+/** What became of each name: retired (204 or 404), refused (403) or failed. */
+export type VariableRetireOutcome = Readonly<{
+	retired: readonly string[];
+	refused: readonly string[];
+	failed: readonly string[];
 }>;
 
-export type FleetRoutePublishInput = Readonly<{
-	installationId: number;
-	repository: string;
-	account: Account;
-	/** Read only when a table is actually computed. */
-	leases: () => Promise<readonly Lease[]>;
-	/** The connection admits isolated runners only. */
-	isolatedOnly: boolean;
-	/** Authoritative current time, RFC 3339 UTC. */
-	at: string;
-}>;
-
-const Repository = z.object({
-	private: z.boolean(),
-	owner: z.object({ type: z.string() }),
-});
-
-const FACTS_TTL_MS = 10 * 60_000;
-const NONE: ReadonlySet<string> = new Set();
-/** A label that changes more often than this would chase individual jobs. */
-const DEFAULT_MIN_INTERVAL_MS = 60_000;
-/** A write the App is not allowed to make will not succeed a minute later. */
-const REFUSED_WRITE_BACKOFF_MS = 10 * 60_000;
-/** The dispatch pass runs every couple of seconds; a table need not. */
-const DEFAULT_MIN_COMPUTE_INTERVAL_MS = 15_000;
+const NAME = /^[A-Z][A-Z0-9_]{0,99}$/u;
 
 /**
- * Sets one repository variable, creating it when it does not exist yet.
- * Resolves to GitHub's status: 204 for an update, 201 for a creation.
+ * Deletes each named repository variable once. Stops at the first 403: the
+ * App will not be allowed the rest either, and the refusal is logged once,
+ * with every name it leaves in place.
  */
-export async function writeRepositoryVariable(
+export async function retireRepositoryVariables(
 	github: GithubTransport,
 	target: Readonly<{
 		installationId: number;
 		repository: string;
-		name: string;
-		value: string;
+		names: readonly string[];
+		log?: VariableRetireLog | undefined;
 	}>,
-): Promise<number> {
-	const body = JSON.stringify({ name: target.name, value: target.value });
-	const updated = await github.request(
-		target.installationId,
-		`/repos/${target.repository}/actions/variables/${target.name}`,
-		"PATCH",
-		body,
-	);
-	if (updated.status !== 404) return updated.status;
-	const created = await github.request(
-		target.installationId,
-		`/repos/${target.repository}/actions/variables`,
-		"POST",
-		body,
-	);
-	return created.status;
-}
-
-export function createFleetRoutePublisher(options: {
-	github: GithubTransport;
-	variable?: string;
-	minIntervalMs?: number;
-	/** Minimum gap between computations for one repository, failed or not. */
-	minComputeIntervalMs?: number;
-	/**
-	 * Offers the fleet should not send new work to right now, for example the
-	 * box's own while its host is critically short of a resource.
-	 */
-	unhealthyOfferIds?: (account: Account) => ReadonlySet<string>;
-	log?: FleetRouteLog;
-}) {
-	const variable = options.variable ?? FLEET_ROUTES_VARIABLE;
-	const minIntervalMs = options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
-	const facts = new Map<
-		string,
-		{
-			visibility: "public" | "private";
-			ownerType: "organization" | "user";
-			readAtMs: number;
-		}
-	>();
-	const published = new Map<string, { value: string; atMs: number }>();
-	const minComputeIntervalMs =
-		options.minComputeIntervalMs ?? DEFAULT_MIN_COMPUTE_INTERVAL_MS;
-	const attempted = new Map<string, number>();
-	const refusedUntil = new Map<string, number>();
-
-	async function repositoryFacts(
-		installationId: number,
-		repository: string,
-		nowMs: number,
-	) {
-		const cached = facts.get(repository);
-		if (cached && nowMs - cached.readAtMs < FACTS_TTL_MS) return cached;
-		const response = await options.github.request(
-			installationId,
-			`/repos/${repository}`,
-		);
-		if (!response.ok)
-			throw new Error(`repository lookup returned ${response.status}`);
-		const parsed = Repository.parse(await response.json());
-		const fresh = {
-			visibility: parsed.private ? "private" : "public",
-			ownerType: parsed.owner.type === "Organization" ? "organization" : "user",
-			readAtMs: nowMs,
-		} as const;
-		facts.set(repository, fresh);
-		return fresh;
-	}
-
-	const write = (installationId: number, repository: string, value: string) =>
-		writeRepositoryVariable(options.github, {
-			installationId,
-			repository,
-			name: variable,
-			value,
-		});
-
-	/**
-	 * Resolves to undefined when the repository was computed too recently, or,
-	 * with a log line, when the table could not be computed.
-	 */
-	async function publish(
-		input: FleetRoutePublishInput,
-	): Promise<FleetRoutePublication | undefined> {
-		const nowMs = Date.parse(input.at);
-		const lastAttemptMs = attempted.get(input.repository);
-		if (
-			(lastAttemptMs !== undefined &&
-				nowMs - lastAttemptMs < minComputeIntervalMs) ||
-			nowMs < (refusedUntil.get(input.repository) ?? 0)
-		)
-			return undefined;
-		// Recorded first, so a failing lookup backs off like a successful one.
-		attempted.set(input.repository, nowMs);
+): Promise<VariableRetireOutcome> {
+	const retired: string[] = [];
+	const failed: string[] = [];
+	const names = [...new Set(target.names)].filter((name) => NAME.test(name));
+	for (const [index, name] of names.entries()) {
+		let status: number | undefined;
+		let message: string | undefined;
 		try {
-			const repository = await repositoryFacts(
-				input.installationId,
-				input.repository,
-				nowMs,
-			);
-			const { account } = input;
-			const leases = await input.leases();
-			// Admission requires isolation for every public-repository job and
-			// every pull request, whatever the connection says.
-			const isolated = input.isolatedOnly || repository.visibility === "public";
-			const minutes = account.maxRuntimeMinutes + account.startupMinutes;
-			const demand = {
-				minutes,
-				repository: {
-					visibility: repository.visibility,
-					ownerType: repository.ownerType,
-				},
-				needsDocker: true,
-			};
-			const table = fleetRouteTable({
-				members: fleetMembersFromAccount(account, leases, {
-					poolLabel: RUNNER_LABEL,
-					extraPoolLabels: [TRUNK_RUNNER_LABEL],
-					unhealthyOfferIds: options.unhealthyOfferIds?.(account) ?? NONE,
-				}),
-				classes: [
-					{
-						name: "pr",
-						hoboLabel: RUNNER_LABEL,
-						demand: {
-							...demand,
-							forkPullRequest: false,
-							isolationRequired: true,
-						},
-					},
-					{
-						name: "fork",
-						hoboLabel: RUNNER_LABEL,
-						demand: {
-							...demand,
-							forkPullRequest: true,
-							isolationRequired: true,
-						},
-					},
-					{
-						name: "trunk",
-						hoboLabel: TRUNK_RUNNER_LABEL,
-						demand: {
-							...demand,
-							forkPullRequest: false,
-							isolationRequired: isolated,
-						},
-					},
-				],
-				policy: fleetBudgetPolicy(account),
-				...fleetAccountExposure(account, leases),
-				now: input.at,
-				// A relay never opens a paid account on its own.
-				allowNewProviderAgreements: false,
-				phase: "plan",
-			});
-			const value = fleetRoutesVariableValue(table);
-			const last = published.get(input.repository);
-			if (last?.value === value) return { value, outcome: "unchanged", table };
-			if (last && nowMs - last.atMs < minIntervalMs)
-				return { value, outcome: "deferred", table };
-			const status = await write(input.installationId, input.repository, value);
-			if (status !== 201 && status !== 204) {
-				options.log?.("hobo_ci_fleet_routes_error", {
-					repository: input.repository,
-					variable,
-					status,
-				});
-				// A refusal is a permission the App lacks, not a blip: wait.
-				refusedUntil.set(input.repository, nowMs + REFUSED_WRITE_BACKOFF_MS);
-				return { value, outcome: "failed", table };
-			}
-			published.set(input.repository, { value, atMs: nowMs });
-			options.log?.("hobo_ci_fleet_routes_published", {
-				repository: input.repository,
-				variable,
-				value,
-			});
-			return { value, outcome: "published", table };
-		} catch (error) {
-			options.log?.("hobo_ci_fleet_routes_error", {
-				repository: input.repository,
-				variable,
-				message: error instanceof Error ? error.message : "unknown failure",
-			});
-			return undefined;
-		}
-	}
-
-	/**
-	 * Puts every class back on its hobo label. For a publisher that is going
-	 * away for good: the variable outlives the process, and a route nobody is
-	 * keeping current must not keep sending work to an overflow provider.
-	 */
-	async function reset(target: {
-		installationId: number;
-		repository: string;
-	}): Promise<boolean> {
-		const value = JSON.stringify({
-			fork: RUNNER_LABEL,
-			pr: RUNNER_LABEL,
-			trunk: TRUNK_RUNNER_LABEL,
-		});
-		try {
-			const status = await write(
+			const response = await github.request(
 				target.installationId,
-				target.repository,
-				value,
+				`/repos/${target.repository}/actions/variables/${name}`,
+				"DELETE",
 			);
-			const ok = status === 201 || status === 204;
-			options.log?.(
-				ok ? "hobo_ci_fleet_routes_published" : "hobo_ci_fleet_routes_error",
-				{ repository: target.repository, variable, value, status, reset: true },
-			);
-			if (ok) published.set(target.repository, { value, atMs: 0 });
-			return ok;
+			status = response.status;
 		} catch (error) {
-			options.log?.("hobo_ci_fleet_routes_error", {
-				repository: target.repository,
-				variable,
-				reset: true,
-				message: error instanceof Error ? error.message : "unknown failure",
-			});
-			return false;
+			message = error instanceof Error ? error.message : "unknown failure";
 		}
+		if (status === 204 || status === 404) {
+			retired.push(name);
+			target.log?.("hobo_ci_variable_retired", {
+				repository: target.repository,
+				variable: name,
+				status,
+			});
+			continue;
+		}
+		if (status === 403) {
+			const refused = names.slice(index);
+			target.log?.("hobo_ci_variable_retire_refused", {
+				repository: target.repository,
+				variables: refused.join(","),
+				status,
+			});
+			return { retired, refused, failed };
+		}
+		failed.push(name);
+		// A status when GitHub answered; the transport's message when it threw.
+		target.log?.(
+			"hobo_ci_variable_retire_failed",
+			status === undefined
+				? {
+						repository: target.repository,
+						variable: name,
+						message: message ?? "unknown failure",
+					}
+				: { repository: target.repository, variable: name, status },
+		);
 	}
-
-	return { publish, reset, variable };
+	return { retired, refused: [], failed };
 }
-
-export type FleetRoutePublisher = ReturnType<typeof createFleetRoutePublisher>;

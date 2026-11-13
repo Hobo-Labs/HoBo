@@ -4,7 +4,8 @@ import * as root from "../src/index.js";
 
 // Plan 0025, section 6.8: whether the fleet can take a run is the relay's to
 // decide (ADR-0180), so the two repository-variable channels it superseded
-// are gone. The route table (`HOBO_CI_FLEET_ROUTES`) stays.
+// are gone. Plan 0026 (3.7) retired the third, the route table
+// (`HOBO_CI_FLEET_ROUTES`): routing travels as a routing slip (ADR-0181).
 const exported = Object.keys(root);
 const file = (path: string) => new URL(path, import.meta.url);
 
@@ -28,7 +29,9 @@ describe("retired fleet variable channels", () => {
 		expect(existsSync(file("../src/fleet-capacity.ts"))).toBe(false);
 	});
 
-	it("keeps the route table publisher", () => {
-		expect(exported).toContain("createFleetRoutePublisher");
+	it("no longer publishes HOBO_CI_FLEET_ROUTES", () => {
+		for (const name of ["createFleetRoutePublisher", "writeRepositoryVariable"])
+			expect(exported).not.toContain(name);
+		expect(exported).toContain("retireRepositoryVariables");
 	});
 });

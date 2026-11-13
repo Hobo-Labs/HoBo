@@ -1,3 +1,8 @@
+/**
+ * The box's slot split. It comes from the committed `runnerRouting.box` in
+ * `.hobo/ci.json` (plan 0026, 3.4), never from the environment: whether the
+ * box serves `hobo-trunk` decides routing, so it is committed policy.
+ */
 export type WorkerSlotConfig = Readonly<{
 	slots: number;
 	trunkSlots: number;
@@ -5,25 +10,37 @@ export type WorkerSlotConfig = Readonly<{
 	prCapWithTrunk: number;
 }>;
 
+/** The slot fields of `runnerRouting.box`; a field left out takes its default. */
+export type WorkerSlotPolicy = Readonly<Partial<WorkerSlotConfig>>;
+
+/** The code's defaults, which the committed `runnerRouting.box` equals. */
+export const DEFAULT_WORKER_SLOTS = 2;
+export const DEFAULT_WORKER_MERGE_GROUP_LEASES = 1;
+export const DEFAULT_WORKER_PR_CAP_WITH_TRUNK = 1;
+
+const whole = (value: number, min: number, max: number) =>
+	Number.isInteger(value) && value >= min && value <= max;
+
+/**
+ * The slot split, from the committed policy. One slot is reserved for trunk
+ * by default when there are at least two. Throws on a value the policy
+ * schema would refuse, so a daemon handed one refuses to start.
+ */
 export function resolveWorkerSlotConfig(
-	env: Readonly<Record<string, string | undefined>>,
+	policy: WorkerSlotPolicy = {},
 ): WorkerSlotConfig {
-	const slots = Number(env.HOBO_CI_WORKER_SLOTS ?? "2");
-	if (!Number.isInteger(slots) || slots < 1 || slots > 8)
-		throw new Error("invalid HOBO_CI_WORKER_SLOTS");
-	const trunkSlots = Number(
-		env.HOBO_CI_WORKER_TRUNK_SLOTS ?? (slots >= 2 ? "1" : "0"),
-	);
-	if (!Number.isInteger(trunkSlots) || trunkSlots < 0 || trunkSlots >= slots)
-		throw new Error("invalid HOBO_CI_WORKER_TRUNK_SLOTS");
-	const mergeGroupLeases = Number(env.HOBO_CI_WORKER_MERGE_GROUP_LEASES ?? "1");
-	if (!Number.isInteger(mergeGroupLeases) || mergeGroupLeases < 1)
-		throw new Error("invalid HOBO_CI_WORKER_MERGE_GROUP_LEASES");
-	const prCapValue = env.HOBO_CI_WORKER_PR_CAP_WITH_TRUNK ?? "1";
-	if (!/^(?:0|[1-9]\d*)$/u.test(prCapValue))
-		throw new Error("invalid HOBO_CI_WORKER_PR_CAP_WITH_TRUNK");
-	const prCapWithTrunk = Number(prCapValue);
-	if (prCapWithTrunk > 8)
-		throw new Error("invalid HOBO_CI_WORKER_PR_CAP_WITH_TRUNK");
+	const slots = policy.slots ?? DEFAULT_WORKER_SLOTS;
+	if (!whole(slots, 1, 8)) throw new Error("invalid runnerRouting.box.slots");
+	const trunkSlots = policy.trunkSlots ?? (slots >= 2 ? 1 : 0);
+	if (!whole(trunkSlots, 0, slots - 1))
+		throw new Error("invalid runnerRouting.box.trunkSlots");
+	const mergeGroupLeases =
+		policy.mergeGroupLeases ?? DEFAULT_WORKER_MERGE_GROUP_LEASES;
+	if (!whole(mergeGroupLeases, 1, 8))
+		throw new Error("invalid runnerRouting.box.mergeGroupLeases");
+	const prCapWithTrunk =
+		policy.prCapWithTrunk ?? DEFAULT_WORKER_PR_CAP_WITH_TRUNK;
+	if (!whole(prCapWithTrunk, 0, 8))
+		throw new Error("invalid runnerRouting.box.prCapWithTrunk");
 	return { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk };
 }
