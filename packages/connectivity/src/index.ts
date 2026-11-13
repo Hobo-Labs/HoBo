@@ -180,6 +180,7 @@ export {
 	type TenantIsolationRegistry,
 	type TenantIsolationRegistryOptions,
 	type TenantOverlayPlane,
+	type TenantOverlays,
 	tenantFromSlug,
 } from "./tenancy/isolation.js";
 export {

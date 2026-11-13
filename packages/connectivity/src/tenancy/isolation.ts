@@ -1,14 +1,10 @@
 import type {
 	OverlayNetwork,
-	PolicyEngine,
 	Tenant,
 	TenantId,
 	TenantIsolationMode,
 } from "@hobo/core";
 import { parseTenantId } from "@hobo/core";
-
-import { createNetbirdOverlay } from "../overlay/netbird.js";
-import { createTailscaleOverlay } from "../overlay/tailscale.js";
 
 export interface TenantControlPlanePartition {
 	readonly tenantId: TenantId;
@@ -46,12 +42,18 @@ export interface TenantIsolationRegistry {
 	};
 }
 
+/**
+ * The overlays the registry hands out; it never constructs one. `shared`
+ * serves every soft tenant; `forTenant` gives a hard-isolated tenant its own
+ * (a separate tailnet or NetBird account the host has joined).
+ */
+export interface TenantOverlays {
+	readonly shared: OverlayNetwork;
+	readonly forTenant?: (tenant: Tenant) => OverlayNetwork;
+}
+
 export interface TenantIsolationRegistryOptions {
 	readonly defaultMode?: TenantIsolationMode;
-	readonly sharedOverlay?: OverlayNetwork;
-	readonly policy?: PolicyEngine;
-	readonly createOverlayForTenant?: (tenant: Tenant) => OverlayNetwork;
-	readonly overlayProvider?: "tailscale" | "netbird";
 }
 
 /**
@@ -61,30 +63,24 @@ export interface TenantIsolationRegistryOptions {
  * - hard-control-plane: hard-overlay + dedicated control-plane partition keys
  */
 export function createTenantIsolationRegistry(
+	overlays: TenantOverlays,
 	options: TenantIsolationRegistryOptions = {},
 ): TenantIsolationRegistry {
 	const defaultMode = options.defaultMode ?? "soft";
-	const shared =
-		options.sharedOverlay ??
-		(options.overlayProvider === "netbird"
-			? createNetbirdOverlay()
-			: createTailscaleOverlay(
-					options.policy !== undefined ? { policy: options.policy } : {},
-				));
+	const shared = overlays.shared;
 
 	const planes = new Map<string, TenantOverlayPlane>();
 	const controlPlanes = new Map<string, TenantControlPlanePartition>();
 
 	function createOverlay(tenant: Tenant): OverlayNetwork {
-		if (options.createOverlayForTenant) {
-			return options.createOverlayForTenant(tenant);
-		}
-		if (options.overlayProvider === "netbird") {
-			return createNetbirdOverlay();
-		}
-		return createTailscaleOverlay(
-			options.policy !== undefined ? { policy: options.policy } : {},
-		);
+		if (overlays.forTenant === undefined)
+			throw Object.assign(
+				new Error(
+					`tenant ${tenant.id} needs its own overlay for hard isolation; pass overlays.forTenant`,
+				),
+				{ code: "overlay-required" },
+			);
+		return overlays.forTenant(tenant);
 	}
 
 	return {

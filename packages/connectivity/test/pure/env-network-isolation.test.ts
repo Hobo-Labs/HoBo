@@ -12,6 +12,7 @@ import {
 	CrossEnvGrantStore,
 	createEnvNetworkIsolationRegistry,
 	createTagAclPolicyEngine,
+	createTailscaleOverlay,
 	createTenantIsolationRegistry,
 	DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK,
 	ENV_NETWORK_ISOLATION_POLICY_PACK_ID,
@@ -209,10 +210,16 @@ describe("Environment Network Isolation conformance", () => {
 	});
 
 	it("tenant × env composition: harder axis wins", () => {
-		const tenants = createTenantIsolationRegistry();
+		const tenants = createTenantIsolationRegistry({
+			shared: createTailscaleOverlay(),
+			forTenant: () => createTailscaleOverlay(),
+		});
 		tenants.registerTenant(tenantFromSlug("hard-a", "hard-overlay"));
 		tenants.registerTenant(tenantFromSlug("hard-b", "hard-overlay"));
-		const envs = createEnvNetworkIsolationRegistry();
+		const envs = createEnvNetworkIsolationRegistry({
+			shared: createTailscaleOverlay(),
+			forClass: () => createTailscaleOverlay(),
+		});
 		envs.registerClass("development", { tier: "soft" });
 		envs.registerClass("production", { tier: "hard-overlay" });
 

@@ -347,9 +347,13 @@ describe("named endpoints + portless (pure)", () => {
 
 describe("multi-tenant isolation + dynamic DNS (pure)", () => {
 	it("gives hard-isolated tenants distinct overlays and control-plane partitions", () => {
-		const registry = createTenantIsolationRegistry({
-			defaultMode: "soft",
-		});
+		const registry = createTenantIsolationRegistry(
+			{
+				shared: createTailscaleOverlay(),
+				forTenant: () => createTailscaleOverlay(),
+			},
+			{ defaultMode: "soft" },
+		);
 		const softA = registry.registerTenant(tenantFromSlug("soft-a", "soft"));
 		const softB = registry.registerTenant(tenantFromSlug("soft-b", "soft"));
 		const hardA = registry.registerTenant(

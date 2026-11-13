@@ -66,6 +66,7 @@ export {
 	type EnvNetworkIsolationRegistry,
 	type EnvNetworkIsolationRegistryOptions,
 	type EnvOverlayPlane,
+	type EnvOverlays,
 	envIsolationTags,
 } from "./registry.js";
 export {

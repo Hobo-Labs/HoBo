@@ -244,7 +244,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for Mermaid diagrams covering local nam
 | OPA/Rego policy | `createOpaPolicyEngine({ opaUrl?, regoModulePath? })` + `SAMPLE_HOBO_AUTHZ_REGO` |
 | Billing aggregator | `createBillingAggregator()` as a `MeteringSink` → `closePeriod()` invoices |
 | Traffic routing | `createSimpleTrafficRouting()` offline; Cloudflare, Funnel, production Vercel (RR + routes), dual-layer Lakebed |
-| Hard multi-tenant | `createTenantIsolationRegistry()` with `soft` \| `hard-overlay` \| `hard-control-plane` |
+| Hard multi-tenant | `createTenantIsolationRegistry({ shared, forTenant })` (overlays are parameters; the registry never constructs one) with `soft` \| `hard-overlay` \| `hard-control-plane` |
 | Dynamic DNS heartbeats | `createJunctionDynamicDnsRegistrar` / `createJunctionAgent({ publicDns, dnsTargets })` |
 
 ```ts
@@ -259,8 +259,11 @@ import {
   tenantFromSlug,
 } from "@hobo/connectivity";
 
-// Hard isolation
-const isolation = createTenantIsolationRegistry();
+// Hard isolation: the host passes the overlays it has joined.
+const isolation = createTenantIsolationRegistry({
+  shared: createTailscaleOverlay(),
+  forTenant: () => createTailscaleOverlay(),
+});
 isolation.registerTenant(tenantFromSlug("acme", "hard-control-plane"));
 
 // OPA policy + billing sink
