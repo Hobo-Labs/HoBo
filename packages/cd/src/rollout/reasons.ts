@@ -27,6 +27,8 @@ export const ROLLOUT_REASONS = Object.freeze({
 	"rollout-unknown": "No rollout with this id was planned in this tenant.",
 	"rollout-awaiting-convergence":
 		"The target Camp's reconciler has not reported CONVERGED for the current Set yet; the rollout waits (bounded by the progress deadline).",
+	"rollout-camp-blocked":
+		"The target Camp's reconciler reported BLOCKED for the promoted Set; a blocked report does not progress, so the rollout fails the Camp closed and rolls back without waiting for the progress deadline. Fix the cause in the reconciler's reasons and promote again.",
 	"rollout-traffic-unconverged":
 		"The provider acknowledged the shift but observed traffic is not the requested split; the rollout re-observes until the progress deadline. Provider self-report never counts as convergence.",
 	"rollout-progress-deadline":
