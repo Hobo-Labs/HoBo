@@ -1278,8 +1278,9 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 			// A version that fails verify: the pilot's promotion writes it,
 			// the agent swaps, sees it unhealthy and restores the previous
 			// digest, and does not swap to it again on its later passes. The
-			// pilot never qualifies, so the fan-out halts at its progress
-			// deadline and the fleet group never starts.
+			// BLOCKED report fails the pilot at once (no wait for the progress
+			// deadline), the compensation restores the host's previous Set, and
+			// the fleet group never starts.
 			const broken = await discoverFreight(BROKEN);
 			const halted = await station.cd.fanout.start(
 				{
@@ -1316,13 +1317,26 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				hostOf(BOX).calls.filter((call) => call === `pull ${BROKEN}`),
 			).toHaveLength(1);
 			expect(hostOf(BOX).runningImage()).toBe(TARGET);
+			const promotionsOfBox = await station.cd.promotions.list({ campId: BOX });
+			const failedPromotion = promotionsOfBox.find(
+				(p) => p.freightId === broken.freightId,
+			);
+			expect(failedPromotion).toBeDefined();
+			// The restore is a rollback to the previous Freight, and the host's
+			// desired Set is back on it: nothing is left pointing at the
+			// broken version.
 			expect(
-				ReconcileStatus[(await station.cd.desired.status(BOX))?.status ?? 0],
-			).toBe("BLOCKED");
-			const [failedPromotion] = await station.cd.promotions.list({
-				campId: BOX,
+				promotionsOfBox.some(
+					(p) =>
+						p.freightId === target.freightId &&
+						PromotionState[p.state] === "ROLLED_BACK",
+				),
+			).toBe(true);
+			expect((await rowOf(BOX)).set?.freightId).toBe(target.freightId);
+			expect((await rowOf(BOX)).row?.realizationParameters).toEqual({
+				image: TARGET,
 			});
-			expect(failedPromotion?.freightId).toBe(broken.freightId);
+			expect(ReconcileStatus[(await reconcile(BOX)).status]).toBe("CONVERGED");
 			expect(PromotionState[failedPromotion?.state ?? 0]).toBe("FAILED");
 			expect(
 				(await progressed(halted.value.fanoutId)).map((p) => p.campId),
