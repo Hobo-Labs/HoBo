@@ -6,6 +6,8 @@ export {
 	type ParsedSet,
 	parseDelta,
 	parseSet,
+	parseStatusBody,
+	STATUS_ENVELOPE_SCHEMA,
 } from "./codec.js";
 export {
 	createDesiredState,

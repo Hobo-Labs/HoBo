@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import type { EventEnvelope, JsonObject } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-import { SetOrigin } from "../../src/_generated/cd_pb.js";
+import { ReconcileStatus, SetOrigin } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
-import { DesiredStateError, foldCampSpec } from "../../src/sets/index.js";
+import {
+	DesiredStateError,
+	foldCampSpec,
+	foldCampStatus,
+} from "../../src/sets/index.js";
 
 type JournalFixture = {
 	campId: string;
@@ -171,5 +175,67 @@ describe("HOBO-50 projection rules (promoted from docs/design/proofs/hobo-50-dep
 		expect(() =>
 			foldCampSpec("prod-azure", envelopes("prod-aws", [setCreated])),
 		).toThrow(/camp/i);
+	});
+});
+
+type StatusFixture = {
+	campId: string;
+	events: { type: string; data: JsonObject }[];
+	expected: {
+		setId: string;
+		fenceToken: string;
+		status: string;
+		observedAt: string;
+	};
+};
+
+const goldenStatus: StatusFixture = JSON.parse(
+	readFileSync(
+		new URL("./fixtures/golden-status.json", import.meta.url),
+		"utf8",
+	),
+);
+
+describe("sets status fold (golden status stream)", () => {
+	it("folds the { schema, observation } envelope the reconcile transport writes", () => {
+		const status = foldCampStatus(
+			envelopes(goldenStatus.campId, goldenStatus.events),
+		);
+		expect(status?.setId).toBe(goldenStatus.expected.setId);
+		expect(status?.fenceToken).toBe(goldenStatus.expected.fenceToken);
+		expect(`RECONCILE_STATUS_${ReconcileStatus[status?.status ?? 0]}`).toBe(
+			goldenStatus.expected.status,
+		);
+		expect(status?.observedAt).toBe(goldenStatus.expected.observedAt);
+	});
+
+	it("still reads the legacy bare observation body", () => {
+		const legacy = goldenStatus.events.slice(0, 1);
+		const status = foldCampStatus(envelopes(goldenStatus.campId, legacy));
+		expect(status?.setId).toBe("set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		expect(status?.status).toBe(ReconcileStatus.CONVERGED);
+	});
+
+	it("ignores an envelope whose schema it does not know (fail-closed)", () => {
+		const unknown = goldenStatus.events.slice(-1);
+		expect(
+			foldCampStatus(envelopes(goldenStatus.campId, unknown)),
+		).toBeUndefined();
+	});
+
+	it("rejects an envelope whose observation is not an observation record", () => {
+		expect(() =>
+			foldCampStatus(
+				envelopes(goldenStatus.campId, [
+					{
+						type: CD_EVENTS.StatusObserved,
+						data: {
+							schema: "hobo.cd.reconcile-status/v1",
+							observation: { fenceToken: ["2"] },
+						},
+					},
+				]),
+			),
+		).toThrow(DesiredStateError);
 	});
 });

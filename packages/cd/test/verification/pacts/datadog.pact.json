@@ -1,0 +1,56 @@
+{
+  "consumer": { "name": "HoboCdVerificationEngine" },
+  "provider": { "name": "DatadogMetricsApi" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "evidence": "Hand-authored HTTP contract for Datadog's v1 timeseries query (GET /api/v1/query, https://docs.datadoghq.com/api/latest/metrics/#query-timeseries-points). Verified by test/verification/sources/pacts.test.ts."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "timeseries query for the baseline cohort by tag",
+      "providerStates": [{ "name": "errors grouped by track" }],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/query",
+        "query": {
+          "from": ["1794484800"],
+          "to": ["1794485400"],
+          "query": ["avg:trace.http.request.errors{env:prod} by {track}"]
+        },
+        "headers": { "accept": "application/json", "DD-API-KEY": "dd-api", "DD-APPLICATION-KEY": "dd-app" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "status": "ok",
+          "series": [
+            { "scope": "env:prod,track:canary", "tag_set": ["track:canary"], "pointlist": [[1794484800000, 0.4], [1794484860000, 0.5]] },
+            { "scope": "env:prod,track:baseline", "tag_set": ["track:baseline"], "pointlist": [[1794484800000, 0.1], [1794484860000, null], [1794484920000, 0.2]] }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "timeseries query refused for bad keys",
+      "providerStates": [{ "name": "the application key is revoked" }],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/query",
+        "query": {
+          "from": ["1794484800"],
+          "to": ["1794485400"],
+          "query": ["avg:trace.http.request.errors{env:prod} by {track}"]
+        },
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 403,
+        "headers": { "content-type": "application/json" },
+        "body": { "errors": ["Forbidden"] }
+      }
+    }
+  ]
+}

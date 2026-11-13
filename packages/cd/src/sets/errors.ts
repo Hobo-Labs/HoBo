@@ -12,6 +12,8 @@ export const SETS_FAILURES = Object.freeze({
 		"Open the Delta first; apply, update and reject act only on a recorded Delta.",
 	"delta-overlap":
 		"Apply or reject the Camp's open Delta before opening another (one in-flight Delta per Camp).",
+	"delta-superseded":
+		"A concrete rollback Delta to the predecessor Set replaced this open rollback Delta on the same base; follow the replacement, nothing to retry.",
 	"delta-stale-base":
 		"Re-resolve against the Camp's current Set and open a new Delta with that base_set_id.",
 	"delta-not-open":
