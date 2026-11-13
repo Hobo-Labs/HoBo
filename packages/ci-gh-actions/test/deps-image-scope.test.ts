@@ -20,7 +20,7 @@ const mainPlan = workflow.jobs["main-gate-plan"];
 
 describe("CI deps image push scope", () => {
 	it("is its own job on pull requests and steps of the plan job on every main run", () => {
-		// Finding 144: on main the check takes seconds, and as a job it cost a
+		// Finding 154: on main the check takes seconds, and as a job it cost a
 		// fourth trunk pickup. Still no commit file-list filtering.
 		expect(depsJob.if).toBe(
 			"${{ !cancelled() && github.event_name == 'pull_request' }}",
@@ -185,6 +185,7 @@ describe("CI deps image push scope", () => {
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
+			"scripts-tests",
 		]);
 		expect(workspaceTests.needs).toEqual(["route", "pr_gate_validation"]);
 		expect(prAffected.needs).toEqual(["route", "pr_gate_validation"]);

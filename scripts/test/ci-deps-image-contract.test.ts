@@ -7,6 +7,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -347,7 +348,7 @@ describe("CI deps workflow contract", () => {
 		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build'";
 	const verifyCondition =
 		"if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true'";
-	// On main the same check is steps of Main workspace plan (finding 144).
+	// On main the same check is steps of Main workspace plan (finding 154).
 	const planStart = workflow.indexOf("  main-gate-plan:");
 	const plan = workflow.slice(
 		planStart,
@@ -609,7 +610,7 @@ describe("CI deps workflow contract", () => {
 		includes(job("main-gate").block, "Check deps layer match");
 
 		// Nothing waits for the PR-only deps job. On main its check is steps of
-		// Main workspace plan (finding 144), so the shards still start after the
+		// Main workspace plan (finding 154), so the shards still start after the
 		// layer was looked at, without a fourth trunk pickup for it.
 		assert.deepEqual(
 			[...jobs]
@@ -684,9 +685,21 @@ describe("CI deps mount probe contract", () => {
 					"--import",
 					join(root, "scripts/lib/ts-source-resolve.mts"),
 					"-e",
+					// The worker hands each job directory to uid/gid 1000. Only root may
+					// chown to another uid: on a GitHub-hosted runner the tests run as
+					// `runner`, so there the probe records the owner the module asks
+					// for and chowns to its own uid/gid instead (a chown it may make).
 					[
+						`import { chown, mkdir } from "node:fs/promises";`,
 						`import { createNodeWorkerStorageFileSystem } from ${JSON.stringify(modulePath)};`,
-						`await createNodeWorkerStorageFileSystem().prepareJobDirectory(${JSON.stringify(jobDir)});`,
+						"const asRoot = process.getuid() === 0;",
+						"const owners = [];",
+						"const recordingChown = async (path, uid, gid) => {",
+						"owners.push([path, uid, gid]);",
+						"await chown(path, asRoot ? uid : process.getuid(), asRoot ? gid : process.getgid());",
+						"};",
+						`await createNodeWorkerStorageFileSystem({ chown: recordingChown, mkdir }).prepareJobDirectory(${JSON.stringify(jobDir)});`,
+						"process.stdout.write(JSON.stringify(owners));",
 					].join(" "),
 				],
 				{
@@ -704,6 +717,14 @@ describe("CI deps mount probe contract", () => {
 			assert.equal(result.status, 0, combined);
 			assert.doesNotMatch(combined, /ERR_MODULE_NOT_FOUND.*['"]zod['"]/u);
 			assert.ok(existsSync(join(jobDir, "HoBo", "HoBo")));
+			assert.deepEqual(JSON.parse(result.stdout), [
+				[join(jobDir, "HoBo"), 1000, 1000],
+				[join(jobDir, "HoBo", "HoBo"), 1000, 1000],
+				[jobDir, 1000, 1000],
+			]);
+			if (process.getuid?.() === 0) {
+				assert.equal(statSync(join(jobDir, "HoBo", "HoBo")).uid, 1000);
+			}
 		} finally {
 			rmSync(probeCwd, { recursive: true, force: true });
 		}

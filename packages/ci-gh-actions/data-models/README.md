@@ -35,11 +35,19 @@ the only place these are parsed and written.
 `fleet_verdict.proto` owns the fleet verdict runner routing asks a relay for
 (ADR-0180): `FleetVerdict`, the labels new work should stay off with one of
 two reasons each, and `FleetVerdictReport`, what a relay with a view of the
-fleet sends to set it. `src/fleet-verdict.ts` is the only place they are
-parsed and written. The `fleet-verdict*` fixtures pin that a verdict may
-block nothing, that a report cannot stand longer than 300 seconds, that a
-reason outside the two is refused, and that a capacity figure in a verdict is
-invalid: none leaves the relay.
+fleet sends to set it, signed with the reporter's Ed25519 key and carrying
+its `mode` (`shadow` or `report`). The same file owns what the hosted relay
+keeps and shows about reporters: `FleetReporterEnrollments` (who may report,
+public keys only, from `HOBO_CI_FLEET_REPORTERS_JSON`), `FleetReporterState`
+(last sequence, mode, last report, and per label when it last blocked and
+cleared), `FleetVerdictAllowance` (blocked time per label in a 24-hour
+window) and `FleetReporterStatusList`, what the OIDC-guarded status route
+answers. `src/fleet-verdict.ts` is the only place they are parsed and
+written. The `fleet-verdict*` and `fleet-reporter*` fixtures pin that a
+verdict may block nothing, that a report cannot stand longer than 180
+seconds and must name its mode, that a reason outside the two is refused,
+that a capacity figure in a verdict is invalid (none leaves the relay), that
+an enrollment holds no private key, and that a status carries no key at all.
 
 `relay_cache.proto` owns the records the hosted relay keeps in its cache
 (ADR-0179): the lease record (the `hobo.ci.v1.Lease` as JSON, its job key,

@@ -101,7 +101,7 @@ describe("Main full gate image dependency", () => {
 		expect(mainNames).not.toContain("Workspace tests");
 		// Main full gate is skipped when the merge queue passed the tree, and
 		// finish runs no repository code, so the scan is a step of the one job
-		// every main run has (finding 144).
+		// every main run has (finding 154).
 		expect(finishNames).not.toContain(wait);
 		expect(planNames).toContain(wait);
 		const waitStep = mainPlan.steps.find((step) => step.name === wait);

@@ -186,7 +186,7 @@ describe("main-gate wiring", () => {
 	it("runs gitleaks through gitleaks-main-scan in the plan job, not inside S0 or finish", () => {
 		// The merge queue does not scan, and Main full gate is skipped when the
 		// merge queue passed the tree, so the scan lives in the job every main
-		// run has: Main workspace plan (finding 144).
+		// run has: Main workspace plan (finding 154).
 		for (const block of [mainGate, mainGateFinish]) {
 			assert.equal(block.includes("scripts/ci/gitleaks-main-scan.mts"), false);
 			assert.equal(block.includes("gitleaks git"), false);

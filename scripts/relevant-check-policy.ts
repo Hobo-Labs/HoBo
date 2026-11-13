@@ -18,7 +18,10 @@ export type RelevantCheckPolicyOptions = {
 	all?: boolean;
 	includeBuild?: boolean;
 	includeBroadSweeps?: boolean;
-	/** The caller requires a separate job to run all selected workspace tests. */
+	/**
+	 * The caller requires separate jobs to run all selected workspace tests
+	 * and the scripts lane (`workspace_tests` and `scripts-tests` in CI).
+	 */
 	workspaceTestsCoveredExternally?: boolean;
 	rootPackageJsonScriptsOnlyChanged?: boolean;
 	workspacePackageExists?: (workspace: string) => boolean;
@@ -708,6 +711,21 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"root scripts/tests must stay type-clean (turbo builds workspace deps first)",
+		});
+	}
+
+	// Every test under scripts/test (finding 0144). A staged commit leaves it
+	// to the pull request, and CI runs it in the required job scripts-tests.
+	if (
+		touched(["scripts", "test", ".github"]) &&
+		!staged &&
+		!options.workspaceTestsCoveredExternally
+	) {
+		checks.push({
+			command: "pnpm",
+			args: ["run", "test:scripts"],
+			reason:
+				"scripts, root tests or workflows changed; the scripts lane gates pull requests",
 		});
 	}
 

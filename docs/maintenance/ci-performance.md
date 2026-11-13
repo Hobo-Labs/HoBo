@@ -100,13 +100,13 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   ([finding 139](../ci/findings/0139-main-gate-finish-empty-shard-matrix.md)). S0 uses
   `--external-workspace-tests` when affected. Gitleaks runs in the plan job, outside S0
   ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md),
-  [finding 144](../ci/findings/0144-main-waited-for-runners-between-jobs.md)).
+  [finding 154](../ci/findings/0154-main-waited-for-runners-between-jobs.md)).
   Box dispatch latency (early `dispatchPending`, poll-triggered tick, shard index ordering,
   `hobo_ci_job_reserved`) is [finding 99](../ci/findings/0099-main-gate-job-pickup-latency.md);
   poll coalesce strand fixes stay [finding 87](../ci/findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md) / [#1819](https://github.com/Hobo-Labs/HoBo/pull/1819).
 - **One trunk pickup per main run when the merge queue passed the tree.** A main run's jobs did 4 to 5
   minutes of work and waited 2 to 7 more for runners between them
-  ([finding 144](../ci/findings/0144-main-waited-for-runners-between-jobs.md)). The route job
+  ([finding 154](../ci/findings/0154-main-waited-for-runners-between-jobs.md)). The route job
   (`scripts/ci/merge-queue-reuse.mts`) looks for a successful `merge_group` run of this workflow whose head
   is the pushed commit or tree; GitHub fast-forwards main to the commit the merge queue tested. On a match
   its `merge-queue-green` output is `true`: **Main full gate** is skipped and the plan emits no shards.
