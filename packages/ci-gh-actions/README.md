@@ -168,6 +168,7 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/engines/gh-actions/…` | The same routes as the root |
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
+| `GET`, `PUT /v1/fleet/verdicts/{owner}/{repo}` | The fleet verdict runner routing asks for ([ADR-0180](../../docs/design/adr/fleet-verdict.md#adr-0180)): read by anyone, reported with an account bearer (`operations:write`) from the account the repository is connected under. Handed to the host's control plane |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
 
@@ -1203,6 +1204,7 @@ the port's 30-day cap.
 | `app:installations:<accountId>`, `app:installation-owner:<installationId>` | `RelayCacheVerifiedInstallations`; owning account id | 24 h | `CacheVerifiedInstallations.bindInstallation` |
 | `invitation:<mac>`, `owner-session:<mac>` | redemption time; `RelayCacheOwnerSession` | until the invitation expires; 10 min | `CacheOwnerBootstrap` |
 | `worker-health:<deployment>:<component>` | `RelayWorkerHealth` (`@hobo/ci-vercel`) | 24 h | `@hobo/ci-vercel`'s `CacheWorkerHealth` |
+| `fleet-verdict:<owner>/<repo>` | `FleetVerdict` | Until the verdict expires (at most 300 s) | `@hobo/ci-vercel`'s `createCacheFleetVerdicts` |
 | `ring:{hobo-ci:<environment>:feed:<accountId>}:seq`, `…:e:<n>` | counter; `hobo.ci.v1.CiEvent` JSON | 1 h, 500 entries per account | A lease's change of state; `ci.BudgetOverrun`, `ci.AssignmentUnknown`, `ci.LeaseRebuilt`; `ci.JobQueued`, `ci.JobExpired`, `ci.JobAssignmentCleared`, and `ci.JobCompleted` for a job no lease took. Not a write that leaves a lease's state alone (an observed job id, a Sandbox sub-stage) |
 
 ### Helpers on the cache (phase 5)

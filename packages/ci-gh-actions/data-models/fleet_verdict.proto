@@ -1,0 +1,38 @@
+syntax = "proto3";
+package hobo.ci.gh_actions.v1;
+
+// The fleet verdict: what a relay tells runner routing about one repository
+// before a run's jobs are queued. It names only the fleet labels new work
+// should stay off right now. A label it does not name is not vouched for:
+// routing decides that label from GitHub's queue, as it does when there is no
+// verdict at all. Nothing in it is secret, and it carries no capacity figure.
+
+// Why a label is blocked. `reason` is one of:
+//   no-node      no live, healthy node serves the label;
+//   no-capacity  nodes serve it, none can admit a job for a reason other than
+//                the jobs it is already running, and no other has a free slot.
+message FleetVerdictBlock {
+  string reason = 1;
+}
+
+// The verdict a relay serves at `GET /v1/fleet/verdicts/{owner}/{repo}`. The
+// relay that stores it stamps both times from its own clock and stops serving
+// it at `expires_at`, so a reader never compares clocks and a reporter that
+// has stopped is forgotten.
+message FleetVerdict {
+  // `owner/name`, lower case.
+  string repository = 1;
+  map<string, FleetVerdictBlock> blocked = 2;
+  // RFC 3339. Absent when nothing is blocked.
+  optional string observed_at = 3;
+  optional string expires_at = 4;
+}
+
+// What a relay with a view of the fleet reports with
+// `PUT /v1/fleet/verdicts/{owner}/{repo}`. It replaces the stored verdict; an
+// empty `blocked` clears it. The reporter repeats it for as long as it holds.
+message FleetVerdictReport {
+  map<string, FleetVerdictBlock> blocked = 1;
+  // How long the verdict stands without being repeated: 1 to 300.
+  uint32 ttl_seconds = 2;
+}
