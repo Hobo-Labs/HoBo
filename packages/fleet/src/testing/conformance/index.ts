@@ -22,6 +22,7 @@ import { JOURNAL_ASSERTIONS } from "./journal.js";
 import { KEYSTORE_ASSERTIONS } from "./keystore.js";
 import { REPLICA_ASSERTIONS } from "./replica.js";
 import { SANDBOX_ASSERTIONS } from "./sandbox.js";
+import { TRANSPORT_ASSERTIONS } from "./transport.js";
 
 export function runBusConformance(make: () => Promise<AuthorityBus>): void {
 	registerSuite("bus conformance", BUS_ASSERTIONS, make, 30_000);
@@ -30,7 +31,7 @@ export function runBusConformance(make: () => Promise<AuthorityBus>): void {
 export function runTransportConformance(
 	make: () => Promise<readonly [FleetTransport, FleetTransport]>,
 ): void {
-	throw new FleetNotImplemented("runTransportConformance");
+	registerSuite("transport conformance", TRANSPORT_ASSERTIONS, make, 120_000);
 }
 
 /** Logic suite: the driver contract (single use, writeSecret never through argv or env, the fence callback answered on controlUrl, destroy idempotent). The fake driver passes it; it proves nothing about isolation. */

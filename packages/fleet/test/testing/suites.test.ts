@@ -12,11 +12,13 @@ import {
 	runKeyStoreConformance,
 	runReplicaConformance,
 	runSandboxConformance,
+	runTransportConformance,
 } from "../../src/testing/conformance/index.js";
 import { JOURNAL_ASSERTIONS } from "../../src/testing/conformance/journal.js";
 import { KEYSTORE_ASSERTIONS } from "../../src/testing/conformance/keystore.js";
 import { REPLICA_ASSERTIONS } from "../../src/testing/conformance/replica.js";
 import { SANDBOX_ASSERTIONS } from "../../src/testing/conformance/sandbox.js";
+import { TRANSPORT_ASSERTIONS } from "../../src/testing/conformance/transport.js";
 import {
 	createFakeSandboxDriver,
 	createMemoryBus,
@@ -27,6 +29,7 @@ import { BROKEN_JOURNALS } from "./doubles/journal.js";
 import { BROKEN_KEYSTORES, memoryKeyStore } from "./doubles/keystore.js";
 import { BROKEN_REPLICAS, memoryReplica } from "./doubles/replica.js";
 import { BROKEN_SANDBOXES } from "./doubles/sandbox.js";
+import { BROKEN_TRANSPORTS, memoryTransports } from "./doubles/transport.js";
 import { eachAssertionCatchesItsBreak } from "./harness.js";
 
 describe("runBusConformance", () => {
@@ -35,6 +38,19 @@ describe("runBusConformance", () => {
 	});
 	describe("broken buses fail", () => {
 		eachAssertionCatchesItsBreak(BUS_ASSERTIONS, BROKEN_BUSES);
+	});
+});
+
+describe("runTransportConformance", () => {
+	describe("an in-memory transport pair passes", () => {
+		runTransportConformance(memoryTransports);
+	});
+	describe("broken transports fail", () => {
+		eachAssertionCatchesItsBreak(
+			TRANSPORT_ASSERTIONS,
+			BROKEN_TRANSPORTS,
+			120_000,
+		);
 	});
 });
 
