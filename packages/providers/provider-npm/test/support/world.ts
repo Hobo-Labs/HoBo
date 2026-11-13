@@ -209,7 +209,7 @@ export function registryWorld(options: WorldOptions = {}) {
 		if (path === `/${name}` && request.method === "PUT") {
 			const doc = JSON.parse(request.body ?? "{}");
 			if (doc._attachments) {
-				const [version] = Object.keys(doc.versions);
+				const [version = ""] = Object.keys(doc.versions);
 				if (
 					packument?.versions?.[version] ||
 					packument?.time?.[version] ||
@@ -218,7 +218,8 @@ export function registryWorld(options: WorldOptions = {}) {
 					return respond(403, {
 						error: `You cannot publish over the previously published versions: ${version}.`,
 					});
-				const tgz = Object.entries(doc._attachments).find(([key]) =>
+				const attachments: Record<string, { data?: string }> = doc._attachments;
+				const tgz = Object.entries(attachments).find(([key]) =>
 					key.endsWith(".tgz"),
 				);
 				const bytes = Buffer.from(tgz?.[1].data ?? "", "base64");

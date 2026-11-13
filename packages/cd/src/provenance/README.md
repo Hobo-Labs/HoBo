@@ -22,6 +22,11 @@ v1, the GitHub Actions workflow build type, the run as builder), with the
 tarball's sha512 (what npm checks) and sha256 (the Freight artifact digest,
 what this verifier checks) as the one subject, has `signer` sign it, and
 refuses a bundle that is not a DSSE envelope over exactly that statement.
+npm's own check of an externally signed bundle (libnpmpublish 11.2.0
+`verifyProvenance`: one subject, its purl name, `digest.sha512`) reads no
+other digest key, and `test/provenance/signer.test.ts` runs a port of it on
+the signed bundle; that the npmjs registry accepts the extra sha256 too is
+shown only by the first live publish.
 `githubActionsBuild(env)` reads the run from the job's env and fails closed
 on any gap. `sigstoreKeylessSigner()` signs keyless with `sigstore@5.0.1`:
 the job's GitHub OIDC token (audience `sigstore`, requested from the Actions

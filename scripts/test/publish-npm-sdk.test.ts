@@ -82,7 +82,11 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 		const signed: string[] = [];
 		await expect(
 			publishNpmSdkArtifacts(
-				{ ...base, freightHome: undefined },
+				{
+					stagingDir: base.stagingDir,
+					token: base.token,
+					releaseRef: base.releaseRef,
+				},
 				{
 					stage: () => staged,
 					tarballs: () => ["/tmp/x/core.tgz"],
@@ -149,7 +153,9 @@ describe("npm publishes only through release Freight and hobo deploy", () => {
 		const signed: string[] = [];
 		let input:
 			| Parameters<
-					NonNullable<Parameters<typeof publishNpmSdkArtifacts>[1]["qualify"]>
+					NonNullable<
+						NonNullable<Parameters<typeof publishNpmSdkArtifacts>[1]>["qualify"]
+					>
 			  >[0]
 			| undefined;
 		await publishNpmSdkArtifacts(base, {

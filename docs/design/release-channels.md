@@ -224,7 +224,7 @@ How each family publishes:
 - **OCI.** `scripts/ci/push-release-ghcr-images.mts` builds the image,
   exports it as an OCI layout and records it; the realizer runs on a byte
   transport (`ociLatin1Transport`: binary bodies bypass the UTF-8 host
-  transport) and pushes config and layers (monolithic up to 256 MiB, chunked
+  transport) and pushes config and layers (monolithic up to 32 MiB, `CATALOG_OCI_CHUNK_BYTES`, chunked
   past it), the manifest by digest with its exact bytes, then the tag. A
   cross-repository mount from the toolchain image's repository is tried
   first; a mount GHCR or the token declines is uploaded. The digest recorded
@@ -237,10 +237,12 @@ Remaining gaps and limits:
 - **Not yet run live.** Both publishers are proven offline against the
   providers' recorded registry worlds (`scripts/test/release-freight-realize.test.ts`);
   the first live npm publish still waits on `HOBO_NPM_PUBLISH` and the
-  hobodev `NPM_TOKEN`. On a runner without the containerd image store,
-  `docker save` writes uncompressed layers, so the pushed image is larger and
-  its layers are not mountable from the toolchain repository; it is still
-  correct by digest.
+  hobodev `NPM_TOKEN`. The export refuses a Docker daemon older than 25
+  (`dockerOciSaveSupport`: older `docker save` writes no OCI layout). On a
+  runner without the containerd image store, `docker save` writes
+  uncompressed layers, so the pushed image is larger and its layers are not
+  mountable from the toolchain repository; the export warns, and the image
+  is still correct by digest.
 - **Pages history.** The Pages realizer commits on the observed head instead
   of force-pushing an orphan commit, so `gh-pages` keeps one commit per
   deploy. Blobs are shared by content, so each commit adds only the files

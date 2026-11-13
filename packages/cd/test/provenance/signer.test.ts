@@ -7,6 +7,11 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { ArtifactKind, ArtifactRefSchema } from "../../src/_generated/cd_pb.js";
 import {
+	isJsonArray,
+	isJsonObject,
+	parseJsonText,
+} from "../../src/artifacts/json.js";
+import {
 	createProvenanceVerifier,
 	githubActionsBuild,
 	INTOTO_PAYLOAD_TYPE,
@@ -163,6 +168,60 @@ describe("npm provenance signing", () => {
 				statementDigest: provenance.statementDigest,
 				subjectDigests: [`sha256:${SHA256}`],
 			});
+	});
+
+	it("passes npm's own check of an externally signed bundle: the extra sha256 sits beside the sha512 npm compares", async () => {
+		// A port of the subject checks in npm's client for `--provenance-file`
+		// (libnpmpublish 11.2.0, lib/provenance.js verifyProvenance, as shipped
+		// with npm 11): exactly one subject, its name the package purl, and
+		// `digest.sha512` equal to the tarball's (ssri hexDigest). Other digest
+		// keys are not read; in-toto's DigestSet allows several algorithms.
+		const npmVerifySubject = (
+			subject: { name: string; digest: { sha512: string } },
+			bundle: Uint8Array,
+		): void => {
+			const parsed = parseJsonText(new TextDecoder().decode(bundle));
+			const envelope =
+				isJsonObject(parsed) && isJsonObject(parsed.dsseEnvelope)
+					? parsed.dsseEnvelope
+					: {};
+			const payload = parseJsonText(
+				Buffer.from(String(envelope.payload), "base64").toString("utf8"),
+			);
+			const subjects =
+				isJsonObject(payload) && isJsonArray(payload.subject)
+					? payload.subject
+					: [];
+			if (!subjects.length)
+				throw new Error("No subject found in sigstore bundle payload");
+			if (subjects.length > 1)
+				throw new Error(
+					"Found more than one subject in the sigstore bundle payload",
+				);
+			const bundleSubject = subjects[0];
+			const bundleName = isJsonObject(bundleSubject) ? bundleSubject.name : "";
+			if (subject.name !== bundleName)
+				throw new Error(
+					`Provenance subject ${String(bundleName)} does not match the package: ${subject.name}`,
+				);
+			const digest =
+				isJsonObject(bundleSubject) && isJsonObject(bundleSubject.digest)
+					? bundleSubject.digest
+					: {};
+			if (subject.digest.sha512 !== digest.sha512)
+				throw new Error("Provenance subject digest does not match the package");
+		};
+		const build = githubActionsBuild(ENV);
+		const { signer } = testSigner(build);
+		const provenance = await signNpmProvenance(PKG, build, signer);
+		const name = npmPackagePurl(PKG.name, PKG.version);
+		expect(() =>
+			npmVerifySubject({ name, digest: { sha512: SHA512 } }, provenance.bundle),
+		).not.toThrow();
+		const other = createHash("sha512").update("other bytes").digest("hex");
+		expect(() =>
+			npmVerifySubject({ name, digest: { sha512: other } }, provenance.bundle),
+		).toThrow(/digest does not match/u);
 	});
 
 	it("refuses a bundle the signer made over another statement (nothing reaches the Freight)", async () => {

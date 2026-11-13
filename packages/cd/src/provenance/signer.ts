@@ -9,7 +9,8 @@
 //
 // The subject carries the tarball's sha512 (what npm checks) and its sha256
 // (the Freight artifact digest, what HoBo's own verifier checks), so one
-// bundle verifies on both sides.
+// bundle verifies on both sides. npm's client check of an external bundle
+// (libnpmpublish `verifyProvenance`) compares only the name and sha512.
 //
 // Credentials: the signer's identity is the CI job's OIDC token, requested
 // by `sigstore` from the Actions runtime (audience `sigstore`) at signing

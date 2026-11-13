@@ -316,11 +316,13 @@ export function buildReleaseImage(options: {
 		ensureReleaseImageCandidate("hobo-cli", options);
 	}
 	try {
-		stageReleaseOciApp(image.id, staging.stagingRoot, {
-			skipBuild: options.skipBuild,
+		const stageOptions: Parameters<typeof stageReleaseOciApp>[2] = {
+			skipBuild: options.skipBuild === true,
 			hardlink: staging.hardlink,
-			sdkArtifactsDir,
-		});
+		};
+		if (sdkArtifactsDir !== undefined)
+			stageOptions.sdkArtifactsDir = sdkArtifactsDir;
+		stageReleaseOciApp(image.id, staging.stagingRoot, stageOptions);
 		if (image.id === "hobo-mcp") ensureCliCandidate();
 		run(
 			"docker",
@@ -332,7 +334,7 @@ export function buildReleaseImage(options: {
 	}
 	const localTag = `${image.name}:candidate`;
 	cleanupReleaseOciBuildChain(image.id, {
-		keepCandidate: options.keepCandidate,
+		keepCandidate: options.keepCandidate === true,
 	});
 	return {
 		localTag,
@@ -515,15 +517,59 @@ export function readOciLayout(dir: string): ReleaseOciLayout {
 }
 
 /**
+ * Whether this host's `docker save` writes what the realizer pushes. Docker
+ * 25 is the first release whose `docker save` writes an OCI image layout;
+ * an older daemon is refused before anything is exported. The containerd
+ * image store saves the compressed layers a registry push would send (and
+ * the toolchain repository's layers match, so cross-repository mounts work);
+ * the classic store saves them uncompressed: the digest is still the one
+ * GHCR serves, but the upload is larger and no mount matches.
+ */
+export type DockerOciSaveSupport = Readonly<{
+	serverVersion: string;
+	compressedLayers: boolean;
+}>;
+
+export function dockerOciSaveSupport(
+	serverVersion: string,
+	driverStatusJson: string,
+): DockerOciSaveSupport {
+	const version = serverVersion.trim();
+	const major = Number.parseInt(version.split(".")[0] ?? "", 10);
+	if (!Number.isInteger(major) || major < 25) {
+		throw new Error(
+			`release OCI export needs Docker 25 or later (docker save writes an OCI layout from 25); the daemon reports ${JSON.stringify(version)}. Remediation: upgrade Docker on this runner`,
+		);
+	}
+	return {
+		serverVersion: version,
+		compressedLayers: driverStatusJson.includes("io.containerd.snapshotter"),
+	};
+}
+
+function dockerFormat(args: string[]): string {
+	const result = spawnSync("docker", args, { cwd: root, encoding: "utf8" });
+	return result.status === 0 ? result.stdout : "";
+}
+
+/**
  * Export a built release image from the local image store as an OCI image
- * layout under `dir` (`docker save`, which writes an OCI layout since Docker
- * 25; with the containerd image store its blobs are the compressed layers a
- * registry push would send) and read it by digest.
+ * layout under `dir` (`docker save`; see dockerOciSaveSupport for the host
+ * it needs) and read it by digest.
  */
 export function exportReleaseOciLayout(
 	localTag: string,
 	dir: string,
 ): ReleaseOciLayout {
+	const support = dockerOciSaveSupport(
+		dockerFormat(["version", "--format", "{{.Server.Version}}"]),
+		dockerFormat(["info", "--format", "{{json .DriverStatus}}"]),
+	);
+	if (!support.compressedLayers) {
+		console.warn(
+			`docker ${support.serverVersion} uses the classic image store: ${localTag} is saved with uncompressed layers, so the GHCR upload is larger and no cross-repository mount matches. Enable the containerd image store on this runner to push compressed layers`,
+		);
+	}
 	mkdirSync(dir, { recursive: true });
 	const archive = join(dir, "image.tar");
 	run("docker", ["save", "--output", archive, localTag]);
