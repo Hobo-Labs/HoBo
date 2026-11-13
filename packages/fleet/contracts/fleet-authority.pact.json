@@ -543,13 +543,6 @@
 						"payload": "CgM=",
 						"signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
 					},
-					"overlayJoins": [
-						{
-							"provider": "tailscale",
-							"credential": "tskey-x",
-							"expiresAt": "2026-11-13T12:10:00.000Z"
-						}
-					],
 					"discovery": {
 						"tenant": "test",
 						"issuer": "https://authority.fleet.test"

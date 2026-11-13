@@ -588,6 +588,20 @@ describe("createFleetClient against the authority's HTTP API (PACT consumer)", (
 			credentialRef: "secret://hobo/cache-a",
 			endpointDigest: `sha256:${"b".repeat(64)}`,
 		});
+		// A declared backend runs no agent, so it is answered with no overlay join (D54).
+		const declared = toJsonString(
+			EnrollmentResponseSchema,
+			create(EnrollmentResponseSchema, {
+				memberRecord: {
+					context: "hobo-fleet/member-record/v1",
+					keyId: "authority#1",
+					algorithm: KeyAlgorithm.EDDSA,
+					payload: new Uint8Array([10, 3]),
+					signature: new Uint8Array(64),
+				},
+				discovery: { tenant: "test", issuer: ORIGIN },
+			}),
+		);
 		ok(
 			await exchange(
 				{
@@ -598,7 +612,7 @@ describe("createFleetClient against the authority's HTTP API (PACT consumer)", (
 					auth: "token",
 					body: json(DeclareRequestSchema, declare),
 					status: 200,
-					response,
+					response: declared,
 				},
 				(fleet) => fleet.declare(declare),
 			),

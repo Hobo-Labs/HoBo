@@ -56,7 +56,9 @@ inviter is the fleet's owner; `SINGLE` needs approve-key then accept;
 `credentials` answers a request at the current generation and advances it;
 repeats the answer (same new generation, nothing appended) for the previous
 generation with the same nonce digest; and otherwise appends
-`MemberLocked` and answers `generation-mismatch`. `unlock` resets the
+`MemberLocked` and answers `generation-mismatch` with
+`detail.generation`, the generation the authority holds (the client's pact
+names it; L42). `unlock` resets the
 generation. O6 (`test/membership/generation.test.ts`) checks the lock on the
 second divergent refresh and zero locks over 1,000 randomised lost-response
 retries across two replicas.

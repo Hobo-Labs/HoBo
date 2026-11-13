@@ -120,7 +120,15 @@ export type Caller = Readonly<{
 	token: string;
 }>;
 
-export async function createHarness() {
+export async function createHarness(
+	options: Readonly<{
+		/** Overlay minters for enrollment (none by default). */
+		overlayMinters?: AuthorityDeps["overlayMinters"];
+		/** Bus and relay URLs for discovery (none by default). */
+		natsUrls?: readonly string[];
+		relayUrls?: readonly string[];
+	}> = {},
+) {
 	const time = clock();
 	const now = () => time.now();
 	const test = await createTestAuthority(now);
@@ -189,15 +197,15 @@ export async function createHarness() {
 		},
 		recordSigner: generateDpopKey().signer,
 		metering: createMeteringBus(),
-		overlayMinters: [],
+		overlayMinters: options.overlayMinters ?? [],
 		incarnation: 1,
 		now,
 		log: () => {},
 		discovery: {
 			issuer: ISSUER,
-			natsUrls: [],
+			natsUrls: options.natsUrls ?? [],
 			natsSentinelCredentials: "",
-			relayUrls: [],
+			relayUrls: options.relayUrls ?? [],
 			minAgentVersion: "0.0.0",
 		},
 	};
@@ -220,7 +228,9 @@ export async function createHarness() {
 		caller?: Caller | undefined;
 		body?: string | undefined;
 		headers?: Readonly<Record<string, string>>;
-		dpop?: Readonly<{ signer: Signer; publicJwk: PublicJwk }>;
+		dpop?: Readonly<{ signer: Signer; publicJwk: PublicJwk }> | undefined;
+		/** Sees each request exactly as the handler receives it (the PACT replay checks its headers). */
+		onRequest?: (request: Request) => void;
 	}>;
 	type Proof = Parameters<typeof mintDpopProof>[2];
 	const send = async (method: string, path: string, options: Send = {}) => {
@@ -248,7 +258,9 @@ export async function createHarness() {
 			headers.set("content-type", "application/json");
 		const init: RequestInit = { method, headers, redirect: "manual" };
 		if (options.body !== undefined) init.body = options.body;
-		const response = await handler(new Request(`${ISSUER}${path}`, init));
+		const request = new Request(`${ISSUER}${path}`, init);
+		options.onRequest?.(request.clone());
+		const response = await handler(request);
 		const text = await response.text();
 		return {
 			status: response.status,

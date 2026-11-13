@@ -55,8 +55,20 @@ gathers them here as the waves merge.
   responses are `@hobo/fleet` records. Parse, don't validate: every request body
   is parsed into its derived type (the generated record, constrained) before a command sees it.
 - **PACT:** the HTTP API's consumer pact is
-  `packages/fleet/contracts/fleet-authority.pact.json` (L07); its provider-side
-  replay against `test/support/harness.ts` is not yet in this package's tests.
+  `packages/fleet/contracts/fleet-authority.pact.json` (L07). L42 replays it on
+  the provider side in `test/contracts/fleet-authority.pact.provider.test.ts`:
+  every interaction, none skipped, against the real service through
+  `test/support/harness.ts` `send()`. A fresh service is brought to each
+  provider state; the state supplies the caller, the ids the service
+  generated for the pact's example ids, and a body where the example cannot
+  pass the service's checks (signatures, the required coordination and
+  approval modes). The sent request must still match the pact (body by type,
+  `DPoP` and `Authorization` by regex, no credential the pact lacks) and the
+  answer its status, headers and body by PACT v3 type matching
+  (`test/contracts/pact.ts`; `@hobo/contract-harness`'s `verifyPact` compares
+  values, not matching rules). The harness uses the memory credential
+  issuer (ES256 JWKS, as the pact's example); the deployed `JwtSvidIssuer`
+  serves RS256 keys, whose JWKS would not type-match the example's `x`/`y`.
 - **Tests:** `test/`, with `*.integration.test.ts` against `nats-server`.
 
 ## Architecture placement
