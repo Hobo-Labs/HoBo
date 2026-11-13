@@ -463,6 +463,17 @@ export async function runCiRelayDeploy(
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
+	const stagedProduction =
+		target === "production" && env.HOBO_CI_RELAY_STAGED_PRODUCTION === "true";
+	if (stagedProduction && values.wait !== true)
+		return usage("A staged production deployment requires --wait.");
+	if (
+		stagedProduction &&
+		relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL) === undefined
+	)
+		return usage(
+			"A staged production deployment requires HOBO_CI_RELAY_PUBLIC_URL to name the public HTTPS origin.",
+		);
 	// The secret store chosen when the relay was first deployed
 	// (`hobo ci secret-store provision`): its committed coordinates fill the
 	// config-service binding's inputs and name the team, so no repository
@@ -599,6 +610,7 @@ export async function runCiRelayDeploy(
 		projectName: project,
 		target,
 		createMissingProject: createProject,
+		...(stagedProduction ? { stageProduction: true } : undefined),
 		configuration: Object.fromEntries(configuration),
 		gitArtifact: {
 			org,
@@ -755,7 +767,7 @@ export async function runCiRelayDeploy(
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 		...(teamId !== undefined && teamId !== "" ? { teamId } : undefined),
 	});
-	let previewDeploymentUrl: string | undefined;
+	let deploymentUrl: string | undefined;
 	// The conductor's Vercel side: the git deployment of the commit the
 	// Freight pins, and its readiness. Failures keep the codes and messages
 	// this command always returned.
@@ -815,7 +827,7 @@ export async function runCiRelayDeploy(
 					outputs = await provider.apply(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
-				if (protectedPreview) previewDeploymentUrl = outputs.url;
+				if (protectedPreview || stagedProduction) deploymentUrl = outputs.url;
 				return {
 					ok: true,
 					outputs: Object.fromEntries(
@@ -862,11 +874,14 @@ export async function runCiRelayDeploy(
 	const baseProbe =
 		input.probe ?? createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
 	const previewProbe =
-		protectedPreview && verifyOrigin !== undefined
+		(protectedPreview || stagedProduction) && verifyOrigin !== undefined
 			? protectedPreviewProbe({
 					base: baseProbe,
 					placeholderOrigin: verifyOrigin,
-					deploymentUrl: () => previewDeploymentUrl,
+					deploymentUrl: () => deploymentUrl,
+					...(stagedProduction
+						? { paths: ["/healthz", "/readyz"] as const }
+						: undefined),
 					jwt: githubActionsJwtSource({
 						env,
 						...(input.credentialFetch !== undefined
@@ -924,6 +939,65 @@ export async function runCiRelayDeploy(
 			}).map(([key, value]) => [key, withoutToken(value)]),
 		);
 		const promoted = delivered.report.state === "PROMOTED";
+		if (stagedProduction) {
+			const liveOrigin = relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL);
+			if (!promoted || !safe.deploymentId || !liveOrigin || !sha)
+				return refused(
+					"HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+					"The staged production deployment was not qualified; production traffic was not changed.",
+				);
+			try {
+				await client.promoteDeployment(project, safe.deploymentId);
+			} catch (error) {
+				const failed = realizationFailure(
+					error instanceof Error ? error : new Error("promotion failed"),
+					withoutToken,
+				);
+				return {
+					ok: false,
+					code: failed.code,
+					message: failed.message,
+					data: { ...deliveryData },
+				};
+			}
+			const live = commitCheckingProbe(baseProbe, {
+				origin: liveOrigin,
+				commit: sha.toLowerCase(),
+			});
+			let liveReady = false;
+			for (let attempt = 0; attempt < 24; attempt++) {
+				try {
+					const request = (path: string) =>
+						live.transport({
+							method: "GET",
+							url: `${liveOrigin}${path}`,
+							headers: {},
+							timeoutMs: 10_000,
+							maxResponseBytes: 65_536,
+						});
+					const health = await request("/healthz");
+					const ready = await request("/readyz");
+					if (health.status === 200 && ready.status === 200) {
+						liveReady = true;
+						break;
+					}
+				} catch {
+					/* No answer is not a passing check. */
+				}
+				if (attempt < 23)
+					await (
+						input.sleep ??
+						((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+					)(5_000);
+			}
+			if (!liveReady)
+				return {
+					ok: false,
+					code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.`,
+					data: { ...deliveryData },
+				};
+		}
 		return {
 			code: "HOBO_CI_DEPLOYED",
 			message: [

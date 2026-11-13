@@ -234,12 +234,11 @@ deployment record, production at `$HOBO_CI_RELAY_URL` or the Yard's
 Each probe must answer 200 on every attempt across a 60 s window; a probe that
 cannot reach the relay is an unhealthy attempt, and no data fails the
 verification (a node whose origin is unset probes a reserved `.invalid` host).
-PASS is the only qualification. **A failed verification fails the promotion
-and the job; it does not roll anything back.** The deployment that failed
-stays live on Vercel: CI's journal is job-scoped, so a production Camp there
-never has a predecessor Set to restore, the command returns as soon as the
-promotion is terminal, and there is no Vercel rollback realizer (no redeploy or
-re-alias of the previous deployment). Roll back by hand (`vercel rollback`, or
+PASS is the only qualification. A failed verification fails the promotion
+and the job. The workflow stages production without assigning domains and
+leaves traffic unchanged if staged verification fails. If the public origin
+fails after the verified deployment is promoted, the job fails; there is no
+automatic Vercel rollback realizer, so roll back by hand (`vercel rollback`, or
 promote the previous deployment in the dashboard).
 `hobo ci deploy --target production` needs `--sha` and is refused, before
 anything is sent, when preview has not qualified that commit
@@ -299,10 +298,11 @@ and on `workflow_dispatch`:
    fail by name (`hobo ci secret-store verify`).
 3. *Deliver the relay through HoBo CD*: `hobo ci deploy` reads the Vercel
    credential from the separate deploy project using the job's OIDC identity,
-   creates and verifies the pinned preview, then deploys production only after
-   preview qualifies the same commit. A Vercel Trusted Source lets the job
-   reach the protected preview using its GitHub OIDC token. Production checks
-   `/healthz` for the commit and requires `/readyz` to answer 200.
+   creates and verifies the pinned preview, then stages the same commit with
+   production configuration. A Vercel Trusted Source lets the job reach the
+   protected deployments using GitHub OIDC. HoBo checks staged production's
+   `/healthz` and `/readyz` before assigning production traffic, then verifies
+   the public origin serves the same healthy commit.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:

@@ -275,8 +275,9 @@ describe("the relay deploy workflow", () => {
 		assert.match(delivery, /HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true"/u);
 		assert.match(
 			delivery,
-			/HOBO_CI_RELAY_URL: https:\/\/hobo-ci\.vercel\.app/u,
+			/HOBO_CI_RELAY_PUBLIC_URL: https:\/\/hobo-ci\.vercel\.app/u,
 		);
+		assert.match(delivery, /HOBO_CI_RELAY_STAGED_PRODUCTION: "true"/u);
 	});
 
 	it("verifies the secret store's CI identity before deployment", () => {

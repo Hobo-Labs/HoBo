@@ -280,9 +280,9 @@ records the commit as Freight, delivers it to preview and verifies it there
 `/readyz` answers 503 `started:false`), then promotes it to production only
 because preview qualified it, sets the production Camp's non-secret
 configuration, waits for READY and verifies `/healthz` and `/readyz` (each must
-answer 200). Production is not deployed until preview qualifies the commit; a
-production deployment that fails verification stays live on Vercel (nothing
-rolls it back) and is not qualified. When `--provision` is requested, the
+answer 200). In the workflow production is staged without assigning domains;
+HoBo promotes it only after it passes verification and then checks the public
+origin. When `--provision` is requested, the
 cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,
 and, when `hobo-ci-cache` is missing, connects the team's resource of that name

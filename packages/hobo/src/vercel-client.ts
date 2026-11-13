@@ -126,6 +126,8 @@ export interface CreateGitDeploymentInput {
 	// "production", or nothing for a preview deployment: Vercel takes a request
 	// with no `target` as preview, so production is only ever asked for by name.
 	readonly target?: "production";
+	/** Stage a production deployment without assigning its domains. */
+	readonly autoAssignCustomDomains?: false;
 	// The project name/id (Vercel `project`); defaults to `name` when omitted.
 	readonly project?: string;
 	// Project build settings (Vercel `projectSettings`), sent only when given:
@@ -295,6 +297,8 @@ export interface VercelClient {
 		deploymentId: string,
 	): Promise<VercelDeploymentResult | undefined>;
 	deleteDeployment(deploymentId: string): Promise<void>;
+	/** Assign production domains to an already verified deployment. */
+	promoteDeployment(project: string, deploymentId: string): Promise<void>;
 	// Create a deployment from inline files, or, given a `gitSource`, from a
 	// git reference Vercel builds itself.
 	createDeployment(
@@ -922,6 +926,9 @@ function gitDeploymentBody(input: CreateGitDeploymentInput): JsonObject {
 			...(gitSource.sha !== undefined ? { sha: gitSource.sha } : undefined),
 		},
 		...(input.target !== undefined ? { target: input.target } : undefined),
+		...(input.autoAssignCustomDomains === false
+			? { autoAssignCustomDomains: false }
+			: undefined),
 		...(input.projectSettings !== undefined
 			? { projectSettings: input.projectSettings }
 			: undefined),
@@ -1150,6 +1157,17 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	}
 	return {
 		getDeployment: readDeployment,
+		async promoteDeployment(project, deploymentId) {
+			if (!deploymentId || !/^[A-Za-z0-9_-]+$/u.test(deploymentId))
+				throw new TypeError("invalid deployment receipt identity");
+			const response = await post(
+				"promote deployment",
+				`/v10/projects/${encodeURIComponent(projectRef(project))}/promote/${encodeURIComponent(deploymentId)}`,
+				"{}",
+			);
+			if (!response.ok)
+				throw await failure("promote deployment", response, secrets);
+		},
 		async deleteDeployment(deploymentId: string) {
 			const response = await send(
 				"delete deployment",

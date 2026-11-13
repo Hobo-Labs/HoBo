@@ -1,11 +1,12 @@
 import type { HttpTransport } from "@hobo/core";
 
-/** Route the preview health check to the deployment just created by CD. */
+/** Route checks to the protected deployment just created by CD. */
 export function protectedPreviewProbe(input: {
 	readonly base: HttpTransport;
 	readonly placeholderOrigin: string;
 	readonly deploymentUrl: () => string | undefined;
 	readonly jwt: () => Promise<string>;
+	readonly paths?: readonly ("/healthz" | "/readyz")[];
 }): HttpTransport {
 	return async (request) => {
 		const url = URL.canParse(request.url) ? new URL(request.url) : undefined;
@@ -15,7 +16,7 @@ export function protectedPreviewProbe(input: {
 			deployment && URL.canParse(deployment) ? new URL(deployment) : undefined;
 		if (
 			request.method !== "GET" ||
-			url.pathname !== "/healthz" ||
+			!(input.paths ?? ["/healthz"]).some((path) => path === url.pathname) ||
 			url.search ||
 			!destination ||
 			destination.protocol !== "https:" ||
@@ -32,7 +33,7 @@ export function protectedPreviewProbe(input: {
 			const jwt = await input.jwt();
 			return await input.base({
 				...request,
-				url: `${destination.origin}/healthz`,
+				url: `${destination.origin}${url.pathname}`,
 				headers: { ...request.headers, "x-vercel-trusted-oidc-idp-token": jwt },
 			});
 		} catch {
