@@ -18,7 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	HOBO_CLI_DIST,
 	openReleaseCd,
@@ -60,8 +60,12 @@ if (!built && process.env.HOBO_RELEASE_REALIZE_REQUIRED === "1")
 type Fixtures = Readonly<{
 	FakeRegistryWorld: typeof import("../../packages/providers/provider-oci-registry/test/support/fake-registry.ts").FakeRegistryWorld;
 	image: typeof import("../../packages/providers/provider-oci-registry/test/support/fixtures.ts").image;
+	declareLatin1Transport: typeof import("../../packages/providers/provider-oci-registry/src/byte-transport.ts").declareLatin1Transport;
 	githubWorld: typeof import("../../packages/providers/provider-github/test/support/world.ts").githubWorld;
 	TOKEN: string;
+	npm: typeof import("../../packages/providers/provider-npm/test/support/world.ts");
+	signer: typeof import("../../packages/cd/src/provenance/signer.ts");
+	sigstore: typeof import("../../packages/cd/test/provenance/sigstore-fixture.ts");
 }>;
 let fx: Fixtures;
 // The core transport types, as the providers' worlds use them.
@@ -150,12 +154,23 @@ describe.skipIf(!built)(
 			const github = await import(
 				"../../packages/providers/provider-github/test/support/world.ts"
 			);
+			const bytes = await import(
+				"../../packages/providers/provider-oci-registry/src/byte-transport.ts"
+			);
 			expect([github.OWNER, github.REPO]).toEqual([OWNER, REPO]);
 			fx = {
 				FakeRegistryWorld: registry.FakeRegistryWorld,
 				image: images.image,
+				declareLatin1Transport: bytes.declareLatin1Transport,
 				githubWorld: github.githubWorld,
 				TOKEN: github.TOKEN,
+				npm: await import(
+					"../../packages/providers/provider-npm/test/support/world.ts"
+				),
+				signer: await import("../../packages/cd/src/provenance/signer.ts"),
+				sigstore: await import(
+					"../../packages/cd/test/provenance/sigstore-fixture.ts"
+				),
 			};
 		});
 
@@ -283,6 +298,77 @@ describe.skipIf(!built)(
 			// The token reached only the registry's token endpoint, never a record.
 			expect(journalText(home)).not.toContain(GHCR_TOKEN);
 			expect(seen.some((r) => r.url === "https://ghcr.io/v2/")).toBe(true);
+		});
+
+		it("OCI: candidate pushes a built image from the artifact store (config and layers, manifest by digest, tag), stable re-observes", async () => {
+			// Nothing in this proof may reach a real network.
+			const fetched = vi.fn(async () => {
+				throw new Error("the release reached the network");
+			});
+			vi.stubGlobal("fetch", fetched);
+			const world = ghcrWorld();
+			const fixture = fx.image({ platform: "amd64", binary: true });
+			const [config, layer] = fixture.blobs;
+			if (!config || !layer) throw new Error("fixture has no config/layer");
+			// The toolchain image's repository already holds the config blob.
+			world.seedBlob("ghcr.io", "hobo-labs/hobo/hobo-ci-worker", config.bytes);
+			const seen: TransportRequest[] = [];
+			const fixtures = seams(
+				fx.declareLatin1Transport(withProbes(world.transport, seen)),
+			);
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-oci-push-"));
+			const manifest = new TextEncoder().encode(fixture.text);
+			const { verdict } = await qualifyReleaseCandidate({
+				home,
+				family: "oci",
+				env,
+				seams: fixtures,
+				registry: [
+					{
+						name: "hobo-sdk",
+						kind: "ARTIFACT_KIND_OCI_IMAGE",
+						digest: fixture.digest,
+						coordinate: `ghcr.io/${REPOSITORY}@${fixture.digest}`,
+						ecosystem: "store",
+						mediaType: fixture.mediaType,
+						sizeBytes: String(manifest.byteLength),
+					},
+				],
+				blobs: [manifest, config.bytes, layer.bytes],
+				labels: {
+					"hobo.cd/oci.tags": VERSION,
+					"hobo.cd/oci.mount-from": "hobo-labs/hobo/hobo-ci-worker",
+				},
+			});
+			expect(verdict.outcome).toBe("qualified");
+			const repo = world.repo("ghcr.io", REPOSITORY);
+			// The registry computed the digest from the bytes it received: the
+			// digest recorded as Freight is the digest GHCR serves.
+			expect(repo.manifests.has(fixture.digest)).toBe(true);
+			expect(repo.tags.get(VERSION)).toBe(fixture.digest);
+			expect(
+				Buffer.from(world.hosts.get("ghcr.io")?.blobs.get(layer.digest) ?? []),
+			).toEqual(Buffer.from(layer.bytes));
+			// Config mounted across repositories, the binary layer uploaded, then
+			// the manifest by digest and the release tag.
+			const mounts = world.calls.filter(
+				(call) => call.method === "POST" && call.url.includes("mount="),
+			);
+			expect(
+				mounts.map((call) => new URL(call.url).searchParams.get("mount")),
+			).toContain(config.digest);
+			const puts = world.paths("PUT");
+			expect(
+				puts.filter((path) => path.includes("/blobs/uploads/")),
+			).toHaveLength(1);
+			expect(puts.filter((path) => path.includes("/manifests/"))).toEqual([
+				`PUT ghcr.io/v2/${REPOSITORY}/manifests/${fixture.digest}`,
+				`PUT ghcr.io/v2/${REPOSITORY}/manifests/${VERSION}`,
+			]);
+			expect(fetched).not.toHaveBeenCalled();
+			expect(await promoteReleaseStable(home, env, fixtures)).toBe(true);
+			expect(world.paths("PUT")).toHaveLength(3);
+			expect(journalText(home)).not.toContain(GHCR_TOKEN);
 		});
 
 		it("OCI: stable only observes: a drifted target blocks it, and it never asks for push scope", async () => {
@@ -461,39 +547,117 @@ describe.skipIf(!built)(
 			expect(journalText(home)).not.toContain(fx.TOKEN);
 		});
 
-		it("npm: the missing provenance bundle is a named impedance; nothing reaches the registry", async () => {
+		it("npm: candidate publishes the tarball with its signed Sigstore bundle through token auth, stable observes anonymously", async () => {
+			const { npm, signer, sigstore } = fx;
+			const world = npm.registryWorld({ publicReads: true });
+			const seen: TransportRequest[] = [];
+			const fixtures = seams(withProbes(world.transport, seen));
+			const build = signer.githubActionsBuild({
+				GITHUB_SERVER_URL: "https://github.com",
+				GITHUB_REPOSITORY: `${OWNER}/${REPO}`,
+				GITHUB_REPOSITORY_ID: "1",
+				GITHUB_REPOSITORY_OWNER_ID: "2",
+				GITHUB_WORKFLOW_REF: `${OWNER}/${REPO}/.github/workflows/release-hobo.yml@refs/heads/main`,
+				GITHUB_REF: "refs/heads/main",
+				GITHUB_SHA: COMMIT,
+				GITHUB_EVENT_NAME: "push",
+				GITHUB_RUN_ID: "42",
+				GITHUB_RUN_ATTEMPT: "1",
+				RUNNER_ENVIRONMENT: "github-hosted",
+			});
+			const root = sigstore.createTestTrustRoot();
+			const signed = await signer.signNpmProvenance(
+				{ name: npm.NAME, version: "1.2.3", tarball: npm.TARBALL },
+				build,
+				async (payload) =>
+					sigstore.actionsAttestBundle(root, {
+						statement: Buffer.from(payload),
+						signedAtMs: Date.parse("2026-11-12T00:00:00Z"),
+						san: signer.githubWorkflowIdentity(build),
+					}),
+			);
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-npm-"));
+			const { verdict } = await qualifyReleaseCandidate({
+				home,
+				family: "npm",
+				env: { ...env, NPM_TOKEN: npm.TOKEN },
+				seams: fixtures,
+				stored: [
+					{
+						name: `${npm.NAME}@1.2.3`,
+						kind: "ARTIFACT_KIND_PACKAGE",
+						mediaType: "application/gzip",
+						bytes: npm.TARBALL,
+					},
+					{
+						name: `${npm.NAME}@1.2.3.sigstore`,
+						kind: "ARTIFACT_KIND_STATIC_ASSETS",
+						mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json",
+						bytes: signed.bundle,
+					},
+				],
+				labels: { "hobo.cd/npm.dist-tag": "alpha" },
+			});
+			expect(verdict.outcome).toBe("qualified");
+			const published = world.packument();
+			expect(published?.["dist-tags"]?.alpha).toBe("1.2.3");
+			expect(published?.versions?.["1.2.3"]?.dist.attestations).toBeDefined();
+			// The publish carried exactly the signed bundle, with the token.
+			const put = world.requests.find(
+				(r) => r.method === "PUT" && r.body?.includes("_attachments"),
+			);
+			expect(put?.headers.authorization).toBe(`Bearer ${npm.TOKEN}`);
+			const attachments = JSON.parse(put?.body ?? "{}")._attachments;
+			expect(attachments[`${npm.NAME}-1.2.3.sigstore`]?.data).toBe(
+				new TextDecoder().decode(signed.bundle),
+			);
+			// The Freight carries the bundle by digest, next to its tarball.
+			const manifest = JSON.parse(
+				readFileSync(join(home, "release-freight-npm.manifest.json"), "utf8"),
+			);
+			expect(manifest.artifacts.map((a: { name: string }) => a.name)).toContain(
+				`${npm.NAME}@1.2.3.sigstore`,
+			);
+			// Stable re-observes the public package without the npm token.
+			const before = world.requests.length;
+			expect(await promoteReleaseStable(home, env, fixtures)).toBe(true);
+			const stableReads = world.requests.slice(before);
+			expect(stableReads.length).toBeGreaterThan(0);
+			expect(stableReads.every((r) => r.method === "GET")).toBe(true);
+			expect(
+				stableReads.every((r) => r.headers.authorization === undefined),
+			).toBe(true);
+			expect(journalText(home)).not.toContain(npm.TOKEN);
+		});
+
+		it("npm: a tarball without its Sigstore bundle blocks; nothing reaches the registry and nothing else publishes", async () => {
 			const npmCalls: TransportRequest[] = [];
 			const http = withProbes(async (request) => {
 				npmCalls.push(request);
 				return { status: 500, headers: {}, body: "" };
 			}, []);
 			const home = mkdtempSync(join(tmpdir(), "hobo-release-npm-"));
-			const fixtures = seams(http);
-			const { verdict } = await qualifyReleaseCandidate({
-				home,
-				family: "npm",
-				env,
-				seams: fixtures,
-				stored: [
-					{
-						name: `@hobo-labs/core@${VERSION}`,
-						kind: "ARTIFACT_KIND_PACKAGE",
-						mediaType: "application/gzip",
-						bytes: new TextEncoder().encode("tarball"),
-					},
-				],
-				labels: { "hobo.cd/npm.dist-tag": "alpha" },
-			});
-			expect(verdict.outcome).toBe("impedance");
-			expect(verdict.codes).toEqual(["npm-provenance-bundle-missing"]);
-			expect(verdict.message).toMatch(/provenance/);
+			await expect(
+				qualifyReleaseCandidate({
+					home,
+					family: "npm",
+					env: { ...env, NPM_TOKEN: "npm_fixtureToken" },
+					seams: seams(http),
+					stored: [
+						{
+							name: `@hobo-labs/core@${VERSION}`,
+							kind: "ARTIFACT_KIND_PACKAGE",
+							mediaType: "application/gzip",
+							bytes: new TextEncoder().encode("tarball"),
+						},
+					],
+					labels: { "hobo.cd/npm.dist-tag": "alpha" },
+				}),
+			).rejects.toThrow(/blocked: npm-provenance-bundle-missing/);
 			expect(npmCalls).toEqual([]);
-			// No qualified candidate: stable is reported, not promoted, and does
-			// not block the tag for npm.
-			expect(await promoteReleaseStable(home, env, fixtures)).toBe(true);
 		});
 
-		it("npm: a package artifact the Camp cannot bind blocks (catalog-binding-invalid, never impedance)", async () => {
+		it("npm: a package artifact the Camp cannot bind blocks (catalog-binding-invalid)", async () => {
 			const npmCalls: TransportRequest[] = [];
 			const http = withProbes(async (request) => {
 				npmCalls.push(request);
@@ -526,6 +690,10 @@ describe.skipIf(!built)(
 		});
 	},
 );
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 describe("release topology module", () => {
 	it("is checked in where --yard and pipeline apply name it", () => {

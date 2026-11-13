@@ -164,9 +164,9 @@ apply --file release/hobo-release.delivery.ts` applies the pipelines.
 
 | Family | Camps | Provider (realizer) | Target and credential | What the realizer does |
 |---|---|---|---|---|
-| `oci` | `hobo-release/oci-candidate`, `oci-stable` | `@hobo/provider-oci-registry` | `ghcr.io`, the workflow `GITHUB_TOKEN` (`env://GITHUB_TOKEN`) | candidate: asserts the release tag on the recorded digest (tag PUT by digest) and observes digest and tag; stable: re-observes |
+| `oci` | `hobo-release/oci-candidate`, `oci-stable` | `@hobo/provider-oci-registry` | `ghcr.io`, the workflow `GITHUB_TOKEN` (`env://GITHUB_TOKEN`) | candidate: pushes the image from the HoBo artifact store (config and layers uploaded, or mounted from the toolchain image's repository; the manifest PUT by digest with its exact bytes; then the release tag) and observes digest and tag; stable: re-observes |
 | `pages` | `hobo-release/pages-candidate`, `pages-stable` | `@hobo/provider-github` | this repository's `gh-pages` branch, `GITHUB_TOKEN` (`contents: write`) | candidate: uploads missing blobs, creates the tree (id computed before upload) and one commit `deploy: <sha>` on the observed head, moved by compare-and-swap; stable: re-observes the tree and its Pages build |
-| `npm` | `hobo-release/npm-candidate`, `npm-stable` | `@hobo/provider-npm` | `registry.npmjs.org`, OIDC trusted publishing, provenance required | refuses with a named impedance code (below); `npm publish --provenance` stays the npm publisher: **unmet requirement** |
+| `npm` | `hobo-release/npm-candidate`, `npm-stable` | `@hobo/provider-npm` | `registry.npmjs.org`, the hobodev token (`env://NPM_TOKEN`), provenance required; stable reads anonymously (`none://npm-public-read`) | candidate: publishes each version with its Sigstore provenance bundle attached and the release dist-tag, and observes both; stable: re-observes without a credential |
 
 Candidate Camps converge; stable Camps declare `hobo.cd/realize-mode:
 observe`, so their realizer only calls the resolver's `read` (pull-only token
@@ -182,10 +182,12 @@ loads it):
 1. `freight record`: the manifest names each artifact by sha256 digest, the
    release commit, the run id and the workflow as builder, and a declaration
    (a Bindle with one resource on the family's product) under its canonical
-   hash. Tarballs and the Pages tree go into the HoBo artifact store first;
-   GHCR images are verified at the registry by the digest main's push logic
-   reads back from GHCR (`pushedDigestRef`, or the published tag reused). A
-   refusal stops the job.
+   hash. Tarballs, their Sigstore bundles and the Pages tree go into the HoBo
+   artifact store first. A built GHCR image is exported as an OCI image layout
+   (`docker save`, `exportReleaseOciLayout`); every blob goes into the store
+   and the root digest is recorded at its GHCR coordinate (`ecosystem:
+   store`). A release tag already on GHCR for this build is reused and
+   verified at the registry instead. A refusal stops the job.
 2. `pipeline apply --file release/hobo-release.delivery.ts`.
 3. `promote <freight> --camp hobo-release/<family>-candidate --pipeline
    hobo-release-<family> --node candidate`, then in the tag jobs (or the Pages
@@ -197,36 +199,50 @@ loads it):
    candidate -> stable lineage itself.
 
 The verdict is `qualified` (PROMOTED: the realizer converged by its own
-observation and the node's probe passed), `impedance` or `blocked`.
-`impedance` is read only from the two named npm provider limits,
-`npm-provenance-bundle-missing` and `npm-oidc-scoped-unsupported`; only the
-npm family may keep its existing publish step on it, and its stable Camp is
-reported, not promoted. Everything else blocks, including not finishing, a
-generic `RESOLVER_PRODUCT_UNSUPPORTED`, and `catalog-binding-invalid` (a
-missing or invalid Camp label such as `hobo.cd/credential-ref`,
-`hobo.cd/npm.registry` or `hobo.cd/npm.auth`, or a package artifact not named
-`<package>@<version>`): a misdeclared npm topology or Freight never publishes.
-There is no fallback that publishes on a missing topology or realizer either.
+observation and the node's probe passed) or `blocked`. Every realizer
+refusal blocks, including `npm-provenance-bundle-missing` (a tarball whose
+Sigstore bundle the Freight does not carry), `npm-oidc-scoped-unsupported`,
+a generic `RESOLVER_PRODUCT_UNSUPPORTED` and `catalog-binding-invalid` (a
+missing or invalid Camp label, or a package artifact not named
+`<package>@<version>`), and so does not finishing. There is no fallback
+publisher: no `npm publish`, no `docker push`.
+
+How each family publishes:
+
+- **npm.** `scripts/ci/publish-npm-sdk.mts` signs each staged tarball's
+  provenance keyless in the `release-npm` job (`@hobo/cd/provenance`
+  `signNpmProvenance`: npm's GitHub Actions in-toto statement with the
+  tarball's sha512 and sha256, a Fulcio certificate for the job's OIDC
+  identity, a Rekor entry). The bundle is recorded next to its tarball as
+  `<package>@<version>.sigstore`; the realizer binds it to the tarball's
+  sha512 and attaches it to the publish, and npmjs verifies it. Auth is the
+  hobodev token: npm's OIDC exchange routes only for the `%2f`-escaped scope,
+  which the transport guard refuses, so a scoped name cannot use trusted
+  publishing through the realizer. The bundle is not a Freight
+  `ProvenanceRef`: a pushed manifest's provenance is unverified by design,
+  and the trust gate refuses unverified provenance.
+- **OCI.** `scripts/ci/push-release-ghcr-images.mts` builds the image,
+  exports it as an OCI layout and records it; the realizer runs on a byte
+  transport (`ociLatin1Transport`: binary bodies bypass the UTF-8 host
+  transport) and pushes config and layers (monolithic up to 32 MiB, `CATALOG_OCI_CHUNK_BYTES`, chunked
+  past it), the manifest by digest with its exact bytes, then the tag. A
+  cross-repository mount from the toolchain image's repository is tried
+  first; a mount GHCR or the token declines is uploaded. The digest recorded
+  as Freight is the digest GHCR serves: the registry recomputes it from the
+  bytes the realizer PUT, and the realizer refuses anything it does not
+  observe there.
 
 Remaining gaps and limits:
 
-- **OCI blobs and manifest (unmet).** `docker push` still uploads the image's
-  blobs and manifest (it is how the build produces the digest); the realizer
-  writes only the release tag by digest. The OCI Camp names no source
-  registry and the image is not stored in the CD artifact store, so the
-  realizer refuses an absent manifest instead of uploading it. Closing this
-  means storing the image (or naming a source registry) so
-  `@hobo/provider-oci-registry` uploads blobs and manifest by digest itself.
-  A blocked verdict stops attestation, the tag and the GitHub Release but
-  leaves what `docker push` wrote.
-- **npm publish and dist-tag moves (unmet).** The npm realizer does not
-  publish. The release records no Sigstore bundle for the provenance its Camp
-  requires (`npm-provenance-bundle-missing`; npm's CLI makes the bundle
-  during `npm publish --provenance`), and `@hobo/provider-npm` refuses OIDC
-  trusted publishing of scoped names (`npm-oidc-scoped-unsupported`: the
-  registry routes the token exchange only for the `%2f`-escaped name, which
-  the transport guard refuses). Closing it means recording the bundle in the
-  Freight and binding token auth for the scoped names.
+- **Not yet run live.** Both publishers are proven offline against the
+  providers' recorded registry worlds (`scripts/test/release-freight-realize.test.ts`);
+  the first live npm publish still waits on `HOBO_NPM_PUBLISH` and the
+  hobodev `NPM_TOKEN`. The export refuses a Docker daemon older than 25
+  (`dockerOciSaveSupport`: older `docker save` writes no OCI layout). On a
+  runner without the containerd image store, `docker save` writes
+  uncompressed layers, so the pushed image is larger and its layers are not
+  mountable from the toolchain repository; the export warns, and the image
+  is still correct by digest.
 - **Pages history.** The Pages realizer commits on the observed head instead
   of force-pushing an orphan commit, so `gh-pages` keeps one commit per
   deploy. Blobs are shared by content, so each commit adds only the files

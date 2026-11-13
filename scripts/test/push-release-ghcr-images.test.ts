@@ -1,216 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-	dockerPushBackoffMs,
-	isRetryableDockerPushOutput,
-	runDockerPushWithRetry,
-} from "../lib/docker-registry-push.mts";
-
-describe("isRetryableDockerPushOutput", () => {
-	it("matches GHCR unknown blob failures from release 42101265267", () => {
-		expect(
-			isRetryableDockerPushOutput(
-				'failed to copy: failed to do request: Put "https://ghcr.io/v2/hobo-labs/hobo/hobo-cli/blobs/uploads/...": unknown blob',
-			),
-		).toBe(true);
-	});
-
-	it("rejects auth and manifest errors", () => {
-		expect(isRetryableDockerPushOutput("denied: permission denied")).toBe(
-			false,
-		);
-		expect(isRetryableDockerPushOutput("manifest unknown")).toBe(false);
-	});
-});
-
-describe("dockerPushBackoffMs", () => {
-	it("exponential backoff capped at 60s", () => {
-		expect(dockerPushBackoffMs(1)).toBe(5_000);
-		expect(dockerPushBackoffMs(2)).toBe(10_000);
-		expect(dockerPushBackoffMs(5)).toBe(60_000);
-	});
-});
-
-describe("runDockerPushWithRetry", () => {
-	it("retries unknown blob then succeeds", () => {
-		const sleeps: number[] = [];
-		const attempts: string[] = [];
-		let calls = 0;
-		runDockerPushWithRetry({
-			tag: "ghcr.io/hobo-labs/hobo/hobo-cli:v0.0.0-alpha.10",
-			maxAttempts: 4,
-			sleepMs: (ms) => {
-				sleeps.push(ms);
-			},
-			push: (tag) => {
-				attempts.push(tag);
-				calls += 1;
-				if (calls < 3) {
-					return {
-						exitCode: 1,
-						stdout: "",
-						stderr: "unknown blob",
-					};
-				}
-				return { exitCode: 0, stdout: "digest: sha256:abc", stderr: "" };
-			},
-		});
-		expect(attempts).toHaveLength(3);
-		expect(sleeps).toEqual([5_000, 10_000]);
-	});
-
-	it("does not retry non-retryable errors", () => {
-		const push = vi.fn(() => ({
-			exitCode: 1,
-			stdout: "",
-			stderr: "denied",
-		}));
-		expect(() =>
-			runDockerPushWithRetry({
-				tag: "ghcr.io/x/y:1",
-				push,
-			}),
-		).toThrow(/docker push ghcr.io\/x\/y:1 failed/);
-		expect(push).toHaveBeenCalledTimes(1);
-	});
-});
+import { describe, expect, it } from "vitest";
 
 describe("push-release-ghcr-images wiring", () => {
-	it("uses runDockerPushWithRetry for registry push", async () => {
+	it("publishes only through hobo deploy: an exported OCI layout, never docker push", async () => {
 		const { readFileSync } = await import("node:fs");
 		const { join } = await import("node:path");
 		const source = readFileSync(
 			join(import.meta.dirname, "..", "ci/push-release-ghcr-images.mts"),
 			"utf8",
 		);
-		expect(source).toMatch(/runDockerPushWithRetry/u);
-		expect(source).not.toMatch(/run\("docker", \["push"/u);
-		expect(source).toMatch(/resolveRegistryDigestForTagWithRetry/u);
+		expect(source).not.toMatch(/runDockerPushWithRetry/u);
+		expect(source).not.toMatch(/"push"/u);
+		expect(source).toMatch(/exportReleaseOciLayout/u);
+		expect(source).toMatch(/qualifyReleaseCandidate/u);
 		expect(source).toMatch(/tryReusePublishedTag/u);
 		expect(source).toMatch(/normalizeRepoDigestLine/u);
-	});
-});
-
-describe("runDockerPushWithRetry time limits", () => {
-	it("stops a stalled push and retries it", () => {
-		const timeouts: (number | undefined)[] = [];
-		let calls = 0;
-		const log: string[] = [];
-		runDockerPushWithRetry({
-			tag: "ghcr.io/hobo-labs/hobo/hobo-cli:v0.0.0-alpha.149",
-			attemptTimeoutMs: 300_000,
-			budgetMs: 600_000,
-			sleepMs: () => {},
-			log: (line) => log.push(line),
-			now: () => 0,
-			push: (_tag, timeoutMs) => {
-				timeouts.push(timeoutMs);
-				calls += 1;
-				return calls === 1
-					? {
-							exitCode: null,
-							stdout: "abc: Pushing",
-							stderr: "",
-							timedOut: true,
-						}
-					: { exitCode: 0, stdout: "digest: sha256:abc", stderr: "" };
-			},
-		});
-		expect(timeouts).toEqual([300_000, 300_000]);
-		expect(log[0]).toMatch(/stalled past 300000ms \(attempt 1\/5\)/u);
-		expect(log[1]).toBe("abc: Pushing");
-	});
-
-	it("gives the last attempt only what is left of the budget", () => {
-		let clock = 0;
-		const timeouts: (number | undefined)[] = [];
-		runDockerPushWithRetry({
-			tag: "ghcr.io/x/y:1",
-			attemptTimeoutMs: 300_000,
-			budgetMs: 400_000,
-			sleepMs: (ms) => {
-				clock += ms;
-			},
-			log: () => {},
-			now: () => clock,
-			push: (_tag, timeoutMs) => {
-				timeouts.push(timeoutMs);
-				if (timeouts.length === 1) {
-					clock += 300_000;
-					return { exitCode: null, stdout: "", stderr: "", timedOut: true };
-				}
-				return { exitCode: 0, stdout: "", stderr: "" };
-			},
-		});
-		// 300 s stalled + 5 s backoff leaves 95 s of the 400 s budget.
-		expect(timeouts).toEqual([300_000, 95_000]);
-	});
-
-	it("fails with the stall named once the budget is spent", () => {
-		let clock = 0;
-		const push = vi.fn((_tag: string, timeoutMs?: number) => {
-			clock += timeoutMs ?? 0;
-			return { exitCode: null, stdout: "", stderr: "", timedOut: true };
-		});
-		expect(() =>
-			runDockerPushWithRetry({
-				tag: "ghcr.io/x/y:1",
-				attemptTimeoutMs: 300_000,
-				budgetMs: 600_000,
-				sleepMs: (ms) => {
-					clock += ms;
-				},
-				log: () => {},
-				now: () => clock,
-				push,
-			}),
-		).toThrow(
-			/docker push ghcr.io\/x\/y:1 timed out after \d+ms \(attempt 2\/5\)/u,
-		);
-		expect(push).toHaveBeenCalledTimes(2);
-	});
-
-	it("counts a timed-out push that also exited 0 as a stall, not a success", () => {
-		// spawnSync can report status 0 alongside ETIMEDOUT only if the child
-		// exited in the same tick; it is retried, never taken as pushed.
-		const push = vi.fn(() => ({
-			exitCode: 0,
-			stdout: "",
-			stderr: "",
-			timedOut: true,
-		}));
-		expect(() =>
-			runDockerPushWithRetry({
-				tag: "ghcr.io/x/y:1",
-				maxAttempts: 2,
-				attemptTimeoutMs: 1,
-				sleepMs: () => {},
-				log: () => {},
-				push,
-			}),
-		).toThrow(/timed out/u);
-		expect(push).toHaveBeenCalledTimes(2);
-	});
-
-	it("fails at once rather than start an attempt with under a minute left", () => {
-		let clock = 0;
-		const push = vi.fn(() => {
-			clock += 250_000;
-			return { exitCode: null, stdout: "", stderr: "", timedOut: true };
-		});
-		expect(() =>
-			runDockerPushWithRetry({
-				tag: "ghcr.io/x/y:1",
-				attemptTimeoutMs: 250_000,
-				budgetMs: 300_000,
-				sleepMs: (ms) => {
-					clock += ms;
-				},
-				log: () => {},
-				now: () => clock,
-				push,
-			}),
-		).toThrow(/attempt 1\/5/u);
-		expect(push).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -321,74 +124,6 @@ describe("release-images job", () => {
 	});
 });
 
-describe("pushedDigestRef (finding 141)", () => {
-	const tag = "ghcr.io/hobo-labs/hobo/hobo-sdk:v0.0.0-alpha.159";
-	const digest =
-		"sha256:e9e01db3ed33237ceac6cf6b8ba6f5f3335287418739ff6992139f4599ab0a20";
-
-	it("takes the digest docker push printed, under the pushed repository", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		// Run 43176733275, ARC pod: RepoDigests[0] was the local name.
-		expect(
-			pushedDigestRef(
-				tag,
-				`abc: Layer already exists\nv0.0.0-alpha.159: digest: ${digest} size: 4307`,
-				`hobo-sdk@${digest}\n`,
-			),
-		).toBe(`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`);
-	});
-
-	it("falls back to the RepoDigests entry for the pushed repository, never the first", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		expect(
-			pushedDigestRef(
-				tag,
-				"",
-				`hobo-sdk@${digest}\nghcr.io/hobo-labs/hobo/hobo-sdk@${digest}\n`,
-			),
-		).toBe(`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`);
-	});
-
-	it("refuses rather than record a reference attest cannot find", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		expect(() => pushedDigestRef(tag, "", `hobo-sdk@${digest}\n`)).toThrow(
-			/no digest for .*hobo-sdk@sha256/u,
-		);
-		expect(() => pushedDigestRef(tag, "", "")).toThrow(
-			/RepoDigests has no ghcr.io\/hobo-labs\/hobo\/hobo-sdk@ entry \(none\)/u,
-		);
-	});
-
-	it("produces a line the attest step selects by image id", async () => {
-		const { pushedDigestRef } = await import(
-			"../ci/push-release-ghcr-images.mts"
-		);
-		const line = pushedDigestRef(tag, `x: digest: ${digest} size: 1`, "");
-		// .github/actions/release-oci-attest: grep -F "/${IMAGE_ID}@"
-		expect(line.includes("/hobo-sdk@")).toBe(true);
-	});
-
-	it("returns the push output so the digest can be read from it", () => {
-		expect(
-			runDockerPushWithRetry({
-				tag,
-				log: () => {},
-				push: () => ({
-					exitCode: 0,
-					stdout: `v: digest: ${digest} size: 1`,
-					stderr: "",
-				}),
-			}),
-		).toContain(digest);
-	});
-});
-
 describe("ociReleaseArtifacts", () => {
 	const digest = `sha256:${"b".repeat(64)}`;
 
@@ -432,5 +167,259 @@ describe("releaseTagsOf (the tag the oci-candidate realizer owns)", () => {
 				`ghcr.io/hobo-labs/hobo/hobo-sdk@${digest}`,
 			]),
 		).toBe("v0.0.0-alpha.3");
+	});
+});
+
+// ── OCI image layout export, read by digest (offline fixtures) ─────────────
+
+const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
+const OCI_INDEX = "application/vnd.oci.image.index.v1+json";
+
+async function layoutFixture(options: {
+	platforms?: readonly string[];
+	present?: readonly string[];
+	attestation?: boolean;
+	index?: boolean;
+}) {
+	const { createHash } = await import("node:crypto");
+	const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const dir = mkdtempSync(join(tmpdir(), "hobo-oci-layout-"));
+	mkdirSync(join(dir, "blobs", "sha256"), { recursive: true });
+	const put = (bytes: Uint8Array, write = true) => {
+		const hex = createHash("sha256").update(bytes).digest("hex");
+		if (write) writeFileSync(join(dir, "blobs", "sha256", hex), bytes);
+		return { digest: `sha256:${hex}`, size: bytes.byteLength };
+	};
+	const platforms = options.platforms ?? ["amd64"];
+	const children = platforms.map((arch) => {
+		const present = (options.present ?? platforms).includes(arch);
+		const config = put(
+			Buffer.from(JSON.stringify({ architecture: arch, os: "linux" })),
+			present,
+		);
+		const layer = put(
+			Uint8Array.from(
+				{ length: 300 },
+				(_, i) => (i * 13 + arch.charCodeAt(1)) % 256,
+			),
+			present,
+		);
+		const manifest = Buffer.from(
+			JSON.stringify({
+				schemaVersion: 2,
+				mediaType: OCI_MANIFEST,
+				config: {
+					mediaType: "application/vnd.oci.image.config.v1+json",
+					...config,
+				},
+				layers: [
+					{
+						mediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
+						...layer,
+					},
+				],
+			}),
+		);
+		return {
+			mediaType: OCI_MANIFEST,
+			...put(manifest, present),
+			platform: { architecture: arch, os: "linux" },
+		};
+	});
+	const attestation = options.attestation
+		? [
+				{
+					mediaType: OCI_MANIFEST,
+					...put(
+						Buffer.from(
+							JSON.stringify({
+								schemaVersion: 2,
+								mediaType: OCI_MANIFEST,
+								config: {
+									mediaType: "application/vnd.oci.image.config.v1+json",
+									...put(Buffer.from("{}")),
+								},
+								layers: [],
+							}),
+						),
+					),
+					annotations: { "vnd.docker.reference.type": "attestation-manifest" },
+				},
+			]
+		: [];
+	let root = children[0];
+	if (options.index) {
+		const index = Buffer.from(
+			JSON.stringify({
+				schemaVersion: 2,
+				mediaType: OCI_INDEX,
+				manifests: [...children, ...attestation],
+			}),
+		);
+		root = {
+			mediaType: OCI_INDEX,
+			...put(index),
+			platform: { architecture: "", os: "" },
+		};
+	}
+	writeFileSync(join(dir, "oci-layout"), '{"imageLayoutVersion":"1.0.0"}');
+	writeFileSync(
+		join(dir, "index.json"),
+		JSON.stringify({ schemaVersion: 2, manifests: [root] }),
+	);
+	return { dir, root, children };
+}
+
+describe("readOciLayout (the image the oci-candidate realizer pushes)", () => {
+	it("reads a single-platform image: root manifest first, then config and layers, each re-hashed", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { root, dir } = await layoutFixture({});
+		const layout = readOciLayout(dir);
+		expect(layout.digest).toBe(root?.digest);
+		expect(layout.mediaType).toBe(OCI_MANIFEST);
+		expect(layout.size).toBe(root?.size);
+		expect(layout.blobs).toHaveLength(3);
+		expect(layout.blobs[0]?.digest).toBe(root?.digest);
+	});
+
+	it("publishes a complete index as the index", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { root, dir } = await layoutFixture({
+			platforms: ["amd64", "arm64"],
+			index: true,
+		});
+		const layout = readOciLayout(dir);
+		expect(layout.digest).toBe(root?.digest);
+		expect(layout.mediaType).toBe(OCI_INDEX);
+		expect(layout.blobs).toHaveLength(7);
+	});
+
+	it("publishes the one complete platform of an index saved from one platform, never the attestation", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { children, dir } = await layoutFixture({
+			platforms: ["amd64", "arm64"],
+			present: ["amd64"],
+			attestation: true,
+			index: true,
+		});
+		expect(readOciLayout(dir).digest).toBe(children[0]?.digest);
+	});
+
+	it("refuses a missing layer or a blob that does not hash to its name (nothing substituted)", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { rmSync, writeFileSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		const missing = await layoutFixture({});
+		rmSync(readOciLayout(missing.dir).blobs[2]?.path ?? "");
+		expect(() => readOciLayout(missing.dir)).toThrow(/missing blobs/u);
+		const tampered = await layoutFixture({});
+		writeFileSync(readOciLayout(tampered.dir).blobs[2]?.path ?? "", "other");
+		expect(() => readOciLayout(tampered.dir)).toThrow(/hashes to/u);
+		expect(() => readOciLayout(join(tampered.dir, "blobs"))).toThrow(
+			/not an OCI image layout/u,
+		);
+	});
+});
+
+describe("dockerOciSaveSupport (the host docker save must run on)", () => {
+	it("refuses a daemon older than Docker 25, whose save is not an OCI layout", async () => {
+		const { dockerOciSaveSupport } = await import(
+			"../ci/build-release-oci-image.mts"
+		);
+		expect(() => dockerOciSaveSupport("24.0.9", "[]")).toThrow(
+			/Docker 25 or later.*24\.0\.9/u,
+		);
+		expect(() => dockerOciSaveSupport("", "[]")).toThrow(/Docker 25/u);
+	});
+
+	it("reports whether the containerd image store compresses the saved layers", async () => {
+		const { dockerOciSaveSupport } = await import(
+			"../ci/build-release-oci-image.mts"
+		);
+		expect(
+			dockerOciSaveSupport(
+				"27.3.1",
+				'[["driver-type","io.containerd.snapshotter.v1"]]',
+			),
+		).toEqual({ serverVersion: "27.3.1", compressedLayers: true });
+		const classic = dockerOciSaveSupport(
+			"25.0.0",
+			'[["Backing Filesystem","extfs"]]',
+		);
+		expect(classic.compressedLayers).toBe(false);
+	});
+});
+
+describe("publishReleaseGhcrImages (release Freight for hobo deploy)", () => {
+	it("records a built image from the artifact store at its GHCR coordinate, with every blob, the release tag and the mount source", async () => {
+		const { readOciLayout } = await import("../ci/build-release-oci-image.mts");
+		const { publishReleaseGhcrImages, releaseMountFrom } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		const { dir } = await layoutFixture({});
+		const layout = readOciLayout(dir);
+		const line = `ghcr.io/hobo-labs/hobo/hobo-cli@${layout.digest}`;
+		const reused = `ghcr.io/hobo-labs/hobo/hobo-sdk@sha256:${"b".repeat(64)}`;
+		let registry: unknown;
+		let labels: unknown;
+		let blobs = 0;
+		await publishReleaseGhcrImages(
+			{
+				releaseRef: "v0.0.0-alpha.3",
+				repository: "Hobo-Labs/HoBo",
+				freightHome: "/tmp/cd",
+				images: [
+					{ id: "hobo-cli", line, layout, layoutDir: dir },
+					{ id: "hobo-sdk", line: reused },
+				],
+			},
+			async (input) => {
+				registry = input.registry;
+				labels = input.labels;
+				for (const _blob of input.blobs ?? []) blobs++;
+				return {
+					freightId: "f",
+					verdict: { outcome: "qualified", codes: [], message: "" },
+				};
+			},
+		);
+		expect(registry).toEqual([
+			{
+				name: "hobo-cli",
+				kind: "ARTIFACT_KIND_OCI_IMAGE",
+				digest: layout.digest,
+				coordinate: line,
+				ecosystem: "store",
+				mediaType: OCI_MANIFEST,
+				sizeBytes: String(layout.size),
+			},
+			expect.objectContaining({ name: "hobo-sdk", ecosystem: "oci" }),
+		]);
+		expect(blobs).toBe(3);
+		expect(labels).toMatchObject({
+			"hobo.cd/oci.tags": "v0.0.0-alpha.3",
+			"hobo.cd/oci.mount-from": "hobo-labs/hobo/hobo-ci-worker",
+		});
+		expect(releaseMountFrom("Hobo-Labs/HoBo")).toBe(
+			"hobo-labs/hobo/hobo-ci-worker",
+		);
+	});
+
+	it("refuses a digest line that does not name the layout root", async () => {
+		const { storedOciReleaseArtifact } = await import(
+			"../ci/push-release-ghcr-images.mts"
+		);
+		expect(() =>
+			storedOciReleaseArtifact(
+				`ghcr.io/hobo-labs/hobo/hobo-cli@sha256:${"e".repeat(64)}`,
+				{
+					digest: `sha256:${"f".repeat(64)}`,
+					mediaType: OCI_MANIFEST,
+					size: 1,
+				},
+			),
+		).toThrow(/does not name the layout root/u);
 	});
 });

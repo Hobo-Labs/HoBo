@@ -71,8 +71,8 @@ Camp's labels bind where (`CATALOG_REALIZER_LABELS` in
 | Provider | Camp labels | Freight |
 |---|---|---|
 | all | `hobo.cd/credential-ref`: the one locator the resolver may use (`env://NAME`); nothing else is resolved for the Camp. Optional `hobo.cd/realize-mode`: `converge` (default) or `observe` (resolver `read` only, never a write) | |
-| npm | `hobo.cd/npm.registry` (`npmjs`, `github-packages`, `https://` origin), `hobo.cd/npm.auth`, `hobo.cd/npm.provenance: required`, optional `hobo.cd/npm.dist-tag` | `PACKAGE` artifacts named `<package>@<version>`, optional `<name>.sigstore` bundle, label `hobo.cd/npm.dist-tag` |
-| oci-registry | `hobo.cd/oci.registry` (host), `hobo.cd/oci.auth-realm`, `hobo.cd/oci.username` (non-secret), optional `hobo.cd/oci.tags` | `OCI_IMAGE` artifacts with a `<host>/<repo>@<digest>` coordinate on that host, label `hobo.cd/oci.tags` |
+| npm | `hobo.cd/npm.registry` (`npmjs`, `github-packages`, `https://` origin), `hobo.cd/npm.auth` (`token`, `oidc-trusted-publishing`, or `anonymous` for an observe-only Camp that resolves no credential), `hobo.cd/npm.provenance: required`, optional `hobo.cd/npm.dist-tag` | `PACKAGE` artifacts named `<package>@<version>`, optional `<name>.sigstore` bundle, label `hobo.cd/npm.dist-tag` |
+| oci-registry | `hobo.cd/oci.registry` (host), `hobo.cd/oci.auth-realm`, `hobo.cd/oci.username` (non-secret), optional `hobo.cd/oci.tags` | `OCI_IMAGE` artifacts with a `<host>/<repo>@<digest>` coordinate on that host (already there, or every blob in the artifact store: the realizer pushes them on a byte transport), label `hobo.cd/oci.tags`, optional `hobo.cd/oci.mount-from` (a repository on that host to cross-mount blobs from) |
 | github | `hobo.cd/github.repository` (`owner/repo`), `hobo.cd/github.pages.branch`, `hobo.cd/github.pages.path` | a `STATIC_ASSETS` `hobo.static-site-tree/v1` index (its file blobs in the store), label `hobo.cd/github.commit-message` |
 
 CONVERGED is reported only when every resolver outcome reads `ready` from its

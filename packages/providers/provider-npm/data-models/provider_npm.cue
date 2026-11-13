@@ -13,7 +13,7 @@ import "strings"
 
 #NpmRegistryKind: "npmjs" | "github-packages" | "verdaccio"
 
-#NpmAuthMode: "token" | "oidc-trusted-publishing"
+#NpmAuthMode: "token" | "oidc-trusted-publishing" | "anonymous"
 
 #NpmConflictReason: "npm-version-integrity-mismatch" | "npm-version-previously-unpublished"
 

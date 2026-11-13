@@ -5,8 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	announceVerdict,
 	classifyRelease,
-	RELEASE_IMPEDANCE_CODES,
-	RELEASE_IMPEDANCE_FAMILIES,
 	releaseCampId,
 	releaseDeclaration,
 	releaseFreightManifest,
@@ -104,21 +102,10 @@ describe("classifyRelease", () => {
 		).toBeUndefined();
 	});
 
-	it("reads a realizer refusal with only impedance codes as impedance", () => {
-		const verdict = classifyRelease("p", {
-			state: "PROMOTION_STATE_ROLLING_OUT",
-			reasons: [],
-			observed: "RECONCILE_STATUS_BLOCKED",
-			observedReasons: [
-				{ code: "npm-provenance-bundle-missing", message: "no bundle" },
-			],
-		});
-		expect(verdict?.outcome).toBe("impedance");
-		expect(verdict?.codes).toEqual(["npm-provenance-bundle-missing"]);
-	});
-
-	it("blocks a misdeclared Camp or a generic unsupported refusal (never impedance)", () => {
+	it("blocks a named npm provider limit too: there is no fallback publisher", () => {
 		for (const code of [
+			"npm-provenance-bundle-missing",
+			"npm-oidc-scoped-unsupported",
 			"catalog-binding-invalid",
 			"RESOLVER_PRODUCT_UNSUPPORTED",
 		])
@@ -127,12 +114,9 @@ describe("classifyRelease", () => {
 					state: "PROMOTION_STATE_ROLLING_OUT",
 					reasons: [],
 					observed: "RECONCILE_STATUS_BLOCKED",
-					observedReasons: [
-						{ code: "npm-provenance-bundle-missing", message: "no bundle" },
-						{ code, message: "label hobo.cd/npm.auth is required" },
-					],
-				})?.outcome,
-			).toBe("blocked");
+					observedReasons: [{ code, message: "refused" }],
+				}),
+			).toMatchObject({ outcome: "blocked", codes: [code] });
 	});
 
 	it("blocks any other realizer refusal and any terminal failure (fail closed)", () => {
@@ -153,36 +137,27 @@ describe("classifyRelease", () => {
 			}),
 		).toMatchObject({ outcome: "blocked", codes: ["planning-camp-unknown"] });
 	});
-
-	it("keeps the impedance list to the two named npm provider limits, for npm only", () => {
-		expect([...RELEASE_IMPEDANCE_CODES]).toEqual([
-			"npm-oidc-scoped-unsupported",
-			"npm-provenance-bundle-missing",
-		]);
-		expect([...RELEASE_IMPEDANCE_FAMILIES]).toEqual(["npm"]);
-	});
 });
 
 describe("announceVerdict", () => {
-	const impedance = {
-		outcome: "impedance" as const,
-		codes: ["npm-provenance-bundle-missing"],
-		message: "no Sigstore bundle",
-	};
-
-	it("lets only npm keep its publish step on an impedance verdict", () => {
+	it("allows only a qualified verdict, for every family", () => {
 		const log = vi.spyOn(console, "log").mockImplementation(() => {});
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		const blocked = {
+			outcome: "blocked" as const,
+			codes: ["npm-provenance-bundle-missing"],
+			message: "no Sigstore bundle",
+		};
+		const qualified = { outcome: "qualified" as const, codes: [], message: "" };
 		try {
-			expect(announceVerdict("npm", "candidate", "f", impedance, {})).toBe(
-				true,
-			);
-			expect(announceVerdict("oci", "candidate", "f", impedance, {})).toBe(
-				false,
-			);
-			expect(announceVerdict("pages", "candidate", "f", impedance, {})).toBe(
-				false,
-			);
+			for (const family of ["npm", "oci", "pages"] as const) {
+				expect(announceVerdict(family, "candidate", "f", blocked, {})).toBe(
+					false,
+				);
+				expect(announceVerdict(family, "candidate", "f", qualified, {})).toBe(
+					true,
+				);
+			}
 		} finally {
 			log.mockRestore();
 			error.mockRestore();
@@ -257,6 +232,21 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 			/HOBO_RELEASE_CD_HOME: \$\{\{ runner\.temp \}\}\/hobo-release-cd\/npm/u,
 		);
 		before(block, "--filter=@hobo/hobo...", "publish-npm-sdk.mts");
+	});
+
+	it("publishes npm and GHCR only through hobo deploy promote: no npm publish, no docker push", () => {
+		expect(job("release-npm")).not.toMatch(/--provenance|npmPublishArgs/u);
+		expect(job("release-publish")).not.toMatch(/docker push/u);
+		const npm = readFileSync(
+			join(import.meta.dirname, "..", "ci", "publish-npm-sdk.mts"),
+			"utf8",
+		);
+		expect(npm).not.toMatch(/"publish"|npmPublishArgs|--provenance/u);
+		const oci = readFileSync(
+			join(import.meta.dirname, "..", "ci", "push-release-ghcr-images.mts"),
+			"utf8",
+		);
+		expect(oci).not.toMatch(/"push"|runDockerPushWithRetry/u);
 	});
 
 	it("publishes Pages only through the realizer: no gh-pages push action", () => {

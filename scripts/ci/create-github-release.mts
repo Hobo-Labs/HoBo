@@ -10,15 +10,16 @@
  * `runCdDeploySubcommand` from the built `@hobo/hobo`, the code the `hobo
  * deploy` verb runs), with the release topology loaded from
  * `release/hobo-release.delivery.ts` exactly as `--yard` loads it. The Camps'
- * realizers publish: the catalogued resolvers of `@hobo/provider-oci-registry`
- * (GHCR tags by digest) and `@hobo/provider-github` (the gh-pages branch).
+ * realizers publish, and nothing else does: the catalogued resolvers of
+ * `@hobo/provider-npm` (each tarball with its Sigstore provenance bundle),
+ * `@hobo/provider-oci-registry` (each image's blobs, manifest and tags by
+ * digest, from the HoBo artifact store) and `@hobo/provider-github` (the
+ * gh-pages branch).
  *
  * A promotion is driven here the way `hobo serve cd` ticks it (promotions,
  * one conductor pass of the Camp, rollouts, verification) until it is
  * PROMOTED, refused, or the realizer reports BLOCKED. The verdict is
- * `qualified`, `impedance` (the realizer refused only with a named npm
- * provider limit, RELEASE_IMPEDANCE_CODES; only npm, see
- * live-provider-matrix.md) or `blocked`.
+ * `qualified` or `blocked`; there is no fallback publisher.
  *
  *   create-github-release.mts promote-stable --freight-home <dir> [...]
  *   create-github-release.mts --tag <tag> [--prerelease]
@@ -97,26 +98,6 @@ const FAMILY_PRODUCT = {
 	oci: "oci-registry.image/v1",
 	pages: "github.pages-site/v1",
 } as const satisfies Record<ReleaseFamily, string>;
-
-/**
- * The exact realizer refusals that name an npm provider limit, not a broken
- * release: OIDC trusted publishing of a scoped package (which
- * @hobo/provider-npm refuses) and a provenance-required Camp whose Freight
- * carries no Sigstore bundle (the release scripts record none yet). Only the
- * npm family reads them: its `npm publish --provenance` step stays the
- * publisher on exactly these codes (an unmet requirement, release-channels.md).
- * Anything else, including RESOLVER_PRODUCT_UNSUPPORTED and
- * catalog-binding-invalid (a misdeclared Camp or Freight), blocks.
- */
-export const RELEASE_IMPEDANCE_CODES: ReadonlySet<string> = new Set([
-	"npm-oidc-scoped-unsupported",
-	"npm-provenance-bundle-missing",
-]);
-
-/** Families whose publisher may stay an existing workflow step on `impedance`. */
-export const RELEASE_IMPEDANCE_FAMILIES: ReadonlySet<ReleaseFamily> = new Set([
-	"npm",
-]);
 
 export type ReleaseSource = Readonly<{
 	repository: string;
@@ -229,7 +210,7 @@ export type CdResult = {
 };
 
 export type ReleaseVerdict = Readonly<{
-	outcome: "qualified" | "impedance" | "blocked";
+	outcome: "qualified" | "blocked";
 	codes: readonly string[];
 	message: string;
 	promotionId?: string;
@@ -258,8 +239,8 @@ const codesOf = (reasons: readonly CdReason[] | undefined) =>
 
 /**
  * Read a driven promotion as a release verdict (fail closed): PROMOTED is the
- * only qualification; a realizer refusal is `impedance` only when every code
- * is a declared impedance code; anything else, including not finishing, blocks.
+ * only qualification; a realizer refusal, a terminal promotion or not
+ * finishing blocks.
  */
 export function classifyRelease(
 	promotionId: string,
@@ -275,10 +256,8 @@ export function classifyRelease(
 		};
 	if (at.observed === "RECONCILE_STATUS_BLOCKED") {
 		const codes = codesOf(at.observedReasons);
-		const impedance =
-			codes.length > 0 && codes.every((c) => RELEASE_IMPEDANCE_CODES.has(c));
 		return {
-			outcome: impedance ? "impedance" : "blocked",
+			outcome: "blocked",
 			codes,
 			message: (at.observedReasons ?? []).map((r) => r.message).join("; "),
 			promotionId,
@@ -499,8 +478,11 @@ export async function recordReleaseFreight(
 			| undefined;
 		readonly registry?: readonly ReleaseArtifact[] | undefined;
 		readonly labels?: Readonly<Record<string, string>> | undefined;
-		/** Content blobs a listed artifact names by digest (a site tree's files). */
-		readonly blobs?: readonly Uint8Array[] | undefined;
+		/**
+		 * Content blobs a listed artifact names by digest (a site tree's files,
+		 * an image's config and layers).
+		 */
+		readonly blobs?: Iterable<Uint8Array> | undefined;
 	},
 ): Promise<{ freightId: string; alias: string }> {
 	const artifacts: ReleaseArtifact[] = [...(input.registry ?? [])];
@@ -624,14 +606,8 @@ export function announceVerdict(
 	env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
 	const line = `release Freight ${family} ${freightId} -> ${releaseCampId(family, channel)}: ${verdict.outcome} (${verdict.codes.join(", ") || "none"})`;
-	const allowed =
-		verdict.outcome === "qualified" ||
-		(verdict.outcome === "impedance" && RELEASE_IMPEDANCE_FAMILIES.has(family));
+	const allowed = verdict.outcome === "qualified";
 	if (!allowed) console.error(`::error::${line} ${verdict.message}`);
-	else if (verdict.outcome === "impedance")
-		console.log(
-			`::warning::${line}: the ${family} resolver cannot realize this target (${verdict.message}); its existing publish step stays the publisher`,
-		);
 	else console.log(line);
 	if (env.GITHUB_STEP_SUMMARY)
 		appendFileSync(env.GITHUB_STEP_SUMMARY, `- ${line}\n`);
@@ -640,8 +616,7 @@ export function announceVerdict(
 
 /**
  * Record one family and promote it into its candidate Camp, whose realizer
- * publishes it; throws unless it qualified (or, for an impedance family, the
- * resolver refused with a typed impedance code).
+ * publishes it; throws unless it qualified.
  */
 export async function qualifyReleaseCandidate(input: {
 	readonly home: string;
@@ -650,7 +625,7 @@ export async function qualifyReleaseCandidate(input: {
 	readonly stored?: Parameters<typeof recordReleaseFreight>[1]["stored"];
 	readonly registry?: readonly ReleaseArtifact[];
 	readonly labels?: Readonly<Record<string, string>>;
-	readonly blobs?: readonly Uint8Array[];
+	readonly blobs?: Iterable<Uint8Array>;
 	readonly seams?: ReleaseCdSeams;
 }): Promise<{ freightId: string; verdict: ReleaseVerdict }> {
 	const env = input.env ?? process.env;
@@ -686,8 +661,7 @@ export async function qualifyReleaseCandidate(input: {
 
 /**
  * Promote every family recorded under `home` to its stable Camp; false when
- * any is blocked. A family whose candidate verdict was `impedance` has no
- * qualified candidate to promote: it is reported, not promoted.
+ * any is blocked.
  */
 export async function promoteReleaseStable(
 	home: string,
@@ -705,14 +679,6 @@ export async function promoteReleaseStable(
 		for (const family of families) {
 			const report = readReport(home, family);
 			const freightId = report?.freightId ?? "";
-			const candidate = report?.channels.candidate;
-			if (
-				candidate?.outcome === "impedance" &&
-				RELEASE_IMPEDANCE_FAMILIES.has(family)
-			) {
-				ok = announceVerdict(family, "stable", freightId, candidate, env) && ok;
-				continue;
-			}
 			const verdict = await promoteReleaseFreight(cd, {
 				family,
 				channel: "stable",
