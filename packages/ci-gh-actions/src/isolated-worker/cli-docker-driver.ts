@@ -8,6 +8,10 @@ import type {
 	DockerDriver,
 	IsolatedContainerSpec,
 } from "./docker-driver.js";
+import {
+	type ContainerHardening,
+	hardenedContainerFlags,
+} from "./container-flags.js";
 import type { WorkerImage } from "./image-gc.js";
 import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
@@ -41,15 +45,18 @@ const dockerContainer = z.object({
 	Labels: z.string().optional(),
 });
 
-/** `docker create` flags for the host engine socket (gid matches socket group inside container). */
+/**
+ * `docker create` flags for the host engine socket (gid matches the socket's
+ * group inside the container). Only when the fleet allows host Docker
+ * (`hostDockerAllowed`); no environment variable turns it on.
+ */
 export function dockerSocketMountCreateArgs(
-	env: NodeJS.ProcessEnv,
-	stat: (path: string) => { gid: number } = (path) => statSync(path),
+	allowed: boolean,
+	gid: () => number = () => statSync("/var/run/docker.sock").gid,
 ): string[] {
-	if (env.HOBO_CI_MOUNT_DOCKER_SOCKET === "0") return [];
+	if (!allowed) return [];
 	const socketPath = "/var/run/docker.sock";
-	const gid = stat(socketPath).gid;
-	return ["-v", `${socketPath}:${socketPath}`, "--group-add", String(gid)];
+	return ["-v", `${socketPath}:${socketPath}`, "--group-add", String(gid())];
 }
 
 export function builderPruneArgs(keepStorage: string): string[] {
@@ -143,6 +150,12 @@ function parseDockerPsJson(stdout: string): DockerContainer[] {
 export function createCliDockerDriver(options: {
 	env?: NodeJS.ProcessEnv;
 	binary?: string;
+	/** S1 limits for every container this driver starts (container-flags.ts). */
+	hardening?: ContainerHardening;
+	/** Whether the host Docker socket may be mounted now (`hostDockerAllowed`); default never. */
+	hostDocker?: () => boolean;
+	/** The host socket's group id; read from the socket by default. */
+	socketGid?: () => number;
 	log?: (
 		event: "hobo_ci_blkio_weight_unsupported",
 		fields: Readonly<Record<string, string | number | boolean>>,
@@ -150,6 +163,7 @@ export function createCliDockerDriver(options: {
 }): DockerDriver & WorkerStorageDockerDriver {
 	const docker = options.binary ?? "docker";
 	const env = options.env ?? process.env;
+	const hardened = hardenedContainerFlags(options.hardening ?? {});
 	let blkioWeightSupported = true;
 	let blkioFailureLogged = false;
 	const withBlkioFallback = async <T>(
@@ -310,6 +324,7 @@ export function createCliDockerDriver(options: {
 					[
 						"run",
 						"--rm",
+						...hardened,
 						"--network",
 						"none",
 						"--user",
@@ -406,6 +421,7 @@ export function createCliDockerDriver(options: {
 					"hobo.ci/isolated=1",
 					"--label",
 					`hobo.ci/timeout-ms=${spec.timeoutMs}`,
+					...hardened,
 				];
 				if (spec.runAsUser) args.push("--user", spec.runAsUser);
 				if (spec.memoryMb !== undefined) {
@@ -419,7 +435,12 @@ export function createCliDockerDriver(options: {
 					);
 				}
 				args.push(...containerResourceArgs(spec, includeBlkio));
-				args.push(...dockerSocketMountCreateArgs(env));
+				args.push(
+					...dockerSocketMountCreateArgs(
+						options.hostDocker?.() === true,
+						options.socketGid,
+					),
+				);
 				for (const volume of spec.volumes ?? []) {
 					if (
 						!/^[A-Za-z0-9][A-Za-z0-9_.-]*$|^\/[^:,]+$/.test(volume.source) ||
