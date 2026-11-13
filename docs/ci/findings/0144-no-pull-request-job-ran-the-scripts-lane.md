@@ -34,6 +34,7 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 
 8. **Some scripts tests read the machine they ran on.** The job's first run on a pull request ([#1962](https://github.com/Hobo-Labs/HoBo/pull/1962), run 43330791071) was routed to a GitHub-hosted `ubuntu-24.04` runner and failed tests that pass on the fleet box:
    - *an override is unverified, and CI refuses it* and *bootstrap-siblings --status (assets)*: the `bootstrap-siblings.mts` children inherited the runner's `GITHUB_ACTIONS=true`, so a test that set `CI=""` or `CI=false` still ran "in CI" and its own `MIRROR_BIN` was refused with `OVERRIDE_IN_CI`.
+   - *resolveMainTestBase* › *prefers last green over push before* and *falls back to push before when last green is absent*: the tests read `HEAD~3` and `HEAD~2` from the repository they ran in, and the job's checkout (`fetch-depth: 2`) has neither, so `git rev-parse` echoed `HEAD~3` back and the script, rightly, fell through to the next base. The script was not wrong; the tests' inputs depended on the checkout.
 
 ## Fix
 
@@ -42,7 +43,7 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 - `turbo.json` lists `test/fleet-enrollment-scorecard.eval.test.ts` in `//#test:unit:root:0`'s inputs.
 - `packages/ci-gh-actions/test/deps-image-scope.test.ts` pins the PR impact gate's needs; it now expects `scripts-tests` among them (it failed `@hobo/ci-gh-actions`'s tests until it did).
 - **The job `scripts-tests`** in `hobo-ci.yml` runs `pnpm run test:scripts` on pull requests and merge groups when the change touches `scripts/**`, `test/**` or `.github/**`, on the routed runner after `ci-runner-preflight`. Before the lane it restores the Turbo cache and builds the dependencies (`--filter=<package>^...`) of every package whose `src/` a scripts test imports, 88 build tasks. The **PR impact gate** needs it and fails unless it succeeded.
-- **The scripts tests are hermetic to the runner (cause 8).** `scripts/test/support/pins-support.ts` starts each `bootstrap-siblings.mts` child without `CI`, `GITHUB_ACTIONS`, `TF_BUILD`, `HOBO_PINS_ALLOW_OVERRIDE` or any override variable the script reads (`overrideEnv` of every asset name); a test sets only what it means.
+- **The scripts tests are hermetic to the runner (cause 8).** `scripts/test/support/pins-support.ts` starts each `bootstrap-siblings.mts` child without `CI`, `GITHUB_ACTIONS`, `TF_BUILD`, `HOBO_PINS_ALLOW_OVERRIDE` or any override variable the script reads (`overrideEnv` of every asset name); a test sets only what it means. `scripts/test/resolve-main-test-base.test.ts` resolves against a throwaway four-commit repository it creates, not the checkout's history.
 - **`scripts/relevant-check-policy.ts`** selects `test:scripts` for the same paths in a base-ref `pnpm agent:check`, and leaves it to the job when the caller runs workspace tests externally (CI) or checks a staged commit.
 
 ## Measure
