@@ -310,9 +310,19 @@ jobs:
             source=ghcr
           fi
           echo "source=${source}" >> "$GITHUB_OUTPUT"
+      - name: Wait for other isolated jobs
+        if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'
+        # Five of the job's 20 minutes; the build and verify need the rest.
+        env:
+          HOBO_CI_DEPS_BUILD_WAIT_MS: "300000"
+        run: node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts scripts/ci/wait-deps-build-window.mts
       - name: Build deps image and verify offline install
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name == 'pull_request'
         id: build
+        # A runner without the worker image pulls the published one; without
+        # this it rebuilds the base image from Debian (read-only token).
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote
       - name: Defer non-PR deps image miss
         if: steps.scope.outputs.run == 'true' && steps.current.outputs.current != 'true' && steps.source.outputs.source == 'build' && github.event_name != 'pull_request'
