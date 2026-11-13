@@ -26,7 +26,7 @@ export type DirectoryEntry = Readonly<{
 export type ClaimRule = Readonly<{
 	tenant: string;
 	/** Only principals signed in through this provider's claims; any when absent. */
-	issuer?: string;
+	issuer?: string | undefined;
 	claim: string;
 	equals: string;
 	tags: readonly string[];

@@ -4,7 +4,9 @@
 
 // Local configuration record of @hobo/fleet-authority (ADR-0182). The fleet's
 // records, ports and signed envelopes are in @hobo/fleet; this package
-// keeps only its own settings here.
+// keeps only its own settings here. One file configures both profiles, the
+// authority, the witness and the operations (src/ops reads the same file and
+// ignores the keys it does not know).
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
@@ -14,7 +16,287 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file fleet_authority.proto.
  */
 export const file_fleet_authority: GenFile = /*@__PURE__*/
-  fileDesc("ChVmbGVldF9hdXRob3JpdHkucHJvdG8SF2hvYm8uZmxlZXRfYXV0aG9yaXR5LnYxInkKFEZsZWV0QXV0aG9yaXR5Q29uZmlnEg4KBmlzc3VlchgBIAEoCRIPCgdwcm9maWxlGAIgASgJEhEKCW5hdHNfdXJscxgDIAMoCRISCgpyZWxheV91cmxzGAQgAygJEhkKEW1pbl9hZ2VudF92ZXJzaW9uGAUgASgJYgZwcm90bzM");
+  fileDesc("ChVmbGVldF9hdXRob3JpdHkucHJvdG8SF2hvYm8uZmxlZXRfYXV0aG9yaXR5LnYxIrABChRTaWduSW5Qcm92aWRlckNvbmZpZxIKCgJpZBgBIAEoCRIOCgZpc3N1ZXIYAiABKAkSEQoJY2xpZW50X2lkGAMgASgJEhwKFGNsaWVudF9zZWNyZXRfc2VjcmV0GAQgASgJEhcKD3ByaW5jaXBhbF9jbGFpbRgFIAEoCRIOCgZzY29wZXMYBiADKAkSEAoId2ViX2Jhc2UYByABKAkSEAoIYXBpX2Jhc2UYCCABKAkiSAoURGlyZWN0b3J5RW50cnlDb25maWcSEQoJcHJpbmNpcGFsGAEgASgJEgwKBHRhZ3MYAiADKAkSDwoHYWxpYXNlcxgDIAMoCSJOCg9DbGFpbVJ1bGVDb25maWcSDgoGaXNzdWVyGAEgASgJEg0KBWNsYWltGAIgASgJEg4KBmVxdWFscxgDIAEoCRIMCgR0YWdzGAQgAygJIjYKElBpbm5lZElzc3VlckNvbmZpZxIOCgZpc3N1ZXIYASABKAkSEAoIandrc191cmkYAiABKAkiTQoNQWNjb3VudENvbmZpZxIRCglwcmluY2lwYWwYASABKAkSDgoGc2NvcGVzGAIgAygJEhkKEWNyZWRlbnRpYWxfc2VjcmV0GAMgASgJImwKFU92ZXJsYXlQcm92aWRlckNvbmZpZxIQCghwcm92aWRlchgBIAEoCRIQCghhcGlfYmFzZRgCIAEoCRIUCgxvcmdhbmlzYXRpb24YAyABKAkSGQoRY3JlZGVudGlhbF9zZWNyZXQYBCABKAkiewoRU2VjcmV0U3RvcmVDb25maWcSDAoEa2luZBgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEgwKBHJvbGUYAyABKAkSEgoKdG9rZW5fZmlsZRgEIAEoCRISCgptb3VudF9wYXRoGAUgASgJEhEKCW5hbWVzcGFjZRgGIAEoCSKwBgoURmxlZXRBdXRob3JpdHlDb25maWcSDgoGaXNzdWVyGAEgASgJEg8KB3Byb2ZpbGUYAiABKAkSEQoJbmF0c191cmxzGAMgAygJEhIKCnJlbGF5X3VybHMYBCADKAkSGQoRbWluX2FnZW50X3ZlcnNpb24YBSABKAkSDgoGdGVuYW50GAYgASgJEhAKCGRhdGFfZGlyGAcgASgJEhUKDXNlY3JldF9wcmVmaXgYCCABKAkSHwoXbmF0c19jcmVkZW50aWFsc19zZWNyZXQYCSABKAkSDgoGbGlzdGVuGAogASgJEhoKEnNlc3Npb25fa2V5X3NlY3JldBgLIAEoCRI+CgdzaWduX2luGAwgAygLMi0uaG9iby5mbGVldF9hdXRob3JpdHkudjEuU2lnbkluUHJvdmlkZXJDb25maWcSQAoJZGlyZWN0b3J5GA0gAygLMi0uaG9iby5mbGVldF9hdXRob3JpdHkudjEuRGlyZWN0b3J5RW50cnlDb25maWcSPQoLY2xhaW1fcnVsZXMYDiADKAsyKC5ob2JvLmZsZWV0X2F1dGhvcml0eS52MS5DbGFpbVJ1bGVDb25maWcSQQoMb2lkY19pc3N1ZXJzGA8gAygLMisuaG9iby5mbGVldF9hdXRob3JpdHkudjEuUGlubmVkSXNzdWVyQ29uZmlnEjgKCGFjY291bnRzGBAgAygLMiYuaG9iby5mbGVldF9hdXRob3JpdHkudjEuQWNjb3VudENvbmZpZxI/CgdvdmVybGF5GBEgAygLMi4uaG9iby5mbGVldF9hdXRob3JpdHkudjEuT3ZlcmxheVByb3ZpZGVyQ29uZmlnEigKIG5hdHNfc2VudGluZWxfY3JlZGVudGlhbHNfc2VjcmV0GBIgASgJEicKH3dpdG5lc3NfbmF0c19jcmVkZW50aWFsc19zZWNyZXQYEyABKAkSGwoTY2FsbG91dF94a2V5X3NlY3JldBgUIAEoCRJACgxzZWNyZXRfc3RvcmUYFSABKAsyKi5ob2JvLmZsZWV0X2F1dGhvcml0eS52MS5TZWNyZXRTdG9yZUNvbmZpZ2IGcHJvdG8z");
+
+/**
+ * A sign-in provider (§6.5); off unless listed.
+ *
+ * @generated from message hobo.fleet_authority.v1.SignInProviderConfig
+ */
+export type SignInProviderConfig = Message<"hobo.fleet_authority.v1.SignInProviderConfig"> & {
+  /**
+   * `oidc`, `github` or `atproto`.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * oidc: the issuer; atproto: the authorization server.
+   *
+   * @generated from field: string issuer = 2;
+   */
+  issuer: string;
+
+  /**
+   * oidc and github: the OAuth client id; atproto: the client metadata URL.
+   *
+   * @generated from field: string client_id = 3;
+   */
+  clientId: string;
+
+  /**
+   * The secret holding the client secret; empty for a public client.
+   *
+   * @generated from field: string client_secret_secret = 4;
+   */
+  clientSecretSecret: string;
+
+  /**
+   * oidc: the ID token claim naming the person (default `sub`).
+   *
+   * @generated from field: string principal_claim = 5;
+   */
+  principalClaim: string;
+
+  /**
+   * oidc: scopes besides `openid` (default email, profile).
+   *
+   * @generated from field: repeated string scopes = 6;
+   */
+  scopes: string[];
+
+  /**
+   * github: GitHub Enterprise Server bases (default github.com).
+   *
+   * @generated from field: string web_base = 7;
+   */
+  webBase: string;
+
+  /**
+   * @generated from field: string api_base = 8;
+   */
+  apiBase: string;
+};
+
+/**
+ * Describes the message hobo.fleet_authority.v1.SignInProviderConfig.
+ * Use `create(SignInProviderConfigSchema)` to create a new message.
+ */
+export const SignInProviderConfigSchema: GenMessage<SignInProviderConfig> = /*@__PURE__*/
+  messageDesc(file_fleet_authority, 0);
+
+/**
+ * A principal and its tags in a tenant (PrincipalDirectory).
+ *
+ * @generated from message hobo.fleet_authority.v1.DirectoryEntryConfig
+ */
+export type DirectoryEntryConfig = Message<"hobo.fleet_authority.v1.DirectoryEntryConfig"> & {
+  /**
+   * `<kind>:<id>`, e.g. `user:github.com/octo`.
+   *
+   * @generated from field: string principal = 1;
+   */
+  principal: string;
+
+  /**
+   * @generated from field: repeated string tags = 2;
+   */
+  tags: string[];
+
+  /**
+   * @generated from field: repeated string aliases = 3;
+   */
+  aliases: string[];
+};
+
+/**
+ * Describes the message hobo.fleet_authority.v1.DirectoryEntryConfig.
+ * Use `create(DirectoryEntryConfigSchema)` to create a new message.
+ */
+export const DirectoryEntryConfigSchema: GenMessage<DirectoryEntryConfig> = /*@__PURE__*/
+  messageDesc(file_fleet_authority, 1);
+
+/**
+ * A provider claim that grants tags (PrincipalDirectory).
+ *
+ * @generated from message hobo.fleet_authority.v1.ClaimRuleConfig
+ */
+export type ClaimRuleConfig = Message<"hobo.fleet_authority.v1.ClaimRuleConfig"> & {
+  /**
+   * @generated from field: string issuer = 1;
+   */
+  issuer: string;
+
+  /**
+   * @generated from field: string claim = 2;
+   */
+  claim: string;
+
+  /**
+   * @generated from field: string equals = 3;
+   */
+  equals: string;
+
+  /**
+   * @generated from field: repeated string tags = 4;
+   */
+  tags: string[];
+};
+
+/**
+ * Describes the message hobo.fleet_authority.v1.ClaimRuleConfig.
+ * Use `create(ClaimRuleConfigSchema)` to create a new message.
+ */
+export const ClaimRuleConfigSchema: GenMessage<ClaimRuleConfig> = /*@__PURE__*/
+  messageDesc(file_fleet_authority, 2);
+
+/**
+ * An OIDC issuer whose workload tokens are accepted (IdentityAssertionVerifier).
+ *
+ * @generated from message hobo.fleet_authority.v1.PinnedIssuerConfig
+ */
+export type PinnedIssuerConfig = Message<"hobo.fleet_authority.v1.PinnedIssuerConfig"> & {
+  /**
+   * @generated from field: string issuer = 1;
+   */
+  issuer: string;
+
+  /**
+   * Default: discovered from the issuer.
+   *
+   * @generated from field: string jwks_uri = 2;
+   */
+  jwksUri: string;
+};
+
+/**
+ * Describes the message hobo.fleet_authority.v1.PinnedIssuerConfig.
+ * Use `create(PinnedIssuerConfigSchema)` to create a new message.
+ */
+export const PinnedIssuerConfigSchema: GenMessage<PinnedIssuerConfig> = /*@__PURE__*/
+  messageDesc(file_fleet_authority, 3);
+
+/**
+ * An account credential (the CI relay's), checked by its SHA-256.
+ *
+ * @generated from message hobo.fleet_authority.v1.AccountConfig
+ */
+export type AccountConfig = Message<"hobo.fleet_authority.v1.AccountConfig"> & {
+  /**
+   * `<kind>:<id>`, e.g. `service:ci-relay`.
+   *
+   * @generated from field: string principal = 1;
+   */
+  principal: string;
+
+  /**
+   * @generated from field: repeated string scopes = 2;
+   */
+  scopes: string[];
+
+  /**
+   * The secret holding the credential.
+   *
+   * @generated from field: string credential_secret = 3;
+   */
+  credentialSecret: string;
+};
+
+/**
+ * Describes the message hobo.fleet_authority.v1.AccountConfig.
+ * Use `create(AccountConfigSchema)` to create a new message.
+ */
+export const AccountConfigSchema: GenMessage<AccountConfig> = /*@__PURE__*/
+  messageDesc(file_fleet_authority, 4);
+
+/**
+ * An overlay provider whose join credentials the authority mints (D54).
+ *
+ * @generated from message hobo.fleet_authority.v1.OverlayProviderConfig
+ */
+export type OverlayProviderConfig = Message<"hobo.fleet_authority.v1.OverlayProviderConfig"> & {
+  /**
+   * `tailscale` or `netbird`.
+   *
+   * @generated from field: string provider = 1;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: string api_base = 2;
+   */
+  apiBase: string;
+
+  /**
+   * The tailnet for Tailscale; unused by NetBird.
+   *
+   * @generated from field: string organisation = 3;
+   */
+  organisation: string;
+
+  /**
+   * The secret holding the operator's API token.
+   *
+   * @generated from field: string credential_secret = 4;
+   */
+  credentialSecret: string;
+};
+
+/**
+ * Describes the message hobo.fleet_authority.v1.OverlayProviderConfig.
+ * Use `create(OverlayProviderConfigSchema)` to create a new message.
+ */
+export const OverlayProviderConfigSchema: GenMessage<OverlayProviderConfig> = /*@__PURE__*/
+  messageDesc(file_fleet_authority, 5);
+
+/**
+ * Where the keys live (§6.16).
+ *
+ * @generated from message hobo.fleet_authority.v1.SecretStoreConfig
+ */
+export type SecretStoreConfig = Message<"hobo.fleet_authority.v1.SecretStoreConfig"> & {
+  /**
+   * `openbao`.
+   *
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string address = 2;
+   */
+  address: string;
+
+  /**
+   * @generated from field: string role = 3;
+   */
+  role: string;
+
+  /**
+   * A file holding this workload's identity token (re-read on every start).
+   *
+   * @generated from field: string token_file = 4;
+   */
+  tokenFile: string;
+
+  /**
+   * @generated from field: string mount_path = 5;
+   */
+  mountPath: string;
+
+  /**
+   * @generated from field: string namespace = 6;
+   */
+  namespace: string;
+};
+
+/**
+ * Describes the message hobo.fleet_authority.v1.SecretStoreConfig.
+ * Use `create(SecretStoreConfigSchema)` to create a new message.
+ */
+export const SecretStoreConfigSchema: GenMessage<SecretStoreConfig> = /*@__PURE__*/
+  messageDesc(file_fleet_authority, 6);
 
 /**
  * The authority service's deployment settings.
@@ -56,6 +338,104 @@ export type FleetAuthorityConfig = Message<"hobo.fleet_authority.v1.FleetAuthori
    * @generated from field: string min_agent_version = 5;
    */
   minAgentVersion: string;
+
+  /**
+   * The tenant this authority serves.
+   *
+   * @generated from field: string tenant = 6;
+   */
+  tenant: string;
+
+  /**
+   * Standalone: the directory of the SQLite journal.
+   *
+   * @generated from field: string data_dir = 7;
+   */
+  dataDir: string;
+
+  /**
+   * Every key's secret is `<secret_prefix>/<which>`; default `hobo-fleet/<tenant>`.
+   *
+   * @generated from field: string secret_prefix = 8;
+   */
+  secretPrefix: string;
+
+  /**
+   * The authority's static-user NATS credentials; default `<secret_prefix>/nats-authority`.
+   *
+   * @generated from field: string nats_credentials_secret = 9;
+   */
+  natsCredentialsSecret: string;
+
+  /**
+   * host:port the HTTP service listens on; default 0.0.0.0:8443 (TLS ends in front of it).
+   *
+   * @generated from field: string listen = 10;
+   */
+  listen: string;
+
+  /**
+   * The secret holding the browser-session key shared by replicas; default `<secret_prefix>/session-key`.
+   *
+   * @generated from field: string session_key_secret = 11;
+   */
+  sessionKeySecret: string;
+
+  /**
+   * @generated from field: repeated hobo.fleet_authority.v1.SignInProviderConfig sign_in = 12;
+   */
+  signIn: SignInProviderConfig[];
+
+  /**
+   * @generated from field: repeated hobo.fleet_authority.v1.DirectoryEntryConfig directory = 13;
+   */
+  directory: DirectoryEntryConfig[];
+
+  /**
+   * @generated from field: repeated hobo.fleet_authority.v1.ClaimRuleConfig claim_rules = 14;
+   */
+  claimRules: ClaimRuleConfig[];
+
+  /**
+   * @generated from field: repeated hobo.fleet_authority.v1.PinnedIssuerConfig oidc_issuers = 15;
+   */
+  oidcIssuers: PinnedIssuerConfig[];
+
+  /**
+   * @generated from field: repeated hobo.fleet_authority.v1.AccountConfig accounts = 16;
+   */
+  accounts: AccountConfig[];
+
+  /**
+   * @generated from field: repeated hobo.fleet_authority.v1.OverlayProviderConfig overlay = 17;
+   */
+  overlay: OverlayProviderConfig[];
+
+  /**
+   * The sentinel's NATS credentials published in Discovery; default `<secret_prefix>/nats-sentinel`.
+   *
+   * @generated from field: string nats_sentinel_credentials_secret = 18;
+   */
+  natsSentinelCredentialsSecret: string;
+
+  /**
+   * The witness's static-user NATS credentials; default `<secret_prefix>/nats-witness`.
+   *
+   * @generated from field: string witness_nats_credentials_secret = 19;
+   */
+  witnessNatsCredentialsSecret: string;
+
+  /**
+   * The callout responder's xkey seed; default `<secret_prefix>/callout-xkey`.
+   *
+   * @generated from field: string callout_xkey_secret = 20;
+   */
+  calloutXkeySecret: string;
+
+  /**
+   * @generated from field: hobo.fleet_authority.v1.SecretStoreConfig secret_store = 21;
+   */
+  secretStore?: SecretStoreConfig | undefined;
 };
 
 /**
@@ -63,5 +443,5 @@ export type FleetAuthorityConfig = Message<"hobo.fleet_authority.v1.FleetAuthori
  * Use `create(FleetAuthorityConfigSchema)` to create a new message.
  */
 export const FleetAuthorityConfigSchema: GenMessage<FleetAuthorityConfig> = /*@__PURE__*/
-  messageDesc(file_fleet_authority, 0);
+  messageDesc(file_fleet_authority, 7);
 

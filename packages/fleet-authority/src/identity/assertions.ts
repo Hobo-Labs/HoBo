@@ -40,7 +40,7 @@ const MAX_ASSERTION_BYTES = 16 * 1024;
 export type PinnedIssuer = Readonly<{
 	issuer: string;
 	/** Default: `jwks_uri` from `<issuer>/.well-known/openid-configuration`. */
-	jwksUri?: string;
+	jwksUri?: string | undefined;
 }>;
 
 export type AssertionOptions = Readonly<{

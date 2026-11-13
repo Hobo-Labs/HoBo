@@ -2,8 +2,84 @@ syntax = "proto3";
 
 // Local configuration record of @hobo/fleet-authority (ADR-0182). The fleet's
 // records, ports and signed envelopes are in @hobo/fleet; this package
-// keeps only its own settings here.
+// keeps only its own settings here. One file configures both profiles, the
+// authority, the witness and the operations (src/ops reads the same file and
+// ignores the keys it does not know).
 package hobo.fleet_authority.v1;
+
+// A sign-in provider (§6.5); off unless listed.
+message SignInProviderConfig {
+  // `oidc`, `github` or `atproto`.
+  string id = 1;
+  // oidc: the issuer; atproto: the authorization server.
+  string issuer = 2;
+  // oidc and github: the OAuth client id; atproto: the client metadata URL.
+  string client_id = 3;
+  // The secret holding the client secret; empty for a public client.
+  string client_secret_secret = 4;
+  // oidc: the ID token claim naming the person (default `sub`).
+  string principal_claim = 5;
+  // oidc: scopes besides `openid` (default email, profile).
+  repeated string scopes = 6;
+  // github: GitHub Enterprise Server bases (default github.com).
+  string web_base = 7;
+  string api_base = 8;
+}
+
+// A principal and its tags in a tenant (PrincipalDirectory).
+message DirectoryEntryConfig {
+  // `<kind>:<id>`, e.g. `user:github.com/octo`.
+  string principal = 1;
+  repeated string tags = 2;
+  repeated string aliases = 3;
+}
+
+// A provider claim that grants tags (PrincipalDirectory).
+message ClaimRuleConfig {
+  string issuer = 1;
+  string claim = 2;
+  string equals = 3;
+  repeated string tags = 4;
+}
+
+// An OIDC issuer whose workload tokens are accepted (IdentityAssertionVerifier).
+message PinnedIssuerConfig {
+  string issuer = 1;
+  // Default: discovered from the issuer.
+  string jwks_uri = 2;
+}
+
+// An account credential (the CI relay's), checked by its SHA-256.
+message AccountConfig {
+  // `<kind>:<id>`, e.g. `service:ci-relay`.
+  string principal = 1;
+  repeated string scopes = 2;
+  // The secret holding the credential.
+  string credential_secret = 3;
+}
+
+// An overlay provider whose join credentials the authority mints (D54).
+message OverlayProviderConfig {
+  // `tailscale` or `netbird`.
+  string provider = 1;
+  string api_base = 2;
+  // The tailnet for Tailscale; unused by NetBird.
+  string organisation = 3;
+  // The secret holding the operator's API token.
+  string credential_secret = 4;
+}
+
+// Where the keys live (§6.16).
+message SecretStoreConfig {
+  // `openbao`.
+  string kind = 1;
+  string address = 2;
+  string role = 3;
+  // A file holding this workload's identity token (re-read on every start).
+  string token_file = 4;
+  string mount_path = 5;
+  string namespace = 6;
+}
 
 // The authority service's deployment settings.
 message FleetAuthorityConfig {
@@ -17,4 +93,29 @@ message FleetAuthorityConfig {
   repeated string relay_urls = 4;
   // The default minimum agent version published in Discovery.
   string min_agent_version = 5;
+  // The tenant this authority serves.
+  string tenant = 6;
+  // Standalone: the directory of the SQLite journal.
+  string data_dir = 7;
+  // Every key's secret is `<secret_prefix>/<which>`; default `hobo-fleet/<tenant>`.
+  string secret_prefix = 8;
+  // The authority's static-user NATS credentials; default `<secret_prefix>/nats-authority`.
+  string nats_credentials_secret = 9;
+  // host:port the HTTP service listens on; default 0.0.0.0:8443 (TLS ends in front of it).
+  string listen = 10;
+  // The secret holding the browser-session key shared by replicas; default `<secret_prefix>/session-key`.
+  string session_key_secret = 11;
+  repeated SignInProviderConfig sign_in = 12;
+  repeated DirectoryEntryConfig directory = 13;
+  repeated ClaimRuleConfig claim_rules = 14;
+  repeated PinnedIssuerConfig oidc_issuers = 15;
+  repeated AccountConfig accounts = 16;
+  repeated OverlayProviderConfig overlay = 17;
+  // The sentinel's NATS credentials published in Discovery; default `<secret_prefix>/nats-sentinel`.
+  string nats_sentinel_credentials_secret = 18;
+  // The witness's static-user NATS credentials; default `<secret_prefix>/nats-witness`.
+  string witness_nats_credentials_secret = 19;
+  // The callout responder's xkey seed; default `<secret_prefix>/callout-xkey`.
+  string callout_xkey_secret = 20;
+  SecretStoreConfig secret_store = 21;
 }
