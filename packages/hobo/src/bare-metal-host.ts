@@ -58,7 +58,9 @@ export function internalRouterHost(bindleName: string): string {
 
 export function isInternalRouterHostname(hostname: string): boolean {
 	const host = hostname.toLowerCase();
-	return host === INTERNAL_ROUTER_HOST || host.endsWith(`.${INTERNAL_ROUTER_HOST}`);
+	return (
+		host === INTERNAL_ROUTER_HOST || host.endsWith(`.${INTERNAL_ROUTER_HOST}`)
+	);
 }
 
 /**

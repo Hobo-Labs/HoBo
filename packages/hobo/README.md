@@ -43,6 +43,70 @@ signal handler, so a host that embeds it keeps its own signal handling. SIGKILL 
 crash are out of reach.
 Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.ts`).
 
+## HoBo Fleet: `hobo fleet …`
+
+`src/fleet-command.ts` holds every command of the fleet CLI (design §6.15,
+ADR-0182); `src/fleet-runtime.ts` is the production composition and
+`src/fleet-cli.ts` the binary's entry (the composed `hobo` hands `fleet` words
+over before the shell's global option parser). Each command parses strictly
+(`parseArgs`, a subcommand allowlist) and calls exactly the `FleetClient`
+methods and local functions the §6.15 "Calls" column names, in order;
+`test/fleet-command.contract.test.ts` (O25) asserts this against a copy of
+that table with a recording fake client.
+
+| Command | Calls |
+|---|---|
+| `login [--device] [--provider] [--tenant]` | `signInStart`, then `signInComplete` (loopback redirect) or `signInPoll` |
+| `logout` | local: delete the stored person token |
+| `enroll --token-file <path\|-> \| --oidc <path\|->` | local key generation, then `enroll` through `createFleetAgent(...).enroll` |
+| `enroll --fleet <id>` | key generation; the person signs in with the device identity key (D44), then `enroll` |
+| `run [--fleets a,b]` | local `createFleetAgent(...).start()` until SIGINT/SIGTERM, then drain and stop |
+| `service install\|uninstall\|status` | local `installService` (uninstall/status remove or report the definition it writes) |
+| `status [--fleet]` | `listFleets`, then `fleetView` per fleet (`hobo ci status` shows the same table) |
+| `doctor` | `authorityDiscovery`, `discovery`, `jwks`; key store, sandbox tiers, a bus TCP connect, a p2p self-start |
+| `token`, `member`, `fleet`, `submit`, `work`, `audit`, `leave` | the client methods of the same meaning |
+| `connect <member> --order <id> [--forward L:R]`, `cp <member>:<digest> <path>` | `grantSession`, then `selectTransport` (`FleetTransport.dial`); shell and forward are line-batched (D56) |
+| `ops provision\|ceremony\|rotate-key\|backup\|restore --config <path>` | local `provisionTopology`, `runCeremony`, `rotateKey`, `backup`, `restore` |
+
+- **Tokens never travel on the command line.** `--token` and any argument
+  that looks like a bootstrap token (`hft_…`) are refused with a pointer to
+  `--token-file` (`-` reads standard input). `token create` prints the new
+  token once and never puts it in `--json` data.
+- **`HOBO_FLEET_HOME`** (default `~/.hobo/fleet`) holds the device key store,
+  `person.json` (0600: the DPoP-bound person token and the ES256 sign-in key
+  it is bound to) and `enrollment.json` (the discovery document; no secret;
+  overlay join credentials are used once at enrollment and never written).
+- **`hobo fleet run`** composes `createFleetAgent` with `createFileKeyStore`
+  (or `createExternalSignerKeyStore` for `HOBO_FLEET_KEYSTORE=external-signer:<command>`),
+  `sandboxDrivers` (capped by `HOBO_FLEET_SANDBOX`), `createEgressProxyFactory`,
+  `createHostCapacity`, `createNatsBusConnector`, the oci-command and GitHub
+  Actions runners, and the transports in `HOBO_FLEET_TRANSPORTS` order:
+  `createP2pTransport`, `createOverlayTransport` over each overlay `enroll`
+  joined with the authority's `OverlayJoin`, and
+  `createBusRelayTransport(() => agent.bus())`.
+- **Device-authenticated commands** (`member rotate`, `leave`) obtain an SVID
+  through the credentials protocol the agent follows (nonce on disk first,
+  generation written back). Stop `hobo fleet run` first: two processes
+  refreshing one key store lock the device (F7).
+- **A person's CLI has no member record** (D59): `connect` and `cp` initiate
+  over `p2p` and `overlay` with ephemeral keys, never `bus-relay`, and so
+  publish no initiator session-close fact (the acceptor publishes its own).
+- **`ops`** reads the operations configuration `@hobo/fleet-authority` reads.
+  `ceremony` prints the two shares and writes them nowhere. `provision` stores
+  the static users' credentials at `<prefix>/nats-<user>`, each scoped signing
+  seed as the slot `<prefix>/scoped-<role>` and, when absent, a callout xkey at
+  `<prefix>/callout-xkey`. This package has no OpenBao adapter yet, so the
+  default build answers `unavailable` for `ops`; a composition root passes
+  `openSecrets`.
+- **`credential-presenter.ts`** presents the authority-issued person token
+  (DPoP with its sign-in key) when `HOBO_FLEET_AUTHORITY_URL` is set and a
+  person is signed in; agent SVIDs are minted through `@hobo/identity`'s
+  `JwtSvidIssuer` (RS256, in-memory key for offline development, never HMAC)
+  and DPoP proofs through `@hobo/fleet/keys`.
+- The bare-metal internal router is `INTERNAL_ROUTER_HOST`
+  (`installInternalRouter`, `internalRouterBase`); "mesh" names only the fleet's
+  coordination plane.
+
 ## CLI verification and remote deployment safety
 
 ### Budgeted cloud hosting

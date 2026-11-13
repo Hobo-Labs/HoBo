@@ -396,7 +396,9 @@ describe("installInternalRouter", () => {
 	it("forwards the method", async () => {
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`, { method: "DELETE" });
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`, {
+			method: "DELETE",
+		});
 		expect(api.seen[0]?.method).toBe("DELETE");
 	});
 
@@ -524,8 +526,12 @@ describe("installInternalRouter", () => {
 		// down the outer host's mesh with the inner one.
 		const outer = echo();
 		const inner = echo();
-		const disposeOuter = installInternalRouter(new Map([["api", outer.handler]]));
-		const disposeInner = installInternalRouter(new Map([["api", inner.handler]]));
+		const disposeOuter = installInternalRouter(
+			new Map([["api", outer.handler]]),
+		);
+		const disposeInner = installInternalRouter(
+			new Map([["api", inner.handler]]),
+		);
 		await fetch(`http://a.${INTERNAL_ROUTER_HOST}/api`);
 		expect(inner.seen).toHaveLength(1);
 		disposeInner();
