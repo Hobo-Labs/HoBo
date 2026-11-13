@@ -3,7 +3,7 @@ export {
 	planForYard,
 	selectConnectivityTier,
 } from "./connectivity.js";
-export { deriveFederationPlan } from "./federation.js";
+export { acceptFederatedTrust, deriveFederationPlan } from "./federation.js";
 export type {
 	JunctionConfig,
 	JunctionMemberManifestInput,
@@ -34,6 +34,7 @@ export type {
 	ResidencyConflict,
 	TrustAnchorExchange,
 	YardConnectivityHalfPlan,
+	YardTrustRecords,
 } from "./types.js";
 export {
 	CONNECTIVITY_TIER_LEVELS,

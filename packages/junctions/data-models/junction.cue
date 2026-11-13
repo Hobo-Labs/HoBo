@@ -48,9 +48,10 @@ package data_models
 }
 
 #TrustAnchorExchange: {
-	from_yard:  string & !=""
-	to_yard:    string & !=""
-	anchor_ref: string & !=""
+	from_yard: string & !=""
+	to_yard:   string & !=""
+	// binary hobo.fleet.v1.WitnessedEnvelope; absent until from_yard publishes its trust record
+	trust?: bytes
 }
 
 #PolicyPackDistribution: {

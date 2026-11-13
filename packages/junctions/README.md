@@ -4,8 +4,17 @@ Production home of `junction()`, the federation primitive that connects
 [Yards](../yards) across clouds. A junction takes member Yards — just the
 members — and derives the cross-cloud connectivity plane from what their
 manifests declare: a peering tier per member pair, a federated DNS plan, and
-the federation records (trust anchors, signed policy packs, signed registry
-bundles) that ride the same member mechanism. Each yard realizes its own half.
+the federation records (fleet trust records, signed policy packs, signed
+registry bundles) that ride the same member mechanism. Each yard realizes its
+own half.
+
+**Trust is the fleet's trust record.** Federation between Yards is an exchange
+of HoBo Fleet trust records (ADR-0182): each `TrustAnchorExchange` carries the
+issuing Yard's witnessed `TrustRecord` envelope (`null` until that Yard has
+published one; pass them as `deriveConnectivityPlan(definition, { trust })`).
+The receiving Yard pins it with `acceptFederatedTrust(exchange, pinned)`, which
+applies the fleet's own rule (`acceptTrust`): both signatures on first sight,
+then only a record that follows the pinned one. There is no second trust format.
 See [`ADR.md`](./ADR.md).
 
 ## Honest scope
