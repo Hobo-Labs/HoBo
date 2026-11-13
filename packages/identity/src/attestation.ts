@@ -1,12 +1,17 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
 	HOST_ATTESTATION_CONTEXT,
-	KeyAlgorithm,
+	type KeyAlgorithm,
 	KeyPurpose,
 	type PublicKeyRef,
 	type SignedEnvelope,
 } from "@hobo/fleet";
 import { verifyEnvelope } from "@hobo/fleet/keys";
+import {
+	fleetEnvelopeAlgorithm,
+	launchMeasurementBytes,
+	SIGN_KEY_SUFFIX,
+} from "./fleet/host-envelope.js";
 import {
 	isJsonObject,
 	isJsonString,
@@ -17,14 +22,6 @@ import {
 
 // public-contract: the schema id every attestation document carries and every verifier checks.
 export const ATTESTATION_SCHEMA_VERSION = "hobo.workload-attestation/v1";
-
-// public-contract: the `hostSignature.algorithm` prefix of a document a fleet device signed (design §7.4).
-export const FLEET_ENVELOPE_ALGORITHM_PREFIX = "hobo-fleet-envelope/";
-const FLEET_ENVELOPE_ALGORITHMS: ReadonlyMap<string, KeyAlgorithm> = new Map([
-	[`${FLEET_ENVELOPE_ALGORITHM_PREFIX}es256`, KeyAlgorithm.ES256],
-	[`${FLEET_ENVELOPE_ALGORITHM_PREFIX}eddsa`, KeyAlgorithm.EDDSA],
-]);
-const SIGN_KEY_SUFFIX = "#sign";
 
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -229,7 +226,7 @@ function verifyHostSignature(
 	}[],
 ): boolean {
 	if (!isPlainObject(signature)) return false;
-	const envelopeAlgorithm = FLEET_ENVELOPE_ALGORITHMS.get(signature.algorithm);
+	const envelopeAlgorithm = fleetEnvelopeAlgorithm(signature.algorithm);
 	if (envelopeAlgorithm !== undefined) {
 		return verifyFleetEnvelopeSignature(
 			measurement,
@@ -305,24 +302,6 @@ function verifyFleetEnvelopeSignature(
 		isPlainObject(signed) &&
 		launchMeasurementBytes(signed) === launchMeasurementBytes(measurement)
 	);
-}
-
-/** The launch measurement's JSON bytes, in one field order: what a device signs. */
-export function launchMeasurementBytes(
-	measurement: LaunchMeasurement | JsonObject,
-): string {
-	return JSON.stringify({
-		runId: measurement.runId,
-		tenant: measurement.tenant,
-		parentPrincipal: measurement.parentPrincipal,
-		codeVersion: measurement.codeVersion,
-		componentImageDigest: measurement.componentImageDigest,
-		hostId: measurement.hostId,
-		issuedAt: measurement.issuedAt,
-		expiresAt: measurement.expiresAt,
-		nonce: measurement.nonce,
-		isolationTier: measurement.isolationTier,
-	});
 }
 
 function signLaunchMeasurement(

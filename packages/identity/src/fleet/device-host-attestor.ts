@@ -3,21 +3,18 @@
 // `hobo-fleet/host-attestation/v1` with the device's SIGN key, and the host id
 // is the member id. `verifyWorkloadAttestation` checks such a document against
 // the SIGN key published in the member's key bundle.
-import {
-	HOST_ATTESTATION_CONTEXT,
-	KeyAlgorithm,
-	type Signer,
-} from "@hobo/fleet";
+import { HOST_ATTESTATION_CONTEXT, type Signer } from "@hobo/fleet";
 import { signEnvelope } from "@hobo/fleet/keys";
 import {
 	ATTESTATION_SCHEMA_VERSION,
-	FLEET_ENVELOPE_ALGORITHM_PREFIX,
 	type HostAttestor,
 	type LaunchMeasurement,
-	launchMeasurementBytes,
 } from "../attestation.js";
-
-const SIGN_KEY_SUFFIX = "#sign";
+import {
+	fleetEnvelopeAlgorithmName,
+	launchMeasurementBytes,
+	SIGN_KEY_SUFFIX,
+} from "./host-envelope.js";
 
 export function deviceHostAttestor(signer: Signer): HostAttestor {
 	if (!signer.keyId.endsWith(SIGN_KEY_SUFFIX)) {
@@ -26,7 +23,7 @@ export function deviceHostAttestor(signer: Signer): HostAttestor {
 		);
 	}
 	const memberId = signer.keyId.slice(0, -SIGN_KEY_SUFFIX.length);
-	const algorithm = algorithmName(signer.algorithm);
+	const algorithm = fleetEnvelopeAlgorithmName(signer.algorithm);
 
 	return Object.freeze({
 		async createDocument(input) {
@@ -68,12 +65,4 @@ function hostedBy(
 		);
 	}
 	return { ...measurement };
-}
-
-function algorithmName(algorithm: KeyAlgorithm): string {
-	if (algorithm === KeyAlgorithm.ES256)
-		return `${FLEET_ENVELOPE_ALGORITHM_PREFIX}es256`;
-	if (algorithm === KeyAlgorithm.EDDSA)
-		return `${FLEET_ENVELOPE_ALGORITHM_PREFIX}eddsa`;
-	throw new Error("a SIGN key is ES256 or EdDSA");
 }
