@@ -15,11 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
-import {
-	DeviceClass,
-	FleetPolicySchema,
-	FleetRecordSchema,
-} from "@hobo/fleet";
+import { DeviceClass, FleetPolicySchema, FleetRecordSchema } from "@hobo/fleet";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCliDockerDriver } from "../src/isolated-worker/cli-docker-driver.js";
 import {
@@ -87,9 +83,7 @@ describe("hardenedContainerFlags", () => {
 		const flags = hardenedContainerFlags({});
 		expectHardened(flags);
 		// Writable state is scratch the container owns, never a host path.
-		expect(flags).toContain(
-			"--mount=type=volume,target=/opt/actions-runner",
-		);
+		expect(flags).toContain("--mount=type=volume,target=/opt/actions-runner");
 		expect(flags).toContain("--mount=type=volume,target=/home/runner");
 	});
 
