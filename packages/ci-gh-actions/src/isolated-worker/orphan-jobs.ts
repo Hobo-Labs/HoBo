@@ -53,13 +53,19 @@ function candidateFields(candidate: OrphanJobCandidate) {
 export function orphanJobCandidateForLease(
 	lease: Lease,
 	detectedAtMs: number,
+	observed?: Readonly<{ jobId: number; runId: number }>,
 ): OrphanJobCandidate | undefined {
 	if (lease.runnerId === 0) return undefined;
+	const jobId =
+		observed?.jobId ??
+		(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId);
+	const runId =
+		observed && observed.runId > 0 ? observed.runId : lease.originalRunId;
 	return {
 		repository: lease.repository,
 		installationId: lease.installationId,
-		runId: lease.originalRunId,
-		jobId: lease.actualJobId > 0 ? lease.actualJobId : lease.jobId,
+		runId,
+		jobId,
 		runnerId: lease.runnerId,
 		runnerName: lease.runnerName,
 		detectedAtMs,
