@@ -11,6 +11,8 @@ description: >-
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
   skipped, and what is left goes to GitHub-hosted without reading the queue.
+  Each decision is one `hobo-ci-route` notice; a fallback is a
+  `hobo-ci-route-fallback` warning, so a monitor can count both.
 inputs:
   token:
     description: A token that can read this repository's Actions runs and jobs.
@@ -35,6 +37,17 @@ inputs:
     description: "`false` keeps trunk events on the shared `hobo` label."
     required: false
     default: ""
+  attest:
+    description: "`false` skips the check for a signed local run (a second ask within a run)."
+    required: false
+    default: "true"
+  include-own-run:
+    description: >-
+      `true` for a second ask later in a run: the queue reading keeps this
+      run's own jobs, and when the script cannot decide no runner is output,
+      so the run's first decision stands.
+    required: false
+    default: "false"
 outputs:
   runner:
     description: The runs-on label for this run's jobs.
@@ -54,6 +67,7 @@ runs:
     # Never fails and never blocks: anything short of a verified attestation
     # is attested=false, and every job then runs as it always did.
     - id: attest
+      if: inputs.attest != 'false'
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
@@ -97,6 +111,7 @@ runs:
         HOBO_CI_ROUTE_MAX_WAIT_SECONDS: ${{ inputs.max-wait-seconds }}
         HOBO_CI_ROUTE_MAX_QUEUED: ${{ inputs.max-queued }}
         HOBO_CI_TRUNK_RUNNER: ${{ inputs.trunk-runner }}
+        HOBO_CI_INCLUDE_OWN_RUN: ${{ inputs.include-own-run }}
       run: |
         set -uo pipefail
         fleet=hobo
@@ -105,13 +120,17 @@ runs:
             if [ "${HOBO_CI_TRUNK_RUNNER}" != "false" ]; then fleet=hobo-trunk; fi ;;
         esac
         # Without a decision, the one tier known to be up is the one this step is
-        # running on. A run pinned to the fleet stays on the fleet.
+        # running on. A run pinned to the fleet stays on the fleet. A second ask
+        # within a run outputs nothing, so the run's first decision stands.
+        # The titled warning is what a monitor counts (hobo-ci-route-fallback).
         without_a_decision() {
-          if [ "${HOBO_CI_ROUTE}" = "fleet" ]; then
-            echo "::warning::runner routing did not run ($1); pinned to the fleet"
+          if [ "${HOBO_CI_INCLUDE_OWN_RUN}" = "true" ]; then
+            echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); keeping the run's route"
+          elif [ "${HOBO_CI_ROUTE}" = "fleet" ]; then
+            echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); pinned to the fleet"
             { echo "runner=${fleet}"; echo "tier=fleet"; } >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::runner routing did not run ($1); using GitHub-hosted runners"
+            echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); using GitHub-hosted runners"
             { echo "runner=ubuntu-24.04"; echo "tier=github"; } >> "$GITHUB_OUTPUT"
           fi
         }
