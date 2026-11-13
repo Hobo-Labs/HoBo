@@ -1,10 +1,10 @@
-/* oxlint-disable no-unused-vars -- contract commit: entry-point stubs keep their final signatures until a lane implements them. */
 /**
- * `@hobo/fleet/work` (L04): many-active work (§6.9): digests, trust class and
- * sandbox tier, order and claim checks, the start fence, the dispatcher and
- * executor loops, and the `oci-command` work kind.
+ * `@hobo/fleet/work` (L04): many-active work (§6.9, §6.11): digests, trust
+ * class and sandbox tier, order and claim checks, the start fence, the
+ * dispatcher and executor loops, and the `oci-command` work kind.
  *
- * Contract commit: every body throws `FleetNotImplemented`; L04 replaces them.
+ * These are the frozen entry points of §7.3; the modules beside this file are
+ * private to the lane.
  */
 import type {
 	DeviceClass,
@@ -17,7 +17,6 @@ import type {
 	WorkOffer,
 	WorkOrder,
 } from "../_generated/fleet_pb.js";
-import { FleetNotImplemented } from "../errors.js";
 import type { FleetId, MemberId, WorkDigest } from "../ids.js";
 import type {
 	CapacitySource,
@@ -35,27 +34,36 @@ import type {
 	WorkRunner,
 	WorkSource,
 } from "../ports.js";
+import { claimVerdict, fenceAllows, orderVerdict } from "./checks.js";
+import { dispatcher } from "./dispatcher.js";
+import { executor } from "./executor.js";
+import { ociRunner, ociSource } from "./oci.js";
+import { digestOf, sandboxFor, trustClassOf } from "./rules.js";
 
+/** First 32 hex of `sha256(kind ‖ 0x00 ‖ work_key)`. */
 export function workDigest(kind: string, workKey: string): WorkDigest {
-	throw new FleetNotImplemented("workDigest");
+	return digestOf(kind, workKey);
 }
 
+/** §6.11, derived on the device from facts it can check; a dispatcher never asserts `OWN`. */
 export function deriveTrustClass(
 	offer: WorkOffer,
 	self: MemberRecord,
 ): TrustClass {
-	throw new FleetNotImplemented("deriveTrustClass");
+	return trustClassOf(offer, self);
 }
 
+/** The table of §6.11. */
 export function requiredSandbox(
 	trust: TrustClass,
 	deviceClass: DeviceClass,
 	policy: FleetPolicy,
 	repository: string,
 ): SandboxTier | "never" {
-	throw new FleetNotImplemented("requiredSandbox");
+	return sandboxFor(trust, deviceClass, policy, repository);
 }
 
+/** §6.9 step 6; a refusal names its rule in `detail.check`. */
 export function checkOrder(
 	order: SignedEnvelope,
 	context: Readonly<{
@@ -68,7 +76,7 @@ export function checkOrder(
 ): Promise<
 	Outcome<Readonly<{ order: WorkOrder; trust: TrustClass; tier: SandboxTier }>>
 > {
-	throw new FleetNotImplemented("checkOrder");
+	return orderVerdict(order, context);
 }
 
 /** The start fence. */
@@ -79,9 +87,13 @@ export function checkAssignment(
 	policy: FleetPolicy,
 	tier: SandboxTier,
 ): boolean {
-	throw new FleetNotImplemented("checkAssignment");
+	return fenceAllows(order, observed, self, policy, tier);
 }
 
+/**
+ * §6.9 step 4. With an empty `ranked` (the authority re-checking a report)
+ * the claimant's own signed rank is its turn.
+ */
 export function checkClaim(
 	claim: SignedEnvelope,
 	subject: Readonly<{ fleet: FleetId; digest: WorkDigest }>,
@@ -93,7 +105,7 @@ export function checkClaim(
 		stepMs: number;
 	}>,
 ): Promise<"valid" | "discard" | "not-entitled" | "early"> {
-	throw new FleetNotImplemented("checkClaim");
+	return claimVerdict(claim, subject, offer, context);
 }
 
 export function createDispatcher(
@@ -106,7 +118,7 @@ export function createDispatcher(
 		log: FleetLog;
 	}>,
 ): Readonly<{ start(): void; stop(): Promise<void> }> {
-	throw new FleetNotImplemented("createDispatcher");
+	return dispatcher(deps);
 }
 
 export function createExecutor(
@@ -127,13 +139,13 @@ export function createExecutor(
 	stop(): Promise<void>;
 	sandboxOf(orderId: string): Sandbox | undefined;
 }> {
-	throw new FleetNotImplemented("createExecutor");
+	return executor(deps);
 }
 
 export function createOciCommandSource(bus: FleetBus): WorkSource {
-	throw new FleetNotImplemented("createOciCommandSource");
+	return ociSource(bus);
 }
 
 export function createOciCommandRunner(): WorkRunner {
-	throw new FleetNotImplemented("createOciCommandRunner");
+	return ociRunner();
 }
