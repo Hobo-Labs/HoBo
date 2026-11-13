@@ -17,13 +17,19 @@ import {
 	runnerHostInterfaceGaps,
 } from "../src/runner-host-realizer.js";
 import {
+	CONTROLLER_DESIRED_FILE,
+	CONTROLLER_RELEASES_DIR,
+	CONTROLLER_STATUS_FILE,
+	controllerDigestFromEnv,
 	createWorkerHostJobs,
 	readWorkerLeases,
 	WORKER_ADMISSION_PAUSED_FILE,
 	WORKER_MESH_ADVERT_FILE,
+	WORKER_RUNNER_PRESENCE_FILE,
 	workerAdmissionPaused,
 	workerHostFiles,
 	writeWorkerMeshAdvert,
+	writeWorkerRunnerPresence,
 } from "../src/runner-host-worker-jobs.js";
 
 const dirs: string[] = [];
@@ -74,6 +80,10 @@ describe("the worker's data directory as the runner-host job ports", () => {
 			database: "/var/lib/hobo-ci/worker.sqlite",
 			admissionPaused: `/var/lib/hobo-ci/${WORKER_ADMISSION_PAUSED_FILE}`,
 			meshAdvert: `/var/lib/hobo-ci/${WORKER_MESH_ADVERT_FILE}`,
+			runnerPresence: `/var/lib/hobo-ci/${WORKER_RUNNER_PRESENCE_FILE}`,
+			controllerDesired: `/var/lib/hobo-ci/${CONTROLLER_DESIRED_FILE}`,
+			controllerStatus: `/var/lib/hobo-ci/${CONTROLLER_STATUS_FILE}`,
+			controllerReleases: `/var/lib/hobo-ci/${CONTROLLER_RELEASES_DIR}`,
 		});
 	});
 
@@ -117,6 +127,30 @@ describe("the worker's data directory as the runner-host job ports", () => {
 		expect(await jobs.meshAdvert?.()).toBeUndefined();
 	});
 
+	it("carries the controller digest a supervised worker names, beside the advert", async () => {
+		const dir = await freshDir();
+		const files = workerHostFiles(join(dir, "worker.sqlite"));
+		const jobs = createWorkerHostJobs({ files, hostKind: "box-worker" });
+		const digest = `sha256:${"a".repeat(64)}`;
+		expect(controllerDigestFromEnv({ HOBO_CI_CONTROLLER_DIGEST: digest })).toBe(
+			digest,
+		);
+		expect(
+			controllerDigestFromEnv({ HOBO_CI_CONTROLLER_DIGEST: "latest" }),
+		).toBeUndefined();
+		await writeWorkerMeshAdvert(files, advert);
+		const plain = await jobs.meshAdvert();
+		expect(plain?.controllerDigest).toBeUndefined();
+		await writeWorkerMeshAdvert(files, advert, digest);
+		expect(await jobs.meshAdvert()).toEqual({
+			...plain,
+			controllerDigest: digest,
+		});
+		// An invalid digest is never written.
+		await writeWorkerMeshAdvert(files, advert, "sha256:nope");
+		expect((await jobs.meshAdvert())?.controllerDigest).toBeUndefined();
+	});
+
 	it("closes and reopens admission with the marker the worker honours", async () => {
 		const dir = await freshDir();
 		const files = workerHostFiles(join(dir, "worker.sqlite"));
@@ -133,18 +167,45 @@ describe("the worker's data directory as the runner-host job ports", () => {
 		expect(workerAdmissionPaused(files)).toBe(false);
 	});
 
-	it("wires every job port for JIT hosts and refuses a local runner's presence by name", () => {
+	it("wires every job port for every host kind, a local runner included", () => {
 		const files = workerHostFiles("/var/lib/hobo-ci/worker.sqlite");
-		for (const hostKind of ["box-worker", "mesh-node"] as const)
+		for (const hostKind of ["box-worker", "mesh-node", "local-runner"] as const)
 			expect(
 				runnerHostInterfaceGaps({
 					jobs: createWorkerHostJobs({ files, hostKind }),
 				}).filter((gap) => gap.startsWith("jobs.")),
 			).toEqual([]);
+	});
+
+	it("reads a local runner's GitHub presence while its report is fresh, and none when it is not", async () => {
+		const dir = await freshDir();
+		const files = workerHostFiles(join(dir, "worker.sqlite"));
+		let nowMs = 1_000_000;
+		const local = createWorkerHostJobs({
+			files,
+			hostKind: "local-runner",
+			now: () => nowMs,
+		});
+		// No report yet: no runner, never an assumed online one.
+		expect(await local.runners()).toEqual([]);
+		await writeWorkerRunnerPresence(files, {
+			observedAtMs: nowMs - 30_000,
+			runners: [{ name: "hobo-local-1", status: "online", busy: true }],
+		});
+		const runners = await local.runners();
+		expect(runners).toEqual([
+			{ name: "hobo-local-1", presence: { status: "online", busy: true } },
+		]);
+		expect(inFlightJobCount([], runners)).toBe(1);
+		// A JIT host's runners are counted by lease, never from this file.
 		expect(
-			runnerHostInterfaceGaps({
-				jobs: createWorkerHostJobs({ files, hostKind: "local-runner" }),
-			}).filter((gap) => gap.startsWith("jobs.")),
-		).toEqual(["jobs.runners"]);
+			await createWorkerHostJobs({ files, hostKind: "box-worker" }).runners(),
+		).toEqual([]);
+		// Stale (the controller stopped refreshing) or corrupt: no runner.
+		nowMs += 5 * 60_000;
+		expect(await local.runners()).toEqual([]);
+		nowMs -= 5 * 60_000;
+		await writeFile(files.runnerPresence, "{not json");
+		expect(await local.runners()).toEqual([]);
 	});
 });

@@ -17,6 +17,7 @@ import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
 	ciEventSinkFromEnv,
+	controllerDigestFromEnv,
 	countLiveBoxContainers,
 	createBoxGitMirror,
 	createCiEventEmitter,
@@ -431,6 +432,9 @@ let meshJournal: MeshJournal | undefined;
 // worker writes here (src/runner-host-worker-jobs.ts).
 const runnerHostFiles = workerHostFiles(plan.store.path);
 const admissionPausedByAgent = () => workerAdmissionPaused(runnerHostFiles);
+// The release this worker runs, when its daemon's supervisor started it at
+// one (runner-controller-process.ts): the advert file names it for the agent.
+const controllerDigest = controllerDigestFromEnv(process.env);
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -1116,7 +1120,11 @@ try {
 		await meshTrust.refresh();
 		await mesh?.advertise();
 		if (mesh)
-			await writeWorkerMeshAdvert(runnerHostFiles, mesh.self()).catch((error) =>
+			await writeWorkerMeshAdvert(
+				runnerHostFiles,
+				mesh.self(),
+				controllerDigest,
+			).catch((error) =>
 				log("hobo_ci_mesh_advert_file_failed", {
 					message: error instanceof Error ? error.message : "unknown",
 				}),

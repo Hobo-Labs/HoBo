@@ -6,12 +6,16 @@
  * `cd-agent-runner-host.ts`), a Kubernetes fleet manager (HOBO_CD_KUBE_FLEET).
  * With none of them the run is refused `compose-realizer-missing`.
  *
- * On a runner host the container port is the engine CLI and the job ports
- * are read from the box worker's data directory (`createWorkerHostJobs`:
- * its journal read-only, the advert it writes, the admission marker it
- * honours). A host kind those cannot serve (a `local-runner`'s runner
- * presence) is refused `runner-host-interface-missing`, naming each missing
- * port method, before any loop starts. Nothing is faked to get past it.
+ * On a runner host the controller port is the engine CLI (a controller
+ * container) or, with `controller.mode` `process`, the worker daemon's
+ * supervisor driven through its control files (`createControllerProcessPort`:
+ * releases fetched and verified by digest, a desired-release request, the
+ * supervisor's status). The job ports are read from the worker's data
+ * directory (`createWorkerHostJobs`: its journal read-only, the advert it
+ * writes, the admission marker it honours, and a local runner's GitHub
+ * presence as its controller reported it). A port a composition leaves
+ * unwired is refused `runner-host-interface-missing`, naming each missing
+ * method, before any loop starts. Nothing is faked to get past it.
  */
 
 import { readFile } from "node:fs/promises";
@@ -101,34 +105,62 @@ async function runnerHostRealizer(
 			`Run the agent with --camp ${own}.`,
 		);
 	const runnerHost = await import("@hobo/ci-gh-actions/runner-host");
-	const ports: RunnerHostPorts = {
-		containers:
-			input.runnerHost?.containers ??
-			runnerHost.createCliDockerDriver({
-				// SAFETY: the process env, passed to the engine CLI unchanged.
-				env: input.env as NodeJS.ProcessEnv,
-				...(config.dockerBinary ? { binary: config.dockerBinary } : undefined),
-			}),
-		jobs:
-			input.runnerHost?.jobs ??
-			runnerHost.createWorkerHostJobs({
-				files: runnerHost.workerHostFiles(
-					resolve(
-						input.cwd,
-						config.workerDatabase ||
-							input.env.HOBO_CI_WORKER_DB?.trim() ||
-							runnerHost.defaultWorkerDatabasePath(input.env, homedir()),
-					),
-				),
-				hostKind: config.hostKind,
-			}),
-	};
+	const files = runnerHost.workerHostFiles(
+		resolve(
+			input.cwd,
+			config.workerDatabase ||
+				input.env.HOBO_CI_WORKER_DB?.trim() ||
+				runnerHost.defaultWorkerDatabasePath(input.env, homedir()),
+		),
+	);
+	const jobs =
+		input.runnerHost?.jobs ??
+		runnerHost.createWorkerHostJobs({
+			files,
+			hostKind: config.hostKind,
+			now: input.now,
+		});
+	let ports: RunnerHostPorts;
+	if (config.controller?.mode === "process") {
+		let fetchRelease: ReturnType<typeof runnerHost.releaseFetchFrom>;
+		try {
+			fetchRelease = runnerHost.releaseFetchFrom(config.controller.releases);
+		} catch (error) {
+			return refusal(
+				"runner-host-config-invalid",
+				error instanceof Error ? error.message : String(error),
+				"Set controller.releases to an absolute directory or an https:// base URL holding <hex>.mjs per release.",
+			);
+		}
+		ports = {
+			process:
+				input.runnerHost?.process ??
+				runnerHost.createControllerProcessPort({
+					files,
+					fetchRelease,
+					now: input.now,
+				}),
+			jobs,
+		};
+	} else
+		ports = {
+			containers:
+				input.runnerHost?.containers ??
+				runnerHost.createCliDockerDriver({
+					// SAFETY: the process env, passed to the engine CLI unchanged.
+					env: input.env as NodeJS.ProcessEnv,
+					...(config.dockerBinary
+						? { binary: config.dockerBinary }
+						: undefined),
+				}),
+			jobs,
+		};
 	const gaps = runnerHost.runnerHostInterfaceGaps(ports);
 	if (gaps.length > 0)
 		return refusal(
 			"runner-host-interface-missing",
-			`this ${config.hostKind} host has no ${gaps.join(", ")}; the runner-host realizer drains, swaps and verifies only through the worker's container driver and job ports`,
-			"A local runner's GitHub presence is not readable from the worker's data directory: upgrade this host as packages/ci/RUNNER-QUEUE.md describes, or run the agent from a composition that supplies the missing ports.",
+			`this ${config.hostKind} host has no ${gaps.join(", ")}; the runner-host realizer drains, swaps and verifies only through the worker's controller port and job ports`,
+			"Run the agent with the default ports (the engine CLI or the supervisor's control files, and the worker's data directory), or from a composition that supplies the missing ones.",
 		);
 	const { createRunnerHostRealizer } = await import(
 		"./cd-agent-runner-host.js"

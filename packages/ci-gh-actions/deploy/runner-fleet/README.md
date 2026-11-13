@@ -14,7 +14,7 @@ new one a host at a time.
 |---|---|
 | [`hosts.json`](hosts.json) | The declared runner hosts: mesh node id, kind (`box-worker`, `mesh-node`, `local-runner`), the runner labels it serves, and its ring (`pilot` or `fleet`). |
 | [`hobo.delivery.ts`](hobo.delivery.ts) | The delivery module `hobo deploy pipeline apply --file` applies; built from `hosts.json` by `runnerFleetDelivery` in [`src/runner-fleet-delivery.ts`](../../src/runner-fleet-delivery.ts). |
-| [`hobo-cd-agent.service`](hobo-cd-agent.service), [`agent.env.example`](agent.env.example), [`agent.runner-host.json.example`](agent.runner-host.json.example) | The CD agent each runner host runs beside its controller, and what it is told about its host (`HOBO_CD_RUNNER_HOST`). |
+| [`hobo-cd-agent.service`](hobo-cd-agent.service), [`agent.env.example`](agent.env.example), [`agent.runner-host.json.example`](agent.runner-host.json.example), [`agent.local-runner.json.example`](agent.local-runner.json.example) | The CD agent each runner host runs beside its controller, and what it is told about its host (`HOBO_CD_RUNNER_HOST`). |
 
 ## What the delivery module declares
 
@@ -118,7 +118,16 @@ read from the box worker's data directory, the directory of `worker.database`
 controller container must mount from the host: the journal read-only for
 leases, `mesh-advert.json` (the worker's own advert, rewritten every mesh
 beat) and the `admission-paused` marker the agent places to drain the host
-(package README, "Job ports from the worker's data directory"). A Set for the host's Camp then
+(package README, "Job ports from the worker's data directory"). A local
+runner names its state directory instead (`worker: {directory}`): its
+controller writes the advert, the GitHub presence of its registered runner
+(`runner-presence.json`) and honours the marker there. A host whose
+controller runs as a process (today's box worker and local runner) sets
+`controller: {mode: "process", releases: "<directory or https:// base URL>"}`
+and runs under `scripts/controller-supervisor.mts`; the agent stages the
+release by digest and asks the supervisor to swap it through
+`controller-desired.json` (package README, "A controller that runs as a
+process"). A Set for the host's Camp then
 converges by pulling the image its runner-host row pins by digest, draining,
 swapping the controller and verifying by observation; a failed verify restores
 the previous digest and reports `BLOCKED` with `runner-host-verify-failed`
@@ -130,13 +139,12 @@ the previous digest and reports `BLOCKED` with `runner-host-verify-failed`
 
 These are refused, not faked:
 
-- **A local runner has no runner-presence port.** Its GitHub presence is not
-  in the worker's data directory, so `agent run` on a `local-runner` refuses
-  `runner-host-interface-missing ... jobs.runners` before it starts; upgrade
-  those hosts the way [the runner queue guide](../../../ci/RUNNER-QUEUE.md)
-  describes. The realizer also assumes the controller runs as a container
-  with the worker's data directory mounted from the host; today's box worker
-  daemon runs as a process (`restart-worker.sh`).
+- **No single-file release is published yet.** Process mode swaps the
+  controller between releases staged by digest (`<hex>.mjs`); the release
+  pipeline does not yet bundle the daemon entry into one file and publish it
+  where `controller.releases` points, so a host is adopted by hand once
+  (`HOBO_CI_CONTROLLER_RELEASE`) and until then upgraded as
+  [the runner queue guide](../../../ci/RUNNER-QUEUE.md) describes.
 - **A placed node's promotion does not write the Set yet.** The fan-out runs
   the pilot group first, one host at a time, and defers a tainted host, but
   the composed `@hobo/cd` PromotionService has no placed-Camps reader or

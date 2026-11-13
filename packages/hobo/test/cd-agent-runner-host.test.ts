@@ -48,6 +48,10 @@ import {
 	imageAt,
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
+import {
+	SupervisedRunnerHost,
+	writeReleases,
+} from "./fixtures/runner-host-supervised.js";
 
 // SAFETY: the runner fleet's Camp id for host `box` (hobo-ci-runners/<host id>).
 const BOX = "hobo-ci-runners/box" as CampId;
@@ -105,7 +109,7 @@ afterEach(async () => {
 	dir = "";
 });
 async function writeConfig(
-	value: Readonly<Record<string, string>> = CONFIG,
+	value: Readonly<Record<string, unknown>> = CONFIG,
 ): Promise<string> {
 	dir = await mkdtemp(join(tmpdir(), "runner-host-agent-"));
 	configPath = join(dir, "agent.runner-host.json");
@@ -134,6 +138,32 @@ describe("runner-host agent config", () => {
 		expect(relative.ok ? "" : relative.reasons[0]?.message).toContain(
 			"worker must be {database: <absolute path",
 		);
+	});
+
+	it("parses a process-mode controller and a local runner's state directory", () => {
+		const parsed = parseRunnerHostAgentConfig({
+			...CONFIG,
+			hostKind: "local-runner",
+			worker: { directory: "/home/dev/.hobo/ci-local/" },
+			controller: { mode: "process", releases: "https://releases.hobo.test/w" },
+		});
+		expect(parsed.ok && parsed.value).toEqual({
+			...CONFIG,
+			hostKind: "local-runner",
+			workerDatabase: "/home/dev/.hobo/ci-local/worker.sqlite",
+			controller: { mode: "process", releases: "https://releases.hobo.test/w" },
+		});
+		for (const controller of [
+			{ mode: "process" },
+			{ mode: "process", releases: "http://releases.hobo.test/" },
+			{ mode: "process", releases: "https://user:secret@releases.hobo.test/" },
+			{ mode: "vm" },
+		]) {
+			const refused = parseRunnerHostAgentConfig({ ...CONFIG, controller });
+			const message = refused.ok ? "" : (refused.reasons[0]?.message ?? "");
+			expect(message).toContain("controller must be {mode: container}");
+			expect(message).not.toContain("secret");
+		}
 	});
 
 	it("refuses a credential value where a locator belongs, and unknown fields", () => {
@@ -203,8 +233,12 @@ describe("agent realizer selection (hobo deploy agent run)", () => {
 		expect(chosen.ok ? "" : chosen.reasons[0]?.message).toBe("");
 	});
 
-	it("refuses by name the port a local runner's worker directory cannot answer", async () => {
-		await writeConfig({ ...CONFIG, hostKind: "local-runner" });
+	it("registers the realizer on a local runner: its presence is read from its state directory", async () => {
+		await writeConfig({
+			...CONFIG,
+			hostKind: "local-runner",
+			controller: { mode: "process", releases: "/var/lib/hobo-ci/releases" },
+		});
 		const chosen = await agentRealizer({
 			simulate: false,
 			env: { [CD_RUNNER_HOST_ENV]: configPath },
@@ -215,13 +249,29 @@ describe("agent realizer selection (hobo deploy agent run)", () => {
 				throw new Error("not simulated");
 			},
 		});
+		expect(chosen.ok ? "" : chosen.reasons[0]?.message).toBe("");
+	});
+
+	it("refuses by name a controller port a composition leaves unwired", async () => {
+		await writeConfig({
+			...CONFIG,
+			controller: { mode: "process", releases: "/var/lib/hobo-ci/releases" },
+		});
+		const chosen = await agentRealizer({
+			simulate: false,
+			env: { [CD_RUNNER_HOST_ENV]: configPath },
+			cwd: "/",
+			now: () => 0,
+			campIds: [BOX],
+			simulated: () => {
+				throw new Error("not simulated");
+			},
+			runnerHost: { process: { status: async () => undefined } },
+		});
 		const reason = chosen.ok ? undefined : chosen.reasons[0];
 		expect(reason?.code).toBe("runner-host-interface-missing");
-		expect(reason?.message).toContain("local-runner host has no jobs.runners");
-		// Only presence is missing: the container port defaults to the engine
-		// CLI and the other job ports come from the worker's data directory.
-		expect(reason?.message).not.toContain("containers.");
-		expect(reason?.message).not.toContain("jobs.leases");
+		expect(reason?.message).toContain("process.run, process.stage");
+		expect(reason?.message).not.toContain("jobs.");
 	});
 
 	it("refuses an agent started for another host's Camp", async () => {
@@ -578,5 +628,121 @@ describe("Station Rails declared beside the runner fleet's Camps", () => {
 		if (!two.ok) throw new Error(two.message);
 		const catalog = declaredRailCatalog(journal(), two.value);
 		expect(catalog.ok ? "" : catalog.reasons[0]?.code).toBe("cd-rail-conflict");
+	});
+});
+
+describe("agent run on a host whose controller is a supervised process (in-process e2e)", () => {
+	/**
+	 * `agentRealizer` with the host's own default ports: the supervisor's
+	 * control files and the worker's data directory, nothing injected. The
+	 * realizer's waits run the host (supervisor pass, worker beat).
+	 */
+	async function processAgent(
+		options: Readonly<{
+			hostKind?: "box-worker" | "local-runner";
+			unhealthy?: (images: string[]) => string[];
+			offline?: boolean;
+		}> = {},
+	) {
+		await writeConfig();
+		const source = join(dir, "releases");
+		const images = await writeReleases(source, [
+			"export const v = 1;\n",
+			"export const v = 2;\n",
+			"export const v = 3;\n",
+		]);
+		const local = options.hostKind === "local-runner";
+		const host = new SupervisedRunnerHost({
+			dataDirectory: join(dir, "data"),
+			hostKind: options.hostKind ?? "box-worker",
+			unhealthy: (options.unhealthy?.(images) ?? []).map(digestOf),
+			...(options.offline ? { offline: true } : undefined),
+		});
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				...CONFIG,
+				hostKind: options.hostKind ?? "box-worker",
+				worker: local
+					? { directory: join(dir, "data") }
+					: { database: join(dir, "data", "worker.sqlite") },
+				controller: { mode: "process", releases: source },
+			}),
+		);
+		const chosen = await agentRealizer({
+			simulate: false,
+			env: { [CD_RUNNER_HOST_ENV]: configPath },
+			cwd: "/",
+			now: () => host.nowMs,
+			sleep: async (ms) => {
+				host.nowMs += ms;
+				await host.tick();
+			},
+			campIds: [BOX],
+			simulated: () => {
+				throw new Error("not simulated");
+			},
+		});
+		if (!chosen.ok) throw new Error(chosen.reasons[0]?.message);
+		return { realizer: chosen.value, host, images };
+	}
+
+	it("swaps the box worker by digest under its supervisor and converges on the advert at the new version", async () => {
+		const { realizer, host, images } = await processAgent();
+		const [v1, v2] = images;
+		const first = await realizer.converge(realizeInput(v1), ctx);
+		expect(first.status).toBe(ReconcileStatus.CONVERGED);
+		const second = await realizer.converge(realizeInput(v2), ctx);
+		expect(second.status).toBe(ReconcileStatus.CONVERGED);
+		expect(second.resources[0]?.physicalId).toBe(
+			`hobo-ci-runners/box/controller@${digestOf(v2 ?? "")}`,
+		);
+		expect(host.running()).toEqual([digestOf(v2 ?? "")]);
+		expect(
+			second.claims.find((claim) => claim.name === "hobo.ci/runner-host-ready")
+				?.value,
+		).toBe("true");
+		expect((await realizer.observe(realizeInput(v2), ctx)).status).toBe(
+			ReconcileStatus.CONVERGED,
+		);
+	});
+
+	it("restores the previous release when the new one never serves, BLOCKED with the realizer's code", async () => {
+		const { realizer, host, images } = await processAgent({
+			unhealthy: (all) => [all[2] ?? ""],
+		});
+		const [v1, , broken] = images;
+		await realizer.converge(realizeInput(v1), ctx);
+		const observed = await realizer.converge(realizeInput(broken), ctx);
+		expect(observed.status).toBe(ReconcileStatus.BLOCKED);
+		expect(observed.reasons[0]?.code).toBe("runner-host-verify-failed");
+		expect(observed.reasons[0]?.message).toContain(
+			`restored and observed the previous controller ${digestOf(v1 ?? "")}`,
+		);
+		expect(host.running()).toEqual([digestOf(v1 ?? "")]);
+		expect(observed.resources[0]?.physicalId).toBe(
+			`hobo-ci-runners/box/controller@${digestOf(v1 ?? "")}`,
+		);
+	});
+
+	it("converges a local runner once its runner is online in GitHub, and not before", async () => {
+		const online = await processAgent({ hostKind: "local-runner" });
+		const [v1] = online.images;
+		expect((await online.realizer.converge(realizeInput(v1), ctx)).status).toBe(
+			ReconcileStatus.CONVERGED,
+		);
+
+		const offline = await processAgent({
+			hostKind: "local-runner",
+			offline: true,
+		});
+		const blocked = await offline.realizer.converge(
+			realizeInput(offline.images[0]),
+			ctx,
+		);
+		expect(blocked.status).toBe(ReconcileStatus.BLOCKED);
+		expect(blocked.reasons[0]?.message).toContain(
+			"no registered runner is online",
+		);
 	});
 });

@@ -34,6 +34,12 @@ import {
 	meshReliabilityResetToken,
 } from "./mesh-node.js";
 import { meshNodeReportsJson } from "./mesh-records.js";
+import {
+	type WorkerHostFiles,
+	type WorkerRunnerPresence,
+	writeWorkerMeshAdvert,
+	writeWorkerRunnerPresence,
+} from "./runner-host-worker-jobs.js";
 
 const exec = promisify(execFile);
 const LOCAL_HOST_LABEL = "hobo-local-host";
@@ -49,6 +55,14 @@ const jitResponse = z.object({
 	runner: z.object({ id: z.number().int().positive() }),
 	encoded_jit_config: z.string().optional(),
 });
+/** GitHub's view of one registered runner: `GET /repos/{repo}/actions/runners/{id}`. */
+const runnerResponse = z.object({
+	id: z.number().int().positive(),
+	name: z.string(),
+	status: z.enum(["online", "offline"]),
+	busy: z.boolean(),
+});
+const RUNNER_PATH = /^\/repos\/[^/]+\/[^/]+\/actions\/runners\/[0-9]+$/u;
 const jit = jitResponse.extend({
 	encoded_jit_config: z
 		.string()
@@ -65,6 +79,7 @@ export type LocalRunnerJitRequest = z.infer<typeof jitRequest>;
 export type LocalRunnerApiResponse =
 	| z.infer<typeof repository>
 	| z.infer<typeof jitResponse>
+	| z.infer<typeof runnerResponse>
 	| null;
 
 const registration = z.object({
@@ -140,7 +155,9 @@ export async function githubLocalRunnerApi(
 					const data: unknown = stdout.trim() ? JSON.parse(stdout) : null;
 					resolve(
 						method === "GET"
-							? repository.parse(data)
+							? RUNNER_PATH.test(path)
+								? runnerResponse.parse(data)
+								: repository.parse(data)
 							: method === "POST"
 								? jitResponse.parse(data)
 								: null,
@@ -194,8 +211,8 @@ export async function installLocalRunnerArchive(
 
 /** What a session tells whoever is reporting this machine to the mesh. */
 export type LocalRunnerSessionObserver = Readonly<{
-	/** A runner is registered and waiting for a job in `work`. */
-	waiting(work: string): void;
+	/** A runner is registered (`runner`, its GitHub id and name) and waiting for a job in `work`. */
+	waiting(work: string, runner?: Readonly<{ id: number; name: string }>): void;
 	/**
 	 * The session is over. `delivered`: the runner ran to its own exit.
 	 * `dropped`: it was registered and then failed. `idle`: it was stopped, or
@@ -302,7 +319,7 @@ export async function runLocalRunnerSession(options: {
 		options.signal?.throwIfAborted();
 		await options.registered?.();
 		options.signal?.throwIfAborted();
-		options.observer?.waiting(work);
+		options.observer?.waiting(work, { id: runnerId, name: runnerName });
 		try {
 			await runHostProcess(
 				join(work, "run.sh"),
@@ -374,7 +391,7 @@ export const LOCAL_RUNNER_MESH_REPORT = "mesh-node.json";
  * starts a worker process for the job it is assigned, and that process opens
  * a `Worker_*.log` in the runner's `_diag` folder; a waiting runner has none.
  */
-function runnerHasJob(work: string): boolean {
+export function runnerHasJob(work: string): boolean {
 	try {
 		return readdirSync(join(work, "_diag")).some((name) =>
 			name.startsWith("Worker_"),
@@ -403,6 +420,13 @@ export async function createLocalRunnerMeshNode(options: {
 	hostname: string;
 	/** The node's SQLite journal, where its reliability record is kept. */
 	journal?: MeshJournal | undefined;
+	/**
+	 * Where this machine meets its host's CD agent: the advert is also
+	 * written to `mesh-advert.json` here after every beat, naming
+	 * `controllerDigest` when a supervisor started this controller at one.
+	 */
+	hostFiles?: WorkerHostFiles | undefined;
+	controllerDigest?: string | undefined;
 	now?: () => number;
 	log?:
 		| ((
@@ -466,6 +490,12 @@ export async function createLocalRunnerMeshNode(options: {
 			repository: served.success ? served.data : undefined,
 		}),
 		afterBeat: async (node) => {
+			if (options.hostFiles)
+				await writeWorkerMeshAdvert(
+					options.hostFiles,
+					node.self(),
+					options.controllerDigest,
+				).catch(() => undefined);
 			// Written whole or not at all: `status` may read it at any moment.
 			const temporary = `${reportFile}.${process.pid}.tmp`;
 			await writeFile(
@@ -480,7 +510,7 @@ export async function createLocalRunnerMeshNode(options: {
 	return {
 		...joined,
 		observer: {
-			waiting(work) {
+			waiting(work, _runner) {
 				waitingIn = work;
 			},
 			ended(outcome) {
@@ -490,6 +520,88 @@ export async function createLocalRunnerMeshNode(options: {
 		},
 		setHealthy(next) {
 			healthy = next;
+		},
+	};
+}
+
+/**
+ * A local runner's side of the runner-host job ports
+ * (`runner-host-worker-jobs.ts`): the GitHub presence of the runner it has
+ * registered, read with its own credential (`gh`) and written to
+ * `runner-presence.json` in its state directory with the time it was read.
+ *
+ * Busy is also what this machine sees itself (a job's worker log in the
+ * runner's `_diag`), so a job is never missed when GitHub cannot be asked;
+ * online is only what GitHub said. When GitHub cannot be asked the runner is
+ * reported offline: unknown presence is never online.
+ */
+export function createLocalRunnerPresenceReporter(options: {
+	files: WorkerHostFiles;
+	repository: string;
+	api?: typeof githubLocalRunnerApi;
+	now?: () => number;
+}) {
+	const api = options.api ?? githubLocalRunnerApi;
+	const now = options.now ?? Date.now;
+	const name = repositoryName.parse(options.repository);
+	let current: Readonly<{ id: number; name: string; work: string }> | undefined;
+	const observer: LocalRunnerSessionObserver = {
+		waiting(work, runner) {
+			current = runner ? { ...runner, work } : undefined;
+			void refresh();
+		},
+		ended() {
+			current = undefined;
+			void refresh();
+		},
+	};
+	async function presence(): Promise<WorkerRunnerPresence> {
+		const runner = current;
+		const observedAtMs = now();
+		if (!runner) return { observedAtMs, runners: [] };
+		const local = runnerHasJob(runner.work);
+		try {
+			const seen = runnerResponse.parse(
+				await api("GET", `/repos/${name}/actions/runners/${runner.id}`),
+			);
+			return {
+				observedAtMs,
+				runners: [
+					{ name: runner.name, status: seen.status, busy: seen.busy || local },
+				],
+			};
+		} catch {
+			return {
+				observedAtMs,
+				runners: [{ name: runner.name, status: "offline", busy: local }],
+			};
+		}
+	}
+	/** Read and write the presence once; a failed write is left to the next refresh. */
+	async function refresh(): Promise<void> {
+		await writeWorkerRunnerPresence(options.files, await presence()).catch(
+			() => undefined,
+		);
+	}
+	return {
+		observer,
+		refresh,
+		presence,
+		/** The registered runner's work folder, while one waits or runs. */
+		work: () => current?.work,
+	};
+}
+
+/** Both observers, in order: a session reports to the mesh and to the presence file. */
+export function combineLocalRunnerObservers(
+	...observers: readonly (LocalRunnerSessionObserver | undefined)[]
+): LocalRunnerSessionObserver {
+	return {
+		waiting(work, runner) {
+			for (const observer of observers) observer?.waiting(work, runner);
+		},
+		ended(outcome) {
+			for (const observer of observers) observer?.ended(outcome);
 		},
 	};
 }

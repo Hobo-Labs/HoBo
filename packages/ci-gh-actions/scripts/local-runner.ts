@@ -17,16 +17,24 @@ import { fileURLToPath } from "node:url";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import { z } from "zod";
 import {
+	combineLocalRunnerObservers,
 	createLocalRunnerMeshNode,
+	createLocalRunnerPresenceReporter,
 	installLocalRunnerArchive,
 	LOCAL_RUNNER_MESH_REPORT,
 	LocalRunnerRegistrationUncertainError,
 	LocalRunnerShutdownUncertainError,
 	parseLocalRunnerEnvironment,
 	runLocalRunnerSession,
+	runnerHasJob,
 } from "../src/local-runner.js";
 import { parseMeshNodeReports } from "../src/mesh-records.js";
 import { acquirePartitionLock } from "../src/partition-lock.js";
+import {
+	controllerDigestFromEnv,
+	workerAdmissionPaused,
+	workerHostFiles,
+} from "../src/runner-host-worker-jobs.js";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const state = resolve(
@@ -37,6 +45,14 @@ const socket = join(
 	`hobo-ci-${process.getuid?.()}-${createHash("sha256").update(state).digest("hex").slice(0, 16)}.sock`,
 );
 const reply = z.object({ status: z.string(), detail: z.string() });
+// Where this machine meets its host's CD agent (`hobo deploy agent run`, a
+// `local-runner` host): the agent closes admission with the
+// `admission-paused` marker here and reads the advert and runner presence
+// this controller writes here (src/runner-host-worker-jobs.ts). There is no
+// worker journal: a local runner has no leases, only its one runner.
+const hostFiles = workerHostFiles(join(state, "worker.sqlite"));
+const PAUSED_DETAIL =
+	"Admission is closed by this host's CD agent; no runner is registered until it reopens";
 
 /**
  * This machine's own mesh report, as the controller last wrote it: which
@@ -154,6 +170,8 @@ async function daemon() {
 			state,
 			hostname: hostname(),
 			journal,
+			hostFiles,
+			controllerDigest: controllerDigestFromEnv(process.env),
 			log: (event, fields) =>
 				process.stdout.write(`${JSON.stringify({ event, ...fields })}\n`),
 		});
@@ -168,7 +186,7 @@ async function daemon() {
 	}
 	const update = async (status: string, detail: string) => {
 		current = { status, detail };
-		mesh?.setHealthy(!["blocked", "waiting"].includes(status));
+		mesh?.setHealthy(!["blocked", "waiting", "paused"].includes(status));
 		await writeFile(
 			join(state, "status.json"),
 			`${JSON.stringify(current)}\n`,
@@ -205,12 +223,42 @@ async function daemon() {
 		process.send?.("ready");
 		process.disconnect?.();
 		while (!stopping.signal.aborted) {
+			// Closed admission: register no runner, and give up a waiting one
+			// that has no job (one with a job runs to its end).
+			if (workerAdmissionPaused(hostFiles)) {
+				if (current.status !== "paused") await update("paused", PAUSED_DETAIL);
+				await pause(5000, undefined, { signal: stopping.signal }).catch(
+					() => {},
+				);
+				continue;
+			}
+			const session = new AbortController();
+			let watch: ReturnType<typeof setInterval> | undefined;
+			let presence:
+				| ReturnType<typeof createLocalRunnerPresenceReporter>
+				| undefined;
 			try {
 				if (process.platform !== "linux" || process.arch !== "x64")
 					throw new Error(
 						"Local HoBo bridge requires Linux x64; use act on other platforms",
 					);
 				const repository = parseLocalRunnerEnvironment(process.env);
+				const reporter = createLocalRunnerPresenceReporter({
+					files: hostFiles,
+					repository,
+				});
+				presence = reporter;
+				watch = setInterval(() => {
+					const work = reporter.work();
+					if (
+						workerAdmissionPaused(hostFiles) &&
+						work !== undefined &&
+						!runnerHasJob(work)
+					)
+						session.abort();
+					else void reporter.refresh();
+				}, 5000);
+				watch.unref();
 				await update("preparing", `Preparing private repository ${repository}`);
 				const archive = await installLocalRunnerArchive(state, stopping.signal);
 				if (stopping.signal.aborted) break;
@@ -218,8 +266,11 @@ async function daemon() {
 					repository,
 					state,
 					archive,
-					signal: stopping.signal,
-					observer: mesh?.observer,
+					signal: AbortSignal.any([stopping.signal, session.signal]),
+					observer: combineLocalRunnerObservers(
+						mesh?.observer,
+						reporter.observer,
+					),
 					registered: () =>
 						update(
 							"registered",
@@ -227,6 +278,10 @@ async function daemon() {
 						),
 				});
 			} catch (error) {
+				if (session.signal.aborted && !stopping.signal.aborted) {
+					await update("paused", PAUSED_DETAIL);
+					continue;
+				}
 				if (
 					error instanceof LocalRunnerShutdownUncertainError ||
 					error instanceof LocalRunnerRegistrationUncertainError
@@ -241,6 +296,9 @@ async function daemon() {
 							? error.message
 							: "Set HOBO_CI_LOCAL_REPOSITORY=owner/repo and configure gh authentication",
 					);
+			} finally {
+				clearInterval(watch);
+				await presence?.refresh();
 			}
 			if (!stopping.signal.aborted)
 				await pause(30000, undefined, { signal: stopping.signal }).catch(

@@ -217,9 +217,11 @@ would post for a new offer.
   advert, lease and readiness into Camp inventory, so an unready host is
   tainted `NO_PLACE` and a fan-out defers it. Balancing reads the mesh board,
   not that inventory. The agent reads the worker's leases, advert and
-  admission marker from the worker's data directory; a local runner's
-  presence is not there (refused by name), and the fleet's promotion does not
-  yet write the Set the agent converges; see
+  admission marker from the worker's data directory, a local runner's GitHub
+  presence from the report its controller writes there, and swaps a
+  controller that runs as a process through its daemon's supervisor
+  (releases staged by digest). The fleet's promotion does not yet write the
+  Set the agent converges, and no single-file release is published yet; see
   [`deploy/runner-fleet/README.md`](../../packages/ci-gh-actions/deploy/runner-fleet/README.md).
 
 `jog` and `boat` are accepted as policy provider kinds and dispatch through the

@@ -5,8 +5,9 @@
 //    agent enrolls by double opt-in, the fleet's Placement is decidable
 //    (its declared Rail approves the fleet's provider), and `agent run` on a
 //    box worker registers the runner-host realizer with the worker's job
-//    ports and runs its loop; a local runner, whose runner presence the
-//    worker's data directory cannot answer, is refused by name.
+//    ports and runs its loop, and so does a local runner whose controller
+//    is a supervised process (its runner presence read from its state
+//    directory).
 // 2. In process, on the durable SQLite journal, the same records in JSON
 //    form, a Station composed by `openCdRuntime` and an agent composed the
 //    way `agent run` composes it (its job ports read from a fake box
@@ -394,7 +395,7 @@ describe.skipIf(!existsSync(BIN))(
 			expect(railless.code).toBe("rail-providers-unknown");
 		});
 
-		it("agent run on a box worker wires the worker's job ports and runs; a local runner is refused by name", async () => {
+		it("agent run on a box worker wires the worker's job ports and runs, and so does a local runner", async () => {
 			const home = await freshDir();
 			const keys = agentKeys();
 			const keyFile = join(home, "agent.jwk.json");
@@ -440,23 +441,26 @@ describe.skipIf(!existsSync(BIN))(
 			expect(runner.ok, runner.message).toBe(true);
 			expect(pick(runner.data, "reconcilerId")).toBe("rec_box");
 
-			// A local runner keeps a registered runner whose GitHub presence the
-			// worker's data directory cannot answer: refused by name, no loop.
+			// A local runner: its controller is a process its supervisor runs,
+			// and its runner's GitHub presence is read from its state directory
+			// (runner-presence.json). Every port is wired, so the loop starts.
 			await writeFile(
 				config,
 				JSON.stringify({
 					...AGENT_CONFIG,
 					hostKind: "local-runner",
-					worker: { database: join(workerDir, "worker.sqlite") },
+					worker: { directory: workerDir },
+					controller: { mode: "process", releases: join(home, "releases") },
 				}),
 			);
-			const local = await deploy(home, argv, {
-				[CD_RUNNER_HOST_ENV]: config,
-			});
-			expect(local.ok).toBe(false);
-			expect(local.code).toBe("runner-host-interface-missing");
-			expect(local.message).toContain("jobs.runners");
-			expect(local.message).not.toContain("jobs.leases");
+			const local = await runAgentFor(
+				home,
+				argv.slice(2),
+				{ HOBO_CD_TOPOLOGY: MODULE, [CD_RUNNER_HOST_ENV]: config },
+				8_000,
+			);
+			expect(local.exitedEarly, local.message).toBe(false);
+			expect(local.ok, local.message).toBe(true);
 		});
 	},
 );

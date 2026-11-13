@@ -1060,11 +1060,12 @@ in [`deploy/runner-fleet/README.md`](deploy/runner-fleet/README.md).
 controller image. It is a typed `ResourceResolver` (`@hobo/core`, product
 `hobo-ci.runner-host/v1`, provider `hobo-ci`) that `hobo deploy agent run`
 calls on the host itself. No shell script and no new exec: it acts only
-through two ports the host wires.
+through a controller port and a job port the host wires.
 
 | Port | Methods | Where they come from |
 |---|---|---|
-| `containers` | `listWorkerContainers`, `inspectImage`, `create`, `start`, `stop`, `remove`, `isRunning`, `pull` | the isolated worker's `DockerDriver` plus the deps-image `pull` |
+| `containers` (a controller container) | `listWorkerContainers`, `inspectImage`, `create`, `start`, `stop`, `remove`, `isRunning`, `pull` | the isolated worker's `DockerDriver` plus the deps-image `pull` |
+| `process` (a controller process, in place of `containers`) | `stage`, `status`, `run` | the worker daemon's supervisor through its control files, `createControllerProcessPort` (below) |
 | `jobs` | `leases`, `runners`, `meshAdvert`, `pauseAdmission`, `resumeAdmission` | the worker's lease store (`ACTIVE_STATES`, `runnerCustody`), GitHub runner presence, the host's mesh advert, the worker's admission gate; across the process boundary, `createWorkerHostJobs` (below) |
 
 A host missing any of them is refused with `RESOLVER_PRODUCT_UNSUPPORTED`
@@ -1148,9 +1149,59 @@ controller container mounts from the host. `createWorkerHostJobs` reads it:
 marker. While the marker exists the worker's tick runs with `admit: false`
 (running jobs are untouched) and it advertises itself unhealthy. JIT hosts
 (`box-worker`, `mesh-node`) answer `runners` with no standing registrations:
-each job's runner is counted through its lease. A `local-runner`'s GitHub
-presence is not in that directory, so its `runners` port stays unwired and
-the agent refuses `runner-host-interface-missing ... jobs.runners`.
+each job's runner is counted through its lease. A `local-runner` (its state
+directory is the data directory: agent config `worker.directory`) answers
+`runners` from `runner-presence.json`, which its controller rewrites with
+its registered runner's GitHub presence (`GET .../actions/runners/{id}`
+with its own `gh` credential) and the time it read it
+(`createLocalRunnerPresenceReporter`). Busy is also what the machine sees
+itself (a job's worker log), so a job is never missed while GitHub cannot be
+asked; online is only what GitHub said, and a missing, corrupt or stale
+(over two minutes) report answers no runner. A local runner honours the
+`admission-paused` marker too: it registers no runner while it exists, gives
+up a waiting runner that has no job, and reports `paused`.
+
+**A controller that runs as a process.** Today's box worker and local
+runner are processes, so the agent config's `controller: {mode: "process",
+releases}` swaps the controller through the worker daemon's supervisor
+instead of the container engine (`src/runner-controller-process.ts`). A
+release is a single-file Node entry identified by the sha256 digest of its
+bytes. In the data directory:
+
+| File | Written by | What it is |
+|---|---|---|
+| `controller-releases/<hex>.mjs` | the agent | a release staged by digest; `stage(<ref>@sha256:<hex>)` fetches it from `releases` (an absolute directory or an `https://` base URL with no credentials, `releaseFetchFrom`) and keeps it only when its bytes hash to the digest (`runner-host-stage-failed` otherwise) |
+| `controller-desired.json` | the agent | `{generation, digest \| null, requestedAtMs}`: the release to run, or none; each request is one generation above any before it |
+| `controller-status.json` | the supervisor | `{generation, digest, state, pid, startedAtMs, reason}`, state `starting`, `running`, `stopping`, `stopped`, `exited` or `failed` |
+
+The supervisor (`scripts/controller-supervisor.mts`,
+`createControllerSupervisor`) acts on a new generation: it stops the old
+child (SIGTERM, which the worker drains on, then SIGKILL after 15 minutes),
+hashes the staged release again and starts it as `node <release> ...args`,
+never through a shell, with `HOBO_CI_CONTROLLER_DIGEST` set; a release that
+no longer hashes to its digest is never started (`failed`). A child that
+exits on its own is restarted, up to three times in ten minutes, then
+`failed`. The worker writes its advert with `controllerDigest` beside the
+`MeshAdvert` fields (`writeWorkerMeshAdvert`; the field is never put on the
+board), and in process mode verification requires the advert to name the
+target digest, so an advert the old worker left behind is never taken for
+the new one's. The controller is running only once the status has caught up
+with the generation the agent asked for. A swap is: stage, drain, ask for
+none and observe `stopped`, ask for the target, verify (status running at
+the target, a fresh healthy advert at the target digest, for a local runner
+an online runner), and on a failed verify ask for the previous digest again
+(still staged, verified again). Container settings (`config.command`, `env`,
+`volumes`, `memoryMb`, `runAsUser`) do not apply to a process and are
+refused `runner-host-config-unsupported`.
+
+Start the supervisor in place of the daemon: `HOBO_CI_WORKER_DB=<journal>
+HOBO_CI_CONTROLLER_RELEASE=<first release file> node
+scripts/controller-supervisor.mts` (`HOBO_CI_CONTROLLER_ARGS='["daemon"]'`
+for a local runner's release). The first release is hashed, staged and
+requested once; after that the agent's requests decide. Producing the
+single-file release (bundling the daemon entry) is the release pipeline's
+job; the supervisor and the agent accept any file whose digest is the one
+asked for.
 
 #### Runbook
 
@@ -1172,10 +1223,15 @@ the agent refuses `runner-host-interface-missing ... jobs.runners`.
 - **`runner-host-ambiguous`.** Two controllers are running. Stop the one
   holding no jobs by hand (`docker ps --filter name=hoboci-runner-controller-`);
   the realizer never guesses.
-- **`runner-host-interface-missing`.** The agent has no source for a port.
-  On a local runner it names `jobs.runners` (presence is not in the worker's
-  data directory): upgrade that host by hand. Elsewhere fix the composition,
-  not the host.
+- **`runner-host-interface-missing`.** The agent has no source for a port:
+  fix the composition, not the host.
+- **`runner-host-stage-failed`.** The release could not be fetched from
+  `controller.releases`, or its bytes did not hash to the digest; nothing was
+  staged and the host keeps its controller. Publish the release under
+  `<hex>.mjs` and let the next pass retry.
+- **The supervisor reports `failed`.** `controller-status.json` says why: a
+  release that no longer verifies, or a child that kept exiting. The agent's
+  next request (a new generation) starts it again.
 - **A pass waits on a closed admission.** `admission-paused` beside the
   worker's journal is the agent's drain marker; the agent removes it on every
   exit. If an agent was killed mid-pass, remove the file to reopen admission.
