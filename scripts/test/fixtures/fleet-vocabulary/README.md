@@ -8,6 +8,8 @@ is wired to a root `package.json` command and each has a test under
 |---|---|---|
 | `pnpm run fleet:vocabulary` | `scripts/check-fleet-vocabulary.mts` | One implementation of each fleet idea (O1): nine rules, each over its own pathspecs, less `scripts/fleet-vocabulary-allow.json` |
 | `pnpm run fleet:docs` | `scripts/check-fleet-docs.mts` | Vocabulary and documents agree (O27): events, ADR mentions, runbooks |
+| `pnpm run fleet:contracts` | `scripts/check-fleet-contracts.mts` | The contracts did not drift (O26): the emitter's `--check`, then no snapshot or record changed since the newest `Fleet-Contract:` commit |
+| `pnpm run fleet:outcome <id>` | `scripts/fleet-outcome.mts` | Runs one outcome of the design and prints its verification object |
 
 ## `fleet:vocabulary`
 
@@ -48,6 +50,34 @@ prints one line per gap when:
   `backup-and-restore-drill.md`, `nats-server-loss.md`, `callout-outage.md`,
   `clone-alarm.md`, `claim-violation-alarm.md`, `witness-outage.md`,
   `relay-outage.md`, `one-active-fleet-stuck-sealed.md`.
+
+## `fleet:contracts`
+
+`node --import tsx scripts/check-fleet-contracts.mts [--root=<dir>] [--no-build]`
+first builds the contract packages with turbo (the emitter reads workspace
+dependencies through their built declarations), then runs
+`scripts/emit-fleet-contracts.mts --check`, then
+`git diff --exit-code <newest Fleet-Contract commit> -- 'packages/*/contracts/api.snapshot.d.ts' packages/fleet/data-models`.
+Both must pass. Its tests are in `scripts/test/fleet-outcome.test.ts`.
+
+## `fleet:outcome <id>`
+
+`node --import tsx scripts/fleet-outcome.mts <id> [--root=<dir>]` holds the
+outcome table (Check commands, Threshold, fallback threshold and the
+assumptions it names) as data. It fails an outcome whose named file is missing
+without running anything, runs the commands in order through `bash -c` (each
+`vitest run` with `--reporter=json --outputFile=<tmp>`), stops at the first
+nonzero exit, fails on any skipped or todo test, then evaluates the threshold
+(for O20, the figures of `fleet-soak.json`). It prints
+`{ id, pass, command, evidence, measured, fallbacks }` on stdout and exits 0
+only when the outcome passes (2 on an unknown id).
+
+When `fleet-fallbacks.json` lists an assumption the outcome names, the outcome
+is judged against its fallback threshold: a skipped test whose title starts
+with that id in brackets (`[A13] …`) is allowed. O21 (cutover) and O23 (the
+deferred lane) are never passed by this command. Turbo-run checks
+(`turbo run test`) are judged by exit code only: their skipped tests are not
+counted.
 
 ## Fixtures
 
