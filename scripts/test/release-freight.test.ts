@@ -258,6 +258,59 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(block).not.toMatch(/id-token|packages: write|secrets\./u);
 	});
 
+	// release-npm runs this CLI while it holds the OIDC token that signs npm
+	// provenance naming a GitHub-hosted builder, so the CLI is built on the same
+	// kind of runner: a self-hosted box never produces code inside that job.
+	it("builds the hobo CLI on the GitHub-hosted runner release-npm uses", () => {
+		const block = job("release-hobo-cli");
+		expect(block).toMatch(/\n {4}runs-on: ubuntu-24\.04\n/u);
+		expect(job("release-npm")).toMatch(/\n {4}runs-on: ubuntu-24\.04\n/u);
+		expect(block).toContain("uses: jdx/mise-action@");
+		expect(block).not.toContain("ci-runner-preflight");
+	});
+
+	it("builds the hobo CLI only for a run that publishes or promotes", () => {
+		const block = job("release-hobo-cli");
+		expect(block).toMatch(
+			/needs: \[release-main-train-gate, release-pages-gate\]/u,
+		);
+		expect(block).toContain(
+			"needs.release-main-train-gate.outputs.run == 'true'",
+		);
+		expect(block).toContain(
+			"needs.release-pages-gate.outputs.deploy == 'true'",
+		);
+		expect(block).not.toMatch(/workflow_run\.conclusion == 'success'/u);
+	});
+
+	// The realize proof builds @hobo/hobo; with the affected images in the same
+	// job a Turbo cache miss could run release-contract past its limit.
+	it("runs the realize proof in its own pull-request job, gated by the PR gate", () => {
+		const contract = job("release-contract");
+		expect(contract).not.toContain("--filter=@hobo/hobo...");
+		expect(contract).not.toContain("release-freight-realize.test.ts");
+		const realize = job("release-realize");
+		before(realize, "name: Turbo cache", "--filter=@hobo/hobo...");
+		before(
+			realize,
+			"--filter=@hobo/hobo...",
+			"release-freight-realize.test.ts",
+		);
+		expect(realize).toContain('HOBO_RELEASE_REALIZE_REQUIRED: "1"');
+		const gate = job("release-pr-gate");
+		expect(gate).toMatch(/needs: \[[^\]]*\brelease-realize\b[^\]]*\]/u);
+		expect(gate).toContain("needs.release-realize.result");
+	});
+
+	it("runs and triggers on the release Freight CLI tests", () => {
+		const contract = job("release-contract");
+		expect(contract).toContain("scripts/test/release-freight-cli.test.ts");
+		const filters = workflow.match(
+			/- "scripts\/test\/release-freight-cli\.test\.ts"/gu,
+		);
+		expect(filters?.length).toBe(2);
+	});
+
 	for (const [name, deploy] of Object.entries(consumers))
 		it(`${name} restores that build instead of building the CLI`, () => {
 			const block = job(name);

@@ -690,7 +690,7 @@
 				{
 					"name": "npm scope map + OCI manifest contract",
 					"id": "release_contract_tests",
-					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-git-tag.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-pages-stale.test.ts scripts/test/release-relevant-push.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts scripts/test/release-freight.test.ts scripts/test/deploy-site.test.ts",
+					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-contract-vitest -- pnpm exec vitest run scripts/test/release-contract-vitest-scope.test.ts scripts/test/release-git-tag.test.ts scripts/test/release-oci-affected.test.ts scripts/test/release-oci-attest-contract.test.ts scripts/test/release-oci-image-contract.test.ts scripts/test/release-pages-stale.test.ts scripts/test/release-relevant-push.test.ts scripts/test/release-sparse-cone.test.ts scripts/test/release-version.test.ts scripts/test/stage-release-oci-app.test.ts scripts/test/stage-sdk-artifacts.test.ts scripts/test/build-release-site-prebuild.test.ts scripts/test/nbgv-release-version.test.ts scripts/test/release-freight.test.ts scripts/test/release-freight-cli.test.ts scripts/test/deploy-site.test.ts",
 					"local": "run"
 				},
 				{
@@ -705,27 +705,6 @@
 					"uses": "./.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
-				},
-				{
-					"name": "Build the hobo CLI (release Freight realize proof)",
-					"run": "pnpm exec turbo run build --filter=@hobo/hobo... --output-logs=new-only --concurrency=\"${HOBO_TURBO_CONCURRENCY:-1}\"",
-					"local": "run"
-				},
-				{
-					"name": "Release Freight realize (offline)",
-					"id": "release_realize_tests",
-					"env": {
-						"HOBO_RELEASE_REALIZE_REQUIRED": "1"
-					},
-					"run": "node --no-warnings scripts/ci/run-job-command-report.mts --label release-realize-vitest -- pnpm exec vitest run scripts/test/release-freight-realize.test.ts",
-					"local": "run"
-				},
-				{
-					"name": "Upload release realize vitest log",
-					"if": "failure() && steps.release_realize_tests.outcome == 'failure'",
-					"uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
-					"local": "skip",
-					"reason": "uploads a log from a failed CI step; a local run keeps its logs on disk"
 				},
 				{
 					"name": "npm pack dry-run (allowlist staging)",

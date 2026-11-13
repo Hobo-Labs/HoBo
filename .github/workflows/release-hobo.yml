@@ -62,6 +62,7 @@ on:
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
       - "scripts/test/release-freight.test.ts"
+      - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
@@ -129,6 +130,7 @@ on:
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
       - "scripts/test/release-freight.test.ts"
+      - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
@@ -320,8 +322,8 @@ jobs:
     # tree. A local run signs for this job only when no OCI image is affected.
     if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
-    # The realize proof builds @hobo/hobo before its tests; the Turbo cache is
-    # restored before that build, so it replays what an earlier run built.
+    # The realize proof (and its @hobo/hobo build) is release-realize's, so a
+    # Turbo cache miss here costs only the affected images.
     timeout-minutes: 20
     # packages: read lets a runner without the worker image (an ARC pod) pull it.
     permissions:
@@ -378,6 +380,7 @@ jobs:
           scripts/test/build-release-site-prebuild.test.ts
           scripts/test/nbgv-release-version.test.ts
           scripts/test/release-freight.test.ts
+          scripts/test/release-freight-cli.test.ts
           scripts/test/deploy-site.test.ts
       - name: Upload release contract vitest log
         if: failure() && steps.release_contract_tests.outcome == 'failure'
@@ -392,29 +395,6 @@ jobs:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
-      # The offline proof of the release realizer path: the built hobo CD
-      # composition with release/hobo-release.delivery.ts as topology, against
-      # the providers' recorded registry and GitHub worlds. It needs the built
-      # @hobo/hobo, and fails (never skips) here when the build is missing.
-      - name: Build the hobo CLI (release Freight realize proof)
-        run: >-
-          pnpm exec turbo run build --filter=@hobo/hobo...
-          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      - name: Release Freight realize (offline)
-        id: release_realize_tests
-        env:
-          HOBO_RELEASE_REALIZE_REQUIRED: "1"
-        run: >-
-          node --no-warnings scripts/ci/run-job-command-report.mts
-          --label release-realize-vitest --
-          pnpm exec vitest run scripts/test/release-freight-realize.test.ts
-      - name: Upload release realize vitest log
-        if: failure() && steps.release_realize_tests.outcome == 'failure'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: vitest-release-realize-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/hobo-ci-job-logs/release-realize-vitest.log
-          if-no-files-found: ignore
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail
@@ -522,6 +502,85 @@ jobs:
         with:
           mode: save
 
+  # The offline proof of the release realizer path: the built hobo CD
+  # composition with release/hobo-release.delivery.ts as topology, against the
+  # providers' recorded registry and GitHub worlds. It needs the built
+  # @hobo/hobo and fails (never skips) when the build is missing. Its own job,
+  # so a Turbo cache miss on that build never runs release-contract's image
+  # builds past their limit. A pull request's proof: a release run restores the
+  # CLI release-hobo-cli built and realizes for real.
+  release-realize:
+    name: Release Freight realize proof (offline)
+    needs: route
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: ./.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
+      - name: Turbo cache
+        uses: ./.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: Build the hobo CLI (release Freight realize proof)
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Release Freight realize (offline)
+        id: release_realize_tests
+        env:
+          HOBO_RELEASE_REALIZE_REQUIRED: "1"
+        run: >-
+          node --no-warnings scripts/ci/run-job-command-report.mts
+          --label release-realize-vitest --
+          pnpm exec vitest run scripts/test/release-freight-realize.test.ts
+      - name: Upload release realize vitest log
+        if: failure() && steps.release_realize_tests.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vitest-release-realize-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/hobo-ci-job-logs/release-realize-vitest.log
+          if-no-files-found: ignore
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.turbo-prune.outputs.save != 'false'
+        uses: ./.github/actions/turbo-cache
+        with:
+          mode: save
+
   # HoBo releases itself through HoBo: every release job that publishes or
   # promotes runs the `hobo deploy` composition of @hobo/cd from the built
   # @hobo/hobo. Building it in each of them ran every one past the 20-minute
@@ -532,17 +591,25 @@ jobs:
   # checked out (scripts/ci/release-freight-cli.mts); anything else fails it.
   release-hobo-cli:
     name: Build the hobo CLI once (release Freight)
+    # Only for a run that publishes or promotes: the main train releases, Pages
+    # is stale, a release tag, or a dispatch that pushes images. Both gates
+    # finish long before any consumer starts.
     if: >-
+      !cancelled() &&
       github.repository == 'Hobo-Labs/HoBo' &&
+      needs.release-main-train-gate.result == 'success' &&
       (
-        (github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push') ||
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        needs.release-pages-gate.outputs.deploy == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
         startsWith(github.ref, 'refs/tags/cli-v') ||
-        (github.event_name == 'workflow_dispatch' && (inputs.push_images || inputs.publish_pages))
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
-    runs-on: ${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    needs: [release-main-train-gate, release-pages-gate]
+    # GitHub-hosted, like release-npm: release-npm runs this CLI while it holds
+    # the OIDC token whose npm provenance names a GitHub-hosted builder, so no
+    # self-hosted runner produces code that runs inside that job.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       digest: ${{ steps.pack.outputs.digest }}
@@ -569,7 +636,7 @@ jobs:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
@@ -902,7 +969,8 @@ jobs:
     needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-hobo-cli]
     # Keyless provenance signing names a GitHub-hosted builder (npm verifies
     # it) — not self-hosted hobo. The tarballs it signs are built here
-    # (stage-sdk-artifacts.mts); only the hobo CLI comes from release-hobo-cli.
+    # (stage-sdk-artifacts.mts); only the hobo CLI comes from release-hobo-cli,
+    # which builds it on a GitHub-hosted runner too.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: release
@@ -1302,7 +1370,7 @@ jobs:
   release-pr-gate:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    needs: [route, release-contract]
+    needs: [route, release-contract, release-realize]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04
@@ -1311,6 +1379,7 @@ jobs:
       - name: Fail closed when release contract is red
         env:
           CONTRACT_RESULT: ${{ needs.release-contract.result }}
+          REALIZE_RESULT: ${{ needs.release-realize.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1329,6 +1398,11 @@ jobs:
           # A contract skipped because routing failed was never evaluated.
           if [ "${ROUTE_RESULT:-}" != "success" ]; then
             echo "::error::Runner routing did not succeed (result=${ROUTE_RESULT:-})"
+            exit 1
+          fi
+          # The realize proof has no local attestation: it must pass here.
+          if [ "${REALIZE_RESULT:-}" != "success" ]; then
+            echo "::error::Release Freight realize proof must pass (result=${REALIZE_RESULT:-})"
             exit 1
           fi
           case "${CONTRACT_RESULT:-}" in

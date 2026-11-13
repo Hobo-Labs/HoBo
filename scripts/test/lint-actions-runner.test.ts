@@ -104,6 +104,11 @@ describe("Actions runner policy", () => {
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
 			0,
 		);
+		// The job that builds the hobo CLI release-npm runs with its OIDC token.
+		assert.equal(
+			lintRunner("release-hobo.yml", "release-hobo-cli", "ubuntu-24.04"),
+			0,
+		);
 	});
 
 	it("rejects the same runner on another job or workflow and other hosted images", () => {
