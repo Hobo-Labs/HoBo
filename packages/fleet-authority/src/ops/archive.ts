@@ -384,10 +384,11 @@ export async function restoreArchive(
 	);
 	if (!loaded.ok) return loaded;
 	const store = await deps.store();
-	const audit = await restoreAudit(deps, entries, checkpoints);
-	if (!audit.ok) return audit;
+	// The archived trust first: the witness judges the restored checkpoints against it.
 	if (deps.bus.registry.trust().sequence < archivedRecord.sequence)
 		await deps.bus.publisher.putTrust(archivedTrust);
+	const audit = await restoreAudit(deps, entries, checkpoints);
+	if (!audit.ok) return audit;
 
 	const signing = await readSlot(deps.secrets, deps.prefix, "record-signing");
 	if (!signing.ok) return signing;
