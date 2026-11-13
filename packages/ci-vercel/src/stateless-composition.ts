@@ -30,6 +30,7 @@ import {
 	createControlAuthenticator,
 	createGithubAppTransport,
 	createGithubOidcVerifier,
+	createGithubWorkflowVerifier,
 	createHostedControlPlane,
 	createHostedRelayRuntime,
 	createQueuedJobRepair,
@@ -37,9 +38,14 @@ import {
 	createRelayMcp,
 	createStatelessAppOnboarding,
 	createWebhookRepair,
+	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
+	type FleetVerdictService,
+	type FleetVerdictSettings,
 	type GithubAppTransport,
+	type GithubWorkflowVerifier,
 	HostedRelay,
 	type IdentityVerifier,
+	parseFleetReporters,
 	reportRelayFailure,
 } from "@hobo/ci-gh-actions";
 import {
@@ -151,6 +157,8 @@ export type StatelessRelayOptions = Readonly<{
 	>;
 	github?: GithubAppTransport;
 	identity?: IdentityVerifier;
+	/** Verifies a workflow's OIDC token for the fleet reporter status route. */
+	workflowIdentity?: GithubWorkflowVerifier;
 	sandboxDrivers?: typeof VERCEL_SANDBOX_DRIVERS;
 	fetch?: typeof fetch;
 	now?: () => string;
@@ -422,12 +430,39 @@ export async function composeStatelessRelay(
 		publicOrigin: origin,
 		resolve: onboarding.trustedBootstrapControl,
 	});
-	// Fleet verdicts for runner routing (ADR-0180): kept here, decided elsewhere.
-	const fleetVerdicts = createCacheFleetVerdicts({
-		state: fleet.state,
-		environment,
-		now: nowMs,
-	});
+	// Fleet verdicts for runner routing (ADR-0180): kept, agreed and served
+	// here, decided on the box. The enrollment follows the config service and
+	// is parsed once per loaded copy.
+	let fleetSettingsFrom: RelayRuntimeConfig | undefined;
+	let fleetSettings: FleetVerdictSettings | undefined;
+	const fleetVerdicts: FleetVerdictService = {
+		store: createCacheFleetVerdicts({
+			state: fleet.state,
+			environment,
+			now: nowMs,
+		}),
+		async settings() {
+			const config = await options.config.load();
+			if (config !== fleetSettingsFrom || !fleetSettings) {
+				fleetSettings = {
+					// The schema has already refused an enrollment that is not one.
+					reporters: config.HOBO_CI_FLEET_REPORTERS_JSON
+						? (parseFleetReporters(config.HOBO_CI_FLEET_REPORTERS_JSON) ?? [])
+						: [],
+					serving: config.HOBO_CI_FLEET_VERDICT_SERVING !== "off",
+					dailyBlockMinutes: config.HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES
+						? Number(config.HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES)
+						: FLEET_VERDICT_DAILY_BLOCK_MINUTES,
+				};
+				fleetSettingsFrom = config;
+			}
+			return fleetSettings;
+		},
+		workflowIdentity:
+			options.workflowIdentity ??
+			createGithubWorkflowVerifier({ audience: origin, fetch: options.fetch }),
+		log: (event, fields) => log({ event, ...fields }),
+	};
 	const health = new CacheWorkerHealth({
 		state: fleet.state,
 		environment,
