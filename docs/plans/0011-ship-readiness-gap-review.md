@@ -10,7 +10,7 @@ tags: [hobo, plans, ship, gap-review]
 > **Audited at:** `9d0233d2` (2026-07-30), branch `worktree/brave-river-7200`.  
 > **Method:** Full recon of README / design / packages / CI; three parallel evidence passes (engineering, CI-security-tests, launch-legal-GTM); high-impact claims spot-vetted against source.  
 > **Prior audit:** [`0002-public-launch-gap-analysis.md`](./0002-public-launch-gap-analysis.md) (2026-07-17) remains useful for launch-ops structure but is **stale on engineering scale**. This document supersedes it for current code maturity.  
-> **Remediation:** [`0012-ship-remediation-plan.md`](./0012-ship-remediation-plan.md) (work packages for agents).
+> **Remediation:** `0012-ship-remediation-plan` (a plan, not kept in the repository) (work packages for agents).
 
 ## 1. Executive summary
 

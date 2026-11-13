@@ -124,3 +124,8 @@ reports/mutation/
 /external/*.kept
 /external/*.kept.[0-9]*
 .mise/
+
+# Plans are working documents and are never committed (AGENTS.md, "Plans are
+# not committed"). Planning tools write here; `pnpm run plans:guard` refuses a
+# plan that is committed anywhere else.
+/plans/

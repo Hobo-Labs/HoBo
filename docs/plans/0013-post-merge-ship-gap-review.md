@@ -8,7 +8,7 @@ tags: [hobo, plans, ship, gap-review, post-merge]
 # Post-merge ship-readiness gap review
 
 > **Audited at:** `61cfcdb9` on `origin/main` (2026-07-30).  
-> **Prior reviews:** [`0011-ship-readiness-gap-review.md`](./0011-ship-readiness-gap-review.md) (pre-remediation), remediations in [`0012-ship-remediation-plan.md`](./0012-ship-remediation-plan.md) and stacked PRs **#952–#956** (all **MERGED**).  
+> **Prior reviews:** [`0011-ship-readiness-gap-review.md`](./0011-ship-readiness-gap-review.md) (pre-remediation), remediations in `0012-ship-remediation-plan` (a plan, not kept in the repository) and stacked PRs **#952–#956** (all **MERGED**).  
 > **Method:** Recon of main tip artifacts, local gates (`docs:okf`, `docs:design-lint`, `ship:gap-closure`, unit tests), live Actions probe, npm registry probe, residual ledger + go/no-go instances.
 
 ## 1. Merge status (done)

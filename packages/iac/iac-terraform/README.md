@@ -40,7 +40,7 @@ as interchangeable binaries behind one flag —
 `{ binary: "terraform" }`. Version pins live beside the engine
 (`PINNED_TOFU_VERSION` / `PINNED_TERRAFORM_VERSION`). This is the resolved
 form of the `iac-opentofu` roadmap entry
-([docs/plans/0017](../../../docs/plans/0017-remediation-roadmap.md) F33).
+(docs/plans/0017 F33).
 
 ## Exports
 

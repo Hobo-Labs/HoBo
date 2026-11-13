@@ -360,7 +360,7 @@ Append-only outcomes for sdlc coordinator runs. Newest entries at the bottom.
 ## 2026-08-04 — Remediation roadmap (0017)
 
 - **scope:** scoped solutions for the full gap inventory as
-  `docs/plans/0017-remediation-roadmap.md` — 36 items across 7 workstreams
+  `0017-remediation-roadmap` (a plan, not kept in the repository) — 36 items across 7 workstreams
   (correctness, ADR-0146 loop, compliance, flagship local/WASM lane, placement
   expressiveness/Radius deliverables, all ✱ aspirational packages, register
   audits), each with verified seam facts, effort class, and acceptance

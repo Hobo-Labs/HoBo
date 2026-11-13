@@ -5,7 +5,7 @@
 ## Agent tooling
 The repo-local **sdlc** skill runs the full dev loop (brainstorm→plan→Linear→gated dispatch to `.claude/agents/` implementer/reviewer subagents in worktrees, incremental checkins, parent-owned GitHub stacked PRs via `gh stack`, bottom-up rubber-duck/adversarial review + squash-merge per PR); **`/sdlc --finish`** lands the session (commit, rebase, PR, squash-merge all session PRs — see skill `references/finish.md`). Companion **gh-stack** skill covers non-interactive CLI; **draft** governs proof material with gate-enforced artifacts (`proof.json`, executed examples, notebooks, cucumber features via `pnpm run test:behavior`).
 This repo is wired with the agent tools listed in the docs/agent-tooling.md table for Claude Code, Cursor, and Codex (Superpowers also targets GitHub Copilot CLI) — see **[`AGENTS.md`](AGENTS.md)** for the full table and **[`docs/agent-tooling.md`](docs/agent-tooling.md)** for setup/keys/risks. Quick map:
-- **improve** — `/improve` audits the repo and writes plans to `docs/plans/` (read-only).
+- **improve** — `/improve` audits the repo and writes plans to the root `plans/` folder, which git ignores (read-only).
 - **superpowers** (`obra/Superpowers`) — plugin: dev methodology (brainstorming, writing-plans, code-review, TDD, debugging); enabled repo-wide via `.claude/settings.json`; loads at session start.
 - **mattpocock/skills** — engineering disciplines incl. **`grill-with-docs`** (design interview → ADRs+glossary), `domain-modeling`, `codebase-design`, `tdd`; one-time `/setup-matt-pocock-skills` to configure.
 - **caveman** — terse-output compression (active by default; `/caveman` to adjust).
@@ -21,6 +21,7 @@ Install the binaries once with [`scripts/setup-agent-tools.sh`](scripts/setup-ag
 **Dev environment:** provision pinned Node, pnpm, cue, and turbo with [`mise.toml`](mise.toml) (`bash scripts/bootstrap-dev.sh --project-only` or `mise install`). Cloud agents without a custom image should run `bash scripts/bootstrap-dev.sh` first so dotfiles + mise stay current; see [`docs/dev-env/mise.md`](docs/dev-env/mise.md).
 
 ## Working norms
+- **Plans are never committed.** A plan, backlog or agent instruction is a working document: write it to the root `plans/` folder (ignored by git) or outside the repo, and never commit, push or open a PR for it. Asked for a plan, deliver a document and stop. `pnpm run plans:guard` (pre-commit and docs checks) refuses one. See AGENTS.md "Plans are not committed".
 - Docs and packages are both product surface: design docs are canonical for intent, `packages/` for behavior; `docs:freshness` requires a docs change alongside code changes; keep cross-doc links valid (relative `.md` links).
 - Follow the HoBo implementation architecture rules in [`AGENTS.md`](AGENTS.md): PACT at service boundaries, protobuf plus CUE for records/messages/data/objects, project-local `data-models/` folders for CUE-constrained types, parse-don't-validate derived types, and event-driven CQRS/actors/materialized views.
 - **Durable EventStore (ADR-0135):** default SQLite behind ports (`@hobo/storage-sqlite`, `@hobo/runtime-local`, `@hobo/runtime-browser`); one partition / one writer; stream-head CAS + fencing; never multi-writer NFS WAL. See AGENTS.md “Portable SQLite EventStore”.

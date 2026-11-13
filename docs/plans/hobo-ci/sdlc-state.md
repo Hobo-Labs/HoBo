@@ -106,7 +106,7 @@ and reconciliation. An outbound Daemon is optional for continuous polling, not
 the public HTTP listener. Existing SQLite/container assets remain self-hosted
 adapters and regression references, not a prerequisite VM deployment.
 
-The [hosting and policy plan](hosting-and-policy-plan.md) records the source
+The hosting and policy plan records the source
 audit, official platform constraints, adversarial/YAGNI/rubber-duck passes,
 SDK desired-state and Station Connection design, and contract-based delivery
 slices. Implementation and resource provisioning have not started in this

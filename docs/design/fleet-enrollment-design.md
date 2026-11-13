@@ -88,7 +88,7 @@ State these limitations in operator documentation:
 | `packages/ci-gh-actions` isolated worker | Isolated-container execution, pull/push, draining, reconciliation | Reuse rather than creating a second worker daemon |
 | `packages/ci-gh-actions/src/project-providers.ts` | Closed provider shapes including local, box worker, Kubernetes, ARC, Dagger | Extend only through typed, provider-specific fields |
 | `packages/ci-dagger/ADR.md` | Backend does not own scheduler, lease, cost, or failover | Preserve this dependency direction |
-| `docs/plans/hobo-ci/hosting-and-policy-plan.md` | Selected controller, durable inbox/outbox, policy ownership, recovery targets | Build within this plan; do not create a parallel controller |
+| `hosting-and-policy-plan` (a plan, not kept in the repository) | Selected controller, durable inbox/outbox, policy ownership, recovery targets | Build within this plan; do not create a parallel controller |
 | `docs/design/adr/01-architecture-core.md` | Optional Kubernetes, provider adapters, durable ports, fencing/replay | Preserve all conformance and ownership rules |
 
 ### Current behavior requiring explicit migration care

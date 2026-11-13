@@ -1,5 +1,5 @@
 ---
-type: Plan
+type: Review Findings
 title: "Test integrity audit"
 description: "What running every test file actually found: five defects that no gate was catching, and why the gates missed them."
 tags: [hobo, plan, testing]

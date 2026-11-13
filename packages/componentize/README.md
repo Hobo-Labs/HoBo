@@ -20,7 +20,7 @@ boundary/Pact tests. They are **not** guest modules produced by compiling
 TypeScript through the pinned jco/`componentize-js` toolchain. Toolchain version
 pins in `PINNED_TOOLCHAIN` document intended real-pipeline targets; the real
 pipeline remains deferred (see ship remediation residual **H-E3b** in
-[`docs/plans/0012-ship-remediation-plan.md`](../../docs/plans/0012-ship-remediation-plan.md)
+`0012-ship-remediation-plan` (a plan, not kept in the repository)
 and known limitation rows in
 [`docs/design/known-limitations-register.md`](../../docs/design/known-limitations-register.md)).
 

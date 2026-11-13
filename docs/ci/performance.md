@@ -11,7 +11,7 @@ Goal: PR, merge-queue and main runs of **HoBo CI Fabric** (`.github/workflows/ho
 five minutes of wall time. This note records what the data says, what has been changed, and what is still in
 the way. Day-to-day tuning knobs live in [`../maintenance/ci-performance.md`](../maintenance/ci-performance.md);
 the box worker runbook is [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md). The plan for
-prebuilt checkout and install layers is [`oci-layer-plan.md`](./oci-layer-plan.md).
+prebuilt checkout and install layers is `oci-layer-plan` (a plan, not kept in the repository).
 
 ## Findings
 

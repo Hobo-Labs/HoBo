@@ -27,7 +27,6 @@ const REQUIRED_RESIDUAL_IDS = [
 
 const REQUIRED_PATHS = [
 	"docs/plans/0011-ship-readiness-gap-review.md",
-	"docs/plans/0012-ship-remediation-plan.md",
 	"docs/design/launch-ship-targets.md",
 	"docs/design/npm-publish-allowlist.md",
 	"docs/design/instances/README.md",

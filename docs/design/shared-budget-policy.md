@@ -237,7 +237,7 @@ removed bucket observation history, immutable payer identities, attempt generati
 claim fences and positive release/settlement receipts. Keeping only the latest
 configuration would discard those protections.
 
-The [implementation and scenario record](../plans/0023-shared-budget-policy-ci.md)
+The implementation and scenario record
 links executable regressions and final validation. External CI vendor execution
 requires authenticated accounts; local PostgreSQL, SQLite, HTTP and modeled
 provider tests do not constitute live vendor billing certification.

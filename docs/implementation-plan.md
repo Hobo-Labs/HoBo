@@ -78,7 +78,7 @@ Hardening), each closing with an executable gate issue keyed to the requirements
 with later stages opened by M0 acceptance-record issues (the post-core-delta pattern applied to the
 build). 79 issues with dependency wiring, plus the companion **Intent-Alignment Gap Remediation**
 project (one issue per confirmed [`GAPS.md`](../GAPS.md) remediation), are staged in
-[`docs/plans/production-build-backlog.md`](plans/production-build-backlog.md) together with an
+`production-build-backlog` (a plan, not kept in the repository) together with an
 import runbook — Linear import runs paced single-writer once MCP access is approved. The 15
 completed proof projects stay closed; draft material is promotion source only.
 
@@ -90,7 +90,7 @@ requirements Release criteria (S0/S1 local → S2 first cloud → S3 agent auton
 S5 Forge → S6 hardening). Created 2026-07-01: **7 stage projects, 27 milestones, 87 issues
 (HOBO-578…HOBO-665)**, all labeled `production-build`, dependencies wired as blocking relations.
 The 15 completed proof projects stay closed; `src/draft/` is promotion source only. Durable mirror:
-[`docs/plans/production-build-backlog.md`](plans/production-build-backlog.md) (see its Import
+`production-build-backlog` (a plan, not kept in the repository) (see its Import
 record for the full identifier map). S0/S1 slices and every stage-M0 acceptance issue carry full
 QA-verified one-shot bodies. S2–S6 slices are blocked by their stage M0 per the post-core delta
 pattern above and carry full build-instruction bodies (stage goal + gate, exact packages, context

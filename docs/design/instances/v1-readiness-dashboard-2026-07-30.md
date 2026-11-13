@@ -9,7 +9,7 @@ tags: [hobo, design, ship, instances, readiness]
 
 > **Contract:** [`v1-readiness-dashboard.md`](../v1-readiness-dashboard.md)  
 > **Ship targets:** [ADR-0140](../adr/07-portability-extensibility.md#adr-0140) / [`launch-ship-targets.md`](../launch-ship-targets.md)  
-> **Source audit:** [`0011-ship-readiness-gap-review.md`](../../plans/0011-ship-readiness-gap-review.md); remediations [`0012-ship-remediation-plan.md`](../../plans/0012-ship-remediation-plan.md)  
+> **Source audit:** [`0011-ship-readiness-gap-review.md`](../../plans/0011-ship-readiness-gap-review.md); remediations `0012-ship-remediation-plan` (a plan, not kept in the repository)  
 > **Owner:** single maintainer (Tyler Kendrick) — all readiness roles unbound except as noted  
 > **Not a ship decision.** See go/no-go instances for gate outcomes.  
 > **Reconciled:** after WP-B–E (truth-in-advertising, CI honesty, publish prep, residual ledger, secret-scan Met).

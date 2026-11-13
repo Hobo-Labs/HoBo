@@ -757,6 +757,11 @@ export function selectRelevantChecks(
 		});
 		checks.push({
 			command: "pnpm",
+			args: ["run", "plans:guard"],
+			reason: "plans are working documents and are never committed",
+		});
+		checks.push({
+			command: "pnpm",
 			args: ["run", "docs:findings", "--", "--check"],
 			reason:
 				"CI performance findings and their generated index must stay valid",

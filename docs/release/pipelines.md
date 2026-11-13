@@ -15,7 +15,7 @@ Most release jobs have a **10-minute hard timeout** and a **5-minute target dura
 
 HoBo’s **fixed `@hobo-labs/*` train** does **not** take its semver from a human-pushed `v*` tag anymore. [`version.json`](../../version.json) pins the base train to **`0.0.0-alpha.{height}`** with a **`versionHeightOffset`** so new releases stay above legacy hand tags (`v0.0.0-alpha.0` … `v0.0.0-alpha.2` remain immutable). **[Nerdbank.GitVersioning](https://dotnet.github.io/Nerdbank.GitVersioning/)** (`nerdbank-gitversioning` npm CLI + **`dotnet`** pinned in [`release/mise.toml`](../../release/mise.toml), not root [`mise.toml`](../../mise.toml)) computes **`VersionHeight`** from git; [`scripts/ci/compute-release-version.mts`](../../scripts/ci/compute-release-version.mts) maps that to **`HOBO_RELEASE_*`** (`npm` dist-tag **`alpha`**, never **`latest`**, no stable semver).
 
-**Changesets prerelease mode** stays in the repo for changelog tooling but was **not** chosen for the main train: [`docs/plans/0018-npm-publish-design.md`](../plans/0018-npm-publish-design.md) requires a **single fixed train** across contract-coupled packages, and Changesets expects per-package bump intent (`.changeset/` files) rather than deterministic git-height versioning.
+**Changesets prerelease mode** stays in the repo for changelog tooling but was **not** chosen for the main train: `0018-npm-publish-design` (a plan, not kept in the repository) requires a **single fixed train** across contract-coupled packages, and Changesets expects per-package bump intent (`.changeset/` files) rather than deterministic git-height versioning.
 
 After **`HoBo CI Fabric`** is green on a **`main`** push that touches the [`release-hobo` path filters](../../.github/workflows/release-hobo.yml), **`release-hobo`** runs via **`workflow_run`**: gate job → npm/GHCR/Pages publish at the computed semver → **`release-tag`** pushes a **signed** `v0.0.0-alpha.N` tag and opens a **prerelease** GitHub Release. The **`release-main-train-gate`** job uses the hermetic **`ci-runner-preflight`** toolchain (root `mise.lock`) plus a bounded **`scripts/ci/ensure-nbgv-toolchain.mts`** step (5-minute timeout, heartbeat logs) to install **`release/mise.toml`** `dotnet` only when missing—not **`jdx/mise-action`**, which can hang silently on self-hosted runners under storage pressure. Failed publishes do not move tags; the next green run gets a higher height. Independent **`sdk-v*`** / **`cli-v*`** tags still use [`resolve-release-version.mts`](../../scripts/ci/resolve-release-version.mts).
 
@@ -235,5 +235,5 @@ Every later sync is `git merge origin/main`. When a `main` change touches a file
 ## Related references
 
 - [npm publish allowlist](../design/npm-publish-allowlist.md)
-- [0018: npm publish path — release engineering design](../plans/0018-npm-publish-design.md)
+- 0018: npm publish path — release engineering design
 - [HoBo runner queue troubleshooting](../../packages/ci/RUNNER-QUEUE.md)

@@ -8,7 +8,7 @@ tags: [hobo, design, instances, ship, residual, human-blockers]
 # Residual Human Blockers Ledger (2026-07-30)
 
 > **Status:** open ledger. **Agents must not mark these fixed.**  
-> **Parent plan:** [`docs/plans/0012-ship-remediation-plan.md`](../../plans/0012-ship-remediation-plan.md)  
+> **Parent plan:** `0012-ship-remediation-plan` (a plan, not kept in the repository)  
 > **Findings:** [`docs/plans/0011-ship-readiness-gap-review.md`](../../plans/0011-ship-readiness-gap-review.md)  
 > **Ship targets:** Target A (OSS public hygiene) → B (local-first npm) → C (hosted beta/GA). Most rows block B and/or C, not repo-public hygiene alone.
 

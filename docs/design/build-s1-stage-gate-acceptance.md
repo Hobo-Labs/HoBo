@@ -8,7 +8,7 @@ tags: [hobo, design, s1, stage-gate]
 # Build S1 Stage Gate Acceptance
 
 Source issue: [HOBO-615](https://linear.app/quickdeploy-ai/issue/HOBO-615) (S1-24 — re-point the
-S1 stage gate at production; see [`0003-engineering-build-plan.md`](../plans/0003-engineering-build-plan.md) §6).
+S1 stage gate at production; see `0003-engineering-build-plan` (a plan, not kept in the repository) §6).
 
 This record supersedes the draft-proof gate captured in
 [`proofs/s1-stage-gate/index.md`](./proofs/s1-stage-gate/index.md): the standing lane

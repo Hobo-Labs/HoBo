@@ -490,7 +490,7 @@ ADR-P2 asked which overlay-mesh technology carries cross-provider connectivity (
 **Lakebed is an accepted deploy-target adapter (`@hobo/provider-lakebed`): honest-partial capabilities, deploy-driver realization, opt-in approval — and rejected as a Yard substrate.**
 
 ### Context
-Lakebed is the named head-on competitor (agent-native closed PaaS — [lakebed.md](../../competitors/lakebed.md)), and until now it appeared only as a competitive frame ([index.md](../index.md#competitive-frame-vs-lakebed-what-we-deliberately-do-differently)) and as an importer source (Lakebed Capsule import, [ADR-0041](#adr-0041)). The default-providers program ([plan 0005](../../plans/0005-default-providers.md), HOBO-714) asked whether HoBo should also deploy *to* Lakebed, giving the importer story its outbound twin: a Bindle written for HoBo lands on the competitor's runtime unedited.
+Lakebed is the named head-on competitor (agent-native closed PaaS — [lakebed.md](../../competitors/lakebed.md)), and until now it appeared only as a competitive frame ([index.md](../index.md#competitive-frame-vs-lakebed-what-we-deliberately-do-differently)) and as an importer source (Lakebed Capsule import, [ADR-0041](#adr-0041)). The default-providers program (plan 0005, HOBO-714) asked whether HoBo should also deploy *to* Lakebed, giving the importer story its outbound twin: a Bindle written for HoBo lands on the competitor's runtime unedited.
 
 ### Decision
 1. **Accepted as a deploy-target adapter.** `@hobo/provider-lakebed` ships in the intended seed set ([Plan 4](../control-plane.md#plan-04) intended-providers table) behind the standard `CloudProvider` authoring contract (HOBO-87) — nothing about the competitor gets a bespoke seam.
@@ -597,7 +597,7 @@ Ship-readiness work conflated three different “ship” meanings: make the mono
 
 5. **Hosted Target C is blocked** until **legal** (counsel-approved terms/privacy/DPA/subprocessor list), **dogfood** (Yard on real cloud + pilot path), and **real apply** (non-fixture provider apply, not in-memory-only success) are closed. Agents may document process instances and placeholders; they do not invent counsel-approved legal text or green CI/npm evidence.
 
-6. **Go/no-go gates** for A/B use gate values `repo-public` and `developer-tooling` on the [go/no-go decision record](../go-no-go-decision-record.md); beta / release-candidate / GA remain for Target C productization. Populated instances live under [`docs/design/instances/`](../instances/README.md). Human-facing summary: [`launch-ship-targets.md`](../launch-ship-targets.md). Remediation packages: [`0012-ship-remediation-plan.md`](../../plans/0012-ship-remediation-plan.md).
+6. **Go/no-go gates** for A/B use gate values `repo-public` and `developer-tooling` on the [go/no-go decision record](../go-no-go-decision-record.md); beta / release-candidate / GA remain for Target C productization. Populated instances live under [`docs/design/instances/`](../instances/README.md). Human-facing summary: [`launch-ship-targets.md`](../launch-ship-targets.md). Remediation packages: `0012-ship-remediation-plan` (a plan, not kept in the repository).
 
 ### Consequences
 - **(+)** Separates OSS hygiene, npm DX, and hosted product so agents and humans cannot greenwash Target C with Target A evidence.

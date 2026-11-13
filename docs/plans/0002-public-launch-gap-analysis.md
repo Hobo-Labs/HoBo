@@ -24,7 +24,7 @@ HoBo's design is essentially finished; the product is not. The design corpus (11
 internally consistent, CI-enforced, and unusually rigorous. Against that, roughly **5–10% of the
 designed system exists as production code** (~26–30k LOC across 18 packages), the current code
 covers approximately **stage S0 plus slivers of S1** of the seven-stage
-[production build backlog](production-build-backlog.md), and **there is no executable path to a
+production build backlog, and **there is no executable path to a
 real cloud**: no cloud provider adapter, no IaC engine, no identity plane, no MCP server, no
 registry, no deployment artifacts of any kind.
 
@@ -66,9 +66,9 @@ The audit scores the repo against the launch criteria it defines for itself:
 | [v1-readiness-dashboard.md](../design/v1-readiness-dashboard.md) | Master scorecard fields (cutline, blockers, milestone health, evidence links, accepted risks, owners, last-verified) and the fail-closed rules. |
 | [go-no-go-decision-record.md](../design/go-no-go-decision-record.md) | Beta/RC/GA decision template; checked for populated instances (none exist). |
 | [launch-blocker-taxonomy.md](../design/launch-blocker-taxonomy.md) | Severity vocabulary used throughout this report. |
-| [production-build-backlog.md](production-build-backlog.md) | S0–S6 stage scope quantifying the engineering gap. |
+| `production-build-backlog` (a plan, not kept in the repository) | S0–S6 stage scope quantifying the engineering gap. |
 | [build-s0-stage-gate-acceptance.md](../design/build-s0-stage-gate-acceptance.md) | S0 acceptance record — gate table currently all `TODO`. |
-| [proof-hardening-backfill.md](proof-hardening-backfill.md) | Validation-debt baseline (647 grandfathered proofs). |
+| `proof-hardening-backfill` (a plan, not kept in the repository) | Validation-debt baseline (647 grandfathered proofs). |
 | [pre-launch-outcome-contract.md](../design/pre-launch-outcome-contract.md), [launch-e2e-persona-matrix.md](../design/launch-e2e-persona-matrix.md), [launch-demo-golden-path.md](../design/launch-demo-golden-path.md), [launch-messaging-claims.md](../design/launch-messaging-claims.md), [legal-privacy-terms-readiness.md](../design/legal-privacy-terms-readiness.md), [billing-launch-policy.md](../design/billing-launch-policy.md), [support-sla-channels.md](../design/support-sla-channels.md) | Per-dimension "contract exists, evidence doesn't" checks. |
 | [Archived requirements suite](../archive/requirements/index.md) | Ratification status (v0.1, "Draft for review"). |
 | [ADR-0064](../design/adr/07-portability-extensibility.md#adr-0064) | The deliberate monetization scope cut — cited so business gaps aren't misread as oversights. |
@@ -112,7 +112,7 @@ What exists is real and well-gated: `@hobo/core` (events, capabilities, ports), 
 offline in simulate mode. That is the S0 toolchain plus part of S1's local runtime — roughly
 26–30k LOC.
 
-What does not exist, keyed to the [backlog](production-build-backlog.md) stages:
+What does not exist, keyed to the backlog stages:
 
 | Stage | Promise | Status at audit |
 |---|---|---|
@@ -156,7 +156,7 @@ public launch copy today except as roadmap.
   both Ubuntu and Windows legs.
 - **Proof-hardening debt.** 647 draft-proof packages are grandfathered
   (`src/draft/_grandfathered.json`); exactly **one** meets the hardened artifact standard. The
-  [backfill plan](proof-hardening-backfill.md) (waves W1–W6) exists but has not visibly burned
+  backfill plan (waves W1–W6) exists but has not visibly burned
   down. Advisory-only warnings mean the design-proof evidence base is largely self-attested.
 - **Requirements unratified.** The BRD/PRD/TRD suite is
   [archived](../archive/requirements/index.md) at v0.1 "Draft for review" with a sign-off table
@@ -305,7 +305,7 @@ backup-restore evidence, compliance evidence pack — all pre-GA rather than pre
 | 3 | Legal artifacts absent (terms, privacy notice, subprocessor list, claims review) | Launch blocker (hosted/public) | Named as blockers by [the repo's own checklist](../design/legal-privacy-terms-readiness.md). |
 | 4 | No launch definition or public-beta cutline; "One v1" philosophy leaves no defensible interim launch surface | Launch blocker (decision, not code) | §4.3, §4.6.4. |
 | 5 | Single-maintainer bus factor: all owner roles resolve to one person; no degradation policy | High-risk non-blocker | §3 Owners row, §4.6.3. Needs recorded acceptance + mitigation. |
-| 6 | Validation debt: 646/647 proofs unhardened; requirements unratified — evidence base is self-attested | High-risk non-blocker (pre-GA blocker) | §4.2; [proof-hardening-backfill](proof-hardening-backfill.md). |
+| 6 | Validation debt: 646/647 proofs unhardened; requirements unratified — evidence base is self-attested | High-risk non-blocker (pre-GA blocker) | §4.2; proof-hardening-backfill. |
 | 7 | Competitive decay: differentiators unshipped while Lakebed + PaaS cohort ship; captures age | High-risk non-blocker | §4.3; [competitors/gap-analysis](../competitors/gap-analysis.md). |
 | 8 | Operational cold start: no dogfood yard, no staffed support, untested restore — first public incident would be handled ad hoc | High-risk non-blocker (pre-beta blocker for hosted) | §4.4. |
 | 9 | TypeScript-only SDK at launch (reference implementation per ADR-0069) | Launch note | Known limitation; needs customer-visible wording. |
@@ -325,4 +325,4 @@ backup-restore evidence, compliance evidence pack — all pre-GA rather than pre
 | Launch machinery uninstantiated | No populated instances of the [dashboard](../design/v1-readiness-dashboard.md), [go/no-go record](../design/go-no-go-decision-record.md), or accepted-risk register anywhere in the tree. |
 | Legal blockers self-declared | [legal-privacy-terms-readiness.md](../design/legal-privacy-terms-readiness.md) "Open Unknowns" table. |
 | OSS hygiene present | `LICENSE` (MIT), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`; gitleaks lane in `.github/workflows/hobo-ci.yml`. |
-| Backlog scale | [production-build-backlog.md](production-build-backlog.md): 7 stage projects, 27 milestones, 87 issues (HOBO-578…665) + 25 gap issues (HOBO-666…690). |
+| Backlog scale | `production-build-backlog` (a plan, not kept in the repository): 7 stage projects, 27 milestones, 87 issues (HOBO-578…665) + 25 gap issues (HOBO-666…690). |

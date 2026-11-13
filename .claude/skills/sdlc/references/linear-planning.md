@@ -33,8 +33,9 @@ per-type assets — see the draft skill). An issue without runnable acceptance i
   2026-06-24 burst rate-limit lesson in docs/implementation-plan.md.
 - Create in dependency order so `blockedBy` targets exist; stage M0/acceptance issues block their
   skeletons.
-- If Linear MCP access is unavailable, stage the full scope in `docs/plans/<name>-backlog.md`
-  with an import runbook (established pattern: docs/plans/production-build-backlog.md).
+- If Linear MCP access is unavailable, stage the full scope in `plans/<name>-backlog.md`
+  with an import runbook. `plans/` is ignored by git: a plan or backlog is never committed
+  (AGENTS.md, "Plans are not committed").
 - Before authoring, read `docs/plans/dispatch-log.md` — recurring failure classes there are
   contract defects; fix the template, not just the issue.
 

@@ -1,5 +1,5 @@
 ---
-type: Plan
+type: Delivery State
 title: "anti-slop SDLC state"
 description: "Stacked PR chain for vendoring dmmulroy/anti-slop and gating it on changed files."
 tags: [hobo, sdlc, anti-slop, oxlint]

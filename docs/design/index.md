@@ -235,4 +235,4 @@ projection over the lease journal's [event cursor](../../packages/ci/README.md#e
 [Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
 the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
 and model-backed conflict resolution beside the Node relay), and
-[implementation plan with live acceptance gates](../plans/hobo-ci/README.md).
+implementation plan with live acceptance gates.

@@ -102,7 +102,6 @@ export const S0_INSTALL_REQUIRED_PATHS = [
 export const S0_REQUIRED_PATHS = [
 	".gitleaks.toml",
 	".github/actions/hobo-checkout/action.yml",
-	"docs/ci/oci-layer-plan.md",
 	"mise.toml",
 	"mise.lock",
 	"packages/stage-gate/package.json",
