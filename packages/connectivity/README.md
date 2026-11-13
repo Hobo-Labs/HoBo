@@ -299,8 +299,9 @@ const invoice = billing.closePeriod({
 | Surface | Implementation |
 |---------|----------------|
 | Route53 | Built-in **AWS SigV4** (no SDK); list + change RR sets |
-| DPoP | Real **ES256 P-256** mint + verify (RFC 9449); keys under `HOBO_HOME/keys/` |
-| JWT-SVID | Audience-bound short-lived SPIFFE JWTs (HS256 local / ES256 issuer keys) |
+| DPoP | Not here: `@hobo/fleet/keys` is the one DPoP implementation (ES256 and EdDSA, RFC 9449) |
+| JWT-SVID | Not here: `@hobo/identity` `JwtSvidIssuer` and `verifyJwtWithJwks` are the one SVID implementation; elevated capabilities are minted and verified through them (no shared secret, no HS256) |
+| Overlay transport | `createOverlayTransport(overlay)`: the HoBo Fleet `overlay` `FleetTransport` (below) |
 | Tailscale MagicDNS | Control-plane **API** split DNS when `TS_API_KEY` set + local `--accept-dns` |
 | Netbird | Management HTTP: enroll, peers, DNS nameserver groups |
 | Billing | Durable JSONL ledger + **Stripe PaymentIntent** REST provider |
@@ -309,7 +310,7 @@ const invoice = billing.closePeriod({
 ## Residual / operational follow-ons
 
 - Multi-process control-plane sharding for hard isolation across clusters
-- SPIRE Workload API fetch as drop-in replacement for local JWT-SVID mint
+- SPIRE Workload API fetch as drop-in replacement for the in-memory-KMS JWT-SVID issuer
 - WebAuthn ceremony for human claim step-up (human-only; agents never hold passkeys)
 - Netbird agent gRPC path if management HTTP enroll is disabled on your build
 
@@ -354,16 +355,21 @@ import {
   mintElevatedAccessCapability,
 } from "@hobo/connectivity";
 
-const elev = mintElevatedAccessCapability({
+// issuer: @hobo/identity JwtSvidIssuer (offline: over createInMemoryKms()).
+const elev = await mintElevatedAccessCapability({
   subject: "user:alice",
   isolationClass: "production",
   issuedBy: "cp-admin",
   evidence: { kind: "dual-approval", ref: "a1" },
-  allowDefaultSecret: true,
+  issuer,
 });
 const gw = createTeleportPamGateway({
   isolationClass: "production",
-  elevatedHmacSecret: process.env.HOBO_SVID_HMAC_SECRET,
+  // Without elevatedTrust every production session is refused.
+  elevatedTrust: {
+    issuer: issuer.issuerUrl,
+    verify: (token, options) => verifyJwtWithJwks(token, issuer.jwks(), options),
+  },
 });
 await gw.start({ stationId: "s1", tenant: "acme", isolationClass: "production", trustDomain: "yard" });
 const session = await gw.brokerSession({

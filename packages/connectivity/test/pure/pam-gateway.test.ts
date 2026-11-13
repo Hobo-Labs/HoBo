@@ -10,6 +10,7 @@ import {
 	renderEnvIsolationTailscaleAcl,
 	verifySessionToken,
 } from "../../src/index.js";
+import { createTestElevatedIssuer } from "../support/elevated-issuer.js";
 
 describe("PAM gateway complete secretless broker", () => {
 	it("native gateway mints, verifies, renews, ends sessions with yard audit drain", async () => {
@@ -43,9 +44,10 @@ describe("PAM gateway complete secretless broker", () => {
 	});
 
 	it("production rejects dummy elevated tokens", async () => {
+		const issuer = createTestElevatedIssuer();
 		const gw = createTeleportPamGateway({
 			isolationClass: "production",
-			elevatedHmacSecret: "hobo-local-svid-dev-only",
+			elevatedTrust: { issuer: issuer.issuerUrl, verify: issuer.verify },
 		});
 		await gw.start({
 			stationId: "sp",
@@ -61,12 +63,12 @@ describe("PAM gateway complete secretless broker", () => {
 				elevatedToken: "dummy-elevated",
 			}),
 		).rejects.toBeTruthy();
-		const elev = mintElevatedAccessCapability({
+		const elev = await mintElevatedAccessCapability({
 			subject: "u",
 			isolationClass: "production",
 			issuedBy: "cp",
 			evidence: { kind: "break-glass", ref: "bg1" },
-			allowDefaultSecret: true,
+			issuer,
 		});
 		const ok = await gw.brokerSession({
 			subject: "u",

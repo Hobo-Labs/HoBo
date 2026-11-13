@@ -5,7 +5,10 @@
 
 import type { PolicyRequest } from "@hobo/core";
 import { isJsonString } from "../json.js";
-import { verifyElevatedAccessCapability } from "./elevated-capability.js";
+import {
+	type ElevatedCapabilityTrust,
+	verifyElevatedAccessCapability,
+} from "./elevated-capability.js";
 import type { BreakGlassService, CrossEnvGrantStore } from "./grants.js";
 import type { EnvMembershipService } from "./membership.js";
 import { assertMembershipIntegrity } from "./membership.js";
@@ -27,6 +30,8 @@ export type EnvIsolationEvalContext = Readonly<{
 	policyPack?: EnvNetworkIsolationPolicyPack;
 	/** Elevated capability JWT if presented. */
 	elevatedToken?: string;
+	/** Whose elevated capabilities are accepted, and how they are verified. Absent: none is. */
+	elevatedTrust?: ElevatedCapabilityTrust;
 	/** Cross-env grant id if presented. */
 	crossEnvGrantId?: string;
 	/** Simulated engine failure → fail closed. */
@@ -54,10 +59,10 @@ export type EnvIsolationVerdict = Readonly<{
  * Order: engine down → missing env → membership integrity → same env →
  * cross-env grant / elevated / break-glass → deny.
  */
-export function evaluateEnvIsolation(
+export async function evaluateEnvIsolation(
 	request: PolicyRequest,
 	ctx: EnvIsolationEvalContext = {},
-): EnvIsolationVerdict {
+): Promise<EnvIsolationVerdict> {
 	const pack = ctx.policyPack ?? DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK;
 	const requireEnv = ctx.requireEnv !== false;
 
@@ -113,6 +118,7 @@ export function evaluateEnvIsolation(
 		ctx.membership &&
 		subjectClass
 	) {
+		await ctx.membership.refresh();
 		const mem = ctx.membership.getActive(
 			request.subject.identity,
 			subjectClass,
@@ -203,11 +209,11 @@ export function evaluateEnvIsolation(
 
 	if (ctx.elevatedToken && resourceClass) {
 		const audience = `${resourceClass}-access`;
-		const verified = verifyElevatedAccessCapability({
+		const verified = await verifyElevatedAccessCapability({
 			token: ctx.elevatedToken,
 			expectedAudience: audience,
 			expectedIsolationClass: resourceClass,
-			allowDefaultSecret: true,
+			trust: ctx.elevatedTrust,
 			now,
 		});
 		if (verified.ok) {
@@ -247,11 +253,11 @@ export function evaluateEnvIsolation(
 		: undefined;
 	if (ctxElevated && resourceClass && !ctx.elevatedToken) {
 		const audience = `${resourceClass}-access`;
-		const verified = verifyElevatedAccessCapability({
+		const verified = await verifyElevatedAccessCapability({
 			token: ctxElevated,
 			expectedAudience: audience,
 			expectedIsolationClass: resourceClass,
-			allowDefaultSecret: true,
+			trust: ctx.elevatedTrust,
 			now,
 		});
 		if (verified.ok) {

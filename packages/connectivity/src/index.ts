@@ -28,30 +28,6 @@ export {
 	createConnectivityHostHandler,
 } from "./connectivity-host.js";
 export {
-	accessTokenHash,
-	createDpopJtiCache,
-	type DpopJtiCache,
-	type DpopKeyPair,
-	exportDpopPrivateJwk,
-	generateDpopKeyPair,
-	importDpopKeyPair,
-	type JsonWebKeyPublic,
-	type MintDpopProofInput,
-	mintDpopProof,
-	type VerifiedDpopProof,
-	verifyDpopProof,
-} from "./crypto/dpop.js";
-export {
-	DEFAULT_SVID_HMAC_SECRET,
-	generateSvidIssuerKeys,
-	type JwtSvidClaims,
-	type MintedJwtSvid,
-	mintJwtSvid,
-	resolveSvidHmacSecret,
-	spiffeIdForAgent,
-	verifyJwtSvid,
-} from "./crypto/jwt-svid.js";
-export {
 	type AwsCredentials,
 	createRoute53SigV4Signer,
 	hmac,
@@ -130,7 +106,7 @@ export {
 	createInMemoryMeteringSink,
 	createLogMeteringSink,
 } from "./metering/sinks.js";
-// HoBo Fleet (ADR-0182): the overlay transport and the overlay credential minters.
+// HoBo Fleet (ADR-0182): the overlay credential minters (L39); the overlay transport is below.
 export {
 	createNetbirdCredentialMinter,
 	createTailscaleCredentialMinter,
