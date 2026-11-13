@@ -2,15 +2,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { JsonObject, JsonValue } from "../../src/json.js";
+import type { JsonValue } from "../../src/json.js";
 
 import { createOpaGatePlane } from "../../src/opa.js";
-import {
-	createArgoCdDeliveryPlane,
-	DeliverySubmissionError,
-	type FetchLike,
-} from "../../src/planes.js";
-import type { PolicyHash, ResolutionReceipt } from "../../src/types.js";
+import type { FetchLike } from "../../src/planes.js";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const opaPact = JSON.parse(
@@ -19,15 +14,9 @@ const opaPact = JSON.parse(
 		"utf8",
 	),
 );
-const argoPact = JSON.parse(
-	readFileSync(
-		join(packageRoot, "../pacts/broker_delivery_argocd.pact.json"),
-		"utf8",
-	),
-);
 
 // Pact-derived mock provider: replays the interaction's recorded response for
-// the request the consumer actually sends (no live OPA / Argo CD, per the
+// the request the consumer actually sends (no live OPA, per the
 // testing policy — mocked service boundaries derived from Pact contracts).
 function mockFetchFor(interaction: {
 	request: { path: string };
@@ -107,54 +96,5 @@ describe("OPA/Rego gate-plane boundary (consumer side of the pact)", () => {
 		const failed = await broken.evaluate(gateInput("bindle:checkout"));
 		expect(failed.effect).toBe("deny");
 		expect(failed.reasons[0]?.code).toBe("policy-engine-unavailable");
-	});
-});
-
-describe("Argo CD delivery-plane boundary (consumer side of the pact)", () => {
-	const receipt = (requestId: string): ResolutionReceipt => ({
-		schemaVersion: "hobo.broker/v1",
-		requestId,
-		brokerId: "broker:yard-1",
-		catalogHash: "sha256:catalog-abc",
-		// SAFETY: assertion required at this I/O or test boundary.
-		policyHash: "sha256:policy-abc" as PolicyHash,
-		placementPolicyId: "pp-bindle",
-		placements: [],
-	});
-	const deliveryPolicy = {
-		engine: "argo" as const,
-		syncMode: "auto" as const,
-		prune: true,
-		gitopsRepo: "https://git.example/hobo-receipts",
-		destinationNamespace: "hobo-prod",
-	};
-
-	it("submits the rendered Application and returns the Argo response", async () => {
-		const interaction = argoPact.interactions[0];
-		const plane = createArgoCdDeliveryPlane({
-			endpoint: "https://argocd.local",
-			fetchFn: mockFetchFor(interaction),
-			tokenProvider: () => "argo-token-from-token-broker",
-		});
-		const ticket = await plane.submit(
-			receipt("req-checkout-1"),
-			deliveryPolicy,
-		);
-		expect(ticket.engine).toBe("argo");
-		// SAFETY: assertion required at this I/O or test boundary.
-		const metadata = ticket.document.metadata as JsonObject;
-		expect(metadata.name).toBe(interaction.request.body.metadata.name);
-		expect(ticket.response).toEqual(interaction.response.body);
-	});
-
-	it("fails closed with delivery-rejected on a non-2xx", async () => {
-		const interaction = argoPact.interactions[1];
-		const plane = createArgoCdDeliveryPlane({
-			endpoint: "https://argocd.local",
-			fetchFn: mockFetchFor(interaction),
-		});
-		await expect(
-			plane.submit(receipt("req-checkout-2"), deliveryPolicy),
-		).rejects.toThrow(DeliverySubmissionError);
 	});
 });

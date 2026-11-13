@@ -48,3 +48,67 @@ enum CharacterState {
   CHARACTER_STATE_READING = 3;
   CHARACTER_STATE_STUCK = 4;
 }
+
+// ── HoBo CD views (plan 0024 WP19) ─────────────────────────────────────────
+// Wire forms of the read models in src/cd-views.ts (TS interfaces of the same
+// shape without the Record suffix are their parsed domain views).
+
+// One delivery of one Freight to one Camp (a CD task run).
+message FreightTimelineEntryRecord {
+  string freight_id = 1;
+  string run_id = 2;      // cicd.pipeline.run.id (promotion id)
+  string pipeline = 3;    // cicd.pipeline.name
+  string node = 4;        // hobo.cd.pipeline.node
+  string camp_id = 5;     // hobo.camp.id
+  string station_id = 6;  // hobo.station.id
+  string environment = 7; // deployment.environment.name
+  string result = 8;      // cicd.pipeline.task.run.result, or "pending"
+  uint64 start_ms = 9;
+  uint64 end_ms = 10;
+}
+
+message FreightTimelineRecord {
+  string freight_id = 1;
+  repeated FreightTimelineEntryRecord entries = 2;
+}
+
+message PipelineGraphNodeRecord {
+  string id = 1;
+  repeated string camps = 2;
+  string last_freight_id = 3;
+  string last_result = 4;
+  int64 last_at_ms = 5;
+}
+
+message PipelineGraphEdgeRecord {
+  string from = 1;
+  string to = 2;
+  uint32 freight_count = 3;
+}
+
+message PipelineGraphRecord {
+  string pipeline = 1;
+  repeated PipelineGraphNodeRecord nodes = 2;
+  repeated PipelineGraphEdgeRecord edges = 3;
+}
+
+message FleetTaintRecord {
+  string key = 1;
+  string effect = 2; // no_place | no_run | unspecified
+}
+
+// One Camp row of the fleet view (Camps by condition and taint).
+message FleetCampRowRecord {
+  string camp_id = 1;
+  map<string, string> conditions = 2; // condition → true | false | unknown
+  repeated FleetTaintRecord taints = 3;
+}
+
+// One cell of the compliance heatmap (Rail × control).
+message ComplianceCellRecord {
+  string rail = 1;    // hobo.rail.digest
+  string control = 2; // hobo.policy.control; "*" = overall
+  string mode = 3;    // enforce | inform
+  double ratio = 4;   // noncompliant ratio 0..1
+  string band = 5;    // ok | watch | breach
+}

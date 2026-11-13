@@ -1,0 +1,16 @@
+{
+	"input": {
+		"requestId": "req-checkout-1",
+		"brokerId": "broker:yard-1",
+		"engine": "argo",
+		"target": "https://git.example/hobo-receipts"
+	},
+	"expected": {
+		"schema": "hobo.broker.delivery-submitted/v2",
+		"requestId": "req-checkout-1",
+		"brokerId": "broker:yard-1",
+		"reconcilerMode": "publisher",
+		"publisher": "argo-cd",
+		"target": "https://git.example/hobo-receipts"
+	}
+}

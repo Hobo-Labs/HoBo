@@ -707,6 +707,18 @@ importers:
         specifier: 5.0.1
         version: 5.0.1
 
+  packages/cd-gitops:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/ci:
     dependencies:
       '@bufbuild/protobuf':
@@ -3041,6 +3053,34 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/storage-postgres:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
+      '@hobo/conformance':
+        specifier: workspace:*
+        version: link:../conformance
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      '@types/pg':
+        specifier: 8.15.5
+        version: 8.15.5
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
