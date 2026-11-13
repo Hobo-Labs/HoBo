@@ -2,11 +2,13 @@ import type { TenantId } from "@hobo/core";
 import {
 	type Account,
 	type ClaimsData,
+	createAccount,
 	createOperator,
 	createServer,
 	createUser,
 	decode,
 	encode,
+	fromSeed,
 	parseCreds,
 	type User,
 } from "@nats-io/jwt";
@@ -15,6 +17,7 @@ import {
 	accountOfCredentials,
 	DEVICE_CREDENTIAL_MS,
 	mintAccount,
+	mintAccountWithSigningKeys,
 	mintAuthorizationResponse,
 	mintDeviceUser,
 	staticCredentials,
@@ -91,6 +94,125 @@ describe("tenant keys (A7)", () => {
 		expect(authority.uc.nats.sub?.allow).toContain("$SYS.REQ.USER.AUTH");
 		expect(authority.uc.nats.resp?.max).toBe(1);
 		expect(() => accountOfCredentials("nothing")).toThrow();
+	});
+});
+
+describe("account signing keys from a supplied list (L41)", () => {
+	const fresh = () => decoder.decode(createAccount().getSeed());
+	const publicOf = (seed: string) =>
+		fromSeed(encoder.encode(seed)).getPublicKey();
+
+	it("lists plain account-signing keys and every scoped key with its {{name()}} template", async () => {
+		const seed = operatorSeed();
+		const keys = tenantKeys(seed, TENANT);
+		const accountSigning = publicOf(fresh());
+		const newObserver = publicOf(fresh());
+		const jwt = await mintAccountWithSigningKeys(keys, TENANT, seed, {
+			account: [accountSigning],
+			scoped: {
+				observer: [keys.scoped.observer.getPublicKey(), newObserver],
+				executor: [keys.scoped.executor.getPublicKey()],
+				dispatcher: [],
+			},
+		});
+		expect(verifyJwt(jwt)).toBe(true);
+		const claims: ClaimsData<Account> = decode(jwt);
+		expect(claims.sub).toBe(keys.account.getPublicKey());
+		const listed = claims.nats.signing_keys ?? [];
+		expect(listed.filter((key) => !(key instanceof Object))).toEqual([
+			accountSigning,
+		]);
+		const scoped = listed.flatMap((key) =>
+			key instanceof Object ? [key] : [],
+		);
+		expect(scoped.map((key) => [key.role, key.key])).toEqual([
+			["observer", keys.scoped.observer.getPublicKey()],
+			["observer", newObserver],
+			["executor", keys.scoped.executor.getPublicKey()],
+		]);
+		for (const key of scoped) {
+			expect(key.kind).toBe("user_scope");
+			expect(key.template.sub?.allow).toContain("_INBOX.{{name()}}.>");
+		}
+		expect(scoped[1]?.template).toEqual(scoped[0]?.template);
+		// The callout settings stay as provisioned.
+		expect(claims.nats.authorization?.auth_users).toEqual([
+			keys.users.authority.getPublicKey(),
+			keys.users.witness.getPublicKey(),
+			keys.users.provisioner.getPublicKey(),
+		]);
+		expect(claims.nats.authorization?.xkey).toBe(keys.xkey.getPublicKey());
+	});
+
+	it("gives the provisioned account exactly the derived scoped keys", async () => {
+		const seed = operatorSeed();
+		const keys = tenantKeys(seed, TENANT);
+		const provisioned: ClaimsData<Account> = decode(
+			await mintAccount(keys, TENANT, seed),
+		);
+		const supplied: ClaimsData<Account> = decode(
+			await mintAccountWithSigningKeys(keys, TENANT, seed, {
+				account: [],
+				scoped: {
+					observer: [keys.scoped.observer.getPublicKey()],
+					executor: [keys.scoped.executor.getPublicKey()],
+					dispatcher: [keys.scoped.dispatcher.getPublicKey()],
+				},
+			}),
+		);
+		expect(supplied.nats.signing_keys).toEqual(provisioned.nats.signing_keys);
+	});
+
+	it("refuses a key that is not an account public key, or one listed twice", async () => {
+		const seed = operatorSeed();
+		const keys = tenantKeys(seed, TENANT);
+		const none = { observer: [], executor: [], dispatcher: [] };
+		await expect(
+			mintAccountWithSigningKeys(keys, TENANT, seed, {
+				account: [createUser().getPublicKey()],
+				scoped: none,
+			}),
+		).rejects.toThrow(/not an account public key/);
+		const mistaken = fresh();
+		const refusal = await mintAccountWithSigningKeys(keys, TENANT, seed, {
+			account: [mistaken],
+			scoped: none,
+		}).catch((cause: Error) => cause.message);
+		expect(refusal).toMatch(/not an account public key/);
+		// A seed passed by mistake is never echoed.
+		expect(refusal).not.toContain(mistaken);
+		const twice = keys.scoped.observer.getPublicKey();
+		await expect(
+			mintAccountWithSigningKeys(keys, TENANT, seed, {
+				account: [twice],
+				scoped: { ...none, observer: [twice] },
+			}),
+		).rejects.toThrow(/listed twice/);
+	});
+
+	it("re-issues a static user's credentials under an account signing key, same user key", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		const signingSeed = fresh();
+		const credentials = await staticCredentials(
+			keys,
+			"provisioner",
+			signingSeed,
+		);
+		const parsed = await parseCreds(encoder.encode(credentials));
+		expect(parsed.uc.iss).toBe(publicOf(signingSeed));
+		expect(parsed.uc.nats.issuer_account).toBe(keys.account.getPublicKey());
+		expect(parsed.uc.sub).toBe(keys.users.provisioner.getPublicKey());
+		expect(accountOfCredentials(credentials)).toBe(keys.account.getPublicKey());
+	});
+
+	it("keeps the provisioner's user JWT under nats-server's 4 KiB control line", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		for (const signer of [undefined, fresh()]) {
+			const parsed = await parseCreds(
+				encoder.encode(await staticCredentials(keys, "provisioner", signer)),
+			);
+			expect(parsed.jwt.length).toBeLessThan(4096);
+		}
 	});
 });
 

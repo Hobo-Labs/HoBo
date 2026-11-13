@@ -5,9 +5,16 @@
  * the grant names this device as acceptor and the proven peer as initiator,
  * that both members are `ACTIVE`, and that fleet policy allows the purpose.
  * Every refusal is `session-denied` with `detail.check` naming the check.
+ *
+ * A bus-relay initiator (D59) proves possession of its SEAL key, so its
+ * transport identity is `relay:<SEAL key>` (raw X25519, base64url). That form
+ * is accepted only when the key is the grant's `seal_public_key` and the SEAL
+ * key of the initiator's member record (`check: "relay"`).
  */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
+	KeyBundleSchema,
+	KeyPurpose,
 	type MemberRecord,
 	MemberState,
 	type SessionGrant,
@@ -30,6 +37,10 @@ const ISSUED_SKEW_MS = 60_000;
 /** `SessionRequest.ttl_seconds` is at most 3600. */
 const MAX_LIFETIME_MS = 3_600_000;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
+/** The transport identity prefix of a bus-relay party (D59). */
+const RELAY_PREFIX = "relay:";
+/** A raw 32-byte X25519 key, base64url without padding. */
+const RAW_X25519 = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 
 const denied = (check: string, message: string): Outcome<SessionGrant> => ({
 	ok: false,
@@ -77,6 +88,36 @@ async function activeMember(
 	if (id === undefined) return undefined;
 	const record = await registry.member(id);
 	return record?.state === MemberState.ACTIVE ? record : undefined;
+}
+
+/** The SEAL key of the member record's key bundle, or "" when it has none. */
+function sealKeyOf(record: MemberRecord): string {
+	const payload = record.keyBundle?.payload;
+	if (payload === undefined || payload.length === 0) return "";
+	try {
+		return (
+			fromBinary(KeyBundleSchema, payload).keys.find(
+				(key) => key.purpose === KeyPurpose.SEAL,
+			)?.value ?? ""
+		);
+	} catch {
+		return "";
+	}
+}
+
+/** True when a `relay:<SEAL key>` identity names the initiator's SEAL key, in the grant and in its member record. */
+function relayPartyHolds(
+	identity: string,
+	grantSeal: string,
+	record: MemberRecord | undefined,
+): boolean {
+	const key = identity.slice(RELAY_PREFIX.length);
+	return (
+		RAW_X25519.test(key) &&
+		key === grantSeal &&
+		record !== undefined &&
+		key === sealKeyOf(record)
+	);
 }
 
 async function purposeAllowed(
@@ -137,14 +178,26 @@ export async function authorise(
 	const acceptor = await activeMember(context.registry, context.self);
 	if (acceptor === undefined)
 		return denied("acceptor-state", "this device is not ACTIVE");
+	let initiatorRecord: MemberRecord | undefined;
 	if (initiator.memberId.length > 0) {
-		if (
-			(await activeMember(context.registry, initiator.memberId)) === undefined
-		)
+		initiatorRecord = await activeMember(context.registry, initiator.memberId);
+		if (initiatorRecord === undefined)
 			return denied("initiator-state", "the initiator is not ACTIVE");
 	} else if (initiator.principal.length === 0) {
 		return denied("initiator-state", "the initiator names no member or person");
 	}
+	if (
+		initiator.transportIdentity.startsWith(RELAY_PREFIX) &&
+		!relayPartyHolds(
+			initiator.transportIdentity,
+			initiator.sealPublicKey,
+			initiatorRecord,
+		)
+	)
+		return denied(
+			"relay",
+			"the relay identity is not the initiator member's SEAL key",
+		);
 	if (!(await purposeAllowed(context.registry, acceptor, grant.purpose)))
 		return denied("purpose", "fleet policy does not allow this purpose");
 	return { ok: true, value: grant };

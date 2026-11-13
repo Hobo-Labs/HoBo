@@ -12,6 +12,26 @@ The frozen entry points of design §7.3 live in `index.ts`. The other modules in
 | `verifyAuditChain` | Recomputes the chain from entry 1 and checks each checkpoint's authority and witness signatures (`verifyWitnessed` against the given trust record) and its hash. Fails with `proof-invalid` and `detail.rule` one of `sequence`, `previous-hash`, `checkpoint-signature`, `checkpoint-beyond`, `checkpoint-hash` |
 | `createWitness` | Reads the entries itself every second, recomputes the chain, watches registry changes, and co-signs checkpoints and proposed trust records by the rules below. Logs `hobo_fleet_witness_refused` for every refusal and `hobo_fleet_witness_lag` once three checkpoints in a row are refused |
 
+## Verifying across trust rotations (L41)
+
+`verifyChainAcrossTrust(entries, checkpoints, trust, journal)` in `verify.ts`
+(internal: the barrel re-exports `index.ts` whole, so exporting it there
+would change the frozen contract; `verifyAuditChain` is this with an empty
+journal) checks each checkpoint against the trust record in force at it, so a
+checkpoint signed before a record-signing or witness key rotation still
+verifies after the old key is removed. The history is the journal's
+`fleet.TrustRotated` records (`data.record`) whose digest a
+`fleet.TrustRotated` entry of the chain carries; a record is in force from
+that entry on. Records above the pinned record's sequence, and records no
+entry carries, are ignored. The history must have one record per sequence,
+rising along the chain, all of the pinned record's tenant, and end at the
+pinned record; otherwise `proof-invalid` with `detail.rule` `trust-history`.
+A checkpoint verifies against the record in force at its sequence or the next
+one (a witness co-signing just after a rotation); a checkpoint before the
+first journalled record verifies against that record, which still lists the
+keys it rotates away from. So a removed key verifies nothing signed later than
+one rotation after its removal.
+
 ## The chain
 
 - `entry_hash = SHA-256(previous_hash ‖ entry_bytes)`: `previous_hash` is the previous entry's hash as 32 raw bytes (64 hex zeros for the first entry) and `entry_bytes` is the entry's protobuf binary.

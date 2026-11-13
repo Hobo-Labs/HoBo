@@ -76,6 +76,29 @@ skip without it unless `CI` is set, and the lane's checks run them with it.
   stream at a time; the authority's get a fresh random name each.
   `resumeFrom` is not consulted: every subscription states its own `from`.
 
+## Rotating account-signing and scoped keys (L41)
+
+`publishAccountSigningKeys({ servers, operatorSigningSeed, tenant,
+signingKeys: { account, scoped } })` (internal, `index.ts`; `…Over` takes the
+client as a port) re-issues the tenant account JWT listing exactly the
+supplied keys and pushes it to the resolver: `account` as plain signing keys,
+each `scoped[template]` key with that template's `{{name()}}` permissions.
+The account identity, limits and callout settings stay as provisioned. The
+caller (the `NatsSigningKeys` of `rotateKey`, composed by L09 and L18) reads
+the lists from the secret-store slots `<prefix>/account-signing` and
+`<prefix>/scoped-<template>` and calls it once per step of add, publish,
+switch, remove, so these keys rotate without the operator seed changing.
+Answers `invalid-request` for a key that is not an account public key or is
+listed twice (the value is never echoed), `unavailable` when the resolver is
+unreachable or refuses. `staticCredentials(keys, user, signerSeed)` re-issues
+a static user under an account signing key with the same user key, so
+`auth_users` still exempts it from the callout; the provisioner's user JWT
+stays under the server's 4 KiB control line either way
+(`test/nats-jwt.test.ts`). `provisionTopology` still pushes only the derived
+scoped keys, so after a rotation it must not be re-run without publishing the
+slots' keys again. `test/signing-keys.integration.test.ts` adds, publishes and
+removes an account signing key on `nats-server`.
+
 ## Assumptions (§13)
 
 | Id | Result in this lane | Evidence |

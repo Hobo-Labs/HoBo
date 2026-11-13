@@ -35,6 +35,7 @@ import {
 	verifyEnvelope,
 } from "../keys/index.js";
 import type { Outcome, VerifiedToken } from "../ports.js";
+import { callerIncarnationRefusal } from "./auth.js";
 import { decodeBundle, signThumbprint, verifyBundle } from "./bundle.js";
 import {
 	actorOf,
@@ -106,6 +107,8 @@ export async function credentials(
 ): Promise<Outcome<CredentialResponse>> {
 	const device = await self(ctx, memberId, caller);
 	if (!device.ok) return device;
+	const stale = await callerIncarnationRefusal<CredentialResponse>(ctx, caller);
+	if (stale !== undefined) return stale;
 	if (request.refreshNonce.length !== NONCE_BYTES)
 		return refuse("invalid-request", "refresh_nonce must be 16 bytes");
 	const id = parseMemberId(memberId);

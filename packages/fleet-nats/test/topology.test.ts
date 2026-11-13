@@ -2,6 +2,10 @@ import { DiscardPolicy } from "@nats-io/jetstream";
 import { describe, expect, it } from "vitest";
 import { connectionOptions, parseServers } from "../src/bus/connection.js";
 import { topologySpecs } from "../src/bus/topology.js";
+import {
+	JOURNAL_STREAM_CONFIG,
+	JOURNAL_SUBJECTS,
+} from "../src/journal/codec.js";
 
 const SECOND_NS = 1_000_000_000;
 
@@ -61,6 +65,21 @@ describe("topology (§6.7)", () => {
 			"fleet.audit.witness",
 		]);
 		expect(named("FLEET_JOURNAL").max_age).toBe(0);
+	});
+
+	it("provisions FLEET_JOURNAL with the journal store's own stream configuration (L36)", () => {
+		const journal = named("FLEET_JOURNAL");
+		expect(journal).toMatchObject(JOURNAL_STREAM_CONFIG);
+		expect(journal.subjects).toEqual([JOURNAL_SUBJECTS]);
+		expect(journal.num_replicas).toBe(3);
+		expect(JOURNAL_STREAM_CONFIG).toMatchObject({
+			name: "FLEET_JOURNAL",
+			subjects: ["fleet.journal.>"],
+			discard: DiscardPolicy.New,
+			max_age: 0,
+			deny_delete: true,
+			deny_purge: true,
+		});
 	});
 
 	it("sets the bucket histories and TTLs", () => {

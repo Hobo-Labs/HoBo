@@ -6,10 +6,13 @@
 // Layout: one secret, named by `prefix`, whose value is JSON
 //   { "keys": [ { "kid": "...", "privateKey": "<PKCS#8 PEM>", "retiredAt": <epoch ms>? } ] }
 // The first key is created with kid `<prefix>#1`; callers rotate with
-// `<prefix>#<n+1>`, so the active key is the highest `n` for which `hasKey`
-// is true. A key is retired when the next one is generated: it stops signing
-// at once and stays in the key set until every token it can have signed has
-// expired (TOKEN_LIFETIME_MS after its retirement), then it is dropped.
+// `<prefix>#<n+1>`. The active key (`activeKeyId`) is the lowest-numbered key
+// that is not retired, which follows the rotation order add, publish, switch,
+// remove: an added and published key waits beside the one that still signs
+// until the switch retires that one. `generateRsaKey` adds and switches in
+// one step: it retires every older key. A retired key stops signing at once
+// and stays in the key set (`keyIds`) until every token it can have signed
+// has expired (TOKEN_LIFETIME_MS after its retirement), then it is dropped.
 import {
 	createPrivateKey,
 	createPublicKey,
@@ -108,9 +111,24 @@ function heldRing(
 			: undefined;
 	};
 
+	const liveKids = (): string[] =>
+		[...keys.values()]
+			.filter((key) => isLive(key.retiredAt, Date.now()))
+			.map((key) => key.kid)
+			.sort(byKeyNumber);
+
 	return {
 		hasKey(kid) {
 			return live(kid) !== undefined;
+		},
+		keyIds: liveKids,
+		activeKeyId() {
+			const active = liveKids().find(
+				(kid) => keys.get(kid)?.retiredAt === undefined,
+			);
+			if (active === undefined)
+				throw new Error(`key ring ${prefix} has no active key`);
+			return active;
 		},
 		generateRsaKey(kid) {
 			if (keys.has(kid)) throw new Error(`KMS key already exists: ${kid}`);
@@ -185,6 +203,21 @@ async function readSecret(
 		throw new Error(`secret store returned no material for ${name}`);
 	}
 	return result.material;
+}
+
+/** The `n` of a `<prefix>#<n>` key id; ids without one sort after every numbered id. */
+function keyNumber(kid: string): number {
+	const n = Number(kid.slice(kid.lastIndexOf("#") + 1));
+	return kid.includes("#") && Number.isSafeInteger(n) && n >= 0
+		? n
+		: Number.POSITIVE_INFINITY;
+}
+
+function byKeyNumber(a: string, b: string): number {
+	const difference = keyNumber(a) - keyNumber(b);
+	return Number.isNaN(difference) || difference === 0
+		? a.localeCompare(b)
+		: difference;
 }
 
 function isLive(retiredAt: number | undefined, now: number): boolean {

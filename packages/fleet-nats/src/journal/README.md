@@ -9,7 +9,7 @@ leader.
 
 | What | How |
 |---|---|
-| Stream | `FLEET_JOURNAL`, subjects `fleet.journal.>`, no expiry, `deny_delete`, `deny_purge`. Created with one replica only if it does not exist; `provisionTopology` normally creates it with the deployment's replica count |
+| Stream | `FLEET_JOURNAL`, subjects `fleet.journal.>`, no expiry, `deny_delete`, `deny_purge`, discard new: `JOURNAL_STREAM_CONFIG` in `codec.ts`. Created with one replica only if it does not exist; `provisionTopology` creates it from the same constant with the deployment's replica count (L41: it used to provision `fleet.journal.*`, which the store refused) |
 | Subject | `fleet.journal.<token>`: the stream id with every character outside `[A-Za-z0-9_:-]` written as `%XX` per UTF-8 byte, so any stream id is one token and the mapping is reversible |
 | Message | One per append: `{ v: 1, ownerEpoch, events }`, the batch's full envelopes and the stream's fencing epoch after the append |
 | Compare-and-set | The publish carries `Nats-Expected-Last-Subject-Sequence` set to the stream sequence of the last message this store read on the subject; error 10071 becomes `OptimisticSequenceConflictError` |
@@ -31,6 +31,22 @@ the head and returns the record, as the core port's other stores do.
 
 `credentials` is the text of a NATS credentials file; empty connects without
 authentication (tests only).
+
+## Import for a high-availability restore (L41)
+
+`importJournalEvents({ servers, credentials }, items)` (internal, in
+`index.ts`; `importJournal(transport, items)` in `import.ts`) writes archived
+envelopes into `FLEET_JOURNAL` unchanged, in the archive's `readAll` order:
+every envelope id stays, and consecutive items of one stream whose positions
+share a stream sequence become one message again, so a journal archived with
+`readAll` comes back with the same positions. It checks everything before
+writing (envelopes parse, ids unique, each stream's `seq` runs 1, 2, 3, ...).
+The journal must be empty or hold exactly the first envelopes of the import,
+which is a partial import that it then finishes; anything else is
+`conflict`. Each message carries the subject's expected last sequence, so a
+concurrent writer fails the import rather than interleaving. Owner epochs
+are not part of an envelope: imported streams start unfenced and their next
+fenced append sets the epoch. Answers `Outcome<{ imported, present }>`.
 
 ## Assumption A15
 

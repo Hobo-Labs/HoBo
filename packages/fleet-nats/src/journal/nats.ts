@@ -23,7 +23,6 @@ import {
 	AckPolicy,
 	type ConsumerConfig,
 	DeliverPolicy,
-	DiscardPolicy,
 	type FetchOptions,
 	JetStreamApiCodes,
 	JetStreamApiError,
@@ -31,17 +30,20 @@ import {
 	jetstream,
 	jetstreamManager,
 	type OrderedConsumerOptions,
-	RetentionPolicy,
-	StorageType,
 	type StreamConfig,
 } from "@nats-io/jetstream";
 import {
 	connect,
 	credsAuthenticator,
+	type NatsConnection,
 	type NodeConnectionOptions,
 	nanos,
 } from "@nats-io/transport-node";
-import { JOURNAL_STREAM, JOURNAL_SUBJECTS } from "./codec.js";
+import {
+	JOURNAL_STREAM,
+	JOURNAL_STREAM_CONFIG,
+	JOURNAL_SUBJECTS,
+} from "./codec.js";
 import {
 	type JournalMessage,
 	type JournalTransport,
@@ -127,7 +129,13 @@ export async function connectJournalTransport(
 		options.authenticator = credsAuthenticator(
 			new TextEncoder().encode(input.credentials),
 		);
-	const nc = await connect(options);
+	return journalTransportOver(await connect(options));
+}
+
+/** The journal transport on an open connection, which it owns from here on (closing it closes the connection). */
+export async function journalTransportOver(
+	nc: NatsConnection,
+): Promise<JournalTransport> {
 	try {
 		const jsm = await jetstreamManager(nc);
 		const js = jetstream(nc);
@@ -166,15 +174,9 @@ async function ensureJournalStream(jet: JournalJetStream): Promise<void> {
 			throw cause;
 	}
 	await jet.streams.add({
-		name: JOURNAL_STREAM,
-		subjects: [JOURNAL_SUBJECTS],
-		retention: RetentionPolicy.Limits,
-		storage: StorageType.File,
-		discard: DiscardPolicy.New,
-		max_age: 0,
+		...JOURNAL_STREAM_CONFIG,
+		subjects: [...JOURNAL_STREAM_CONFIG.subjects],
 		num_replicas: 1,
-		deny_delete: true,
-		deny_purge: true,
 	});
 }
 

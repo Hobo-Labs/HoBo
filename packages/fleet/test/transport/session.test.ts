@@ -6,10 +6,11 @@
  * publishes a signed session-close fact; `fetchBlob` verifies the digest.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { create, fromBinary } from "@bufbuild/protobuf";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	KeyAlgorithm,
+	KeyBundleSchema,
 	KeyPurpose,
 	MemberState,
 	PublicKeyRefSchema,
@@ -445,6 +446,146 @@ describe("authoriseSession", () => {
 			}
 		});
 	}
+});
+
+describe("authoriseSession, bus-relay parties (D59)", () => {
+	/** The member record with a key bundle naming `seal` as its SEAL key. */
+	function withSeal(memberId: MemberId, seal: string) {
+		const record = memberRecord(memberId);
+		record.keyBundle = create(SignedEnvelopeSchema, {
+			payload: toBinary(
+				KeyBundleSchema,
+				create(KeyBundleSchema, {
+					memberId,
+					sequence: 1,
+					keys: [
+						create(PublicKeyRefSchema, {
+							purpose: KeyPurpose.SEAL,
+							keyId: `${memberId}#seal`,
+							value: seal,
+						}),
+					],
+				}),
+			),
+		});
+		return record;
+	}
+
+	async function relayGrant(
+		f: Fixture,
+		options: Readonly<{
+			identity?: string;
+			seal?: string;
+			memberId?: string;
+			principal?: string;
+		}> = {},
+	): Promise<Readonly<{ peer: string; grant: SignedEnvelope }>> {
+		const seal = options.seal ?? f.initiator.sealPublicKey;
+		const identity = options.identity ?? `relay:${seal}`;
+		const record = grantRecord({
+			initiator: {
+				memberId: options.memberId ?? f.initiator.memberId,
+				principal: options.principal ?? "",
+				transportIdentity: identity,
+			},
+			acceptor: {
+				memberId: f.acceptor.memberId,
+				transportIdentity: `relay:${f.acceptor.sealPublicKey}`,
+			},
+			nowMs: f.now,
+		});
+		if (record.initiator !== undefined) record.initiator.sealPublicKey = seal;
+		return {
+			peer: identity,
+			grant: await signGrant(f.authority.signer, record),
+		};
+	}
+
+	const check = (f: Fixture, peer: string, grant: SignedEnvelope) =>
+		authoriseSession(peer, grant, {
+			self: f.acceptor.memberId,
+			registry: f.registry,
+			nowMs: f.now,
+		});
+
+	async function relayFixture(): Promise<Fixture> {
+		const f = await fixture();
+		f.registry.putMember(
+			withSeal(f.initiator.memberId, f.initiator.sealPublicKey),
+		);
+		return f;
+	}
+
+	it("accepts relay:<SEAL key> when it is the initiator's SEAL key in its member record", async () => {
+		const f = await relayFixture();
+		expect(f.initiator.sealPublicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+		const { peer, grant } = await relayGrant(f);
+		const outcome = await check(f, peer, grant);
+		expect(outcome.ok).toBe(true);
+		if (outcome.ok)
+			expect(outcome.value.initiator?.transportIdentity).toBe(
+				`relay:${f.initiator.sealPublicKey}`,
+			);
+	});
+
+	const refusals: readonly Readonly<{
+		name: string;
+		make(
+			f: Fixture,
+		): Promise<Readonly<{ peer: string; grant: SignedEnvelope }>>;
+		prepare?(f: Fixture): void;
+	}>[] = [
+		{
+			name: "a SEAL key that is not the member's",
+			make: async (f) => relayGrant(f, { seal: f.acceptor.sealPublicKey }),
+		},
+		{
+			name: "a member record with no key bundle",
+			prepare: (f) => f.registry.putMember(memberRecord(f.initiator.memberId)),
+			make: async (f) => relayGrant(f),
+		},
+		{
+			name: "a SEAL key that is not raw X25519 in base64url",
+			prepare: (f) =>
+				f.registry.putMember(withSeal(f.initiator.memberId, "c2hvcnQ")),
+			make: async (f) => relayGrant(f, { seal: "c2hvcnQ" }),
+		},
+		{
+			name: "a relay identity whose key differs from the grant's seal_public_key",
+			make: async (f) =>
+				relayGrant(f, {
+					identity: `relay:${f.acceptor.sealPublicKey}`,
+					seal: f.initiator.sealPublicKey,
+				}),
+		},
+		{
+			name: "a person's CLI (no member record to check against)",
+			make: async (f) =>
+				relayGrant(f, { memberId: "", principal: "user:alice" }),
+		},
+	];
+
+	for (const refusal of refusals) {
+		it(`refuses ${refusal.name} (check relay)`, async () => {
+			const f = await relayFixture();
+			refusal.prepare?.(f);
+			const { peer, grant } = await refusal.make(f);
+			const outcome = await check(f, peer, grant);
+			expect(outcome.ok).toBe(false);
+			if (!outcome.ok) {
+				expect(outcome.error.code).toBe("session-denied");
+				expect(outcome.error.detail?.check).toBe("relay");
+			}
+		});
+	}
+
+	it("still refuses a relay identity that is not the proven peer (check peer)", async () => {
+		const f = await relayFixture();
+		const { grant } = await relayGrant(f);
+		const outcome = await check(f, `relay:${f.acceptor.sealPublicKey}`, grant);
+		expect(outcome.ok).toBe(false);
+		if (!outcome.ok) expect(outcome.error.detail?.check).toBe("peer");
+	});
 });
 
 type Served = Readonly<{

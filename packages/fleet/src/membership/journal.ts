@@ -17,15 +17,16 @@
  * Nothing secret is ever written: tokens only as their SHA-256, refresh
  * nonces only as their SHA-256, credentials only as the ticket id.
  */
-import { create, fromJson, toJson } from "@bufbuild/protobuf";
+import { create, fromBinary, fromJson, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope, EventInput, JsonObject } from "@hobo/core";
 import {
 	type BootstrapTokenRecord,
 	BootstrapTokenRecordSchema,
 	type MemberRecord,
 	MemberRecordSchema,
+	TrustRecordSchema,
 } from "../_generated/fleet_pb.js";
-import type { FleetEventType } from "../events.js";
+import { FLEET_TRUST_STREAM, type FleetEventType } from "../events.js";
 import { type MemberId, parseMemberId } from "../ids.js";
 import {
 	type FieldValue,
@@ -165,10 +166,28 @@ export type MembershipIndex = {
 	readonly members: Map<MemberId, MemberState>;
 	readonly tokens: Map<string, TokenState>;
 	readonly thumbprints: Map<string, ThumbprintState>;
+	/**
+	 * When each authority incarnation after the first began (epoch ms): the
+	 * `issued_at` of the earliest journalled `fleet.TrustRotated` record that
+	 * names it, counted only when it raised the incarnation (it is above 1, the
+	 * genesis incarnation, or above a record journalled before it).
+	 */
+	readonly incarnations: Map<number, number>;
+	/** The lowest incarnation any journalled trust record has named. */
+	lowestIncarnation: number | undefined;
 };
 
+/** The genesis trust record's incarnation (the ceremony and every fixture start at 1). */
+const GENESIS_INCARNATION = 1;
+
 export function emptyIndex(): MembershipIndex {
-	return { members: new Map(), tokens: new Map(), thumbprints: new Map() };
+	return {
+		members: new Map(),
+		tokens: new Map(),
+		thumbprints: new Map(),
+		incarnations: new Map(),
+		lowestIncarnation: undefined,
+	};
 }
 
 function text(data: JsonObject, field: string): string {
@@ -203,6 +222,10 @@ export function applyEvent(index: MembershipIndex, event: EventEnvelope): void {
 		applyToken(index, event, data);
 		return;
 	}
+	if (event.streamId === FLEET_TRUST_STREAM) {
+		if (event.type === "fleet.TrustRotated") applyTrust(index, data);
+		return;
+	}
 	if (event.streamId.startsWith(THUMBPRINT_STREAM)) {
 		const thumbprint = event.streamId.slice(THUMBPRINT_STREAM.length);
 		const member = text(data, "memberId");
@@ -212,6 +235,35 @@ export function applyEvent(index: MembershipIndex, event: EventEnvelope): void {
 				memberId: parseMemberId(member),
 			});
 	}
+}
+
+function applyTrust(index: MembershipIndex, data: JsonObject): void {
+	const encoded = data.record;
+	if (!isJsonString(encoded)) return;
+	let incarnation: number;
+	let issuedAtMs: number;
+	try {
+		const record = fromBinary(
+			TrustRecordSchema,
+			new Uint8Array(Buffer.from(encoded, "base64")),
+		);
+		incarnation = record.authorityIncarnation;
+		issuedAtMs = Date.parse(record.issuedAt);
+	} catch {
+		return;
+	}
+	const lowest = index.lowestIncarnation;
+	const raised =
+		incarnation > GENESIS_INCARNATION ||
+		(lowest !== undefined && incarnation > lowest);
+	if (
+		raised &&
+		!index.incarnations.has(incarnation) &&
+		!Number.isNaN(issuedAtMs)
+	)
+		index.incarnations.set(incarnation, issuedAtMs);
+	if (lowest === undefined || incarnation < lowest)
+		index.lowestIncarnation = incarnation;
 }
 
 function applyMember(

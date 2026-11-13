@@ -10,11 +10,16 @@ import { create } from "@bufbuild/protobuf";
 import type { TenantId } from "@hobo/core";
 import { DiscoverySchema, type FleetLog, Role } from "@hobo/fleet";
 import {
+	type Account,
+	type ClaimsData,
+	createAccount,
 	createCurve,
 	createOperator,
 	createServer,
 	createUser,
+	decode,
 	encode,
+	fromSeed,
 } from "@nats-io/jwt";
 import { beforeEach, describe, expect, it } from "vitest";
 import { mintConnectToken } from "../src/bus/connect-token.js";
@@ -26,6 +31,8 @@ import {
 	natsBusConnectorOver,
 	provisionTopology,
 	provisionTopologyOver,
+	publishAccountSigningKeys,
+	publishAccountSigningKeysOver,
 	startCalloutResponder,
 } from "../src/bus/index.js";
 import { staticCredentials, tenantKeys } from "../src/bus/nats-jwt.js";
@@ -51,6 +58,16 @@ beforeEach(() => {
 	server = createFakeServer();
 	operatorSigningSeed = decoder.decode(createOperator().getSeed());
 });
+
+/** A local URL nothing listens on: a port the OS handed out and took back. */
+async function closedServer(): Promise<string> {
+	const probe = listen();
+	await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+	// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
+	const { port } = probe.address() as AddressInfo;
+	await new Promise((resolve) => probe.close(resolve));
+	return `tls://127.0.0.1:${port}`;
+}
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -109,6 +126,114 @@ describe("provisionTopology", () => {
 			"hobo-fleet-provision",
 			"hobo-fleet-provisioner",
 		]);
+	});
+});
+
+describe("publishAccountSigningKeys (L41: account-signing and scoped-* rotation)", () => {
+	const accountKey = () => createAccount().getPublicKey();
+	const signingOf = (jwt: string | undefined) => {
+		const claims: ClaimsData<Account> = decode(jwt ?? "");
+		return (claims.nats.signing_keys ?? []).map((key) =>
+			key instanceof Object ? `${key.role}:${key.key}` : key,
+		);
+	};
+
+	it("re-issues and pushes the account with the supplied keys, each step of add, publish, switch, remove", async () => {
+		const pushed = acceptAccounts(server);
+		const keys = tenantKeys(operatorSigningSeed, TENANT);
+		const derived = {
+			observer: [keys.scoped.observer.getPublicKey()],
+			executor: [keys.scoped.executor.getPublicKey()],
+			dispatcher: [keys.scoped.dispatcher.getPublicKey()],
+		};
+		const oldSigning = accountKey();
+		const newSigning = accountKey();
+		const newExecutor = accountKey();
+		const publish = (account: readonly string[], scoped: typeof derived) =>
+			publishAccountSigningKeysOver(server.clients, {
+				servers: SERVERS,
+				operatorSigningSeed,
+				tenant: TENANT,
+				signingKeys: { account, scoped },
+			});
+		// Publish: old and new side by side.
+		expect(
+			await publish([oldSigning, newSigning], {
+				...derived,
+				executor: [...derived.executor, newExecutor],
+			}),
+		).toEqual({
+			ok: true,
+			value: { accountPublicKey: keys.account.getPublicKey() },
+		});
+		// Remove: only the new ones.
+		await publish([newSigning], { ...derived, executor: [newExecutor] });
+		expect(pushed).toHaveLength(2);
+		expect(signingOf(pushed[0])).toEqual([
+			oldSigning,
+			newSigning,
+			`observer:${derived.observer[0]}`,
+			`executor:${derived.executor[0]}`,
+			`executor:${newExecutor}`,
+			`dispatcher:${derived.dispatcher[0]}`,
+		]);
+		expect(signingOf(pushed[1])).toEqual([
+			newSigning,
+			`observer:${derived.observer[0]}`,
+			`executor:${newExecutor}`,
+			`dispatcher:${derived.dispatcher[0]}`,
+		]);
+		const claims: ClaimsData<Account> = decode(pushed[1] ?? "");
+		expect(claims.sub).toBe(keys.account.getPublicKey());
+		expect(claims.iss).toBe(
+			fromSeed(encoder.encode(operatorSigningSeed)).getPublicKey(),
+		);
+		expect(
+			server.connections.every((connection) => connection.isClosed()),
+		).toBe(true);
+	});
+
+	it("refuses a malformed key list with invalid-request and pushes nothing", async () => {
+		const pushed = acceptAccounts(server);
+		const outcome = await publishAccountSigningKeysOver(server.clients, {
+			servers: SERVERS,
+			operatorSigningSeed,
+			tenant: TENANT,
+			signingKeys: {
+				account: ["not-a-key"],
+				scoped: { observer: [], executor: [], dispatcher: [] },
+			},
+		});
+		expect(outcome.ok).toBe(false);
+		if (!outcome.ok) expect(outcome.error.code).toBe("invalid-request");
+		expect(pushed).toHaveLength(0);
+	});
+
+	it("answers unavailable when the resolver refuses the account or cannot be reached", async () => {
+		server.reply("$SYS.REQ.CLAIMS.UPDATE", () =>
+			encoder.encode(JSON.stringify({ error: { description: "bad jwt" } })),
+		);
+		const input = {
+			servers: SERVERS,
+			operatorSigningSeed,
+			tenant: TENANT,
+			signingKeys: {
+				account: [],
+				scoped: { observer: [], executor: [], dispatcher: [] },
+			},
+		};
+		const refused = await publishAccountSigningKeysOver(server.clients, input);
+		expect(refused.ok).toBe(false);
+		if (!refused.ok) {
+			expect(refused.error.code).toBe("unavailable");
+			expect(refused.error.message).toContain("bad jwt");
+		}
+		const unreachable = await publishAccountSigningKeys({
+			...input,
+			servers: [await closedServer()],
+		});
+		expect(unreachable.ok).toBe(false);
+		if (!unreachable.ok) expect(unreachable.error.code).toBe("unavailable");
 	});
 });
 
@@ -282,16 +407,6 @@ describe("startCalloutResponder", () => {
 });
 
 describe("the entry points on the real client", () => {
-	/** A local URL nothing listens on: a port the OS handed out and took back. */
-	async function closedServer(): Promise<string> {
-		const probe = listen();
-		await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-		// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
-		const { port } = probe.address() as AddressInfo;
-		await new Promise((resolve) => probe.close(resolve));
-		return `tls://127.0.0.1:${port}`;
-	}
-
 	it("each refuses when no server answers", async () => {
 		const servers = [await closedServer()];
 		const keys = tenantKeys(operatorSigningSeed, TENANT);
