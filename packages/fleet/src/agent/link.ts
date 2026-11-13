@@ -84,26 +84,26 @@ export function createBusLink(): BusLink {
 
 	const bus: FleetBus = {
 		registry: {
-			member: (id: MemberId) => registry().member(id),
-			fleet: (id: FleetId) => registry().fleet(id),
-			membersOf: (id: FleetId) => registry().membersOf(id),
-			fleets: () => registry().fleets(),
-			members: () => registry().members(),
-			view: (id: FleetId) => registry().view(id),
+			member: async (id: MemberId) => registry().member(id),
+			fleet: async (id: FleetId) => registry().fleet(id),
+			membersOf: async (id: FleetId) => registry().membersOf(id),
+			fleets: async () => registry().fleets(),
+			members: async () => registry().members(),
+			view: async (id: FleetId) => registry().view(id),
 			trust: () => registry().trust(),
 			trustEnvelope: () => registry().trustEnvelope(),
-			caughtUp: () => registry().caughtUp(),
+			caughtUp: async () => registry().caughtUp(),
 		},
 		observations: {
-			publish: (observation, observer, member) =>
+			publish: async (observation, observer, member) =>
 				live().observations.publish(observation, observer, member),
-			read: (limit) => live().observations.read(limit),
+			read: async (limit) => live().observations.read(limit),
 		},
 		claims: {
-			claim: (claim, fleet, digest) =>
+			claim: async (claim, fleet, digest) =>
 				live().claims.claim(claim, fleet, digest),
-			holder: (fleet, digest) => live().claims.holder(fleet, digest),
-			remove: (fleet: FleetId, digest: WorkDigest) =>
+			holder: async (fleet, digest) => live().claims.holder(fleet, digest),
+			remove: async (fleet: FleetId, digest: WorkDigest) =>
 				live().claims.remove(fleet, digest),
 			subscribe: (fleets, from, handler) =>
 				durable(
@@ -120,7 +120,7 @@ export function createBusLink(): BusLink {
 				),
 		},
 		offers: {
-			publish: (offer, fleet) => live().offers.publish(offer, fleet),
+			publish: async (offer, fleet) => live().offers.publish(offer, fleet),
 			subscribe: (fleets, from, handler) =>
 				durable(
 					from,
@@ -136,7 +136,7 @@ export function createBusLink(): BusLink {
 				),
 		},
 		submissions: {
-			publish: (submission, fleet) =>
+			publish: async (submission, fleet) =>
 				live().submissions.publish(submission, fleet),
 			subscribe: (fleets, from, handler) =>
 				durable(
@@ -153,7 +153,7 @@ export function createBusLink(): BusLink {
 				),
 		},
 		orders: {
-			deliver: (order, to) => live().orders.deliver(order, to),
+			deliver: async (order, to) => live().orders.deliver(order, to),
 			subscribe: (self, from, handler) =>
 				durable(
 					from,
@@ -181,7 +181,8 @@ export function createBusLink(): BusLink {
 				),
 		},
 		events: {
-			publish: (event, from, kind) => live().events.publish(event, from, kind),
+			publish: async (event, from, kind) =>
+				live().events.publish(event, from, kind),
 			subscribe: (kinds, from, handler) =>
 				durable(
 					from,
@@ -197,7 +198,7 @@ export function createBusLink(): BusLink {
 				),
 		},
 		control: {
-			send: (control, to) => live().control.send(control, to),
+			send: async (control, to) => live().control.send(control, to),
 			subscribe: (self, from, handler) =>
 				durable(
 					from,
@@ -213,7 +214,8 @@ export function createBusLink(): BusLink {
 				),
 		},
 		relay: {
-			send: (to, sessionId, frame) => live().relay.send(to, sessionId, frame),
+			send: async (to, sessionId, frame) =>
+				live().relay.send(to, sessionId, frame),
 			subscribe: (self, handler) =>
 				durable(
 					"new",
