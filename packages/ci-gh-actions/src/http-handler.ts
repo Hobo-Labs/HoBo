@@ -272,8 +272,11 @@ export function createRelayHandler(options: {
 				// The mesh's node list; the control plane authenticates it like
 				// the account API's other reads.
 				path === "/v1/mesh/nodes" ||
-				// Fleet verdicts (ADR-0180): read by anyone, reported by an account.
-				path.startsWith("/v1/fleet/verdicts/")) &&
+				// Fleet verdicts (ADR-0180): read by anyone, reported by an
+				// enrolled reporter's signature; reporter status, read by a
+				// workflow of the repository with its OIDC token.
+				path.startsWith("/v1/fleet/verdicts/") ||
+				path.startsWith("/v1/fleet/reporters/")) &&
 			!/%2f|%5c/i.test(path)
 		) {
 			try {
