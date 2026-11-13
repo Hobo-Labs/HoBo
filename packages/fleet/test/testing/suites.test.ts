@@ -8,14 +8,17 @@ import { BUS_ASSERTIONS } from "../../src/testing/conformance/bus.js";
 import {
 	runBusConformance,
 	runJournalConformance,
+	runReplicaConformance,
 } from "../../src/testing/conformance/index.js";
 import { JOURNAL_ASSERTIONS } from "../../src/testing/conformance/journal.js";
+import { REPLICA_ASSERTIONS } from "../../src/testing/conformance/replica.js";
 import {
 	createMemoryBus,
 	createMemoryEventStore,
 } from "../../src/testing/plumbing/index.js";
 import { BROKEN_BUSES } from "./doubles/bus.js";
 import { BROKEN_JOURNALS } from "./doubles/journal.js";
+import { BROKEN_REPLICAS, memoryReplica } from "./doubles/replica.js";
 import { eachAssertionCatchesItsBreak } from "./harness.js";
 
 describe("runBusConformance", () => {
@@ -24,6 +27,15 @@ describe("runBusConformance", () => {
 	});
 	describe("broken buses fail", () => {
 		eachAssertionCatchesItsBreak(BUS_ASSERTIONS, BROKEN_BUSES);
+	});
+});
+
+describe("runReplicaConformance", () => {
+	describe("an in-memory replica keeping the register's rules passes", () => {
+		runReplicaConformance(memoryReplica);
+	});
+	describe("broken replicas fail", () => {
+		eachAssertionCatchesItsBreak(REPLICA_ASSERTIONS, BROKEN_REPLICAS);
 	});
 });
 

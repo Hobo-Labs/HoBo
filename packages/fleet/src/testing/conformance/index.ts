@@ -19,6 +19,7 @@ import type {
 import { registerSuite } from "./assertion.js";
 import { BUS_ASSERTIONS } from "./bus.js";
 import { JOURNAL_ASSERTIONS } from "./journal.js";
+import { REPLICA_ASSERTIONS } from "./replica.js";
 
 export function runBusConformance(make: () => Promise<AuthorityBus>): void {
 	registerSuite("bus conformance", BUS_ASSERTIONS, make, 30_000);
@@ -59,7 +60,7 @@ export function runKeyStoreConformance(make: () => KeyStore): void {
 export function runReplicaConformance(
 	make: (id: MemberName) => AssignmentReplica,
 ): void {
-	throw new FleetNotImplemented("runReplicaConformance");
+	registerSuite("replica conformance", REPLICA_ASSERTIONS, make, 30_000);
 }
 
 export function runJournalConformance(
