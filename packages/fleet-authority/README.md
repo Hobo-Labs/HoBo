@@ -42,9 +42,10 @@ gathers them here as the waves merge.
   accounts, tag-based fail-closed policy engine, decision recorder), the
   `oidc`, `github` and `atproto` sign-in providers, and the binaries
   `hobo-fleet-authority --config <file>` and `hobo-fleet-witness --config
-  <file>` (OpenBao secret store only). The witness binary composes and then
-  refuses to run until `@hobo/fleet-nats` can publish on
-  `fleet.audit.witness`. Fallbacks: none.
+  <file>` (OpenBao secret store only). The witness connects with the
+  witness user's credentials and publishes its co-signatures through that
+  connection's audit log, which writes them to `fleet.audit.witness`
+  (`publishOverAuditLog`, L42). Fallbacks: none.
 
 ## Gates
 

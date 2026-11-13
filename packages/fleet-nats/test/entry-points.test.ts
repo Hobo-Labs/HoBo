@@ -382,7 +382,10 @@ describe("startCalloutResponder", () => {
 			replay: tenant.bus.replay,
 			incarnation: 3,
 			now: tenant.now,
-			log: (event, fields) => logged.push(`${event} ${String(fields.check)}`),
+			log: (event, fields) =>
+				logged.push(
+					`${event} ${String(fields.check ?? `${fields.status} ${fields.member}`)}`,
+				),
 		});
 		expect(server.opened.at(-1)?.name).toBe("hobo-fleet-callout");
 		const client = server.connect("server");
@@ -400,7 +403,10 @@ describe("startCalloutResponder", () => {
 		await expect(
 			client.ask("$SYS.REQ.USER.AUTH", new Uint8Array([1, 2, 3]), {}),
 		).rejects.toThrow(/no responders/u);
-		expect(logged).toEqual(["hobo_fleet_callout_refused request-signature"]);
+		expect(logged).toEqual([
+			`hobo_fleet_bus_status authorised ${device.memberId}`,
+			"hobo_fleet_callout_refused request-signature",
+		]);
 		await responder.stop();
 		await client.close();
 	});

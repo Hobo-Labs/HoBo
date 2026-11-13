@@ -208,12 +208,26 @@ export function mintAuthorizationResponse(
 
 /** The account a credentials file's user belongs to. */
 export function accountOfCredentials(credentials: string): string {
+	const claims = userClaimsOf(credentials);
+	return claims.nats.issuer_account ?? claims.iss;
+}
+
+function userClaimsOf(credentials: string): ClaimsData<User> {
 	const jwt = credentials.match(
 		/-----BEGIN NATS USER JWT-----\s*([^\s]+)\s*------END NATS USER JWT------/u,
 	)?.[1];
 	if (jwt === undefined) throw new Error("not a NATS credentials file");
-	const claims: ClaimsData<User> = decode(jwt);
-	return claims.nats.issuer_account ?? claims.iss;
+	return decode(jwt);
+}
+
+/**
+ * Whose audit log a connection with `credentials` holds: the witness's when
+ * the credentials are the static `witness` user's, else the authority's.
+ */
+export function auditRoleOfCredentials(
+	credentials: string,
+): "authority" | "witness" {
+	return userClaimsOf(credentials).name === "witness" ? "witness" : "authority";
 }
 
 export type TenantKeys = Readonly<{

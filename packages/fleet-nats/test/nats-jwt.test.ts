@@ -15,6 +15,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
 	accountOfCredentials,
+	auditRoleOfCredentials,
 	DEVICE_CREDENTIAL_MS,
 	mintAccount,
 	mintAccountWithSigningKeys,
@@ -94,6 +95,20 @@ describe("tenant keys (A7)", () => {
 		expect(authority.uc.nats.sub?.allow).toContain("$SYS.REQ.USER.AUTH");
 		expect(authority.uc.nats.resp?.max).toBe(1);
 		expect(() => accountOfCredentials("nothing")).toThrow();
+	});
+});
+
+describe("the audit role of a connection", () => {
+	it("is the witness only for the witness user's credentials", async () => {
+		const keys = tenantKeys(operatorSeed(), TENANT);
+		expect(
+			auditRoleOfCredentials(await staticCredentials(keys, "witness")),
+		).toBe("witness");
+		for (const user of ["authority", "provisioner", "sentinel"] as const)
+			expect(auditRoleOfCredentials(await staticCredentials(keys, user))).toBe(
+				"authority",
+			);
+		expect(() => auditRoleOfCredentials("nothing")).toThrow();
 	});
 });
 

@@ -26,6 +26,9 @@ export type CalloutDeps = Readonly<{
 	log: FleetLog;
 }>;
 
+// public-contract: the `status` of the `hobo_fleet_bus_status` event logged for each allowed callout decision.
+export const CALLOUT_AUTHORISED = "authorised";
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -98,6 +101,13 @@ export async function answerCallout(
 			signerSeed,
 			answer: { jwt },
 			nowMs,
+		});
+		// The hook for an allowed decision: the status feed counts it as an answered callout.
+		deps.log("hobo_fleet_bus_status", {
+			component: "callout",
+			status: CALLOUT_AUTHORISED,
+			member: verdict.memberId,
+			template: verdict.template,
 		});
 	} else {
 		deps.log("hobo_fleet_callout_refused", {

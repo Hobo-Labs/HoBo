@@ -28,13 +28,30 @@ export type WitnessAdapters = Readonly<{
 	now: Clock;
 	log: FleetLog;
 	connectBus: typeof connectAuthorityBus;
-	/** Writes a co-signature to `fleet.audit.witness`. */
-	publish(
+	/** Writes a co-signature to `fleet.audit.witness`; `publishOverAuditLog` unless given. */
+	publish?(
 		bus: AuthorityBus,
 		cosignature: SignedEnvelope,
 		of: "checkpoint" | "trust",
 	): Promise<void>;
 }>;
+
+/**
+ * The witness's publish path over its own bus connection: a connection opened
+ * with the witness user's credentials appends co-signatures, so
+ * `appendCheckpoint` and `proposeTrust` write the co-signature of a
+ * checkpoint or of a trust record to `fleet.audit.witness` (@hobo/fleet-nats,
+ * `connectAuthorityBus`), the one subject the witness user may publish.
+ */
+export function publishOverAuditLog(
+	bus: AuthorityBus,
+	cosignature: SignedEnvelope,
+	of: "checkpoint" | "trust",
+): Promise<void> {
+	return of === "checkpoint"
+		? bus.audit.appendCheckpoint(cosignature)
+		: bus.audit.proposeTrust(cosignature);
+}
 
 function trustOf(bus: AuthorityBus | undefined): TrustRecord {
 	const payload = bus?.registry.trustEnvelope()?.authority?.payload;
@@ -73,7 +90,8 @@ export async function composeWitness(
 		registryChanges: pollRegistryChanges(connected.registry),
 		trust: () => connected.registry.trust(),
 		signer: followingSigner(key.value),
-		publish: (cosignature, of) => adapters.publish(connected, cosignature, of),
+		publish: (cosignature, of) =>
+			(adapters.publish ?? publishOverAuditLog)(connected, cosignature, of),
 		now: adapters.now,
 		log2: adapters.log,
 	});

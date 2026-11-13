@@ -370,7 +370,17 @@ function replayStore(wire: BusWire, now: Clock): ReplayStore {
 	};
 }
 
-function auditLog(wire: BusWire): AuditLog {
+/**
+ * Who holds an `AuditLog`. The authority appends entries and checkpoints and
+ * proposes trust records; the witness appends co-signatures. §7.3 gives the
+ * witness no method of its own to publish one, so on a witness connection
+ * `appendCheckpoint` and `proposeTrust` write the co-signature of a
+ * checkpoint or of a proposed trust record to `fleet.audit.witness`, the one
+ * subject the witness user may publish (§6.7), and `append` is refused.
+ */
+export type AuditRole = "authority" | "witness";
+
+function auditLog(wire: BusWire, role: AuditRole): AuditLog {
 	/** Pairs each witness co-signature under `context` with the authority envelope on `subject` carrying the same payload. */
 	const witnessed = (
 		context: string,
@@ -398,16 +408,28 @@ function auditLog(wire: BusWire): AuditLog {
 				}
 			},
 		);
+	const cosign = (cosignature: SignedEnvelope) =>
+		store(wire, STREAMS.audit, AUDIT_SUBJECTS.witness, encode(cosignature));
+	const witness = role === "witness";
 	return {
-		append: (entry) =>
-			store(
+		async append(entry) {
+			if (witness) throw new Error("the witness appends no audit entries");
+			await store(
 				wire,
 				STREAMS.audit,
 				AUDIT_SUBJECTS.entry,
 				toBinary(AuditEntrySchema, entry),
-			),
+			);
+		},
 		appendCheckpoint: (checkpoint) =>
-			store(wire, STREAMS.audit, AUDIT_SUBJECTS.checkpoint, encode(checkpoint)),
+			witness
+				? cosign(checkpoint)
+				: store(
+						wire,
+						STREAMS.audit,
+						AUDIT_SUBJECTS.checkpoint,
+						encode(checkpoint),
+					),
 		async entries(fromSequence, toSequence) {
 			const out: AuditEntry[] = [];
 			for (const message of await wire.streamRead(
@@ -426,8 +448,19 @@ function auditLog(wire: BusWire): AuditLog {
 		},
 		onWitnessed: (handler) =>
 			witnessed(AUDIT_CHECKPOINT_CONTEXT, AUDIT_SUBJECTS.checkpoint, handler),
+		onCheckpoint: (handler) =>
+			envelopes(
+				wire,
+				STREAMS.audit,
+				AUDIT_SUBJECTS.checkpoint,
+				"start",
+				() => true,
+				(_picked, checkpoint) => handler(checkpoint),
+			),
 		proposeTrust: (record) =>
-			store(wire, STREAMS.audit, AUDIT_SUBJECTS.trust, encode(record)),
+			witness
+				? cosign(record)
+				: store(wire, STREAMS.audit, AUDIT_SUBJECTS.trust, encode(record)),
 		onTrustProposed: (handler) =>
 			envelopes(
 				wire,
@@ -442,17 +475,18 @@ function auditLog(wire: BusWire): AuditLog {
 	};
 }
 
-/** What the authority holds: the device ports plus the registry publisher, the audit log and the replay store. */
+/** What the authority (or, with `role` "witness", the witness) holds: the device ports plus the registry publisher, the audit log and the replay store. */
 export function authorityBusOverWire(
 	wire: BusWire,
 	registry: RegistryView,
 	pin: TrustPin,
 	now: Clock,
+	role: AuditRole = "authority",
 ): AuthorityBus {
 	return {
 		...busOverWire(wire, registry),
 		publisher: registryPublisher(wire, pin),
-		audit: auditLog(wire),
+		audit: auditLog(wire, role),
 		replay: replayStore(wire, now),
 	};
 }

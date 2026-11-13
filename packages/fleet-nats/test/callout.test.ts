@@ -84,7 +84,12 @@ function depsOf(tenant: Tenant, logged: string[]): TestDeps {
 		replay: tenant.bus.replay,
 		incarnation: 3,
 		now: tenant.now,
-		log: (event, fields) => logged.push(`${event} ${String(fields.check)}`),
+		log: (event, fields) =>
+			logged.push(
+				event === "hobo_fleet_bus_status"
+					? `${event} ${String(fields.component)} ${String(fields.status)} ${String(fields.member)} ${String(fields.template)}`
+					: `${event} ${String(fields.check)}`,
+			),
 	};
 }
 
@@ -123,7 +128,10 @@ describe("the auth callout exchange", () => {
 		const user: ClaimsData<User> = decode(answer?.nats.jwt ?? "");
 		expect(user.name).toBe(keys.memberId);
 		expect(user.iss).toBe(deps.executorKey);
-		expect(logged).toEqual([]);
+		// The allowed decision is reported once, for the status feed (L27).
+		expect(logged).toEqual([
+			`hobo_fleet_bus_status callout authorised ${keys.memberId} executor`,
+		]);
 	});
 
 	it("answers a refusal with the failed check and logs it", async () => {

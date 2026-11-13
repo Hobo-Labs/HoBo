@@ -16,7 +16,10 @@ import {
 	composeAuthority,
 	type ProfileAdapters,
 } from "../../src/compose/profile.js";
-import { composeWitness } from "../../src/compose/witness.js";
+import {
+	composeWitness,
+	publishOverAuditLog,
+} from "../../src/compose/witness.js";
 
 const NOW = Date.parse("2026-11-13T10:00:00Z");
 const CONFIG = {
@@ -258,6 +261,40 @@ describe("composing the authority from one configuration", () => {
 		await composed.value.stop();
 	});
 
+	it("counts each allowed callout decision toward nats-callout availability", async () => {
+		const f = await fixture();
+		const composed = await composeAuthority(f.config, f.adapters);
+		if (!composed.ok) throw new Error(composed.error.message);
+		await composed.value.start();
+		const log = f.callout();
+		for (const member of ["dev_a", "dev_b", "dev_c"])
+			log?.("hobo_fleet_bus_status", {
+				component: "callout",
+				status: "authorised",
+				member,
+				template: "executor",
+			});
+		// Not a decision: a responder's connection status is not counted.
+		log?.("hobo_fleet_bus_status", { status: "reconnecting" });
+		log?.("hobo_fleet_callout_refused", {
+			check: "request-signature",
+			reason: "unsealed",
+		});
+		f.advance(120_000);
+		await composed.value.runtime.status.tick();
+		const measured = [];
+		for await (const positioned of composed.value.deps.store.readAll())
+			if (JSON.stringify(positioned.event.data).includes("fleet-nats-callout"))
+				measured.push(positioned.event.data);
+		expect(measured).toContainEqual(
+			expect.objectContaining({
+				componentId: "fleet-nats-callout",
+				attainment: 0.75,
+			}),
+		);
+		await composed.value.stop();
+	});
+
 	it("keeps serving without a callout when its keys are not provisioned", async () => {
 		const f = await fixture({ withCallout: false });
 		const composed = await composeAuthority(f.config, f.adapters);
@@ -323,6 +360,45 @@ describe("composing the witness", () => {
 		});
 		expect(witness.ok).toBe(true);
 		expect(connectedWith).toBe("witness-creds");
+		if (witness.ok) {
+			witness.value.start();
+			await witness.value.stop();
+		}
+	});
+
+	it("publishes co-signatures through the witness connection's audit log by default", async () => {
+		const f = await fixture();
+		const written: string[] = [];
+		const bus: AuthorityBus = {
+			...f.bus,
+			audit: {
+				...f.bus.audit,
+				async appendCheckpoint(envelope) {
+					written.push(`checkpoint ${envelope.keyId}`);
+				},
+				async proposeTrust(envelope) {
+					written.push(`trust ${envelope.keyId}`);
+				},
+			},
+		};
+		const cosignature = await signEnvelope(
+			generateDpopKey().signer,
+			TRUST_RECORD_CONTEXT,
+			new Uint8Array([1]),
+		);
+		await publishOverAuditLog(bus, cosignature, "checkpoint");
+		await publishOverAuditLog(bus, cosignature, "trust");
+		expect(written).toEqual([
+			`checkpoint ${cosignature.keyId}`,
+			`trust ${cosignature.keyId}`,
+		]);
+		const witness = await composeWitness(f.config, {
+			secrets: f.secrets,
+			now: () => NOW,
+			log: () => {},
+			connectBus: async () => bus,
+		});
+		expect(witness.ok).toBe(true);
 		if (witness.ok) {
 			witness.value.start();
 			await witness.value.stop();

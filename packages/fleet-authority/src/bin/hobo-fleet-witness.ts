@@ -2,15 +2,15 @@
 /**
  * `hobo-fleet-witness --config <file>`: the witness of §6.14 (another
  * operating-system account in the standalone profile, another host in high
- * availability). Co-signs audit checkpoints and proposed trust records.
+ * availability). Co-signs audit checkpoints and proposed trust records, and
+ * runs until SIGTERM.
  *
- * Its co-signatures go to `fleet.audit.witness`, which @hobo/fleet-nats has
- * no entry point for yet (reported as a cascade delta to L08): until it does,
- * the witness refuses to start rather than run and sign nothing.
+ * It connects with the witness user's credentials, so its audit log writes
+ * each co-signature to `fleet.audit.witness` (`publishOverAuditLog`).
  */
 import { connectAuthorityBus } from "@hobo/fleet-nats";
 import { composeWitness } from "../compose/witness.js";
-import { boot, fail, stderrLog } from "./common.js";
+import { boot, fail, onShutdown, stderrLog } from "./common.js";
 
 const { config, secrets } = await boot(
 	process.argv.slice(2),
@@ -21,13 +21,12 @@ const composed = await composeWitness(config, {
 	now: () => Date.now(),
 	log: stderrLog,
 	connectBus: connectAuthorityBus,
-	async publish() {
-		throw new Error("@hobo/fleet-nats has no witness publish entry point yet");
-	},
 });
 if (!composed.ok) fail(composed.error.message);
-// The composition (bus, key, registry changes) is proven; only the publish path is missing.
-await composed.value.stop();
-fail(
-	"hobo-fleet-witness: @hobo/fleet-nats does not yet expose a publish path for fleet.audit.witness; refusing to run a witness that cannot co-sign",
-);
+const witness = composed.value;
+witness.start();
+stderrLog("hobo_fleet_bus_status", {
+	component: "witness",
+	status: "started",
+});
+onShutdown(() => witness.stop());

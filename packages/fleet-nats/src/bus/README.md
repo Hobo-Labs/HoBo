@@ -99,6 +99,30 @@ scoped keys, so after a rotation it must not be re-run without publishing the
 slots' keys again. `test/signing-keys.integration.test.ts` adds, publishes and
 removes an account signing key on `nats-server`.
 
+## The witness side of the audit log (L42)
+
+`connectAuthorityBus` opened with the static `witness` user's credentials is
+the witness's connection (`auditRoleOfCredentials` reads the user name from
+the credentials). §7.3 gives the witness no method of its own to publish a
+co-signature, so on that connection the audit log appends co-signatures:
+`appendCheckpoint` and `proposeTrust` write the co-signature of a checkpoint
+or of a proposed trust record to `fleet.audit.witness`, and `append` is
+refused. The authority's `onWitnessed` and `onTrustWitnessed` pair each
+co-signature with the authority envelope carrying the same payload. Every
+connection also offers `onCheckpoint` (amendment 2): the authority-signed
+checkpoints as appended, in stream order. Only the witness user may publish
+on `fleet.audit.witness`: the authority user is denied it, the sentinel is
+denied everything, and the witness may publish nothing else
+(`test/witness.integration.test.ts`, which also runs `createWitness` against
+the authority's `createAuditChain` on `nats-server`).
+
+## Callout decisions
+
+Each allowed decision is logged as `hobo_fleet_bus_status` with `component`
+`callout`, `status` `authorised` (`CALLOUT_AUTHORISED`), the member and its
+template, so that the status feed counts successful callouts toward
+`nats-callout` availability; a refusal is `hobo_fleet_callout_refused`.
+
 ## Assumptions (§13)
 
 | Id | Result in this lane | Evidence |

@@ -29,6 +29,7 @@ import { NATS, type NatsClients } from "./nats-client.js";
 import {
 	type AccountSigningKeys,
 	accountOfCredentials,
+	auditRoleOfCredentials,
 	mintAccount,
 	mintAccountWithSigningKeys,
 	staticCredentials,
@@ -276,7 +277,11 @@ export function natsBusConnectorOver(clients: NatsClients): FleetBusConnector {
 	};
 }
 
-/** The authority's connection; positions are per subscription (`BusStart`). */
+/**
+ * The authority's connection; positions are per subscription (`BusStart`).
+ * Opened with the witness user's credentials it is the witness's: its audit
+ * log writes co-signatures to `fleet.audit.witness` (see `AuditRole`).
+ */
 export function connectAuthorityBus(
 	input: Readonly<{
 		servers: readonly string[];
@@ -293,16 +298,17 @@ export async function authorityBusOver(
 	clients: NatsClients,
 	input: AuthorityInput,
 ): Promise<AuthorityBus> {
+	const role = auditRoleOfCredentials(input.credentials);
 	const connection = await clients.open({
 		servers: input.servers,
 		authenticator: credsAuthenticator(encoder.encode(input.credentials)),
-		name: "hobo-fleet-authority",
+		name: `hobo-fleet-${role}`,
 		persistent: true,
 	});
 	const wire = natsWire(
 		connection,
 		{
-			consumerName: () => `authority_${randomBytes(8).toString("hex")}`,
+			consumerName: () => `${role}_${randomBytes(8).toString("hex")}`,
 			onStatus: (status) => input.log("hobo_fleet_bus_status", { status }),
 		},
 		clients,
@@ -310,7 +316,7 @@ export async function authorityBusOver(
 	const pin = authorityPin(input.trust);
 	const registry = createRegistryView({ wire, pin, now: Date.now });
 	await registry.caughtUp();
-	return authorityBusOverWire(wire, registry, pin, Date.now);
+	return authorityBusOverWire(wire, registry, pin, Date.now, role);
 }
 
 /** Answers NATS auth callouts with user credentials scoped to the member. */
