@@ -85,6 +85,15 @@ const ORDERS = "orders";
 const OFFERS = "offers";
 
 type Held = { offer: WorkOffer; timer: ReturnType<typeof setTimeout> };
+/**
+ * Where the offer subscription starts: the start of `FLEET_OFFERS`, whose
+ * 15-minute maximum age (§6.7) holds every offer still standing (an offer
+ * stands 10 minutes), so an executor that has just started, restarted or
+ * joined a fleet sees the offers made before it listened. Offers past their
+ * `expires_at` are skipped, and each digest is handled once while its offer
+ * stands.
+ */
+const OFFERS_FROM = "start";
 type Live = { sandbox: Sandbox; abort: AbortController };
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -123,6 +132,8 @@ export function executor(
 ) {
 	const { self, bus, log } = deps;
 	const held = new Map<WorkDigest, Held>();
+	/** Digests already handled, until their offer's `expires_at` (epoch ms). */
+	const handled = new Map<WorkDigest, number>();
 	const live = new Map<string, Live>();
 	const runs = new Set<Promise<void>>();
 	const waits = new Set<ReturnType<typeof setTimeout>>();
@@ -348,7 +359,12 @@ export function executor(
 		if (digest === undefined || digest !== digestOf(offer.kind, offer.workKey))
 			return;
 		const nowMs = deps.now();
-		if (Date.parse(offer.expiresAt) <= nowMs || held.has(digest)) return;
+		const expiresAtMs = Date.parse(offer.expiresAt);
+		if (expiresAtMs <= nowMs || held.has(digest)) return;
+		for (const [seen, until] of handled)
+			if (until <= nowMs) handled.delete(seen);
+		if (handled.has(digest)) return;
+		handled.set(digest, expiresAtMs);
 		const planned = await plan(offer, digest);
 		if (planned === undefined) return;
 		const own = await ownObservation(planned.record, parseFleetId(offer.fleet));
@@ -631,7 +647,7 @@ export function executor(
 			return after === undefined ? "new" : { after };
 		};
 		if (!started) return;
-		offerSubscription = bus.offers.subscribe(fleets, from(OFFERS), onOffer);
+		offerSubscription = bus.offers.subscribe(fleets, OFFERS_FROM, onOffer);
 		orderSubscription = bus.orders.subscribe(
 			self.memberId,
 			from(ORDERS),
