@@ -1,9 +1,9 @@
-/* oxlint-disable no-unused-vars -- contract commit: entry-point stubs keep their final signatures until a lane implements them. */
 /**
  * `@hobo/fleet/audit` (L06): the hash-chained audit log, its verification,
  * and the witness that co-signs checkpoints and trust records (§6.14).
  *
- * Contract commit: every body throws `FleetNotImplemented`; L06 replaces them.
+ * The frozen entry points of design §7.3; the modules beside this file are
+ * private to the lane (see README.md here).
  */
 import type {
 	AuditEntry,
@@ -11,7 +11,6 @@ import type {
 	TrustRecord,
 	WitnessedEnvelope,
 } from "../_generated/fleet_pb.js";
-import { FleetNotImplemented } from "../errors.js";
 import type {
 	AuditLog,
 	Clock,
@@ -21,6 +20,9 @@ import type {
 	Signer,
 	Subscription,
 } from "../ports.js";
+import { auditChain } from "./chain.js";
+import { verifyChain } from "./verify.js";
+import { witnessProcess } from "./witness.js";
 
 export function createAuditChain(
 	deps: Readonly<{
@@ -31,7 +33,7 @@ export function createAuditChain(
 		now: Clock;
 	}>,
 ): Readonly<{ tick(): Promise<void> }> {
-	throw new FleetNotImplemented("createAuditChain");
+	return auditChain(deps);
 }
 
 export function verifyAuditChain(
@@ -39,7 +41,7 @@ export function verifyAuditChain(
 	checkpoints: readonly WitnessedEnvelope[],
 	trust: TrustRecord,
 ): Outcome<Readonly<{ entries: number; finalThrough: number }>> {
-	throw new FleetNotImplemented("verifyAuditChain");
+	return verifyChain(entries, checkpoints, trust);
 }
 
 /**
@@ -62,5 +64,5 @@ export function createWitness(
 		log2: FleetLog;
 	}>,
 ): Readonly<{ start(): void; stop(): Promise<void> }> {
-	throw new FleetNotImplemented("createWitness");
+	return witnessProcess(deps);
 }
