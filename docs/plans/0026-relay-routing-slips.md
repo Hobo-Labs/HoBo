@@ -38,201 +38,264 @@ is.
    (pickups up to 307 s against a 120 s limit). The hosted relay answers 503
    (its Vercel project lost its GitHub link after #1883; `/readyz`
    `store-unavailable`), which only removes its veto.
-2. The box daemon runs `c7ec8d449` (#1883). It does not run the verdict
-   reporter. It has no self-update and its startup log has no version.
+2. The box daemon runs `c7ec8d449` (#1883). It has no update path, its jobs
+   run in containers with no host access, and its startup log has no
+   version. **It takes the new code only after it is restarted once**; from
+   then on it keeps itself current (3.8). This is a fact of the box, stated
+   once in finding 0149, not a task.
 3. The App holds `contents: write`, `actions: write`,
    `administration: write`; not `checks`, `statuses` or `variables`.
-4. The route job's token has `actions: read`, `contents: read`. A git ref is
-   the one per-run channel the box can write today and the job can read.
-5. All five routing repository variables (`HOBO_CI_ROUTE`,
-   `HOBO_CI_LOCAL_RUNNER`, `HOBO_CI_ROUTE_MAX_WAIT_SECONDS`,
-   `HOBO_CI_ROUTE_MAX_QUEUED`, `HOBO_CI_TRUNK_RUNNER`) read empty in
-   production runs; whether `HOBO_CI_FLEET_ROUTES/_STATE/_CAPACITY` exist is
-   unknown (the proxy refuses the variables API).
+4. The route job's token has `actions: read`, `contents: read`, and the job
+   runs from a sparse checkout with nothing installed.
+5. The five routing repository variables read empty in production runs;
+   whether `HOBO_CI_FLEET_ROUTES/_STATE/_CAPACITY` exist is unknown (the
+   proxy refuses the variables API).
+6. `main` pushes queue behind the running `main` run, often for more than
+   10 minutes (`hobo-ci.yml:40-50`).
+7. GitHub's secondary limit is 80 content-creating requests a minute and 500
+   an hour, shared with the box's job polling and runner registration.
 
 ## 3. Design
 
 ### 3.1 The routing slip
 
-A protobuf record `RoutingSlip` (`packages/ci-gh-actions/data-models/routing_slip.proto`,
-CUE `#RoutingSlip` in `data-models/onboarding.cue`, valid and invalid
-fixtures):
+One slip per repository: the relay's current routing answer, rewritten when
+it changes. A protobuf record `RoutingSlip`
+(`packages/ci-gh-actions/data-models/routing_slip.proto`; CUE `#RoutingSlip`
+in `data-models/onboarding.cue`; valid and invalid fixtures):
 
 | Field | Meaning |
 | --- | --- |
 | `version` | 1 |
 | `repository` | `owner/name`, lower case |
-| `run_id`, `run_attempt`, `head_sha`, `workflow` | the run it was written for; the route job refuses a slip that names another run, attempt or commit |
-| `issued_at`, `expires_at` | the relay's clock; lifetime 10 minutes; a reader treats an expired slip as absent |
-| `runners` | map job class → label: `pr`, `fork`, `trunk`, `shard` (the classes of `#FleetRoutes`) |
-| `tier` | `fleet`, `local` or `github` for the class the run belongs to |
-| `reason` | one line a person reads in the route log |
-| `relay` | `{node_id, commit}`: which relay and which code wrote it |
+| `issued_at`, `expires_at` | the relay's clock; lifetime 10 minutes; rewritten at least every 3 minutes while the relay is up |
+| `classes` | map class → `{runner, tier, reason}` for `pr`, `fork`, `trunk` (the classes of `#FleetRoutes`); shards use `trunk` on trunk events and `pr` otherwise |
+| `relay` | `{node_id, commit}` |
 
-No slot count, memory figure or reporter identity leaves the relay beyond
-`relay`.
+`tier` is `fleet`, `local` or `github`. `reason` is a code
+(`fleet-open`, `fleet-busy`, `no-node`, `no-capacity`, `stalled`, `pinned`),
+never a figure. No slot count or memory figure leaves the relay.
 
 ### 3.2 Where it lives
 
-`refs/hobo/routing-slips/<run_id>` → a parentless commit whose tree is the
-empty tree and whose **message** is the slip's JSON. Writing: blob-free,
-`POST /git/trees` (empty or one-file tree, created once and reused),
-`POST /git/commits`, `POST /git/refs` (or `PATCH` for a new attempt). Reading
-(route job, `GITHUB_TOKEN`, `contents: read`): `GET /git/ref/hobo/routing-slips/<id>`
-then `GET /git/commits/<sha>`; two calls, no checkout. The relay deletes a
-slip ref when its run completes (the poller already sees completions) and
-sweeps refs older than 24 hours on start and hourly. Non-branch refs
-trigger no workflow and are not shown in the UI.
+`refs/hobo/routing-slip` → a parentless commit whose tree is a one-file tree
+(created once and reused) and whose **message** is the slip's JSON. Written
+with `POST /git/commits` then `PATCH /git/refs/hobo/routing-slip`
+(`force: true`; `POST /git/refs` the first time). Read by the route job with
+`GITHUB_TOKEN` and `contents: read`: `GET /git/ref/hobo/routing-slip`, then
+`GET /git/commits/<sha>`. Layer 01 includes a probe test, run by the
+implementer against the live repository, that proves the write and read
+calls before anything builds on them.
 
-**Trust.** Only holders of `contents: write` can write a ref: the relay's App
-and repository writers, who can already edit workflows. Fork pull requests
-cannot. The binding to run id, attempt and head SHA stops replay. No
-signature is added: the only keys a reader could trust would themselves
-have to be committed by a person (R5).
+**Write budget.** The relay writes when the decision changes and as a
+heartbeat every 3 minutes: ≤ 2 writes per change, ≤ 40 per hour in steady
+state, hard-capped at 20 per minute and 300 per hour; a 403 or 429 backs off
+10 minutes. Only the **mesh leader** writes (the existing leader election);
+a box without a mesh is its own leader.
 
-### 3.3 Who writes it and how it decides
+**Trust.** Only holders of `contents: write` can write the ref. The route
+job accepts a `runner` only when it is one of the committed
+`runnerRouting.labels` (3.4); anything else makes the slip invalid. No
+signature: the keys a reader could trust would have to be committed by a
+person (R5).
 
-The box relay (daemon) writes a slip for every queued run of a routed
-workflow it sees in its poll (≤ 2 s after the run is queued). It decides
-with what only it holds:
+### 3.3 How the relay decides
 
-1. **Fleet can take it** when a node serving the class's label is live and
-   either has a free slot, or can admit by memory once a slot frees (R4:
-   busy is not refusal), **or** an external pool from committed config (ARC,
-   counted from `GET /repos/{r}/actions/runners` by label and `busy`, which
-   `administration` permits) has a free runner.
-2. **Refuse the fleet** (`tier: github`) only when no node serves the label
-   (`no-node`), or every node refuses for a reason other than its own
-   running jobs and no pool has a free runner (`no-capacity`): the existing
-   `fleet-verdict-evaluator.ts` rule, reused, with its enter/exit hysteresis.
-3. **Local** when the committed config enrolls a local box for the class and
-   the fleet is refused.
-4. **Pins** from committed policy (`routing.pin`) are written into the slip
-   unchanged.
+Per class, from what only the relay holds:
 
-The relay also writes a fresh slip when the run's second ask (main gate
-before shards) is made: the main-gate plan job reads the slip ref again;
-the relay rewrites it on each dispatch pass while the run is in progress.
+1. **Refuse the fleet** (`tier: github`) when no live node serves the
+   class's label (`no-node`); or when every node refuses for a reason other
+   than its own running jobs, which includes critical host or storage health
+   **whether or not the node is busy**, and no external pool has a free
+   runner (`no-capacity`); or when work has been assigned to the label and
+   nothing has started for 10 minutes (`stalled`, the `stall-job-recovery`
+   signal). The existing `fleet-verdict-evaluator.ts` rule and its
+   enter/exit hysteresis are reused, extended for the busy-health and stall
+   cases.
+2. Otherwise the fleet label (`fleet-open`, or `fleet-busy` when every slot
+   is taken: R4, busy is never refusal).
+3. **Local** instead of GitHub-hosted when committed config enrolls a local
+   box and the fleet is refused.
+4. A committed `runnerRouting.pin` is written into every class (`pinned`).
+5. **Forks** use `classes.fork`, never the trunk label.
+6. An external pool counts as free only when it can be counted (repo-level
+   runners with its label, `busy: false`, via `GET /actions/runners`, which
+   `administration` allows). A pool that cannot be counted is "unknown" and
+   never allows a refusal (R3).
+
+**What this changes, and what is measured.** With slips, `main` returns to
+the fleet while it is merely slow, as R4 asks: four shards may queue behind
+one trunk slot. Finding 0149 records, before and after, the pickup p95,
+main-gate duration and GitHub-hosted minutes per day.
 
 ### 3.4 Committed routing policy
 
-`.hobo/ci.json` gains `routing` (zod parser in `relay-routing.ts`, JSON
-Schema regenerated, CUE `#RoutingPolicy` + fixtures):
+`.hobo/ci.json` gains `runnerRouting` (named to avoid
+`environments.*.policy.routing`): zod parser in `relay-routing.ts`, JSON
+Schema regenerated, CUE `#RunnerRouting` and fixtures. Values are the code
+defaults today, so moving them changes nothing:
 
 ```json
-"routing": {
+"runnerRouting": {
   "pin": "auto",
-  "slipWaitSeconds": 20,
   "queue": { "maxWaitSeconds": 120, "maxQueued": 4 },
   "labels": { "fleet": "hobo", "trunk": "hobo-trunk", "local": "hobo-local-host", "github": "ubuntu-24.04" },
   "localRunner": false,
-  "verdict": { "minFreeRunners": 1, "enterMs": 60000, "exitMs": 120000 },
-  "box": { "trunkSlots": 1, "trunkLend": 0, "prCapWithTrunk": 2, "slots": 2, "capacityVolatilityMb": 1024, "trunkHeadroomFleetDeferMs": 180000 },
+  "mainWorkspaceParallelCap": 4,
+  "verdict": { "minFreeRunners": 1, "enterMs": 60000, "exitMs": 30000, "stallMs": 600000 },
+  "box": {
+    "slots": 2, "trunkSlots": 1, "trunkLend": 0, "prCapWithTrunk": 1, "mergeGroupLeases": 1,
+    "capacityVolatilityMb": 1024, "trunkHeadroomFleetDeferMs": 45000, "jobAdmission": "pull"
+  },
+  "externalPools": [],
   "retiredVariables": ["HOBO_CI_FLEET_ROUTES", "HOBO_CI_FLEET_STATE", "HOBO_CI_FLEET_CAPACITY", "HOBO_CI_ROUTE", "HOBO_CI_LOCAL_RUNNER", "HOBO_CI_ROUTE_MAX_WAIT_SECONDS", "HOBO_CI_ROUTE_MAX_QUEUED", "HOBO_CI_TRUNK_RUNNER"]
 }
 ```
 
-Values shown are today's defaults, so moving them changes no behavior. The
-external pools are derived from the enabled `providers` entries with a
-`scaleSet` (ARC); the reporter id is the mesh node id. The box daemon reads
-the file from its checkout at start and on every self-update; the route job
-reads it from its sparse checkout (already checked out).
+The implementer reads every default from the code (`worker-slots.ts`,
+daemon, `fleet-verdict-state.ts`, `route-runner.mts`,
+`plan-main-workspace-shards.mts`) and the test asserts the committed values
+equal them. The daemon reads the file from its checkout at start; at start
+it also logs once the **names** (never values) of any retired environment
+variable still set on the box, so a box-local override that stops applying
+is visible. The route job and the main-gate plan read it with a
+dependency-free reader (`scripts/ci/runner-routing.mts`, in the style of
+`fleet-overflow.ts`), added to every route job's sparse checkout.
+
+**What counts as routing (R2), exhaustively:** `HOBO_CI_ROUTE`,
+`HOBO_CI_ROUTE_MAX_WAIT_SECONDS`, `HOBO_CI_ROUTE_MAX_QUEUED`,
+`HOBO_CI_TRUNK_RUNNER`, `HOBO_CI_LOCAL_RUNNER` (the repository variable; not
+`scripts/local-runner.ts`'s switch), `HOBO_CI_INCLUDE_OWN_RUN`,
+`HOBO_CI_ATTESTED`, `HOBO_CI_FLEET_ROUTES`, `HOBO_CI_FLEET_VERDICT_*`,
+`HOBO_CI_FLEET_REPORTER_ID`, `HOBO_CI_FLEET_EXTERNAL_POOLS_JSON`,
+`HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB`,
+`HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`, `HOBO_CI_WORKER_SLOTS`,
+`HOBO_CI_WORKER_TRUNK_SLOTS`, `HOBO_CI_WORKER_TRUNK_LEND`,
+`HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`, `HOBO_CI_WORKER_MERGE_GROUP_LEASES`,
+`HOBO_CI_JOB_ADMISSION`, `MAIN_WORKSPACE_PARALLEL_CAP`, and the pool label
+and providers carried by `HOBO_CI_CONFIG`/`HOBO_CI_CONFIG_JSON` (the daemon
+takes labels and providers from `.hobo/ci.json` instead; those two keep only
+what is not routing). `HOBO_CI_RELAY_URL` names a relay and is written as a
+literal by onboarding; it is not routing. `HOBO_CI_MERGE_QUEUE_BRANCH` names
+a branch, not a runner; it is not routing.
 
 ### 3.5 The route job
 
-1. Read `routing` from `.hobo/ci.json`. Read the dispatch input `route` as
-   an **argument** (`--pin`), not an environment variable.
-2. Poll the slip ref for this run every 2 s up to `slipWaitSeconds`. A slip
-   for this run, attempt and SHA that has not expired decides: outputs
-   `runner`, `tier`, `shard_runner` from it; log `relay: slip <node>@<commit>, <reason>`.
-3. No valid slip: the queue rule decides exactly as today (R3), using the
-   committed limits; the titled warning `hobo-ci-route-fallback` says
-   `no routing slip within N s`.
-4. The hosted relay is not asked (`askRelay` and its tests removed).
+1. Read `runnerRouting` with the dependency-free reader. The dispatch input
+   `route` becomes `type: choice` (`auto`, `fleet`, `local`, `github`) and
+   reaches the script as an argument, as do `include-own-run` and
+   `attested` (argv, never env).
+2. Read the slip once (two GET calls, 3 s limit). A slip that has not
+   expired, names this repository and whose runners are all allowed
+   decides: `runner`, `tier`, `shard_runner` for the run's class; the log
+   says `relay: slip from <node>@<commit>, <reason>`.
+3. No valid slip: the queue rule decides immediately, exactly as today (R3).
+   This is the workflow judging the queue, allowed only by R3. The titled
+   warning `hobo-ci-route-fallback` says why (`no routing slip`, `slip
+   expired`, `slip names a label not in runnerRouting.labels`, ...).
+4. The hosted relay is no longer asked (`askRelay` removed).
+5. The main gate's second ask reads the slip again (it may have changed).
 
 ### 3.6 Workflows
 
-- Every `vars.HOBO_CI_*` routing input is removed from route jobs.
+- Every `vars.HOBO_CI_*` is removed from every workflow, action and
+  template (`templates/hobo-ci-smoke.yml` with `hobo-ci-acceptance.yml`,
+  keeping their pinned digest in step).
 - Routed `runs-on`: `${{ needs.route.outputs.runner || 'ubuntu-24.04' }}`
-  (shards: `shard_runner`). The literal fallback applies only when the
-  route job itself failed.
-- Unrouted always-fleet jobs (`ci-deps-image`, `ci-deps-publish`,
-  `fleet-enrollment`, `dev-env-smoke`, `examples-e2e`,
-  `hobo-ci-acceptance`, release jobs listed in finding 0149): `runs-on:
-  hobo-trunk`, the value the unset variable resolved to.
+  (shards: `shard_runner`). This changes one unknown: a route job that
+  itself fails now sends the run to GitHub-hosted rather than the fleet; the
+  route action already does that when its script fails.
+- Unrouted jobs keep their event test with the variable removed:
+  `${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}`.
 - `fleet-probe.yml`: the trunk probe always runs; the local-box probe is
-  gated by a one-step job that reads `routing.localRunner` from
-  `.hobo/ci.json` (sparse checkout) and outputs it.
-- A step in each route job, with only expression conditions, warns
-  `hobo-ci-retired-variable` naming any `vars.<retired>` that is non-empty.
-  No value is passed to a step.
-- `scripts/lint-actions.ts` bans, in workflows and actions, any
-  `vars.HOBO_CI_*` and any env, input or output named for a retired
-  variable; the pinned `runs-on` strings change to the forms above.
+  gated by a one-step job that reads `runnerRouting.localRunner` from
+  `.hobo/ci.json` with the reader.
+- `scripts/lint-actions.ts` bans every `vars.HOBO_CI_*` and every env,
+  input or output named in 3.4's list, and pins the new `runs-on` strings.
 
 ### 3.7 Retiring repository variables
 
-At daemon start and once per hour, the relay sends
-`DELETE /repos/{r}/actions/variables/{name}` for each
-`routing.retiredVariables` entry. 204 and 404 are success; 403 logs
-`hobo_ci_variable_retire_refused` once per hour and continues. The
-`HOBO_CI_FLEET_ROUTES` publisher (`fleet-routes.ts` write path) is deleted.
+The owner asked for the variables to be deleted. At each daemon start the
+leader sends one `DELETE /repos/{r}/actions/variables/{name}` per
+`retiredVariables` entry. 204 and 404 are success; 403 is logged once for
+that start (`hobo_ci_variable_retire_refused`, naming the variables) and
+never retried in that process. Nothing reads these variables after layer
+02, so their presence changes nothing. The `HOBO_CI_FLEET_ROUTES` publisher
+(`fleet-routes.ts` write path) is deleted.
 
 ### 3.8 The relay keeps itself current
 
-The daemon logs `commit` at start and in every slip. Every 10 minutes it
-fetches `origin main`; when its checkout is behind and the new head is on
-main's first-parent line, it drains (existing drain), checks out the new
-head, and exits with the restart code its supervisor already restarts
-(`restart-worker.sh` semantics). A failing start after an update logs and
-keeps running the old checkout (it re-execs only after the new code passes
-its own `--self-check`).
+- The daemon logs `commit` at start and in every slip (`relay.commit`).
+- Every 3 hours, and only when the box is idle, the leader fetches
+  `origin main`. When main's head is on its first-parent line, and the
+  daemon's own paths (`packages/ci-gh-actions`, `packages/ci`, the lockfile,
+  the daemon scripts) changed, it prepares the new head in a **separate
+  worktree**: `pnpm install --frozen-lockfile`, submodule update, build, and
+  `--self-check` (a new entry that loads the daemon's modules and config and
+  exits 0).
+- Only after that passes does it stop with the existing `handoff` mode (the
+  next daemon adopts running containers) and re-exec itself in place with
+  `process.execve` on the new worktree: same PID, so no supervisor is
+  assumed. A failing preparation logs `hobo_ci_self_update_refused` and the
+  old code keeps running; the same head is not retried for 24 hours.
 
 ### 3.9 Hosted relay
 
-The verdict routes (`GET/PUT /v1/fleet/verdicts`, `/v1/fleet/reporters`),
-their stores, `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING`,
-`HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES`, the reporter's PUT, the client,
-the PACT `fleet-verdict-boundary` and `fleet_verdict.proto` are removed. The
-evaluator stays (it now feeds slips). ADR-0180 is marked superseded by
-ADR-0181 for transport.
+Removed: the verdict routes (`GET/PUT /v1/fleet/verdicts`,
+`/v1/fleet/reporters`), their stores and auth (`fleet-verdict-auth.ts`,
+`fleet-verdict-cache.ts`), `client.ts` verdict calls, `hosted-control.ts`
+and `http-handler.ts` routes, `cloud-events.ts` verdict events, the reporter
+PUT, `scripts/fleet-reporter-enroll.mts`, the PACT
+`fleet-verdict-boundary`, `fleet_verdict.proto`, their `index.ts` exports
+and the `ci-vercel` imports (`bindle.ts`, `stateless-composition.ts`).
+`relay_runtime_config` field numbers are reserved, and the runtime config
+loader **accepts and ignores** the retired keys (`HOBO_CI_FLEET_*`) so a
+store that still holds one does not stop the relay. The evaluator stays
+(it feeds slips). `relay-deploy.yml`'s verdict probe and `ci-health.mts`'s
+relay-status reads move in the same layer that removes what they read.
+ADR-0180 is marked superseded by ADR-0181 for transport.
 
 ## 4. Failure scenarios
 
 | Failure | Behavior |
 | --- | --- |
-| Box down or not yet updated | No slip within 20 s: queue rule (today's behavior). Monitor H-signal counts `no routing slip` |
-| Slip for another run/attempt/SHA, expired, malformed | Treated as absent; logged with the reason |
-| GitHub API error reading the ref | Treated as absent after the wait |
-| Ref write refused (ruleset, permission) | Relay logs `hobo_ci_slip_write_refused` with status, backs off 10 min; routing falls back per row 1 |
-| Relay crashes after writing | Slip expires in 10 min; refs swept hourly |
-| Variable delete refused | Logged; routing never reads variables, so no effect |
-| Self-update to a broken commit | Self-check fails; old checkout keeps running; logged |
-| Burst of runs | One ref per run; GitHub secondary rate limit: relay writes at most 1 slip/s, skips runs older than 2 min |
+| Box down, not restarted onto new code, or no leader | No slip or an expired one: queue rule at once (today's behavior); the monitor counts `no routing slip` |
+| Slip malformed, wrong repository, unknown label | Invalid: queue rule; warning names the reason |
+| GitHub API error or 3 s timeout reading the ref | Queue rule |
+| Ref write refused or rate-limited | `hobo_ci_slip_write_refused` with status; 10-minute back-off; the old slip expires within 10 minutes |
+| Relay crashes after writing | Slip expires within 10 minutes |
+| A node wedged with jobs assigned | `stalled` after 10 minutes: refused |
+| Box busy with its own jobs, healthy | `fleet-busy`: the fleet (R4) |
+| Fork pull request | `classes.fork` (the fleet's `hobo` label, or GitHub-hosted when refused); never trunk |
+| Variable delete refused | Logged once per start; routing never reads variables |
+| Self-update preparation fails | Old code keeps running; head skipped for 24 hours |
+| Retired keys left in the hosted relay's store | Ignored; the relay starts |
 
-## 5. Delivery: stacked PRs
+## 5. Delivery: one linear stack
 
-| Layer | Branch | Content | Depends |
-| --- | --- | --- | --- |
-| 01 | `sdlc/slips-01-contracts` | `routing_slip.proto`, CUE, fixtures, parser (`src/routing-slip.ts`), `routing` policy in `.hobo/ci.json` + zod + schema + CUE, ADR-0181, this plan, finding 0149 | main |
-| 02 | `sdlc/slips-02-box-issuer` | slip writer + sweeper, decision (3.3), policy read from checkout, every routing `process.env` read removed from daemon/reporter/worker-slots, variable retirement, `fleet-routes` writer deleted, `commit` in logs, self-update | 01 |
-| 03 | `sdlc/slips-03-route-workflows` | route script reads slip + policy, `--pin` argv, `askRelay` removed, action inputs removed, all workflows (3.6), lint ban, main-gate reroute reads slip | 01 |
-| 04 | `sdlc/slips-04-hosted-retire` | 3.9 | 03 |
-| 05 | `sdlc/slips-05-docs-guards` | RUNNER-QUEUE, ci-relay-mesh, ci-fleet-balancing, plan 0025 status, monitor signal for `no routing slip`, a source guard test: no `process.env.HOBO_CI_(ROUTE|TRUNK|LOCAL|FLEET|WORKER_.*SLOTS)` in scripts/packages | 02, 03, 04 |
+| Layer | Branch | Content |
+| --- | --- | --- |
+| 01 | `sdlc/slips-01-contracts` | `routing_slip.proto`, CUE, fixtures, `src/routing-slip.ts` parser; `runnerRouting` in `.hobo/ci.json` + zod + schema + CUE; the dependency-free reader `scripts/ci/runner-routing.mts` (policy and slip); the Git-API probe test; ADR-0181; this plan; finding 0149 |
+| 02 | `sdlc/slips-02-route-workflows` | route script reads slip + policy; argv for `route`/`include-own-run`/`attested`; `route` as `type: choice`; `askRelay` removed; every workflow, action and template (3.6); lint ban; main-gate second ask; `ci-health.mts` reads the new route notice; `MAIN_WORKSPACE_PARALLEL_CAP` from policy |
+| 03 | `sdlc/slips-03-box-issuer` | slip writer (leader, budget), decision (3.3), policy from checkout, every routing `process.env` read removed from daemon/reporter/worker-slots/worker-store/config, retired-name log, variable retirement, `fleet-routes` writer deleted, `commit` in logs |
+| 04 | `sdlc/slips-04-hosted-retire` | 3.9, with `relay-deploy.yml` and `ci-health.mts` relay-status changes |
+| 05 | `sdlc/slips-05-self-update-docs` | 3.8; RUNNER-QUEUE, ci-relay-mesh, ci-fleet-balancing, plan 0025 status; monitor signal `no routing slip`; source guard test over 3.4's list |
 
-02 and 03 are built in parallel against 01.
+Each layer is based on the one below and merged bottom-up.
 
 ## 6. Measurable outcomes
 
 | Id | Outcome | Check |
 | --- | --- | --- |
-| M1 | Zero `vars.HOBO_CI_*` in `.github/` except the retired-variable warning conditions | lint-actions test |
-| M2 | Zero routing `process.env.HOBO_CI_*` reads in `scripts/`, `packages/ci*` | source guard test |
-| M3 | Route job decides from a valid slip in ≤ slipWaitSeconds + 1 s | route-runner test with a fake GitHub API |
-| M4 | A slip for another run/attempt/SHA, expired or malformed is never used | parser + route tests, invalid fixtures |
-| M5 | No slip → identical outputs to today's queue rule on the recorded production cases | route-runner replay tests |
-| M6 | Box busy with own jobs + memory to admit → slip says fleet (R4) | evaluator/issuer test |
-| M7 | Variable retirement: 204/404 success, 403 logged, never throws | unit test with recorded responses |
-| M8 | Self-update never replaces a running checkout with one that fails `--self-check` | daemon test |
-| M9 | Hosted relay has no `/v1/fleet/` route; no `fleet_verdict` proto | tests + codegen check |
-| M10 | All gates green on each layer: `test:scripts`, actions lint, architecture guard, codegen, schema, docs freshness, the touched packages' build/typecheck/lint/test | CI |
+| M1 | No `vars.HOBO_CI_*` in `.github/` or `packages/ci-gh-actions/templates/` | lint-actions test |
+| M2 | No `process.env` read of any name in 3.4's list in `scripts/`, `packages/ci*` | source guard test |
+| M3 | A valid slip decides; route job adds ≤ 3 s; no slip adds 0 s wait | route-runner tests with a fake GitHub API |
+| M4 | An expired, malformed, wrong-repository or unknown-label slip is never used | reader tests, invalid fixtures |
+| M5 | No slip → identical outputs to today on the recorded production cases | route-runner replay tests |
+| M6 | Busy + healthy → `fleet-busy`; busy + critical disk → refused; assigned + nothing started 10 min → `stalled` | evaluator/issuer tests |
+| M7 | Slip writes ≤ 20/min and ≤ 300/h under a 100-run burst; one writer per mesh | issuer test with a fake clock |
+| M8 | Committed `runnerRouting` values equal the code defaults | policy test |
+| M9 | Variable retirement: 204/404 success, 403 logged once, never throws | unit test |
+| M10 | Self-update never re-execs onto a head whose preparation failed; re-exec keeps the PID and adopts containers | daemon test |
+| M11 | Hosted relay has no `/v1/fleet/` route; it starts with retired keys present | tests + codegen check |
+| M12 | Every layer: `test:scripts`, actions lint, architecture guard, codegen, schema, docs freshness, and build/typecheck/lint/test of touched packages, all green in CI | CI |
