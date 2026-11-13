@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /** Resolve measured deps-build inode/byte headroom (shared with build-deps.sh and admission). */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 // Not `deps-build-budget.ts`: that module holds the worker's zod schema, and
 // this file runs in the deps layer job before anything is installed.
 import { depsBuildDockerReserve } from "../../packages/ci-gh-actions/src/isolated-worker/deps-build-docker-reserve.ts";
@@ -81,6 +82,7 @@ export function loadDepsBuildTelemetry(): DepsBuildTelemetry {
 
 export function saveDepsBuildTelemetry(telemetry: DepsBuildTelemetry): void {
 	const path = telemetryPath();
+	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(telemetry, null, 2)}\n`);
 }
 

@@ -126,7 +126,7 @@ non-secret settings:
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
 | `HOBO_CI_DEPS_BUILD_TELEMETRY_PATH` | `$HOBO_HOME/ci/deps-build-telemetry.json` | Rolling peak inode/byte consumption recorded after successful deps builds |
 | `HOBO_RELEASE_BUILDER_CACHE_CAP` | `2GB` | `docker builder prune --keep-storage` cap after release OCI builds on shared boxes |
-| `HOBO_CI_DEPS_BUILD_WAIT_MS` | `900000` | Maximum wait in `scripts/ci/wait-deps-build-window.mts` before a publisher or PR miss build; the script leaves its own job container out of the count ([finding 153](../../../docs/ci/findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)) |
+| `HOBO_CI_DEPS_BUILD_WAIT_MS` | `300000` | Maximum wait in `scripts/ci/wait-deps-build-window.mts` for other job containers before a publisher or PR miss build (both callers also set it explicitly, inside 20-minute jobs); the script leaves its own job container out of the count and does not wait on Docker headroom, which `build-deps.sh` enforces after pruning ([finding 153](../../../docs/ci/findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)) |
 | `HOBO_CI_DEPS_BUILD_WAIT_UNKNOWN_SELF_MS` | `120000` | How long that script waits on job containers when it runs in a container it cannot identify as its own; it then proceeds and logs why; digits only |
 | `HOBO_CI_DEPS_BUILD_WAIT_POLL_MS` | `10000` | Poll interval for the deps build window script; digits only |
 

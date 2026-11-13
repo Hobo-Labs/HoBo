@@ -72,7 +72,6 @@ describe("deps build window: which containers count as busy", () => {
 		expect(
 			windowDecision({
 				busyJobContainers: 0,
-				headroomOk: true,
 				self,
 				elapsedMs: 0,
 				maxWaitMs: 900_000,
@@ -119,7 +118,6 @@ describe("deps build window: decision", () => {
 			windowDecision({
 				...base,
 				busyJobContainers: 1,
-				headroomOk: true,
 				self: known,
 				elapsedMs: 10_000,
 			}),
@@ -128,7 +126,6 @@ describe("deps build window: decision", () => {
 			windowDecision({
 				...base,
 				busyJobContainers: 1,
-				headroomOk: true,
 				self: known,
 				elapsedMs: 900_000,
 			}),
@@ -139,7 +136,6 @@ describe("deps build window: decision", () => {
 		const input = {
 			...base,
 			busyJobContainers: 1,
-			headroomOk: true,
 			self: { kind: "unknown" },
 		} as const;
 		expect(windowDecision({ ...input, elapsedMs: 119_999 })).toBe("wait");
@@ -147,31 +143,20 @@ describe("deps build window: decision", () => {
 		expect(windowDecision({ ...input, elapsedMs: 900_000 })).toBe("proceed");
 	});
 
-	it("never proceeds on low headroom, whoever the caller is", () => {
-		const input = {
-			...base,
-			busyJobContainers: 1,
-			headroomOk: false,
-			self: { kind: "unknown" },
-		} as const;
-		expect(windowDecision({ ...input, elapsedMs: 120_000 })).toBe("wait");
-		expect(windowDecision({ ...input, elapsedMs: 900_000 })).toBe("fail");
-		expect(
-			windowDecision({
-				...base,
-				busyJobContainers: 0,
-				headroomOk: false,
-				self: known,
-				elapsedMs: 900_000,
-			}),
-		).toBe("fail");
+	it("opens on an idle box however long it has waited: low headroom alone does not block", () => {
+		// build-deps.sh enforces headroom after the window, pruning the builder
+		// cache and old deps images first; waiting here would never prune.
+		for (const self of [known, { kind: "unknown" }, { kind: "none" }] as const)
+			for (const elapsedMs of [0, 900_000])
+				expect(
+					windowDecision({ ...base, busyJobContainers: 0, self, elapsedMs }),
+				).toBe("open");
 	});
 
 	it("caps the unknown-caller bound at the overall bound", () => {
 		expect(
 			windowDecision({
 				busyJobContainers: 1,
-				headroomOk: true,
 				self: { kind: "unknown" },
 				elapsedMs: 5_000,
 				maxWaitMs: 5_000,
@@ -194,6 +179,20 @@ describe("deps build window: wiring", () => {
 			"HOBO_CI_HOST_JOB_DIRECTORY",
 		])
 			expect(script).toContain(name);
+	});
+
+	it("the wait script leaves Docker headroom to build-deps.sh", () => {
+		const script = read("scripts/ci/wait-deps-build-window.mts");
+		expect(script).not.toContain("deps-build-headroom");
+		expect(script).not.toContain("headroomOk");
+		const build = read(
+			"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
+		);
+		const ensure = build.indexOf("ensure_deps_build_headroom() {");
+		expect(build.indexOf("builder prune", ensure)).toBeGreaterThan(ensure);
+		expect(build.indexOf("refusing deps rebuild", ensure)).toBeGreaterThan(
+			build.indexOf("builder prune", ensure),
+		);
 	});
 
 	it("the worker still gives a job the identity the script reads", () => {

@@ -79,24 +79,24 @@ export type WindowDecision = "open" | "wait" | "proceed" | "fail";
 /**
  * `proceed` ends the wait without the window opening: the caller could not
  * tell its own container from the others, so after `unknownSelfMaxWaitMs` the
- * containers it is waiting on are taken to be itself. Headroom is measured,
- * never guessed, so a shortage waits the full `maxWaitMs` and then fails.
+ * containers it is waiting on are taken to be itself.
+ *
+ * Docker headroom is not a reason to wait. `build-deps.sh` checks it once the
+ * window opens and prunes the builder cache and old deps images before it
+ * refuses; a wait here could never reach that prune, so a box short only of
+ * reclaimable cache would wait out the bound and fail.
  */
 export function windowDecision(input: {
 	busyJobContainers: number;
-	headroomOk: boolean;
 	self: SelfContainer;
 	elapsedMs: number;
 	maxWaitMs: number;
 	unknownSelfMaxWaitMs: number;
 }): WindowDecision {
-	const timedOut = input.elapsedMs >= input.maxWaitMs;
-	const containersBlock = input.busyJobContainers > 0;
+	if (input.busyJobContainers === 0) return "open";
 	const containersMayBeSelf =
 		input.self.kind === "unknown" &&
 		input.elapsedMs >= Math.min(input.unknownSelfMaxWaitMs, input.maxWaitMs);
-	if (containersBlock && !containersMayBeSelf)
-		return timedOut ? "fail" : "wait";
-	if (!input.headroomOk) return timedOut ? "fail" : "wait";
-	return containersBlock ? "proceed" : "open";
+	if (containersMayBeSelf) return "proceed";
+	return input.elapsedMs >= input.maxWaitMs ? "fail" : "wait";
 }

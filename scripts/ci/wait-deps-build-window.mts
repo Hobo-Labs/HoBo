@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-/** Wait until no other isolated job container runs and deps-build headroom is available. */
+/**
+ * Wait until no other isolated job container runs. Docker headroom is left to
+ * `build-deps.sh`, which prunes the builder cache and old deps images before
+ * it refuses.
+ */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import { promisify } from "node:util";
-import {
-	depsBuildHeadroomSatisfied,
-	depsBuildHeadroomThresholds,
-} from "../lib/deps-build-headroom.mts";
 import {
 	busyJobContainers,
 	identifySelfContainer,
@@ -20,13 +20,12 @@ import {
 const exec = promisify(execFile);
 
 const POLL_MS = Number(process.env.HOBO_CI_DEPS_BUILD_WAIT_POLL_MS ?? 10_000);
-const MAX_WAIT_MS = Number(process.env.HOBO_CI_DEPS_BUILD_WAIT_MS ?? 900_000);
+// Callers run in 20-minute jobs; the build after the wait needs most of that.
+const MAX_WAIT_MS = Number(process.env.HOBO_CI_DEPS_BUILD_WAIT_MS ?? 300_000);
 // How long a caller that cannot identify its own container waits on job containers.
 const UNKNOWN_SELF_MAX_WAIT_MS = Number(
 	process.env.HOBO_CI_DEPS_BUILD_WAIT_UNKNOWN_SELF_MS ?? 120_000,
 );
-const { inodes: INODE_HEADROOM, bytes: BYTE_HEADROOM } =
-	depsBuildHeadroomThresholds();
 
 function parsePositiveInt(name: string, value: number) {
 	if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value))
@@ -51,21 +50,6 @@ async function listRunningContainers(): Promise<RunningContainer[]> {
 	return parseRunningContainers(stdout);
 }
 
-async function dockerSamplePath(): Promise<string> {
-	let dockerRoot = "";
-	try {
-		const { stdout } = await exec("docker", [
-			"info",
-			"--format",
-			"{{.DockerRootDir}}",
-		]);
-		dockerRoot = stdout.trim();
-	} catch {
-		dockerRoot = "";
-	}
-	return dockerRoot && existsSync(dockerRoot) ? dockerRoot : "/";
-}
-
 function describeSelf(self: SelfContainer): string {
 	if (self.kind === "known") return `${self.name} (from ${self.source})`;
 	return self.kind === "none" ? "not in a container" : "unidentified container";
@@ -87,11 +71,9 @@ async function main() {
 			selfLogged = true;
 		}
 		const busy = busyJobContainers(containers, self);
-		const headroomOk = depsBuildHeadroomSatisfied(await dockerSamplePath());
 		const elapsed = Math.max(0, Date.now() - started);
 		const decision = windowDecision({
 			busyJobContainers: busy.length,
-			headroomOk,
 			self,
 			elapsedMs: elapsed,
 			maxWaitMs: MAX_WAIT_MS,
@@ -107,10 +89,7 @@ async function main() {
 			);
 			return;
 		}
-		const reason =
-			busy.length > 0
-				? `isolated job containers: ${busy.join(", ")}`
-				: `docker data root below measured deps headroom (need inodes>=${INODE_HEADROOM} bytes>=${BYTE_HEADROOM})`;
+		const reason = `isolated job containers: ${busy.join(", ")}`;
 		if (decision === "fail") {
 			console.error(
 				`timed out waiting for deps build window after ${elapsed} ms: ${reason}`,

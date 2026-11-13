@@ -295,7 +295,11 @@ fi
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
 "${prune_command[@]}" -f --keep-storage "$cap"
 sample_path="$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" || sample_path="/"
-if [[ "$before_iavail" =~ ^[0-9]+$ && "$before_avail" =~ ^[0-9]+$ ]]; then
+# A `host:` sample is read through a helper container; `df` in the recorder
+# cannot read it, so there is no peak to record from this job.
+if [[ "$sample_path" == host:* ]]; then
+  echo "deps build telemetry: skipped (Docker data root sampled via host mount)"
+elif [[ "$before_iavail" =~ ^[0-9]+$ && "$before_avail" =~ ^[0-9]+$ ]]; then
   node --experimental-strip-types --no-warnings --import "$root/scripts/lib/ts-source-resolve.mts" \
     "$root/scripts/lib/deps-build-headroom.mts" --record "$sample_path" "$before_iavail" "$before_avail" || true
 fi

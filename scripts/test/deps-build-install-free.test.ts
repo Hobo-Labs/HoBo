@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	loadDepsBuildTelemetry,
 	parseDepsBuildTelemetry,
+	saveDepsBuildTelemetry,
 } from "../lib/deps-build-headroom.mts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..");
@@ -104,5 +105,40 @@ describe("deps build telemetry read without a schema library", () => {
 				delete process.env.HOBO_CI_DEPS_BUILD_TELEMETRY_PATH;
 			else process.env.HOBO_CI_DEPS_BUILD_TELEMETRY_PATH = prior;
 		}
+	});
+
+	it("saves telemetry into a directory that does not exist yet", () => {
+		const root = mkdtempSync(join(tmpdir(), "deps-telemetry-"));
+		roots.push(root);
+		const path = join(root, "fresh-hobo-home", "ci", "telemetry.json");
+		const prior = process.env.HOBO_CI_DEPS_BUILD_TELEMETRY_PATH;
+		process.env.HOBO_CI_DEPS_BUILD_TELEMETRY_PATH = path;
+		try {
+			saveDepsBuildTelemetry({ peakDockerInodes: 1, updatedAtMs: 2 });
+			assert.deepEqual(loadDepsBuildTelemetry(), {
+				peakDockerInodes: 1,
+				updatedAtMs: 2,
+			});
+		} finally {
+			if (prior === undefined)
+				delete process.env.HOBO_CI_DEPS_BUILD_TELEMETRY_PATH;
+			else process.env.HOBO_CI_DEPS_BUILD_TELEMETRY_PATH = prior;
+		}
+	});
+});
+
+describe("build-deps.sh peak recording", () => {
+	it("does not hand the recorder a host: sample path df cannot read", () => {
+		const build = readFileSync(
+			join(
+				REPO_ROOT,
+				"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
+			),
+			"utf8",
+		);
+		const guard = build.indexOf('if [[ "$sample_path" == host:* ]]; then');
+		const record = build.indexOf('deps-build-headroom.mts" --record');
+		assert.ok(guard > -1, "host: guard missing");
+		assert.ok(record > guard, "--record must sit behind the host: guard");
 	});
 });

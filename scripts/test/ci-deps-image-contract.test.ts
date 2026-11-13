@@ -754,11 +754,23 @@ describe("CI deps publisher contract", () => {
 		const login = publish.indexOf("docker login ghcr.io");
 		const manifest = publish.indexOf('docker manifest inspect "$image"');
 		const local = publish.indexOf("docker image inspect hobo-ci-deps:local");
-		includes(
-			read(".github/workflows/hobo-ci.yml"),
-			"scripts/ci/wait-deps-build-window.mts",
-		);
+		const hoboCi = read(".github/workflows/hobo-ci.yml");
+		includes(hoboCi, "scripts/ci/wait-deps-build-window.mts");
 		includes(publish, "scripts/ci/wait-deps-build-window.mts");
+		// The wait leaves most of a 20-minute job for the build that follows it.
+		const waitStep = hoboCi.slice(
+			hoboCi.indexOf("- name: Wait for other isolated jobs"),
+			hoboCi.indexOf("scripts/ci/wait-deps-build-window.mts"),
+		);
+		includes(waitStep, 'HOBO_CI_DEPS_BUILD_WAIT_MS: "300000"');
+		includes(
+			publish,
+			'HOBO_CI_DEPS_BUILD_WAIT_MS="${HOBO_CI_DEPS_BUILD_WAIT_MS:-300000}"',
+		);
+		includes(
+			read("scripts/ci/wait-deps-build-window.mts"),
+			"process.env.HOBO_CI_DEPS_BUILD_WAIT_MS ?? 300_000",
+		);
 		const build = publish.indexOf(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh",
 		);
