@@ -15,6 +15,11 @@ export const SECRET_STORE_ERROR_CODES = [
 	"SECRET_STORE_PROVIDER_FAILED",
 	/** The store exists but the relay cannot read it yet (runtime binding designed only). */
 	"SECRET_STORE_RUNTIME_BINDING_UNBUILT",
+	/**
+	 * GitHub did not say which OIDC subject the repository's tokens carry, so
+	 * no workload trust is written (fail closed rather than guess a format).
+	 */
+	"SECRET_STORE_OIDC_SUBJECT_UNRESOLVED",
 	/** Ownership could not be verified through the provider. */
 	"SECRET_STORE_CLAIM_UNVERIFIED",
 ] as const;

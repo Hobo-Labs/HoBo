@@ -1,7 +1,7 @@
 ---
 type: CI Performance Finding
 title: "Finding 145: fleet verdict channel operating record"
-description: "Four CI signals were built and unit-tested on both sides but never seen carrying a value in production, and each failed into a default without telling anyone. Plan 0025 makes the relay the only judge of whether the fleet can take a run; this finding is its operating record, with the evidence gates of plan section 6.10 filled in as each is passed."
+description: "Four CI signals were built and unit-tested on both sides but never seen carrying a value in production, and each failed into a default without telling anyone. ADR-0180 makes the relay the only judge of whether the fleet can take a run; this finding is its operating record, with the evidence gates of its operating checklist filled in as each is passed."
 tags: [hobo, ci, routing, fleet, relay, verdict, monitoring, operations]
 ---
 
@@ -9,14 +9,15 @@ tags: [hobo, ci, routing, fleet, relay, verdict, monitoring, operations]
 
 **Status:** closed without a gate passed. Built in the stack `sdlc/routing-01` to `sdlc/routing-07`; the
 hosted verdict channel was then retired before any gate of the operating checklist was passed
-([plan 0026](../../plans/0026-relay-routing-slips.md), section 3.9; [ADR-0181](../../design/adr/routing-slips.md#adr-0181)):
+([ADR-0181](../../design/adr/routing-slips.md#adr-0181), which supersedes ADR-0180's hosted transport):
 its routes answer 404 and its store, reporter and enrollment are removed. The rows below stay unfilled as the
 record of what was never observed.
 
-Design: [plan 0025](../../plans/0025-relay-owned-runner-routing.md). Authority:
-[ADR-0180](../../design/adr/fleet-verdict.md#adr-0180-amendment). Runbooks:
+Design and authority:
+[ADR-0180](../../design/adr/fleet-verdict.md#adr-0180-amendment) and its
+[routing rules amendment](../../design/adr/fleet-verdict.md#adr-0180-rules). Runbooks:
 [Fleet verdicts (retired)](../../../packages/ci-vercel/README.md#fleet-verdicts-retired). Monitor: the CI health
-monitor, `docs/ci/health-monitor.md` (layer 05 of the stack).
+monitor, [`docs/ci/health-monitor.md`](../health-monitor.md).
 
 ## Evidence
 
@@ -39,14 +40,14 @@ consumer then fell back silently to a default.
 
 ## Fix
 
-- **The relay decides, workflows ask** (plan 0025 sections 6.1–6.5). The box relay reports a fleet label
+- **The relay decides, workflows ask** (ADR-0180 and its amendments). The box relay reports a fleet label
   blocked only while it is idle, admission would still refuse a job, and nothing else can take it. Reports are
   signed; the hosted relay keeps them, agrees them unanimously among enrolled reporters, bounds the blocked
   time with a daily allowance, and serves the verdict. The route job asks it; the main gate follows the route
   and asks again before shards.
-- **Loud fallbacks** (6.6). Every fallback leaves a titled annotation; `ci-health.yml` reads them every two
+- **Loud fallbacks** ([CI health monitor](../health-monitor.md)). Every fallback leaves a titled annotation; `ci-health.yml` reads them every two
   hours and opens an issue per breach.
-- **Retirement** (6.8). The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` publishers are removed; no
+- **Retirement** ([ADR-0180, Retirement](../../design/adr/fleet-verdict.md#adr-0180-retirement)). The `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` publishers are removed; no
   workflow may read a fleet variable (lint).
 - **The smoke check probes the public origin.** `relay-deploy.yml` requires the verdict read at the origin
   `.hobo/ci.json` names to answer a verdict for this repository.
@@ -56,7 +57,7 @@ consumer then fell back silently to a default.
 
 ## Operating record
 
-Plan section 6.10, in order. Each gate's evidence must hold before the next step starts.
+The operating checklist, in order. Each gate's evidence must hold before the next step starts.
 
 | Step | Do | Evidence before the next step | Measured | Date | Link |
 | --- | --- | --- | --- | --- | --- |
@@ -68,7 +69,7 @@ Plan section 6.10, in order. Each gate's evidence must hold before the next step
 | G6 | Seven days | H6 zero, H8 and H10 within bound | | | |
 | G7 | Delete the repository variables `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` | — | | | |
 
-**Operating outcomes** (plan section 8), measured at the gates above:
+**Operating outcomes**, measured at the gates above:
 
 | # | Outcome | Target | Proven at | Measured |
 | --- | --- | --- | --- | --- |

@@ -46,12 +46,24 @@ outputs:
   shard_runner:
     description: The runs-on label for the main gate's shards (the run's class).
     value: ${{ steps.route.outputs.shard_runner }}
+  box_runner:
+    description: >-
+      runnerRouting.labels.box when committed runnerRouting.boxRunner is true,
+      else empty: the label a pull request's deps-image job asks for.
+    value: ${{ steps.route.outputs.box_runner }}
   attested:
     description: "`true` when a signed local run was verified for the checked-out tree, else `false`."
     value: ${{ steps.attest.outputs.attested || 'false' }}
   attested-jobs:
     description: JSON array of the job ids that run covers; `[]` when there is none.
     value: ${{ steps.attest.outputs.attested-jobs || '[]' }}
+  merge-queue-green:
+    description: >-
+      `true` on a push to main whose tree a successful merge_group run of this
+      workflow already tested (merge-queue-reuse.mts, when the workflow checked
+      that script out), else `false`. Committed
+      runnerRouting.mainGate.reuseMergeQueue `false` turns reuse off.
+    value: ${{ steps.reuse.outputs.reuse || 'false' }}
 runs:
   using: composite
   steps:
@@ -140,3 +152,47 @@ runs:
         "${node_bin}" --no-warnings scripts/ci/route-runner.mts \
           --route "${route}" --include-own-run "${include_own_run}" --attested "${attested}" \
           || without_a_decision "the routing script failed"
+    # Never fails and never blocks: anything short of a verified green
+    # merge-queue run of this tree is reuse=false, and main runs its full gate.
+    - id: reuse
+      # A second ask later in a run only re-reads the fleet; the reuse answer is the first one.
+      if: inputs.include-own-run != 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        HEAD_SHA: ${{ github.sha }}
+        HEAD_TREE: ${{ github.event.head_commit.tree_id }}
+      run: |
+        set -uo pipefail
+        no_reuse() {
+          echo "merge-queue reuse: no: $1"
+          echo "reuse=false" >> "$GITHUB_OUTPUT"
+        }
+        if [ ! -f scripts/ci/merge-queue-reuse.mts ]; then
+          no_reuse "this workflow does not reuse merge-queue results"
+          exit 0
+        fi
+        if [ "${GITHUB_EVENT_NAME}" != "push" ] || [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+          no_reuse "not a push to main"
+          exit 0
+        fi
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          no_reuse "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        # The script writes the output itself; if it dies first, say no here.
+        outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
+        if ! "${node_bin}" --no-warnings scripts/ci/merge-queue-reuse.mts \
+          || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
+          no_reuse "the reuse check failed"
+        fi

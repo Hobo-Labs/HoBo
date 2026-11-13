@@ -137,7 +137,7 @@ reads the box relay's routing slip, a git ref, with its own token
 ([ADR-0181](./adr/routing-slips.md#adr-0181)); a missing or expired slip
 changes nothing, and a job already queued never touches it. The hosted relay
 is not asked: its fleet verdict routes were retired
-([plan 0026](../plans/0026-relay-routing-slips.md), section 3.9).
+([ADR-0181](./adr/routing-slips.md#adr-0181)).
 
 The one setting that would tie a worker to the hosted relay is
 `HOBO_CI_JOB_ADMISSION=push`. It is not a default, and a mesh does not need
@@ -587,7 +587,7 @@ interface.
 | 6 | The advertisement as a protobuf and CUE record (`MeshAdvert`), read as protobuf JSON at the NATS boundary; an older node's advertisement still parses | Done |
 | 8 | Reporting: every node (worker, local runner, relay host) advertises availability, capacity and trust; one list on the relay's HTTP route, its MCP tool and resource, and `hobo ci status`; measured free disk; reliability kept in the node's journal | Done; needs a second box to run for real |
 | 9 | Trust: a per-node Ed25519 identity, signed advertisements, a trusted-key set in the mesh's configuration, `invalid` nodes never ranked | Done. No attestation of what a node runs, no key rotation or revocation list, and the buckets' access control is NATS's, not the mesh's |
-| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | Superseded by the routing slip ([ADR-0181](./adr/routing-slips.md#adr-0181)): the hosted verdict routes, stores, signed reporter and client were removed (plan 0026, 3.9). The older `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables are no longer written or read |
+| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | Superseded by the routing slip ([ADR-0181](./adr/routing-slips.md#adr-0181)): the hosted verdict routes, stores, signed reporter and client were removed (ADR-0181). The older `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables are no longer written or read |
 
 A worker with no `HOBO_CI_NATS_URL` behaves exactly as it did. With it and no
 peers, it ranks itself first for every job and takes them all, so turning the

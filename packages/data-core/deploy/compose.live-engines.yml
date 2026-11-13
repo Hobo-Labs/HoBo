@@ -48,9 +48,13 @@ services:
       - "127.0.0.1:57017:27017"
     healthcheck:
       # Initiates the set on first start, then reports healthy once this
-      # member is the writable primary.
+      # member is the writable primary. mongosh keeps its lock files under
+      # $HOME, which the image sets to /data/db; the entrypoint chowns that
+      # tree at start-up and exits if a lock file vanishes under it.
       test:
         - CMD
+        - env
+        - HOME=/tmp
         - mongosh
         - --quiet
         - --eval

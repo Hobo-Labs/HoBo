@@ -62,6 +62,9 @@
     },
     "runnerRouting": {
       "$ref": "#/$defs/RunnerRouting"
+    },
+    "turboCache": {
+      "$ref": "#/$defs/TurboCache"
     }
   },
   "additionalProperties": false,
@@ -1176,20 +1179,26 @@
         "localRunner": {
           "$ref": "#/$defs/__schema95"
         },
-        "mainWorkspaceParallelCap": {
+        "boxRunner": {
           "$ref": "#/$defs/__schema96"
         },
-        "verdict": {
+        "mainWorkspaceParallelCap": {
           "$ref": "#/$defs/__schema97"
         },
-        "box": {
+        "mainGate": {
           "$ref": "#/$defs/__schema98"
         },
+        "verdict": {
+          "$ref": "#/$defs/__schema99"
+        },
+        "box": {
+          "$ref": "#/$defs/__schema100"
+        },
         "externalPools": {
-          "$ref": "#/$defs/__schema107"
+          "$ref": "#/$defs/__schema109"
         },
         "retiredVariables": {
-          "$ref": "#/$defs/__schema109"
+          "$ref": "#/$defs/__schema111"
         }
       },
       "required": [
@@ -1197,7 +1206,9 @@
         "queue",
         "labels",
         "localRunner",
+        "boxRunner",
         "mainWorkspaceParallelCap",
+        "mainGate",
         "verdict",
         "box",
         "externalPools",
@@ -1248,13 +1259,17 @@
         },
         "github": {
           "$ref": "#/$defs/__schema94"
+        },
+        "box": {
+          "$ref": "#/$defs/__schema94"
         }
       },
       "required": [
         "fleet",
         "trunk",
         "local",
-        "github"
+        "github",
+        "box"
       ],
       "additionalProperties": false
     },
@@ -1266,11 +1281,26 @@
       "type": "boolean"
     },
     "__schema96": {
+      "type": "boolean"
+    },
+    "__schema97": {
       "type": "integer",
       "minimum": 1,
       "maximum": 8
     },
-    "__schema97": {
+    "__schema98": {
+      "type": "object",
+      "properties": {
+        "reuseMergeQueue": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reuseMergeQueue"
+      ],
+      "additionalProperties": false
+    },
+    "__schema99": {
       "type": "object",
       "properties": {
         "minFreeRunners": {
@@ -1302,32 +1332,32 @@
       ],
       "additionalProperties": false
     },
-    "__schema98": {
+    "__schema100": {
       "type": "object",
       "properties": {
         "slots": {
-          "$ref": "#/$defs/__schema99"
-        },
-        "trunkSlots": {
-          "$ref": "#/$defs/__schema100"
-        },
-        "trunkLend": {
           "$ref": "#/$defs/__schema101"
         },
-        "prCapWithTrunk": {
+        "trunkSlots": {
           "$ref": "#/$defs/__schema102"
         },
-        "mergeGroupLeases": {
+        "trunkLend": {
           "$ref": "#/$defs/__schema103"
         },
-        "capacityVolatilityMb": {
+        "prCapWithTrunk": {
           "$ref": "#/$defs/__schema104"
         },
-        "trunkHeadroomFleetDeferMs": {
+        "mergeGroupLeases": {
           "$ref": "#/$defs/__schema105"
         },
-        "jobAdmission": {
+        "capacityVolatilityMb": {
           "$ref": "#/$defs/__schema106"
+        },
+        "trunkHeadroomFleetDeferMs": {
+          "$ref": "#/$defs/__schema107"
+        },
+        "jobAdmission": {
+          "$ref": "#/$defs/__schema108"
         }
       },
       "required": [
@@ -1342,17 +1372,17 @@
       ],
       "additionalProperties": false
     },
-    "__schema99": {
+    "__schema101": {
       "type": "integer",
       "minimum": 1,
       "maximum": 8
     },
-    "__schema100": {
+    "__schema102": {
       "type": "integer",
       "minimum": 0,
       "maximum": 7
     },
-    "__schema101": {
+    "__schema103": {
       "anyOf": [
         {
           "type": "number",
@@ -1364,41 +1394,41 @@
         }
       ]
     },
-    "__schema102": {
+    "__schema104": {
       "type": "integer",
       "minimum": 0,
       "maximum": 8
     },
-    "__schema103": {
+    "__schema105": {
       "type": "integer",
       "minimum": 1,
       "maximum": 8
     },
-    "__schema104": {
+    "__schema106": {
       "type": "integer",
       "minimum": 0,
       "maximum": 1048576
     },
-    "__schema105": {
+    "__schema107": {
       "type": "integer",
       "minimum": 1000,
       "maximum": 3600000
     },
-    "__schema106": {
+    "__schema108": {
       "type": "string",
       "enum": [
         "pull",
         "push"
       ]
     },
-    "__schema107": {
+    "__schema109": {
       "maxItems": 32,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema108"
+        "$ref": "#/$defs/__schema110"
       }
     },
-    "__schema108": {
+    "__schema110": {
       "type": "object",
       "properties": {
         "labels": {
@@ -1427,16 +1457,41 @@
       ],
       "additionalProperties": false
     },
-    "__schema109": {
+    "__schema111": {
       "maxItems": 32,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema110"
+        "$ref": "#/$defs/__schema112"
       }
     },
-    "__schema110": {
+    "__schema112": {
       "type": "string",
       "pattern": "^HOBO_CI_[A-Z0-9_]{1,60}$"
+    },
+    "TurboCache": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "$ref": "#/$defs/__schema113"
+        }
+      },
+      "required": [
+        "api"
+      ],
+      "additionalProperties": false
+    },
+    "__schema113": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": ""
+        },
+        {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https:\\/\\/[A-Za-z0-9._:/-]+$"
+        }
+      ]
     }
   },
   "$id": "https://raw.githubusercontent.com/Hobo-Labs/HoBo/main/packages/ci-gh-actions/schema/ci-project.schema.json",

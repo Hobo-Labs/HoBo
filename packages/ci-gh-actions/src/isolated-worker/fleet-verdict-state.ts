@@ -1,9 +1,9 @@
 /**
  * What the box relay keeps between samples when it decides a routing slip
- * (ADR-0181; the hysteresis of ADR-0180 and plan 0025, 6.2): the holds that
+ * (ADR-0181; the hysteresis of ADR-0180's amendment, item 2): the holds that
  * turn samples into a held refusal, and the jobs runners took lately. The
  * hosted relay's report schedule and sequence went with its verdict routes
- * (plan 0026, 3.9).
+ * (ADR-0181).
  *
  * | Rule           | Value                                 |
  * | -------------- | ------------------------------------- |

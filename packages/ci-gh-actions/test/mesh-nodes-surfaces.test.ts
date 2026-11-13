@@ -421,7 +421,7 @@ describe("the MCP server's list_mesh_nodes and hobo-ci://mesh/nodes", () => {
 	});
 });
 
-describe("the retired fleet verdict routes on a relay host (plan 0026, 3.9)", () => {
+describe("the retired fleet verdict routes on a relay host (ADR-0181)", () => {
 	it("answers 404 for every /v1/fleet/ path, with or without a credential", async () => {
 		const h = await relay();
 		for (const path of [

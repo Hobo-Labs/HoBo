@@ -1,0 +1,264 @@
+{
+	"consumer": {
+		"name": "HoboCdPackageRegistryDriver"
+	},
+	"provider": {
+		"name": "PackageRegistries"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "4.0.0"
+		},
+		"evidence": "Hand-authored registry metadata exchanges per ecosystem (npm packument, PyPI JSON API, crates.io sparse index, RubyGems versions API, NuGet flat container, Maven maven-metadata.xml and .sha256 sidecar) plus package downloads hashed when no sha256 is published. Generated from test/sources/package-fixtures.ts and verified by contracts/sources.consumer.test.ts."
+	},
+	"interactions": [
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /@acme%2fweb -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.npmjs.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/@acme%2fweb",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"name\":\"@acme/web\",\"versions\":{\"1.0.0\":{\"dist\":{\"tarball\":\"https://registry.npmjs.org/@acme/web/-/web-1.0.0.tgz\",\"integrity\":\"sha512-ijpex+t7X23oJvEWGFGrt2z8CMyMIZY3UxkRBkjqzO4GSmqBNlyfNBOApnKlNPaJp/sW2pj+KN+TQZ8BOu8r5A==\"}},\"1.1.0-rc.1\":{\"dist\":{\"tarball\":\"https://registry.npmjs.org/@acme/web/-/web-1.1.0-rc.1.tgz\",\"integrity\":\"sha512-ijpex+t7X23oJvEWGFGrt2z8CMyMIZY3UxkRBkjqzO4GSmqBNlyfNBOApnKlNPaJp/sW2pj+KN+TQZ8BOu8r5A==\"}}}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /@acme/web/-/web-1.0.0.tgz -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://registry.npmjs.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/@acme/web/-/web-1.0.0.tgz",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "H4sIAP+AAH8=",
+					"contentType": "application/octet-stream",
+					"encoded": "base64"
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /pypi/acme-web/json -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://pypi.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/pypi/acme-web/json",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"releases\":{\"2.0.0\":[{\"filename\":\"acme_web-2.0.0-py3-none-any.whl\",\"url\":\"https://files.pythonhosted.org/a.whl\",\"packagetype\":\"bdist_wheel\",\"digests\":{\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\"}},{\"filename\":\"acme-web-2.0.0.tar.gz\",\"url\":\"https://files.pythonhosted.org/a.tar.gz\",\"packagetype\":\"sdist\",\"digests\":{\"sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\"}}],\"2.1.0\":[{\"filename\":\"acme-web-2.1.0.tar.gz\",\"url\":\"https://files.pythonhosted.org/b.tar.gz\",\"packagetype\":\"sdist\",\"yanked\":true,\"digests\":{\"sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\"}}]}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /ac/me/acme-web -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://index.crates.io"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/ac/me/acme-web",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"name\":\"acme-web\",\"vers\":\"0.1.0\",\"cksum\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"yanked\":false}\n{\"name\":\"acme-web\",\"vers\":\"0.2.0\",\"cksum\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"yanked\":true}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /api/v1/versions/acme-web.json -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://rubygems.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/versions/acme-web.json",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "[{\"number\":\"3.0.0\",\"sha\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"platform\":\"ruby\"},{\"number\":\"3.0.0\",\"sha\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"platform\":\"java\"}]",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v3-flatcontainer/acme.web/index.json -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://api.nuget.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v3-flatcontainer/acme.web/index.json",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "{\"versions\":[\"4.0.0\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /v3-flatcontainer/acme.web/4.0.0/acme.web.4.0.0.nupkg -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://api.nuget.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/v3-flatcontainer/acme.web/4.0.0/acme.web.4.0.0.nupkg",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "H4sIAP+AAH8=",
+					"contentType": "application/octet-stream",
+					"encoded": "base64"
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /maven2/com/acme/web/maven-metadata.xml -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://repo1.maven.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/maven2/com/acme/web/maven-metadata.xml",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "<metadata><versioning><versions><version>5.0.0</version><version>5.1.0</version></versions></versioning></metadata>",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /maven2/com/acme/web/5.0.0/web-5.0.0.jar.sha256 -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://repo1.maven.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/maven2/com/acme/web/5.0.0/web-5.0.0.jar.sha256",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "8888888888888888888888888888888888888888888888888888888888888888\n",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /maven2/com/acme/web/5.1.0/web-5.1.0.jar.sha256 -> 404",
+			"providerStates": [
+				{
+					"name": "origin https://repo1.maven.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/maven2/com/acme/web/5.1.0/web-5.1.0.jar.sha256",
+				"headers": {}
+			},
+			"response": {
+				"status": 404,
+				"headers": {}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET /maven2/com/acme/web/5.1.0/web-5.1.0.jar -> 200",
+			"providerStates": [
+				{
+					"name": "origin https://repo1.maven.org"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/maven2/com/acme/web/5.1.0/web-5.1.0.jar",
+				"headers": {}
+			},
+			"response": {
+				"status": 200,
+				"headers": {},
+				"body": {
+					"content": "H4sIAP+AAH8=",
+					"contentType": "application/octet-stream",
+					"encoded": "base64"
+				}
+			}
+		}
+	]
+}

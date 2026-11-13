@@ -473,10 +473,37 @@ function stageSite(
 	);
 }
 
+/**
+ * Build noise left out of a deploy image's context: source maps, test
+ * directories and named documents. Two wider rules are left out on purpose.
+ * A file-name infix (`*.test.*`, `*.spec.*`) also drops data a package ships
+ * to be read at run time, such as the `app.test.ts.tpl` starter templates in
+ * `@hobo/patterns`. Every `*.md` also drops the `LICENSE.md` texts that have
+ * to travel with the third-party code in the image.
+ */
+const DEPLOY_CONTEXT_NOISE = [
+	"app/**/*.map",
+	"app/**/test/**",
+	"app/**/__tests__/**",
+	"app/**/README.md",
+	"app/**/readme.md",
+	"app/**/CHANGELOG.md",
+	"app/**/HISTORY.md",
+	"app/**/DESIGN.md",
+] as const;
+
 export function releaseOciDockerignore(spec: ReleaseOciStageSpec): string {
 	switch (spec.kind) {
 		case "deploy":
-			return "*\n!.dockerignore\n!app/\n!app/**\n!app/bin/\n!app/bin/**\n";
+			return `${[
+				"*",
+				"!.dockerignore",
+				"!app/",
+				"!app/**",
+				"!app/bin/",
+				"!app/bin/**",
+				...DEPLOY_CONTEXT_NOISE,
+			].join("\n")}\n`;
 		case "sdk":
 			return "*\n!.dockerignore\n!artifacts/\n!artifacts/**\n";
 		case "site":
@@ -484,6 +511,52 @@ export function releaseOciDockerignore(spec: ReleaseOciStageSpec): string {
 		case "mcp":
 			return `*\n!.dockerignore\n!${spec.markerPath}\n`;
 	}
+}
+
+const REGEXP_SPECIAL = new Set("\\^$.|+()[]{}");
+
+function dockerignoreRuleMatcher(rule: string): RegExp {
+	let source = "";
+	for (let index = 0; index < rule.length; index++) {
+		const char = rule.charAt(index);
+		if (char === "*" && rule.charAt(index + 1) === "*") {
+			index++;
+			if (rule.charAt(index + 1) === "/") {
+				index++;
+				source += "(?:.*/)?";
+			} else source += ".*";
+		} else if (char === "*") source += "[^/]*";
+		else if (char === "?") source += "[^/]";
+		else source += REGEXP_SPECIAL.has(char) ? `\\${char}` : char;
+	}
+	return new RegExp(`^${source}$`, "u");
+}
+
+/**
+ * Whether Docker leaves `path` out of a build context that has this
+ * `.dockerignore`: the last rule matching the path or one of its parent
+ * directories decides, and a `!` rule puts the path back.
+ */
+export function releaseOciDockerignoreExcludes(
+	dockerignore: string,
+	path: string,
+): boolean {
+	const segments = path.split("/").filter(Boolean);
+	const candidates = segments.map((_, index) =>
+		segments.slice(0, index + 1).join("/"),
+	);
+	let excluded = false;
+	for (const line of dockerignore.split("\n")) {
+		const rule = line.trim();
+		if (rule === "" || rule.startsWith("#")) continue;
+		const keep = rule.startsWith("!");
+		const matcher = dockerignoreRuleMatcher(
+			(keep ? rule.slice(1) : rule).replace(/\/+$/u, ""),
+		);
+		if (candidates.some((candidate) => matcher.test(candidate)))
+			excluded = !keep;
+	}
+	return excluded;
 }
 
 export function releaseOciAffectedImageIds(

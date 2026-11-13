@@ -10,12 +10,11 @@ tags: [hobo, ci, relay, routing, fleet, monitoring]
 Every fallback to a default must leave a record something reads. The monitor is that reader: it turns the
 route job's notices, the fleet's queue waits and paid minutes into issues,
 so a signal that stops carrying a value is raised within two monitor runs instead of failing silently. Design:
-[plan 0025, section 6.6](../plans/0025-relay-owned-runner-routing.md); routing authority: the box relay's
-routing slip ([ADR-0181](../design/adr/routing-slips.md#adr-0181),
-[plan 0026](../plans/0026-relay-routing-slips.md)), which replaced the hosted relay's verdict
+[ADR-0180](../design/adr/fleet-verdict.md#adr-0180-rules); routing authority: the box relay's
+routing slip ([ADR-0181](../design/adr/routing-slips.md#adr-0181)), which replaced the hosted relay's verdict
 ([ADR-0180](../design/adr/fleet-verdict.md#adr-0180)) as what route jobs read. It asks no relay: H4
 (reporter silent) and H10 (allowance spent) read the hosted relay's reporter status route, which was retired
-with the verdict ([plan 0026](../plans/0026-relay-routing-slips.md), section 3.9), so they are no longer
+with the verdict ([ADR-0181](../design/adr/routing-slips.md#adr-0181)), so they are no longer
 computed and their numbers are not reused.
 
 | Piece | Where |

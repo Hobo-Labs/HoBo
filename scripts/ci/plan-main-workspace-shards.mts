@@ -36,8 +36,8 @@ import { loadWorkspaceDurations } from "./workspace-test-durations.mts";
 
 /**
  * How many shards the plan sizes for at once. Committed routing policy
- * (`runnerRouting.mainWorkspaceParallelCap` in `.hobo/ci.json`, plan 0026
- * section 3.4), not a reading of the fleet and not an environment variable:
+ * (`runnerRouting.mainWorkspaceParallelCap` in `.hobo/ci.json`, ADR-0181),
+ * not a reading of the fleet and not an environment variable:
  * where the shards run is the route's decision (the plan job reads the
  * routing slip, else the queue, again before them).
  */
@@ -109,12 +109,38 @@ function savePlanCache(head: string, outputs: Record<string, string>): void {
 	writeFileSync(join(CACHE_DIR, "manifest.json"), JSON.stringify({ head }));
 }
 
+/** What the plan reports when the merge queue's result stands in for main's tests. */
+export const EMPTY_PLAN_OUTPUTS = {
+	main_base: "",
+	main_tests: "",
+	main_scope: "",
+	shards: "[]",
+} as const;
+
+/** Only a push reuses the merge queue; schedule and dispatch always plan. */
+export function reusesMergeQueue(
+	setting: string | undefined,
+	eventName: string,
+): boolean {
+	return eventName === "push" && setting?.trim() === "true";
+}
+
 async function main(): Promise<void> {
 	// Install-free on the worker: turbo via mise, no pnpm install for planning.
 	process.env.HOBO_TURBO_INVOKER ??= "mise";
 	const eventName = process.env.EVENT_NAME ?? "";
 	const pushBefore = process.env.PUSH_BEFORE ?? "";
 	const head = process.env.HEAD_SHA ?? process.env.GITHUB_SHA ?? "";
+	// The merge queue already passed this tree (scripts/ci/merge-queue-reuse.mts):
+	// no shard runs, and nothing is cached, so a re-run with reuse off plans afresh.
+	if (reusesMergeQueue(process.env.MAIN_REUSE_MERGE_QUEUE, eventName)) {
+		console.error(
+			"main gate plan: merge queue passed this tree; no workspace shards",
+		);
+		for (const [name, value] of Object.entries(EMPTY_PLAN_OUTPUTS))
+			setOutput(name, value);
+		return;
+	}
 	if (head && tryRestorePlanCache(head)) return;
 	const repository = process.env.GITHUB_REPOSITORY ?? "";
 	const token = process.env.GITHUB_TOKEN?.trim() ?? "";

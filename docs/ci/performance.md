@@ -10,8 +10,7 @@ tags: [hobo, ci, performance]
 Goal: PR, merge-queue and main runs of **HoBo CI Fabric** (`.github/workflows/hobo-ci.yml`) finish in under
 five minutes of wall time. This note records what the data says, what has been changed, and what is still in
 the way. Day-to-day tuning knobs live in [`../maintenance/ci-performance.md`](../maintenance/ci-performance.md);
-the box worker runbook is [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md). The plan for
-prebuilt checkout and install layers is [`oci-layer-plan.md`](./oci-layer-plan.md).
+the box worker runbook is [`packages/ci/RUNNER-QUEUE.md`](../../packages/ci/RUNNER-QUEUE.md).
 
 ## Findings
 
@@ -140,7 +139,12 @@ unindexed new finding files as notices.
 - [Finding 128: light trunk plan and immediate fleet pickup for deps](./findings/0128-light-trunk-plan-and-immediate-fleet-pickup-for-deps.md)
 - [Finding 129: cancelled release run still queued publish legs](./findings/0129-cancelled-release-run-still-queued-publish-legs.md)
 - [Finding 130: release OCI matrix legs missed main-train trunk admission](./findings/0130-release-oci-matrix-legs-missed-main-train-trunk-admission.md)
+- [Finding 131: main shard trunk slot ceiling ignored parallel launch capacity](./findings/0131-main-shard-trunk-slot-ceiling-ignored-parallel-launch-capacity.md)
+- [Finding 132: main gate finish immediate fleet pickup](./findings/0132-main-gate-finish-immediate-fleet-pickup.md)
+- [Finding 133: route job GitHub-hosted start latency](./findings/0133-route-job-github-hosted-start-latency.md)
+- [Finding 134: main trunk pickup delay after route](./findings/0134-main-trunk-pickup-delay-after-route.md)
 - [Finding 135: main gate and shard job wall profiling](./findings/0135-main-gate-and-shard-job-wall-profiling.md)
+- [Finding 137: main gate plan preflight mise](./findings/0137-main-gate-plan-preflight-mise.md)
 - [Finding 138: release attest missing digest after cancel](./findings/0138-release-attest-missing-digest-after-cancel.md)
 - [Finding 139: main gate finish empty shard matrix](./findings/0139-main-gate-finish-empty-shard-matrix.md)
 - [Finding 140: main shard tsc codegen memory contention](./findings/0140-main-shard-tsc-codegen-memory-contention.md)
@@ -153,6 +157,10 @@ unindexed new finding files as notices.
 - [Finding 147: merge queue shard timed out a one-second test on a stalled box](./findings/0147-merge-queue-shard-timed-out-a-one-second-test-on-a-stalled-box.md)
 - [Finding 148: jit runner cross job custody kill](./findings/0148-jit-runner-cross-job-custody-kill.md)
 - [Finding 149: routing slip facts, main on the queue rule, hosted relay down, box on c7ec8d449](./findings/0149-routing-slip-facts-main-on-the-queue-rule-hosted-relay-down-box-on-c7ec8d449.md)
+- [Finding 151: deps image builds take a storage grant on an idle box](./findings/0151-deps-image-builds-take-a-storage-grant-on-an-idle-box.md)
+- [Finding 152: two-second job poll and hard-linked deps staging](./findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)
+- [Finding 153: deps build window, release-image GC, and leaner release contexts](./findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)
+- [Finding 154: main waited for runners between jobs](./findings/0154-main-waited-for-runners-between-jobs.md)
 <!-- findings-index:end -->
 
 ## Data

@@ -11,6 +11,7 @@ const workflow = parse(
 const imageJob = workflow.jobs["ci-runner-image"];
 const mainGate = workflow.jobs["main-gate"];
 const mainFinish = workflow.jobs.main_gate_finish;
+const mainPlan = workflow.jobs["main-gate-plan"];
 const imageInputPrefixes = [
 	"mise.toml",
 	"mise.lock",
@@ -79,9 +80,10 @@ describe("Main full gate image dependency", () => {
 		}
 	});
 
-	it("runs full-history secret scans in main_gate_finish, never the image job", () => {
+	it("runs full-history secret scans in the plan job, never the gate, finish or image job", () => {
 		const mainNames = mainGate.steps.map((step) => step.name);
 		const finishNames = mainFinish.steps.map((step) => step.name);
+		const planNames = mainPlan.steps.map((step) => step.name);
 		const imageNames = imageJob.steps.map((step) => step.name);
 		const checkout = "Checkout (sparse S0, full history)";
 		const wait = "Secret scan (full history)";
@@ -97,10 +99,16 @@ describe("Main full gate image dependency", () => {
 		expect(preflightIndex).toBe(checkoutIndex + 1);
 		expect(mainNames).not.toContain(wait);
 		expect(mainNames).not.toContain("Workspace tests");
-		expect(finishNames).toContain(wait);
-		const waitStep = mainFinish.steps.find((step) => step.name === wait);
+		// Main full gate is skipped when the merge queue passed the tree, and
+		// finish runs no repository code, so the scan is a step of the one job
+		// every main run has (finding 154).
+		expect(finishNames).not.toContain(wait);
+		expect(planNames).toContain(wait);
+		const waitStep = mainPlan.steps.find((step) => step.name === wait);
 		expect(waitStep?.run).toContain("gitleaks-main-scan.mts --background");
 		expect(waitStep?.run).toContain("gitleaks-main-scan.mts --wait");
+		expect(waitStep?.if).toBeUndefined();
+		expect(mainPlan.steps.at(-1)).toBe(waitStep);
 		expect(imageNames).not.toContain(wait);
 		expect(imageJob.steps[0].with["fetch-depth"]).toBe(2);
 	});

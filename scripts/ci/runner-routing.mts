@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Committed routing policy and the routing slip, read without dependencies
- * (plan 0026, 3.4 and 3.5; ADR-0181).
+ * (ADR-0181).
  *
  * The route job runs from a sparse checkout with nothing installed, so this
  * file uses Node's built-ins only, in the style of
@@ -181,9 +181,17 @@ export type RunnerRouting = Readonly<{
 		trunk: string;
 		local: string;
 		github: string;
+		/** The box's own label, for the one job that builds in its Docker context. */
+		box: string;
 	}>;
 	localRunner: boolean;
+	/** Whether pull requests' deps-image job asks for `labels.box` (else the fleet label). */
+	boxRunner: boolean;
 	mainWorkspaceParallelCap: number;
+	mainGate: Readonly<{
+		/** `false` makes a push to main run its full gate even when the merge queue passed its tree. */
+		reuseMergeQueue: boolean;
+	}>;
 	verdict: Readonly<{
 		minFreeRunners: number;
 		enterMs: number;
@@ -218,14 +226,24 @@ function parseQueue(
 function parseLabels(
 	value: JsonValue | undefined,
 ): RunnerRouting["labels"] | undefined {
-	const fields = exactly(value, ["fleet", "trunk", "local", "github"]);
+	const fields = exactly(value, ["fleet", "trunk", "local", "github", "box"]);
 	const fleet = routingLabel(fields?.fleet);
 	const trunk = routingLabel(fields?.trunk);
 	const local = routingLabel(fields?.local);
 	const github = routingLabel(fields?.github);
-	return fleet && trunk && local && github
-		? { fleet, trunk, local, github }
+	const box = routingLabel(fields?.box);
+	return fleet && trunk && local && github && box
+		? { fleet, trunk, local, github, box }
 		: undefined;
+}
+
+function parseMainGate(
+	value: JsonValue | undefined,
+): RunnerRouting["mainGate"] | undefined {
+	const reuseMergeQueue = asBoolean(
+		exactly(value, ["reuseMergeQueue"])?.reuseMergeQueue,
+	);
+	return reuseMergeQueue !== undefined ? { reuseMergeQueue } : undefined;
 }
 
 function parseVerdict(
@@ -330,7 +348,9 @@ export function parseRunnerRouting(
 		"queue",
 		"labels",
 		"localRunner",
+		"boxRunner",
 		"mainWorkspaceParallelCap",
+		"mainGate",
 		"verdict",
 		"box",
 		"externalPools",
@@ -340,7 +360,9 @@ export function parseRunnerRouting(
 	const queue = parseQueue(top?.queue);
 	const labels = parseLabels(top?.labels);
 	const localRunner = asBoolean(top?.localRunner);
+	const boxRunner = asBoolean(top?.boxRunner);
 	const mainWorkspaceParallelCap = whole(top?.mainWorkspaceParallelCap, 1, 8);
+	const mainGate = parseMainGate(top?.mainGate);
 	const verdict = parseVerdict(top?.verdict);
 	const box = parseBox(top?.box);
 	const externalPools = listOf(top?.externalPools, 32, parsePool);
@@ -349,7 +371,9 @@ export function parseRunnerRouting(
 		queue &&
 		labels &&
 		localRunner !== undefined &&
+		boxRunner !== undefined &&
 		mainWorkspaceParallelCap !== undefined &&
+		mainGate &&
 		verdict &&
 		box &&
 		externalPools &&
@@ -359,7 +383,9 @@ export function parseRunnerRouting(
 				queue,
 				labels,
 				localRunner,
+				boxRunner,
 				mainWorkspaceParallelCap,
+				mainGate,
 				verdict,
 				box,
 				externalPools,
@@ -384,9 +410,15 @@ export function readRunnerRouting(
 	return parseRunnerRouting(asObject(parseJson(text))?.runnerRouting);
 }
 
-/** Every label a slip may name. */
-export function routingLabels(policy: RunnerRouting): ReadonlySet<string> {
-	return new Set(Object.values(policy.labels));
+/**
+ * Every label a slip may name: the four a run is routed to. The box label is
+ * one job's, chosen by `boxRunner`, never a run's route.
+ */
+export function routingLabels(
+	policy: Pick<RunnerRouting, "labels">,
+): ReadonlySet<string> {
+	const { fleet, trunk, local, github } = policy.labels;
+	return new Set([fleet, trunk, local, github]);
 }
 
 export type RoutingSlipRoute = Readonly<{

@@ -107,12 +107,13 @@ describe("main workspace affected-only", () => {
 		assert.match(dependent, /intersectScopedPlanWithTurboAffected/u);
 	});
 
-	it("runs the plan job beside the deps image job", () => {
+	it("runs the plan and main's deps layer check in one install-free job", () => {
 		const planStart = workflow.indexOf("  main-gate-plan:");
 		const mainStart = workflow.indexOf("  main-gate:", planStart);
 		const plan = workflow.slice(planStart, mainStart);
 		assert.match(plan, /plan-main-workspace-shards\.mts/u);
 		assert.match(plan, /needs: \[route, ci-runner-image\]/u);
+		assert.match(plan, /name: Promote verified deps image/u);
 		assert.doesNotMatch(plan, /pnpm-install\.mts/u);
 		assert.match(plan, /HOBO_TURBO_INVOKER: mise/u);
 	});

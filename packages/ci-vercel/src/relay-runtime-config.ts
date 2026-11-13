@@ -59,7 +59,7 @@ export function parseRelayRuntimeConfig(
 ): RelayRuntimeConfig {
 	// An empty entry reads as unset, as an empty environment variable does.
 	// A retired key is accepted and ignored: a store that still holds one
-	// starts the relay (plan 0026, section 3.9).
+	// starts the relay (ADR-0181).
 	const present = Object.fromEntries(
 		Object.entries(entries).filter(
 			([key, value]) => value !== "" && !RETIRED.has(key),

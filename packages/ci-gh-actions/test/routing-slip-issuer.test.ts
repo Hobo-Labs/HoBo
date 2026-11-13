@@ -88,7 +88,7 @@ function gitApi(
 	return { transport, calls, clock, commits };
 }
 
-describe("the routing slip decision (plan 0026, 3.3)", () => {
+describe("the routing slip decision (ADR-0181, decision 5)", () => {
 	it("sends every class to its fleet label while the fleet is open", () => {
 		expect(decide()).toEqual({
 			pr: { runner: "hobo", tier: "fleet", reason: "fleet-open" },
@@ -275,7 +275,7 @@ describe("writing the slip", () => {
 	});
 });
 
-describe("the issuer (plan 0026, 3.2)", () => {
+describe("the issuer (ADR-0181, decisions 1-2)", () => {
 	const flipping = () => {
 		let calls = 0;
 		return async (): Promise<RoutingSlipClasses> =>
@@ -451,7 +451,7 @@ describe("the budget", () => {
 	});
 });
 
-describe("the box's committed routing policy (plan 0026, 3.4)", () => {
+describe("the box's committed routing policy (ADR-0181, decision 4)", () => {
 	const root = fileURLToPath(new URL("../../..", import.meta.url));
 
 	it("reads runnerRouting from the checkout, and it equals the code's defaults", () => {

@@ -159,3 +159,42 @@ describe("cli docker memory peaks", () => {
 		).resolves.toBeUndefined();
 	});
 });
+
+describe("cli docker image pull (runner-host controller images)", () => {
+	const IMAGE = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"d".repeat(64)}`;
+
+	it("pulls an image reference with docker pull and nothing else", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-pull-"));
+		try {
+			const bin = join(dir, "docker");
+			const log = join(dir, "args");
+			writeFileSync(bin, `#!/bin/sh\nprintf '%s' "$*" > "${log}"\n`);
+			chmodSync(bin, 0o755);
+			const driver = createCliDockerDriver({ binary: bin, env: {} });
+			await driver.pull(IMAGE);
+			expect(readFileSync(log, "utf8")).toBe(`pull ${IMAGE}`);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses an option-shaped or whitespace image reference before docker runs", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "fake-docker-pull-bad-"));
+		try {
+			const bin = join(dir, "docker");
+			const log = join(dir, "args");
+			writeFileSync(bin, `#!/bin/sh\nprintf '%s' "$*" > "${log}"\n`);
+			chmodSync(bin, 0o755);
+			const driver = createCliDockerDriver({ binary: bin, env: {} });
+			await expect(driver.pull("--all-tags")).rejects.toThrow(
+				"invalid image reference",
+			);
+			await expect(driver.pull("a b")).rejects.toThrow(
+				"invalid image reference",
+			);
+			expect(() => readFileSync(log, "utf8")).toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});

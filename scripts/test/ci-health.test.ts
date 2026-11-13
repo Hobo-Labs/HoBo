@@ -161,7 +161,7 @@ describe("ci-health signals from recorded pages", () => {
 		assert.equal(breachReport.paidMinutes.byRefusal.queue, 159);
 	});
 
-	it("computes no reporter or allowance signal: the status route they read is retired (plan 0026, 3.9)", () => {
+	it("computes no reporter or allowance signal: the status route they read is retired (ADR-0181)", () => {
 		assert.deepEqual(Object.keys(clearReport.signals), [
 			"H1",
 			"H2",
@@ -608,7 +608,7 @@ describe("ci-health workflow", () => {
 		assert.match(workflow, /workflow_dispatch:\n {4}inputs:\n {6}dry-run:/);
 		for (const permission of ["actions: read", "checks: read", "issues: write"])
 			assert.match(workflow, new RegExp(`^  ${permission}$`, "m"));
-		// No OIDC token: no relay is asked (plan 0026, 3.9).
+		// No OIDC token: no relay is asked (ADR-0181).
 		assert.doesNotMatch(workflow, /id-token/);
 		assert.match(
 			workflow,

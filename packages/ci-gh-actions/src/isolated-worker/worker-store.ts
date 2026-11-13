@@ -23,7 +23,7 @@ export function defaultWorkerDatabasePath(
  * (`HOBO_CI_WORKER_DB`), never a shared database. `HOBO_CI_STORE` may only
  * name `sqlite`; the shared Postgres partition option was removed with the
  * hosted relay's database (ADR-0179). How the box sees jobs is committed
- * policy (`runnerRouting.box.jobAdmission`, plan 0026, 3.4), never the
+ * policy (`runnerRouting.box.jobAdmission`, ADR-0181, decision 4), never the
  * environment.
  */
 export function resolveWorkerStorePlan(
@@ -40,8 +40,8 @@ export function resolveWorkerStorePlan(
 	};
 	if (admission !== "pull" && admission !== "push")
 		throw new Error("runnerRouting.box.jobAdmission must be pull or push");
-	const jobPollMs = Number(env.HOBO_CI_JOB_POLL_MS || "5000");
-	if (!Number.isInteger(jobPollMs) || jobPollMs < 5_000 || jobPollMs > 300_000)
+	const jobPollMs = Number(env.HOBO_CI_JOB_POLL_MS || "2000");
+	if (!Number.isInteger(jobPollMs) || jobPollMs < 2_000 || jobPollMs > 300_000)
 		throw new Error("invalid HOBO_CI_JOB_POLL_MS");
 	return { store, admission, jobPollMs };
 }

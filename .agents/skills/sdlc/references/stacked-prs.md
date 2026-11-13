@@ -47,7 +47,7 @@ Name branches for agents and humans:
 sdlc/<initiative-or-issue>-NN-<slug>
 ```
 
-Record the planned chain in `docs/plans/<initiative>/sdlc-state.md` before dispatch.
+Record the planned chain in `.sdlc/<initiative>/sdlc-state.md` before dispatch.
 
 ## Non-interactive agent rules (mandatory)
 
@@ -243,7 +243,7 @@ For PR at index `i` (bottom first):
 - Every PR the parent opened is MERGED (squash) or explicitly closed with user approval.
 - `gh stack view --json` shows no open unmerged work (or stack fully pruned).
 - Linear/issue tracker: each issue Done only under the Done rule (checks + review + merge).
-- `docs/plans/dispatch-log.md` and `sdlc-state.md` updated with outcomes.
+- `.sdlc/dispatch-log.md` and `sdlc-state.md` updated with outcomes.
 - Each design-relevant layer records its council review ID, consensus entry,
   proposal digest, reviewed head, cycle, and final assertion time.
 - Workspace cleaned per `repo` skill when appropriate.

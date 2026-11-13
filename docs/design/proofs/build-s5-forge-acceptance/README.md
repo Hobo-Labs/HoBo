@@ -8,7 +8,7 @@ tags: [hobo, design]
 # Build S5 Forge Acceptance Proof
 
 This proof README backs the Stage-5 (Forge & Extensibility) M0 acceptance record per the
-[post-399 cross-cutting delta pattern](../../../implementation-plan.md).
+post-399 cross-cutting delta pattern.
 
 ## Branch Evidence
 

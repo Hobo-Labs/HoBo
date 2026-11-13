@@ -1,6 +1,6 @@
 /**
  * The box's slot split. It comes from the committed `runnerRouting.box` in
- * `.hobo/ci.json` (plan 0026, 3.4), never from the environment: whether the
+ * `.hobo/ci.json` (ADR-0181, decision 4), never from the environment: whether the
  * box serves `hobo-trunk` decides routing, so it is committed policy.
  */
 export type WorkerSlotConfig = Readonly<{

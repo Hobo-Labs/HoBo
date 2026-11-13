@@ -34,7 +34,7 @@ reads the box relay's routing slip instead (ADR-0181).
 
 `fleet_verdict.proto` (the hosted relay's fleet verdict, its signed reports,
 reporter enrollment, state, allowance and status list; ADR-0180) is retired
-with the hosted verdict routes (ADR-0181, plan 0026 section 3.9): the file,
+with the hosted verdict routes (ADR-0181): the file,
 its generated code, its CUE definitions and its `fleet-verdict*` and
 `fleet-reporter*` fixtures are gone. The routing slip below carries routing.
 

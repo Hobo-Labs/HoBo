@@ -12,11 +12,27 @@ const mapPath = join(root, "release", "npm-scope-map.json");
 type ScopeMap = {
 	publicScope: string;
 	packages: Record<string, string>;
+	/**
+	 * The source repository every published manifest names. npmjs verifies a
+	 * provenance bundle against it: the statement's workflow repository must
+	 * match `repository.url` in the tarball's package.json.
+	 */
+	repository?: string;
 };
 
 export function assertNpmScopeMapAllowlist(map: ScopeMap): void {
 	if (!map.publicScope.startsWith("@hobo-labs")) {
 		throw new Error("npm-scope-map: publicScope must be @hobo-labs");
+	}
+	if (
+		map.repository !== undefined &&
+		!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(
+			map.repository,
+		)
+	) {
+		throw new Error(
+			"npm-scope-map: repository must be https://github.com/<owner>/<repo>",
+		);
 	}
 	for (const [workspace, published] of Object.entries(map.packages)) {
 		if (!workspace.startsWith("@hobo/")) {
@@ -52,6 +68,7 @@ export function mapPackageName(
 type PackageJson = {
 	name: string;
 	version?: string;
+	repository?: string | { type: string; url: string };
 	dependencies?: Record<string, string>;
 	devDependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
@@ -109,6 +126,9 @@ export function applyScopeToManifest(
 	};
 	if (options?.version) {
 		out.version = options.version;
+	}
+	if (map.repository) {
+		out.repository = { type: "git", url: `git+${map.repository}.git` };
 	}
 	let deps = remapDeps(manifest.dependencies, map);
 	let devDeps = remapDeps(manifest.devDependencies, map);

@@ -1218,6 +1218,7 @@ describe("the script as a whole", () => {
 				trunk: "acme-trunk",
 				local: "acme-local",
 				github: "ubuntu-24.04",
+				box: "acme-box",
 			};
 		});
 		const local = await main([], env, {
@@ -1296,7 +1297,45 @@ describe("the script as a whole", () => {
 			);
 			assert.equal(
 				readFileSync(output, "utf8"),
-				"runner=hobo-trunk\ntier=fleet\nshard_runner=hobo-trunk\n",
+				"box_runner=\nrunner=hobo-trunk\ntier=fleet\nshard_runner=hobo-trunk\n",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("names the box label for the deps-image job only when committed boxRunner is on", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-route-box-"));
+		try {
+			const output = join(dir, "output");
+			const run = async (config: string | undefined) => {
+				writeFileSync(output, "");
+				await main(
+					["--route", "fleet"],
+					{ GITHUB_EVENT_NAME: "pull_request", GITHUB_OUTPUT: output },
+					{ ...NO_SLIP_CALL, routingConfig: config },
+				);
+				return readFileSync(output, "utf8").split("\n")[0];
+			};
+			// Today's behaviour: the committed policy and the code's default leave it off.
+			assert.equal(await run(withRouting(() => {})), "box_runner=");
+			assert.equal(await run("{}"), "box_runner=");
+			assert.equal(
+				await run(
+					withRouting((routing) => {
+						routing.boxRunner = true;
+					}),
+				),
+				"box_runner=hobo-box",
+			);
+			assert.equal(
+				await run(
+					withRouting((routing) => {
+						routing.boxRunner = true;
+						routing.labels = { ...routing.labels, box: "acme-box" };
+					}),
+				),
+				"box_runner=acme-box",
 			);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });

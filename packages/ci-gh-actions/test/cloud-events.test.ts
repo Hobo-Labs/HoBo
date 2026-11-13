@@ -90,7 +90,7 @@ describe("toCiCloudEvent", () => {
 		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_mesh_reliability")).toBe(
 			"ci.MeshReliabilityChanged",
 		);
-		// The hosted relay's fleet verdict path is retired (plan 0026, 3.9):
+		// The hosted relay's fleet verdict path is retired (ADR-0181):
 		// none of its events is named.
 		for (const name of [
 			"hobo_ci_fleet_verdict_state",

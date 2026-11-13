@@ -22,7 +22,11 @@ All cluster I/O goes through `KubectlTransport` — an HTTP-shaped port matching
 | `POST /kubectl/http-proxy` | mesh HTTP hop |
 | `DELETE /kubectl/resources` | delete deployment+service |
 
-- **Production:** `createProcessKubectlTransport()` shells out to `kubectl`
+- **Production:** `createProcessKubectlTransport()` shells out to `kubectl`.
+  The read probes (`version`, `cluster-info`) are bounded by `probeTimeoutMs`
+  (default 4 s; `cluster-info` also passes `--request-timeout`), so an
+  unreachable cluster answers 503 instead of waiting out kubectl's discovery
+  retries; write paths keep a 120 s limit
 - **Tests:** `createMockProviderFromPact(pact)` from the kubectl-cluster contract
 
 There is **no shell kubectl shim** and **no in-memory fake client class**.

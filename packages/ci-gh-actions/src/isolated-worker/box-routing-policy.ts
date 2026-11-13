@@ -1,5 +1,5 @@
 /**
- * The box daemon's routing policy (plan 0026, 3.4; ADR-0181): the committed
+ * The box daemon's routing policy (ADR-0181, decision 4): the committed
  * `runnerRouting` block of `.hobo/ci.json` in the daemon's own checkout.
  *
  * No environment variable chooses a runner label, a tier, a pool, a slot
@@ -18,7 +18,11 @@ import { join } from "node:path";
 import { DEFAULT_GITHUB_MACHINE_TYPE } from "@hobo/ci";
 import { z } from "zod";
 import { DEFAULT_CI_PROJECT_PATH } from "../relay-routing.js";
-import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "../runner-labels.js";
+import {
+	BOX_ISOLATED_RUNNER_LABEL,
+	RUNNER_LABEL,
+	TRUNK_RUNNER_LABEL,
+} from "../runner-labels.js";
 import { parseRunnerRouting, type RunnerRouting } from "../runner-routing.js";
 import {
 	FLEET_VERDICT_ENTER_MS,
@@ -40,7 +44,7 @@ export const DEFAULT_FLEET_MIN_FREE_RUNNERS = 1;
 export const DEFAULT_ROUTING_STALL_MS = 10 * 60_000;
 
 /**
- * The code's defaults. The committed `runnerRouting` equals them (plan 0026,
+ * The code's defaults. The committed `runnerRouting` equals them (ADR-0181,
  * M8), so a checkout without the block routes exactly as one with it.
  */
 export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
@@ -51,9 +55,12 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 		trunk: TRUNK_RUNNER_LABEL,
 		local: "hobo-local-host",
 		github: DEFAULT_GITHUB_MACHINE_TYPE,
+		box: BOX_ISOLATED_RUNNER_LABEL,
 	},
 	localRunner: false,
+	boxRunner: false,
 	mainWorkspaceParallelCap: 4,
+	mainGate: { reuseMergeQueue: true },
 	verdict: {
 		minFreeRunners: DEFAULT_FLEET_MIN_FREE_RUNNERS,
 		enterMs: FLEET_VERDICT_ENTER_MS,
@@ -80,6 +87,8 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 		"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
 		"HOBO_CI_ROUTE_MAX_QUEUED",
 		"HOBO_CI_TRUNK_RUNNER",
+		"HOBO_CI_BOX_RUNNER",
+		"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 	],
 };
 
@@ -118,7 +127,7 @@ export function readBoxRoutingPolicy(checkoutRoot: string): BoxRoutingPolicy {
 }
 
 /**
- * Every environment name plan 0026 (3.4) counts as routing. None of them is
+ * Every environment name ADR-0181 (routing list) counts as routing. None of them is
  * read on the box any more; `routingEnvironmentNamesSet` names the ones still
  * set, for the start log.
  */
@@ -143,6 +152,8 @@ export const ROUTING_ENVIRONMENT_NAMES: readonly string[] = Object.freeze([
 	"HOBO_CI_WORKER_MERGE_GROUP_LEASES",
 	"HOBO_CI_JOB_ADMISSION",
 	"MAIN_WORKSPACE_PARALLEL_CAP",
+	"HOBO_CI_BOX_RUNNER",
+	"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 ]);
 /** Every `HOBO_CI_FLEET_VERDICT_*` name is routing too. */
 export const ROUTING_ENVIRONMENT_PREFIXES: readonly string[] = Object.freeze([

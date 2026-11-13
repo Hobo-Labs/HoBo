@@ -8,10 +8,15 @@
     "fleet": "hobo",
     "trunk": "hobo-trunk",
     "local": "hobo-local-host",
-    "github": "ubuntu-24.04"
+    "github": "ubuntu-24.04",
+    "box": "hobo-box"
   },
   "localRunner": true,
+  "boxRunner": false,
   "mainWorkspaceParallelCap": 4,
+  "mainGate": {
+    "reuseMergeQueue": true
+  },
   "verdict": {
     "minFreeRunners": 1,
     "enterMs": 60000,

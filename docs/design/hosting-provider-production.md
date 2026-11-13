@@ -195,8 +195,7 @@ for a strict absolute ceiling even when its deployment API works.
 
 ## Executable evidence
 
-The [scenario ledger](../plans/0022-budgeted-cloud-hosting-transitions.md#executable-scenario-ledger)
-maps the original core regressions. Production suites additionally cover:
+Production suites cover:
 
 - Core lifecycle parsing and actual CUE: stale/foreign/nonterminal evidence and explicit monetary amounts.
 - Hobo resource-store and mutation tests: independent SQLite connections, reopen, immutable identities, secret refusal and parent-write races.
@@ -216,8 +215,7 @@ Turbo environment. CI now uses `HOBO_TEST_MAX_WORKERS` so package-specific
 single-worker settings remain effective. Build outputs must settle before compiled
 CLI subprocess tests start; otherwise concurrent compilation can expose partial files.
 
-The [provider validation record](../plans/0022-budgeted-cloud-hosting-transitions.md#provider-validation-record--2026-10-30)
-records 9,990 passing tests across 29 affected workspaces, the complete schema and
+Validation recorded 9,990 passing tests across 29 affected workspaces, the complete schema and
 behavior checks, and the final standards annotation repair. These results establish
 the tested adapter contracts and refusal behavior; the live evidence above defines
 the narrower external acceptance boundary.

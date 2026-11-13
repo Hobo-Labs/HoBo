@@ -246,8 +246,8 @@ describe("the declared settings and the deployed code agree", () => {
 				pending.push(relative);
 		}
 	}
-	// A retired key is named only so the loader can drop it (plan 0026,
-	// 3.9): it is read by nothing and declared nowhere.
+	// A retired key is named only so the loader can drop it (ADR-0181): it
+	// is read by nothing and declared nowhere.
 	const retired = new Set(RETIRED_RELAY_RUNTIME_CONFIG_KEYS);
 	const read = new Set(
 		[...reached]

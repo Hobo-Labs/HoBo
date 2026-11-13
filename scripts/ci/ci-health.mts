@@ -2,7 +2,7 @@
 /**
  * The CI health monitor: reads what the last window of workflow runs left
  * behind and raises every fallback that would otherwise stay silent
- * (plan 0025, section 6.6; `docs/ci/health-monitor.md`).
+ * (ADR-0180; `docs/ci/health-monitor.md`).
  *
  * Runs every two hours on a GitHub-hosted machine (`ci-health.yml`). It reads
  * the run list, each run's jobs, and the annotations of the route job and of
@@ -18,7 +18,7 @@
  * It decides nothing about the fleet (R1): it only counts what the route job
  * already said. It asks no relay: the hosted relay's reporter status route,
  * which H4 (reporter silent) and H10 (allowance spent) read, was retired with
- * the fleet verdict (plan 0026, section 3.9). It loads no package, only node builtins, so it
+ * the fleet verdict (ADR-0181). It loads no package, only node builtins, so it
  * runs straight from a checkout with `node scripts/ci/ci-health.mts`.
  */
 import { execFileSync } from "node:child_process";

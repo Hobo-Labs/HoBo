@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** The operator script of plan 0025, step G3 (G2's reporter enrollment retired with plan 0026, 3.9). */
+/** The operator script of the fleet verdict runbook, step G3 (G2's reporter enrollment retired with ADR-0181). */
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function run(script: string, args: readonly string[]) {

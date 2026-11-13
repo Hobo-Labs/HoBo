@@ -37,7 +37,7 @@ function recorder() {
 	return { events, log };
 }
 
-// Plan 0026, M9: 204/404 are success, 403 is logged once, nothing throws.
+// ADR-0181, M9: 204/404 are success, 403 is logged once, nothing throws.
 describe("retireRepositoryVariables", () => {
 	it("sends one DELETE per name and counts 204 and 404 as retired", async () => {
 		const api = github((name) => (name === "HOBO_CI_FLEET_STATE" ? 404 : 204));

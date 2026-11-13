@@ -392,7 +392,7 @@ describe("the stateless relay's configuration is read-only", () => {
 		expect(body.error).toMatch(/read-only.*hobo ci.*config service/u);
 	});
 
-	it("serves no fleet verdict or reporter status, and keeps nothing on the cache for one (plan 0026, 3.9)", async () => {
+	it("serves no fleet verdict or reporter status, and keeps nothing on the cache for one (ADR-0181)", async () => {
 		const h = await openStatelessRelay();
 		const before = h.cache.meter.usage().total;
 		const report = '{"blocked":{},"ttlSeconds":180,"mode":"report"}';
@@ -472,10 +472,14 @@ describe("the stateless relay's probes", () => {
 			const base = `http://127.0.0.1:${port}`;
 			const health = await fetch(`${base}/healthz`);
 			expect(health.status).toBe(200);
-			expect(await health.json()).toEqual({ ok: true });
+			expect(await health.json()).toEqual({ ok: true, commit: null });
 			const ready = await fetch(`${base}/readyz`);
 			expect(ready.status).toBe(503);
-			expect(await ready.json()).toEqual({ ready: false, started: false });
+			expect(await ready.json()).toEqual({
+				ready: false,
+				started: false,
+				state: "start-failed",
+			});
 			expect((await fetch(`${base}/github/webhooks`)).status).toBe(503);
 		} finally {
 			await new Promise<void>((resolve, reject) =>

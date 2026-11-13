@@ -108,7 +108,7 @@ export interface ResolvedCiRelayRoute {
 }
 
 /**
- * The committed `runnerRouting` block of `.hobo/ci.json` (plan 0026, 3.4), or
+ * The committed `runnerRouting` block of `.hobo/ci.json` (ADR-0181, "Routing list"), or
  * nothing when the file has none or it is not a policy. Never throws.
  */
 export function parseCiRunnerRouting(json: string): RunnerRouting | undefined {

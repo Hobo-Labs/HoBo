@@ -182,6 +182,54 @@ describe("ci-runner mise tool sync", () => {
 		expect(env.PATH).toContain(binDir);
 	});
 
+	it("installs only the tool whose mise.lock pin is ahead of the runner image (no fail-closed drift)", () => {
+		// A PR bumped cue in mise.lock and merged before the fleet image was
+		// rebuilt: mise reports the new pin missing; preflight must install just
+		// that tool with --locked instead of failing Main workspace plan.
+		const calls: { cmd: string; args: string[] }[] = [];
+		const result = syncMissingMiseTools(root, {
+			run: (cmd, args) => {
+				calls.push({ cmd, args });
+				if (cmd === "mise" && args.includes("ls")) {
+					return {
+						ok: true,
+						out: "cue 0.15.0 (missing) /checkout/mise.toml 0.15.0\n",
+					};
+				}
+				if (cmd === "sh") return { ok: true, out: "/usr/bin/fake" };
+				return { ok: true, out: "" };
+			},
+			env: { PATH: "/usr/bin" },
+			appendFile: () => {},
+		});
+		expect(result.ok).toBe(true);
+		expect(result.installed).toEqual(["cue"]);
+		expect(calls.filter((call) => call.args.includes("install"))).toEqual([
+			{ cmd: "mise", args: ["--cd", root, "install", "--locked", "cue"] },
+		]);
+	});
+
+	it("install failures do not duplicate command text from spawnCommand failures", () => {
+		const installCommand = `mise --cd ${root} install --locked cue`;
+		const failure = `${installCommand}: exited 1; stderr tail: checksum mismatch`;
+		const result = syncMissingMiseTools(root, {
+			run: (cmd, args) => {
+				if (cmd === "mise" && args.includes("ls")) {
+					return { ok: true, out: "cue 0.15.0 (missing)\n" };
+				}
+				if (cmd === "mise" && args.includes("install")) {
+					return { ok: false, out: "", command: installCommand, failure };
+				}
+				return { ok: true, out: "" };
+			},
+			env: { PATH: "/usr/bin" },
+			appendFile: () => {},
+		});
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain(failure);
+		expect(result.detail.split(installCommand).length).toBe(2);
+	});
+
 	it("exports PATH-invisible configured tools when already installed (syft preflight)", () => {
 		const env = {
 			PATH: "/usr/bin",
@@ -670,6 +718,9 @@ describe("ci-runner image contract (host smoke)", () => {
 			join(root, ".github/actions/ci-runner-preflight/action.yml"),
 			"utf8",
 		);
+		expect(action).toContain("install-toolchain:");
+		expect(action).toMatch(/if: inputs\.install-toolchain == 'true'/);
+		expect(action).not.toContain("HOBO_CI_PREFLIGHT_SKIP_MISE_INSTALL");
 		expect(action).toContain(
 			"node --no-warnings scripts/ci-runner-preflight.mts",
 		);

@@ -1,0 +1,172 @@
+{
+	"consumer": {
+		"name": "HoboSecretStoreDeployTrust"
+	},
+	"provider": {
+		"name": "GitHubRestApi"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"documentation": "Shapes from GitHub's REST reference: GET /repos/{owner}/{repo} (https://docs.github.com/en/rest/repos/repos#get-a-repository) and GET /repos/{owner}/{repo}/actions/oidc/customization/sub (https://docs.github.com/en/rest/actions/oidc#get-the-customization-template-for-an-oidc-subject-claim-for-a-repository), read 2026-11-13. Hand-authored consumer expectations replayed by contracts/consumer/github-oidc-subject.consumer.contract.test.ts; not captured traffic and not verified by GitHub. The Hobo-Labs/HoBo ids are the ones in the relay deploy's failing token; every token is a fixture."
+	},
+	"interactions": [
+		{
+			"description": "The relay's repository, with the ids its deploy trust pins",
+			"providerState": "repository Hobo-Labs/HoBo exists",
+			"request": {
+				"method": "GET",
+				"path": "/repos/Hobo-Labs/HoBo",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"x-github-api-version": "2022-11-28",
+					"authorization": "Bearer fixture-github-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8"
+				},
+				"body": {
+					"id": 1274791462,
+					"name": "HoBo",
+					"full_name": "Hobo-Labs/HoBo",
+					"private": false,
+					"owner": {
+						"login": "Hobo-Labs",
+						"id": 344805935,
+						"type": "Organization"
+					}
+				}
+			}
+		},
+		{
+			"description": "The relay's repository issues the immutable subject, and says its prefix",
+			"providerState": "repository Hobo-Labs/HoBo uses the immutable subject format",
+			"request": {
+				"method": "GET",
+				"path": "/repos/Hobo-Labs/HoBo/actions/oidc/customization/sub",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"x-github-api-version": "2022-11-28",
+					"authorization": "Bearer fixture-github-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8"
+				},
+				"body": {
+					"use_default": true,
+					"use_immutable_subject": true,
+					"sub_claim_prefix": "repo:Hobo-Labs@344805935/HoBo@1274791462"
+				}
+			}
+		},
+		{
+			"description": "A repository that keeps the legacy subject",
+			"providerState": "repository acme/legacy exists",
+			"request": {
+				"method": "GET",
+				"path": "/repos/acme/legacy",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"x-github-api-version": "2022-11-28",
+					"authorization": "Bearer fixture-github-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8"
+				},
+				"body": {
+					"id": 42,
+					"name": "legacy",
+					"full_name": "acme/legacy",
+					"owner": {
+						"login": "acme",
+						"id": 7
+					}
+				}
+			}
+		},
+		{
+			"description": "Its template keeps the legacy repo:owner/name prefix",
+			"providerState": "repository acme/legacy keeps the legacy subject format",
+			"request": {
+				"method": "GET",
+				"path": "/repos/acme/legacy/actions/oidc/customization/sub",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"x-github-api-version": "2022-11-28",
+					"authorization": "Bearer fixture-github-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8"
+				},
+				"body": {
+					"use_default": true,
+					"use_immutable_subject": false,
+					"sub_claim_prefix": "repo:acme/legacy"
+				}
+			}
+		},
+		{
+			"description": "A repository whose OIDC settings the token cannot read",
+			"providerState": "repository acme/private exists",
+			"request": {
+				"method": "GET",
+				"path": "/repos/acme/private",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"x-github-api-version": "2022-11-28",
+					"authorization": "Bearer fixture-github-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json; charset=utf-8"
+				},
+				"body": {
+					"id": 43,
+					"name": "private",
+					"owner": {
+						"login": "acme",
+						"id": 7
+					}
+				}
+			}
+		},
+		{
+			"description": "Its subject template is not readable with that token",
+			"providerState": "the token lacks Actions read on acme/private",
+			"request": {
+				"method": "GET",
+				"path": "/repos/acme/private/actions/oidc/customization/sub",
+				"headers": {
+					"accept": "application/vnd.github+json",
+					"x-github-api-version": "2022-11-28",
+					"authorization": "Bearer fixture-github-token"
+				}
+			},
+			"response": {
+				"status": 403,
+				"headers": {
+					"content-type": "application/json; charset=utf-8"
+				},
+				"body": {
+					"message": "Resource not accessible by personal access token",
+					"status": "403"
+				}
+			}
+		}
+	]
+}

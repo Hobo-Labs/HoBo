@@ -2,9 +2,9 @@ import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import * as root from "../src/index.js";
 
-// Plan 0025, section 6.8: whether the fleet can take a run is the relay's to
+// ADR-0180, "Retirement": whether the fleet can take a run is the relay's to
 // decide (ADR-0180), so the two repository-variable channels it superseded
-// are gone. Plan 0026 (3.7) retired the third, the route table
+// are gone. ADR-0181 (decision 6) retired the third, the route table
 // (`HOBO_CI_FLEET_ROUTES`): routing travels as a routing slip (ADR-0181).
 const exported = Object.keys(root);
 const file = (path: string) => new URL(path, import.meta.url);
@@ -36,7 +36,7 @@ describe("retired fleet variable channels", () => {
 	});
 });
 
-// Plan 0026, 3.9 (M11): the hosted relay's fleet verdict path is gone. The
+// ADR-0181 (M11): the hosted relay's fleet verdict path is gone. The
 // box relay hands each run its route as a routing slip (ADR-0181); the
 // evaluator and its holds stay, because the slip's decision uses them.
 describe("the retired hosted fleet verdict path", () => {

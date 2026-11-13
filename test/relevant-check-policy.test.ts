@@ -707,6 +707,22 @@ test("the behavior lane builds the proofs' dependencies first, serially", () => 
 	assert.equal(build?.serial, true);
 });
 
+test("the behavior lane also builds what the root step definitions import", () => {
+	// cucumber.yaml loads every features/steps/**/*.ts file on every run, and
+	// those steps import @hobo/conformance and the CD conformance kit from source,
+	// whose own dependencies resolve through dist/.
+	const { checks } = plan(["cucumber.yaml"]);
+	const build = checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+	assert.ok(build?.args.includes("--filter=@hobo/conformance^..."));
+	assert.ok(
+		build?.args.includes("--filter=@hobo/example-cd-conformance-kit^..."),
+	);
+});
+
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {
 	const { checks } = plan([
 		"packages/patterns/patterns/starter/cli/todo/project/features/visual.feature",

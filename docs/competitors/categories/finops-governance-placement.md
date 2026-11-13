@@ -17,7 +17,7 @@ Cost visibility, allocation, estimation, optimization, policy, governance, and p
 
 HoBo's budget-aware provider matching decides cost *before* spend. FinOps tools mostly explain spend afterwards — the contest is over where the decision happens.
 
-## Competitors (13)
+## Competitors (14)
 
 | Competitor | Role in this category | Directness | Contested HoBo surface | Competitor advantage | HoBo distinction | Posture | Priority |
 | ---------- | --------------------- | ---------- | ---------------------- | -------------------- | ---------------- | ------- | -------- |
@@ -34,6 +34,7 @@ HoBo's budget-aware provider matching decides cost *before* spend. FinOps tools 
 | [**Infracost**](../infracost.md) *(primary)* | plan-time cost estimation — the strongest existing evidence for HoBo's claim that cost belongs at the decision, not in a monthly report | overlapping | `finops`, `governance`, `delivery` | Cost estimated before merge, credential-free, with FinOps and tagging policies as pull-request gates and usage files for what a plan cannot know. | HoBo prices candidate placements before a provider has been named, and holds estimate and actual in one event log so the loop can close. | borrow, benchmark, integrate | P1 |
 | [**Vantage**](../vantage.md) *(primary)* | multi-cloud cost observability — the corpus's evidence that attribution is an organizational problem before it is a technical one | adjacent | `finops`, `governance`, `observability` | The whole bill across clouds and SaaS, with virtual tagging that reconstructs attribution without provider tag discipline. | HoBo knows attribution because it made the placement decision; virtual tags are a workaround for arriving after the fact. | benchmark, integrate, borrow | P2 |
 | [**CAST AI**](../cast-ai.md) *(primary)* | automated cost optimization — the cohort's only actor, and the clearest demonstration that acting on cost requires a resilience contract | adjacent | `finops`, `provider-matching`, `reconciliation`, `governance` | The cohort's only actor: continuous rightsizing, bin packing and spot orchestration producing realized rather than projected savings. | HoBo chooses between heterogeneous providers rather than node shapes inside one cluster, and scores residency and portability that pure cost optimization ignores. | benchmark, borrow, integrate | P1 |
+| [**Open Cluster Management**](../open-cluster-management.md) | the fleet inventory, rollout-group and governance reference behind HoBo.CD's enrollment, Camp sets, fan-out and posture | overlapping | `environments`, `delivery`, `governance`, `provider-matching` | Hub-and-spoke Kubernetes fleet management with pull agents, progressive work rollout and inform/enforce policy. | HoBo.CD rolls out verified Freight and Rails through one pipeline model with a single mutator per Camp, on any platform; OCM is an optional ManifestWork transport. | borrow, integrate, benchmark | P1 |
 
 ## Navigation
 

@@ -1,175 +1,175 @@
 /**
- * `hobo incident` — observe CD failure disposition (A2H / self-heal).
- * Subcommands: status | open
- * Drives shipped ContinuousDeliveryPlane failure path.
+ * `hobo incident` — CD failure disposition through `@hobo/cd` (plan 0024).
+ *
+ * - `status [--camp <a,b>]`: failed, rolled-back and rejected promotions and
+ *   open failovers, from the journal (no fixture).
+ * - `open --camp <camp> --signal <s> [--reason <text>]`: the CD rollback (D12):
+ *   zero exposure, then a Delta to the predecessor Set through the same gate.
+ *   An agent principal (HOBO_AGENT_ID) only proposes it unless granted
+ *   (ADR-0094); a human or granted principal executes it.
+ *
+ * `--simulate` is the only fixture path, as for `hobo deploy`.
  */
 
-import type { CommandModule } from "@hobo/cli";
+import { type CampId, PromotionState } from "@hobo/cd";
+import type { CommandModule, CommandResult } from "@hobo/cli";
 import {
-	type ContinuousDeliveryPlane,
-	createContinuousDeliveryPlane,
-	createContractAssertedCdFixtures,
-	createDefaultSafetyEnvelope,
-	type LocalCdFixtures,
-} from "@hobo/cloud";
-import { must } from "@hobo/core/total-access";
+	cdFlagsOf,
+	cdOk,
+	cdRefused,
+	cdUsage,
+	parseCdFormat,
+} from "./cd-render.js";
+import { topologyFilesOf } from "./cd-topology.js";
+import {
+	type CdHostOpener,
+	isSimulate,
+	openDefaultCdHost,
+} from "./deploy-command.js";
+import { defaultHoboHome } from "./hobo-home.js";
 import { isJsonString, type JsonObject } from "./json.js";
 
 export interface IncidentCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;
-	readonly plane?: ContinuousDeliveryPlane;
-	readonly fixtures?: LocalCdFixtures;
+	readonly hoboHome?: string;
+	readonly openCd?: CdHostOpener;
 }
 
-const SUBS = ["status", "open"] as const;
+const USAGE = [
+	"hobo incident status [--camp <a,b>]",
+	"hobo incident open --camp <camp> --signal slo-burn|apply-failed|verification-failed [--reason <text>]",
+] as const;
+
+// public-contract: promotion states an incident reports.
+export const INCIDENT_STATES = Object.freeze([
+	PromotionState.FAILED,
+	PromotionState.ROLLED_BACK,
+	PromotionState.REJECTED,
+]);
+
+function camps(flags: JsonObject): readonly CampId[] {
+	const v = flags.camp;
+	const raw = isJsonString(v) ? v : "";
+	// SAFETY: opaque Camp ids; the CD modules refuse unknown ones.
+	return raw
+		.split(",")
+		.map((s) => s.trim())
+		.filter((s) => s !== "") as CampId[];
+}
 
 export function createIncidentCommand(
 	deps: IncidentCommandDeps = {},
 ): CommandModule {
 	return {
-		run: async ({ args, flags, emitProgress }) => {
-			// SAFETY: assertion required at this I/O or test boundary.
-			const f = flags as JsonObject;
-			const tenant =
-				(isJsonString(f.tenant) && f.tenant) ||
-				deps.env?.HOBO_TENANT ||
-				"local";
-			const fixtures =
-				deps.fixtures ?? createContractAssertedCdFixtures({ tenant });
-			const plane =
-				deps.plane ?? createContinuousDeliveryPlane({ mode: "simulate" });
-			// SAFETY: assertion required at this I/O or test boundary.
-			const sub = (args[0] ?? "status") as string;
-
-			// SAFETY: assertion required at this I/O or test boundary.
-			if (!(SUBS as readonly string[]).includes(sub)) {
+		run: async ({ args, flags, context, emitProgress }) => {
+			const f = cdFlagsOf(flags);
+			const sub = args[0] ?? "status";
+			const format = parseCdFormat(f);
+			const fmt = format.ok ? format.format : "text";
+			if (sub !== "status" && sub !== "open")
 				return {
-					ok: false,
-					status: "usage",
-					code: "HOBO_INCIDENT_USAGE",
+					...cdUsage({
+						code: "HOBO_INCIDENT_USAGE",
+						subcommand: sub,
+						message: `unknown subcommand "${sub}"`,
+						usage: USAGE,
+					}),
 					message: `hobo incident: unknown subcommand "${sub}"`,
-					remediation: [
-						"hobo incident status",
-						"hobo incident open --signal slo-burn",
-						"hobo incident open --signal apply-failed --self-heal",
-					],
-					data: { command: "incident", subcommands: [...SUBS] },
+					data: { command: "incident", subcommands: ["status", "open"] },
 				};
-			}
-
-			if (sub === "status") {
-				const last = plane.lastResult();
-				const active = last?.failure !== undefined;
-				return {
-					ok: true,
-					status: "ok",
-					code: "HOBO_INCIDENT_STATUS",
-					message: active
-						? `incident: active ${must(must(last, "last").failure).kind} ${must(must(last, "last").failure).incidentId}`
-						: "incident: no active CD incident",
+			const env = deps.env ?? process.env;
+			const opened = await (deps.openCd ?? openDefaultCdHost)({
+				simulate: isSimulate(f),
+				cwd: (isJsonString(f.cwd) && f.cwd) || context.cwd,
+				env,
+				home: deps.hoboHome ?? defaultHoboHome(env),
+				topologyFiles: topologyFilesOf(f, env),
+			});
+			if (!opened.ok)
+				return cdRefused({
+					reasons: opened.reasons,
+					subcommand: `incident ${sub}`,
+					format: fmt,
+				});
+			const { host } = opened.value;
+			try {
+				if (sub === "status") {
+					const selected = camps(f);
+					const promotions = (
+						selected.length === 0
+							? await host.cd.promotions.list({ limit: 200 })
+							: (
+									await Promise.all(
+										selected.map((campId) =>
+											host.cd.promotions.list({ campId, limit: 200 }),
+										),
+									)
+								).flat()
+					).filter((p) => INCIDENT_STATES.includes(p.state));
+					const failovers = await host.cd.failover.list({ limit: 200 });
+					const result: CommandResult = cdOk({
+						code: "HOBO_INCIDENT_STATUS",
+						summary:
+							promotions.length + failovers.length === 0
+								? "incident: no active CD incident"
+								: `incident: ${promotions.length} failed/rolled-back promotion(s), ${failovers.length} failover(s)`,
+						format: fmt,
+						data: {
+							command: "incident",
+							subcommand: "status",
+							simulated: host.simulated,
+							active: promotions.length + failovers.length > 0,
+							promotions,
+							failovers,
+							defaultPath: "rollback",
+						},
+					});
+					return result;
+				}
+				const [campId] = camps(f);
+				if (!campId)
+					return cdUsage({
+						code: "HOBO_INCIDENT_USAGE",
+						subcommand: "incident open",
+						message: "missing --camp",
+						usage: USAGE,
+					});
+				const signal = (isJsonString(f.signal) && f.signal) || "slo-burn";
+				const reason =
+					(isJsonString(f.reason) && f.reason) || `incident: ${signal}`;
+				emitProgress(`incident open camp=${campId} signal=${signal}`);
+				const rolled = await host.cd.promotions.rollback(
+					{
+						campId,
+						reason,
+						idempotencyKey: `incident|${campId}|${signal}|${reason}`,
+					},
+					host.ctx,
+				);
+				if (!rolled.ok)
+					return cdRefused({
+						reasons: rolled.reasons,
+						subcommand: "incident open",
+						format: fmt,
+					});
+				return cdOk({
+					code: rolled.value.proposal
+						? "HOBO_INCIDENT_PROPOSED"
+						: "HOBO_INCIDENT_OPEN",
+					summary: `incident: rollback ${rolled.value.promotionId} for ${campId}${rolled.value.proposal ? " (proposal; awaits a granted principal)" : ""}`,
+					format: fmt,
 					data: {
 						command: "incident",
-						subcommand: "status",
-						active,
-						...(active
-							? {
-									kind: must(must(last, "last").failure).kind,
-									incidentId: must(must(last, "last").failure).incidentId,
-								}
-							: undefined),
-						defaultPath: "a2h",
-						selfHealRequires: [
-							"registered-agent",
-							"policy-allow",
-							"safety-envelope",
-							"adr-0076-lane",
-						],
+						subcommand: "open",
+						simulated: host.simulated,
+						signal,
+						campId,
+						promotion: rolled.value,
 					},
-				};
+				});
+			} finally {
+				await opened.value.close();
 			}
-
-			const signal = (isJsonString(f.signal) && f.signal) || "slo-burn";
-			const withSelfHeal =
-				f["self-heal"] === true ||
-				f.selfHeal === true ||
-				f["self-heal"] === "true" ||
-				f.selfHeal === "true";
-			emitProgress(`incident open signal=${signal}`);
-			const result = await plane.deliver(fixtures.set, {
-				forceFailure:
-					signal === "apply-failed"
-						? "apply-failed"
-						: signal === "golden-failed"
-							? "golden-failed"
-							: signal === "progressive-rollback"
-								? "progressive-rollback"
-								: "slo-burn",
-				envelope: createDefaultSafetyEnvelope({
-					blastRadius: withSelfHeal ? "resource" : "unknown",
-					reversible: true,
-					selfCausation: false,
-					estimatedSpendUsd: 1,
-					spendCapUsd: 50,
-				}),
-				...(withSelfHeal
-					? {
-							selfHealAgent: {
-								agentId: "agent:local-sre",
-								tenant: fixtures.set.tenant,
-								scopes: Object.freeze([
-									fixtures.set.environment,
-									"local-dev",
-									"local",
-								]),
-								policyAllowed: true,
-							},
-							attemptFixInLane: (lane) => {
-								if (lane.baselineMutation !== false) {
-									return {
-										ok: false,
-										summary: "baseline mutation forbidden",
-									};
-								}
-								return { ok: true, summary: "lane fix proposed" };
-							},
-						}
-					: undefined),
-			});
-
-			return {
-				ok: true,
-				status: "ok",
-				code: "HOBO_INCIDENT_OPEN",
-				message: `incident: ${result.failure?.kind ?? "none"}`,
-				data: {
-					command: "incident",
-					subcommand: "open",
-					status: result.status,
-					failureKind: result.failure?.kind,
-					incidentId: result.failure?.incidentId,
-					deploymentId: result.apply.deploymentId,
-					attested: result.apply.principal.attestationState,
-					secretFree: result.apply.secretFree,
-					...(result.failure?.kind === "a2h"
-						? {
-								handoff: {
-									obligationId: result.failure.handoff.obligationId,
-									deadline: result.failure.handoff.deadline,
-									decisionRequired: result.failure.handoff.decisionRequired,
-								},
-							}
-						: undefined),
-					...(result.failure?.kind === "self-heal-lane"
-						? {
-								laneId: result.failure.lane.laneId,
-								baselineMutation: result.failure.lane.baselineMutation,
-								proposedDelta: result.failure.attempt.proposedDelta?.deltaId,
-								promotionPath:
-									result.failure.attempt.proposedDelta?.promotionPath,
-							}
-						: undefined),
-				},
-			};
 		},
 	};
 }

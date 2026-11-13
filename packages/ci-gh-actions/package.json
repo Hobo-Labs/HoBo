@@ -43,6 +43,10 @@
       "types": "./dist/node-http.d.ts",
       "default": "./dist/node-http.js"
     },
+    "./runner-host": {
+      "types": "./dist/runner-host.d.ts",
+      "default": "./dist/runner-host.js"
+    },
     "./relay-cache": {
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"
@@ -73,7 +77,8 @@
     "pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
     "pretest:acceptance": "node --experimental-strip-types ../../scripts/ensure-built.mts",
     "schema:generate": "node --import tsx scripts/project-schema.ts",
-    "schema:check": "node --import tsx scripts/project-schema.ts --check"
+    "schema:check": "node --import tsx scripts/project-schema.ts --check",
+    "release:build": "node --import tsx scripts/build-controller-release.mts"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
@@ -97,6 +102,7 @@
     "@hobo/stations": "workspace:*",
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
+    "esbuild": "0.28.1",
     "pg": "8.22.0",
     "testcontainers": "11.8.1",
     "yaml": "2.9.0"

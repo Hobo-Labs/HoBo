@@ -1,0 +1,19 @@
+{
+	"name": "@hobo/example-cd-gitlab",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"description": "Deliver a Bindle with HoBo.CD from GitLab CI: OIDC id_tokens, Git smart-HTTP polling, and a lineage pipeline with a freeze window.",
+	"scripts": {
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check --no-errors-on-unmatched ."
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "^2.12.1",
+		"@hobo/cd": "workspace:*",
+		"@hobo/conformance": "workspace:*"
+	}
+}

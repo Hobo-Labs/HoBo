@@ -63,6 +63,9 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`ci-fleet-balancing.md`](./ci-fleet-balancing.md) | CI fleet balancing: per-provider runner financial models rated by `@hobo/pricing`, admission through the shared budget policy, and the `HOBO_CI_FLEET_ROUTES` route table for label providers (`packages/ci/src/fleet/`) | — |
 | [`ci-runner-balancing-example.md`](./ci-runner-balancing-example.md) | CI runner balancing reference example + dogfood record: credit-aware dispatch of this repo's CI across GitHub-hosted, self-hosted, and third-party runner providers (`examples/ci-runner-balancing/`) | — |
 | [`ci-relay-mesh.md`](./ci-relay-mesh.md) | The CI relay as a mesh of equal nodes. Each node reads GitHub's queue and starts its own runners; nodes agree on who starts a job by weighted rendezvous ranking and a per-rank delay, so no relay is a single point of failure. Implemented behind `HOBO_CI_NATS_URL`: claiming, capacity-aware ranking, per-node reliability, signed advertisements with a trusted-key set, and one node list (availability, capacity, trust) on the relay's HTTP route, MCP tool and `hobo ci status` | — |
+| [`continuous-delivery.md`](./continuous-delivery.md) | HoBo.CD (`@hobo/cd`, [ADR-0182](./adr/01-architecture-core.md#adr-0182)): immutable Freight discovered by pull or pushed from any CI, a pipeline graph with lineage and change windows, fenced per-Camp pull reconcilers on every platform, deterministic fail-closed verification, capability-lowered progressive rollout, Placement, fan-out, governed failover, Rails delivered INFORM → ENFORCE with posture, and HoBo CI dogfooding intent | — |
+| [`resolver-component-authoring.md`](./resolver-component-authoring.md) | Guide: write, sign, test and register an out-of-tree `hobo:resolver@0.1.0` WASM component to reach a platform HoBo has no in-tree resolver for | — |
+| [`delivery-policy-upgrade.md`](./delivery-policy-upgrade.md) | Upgrade notes: the broker `DeliveryPolicy` becomes neutral reconciler modes; how deprecated `engine`/`gitops_repo`/`destination_namespace` are mapped or ignored | — |
 | [`hosted-relay-stateless.md`](./hosted-relay-stateless.md) | The hosted CI relay keeps no durable state ([ADR-0179](./adr/hosted-relay-stateless.md#adr-0179)): config and secrets read-only from a separate service (Infisical via Vercel OIDC), short-lived job state in a Redis-protocol cache with TTL and compare-and-set whose loss is rebuilt from GitHub and Vercel by deterministic names, Vercel Queues for webhook intake and per-lease steps, read-only config at runtime; replaces the relay's PostgreSQL store, relay database fleet and Neon broker in eight phases (phase 7, the removals, is done). Amended 2026-11-12: the config/secret store (`secrets.config-service/v1`) is chosen when the deployment runs and handed to the owner by claim (auth.md stores, a Cloudflare temporary account, self-hosted Infisical, attach-only Infisical Cloud), with nothing in Vercel or GitHub secrets or variables; and, secretless first, the relay stays on its Vercel project `hobo-ci` (Vercel's Git integration, no deploy token), derives its keys, gets the GitHub App's credentials straight from GitHub, and keeps the rest in a secrets manager (Infisical, 1Password or Bitwarden, ranked by whether a workload signs in without a stored token), any optional leftover typed by the owner into the HoBo secret-capture MCP App without entering the agent's context. The compute fleet is unchanged | — |
 | [`adr/fleet-verdict.md`](./adr/fleet-verdict.md) | Runner routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)): which fleet labels new work should stay off is decided by the relay, kept with an expiry, and asked for over HTTP when a run is routed; transport superseded by ADR-0181 | — |
 | [`adr/routing-slips.md`](./adr/routing-slips.md) | The box relay hands each run its route on a routing slip ([ADR-0181](./adr/routing-slips.md#adr-0181)): a parentless commit at `refs/hobo/routing-slip` the route job reads with its own token, and routing policy committed in `.hobo/ci.json`; no variable carries routing | — |
@@ -223,6 +226,12 @@ When a draft package, validation script, workflow, or public contract changes, u
 
 - [Contract-First Testing Strategy](./contract-first-testing.md)
 
+## HoBo.CD
+
+[Design](./continuous-delivery.md), [package map](../../packages/cd/README.md),
+[runbooks](../runbooks/cd/index.md), [resolver component authoring](./resolver-component-authoring.md)
+and [`DeliveryPolicy` upgrade notes](./delivery-policy-upgrade.md).
+
 ## HoBo.CI SDK family
 
 [HoBo.CI contracts and routing](../../packages/ci/README.md),
@@ -233,7 +242,6 @@ as a Node service by `hobo ci serve` and the container image, on
 is also an [MCP server](../../packages/ci-gh-actions/README.md#mcp-server) at
 `/mcp`, whose `wait_for_events` tool and resource subscriptions are a
 projection over the lease journal's [event cursor](../../packages/ci/README.md#event-cursor)),
-[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md),
+[Azure Pipelines self-hosted integration](../../packages/ci-ado/README.md), and
 the optional [CI agent](../../packages/ci-agent/README.md) (merge-queue planning
-and model-backed conflict resolution beside the Node relay), and
-[implementation plan with live acceptance gates](../plans/hobo-ci/README.md).
+and model-backed conflict resolution beside the Node relay).

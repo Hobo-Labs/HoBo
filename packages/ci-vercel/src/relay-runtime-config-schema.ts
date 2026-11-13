@@ -185,8 +185,7 @@ export const RelayRuntimeConfigSchema = z
 
 /**
  * Keys a config service may still hold from a retired feature: the hosted
- * relay's fleet verdict routes (ADR-0180, retired by ADR-0181 and plan 0026
- * section 3.9). Their protobuf fields are reserved. The loader drops them
+ * relay's fleet verdict routes (ADR-0180, retired by ADR-0181). Their protobuf fields are reserved. The loader drops them
  * before parsing, so a store that still holds one starts the relay as if it
  * did not; nothing reads them.
  */

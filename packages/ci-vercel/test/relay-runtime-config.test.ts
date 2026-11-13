@@ -126,7 +126,7 @@ describe("parseRelayRuntimeConfig", () => {
 	});
 
 	it("accepts and ignores the retired fleet verdict keys, whatever they hold", () => {
-		// Plan 0026, 3.9 (M11): the hosted relay no longer serves fleet
+		// ADR-0181 (M11): the hosted relay no longer serves fleet
 		// verdicts. A store that still holds the old keys starts the relay.
 		const retired = {
 			HOBO_CI_FLEET_REPORTERS_JSON:

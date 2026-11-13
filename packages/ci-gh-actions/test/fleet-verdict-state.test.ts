@@ -6,7 +6,7 @@ import {
 	FLEET_VERDICT_EXIT_MS,
 } from "../src/isolated-worker/fleet-verdict-state.js";
 
-/** What the box relay keeps between samples (plan 0025, 6.2): the holds and the pickup memory. */
+/** What the box relay keeps between samples (ADR-0180 amendment, item 2): the holds and the pickup memory. */
 const T0 = Date.parse("2026-11-12T11:14:00.000Z");
 const SAMPLE = 10_000;
 
