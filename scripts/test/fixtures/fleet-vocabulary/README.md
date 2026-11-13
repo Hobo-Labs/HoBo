@@ -10,6 +10,7 @@ is wired to a root `package.json` command and each has a test under
 | `pnpm run fleet:docs` | `scripts/check-fleet-docs.mts` | Vocabulary and documents agree (O27): events, ADR mentions, runbooks |
 | `pnpm run fleet:contracts` | `scripts/check-fleet-contracts.mts` | The contracts did not drift (O26): the emitter's `--check`, then no snapshot or record changed since the newest `Fleet-Contract:` commit |
 | `pnpm run fleet:outcome <id>` | `scripts/fleet-outcome.mts` | Runs one outcome of the design and prints its verification object |
+| `pnpm run fleet:verify` | `scripts/fleet-verify.mts` | Runs every outcome through `fleet:outcome` and writes `fleet-verification.json` |
 
 ## `fleet:vocabulary`
 
@@ -78,6 +79,15 @@ with that id in brackets (`[A13] …`) is allowed. O21 (cutover) and O23 (the
 deferred lane) are never passed by this command. Turbo-run checks
 (`turbo run test`) are judged by exit code only: their skipped tests are not
 counted.
+
+## `fleet:verify`
+
+`node --import tsx scripts/fleet-verify.mts [--root=<dir>] [--ids=O1,O2] [--include-deferred] [--out=<file>]`
+runs each outcome in its own `fleet-outcome.mts` process and writes the
+objects, in table order, to `fleet-verification.json` at the root (or
+`--out`). O21 and O23 are left out unless `--include-deferred` is given. It
+exits 1 when any outcome it ran did not pass; an outcome that printed no object
+is recorded as failed.
 
 ## Fixtures
 
