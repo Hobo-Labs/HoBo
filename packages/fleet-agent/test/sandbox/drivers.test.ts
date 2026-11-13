@@ -27,7 +27,17 @@ import {
 	createMicroVmSandboxDriver,
 	KATA_RUNTIME,
 } from "../../src/sandbox/microvm.js";
-import { createOciSandboxDriver } from "../../src/sandbox/oci-driver.js";
+import {
+	forwarderUid,
+	hostPidsBackstop,
+	POD_CONTAINER_TYPE,
+	POD_SANDBOX_ID,
+} from "../../src/sandbox/oci-config.js";
+import {
+	createOciSandboxDriver,
+	createOciSandboxDrivers,
+	STDIN_RELAY,
+} from "../../src/sandbox/oci-driver.js";
 import { createRecordingOci, type RecordingOci } from "./recording-oci.js";
 
 const root = mkdtempSync(join(tmpdir(), "hobo-l38-drivers-"));
@@ -53,6 +63,8 @@ function driver(
 	return createOciSandboxDriver({
 		tier,
 		runtime: "recording",
+		flavor: "runsc",
+		cgroups: { mode: "sentry" },
 		calls: oci,
 		images,
 		workRoot: mkdtempSync(join(root, "work-")),
@@ -156,7 +168,13 @@ describe("createOciSandboxDriver", () => {
 			expect(config?.process.capabilities.bounding).toEqual([]);
 			expect(config?.process.noNewPrivileges).toBe(true);
 			expect(config?.root.readonly).toBe(true);
-			expect(config?.linux.resources.pids.limit).toBe(32);
+			// runsc: the pids limit holds in the sentry; the host cgroup only backstops it.
+			expect(config?.process.rlimits).toContainEqual({
+				type: "RLIMIT_NPROC",
+				hard: 32,
+				soft: 32,
+			});
+			expect(config?.linux.resources.pids.limit).toBe(hostPidsBackstop(32));
 			expect(config?.linux.resources.memory.limit).toBe(128 * 1024 * 1024);
 			expect(config?.linux.namespaces.map((entry) => entry.type)).toContain(
 				"network",
@@ -320,6 +338,8 @@ describe("createOciSandboxDriver", () => {
 		const make = createOciSandboxDriver({
 			tier: SandboxTier.S1_CONTAINER,
 			runtime: "recording",
+			flavor: "runsc",
+			cgroups: { mode: "sentry" },
 			calls: oci,
 			images,
 			workRoot,
@@ -342,6 +362,8 @@ describe("createOciSandboxDriver", () => {
 		const make = createOciSandboxDriver({
 			tier: SandboxTier.S1_CONTAINER,
 			runtime: "recording",
+			flavor: "runsc",
+			cgroups: { mode: "sentry" },
 			calls: createRecordingOci({ startFails: true }),
 			images,
 			workRoot,
@@ -396,6 +418,149 @@ describe("createOciSandboxDriver", () => {
 			createRecordingOci({ startFails: true }),
 		).available();
 		expect(broken.ok).toBe(false);
+	});
+});
+
+describe("the forwarder container (D58)", () => {
+	it("under runsc, starts the forwarder as the pod and the workload in it, with the sentry's limits on every process", async () => {
+		const oci = createRecordingOci();
+		const sandbox = await driver(SandboxTier.S2_USER_KERNEL, oci).create(
+			createInput("order-pod", "http://127.0.0.1:9", async () => true),
+		);
+		try {
+			const container = oci.containers.get(sandbox.id);
+			const pod = `hobofwd-${sandbox.id.slice("hobo-".length)}`;
+			expect(container?.config.annotations).toEqual({
+				[POD_CONTAINER_TYPE]: "container",
+				[POD_SANDBOX_ID]: pod,
+			});
+			expect(container?.forwarder?.annotations).toEqual({
+				[POD_CONTAINER_TYPE]: "sandbox",
+				[POD_SANDBOX_ID]: pod,
+			});
+			// Rootless: the agent's id, in a pid namespace above the workload's.
+			expect(container?.forwarder?.process.user.uid).toBe(
+				forwarderUid({ uid: 1000, gid: 1000 }),
+			);
+			expect(container?.forwarder?.root).toEqual({
+				path: "/",
+				readonly: true,
+			});
+			expect(oci.calls.filter((call) => !call.startsWith("exec"))).toEqual([
+				`forward ${pod}`,
+				`start ${sandbox.id}`,
+			]);
+			await run(sandbox, ["true"]);
+			const exec = oci.processes.at(-1);
+			expect(exec?.rlimits).toContainEqual({
+				type: "RLIMIT_NPROC",
+				hard: 32,
+				soft: 32,
+			});
+			expect(exec?.rlimits).toContainEqual({
+				type: "RLIMIT_AS",
+				hard: 128 * 1024 * 1024,
+				soft: 128 * 1024 * 1024,
+			});
+		} finally {
+			await sandbox.destroy();
+		}
+	});
+
+	it("under runsc, relays standard input through a pipe inside the sandbox, so /dev/stdin opens", async () => {
+		const oci = createRecordingOci();
+		const sandbox = await driver(SandboxTier.S1_CONTAINER, oci).create(
+			createInput("order-stdin", "http://127.0.0.1:9", async () => true),
+		);
+		try {
+			const argv = [
+				"wget",
+				"-q",
+				"-O-",
+				"-Y",
+				"off",
+				"--post-file=/dev/stdin",
+				`${sandbox.controlUrl}/fence`,
+			];
+			const answer = await run(sandbox, argv, {
+				stdin: JSON.stringify(observed),
+			});
+			expect(answer).toEqual({ exitCode: 0, output: '{"allow":true}' });
+			expect(oci.processes.at(-1)?.args).toEqual([
+				"sh",
+				"-c",
+				STDIN_RELAY,
+				"hobo-stdin",
+				...argv,
+			]);
+			await run(sandbox, ["true"]);
+			expect(oci.processes.at(-1)?.args).toEqual(["true"]);
+		} finally {
+			await sandbox.destroy();
+		}
+	});
+
+	it("under a host runtime, joins the workload's network namespace by path", async () => {
+		const oci = createRecordingOci();
+		const make = createOciSandboxDriver({
+			tier: SandboxTier.S1_CONTAINER,
+			runtime: "recording",
+			flavor: "oci",
+			cgroups: { mode: "delegated", parent: "/hobo-fleet" },
+			calls: oci,
+			images,
+			workRoot: mkdtempSync(join(root, "work-")),
+			rootless: { uid: 1000, gid: 1000 },
+			log,
+		});
+		const sandbox = await make.create(
+			createInput("order-netns", "http://127.0.0.1:9", async () => true),
+		);
+		try {
+			const container = oci.containers.get(sandbox.id);
+			expect(container?.forwarder?.linux.namespaces).toContainEqual({
+				type: "network",
+				path: `/proc/${container?.pid}/ns/net`,
+			});
+			expect(container?.config.annotations).toEqual({});
+			expect(container?.routes).toHaveLength(2);
+		} finally {
+			await sandbox.destroy();
+		}
+	});
+});
+
+describe("createOciSandboxDrivers", () => {
+	it("serves S1 and S2 over one runtime with one self-test, and an order id once across them", async () => {
+		const oci = createRecordingOci();
+		const [s1, s2] = createOciSandboxDrivers({
+			tiers: [SandboxTier.S1_CONTAINER, SandboxTier.S2_USER_KERNEL],
+			runtime: "recording",
+			flavor: "runsc",
+			cgroups: { mode: "sentry" },
+			calls: oci,
+			images,
+			workRoot: mkdtempSync(join(root, "work-")),
+			rootless: { uid: 1000, gid: 1000 },
+			log,
+		});
+		expect(s1?.tier).toBe(SandboxTier.S1_CONTAINER);
+		expect(s2?.tier).toBe(SandboxTier.S2_USER_KERNEL);
+		expect((await s1?.available())?.ok).toBe(true);
+		expect((await s2?.available())?.ok).toBe(true);
+		expect(oci.calls.filter((call) => call.startsWith("start"))).toHaveLength(
+			1,
+		);
+		const sandbox = await s2?.create(
+			createInput("order-shared", "http://127.0.0.1:9", async () => true),
+		);
+		expect(sandbox?.tier).toBe(SandboxTier.S2_USER_KERNEL);
+		await sandbox?.destroy();
+		await expect(
+			s1?.create(
+				createInput("order-shared", "http://127.0.0.1:9", async () => true),
+			),
+		).rejects.toThrow(/already created/u);
 	});
 });
 
