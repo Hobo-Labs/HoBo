@@ -3,7 +3,7 @@
  * pass their suites, and for each assertion of each suite a double broken in
  * exactly that way fails exactly that assertion.
  */
-import { describe } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { SandboxTier } from "../../src/_generated/fleet_pb.js";
 import { BUS_ASSERTIONS } from "../../src/testing/conformance/bus.js";
 import {
@@ -12,8 +12,10 @@ import {
 	runKeyStoreConformance,
 	runReplicaConformance,
 	runSandboxConformance,
+	runSandboxIsolationProbe,
 	runTransportConformance,
 } from "../../src/testing/conformance/index.js";
+import { ISOLATION_ASSERTIONS } from "../../src/testing/conformance/isolation.js";
 import { JOURNAL_ASSERTIONS } from "../../src/testing/conformance/journal.js";
 import { KEYSTORE_ASSERTIONS } from "../../src/testing/conformance/keystore.js";
 import { REPLICA_ASSERTIONS } from "../../src/testing/conformance/replica.js";
@@ -25,12 +27,17 @@ import {
 	createMemoryEventStore,
 } from "../../src/testing/plumbing/index.js";
 import { BROKEN_BUSES } from "./doubles/bus.js";
+import {
+	BROKEN_ISOLATION,
+	isolatedSubject,
+	LEFT_BEHIND,
+} from "./doubles/isolation.js";
 import { BROKEN_JOURNALS } from "./doubles/journal.js";
 import { BROKEN_KEYSTORES, memoryKeyStore } from "./doubles/keystore.js";
 import { BROKEN_REPLICAS, memoryReplica } from "./doubles/replica.js";
 import { BROKEN_SANDBOXES } from "./doubles/sandbox.js";
 import { BROKEN_TRANSPORTS, memoryTransports } from "./doubles/transport.js";
-import { eachAssertionCatchesItsBreak } from "./harness.js";
+import { eachAssertionCatchesItsBreak, failingAssertions } from "./harness.js";
 
 describe("runBusConformance", () => {
 	describe("the in-memory bus passes", () => {
@@ -63,6 +70,34 @@ describe("runSandboxConformance", () => {
 	describe("broken sandbox drivers fail", () => {
 		eachAssertionCatchesItsBreak(SANDBOX_ASSERTIONS, BROKEN_SANDBOXES);
 	});
+});
+
+describe("runSandboxIsolationProbe", () => {
+	afterAll(() => {
+		for (const child of LEFT_BEHIND) child.kill("SIGKILL");
+	});
+	describe("a simulated, well-isolated driver passes", () => {
+		runSandboxIsolationProbe(isolatedSubject.make, isolatedSubject.options);
+	});
+	describe("simulated drivers broken in one way fail", () => {
+		eachAssertionCatchesItsBreak(
+			ISOLATION_ASSERTIONS,
+			BROKEN_ISOLATION,
+			120_000,
+		);
+	});
+	it("fails the fake sandbox driver", async () => {
+		const failing = await failingAssertions(ISOLATION_ASSERTIONS, {
+			...isolatedSubject,
+			make: async () => createFakeSandboxDriver(SandboxTier.S1_CONTAINER),
+		});
+		expect(failing).toContain(
+			"the sandbox runs with no effective capabilities",
+		);
+		expect(failing.length).toBeGreaterThanOrEqual(
+			ISOLATION_ASSERTIONS.length - 1,
+		);
+	}, 120_000);
 });
 
 describe("runKeyStoreConformance", () => {
