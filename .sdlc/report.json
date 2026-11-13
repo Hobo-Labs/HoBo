@@ -1,0 +1,35 @@
+{
+  "issue": "L17: @hobo/ci-vercel cache fleet on createLocalFleet and createOneActiveFleet (HoBo Fleet, wave 5)",
+  "branch": "fleet/L17",
+  "gates": [
+    { "command": "pnpm exec vitest run packages/ci-vercel/test/cache-fleet.test.ts packages/ci-vercel/test/cache-backend.test.ts packages/ci-vercel/test/cache-fleet-isolation.test.ts", "exitCode": 0 },
+    { "command": "pnpm run fleet:moved-tests -- O16 --lane L17", "exitCode": 0 },
+    { "command": "pnpm run fleet:outcome O16", "exitCode": 0 },
+    { "command": "pnpm run lint:boundaries", "exitCode": 0 },
+    { "command": "pnpm run lint:test-deps", "exitCode": 0 },
+    { "command": "pnpm codegen:check", "exitCode": 0 },
+    { "command": "pnpm exec turbo run test --filter @hobo/ci-vercel", "exitCode": 0 },
+    { "command": "pnpm --filter @hobo/ci-vercel run typecheck", "exitCode": 0 }
+  ],
+  "cascadeDeltas": [
+    {
+      "file": "packages/ci-vercel/src/cache-fleet.ts (after L21 merges)",
+      "change": "chooseAction passes routeFleetByBudget observations that carry both the NamedObservation fields and today's flat fields (backend, health, failingForMs, usage), so it compiles and routes the same against the wave-4 and the L21 input. Once L21 is on the integration branch the flat fields (type RoutedObservation) can be dropped; no other change is needed."
+    },
+    {
+      "file": "packages/ci-vercel/package.json",
+      "change": "None needed: @hobo/fleet and @hobo/backend-routing are already dependencies."
+    }
+  ],
+  "requirementChanges": [
+    "membership_epochs is read from the relay's configuration as an optional `membershipEpochs` boolean in HOBO_CI_CACHE_OFFERS_JSON (RelayCacheOffers field 3, CUE and zod updated), false when unset.",
+    "createCacheFleet stays synchronous: createLocalFleet and createOneActiveFleet are built lazily on first use and memoised; CacheFleet gains localFleet() returning the fleet and member records.",
+    "Local fleet identity: tenant `relay`, fleet id `cache`, owner service `hosted-relay`, one BACKEND member per bound cache named by its cache id, displayName the backend kind, credentialRef the env:// names of its binding, empty endpointDigest; policy AUTO_OWNER, allowedKinds [BACKEND], failoverAfterMs from the marks.",
+    "observe() reuses each replica's health from the tick's own register read (a wrapped replica records it) and probes only the member named active or target by the newest entry read, three times five seconds apart, as today.",
+    "routeFleetByBudget is called for real in the isolated checks rather than through a double, with dual-shape observations (see cascadeDeltas), so the moved tests assert today's outputs from the real routing.",
+    "CacheFleetUnavailableError keeps today's reasons; the loop's `no-active-member` is reported as today's `no-active-backend`.",
+    "No fleet-verdict, fleet-view or mesh code exists in packages/ci-vercel at fleet-wave-4, so there was nothing to delete or move to @hobo/fleet/client here."
+  ],
+  "fallbacks": [],
+  "notes": "Package-wide coverage of @hobo/ci-vercel is below 87/79/89/88 because of files outside the cache fleet (e.g. cache-backend.ts 72.6% lines, stateless-composition.ts 78.7%); src/cache-fleet.ts is at 92.8% lines, 77% branches, 87% functions, 90.8% statements. test/turbo-ci.test.ts 'stops a running task's process group on cancellation' failed once under parallel load and passed on rerun; unrelated."
+}
