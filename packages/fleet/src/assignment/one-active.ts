@@ -30,10 +30,10 @@ import {
 	ObservationSchema,
 } from "../_generated/fleet_pb.js";
 import { type MemberName, parseFleetId } from "../ids.js";
+import { eligibleForActive } from "../observation/index.js";
 import type {
 	AssignmentEntry,
 	AssignmentResolution,
-	EligibleMember,
 	NamedObservation,
 	OneActiveAction,
 	OneActiveDeps,
@@ -87,31 +87,6 @@ function reasonToken(text: string): string {
 /** `QUOTA_EXHAUSTED` → `quota-exhausted`: today's failure-class strings. */
 function healthToken(health: Health): string {
 	return (Health[health] ?? "UNKNOWN").toLowerCase().replaceAll("_", "-");
-}
-
-/**
- * The health rules of §6.8 for each observed member. A private copy of
- * `eligibleForActive` (L03, a later wave): see the lane report.
- */
-function eligibility(
-	observations: readonly NamedObservation[],
-	mode: "failover" | "switch",
-	recoveryPointMs: number | undefined,
-): EligibleMember[] {
-	return observations.map(({ name, observation }) => {
-		const reasons: string[] = [];
-		if (observation.health !== Health.REACHABLE)
-			reasons.push(healthToken(observation.health));
-		if (observation.ready === false) reasons.push("not-ready");
-		if (mode === "failover" && recoveryPointMs !== undefined) {
-			if (observation.lagMs === undefined) reasons.push("never-copied");
-			else if (observation.lagMs > recoveryPointMs)
-				reasons.push(
-					`lag ${observation.lagMs}ms exceeds rpo ${recoveryPointMs}ms`,
-				);
-		}
-		return { name, eligible: reasons.length === 0, reasons };
-	});
 }
 
 export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
@@ -308,7 +283,10 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 			assignment,
 			members,
 			observations,
-			eligibility: eligibility(observations, mode, policy?.recoveryPointMs),
+			eligibility: eligibleForActive(observations, {
+				mode,
+				recoveryPointMs: policy?.recoveryPointMs,
+			}),
 			nowMs: now(),
 		});
 	}

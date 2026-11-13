@@ -27,6 +27,6 @@ entry `e` (`decidingSet`), never from configuration.
 `hobo_fleet_assignment_tick`. While the pin is being decided, every instance of
 the fleet must run one configuration.
 
-**Interim.** `createOneActiveFleet` computes member eligibility with a private
-copy of the §6.8 rules until `eligibleForActive` (L03, wave 2) lands; it should
-then call that entry point instead.
+**Eligibility.** `createOneActiveFleet` computes member eligibility with
+`eligibleForActive` from `@hobo/fleet/observation` (L03), so its reasons read
+as today's `decideFleet` does (`lag 21m exceeds rpo 20m`).

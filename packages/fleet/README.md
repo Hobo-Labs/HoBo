@@ -57,8 +57,8 @@ gathers them here as the waves merge.
   register moved from `@hobo/backend-routing` with its algorithm unchanged,
   log formats 1 and 2, the cache-key replica (stored key
   `hobo:fleet:assignment`), membership epochs (off by default) and
-  `createOneActiveFleet`. Until `eligibleForActive` lands (wave 2) the loop
-  uses a private copy of the §6.8 rules.
+  `createOneActiveFleet`. The loop uses `eligibleForActive` from
+  `@hobo/fleet/observation`.
 - **Conformance suites** (`@hobo/fleet/testing`, wave 1) —
   [`src/testing/conformance/README.md`](src/testing/conformance/README.md).
   The seven suites (bus, transport, sandbox logic, sandbox isolation probe,
