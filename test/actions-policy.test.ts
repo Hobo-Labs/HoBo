@@ -486,14 +486,16 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				.join("\n");
 			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
+			// release-hobo-cli builds the CLI release-npm runs with its OIDC token.
 			if (
 				file === "release-hobo.yml" &&
-				(lines[start] ?? "").startsWith("  release-npm:")
+				((lines[start] ?? "").startsWith("  release-npm:") ||
+					(lines[start] ?? "").startsWith("  release-hobo-cli:"))
 			) {
 				assert.equal(
 					runsOn,
 					"ubuntu-24.04",
-					`${file}:${lines[start]} release-npm must use GitHub-hosted runners for npm OIDC`,
+					`${file}:${lines[start]} must use GitHub-hosted runners for npm OIDC`,
 				);
 				continue;
 			}

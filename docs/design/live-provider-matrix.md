@@ -121,6 +121,33 @@ could be replayed as if it were a live one.
 | `runtime-cloud-native` | **Stub** providers (`HOBO_CLOUD_NATIVE_UNIMPLEMENTED`) |
 | `runtime-dapr` / `runtime-browser` | Specialized |
 
+## HoBo's own release targets (release Freight through `@hobo/cd`)
+
+HoBo releases itself through HoBo CD
+([`release-channels.md`](./release-channels.md#hobo-releases-through-hobo-cd)).
+Every artifact family is recorded as Freight and promoted
+`hobo-release/<family>-candidate` -> `hobo-release/<family>-stable` by the
+`hobo deploy` composition, with the topology
+[`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
+(`--yard`). Each Camp is realized by the catalog resolver realizer
+(`packages/hobo/src/provider-hosting-catalog.ts`, `cd-runtime.ts`): the
+provider's shipped `ResourceResolver`, no shell, no new port method, the
+Camp's one credential locator resolved by the host at call time.
+
+| Target | Freight artifact | Verified by | Realizer | Status |
+|---|---|---|---|---|
+| GHCR (`ghcr.io/<owner>/hobo/*`) | each built image, `ARTIFACT_KIND_OCI_IMAGE`, the root digest of its exported OCI layout, at its GHCR coordinate | every blob in the HoBo artifact store (`ecosystem: store`); a reused published tag by registry lookup | `@hobo/provider-oci-registry`, `GITHUB_TOKEN`, byte transport | **realized**: config and layers uploaded (or mounted from the toolchain repository), manifest PUT by digest with its exact bytes, release tag, digest and tag observed (I5); no `docker push`. Stable observes only (pull scope) |
+| GitHub Pages (`gh-pages`) | the `hobo.static-site-tree/v1` index (`ARTIFACT_KIND_STATIC_ASSETS`) plus file blobs | digests in the HoBo artifact store; git tree id computed locally | `@hobo/provider-github` (branch mode), `GITHUB_TOKEN` | **realized**: Git Data API blobs (looked up before upload, never re-posted), tree, commit `deploy: <sha>`, compare-and-swap ref move; replaces the gh-pages push action. Limits: history grows one commit per deploy; a change of more than about 75 files can hit GitHub's 80-per-minute content-creation limit ([release-channels.md](./release-channels.md#hobo-releases-through-hobo-cd)) |
+| npm (`@hobo-labs/*`) | each tarball, `ARTIFACT_KIND_PACKAGE`, and its Sigstore bundle `<package>@<version>.sigstore` | digests in the HoBo artifact store; the bundle bound to the tarball's sha512 | `@hobo/provider-npm`, hobodev token (`env://NPM_TOKEN`); stable anonymous | **realized offline, not yet run live**: keyless provenance signed in the release job (`@hobo/cd/provenance`), version published with the bundle attached, dist-tag set, both observed; no `npm publish`. Token auth because OIDC trusted publishing of a scoped name does not route through the transport guard. Every refusal blocks |
+
+Offline proof: `scripts/test/release-freight-realize.test.ts` runs the built
+composition with the release topology against the providers' recorded
+registry and GitHub worlds (and the built binary with `--yard` for topology
+and `pipeline apply`). No live lane runs here; the providers' opt-in live
+lanes are the live evidence. Unverified live: GHCR's token endpoint with the
+non-secret user name the Camp declares (`hobo-release`) and the workflow
+token.
+
 ## Traffic-routing staging cutover lane (`pnpm run staging:cutover`)
 
 The Phase-5 transparency demo: `scripts/staging-cutover-demo.mts` drives the

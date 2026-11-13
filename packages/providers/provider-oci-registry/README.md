@@ -21,6 +21,7 @@ and no external dependency, and runs no shell (decision R2).
 | `OCI_REGISTRY_TRAFFIC_ROUTING_ABSENT` | All 17 portable offerings, each declared absent with a reason (ADR-0144). |
 | `OCI_REGISTRY_HOSTING_COVERAGE`, `ociRegistryProductRefusal` | The I14 coverage document, and a typed `RESOLVER_PRODUCT_UNSUPPORTED` for the repository and retention products it refuses. |
 | `parseManifest`, `parseReferrers`, `parseChallenge` | Parse boundaries for manifests, referrers indexes and `WWW-Authenticate`. |
+| `createLatin1FetchTransport`, `ociLatin1Transport`, `declareLatin1Transport`, `isLatin1Transport` | Byte transports for binary layers (see "Transport body encoding"). |
 
 ## Desired state
 
@@ -44,7 +45,9 @@ Anything else is refused by name rather than ignored.
 2. If it is absent, copy it. An index's child manifests are copied first. For
    each config and layer blob, in this order:
    - skip it when the target already has it;
-   - **cross-repository mount** when the source is on the same host;
+   - **cross-repository mount** when the source is on the same host; a mount
+     the registry declines (202), or one whose source the credential may not
+     read, falls back to an upload;
    - otherwise **upload** the bytes from the host `artifactStore` or the source
      registry, monolithically or in `Content-Range` chunks.
 
@@ -108,7 +111,21 @@ is explicit about that limit and never assumes past it:
   one code unit (0–255). Any blob moves, including chunked uploads.
 
 Either way, a blob is hashed before upload, so a lossy transport cannot push
-altered bytes.
+altered bytes. Manifests move as bytes too: under `latin1` the manifest is
+sent and read as its exact UTF-8 bytes (a non-ASCII annotation keeps its
+digest), never as decoded text.
+
+A host whose transport is the stock UTF-8 one gets a byte transport from
+`ociLatin1Transport(host)`: a transport already declared latin1
+(`declareLatin1Transport`, a `Symbol.for` marker that survives package
+copies) is used as is; otherwise ASCII requests (manifests, JSON, empty
+bodies) still go through the host, with its response re-expressed as latin1,
+and only a request whose body the host would re-encode (a binary layer)
+goes through `createLatin1FetchTransport` over `fetch`, bounded like the
+stock transport (no redirect following, a total deadline, a streamed response
+cap). The resolver's per-host guard wraps both. The `@hobo/hobo` catalog
+binds its OCI Camps this way, so HoBo's release pushes its images from the
+CD artifact store with no `docker push`.
 
 Blob GETs that a registry redirects to object storage are followed once, only
 to a host in the endpoint's `blobRedirectHosts`, and never with the registry

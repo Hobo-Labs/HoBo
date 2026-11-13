@@ -840,6 +840,7 @@ jobs:
         timeout-minutes: 6
         run: >-
           pnpm exec turbo run build
+          --filter=@hobo/cd^...
           --filter=@hobo/ci^...
           --filter=@hobo/ci-gh-actions^...
           --filter=@hobo/cli^...
@@ -849,6 +850,7 @@ jobs:
           --filter=@hobo/provider-lakebed^...
           --filter=@hobo/provider-neon^...
           --filter=@hobo/provider-netlify^...
+          --filter=@hobo/provider-oci-registry^...
           --filter=@hobo/provider-prisma-postgres^...
           --filter=@hobo/provider-upstash^...
           --filter=@hobo/runtime-local^...
@@ -1591,6 +1593,81 @@ jobs:
             echo "Main workspace test shards did not all succeed: $WORKSPACE_RESULT" >&2
             exit 1
           fi
+
+  hobo_freight:
+    name: HoBo's own Freight
+    # HoBo delivering itself: on a green main push, HoBo CI writes each deliverable
+    # this run built as Freight (packages/ci/src/freight-cli.ts): its bytes, a
+    # hobo.freight-manifest/v1 document and an in-toto/SLSA provenance statement,
+    # uploaded as a run artifact in the shape a HOBO_CI Freight source reads.
+    # Nothing is recorded in CD from here and no credential is used: the source
+    # re-reads the bytes and checks the digest (I15). Deliverables this workflow
+    # does not build (relay bundle, runner image, site bundle) are printed as
+    # skipped, never invented. Its own job, after the finish check, so that check
+    # stays GitHub-hosted arithmetic with no repository code (finding 154).
+    needs: [route, main_gate_finish]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.main_gate_finish.result == 'success' }}
+    runs-on: ${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve repo-local actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
+          filter: blob:none
+          fetch-tags: false
+          clean: false
+      - uses: ./.github/actions/hobo-repo-checkout
+        with:
+          fetch-depth: 1
+          submodules: recursive
+          bootstrap-composite-actions: "false"
+          marker: packages/ci/src/freight-cli.ts
+      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode for HoBo's own Freight
+        run: pnpm run pins:fetch ts-autocode
+      - name: Install dependencies for HoBo's own Freight
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build the SDK, the CLI and the Freight writer
+        timeout-minutes: 8
+        run: >-
+          pnpm exec turbo run build
+          --filter=@hobo/ci
+          --filter=@hobo/sdk
+          --filter=@hobo/hobo
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+      - name: Write HoBo's own Freight
+        env:
+          FREIGHT_IN: ${{ runner.temp }}/hobo-freight-in
+          FREIGHT_OUT: ${{ runner.temp }}/hobo-freight
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+          REF: ${{ github.ref }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          BUILDER_ID: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/hobo-ci.yml
+        run: |
+          set -euo pipefail
+          rm -rf "$FREIGHT_IN" "$FREIGHT_OUT"
+          mkdir -p "$FREIGHT_IN/sdk" "$FREIGHT_IN/cli"
+          pnpm --filter @hobo/sdk pack --pack-destination "$FREIGHT_IN/sdk"
+          pnpm --filter @hobo/hobo pack --pack-destination "$FREIGHT_IN/cli"
+          node --no-warnings packages/ci/dist/freight-cli.js \
+            --out "$FREIGHT_OUT" \
+            --repository "$REPOSITORY" --commit "$COMMIT" --ref "$REF" \
+            --pipeline hobo-ci --run-id "$RUN_ID" --ci-system github-actions \
+            --builder-id "$BUILDER_ID" \
+            --deliverable "sdk=$(ls "$FREIGHT_IN"/sdk/*.tgz)" \
+            --deliverable "cli=$(ls "$FREIGHT_IN"/cli/*.tgz)"
+      - name: Expose HoBo's own Freight as CI outputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-freight-${{ github.sha }}
+          path: ${{ runner.temp }}/hobo-freight
+          if-no-files-found: error
 
   artifact-trust:
     name: artifact signing and install verification

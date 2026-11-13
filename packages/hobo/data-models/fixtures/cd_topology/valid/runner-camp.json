@@ -1,0 +1,10 @@
+{
+	"campId": "hobo-ci-runners/box",
+	"yardId": "hobo-ci-runners",
+	"stationId": "local",
+	"provider": "self-hosted",
+	"regions": [],
+	"envType": "ci",
+	"labels": { "hobo.ci/runner-fleet": "true", "hobo.ci/runner-ring": "pilot" },
+	"management": "CAMP_MANAGEMENT_MANAGED"
+}

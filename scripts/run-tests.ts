@@ -100,7 +100,20 @@ const categories = {
 	// to ask "is the chaos surface green" without running everything. The glob
 	// keys on the `chaos` marker in the filename, which is how the two suites
 	// AGENTS.md distinguishes are already named.
-	chaos: ["packages/**/test/*chaos*.test.ts"],
+	// CD chaos (plan 0024 WP20) also runs from the conformance kit example,
+	// which drives the shared `runCdChaos` lane against its reference world.
+	chaos: [
+		"packages/**/test/*chaos*.test.ts",
+		"examples/cd-*/test/*chaos*.test.ts",
+	],
+	// CD load (plan 0024 WP20): the 10,000-Camp fan-out tick and the delivery
+	// feed. Scoped to the CD packages on purpose: `*load*` elsewhere names
+	// loaders, not load tests.
+	load: [
+		"examples/cd-*/test/*-load.test.ts",
+		"packages/cd/test/**/*-load.test.ts",
+		"packages/resolver-components/test/**/*-load.test.ts",
+	],
 	dom: ["tests/dom/**/*test.ts", "test/dom/**/*test.ts"],
 	component: ["tests/component/**/*test.ts", "test/component/**/*test.ts"],
 	behavior: ["tests/behavior/**/*test.ts", "features/**/*.feature"],
