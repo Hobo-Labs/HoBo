@@ -21,6 +21,7 @@ import {
 	REQUEST_BUDGET,
 	type RunPages,
 	readJsonFromZip,
+	renderReport,
 	routeEvidence,
 	SLIP_FALLBACK_PREFIX,
 } from "../ci/ci-health.mts";
@@ -131,6 +132,28 @@ describe("ci-health signals from recorded pages", () => {
 		assert.deepEqual(breachReport.signals.H3.evidence, [
 			"https://github.com/Hobo-Labs/HoBo/actions/runs/202",
 		]);
+	});
+
+	it("counts every fallback to the queue rule by the reason the route job gave (plan 0026, 4)", () => {
+		assert.deepEqual(clearReport.slipFallbacks, { total: 0, byReason: {} });
+		assert.equal(breachReport.slipFallbacks.total, 8);
+		assert.equal(breachReport.slipFallbacks.byReason["no routing slip"], 1);
+		assert.equal(
+			Object.values(breachReport.slipFallbacks.byReason).reduce(
+				(sum, count) => sum + count,
+				0,
+			),
+			8,
+		);
+		assert.match(breachReport.signals.H3.summary, /\(no routing slip 1\)$/);
+		assert.match(
+			renderReport(breachReport),
+			/Route fallbacks to the queue rule: 8 \(.*no routing slip 1.*\)\./,
+		);
+		assert.match(
+			renderReport(clearReport),
+			/Route fallbacks to the queue rule: none\./,
+		);
 	});
 
 	it("H6 is clear when fleet jobs waited under the limit, and the main gate's concurrency wait does not count", () => {

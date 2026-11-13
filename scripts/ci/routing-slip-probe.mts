@@ -135,7 +135,15 @@ export type ProbeReport = Readonly<{
 	slip: string;
 	readCalls: string;
 	write?: string;
+	/**
+	 * With `--write`: the probe slip was written, read back valid the way the
+	 * route job reads it, and the probe ref deleted.
+	 */
+	proved?: boolean;
 }>;
+
+/** The node id the probe signs its slip with, so a read-back is recognised. */
+const PROBE_NODE_ID = "routing-slip-probe";
 
 /** The probe itself; `write` adds the write, read-back and delete of `PROBE_REF`. */
 export async function probe(
@@ -194,7 +202,7 @@ export async function probe(
 			fork: { runner: "hobo", tier: "fleet", reason: "fleet-open" },
 			trunk: { runner: "hobo-trunk", tier: "fleet", reason: "fleet-open" },
 		},
-		relay: { nodeId: "routing-slip-probe", commit: "0000000" },
+		relay: { nodeId: PROBE_NODE_ID, commit: "0000000" },
 	});
 	const first = await writeRoutingSlip({ ...input, ref: PROBE_REF, message });
 	const second = await writeRoutingSlip({
@@ -216,7 +224,23 @@ export async function probe(
 	const trace = [...first.calls, ...second.calls, ...removed]
 		.map((entry) => `${entry.method} ${entry.status}`)
 		.join(", ");
-	return { slip, readCalls, write: `${trace}; read back: ${back}` };
+	return {
+		slip,
+		readCalls,
+		write: `${trace}; read back: ${back}`,
+		proved:
+			back.startsWith(`slip from ${PROBE_NODE_ID}@`) &&
+			removed[0]?.status === 204,
+	};
+}
+
+/**
+ * 1 when the read calls failed or, with `--write`, the transport was not
+ * proved; a write that throws fails the run before this.
+ */
+export function probeExitCode(report: ProbeReport): number {
+	if (report.readCalls.startsWith("reading")) return 1;
+	return report.proved === false ? 1 : 0;
 }
 
 function option(argv: readonly string[], name: string): string | undefined {
@@ -243,7 +267,7 @@ async function main(argv: readonly string[]): Promise<number> {
 		nowMs: Date.now(),
 	});
 	process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-	return report.readCalls.startsWith("reading") ? 1 : 0;
+	return probeExitCode(report);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)

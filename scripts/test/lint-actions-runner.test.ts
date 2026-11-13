@@ -585,6 +585,38 @@ describe("Actions runner policy", () => {
 		);
 	});
 
+	it("pins the routing slip probe job in the health workflow (plan 0026, 3.2)", () => {
+		const workflow = readFileSync(
+			new URL("../../.github/workflows/ci-health.yml", import.meta.url),
+			"utf8",
+		);
+		const at = workflow.indexOf("  routing-slip-probe:\n");
+		assert.ok(at > 0, "ci-health.yml runs the routing slip probe");
+		const job = workflow.slice(at);
+		const health = (probeJob: string) =>
+			lintFile(
+				"ci-health.yml",
+				`name: fixture\non:\n  workflow_dispatch:\npermissions:\n  actions: read\njobs:\n  ci-health:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: node scripts/ci/ci-health.mts\n\n${probeJob}`,
+			);
+		assert.equal(health(job), 0);
+		// The probe job may not write elsewhere, gain a step, or run on the fleet.
+		assert.notEqual(
+			health(job.replace("--write", "--write --ref refs/heads/main")),
+			0,
+		);
+		assert.notEqual(
+			health(job.replace("runs-on: ubuntu-24.04", "runs-on: hobo")),
+			0,
+		);
+		assert.notEqual(
+			health(
+				job.replace("contents: write", "contents: write\n      actions: write"),
+			),
+			0,
+		);
+		assert.notEqual(health(`${job}      - run: echo extra\n`), 0);
+	});
+
 	it("keeps label-by-name out of every other workflow", () => {
 		assert.notEqual(
 			lintRunner("pricing-ci.yml", "probe", "hobo-local-host"),

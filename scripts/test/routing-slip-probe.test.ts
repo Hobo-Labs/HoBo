@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
 	PROBE_REF,
 	probe,
+	probeExitCode,
 	SLIP_TREE_PATH,
 	writeRoutingSlip,
 } from "../ci/routing-slip-probe.mts";
@@ -300,5 +301,18 @@ describe("the routing slip's Git Data API calls (recorded fake)", () => {
 		);
 		assert.equal(github.refs.has("hobo/routing-slip"), false);
 		assert.equal(github.refs.has(PROBE_REF.replace(/^refs\//u, "")), false);
+		assert.equal(report.proved, true);
+		assert.equal(probeExitCode(report), 0);
+	});
+
+	it("fails the run when the transport is not proved (CI health's live probe)", () => {
+		const readCalls = "GET /git/ref and GET /git/commits read main at x";
+		assert.equal(probeExitCode({ slip: "", readCalls }), 0);
+		assert.equal(probeExitCode({ slip: "", readCalls, proved: true }), 0);
+		assert.equal(probeExitCode({ slip: "", readCalls, proved: false }), 1);
+		assert.equal(
+			probeExitCode({ slip: "", readCalls: "reading main failed: 403" }),
+			1,
+		);
 	});
 });

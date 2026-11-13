@@ -481,7 +481,7 @@ holds that head for 24 hours. A slip carries the commit that wrote it, so a
 node that did not update is visible
 ([runner queue guide](../../packages/ci/RUNNER-QUEUE.md)).
 
-**Continuous proof of the transport.** On every push to `main`, CI health
+**Continuous proof of the transport.** Every two hours, CI health
 writes and reads back `refs/hobo/routing-slip-probe` with its job's own
 `GITHUB_TOKEN`, through the same Git Data API calls the slip uses, and counts
 route fallbacks by reason (`no routing slip`, `slip expired`, …) over its

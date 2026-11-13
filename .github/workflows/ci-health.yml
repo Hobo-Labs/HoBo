@@ -7,6 +7,12 @@ name: CI health
 #
 # GitHub-hosted on purpose: it reads the fleet's record, so it must not wait
 # on the fleet. It checks out only the monitor, which loads no package.
+#
+# routing-slip-probe is the continuous live proof of the routing slip's
+# transport (plan 0026, 3.2; ADR-0181): with its own GITHUB_TOKEN it writes
+# refs/hobo/routing-slip-probe (never the live slip) through the Git Data API
+# calls the box relay uses, reads it back the way the route job does, and
+# deletes it. It alone holds contents: write. Pinned by scripts/lint-actions.ts.
 on:
   schedule:
     - cron: "17 */2 * * *"
@@ -65,3 +71,26 @@ jobs:
           path: ci-health-report.json
           if-no-files-found: error
           retention-days: 30
+
+  routing-slip-probe:
+    name: Routing slip transport
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ci/routing-slip-probe.mts
+            scripts/ci/runner-routing.mts
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Write, read back and delete refs/hobo/routing-slip-probe
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/routing-slip-probe.mts --write
