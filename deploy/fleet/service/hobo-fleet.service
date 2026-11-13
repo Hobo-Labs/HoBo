@@ -1,0 +1,25 @@
+# HoBo Fleet agent as a systemd user unit (design §6.15, §6.16).
+# `hobo fleet service install` writes the same unit for the current user; this
+# copy is for image builders and configuration management. Install it as
+# ~/.config/systemd/user/hobo-fleet.service, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now hobo-fleet
+#   loginctl enable-linger "$USER"   # keep it running while logged out
+# The agent provisions its own sandbox runtime (D58); no host package is needed.
+[Unit]
+Description=HoBo Fleet agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart="/usr/local/bin/hobo" "fleet" "run"
+Environment="HOBO_FLEET_AUTHORITY_URL=https://fleet.example.com"
+Environment="HOBO_FLEET_KEYSTORE=file"
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=120
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

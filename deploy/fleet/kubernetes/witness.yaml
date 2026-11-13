@@ -1,0 +1,66 @@
+# The witness (design §6.14, §6.16): co-signs audit checkpoints and proposed
+# trust records. In production it runs in another cluster or on another host
+# than the authority; it has its own service account, so its OpenBao token
+# reads only the witness key and its NATS credentials.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hobo-fleet-witness
+  labels: { app.kubernetes.io/name: hobo-fleet-witness, app.kubernetes.io/part-of: hobo-fleet }
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hobo-fleet-witness
+  labels: { app.kubernetes.io/name: hobo-fleet-witness, app.kubernetes.io/part-of: hobo-fleet }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: hobo-fleet-witness }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: hobo-fleet-witness, app.kubernetes.io/part-of: hobo-fleet }
+    spec:
+      serviceAccountName: hobo-fleet-witness
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: witness
+          image: ghcr.io/hobo-labs/hobo/hobo-fleet-witness:candidate
+          args: ["--config", "/etc/hobo-fleet/witness.json"]
+          env:
+            - { name: HOBO_FLEET_NATS_CA, value: /etc/hobo-fleet/tls/ca.pem }
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+          volumeMounts:
+            - { name: config, mountPath: /etc/hobo-fleet/witness.json, subPath: witness.json, readOnly: true }
+            - { name: nats-ca, mountPath: /etc/hobo-fleet/tls, readOnly: true }
+            - { name: openbao-token, mountPath: /run/secrets, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: hobo-fleet-witness-config }
+        - name: nats-ca
+          secret:
+            secretName: hobo-fleet-nats-tls
+            items: [{ key: ca.pem, path: ca.pem }]
+        - name: openbao-token
+          projected:
+            sources:
+              - serviceAccountToken: { audience: openbao, expirationSeconds: 3600, path: openbao-token }
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }

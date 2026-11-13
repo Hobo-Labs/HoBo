@@ -1,0 +1,212 @@
+# HoBo Fleet, high-availability profile (design §6.16): three NATS servers in
+# one cluster (replicas 3), two authority replicas journalling to FLEET_JOURNAL
+# and answering auth callouts in one queue group, the witness, two
+# peer-to-peer relays, and the provisioning job.
+#
+#   docker compose -f deploy/fleet/compose.ha.yml up -d
+#   docker compose -f deploy/fleet/compose.ha.yml run --rm provision
+#
+# This file brings the whole profile up on one Docker host (the soak does). In
+# production the witness runs on another host and the relays in other regions:
+# split the services across hosts and keep the settings. deploy/fleet/README.md
+# lists the files to place under deploy/fleet/secrets/ (none is committed).
+#
+# Cluster routes use a private, internal network with fixed addresses and
+# mutual TLS; nothing outside the three servers can reach them. Monitoring is
+# on each server's loopback. The authority replicas speak plain HTTP on this
+# host's loopback (8443, 8444): put the TLS-terminating load balancer in front.
+name: hobo-fleet-ha
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  restart: unless-stopped
+  init: true
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+x-nats: &nats
+  <<: *hardening
+  # NATS 2.15.3 or later (design §6.7, D13). It runs as the image's root user
+  # holding no capability, so it can write its own volume and nothing else.
+  image: nats:2.15.3-alpine
+  command: ["-c", "/etc/nats/nats.conf"]
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+    interval: 10s
+    timeout: 3s
+    retries: 6
+    start_period: 15s
+
+x-nats-env: &nats-env
+  HOBO_FLEET_NATS_ROUTE_1: nats-route://172.30.53.11:6222
+  HOBO_FLEET_NATS_ROUTE_2: nats-route://172.30.53.12:6222
+  HOBO_FLEET_NATS_ROUTE_3: nats-route://172.30.53.13:6222
+
+x-authority: &authority
+  <<: *hardening
+  image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-authority:${HOBO_FLEET_VERSION:-candidate}
+  user: "1000:1000"
+  command: ["--config", "/etc/hobo-fleet/authority.json"]
+  environment:
+    HOBO_FLEET_NATS_CA: /etc/hobo-fleet/tls/ca.pem
+  volumes:
+    - ./config/authority.ha.json:/etc/hobo-fleet/authority.json:ro
+    - ./secrets/nats/tls/ca.pem:/etc/hobo-fleet/tls/ca.pem:ro
+  secrets:
+    - source: authority-openbao-token
+      target: openbao-token
+  networks: [fleet]
+  depends_on:
+    nats-1: { condition: service_healthy }
+    nats-2: { condition: service_healthy }
+    nats-3: { condition: service_healthy }
+
+x-relay: &relay
+  <<: *hardening
+  image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-relay:${HOBO_FLEET_VERSION:-candidate}
+  user: "1000:1000"
+  command: ["--config-path", "/etc/hobo-fleet-relay/iroh-relay.toml"]
+  volumes:
+    - ./relay/iroh-relay.toml:/etc/hobo-fleet-relay/iroh-relay.toml:ro
+    - ./secrets/relay/tls:/etc/hobo-fleet-relay/tls:ro
+  networks: [fleet]
+
+services:
+  nats-1:
+    <<: *nats
+    environment:
+      <<: *nats-env
+      HOBO_FLEET_NATS_SERVER_NAME: hobo-fleet-nats-1
+      HOBO_FLEET_NATS_CLUSTER_HOST: 172.30.53.11
+    volumes:
+      - ./nats/ha.conf:/etc/nats/nats.conf:ro
+      - ./secrets/nats/operator.conf:/etc/nats/operator.conf:ro
+      - ./secrets/nats/tls:/etc/nats/tls:ro
+      - nats-1-data:/data
+    ports: ["4222:4222", "9443:8443"]
+    networks:
+      fleet:
+        aliases: [nats-1.fleet.example.com]
+      nats-cluster:
+        ipv4_address: 172.30.53.11
+
+  nats-2:
+    <<: *nats
+    environment:
+      <<: *nats-env
+      HOBO_FLEET_NATS_SERVER_NAME: hobo-fleet-nats-2
+      HOBO_FLEET_NATS_CLUSTER_HOST: 172.30.53.12
+    volumes:
+      - ./nats/ha.conf:/etc/nats/nats.conf:ro
+      - ./secrets/nats/operator.conf:/etc/nats/operator.conf:ro
+      - ./secrets/nats/tls:/etc/nats/tls:ro
+      - nats-2-data:/data
+    ports: ["4223:4222", "9444:8443"]
+    networks:
+      fleet:
+        aliases: [nats-2.fleet.example.com]
+      nats-cluster:
+        ipv4_address: 172.30.53.12
+
+  nats-3:
+    <<: *nats
+    environment:
+      <<: *nats-env
+      HOBO_FLEET_NATS_SERVER_NAME: hobo-fleet-nats-3
+      HOBO_FLEET_NATS_CLUSTER_HOST: 172.30.53.13
+    volumes:
+      - ./nats/ha.conf:/etc/nats/nats.conf:ro
+      - ./secrets/nats/operator.conf:/etc/nats/operator.conf:ro
+      - ./secrets/nats/tls:/etc/nats/tls:ro
+      - nats-3-data:/data
+    ports: ["4224:4222", "9445:8443"]
+    networks:
+      fleet:
+        aliases: [nats-3.fleet.example.com]
+      nats-cluster:
+        ipv4_address: 172.30.53.13
+
+  authority-1:
+    <<: *authority
+    ports: ["127.0.0.1:8443:8443"]
+
+  authority-2:
+    <<: *authority
+    ports: ["127.0.0.1:8444:8443"]
+
+  witness:
+    <<: *hardening
+    # A separate host in production (design §6.16); here, another user.
+    image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-witness:${HOBO_FLEET_VERSION:-candidate}
+    user: "1001:1001"
+    command: ["--config", "/etc/hobo-fleet/witness.json"]
+    environment:
+      HOBO_FLEET_NATS_CA: /etc/hobo-fleet/tls/ca.pem
+    volumes:
+      - ./config/witness.ha.json:/etc/hobo-fleet/witness.json:ro
+      - ./secrets/nats/tls/ca.pem:/etc/hobo-fleet/tls/ca.pem:ro
+    secrets:
+      - source: witness-openbao-token
+        target: openbao-token
+    networks: [fleet]
+    depends_on:
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+
+  relay-1:
+    <<: *relay
+    ports: ["443:8443", "80:8080", "7842:7842/udp"]
+
+  relay-2:
+    <<: *relay
+    ports: ["4443:8443", "8080:8080", "7843:7842/udp"]
+
+  provision:
+    <<: *hardening
+    # `hobo fleet ops provision`: creates the streams and buckets of §6.7 with
+    # replicas 3. Run by an operator, never by a service.
+    image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-cli:${HOBO_FLEET_VERSION:-candidate}
+    user: "1000:1000"
+    profiles: [provision]
+    restart: "no"
+    command: ["fleet", "ops", "provision", "--config", "/etc/hobo-fleet/provisioner.json"]
+    environment:
+      HOBO_FLEET_NATS_CA: /etc/hobo-fleet/tls/ca.pem
+      HOBO_HOME: /tmp/hobo
+    volumes:
+      - ./config/provisioner.ha.json:/etc/hobo-fleet/provisioner.json:ro
+      - ./secrets/nats/tls/ca.pem:/etc/hobo-fleet/tls/ca.pem:ro
+    secrets:
+      - source: provisioner-openbao-token
+        target: openbao-token
+    networks: [fleet]
+    depends_on:
+      nats-1: { condition: service_healthy }
+      nats-2: { condition: service_healthy }
+      nats-3: { condition: service_healthy }
+
+networks:
+  fleet: {}
+  nats-cluster:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.53.0/24
+
+volumes:
+  nats-1-data: {}
+  nats-2-data: {}
+  nats-3-data: {}
+
+secrets:
+  authority-openbao-token:
+    file: ./secrets/authority.openbao-token
+  witness-openbao-token:
+    file: ./secrets/witness.openbao-token
+  provisioner-openbao-token:
+    file: ./secrets/provisioner.openbao-token

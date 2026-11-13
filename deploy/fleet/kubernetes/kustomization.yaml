@@ -1,0 +1,36 @@
+# HoBo Fleet on Kubernetes, high-availability profile (design §6.16).
+# The configuration maps come from the same files the Compose profiles use,
+# one directory up, so build with:
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/fleet/kubernetes
+# Pin the release by setting newTag below (the release workflow publishes
+# ghcr.io/hobo-labs/hobo/<image>:<version>).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hobo-fleet
+resources:
+  - namespace.yaml
+  - nats.yaml
+  - authority.yaml
+  - witness.yaml
+  - relay.yaml
+  - provision-job.yaml
+configMapGenerator:
+  - name: hobo-fleet-nats-config
+    files: [nats.conf=../nats/ha.conf]
+  - name: hobo-fleet-authority-config
+    files: [authority.json=../config/authority.ha.json]
+  - name: hobo-fleet-witness-config
+    files: [witness.json=../config/witness.ha.json]
+  - name: hobo-fleet-provisioner-config
+    files: [provisioner.json=../config/provisioner.ha.json]
+  - name: hobo-fleet-relay-config
+    files: [iroh-relay.toml=../relay/iroh-relay.toml]
+images:
+  - name: ghcr.io/hobo-labs/hobo/hobo-fleet-authority
+    newTag: candidate
+  - name: ghcr.io/hobo-labs/hobo/hobo-fleet-witness
+    newTag: candidate
+  - name: ghcr.io/hobo-labs/hobo/hobo-fleet-relay
+    newTag: candidate
+  - name: ghcr.io/hobo-labs/hobo/hobo-cli
+    newTag: candidate

@@ -1,0 +1,143 @@
+# HoBo Fleet, standalone profile (design §6.16): one NATS server (replicas 1),
+# one authority on SQLite, the witness on the same host under another user,
+# one peer-to-peer relay, and the provisioning job.
+#
+#   docker compose -f deploy/fleet/compose.standalone.yml up -d
+#   docker compose -f deploy/fleet/compose.standalone.yml run --rm provision
+#
+# Before the first start, deploy/fleet/README.md lists the files to place under
+# deploy/fleet/secrets/ (none of them is committed): the NATS operator.conf from
+# the key ceremony, TLS material for NATS and the relay, and one OpenBao
+# workload token per service. Every key lives in OpenBao, one secret each.
+#
+# The authority speaks plain HTTP on loopback; terminate TLS for its issuer
+# origin in front of it. Port 443 on this host belongs to the relay, so the
+# NATS WebSocket listener is published on 9443 here.
+name: hobo-fleet
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  restart: unless-stopped
+  init: true
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  nats:
+    <<: *hardening
+    # NATS 2.15.3 or later (design §6.7, D13). It runs as the image's root user
+    # holding no capability, so it can write its own volume and nothing else.
+    image: nats:2.15.3-alpine
+    command: ["-c", "/etc/nats/nats.conf"]
+    environment:
+      HOBO_FLEET_NATS_SERVER_NAME: hobo-fleet-nats
+    volumes:
+      - ./nats/standalone.conf:/etc/nats/nats.conf:ro
+      - ./secrets/nats/operator.conf:/etc/nats/operator.conf:ro
+      - ./secrets/nats/tls:/etc/nats/tls:ro
+      - nats-data:/data
+    ports:
+      - "4222:4222"
+      - "${HOBO_FLEET_NATS_WSS_PORT:-9443}:8443"
+    networks:
+      fleet:
+        aliases: [nats.fleet.example.com]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  authority:
+    <<: *hardening
+    image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-authority:${HOBO_FLEET_VERSION:-candidate}
+    user: "1000:1000"
+    command: ["--config", "/etc/hobo-fleet/authority.json"]
+    environment:
+      HOBO_FLEET_NATS_CA: /etc/hobo-fleet/tls/ca.pem
+    volumes:
+      - ./config/authority.standalone.json:/etc/hobo-fleet/authority.json:ro
+      - ./secrets/nats/tls/ca.pem:/etc/hobo-fleet/tls/ca.pem:ro
+      - authority-data:/var/lib/hobo-fleet
+    secrets:
+      - source: authority-openbao-token
+        target: openbao-token
+    ports:
+      - "127.0.0.1:8443:8443"
+    networks: [fleet]
+    depends_on:
+      nats: { condition: service_healthy }
+
+  witness:
+    <<: *hardening
+    # Another operating-system account than the authority's (design §6.16).
+    image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-witness:${HOBO_FLEET_VERSION:-candidate}
+    user: "1001:1001"
+    command: ["--config", "/etc/hobo-fleet/witness.json"]
+    environment:
+      HOBO_FLEET_NATS_CA: /etc/hobo-fleet/tls/ca.pem
+    volumes:
+      - ./config/witness.standalone.json:/etc/hobo-fleet/witness.json:ro
+      - ./secrets/nats/tls/ca.pem:/etc/hobo-fleet/tls/ca.pem:ro
+    secrets:
+      - source: witness-openbao-token
+        target: openbao-token
+    networks: [fleet]
+    depends_on:
+      nats: { condition: service_healthy }
+
+  relay:
+    <<: *hardening
+    image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-relay:${HOBO_FLEET_VERSION:-candidate}
+    user: "1000:1000"
+    command: ["--config-path", "/etc/hobo-fleet-relay/iroh-relay.toml"]
+    volumes:
+      - ./relay/iroh-relay.toml:/etc/hobo-fleet-relay/iroh-relay.toml:ro
+      - ./secrets/relay/tls:/etc/hobo-fleet-relay/tls:ro
+    ports:
+      - "443:8443"
+      - "80:8080"
+      - "7842:7842/udp"
+    networks: [fleet]
+
+  provision:
+    <<: *hardening
+    # `hobo fleet ops provision`: creates the streams and buckets of §6.7. Run
+    # by an operator, never by a service: `docker compose run --rm provision`.
+    image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-cli:${HOBO_FLEET_VERSION:-candidate}
+    user: "1000:1000"
+    profiles: [provision]
+    restart: "no"
+    command: ["fleet", "ops", "provision", "--config", "/etc/hobo-fleet/provisioner.json"]
+    environment:
+      HOBO_FLEET_NATS_CA: /etc/hobo-fleet/tls/ca.pem
+      HOBO_HOME: /tmp/hobo
+    volumes:
+      - ./config/provisioner.standalone.json:/etc/hobo-fleet/provisioner.json:ro
+      - ./secrets/nats/tls/ca.pem:/etc/hobo-fleet/tls/ca.pem:ro
+    secrets:
+      - source: provisioner-openbao-token
+        target: openbao-token
+    networks: [fleet]
+    depends_on:
+      nats: { condition: service_healthy }
+
+networks:
+  fleet: {}
+
+volumes:
+  nats-data: {}
+  authority-data: {}
+
+secrets:
+  authority-openbao-token:
+    file: ./secrets/authority.openbao-token
+  witness-openbao-token:
+    file: ./secrets/witness.openbao-token
+  provisioner-openbao-token:
+    file: ./secrets/provisioner.openbao-token

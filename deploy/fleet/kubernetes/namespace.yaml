@@ -1,0 +1,12 @@
+# The namespace enforces the restricted Pod Security Standard, so a workload
+# that is not non-root, read-only and capability-free is refused at admission.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hobo-fleet
+  labels:
+    app.kubernetes.io/part-of: hobo-fleet
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

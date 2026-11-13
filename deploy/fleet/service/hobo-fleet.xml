@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- HoBo Fleet agent as a Windows task (design §6.15, §6.16): runs at logon,
+     as the user, with least privilege, and restarts on failure.
+     `hobo fleet service install` writes the same definition for the current
+     user; this copy is for image builders and configuration management.
+     Register it with
+       Register-ScheduledTask -TaskName hobo-fleet -Xml (Get-Content -Raw hobo-fleet.xml)
+     and set HOBO_FLEET_AUTHORITY_URL with setx: the task runs with the
+     user's environment. -->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>HoBo Fleet agent</Description>
+    <URI>\HoBo\hobo-fleet</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>999</Count>
+    </RestartOnFailure>
+    <Hidden>true</Hidden>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Program Files\nodejs\node.exe</Command>
+      <Arguments>"C:\Program Files\HoBo\bin\hobo.js" fleet run</Arguments>
+    </Exec>
+  </Actions>
+</Task>

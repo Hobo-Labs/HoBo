@@ -1,0 +1,90 @@
+# The peer-to-peer relay (design §6.12, §6.16): iroh-relay from
+# deploy/fleet/relay/iroh-relay.toml. Run two or more, in different regions
+# (one Deployment per region in production). The relay's TLS certificate is
+# the secret hobo-fleet-relay-tls (relay.pem, relay.key).
+apiVersion: v1
+kind: Service
+metadata:
+  name: hobo-fleet-relay
+  labels: { app.kubernetes.io/name: hobo-fleet-relay, app.kubernetes.io/part-of: hobo-fleet }
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector: { app.kubernetes.io/name: hobo-fleet-relay }
+  ports:
+    - { name: https, port: 443, targetPort: 8443, protocol: TCP }
+    - { name: http, port: 80, targetPort: 8080, protocol: TCP }
+    - { name: quic, port: 7842, targetPort: 7842, protocol: UDP }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hobo-fleet-relay
+  labels: { app.kubernetes.io/name: hobo-fleet-relay, app.kubernetes.io/part-of: hobo-fleet }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: hobo-fleet-relay }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: hobo-fleet-relay, app.kubernetes.io/part-of: hobo-fleet }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: topology.kubernetes.io/zone
+                labelSelector:
+                  matchLabels: { app.kubernetes.io/name: hobo-fleet-relay }
+      containers:
+        - name: relay
+          image: ghcr.io/hobo-labs/hobo/hobo-fleet-relay:candidate
+          args: ["--config-path", "/etc/hobo-fleet-relay/iroh-relay.toml"]
+          ports:
+            - { name: https, containerPort: 8443, protocol: TCP }
+            - { name: http, containerPort: 8080, protocol: TCP }
+            - { name: quic, containerPort: 7842, protocol: UDP }
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          readinessProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: https }
+            periodSeconds: 30
+          volumeMounts:
+            - { name: config, mountPath: /etc/hobo-fleet-relay/iroh-relay.toml, subPath: iroh-relay.toml, readOnly: true }
+            - { name: tls, mountPath: /etc/hobo-fleet-relay/tls, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: hobo-fleet-relay-config }
+        - name: tls
+          secret: { secretName: hobo-fleet-relay-tls, defaultMode: 0440 }
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hobo-fleet-relay
+  labels: { app.kubernetes.io/name: hobo-fleet-relay, app.kubernetes.io/part-of: hobo-fleet }
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: hobo-fleet-relay }
