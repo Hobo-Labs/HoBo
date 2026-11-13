@@ -12,10 +12,11 @@ import {
 	memoryAdmitHeadroom,
 	parseConfiguration,
 } from "@hobo/ci";
-import { createTrustedMeshBoard } from "@hobo/ci/mesh";
+import { createTrustedMeshBoard, meshAdvertRejected } from "@hobo/ci/mesh";
 import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
+	boxLeaseIdsOf,
 	ciEventSinkFromEnv,
 	countLiveBoxContainers,
 	createBoxGitMirror,
@@ -25,8 +26,11 @@ import {
 	createContainerStallGuard,
 	createDepsImageEnsurer,
 	createFleetCapacityPublisher,
+	createFleetPickupMemory,
 	createFleetRoutePublisher,
 	createFleetStatePublisher,
+	createFleetVerdictReporter,
+	createFleetVerdictSequence,
 	createGithubAppTransport,
 	createGithubJobPoller,
 	createGithubOidcVerifier,
@@ -55,6 +59,9 @@ import {
 	defaultGitMirrorFallbackRoot,
 	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
+	evaluateFleetVerdict,
+	type FleetJobsSeen,
+	type FleetVerdictReporter,
 	freeDiskMb,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
@@ -71,6 +78,7 @@ import {
 	meshReliabilityJournal,
 	meshReliabilityResetToken,
 	meshSettingsFromEnv,
+	parseFleetVerdictReporterSettings,
 	parseWorkerStopMode,
 	readAvailableMemoryMb,
 	readHostHealthSample,
@@ -365,6 +373,12 @@ const fleetRoutesFlag = process.env.HOBO_CI_FLEET_ROUTES ?? "0";
 if (fleetRoutesFlag !== "0" && fleetRoutesFlag !== "1")
 	throw new Error("invalid HOBO_CI_FLEET_ROUTES");
 const publishFleetRoutes = fleetRoutesFlag === "1";
+// The fleet verdict reporter (ADR-0180): off unless HOBO_CI_FLEET_VERDICT_MODE
+// is shadow or report. Its id defaults to the mesh node id when there is a mesh.
+const fleetVerdictSettings = parseFleetVerdictReporterSettings(
+	process.env,
+	plan.admission === "pull" ? meshBootSettings?.nodeId : undefined,
+);
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -746,6 +760,8 @@ try {
 	await worker.reconcileOrphanJobs();
 	await worker.reconcileStallRecoveries();
 	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
+	let depsImageWorkRunning = false;
+	let warmContainersStarting = 0;
 	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 		depsImageEnsurer = createDepsImageEnsurer({
 			root: depsRoot,
@@ -822,7 +838,17 @@ try {
 					),
 				release: () => storageAdmission.release(DEPS_BUILD_ADMISSION_ID),
 			},
-			onEvent: ({ event, ...fields }) => log(event, fields),
+			onEvent: ({ event, ...fields }) => {
+				// The box's own deps-image work: while it runs the box is not idle.
+				if (event === "hobo_ci_deps_image_ensure_started")
+					depsImageWorkRunning = true;
+				else if (
+					event === "hobo_ci_deps_image_ensure" ||
+					event === "hobo_ci_deps_image_ensure_failed"
+				)
+					depsImageWorkRunning = false;
+				log(event, fields);
+			},
 		});
 	}
 	const host = createCompositeIsolatedHost({ store, worker: worker.host });
@@ -1200,16 +1226,26 @@ try {
 						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
 					beforePoll: () => mergeQueueCache.refresh(),
 					onMainFabricTrunkQueued: (repository) => {
-						void worker.prewarm(repository).catch((error) =>
-							log("hobo_ci_main_fabric_prewarm_failed", {
-								repository,
-								message: error instanceof Error ? error.message : "unknown",
-							}),
-						);
+						warmContainersStarting += 1;
+						void worker
+							.prewarm(repository)
+							.catch((error) =>
+								log("hobo_ci_main_fabric_prewarm_failed", {
+									repository,
+									message: error instanceof Error ? error.message : "unknown",
+								}),
+							)
+							.finally(() => {
+								warmContainersStarting -= 1;
+							});
 					},
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
+	// What the fleet verdict reporter reads of GitHub: the last completed
+	// poll's jobs on fleet labels, and the jobs runners took lately.
+	const fleetPickups = createFleetPickupMemory();
+	let latestFleetJobs: FleetJobsSeen | undefined;
 
 	let draining = false;
 	let workerDrainStartedAtMs: number | undefined;
@@ -1327,11 +1363,15 @@ try {
 						terminalJobs: [],
 					},
 				);
+				const { waiting, fleetJobs, ...counts } = summary;
+				if (fleetJobs) {
+					latestFleetJobs = fleetJobs;
+					fleetPickups.remember(fleetJobs);
+				}
 				const pruned = (await heldJobPruner?.maybePrune()) ?? 0;
 				if (summary.accepted > 0 || pruned > 0)
 					void runTick().catch(() => undefined);
 				if (!pollWorthLogging(summary, Date.now())) return;
-				const { waiting, ...counts } = summary;
 				log("hobo_ci_isolated_worker_jobs_polled", {
 					...counts,
 					waitingJobs: waiting.length,
@@ -1468,6 +1508,118 @@ try {
 	}
 	runDepsImageEnsure();
 
+	// The fleet verdict reporter (ADR-0180; plan 0025, 6.1-6.3). It evaluates
+	// the box every 10 s on its own unreferenced timer and sends signed
+	// reports to the hosted relay; nothing here awaits it.
+	const fleetLabels = trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"];
+	const evaluateFleet = async () => {
+		const nowMs = Date.now();
+		const active = await store.activeLeases();
+		const idle =
+			active.length === 0 &&
+			liveLaunchSlotsInUse === 0 &&
+			!depsImageWorkRunning &&
+			warmContainersStarting === 0 &&
+			gcInFlight === undefined;
+		const pickups = fleetPickups.list(nowMs);
+		const ownLeaseIds = new Set<string>();
+		for (const id of boxLeaseIdsOf(pickups))
+			if (await store.get(id)) ownLeaseIds.add(id);
+		// A board that cannot be read throws: no report, and the relay's
+		// entry lapses (R3).
+		const peers =
+			mesh && meshBoard
+				? (await meshBoard.nodes())
+						.filter(
+							(node) =>
+								node.id !== mesh?.self().id &&
+								node.validUntilMs > nowMs &&
+								node.healthy &&
+								!meshAdvertRejected(node, nowMs),
+						)
+						.map((node) => ({ labels: node.labels, freeSlots: node.freeSlots }))
+				: undefined;
+		const seen = latestFleetJobs;
+		return evaluateFleetVerdict({
+			nowMs,
+			labels: fleetLabels,
+			idle,
+			host: {
+				availableMb: readAvailableMemoryMb(),
+				pressure: hostPressureSample(),
+				health: hostHealth.current(),
+			},
+			admission: {
+				standardClassMb: memoryConfig.classes.standard,
+				reserveMb: memoryConfig.reserveMb,
+				volatilityMb: capacityVolatilityMb,
+			},
+			pools:
+				fleetVerdictSettings.mode === "off" ? [] : fleetVerdictSettings.pools,
+			minFreeRunners:
+				fleetVerdictSettings.mode === "off"
+					? 1
+					: fleetVerdictSettings.minFreeRunners,
+			poll:
+				seen === undefined
+					? undefined
+					: {
+							completedAtMs: Date.parse(seen.completedAt),
+							inProgress: seen.inProgress.map((job) => ({
+								label: job.label,
+								runnerName: job.runnerName,
+								startedAtMs: Date.parse(job.startedAt ?? seen.completedAt),
+							})),
+						},
+			mesh: peers,
+			ownLeaseIds,
+			pickups,
+		});
+	};
+	let fleetReporter: FleetVerdictReporter | undefined;
+	if (fleetVerdictSettings.mode === "off")
+		log("hobo_ci_fleet_verdict_state", { mode: "off" });
+	else {
+		// The same key as the mesh's, made on first start if there is none;
+		// its public half is what enrollment lists.
+		const reporterIdentity =
+			meshIdentity ??
+			(await loadMeshIdentity(
+				process.env.HOBO_CI_MESH_KEY_FILE ??
+					join(dirname(plan.store.path), "mesh-node.key"),
+			));
+		fleetReporter = createFleetVerdictReporter({
+			mode: fleetVerdictSettings.mode,
+			reporterId: fleetVerdictSettings.reporterId,
+			origin: fleetVerdictSettings.origin,
+			identity: reporterIdentity,
+			labels: fleetLabels,
+			evaluate: evaluateFleet,
+			repositories: async () => [
+				...new Set(
+					((await store.configuration())?.configuration?.connections ?? []).map(
+						(connection) => connection.repository,
+					),
+				),
+			],
+			sequence: createFleetVerdictSequence(
+				join(dirname(plan.store.path), "fleet-verdict-state.json"),
+			),
+			enterMs: fleetVerdictSettings.enterMs,
+			exitMs: fleetVerdictSettings.exitMs,
+			log,
+		});
+		log("hobo_ci_fleet_verdict_state", {
+			mode: fleetVerdictSettings.mode,
+			status: "started",
+			reporterId: fleetVerdictSettings.reporterId,
+			origin: fleetVerdictSettings.origin,
+			labels: fleetLabels.join(","),
+			publicKey: reporterIdentity.publicKey,
+		});
+		fleetReporter.start();
+	}
+
 	let shutdownOnce: Promise<void> | undefined;
 	let runningWorkerContainers = 0;
 
@@ -1489,6 +1641,8 @@ try {
 			await mesh?.advertise();
 			// And tell routing: this worker no longer counts towards its labels.
 			await publishFleetState({ now: true }).catch(() => undefined);
+			// One last fleet verdict that blocks nothing, best effort.
+			await fleetReporter?.clear().catch(() => undefined);
 			const backgroundKinds = (): (
 				| "tick"
 				| "inbox"
