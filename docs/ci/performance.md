@@ -152,6 +152,7 @@ unindexed new finding files as notices.
 - [Finding 146: route job read a capacity record no worker wrote](./findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)
 - [Finding 147: merge queue shard timed out a one-second test on a stalled box](./findings/0147-merge-queue-shard-timed-out-a-one-second-test-on-a-stalled-box.md)
 - [Finding 148: jit runner cross job custody kill](./findings/0148-jit-runner-cross-job-custody-kill.md)
+- [Finding 149: routing slip facts, main on the queue rule, hosted relay down, box on c7ec8d449](./findings/0149-routing-slip-facts-main-on-the-queue-rule-hosted-relay-down-box-on-c7ec8d449.md)
 <!-- findings-index:end -->
 
 ## Data

@@ -155,7 +155,12 @@ defaults today, so moving them changes nothing:
 The implementer reads every default from the code (`worker-slots.ts`,
 daemon, `fleet-verdict-state.ts`, `route-runner.mts`,
 `plan-main-workspace-shards.mts`) and the test asserts the committed values
-equal them. The daemon reads the file from its checkout at start; at start
+equal them. Checked in layer 01: every value above is the code's default
+except `verdict.stallMs`, which no code holds yet; 600000 is this plan's
+ten minutes (3.3). The zod schema is `src/runner-routing.ts` (a leaf module,
+since `project-schema.ts` embeds it and `relay-routing.ts` imports
+`project-schema.ts`); `parseCiRunnerRouting` in `relay-routing.ts` reads it
+from the file. The daemon reads the file from its checkout at start; at start
 it also logs once the **names** (never values) of any retired environment
 variable still set on the box, so a box-local override that stops applying
 is visible. The route job and the main-gate plan read it with a
