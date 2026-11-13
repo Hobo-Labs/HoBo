@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	deferredByRangeOnly,
 	FULL_WAIT_SECONDS,
 	gitFetchBlobArgs,
 	gitleaksArgs,
@@ -182,7 +183,52 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 	});
 });
 
+describe("range-only early start", () => {
+	it("defers only a scan that would refetch blobs", () => {
+		const exists = () => true;
+		const range = planMainGitleaksScan({
+			eventName: "push",
+			pushBefore: "a".repeat(40),
+			sha: "b".repeat(40),
+			commitExists: exists,
+		});
+		const full = planMainGitleaksScan({
+			eventName: "workflow_dispatch",
+			pushBefore: undefined,
+			sha: "b".repeat(40),
+			commitExists: exists,
+		});
+		assert.equal(range.mode, "range");
+		assert.equal(full.mode, "full");
+		assert.equal(deferredByRangeOnly(range, true), false);
+		assert.equal(deferredByRangeOnly(full, true), true);
+		assert.equal(deferredByRangeOnly(full, false), false);
+	});
+});
+
 describe("main-gate wiring", () => {
+	it("starts the range scan beside the plan and leaves a full scan to the last step", () => {
+		const preflight = mainGatePlan.indexOf(
+			"./.github/actions/ci-runner-preflight",
+		);
+		const start = mainGatePlan.indexOf("name: Start secret scan");
+		const plan = mainGatePlan.indexOf("name: Plan workspace shards");
+		const scan = mainGatePlan.indexOf("name: Secret scan (full history)");
+		assert.ok(preflight > -1 && start > preflight && plan > start, "order");
+		const early = mainGatePlan.slice(
+			start,
+			mainGatePlan.indexOf("\n      - ", start + 1),
+		);
+		assert.match(
+			early,
+			/gitleaks-main-scan\.mts --background --range-only --dir "\$dir"/u,
+		);
+		// Detached, so the next steps run while it scans.
+		assert.match(early, /^\s+nohup node /mu);
+		assert.match(early, /2>&1 &\n/u);
+		const last = mainGatePlan.slice(scan);
+		assert.match(last, /if \[ -f "\$dir\/deferred" \]/u);
+	});
 	it("runs gitleaks through gitleaks-main-scan in the plan job, not inside S0 or finish", () => {
 		// The merge queue does not scan, and Main full gate is skipped when the
 		// merge queue passed the tree, so the scan lives in the job every main

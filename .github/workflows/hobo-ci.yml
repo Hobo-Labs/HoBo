@@ -1057,6 +1057,26 @@ jobs:
           attest: "false"
           include-own-run: "true"
       - uses: ./.github/actions/ci-runner-preflight
+      # The secret scan starts here and runs beside the deps and plan steps; the last
+      # step waits for it, so the job's 20 minutes hold the longer of the two, not
+      # their sum. Only a range scan starts early: a full-history scan refetches every
+      # blob into the clone, so it is left to the last step (gitleaks-main-scan.mts
+      # --range-only writes the deferred marker instead of scanning).
+      - name: Start secret scan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          SCAN_SHA: ${{ github.sha }}
+          # Read-only: lists completed runs to find the last green main commit.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/gitleaks"
+          mkdir -p "$dir"
+          nohup node --experimental-strip-types --no-warnings \
+            scripts/ci/gitleaks-main-scan.mts --background --range-only --dir "$dir" \
+            >"$dir/start.log" 2>&1 &
       # The deps layer, as steps. Only the box has the Docker context its job
       # containers start from; on any other runner (an ARC pod pulled several GB
       # for nothing) the daemon's ensure loop promotes the layer instead. Main
@@ -1145,7 +1165,7 @@ jobs:
           key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
       # The merge queue does not run this scan, so every main run does, reused or
       # not: the step has no condition. Last, so nothing else uses the clone while
-      # a full-history scan backfills its blobs.
+      # a full-history scan (deferred by the early start) backfills its blobs.
       - name: Secret scan (full history)
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -1158,8 +1178,17 @@ jobs:
           set -euo pipefail
           dir="$RUNNER_TEMP/gitleaks"
           mkdir -p "$dir"
-          node --experimental-strip-types --no-warnings \
-            scripts/ci/gitleaks-main-scan.mts --background --dir "$dir"
+          # The early start has either begun a range scan (pid) or deferred a full
+          # one (deferred). Give it a moment to say which; with neither, start here.
+          for _ in $(seq 1 30); do
+            if [ -f "$dir/pid" ] || [ -f "$dir/deferred" ] || [ -f "$dir/exit" ]; then break; fi
+            sleep 1
+          done
+          if [ -f "$dir/deferred" ] || { [ ! -f "$dir/pid" ] && [ ! -f "$dir/exit" ]; }; then
+            rm -f "$dir/deferred"
+            node --experimental-strip-types --no-warnings \
+              scripts/ci/gitleaks-main-scan.mts --background --dir "$dir"
+          fi
           node --experimental-strip-types --no-warnings \
             scripts/ci/gitleaks-main-scan.mts --wait --dir "$dir"
 

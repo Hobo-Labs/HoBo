@@ -77,8 +77,8 @@ runs:
           api="${INPUT_API:-}"
           # A cache server's address is a URL and nothing else: it is written to
           # GITHUB_ENV, where a stray newline would set another variable.
-          if [ -n "${api}" ] && ! [[ "${api}" =~ ^https?://[A-Za-z0-9._:/-]+$ ]]; then
-            echo "::error::turbo-api must be an http(s) URL" >&2
+          if [ -n "${api}" ] && ! [[ "${api}" =~ ^https://[A-Za-z0-9._:/-]+$ ]]; then
+            echo "::error::turbo-api must be an https URL: the token is sent to it" >&2
             exit 1
           fi
           {

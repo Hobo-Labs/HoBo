@@ -126,9 +126,11 @@ describe("turbo-cache action on the box", () => {
 		);
 	});
 
-	it("refuses a cache server address that is not a plain http(s) URL", () => {
+	it("refuses a cache server address that is not a plain https URL", () => {
 		for (const api of [
 			"turbo-cache.example.internal",
+			// The token travels to this address, so plain http is refused.
+			"http://turbo-cache.example.internal:3000",
 			"file:///etc/passwd",
 			"https://ok.example\nNODE_OPTIONS=--require=/tmp/x",
 			"https://ok.example/$(id)",
