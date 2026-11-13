@@ -54,7 +54,12 @@ none). Design: ADR-0182, §6.11 and decision D58 of the fleet design.
 - **CLI**: `node --import tsx packages/fleet-agent/src/cli/sandbox-provision.ts
   [--cache <dir>] [--probe]` provisions and probes with this same code and
   prints `{runtime, version, arch, digest, mode, cgroups, reason?}`; exit 0
-  when a mode is available, 3 when not. CI runs exactly this.
+  when a mode is available, 3 when not. CI runs exactly this
+  (`.github/workflows/fleet-integration.yml`, "Provision the sandbox
+  runtime"): it caches into `$RUNNER_TEMP/hobo-sandbox`, exports
+  `HOBO_FLEET_SANDBOX_CACHE` and `HOBO_FLEET_SANDBOX_DOWNLOAD=0` for O10, lifts
+  the user-namespace sysctls once with passwordless sudo when the probe is
+  refused, and otherwise fails naming the kernel capability.
 
 ## How a sandbox is built
 
@@ -78,7 +83,7 @@ none). Design: ADR-0182, §6.11 and decision D58 of the fleet design.
   namespace; the sentry, which runsc starts with no host capabilities to
   speak of in a minimal chroot, is the boundary, and the gofer serves host
   files as their real owners.
-- **Pod and forwarder** (D58; no `nsenter`). Under runsc each sandbox is a
+- **Pod and forwarder** (D58; no host namespace tool). Under runsc each sandbox is a
   pod: the forwarder (`forwarder.ts`) is its sandbox container and the
   workload a second container in it (CRI annotations
   `io.kubernetes.cri.container-type` / `io.kubernetes.cri.sandbox-id`), on the
