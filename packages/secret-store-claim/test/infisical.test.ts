@@ -10,8 +10,13 @@ import {
 	relayStoreLayout,
 	SECRET_STORE_CLAIM_ITEM,
 	SecretStoreError,
+	updateDeployIdentityTrust,
 	verifySelfHostedInfisicalClaim,
 } from "../src/index.js";
+import {
+	RELAY_DEPLOY_SUBJECT,
+	RELAY_GITHUB_SUBJECT,
+} from "./support/github-subject.js";
 import {
 	type StubInfisical,
 	startStubInfisical,
@@ -52,7 +57,7 @@ const layout = relayStoreLayout({
 	vercelTeamSlug: "hobo-team",
 	vercelTeamId: "team_fixture",
 	vercelProjectId: "prj_fixture",
-	repository: "Hobo-Labs/HoBo",
+	github: RELAY_GITHUB_SUBJECT,
 });
 const scope = claimScopeFor("ci-vercel", {});
 
@@ -101,11 +106,18 @@ describe("a self-hosted Infisical, bootstrapped and handed over by claim", () =>
 			boundSubject: "owner:hobo-team:project:hobo-ci:environment:production",
 			boundClaims: { owner_id: "team_fixture", project_id: "prj_fixture" },
 		});
+		// The subject GitHub issues for the repository (immutable form), never
+		// the legacy repo:owner/name one, and its ids pinned as claims.
 		expect(deploy?.oidc).toMatchObject({
 			boundIssuer: "https://token.actions.githubusercontent.com",
 			boundAudiences: "https://github.com/Hobo-Labs",
-			boundSubject: "repo:Hobo-Labs/HoBo:ref:refs/heads/main",
+			boundSubject: RELAY_DEPLOY_SUBJECT,
+			boundClaims: {
+				repository_id: "1274791462",
+				repository_owner_id: "344805935",
+			},
 		});
+		expect(binding.deployOidcSubject).toBe(RELAY_DEPLOY_SUBJECT);
 
 		expect(binding).toMatchObject({
 			kind: "infisical-self-hosted",
@@ -271,5 +283,74 @@ describe("an Infisical Cloud organization the owner already has", () => {
 				allowLoopback: true,
 			}),
 		).toEqual(binding);
+	});
+});
+
+describe("re-running connect against an existing store", () => {
+	it("replaces the deploy identity's OIDC trust in place, creating nothing", async () => {
+		const store = createOneTimeActionStore(testCipher());
+		const stale = relayStoreLayout({
+			vercelTeamSlug: "hobo-team",
+			vercelTeamId: "team_fixture",
+			vercelProjectId: "prj_fixture",
+			github: RELAY_GITHUB_SUBJECT,
+			branch: "legacy-branch",
+		});
+		const { binding } = await provisionSelfHostedInfisical({
+			siteUrl: stub.url,
+			ownerEmail: "owner@hobo.invalid",
+			organization: "hobo",
+			layout: stale,
+			deploymentRef: "ci-vercel",
+			store,
+			scope,
+			now: NOW,
+			generatePassword: () => PASSWORD,
+			allowLoopback: true,
+		});
+		const before = {
+			projects: stub.projects.length,
+			identities: stub.identities.length,
+		};
+		await updateDeployIdentityTrust({
+			siteUrl: stub.url,
+			ownerAccessToken: stub.adminToken(),
+			deployIdentityId: binding.deployIdentityId,
+			trust: layout.deployTrust,
+		});
+		expect({
+			projects: stub.projects.length,
+			identities: stub.identities.length,
+		}).toEqual(before);
+		const deploy = stub.identities.find(
+			(identity) => identity.id === binding.deployIdentityId,
+		);
+		expect(deploy?.oidc?.boundSubject).toBe(RELAY_DEPLOY_SUBJECT);
+		expect(stub.patches).toEqual([binding.deployIdentityId]);
+	});
+
+	it("fails typed, naming no token, when the identity has no OIDC Auth to update", async () => {
+		const store = createOneTimeActionStore(testCipher());
+		await provisionSelfHostedInfisical({
+			siteUrl: stub.url,
+			ownerEmail: "owner@hobo.invalid",
+			organization: "hobo",
+			layout,
+			deploymentRef: "ci-vercel",
+			store,
+			scope,
+			now: NOW,
+			generatePassword: () => PASSWORD,
+			allowLoopback: true,
+		});
+		const error = await updateDeployIdentityTrust({
+			siteUrl: stub.url,
+			ownerAccessToken: stub.adminToken(),
+			deployIdentityId: "missing-identity",
+			trust: layout.deployTrust,
+		}).catch((caught: unknown) => caught);
+		expect(error).toMatchObject({ code: "SECRET_STORE_PROVIDER_FAILED" });
+		expect(String(error)).toContain("not-found");
+		expect(String(error)).not.toContain(stub.adminToken());
 	});
 });
