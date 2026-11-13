@@ -45,7 +45,17 @@ const activeCiFiles = new Set([
  */
 const probeFile = "fleet-probe.yml";
 const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
-const allowedEnabled = new Set([acceptanceFile, probeFile, ...activeCiFiles]);
+/**
+ * The CI health monitor (docs/ci/health-monitor.md): one GitHub-hosted job,
+ * `ci-health`, that runs the monitor and nothing on the fleet it watches.
+ */
+const healthFile = "ci-health.yml";
+const allowedEnabled = new Set([
+	acceptanceFile,
+	probeFile,
+	healthFile,
+	...activeCiFiles,
+]);
 
 /**
  * The probe asks for each label by name, which no other workflow may, so it
@@ -71,6 +81,27 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 	}
 	if (!/^permissions: \{\}$/m.test(text))
 		errors.push(`${probeFile}: the probe must hold no permissions`);
+}
+
+/** The health monitor's workflow holds its one hosted job and nothing else. */
+function lintHealthWorkflow(errors: string[], text: string): void {
+	const lines = text.split("\n");
+	const jobsIndex = lines.indexOf("jobs:");
+	const starts = lines.flatMap((line, index) =>
+		index > jobsIndex && /^  [A-Za-z0-9_-]+:$/.test(line) ? [index] : [],
+	);
+	if (jobsIndex === -1 || starts.length === 0)
+		errors.push(`${healthFile}: the health monitor needs its ci-health job`);
+	for (const [position, start] of starts.entries()) {
+		const block = lines.slice(start, starts[position + 1] ?? lines.length);
+		const runsOn = block
+			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
+			.find((value) => value !== undefined);
+		if (!isAlwaysHostedJob(lines[start] ?? "", block, runsOn))
+			errors.push(
+				`${healthFile}:${start + 1}: the health monitor runs one job, ci-health, on ${HOSTED_RUNS_ON}, that runs node scripts/ci/ci-health.mts`,
+			);
+	}
 }
 
 /** The one runner choice besides `hobo`: trunk events may ask for the box's trunk label. */
@@ -153,6 +184,11 @@ function isAlwaysHostedJob(
 	if (/^  route:$/.test(jobLine))
 		return block.some(
 			(line) => line.trim() === "uses: ./.github/actions/route-runner",
+		);
+	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
+	if (/^  ci-health:$/.test(jobLine))
+		return block.some((line) =>
+			/^\s*-?\s*run: node scripts\/ci\/ci-health\.mts$/.test(line),
 		);
 	const stepsAt = block.findIndex((line) => line === "    steps:");
 	const header = block.slice(0, stepsAt === -1 ? block.length : stepsAt);
@@ -505,6 +541,8 @@ function lintWorkflowYaml(
 		lintProbeWorkflow(errors, text);
 		return;
 	}
+	if (file === healthFile && !requireDisabledJobs)
+		lintHealthWorkflow(errors, text);
 	const lines = text.split(/\r?\n/);
 	const jobsIndex = lines.findIndex((line) => line === "jobs:");
 	if (jobsIndex === -1) {
