@@ -140,7 +140,7 @@ function storageLeases(leases: readonly Lease[]) {
 	return leases.map((lease) => ({
 		id: lease.id,
 		sandboxName: lease.sandboxName,
-		jobId: String(lease.jobId),
+		jobId: String(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId),
 	}));
 }
 
