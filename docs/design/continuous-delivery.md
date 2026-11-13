@@ -278,25 +278,53 @@ resolver components never see secrets (I9). Records are secret-free.
 
 ## Dogfooding: HoBo CI delivered by HoBo.CD
 
-HoBo uses HoBo.CD to deliver HoBo. The intent is that HoBo CI's own moving
-parts are Bindles promoted through `@hobo/cd`, not deployed by hand or by
-workflow scripts:
+HoBo uses HoBo.CD to deliver HoBo. HoBo CI's moving parts and HoBo's own
+releases are Bindles promoted through `@hobo/cd` with the same `hobo` binary,
+topology files and realizers any user gets; there is no HoBo-only delivery
+lane. Commands and runbooks: [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
 
-- **The hosted CI relay** ([hosted-relay-stateless.md](./hosted-relay-stateless.md))
-  is Freight built by HoBo CI and promoted through a staging Camp to
-  production, verified on its own health, with rollback as a Delta.
-- **Runner controllers** are delivered the same way, per Yard.
-- **Self-hosted runner fleets** are Camps in Rail-bound Camp sets: agents
-  enroll with double opt-in, a placed node fans new runner images out group by
-  group under a failure budget, and offline runners are deferred rather than
-  failed.
+- **The hosted CI relay** ([hosted-relay-stateless.md](./hosted-relay-stateless.md)).
+  Vercel's Git integration builds each push to `main`; the relay deploy
+  workflow holds no Vercel token and runs `hobo ci deploy --adopt`, which
+  finds Vercel's deployment of the pushed commit through GitHub's Deployments
+  API, records it as Freight and promotes it through the Camps of
+  [`packages/ci-vercel/deploy/yard.ts`](../../packages/ci-vercel/deploy/yard.ts),
+  preview then production. Verification fails closed at the public
+  production origin: `/healthz` must name the commit served and `/readyz`
+  must answer 200 (typed codes `RELAY_NOT_CONFIGURED`, `RELAY_NOT_READY`,
+  `COMMIT_MISMATCH`). The adoption runs under a deadline the gate computes,
+  so it fits the 20-minute job limit and refuses with
+  `HOBO_CI_ADOPT_BUDGET_EXHAUSTED` or `HOBO_CI_ADOPT_NOT_READY_IN_BUDGET`
+  instead of hanging.
+- **Self-hosted runner fleets and their controllers**
+  ([runner-fleet README](../../packages/ci-gh-actions/deploy/runner-fleet/README.md)).
+  Every runner host is a Camp `hobo-ci-runners/<host>` in the Rail-bound Camp
+  set `hobo-ci-runner-fleet`. A Freight source discovers digest-pinned
+  `hobo-ci-worker` images (and, with a release index, the controller
+  releases of the same version); the pipeline fans each new Freight out
+  pilot first, one host at a time, under a failure budget. Each host's CD
+  agent enrolls with double opt-in and runs the runner-host realizer, which
+  upgrades the controller (container or supervised process), checks it with
+  the verify suite and restores the previous digest when verification fails.
+- **HoBo releases** ([release-channels.md](./release-channels.md#hobo-releases-through-hobo-cd)).
+  [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
+  declares npm, OCI and GitHub Pages Camps, candidate and stable. The release
+  workflow builds the `hobo` CLI once and promotes candidate to stable with
+  `hobo deploy promote`; the provider catalog's own resolvers realize each
+  Camp (npm with Sigstore provenance, OCI layout upload, Pages tree), so the
+  workflow no longer runs `npm publish` or `docker push` itself. The
+  `release-realize` job proves that path on every pull request and merge
+  group.
 
-What exists today is the seam: `@hobo/cd/compose` exports
-`hoboCiDogfoodSources`, which declares `HOBO_CI` Freight sources for the relay
-and the runner fleet so they can be applied with
-`hobo deploy pipeline apply`. The pipelines, Camp sets, Rails and runbooks
-that actually move HoBo CI through HoBo.CD land in a follow-up dogfood
-package; until then HoBo CI's deployment is unchanged.
+`@hobo/cd/compose` still exports `hoboCiDogfoodSources` for a Station that
+wants the relay and fleet sources in its own delivery module.
+
+What only a live run can confirm, and what waits on the owner: a published
+controller release index (until then a process-mode runner host is adopted
+by hand once), the npm provenance check against the live registry, the relay
+production origin being public under Vercel Deployment Protection, and the
+container engine on the self-hosted runners. These are tracked in
+[live-provider-matrix.md](./live-provider-matrix.md#hobocd-live-lanes).
 
 ## Limits and honest scope
 
