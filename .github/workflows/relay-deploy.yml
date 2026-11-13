@@ -197,8 +197,8 @@ jobs:
       # The route job asks the relay `.hobo/ci.json` names, at its public
       # origin, for this repository's fleet verdict (ADR-0180). Vercel has
       # already promoted the deploy, so this reports rather than gates: a red
-      # check is the signal to roll back in the order of
-      # docs/plans/0025-relay-owned-runner-routing.md section 6.10. A relay
+      # check is the signal to roll back in the order of "Roll back" under
+      # "Fleet verdict operations" in packages/ci-vercel/README.md. A relay
       # that does not answer never stops a run; routing treats it as no relay.
       - name: Probe the fleet verdict at the public origin
         if: steps.gate.outputs.run == 'true'
@@ -222,7 +222,7 @@ jobs:
           echo "GET $origin/v1/fleet/verdicts/$repository answered $code"
           echo "- Fleet verdict at $origin: $code" >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" != "200" ]; then
-            echo "::error title=Relay fleet verdict::GET /v1/fleet/verdicts/$repository at $origin answered $code; route jobs read this as no relay. Roll back in the order of plan 0025 section 6.10"
+            echo "::error title=Relay fleet verdict::GET /v1/fleet/verdicts/$repository at $origin answered $code; route jobs read this as no relay. Follow the rollback order in the fleet verdict runbook (packages/ci-vercel/README.md)"
             exit 1
           fi
           node -e '

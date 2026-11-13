@@ -6,8 +6,7 @@ lineage: a source the node reads, upstream qualification plus soak, or an
 unexpired approval for one Camp (D4, I16). Fleet nodes fan out and qualify
 downstream on quorum (D21). Rail pipelines shadow a Rail in INFORM nodes
 before ENFORCE nodes enforce it (D24, I23). This folder is half of work
-package WP5 of
-[plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md).
+package WP5.
 
 | Export | What it does |
 |---|---|

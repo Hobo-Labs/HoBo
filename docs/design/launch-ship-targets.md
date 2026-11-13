@@ -8,8 +8,6 @@ tags: [hobo, design, ship, launch]
 # Launch ship targets
 
 > **Decision:** [ADR-0140](./adr/07-portability-extensibility.md#adr-0140)  
-> **Gap review:** [`docs/plans/0011-ship-readiness-gap-review.md`](../plans/0011-ship-readiness-gap-review.md)  
-> **Remediation:** [`docs/plans/0012-ship-remediation-plan.md`](../plans/0012-ship-remediation-plan.md)  
 > **Instances:** [`instances/`](./instances/README.md)
 
 HoBo has **three different “ship” meanings**. Public claims must name which one.

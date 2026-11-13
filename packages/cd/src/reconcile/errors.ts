@@ -1,4 +1,4 @@
-// Typed failure modes of the reconcile module (WP7, plan 0024). Every refusal
+// Typed failure modes of the reconcile module (WP7). Every refusal
 // and every blocked observation carries a stable code plus a remediation an
 // operator or agent can act on.
 import { create } from "@bufbuild/protobuf";

@@ -1,8 +1,7 @@
 # `@hobo/cd/provenance`: provenance verifier
 
 Verifies in-toto/SLSA provenance for Freight (D3), as a Sigstore bundle or as
-a HoBo-signed attestation, and returns `ProvenanceRef`s. Work package WP3 of
-[plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md); the
+a HoBo-signed attestation, and returns `ProvenanceRef`s. Work package WP3; the
 artifact store and registry-digest verifier live in
 [`../artifacts`](../artifacts/README.md).
 

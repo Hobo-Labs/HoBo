@@ -274,6 +274,5 @@ library — without a name collision.
 
 ## Migration
 
-Staged in [docs/plans/package-decomposition/plan.md](../plans/package-decomposition/plan.md).
 Every stage is independently shippable and gate-green; no stage requires the
 next one to land.

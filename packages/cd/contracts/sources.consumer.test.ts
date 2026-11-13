@@ -1,5 +1,4 @@
-// PACT verification for every WP2 boundary (plan 0024 §9 WP2 "PACT per
-// driver"). Outbound drivers are consumers: every request they make must match
+// PACT verification for every WP2 boundary. Outbound drivers are consumers: every request they make must match
 // a contracted interaction exactly, every interaction must be exercised, and
 // they must accept the contracted responses. The webhook receiver is a
 // provider: every contracted sender request must get the contracted response.

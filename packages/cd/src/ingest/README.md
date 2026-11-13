@@ -3,8 +3,7 @@
 Freight normally enters HoBo CD by pull: `@hobo/cd/sources` (WP2) polls
 registries, Git, package indexes and HoBo CI, with a verified read. This
 folder holds the optional push paths and the trusted-publisher verifier
-(D3, I15). It is work package WP1 of
-[plan 0024](../../../../docs/plans/0024-hobo-cd-swarm-instruction.md).
+(D3, I15). It is work package WP1.
 
 | Export | What it does |
 |---|---|

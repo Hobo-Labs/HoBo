@@ -20,5 +20,5 @@
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run"
 	},
-	"description": "HoBo agent-skills bundle: the mirrored .agents/skills tree as a distributable module — parsed skills manifest (name/description/entry per skill), parse-don't-validate frontmatter, and a conformance check every skill must pass (docs/plans/0017 F27). Distribution rides Registry listings like Resource Packs."
+	"description": "HoBo agent-skills bundle: the mirrored .agents/skills tree as a distributable module — parsed skills manifest (name/description/entry per skill), parse-don't-validate frontmatter, and a conformance check every skill must pass. Distribution rides Registry listings like Resource Packs."
 }

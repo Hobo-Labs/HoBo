@@ -1,4 +1,4 @@
-// CUE constraints for the Reconciliation records in cd.proto (WP7, plan 0024).
+// CUE constraints for the Reconciliation records in cd.proto (WP7).
 // Field names follow the protobuf JSON mapping the journal stores (status
 // events carry `observation` in this shape). The TS module src/reconcile
 // applies the same rules: observation.ts (attribute bound, secret-free

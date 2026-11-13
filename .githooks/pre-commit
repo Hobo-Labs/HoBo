@@ -33,4 +33,6 @@ if ! git rev-parse --verify --quiet --end-of-options "$BASE^{commit}" >/dev/null
 fi
 
 run generated:guard
+# Plans are never committed (AGENTS.md, "Plans are not committed").
+run plans:guard -- --staged
 run check:relevant:staged -- --base="$BASE"

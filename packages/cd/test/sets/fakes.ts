@@ -1,4 +1,4 @@
-// Test fakes owned by WP4 (plan 0024 §7.3): an in-memory DurableEventStore with
+// Test fakes owned by WP4: an in-memory DurableEventStore with
 // the SQLite journal's CAS/idempotency semantics, an in-memory ArtifactStore
 // that can corrupt bytes at rest, a recording TelemetrySink and fixtures.
 import { createHash } from "node:crypto";

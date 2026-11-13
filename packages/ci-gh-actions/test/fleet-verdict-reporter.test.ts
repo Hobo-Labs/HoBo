@@ -32,7 +32,7 @@ import {
 	BOX_1_PUBLIC_KEY,
 } from "./fixtures/fleet-reporter-keys.js";
 
-/** The fleet verdict reporter (plan 0025, 6.2 and 6.3). */
+/** The fleet verdict reporter (ADR-0180 amendment, items 2 and 3). */
 const T0 = Date.parse("2026-11-12T11:14:00.000Z");
 const ORIGIN = "https://ci.hobo.test";
 const identity = meshIdentityFromPem(BOX_1_KEY_PEM);

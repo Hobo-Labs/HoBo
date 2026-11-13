@@ -3,7 +3,7 @@
  * Built-in default reuses flag percentage + gateway-weighted traffic signal.
  * External Argo/Flagger adapters are ranked optionals (not required).
  *
- * Staged progressive strategies (ADR-0083 extension, plan 0015 §B deliverable 4):
+ * Staged progressive strategies (ADR-0083 extension):
  * a stage may carry ordered target `groups` executed with bounded `concurrency`,
  * a `maxFailures` halt threshold, `approval` barriers (stage- or group-scoped),
  * and deterministic resume-from-halt (`resumeFrom` on `RolloutState`).

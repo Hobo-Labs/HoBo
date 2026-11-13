@@ -7,7 +7,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { parseFleetReporters } from "../src/fleet-verdict.js";
 
-/** The operator scripts of plan 0025, steps G2 and G3. */
+/** The operator scripts of the fleet verdict runbook, steps G2 and G3. */
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function run(script: string, args: readonly string[]) {

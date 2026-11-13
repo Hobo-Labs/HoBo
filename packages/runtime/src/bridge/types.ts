@@ -1,5 +1,5 @@
 // The Bridge: session-scoped boundary routing for local/remote dev
-// (plan 0008; generalizes Bridge-to-Kubernetes beyond Kubernetes). Every
+// (generalizes Bridge-to-Kubernetes beyond Kubernetes). Every
 // service boundary is a WIT port whose peers are PACT-emulable, so a
 // boundary can be re-pointed per DEV SESSION — your calls take the bridge
 // to the process on your laptop, everyone else's stay live — on any
