@@ -37,6 +37,27 @@ function lintJobs(jobs: string): number | null {
 	}
 }
 
+/** What the main gate's shards ask for: the plan job's second ask, then the run's route. */
+const shardRunner =
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+
+/** Lints a repository holding one composite action and no workflow. */
+function lintAction(text: string): number | null {
+	const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
+	try {
+		const dir = join(root, ".github", "actions", "fixture");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "action.yml"), text);
+		return spawnSync(process.execPath, ["--experimental-strip-types", lint], {
+			cwd: root,
+			encoding: "utf8",
+			env: { ...process.env, HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY: "1" },
+		}).status;
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
+
 function lintFile(file: string, text: string): number | null {
 	const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
 	try {
@@ -106,6 +127,68 @@ describe("Actions runner policy", () => {
 				0,
 				needs,
 			);
+	});
+
+	it("allows the shard runner on a job that needs the route and plan jobs", () => {
+		for (const needs of [
+			"[route, main-gate-plan]",
+			"[other, main-gate-plan, route]",
+		])
+			assert.equal(
+				lintJobs(
+					`${routeJob}  main-gate-plan:\n    needs: route\n    runs-on: ${routed}\n    steps:\n      - run: echo ok\n  shard:\n    needs: ${needs}\n    runs-on: ${shardRunner}\n    steps:\n      - run: echo ok\n`,
+				),
+				0,
+				needs,
+			);
+	});
+
+	it("rejects the shard runner on a job that does not need both the route and plan jobs", () => {
+		for (const needs of ["route", "main-gate-plan", "[other]"])
+			assert.notEqual(
+				lintJobs(
+					`${routeJob}  shard:\n    needs: ${needs}\n    runs-on: ${shardRunner}\n    steps:\n      - run: echo ok\n`,
+				),
+				0,
+				needs,
+			);
+	});
+
+	it("rejects fleet state passed to a workflow", () => {
+		const job = (body: string) =>
+			lintJobs(`  build:\n    runs-on: ${trunk}\n${body}`);
+		assert.equal(job("    steps:\n      - run: echo ok\n"), 0);
+		// A repository variable read anywhere in the workflow.
+		assert.notEqual(
+			job("    steps:\n      - run: echo ${{ vars.HOBO_CI_FLEET_ROUTES }}\n"),
+			0,
+		);
+		// An environment variable by that name, whatever its value.
+		assert.notEqual(
+			job(
+				'    env:\n      HOBO_CI_FLEET_ROUTES: "1"\n    steps:\n      - run: echo ok\n',
+			),
+			0,
+		);
+		// An action input by that name.
+		const uses = (input: string) =>
+			job(
+				`    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          clean: false\n      - uses: ./.github/actions/route-runner\n        with:\n          ${input}: hobo\n`,
+			);
+		assert.equal(uses("mode"), 0);
+		assert.notEqual(uses("fleet-routes"), 0);
+		assert.notEqual(
+			lintAction(
+				"name: fixture\ninputs:\n  fleet-routes:\n    required: false\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo ok\n",
+			),
+			0,
+		);
+		assert.equal(
+			lintAction(
+				"name: fixture\ninputs:\n  mode:\n    required: false\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo ok\n",
+			),
+			0,
+		);
 	});
 
 	it("rejects the routed label on a job that does not need the route job", () => {
@@ -332,6 +415,28 @@ describe("Actions runner policy", () => {
 		);
 		assert.notEqual(
 			probe('    runs-on: hobo\n    steps:\n      - run: "true"\n', ""),
+			0,
+		);
+	});
+
+	const healthJob = (job: string, run = "node scripts/ci/ci-health.mts") =>
+		lintFile(
+			"ci-health.yml",
+			`name: fixture\non:\n  workflow_dispatch:\npermissions:\n  actions: read\njobs:\n${job}    runs-on: ubuntu-24.04\n    steps:\n      - run: ${run}\n`,
+		);
+
+	it("lets the health monitor run one GitHub-hosted ci-health job that runs the monitor", () => {
+		assert.equal(healthJob("  ci-health:\n"), 0);
+	});
+
+	it("rejects a health monitor job by another name, on another runner, or running something else", () => {
+		assert.notEqual(healthJob("  monitor:\n"), 0);
+		assert.notEqual(healthJob("  ci-health:\n", "pnpm install"), 0);
+		assert.notEqual(
+			lintFile(
+				"ci-health.yml",
+				"name: fixture\non:\n  workflow_dispatch:\njobs:\n  ci-health:\n    runs-on: hobo\n    steps:\n      - run: node scripts/ci/ci-health.mts\n",
+			),
 			0,
 		);
 	});

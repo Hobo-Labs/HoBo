@@ -406,6 +406,48 @@ three-second limit.
 | Answers and does not name it | Nothing new. The queue still decides: a verdict never makes a backend look available |
 | Is not named, does not answer in time, or answers something that is not a verdict | Nothing. The queue is read exactly as before, and the job's log says the relay gave no verdict |
 
+Every decision leaves one line a monitor reads from the job's check run:
+
+```text
+::notice title=hobo-ci-route::{"v":1,"workflow":"<file>","tier":"fleet|local|github","runner":"<label>","relay":"verdict|unanswered|unasked","why":"…","refusedBy":"relay|queue|none"}
+```
+
+`why` is empty for a verdict, the reason for an unanswered relay, and for an
+unasked one `no-relay`, `pinned`, `attested`, or `queue-unread` (the queue
+could not be read, so the relay was never reached and the run went to
+GitHub-hosted). `refusedBy` names what took the fleet out of the decision.
+When the routing step cannot run its script at all it says so in a
+`hobo-ci-route-fallback` warning and falls back as before.
+
+**The main gate follows the route, and asks again before its shards.** On a
+push to `main`, a schedule or a dispatch, `main-gate-plan` and `main-gate` need
+the route job and ask for its runner like every routed job. After its full
+checkout the plan job asks again (`reroute`, the same action with
+`attest: "false"` and `include-own-run: "true"`), but only for a run the route
+job kept on the fleet: a run already sent to GitHub-hosted runners is not
+brought back to a fleet whose deps job was skipped. The second ask reads this
+run's own jobs too, so a plan job that itself waited past the limit (444 s in
+finding 142) sends the shards elsewhere. The shards and the finish job ask for
+`needs.main-gate-plan.outputs.shard_runner`, else the run's route, else the
+trunk label; a second ask that cannot decide outputs nothing, so the run's
+route stands. `ci-deps-image` runs on these events only for a run kept on the
+fleet (or one the route job could not route), and the shards accept it
+skipped. A dispatch can pin its own run with the `route` input, leaving
+`HOBO_CI_ROUTE` untouched. Between the route job and the pickup of the plan
+and deps jobs, a fleet that becomes blocked still holds those two jobs; the
+monitor's stall signal reports it.
+
+The plan reads no capacity record: `scripts/ci/load-fleet-capacity.mts` is
+gone (its repository-variable read answered 403 to a job token, finding 146).
+`plan-main-workspace-shards.mts` sizes shards from `MAIN_WORKSPACE_PARALLEL_CAP`
+when set, else 4, a tuning setting of the script.
+
+Nothing about the fleet reaches a workflow any other way. `scripts/lint-actions.ts`
+rejects any workflow or action that reads a `vars.HOBO_CI_FLEET_*` variable or
+declares an input or environment variable named `fleet-state`,
+`fleet-capacity`, `fleet-routes` or `HOBO_CI_FLEET_STATE`, `…_CAPACITY`,
+`…_ROUTES`.
+
 A label is blocked when no live healthy node serves it, or when none can admit
 a job for a reason other than its own running jobs and no other has a free
 slot. A label that is only busy is not blocked. No count of nodes, slots or
