@@ -23,7 +23,8 @@ export const file_fleet_p2p: GenFile = /*@__PURE__*/
  */
 export type FleetP2pConfig = Message<"hobo.fleet_p2p.v1.FleetP2pConfig"> & {
   /**
-   * iroh relay URLs, `https://` only.
+   * iroh relay URLs: `https://`, or `http://` on a loopback address (a
+   * relay in development mode). The public relays are never used.
    *
    * @generated from field: repeated string relay_urls = 1;
    */
