@@ -35,10 +35,13 @@ import {
 	type CampClaimRecord,
 	CampClaimRecordSchema,
 	CampConditionRecordSchema,
+	CampConditionType,
 	type CampId,
 	type CampInventory,
 	type CdContext,
 	type CdFactories,
+	ConditionStatus,
+	type DesiredStateReader,
 	type FeedRequest,
 	type Outcome,
 	type RealizeInput,
@@ -51,10 +54,12 @@ import {
 	SignalSource,
 	TaintEffect,
 	TaintRecordSchema,
+	type VerifyPort,
 } from "@hobo/cd";
 import {
 	RUNNER_FLEET_YARD,
 	RUNNER_HOST_PRODUCT_ID,
+	RUNNER_HOST_VERIFY_SUITE,
 	type RunnerHostCampReport,
 	type RunnerHostKind,
 	type RunnerReleaseParameter,
@@ -370,6 +375,10 @@ export type RunnerHostRealizerInput = Readonly<{
 	transport?: HttpTransport;
 }>;
 
+/** The realizer's code for a swap whose verify failed and was restored. */
+const VERIFY_FAILED = "runner-host-verify-failed";
+const MAX_REMEMBERED_FAILURES = 16;
+
 const NO_HTTP: HttpTransport = async () => {
 	throw new Error("the runner-host realizer makes no HTTP call");
 };
@@ -385,6 +394,11 @@ export function createRunnerHostRealizer(
 ): Realizer {
 	const transport = input.transport ?? NO_HTTP;
 	const reference = input.reference ?? "image";
+	/** Sets whose digest failed verify on this host, with that refusal. */
+	const verifyFailed = new Map<
+		string,
+		Readonly<{ code: string; message: string; remediation: string }>
+	>();
 
 	function request(realize: RealizeInput, image: string) {
 		return runnerHostResolveRequest({
@@ -469,6 +483,22 @@ export function createRunnerHostRealizer(
 			if (wrongHost(realize)) return foreign(realize);
 			const image = runnerHostImageOf(realize.resolved, reference);
 			if (image === undefined) return unresolved(realize);
+			// A Set whose digest already failed verify here (and was restored)
+			// is not swapped again on every pass: the host keeps serving the
+			// restored controller and reports the same refusal until a new
+			// Set replaces this one (or the agent restarts and tries once more).
+			const failed = verifyFailed.get(realize.desired.setId);
+			if (failed !== undefined) {
+				const after = await current(realize, image);
+				return observation(
+					realize,
+					ReconcileStatus.BLOCKED,
+					after.report,
+					after.digest,
+					input.now(),
+					[failed],
+				);
+			}
 			try {
 				const outcome = await input.resolver.reconcile(
 					request(realize, image),
@@ -491,23 +521,28 @@ export function createRunnerHostRealizer(
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				const after = await current(realize, image);
+				const refusal = {
+					code:
+						error instanceof ResolverError ? codeOf(message) : "realize-failed",
+					message,
+					remediation:
+						"see packages/ci-gh-actions/README.md, Runner-host realizer, Runbook",
+				};
+				if (refusal.code === VERIFY_FAILED) {
+					verifyFailed.set(realize.desired.setId, refusal);
+					// Bounded: only the most recent failed Sets are remembered.
+					for (const setId of verifyFailed.keys()) {
+						if (verifyFailed.size <= MAX_REMEMBERED_FAILURES) break;
+						verifyFailed.delete(setId);
+					}
+				}
 				return observation(
 					realize,
 					ReconcileStatus.BLOCKED,
 					after.report,
 					after.digest,
 					input.now(),
-					[
-						{
-							code:
-								error instanceof ResolverError
-									? codeOf(message)
-									: "realize-failed",
-							message,
-							remediation:
-								"see packages/ci-gh-actions/README.md, Runner-host realizer, Runbook",
-						},
-					],
+					[refusal],
 				);
 			}
 		},
@@ -682,4 +717,96 @@ export function withRunnerHostHealthIngest(
 			});
 		},
 	});
+}
+
+// ── Station side: verification ─────────────────────────────────────────────
+
+export type RunnerHostVerifySuiteDeps = Readonly<{
+	desired: Pick<DesiredStateReader, "current" | "status">;
+	inventory: Pick<CampInventory, "status">;
+	/** The port that answers every other suite (fail-closed by default). */
+	otherwise: VerifyPort;
+}>;
+
+/**
+ * The verify suite a runner fleet node runs (`RUNNER_HOST_VERIFY_SUITE`),
+ * answered from what the host's own agent observed, never assumed: PASS when
+ * the agent reported the Camp's current Set, of the verified Freight,
+ * CONVERGED (its controller serving at the Set's digest) and the host is
+ * READY in Camp inventory (the health its reports carry: advert fresh,
+ * healthy). A report on that Set that is not CONVERGED (a failed verify the
+ * agent restored, a refused drain) or a host that is not ready FAILs. Until
+ * the agent reports on the Set at all the suite does not complete, so the
+ * engine retries it each tick up to the node's progress deadline and then
+ * fails it for no data. Any other suite goes to `otherwise`.
+ */
+export function createRunnerHostVerifySuite(
+	d: RunnerHostVerifySuiteDeps,
+): VerifyPort {
+	const port: VerifyPort = {
+		async run(input, ctx) {
+			if (input.suite !== RUNNER_HOST_VERIFY_SUITE)
+				return d.otherwise.run(input, ctx);
+			const refuse = (code: string, message: string, remediation: string) => ({
+				ok: false as const,
+				reasons: [
+					create(ReasonRecordSchema, {
+						code,
+						message,
+						remediation,
+						subject: input.campId,
+					}),
+				],
+			});
+			if (runnerHostIdForCamp(input.campId) === undefined)
+				return refuse(
+					"runner-host-camp-unbound",
+					`${input.campId} is not a runner host Camp; ${RUNNER_HOST_VERIFY_SUITE} verifies only hobo-ci-runners/<host id>`,
+					"Run the runner-host suite only on the runner fleet's node.",
+				);
+			const set = await d.desired.current(input.campId);
+			if (!set || set.freightId !== input.freightId)
+				return refuse(
+					"runner-host-verify-superseded",
+					`the current Set of ${input.campId} (${set?.setId ?? "none"}) is not of Freight ${input.freightId}`,
+					"A newer Set replaced the one under verification; verify that Set's promotion instead.",
+				);
+			const observed = await d.desired.status(input.campId);
+			// A CONVERGED report names its Set; any other report is on the
+			// current Set when it was made after that Set was applied.
+			const reported =
+				observed !== undefined &&
+				(observed.setId === set.setId ||
+					(observed.status !== ReconcileStatus.CONVERGED &&
+						Date.parse(observed.observedAt) >= Date.parse(set.createdAt)));
+			if (!observed || !reported)
+				throw new Error(
+					`runner-host-verify-pending: the agent of ${input.campId} has not reported on Set ${set.setId} yet`,
+				);
+			if (observed.status !== ReconcileStatus.CONVERGED)
+				return refuse(
+					"runner-host-not-converged",
+					`the agent of ${input.campId} reported Set ${set.setId} ${ReconcileStatus[observed.status] ?? "UNSPECIFIED"}${observed.reasons.length > 0 ? ` (${observed.reasons.map((r) => r.code).join(", ")})` : ""}`,
+					"Read the agent's reasons (hobo deploy status --camp); the host keeps the controller it restored.",
+				);
+			const ready = (await d.inventory.status(input.campId))?.conditions.find(
+				(condition) => condition.type === CampConditionType.READY,
+			);
+			if (ready?.status !== ConditionStatus.TRUE)
+				return refuse(
+					"runner-host-unready",
+					`${input.campId} converged Set ${set.setId} but is not ready (${ready?.reason || "no readiness reported"})`,
+					"The host's controller is not serving or its mesh advert is stale or unhealthy; fix the host, then promote again.",
+				);
+			return {
+				ok: true as const,
+				value: {
+					setId: set.setId,
+					observedAt: observed.observedAt,
+					ready: ready.reason,
+				},
+			};
+		},
+	};
+	return Object.freeze(port);
 }

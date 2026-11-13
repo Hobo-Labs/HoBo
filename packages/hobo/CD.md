@@ -273,12 +273,40 @@ Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
   Camps (`rails` export) or pass the module that does with `--yard`.
 - **`runner-host-interface-missing`** on `agent run`: `HOBO_CD_RUNNER_HOST` is
   set, so the runner-host realizer is registered, but this process has no
-  source for the worker's job ports (leases, runner presence, mesh advert,
-  admission gate); the message names each. Run it from a composition that
-  supplies them, or upgrade the host by hand.
+  source for the controller port (the container engine, or the supervised
+  process's control files) or for one of the worker's job ports (leases,
+  runner presence, mesh advert, admission gate); the message names each
+  `<port>.<method>`. Run it from a composition that supplies them (the
+  worker's data directory, `controller: {mode: "process"}` under the
+  controller supervisor), or upgrade the host by hand.
 - **`runner-host-config-invalid` / `runner-host-camp-unbound`**: fix the agent
   config the variable names, or start the agent with `--camp
-  hobo-ci-runners/<its host id>` only.
+  hobo-ci-runners/<its host id>` only. On the Station, `runner-host-camp-unbound`
+  also refuses a promotion whose Set plans a runner-host row for a Camp
+  outside `hobo-ci-runners/`.
+- **`runner-host-image-unresolved` / `runner-host-release-unresolved`**: the
+  Set has no runner-host row with the digest-pinned parameter this host
+  runs. On the Station, promotion refuses `runner-host-image-unresolved` for
+  Freight without a digest-pinned `hobo-ci-worker` image; promote the
+  Freight the fleet's source (`hobo-ci-runner-image`) discovered. A process
+  host refuses `runner-host-release-unresolved` when that Freight carries no
+  controller release: apply the delivery module with
+  `HOBO_CI_RUNNER_RELEASE_INDEX` set so each Freight pairs the image with its
+  releases. Until a release index is published, a process host is adopted
+  by hand once (`HOBO_CI_CONTROLLER_RELEASE` under the controller supervisor,
+  packages/ci-gh-actions/README.md); there is no `--adopt` for a runner
+  host's first Set (unlike the relay's `--adopt`, packages/ci-vercel/README.md), so a
+  fresh host stays unplaced until its agent reports against one.
+- **`planning-declaration-missing`** on a runner fleet promotion: the Freight
+  was ingested by hand, or the fleet's source was redefined after it
+  discovered the Freight; the Station plans only Freight whose declaration
+  digest is the applied source's. Promote Freight the current source
+  discovered.
+- **`runner-host-not-converged` / `runner-host-unready`** in a runner fleet
+  promotion's verification: the host's agent reported the Set refused (for
+  example `runner-host-verify-failed`, restored to the previous digest) or
+  the host is not ready. The fan-out halts at its progress deadline; fix the
+  host or the image and promote newer Freight.
 - **`cd-topology-station-mismatch`**: a Camp record names another Station.
   Leave `stationId` empty or match `HOBO_STATION`.
 - **`cd-topology-duplicate-camp`**: two topology files declare the same Camp.

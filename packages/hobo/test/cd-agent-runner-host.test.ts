@@ -10,8 +10,11 @@ import {
 	CampClaimRecordSchema,
 	CampConditionType,
 	type CampId,
+	CampStatusRecordSchema,
 	type CdContext,
+	ConditionStatus,
 	type FenceToken,
+	type FreightId,
 	ReasonRecordSchema,
 	ReconcileObservationRecordSchema,
 	type ReconcilerId,
@@ -24,6 +27,7 @@ import {
 import type { RailCatalog } from "@hobo/cd/compose";
 import {
 	createRunnerHostResolver,
+	RUNNER_HOST_VERIFY_SUITE,
 	RUNNER_RELEASE_ARTIFACTS,
 	runnerFleetRail,
 } from "@hobo/ci-gh-actions/runner-host";
@@ -32,6 +36,7 @@ import { agentRealizer } from "../src/cd-agent.js";
 import {
 	CD_RUNNER_HOST_ENV,
 	createRunnerHostRealizer,
+	createRunnerHostVerifySuite,
 	ingestRunnerHostHealth,
 	parseRunnerHostAgentConfig,
 	RUNNER_HOST_UNREADY_TAINT,
@@ -357,6 +362,36 @@ describe("the runner-host realizer as a @hobo/cd Realizer", () => {
 		expect(host.admission).toBe(true);
 	});
 
+	it("does not drain and swap again to a Set whose digest already failed verify here; a new Set is tried", async () => {
+		await writeConfig();
+		const host = new FakeRunnerHost({ running: PREVIOUS, unhealthy: [BROKEN] });
+		const chosen = await realizerFor(host);
+		if (!chosen.ok) throw new Error(chosen.reasons[0]?.message);
+		await chosen.value.converge(realizeInput(BROKEN), ctx);
+		const callsAfterFirst = host.calls.length;
+		const again = await chosen.value.converge(realizeInput(BROKEN), ctx);
+		expect(again.status).toBe(ReconcileStatus.BLOCKED);
+		expect(again.reasons[0]?.code).toBe("runner-host-verify-failed");
+		expect(
+			host.calls
+				.slice(callsAfterFirst)
+				.filter((call) => /^(pull|create|stop|pause|resume)\b/u.test(call)),
+		).toEqual([]);
+		expect(host.runningImage()).toBe(PREVIOUS);
+		expect(again.resources[0]?.physicalId).toBe(
+			`hobo-ci-runners/box/controller@${digestOf(PREVIOUS)}`,
+		);
+		// Another Set (newer Freight) is converged as usual.
+		const next = {
+			...realizeInput(TARGET),
+			desired: create(SetRecordSchema, { setId: "set_next", campId: BOX }),
+		};
+		expect((await chosen.value.converge(next, ctx)).status).toBe(
+			ReconcileStatus.CONVERGED,
+		);
+		expect(host.runningImage()).toBe(TARGET);
+	});
+
 	it("observe is CONVERGED only at the Set's digest, serving; otherwise DRIFTED", async () => {
 		await writeConfig();
 		const host = new FakeRunnerHost({ running: PREVIOUS });
@@ -423,6 +458,158 @@ describe("the runner-host realizer as a @hobo/cd Realizer", () => {
 		expect(observed.status).toBe(ReconcileStatus.BLOCKED);
 		expect(observed.reasons[0]?.code).toBe("runner-host-image-unresolved");
 		expect(host.calls).toEqual([]);
+	});
+});
+
+describe("the runner fleet's verify suite (Station side)", () => {
+	const FREIGHT = `sha256:${"f".repeat(64)}`;
+	const SET = create(SetRecordSchema, {
+		setId: "set_target",
+		campId: BOX,
+		freightId: FREIGHT,
+		createdAt: "2026-11-12T10:00:00.000Z",
+	});
+	function suiteWith(
+		input: Readonly<{
+			observed?: Parameters<
+				typeof create<typeof ReconcileObservationRecordSchema>
+			>[1];
+			ready?: ConditionStatus;
+			set?: typeof SET;
+		}>,
+	) {
+		const others: string[] = [];
+		const suite = createRunnerHostVerifySuite({
+			desired: {
+				current: async () => input.set ?? SET,
+				status: async () =>
+					input.observed
+						? create(ReconcileObservationRecordSchema, input.observed)
+						: undefined,
+			},
+			inventory: {
+				status: async (campId) =>
+					create(CampStatusRecordSchema, {
+						campId,
+						conditions:
+							input.ready === undefined
+								? []
+								: [
+										{
+											type: CampConditionType.READY,
+											status: input.ready,
+											reason: "runner-host-healthy",
+										},
+									],
+					}),
+			},
+			otherwise: {
+				async run(request) {
+					others.push(request.suite);
+					return { ok: true, value: {} };
+				},
+			},
+		});
+		const run = (campId: CampId = BOX, suite = RUNNER_HOST_VERIFY_SUITE) =>
+			suiteRun(campId, suite);
+		async function suiteRun(campId: CampId, name: string) {
+			return suite.run(
+				// SAFETY: the Freight id the Set above names.
+				{ suite: name, campId, freightId: FREIGHT as FreightId },
+				ctx,
+			);
+		}
+		return { run, others };
+	}
+
+	it("passes on the agent's own CONVERGED report of the current Set with the host ready", async () => {
+		const { run } = suiteWith({
+			observed: {
+				campId: BOX,
+				setId: "set_target",
+				status: ReconcileStatus.CONVERGED,
+				observedAt: "2026-11-12T10:05:00.000Z",
+			},
+			ready: ConditionStatus.TRUE,
+		});
+		expect((await run()).ok).toBe(true);
+	});
+
+	it("does not complete until the agent reports on the Set, so the engine retries it", async () => {
+		const stale = suiteWith({
+			observed: {
+				campId: BOX,
+				setId: "set_previous",
+				status: ReconcileStatus.CONVERGED,
+				observedAt: "2026-11-12T10:05:00.000Z",
+			},
+			ready: ConditionStatus.TRUE,
+		});
+		await expect(stale.run()).rejects.toThrow(/runner-host-verify-pending/u);
+		await expect(suiteWith({}).run()).rejects.toThrow(
+			/runner-host-verify-pending/u,
+		);
+		// A refusal made before this Set was applied is about an older one.
+		const older = suiteWith({
+			observed: {
+				campId: BOX,
+				status: ReconcileStatus.BLOCKED,
+				observedAt: "2026-11-12T09:59:59.000Z",
+			},
+		});
+		await expect(older.run()).rejects.toThrow(/runner-host-verify-pending/u);
+	});
+
+	it("fails a Set the agent refused (a failed verify it restored), a host that is not ready, and a superseded Set", async () => {
+		const blocked = await suiteWith({
+			observed: {
+				campId: BOX,
+				status: ReconcileStatus.BLOCKED,
+				observedAt: "2026-11-12T10:05:00.000Z",
+				reasons: [
+					create(ReasonRecordSchema, { code: "runner-host-verify-failed" }),
+				],
+			},
+			ready: ConditionStatus.TRUE,
+		}).run();
+		expect(blocked.ok ? "" : blocked.reasons[0]?.code).toBe(
+			"runner-host-not-converged",
+		);
+		expect(blocked.ok ? "" : blocked.reasons[0]?.message).toContain(
+			"runner-host-verify-failed",
+		);
+		const unready = await suiteWith({
+			observed: {
+				campId: BOX,
+				setId: "set_target",
+				status: ReconcileStatus.CONVERGED,
+				observedAt: "2026-11-12T10:05:00.000Z",
+			},
+			ready: ConditionStatus.FALSE,
+		}).run();
+		expect(unready.ok ? "" : unready.reasons[0]?.code).toBe(
+			"runner-host-unready",
+		);
+		const superseded = await suiteWith({
+			set: create(SetRecordSchema, {
+				...SET,
+				freightId: `sha256:${"e".repeat(64)}`,
+			}),
+		}).run();
+		expect(superseded.ok ? "" : superseded.reasons[0]?.code).toBe(
+			"runner-host-verify-superseded",
+		);
+	});
+
+	it("refuses a Camp outside the fleet and hands every other suite to the composed port", async () => {
+		const { run, others } = suiteWith({});
+		// SAFETY: a Camp id outside the runner fleet's Yard.
+		const outside = await run("hobo-release/npm" as CampId);
+		expect(outside.ok ? "" : outside.reasons[0]?.code).toBe(
+			"runner-host-camp-unbound",
+		);
+		expect((await run(BOX, "smoke")).ok).toBe(true);
+		expect(others).toEqual(["smoke"]);
 	});
 });
 

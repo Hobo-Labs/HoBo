@@ -9,10 +9,14 @@ import {
 	RUNNER_FLEET_CAMP_SET,
 	RUNNER_FLEET_PIPELINE,
 	RUNNER_FLEET_YARD,
+	RUNNER_HOST_PRODUCT_ID,
+	RUNNER_HOST_RESOURCE,
+	RUNNER_HOST_VERIFY_SUITE,
 	RUNNER_IMAGE_RELEASE_TAG_PATTERN,
 	RUNNER_IMAGE_SOURCE,
 	RUNNER_RELEASE_ARTIFACTS,
 	runnerFleetCampObservations,
+	runnerFleetDeclaration,
 	runnerFleetDelivery,
 	runnerFleetRail,
 	runnerFleetTopology,
@@ -282,9 +286,41 @@ describe("the delivery module for the runner fleet", () => {
 		});
 		expect(node?.quorum).toEqual({ minQualifiedPercent: 50 });
 		expect(node?.departure).toBe("DEPARTURE_ACTION_ORPHAN");
+		// No traffic routing reaches a runner host: each host swaps whole,
+		// so the rollout is ALL_AT_ONCE (a canary is progressive-unsupported).
+		expect(node?.strategy).toBe("ROLLOUT_STRATEGY_ALL_AT_ONCE");
 		function placement() {
 			return delivery.placements[0]?.name;
 		}
+	});
+
+	it("qualifies a host only on the Station's runner-host suite, retried up to the drain-sized deadline", () => {
+		const [node] = delivery.pipelines[0]?.nodes ?? [];
+		expect(node?.verification).toEqual({
+			windowMs: "60000",
+			requiredObservations: 1,
+			progressDeadlineMs: "10800000",
+			failOnNoData: true,
+			suites: [{ suite: RUNNER_HOST_VERIFY_SUITE }],
+		});
+		expect(RUNNER_HOST_VERIFY_SUITE).toBe("hobo-ci.runner-host/serving");
+	});
+
+	it("declares the runner controller as the Bindle's one resource, asking Matching for exactly the runner-host product", () => {
+		expect(runnerFleetDeclaration()).toEqual({
+			schema: "hobo.manifest/v1",
+			componentHost: { kind: "oci", version: "1" },
+			resources: {
+				[RUNNER_HOST_RESOURCE]: {
+					type: "data.v1",
+					port: `hobo:${RUNNER_HOST_PRODUCT_ID}`,
+				},
+			},
+		});
+		expect(RUNNER_HOST_RESOURCE).toBe("runner-controller");
+		expect(RUNNER_HOST_PRODUCT_ID).toBe("hobo-ci.runner-host/v1");
+		// The declaration names no version: the Freight's artifacts do.
+		expect(JSON.stringify(runnerFleetDeclaration())).not.toMatch(/sha256/u);
 	});
 
 	it("pairs each image with the controller releases of the same version, each identified by its own bytes", () => {

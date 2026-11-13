@@ -78,14 +78,14 @@ import {
 	RUNNER_FLEET_BINDLE,
 	RUNNER_FLEET_CAMP_SET,
 	RUNNER_FLEET_YARD,
+	RUNNER_HOST_PRODUCT_ID,
 	type RunnerHostKind,
 	servedLabelClaims,
 } from "./runner-fleet-delivery.js";
 
+export { RUNNER_HOST_PRODUCT_ID };
 // public-contract: the resolver identity the runner fleet's Camps resolve to.
 export const RUNNER_HOST_PROVIDER_ID = "hobo-ci";
-// public-contract: the runner controller product, keyed by the resolver registry.
-export const RUNNER_HOST_PRODUCT_ID = "hobo-ci.runner-host/v1";
 // public-contract: the controller container name prefix; the suffix is the image digest hex.
 export const RUNNER_CONTROLLER_CONTAINER_PREFIX = "hoboci-runner-controller-";
 // public-contract: realization parameters that say how to act, not what the controller is.
