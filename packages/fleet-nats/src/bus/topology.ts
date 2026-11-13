@@ -10,6 +10,7 @@ import {
 	StorageType,
 	type StreamConfig,
 } from "@nats-io/jetstream";
+import { JOURNAL_STREAM_CONFIG } from "../journal/codec.js";
 import { AUDIT_SUBJECTS, BUCKETS, bucketStream, STREAMS } from "./names.js";
 import type { JetStreamManagerPort } from "./nats-client.js";
 
@@ -86,11 +87,8 @@ export function topologySpecs(replicas: 1 | 3): readonly StreamSpec[] {
 		},
 		{ name: STREAMS.control, subjects: ["fleet.control.*"], max_age: HOUR_NS },
 		{
-			name: STREAMS.journal,
-			subjects: ["fleet.journal.*"],
-			max_age: 0,
-			deny_delete: true,
-			deny_purge: true,
+			...JOURNAL_STREAM_CONFIG,
+			subjects: [...JOURNAL_STREAM_CONFIG.subjects],
 		},
 		{
 			name: STREAMS.audit,

@@ -19,12 +19,35 @@ import {
 	type JsonValue,
 	parseEventEnvelope,
 } from "@hobo/core";
+import {
+	DiscardPolicy,
+	RetentionPolicy,
+	StorageType,
+	type StreamConfig,
+} from "@nats-io/jetstream";
 
 // public-contract: the stream and subject names of the topology table (design §6.7).
 export const JOURNAL_STREAM = "FLEET_JOURNAL";
 // public-contract: every journal subject; one token per stream id follows the prefix.
 export const JOURNAL_SUBJECTS = "fleet.journal.>";
 const SUBJECT_PREFIX = "fleet.journal.";
+
+/**
+ * `FLEET_JOURNAL` as the journal needs it, whoever creates it: no expiry,
+ * append-only, new messages refused rather than old ones dropped. The store
+ * creates it with one replica when missing; `provisionTopology` creates it
+ * with the deployment's replica count from this same configuration.
+ */
+export const JOURNAL_STREAM_CONFIG = {
+	name: JOURNAL_STREAM,
+	subjects: [JOURNAL_SUBJECTS],
+	retention: RetentionPolicy.Limits,
+	storage: StorageType.File,
+	discard: DiscardPolicy.New,
+	max_age: 0,
+	deny_delete: true,
+	deny_purge: true,
+} as const satisfies Partial<StreamConfig>;
 
 /** At most this many events in one append (the position's batch field). */
 export const MAX_BATCH_EVENTS = (1 << 20) - 2;

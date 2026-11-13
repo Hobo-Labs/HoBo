@@ -9,6 +9,7 @@ import { type AddressInfo, createServer } from "node:net";
 import { OptimisticSequenceConflictError } from "@hobo/core";
 import { runJournalConformance } from "@hobo/fleet/testing";
 import { describe, expect, it } from "vitest";
+import { topologySpecs } from "../../src/bus/topology.js";
 import { createJournalEventStore } from "../../src/journal/index.js";
 import {
 	connectJournalTransport,
@@ -72,6 +73,20 @@ describe("FLEET_JOURNAL", () => {
 			subjects: ["fleet.journal.>"],
 		});
 		await journalTransportOn(createFakeJetStream(stream, state));
+		expect(state.added).toEqual([]);
+	});
+
+	it("is used as provisionTopology creates it", async () => {
+		const provisioned = topologySpecs(3).find(
+			(spec) => spec.name === "FLEET_JOURNAL",
+		);
+		const state = createFakeJetStreamState({
+			created: true,
+			subjects: [...(provisioned?.subjects ?? [])],
+		});
+		await journalTransportOn(
+			createFakeJetStream(createFakeJournalStream(), state),
+		);
 		expect(state.added).toEqual([]);
 	});
 
