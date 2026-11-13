@@ -209,6 +209,22 @@ export function mongoRunArgv(name: string, image: string): string[] {
 export const MONGO_PRIMARY_PROBE =
 	'try { rs.status() } catch (e) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) } if (!db.hello().isWritablePrimary) quit(1)';
 
+/**
+ * mongosh keeps lock and settings files under `$HOME/.mongodb`, and the image
+ * sets HOME to /data/db. The image's entrypoint chowns everything under
+ * /data/db as the container starts; a probe that creates and removes a lock
+ * file there meanwhile makes that chown fail ("cannot access
+ * ...json.lock") and the server exit during start-up. So mongosh keeps its
+ * files elsewhere.
+ */
+// public-contract: where every mongosh the lane and the compose healthcheck start keeps its own files.
+export const MONGOSH_HOME = "HOME=/tmp";
+
+/** `docker exec` of a one-shot mongosh in the fixture; the script follows. */
+export function mongoshExecArgv(name: string): string[] {
+	return ["exec", "--env", MONGOSH_HOME, name, "mongosh", "--quiet", "--eval"];
+}
+
 /** The container's address on the bridge network, from `docker inspect`. */
 export function bridgeAddress(inspectOutput: string): string {
 	const address = inspectOutput
@@ -521,7 +537,7 @@ export async function startLiveServers(
 			"--tuples-only",
 			"--command",
 		];
-		const mongosh = ["exec", names.mongodb, "mongosh", "--quiet", "--eval"];
+		const mongosh = mongoshExecArgv(names.mongodb);
 		// The image's init phase serves a unix socket only, so answering on TCP
 		// means the real server is up, not the bootstrap one.
 		await until(
