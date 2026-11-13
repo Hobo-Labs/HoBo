@@ -101,15 +101,19 @@ describe("createAuditChain", () => {
 		await journal(store, "fleet-work-abc", [
 			{ type: "fleet.WorkOffered", data: { recordSequence: 9 } },
 		]);
+		await journal(store, "fleet-member-dev_c", [
+			{ type: "fleet.MemberActivated", data: { subjectSequence: 3 } },
+		]);
 		await chain.tick();
 
-		expect(log.all.map((e) => e.sequence)).toEqual([1, 2, 3, 4, 5]);
+		expect(log.all.map((e) => e.sequence)).toEqual([1, 2, 3, 4, 5, 6]);
 		expect(log.all.map((e) => e.eventType)).toEqual([
 			"fleet.EnrollmentRequested",
 			"fleet.MemberActivated",
 			"fleet.FleetDefined",
 			"fleet.MemberSuspended",
 			"fleet.WorkOffered",
+			"fleet.MemberActivated",
 		]);
 		expect(log.all.map((e) => [e.subject, e.subjectSequence])).toEqual([
 			["fleet-member-dev_a", 0],
@@ -117,6 +121,7 @@ describe("createAuditChain", () => {
 			["fleet.flt_x", 1],
 			["member.dev_b", 7],
 			["fleet-work-abc", 0],
+			["member.dev_c", 3],
 		]);
 		expect(log.all[0]?.previousHash).toBe(GENESIS_HASH);
 		for (let i = 1; i < log.all.length; i += 1) {
@@ -133,7 +138,7 @@ describe("createAuditChain", () => {
 		expect(log.all[0]?.actor).toBe("service:test");
 
 		await chain.tick();
-		expect(log.all).toHaveLength(5);
+		expect(log.all).toHaveLength(6);
 	});
 
 	it("gives a fleet.TrustRotated entry the digest of the trust record bytes it carries", async () => {

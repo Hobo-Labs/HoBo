@@ -142,7 +142,8 @@ function positiveInteger(value: JsonValue | undefined): number | undefined {
  * `subject` and `subject_sequence` of an event (§7.1). An event changes a
  * registry record when it is on a member, fleet or trust stream and names the
  * record's sequence after the event: `meta.subjectSequence`, else the data
- * field `recordSequence` (member), `revision` (fleet) or `sequence` (trust).
+ * field `subjectSequence` (as L02 and L32 write it), else `recordSequence`
+ * (member), `revision` (fleet) or `sequence` (trust).
  * Every other event's subject is its stream id, with sequence 0.
  */
 /** `subject` and `subject_sequence` of an audit entry. */
@@ -160,7 +161,10 @@ export function subjectOf(event: EventEnvelope, data: JsonValue): EntrySubject {
 		if (!matches) continue;
 		const sequence =
 			positiveInteger(event.meta?.subjectSequence) ??
-			(isObject(data) ? positiveInteger(data[stream.field]) : undefined);
+			(isObject(data)
+				? (positiveInteger(data.subjectSequence) ??
+					positiveInteger(data[stream.field]))
+				: undefined);
 		if (sequence === undefined) break;
 		return {
 			subject: stream.subject(event.streamId.slice(stream.prefix.length)),
