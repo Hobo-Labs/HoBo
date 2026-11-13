@@ -91,7 +91,9 @@ describe("the tag policy engine", () => {
 				resourceId: "build",
 			},
 		});
-		expect(JSON.stringify(event.data)).toMatch(/"inputHash":"sha256:[0-9a-f]{64}"/u);
+		expect(JSON.stringify(event.data)).toMatch(
+			/"inputHash":"sha256:[0-9a-f]{64}"/u,
+		);
 	});
 });
 
