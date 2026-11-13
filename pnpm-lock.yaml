@@ -1717,6 +1717,9 @@ importers:
       '@hobo/provider-gcp':
         specifier: workspace:*
         version: link:../providers/provider-gcp
+      '@hobo/provider-github':
+        specifier: workspace:*
+        version: link:../providers/provider-github
       '@hobo/provider-hetzner':
         specifier: workspace:*
         version: link:../providers/provider-hetzner
@@ -1741,6 +1744,12 @@ importers:
       '@hobo/provider-netlify':
         specifier: workspace:*
         version: link:../providers/provider-netlify
+      '@hobo/provider-npm':
+        specifier: workspace:*
+        version: link:../providers/provider-npm
+      '@hobo/provider-oci-registry':
+        specifier: workspace:*
+        version: link:../providers/provider-oci-registry
       '@hobo/provider-prisma-postgres':
         specifier: workspace:*
         version: link:../providers/provider-prisma-postgres
@@ -2359,6 +2368,15 @@ importers:
         specifier: workspace:*
         version: link:../../provider-redaction
 
+  packages/providers/provider-github:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../core
+
   packages/providers/provider-hetzner:
     dependencies:
       '@hobo/core':
@@ -2464,6 +2482,18 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/providers/provider-npm:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/providers/provider-oci-registry:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../core
 
   packages/providers/provider-opa:
     dependencies:
@@ -2749,6 +2779,34 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/resolver-components:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/componentize':
+        specifier: workspace:*
+        version: link:../componentize
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/registry':
+        specifier: workspace:*
+        version: link:../registry
+    devDependencies:
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-local
+      '@types/node':
+        specifier: '>=24.0.0'
+        version: 24.13.2
 
   packages/rift:
     dependencies:

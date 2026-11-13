@@ -51,4 +51,30 @@ export type {
 
 // public-contract: package identity used by generated catalogs.
 export const HOBO_PROVIDER_RAILWAY_PACKAGE = "@hobo/provider-railway";
+export {
+	type AbsentTrafficOffering,
+	defineHostingCoverage,
+	HOSTING_COVERAGE_CONTRACT,
+	type HostingCoverage,
+	hostingProductRefusal,
+	instrumentResolvers,
+	PORTABLE_TRAFFIC_OFFERING_IDS,
+	RESOLVER_DURATION_METRIC,
+	RESOLVER_OPERATIONS_METRIC,
+	type ResolverMetricPoint,
+	type ResolverMetricSink,
+	type ResolverTelemetryOptions,
+	type UnresolvedHostingProduct,
+} from "./delivery-coverage.js";
 export { RAILWAY_HOST_FORMS } from "./host-forms.js";
+export {
+	RAILWAY_HOSTING_COVERAGE,
+	RAILWAY_RESOLVED_PRODUCT_IDS,
+	RAILWAY_UNRESOLVED_PRODUCTS,
+	railwayProductRefusal,
+} from "./hosting-coverage.js";
+export {
+	RAILWAY_TRAFFIC_ROUTING_ABSENT,
+	RAILWAY_TRAFFIC_ROUTING_OFFERING_IDS,
+	RAILWAY_TRAFFIC_ROUTING_PROFILE,
+} from "./traffic-routing-offerings.js";

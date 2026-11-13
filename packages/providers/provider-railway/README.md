@@ -210,3 +210,36 @@ product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
 [`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
+
+## Delivery coverage (plan 0024 WP13, I14)
+
+`@hobo/cd` reaches Railway only through the shipped resolver and a declared
+traffic profile; nothing here is new provider-port surface (D6).
+
+| Export | What it is |
+|---|---|
+| `railwayResolverRegistry(options)` | Registry of every Railway hosting product with a resolver: `railway.service/v1`. Pass `metrics` (structurally the `@hobo/cd` `TelemetrySink`) and `nowMs` to emit `hobo.cd.resolver.operations` and `hobo.cd.resolver.duration`. |
+| `RAILWAY_TRAFFIC_ROUTING_PROFILE` | Kind `other` (the core union has no Railway member). Only `inprocess.weighted`: Railway routes a domain to one active deployment, so canary, weighted and DNS steering are absent. |
+| `RAILWAY_TRAFFIC_ROUTING_ABSENT` | Every other portable offering, each with the reason it is absent (ADR-0144). |
+| `RAILWAY_HOSTING_COVERAGE` | The I14 document (`hobo.provider-hosting-coverage/v1`; protobuf `data-models/hosting_coverage.proto`, CUE `#HostingCoverage`). |
+| `railwayProductRefusal(productId)` | Typed `RESOLVER_PRODUCT_UNSUPPORTED` with remediation for `railway.redis/v1`, `railway.queue/v1` and any uncatalogued id. |
+
+`src/delivery-coverage.ts` is the provider-neutral coverage and telemetry
+module shared verbatim by the WP13 providers (railway, convex, flux,
+webernetes); `test/support/resolver-conformance.ts` is the conformance kit each
+of them runs on recorded fixtures.
+
+Live lane (read-only; skipped with a visible reason unless all are set):
+`RAILWAY_LIVE_PROJECT_TOKEN`, `RAILWAY_LIVE_PROJECT_ID`,
+`RAILWAY_LIVE_ENVIRONMENT_ID`, `RAILWAY_LIVE_SERVICE_ID`,
+`RAILWAY_LIVE_DEPLOYMENT_ID`.
+
+## Runbook
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| `RESOLVER_PRODUCT_UNSUPPORTED` naming `railway.redis/v1` or `railway.queue/v1` | Railway has no convergent API for that product. | Create the service once in Railway and adopt it through `railway.service/v1`, or bind Upstash or Kafka. |
+| `RESOLVER_PROVIDER_REJECTED` "outcome is uncertain" | A deploy dispatch lost its reply; the journal forbids a second deploy. | Find the deployment in the Railway dashboard, record its id as `desired.deploymentId` and reconcile again. |
+| `RESOLVER_CREDENTIAL_MISSING` | The credential locator did not resolve to a project token. | Re-issue the Railway project token for the bound project and environment in the Yard broker. |
+| Rollout refused `progressive-unsupported` on a Railway Camp | The profile has no canary or weighted offering. | Use blue/green between two Railway services behind a caller-owned router, or permit the in-process fallback in policy. |
+| `hobo.cd.resolver.operations` with `hobo.resolver.outcome` other than `ok` rising | Railway calls are failing. | Group by outcome: credential codes go to the broker owner, `RESOLVER_OUTPUT_UNPARSEABLE` to the provider owner (API drift). |

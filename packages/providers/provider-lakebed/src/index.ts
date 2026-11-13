@@ -1,4 +1,27 @@
 export {
+	createLakebedResolvers,
+	LAKEBED_CAPSULE_PRODUCT_ID,
+	type LakebedCapsuleRecord,
+	type LakebedDeployHost,
+	type LakebedResolverOptions,
+	lakebedResolverRegistry,
+} from "./capsule-resolver.js";
+export {
+	type AbsentTrafficOffering,
+	defineHostingCoverage,
+	HOSTING_COVERAGE_CONTRACT,
+	type HostingCoverage,
+	hostingProductRefusal,
+	instrumentResolvers,
+	PORTABLE_TRAFFIC_OFFERING_IDS,
+	RESOLVER_DURATION_METRIC,
+	RESOLVER_OPERATIONS_METRIC,
+	type ResolverMetricPoint,
+	type ResolverMetricSink,
+	type ResolverTelemetryOptions,
+	type UnresolvedHostingProduct,
+} from "./delivery-coverage.js";
+export {
 	assertDriverProgram,
 	DRIVER_PROGRAM_API_VERSION,
 	DRIVER_PROGRAM_KIND,
@@ -14,6 +37,12 @@ export {
 	lakebedNativeFeaturesForPort,
 	lakebedNativePorts,
 } from "./equivalence.js";
+export {
+	LAKEBED_HOSTING_COVERAGE,
+	LAKEBED_RESOLVED_PRODUCT_IDS,
+	LAKEBED_UNRESOLVED_PRODUCTS,
+	lakebedProductRefusal,
+} from "./hosting-coverage.js";
 export {
 	AUTH_SCHEMA,
 	CAPABILITIES_SCHEMA,
@@ -57,8 +86,8 @@ export {
 	provisionTemporaryEnvironmentStation,
 	supportsAnonymousTemporaryDeploy,
 } from "./temporary-station.js";
-
 export {
+	LAKEBED_TRAFFIC_ROUTING_ABSENT,
 	LAKEBED_TRAFFIC_ROUTING_OFFERING_IDS,
 	LAKEBED_TRAFFIC_ROUTING_PROFILE,
 } from "./traffic-routing-offerings.js";
