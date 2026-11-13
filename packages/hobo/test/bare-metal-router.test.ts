@@ -30,11 +30,11 @@ import {
 	collectBindleEnvInjections,
 	HOBO_BINDLE_ENV_HEADER,
 	HOBO_ENV_HEADER_PREFIX,
-	INTERNAL_MESH_HOST,
-	installInternalMesh,
-	internalMeshBase,
-	internalMeshHost,
-	isInternalMeshHostname,
+	INTERNAL_ROUTER_HOST,
+	installInternalRouter,
+	internalRouterBase,
+	internalRouterHost,
+	isInternalRouterHostname,
 	serviceDiscoveryKey,
 } from "../src/bare-metal-host.js";
 
@@ -48,9 +48,9 @@ afterEach(() => {
 /** Installs the mesh and guarantees the global fetch is restored. */
 function mesh(
 	handlers: Record<string, (request: Request) => Promise<Response>>,
-	options: Parameters<typeof installInternalMesh>[1] = {},
+	options: Parameters<typeof installInternalRouter>[1] = {},
 ) {
-	const dispose = installInternalMesh(
+	const dispose = installInternalRouter(
 		new Map(Object.entries(handlers)),
 		options,
 	);
@@ -76,7 +76,7 @@ describe("mesh hostnames", () => {
 	it("derives a per-bindle subdomain", () => {
 		// Per bindle, so two bindles served from one process cannot address each
 		// other's components by accident.
-		expect(internalMeshHost("shop")).toBe(`shop.${INTERNAL_MESH_HOST}`);
+		expect(internalRouterHost("shop")).toBe(`shop.${INTERNAL_ROUTER_HOST}`);
 	});
 
 	it("sanitizes a bindle name into a DNS label", () => {
@@ -84,8 +84,8 @@ describe("mesh hostnames", () => {
 		// name would produce a URL that `new URL` rejects, and the mesh would
 		// fall through to the real fetch — silently sending an internal request
 		// to the internet.
-		const host = internalMeshHost("My Shop/v2");
-		expect(host.endsWith(`.${INTERNAL_MESH_HOST}`)).toBe(true);
+		const host = internalRouterHost("My Shop/v2");
+		expect(host.endsWith(`.${INTERNAL_ROUTER_HOST}`)).toBe(true);
 		expect(host.split(".")[0]).toMatch(/^[a-z0-9-]+$/u);
 	});
 
@@ -93,20 +93,20 @@ describe("mesh hostnames", () => {
 		// A name of only separators would otherwise produce `.hobo.internal`,
 		// which is not a valid hostname at all.
 		for (const name of ["", "///", "---"]) {
-			expect(internalMeshHost(name)).toBe(INTERNAL_MESH_HOST);
+			expect(internalRouterHost(name)).toBe(INTERNAL_ROUTER_HOST);
 		}
 	});
 
 	it("recognises the bare mesh host and any subdomain of it", () => {
-		expect(isInternalMeshHostname(INTERNAL_MESH_HOST)).toBe(true);
-		expect(isInternalMeshHostname(`shop.${INTERNAL_MESH_HOST}`)).toBe(true);
-		expect(isInternalMeshHostname(`a.b.${INTERNAL_MESH_HOST}`)).toBe(true);
+		expect(isInternalRouterHostname(INTERNAL_ROUTER_HOST)).toBe(true);
+		expect(isInternalRouterHostname(`shop.${INTERNAL_ROUTER_HOST}`)).toBe(true);
+		expect(isInternalRouterHostname(`a.b.${INTERNAL_ROUTER_HOST}`)).toBe(true);
 	});
 
 	it("is case-insensitive, because hostnames are", () => {
 		// A URL parser may preserve the case a caller wrote. Comparing case
 		// sensitively would let `HOBO.INTERNAL` escape to the real network.
-		expect(isInternalMeshHostname("SHOP.HOBO.INTERNAL")).toBe(true);
+		expect(isInternalRouterHostname("SHOP.HOBO.INTERNAL")).toBe(true);
 	});
 
 	it("does not treat a lookalike host as internal", () => {
@@ -119,18 +119,18 @@ describe("mesh hostnames", () => {
 			"hobointernal",
 			"example.com",
 		]) {
-			expect(isInternalMeshHostname(host)).toBe(false);
+			expect(isInternalRouterHostname(host)).toBe(false);
 		}
 	});
 
 	it("builds a component base URL under the bindle's host", () => {
-		expect(internalMeshBase("shop", "api")).toBe(
-			`http://shop.${INTERNAL_MESH_HOST}/api`,
+		expect(internalRouterBase("shop", "api")).toBe(
+			`http://shop.${INTERNAL_ROUTER_HOST}/api`,
 		);
 	});
 
 	it("sanitizes the resource name in a base URL too", () => {
-		expect(internalMeshBase("shop", "My API")).toMatch(
+		expect(internalRouterBase("shop", "My API")).toMatch(
 			/^http:\/\/shop\.hobo\.internal\/[a-z0-9-]+$/u,
 		);
 	});
@@ -315,12 +315,12 @@ describe("collectBindleEnvInjections", () => {
 	});
 });
 
-describe("installInternalMesh", () => {
+describe("installInternalRouter", () => {
 	it("routes a mesh URL to the named component's handler", async () => {
 		const api = echo();
 		mesh({ api: api.handler });
 		const response = await fetch(
-			`http://shop.${INTERNAL_MESH_HOST}/api/orders`,
+			`http://shop.${INTERNAL_ROUTER_HOST}/api/orders`,
 		);
 		expect(response.status).toBe(200);
 		expect(api.seen).toHaveLength(1);
@@ -332,14 +332,14 @@ describe("installInternalMesh", () => {
 		// name, and one of them would forget.
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(`http://shop.${INTERNAL_MESH_HOST}/api/orders/1`);
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api/orders/1`);
 		expect(new URL(api.seen[0]?.url ?? "").pathname).toBe("/orders/1");
 	});
 
 	it("carries the query string through", async () => {
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(`http://shop.${INTERNAL_MESH_HOST}/api/orders?limit=10`);
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api/orders?limit=10`);
 		expect(new URL(api.seen[0]?.url ?? "").search).toBe("?limit=10");
 	});
 
@@ -347,14 +347,14 @@ describe("installInternalMesh", () => {
 		// Named in the body, because a private component that failed to start is
 		// otherwise indistinguishable from one that was never declared.
 		mesh({ api: echo().handler });
-		const response = await fetch(`http://shop.${INTERNAL_MESH_HOST}/ghost`);
+		const response = await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/ghost`);
 		expect(response.status).toBe(404);
 		expect(await response.text()).toContain("unknown component ghost");
 	});
 
 	it("answers 404 for a mesh URL naming no component at all", async () => {
 		mesh({ api: echo().handler });
-		const response = await fetch(`http://shop.${INTERNAL_MESH_HOST}/`);
+		const response = await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/`);
 		expect(response.status).toBe(404);
 		expect(await response.text()).toContain("missing component name");
 	});
@@ -365,7 +365,7 @@ describe("installInternalMesh", () => {
 		// would make the artifact environment-specific.
 		const api = echo();
 		mesh({ api: api.handler }, { bindleEnv: { LOG_LEVEL: "debug" } });
-		await fetch(`http://shop.${INTERNAL_MESH_HOST}/api`);
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`);
 		expect(api.seen[0]?.headers.get(`${HOBO_ENV_HEADER_PREFIX}log_level`)).toBe(
 			"debug",
 		);
@@ -379,14 +379,14 @@ describe("installInternalMesh", () => {
 		// noise a guest has to parse to learn nothing.
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(`http://shop.${INTERNAL_MESH_HOST}/api`);
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`);
 		expect(api.seen[0]?.headers.get(HOBO_BINDLE_ENV_HEADER)).toBeNull();
 	});
 
 	it("preserves the caller's own headers alongside the injected ones", async () => {
 		const api = echo();
 		mesh({ api: api.handler }, { bindleEnv: { A: "1" } });
-		await fetch(`http://shop.${INTERNAL_MESH_HOST}/api`, {
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`, {
 			headers: { "x-trace-id": "t-1" },
 		});
 		expect(api.seen[0]?.headers.get("x-trace-id")).toBe("t-1");
@@ -396,7 +396,7 @@ describe("installInternalMesh", () => {
 	it("forwards the method", async () => {
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(`http://shop.${INTERNAL_MESH_HOST}/api`, { method: "DELETE" });
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`, { method: "DELETE" });
 		expect(api.seen[0]?.method).toBe("DELETE");
 	});
 
@@ -405,13 +405,13 @@ describe("installInternalMesh", () => {
 		// so forwarding one unconditionally would break every private read.
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(`http://shop.${INTERNAL_MESH_HOST}/api`, {
+		await fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`, {
 			method: "POST",
 			body: "hello",
 		});
 		expect(api.seen[0]?.method).toBe("POST");
 		await expect(
-			fetch(`http://shop.${INTERNAL_MESH_HOST}/api`),
+			fetch(`http://shop.${INTERNAL_ROUTER_HOST}/api`),
 		).resolves.toBeDefined();
 	});
 
@@ -420,8 +420,8 @@ describe("installInternalMesh", () => {
 		// string would send the other two to the real network.
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(new Request(`http://shop.${INTERNAL_MESH_HOST}/api`));
-		await fetch(new URL(`http://shop.${INTERNAL_MESH_HOST}/api`));
+		await fetch(new Request(`http://shop.${INTERNAL_ROUTER_HOST}/api`));
+		await fetch(new URL(`http://shop.${INTERNAL_ROUTER_HOST}/api`));
 		expect(api.seen).toHaveLength(2);
 	});
 
@@ -484,7 +484,7 @@ describe("installInternalMesh", () => {
 		});
 		try {
 			mesh({ api: echo().handler }, { bindleName: "shop" });
-			await fetch(`http://other.${INTERNAL_MESH_HOST}/api`);
+			await fetch(`http://other.${INTERNAL_ROUTER_HOST}/api`);
 			expect(delegated).toBe(1);
 		} finally {
 			globalThis.fetch = previous;
@@ -497,14 +497,14 @@ describe("installInternalMesh", () => {
 		// without naming the bindle would escape to the network.
 		const api = echo();
 		mesh({ api: api.handler }, { bindleName: "shop" });
-		await fetch(`http://${INTERNAL_MESH_HOST}/api`);
+		await fetch(`http://${INTERNAL_ROUTER_HOST}/api`);
 		expect(api.seen).toHaveLength(1);
 	});
 
 	it("answers for any mesh hostname when scoped to no bindle", async () => {
 		const api = echo();
 		mesh({ api: api.handler });
-		await fetch(`http://anything.${INTERNAL_MESH_HOST}/api`);
+		await fetch(`http://anything.${INTERNAL_ROUTER_HOST}/api`);
 		expect(api.seen).toHaveLength(1);
 	});
 
@@ -512,7 +512,7 @@ describe("installInternalMesh", () => {
 		// The interceptor is global. A dispose that failed to restore would leave
 		// every later request in the process routed through a dead mesh.
 		const before = globalThis.fetch;
-		const dispose = installInternalMesh(new Map());
+		const dispose = installInternalRouter(new Map());
 		expect(globalThis.fetch).not.toBe(before);
 		dispose();
 		expect(globalThis.fetch).toBe(before);
@@ -524,12 +524,12 @@ describe("installInternalMesh", () => {
 		// down the outer host's mesh with the inner one.
 		const outer = echo();
 		const inner = echo();
-		const disposeOuter = installInternalMesh(new Map([["api", outer.handler]]));
-		const disposeInner = installInternalMesh(new Map([["api", inner.handler]]));
-		await fetch(`http://a.${INTERNAL_MESH_HOST}/api`);
+		const disposeOuter = installInternalRouter(new Map([["api", outer.handler]]));
+		const disposeInner = installInternalRouter(new Map([["api", inner.handler]]));
+		await fetch(`http://a.${INTERNAL_ROUTER_HOST}/api`);
 		expect(inner.seen).toHaveLength(1);
 		disposeInner();
-		await fetch(`http://a.${INTERNAL_MESH_HOST}/api`);
+		await fetch(`http://a.${INTERNAL_ROUTER_HOST}/api`);
 		expect(outer.seen).toHaveLength(1);
 		disposeOuter();
 	});

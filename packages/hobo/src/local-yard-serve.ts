@@ -22,8 +22,8 @@ import {
 	type ComponentEndpoint,
 	collectBindleEnvInjections,
 	type FetchHandler,
-	installInternalMesh,
-	internalMeshBase,
+	installInternalRouter,
+	internalRouterBase,
 	listServableEntrypoints,
 	serviceDiscoveryKey,
 } from "./bare-metal-host.js";
@@ -112,7 +112,7 @@ function componentDescriptor(
 				// interface has its own argument shape, and `ComponentExport`
 				// describes the table, not this entry. The host reads it back through
 				// the matching handler type (`HttpIncomingHandler` in runtime-local),
-				// so the two-step cast is where that agreement is recorded rather
+				// so this cast is where that agreement is recorded rather
 				// than a claim that the signatures line up.
 				handle: (async (httpReq: HttpRequest): Promise<HttpResponse> => {
 					const req = httpReq;
@@ -130,7 +130,7 @@ function componentDescriptor(
 						headers: [...webRes.headers.entries()] as [string, string][],
 						body: Buffer.from(await webRes.arrayBuffer()).toString("latin1"),
 					};
-				}) as unknown as ParsedComponentDescriptor["exports"][string][string],
+				}) as never,
 			},
 		},
 	};
@@ -277,7 +277,7 @@ export async function serveBindleOnLocalYard(options: {
 			return httpResponseToWeb(httpRes);
 		});
 	}
-	const uninstallMesh = installInternalMesh(privateHandlers, {
+	const uninstallMesh = installInternalRouter(privateHandlers, {
 		bindleName: definition.name,
 	});
 
@@ -285,7 +285,7 @@ export async function serveBindleOnLocalYard(options: {
 	const serviceDiscovery: Record<string, string> = {};
 
 	for (const entry of privateEntries) {
-		const url = internalMeshBase(definition.name, entry.name);
+		const url = internalRouterBase(definition.name, entry.name);
 		const key = serviceDiscoveryKey(entry.name);
 		endpoints.push({
 			resourceName: entry.name,

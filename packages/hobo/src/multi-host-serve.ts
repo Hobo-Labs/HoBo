@@ -27,9 +27,9 @@ import {
 	type BareMetalServeResult,
 	type ComponentEndpoint,
 	collectBindleEnvInjections,
-	INTERNAL_MESH_HOST,
-	installInternalMesh,
-	internalMeshBase,
+	INTERNAL_ROUTER_HOST,
+	installInternalRouter,
+	internalRouterBase,
 	listServableEntrypoints,
 	serviceDiscoveryKey,
 } from "./bare-metal-host.js";
@@ -119,7 +119,7 @@ function componentDescriptor(
 				// interface has its own argument shape, and `ComponentExport`
 				// describes the table, not this entry. The host reads it back through
 				// the matching handler type (`HttpIncomingHandler` in runtime-local),
-				// so the two-step cast is where that agreement is recorded rather
+				// so this cast is where that agreement is recorded rather
 				// than a claim that the signatures line up.
 				handle: (async (httpReq: HttpRequest): Promise<HttpResponse> => {
 					const req = httpReq;
@@ -137,7 +137,7 @@ function componentDescriptor(
 						headers: [...webRes.headers.entries()] as [string, string][],
 						body: await webRes.text(),
 					};
-				}) as unknown as ParsedComponentDescriptor["exports"][string][string],
+				}) as never,
 			},
 		},
 	};
@@ -187,7 +187,7 @@ export type MultiHostServeResult = BareMetalServeResult & {
 	readonly isolation?: {
 		readonly privateSandboxes: number;
 		readonly privateWorkers: number;
-		readonly meshHost: typeof INTERNAL_MESH_HOST;
+		readonly meshHost: typeof INTERNAL_ROUTER_HOST;
 		readonly isolateBoundary: string;
 		readonly details?: JsonObject;
 		readonly wasmtimeVersion?: string;
@@ -279,7 +279,7 @@ export async function serveProjectOnHost(options: {
 			record.kind === "service"
 		) {
 			resolved.httpUrl =
-				resolved.httpUrl ?? internalMeshBase(definition.name, name);
+				resolved.httpUrl ?? internalRouterBase(definition.name, name);
 		}
 		const discovery = discoveryEnvForDependency(name, config, resolved);
 		Object.assign(bindleEnv, discovery);
@@ -321,7 +321,7 @@ export async function serveProjectOnHost(options: {
 	}
 
 	const privateHandlers = new Map<string, FetchHandler>(privateServe.handlers);
-	const uninstallMesh = installInternalMesh(privateHandlers, {
+	const uninstallMesh = installInternalRouter(privateHandlers, {
 		bindleEnv,
 		bindleName: definition.name,
 	});
@@ -330,7 +330,7 @@ export async function serveProjectOnHost(options: {
 	const serviceDiscovery: Record<string, string> = {};
 
 	for (const entry of privateEntries) {
-		const url = internalMeshBase(definition.name, entry.name);
+		const url = internalRouterBase(definition.name, entry.name);
 		const key = serviceDiscoveryKey(entry.name);
 		endpoints.push({
 			resourceName: entry.name,
@@ -480,7 +480,7 @@ export async function serveProjectOnHost(options: {
 		isolation: {
 			privateSandboxes: privateServe.isolation.privateSandboxes,
 			privateWorkers: privateServe.isolation.privateSandboxes,
-			meshHost: INTERNAL_MESH_HOST,
+			meshHost: INTERNAL_ROUTER_HOST,
 			isolateBoundary: privateServe.isolation.isolateBoundary,
 			details: jsonObjectFrom(cloneAsJson(details)),
 			...(isJsonString(details.wasmtimeVersion)

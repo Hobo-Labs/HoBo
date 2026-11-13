@@ -10,7 +10,7 @@
  */
 export const ISOLATED_TEST_FILES = [
 	"test/auth-md-https.test.ts",
-	"test/bare-metal-mesh.test.ts",
+	"test/bare-metal-router.test.ts",
 	"test/bare-metal-yard.test.ts",
 	"test/cloudflare-deploy.test.ts",
 	"test/serve-control-command.test.ts",

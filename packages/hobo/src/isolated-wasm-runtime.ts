@@ -3,7 +3,7 @@
  * with `componentHost=wasm` (legacy name: isolated-wasm).
  */
 
-import type { INTERNAL_MESH_HOST } from "./bare-metal-host.js";
+import type { INTERNAL_ROUTER_HOST } from "./bare-metal-host.js";
 import type { BareMetalYard } from "./bare-metal-yard.js";
 import {
 	type MultiHostServeResult,
@@ -14,7 +14,7 @@ export type IsolatedWasmServeResult = MultiHostServeResult & {
 	readonly componentHost: "wasm";
 	readonly isolation: NonNullable<MultiHostServeResult["isolation"]> & {
 		readonly isolateBoundary: "wasmtime_process" | string;
-		readonly meshHost: typeof INTERNAL_MESH_HOST;
+		readonly meshHost: typeof INTERNAL_ROUTER_HOST;
 	};
 };
 

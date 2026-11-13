@@ -47,18 +47,18 @@ export {
 };
 
 // public-contract: reserved zone for in-mesh hops between components.
-export const INTERNAL_MESH_HOST = "hobo.internal";
+export const INTERNAL_ROUTER_HOST = "hobo.internal";
 
-export function internalMeshHost(bindleName: string): string {
+export function internalRouterHost(bindleName: string): string {
 	const label = sanitizeDnsLabel(bindleName);
 	return label.length > 0
-		? `${label}.${INTERNAL_MESH_HOST}`
-		: INTERNAL_MESH_HOST;
+		? `${label}.${INTERNAL_ROUTER_HOST}`
+		: INTERNAL_ROUTER_HOST;
 }
 
-export function isInternalMeshHostname(hostname: string): boolean {
+export function isInternalRouterHostname(hostname: string): boolean {
 	const host = hostname.toLowerCase();
-	return host === INTERNAL_MESH_HOST || host.endsWith(`.${INTERNAL_MESH_HOST}`);
+	return host === INTERNAL_ROUTER_HOST || host.endsWith(`.${INTERNAL_ROUTER_HOST}`);
 }
 
 /**
@@ -136,12 +136,12 @@ export function serviceDiscoveryKey(
 	return `services__${resourceName}__${endpointName}__${index}`;
 }
 
-export function internalMeshBase(
+export function internalRouterBase(
 	bindleName: string,
 	resourceName: string,
 ): string {
 	const resource = sanitizeDnsLabel(resourceName);
-	return `http://${internalMeshHost(bindleName)}/${resource}`;
+	return `http://${internalRouterHost(bindleName)}/${resource}`;
 }
 
 /**
@@ -176,7 +176,7 @@ export function collectBindleEnvInjections(definition: BindleDefinition) {
  * `x-hobo-env-*` / `x-hobo-bindle-env` headers so isolated-wasm sandboxes receive
  * camp config through the Camp mesh (not baked into .wasm artifacts).
  */
-export function installInternalMesh(
+export function installInternalRouter(
 	privateHandlers: ReadonlyMap<string, FetchHandler>,
 	options: {
 		readonly bindleEnv?: Readonly<Record<string, string>>;
@@ -187,7 +187,7 @@ export function installInternalMesh(
 	const bindleEnv = options.bindleEnv ?? {};
 	const expectedHost =
 		options.bindleName !== undefined
-			? internalMeshHost(options.bindleName)
+			? internalRouterHost(options.bindleName)
 			: undefined;
 	const meshFetch: typeof fetch = async (input, init) => {
 		const raw = isJsonString(input)
@@ -202,14 +202,14 @@ export function installInternalMesh(
 			// SAFETY: assertion required at this I/O or test boundary.
 			return previous(input as RequestInfo, init);
 		}
-		if (!isInternalMeshHostname(url.hostname)) {
+		if (!isInternalRouterHostname(url.hostname)) {
 			// SAFETY: assertion required at this I/O or test boundary.
 			return previous(input as RequestInfo, init);
 		}
 		if (
 			expectedHost !== undefined &&
 			url.hostname !== expectedHost &&
-			url.hostname !== INTERNAL_MESH_HOST
+			url.hostname !== INTERNAL_ROUTER_HOST
 		) {
 			// SAFETY: assertion required at this I/O or test boundary.
 			return previous(input as RequestInfo, init);
@@ -387,7 +387,7 @@ export async function serveProjectOnBareMetalYard(options: {
 	for (const entry of privateEntries) {
 		privateHandlers.set(entry.name, entry.handler);
 	}
-	const uninstallMesh = installInternalMesh(privateHandlers, {
+	const uninstallMesh = installInternalRouter(privateHandlers, {
 		bindleName: definition.name,
 	});
 
@@ -395,7 +395,7 @@ export async function serveProjectOnBareMetalYard(options: {
 	const serviceDiscovery: Record<string, string> = {};
 
 	for (const entry of privateEntries) {
-		const url = internalMeshBase(definition.name, entry.name);
+		const url = internalRouterBase(definition.name, entry.name);
 		const key = serviceDiscoveryKey(entry.name);
 		endpoints.push({
 			resourceName: entry.name,
