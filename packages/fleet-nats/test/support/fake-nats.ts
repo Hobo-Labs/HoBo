@@ -484,9 +484,12 @@ export function createFakeServer(): FakeServer {
 	const clients: NatsClients = {
 		async open(options: OpenOptions) {
 			parseServers(options.servers);
-			const authenticators = Array.isArray(options.authenticator)
-				? options.authenticator
-				: [options.authenticator];
+			const authenticators =
+				options.authenticator === undefined
+					? []
+					: Array.isArray(options.authenticator)
+						? options.authenticator
+						: [options.authenticator];
 			opened.push({
 				name: options.name,
 				authTokens: authenticators.map((authenticate) =>

@@ -210,11 +210,8 @@ if (binary === "") {
 			} finally {
 				process.env.HOBO_FLEET_NATS_CA = ca;
 			}
-			const store = await createJournalEventStore({
-				servers: [url()],
-				credentials: "",
-			});
-			await store.close?.();
+			// With it, the same connection settings reach the server.
+			await open();
 		}, 30_000);
 
 		it("is what createJournalEventStore returns", async () => {

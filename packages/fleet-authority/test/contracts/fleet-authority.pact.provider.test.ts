@@ -36,6 +36,7 @@ import {
 	ObservationSchema,
 	OFFER_CONTEXT,
 	type OverlayCredentialMinter,
+	type PublicJwk,
 	PublicKeyRefSchema,
 	Role,
 	SandboxTier,
@@ -47,7 +48,7 @@ import {
 	WorkOfferSchema,
 	WorkOrigin,
 } from "@hobo/fleet";
-import { jwkThumbprint, type PublicJwk, signEnvelope } from "@hobo/fleet/keys";
+import { jwkThumbprint, signEnvelope } from "@hobo/fleet/keys";
 import { workDigest } from "@hobo/fleet/work";
 import { describe, expect, it } from "vitest";
 import { parseJson } from "../../src/ops/json.js";
@@ -371,7 +372,7 @@ async function earlyReport(
 /** Each provider state of the pact, by its name. */
 type ProviderStates = Readonly<Record<string, () => Promise<Prepared>>>;
 
-const STATES = new Map(
+const STATES = new Map<string, () => Promise<Prepared>>(
 	Object.entries({
 		"an authority is running": async () => ({ h: (await world()).h }),
 		"tenant test exists": async () => ({
