@@ -149,6 +149,7 @@ unindexed new finding files as notices.
 - [Finding 143: release publish needed buildx the runners lack](./findings/0143-release-publish-needed-buildx-the-runners-lack.md)
 - [Finding 146: route job read a capacity record no worker wrote](./findings/0146-route-job-read-a-capacity-record-no-worker-wrote.md)
 - [Finding 147: merge queue shard timed out a one-second test on a stalled box](./findings/0147-merge-queue-shard-timed-out-a-one-second-test-on-a-stalled-box.md)
+- [Finding 148: jit runner cross job custody kill](./findings/0148-jit-runner-cross-job-custody-kill.md)
 - [Finding 151: deps image builds take a storage grant on an idle box](./findings/0151-deps-image-builds-take-a-storage-grant-on-an-idle-box.md)
 - [Finding 152: two-second job poll and hard-linked deps staging](./findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)
 - [Finding 153: deps build window, release-image GC, and leaner release contexts](./findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)
