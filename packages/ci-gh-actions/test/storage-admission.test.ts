@@ -28,7 +28,10 @@ import {
 	type WorkerStorageLease,
 	type WorkerStoragePnpmStore,
 } from "../src/isolated-worker/storage-admission.js";
-import { storageReserveForJob } from "../src/isolated-worker/storage-job-classes.js";
+import {
+	DEPS_BUILD_ADMISSION_ID,
+	storageReserveForJob,
+} from "../src/isolated-worker/storage-job-classes.js";
 
 const nodeFs = {
 	chown: vi.fn<typeof chown>(),
@@ -212,6 +215,28 @@ describe("worker storage admission", () => {
 				"job-2",
 			),
 		).resolves.toBe(true);
+	});
+
+	it("holds the deps image build grant without a lease until it is released", async () => {
+		let nowMs = 0;
+		const reserve = {
+			workRoot: 0,
+			dockerDataRoot: 300_000,
+			workRootBytes: 0,
+			dockerDataRootBytes: 0,
+		};
+		const h = harness({ before: freeInodes(500_000), now: () => nowMs });
+		// A job's grant with no lease lapses after the grace period.
+		await expect(h.admission.admit([], "job-0", reserve)).resolves.toBe(true);
+		nowMs += 60_000;
+		await expect(
+			h.admission.admit([], DEPS_BUILD_ADMISSION_ID, reserve),
+		).resolves.toBe(true);
+		// The build holds no lease, and its grant still counts after the grace period.
+		nowMs += 60_000;
+		await expect(h.admission.admit([], "job-1", reserve)).resolves.toBe(false);
+		h.admission.release(DEPS_BUILD_ADMISSION_ID);
+		await expect(h.admission.admit([], "job-1", reserve)).resolves.toBe(true);
 	});
 
 	it("checks reserves independently on different devices", async () => {

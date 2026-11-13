@@ -1,6 +1,9 @@
 import { basename } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
-import type { WorkerStorageReserve } from "./storage-job-classes.js";
+import {
+	DEPS_BUILD_ADMISSION_ID,
+	type WorkerStorageReserve,
+} from "./storage-job-classes.js";
 import {
 	createNodeWorkerStorageFileSystem,
 	type WorkerFileSystemStats,
@@ -253,12 +256,15 @@ export function createWorkerStorageAdmission(options: {
 			...activeLeases.map((lease) => lease.jobId),
 		]);
 		const nowMs = now();
-		for (const [holder, grant] of grants)
+		for (const [holder, grant] of grants) {
+			// The deps image build holds no lease; its grant lives until released.
+			if (holder === DEPS_BUILD_ADMISSION_ID) continue;
 			if (
 				!activeHolders.has(holder) &&
 				nowMs - grant.grantedAtMs > INODE_GRANT_GRACE_MS
 			)
 				grants.delete(holder);
+		}
 	}
 
 	function reserveShortage(samples: readonly StorageSample[]) {
