@@ -1,0 +1,337 @@
+{
+	"fanout.Started": {
+		"fanoutId": "fanout-8f2d81145b7896190aa33a1730e13a7e",
+		"pipeline": "web",
+		"node": "prod",
+		"freightId": "sha256:aaaa",
+		"decision": {
+			"decisionId": "wide",
+			"placement": "web",
+			"pipeline": "web",
+			"node": "prod",
+			"inventoryDigest": "sha256:00",
+			"groups": [
+				{
+					"name": "g0",
+					"campIds": [
+						"c000",
+						"c001",
+						"c002",
+						"c003"
+					]
+				},
+				{
+					"name": "g1",
+					"index": 1,
+					"campIds": [
+						"c004",
+						"c005",
+						"c006",
+						"c007"
+					]
+				},
+				{
+					"name": "g2",
+					"index": 2,
+					"campIds": [
+						"c008",
+						"c009",
+						"c010",
+						"c011"
+					]
+				}
+			],
+			"candidates": [
+				{
+					"campId": "c000",
+					"selected": true
+				},
+				{
+					"campId": "c001",
+					"selected": true
+				},
+				{
+					"campId": "c002",
+					"selected": true
+				},
+				{
+					"campId": "c003",
+					"selected": true
+				},
+				{
+					"campId": "c004",
+					"selected": true
+				},
+				{
+					"campId": "c005",
+					"selected": true
+				},
+				{
+					"campId": "c006",
+					"selected": true
+				},
+				{
+					"campId": "c007",
+					"selected": true
+				},
+				{
+					"campId": "c008",
+					"selected": true
+				},
+				{
+					"campId": "c009",
+					"selected": true
+				},
+				{
+					"campId": "c010",
+					"selected": true
+				},
+				{
+					"campId": "c011",
+					"selected": true
+				}
+			]
+		},
+		"fanout": {
+			"strategy": "FANOUT_STRATEGY_PROGRESSIVE_PER_GROUP",
+			"minSuccessMs": "60000",
+			"progressDeadlineMs": "1800000",
+			"maxFailures": 1,
+			"rollbackOnHalt": true
+		},
+		"departure": "DEPARTURE_ACTION_ORPHAN_DATA",
+		"windows": [],
+		"idempotencyKey": "start:wide:sha256:aaaa",
+		"departing": [],
+		"atMs": 1794484800000
+	},
+	"fanout.Progressed:requested": {
+		"campId": "c000",
+		"outcome": "requested",
+		"promotionId": "",
+		"catchUp": false,
+		"reasons": [],
+		"atMs": 1794484800000
+	},
+	"fanout.Progressed:bound": {
+		"campId": "c000",
+		"outcome": "bound",
+		"promotionId": "prm-1",
+		"catchUp": false,
+		"reasons": [],
+		"atMs": 1794484800000
+	},
+	"fanout.Progressed:succeeded": {
+		"campId": "c000",
+		"outcome": "succeeded",
+		"promotionId": "prm-1",
+		"catchUp": false,
+		"reasons": [],
+		"atMs": 1794484860001
+	},
+	"fanout.Progressed:failed": {
+		"campId": "c001",
+		"outcome": "failed",
+		"promotionId": "prm-2",
+		"catchUp": false,
+		"reasons": [
+			{
+				"code": "verification-failed",
+				"message": "verification FAIL in c001",
+				"remediation": "fix the fixture",
+				"subject": "verification-failed"
+			}
+		],
+		"atMs": 1794484860001
+	},
+	"fanout.Halted": {
+		"reason": {
+			"code": "fanout-failure-budget-exceeded",
+			"message": "2 Camps failed; the budget allows 1",
+			"remediation": "inspect the failed Camps; resume (fanout.resume) after fixing the cause, or roll the fan-out back",
+			"subject": "fanout-8f2d81145b7896190aa33a1730e13a7e"
+		},
+		"atMs": 1794484860001,
+		"status": {
+			"fanoutId": "fanout-8f2d81145b7896190aa33a1730e13a7e",
+			"pipeline": "web",
+			"node": "prod",
+			"freightId": "sha256:aaaa",
+			"decisionId": "wide",
+			"state": "FANOUT_STATE_HALTED",
+			"groupIndex": 1,
+			"pending": [
+				"c004",
+				"c005",
+				"c006",
+				"c007",
+				"c008",
+				"c009",
+				"c010",
+				"c011"
+			],
+			"succeeded": [
+				"c000",
+				"c003"
+			],
+			"failed": [
+				"c001",
+				"c002"
+			],
+			"reasons": [
+				{
+					"code": "fanout-failure-budget-exceeded",
+					"message": "2 Camps failed; the budget allows 1",
+					"remediation": "inspect the failed Camps; resume (fanout.resume) after fixing the cause, or roll the fan-out back",
+					"subject": "fanout-8f2d81145b7896190aa33a1730e13a7e"
+				}
+			],
+			"updatedAt": "2026-11-12T12:01:00.001Z"
+		}
+	},
+	"fanout.Progressed:rolled-back": {
+		"campId": "c001",
+		"outcome": "rolled-back",
+		"promotionId": "rb-c001",
+		"catchUp": false,
+		"reasons": [],
+		"atMs": 1794484860001
+	},
+	"fanout.Resumed": {
+		"baseline": 2,
+		"atMs": 1794484920002,
+		"status": {
+			"fanoutId": "fanout-8f2d81145b7896190aa33a1730e13a7e",
+			"pipeline": "web",
+			"node": "prod",
+			"freightId": "sha256:aaaa",
+			"decisionId": "wide",
+			"state": "FANOUT_STATE_RUNNING",
+			"groupIndex": 1,
+			"pending": [
+				"c004",
+				"c005",
+				"c006",
+				"c007",
+				"c008",
+				"c009",
+				"c010",
+				"c011"
+			],
+			"succeeded": [
+				"c000",
+				"c003"
+			],
+			"failed": [
+				"c001",
+				"c002"
+			],
+			"updatedAt": "2026-11-12T12:01:00.001Z"
+		}
+	},
+	"fanout.Progressed:deferred": {
+		"campId": "c005",
+		"outcome": "deferred",
+		"promotionId": "",
+		"catchUp": false,
+		"reasons": [
+			{
+				"code": "camp-unreachable",
+				"message": "Camp c005 is not reachable",
+				"remediation": "restore the Camp's reconciler connectivity; it catches up on reconnect",
+				"subject": "c005"
+			}
+		],
+		"atMs": 1794484920002
+	},
+	"fanout.Completed": {
+		"atMs": 1794485040004,
+		"campIds": [],
+		"reasons": [],
+		"status": {
+			"fanoutId": "fanout-8f2d81145b7896190aa33a1730e13a7e",
+			"pipeline": "web",
+			"node": "prod",
+			"freightId": "sha256:aaaa",
+			"decisionId": "wide",
+			"state": "FANOUT_STATE_COMPLETED",
+			"groupIndex": 2,
+			"succeeded": [
+				"c000",
+				"c003",
+				"c004",
+				"c006",
+				"c007",
+				"c008",
+				"c009",
+				"c010",
+				"c011"
+			],
+			"failed": [
+				"c001",
+				"c002"
+			],
+			"deferred": [
+				"c005"
+			],
+			"updatedAt": "2026-11-12T12:04:00.004Z"
+		}
+	},
+	"fanout.Progressed:supersede-requested": {
+		"campId": "",
+		"outcome": "supersede-requested",
+		"promotionId": "",
+		"catchUp": false,
+		"reasons": [],
+		"atMs": 1794485100005
+	},
+	"camp.Departed": {
+		"fanoutId": "fanout-f857d53230d783234d7bbe69688a528b",
+		"campId": "c008",
+		"action": "DEPARTURE_ACTION_ORPHAN_DATA",
+		"promotionId": "prm-23",
+		"kept": [],
+		"reasons": [],
+		"atMs": 1794485280008
+	},
+	"fanout.RolledBack": {
+		"atMs": 1794485340009,
+		"campIds": [
+			"c000",
+			"c001",
+			"c002",
+			"c003"
+		],
+		"reasons": [
+			{
+				"code": "fanout-rolled-back",
+				"message": "bad release",
+				"remediation": "promote newer Freight when ready",
+				"subject": "user:ops@acme"
+			}
+		],
+		"status": {
+			"fanoutId": "fanout-d5c865893d2e6362848da570938a8b21",
+			"pipeline": "web",
+			"node": "canary",
+			"freightId": "sha256:aaaa",
+			"decisionId": "canary",
+			"state": "FANOUT_STATE_ROLLED_BACK",
+			"inFlight": [
+				"c000",
+				"c001",
+				"c002",
+				"c003"
+			],
+			"reasons": [
+				{
+					"code": "fanout-rolled-back",
+					"message": "bad release",
+					"remediation": "promote newer Freight when ready",
+					"subject": "user:ops@acme"
+				}
+			],
+			"updatedAt": "2026-11-12T12:09:00.009Z"
+		}
+	}
+}

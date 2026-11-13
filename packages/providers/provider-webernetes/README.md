@@ -158,3 +158,37 @@ protobuf + CUE boundary shapes in `data-models/`.
 IPv6, private-network and overlay records, and rejects public locators labelled
 local, mismatched authority fields and invalid IPv4 ranges. The temporary station
 test also serves and probes a real loopback HTTP endpoint through the injected host.
+
+## Delivery coverage (ADR-0182: I14)
+
+| Export | What it is |
+|---|---|
+| `webernetesResolverRegistry({ host })` | Registry with `webernetes.pod/v1` (`src/pod-resolver.ts`) over an injected `WebernetesStationHost` (`provision`, `describe`, `release`). Reconcile describes first, provisions only an unknown station, re-describes, then probes the parsed local URL over the caller's `HttpTransport`. Delete releases and confirms by observation. Optional `metrics` + `nowMs` emit `hobo.cd.resolver.*`. |
+| `WEBERNETES_TRAFFIC_ROUTING_PROFILE` | Kind `other`; only `inprocess.weighted` (the local router splits between stations). Funnel and every public offering are absent: a local yard is never public. |
+| `WEBERNETES_TRAFFIC_ROUTING_ABSENT` | Every other portable offering, with its reason (ADR-0144). |
+| `WEBERNETES_HOSTING_COVERAGE` | The I14 document; CUE `#HostingCoverage`, design-time protobuf `data-models/hosting_coverage.proto`. |
+| `webernetesProductRefusal(productId)` | Typed `RESOLVER_PRODUCT_UNSUPPORTED` for `webernetes.kv/v1` and `webernetes.queue/v1` (bound in-process by the local yard runtime). |
+
+The host seam extends `LocalTempTransport` with `describe` and `release`; the
+Examples dev server must implement both before a local Camp can use the
+resolver (until then the resolver is constructed only with a host that has
+them, and refuses otherwise). Every URL the host reports crosses
+`parseWebernetesLocalEndpoint`; the claim URL never reaches outputs; a
+private-network or overlay HTTP station is reported without a
+`servingEndpoint`, because core's lifecycle rule admits only HTTPS or loopback
+HTTP. A digest change on a running station is refused: deliver the new version
+to a new station id. Outputs: `#WebernetesPodOutputs`
+(`data-models/pod_resolver.cue`). PACT:
+`contracts/provider-webernetes-station-host.pact.json`. The local lane needs no
+credential and always runs: a real loopback server probed through the bounded
+fetch transport.
+
+## Runbook
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| `RESOLVER_PROVIDER_REJECTED` "local station host failed" | The injected host threw (dev server down). | Start the local station host and reconcile again. |
+| `RESOLVER_OUTPUT_UNPARSEABLE` "non-local or malformed endpoint" | The host reported a public URL or userinfo. | Fix the host; a local yard never stands up a public endpoint. |
+| Outputs `lifecycleStatus: pending`, `probeStatus: 0` or non-2xx | The station exists but does not answer. | Check the station process; verification fails closed at its deadline. |
+| `RESOLVER_PROVIDER_REJECTED` "serves another artifact" | A new version was aimed at a running station. | Deliver it to a new station id and shift traffic in-process. |
+| `RESOLVER_PROVIDER_REJECTED` "release is not confirmed" | The host still reports the station running after release. | Stop it on the host, then reconcile the retirement again. |

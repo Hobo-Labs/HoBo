@@ -12,7 +12,7 @@ import {
 } from "../src/isolated-worker/host-resource-pressure.js";
 
 /**
- * The pure rule of ADR-0180 (plan 0025, 6.1): a fleet label is blocked only
+ * The pure rule of ADR-0180 (amendment, item 1): a fleet label is blocked only
  * while the box is idle and admission would still refuse a job, and nothing
  * else in the fleet can take it.
  */
@@ -399,7 +399,7 @@ describe("the evaluator's answer for a lone idle box", () => {
 	});
 });
 
-// Plan 0026, 3.3 and M6: a busy, healthy box is never refused (R4); critical
+// ADR-0181, decision 5 and M6: a busy, healthy box is never refused (R4); critical
 // storage refuses whether or not the box is busy; pools are counted from
 // GitHub's runner list, and a list that cannot be read is unknown.
 describe("the evaluator behind the routing slip", () => {

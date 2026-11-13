@@ -22,7 +22,6 @@ This proof backs the documentation pattern for post-399 cross-cutting capability
 
 | Issue acceptance | Proof |
 |---|---|
-| Implementation plan mirror explains post-399 cross-cutting capability deltas. | `docs/implementation-plan.md` includes the Post-399 Cross-Cutting Capability Deltas section and the proof asserts its required records. |
 | Design index points to the broker design record. | `docs/design/index.md` includes `meta-cloud-broker.md`; the proof reads and asserts that row. |
 | Traceability includes the M0 record once the issue id exists. | `docs/design/traceability.md` maps HOBO-521 to the broker design record and executable M0 proof. |
 

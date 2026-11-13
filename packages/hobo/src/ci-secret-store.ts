@@ -68,6 +68,10 @@ import {
 	runCiSecretStoreConnect,
 	runCiSecretStoreVerify,
 } from "./ci-secret-store-connect.js";
+import {
+	relayRepository,
+	resolveDeploySubject,
+} from "./ci-secret-store-github.js";
 import { applyClaimCommand, rebuildClaimState } from "./claim-plane.js";
 import { isJsonString } from "./json.js";
 import { createFileOneTimeActionStore } from "./one-time-action-store-file.js";
@@ -390,7 +394,7 @@ function claimSteps(kind: string, cwd: string): readonly string[] {
 		case "infisical-cloud-attach":
 			return [
 				"In Infisical's web app: sign up or in, create project hobo-ci with folder /hobo-ci-relay in prod, and add two OIDC Auth machine identities, hobo-ci-relay (Vercel) and hobo-ci-writer (GitHub Actions). The hobo-deploy skill gives every value.",
-				`Run \`hobo ci secret-store connect ${where} --project-id … --relay-identity-id … --deploy-identity-id … --team …\` with the ids (none is a secret), then commit ${SECRET_STORE_BINDING_FILE}.`,
+				`Run \`hobo ci secret-store connect ${where} --repo <owner/name> --project-id … --relay-identity-id … --deploy-identity-id … --team …\` with the ids (none is a secret; GH_TOKEN lets it read the OIDC subject GitHub issues for the repository), set hobo-ci-writer's OIDC trust to the subject and claims it prints, then commit ${SECRET_STORE_BINDING_FILE}.`,
 			];
 		default:
 			return [
@@ -482,10 +486,7 @@ export async function runCiSecretStore(
 			const teamSlug = text(input.values, "vercel-team-slug");
 			const projectId = text(input.values, "vercel-project-id");
 			const yard = await loadRelayYard(input.cwd);
-			const yardRepo = yard?.properties.repository;
-			const repository =
-				text(input.values, "repo") ??
-				(isJsonString(yardRepo) ? yardRepo : undefined);
+			const repository = await relayRepository(input.cwd, input.values);
 			if (
 				teamId === undefined ||
 				teamSlug === undefined ||
@@ -496,15 +497,22 @@ export async function runCiSecretStore(
 					"hobo ci secret-store provision needs --team <team_id>, --vercel-team-slug <slug> and --vercel-project-id <prj_id> (the relay's identity trusts that project's OIDC tokens only), and a repository (--repo or the Yard's).",
 				);
 			const yardProject = yard?.properties.project;
-			const layout = relayStoreLayout({
-				vercelTeamSlug: teamSlug,
-				vercelTeamId: teamId,
-				vercelProjectId: projectId,
-				...(isJsonString(yardProject)
-					? { vercelProjectName: yardProject }
-					: undefined),
-				repository,
-			});
+			// The deploy trust uses the subject GitHub issues for the
+			// repository; resolved only where a layout is provisioned.
+			const layoutOf = async () =>
+				relayStoreLayout({
+					vercelTeamSlug: teamSlug,
+					vercelTeamId: teamId,
+					vercelProjectId: projectId,
+					...(isJsonString(yardProject)
+						? { vercelProjectName: yardProject }
+						: undefined),
+					github: await resolveDeploySubject({
+						repository,
+						env: input.env,
+						fetch: send,
+					}),
+				});
 			if (kind === "infisical-self-hosted") {
 				const ownerEmail = text(input.values, "owner-email");
 				if (ownerEmail === undefined)
@@ -515,7 +523,7 @@ export async function runCiSecretStore(
 					siteUrl: text(input.values, "fleet-host") ?? "",
 					ownerEmail,
 					organization: "hobo",
-					layout,
+					layout: await layoutOf(),
 					deploymentRef,
 					store,
 					scope,
@@ -552,7 +560,7 @@ export async function runCiSecretStore(
 						? { siteUrl: input.env.INFISICAL_SITE_URL }
 						: undefined),
 					ownerAccessToken: input.env.INFISICAL_TOKEN ?? "",
-					layout,
+					layout: await layoutOf(),
 					deploymentRef,
 					now,
 					fetch: send,

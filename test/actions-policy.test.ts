@@ -179,6 +179,8 @@ jobs:
 });
 const trunkRunsOn =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
+const boxOrTrunkRunsOn =
+	"${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
 const routedRunsOn = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 /** The main gate's shards: the plan job's second ask, then the run's route, then GitHub-hosted. */
 const shardRunsOn =
@@ -364,6 +366,68 @@ jobs:
 	}
 });
 
+test("box-label-routing sends the deps image build to the box and nothing else", async () => {
+	const workflow = (runsOn: string, command: string) => `name: Routing
+on:
+  pull_request:
+  push:
+jobs:
+  build:
+    needs: route
+    runs-on: ${runsOn}
+    steps:
+      - run: ${command}
+`;
+	const build =
+		"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote";
+	// The image must land in the Docker context job containers start from:
+	// under the shared label an ARC pod can take the job.
+	const boxed = await lint(
+		await fixture({ "pricing-ci.yml": workflow(boxOrTrunkRunsOn, build) }),
+	);
+	assert.equal(boxed.status, 0, boxed.stderr);
+	for (const runsOn of [trunkRunsOn, "hobo"]) {
+		const shared = await lint(
+			await fixture({ "pricing-ci.yml": workflow(runsOn, build) }),
+		);
+		assert.equal(shared.status, 1, runsOn);
+		assert.match(
+			shared.stderr,
+			/box-label-routing: a job that runs deps\/build-deps\.sh must use the box-or-trunk label expression/,
+		);
+	}
+	// The box label is for that job alone, and never asked for bare.
+	const borrowed = await lint(
+		await fixture({ "pricing-ci.yml": workflow(boxOrTrunkRunsOn, "true") }),
+	);
+	assert.equal(borrowed.status, 1);
+	assert.match(borrowed.stderr, /runs-on must be hobo or the trunk label/);
+	const bare = await lint(
+		await fixture({ "pricing-ci.yml": workflow("hobo-box", build) }),
+	);
+	assert.equal(bare.status, 1);
+	// The box label comes from the route job's answer, so the job must need it.
+	const unrouted = await lint(
+		await fixture({
+			"pricing-ci.yml": workflow(boxOrTrunkRunsOn, build).replace(
+				"    needs: route\n",
+				"",
+			),
+		}),
+	);
+	assert.equal(unrouted.status, 1);
+	assert.match(unrouted.stderr, /must need the route job/);
+	// A comment naming the script does not make a job a deps image build.
+	const commented = await lint(
+		await fixture({
+			"pricing-ci.yml": workflow(trunkRunsOn, "true").replace(
+				"    steps:",
+				"    # see packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh\n    steps:",
+			),
+		}),
+	);
+	assert.equal(commented.status, 0, commented.stderr);
+});
 test("trunk-label-routing requires plain hobo on PR-only jobs, including folded conditions", async () => {
 	const workflow = (runsOn: string) => `name: Routing
 on:
@@ -433,14 +497,16 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				.join("\n");
 			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
+			// release-hobo-cli builds the CLI release-npm runs with its OIDC token.
 			if (
 				file === "release-hobo.yml" &&
-				(lines[start] ?? "").startsWith("  release-npm:")
+				((lines[start] ?? "").startsWith("  release-npm:") ||
+					(lines[start] ?? "").startsWith("  release-hobo-cli:"))
 			) {
 				assert.equal(
 					runsOn,
 					"ubuntu-24.04",
-					`${file}:${lines[start]} release-npm must use GitHub-hosted runners for npm OIDC`,
+					`${file}:${lines[start]} must use GitHub-hosted runners for npm OIDC`,
 				);
 				continue;
 			}
@@ -493,6 +559,12 @@ test("every trunk-capable CI and release job requests the trunk label by default
 					/^  ci-deps-image:$/,
 					`${file}:${lines[start]} is not routed`,
 				);
+			// The deps image job asks for the box on pull requests, the trunk
+			// label otherwise.
+			if ((lines[start] ?? "") === "  ci-deps-image:") {
+				assert.equal(runsOn, boxOrTrunkRunsOn, `${file}: ci-deps-image`);
+				continue;
+			}
 			const prOnly =
 				/github\.event_name == 'pull_request'/.test(condition) &&
 				!condition.includes("||");

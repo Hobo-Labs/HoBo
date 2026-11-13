@@ -21,6 +21,10 @@ import {
 	RailwayDeploymentIdentitySchema,
 } from "./_generated/deployment_identity_pb.js";
 import {
+	instrumentResolvers,
+	type ResolverTelemetryOptions,
+} from "./delivery-coverage.js";
+import {
 	isJsonArray,
 	isJsonObject,
 	isJsonString,
@@ -36,7 +40,7 @@ export const RAILWAY_GRAPHQL_ENDPOINT =
 	"https://backboard.railway.com/graphql/v2";
 
 /** Scope is supplied by the host, not inferred from a credential or a plan. */
-export interface RailwayResolverOptions {
+export interface RailwayResolverOptions extends ResolverTelemetryOptions {
 	readonly projectId: string;
 	readonly environmentId: string;
 	readonly resolveCredential: (ref: string) => Promise<string>;
@@ -684,6 +688,10 @@ export function createRailwayResolvers(
 	];
 }
 
+/** Registry of every Railway hosting product with a shipped resolver (I14).
+ * With `metrics` + `nowMs`, each call emits `hobo.cd.resolver.*` metrics. */
 export function railwayResolverRegistry(options: RailwayResolverOptions) {
-	return createResolverRegistry(createRailwayResolvers(options));
+	return createResolverRegistry(
+		instrumentResolvers(createRailwayResolvers(options), options),
+	);
 }

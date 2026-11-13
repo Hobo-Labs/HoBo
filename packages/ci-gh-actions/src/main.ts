@@ -207,7 +207,12 @@ export async function startRelayFromEnvironment(
 	}
 }
 const entry = process.argv[1];
-if (entry && import.meta.url === pathToFileURL(entry).href) {
+// Not inside a bundled controller release, whose entry is another module.
+if (
+	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
+	entry &&
+	import.meta.url === pathToFileURL(entry).href
+) {
 	startRelayFromEnvironment()
 		.then((running) => {
 			const stop = () => {

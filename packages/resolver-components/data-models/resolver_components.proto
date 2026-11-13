@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+// Wire records of @hobo/resolver-components (plan 0024 WP8, D6, I9).
+//
+// A hobo:resolver WASM component ships as a signed bundle: a component
+// manifest (this file's ResolverComponentManifestRecord), the component bytes,
+// and a @hobo/registry bundle manifest whose capability features bind both
+// digests, signed by the registry attestation. Everything here is
+// secret-free: credentials appear only as locators, and the host attaches
+// material to allowlisted requests itself.
+package hobo.resolver_components.v1;
+
+// One allowlisted egress host. Exact host names only; no wildcards.
+message EgressHostRecord {
+  string host = 1;
+  // Ports beyond the implicit 443, as decimal strings.
+  repeated string ports = 2;
+  // Path prefixes the component may reach on this host ("/" for any).
+  repeated string path_prefixes = 3;
+  // Agent mode only: literal private addresses this host may resolve to.
+  repeated string local_addresses = 4;
+}
+
+// Hosts the host may attach the call's credential to. A credential is never
+// attached to any other host.
+message CredentialBindingRecord {
+  repeated string hosts = 1;
+}
+
+// Per-call limits. Each is capped by CD_DEFAULTS (128 MiB, 30 s, 10^9 fuel).
+message ComponentLimitsRecord {
+  uint64 memory_bytes = 1;
+  uint32 call_timeout_ms = 2;
+  uint64 fuel = 3;
+}
+
+// One resource class (product) a component resolves.
+message ResourceClassRecord {
+  string product_id = 1;
+  // A @hobo/core CapabilitySlot.
+  string slot = 2;
+  // Fields owned on the target side; excluded from drift (D22).
+  repeated string retained_fields = 3;
+  // Attributes read() may report; trimmed to the Camp's observe_fields.
+  repeated string observe_fields = 4;
+  // Realization parameters that steer how, never what (ADR-0175).
+  repeated string directives = 5;
+}
+
+enum ReconcilerModeRecord {
+  RECONCILER_MODE_RECORD_UNSPECIFIED = 0;
+  RECONCILER_MODE_RECORD_CONDUCTOR = 1;
+  RECONCILER_MODE_RECORD_AGENT = 2;
+}
+
+// The signed component manifest.
+message ResolverComponentManifestRecord {
+  string schema = 1;
+  // Component id: lowercase, path-safe.
+  string id = 2;
+  string version = 3;
+  // Always "hobo:resolver/resolver-component@0.1.0".
+  string world = 4;
+  // sha256:<hex> of the component bytes.
+  string wasm_digest = 5;
+  // providerId stamped on every ResourceResolver this component backs.
+  string provider_id = 6;
+  repeated ResourceClassRecord classes = 7;
+  repeated EgressHostRecord egress = 8;
+  CredentialBindingRecord credential = 9;
+  ComponentLimitsRecord limits = 10;
+  // Modes this component may run in; agent mode admits local_addresses.
+  repeated ReconcilerModeRecord modes = 11;
+}
+
+// What describe() returns: must equal the signed manifest's classes.
+message ResolverDescriptionRecord {
+  string component_id = 1;
+  string version = 2;
+  repeated ResourceClassRecord classes = 3;
+}
+
+enum EgressDenialCode {
+  EGRESS_DENIAL_CODE_UNSPECIFIED = 0;
+  // Host not in the component's allowlist (relay forward-proxy rule).
+  EGRESS_DENIAL_CODE_HOST_NOT_ALLOWLISTED = 1;
+  EGRESS_DENIAL_CODE_SCHEME_FORBIDDEN = 2;
+  EGRESS_DENIAL_CODE_PORT_FORBIDDEN = 3;
+  EGRESS_DENIAL_CODE_PATH_FORBIDDEN = 4;
+  EGRESS_DENIAL_CODE_METADATA_ENDPOINT = 5;
+  // Resolves to a private, loopback, link-local or reserved address.
+  EGRESS_DENIAL_CODE_PRIVATE_ADDRESS = 6;
+  // Resolution failed or changed outside the allowed set (rebinding).
+  EGRESS_DENIAL_CODE_REBINDING = 7;
+  EGRESS_DENIAL_CODE_REDIRECT = 8;
+  // Credential asked for a host outside the credential binding, or with a
+  // locator other than the call's.
+  EGRESS_DENIAL_CODE_CREDENTIAL_SCOPE = 9;
+  // Request or result carried injected credential material.
+  EGRESS_DENIAL_CODE_SECRET_EXFILTRATION = 10;
+  EGRESS_DENIAL_CODE_BODY_TOO_LARGE = 11;
+}
+
+message EgressDenialRecord {
+  EgressDenialCode code = 1;
+  string host = 2;
+  string detail = 3;
+}
+
+enum InvocationOutcome {
+  INVOCATION_OUTCOME_UNSPECIFIED = 0;
+  INVOCATION_OUTCOME_OK = 1;
+  INVOCATION_OUTCOME_GUEST_ERROR = 2;
+  INVOCATION_OUTCOME_EGRESS_DENIED = 3;
+  INVOCATION_OUTCOME_SECRET_EXFILTRATION = 4;
+  INVOCATION_OUTCOME_FUEL_EXHAUSTED = 5;
+  INVOCATION_OUTCOME_MEMORY_EXCEEDED = 6;
+  INVOCATION_OUTCOME_TIMEOUT = 7;
+  INVOCATION_OUTCOME_TRAP = 8;
+  INVOCATION_OUTCOME_OUTPUT_UNPARSEABLE = 9;
+}
+
+// One host-observed invocation (audit + telemetry), secret-free.
+message ComponentInvocationRecord {
+  string component_id = 1;
+  string wasm_digest = 2;
+  string product_id = 3;
+  // describe | reconcile | read | delete | instances
+  string operation = 4;
+  InvocationOutcome outcome = 5;
+  uint64 fuel_used = 6;
+  uint64 peak_memory_bytes = 7;
+  uint32 duration_ms = 8;
+  uint32 egress_calls = 9;
+  repeated EgressDenialRecord denials = 10;
+}
+
+message ConformanceCheckRecord {
+  string id = 1;
+  bool passed = 2;
+  string detail = 3;
+}
+
+message ConformanceReportRecord {
+  string component_id = 1;
+  string version = 2;
+  string wasm_digest = 3;
+  bool passed = 4;
+  repeated ConformanceCheckRecord checks = 5;
+}

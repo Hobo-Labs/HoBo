@@ -2,7 +2,7 @@
 /**
  * The CI health monitor: reads what the last window of workflow runs left
  * behind and raises every fallback that would otherwise stay silent
- * (plan 0025, section 6.6; `docs/ci/health-monitor.md`).
+ * (ADR-0180; `docs/ci/health-monitor.md`).
  *
  * Runs every two hours on a GitHub-hosted machine (`ci-health.yml`). It reads
  * the run list, each run's jobs, and the annotations of the route job and of

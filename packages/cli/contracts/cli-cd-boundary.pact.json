@@ -1,0 +1,144 @@
+{
+	"consumer": {
+		"name": "@hobo/cli"
+	},
+	"provider": {
+		"name": "@hobo/cd"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "4.0.0"
+		},
+		"evidence": "Hand-authored synchronous-message contract for the hobo up/down/build -> @hobo/cd port boundary (plan 0024 D13). The consumer side is verified by test/cli-cd-boundary.contract.test.ts against the yard-client seam; requests use the frozen ports.ts shapes and protobuf JSON of cd.proto records. Values under matchingRules are regular expressions; every other value is exact."
+	},
+	"interactions": [
+		{
+			"type": "Synchronous/Messages",
+			"description": "hobo up stores the canonical declaration under its own hash",
+			"request": {
+				"port": "ArtifactStore.put",
+				"contents": {
+					"name": "declaration",
+					"kind": 7,
+					"mediaType": "application/vnd.hobo.bindle+json"
+				}
+			},
+			"response": {
+				"contents": {
+					"digest": "<declarationHash>"
+				}
+			},
+			"matchingRules": {
+				"response.digest": "^sha256:[0-9a-f]{64}$"
+			}
+		},
+		{
+			"type": "Synchronous/Messages",
+			"description": "hobo up records LOCAL_BUILD Freight for the project's declaration",
+			"request": {
+				"port": "FreightLedger.record",
+				"contents": {
+					"origin": 6,
+					"manifest": {
+						"schemaVersion": "hobo.freight-manifest/v1",
+						"bindle": "pact-cd"
+					}
+				}
+			},
+			"response": {
+				"contents": {
+					"freightId": "<freightId>",
+					"alias": "<alias>"
+				}
+			},
+			"matchingRules": {
+				"request.manifest.declarationHash": "^sha256:[0-9a-f]{64}$",
+				"response.freightId": "^sha256:[0-9a-f]{64}$",
+				"response.alias": "^.+$"
+			}
+		},
+		{
+			"type": "Synchronous/Messages",
+			"description": "hobo up promotes the Freight into the deployment Camp with intent up",
+			"request": {
+				"port": "PromotionService.promote",
+				"contents": {
+					"targets": ["pact-cd"],
+					"intent": "up"
+				}
+			},
+			"response": {
+				"contents": {
+					"promotionId": "<promotionId>"
+				}
+			},
+			"matchingRules": {
+				"request.freightId": "^sha256:[0-9a-f]{64}$",
+				"request.idempotencyKey": "^up\\|pact-cd\\|sha256:[0-9a-f]{64}\\|genesis$",
+				"response.promotionId": "^.+$"
+			}
+		},
+		{
+			"type": "Synchronous/Messages",
+			"description": "hobo up converges the Camp with a bounded in-process conductor",
+			"request": {
+				"port": "ContinuousDelivery.createReconciler",
+				"contents": {
+					"mode": 1,
+					"reconcilerId": "hobo-up.pact-cd",
+					"campIds": ["pact-cd"]
+				}
+			},
+			"response": {
+				"contents": {
+					"reconcileOnce": {
+						"campId": "pact-cd",
+						"status": "RECONCILE_STATUS_CONVERGED"
+					}
+				}
+			},
+			"matchingRules": {
+				"request.holderId": "^hobo-up\\.[0-9]+$"
+			}
+		},
+		{
+			"type": "Synchronous/Messages",
+			"description": "hobo down opens a teardown Delta through the same gate",
+			"request": {
+				"port": "PromotionService.promote",
+				"contents": {
+					"targets": ["pact-cd"],
+					"intent": "down"
+				}
+			},
+			"response": {
+				"contents": {
+					"setOrigin": "SET_ORIGIN_TEARDOWN"
+				}
+			},
+			"matchingRules": {
+				"request.freightId": "^sha256:[0-9a-f]{64}$",
+				"request.idempotencyKey": "^down\\|pact-cd\\|.+$"
+			}
+		},
+		{
+			"type": "Synchronous/Messages",
+			"description": "hobo up --rollback re-applies the predecessor Set",
+			"request": {
+				"port": "PromotionService.rollback",
+				"contents": {
+					"campId": "pact-cd",
+					"reason": "hobo up --rollback"
+				}
+			},
+			"response": {
+				"contents": {
+					"setOrigin": "SET_ORIGIN_ROLLBACK"
+				}
+			},
+			"matchingRules": {
+				"request.idempotencyKey": "^up-rollback\\|pact-cd\\|.+$"
+			}
+		}
+	]
+}

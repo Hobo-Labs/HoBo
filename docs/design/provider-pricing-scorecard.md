@@ -1,3 +1,10 @@
+---
+type: Acceptance Scorecard
+title: "Provider pricing acceptance scorecard"
+description: "Acceptance rows for provider-pricing-commercial-terms.md; each pass row names the test that proves it, parsed by the pricing package design-scorecard eval."
+tags: [hobo, design, pricing, acceptance]
+---
+
 # Provider pricing acceptance scorecard
 
 Tracks acceptance of [`provider-pricing-commercial-terms.md`](./provider-pricing-commercial-terms.md) on branch `cursor/hobo-pricing-81a7`. The CI eval in `packages/pricing/test/design-scorecard-eval.test.ts` parses the table below: every row must be `pass` with evidence; `partial`, `fail`, and `deferred` block merge.

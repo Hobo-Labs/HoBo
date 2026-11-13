@@ -1,5 +1,5 @@
 /**
- * Retires the repository variables that used to carry routing (plan 0026,
+ * Retires the repository variables that used to carry routing (ADR-0181,
  * 3.7; ADR-0181).
  *
  * Routing travels as a routing slip (`routing-slip.ts`) and committed policy

@@ -39,9 +39,59 @@ service (control-api). The draft remains in place as reference; see its
 - [`src/layout-store.ts`](./src/layout-store.ts) — **node-only** JSON
   persistence for layouts (`YARD_WORLD_HOME`, default `~/.hobo-yard-world/`);
   excluded from `src/index.ts`, import via `@hobo/yard-world/layout-store`.
+- [`src/cd-views.ts`](./src/cd-views.ts) — HoBo CD views:
+  `parseCdSpans` (parse boundary for OTel CI/CD spans), `freightTimeline`,
+  `pipelineGraph`, `renderPromotionTrace`, and the fleet views `fleetView`
+  (Camps by condition and taint) and `complianceHeatmap` (noncompliance by
+  Rail × control). See [HoBo CD](#hobo-cd) below.
 - [`src/simulator.ts`](./src/simulator.ts) — deterministic (mulberry32-seeded)
   platform simulator that routes OTLP payloads through the same mappers and
   trace index; same seed → identical event stream.
+
+## HoBo CD
+
+`@hobo/cd` exports promotions as OTel CI/CD spans (`RUN <pipeline>` pipeline
+runs, `promote <camp>` task runs) that carry topology as **span** attributes
+(`hobo.camp.id`, `hobo.station.id`, `hobo.yard.id`, `hobo.freight.id`,
+`hobo.cd.pipeline.node`, `deployment.environment.name`), because one CD
+service delivers to many Camps.
+
+- `mapTracePayload` first runs `liftCdTopology`: spans naming a Camp move to a
+  per-Camp resource, so each delivery task lands in its Camp room as an
+  `actor` character `<service>@<camp>` in the right Station. A resource that
+  already pins `hobo.camp` is left alone; spans without `hobo.camp.id` are
+  unchanged.
+- `freightTimeline` (Freight → deliveries in time order, result per Camp)
+  and `pipelineGraph` (nodes with last Freight/result, edges a Freight
+  travelled) are projections over parsed CD spans.
+- `fleetView` reads the `hobo.cd.camp.condition` / `hobo.cd.camp.taint`
+  gauges; `complianceHeatmap` reads `hobo.cd.compliance.noncompliant_ratio`
+  (latest point per Rail × control × mode; bands: `ok` = 0, `watch` ≤ 2 %,
+  `breach` > 2 %, the R12 INFORM budget).
+- Wire forms: the `*Record` messages at the end of
+  `data-models/yard_world.proto` with CUE constraints in
+  `data-models/yard_world.cue`.
+
+The CD attribute keys are mirrored from `@hobo/cd/telemetry` (`semconv.ts`),
+not imported, because this package has no dependencies. Golden trace:
+`test/cd-promotion-trace.otlp.json`, produced by `@hobo/cd`'s span builder and
+OTLP encoder.
+
+### Runbook
+
+- **Delivery characters pile up in the `default` Camp.** The CD spans lack
+  `hobo.camp.id` (multi-Camp pipeline-run spans legitimately stay with the
+  CD service). Task spans always carry it; if they do not, check the
+  `@hobo/cd` version and its `CampLocator` composition.
+- **A Camp shows in the wrong Station.** The span's `hobo.station.id` comes
+  from the CD topology port; fix the Camp's declared Station there. Stations
+  never mix (ADR-0131), so a wrong id creates a separate building.
+- **Heatmap cell stuck on an old value.** Cells keep the latest point per
+  Rail × control × mode; a Rail no longer evaluated keeps its last cell until
+  the hosting service restarts its read model.
+- **Golden trace drift.** If `@hobo/cd` span shapes change, regenerate
+  `test/cd-promotion-trace.otlp.json` from `promotionSpans` + `encodeTraces`
+  and review the timeline/graph expectations in `test/cd-views.test.ts`.
 
 ## Types
 

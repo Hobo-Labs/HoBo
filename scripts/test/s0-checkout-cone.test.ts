@@ -66,7 +66,7 @@ describe("Main full gate S0 sparse checkout", () => {
 		);
 	});
 
-	it("keeps gitleaks out of the S0 job (finish job runs full-history scan)", () => {
+	it("keeps gitleaks out of the S0 job (the plan job runs the full-history scan)", () => {
 		const checkout = mainGate.indexOf(
 			"name: Checkout (sparse S0, full history)",
 		);
@@ -80,11 +80,16 @@ describe("Main full gate S0 sparse checkout", () => {
 			workflow.indexOf("\n  main_gate_finish:"),
 			workflow.indexOf("\n  artifact-trust:"),
 		);
-		expect(finish).toContain("gitleaks-main-scan.mts --background");
-		expect(finish).toContain("gitleaks-main-scan.mts --wait");
+		expect(finish).not.toContain("gitleaks-main-scan.mts");
+		const plan = workflow.slice(
+			workflow.indexOf("\n  main-gate-plan:"),
+			workflow.indexOf("\n  main-gate:"),
+		);
+		expect(plan).toContain("gitleaks-main-scan.mts --background");
+		expect(plan).toContain("gitleaks-main-scan.mts --wait");
 		const imageJob = workflow.slice(
 			workflow.indexOf("\n  ci-runner-image:"),
-			workflow.indexOf("\n  main-gate:"),
+			workflow.indexOf("\n  main-gate-plan:"),
 		);
 		expect(imageJob).not.toContain("gitleaks-main-scan");
 	});

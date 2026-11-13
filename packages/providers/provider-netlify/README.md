@@ -320,3 +320,30 @@ validated root `deploy_ssl_url` origin after fetching artifact bytes. Foreign
 hosts, userinfo, paths, queries and fragments are refused. Site control records
 and pending deployments provide no serving endpoint proof; mutable primary site
 URLs are not accepted as immutable deployment bindings.
+
+## Delivery coverage (ADR-0182: I14)
+
+The traffic audit found no Netlify profile and no Netlify routing adapter.
+`NETLIFY_TRAFFIC_ROUTING_PROFILE` (kind `other`; mirrored as
+`NETLIFY_TRAFFIC_ROUTING_PROFILE` in `@hobo/connectivity`'s profiles) declares
+the one realized offering: `inprocess.weighted` between immutable deploy
+permalinks. Netlify's split testing splits by git branch, which HoBo does not
+deliver, so the edge offerings and the other fourteen are declared absent with a
+reason (`NETLIFY_TRAFFIC_ROUTING_ABSENT`): a required canary is refused, not
+faked.
+
+`NETLIFY_HOSTING_COVERAGE` (`data-models/hosting_coverage.{proto,cue}`) lists
+the resolved `netlify.authenticated-site/v1` and `netlify.static-deploy/v1`
+and refuses `netlify.anonymous-static-site/v1` and `netlify.functions/v1` with
+remediation through `netlifyProductRefusal`. `netlifyResolverRegistry` takes
+optional `metrics` + `nowMs` and then emits `hobo.cd.resolver.operations` and
+`hobo.cd.resolver.duration` for every call.
+
+## Runbook
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| a canary is refused with `progressive-unsupported` | Netlify realizes no edge canary | permit the in-process fallback in policy, or deliver the canary through a provider with `edge.canary` |
+| `RESOLVER_PRODUCT_UNSUPPORTED` for the anonymous site | anonymous sites have no account to reconcile | use the temporary station path, or the authenticated site plus static deploy |
+| `RESOLVER_PRODUCT_UNSUPPORTED` for `netlify.functions/v1` | functions ship inside a deploy | include them in the site's deploy |
+| no `hobo.cd.resolver.*` metrics | the registry was built without `metrics` and `nowMs` | pass both; a sink without a clock is refused |

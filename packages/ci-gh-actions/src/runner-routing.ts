@@ -1,6 +1,6 @@
 /**
- * Committed routing policy: `runnerRouting` in `.hobo/ci.json` (plan 0026,
- * 3.4; ADR-0181). It replaces every repository variable and box environment
+ * Committed routing policy: `runnerRouting` in `.hobo/ci.json` (ADR-0181,
+ * "Routing list"). It replaces every repository variable and box environment
  * variable that chose a runner label, a tier, a slot split, a limit or a
  * reporter. Its values are the code's defaults, so committing them changed
  * nothing.
@@ -62,10 +62,20 @@ export const RunnerRoutingSchema = z
 				trunk: RunnerRoutingLabelSchema,
 				local: RunnerRoutingLabelSchema,
 				github: RunnerRoutingLabelSchema,
+				/** The box's own label, for the one job that builds in its Docker context. */
+				box: RunnerRoutingLabelSchema,
 			})
 			.strict(),
 		localRunner: z.boolean(),
+		/** Pull requests' deps-image job asks for `labels.box` (else the fleet label). */
+		boxRunner: z.boolean(),
 		mainWorkspaceParallelCap: whole(1, 8),
+		mainGate: z
+			.object({
+				/** `false`: a push to main runs its full gate even when the merge queue passed its tree. */
+				reuseMergeQueue: z.boolean(),
+			})
+			.strict(),
 		verdict: z
 			.object({
 				minFreeRunners: whole(1, 9999),
@@ -107,9 +117,13 @@ export function parseRunnerRouting(
 	return parsed.success ? parsed.data : undefined;
 }
 
-/** Every label a routing slip may name: the committed `labels`. */
+/**
+ * Every label a routing slip may name: the four committed labels a run is
+ * routed to. `labels.box` is one job's, chosen by `boxRunner`, never a route.
+ */
 export function runnerRoutingLabels(
-	policy: RunnerRouting,
+	policy: Pick<RunnerRouting, "labels">,
 ): ReadonlySet<string> {
-	return new Set(Object.values(policy.labels));
+	const { fleet, trunk, local, github } = policy.labels;
+	return new Set([fleet, trunk, local, github]);
 }

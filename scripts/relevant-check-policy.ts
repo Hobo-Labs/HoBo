@@ -657,11 +657,15 @@ export function selectRelevantChecks(
 				"build",
 				"--filter={./src/draft/epic-proofs/*}^...",
 				"--filter={./src/draft/projects/*}^...",
+				// features/steps/**/*.ts loads on every run and imports these
+				// packages from source; their dependencies resolve through dist/.
+				"--filter=@hobo/conformance^...",
+				"--filter=@hobo/example-cd-conformance-kit^...",
 				"--output-logs=new-only",
 				"--concurrency=100%",
 			],
 			reason:
-				"behavior steps import the proofs' workspace dependencies from dist, which a scoped run has not built",
+				"behavior steps import the proofs' and root steps' workspace dependencies from dist, which a scoped run has not built",
 			serial: true,
 		});
 		checks.push({
@@ -742,8 +746,7 @@ export function selectRelevantChecks(
 	}
 
 	// Any manifest or lockfile edit can change outbound licence metadata or
-	// pull in a dependency whose licence is not on the allowlist
-	// (docs/plans/0009-legal-compliance-audit.md findings 3 and 5).
+	// pull in a dependency whose licence is not on the allowlist.
 	if (
 		rootConfigChanged ||
 		touchedAny([
@@ -774,6 +777,11 @@ export function selectRelevantChecks(
 			command: "pnpm",
 			args: ["run", "docs:coverage"],
 			reason: "documentation coverage may be affected",
+		});
+		checks.push({
+			command: "pnpm",
+			args: ["run", "plans:guard"],
+			reason: "plans are working documents and are never committed",
 		});
 		checks.push({
 			command: "pnpm",

@@ -1,5 +1,5 @@
 /**
- * The box relay's routing slip issuer (plan 0026, 3.2-3.3; ADR-0181).
+ * The box relay's routing slip issuer (ADR-0181, decisions 1-5).
  *
  * The relay decides routing (R1). Per connected repository it writes its
  * current answer, the routing slip (`../routing-slip.ts`), as the message of
@@ -35,7 +35,7 @@ import {
 import type { RunnerRouting } from "../runner-routing.js";
 import type { FleetRunnersView } from "./fleet-verdict-evaluator.js";
 
-/** Hard caps on slip writes, whatever the decision does (plan 0026, 3.2). */
+/** Hard caps on slip writes, whatever the decision does (ADR-0181, decisions 1-2). */
 export const ROUTING_SLIP_WRITES_PER_MINUTE = 20;
 export const ROUTING_SLIP_WRITES_PER_HOUR = 300;
 /** A 403 or 429 is not a blip: no write for this long. */
@@ -69,7 +69,7 @@ export type RoutingSlipDecisionInput = Readonly<{
 }>;
 
 /**
- * What the slip says per class (plan 0026, 3.3):
+ * What the slip says per class (ADR-0181, decision 5):
  *
  * 1. A committed pin goes into every class (`pinned`).
  * 2. The fleet is refused when no live node serves the class's label
@@ -139,7 +139,7 @@ export type StallWatchLease = Readonly<{
 }>;
 
 /**
- * `stalled` (plan 0026, 3.3): work has been assigned to a label and nothing
+ * `stalled` (ADR-0181, decision 5): work has been assigned to a label and nothing
  * on it has started for `stallMs`. The clock for "nothing started" starts
  * when the watch does, so a restart never reads as a stall.
  */
@@ -244,7 +244,7 @@ const RunnerList = z.object({
 /**
  * GitHub's runner list for a repository (`GET /actions/runners`, which the
  * App's `administration` permission allows), for counting external pools
- * (plan 0026, 3.3.6). Undefined when it cannot be read: unknown (R3).
+ * (ADR-0181, decision 5). Undefined when it cannot be read: unknown (R3).
  */
 export async function readRepositoryRunners(
 	github: GithubTransport,

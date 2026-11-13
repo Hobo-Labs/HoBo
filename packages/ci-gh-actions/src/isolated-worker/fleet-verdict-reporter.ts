@@ -1,5 +1,5 @@
 /**
- * The box relay's fleet verdict reporter (ADR-0180; plan 0025, 6.2–6.3).
+ * The box relay's fleet verdict reporter (ADR-0180 amendment, items 2–3).
  *
  * Every 10 s, on its own unreferenced timer, it asks for an evaluation
  * (`fleet-verdict-evaluator.ts`), holds it (`fleet-verdict-state.ts`), and
@@ -12,7 +12,7 @@
  * `mode: "shadow"`, which the relay keeps but never serves) and `report`.
  * On drain it sends one last report that blocks nothing, best effort.
  *
- * The box daemon no longer wires it (plan 0026, 3.9): the box relay issues
+ * The box daemon no longer wires it (ADR-0181, which supersedes ADR-0180's hosted transport): the box relay issues
  * routing slips instead (`routing-slip-issuer.ts`), and its settings, which
  * came from `HOBO_CI_FLEET_VERDICT_*` environment variables, are gone (R2).
  * The hosted relay's verdict routes and this reporter go with layer 04.

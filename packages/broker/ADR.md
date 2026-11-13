@@ -47,10 +47,13 @@ policies, wraps policy enforcement (OPA-shaped), contract enforcement
    and `catalogHash` so decisions replay against the exact policy set and
    catalog that produced them (same discipline as the registry catalog hash
    and the Meta-cloud Broker receipt integrity requirement).
-5. **Delivery as rendered documents.** The Argo delivery plane renders Argo CD
-   Application documents as pure data behind `DeliveryPlane`; live submission
-   is an adapter concern, so tests and dry runs inspect exactly what would be
-   applied.
+5. **Delivery through CD** (superseded by ADR-0182, D14). The broker no
+   longer renders GitOps documents. `DeliveryPolicy` is neutral
+   (`reconciler_mode`, optional `publisher`) and every accepted receipt is
+   handed to `@hobo/cd` as a promotion request
+   (`createReconcilerDeliveryPlane`). Argo CD / Flux rendering lives in
+   `@hobo/cd-gitops`; the legacy `argo` engine maps to its `argo-cd`
+   publisher.
 6. **Connector registry stores configuration, never credentials.**
    Well-known kinds (`github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`)
    have required-setting parsers; `credentialRef` points into the token broker

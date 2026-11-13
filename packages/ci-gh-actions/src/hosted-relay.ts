@@ -1565,7 +1565,9 @@ export class HostedRelay {
 			const headroomFleetDeferMs = this.headroomFleetDeferMs();
 			const runEvent = await this.admissionOrder.event(refOf(job));
 			const mainTrunk = isMainTrunkFleetDeferJob(job.name, runEvent);
-			const fleetDeferDecision = evaluateMainTrunkFleetDefer({
+			const parallelTrunkLaunchCapacity =
+				this.options.parallelLaunchCapacity?.();
+			const fleetDeferBase = {
 				jobName: job.name,
 				isMainTrunkJob: mainTrunk,
 				priorWait,
@@ -1574,7 +1576,12 @@ export class HostedRelay {
 				trunkSlots: this.options.trunkSlots,
 				localTrunkReserved,
 				fleetWitness,
-			});
+			};
+			const fleetDeferDecision = evaluateMainTrunkFleetDefer(
+				parallelTrunkLaunchCapacity === undefined
+					? fleetDeferBase
+					: { ...fleetDeferBase, parallelTrunkLaunchCapacity },
+			);
 			if (mainTrunk || priorWait !== undefined) {
 				this.logTrunkFleetDeferDecision(job, fleetDeferDecision);
 			}
@@ -1693,16 +1700,24 @@ export class HostedRelay {
 							);
 							if (mainTrunk) {
 								const afterWait = this.trunkWaits.get(trunkWaitKey(job));
-								const postDecision = evaluateMainTrunkFleetDefer({
+								const postDeferBase = {
 									jobName: job.name,
-									isMainTrunkJob: true,
+									isMainTrunkJob: true as const,
 									priorWait: afterWait,
 									deferMs: headroomFleetDeferMs,
 									nowMs,
 									trunkSlots: this.options.trunkSlots,
 									localTrunkReserved,
 									fleetWitness,
-								});
+								};
+								const postDecision = evaluateMainTrunkFleetDefer(
+									parallelTrunkLaunchCapacity === undefined
+										? postDeferBase
+										: {
+												...postDeferBase,
+												parallelTrunkLaunchCapacity,
+											},
+								);
 								this.logTrunkFleetDeferDecision(job, postDecision);
 								if (postDecision.action === "defer") {
 									waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));

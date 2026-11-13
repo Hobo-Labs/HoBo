@@ -76,6 +76,7 @@
 		"search": "node --import tsx scripts/search.mts",
 		"search:structure": "ast-grep scan",
 		"setup": "node --experimental-strip-types scripts/bootstrap-siblings.mts && bash scripts/bootstrap-dev.sh --project-only && pnpm run install:check",
+		"plans:guard": "node --experimental-strip-types scripts/check-no-committed-plans.mts",
 		"ship:gap-closure": "node --import tsx scripts/check-ship-gap-closure.mts",
 		"site:deploy": "node --import tsx scripts/deploy-site.mts",
 		"skills:mirror-check": "node --import tsx scripts/check-skill-mirrors.ts",

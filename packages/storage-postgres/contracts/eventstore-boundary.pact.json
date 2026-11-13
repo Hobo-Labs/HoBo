@@ -1,0 +1,103 @@
+{
+	"consumer": { "name": "hobo-cd-reconciler" },
+	"provider": { "name": "hobo-storage-postgres" },
+	"interactions": [
+		{
+			"description": "append commits events with database-local positions",
+			"providerState": "an empty store",
+			"request": {
+				"method": "append",
+				"streamId": "order:1",
+				"events": [{ "type": "order.Created", "data": { "n": 1 } }],
+				"options": { "expectedSeq": 0 }
+			},
+			"response": { "appended": 1, "firstPosition": "1", "lastPosition": "1" }
+		},
+		{
+			"description": "stale expectedSeq is rejected as an optimistic sequence conflict",
+			"providerState": "stream order:1 has one event",
+			"request": {
+				"method": "append",
+				"streamId": "order:1",
+				"events": [{ "type": "order.Raced", "data": {} }],
+				"options": { "expectedSeq": 0 }
+			},
+			"response": { "error": { "code": "OPTIMISTIC_SEQUENCE_CONFLICT" } }
+		},
+		{
+			"description": "a stale fence token is rejected distinctly from a sequence conflict",
+			"providerState": "stream actor:a is fenced at 5",
+			"request": {
+				"method": "append",
+				"streamId": "actor:a",
+				"events": [{ "type": "actor.Stale", "data": {} }],
+				"options": { "expectedSeq": 1, "fenceToken": "4" }
+			},
+			"response": { "error": { "code": "STALE_FENCE" } }
+		},
+		{
+			"description": "an unfenced write to a fenced stream is refused",
+			"providerState": "stream actor:a is fenced at 5",
+			"request": {
+				"method": "append",
+				"streamId": "actor:a",
+				"events": [{ "type": "actor.Unfenced", "data": {} }],
+				"options": { "expectedSeq": 1 }
+			},
+			"response": { "error": { "code": "MISSING_FENCE" } }
+		},
+		{
+			"description": "claiming a Camp lease held by another live replica is a lease conflict",
+			"providerState": "subscription hobo.cd.camp/camp-1 is leased by replica-a with fence 1",
+			"request": {
+				"method": "claimSubscription",
+				"subscriptionId": "hobo.cd.camp",
+				"partitionId": "camp-1",
+				"holderId": "replica-b"
+			},
+			"response": { "error": { "code": "SUBSCRIPTION_LEASE_CONFLICT" } }
+		},
+		{
+			"description": "claiming a free Camp lease returns fence 1",
+			"providerState": "an empty store",
+			"request": {
+				"method": "claimSubscription",
+				"subscriptionId": "hobo.cd.camp",
+				"partitionId": "camp-1",
+				"holderId": "replica-a"
+			},
+			"response": { "fenceToken": "1" }
+		},
+		{
+			"description": "a checkpoint from a superseded fence is refused",
+			"providerState": "subscription hobo.cd.camp/camp-1 was taken over with fence 2",
+			"request": {
+				"method": "commitCheckpoint",
+				"subscriptionId": "hobo.cd.camp",
+				"partitionId": "camp-1",
+				"position": "1",
+				"fenceToken": "1"
+			},
+			"response": { "error": { "code": "STALE_FENCE" } }
+		},
+		{
+			"description": "a checkpoint never moves backwards",
+			"providerState": "subscription hobo.cd.camp/camp-1 is checkpointed at 7 with fence 1",
+			"request": {
+				"method": "commitCheckpoint",
+				"subscriptionId": "hobo.cd.camp",
+				"partitionId": "camp-1",
+				"position": "5",
+				"fenceToken": "1"
+			},
+			"response": { "error": { "code": "CHECKPOINT_REGRESSION" } }
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "2.0.0" },
+		"evidence": [
+			"contracts/consumer/eventstore-boundary.test.ts",
+			"contracts/provider/eventstore-boundary.provider.test.ts"
+		]
+	}
+}

@@ -91,7 +91,7 @@ export function meshCapacity(
  * The mesh's leader: the live node with the lowest id, among advertisements
  * that have not expired and whose signature holds. It is the one node that
  * reports changes about others, and the one box relay that writes the routing
- * slip (plan 0026, 3.2). A node that sees no live node leads itself, so a box
+ * slip (ADR-0181, decisions 1-2). A node that sees no live node leads itself, so a box
  * without a mesh is its own leader. When the leader stops advertising, the
  * next lowest takes over on its following reading.
  */

@@ -330,6 +330,18 @@ second-run claim is made against recorded states. **Status: exercised against
 a fake transport only. No live deployment has been made from this repository
 through this mode, and Vercel has not verified the pact.**
 
+**`hobo deploy`: continuous delivery from the binary.** [`CD.md`](CD.md) is
+the reference. Every `deploy`/`incident`/`serve cd` subcommand takes exactly
+the flags it declares (typed by `@hobo/cli`'s subcommand table; anything else
+is `Unknown option`) and runs without a Bindle in the working directory. Camps
+come from topology files: `--yard <file,...>` or `HOBO_CD_TOPOLOGY` name a
+Yard module (`packages/ci-vercel/deploy/yard.ts`) or a delivery module
+exporting `yards`/`camps` (the runner fleet's `hobo.delivery.ts`), parsed once
+with `data-models/cd_topology.proto` (`src/cd-topology.ts`); `pipeline apply
+--file <module>` reads the module it applies too. Telemetry is exported only
+when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `test/cd-md-examples.test.ts` runs
+every CD.md example against `dist/bin/hobo.js`.
+
 **`hobo ci deploy`: HoBo deploys its own CI relay.** The hosted relay
 (`packages/ci-vercel`) is a HoBo app: its Bindle is
 [`packages/ci-vercel/src/bindle.ts`](../ci-vercel/src/bindle.ts). `hobo ci

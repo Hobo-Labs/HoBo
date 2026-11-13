@@ -109,6 +109,11 @@ describe("Actions runner policy", () => {
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
 			0,
 		);
+		// The job that builds the hobo CLI release-npm runs with its OIDC token.
+		assert.equal(
+			lintRunner("release-hobo.yml", "release-hobo-cli", "ubuntu-24.04"),
+			0,
+		);
 	});
 
 	it("rejects the same runner on another job or workflow and other hosted images", () => {
@@ -182,12 +187,13 @@ describe("Actions runner policy", () => {
 			);
 		assert.equal(uses("route"), 0);
 		assert.notEqual(uses("fleet-routes"), 0);
-		// The inputs that carried the retired routing variables (plan 0026).
+		// The inputs that carried the retired routing variables (ADR-0181).
 		for (const input of [
 			"local-runner",
 			"trunk-runner",
 			"max-wait-seconds",
 			"max-queued",
+			"reuse-merge-queue",
 		])
 			assert.notEqual(uses(input), 0, input);
 		assert.notEqual(
@@ -204,7 +210,7 @@ describe("Actions runner policy", () => {
 		);
 	});
 
-	it("rejects every routing variable and routing name plan 0026 retires", () => {
+	it("rejects every routing variable and routing name ADR-0181 retires", () => {
 		const job = (body: string) =>
 			lintJobs(`  build:\n    runs-on: ${trunk}\n${body}`);
 		// Any repository variable under HOBO_CI_, routing or not.
@@ -212,6 +218,9 @@ describe("Actions runner policy", () => {
 			"HOBO_CI_TRUNK_RUNNER",
 			"HOBO_CI_ROUTE",
 			"HOBO_CI_LOCAL_RUNNER",
+			"HOBO_CI_BOX_RUNNER",
+			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
+			"HOBO_CI_TURBO_API",
 			"HOBO_CI_ANYTHING",
 		])
 			assert.notEqual(
@@ -228,7 +237,7 @@ describe("Actions runner policy", () => {
 			),
 			0,
 		);
-		// Every name on plan 0026's list, as an environment variable.
+		// Every name on ADR-0181's routing list, as an environment variable.
 		for (const name of [
 			"HOBO_CI_ROUTE",
 			"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
@@ -250,6 +259,8 @@ describe("Actions runner policy", () => {
 			"HOBO_CI_WORKER_MERGE_GROUP_LEASES",
 			"HOBO_CI_JOB_ADMISSION",
 			"MAIN_WORKSPACE_PARALLEL_CAP",
+			"HOBO_CI_BOX_RUNNER",
+			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 		])
 			assert.notEqual(
 				job(`    env:\n      ${name}: "1"\n    steps:\n      - run: echo ok\n`),

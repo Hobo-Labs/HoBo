@@ -1,6 +1,6 @@
 /**
- * When the box relay says a fleet label is blocked (ADR-0180; plan 0025,
- * 6.1). Pure: plain values in, a verdict per label out. It never calls
+ * When the box relay says a fleet label is blocked (ADR-0180 amendment,
+ * item 1). Pure: plain values in, a verdict per label out. It never calls
  * `admit`, `availableLowWaterMb` or anything else on the memory admission
  * object, and reads only the host sample it is given.
  *
@@ -10,7 +10,7 @@
  *    running jobs. Idle, that is memory headroom, memory or CPU pressure
  *    stall, or swap (`hostMemoryAdmitFits` with nothing committed). Idle or
  *    busy, it is a host health verdict that is `critical` for a disk or
- *    inode reason (plan 0026, 3.3: critical host or storage health refuses
+ *    inode reason (ADR-0181, decision 5: critical host or storage health refuses
  *    whether or not the box is busy). A busy box short of memory is short
  *    because of its own jobs, and is never refused (R4). The load-average
  *    check admission also makes is left out on purpose: the one-minute load
@@ -22,7 +22,7 @@
  *
  * Pools are counted one of two ways. With `runners`, from GitHub's runner
  * list (`GET /actions/runners`: online, `busy: false`, the pool's label and
- * name prefix), which the routing slip issuer uses (plan 0026, 3.3.6).
+ * name prefix), which the routing slip issuer uses (ADR-0181, decision 5).
  * Without it, from the last poll's jobs in progress against `maxRunners`.
  *
  * Anything unknown (a stale count, no count) leaves the label open (R3).

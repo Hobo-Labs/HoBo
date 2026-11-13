@@ -18,6 +18,13 @@ export {
 	type VerifiedSourceRef,
 } from "./capability-profile.js";
 export {
+	CONVEX_CLOUD_DEPLOYMENT_PRODUCT_ID,
+	CONVEX_MANAGEMENT_API_ORIGIN,
+	type ConvexResolverOptions,
+	convexResolverRegistry,
+	createConvexResolvers,
+} from "./cloud-deployment-resolver.js";
+export {
 	CONFORMANCE_PROFILE_SCHEMA,
 	CONFORMANCE_REPORT_SCHEMA,
 	CONVEX_CONFORMANCE_CHECK_IDS,
@@ -32,6 +39,21 @@ export {
 	evaluateConvexConformance,
 	requiredChecksForHostingForm,
 } from "./conformance.js";
+export {
+	type AbsentTrafficOffering,
+	defineHostingCoverage,
+	HOSTING_COVERAGE_CONTRACT,
+	type HostingCoverage,
+	hostingProductRefusal,
+	instrumentResolvers,
+	PORTABLE_TRAFFIC_OFFERING_IDS,
+	RESOLVER_DURATION_METRIC,
+	RESOLVER_OPERATIONS_METRIC,
+	type ResolverMetricPoint,
+	type ResolverMetricSink,
+	type ResolverTelemetryOptions,
+	type UnresolvedHostingProduct,
+} from "./delivery-coverage.js";
 export {
 	ConvexDeployError,
 	type ConvexSpawn,
@@ -73,6 +95,12 @@ export {
 	INITIAL_CAPABILITY_PORTS,
 	type InitialCapabilityPort,
 } from "./equivalence.js";
+export {
+	CONVEX_HOSTING_COVERAGE,
+	CONVEX_RESOLVED_PRODUCT_IDS,
+	CONVEX_UNRESOLVED_PRODUCTS,
+	convexProductRefusal,
+} from "./hosting-coverage.js";
 export {
 	type CloudSponsoredTransferHostingForm,
 	CONVEX_BACKEND_IMAGE_DIGEST_LINUX_AMD64,
@@ -208,6 +236,11 @@ export {
 	classifyConvexBackendUrl,
 	type FrontendPlacement,
 } from "./topology.js";
+export {
+	CONVEX_TRAFFIC_ROUTING_ABSENT,
+	CONVEX_TRAFFIC_ROUTING_OFFERING_IDS,
+	CONVEX_TRAFFIC_ROUTING_PROFILE,
+} from "./traffic-routing-offerings.js";
 export type {
 	Capability,
 	CapabilityManifest,

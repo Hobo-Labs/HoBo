@@ -66,3 +66,39 @@ it never reconstructs identity or a claim credential from the app hostname.
 A CLI acknowledgement alone cannot establish serving health, data-transfer safety,
 resource retirement or final usage. The common hosting coordinator requires separate
 provider observations for those postconditions.
+
+## Delivery coverage (ADR-0182: I14)
+
+`lakebedResolverRegistry({ host, resolveCredential })` ships one resolver,
+`lakebed.capsule/v1`, over the `LakebedDeployHost` seam (the `lakebed-deploy`
+driver that runs next to the reconciler). A reconcile builds one
+`hobo.driver-program/v1` with `realizeResourcePlans`, so Capsule KV, File Store
+and Reactive DB resources declared in `desired.resources` ride inside the same
+capsule deploy. Readiness is a probe of the parsed `https://*.lakebed.app`
+origin; a live capsule serving another digest is refused (deliver to a new
+deployment id), and a retired one is never resurrected.
+
+`LAKEBED_HOSTING_COVERAGE` (contract `hobo.provider-hosting-coverage/v1`,
+`data-models/hosting_coverage.{proto,cue}`) lists the resolved product, the
+four refused products (`lakebed.capsule-kv/v1`, `lakebed.file-store/v1`,
+`lakebed.reactive-db/v1`, `lakebed.traffic-route/v1`) with remediation, and the
+traffic profile: `inprocess.weighted` + `driver.route-bind` present, the other
+fifteen portable offerings declared absent with a reason.
+`lakebedProductRefusal(productId)` returns the typed
+`RESOLVER_PRODUCT_UNSUPPORTED`. The driver seam is pinned by
+`contracts/provider-lakebed-deploy-host.pact.json`.
+
+Metrics: with `metrics` and an injected `nowMs`, every call emits
+`hobo.cd.resolver.operations` and `hobo.cd.resolver.duration` through a
+`TelemetrySink`-shaped sink; an export failure never changes an outcome.
+
+## Runbook
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| `RESOLVER_CREDENTIAL_MISSING` | the brokered `lakebed.deploy` token did not resolve | re-enroll the Camp's deploy token; the token never appears in records |
+| `RESOLVER_PROVIDER_REJECTED` "serves another artifact" | a promotion tried to replace a live deployment in place | deliver to a new deployment id and shift traffic in-process |
+| `RESOLVER_PROVIDER_REJECTED` "was retired" | the deployment id was retired | use a new deployment id; retired capsules are not resurrected |
+| `RESOLVER_OUTPUT_UNPARSEABLE` | the driver reported a URL outside `https://*.lakebed.app` | inspect the driver; nothing is probed or recorded until it answers a Lakebed origin |
+| outcome `ready: false`, diagnostic `HTTP 5xx` | the capsule is deployed but not serving | the reconciler re-observes; verification fails closed meanwhile |
+| `RESOLVER_PRODUCT_UNSUPPORTED` for kv, file-store or reactive-db | the resource was requested on its own | declare it in `desired.resources` of the capsule deployment |

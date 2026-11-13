@@ -38,6 +38,21 @@ export {
 	type VercelDefinitionOverrides,
 } from "./definitions.js";
 export {
+	type AbsentTrafficOffering,
+	defineHostingCoverage,
+	HOSTING_COVERAGE_CONTRACT,
+	type HostingCoverage,
+	hostingProductRefusal,
+	instrumentResolvers,
+	PORTABLE_TRAFFIC_OFFERING_IDS,
+	RESOLVER_DURATION_METRIC,
+	RESOLVER_OPERATIONS_METRIC,
+	type ResolverMetricPoint,
+	type ResolverMetricSink,
+	type ResolverTelemetryOptions,
+	type UnresolvedHostingProduct,
+} from "./delivery-coverage.js";
+export {
 	createVercelStaticDeploymentResolver,
 	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 } from "./deployment-resolver.js";
@@ -53,6 +68,24 @@ export {
 	type InitialCapabilityPort,
 	vercelNativePorts,
 } from "./equivalence.js";
+export {
+	isVercelGitEnvironment,
+	VERCEL_GIT_BLOCKED_STATES,
+	type VercelAdoptedDeployment,
+	type VercelAdoptionVerdict,
+	type VercelGitDeploymentRecord,
+	type VercelGitDeploymentState,
+	type VercelGitDeploymentStatus,
+	vercelAdoptionVerdict,
+	vercelGitDeploymentRecords,
+	vercelGitDeploymentStatus,
+} from "./git-integration-adoption.js";
+export {
+	VERCEL_HOSTING_COVERAGE,
+	VERCEL_NEON_POSTGRES_PRODUCT_ID,
+	VERCEL_UNRESOLVED_PRODUCTS,
+	vercelProductRefusal,
+} from "./hosting-coverage.js";
 export {
 	type ImpedanceFinding,
 	VERCEL_IMPEDANCE_SCHEMA,
@@ -193,6 +226,11 @@ export {
 	type VercelDropTransport,
 	type VercelTemporaryStationInput,
 } from "./temporary-station.js";
+export {
+	VERCEL_TRAFFIC_ROUTING_ABSENT,
+	VERCEL_TRAFFIC_ROUTING_OFFERING_IDS,
+	VERCEL_TRAFFIC_ROUTING_PROFILE,
+} from "./traffic-routing-offerings.js";
 export {
 	assertAllowedEndpoint,
 	createFetchTransport,

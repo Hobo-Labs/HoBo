@@ -223,3 +223,34 @@ sending a deploy credential. Dedicated negative tests cover those boundaries.
 Convex's anonymous backend matrix remains an explicit refusal where the host cannot
 supply the official backend's memory and durable storage. A deployment acknowledgement
 is not application health, final billing, data fencing or retirement evidence.
+
+## Delivery coverage (ADR-0182: I14)
+
+| Export | What it is |
+|---|---|
+| `convexResolverRegistry(options)` | Registry with `convex.cloud-deployment/v1` (`src/cloud-deployment-resolver.ts`). It reads `GET /v1/token_details` and `GET /v1/projects/{projectId}/list_deployments`, adopts a deployment by name, and never creates or deletes one. Optional `metrics` + `nowMs` emit `hobo.cd.resolver.*`. |
+| `CONVEX_TRAFFIC_ROUTING_PROFILE` | Kind `other`; only `inprocess.weighted` (the client picks the deployment URL). |
+| `CONVEX_TRAFFIC_ROUTING_ABSENT` | Every other portable offering, with its reason (ADR-0144). |
+| `CONVEX_HOSTING_COVERAGE` | The I14 document; protobuf `data-models/hosting_coverage.proto`, CUE `#HostingCoverage`. |
+| `convexProductRefusal(productId)` | Typed `RESOLVER_PRODUCT_UNSUPPORTED` for `convex.functions/v1`, `convex.selfhosted-oci/v1`, `convex.local-accountless/v1`. |
+
+The resolver reports `codeVersionObserved: false` and no `artifactDigest`:
+Convex code is pushed by the CLI and cannot be observed through the Management
+API, so a transition that expects an approved artifact fails closed rather than
+trusting a deployment that merely exists. Its outputs are constrained by
+`#ConvexCloudDeploymentOutputs` (`data-models/cloud_deployment.cue`). The PACT
+is `contracts/provider-convex-management.pact.json`; the fixtures replay it.
+
+Live lane (read-only; skipped with a visible reason unless all are set):
+`CONVEX_LIVE_TEAM_TOKEN`, `CONVEX_LIVE_TEAM_ID`, `CONVEX_LIVE_PROJECT_ID`,
+`CONVEX_LIVE_DEPLOYMENT_NAME`, `CONVEX_LIVE_DEPLOYMENT_TYPE`.
+
+## Runbook
+
+| Symptom | Meaning | Action |
+|---|---|---|
+| `RESOLVER_PROVIDER_REJECTED` "not visible in project" | The named deployment does not exist in the bound project; creation is never attempted. | Create it once in the Convex dashboard or CLI, then reconcile to adopt it. |
+| `RESOLVER_PROVIDER_REJECTED` "needs a team access token" or "another team" | The broker handed a project/deployment token or a token for a different team. | Issue a team access token for the bound team in the Yard broker. |
+| `RESOLVER_PRODUCT_UNSUPPORTED` naming `convex.functions/v1` | Code push has no HTTP API. | Run the push as a RUNBOOK hook through RunbookExecutor, or register a `hobo:resolver` WASM component calling an agent-local bridge. |
+| Hosting transition fails with "provider artifact differs" | The plan expects an artifact digest Convex cannot report. | Expected: deliver code with the runbook hook and treat the deployment as config-only, or host the self-hosted OCI form on a container provider. |
+| `RESOLVER_PROVIDER_REJECTED` on delete | HoBo never deletes Convex deployments. | Retire it in the Convex dashboard and reconcile to observe it gone. |

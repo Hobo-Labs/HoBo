@@ -8,7 +8,7 @@ import {
 import { createPortDescriptor, type PortDescriptor } from "../ports.js";
 import type { CronSchedule, IntervalCronSpec, ScheduleId } from "./clock.js";
 
-// The hobo:scheduler port (D14, docs/plans/0017-remediation-roadmap.md).
+// The hobo:scheduler port (D14).
 // Record shapes reuse the clock port's types (`IntervalCronSpec`,
 // `CronSchedule`; wire form data-models/clock_port.proto) — the scheduler is
 // a thin scheduling facade delegating to the deterministic clock port's

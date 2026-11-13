@@ -312,7 +312,7 @@ describe("release-hobo pages jobs", () => {
 		expect(gate).toContain("    needs: [route]\n");
 		expect(gate).not.toContain("release-main-train-gate");
 		const pages = job("release-pages");
-		expect(pages).toContain("needs: [release-pages-gate]");
+		expect(pages).toContain("needs: [release-pages-gate, release-hobo-cli]");
 		expect(pages).toContain(
 			"needs.release-pages-gate.outputs.deploy == 'true'",
 		);
@@ -377,7 +377,9 @@ describe("release-hobo pages jobs", () => {
 		const tag = job("release-tag");
 		expect(tag).toContain("!cancelled() &&");
 		expect(tag).not.toContain("always()");
-		expect(tag).toMatch(/needs: \[[^\]]*release-pages-gate, release-pages\]/);
+		expect(tag).toMatch(
+			/needs: \[[^\]]*release-pages-gate, release-pages\b[^\]]*\]/,
+		);
 		// A failed gate skips the publish; that skip must not read as "nothing to do".
 		expect(tag).toContain(
 			`contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result)`,
@@ -389,9 +391,20 @@ describe("release-hobo pages jobs", () => {
 	});
 
 	it("records the commit it built, not the branch tip the event fired on", () => {
+		// The Pages realizer commits `deploy: <HOBO_RELEASE_REVISION>`
+		// (scripts/deploy-site.mts), and the publish step pins it to the
+		// commit checked out and built here.
 		const pages = job("release-pages");
-		expect(pages).toContain(
-			'full_commit_message: "deploy: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}"',
+		const step = pages.slice(
+			pages.indexOf("Record, promote and publish the Pages site"),
+		);
+		expect(step).toContain(
+			"HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}",
+		);
+		expect(
+			readFileSync(join(root, "scripts/deploy-site.mts"), "utf8"),
+		).toContain(
+			'"hobo.cd/github.commit-message": `deploy: ${releaseSource(env).commit}`',
 		);
 	});
 
@@ -400,7 +413,7 @@ describe("release-hobo pages jobs", () => {
 		const site = pages.indexOf("pnpm --filter hobo-site run build");
 		const media = pages.indexOf("pnpm --filter hobo-media run build");
 		const nest = pages.indexOf("cp -a media/dist/. site/dist/media/");
-		const deploy = pages.indexOf("peaceiris/actions-gh-pages@");
+		const deploy = pages.indexOf("deploy-site.mts --release-freight site/dist");
 		expect(site).toBeGreaterThan(-1);
 		expect(media).toBeGreaterThan(site);
 		expect(nest).toBeGreaterThan(media);

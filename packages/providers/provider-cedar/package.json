@@ -23,5 +23,5 @@
 	"dependencies": {
 		"@hobo/contracts": "workspace:*"
 	},
-	"description": "HoBo Cedar policy-engine gate-plane adapter extracted from @hobo/broker: Policy IR request onto cedar-agent is_authorized, fail-closed, governed-by-default policy.Decided facts (docs/plans/0017 F30)."
+	"description": "HoBo Cedar policy-engine gate-plane adapter extracted from @hobo/broker: Policy IR request onto cedar-agent is_authorized, fail-closed, governed-by-default policy.Decided facts."
 }

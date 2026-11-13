@@ -26,6 +26,9 @@ if ! docker image inspect "$candidate" >/dev/null 2>&1; then
     source="hobo-ci-deps:local"
   else
     echo "No local deps image for ${key}; building before GHCR publish"
+    # Five of ci-deps-publish.yml's 20 minutes; build, push and cache export need the rest.
+    HOBO_CI_DEPS_BUILD_WAIT_MS="${HOBO_CI_DEPS_BUILD_WAIT_MS:-300000}" \
+      node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts scripts/ci/wait-deps-build-window.mts
     bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh
   fi
 fi

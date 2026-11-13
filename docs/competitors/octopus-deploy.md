@@ -220,6 +220,21 @@ State labels follow the research contract.
    realistic story is the layer above it, not instead of it — and this capture does not pretend
    otherwise.
 
+
+## HoBo.CD update (2026-11-12)
+
+HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182), [continuous-delivery.md](../design/continuous-delivery.md)); the competitor research
+itself was not re-run.
+
+- **Lifecycles → pipelines with lineage.** Freight reaches an environment only after qualifying
+  upstream (a PASS verification plus soak) or through an audited, expiring approval.
+- **Runbooks → typed hooks.** `RUNBOOK`, `NOTIFY` and `SUITE` hooks at fixed points replace an
+  imperative step runner; incident runbooks remain `hobo runbook`.
+- **Tenants → fleets.** A pipeline node can target a deterministic Placement over Camp sets and fan
+  out group by group under a failure budget, with governed failover.
+- **Deployment freezes → change windows**, with governed, expiring overrides and rollback allowed
+  by default.
+
 ## Sources
 
 - [octopus.com/docs](https://octopus.com/docs) — environments, lifecycles, channels, tenants, runbooks, manual interventions, targets and workers

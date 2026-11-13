@@ -20,15 +20,19 @@ import { resolveWorkerSlotConfig } from "../../packages/ci-gh-actions/src/isolat
 import { resolveWorkerStorePlan } from "../../packages/ci-gh-actions/src/isolated-worker/worker-store.ts";
 import { parseCiRunnerRouting } from "../../packages/ci-gh-actions/src/relay-routing.ts";
 import { judgeRoutingSlip as judgeWithProtobuf } from "../../packages/ci-gh-actions/src/routing-slip.ts";
+import { BOX_ISOLATED_RUNNER_LABEL } from "../../packages/ci-gh-actions/src/runner-labels.ts";
 import { parseRunnerRouting as parseWithZod } from "../../packages/ci-gh-actions/src/runner-routing.ts";
+import { DEFAULT_REUSE_MERGE_QUEUE } from "../ci/merge-queue-reuse.mts";
 import {
 	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
 	mainWorkspaceParallelCap,
 } from "../ci/plan-main-workspace-shards.mts";
 import {
+	DEFAULT_BOX_RUNNER,
 	DEFAULT_LOCAL_RUNNER,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
+	DEFAULT_RUNNER_LABELS,
 	fleetLabelFor,
 	parseRouteMode,
 } from "../ci/route-runner.mts";
@@ -242,7 +246,7 @@ describe("the routing slip, read without dependencies (M4)", () => {
 });
 
 describe("committed runnerRouting equals the code's defaults (M8)", () => {
-	// The box daemon reads runnerRouting from its checkout (plan 0026, 3.4)
+	// The box daemon reads runnerRouting from its checkout (ADR-0181, decision 4)
 	// and falls back to DEFAULT_RUNNER_ROUTING when the block is absent.
 	const daemon = repoFile(
 		"packages/ci-gh-actions/scripts/isolated-worker-daemon-main.mts",
@@ -254,7 +258,7 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		assert.deepEqual(committed, DEFAULT_RUNNER_ROUTING);
 	});
 
-	it("route: no pin, the queue limits and the four labels", () => {
+	it("route: no pin, the queue limits and the labels", () => {
 		assert.ok(committed);
 		assert.equal(committed.pin, parseRouteMode(undefined));
 		assert.deepEqual(committed.queue, {
@@ -266,7 +270,13 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 			trunk: fleetLabelFor("push", undefined),
 			local: LOCAL_HOST_RUNNER_LABEL,
 			github: DEFAULT_GITHUB_MACHINE_TYPE,
+			box: BOX_ISOLATED_RUNNER_LABEL,
 		});
+		assert.equal(committed.labels.box, DEFAULT_RUNNER_LABELS.box);
+		// Pull requests' deps-image job keeps the fleet label, as the unset
+		// HOBO_CI_BOX_RUNNER variable left it.
+		assert.equal(committed.boxRunner, DEFAULT_BOX_RUNNER);
+		assert.equal(committed.boxRunner, false);
 		// The route job enrolls a local box only when the policy says so.
 		assert.match(
 			repoFile("scripts/ci/route-runner.mts"),
@@ -276,8 +286,10 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		assert.equal(committed.localRunner, false);
 	});
 
-	it("main gate: the plan's parallel cap", () => {
+	it("main gate: the plan's parallel cap and merge-queue reuse", () => {
 		assert.ok(committed);
+		// Reuse is on, as the unset HOBO_CI_MAIN_REUSE_MERGE_QUEUE variable left it.
+		assert.equal(committed.mainGate.reuseMergeQueue, DEFAULT_REUSE_MERGE_QUEUE);
 		assert.equal(
 			committed.mainWorkspaceParallelCap,
 			DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
@@ -303,7 +315,7 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		assert.equal(committed.verdict.exitMs, FLEET_VERDICT_EXIT_MS);
 		assert.deepEqual(committed.externalPools, []);
 		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);
-		// Plan 0026 (3.3) sets the stall limit at ten minutes.
+		// ADR-0181 sets the stall limit at ten minutes.
 		assert.equal(committed.verdict.stallMs, 10 * 60_000);
 	});
 
@@ -334,13 +346,15 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		);
 	});
 
-	it("retires the five routing variables and the three the relay published", () => {
+	it("retires the routing variables and the three the relay published", () => {
 		assert.ok(committed);
 		assert.deepEqual([...committed.retiredVariables].sort(), [
+			"HOBO_CI_BOX_RUNNER",
 			"HOBO_CI_FLEET_CAPACITY",
 			"HOBO_CI_FLEET_ROUTES",
 			"HOBO_CI_FLEET_STATE",
 			"HOBO_CI_LOCAL_RUNNER",
+			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 			"HOBO_CI_ROUTE",
 			"HOBO_CI_ROUTE_MAX_QUEUED",
 			"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",

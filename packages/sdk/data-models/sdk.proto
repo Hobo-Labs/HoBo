@@ -2,8 +2,7 @@ syntax = "proto3";
 
 package hobo.sdk.v1;
 
-// Wire shapes for the operator SDK's greenfield declarations (docs/plans/0017
-// F23): the frozen, schema-versioned authoring contracts behind `waiver`,
+// Wire shapes for the operator SDK's greenfield declarations: the frozen, schema-versioned authoring contracts behind `waiver`,
 // `chaos`, `runbook`, `generateProvider`, and `runner`. The wrapped factories
 // (`dispatcher`, `policyPack`/`rule`, `defineResource`) lower onto shapes
 // owned by @hobo/dispatcher, @hobo/contracts, and @hobo/cloud — those wire

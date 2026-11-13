@@ -1,0 +1,31 @@
+{
+	"name": "@hobo/cd-gitops",
+	"version": "0.0.1",
+	"description": "HoBo CD GitOps publisher: renders a Set as an Argo CD Application or a Flux Kustomization, commits it through a Git host HTTP API (GitHub, GitLab, Gitea/Forgejo, Bitbucket), and converges only on the engine's observed status",
+	"license": "MIT",
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/cd": "workspace:*",
+		"@hobo/core": "workspace:*"
+	}
+}

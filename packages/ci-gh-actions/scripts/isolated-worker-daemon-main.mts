@@ -17,6 +17,7 @@ import {
 	boxGitMirrorPath,
 	boxLeaseIdsOf,
 	ciEventSinkFromEnv,
+	controllerDigestFromEnv,
 	countLiveBoxContainers,
 	createBoxGitMirror,
 	createCiEventEmitter,
@@ -50,6 +51,7 @@ import {
 	createWorkerMesh,
 	createWorkerStorageAdmission,
 	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+	DEPS_BUILD_ADMISSION_ID,
 	type DepsImageProcessRequest,
 	decideRoutingSlipClasses,
 	defaultDepsRoot,
@@ -84,6 +86,7 @@ import {
 	readRepositoryRunners,
 	refreshHeldPruneWitnessFromStore,
 	relayTraceSinkFromEnv,
+	releaseEntryPath,
 	resolvedStorageReserve,
 	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
@@ -92,12 +95,17 @@ import {
 	retireRepositoryVariables,
 	routingEnvironmentNamesSet,
 	runnerRoutingLabels,
+	runningAsControllerRelease,
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
+	storageReserveForDepsBuild,
 	storageReserveForJob,
 	traceGithubTransport,
 	withGithubReadCache,
+	workerAdmissionPaused,
+	workerHostFiles,
+	writeWorkerMeshAdvert,
 } from "@hobo/ci-gh-actions";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
@@ -251,7 +259,7 @@ function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
 	});
 }
 
-// Routing policy is committed configuration (plan 0026, 3.4; ADR-0181): the
+// Routing policy is committed configuration (ADR-0181, decision 4): the
 // `runnerRouting` block of `.hobo/ci.json` in this daemon's own checkout. No
 // environment variable chooses a label, a tier, a pool, a slot split, a limit
 // or a reporter here (R2).
@@ -449,6 +457,14 @@ let closeStore: () => Promise<void> = async () => {};
 // The worker's own SQLite journal, when it has one: where its mesh
 // reliability record is kept, and beside which its identity key lives.
 let meshJournal: MeshJournal | undefined;
+// Where this worker meets its host's CD agent (`hobo deploy agent run`): the
+// agent closes admission with a marker file here and reads the advert this
+// worker writes here (src/runner-host-worker-jobs.ts).
+const runnerHostFiles = workerHostFiles(plan.store.path);
+const admissionPausedByAgent = () => workerAdmissionPaused(runnerHostFiles);
+// The release this worker runs, when its daemon's supervisor started it at
+// one (runner-controller-process.ts): the advert file names it for the agent.
+const controllerDigest = controllerDigestFromEnv(process.env);
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -555,8 +571,13 @@ try {
 	const depsRepository =
 		process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 	const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
-	const depsRoot =
-		process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
+	// A release staged by digest has no checkout to find the repository from.
+	const depsRoot = releaseEntryPath({
+		env: process.env,
+		name: "HOBO_CI_DEPS_ROOT",
+		release: runningAsControllerRelease(),
+		fallback: () => defaultDepsRoot(import.meta.url),
+	});
 	if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 		throw new Error(
 			"pnpm store and work root must share a filesystem for hardlinks",
@@ -831,6 +852,23 @@ try {
 				},
 			},
 			processes: { run: runDepsProcess },
+			idleForBuild: async () => {
+				try {
+					return (await store.activeLeases()).length === 0;
+				} catch {
+					return false;
+				}
+			},
+			// The grant is refused when the build's reserve does not fit.
+			onBuildSlot: {
+				acquire: async () =>
+					storageAdmission.admit(
+						storageLeases(await store.activeLeases()),
+						DEPS_BUILD_ADMISSION_ID,
+						storageReserveForDepsBuild(),
+					),
+				release: () => storageAdmission.release(DEPS_BUILD_ADMISSION_ID),
+			},
 			onEvent: ({ event, ...fields }) => {
 				// The box's own deps-image work: while it runs the box is not idle.
 				if (event === "hobo_ci_deps_image_ensure_started")
@@ -1012,7 +1050,8 @@ try {
 					persistReliability: (record) => void meshReliability?.save(record),
 					freeSlots: () => Math.max(0, slots - liveLaunchSlotsInUse),
 					totalSlots: slots,
-					healthy: () => !meshDraining,
+					// Closed admission is not healthy: others stop deferring to it.
+					healthy: () => !meshDraining && !admissionPausedByAgent(),
 					servesTrunk: trunkSlots > 0,
 					// Memory a new job could have: what the worker's budget has
 					// left, and no more than the host can spare above its reserve.
@@ -1069,6 +1108,16 @@ try {
 	const meshBeat = async () => {
 		await meshTrust.refresh();
 		await mesh?.advertise();
+		if (mesh)
+			await writeWorkerMeshAdvert(
+				runnerHostFiles,
+				mesh.self(),
+				controllerDigest,
+			).catch((error) =>
+				log("hobo_ci_mesh_advert_file_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				}),
+			);
 		await mesh?.observe();
 	};
 	const meshAdvertTimer = mesh
@@ -1221,7 +1270,12 @@ try {
 		if (!reconciliation.inventoryKnown) return;
 		// Pull workers drain the inbox on a separate timer so admission ticks stay
 		// under slow-tick alerting; push relay hosts still bound inbox work in tick.
-		await runtime.tick({ maxDeliveries: poller ? 0 : 10 });
+		// The host's CD agent may have closed admission to swap the controller:
+		// inspect leases, admit nothing new; running jobs are untouched.
+		await runtime.tick({
+			maxDeliveries: poller ? 0 : 10,
+			admit: !admissionPausedByAgent(),
+		});
 		if (heldJobPruner) {
 			const pruned = await heldJobPruner.maybePrune();
 			if (pruned > 0) void runTick().catch(() => undefined);
@@ -1379,7 +1433,7 @@ try {
 		drainTimeoutMs,
 		stopMode,
 	});
-	// Routing comes from committed policy (plan 0026, 3.4): name, once, any
+	// Routing comes from committed policy (ADR-0181, decision 4): name, once, any
 	// routing variable still set on the box, so an override that stopped
 	// applying is visible. Never its value.
 	const ignoredRoutingNames = routingEnvironmentNamesSet(process.env);
@@ -1435,7 +1489,7 @@ try {
 	}
 	runDepsImageEnsure();
 
-	// The routing slip (plan 0026, 3.2-3.3; ADR-0181). Every 10 s, on its own
+	// The routing slip (ADR-0181). Every 10 s, on its own
 	// unreferenced timer, the mesh leader decides each connected repository's
 	// routing and writes it to refs/hobo/routing-slip when it changes and as a
 	// heartbeat. Nothing in admission, dispatch or the poller awaits it.
@@ -1647,7 +1701,7 @@ try {
 				enabled: () => !draining,
 				log,
 				// Once per start, on the leader: delete the retired variables
-				// (plan 0026, 3.7). A 403 is logged once and never retried here.
+				// (ADR-0181, decision 6). A 403 is logged once and never retried here.
 				onFirstLead: async () => {
 					for (const target of await connectedTargets())
 						await retireRepositoryVariables(github, {
@@ -1690,7 +1744,7 @@ try {
 			meshDraining = true;
 			if (meshAdvertTimer) clearInterval(meshAdvertTimer);
 			await mesh?.advertise();
-			// No more slips: the last one expires on its own (plan 0026, 4).
+			// No more slips: the last one expires on its own (ADR-0181).
 			if (slipTimer) clearInterval(slipTimer);
 			const backgroundKinds = (): (
 				| "tick"
