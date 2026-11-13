@@ -6,15 +6,19 @@ import { FleetNotImplemented, type Signer } from "@hobo/fleet";
 import type { HostAttestor } from "../attestation.js";
 import type { KmsLike } from "../issuer.js";
 import type { SecretsPort } from "../secrets-port.js";
+import { loadKeyRing } from "./secret-store-kms.js";
 
-/** A `KmsLike` whose signing key is read once from the secret store, under `options.prefix`. */
+/**
+ * A `KmsLike` whose RSA signing keys are read once from the secret store
+ * (created once when absent) under the secret named `options.prefix`. The
+ * first key id is `<prefix>#1`; see `secret-store-kms.ts` for the layout and
+ * the rotation rule.
+ */
 export function loadSecretStoreKms(
 	secrets: SecretsPort,
 	options: Readonly<{ prefix: string }>,
 ): Promise<KmsLike> {
-	void secrets;
-	void options;
-	throw new FleetNotImplemented("loadSecretStoreKms");
+	return loadKeyRing(secrets, options.prefix);
 }
 
 /** Signs launch measurements as fleet envelopes with the device's `SIGN` key; `hostId` is the member id. */
