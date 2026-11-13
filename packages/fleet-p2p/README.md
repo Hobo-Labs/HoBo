@@ -73,7 +73,10 @@ where the binding has no prebuild for the platform.
   `runTransportConformance` between two `createP2pTransport` instances that
   reach each other only through the provisioned `iroh-relay` (on `PATH`, or
   `HOBO_FLEET_IROH_RELAY_BIN`), started in development mode on a loopback
-  port. With `CI` set a missing relay fails; otherwise it skips.
+  port. With `CI` set a missing relay fails; otherwise it skips. The
+  package's `test` script leaves it out (the integration lane runs it, or
+  `pnpm --filter @hobo/fleet-p2p run test:integration`), so a unit job with
+  `CI` set and no relay binary stays green.
 
 ## Architecture placement
 
