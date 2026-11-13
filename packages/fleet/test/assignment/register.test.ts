@@ -80,7 +80,7 @@ describe("majority", () => {
 	});
 });
 
-describe("parseAssignmentEntry", () => {
+describe("parseFleetAssignment", () => {
 	it("refuses a sealed entry without a different target", () => {
 		const sealed = { ...entry(1, "b0"), sealed: true };
 		expect(() => parseAssignmentEntry(sealed)).toThrow(/different target/u);
