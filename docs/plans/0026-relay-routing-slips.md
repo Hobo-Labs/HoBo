@@ -323,7 +323,8 @@ Recorded when layer 05 landed. Everything else is as written above.
   stop: the repeat-signal path imported a module path that does not exist at
   run time, and the drain assigned an undeclared variable, so every stop
   threw before its handoff. Both are fixed; the self-check runs in the
-  package's tests.
+  package's tests (its run-time reach of `@hobo/ci` is declared in
+  `scripts/test-deps-runtime-reaches.json`).
 - **Labels and providers from `.hobo/ci.json`** (3.4, the layer-03 gap). The
   box's own isolated offers take `runsOn`, provider kind and `enabled` from
   the committed provider with the same `id` whose `connectionRef` is the
