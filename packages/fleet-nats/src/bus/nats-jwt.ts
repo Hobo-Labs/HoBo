@@ -256,6 +256,65 @@ export function mintAccount(
 	/** The templates whose scoped keys the account lists; removing one revokes every credential it signs (§6.16). */
 	templates: readonly DeviceTemplate[] = DEVICE_TEMPLATES,
 ): Promise<string> {
+	const listed = new Set(templates);
+	const scoped = (template: DeviceTemplate) =>
+		listed.has(template) ? [keys.scoped[template].getPublicKey()] : [];
+	return mintAccountWithSigningKeys(keys, tenant, operatorSigningSeed, {
+		account: [],
+		scoped: {
+			observer: scoped("observer"),
+			executor: scoped("executor"),
+			dispatcher: scoped("dispatcher"),
+		},
+	});
+}
+
+/**
+ * The signing keys a tenant account JWT lists, as the secret-store slots
+ * hold them (`<prefix>/account-signing`, `<prefix>/scoped-<template>`):
+ * every version a verifier may still need, so that a key can be added,
+ * published, switched to and removed without an outage (§6.16).
+ */
+export type AccountSigningKeys = Readonly<{
+	/** Plain account signing keys (nkey `A…`): they sign the static users' credentials. */
+	account: readonly string[];
+	/** Scoped keys per template (nkey `A…`), each listed with that template's `{{name()}}` permissions. */
+	scoped: Readonly<Record<DeviceTemplate, readonly string[]>>;
+}>;
+
+/** Throws unless `key` is an account public key; never echoes the value, which could be a seed passed by mistake. */
+function checkAccountKey(key: string, place: number): void {
+	let valid = false;
+	try {
+		valid = key.startsWith("A") && fromPublic(key).getPublicKey() === key;
+	} catch {
+		valid = false;
+	}
+	if (!valid)
+		throw new Error(`signing key ${place} is not an account public key`);
+}
+
+/**
+ * The tenant account JWT listing exactly `signing`, signed by the operator
+ * signing key. The account identity, its limits and its auth-callout
+ * settings are those `mintAccount` gives it.
+ */
+export async function mintAccountWithSigningKeys(
+	keys: TenantKeys,
+	tenant: TenantId,
+	operatorSigningSeed: string,
+	signing: AccountSigningKeys,
+): Promise<string> {
+	const seen = new Set<string>();
+	const all = [
+		...signing.account,
+		...DEVICE_TEMPLATES.flatMap((template) => signing.scoped[template]),
+	];
+	for (const [index, key] of all.entries()) {
+		checkAccountKey(key, index + 1);
+		if (seen.has(key)) throw new Error(`signing key ${key} is listed twice`);
+		seen.add(key);
+	}
 	const account = keys.account.getPublicKey();
 	return encodeAccount(
 		`T_${tenant}`,
@@ -275,12 +334,17 @@ export function mintAccount(
 				streams: -1,
 				consumer: -1,
 			},
-			signing_keys: templates.map((template) =>
-				newScopedSigner(keys.scoped[template], template, {
-					pub: { allow: [...TEMPLATES[template].publish] },
-					sub: { allow: [...TEMPLATES[template].subscribe] },
-				}),
-			),
+			signing_keys: [
+				...signing.account,
+				...DEVICE_TEMPLATES.flatMap((template) =>
+					signing.scoped[template].map((key) =>
+						newScopedSigner(key, template, {
+							pub: { allow: [...TEMPLATES[template].publish] },
+							sub: { allow: [...TEMPLATES[template].subscribe] },
+						}),
+					),
+				),
+			],
 			authorization: {
 				auth_users: (["authority", "witness", "provisioner"] as const).map(
 					(user) => keys.users[user].getPublicKey(),
@@ -293,10 +357,16 @@ export function mintAccount(
 	);
 }
 
-/** A static user's credentials file, signed by the account key. */
+/**
+ * A static user's credentials file, signed by the account key, or by the
+ * account signing key `signerSeed` (then the JWT names the account as
+ * `issuer_account`). The user's own key is the same either way, so the
+ * account's `auth_users` still lets it past the callout.
+ */
 export async function staticCredentials(
 	keys: TenantKeys,
 	user: StaticUser,
+	signerSeed?: string,
 ): Promise<string> {
 	const permissions = staticUserPermissions(user);
 	const denyAll = permissions.denyPublish.includes(">");
@@ -308,7 +378,15 @@ export async function staticCredentials(
 		sub: denyAll ? { deny: [">"] } : { allow: [...permissions.subscribe] },
 	};
 	if (permissions.allowResponses) claims.resp = { max: 1, ttl: 0 };
-	const jwt = await encodeUser(user, keys.users[user], keys.account, claims);
+	const jwt = await encodeUser(
+		user,
+		keys.users[user],
+		keys.account,
+		claims,
+		signerSeed === undefined
+			? {}
+			: { signer: fromSeed(encoder.encode(signerSeed)) },
+	);
 	return new TextDecoder().decode(fmtCreds(jwt, keys.users[user]));
 }
 

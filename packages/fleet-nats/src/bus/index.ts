@@ -13,6 +13,7 @@ import type {
 	Clock,
 	FleetBusConnector,
 	FleetLog,
+	Outcome,
 	RegistryView,
 	ReplayStore,
 	SignedEnvelope,
@@ -26,8 +27,10 @@ import { mintConnectToken } from "./connect-token.js";
 import { authorityBusOverWire, busOverWire } from "./fleet-bus.js";
 import { NATS, type NatsClients } from "./nats-client.js";
 import {
+	type AccountSigningKeys,
 	accountOfCredentials,
 	mintAccount,
+	mintAccountWithSigningKeys,
 	staticCredentials,
 	tenantKeys,
 } from "./nats-jwt.js";
@@ -143,6 +146,70 @@ export async function provisionTopologyOver(
 			dispatcher: seedText(keys.scoped.dispatcher.getSeed()),
 		},
 	};
+}
+
+type SigningKeysInput = Readonly<{
+	servers: readonly string[];
+	operatorSigningSeed: string;
+	tenant: TenantId;
+	signingKeys: AccountSigningKeys;
+}>;
+
+/**
+ * Internal (L41; composed by the authority service and `hobo fleet ops` as
+ * the `NatsSigningKeys` of `rotateKey`): re-issues the tenant account JWT
+ * listing exactly `signingKeys` and pushes it to the resolver. The caller
+ * reads the lists from the secret-store slots `<prefix>/account-signing` and
+ * `<prefix>/scoped-<template>`; each step of add, publish, switch, remove is
+ * one call with the slots as they then are. `invalid-request` for a key that
+ * is not an account public key or is listed twice (nothing is pushed);
+ * `unavailable` when the resolver cannot be reached or refuses the account.
+ *
+ * `provisionTopology` pushes the account with the derived scoped keys only,
+ * so after a rotation it must not be re-run without publishing the slots'
+ * keys again.
+ */
+export function publishAccountSigningKeys(
+	input: SigningKeysInput,
+): Promise<Outcome<Readonly<{ accountPublicKey: string }>>> {
+	return publishAccountSigningKeysOver(NATS, input);
+}
+
+/** `publishAccountSigningKeys` over `clients`. */
+export async function publishAccountSigningKeysOver(
+	clients: NatsClients,
+	input: SigningKeysInput,
+): Promise<Outcome<Readonly<{ accountPublicKey: string }>>> {
+	const keys = tenantKeys(input.operatorSigningSeed, input.tenant);
+	let jwt: string;
+	try {
+		jwt = await mintAccountWithSigningKeys(
+			keys,
+			input.tenant,
+			input.operatorSigningSeed,
+			input.signingKeys,
+		);
+	} catch (cause) {
+		return {
+			ok: false,
+			error: {
+				code: "invalid-request",
+				message: cause instanceof Error ? cause.message : String(cause),
+			},
+		};
+	}
+	try {
+		await pushAccount(input.servers, input.operatorSigningSeed, jwt, clients);
+	} catch (cause) {
+		return {
+			ok: false,
+			error: {
+				code: "unavailable",
+				message: `the account was not published: ${cause instanceof Error ? cause.message : String(cause)}`,
+			},
+		};
+	}
+	return { ok: true, value: { accountPublicKey: keys.account.getPublicKey() } };
 }
 
 /**
