@@ -133,9 +133,11 @@ way:
 | Hosted relay on Vercel | Not involved | — |
 
 Routing is not in that path. Before a run's jobs are queued, the routing job
-may ask the hosted relay for a fleet verdict
-([ADR-0180](./adr/fleet-verdict.md#adr-0180)); a relay that does not answer
-changes nothing, and a job already queued never touches it.
+reads the box relay's routing slip, a git ref, with its own token
+([ADR-0181](./adr/routing-slips.md#adr-0181)); a missing or expired slip
+changes nothing, and a job already queued never touches it. The hosted relay
+is not asked: its fleet verdict routes were retired
+([plan 0026](../plans/0026-relay-routing-slips.md), section 3.9).
 
 The one setting that would tie a worker to the hosted relay is
 `HOBO_CI_JOB_ADMISSION=push`. It is not a default, and a mesh does not need
@@ -386,38 +388,41 @@ step of delay, and an `invalid` one now costs nothing.
   keys listed, every node ranks only itself.
 - A node that loses its key file gets a new identity and must be listed again.
 
-## Routing asks the relay
+## Routing reads the relay's slip
 
 The routing job (`scripts/ci/route-runner.mts`) chooses the fleet, a local box
 or GitHub-hosted before a run's jobs are queued. It reads GitHub's queue,
 which says what happened to jobs already queued; it cannot see a fleet that is
 full or gone until jobs have waited on it.
 
-So it asks the relay ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). A relay
-with a view of the fleet reports, per repository, the labels new work should
-stay off; the hosted relay keeps each report until it lapses and serves it at
-`GET /v1/fleet/verdicts/{owner}/{repo}`. The routing job reads the relay's
-origin from `.hobo/ci.json` and asks on every pass of its decision, with a
-three-second limit.
+So the relay decides and writes it down
+([ADR-0181](./adr/routing-slips.md#adr-0181), which keeps
+[ADR-0180](./adr/fleet-verdict.md#adr-0180)'s rule and replaces its
+transport). The box relay that leads the mesh writes one routing slip per
+repository at `refs/hobo/routing-slip`: per class (`pr`, `fork`, `trunk`) a
+runner, a tier and a reason code, valid for ten minutes. The routing job reads
+it with its own `GITHUB_TOKEN` (two GET calls, three seconds at most).
 
-| The relay | What routing does |
+| The slip | What routing does |
 |---|---|
-| Names the run's label (`no-node`, `no-capacity`) | That backend is refusing jobs, at once, without waiting for queue evidence |
-| Answers and does not name it | Nothing new. The queue still decides: a verdict never makes a backend look available |
-| Is not named, does not answer in time, or answers something that is not a verdict | Nothing. The queue is read exactly as before, and the job's log says the relay gave no verdict |
+| Unexpired, for this repository, every runner one of `runnerRouting.labels` | It decides the run's runner and tier |
+| Missing, expired, malformed, for another repository, naming an unknown label, or not read in time | Nothing. The queue is read exactly as before, and a `hobo-ci-route-fallback` warning says why |
+
+The hosted relay is no longer asked. `GET /v1/fleet/verdicts/{owner}/{repo}`
+and `GET /v1/fleet/reporters/{owner}/{repo}` answer 404, and the relay keeps
+no verdict, report or reporter.
 
 Every decision leaves one line a monitor reads from the job's check run:
 
 ```text
-::notice title=hobo-ci-route::{"v":1,"workflow":"<file>","tier":"fleet|local|github","runner":"<label>","relay":"verdict|unanswered|unasked","why":"…","refusedBy":"relay|queue|none"}
+::notice title=hobo-ci-route::{"v":2,"workflow":"<file>","tier":"fleet|local|github","runner":"<label>","slip":"used|fallback|unasked","why":"…","refusedBy":"slip|queue|none"}
 ```
 
-`why` is empty for a verdict, the reason for an unanswered relay, and for an
-unasked one `no-relay`, `pinned`, `attested`, or `queue-unread` (the queue
-could not be read, so the relay was never reached and the run went to
-GitHub-hosted). `refusedBy` names what took the fleet out of the decision.
-When the routing step cannot run its script at all it says so in a
-`hobo-ci-route-fallback` warning and falls back as before.
+`why` is the slip's reason when it was used, why no slip could be used when
+the queue decided, and `pinned` or `attested` when no slip was read.
+`refusedBy` names what took the fleet out of the decision. When the routing
+step cannot run its script at all it says so in a `hobo-ci-route-fallback`
+warning and falls back as before.
 
 **The main gate follows the route, and asks again before its shards.** On a
 push to `main`, a schedule or a dispatch, `main-gate-plan` and `main-gate` need
@@ -453,9 +458,9 @@ a job for a reason other than its own running jobs and no other has a free
 slot. A label that is only busy is not blocked. No count of nodes, slots or
 memory leaves the relay.
 
-**The reporter.** A box relay evaluates the verdict and reports it, signed
-with its node key ([ADR-0180](./adr/fleet-verdict.md#adr-0180)). A relay that
-receives no report answers that nothing is blocked. The older snapshot in the
+**The decision.** The box relay evaluates each label and writes the slip
+([ADR-0181](./adr/routing-slips.md#adr-0181)); nothing is reported to the
+hosted relay, whose signed-report path was removed. The older snapshot in the
 repository variable `HOBO_CI_FLEET_STATE`, and the capacity record in
 `HOBO_CI_FLEET_CAPACITY`, are no longer written: no worker publishes them and
 no workflow reads them. Delete the two variables from the repository once the
@@ -582,7 +587,7 @@ interface.
 | 6 | The advertisement as a protobuf and CUE record (`MeshAdvert`), read as protobuf JSON at the NATS boundary; an older node's advertisement still parses | Done |
 | 8 | Reporting: every node (worker, local runner, relay host) advertises availability, capacity and trust; one list on the relay's HTTP route, its MCP tool and resource, and `hobo ci status`; measured free disk; reliability kept in the node's journal | Done; needs a second box to run for real |
 | 9 | Trust: a per-node Ed25519 identity, signed advertisements, a trusted-key set in the mesh's configuration, `invalid` nodes never ranked | Done. No attestation of what a node runs, no key rotation or revocation list, and the buckets' access control is NATS's, not the mesh's |
-| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | Done: the route and its stores, the routing job's client, and the box relay's signed reporter. The older `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables are no longer written or read |
+| 10 | Routing asks the relay for a fleet verdict ([ADR-0180](./adr/fleet-verdict.md#adr-0180)) | Superseded by the routing slip ([ADR-0181](./adr/routing-slips.md#adr-0181)): the hosted verdict routes, stores, signed reporter and client were removed (plan 0026, 3.9). The older `HOBO_CI_FLEET_STATE` and `HOBO_CI_FLEET_CAPACITY` variables are no longer written or read |
 
 A worker with no `HOBO_CI_NATS_URL` behaves exactly as it did. With it and no
 peers, it ranks itself first for every job and takes them all, so turning the
@@ -676,11 +681,12 @@ of the four keys listed.
 - One worker is killed: within its advertisement's lifetime all three
   surfaces list it as `lost`, since the moment its advertisement expired.
 
-Routing (`scripts/test/route-runner.test.ts` and
-`packages/ci-gh-actions/contracts/fleet-verdict-boundary.provider.test.ts`): a
-verdict that names the run's label sends the run elsewhere at once; one that
-names nothing, a relay that fails or is slow, and no relay each leave the
-decision identical to the queue's alone; a pinned tier does not ask.
+Routing (`scripts/test/route-runner.test.ts`): a valid slip decides; a
+missing, expired, malformed, foreign or unknown-label slip, and a Git API that
+fails or is slow, each leave the decision identical to the queue's alone; a
+pinned tier does not read. The retired hosted routes answer 404
+(`packages/ci-gh-actions/test/mesh-nodes-surfaces.test.ts`,
+`packages/ci-vercel/test/stateless-relay.test.ts`).
 `packages/ci-gh-actions/test/fleet-state.test.ts` covers the older snapshot's
 publisher.
 
@@ -693,9 +699,9 @@ publisher.
   a new one under its old one.
 - **Per-node write access to the board.** NATS can restrict each node to its
   own key of the nodes bucket; the mesh does not set that up.
-- **Agreement between reporters.** A label is blocked only when every
-  reporter enrolled for it agrees. A partitioned box that sees a smaller mesh
-  can withhold a block but cannot impose one alone.
+- **One writer per mesh.** Only the mesh leader writes the slip. A
+  partitioned box that believes it leads could write a slip from a smaller
+  view of the mesh; the slip's ten-minute expiry bounds how long that lasts.
 - **Rented providers.** The fleet balancer has a circuit breaker per member
   (healthy or not). The same decayed score could rank rented providers by how
   often their runners arrive; it does not yet.

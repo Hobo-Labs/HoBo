@@ -11,10 +11,16 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 [ADR-0181](routing-slips.md#adr-0181) (2026-11-13): the route job reads the
 box relay's routing slip instead of asking the hosted relay. The rule stands:
 the relay decides and no capacity figure leaves it. Accepted, amended
-2026-11-12 ("Signed reports, agreement and allowance" below). Built: the record, the relay routes and stores, signed
-reports, agreement among enrolled reporters, the allowance, the reporter
-status route, the route job's client. Not built: the box's reporter
-([plan 0025](../../plans/0025-relay-owned-runner-routing.md), layer 03).
+2026-11-12 ("Signed reports, agreement and allowance" below). **Retired
+transport** ([plan 0026](../../plans/0026-relay-routing-slips.md), section
+3.9, layer 04): the hosted relay's verdict and reporter status routes (both
+now answer 404), the verdict store and its cache binding, signed reports,
+reporter enrollment, the allowance, the box's reporter, `fleet_verdict.proto`,
+the PACT and the route job's client are removed; the hosted relay's three
+settings are reserved fields its loader accepts and ignores. What remains is
+the box's evaluator and hysteresis (`fleet-verdict-evaluator.ts`,
+`fleet-verdict-state.ts`), which decide each routing slip. The sections below
+record the decision as it was made.
 **Date:** 2026-11-12
 **Amends:** [CI Relay Mesh](../ci-relay-mesh.md), "Routing reads the mesh when
 it can" and "No hosted database in the job path";
@@ -265,17 +271,14 @@ explanation against the code before this was chosen.
 
 ## Not built
 
-- **The reporter.** The box relay's evaluator, hold and sender of the
-  amendment's items 1–3, in the worker daemon
-  ([plan 0025](../../plans/0025-relay-owned-runner-routing.md), layer 03).
-  It signs with `fleetVerdictSigningInput` and reports with
-  `signedFleetVerdictRequest`; its three log events are already named in
-  `src/cloud-events.ts`.
-- **Main workspace plan** still reads `HOBO_CI_FLEET_CAPACITY`; #1935 hands it
-  the variable through an environment variable. Moving it onto a relay answer
-  is a separate change.
+Nothing further: the transport was retired before the reporter sent to it
+in production (see Status). The evaluator and its holds were built and feed
+routing slips ([ADR-0181](routing-slips.md#adr-0181)).
 
-## Contracts and gates
+## Contracts and gates (retired with the transport)
+
+Every item below was removed by plan 0026 layer 04 except where noted; the
+list stays as the record of what the transport was held to.
 
 - **Protobuf:** `packages/ci-gh-actions/data-models/fleet_verdict.proto`
   (`FleetVerdict`, `FleetVerdictBlock`, `FleetVerdictReport`,

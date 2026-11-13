@@ -7,11 +7,15 @@ tags: [hobo, design, adr, ci, relay, routing, fleet]
 
 # ADR-0181 — The Box Relay Hands Each Run Its Route on a Routing Slip {#adr-0181}
 
-**Status:** Accepted. Built: the record (`RoutingSlip`), its parsers and
-writer, the committed policy (`runnerRouting`), the dependency-free reader
-and the Git Data API probe
-([plan 0026](../../plans/0026-relay-routing-slips.md), layer 01). Not built:
-the rest of plan 0026 ("Not built" below).
+**Status:** Accepted. Built
+([plan 0026](../../plans/0026-relay-routing-slips.md), layers 01–04): the
+record (`RoutingSlip`), its parsers and writer, the committed policy
+(`runnerRouting`), the dependency-free reader and the Git Data API probe
+(01); the route job reading slip and policy, and the workflows (02); the
+box's slip writer and decision, and variable retirement (03); the hosted
+relay's verdict path retired (04: no `/v1/fleet/` route, retired runtime
+config keys accepted and ignored). Not built: self-update (layer 05, "Not
+built" below).
 **Date:** 2026-11-13
 **Supersedes, for transport:** [ADR-0180](fleet-verdict.md#adr-0180)'s
 hosted verdict read (`GET /v1/fleet/verdicts/{owner}/{repo}` and the signed
@@ -91,9 +95,17 @@ never refused; nothing is handed to the owner as a task.
 
 ## Consequences
 
-- **The hosted relay leaves the routing path.** Its verdict routes, stores,
-  reporter enrollment and PACT are removed in plan 0026 layer 04; the
-  evaluator stays and feeds slips.
+- **The hosted relay leaves the routing path.** Its verdict routes
+  (`GET`/`PUT /v1/fleet/verdicts/{owner}/{repo}`,
+  `GET /v1/fleet/reporters/{owner}/{repo}`, now 404), stores, reporter
+  enrollment and signature, the box's reporter, `fleet_verdict.proto` and
+  the `fleet-verdict-boundary` PACT are removed (plan 0026 layer 04). Its
+  runtime config reserves the three retired fields, and its loader drops
+  `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING` and
+  `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` before parsing, so a store
+  that still holds one starts the relay. `relay-deploy.yml` smoke-checks
+  `/healthz` only, and the CI health monitor asks no relay. The evaluator
+  stays and feeds slips.
 - **Unknown changes nothing.** With the box down, not restarted onto new
   code, or with no mesh leader, there is no slip or an expired one, and the
   route job behaves exactly as today.
@@ -105,9 +117,9 @@ never refused; nothing is handed to the owner as a task.
 
 ## Not built
 
-Plan 0026 layers 02–05: the route job reading slip and policy, the workflow
-and lint changes, the box's slip writer and decision, variable retirement,
-the hosted relay's retirement, and self-update.
+Plan 0026 layer 05: self-update, the remaining runbook updates, the
+`no routing slip` monitor signal's documentation and the source guard over
+3.4's list.
 
 ## Contracts and gates
 
