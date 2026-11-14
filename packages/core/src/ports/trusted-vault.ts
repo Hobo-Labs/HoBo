@@ -4,10 +4,9 @@
  * came from and the call that spends it.
  *
  * It is memory and nothing else: no file, no temporary directory, no
- * environment variable, no argument. A temporary file or an environment
- * variable is readable by every process of the same user (and an environment
- * variable by every child), which is what an untrusted process needs to take
- * it; process memory is not. So:
+ * environment variable, no argument. This avoids intentionally putting values
+ * in files or child-process environments. A debugger, memory dump, or other
+ * process with sufficient access can still read process memory. So:
  *
  * - **Stored buffers are wiped.** `clear`, expiry and normal process exit
  *   overwrite the vault's buffers before dropping them. The input and
@@ -15,8 +14,8 @@
  * - **Nothing serializes it.** `JSON.stringify`, `util.inspect` and string
  *   conversion print the entry names only, so a vault that reaches a log or a
  *   result says what it holds, never a value.
- * - **Every value expires** (`ttlMs`, default 15 minutes): a run that forgets to
- *   clear still drops what it held.
+ * - **Every value expires** (`ttlMs`, default 15 minutes). Reads refuse it
+ *   after the deadline; the timer wipes it when the event loop next runs.
  * - **Reading is explicit.** `reveal` is the one way a value leaves, named so a
  *   reviewer can find every place one does.
  */
