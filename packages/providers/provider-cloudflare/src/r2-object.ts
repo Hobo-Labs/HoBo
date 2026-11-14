@@ -138,7 +138,9 @@ export function createR2ObjectClient(options: R2ObjectOptions) {
 			now: new Date(at),
 			headers: {
 				...conditional,
-				...(body === undefined ? undefined : { "content-type": "application/json" }),
+				...(body === undefined
+					? undefined
+					: { "content-type": "application/json" }),
 			},
 		});
 		try {
