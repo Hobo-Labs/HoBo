@@ -12,6 +12,11 @@ export function isJournalString<T>(value: T): value is T & string {
 	return typeof value === "string";
 }
 
+export function isJournalNumber<T>(value: T): value is T & number {
+	// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: this is the primitive check at the journal's untrusted input boundary.
+	return typeof value === "number";
+}
+
 export function isJournalObject(
 	value: JsonValue | undefined,
 ): value is JsonObject {

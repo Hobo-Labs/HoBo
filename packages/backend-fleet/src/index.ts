@@ -62,6 +62,10 @@ export {
 	type SealableImmutableJournalReplica,
 } from "./immutable-journal.js";
 export {
+	createImmutableJournalRollover,
+	JournalRolloverError,
+} from "./journal-rollover.js";
+export {
 	DEFAULT_FLEET_POLICY,
 	decideFleet,
 	FLEET_ACTIONS,
