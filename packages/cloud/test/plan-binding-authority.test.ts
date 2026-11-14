@@ -106,8 +106,8 @@ function definition(
 		specificity: 1,
 		priority: 1,
 		cost: { sku: id, unit: "hour", marginalPrice: "0" },
-		// SAFETY: `satisfies: () => ({ ok: true, missing: [] }) as never,` is required at this I/O or test boundary.
-		satisfies: () => ({ ok: true, missing: [] }) as never,
+		satisfies: (req) =>
+			req.port === "kv" ? { kind: "full" } : { kind: "none" },
 		semantics: semantics({
 			productId,
 			implementsProfiles: [
@@ -153,7 +153,18 @@ function helloBindle(): ManifestV1 {
 }
 
 function registry() {
-	return createRegistryFromProviders([createCloudflareProvider()]);
+	const base = createRegistryFromProviders([createCloudflareProvider()]);
+	return {
+		...base,
+		definitions: () => [
+			kvDefinition,
+			durableDefinition,
+			...base
+				.definitions()
+				.filter((entry) => entry.port === "objectStore")
+				.map((entry) => ({ ...entry, providerId: "cloudflare" })),
+		],
+	};
 }
 
 function authority(
@@ -271,6 +282,58 @@ describe("plan() with Yard binding authority", () => {
 		expect(JSON.stringify(result.remediations)).toContain(
 			"cloudflare.not-registered/v1",
 		);
+	});
+
+	it("rejects an unused row whose product belongs to another provider", () => {
+		const foreign = definition(
+			"neon.db/v1",
+			"neon",
+			"neon.db/v1",
+			"data.postgres/v1",
+		);
+		const yard = kvYard("cloudflare.kv/v1");
+		const result = plan(
+			helloBindle(),
+			{
+				deploymentId: "unused-foreign",
+				binding: authority(
+					{
+						...yard,
+						bindings: [
+							...yard.bindings,
+							{ profile: "data.postgres/v1", productId: "neon.db/v1" },
+						],
+					},
+					{ definitions: [kvDefinition, foreign] },
+				),
+			},
+			registry(),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok)
+			expect(result.remediations).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({ code: "YARD_BINDING_PROVIDER_MISMATCH" }),
+				]),
+			);
+	});
+
+	it("never matches an unprofiled resource to a foreign provider", () => {
+		const base = registry();
+		const foreignOnly = {
+			...base,
+			definitions: () =>
+				base.definitions().map((entry) => ({ ...entry, providerId: "neon" })),
+		};
+		const result = plan(
+			helloBindle(),
+			{
+				deploymentId: "foreign-legacy",
+				binding: authority(kvYard("cloudflare.kv/v1"), { requirements: {} }),
+			},
+			foreignOnly,
+		);
+		expect(result.ok).toBe(false);
 	});
 
 	it("is deterministic: two passes over the same authority are byte-identical", () => {
