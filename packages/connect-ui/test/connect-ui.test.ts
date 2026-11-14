@@ -131,6 +131,7 @@ describe("stepView: the exact component each step needs", () => {
 			submits: true,
 		});
 		expect(view.actions[0]?.confirm).toMatch(/secret/);
+		expect(JSON.stringify(view)).not.toContain("must-not-show");
 		expect(
 			missingRequiredFields(view.fields, {
 				HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
@@ -144,6 +145,13 @@ describe("stepView: the exact component each step needs", () => {
 		expect(view.references).toEqual([
 			"infisical://hobo-ci/HOBO_CI_GITHUB_APP_ID",
 		]);
+	});
+
+	it("describes stored Vercel credentials and does not promise rollback on failure", () => {
+		expect(stepView(VERCEL_STEP).explanation.join(" ")).toContain(
+			"reads the token",
+		);
+		expect(stepView(FAILED_STEP).description).not.toContain("Nothing was left");
 	});
 });
 

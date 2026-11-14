@@ -40,10 +40,10 @@ shadows. Parts are restyled from their `data-slot` attributes.
 
 ## Secretless by construction
 
-A provider's credentials, and any secret a `configure` step collects, go from
-the response or the form straight into the owner's secret store (Infisical with
-OIDC by default, or 1Password). No view, step or response carries a secret
-value; finished steps show references (`infisical://…`, `op://…`).
+A provider's credentials are written to the owner's secret store (Infisical or
+1Password). A `configure` step submits secrets to its flow; some, such as a
+session token, are used only for that run. Views blank secret field values,
+and finished steps show references (`infisical://…`, `op://…`).
 
 ## The loopback server
 

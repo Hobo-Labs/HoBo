@@ -74,7 +74,9 @@ export function stepView(step: ConnectStep): StepView {
 				title: step.title,
 				description: `Finish setting up ${provider}`,
 				explanation: [step.reason],
-				fields: step.fields,
+				fields: step.fields.map((field) =>
+					field.kind === "secret" ? { ...field, value: "" } : field,
+				),
 				actions: [
 					{
 						action: "connect.submit",
@@ -83,7 +85,7 @@ export function stepView(step: ConnectStep): StepView {
 						submits: true,
 						...(hasSecret
 							? {
-									confirm: `Saves the ${provider} settings and writes the secret you entered to your secret store.`,
+									confirm: `Submits the ${provider} settings, including the secret you entered, to continue setup.`,
 								}
 							: undefined),
 					},
@@ -159,7 +161,7 @@ export function stepView(step: ConnectStep): StepView {
 				description: "Vercel asks you to install HoBo CD",
 				explanation: [
 					`Vercel will ask you to allow HoBo CD to manage projects${step.team === undefined ? "" : ` in the team ${step.team}`}.`,
-					`The access it grants goes straight to ${step.store}; deployments then sign in to Vercel with OIDC, never with a stored token.`,
+					`The access it grants is stored in ${step.store}; the Vercel junction reads the token for each convergence.`,
 				],
 				actions: [
 					{
@@ -201,7 +203,7 @@ export function stepView(step: ConnectStep): StepView {
 				...base,
 				tone: "error",
 				title: `${provider} was not connected`,
-				description: "Nothing was left half-created",
+				description: "Setup did not complete; check the details below.",
 				explanation: [step.message, ...step.remediation],
 				actions: [],
 			};
