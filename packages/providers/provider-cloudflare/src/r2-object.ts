@@ -184,10 +184,16 @@ export function createR2ObjectClient(options: R2ObjectOptions) {
 			if (result.status === 412) return { applied: false };
 			if (result.status !== 200)
 				throw new R2ObjectError("write-outcome-unknown", result.status);
-			return {
-				applied: true,
-				etag: strongEtag(header(result.headers, "etag")),
-			};
+			// A 200 means the write committed. A weak or missing ETag only means
+			// the caller has no token for its next conditional write: report the
+			// write as applied without one rather than as a failure, because a
+			// retry with the same condition would then look like a lost race.
+			const etag = header(result.headers, "etag");
+			try {
+				return { applied: true, etag: strongEtag(etag) };
+			} catch {
+				return { applied: true };
+			}
 		},
 	});
 }
