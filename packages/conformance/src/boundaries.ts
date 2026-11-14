@@ -217,6 +217,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/identity",
 	"packages/cloud",
 	"packages/connectivity",
+	"packages/connect-ui",
 	"packages/contracts",
 	"packages/broker",
 	"packages/mcp",
