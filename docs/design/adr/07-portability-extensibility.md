@@ -481,6 +481,8 @@ ADR-P2 asked which overlay-mesh technology carries cross-provider connectivity (
 3. **The mesh never sits on the app request path's correctness** — it carries control-plane/cross-Camp replication traffic; data-plane reads use the declared replication topology ([ADR-0040](01-architecture-core.md#adr-0040)), so a mesh outage degrades to bounded-staleness, not incorrectness.
 4. **Conformance:** each `mesh` adapter certifies encrypted transport, peer authentication via the platform's own identity (SVID, [Plan 6](../ai-native-agent-auth.md#plan-06)), and zero-egress operation for the WireGuard floor.
 
+**Amended by [ADR-0183](./fleet.md#adr-0183) (2026-11-14):** the port is named `overlay`, as it is in `packages/core/src/ports/overlay.ts` (`OverlayNetwork`, `OverlayIdentity`, with an optional fleet `memberId`); read "`mesh` port" and "`mesh` adapter" above as `overlay`. "Mesh" now names only the coordination plane among a tenant's fleet devices. The overlay is the second of the fleet's three transports (after peer-to-peer, before the bus relay), and overlay join credentials are minted by the fleet authority at enrollment; no static overlay key is configured.
+
 ### Consequences
 - **(+)** Resolves ADR-P2 without vendor lock-in: a portable WireGuard floor that works air-gapped, with provider-native/managed escape hatches for latency or existing investment.
 - **(+)** Composes with the Junction ([ADR-0043](#adr-0043)) and the zero-egress profile ([ADR-0036](#adr-0036)) rather than adding a plane.

@@ -2,12 +2,14 @@
 type: Design
 title: "HoBo CI Enrolled Execution Fleet And At-Most-Once Claims"
 description: "Single-pass implementation and verification handoff for enrolled devices, joined Kubernetes clusters, durable execution claims, secure worker realization, and production-shaped E2E evidence."
-status: Proposed for implementation
+status: "Superseded by ADR-0183"
 repository: "https://github.com/Hobo-Labs/HoBo"
 baseline: "921ad419e76a4773e037dd33d095127e5846855b"
 ---
 
 # HoBo CI Enrolled Execution Fleet And At-Most-Once Claims
+
+> **Superseded by [ADR-0183](./adr/fleet.md#adr-0183) ([HoBo Fleet](./fleet.md)).** The `fleet-v2` code this document describes was deleted: device and cluster enrollment are fleet enrollment, the start fence and pre-job hook are rebuilt in `@hobo/fleet/work` and `@hobo/ci-gh-actions`, and its Postgres controller store, which contradicted [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179), is gone. Kept as a historical record; nothing below describes the current system.
 
 ## 0. Coding-agent execution directive
 

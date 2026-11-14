@@ -1,4 +1,14 @@
+---
+type: Maintenance Note
+title: "Fleet enrollment operator guide (superseded)"
+description: "Historical operator guide for the fleet-v2 enrolled execution fleet, superseded by ADR-0183 and the HoBo Fleet runbooks."
+status: "Superseded by ADR-0183"
+tags: [hobo, ci, fleet, superseded]
+---
+
 # Fleet enrollment operator guide
+
+> **Superseded by [ADR-0183](./adr/fleet.md#adr-0183).** Operate fleets with the [HoBo Fleet runbooks](../maintenance/fleet/index.md). Kept as a historical record.
 
 Operator semantics and limits from [`fleet-enrollment-design.md`](./fleet-enrollment-design.md), especially Sections 2.3, 6, and 17.4. `.github/workflows/fleet-enrollment.yml` is in the approved CI fabric set in `scripts/lint-actions.ts` (same runner, pin, and checkout rules as `hobo-ci.yml`). The [scorecard](./fleet-enrollment-scorecard.md) is frozen: its generator and eval test were deleted with `fleet-v2` when the HoBo Fleet consolidation (ADR-0183) replaced it. The `@hobo/ci` barrel (`packages/ci/src/index.ts`) keeps its fleet export blocks biome-organized (`fleet-overflow` before `fleet-v2`); run the package `lint` after adding exports there. The same organize-imports rule covers fleet test files (value imports sort before `type` imports), and the PR affected-lanes gate runs `build typecheck lint test:unit test:schema test:contract:consumer` for `@hobo/ci`, `@hobo/ci-gh-actions`, and `@hobo/schema-tools` — run those package lints before pushing fleet changes.
 

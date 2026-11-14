@@ -15,11 +15,11 @@ OptimizeXP native captures persist the replay command's exit code, mark nonzero 
 
 The [default dev container](../.devcontainer/devcontainer.json) installs **mise** (pinned Node, pnpm, cue, gitleaks, turbo from [`../mise.toml`](../mise.toml)) on a **digest-pinned** Node 24 Bookworm base (see
 [`.devcontainer/Dockerfile`](../.devcontainer/Dockerfile)), plus GitHub CLI, Docker in Docker, native Actions runner dependencies and pinned act. Personal dotfiles install via [`../scripts/bootstrap-dev.sh`](../scripts/bootstrap-dev.sh) (see [`dev-env/mise.md`](dev-env/mise.md)).
-It starts the local CI runner controller on every container start. Missing
-credentials/configuration leave it waiting while offline checks remain usable.
-See [local CI setup, trust, lifecycle and recovery](../packages/ci-gh-actions/LOCAL-DEVELOPMENT.md)
-for the `local` provider and `HOBO_CI_LOCAL_*` settings. Persistent host runners use
-`hobo-local-host`; only HoBo's reserved JIT runners use `hobo`.
+The local CI runner controller and its `HOBO_CI_LOCAL_*` settings are gone. To
+run CI work on a development machine, enroll it as a `PERSONAL` fleet device
+and run `hobo fleet run` (the [fleet quick start](maintenance/fleet/quick-start.md),
+[ADR-0183](design/adr/fleet.md#adr-0183)); only HoBo's reserved JIT runners use
+`hobo`.
 
 ## Product implementation guardrails
 

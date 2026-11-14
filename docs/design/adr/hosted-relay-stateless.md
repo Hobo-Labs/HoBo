@@ -124,7 +124,7 @@ budget policy choose among them; the relay dogfoods the routing it sells. Two
 independent choices:
 
 1. **Cache fleet** (the relay's state fleet, behind `EphemeralStatePort`; the
-   compute fleet is untouched): Upstash Redis (500,000 commands a month free,
+   machines that run jobs are untouched): Upstash Redis (500,000 commands a month free,
    then $0.20 per 100,000), Aiven for Valkey free (no command cap, single node,
    powered off when idle), Turso free (500 million rows read and 10 million
    written a month, blocked when exhausted; bound by `@hobo/provider-turso`),
@@ -171,6 +171,16 @@ an instance caches that answer before the target is activated, and the
 repair tick routes by budget (`routeFleetByBudget`: switch at 90% projected,
 back only below 80%). With no majority the relay refuses admissions
 retryably. Details: [Exactly one cache at a time](../hosted-relay-stateless.md#exactly-one-cache-at-a-time).
+
+*Amended by [ADR-0183](fleet.md#adr-0183) (2026-11-14).* The cache fleet is a
+local-mode `ONE_ACTIVE` fleet of `@hobo/fleet`: the relay declares one
+`BACKEND` member per cache backend, `createOneActiveFleet` from
+`@hobo/fleet/assignment` runs its tick, and `routeFleetByBudget` from
+`@hobo/backend-routing` is its `chooseAction`. The register and the
+cache-key replica moved to `@hobo/fleet` unchanged in algorithm, with the
+stored key and format 1 kept; `@hobo/backend-routing` keeps only cost-based
+choosing. The relay still needs no other service. Membership changes are
+decided epochs only once the relay's configuration sets `membership_epochs`.
 
 *Phase 5, implemented.* The repair scanners (missed deliveries, queued jobs)
 run on the cache with a lock per scanner and App, cursors and minute
