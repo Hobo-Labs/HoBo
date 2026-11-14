@@ -420,6 +420,7 @@ export type Observation = Message<"hobo.fleet.v1.Observation"> & {
     since: string;
     issuedAt: string;
     validUntil: string;
+    refusal: Refusal;
 };
 export declare const ObservationSchema: GenMessage<Observation>;
 export type FleetMemberView = Message<"hobo.fleet.v1.FleetMemberView"> & {
@@ -442,6 +443,7 @@ export type FleetMemberView = Message<"hobo.fleet.v1.FleetMemberView"> & {
     labels: string[];
     deviceClass: DeviceClass;
     roles: Role[];
+    refusal: Refusal;
 };
 export declare const FleetMemberViewSchema: GenMessage<FleetMemberView>;
 export type FleetCapacity = Message<"hobo.fleet.v1.FleetCapacity"> & {
@@ -807,6 +809,15 @@ export declare enum Health {
     UNKNOWN = 7
 }
 export declare const HealthSchema: GenEnum<Health>;
+export declare enum Refusal {
+    UNSPECIFIED = 0,
+    NONE = 1,
+    OWN_WORK = 2,
+    PRESSURE = 3,
+    STORAGE = 4,
+    DRAINING = 5
+}
+export declare const RefusalSchema: GenEnum<Refusal>;
 export declare enum Availability {
     UNSPECIFIED = 0,
     LIVE = 1,
@@ -818,7 +829,8 @@ export declare enum VerdictState {
     UNSPECIFIED = 0,
     OPEN = 1,
     NO_MEMBER = 2,
-    NO_CAPACITY = 3
+    NO_CAPACITY = 3,
+    BUSY = 4
 }
 export declare const VerdictStateSchema: GenEnum<VerdictState>;
 export declare enum WorkOrigin {
@@ -2096,6 +2108,7 @@ export declare function rankMembers(digest: WorkDigest, candidates: readonly Rea
     copies: number;
     reliability: number;
 }>[]): readonly MemberId[];
+export declare function leaderOf(ranked: readonly MemberId[], self: MemberId): MemberId;
 export declare function claimTurn(input: Readonly<{
     digest: WorkDigest;
     self: MemberId;
@@ -2297,7 +2310,7 @@ export declare function createFleetClient(options: Readonly<{
 
 // ── src/verdict-wire.ts
 export declare function parseFleetVerdict(json: string, nowMs: number): {
-    state: "OPEN" | "NO_MEMBER" | "NO_CAPACITY";
+    state: "OPEN" | "BUSY" | "NO_MEMBER" | "NO_CAPACITY";
     freeSlots: number;
 } | undefined;
 
