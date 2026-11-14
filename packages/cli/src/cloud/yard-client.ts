@@ -35,6 +35,8 @@ import {
 } from "@hobo/cd";
 import {
 	collectStream,
+	type DeploymentChangeSet,
+	type DeploymentMode,
 	type DeploymentPlan,
 	type DeployResult,
 	type DeployResultPlanned,
@@ -105,6 +107,8 @@ export interface DeployConfig {
 	readonly objective?: string;
 	readonly region?: string;
 	readonly budgetId?: string;
+	/** Bicep deployment mode: `complete` prunes resources no longer declared. */
+	readonly mode?: DeploymentMode;
 }
 
 export interface PlanRenderedSuccess {
@@ -145,6 +149,10 @@ export interface UpRealized {
 	readonly plan: DeploymentPlan;
 	readonly provisioned: string[];
 	readonly progress: ProgressEvent[];
+	/** The what-if this `up` started from (orchestrator lane). */
+	readonly changes?: DeploymentChangeSet;
+	/** Undeclared resources `complete` mode destroyed. */
+	readonly pruned?: string[];
 }
 
 export type UpResult = UpRejected | UpRealized;
@@ -554,6 +562,7 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					tenant: session.tenant,
 					actor: session.principal,
 					correlationId: `deploy:${deploymentId}`,
+					...(config?.mode !== undefined ? { mode: config.mode } : undefined),
 				},
 			);
 
@@ -565,6 +574,8 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					plan: deployResult.plan,
 					provisioned: orchestrated.provisioned,
 					progress: progressFrom(orchestrated.events),
+					changes: orchestrated.changes,
+					pruned: orchestrated.pruned,
 				},
 			};
 		},

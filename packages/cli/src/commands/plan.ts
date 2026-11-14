@@ -2,6 +2,7 @@ import { manifestHostingPolicy } from "@hobo/cloud";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
+import { changeSummaryLine, upWhatIf } from "../cloud/what-if.js";
 import { createYardClient, type YardRuntime } from "../cloud/yard-client.js";
 import type { CommandModule } from "../shell/registry.js";
 
@@ -66,11 +67,32 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 				};
 			}
 
+			// The what-if: the change set `up` would apply against what the log
+			// recorded (create / update / no-op / delete / retain).
+			let changes: Awaited<ReturnType<typeof upWhatIf>>;
+			try {
+				changes = await upWhatIf(
+					runtime.store,
+					deploymentId,
+					rendered.plan,
+					flags.mode,
+				);
+			} catch (error) {
+				return {
+					ok: false,
+					status: "usage_error",
+					code: "HOBO_USAGE",
+					message: `hobo plan: ${error instanceof Error ? error.message : String(error)}`,
+					remediation: ["Pass --mode incremental or --mode complete."],
+					data: { command: "plan", deploymentId },
+				};
+			}
+
 			return {
 				ok: true,
 				status: "ok",
 				code: "HOBO_OK",
-				message: `hobo plan ok (${rendered.resources.length} resources, planHash ${rendered.planHash})`,
+				message: `hobo plan ok (${rendered.resources.length} resources, ${changeSummaryLine(changes)}, planHash ${rendered.planHash})`,
 				data: {
 					command: "plan",
 					deploymentId,
@@ -78,6 +100,7 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 					dependencyOrder: rendered.dependencyOrder,
 					resources: rendered.resources,
 					plan: rendered.plan,
+					changes,
 				},
 			};
 		},
