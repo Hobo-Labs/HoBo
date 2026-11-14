@@ -2413,6 +2413,12 @@ importers:
 
   packages/providers/provider-cloudflare:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../../backend-fleet
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../../bindings
@@ -2425,6 +2431,9 @@ importers:
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
 
   packages/providers/provider-config:
     devDependencies:

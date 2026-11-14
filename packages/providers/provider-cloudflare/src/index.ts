@@ -24,6 +24,16 @@ export {
 	CORS_RELAY_WORKER_MODULE,
 } from "./cors-relay-source.js";
 export {
+	assertD1ImmutableJournalReplicaWiring,
+	createD1ImmutableJournalReplica,
+	type D1ImmutableJournalCharge,
+	D1ImmutableJournalError,
+	type D1ImmutableJournalOptions,
+	type D1ImmutableJournalReplicaIdentity,
+	d1ImmutableJournalReplicaIdentity,
+	d1ImmutableJournalTable,
+} from "./d1-immutable-journal.js";
+export {
 	CLOUDFLARE_DEFAULT_BINDINGS,
 	CLOUDFLARE_DEFAULT_REGIONS,
 	CLOUDFLARE_DEFAULT_YARD_NAME,

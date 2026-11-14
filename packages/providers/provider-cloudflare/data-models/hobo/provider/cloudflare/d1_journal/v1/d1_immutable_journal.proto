@@ -1,0 +1,40 @@
+// Persisted provider-owned D1 journal metadata. The immutable command bytes
+// are stored separately and are addressed by their SHA-256 digest.
+syntax = "proto3";
+
+package hobo.provider.cloudflare.d1_journal.v1;
+
+message D1JournalMember {
+  string id = 1;
+  string provider = 2;
+  string account_id = 3;
+  string resource_id = 4;
+  string incarnation = 5;
+}
+
+message D1JournalAssignment {
+  uint32 epoch = 1;
+  optional string active = 2;
+  bool sealed = 3;
+  optional string target = 4;
+  string reason = 5;
+  optional uint32 loss_window_ms = 6;
+  uint32 decided_at_ms = 7;
+  string decided_by = 8;
+}
+
+message D1JournalSeal {
+  string transition_id = 1;
+  uint32 epoch = 2;
+  string digest = 3;
+}
+
+message D1JournalLog {
+  string contract = 1;
+  string anchor_digest = 2;
+  string fleet_id = 3;
+  D1JournalMember member = 4;
+  string initialization_id = 5;
+  repeated D1JournalAssignment entries = 6;
+  optional D1JournalSeal seal = 7;
+}
