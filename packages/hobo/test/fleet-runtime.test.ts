@@ -61,6 +61,7 @@ import {
 	journalEvents,
 	keyStoreFor,
 	provisionWith,
+	rotateKeyWith,
 	rotationBundle,
 	sandboxCap,
 	serviceDefinitionPath,
@@ -282,6 +283,126 @@ describe("ops provision", () => {
 			true,
 		);
 		expect(result.ok && result.value).toContain("Callout xkey");
+	});
+
+	it("publishes a rotated account key through publishAccountSigningKeys when the rotation cannot", async () => {
+		const secrets = createMemorySecretsPort();
+		const operator = encodeSeed("account", new Uint8Array(32).fill(1));
+		const slot = (which: string, fill: number[]) =>
+			JSON.stringify({
+				v: 1,
+				active: `${which}#1`,
+				keys: fill.map((byte, index) => {
+					const seed = encodeSeed("account", new Uint8Array(32).fill(byte));
+					return {
+						kid: `${which}#${index + 1}`,
+						seed,
+						publicKey: publicOfSeed(seed),
+					};
+				}),
+			});
+		await secrets.put(
+			"hobo-fleet/acme/operator-signing",
+			slot("operator-signing", [1]),
+		);
+		await secrets.put(
+			"hobo-fleet/acme/scoped-observer",
+			slot("scoped-observer", [2, 3]),
+		);
+		await secrets.put(
+			"hobo-fleet/acme/scoped-executor",
+			slot("scoped-executor", [4]),
+		);
+		await secrets.put(
+			"hobo-fleet/acme/scoped-dispatcher",
+			slot("scoped-dispatcher", [5]),
+		);
+		const published: unknown[] = [];
+		const unpublished = async () => ({
+			ok: false as const,
+			error: {
+				code: "unavailable" as const,
+				message: "the key is added but not yet published",
+			},
+		});
+		const result = await rotateKeyWith({
+			configText: config,
+			secrets,
+			which: "scoped-observer",
+			rotate: unpublished,
+			publish: async (input) => {
+				published.push({
+					servers: input.servers,
+					tenant: input.tenant,
+					operator: input.operatorSigningSeed === operator,
+					signingKeys: input.signingKeys,
+				});
+				return { ok: true, value: { accountPublicKey: "AACC" } };
+			},
+		});
+		const key = (byte: number) =>
+			publicOfSeed(encodeSeed("account", new Uint8Array(32).fill(byte)));
+		expect(published).toEqual([
+			{
+				servers: ["nats://n:4222"],
+				tenant: "acme",
+				operator: true,
+				signingKeys: {
+					account: [],
+					scoped: {
+						observer: [key(2), key(3)],
+						executor: [key(4)],
+						dispatcher: [key(5)],
+					},
+				},
+			},
+		]);
+		expect(!result.ok && result.error.message).toContain(
+			"published through publishAccountSigningKeys",
+		);
+		// A rotation that completes, a refusal of another kind, and a key NATS
+		// does not hold never publish here.
+		const done = await rotateKeyWith({
+			configText: config,
+			secrets,
+			which: "account-signing",
+			rotate: async () => ({ ok: true, value: { reached: "done" } }),
+			publish: async () => {
+				throw new Error("not reached");
+			},
+		});
+		expect(done).toEqual({ ok: true, value: { reached: "done" } });
+		const witness = await rotateKeyWith({
+			configText: config,
+			secrets,
+			which: "witness",
+			rotate: unpublished,
+			publish: async () => {
+				throw new Error("not reached");
+			},
+		});
+		expect(!witness.ok && witness.error.message).toBe(
+			"the key is added but not yet published",
+		);
+	});
+
+	it("names the slot a NATS rotation cannot publish without", async () => {
+		const secrets = createMemorySecretsPort();
+		const result = await rotateKeyWith({
+			configText: config,
+			secrets,
+			which: "account-signing",
+			rotate: async () => ({
+				ok: false,
+				error: { code: "unavailable", message: "not published" },
+			}),
+			publish: async () => {
+				throw new Error("not reached");
+			},
+		});
+		expect(!result.ok && result.error.message).toContain(
+			"hobo-fleet/acme/operator-signing",
+		);
 	});
 
 	it("refuses without the ceremony's key, a tenant or servers, and reports a failed provision", async () => {

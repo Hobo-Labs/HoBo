@@ -11,13 +11,25 @@ import {
 	CredentialResponseSchema,
 	DiscoverySchema,
 	EnrollmentResponseSchema,
+	type FleetBusConnector,
+	type FleetStream,
+	type FleetTransport,
 	KeyBundleSchema,
 	MemberRecordSchema,
+	SESSION_CLOSE_CONTEXT,
+	SessionCloseSchema,
+	SessionGrantSchema,
+	SessionPartySchema,
+	type SignedEnvelope,
 	SignedEnvelopeSchema,
 	TrustRecordSchema,
 	WitnessedEnvelopeSchema,
 } from "@hobo/fleet";
+import { verifyEnvelope } from "@hobo/fleet/keys";
+import { createMemoryBus } from "@hobo/fleet/testing";
+import { createFileKeyStore } from "@hobo/fleet-agent";
 import { afterEach, describe, expect, it } from "vitest";
+import type { SessionInitiator } from "../src/fleet-command.js";
 import { createFleetRuntime } from "../src/fleet-runtime.js";
 
 const directories: string[] = [];
@@ -82,6 +94,7 @@ function authority(requests: string[], options: { refuse?: boolean } = {}) {
 					create(CredentialResponseSchema, {
 						svid: "svid-1",
 						generation: 2,
+						sessionTicket: create(SignedEnvelopeSchema, {}),
 						memberRecord: memberEnvelope(
 							decodeURIComponent(credentials[1] ?? ""),
 							3,
@@ -298,4 +311,157 @@ describe("the device runtime", () => {
 		const dial = await runtime.local.transportSelfDial();
 		expect(dial.ok ? dial.value : dial.error.message).toMatch(/p2p/);
 	});
+	it("publishes its own initiator session-close fact on an enrolled device's bus", async () => {
+		const home = await temporary();
+		const requests: string[] = [];
+		const published: { event: SignedEnvelope; from: string; kind: string }[] =
+			[];
+		const connected: string[] = [];
+		const connector: FleetBusConnector = {
+			async connect(input) {
+				connected.push(input.discovery.natsUrls[0] ?? "");
+				await input.ticket();
+				const bus = createMemoryBus(() => Date.now());
+				return {
+					...bus,
+					events: {
+						...bus.events,
+						async publish(event, from, kind) {
+							published.push({ event, from, kind });
+						},
+					},
+				};
+			},
+		};
+		const runtime = createFleetRuntime({
+			env: {
+				HOBO_FLEET_HOME: home,
+				HOBO_FLEET_AUTHORITY_URL: "https://fleet.test",
+			},
+			progress: quiet,
+			fetch: authority(requests),
+			log: quiet,
+			connector,
+		});
+		const device = await runtime.local.generateKeys();
+		expect(device.ok).toBe(true);
+		if (!device.ok) return;
+		const memberId = device.value.memberId;
+		await runtime.io.saveEnrollment(
+			create(EnrollmentResponseSchema, {
+				memberRecord: memberEnvelope(memberId, 1),
+				discovery: create(DiscoverySchema, {
+					tenant: "acme",
+					natsUrls: ["nats://bus.test:4222"],
+					trust: create(WitnessedEnvelopeSchema, {}),
+				}),
+			}),
+		);
+		const sessionId = "s_0123456789abcdef";
+		const grant = create(SignedEnvelopeSchema, {
+			payload: toBinary(
+				SessionGrantSchema,
+				create(SessionGrantSchema, { sessionId }),
+			),
+		});
+		const stream = await runtime.local.dial(
+			initiatorOver("overlay", { bytesSent: 5, bytesReceived: 7 }),
+			grant,
+			new AbortController().signal,
+		);
+		expect(stream.ok).toBe(true);
+		if (!stream.ok) return;
+		expect(await stream.value.close()).toEqual({
+			bytesSent: 5,
+			bytesReceived: 7,
+		});
+		expect(connected).toEqual(["nats://bus.test:4222"]);
+		expect(published).toHaveLength(1);
+		const [fact] = published;
+		expect(fact?.from).toBe(memberId);
+		expect(fact?.kind).toBe("session-close");
+		if (fact === undefined) return;
+		const keys = await createFileKeyStore(home).open();
+		const close = fromBinary(SessionCloseSchema, fact.event.payload);
+		expect(close).toMatchObject({
+			sessionId,
+			memberId,
+			transport: "overlay",
+			bytesSent: 5n,
+			bytesReceived: 7n,
+		});
+		expect(Number.isNaN(Date.parse(close.at))).toBe(false);
+		expect(
+			verifyEnvelope(fact.event, SESSION_CLOSE_CONTEXT, {
+				kty: "OKP",
+				crv: "Ed25519",
+				x: keys.signPublicKey,
+			}),
+		).toBe(true);
+	});
+
+	it("publishes no initiator fact for a person's CLI on an unenrolled device", async () => {
+		let connects = 0;
+		const runtime = createFleetRuntime({
+			env: { HOBO_FLEET_HOME: await temporary() },
+			progress: quiet,
+			log: quiet,
+			connector: {
+				async connect() {
+					connects += 1;
+					throw new Error("not reached");
+				},
+			},
+		});
+		const stream = await runtime.local.dial(
+			initiatorOver("p2p", { bytesSent: 1, bytesReceived: 2 }),
+			create(SignedEnvelopeSchema, {
+				payload: toBinary(
+					SessionGrantSchema,
+					create(SessionGrantSchema, { sessionId: "s_1" }),
+				),
+			}),
+			new AbortController().signal,
+		);
+		expect(stream.ok).toBe(true);
+		if (!stream.ok) return;
+		expect(await stream.value.close()).toEqual({
+			bytesSent: 1,
+			bytesReceived: 2,
+		});
+		expect(connects).toBe(0);
+	});
 });
+
+/** An initiator with one transport of `kind` whose stream closes with `counts`. */
+function initiatorOver(
+	kind: FleetTransport["kind"],
+	counts: Readonly<{ bytesSent: number; bytesReceived: number }>,
+): SessionInitiator {
+	const stream: FleetStream = {
+		peer: "peer",
+		async *read() {},
+		async write() {},
+		async close() {
+			return counts;
+		},
+	};
+	const transport: FleetTransport = {
+		kind,
+		async start() {
+			return { transportIdentity: "me" };
+		},
+		async dial() {
+			return { ok: true, value: stream };
+		},
+		accept() {
+			return { stop: async () => undefined };
+		},
+		async stop() {},
+	};
+	return {
+		party: create(SessionPartySchema, { principal: "person:ann" }),
+		transports: [transport],
+		async stop() {},
+	};
+}

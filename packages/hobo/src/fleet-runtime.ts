@@ -44,6 +44,7 @@ import {
 	CredentialRequestSchema,
 	type DeviceKeys,
 	type FleetBus,
+	type FleetBusConnector,
 	type FleetClient,
 	type FleetLog,
 	type FleetTransport,
@@ -58,8 +59,12 @@ import {
 	OVERLAY_PROVIDERS,
 	PublicKeyRefSchema,
 	SandboxTier,
+	SESSION_CLOSE_CONTEXT,
+	SessionCloseSchema,
+	SessionGrantSchema,
 	SessionPartySchema,
 	type SignedEnvelope,
+	type TransportKind,
 	type TrustRecord,
 	TrustRecordSchema,
 	type WitnessedEnvelope,
@@ -90,6 +95,7 @@ import {
 import {
 	backup,
 	type OpsContext,
+	type RotatableKey,
 	restore,
 	rotateKey,
 	runCeremony,
@@ -98,6 +104,7 @@ import {
 	createBusRelayTransport,
 	createNatsBusConnector,
 	provisionTopology,
+	publishAccountSigningKeys,
 } from "@hobo/fleet-nats";
 import { createP2pTransport } from "@hobo/fleet-p2p";
 import type { SecretsPort } from "@hobo/identity";
@@ -216,6 +223,7 @@ export async function deviceCredentials(
 			keys: DeviceKeys;
 			svid: string;
 			member: SignedEnvelope | undefined;
+			ticket: SignedEnvelope | undefined;
 		}>
 	>
 > {
@@ -242,7 +250,12 @@ export async function deviceCredentials(
 	});
 	return {
 		ok: true,
-		value: { keys, svid: answer.value.svid, member: answer.value.memberRecord },
+		value: {
+			keys,
+			svid: answer.value.svid,
+			member: answer.value.memberRecord,
+			ticket: answer.value.sessionTicket,
+		},
 	};
 }
 
@@ -493,6 +506,111 @@ export async function provisionWith(
 	};
 }
 
+/** The public keys of every key in a slot `{ v: 1, active, keys: [{ kid, seed, publicKey }] }`. */
+function slotPublicKeys(slotText: string): readonly string[] | undefined {
+	try {
+		const { keys } = parseJsonObject(slotText);
+		if (!isJsonArray(keys)) return undefined;
+		return keys.flatMap((key) =>
+			isJsonObject(key) && isJsonString(key.publicKey) ? [key.publicKey] : [],
+		);
+	} catch {
+		return undefined;
+	}
+}
+
+const ACCOUNT_KEYS: ReadonlySet<RotatableKey> = new Set<RotatableKey>([
+	"account-signing",
+	"scoped-observer",
+	"scoped-executor",
+	"scoped-dispatcher",
+]);
+
+/**
+ * `ops rotate-key`: `rotateKey` of @hobo/fleet-authority, with the tenant
+ * account's signing keys published through `publishAccountSigningKeys` of
+ * @hobo/fleet-nats. `rotateKey` takes no publisher (its `OpsContext` is
+ * frozen) and answers `unavailable` at the publish step of an account or
+ * scoped key; the CLI then re-issues the account listing exactly the slots'
+ * public keys (`<prefix>/account-signing`, none when that slot is absent, and
+ * `<prefix>/scoped-<template>`) with the ceremony's operator signing key. The
+ * answer stays a refusal, naming what was published, because the rotation
+ * record has not advanced; `operator-signing` needs the ceremony's shares and
+ * is not published here.
+ */
+export async function rotateKeyWith(
+	input: Readonly<{
+		configText: string;
+		secrets: SecretsPort;
+		which: RotatableKey;
+		rotate: () => ReturnType<typeof rotateKey>;
+		publish: typeof publishAccountSigningKeys;
+	}>,
+): ReturnType<typeof rotateKey> {
+	const rotated = await input.rotate();
+	if (
+		rotated.ok ||
+		rotated.error.code !== "unavailable" ||
+		!ACCOUNT_KEYS.has(input.which)
+	)
+		return rotated;
+	const config = provisionConfig(input.configText);
+	if (!config.ok) return config;
+	const { tenant, secretPrefix: prefix, natsUrls } = config.value;
+	const operator = await secretText(
+		input.secrets,
+		`${prefix}/operator-signing`,
+	);
+	if (!operator.ok) return operator;
+	const operatorSigningSeed =
+		operator.value === undefined ? undefined : activeSeed(operator.value);
+	if (operatorSigningSeed === undefined)
+		return refused(
+			"invalid-request",
+			`${rotated.error.message}; publishing needs the operator signing key at ${prefix}/operator-signing`,
+		);
+	const keysOf = async (
+		name: string,
+		absent: readonly string[] | undefined,
+	): Promise<Outcome<readonly string[]>> => {
+		const text = await secretText(input.secrets, `${prefix}/${name}`);
+		if (!text.ok) return text;
+		const keys = text.value === undefined ? absent : slotPublicKeys(text.value);
+		return keys === undefined
+			? refused(
+					"invalid-request",
+					`${prefix}/${name} is not a key slot; run hobo fleet ops provision first`,
+				)
+			: { ok: true, value: keys };
+	};
+	const account = await keysOf("account-signing", []);
+	if (!account.ok) return account;
+	const observer = await keysOf("scoped-observer", undefined);
+	if (!observer.ok) return observer;
+	const executor = await keysOf("scoped-executor", undefined);
+	if (!executor.ok) return executor;
+	const dispatcher = await keysOf("scoped-dispatcher", undefined);
+	if (!dispatcher.ok) return dispatcher;
+	const published = await input.publish({
+		servers: natsUrls,
+		operatorSigningSeed,
+		tenant: parseTenantId(tenant),
+		signingKeys: {
+			account: account.value,
+			scoped: {
+				observer: observer.value,
+				executor: executor.value,
+				dispatcher: dispatcher.value,
+			},
+		},
+	});
+	if (!published.ok) return published;
+	return refused(
+		"unavailable",
+		`${rotated.error.message}. The ${input.which} keys in the slots are published through publishAccountSigningKeys (account ${published.value.accountPublicKey}); the rotation record stays at its step until rotateKey records the publish, so run hobo fleet ops rotate-key again then`,
+	);
+}
+
 /** The trust record a `WitnessedEnvelope` carries. */
 function trustOf(
 	witnessed: WitnessedEnvelope | undefined,
@@ -523,7 +641,43 @@ export type RuntimeOptions = Readonly<{
 	/** The secret store the operations use, from the configuration file. */
 	openSecrets?: (configPath: string) => Promise<Outcome<SecretsPort>>;
 	log?: FleetLog;
+	/** The bus connector the initiator's session-close fact goes through; NATS by default. */
+	connector?: FleetBusConnector;
 }>;
+
+/**
+ * Both sides of a session publish a signed session-close fact with byte
+ * counts (design §6.12). The acceptor's comes from `serveSessions`; this is
+ * the initiator's, signed with this device's SIGN key and published on its
+ * own events subjects. A person's CLI on a device that is not enrolled has no
+ * member record or bus (D59), so it publishes nothing.
+ */
+export async function publishInitiatorClose(
+	bus: Pick<FleetBus, "events">,
+	keys: DeviceKeys,
+	fact: Readonly<{
+		sessionId: string;
+		transport: TransportKind;
+		bytesSent: number;
+		bytesReceived: number;
+		atMs: number;
+	}>,
+): Promise<void> {
+	const close = create(SessionCloseSchema, {
+		sessionId: fact.sessionId,
+		memberId: keys.memberId,
+		transport: fact.transport,
+		bytesSent: BigInt(fact.bytesSent),
+		bytesReceived: BigInt(fact.bytesReceived),
+		at: new Date(fact.atMs).toISOString(),
+	});
+	const envelope = await signEnvelope(
+		keys.sign,
+		SESSION_CLOSE_CONTEXT,
+		toBinary(SessionCloseSchema, close),
+	);
+	await bus.events.publish(envelope, keys.memberId, SESSION_CLOSE_KIND);
+}
 
 /**
  * The secret store `hobo fleet ops` opens. The authority's configuration
@@ -540,12 +694,16 @@ async function noSecretStore(
 	);
 }
 
+// public-contract: the event kind of a session-close fact on FLEET_EVENTS (§7.3 EventChannel).
+const SESSION_CLOSE_KIND = "session-close";
+
 export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 	const { env, progress } = options;
 	const home = fleetHome(env);
 	const log = options.log ?? stderrLog;
 	const fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
 	const openSecrets = options.openSecrets ?? noSecretStore;
+	const connector = options.connector ?? createNatsBusConnector();
 	const authorityUrl = env.HOBO_FLEET_AUTHORITY_URL;
 	const keyStore = (() => {
 		let made: Outcome<KeyStore> | undefined;
@@ -580,6 +738,66 @@ export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 			signer: keys.sign,
 			publicJwk: signJwk(keys),
 		});
+
+	/** The initiator's session-close fact, when this CLI runs on an enrolled device whose bus it reaches; best effort. */
+	async function initiatorClose(
+		grant: SignedEnvelope,
+		transport: TransportKind,
+		counts: Readonly<{ bytesSent: number; bytesReceived: number }>,
+	): Promise<void> {
+		const enrollment = await readEnrollment(home);
+		const store = keyStore();
+		const base = clientFor(undefined);
+		if (!enrollment.ok || !store.ok || !base.ok) return;
+		const fields = {
+			transport,
+			bytes_sent: counts.bytesSent,
+			bytes_received: counts.bytesReceived,
+		};
+		let bus: FleetBus | undefined;
+		try {
+			const { sessionId } = fromBinary(SessionGrantSchema, grant.payload);
+			const state = await store.value.readState();
+			const trust = state.trust ?? enrollment.value.discovery.trust;
+			if (trust === undefined) return;
+			const credentials = await deviceCredentials(store.value, (keys) => {
+				const made = deviceClient(keys, "");
+				return made.ok ? made.value : base.value;
+			});
+			if (!credentials.ok) {
+				log("hobo_fleet_session_closed", { ...fields, published: false });
+				return;
+			}
+			const { keys, ticket } = credentials.value;
+			bus = await connector.connect({
+				discovery: enrollment.value.discovery,
+				keys,
+				trust,
+				ticket: async () => {
+					if (ticket === undefined)
+						throw new Error("the authority issued no session ticket");
+					return ticket;
+				},
+				resumeFrom: {},
+				log,
+			});
+			await publishInitiatorClose(bus, keys, {
+				sessionId,
+				transport,
+				...counts,
+				atMs: Date.now(),
+			});
+			log("hobo_fleet_session_closed", {
+				session: sessionId,
+				...fields,
+				published: true,
+			});
+		} catch {
+			log("hobo_fleet_session_closed", { ...fields, published: false });
+		} finally {
+			await bus?.close().catch(() => undefined);
+		}
+	}
 
 	async function client(auth: FleetClientAuth): Promise<Outcome<FleetClient>> {
 		if (auth.kind === "none") return clientFor(undefined);
@@ -830,8 +1048,38 @@ export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 				await transport.stop().catch(() => undefined);
 			}
 		},
-		dial(initiator, grant, signal) {
-			return selectTransport(initiator.transports, grant, signal, log);
+		async dial(initiator, grant, signal) {
+			let dialed: TransportKind | undefined;
+			const tracked = initiator.transports.map(
+				(transport): FleetTransport => ({
+					kind: transport.kind,
+					start: (keys) => transport.start(keys),
+					async dial(input) {
+						const stream = await transport.dial(input);
+						if (stream.ok) dialed = transport.kind;
+						return stream;
+					},
+					accept: (authorise, handler) => transport.accept(authorise, handler),
+					stop: () => transport.stop(),
+				}),
+			);
+			const stream = await selectTransport(tracked, grant, signal, log);
+			if (!stream.ok) return stream;
+			const inner = stream.value;
+			return {
+				ok: true,
+				value: {
+					peer: inner.peer,
+					read: () => inner.read(),
+					write: (chunk) => inner.write(chunk),
+					async close() {
+						const counts = await inner.close();
+						if (dialed !== undefined)
+							await initiatorClose(grant, dialed, counts);
+						return counts;
+					},
+				},
+			};
 		},
 		fetchBlob(stream, digest) {
 			return fetchBlob(stream, digest);
@@ -881,7 +1129,14 @@ export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 		},
 		async rotateKey(configPath, which) {
 			const context = await opsContext(configPath);
-			return context.ok ? rotateKey(context.value, which) : context;
+			if (!context.ok) return context;
+			return rotateKeyWith({
+				configText: await readFile(configPath, "utf8"),
+				secrets: context.value.secrets,
+				which,
+				rotate: () => rotateKey(context.value, which),
+				publish: publishAccountSigningKeys,
+			});
 		},
 		async backup(configPath, archivePath) {
 			const context = await opsContext(configPath);
