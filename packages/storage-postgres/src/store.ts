@@ -991,13 +991,6 @@ SELECT EXISTS (
 		}
 		const revision = int4(headRow, "revision");
 		const ownerEpoch = int8(headRow, "owner_epoch");
-		await checkActorWrite(
-			client,
-			actorPolicy,
-			streamId,
-			ownerEpoch,
-			append.fenceToken,
-		);
 
 		const keys = inputs.flatMap((input) =>
 			input.idempotencyKey === undefined ? [] : [input.idempotencyKey],
@@ -1044,6 +1037,15 @@ SELECT EXISTS (
 				lastPositionRaw: undefined,
 			});
 		}
+		// Only new writes are fenced: a retry whose events already committed
+		// reads them back above, even after its lease has expired.
+		await checkActorWrite(
+			client,
+			actorPolicy,
+			streamId,
+			ownerEpoch,
+			append.fenceToken,
+		);
 
 		const epoch = nextOwnerEpoch(streamId, ownerEpoch, append.fenceToken);
 		if (toWrite.length > 0 && append.expectedSeq !== revision) {

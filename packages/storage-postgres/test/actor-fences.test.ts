@@ -135,6 +135,51 @@ describeLive("shared PostgreSQL actor leases", () => {
 		expect(replacement.fenceToken).toBeGreaterThan(lease.fenceToken);
 		await replacement.release();
 	});
+	it("returns a committed retry after its lease expires but refuses new events", async () => {
+		const schema = freshSchema(),
+			store = liveStore({
+				schema,
+				protectedActorStreamPrefixes: ["deployment:"],
+			});
+		const lease = await store.actorLeaseHost.acquire("deployment:retry", {
+			holderId: "a",
+		});
+		const options = {
+			...OPTS,
+			expectedSeq: 0,
+			fenceToken: lease.fenceToken,
+		};
+		const first = await store.append(
+			lease.key,
+			[{ type: "test.Event", meta: { idempotencyKey: "k1" } }],
+			options,
+		);
+		await adminQuery(
+			`UPDATE "${schema}".actor_leases SET expires_at = clock_timestamp() - INTERVAL '1 second' WHERE stream_id = $1`,
+			[lease.key],
+		);
+		// The caller lost the first response and retries the same append.
+		const retry = await store.append(
+			lease.key,
+			[{ type: "test.Event", meta: { idempotencyKey: "k1" } }],
+			options,
+		);
+		expect(retry.appended).toHaveLength(0);
+		expect(retry.deduped.map((event) => event.id)).toEqual(
+			first.appended.map((event) => event.id),
+		);
+		await expect(
+			store.append(
+				lease.key,
+				[
+					{ type: "test.Event", meta: { idempotencyKey: "k1" } },
+					{ type: "test.Event", meta: { idempotencyKey: "k2" } },
+				],
+				options,
+			),
+		).rejects.toMatchObject({ code: "STALE_FENCE" });
+		expect(await collect(store.read(lease.key))).toHaveLength(1);
+	});
 	it("rejects a protected transaction whose lease expires immediately before commit", async () => {
 		const schema = freshSchema();
 		const base = liveStore({
@@ -180,7 +225,7 @@ describeLive("shared PostgreSQL actor leases", () => {
 					expectedSeq: 0,
 					fenceToken: lease.fenceToken,
 				}),
-			).rejects.toThrow();
+			).rejects.toMatchObject({ code: "STALE_FENCE" });
 			expect(await collect(base.read(lease.key))).toHaveLength(0);
 			const replacement = await base.actorLeaseHost.acquire(lease.key, {
 				holderId: "replacement",
