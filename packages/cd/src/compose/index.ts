@@ -1,4 +1,4 @@
-// `@hobo/cd/compose` (WP18, plan 0024): the composition root of @hobo/cd.
+// `@hobo/cd/compose` — the composition root of @hobo/cd.
 export * from "./ci-bridge.js";
 export * from "./compose.js";
 export * from "./config.js";

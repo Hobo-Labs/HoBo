@@ -1,5 +1,5 @@
 /**
- * Invariant I14 (plan 0024 WP14): every package under `packages/providers`
+ * Invariant I14 (ADR-0182): every package under `packages/providers`
  * resolves to a realization path and a traffic profile, or to a typed refusal.
  *
  * The catalog's `PROVIDER_DELIVERY_COVERAGE` table is checked against the
@@ -11,7 +11,7 @@
  *
  * `@hobo/hobo` does not depend on every provider package, so each module is
  * loaded from its source entry point. Exports a sibling work package adds
- * (plan 0024 WP13: convex, flux, webernetes, railway coverage) are checked as
+ * (convex, flux, webernetes, railway coverage) are checked as
  * soon as they exist; until then their cases are skipped with that reason.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -43,7 +43,7 @@ const PROVIDERS_ROOT = fileURLToPath(
 const PORTABLE_OFFERINGS = 17;
 const COVERAGE_CONTRACT = "hobo.provider-hosting-coverage/v1";
 const PENDING_SIBLING =
-	"binds when cd/wp13-providers-a merges (plan 0024 WP13 adds this export)";
+	"skipped until the provider package adds this export";
 const WP13_PACKAGES = new Set([
 	"@hobo/provider-convex",
 	"@hobo/provider-flux",

@@ -1,5 +1,5 @@
 // @hobo/resolver-components — out-of-tree hobo:resolver WASM components
-// behind the existing @hobo/core ResourceResolver seam (plan 0024 WP8).
+// behind the existing @hobo/core ResourceResolver seam.
 export * from "./_generated/resolver_components_pb.js";
 export * from "./bundle.js";
 export * from "./egress.js";

@@ -30,7 +30,7 @@ package control_api
 	json_payload?: string
 }
 
-// ── CD read API under /v1/cd/ (plan 0024 WP12) ─────────────────────────────
+// ── CD read API under /v1/cd/ ──────────────────────────────────────────────
 // Record payloads are hobo.cd.v1 messages (packages/cd/data-models) as
 // canonical protobuf JSON — referenced, not duplicated.
 

@@ -224,7 +224,7 @@ function parseDeliveryPublisher(
 }
 
 /**
- * Neutral delivery policy (plan 0024, D14). `reconcilerMode` and an optional
+ * Neutral delivery policy (ADR-0182 D14). `reconcilerMode` and an optional
  * `publisher` are read. The deprecated `engine` is read only when no
  * `reconcilerMode` is present, and then only to map it: `argo` becomes the
  * `argo-cd` publisher (its `gitops_repo` the publisher repository) and

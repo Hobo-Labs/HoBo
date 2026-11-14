@@ -1,4 +1,4 @@
-// Delivery-as-code conformance (plan 0024 WP20 examples, D3, D4, D21, D24).
+// Delivery-as-code conformance (ADR-0182 D3, D4, D21, D24).
 // A `hobo.delivery.ts` module exports sources, trusted publishers, windows and
 // pipelines; `hobo deploy pipeline apply --file` applies them. This suite
 // checks the module before anything reaches the gate: the graph, lineage

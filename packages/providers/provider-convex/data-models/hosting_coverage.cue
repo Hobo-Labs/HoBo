@@ -1,4 +1,4 @@
-// CUE constraints for hosting_coverage.proto (plan 0024 WP13, I14).
+// CUE constraints for hosting_coverage.proto (ADR-0182 I14).
 package provider_convex
 
 import "list"

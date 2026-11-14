@@ -1,5 +1,5 @@
 /**
- * Open the CD journal (WP18, plan 0024, R6/D16, ADR-0135).
+ * Open the CD journal (ADR-0182 D16, ADR-0135).
  *
  * - SQLite (default): one partition, one writer, behind `@hobo/storage-sqlite`.
  * - Postgres (>= 16): `@hobo/storage-postgres`, required for more than one
@@ -60,7 +60,6 @@ export const openCdStore: CdStoreOpener = async (selection, clock) => {
 			};
 		}
 		case "postgres": {
-			// binds at merge (plan 0024): @hobo/storage-postgres is WP17.
 			const { createPostgresEventStore } = await import(
 				"@hobo/storage-postgres"
 			);

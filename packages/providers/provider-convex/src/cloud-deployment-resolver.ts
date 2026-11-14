@@ -1,5 +1,5 @@
 /**
- * Convex Cloud deployment resolver (plan 0024 WP13, I14; D6).
+ * Convex Cloud deployment resolver (ADR-0182 I14, D6).
  *
  * The hosting product is a Convex Cloud *deployment* inside a project the host
  * binds. The resolver observes it through two documented Management API reads

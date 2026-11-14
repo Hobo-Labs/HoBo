@@ -1,4 +1,4 @@
-// Typed failure modes of the agent identity boundary (WP11, plan 0024). Every
+// Typed failure modes of the agent identity boundary. Every
 // refusal carries a stable code, the HTTP status the delivery feed answers
 // with, and a remediation an operator or agent can act on.
 import { create } from "@bufbuild/protobuf";

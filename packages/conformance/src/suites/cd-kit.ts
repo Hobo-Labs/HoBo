@@ -1,9 +1,9 @@
-// Shared harness for the @hobo/cd conformance suites (plan 0024 WP20).
+// Shared harness for the @hobo/cd conformance suites.
 //
 // Every suite is a set of named assertions run against one subject. A check
 // passes only by returning; anything else (a violation, a thrown error, a
 // timeout) is a recorded failure with its detail. Absent harness capability is
-// a failure too: a suite never passes on missing evidence (plan 0024 §12).
+// a failure too: a suite never passes on missing evidence.
 
 import {
 	isJsonArray,

@@ -17,7 +17,7 @@ const packageDir = join(here, "..");
 const crasher = join(here, "support", "append-crasher.ts");
 
 /**
- * Plan 0024 WP17 Accept: "Passes suites/eventstore.ts unmodified". The suite's
+ * Passes suites/eventstore.ts unmodified. The suite's
  * `dataDir` is a store namespace; for PostgreSQL that is a schema, so the
  * factory maps it to one and `removeDataDir` is a no-op (schemas are dropped
  * after the file).

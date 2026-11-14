@@ -1,5 +1,5 @@
 /**
- * Subcommand-declared options (plan 0024; packages/hobo/CD.md).
+ * Subcommand-declared options (packages/hobo/CD.md).
  *
  * Some verbs are a family of subcommands, each with its own flags:
  * `hobo deploy freight record --file`, `hobo deploy agent token --camp-set`,

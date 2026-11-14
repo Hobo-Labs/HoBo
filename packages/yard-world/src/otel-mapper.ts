@@ -109,7 +109,7 @@ function str(key: string, value: string): OtlpAttribute {
 }
 
 /**
- * HoBo CD spans (plan 0024 WP19) carry topology as SPAN attributes
+ * HoBo CD spans carry topology as SPAN attributes
  * (`hobo.camp.id`, `hobo.station.id`, `hobo.yard.id`) because one CD service
  * delivers to many Camps. Regroup spans that name a Camp (`hobo.camp.id`) under a per-Camp resource.
  * Spans without one stay where they were. Input order is preserved within a

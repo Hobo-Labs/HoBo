@@ -1,4 +1,4 @@
-// CDEvents relay: journal → projection → sinks (WP16, plan 0024 D17).
+// CDEvents relay: journal → projection → sinks (ADR-0182 D17).
 //
 // A materialized-view consumer over `readAll`. It folds every event (the
 // projector needs history to tell `deployed` from `upgraded`) but delivers

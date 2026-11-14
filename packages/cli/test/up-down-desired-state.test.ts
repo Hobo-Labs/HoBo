@@ -35,7 +35,7 @@ import {
 	fakeFreightManifestCodec,
 } from "./cd-delivery-fakes.js";
 
-// Plan 0024 WP15 (D13): `hobo up` declares desired state. It records
+// ADR-0182 D13: `hobo up` declares desired state. It records
 // LOCAL_BUILD Freight, promotes it into the deployment Camp, and an
 // in-process conductor converges it with `reconcileOnce`; `down` is a
 // teardown Delta. The UpResult/DownResult contracts are unchanged.

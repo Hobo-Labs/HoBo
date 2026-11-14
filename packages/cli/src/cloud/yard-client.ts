@@ -158,7 +158,7 @@ export interface DownResult {
 	readonly progress: ProgressEvent[];
 }
 
-// ── Desired-state delivery (plan 0024 D13) ──────────────────────────────────
+// ── Desired-state delivery (ADR-0182 D13) ───────────────────────────────────
 // With `runtime.delivery` wired, `hobo up` declares desired state instead of
 // driving the orchestrator imperatively: it records LOCAL_BUILD Freight,
 // promotes it into the deployment Camp, and an in-process conductor converges

@@ -38,7 +38,7 @@ import {
 	fakeFreightManifestCodec,
 } from "./cd-delivery-fakes.js";
 
-// Plan 0024 WP15: `hobo build` writes `.hobo/freight.json` with the injected
+// `hobo build` writes `.hobo/freight.json` with the injected
 // `writeFreightManifest` and stores the bytes in the configured artifact
 // store, so `hobo up` records the build as LOCAL_BUILD Freight.
 

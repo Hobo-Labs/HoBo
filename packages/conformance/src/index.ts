@@ -134,7 +134,7 @@ export {
 } from "./streamer.js";
 export * from "./suite.js";
 export * from "./suites/anonymous/index.js";
-// @hobo/cd port, fleet, matrix, chaos and load suites (plan 0024 WP20).
+// @hobo/cd port, fleet, matrix, chaos and load suites.
 export * from "./suites/cd-index.js";
 export type {
 	ComponentHostAdapter,

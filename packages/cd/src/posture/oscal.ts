@@ -1,4 +1,4 @@
-// OSCAL assessment results for recorded compliance (plan 0024 D25): maps the
+// OSCAL assessment results for recorded compliance (ADR-0182 D25): maps the
 // journal's ComplianceRecords onto @hobo/policy/posture's structural input
 // and emits the OSCAL 1.1.2 document there (schema-validated in
 // packages/policy/test/posture). Evidence, not attestation.

@@ -31,7 +31,7 @@ import {
 	runInput,
 } from "./support/cd-fakes.js";
 
-// WP18 Build list: every `hobo deploy` subcommand plan 0024 names.
+// Every `hobo deploy` subcommand the CD surface requires.
 const REQUIRED = [
 	"freight record",
 	"freight list",

@@ -1,8 +1,7 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names -- SAFETY: this is the parse boundary for an untrusted delivery module; module exports are unknown until fromJson parses each record with its generated schema. */
 /**
- * Delivery as code (WP18, plan 0024): a `hobo.delivery.ts` module, or a JSON
- * file, that exports CD records, applied by `hobo deploy pipeline apply
- * --file`.
+ * Delivery as code: a `hobo.delivery.ts` module, or a JSON file, that exports
+ * CD records, applied by `hobo deploy pipeline apply --file`.
  *
  * The module exports plain data, never behaviour: `sources`, `pipelines`,
  * `windows`, `campSets`, `placements` and `publishers`, each an array of

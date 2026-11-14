@@ -1,6 +1,6 @@
-// Fleet and policy suites (plan 0024 WP20 "Fleet and policy"): PlacementEngine
+// Fleet and policy suites: PlacementEngine
 // permutation determinism, FanoutController, PostureEvaluator, CampInventory.
-// Also pins the §10 fleet rows these suites prove.
+// Also pins the fleet rows these suites prove.
 import {
 	CAMP_INVENTORY_ASSERTIONS,
 	FANOUT_CONTROLLER_ASSERTIONS,

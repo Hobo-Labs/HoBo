@@ -1,8 +1,7 @@
 /**
  * The runner-host realizer as `hobo deploy agent run` registers it on a
- * runner host (plan 0024, decision R2; packages/ci-gh-actions/deploy/
- * runner-fleet/README.md), and the Station's reading of what such an agent
- * reports.
+ * runner host (packages/ci-gh-actions/deploy/runner-fleet/README.md), and
+ * the Station's reading of what such an agent reports.
  *
  * Agent side: `createRunnerHostRealizer` adapts the typed `ResourceResolver`
  * from `@hobo/ci-gh-actions/runner-host` to the `@hobo/cd` `Realizer` port.

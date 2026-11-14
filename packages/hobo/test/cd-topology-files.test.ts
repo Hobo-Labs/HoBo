@@ -1,4 +1,4 @@
-// Repo-declared topology reaches `hobo deploy` (plan 0024): Yards from a Yard
+// Repo-declared topology reaches `hobo deploy`: Yards from a Yard
 // module and Camps from a delivery module, parsed once with the generated
 // cd_topology schemas, then resolved by `camp list`, `pipeline apply` and
 // `agent token`.

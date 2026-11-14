@@ -1,4 +1,4 @@
-// Composition configuration (WP18, plan 0024, R6/D16): store and artifact
+// Composition configuration (ADR-0182 D16): store and artifact
 // selection parsed once at the boundary (parse, don't validate).
 //
 // - SQLite is the default (single node: `hobo up`, local, one conductor).

@@ -2,7 +2,7 @@ import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
 /**
- * Lakebed TrafficRouting offerings (ADR-0143 dual layer; plan 0024 WP14, I14).
+ * Lakebed TrafficRouting offerings (ADR-0143 dual layer; ADR-0182 I14).
  *
  * Lakebed has no multi-backend load-balancer API. HoBo realizes weights in
  * process between capsule endpoints, and `realizeTrafficRoutingPlan` binds

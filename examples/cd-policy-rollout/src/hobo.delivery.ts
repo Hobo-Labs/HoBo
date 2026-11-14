@@ -1,4 +1,4 @@
-// Deliver a Rail like software (plan 0024 D24, D25, I22, I23, R12).
+// Deliver a Rail like software (ADR-0182 D24, D25, I22, I23).
 //
 // A Rail version is Freight with subject RAIL, discovered when the Rail is
 // approved (HOBO_RAIL). Its pipeline binds it first as a candidate in INFORM.

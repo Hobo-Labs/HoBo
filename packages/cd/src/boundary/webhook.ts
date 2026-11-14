@@ -1,4 +1,4 @@
-// CloudEvents webhook sink (WP16, plan 0024 D17).
+// CloudEvents webhook sink (ADR-0182 D17).
 //
 // - HTTP binding, binary content mode: `ce-*` headers carry the CloudEvents
 //   context (from the CDEvent context per the CDEvents CloudEvents binding);

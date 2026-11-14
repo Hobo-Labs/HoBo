@@ -26,7 +26,7 @@ export interface UpCommandDeps {
 	readonly session?: YardSession;
 }
 
-// `hobo up` — declare desired state (plan 0024 D13). With `runtime.delivery`
+// `hobo up` — declare desired state (ADR-0182 D13). With `runtime.delivery`
 // wired it records LOCAL_BUILD Freight (the `.hobo/freight.json` that `hobo
 // build` wrote, else the declaration alone), promotes it into the deployment
 // Camp and converges it with an in-process conductor, streaming progress.

@@ -1,5 +1,5 @@
 /**
- * Fleet and policy model for the HoBo.CD fleet journeys (plan 0024 WP20).
+ * Fleet and policy model for the HoBo.CD fleet journeys.
  * Placement and fan-out run on the conformance kit's reference engines (the
  * same ones the conformance suites prove). Failover (D23, I21) and Rail
  * inform → enforce (D24, I23) are modelled here at the decision level.

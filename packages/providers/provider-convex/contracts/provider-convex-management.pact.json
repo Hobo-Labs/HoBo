@@ -9,7 +9,7 @@
 		"pactSpecification": {
 			"version": "3.0.0"
 		},
-		"provenance": "Hand-authored consumer expectations (plan 0024 WP13) against the documented Convex Management API at https://api.convex.dev/v1 (docs.convex.dev/management-api, read 2026-11-12); not provider-verified or captured live traffic. The resolver issues only these two read operations."
+		"provenance": "Hand-authored consumer expectations against the documented Convex Management API at https://api.convex.dev/v1 (docs.convex.dev/management-api, read 2026-11-12); not provider-verified or captured live traffic. The resolver issues only these two read operations."
 	},
 	"interactions": [
 		{

@@ -2,7 +2,7 @@ import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
 /**
- * Netlify TrafficRouting offerings (ADR-0143/0144; plan 0024 WP14, I14).
+ * Netlify TrafficRouting offerings (ADR-0143/0144; ADR-0182 I14).
  *
  * The audit against `@hobo/connectivity` found no Netlify profile and no
  * Netlify adapter. Every static deploy HoBo delivers is immutable and keeps

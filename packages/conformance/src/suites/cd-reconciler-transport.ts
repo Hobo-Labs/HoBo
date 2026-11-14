@@ -1,4 +1,4 @@
-// ReconcilerTransport conformance (plan 0024 D5, I4, I12). One fenced lease
+// ReconcilerTransport conformance (ADR-0182 D5, I4, I12). One fenced lease
 // per Camp, a cursor feed of desired state after the committed checkpoint,
 // and reports that a stale holder can never land.
 import type { EventPosition } from "@hobo/core";

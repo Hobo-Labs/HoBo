@@ -1,5 +1,5 @@
 // HoBo's runner fleet delivered by its own @hobo/cd, end to end and offline
-// (plan 0024; packages/ci-gh-actions/deploy/runner-fleet/README.md).
+// (packages/ci-gh-actions/deploy/runner-fleet/README.md).
 //
 // 1. The BUILT binary against the repository's real delivery module: the
 //    agent enrolls by double opt-in, the fleet's Placement is decidable

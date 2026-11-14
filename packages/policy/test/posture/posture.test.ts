@@ -1,4 +1,4 @@
-// @hobo/policy/posture (plan 0024 WP24, D25): the observe-phase posture rule
+// @hobo/policy/posture (ADR-0182 D25): the observe-phase posture rule
 // profile, the pure evaluator, observe_fields, remediation resolution and the
 // OSCAL assessment-results export.
 import { readFileSync } from "node:fs";

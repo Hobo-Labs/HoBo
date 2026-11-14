@@ -1,5 +1,5 @@
 // @hobo/cd-gitops — a PublisherPort that delivers a Set through GitOps
-// (plan 0024, WP16, D14). Vendor vocabulary (Argo CD, Flux, Git hosts) lives
+// (ADR-0182 D14). Vendor vocabulary (Argo CD, Flux, Git hosts) lives
 // here, outside the neutral @hobo/cd core (I11).
 export * from "./_generated/gitops_pb.js";
 export {
