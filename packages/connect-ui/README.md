@@ -38,6 +38,16 @@ through `onValueChange`, so a person and an agent drive the same page.
 HoBo Rubberhose (`DESIGN.md`): ink on paper, thick outlines, hard sticker
 shadows. Parts are restyled from their `data-slot` attributes.
 
+## Ceremonies
+
+`configureThen` turns missing settings into a `configure` step, then hands the
+answers to `proceed`, which builds the provider's own flow (or returns field
+errors to show on the same page). `resolveSettings` reads each setting from the
+environment, then from earlier answers, then from its fallback, and lists what
+is still missing. `familySettingsStore(family)` keeps answers in
+`$HOBO_HOME/ceremonies/<family>.json`; fields of kind `secret` are used for the
+run and never saved.
+
 ## Secretless by construction
 
 A provider's credentials are written to the owner's secret store (Infisical or

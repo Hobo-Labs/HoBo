@@ -88,7 +88,8 @@ export type ConnectStep =
 	| {
 			readonly kind: "connected";
 			readonly provider: ConnectProvider;
-			readonly store: SecretStoreOption["id"];
+			/** Where the result lives: a secret store, or `the Yard registry`. */
+			readonly store: string;
 			/** Store references, never values. */
 			readonly references: readonly string[];
 			readonly nextHint: string;

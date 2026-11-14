@@ -1,4 +1,15 @@
 export {
+	type CeremonySetting,
+	type ConfigureOptions,
+	configureThen,
+	familySettingsStore,
+	fileSettingsStore,
+	type ResolvedSettings,
+	resolveSettings,
+	type SavedSettings,
+	type SettingsStore,
+} from "./ceremony.js";
+export {
 	type BrowserDirective,
 	type ConnectFlow,
 	type ConnectPage,
