@@ -111,6 +111,7 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 							deploymentId,
 							session,
 							config,
+							requireYardBinding: true,
 						})
 					: runtime && hosted
 						? await planHostingAuthoritatively(runtime, bindle, {
