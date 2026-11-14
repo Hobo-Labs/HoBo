@@ -305,21 +305,27 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 	].sort();
 	// An HTTP compute entry only when the Yard binds the HTTP API profile.
 	const http = yard.bindings.some((row) => row.profile === capability.api.http);
-	const ports = ["compute", "data"] as const;
 	const none: readonly string[] = [];
-	const offered = {
-		compute: http ? ["http"] : none,
-		data: none,
-	} satisfies Record<(typeof ports)[number], readonly string[]>;
+	const offered: { port: string; features: readonly string[] }[] = [
+		{ port: "compute", features: http ? ["http"] : none },
+		{ port: "data", features: none },
+	];
+	// A runtime projection can read secrets; it does not imply write access.
+	if (
+		yard.bindings.some(
+			(row) => row.profile === capability.secretRef.runtimeProjection,
+		)
+	)
+		offered.push({ port: "secretRef", features: ["access"] });
 	return {
 		id: `yard:${yard.name}`,
 		regions: [...yard.regions],
-		capabilities: ports.map((port) => ({
+		capabilities: offered.map(({ port, features }) => ({
 			port,
 			satisfies(request) {
 				if (request.port !== port) return { kind: "none" };
 				const missing = (request.features ?? []).filter(
-					(feature) => !offered[port].includes(feature),
+					(feature) => !features.includes(feature),
 				);
 				return missing.length === 0
 					? { kind: "full" }
@@ -339,9 +345,9 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 				providerId: `yard:${yard.name}`,
 				published: {},
 				capabilities: {
-					capabilities: ports.map((port) => ({
+					capabilities: offered.map(({ port, features }) => ({
 						port,
-						features: [...offered[port]],
+						features: [...features],
 						productIds,
 						realizedBy: "relay git deployment",
 					})),
