@@ -10,6 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
 	DeviceClass,
+	type EgressProxyFactory,
 	EnrollmentRequestSchema,
 	type EnrollmentResponse,
 	type KeyStore,
@@ -60,11 +61,13 @@ export async function enrollDevice(
 		sandboxes?: readonly SandboxDriver[];
 		keys?: KeyStore;
 		runners?: readonly WorkRunner[];
+		egress?: EgressProxyFactory;
 	}>,
 ): Promise<Enrolled> {
 	const built = world.agent({
 		keys: input.keys,
 		sandboxes: input.sandboxes,
+		egress: input.egress,
 		runners: input.runners ?? [createOciCommandRunner()],
 		sources: (current) => [createOciCommandSource(liveBus(() => current()?.bus()))],
 	});

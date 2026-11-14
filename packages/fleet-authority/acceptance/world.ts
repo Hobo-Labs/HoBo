@@ -400,6 +400,7 @@ export async function createFleetWorld(
 			runners?: readonly WorkRunner[];
 			sources?: (current: () => ReturnType<typeof createFleetAgent> | undefined) => readonly WorkSource[];
 			sandboxes?: readonly SandboxDriver[] | undefined;
+			egress?: EgressProxyFactory | undefined;
 			slots?: number;
 			log?: FleetLog;
 		}> = {},
@@ -415,7 +416,7 @@ export async function createFleetWorld(
 			runners: input.runners ?? [],
 			sources: input.sources?.(() => built) ?? [],
 			sandboxes: input.sandboxes ?? [createFakeSandboxDriver(SandboxTier.S1_CONTAINER)],
-			egress: closedEgress,
+			egress: input.egress ?? closedEgress,
 			transports: [],
 			agentVersion: "1.0.0",
 			now,
