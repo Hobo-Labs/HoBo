@@ -25,6 +25,12 @@ export {
 	resolveAssignment,
 } from "./assignment.js";
 export {
+	type AtomicJournalObject,
+	AtomicObjectJournalError,
+	type AtomicObjectJournalOptions,
+	createAtomicObjectJournalReplica,
+} from "./atomic-object-journal.js";
+export {
 	FLEET_FAILURE_CLASSES,
 	type FleetFailureClass,
 	type FleetFailureClassifier,
