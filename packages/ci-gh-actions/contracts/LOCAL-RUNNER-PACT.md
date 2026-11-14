@@ -1,6 +1,9 @@
 # Local CI integration contracts and broker gate
 
-The local runner lane uses Pact JS 17.1.4, its native Pact mock server/verifier,
+The local runner itself is gone: a developer machine is an enrolled
+`PERSONAL` fleet executor running `hobo fleet run`. What remains here is the
+relay's own local contract (`HoboCiLocalWorkflowAcceptance` →
+`HoboCiLocalRelay`). The lane uses Pact JS 17.1.4, its native Pact mock server/verifier,
 and a real PostgreSQL-backed Pact Broker. Consumer tests generate the artifacts;
 the owning provider's actual HTTP handler verifies them. Legacy hand-authored
 contracts elsewhere in this folder keep their existing coverage and are not
@@ -33,11 +36,6 @@ An existing shared broker can replace the local broker through
 remote brokers, redirects, malformed responses and missing verification fail
 closed. Use a reviewed source commit as `--version`. A published version cannot
 be replaced with a different contract; publish the new source version instead.
-GitHub's provider version is independent of HoBo's source commit. Select a
-broker-verified upstream version with `--github-version <provider-version>` or
-`HOBO_CI_GITHUB_PACT_VERSION`. Without one, the explicit `unverified` sentinel
-keeps the release gate blocked. A legitimate independently published upstream
-verification is honored; the validation lane never fabricates it.
 
 ## Scenario coverage
 
@@ -48,15 +46,12 @@ verification is honored; the validation lane never fabricates it.
 | Valid JIT, disabled/expired/revoked authority, wrong host, repeated/completed claim | Same | Shipped `claimRunnerJit` consumer and actual relay HTTP verification |
 | Repository/attempt/SHA/workflow identity mismatch, completed host, revoked original workflow | Same | Separate negative JIT provider states |
 | Invalid identity, unknown lease, malformed/unsigned/bad-signature webhook, API outage, health and unknown route | Same | Status, response body and no-store headers verified |
-| Repository visibility/rename/authentication/permissions, missing repository | `HoboCiLocalController` → `GitHubActionsRest` | Shipped GitHub CLI adapter against Pact's mock HTTP server |
-| JIT success/refusal/422/503/missing credential/malformed response | Same | Exact API version, method, path, JSON body and parser behavior |
-| Cleanup 204/404/403/503 | Same | Confirmed removal, idempotency and retained failure semantics |
-| Missing auth/trust, idempotent starts, stop, damaged state, cancellation, pending/uncertain registration and cleanup retry | Native lifecycle prerequisites | Existing real subprocess/socket/process-group tests must pass before publication |
+| JIT claim and provider lifecycle | Native lifecycle prerequisites | Existing bootstrap and local-provider tests must pass before publication |
 | Matrix/needs/outputs/artifacts/continued failures and provider swapping | Actual act corpus prerequisite | All 11 corpus scenarios execute; expected budget refusal launches no jobs |
 | Two local jobs, capacity withdrawal, zero settlement and durable restart/replay | Connected acceptance prerequisite | Shipped relay/outbox/OIDC/JIT/host path with strict local remote fixtures |
 | Missing JIT, wrong provider and skipped original job | Acceptance fault prerequisites | All three executions must fail |
 | Missing/failed verification, version skew and changed contract under the same version | Real broker matrix and publication client | Missing/failed/skewed pairs block; immutable-version replacement is refused |
-| Broker URL/credential/response guards and independent upstream version selection | Broker-client prerequisites | Real loopback client/CLI tests run before publication, including a mocked verified upstream version without publishing a fake GitHub result |
+| Broker URL/credential/response guards and the deployment gate | Broker-client prerequisites | Real loopback client/CLI tests run before publication |
 
 A signed delivery is committed to the relay's inbox and acknowledged before it
 is admitted, so the HTTP answer of an admission interaction is `accepted`
@@ -71,8 +66,7 @@ through the same rules a host applies: the store refuses to remove a connection
 under an active lease, so the revoked claim state narrows the connection's
 trusted branches instead.
 
-The relay contract contains 31 separately generated interactions; the GitHub
-consumer contract contains 16. Tests assert exact scenario inventories, so a
+The relay contract contains 31 separately generated interactions. Tests assert exact scenario inventories, so a
 skipped or duplicated interaction fails. Pact handles protocol compatibility;
 OS process lifecycle and executed workflow evidence remain explicit prerequisites.
 The local acceptance consumer models synthetic webhook delivery and invokes the
@@ -82,7 +76,7 @@ authored or verified by GitHub.
 ## What the broker approves
 
 `test:pact:broker` is a validation lane. It first executes the native and workflow
-prerequisites, then publishes both consumer contracts and their branch/version
+prerequisites, then publishes the consumer contract and its branch/version
 metadata. It fetches the exact relay contract back from the broker for provider
 verification, publishes that result, and queries exact-version compatibility.
 An intentionally broken provider uses a separate negative-control version and
@@ -91,12 +85,6 @@ result is insufficient to pass that test. Evidence, generated Pacts and the
 matrix report live under ignored `.hobo/ci-local/pact-evidence/` unless
 `--evidence` specifies another directory.
 
-The GitHub CLI fixture only translates the real adapter's arguments/stdin to
-Pact's loopback mock HTTP server. It does not authenticate or contact GitHub.
-No successful provider verification is published for `GitHubActionsRest`.
-Consequently **`pact:can-deploy` currently blocks** this unverified external
-integration, even when HoBo's owned relay contract is green. This is deliberate:
-passing local consumer tests is not evidence of GitHub accepting the contract.
 The lane does not establish live GitHub queue assignment or vendor runner
 compatibility. These remain visible unknowns, not synthetic success.
 

@@ -1,7 +1,7 @@
 import { mainWorkspaceShardIndex } from "./admission-order.js";
 import { CI_DEPS_LAYER_JOB_NAME } from "./isolated-worker/memory-classes.js";
 
-/** Node-only trunk jobs that should fleet-absorb on memory pressure without a 45s box hold. */
+/** Node-only trunk jobs that fleet peers should absorb on memory pressure without a 45s box hold. */
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
 const MAIN_FULL_GATE_FINISH_JOB = "Main full gate (finish)";
 
@@ -16,10 +16,10 @@ function isImmediateFleetMainTrunkPickupJob(
 }
 
 import {
-	type FleetCapacityWitness,
-	type FleetWitnessFields,
-	fleetWitnessFields,
-} from "./fleet-absorb.js";
+	type PeerCapacityWitness,
+	type PeerWitnessFields,
+	peerWitnessFields,
+} from "./peer-capacity.js";
 
 export type TrunkWaitReason =
 	| "lease-capacity"
@@ -45,7 +45,7 @@ export type TrunkWaitCache = Map<string, TrunkWaitState>;
 // public-contract: bounds box memory hold without lowering standard class sizes.
 export const DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS = 45_000;
 
-/** Shorter cooperative window when mesh/ARC already report absorb slots (finding 119). */
+/** Shorter cooperative window when fleet peers already have absorb slots (finding 119). */
 export const PEER_PRESENT_TRUNK_HEADROOM_FLEET_DEFER_MS = 5_000;
 
 export function effectiveTrunkFleetDeferMs(
@@ -80,7 +80,7 @@ export type TrunkFleetDeferDecision = Readonly<{
 	deferMs?: number;
 	shardIndex?: number;
 }> &
-	FleetWitnessFields;
+	PeerWitnessFields;
 
 export function evaluateMainTrunkFleetDefer(
 	input: Readonly<{
@@ -96,10 +96,10 @@ export function evaluateMainTrunkFleetDefer(
 		 */
 		parallelTrunkLaunchCapacity?: number;
 		localTrunkReserved: number;
-		fleetWitness: FleetCapacityWitness | undefined;
+		fleetWitness: PeerCapacityWitness | undefined;
 	}>,
 ): TrunkFleetDeferDecision {
-	const fields = fleetWitnessFields(input.fleetWitness);
+	const fields = peerWitnessFields(input.fleetWitness);
 	const effectiveDeferMs = effectiveTrunkFleetDeferMs(
 		input.deferMs,
 		fields.peerAbsorbSlots,
@@ -137,7 +137,7 @@ export function evaluateMainTrunkFleetDefer(
 		deferMs: number;
 		waitReason?: TrunkWaitReason;
 		shardIndex?: number;
-	} & FleetWitnessFields;
+	} & PeerWitnessFields;
 	const meta: DeferMeta = { waitedMs, deferMs: effectiveDeferMs, ...fields };
 	if (waitReason !== undefined) meta.waitReason = waitReason;
 	if (shardIndex !== undefined) meta.shardIndex = shardIndex;

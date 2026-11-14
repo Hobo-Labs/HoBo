@@ -63,6 +63,9 @@
     "runnerRouting": {
       "$ref": "#/$defs/RunnerRouting"
     },
+    "fleet": {
+      "$ref": "#/$defs/BoxMemberSettings"
+    },
     "turboCache": {
       "$ref": "#/$defs/TurboCache"
     }
@@ -1468,11 +1471,83 @@
       "type": "string",
       "pattern": "^HOBO_CI_[A-Z0-9_]{1,60}$"
     },
+    "BoxMemberSettings": {
+      "type": "object",
+      "properties": {
+        "authorityUrl": {
+          "$ref": "#/$defs/__schema113"
+        },
+        "fleet": {
+          "$ref": "#/$defs/__schema114"
+        },
+        "tenant": {
+          "$ref": "#/$defs/__schema115"
+        },
+        "region": {
+          "$ref": "#/$defs/__schema116"
+        },
+        "memberName": {
+          "$ref": "#/$defs/__schema117"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/__schema118"
+        }
+      },
+      "required": [
+        "authorityUrl",
+        "fleet",
+        "tenant",
+        "region"
+      ],
+      "additionalProperties": false
+    },
+    "__schema113": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https:\\/\\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\\/[A-Za-z0-9._~/-]*)?$"
+    },
+    "__schema114": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema115": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "__schema116": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema117": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "__schema118": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/__schema119"
+        },
+        "cache": {
+          "$ref": "#/$defs/__schema119"
+        },
+        "download": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema119": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 1024,
+      "pattern": "^\\/[^\\0]*$"
+    },
     "TurboCache": {
       "type": "object",
       "properties": {
         "api": {
-          "$ref": "#/$defs/__schema113"
+          "$ref": "#/$defs/__schema120"
         }
       },
       "required": [
@@ -1480,7 +1555,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema113": {
+    "__schema120": {
       "anyOf": [
         {
           "type": "string",

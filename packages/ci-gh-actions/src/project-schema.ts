@@ -228,6 +228,50 @@ export const TurboCacheSchema = z
 	})
 	.strict()
 	.meta({ id: "TurboCache" });
+/**
+ * The box worker's fleet membership (D61), read by `readBoxMemberSettings`
+ * (`isolated-worker/box-member-settings.ts`). Holds no secret.
+ */
+const absoluteHostPath = z
+	.string()
+	.min(2)
+	.max(1024)
+	.regex(/^\/[^\0]*$/u);
+
+export const BoxMemberSettingsSchema = z
+	.object({
+		/** The fleet authority's `https` origin. */
+		authorityUrl: z
+			.string()
+			.max(2048)
+			.regex(
+				/^https:\/\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~/-]*)?$/u,
+			),
+		/** The fleet this box serves (a short name, §7.2). */
+		fleet: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u),
+		tenant: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u),
+		region: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u),
+		/** The member's name at enrollment; the host name when absent. */
+		memberName: z
+			.string()
+			.regex(/^[a-z0-9][a-z0-9_-]{0,62}$/u)
+			.optional(),
+		/** D58's sandbox settings for the box daemon. */
+		sandbox: z
+			.object({
+				/** An operator-configured host runtime, by absolute path; never looked up on PATH. */
+				runtime: absoluteHostPath.optional(),
+				/** Where the pinned runtime is unpacked. */
+				cache: absoluteHostPath.optional(),
+				/** Whether the agent may fetch the pinned runtime (default true). */
+				download: z.boolean().optional(),
+			})
+			.strict()
+			.optional(),
+	})
+	.strict()
+	.meta({ id: "BoxMemberSettings" });
+
 export const CiProjectDocumentSchema = z
 	.object({
 		$schema: z.string().max(2048).optional(),
@@ -261,6 +305,14 @@ export const CiProjectDocumentSchema = z
 		 * route job and the box; never by the relay's environment selection.
 		 */
 		runnerRouting: RunnerRoutingSchema.optional(),
+		/**
+		 * The box worker's fleet membership (D61): the authority, fleet,
+		 * tenant, region and sandbox settings a box daemon in this checkout
+		 * enrolls and runs with. Committed, so no environment variable carries
+		 * fleet information on the box (ADR-0181 R2). Holds no secret: the
+		 * bootstrap token stays a file the process names.
+		 */
+		fleet: BoxMemberSettingsSchema.optional(),
 		/**
 		 * The shared Turborepo cache (`.github/actions/turbo-cache`). `api` is
 		 * the base URL of a self-hosted cache server
@@ -369,6 +421,7 @@ export function resolveCiProjectReferences(
 		integrations: _integrations,
 		agent: _agent,
 		runnerRouting: _runnerRouting,
+		fleet: _fleet,
 		turboCache: _turboCache,
 		...document
 	} = input;

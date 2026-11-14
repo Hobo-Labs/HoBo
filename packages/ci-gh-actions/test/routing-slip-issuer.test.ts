@@ -355,7 +355,7 @@ describe("the issuer (ADR-0181, decisions 1-2)", () => {
 		expect(api.commits()).toHaveLength(1);
 	});
 
-	it("only the mesh leader writes", async () => {
+	it("only the slip leader writes", async () => {
 		const api = gitApi();
 		const nodes = ["box-a", "box-b", "box-c"];
 		const leader = (id: string) => async () => [...nodes].sort()[0] === id;
@@ -481,7 +481,7 @@ describe("the box's committed routing policy (ADR-0181, decision 4)", () => {
 				HOBO_CI_WORKER_SLOTS: "4",
 				HOBO_CI_FLEET_VERDICT_MODE: "report",
 				HOBO_CI_JOB_ADMISSION: "",
-				HOBO_CI_NATS_URL: "nats://mesh:4222",
+				HOBO_CI_RELAY_TRACE: "1",
 				MAIN_WORKSPACE_PARALLEL_CAP: "2",
 			}),
 		).toEqual([

@@ -14,8 +14,9 @@
  *   `POST /git/refs` the first time.
  * - `createRoutingSlipIssuer`: when to write. On a change and as a
  *   heartbeat every 3 minutes, never more than 20 writes a minute or 300 an
- *   hour, 10 minutes of quiet after a 403 or 429, and only on the mesh
- *   leader (a box without a mesh is its own leader).
+ *   hour, 10 minutes of quiet after a 403 or 429, and only on the slip
+ *   leader: rank 0 of the fleet's live `DISPATCHER` members
+ *   (`routingSlipLeader`; a box outside a fleet is its own leader).
  *
  * A slip names no slot count and no memory figure; `reason` is a code.
  * Anything the issuer cannot do it logs and leaves: with no fresh slip the
@@ -33,7 +34,7 @@ import {
 	routingSlipJson,
 } from "../routing-slip.js";
 import type { RunnerRouting } from "../runner-routing.js";
-import type { FleetRunnersView } from "./fleet-verdict-evaluator.js";
+import type { RepositoryRunnersView } from "./routing-slip-decision.js";
 
 /** Hard caps on slip writes, whatever the decision does (ADR-0181, decisions 1-2). */
 export const ROUTING_SLIP_WRITES_PER_MINUTE = 20;
@@ -58,7 +59,7 @@ export type RoutingSlipClasses = Readonly<{
 
 export type RoutingSlipDecisionInput = Readonly<{
 	policy: Pick<RunnerRouting, "pin" | "labels" | "localRunner">;
-	/** Labels at least one live node (this box or a mesh peer) serves. */
+	/** Labels at least one live node (this box or a fleet peer) serves. */
 	served: ReadonlySet<string>;
 	/** Labels the held evaluation refuses: nothing can take a job (no-capacity). */
 	refused: ReadonlySet<string>;
@@ -250,7 +251,7 @@ export async function readRepositoryRunners(
 	github: GithubTransport,
 	target: Readonly<{ installationId: number; repository: string }>,
 	nowMs: number,
-): Promise<FleetRunnersView | undefined> {
+): Promise<RepositoryRunnersView | undefined> {
 	try {
 		const response = await github.request(
 			target.installationId,
@@ -365,9 +366,9 @@ export type RoutingSlipIssuerOptions = Readonly<{
 	github: GithubTransport;
 	/** The committed labels; every runner a slip names is one of them. */
 	labels: ReadonlySet<string>;
-	/** This relay: the mesh node id (or the box's own) and its commit. */
+	/** This relay: its fleet member id (or the box's own name) and its commit. */
 	relay: Readonly<{ nodeId: string; commit: string }>;
-	/** Whether this box is the mesh leader right now. */
+	/** Whether this box leads the slip right now. */
 	leader: () => Promise<boolean>;
 	/** The connected repositories, one slip each. */
 	targets: () => Promise<readonly RoutingSlipTarget[]>;
@@ -393,7 +394,7 @@ const classesKey = (classes: RoutingSlipClasses) =>
 
 /**
  * Writes each connected repository's slip when its decision changes and as a
- * heartbeat, within the budget, and only while this box leads the mesh.
+ * heartbeat, within the budget, and only while this box leads the slip.
  */
 export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 	const now = options.now ?? Date.now;
@@ -492,7 +493,7 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 		try {
 			leads = await options.leader();
 		} catch {
-			// A mesh that cannot be read names no leader: no slip (R3).
+			// A fleet that cannot be read names no leader: no slip (R3).
 			leads = false;
 		}
 		if (leads !== leading) {

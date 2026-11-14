@@ -23,6 +23,7 @@ import {
 import type { MergeQueuePositionSource } from "./merge-queue-order.js";
 import { createOfflineJitJobRecovery } from "./offline-jit-job-recovery.js";
 import type { IdentityVerifier } from "./oidc.js";
+import type { PeerCapacityWitness } from "./peer-capacity.js";
 import { TRUNK_RUNNER_LABEL } from "./runner-labels.js";
 import { adoptRunnerAssignment } from "./runner-lease-adoption.js";
 
@@ -167,11 +168,9 @@ export function createHostedRelayRuntime(options: {
 	headroomFleetDeferMs?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["headroomFleetDeferMs"];
-	/** See `HostedRelay`: free slots dispatch reads to defer trunk work. */
+	/** See `HostedRelay`: this box's free slots against its fleet's capacity. */
 	fleetCapacity?: Readonly<{
-		snapshot: () => Promise<
-			Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>
-		>;
+		snapshot: () => Promise<PeerCapacityWitness & { hoboFreeSlots: number }>;
 	}>;
 	/** Release reservations that never launch within policy bounds. */
 	unlaunchedReservationRelease?: ConstructorParameters<

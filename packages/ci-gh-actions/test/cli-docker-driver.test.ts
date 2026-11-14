@@ -16,7 +16,7 @@ import {
 
 describe("cli docker driver socket mount", () => {
 	it("adds the socket bind mount and matching --group-add for the socket gid", () => {
-		const args = dockerSocketMountCreateArgs({}, () => ({ gid: 998 }));
+		const args = dockerSocketMountCreateArgs(true, () => 998);
 		expect(args).toEqual([
 			"-v",
 			"/var/run/docker.sock:/var/run/docker.sock",
@@ -25,10 +25,8 @@ describe("cli docker driver socket mount", () => {
 		]);
 	});
 
-	it("omits socket flags when HOBO_CI_MOUNT_DOCKER_SOCKET=0", () => {
-		expect(
-			dockerSocketMountCreateArgs({ HOBO_CI_MOUNT_DOCKER_SOCKET: "0" }),
-		).toEqual([]);
+	it("omits socket flags unless the fleet allows host Docker", () => {
+		expect(dockerSocketMountCreateArgs(false, () => 998)).toEqual([]);
 	});
 });
 

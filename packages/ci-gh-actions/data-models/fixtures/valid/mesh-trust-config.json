@@ -1,7 +1,0 @@
-{
-  "trustedKeys": [
-    { "publicKey": "pd9eXPPYfLVgqaVhrA0ACZA8nfqeSr-azekKYv3TGM4", "nodeId": "box-a" },
-    { "publicKey": "q0yB3J8C8nN0zE2r1m4p5s6t7u8v9w0x1y2z3A4B5C6" }
-  ],
-  "requireTrusted": true
-}

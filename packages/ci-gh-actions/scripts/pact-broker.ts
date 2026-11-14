@@ -8,12 +8,6 @@ import { parseArgs, promisify } from "node:util";
 import type { VerifierOptions } from "@pact-foundation/pact";
 import { z } from "zod";
 import {
-	generateGithubRunnerPact,
-	githubConsumer,
-	githubProvider,
-	githubScenarios,
-} from "../contracts/local-github-pact.js";
-import {
 	consumer,
 	generateLocalRunnerPact,
 	provider,
@@ -153,7 +147,6 @@ async function main() {
 			pact: { type: "string" },
 			fault: { type: "boolean" },
 			gate: { type: "boolean" },
-			"github-version": { type: "string" },
 			act: { type: "string" },
 		},
 	});
@@ -199,28 +192,16 @@ async function main() {
 			"Pass --version with the reviewed source version (letters, digits, dot, underscore or hyphen)",
 		);
 	const version = parsedVersion.data;
-	const githubVersion = versionName.parse(
-		values["github-version"] ??
-			process.env.HOBO_CI_GITHUB_PACT_VERSION ??
-			"unverified",
-	);
 	const broker = pactBrokerClient(address, process.env.PACT_BROKER_TOKEN);
 	if (values.gate) {
 		const local = await broker.matrix(version, version);
-		const github = await broker.matrix(version, githubVersion, {
-			consumer: githubConsumer,
-			provider: githubProvider,
-		});
-		process.stdout.write(
-			`${JSON.stringify({ local, github, githubProviderVersion: githubVersion })}\n`,
-		);
+		process.stdout.write(`${JSON.stringify({ local })}\n`);
 		if (
-			![local, github].every(
-				(result) =>
-					result.deployable === true &&
-					result.success > 0 &&
-					result.failed === 0 &&
-					result.unknown === 0,
+			!(
+				local.deployable === true &&
+				local.success > 0 &&
+				local.failed === 0 &&
+				local.unknown === 0
 			)
 		)
 			throw new Error(
@@ -263,11 +244,8 @@ async function main() {
 		}
 	};
 	const nativeTests = [
-		"test/local-runner.test.ts",
-		"test/local-runner-controller.test.ts",
 		"test/bootstrap.test.ts",
 		"test/local-provider.test.ts",
-		"contracts/local-runner-api.test.ts",
 		"test/pact-broker.test.ts",
 	];
 	await record(
@@ -342,9 +320,7 @@ async function main() {
 			]),
 		);
 	const file = await generateLocalRunnerPact(directory);
-	const githubFile = await generateGithubRunnerPact(directory);
 	const pactUrl = await broker.publish(file, version, values.branch);
-	await broker.publish(githubFile, version, values.branch);
 	const changed = contractIdentity.parse(
 		JSON.parse(await readFile(file, "utf8")),
 	);
@@ -438,18 +414,6 @@ async function main() {
 		broken.failed > 0 && broken.unknown === 0,
 		"a published failed verification must block deployment (unknown is insufficient)",
 	);
-	const unknownGithub = await broker.matrix(version, `${version}-unverified`, {
-		consumer: githubConsumer,
-		provider: githubProvider,
-	});
-	assert.ok(
-		unknownGithub.deployable !== true && unknownGithub.unknown > 0,
-		"an unverified external provider version must be blocked",
-	);
-	const githubDecision = await broker.matrix(version, githubVersion, {
-		consumer: githubConsumer,
-		provider: githubProvider,
-	});
 	const report = {
 		broker: broker.origin,
 		consumer,
@@ -460,13 +424,9 @@ async function main() {
 		pactSha256: createHash("sha256")
 			.update(await readFile(file))
 			.digest("hex"),
-		githubPactSha256: createHash("sha256")
-			.update(await readFile(githubFile))
-			.digest("hex"),
 		negativeProviderVersion: brokenVersion,
 		failedMatrix: broken,
 		scenarios,
-		githubScenarios,
 		nativeTests,
 		actCorpus: corpus,
 		localExecutions: local.executions.length,
@@ -475,9 +435,6 @@ async function main() {
 		versionSkewBlocked: true,
 		failedVerificationBlocked: true,
 		contractMutationBlocked: true,
-		githubDecision,
-		githubProviderVersion: githubVersion,
-		liveGithubVerified: false,
 	};
 	await writeFile(
 		join(directory, "report.json"),

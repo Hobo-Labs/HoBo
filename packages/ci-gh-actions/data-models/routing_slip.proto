@@ -31,7 +31,9 @@ message RoutingSlipClass {
 
 // The relay that wrote the slip.
 message RoutingSlipRelay {
-  // The mesh node id, `^[A-Za-z0-9_-]{1,64}$`.
+  // The fleet member id of the writing dispatcher (rank 0 of the fleet's
+  // DISPATCHER members), or the box's own name outside a fleet:
+  // `^[A-Za-z0-9_-]{1,64}$`.
   string node_id = 1;
   // The commit the relay's daemon runs: 7 to 40 lower-case hex digits.
   string commit = 2;

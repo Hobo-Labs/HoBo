@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-	fleetCanAbsorbUnlaunchedRelease,
 	isUnlaunchedReservation,
+	peersCanAbsorbUnlaunchedRelease,
 	pickTrunkHeadroomFleetReleases,
 	pickUnlaunchedReservationsToRelease,
 	unlaunchedReleaseReason,
@@ -42,19 +42,18 @@ describe("unlaunched reservation release", () => {
 		).toBe(false);
 	});
 
-	it("accepts mesh peer headroom when arc is zero", () => {
+	it("accepts fleet peer headroom beyond this box's own slots", () => {
 		expect(
-			fleetCanAbsorbUnlaunchedRelease({
+			peersCanAbsorbUnlaunchedRelease({
 				hoboFreeSlots: 1,
-				arcFreeSlots: 0,
-				meshFreeSlots: 3,
+				fleetFreeSlots: 3,
 			}),
 		).toBe(true);
 	});
 
 	it("refuses release when fleet witnesses report no non-local capacity", () => {
-		expect(fleetCanAbsorbUnlaunchedRelease({ arcFreeSlots: 0 })).toBe(false);
-		expect(fleetCanAbsorbUnlaunchedRelease(undefined)).toBe(false);
+		expect(peersCanAbsorbUnlaunchedRelease({ fleetFreeSlots: 0 })).toBe(false);
+		expect(peersCanAbsorbUnlaunchedRelease(undefined)).toBe(false);
 		const nowMs = Date.parse("2026-11-11T12:01:00.000Z");
 		const reason = unlaunchedReleaseReason(baseLease, nowMs, {
 			...baseContext,
@@ -180,7 +179,7 @@ describe("unlaunched reservation release", () => {
 				nowMs,
 				{
 					deferMs: 45_000,
-					fleetWitness: { arcFreeSlots: 2, hoboFreeSlots: 0 },
+					fleetWitness: { fleetFreeSlots: 2, hoboFreeSlots: 0 },
 				},
 			);
 			expect(releases).toEqual([

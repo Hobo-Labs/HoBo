@@ -25,9 +25,9 @@ import {
 } from "../runner-labels.js";
 import { parseRunnerRouting, type RunnerRouting } from "../runner-routing.js";
 import {
-	FLEET_VERDICT_ENTER_MS,
-	FLEET_VERDICT_EXIT_MS,
-} from "./fleet-verdict-state.js";
+	ROUTING_HOLD_ENTER_MS,
+	ROUTING_HOLD_EXIT_MS,
+} from "./routing-slip-state.js";
 import {
 	DEFAULT_WORKER_MERGE_GROUP_LEASES,
 	DEFAULT_WORKER_PR_CAP_WITH_TRUNK,
@@ -63,8 +63,8 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 	mainGate: { reuseMergeQueue: true },
 	verdict: {
 		minFreeRunners: DEFAULT_FLEET_MIN_FREE_RUNNERS,
-		enterMs: FLEET_VERDICT_ENTER_MS,
-		exitMs: FLEET_VERDICT_EXIT_MS,
+		enterMs: ROUTING_HOLD_ENTER_MS,
+		exitMs: ROUTING_HOLD_EXIT_MS,
 		stallMs: DEFAULT_ROUTING_STALL_MS,
 	},
 	box: {
