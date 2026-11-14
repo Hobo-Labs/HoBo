@@ -321,17 +321,19 @@ describe("attachCampToYard", () => {
 		).toThrow(TypeError);
 	});
 
-	it("refuses to re-attach to a different provider", () => {
-		// Silently re-deriving would let one Camp object mean two providers.
+	it("moves an attached Camp to a different provider Yard", () => {
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "y1",
 			providerId: "aws",
 		});
 		expect(
-			codeOf(() =>
-				attachCampToYard(attached, { yardId: "y2", providerId: "gcp" }),
-			),
-		).toBe(CAMP_MIGRATION_CODE);
+			attachCampToYard(attached, { yardId: "y2", providerId: "gcp" }),
+		).toMatchObject({
+			id: "y2/prod",
+			logicalId: "y1/y1/prod",
+			derivedProviderId: "gcp",
+			enclosingYardId: "y2",
+		});
 	});
 
 	it("permits re-attaching to the same provider", () => {

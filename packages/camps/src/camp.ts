@@ -14,7 +14,9 @@ import {
 	TOPOLOGY_CONTRACT_VERSION,
 } from "./types.js";
 
+// public-contract: stable error code for a Camp attempting to select a provider.
 export const CAMP_MIGRATION_CODE = "camp-provider-selection-forbidden" as const;
+// public-contract: stable error code for a Camp attempting to own a Bindle.
 export const CAMP_BINDLE_OWNERSHIP_FORBIDDEN =
 	"camp-bindle-ownership-forbidden" as const;
 
@@ -27,6 +29,8 @@ export function camp(name: string, config: CampConfig = {}): Camp {
 	if (!isPlainObject(config)) {
 		throw new TypeError("camp config must be an object");
 	}
+	if (config.logicalId !== undefined && !validLogicalId(config.logicalId))
+		throw new TypeError("camp logicalId must be a non-empty stable identity");
 
 	if (config.bindle !== undefined) {
 		throw Object.assign(
@@ -109,6 +113,9 @@ export function camp(name: string, config: CampConfig = {}): Camp {
 		contract: TOPOLOGY_CONTRACT_VERSION,
 		id,
 		name: id,
+		...(typeof config.logicalId === "string"
+			? { logicalId: config.logicalId }
+			: {}),
 		env,
 		envType,
 		...(tier !== undefined ? { tier } : {}),
@@ -123,8 +130,8 @@ export function camp(name: string, config: CampConfig = {}): Camp {
 }
 
 /**
- * Attach a Camp into a Yard: derive provider from the Yard (never override).
- * Canonical identity becomes `<yardId>/<campId>`.
+ * Attach a Camp into a Yard: derive provider from this Yard and retain the
+ * logical identity and provider-neutral declaration across later moves.
  */
 export function attachCampToYard(
 	campObject: Camp,
@@ -141,8 +148,16 @@ export function attachCampToYard(
 	requireName("yard id", options.yardId);
 	requireName("provider id", options.providerId);
 	if (
+		campObject.logicalId !== undefined &&
+		!validLogicalId(campObject.logicalId)
+	)
+		throw new TypeError("camp logicalId must be a non-empty stable identity");
+	const origin = campObject.enclosingYardId;
+	if (
 		campObject.derivedProviderId !== undefined &&
-		campObject.derivedProviderId !== options.providerId
+		(!origin ||
+			(origin === options.yardId &&
+				campObject.derivedProviderId !== options.providerId))
 	) {
 		throw Object.assign(
 			new Error(
@@ -151,19 +166,47 @@ export function attachCampToYard(
 			{ code: CAMP_MIGRATION_CODE },
 		);
 	}
+	if (
+		origin &&
+		(!campObject.derivedProviderId ||
+			!campObject.placementDeclaration ||
+			!campObject.id.startsWith(`${origin}/`) ||
+			campObject.id.slice(origin.length + 1).includes("/") ||
+			!campObject.id.slice(origin.length + 1) ||
+			!campObject.logicalId)
+	)
+		throw new Error(
+			"Camp placement does not retain a valid provider-neutral declaration",
+		);
+	const localId = origin
+		? campObject.id.slice(origin.length + 1)
+		: campObject.id;
+	const declaration = campObject.placementDeclaration ?? {
+		resolverConfig: campObject.resolverConfig,
+		resourceMappings: campObject.resourceMappings,
+	};
+	const moving = origin !== undefined && origin !== options.yardId;
 	const mergedResolvers = mergeResolverConfig(
-		campObject.resolverConfig,
+		moving ? declaration.resolverConfig : campObject.resolverConfig,
 		parseResolverConfig(options.resolverConfig),
 	);
 	const mappings =
 		options.resourceMappings !== undefined
 			? parseResourceMappings(options.resourceMappings)
-			: campObject.resourceMappings;
+			: moving
+				? declaration.resourceMappings
+				: campObject.resourceMappings;
 
 	return deepFreeze({
 		...campObject,
-		id: `${options.yardId}/${campObject.id}`,
-		name: `${options.yardId}/${campObject.id}`,
+		id: `${options.yardId}/${localId}`,
+		name: `${options.yardId}/${localId}`,
+		// The first placement's existing CD identity must remain addressable by
+		// its journal after an upgrade. It is an opaque id, never a constraint
+		// on the Yard to which the Camp may subsequently move.
+		logicalId:
+			campObject.logicalId ?? `${options.yardId}/${options.yardId}/${localId}`,
+		placementDeclaration: declaration,
 		derivedProviderId: options.providerId,
 		enclosingYardId: options.yardId,
 		resolverConfig: mergedResolvers,
@@ -243,6 +286,7 @@ export function campToShape(campObject: Camp): CampShape {
 		: campObject.id;
 	const shape: CampShape = {
 		id: localId,
+		...(campObject.logicalId ? { logicalId: campObject.logicalId } : {}),
 		env: campObject.env,
 		envType: campObject.envType,
 		require: campObject.require,
@@ -499,6 +543,19 @@ function requireName(label: string, value: string): void {
 	if (typeof value !== "string" || value.length === 0) {
 		throw new TypeError(`${label} must be a non-empty string`);
 	}
+}
+
+function validLogicalId(value: unknown): value is string {
+	return (
+		typeof value === "string" &&
+		value.length > 0 &&
+		value.length <= 512 &&
+		value === value.trim() &&
+		!Array.from(value).some((character) => {
+			const code = character.charCodeAt(0);
+			return code < 32 || code === 127;
+		})
+	);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

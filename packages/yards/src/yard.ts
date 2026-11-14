@@ -20,6 +20,7 @@ import {
 } from "./canonical.js";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
+// public-contract: version tag serialized on Yard topology objects.
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 
 /**
@@ -86,14 +87,6 @@ export function yard(name: string, config: YardConfig): Yard {
 	for (const entry of campsInput) {
 		if (entry?.kind !== "camp") {
 			throw new TypeError("yard camps must be Camp objects");
-		}
-		if (
-			entry.derivedProviderId !== undefined &&
-			entry.derivedProviderId !== providerId
-		) {
-			throw new Error(
-				`Yard ${name} cannot attach camp with provider ${entry.derivedProviderId} (yard provider is ${providerId})`,
-			);
 		}
 	}
 
@@ -184,6 +177,7 @@ export function yardToContract(yardObject: Yard): {
  */
 export interface CampContract {
 	readonly id?: string;
+	readonly logicalId?: string;
 	readonly env?: string;
 	readonly envType?: string;
 	readonly require: readonly string[];
@@ -198,6 +192,7 @@ function campToContract(campObject: Camp): CampContract {
 		: campObject.id;
 	return deepFreeze({
 		id: localId,
+		...(campObject.logicalId ? { logicalId: campObject.logicalId } : undefined),
 		env: campObject.env,
 		envType: campObject.envType,
 		require: campObject.require,
