@@ -99,6 +99,8 @@ export function createBindlesPublicApiSnapshot(
 		"evaluateBindingDeliveryGate",
 		"isForbiddenSecretEnvKey",
 		"looksLikeSecretEnvValue",
+		// Domain and provider boundaries: a Yard holds nothing external
+		"externalBoundaryViolations",
 		// ADR-0142 classification
 		"CONFIG_SENSITIVITY",
 		"sensitivityForField",
