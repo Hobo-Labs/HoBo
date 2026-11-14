@@ -16,6 +16,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	createYardClient,
+	planHostingAuthoritatively,
 	type YardRuntime,
 	type YardSession,
 } from "../src/cloud/yard-client.js";
@@ -163,6 +164,16 @@ function fixture() {
 		hostingBudgetAuthority: authority,
 		defaultHostingBudgetId: "hosting",
 		hostingBudgetRequired: true,
+		hostingPlanBinding: async () => ({
+			yard: { yardId: "yard", providerId: "host", bindings: [] },
+			definitions: [],
+			// SAFETY: this fixture declares no profile-specific requirements.
+			profiles: {} as PlanBindingAuthority["profiles"],
+			// SAFETY: this fixture declares no profile-specific requirements.
+			policy: {} as PlanBindingAuthority["policy"],
+			nowMs: 1000,
+			requirements: {},
+		}),
 		hostingExecution: {
 			up: async ({ admission }) => {
 				supervised++;
@@ -238,8 +249,49 @@ describe("production CLI budget execution", () => {
 			code: "HOBO_PLAN_TARGET_UNAVAILABLE",
 		});
 		expect(subjects).toEqual([]);
-		const cli = createHoboCli({
+		const unbound = createHoboCli({
 			commands: { plan: createPlanCommand({ preflightRuntime, session }) },
+		});
+		const missingBinding = await unbound.run(["plan", "--json"], { cwd });
+		expect(JSON.parse(missingBinding.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_PLAN_REJECTED",
+		});
+		expect(subjects).toEqual([]);
+		const binding: PlanBindingAuthority = {
+			yard: { yardId: "yard", providerId: "host", bindings: [] },
+			definitions: [],
+			// SAFETY: no resource has a profile requirement in this fixture.
+			profiles: {} as PlanBindingAuthority["profiles"],
+			// SAFETY: no resource has a profile requirement in this fixture.
+			policy: {} as PlanBindingAuthority["policy"],
+			nowMs: 1000,
+			requirements: {},
+		};
+		const boundRuntime = {
+			...preflightRuntime,
+			hostingPlanBinding: async () => {
+				expect(subjects).toEqual([]);
+				return binding;
+			},
+		};
+		await expect(
+			planHostingAuthoritatively(
+				{
+					...boundRuntime,
+					hostingPlanBinding: async () => {
+						throw new Error("untrusted session");
+					},
+				},
+				manifest,
+				{ deploymentId: "one", session },
+			),
+		).rejects.toThrow("untrusted session");
+		expect(subjects).toEqual([]);
+		const cli = createHoboCli({
+			commands: {
+				plan: createPlanCommand({ preflightRuntime: boundRuntime, session }),
+			},
 		});
 		const planned = await cli.run(["plan", "--region", "us", "--json"], {
 			cwd,
@@ -298,6 +350,22 @@ describe("production CLI budget execution", () => {
 			).ok,
 		).toBe(true);
 		expect(fx.counts().reservations).toBe(0);
+	});
+	it("refuses budget-required planning without a host Yard binding", async () => {
+		const fx = fixture();
+		const { hostingPlanBinding: _removed, ...runtime } = fx.runtime;
+		const result = await createYardClient(runtime).planAuthoritatively(
+			manifest,
+			{ deploymentId: "one", session },
+		);
+		expect(result).toMatchObject({ ok: false });
+		if (!result.ok) expect(result.reason).toContain("trusted Yard binding");
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
 	});
 	it("checks trusted Yard product ownership during authoritative planning", async () => {
 		const fx = fixture();

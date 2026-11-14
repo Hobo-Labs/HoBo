@@ -396,10 +396,13 @@ export async function planHostingAuthoritatively(
 		deploymentId,
 		session,
 		config,
+		requireYardBinding = runtime.hostingBudgetRequired === true,
 	}: {
 		readonly deploymentId: string;
 		readonly session: YardSession;
 		readonly config?: DeployConfig;
+		/** A hosted preflight must identify its provider boundary. */
+		readonly requireYardBinding?: boolean;
 	},
 ): Promise<PlanRendered> {
 	const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
@@ -413,6 +416,20 @@ export async function planHostingAuthoritatively(
 			ok: false,
 			deploymentId,
 			reason: "authoritative hosting budget is not configured",
+			remediations: [],
+		};
+	// The host binding authenticates the session and identifies the selected
+	// Yard. Resolve it before reading budget evidence for the supplied tenant.
+	const binding = await runtime.hostingPlanBinding?.({
+		deploymentId,
+		bindle,
+		session,
+	});
+	if (requireYardBinding && !binding)
+		return {
+			ok: false,
+			deploymentId,
+			reason: "trusted Yard binding is not configured",
 			remediations: [],
 		};
 	const evidence = await authority.resolve({
@@ -429,11 +446,6 @@ export async function planHostingAuthoritatively(
 		evidence.budget.budgetId !== budgetId
 	)
 		throw new Error("hosting evidence belongs to another tenant or budget");
-	const binding = await runtime.hostingPlanBinding?.({
-		deploymentId,
-		bindle,
-		session,
-	});
 	const result = planDeployment(
 		bindle,
 		{
