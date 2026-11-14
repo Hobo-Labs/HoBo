@@ -157,6 +157,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   can start within the queue deadline. Explicit pins, a missing or invalid committed routing policy,
   a single shard, other events, and a failed or mismatched repository read retain the original route.
   The visibility observation does not prove future capacity, total job cost, or budget admission.
+  The routed workspace shards still check the sibling pins after checkout and before installing;
+  `scripts/test/pins-wiring.test.ts` verifies that order and the shard's runner fallback.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
   do not collide on `upload-artifact`)

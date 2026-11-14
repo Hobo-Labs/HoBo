@@ -69,11 +69,19 @@ describe("pins wiring", () => {
 				`${name}: status follows checkout`,
 			);
 			assert.ok(install > status, `${name}: status precedes pnpm install`);
-			// The fleet, or the route job's choice (GitHub-hosted when it did not run).
-			assert.match(
-				job,
-				/runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo'|\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\})/u,
-			);
+			// Only workspace shards may use the batch route, which falls back to
+			// the run's route and then to GitHub-hosted when no route is available.
+			if (name === "workspace_tests") {
+				assert.match(
+					job,
+					/runs-on:\s*\$\{\{ needs\.pr_gate_validation\.outputs\.shard_runner \|\| needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
+				);
+			} else {
+				assert.match(
+					job,
+					/runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo'|\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\})/u,
+				);
+			}
 		}
 	});
 
