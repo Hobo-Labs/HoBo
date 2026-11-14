@@ -99,7 +99,7 @@ async function openFleet(
 	const shortfalls = continuityShortfalls(plan, {
 		standbys: Math.max(0, selection.members.length - 1),
 		tickEveryMs: plan.copyEveryMs,
-		vendors: selection.members.length,
+		// Member names and URLs do not establish independent failure domains.
 		witnesses: selection.witnesses.length,
 	}).map((shortfall) => shortfall.message);
 	if (shortfalls.length > 0)
