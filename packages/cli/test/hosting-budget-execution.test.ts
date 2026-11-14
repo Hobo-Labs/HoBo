@@ -232,6 +232,77 @@ describe("production CLI budget execution", () => {
 			teardowns: 0,
 		});
 	});
+	it("plans through read-only hosting authority using the authenticated session", async () => {
+		const fx = fixture();
+		const authority = fx.runtime.hostingBudgetAuthority;
+		if (!authority) throw new Error("missing hosting authority");
+		const cwd = mkdtempSync(join(tmpdir(), "cli-hosting-plan-"));
+		dispose.push(() => rmSync(cwd, { recursive: true, force: true }));
+		writeFileSync(
+			join(cwd, "hobo.bindle.json"),
+			JSON.stringify(manifest.value),
+		);
+		const subjects: string[] = [];
+		const preflightRuntime = {
+			registry: {
+				...fx.runtime.registry,
+				refresh: async () => {
+					throw new Error("read-only planning must not refresh mutable state");
+				},
+			},
+			hostingBudgetAuthority: {
+				persistence: authority.persistence,
+				resolve: async (request: Parameters<typeof authority.resolve>[0]) => {
+					subjects.push(`${request.tenantId}:${request.budgetId}`);
+					return authority.resolve(request);
+				},
+			},
+			defaultHostingBudgetId: "hosting",
+			hostingBudgetRequired: true,
+		};
+		const missingSession = createHoboCli({
+			commands: { plan: createPlanCommand({ preflightRuntime }) },
+		});
+		const rejected = await missingSession.run(["plan", "--json"], { cwd });
+		expect(JSON.parse(rejected.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_HOSTING_SESSION_REQUIRED",
+		});
+		expect(subjects).toEqual([]);
+		const foreignTarget = await missingSession.run(
+			["--camp", "another-camp", "plan", "--json"],
+			{ cwd },
+		);
+		expect(JSON.parse(foreignTarget.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_PLAN_TARGET_UNAVAILABLE",
+		});
+		expect(subjects).toEqual([]);
+		const cli = createHoboCli({
+			commands: { plan: createPlanCommand({ preflightRuntime, session }) },
+		});
+		const planned = await cli.run(["plan", "--region", "us", "--json"], {
+			cwd,
+		});
+		expect(JSON.parse(planned.stdout)).toMatchObject({
+			ok: true,
+			data: { command: "plan", resources: [{ name: "app" }] },
+		});
+		expect(subjects).toEqual(["tenant:hosting"]);
+		expect(JSON.parse(planned.stdout).data.changes).toBeUndefined();
+		const unsupported = await cli.run(["plan", "--mode", "complete", "--json"], { cwd });
+		expect(JSON.parse(unsupported.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_DEPLOYMENT_MODE_UNSUPPORTED",
+		});
+		expect(subjects).toEqual(["tenant:hosting"]);
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
+	});
 	it("forwards authoritative admission to the supervisor without legacy provider effects", async () => {
 		const fx = fixture();
 		expect(
