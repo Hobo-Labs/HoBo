@@ -23,6 +23,10 @@ import { PostgresDataError } from "../errors.js";
 import { LOGICAL_COPY_PROFILE } from "../migration-profiles.js";
 import { createCapturePort } from "./capture.js";
 import type { PostgresExecutor } from "./executor.js";
+import {
+	createFenceOperationPort,
+	type FenceOperationReceiverKeys,
+} from "./fence-operation.js";
 import { parseNamespace, parseTableName } from "./identifiers.js";
 import { createNativeTransferPort } from "./native.js";
 import { createSchemaPort } from "./schema-port.js";
@@ -113,6 +117,8 @@ export interface PostgresEngineOptions {
 	 * capture become ineligible instead of failing at run time.
 	 */
 	readonly capture?: boolean;
+	/** Independently enrolled public keys of destination routing receivers. */
+	readonly operationReceivers?: FenceOperationReceiverKeys;
 	/** Tables in the namespace the schema port snapshots and restores. */
 	readonly schemaTables?: readonly string[];
 	/** Rows per keyset page when digesting. Defaults to 1000. */
@@ -236,6 +242,10 @@ export function createPostgresEngine(
 		namespace,
 		pageSize: parsePageSize(options.pageSize),
 	});
+	const fenceOperation = createFenceOperationPort(
+		store,
+		options.operationReceivers,
+	);
 	// The capture machinery exists either way, so an ephemeral close can
 	// clean up subscriptions an earlier binding left in this namespace.
 	const pollIntervalMs = parsePollInterval(options.nativePollIntervalMs);
@@ -321,6 +331,7 @@ export function createPostgresEngine(
 			digest: (request) => store.digest(request.scope, request.buckets),
 		},
 		fence: {
+			...(fenceOperation ? { operation: fenceOperation } : undefined),
 			async raise(request) {
 				return {
 					fenceToken: await store.raiseFence(request.scope, request.reason),
@@ -370,6 +381,10 @@ export function createPostgresEngine(
 			if (options.ephemeral !== true || !store.touched) return;
 			// Native transfers first: a subscription still attached holds its
 			// slot, which the capture sweep below would then fail to drop.
+			// Logical-slot and subscription operations run outside SQL
+			// transactions. An enrolled host must separately prove that old
+			// cleanup workers have stopped before admitting a handover.
+			await store.assertNamespaceDisposable();
 			await native.stopAll();
 			await capture.stopAll();
 			await schema.dropAllSnapshots();

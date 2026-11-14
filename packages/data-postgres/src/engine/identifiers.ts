@@ -20,6 +20,9 @@ export const OPEN_FIELDS_COLUMN = "hobo_extra";
 export const METADATA_TABLES = Object.freeze({
 	datasets: "hobo_data_datasets",
 	fences: "hobo_data_fences",
+	fenceOperations: "hobo_data_fence_operations",
+	fencePolicy: "hobo_data_fence_policy",
+	fenceReceivers: "hobo_data_fence_receivers",
 	watermarks: "hobo_data_watermarks",
 	subscriptions: "hobo_data_subscriptions",
 	schemaSnapshots: "hobo_data_schema_snapshots",
