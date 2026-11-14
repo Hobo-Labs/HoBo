@@ -121,6 +121,12 @@ its store is the [cache store](../ci-gh-actions/README.md#relay-cache-store) in
 migrations were removed in phase 7 of that design. The rules below hold for
 both stores.
 
+The budget-authority tests in `test/shared-budget*.test.ts` run against a real
+PostgreSQL server (pg-mem cannot prove row locks). `HOBO_TEST_POSTGRES_URL`
+names one; when it is unset, the Vitest global setup
+(`test/support/postgres-global-setup.ts`) starts an ephemeral local cluster from
+PostgreSQL 16+ server binaries on a private Unix socket and removes it after the run.
+
 The signed webhook body is hashed independently of GitHub's unsigned delivery
 ID and event headers. Exact byte-identical bodies for one installation received
 within 24 hours are acknowledged as duplicates without creating another inbox
