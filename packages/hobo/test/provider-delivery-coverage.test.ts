@@ -42,8 +42,7 @@ const PROVIDERS_ROOT = fileURLToPath(
 );
 const PORTABLE_OFFERINGS = 17;
 const COVERAGE_CONTRACT = "hobo.provider-hosting-coverage/v1";
-const PENDING_SIBLING =
-	"skipped until the provider package adds this export";
+const PENDING_SIBLING = "skipped until the provider package adds this export";
 const WP13_PACKAGES = new Set([
 	"@hobo/provider-convex",
 	"@hobo/provider-flux",
