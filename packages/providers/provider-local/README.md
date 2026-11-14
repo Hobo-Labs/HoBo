@@ -39,7 +39,9 @@ never claimed.
 
 - **Definitions only.** No engine, driver, or apply loop lives here; the
   single local engine owner is `@hobo/runtime-local`. `executorRef` values
-  name those engines.
+  name those engines. HoBo CD refuses local delivery with
+  `RESOLVER_PRODUCT_UNSUPPORTED` until a local delivery resolver and
+  apply/down executor are wired in.
 - **Not L2-live.** Nothing here ran the six lifecycle cases against real
   local processes. Conformance refs end `@engine-traced@2026-11-08` and the
   shipped constants carry `conformance: "unknown"`,
