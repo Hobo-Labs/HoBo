@@ -2,7 +2,7 @@
 	"name": "@hobo/provider-upstash",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "HoBo Upstash temporary Redis provider: the data-only upstash.temporary-redis/v1 product definition (kv.redis-compatible/v1 native, therefore kv.key-value/v1 by refinement, and nothing queue or topic), a narrow versioned parser for the no-signup start-redis markdown response, an injected-transport driver that deposits the REST token into secret custody before it can reach a receipt, provider-reported expiry, and a console claim ceremony with a blocking post-claim token rotation.",
+	"description": "Upstash temporary Redis provider and scoped, budget-aware private Blob credential and pricing primitives.",
 	"type": "module",
 	"files": [
 		"LICENSE",
@@ -26,6 +26,7 @@
 		"@hobo/provider-redaction": "workspace:*"
 	},
 	"devDependencies": {
+		"@hobo/broker": "workspace:*",
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"

@@ -2721,6 +2721,9 @@ importers:
         specifier: workspace:*
         version: link:../../provider-redaction
     devDependencies:
+      '@hobo/broker':
+        specifier: workspace:*
+        version: link:../../broker
       '@hobo/redaction-test-harness':
         specifier: workspace:*
         version: link:../../redaction-test-harness
