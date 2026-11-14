@@ -149,6 +149,46 @@ function fixture() {
 	};
 }
 describe("durable application lifecycle gate", () => {
+	it("rejects trailing line terminators in scope, operation and evidence identities", async () => {
+		const f = fixture();
+		try {
+			for (const suffix of ["\n", "\r", "\u2028", "\u2029"]) {
+				for (const field of [
+					"tenantId",
+					"serviceId",
+					"incarnationId",
+				] as const) {
+					const scope = {
+						...f.options.scope,
+						[field]: `${f.options.scope[field]}${suffix}`,
+					};
+					// SAFETY: the fixture supplies the same fenced store as the valid case;
+					// this call tests only the malformed scope identity.
+					expect(() =>
+						createDurableLifecycleGate({ ...f.options, scope } as never),
+					).toThrow();
+				}
+				await expect(f.gate.initialize(`deploy${suffix}`)).rejects.toThrow();
+			}
+			await f.gate.initialize("deploy");
+			const participant = await f.gate.begin("worker");
+			f.setTerminated(true);
+			for (const suffix of ["\n", "\r", "\u2028", "\u2029"]) {
+				await expect(f.gate.drain(`stop${suffix}`)).rejects.toThrow();
+				await expect(
+					f.gate.retireParticipant(
+						"stop",
+						participant.id,
+						`provider:termination${suffix}`,
+					),
+				).rejects.toThrow();
+			}
+			expect((await f.gate.status()).participants).toHaveLength(1);
+			await participant.finish();
+		} finally {
+			f.close();
+		}
+	});
 	it("rechecks funding and drain proof immediately before committing a transition", async () => {
 		const f = fixture();
 		try {

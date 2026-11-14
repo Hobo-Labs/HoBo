@@ -75,8 +75,8 @@ export interface DurableLifecycleGateOptions {
 		readonly evidenceRef: string;
 	}) => Promise<void>;
 }
-const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/u;
-const REF = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}$/u;
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}(?![\s\S])/u;
+const REF = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}(?![\s\S])/u;
 function fail(): never {
 	throw new Error(
 		"durable lifecycle gate is unavailable or its scope is invalid",
