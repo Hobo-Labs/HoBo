@@ -36,6 +36,13 @@ operator  revoke(id)                                 governed reconciler.revoke 
 
 `hobo deploy agent token|enroll|approve-key|accept|run|revoke` are aliases of
 `hobo fleet token create|enroll --token-file|member approve|member accept|run|member revoke`.
+On the agent's host, `generateReconcilerKeys()` makes its identity (P-256),
+SIGN (Ed25519) and SEAL (X25519) private JWKs, which stay there (written
+`0600` under `--key-dir`), and `reconcilerEnrollment(...)` builds the
+`EnrollmentRequest` (role RECONCILER, key bundle 1 signed by the identity key,
+the bootstrap token as proof) and a bare DPoP proof by the identity key for
+`<authority>/v1/fleet/members`. `agent enroll --token <value>` is refused
+with `token-on-command-line`.
 
 ## Ports
 

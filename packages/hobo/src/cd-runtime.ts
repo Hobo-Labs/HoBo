@@ -15,10 +15,12 @@ import { canonicalManifestHash } from "@hobo/bindles";
 import {
 	ArtifactKind,
 	type CampId,
+	type CampMembers,
 	type CampReconciler,
 	type CampTopology,
 	type CdContext,
 	type CredentialResolver,
+	type DeliveryFleet,
 	DeltaRecordSchema,
 	type DesiredStateReader,
 	type FreightId,
@@ -171,6 +173,14 @@ export type CdRuntimeOptions = Readonly<{
 	 * line on stderr, event `hobo_cd_runner_host_ingest_failed`).
 	 */
 	onRunnerHostIngestError?: (error: Error) => void;
+	/**
+	 * The fleet the Station's reconcilers enroll in (L19): a reconciler is a
+	 * fleet DEVICE with role RECONCILER. Absent: `agent token` and
+	 * `agent enroll` refuse with `fleet-unavailable`.
+	 */
+	fleet?: DeliveryFleet;
+	/** The Camp mapper's fleet registry and Yard-to-fleet map (L19); absent: Camps carry no member lifecycle. */
+	members?: CampMembers;
 }>;
 
 export type CdRuntime = Readonly<{
@@ -488,6 +498,10 @@ export async function openCdRuntime(
 		trustPolicy: options.trustPolicy ?? {},
 		policyPack,
 		topology,
+		...(options.fleet !== undefined ? { fleet: options.fleet } : undefined),
+		...(options.members !== undefined
+			? { members: options.members }
+			: undefined),
 		railCatalog,
 		readRailEvents: createJournalRailEventReader({ store }),
 		...(options.readCiEvents
@@ -1092,6 +1106,8 @@ export function agentReconciler(
 		reconcilerId: string;
 		privateJwk: CdJsonObject;
 		svid: string;
+		/** The current member SVID (the fleet agent keeps it fresh); read before each request when set. */
+		credential?: () => Promise<string>;
 		campIds: readonly CampId[];
 		realizer: Realizer;
 		store: DurableEventStore;
@@ -1111,6 +1127,7 @@ export function agentReconciler(
 		reconcilerId,
 		privateJwk: input.privateJwk,
 		svid: input.svid,
+		credential: input.credential,
 		now: input.now,
 	});
 	return defaultCdFactories.createCampReconciler({
@@ -1334,6 +1351,9 @@ async function runAgentProcess(
 		// SAFETY: checked to be a JSON object above.
 		privateJwk: parsedKey as CdJsonObject,
 		svid,
+		// `hobo fleet run` refreshes the member SVID in this file; read it before each request.
+		credential: async () =>
+			(await readFile(resolve(input.cwd, svidFile), "utf8")).trim(),
 		// SAFETY: opaque Camp ids; the feed refuses Camps the agent was not accepted for.
 		campIds: camps as CampId[],
 		realizer: input.realizer,

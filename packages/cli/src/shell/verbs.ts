@@ -499,8 +499,10 @@ Promotion:
   hobo deploy preview create <freight> --source-camp <camp> | preview list
   hobo deploy verify show <verification-id>
   hobo deploy metrics [--window-ms <ms>]
-Agents (double opt-in):
+Agents (double opt-in; a reconciler is a fleet device with role RECONCILER):
   hobo deploy agent token|enroll|approve-key|accept|run|revoke
+  aliases of hobo fleet token create|enroll --token-file|member approve|
+  member accept|run|member revoke; --token <value> is refused
 Fleet and policy:
   hobo deploy campset define|list
   hobo deploy camp list|show|taint|untaint|manage
