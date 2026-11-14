@@ -33,8 +33,12 @@ export {
 } from "./binding.js";
 export {
 	createInfisicalClient,
+	createInfisicalPlanObserver,
 	type InfisicalClient,
 	type InfisicalClientOptions,
+	type InfisicalPlanAttempt,
+	type InfisicalPlanLeaseScope,
+	type InfisicalPlanObservation,
 	type InfisicalRetryPolicy,
 } from "./client.js";
 export { InfisicalError, type InfisicalErrorCode } from "./errors.js";
