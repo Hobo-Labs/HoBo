@@ -42,9 +42,10 @@ credentials are in the owner's secret store.
    later runs find the connection and skip the page.
 
 **Connection credentials.** Setup filters known secret environment names and
-secret-shaped values, but that heuristic cannot identify every possible secret;
-unknown names can still reach child processes. Other CI paths still read
-credentials from the environment. The store is found through
+secret-shaped values, but that heuristic cannot identify every possible secret.
+The browser opener receives only an allowlist of desktop and process-location
+variables; loader hooks and arbitrary application variables are excluded.
+Other CI paths still read credentials from the environment. The store is found through
 the committed locator `.hobo/secret-store.json` (which store, its ids, no
 credential). You sign in on the setup page: an Infisical access token from your
 own `infisical login`, the 1Password desktop app (`OP_ACCOUNT`, unlocked with

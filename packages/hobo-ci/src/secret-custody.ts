@@ -13,9 +13,9 @@ import type { Env } from "./secret-stores.js";
 // variable or a `.env` file on disk. Values in hand for a run live in a
 // trusted vault (`createTrustedVault`, `@hobo/core`): memory only.
 //
-// These checks remove known credential names and secret-shaped values before
-// launching a child. They are heuristic: an arbitrary secret under an unknown
-// name may remain. A strict child environment needs an explicit allowlist.
+// Setup settings filter known credential names and secret-shaped values. That
+// filter is heuristic: an arbitrary secret under an unknown name may remain.
+// The browser opener instead receives only the names its platform needs.
 // The source scan covers the named lifecycle sources and keys only.
 
 /** Variables that hold a sign-in or a credential HoBo's lifecycles use. */
@@ -72,6 +72,56 @@ export function withoutSecretEnv(env: Env): PlainEnv {
 	const kept: PlainEnv = {};
 	for (const [name, value] of Object.entries(env))
 		if (value !== undefined && !isSecretEnv(name, value)) kept[name] = value;
+	return kept;
+}
+
+// The platform opener needs desktop/session discovery and ordinary process
+// locations. Do not forward arbitrary application variables or loader hooks.
+const BROWSER_ENV_NAMES: ReadonlySet<string> = new Set([
+	"PATH",
+	"HOME",
+	"USER",
+	"LOGNAME",
+	"LANG",
+	"LANGUAGE",
+	"LC_ALL",
+	"LC_CTYPE",
+	"LC_MESSAGES",
+	"DISPLAY",
+	"WAYLAND_DISPLAY",
+	"XAUTHORITY",
+	"XDG_RUNTIME_DIR",
+	"XDG_CONFIG_HOME",
+	"XDG_DATA_HOME",
+	"XDG_CONFIG_DIRS",
+	"XDG_DATA_DIRS",
+	"XDG_CURRENT_DESKTOP",
+	"XDG_SESSION_DESKTOP",
+	"XDG_SESSION_TYPE",
+	"DESKTOP_SESSION",
+	"DBUS_SESSION_BUS_ADDRESS",
+	"SYSTEMROOT",
+	"WINDIR",
+	"USERPROFILE",
+	"APPDATA",
+	"LOCALAPPDATA",
+	"TEMP",
+	"TMP",
+	"TMPDIR",
+]);
+
+/** An allowlisted desktop environment for the browser opener, with no loader hooks. */
+export function browserEnvironment(env: Env): PlainEnv {
+	const kept: PlainEnv = {};
+	for (const [name, value] of Object.entries(env)) {
+		const lookup = process.platform === "win32" ? name.toUpperCase() : name;
+		if (
+			value !== undefined &&
+			BROWSER_ENV_NAMES.has(lookup) &&
+			!isSecretEnv(name, value)
+		)
+			kept[name] = value;
+	}
 	return kept;
 }
 

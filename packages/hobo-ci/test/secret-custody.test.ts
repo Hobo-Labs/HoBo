@@ -1,4 +1,14 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,6 +67,60 @@ describe("secret custody", () => {
 		expect(notice).toContain("INFISICAL_TOKEN");
 		expect(notice).not.toContain("tok-value");
 	});
+
+	it.skipIf(process.platform !== "linux")(
+		"opens the browser without inheriting unrecognized credentials or loader settings",
+		async () => {
+			const work = mkdtempSync(path.join(tmpdir(), "hobo-browser-env-"));
+			const resultFile = path.join(work, "received");
+			// The temporary directory name is generated locally; quote it for sh.
+			const quotedFile = `'${resultFile.replaceAll("'", "'\\''")}'`;
+			writeFileSync(
+				path.join(work, "xdg-open"),
+				`#!/bin/sh\nprintf '%s\\n' "${"${INNOCENT_ENV-unset}"}" "${"${INFISICAL_TOKEN-unset}"}" "${"${NODE_OPTIONS-unset}"}" "${"${LD_PRELOAD-unset}"}" "${"${BROWSER-unset}"}" "$DISPLAY" "$HOME" > ${quotedFile}\n`,
+				{ mode: 0o755 },
+			);
+			try {
+				const launched = spawnSync(
+					process.execPath,
+					[
+						"--import",
+						"tsx",
+						"--input-type=module",
+						"-e",
+						'import { openInBrowser } from "./src/prepare.ts"; process.env.NODE_OPTIONS = "--no-warnings"; process.env.LD_PRELOAD = "fake-loader"; process.env.BROWSER = "fake-browser"; openInBrowser("https://example.invalid");',
+					],
+					{
+						cwd: path.join(packages, "hobo-ci"),
+						encoding: "utf8",
+						env: {
+							PATH: work,
+							HOME: work,
+							DISPLAY: ":3",
+							INNOCENT_ENV: "an-opaque-credential",
+							INFISICAL_TOKEN: "fake-token",
+						},
+					},
+				);
+				expect(launched.status, launched.stderr).toBe(0);
+				for (let attempt = 0; attempt < 150; attempt++) {
+					if (existsSync(resultFile) && readFileSync(resultFile, "utf8")) break;
+					await new Promise((resolve) => setTimeout(resolve, 20));
+				}
+				expect(readFileSync(resultFile, "utf8").trimEnd().split("\n")).toEqual([
+					"unset",
+					"unset",
+					"unset",
+					"unset",
+					"unset",
+					":3",
+					work,
+				]);
+			} finally {
+				rmSync(work, { recursive: true, force: true });
+			}
+		},
+	);
 
 	it("no lifecycle source reads a secret from the environment", () => {
 		const offenders: string[] = [];

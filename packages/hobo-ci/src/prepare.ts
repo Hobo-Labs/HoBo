@@ -27,7 +27,11 @@ import {
 	SECRET_STORE_LOCATOR_FILE,
 	storeIdOf,
 } from "./owner-store.js";
-import { ignoredSecretEnvNotice, withoutSecretEnv } from "./secret-custody.js";
+import {
+	browserEnvironment,
+	ignoredSecretEnvNotice,
+	withoutSecretEnv,
+} from "./secret-custody.js";
 import type { Env, OpenedSecretStore } from "./secret-stores.js";
 
 // `hobo ci up`'s prepare step (cli-spec.md "Lifecycle families"): make sure
@@ -73,7 +77,7 @@ function refused(
 	return { kind: "refused", result };
 }
 
-/** Open a URL with the platform opener after filtering detected secrets. */
+/** Open a URL with only the desktop environment needed by the platform opener. */
 export function openInBrowser(url: string): void {
 	const command =
 		process.platform === "darwin"
