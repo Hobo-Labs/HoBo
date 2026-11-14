@@ -9,7 +9,7 @@ import {
 	COMPLIANCE_WATCH_RATIO,
 	complianceHeatmap,
 	emptyWorld,
-	fleetView,
+	deliveryCampsView,
 	freightTimeline,
 	heatBand,
 	liftCdTopology,
@@ -295,7 +295,7 @@ describe("fleet views", () => {
 				},
 				1,
 			);
-		const view = fleetView(
+		const view = deliveryCampsView(
 			metrics([
 				cond("c2", "reachable", "false"),
 				cond("c1", "reachable", "true"),

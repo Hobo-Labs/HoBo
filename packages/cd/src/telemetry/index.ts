@@ -27,10 +27,10 @@ export {
 } from "./errors.js";
 export {
 	campInventoryPoints,
-	collectFleetMetrics,
+	collectCampMetrics,
 	compliancePoints,
 	FANOUT_SLOT_STATES,
-	type FleetSources,
+	type CampMetricSources,
 	failoverCountPoints,
 	fanoutCampsPoints,
 } from "./fleet.js";

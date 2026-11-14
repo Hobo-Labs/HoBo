@@ -41,7 +41,7 @@ service (control-api). The draft remains in place as reference; see its
   excluded from `src/index.ts`, import via `@hobo/yard-world/layout-store`.
 - [`src/cd-views.ts`](./src/cd-views.ts) — HoBo CD views:
   `parseCdSpans` (parse boundary for OTel CI/CD spans), `freightTimeline`,
-  `pipelineGraph`, `renderPromotionTrace`, and the fleet views `fleetView`
+  `pipelineGraph`, `renderPromotionTrace`, and the Camp views `deliveryCampsView`
   (Camps by condition and taint) and `complianceHeatmap` (noncompliance by
   Rail × control). See [HoBo CD](#hobo-cd) below.
 - [`src/simulator.ts`](./src/simulator.ts) — deterministic (mulberry32-seeded)
@@ -64,7 +64,7 @@ service delivers to many Camps.
 - `freightTimeline` (Freight → deliveries in time order, result per Camp)
   and `pipelineGraph` (nodes with last Freight/result, edges a Freight
   travelled) are projections over parsed CD spans.
-- `fleetView` reads the `hobo.cd.camp.condition` / `hobo.cd.camp.taint`
+- `deliveryCampsView` reads the `hobo.cd.camp.condition` / `hobo.cd.camp.taint`
   gauges; `complianceHeatmap` reads `hobo.cd.compliance.noncompliant_ratio`
   (latest point per Rail × control × mode; bands: `ok` = 0, `watch` ≤ 2 %,
   `breach` > 2 %, the R12 INFORM budget).

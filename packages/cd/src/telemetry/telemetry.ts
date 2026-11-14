@@ -20,7 +20,7 @@ import {
 	type DoraQuery,
 } from "./dora.js";
 import { TelemetryError } from "./errors.js";
-import { collectFleetMetrics, type FleetSources } from "./fleet.js";
+import { collectCampMetrics, type CampMetricSources } from "./fleet.js";
 import { CD_METRICS, HOBO_ATTR } from "./semconv.js";
 
 // public-contract: default DORA window for collected gauges (30 days).
@@ -29,7 +29,7 @@ export const DORA_DEFAULT_WINDOW_MS = 30 * DAY_MS;
 export type CdTelemetryDeps = CdBase &
 	Readonly<{
 		sink?: TelemetrySink;
-		fleet?: FleetSources;
+		fleet?: CampMetricSources;
 		doraWindowMs?: number;
 	}>;
 
@@ -171,7 +171,7 @@ export function createCdTelemetry(d: CdTelemetryDeps): CdTelemetryService {
 		}
 		if (d.fleet) {
 			try {
-				points.push(...(await collectFleetMetrics(d.fleet, atMs)));
+				points.push(...(await collectCampMetrics(d.fleet, atMs)));
 				checks.set("fleet-sources", { ok: true, detail: "collected" });
 			} catch (error) {
 				checks.set("fleet-sources", {

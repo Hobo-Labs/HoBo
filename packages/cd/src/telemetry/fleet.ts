@@ -215,8 +215,8 @@ export function campInventoryPoints(
 	return points;
 }
 
-/** The read ports the fleet collector uses (all optional; composed by WP18). */
-export type FleetSources = Readonly<{
+/** The read ports the Camp metrics collector uses (all optional; composed by WP18). */
+export type CampMetricSources = Readonly<{
 	fanout?: Pick<FanoutController, "list">;
 	failover?: Pick<FailoverController, "list">;
 	inventory?: Pick<CampInventory, "list">;
@@ -225,8 +225,8 @@ export type FleetSources = Readonly<{
 	postureSeries?: Pick<PostureSeriesReader, "shadowDivergence">;
 }>;
 
-export async function collectFleetMetrics(
-	sources: FleetSources,
+export async function collectCampMetrics(
+	sources: CampMetricSources,
 	atMs: number,
 ): Promise<OtelMetricPoint[]> {
 	const points: OtelMetricPoint[] = [];
