@@ -97,6 +97,8 @@ export type {
 	ActorLease,
 	ActorLeaseHost,
 	ActorStateHandle,
+	AsyncActorLease,
+	AsyncActorLeaseHost,
 	FoldEvent,
 } from "./ports/actor-host.js";
 export {
