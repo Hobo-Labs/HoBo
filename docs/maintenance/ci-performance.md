@@ -167,6 +167,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   currently has no installed batch-claim authority, so it uses `ubuntu-24.04` after a fresh
   read verifies the caller repository and public standard-runner compute pricing. A missing
   policy or unavailable public-price evidence fails the route instead of starting the batch.
+  The PR-only deps-image job also requires the route to succeed, and its candidate is
+  checked without promotion; main runs the deps check in the workspace plan instead.
   Explicit pins still select their configured tiers. The public-price observation covers
   compute only; it does not establish availability, other costs, or financial settlement.
   GitHub documents [free standard-runner minutes for public repositories](https://docs.github.com/en/actions/concepts/billing-and-usage)
