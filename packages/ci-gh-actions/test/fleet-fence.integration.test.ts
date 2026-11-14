@@ -7,9 +7,12 @@
  * own `controlUrl`. The fence on the far side is the device's real check,
  * `checkAssignment`, for an `EPHEMERAL` device running an `S1` sandbox.
  *
- * - A fork job context is refused, and the command after the hook (the job's
- *   steps) never starts.
- * - An internal job context is allowed, and that command runs.
+ * - A fork job context is refused (exit 41), and the command after the hook
+ *   (the job's steps) never starts. The work key posted is
+ *   `<repo>#<jobId>@<runAttempt>`, the form the work source offers.
+ * - An internal job context is allowed, and that command runs; a second job
+ *   in the same single-use sandbox is a conflict (exit 42), and an agent the
+ *   hook cannot reach fails closed (exit 43).
  * - The hook reads the head repository from the event file and fails closed:
  *   a pull request from a branch is internal; one whose head repository is
  *   gone is unknown; text in the pull request's title cannot pass for its
@@ -39,6 +42,7 @@ import { checkAssignment } from "@hobo/fleet/work";
 import { createEgressProxyFactory, sandboxDrivers } from "@hobo/fleet-agent";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+	HOOK_EXIT,
 	HOOK_PATH,
 	INSTALL_HOOK_ARGV,
 	preJobHookScript,
@@ -192,13 +196,21 @@ async function orderSandbox() {
 					GITHUB_RUN_ID: "100",
 					GITHUB_RUN_ATTEMPT: "1",
 					GITHUB_JOB: "build",
+					GITHUB_JOB_ID: "9000",
 					GITHUB_EVENT_PATH: EVENT_PATH,
 					...context,
 				},
 			},
 		);
 	};
-	return { sandbox, asked, answers, job };
+	return {
+		sandbox,
+		asked,
+		answers,
+		job,
+		run: (argv: readonly string[], init?: Parameters<typeof run>[2]) =>
+			run(sandbox, argv, init),
+	};
 }
 
 /** A pull_request event as GitHub writes it: pretty-printed, title before head, head before base. */
@@ -257,7 +269,7 @@ describe("O24: the start fence in a real S1 sandbox", () => {
 		);
 		expect(asked).toEqual([
 			{
-				workKey: "acme/app/runs/100/attempts/1/jobs/build",
+				workKey: "acme/app#9000@1",
 				repository: "acme/app",
 				ref: "refs/pull/5/merge",
 				author: "github:2",
@@ -265,7 +277,7 @@ describe("O24: the start fence in a real S1 sandbox", () => {
 			},
 		]);
 		expect(answers).toEqual([false]);
-		expect(result.exitCode).not.toBe(0);
+		expect(result.exitCode).toBe(HOOK_EXIT.refused);
 		expect(result.output).not.toContain(STARTED);
 	}, 300_000);
 
@@ -284,6 +296,55 @@ describe("O24: the start fence in a real S1 sandbox", () => {
 		expect(answers).toEqual([true]);
 		expect(result.exitCode).toBe(0);
 		expect(result.output).toContain(STARTED);
+		// The runner is single-use: a second job in this sandbox is a conflict, asked of no one.
+		const again = await job(
+			{ GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/heads/main" },
+			JSON.stringify({ ref: "refs/heads/main" }),
+		);
+		expect(again.exitCode).toBe(HOOK_EXIT.conflict);
+		expect(again.output).not.toContain(STARTED);
+		expect(asked).toHaveLength(1);
+	}, 300_000);
+
+	it("fails closed when the agent cannot be reached", async () => {
+		const { asked, run: inSandbox } = await orderSandbox();
+		const elsewhere = "/work/hobo-fleet-unreachable/pre-job.sh";
+		const wrote = await inSandbox(
+			[
+				"sh",
+				"-c",
+				'mkdir -p "$(dirname "$1")" && cat > "$1"',
+				"hook",
+				elsewhere,
+			],
+			{
+				stdin: preJobHookScript("http://127.0.0.1:9", {
+					stateDir: "/work/hobo-fleet-unreachable",
+				}),
+			},
+		);
+		expect(wrote.exitCode).toBe(0);
+		const result = await inSandbox(
+			[
+				"sh",
+				"-c",
+				`sh "$1"; code=$?; [ $code -eq 0 ] && echo ${STARTED}; exit $code`,
+				"github-runner",
+				elsewhere,
+			],
+			{
+				env: {
+					GITHUB_REPOSITORY: "acme/app",
+					GITHUB_REF: "refs/heads/main",
+					GITHUB_EVENT_NAME: "push",
+					GITHUB_RUN_ATTEMPT: "1",
+					GITHUB_JOB_ID: "9000",
+				},
+			},
+		);
+		expect(result.exitCode).toBe(HOOK_EXIT.unreachable);
+		expect(result.output).not.toContain(STARTED);
+		expect(asked).toEqual([]);
 	}, 300_000);
 
 	it("reads the head repository from the event file and fails closed", async () => {
@@ -292,8 +353,6 @@ describe("O24: the start fence in a real S1 sandbox", () => {
 			GITHUB_EVENT_NAME: "pull_request",
 			GITHUB_REF: "refs/pull/5/merge",
 		};
-		const branch = await job(pull, pullRequestEvent("acme/app"));
-		expect(branch.output).toContain(STARTED);
 		const gone = await job(pull, pullRequestEvent(null));
 		expect(gone.output).not.toContain(STARTED);
 		const forged = await job(
@@ -309,11 +368,14 @@ describe("O24: the start fence in a real S1 sandbox", () => {
 			"{}",
 		);
 		expect(other.output).not.toContain(STARTED);
+		// Last, since a sandbox that allowed a job takes no second one.
+		const branch = await job(pull, pullRequestEvent("acme/app"));
+		expect(branch.output).toContain(STARTED);
 		expect(asked.map((observed) => observed.origin)).toEqual([
-			WorkOrigin.INTERNAL,
 			WorkOrigin.UNKNOWN,
 			WorkOrigin.FORK,
 			WorkOrigin.UNKNOWN,
+			WorkOrigin.INTERNAL,
 		]);
 	}, 300_000);
 });

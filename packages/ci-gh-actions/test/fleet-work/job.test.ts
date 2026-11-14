@@ -137,8 +137,9 @@ async function world(assigned: () => ObservedAssignment) {
 	};
 }
 
-const facts = (origin: WorkOrigin, job: number): ObservedAssignment => ({
-	workKey: `acme/app/runs/100/attempts/1/jobs/build-${job}`,
+/** What the hook posts; its work key has the offer's form, `<repo>#<jobId>@<runAttempt>`. */
+const facts = (origin: WorkOrigin, jobId: number): ObservedAssignment => ({
+	workKey: `acme/app#${jobId}@1`,
 	repository: "acme/app",
 	ref: origin === WorkOrigin.FORK ? "refs/pull/5/merge" : "refs/heads/main",
 	author: "github:2",
@@ -147,7 +148,7 @@ const facts = (origin: WorkOrigin, job: number): ObservedAssignment => ({
 
 describe("a github-actions-job through the fleet on the memory bus", () => {
 	it("offer, claim, sealed order, fence and a SUCCEEDED receipt for an internal job", async () => {
-		const w = await world(() => facts(WorkOrigin.INTERNAL, 1));
+		const w = await world(() => facts(WorkOrigin.INTERNAL, 9000));
 		await w.run();
 		expect(w.offers).toEqual([`acme/app#${w.job.id}@1`]);
 		expect(w.minted).toHaveLength(1);
@@ -162,14 +163,15 @@ describe("a github-actions-job through the fleet on the memory bus", () => {
 			ReceiptStatus.STARTED,
 			ReceiptStatus.SUCCEEDED,
 		]);
-		// GitHub may hand the runner another job of its label; the receipt names the one run.
-		expect(w.receipts[1]?.observedWorkKey).toBe(
-			facts(WorkOrigin.INTERNAL, 1).workKey,
-		);
+		// The hook's key has the offer's form, so the job the offer named leaves
+		// observedWorkKey empty ("what actually ran, when it differs").
+		expect(facts(WorkOrigin.INTERNAL, w.job.id).workKey).toBe(w.offers[0]);
+		expect(w.receipts[1]?.observedWorkKey).toBe("");
 	});
 
 	it("a fork job GitHub hands the runner is stopped by the fence before its first step", async () => {
-		const w = await world(() => facts(WorkOrigin.FORK, 2));
+		// GitHub may hand the runner another job of its label than the one offered.
+		const w = await world(() => facts(WorkOrigin.FORK, 9001));
 		await w.run();
 		expect(w.offers).toHaveLength(1);
 		expect(w.driver.fenced).toEqual([false]);
@@ -177,5 +179,6 @@ describe("a github-actions-job through the fleet on the memory bus", () => {
 		const final = w.receipts.at(-1);
 		expect(final?.status).toBe(ReceiptStatus.REFUSED);
 		expect(final?.reason).toBe("assignment-mismatch");
+		expect(final?.observedWorkKey).toBe("acme/app#9001@1");
 	});
 });

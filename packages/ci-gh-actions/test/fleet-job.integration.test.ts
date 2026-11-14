@@ -181,7 +181,7 @@ async function oneJob(assigned: ObservedAssignment) {
 }
 
 const facts = (origin: WorkOrigin): ObservedAssignment => ({
-	workKey: "acme/app/runs/100/attempts/1/jobs/build",
+	workKey: "acme/app#9000@1",
 	repository: "acme/app",
 	ref: origin === WorkOrigin.FORK ? "refs/pull/5/merge" : "refs/heads/main",
 	author: "github:2",
@@ -205,6 +205,8 @@ describe.skipIf(SKIP_NATS)(
 				ReceiptStatus.STARTED,
 				ReceiptStatus.SUCCEEDED,
 			]);
+			// The hook's key has the offer's form: the offered job leaves observedWorkKey empty.
+			expect(run.receipts.at(-1)?.observedWorkKey).toBe("");
 		}, 90_000);
 
 		it("a fork job is stopped by the fence before a step runs", async () => {

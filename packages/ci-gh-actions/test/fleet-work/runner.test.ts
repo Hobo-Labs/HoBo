@@ -22,13 +22,13 @@ import {
 	START_SCRIPT,
 } from "../../src/fleet-work/hook.js";
 import { createGithubActionsWorkRunner } from "../../src/fleet-work/index.js";
-import { readVerdict } from "../../src/fleet-work/runner.js";
+import { readVerdict, settleVerdict } from "../../src/fleet-work/runner.js";
 import { githubRunnerDouble } from "./support/runner-double.js";
 
 const SECRET = "jit-config-secret-value";
 
 const internal: ObservedAssignment = {
-	workKey: "acme/app/runs/1/attempts/1/jobs/build",
+	workKey: "acme/app#9001@1",
 	repository: "acme/app",
 	ref: "refs/heads/main",
 	author: "github:2",
@@ -186,5 +186,38 @@ describe("readVerdict", () => {
 		expect(readVerdict("@@hobo-fleet observed not json").observedWorkKey).toBe(
 			"",
 		);
+	});
+});
+
+describe("settleVerdict", () => {
+	const ran = (fence: string, result?: string) =>
+		settleVerdict(
+			{ fence, observedWorkKey: "acme/app#9000@1", result, exit: 0 },
+			false,
+		);
+
+	it("maps each hook verdict to the receipt (41 refused, 42 conflict, 43 unreachable)", () => {
+		expect(ran("allow", "Succeeded")).toEqual({
+			status: ReceiptStatus.SUCCEEDED,
+			reason: "",
+		});
+		expect(ran("refuse", "Failed")).toEqual({
+			status: ReceiptStatus.REFUSED,
+			reason: "assignment-mismatch",
+		});
+		expect(ran("conflict", "Failed")).toEqual({
+			status: ReceiptStatus.REFUSED,
+			reason: "conflict",
+		});
+		expect(ran("unreachable", "Failed")).toEqual({
+			status: ReceiptStatus.ABANDONED,
+			reason: "unavailable",
+		});
+		expect(
+			settleVerdict(
+				{ fence: "allow", observedWorkKey: "", result: "Succeeded", exit: 0 },
+				true,
+			).status,
+		).toBe(ReceiptStatus.CANCELLED);
 	});
 });

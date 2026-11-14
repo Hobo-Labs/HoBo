@@ -52,7 +52,8 @@ export const GITHUB_EGRESS: readonly string[] = [
 /** How much of the runner's console is kept to read its result line and the markers. */
 const TAIL_BYTES = 64 * 1024;
 
-type Verdict = Readonly<{
+// domain-view: what the start script's marker lines say about one run.
+export type Verdict = Readonly<{
 	fence: string | undefined;
 	observedWorkKey: string;
 	result: string | undefined;
@@ -97,10 +98,22 @@ export function readVerdict(output: string): Verdict {
 /** domain-view: the two receipt fields a run's outcome decides. */
 type Settled = Readonly<{ status: ReceiptStatus; reason: string }>;
 
-function statusOf(verdict: Verdict, aborted: boolean): Settled {
+/**
+ * The receipt for one run. The hook's verdict decides first: `refuse` (exit
+ * 41) is `REFUSED`/`assignment-mismatch`, `conflict` (42, a second job in a
+ * single-use sandbox) `REFUSED`/`conflict`, `unreachable` (43, fail closed)
+ * `ABANDONED`/`unavailable`; then the runner's own result line.
+ */
+export function settleVerdict(verdict: Verdict, aborted: boolean): Settled {
 	if (aborted) return { status: ReceiptStatus.CANCELLED, reason: "" };
-	if (verdict.fence === "refuse")
-		return { status: ReceiptStatus.REFUSED, reason: "assignment-mismatch" };
+	switch (verdict.fence) {
+		case "refuse":
+			return { status: ReceiptStatus.REFUSED, reason: "assignment-mismatch" };
+		case "conflict":
+			return { status: ReceiptStatus.REFUSED, reason: "conflict" };
+		case "unreachable":
+			return { status: ReceiptStatus.ABANDONED, reason: "unavailable" };
+	}
 	switch (verdict.result?.toLowerCase()) {
 		case "succeeded":
 			return { status: ReceiptStatus.SUCCEEDED, reason: "" };
@@ -158,7 +171,7 @@ export function githubActionsRunner(): WorkRunner {
 			});
 			tail += decoder.decode();
 			const verdict = readVerdict(tail);
-			const { status, reason } = statusOf(verdict, signal.aborted);
+			const { status, reason } = settleVerdict(verdict, signal.aborted);
 			return {
 				status,
 				reason,

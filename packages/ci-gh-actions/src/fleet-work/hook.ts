@@ -6,6 +6,10 @@
  * the head repository is another repository, the job), posts it to the
  * order's control endpoint as an `ObservedAssignment`, and fails, which fails
  * the job before any step runs, unless the agent answers `{"allow":true}`.
+ * Its exit codes are #1688's (`HOOK_EXIT`): 41 refused, 42 conflict (this
+ * single-use sandbox already allowed a job), 43 the agent unreachable or its
+ * answer unreadable (fail closed). The work key it posts is
+ * `<repo>#<jobId>@<runAttempt>`, the form the work source offers.
  *
  * POSIX `sh` with `tr`, `sed`, `grep` and `wget` or `curl` only: busybox
  * images and GitHub's runner image both carry them. The rules of `origin.ts`
@@ -25,19 +29,43 @@ export const REGISTRATION_PATH = "/run/hobo-fleet/registration";
 // public-contract: prefix of the lines the start script prints after the runner exits.
 export const MARKER = "@@hobo-fleet";
 
+/** The hook's exit codes, as #1688's start fence (`START_FENCE_EXIT`) numbered them. */
+// public-contract: the pre-job hook's exit codes; GitHub shows them on the failed job.
+export const HOOK_EXIT = {
+	allowed: 0,
+	refused: 41,
+	conflict: 42,
+	unreachable: 43,
+} as const;
+
 function quote(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/** The hook script for one sandbox; `controlUrl` is that sandbox's `Sandbox.controlUrl`. */
-export function preJobHookScript(controlUrl: string): string {
+/**
+ * The hook script for one sandbox; `controlUrl` is that sandbox's
+ * `Sandbox.controlUrl`. `stateDir` is where it leaves its verdict and the
+ * facts it posted (`STATE_DIR`, which the start script reads back).
+ */
+export function preJobHookScript(
+	controlUrl: string,
+	options: Readonly<{ stateDir?: string }> = {},
+): string {
 	return `#!/bin/sh
-# HoBo fleet start fence (ADR-0182; fleet design 6.9 step 7). Installed by the
-# github-actions-job runner as ACTIONS_RUNNER_HOOK_JOB_STARTED.
+# HoBo fleet start fence (ADR-0183; fleet design 6.9 step 7). Installed by the
+# github-actions-job runner as ACTIONS_RUNNER_HOOK_JOB_STARTED. Exits
+# ${HOOK_EXIT.refused} refused, ${HOOK_EXIT.conflict} conflict, ${HOOK_EXIT.unreachable} agent unreachable (fail closed).
 set -u
 fence=${quote(`${controlUrl}/fence`)}
-state=${quote(STATE_DIR)}
-mkdir -p "$state"
+state=${quote(options.stateDir ?? STATE_DIR)}
+mkdir -p "$state" || exit ${HOOK_EXIT.unreachable}
+
+# A just-in-time runner runs one job: a second one in this sandbox is a conflict.
+if [ "$(cat "$state/fence" 2>/dev/null)" = allow ]; then
+  echo conflict > "$state/fence"
+  echo "HoBo fleet: this sandbox already started a job; refusing a second" >&2
+  exit ${HOOK_EXIT.conflict}
+fi
 
 # JSON string contents: backslash and double quote escaped, control characters dropped.
 esc() { printf '%s' "$1" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'; }
@@ -76,7 +104,20 @@ case "$event" in
       fi
     fi ;;
 esac
-work="\${repository}/runs/\${GITHUB_RUN_ID:-}/attempts/\${GITHUB_RUN_ATTEMPT:-}/jobs/\${GITHUB_JOB:-}"
+# The numeric job id, when the runner names it; otherwise empty, and the key joins no offer.
+job=''
+for candidate in "\${GITHUB_JOB_ID:-}" "\${JOB_CHECK_RUN_ID:-}"; do
+  case "$candidate" in
+    ''|*[!0-9]*) ;;
+    *) job=$candidate; break ;;
+  esac
+done
+attempt=''
+case "\${GITHUB_RUN_ATTEMPT:-}" in
+  ''|*[!0-9]*) ;;
+  *) attempt=$GITHUB_RUN_ATTEMPT ;;
+esac
+work="\${repository}#\${job}@\${attempt}"
 
 body="$state/observed.json"
 printf '{"workKey":"%s","repository":"%s","ref":"%s","author":"%s","origin":"%s"}' \\
@@ -93,11 +134,15 @@ fi
 case "$answer" in
   *'"allow":true'*)
     echo allow > "$state/fence"
-    exit 0 ;;
+    exit ${HOOK_EXIT.allowed} ;;
+  *'"allow":false'*)
+    echo refuse > "$state/fence"
+    echo "HoBo fleet: this device's start fence refused the job ($origin, $repository, $ref)" >&2
+    exit ${HOOK_EXIT.refused} ;;
 esac
-echo refuse > "$state/fence"
-echo "HoBo fleet: this device's start fence refused the job ($origin, $repository, $ref)" >&2
-exit 1
+echo unreachable > "$state/fence"
+echo "HoBo fleet: this device's agent did not answer the start fence; refusing the job" >&2
+exit ${HOOK_EXIT.unreachable}
 `;
 }
 
