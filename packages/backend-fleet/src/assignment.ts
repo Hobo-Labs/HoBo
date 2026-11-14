@@ -290,11 +290,23 @@ export type AssignmentRegister = {
 	readonly replicas: readonly AssignmentReplica[];
 	/** How a replica's failed read is classified. Default: `unknown`. */
 	readonly classify?: FleetFailureClassifier;
+	/** Optional application-specific proof that the current majority has all
+	 * information the caller needs. Absent means wait for every reply. */
+	readonly earlyCurrent?: (
+		resolution: Extract<AssignmentResolution, { status: "current" }>,
+		replies: readonly AssignmentReply[],
+	) => boolean;
+	/** Stop offering once a majority has accepted; no extra writes continue in the background. */
+	readonly stopAfterMajority?: boolean;
 };
 
 export function parseAssignmentRegister(
 	replicas: readonly AssignmentReplica[],
-	options: { readonly classify?: FleetFailureClassifier } = {},
+	options: {
+		readonly classify?: FleetFailureClassifier;
+		readonly earlyCurrent?: AssignmentRegister["earlyCurrent"];
+		readonly stopAfterMajority?: boolean;
+	} = {},
 ): AssignmentRegister {
 	const ids = replicas.map((replica) => parseFleetBackendId(replica.id));
 	if (ids.length === 0 || new Set(ids).size !== ids.length)
@@ -305,11 +317,14 @@ export function parseAssignmentRegister(
 	const register: AssignmentRegister = {
 		replicas: Object.freeze([...replicas]),
 	};
-	return Object.freeze(
-		options.classify === undefined
-			? register
-			: { ...register, classify: options.classify },
-	);
+	return Object.freeze({
+		...register,
+		...(options.classify ? { classify: options.classify } : undefined),
+		...(options.earlyCurrent
+			? { earlyCurrent: options.earlyCurrent }
+			: undefined),
+		...(options.stopAfterMajority ? { stopAfterMajority: true } : undefined),
+	});
 }
 
 /** Ask every member for its log. A member that fails is a classified absence. */
@@ -317,8 +332,8 @@ export async function readAssignmentReplies(
 	register: AssignmentRegister,
 	limit?: number,
 ): Promise<readonly AssignmentReply[]> {
-	return Promise.all(
-		register.replicas.map(async (replica): Promise<AssignmentReply> => {
+	const reads = register.replicas.map(
+		async (replica): Promise<AssignmentReply> => {
 			try {
 				return { replica: replica.id, rows: await replica.read(limit) };
 			} catch (error) {
@@ -329,8 +344,33 @@ export async function readAssignmentReplies(
 					),
 				};
 			}
-		}),
+		},
 	);
+	if (!register.earlyCurrent) return Promise.all(reads);
+	const members = register.replicas.map((replica) => replica.id);
+	const acceptCurrent = register.earlyCurrent;
+	return new Promise((resolve) => {
+		const replies: AssignmentReply[] = [];
+		let done = false;
+		for (const read of reads)
+			void read.then((reply) => {
+				if (done) return;
+				replies.push(reply);
+				const resolution = resolveAssignment(members, replies);
+				let sufficient = false;
+				if (resolution.status === "current") {
+					try {
+						sufficient = acceptCurrent(resolution, replies);
+					} catch {
+						/* wait for another holder */
+					}
+				}
+				if (sufficient || replies.length === members.length) {
+					done = true;
+					resolve([...replies]);
+				}
+			});
+	});
 }
 
 /**
@@ -446,6 +486,7 @@ async function place(
 	register: AssignmentRegister,
 	assignment: FleetAssignment,
 	mode: "propose" | "complete",
+	priority: readonly string[] = [],
 ): Promise<AssignmentProposalOutcome> {
 	const required = fleetMajority(register.replicas.length);
 	const writer = register.replicas.find(
@@ -463,13 +504,25 @@ async function place(
 		if (outcome !== "accepted" && outcome !== "duplicate")
 			return { status: "refused", replica: writer.id, outcome };
 		holders.push(writer.id);
+		if (register.stopAfterMajority && holders.length >= required)
+			return { status: "decided", assignment, holders };
 	}
-	for (const replica of register.replicas) {
+	const rank = new Map(priority.map((id, index) => [id, index]));
+	const ordered = register.stopAfterMajority
+		? [...register.replicas].sort(
+				(a, b) =>
+					(rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+					(rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+			)
+		: register.replicas;
+	for (const replica of ordered) {
 		if (replica === writer) continue;
 		const outcome = await offer(replica, assignment);
-		if (outcome === "accepted" || outcome === "duplicate")
+		if (outcome === "accepted" || outcome === "duplicate") {
 			holders.push(replica.id);
-		else if (outcome === "conflict" && mode === "propose") break;
+			if (register.stopAfterMajority && holders.length >= required)
+				return { status: "decided", assignment, holders };
+		} else if (outcome === "conflict" && mode === "propose") break;
 	}
 	return {
 		status: holders.length >= required ? "decided" : "undecided",
@@ -516,7 +569,12 @@ export async function proposeAssignment(
 		decidedBy: proposal.decidedBy,
 	});
 	await repairLogs(register, replies, currentEpoch);
-	return place(register, assignment, "propose");
+	return place(
+		register,
+		assignment,
+		"propose",
+		replies.filter((reply) => "rows" in reply).map((reply) => reply.replica),
+	);
 }
 
 /**
@@ -564,7 +622,12 @@ export async function completeAssignment(
 	if (resolution.status !== "undecided") return resolution;
 	await repairLogs(register, replies, resolution.epoch - 1);
 	for (const contender of resolution.contenders) {
-		const outcome = await place(register, contender.assignment, "complete");
+		const outcome = await place(
+			register,
+			contender.assignment,
+			"complete",
+			replies.filter((reply) => "rows" in reply).map((reply) => reply.replica),
+		);
 		if (outcome.status === "decided") break;
 	}
 	return resolveAssignment(members, await readAssignmentReplies(register));

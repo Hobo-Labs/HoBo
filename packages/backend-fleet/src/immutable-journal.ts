@@ -121,6 +121,9 @@ export interface ImmutableJournalOptions {
 	readonly replicas: readonly ImmutableJournalReplica[];
 	readonly maxEntryBytes: number;
 	readonly maxEntries: number;
+	/** Deadline for each individual replica call. Timed-out writes may still
+	 * complete; replicas must atomically enforce predecessor and seal fences. */
+	readonly replicaTimeoutMs?: number;
 	readonly authorize: (
 		action: "bootstrap" | "read" | "append" | "recover",
 	) => Promise<void>;
@@ -130,6 +133,27 @@ export function createImmutableJournal(
 	input: ImmutableJournalOptions,
 ): ImmutableJournal {
 	const { fleetId, anchorDigest, maxEntryBytes, maxEntries, authorize } = input;
+	const replicaTimeoutMs = input.replicaTimeoutMs ?? 2_000;
+	function bounded<T>(operation: () => Promise<T>): Promise<T> {
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(
+				() => reject(new ImmutableJournalError("replica-timeout")),
+				replicaTimeoutMs,
+			);
+			void Promise.resolve()
+				.then(operation)
+				.then(
+					(value) => {
+						clearTimeout(timer);
+						resolve(value);
+					},
+					(error) => {
+						clearTimeout(timer);
+						reject(error);
+					},
+				);
+		});
+	}
 	const members = Object.freeze(
 		input.members.map((entry) => Object.freeze({ ...entry })),
 	);
@@ -137,10 +161,13 @@ export function createImmutableJournal(
 		input.replicas.map((replica) =>
 			Object.freeze({
 				id: replica.id,
-				read: replica.read.bind(replica),
-				accept: replica.accept.bind(replica),
-				readDocument: replica.readDocument.bind(replica),
-				writeDocument: replica.writeDocument.bind(replica),
+				read: (limit?: number) => bounded(() => replica.read(limit)),
+				accept: (entry: Parameters<ImmutableJournalReplica["accept"]>[0]) =>
+					bounded(() => replica.accept(entry)),
+				readDocument: (digest: string) =>
+					bounded(() => replica.readDocument(digest)),
+				writeDocument: (digest: string, value: string) =>
+					bounded(() => replica.writeDocument(digest, value)),
 			}),
 		),
 	);
@@ -169,6 +196,9 @@ export function createImmutableJournal(
 		!Number.isSafeInteger(maxEntries) ||
 		maxEntries < 1 ||
 		maxEntries > 10_000 ||
+		!Number.isSafeInteger(replicaTimeoutMs) ||
+		replicaTimeoutMs < 1 ||
+		replicaTimeoutMs > 60_000 ||
 		!HASH.test(anchorDigest)
 	)
 		throw new ImmutableJournalError("invalid-configuration");
@@ -204,19 +234,22 @@ export function createImmutableJournal(
 	async function document(digest: string): Promise<string> {
 		const pending = offered.get(digest);
 		if (pending !== undefined && hash(pending) === digest) return pending;
-		const replies = await Promise.allSettled(
-			replicas.map((replica) => replica.readDocument(digest)),
-		);
-		for (const reply of replies) {
-			if (
-				reply.status === "fulfilled" &&
-				isJournalString(reply.value) &&
-				Buffer.byteLength(reply.value, "utf8") <= maxDocumentBytes &&
-				hash(reply.value) === digest
-			)
-				return reply.value;
+		try {
+			return await Promise.any(
+				replicas.map(async (replica) => {
+					const value = await replica.readDocument(digest);
+					if (
+						!isJournalString(value) ||
+						Buffer.byteLength(value, "utf8") > maxDocumentBytes ||
+						hash(value) !== digest
+					)
+						throw new ImmutableJournalError("invalid-document");
+					return value;
+				}),
+			);
+		} catch {
+			throw new ImmutableJournalError("document-unavailable");
 		}
-		throw new ImmutableJournalError("document-unavailable");
 	}
 	const guarded: AssignmentReplica[] = members.map((member) => {
 		const replica = byId.get(member.id);
@@ -257,7 +290,51 @@ export function createImmutableJournal(
 			},
 		};
 	});
-	const register = parseAssignmentRegister(guarded);
+	const fullRegister = parseAssignmentRegister(guarded);
+	function validHistory(
+		rows: readonly Parameters<typeof assignmentKey>[0][],
+		head: Parameters<typeof assignmentKey>[0],
+	): boolean {
+		const last = rows.at(-1);
+		if (
+			!last ||
+			rows.length !== head.epoch ||
+			assignmentKey(last) !== assignmentKey(head)
+		)
+			return false;
+		let previous = ROOT;
+		try {
+			for (const [index, row] of rows.entries()) {
+				const link = parseReason(row.reason);
+				if (
+					row.epoch !== index + 1 ||
+					link.previous !== previous ||
+					(index === 0 && link.digest !== genesisDigest) ||
+					row.active !== undefined ||
+					row.sealed ||
+					row.target !== undefined ||
+					row.lossWindowMs !== undefined ||
+					row.decidedBy !== "journal" ||
+					row.decidedAtMs !== 0
+				)
+					return false;
+				previous = link.digest;
+			}
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	const register = parseAssignmentRegister(guarded, {
+		stopAfterMajority: true,
+		earlyCurrent: (resolution, replies) =>
+			replies.some(
+				(reply) =>
+					"rows" in reply &&
+					resolution.holders.includes(reply.replica) &&
+					validHistory(reply.rows, resolution.assignment),
+			),
+	});
 
 	async function chosen(
 		recover: boolean,
@@ -287,7 +364,8 @@ export function createImmutableJournal(
 			(reply) =>
 				"rows" in reply &&
 				resolution.status === "current" &&
-				resolution.holders.includes(reply.replica),
+				resolution.holders.includes(reply.replica) &&
+				validHistory(reply.rows, resolution.assignment),
 		);
 		if (
 			!holder ||
@@ -359,11 +437,13 @@ export function createImmutableJournal(
 		): Promise<void> {
 			await admitted("bootstrap");
 			try {
-				await Promise.all(members.map((member) => verifyFresh(member)));
+				await Promise.all(
+					members.map((member) => bounded(() => verifyFresh(member))),
+				);
 			} catch {
 				throw new ImmutableJournalError("freshness-unverified");
 			}
-			const replies = await readAssignmentReplies(register, 2);
+			const replies = await readAssignmentReplies(fullRegister, 2);
 			if (
 				replies.length !== members.length ||
 				replies.some(
@@ -381,7 +461,7 @@ export function createImmutableJournal(
 				replies,
 			);
 			if (resolved.status === "empty")
-				await proposeAssignment(register, {
+				await proposeAssignment(fullRegister, {
 					expectedEpoch: 0,
 					value: {
 						active: undefined,
@@ -395,7 +475,33 @@ export function createImmutableJournal(
 				});
 			else if (resolved.status !== "current" && resolved.status !== "undecided")
 				throw new ImmutableJournalError("quorum-unavailable");
-			await completeAssignment(register);
+			await completeAssignment(fullRegister);
+			// Bootstrap proves every independently enrolled member, not merely a
+			// voting majority. A timeout or lost write acknowledgement must leave
+			// initialization pending until all members can be read back.
+			try {
+				const confirmed = await readAssignmentReplies(fullRegister, 2);
+				if (confirmed.length !== members.length)
+					throw new Error("missing voter");
+				for (const reply of confirmed) {
+					if (!("rows" in reply)) throw new Error("missing genesis");
+					const head = reply.rows[0];
+					if (
+						!head ||
+						reply.rows.length !== 1 ||
+						!validHistory(reply.rows, head)
+					)
+						throw new Error("missing genesis");
+					const replica = byId.get(reply.replica);
+					if (
+						!replica ||
+						(await replica.readDocument(genesisDigest)) !== genesis
+					)
+						throw new Error("missing genesis document");
+				}
+			} catch {
+				throw new ImmutableJournalError("freshness-unverified");
+			}
 			await chosen(false);
 		},
 		async read(): Promise<readonly ImmutableJournalEntry[]> {
@@ -426,8 +532,13 @@ export function createImmutableJournal(
 						Buffer.byteLength(expectedFirst.value, "utf8") > maxEntryBytes)
 				)
 					throw new Error("invalid expected first command");
-				await Promise.all(members.map((member) => verifyMember(member)));
-				const replies = await readAssignmentReplies(register, maxEntries + 1);
+				await Promise.all(
+					members.map((member) => bounded(() => verifyMember(member))),
+				);
+				const replies = await readAssignmentReplies(
+					fullRegister,
+					maxEntries + 1,
+				);
 				if (replies.length !== members.length) throw new Error("missing voter");
 				for (const reply of replies) {
 					if (!("rows" in reply) || reply.rows.length === 0)
