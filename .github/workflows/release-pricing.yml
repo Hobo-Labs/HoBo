@@ -49,7 +49,6 @@ jobs:
             scripts/ci/route-runner.mts
             scripts/ci/runner-routing.mts
             .hobo/ci.json
-            packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:

@@ -48,12 +48,6 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
-	DEFAULT_GITHUB_MACHINE_TYPE,
-	type FleetMember,
-	LOCAL_HOST_RUNNER_LABEL,
-	selectFleetBackend,
-} from "../../packages/ci/src/fleet-overflow.ts";
-import {
 	judgeRoutingSlip,
 	type ParsedRoutingSlip,
 	type RoutingSlipClassName,
@@ -64,6 +58,18 @@ import {
 	readRunnerRouting,
 	routingLabels,
 } from "./runner-routing.mts";
+
+/**
+ * The GitHub-hosted machine type and the local box's label when
+ * `runnerRouting.labels` names none. The same values as `@hobo/ci`'s runner
+ * tiers; this script imports no package source, so a rename there cannot
+ * stop the route job (R14). `route-runner.test.ts` holds them equal to the
+ * committed `runnerRouting.labels`.
+ */
+// public-contract: GitHub's machine type the route job falls back to.
+export const DEFAULT_GITHUB_MACHINE_TYPE = "ubuntu-24.04";
+// public-contract: the runs-on label a registered local box serves.
+export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
 
 /** `auto` falls back; the others pin one tier, `fleet` being the behaviour before routing. */
 export const ROUTE_MODES = ["auto", "fleet", "local", "github"] as const;
@@ -291,30 +297,14 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.undecidedAhead === 0;
-	const members = [
-		{
-			id: "fleet",
-			backend: "hobo",
-			enabled: true,
-			runsOn: fleetLabel,
-			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
-		},
-		{
-			id: "local",
-			backend: "local",
-			enabled: input.localEnrolled,
-			runsOn: localLabel,
-			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
-		},
-		{
-			id: "github",
-			backend: "github",
-			enabled: true,
-			runsOn: githubLabel,
-			freeSlots: 1,
-		},
-	] satisfies FleetMember[];
-	const selected = selectFleetBackend({ members, currentLabels: [] });
+	// Nearest first: the fleet, then an enrolled local box, then GitHub's own
+	// machines, which always take a job.
+	const selected: RouteTier =
+		first && takingJobs(input.fleet, limits)
+			? "fleet"
+			: input.localEnrolled && first && takingJobs(input.local, limits)
+				? "local"
+				: "github";
 	const loads = [
 		describeLoad("the fleet", input.fleet),
 		input.localEnrolled
@@ -326,7 +316,7 @@ export function routeRunner(input: {
 					`${input.undecidedAhead} run(s) started in the ${BURST_SECONDS} s before this one and have not chosen a runner yet`,
 				]),
 	].join("; ");
-	if (!selected || selected.backend === "hobo")
+	if (selected === "fleet")
 		return {
 			tier: "fleet",
 			runner: fleetLabel,
@@ -334,8 +324,8 @@ export function routeRunner(input: {
 			refusedBy: "none",
 		};
 	return {
-		tier: selected.backend === "local" ? "local" : "github",
-		runner: selected.runsOn,
+		tier: selected,
+		runner: selected === "local" ? localLabel : githubLabel,
 		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
 		refusedBy: "queue",
 	};
