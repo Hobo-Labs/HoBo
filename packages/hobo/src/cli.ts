@@ -257,16 +257,16 @@ export function createComposedHoboCli(
 				// executor whose IaC provider deploys with the junction's token,
 				// resolved from the owner's secret store for this run only.
 				prepare: (input) => prepareVercelConnection(input),
-				upWith: (junctionEnv) =>
+				upWith: (credentials) =>
 					createBrokerAwareUpCommand({
 						runtime: {
 							...runtime,
 							executor: createInProcessExecutor({
 								iac: createVercelDeployProvider({
-									token: junctionEnv.VERCEL_TOKEN ?? "",
-									...(junctionEnv.VERCEL_TEAM_ID !== undefined
-										? { teamId: junctionEnv.VERCEL_TEAM_ID }
-										: undefined),
+									token: credentials.reveal("VERCEL_TOKEN") ?? "",
+									...((team) => (team !== undefined ? { teamId: team } : undefined))(
+										credentials.reveal("VERCEL_TEAM_ID"),
+									),
 									projectName: "hobo-cd",
 								}),
 							}),
