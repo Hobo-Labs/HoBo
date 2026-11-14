@@ -89,6 +89,32 @@ and become parsed, derived types: the branded `PostgresStoreConfig`,
 re-checks raw input. Database rows are decoded the same way (`rowToEnvelope`
 goes through `parseEventEnvelope`).
 
+## On a fleet of vendors
+
+`createPostgresFleetEventStore({ members, witnesses, plan, decidedBy })` puts
+the store on several PostgreSQL backends, one writer and standbys on other
+vendors, so one vendor's outage is a failover rather than a stop:
+
+- Every call goes to the writer the fleet's assignment register names
+  (`@hobo/data-postgres`, decided by majority across members and witnesses).
+  A sealed fleet, an undecided epoch or no majority refuses the call with a
+  retryable `unavailable`.
+- `tick()` runs `reconcileFleet` with the declared policy (`plan`, from
+  `continuityFleetPlan` in `@hobo/backend-fleet`): copy the writer to every
+  standby, fail over within the recovery point, switch away from a backend
+  whose allowance or budget runs out. The host runs it on the plan's copy
+  cadence.
+- **Interrupted work resumes.** A copy is one transaction on the standby, so an
+  interrupted one leaves it as it was and the next tick copies it whole; a
+  move is a sealed register entry the next tick completes or undoes.
+  `test/fleet.test.ts` cuts a copy mid-way, takes the writer's vendor down and
+  checks the history and the append positions on the new writer.
+- With two members and no witness, losing one leaves no majority: the fleet
+  holds (and says so) instead of guessing. Give it a witness (a few rows on a
+  third backend) to fail over on its own.
+- Live subscriptions follow the writer; delivery across a move is at least
+  once.
+
 ## Defaults
 
 Mirrors `CD_DEFAULTS` (PostgreSQL 16 or newer; statement timeout 5 s;

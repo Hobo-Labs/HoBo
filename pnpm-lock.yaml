@@ -3413,9 +3413,15 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
       pg:
         specifier: 8.22.0
         version: 8.22.0
