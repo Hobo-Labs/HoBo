@@ -40,7 +40,7 @@ export const VERCEL_UNRESOLVED_PRODUCTS: readonly UnresolvedHostingProduct[] =
 			reason:
 				"Vercel Postgres is Neon attached through the Marketplace; Vercel itself has no database resource to reconcile.",
 			remediation:
-				"Request data.postgres and let placement choose the cheapest reachable fleet (placePostgresFleet in @hobo/cloud-providers): Neon (@hobo/provider-neon), Prisma Postgres, Supabase or another catalog backend as writer, with a standby on a second vendor so one vendor's outage fails over instead of stopping the deployment.",
+				"Choose and enroll a PostgreSQL backend, such as Neon (@hobo/provider-neon), or bind another provider with a resolver. The optional placePostgresFleet helper ranks configured offers; the host must verify and wire replication and failover separately.",
 		}),
 	]);
 

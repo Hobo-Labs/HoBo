@@ -12,24 +12,87 @@ const NEON: PostgresOffer = {
 	provider: "neon-postgres",
 	health: "reachable",
 	monthlyFeeMicros: 0,
+	failureDomains: ["neon", "aws-east"],
 };
 const SUPABASE: PostgresOffer = {
 	provider: "supabase-postgres",
 	health: "reachable",
 	monthlyFeeMicros: 0,
 	probeLatencyMs: 40,
+	failureDomains: ["supabase", "gcp-west"],
 };
 const PRISMA: PostgresOffer = {
 	provider: "prisma-postgres",
 	health: "reachable",
 	monthlyFeeMicros: usd(10),
+	failureDomains: ["prisma", "azure-east"],
 };
 const SELF_HOSTED: PostgresOffer = {
 	provider: "self-hosted-postgres",
-	health: "unknown",
+	health: "reachable",
+	failureDomains: ["self-hosted-site"],
 };
 
 describe("placePostgresFleet", () => {
+	it("never selects an unprobed backend even if it is cheaper", () => {
+		const placement = placePostgresFleet([
+			{ ...NEON, health: "unknown" },
+			PRISMA,
+		]);
+		expect(placement.writer?.provider).toBe("prisma-postgres");
+		expect(placement.status).toBe("degraded");
+		expect(placement.skipped).toContainEqual(
+			expect.objectContaining({
+				provider: "neon-postgres",
+				reason: "unprobed",
+			}),
+		);
+		expect(placePostgresFleet([{ ...NEON, health: "unknown" }]).status).toBe(
+			"unavailable",
+		);
+	});
+
+	it("does not claim independent failover when vendors share a failure domain or domain evidence is absent", () => {
+		const shared = placePostgresFleet([
+			NEON,
+			{ ...SUPABASE, failureDomains: ["supabase", "aws-east"] },
+		]);
+		expect(shared.status).toBe("degraded");
+		expect(shared.reasons.join(" ")).toMatch(/failure.domain/i);
+		const { failureDomains: _domains, ...unverified } = SUPABASE;
+		const unknown = placePostgresFleet([NEON, unverified]);
+		expect(unknown.status).toBe("degraded");
+	});
+
+	it("prefers verified independent standbys over cheaper overlapping ones", () => {
+		const placement = placePostgresFleet([
+			NEON,
+			{ ...SUPABASE, failureDomains: ["supabase", "aws-east"] },
+			PRISMA,
+		]);
+		expect(placement.standbys[0]?.provider).toBe("prisma-postgres");
+		expect(placement.status).toBe("placed");
+	});
+
+	it("marks a fleet degraded if selected standbys share a failure domain", () => {
+		const placement = placePostgresFleet(
+			[NEON, SUPABASE, { ...PRISMA, failureDomains: ["prisma", "gcp-west"] }],
+			{ standbys: 2 },
+		);
+		expect(placement.status).toBe("degraded");
+		expect(placement.reasons.join(" ")).toMatch(/failure.domain/i);
+	});
+
+	it("rejects malformed cost, latency, and backend identities", () => {
+		for (const offer of [
+			{ ...NEON, monthlyFeeMicros: -1 },
+			{ ...NEON, monthlyFeeMicros: Number.NaN },
+			{ ...NEON, probeLatencyMs: -1 },
+			{ ...NEON, id: "INVALID ID" },
+			{ ...NEON, failureDomains: ["aws", "aws"] },
+		])
+			expect(() => placePostgresFleet([offer])).toThrow(RangeError);
+	});
 	it("places the cheapest reachable backend as writer and a standby on another vendor", () => {
 		const placement = placePostgresFleet([PRISMA, SUPABASE, NEON]);
 		expect(placement.status).toBe("placed");

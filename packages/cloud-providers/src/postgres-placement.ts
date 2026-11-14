@@ -10,30 +10,9 @@ import {
 	postgresBackendProfiles,
 } from "./postgres-backends.js";
 
-// Cheapest-available PostgreSQL placement (docs/design/postgres-backend-catalog.md
-// "Placement"). No single vendor is a dependency: a request for
-// `data.postgres` is placed on a *fleet* — a writer and standbys on other
-// vendors — chosen from every catalog backend that satisfies it, so Neon,
-// Supabase, Prisma Postgres, pgEdge, PlanetScale, the hyperscalers and a
-// self-hosted Postgres all compete on the same terms.
-//
-// - A backend the host cannot reach is skipped, never fatal. Placement is
-//   `unavailable` only when no configured backend that satisfies the request
-//   is reachable.
-// - Order is cost first (known monthly fee, ascending; unknown fees after
-//   every known one), then probe latency, then catalog order. The cheapest
-//   reachable backend is the writer.
-// - Standbys prefer vendors other than the writer's, so one vendor's outage
-//   leaves a standby to fail over to. A fleet with fewer standbys than asked
-//   for is `degraded`, not refused: it serves, and says what it lacks.
-//
-// The result's `fleetOrder` is the `backends` order `reconcileFleet`
-// (`@hobo/data-postgres`) takes — the first entry is the writer of an empty
-// fleet — and the runtime keeps the fleet converged from there: it copies the
-// writer to every standby, and `decideFleet` (`@hobo/backend-fleet`) fails
-// over to a standby within the RPO when the writer stops answering or
-// switches to a cheaper one when an allowance runs out. Placement chooses who
-// is in the fleet; the fleet decides, continuously, who writes.
+// Pure placement ranking; see docs/design/postgres-backend-catalog.md.
+// Probes and failure-domain evidence come from the caller. This function does
+// not create databases, establish replication, wire a fleet, or perform failover.
 
 /** What the host knows about one configured backend at placement time. */
 export interface PostgresOffer {
@@ -46,6 +25,11 @@ export interface PostgresOffer {
 	/** Fixed monthly fee in millionths of a US dollar; absent when unknown. */
 	readonly monthlyFeeMicros?: number;
 	readonly probeLatencyMs?: number;
+	/**
+	 * Failure domains verified by the host, including shared vendors and
+	 * underlying infrastructure. Absent or empty means independence is unknown.
+	 */
+	readonly failureDomains?: readonly string[];
 }
 
 export interface PostgresPlacementRequest {
@@ -66,7 +50,11 @@ export interface PlacedPostgresBackend {
 export interface SkippedPostgresBackend {
 	readonly id: string;
 	readonly provider: DataStoreProvider;
-	readonly reason: "unreachable" | "unsatisfied" | "not-in-catalog";
+	readonly reason:
+		| "unreachable"
+		| "unprobed"
+		| "unsatisfied"
+		| "not-in-catalog";
 	readonly detail: string;
 }
 
@@ -96,14 +84,60 @@ function byCost(a: Candidate, b: Candidate): number {
 	const fee = (c: Candidate) =>
 		c.offer.monthlyFeeMicros ?? Number.POSITIVE_INFINITY;
 	if (fee(a) !== fee(b)) return fee(a) < fee(b) ? -1 : 1;
-	// A probed-reachable backend outranks an unprobed one at the same fee.
-	const probed = (c: Candidate) => (c.offer.health === "reachable" ? 0 : 1);
-	if (probed(a) !== probed(b)) return probed(a) - probed(b);
 	const latency = (c: Candidate) =>
 		c.offer.probeLatencyMs ?? Number.POSITIVE_INFINITY;
 	if (latency(a) !== latency(b)) return latency(a) < latency(b) ? -1 : 1;
 	if (a.catalogIndex !== b.catalogIndex) return a.catalogIndex - b.catalogIndex;
 	return a.id.localeCompare(b.id);
+}
+
+function independent(a: Candidate, b: Candidate): boolean {
+	const left = a.offer.failureDomains;
+	const right = b.offer.failureDomains;
+	return (
+		left !== undefined &&
+		left.length > 0 &&
+		right !== undefined &&
+		right.length > 0 &&
+		left.every((domain) => !right.includes(domain))
+	);
+}
+
+function isOfferString(value: string): boolean {
+	return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function validateOffer(offer: PostgresOffer, id: string): void {
+	if (!isOfferString(id) || !/^[a-z0-9][a-z0-9_-]{0,62}$/u.test(id))
+		throw new RangeError(
+			"Postgres offer id must be a short lower-case fleet token",
+		);
+	if (!["reachable", "unreachable", "unknown"].includes(offer.health))
+		throw new RangeError(`invalid Postgres offer health for ${id}`);
+	if (
+		offer.monthlyFeeMicros !== undefined &&
+		(!Number.isSafeInteger(offer.monthlyFeeMicros) ||
+			offer.monthlyFeeMicros < 0)
+	)
+		throw new RangeError(`invalid Postgres offer fee for ${id}`);
+	if (
+		offer.probeLatencyMs !== undefined &&
+		(!Number.isFinite(offer.probeLatencyMs) || offer.probeLatencyMs < 0)
+	)
+		throw new RangeError(`invalid Postgres offer probe latency for ${id}`);
+	const domains = offer.failureDomains;
+	if (
+		domains !== undefined &&
+		(!Array.isArray(domains) ||
+			domains.some(
+				(domain) =>
+					!isOfferString(domain) ||
+					domain.length === 0 ||
+					domain.trim() !== domain,
+			) ||
+			new Set(domains).size !== domains.length)
+	)
+		throw new RangeError(`invalid Postgres offer failure domains for ${id}`);
 }
 
 function placed(
@@ -138,6 +172,7 @@ export function placePostgresFleet(
 
 	for (const offer of offers) {
 		const id = offerId(offer);
+		validateOffer(offer, id);
 		if (seen.has(id)) throw new RangeError(`duplicate Postgres offer id ${id}`);
 		seen.add(id);
 		const catalogIndex = POSTGRES_BACKEND_CATALOG.findIndex(
@@ -167,12 +202,15 @@ export function placePostgresFleet(
 			});
 			continue;
 		}
-		if (offer.health === "unreachable") {
+		if (offer.health !== "reachable") {
 			skipped.push({
 				id,
 				provider: offer.provider,
-				reason: "unreachable",
-				detail: `${entry.vendor} ${entry.product} did not answer its probe; placed elsewhere`,
+				reason: offer.health === "unknown" ? "unprobed" : "unreachable",
+				detail:
+					offer.health === "unknown"
+						? `${entry.vendor} ${entry.product} has not passed a probe`
+						: `${entry.vendor} ${entry.product} did not answer its probe`,
 			});
 			continue;
 		}
@@ -195,26 +233,40 @@ export function placePostgresFleet(
 			],
 		};
 
-	// Standbys: other vendors first (cheapest first within each pass), so a
-	// single vendor's outage cannot take the writer and every standby down.
-	const otherVendor = rest.filter(
-		(c) => c.entry.vendor !== writer.entry.vendor,
-	);
-	const sameVendor = rest.filter((c) => c.entry.vendor === writer.entry.vendor);
-	const standbys = [...otherVendor, ...sameVendor].slice(0, wantedStandbys);
+	// Prefer evidence of independence from all selected members, then a
+	// different vendor, and finally cost. Different vendor names alone are not
+	// evidence that the underlying infrastructure has no common failure domain.
+	const remaining = [...rest];
+	const standbys: Candidate[] = [];
+	while (standbys.length < wantedStandbys && remaining.length > 0) {
+		const selected = [writer, ...standbys];
+		remaining.sort((a, b) => {
+			const aIndependent = selected.every((c) => independent(a, c));
+			const bIndependent = selected.every((c) => independent(b, c));
+			if (aIndependent !== bIndependent) return aIndependent ? -1 : 1;
+			const aOtherVendor = a.entry.vendor !== writer.entry.vendor;
+			const bOtherVendor = b.entry.vendor !== writer.entry.vendor;
+			if (aOtherVendor !== bOtherVendor) return aOtherVendor ? -1 : 1;
+			return byCost(a, b);
+		});
+		const next = remaining.shift();
+		if (next !== undefined) standbys.push(next);
+	}
 
 	const reasons: string[] = [];
 	if (standbys.length < wantedStandbys)
 		reasons.push(
 			`${standbys.length} of ${wantedStandbys} standbys available; configure another PostgreSQL vendor for failover`,
 		);
-	else if (
-		wantedStandbys > 0 &&
-		standbys.every((c) => c.entry.vendor === writer.entry.vendor)
+	if (
+		standbys.some(
+			(candidate, index) =>
+				![writer, ...standbys.slice(0, index)].every((other) =>
+					independent(candidate, other),
+				),
+		)
 	)
-		reasons.push(
-			`every standby is on ${writer.entry.vendor}, the writer's vendor; one outage can take the fleet down`,
-		);
+		reasons.push("standby failure-domain independence is shared or unverified");
 
 	return {
 		status: reasons.length === 0 ? "placed" : "degraded",

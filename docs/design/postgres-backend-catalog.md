@@ -293,35 +293,31 @@ and Railway, which publish compute equivalence classes but no Yard catalog in
 `@hobo/cloud-providers`, so their catalog half is empty. Neon, Prisma Postgres,
 Upstash and Convex are data backends, not compute, and are not hosts.
 
-## Placement: cheapest available, no single vendor
+## Placement: ranking configured PostgreSQL offers
 
-No PostgreSQL vendor is a dependency of a deployment. `placePostgresFleet`
-(`packages/cloud-providers/src/postgres-placement.ts`) places a `data.postgres`
-request on a **fleet**: a writer and standbys chosen from every configured
-offer whose catalog entry satisfies the request, so Neon, Supabase, Prisma
-Postgres, pgEdge, PlanetScale, the hyperscalers and a self-hosted Postgres
-compete on the same terms.
+`placePostgresFleet` (`packages/cloud-providers/src/postgres-placement.ts`) is a
+pure ranking helper. It selects a candidate writer and standbys from configured
+offers whose catalog entries satisfy the caller's request. It does not provision
+or connect databases, establish replication, wire the fleet, provide assignment
+authority, enforce failover, or prove runtime readiness. A host must supply and
+verify those capabilities separately, including replication privileges.
 
-- **Unreachable is skipped, never fatal.** An offer that failed its probe is
-  reported in `skipped` and placement moves on. The result is `unavailable`
-  only when no configured offer that satisfies the request answers.
-- **Cost first.** Offers rank by known monthly fee (ascending; an unknown fee
-  ranks after every known one), then a probed offer before an unprobed one,
-  then probe latency, then catalog order. The cheapest reachable offer writes.
-- **Vendor diversity.** Standbys go to vendors other than the writer's first,
-  so one vendor's outage leaves a standby. Fewer standbys than requested, or
-  standbys only on the writer's vendor, is `degraded` with a reason. It still
-  serves.
-- **Continuous migration from there.** `fleetOrder` (writer first) is the
-  `backends` order `reconcileFleet` in `@hobo/data-postgres` takes. Each tick
-  copies the writer to every standby, and `decideFleet` in
-  `@hobo/backend-fleet` fails over to a standby within the RPO when the
-  writer stops answering, or switches to a cheaper member when an allowance
-  runs out. Placement chooses who is in the fleet; the fleet keeps deciding,
-  continuously, who writes.
+- **Probe first.** Offers that failed a probe or have not been probed are
+  reported in `skipped`; with no reachable matching offer the result is
+  `unavailable`.
+- **Cost first for the writer.** Offers rank by known monthly fee (ascending;
+  unknown fees follow known ones), then probe latency and catalog order.
+- **Failure domains.** The host may provide verified, complete failure-domain
+  identifiers for each offer, including shared vendors and infrastructure.
+  Standbys with disjoint supplied domains are preferred, then other vendors,
+  then cost. Missing or overlapping domain evidence, or fewer standbys than
+  requested, makes the result `degraded`. Vendor names alone do not prove
+  independence. The helper cannot verify the host's evidence.
+- **Integration remains the host's responsibility.** `fleetOrder` (writer
+  first) has the shape accepted by `reconcileFleet` in `@hobo/data-postgres`;
+  returning that order does not connect or run it.
 
-Fees come from the host (a pricing feed, a plan the owner chose); the catalog
-still records none.
+Fees and probe results come from the host; the catalog records no prices.
 
 ## Gates
 
