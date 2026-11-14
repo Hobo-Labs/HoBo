@@ -498,6 +498,26 @@ describe("camp() — resource mappings", () => {
 });
 
 describe("attachCampToYard", () => {
+	it("reattaches a pre-upgrade serialized Camp to the same Yard without inventing a movable declaration", () => {
+		const original = attachCampToYard(camp("prod"), {
+			yardId: "eu",
+			providerId: "aws",
+		});
+		const {
+			logicalId: _logicalId,
+			placementDeclaration: _placementDeclaration,
+			...legacy
+		} = original;
+		const restored = attachCampToYard(legacy, {
+			yardId: "eu",
+			providerId: "aws",
+		});
+		expect(restored.id).toBe("eu/prod");
+		expect(restored.placementDeclaration).toBeUndefined();
+		expect(() =>
+			attachCampToYard(restored, { yardId: "west", providerId: "gcp" }),
+		).toThrow(/provider-neutral declaration/);
+	});
 	it("namespaces identity under the Yard and derives the provider", () => {
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "eu",

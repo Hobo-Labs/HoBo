@@ -153,6 +153,7 @@ export function attachCampToYard(
 	)
 		throw new TypeError("camp logicalId must be a non-empty stable identity");
 	const origin = campObject.enclosingYardId;
+	const moving = origin !== undefined && origin !== options.yardId;
 	if (
 		campObject.derivedProviderId !== undefined &&
 		(!origin ||
@@ -169,11 +170,10 @@ export function attachCampToYard(
 	if (
 		origin &&
 		(!campObject.derivedProviderId ||
-			!campObject.placementDeclaration ||
 			!campObject.id.startsWith(`${origin}/`) ||
 			campObject.id.slice(origin.length + 1).includes("/") ||
 			!campObject.id.slice(origin.length + 1) ||
-			!campObject.logicalId)
+			(moving && (!campObject.placementDeclaration || !campObject.logicalId)))
 	)
 		throw new Error(
 			"Camp placement does not retain a valid provider-neutral declaration",
@@ -181,19 +181,27 @@ export function attachCampToYard(
 	const localId = origin
 		? campObject.id.slice(origin.length + 1)
 		: campObject.id;
-	const declaration = campObject.placementDeclaration ?? {
-		resolverConfig: campObject.resolverConfig,
-		resourceMappings: campObject.resourceMappings,
-	};
-	const moving = origin !== undefined && origin !== options.yardId;
+	// A pre-upgrade placement has already merged its Yard overrides. It can be
+	// restored in the same Yard, but cannot be moved until the original
+	// provider-neutral declaration is supplied again.
+	const declaration =
+		campObject.placementDeclaration ??
+		(origin
+			? undefined
+			: {
+					resolverConfig: campObject.resolverConfig,
+					resourceMappings: campObject.resourceMappings,
+				});
 	const mergedResolvers = mergeResolverConfig(
-		moving ? declaration.resolverConfig : campObject.resolverConfig,
+		moving && declaration
+			? declaration.resolverConfig
+			: campObject.resolverConfig,
 		parseResolverConfig(options.resolverConfig),
 	);
 	const mappings =
 		options.resourceMappings !== undefined
 			? parseResourceMappings(options.resourceMappings)
-			: moving
+			: moving && declaration
 				? declaration.resourceMappings
 				: campObject.resourceMappings;
 
@@ -206,7 +214,9 @@ export function attachCampToYard(
 		// on the Yard to which the Camp may subsequently move.
 		logicalId:
 			campObject.logicalId ?? `${options.yardId}/${options.yardId}/${localId}`,
-		placementDeclaration: declaration,
+		...(declaration !== undefined
+			? { placementDeclaration: declaration }
+			: undefined),
 		derivedProviderId: options.providerId,
 		enclosingYardId: options.yardId,
 		resolverConfig: mergedResolvers,

@@ -26,6 +26,9 @@ const west = yard("west", { provider: "gcp", camps: [production] });
 Declare only the current placement in a CD topology. A live move additionally
 uses a Trail to transfer state and cut over; changing the declaration alone
 does not transfer data or retire the former provider's resources.
+Pre-upgrade serialized placements can be restored in their existing Yard. To
+move one, reconstruct it from its original provider-neutral Camp declaration;
+its serialized resolver configuration may contain source Yard overrides.
 
 **API residual:** `defaultProvider` / `tiers` / `bindings` on `camp()` are
 **rejected at parse** (`Camp must not select a cloud provider`).
