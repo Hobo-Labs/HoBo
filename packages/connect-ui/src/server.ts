@@ -75,6 +75,13 @@ export interface ConnectPageOptions {
 	readonly assetsDir?: string;
 	readonly host?: "127.0.0.1";
 	readonly port?: number;
+	/**
+	 * A provider that only redirects to a pre-registered URL (a Vercel
+	 * Integration's Redirect URL) cannot reach the per-session path. This
+	 * fixed path (`/vercel/callback`) is routed to the same callback, so the
+	 * flow's own state check is what protects it; use it with a fixed `port`.
+	 */
+	readonly callbackPath?: string;
 }
 
 export interface ConnectPage {
@@ -222,9 +229,14 @@ export async function startConnectPage(
 	const server = createServer((req, res) => {
 		void (async () => {
 			const url = new URL(req.url ?? "/", "http://127.0.0.1");
-			if (!url.pathname.startsWith(base))
+			const fixedCallback =
+				options.callbackPath !== undefined &&
+				url.pathname === options.callbackPath;
+			if (!fixedCallback && !url.pathname.startsWith(base))
 				return send(res, 404, "text/plain", "not found");
-			const route = url.pathname.slice(base.length);
+			const route = fixedCallback
+				? "callback"
+				: url.pathname.slice(base.length);
 			if (req.method === "GET" && route === "")
 				return send(res, 200, "text/html; charset=utf-8", shell(base));
 			if (
@@ -283,7 +295,10 @@ export async function startConnectPage(
 	const origin = `http://127.0.0.1:${port}`;
 	return {
 		url: `${origin}${base}`,
-		callbackUrl: `${origin}${base}callback`,
+		callbackUrl:
+			options.callbackPath === undefined
+				? `${origin}${base}callback`
+				: `${origin}${options.callbackPath}`,
 		done,
 		close: async (closeOptions = {}) => {
 			const graceMs = closeOptions.graceMs ?? 0;
