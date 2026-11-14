@@ -150,6 +150,10 @@ gathers them here as the waves merge.
 - **Contract snapshot:** `contracts/api.snapshot.d.ts`, checked by
   `node --import tsx scripts/emit-fleet-contracts.mts --check`.
 - **Tests:** `test/<area>/` per subpath; `pnpm exec turbo run test --filter @hobo/fleet`.
+- **Integration lane:** `.github/workflows/fleet-integration.yml` runs
+  `fleet:verify` and every fleet integration test on `hobo` (pull requests) or
+  `hobo-trunk` (trunk events). No `vars.HOBO_CI_*` variable picks the runner:
+  routing is the relay's routing slip (ADR-0181).
 
 ## Architecture placement
 
