@@ -24,7 +24,7 @@ type GithubAppVerificationOptions = {
 	pem: string;
 	expectedOrigin: string;
 	expectedOwnerId: number;
-	/** When set, the converted App must be owned by this kind of account. */
+	/** Account kind to verify; defaults to User for existing callers. */
 	expectedOwnerType?: "User" | "Organization";
 	fetch?: typeof fetch;
 	now?: () => number;
@@ -75,8 +75,7 @@ async function verifyGithubApp(
 		if (
 			app.id !== appId ||
 			app.owner.id !== ownerId ||
-			(options.expectedOwnerType !== undefined &&
-				app.owner.type !== options.expectedOwnerType) ||
+			app.owner.type !== (options.expectedOwnerType ?? "User") ||
 			external.origin !== origin.origin ||
 			external.pathname !== "/" ||
 			external.search ||

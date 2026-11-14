@@ -19,16 +19,11 @@ export interface GithubAppHost {
 	readonly ownerKinds: readonly GithubOwnerKind[];
 }
 
-/** The hosts HoBo ships. Both support users and organizations. */
+/** The manifest flow is the only App host wired by this composition. */
 export const GITHUB_APP_HOSTS: readonly GithubAppHost[] = Object.freeze([
 	Object.freeze({
 		id: "manifest",
 		label: "HoBo CI App from the reviewed manifest (this machine)",
-		ownerKinds: Object.freeze(["User", "Organization"] as const),
-	}),
-	Object.freeze({
-		id: "hosted-relay",
-		label: "The hosted relay's App registration",
 		ownerKinds: Object.freeze(["User", "Organization"] as const),
 	}),
 ]);
@@ -56,7 +51,13 @@ export function resolveGithubAppHost(
 			? undefined
 			: hosts.find((host) => host.id === options.configured);
 	const kind = owner.kind === "User" ? "user" : "organization";
-	if (pinned !== undefined && pinned.ownerKinds.includes(owner.kind))
+	if (options.configured !== undefined && pinned === undefined)
+		return {
+			ok: false,
+			message: `App host ${options.configured} is not configured or implemented.`,
+			suggestions: able,
+		};
+	if (pinned?.ownerKinds.includes(owner.kind))
 		return { ok: true, host: pinned };
 	if (pinned !== undefined) {
 		const supported = pinned.ownerKinds

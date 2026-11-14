@@ -41,6 +41,7 @@ function fixture(
 	metadata: FixtureObject = app(),
 	live: FixtureObject = app(),
 	config: FixtureObject = hook(),
+	ownerType?: "User" | "Organization",
 ) {
 	const calls: string[] = [];
 	return {
@@ -52,6 +53,7 @@ function fixture(
 				metadata,
 				expectedOrigin: origin,
 				expectedOwnerId: 123,
+				...(ownerType ? { expectedOwnerType: ownerType } : undefined),
 				now: () => 2_000_000,
 				fetch: async (url, init) => {
 					const path = String(url);
@@ -156,14 +158,25 @@ it("fails closed on invalid signing keys and GitHub verification errors", async 
 
 it("accepts an App owned by an organization, matched by the organization's id", async () => {
 	const org = { ...app(), owner: { id: 123, type: "Organization" } };
-	await expect(fixture(org, org).run()).resolves.toBeUndefined();
+	await expect(
+		fixture(org, org, hook(), "Organization").run(),
+	).resolves.toBeUndefined();
+});
+
+it("retains user-only verification when the caller does not opt into organizations", async () => {
+	const org = { ...app(), owner: { id: 123, type: "Organization" } };
+	const check = fixture(org, org);
+	await expect(check.run()).rejects.toThrow(
+		"does not match reviewed configuration",
+	);
+	expect(check.calls).toEqual([]);
 });
 
 it("refuses an organization-owned App whose id is not the one that asked", async () => {
 	const other = { ...app(), owner: { id: 999, type: "Organization" } };
-	await expect(fixture(other, other).run()).rejects.toThrow(
-		"does not match reviewed configuration",
-	);
+	await expect(
+		fixture(other, other, hook(), "Organization").run(),
+	).rejects.toThrow("does not match reviewed configuration");
 });
 
 it("holds the owner type when the caller pins it", async () => {

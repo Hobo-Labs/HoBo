@@ -508,6 +508,22 @@ describe("prepareGithubConnection", () => {
 		}
 	});
 
+	it("refuses an unimplemented pinned host before opening a secret store", async () => {
+		let opened = false;
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: { ...ENV, HOBO_CI_APP_HOST: "hosted-relay" },
+			openStore: async () => {
+				opened = true;
+				throw new Error("unexpected store access");
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_APP_HOST_UNSUPPORTED_OWNER" },
+		});
+		expect(opened).toBe(false);
+	});
+
 	it("reports unchanged without opening a page when the store holds the App", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
@@ -754,6 +770,14 @@ describe("resolveGithubAppHost", () => {
 		expect(
 			resolveGithubAppHost(org, { hosts: [userOnly, both] }),
 		).toMatchObject({ ok: true, host: both });
+	});
+
+	it("refuses an unknown or unimplemented pinned host instead of silently using the local manifest flow", () => {
+		for (const configured of ["unknown-host", "hosted-relay"])
+			expect(resolveGithubAppHost(org, { configured })).toMatchObject({
+				ok: false,
+				suggestions: [expect.objectContaining({ id: "manifest" })],
+			});
 	});
 
 	it("HoBo's own hosts serve users and organizations", () => {
