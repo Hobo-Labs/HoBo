@@ -7,8 +7,9 @@
  * platform's boundary rule (ADR-0046): a native event envelope inside,
  * CloudEvents 1.0 at the edge, mapped by `@hobo/core`.
  *
- * Only named facts are emitted. Each has a past-tense `ci.*` type below; a
- * log event with no entry stays a log line. Events are delivered over the
+ * Only named facts are emitted. Each has a past-tense `ci.*` type below, or,
+ * for the fleet's own log events (`hobo_fleet_*`, ADR-0183), its `fleet.*`
+ * type; a log event with no entry stays a log line. Events are delivered over the
  * CloudEvents HTTP binding in batched structured mode
  * (`application/cloudevents-batch+json`), which any CloudEvents receiver
  * accepts. Delivery is best effort: a bounded queue, no retry, and never a
@@ -16,6 +17,52 @@
  */
 import { randomUUID } from "node:crypto";
 import { type CloudEvent, toCloudEvent } from "@hobo/core";
+import { FLEET_EVENT_TYPES, FLEET_LOG_EVENTS } from "@hobo/fleet";
+
+/**
+ * The fleet's operational log events, which have no stream of their own, as
+ * past-tense facts. The rest of `FLEET_LOG_EVENTS` keep their stored type:
+ * `hobo_fleet_member_revoked` is `fleet.MemberRevoked` (design §7.5).
+ */
+const FLEET_OPERATIONAL_TYPES: ReadonlyMap<string, string> = new Map([
+	["hobo_fleet_bus_status", "fleet.BusStatusChanged"],
+	["hobo_fleet_observation_rejected", "fleet.ObservationRejected"],
+	["hobo_fleet_offer_unfit", "fleet.OfferFoundUnfit"],
+	["hobo_fleet_claims_unreachable", "fleet.ClaimsLost"],
+	["hobo_fleet_claim_discarded", "fleet.ClaimDiscarded"],
+	["hobo_fleet_capacity", "fleet.CapacityReported"],
+	["hobo_fleet_capacity_exhausted", "fleet.CapacityExhausted"],
+	["hobo_fleet_capacity_restored", "fleet.CapacityRestored"],
+	["hobo_fleet_callout_refused", "fleet.CalloutRefused"],
+	["hobo_fleet_transport_selected", "fleet.TransportSelected"],
+	["hobo_fleet_sandbox_unavailable", "fleet.SandboxFoundUnavailable"],
+	["hobo_fleet_update_required", "fleet.UpdateRequired"],
+	["hobo_fleet_clock_skew", "fleet.ClockSkewDetected"],
+	["hobo_fleet_assignment_tick", "fleet.AssignmentTicked"],
+	["hobo_fleet_assignment_sealed_too_long", "fleet.AssignmentSealedTooLong"],
+	["hobo_fleet_witness_lag", "fleet.WitnessLagged"],
+	["hobo_fleet_witness_refused", "fleet.WitnessRefused"],
+	["hobo_fleet_egress_refused", "fleet.EgressRefused"],
+]);
+
+/** `fleet.SignInStarted` to `hobo_fleet_sign_in_started`. */
+function fleetLogName(type: string): string {
+	return `hobo_fleet_${type
+		.slice("fleet.".length)
+		.replace(/(?<=[a-z])(?=[A-Z])/gu, "_")
+		.toLowerCase()}`;
+}
+
+/** Each fleet log event, in `FLEET_LOG_EVENTS` order, with its `fleet.*` type. */
+function fleetEventTypes(): readonly (readonly [string, string])[] {
+	const stored = new Map<string, string>(
+		FLEET_EVENT_TYPES.map((type) => [fleetLogName(type), type]),
+	);
+	return FLEET_LOG_EVENTS.flatMap((name) => {
+		const type = stored.get(name) ?? FLEET_OPERATIONAL_TYPES.get(name);
+		return type === undefined ? [] : [[name, type] as const];
+	});
+}
 
 /** Log event name to CloudEvents type. Past-tense facts, one per thing that happened. */
 export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
@@ -63,40 +110,10 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_stall_job_rerun", "ci.StallJobRerunRequested"],
 	["hobo_ci_stall_job_rerun_skipped", "ci.StallJobRerunSkipped"],
 	["hobo_ci_storage_admission_wait", "ci.StorageAdmissionDelayed"],
-	// Relay mesh
-	["hobo_ci_mesh_job_taken", "ci.MeshJobTaken"],
-	["hobo_ci_mesh_board_unreachable", "ci.MeshBoardLost"],
-	["hobo_ci_mesh_board_recovered", "ci.MeshBoardRecovered"],
-	["hobo_ci_mesh_claims_unreachable", "ci.MeshClaimsLost"],
-	["hobo_ci_mesh_claims_recovered", "ci.MeshClaimsRecovered"],
-	// Mesh capacity and availability
-	["hobo_ci_mesh_node_joined", "ci.MeshNodeJoined"],
-	["hobo_ci_mesh_node_lost", "ci.MeshNodeLost"],
-	["hobo_ci_mesh_node_unhealthy", "ci.MeshNodeDegraded"],
-	["hobo_ci_mesh_node_recovered", "ci.MeshNodeRecovered"],
-	// Trust: an advertisement whose signature failed, and a changed trusted-key set
-	["hobo_ci_mesh_node_invalid", "ci.MeshNodeRejected"],
-	["hobo_ci_mesh_trust_changed", "ci.MeshTrustChanged"],
-	["hobo_ci_mesh_capacity_exhausted", "ci.MeshCapacityExhausted"],
-	["hobo_ci_mesh_capacity_restored", "ci.MeshCapacityRestored"],
-	["hobo_ci_mesh_capacity", "ci.MeshCapacityReported"],
-	["hobo_ci_fleet_capacity_published", "ci.FleetCapacityPublished"],
-	["hobo_ci_fleet_capacity_error", "ci.FleetCapacityPublishError"],
-	// Fleet verdicts (ADR-0180): what the box's reporter decided, capacity it
-	// could not count, and reports the hosted relay refused
-	["hobo_ci_fleet_verdict_state", "ci.FleetVerdictStateReported"],
-	[
-		"hobo_ci_fleet_verdict_unaccounted_runner",
-		"ci.FleetVerdictUnaccountedRunnerSeen",
-	],
-	["hobo_ci_fleet_verdict_refused", "ci.FleetVerdictReportRefused"],
-	// A node's record of the jobs it took
-	["hobo_ci_mesh_job_dropped", "ci.MeshJobDropped"],
-	["hobo_ci_mesh_reliability", "ci.MeshReliabilityChanged"],
-	["hobo_ci_mesh_config_published", "ci.MeshConfigPublished"],
-	["hobo_ci_mesh_config_drift", "ci.MeshConfigDrifted"],
 	// Telemetry about telemetry
 	["hobo_ci_trace_export_problem", "ci.TraceExportDegraded"],
+	// The fleet (ADR-0183): every member, work and capacity fact
+	...fleetEventTypes(),
 ]);
 
 export type CiEventFields = Readonly<Record<string, string | number | boolean>>;
