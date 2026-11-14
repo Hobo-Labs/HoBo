@@ -104,6 +104,10 @@ function hitsIn(file: string): readonly Hit[] {
  * removed, fails below.
  */
 const ALLOWANCES = {
+	"packages/ci/test/workspace-backend.test.ts": {
+		literals: { "/nonexistent/hobo-program": 1 },
+		why: 'a program path handed to spawn, which only tries to execute it: the child\'s error event becomes "command could not start" (src/workspace-backend.ts:143-145); nothing writes there',
+	},
 	"packages/componentize/test/real-componentize.test.ts": {
 		literals: { "/nowhere": 2 },
 		why: "the toolchain probe fails first, so componentize rejects without opening sourceRoot (src/real-componentize.ts:137-142)",

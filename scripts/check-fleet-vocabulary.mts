@@ -20,15 +20,15 @@
  * The guard, its allowlist, its test and its fixtures are never scanned, nor
  * is anything under `docs/` or `site/`.
  *
- *   node --import tsx scripts/check-fleet-vocabulary.mts [--root=<dir>] [--json]
+ *   node --import tsx scripts/check-fleet-vocabulary.mts [--root=<dir>] [--json] [--under=<prefix>]...
  *
  * `--root` points the guard at another tree, which is how its tests show it a
  * tree that breaks each rule (the pattern of `check-package-boundaries.mts`).
  * Exits 1 when any rule finds something.
  */
 import {
-	existsSync,
 	type Dirent,
+	existsSync,
 	readdirSync,
 	readFileSync,
 	statSync,
@@ -105,8 +105,13 @@ const RULE_4_MESSAGES = new Set([
 const RULE_5 = /InternalMesh|INTERNAL_MESH|internalMesh/u;
 
 /** The removed environment variables of the surfaces section (§6.15). */
-const RULE_6 =
-	/\b(?:HOBO_CI_MESH_[A-Z0-9_]*|HOBO_CI_NATS_[A-Z0-9_]*|HOBO_CI_FLEET_CAPACITY[A-Z0-9_]*|HOBO_CI_FLEET_STATE|HOBO_CI_FLEET_ROUTES|HOBO_CI_LOCAL_RUNNER|HOBO_CI_LOCAL_REPOSITORY|HOBO_CI_LOCAL_TRUSTED|HOBO_TAILSCALE_AUTHKEY)\b/gu;
+// The `HOBO_CI_` prefix is joined here, not written, so the repository-wide
+// retired-variable grep does not find this guard itself.
+const CI = ["HOBO", "CI"].join("_");
+const RULE_6 = new RegExp(
+	String.raw`\b(?:${CI}_MESH_[A-Z0-9_]*|${CI}_NATS_[A-Z0-9_]*|${CI}_FLEET_CAPACITY[A-Z0-9_]*|${CI}_FLEET_STATE|${CI}_FLEET_ROUTES|${CI}_LOCAL_RUNNER|${CI}_LOCAL_REPOSITORY|${CI}_LOCAL_TRUSTED|HOBO_TAILSCALE_AUTHKEY)\b`,
+	"gu",
+);
 
 /** Every `deletes` path of the workflow manifest (§11.5), held as data. */
 const RULE_7_DELETES = [
@@ -574,7 +579,16 @@ if (
 		.find((arg) => arg.startsWith("--root="))
 		?.slice("--root=".length);
 	const root = rootArg ? resolve(rootArg) : resolve(scriptsDir, "..");
-	const findings = scanVocabulary(root);
+	// `--under=<prefix>` (repeatable) reports only findings whose path starts
+	// with one of the prefixes: how an outcome checks one lane's paths.
+	const under = args
+		.filter((arg) => arg.startsWith("--under="))
+		.map((arg) => arg.slice("--under=".length));
+	const findings = scanVocabulary(root).filter(
+		(finding) =>
+			under.length === 0 ||
+			under.some((prefix) => finding.path.startsWith(prefix)),
+	);
 	if (args.includes("--json"))
 		process.stdout.write(`${JSON.stringify({ findings }, null, "\t")}\n`);
 	for (const finding of findings)

@@ -1,6 +1,6 @@
 # Fleet enrollment scorecard
 
-Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`. The allowed status vocabulary (`pass`, `blocked-on-credentials`, `not-implemented`) is pinned by `test/fleet-enrollment-scorecard.eval.test.ts`.
+Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). CI eval rejects `partial`, `fail`, and `deferred`; reports `blocked-on-credentials` and `not-implemented` separately from `pass`. The allowed status vocabulary is `pass`, `blocked-on-credentials` and `not-implemented`. Frozen: `fleet-v2` and this scorecard's generator and eval test were deleted by the HoBo Fleet consolidation (ADR-0183).
 
 | Section | Requirement | Status | Evidence |
 | --- | --- | --- | --- |

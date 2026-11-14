@@ -5,7 +5,7 @@
  *
  * The route job runs from a sparse checkout with nothing installed, so this
  * file uses Node's built-ins only, in the style of
- * `packages/ci/src/fleet-overflow.ts` and `route-runner.mts`. It holds the
+ * `packages/ci/src/runner-routing/tiers.ts` and `route-runner.mts`. It holds the
  * same rules as the package's parsers
  * (`packages/ci-gh-actions/src/runner-routing.ts`, zod;
  * `packages/ci-gh-actions/src/routing-slip.ts`, protobuf) and

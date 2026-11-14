@@ -328,7 +328,10 @@ describe("createFleetClient against the authority's HTTP API (PACT consumer)", (
 					auth: "none",
 					status: 200,
 					response: JSON.stringify({
-						keys: [{ kty: "EC", crv: "P-256", x: "AA", y: "AA", kid: "k1" }],
+						// Only the fields every signing key carries, matched by type:
+						// the authority signs RS256 (JwtSvidIssuer), the in-memory
+						// issuer ES256, and both answer this interaction.
+						keys: [{ kty: "EC", alg: "ES256", use: "sig", kid: "k1" }],
 					}),
 				},
 				(fleet) => fleet.jwks({}),

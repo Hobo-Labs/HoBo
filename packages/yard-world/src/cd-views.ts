@@ -433,14 +433,6 @@ export function deliveryCampsView(
 	return { camps, byCondition, byTaint, untainted };
 }
 
-/**
- * @deprecated The old name of `deliveryCampsView` (rule 9 of L24 keeps
- * `fleet*` names for the fleet packages). Kept only while
- * `test/cd-views.test.ts`, outside L19's paths, still imports it; the
- * coordinator renames that import and removes this alias at the wave-5 merge.
- */
-export const fleetView = deliveryCampsView;
-
 export type HeatBand = "ok" | "watch" | "breach";
 
 export interface ComplianceCell {

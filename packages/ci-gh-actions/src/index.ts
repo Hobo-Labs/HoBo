@@ -1,12 +1,4 @@
 export type {
-	FleetReporterState,
-	FleetReporterStatus,
-	FleetReporterStatusList,
-	FleetVerdict,
-	FleetVerdictAllowance,
-	FleetVerdictAllowanceUse,
-} from "./_generated/fleet_verdict_pb.js";
-export type {
 	RoutingSlip,
 	RoutingSlipClass,
 	RoutingSlipRelay,
@@ -47,73 +39,6 @@ export {
 	reportRelayFailure,
 	setRelayFailureEvents,
 } from "./failure-log.js";
-export {
-	retireRepositoryVariables,
-	type VariableRetireEvent,
-	type VariableRetireLog,
-	type VariableRetireOutcome,
-} from "./fleet-routes.js";
-export {
-	agreedFleetBlocks,
-	countFleetVerdictAllowance,
-	createFleetVerdictStore,
-	createMemoryFleetVerdictKv,
-	createMemoryFleetVerdicts,
-	FLEET_REPORTERS_PATH,
-	FLEET_REPORTERS_PER_ACCOUNT,
-	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
-	FLEET_VERDICT_MAX_TTL_SECONDS,
-	FLEET_VERDICT_MODES,
-	FLEET_VERDICT_REASONS,
-	FLEET_VERDICTS_PATH,
-	type FleetEnrollment,
-	type FleetReporter,
-	type FleetVerdictAcceptance,
-	type FleetVerdictKeys,
-	type FleetVerdictKv,
-	type FleetVerdictKvEntry,
-	type FleetVerdictMode,
-	type FleetVerdictReason,
-	type FleetVerdictRepository,
-	type FleetVerdictSettings,
-	type FleetVerdictStore,
-	type FleetVerdictSubmission,
-	fleetAllowanceSpent,
-	fleetEnrollmentFor,
-	fleetReporterStateJson,
-	fleetReporterStatusListJson,
-	fleetVerdictAllowanceJson,
-	fleetVerdictExpiresAtMs,
-	fleetVerdictJson,
-	fleetVerdictReportJson,
-	MEMORY_FLEET_VERDICT_KEYS,
-	nextFleetReporterState,
-	noFleetVerdict,
-	type ParsedFleetVerdictReport,
-	parseFleetReporterState,
-	parseFleetReporters,
-	parseFleetReportersPath,
-	parseFleetVerdict,
-	parseFleetVerdictAllowance,
-	parseFleetVerdictPath,
-	parseFleetVerdictReport,
-	reportedFleetVerdict,
-} from "./fleet-verdict.js";
-export {
-	FLEET_REPORTER_ID,
-	FLEET_REPORTER_PUBLIC_KEY,
-	FLEET_VERDICT_HEADERS,
-	FLEET_VERDICT_SIGNING_CONTEXT,
-	type FleetVerdictSigner,
-	type FleetVerdictSigningFields,
-	fleetVerdictSigningInput,
-	isFleetVerdictIssuedAt,
-	isFleetVerdictSequence,
-	type SignedFleetVerdictRequest,
-	signedFleetVerdictRequest,
-	signFleetVerdictReport,
-	verifyFleetVerdictReport,
-} from "./fleet-verdict-auth.js";
 // HoBo Fleet (ADR-0183): the `github-actions-job` work kind.
 export {
 	createGithubActionsWorkRunner,
@@ -132,10 +57,8 @@ export { verifyConvertedGithubApp } from "./github-app-manifest-validation.js";
 export { withGithubReadCache } from "./github-read-cache.js";
 export {
 	createHostedControlPlane,
-	type FleetVerdictRefusal,
-	type FleetVerdictService,
 	isConfigWriteRoute,
-	MESH_NODES_PATH,
+	RELAY_FLEET_MEMBERS_PATH,
 } from "./hosted-control.js";
 export {
 	generalLeaseIdsFor,
@@ -162,6 +85,11 @@ export {
 	isIsolatedHostOffer,
 	isSandboxOffer,
 } from "./isolated-backend.js";
+export {
+	BOX_MEMBER_PROCESS_PATHS,
+	type BoxMemberSettings,
+	readBoxMemberSettings,
+} from "./isolated-worker/box-member-settings.js";
 export {
 	type BoxRoutingPolicy,
 	DEFAULT_CAPACITY_VOLATILITY_MB,
@@ -218,42 +146,6 @@ export {
 	defaultDepsRoot,
 } from "./isolated-worker/deps-image.js";
 export {
-	boxLeaseIdsOf,
-	evaluateFleetVerdict,
-	FLEET_VERDICT_POOL_FRESH_MS,
-	FLEET_VERDICT_UNACCOUNTED_WINDOW_MS,
-	type FleetExternalPool,
-	type FleetJobOnRunner,
-	type FleetLabelEvaluation,
-	type FleetLabelReason,
-	type FleetMeshPeer,
-	type FleetPollView,
-	type FleetRunnersView,
-	type FleetVerdictEvaluation,
-	type FleetVerdictEvaluatorInput,
-	fleetRunnerNamePrefix,
-} from "./isolated-worker/fleet-verdict-evaluator.js";
-export {
-	createFleetVerdictReporter,
-	FLEET_VERDICT_SEND_TIMEOUT_MS,
-	type FleetVerdictReporter,
-	type FleetVerdictReporterEvent,
-	type FleetVerdictReporterLog,
-	type FleetVerdictReporterOptions,
-	type FleetVerdictSequenceSource,
-} from "./isolated-worker/fleet-verdict-reporter.js";
-export {
-	createFleetPickupMemory,
-	createFleetVerdictHolds,
-	createFleetVerdictSchedule,
-	createFleetVerdictSequence,
-	FLEET_VERDICT_ENTER_MS,
-	FLEET_VERDICT_EXIT_MS,
-	FLEET_VERDICT_RESEND_MS,
-	FLEET_VERDICT_SAMPLE_MS,
-	FLEET_VERDICT_TTL_SECONDS,
-} from "./isolated-worker/fleet-verdict-state.js";
-export {
 	type BoxGitMirror,
 	type BoxGitMirrorEnsureResult,
 	boxGitMirrorPath,
@@ -266,11 +158,11 @@ export {
 	createGithubJobPoller,
 	createPollLogFilter,
 	describeWaitingJobs,
-	type FleetJobInProgress,
-	type FleetJobsSeen,
 	type GithubJobPollerOptions,
 	type GithubJobPollSummary,
 	type GithubReadFailure,
+	type RunnerJobInProgress,
+	type RunnerJobsSeen,
 	type WaitingJob,
 } from "./isolated-worker/github-job-poller.js";
 export { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
@@ -341,6 +233,22 @@ export {
 } from "./isolated-worker/poll-ingest-coalesce.js";
 export { createRetiredWorkDirectorySweeper } from "./isolated-worker/retired-work-directory-sweeper.js";
 export {
+	boxLeaseIdsOf,
+	evaluateRoutingSlip,
+	type RepositoryRunnersView,
+	ROUTING_POOL_FRESH_MS,
+	ROUTING_UNACCOUNTED_WINDOW_MS,
+	type RoutingLabelEvaluation,
+	type RoutingLabelReason,
+	type RoutingSlipEvaluation,
+	type RoutingSlipEvaluatorInput,
+	type RunnerExternalPool,
+	type RunnerJobOnLabel,
+	type RunnerPollView,
+	routingSlipLeader,
+	runnerNamePrefixOf,
+} from "./isolated-worker/routing-slip-decision.js";
+export {
 	createRoutingSlipBudget,
 	createRoutingSlipIssuer,
 	createRoutingStallWatch,
@@ -363,6 +271,12 @@ export {
 	type StallWatchLease,
 	writeRoutingSlipCommit,
 } from "./isolated-worker/routing-slip-issuer.js";
+export {
+	createRoutingHolds,
+	createRunnerPickupMemory,
+	ROUTING_HOLD_ENTER_MS,
+	ROUTING_HOLD_EXIT_MS,
+} from "./isolated-worker/routing-slip-state.js";
 export { singleFlight } from "./isolated-worker/single-flight.js";
 export {
 	createStallJobRecovery,
@@ -393,6 +307,13 @@ export {
 	type StoragePeaks,
 } from "./isolated-worker/storage-peaks.js";
 export {
+	accountForStorageOverflowReserve,
+	runnerTiersFromAccount,
+	type StorageSpillSelection,
+	selectStorageSpillBackend,
+	spillDemandLabelsForLease,
+} from "./isolated-worker/storage-spill.js";
+export {
 	DEFAULT_WORKER_MERGE_GROUP_LEASES,
 	DEFAULT_WORKER_PR_CAP_WITH_TRUNK,
 	DEFAULT_WORKER_SLOTS,
@@ -415,11 +336,6 @@ export {
 	countLiveBoxContainers,
 	localWorkerFreeSlots,
 } from "./live-container-count.js";
-export {
-	createLocalRunnerMeshNode,
-	LOCAL_RUNNER_MESH_REPORT,
-	type LocalRunnerSessionObserver,
-} from "./local-runner.js";
 export { startRelayFromEnvironment } from "./main.js";
 export {
 	effectiveParallelLaunchSlots,
@@ -432,54 +348,6 @@ export {
 	type MergeQueuePositionSource,
 	type MergeQueuePositions,
 } from "./merge-queue-order.js";
-export {
-	type JoinedMesh,
-	joinMeshFromEnv,
-	meshNodeIdFromEnv,
-	natsCredentialsFromEnv,
-} from "./mesh-join.js";
-export {
-	changeMeshTrust,
-	createHealthSince,
-	createMeshNode,
-	createMeshNodesReader,
-	createMeshReliabilityLedger,
-	createMeshTrust,
-	freeDiskMb,
-	loadMeshIdentity,
-	type MeshJournal,
-	type MeshKeyFiles,
-	type MeshNodeDescription,
-	type MeshNodeEvent,
-	type MeshNodeHandle,
-	type MeshNodesReader,
-	type MeshTrustChange,
-	type MeshTrustSettings,
-	meshReliabilityJournal,
-	meshReliabilityResetToken,
-} from "./mesh-node.js";
-export {
-	MESH_NODE_ID,
-	MESH_REPORT_MAX_NODES,
-	type MeshReading,
-	meshAdvertJson,
-	meshNodeReportsForAccount,
-	meshNodeReportsJson,
-	meshNodeReportsMessage,
-	meshReliabilityRecordJson,
-	meshTrustConfigJson,
-	parseMeshAdvert,
-	parseMeshNodeReports,
-	parseMeshReliabilityRecord,
-	parseMeshTrustConfig,
-	type StoredMeshReliability,
-} from "./mesh-records.js";
-export {
-	createWorkerMesh,
-	type MeshSettings,
-	meshSettingsFromEnv,
-	type WorkerMesh,
-} from "./mesh-worker.js";
 export { createNodeRelayHandler } from "./node-http.js";
 export {
 	createGithubOidcVerifier,
@@ -675,13 +543,11 @@ export {
 	readWorkerLeases,
 	readWorkerRunnerPresence,
 	WORKER_ADMISSION_PAUSED_FILE,
-	WORKER_MESH_ADVERT_FILE,
 	WORKER_RUNNER_PRESENCE_FILE,
 	type WorkerHostFiles,
 	type WorkerRunnerPresence,
 	workerAdmissionPaused,
 	workerHostFiles,
-	writeWorkerMeshAdvert,
 	writeWorkerRunnerPresence,
 } from "./runner-host-worker-jobs.js";
 export {
@@ -707,13 +573,14 @@ export {
 } from "./stateless-app-onboarding.js";
 export { LeaseStore } from "./store.js";
 export {
+	retireRepositoryVariables,
+	type VariableRetireEvent,
+	type VariableRetireLog,
+	type VariableRetireOutcome,
+} from "./variable-retirement.js";
+export {
 	type CiProjectContentFetcher,
 	createGithubCiProjectFetcher,
 	createWebhookIngressHandler,
 } from "./webhook-ingress.js";
 export { createWebhookRepair } from "./webhook-repair.js";
-export {
-	createGithubWorkflowVerifier,
-	type GithubWorkflowClaims,
-	type GithubWorkflowVerifier,
-} from "./workflow-oidc.js";

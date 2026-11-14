@@ -27,7 +27,7 @@ exits 1 when any rule finds something and prints one line per finding
 | 3 | A function, `const`, class or object method named after a fleet-owned function (names only) | `packages/*/src/**`, `scripts/**` | `packages/fleet/src/**` |
 | 4 | A protobuf `message` named after a fleet record | `packages/**/*.proto` | `packages/fleet/data-models/**` |
 | 5 | An identifier containing `InternalMesh`, `INTERNAL_MESH` or `internalMesh` | `packages/*/src/**`, `packages/*/test/**`, `scripts/**` | none |
-| 6 | A removed environment variable (`HOBO_CI_MESH_*`, `HOBO_CI_NATS_*`, `HOBO_CI_FLEET_STATE`, `HOBO_CI_FLEET_CAPACITY*`, `HOBO_CI_FLEET_ROUTES`, `HOBO_CI_LOCAL_RUNNER`, `HOBO_CI_LOCAL_REPOSITORY`, `HOBO_CI_LOCAL_TRUSTED`, `HOBO_TAILSCALE_AUTHKEY`) | `packages/*/src/**`, `packages/*/test/**`, `packages/*/scripts/**`, `scripts/**`, `.github/**`, `.devcontainer/**`, `deploy/**` | none |
+| 6 | A removed environment variable (the relay mesh's, the NATS client's, the fleet state's, `HOBO_CI_FLEET_CAPACITY*`, `HOBO_CI_FLEET_ROUTES`, `HOBO_CI_LOCAL_RUNNER`, `HOBO_CI_LOCAL_REPOSITORY`, `HOBO_CI_LOCAL_TRUSTED`, `HOBO_TAILSCALE_AUTHKEY`; the full list is `RULE_6` in the guard, and the test builds the first three from parts so the repository-wide retired-variable grep stays empty) | `packages/*/src/**`, `packages/*/test/**`, `packages/*/scripts/**`, `scripts/**`, `.github/**`, `.devcontainer/**`, `deploy/**` | none |
 | 7 | A path the fleet work deletes that still exists | the paths themselves | none |
 | 8 | The specifier `@hobo/backend-fleet` or `@hobo/ci/mesh` | as rule 1, and `.github/**` | none |
 | 9 | An exported name starting with `Fleet`, `fleet` or `FLEET_` | `packages/*/src/**`, `scripts/**`, except `packages/fleet*/**` | see the allowlist file |

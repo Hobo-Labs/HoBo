@@ -411,9 +411,9 @@ describe("fleet:outcome", () => {
 		expect(unprefixed.pass).toBe(false);
 	});
 
-	it("does not pass an outcome checked at cutover or by the deferred lane", () => {
+	it("does not pass an outcome checked at cutover", () => {
 		const dir = root(new Map());
-		for (const id of ["O21", "O23"]) {
+		for (const id of ["O21"]) {
 			const exec = runner(passing);
 			const result = runOutcome(spec(id), { root: dir, fallbacks: [], exec });
 			expect(result.pass).toBe(false);

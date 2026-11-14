@@ -269,14 +269,10 @@ export function createRelayHandler(options: {
 			(path.startsWith("/v1/app-registration/") ||
 				path.startsWith("/v1/accounts/self/") ||
 				path.startsWith("/v2/accounts/self/") ||
-				// The mesh's node list; the control plane authenticates it like
-				// the account API's other reads.
-				path === "/v1/mesh/nodes" ||
-				// Fleet verdicts (ADR-0180): read by anyone, reported by an
-				// enrolled reporter's signature; reporter status, read by a
-				// workflow of the repository with its OIDC token.
-				path.startsWith("/v1/fleet/verdicts/") ||
-				path.startsWith("/v1/fleet/reporters/")) &&
+				// The fleet's member list (ADR-0183, `RELAY_FLEET_MEMBERS_PATH`);
+				// the control plane authenticates it like the account API's
+				// other reads.
+				path === "/v1/fleet/members") &&
 			!/%2f|%5c/i.test(path)
 		) {
 			try {

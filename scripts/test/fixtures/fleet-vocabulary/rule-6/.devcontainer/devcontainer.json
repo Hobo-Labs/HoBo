@@ -1,1 +1,1 @@
-{ "containerEnv": { "HOBO_CI_NATS_URL": "nats://example.invalid" } }
+{ "containerEnv": { "HOBO_CI_LOCAL_RUNNER": "1" } }

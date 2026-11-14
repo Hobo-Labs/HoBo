@@ -1,13 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import {
-	existsSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -230,9 +222,8 @@ describe("the relay deploy workflow", () => {
 		assert.match(adopt, /exit "\$status"/u);
 		assert.doesNotMatch(adopt, /--adopt[^\n]*\|\| true/u);
 		// The ad-hoc lookup and smoke check are gone: hobo does both, fail closed.
-		// (The fleet-verdict probe, a separate step, still reads one public URL.)
 		assert.doesNotMatch(workflow, /gh api/u);
-		assert.doesNotMatch(adopt, /curl /u);
+		assert.doesNotMatch(workflow, /curl /u);
 		assert.doesNotMatch(workflow, /curl [^\n]*\/(healthz|readyz)/u);
 	});
 
@@ -341,92 +332,9 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	describe("probes the public origin", () => {
-		const name = "Probe the fleet verdict at the public origin";
-
-		/** The step's body check, run as the workflow runs it. */
-		function judge(body: string, repository = "Hobo-Labs/HoBo") {
-			const probe = step(name);
-			const match = /node -e '([^']+)' "\$RUNNER_TEMP\/verdict\.json"/u.exec(
-				probe,
-			);
-			assert.ok(match, "the step judges the answer with one node -e script");
-			const dir = mkdtempSync(join(tmpdir(), "relay-verdict-probe-"));
-			try {
-				const file = join(dir, "verdict.json");
-				writeFileSync(file, body);
-				return spawnSync(process.execPath, ["-e", match[1] ?? "", file], {
-					encoding: "utf8",
-					env: { ...process.env, GITHUB_REPOSITORY: repository },
-				});
-			} finally {
-				rmSync(dir, { recursive: true, force: true });
-			}
-		}
-
-		it("reads the relay's public origin from .hobo/ci.json, not the deployment URL", () => {
-			const probe = step(name);
-			assert.match(probe, /\.hobo\/ci\.json/u);
-			assert.match(probe, /defaultEnvironment/u);
-			assert.match(probe, /relayOrigin/u);
-			assert.match(probe, /https:/u);
-			assert.doesNotMatch(probe, /DEPLOYMENT_URL/u);
-			assert.match(probe, /\/v1\/fleet\/verdicts\/\$\{?repository/u);
-			assert.match(probe, /if: steps\.gate\.outputs\.run == 'true'/u);
-		});
-
-		it("runs after the existing checks, so it reports on what Vercel already deployed", () => {
-			assert.ok(
-				workflow.indexOf(`- name: ${name}`) >
-					workflow.indexOf(
-						"- name: Adopt Vercel's Git deployment of this commit",
-					),
-			);
-			assert.ok(
-				workflow.indexOf(`- name: ${name}`) <
-					workflow.indexOf("  app-credentials:"),
-			);
-		});
-
-		it("is red, naming the rollback order, unless the read answers 200", () => {
-			const probe = step(name);
-			assert.match(probe, /\[ "\$code" != "200" \]/u);
-			assert.match(probe, /::error title=Relay fleet verdict::/u);
-			assert.match(probe, /exit 1/u);
-			assert.match(probe, /6\.10|rollback/iu);
-		});
-
-		it("accepts a verdict for this repository with a blocked object", () => {
-			const open = judge(
-				JSON.stringify({ repository: "hobo-labs/hobo", blocked: {} }),
-			);
-			assert.equal(open.status, 0, open.stderr);
-			const blocked = judge(
-				JSON.stringify({
-					repository: "hobo-labs/hobo",
-					blocked: { hobo: { reason: "no-capacity" } },
-					observedAt: "2026-11-12T11:14:00.000Z",
-				}),
-			);
-			assert.equal(blocked.status, 0, blocked.stderr);
-		});
-
-		it("refuses an answer that is not a verdict for this repository", () => {
-			for (const body of [
-				"",
-				"not json",
-				"[]",
-				JSON.stringify({ blocked: {} }),
-				JSON.stringify({ repository: "other/repo", blocked: {} }),
-				JSON.stringify({ repository: "hobo-labs/hobo" }),
-				JSON.stringify({ repository: "hobo-labs/hobo", blocked: [] }),
-				JSON.stringify({ repository: "hobo-labs/hobo", blocked: null }),
-				JSON.stringify({ status: "config-unavailable" }),
-			]) {
-				const result = judge(body);
-				assert.notEqual(result.status, 0, `accepted ${body}`);
-			}
-		});
+	it("probes no hosted fleet verdict: the relay serves none (ADR-0183)", () => {
+		assert.doesNotMatch(workflow, /Probe the fleet verdict/u);
+		assert.doesNotMatch(workflow, /\/v1\/fleet\/verdicts\//u);
 	});
 
 	it("passes the repository's workflow lint, as an approved CI fabric workflow", async () => {

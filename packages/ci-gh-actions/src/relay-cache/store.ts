@@ -58,7 +58,7 @@ import {
 	SequencedCiEventSchema,
 	sandboxProxyOnlyUsageQuote,
 	sandboxUsageQuote,
-	shouldAbortIsolatedFleetLease,
+	shouldAbortIsolatedLease,
 	type WebhookInput,
 } from "@hobo/ci";
 import { leaseFinancialIdentity, pinCiQueueDeadline } from "@hobo/ci/store";
@@ -1684,7 +1684,7 @@ export class RelayCacheStore {
 				.find((account) => account.id === lease.accountId)
 				?.offers.find((candidate) => candidate.id === lease.offerId);
 			if (
-				!shouldAbortIsolatedFleetLease(
+				!shouldAbortIsolatedLease(
 					lease.provider,
 					offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
 				)
@@ -1721,7 +1721,7 @@ export class RelayCacheStore {
 			.find((account) => account.id === lease.accountId)
 			?.offers.find((candidate) => candidate.id === lease.offerId);
 		if (
-			!shouldAbortIsolatedFleetLease(
+			!shouldAbortIsolatedLease(
 				lease.provider,
 				offer ? { backend: offer.backend, runsOn: offer.runsOn } : undefined,
 			)

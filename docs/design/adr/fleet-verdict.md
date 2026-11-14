@@ -225,7 +225,7 @@ the route table and its `HOBO_CI_FLEET_ROUTES` publisher stay.
 channel is built to, and what the workflows, the monitor and the retirement
 of the variable channels do. Operating the channel (enrollment, switches,
 cost, rollback, the game day) is in the
-[fleet verdict runbooks](../../../packages/ci-vercel/README.md#fleet-verdict-operations);
+fleet verdict runbooks, which the HoBo Fleet consolidation (ADR-0183) removed with the hosted verdict;
 its evidence gates G1–G7 are recorded in
 [finding 145](../../ci/findings/0145-fleet-verdict-channel-operating-record.md).
 

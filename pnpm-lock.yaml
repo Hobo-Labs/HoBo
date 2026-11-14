@@ -763,6 +763,9 @@ importers:
       '@hobo/events':
         specifier: workspace:*
         version: link:../events
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
@@ -805,6 +808,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
 
   packages/ci:
     dependencies:
@@ -980,15 +986,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
         version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.4.3)
-      '@nats-io/jetstream':
-        specifier: 3.4.0
-        version: 3.4.0
-      '@nats-io/kv':
-        specifier: 3.4.0
-        version: 3.4.0
-      '@nats-io/transport-node':
-        specifier: 3.4.0
-        version: 3.4.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3

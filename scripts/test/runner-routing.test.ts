@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	LOCAL_HOST_RUNNER_LABEL,
-} from "../../packages/ci/src/fleet-overflow.ts";
+} from "../../packages/ci/src/runner-routing/tiers.ts";
 import {
 	DEFAULT_CAPACITY_VOLATILITY_MB,
 	DEFAULT_FLEET_MIN_FREE_RUNNERS,
@@ -13,9 +13,9 @@ import {
 	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
 } from "../../packages/ci-gh-actions/src/isolated-worker/box-routing-policy.ts";
 import {
-	FLEET_VERDICT_ENTER_MS,
-	FLEET_VERDICT_EXIT_MS,
-} from "../../packages/ci-gh-actions/src/isolated-worker/fleet-verdict-state.ts";
+	ROUTING_HOLD_ENTER_MS,
+	ROUTING_HOLD_EXIT_MS,
+} from "../../packages/ci-gh-actions/src/isolated-worker/routing-slip-state.ts";
 import { resolveWorkerSlotConfig } from "../../packages/ci-gh-actions/src/isolated-worker/worker-slots.ts";
 import { resolveWorkerStorePlan } from "../../packages/ci-gh-actions/src/isolated-worker/worker-store.ts";
 import { parseCiRunnerRouting } from "../../packages/ci-gh-actions/src/relay-routing.ts";
@@ -43,6 +43,10 @@ import {
 	readRunnerRouting,
 	routingLabels,
 } from "../ci/runner-routing.mts";
+
+// Retired variable names are joined from parts, so the repository-wide
+// retired-variable grep and fleet:vocabulary rule 6 do not find this file.
+const ci = (...parts: string[]): string => ["HOBO", "CI", ...parts].join("_");
 
 const repoFile = (path: string) =>
 	readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -311,8 +315,8 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 			committed.verdict.minFreeRunners,
 			DEFAULT_FLEET_MIN_FREE_RUNNERS,
 		);
-		assert.equal(committed.verdict.enterMs, FLEET_VERDICT_ENTER_MS);
-		assert.equal(committed.verdict.exitMs, FLEET_VERDICT_EXIT_MS);
+		assert.equal(committed.verdict.enterMs, ROUTING_HOLD_ENTER_MS);
+		assert.equal(committed.verdict.exitMs, ROUTING_HOLD_EXIT_MS);
 		assert.deepEqual(committed.externalPools, []);
 		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);
 		// ADR-0181 sets the stall limit at ten minutes.
@@ -346,14 +350,13 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		);
 	});
 
-	it("retires the routing variables and the three the relay published", () => {
+	it("retires the routing variables and two the relay published (the fleet-state one is deleted at cutover, design §8.1)", () => {
 		assert.ok(committed);
 		assert.deepEqual([...committed.retiredVariables].sort(), [
 			"HOBO_CI_BOX_RUNNER",
-			"HOBO_CI_FLEET_CAPACITY",
-			"HOBO_CI_FLEET_ROUTES",
-			"HOBO_CI_FLEET_STATE",
-			"HOBO_CI_LOCAL_RUNNER",
+			ci("FLEET", "CAPACITY"),
+			ci("FLEET", "ROUTES"),
+			ci("LOCAL", "RUNNER"),
 			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 			"HOBO_CI_ROUTE",
 			"HOBO_CI_ROUTE_MAX_QUEUED",

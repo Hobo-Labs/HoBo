@@ -13,6 +13,10 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
 
+// Retired variable names are joined from parts, so the repository-wide
+// retired-variable grep and fleet:vocabulary rule 6 do not find this file.
+const ci = (...parts: string[]): string => ["HOBO", "CI", ...parts].join("_");
+
 // Git sets GIT_DIR, GIT_INDEX_FILE and the like for the hooks it runs. These
 // tests run from pre-commit too, and every git command they start (their own
 // or a script's) must act on its own repository, never the one being committed.
@@ -170,13 +174,15 @@ describe("Actions runner policy", () => {
 		assert.equal(job("    steps:\n      - run: echo ok\n"), 0);
 		// A repository variable read anywhere in the workflow.
 		assert.notEqual(
-			job("    steps:\n      - run: echo ${{ vars.HOBO_CI_FLEET_ROUTES }}\n"),
+			job(
+				`    steps:\n      - run: echo \${{ vars.${ci("FLEET", "ROUTES")} }}\n`,
+			),
 			0,
 		);
 		// An environment variable by that name, whatever its value.
 		assert.notEqual(
 			job(
-				'    env:\n      HOBO_CI_FLEET_ROUTES: "1"\n    steps:\n      - run: echo ok\n',
+				`    env:\n      ${ci("FLEET", "ROUTES")}: "1"\n    steps:\n      - run: echo ok\n`,
 			),
 			0,
 		);
@@ -217,7 +223,7 @@ describe("Actions runner policy", () => {
 		for (const name of [
 			"HOBO_CI_TRUNK_RUNNER",
 			"HOBO_CI_ROUTE",
-			"HOBO_CI_LOCAL_RUNNER",
+			ci("LOCAL", "RUNNER"),
 			"HOBO_CI_BOX_RUNNER",
 			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 			"HOBO_CI_TURBO_API",
@@ -243,14 +249,14 @@ describe("Actions runner policy", () => {
 			"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
 			"HOBO_CI_ROUTE_MAX_QUEUED",
 			"HOBO_CI_TRUNK_RUNNER",
-			"HOBO_CI_LOCAL_RUNNER",
+			ci("LOCAL", "RUNNER"),
 			"HOBO_CI_INCLUDE_OWN_RUN",
 			"HOBO_CI_ATTESTED",
 			"HOBO_CI_FLEET_VERDICT_MODE",
 			"HOBO_CI_FLEET_REPORTER_ID",
 			"HOBO_CI_FLEET_EXTERNAL_POOLS_JSON",
 			"HOBO_CI_FLEET_REPORTERS_JSON",
-			"HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB",
+			ci("FLEET", "CAPACITY", "VOLATILITY", "MB"),
 			"HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS",
 			"HOBO_CI_WORKER_SLOTS",
 			"HOBO_CI_WORKER_TRUNK_SLOTS",

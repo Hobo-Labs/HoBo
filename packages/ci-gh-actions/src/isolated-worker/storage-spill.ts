@@ -8,17 +8,17 @@
  */
 import type { Account, Job, Lease } from "@hobo/ci";
 import {
-	type FleetMember,
 	isOverflowRunnerLabel,
 	providerOffer,
 	queuedDemandLabels,
-	selectFleetBackend,
+	type RunnerTierState,
+	selectRunnerTier,
 } from "@hobo/ci";
 
 export type StorageSpillSelection = Readonly<{
 	memberId: string;
 	runsOn: string;
-	backend: FleetMember["backend"];
+	backend: RunnerTierState["backend"];
 }>;
 
 /** Map configured offers to runner tiers for pure overflow selection. */
@@ -28,10 +28,10 @@ export function runnerTiersFromAccount(
 		hoboFreeSlots: number;
 		overflowSlots?: Readonly<Record<string, number>>;
 	}>,
-): FleetMember[] {
+): RunnerTierState[] {
 	const overflowSlots = input.overflowSlots ?? {};
 	return account.offers.map((offer) => {
-		let backend: FleetMember["backend"] = "hobo";
+		let backend: RunnerTierState["backend"] = "hobo";
 		if (offer.provider === "github") backend = "github";
 		else if (offer.provider === "kubernetes" && offer.backend === "gh-actions")
 			backend = "arc";
@@ -56,7 +56,7 @@ export function selectStorageSpillBackend(
 	overflowSlots?: Readonly<Record<string, number>>,
 ): StorageSpillSelection | undefined {
 	if (job.isolatedRequired) return undefined;
-	const selection = selectFleetBackend({
+	const selection = selectRunnerTier({
 		members: runnerTiersFromAccount(
 			account,
 			overflowSlots === undefined

@@ -5,14 +5,21 @@
  * run against a clean tree has not been seen to refuse anything.
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-	type VocabularyFinding,
 	matchesGlob,
 	scanVocabulary,
+	type VocabularyFinding,
 } from "../check-fleet-vocabulary.mts";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
@@ -80,8 +87,36 @@ describe("fleet:vocabulary rules", () => {
 		const details = scanVocabulary(join(fixtures, "rule-6")).map(
 			(finding) => finding.detail,
 		);
-		expect(details.join("\n")).not.toContain("HOBO_CI_FLEET_STATEFUL");
+		expect(details.join("\n")).not.toContain("HOBO_CI_FLEET_ROUTESET");
 		expect(details.join("\n")).not.toContain("HOBO_FLEET_HOME");
+	});
+
+	it("rule 6 refuses the mesh, NATS and fleet-state variables", () => {
+		// Built from parts: the repository-wide retired-variable grep must not
+		// find them in this file or a committed fixture.
+		const name = (...parts: string[]) => ["HOBO", "CI", ...parts].join("_");
+		const dir = mkdtempSync(join(tmpdir(), "fleet-vocabulary-rule-6-"));
+		try {
+			mkdirSync(join(dir, "packages", "app", "src"), { recursive: true });
+			writeFileSync(
+				join(dir, "packages", "app", "src", "env.ts"),
+				[
+					`export const a = process.env.${name("MESH", "URL")};`,
+					`export const b = process.env.${name("NATS", "CREDS")};`,
+					`export const c = process.env.${name("FLEET", "STATE")};`,
+					`export const d = process.env.${name("FLEET", "STATEFUL")};`,
+				].join("\n"),
+			);
+			expect(
+				scanVocabulary(dir).map(({ rule, line }) => ({ rule, line })),
+			).toEqual([
+				{ rule: 6, line: 1 },
+				{ rule: 6, line: 2 },
+				{ rule: 6, line: 3 },
+			]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("rule 7 refuses a path a lane deletes that still exists", () => {

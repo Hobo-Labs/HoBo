@@ -60,8 +60,8 @@ export interface OutcomeSpec {
 	/** The assumptions whose fallback changes this outcome. */
 	readonly assumptions: readonly string[];
 	readonly owner: string;
-	/** Checked outside `fleet:verify`'s default run: at cutover, or when the deferred lane runs. */
-	readonly deferred?: "cutover" | "L19";
+	/** Checked outside `fleet:verify`'s default run: at cutover. */
+	readonly deferred?: "cutover";
 	/** A threshold beyond the commands passing, evaluated after they ran. */
 	readonly measure?: (root: string) => ThresholdResult;
 }
@@ -405,14 +405,14 @@ export const OUTCOMES: readonly OutcomeSpec[] = [
 		id: "O23",
 		outcome: "Delivery agents and Camp lifecycle come from the fleet package",
 		checks: [
-			"pnpm exec turbo run test --filter @hobo/cd --filter @hobo/cd-kube-fleet",
-			'! git grep -qE -e "function verifyDpopProof[ (<]" -e "function jwkThumbprint[ (<]" -e "const verifyDpopProof[ :=]" -e "const jwkThumbprint[ :=]" -- packages/cd packages/cd-kube-fleet',
+			"pnpm exec turbo run test --filter @hobo/cd --filter @hobo/cd-kube-fleet --filter @hobo/yard-world",
+			"! git grep -nE 'function (mintDpopProof|verifyDpopProof|jwkThumbprint|importJwk)' -- packages/cd packages/cd-kube-fleet",
+			"node --import tsx scripts/check-fleet-vocabulary.mts --under=packages/cd --under=packages/yard-world/ --under=packages/ci-gh-actions/src/runner-",
 		],
 		threshold:
-			"The existing agent and inventory tests pass on the adapter and mapper; neither package defines verifyDpopProof or jwkThumbprint",
+			"The existing agent and inventory tests pass on the adapter and mapper; neither package defines its own DPoP or JWK functions; fleet:vocabulary has no finding under packages/cd*, packages/yard-world or the runner-host files",
 		assumptions: [],
 		owner: "L19",
-		deferred: "L19",
 	},
 	{
 		id: "O24",
@@ -798,11 +798,7 @@ export function runOutcome(
 	);
 
 	if (spec.deferred !== undefined) {
-		evidence.push(
-			spec.deferred === "cutover"
-				? "checked at cutover, not by this command"
-				: "checked when the deferred lane L19 runs",
-		);
+		evidence.push("checked at cutover, not by this command");
 		return record(false);
 	}
 

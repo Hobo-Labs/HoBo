@@ -21,7 +21,6 @@ export {
 	deliveryCampsView,
 	type FreightTimeline,
 	type FreightTimelineEntry,
-	fleetView,
 	freightTimeline,
 	type HeatBand,
 	heatBand,

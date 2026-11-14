@@ -97,9 +97,8 @@
 					"keys": [
 						{
 							"kty": "EC",
-							"crv": "P-256",
-							"x": "AA",
-							"y": "AA",
+							"alg": "ES256",
+							"use": "sig",
 							"kid": "k1"
 						}
 					]
