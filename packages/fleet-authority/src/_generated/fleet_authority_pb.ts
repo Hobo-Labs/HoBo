@@ -2,7 +2,7 @@
 // @generated from file fleet_authority.proto (package hobo.fleet_authority.v1, syntax proto3)
 /* eslint-disable */
 
-// Local configuration record of @hobo/fleet-authority (ADR-0182). The fleet's
+// Local configuration record of @hobo/fleet-authority (ADR-0183). The fleet's
 // records, ports and signed envelopes are in @hobo/fleet; this package
 // keeps only its own settings here. One file configures both profiles, the
 // authority, the witness and the operations (src/ops reads the same file and

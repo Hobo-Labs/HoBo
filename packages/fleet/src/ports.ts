@@ -1,5 +1,5 @@
 /**
- * The frozen ports of HoBo Fleet (ADR-0182, design §7.3), verbatim.
+ * The frozen ports of HoBo Fleet (ADR-0183, design §7.3), verbatim.
  *
  * Record types are the generated ones from `./_generated/fleet_pb.js`; the
  * branded ids come from `./ids.js`. Only the coordinator edits this file; a

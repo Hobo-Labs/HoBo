@@ -15,6 +15,7 @@ import {
 	Health,
 	MemberState,
 	MembershipSchema,
+	Refusal,
 	ReliabilitySamplesSchema,
 	Role,
 	VerdictState,
@@ -262,16 +263,94 @@ describe("fleetVerdict", () => {
 		});
 	});
 
-	it("is NO_MEMBER when nobody live serves the label, NO_CAPACITY when they are full", () => {
+	it("is NO_MEMBER when nobody live serves the label", () => {
 		expect(
 			fleetVerdict(view({ labels: ["hobo-trunk"] }), "hobo", NOW).state,
 		).toBe(VerdictState.NO_MEMBER);
 		expect(
 			fleetVerdict(view({ validUntil: iso(NOW - 1) }), "hobo", NOW).state,
 		).toBe(VerdictState.NO_MEMBER);
+	});
+
+	// Amendment 4 (D60, ADR-0181 R4): a box that is only busy with its own
+	// jobs is never refused.
+	it("is BUSY, never NO_CAPACITY, when full members refuse only for their own work or say nothing", () => {
+		for (const refusal of [Refusal.UNSPECIFIED, Refusal.NONE, Refusal.OWN_WORK])
+			expect(
+				fleetVerdict(
+					view({ capacity: { freeSlots: 0 }, refusal }),
+					"hobo",
+					NOW,
+				),
+			).toMatchObject({ state: VerdictState.BUSY, members: 1, freeSlots: 0 });
 		expect(
-			fleetVerdict(view({ capacity: { freeSlots: 0 } }), "hobo", NOW),
-		).toMatchObject({ state: VerdictState.NO_CAPACITY, members: 1 });
+			fleetVerdict(
+				view(
+					{ capacity: { freeSlots: 0 }, refusal: Refusal.OWN_WORK },
+					{ capacity: { freeSlots: 0 } },
+				),
+				"hobo",
+				NOW,
+			),
+		).toMatchObject({ state: VerdictState.BUSY, members: 2 });
+	});
+
+	it("is NO_CAPACITY when full members refuse for pressure, storage or draining", () => {
+		for (const refusal of [Refusal.PRESSURE, Refusal.STORAGE, Refusal.DRAINING])
+			expect(
+				fleetVerdict(
+					view({ capacity: { freeSlots: 0 }, refusal }),
+					"hobo",
+					NOW,
+				),
+			).toMatchObject({ state: VerdictState.NO_CAPACITY, members: 1 });
+		expect(
+			fleetVerdict(
+				view(
+					{ capacity: { freeSlots: 0 }, refusal: Refusal.PRESSURE },
+					{ capacity: { freeSlots: 0 }, refusal: Refusal.STORAGE },
+				),
+				"hobo",
+				NOW,
+			).state,
+		).toBe(VerdictState.NO_CAPACITY);
+	});
+
+	it("is BUSY when any full member is busy only with its own work, even beside one that refuses", () => {
+		expect(
+			fleetVerdict(
+				view(
+					{ capacity: { freeSlots: 0 }, refusal: Refusal.OWN_WORK },
+					{ capacity: { freeSlots: 0 }, refusal: Refusal.PRESSURE },
+				),
+				"hobo",
+				NOW,
+			).state,
+		).toBe(VerdictState.BUSY);
+	});
+
+	it("stays OPEN while a serving member has a free slot, whatever the others refuse", () => {
+		expect(
+			fleetVerdict(
+				view(
+					{ capacity: { freeSlots: 1 } },
+					{ capacity: { freeSlots: 0 }, refusal: Refusal.DRAINING },
+				),
+				"hobo",
+				NOW,
+			),
+		).toMatchObject({ state: VerdictState.OPEN, freeSlots: 1 });
+	});
+
+	it("carries each member's refusal into the view while its observation is current", () => {
+		const shown = view(
+			{ capacity: { freeSlots: 0 }, refusal: Refusal.STORAGE },
+			{ refusal: Refusal.PRESSURE, validUntil: iso(NOW - 1) },
+		);
+		expect(shown.members.map((member) => member.refusal)).toEqual([
+			Refusal.STORAGE,
+			Refusal.UNSPECIFIED,
+		]);
 	});
 
 	it("expires at most 300 seconds after it was made, and no later than its view", () => {
@@ -298,6 +377,12 @@ describe("fleetVerdict", () => {
 			members: 40,
 			freeSlots: 12,
 		});
+		// The summary says no member's reason, so a full fleet is BUSY, not refused.
+		const full = create(FleetViewSchema, {
+			...partial,
+			capacity: create(FleetCapacitySchema, { healthy: 40, freeSlots: 0 }),
+		});
+		expect(fleetVerdict(full, "hobo", NOW).state).toBe(VerdictState.BUSY);
 	});
 
 	it("round-trips through the verdict wire as protobuf JSON", () => {

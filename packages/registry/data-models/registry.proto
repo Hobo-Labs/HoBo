@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hobo.registry.v1;
 
-// Wire shapes for the @hobo/registry catalog service (docs/plans/0017 F24):
+// Wire shapes for the @hobo/registry catalog service:
 // the untrusted bundle manifest the ingest boundary parses, the
 // registry.BundleImported fact body it produces, the SLSA-shaped provenance
 // statement the verifier consumes, and the search-index entry the pure

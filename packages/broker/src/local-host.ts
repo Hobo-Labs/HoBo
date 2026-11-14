@@ -105,7 +105,12 @@ export function defaultLocalPolicySet(
 			budgetUsd: 0,
 			spendCapUsd: 0,
 		},
-		delivery: { engine: "in-proc", syncMode: "auto", prune: false },
+		delivery: {
+			reconcilerMode: "conductor",
+			syncMode: "auto",
+			prune: false,
+			engine: "in-proc",
+		},
 		requiredConnectorKinds: [],
 	};
 }

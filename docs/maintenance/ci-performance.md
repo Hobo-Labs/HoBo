@@ -1,7 +1,30 @@
+---
+type: Maintenance Note
+title: "CI performance notes"
+description: "How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down."
+tags: [hobo, ci, performance, maintenance]
+---
+
 # CI performance notes
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
+  pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
+  no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
+  label only when committed `runnerRouting.boxRunner` in `.hobo/ci.json` is `true` (the route job then
+  outputs `box_runner`, `runnerRouting.labels.box`), set once the deployed box daemon is seen to serve
+  `hobo-box`; otherwise it asks for `hobo` as before. No repository variable decides it (ADR-0181). The runner-image and cold-loop jobs do not need the label: they materialize the
+  content-keyed worker image from the host cache or GHCR wherever they run.
+- **The release contract reuses the worker image.** `release-hobo.yml` job
+  `release-contract` resolves `hobo-ci-worker` through
+  `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
+  runner's own content-keyed image, else a GHCR pull with the job token
+  (`packages: read`), and `build.sh` only when neither has it. The
+  `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
+  job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
+  legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
+  removes its own `<image>:candidate` when it finishes.
 - **Parallel isolated containers.** The box worker (`packages/ci-gh-actions/scripts/isolated-worker-daemon.mts`)
   runs up to `HOBO_CI_WORKER_SLOTS` jobs at once, subject to both slot and memory admission. Exact job names
   select light/standard/heavy hard container limits (3072/4096/6144 MiB); active, reserved and warm requests
@@ -16,7 +39,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
-  GitHub every `HOBO_CI_JOB_POLL_MS` for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
+  GitHub every `HOBO_CI_JOB_POLL_MS` (2 s by default) for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
   Postgres quota or webhook relay does. SQLite is the only store: the shared-Postgres option was removed
   with the hosted relay's database (ADR-0179 phase 7). `ci-store-contract.test.ts` runs the store
   contract against it; see `packages/ci/RUNNER-QUEUE.md` for the env vars.
@@ -31,6 +54,14 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   ([finding 83](../ci/findings/0083-main-full-gate-paid-for-missing-deps-layer-and-trunk-serialization.md)).
   Trunk admission now prefers `merge_group` over `push` at the same rank so merge-queue shards are not
   stuck behind a long main push gate when trunk slots are scarce (finding 83).
+  The worker daemon picks the git mirror root with `resolveGitMirrorRoot` (`HOBO_CI_GIT_MIRROR_ROOT`
+  when set, falling back to `~/.cache/hobo-ci/git` when the preferred root is not writable). A lazy
+  mirror clone whose owner directory still cannot be created under that root (**EACCES** on a root that
+  exists but is not writable) does not throw: it is a mirror **miss** with the reason, and the job
+  falls back to a plain checkout.
+  The runner-image job's script-free `pnpm install` (root dependencies for shell lint) goes through
+  `scripts/ci/pnpm-install.mts` like every other workflow install, so a cold store stalls it for the
+  wrapper's bound (`HOBO_PNPM_INSTALL_TIMEOUT_S`, default 180 s) and a retry, not the job's limit.
 - **Full clones.** Checkouts stay full (no `filter: blob:none`): a blobless clone fetches every blob
   lazily at checkout and timed out with HTTP 408 on this repo.
 - **Turbo cache saves even when the job fails.** `.github/actions/turbo-cache` restores at job start and
@@ -66,8 +97,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   referenced by root tests resolve its declarations from `dist` on a clean worker.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
 - **Main full gate workspace sharding.** `main-gate-plan` (runner image only; install-free mise turbo — [finding 93](../ci/findings/0093-main-sub3m-plan-pickup-shards.md), [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
-  base and prints a duration-balanced shard matrix capped by `HOBO_CI_FLEET_CAPACITY` (default four
-  parallel slots; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
+  base and prints a duration-balanced shard matrix capped by `MAIN_WORKSPACE_PARALLEL_CAP` (default four
+  parallel slots; the fleet capacity record it once read is retired; see [finding 86](../ci/findings/0086-main-workspace-shards-fleet-parallel-cap.md)).
   Each shard packs several workspace groups (`scripts/ci/workspace-test-durations.json`, target 180s
   slowest shard when slots allow; weights refreshed from turbo build+test seconds in
   [run 42951579615](https://github.com/Hobo-Labs/HoBo/actions/runs/42951579615) so
@@ -81,11 +112,26 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   links the deps layer first, and skips pnpm store/install on a layer hit; when the plan emits
   `shards=[]` the shard job is skipped and finish passes without workspace legs
   ([finding 139](../ci/findings/0139-main-gate-finish-empty-shard-matrix.md)). S0 uses
-  `--external-workspace-tests` when affected. Gitleaks stays in `main_gate_finish`
-  ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md)).
+  `--external-workspace-tests` when affected. Gitleaks runs in the plan job, outside S0
+  ([finding 85](../ci/findings/0085-main-full-gate-workspace-shards-and-last-green-base.md),
+  [finding 154](../ci/findings/0154-main-waited-for-runners-between-jobs.md)).
   Box dispatch latency (early `dispatchPending`, poll-triggered tick, shard index ordering,
   `hobo_ci_job_reserved`) is [finding 99](../ci/findings/0099-main-gate-job-pickup-latency.md);
   poll coalesce strand fixes stay [finding 87](../ci/findings/0087-poll-coalesce-stranded-queued-jobs-on-github.md) / [#1819](https://github.com/Hobo-Labs/HoBo/pull/1819).
+- **One trunk pickup per main run when the merge queue passed the tree.** A main run's jobs did 4 to 5
+  minutes of work and waited 2 to 7 more for runners between them
+  ([finding 154](../ci/findings/0154-main-waited-for-runners-between-jobs.md)). The route job
+  (`scripts/ci/merge-queue-reuse.mts`) looks for a successful `merge_group` run of this workflow whose head
+  is the pushed commit or tree; GitHub fast-forwards main to the commit the merge queue tested. On a match
+  its `merge-queue-green` output is `true`: **Main full gate** is skipped and the plan emits no shards.
+  **Main workspace plan** carries what main still owes on every push: the deps layer check that was the
+  `CI deps layer (pnpm)` job (now pull requests only; promotion happens on the box alone), the secret scan
+  that was in finish, and the plan. **Main full gate (finish)** is GitHub-hosted and only adds up results.
+  The plan and the gate follow the route job and the shards follow the plan's second ask (#1965), so a
+  run goes to GitHub-hosted runners when the fleet is not taking jobs; the plan's deps layer steps run
+  only on the box worker. Set committed `runnerRouting.mainGate.reuseMergeQueue` to `false` in
+  `.hobo/ci.json` to make every push run the full gate again. A reused push does not run the generated-output drift check or
+  refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
@@ -176,6 +222,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   start there, and until 8.0.37 they also refused on Ubuntu kernels that already carry the fix — the
   lane's first run failed on a GitHub-hosted runner for exactly that. With glibc owning rseq the
   allocator falls back to per-thread caches and the host's kernel stops mattering.
+  Every `mongosh` the lane starts, and the compose healthcheck, runs with `HOME=/tmp`. The image sets
+  `HOME` to `/data/db`, where mongosh keeps its lock files, and the image's entrypoint chowns that
+  tree as the container starts. A readiness probe that created and removed a lock file there during
+  the chown made it fail (`chown: cannot access '/data/db/.mongodb/mongosh/...json.lock'`) and the
+  server exit during start-up, which failed the job on one pull request before any test ran.
   The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,
   so a cached offline result would replay as a live pass. A green exit is not taken as proof either:
   the live tests skip themselves when their variable is missing, so the step ends with
@@ -618,6 +669,12 @@ checks failed on main before anyone saw them:
   checkout that sets `clean: false` twice: two branches that each add the line to the same checkout
   merge without a git conflict into a duplicate YAML key, which GitHub cannot parse, so the workflow
   does not run at all.
+- **An enabled workflow the lint does not list.** #1688 added `fleet-enrollment.yml` (the fleet
+  enrollment scorecard eval) without adding it to the lint's approved set, so `actions:lint` and the
+  `lint-actions-runner.test.ts` repository checks failed on main and refused every commit hook that
+  ran them. #1959 lists it in `activeCiFiles`, and its two jobs follow the rules the lint then
+  applies: the trunk label expression (the workflow can be dispatched) and `clean: false` on the box
+  checkout.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
   `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
   `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads
@@ -630,6 +687,12 @@ checks failed on main before anyone saw them:
   Docker context. The Dockerfile and the bucket
   script are unchanged, so image contents and paths are too: the digest is updated and
   `DEPS_LAYOUT.version` stays 1, which leaves the deps key and every existing layer as they were.
+  The next edit did change the Dockerfile: the deps install now sets
+  `npm_config_package_import_method=hardlink` and stages `node_modules` with `cp -al` instead of
+  `mv` ([finding 152](../ci/findings/0152-two-second-job-poll-and-hard-linked-deps-staging.md)).
+  An install flag is one of the things the rule names, so `DEPS_LAYOUT.version` is 2 and the digest
+  is new: the deps key changes once and the image is rebuilt with the new recipe. The scripts lane
+  only became a pull-request gate with #1962, which is how the stale digest was caught.
 - **Main shard planning vs Turbo affected.** The import-walk planner can list dependents Turbo
   would not schedule under `--affected`. `plan-main-workspace-shards.mts` and the shard CLI now
   intersect scoped plans with `turbo run test --affected --dry=json` at `TURBO_SCM_BASE` before

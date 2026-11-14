@@ -1,6 +1,6 @@
 # `@hobo/fleet`
 
-One package for every fleet (ADR-0182). A **fleet** is a named set of members
+One package for every fleet (ADR-0183). A **fleet** is a named set of members
 inside one tenant, with one policy and one coordination mode; a **member** is a
 `DEVICE` (runs the agent and holds its own keys), a `BACKEND` or a `TARGET`
 (declared and observed by a sponsor). This package owns member identity,
@@ -150,6 +150,10 @@ gathers them here as the waves merge.
 - **Contract snapshot:** `contracts/api.snapshot.d.ts`, checked by
   `node --import tsx scripts/emit-fleet-contracts.mts --check`.
 - **Tests:** `test/<area>/` per subpath; `pnpm exec turbo run test --filter @hobo/fleet`.
+- **Integration lane:** `.github/workflows/fleet-integration.yml` runs
+  `fleet:verify` and every fleet integration test on `hobo` (pull requests) or
+  `hobo-trunk` (trunk events). No `vars.HOBO_CI_*` variable picks the runner:
+  routing is the relay's routing slip (ADR-0181).
 
 ## Architecture placement
 

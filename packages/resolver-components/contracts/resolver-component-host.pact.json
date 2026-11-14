@@ -1,0 +1,82 @@
+{
+  "consumer": {
+    "name": "@hobo/cd/reconcile"
+  },
+  "provider": {
+    "name": "ResolverComponentHost"
+  },
+  "interactions": [
+    {
+      "description": "reconcile through a signed http-artifact-upload component converges on first apply",
+      "providerState": "a verified http-artifact-upload component and an empty upload endpoint",
+      "request": {
+        "method": "POST",
+        "path": "/resolver/http/artifact-upload/reconcile",
+        "body": {
+          "ref": { "slot": "web", "productId": "http/artifact-upload", "logicalId": "site" },
+          "credentialRef": "vault://acme/upload-token"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contract": "hobo.resource-resolver/v1",
+          "action": "create",
+          "physicalId": "https://static.example.net/site/index.html"
+        }
+      }
+    },
+    {
+      "description": "a second reconcile of the same desired state is a noop",
+      "providerState": "the artifact was uploaded",
+      "request": {
+        "method": "POST",
+        "path": "/resolver/http/artifact-upload/reconcile"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contract": "hobo.resource-resolver/v1",
+          "action": "noop"
+        }
+      }
+    },
+    {
+      "description": "a component reaching a non-allowlisted host is refused with a typed resolver error",
+      "providerState": "a component whose reconcile calls evil.example",
+      "request": {
+        "method": "POST",
+        "path": "/resolver/acme/site/reconcile"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "code": "RESOLVER_PROVIDER_REJECTED",
+          "componentCode": "component.egress-denied"
+        }
+      }
+    },
+    {
+      "description": "observe reports retained fields and never as drift",
+      "providerState": "the artifact was uploaded and the endpoint reports last-modified",
+      "request": {
+        "method": "POST",
+        "path": "/resolver/http/artifact-upload/observe",
+        "body": { "observeFields": ["digest", "contentType"] }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "driftKind": "",
+          "retained": ["lastModified"],
+          "kind": "http/artifact-upload"
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

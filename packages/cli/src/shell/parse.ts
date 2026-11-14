@@ -1,6 +1,14 @@
 import path from "node:path";
 
 import { UsageError } from "./errors.js";
+import {
+	acceptedOptions,
+	resolveSubcommand,
+	type SubcommandOptions,
+	type SubcommandOptionValue,
+	VERB_SUBCOMMANDS,
+	type VerbSubcommandTable,
+} from "./subcommands.js";
 import { verbNames } from "./verbs.js";
 
 export interface CliFlags {
@@ -49,6 +57,12 @@ export interface CliFlags {
 	/** Target region for residency-aware preflight (`hobo verify --region`). */
 	readonly region: string | null;
 	readonly budgetId?: string | null;
+	/**
+	 * Options the resolved subcommand declares (`hobo deploy freight record
+	 * --file`), by name without `--`: a value, or `true` for a switch. Empty for
+	 * verbs without a subcommand table (subcommands.ts).
+	 */
+	readonly subcommandOptions?: SubcommandOptions;
 }
 
 export interface CliRequest {
@@ -56,7 +70,8 @@ export interface CliRequest {
 	readonly args: readonly string[];
 	readonly cwd: string;
 	readonly help: boolean;
-	readonly flags: CliFlags;
+	/** Parsed flags; parseArgv always sets subcommandOptions (empty when none). */
+	readonly flags: CliFlags & { readonly subcommandOptions: SubcommandOptions };
 }
 
 export interface ParseArgvOptions {
@@ -126,6 +141,7 @@ export function parseArgv(
 		budgetId: null as string | null,
 	};
 	const args: string[] = [];
+	const subcommandOptions = new Map<string, SubcommandOptionValue>();
 	let verb: string | null = null;
 
 	for (let index = 0; index < argv.length; index += 1) {
@@ -172,6 +188,21 @@ export function parseArgv(
 				args.push(token);
 				continue;
 			}
+			const verbTable = verb === null ? undefined : VERB_SUBCOMMANDS.get(verb);
+			if (verbTable) {
+				const taken = takeSubcommandOption(
+					argv,
+					index,
+					verbTable,
+					subcommandOptions,
+				);
+				if (taken !== undefined) {
+					index = taken;
+					continue;
+				}
+				if (verbTable.strict && !STRICT_GLOBAL_FLAGS.has(token))
+					throw unknownOption(token, verb);
+			}
 			index = parseOption(argv, index, flags, verb);
 			continue;
 		}
@@ -191,13 +222,81 @@ export function parseArgv(
 		);
 	}
 
+	const verbTable = verb === null ? undefined : VERB_SUBCOMMANDS.get(verb);
+	if (verbTable) refuseUndeclared(verbTable, verb, args, subcommandOptions);
+
 	return {
 		verb,
 		args,
 		cwd: flags.cwd,
 		help: flags.help,
-		flags,
+		flags: {
+			...flags,
+			subcommandOptions: Object.freeze(Object.fromEntries(subcommandOptions)),
+		},
 	};
+}
+
+// The shell flags a strict subcommand verb keeps (verbs.ts GLOBAL_FLAGS).
+const STRICT_GLOBAL_FLAGS: ReadonlySet<string> = new Set([
+	"--json",
+	"--cwd",
+	"--verbose",
+	"-q",
+	"--help",
+	"-h",
+]);
+
+/**
+ * Take one table-declared option at `index` into `into`: the index of its
+ * last token, or undefined when the token names no option the table declares.
+ */
+function takeSubcommandOption(
+	argv: readonly string[],
+	index: number,
+	verbTable: VerbSubcommandTable,
+	into: Map<string, SubcommandOptionValue>,
+): number | undefined {
+	const token = argv[index];
+	if (token === undefined || !token.startsWith("--")) return undefined;
+	const equals = token.indexOf("=");
+	const name = token.slice(2, equals === -1 ? undefined : equals);
+	const kind = verbTable.options.get(name);
+	if (kind === undefined) return undefined;
+	if (kind === "switch") {
+		if (equals !== -1)
+			throw new UsageError(`Option "--${name}" takes no value.`, [
+				`Pass --${name} on its own.`,
+			]);
+		into.set(name, true);
+		return index;
+	}
+	if (equals === -1) {
+		into.set(name, takeValue(argv, index, token));
+		return index + 1;
+	}
+	const inline = token.slice(equals + 1);
+	if (inline === "")
+		throw new UsageError(`Option "--${name}" requires a value.`, [
+			`Provide a value immediately after --${name}.`,
+		]);
+	into.set(name, inline);
+	return index;
+}
+
+/** Refuse a declared option the resolved subcommand does not take. */
+function refuseUndeclared(
+	verbTable: VerbSubcommandTable,
+	verb: string | null,
+	args: readonly string[],
+	options: ReadonlyMap<string, SubcommandOptionValue>,
+): void {
+	const subcommand = resolveSubcommand(verbTable, args);
+	// An unknown subcommand is the command's to report, with its usage.
+	if (subcommand === undefined) return;
+	const accepted = acceptedOptions(verbTable, subcommand);
+	for (const name of options.keys())
+		if (!accepted.has(name)) throw unknownOption(`--${name}`, verb, subcommand);
 }
 
 function parseOption(
@@ -447,11 +546,17 @@ function takeValue(
 	return value;
 }
 
-function unknownOption(token: string, verb: string | null): UsageError {
+function unknownOption(
+	token: string,
+	verb: string | null,
+	subcommand?: string,
+): UsageError {
 	const helpTarget = verb ? `hobo ${verb} --help` : "hobo --help";
-	return new UsageError(`Unknown option "${token}". Run "${helpTarget}".`, [
-		`Run \`${helpTarget}\` to see supported flags.`,
-	]);
+	const scope = verb && subcommand ? ` for "hobo ${verb} ${subcommand}"` : "";
+	return new UsageError(
+		`Unknown option "${token}"${scope}. Run "${helpTarget}".`,
+		[`Run \`${helpTarget}\` to see supported flags.`],
+	);
 }
 
 export function unknownVerbMessage(input: string): string {

@@ -1,0 +1,27 @@
+{
+	"name": "@hobo/provider-npm",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"description": "HoBo npm-compatible registry realizer (npmjs, GitHub Packages, Verdaccio): publishes a Freight tarball as an immutable package version, moves dist-tags as the promotion lever, attaches npm provenance, and deprecates instead of unpublishing."
+}

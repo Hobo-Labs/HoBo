@@ -1,0 +1,82 @@
+{
+  "consumer": { "name": "HoboCdPipelinesFanoutAndOperators" },
+  "provider": { "name": "HoboCdPromotion" },
+  "interactions": [
+    {
+      "description": "a pipeline requests a promotion of available Freight and it is promoted",
+      "providerState": "Freight f1 is available to shop/staging and staging-1 has a predecessor Set",
+      "request": { "method": "PROMOTE", "body": { "freightId": "f1", "targets": ["staging-1"], "idempotencyKey": "k1", "pipeline": "shop", "node": "staging" } },
+      "response": {
+        "body": {
+          "ok": true,
+          "record": { "schemaVersion": "hobo.cd.promotion/v1", "freightId": "f1", "targetCampIds": ["staging-1"], "pipeline": "shop", "node": "staging", "state": "PROMOTION_STATE_PROMOTED", "subject": "FREIGHT_SUBJECT_BINDLE", "idempotencyKey": "k1" },
+          "events": ["env.PromoteRequested", "saga.Started", "env.Promoted", "saga.Completed"],
+          "stream": "cd-promotion-<promotionId>"
+        },
+        "matchingRules": {
+          "$.body.record.promotionId": { "match": "regex", "regex": "^promo_[0-9a-f]{24}$" },
+          "$.body.record.gateDecisionId": { "match": "regex", "regex": "^.+$" }
+        }
+      }
+    },
+    {
+      "description": "the same request again returns the same promotion",
+      "providerState": "promotion k1 exists",
+      "request": { "method": "PROMOTE", "body": { "freightId": "f1", "targets": ["staging-1"], "idempotencyKey": "k1", "pipeline": "shop", "node": "staging", "repeat": true } },
+      "response": { "body": { "ok": true, "samePromotion": true, "requestEvents": 1 } }
+    },
+    {
+      "description": "Freight that is not available to prod is refused with a typed lineage reason",
+      "providerState": "Freight f1 is not qualified upstream of shop/prod",
+      "request": { "method": "PROMOTE", "body": { "freightId": "f1", "targets": ["prod-1"], "idempotencyKey": "k2", "pipeline": "shop", "node": "prod" } },
+      "response": { "body": { "ok": false, "code": "lineage-unsatisfied", "hasRemediation": true } }
+    },
+    {
+      "description": "an operator rolls a Camp back to its predecessor Set",
+      "providerState": "staging-1 runs f1 over a predecessor f0",
+      "request": { "method": "ROLLBACK", "body": { "campId": "staging-1", "reason": "error spike", "idempotencyKey": "rb1" } },
+      "response": {
+        "body": { "ok": true, "record": { "state": "PROMOTION_STATE_ROLLED_BACK", "freightId": "f0", "targetCampIds": ["staging-1"] }, "setOrigin": "SET_ORIGIN_ROLLBACK", "events": ["env.PromoteRolledBack"] },
+        "matchingRules": { "$.body.record.promotionId": { "match": "regex", "regex": "^rollback_[0-9a-f]{24}$" } }
+      }
+    },
+    {
+      "description": "the webhook approver POSTs a CloudEvent naming a signed callback",
+      "providerState": "a promotion awaits approval",
+      "request": { "method": "APPROVAL_REQUEST", "body": { "subject": "promotion:promo_1/prod-1" } },
+      "response": {
+        "body": {
+          "headers": { "content-type": "application/cloudevents+json; charset=utf-8" },
+          "event": { "specversion": "1.0", "type": "dev.cdeventsx.hobo.approval.requested", "subject": "promotion:promo_1/prod-1", "datacontenttype": "application/json" },
+          "data": { "requestId": "promotion:promo_1/prod-1", "callback": { "url": "https://cd.example/v1/cd/approvals/callback" } }
+        },
+        "matchingRules": { "$.body.data.callback.token": { "match": "regex", "regex": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}$" } }
+      }
+    },
+    {
+      "description": "the approver answers on the signed callback",
+      "providerState": "an approval request is open",
+      "request": { "method": "APPROVAL_CALLBACK", "body": { "decision": "approved", "approver": "release-bot" } },
+      "response": { "body": { "status": 200, "result": { "status": "approved" } } }
+    },
+    {
+      "description": "a callback with a forged signature is refused",
+      "providerState": "an approval request is open",
+      "request": { "method": "APPROVAL_CALLBACK", "body": { "decision": "approved", "approver": "mallory", "forged": true } },
+      "response": { "body": { "status": 401, "result": { "error": "approval-signature-invalid" } } }
+    },
+    {
+      "description": "a NOTIFY hook is delivered as a structured CloudEvent",
+      "providerState": "channel ops has an endpoint",
+      "request": { "method": "NOTIFY", "body": { "channel": "ops", "subject": "promo_1/prod-1" } },
+      "response": {
+        "body": {
+          "headers": { "content-type": "application/cloudevents+json; charset=utf-8" },
+          "event": { "specversion": "1.0", "type": "dev.cdeventsx.hobo.promotion.hook.notified", "subject": "promo_1/prod-1", "source": "hobo://cd/acme", "datacontenttype": "application/json" }
+        },
+        "matchingRules": { "$.body.event.id": { "match": "regex", "regex": "^[0-9a-f]{64}$" } }
+      }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

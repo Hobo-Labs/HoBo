@@ -20,7 +20,7 @@ const MAX_VERDICT_TTL_MS = 300_000;
 /** How far the authority's clock may run ahead of the route job's. */
 const MAX_CLOCK_SKEW_MS = 60_000;
 
-const STATES = ["OPEN", "NO_MEMBER", "NO_CAPACITY"] as const;
+const STATES = ["OPEN", "NO_MEMBER", "NO_CAPACITY", "BUSY"] as const;
 type VerdictWireState = (typeof STATES)[number];
 
 function objectOf(value: Json): JsonObject | undefined {
@@ -60,7 +60,7 @@ function stateOf(value: Json | undefined): VerdictWireState | undefined {
 	const text = textOf(value);
 	if (text !== undefined)
 		return STATES.find((state) => `VERDICT_STATE_${state}` === text);
-	// VERDICT_STATE_OPEN = 1, NO_MEMBER = 2, NO_CAPACITY = 3.
+	// VERDICT_STATE_OPEN = 1, NO_MEMBER = 2, NO_CAPACITY = 3, BUSY = 4 (D60).
 	return Number.isSafeInteger(value) ? STATES[Number(value) - 1] : undefined;
 }
 
@@ -75,7 +75,7 @@ export function parseFleetVerdict(
 	json: string,
 	nowMs: number,
 ):
-	| { state: "OPEN" | "NO_MEMBER" | "NO_CAPACITY"; freeSlots: number }
+	| { state: "OPEN" | "BUSY" | "NO_MEMBER" | "NO_CAPACITY"; freeSlots: number }
 	| undefined {
 	let parsed: Json;
 	try {

@@ -651,9 +651,16 @@ export interface ProductionYardRuntimeOptions
 /** Async production composition shares one persistent event partition among
  * gateway admission, mutation journals and the execution supervisor. Verified
  * credential leases and native financial readers can be acquired in configureHosting. */
+export type ProductionYardRuntime = YardRuntime & {
+	readonly hostingController: ReturnType<
+		typeof createProductionHostingExecution
+	>;
+	readonly close: () => void;
+};
+
 export async function createProductionYardRuntime(
 	options: ProductionYardRuntimeOptions,
-) {
+): Promise<ProductionYardRuntime> {
 	if (!options.dataDir || !isAbsolute(options.dataDir))
 		throw new Error(
 			"production hosting requires an absolute persistent data directory",
@@ -819,8 +826,8 @@ export function createDefaultDevRuntime(
 	};
 }
 
-// The project-aware dev-runtime resolver `hobo dev` boots in the composed CLI
-// (docs/plans/0006 item 3-1). When the invoked project's bindle source loads
+// The project-aware dev-runtime resolver `hobo dev` boots in the composed CLI.
+// When the invoked project's bindle source loads
 // and its first api/web resource carries an app-host entrypoint (the
 // `b.api(() => app.fetch)` handler), the local Camp serves THAT handler:
 // the component descriptor's HTTP export converts the host's HttpRequest to a
@@ -939,7 +946,7 @@ export function createDefaultCollectionTarget(
 }
 
 // The project-aware target resolver `hobo collect` runs with in the composed
-// CLI (docs/plans/0006 item 3-1): the invoked project's own bindle source wins
+// CLI: the invoked project's own bindle source wins
 // (TS loader → run-to-collect); the representative hello-bindle target remains
 // the fallback so composed `collect` never regresses to the shell stub.
 export async function resolveProjectCollectionTarget(

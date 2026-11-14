@@ -50,7 +50,7 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `eval.*` | `eval.Ran`, `eval.GateFailed` |
 | `exec.*` | `exec.Started`, `exec.Succeeded` |
 | `experiment.*` | `experiment.Assigned` (sampled), `experiment.Exposed` (sampled), `experiment.Concluded` |
-| `fleet.*` | `fleet.TokenIssued`, `fleet.TokenConsumed`, `fleet.TokenRevoked`, `fleet.ThumbprintBound`, `fleet.EnrollmentRequested`, `fleet.MemberDeclared`, `fleet.KeyApproved`, `fleet.EnrollmentAccepted`, `fleet.EnrollmentRejected`, `fleet.MemberActivated`, `fleet.MembershipAssigned`, `fleet.CredentialsIssued`, `fleet.KeysRotated`, `fleet.IdentityKeyRotated`, `fleet.MemberSuspended`, `fleet.MemberResumed`, `fleet.MemberLocked`, `fleet.MemberUnlocked`, `fleet.MemberRevoked`, `fleet.ViolationReported`, `fleet.FleetDefined`, `fleet.FleetPolicyChanged`, `fleet.SignInStarted`, `fleet.SignInAuthenticated`, `fleet.SignInApproved`, `fleet.SignInCompleted`, `fleet.PersonSignedIn`, `fleet.SessionGranted`, `fleet.SessionClosed`, `fleet.WorkSubmitted`, `fleet.WorkOffered`, `fleet.WorkClaimed`, `fleet.WorkOrdered`, `fleet.WorkStarted`, `fleet.WorkSucceeded`, `fleet.WorkFailed`, `fleet.WorkCancelled`, `fleet.WorkAbandoned`, `fleet.WorkRefused`, `fleet.TrustRotated`, `fleet.AuditCheckpointed` — HoBo Fleet ([ADR-0182](./adr/index.md)): enrollment, membership, sign-in, sessions, work, trust and audit facts on the core EventStore, names in `packages/fleet/src/events.ts`; usage types `fleet.member.active`, `fleet.work.sandbox`, `fleet.transport.relay`, `fleet.transport.direct` are metering, not events |
+| `fleet.*` | `fleet.TokenIssued`, `fleet.TokenConsumed`, `fleet.TokenRevoked`, `fleet.ThumbprintBound`, `fleet.EnrollmentRequested`, `fleet.MemberDeclared`, `fleet.KeyApproved`, `fleet.EnrollmentAccepted`, `fleet.EnrollmentRejected`, `fleet.MemberActivated`, `fleet.MembershipAssigned`, `fleet.CredentialsIssued`, `fleet.KeysRotated`, `fleet.IdentityKeyRotated`, `fleet.MemberSuspended`, `fleet.MemberResumed`, `fleet.MemberLocked`, `fleet.MemberUnlocked`, `fleet.MemberRevoked`, `fleet.ViolationReported`, `fleet.FleetDefined`, `fleet.FleetPolicyChanged`, `fleet.SignInStarted`, `fleet.SignInAuthenticated`, `fleet.SignInApproved`, `fleet.SignInCompleted`, `fleet.PersonSignedIn`, `fleet.SessionGranted`, `fleet.SessionClosed`, `fleet.WorkSubmitted`, `fleet.WorkOffered`, `fleet.WorkClaimed`, `fleet.WorkOrdered`, `fleet.WorkStarted`, `fleet.WorkSucceeded`, `fleet.WorkFailed`, `fleet.WorkCancelled`, `fleet.WorkAbandoned`, `fleet.WorkRefused`, `fleet.TrustRotated`, `fleet.AuditCheckpointed` — HoBo Fleet ([ADR-0183](./adr/index.md)): enrollment, membership, sign-in, sessions, work, trust and audit facts on the core EventStore, names in `packages/fleet/src/events.ts`; usage types `fleet.member.active`, `fleet.work.sandbox`, `fleet.transport.relay`, `fleet.transport.direct` are metering, not events |
 | `flag.*` | `flag.Defined`, `flag.Changed`, `flag.Evaluated` (sampled), `flag.Archived`, `flag.KillSwitch` |
 | `gatekeeper.*` | `gatekeeper.Decided` |
 | `generated.*` | `generated.ResourcePut`, `generated.ResourceRemoved` — executable generated resource APIs backed by the core EventStore; Protobuf/CUE payloads live in `packages/cli/data-models/project_codegen.*` |
@@ -87,7 +87,7 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `resource.*` | `resource.Provisioned`, `resource.DriftDetected` |
 | `resilience.*` | `resilience.Attempt`, `resilience.Terminal` |
 | `resourcedef.*` | `resourcedef.Registered`, `resourcedef.Updated` (design-only: no emitter ships yet — emission from the registry write path is tracked in GAPS.md) |
-| `rollout.*` | `rollout.Started`, `rollout.Stepped`, `rollout.Promoted`, `rollout.RolledBack`, `rollout.Failed` |
+| `rollout.*` | `rollout.Started`, `rollout.Stepped`, `rollout.Promoted`, `rollout.RolledBack`, `rollout.Failed` (OpenDelivery port, `@hobo/identity`); `@hobo/cd` rollout ledger: `rollout.Lowered`, `rollout.EvidenceObserved`, `rollout.RampStarted`, `rollout.ShiftRequested`, `rollout.Shifted`, `rollout.TrafficObserved`, `rollout.StageVerified`, `rollout.StageApprovalRequested`, `rollout.Held`, `rollout.Released`, `rollout.Advanced`, `rollout.RollbackStarted`, `rollout.RollbackDeltaOpened`, `rollout.Finished`, `rollout.EngineCommanded` (`packages/cd/src/rollout/journal.ts`) |
 | `run.*` | `run.Started`, `run.StepCompleted` |
 | `runbook.*` | `runbook.Defined`, `runbook.Triggered`, `runbook.Diagnosed`, `runbook.FixBlocked`, `runbook.RemediationStarted`, `runbook.RemediationCompleted`, `runbook.StepCompleted`, `runbook.Completed`, `runbook.Failed` |
 | `sdk.*` | `sdk.ExecutionFact` — provider generation and runner execution receipts; Protobuf/CUE payloads in `packages/sdk/data-models/sdk.*` |
@@ -113,3 +113,43 @@ This catalog is the canonical event-family inventory for design docs. Add a fami
 | `training.*` | `training.RunStarted`, `training.Promoted` |
 | `user.*` | `user.Authenticated` |
 | `ws.*` | `ws.Connected`, `ws.Subscribed` |
+
+## HoBo.CD families (`CD_EVENTS`)
+
+Every event name in `CD_EVENTS` (`packages/cd/src/events.ts`, frozen by plan
+0024 Appendix A) is listed here with the `@hobo/cd` module that appends it.
+Stream ids come from `CD_STREAMS` in the same file: desired state on
+`cd-camp-<campId>`, observations on `cd-camp-status-<campId>`, inventory on
+`cd-camp-inventory-<campId>`, compliance on `cd-compliance-<campId>`, and one
+stream per Freight, source, publisher, artifact, pipeline, window, promotion,
+verification, reconciler, Camp set, placement, fan-out and failover. Bodies are
+the protobuf messages in `packages/cd/data-models/cd.proto`. Some families
+(`camp.*`, `delta.*`, `deployment.*`, `env.*`, `pipeline.*`, `policy.*`,
+`rollout.*`, `set.*`) already appear above for other packages; the CD names
+extend them. Design: [continuous-delivery.md](./continuous-delivery.md),
+[ADR-0182](./adr/01-architecture-core.md#adr-0182).
+
+| Family | `CD_EVENTS` names | Appended by (`packages/cd/src/`) |
+|---|---|---|
+| `freight.*` | `freight.Recorded`, `freight.Yanked`, `freight.Qualified`, `freight.Approved`, `freight.Retired` | `freight/` |
+| `source.*` | `source.Defined`, `source.ArtifactDiscovered` | `sources/` |
+| `publisher.*` | `publisher.Trusted` | `ingest/` |
+| `artifact.*` | `artifact.Stored`, `artifact.Deleted` | `artifacts/` |
+| `set.*` | `set.Created` | `sets/` (and `freight/` for a recorded Set) |
+| `delta.*` | `delta.Opened`, `delta.Updated`, `delta.Applied`, `delta.Rejected` | `sets/` |
+| `pipeline.*` | `pipeline.Applied`, `pipeline.FreightAvailable` | `pipelines/` |
+| `window.*` | `window.Defined`, `window.Overridden` | `windows/` |
+| `env.*` | `env.PromoteRequested`, `env.Promoted`, `env.PromoteRolledBack`, `env.PromoteRejected`, `env.PromoteSuperseded`, `env.Cloned`, `env.Expired` | `promotion/` |
+| `verification.*` | `verification.Started`, `verification.Completed` | `verification/` |
+| `rollout.*` | `rollout.Lowered`, `rollout.EvidenceObserved` | `rollout/` (`Lowered`), `verification/` (`EvidenceObserved`) |
+| `reconciler.*` | `reconciler.Enrolled`, `reconciler.Revoked`, `reconciler.EnrollmentRequested`, `reconciler.KeyApproved`, `reconciler.Accepted` | `agent/` (enrollment) |
+| `deployment.*` | `deployment.ReconcileStarted`, `deployment.StatusObserved`, `deployment.Converged`, `deployment.ReconcileBlocked` | `reconcile/` (Camp status stream) |
+| `camp.*` | `camp.StatusChanged`, `camp.Tainted`, `camp.Untainted`, `camp.ManagementChanged`, `camp.Departed` | `inventory/` (`Departed`: `fanout/`) |
+| `campset.*` | `campset.Defined` | `inventory/` |
+| `placement.*` | `placement.Defined`, `placement.ScoresReported`, `placement.Decided` | `placement/` |
+| `fanout.*` | `fanout.Started`, `fanout.Progressed`, `fanout.Halted`, `fanout.Resumed`, `fanout.Completed`, `fanout.RolledBack` | `fanout/` |
+| `failover.*` | `failover.Proposed`, `failover.Started`, `failover.Progressed`, `failover.Completed`, `failover.Refused` | `failover/` |
+| `rebalance.*` | `rebalance.Requested` | `failover/` |
+| `policy.*` | `policy.BindingChanged`, `policy.ShadowDecided` | `posture/` |
+| `compliance.*` | `compliance.Observed`, `compliance.Changed` | `posture/` |
+| `posture.*` | `posture.RemediationProposed` | `posture/` |

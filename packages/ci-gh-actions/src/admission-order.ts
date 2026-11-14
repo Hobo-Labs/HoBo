@@ -68,6 +68,7 @@ const MAIN_WORKSPACE_SHARD = /^Main workspace test shard (\d+)$/u;
 /** HoBo CI Fabric main push trunk phases (lower admits first on the same run). */
 const MAIN_WORKSPACE_PLAN_JOB = "Main workspace plan";
 const MAIN_FULL_GATE_JOB = "Main full gate";
+const MAIN_FULL_GATE_FINISH_JOB = "Main full gate (finish)";
 const CI_DEPS_LAYER_JOB = "CI deps layer (pnpm)";
 const MAIN_TRAIN_RELEASE_GATE = "Main train release gate (nbgv)";
 const RELEASE_CONTRACT_JOB = "Release contract + affected OCI images";
@@ -130,6 +131,7 @@ export function isMainTrunkFleetDeferJob(
 	jobName: string | undefined,
 	runEvent?: string | undefined,
 ): boolean {
+	if (jobName === MAIN_FULL_GATE_FINISH_JOB) return true;
 	return trunkAdmissionPhase(jobName, runEvent) <= 3;
 }
 
@@ -156,6 +158,7 @@ function mainFabricTrunkPhase(
 	}
 	if (jobName === MAIN_FULL_GATE_JOB) return 2;
 	if (isMainWorkspaceShardJob(jobName)) return 3;
+	if (jobName === MAIN_FULL_GATE_FINISH_JOB) return 4;
 	return 4;
 }
 

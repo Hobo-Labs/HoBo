@@ -182,6 +182,24 @@ describe("worker-owned deps image ensure", () => {
 		);
 	});
 
+	it("defers a local build while job leases are still active", async () => {
+		const fake = harness();
+		fake.setPullFails(true);
+		let idle = false;
+		const ensurer = createDepsImageEnsurer({
+			...fake.options,
+			idleForBuild: async () => idle,
+			idleBuildRetryMs: 50,
+		});
+		expect(await ensurer.ensure()).toEqual({ status: "backoff", retryMs: 50 });
+		expect(fake.processCalls).toHaveLength(0);
+		idle = true;
+		expect(await ensurer.ensure()).toMatchObject({
+			status: "ensured",
+			action: "build",
+		});
+	});
+
 	it("builds after a pull miss with memory and scheduling limits", async () => {
 		const fake = harness();
 		fake.setPullFails(true);

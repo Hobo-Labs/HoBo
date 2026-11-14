@@ -4,7 +4,7 @@ import { createComposedHoboCli } from "../src/cli.js";
 
 // Canonical verbs whose composition lands in a later lane; their help must
 // say, truthfully, that they are not wired. `fleet` left this list when
-// `src/fleet-command.ts` wired it (HoBo Fleet, ADR-0182).
+// `src/fleet-command.ts` wired it (HoBo Fleet, ADR-0183).
 const PENDING_VERBS: ReadonlySet<string> = new Set<string>();
 
 describe("composed CLI command inventory", () => {

@@ -15,6 +15,7 @@ import {
 	relayStoreLayout,
 	verifySelfHostedInfisicalClaim,
 } from "../../src/index.js";
+import { RELAY_GITHUB_SUBJECT } from "../../test/support/github-subject.js";
 import {
 	type StubInfisical,
 	startStubInfisical,
@@ -59,7 +60,7 @@ function provider() {
 						vercelTeamSlug: "hobo-team",
 						vercelTeamId: "team_fixture",
 						vercelProjectId: "prj_fixture",
-						repository: "Hobo-Labs/HoBo",
+						github: RELAY_GITHUB_SUBJECT,
 					}),
 					deploymentRef: "ci-vercel",
 					store,

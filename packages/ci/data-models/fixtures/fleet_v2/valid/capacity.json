@@ -1,0 +1,8 @@
+{
+  "id": "device-1",
+  "accountId": "hobo-labs",
+  "approvedUnits": 3,
+  "reservedUnits": 1,
+  "seq": 4,
+  "state": "active"
+}

@@ -11,7 +11,7 @@ default:
     # file on purpose: the other root features/*.feature files are design
     # specs with no step definitions yet, and a glob would fail the lane.
     - "features/control-yard-core-loop.feature"
-    # HoBo Fleet (ADR-0182) acceptance: scenario titles first, steps under
+    # HoBo Fleet (ADR-0183) acceptance: scenario titles first, steps under
     # features/steps/fleet/ as the behaviour lane writes them.
     - "features/fleet/*.feature"
   import:

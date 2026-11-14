@@ -1,0 +1,53 @@
+{
+  "consumer": { "name": "HoboCdVerificationEngine" },
+  "provider": { "name": "HoboStationMeteringReadApi" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "evidence": "Hand-authored consumer contract for the Station metering read API the HOBO_METERING source consumes (GET /v1/metering/series). No provider implements it in this change; the provider side is a tracked residual. Verified by test/verification/sources/pacts.test.ts."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "metered series for one Camp and the baseline cohort",
+      "providerStates": [{ "name": "the Station meters request errors per cohort" }],
+      "request": {
+        "method": "GET",
+        "path": "/station/v1/metering/series",
+        "query": {
+          "meter": ["requests.error_ratio"],
+          "camp": ["camp-a"],
+          "from": ["1794484800000"],
+          "to": ["1794485400000"],
+          "cohort": ["baseline"]
+        },
+        "headers": { "accept": "application/json", "authorization": "Bearer station-token" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "series": [
+            { "atMs": 1794484920000, "value": 0.03 },
+            { "atMs": 1794484800000, "value": 0.01 },
+            { "atMs": 1794484860000, "value": null }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "metering unavailable",
+      "providerStates": [{ "name": "the metering store is restarting" }],
+      "request": {
+        "method": "GET",
+        "path": "/station/v1/metering/series",
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 503,
+        "headers": { "content-type": "application/json" },
+        "body": { "error": "unavailable" }
+      }
+    }
+  ]
+}

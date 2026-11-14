@@ -64,7 +64,7 @@ lowest-common-denominator abstraction that hides the provider.
 ## Capabilities and Constraints
 
 - Active design + executable contract/proof repository with a production
-  `packages/` workspace (127 package manifests).
+  `packages/` workspace (144 package manifests).
 - The canonical `hobo` verb set dispatches against the local lane.
 - Live Vercel/Cloudflare paths and `HOBO_PULUMI_LIVE=1` are credential- or
   engine-gated, not default.

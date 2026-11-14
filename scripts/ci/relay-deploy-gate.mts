@@ -16,8 +16,12 @@
  *    closure (`importerClosure`, the release OCI impact tooling's), plus this
  *    workflow and this gate. A manual run always deploys.
  *
- * Prints `run=true|false` and `reason=<text>` to `--github-output`, or to
- * stdout without it. A range it cannot read (a new branch, a force push, a
+ * Prints `run=true|false`, `reason=<text>` and `deadline=<ISO time>` to
+ * `--github-output`, or to stdout without it. The deadline is when
+ * `hobo ci deploy --adopt` must be done (`--deadline`): the deploy job's
+ * timeout less a margin, counted from this step, which runs right after
+ * checkout, so whatever the install and build take comes out of the adopt
+ * budget and the command ends with a typed reason before the job is killed. A range it cannot read (a new branch, a force push, a
  * missing commit) deploys: a redundant deploy is cheap, a skipped one is not.
  */
 import { spawnSync } from "node:child_process";
@@ -40,6 +44,24 @@ export const RELAY_EXTRA_INPUTS = [
 /** The relay's committed secret store binding: coordinates only. */
 export const RELAY_SECRET_STORE_BINDING =
 	"packages/ci-vercel/deploy/secret-store.binding.json";
+
+/** The deploy job's `timeout-minutes` in relay-deploy.yml (CI caps every job at 20). */
+export const RELAY_DEPLOY_JOB_TIMEOUT_MINUTES = 20;
+
+/**
+ * Held back from the job's timeout: the runner's setup and checkout before
+ * this step, and the adopt step's summary after the command ends.
+ */
+export const RELAY_DEPLOY_JOB_MARGIN_MINUTES = 3;
+
+/** When `hobo ci deploy --adopt` must end, counted from the gate's own run. */
+export function adoptDeadline(nowMs: number): string {
+	return new Date(
+		nowMs +
+			(RELAY_DEPLOY_JOB_TIMEOUT_MINUTES - RELAY_DEPLOY_JOB_MARGIN_MINUTES) *
+				60_000,
+	).toISOString();
+}
 
 /** What the gate knows of the binding; it never reads a value out. */
 export type StoreBindingState = "absent" | "unreadable" | "bound";
@@ -157,7 +179,7 @@ function main(argv: readonly string[]): void {
 				? relayInputDirs(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"))
 				: [],
 	});
-	const text = `run=${decision.run}\nreason=${decision.reason}\n`;
+	const text = `run=${decision.run}\nreason=${decision.reason}\ndeadline=${adoptDeadline(Date.now())}\n`;
 	if (output) appendFileSync(output, text, "utf8");
 	else process.stdout.write(text);
 	process.stdout.write(

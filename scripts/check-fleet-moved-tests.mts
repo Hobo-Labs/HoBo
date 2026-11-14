@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * `pnpm run fleet:moved-tests -- <outcome> [--lane <id>]` (O15, O16, O17,
- * ADR-0182): every moved test differs from its base file at tag
+ * ADR-0183): every moved test differs from its base file at tag
  * `fleet-wave-0` only as the moved-test rules allow.
  *
  * Both sides are parsed with the TypeScript compiler API and reduced to a

@@ -1,6 +1,6 @@
 /**
  * Overlay credential minters (L39). Signatures frozen by the fleet contract
- * commit (ADR-0182). The authority composes them and enrollment calls them;
+ * commit (ADR-0183). The authority composes them and enrollment calls them;
  * they make their own provider API calls through `fetch` and do not use or
  * change the existing overlay API clients.
  *

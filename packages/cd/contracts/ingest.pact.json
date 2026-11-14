@@ -1,0 +1,192 @@
+{
+  "consumer": {
+    "name": "HoboCdFreightIngest"
+  },
+  "provider": {
+    "name": "AnyCiPublisher"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "evidence": "Hand-authored synchronous-message contract for the push ingress: in-toto/SLSA attestations, manifests authenticated by an OIDC trusted-publisher token, and inbound artifact CDEvents. Verified by contracts/ingest.consumer.test.ts against createFreightIngest; the provenance verifier (WP3) and the signing key are test doubles, so the bundle and token here are placeholders the test re-mints."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/Messages",
+      "description": "record Freight from a signed in-toto v1 statement with an SLSA v1 predicate",
+      "providerStates": [
+        {
+          "name": "the bundle signs the exact statement bytes with a trusted builder"
+        }
+      ],
+      "request": {
+        "contents": {
+          "operation": "attestation",
+          "bindle": "shop",
+          "bundle": "<sigstore bundle over the statement bytes>",
+          "statement": {
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [
+              {
+                "name": "pkg:oci/shop-api@sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479?repository_url=ghcr.io/acme/shop-api",
+                "digest": {
+                  "sha256": "14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479"
+                }
+              },
+              {
+                "name": "pkg:npm/%40acme/shop-web@1.4.0",
+                "digest": {
+                  "sha256": "4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2"
+                }
+              }
+            ],
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "predicate": {
+              "buildDefinition": {
+                "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+                "externalParameters": {
+                  "hobo.cd/declaration-hash": "sha256:e77d7f3dc257d83b08015aa3dfff96a3539291d11e63129fc16a4d0669c33fca"
+                }
+              },
+              "runDetails": {
+                "builder": {
+                  "id": "https://github.com/actions/runner/github-hosted"
+                }
+              }
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "ok": true,
+            "origin": "FREIGHT_ORIGIN_ATTESTATION",
+            "bindle": "shop",
+            "declarationHash": "sha256:e77d7f3dc257d83b08015aa3dfff96a3539291d11e63129fc16a4d0669c33fca",
+            "builderId": "https://github.com/actions/runner/github-hosted",
+            "provenanceVerified": true,
+            "artifacts": [
+              {
+                "name": "pkg:npm/%40acme/shop-web@1.4.0",
+                "kind": "ARTIFACT_KIND_PACKAGE",
+                "ecosystem": "npm",
+                "digest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2"
+              },
+              {
+                "name": "pkg:oci/shop-api@sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479?repository_url=ghcr.io/acme/shop-api",
+                "kind": "ARTIFACT_KIND_OCI_IMAGE",
+                "ecosystem": "oci",
+                "digest": "sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479"
+              }
+            ]
+          },
+          "contentType": "application/json"
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "record a manifest pushed with a GitHub Actions OIDC token for a trusted publisher",
+      "providerStates": [
+        {
+          "name": "publisher github-shop trusts acme/shop release.yml in environment release for Bindle shop"
+        }
+      ],
+      "request": {
+        "contents": {
+          "operation": "manifest",
+          "publisherToken": "<RS256 OIDC ID token carrying these claims>",
+          "claims": {
+            "iss": "https://token.actions.githubusercontent.com",
+            "aud": "https://cd.acme.example",
+            "sub": "repo:acme/shop:environment:release",
+            "repository": "acme/shop",
+            "workflow_ref": "acme/shop/.github/workflows/release.yml@refs/heads/main",
+            "environment": "release"
+          }
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "ok": true,
+            "origin": "FREIGHT_ORIGIN_MANIFEST",
+            "recordedBy": "service:workload:github-shop:repo:acme/shop:environment:release"
+          },
+          "contentType": "application/json"
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "refuse a publisher token from an unconfigured issuer",
+      "request": {
+        "contents": {
+          "operation": "manifest",
+          "publisherToken": "<RS256 OIDC ID token carrying these claims>",
+          "claims": {
+            "iss": "https://token.evil.example",
+            "aud": "https://cd.acme.example",
+            "sub": "repo:acme/shop:environment:release",
+            "repository": "acme/shop",
+            "workflow_ref": "acme/shop/.github/workflows/release.yml@refs/heads/main",
+            "environment": "release"
+          }
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "ok": false,
+            "codes": [
+              "publisher-issuer-unconfigured"
+            ]
+          },
+          "contentType": "application/json"
+        }
+      ]
+    },
+    {
+      "type": "Synchronous/Messages",
+      "description": "an artifact.published CDEvent without an attestation only schedules polls",
+      "request": {
+        "contents": {
+          "operation": "cdevent",
+          "body": {
+            "context": {
+              "specversion": "0.4.1",
+              "id": "271069a8-fc18-44f1-b38f-9d70a1695819",
+              "source": "/ci/acme/shop",
+              "type": "dev.cdevents.artifact.published.0.2.0",
+              "timestamp": "2026-11-12T12:00:00Z"
+            },
+            "subject": {
+              "id": "pkg:oci/shop-api@sha256:14c2529eb4498c5d1ffd6915d05bf58a91bdda796af59f41d480d11c099d0479?repository_url=ghcr.io/acme/shop-api",
+              "source": "/ci/acme/shop",
+              "type": "artifact",
+              "content": {}
+            }
+          }
+        },
+        "contentType": "application/json"
+      },
+      "response": [
+        {
+          "contents": {
+            "ok": true,
+            "scheduledPolls": [
+              "shop-images"
+            ],
+            "freightCreated": false
+          },
+          "contentType": "application/json"
+        }
+      ]
+    }
+  ]
+}

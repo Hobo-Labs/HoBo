@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,6 +54,29 @@ describe("local runner controller lifecycle", { timeout: 60_000 }, () => {
 			expect(
 				JSON.parse(readFileSync(join(state, "status.json"), "utf8")).status,
 			).toBe("stopped");
+		} finally {
+			await command("stop");
+		}
+	});
+	it("registers no runner while the host's CD agent holds admission closed", async () => {
+		const { state, command } = controller();
+		// The marker the runner-host agent places to drain this host.
+		writeFileSync(join(state, "admission-paused"), "");
+		try {
+			await command("start");
+			let status = "";
+			for (let i = 0; i < 50 && status !== "paused"; i++) {
+				status = JSON.parse((await command("status")).stdout).status;
+				if (status !== "paused") await pause(100);
+			}
+			expect(status).toBe("paused");
+			// Reopened: the controller goes back to its usual loop.
+			rmSync(join(state, "admission-paused"));
+			for (let i = 0; i < 100 && status === "paused"; i++) {
+				await pause(100);
+				status = JSON.parse((await command("status")).stdout).status;
+			}
+			expect(status).toBe("waiting");
 		} finally {
 			await command("stop");
 		}

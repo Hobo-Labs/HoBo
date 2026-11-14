@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
  * Build one release OCI app image from artifacts staged on the host runner.
- * PR/CI: build + load locally. Release: push to GHCR with semver tag (digest recorded separately).
+ * PR/CI: build + load locally. Release: export the image as an OCI image layout
+ * (exportReleaseOciLayout) that the hobo-release/oci-candidate realizer pushes
+ * to GHCR by digest; nothing here pushes.
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -13,6 +16,15 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
+import {
+	isArray,
+	isCount,
+	isObject,
+	isString,
+	type Json,
+	type JsonObject,
+	parseUnknownJson,
+} from "../lib/pins-json.ts";
 import {
 	ghcrRepository,
 	loadReleaseOciManifest,
@@ -225,7 +237,11 @@ export function cleanupReleaseOciBuild(
 		}
 	}
 	if (!options.keepCandidate && !options.deferBuilderPrune) {
-		spawnSync("docker", ["builder", "prune", "-f"], {
+		const cap =
+			process.env.HOBO_RELEASE_BUILDER_CACHE_CAP ??
+			process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
+			"2GB";
+		spawnSync("docker", ["builder", "prune", "-f", "--keep-storage", cap], {
 			cwd: root,
 			stdio: "inherit",
 		});
@@ -248,7 +264,11 @@ function cleanupReleaseOciBuildChain(
 		});
 	}
 	if (!options.keepCandidate) {
-		spawnSync("docker", ["builder", "prune", "-f"], {
+		const cap =
+			process.env.HOBO_RELEASE_BUILDER_CACHE_CAP ??
+			process.env.HOBO_CI_WORKER_BUILDER_CACHE_CAP ??
+			"2GB";
+		spawnSync("docker", ["builder", "prune", "-f", "--keep-storage", cap], {
 			cwd: root,
 			stdio: "inherit",
 		});
@@ -304,11 +324,13 @@ export function buildReleaseImage(options: {
 		ensureReleaseImageCandidate("hobo-cli", options);
 	}
 	try {
-		stageReleaseOciApp(image.id, staging.stagingRoot, {
-			skipBuild: options.skipBuild,
+		const stageOptions: Parameters<typeof stageReleaseOciApp>[2] = {
+			skipBuild: options.skipBuild === true,
 			hardlink: staging.hardlink,
-			sdkArtifactsDir,
-		});
+		};
+		if (sdkArtifactsDir !== undefined)
+			stageOptions.sdkArtifactsDir = sdkArtifactsDir;
+		stageReleaseOciApp(image.id, staging.stagingRoot, stageOptions);
 		if (image.id === "hobo-mcp") ensureCliCandidate();
 		run(
 			"docker",
@@ -320,12 +342,248 @@ export function buildReleaseImage(options: {
 	}
 	const localTag = `${image.name}:candidate`;
 	cleanupReleaseOciBuildChain(image.id, {
-		keepCandidate: options.keepCandidate,
+		keepCandidate: options.keepCandidate === true,
 	});
 	return {
 		localTag,
 		ghcrRepo: ghcrRepository(manifest, image),
 	};
+}
+
+// ── OCI image layout export (what the oci-candidate realizer pushes) ────────
+
+const OCI_INDEX_MEDIA_TYPES = new Set([
+	"application/vnd.oci.image.index.v1+json",
+	"application/vnd.docker.distribution.manifest.list.v2+json",
+]);
+const OCI_MANIFEST_MEDIA_TYPES = new Set([
+	"application/vnd.oci.image.manifest.v1+json",
+	"application/vnd.docker.distribution.manifest.v2+json",
+]);
+const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/u;
+
+type LayoutDescriptor = {
+	mediaType?: string;
+	digest?: string;
+	size?: number;
+	annotations?: Record<string, string>;
+};
+
+/**
+ * One release image as an OCI image layout on disk, read by digest: the root
+ * (an image manifest, or an index whose every child is in the layout), and
+ * every blob it names. Paths, not bytes: a layer is read only when it is
+ * stored, so the job never holds the whole image in memory.
+ */
+export type ReleaseOciLayout = Readonly<{
+	/** The digest the registry will serve once the realizer pushes the root. */
+	digest: string;
+	mediaType: string;
+	/** Size of the root manifest bytes. */
+	size: number;
+	/** Every blob of the image (manifests, configs, layers), root first. */
+	blobs: readonly Readonly<{ digest: string; path: string; size: number }>[];
+}>;
+
+function layoutJson(path: string, what: string): JsonObject {
+	let value: Json | undefined;
+	try {
+		value = parseUnknownJson(JSON.parse(readFileSync(path, "utf8")));
+	} catch {
+		value = undefined;
+	}
+	if (!isObject(value))
+		throw new Error(`OCI layout ${what} is not a JSON object (${path})`);
+	return value;
+}
+
+/** The descriptors of a JSON value: objects only, each field parsed. */
+function descriptors(value: Json | undefined): LayoutDescriptor[] {
+	if (!isArray(value)) return [];
+	const out: LayoutDescriptor[] = [];
+	for (const entry of value) {
+		if (!isObject(entry)) continue;
+		const annotations: Record<string, string> = {};
+		if (isObject(entry.annotations))
+			for (const [key, note] of Object.entries(entry.annotations))
+				if (isString(note)) annotations[key] = note;
+		const descriptor: LayoutDescriptor = { annotations };
+		if (isString(entry.mediaType)) descriptor.mediaType = entry.mediaType;
+		if (isString(entry.digest)) descriptor.digest = entry.digest;
+		if (isCount(entry.size)) descriptor.size = entry.size;
+		out.push(descriptor);
+	}
+	return out;
+}
+
+/**
+ * Read an OCI image layout directory (`oci-layout`, `index.json`,
+ * `blobs/sha256/*`) into the root the release publishes. Every blob is
+ * re-hashed and must match its descriptor's digest and size. An index whose
+ * children are not all in the layout (a multi-platform index saved from one
+ * platform) publishes its one complete, non-attestation child instead; any
+ * other gap is refused, never filled.
+ */
+export function readOciLayout(dir: string): ReleaseOciLayout {
+	if (!existsSync(join(dir, "oci-layout")))
+		throw new Error(
+			`${dir} is not an OCI image layout (no oci-layout); export with Docker 25+ (docker save writes OCI layouts)`,
+		);
+	const pathOf = (digest: string) =>
+		join(dir, "blobs", "sha256", digest.slice("sha256:".length));
+	const verified = new Map<string, number>();
+	const blob = (descriptor: LayoutDescriptor): string | undefined => {
+		const digest = descriptor.digest ?? "";
+		if (!SHA256_DIGEST.test(digest))
+			throw new Error(`OCI layout names a non-sha256 digest ${digest}`);
+		const path = pathOf(digest);
+		if (!existsSync(path)) return undefined;
+		if (!verified.has(digest)) {
+			const bytes = readFileSync(path);
+			const actual = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+			if (actual !== digest)
+				throw new Error(`OCI layout blob ${digest} hashes to ${actual}`);
+			verified.set(digest, bytes.byteLength);
+		}
+		const size = verified.get(digest) ?? -1;
+		if (descriptor.size !== undefined && descriptor.size !== size)
+			throw new Error(
+				`OCI layout blob ${digest} is ${size} bytes, its descriptor says ${descriptor.size}`,
+			);
+		return path;
+	};
+	/** The closure of a manifest or index, or undefined when a blob is absent. */
+	const closure = (descriptor: LayoutDescriptor): string[] | undefined => {
+		if (blob(descriptor) === undefined) return undefined;
+		const digest = descriptor.digest ?? "";
+		const doc = layoutJson(pathOf(digest), `manifest ${digest}`);
+		const mediaType = isString(doc.mediaType)
+			? doc.mediaType
+			: (descriptor.mediaType ?? "");
+		if (OCI_INDEX_MEDIA_TYPES.has(mediaType)) {
+			const out = [digest];
+			for (const child of descriptors(doc.manifests)) {
+				const sub = closure(child);
+				if (sub === undefined) return undefined;
+				out.push(...sub);
+			}
+			return out;
+		}
+		if (!OCI_MANIFEST_MEDIA_TYPES.has(mediaType))
+			throw new Error(
+				`OCI layout manifest ${digest} has media type ${mediaType || "(none)"}, not an image manifest or index`,
+			);
+		const out = [digest];
+		for (const part of [
+			...descriptors(doc.config === undefined ? [] : [doc.config]),
+			...descriptors(doc.layers),
+		]) {
+			if (blob(part) === undefined) return undefined;
+			out.push(part.digest ?? "");
+		}
+		return out;
+	};
+	const roots = descriptors(
+		layoutJson(join(dir, "index.json"), "index.json").manifests,
+	);
+	if (roots.length !== 1)
+		throw new Error(
+			`OCI layout index.json names ${roots.length} images; export exactly one`,
+		);
+	let root = roots[0] ?? {};
+	let digests = closure(root);
+	if (digests === undefined && root.digest && blob(root)) {
+		const doc = layoutJson(pathOf(root.digest), `index ${root.digest}`);
+		const complete = descriptors(doc.manifests).filter(
+			(child) =>
+				child.annotations?.["vnd.docker.reference.type"] !==
+					"attestation-manifest" && closure(child) !== undefined,
+		);
+		if (complete.length === 1 && complete[0]) {
+			root = complete[0];
+			digests = closure(root);
+		}
+	}
+	if (digests === undefined || !root.digest)
+		throw new Error(
+			"OCI layout is missing blobs of the image it names; nothing is substituted. Remediation: re-export the image (docker save) after the build",
+		);
+	const rootDoc = layoutJson(pathOf(root.digest), `manifest ${root.digest}`);
+	const unique = [...new Set(digests)];
+	return {
+		digest: root.digest,
+		mediaType: isString(rootDoc.mediaType)
+			? rootDoc.mediaType
+			: (root.mediaType ?? ""),
+		size: verified.get(root.digest) ?? 0,
+		blobs: unique.map((digest) => ({
+			digest,
+			path: pathOf(digest),
+			size: verified.get(digest) ?? 0,
+		})),
+	};
+}
+
+/**
+ * Whether this host's `docker save` writes what the realizer pushes. Docker
+ * 25 is the first release whose `docker save` writes an OCI image layout;
+ * an older daemon is refused before anything is exported. The containerd
+ * image store saves the compressed layers a registry push would send (and
+ * the toolchain repository's layers match, so cross-repository mounts work);
+ * the classic store saves them uncompressed: the digest is still the one
+ * GHCR serves, but the upload is larger and no mount matches.
+ */
+export type DockerOciSaveSupport = Readonly<{
+	serverVersion: string;
+	compressedLayers: boolean;
+}>;
+
+export function dockerOciSaveSupport(
+	serverVersion: string,
+	driverStatusJson: string,
+): DockerOciSaveSupport {
+	const version = serverVersion.trim();
+	const major = Number.parseInt(version.split(".")[0] ?? "", 10);
+	if (!Number.isInteger(major) || major < 25) {
+		throw new Error(
+			`release OCI export needs Docker 25 or later (docker save writes an OCI layout from 25); the daemon reports ${JSON.stringify(version)}. Remediation: upgrade Docker on this runner`,
+		);
+	}
+	return {
+		serverVersion: version,
+		compressedLayers: driverStatusJson.includes("io.containerd.snapshotter"),
+	};
+}
+
+function dockerFormat(args: string[]): string {
+	const result = spawnSync("docker", args, { cwd: root, encoding: "utf8" });
+	return result.status === 0 ? result.stdout : "";
+}
+
+/**
+ * Export a built release image from the local image store as an OCI image
+ * layout under `dir` (`docker save`; see dockerOciSaveSupport for the host
+ * it needs) and read it by digest.
+ */
+export function exportReleaseOciLayout(
+	localTag: string,
+	dir: string,
+): ReleaseOciLayout {
+	const support = dockerOciSaveSupport(
+		dockerFormat(["version", "--format", "{{.Server.Version}}"]),
+		dockerFormat(["info", "--format", "{{json .DriverStatus}}"]),
+	);
+	if (!support.compressedLayers) {
+		console.warn(
+			`docker ${support.serverVersion} uses the classic image store: ${localTag} is saved with uncompressed layers, so the GHCR upload is larger and no cross-repository mount matches. Enable the containerd image store on this runner to push compressed layers`,
+		);
+	}
+	mkdirSync(dir, { recursive: true });
+	const archive = join(dir, "image.tar");
+	run("docker", ["save", "--output", archive, localTag]);
+	run("tar", ["-xf", archive, "-C", dir]);
+	rmSync(archive, { force: true });
+	return readOciLayout(dir);
 }
 
 function main(): void {
