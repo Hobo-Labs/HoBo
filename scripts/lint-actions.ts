@@ -50,10 +50,13 @@ const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
  * `ci-health`, that runs the monitor and nothing on the fleet it watches.
  */
 const healthFile = "ci-health.yml";
+/** A manually dispatched, read-only identity observation on a hosted runner. */
+const hostingEvidenceFile = "hosting-evidence.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
 	probeFile,
 	healthFile,
+	hostingEvidenceFile,
 	...activeCiFiles,
 ]);
 
@@ -534,6 +537,8 @@ function isNpmOidcHostedReleaseJob(
 
 const acceptanceDigest =
 	"ae9f17ce8d8d862722d50c0bd6b66077275edd376c068aaa42112e7ba7e150df";
+const hostingEvidenceDigest =
+	"e7e56b78f1f8d2942d17b704fc662144743bc843661aecdce91b9eda5a6c8e12";
 
 const TRUNK_EVENTS = new Set([
 	"push",
@@ -934,6 +939,13 @@ export async function lintActionsRepository(
 				);
 			}
 		}
+		if (
+			file === hostingEvidenceFile &&
+			createHash("sha256").update(text).digest("hex") !== hostingEvidenceDigest
+		)
+			errors.push(
+				`${file}: read-only hosting evidence workflow differs from its reviewed recipe (update hostingEvidenceDigest after review)`,
+			);
 		lintWorkflowYaml(errors, file, text, false);
 	}
 
