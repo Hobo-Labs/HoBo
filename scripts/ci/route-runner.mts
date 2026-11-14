@@ -788,8 +788,10 @@ export type PrBatchCapacityVerifier = (
 		workflow: string;
 		runner: string;
 		boxRunner: string;
-		/** The full batch must be able to start by this time. */
-		queueDeadlineMs: number;
+		/** Latest time this routing decision can be made. */
+		decisionDeadlineMs: number;
+		/** Maximum acceptable wait after each job enters the provider queue. */
+		maxQueueWaitSeconds: number;
 	}>,
 ) => Promise<boolean>;
 
@@ -797,7 +799,8 @@ function prBatchScope(
 	env: NodeJS.ProcessEnv,
 	runner: string,
 	boxRunner: string,
-	queueDeadlineMs: number,
+	decisionDeadlineMs: number,
+	maxQueueWaitSeconds: number,
 	workflowName: string,
 ): Parameters<PrBatchCapacityVerifier>[0] | undefined {
 	const repository = env.GITHUB_REPOSITORY ?? "";
@@ -816,8 +819,10 @@ function prBatchScope(
 			(value) => Number.isSafeInteger(value) && value > 0,
 		) ||
 		!/^[a-f0-9]{40}$/u.test(revision) ||
-		!Number.isSafeInteger(queueDeadlineMs) ||
-		queueDeadlineMs < 1 ||
+		!Number.isSafeInteger(decisionDeadlineMs) ||
+		decisionDeadlineMs < 1 ||
+		!Number.isSafeInteger(maxQueueWaitSeconds) ||
+		maxQueueWaitSeconds < 1 ||
 		!workflowRef.startsWith(`${repository}/${workflowPath}@`) ||
 		workflowRef.endsWith("@") ||
 		!workflow ||
@@ -836,7 +841,8 @@ function prBatchScope(
 		workflow,
 		runner,
 		boxRunner,
-		queueDeadlineMs,
+		decisionDeadlineMs,
+		maxQueueWaitSeconds,
 	});
 }
 
@@ -1102,6 +1108,7 @@ export async function main(
 			fleetLabel,
 			settings.boxRunner,
 			startedAt + limits.maxWaitSeconds * 1_000,
+			limits.maxWaitSeconds,
 			workflowFile(env),
 		);
 		let capacityHeld = false;
@@ -1120,7 +1127,7 @@ export async function main(
 			startedAt > 0 &&
 			Number.isSafeInteger(checkedAt) &&
 			checkedAt >= startedAt &&
-			checkedAt < scope.queueDeadlineMs
+			checkedAt < scope.decisionDeadlineMs
 		)
 			return report(
 				{

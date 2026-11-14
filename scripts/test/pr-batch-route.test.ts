@@ -125,15 +125,16 @@ describe("PR batch routing", () => {
 		}
 	});
 
-	it("does not use a capacity answer returned after the batch queue deadline", async () => {
+	it("does not use a capacity answer returned after the routing decision expires", async () => {
 		let clock = 1_000;
 		const decision = await main([], env, {
 			routingConfig: routing("auto"),
 			fetch: readPublic,
 			now: () => clock,
 			verifyPrBatchCapacity: async (scope) => {
-				assert.equal(scope.queueDeadlineMs, 121_000);
-				clock = scope.queueDeadlineMs;
+				assert.equal(scope.decisionDeadlineMs, 121_000);
+				assert.equal(scope.maxQueueWaitSeconds, 120);
+				clock = scope.decisionDeadlineMs;
 				return true;
 			},
 		});

@@ -17,26 +17,33 @@ export function shardCount(plan: string): number {
 	return new Set(shards).size === shards.length ? shards.length : 8;
 }
 
-/** An explicit pin or a single shard keeps the first route. The existing
- * pickup evidence does not prove enough capacity for a whole concurrent
- * batch, so an automatic fan-out uses the configured GitHub fallback. */
+/** Decide whether an auto-routed batch needs the verified public fallback. */
+export function mergeShardPolicy(input: {
+	readonly event: string;
+	readonly plan: string;
+	readonly routingConfig?: string | undefined;
+}): "unchanged" | "require-public" | "unavailable" {
+	if (input.event !== "merge_group" || shardCount(input.plan) < 2)
+		return "unchanged";
+	const settings = routeSettings(readRunnerRouting(input.routingConfig));
+	if (!settings.committed) return "unavailable";
+	if (settings.pin !== "auto") return "unchanged";
+	return settings.labels.github === "ubuntu-24.04"
+		? "require-public"
+		: "unavailable";
+}
+
+/** A pin or single shard keeps the first route. Pickup evidence alone does
+ * not prove enough capacity for an automatic concurrent batch. */
 export function mergeShardRunner(input: {
 	readonly event: string;
 	readonly plan: string;
 	readonly publicRepository: boolean;
 	readonly routingConfig?: string | undefined;
 }): string | undefined {
-	if (input.event !== "merge_group") return undefined;
-	const settings = routeSettings(readRunnerRouting(input.routingConfig));
-	if (
-		!settings.committed ||
-		settings.pin !== "auto" ||
-		shardCount(input.plan) < 2 ||
-		!input.publicRepository ||
-		settings.labels.github !== "ubuntu-24.04"
-	)
-		return undefined;
-	return settings.labels.github;
+	return mergeShardPolicy(input) === "require-public" && input.publicRepository
+		? "ubuntu-24.04"
+		: undefined;
 }
 
 export async function main(
@@ -49,19 +56,21 @@ export async function main(
 	} catch {
 		config = undefined;
 	}
-	const runner = mergeShardRunner({
+	const policy = mergeShardPolicy({
 		event: env.GITHUB_EVENT_NAME ?? "",
 		plan: env.HOBO_PLANNED_SHARDS ?? "",
-		publicRepository: true,
 		routingConfig: config,
 	});
-	if (!runner) return;
-	if (!(await isPublicCaller(env, send))) {
-		console.log(
-			"Public caller repository was not verified; keeping the original shard route.",
+	if (policy === "unchanged") return;
+	if (policy === "unavailable")
+		throw new Error(
+			"merge-group shard routing policy or standard-runner price evidence is unavailable",
 		);
-		return;
-	}
+	if (!(await isPublicCaller(env, send)))
+		throw new Error(
+			"merge-group public standard-runner compute evidence is unavailable",
+		);
+	const runner = "ubuntu-24.04";
 	if (!env.GITHUB_OUTPUT) throw new Error("GitHub output is unavailable");
 	appendFileSync(env.GITHUB_OUTPUT, `runner=${runner}\n`);
 	console.log(

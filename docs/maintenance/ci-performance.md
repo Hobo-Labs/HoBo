@@ -154,8 +154,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Merge-group batch routing.** After the validation job plans its shards, an auto-routed batch of
   more than one uses the configured `ubuntu-24.04` fallback when a fresh GitHub read confirms the
   exact caller repository is public. A recent fleet pickup does not establish that the whole batch
-  can start within the queue deadline. Explicit pins, a missing or invalid committed routing policy,
-  a single shard, other events, and a failed or mismatched repository read retain the original route.
+  can start within the queue deadline. Explicit pins, a single shard and other events retain the
+  original route. Missing routing policy or unavailable public-price evidence fails validation
+  before the shard matrix is queued.
   The visibility observation does not prove future capacity, total job cost, or budget admission.
   The routed workspace shards still check the sibling pins after checkout and before installing;
   `scripts/test/pins-wiring.test.ts` verifies that order and the shard's runner fallback.

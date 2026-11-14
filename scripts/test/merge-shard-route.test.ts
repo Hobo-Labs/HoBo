@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
 	isPublicCaller,
 	main,
+	mergeShardPolicy,
 	mergeShardRunner,
 	shardCount,
 } from "../ci/merge-shard-route.mts";
@@ -76,7 +77,7 @@ describe("merge-group shard routing", () => {
 			undefined,
 		);
 	});
-	it("keeps the original route when the committed policy is missing or invalid", () => {
+	it("does not select a runner when the committed policy is missing or invalid", () => {
 		for (const routingConfig of [undefined, "", "invalid", "{}"]) {
 			assert.equal(
 				mergeShardRunner({
@@ -86,6 +87,14 @@ describe("merge-group shard routing", () => {
 					routingConfig,
 				}),
 				undefined,
+			);
+			assert.equal(
+				mergeShardPolicy({
+					event: "merge_group",
+					plan: "[0, 1]",
+					routingConfig,
+				}),
+				"unavailable",
 			);
 		}
 	});
@@ -115,6 +124,14 @@ describe("merge-group shard routing", () => {
 		);
 		const config = JSON.parse(routing("auto"));
 		config.runnerRouting.labels.github = "custom-runner";
+		assert.equal(
+			mergeShardPolicy({
+				event: "merge_group",
+				plan: "[0, 1]",
+				routingConfig: JSON.stringify(config),
+			}),
+			"unavailable",
+		);
 		assert.equal(
 			mergeShardRunner({
 				event: "merge_group",
@@ -199,19 +216,22 @@ describe("merge-group shard routing", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
-	it("leaves the original route in place when the repository read is denied", async () => {
+	it("fails validation without queuing shards when the repository read is denied", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "merge-shard-route-"));
 		try {
 			const output = join(dir, "output");
 			writeFileSync(output, "");
-			await main(
-				{
-					...githubEnv,
-					GITHUB_EVENT_NAME: "merge_group",
-					GITHUB_OUTPUT: output,
-					HOBO_PLANNED_SHARDS: "[0, 1]",
-				},
-				async () => new Response("", { status: 403 }),
+			await assert.rejects(
+				main(
+					{
+						...githubEnv,
+						GITHUB_EVENT_NAME: "merge_group",
+						GITHUB_OUTPUT: output,
+						HOBO_PLANNED_SHARDS: "[0, 1]",
+					},
+					async () => new Response("", { status: 403 }),
+				),
+				/public standard-runner compute evidence is unavailable/u,
 			);
 			assert.equal(readFileSync(output, "utf8"), "");
 		} finally {
