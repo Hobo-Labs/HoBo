@@ -33,3 +33,9 @@ export {
 	type ParsedSelector,
 	parseSelector,
 } from "./selector.js";
+export {
+	type CampTargetDeclarer,
+	type CampTargetInput,
+	createCampTargetDeclarer,
+	declareCampTarget,
+} from "./targets.js";

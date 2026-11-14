@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { create, toJson } from "@bufbuild/protobuf";
 import {
 	type CampConditionRecord,
 	CampConditionType,
@@ -10,7 +11,17 @@ import {
 	ReconcileStatus,
 	SignalSource,
 } from "@hobo/cd";
-import type { JsonObject, TransportRequest } from "@hobo/core";
+import {
+	type JsonObject,
+	parseTenantId,
+	type TransportRequest,
+} from "@hobo/core";
+import {
+	type DeclareRequest,
+	DeclareRequestSchema,
+	EnrollmentResponseSchema,
+	MemberKind,
+} from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import {
 	clusterProfileInventory,
@@ -169,6 +180,103 @@ describe("clusterProfileInventory", () => {
 			["k8s-fleet-system-edge-lyon-02", SignalSource.HEALTH_SOURCE],
 			["k8s-fleet-system-edge-paris-01", SignalSource.HEALTH_SOURCE],
 		]);
+	});
+
+	it("declares each imported cluster as a TARGET member, besides the OBSERVE_ONLY Camp (L19)", async () => {
+		const declared: DeclareRequest[] = [];
+		const sink = recordingSink();
+		const inventory = clusterProfileInventory({
+			config: importConfig(),
+			http: seeded().transport,
+			credentials: credentials(HUB_TOKEN),
+			now,
+			telemetry: sink,
+			delay: async () => {},
+			members: {
+				tenant: parseTenantId("acme"),
+				fleetOf: (yardId) => yardId,
+				client: {
+					async declare(request) {
+						declared.push(request);
+						return { ok: true, value: create(EnrollmentResponseSchema, {}) };
+					},
+				},
+			},
+		});
+		await inventory.list();
+		const calls: string[] = [];
+		await inventory.publish(
+			{
+				async observe(input) {
+					calls.push(input.campId);
+					return { ok: false, reasons: [] };
+				},
+			},
+			ctx,
+		);
+		expect(calls).toHaveLength(2);
+		expect(
+			declared.map((r) => [r.tenant, r.fleet, r.kind, r.name, r.displayName]),
+		).toEqual([
+			[
+				"acme",
+				"yard-eu",
+				MemberKind.TARGET,
+				"k8s-fleet-system-edge-lyon-02",
+				"fleet-system/edge-lyon-02",
+			],
+			[
+				"acme",
+				"yard-eu",
+				MemberKind.TARGET,
+				"k8s-fleet-system-edge-paris-01",
+				"fleet-system/edge-paris-01",
+			],
+		]);
+		// Secret-free: a reference to the access provider, never its token.
+		for (const request of declared) {
+			expect(
+				JSON.stringify(toJson(DeclareRequestSchema, request)),
+			).not.toContain(HUB_TOKEN);
+			expect(request.credentialRef).toMatch(/^clusterprofile\/fleet-system\//u);
+		}
+	});
+
+	it("a refused TARGET declaration does not stop the Camp being observed", async () => {
+		const sink = recordingSink();
+		const inventory = clusterProfileInventory({
+			config: importConfig(),
+			http: seeded().transport,
+			credentials: credentials(HUB_TOKEN),
+			now,
+			telemetry: sink,
+			delay: async () => {},
+			members: {
+				tenant: parseTenantId("acme"),
+				fleetOf: (yardId) => yardId,
+				client: {
+					async declare() {
+						return {
+							ok: false,
+							error: { code: "unauthenticated", message: "no sponsor rule" },
+						};
+					},
+				},
+			},
+		});
+		await inventory.list();
+		const calls: string[] = [];
+		const results = await inventory.publish(
+			{
+				async observe(input) {
+					calls.push(input.campId);
+					return { ok: false, reasons: [] };
+				},
+			},
+			ctx,
+		);
+		expect(calls).toHaveLength(2);
+		expect(results).toHaveLength(2);
 	});
 
 	it("reports an OBSERVED record posture can evaluate, trimmed to observe_fields", async () => {

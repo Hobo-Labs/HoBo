@@ -84,7 +84,7 @@ describe("I11 neutral core and D26 transport-only", () => {
 				/@kubernetes\/client-node|kubernetes-client|\bfetch\(|KUBECONFIG|process\.env|node:https?"/u,
 			);
 			expect(source, relative(packageRoot, path)).not.toMatch(
-				/from "@hobo\/(?!cd"|core")/u,
+				/from "@hobo\/(?!cd"|cd\/inventory"|core"|fleet")/u,
 			);
 		}
 	});
