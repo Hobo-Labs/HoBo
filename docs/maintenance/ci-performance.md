@@ -151,6 +151,23 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   succeed. The PR merge base is pinned from the event's base SHA and passed to every job, so a later
   target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
   covers failed, cancelled, skipped, and missing results.
+- **Merge-group batch routing.** After the validation job plans its shards, an auto-routed batch of
+  more than one uses the configured `ubuntu-24.04` fallback when a fresh GitHub read confirms the
+  exact caller repository is public. A recent fleet pickup does not establish that the whole batch
+  can start within the queue deadline. Explicit pins, a missing or invalid committed routing policy,
+  a single shard, other events, and a failed or mismatched repository read retain the original route.
+  The visibility observation does not prove future capacity, total job cost, or budget admission.
+- **Pull-request batch routing.** Auto-routed PRs in `hobo-ci.yml` and `release-hobo.yml` choose before any
+  dependent jobs are queued. A trusted host may select the fleet only after it verifies a
+  durable, exact-run capacity claim and Broker admission for the complete reviewed fan-out,
+  including the eight-shard maximum and any separately selected box. The standalone action
+  currently has no installed batch-claim authority, so it uses `ubuntu-24.04` after a fresh
+  read verifies the caller repository and public standard-runner compute pricing. A missing
+  policy or unavailable public-price evidence fails the route instead of starting the batch.
+  Explicit pins still select their configured tiers. The public-price observation covers
+  compute only; it does not establish availability, other costs, or financial settlement.
+  GitHub documents [free standard-runner minutes for public repositories](https://docs.github.com/en/actions/concepts/billing-and-usage)
+  and lists [`ubuntu-24.04` as a standard runner](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job).
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
   do not collide on `upload-artifact`)

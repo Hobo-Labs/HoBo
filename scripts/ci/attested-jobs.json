@@ -3,7 +3,7 @@
 		{
 			"id": "pr_gate_validation",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_validation\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_validation\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -18,7 +18,8 @@
 				"merge_base": "${{ steps.merge-group-base.outputs.base }}",
 				"merge_tests": "${{ steps.merge-group-base.outputs.tests }}",
 				"pr_base": "${{ steps.scm-base.outputs.base }}",
-				"shards": "${{ steps.shard-plan.outputs.shards }}"
+				"shards": "${{ steps.shard-plan.outputs.shards }}",
+				"shard_runner": "${{ steps.shard-route.outputs.runner }}"
 			},
 			"steps": [
 				{
@@ -149,6 +150,18 @@
 					"local": "run"
 				},
 				{
+					"name": "Route the merge-group shard batch",
+					"id": "shard-route",
+					"if": "github.event_name == 'merge_group'",
+					"env": {
+						"HOBO_PLANNED_SHARDS": "${{ steps.shard-plan.outputs.shards }}",
+						"GITHUB_TOKEN": "${{ github.token }}"
+					},
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/merge-shard-route.mts",
+					"local": "skip",
+					"reason": "the local run executes the planned tests itself; choosing a GitHub runner is only needed before hosted jobs are queued"
+				},
+				{
 					"name": "Impact classification (shadow)",
 					"if": "github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'",
 					"run": "set -euo pipefail\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base=\"$BASE\" --meaningful-out=\"$RUNNER_TEMP/impact-meaningful.txt\" \\\n  > \"$RUNNER_TEMP/impact-plan.json\"\n",
@@ -198,7 +211,7 @@
 		{
 			"id": "workspace_tests",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"workspace_tests\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"workspace_tests\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -321,7 +334,7 @@
 		{
 			"id": "pr_affected",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_affected\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_affected\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",

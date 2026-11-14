@@ -235,6 +235,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/actions/route-runner
+            .github/workflows/release-hobo.yml
             scripts/ci/route-runner.mts
             scripts/ci/runner-routing.mts
             .hobo/ci.json
