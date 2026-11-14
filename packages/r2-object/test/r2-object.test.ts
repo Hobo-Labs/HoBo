@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { HttpTransport, TransportRequest } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-import { createR2ObjectClient, R2ObjectError } from "../src/r2-object.js";
+import { createR2ObjectClient, R2ObjectError } from "../src/index.js";
 
 const accountId = "0123456789abcdef0123456789abcdef";
 const bucket = "hobo-ci-cache";

@@ -2431,6 +2431,9 @@ importers:
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
+      '@hobo/r2-object':
+        specifier: workspace:*
+        version: link:../../r2-object
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -2729,6 +2732,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../../backend-fleet
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../../bindings
@@ -2744,6 +2750,12 @@ importers:
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
+      '@hobo/r2-object':
+        specifier: workspace:*
+        version: link:../../r2-object
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
     devDependencies:
       '@hobo/redaction-test-harness':
         specifier: workspace:*
@@ -2841,6 +2853,19 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+
+  packages/r2-object:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/recipes:
     dependencies:

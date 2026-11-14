@@ -1,0 +1,32 @@
+{
+  "consumer": { "name": "@hobo/r2-object" },
+  "provider": { "name": "Cloudflare R2 S3 origin" },
+  "metadata": { "pactSpecification": { "version": "3.0.0" } },
+  "interactions": [
+    {
+      "description": "a missing object reads as absent",
+      "request": { "method": "GET", "path": "/hobo-ci-cache/state/key" },
+      "response": { "status": 404, "headers": {}, "body": "" }
+    },
+    {
+      "description": "an existing object has its body and a strong ETag",
+      "request": { "method": "GET", "path": "/hobo-ci-cache/state/key" },
+      "response": { "status": 200, "headers": { "etag": "\"version-1\"" }, "body": "one" }
+    },
+    {
+      "description": "a conditional create sends If-None-Match and receives a strong ETag",
+      "request": { "method": "PUT", "path": "/hobo-ci-cache/state/key", "headers": { "if-none-match": "*" }, "body": "one" },
+      "response": { "status": 200, "headers": { "etag": "\"version-1\"" }, "body": "" }
+    },
+    {
+      "description": "an ETag mismatch is an unapplied conditional write",
+      "request": { "method": "PUT", "path": "/hobo-ci-cache/state/key", "headers": { "if-match": "\"version-1\"" }, "body": "two" },
+      "response": { "status": 412, "headers": {}, "body": "" }
+    },
+    {
+      "description": "a 200 write with a weak ETag is applied without a reusable ETag",
+      "request": { "method": "PUT", "path": "/hobo-ci-cache/state/key", "headers": { "if-none-match": "*" }, "body": "one" },
+      "response": { "status": 200, "headers": { "etag": "W/\"version-1\"" }, "body": "" }
+    }
+  ]
+}
