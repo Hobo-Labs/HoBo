@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 
 import type { ConnectFlow, FlowTransition } from "./server.js";
 import type { ConfigField, ConnectProvider } from "./steps.js";
@@ -34,20 +35,16 @@ export interface SettingsStore {
 	readonly write: (values: Readonly<Record<string, string>>) => Promise<void>;
 }
 
-function parseSaved(text: string | undefined): Readonly<Record<string, string>> {
-	if (text === undefined || text === "") return {};
+function parseSaved(
+	text: string | undefined,
+): Readonly<Record<string, string>> {
+	if (text === undefined) return {};
 	try {
-		const parsed: unknown = JSON.parse(text);
-		if (parsed === null || Array.isArray(parsed) || !(parsed instanceof Object))
-			return {};
-		return Object.fromEntries(
-			Object.entries(parsed).filter(
-				(entry): entry is [string, string] =>
-					Object.prototype.toString.call(entry[1]) === "[object String]",
-			),
-		);
+		return z.record(z.string(), z.string()).parse(JSON.parse(text));
 	} catch {
-		return {};
+		throw new Error(
+			"Saved settings are invalid; restore or repair them before continuing.",
+		);
 	}
 }
 
@@ -57,8 +54,10 @@ export function fileSettingsStore(file: string): SettingsStore {
 		async read() {
 			try {
 				return parseSaved(await readFile(file, "utf8"));
-			} catch {
-				return {};
+			} catch (error) {
+				if (z.object({ code: z.literal("ENOENT") }).safeParse(error).success)
+					return {};
+				throw error;
 			}
 		},
 		async write(values) {
@@ -87,7 +86,6 @@ export function cellSettingsStore(cell: SettingsCell): SettingsStore {
 		write: (values) => cell.write(JSON.stringify(values)),
 	};
 }
-
 
 /** Where a run holds the secrets it was given (`TrustedVault`, `@hobo/core`). */
 export interface SecretHolder {
