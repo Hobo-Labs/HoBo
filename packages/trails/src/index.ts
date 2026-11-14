@@ -14,6 +14,18 @@ export {
 } from "./can-trail.js";
 export type { DataDualPort, LiveDataDualPort } from "./data-dual-port.js";
 export {
+	type DataHandoverInput,
+	type DataHandoverResult,
+	executeDataHandover,
+	type HandoverEndpoint,
+	type HandoverEngine,
+	type HandoverPhase,
+	type HandoverRole,
+	type HandoverSchema,
+	type HandoverVerdict,
+	inspectDataHandover,
+} from "./data-handover.js";
+export {
 	applySchemaStep,
 	createContractAssertedDataDualFixtures,
 	DATA_DUAL_SCHEMA,
@@ -79,18 +91,6 @@ export {
 	type TrailIdentityFixturesView,
 	type TrailIdentityProgress,
 } from "./identity-trail.js";
-export {
-	type DataHandoverInput,
-	type DataHandoverResult,
-	executeDataHandover,
-	inspectDataHandover,
-	type HandoverEndpoint,
-	type HandoverEngine,
-	type HandoverPhase,
-	type HandoverRole,
-	type HandoverSchema,
-	type HandoverVerdict,
-} from "./data-handover.js";
 export {
 	type CompatGateEvidence,
 	type DataMigrationJournal,
