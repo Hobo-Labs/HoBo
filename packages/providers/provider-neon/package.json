@@ -22,11 +22,13 @@
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/core": "workspace:*",
-		"@hobo/provider-redaction": "workspace:*"
+		"@hobo/provider-redaction": "workspace:*",
+		"pg": "8.22.0"
 	},
 	"devDependencies": {
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
+		"@types/pg": "8.15.5",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {

@@ -80,6 +80,20 @@ export {
 	redactProviderText,
 } from "./errors.js";
 export {
+	createNeonManagedPostgresCandidate,
+	createNeonManagedPostgresResolver,
+	NEON_MANAGED_POSTGRES_PRODUCT_ID,
+	type NeonManagedAuthorization,
+	type NeonManagedPostgresOptions,
+	type NeonManagedProjectIdentity,
+	type NeonManagedProjectRepository,
+	type NeonManagedQuota,
+	type NeonManagedSession,
+	neonManagedPostgres,
+	observeNeonManagedPreflight,
+	probeNeonManagedSession,
+} from "./managed-postgres.js";
+export {
 	assertArgvSafe,
 	buildLogicalCopyPlan,
 	buildPgDumpArgv,
