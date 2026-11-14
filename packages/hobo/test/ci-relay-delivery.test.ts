@@ -28,7 +28,7 @@ import {
 	relayCampId,
 	relayYardRegistryProvider,
 } from "../src/ci-relay-delivery.js";
-import { loadRelayYard } from "../src/ci-relay-yard.js";
+import { loadRelayJoinedYards, loadRelayYard } from "../src/ci-relay-yard.js";
 
 const RELAY_DIR = resolve(import.meta.dirname, "../../ci-vercel");
 const PREVIEW = "https://relay-preview.example.test";
@@ -241,7 +241,6 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(provider.capabilities.map((capability) => capability.port)).toEqual([
 			"compute",
 			"data",
-			"secretRef",
 			"kv",
 			"queue",
 		]);
@@ -250,6 +249,27 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(
 			compute?.satisfies({ port: "compute", features: ["gpu"] }).kind,
 		).toBe("partial");
+		for (const port of ["kv", "queue"]) {
+			const entry = provider.capabilities.find((item) => item.port === port);
+			expect(entry?.satisfies({ port })).toEqual({ kind: "full" });
+			expect(entry?.satisfies({ port, features: ["unlisted"] })).toEqual({
+				kind: "partial",
+				missing: ["unlisted"],
+			});
+		}
+	});
+
+	it("keeps a joined secret projection under its own Yard and does not invent other capabilities", async () => {
+		const joined = await loadRelayJoinedYards(RELAY_DIR, yard);
+		const configYard = joined.find(
+			(member) => member.providerId === "infisical",
+		);
+		if (!configYard) throw new Error("missing joined config Yard");
+		const provider = relayYardRegistryProvider(configYard, true);
+		expect(provider.id).toBe("yard:hobo-ci-relay-config");
+		expect(provider.capabilities.map((entry) => entry.port)).toEqual([
+			"secretRef",
+		]);
 		const secrets = provider.capabilities.find(
 			(entry) => entry.port === "secretRef",
 		);
@@ -259,23 +279,30 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(
 			secrets?.satisfies({ port: "secretRef", features: ["put"] }).kind,
 		).toBe("partial");
-		const noProjection = relayYardRegistryProvider({
-			...yard,
-			bindings: yard.bindings.filter(
-				(row) => row.profile !== capability.secretRef.runtimeProjection,
-			),
-		});
+		const noProjection = relayYardRegistryProvider(
+			{
+				...configYard,
+				bindings: configYard.bindings.filter(
+					(row) => row.profile !== capability.secretRef.runtimeProjection,
+				),
+			},
+			true,
+		);
 		expect(
 			noProjection.capabilities.some((entry) => entry.port === "secretRef"),
 		).toBe(false);
-		for (const port of ["kv", "queue"]) {
-			const entry = provider.capabilities.find((item) => item.port === port);
-			expect(entry?.satisfies({ port })).toEqual({ kind: "full" });
-			expect(entry?.satisfies({ port, features: ["unlisted"] })).toEqual({
-				kind: "partial",
-				missing: ["unlisted"],
-			});
-		}
+		const withOtherBindings: Yard = {
+			...configYard,
+			bindings: [...configYard.bindings, ...yard.bindings],
+		};
+		expect(
+			relayYardRegistryProvider(withOtherBindings, true).capabilities.map(
+				(entry) => entry.port,
+			),
+		).toEqual(["secretRef"]);
+		expect(
+			await loadRelayJoinedYards(RELAY_DIR, { ...yard, name: "other" }),
+		).toEqual([]);
 	});
 
 	it("does not advertise key-value or queue ports without matching Yard bindings", () => {
@@ -294,11 +321,21 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 			relayYardRegistryProvider(withoutDataPorts).capabilities.map(
 				(entry) => entry.port,
 			),
-		).toEqual(["compute", "data", "secretRef"]);
+		).toEqual(["compute", "data"]);
 	});
 });
 
 describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
+	it("refuses delivery when the relay is not a member of the declared Junction", async () => {
+		const h = await harness();
+		const outcome = await deliver(h, "preview", { yard: { ...yard } });
+		expect(outcome).toMatchObject({
+			ok: false,
+			code: RELAY_DELIVERY_REFUSAL.promotionRefused,
+		});
+		expect(h.deployed).toEqual([]);
+	});
+
 	it("records Freight, promotes to preview, realizes it and qualifies it on passing probes", async () => {
 		const h = await harness();
 		const outcome = await deliver(h, "preview");

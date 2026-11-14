@@ -142,8 +142,18 @@ export async function loadRelayJoinedYards(
 		const declared = Object.entries(module).find(
 			([name]) => name === "relayJunction",
 		)?.[1];
-		if (!isJsonObject(declared) || !isJsonArray(declared.yards)) return [];
+		if (
+			!isJsonObject(declared) ||
+			declared.kind !== "junction" ||
+			declared.contract !== "hobo.junction-objects/v1" ||
+			!isJsonArray(declared.yards)
+		)
+			return [];
 		const members: readonly JsonValue[] = declared.yards;
+		// A junction that does not include this very Yard does not authorize its
+		// members to supply capabilities to the relay.
+		if (!members.some((member) => isYard(member) && member === relay))
+			return [];
 		return members.flatMap((member) =>
 			isYard(member) && member.name !== relay.name ? [member] : [],
 		);
