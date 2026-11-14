@@ -1,4 +1,5 @@
 import { manifestHostingPolicy, parseDeploymentMode } from "@hobo/cloud";
+import { externalBoundaryRefusal } from "../cloud/boundaries.js";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
@@ -43,6 +44,10 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 			if (!bindle) {
 				return stubResult("plan");
 			}
+
+			// A Yard holds nothing external: refuse before planning.
+			const boundary = await externalBoundaryRefusal(projectDir, "plan");
+			if (boundary !== undefined) return boundary;
 
 			// Fold any providers installed via `hobo add` from the durable registry
 			// stream into the matchable snapshot before planning.
