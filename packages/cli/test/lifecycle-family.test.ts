@@ -16,6 +16,7 @@ import {
 	createRuntimeLocalEventStore,
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
+import { createTrustedVault } from "@hobo/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -286,7 +287,9 @@ describe("resolveFamilyProject", () => {
 });
 
 describe("provider junction credentials", () => {
-	it("converges with the up that upWith builds from the prepare step's runtimeEnv", async () => {
+	it("converges with the up that upWith builds from the prepare step's vault, then wipes it", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
 		const runtime = runtimeWith(recordingIac());
 		const dir = await project();
 		const seen: string[] = [];
@@ -307,10 +310,10 @@ describe("provider junction credentials", () => {
 						steps: [
 							{ id: "vercel", outcome: "unchanged", detail: "connected" },
 						],
-						runtimeEnv: { VERCEL_TOKEN: "from-the-store" },
+						credentials: vault,
 					}),
-					upWith: (env) => {
-						seen.push(Object.keys(env).join(","));
+					upWith: (credentials) => {
+						seen.push(credentials.names().join(","));
 						return createUpCommand({ runtime });
 					},
 				}),
@@ -319,6 +322,8 @@ describe("provider junction credentials", () => {
 		const up = await run(cli, ["cd", "up"]);
 		expect(up.exitCode).toBe(0);
 		expect(seen).toEqual(["VERCEL_TOKEN"]);
+		// The run's credentials end with the run.
+		expect(vault.names()).toEqual([]);
 		// The credential never reaches the result.
 		expect(JSON.stringify(up.envelope)).not.toContain("from-the-store");
 	});
