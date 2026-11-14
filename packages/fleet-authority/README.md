@@ -1,6 +1,6 @@
 # `@hobo/fleet-authority`
 
-The HoBo Fleet authority service (ADR-0182): the HTTP API, sign-in providers,
+The HoBo Fleet authority service (ADR-0183): the HTTP API, sign-in providers,
 the composition of the recorder and registry projection, operations (key
 ceremony, rotation, backup, restore), the status feed and the witness. Its
 composition roots are `hobo-fleet-authority` and `hobo-fleet-witness`.

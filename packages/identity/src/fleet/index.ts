@@ -1,5 +1,5 @@
 /**
- * Identity additions for HoBo Fleet (ADR-0182). Signatures are frozen by the
+ * Identity additions for HoBo Fleet (ADR-0183). Signatures are frozen by the
  * fleet contract commit (design §7.3).
  */
 import type { Signer } from "@hobo/fleet";

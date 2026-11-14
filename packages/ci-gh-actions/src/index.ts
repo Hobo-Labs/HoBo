@@ -114,7 +114,7 @@ export {
 	signFleetVerdictReport,
 	verifyFleetVerdictReport,
 } from "./fleet-verdict-auth.js";
-// HoBo Fleet (ADR-0182): the `github-actions-job` work kind.
+// HoBo Fleet (ADR-0183): the `github-actions-job` work kind.
 export {
 	createGithubActionsWorkRunner,
 	createGithubActionsWorkSource,

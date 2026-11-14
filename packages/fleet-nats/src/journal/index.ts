@@ -1,6 +1,6 @@
 /**
  * The journal event store on `FLEET_JOURNAL` (L36).
- * Signature frozen by the fleet contract commit (ADR-0182).
+ * Signature frozen by the fleet contract commit (ADR-0183).
  */
 import type { FleetEventStore, Outcome } from "@hobo/fleet";
 import {

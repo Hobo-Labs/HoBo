@@ -1,6 +1,6 @@
 /**
  * Topology, credentials, auth callout and the bus ports over NATS (L08).
- * Signatures frozen by the fleet contract commit (ADR-0182).
+ * Signatures frozen by the fleet contract commit (ADR-0183).
  *
  * Each frozen entry point runs its `…Over` twin on the real client (`NATS`);
  * the twins take the client as a `NatsClients` port, which is how the unit

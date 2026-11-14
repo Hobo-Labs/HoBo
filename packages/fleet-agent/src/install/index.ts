@@ -1,6 +1,6 @@
 /**
  * Service installers (L10, design §6.15). Signature frozen by the fleet
- * contract commit (ADR-0182).
+ * contract commit (ADR-0183).
  *
  * `argv` is the command line the service runs, program first (for example
  * `[process.execPath, <hobo entry>, "fleet", "run"]`). The definition is

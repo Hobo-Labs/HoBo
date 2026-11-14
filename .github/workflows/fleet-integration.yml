@@ -1,6 +1,6 @@
 name: Fleet integration
 
-# The HoBo Fleet integration lane (ADR-0182). It provisions the binaries the
+# The HoBo Fleet integration lane (ADR-0183). It provisions the binaries the
 # fleet's `*.integration.test.ts` need and runs them: `fleet:verify` (every
 # outcome, each of which names its integration tests) and every fleet
 # integration test besides. Those tests fail when a binary is absent and `CI`

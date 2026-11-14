@@ -1,6 +1,6 @@
 # `@hobo/fleet`
 
-One package for every fleet (ADR-0182). A **fleet** is a named set of members
+One package for every fleet (ADR-0183). A **fleet** is a named set of members
 inside one tenant, with one policy and one coordination mode; a **member** is a
 `DEVICE` (runs the agent and holds its own keys), a `BACKEND` or a `TARGET`
 (declared and observed by a sponsor). This package owns member identity,
