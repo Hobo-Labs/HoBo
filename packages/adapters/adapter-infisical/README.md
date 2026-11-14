@@ -38,10 +38,11 @@ take it explicitly.
   deploy project on that login, then a revoke.
   `valueRef` is the entry's `infisical://` SecretRef.
 - **Plan observation** (`createInfisicalPlanObserver`): an enrolled OIDC
-  identity reads its project and organization plan after the host revalidates
-  the exact lease and reserves and claims each request. The project response
-  must name the enrolled organization. The host independently verifies that
-  organization's root, because Infisical returns the caller's root-org plan.
+  identity from `oidcAuth` reads its project and organization plan after the
+  host revalidates the exact lease and reserves and claims each request. The
+  project response must name the enrolled organization. The host independently
+  verifies that organization's root, because Infisical returns the caller's
+  root-org plan.
   The returned limits are provider reports with freshness unverified: Infisical
   may serve a cached or fallback plan without identifying it. This observation
   does not establish available shared-IP capacity, pricing, final usage, or

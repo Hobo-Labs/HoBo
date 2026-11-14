@@ -4,6 +4,7 @@ import {
 	createInfisicalPlanObserver,
 	type InfisicalPlanAttempt,
 	type InfisicalPlanLeaseScope,
+	oidcAuth,
 	parseInfisicalBinding,
 	parseInfisicalIdentityId,
 } from "../src/index.js";
@@ -83,7 +84,7 @@ function fixture(
 	const observer = createInfisicalPlanObserver({
 		client: {
 			binding,
-			auth: { method: "oidc", identityId, jwt: async () => "a.b.c" },
+			auth: oidcAuth({ identityId, jwt: async () => "a.b.c" }),
 			fetch: send,
 			now: () => 1_800_000_000_000,
 		},
