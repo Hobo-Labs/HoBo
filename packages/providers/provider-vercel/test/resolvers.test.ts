@@ -34,6 +34,9 @@ function options(
 		readonly teamId?: string;
 		readonly verifyUnlinkedProject?: VercelResolverOptions["verifyUnlinkedProject"];
 		readonly verifyProjectDeletion?: VercelResolverOptions["verifyProjectDeletion"];
+		readonly verifyProjectControl?:
+			| VercelResolverOptions["verifyProjectControl"]
+			| null;
 	} = {},
 ) {
 	return {
@@ -61,9 +64,22 @@ function resolverFor(
 	productId: string,
 	overrides: Parameters<typeof options>[0] = {},
 ) {
-	const resolver = vercelResolvers(options(overrides)).find(
-		(candidate) => candidate.productId === productId,
-	);
+	const projectDefaults =
+		productId === VERCEL_PROJECT_PRODUCT_ID
+			? {
+					teamId: "team_hobo",
+					...(overrides.verifyProjectControl === null
+						? undefined
+						: {
+								verifyProjectControl:
+									overrides.verifyProjectControl ?? (async () => true),
+							}),
+				}
+			: {};
+	const resolver = vercelResolvers({
+		...projectDefaults,
+		...options(overrides),
+	}).find((candidate) => candidate.productId === productId);
 	if (resolver === undefined) {
 		throw new Error(`no resolver registered for ${productId}`);
 	}
@@ -80,7 +96,11 @@ function projectRequest(
 			logicalId: "storefront",
 			...overrides.ref,
 		},
-		desired: { framework: "nextjs", ...overrides.desired },
+		desired: {
+			framework: "nextjs",
+			operationId: "fixture-op",
+			...overrides.desired,
+		},
 		credentialRef: overrides.credentialRef ?? CREDENTIAL_REF,
 		...(overrides.observed !== undefined
 			? { observed: overrides.observed }
@@ -144,7 +164,8 @@ function always(response: TransportResponse): Handler {
 /** In-memory stand-in for `/v9/projects`. Never touches the network. */
 function projectApi(seed: readonly JsonObject[] = []): Handler {
 	const store = new Map<string, JsonObject>();
-	for (const entry of seed) store.set(String(entry.id), { ...entry });
+	for (const entry of seed)
+		store.set(String(entry.id), { accountId: "team_hobo", ...entry });
 	let sequence = store.size;
 	return (request) => {
 		const url = new URL(request.url);
@@ -673,6 +694,80 @@ describe("vercel.project/v1 resolver", () => {
 			);
 			expect(calls.every((call) => call.method !== "DELETE")).toBe(true);
 		}
+	});
+
+	it("does not adopt or update a same-name project without independent control evidence", async () => {
+		const { transport, calls } = recorded(
+			projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "remix",
+				},
+			]),
+		);
+		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectControl: null,
+		});
+		await expect(
+			resolver.reconcile(
+				projectRequest({ desired: { operationId: "deploy-1" } }),
+				transport,
+			),
+		).rejects.toThrow(/project control authorization/u);
+		await expect(
+			resolver.read?.(
+				projectRequest({ desired: { operationId: "deploy-1" } }),
+				transport,
+			),
+		).rejects.toThrow(/project control authorization/u);
+		expect(calls.every((call) => call.method === "GET")).toBe(true);
+	});
+
+	it("rechecks project control before an update and binds it to the requested intent", async () => {
+		const { transport, calls } = recorded(
+			projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "remix",
+				},
+			]),
+		);
+		const approvals: unknown[] = [];
+		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectControl: async (scope) => {
+				approvals.push(scope);
+				return scope.action !== "update";
+			},
+		});
+		await expect(
+			resolver.reconcile(
+				projectRequest({ desired: { operationId: "deploy-1" } }),
+				transport,
+			),
+		).rejects.toThrow(/project control authorization/u);
+		expect(approvals).toEqual([
+			{
+				teamId: "team_hobo",
+				projectId: "prj_9",
+				operationId: "deploy-1",
+				action: "adopt",
+				desired: { framework: "nextjs", operationId: "deploy-1" },
+			},
+			{
+				teamId: "team_hobo",
+				projectId: "prj_9",
+				operationId: "deploy-1",
+				action: "update",
+				desired: { framework: "nextjs", operationId: "deploy-1" },
+			},
+		]);
+		expect(calls.every((call) => call.method === "GET")).toBe(true);
 	});
 
 	it("carries teamId onto every call when the token is team scoped", async () => {

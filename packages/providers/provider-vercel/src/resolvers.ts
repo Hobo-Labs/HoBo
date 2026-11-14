@@ -165,6 +165,14 @@ export type VercelResolverOptions = {
 		readonly projectId: string;
 		readonly operationId: string;
 	}) => Promise<boolean>;
+	/** Independently bind control of an existing project to the exact intent. */
+	readonly verifyProjectControl?: (input: {
+		readonly teamId: string;
+		readonly projectId: string;
+		readonly operationId: string;
+		readonly action: "observe" | "adopt" | "update" | "link";
+		readonly desired: JsonObject;
+	}) => Promise<boolean>;
 	/** Trusted durable fence and accounting proof: no queued, delayed or leased
 	 * messages remain and producers stay fenced until the deployment is gone. */
 	readonly verifyQueueDrain?: (input: {
@@ -797,6 +805,37 @@ function checkProjectRepository(
 		);
 }
 
+async function requireProjectControl(
+	options: VercelResolverOptions,
+	request: ResolveRequest,
+	view: ProjectView,
+	action: "observe" | "adopt" | "update" | "link",
+): Promise<void> {
+	const operationId = desiredString(
+		request.desired,
+		"operationId",
+		VERCEL_PROJECT_PRODUCT_ID,
+	);
+	if (
+		!options.teamId ||
+		!/^[A-Za-z0-9_-]{1,128}$/u.test(options.teamId) ||
+		view.accountId !== options.teamId ||
+		!operationId ||
+		!options.verifyProjectControl ||
+		!(await options.verifyProjectControl({
+			teamId: options.teamId,
+			projectId: view.id,
+			operationId,
+			action,
+			desired: request.desired,
+		}))
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			"Vercel project control authorization is required for the exact team, project, operation and intent",
+		);
+}
+
 function createProjectResolver(
 	options: VercelResolverOptions,
 ): ResourceResolver {
@@ -883,6 +922,12 @@ function createProjectResolver(
 			}
 
 			checkProjectRepository(desired, observed, true);
+			await requireProjectControl(
+				options,
+				parsed,
+				observed,
+				known === undefined ? "adopt" : "observe",
+			);
 			const verifyUnlinked = async () => {
 				if (!desired.repository || observed.hasGitLink) return;
 				const operationId = desiredString(
@@ -923,6 +968,7 @@ function createProjectResolver(
 
 			let view = observed;
 			if (Object.keys(delta).length) {
+				await requireProjectControl(options, parsed, observed, "update");
 				const operation = "PATCH /v9/projects/{idOrName}";
 				const response = await callApi(
 					dispatch,
@@ -964,6 +1010,7 @@ function createProjectResolver(
 			}
 			if (desired.repository && !view.hasGitLink) {
 				await verifyUnlinked();
+				await requireProjectControl(options, parsed, view, "link");
 				const operation = "POST /v9/projects/{idOrName}/link";
 				const response = await callApi(
 					dispatch,
@@ -1089,6 +1136,10 @@ function createProjectResolver(
 				target,
 				known !== undefined,
 			);
+			if (view !== undefined) {
+				checkProjectRepository(parseProjectDesired(parsed), view, false);
+				await requireProjectControl(options, parsed, view, "observe");
+			}
 			return view === undefined
 				? undefined
 				: outcomeOf("noop", view.id, projectOutputs(view), [

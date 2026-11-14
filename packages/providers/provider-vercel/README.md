@@ -229,10 +229,15 @@ conformance and unavailable custody by default; account evidence, quota,
 credentials and a current quote must be verified separately.
 `createVercelProjectDefinition` describes an operator-owned project and also
 requires separately verified ownership, Git linkage, permissions and costs.
+Observing, adopting, updating or linking an existing project requires a
+`verifyProjectControl` authorization bound to the exact team, project,
+operation, action and desired settings. The resolver rechecks it before each
+update or link; a name or repository match alone is not control evidence.
 Deleting a project requires its recorded physical ID, team and operation ID,
 plus an independently supplied `verifyProjectDeletion` authorization for that
 exact scope. A same-name project or matching Git repository is not deletion
-authority. Until the host supplies that verifier, project deletion is refused.
+authority. Until the host supplies these verifiers, existing-project control
+and deletion are refused.
 
 Vercel renamed the Edge Config REST surface to `/v1/global-config` (the path
 parameter is still `edgeConfigId`); the product id keeps the `edge-config` name
