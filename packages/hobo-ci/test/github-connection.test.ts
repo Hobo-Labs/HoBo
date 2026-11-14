@@ -574,6 +574,34 @@ describe("prepareGithubConnection", () => {
 		}
 	});
 
+	it("uses a configured Bitwarden store to find an existing GitHub connection", async () => {
+		const store = { ...memoryStore(), id: "bitwarden" as const };
+		await seedConnection(store);
+		let selected = "";
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: {
+				...ENV,
+				HOBO_CI_SECRET_STORE: "bitwarden",
+				BWS_ORGANIZATION_ID: "org",
+				BWS_PROJECT_ID: "project",
+				BWS_ACCESS_TOKEN: "token",
+			},
+			settings: memorySettings(),
+			openStore: async (id) => {
+				selected = id;
+				return { ok: true, store };
+			},
+			startPage: () => {
+				throw new Error("no page should open");
+			},
+		});
+		expect(selected).toBe("bitwarden");
+		expect(outcome).toMatchObject({
+			kind: "ready",
+			steps: [{ outcome: "unchanged" }],
+		});
+	});
+
 	it("refuses an unknown saved or configured secret store before opening it", async () => {
 		for (const [env, saved] of [
 			[{ ...ENV, HOBO_CI_SECRET_STORE: "unknown" }, {}],

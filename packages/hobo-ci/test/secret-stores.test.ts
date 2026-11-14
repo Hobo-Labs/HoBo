@@ -4,7 +4,7 @@ import type {
 } from "@hobo/adapter-bitwarden";
 import { describe, expect, it } from "vitest";
 
-import { storeSettings } from "../src/ceremony-settings.js";
+import { CI_SETTINGS, storeSettings } from "../src/ceremony-settings.js";
 import { openSecretStore } from "../src/secret-stores.js";
 
 const ORG = "11111111-2222-4333-8444-555555555555";
@@ -61,6 +61,10 @@ function fakeBitwarden(): BitwardenSdkClient {
 
 describe("Bitwarden Secrets Manager", () => {
 	it("is offered on the setup page, with its token never saved", () => {
+		expect(
+			CI_SETTINGS.find((s) => s.field.name === "HOBO_CI_SECRET_STORE")?.field
+				.options,
+		).toContainEqual(expect.objectContaining({ value: "bitwarden" }));
 		const fields = storeSettings("bitwarden", "/unused").map((s) => s.field);
 		expect(fields.map((field) => field.name)).toEqual([
 			"BWS_ORGANIZATION_ID",
@@ -93,7 +97,8 @@ describe("Bitwarden Secrets Manager", () => {
 	it("says what is missing instead of failing late", async () => {
 		const unbound = await openSecretStore("bitwarden", {});
 		expect(unbound.ok).toBe(false);
-		if (!unbound.ok) expect(unbound.remediation.join(" ")).toMatch(/BWS_PROJECT_ID/);
+		if (!unbound.ok)
+			expect(unbound.remediation.join(" ")).toMatch(/BWS_PROJECT_ID/);
 		const signedOut = await openSecretStore(
 			"bitwarden",
 			{ BWS_ORGANIZATION_ID: ORG, BWS_PROJECT_ID: PROJECT },

@@ -100,6 +100,11 @@ export const CD_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 					description:
 						"Unlocked with your desktop app; workloads use a service account.",
 				},
+				{
+					value: "bitwarden",
+					label: "Bitwarden Secrets Manager",
+					description: "Use a machine account to access the selected project.",
+				},
 			],
 		},
 	},
@@ -327,8 +332,7 @@ export async function prepareVercelConnection(
 				: [...resolved.missing, CLIENT_SECRET_SETTING.field];
 			const stage = await configureThen({
 				provider: "vercel",
-				title:
-					`Connect ${storeLabel(chosen)}`,
+				title: `Connect ${storeLabel(chosen)}`,
 				reason: `HoBo keeps the Integration's client secret and the access Vercel grants in ${storeLabel(chosen)}. Coordinates are saved for next time; secrets go only to the store.`,
 				settings: stageSettings,
 				missing: stageMissing,

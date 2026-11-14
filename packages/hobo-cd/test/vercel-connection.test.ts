@@ -347,6 +347,43 @@ describe("prepareVercelConnection", () => {
 		}
 	});
 
+	it("uses a configured Bitwarden store to find an existing Vercel connection", async () => {
+		const memory = await memoryStore();
+		const store = { ...memory.store, id: "bitwarden" as const };
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
+		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
+		let selected = "";
+		const outcome = await prepareVercelConnection(prepareInput(), {
+			env: {
+				HOBO_CD_SECRET_STORE: "bitwarden",
+				BWS_ORGANIZATION_ID: "org",
+				BWS_PROJECT_ID: "project",
+				BWS_ACCESS_TOKEN: "token",
+			},
+			settings: memorySettings(),
+			openStore: async (id) => {
+				selected = id;
+				return { ok: true, store };
+			},
+			startPage: () => {
+				throw new Error("no page should open");
+			},
+		});
+		expect(selected).toBe("bitwarden");
+		expect(outcome).toMatchObject({
+			kind: "ready",
+			steps: [{ outcome: "unchanged" }],
+			runtimeEnv: { VERCEL_TOKEN: TOKEN },
+		});
+	});
+
+	it("offers Bitwarden as a secret store", async () => {
+		const { CD_SETTINGS } = await import("../src/prepare.js");
+		expect(
+			CD_SETTINGS.find((s) => s.field.name === "HOBO_CD_SECRET_STORE")?.field
+				.options,
+		).toContainEqual(expect.objectContaining({ value: "bitwarden" }));
+	});
 	it("refuses an unknown configured or saved store before opening it", async () => {
 		for (const savedValue of [false, true]) {
 			const settings = memorySettings();

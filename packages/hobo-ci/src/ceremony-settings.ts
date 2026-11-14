@@ -70,6 +70,11 @@ export const CI_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 					description:
 						"Unlocked with your desktop app; workloads use a service account.",
 				},
+				{
+					value: "bitwarden",
+					label: "Bitwarden Secrets Manager",
+					description: "Use a machine account to access the selected project.",
+				},
 			],
 		},
 	},
