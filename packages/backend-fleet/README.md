@@ -27,7 +27,7 @@ against, and nothing in core needs a fleet.
 | Assignment entries and their identity | `parseFleetAssignment`, `assignmentKey`, `fleetMajority` |
 | The register over any replica | `AssignmentReplica`, `resolveAssignment`, `readCurrentAssignment`, `proposeAssignment`, `bootstrapAssignment`, `completeAssignment`, `overrideAssignment` |
 | The register on a cache | `ephemeralAssignmentReplica`, `ephemeralAssignmentRegister`, `rejoinAssignmentReplicas` |
-| Bounded immutable journal | `createImmutableJournal` |
+| Bounded immutable journal and generation handover | `createImmutableJournal`, `createImmutableJournalRollover` |
 | Billing periods and usage units | `billingPeriod`, `FLEET_USAGE_UNITS` |
 | Keep, switch or fail over a database fleet | `decideFleet`, `parseFleetFinancialModel`, `parseFleetPolicy` |
 | Route a loss-tolerant fleet by budget | `routeFleetByBudget`, `parseFleetOffer`, `parseFleetRoutingMarks` |
@@ -74,6 +74,11 @@ and each operation calls the host's authorization hook. A host must also verify
 failure domains, fund provider calls, quarantine restored replicas and fence
 external effects; the journal itself does not establish those properties or
 implement `DurableEventStore`.
+
+`createImmutableJournalRollover` uses an independently anchored control
+journal to choose a handover, seals the source generation and transfers its
+bounded history to the destination. It does not take an application snapshot
+or by itself authorize a production cutover.
 
 ## Budget routing
 
