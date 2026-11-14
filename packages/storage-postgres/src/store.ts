@@ -971,6 +971,17 @@ SELECT EXISTS (
 		append: ParsedAppend,
 		effects: DurableCommitRequest["effects"],
 	): Promise<DurableCommitResult & { lastPositionRaw: bigint | undefined }> {
+		const effectList = effects ?? [];
+		// An empty commit is a no-op. In particular it must not create a stream
+		// head before the lease boundary has authorized an actual write.
+		if (inputs.length === 0 && effectList.length === 0)
+			return Object.freeze({
+				streamId,
+				appended: [],
+				deduped: [],
+				effects: [],
+				lastPositionRaw: undefined,
+			});
 		const now = clock.now();
 		const actorPolicy = await lockedActorPolicy(client);
 		await client.query(
@@ -1027,7 +1038,6 @@ SELECT EXISTS (
 			}
 			toWrite.push(input);
 		}
-		const effectList = effects ?? [];
 		if (toWrite.length === 0 && effectList.length === 0) {
 			return Object.freeze({
 				streamId,

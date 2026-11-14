@@ -14,6 +14,20 @@ import {
 } from "./support/live.js";
 
 describeLive("shared PostgreSQL actor leases", () => {
+	it("does not create a protected stream for an empty append without a lease", async () => {
+		const store = liveStore({ protectedActorStreamPrefixes: ["deployment:"] });
+		const streamId = "deployment:empty";
+		await store.ready();
+		expect(await store.loadStreamHead(streamId)).toBeUndefined();
+		const result = await store.append(streamId, [], {
+			...OPTS,
+			expectedSeq: 0,
+		});
+		expect(result.appended).toEqual([]);
+		expect(result.deduped).toEqual([]);
+		expect(await store.loadStreamHead(streamId)).toBeUndefined();
+	});
+
 	it("requires the current lease fence before a fold may append a quarantine marker", async () => {
 		const schema = freshSchema();
 		const owner = liveStore({
