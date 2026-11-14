@@ -1829,6 +1829,9 @@ importers:
       '@hobo/data':
         specifier: workspace:*
         version: link:../data
+      '@hobo/hobo-cd':
+        specifier: workspace:*
+        version: link:../hobo-cd
       '@hobo/hobo-ci':
         specifier: workspace:*
         version: link:../hobo-ci
@@ -2004,6 +2007,43 @@ importers:
       pg:
         specifier: 8.22.0
         version: 8.22.0
+
+  packages/hobo-cd:
+    dependencies:
+      '@hobo/bindles':
+        specifier: workspace:*
+        version: link:../bindles
+      '@hobo/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@hobo/connect-ui':
+        specifier: workspace:*
+        version: link:../connect-ui
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
+      '@hobo/hobo-ci':
+        specifier: workspace:*
+        version: link:../hobo-ci
+      '@hobo/junctions':
+        specifier: workspace:*
+        version: link:../junctions
+      '@hobo/yards':
+        specifier: workspace:*
+        version: link:../yards
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/hobo-ci:
     dependencies:
