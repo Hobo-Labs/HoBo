@@ -25,6 +25,7 @@ import {
 	type OwnerStoreDeps,
 	ownerStore,
 	SECRET_STORE_LOCATOR_FILE,
+	storeIdOf,
 } from "./owner-store.js";
 import { ignoredSecretEnvNotice, withoutSecretEnv } from "./secret-custody.js";
 import type { Env, OpenedSecretStore } from "./secret-stores.js";
@@ -154,6 +155,18 @@ export async function prepareGithubConnection(
 	const notice = ignoredSecretEnvNotice(env);
 	if (notice !== undefined) input.run.emitProgress(notice);
 	const plainEnv = withoutSecretEnv(env);
+	if (env.HOBO_SECRET_STORE) {
+		try {
+			storeIdOf(env.HOBO_SECRET_STORE);
+		} catch (error) {
+			if (!(error instanceof InvalidSecretStoreError)) throw error;
+			return refused("HOBO_CI_SECRET_STORE_INVALID", error.message, [
+				"Choose infisical, 1password, or bitwarden in the store locator.",
+			]);
+		}
+		// The validated choice is a non-secret setting despite its name.
+		plainEnv.HOBO_SECRET_STORE = env.HOBO_SECRET_STORE;
+	}
 	const vault = deps.vault ?? createTrustedVault();
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
 	let owner: Awaited<ReturnType<typeof ownerStore>>;

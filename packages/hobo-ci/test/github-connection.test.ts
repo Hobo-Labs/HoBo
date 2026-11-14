@@ -753,6 +753,12 @@ describe("prepareGithubConnection", () => {
 		);
 	});
 
+	it("does not treat corrupt saved settings as missing", async () => {
+		const store = memoryStore();
+		await store.port.put("HOBO_CI_SETTINGS", "{not-json");
+		await expect(familySettings(store, "ci").read()).rejects.toThrow(/invalid/);
+	});
+
 	it("reports unchanged without a page when this run's vault already signs in", async () => {
 		const store = memoryStore();
 		await seedConnection(store);

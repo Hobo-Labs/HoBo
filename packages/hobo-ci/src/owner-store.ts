@@ -12,6 +12,7 @@ import {
 	type SettingsStore,
 } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
+import { z } from "zod";
 
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
 import {
@@ -99,7 +100,16 @@ export function familySettings(
 	return cellSettingsStore({
 		async read() {
 			const read = await store.port.access(entry);
-			if (read.status === "ok") return read.material;
+			if (read.status === "ok") {
+				try {
+					z.record(z.string(), z.string()).parse(
+						JSON.parse(read.material ?? ""),
+					);
+					return read.material;
+				} catch {
+					throw new Error("The saved ceremony settings are invalid.");
+				}
+			}
 			if (read.code === "secret-not-found") return undefined;
 			throw new Error("Cannot read the saved ceremony settings.");
 		},

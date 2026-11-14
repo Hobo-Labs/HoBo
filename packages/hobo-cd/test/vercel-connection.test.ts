@@ -453,7 +453,7 @@ describe("prepareVercelConnection", () => {
 	});
 
 	it("does not replace a client secret when its store read is denied", async () => {
-		const { store, names } = await memoryStore();
+		const { store } = await memoryStore();
 		const unavailable: OpenedSecretStore = {
 			...store,
 			port: {
@@ -475,6 +475,18 @@ describe("prepareVercelConnection", () => {
 			vault: signedInVault(),
 			locator: memorySettings(LOCATOR),
 			openStore: opened(unavailable),
+			startPage: async ({ flow }) => {
+				expect(flow.initial).toMatchObject({
+					kind: "failed",
+					provider: "vercel",
+				});
+				return {
+					url: "http://127.0.0.1:1/",
+					callbackUrl: "http://127.0.0.1:1/callback",
+					done: Promise.resolve(flow.initial),
+					close: async () => {},
+				};
+			},
 			openBrowser: () => undefined,
 			timeoutMs: 2_000,
 		});
@@ -482,7 +494,11 @@ describe("prepareVercelConnection", () => {
 			kind: "refused",
 			result: { code: "HOBO_CD_VERCEL_NOT_CONNECTED" },
 		});
-		expect(names()).not.toContain(VERCEL_CLIENT_SECRET_KEY);
+		const original = await store.port.access(VERCEL_CLIENT_SECRET_KEY);
+		expect(original).toMatchObject({
+			status: "ok",
+			material: "integration-client-secret",
+		});
 	});
 
 	it("hands an existing connection's credential to convergence without a page", async () => {
