@@ -505,6 +505,64 @@ describe("Vercel Blob provider lifecycle", () => {
 			),
 		).toBe(false);
 	});
+	it.each([
+		["missing", {}],
+		["foreign", { ownerId: "team_other" }],
+		["malformed", { ownerId: null }],
+		["conflicting", { ownerId: team, accountId: "team_other" }],
+	])("rejects %s Blob owner evidence before reads or mutations", async (_name, ownership) => {
+		const api = fixture([store()]);
+		const observed: HttpTransport = async (call) => {
+			const response = await api.transport(call);
+			if (
+				call.method === "GET" &&
+				new URL(call.url).pathname === "/v1/storage/stores/store_1"
+			) {
+				const body = JSON.parse(response.body);
+				delete body.store.ownerId;
+				Object.assign(body.store, ownership);
+				return { ...response, body: JSON.stringify(body) };
+			}
+			return response;
+		};
+		await expect(api.resolver.read(pinned(), observed)).rejects.toThrow(
+			/owner/u,
+		);
+		await expect(api.resolver.reconcile(request(), observed)).rejects.toThrow(
+			/owner/u,
+		);
+		await expect(
+			api.resolver.delete(
+				pinned("store_1", ["production"], { deleteWhenEmpty: true }),
+				observed,
+			),
+		).rejects.toThrow(/owner/u);
+		expect(api.calls.some((call) => call.method !== "GET")).toBe(false);
+	});
+	it.each([
+		{ ownerId: team },
+		{ accountId: team },
+		{ teamId: team },
+		{ ownerId: team, accountId: team, teamId: team },
+	])("accepts only matching, explicit Blob owner identities %#", async (ownership) => {
+		const api = fixture([store()]);
+		const observed: HttpTransport = async (call) => {
+			const response = await api.transport(call);
+			if (
+				call.method === "GET" &&
+				new URL(call.url).pathname === "/v1/storage/stores/store_1"
+			) {
+				const body = JSON.parse(response.body);
+				delete body.store.ownerId;
+				Object.assign(body.store, ownership);
+				return { ...response, body: JSON.stringify(body) };
+			}
+			return response;
+		};
+		await expect(api.resolver.read(pinned(), observed)).resolves.toMatchObject({
+			physicalId: "store_1",
+		});
+	});
 	it("rejects a foreign account and incomplete store listing without mutation", async () => {
 		const foreign = fixture([store({ ownerId: "team_other" })]);
 		await expect(

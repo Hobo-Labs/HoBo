@@ -1575,15 +1575,16 @@ function blobView(
 	const name = requiredString(record, "name", op);
 	const region = requiredString(record, "region", op);
 	const access = requiredString(record, "access", op);
-	const owner =
-		optionalString(record, "ownerId") ??
-		optionalString(record, "accountId") ??
-		optionalString(record, "teamId");
+	const owners = [record.ownerId, record.accountId, record.teamId].filter(
+		(owner) => owner !== undefined,
+	);
 	if (
 		!/^store_[A-Za-z0-9]+$/u.test(id) ||
 		record.type !== "blob" ||
 		(access !== "private" && access !== "public") ||
-		(owner && owner !== options.teamId)
+		!options.teamId ||
+		owners.length === 0 ||
+		owners.some((owner) => owner !== options.teamId)
 	)
 		throw unparseable(
 			op,
