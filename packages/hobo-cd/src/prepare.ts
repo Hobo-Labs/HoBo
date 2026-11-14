@@ -3,23 +3,23 @@ import {
 	type CeremonySetting,
 	type ConnectFlow,
 	type ConnectPage,
-	type ConnectStep,
 	configureThen,
-	familySettingsStore,
 	resolveSettings,
-	type SettingsStore,
 	startConnectPage,
 } from "@hobo/connect-ui";
+import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
-	type Env,
+	familySettings,
+	InvalidSecretStoreError,
+	ignoredSecretEnvNotice,
 	type OpenedSecretStore,
+	type OwnerStoreDeps,
 	openInBrowser,
-	openSecretStore,
-	type SecretStoreDeps,
-	type SecretStoreId,
-	type SecretStoreOpening,
-	storeLabel,
-	storeSettings,
+	ownerStore,
+	runPage,
+	SECRET_STORE_LOCATOR_FILE,
+	withoutSecretEnv,
+	workloadOidcOf,
 } from "@hobo/hobo-ci";
 
 import { resolveVercelJunction } from "./junction.js";
@@ -35,15 +35,16 @@ import {
 // client id), the secret store and its sign-in, and the Integration's client
 // secret, which goes straight into the store — then installs the Integration
 // and resolves the Vercel junction's credential for this convergence.
-// Answered settings (never secrets) are saved under HOBO_HOME for the next
-// run; environment variables of the same names win. Idempotent: a stored
-// installation opens nothing. `--what-if` opens nothing. Without a person at
-// a browser, it refuses and names each missing setting.
+// The store is found through the committed locator and signed in to on the
+// page (`ownerStore`, `@hobo/hobo-ci`); the Integration's ids are kept in the
+// store as `HOBO_CD_SETTINGS`, so a destroyed devbox is set up again by
+// signing in. No secret is read from the environment or written to a disk.
+// Idempotent: a stored installation opens nothing. `--what-if` opens
+// nothing. Without a person at a browser, it refuses and says why.
 
 // public-contract: the Redirect URL HoBo CD's Integration registers by default.
 export const DEFAULT_VERCEL_REDIRECT_URI =
 	"http://127.0.0.1:8792/vercel/callback";
-const CD_FOLDER = "/hobo-cd";
 
 /** What `hobo cd up` needs to know before it can connect Vercel. */
 export const CD_SETTINGS: readonly CeremonySetting[] = Object.freeze([
@@ -81,33 +82,6 @@ export const CD_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 		},
 		fallback: DEFAULT_VERCEL_REDIRECT_URI,
 	},
-	{
-		field: {
-			name: "HOBO_CD_SECRET_STORE",
-			label: "Secret store",
-			kind: "choice",
-			required: true,
-			value: "infisical",
-			options: [
-				{
-					value: "infisical",
-					label: "Infisical Cloud (recommended)",
-					description: "Workloads sign in with OIDC: no secret to keep.",
-				},
-				{
-					value: "1password",
-					label: "1Password",
-					description:
-						"Unlocked with your desktop app; workloads use a service account.",
-				},
-				{
-					value: "bitwarden",
-					label: "Bitwarden Secrets Manager",
-					description: "Use a machine account to access the selected project.",
-				},
-			],
-		},
-	},
 ]);
 
 const CLIENT_SECRET_SETTING: CeremonySetting = {
@@ -121,17 +95,13 @@ const CLIENT_SECRET_SETTING: CeremonySetting = {
 	},
 };
 
-export interface PrepareVercelDeps extends SecretStoreDeps {
-	readonly env?: Env;
+export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly interactive?: boolean;
 	readonly openBrowser?: (url: string) => void;
 	readonly startPage?: typeof startConnectPage;
 	readonly timeoutMs?: number;
-	readonly openStore?: (
-		id: SecretStoreId,
-		env: Env,
-	) => Promise<SecretStoreOpening>;
-	readonly settings?: SettingsStore;
+	/** The run's trusted vault; a fresh one by default. */
+	readonly vault?: TrustedVault;
 }
 
 function refused(
@@ -150,15 +120,12 @@ function refused(
 	return { kind: "refused", result };
 }
 
-function storeIdOf(value: string | undefined): SecretStoreId {
-	return value === "1password" || value === "bitwarden" ? value : "infisical";
-}
-
 async function ready(
 	store: OpenedSecretStore,
 	outcome: "created" | "unchanged",
+	vault: TrustedVault,
 ): Promise<PrepareOutcome> {
-	const resolved = await resolveVercelJunction(store);
+	const resolved = await resolveVercelJunction(store, vault);
 	if (!resolved.ok)
 		return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", resolved.message, [
 			"Run hobo cd up again; if it persists, check access to the secret store.",
@@ -172,7 +139,7 @@ async function ready(
 				detail: `junction ${resolved.junction.name} (${resolved.junction.yards.map((y) => y.name).join(" <-> ")}); credential in ${store.id}`,
 			},
 		],
-		runtimeEnv: resolved.runtimeEnv,
+		credentials: vault,
 	};
 }
 
@@ -182,64 +149,52 @@ export async function prepareVercelConnection(
 	deps: PrepareVercelDeps = {},
 ): Promise<PrepareOutcome> {
 	const env = deps.env ?? process.env;
-	const settings = deps.settings ?? familySettingsStore("cd", env);
-	const saved = await settings.read();
-	const openStore =
-		deps.openStore ??
-		((id: SecretStoreId, storeEnv: Env) => openSecretStore(id, storeEnv, deps));
-
-	const basics = resolveSettings(CD_SETTINGS, env, saved);
-	const configuredStore = basics.values.HOBO_CD_SECRET_STORE;
-	if (
-		configuredStore &&
-		configuredStore !== "infisical" &&
-		configuredStore !== "1password" &&
-		configuredStore !== "bitwarden"
-	)
-		return refused(
-			"HOBO_CD_SECRET_STORE_INVALID",
-			"HOBO_CD_SECRET_STORE must be infisical, 1password, or bitwarden.",
-			["Unset it to use Infisical, or choose 1password or bitwarden."],
-		);
-	const storeId = storeIdOf(basics.values.HOBO_CD_SECRET_STORE);
-	const storeSide = resolveSettings(
-		storeSettings(storeId, CD_FOLDER),
-		env,
-		saved,
-	);
-
-	if (storeSide.missing.length === 0) {
-		const opened = await openStore(storeId, { ...env, ...storeSide.values });
-		if (opened.ok) {
-			let connected: boolean;
-			try {
-				connected = await vercelConnected(opened.store);
-			} catch {
-				return refused(
-					"HOBO_CD_SECRET_STORE_UNAVAILABLE",
-					"Cannot verify the existing Vercel connection in the secret store.",
-					[
-						"Check store access and reconcile any partial credentials before retrying.",
-					],
-				);
-			}
-			if (connected) {
-				if (input.whatIf)
-					return {
-						kind: "ready",
-						steps: [
-							{
-								id: "vercel",
-								outcome: "unchanged",
-								detail: `already in ${opened.store.id}`,
-							},
-						],
-					};
-				return ready(opened.store, "unchanged");
-			}
-		}
+	const notice = ignoredSecretEnvNotice(env);
+	if (notice !== undefined) input.run.emitProgress(notice);
+	const plainEnv = withoutSecretEnv(env);
+	const vault = deps.vault ?? createTrustedVault();
+	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
+	let owner: Awaited<ReturnType<typeof ownerStore>>;
+	try {
+		owner = await ownerStore("cd", vault, {
+			...deps,
+			env: plainEnv,
+			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
+		});
+	} catch (error) {
+		if (!(error instanceof InvalidSecretStoreError)) throw error;
+		return refused("HOBO_CD_SECRET_STORE_INVALID", error.message, [
+			"Choose infisical, 1password, or bitwarden in the store locator.",
+		]);
 	}
-	const missing = [...basics.missing, ...storeSide.missing];
+
+	let connected = false;
+	try {
+		connected =
+			owner.opened !== undefined && (await vercelConnected(owner.opened));
+	} catch {
+		return refused(
+			"HOBO_CD_SECRET_STORE_UNAVAILABLE",
+			"Cannot verify the existing Vercel connection in the secret store.",
+			[
+				"Check store access and reconcile any partial credentials before retrying.",
+			],
+		);
+	}
+	if (owner.opened !== undefined && connected) {
+		if (input.whatIf)
+			return {
+				kind: "ready",
+				steps: [
+					{
+						id: "vercel",
+						outcome: "unchanged",
+						detail: `already in ${owner.opened.id}`,
+					},
+				],
+			};
+		return ready(owner.opened, "unchanged", vault);
+	}
 	if (input.whatIf)
 		return {
 			kind: "ready",
@@ -248,9 +203,9 @@ export async function prepareVercelConnection(
 					id: "vercel",
 					outcome: "would-create",
 					detail:
-						missing.length === 0
-							? `would install HoBo CD on Vercel and store its token in ${storeId}`
-							: `would ask for ${missing.map((field) => field.label).join(", ")}, then install HoBo CD on Vercel`,
+						owner.opened === undefined
+							? `would sign in to ${owner.id}${owner.missing.length > 0 ? ` (asking for ${owner.missing.map((f) => f.label).join(", ")})` : ""}, then install HoBo CD on Vercel unless the store holds it`
+							: `would install HoBo CD on Vercel and store its token in ${owner.id}`,
 				},
 			],
 		};
@@ -259,17 +214,29 @@ export async function prepareVercelConnection(
 			"HOBO_CD_CONNECTION_NEEDS_OWNER",
 			"Connecting Vercel needs the owner at a browser once; this run cannot show the setup page.",
 			[
-				"Run hobo cd up once in a terminal; it asks for what is missing and later runs (and CI) find the connection.",
-				...(missing.length > 0
-					? [
-							`Or set ${missing.map((field) => field.name).join(", ")} in the environment.`,
-						]
-					: []),
+				"Run hobo cd up once in a terminal; it asks for what is missing and keeps it in your secret store.",
+				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID in ${SECRET_STORE_LOCATOR_FILE}) so the run signs in with its own OIDC token.`,
 			],
 		);
 
+	let vercel: ReturnType<typeof createVercelConnectFlow> | undefined;
+	let connectedStore: OpenedSecretStore | undefined;
+	const unavailableFlow = (): ConnectFlow => ({
+		initial: {
+			kind: "failed",
+			provider: "vercel",
+			message:
+				"Cannot verify the existing Vercel connection in the secret store.",
+			remediation: [
+				"Check store access and reconcile any partial credentials before retrying.",
+			],
+		},
+		onAction: async (_action, _params, current) => ({ step: current }),
+	});
+	// The page must listen on the Redirect URL before the store is open, so it
+	// comes from a non-secret setting of this run, not from the store.
 	const redirect = parseVercelRedirect(
-		basics.values.HOBO_CD_VERCEL_REDIRECT_URI ?? DEFAULT_VERCEL_REDIRECT_URI,
+		plainEnv.HOBO_CD_VERCEL_REDIRECT_URI ?? DEFAULT_VERCEL_REDIRECT_URI,
 	);
 	if (redirect === undefined)
 		return refused(
@@ -279,9 +246,7 @@ export async function prepareVercelConnection(
 				`Register ${DEFAULT_VERCEL_REDIRECT_URI} as the Integration's Redirect URL, or set HOBO_CD_VERCEL_REDIRECT_URI to the one it has.`,
 			],
 		);
-
-	let vercel: ReturnType<typeof createVercelConnectFlow> | undefined;
-	let connectedStore: OpenedSecretStore | undefined;
+	const redirectUri = redirect.href;
 	const vercelFlowIn = async (
 		store: OpenedSecretStore,
 		values: Readonly<Record<string, string>>,
@@ -290,7 +255,7 @@ export async function prepareVercelConnection(
 		vercel = createVercelConnectFlow({
 			integrationSlug: values.HOBO_CD_VERCEL_INTEGRATION ?? "",
 			clientId: values.HOBO_CD_VERCEL_CLIENT_ID ?? "",
-			redirectUri: redirect.href,
+			redirectUri,
 			openStore: async () => ({ ok: true, store }),
 			...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
 		});
@@ -302,70 +267,90 @@ export async function prepareVercelConnection(
 		return { ...vercel, initial: first.step };
 	};
 
-	const flow = await configureThen({
+	const flow = await owner.stage({
 		provider: "vercel",
-		title: "Set up HoBo CD on Vercel",
 		reason:
-			"hobo cd up needs HoBo CD's Vercel Integration and a secret store for the access Vercel grants.",
-		settings: CD_SETTINGS,
-		missing: basics.missing,
-		known: basics.values,
-		store: settings,
-		async proceed(values) {
-			const chosen = storeIdOf(values.HOBO_CD_SECRET_STORE);
-			const side = storeSettings(chosen, CD_FOLDER);
-			const resolved = resolveSettings(side, env, await settings.read());
-			// The client secret is asked for only when the store does not hold it.
-			let probe: SecretStoreOpening | undefined;
-			if (resolved.missing.length === 0)
-				probe = await openStore(chosen, { ...env, ...resolved.values });
+			"hobo cd up keeps the access Vercel grants, the Integration's client secret and what you tell it here in your secret store.",
+		async proceed(store) {
+			connectedStore = store;
+			let alreadyConnected: boolean;
+			try {
+				alreadyConnected = await vercelConnected(store);
+			} catch {
+				return unavailableFlow();
+			}
+			if (alreadyConnected)
+				return {
+					initial: {
+						kind: "connected",
+						provider: "vercel",
+						store: store.id,
+						references: [store.reference("HOBO_CD_VERCEL_TOKEN")],
+						nextHint: "hobo cd up continues in your terminal.",
+						link: undefined,
+					},
+					onAction: async (_action, _params, current) => ({ step: current }),
+				};
+			const settings = familySettings(store, "cd");
+			const basics = resolveSettings(
+				CD_SETTINGS,
+				plainEnv,
+				await settings.read(),
+			);
+			let secretRead: Awaited<ReturnType<typeof store.port.access>>;
+			try {
+				secretRead = await store.port.access(VERCEL_CLIENT_SECRET_KEY);
+			} catch {
+				return unavailableFlow();
+			}
+			if (secretRead.status !== "ok" && secretRead.code !== "secret-not-found")
+				return unavailableFlow();
 			const hasSecret =
-				probe?.ok === true &&
-				(
-					await probe.store.port
-						.access(VERCEL_CLIENT_SECRET_KEY)
-						.catch(() => undefined)
-				)?.status === "ok";
-			const stageSettings = hasSecret ? side : [...side, CLIENT_SECRET_SETTING];
+				secretRead.status === "ok" && Boolean(secretRead.material);
+			if (secretRead.status === "ok" && !hasSecret) return unavailableFlow();
+			const stageSettings = hasSecret
+				? CD_SETTINGS
+				: [...CD_SETTINGS, CLIENT_SECRET_SETTING];
 			const stageMissing = hasSecret
-				? resolved.missing
-				: [...resolved.missing, CLIENT_SECRET_SETTING.field];
-			const stage = await configureThen({
+				? basics.missing
+				: [...basics.missing, CLIENT_SECRET_SETTING.field];
+			return configureThen({
 				provider: "vercel",
-				title: `Connect ${storeLabel(chosen)}`,
-				reason: `HoBo keeps the Integration's client secret and the access Vercel grants in ${storeLabel(chosen)}. Coordinates are saved for next time; secrets go only to the store.`,
+				title: "Set up HoBo CD on Vercel",
+				reason:
+					"hobo cd up needs HoBo CD's Vercel Integration. Answers are kept in your secret store; the client secret goes only there.",
 				settings: stageSettings,
 				missing: stageMissing,
-				known: resolved.values,
+				known: basics.values,
 				store: settings,
-				async proceed(storeValues) {
-					const opened = await openStore(chosen, { ...env, ...storeValues });
-					if (!opened.ok) {
-						const first = stageMissing[0]?.name ?? "store";
+				async proceed(values) {
+					const asked = values.HOBO_CD_VERCEL_REDIRECT_URI;
+					if (
+						asked !== undefined &&
+						parseVercelRedirect(asked)?.href !== redirectUri
+					)
 						return {
 							ok: false,
 							errors: {
-								[first]: `${opened.message} ${opened.remediation.join(" ")}`,
+								HOBO_CD_VERCEL_REDIRECT_URI: `This run serves ${redirectUri}; register it as the Integration's Redirect URL, or run with HOBO_CD_VERCEL_REDIRECT_URI set to the one it has.`,
 							},
 						};
-					}
-					const secret = storeValues.HOBO_CD_VERCEL_CLIENT_SECRET;
+					const secret = values.HOBO_CD_VERCEL_CLIENT_SECRET;
 					if (secret !== undefined && secret !== "") {
 						try {
-							await opened.store.port.put(VERCEL_CLIENT_SECRET_KEY, secret);
+							await store.port.put(VERCEL_CLIENT_SECRET_KEY, secret);
 						} catch {
 							return {
 								ok: false,
 								errors: {
-									HOBO_CD_VERCEL_CLIENT_SECRET: `Could not write it to ${chosen}.`,
+									HOBO_CD_VERCEL_CLIENT_SECRET: `Could not write it to ${store.id}.`,
 								},
 							};
 						}
 					}
-					return { ok: true, flow: await vercelFlowIn(opened.store, values) };
+					return { ok: true, flow: await vercelFlowIn(store, values) };
 				},
 			});
-			return { ok: true, flow: stage };
 		},
 	});
 
@@ -374,39 +359,23 @@ export async function prepareVercelConnection(
 		port: Number(redirect.port),
 		callbackPath: redirect.pathname,
 	});
-	let timer: NodeJS.Timeout | undefined;
-	const timedOut = new Promise<ConnectStep>((resolve) => {
-		timer = setTimeout(
-			() =>
-				resolve({
-					kind: "failed",
-					provider: "vercel",
-					message: "The setup page was not finished in time.",
-					remediation: ["Run hobo cd up again; what you answered is saved."],
-				}),
-			deps.timeoutMs ?? 15 * 60_000,
-		);
-	});
-	let step: ConnectStep;
-	let browserLaunched = false;
-	try {
-		input.run.emitProgress(
-			`Set up Vercel for HoBo CD in your browser: ${page.url}`,
-		);
-		(deps.openBrowser ?? openInBrowser)(page.url);
-		browserLaunched = true;
-		step = await Promise.race([page.done, timedOut]);
-	} finally {
-		clearTimeout(timer);
-		// Give a launched browser time to show the final step; on startup
-		// failure there is no browser to wait for, so close immediately.
-		await page.close({ graceMs: browserLaunched ? 10_000 : 0 });
-	}
+	const step = await runPage(
+		page,
+		"vercel",
+		deps.timeoutMs ?? 15 * 60_000,
+		"hobo cd up",
+		() => {
+			input.run.emitProgress(
+				`Set up Vercel for HoBo CD in your browser: ${page.url}`,
+			);
+			(deps.openBrowser ?? openInBrowser)(page.url);
+		},
+	);
 	if (step.kind !== "connected" || connectedStore === undefined)
 		return refused(
 			"HOBO_CD_VERCEL_NOT_CONNECTED",
 			step.kind === "failed" ? step.message : "Vercel was not connected.",
 			step.kind === "failed" ? step.remediation : [],
 		);
-	return ready(connectedStore, vercel?.outcome() ?? "created");
+	return ready(connectedStore, vercel?.outcome() ?? "unchanged", vault);
 }

@@ -4,11 +4,9 @@ HoBo's CD as a HoBo project:
 
 - **A Bindle** (`src/bindle.ts`): the CD service (`hobo serve cd`: the read
   API, the agent feed, health), its tick, the provider connections it reads,
-  and its journal. The Bindle currently declares generic resources: its
-  exported `cdJournal` PostgreSQL requirement and `CD_TICK_SCHEDULE` cadence
-  are not attached, and its API has no handler binding. `placePostgresFleet`
-  ranks candidates; it does not provision or replicate a database. These
-  connections must be implemented before this project can deploy CD.
+  and its journal. The journal's requirement (`cdJournal`) is a
+  provider-neutral `postgres.database({ version: ">=16" })`, placed on a fleet
+  of vendors by `placePostgresFleet`, so one vendor's outage is a failover.
   It names no provider.
 - **A lifecycle**: `hobo cd up|down|plan|status` (and `hobo up` here) through
   the one HoBo engine. Re-running is idempotent, a changed declaration is an
@@ -23,10 +21,9 @@ HoBo's CD as a HoBo project:
 `prepareVercelConnection` is the family's prepare step, mirroring CI's GitHub
 connection:
 
-1. **Idempotent.** If the installation id and token are readable, it opens
-   nothing. An unreadable or partial connection is refused until reconciled,
-   rather than replaced after a failed read. `--what-if` opens nothing either.
-   Headless runs refuse with the reason.
+1. **Idempotent.** If the store holds the installation
+   (`HOBO_CD_VERCEL_INSTALLATION_ID`, written last), it opens nothing.
+   `--what-if` opens nothing either. Headless runs refuse with the reason.
 2. **Connect page** (`@hobo/connect-ui`). The owner chooses the store
    (Infisical OIDC by default, 1Password, or Bitwarden Secrets Manager),
    then installs HoBo CD's Vercel
@@ -54,13 +51,15 @@ IaC provider is the Vercel deploy provider built from that credential. The
 token is held in memory for the run and is never written to a file, an
 environment file, a log or a result.
 
-Configuration is a **ceremony**, not a list of environment variables:
-whatever `hobo cd up` is missing is asked for on the setup page, checked, and the
-non-secret answers are saved for the next run under
-`$HOBO_HOME/ceremonies/cd.json`. Environment variables of the same names
-(`HOBO_CD_VERCEL_INTEGRATION`, `HOBO_CD_VERCEL_CLIENT_ID`, `HOBO_CD_SECRET_STORE`, and the
-store's coordinates) still win, for CI and scripting. Secrets typed on the page
-(a sign-in token for this run, the Integration's client secret) go only to the secret store.
+Configuration is a **ceremony**, not a list of environment variables, and it
+survives the machine: the store is found through the committed locator
+`.hobo/secret-store.json` and signed in to on the page (the sign-in is held in
+the run's trusted vault, in memory); whatever `hobo cd up` is missing is asked
+for and kept **in the secret store** as `HOBO_CD_SETTINGS` (the Integration's
+slug and client id). The client secret is its own store entry, and the Vercel
+token reaches the deploy through the vault, never an environment variable.
+`HOBO_CD_VERCEL_REDIRECT_URI` (non-secret) may still name the Redirect URL the
+page listens on.
 
 ## Continuity: what CD keeps, and how hard
 
@@ -70,13 +69,14 @@ that keeps what the data is for:
 
 | resource     | tier          | why                                                                 |
 | ------------ | ------------- | ------------------------------------------------------------------- |
-| `cd-journal` | `standard`, 2 standbys | Desired policy for the rollout ledger. Replication, independent failure domains, fenced failover, and scheduled backups are not yet proven. |
+| `cd-journal` | `standard`, 2 standbys | The rollout ledger. A few minutes' loss is re-derived from desired state, so a 5-minute recovery point is enough; three voting members fail over by majority when any one vendor stops; free tiers make the copies cheap; daily backups, 7 kept. |
 | `cd-config`  | `rebuildable` | References into the secret store, which keeps its own replicas; `hobo cd up` rebuilds them idempotently. |
 
 An experimental PostgreSQL fleet can be selected with `HOBO_CD_POSTGRES_FLEET`
-(see `packages/cd/src/compose/README.md`). It does not yet fence an in-flight
-write at the database commit boundary and must not be relied on for safe
-failover. A reported policy shortfall does not prevent the fleet from serving.
+(see `packages/cd/src/compose/README.md`). Member connection strings are read
+from secret-store entries (`HOBO_CD_POSTGRES_URL_<ID>`). The fleet does not yet
+fence an in-flight write at the database commit boundary and must not be relied
+on for safe failover. A reported shortfall does not stop it serving.
 
 ## Architecture rules (AGENTS.md)
 
