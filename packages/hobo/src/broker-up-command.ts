@@ -155,6 +155,48 @@ export function createBrokerAwareUpCommand(
 				// Local zero-config: prefer event-sourced Yard lane when runtime is wired
 				// (preserves claim/inspect). Fall back to broker-runtime placement+serve
 				// when a bindle() source is present without a cloud runtime.
+				// `up --what-if`: the change set, never applied. The Yard lane
+				// computes it from the durable log; the local lane only names what
+				// it would place; a remote broker cannot answer it without placing.
+				if (flags.whatIf) {
+					if (target.kind !== "local")
+						return {
+							ok: false,
+							status: "usage_error",
+							code: "HOBO_USAGE",
+							message:
+								"hobo up --what-if is answered by the local Yard; a remote broker has no side-effect-free preview",
+							remediation: ["Run `hobo plan` against the local Yard instead."],
+							data: { command: "up", whatIf: true },
+						};
+					if (yardUp) {
+						const planned = await yardUp.run(input);
+						if (planned.code !== "HOBO_CLI_STUB") return planned;
+					}
+					const definition = await loadBindleDefinition(projectDir);
+					return definition === null
+						? {
+								ok: false,
+								status: "no_bindle",
+								code: "HOBO_UP_NO_BINDLE",
+								message: `hobo up --what-if: no loadable bindle in ${projectDir}`,
+								data: { command: "up", whatIf: true, projectDir },
+							}
+						: {
+								ok: true,
+								status: "ok",
+								code: "HOBO_OK",
+								message: `hobo up --what-if would place bindle ${definition.name} on the local Yard`,
+								data: {
+									command: "up",
+									whatIf: true,
+									mode: "local",
+									projectDir,
+									bindle: definition.name,
+								},
+							};
+				}
+
 				if (target.kind === "local") {
 					// Event-sourced Yard lane when runtime is wired (claim/inspect).
 					if (yardUp) {

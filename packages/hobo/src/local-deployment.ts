@@ -317,6 +317,20 @@ export function createLocalDeploymentDownCommand(
 							message: "No local deployment is running",
 							data: { command: "down" },
 						};
+			// `down --what-if`: name what would stop, stop nothing.
+			if (input.flags.whatIf)
+				return {
+					ok: true,
+					status: "ok",
+					code: "HOBO_OK",
+					message: `hobo down --what-if would stop local deployment ${receipt.bindleName}`,
+					data: {
+						command: "down",
+						whatIf: true,
+						deploymentId: receipt.leaseId,
+						wouldDestroy: [receipt.bindleName],
+					},
+				};
 			try {
 				await controlRequest(receipt, true);
 			} catch (error) {
