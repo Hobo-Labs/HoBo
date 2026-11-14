@@ -3,7 +3,7 @@ import { type AddressInfo, createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
-import { type ConnectPage, startConnectPage } from "@hobo/connect-ui";
+import { type ConnectPage, type SavedSettings, startConnectPage } from "@hobo/connect-ui";
 import type { OpenedSecretStore, SecretStoreOpening } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
@@ -246,6 +246,17 @@ async function freePort(): Promise<number> {
 	});
 }
 
+function memorySettings() {
+	let saved: SavedSettings = {};
+	return {
+		saved: () => saved,
+		read: async () => saved,
+		write: async (values: Readonly<Record<string, string>>) => {
+			saved = { ...values };
+		},
+	};
+}
+
 describe("prepareVercelConnection", () => {
 	it.each([
 		"not-a-url",
@@ -302,6 +313,7 @@ describe("prepareVercelConnection", () => {
 							},
 							interactive: true,
 							openStore: opened(store),
+							settings: memorySettings(),
 							startPage: async (options) => {
 								page = await startConnectPage(options);
 								const started = page;
@@ -365,7 +377,12 @@ describe("prepareVercelConnection", () => {
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
 		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
 		const outcome = await prepareVercelConnection(prepareInput(), {
-			env: {},
+			env: {
+				HOBO_CD_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "p",
+				INFISICAL_TOKEN: "t",
+			},
+			settings: memorySettings(),
 			openStore: opened(store),
 			startPage: () => {
 				throw new Error("no page should open");
@@ -378,77 +395,112 @@ describe("prepareVercelConnection", () => {
 		});
 	});
 
-	it("opens nothing for --what-if and refuses when unconfigured", async () => {
+	it("opens nothing for --what-if and names what it would ask for", async () => {
 		const { store } = await memoryStore();
-		expect(
-			await prepareVercelConnection(prepareInput(true), {
-				env: {},
-				openStore: opened(store),
-			}),
-		).toMatchObject({ kind: "ready", steps: [{ outcome: "would-create" }] });
-		expect(
-			await prepareVercelConnection(prepareInput(), {
-				env: {},
-				openStore: opened(store),
-			}),
-		).toMatchObject({
-			kind: "refused",
-			result: { code: "HOBO_CD_CONNECTION_UNCONFIGURED" },
+		const outcome = await prepareVercelConnection(prepareInput(true), {
+			env: {},
+			settings: memorySettings(),
+			openStore: opened(store),
 		});
+		expect(outcome).toMatchObject({
+			kind: "ready",
+			steps: [{ outcome: "would-create" }],
+		});
+		expect(JSON.stringify(outcome)).toMatch(
+			/would ask for Vercel Integration slug, Integration client ID, Secret store/,
+		);
 	});
 
-	it("connects end to end through the real page on the Integration's fixed Redirect URL", async () => {
+	it("without a person at a browser, refuses and names every missing setting", async () => {
 		const { store } = await memoryStore();
+		const outcome = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			interactive: false,
+			settings: memorySettings(),
+			openStore: opened(store),
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_CONNECTION_NEEDS_OWNER" },
+		});
+		expect(JSON.stringify(outcome)).toContain(
+			"HOBO_CD_VERCEL_INTEGRATION, HOBO_CD_VERCEL_CLIENT_ID, HOBO_CD_SECRET_STORE",
+		);
+	});
+
+	it("sets everything up through the ceremony: the client secret lands in the store, never in settings", async () => {
+		const { store, names } = await memoryStore(false);
 		const vercel = fakeVercel();
+		const settings = memorySettings();
 		const port = await freePort();
+		const seen: string[] = [];
 		let browsing: Promise<unknown> = Promise.resolve();
-		const landed: (number | string)[] = [];
 		const outcome = await prepareVercelConnection(prepareInput(), {
 			env: {
-				HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
-				HOBO_CD_VERCEL_CLIENT_ID: "oac_test",
 				HOBO_CD_VERCEL_REDIRECT_URI: `http://127.0.0.1:${port}/vercel/callback`,
 			},
 			interactive: true,
-			openStore: opened(store),
+			settings,
 			fetch: vercel.fetch,
+			openStore: opened(store),
 			openBrowser: (url) => {
 				browsing = (async () => {
-					const action = (body: {
-						readonly action: string;
-						readonly params: Readonly<Record<string, string>>;
-					}) =>
+					const post = (action: string, params: Record<string, string> = {}) =>
 						fetch(`${url}action`, {
 							method: "POST",
 							headers: { "content-type": "application/json" },
-							body: JSON.stringify(body),
+							body: JSON.stringify({ action, params }),
 						}).then((res) => res.json());
-					await action({
-						action: "connect.chooseStore",
-						params: { store: "infisical" },
+					const storeStage = await post("connect.submit", {
+						HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
+						HOBO_CD_VERCEL_CLIENT_ID: "oac_test",
+						HOBO_CD_SECRET_STORE: "infisical",
 					});
-					const started = await action({ action: "connect.start", params: {} });
+					seen.push(
+						storeStage.view.fields
+							.map((f: { name: string }) => f.name)
+							.join(","),
+					);
+					const authorize = await post("connect.submit", {
+						INFISICAL_PROJECT_ID: "proj",
+						INFISICAL_TOKEN: "session-token",
+						HOBO_CD_VERCEL_CLIENT_SECRET: "integration-client-secret",
+					});
+					seen.push(authorize.step);
+					const started = await post("connect.start");
 					const state = new URL(started.directive.url).searchParams.get(
 						"state",
 					);
-					// Vercel redirects to the registered URL, not the session path.
-					const back = await fetch(
+					await fetch(
 						`http://127.0.0.1:${port}/vercel/callback?code=one-time&state=${state}`,
 						{ redirect: "manual" },
 					);
-					landed.push(back.status);
-					landed.push(
-						(await fetch(`${url}view`).then((res) => res.json())).step,
-					);
+					seen.push((await fetch(`${url}view`).then((res) => res.json())).step);
 				})();
 			},
 		});
 		await browsing;
+		expect(seen).toEqual([
+			"INFISICAL_PROJECT_ID,INFISICAL_TOKEN,HOBO_CD_VERCEL_CLIENT_SECRET",
+			"authorize-vercel",
+			"connected",
+		]);
 		expect(outcome).toMatchObject({
 			kind: "ready",
 			steps: [{ id: "vercel", outcome: "created" }],
-			runtimeEnv: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: "team_test" },
+			runtimeEnv: { VERCEL_TOKEN: TOKEN },
 		});
-		expect(landed).toEqual([303, "connected"]);
+		// The client secret went to the store and was used for the exchange.
+		expect(names()).toContain(VERCEL_CLIENT_SECRET_KEY);
+		expect(vercel.bodies[0]).toContain(
+			"client_secret=integration-client-secret",
+		);
+		// Settings keep only non-secrets.
+		expect(settings.saved()).toEqual({
+			HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
+			HOBO_CD_VERCEL_CLIENT_ID: "oac_test",
+			HOBO_CD_SECRET_STORE: "infisical",
+			INFISICAL_PROJECT_ID: "proj",
+		});
 	});
 });

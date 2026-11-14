@@ -53,11 +53,13 @@ IaC provider is the Vercel deploy provider built from that credential. The
 token is held in memory for the run and is never written to a file, an
 environment file, a log or a result.
 
-Configuration (environment, nothing secret): `HOBO_CD_VERCEL_INTEGRATION`,
-`HOBO_CD_VERCEL_CLIENT_ID`, `HOBO_CD_VERCEL_REDIRECT_URI` (default
-`http://127.0.0.1:8792/vercel/callback`), optional `HOBO_CD_SECRET_STORE`, and
-the store's coordinates. The stores and the owner's sign-in are
-`@hobo/hobo-ci`'s `openSecretStore`.
+Configuration is a **ceremony**, not a list of environment variables:
+whatever `hobo cd up` is missing is asked for on the setup page, checked, and the
+non-secret answers are saved for the next run under
+`$HOBO_HOME/ceremonies/cd.json`. Environment variables of the same names
+(`HOBO_CD_VERCEL_INTEGRATION`, `HOBO_CD_VERCEL_CLIENT_ID`, `HOBO_CD_SECRET_STORE`, and the
+store's coordinates) still win, for CI and scripting. Secrets typed on the page
+(a sign-in token for this run, the Integration's client secret) go only to the secret store.
 
 ## Architecture rules (AGENTS.md)
 
