@@ -90,6 +90,33 @@ log recorded, apply only the difference
   (`create` / `update` / `no-op` / `delete` / `retain`) that `hobo plan` and
   `hobo up --what-if` print and every run reports as `changes`.
 
+**Routing around an unavailable provider.** One provider's outage moves work;
+it never stops `up`. That is HoBo's purpose: route to the cheapest *available*
+configured provider.
+
+- **Matching** takes `unavailableProviders` (`PlanConfig`): their candidates
+  are rejected as `provider-unavailable`, and the next-ranked candidate that
+  satisfies the resource wins.
+- **`up`** (yard-client) treats a provider whose apply failed *retryably* this
+  run as down. It re-plans without that provider and converges again, so the
+  resource lands on the next cheapest provider that answers. The result
+  reports `rerouted` (resource and the provider it left). The loop is bounded:
+  each pass marks at least one more provider down.
+- **No provider left.** Only when every satisfying provider is down does
+  planning refuse, with `placement.providers-unavailable` naming them and
+  saying to configure another vendor, e.g. Supabase beside Neon.
+  `placePostgresFleet` and `decideFleet` then keep a placed PostgreSQL fleet
+  failing over at runtime.
+
+**Generational admission.** The gateway admits a deployment per generation: a
+`deployment.Requested` opens one, and its `Planned` or `PlanRejected` closes it.
+The same input replays the current generation (idempotent). A different input
+after it completed opens the next one, so an edited project or a re-plan
+around an outage is simply the next desired state. A different input while one
+is pending is refused. Ownership is bound by the first request, and a
+budgeted deployment keeps its input bound: it changes through a hosting
+transition, never by reserving twice.
+
 **Why actors, not a monolithic engine:** per-resource isolation means one stuck provider call can't block the whole deploy; single-writer leases ([Plan 5](./reliability-observability-cost.md#plan-05)) prevent two reconciles racing on the same resource; and each actor's stream is an independent audit/replay unit.
 
 ### Choreography over orchestration (and why)
