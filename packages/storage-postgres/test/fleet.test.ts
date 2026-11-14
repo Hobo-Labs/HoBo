@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { type ContinuityFleetPlan, continuityFleetPlan } from "@hobo/backend-fleet";
+import {
+	type ContinuityFleetPlan,
+	continuityFleetPlan,
+} from "@hobo/backend-fleet";
 import pg from "pg";
 import { afterAll, expect, it } from "vitest";
 
 import {
+	createPostgresEventStore,
 	createPostgresFleetEventStore,
 	type PgPoolLike,
 	type PostgresFleetEventStore,
@@ -122,87 +126,130 @@ async function rows(member: PostgresFleetMember): Promise<number> {
 }
 
 describeLive("PostgreSQL EventStore on a fleet", () => {
-	it(
-		"copies to a standby, fails over, survives an interrupted copy and keeps appending",
-		{ timeout: 60_000 },
-		async () => {
-			const a = await freshDatabase("a");
-			const b = await freshDatabase("b");
-			const w = await freshDatabase("w");
-			const outage: Outage = { down: new Set(), dropOnce: new Set() };
-			// A writer, one standby and a witness that holds only the register.
-			const store = await open([a, b], outage, [w]);
-			try {
-				// An empty fleet: the first tick names the first member writer.
-				expect((await store.tick()).status).toBe("settled");
-				const first = await store.append(
-					"deploy:1",
-					[{ type: "deploy.Started", data: { n: 1 } }],
-					{ ...OPTS, expectedSeq: 0 },
-				);
-				expect(store.writer()).toBe("a");
+	it("forwards an actor fence when snapshotting through the fleet", async () => {
+		const a = await freshDatabase("snap_a");
+		const b = await freshDatabase("snap_b");
+		const witness = await freshDatabase("snap_w");
+		const fleet = await open([a, b], { down: new Set(), dropOnce: new Set() }, [
+			witness,
+		]);
+		const supervisor = createPostgresEventStore({
+			config: { connectionString: a.connectionString },
+			protectedActorStreamPrefixes: ["deployment:"],
+		});
+		try {
+			await fleet.tick();
+			await supervisor.ready();
+			const lease = await supervisor.actorLeaseHost.acquire(
+				"deployment:snapshot",
+				{
+					holderId: "fleet-test",
+				},
+			);
+			await fleet.append(lease.key, [{ type: "deployment.Started" }], {
+				...OPTS,
+				expectedSeq: 0,
+				fenceToken: lease.fenceToken,
+			});
+			await expect(
+				fleet.snapshot(lease.key, { live: true }, 1),
+			).rejects.toMatchObject({
+				code: "MISSING_FENCE",
+			});
+			await expect(
+				fleet.snapshot(lease.key, { live: true }, 1, {
+					fenceToken: lease.fenceToken,
+				}),
+			).resolves.toMatchObject({ seq: 1, state: { live: true } });
+			await lease.release();
+			await expect(
+				fleet.snapshot(lease.key, { live: false }, 1, {
+					fenceToken: lease.fenceToken,
+				}),
+			).rejects.toMatchObject({ code: "STALE_FENCE" });
+		} finally {
+			await supervisor.end();
+			await fleet.end();
+		}
+	}, 60_000);
 
-				// The copy is interrupted part-way: the standby is left as it was.
-				outage.dropOnce.add("b");
-				await store.tick();
-				// The next tick copies it whole.
-				await store.tick();
-				expect(await rows(b)).toBe(1);
+	it("copies to a standby, fails over, survives an interrupted copy and keeps appending", {
+		timeout: 60_000,
+	}, async () => {
+		const a = await freshDatabase("a");
+		const b = await freshDatabase("b");
+		const w = await freshDatabase("w");
+		const outage: Outage = { down: new Set(), dropOnce: new Set() };
+		// A writer, one standby and a witness that holds only the register.
+		const store = await open([a, b], outage, [w]);
+		try {
+			// An empty fleet: the first tick names the first member writer.
+			expect((await store.tick()).status).toBe("settled");
+			const first = await store.append(
+				"deploy:1",
+				[{ type: "deploy.Started", data: { n: 1 } }],
+				{ ...OPTS, expectedSeq: 0 },
+			);
+			expect(store.writer()).toBe("a");
 
-				// The writer's vendor goes down: the fleet fails over within the RPO.
-				outage.down.add("a");
-				const report = await store.tick();
-				expect(report.decision?.action).toBe("failover");
-				expect(report.assignment?.active).toBe("b");
+			// The copy is interrupted part-way: the standby is left as it was.
+			outage.dropOnce.add("b");
+			await store.tick();
+			// The next tick copies it whole.
+			await store.tick();
+			expect(await rows(b)).toBe(1);
 
-				// Work continues on the new writer, with the history it had.
-				const second = await store.append(
-					"deploy:1",
-					[{ type: "deploy.Finished", data: {} }],
-					{ ...OPTS, expectedSeq: 1 },
-				);
-				expect(store.writer()).toBe("b");
-				expect(second.firstPosition > first.lastPosition).toBe(true);
-				const history = await collect(store.read("deploy:1"));
-				expect(history.map((event) => event.type)).toEqual([
-					"deploy.Started",
-					"deploy.Finished",
-				]);
-			} finally {
-				await store.end();
-			}
-		},
-	);
+			// The writer's vendor goes down: the fleet fails over within the RPO.
+			outage.down.add("a");
+			const report = await store.tick();
+			expect(report.decision?.action).toBe("failover");
+			expect(report.assignment?.active).toBe("b");
 
-	it(
-		"without a witness, a fleet of two holds rather than guess",
-		{ timeout: 60_000 },
-		async () => {
-			const a = await freshDatabase("pa");
-			const b = await freshDatabase("pb");
-			const outage: Outage = { down: new Set(), dropOnce: new Set() };
-			const store = await open([a, b], outage);
-			try {
-				await store.tick();
-				await store.append("s", [{ type: "s.Started", data: {} }], {
+			// Work continues on the new writer, with the history it had.
+			const second = await store.append(
+				"deploy:1",
+				[{ type: "deploy.Finished", data: {} }],
+				{ ...OPTS, expectedSeq: 1 },
+			);
+			expect(store.writer()).toBe("b");
+			expect(second.firstPosition > first.lastPosition).toBe(true);
+			const history = await collect(store.read("deploy:1"));
+			expect(history.map((event) => event.type)).toEqual([
+				"deploy.Started",
+				"deploy.Finished",
+			]);
+		} finally {
+			await store.end();
+		}
+	});
+
+	it("without a witness, a fleet of two holds rather than guess", {
+		timeout: 60_000,
+	}, async () => {
+		const a = await freshDatabase("pa");
+		const b = await freshDatabase("pb");
+		const outage: Outage = { down: new Set(), dropOnce: new Set() };
+		const store = await open([a, b], outage);
+		try {
+			await store.tick();
+			await store.append("s", [{ type: "s.Started", data: {} }], {
+				...OPTS,
+				expectedSeq: 0,
+			});
+			await store.tick();
+			outage.down.add("pa");
+			const report = await store.tick();
+			expect(report.status).toBe("no-majority");
+			await expect(
+				store.append("s", [{ type: "s.More", data: {} }], {
 					...OPTS,
-					expectedSeq: 0,
-				});
-				await store.tick();
-				outage.down.add("pa");
-				const report = await store.tick();
-				expect(report.status).toBe("no-majority");
-				await expect(
-					store.append("s", [{ type: "s.More", data: {} }], {
-						...OPTS,
-						expectedSeq: 1,
-					}),
-				).rejects.toThrow(/fleet's writer is no-majority/);
-			} finally {
-				await store.end();
-			}
-		},
-	);
+					expectedSeq: 1,
+				}),
+			).rejects.toThrow(/fleet's writer is no-majority/);
+		} finally {
+			await store.end();
+		}
+	});
 
 	it("refuses rebuildable plans for a journal with standbys", () => {
 		expect(() =>

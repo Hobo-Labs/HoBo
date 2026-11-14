@@ -48,6 +48,7 @@ import type {
 	PositionedEvent,
 	ReadAllOptions,
 	SnapshotRecord,
+	SnapshotWriteOptions,
 	StreamFilter,
 	Subscription,
 } from "@hobo/core";
@@ -400,8 +401,9 @@ export function createPostgresFleetEventStore(
 			streamId: string,
 			state: JsonValue,
 			seq: number,
+			opts?: SnapshotWriteOptions,
 		): Promise<SnapshotRecord> {
-			return (await writerStore()).snapshot(streamId, state, seq);
+			return (await writerStore()).snapshot(streamId, state, seq, opts);
 		},
 		getStreamHead(streamId: string) {
 			return resolved === undefined
