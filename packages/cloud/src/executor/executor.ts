@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, type JsonObject } from "../json.js";
+import type { ResourcePlan } from "../plan-types.js";
 
 // The Executor (control-plane.md "Executor sandbox model"): the sandboxed apply
 // step. IaC apply runs untrusted-ish provider code, so it is isolated — no
@@ -25,6 +26,8 @@ export interface IacProgram {
 	driver: string;
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
+	/** The declaration the provider must realize, when supplied by the orchestrator. */
+	resource?: ResourcePlan;
 }
 
 export type IacOutputs = Record<string, string>;

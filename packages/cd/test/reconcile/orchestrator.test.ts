@@ -32,6 +32,7 @@ const CAMP = asCamp("camp-graph");
 
 function countingIac() {
 	const calls: string[] = [];
+	const programs: IacProgram[] = [];
 	const drift = new Set<string>();
 	const iac: IacProvider = {
 		id: "fake-iac",
@@ -40,6 +41,7 @@ function countingIac() {
 		},
 		async apply(program: IacProgram) {
 			calls.push(`apply:${program.resourceId}`);
+			programs.push(structuredClone(program));
 			return { endpoint: `https://${program.resourceId}.example` };
 		},
 		async destroy(program: IacProgram) {
@@ -49,7 +51,7 @@ function countingIac() {
 			return { drift: drift.has(program.resourceId), observed: {} };
 		},
 	};
-	return { iac, calls, drift };
+	return { iac, calls, programs, drift };
 }
 
 function actorHost(): ActorLeaseHost {
@@ -74,7 +76,7 @@ function actorHost(): ActorLeaseHost {
 function harness(opts: { badAttestor?: boolean } = {}) {
 	const clock = createClock();
 	const store = createFakeStore(clock);
-	const { iac, calls, drift } = countingIac();
+	const { iac, calls, programs, drift } = countingIac();
 	const attestor = createFixtureHostAttestor({ hostId: "host-a" });
 	const realizer = createOrchestratorRealizer({
 		store,
@@ -106,7 +108,16 @@ function harness(opts: { badAttestor?: boolean } = {}) {
 			...extra,
 		};
 	};
-	return { clock, store, realizer, calls, drift, input, ctx: ctxAt(clock) };
+	return {
+		clock,
+		store,
+		realizer,
+		calls,
+		programs,
+		drift,
+		input,
+		ctx: ctxAt(clock),
+	};
 }
 
 const API_V1 = { name: "api", port: "compute", version: "1", deps: ["db"] };
@@ -128,6 +139,19 @@ describe("createOrchestratorRealizer", () => {
 		expect(second.setId).toBe(
 			h.input([DB_V1, { ...API_V1, version: "2" }], 2).desired.setId,
 		);
+	});
+
+	it("sends the full resource specification when an unchanged dependency is skipped", async () => {
+		const h = harness();
+		await h.realizer.converge(h.input([DB_V1, API_V1], 1), h.ctx);
+		h.programs.length = 0;
+		const result = await h.realizer.converge(
+			h.input([DB_V1, { ...API_V1, version: "2" }], 2),
+			h.ctx,
+		);
+		expect(result.status).toBe(ReconcileStatus.CONVERGED);
+		expect(h.programs).toHaveLength(1);
+		expect(h.programs[0]?.resource?.deps).toEqual(["db"]);
 	});
 
 	it("C4: a rollback Set re-applies the predecessor's changed nodes", async () => {

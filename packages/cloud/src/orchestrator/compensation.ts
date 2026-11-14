@@ -59,6 +59,7 @@ function reverseDependencyOrder(
 		const s = states.get(id);
 		return (
 			s === "Provisioned" ||
+			s === "Updating" ||
 			s === "Failed" ||
 			s === "Destroying" ||
 			s === "Destroyed"
@@ -163,13 +164,14 @@ export async function runCompensation(
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
 			const state = states.get(resourceId);
 			if (state === "Destroyed") continue;
-			// Only compensate resources that actually got provisioned.
-			if (state !== "Provisioned") continue;
+			// Only compensate resources that actually got provisioned (an
+			// interrupted in-place update still exists at the provider).
+			if (state !== "Provisioned" && state !== "Updating") continue;
 
 			// Gate: all dependents must already be Destroyed (reverse order).
 			const liveDependents = dependentsOf(plan, resourceId).filter((depId) => {
 				const s = states.get(depId);
-				return s === "Provisioned" || s === "Destroying";
+				return s === "Provisioned" || s === "Updating" || s === "Destroying";
 			});
 			if (liveDependents.length > 0) continue;
 

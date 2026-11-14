@@ -21,8 +21,10 @@ import {
 	type Executor,
 	type IacProgram,
 } from "../executor/executor.js";
+import { isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
+import { desiredSpecHash, recordedResources } from "./desired-state.js";
 
 // The ResourceActor reconciliation FSM (control-plane.md "The ResourceActor
 // reconciliation FSM"). Each resource in a plan gets a durable virtual actor
@@ -53,6 +55,12 @@ export interface ResourceActorSnapshot {
 	sequence: number;
 	outputs: Record<string, string>;
 	deps: string[];
+	/**
+	 * Hash of the desired spec the resource was last provisioned from
+	 * (`desiredSpecHash`). Absent before the first Provisioned fact, and on
+	 * facts written before spec hashes were recorded.
+	 */
+	specHash?: string;
 }
 
 export function resourceActorKey(
@@ -69,6 +77,7 @@ export function foldResourceActor(
 	events: Iterable<EventEnvelope>,
 	resource: ResourcePlan,
 ): ResourceActorSnapshot {
+	const history = Array.isArray(events) ? events : [...events];
 	const snapshot: ResourceActorSnapshot = {
 		deploymentId: resource.deploymentId ?? "",
 		resourceId: resource.name,
@@ -78,22 +87,30 @@ export function foldResourceActor(
 		deps: [...resource.deps],
 	};
 
-	for (const event of events) {
+	for (const event of history) {
 		// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 		const data = event.data as {
 			resourceId?: string;
 			outputs?: Record<string, string>;
+			specHash?: string;
 		};
 		if (data.resourceId !== resource.name) continue;
 		switch (event.type) {
 			case CLOUD_EVENTS.ResourceProvisioning:
-				snapshot.state = "Provisioning";
+				// Re-applying a provisioned resource is an in-place update (upsert);
+				// its outputs stay readable until the new apply replaces them.
+				snapshot.state =
+					snapshot.state === "Provisioned" || snapshot.state === "Updating"
+						? "Updating"
+						: "Provisioning";
 				snapshot.sequence += 1;
 				break;
 			case CLOUD_EVENTS.ResourceProvisioned:
 				snapshot.state = "Provisioned";
 				snapshot.sequence += 1;
 				if (data.outputs) snapshot.outputs = { ...data.outputs };
+				if (isJsonString(data.specHash)) snapshot.specHash = data.specHash;
+				else delete snapshot.specHash;
 				break;
 			case CLOUD_EVENTS.ResourceFailed:
 				snapshot.state = "Failed";
@@ -106,10 +123,20 @@ export function foldResourceActor(
 			case CLOUD_EVENTS.ResourceDestroyed:
 				snapshot.state = "Destroyed";
 				snapshot.sequence += 1;
+				snapshot.outputs = {};
+				delete snapshot.specHash;
 				break;
 			default:
 				break;
 		}
+	}
+	// Old facts have no hash. When their original plan is in the log, derive
+	// the baseline from that plan rather than ignoring every subsequent change.
+	if (snapshot.state === "Provisioned" && snapshot.specHash === undefined) {
+		const recordedHash = recordedResources(history).get(
+			resource.name,
+		)?.specHash;
+		if (recordedHash !== undefined) snapshot.specHash = recordedHash;
 	}
 	return snapshot;
 }
@@ -134,6 +161,7 @@ export interface ReconcileContext {
 export type ReconcileOutcome =
 	| { kind: "converged"; snapshot: ResourceActorSnapshot }
 	| { kind: "provisioned"; snapshot: ResourceActorSnapshot; execId: string }
+	| { kind: "updated"; snapshot: ResourceActorSnapshot; execId: string }
 	| {
 			kind: "failed";
 			snapshot: ResourceActorSnapshot;
@@ -158,6 +186,7 @@ export function iacProgramFor(
 				: "pulumi",
 		action,
 		stackName: `${tenant}/${deploymentId}/${resource.name}`,
+		resource: structuredClone(resource),
 	};
 }
 
@@ -167,6 +196,23 @@ function streamId(deploymentId: string): string {
 
 function finalStateHash(resourceId: string): string {
 	return `sha256:${createHash("sha256").update(resourceId).digest("hex")}`;
+}
+
+/**
+ * True when a resource's recorded state already matches its declaration, so
+ * reconciling it must call no provider: it is Provisioned from the same
+ * desired spec, or Provisioned by a legacy fact whose original plan is not
+ * available (treated as converged rather than guessing what was applied).
+ */
+export function isConverged(
+	snapshot: ResourceActorSnapshot,
+	resource: ResourcePlan,
+): boolean {
+	if (snapshot.state !== "Provisioned") return false;
+	return (
+		snapshot.specHash === undefined ||
+		snapshot.specHash === desiredSpecHash(resource)
+	);
 }
 
 // The idempotent reconcile core (control-plane.md reconcile loop). Runs under the
@@ -192,10 +238,16 @@ export async function reconcileResource(
 			deploymentId: ctx.deploymentId,
 		});
 
-		// Converged: nothing to do (empty diff — the controller no-op).
-		if (snapshot.state === "Provisioned" || snapshot.state === "Destroyed") {
+		// Converged: nothing to do (empty diff — the controller no-op). A
+		// Destroyed resource is not converged: `up` declares it should exist, so
+		// it is re-created. A Provisioned one whose declared spec changed is
+		// updated in place (upsert).
+		if (isConverged(snapshot, resource)) {
 			return { kind: "converged", snapshot };
 		}
+		const updating =
+			snapshot.state === "Provisioned" || snapshot.state === "Updating";
+		const specHash = desiredSpecHash(resource);
 
 		const fenceToken = currentFenceToken(deps.store, stream);
 		const appendOpts = {
@@ -247,7 +299,7 @@ export async function reconcileResource(
 		};
 
 		try {
-			if (snapshot.state !== "Provisioning") {
+			if (snapshot.state !== "Provisioning" && snapshot.state !== "Updating") {
 				const provisioningId = `exec-apply-${resource.name}`;
 				const emitted = await emit(
 					deps.store,
@@ -258,6 +310,7 @@ export async function reconcileResource(
 							resourceId: resource.name,
 							execId: provisioningId,
 							programHash,
+							specHash,
 						}),
 					],
 					{ expectedSeq: lastSeq, ...appendOpts },
@@ -323,6 +376,7 @@ export async function reconcileResource(
 						resourceId: resource.name,
 						outputs: result.outputs,
 						execId: result.execId,
+						specHash,
 					}),
 					tokenUsed({ grantId: grant.grantId }),
 					tokenRevoked({ grantId: grant.grantId, reason: "apply complete" }),
@@ -335,7 +389,11 @@ export async function reconcileResource(
 				...resource,
 				deploymentId: ctx.deploymentId,
 			});
-			return { kind: "provisioned", snapshot, execId: result.execId };
+			return {
+				kind: updating ? "updated" : "provisioned",
+				snapshot,
+				execId: result.execId,
+			};
 		} finally {
 			deps.broker.revoke(credential);
 		}

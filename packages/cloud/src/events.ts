@@ -214,6 +214,8 @@ export interface ResourceProvisioningData {
 	resourceId: string;
 	execId: string;
 	programHash: string;
+	/** `desiredSpecHash` of the resource being applied (upsert detection). */
+	specHash?: string;
 }
 
 export function resourceProvisioning(
@@ -227,6 +229,8 @@ export interface ResourceProvisionedData {
 	resourceId: string;
 	outputs: Record<string, string>;
 	execId: string;
+	/** `desiredSpecHash` the resource now matches; absent on legacy facts. */
+	specHash?: string;
 }
 
 export function resourceProvisioned(data: ResourceProvisionedData): EventInput {
