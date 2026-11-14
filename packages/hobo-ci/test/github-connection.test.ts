@@ -789,7 +789,7 @@ describe("prepareGithubConnection", () => {
 		});
 		expect(JSON.stringify(outcome)).toMatch(/would sign in to infisical/);
 		expect(input.progress.join("\n")).toMatch(
-			/does not read secrets from the environment; ignored BWS_ACCESS_TOKEN, INFISICAL_TOKEN/,
+			/Setup ignored these known secret environment variables: BWS_ACCESS_TOKEN, INFISICAL_TOKEN/,
 		);
 	});
 

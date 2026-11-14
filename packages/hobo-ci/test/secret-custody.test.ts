@@ -38,6 +38,7 @@ describe("secret custody", () => {
 		const env = {
 			PATH: "/usr/bin",
 			INFISICAL_TOKEN: "tok-value",
+			service_credential: "opaque-value",
 			HOBO_CD_POSTGRES_URL_NEON: "postgres://u:p@h/db",
 			DATABASE_URL: "postgres://u:p@h/db",
 			HOBO_CI_PUBLIC_URL: "https://ci.example",
@@ -46,6 +47,7 @@ describe("secret custody", () => {
 			"DATABASE_URL",
 			"HOBO_CD_POSTGRES_URL_NEON",
 			"INFISICAL_TOKEN",
+			"service_credential",
 		]);
 		expect(withoutSecretEnv(env)).toEqual({
 			PATH: "/usr/bin",

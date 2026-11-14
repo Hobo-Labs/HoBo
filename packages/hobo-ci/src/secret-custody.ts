@@ -13,11 +13,10 @@ import type { Env } from "./secret-stores.js";
 // variable or a `.env` file on disk. Values in hand for a run live in a
 // trusted vault (`createTrustedVault`, `@hobo/core`): memory only.
 //
-// This module is the enforcement. `secretEnvNames` names the variables in an
-// environment that hold a secret, so a lifecycle can say it ignored them;
-// `withoutSecretEnv` is the environment a child process gets; and
-// `test/secret-custody.test.ts` scans the lifecycle sources so that none of
-// them reads one of these variables again.
+// These checks remove known credential names and secret-shaped values before
+// launching a child. They are heuristic: an arbitrary secret under an unknown
+// name may remain. A strict child environment needs an explicit allowlist.
+// The source scan covers the named lifecycle sources and keys only.
 
 /** Variables that hold a sign-in or a credential HoBo's lifecycles use. */
 export const SECRET_ENV_NAMES: ReadonlySet<string> = new Set([
@@ -41,25 +40,26 @@ export const SECRET_ENV_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 const TOKENISH =
-	/(^|_)(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|ACCESS_KEY|API_KEY)(_|$)/u;
+	/(^|_)(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|ACCESS_KEY|API_KEY|CREDENTIAL|CREDENTIALS)(_|$)/u;
 
-/** An environment with every secret taken out: what a child process gets. */
+/** An environment after filtering detected secret names and values. */
 export interface PlainEnv {
 	[name: string]: string;
 }
 
-/** True when a variable of this name (or value) carries a secret. */
+/** True when a variable matches a known secret name or value pattern. */
 export function isSecretEnv(name: string, value: string | undefined): boolean {
+	const normalized = name.toUpperCase();
 	return (
-		SECRET_ENV_NAMES.has(name) ||
-		name.startsWith("HOBO_CD_POSTGRES_URL_") ||
-		TOKENISH.test(name) ||
+		SECRET_ENV_NAMES.has(normalized) ||
+		normalized.startsWith("HOBO_CD_POSTGRES_URL_") ||
+		TOKENISH.test(normalized) ||
 		isForbiddenSecretEnvKey(name) ||
 		(value !== undefined && looksLikeSecretEnvValue(value))
 	);
 }
 
-/** Names (never values) of the variables in `env` that hold a secret. */
+/** Names (never values) of the variables matching a known secret pattern. */
 export function secretEnvNames(env: Env): readonly string[] {
 	return Object.keys(env)
 		.filter((name) => env[name] !== undefined && env[name] !== "")
@@ -67,7 +67,7 @@ export function secretEnvNames(env: Env): readonly string[] {
 		.sort();
 }
 
-/** The environment a child process gets: the same, minus every secret. */
+/** Remove detected secrets; unknown names and opaque values may remain. */
 export function withoutSecretEnv(env: Env): PlainEnv {
 	const kept: PlainEnv = {};
 	for (const [name, value] of Object.entries(env))
@@ -79,9 +79,10 @@ export function withoutSecretEnv(env: Env): PlainEnv {
 export function ignoredSecretEnvNotice(env: Env): string | undefined {
 	const names = secretEnvNames(env).filter(
 		(name) =>
-			SECRET_ENV_NAMES.has(name) || name.startsWith("HOBO_CD_POSTGRES_URL"),
+			SECRET_ENV_NAMES.has(name.toUpperCase()) ||
+			name.toUpperCase().startsWith("HOBO_CD_POSTGRES_URL"),
 	);
 	return names.length === 0
 		? undefined
-		: `HoBo does not read secrets from the environment; ignored ${names.join(", ")}. Keep them in your secret store; HoBo signs in to it on the setup page.`;
+		: `Setup ignored these known secret environment variables: ${names.join(", ")}. Keep them in your secret store; sign in on the setup page.`;
 }

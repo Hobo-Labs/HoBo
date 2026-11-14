@@ -41,21 +41,22 @@ credentials are in the owner's secret store.
    Without a person at a browser (CI, no TTY), `up` refuses with the reason;
    later runs find the connection and skip the page.
 
-**Secretless and passwordless for the owner.** No secret is read from an
-environment variable, written to a disk or put in a temporary file; a secret
-variable in the environment is ignored and named. The store is found through
+**Connection credentials.** Setup filters known secret environment names and
+secret-shaped values, but that heuristic cannot identify every possible secret;
+unknown names can still reach child processes. Other CI paths still read
+credentials from the environment. The store is found through
 the committed locator `.hobo/secret-store.json` (which store, its ids, no
 credential). You sign in on the setup page: an Infisical access token from your
 own `infisical login`, the 1Password desktop app (`OP_ACCOUNT`, unlocked with
 your biometrics), or a Bitwarden Secrets Manager machine account token on the
-US or EU cloud. The sign-in lives in the run's trusted vault (memory only) and
-is wiped when the run ends. In CI, a preconfigured Infisical machine identity
-with OIDC Auth (`INFISICAL_IDENTITY_ID` in the locator) signs in with the job's
-own OIDC token, so nobody types anything. Bitwarden has no workload OIDC
+US or EU cloud. The sign-in's vault buffer is cleared when the run ends, but
+copies of JavaScript strings cannot be reliably erased. In CI, a preconfigured
+Infisical machine identity with OIDC Auth (`INFISICAL_IDENTITY_ID` in the
+locator) signs in with the job's own OIDC token. Bitwarden has no workload OIDC
 sign-in, so a relay on Bitwarden reads back with its own machine account
 token, kept by the platform; Infisical stays the default for that reason.
-The relay reads the credentials back with its own workload identity (OIDC),
-so no secret is put in the repository, a CI variable or the page.
+The intended relay connection reads credentials with its own workload identity
+(OIDC); it still needs an end-to-end observation with the configured store.
 When updating an existing 1Password item, HoBo preserves its other metadata and
 refuses the update if the item changed since it was read. Displayed 1Password
 references point to the item's `password` field.
