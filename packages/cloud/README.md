@@ -11,6 +11,12 @@ Commercial provider pricing catalogs use `pricingCatalogHashFromCommercialRefs` 
 `src/commercial-pricing.ts` (sorted product-ref digest) without altering resource
 definition `catalogHashOf`.
 
+SDK `b.secret().allow(...)` declarations lower to `secretRef` and preserve
+their requested `access` and `put` operations as required capabilities. A
+read-only provider cannot satisfy a write request. The SDK/CLI planner tests
+cover collection and selection; provider authorization and realization still
+require the provider's own conformance and contract evidence.
+
 ## Budget-aware hosting placement
 
 `plan(bindle, { deploymentId, objective: "maximize-credits", hostingBudget }, registry)`

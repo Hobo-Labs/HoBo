@@ -37,6 +37,8 @@ function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
 	// A provider-owned project groups resources; it does not serve HTTP itself.
 	if ((port === "hobo:data" || port === "data") && paradigm === "project")
 		return { capabilityPort: "project", require: [] };
+	if ((port === "hobo:data" || port === "data") && paradigm === "secret")
+		return { capabilityPort: "secretRef", require: [] };
 	for (const rule of DATA_PORT_RULES) {
 		if (rule.match(port)) {
 			return { capabilityPort: rule.capabilityPort, require: rule.require };
@@ -74,6 +76,14 @@ export function lowerManifest(
 				const lowered = lowerDataPort(resource.port ?? "", resource.paradigm);
 				capabilityPort = lowered.capabilityPort;
 				require = lowered.require;
+				if (capabilityPort === "secretRef" && resource.paradigm === "secret") {
+					const access = resource.allow ?? [];
+					if (access.some((verb) => verb !== "access" && verb !== "put"))
+						throw new Error(
+							"secret resource has an unsupported access operation",
+						);
+					require = [...new Set(access)].sort();
+				}
 				break;
 			}
 			default:
