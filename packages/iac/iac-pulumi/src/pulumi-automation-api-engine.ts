@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
 	existsSync,
@@ -101,6 +102,7 @@ export function createPulumiAutomationApiEngine(
 ) {
 	const env = options.env ?? process.env;
 	const stateDir = join(options.workDir, "state");
+	const runPassphrase = randomBytes(32).toString("base64url");
 	const programsDir = join(options.workDir, "programs");
 	let automation: AutomationModuleLike | null = options.automation ?? null;
 
@@ -131,7 +133,11 @@ export function createPulumiAutomationApiEngine(
 				),
 			),
 			PULUMI_BACKEND_URL: `file://${stateDir}`,
-			PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE ?? "",
+			// An empty passphrase leaves every secret in the state readable by
+			// any process that can read the state directory. Without one, each
+			// engine encrypts with a random passphrase that lives only in this
+			// process's memory and its Pulumi child.
+			PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE || runPassphrase,
 			PULUMI_SKIP_UPDATE_CHECK: "true",
 		};
 	}

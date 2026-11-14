@@ -36,6 +36,15 @@ The composed runtime's live lane (`HOBO_PULUMI_LIVE=1`, see `@hobo/hobo`
 `compose.ts`) defaults to the Automation API engine; `HOBO_PULUMI_LIVE_ENGINE=cli`
 (or setting `HOBO_PULUMI_BIN`) selects the CLI engine instead.
 
+### State secrets
+
+Both engines keep their state under a local `file://` backend. Pulumi encrypts
+the secrets in it with `PULUMI_CONFIG_PASSPHRASE`; an empty passphrase leaves
+them readable by any process that can read the state directory (often a
+temporary one). When the caller supplies none, each engine encrypts with a
+random passphrase that lives only in its own memory and its Pulumi child, and
+stays stable for the engine's life so its own state remains readable to it.
+
 ## Exports
 
 - `createPulumiAutomationAdapter` — the `IacProvider` adapter.
