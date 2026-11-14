@@ -8,7 +8,11 @@ import {
 	startConnectPage,
 } from "@hobo/connect-ui";
 
-import { type GithubAppOwner, resolveGithubAppHost } from "./app-hosts.js";
+import {
+	GITHUB_APP_HOSTS,
+	type GithubAppOwner,
+	resolveGithubAppHost,
+} from "./app-hosts.js";
 import { browserEnvironment } from "./browser-environment.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import {
@@ -31,7 +35,7 @@ import {
 //   HOBO_CI_GITHUB_OWNER        the login of the user or organization that owns the App
 //   HOBO_CI_GITHUB_OWNER_ID     its numeric id (gh api users/<login> --jq .id)
 //   HOBO_CI_GITHUB_OWNER_TYPE   User (default) or Organization
-//   HOBO_CI_APP_HOST            optional: pin how the App is hosted (manifest | hosted-relay)
+//   HOBO_CI_APP_HOST            optional: pin the implemented manifest flow
 //   HOBO_CI_SECRET_STORE        infisical (default) | 1password
 
 export interface PrepareGithubDeps extends SecretStoreDeps {
@@ -94,6 +98,16 @@ export async function prepareGithubConnection(
 	deps: PrepareGithubDeps = {},
 ): Promise<PrepareOutcome> {
 	const env = deps.env ?? process.env;
+	const configuredHost = env.HOBO_CI_APP_HOST;
+	if (
+		configuredHost &&
+		!GITHUB_APP_HOSTS.some((host) => host.id === configuredHost)
+	)
+		return refused(
+			"HOBO_CI_APP_HOST_UNSUPPORTED_OWNER",
+			`App host ${configuredHost} is not configured or implemented.`,
+			["Use HOBO_CI_APP_HOST=manifest, or unset HOBO_CI_APP_HOST."],
+		);
 	const preferred = parseStore(env.HOBO_CI_SECRET_STORE);
 	if (preferred === undefined)
 		return refused(

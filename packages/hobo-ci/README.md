@@ -63,8 +63,9 @@ How the App is hosted is resolved for the owner (`resolveGithubAppHost`):
 `HOBO_CI_APP_HOST` pins a host. If a pinned host cannot serve the owner's kind,
 `hobo ci up` says so and names the hosts that can, rather than creating an App
 that would then be refused. Unpinned, resolution takes the first host that
-satisfies every criterion. HoBo's own hosts (`manifest`, `hosted-relay`)
-serve both.
+satisfies every criterion. The implemented `manifest` host supports both
+owner kinds. An unknown host or the not-yet-wired `hosted-relay` option is
+refused rather than silently starting the local manifest flow.
 
 ## Architecture rules (AGENTS.md)
 
