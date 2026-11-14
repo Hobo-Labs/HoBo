@@ -40,15 +40,29 @@ function mount(view: ReturnType<typeof stepView>) {
 }
 
 function labels() {
-	const components = agent.snapshot().filter((entry) => !entry.offPage && entry.component !== "more");
-	for (const entry of components) expect(entry.label, `${entry.component} ${entry.ref} has no name`).toBeTruthy();
+	const components = agent
+		.snapshot()
+		.filter((entry) => !entry.offPage && entry.component !== "more");
+	for (const entry of components)
+		expect(
+			entry.label,
+			`${entry.component} ${entry.ref} has no name`,
+		).toBeTruthy();
 	return components.map((entry) => entry.label);
 }
 
 describe("an agent can complete each step", () => {
 	it("chooses a secret store and continues", async () => {
-		const calls = mount(stepView({ kind: "choose-secret-store", provider: "github", stores: DEFAULT_SECRET_STORES }));
-		expect(labels()).toEqual(expect.arrayContaining(["Secret store", "Use this store", "Cancel"]));
+		const calls = mount(
+			stepView({
+				kind: "choose-secret-store",
+				provider: "github",
+				stores: DEFAULT_SECRET_STORES,
+			}),
+		);
+		expect(labels()).toEqual(
+			expect.arrayContaining(["Secret store", "Use this store", "Cancel"]),
+		);
 		let result: Awaited<ReturnType<typeof agent.act>> | undefined;
 		await act(async () => {
 			result = await agent.act({
@@ -59,24 +73,36 @@ describe("an agent can complete each step", () => {
 			});
 		});
 		expect(result?.ok, result?.error?.message).toBe(true);
-		expect(calls).toEqual([{ action: "connect.chooseStore", values: { store: "1password" } }]);
+		expect(calls).toEqual([
+			{ action: "connect.chooseStore", values: { store: "1password" } },
+		]);
 	});
 
 	it("needs a person to hand off to GitHub", async () => {
 		const calls = mount(
-			stepView({ kind: "create-github-app", provider: "github", appName: "HoBo CI", owner: "octo-org", store: "infisical" }),
+			stepView({
+				kind: "create-github-app",
+				provider: "github",
+				appName: "HoBo CI",
+				owner: "octo-org",
+				store: "infisical",
+			}),
 		);
 		expect(labels()).toEqual(expect.arrayContaining(["Continue on GitHub"]));
 		approve = false;
 		let refused: Awaited<ReturnType<typeof agent.act>> | undefined;
 		await act(async () => {
-			refused = await agent.act({ steps: [{ ref: "Continue on GitHub", action: "press" }] });
+			refused = await agent.act({
+				steps: [{ ref: "Continue on GitHub", action: "press" }],
+			});
 		});
 		expect(refused?.ok).toBe(false);
 		expect(calls).toEqual([]);
 		approve = true;
 		await act(async () => {
-			await agent.act({ steps: [{ ref: "Continue on GitHub", action: "press" }] });
+			await agent.act({
+				steps: [{ ref: "Continue on GitHub", action: "press" }],
+			});
 		});
 		expect(calls.map((call) => call.action)).toEqual(["connect.start"]);
 		approve = false;
@@ -90,12 +116,28 @@ describe("an agent can complete each step", () => {
 				title: "Configure HoBo CD's Vercel Integration",
 				reason: "hobo cd up needs these to connect Vercel.",
 				fields: [
-					{ name: "slug", label: "Integration slug", kind: "text", required: true },
-					{ name: "secret", label: "Client secret", kind: "secret", required: true },
+					{
+						name: "slug",
+						label: "Integration slug",
+						kind: "text",
+						required: true,
+					},
+					{
+						name: "secret",
+						label: "Client secret",
+						kind: "secret",
+						required: true,
+					},
 				],
 			}),
 		);
-		expect(labels()).toEqual(expect.arrayContaining(["Integration slug", "Client secret", "Save and continue"]));
+		expect(labels()).toEqual(
+			expect.arrayContaining([
+				"Integration slug",
+				"Client secret",
+				"Save and continue",
+			]),
+		);
 		approve = true;
 		let result: Awaited<ReturnType<typeof agent.act>> | undefined;
 		await act(async () => {
@@ -109,9 +151,16 @@ describe("an agent can complete each step", () => {
 		});
 		approve = false;
 		expect(result?.ok, result?.error?.message).toBe(true);
-		expect(calls).toEqual([{ action: "connect.submit", values: { slug: "hobo-cd", secret: "s3cret" } }]);
+		expect(calls).toEqual([
+			{
+				action: "connect.submit",
+				values: { slug: "hobo-cd", secret: "s3cret" },
+			},
+		]);
 		// The agent may fill the secret but never read it back.
-		const secret = agent.snapshot().find((entry) => entry.label === "Client secret");
+		const secret = agent
+			.snapshot()
+			.find((entry) => entry.label === "Client secret");
 		expect(JSON.stringify(secret)).not.toContain("s3cret");
 	});
 });
