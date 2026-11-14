@@ -75,6 +75,14 @@ satisfies every criterion. The implemented `manifest` host supports both
 owner kinds. An unknown host or the not-yet-wired `hosted-relay` option is
 refused rather than silently starting the local manifest flow.
 
+## Continuity
+
+The relay this project deploys declares a `continuity` policy on every
+stateful resource (`RELAY_CONTINUITY`, `packages/ci-vercel`). Everything it
+keeps is rebuilt from GitHub, so every policy is `rebuildable` and nothing is
+copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
+(`packages/hobo-cd` README, "Continuity").
+
 ## Architecture rules (AGENTS.md)
 
 - **PACT**: `contracts/pacts/github-app-manifest.pact.json` (conversion, App

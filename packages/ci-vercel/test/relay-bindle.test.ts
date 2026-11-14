@@ -1,5 +1,10 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { assertNoBindleProviderSelection } from "@hobo/bindles";
+import {
+	assertNoBindleProviderSelection,
+	CONTINUITY_KINDS,
+	continuityPolicies,
+	continuityViolations,
+} from "@hobo/bindles";
 import { describe, expect, it } from "vitest";
 import relay, {
 	RELAY_REPAIR_SCHEDULE,
@@ -281,5 +286,19 @@ describe("the declared settings and the deployed code agree", () => {
 		// A secret is never a value set at deploy time.
 		for (const [name, field] of fields)
 			expect(field.source === "camp-value", name).toBe(!field.sensitive);
+	});
+});
+
+describe("relay continuity", () => {
+	it("declares a policy on every stateful resource and none elsewhere", () => {
+		const policies = continuityPolicies(relay);
+		for (const resource of Object.values(relay.resources))
+			expect(policies.has(resource.name)).toBe(
+				CONTINUITY_KINDS.has(resource.kind),
+			);
+		expect(continuityViolations(relay)).toEqual([]);
+		// GitHub is the source of truth: nothing in the relay is copied.
+		for (const policy of policies.values())
+			expect(policy).toMatchObject({ onLoss: "rebuild", standbys: 0 });
 	});
 });
