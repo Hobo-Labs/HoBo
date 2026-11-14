@@ -5,6 +5,22 @@ runbooks/recipes. Platform continuous identity duals remain hands-off (zero
 Bindle config); app-authored Trails cover schema/data transforms and cross-cloud
 moves over junctions.
 
+`executeDataHandover` resumes a journaled data copy between independently
+scoped Yard endpoints. It rechecks authorization at each phase, uses the
+data engines' fencing and a compare-and-set routing authority for cutover, and
+holds retirement until the supplied soak decision permits finalization.
+Every engine call and journal write requires current authorization. If it
+lapses while a source is fenced, the run leaves the fence in place for an
+independently authorized successor; it does not guess that a delayed cleanup
+still owns the Camp. The routing receiver checks the journaled decision and
+native fence token, and conditionally appends against a single logical-Camp
+generation. Its journal must be the authoritative route for every reader and
+writer, and the host must enroll independent native-fence and funding checks.
+The native fence and route journal may belong to different providers. Their
+checks are not atomic together. The SDK does not expose a routing receiver
+until a provider can enforce a logical-Camp operation lock and funding through
+completion, so handover execution remains unavailable in production.
+
 ## Quick start
 
 ```ts
