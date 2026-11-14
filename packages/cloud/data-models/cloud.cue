@@ -228,6 +228,7 @@ package hobo
 	resourceId:   string & !=""
 	execId:       string & !=""
 	programHash:  string & !=""
+	specHash?:    =~"^sha256:[0-9a-f]{64}$"
 }
 
 #ResourceProvisionedRecord: {
@@ -235,6 +236,7 @@ package hobo
 	resourceId:   string & !=""
 	outputs: {[string]: string}
 	execId:       string & !=""
+	specHash?:    =~"^sha256:[0-9a-f]{64}$"
 }
 
 #ResourceFailedRecord: {
