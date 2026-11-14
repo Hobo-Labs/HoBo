@@ -288,7 +288,7 @@ package ci
  engine?: #CiPolicyDaggerEngine
  location?: "vercel" | "local" | "remote"
  if kind == "local" {runsOn: "hobo-local-host"}
- // Mirror packages/ci/src/fleet-overflow.ts isGithubLatestLabel — never ubuntu-latest for github.
+ // Mirror packages/ci/src/runner-routing/tiers.ts isGithubLatestLabel — never ubuntu-latest for github.
  if kind == "github" {runsOn: != "ubuntu-latest"}
  if scaleSet != _|_ {kind: "kubernetes", engine?: _|_}
  if engine != _|_ {kind: "kubernetes"}
