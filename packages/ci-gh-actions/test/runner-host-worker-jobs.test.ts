@@ -27,10 +27,12 @@ import {
 	createWorkerHostJobs,
 	readWorkerLeases,
 	WORKER_ADMISSION_PAUSED_FILE,
+	WORKER_MESH_ADVERT_FILE,
 	WORKER_OBSERVATION_FILE,
 	WORKER_RUNNER_PRESENCE_FILE,
 	workerAdmissionPaused,
 	workerHostFiles,
+	writeWorkerMeshAdvert,
 	writeWorkerObservation,
 	writeWorkerRunnerPresence,
 } from "../src/runner-host-worker-jobs.js";
@@ -87,11 +89,52 @@ describe("the worker's data directory as the runner-host job ports", () => {
 			database: "/var/lib/hobo-ci/worker.sqlite",
 			admissionPaused: `/var/lib/hobo-ci/${WORKER_ADMISSION_PAUSED_FILE}`,
 			observation: `/var/lib/hobo-ci/${WORKER_OBSERVATION_FILE}`,
+			meshAdvert: `/var/lib/hobo-ci/${WORKER_MESH_ADVERT_FILE}`,
 			runnerPresence: `/var/lib/hobo-ci/${WORKER_RUNNER_PRESENCE_FILE}`,
 			controllerDesired: `/var/lib/hobo-ci/${CONTROLLER_DESIRED_FILE}`,
 			controllerStatus: `/var/lib/hobo-ci/${CONTROLLER_STATUS_FILE}`,
 			controllerReleases: `/var/lib/hobo-ci/${CONTROLLER_RELEASES_DIR}`,
 		});
+	});
+
+	it("keeps the pre-fleet advert writer apart from the observation the agent reads", async () => {
+		const dir = await freshDir();
+		const files = workerHostFiles(join(dir, "worker.sqlite"));
+		const digest = `sha256:${"e".repeat(64)}`;
+		await writeWorkerMeshAdvert(
+			files,
+			{
+				id: "box",
+				freeSlots: 3,
+				totalSlots: 4,
+				healthy: true,
+				labels: ["hobo"],
+				validUntilMs: Date.parse("2026-11-12T10:01:00.000Z"),
+				platform: { os: "linux", arch: "x64" },
+			},
+			digest,
+		);
+		const advert = JSON.parse(await readFile(files.meshAdvert, "utf8"));
+		expect(advert.controllerDigest).toBe(digest);
+		// The runner-host agent reads only the fleet observation.
+		const jobs = createWorkerHostJobs({ files, hostKind: "box-worker" });
+		expect(await jobs.observation()).toBeUndefined();
+	});
+
+	it("answers a pre-fleet local-runner host's runners from its presence report", async () => {
+		const dir = await freshDir();
+		const files = workerHostFiles(join(dir, "worker.sqlite"));
+		const now = Date.parse("2026-11-12T10:00:00.000Z");
+		await writeWorkerRunnerPresence(files, {
+			observedAtMs: now,
+			runners: [{ name: "hobo-local-1", status: "online", busy: false }],
+		});
+		const jobs = createWorkerHostJobs({
+			files,
+			hostKind: "local-runner",
+			now: () => now,
+		});
+		expect((await jobs.runners()).map((r) => r.name)).toEqual(["hobo-local-1"]);
 	});
 
 	it("reads only active leases, read-only, from the worker's journal", async () => {

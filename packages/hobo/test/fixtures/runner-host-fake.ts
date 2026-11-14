@@ -1,6 +1,6 @@
 // A runner host as the runner-host realizer sees it, offline: the container
 // engine (`--rm` semantics: a stopped controller is gone), the worker's
-// leases, GitHub runner presence and the host's own fleet observation, derived from
+// leases, GitHub runner presence and the host's own mesh advert, derived from
 // whichever controller is running. Images listed in `unhealthy` start but
 // never advertise healthy, which is how a failed verify is reproduced.
 //
@@ -11,53 +11,15 @@
 // agent's own job ports (`createWorkerHostJobs`) then read the host.
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { create } from "@bufbuild/protobuf";
 import {
 	type WorkerHostFiles,
-	writeWorkerObservation,
+	writeWorkerMeshAdvert,
 } from "@hobo/ci-gh-actions";
 import type { RunnerHostPorts } from "@hobo/ci-gh-actions/runner-host";
 import {
 	createResolvedDeploymentSet,
 	DEPLOYMENT_PLAN_SCHEMA,
 } from "@hobo/cloud";
-import { Health, type Observation, ObservationSchema } from "@hobo/fleet";
-
-/**
- * A host's own fleet observation (observer = member), as its fleet agent
- * signs and publishes it every beat; `controllerDigest` rides as a label.
- */
-export function selfObservation(
-	input: Readonly<{
-		memberId: string;
-		healthy: boolean;
-		labels: readonly string[];
-		validUntilMs: number;
-		sinceMs: number;
-		freeSlots: number;
-		totalSlots: number;
-		controllerDigest?: string;
-	}>,
-): Observation {
-	return create(ObservationSchema, {
-		memberId: input.memberId,
-		observerId: input.memberId,
-		fleets: ["hobo"],
-		health: input.healthy ? Health.REACHABLE : Health.DRAINING,
-		capacity: { freeSlots: input.freeSlots, totalSlots: input.totalSlots },
-		labels: [
-			...input.labels,
-			...(input.controllerDigest
-				? [`hobo.ci/controller-digest=${input.controllerDigest}`]
-				: []),
-		],
-		platform: { os: "linux", arch: "x64" },
-		agentVersion: "1.0.0",
-		since: new Date(input.sinceMs).toISOString(),
-		issuedAt: new Date(input.validUntilMs - 60_000).toISOString(),
-		validUntil: new Date(input.validUntilMs).toISOString(),
-	});
-}
 
 /** A resolved Set whose plan has the runner-host row for `image` (what a promotion would resolve). */
 export function runnerHostResolvedSet(
@@ -174,30 +136,31 @@ export class FakeRunnerHost {
 		this.#admission = open;
 	}
 
-	/** The host's own fleet observation, as its fleet agent makes it while a controller runs. */
-	advert(): Observation | undefined {
+	/** The host's own advert, as the running controller's worker makes it. */
+	advert() {
 		const live = [...this.containers.values()].find(
 			(c) => c.state === "running" && c.name.startsWith(CONTROLLER),
 		);
 		if (!live) return undefined;
-		return selfObservation({
-			memberId: `member-${this.options.hostId ?? "box"}`,
+		return {
+			id: this.options.hostId ?? "box",
 			freeSlots: 3,
 			totalSlots: 4,
 			healthy: this.admission && !this.options.unhealthy?.includes(live.image),
 			labels: [...(this.options.labels ?? ["hobo", "hobo-trunk"])],
 			validUntilMs: this.nowMs + 60_000,
 			sinceMs: live.startedAtMs ?? 0,
-		});
+			platform: { os: "linux", arch: "x64" },
+		};
 	}
 
-	/** The fleet agent's beat: rewrite (or, with no controller, remove) the observation file. */
+	/** The worker's mesh beat: rewrite (or, with no controller, remove) its advert file. */
 	async beat(): Promise<void> {
 		const worker = this.options.worker;
 		if (!worker) return;
 		const advert = this.advert();
-		if (advert) await writeWorkerObservation(worker, advert);
-		else await rm(worker.observation, { force: true });
+		if (advert) await writeWorkerMeshAdvert(worker, advert);
+		else await rm(worker.meshAdvert, { force: true });
 	}
 
 	ports(): RunnerHostPorts {
@@ -262,7 +225,7 @@ function portsOf(host: FakeRunnerHost): RunnerHostPorts {
 			async runners() {
 				return [];
 			},
-			async observation() {
+			async meshAdvert() {
 				return host.advert();
 			},
 			async pauseAdmission() {

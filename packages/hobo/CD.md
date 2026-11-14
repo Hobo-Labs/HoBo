@@ -111,7 +111,7 @@ Each subcommand takes exactly the flags its usage line names, plus `--format`,
 | Pipelines | `pipeline apply`, `pipeline show`, `pipeline list` |
 | Windows | `window define`, `window list`, `window override` |
 | Promotion | `promote`, `status`, `logs`, `rollback`, `reconcile`, `preview create`, `preview list`, `verify show`, `metrics` |
-| Agents | `agent token`, `agent enroll`, `agent approve-key`, `agent accept`, `agent run`, `agent revoke` (aliases of the fleet commands token create, enroll --token-file, member approve, member accept, run and member revoke) |
+| Agents | `agent token`, `agent enroll`, `agent approve-key`, `agent accept`, `agent run`, `agent revoke` |
 | Publishers | `publisher define` |
 | Fleet | `campset define`, `campset list`, `camp list`, `camp show`, `camp taint`, `camp untaint`, `camp manage`, `placement define`, `placement decide`, `placement show`, `scores report`, `fanout show`, `fanout halt`, `fanout resume`, `fanout rollback`, `failover list`, `failover approve`, `rebalance` |
 | Policy | `compliance show`; Rails promote with `promote` and Rail Freight |
@@ -157,7 +157,7 @@ hobo deploy preview list
 hobo deploy verify show verification-1
 hobo deploy metrics --window-ms 604800000 --camp hobo-ci-relay/hobo-ci-relay/production
 hobo deploy agent token --camp-set hobo-ci-runner-fleet --camp hobo-ci-runners/box --mode agent --ttl-ms 3600000 --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
-hobo deploy agent enroll --token-file bootstrap.token --authority https://authority.example --tenant acme --fleet hobo --key-dir agent-keys
+hobo deploy agent enroll --token bootstrap-token --jwk-file public.jwk.json
 hobo deploy agent approve-key reconciler-1
 hobo deploy agent accept reconciler-1 --camp hobo-ci-runners/box --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts
 hobo deploy agent run --feed https://station.example/v1/cd/ --reconciler reconciler-1 --key-file agent.jwk.json --svid-file agent.svid --camp hobo-ci-runners/box
@@ -315,12 +315,8 @@ Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
 - **`delivery-module-invalid` / `delivery-module-unreadable`**: the
   `--file` module has an unknown export or a malformed record; nothing was
   applied. Fix the named record and re-run.
-- **`token-on-command-line`**: `agent enroll` reads the bootstrap token from
-  `--token-file`, never from the command line; it generates the agent's keys
-  in `--key-dir` (aliases of the fleet commands: a reconciler is a fleet device
-  with role RECONCILER).
-- **`fleet-unavailable`**: this Station has no fleet authority composed, so
-  `agent token` and `agent enroll` refuse; enrollment is the fleet's.
+- **`agent-jwk-invalid`**: `agent enroll` takes the PUBLIC JWK; a key with a
+  private member `d` is refused.
 - **`cd-not-found`**: the named Freight, pipeline, Camp or decision does not
   exist; the remediation names the list command.
 - Any other code comes from the owning `@hobo/cd` module; its remediation is in

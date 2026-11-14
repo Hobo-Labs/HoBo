@@ -47,18 +47,18 @@ import {
 	parseDeclaredRails,
 } from "../src/cd-declared-rails.js";
 import { parseDeliveryModule } from "../src/cd-delivery-module.js";
+import {
+	FakeRunnerHost,
+	SupervisedRunnerHost,
+	writeReleases,
+} from "../src/cd-runner-host-testing.js";
 import { openCdRuntime, stationOriginOf } from "../src/cd-runtime.js";
 import type { JsonValue } from "../src/json.js";
 import {
 	digestOf,
-	FakeRunnerHost,
 	imageAt,
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
-import {
-	SupervisedRunnerHost,
-	writeReleases,
-} from "./fixtures/runner-host-supervised.js";
 
 // SAFETY: the runner fleet's Camp id for host `box` (hobo-ci-runners/<host id>).
 const BOX = "hobo-ci-runners/box" as CampId;

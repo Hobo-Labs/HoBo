@@ -234,6 +234,13 @@ function selfOf(observation: Observation | undefined): HostSelf | undefined {
 	};
 }
 
+/**
+ * @deprecated What the host reported about itself before it was a fleet
+ * member; it is now its own fleet `Observation`. Kept as an alias so the
+ * package barrel compiles until the coordinator drops it at the wave-5 merge.
+ */
+export type RunnerHostAdvert = Observation;
+
 /** One runner this host registered with GitHub, and its presence. */
 export type RunnerHostRegistration = Readonly<{
 	name: string;

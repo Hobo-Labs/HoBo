@@ -108,16 +108,18 @@ import {
 	RUNNER_HOST_UNREADY_TAINT,
 } from "../src/cd-agent-runner-host.js";
 import { runCdDeploySubcommand } from "../src/cd-deploy.js";
+import {
+	FakeRunnerHost,
+	SupervisedRunnerHost,
+} from "../src/cd-runner-host-testing.js";
 import { agentReconciler, openCdRuntime } from "../src/cd-runtime.js";
 import { openCdStore } from "../src/cd-store.js";
 import { isJsonArray, isJsonObject } from "../src/json.js";
 import {
 	digestOf,
-	FakeRunnerHost,
 	imageAt,
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
-import { SupervisedRunnerHost } from "./fixtures/runner-host-supervised.js";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");

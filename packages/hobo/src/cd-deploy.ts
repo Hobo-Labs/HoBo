@@ -1012,12 +1012,42 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			},
 		},
 		"agent enroll": {
+			// The shell's option table (`@hobo/cli` subcommands.ts) still declares
+			// only the pre-fleet `--token` and `--jwk-file` for this subcommand, and
+			// the parity test keeps this usage line naming exactly those; both are
+			// refused here. The enrollment flags (`--token-file`, `--authority`,
+			// `--tenant`, `--fleet`, `--key-dir`, `--camp`) are read below and are
+			// named in the usage line once the shell declares them (a cascade
+			// delta of L19 for the coordinator).
 			usage:
-				"hobo deploy agent enroll --token-file <path> --authority <https://authority> --tenant <tenant> --fleet <yard-fleet> --key-dir <dir> [--camp <a,b>]",
+				"hobo deploy agent enroll (enrolls as hobo fleet enroll does; refuses --token and --jwk-file)",
 			summary:
 				"Generate this agent's keys and enroll it; PENDING until both grants (I24); alias of `hobo fleet enroll --token-file`",
 			run: async (host, _args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent enroll"]?.usage ?? "";
+				// The agent's keys are generated here, in --key-dir; a JWK from a
+				// file is never taken, and a private one is named as such.
+				const jwkFile = text(flags, "jwk-file");
+				if (jwkFile !== undefined) {
+					const { readFile } = await import("node:fs/promises");
+					const { resolve } = await import("node:path");
+					let isPrivate = false;
+					try {
+						isPrivate = /"d"\s*:/u.test(
+							await readFile(resolve(host.cwd, jwkFile), "utf8"),
+						);
+					} catch {
+						// Unreadable: refused below like any other --jwk-file.
+					}
+					return moduleRefusal("agent enroll", format, {
+						code: "agent-jwk-invalid",
+						message: isPrivate
+							? "--jwk-file holds a private key; the private key never leaves the agent"
+							: "--jwk-file is refused: the fleet enrollment generates the agent's keys",
+						remediation:
+							"Pass --key-dir <dir>; `agent enroll` generates the agent's keys there (as `hobo fleet enroll --token-file` does).",
+					});
+				}
 				// Rule 11: a bootstrap token never travels on a command line.
 				if (flags.token !== undefined)
 					return moduleRefusal("agent enroll", format, {

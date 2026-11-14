@@ -122,8 +122,11 @@ through the JSON guards in `src/json.ts`.
 
 ### Live kind lane
 
-`test/kind-lane.test.ts` runs both realizers against real hubs and skips with
-the missing variable named when they are absent. To run it:
+`test/kind-lane.integration.test.ts` runs both realizers against real hubs
+and skips with the missing variable named when they are absent. It needs
+`kind` and live hubs, so it is an integration test (rule 10 of the fleet
+design): `pnpm --filter @hobo/cd-kube-fleet test` leaves it out, and
+`test:integration` runs it. To run it:
 
 1. Create a hub and a managed cluster with `kind`, install OCM
    (`clusteradm init` on the hub, `clusteradm join` from the member) and/or
@@ -134,4 +137,4 @@ the missing variable named when they are absent. To run it:
    and/or `HOBO_KIND_KARMADA_API`, `HOBO_KIND_KARMADA_TOKEN`,
    `HOBO_KIND_KARMADA_MEMBER`, plus `NODE_EXTRA_CA_CERTS` pointing at the
    clusters' CA bundle.
-4. `pnpm --filter @hobo/cd-kube-fleet test`.
+4. `pnpm --filter @hobo/cd-kube-fleet test:integration`.

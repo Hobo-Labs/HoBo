@@ -49,7 +49,6 @@
     "@hobo/core": "workspace:*",
     "@hobo/dispatcher": "workspace:*",
     "@hobo/events": "workspace:*",
-    "@hobo/fleet": "workspace:*",
     "@hobo/identity": "workspace:*",
     "@hobo/policy": "workspace:*",
     "@hobo/registry": "workspace:*",
