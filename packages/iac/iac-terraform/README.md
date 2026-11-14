@@ -39,8 +39,7 @@ as interchangeable binaries behind one flag —
 `createTerraformCliEngine({ binary: "tofu" })` (the **default**) or
 `{ binary: "terraform" }`. Version pins live beside the engine
 (`PINNED_TOFU_VERSION` / `PINNED_TERRAFORM_VERSION`). This is the resolved
-form of the `iac-opentofu` roadmap entry
-([docs/plans/0017](../../../docs/plans/0017-remediation-roadmap.md) F33).
+form of the `iac-opentofu` roadmap entry.
 
 ## Exports
 

@@ -1,0 +1,115 @@
+{
+  "about": "GitHub Git Data API answers the routing-slip probe relies on. The GET answers were recorded from api.github.com on 2026-11-13 against Hobo-Labs/HoBo (read only; author fields and the message replaced, signature dropped). The write answers follow GitHub's documented shapes (docs.github.com/rest/git); nothing was written to the repository.",
+  "getRefMissing": {
+    "status": 404,
+    "body": {
+      "message": "Not Found",
+      "documentation_url": "https://docs.github.com/rest/git/refs#get-a-reference",
+      "status": "404"
+    }
+  },
+  "getRef": {
+    "status": 200,
+    "body": {
+      "ref": "refs/heads/main",
+      "node_id": "REF_kwDOS_vGJq9yZWZzL2hlYWRzL21haW4",
+      "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/refs/heads/main",
+      "object": {
+        "sha": "e7c50e35bb9d9c3e184957c0709e531a10201978",
+        "type": "commit",
+        "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/commits/e7c50e35bb9d9c3e184957c0709e531a10201978"
+      }
+    }
+  },
+  "getCommit": {
+    "status": 200,
+    "body": {
+      "sha": "e7c50e35bb9d9c3e184957c0709e531a10201978",
+      "node_id": "C_kwDOS_vGJtoAKGU3YzUwZTM1YmI5ZDljM2UxODQ5NTdjMDcwOWU1MzFhMTAyMDE5Nzg",
+      "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/commits/e7c50e35bb9d9c3e184957c0709e531a10201978",
+      "html_url": "https://github.com/Hobo-Labs/HoBo/commit/e7c50e35bb9d9c3e184957c0709e531a10201978",
+      "author": {
+        "name": "HoBo relay",
+        "email": "relay@example.invalid",
+        "date": "2026-11-13T05:39:55Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-11-13T05:39:55Z"
+      },
+      "tree": {
+        "sha": "79add6ae11c9ddedd4eca9d75a933b9622a7302e",
+        "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/trees/79add6ae11c9ddedd4eca9d75a933b9622a7302e"
+      },
+      "message": "fix(secret-store-claim,hobo): bind the relay deploy trust to GitHub's immutable OIDC subject (#1971)",
+      "parents": [
+        {
+          "sha": "87135bfc4600a068fed3d7c19366d1b7b39d52a7",
+          "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/commits/87135bfc4600a068fed3d7c19366d1b7b39d52a7",
+          "html_url": "https://github.com/Hobo-Labs/HoBo/commit/87135bfc4600a068fed3d7c19366d1b7b39d52a7"
+        }
+      ],
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "signature": null,
+        "payload": null,
+        "verified_at": null
+      }
+    }
+  },
+  "createTree": {
+    "status": 201,
+    "body": {
+      "sha": "TREE_SHA",
+      "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/trees/TREE_SHA",
+      "tree": [
+        {
+          "path": "README.md",
+          "mode": "100644",
+          "type": "blob",
+          "size": 81,
+          "sha": "BLOB_SHA",
+          "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/blobs/BLOB_SHA"
+        }
+      ],
+      "truncated": false
+    }
+  },
+  "createCommit": {
+    "status": 201,
+    "body": {
+      "sha": "COMMIT_SHA",
+      "node_id": "C_probe",
+      "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/commits/COMMIT_SHA",
+      "html_url": "https://github.com/Hobo-Labs/HoBo/commit/COMMIT_SHA",
+      "author": { "name": "hobo-ci[bot]", "email": "bot@example.invalid", "date": "2026-11-13T16:00:00Z" },
+      "committer": { "name": "hobo-ci[bot]", "email": "bot@example.invalid", "date": "2026-11-13T16:00:00Z" },
+      "tree": { "sha": "TREE_SHA", "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/trees/TREE_SHA" },
+      "message": "MESSAGE",
+      "parents": [],
+      "verification": { "verified": false, "reason": "unsigned", "signature": null, "payload": null, "verified_at": null }
+    }
+  },
+  "updateRefMissing": {
+    "status": 422,
+    "body": {
+      "message": "Reference does not exist",
+      "documentation_url": "https://docs.github.com/rest/git/refs#update-a-reference",
+      "status": "422"
+    }
+  },
+  "ref": {
+    "body": {
+      "ref": "REF",
+      "node_id": "REF_probe",
+      "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/REF",
+      "object": {
+        "sha": "COMMIT_SHA",
+        "type": "commit",
+        "url": "https://api.github.com/repos/Hobo-Labs/HoBo/git/commits/COMMIT_SHA"
+      }
+    }
+  }
+}

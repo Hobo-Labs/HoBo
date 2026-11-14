@@ -1,6 +1,6 @@
 /**
  * Device key stores (L10, design §6.4 and §7.3). Signatures frozen by the
- * fleet contract commit (ADR-0182).
+ * fleet contract commit (ADR-0183).
  *
  * Both stores keep their files in one key directory (`HOBO_FLEET_HOME`):
  * `operational.json` (the SIGN and SEAL private keys), `state.json` (the

@@ -329,9 +329,9 @@ describe("isolated container controller reconcile", () => {
 			list: vi.fn(async () => []),
 		};
 		const github = deniedGithub();
-		vi.spyOn(githubModule, "getJob")
-			.mockRejectedValueOnce(new Error("temporary GitHub failure"))
-			.mockResolvedValueOnce(githubJob(lease.jobId, "queued"));
+		vi.spyOn(githubModule, "getJob").mockImplementation(async () => {
+			throw new Error("temporary GitHub failure");
+		});
 		const controller = createIsolatedContainerController({
 			store,
 			github,
@@ -343,6 +343,10 @@ describe("isolated container controller reconcile", () => {
 		});
 		await expect(controller.host.reconcile(lease.id, true)).rejects.toThrow(
 			"temporary GitHub failure",
+		);
+		vi.mocked(githubModule.getJob).mockClear();
+		vi.spyOn(githubModule, "getJob").mockResolvedValue(
+			githubJob(lease.jobId, "queued"),
 		);
 		expect(lease.sandboxStage).toBe("stopped");
 		expect(lease.usageCompletedAt).toBe(clock);
@@ -460,9 +464,9 @@ describe("isolated container controller reconcile", () => {
 				}),
 			};
 			const github = deniedGithub();
-			vi.spyOn(githubModule, "getJob")
-				.mockRejectedValueOnce(new Error("temporary GitHub failure"))
-				.mockResolvedValueOnce(githubJob(job.id, "queued"));
+			vi.spyOn(githubModule, "getJob").mockImplementation(async () => {
+				throw new Error("temporary GitHub failure");
+			});
 			let clock = "2026-10-26T12:02:00.000Z";
 			let controller = createIsolatedContainerController({
 				store,
@@ -476,6 +480,9 @@ describe("isolated container controller reconcile", () => {
 			await expect(
 				controller.host.reconcile(reserved.id, true),
 			).rejects.toThrow("temporary GitHub failure");
+			vi.mocked(githubModule.getJob).mockResolvedValue(
+				githubJob(job.id, "queued"),
+			);
 			const held = await store.get(reserved.id);
 			expect(held).toMatchObject({
 				state: "uncertain",

@@ -40,12 +40,20 @@ describe("parseFleetVerdict", () => {
 		expect(
 			parseFleetVerdict(wire({ state: "VERDICT_STATE_NO_CAPACITY" }), NOW),
 		).toEqual({ state: "NO_CAPACITY", freeSlots: 5 });
+		expect(
+			parseFleetVerdict(
+				wire({ state: "VERDICT_STATE_BUSY", freeSlots: 0 }),
+				NOW,
+			),
+		).toEqual({ state: "BUSY", freeSlots: 0 });
 	});
 
 	it("accepts enum numbers, snake_case names and uint32 as strings, and reads an omitted zero as zero", () => {
 		expect(parseFleetVerdict(wire({ state: 3 }), NOW)?.state).toBe(
 			"NO_CAPACITY",
 		);
+		// Amendment 4 (D60): VERDICT_STATE_BUSY = 4.
+		expect(parseFleetVerdict(wire({ state: 4 }), NOW)?.state).toBe("BUSY");
 		expect(
 			parseFleetVerdict(
 				JSON.stringify({
@@ -98,6 +106,8 @@ describe("parseFleetVerdict", () => {
 			wire({ state: "VERDICT_STATE_UNSPECIFIED" }),
 			wire({ state: "OPEN" }),
 			wire({ state: 9 }),
+			wire({ state: 5 }),
+			wire({ state: "BUSY" }),
 			wire({ state: null }),
 			wire({ freeSlots: -1 }),
 			wire({ freeSlots: 1.5 }),

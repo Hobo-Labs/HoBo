@@ -33,15 +33,32 @@ message BillingPolicy {
   bool spend_cap_unlimited = 7;
 }
 
-// Delivery (GitOps) plane configuration; engine "argo" renders Argo CD
-// Application documents, "in-proc" hands the receipt to the local executor.
+// A @hobo/cd-gitops publisher the delivery plane routes through.
+message DeliveryPublisher {
+  // Publisher target: argo-cd | flux.
+  string target = 1;
+  // GitOps repository the publisher commits to, when the policy names one.
+  string repository = 2;
+}
+
+// Delivery plane configuration (plan 0024, D14). Neutral: every receipt is
+// delivered through @hobo/cd by a reconciler mode; the broker names no GitOps
+// engine, cluster or namespace.
 message DeliveryPolicy {
-  string engine = 1;
+  // Deprecated: argo | in-proc. Read only when reconciler_mode is empty, and
+  // then only to map it (argo -> publisher argo-cd, in-proc -> conductor).
+  string engine = 1 [deprecated = true];
   // auto | manual
   string sync_mode = 2;
   bool prune = 3;
-  string gitops_repo = 4;
-  string destination_namespace = 5;
+  // Deprecated: mapped to publisher.repository for a legacy argo engine.
+  string gitops_repo = 4 [deprecated = true];
+  // Deprecated: never read.
+  string destination_namespace = 5 [deprecated = true];
+  // conductor | agent | publisher
+  string reconciler_mode = 6;
+  // Required exactly when reconciler_mode is publisher.
+  DeliveryPublisher publisher = 7;
 }
 
 // One connector registration in the broker's connector registry

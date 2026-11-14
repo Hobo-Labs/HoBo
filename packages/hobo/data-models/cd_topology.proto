@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hobo.hobo.v1;
+
+// Declared CD topology the `hobo` binary loads (plan 0024; packages/hobo/CD.md).
+//
+// `hobo deploy --yard <file>` and HOBO_CD_TOPOLOGY name topology files: a Yard
+// module (`export default yard(...)` from @hobo/yards) or a delivery module
+// exporting `yards` (Yards) and `camps` (CdTopologyCamp records). Every export
+// is parsed once with these messages before a Camp enters the TopologyReader;
+// a malformed one refuses the whole command.
+
+// Whether CD acts on a Camp. UNSPECIFIED takes the `hobo.cd/management` label.
+enum CampManagement {
+  CAMP_MANAGEMENT_UNSPECIFIED = 0;
+  CAMP_MANAGEMENT_MANAGED = 1;
+  CAMP_MANAGEMENT_OBSERVE_ONLY = 2;
+}
+
+// One declared Camp, in the shape @hobo/cd's TopologyReader returns.
+message CdTopologyCamp {
+  // Yard-scoped id, `<yard>/<camp>`.
+  string camp_id = 1;
+  string yard_id = 2;
+  // Empty: the Station the CD runtime composes. Any other Station is refused.
+  string station_id = 3;
+  string provider = 4;
+  // Declared regions; residency is evaluated only against these.
+  repeated string regions = 5;
+  string env_type = 6;
+  map<string, string> labels = 7;
+  CampManagement management = 8;
+}
+
+// The part of a @hobo/yards Camp the topology reads.
+message CdTopologyYardCamp {
+  // "camp".
+  string kind = 1;
+  string id = 2;
+  string env_type = 3;
+  map<string, string> labels = 4;
+}
+
+// The part of a @hobo/yards Yard the topology reads.
+message CdTopologyYard {
+  // "yard".
+  string kind = 1;
+  // "hobo.topology-objects/v1".
+  string contract = 2;
+  string name = 3;
+  string provider_id = 4;
+  repeated string regions = 5;
+  map<string, string> labels = 6;
+  repeated CdTopologyYardCamp camps = 7;
+}

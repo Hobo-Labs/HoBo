@@ -135,7 +135,22 @@ function digestFromImagetoolsJson(parsed: Json): string | undefined {
 	return assertSha256ImageDigest(top, "imagetools digest");
 }
 
-/** Test and production parser for `docker buildx imagetools inspect --format '{{json .}}'`. */
+/** argv for registry digest probe (default tabwriter output; no Go-template --format). */
+export function imagetoolsInspectArgv(tag: string): readonly string[] {
+	return ["buildx", "imagetools", "inspect", tag];
+}
+
+/** First top-level `Digest:` line from default `docker buildx imagetools inspect` output. */
+export function parseImagetoolsDefaultStdout(
+	stdout: string,
+): string | undefined {
+	const header = stdout.split(/^Manifests:\s*$/m)[0] ?? stdout;
+	const match = /^Digest:[ \t]+(sha256:[a-f0-9]{64})[ \t]*$/m.exec(header);
+	if (!match?.[1]) return undefined;
+	return assertSha256ImageDigest(match[1], "imagetools default Digest line");
+}
+
+/** Test and production parser for `docker buildx imagetools inspect --format json`. */
 export function parseImagetoolsInspectStdout(
 	stdout: string,
 ): { digest?: string; labels?: Record<string, string> } | undefined {
@@ -161,42 +176,52 @@ export function parseImagetoolsInspectStdout(
 	return undefined;
 }
 
+function imagetoolsInspectFailureSuffix(
+	stderr: string,
+	status: number,
+): string {
+	const detail = stderr.trim();
+	if (!detail) {
+		if (status === 125) {
+			return ": docker exited 125 with no stderr (buildx plugin missing or CLI rejected the invocation)";
+		}
+		return "";
+	}
+	const tail = detail.split("\n").slice(-3).join(" ");
+	if (/is not a docker command/u.test(detail)) {
+		return `: ${tail} (install/enable the docker buildx CLI plugin before release publish)`;
+	}
+	if (status === 125 && /Run 'docker COMMAND --help'/u.test(detail)) {
+		return `: ${tail} (buildx imagetools rejected the invocation; prefer default inspect output without --format)`;
+	}
+	return `: ${tail}`;
+}
+
 /** Registry lookup via buildx (requires `docker login ghcr.io`). */
 export function imagetoolsInspectTag(
 	tag: string,
 	run: ImagetoolsCommandRunner = (command, args, options) =>
 		spawnSync(command, args, options),
 ): { digest?: string; labels?: Record<string, string> } | undefined {
-	const result = run(
-		"docker",
-		["buildx", "imagetools", "inspect", tag, "--format", "{{json .}}"],
-		{
-			encoding: "utf8",
-		},
-	);
+	const result = run("docker", [...imagetoolsInspectArgv(tag)], {
+		encoding: "utf8",
+	});
 	if (result.status !== 0 || !result.stdout?.trim()) {
 		const detail = `${result.stderr ?? ""}`.trim();
 		if (isImagetoolsTagAbsent(detail, result.status ?? -1, tag))
 			return undefined;
-		const suffix = detail ? `: ${detail.split("\n").slice(-3).join(" ")}` : "";
+		const suffix = imagetoolsInspectFailureSuffix(detail, result.status ?? -1);
 		throw new Error(
 			`imagetools inspect ${tag} failed (status ${result.status ?? "?"})${suffix}`,
 		);
 	}
-	let parsed: { digest?: string; labels?: Record<string, string> } | undefined;
-	try {
-		parsed = parseImagetoolsInspectStdout(result.stdout);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`imagetools inspect ${tag}: ${message}`);
+	const digest = parseImagetoolsDefaultStdout(result.stdout);
+	if (!digest) {
+		throw new Error(
+			`imagetools inspect ${tag} returned no top-level Digest line`,
+		);
 	}
-	if (!parsed) {
-		throw new Error(`imagetools inspect ${tag} returned unparsable JSON`);
-	}
-	if (!parsed.digest) {
-		throw new Error(`imagetools inspect ${tag} returned no digest`);
-	}
-	return parsed;
+	return { digest };
 }
 
 /**

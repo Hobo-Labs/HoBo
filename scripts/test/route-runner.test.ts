@@ -1,17 +1,29 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
+	ABSENT_SLIP_WHYS,
+	askSlip,
 	BURST_SECONDS,
 	chooseRunner,
+	DEFAULT_LOCAL_RUNNER,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
-	FLEET_STATE_MAX_AGE_SECONDS,
-	FLEET_STATE_MAX_SKEW_SECONDS,
-	type FleetState,
+	DEFAULT_RUNNER_LABELS,
 	fleetLabelFor,
-	fleetStateRefusal,
 	hasChosen,
+	type JsonValue,
 	type LabelLoad,
 	labelLoad,
 	lookupOrder,
@@ -19,26 +31,40 @@ import {
 	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
 	main,
+	NO_ROUTING_SLIP,
 	observeQueue,
 	PROBE_POLL_SECONDS,
 	PROBE_WAIT_SECONDS,
 	PROBE_WORKFLOW_PATH,
-	parseFleetState,
+	parseRouteArgs,
 	parseRouteMode,
 	probeRunIds,
 	type QueueView,
 	RECENT_PICKUP_SECONDS,
+	type RouteDecision,
 	refusingJobs,
+	routeAnnotation,
+	routeClass,
 	routeRunner,
+	routeSettings,
 	runsJustAhead,
 	type SeenJob,
+	SLIP_REFUSAL_WHY,
 	SLOW_PICKUP_MEMORY_SECONDS,
 	STALE_WAIT_SECONDS,
 	seenJobs,
 	slowestFinishedRunIds,
+	TRUNK_EVENTS,
 	takingJobs,
 	unfinishedRunIds,
+	workflowFile,
 } from "../ci/route-runner.mts";
+import {
+	ROUTING_SLIP_READ_TIMEOUT_MS,
+	RUNNER_ROUTING_PATH,
+	type RunnerRouting,
+	readRunnerRouting,
+} from "../ci/runner-routing.mts";
 
 const NOW = Date.parse("2026-11-10T18:00:00Z");
 const limits = {
@@ -77,15 +103,6 @@ const decide = (overrides: Partial<Parameters<typeof routeRunner>[0]> = {}) =>
 		undecidedAhead: 0,
 		...overrides,
 	});
-
-const trunkCapacity = {
-	freeSlots: 1,
-	requiredMb: 4096,
-	reserveMb: 2048,
-	volatilityMb: 1024,
-	availableMb: 2400,
-	admit: false,
-};
 
 describe("the load on a label", () => {
 	it("counts jobs asking for exactly that label and takes the oldest wait", () => {
@@ -296,15 +313,6 @@ describe("the routing decision", () => {
 		assert.equal(decide({ fleetLabel: "hobo-trunk" }).runner, "hobo-trunk");
 	});
 
-	it("overflows to GitHub-hosted when live capacity refuses trunk jobs", () => {
-		const routed = decide({
-			fleetLabel: "hobo-trunk",
-			fleetCapacity: trunkCapacity,
-		});
-		assert.equal(routed.tier, "github");
-		assert.match(routed.reason, /cannot admit/);
-	});
-
 	it("honours a pinned tier without looking at the queue", () => {
 		const down = { ...idle, queued: 50, oldestWaitSeconds: 9000 };
 		assert.equal(decide({ mode: "fleet", fleet: down }).runner, "hobo");
@@ -320,290 +328,318 @@ describe("the routing decision", () => {
 	});
 });
 
-/** A snapshot published `ageSeconds` ago with these labels. */
-const snapshot = (
-	labels: Record<string, { nodes: number; freeSlots: number }>,
-	ageSeconds = 30,
-) =>
-	JSON.stringify({
-		publishedAt: new Date(NOW - ageSeconds * 1000).toISOString(),
-		labels: Object.fromEntries(
-			Object.entries(labels).map(([label, state]) => [
-				label,
-				{ ...state, trustedNodes: state.nodes },
-			]),
-		),
+describe("the fleet label a run asks for", () => {
+	it("is the committed trunk label for trunk events, the fleet label otherwise", () => {
+		assert.equal(fleetLabelFor("pull_request"), "hobo");
+		assert.equal(fleetLabelFor("schedule"), "hobo");
+		assert.equal(fleetLabelFor("merge_group"), "hobo-trunk");
+		assert.equal(fleetLabelFor("push"), "hobo-trunk");
+		const labels = {
+			...DEFAULT_RUNNER_LABELS,
+			fleet: "acme",
+			trunk: "acme-trunk",
+		};
+		assert.equal(fleetLabelFor("push", labels), "acme-trunk");
+		assert.equal(fleetLabelFor("pull_request", labels), "acme");
 	});
-const fresh = (
-	labels: Record<string, { nodes: number; freeSlots: number }>,
-): FleetState => {
-	const state = parseFleetState(snapshot(labels), NOW);
-	assert.ok(state);
-	return state;
-};
-const ROOM = { nodes: 2, freeSlots: 3 };
-const FULL = { nodes: 2, freeSlots: 0 };
-const NOBODY = { nodes: 0, freeSlots: 0 };
+});
 
-describe("the mesh's snapshot", () => {
-	it("is read while it is fresh, with how old it is", () => {
-		const state = parseFleetState(
-			snapshot({ hobo: ROOM, "hobo-trunk": NOBODY }, 45),
-			NOW,
+describe("the run's slip class", () => {
+	const pullRequest = (head: string | null, base: string) => ({
+		pull_request: {
+			head: { repo: head === null ? null : { full_name: head } },
+			base: { repo: { full_name: base } },
+		},
+	});
+	it("is trunk for trunk events, fork for another repository's pull request, else pr", () => {
+		for (const event of TRUNK_EVENTS)
+			assert.equal(routeClass(event, undefined), "trunk", event);
+		assert.equal(
+			routeClass(
+				"pull_request",
+				pullRequest("Hobo-Labs/HoBo", "hobo-labs/hobo"),
+			),
+			"pr",
 		);
-		assert.equal(state?.ageSeconds, 45);
+		assert.equal(
+			routeClass("pull_request", pullRequest("someone/HoBo", "Hobo-Labs/HoBo")),
+			"fork",
+		);
+		// A fork whose repository was deleted is still not this repository.
+		assert.equal(
+			routeClass("pull_request", pullRequest(null, "Hobo-Labs/HoBo")),
+			"fork",
+		);
+		assert.equal(routeClass("schedule", undefined), "pr");
+		assert.equal(routeClass("pull_request", undefined), "pr");
+	});
+});
+
+describe("what this run chose, as arguments", () => {
+	it("reads --route, --include-own-run and --attested, in either form", () => {
+		assert.deepEqual(parseRouteArgs([]), {
+			route: "auto",
+			includeOwnRun: false,
+			attested: false,
+		});
 		assert.deepEqual(
-			[...(state?.labels ?? [])],
-			[
-				["hobo", { nodes: 2, freeSlots: 3 }],
-				["hobo-trunk", { nodes: 0, freeSlots: 0 }],
-			],
+			parseRouteArgs([
+				"--route",
+				"github",
+				"--include-own-run=true",
+				"--attested",
+				"true",
+			]),
+			{ route: "github", includeOwnRun: true, attested: true },
 		);
+		assert.equal(parseRouteArgs(["--route", "hosted"]).route, "auto");
+		assert.equal(parseRouteArgs(["--attested", "yes"]).attested, false);
 	});
+	it("refuses anything else, so the action's fallback says the script did not run", () => {
+		assert.throws(
+			() => parseRouteArgs(["--mode", "fleet"]),
+			/unknown argument/,
+		);
+		assert.throws(() => parseRouteArgs(["--route"]), /needs a value/);
+	});
+});
 
-	it("is the record the workers publish", () => {
-		// The contract fixture of `MeshFleetState`, as a worker writes it.
-		const value = readFileSync(
+/** The routing slip fixtures `packages/ci-gh-actions` holds valid. */
+const slipFixture = (name: string): JsonValue =>
+	JSON.parse(
+		readFileSync(
 			new URL(
-				"../../packages/ci-gh-actions/data-models/fixtures/valid/mesh-fleet-state.json",
+				`../../packages/ci-gh-actions/data-models/fixtures/valid/${name}`,
 				import.meta.url,
 			),
 			"utf8",
-		);
-		const state = parseFleetState(
-			value,
-			Date.parse("2026-11-10T02:41:05.000Z"),
-		);
-		assert.equal(state?.ageSeconds, 60);
-		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 3 });
-		assert.deepEqual(state?.labels.get("hobo-trunk"), {
-			nodes: 0,
-			freeSlots: 0,
+		),
+	);
+/** A minute after the fixtures' slips were issued: they are current. */
+const SLIP_NOW = Date.parse("2026-11-13T16:01:00.000Z");
+const OPEN_SLIP = JSON.stringify(slipFixture("routing-slip.json"));
+const REFUSED_SLIP = JSON.stringify(slipFixture("routing-slip-refused.json"));
+const SLIP_SHA = "5".repeat(40);
+/**
+ * GitHub's Git API with the slip's commit behind `refs/hobo/routing-slip`, or
+ * no such ref when `message` is undefined. Records every URL it was asked.
+ */
+const slipApi =
+	(
+		message: string | undefined,
+		asked: string[] = [],
+		headers: Headers[] = [],
+	): typeof fetch =>
+	async (url, init) => {
+		asked.push(String(url));
+		headers.push(new Headers(init?.headers));
+		if (String(url).endsWith("/git/ref/hobo/routing-slip"))
+			return message === undefined
+				? Response.json({ message: "Not Found" }, { status: 404 })
+				: Response.json({
+						ref: "refs/hobo/routing-slip",
+						object: { type: "commit", sha: SLIP_SHA },
+					});
+		if (String(url).endsWith(`/git/commits/${SLIP_SHA}`))
+			return Response.json({ sha: SLIP_SHA, message });
+		return Response.json({ message: "unexpected" }, { status: 500 });
+	};
+const COMMITTED = readFileSync(
+	new URL("../../.hobo/ci.json", import.meta.url),
+	"utf8",
+);
+/** `.hobo/ci.json` with its `runnerRouting` changed. */
+const withRouting = (
+	change: (
+		routing: { -readonly [K in keyof RunnerRouting]: RunnerRouting[K] },
+	) => void,
+) => {
+	const project = JSON.parse(COMMITTED);
+	change(project.runnerRouting);
+	return JSON.stringify(project);
+};
+
+describe("the routing slip", () => {
+	const ask = (
+		message: string | undefined,
+		routeClassName: "pr" | "fork" | "trunk" = "pr",
+		overrides: { repository?: string; nowMs?: number } = {},
+	) =>
+		askSlip({
+			apiUrl: "https://api.github.test/",
+			repository: overrides.repository ?? "Hobo-Labs/HoBo",
+			token: "job-token",
+			labels: DEFAULT_RUNNER_LABELS,
+			routeClass: routeClassName,
+			nowMs: () => overrides.nowMs ?? SLIP_NOW,
+			fetch: slipApi(message),
 		});
-	});
 
-	it("is ignored once it is more than five minutes old", () => {
-		assert.equal(FLEET_STATE_MAX_AGE_SECONDS, 300);
-		assert.ok(parseFleetState(snapshot({ hobo: FULL }, 300), NOW));
-		assert.equal(
-			parseFleetState(snapshot({ hobo: FULL }, 301), NOW),
-			undefined,
+	it("decides the run's class, and says whose slip it was", async () => {
+		const open = await ask(OPEN_SLIP, "trunk");
+		assert.ok(open.ok);
+		assert.deepEqual(open.decision, {
+			tier: "fleet",
+			runner: "hobo-trunk",
+			reason: "relay: slip from oracle-box-1@c7ec8d449, fleet-busy",
+			refusedBy: "none",
+			slip: {
+				kind: "used",
+				reason: "fleet-busy",
+				from: "oracle-box-1@c7ec8d449",
+			},
+		});
+		const refused = await ask(REFUSED_SLIP, "trunk");
+		assert.ok(refused.ok);
+		assert.deepEqual(
+			[
+				refused.decision.tier,
+				refused.decision.runner,
+				refused.decision.refusedBy,
+			],
+			["github", "ubuntu-24.04", "slip"],
 		);
-		assert.equal(
-			parseFleetState(snapshot({ hobo: FULL }, 86_400), NOW),
-			undefined,
-		);
+		assert.match(refused.decision.reason, /, stalled$/);
 	});
 
-	it("allows for a little clock skew, and ignores a timestamp from the future", () => {
-		const ahead = (seconds: number) =>
-			parseFleetState(snapshot({ hobo: FULL }, -seconds), NOW);
-		assert.equal(ahead(FLEET_STATE_MAX_SKEW_SECONDS)?.ageSeconds, 0);
-		assert.equal(ahead(FLEET_STATE_MAX_SKEW_SECONDS + 1), undefined);
-	});
-
-	it("is ignored when it is missing or is not the record", () => {
-		for (const value of [
-			undefined,
-			"",
-			"   ",
-			"not json",
-			"[]",
-			"null",
-			'"text"',
-			"{}",
-			'{"labels":{"hobo":{"nodes":0}}}',
-			'{"publishedAt":"yesterday","labels":{}}',
-			`{"publishedAt":"${new Date(NOW).toISOString()}"}`,
-			`{"publishedAt":"${new Date(NOW).toISOString()}","labels":[]}`,
-			`{"publishedAt":${NOW},"labels":{}}`,
-		])
-			assert.equal(parseFleetState(value, NOW), undefined, String(value));
-	});
-
-	it("reads a label without both counts as unknown, not as refusing", () => {
-		const state = parseFleetState(
-			JSON.stringify({
-				publishedAt: new Date(NOW).toISOString(),
-				labels: {
-					HOBO: { nodes: 2.9, freeSlots: -1 },
-					"hobo-trunk": { nodes: 0 },
-					partial: { freeSlots: 0 },
-					text: { nodes: "many", freeSlots: "none" },
-					odd: 7,
+	it("sends a fork pull request by its own class, never the trunk one", async () => {
+		const fork = await ask(REFUSED_SLIP, "fork");
+		assert.ok(fork.ok);
+		assert.deepEqual(
+			[fork.decision.runner, fork.decision.slip],
+			[
+				"ubuntu-24.04",
+				{
+					kind: "used",
+					reason: "no-node",
+					from: "oracle-box-1@fa092c44f0a1b2c3d4e5f60718293a4b5c6d7e8f",
 				},
-			}),
-			NOW,
+			],
 		);
-		// Counts that are numbers are read, whole and not below zero.
-		assert.deepEqual(state?.labels.get("hobo"), { nodes: 2, freeSlots: 0 });
-		// The rest say nothing: left out, so nothing is refused on them.
-		for (const label of ["hobo-trunk", "partial", "text", "odd"]) {
-			assert.equal(state?.labels.has(label), false, label);
-			assert.equal(fleetStateRefusal(state, label), undefined, label);
-		}
-		assert.equal(
-			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
-			"fleet",
-		);
-	});
-
-	it("says a label is refusing when it has no node or no free slot", () => {
-		const state = fresh({ hobo: FULL, "hobo-trunk": NOBODY, spare: ROOM });
-		assert.match(
-			fleetStateRefusal(state, "hobo") ?? "",
-			/mesh snapshot \(30 s old\) shows no free slot on 2 node\(s\) for hobo/,
-		);
-		assert.match(
-			fleetStateRefusal(state, "hobo-trunk") ?? "",
-			/shows no live node for hobo-trunk/,
-		);
-		assert.equal(fleetStateRefusal(state, "spare"), undefined);
-		assert.equal(fleetStateRefusal(state, "SPARE"), undefined);
-	});
-
-	it("reads a label the snapshot does not list as unknown: the publisher does not speak for it", () => {
-		const state = fresh({ hobo: ROOM });
-		assert.equal(fleetStateRefusal(state, "hobo-trunk"), undefined);
-		assert.equal(fleetStateRefusal(state, "hobo-local-host"), undefined);
-		assert.equal(fleetStateRefusal(undefined, "hobo"), undefined);
-	});
-});
-
-describe("the routing decision with the mesh's snapshot", () => {
-	it("leaves a fleet with no free slot at once, though the queue shows it taking jobs", () => {
-		assert.equal(decide().tier, "fleet");
-		const routed = decide({ fleetState: fresh({ hobo: FULL }) });
-		assert.equal(routed.tier, "github");
-		assert.equal(routed.runner, "ubuntu-24.04");
-		assert.match(routed.reason, /the fleet has nothing waiting/);
-		assert.match(
-			routed.reason,
-			/the mesh snapshot \(30 s old\) shows no free slot on 2 node\(s\) for hobo/,
-		);
-	});
-
-	it("leaves a fleet with no live node at once", () => {
-		const routed = decide({ fleetState: fresh({ hobo: NOBODY }) });
-		assert.equal(routed.tier, "github");
-		assert.match(routed.reason, /shows no live node for hobo/);
-	});
-
-	it("judges the label this run would ask for", () => {
-		const state = fresh({ hobo: ROOM, "hobo-trunk": FULL });
-		assert.equal(decide({ fleetState: state }).tier, "fleet");
-		assert.equal(
-			decide({ fleetLabel: "hobo-trunk", fleetState: state }).tier,
-			"github",
-		);
-		// A trunk label the publisher does not list is not its to refuse: the
-		// queue decides, as without a snapshot.
+		const pr = await ask(REFUSED_SLIP, "pr");
+		assert.ok(pr.ok);
 		assert.deepEqual(
-			decide({ fleetLabel: "hobo-trunk", fleetState: fresh({ hobo: ROOM }) }),
-			decide({ fleetLabel: "hobo-trunk" }),
+			[pr.decision.tier, pr.decision.runner],
+			["local", "hobo-local-host"],
 		);
 	});
 
-	it("stays on the fleet when the snapshot shows room, as the queue alone would", () => {
-		const state = fresh({ hobo: ROOM });
-		assert.deepEqual(decide({ fleetState: state }), decide());
-	});
-
-	it("never makes a fleet look available: room in the snapshot does not outvote the queue", () => {
-		const state = fresh({ hobo: { nodes: 9, freeSlots: 40 } });
-		for (const fleet of [
-			idle,
-			{ ...idle, queued: 38, oldestWaitSeconds: 3600 },
-			{ ...up, slowestRecentPickupSeconds: 1500 },
-			{ ...up, queued: DEFAULT_MAX_QUEUED },
-		])
-			assert.deepEqual(decide({ fleet, fleetState: state }), decide({ fleet }));
-		assert.deepEqual(
-			decide({ undecidedAhead: 2, fleetState: state }),
-			decide({ undecidedAhead: 2 }),
-		);
-	});
-
-	it("changes nothing when the snapshot is stale or missing", () => {
-		const loads: Partial<Parameters<typeof routeRunner>[0]>[] = [
-			{},
-			{ fleet: idle },
-			{ fleet: { ...idle, queued: 38, oldestWaitSeconds: 3600 } },
-			{ localEnrolled: true, fleet: { ...idle, queued: 4 } },
-			{ localEnrolled: true, undecidedAhead: 1 },
-			{ fleetLabel: "hobo-trunk" },
-		];
-		for (const value of [
-			// Says the fleet is full, but is six minutes old.
-			snapshot({ hobo: NOBODY, "hobo-trunk": NOBODY }, 360),
-			undefined,
-			"",
-			"not json",
-		]) {
-			const fleetState = parseFleetState(value, NOW);
-			assert.equal(fleetState, undefined);
-			for (const load of loads)
-				assert.deepEqual(decide({ ...load, fleetState }), decide(load));
-		}
-	});
-
-	it("passes over a local box the snapshot shows busy, and one it does not list is judged by the queue", () => {
-		const fleetDown = { ...idle, queued: 4, oldestWaitSeconds: 900 };
-		const local = { localEnrolled: true, fleet: fleetDown };
-		assert.equal(decide(local).tier, "local");
-		// Not in the mesh: nothing is known of it but the queue.
-		assert.equal(
-			decide({ ...local, fleetState: fresh({ hobo: ROOM }) }).tier,
-			"local",
-		);
-		const busy = decide({
-			...local,
-			fleetState: fresh({
-				hobo: ROOM,
-				"hobo-local-host": { nodes: 1, freeSlots: 0 },
-			}),
+	it("is read with two GET calls and the job's own token, and none at all when absent", async () => {
+		const asked: string[] = [];
+		const headers: Headers[] = [];
+		await askSlip({
+			apiUrl: "https://api.github.test",
+			repository: "Hobo-Labs/HoBo",
+			token: "job-token",
+			labels: DEFAULT_RUNNER_LABELS,
+			routeClass: "pr",
+			nowMs: () => SLIP_NOW,
+			fetch: slipApi(OPEN_SLIP, asked, headers),
 		});
-		assert.equal(busy.tier, "github");
-		assert.match(
-			busy.reason,
-			/no free slot on 1 node\(s\) for hobo-local-host/,
+		assert.deepEqual(asked, [
+			"https://api.github.test/repos/Hobo-Labs/HoBo/git/ref/hobo/routing-slip",
+			`https://api.github.test/repos/Hobo-Labs/HoBo/git/commits/${SLIP_SHA}`,
+		]);
+		for (const header of headers)
+			assert.equal(header.get("authorization"), "Bearer job-token");
+		assert.deepEqual(await ask(undefined), {
+			ok: false,
+			why: NO_ROUTING_SLIP,
+		});
+	});
+
+	it("is never used expired, for another repository, naming a label the policy does not allow, or malformed", async () => {
+		/** The fields of the slip's wire record these cases change. */
+		type SlipRecord = {
+			version: number;
+			extra?: boolean;
+			classes: { pr: { runner: string; tier: string; reason: string } };
+		};
+		const slip = (change: (record: SlipRecord) => void) => {
+			const record = JSON.parse(OPEN_SLIP);
+			change(record);
+			return JSON.stringify(record);
+		};
+		assert.deepEqual(
+			await ask(OPEN_SLIP, "pr", { nowMs: SLIP_NOW + 600_000 }),
+			{
+				ok: false,
+				why: "slip expired",
+			},
 		);
-		assert.equal(
-			decide({
-				...local,
-				fleetState: fresh({
-					hobo: ROOM,
-					"hobo-local-host": { nodes: 1, freeSlots: 1 },
+		assert.deepEqual(await ask(OPEN_SLIP, "pr", { repository: "acme/app" }), {
+			ok: false,
+			why: "slip names another repository",
+		});
+		assert.deepEqual(
+			await ask(
+				slip((record) => {
+					record.classes.pr = {
+						runner: "attacker-box",
+						tier: "fleet",
+						reason: "fleet-open",
+					};
 				}),
-			}).tier,
-			"local",
+			),
+			{ ok: false, why: "slip names a label not in runnerRouting.labels" },
 		);
+		for (const message of [
+			"not json",
+			slip((record) => {
+				record.version = 2;
+			}),
+			slip((record) => {
+				record.extra = true;
+			}),
+		])
+			assert.deepEqual(await ask(message), {
+				ok: false,
+				why: "slip malformed",
+			});
 	});
 
-	it("goes to the local box when the snapshot shows the fleet full", () => {
-		const routed = decide({
-			localEnrolled: true,
-			fleetState: fresh({ hobo: FULL }),
+	it("adds at most the three-second limit when GitHub does not answer (M3)", async () => {
+		// A GitHub API that never answers: only the read's own limit ends the wait.
+		const hanging: typeof fetch = (_url, init) =>
+			new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () =>
+					reject(init.signal?.reason),
+				);
+			});
+		const startedMs = performance.now();
+		const reading = await askSlip({
+			apiUrl: "https://api.github.test",
+			repository: "Hobo-Labs/HoBo",
+			token: "job-token",
+			labels: DEFAULT_RUNNER_LABELS,
+			routeClass: "pr",
+			nowMs: () => SLIP_NOW,
+			fetch: hanging,
 		});
-		assert.equal(routed.tier, "local");
+		const tookMs = performance.now() - startedMs;
+		assert.deepEqual(reading, {
+			ok: false,
+			why: "the routing slip was not read in time",
+		});
+		assert.equal(ROUTING_SLIP_READ_TIMEOUT_MS, 3_000);
+		assert.ok(tookMs < ROUTING_SLIP_READ_TIMEOUT_MS + 500, `took ${tookMs} ms`);
 	});
 
-	it("does not move a pinned tier", () => {
-		const state = fresh({ hobo: NOBODY });
-		assert.equal(decide({ mode: "fleet", fleetState: state }).runner, "hobo");
-		assert.equal(
-			decide({ mode: "local", fleetState: state }).runner,
-			"hobo-local-host",
+	it("reads an API failure as no slip, and says which", async () => {
+		const failing: typeof fetch = async () =>
+			Response.json({ message: "boom" }, { status: 502 });
+		assert.deepEqual(
+			await askSlip({
+				apiUrl: "https://api.github.test",
+				repository: "Hobo-Labs/HoBo",
+				token: "",
+				labels: DEFAULT_RUNNER_LABELS,
+				routeClass: "pr",
+				nowMs: () => SLIP_NOW,
+				fetch: failing,
+			}),
+			{ ok: false, why: "the routing slip could not be read (HTTP 502)" },
 		);
-	});
-});
-
-describe("the fleet label a run asks for", () => {
-	it("is the trunk label for trunk events unless that is switched off", () => {
-		assert.equal(fleetLabelFor("pull_request", undefined), "hobo");
-		assert.equal(fleetLabelFor("merge_group", undefined), "hobo-trunk");
-		assert.equal(fleetLabelFor("push", ""), "hobo-trunk");
-		assert.equal(fleetLabelFor("push", "false"), "hobo");
 	});
 });
 
@@ -934,7 +970,9 @@ describe("waiting for the probe", () => {
 	/** Plays out a list of queue views, one per look, on a clock only `sleep` moves. */
 	const choose = async (
 		views: readonly QueueView[],
-		overrides: { localEnrolled?: boolean; fleetState?: string } = {},
+		overrides: {
+			localEnrolled?: boolean;
+		} = {},
 	) => {
 		let clock = NOW;
 		let looks = 0;
@@ -953,7 +991,6 @@ describe("waiting for the probe", () => {
 			fleetLabel: "hobo",
 			localEnrolled: overrides.localEnrolled ?? false,
 			limits,
-			fleetState: (nowMs) => parseFleetState(overrides.fleetState, nowMs),
 		});
 		return { decision, looks, waited: (clock - NOW) / 1000 };
 	};
@@ -1018,43 +1055,6 @@ describe("waiting for the probe", () => {
 		);
 	});
 
-	it("does not wait for the probe on a fleet the mesh snapshot shows full", async () => {
-		const waitedFor = await choose([probing]);
-		assert.equal(waitedFor.waited, PROBE_WAIT_SECONDS);
-		const seen = await choose([probing, probing, answered], {
-			fleetState: snapshot({ hobo: FULL }),
-		});
-		assert.deepEqual(
-			[seen.decision.tier, seen.looks, seen.waited],
-			["github", 1, 0],
-		);
-		assert.match(seen.decision.reason, /shows no free slot/);
-	});
-
-	it("waits for the probe as before when the snapshot shows room, or is stale", async () => {
-		for (const fleetState of [
-			snapshot({ hobo: ROOM }),
-			snapshot({ hobo: FULL }, 600),
-		]) {
-			const seen = await choose([probing, probing, answered], { fleetState });
-			assert.equal(seen.decision.tier, "fleet");
-			assert.equal(seen.waited, 2 * PROBE_POLL_SECONDS);
-		}
-	});
-
-	it("reads the snapshot afresh on every look, not once", async () => {
-		// Stamped too far ahead of this clock to believe at the first look, and
-		// within its skew ten seconds later: the second look goes by it.
-		const seen = await choose([probing, probing, answered], {
-			fleetState: snapshot({ hobo: FULL }, -(FLEET_STATE_MAX_SKEW_SECONDS + 5)),
-		});
-		assert.deepEqual(
-			[seen.decision.tier, seen.looks, seen.waited],
-			["github", 2, PROBE_POLL_SECONDS],
-		);
-		assert.match(seen.decision.reason, /shows no free slot/);
-	});
-
 	it("falls back to the local box when the probe finds only that", async () => {
 		const seen = await choose(
 			[probing, { ...probing, jobs: [taken("hobo-local-host", 8, -5)] }],
@@ -1065,72 +1065,1028 @@ describe("waiting for the probe", () => {
 	});
 });
 
+/** GitHub's REST API on a local port, answering each path from `answer`. */
+const withGithub = async <T>(
+	answer: (path: string) => JsonValue,
+	run: (apiUrl: string) => Promise<T>,
+) => {
+	const server = createServer((request, response) => {
+		response.setHeader("content-type", "application/json");
+		response.end(JSON.stringify(answer(request.url ?? "")));
+	});
+	await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+	// SAFETY: a server listening on a TCP port reports an AddressInfo.
+	const { port } = server.address() as AddressInfo;
+	try {
+		return await run(`http://127.0.0.1:${port}`);
+	} finally {
+		await new Promise((done) => server.close(done));
+	}
+};
+
+/** No routing slip: the relay has written none. */
+const NO_SLIP = { routingConfig: COMMITTED, fetch: slipApi(undefined) };
+/** A slip must not be read here: a pinned or attested run decides without it. */
+const NO_SLIP_CALL = {
+	routingConfig: COMMITTED,
+	fetch: async (): Promise<never> => {
+		throw new Error("the slip must not be read here");
+	},
+};
+
+/** The lines the script printed, and its decision. */
+const printedBy = async (
+	run: () => Promise<RouteDecision>,
+): Promise<{ decision: RouteDecision; lines: string[] }> => {
+	const lines: string[] = [];
+	const log = console.log;
+	console.log = (...parts: unknown[]) => {
+		lines.push(parts.map(String).join(" "));
+	};
+	try {
+		return { decision: await run(), lines };
+	} finally {
+		console.log = log;
+	}
+};
+const noticesIn = (lines: readonly string[]) =>
+	lines.filter((line) => line.startsWith("::notice title=hobo-ci-route::"));
+const warningsIn = (lines: readonly string[]) =>
+	lines.filter((line) =>
+		line.startsWith("::warning title=hobo-ci-route-fallback::"),
+	);
+/** The `hobo-ci-route` notice a decision should print, field by field. */
+const notice = (fields: {
+	workflow?: string;
+	tier: string;
+	runner: string;
+	slip: string;
+	why: string;
+	refusedBy: string;
+}) =>
+	`::notice title=hobo-ci-route::${JSON.stringify({
+		v: 2,
+		workflow: fields.workflow ?? "",
+		tier: fields.tier,
+		runner: fields.runner,
+		slip: fields.slip,
+		why: fields.why,
+		refusedBy: fields.refusedBy,
+	})}`;
+
+describe("the committed routing policy the route job reads", () => {
+	it("holds the code's defaults, so moving them out of variables changed nothing", () => {
+		const { committed, ...fromFile } = routeSettings(
+			readRunnerRouting(COMMITTED),
+		);
+		const { committed: fromCode, ...defaults } = routeSettings(undefined);
+		assert.deepEqual([committed, fromCode], [true, false]);
+		assert.deepEqual(fromFile, defaults);
+		assert.equal(defaults.localRunner, DEFAULT_LOCAL_RUNNER);
+	});
+
+	it("counts no slip and an expired slip as absent, every other refusal as unusable", () => {
+		assert.deepEqual(ABSENT_SLIP_WHYS, [
+			NO_ROUTING_SLIP,
+			SLIP_REFUSAL_WHY.expired,
+		]);
+	});
+});
+
 describe("the script as a whole", () => {
-	it("uses GitHub-hosted, and says why, when the queue cannot be read", async () => {
-		const decision = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			GITHUB_REPOSITORY: "acme/app",
-			GITHUB_RUN_ID: "1",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+	it("uses GitHub-hosted, and says why, when there is no slip and the queue cannot be read", async () => {
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{
+					GITHUB_EVENT_NAME: "merge_group",
+					GITHUB_REPOSITORY: "acme/app",
+					GITHUB_RUN_ID: "1",
+					GITHUB_API_URL: "http://127.0.0.1:9",
+				},
+				NO_SLIP,
+			),
+		);
 		assert.equal(decision.runner, "ubuntu-24.04");
 		assert.equal(decision.tier, "github");
 		assert.match(decision.reason, /could not be read/);
+		assert.deepEqual(warningsIn(lines), [
+			"::warning title=hobo-ci-route-fallback::routing slip not used (no routing slip); the queue rule decides",
+		]);
 	});
 
-	it("does not read the queue for a pinned tier", async () => {
-		const pinned = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			HOBO_CI_ROUTE: "fleet",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+	it("does not read the slip or the queue for a tier pinned by argument", async () => {
+		const pinned = await main(
+			["--route", "fleet"],
+			{
+				GITHUB_EVENT_NAME: "merge_group",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP_CALL,
+		);
 		assert.equal(pinned.runner, "hobo-trunk");
-		const hosted = await main({
-			GITHUB_EVENT_NAME: "pull_request",
-			HOBO_CI_ROUTE: "github",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const hosted = await main(
+			["--route=github"],
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP_CALL,
+		);
 		assert.equal(hosted.runner, "ubuntu-24.04");
+		const fleet = await main(
+			["--route", "fleet"],
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_REPOSITORY: "acme/app",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP_CALL,
+		);
+		assert.deepEqual([fleet.tier, fleet.runner], ["fleet", "hobo"]);
 	});
 
-	it("keeps a pinned fleet on the fleet whatever the mesh snapshot says", async () => {
-		const pinned = await main({
-			GITHUB_EVENT_NAME: "pull_request",
-			HOBO_CI_ROUTE: "fleet",
+	it("follows the committed pin and labels, and a dispatch's own choice over them", async () => {
+		const env = {
+			GITHUB_EVENT_NAME: "push",
 			GITHUB_API_URL: "http://127.0.0.1:9",
-			HOBO_CI_FLEET_STATE: JSON.stringify({
-				publishedAt: new Date().toISOString(),
-				labels: { hobo: { nodes: 0, trustedNodes: 0, freeSlots: 0 } },
-			}),
+		};
+		const pinnedLocal = withRouting((routing) => {
+			routing.pin = "local";
+			routing.labels = {
+				fleet: "acme",
+				trunk: "acme-trunk",
+				local: "acme-local",
+				github: "ubuntu-24.04",
+				box: "acme-box",
+			};
 		});
-		assert.deepEqual([pinned.tier, pinned.runner], ["fleet", "hobo"]);
+		const local = await main([], env, {
+			...NO_SLIP_CALL,
+			routingConfig: pinnedLocal,
+		});
+		assert.deepEqual([local.tier, local.runner], ["local", "acme-local"]);
+		const dispatched = await main(["--route", "fleet"], env, {
+			...NO_SLIP_CALL,
+			routingConfig: pinnedLocal,
+		});
+		assert.deepEqual(
+			[dispatched.tier, dispatched.runner],
+			["fleet", "acme-trunk"],
+		);
 	});
 
-	it("sends what is left of an attested run to GitHub-hosted without reading the queue", async () => {
-		const attested = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			HOBO_CI_ATTESTED: "true",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+	it("uses the code's defaults, and says so, when .hobo/ci.json has no runnerRouting", async () => {
+		const decision = await main(
+			["--route", "fleet"],
+			{ GITHUB_EVENT_NAME: "push" },
+			{ ...NO_SLIP_CALL, routingConfig: "{}" },
+		);
+		assert.equal(decision.runner, "hobo-trunk");
+		assert.match(
+			decision.reason,
+			/\.hobo\/ci\.json holds no valid runnerRouting, so the code's defaults apply/,
+		);
+	});
+
+	it("sends what is left of an attested run to GitHub-hosted without reading the slip or the queue", async () => {
+		const attested = await main(
+			["--attested", "true"],
+			{
+				GITHUB_EVENT_NAME: "merge_group",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP_CALL,
+		);
 		assert.equal(attested.runner, "ubuntu-24.04");
 		assert.equal(attested.tier, "github");
 		assert.match(attested.reason, /signed local run/);
 		// A pin is an operator's override: it still wins.
-		const pinned = await main({
-			GITHUB_EVENT_NAME: "merge_group",
-			HOBO_CI_ATTESTED: "true",
-			HOBO_CI_ROUTE: "fleet",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const pinned = await main(
+			["--attested", "true", "--route", "fleet"],
+			{
+				GITHUB_EVENT_NAME: "merge_group",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP_CALL,
+		);
 		assert.equal(pinned.runner, "hobo-trunk");
 		// Anything but the literal `true` is not an attestation.
-		const unattested = await main({
-			GITHUB_EVENT_NAME: "pull_request",
-			HOBO_CI_ATTESTED: "false",
-			GITHUB_REPOSITORY: "acme/app",
-			GITHUB_RUN_ID: "1",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-		});
+		const unattested = await main(
+			["--attested", "false"],
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_REPOSITORY: "acme/app",
+				GITHUB_RUN_ID: "1",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP,
+		);
 		assert.match(unattested.reason, /could not be read/);
+	});
+
+	it("writes runner, tier and shard_runner as step outputs", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-route-output-"));
+		try {
+			const output = join(dir, "output");
+			writeFileSync(output, "");
+			await main(
+				["--route", "fleet"],
+				{ GITHUB_EVENT_NAME: "push", GITHUB_OUTPUT: output },
+				NO_SLIP_CALL,
+			);
+			assert.equal(
+				readFileSync(output, "utf8"),
+				"box_runner=\nrunner=hobo-trunk\ntier=fleet\nshard_runner=hobo-trunk\n",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("names the box label for the deps-image job only when committed boxRunner is on", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-route-box-"));
+		try {
+			const output = join(dir, "output");
+			const run = async (config: string | undefined) => {
+				writeFileSync(output, "");
+				await main(
+					["--route", "fleet"],
+					{ GITHUB_EVENT_NAME: "pull_request", GITHUB_OUTPUT: output },
+					{ ...NO_SLIP_CALL, routingConfig: config },
+				);
+				return readFileSync(output, "utf8").split("\n")[0];
+			};
+			// Today's behaviour: the committed policy and the code's default leave it off.
+			assert.equal(await run(withRouting(() => {})), "box_runner=");
+			assert.equal(await run("{}"), "box_runner=");
+			assert.equal(
+				await run(
+					withRouting((routing) => {
+						routing.boxRunner = true;
+					}),
+				),
+				"box_runner=hobo-box",
+			);
+			assert.equal(
+				await run(
+					withRouting((routing) => {
+						routing.boxRunner = true;
+						routing.labels = { ...routing.labels, box: "acme-box" };
+					}),
+				),
+				"box_runner=acme-box",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("the script reading the slip", () => {
+	/** GitHub's queue with a runner that took the probe's `hobo` job a minute ago. */
+	const fleetUpPages = (path: string): JsonValue => {
+		const ago = (seconds: number) =>
+			new Date(SLIP_NOW - seconds * 1000).toISOString();
+		return path.includes("/jobs")
+			? {
+					jobs: [
+						{
+							run_id: 40,
+							status: "completed",
+							labels: ["hobo"],
+							runner_name: "hobo-1",
+							created_at: ago(65),
+							started_at: ago(60),
+						},
+					],
+				}
+			: {
+					workflow_runs: [
+						{
+							id: 40,
+							path: PROBE_WORKFLOW_PATH,
+							status: "completed",
+							created_at: ago(65),
+							updated_at: ago(50),
+						},
+					],
+				};
+	};
+	const route = (
+		apiUrl: string,
+		message: string | undefined,
+		env: Record<string, string> = {},
+		argv: string[] = [],
+	) =>
+		printedBy(() =>
+			main(
+				argv,
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_RUN_ID: "51",
+					GITHUB_API_URL: apiUrl,
+					...env,
+				},
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: slipApi(message),
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+
+	it("lets a usable slip decide without reading the queue", async () => {
+		// The queue cannot be read here: only the slip can have decided.
+		const { decision, lines } = await route("http://127.0.0.1:9", REFUSED_SLIP);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["local", "hobo-local-host", "slip"],
+		);
+		assert.match(
+			decision.reason,
+			/^relay: slip from oracle-box-1@fa092c44f\w*, no-capacity$/,
+		);
+		assert.deepEqual(warningsIn(lines), []);
+		assert.deepEqual(noticesIn(lines), [
+			notice({
+				tier: "local",
+				runner: "hobo-local-host",
+				slip: "used",
+				why: "no-capacity",
+				refusedBy: "slip",
+			}),
+		]);
+	});
+
+	it("keeps a busy fleet the slip names, whatever the queue shows (R4)", async () => {
+		const { decision } = await route("http://127.0.0.1:9", OPEN_SLIP, {
+			GITHUB_EVENT_NAME: "push",
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", "hobo-trunk", "none"],
+		);
+		assert.match(decision.reason, /fleet-busy/);
+	});
+
+	it("routes a fork pull request by the slip's fork class", async () => {
+		const { decision } = await printedBy(() =>
+			main(
+				[],
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_API_URL: "http://127.0.0.1:9",
+				},
+				{
+					routingConfig: COMMITTED,
+					eventPayload: {
+						pull_request: {
+							head: { repo: { full_name: "someone/HoBo" } },
+							base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+						},
+					},
+					fetch: slipApi(REFUSED_SLIP),
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["github", "ubuntu-24.04"],
+		);
+		assert.match(decision.reason, /no-node$/);
+	});
+
+	it("falls back to the queue at once, and says why, when no slip can be used", async () => {
+		await withGithub(fleetUpPages, async (apiUrl) => {
+			const expired = JSON.parse(OPEN_SLIP);
+			expired.expiresAt = "2026-11-13T16:00:30.000Z";
+			for (const [message, why] of [
+				[undefined, "no routing slip"],
+				[JSON.stringify(expired), "slip expired"],
+				[
+					OPEN_SLIP.replace('"hobo-trunk"', '"elsewhere"'),
+					"slip names a label not in runnerRouting.labels",
+				],
+				["{}", "slip malformed"],
+			] as const) {
+				const { decision, lines } = await route(apiUrl, message);
+				// What the queue alone decides: the fleet took the probe a minute ago.
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo", "none"],
+					why,
+				);
+				assert.deepEqual(warningsIn(lines), [
+					`::warning title=hobo-ci-route-fallback::routing slip not used (${why}); the queue rule decides`,
+				]);
+				assert.deepEqual(noticesIn(lines), [
+					notice({
+						tier: "fleet",
+						runner: "hobo",
+						slip: "fallback",
+						why,
+						refusedBy: "none",
+					}),
+				]);
+			}
+		});
+	});
+
+	it("takes nothing about routing from the environment", async () => {
+		// What a repository variable or a worker once handed over the old way.
+		await withGithub(fleetUpPages, async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, {
+				HOBO_CI_ROUTE: "github",
+				HOBO_CI_LOCAL_RUNNER: "true",
+				HOBO_CI_TRUNK_RUNNER: "false",
+				HOBO_CI_ROUTE_MAX_WAIT_SECONDS: "1",
+				HOBO_CI_ROUTE_MAX_QUEUED: "1",
+				HOBO_CI_INCLUDE_OWN_RUN: "true",
+				HOBO_CI_ATTESTED: "true",
+				HOBO_CI_FLEET_STATE: JSON.stringify({
+					labels: { hobo: { nodes: 0, freeSlots: 0 } },
+				}),
+			});
+			assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		});
+		assert.doesNotMatch(
+			readFileSync(new URL("../ci/route-runner.mts", import.meta.url), "utf8"),
+			/env\.(HOBO_CI_|MAIN_WORKSPACE)/,
+		);
+	});
+
+	it("annotates why no slip was read for a pinned or attested run", async () => {
+		const env = {
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+		};
+		const unasked = (why: string) => [
+			notice({
+				workflow: "hobo-ci.yml",
+				tier: "github",
+				runner: "ubuntu-24.04",
+				slip: "unasked",
+				why,
+				refusedBy: "none",
+			}),
+		];
+		assert.deepEqual(
+			noticesIn(
+				(await printedBy(() => main(["--route", "github"], env, NO_SLIP_CALL)))
+					.lines,
+			),
+			unasked("pinned"),
+		);
+		assert.deepEqual(
+			noticesIn(
+				(await printedBy(() => main(["--attested", "true"], env, NO_SLIP_CALL)))
+					.lines,
+			),
+			unasked("attested"),
+		);
+		assert.deepEqual(
+			noticesIn(
+				(
+					await printedBy(() =>
+						main(
+							[],
+							{ ...env, GITHUB_REPOSITORY: "acme/app", GITHUB_RUN_ID: "1" },
+							NO_SLIP,
+						),
+					)
+				).lines,
+			),
+			[
+				notice({
+					workflow: "hobo-ci.yml",
+					tier: "github",
+					runner: "ubuntu-24.04",
+					slip: "fallback",
+					why: "no routing slip",
+					refusedBy: "queue",
+				}),
+			],
+		);
+	});
+});
+
+describe("the route notice", () => {
+	it("is one line a workflow command cannot cut short", () => {
+		const line = routeAnnotation(
+			{
+				tier: "github",
+				runner: "ubuntu-24.04",
+				reason: "",
+				refusedBy: "queue",
+				slip: { kind: "fallback", why: "100% down\nnext" },
+			},
+			"hobo-ci.yml",
+		);
+		assert.doesNotMatch(line, /\n|\r/);
+		assert.match(line, /^::notice title=hobo-ci-route::\{"v":2,/);
+		assert.match(line, /100%25 down/);
+		assert.match(line, /"refusedBy":"queue"/);
+	});
+
+	it("names the workflow file the run belongs to", () => {
+		assert.equal(
+			workflowFile({
+				GITHUB_WORKFLOW_REF:
+					"Hobo-Labs/HoBo/.github/workflows/pricing-ci.yml@refs/pull/7/merge",
+			}),
+			"pricing-ci.yml",
+		);
+		assert.equal(
+			workflowFile({ GITHUB_WORKFLOW: "HoBo CI Fabric" }),
+			"HoBo CI Fabric",
+		);
+	});
+});
+
+/**
+ * Run 43354645076 (push fa092c44f, 2026-11-13; finding 0149) as the route
+ * job saw it: the fleet had one trunk job waiting 356 s and had taken up to
+ * 307 s to pick one up in the last hour; the hosted relay answered 503. The
+ * queue refused the fleet and the run went to GitHub-hosted.
+ */
+describe("replaying the recorded production cases with no slip (M5)", () => {
+	const at = (time: string) => `2026-11-13T${time}Z`;
+	const NOW_149 = Date.parse(at("02:48:19"));
+	const RUN = 43354645076;
+	const pages = (path: string): JsonValue => {
+		if (!path.includes("/jobs"))
+			return {
+				workflow_runs: [
+					{
+						id: RUN,
+						status: "in_progress",
+						created_at: at("02:48:05"),
+						updated_at: at("02:48:11"),
+					},
+					{
+						id: RUN - 9,
+						status: "in_progress",
+						created_at: at("02:30:00"),
+						updated_at: at("02:42:23"),
+					},
+					{
+						id: RUN - 30,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: at("02:40:00"),
+						updated_at: at("02:40:10"),
+					},
+				],
+			};
+		const runId = Number(/\/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+		// The running main run: a trunk job a runner took after 307 s, and one
+		// still waiting since 02:42:23.
+		if (runId === RUN - 9)
+			return {
+				jobs: [
+					{
+						run_id: runId,
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-4c1d9e2a",
+						created_at: at("02:20:00"),
+						started_at: at("02:25:07"),
+					},
+					{
+						run_id: runId,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						created_at: at("02:42:23"),
+					},
+				],
+			};
+		// The probe: a runner took the trunk label's job in 3 s.
+		if (runId === RUN - 30)
+			return {
+				jobs: [
+					{
+						run_id: runId,
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-runner-7x2kq",
+						created_at: at("02:40:00"),
+						started_at: at("02:40:03"),
+					},
+				],
+			};
+		return { jobs: [] };
+	};
+
+	it("sends the run to GitHub-hosted, refused by the queue, as production did", async () => {
+		await withGithub(pages, async (apiUrl) => {
+			const { decision } = await printedBy(() =>
+				main(
+					[],
+					{
+						GITHUB_EVENT_NAME: "push",
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_RUN_ID: String(RUN),
+						GITHUB_API_URL: apiUrl,
+					},
+					{ ...NO_SLIP, now: () => NOW_149 },
+				),
+			);
+			// The notice production printed: tier github, ubuntu-24.04, refused by the queue.
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			assert.match(
+				decision.reason,
+				/^the fleet has 1 waiting, the oldest for 356 s, and in the last 60 minutes took up to 307 s to pick a job up; no local box is enrolled; the limits are 120 s and 4 waiting; no routing slip decided \(no routing slip\)$/,
+			);
+		});
+	});
+
+	it("keeps the fleet under committed limits that allow those waits, so the policy, not a variable, sets them", async () => {
+		await withGithub(pages, async (apiUrl) => {
+			const decision = await main(
+				[],
+				{
+					GITHUB_EVENT_NAME: "push",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_RUN_ID: String(RUN),
+					GITHUB_API_URL: apiUrl,
+				},
+				{
+					fetch: slipApi(undefined),
+					routingConfig: withRouting((routing) => {
+						routing.queue = { maxWaitSeconds: 400, maxQueued: 4 };
+					}),
+					now: () => NOW_149,
+				},
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["fleet", "hobo-trunk"],
+			);
+		});
+	});
+});
+
+/**
+ * Run 43207388098 (finding 142) as it stood when its plan job started: the
+ * box was refusing jobs for lack of memory, ARC took one job ten seconds
+ * after it was queued, and the run's own plan job waited 444 s for a runner.
+ */
+describe("a second ask within a run", () => {
+	const RUN = 43207388098;
+	const PROBE_RUN = RUN - 500;
+	const at = (time: string) => `2026-11-12T${time}Z`;
+	const NOW_142 = Date.parse(at("11:21:50"));
+	const runsPage = {
+		workflow_runs: [
+			{
+				id: RUN,
+				status: "in_progress",
+				created_at: at("11:14:02"),
+				updated_at: at("11:21:44"),
+			},
+			// The probe was picked up at once, so the label looked alive.
+			{
+				id: PROBE_RUN,
+				path: PROBE_WORKFLOW_PATH,
+				status: "completed",
+				created_at: at("11:10:00"),
+				updated_at: at("11:10:20"),
+			},
+		],
+	};
+	const jobsPages = new Map<number, JsonValue>([
+		[
+			RUN,
+			{
+				jobs: [
+					{
+						run_id: RUN,
+						name: "Route runners",
+						status: "completed",
+						labels: ["ubuntu-24.04"],
+						runner_name: "GitHub Actions 1000",
+						created_at: at("11:14:02"),
+						started_at: at("11:14:06"),
+					},
+					// Skipped: no image input changed.
+					{
+						run_id: RUN,
+						name: "CI runner image (mise oci)",
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "",
+						created_at: at("11:14:20"),
+						started_at: at("11:14:20"),
+					},
+					// ARC took it ten seconds after it was queued.
+					{
+						run_id: RUN,
+						name: "CI deps layer (pnpm)",
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-runner-7x2kq",
+						created_at: at("11:14:20"),
+						started_at: at("11:14:30"),
+					},
+					{
+						run_id: RUN,
+						name: "Main workspace plan",
+						status: "in_progress",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-4c1d9e2a-0b7f-4c55-9a8e-2f6b1d0c3e11",
+						created_at: at("11:14:20"),
+						started_at: at("11:21:44"),
+					},
+				],
+			},
+		],
+		[
+			PROBE_RUN,
+			{
+				jobs: [
+					{
+						run_id: PROBE_RUN,
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-runner-7x2kq",
+						created_at: at("11:10:01"),
+						started_at: at("11:10:04"),
+					},
+				],
+			},
+		],
+	]);
+	const read = async (path: string): Promise<JsonValue> => {
+		if (!path.includes("/jobs")) return runsPage;
+		const runId = Number(/\/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+		return jobsPages.get(runId) ?? { jobs: [] };
+	};
+	const reading = (includeOwnRun: boolean, paths: string[] = []) =>
+		observeQueue({
+			read: async (path) => {
+				paths.push(path);
+				return read(path);
+			},
+			repository: "Hobo-Labs/HoBo",
+			ownRunId: RUN,
+			labels: ["hobo-trunk"],
+			limits,
+			nowMs: NOW_142,
+			includeOwnRun,
+		});
+	const decide = (includeOwnRun: boolean) =>
+		chooseRunner({
+			observe: () => reading(includeOwnRun),
+			now: () => NOW_142,
+			sleep: async () => undefined,
+			mode: "auto",
+			fleetLabel: "hobo-trunk",
+			localEnrolled: false,
+			limits,
+		});
+
+	it("replays finding 142: with include-own-run the plan job's wait sends the shards to GitHub-hosted", async () => {
+		const reask = await decide(true);
+		assert.deepEqual(
+			[reask.tier, reask.runner, reask.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(reask.reason, /took up to 444 s to pick a job up/);
+		// The route job's reading, which leaves its own run out, kept the fleet.
+		const first = await decide(false);
+		assert.deepEqual([first.tier, first.runner], ["fleet", "hobo-trunk"]);
+	});
+
+	it("replays finding 142 through the script: --include-own-run with no slip sends the shards to GitHub-hosted", async () => {
+		const page = (path: string): JsonValue => {
+			if (!path.includes("/jobs")) return runsPage;
+			const runId = Number(/\/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+			return jobsPages.get(runId) ?? { jobs: [] };
+		};
+		await withGithub(page, async (apiUrl) => {
+			const env = {
+				GITHUB_EVENT_NAME: "push",
+				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+				GITHUB_RUN_ID: String(RUN),
+				GITHUB_API_URL: apiUrl,
+			};
+			const io = { ...NO_SLIP, now: () => NOW_142 };
+			const { decision: reask } = await printedBy(() =>
+				main(["--include-own-run", "true"], env, io),
+			);
+			assert.deepEqual(
+				[reask.tier, reask.runner, reask.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			const { decision: first } = await printedBy(() => main([], env, io));
+			assert.deepEqual([first.tier, first.runner], ["fleet", "hobo-trunk"]);
+		});
+	});
+
+	it("reads this run's own jobs first, and only when asked to", async () => {
+		const asked: string[] = [];
+		await reading(true, asked);
+		assert.equal(
+			asked[1],
+			`/repos/Hobo-Labs/HoBo/actions/runs/${RUN}/jobs?filter=latest&per_page=100`,
+		);
+		const left: string[] = [];
+		await reading(false, left);
+		assert.ok(left.every((path) => !path.includes(`/runs/${RUN}/`)));
+	});
+});
+
+describe("the routing step without a decision", () => {
+	const root = resolve(import.meta.dirname, "..", "..");
+	/** The route step's shell script, as the action runs it. */
+	const script = (() => {
+		const lines = readFileSync(
+			join(root, ".github/actions/route-runner/action.yml"),
+			"utf8",
+		).split("\n");
+		const step = lines.indexOf("    - id: route");
+		const run = lines.indexOf("      run: |", step);
+		assert.ok(step > -1 && run > step);
+		const body: string[] = [];
+		for (const line of lines.slice(run + 1)) {
+			if (line.trim() !== "" && !line.startsWith("        ")) break;
+			body.push(line.slice(8));
+		}
+		return body.join("\n");
+	})();
+	/**
+	 * Runs the step where the routing script was not checked out (finding 146),
+	 * with the action's expressions already replaced as GitHub replaces them.
+	 */
+	const fallBack = (chosen: {
+		route?: string;
+		includeOwnRun?: string;
+		attested?: string;
+	}) => {
+		const expressions = script
+			.replace(/^route='\$\{\{.*\}\}'$/m, `route='${chosen.route ?? "auto"}'`)
+			.replace(
+				/^include_own_run='\$\{\{.*\}\}'$/m,
+				`include_own_run='${chosen.includeOwnRun ?? "false"}'`,
+			)
+			.replace(
+				/^attested='\$\{\{.*\}\}'$/m,
+				`attested='${chosen.attested ?? "false"}'`,
+			);
+		assert.doesNotMatch(expressions, /\$\{\{/);
+		const dir = mkdtempSync(join(tmpdir(), "hobo-route-fallback-"));
+		try {
+			const output = join(dir, "output");
+			writeFileSync(output, "");
+			const run = spawnSync("bash", ["-c", expressions], {
+				cwd: dir,
+				encoding: "utf8",
+				env: {
+					PATH: process.env.PATH ?? "",
+					GITHUB_OUTPUT: output,
+					GITHUB_EVENT_NAME: "push",
+				},
+			});
+			assert.equal(run.status, 0, run.stderr);
+			return { stdout: run.stdout, output: readFileSync(output, "utf8") };
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	};
+	const WARNING =
+		/^::warning title=hobo-ci-route-fallback::runner routing did not run \(the routing script failed\)/m;
+
+	it("names the fallback in a titled warning, and uses GitHub-hosted", () => {
+		const { stdout, output } = fallBack({});
+		assert.match(stdout, WARNING);
+		assert.equal(
+			output,
+			"runner=ubuntu-24.04\ntier=github\nshard_runner=ubuntu-24.04\n",
+		);
+	});
+
+	it("names the fallback and keeps a pinned fleet on the fleet", () => {
+		const { stdout, output } = fallBack({ route: "fleet" });
+		assert.match(stdout, WARNING);
+		assert.equal(
+			output,
+			"runner=hobo-trunk\ntier=fleet\nshard_runner=hobo-trunk\n",
+		);
+	});
+
+	it("passes what the run chose to the script as arguments, never as environment", () => {
+		assert.match(
+			script,
+			/scripts\/ci\/route-runner\.mts \\\n\s+--route "\$\{route\}" --include-own-run "\$\{include_own_run\}" --attested "\$\{attested\}"/,
+		);
+		// Only a fixed literal can come out of each expression.
+		assert.ok(
+			script.includes(
+				`route='\${{ contains(fromJSON('["auto","fleet","local","github"]'), inputs.route) && inputs.route || 'auto' }}'`,
+			),
+		);
+		assert.doesNotMatch(script, /HOBO_CI_/);
+	});
+
+	it("names the fallback and outputs nothing on a second ask, so the run's route stands", () => {
+		const { stdout, output } = fallBack({ includeOwnRun: "true" });
+		assert.match(stdout, WARNING);
+		assert.match(stdout, /keeping the run's route/);
+		assert.equal(output, "");
+	});
+});
+
+describe("the workflows that route", () => {
+	const root = resolve(import.meta.dirname, "..", "..");
+	const read = (path: string) => readFileSync(join(root, path), "utf8");
+	/** The files a script loads, itself included, as repository paths. */
+	const loadedBy = (path: string, seen = new Set<string>()): Set<string> => {
+		if (seen.has(path)) return seen;
+		seen.add(path);
+		for (const [, specifier = ""] of read(path).matchAll(
+			/^(?:import|export)\s[^;]*?from\s+"([^"]+)"/gms,
+		)) {
+			if (specifier.startsWith("node:")) continue;
+			assert.ok(
+				specifier.startsWith("."),
+				`${path} imports ${specifier}, which the route job never installs`,
+			);
+			loadedBy(
+				relative(root, resolve(root, dirname(path), specifier)).replaceAll(
+					"\\",
+					"/",
+				),
+				seen,
+			);
+		}
+		return seen;
+	};
+	const routed = readdirSync(join(root, ".github/workflows"))
+		.map((name) => `.github/workflows/${name}`)
+		.filter((path) =>
+			read(path).includes("uses: ./.github/actions/route-runner"),
+		);
+
+	// A file the script loads and a workflow does not check out stops the
+	// script before it decides, and the step then falls back to GitHub-hosted.
+	it("check out every file the routing script loads", () => {
+		const needed = loadedBy("scripts/ci/route-runner.mts");
+		assert.deepEqual([...needed].sort(), [
+			"packages/ci/src/fleet-overflow.ts",
+			"scripts/ci/route-runner.mts",
+			"scripts/ci/runner-routing.mts",
+		]);
+		assert.ok(routed.length >= 6, `found ${routed.length} routed workflows`);
+		for (const path of routed) {
+			const lines = new Set(
+				read(path)
+					.split("\n")
+					.map((line) => line.trim()),
+			);
+			for (const file of needed)
+				assert.ok(lines.has(file), `${path} does not sparse-checkout ${file}`);
+		}
+	});
+
+	it("check out the committed routing policy", () => {
+		for (const path of routed)
+			assert.ok(
+				read(path)
+					.split("\n")
+					.some((line) => line.trim() === RUNNER_ROUTING_PATH),
+				`${path} does not sparse-checkout ${RUNNER_ROUTING_PATH}`,
+			);
+	});
+
+	it("offer a dispatch's route as a choice", () => {
+		const ci = read(".github/workflows/hobo-ci.yml");
+		assert.match(
+			ci,
+			/ {6}route:\n {8}description: .*\n {8}type: choice\n {8}options: \[auto, fleet, local, github\]\n/,
+		);
+		assert.equal(ci.split("route: ${{ inputs.route || 'auto' }}").length, 3);
+	});
+
+	it("hand the routing step nothing about routing but what the run chose", () => {
+		// The script reads the slip and runnerRouting at decision time; no
+		// repository variable, input or environment variable carries them.
+		const action = read(".github/actions/route-runner/action.yml");
+		for (const path of [".github/actions/route-runner/action.yml", ...routed])
+			assert.doesNotMatch(
+				read(path),
+				/fleet-state|fleet-capacity|vars\.HOBO_CI_|HOBO_CI_(ROUTE|TRUNK_RUNNER|LOCAL_RUNNER|INCLUDE_OWN_RUN|ATTESTED|FLEET_)|local-runner:|trunk-runner:|max-wait-seconds:|max-queued:/,
+				path,
+			);
+		assert.match(action, /scripts\/ci\/route-runner\.mts/);
 	});
 });

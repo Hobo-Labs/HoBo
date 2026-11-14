@@ -67,9 +67,10 @@ minute), the browser-session key (created once), the sentinel credentials,
 and the callout's xkey and scoped seeds. The incarnation is the pinned trust
 record's `authority_incarnation`. Standalone journals to SQLite
 (`createRuntimeLocalEventStore`); high availability to `FLEET_JOURNAL`
-(`createJournalEventStore`). Every replica answers NATS auth callouts; a
-refusal counts as an answered callout on the status feed, an unopenable
-request as a failed one.
+(`createJournalEventStore`). Every replica answers NATS auth callouts; an
+allowed decision (`hobo_fleet_bus_status`, component `callout`, status
+`authorised`) and a refusal count as answered callouts on the status feed, an
+unopenable request as a failed one.
 
 Tokens are RS256 JWTs through `JwtSvidIssuer`, signed with the ring's
 `activeKeyId()` when offered, else the lowest-numbered `<prefix>#<n>` key
@@ -91,9 +92,13 @@ overlay providers are lists; an absent list turns the feature off.
 `hobo-fleet-authority --config <file>` and `hobo-fleet-witness --config
 <file>` (`src/bin/`). The secret store is OpenBao (`secretStore`, with the
 workload's token file). The package's `bin` entries are the coordinator's
-(cascade delta). The witness binary composes and then refuses to run: its
-co-signatures go to `fleet.audit.witness`, for which `@hobo/fleet-nats` has
-no entry point yet (cascade delta to L08).
+(cascade delta). The witness binary composes `createWitness` over its own
+bus connection, opened with the witness user's credentials, and runs until
+SIGTERM. That connection's audit log appends co-signatures:
+`appendCheckpoint` and `proposeTrust` write the co-signature of a checkpoint
+or of a trust record to `fleet.audit.witness` (`publishOverAuditLog`), and
+the authority's `onWitnessed` and `onTrustWitnessed` pair them
+(`packages/fleet-nats/test/witness.integration.test.ts`).
 
 ## Fallbacks
 

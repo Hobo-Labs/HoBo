@@ -130,7 +130,7 @@ export {
 	createInMemoryMeteringSink,
 	createLogMeteringSink,
 } from "./metering/sinks.js";
-// HoBo Fleet (ADR-0182): the overlay transport and the overlay credential minters.
+// HoBo Fleet (ADR-0183): the overlay transport and the overlay credential minters.
 export {
 	createNetbirdCredentialMinter,
 	createTailscaleCredentialMinter,

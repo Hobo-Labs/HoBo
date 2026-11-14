@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -14,10 +20,9 @@ for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
 
 const lint = fileURLToPath(new URL("../lint-actions.ts", import.meta.url));
 const trunk =
-	"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-const routed =
-	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+const routed = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 function lintJobs(jobs: string): number | null {
 	const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
@@ -31,6 +36,27 @@ function lintJobs(jobs: string): number | null {
 		return spawnSync(process.execPath, ["--experimental-strip-types", lint], {
 			cwd: root,
 			encoding: "utf8",
+		}).status;
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
+
+/** What the main gate's shards ask for: the plan job's second ask, then the run's route. */
+const shardRunner =
+	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
+
+/** Lints a repository holding one composite action and no workflow. */
+function lintAction(text: string): number | null {
+	const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
+	try {
+		const dir = join(root, ".github", "actions", "fixture");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "action.yml"), text);
+		return spawnSync(process.execPath, ["--experimental-strip-types", lint], {
+			cwd: root,
+			encoding: "utf8",
+			env: { ...process.env, HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY: "1" },
 		}).status;
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -83,6 +109,11 @@ describe("Actions runner policy", () => {
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
 			0,
 		);
+		// The job that builds the hobo CLI release-npm runs with its OIDC token.
+		assert.equal(
+			lintRunner("release-hobo.yml", "release-hobo-cli", "ubuntu-24.04"),
+			0,
+		);
 	});
 
 	it("rejects the same runner on another job or workflow and other hosted images", () => {
@@ -106,6 +137,179 @@ describe("Actions runner policy", () => {
 				0,
 				needs,
 			);
+	});
+
+	it("allows the shard runner on a job that needs the route and plan jobs", () => {
+		for (const needs of [
+			"[route, main-gate-plan]",
+			"[other, main-gate-plan, route]",
+		])
+			assert.equal(
+				lintJobs(
+					`${routeJob}  main-gate-plan:\n    needs: route\n    runs-on: ${routed}\n    steps:\n      - run: echo ok\n  shard:\n    needs: ${needs}\n    runs-on: ${shardRunner}\n    steps:\n      - run: echo ok\n`,
+				),
+				0,
+				needs,
+			);
+	});
+
+	it("rejects the shard runner on a job that does not need both the route and plan jobs", () => {
+		for (const needs of ["route", "main-gate-plan", "[other]"])
+			assert.notEqual(
+				lintJobs(
+					`${routeJob}  shard:\n    needs: ${needs}\n    runs-on: ${shardRunner}\n    steps:\n      - run: echo ok\n`,
+				),
+				0,
+				needs,
+			);
+	});
+
+	it("rejects fleet state passed to a workflow", () => {
+		const job = (body: string) =>
+			lintJobs(`  build:\n    runs-on: ${trunk}\n${body}`);
+		assert.equal(job("    steps:\n      - run: echo ok\n"), 0);
+		// A repository variable read anywhere in the workflow.
+		assert.notEqual(
+			job("    steps:\n      - run: echo ${{ vars.HOBO_CI_FLEET_ROUTES }}\n"),
+			0,
+		);
+		// An environment variable by that name, whatever its value.
+		assert.notEqual(
+			job(
+				'    env:\n      HOBO_CI_FLEET_ROUTES: "1"\n    steps:\n      - run: echo ok\n',
+			),
+			0,
+		);
+		// An action input by that name.
+		const uses = (input: string) =>
+			job(
+				`    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          clean: false\n      - uses: ./.github/actions/route-runner\n        with:\n          ${input}: hobo\n`,
+			);
+		assert.equal(uses("route"), 0);
+		assert.notEqual(uses("fleet-routes"), 0);
+		// The inputs that carried the retired routing variables (ADR-0181).
+		for (const input of [
+			"local-runner",
+			"trunk-runner",
+			"max-wait-seconds",
+			"max-queued",
+			"reuse-merge-queue",
+		])
+			assert.notEqual(uses(input), 0, input);
+		assert.notEqual(
+			lintAction(
+				"name: fixture\ninputs:\n  fleet-routes:\n    required: false\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo ok\n",
+			),
+			0,
+		);
+		assert.equal(
+			lintAction(
+				"name: fixture\ninputs:\n  mode:\n    required: false\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo ok\n",
+			),
+			0,
+		);
+	});
+
+	it("rejects every routing variable and routing name ADR-0181 retires", () => {
+		const job = (body: string) =>
+			lintJobs(`  build:\n    runs-on: ${trunk}\n${body}`);
+		// Any repository variable under HOBO_CI_, routing or not.
+		for (const name of [
+			"HOBO_CI_TRUNK_RUNNER",
+			"HOBO_CI_ROUTE",
+			"HOBO_CI_LOCAL_RUNNER",
+			"HOBO_CI_BOX_RUNNER",
+			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
+			"HOBO_CI_TURBO_API",
+			"HOBO_CI_ANYTHING",
+		])
+			assert.notEqual(
+				job(`    steps:\n      - run: echo \${{ vars.${name} }}\n`),
+				0,
+				name,
+			);
+		// The trunk expression with the retired kill switch.
+		assert.notEqual(
+			lintRunner(
+				"pricing-ci.yml",
+				"build",
+				"${{ vars.HOBO_CI_TRUNK_RUNNER != 'false' && 'hobo-trunk' || 'hobo' }}",
+			),
+			0,
+		);
+		// Every name on ADR-0181's routing list, as an environment variable.
+		for (const name of [
+			"HOBO_CI_ROUTE",
+			"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
+			"HOBO_CI_ROUTE_MAX_QUEUED",
+			"HOBO_CI_TRUNK_RUNNER",
+			"HOBO_CI_LOCAL_RUNNER",
+			"HOBO_CI_INCLUDE_OWN_RUN",
+			"HOBO_CI_ATTESTED",
+			"HOBO_CI_FLEET_VERDICT_MODE",
+			"HOBO_CI_FLEET_REPORTER_ID",
+			"HOBO_CI_FLEET_EXTERNAL_POOLS_JSON",
+			"HOBO_CI_FLEET_REPORTERS_JSON",
+			"HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB",
+			"HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS",
+			"HOBO_CI_WORKER_SLOTS",
+			"HOBO_CI_WORKER_TRUNK_SLOTS",
+			"HOBO_CI_WORKER_TRUNK_LEND",
+			"HOBO_CI_WORKER_PR_CAP_WITH_TRUNK",
+			"HOBO_CI_WORKER_MERGE_GROUP_LEASES",
+			"HOBO_CI_JOB_ADMISSION",
+			"MAIN_WORKSPACE_PARALLEL_CAP",
+			"HOBO_CI_BOX_RUNNER",
+			"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
+		])
+			assert.notEqual(
+				job(`    env:\n      ${name}: "1"\n    steps:\n      - run: echo ok\n`),
+				0,
+				name,
+			);
+		// Names that only share a prefix are not routing.
+		for (const name of ["HOBO_CI_WORKER_IMAGE", "HOBO_CI_DEPS_LAYER"])
+			assert.equal(
+				job(`    env:\n      ${name}: "1"\n    steps:\n      - run: echo ok\n`),
+				0,
+				name,
+			);
+		assert.notEqual(
+			lintAction(
+				"name: fixture\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      env:\n        HOBO_CI_ROUTE: ${{ inputs.mode }}\n      run: echo ok\n",
+			),
+			0,
+		);
+	});
+
+	it("rejects a routing variable in an installable template, but not onboarding's relay placeholder", () => {
+		const lintTemplate = (text: string) => {
+			const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
+			try {
+				const dir = join(root, "packages", "ci-gh-actions", "templates");
+				mkdirSync(dir, { recursive: true });
+				writeFileSync(join(dir, "fixture.yml"), text);
+				return spawnSync(
+					process.execPath,
+					["--experimental-strip-types", lint],
+					{ cwd: root, encoding: "utf8" },
+				).status;
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		};
+		assert.equal(
+			lintTemplate(
+				"env:\n  HOBO_CI_RELAY_URL: ${{ vars.HOBO_CI_RELAY_URL }}\n",
+			),
+			0,
+		);
+		assert.notEqual(
+			lintTemplate(
+				`jobs:\n  smoke:\n    runs-on: \${{ vars.HOBO_CI_TRUNK_RUNNER }}\n`,
+			),
+			0,
+		);
 	});
 
 	it("rejects the routed label on a job that does not need the route job", () => {
@@ -315,6 +519,40 @@ describe("Actions runner policy", () => {
 			);
 	});
 
+	/** The probe workflow as committed: its gate job and the local box's gated probe. */
+	const committedProbe = readFileSync(
+		fileURLToPath(
+			new URL("../../.github/workflows/fleet-probe.yml", import.meta.url),
+		),
+		"utf8",
+	);
+
+	it("lets the probe gate the local box on committed policy, read with the route job's reader", () => {
+		assert.equal(lintFile("fleet-probe.yml", committedProbe), 0);
+		// The gate job pinned line for line: anything else it runs is refused.
+		assert.notEqual(
+			lintFile(
+				"fleet-probe.yml",
+				committedProbe.replace(
+					"--get localRunner)",
+					"--get localRunner; curl https://example.test)",
+				),
+			),
+			0,
+		);
+		// The local box's probe runs only on the gate's answer.
+		assert.notEqual(
+			lintFile(
+				"fleet-probe.yml",
+				committedProbe.replace(
+					"    if: needs.local-box-enrolled.outputs.enrolled == 'true'\n",
+					"",
+				),
+			),
+			0,
+		);
+	});
+
 	it("rejects a probe that asks for another runner, runs something, or holds permissions", () => {
 		assert.notEqual(
 			probe('    runs-on: ubuntu-24.04\n    steps:\n      - run: "true"\n'),
@@ -332,6 +570,28 @@ describe("Actions runner policy", () => {
 		);
 		assert.notEqual(
 			probe('    runs-on: hobo\n    steps:\n      - run: "true"\n', ""),
+			0,
+		);
+	});
+
+	const healthJob = (job: string, run = "node scripts/ci/ci-health.mts") =>
+		lintFile(
+			"ci-health.yml",
+			`name: fixture\non:\n  workflow_dispatch:\npermissions:\n  actions: read\njobs:\n${job}    runs-on: ubuntu-24.04\n    steps:\n      - run: ${run}\n`,
+		);
+
+	it("lets the health monitor run one GitHub-hosted ci-health job that runs the monitor", () => {
+		assert.equal(healthJob("  ci-health:\n"), 0);
+	});
+
+	it("rejects a health monitor job by another name, on another runner, or running something else", () => {
+		assert.notEqual(healthJob("  monitor:\n"), 0);
+		assert.notEqual(healthJob("  ci-health:\n", "pnpm install"), 0);
+		assert.notEqual(
+			lintFile(
+				"ci-health.yml",
+				"name: fixture\non:\n  workflow_dispatch:\njobs:\n  ci-health:\n    runs-on: hobo\n    steps:\n      - run: node scripts/ci/ci-health.mts\n",
+			),
 			0,
 		);
 	});

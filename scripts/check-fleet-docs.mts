@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pnpm run fleet:docs` (O27, ADR-0182): the fleet's vocabulary and its
+ * `pnpm run fleet:docs` (O27, ADR-0183): the fleet's vocabulary and its
  * documents agree. Three checks, each a list of gaps:
  *
  * 1. every event type in `packages/fleet/src/events.ts` appears in

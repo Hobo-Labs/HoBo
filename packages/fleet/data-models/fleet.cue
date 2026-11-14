@@ -119,7 +119,9 @@ import (
 #Availability: "AVAILABILITY_UNSPECIFIED" | "AVAILABILITY_LIVE" | "AVAILABILITY_UNHEALTHY" |
 	"AVAILABILITY_LOST"
 #VerdictState: "VERDICT_STATE_UNSPECIFIED" | "VERDICT_STATE_OPEN" | "VERDICT_STATE_NO_MEMBER" |
-	"VERDICT_STATE_NO_CAPACITY"
+	"VERDICT_STATE_NO_CAPACITY" | "VERDICT_STATE_BUSY"
+#Refusal: "REFUSAL_UNSPECIFIED" | "REFUSAL_NONE" | "REFUSAL_OWN_WORK" | "REFUSAL_PRESSURE" |
+	"REFUSAL_STORAGE" | "REFUSAL_DRAINING"
 #WorkOrigin: "WORK_ORIGIN_UNSPECIFIED" | "WORK_ORIGIN_INTERNAL" | "WORK_ORIGIN_FORK" |
 	"WORK_ORIGIN_UNKNOWN"
 #ReceiptStatus: "RECEIPT_STATUS_UNSPECIFIED" | "RECEIPT_STATUS_STARTED" |
@@ -679,6 +681,7 @@ import (
 	since?:          #Timestamp
 	issuedAt?:       #Timestamp
 	validUntil?:     #Timestamp
+	refusal?:        #Refusal
 	_need: [memberId != _|_, observerId != _|_, health != _|_, issuedAt != _|_, validUntil != _|_] & [...true]
 
 	_health: [if health != _|_ {health}, "HEALTH_UNSPECIFIED"][0]
@@ -707,6 +710,7 @@ import (
 	labels?: [...#Label] & list.MaxItems(32)
 	deviceClass?: #DeviceClass
 	roles?: [...#Role & !="ROLE_UNSPECIFIED"] & list.UniqueItems()
+	refusal?: #Refusal
 	_need: [memberId != _|_, name != _|_, kind != _|_, state != _|_] & [...true]
 }
 
@@ -749,6 +753,13 @@ import (
 		members?: 0
 	}
 	if _state == "VERDICT_STATE_NO_CAPACITY" {
+		members?:   >0
+		freeSlots?: 0
+		_needMembers: [members != _|_] & [...true]
+	}
+	// Amendment 4 (D60): BUSY is full only with members' own work. Which
+	// members refuse is not on the verdict, so fleetVerdict checks that rule.
+	if _state == "VERDICT_STATE_BUSY" {
 		members?:   >0
 		freeSlots?: 0
 		_needMembers: [members != _|_] & [...true]

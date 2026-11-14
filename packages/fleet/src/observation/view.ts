@@ -9,7 +9,10 @@
  * surface that shows a fleet is built from this one function.
  *
  * The verdict is the one answer runner routing needs for a label: `OPEN`,
- * `NO_MEMBER` or `NO_CAPACITY`.
+ * `BUSY`, `NO_MEMBER` or `NO_CAPACITY`. `BUSY` (amendment 4, D60) is a fleet
+ * with no free slot only because its members run their own work; routing
+ * treats it as `OPEN`, since a box busy only with its own jobs is never
+ * refused (ADR-0181 R4).
  */
 import { create } from "@bufbuild/protobuf";
 import {
@@ -25,6 +28,7 @@ import {
 	type MemberRecord,
 	MemberState,
 	type Observation,
+	Refusal,
 	type ReliabilitySamples,
 	VerdictState,
 } from "../_generated/fleet_pb.js";
@@ -100,6 +104,7 @@ function memberView(
 		labels: observation?.labels ?? [],
 		deviceClass: member.deviceClass,
 		roles: membership?.roles ?? [],
+		refusal: current ? observation.refusal : Refusal.UNSPECIFIED,
 	});
 }
 
@@ -153,9 +158,19 @@ export function buildFleetView(
 	});
 }
 
+/** Refusals that are not the member's own running work (amendment 4, D60). */
+const REFUSING: ReadonlySet<Refusal> = new Set([
+	Refusal.PRESSURE,
+	Refusal.STORAGE,
+	Refusal.DRAINING,
+]);
+
 /**
  * Live, active members serving `label` (any label when empty) and their free
- * slots. When a truncated list shows nobody for the label, the fleet's
+ * slots. With no free slot the fleet is `NO_CAPACITY` only when every serving
+ * member refuses for pressure, storage or draining; if any is full only with
+ * its own work, or says nothing (`UNSPECIFIED`, an older agent), the fleet is
+ * `BUSY` (ADR-0181 R4). When a truncated list shows nobody for the label, the fleet's
  * capacity, which covers every member, answers instead: a partial list is not
  * evidence that nobody serves the label, and a wrong `NO_MEMBER` would send
  * runs away.
@@ -176,9 +191,14 @@ export function buildFleetVerdict(
 		(sum, member) => sum + (member.capacity?.freeSlots ?? 0),
 		0,
 	);
+	let refused =
+		serving.length > 0 &&
+		serving.every((member) => REFUSING.has(member.refusal));
 	if (view.truncated && members === 0 && view.capacity !== undefined) {
 		members = view.capacity.healthy;
 		freeSlots = view.capacity.freeSlots;
+		// The summary carries no member's refusal, so it never refuses.
+		refused = false;
 	}
 	const expiresAtMs = Math.max(
 		nowMs,
@@ -190,9 +210,11 @@ export function buildFleetVerdict(
 		state:
 			members === 0
 				? VerdictState.NO_MEMBER
-				: freeSlots === 0
-					? VerdictState.NO_CAPACITY
-					: VerdictState.OPEN,
+				: freeSlots > 0
+					? VerdictState.OPEN
+					: refused
+						? VerdictState.NO_CAPACITY
+						: VerdictState.BUSY,
 		members,
 		freeSlots,
 		asOf: iso(nowMs),

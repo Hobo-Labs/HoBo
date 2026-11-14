@@ -67,6 +67,8 @@ export type Tenant = Readonly<{
 	now: () => number;
 	setNow(ms: number): void;
 	authority: Signer;
+	/** The witness key the trust record pins. */
+	witness: Signer;
 	device(
 		options?: Readonly<{
 			roles?: Role[];
@@ -177,6 +179,7 @@ export async function createTenantOn(
 		now,
 		setNow,
 		authority: authority.signer,
+		witness: witness.signer,
 		async device(options = {}) {
 			const keys = await createMemoryKeyStore().open();
 			const bundle = await signEnvelope(

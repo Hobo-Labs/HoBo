@@ -16,6 +16,7 @@ export {
 	githubActionsJwtSource,
 	type InfisicalAuth,
 	type JwtSource,
+	jwtOidcClaimHints,
 	oidcAuth,
 	ownerAuthFromEnv,
 	parseJwt,

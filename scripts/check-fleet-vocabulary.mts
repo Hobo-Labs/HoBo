@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pnpm run fleet:vocabulary` (O1, ADR-0182): one implementation of each fleet
+ * `pnpm run fleet:vocabulary` (O1, ADR-0183): one implementation of each fleet
  * idea. Nine rules, each over its own pathspecs and less its allowlist
  * (`scripts/fleet-vocabulary-allow.json`, entries `{ rule, path, reason }`;
  * adding one is a coordinator amendment):

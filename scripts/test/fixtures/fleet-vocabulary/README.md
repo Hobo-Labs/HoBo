@@ -1,6 +1,6 @@
 # Fleet guard scripts and their fixtures
 
-The HoBo Fleet work (ADR-0182) is verified by a small set of root scripts. Each
+The HoBo Fleet work (ADR-0183) is verified by a small set of root scripts. Each
 is wired to a root `package.json` command and each has a test under
 `scripts/test/`.
 

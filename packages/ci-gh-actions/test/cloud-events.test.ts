@@ -90,6 +90,19 @@ describe("toCiCloudEvent", () => {
 		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_mesh_reliability")).toBe(
 			"ci.MeshReliabilityChanged",
 		);
+		// The fleet verdict's reporter and the relay that refuses its reports
+		// (ADR-0180) are named before either emits.
+		expect(
+			[
+				"hobo_ci_fleet_verdict_state",
+				"hobo_ci_fleet_verdict_unaccounted_runner",
+				"hobo_ci_fleet_verdict_refused",
+			].map((name) => CI_INFRA_EVENT_TYPES.get(name)),
+		).toEqual([
+			"ci.FleetVerdictStateReported",
+			"ci.FleetVerdictUnaccountedRunnerSeen",
+			"ci.FleetVerdictReportRefused",
+		]);
 	});
 });
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createComposedHoboCli } from "../src/cli.js";
 
 // Canonical verbs whose composition lands in a later lane. `fleet` is added to
-// CANONICAL_VERBS by the HoBo Fleet contract commit (ADR-0182) and wired here
+// CANONICAL_VERBS by the HoBo Fleet contract commit (ADR-0183) and wired here
 // by the lane that writes `src/fleet-command.ts`, which removes it from this
 // list. Until then its help must say, truthfully, that it is not wired.
 const PENDING_VERBS: ReadonlySet<string> = new Set(["fleet"]);

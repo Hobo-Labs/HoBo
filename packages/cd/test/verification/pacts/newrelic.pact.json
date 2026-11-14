@@ -1,0 +1,61 @@
+{
+  "consumer": { "name": "HoboCdVerificationEngine" },
+  "provider": { "name": "NewRelicNerdGraph" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "evidence": "Hand-authored HTTP contract for NRQL through NerdGraph (POST /graphql, https://docs.newrelic.com/docs/apis/nerdgraph/examples/nerdgraph-nrql-tutorial/). NRQL travels as a GraphQL variable. Verified by test/verification/sources/pacts.test.ts."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "faceted timeseries NRQL for the canary cohort",
+      "providerStates": [{ "name": "Transaction data faceted by track" }],
+      "request": {
+        "method": "POST",
+        "path": "/graphql",
+        "headers": { "accept": "application/json", "content-type": "application/json", "API-Key": "nr-key" },
+        "body": {
+          "query": "query($accountId: Int!, $nrql: Nrql!) { actor { account(id: $accountId) { nrql(query: $nrql) { results } } } }",
+          "variables": {
+            "accountId": 1234567,
+            "nrql": "SELECT average(duration) FROM Transaction FACET track TIMESERIES 1 minute SINCE 1794484800000 UNTIL 1794485400000"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": {
+          "data": {
+            "actor": {
+              "account": {
+                "nrql": {
+                  "results": [
+                    { "beginTimeSeconds": 1794484860, "endTimeSeconds": 1794484920, "facet": "canary", "track": "canary", "average.duration": 0.31 },
+                    { "beginTimeSeconds": 1794484800, "endTimeSeconds": 1794484860, "facet": "canary", "track": "canary", "average.duration": 0.3 },
+                    { "beginTimeSeconds": 1794484800, "endTimeSeconds": 1794484860, "facet": "baseline", "track": "baseline", "average.duration": 0.2 }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "NRQL syntax error reported in the GraphQL errors array",
+      "providerStates": [{ "name": "the NRQL does not parse" }],
+      "request": {
+        "method": "POST",
+        "path": "/graphql",
+        "headers": { "accept": "application/json", "content-type": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "data": { "actor": { "account": { "nrql": null } } }, "errors": [{ "message": "NRQL Syntax Error" }] }
+      }
+    }
+  ]
+}

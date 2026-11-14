@@ -4,7 +4,7 @@ import { CLOUD_EVENTS } from "../events.js";
 import type { DeploymentPlan } from "../plan-types.js";
 import type { ResourceLifecycle } from "./deployment-view.js";
 
-// The TopologyView projection (E21, 0015 §B deliverable 3): the app-graph
+// The TopologyView projection (E21): the app-graph
 // read model beside deployment-view, folding the SAME deployment event stream
 // into nodes (bindle, resources, yards) and edges (bindings, placements) —
 // shaped for the designed dashboard TopologyView surface

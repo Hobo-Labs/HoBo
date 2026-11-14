@@ -63,6 +63,15 @@ export function rank(
 		.map((entry) => entry.memberId);
 }
 
+/**
+ * The leader among dispatchers (amendment 4): rank 0 of their ranking, or
+ * `self` when it ranks nobody (a member that sees no live dispatcher leads
+ * itself). Replaces main's `meshLeaderId`, the lowest live node id.
+ */
+export function leader(ranked: readonly MemberId[], self: MemberId): MemberId {
+	return ranked[0] ?? self;
+}
+
 /** `waitMs` 0 means claim now. */
 export type ClaimTurnAnswer = Readonly<{ rank: number; waitMs: number }>;
 

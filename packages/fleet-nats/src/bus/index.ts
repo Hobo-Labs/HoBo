@@ -1,6 +1,6 @@
 /**
  * Topology, credentials, auth callout and the bus ports over NATS (L08).
- * Signatures frozen by the fleet contract commit (ADR-0182).
+ * Signatures frozen by the fleet contract commit (ADR-0183).
  *
  * Each frozen entry point runs its `…Over` twin on the real client (`NATS`);
  * the twins take the client as a `NatsClients` port, which is how the unit
@@ -29,8 +29,10 @@ import { NATS, type NatsClients } from "./nats-client.js";
 import {
 	type AccountSigningKeys,
 	accountOfCredentials,
+	auditRoleOfCredentials,
 	mintAccount,
 	mintAccountWithSigningKeys,
+	signingKeysOfAccountJwt,
 	staticCredentials,
 	tenantKeys,
 } from "./nats-jwt.js";
@@ -40,7 +42,7 @@ import {
 	createRegistryView,
 	devicePin,
 } from "./registry-view.js";
-import { pushAccount } from "./resolver.js";
+import { pushAccount, pushAccountOver } from "./resolver.js";
 import { applyTopology } from "./topology.js";
 
 const encoder = new TextEncoder();
@@ -105,18 +107,60 @@ export function provisionTopology(
 	return provisionTopologyOver(NATS, input);
 }
 
-/** `provisionTopology` over `clients`. */
+/** Internal options of `provisionTopologyOver`. */
+export type ProvisionOptions = Readonly<{
+	/**
+	 * The signing keys the account lists (the secret-store slots, after a
+	 * rotation). Without them the account keeps the signing keys the resolver
+	 * already holds for it, or, for an account it does not hold yet, lists the
+	 * derived scoped keys.
+	 */
+	signingKeys?: AccountSigningKeys;
+}>;
+
+/**
+ * `provisionTopology` over `clients`. Re-running it never undoes a rotation
+ * of the account-signing or scoped keys: the account is re-issued with the
+ * signing keys `options` supplies, else with those the resolver holds for it
+ * (`publishAccountSigningKeys` published them), and only a new account gets
+ * the derived scoped keys. `scopedSeeds` are always the derived seeds.
+ */
 export async function provisionTopologyOver(
 	clients: NatsClients,
 	input: ProvisionInput,
+	options: ProvisionOptions = {},
 ): Promise<Provisioned> {
 	const keys = tenantKeys(input.operatorSigningSeed, input.tenant);
-	await pushAccount(
-		input.servers,
-		input.operatorSigningSeed,
-		await mintAccount(keys, input.tenant, input.operatorSigningSeed),
-		clients,
-	);
+	const mint = (signing: AccountSigningKeys | undefined) =>
+		signing === undefined
+			? mintAccount(keys, input.tenant, input.operatorSigningSeed)
+			: mintAccountWithSigningKeys(
+					keys,
+					input.tenant,
+					input.operatorSigningSeed,
+					signing,
+				);
+	const supplied = options.signingKeys;
+	if (supplied !== undefined)
+		await pushAccount(
+			input.servers,
+			input.operatorSigningSeed,
+			await mint(supplied),
+			clients,
+		);
+	else
+		await pushAccountOver(
+			input.servers,
+			input.operatorSigningSeed,
+			keys.account.getPublicKey(),
+			(published) =>
+				mint(
+					published === undefined
+						? undefined
+						: signingKeysOfAccountJwt(published, keys.account.getPublicKey()),
+				),
+			clients,
+		);
 	const credentials = {
 		authority: await staticCredentials(keys, "authority"),
 		witness: await staticCredentials(keys, "witness"),
@@ -165,9 +209,8 @@ type SigningKeysInput = Readonly<{
  * is not an account public key or is listed twice (nothing is pushed);
  * `unavailable` when the resolver cannot be reached or refuses the account.
  *
- * `provisionTopology` pushes the account with the derived scoped keys only,
- * so after a rotation it must not be re-run without publishing the slots'
- * keys again.
+ * `provisionTopology` keeps the signing keys the resolver holds, so re-running
+ * it after a rotation leaves the rotation in place.
  */
 export function publishAccountSigningKeys(
 	input: SigningKeysInput,
@@ -276,7 +319,11 @@ export function natsBusConnectorOver(clients: NatsClients): FleetBusConnector {
 	};
 }
 
-/** The authority's connection; positions are per subscription (`BusStart`). */
+/**
+ * The authority's connection; positions are per subscription (`BusStart`).
+ * Opened with the witness user's credentials it is the witness's: its audit
+ * log writes co-signatures to `fleet.audit.witness` (see `AuditRole`).
+ */
 export function connectAuthorityBus(
 	input: Readonly<{
 		servers: readonly string[];
@@ -293,16 +340,17 @@ export async function authorityBusOver(
 	clients: NatsClients,
 	input: AuthorityInput,
 ): Promise<AuthorityBus> {
+	const role = auditRoleOfCredentials(input.credentials);
 	const connection = await clients.open({
 		servers: input.servers,
 		authenticator: credsAuthenticator(encoder.encode(input.credentials)),
-		name: "hobo-fleet-authority",
+		name: `hobo-fleet-${role}`,
 		persistent: true,
 	});
 	const wire = natsWire(
 		connection,
 		{
-			consumerName: () => `authority_${randomBytes(8).toString("hex")}`,
+			consumerName: () => `${role}_${randomBytes(8).toString("hex")}`,
 			onStatus: (status) => input.log("hobo_fleet_bus_status", { status }),
 		},
 		clients,
@@ -310,7 +358,7 @@ export async function authorityBusOver(
 	const pin = authorityPin(input.trust);
 	const registry = createRegistryView({ wire, pin, now: Date.now });
 	await registry.caughtUp();
-	return authorityBusOverWire(wire, registry, pin, Date.now);
+	return authorityBusOverWire(wire, registry, pin, Date.now, role);
 }
 
 /** Answers NATS auth callouts with user credentials scoped to the member. */

@@ -1,0 +1,8 @@
+{
+  "id": "trusted-linux-x64",
+  "os": "linux",
+  "architecture": "x64",
+  "isolation": "trusted-process",
+  "lifecycle": "persistent-capacity",
+  "guarantee": "start-fenced"
+}

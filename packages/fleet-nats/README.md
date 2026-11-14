@@ -1,6 +1,6 @@
 # `@hobo/fleet-nats`
 
-Every NATS interaction of HoBo Fleet (ADR-0182), and the only package that
+Every NATS interaction of HoBo Fleet (ADR-0183), and the only package that
 imports a NATS client. NATS runs in operator mode with an account per tenant;
 devices get per-connection user credentials minted by the authority's auth
 callout from scoped signing keys whose permission templates are fixed to the

@@ -8,7 +8,7 @@ import {
 	isSubsetMatch,
 } from "../src/index.js";
 
-// The Bridge (plan 0008): Bridge-to-Kubernetes-style local/remote dev,
+// The Bridge: Bridge-to-Kubernetes-style local/remote dev,
 // generalized to every provider. These tests double as the executable
 // example for site docs /guide/bridge/ — a storefront calling a deployed
 // payments boundary, with a developer bridging just their own traffic to

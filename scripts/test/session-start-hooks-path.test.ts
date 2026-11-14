@@ -145,6 +145,28 @@ function checkout(): string {
 	return furnish(dir);
 }
 
+/**
+ * Adds a linked worktree on a new branch. `worktree add --orphan` needs git
+ * 2.42, newer than the bookworm git (2.39) the CI runner image ships, so the
+ * branch starts from an empty root commit instead.
+ */
+function linkWorktree(repo: string, path: string) {
+	const root = git(repo, [
+		"-c",
+		"user.name=hooks-path-test",
+		"-c",
+		"user.email=hooks-path-test@example.invalid",
+		"commit",
+		"--quiet",
+		"--allow-empty",
+		"--no-verify",
+		"-m",
+		"root",
+	]);
+	assert.equal(root.status, 0, root.stderr);
+	return git(repo, ["worktree", "add", "--quiet", "-b", "side", path]);
+}
+
 function hooksPath(repo: string): string {
 	return git(repo, [
 		"config",
@@ -192,15 +214,7 @@ describe("scripts/ensure-hooks-path.sh", () => {
 	it("writes the shared config from a worktree", () => {
 		const repo = checkout();
 		const worktree = join(tempDir(), "wt");
-		const added = git(repo, [
-			"worktree",
-			"add",
-			"--quiet",
-			"--orphan",
-			"-b",
-			"side",
-			worktree,
-		]);
+		const added = linkWorktree(repo, worktree);
 		assert.equal(added.status, 0, added.stderr);
 		assert.equal(script(furnish(worktree)).status, 0);
 		assert.equal(hooksPath(repo), ".githooks");
@@ -252,15 +266,7 @@ describe("scripts/ensure-hooks-path.sh", () => {
 		// repository, silencing its own hooks, and leaves this one unset.
 		const other = checkout();
 		const linked = join(tempDir(), "linked");
-		const added = git(other, [
-			"worktree",
-			"add",
-			"--quiet",
-			"--orphan",
-			"-b",
-			"side",
-			linked,
-		]);
+		const added = linkWorktree(other, linked);
 		assert.equal(added.status, 0, added.stderr);
 		for (const inherited of [
 			{ GIT_DIR: join(other, ".git") },

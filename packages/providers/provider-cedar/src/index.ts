@@ -11,7 +11,7 @@ import {
 export type { JsonObject, JsonValue } from "./json.js";
 
 // The Cedar policy engine behind the same gate-plane port the Rego adapter
-// uses, extracted from `@hobo/broker` per docs/plans/0017 F30 (the broker
+// uses, extracted from `@hobo/broker` (the broker
 // re-exports this adapter, so `createCedarGatePlane` keeps its original
 // import surface). contracts-policy-flags.md names Cedar as the ABAC-style
 // external language beside OPA/Rego. The broker maps its Policy IR decision

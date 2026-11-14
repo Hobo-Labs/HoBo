@@ -1,0 +1,7 @@
+{
+  "kind": "dagger-pipeline",
+  "accountId": "hobo-labs",
+  "engineId": "dagger",
+  "pipelineId": "pipeline-1",
+  "pipelineDigest": ""
+}

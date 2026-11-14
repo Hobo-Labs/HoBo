@@ -60,6 +60,31 @@ describe("O6 clone detection", () => {
 		expect(h.logged).toContain("hobo_fleet_member_locked");
 	});
 
+	it("names the generation the authority holds in the 423 (the client's contract)", async () => {
+		const h = await harness();
+		await h.fleet("build");
+		const admin = (await h.person({ kind: "user", id: "admin" })).caller;
+		const subject = await active(h, admin);
+		const original = agent(subject, { generation: 0, pending: undefined });
+		expect(await original.refresh(h.authority, false)).toBe("ok");
+		expect(await original.refresh(h.authority, false)).toBe("ok");
+		const answer = await h.authority.credentials(
+			{
+				memberId: subject.keys.memberId,
+				request: refresh(0, new Uint8Array(randomBytes(16))),
+			},
+			subject.caller,
+		);
+		expect(answer).toEqual({
+			ok: false,
+			error: {
+				code: "generation-mismatch",
+				message: "the refresh generation does not match: the device is locked",
+				detail: { generation: "2" },
+			},
+		});
+	});
+
 	it("locks whichever copy refreshes second, on any authority replica", async () => {
 		const h = await harness();
 		await h.fleet("build");

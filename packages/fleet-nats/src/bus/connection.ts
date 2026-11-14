@@ -26,7 +26,8 @@ export function parseServers(servers: readonly string[]): string[] {
 
 export type OpenOptions = Readonly<{
 	servers: readonly string[];
-	authenticator: Authenticator | Authenticator[];
+	/** None for a server without authentication (the journal's tests). */
+	authenticator?: Authenticator | Authenticator[];
 	name: string;
 	inboxPrefix?: string;
 	/** Keep reconnecting for the life of the process (devices); else fail fast (provisioning). */
@@ -38,12 +39,13 @@ export function connectionOptions(options: OpenOptions): NodeConnectionOptions {
 	const settings: NodeConnectionOptions = {
 		servers: parseServers(options.servers),
 		name: options.name,
-		authenticator: options.authenticator,
 		tls: ca === undefined || ca === "" ? {} : { caFile: ca },
 		maxReconnectAttempts: options.persistent ? -1 : 0,
 		reconnectTimeWait: 2_000,
 		timeout: 10_000,
 	};
+	if (options.authenticator !== undefined)
+		settings.authenticator = options.authenticator;
 	if (options.inboxPrefix !== undefined)
 		settings.inboxPrefix = options.inboxPrefix;
 	return settings;

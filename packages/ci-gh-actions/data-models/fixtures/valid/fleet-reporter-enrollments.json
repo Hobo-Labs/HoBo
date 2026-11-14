@@ -1,0 +1,10 @@
+{
+  "reporters": [
+    {
+      "id": "box-1",
+      "publicKey": "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8",
+      "accountId": "tenant",
+      "labels": ["hobo", "hobo-trunk"]
+    }
+  ]
+}
