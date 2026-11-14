@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { evaluateExpression } from "../../../scripts/ci/attested-jobs.mts";
 
 const root = join(import.meta.dirname, "..", "..", "..");
 const workflow = parse(
@@ -141,6 +142,32 @@ describe("CI deps image push scope", () => {
 		expect(job.steps[1].run).toBe(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
 		);
+	});
+
+	it("routes the PR deps build to an available Docker runner without promoting it", () => {
+		const expression = depsJob["runs-on"].slice(3, -2).trim();
+		const selected = (tier: string, runner: string, box: string) => {
+			return evaluateExpression(expression, (path) => {
+				if (path === "needs.route.outputs.tier") return tier;
+				if (path === "needs.route.outputs.runner") return runner;
+				if (path === "needs.route.outputs.box_runner") return box;
+				throw new Error(`unexpected route input: ${path}`);
+			});
+		};
+		expect(selected("fleet", "hobo", "hobo-local-host")).toBe(
+			"hobo-local-host",
+		);
+		expect(selected("fleet", "hobo", "")).toBe("hobo");
+		expect(selected("github", "ubuntu-24.04", "")).toBe("ubuntu-24.04");
+		expect(selected("local", "hobo-local-host", "")).toBe("ubuntu-24.04");
+		expect(selected("", "", "")).toBe("ubuntu-24.04");
+		expect(depsJob.needs).toEqual(["route"]);
+		const build = depsJob.steps.find(
+			(step) => step.name === "Build deps image and verify offline install",
+		);
+		expect(build.run).toContain("build-deps.sh --no-promote");
+		expect(depsJob.permissions).toEqual({ contents: "read", packages: "read" });
+		expect(JSON.stringify(depsJob)).not.toContain("docker push");
 	});
 
 	it("publishes the worker image after a green main run when GHCR lacks it", () => {
