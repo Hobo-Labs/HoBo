@@ -20,7 +20,25 @@ never a journal position.
 
 The relay mesh's records (`mesh.proto`, the `#Mesh*` definitions and the
 `mesh-*` fixtures) are gone: the box worker is a HoBo Fleet member, and the
-fleet's records live in `packages/fleet/data-models/`.
+fleet's records live in `packages/fleet/data-models/`. The hosted fleet verdict and its
+reporters (`fleet_verdict.proto`, ADR-0180) are gone too: the slip's
+reasons come from `fleetVerdict` in `@hobo/fleet/observation`.
+
+`routing_slip.proto` owns the routing slip (ADR-0181): the box relay's
+current routing answer for one repository, one route per class (`pr`, `fork`,
+`trunk`: runner, tier and a reason code), with its issue and expiry times and
+the writing dispatcher's fleet member id (rank 0 of the fleet's
+`DISPATCHER` members) and commit. It is the message of a parentless commit
+at `refs/hobo/routing-slip`. `#RoutingSlip` in `onboarding.cue` constrains it,
+and `#RunnerRouting` the committed `runnerRouting` policy in `.hobo/ci.json`
+(no proto: it is authored JSON, parsed by zod in `src/runner-routing.ts`).
+`src/routing-slip.ts` is the only place a slip is parsed and written; the
+route job's dependency-free reader `scripts/ci/runner-routing.mts` agrees with
+it on every fixture. The `routing-slip*` fixtures pin that an expired slip, a
+wrong repository, an unknown or missing class, a figure in a reason, a
+generic label and a reason its tier disagrees with are invalid; the
+`runner-routing*` fixtures pin the committed defaults and refuse a generic
+label or a trunk split that leaves no shared slot.
 
 `relay_cache.proto` owns the records the hosted relay keeps in its cache
 (ADR-0179): the lease record (the `hobo.ci.v1.Lease` as JSON, its job key,

@@ -39,6 +39,10 @@ export type StubInfisical = {
 	}[];
 	/** Every request body the stub received, for leak checks. */
 	readonly bodies: string[];
+	/** Identities whose OIDC trust was replaced in place (PATCH). */
+	readonly patches: string[];
+	/** The bootstrap admin token, for tests that act as the owner. */
+	readonly adminToken: () => string;
 	close(): Promise<void>;
 };
 
@@ -56,6 +60,7 @@ export async function startStubInfisical(): Promise<StubInfisical> {
 	const folders: StubInfisical["folders"] = [];
 	const identities: StubInfisical["identities"] = [];
 	const bodies: string[] = [];
+	const patches: string[] = [];
 	let counter = 0;
 	const next = (prefix: string) => `${prefix}-${++counter}`;
 
@@ -140,6 +145,17 @@ export async function startStubInfisical(): Promise<StubInfisical> {
 				identityOidcAuth: { id: next("oidc"), identityId: identity.id },
 			});
 		}
+		if (request.method === "PATCH" && oidc) {
+			// An update replaces an existing trust; it never creates one.
+			const identity = identities.find((entry) => entry.id === oidc[1]);
+			if (!identity?.oidc)
+				return send(404, { reqId: "req-404", statusCode: 404 });
+			identity.oidc = body;
+			patches.push(identity.id);
+			return send(200, {
+				identityOidcAuth: { id: next("oidc"), identityId: identity.id },
+			});
+		}
 		const one = /^\/api\/v1\/identities\/([^/]+)$/u.exec(path);
 		if (one) {
 			const index = identities.findIndex((entry) => entry.id === one[1]);
@@ -162,6 +178,8 @@ export async function startStubInfisical(): Promise<StubInfisical> {
 		folders,
 		identities,
 		bodies,
+		patches,
+		adminToken: () => adminToken ?? "",
 		close: () =>
 			new Promise<void>((resolve) => {
 				server.closeAllConnections();

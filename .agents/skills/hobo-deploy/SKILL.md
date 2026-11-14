@@ -105,8 +105,14 @@ they paste (identifiers, not secrets).
 4. In project `hobo-ci`, create identity `hobo-ci-writer` (organization role
    **No Access**) with **OIDC Auth**:
    - OIDC Discovery URL and Issuer: `https://token.actions.githubusercontent.com`
-   - Subject: `repo:Hobo-Labs/HoBo:ref:refs/heads/main`
+   - Subject: `repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main`
+     (GitHub's immutable subject for this repository: owner and repository
+     suffixed with their ids. Do not use the legacy
+     `repo:Hobo-Labs/HoBo:ref:refs/heads/main` (Infisical answers 403) or a
+     glob like `repo:Hobo-Labs@*/HoBo@*` (it matches a recycled name). For
+     another repository, take the value `connect` prints in step 5.)
    - Audiences: `https://github.com/Hobo-Labs`
+   - Claims: `repository_id` = `1274791462`, `repository_owner_id` = `344805935`
    - Access Token TTL `600`, Max TTL `600`
 
    **Role:** **Advanced+** — add custom role `hobo-ci-writer` (create/edit
@@ -116,12 +122,23 @@ they paste (identifiers, not secrets).
 5. You run:
 
    ```sh
-   hobo ci secret-store connect --cwd packages/ci-vercel \
-     --project-id <hobo-ci id> --relay-identity-id <hobo-ci-relay id> \
+   GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
+     --repo Hobo-Labs/HoBo --project-id <hobo-ci id> \
+     --relay-identity-id <hobo-ci-relay id> \
      --deploy-identity-id <hobo-ci-writer id> --team team_BRBUnG6uGhSsVV3EG5GFV3FM
    ```
 
-   It writes the binding (ids only). Commit it in a PR and merge it.
+   It reads from GitHub the OIDC subject the repository's tokens carry (fails
+   closed with the `gh api` check if GitHub does not say), prints the exact
+   subject and claims for `hobo-ci-writer`, and writes the binding (ids and
+   that subject only). If they differ from step 4, fix the dashboard to match.
+   Commit it in a PR and merge it.
+
+   **Repair** (verify says the token's subject differs from the trust): re-run
+   `connect` with `--repo` (no ids needed once the binding exists). With
+   `INFISICAL_TOKEN` from the owner's own `infisical login` for that one run,
+   it updates `hobo-ci-writer`'s OIDC trust in place; otherwise walk the owner
+   through setting the printed subject and claims.
 
 ### 3. Fill the store, with no secret passing through anyone
 

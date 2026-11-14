@@ -129,6 +129,81 @@ describe("provisionTopology", () => {
 	});
 });
 
+describe("provisionTopology after a rotation (L42)", () => {
+	const signingOf = (jwt: string | undefined) => {
+		const claims: ClaimsData<Account> = decode(jwt ?? "");
+		return (claims.nats.signing_keys ?? []).map((key) =>
+			key instanceof Object ? `${key.role}:${key.key}` : key,
+		);
+	};
+	const input = () =>
+		({
+			servers: SERVERS,
+			operatorSigningSeed,
+			tenant: TENANT,
+			replicas: 1,
+		}) as const;
+
+	it("keeps the signing keys the resolver holds instead of the derived ones", async () => {
+		const pushed = acceptAccounts(server);
+		const rotatedSigning = createAccount().getPublicKey();
+		const rotatedExecutor = createAccount().getPublicKey();
+		const keys = tenantKeys(operatorSigningSeed, TENANT);
+		await provisionTopologyOver(server.clients, input());
+		expect(signingOf(pushed.at(-1))).toEqual([
+			`observer:${keys.scoped.observer.getPublicKey()}`,
+			`executor:${keys.scoped.executor.getPublicKey()}`,
+			`dispatcher:${keys.scoped.dispatcher.getPublicKey()}`,
+		]);
+		const rotated = await publishAccountSigningKeysOver(server.clients, {
+			servers: SERVERS,
+			operatorSigningSeed,
+			tenant: TENANT,
+			signingKeys: {
+				account: [rotatedSigning],
+				scoped: {
+					observer: [keys.scoped.observer.getPublicKey()],
+					executor: [rotatedExecutor],
+					dispatcher: [keys.scoped.dispatcher.getPublicKey()],
+				},
+			},
+		});
+		expect(rotated.ok).toBe(true);
+		const afterRotation = signingOf(pushed.at(-1));
+		await provisionTopologyOver(server.clients, input());
+		expect(signingOf(pushed.at(-1))).toEqual(afterRotation);
+		expect(afterRotation).toEqual([
+			rotatedSigning,
+			`observer:${keys.scoped.observer.getPublicKey()}`,
+			`executor:${rotatedExecutor}`,
+			`dispatcher:${keys.scoped.dispatcher.getPublicKey()}`,
+		]);
+	});
+
+	it("lists the signing keys it is given, from the internal options", async () => {
+		const pushed = acceptAccounts(server);
+		const given = createAccount().getPublicKey();
+		await provisionTopologyOver(server.clients, input(), {
+			signingKeys: {
+				account: [],
+				scoped: { observer: [given], executor: [], dispatcher: [] },
+			},
+		});
+		expect(signingOf(pushed.at(-1))).toEqual([`observer:${given}`]);
+	});
+
+	it("pushes nothing when the resolver's answer is not this account's JWT", async () => {
+		const pushed = acceptAccounts(server);
+		server.reply("$SYS.REQ.ACCOUNT.*.CLAIMS.LOOKUP", () =>
+			encoder.encode("not a jwt"),
+		);
+		await expect(
+			provisionTopologyOver(server.clients, input()),
+		).rejects.toThrow(/does not decode/u);
+		expect(pushed).toEqual([]);
+	});
+});
+
 describe("publishAccountSigningKeys (L41: account-signing and scoped-* rotation)", () => {
 	const accountKey = () => createAccount().getPublicKey();
 	const signingOf = (jwt: string | undefined) => {
@@ -382,7 +457,10 @@ describe("startCalloutResponder", () => {
 			replay: tenant.bus.replay,
 			incarnation: 3,
 			now: tenant.now,
-			log: (event, fields) => logged.push(`${event} ${String(fields.check)}`),
+			log: (event, fields) =>
+				logged.push(
+					`${event} ${String(fields.check ?? `${fields.status} ${fields.member}`)}`,
+				),
 		});
 		expect(server.opened.at(-1)?.name).toBe("hobo-fleet-callout");
 		const client = server.connect("server");
@@ -400,7 +478,10 @@ describe("startCalloutResponder", () => {
 		await expect(
 			client.ask("$SYS.REQ.USER.AUTH", new Uint8Array([1, 2, 3]), {}),
 		).rejects.toThrow(/no responders/u);
-		expect(logged).toEqual(["hobo_fleet_callout_refused request-signature"]);
+		expect(logged).toEqual([
+			`hobo_fleet_bus_status authorised ${device.memberId}`,
+			"hobo_fleet_callout_refused request-signature",
+		]);
 		await responder.stop();
 		await client.close();
 	});

@@ -163,6 +163,30 @@ describe("every container the worker starts", () => {
 		expect(docker.calls()[0]).not.toContain(SOCKET);
 	});
 
+	it("creates the runner-host controller container hardened, through the same driver (B5)", async () => {
+		const docker = fakeDocker();
+		const driver = createCliDockerDriver({
+			binary: docker.binary,
+			env: {},
+			socketGid: () => 998,
+		});
+		// runner-host-realizer.ts names it `hoboci-runner-controller-<sha256 hex>`.
+		await driver.create({
+			...spec,
+			name: `hoboci-runner-controller-${"a".repeat(64)}`,
+		});
+		await driver.pull(
+			`ghcr.io/hobo-labs/hobo-ci-controller@sha256:${"b".repeat(64)}`,
+		);
+		const [argv, pull] = docker.calls();
+		expect(argv?.[0]).toBe("create");
+		expectHardened(argv ?? []);
+		expect(argv).not.toContain(SOCKET);
+		// A pull starts no container, so it takes no container flags.
+		expect(pull?.[0]).toBe("pull");
+		expect(pull).not.toContain("--cap-drop=ALL");
+	});
+
 	it("probes images in a hardened container too", async () => {
 		const docker = fakeDocker();
 		const driver = createCliDockerDriver({ binary: docker.binary, env: {} });

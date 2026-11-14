@@ -645,8 +645,9 @@ describe("work through a bus outage (F4)", () => {
 			executor.agent.status().member?.memberships.map((m) => m.fleet),
 		).toEqual([FLEET, trunk]);
 		work.add("trunk-job-2", trunk);
-		await until(() => succeeded(receipts).length === 1);
-		expect(run.ran).toEqual(["trunk-job-2"]);
+		// The offer made before it joined still stands, so it runs too (L42).
+		await until(() => succeeded(receipts).length === 2);
+		expect(run.ran).toEqual(["trunk-job", "trunk-job-2"]);
 		await dispatcher.agent.stop();
 		await executor.agent.stop();
 	});

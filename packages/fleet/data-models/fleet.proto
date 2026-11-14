@@ -488,6 +488,15 @@ message Observation {
   string since = 18;                   // when the current health began
   string issued_at = 19;
   string valid_until = 20;
+  Refusal refusal = 21;                // why no new work is admitted (amendment 4, D60)
+}
+enum Refusal {
+  REFUSAL_UNSPECIFIED = 0;
+  REFUSAL_NONE = 1;                    // admits new work
+  REFUSAL_OWN_WORK = 2;                // full only with its own running work
+  REFUSAL_PRESSURE = 3;
+  REFUSAL_STORAGE = 4;
+  REFUSAL_DRAINING = 5;
 }
 enum Availability {
   AVAILABILITY_UNSPECIFIED = 0;
@@ -517,6 +526,7 @@ message FleetMemberView {
   repeated Role roles = 19;
   reserved 20;                         // was `active`: one-active fleets are local mode only and publish no view
   reserved "active";
+  Refusal refusal = 21;                // the current observation's refusal (amendment 4, D60)
 }
 message FleetCapacity {
   uint32 live = 1;
@@ -541,6 +551,7 @@ enum VerdictState {
   VERDICT_STATE_OPEN = 1;
   VERDICT_STATE_NO_MEMBER = 2;
   VERDICT_STATE_NO_CAPACITY = 3;
+  VERDICT_STATE_BUSY = 4;              // amendment 4 (D60): routing treats it as OPEN (`fleet-busy`)
 }
 message FleetVerdict {
   string fleet = 1;

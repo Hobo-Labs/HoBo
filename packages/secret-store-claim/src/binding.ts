@@ -31,6 +31,9 @@ export type ParsedSecretStoreBinding = Readonly<
 const ENDPOINT = /^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/[A-Za-z0-9._~/-]*)?$/u;
 const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/u;
 const ID = /^[A-Za-z0-9_-]{1,64}$/u;
+// GitHub's legacy or immutable prefix, then the branch; never a glob.
+const DEPLOY_SUBJECT =
+	/^repo:[A-Za-z0-9-]{1,39}(@\d{1,20})?\/[A-Za-z0-9._-]{1,100}(@\d{1,20})?:ref:refs\/heads\/[A-Za-z0-9._/-]{1,200}$/u;
 
 export function parseSecretStoreBinding(
 	record: SecretStoreBinding,
@@ -56,7 +59,9 @@ export function parseSecretStoreBinding(
 		record.relayIdentityId !== record.deployIdentityId &&
 		(record.vercelTeamId === "" ||
 			/^team_[A-Za-z0-9]{1,64}$/u.test(record.vercelTeamId)) &&
-		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId);
+		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId) &&
+		(record.deployOidcSubject === "" ||
+			DEPLOY_SUBJECT.test(record.deployOidcSubject));
 	if (!ok || claimState === undefined)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
@@ -74,6 +79,7 @@ export function parseSecretStoreBinding(
 		vercelTeamId: record.vercelTeamId,
 		claimBundleId: record.claimBundleId,
 		claimState,
+		deployOidcSubject: record.deployOidcSubject,
 	});
 }
 

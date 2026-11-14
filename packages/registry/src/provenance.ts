@@ -8,7 +8,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// Signature/provenance verification (docs/plans/0017 F24), reusing the
+// Signature/provenance verification, reusing the
 // @hobo/identity issuer/verify surface: a bundle attestation is a JWT signed
 // by the identity issuer whose codeVersion.digest claim binds the canonical
 // manifest digest, optionally accompanied by an SLSA-shaped in-toto provenance

@@ -1,5 +1,5 @@
 // @hobo/training — the built-in engine behind core's hobo:training-engine
-// port (ADR-0025, docs/plans/0017 F26). Internal-only: never re-exported
+// port (ADR-0025). Internal-only: never re-exported
 // through the app SDK surface; the platform selects it per tenant/Camp.
 
 export {

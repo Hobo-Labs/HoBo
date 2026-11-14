@@ -140,7 +140,7 @@ ensure_deps_build_headroom() {
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
     return 0
   fi
-  echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} bytes=${avail}); pruning BuildKit cache"
+  echo "deps rebuild headroom low (dockerRoot=${docker_root} samplePath=${sample_path} inodes=${iavail} need ${inode_headroom} bytes=${avail} need ${byte_headroom}); pruning BuildKit cache"
   docker builder prune -f --keep-storage "$cap"
   read -r iavail avail < <(sample_docker_headroom "$sample_path" "$base")
   if (( iavail >= inode_headroom && avail >= byte_headroom )); then
@@ -250,6 +250,10 @@ else
 fi
 
 echo "Building $candidate (fetch network restricted to lockfile-verified downloads; install offline)"
+node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate" || true
+before_iavail=0
+before_avail=0
+read -r before_iavail before_avail < <(sample_docker_headroom "$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" "$base" || echo "0 0")
 ensure_deps_build_headroom
 "${build_command[@]}" \
   "${docker_memory_args[@]}" \
@@ -290,3 +294,12 @@ else
 fi
 node --experimental-strip-types --no-warnings scripts/ci-runner-image-gc.mts "$candidate"
 "${prune_command[@]}" -f --keep-storage "$cap"
+sample_path="$(resolve_deps_headroom_sample_path "$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)" "$base")" || sample_path="/"
+# A `host:` sample is read through a helper container; `df` in the recorder
+# cannot read it, so there is no peak to record from this job.
+if [[ "$sample_path" == host:* ]]; then
+  echo "deps build telemetry: skipped (Docker data root sampled via host mount)"
+elif [[ "$before_iavail" =~ ^[0-9]+$ && "$before_avail" =~ ^[0-9]+$ ]]; then
+  node --experimental-strip-types --no-warnings --import "$root/scripts/lib/ts-source-resolve.mts" \
+    "$root/scripts/lib/deps-build-headroom.mts" --record "$sample_path" "$before_iavail" "$before_avail" || true
+fi

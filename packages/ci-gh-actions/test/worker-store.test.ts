@@ -17,7 +17,7 @@ describe("worker store plan", () => {
 				path: join("/home/box", ".local", "share", "hobo-ci", "worker.sqlite"),
 			},
 			admission: "pull",
-			jobPollMs: 5_000,
+			jobPollMs: 2_000,
 		});
 		expect(
 			defaultWorkerDatabasePath({ XDG_DATA_HOME: "/data" }, "/home/box"),
@@ -45,24 +45,29 @@ describe("worker store plan", () => {
 				{
 					HOBO_CI_STORE: "sqlite",
 					HOBO_CI_WORKER_DB: "/w.sqlite",
-					HOBO_CI_JOB_ADMISSION: "push",
 				},
 				"/h",
+				"push",
 			),
 		).toEqual({
 			store: { kind: "sqlite", path: "/w.sqlite" },
 			admission: "push",
-			jobPollMs: 5_000,
+			jobPollMs: 2_000,
 		});
+	});
+
+	it("takes admission from committed policy, never the environment", () => {
+		expect(
+			resolveWorkerStorePlan({ HOBO_CI_JOB_ADMISSION: "push" }, "/h").admission,
+		).toBe("pull");
 	});
 
 	it("rejects unknown stores, admissions and poll intervals", () => {
 		expect(() =>
 			resolveWorkerStorePlan({ HOBO_CI_STORE: "neon" }, "/h"),
 		).toThrow();
-		expect(() =>
-			resolveWorkerStorePlan({ HOBO_CI_JOB_ADMISSION: "both" }, "/h"),
-		).toThrow();
+		// SAFETY: deliberately not an admission, to prove the guard refuses it.
+		expect(() => resolveWorkerStorePlan({}, "/h", "both" as "pull")).toThrow();
 		expect(() =>
 			resolveWorkerStorePlan({ HOBO_CI_JOB_POLL_MS: "1000" }, "/h"),
 		).toThrow();

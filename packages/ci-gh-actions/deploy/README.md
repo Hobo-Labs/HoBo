@@ -112,9 +112,7 @@ non-secret settings:
 | `HOBO_CI_WORKER_MEMORY_MB` | unset | Backward-compatible heavy-class override; the startup check still applies |
 | `HOBO_CI_WORKER_MEMORY_LEARN` | `1` | `0` disables unmeasured and learned reservations, restoring full class admission |
 | `HOBO_CI_WORKER_MEMORY_HOL_MS` | `60000` | Time smaller same-rank jobs may backfill behind a non-fitting head job |
-| `HOBO_CI_JOB_POLL_MS` | `5000` | GitHub list-poll interval; minimum 5000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
-| `HOBO_CI_WORKER_MERGE_GROUP_LEASES` | `1` | Maximum distinct merge groups with active leases, grouped by `head_sha`; zero and invalid values are rejected |
-| `HOBO_CI_WORKER_PR_CAP_WITH_TRUNK` | `1` | Maximum new non-trunk leases while a trunk lease is active; strict integer 0–8; zero pauses them; uncapped when trunk is idle |
+| `HOBO_CI_JOB_POLL_MS` | `2000` | GitHub list-poll interval; minimum 2000, maximum 300000; every list uses its cached ETag and unchanged 304 responses do not consume primary rate limit |
 | `HOBO_CI_WORKER_WORK_ROOT` | `${XDG_STATE_HOME:-~/.local/state}/hobo-ci/work` | Host per-job work mounts, teardown and pressure checks; same filesystem as pnpm store |
 | `HOBO_CI_WORKER_WORKDIR_INODES` | `200000` | Host-workdir inode growth reserved per job; digits only, `0` disables this root's reservation |
 | `HOBO_CI_WORKER_CONTAINER_INODES` | `170000` | Docker-writable-layer inode growth reserved per job; digits only, `0` disables this root's reservation |
@@ -124,6 +122,23 @@ non-secret settings:
 | `HOBO_CI_WORKER_BUILDER_CACHE_CAP` | `4GB` | Hard BuildKit cache cap with no age exemption; `HOBO_CI_WORKER_BUILDER_KEEP_STORAGE` remains a deprecated alias |
 | `HOBO_CI_DEPS_BUILD_INODE_HEADROOM` | `400000` | Free inodes required on Docker's data root before a deps rebuild; digits only; sub-threshold runs LRU-evict unused `hobo-ci-deps:*` images via `scripts/ci-runner-image-gc.mts` after builder prune |
 | `HOBO_CI_DEPS_BUILD_BYTE_HEADROOM` | `8589934592` | Free bytes required on Docker's data root before a deps rebuild; digits only |
+| `HOBO_CI_DEPS_BUILD_TELEMETRY_PATH` | `$HOBO_HOME/ci/deps-build-telemetry.json` | Rolling peak inode/byte consumption recorded after successful deps builds |
+| `HOBO_RELEASE_BUILDER_CACHE_CAP` | `2GB` | `docker builder prune --keep-storage` cap after release OCI builds on shared boxes |
+| `HOBO_CI_DEPS_BUILD_WAIT_MS` | `300000` | Maximum wait in `scripts/ci/wait-deps-build-window.mts` for other job containers before a publisher or PR miss build (both callers also set it explicitly, inside 20-minute jobs); the script leaves its own job container out of the count and does not wait on Docker headroom, which `build-deps.sh` enforces after pruning ([finding 153](../../../docs/ci/findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)) |
+| `HOBO_CI_DEPS_BUILD_WAIT_UNKNOWN_SELF_MS` | `120000` | How long that script waits on job containers when it runs in a container it cannot identify as its own; it then proceeds and logs why; digits only |
+| `HOBO_CI_DEPS_BUILD_WAIT_POLL_MS` | `10000` | Poll interval for the deps build window script; digits only |
+
+The box's routing settings are not environment variables. The slot split (`slots`, `trunkSlots`,
+`trunkLend`), `prCapWithTrunk`, `mergeGroupLeases`, `capacityVolatilityMb`, `trunkHeadroomFleetDeferMs` and
+`jobAdmission` are committed in the `runnerRouting.box` block of `.hobo/ci.json`, which the daemon reads
+from its own checkout once at start ([ADR-0181](../../../docs/design/adr/routing-slips.md#adr-0181), decision 4).
+`HOBO_CI_WORKER_SLOTS`, `HOBO_CI_WORKER_TRUNK_SLOTS`, `HOBO_CI_WORKER_TRUNK_LEND`,
+`HOBO_CI_WORKER_PR_CAP_WITH_TRUNK`, `HOBO_CI_WORKER_MERGE_GROUP_LEASES`, `HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB`,
+`HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS`, `HOBO_CI_JOB_ADMISSION`, `HOBO_CI_FLEET_ROUTES` and every
+`HOBO_CI_FLEET_VERDICT_*` setting are no longer read; the daemon logs `hobo_ci_routing_environment_ignored`
+once at start with the names (never the values) of any still set. The box's own isolated offer takes
+`runnerRouting.box.slots` as its `concurrency`, whatever `HOBO_CI_CONFIG` says. See
+[the runner queue guide](../../ci/RUNNER-QUEUE.md) for the table.
 
 One `hobo_ci_job_pickup` log per lease records job/run identity, workflow event, runner label, admission,
 container-start and registration timestamps, and their millisecond deltas. Polled job creation time and total
@@ -157,7 +172,7 @@ create/update probes block-IO support once per daemon process. An unsupported en
 `hobo_ci_blkio_weight_unsupported` once and retries with CPU-only weighting, so IO support never gates
 admission. Warm spares start at PR weight and are updated to their lease's weights on assignment. The
 trunk-active PR cap leaves running PRs untouched and preserves strict trunk-first ordering. All of these
-scheduling changes require a box daemon redeploy before their effect is observable.
+scheduling changes require a box daemon restart before their effect is observable.
 
 At startup and before every admission or drain check, the worker reconciles its lease journal against the strictly
 parsed `hobo.ci/isolated=1` Docker inventory. Running containers are never reaped; exited/dead containers settle;
@@ -322,6 +337,11 @@ version is deliberately bumped. Node and pnpm mise entries are covered by the
 toolchain version, and `scripts/ci/deps-layer.mts` is staged into the deps
 context so mount verify can run `link`. It is not hashed into the key.
 
+The same checkout is where the daemon reads `runnerRouting` (`.hobo/ci.json`) and its own commit
+(`git rev-parse HEAD`). The commit is the `commit` field of the `hobo_ci_isolated_worker_started` record and
+the `relay.commit` of every routing slip the box writes, so the version a box runs can be read from its log
+or from `refs/hobo/routing-slip`. A checkout whose commit cannot be read writes no slip.
+
 The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
 
 The install stage moves every repo-relative `node_modules` under `/opt/hobo-deps` and splits its `node_modules/.pnpm` into 64 stable entry-name hash buckets under `/opt/hobo-deps-buckets`. `scripts/ci/deps-layer-buckets.mts` owns the assignment and generates the Dockerfile's `COPY --link` section into `/opt/hobo-deps`; `--check` and `scripts/test/deps-layer-buckets.test.ts` reject drift. A residual layer holds workspace links and pnpm metadata, with no `.git` and no checkout path. A final root step chowns `/opt/hobo-deps`, its `node_modules` and `.pnpm` to uid 1000 so `--link` cannot leave them root-owned. Ownership and timestamps are normalized, and `build-deps.sh` opts into timestamp rewriting only when supported, so unchanged bucket layers are reused across deps keys.
@@ -374,6 +394,38 @@ For immediate recovery from an unwritable promoted image, stop the daemon, run
 `docker rmi hobo-ci-deps:local`, and restart it. Alternatively set
 `HOBO_CI_DEPS_IMAGE=` (empty) and restart to disable selection and the ensure
 loop. Redeploy the fixed daemon and rebuild the image before re-enabling it.
+
+## Runner hosts as HoBo CD Camps
+
+The runner hosts themselves (this box worker, mesh nodes, local runners) are
+declared in [`runner-fleet/hosts.json`](runner-fleet/hosts.json) and delivered by
+HoBo CD: [`runner-fleet/hobo.delivery.ts`](runner-fleet/hobo.delivery.ts) is the
+delivery module, and [`runner-fleet/hobo-cd-agent.service`](runner-fleet/hobo-cd-agent.service)
+runs `hobo deploy agent run` beside the worker daemon. Enrollment, the rollout
+policy and what is still refused are in [`runner-fleet/README.md`](runner-fleet/README.md).
+
+## Shared Turbo cache server
+
+`turbo-cache/compose.yml` runs the open-source Turborepo remote cache server
+(`ducktors/turborepo-remote-cache`, pinned by digest) with a local volume, so
+every box job, ARC pod and GitHub-hosted runner can replay what another already
+built. It is separate from the relay and optional; nothing uses it until
+`.hobo/ci.json` names the server's URL in `turboCache.api` (committed
+configuration, read by `.github/actions/turbo-cache` from the checkout; no
+repository variable carries it), and the repository has the variable
+`TURBO_TEAM` (any slug) and the secret `TURBO_TOKEN` (the token below).
+
+```sh
+docker compose --env-file /abs/path/to/turbo-cache.env \
+  -f packages/ci-gh-actions/deploy/turbo-cache/compose.yml up -d
+```
+
+The env file sets `HOBO_CI_TURBO_CACHE_TOKEN`, and optionally
+`HOBO_CI_TURBO_CACHE_BIND` (default `127.0.0.1`), `HOBO_CI_TURBO_CACHE_PORT`
+(default `3000`) and `HOBO_CI_TURBO_CACHE_VOLUME`. Keep it outside the checkout.
+To serve ARC pods or another box, bind the private address they reach this host
+on; do not expose it publicly without TLS in front. Fork pull requests receive
+no token, so they neither read nor write the cache.
 
 ## Backup, restore and stop
 

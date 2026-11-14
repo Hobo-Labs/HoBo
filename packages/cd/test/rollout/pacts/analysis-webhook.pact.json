@@ -1,0 +1,70 @@
+{
+  "consumer": { "name": "HoboCdRolloutAnalysis" },
+  "provider": { "name": "ProgressiveAnalysisWebhook" },
+  "metadata": {
+    "pactSpecification": { "version": "4.0.0" },
+    "evidence": "Hand-authored HTTP contract for the optional analysis-webhook HealthSource (src/rollout/analysis.ts): the status-gate dialect POSTs the stage context and reads pass/fail from the status; the json-metric dialect GETs a document and reads a JSON pointer. Verified by test/rollout/analysis.test.ts."
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "status gate passes the stage",
+      "providerStates": [{ "name": "an analysis gate that accepts the canary" }],
+      "request": {
+        "method": "POST",
+        "path": "/gate/checkout",
+        "headers": { "content-type": "application/json", "authorization": "Bearer gate-token" },
+        "body": {
+          "name": "checkout-gate",
+          "phase": "stage-boundary",
+          "metadata": { "campId": "prod-a", "cohort": "COHORT_CANARY", "fromMs": "1794484800000", "toMs": "1794485400000" }
+        }
+      },
+      "response": { "status": 200 }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "status gate rejects the stage",
+      "providerStates": [{ "name": "an analysis gate that rejects the canary" }],
+      "request": {
+        "method": "POST",
+        "path": "/gate/checkout",
+        "headers": { "content-type": "application/json", "authorization": "Bearer gate-token" }
+      },
+      "response": { "status": 412, "body": { "reason": "error rate above budget" } }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "status gate is down",
+      "providerStates": [{ "name": "an analysis gate that is unavailable" }],
+      "request": { "method": "POST", "path": "/gate/checkout" },
+      "response": { "status": 503 }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "json metric series at a pointer",
+      "providerStates": [{ "name": "an analysis run exposing its measurements" }],
+      "request": {
+        "method": "GET",
+        "path": "/runs/42",
+        "headers": { "accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "metrics": [{ "name": "error-rate", "measurements": [0.01, 0.02, 0.015] }] }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "json metric without a numeric value",
+      "providerStates": [{ "name": "an analysis run still pending" }],
+      "request": { "method": "GET", "path": "/runs/42" },
+      "response": {
+        "status": 200,
+        "headers": { "content-type": "application/json" },
+        "body": { "metrics": [{ "name": "error-rate", "measurements": [] }] }
+      }
+    }
+  ]
+}

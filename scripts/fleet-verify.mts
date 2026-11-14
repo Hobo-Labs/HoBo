@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pnpm run fleet:verify` (ADR-0182): runs every outcome of the fleet design
+ * `pnpm run fleet:verify` (ADR-0183): runs every outcome of the fleet design
  * through `scripts/fleet-outcome.mts`, one process per outcome, and writes
  * `fleet-verification.json` at the root: one `{ id, pass, command, evidence,
  * measured, fallbacks }` object per outcome, in table order.

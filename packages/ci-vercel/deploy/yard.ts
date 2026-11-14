@@ -50,6 +50,14 @@ export const RELAY_PLACEMENT = Object.freeze({
 	project: "hobo-ci",
 	repository: "Hobo-Labs/HoBo",
 	rootDirectory: "packages/ci-vercel",
+	/**
+	 * The production domain Vercel aliases each production deployment to.
+	 * Standard Deployment Protection leaves it public (a per-deployment URL
+	 * answers 401), so `hobo ci deploy --adopt` verifies here: `/healthz` must
+	 * name the adopted commit, and `/readyz` must answer 200.
+	 * `HOBO_CI_RELAY_URL` overrides it.
+	 */
+	productionOrigin: "https://hobo-ci.vercel.app",
 } as const);
 
 /** The queue topic, the repair schedule and the function entries, by name. */
@@ -100,6 +108,7 @@ export default yard("hobo-ci-relay", {
 		project: RELAY_PLACEMENT.project,
 		repository: RELAY_PLACEMENT.repository,
 		rootDirectory: RELAY_PLACEMENT.rootDirectory,
+		productionOrigin: RELAY_PLACEMENT.productionOrigin,
 	},
 	bindings: [
 		// The project and the functions a git deployment of it produces.

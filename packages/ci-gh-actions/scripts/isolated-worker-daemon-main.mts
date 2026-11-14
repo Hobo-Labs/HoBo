@@ -21,7 +21,9 @@ import {
 import {
 	awaitWorkerBackgroundDrainIdle,
 	boxGitMirrorPath,
+	boxLeaseIdsOf,
 	ciEventSinkFromEnv,
+	controllerDigestFromEnv,
 	countLiveBoxContainers,
 	createBoxGitMirror,
 	createCiEventEmitter,
@@ -45,15 +47,22 @@ import {
 	createPollLogFilter,
 	createRelayTrace,
 	createRetiredWorkDirectorySweeper,
+	createRoutingHolds,
+	createRoutingSlipIssuer,
+	createRoutingStallWatch,
+	createRunnerPickupMemory,
 	createStoragePeaks,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
 	DEFAULT_DRAIN_BACKGROUND_BOUND_MS,
+	DEPS_BUILD_ADMISSION_ID,
 	type DepsImageProcessRequest,
+	decideRoutingSlipClasses,
 	defaultDepsRoot,
 	defaultGitMirrorFallbackRoot,
 	defaultGitMirrorPreferredRoot,
 	describeWaitingJobs,
+	evaluateRoutingSlip,
 	generalLeaseIdsFor,
 	type HostedInboxStore,
 	hostPressureBlocksAdmission,
@@ -64,29 +73,68 @@ import {
 	mainShardParallelLaunchCapacity,
 	mergeHeldPruneWitness,
 	parseWorkerStopMode,
+	type RepositoryRunnersView,
+	ROUTING_SLIP_SAMPLE_MS,
+	type RunnerJobsSeen,
 	readAvailableMemoryMb,
+	readBoxMemberSettings,
+	readBoxRoutingPolicy,
 	readHostHealthSample,
 	readHostMemory,
 	readHostResourcePressureSample,
+	readRepositoryRunners,
 	refreshHeldPruneWitnessFromStore,
 	relayTraceSinkFromEnv,
+	releaseEntryPath,
 	resolvedStorageReserve,
 	resolveGitMirrorRoot,
 	resolveWorkerMemoryConfig,
 	resolveWorkerSlotConfig,
 	resolveWorkerStorePlan,
+	retireRepositoryVariables,
+	routingEnvironmentNamesSet,
+	routingSlipLeader,
+	runnerRoutingLabels,
+	runningAsControllerRelease,
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
+	storageReserveForDepsBuild,
 	storageReserveForJob,
 	traceGithubTransport,
 	withGithubReadCache,
+	workerAdmissionPaused,
+	workerHostFiles,
 } from "@hobo/ci-gh-actions";
+import type { FleetView, MemberId } from "@hobo/fleet";
+import { z } from "zod";
 import { ciRunnerImageVersion } from "../../../scripts/lib/ci-runner-contract.mts";
 import { depsKeyForRoot } from "../../../scripts/lib/deps-key.mts";
 import { loadWorkerBudgetAdapter } from "./worker-budget-adapter.mts";
 
 const exec = promisify(execFile);
+
+/** The member name a host name gives (a §7.2 short name). */
+function memberNameOf(host: string): string {
+	const name = host
+		.toLowerCase()
+		.replace(/[^a-z0-9_-]/gu, "-")
+		.replace(/^[^a-z0-9]+/u, "")
+		.slice(0, 63);
+	return name === "" ? "box" : name;
+}
+
+/** This package's version: the agent version the box's fleet member reports. */
+function ciGhActionsVersion(): string {
+	const manifest = z
+		.object({ version: z.string().min(1) })
+		.safeParse(
+			JSON.parse(
+				readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+			),
+		);
+	return manifest.success ? manifest.data.version : "0.0.0";
+}
 
 function required(name: string): string {
 	const value = process.env[name];
@@ -122,7 +170,7 @@ function storageLeases(leases: readonly Lease[]) {
 	return leases.map((lease) => ({
 		id: lease.id,
 		sandboxName: lease.sandboxName,
-		jobId: String(lease.jobId),
+		jobId: String(lease.actualJobId > 0 ? lease.actualJobId : lease.jobId),
 	}));
 }
 
@@ -219,7 +267,25 @@ function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
 	});
 }
 
-const plan = resolveWorkerStorePlan(process.env, homedir());
+// Routing policy is committed configuration (ADR-0181, decision 4): the
+// `runnerRouting` block of `.hobo/ci.json` in this daemon's own checkout. No
+// environment variable chooses a label, a tier, a pool, a slot split, a limit
+// or a reporter here (R2).
+const checkoutRoot = defaultDepsRoot(import.meta.url);
+const routingPolicy = readBoxRoutingPolicy(checkoutRoot);
+const routing = routingPolicy.policy;
+// The commit this daemon runs, for its start log and every slip it writes.
+const daemonCommit = await exec("git", ["rev-parse", "HEAD"], {
+	cwd: checkoutRoot,
+})
+	.then(({ stdout }) => stdout.trim())
+	.catch(() => "")
+	.then((sha) => (/^[0-9a-f]{40}$/u.test(sha) ? sha : undefined));
+const plan = resolveWorkerStorePlan(
+	process.env,
+	homedir(),
+	routing.box.jobAdmission,
+);
 const appId = required("HOBO_CI_GITHUB_APP_ID");
 const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 	? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
@@ -249,10 +315,26 @@ const webhookSecret =
 // is per process, not a container budget: native code, pnpm/turbo children and page
 // cache must fit in the class too.
 // One slot is reserved for hobo-trunk jobs by default when there are at least two.
-// Shared-label jobs never borrow it unless HOBO_CI_WORKER_TRUNK_LEND=1.
-// The offer's concurrency must equal the slot count.
+// Shared-label jobs never borrow it unless runnerRouting.box.trunkLend is 1.
+// The offer's concurrency must equal the slot count, so the box's own offers
+// take it from the committed policy, whatever the configuration says.
 const { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk } =
-	resolveWorkerSlotConfig(process.env);
+	resolveWorkerSlotConfig(routing.box);
+for (const account of configuration.accounts)
+	for (const offer of account.offers)
+		if (
+			isIsolatedContainerOffer(offer) &&
+			offer.providerAccountId === workerAccountId &&
+			offer.concurrency !== slots
+		) {
+			log("hobo_ci_isolated_worker_offer_concurrency", {
+				accountId: account.id,
+				offerId: offer.id,
+				configured: offer.concurrency,
+				slots,
+			});
+			offer.concurrency = slots;
+		}
 const workRoot =
 	process.env.HOBO_CI_WORKER_WORK_ROOT ??
 	join(
@@ -279,15 +361,7 @@ const hostMemMb = Math.min(
 	hostMemorySample.cgroupMemoryLimitMb ?? Number.MAX_SAFE_INTEGER,
 );
 const workerMemoryMb = memoryConfig.classes.heavy;
-const capacityVolatilityMb = Number(
-	process.env.HOBO_CI_WORKER_MEMORY_VOLATILITY_MB ?? "1024",
-);
-if (
-	!Number.isFinite(capacityVolatilityMb) ||
-	capacityVolatilityMb < 0 ||
-	!Number.isInteger(capacityVolatilityMb)
-)
-	throw new Error("invalid HOBO_CI_WORKER_MEMORY_VOLATILITY_MB");
+const capacityVolatilityMb = routing.box.capacityVolatilityMb;
 let lastHostPressureLogAt = 0;
 const hostPressureSample = () => readHostResourcePressureSample(Date.now());
 const containerStallGuard = createContainerStallGuard({
@@ -315,10 +389,7 @@ const memoryAdmission = createWorkerMemoryAdmission(memoryConfig, {
 	memoryRampMs,
 	availableWindowMs: memoryLowWaterMs,
 });
-const trunkLend = process.env.HOBO_CI_WORKER_TRUNK_LEND ?? "0";
-if (trunkLend !== "0" && trunkLend !== "1")
-	throw new Error("invalid HOBO_CI_WORKER_TRUNK_LEND");
-const lendTrunkSlots = trunkLend === "1";
+const lendTrunkSlots = routing.box.trunkLend === 1;
 const intervalMs = Number(process.env.HOBO_CI_WORKER_POLL_MS ?? "2000");
 if (!Number.isFinite(intervalMs) || intervalMs < 1000)
 	throw new Error("invalid HOBO_CI_WORKER_POLL_MS");
@@ -376,6 +447,16 @@ if (
 
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void> = async () => {};
+// Where this worker meets its host's CD agent (`hobo deploy agent run`): the
+// agent closes admission with a marker file here (src/runner-host-worker-jobs.ts).
+// The mesh advert it used to read is gone; the agent reads this box's fleet
+// observation, whose agent version is the controller release below.
+const runnerHostFiles = workerHostFiles(plan.store.path);
+const admissionPausedByAgent = () => workerAdmissionPaused(runnerHostFiles);
+// The release this worker runs, when its daemon's supervisor started it at
+// one (runner-controller-process.ts): the fleet member reports it as its
+// agent version.
+const controllerDigest = controllerDigestFromEnv(process.env);
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
 	plan.store.kind,
@@ -481,8 +562,13 @@ try {
 	const depsRepository =
 		process.env.HOBO_CI_DEPS_REPOSITORY ?? "Hobo-Labs/HoBo";
 	const depsImage = process.env.HOBO_CI_DEPS_IMAGE ?? "hobo-ci-deps:local";
-	const depsRoot =
-		process.env.HOBO_CI_DEPS_ROOT ?? defaultDepsRoot(import.meta.url);
+	// A release staged by digest has no checkout to find the repository from.
+	const depsRoot = releaseEntryPath({
+		env: process.env,
+		name: "HOBO_CI_DEPS_ROOT",
+		release: runningAsControllerRelease(),
+		fallback: () => defaultDepsRoot(import.meta.url),
+	});
 	if (pnpmStore && statSync(pnpmStore).dev !== statSync(workRoot).dev)
 		throw new Error(
 			"pnpm store and work root must share a filesystem for hardlinks",
@@ -511,6 +597,7 @@ try {
 		docker,
 		activeLeases: async () => storageLeases(await store.activeLeases()),
 		scheduleRetiredSweep: retiredSweep.trigger,
+		drainRetiredSweep: retiredSweep.drain,
 		defaultJobReserve: storageReserveForClass("standard"),
 		pnpmStore: pnpmStore
 			? createPnpmStoreMaintenance({
@@ -689,6 +776,7 @@ try {
 		containerEnv,
 		workRoot,
 		workFs,
+		storageAdmission,
 		scheduleRetiredSweep: retiredSweep.trigger,
 		containerStallGuard,
 		noContainerDrainMaxMs,
@@ -700,6 +788,8 @@ try {
 	await worker.reconcileOrphanJobs();
 	await worker.reconcileStallRecoveries();
 	let depsImageEnsurer: ReturnType<typeof createDepsImageEnsurer> | undefined;
+	let depsImageWorkRunning = false;
+	let warmContainersStarting = 0;
 	if (depsImage && depsRepository.toLowerCase() === "hobo-labs/hobo") {
 		depsImageEnsurer = createDepsImageEnsurer({
 			root: depsRoot,
@@ -759,7 +849,34 @@ try {
 				},
 			},
 			processes: { run: runDepsProcess },
-			onEvent: ({ event, ...fields }) => log(event, fields),
+			idleForBuild: async () => {
+				try {
+					return (await store.activeLeases()).length === 0;
+				} catch {
+					return false;
+				}
+			},
+			// The grant is refused when the build's reserve does not fit.
+			onBuildSlot: {
+				acquire: async () =>
+					storageAdmission.admit(
+						storageLeases(await store.activeLeases()),
+						DEPS_BUILD_ADMISSION_ID,
+						storageReserveForDepsBuild(),
+					),
+				release: () => storageAdmission.release(DEPS_BUILD_ADMISSION_ID),
+			},
+			onEvent: ({ event, ...fields }) => {
+				// The box's own deps-image work: while it runs the box is not idle.
+				if (event === "hobo_ci_deps_image_ensure_started")
+					depsImageWorkRunning = true;
+				else if (
+					event === "hobo_ci_deps_image_ensure" ||
+					event === "hobo_ci_deps_image_ensure_failed"
+				)
+					depsImageWorkRunning = false;
+				log(event, fields);
+			},
 		});
 	}
 	const host = createCompositeIsolatedHost({ store, worker: worker.host });
@@ -780,15 +897,7 @@ try {
 			? { hoboFreeSlots }
 			: { hoboFreeSlots, fleetFreeSlots: capacity.freeSlots };
 	};
-	const headroomFleetDeferMs = Number(
-		process.env.HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS ?? "45000",
-	);
-	if (
-		!Number.isFinite(headroomFleetDeferMs) ||
-		headroomFleetDeferMs < 1_000 ||
-		!Number.isInteger(headroomFleetDeferMs)
-	)
-		throw new Error("invalid HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS");
+	const headroomFleetDeferMs = routing.box.trunkHeadroomFleetDeferMs;
 	const unlaunchedReserveMs = Number(
 		process.env.HOBO_CI_UNLAUNCHED_RESERVE_MS ?? "25000",
 	);
@@ -823,6 +932,8 @@ try {
 		| Readonly<{
 				daemon: Readonly<{
 					fleetCapacity(): Promise<{ freeSlots: number } | undefined>;
+					fleetView(): Promise<FleetView | undefined>;
+					memberId(): MemberId | undefined;
 					hostDocker(): boolean;
 					refreshFleet(): Promise<void>;
 					agent: Readonly<{
@@ -880,19 +991,47 @@ try {
 		inboxDrainBudgetMs,
 		onInboxDeliveryEvent: (event, fields) => log(event, fields),
 	});
-	// HoBo Fleet (ADR-0182): with HOBO_FLEET_AUTHORITY_URL this box is a
-	// DEDICATED fleet member with roles DISPATCHER and EXECUTOR. Its memory,
-	// storage and host-health admission is its capacity; GitHub's queue reaches
-	// it as the github-actions-job work kind, and each order runs in a sandbox
-	// from @hobo/fleet-agent behind the agent's egress proxy. Without it the box
-	// takes GitHub's queue alone, as before.
-	if (process.env.HOBO_FLEET_AUTHORITY_URL) {
-		const authorityUrl = process.env.HOBO_FLEET_AUTHORITY_URL;
-		const fleetName = required("HOBO_FLEET_NAME");
-		const tenant = required("HOBO_FLEET_TENANT");
-		const fleetHome =
-			process.env.HOBO_FLEET_HOME ??
-			join(dirname(plan.store.path), "fleet-member");
+	// HoBo Fleet (ADR-0183): with a committed `fleet` block in .hobo/ci.json
+	// (D61) this box is a DEDICATED fleet member with roles DISPATCHER and
+	// EXECUTOR. Its memory, storage and host-health admission is its capacity;
+	// GitHub's queue reaches it as the github-actions-job work kind, and each
+	// order runs in a sandbox from @hobo/fleet-agent behind the agent's egress
+	// proxy. Without the block, or before the box is enrolled and with no
+	// bootstrap token file, the box takes GitHub's queue alone, as before. No
+	// fleet setting is read from the environment: only the state directory and
+	// the token's file path come from the process.
+	const memberSettings = readBoxMemberSettings(checkoutRoot, process.env, {
+		journalDirectory: dirname(plan.store.path),
+	});
+	const memberKeys = memberSettings
+		? (await import("@hobo/fleet-agent")).createFileKeyStore(
+				memberSettings.home,
+			)
+		: undefined;
+	const memberEnrolled =
+		memberKeys !== undefined &&
+		(await memberKeys.readState()).trust !== undefined;
+	if (
+		memberSettings &&
+		memberKeys &&
+		(memberEnrolled || memberSettings.bootstrapTokenFile !== undefined)
+	) {
+		const authorityUrl = memberSettings.authorityUrl;
+		const fleetName = memberSettings.fleet;
+		const tenant = memberSettings.tenant;
+		// D58's sandbox settings come from the committed block on the box:
+		// whatever the environment says is replaced before the drivers read it.
+		for (const [name, value] of [
+			["HOBO_FLEET_SANDBOX_RUNTIME", memberSettings.sandbox.runtime],
+			["HOBO_FLEET_SANDBOX_CACHE", memberSettings.sandbox.cache],
+			[
+				"HOBO_FLEET_SANDBOX_DOWNLOAD",
+				memberSettings.sandbox.download ? undefined : "0",
+			],
+		] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
 		const [ciGh, fleetAgent, fleetNats, core] = await Promise.all([
 			import("@hobo/ci-gh-actions"),
 			import("@hobo/fleet-agent"),
@@ -905,7 +1044,7 @@ try {
 		) => log(event, fields);
 		const connections = async () =>
 			(await store.configuration())?.configuration?.connections ?? [];
-		const keys = fleetAgent.createFileKeyStore(fleetHome);
+		const keys = memberKeys;
 		const standardDiskMb = Math.ceil(
 			storageReserveForClass("standard").workRootBytes / (1024 * 1024),
 		);
@@ -970,22 +1109,24 @@ try {
 			},
 			sandboxes: await fleetAgent.sandboxDrivers({ log: fleetLog }),
 			egress,
-			agentVersion: process.env.HOBO_FLEET_AGENT_VERSION ?? "0.0.1",
+			agentVersion: controllerDigest ?? ciGhActionsVersion(),
 			now: Date.now,
 			log: fleetLog,
 			fetch,
 		});
 		// First start: enroll with the single-use bootstrap token, read from a
 		// file so it never appears on a command line or in the environment.
-		if ((await keys.readState()).trust === undefined) {
-			const tokenFile = required("HOBO_FLEET_BOOTSTRAP_TOKEN_FILE");
+		if (!memberEnrolled && memberSettings.bootstrapTokenFile !== undefined) {
 			const enrolled = await daemon.agent.enroll(
 				ciGh.boxEnrollment({
 					tenant: core.parseTenantId(tenant),
 					fleet: fleetName,
-					name: process.env.HOBO_FLEET_MEMBER_NAME ?? hostname(),
-					bootstrapToken: readFileSync(tokenFile, "utf8").trim(),
-					region: required("HOBO_FLEET_REGION"),
+					name: memberSettings.memberName ?? memberNameOf(hostname()),
+					bootstrapToken: readFileSync(
+						memberSettings.bootstrapTokenFile,
+						"utf8",
+					).trim(),
+					region: memberSettings.region,
 					platform: { os: process.platform, arch: process.arch },
 				}),
 			);
@@ -1003,7 +1144,9 @@ try {
 	}
 	log("hobo_ci_fleet_member", {
 		enabled: fleetMember !== undefined,
-		fleet: process.env.HOBO_FLEET_NAME ?? "",
+		fleet: memberSettings?.fleet ?? "",
+		configured: memberSettings !== undefined,
+		enrolled: memberEnrolled,
 	});
 	const pollIngestCoalesce = createPollIngestCoalesce();
 	const heldJobPruner =
@@ -1034,16 +1177,26 @@ try {
 						log("hobo_ci_isolated_worker_github_read_failed", { ...failure }),
 					beforePoll: () => mergeQueueCache.refresh(),
 					onMainFabricTrunkQueued: (repository) => {
-						void worker.prewarm(repository).catch((error) =>
-							log("hobo_ci_main_fabric_prewarm_failed", {
-								repository,
-								message: error instanceof Error ? error.message : "unknown",
-							}),
-						);
+						warmContainersStarting += 1;
+						void worker
+							.prewarm(repository)
+							.catch((error) =>
+								log("hobo_ci_main_fabric_prewarm_failed", {
+									repository,
+									message: error instanceof Error ? error.message : "unknown",
+								}),
+							)
+							.finally(() => {
+								warmContainersStarting -= 1;
+							});
 					},
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
+	// What the routing slip reads of GitHub: the last completed poll's jobs on
+	// routed labels, and the jobs runners took lately.
+	const runnerPickups = createRunnerPickupMemory();
+	let latestRunnerJobs: RunnerJobsSeen | undefined;
 
 	let draining = false;
 	let workerDrainStartedAtMs: number | undefined;
@@ -1102,7 +1255,12 @@ try {
 		if (!reconciliation.inventoryKnown) return;
 		// Pull workers drain the inbox on a separate timer so admission ticks stay
 		// under slow-tick alerting; push relay hosts still bound inbox work in tick.
-		await runtime.tick({ maxDeliveries: poller ? 0 : 10 });
+		// The host's CD agent may have closed admission to swap the controller:
+		// inspect leases, admit nothing new; running jobs are untouched.
+		await runtime.tick({
+			maxDeliveries: poller ? 0 : 10,
+			admit: !admissionPausedByAgent(),
+		});
 		if (heldJobPruner) {
 			const pruned = await heldJobPruner.maybePrune();
 			if (pruned > 0) void runTick().catch(() => undefined);
@@ -1161,11 +1319,15 @@ try {
 						terminalJobs: [],
 					},
 				);
+				const { waiting, runnerJobs, ...counts } = summary;
+				if (runnerJobs) {
+					latestRunnerJobs = runnerJobs;
+					runnerPickups.remember(runnerJobs);
+				}
 				const pruned = (await heldJobPruner?.maybePrune()) ?? 0;
 				if (summary.accepted > 0 || pruned > 0)
 					void runTick().catch(() => undefined);
 				if (!pollWorthLogging(summary, Date.now())) return;
-				const { waiting, ...counts } = summary;
 				log("hobo_ci_isolated_worker_jobs_polled", {
 					...counts,
 					waitingJobs: waiting.length,
@@ -1228,6 +1390,8 @@ try {
 	}
 
 	log("hobo_ci_isolated_worker_started", {
+		commit: daemonCommit ?? "unknown",
+		routingPolicy: routingPolicy.source,
 		store: plan.store.kind,
 		admission: plan.admission,
 		publicOrigin,
@@ -1254,6 +1418,15 @@ try {
 		drainTimeoutMs,
 		stopMode,
 	});
+	// Routing comes from committed policy (ADR-0181, decision 4): name, once, any
+	// routing variable still set on the box, so an override that stopped
+	// applying is visible. Never its value.
+	const ignoredRoutingNames = routingEnvironmentNamesSet(process.env);
+	if (ignoredRoutingNames.length > 0)
+		log("hobo_ci_routing_environment_ignored", {
+			names: ignoredRoutingNames.join(","),
+			policy: routingPolicy.source,
+		});
 
 	gcTimer = setInterval(runGc, gcIntervalMs);
 	pollTimer = setInterval(() => {
@@ -1301,6 +1474,216 @@ try {
 	}
 	runDepsImageEnsure();
 
+	// The routing slip (ADR-0181). Every 10 s, on its own unreferenced timer,
+	// the slip leader (rank 0 of the fleet's live DISPATCHER members; a box
+	// outside a fleet leads itself) decides each connected repository's routing
+	// and writes it to refs/hobo/routing-slip when it changes and as a
+	// heartbeat. The decision is an adapter over `fleetVerdict`
+	// (routing-slip-decision.ts), with peers from the authority's signed fleet
+	// view. Nothing in admission, dispatch or the poller awaits it.
+	const routedLabels =
+		trunkSlots > 0
+			? [routing.labels.fleet, routing.labels.trunk]
+			: [routing.labels.fleet];
+	// The fleet view and this box's member id, when it is a member; a view that
+	// cannot be read is no view, and the slip treats peers as unknown (R3).
+	const memberFleet = async () => {
+		const self = fleetMember?.daemon.memberId();
+		if (!fleetMember || self === undefined) return undefined;
+		const view = await fleetMember.daemon.fleetView().catch(() => undefined);
+		return view === undefined ? undefined : { view, self };
+	};
+	const evaluateRouting = async (
+		runners: RepositoryRunnersView | undefined,
+		active: Awaited<ReturnType<typeof store.activeLeases>>,
+	) => {
+		const nowMs = Date.now();
+		const idle =
+			active.length === 0 &&
+			liveLaunchSlotsInUse === 0 &&
+			!depsImageWorkRunning &&
+			warmContainersStarting === 0 &&
+			gcInFlight === undefined;
+		const pickups = runnerPickups.list(nowMs);
+		const ownLeaseIds = new Set<string>();
+		for (const id of boxLeaseIdsOf(pickups))
+			if (await store.get(id)) ownLeaseIds.add(id);
+		const seen = latestRunnerJobs;
+		return evaluateRoutingSlip({
+			nowMs,
+			labels: routedLabels,
+			idle,
+			freeSlots: Math.max(0, slots - liveLaunchSlotsInUse),
+			draining,
+			host: {
+				availableMb: readAvailableMemoryMb(),
+				pressure: hostPressureSample(),
+				health: hostHealth.current(),
+			},
+			admission: {
+				standardClassMb: memoryConfig.classes.standard,
+				reserveMb: memoryConfig.reserveMb,
+				volatilityMb: capacityVolatilityMb,
+			},
+			pools: routing.externalPools,
+			minFreeRunners: routing.verdict.minFreeRunners,
+			poll:
+				seen === undefined
+					? undefined
+					: {
+							completedAtMs: Date.parse(seen.completedAt),
+							inProgress: seen.inProgress.map((job) => ({
+								label: job.label,
+								runnerName: job.runnerName,
+								startedAtMs: Date.parse(job.startedAt ?? seen.completedAt),
+							})),
+						},
+			runners: { view: runners },
+			fleet: await memberFleet(),
+			ownLeaseIds,
+			pickups,
+		});
+	};
+	// GitHub's runner list per repository, read only when pools are declared
+	// and no more than every 30 s; a failed read is unknown (R3).
+	const runnerViews = new Map<string, RepositoryRunnersView | undefined>();
+	const runnerViewReadAt = new Map<string, number>();
+	const readRunners = async (
+		installationId: number,
+		repository: string,
+	): Promise<RepositoryRunnersView | undefined> => {
+		const nowMs = Date.now();
+		if (routing.externalPools.length === 0)
+			return { readAtMs: nowMs, runners: [] };
+		if (nowMs - (runnerViewReadAt.get(repository) ?? 0) < 30_000)
+			return runnerViews.get(repository);
+		runnerViewReadAt.set(repository, nowMs);
+		const view = await readRepositoryRunners(
+			github,
+			{ installationId, repository },
+			nowMs,
+		);
+		runnerViews.set(repository, view);
+		return view;
+	};
+	const connectedTargets = async () => {
+		const seen = new Map<string, number>();
+		for (const connection of (await store.configuration())?.configuration
+			?.connections ?? [])
+			if (!seen.has(connection.repository))
+				seen.set(connection.repository, connection.installationId);
+		return [...seen].map(([repository, installationId]) => ({
+			repository,
+			installationId,
+		}));
+	};
+	const slipHolds = new Map<string, ReturnType<typeof createRoutingHolds>>();
+	const STALL_WAITING_STATES = new Set([
+		"reserved",
+		"dispatching",
+		"dispatched",
+		"claiming",
+	]);
+	const stallWatch = createRoutingStallWatch({
+		stallMs: routing.verdict.stallMs,
+		startedAtMs: Date.now(),
+	});
+	const labelOfLease = (lease: Lease) =>
+		workerRunnerLabels.get(`${lease.repository}:${lease.jobId}`) ===
+		routing.labels.trunk
+			? routing.labels.trunk
+			: routing.labels.fleet;
+	const decideSlip = async (repository: string) => {
+		const nowMs = Date.now();
+		const target = (await connectedTargets()).find(
+			(entry) => entry.repository === repository,
+		);
+		const active = await store.activeLeases();
+		const evaluation = await evaluateRouting(
+			target ? await readRunners(target.installationId, repository) : undefined,
+			active,
+		);
+		let holds = slipHolds.get(repository);
+		if (!holds) {
+			holds = createRoutingHolds({
+				labels: routedLabels,
+				enterMs: routing.verdict.enterMs,
+				exitMs: routing.verdict.exitMs,
+			});
+			slipHolds.set(repository, holds);
+		}
+		holds.observe(nowMs, new Set(evaluation.blocked.keys()));
+		// A label stalls on the box, whatever repository its work came from, so
+		// the watch sees every lease: filtered per repository, a running job of
+		// another repository would read as a fresh start on every pass. Work is
+		// waiting from reservation until its runner starts it, so a container
+		// whose runner never takes the job counts too.
+		const stalled = stallWatch.observe(
+			nowMs,
+			active.map((lease) => ({
+				id: lease.id,
+				label: labelOfLease(lease),
+				waiting: STALL_WAITING_STATES.has(lease.state),
+				started: lease.state === "running",
+				assignedAtMs: Date.parse(lease.createdAt) || nowMs,
+			})),
+		);
+		return decideRoutingSlipClasses({
+			policy: routing,
+			served: evaluation.served,
+			refused: holds.blocked(),
+			stalled,
+			full: evaluation.full,
+		});
+	};
+	const hostSlipNodeId = hostname()
+		.replace(/[^A-Za-z0-9_-]/g, "-")
+		.slice(0, 64);
+	// Known once the agent is enrolled; the slip names the member that wrote it.
+	const slipNodeId = fleetMember?.daemon.memberId() ?? hostSlipNodeId;
+	const slipIssuer = daemonCommit
+		? createRoutingSlipIssuer({
+				github,
+				labels: runnerRoutingLabels(routing),
+				relay: { nodeId: slipNodeId, commit: daemonCommit },
+				// rank 0 of rankMembers over the fleet's live dispatchers
+				// (`leaderOf`, replacing main's lowest-node-id election); a box
+				// outside a fleet leads itself.
+				leader: async () => {
+					if (!fleetMember) return true;
+					const fleet = await memberFleet();
+					if (fleet === undefined) return true;
+					return routingSlipLeader(fleet, Date.now()) === fleet.self;
+				},
+				targets: connectedTargets,
+				decide: decideSlip,
+				enabled: () => !draining,
+				log,
+				// Once per start, on the leader: delete the retired variables
+				// (ADR-0181, decision 6). A 403 is logged once and never retried here.
+				onFirstLead: async () => {
+					for (const target of await connectedTargets())
+						await retireRepositoryVariables(github, {
+							installationId: target.installationId,
+							repository: target.repository,
+							names: routing.retiredVariables,
+							log,
+						});
+				},
+			})
+		: undefined;
+	if (!slipIssuer)
+		log("hobo_ci_slip_leader", {
+			leader: false,
+			nodeId: slipNodeId,
+			reason: "commit-unknown",
+		});
+	const slipTimer = slipIssuer
+		? setInterval(() => void slipIssuer.tick(), ROUTING_SLIP_SAMPLE_MS)
+		: undefined;
+	slipTimer?.unref();
+	void slipIssuer?.tick();
+
 	let shutdownOnce: Promise<void> | undefined;
 	let runningWorkerContainers = 0;
 
@@ -1322,6 +1705,8 @@ try {
 				clearInterval(fleetMember.timer);
 				await fleetMember.daemon.agent.drain().catch(() => undefined);
 			}
+			// No more slips: the last one expires on its own (ADR-0181).
+			if (slipTimer) clearInterval(slipTimer);
 			const backgroundKinds = (): (
 				| "tick"
 				| "inbox"

@@ -29,8 +29,10 @@ import {
 	type FleetLog,
 	type FleetRecord,
 	type FleetTransport,
+	type FleetView,
 	Health,
 	type KeyStore,
+	type MemberId,
 	type Outcome,
 	parseFleetId,
 	Role,
@@ -257,9 +259,19 @@ export function composeFleetDaemon(options: BoxMemberOptions) {
 		fleetAllow: (): readonly string[] => fleet?.policy?.egressAllow ?? [],
 		/** The fleet's capacity from the authority's signed fleet view; undefined while unknown. */
 		async fleetCapacity(): Promise<FleetCapacity | undefined> {
+			return (await this.fleetView())?.capacity;
+		},
+		/** The authority's signed fleet view (peers for the routing slip); undefined while unknown. */
+		async fleetView(): Promise<FleetView | undefined> {
 			const registry = agent.bus()?.registry;
 			if (registry === undefined) return undefined;
-			return (await registry.view(fleetId))?.capacity;
+			return registry.view(fleetId);
+		},
+		/** This box's member id once enrolled. */
+		memberId(): MemberId | undefined {
+			const id = agent.status().member?.memberId;
+			// SAFETY: the agent's member record is one the registry verified.
+			return id === undefined || id === "" ? undefined : (id as MemberId);
 		},
 	};
 }

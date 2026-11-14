@@ -23,7 +23,7 @@ FROM node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054f
 ENV NODE_ENV=production HOBO_CI_HOST=0.0.0.0 HOBO_CI_PORT=8787 HOBO_CI_DB=/var/lib/hobo-ci/relay.sqlite
 WORKDIR /app
 COPY --from=build --chown=1000:1000 /out /app
-RUN mkdir -p /var/lib/hobo-ci && chown 1000:1000 /var/lib/hobo-ci
+RUN mkdir -p /var/lib/hobo-ci/git && chown 1000:1000 /var/lib/hobo-ci /var/lib/hobo-ci/git
 RUN command -v flock
 USER 1000:1000
 EXPOSE 8787

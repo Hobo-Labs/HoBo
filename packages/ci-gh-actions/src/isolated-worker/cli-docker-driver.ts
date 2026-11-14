@@ -6,6 +6,7 @@ import {
 	type ContainerHardening,
 	hardenedContainerFlags,
 } from "./container-flags.js";
+import type { DepsImageDockerPort } from "./deps-image.js";
 import type {
 	ContainerResourceWeights,
 	DockerContainer,
@@ -16,6 +17,8 @@ import type { WorkerImage } from "./image-gc.js";
 import type { WorkerStorageDockerDriver } from "./storage-admission.js";
 
 const exec = promisify(execFile);
+/** An image reference as `docker pull` takes it: no option shape, no whitespace. */
+const IMAGE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,511}$/u;
 const dockerImage = z.object({
 	ID: z.string().min(1),
 	Repository: z.string(),
@@ -160,7 +163,9 @@ export function createCliDockerDriver(options: {
 		event: "hobo_ci_blkio_weight_unsupported",
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
-}): DockerDriver & WorkerStorageDockerDriver {
+}): DockerDriver &
+	WorkerStorageDockerDriver &
+	Pick<DepsImageDockerPort, "pull"> {
 	const docker = options.binary ?? "docker";
 	const env = options.env ?? process.env;
 	const hardened = hardenedContainerFlags(options.hardening ?? {});
@@ -299,6 +304,16 @@ export function createCliDockerDriver(options: {
 					return false;
 				throw error;
 			}
+		},
+		/** `docker pull <ref>`: a runner-host controller image, pinned by the caller. */
+		async pull(image) {
+			if (!IMAGE_REFERENCE.test(image))
+				throw new Error("invalid image reference");
+			await exec(docker, ["pull", image], {
+				env,
+				timeout: 45 * 60_000,
+				maxBuffer: 1024 * 1024,
+			});
 		},
 		async inspectImage(image) {
 			const { stdout } = await exec(docker, ["image", "inspect", image], {

@@ -1,0 +1,17 @@
+{
+  "id": "slot-1",
+  "accountId": "hobo-labs",
+  "offerId": "local-offer",
+  "workerBindingId": "worker-binding-1",
+  "profileId": "trusted-linux-x64",
+  "runnerName": "hobo-slot-1",
+  "state": "reserved",
+  "capacityGroupId": "device-1",
+  "capacityCostUnits": 1,
+  "policyHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "offerObservationHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "quoteHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "bindingSecretHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "incarnationId": "incarnation-1",
+  "createdAt": "2026-11-03T00:00:00Z"
+}

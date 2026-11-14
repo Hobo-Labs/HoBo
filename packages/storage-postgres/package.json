@@ -1,0 +1,41 @@
+{
+	"name": "@hobo/storage-postgres",
+	"version": "0.0.1",
+	"description": "HoBo durable EventStore on PostgreSQL 16+: fenced multi-node journal, subscription leases and checkpoints",
+	"license": "MIT",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/core": "workspace:*",
+		"pg": "8.22.0"
+	},
+	"devDependencies": {
+		"@hobo/conformance": "workspace:*",
+		"@types/node": "^22.15.29",
+		"@types/pg": "8.15.5",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer",
+		"test:contract:provider": "vitest run contracts/provider"
+	}
+}

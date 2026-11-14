@@ -1,6 +1,6 @@
 import type { ResidencyGateVerdict } from "@hobo/contracts";
 
-// Rubric + promotion-gate engine (docs/plans/0017 F25, design PLAN-23).
+// Rubric + promotion-gate engine (design PLAN-23).
 // Rubrics are schema-versioned records; scoring is a deterministic pure
 // function producing a frozen report that mirrors the @hobo/conformance
 // suite/report vocabulary (schema id, ok, failures with machine-readable

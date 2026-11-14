@@ -6,6 +6,21 @@ export {
 	type HostAssetClientOptions,
 } from "./client.js";
 export {
+	type AbsentTrafficOffering,
+	defineHostingCoverage,
+	HOSTING_COVERAGE_CONTRACT,
+	type HostingCoverage,
+	hostingProductRefusal,
+	instrumentResolvers,
+	PORTABLE_TRAFFIC_OFFERING_IDS,
+	RESOLVER_DURATION_METRIC,
+	RESOLVER_OPERATIONS_METRIC,
+	type ResolverMetricPoint,
+	type ResolverMetricSink,
+	type ResolverTelemetryOptions,
+	type UnresolvedHostingProduct,
+} from "./delivery-coverage.js";
+export {
 	CLEANUP_STATES,
 	type CleanupOutcome,
 	type CleanupState,
@@ -34,6 +49,12 @@ export {
 	redactHostText,
 } from "./errors.js";
 export {
+	BROWSER_WASM_GUEST_PRODUCT_ID,
+	type BrowserWasmResolverOptions,
+	browserWasmResolverRegistry,
+	createBrowserWasmResolvers,
+} from "./guest-resolver.js";
+export {
 	createUnavailableRuntime,
 	type GuestRuntimePort,
 	type InstantiatedGuest,
@@ -41,6 +62,12 @@ export {
 	type TerminateInput,
 	type TerminationResult,
 } from "./host-runtime.js";
+export {
+	BROWSER_WASM_HOSTING_COVERAGE,
+	BROWSER_WASM_RESOLVED_PRODUCT_IDS,
+	BROWSER_WASM_UNRESOLVED_PRODUCTS,
+	browserWasmProductRefusal,
+} from "./hosting-coverage.js";
 export {
 	COMPONENT_MEDIA_TYPE,
 	type ComponentArtifact,
@@ -89,6 +116,11 @@ export {
 	provisionTemporaryEnvironmentStation,
 	supportsAnonymousTemporaryDeploy,
 } from "./temporary-station.js";
+export {
+	BROWSER_WASM_TRAFFIC_ROUTING_ABSENT,
+	BROWSER_WASM_TRAFFIC_ROUTING_OFFERING_IDS,
+	BROWSER_WASM_TRAFFIC_ROUTING_PROFILE,
+} from "./traffic-routing-offerings.js";
 export {
 	assertSameOriginAsset,
 	createFetchTransport,

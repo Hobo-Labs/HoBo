@@ -39,7 +39,10 @@ import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
-import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
+import {
+	releaseWorkerStorageGrants,
+	type WorkerStorageAdmission,
+} from "./isolated-worker/storage-admission.js";
 import type { WorkerStorageReserve } from "./isolated-worker/storage-job-classes.js";
 import { deregisterGithubRunner } from "./jit-runner-deregister.js";
 import { decideFleetGhostRecovery } from "./jit-runner-fleet-recovery.js";
@@ -1414,6 +1417,11 @@ export class HostedRelay {
 		}
 		return key;
 	}
+
+	private releaseInodeGrants(lease: Readonly<{ id: string; jobId: number }>) {
+		releaseWorkerStorageGrants(this.options.storageAdmission, lease);
+	}
+
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<number> {
 		this.dispatchGithubJobCache = new Map();
@@ -1558,7 +1566,9 @@ export class HostedRelay {
 			const headroomFleetDeferMs = this.headroomFleetDeferMs();
 			const runEvent = await this.admissionOrder.event(refOf(job));
 			const mainTrunk = isMainTrunkFleetDeferJob(job.name, runEvent);
-			const fleetDeferDecision = evaluateMainTrunkFleetDefer({
+			const parallelTrunkLaunchCapacity =
+				this.options.parallelLaunchCapacity?.();
+			const fleetDeferBase = {
 				jobName: job.name,
 				isMainTrunkJob: mainTrunk,
 				priorWait,
@@ -1567,7 +1577,12 @@ export class HostedRelay {
 				trunkSlots: this.options.trunkSlots,
 				localTrunkReserved,
 				fleetWitness,
-			});
+			};
+			const fleetDeferDecision = evaluateMainTrunkFleetDefer(
+				parallelTrunkLaunchCapacity === undefined
+					? fleetDeferBase
+					: { ...fleetDeferBase, parallelTrunkLaunchCapacity },
+			);
 			if (mainTrunk || priorWait !== undefined) {
 				this.logTrunkFleetDeferDecision(job, fleetDeferDecision);
 			}
@@ -1590,6 +1605,24 @@ export class HostedRelay {
 			if (storageAdmission) {
 				if (storageRefused) {
 					if (trunk) waitingTrunk.add(this.reportTrunkWait(job, "storage"));
+					continue;
+				}
+				// A grant is headroom held for a job that will run; never take one for
+				// a job GitHub no longer has queued.
+				try {
+					const currentJob = await this.cachedGithubJob(
+						job.installationId,
+						job.repository,
+						job.id,
+					);
+					if (
+						currentJob.status !== "queued" ||
+						currentJob.id !== job.id ||
+						currentJob.run_id !== job.runId ||
+						(currentJob.run_attempt ?? 1) !== job.runAttempt
+					)
+						continue;
+				} catch {
 					continue;
 				}
 				const storageLeases = await this.options.store.activeLeases();
@@ -1668,16 +1701,24 @@ export class HostedRelay {
 							);
 							if (mainTrunk) {
 								const afterWait = this.trunkWaits.get(trunkWaitKey(job));
-								const postDecision = evaluateMainTrunkFleetDefer({
+								const postDeferBase = {
 									jobName: job.name,
-									isMainTrunkJob: true,
+									isMainTrunkJob: true as const,
 									priorWait: afterWait,
 									deferMs: headroomFleetDeferMs,
 									nowMs,
 									trunkSlots: this.options.trunkSlots,
 									localTrunkReserved,
 									fleetWitness,
-								});
+								};
+								const postDecision = evaluateMainTrunkFleetDefer(
+									parallelTrunkLaunchCapacity === undefined
+										? postDeferBase
+										: {
+												...postDeferBase,
+												parallelTrunkLaunchCapacity,
+											},
+								);
 								this.logTrunkFleetDeferDecision(job, postDecision);
 								if (postDecision.action === "defer") {
 									waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
@@ -1726,6 +1767,7 @@ export class HostedRelay {
 				if (trunk)
 					waitingTrunk.add(this.reportTrunkWait(job, "lease-capacity"));
 			} else {
+				storageAdmission?.bindGrant(storageJobId, lease.id);
 				this.servedRunnerLabels.set(
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
@@ -1810,6 +1852,7 @@ export class HostedRelay {
 						this.queuedDemand(candidate),
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				this.binding(candidate);
@@ -1834,6 +1877,7 @@ export class HostedRelay {
 						this.now(),
 						preflightRevision,
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				const connection = this.binding(candidate);
@@ -1852,6 +1896,7 @@ export class HostedRelay {
 						demand,
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				if (
@@ -1876,6 +1921,7 @@ export class HostedRelay {
 						this.now(),
 						preflightRevision,
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				if (isolatedHost) {
@@ -1906,6 +1952,7 @@ export class HostedRelay {
 						this.queuedDemand(candidate),
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				const lease = await this.options.store.transition(
@@ -2239,5 +2286,6 @@ export class HostedRelay {
 				runnerId: lease.runnerId,
 			},
 		);
+		this.releaseInodeGrants(lease);
 	}
 }

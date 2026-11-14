@@ -156,7 +156,7 @@ The broker returns a deterministic fixture-scoped token derived inside the
 vault. The real keyless OIDC-federation / provider-STS token exchange is a later
 item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
 
-## HoBo Fleet additions (ADR-0182)
+## HoBo Fleet additions (ADR-0183)
 
 - **`loadSecretStoreKms(secrets, { prefix })`** — the fleet authority's
   token-signing key, shared by every replica and kept across restarts. One

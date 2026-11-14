@@ -347,6 +347,9 @@ export async function composeAuthority(
 	};
 }
 
+// public-contract: the `status` @hobo/fleet-nats logs (`hobo_fleet_bus_status`, component "callout") for each allowed callout decision.
+const CALLOUT_AUTHORISED = "authorised";
+
 /** Every replica answers NATS auth callouts; `nats-callout` availability is recorded per decision it can observe. */
 async function startCallout(
 	config: AuthorityConfig,
@@ -407,12 +410,18 @@ async function startCallout(
 		incarnation,
 		now: adapters.now,
 		log: (event, fields) => {
-			// A refusal is an answer; a request the responder cannot open is a failed one.
+			// An allowed decision and a refusal are answers; a request the responder cannot open is a failed one.
 			if (event === "hobo_fleet_callout_refused")
 				runtime.status.record(
 					"nats-callout",
 					fields.check !== "request-signature",
 				);
+			else if (
+				event === "hobo_fleet_bus_status" &&
+				fields.component === "callout" &&
+				fields.status === CALLOUT_AUTHORISED
+			)
+				runtime.status.record("nats-callout", true);
 			adapters.log(event, fields);
 		},
 	});

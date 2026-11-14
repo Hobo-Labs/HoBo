@@ -1,0 +1,21 @@
+{
+  "key": {
+    "githubJob": {
+      "kind": "github-job",
+      "accountId": "hobo-labs",
+      "engineId": "gh-actions",
+      "installationId": "10",
+      "repositoryId": "101",
+      "runId": "900",
+      "jobId": "1",
+      "runAttempt": 1
+    }
+  },
+  "state": "observed",
+  "firstObservedAt": "2026-11-03T00:00:00Z",
+  "lastObservedAt": "2026-11-03T00:00:00Z",
+  "policyRevision": 1,
+  "requiredProfileId": "trusted-linux-x64",
+  "source": "webhook",
+  "sourceDeliveryIds": ["delivery-1"]
+}

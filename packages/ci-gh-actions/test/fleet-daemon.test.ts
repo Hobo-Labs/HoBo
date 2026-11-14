@@ -279,9 +279,12 @@ describe("the box worker's fleet daemon", () => {
 	it("reads its fleet's capacity from the registry's fleet view, and nothing before it is connected", async () => {
 		const { world, daemon } = await box();
 		await expect(daemon.fleetCapacity()).resolves.toBeUndefined();
+		await expect(daemon.fleetView()).resolves.toBeUndefined();
 		await daemon.agent.start();
 		await until(() => daemon.agent.status().bus === "connected");
 		await expect(daemon.fleetCapacity()).resolves.toBeUndefined();
+		expect(daemon.memberId()).toBe(daemon.agent.status().member?.memberId);
+		expect(daemon.memberId()).toMatch(/^dev_[0-9a-f]{32}$/u);
 		// The authority's projection signs a view; the memory registry decodes it without verifying.
 		await world.bus.publisher.putView(
 			create(SignedEnvelopeSchema, {
@@ -302,6 +305,8 @@ describe("the box worker's fleet daemon", () => {
 			totalSlots: 9,
 			freeSlots: 5,
 		});
+		// The routing slip reads the same signed view for its peers and leader.
+		expect((await daemon.fleetView())?.fleet).toBe(FLEET);
 		await daemon.agent.stop();
 	});
 
