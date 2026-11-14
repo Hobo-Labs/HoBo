@@ -337,6 +337,7 @@ export function createVercelGitFunctionResolver(
 		request: ResolveRequest,
 		transport: HttpTransport,
 		verifyArtifact = true,
+		requireOwnership = false,
 	): Promise<JsonObject | undefined> => {
 		const d = desired(request),
 			send = await caller(request, transport),
@@ -417,6 +418,12 @@ export function createVercelGitFunctionResolver(
 		)
 			return invalid(
 				"Vercel deployment identity, scope, revision or operation differs from the approved artifact",
+			);
+		// Adopting a source for reading is not ownership: destroying it needs
+		// the HoBo operation marker, never only a matching Git revision.
+		if (requireOwnership && meta.hoboOperation !== marker(request))
+			return refuse(
+				"Vercel deletion requires the HoBo operation marker; an adopted deployment HoBo did not create is never destroyed",
 			);
 		const state = field(record, "readyState"),
 			terminal = ["READY", "ERROR", "CANCELED"].includes(state);
@@ -676,6 +683,7 @@ export function createVercelGitFunctionResolver(
 			const d = desired(request),
 				send = await caller(request, transport);
 			let p = await project(request, send);
+			let createdHere = false;
 			if (!p) {
 				if (d.projectId)
 					return refuse(
@@ -693,8 +701,15 @@ export function createVercelGitFunctionResolver(
 				p = await project(request, send);
 				if (!p)
 					return invalid("Vercel project creation lacks independent readback");
+				createdHere = true;
 			}
 			if (!projectReady(request, p)) {
+				// A name match is not ownership: only a pinned project or one this
+				// reconcile created may have its build settings rewritten.
+				if (!d.projectId && !createdHere)
+					return refuse(
+						"Vercel project matched by name differs from the approved build settings and HoBo did not create it; pin its projectId to approve rewriting it",
+					);
 				const updated = await send(
 					"PATCH",
 					`/v9/projects/${encodeURIComponent(identifier(field(p, "id")))}${query()}`,
@@ -757,7 +772,7 @@ export function createVercelGitFunctionResolver(
 			const request = parse(raw);
 			if (!request.ref.physicalId)
 				return refuse("Vercel deletion requires an observed physical identity");
-			const existing = await observe(request, transport, false);
+			const existing = await observe(request, transport, false, true);
 			if (!existing) {
 				if (await observeAbsence(request, transport)) return;
 				return refuse("Vercel deployment retirement remains unconfirmed");

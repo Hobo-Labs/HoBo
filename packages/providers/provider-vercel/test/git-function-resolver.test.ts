@@ -58,11 +58,14 @@ function fixture(
 		retirementProof?: boolean;
 		inventoryProof?: "valid" | "foreign" | "expired" | "denied";
 		verifyEnv?: boolean;
+		gitBuilt?: boolean;
+		foreignSettings?: boolean;
 	} = {},
 ) {
 	const calls: TransportRequest[] = [];
 	let projectExists = options.projectExists ?? true;
-	let created = false;
+	// A Git-built deployment exists before HoBo acts and carries no HoBo marker.
+	let created = options.gitBuilt ?? false;
 	let metadata: Record<string, string> = {};
 	const transport: HttpTransport = async (call) => {
 		calls.push(call);
@@ -84,8 +87,10 @@ function fixture(
 					id: "prj_owned",
 					name: "hobo-cd",
 					accountId: options.wrongTeam ? "team_foreign" : "team_owned",
-					rootDirectory: "packages/hobo",
-					buildCommand: "pnpm build",
+					rootDirectory: options.foreignSettings
+						? "apps/site"
+						: "packages/hobo",
+					buildCommand: options.foreignSettings ? "next build" : "pnpm build",
 				}),
 			};
 		}
@@ -527,5 +532,28 @@ describe("supervised Vercel Git functions", () => {
 		await expect(
 			f.resolver.read?.({ ...source, ref: request.ref }, f.transport),
 		).rejects.toThrow("exact approved native identity");
+	});
+	it("never deletes an adopted source deployment that lacks the HoBo operation marker", async () => {
+		const f = fixture({ gitBuilt: true, retirementProof: true });
+		const adopted = {
+			...request,
+			ref: { ...request.ref, physicalId: "dpl_owned" },
+			desired: { ...request.desired, source: true },
+		};
+		expect((await f.resolver.read?.(adopted, f.transport))?.physicalId).toBe(
+			"dpl_owned",
+		);
+		await expect(f.resolver.delete(adopted, f.transport)).rejects.toThrow(
+			/operation marker/u,
+		);
+		expect(f.calls.some((call) => call.method === "DELETE")).toBe(false);
+	});
+	it("never rewrites an unpinned existing project HoBo did not create", async () => {
+		const f = fixture({ foreignSettings: true });
+		await expect(f.resolver.reconcile(request, f.transport)).rejects.toThrow(
+			/did not create/u,
+		);
+		expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+		expect(f.calls.some((call) => call.method === "PATCH")).toBe(false);
 	});
 });

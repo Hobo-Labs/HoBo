@@ -220,6 +220,11 @@ exists and the request did not name it) or `noop` (the request named it and
 nothing differs). `delete` treats a 404 as success. `read` powers adoption and
 state recovery. `replace` is never emitted: nothing here deletes and re-creates
 a resource behind the caller's back.
+For `vercel.function/v1`, adoption for reading is not ownership: `delete`
+refuses any deployment that lacks the HoBo operation marker (including an
+adopted `source` deployment Vercel's Git integration built), and `reconcile`
+refuses to rewrite the build settings of a project it only matched by name
+unless the request pins its `projectId` or created it in the same reconcile.
 
 **Endpoints covered.**
 
