@@ -9,7 +9,7 @@ import { createComposedHoboCli } from "../src/cli.js";
 import {
 	ensureIsolatedWasmToolchain,
 	HOBO_ENV_HEADER_PREFIX,
-	INTERNAL_MESH_HOST,
+	INTERNAL_ROUTER_HOST,
 	initBareMetalYard,
 	PINNED_WASMTIME_VERSION,
 	probeWasmHostInstall,
@@ -120,7 +120,7 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 		expect(serve.exposedEndpoints[0]?.resourceName).toBe("web");
 		const api = serve.endpoints.find((e) => e.resourceName === "api");
 		expect(api?.port).toBeNull();
-		expect(api?.url).toBe(`http://hello-bindle.${INTERNAL_MESH_HOST}/api`);
+		expect(api?.url).toBe(`http://hello-bindle.${INTERNAL_ROUTER_HOST}/api`);
 
 		const html = await (await fetch(`${serve.primaryUrl}/?name=Local`)).text();
 		// Bindle injects GREETING_PREFIX/APP_TITLE via env() — proves apps are live.

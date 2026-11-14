@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createComposedHoboCli } from "../src/cli.js";
 import {
 	composeBareMetalTopology,
-	INTERNAL_MESH_HOST,
+	INTERNAL_ROUTER_HOST,
 	initBareMetalYard,
 	loadBareMetalYardConfig,
 	openBareMetalYard,
@@ -106,9 +106,9 @@ describe("bare-metal yard e2e", () => {
 		const api = serve.endpoints.find((e) => e.resourceName === "api");
 		expect(api?.external).toBe(false);
 		expect(api?.port).toBeNull();
-		expect(api?.url).toBe(`http://hello-bindle.${INTERNAL_MESH_HOST}/api`);
+		expect(api?.url).toBe(`http://hello-bindle.${INTERNAL_ROUTER_HOST}/api`);
 		expect(serve.serviceDiscovery.services__api__http__0).toBe(
-			`http://hello-bindle.${INTERNAL_MESH_HOST}/api`,
+			`http://hello-bindle.${INTERNAL_ROUTER_HOST}/api`,
 		);
 
 		// Public TCP must not answer on basePort+1 (legacy dual-port posture).
@@ -175,7 +175,7 @@ describe("bare-metal yard e2e", () => {
 			expect(envelope.data.mode).toBe("local-yard");
 			expect(envelope.data.bindleName).toBe("hello-bindle");
 			expect(envelope.data.serviceDiscovery.services__api__http__0).toBe(
-				`http://hello-bindle.${INTERNAL_MESH_HOST}/api`,
+				`http://hello-bindle.${INTERNAL_ROUTER_HOST}/api`,
 			);
 			expect(envelope.data.exposedEndpoints).toEqual([
 				expect.objectContaining({ resourceName: "web", external: true }),

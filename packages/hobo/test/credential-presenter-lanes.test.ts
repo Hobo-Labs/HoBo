@@ -32,20 +32,28 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { create } from "@bufbuild/protobuf";
+import { PersonCredentialSchema } from "@hobo/fleet";
+import { verifyDpopProof } from "@hobo/fleet/keys";
+import { verifyJwtWithJwks } from "@hobo/identity";
 import { afterEach, describe, expect, it } from "vitest";
-
 import {
 	authorizationHeaders,
 	createCredentialPresenter,
+	createLocalSvidIssuer,
 	loadOrCreateDpopKeyPair,
 	mintMockDpopProof,
 	type PresentedCredential,
 	profileHasSession,
 } from "../src/credential-presenter.js";
-import { HOBO_PROFILE_SCHEMA, saveHoboProfile } from "../src/hobo-profile.js";
+import { newSignInKey, savePerson } from "../src/fleet-home.js";
+import {
+	HOBO_PROFILE_SCHEMA,
+	type HoboProfileSession,
+	saveHoboProfile,
+} from "../src/hobo-profile.js";
 
 const AUDIENCE = "https://broker.example";
-const SECRET = "test-only-svid-secret";
 
 const dirs: string[] = [];
 
@@ -63,18 +71,20 @@ function home(): string {
 /** A home with a stored login session, optionally DPoP-bound. */
 function homeWithSession(options: { proofKeyId?: string } = {}): string {
 	const dir = home();
+	const base: HoboProfileSession = {
+		principal: { kind: "user", id: "user:ada" },
+		tenant: "acme",
+		token: "session-token",
+		issuedAt: "2026-01-01T00:00:00.000Z",
+	};
+	const session: HoboProfileSession =
+		options.proofKeyId === undefined
+			? base
+			: { ...base, proofKeyId: options.proofKeyId };
 	saveHoboProfile(dir, {
 		schemaVersion: HOBO_PROFILE_SCHEMA,
 		updatedAt: "2026-01-01T00:00:00.000Z",
-		session: {
-			principal: { kind: "user", id: "user:ada" },
-			tenant: "acme",
-			token: "session-token",
-			issuedAt: "2026-01-01T00:00:00.000Z",
-			...(options.proofKeyId !== undefined
-				? { proofKeyId: options.proofKeyId }
-				: {}),
-		},
+		session,
 	});
 	return dir;
 }
@@ -82,7 +92,7 @@ function homeWithSession(options: { proofKeyId?: string } = {}): string {
 function presenter(
 	options: Parameters<typeof createCredentialPresenter>[0] = {},
 ) {
-	return createCredentialPresenter({ svidHmacSecret: SECRET, ...options });
+	return createCredentialPresenter(options);
 }
 
 async function present(
@@ -117,7 +127,7 @@ describe("agent lane", () => {
 		// audience from a wrong signing key without a packet capture.
 		const credential = await present(home(), { HOBO_AGENT_ID: "agent:ci" });
 		expect(credential?.metadata?.credentialScheme).toBe("spiffe-jwt-svid+dpop");
-		expect(credential?.metadata?.svidAlg).toBe("HS256");
+		expect(credential?.metadata?.svidAlg).toBe("RS256");
 		expect(credential?.metadata?.dpopAlg).toBe("ES256");
 		expect(credential?.metadata?.spiffeId).toContain("spiffe://");
 	});
@@ -255,16 +265,86 @@ describe("agent lane", () => {
 		expect(credential?.dpopProof).toBeTruthy();
 	});
 
-	it("verifies against a secret supplied through the environment", async () => {
-		// A deployment that sets the secret in env rather than in code must reach
-		// the same verify path, or the presenter would check its own mint against
-		// the wrong key and refuse a valid credential.
-		const credential = await createCredentialPresenter().presentAuthenticated({
+	it("signs the SVID with RS256 through the identity issuer, never an HMAC secret", async () => {
+		// A shared HMAC secret would let anything that verifies an SVID also mint
+		// one. The issuer's key signs; its JWKS verifies.
+		const issuer = createLocalSvidIssuer("spiffe://prod.example");
+		const credential = await present(
+			home(),
+			{ HOBO_AGENT_ID: "agent:ci" },
+			{},
+			{ svidIssuer: issuer },
+		);
+		const token = credential?.accessToken ?? "";
+		const header = JSON.parse(
+			Buffer.from(token.split(".")[0] ?? "", "base64url").toString("utf8"),
+		);
+		expect(header.alg).toBe("RS256");
+		const verified = await verifyJwtWithJwks(token, issuer.jwks(), {
+			issuer: "spiffe://prod.example",
 			audience: AUDIENCE,
-			hoboHome: home(),
-			env: { HOBO_AGENT_ID: "agent:ci", HOBO_SVID_HMAC_SECRET: SECRET },
+			now: Math.floor(Date.now() / 1000),
+		});
+		expect(verified.claims.sub).toBe(credential?.metadata?.spiffeId);
+	});
+
+	it("mints under the issuer HOBO_SVID_ISSUER names", async () => {
+		const credential = await present(home(), {
+			HOBO_AGENT_ID: "agent:ci",
+			HOBO_SVID_ISSUER: "spiffe://env.example",
+		});
+		const claims = JSON.parse(
+			Buffer.from(
+				(credential?.accessToken ?? "").split(".")[1] ?? "",
+				"base64url",
+			).toString("utf8"),
+		);
+		expect(claims.iss).toBe("spiffe://env.example");
+		expect(credential?.scheme).toBe("dpop-bound");
+	});
+});
+
+describe("fleet authority lane", () => {
+	it("presents the person token hobo fleet login stored, DPoP-bound to its key", async () => {
+		// With an authority configured, the person's authority-issued token is
+		// the human credential; the proof is made with the key it is bound to.
+		const fleet = home();
+		const key = newSignInKey();
+		await savePerson(
+			fleet,
+			create(PersonCredentialSchema, {
+				token: "person-token",
+				expiresAt: "2999-01-01T00:00:00.000Z",
+				principal: "user:ada",
+				tenant: "acme",
+			}),
+			key,
+		);
+		const credential = await present(homeWithSession(), {
+			HOBO_FLEET_AUTHORITY_URL: "https://fleet.example",
+			HOBO_FLEET_HOME: fleet,
 		});
 		expect(credential?.scheme).toBe("dpop-bound");
+		expect(credential?.principal).toEqual({ kind: "user", id: "user:ada" });
+		expect(credential?.accessToken).toBe("person-token");
+		expect(credential?.proofKeyId).toBe(key.thumbprint);
+		const proof = await verifyDpopProof({
+			proof: credential?.dpopProof ?? "",
+			htm: "POST",
+			htu: AUDIENCE,
+			accessToken: "person-token",
+			nowMs: Date.now(),
+			replay: { firstUse: async () => true },
+		});
+		expect(proof.ok && proof.value.jkt).toBe(key.thumbprint);
+	});
+
+	it("falls back to the profile session when no person token is stored", async () => {
+		const credential = await present(homeWithSession(), {
+			HOBO_FLEET_AUTHORITY_URL: "https://fleet.example",
+			HOBO_FLEET_HOME: home(),
+		});
+		expect(credential?.scheme).toBe("bearer-session");
 	});
 });
 
@@ -498,10 +578,10 @@ describe("small helpers", () => {
 		).toBe(true);
 	});
 
-	it("mintMockDpopProof still produces a proof for its deprecated callers", () => {
+	it("mintMockDpopProof still produces a proof for its deprecated callers", async () => {
 		// Deprecated, not removed. A caller still on it should get a real proof
 		// rather than a silently invalid string.
-		const proof = mintMockDpopProof({
+		const proof = await mintMockDpopProof({
 			htm: "POST",
 			htu: AUDIENCE,
 			ath: "tok",
