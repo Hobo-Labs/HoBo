@@ -15,6 +15,7 @@ import {
 } from "@hobo/connect-ui";
 import { z } from "zod";
 
+import type { GithubAppOwner } from "./app-hosts.js";
 import type {
 	OpenedSecretStore,
 	SecretStoreId,
@@ -57,10 +58,8 @@ const ConversionSchema = z.object({
 export interface GithubConnectOptions {
 	/** The hosted relay's public HTTPS origin (webhooks go there). */
 	readonly relayUrl: string;
-	/** The numeric id of the GitHub user the App must belong to. */
-	readonly ownerId: number;
-	/** Shown on the page and used in GitHub's create screen. */
-	readonly owner: string;
+	/** The user or organization the App must belong to. */
+	readonly owner: GithubAppOwner;
 	readonly appName?: string;
 	/** Where GitHub sends the browser back (the connect page's callback). */
 	readonly callbackUrl: () => string;
@@ -80,6 +79,7 @@ function failed(
 export type GithubAppExpectation = Readonly<{
 	relayUrl: string;
 	ownerId: number;
+	ownerType: "User" | "Organization";
 	fetch?: typeof fetch;
 }>;
 
@@ -117,6 +117,7 @@ async function checkedGithubAppCredentials(
 		pem,
 		expectedOrigin: expected.relayUrl,
 		expectedOwnerId: expected.ownerId,
+		expectedOwnerType: expected.ownerType,
 		...(expected.fetch ? { fetch: expected.fetch } : undefined),
 	});
 	return values;
@@ -201,7 +202,8 @@ export function createGithubConnectFlow(
 				try {
 					alreadyConnected = await githubAppConnected(store, async () => ({
 						relayUrl: options.relayUrl,
-						ownerId: options.ownerId,
+						ownerId: options.owner.id,
+						ownerType: options.owner.kind,
 						fetch: send,
 					}));
 				} catch {
@@ -218,7 +220,7 @@ export function createGithubConnectFlow(
 						kind: "create-github-app",
 						provider: "github",
 						appName,
-						owner: options.owner,
+						owner: options.owner.login,
 						store: store.id,
 					},
 				};
@@ -237,10 +239,13 @@ export function createGithubConnectFlow(
 			});
 			// GitHub sends the browser back to this machine, not to the relay.
 			manifest.redirectUrl = options.callbackUrl();
-			// A user-owned App: the reviewed verifier (verifyConvertedGithubApp)
-			// accepts only `owner.type: "User"`, so an organization-owned App
-			// would be created and then always refused.
-			const action_ = new URL("https://github.com/settings/apps/new");
+			// GitHub's create screen for the owner: the user's settings, or the
+			// organization's (the person must be able to manage its Apps).
+			const action_ = new URL(
+				options.owner.kind === "Organization"
+					? `https://github.com/organizations/${encodeURIComponent(options.owner.login)}/settings/apps/new`
+					: "https://github.com/settings/apps/new",
+			);
 			action_.searchParams.set("state", state);
 			return {
 				step: current,
@@ -302,7 +307,8 @@ export function createGithubConnectFlow(
 					pem: conversion.pem,
 					metadata,
 					expectedOrigin: options.relayUrl,
-					expectedOwnerId: options.ownerId,
+					expectedOwnerId: options.owner.id,
+					expectedOwnerType: options.owner.kind,
 					fetch: send,
 				});
 			} catch {
