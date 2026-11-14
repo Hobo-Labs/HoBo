@@ -1,12 +1,12 @@
 {
 	"schemaVersion": "hobo.deployment-offer/v1",
-	"offerId": "offer/6bc912d73489335903b8784c5646120201a47e902e61ba1c0bad2d54e855a1f2",
+	"offerId": "offer/97b48fbbda37b136eeb716fbedc99ecf342f2c5fe569aa3f214dd5ff4deb8a09",
 	"recipeId": "recipe.prisma.claimable-sql-sandbox/v1",
 	"deploymentRef": "junction/recipe-prisma-claimable-sql-sandbox-v1",
 	"topologyDigest": "sha256:848f2638d620dc45ab2da061e393874c54f2af47e76f21b93473c4109800f897",
-	"resolutionDigest": "sha256:66dac715f3eddb4cdd9cd2b816cde3c9219f34a0656f6959a5b41a81a6a17918",
+	"resolutionDigest": "sha256:025448efee7672678398e7b4eca18691e6b00b5ec1145a75a6e7f3629758ae49",
 	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
-	"profileRegistryDigest": "sha256:4ad6cb0f734c95599f3863736d8da56eae97f43534e257af11f9ed7beb1480ca",
+	"profileRegistryDigest": "sha256:1a4e6a5eb4a8d7ba725d9611c25555484e6d82ce3c0fcd97c5e062d62c207b9a",
 	"placements": [
 		{
 			"placementId": "sandbox",
@@ -82,7 +82,7 @@
 	"signature": {
 		"algorithm": "test.detached-digest/v1",
 		"keyId": "test-key-1",
-		"payloadDigest": "sha256:c398e408f6c4db3dc974452e7ed2d1ab683dbb2ce67903cdfc8a266999afd197",
-		"signature": "sig:c398e408f6c4db3d"
+		"payloadDigest": "sha256:0aee16b162b7b58a70d3e9d117e4c867090befeebe75e6d3558ed62f2b5ecc44",
+		"signature": "sig:0aee16b162b7b58a"
 	}
 }

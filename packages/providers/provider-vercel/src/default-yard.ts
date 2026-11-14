@@ -21,10 +21,9 @@
  * Two calls with the same options are deep-equal.
  *
  * HONEST SCOPE: a catalog entry means "HoBo can express this offering", not
- * "HoBo can provision it today". Two of the four offerings here have no REST
- * resolver (`vercel.blob/v1`, `vercel.edge-function/v1`) — they are declarable
- * and not yet deployable by this package. See `VERCEL_UNRESOLVED_PRODUCT_IDS`
- * in `./resolvers.js` and the README table.
+ * "HoBo can provision it today". Standalone `vercel.edge-function/v1` has no
+ * REST resolver. Blob requires a team, an approved project binding and
+ * durable mutation coordination; see `./resolvers.js` and the README.
  */
 
 import type { CapabilitySlot, SlotBinding } from "@hobo/core";

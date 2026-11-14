@@ -136,7 +136,7 @@ describe("slot factories are re-exported for override authoring", () => {
 	it("exposes Cloudflare and Vercel factories", () => {
 		expect(cloudflare.r2().profile).toMatch(/^bucket\./u);
 		expect(vercel.staticDeployment().profile).toBe("web.hosted/v1");
-		expect(vercel.project().profile).toBe("provider.project/v1");
+		expect(vercel.project().profile).toBe("web.project/v1");
 	});
 
 	it("passes Vercel offering settings through to the composed Yard", () => {

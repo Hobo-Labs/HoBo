@@ -67,6 +67,13 @@ const integer = (key: string, description: string) =>
 /** web */
 const WEB: readonly CapabilityProfileDescriptor[] = [
 	profile({
+		id: "web.project/v1",
+		primitive: "web",
+		displayName: "Provider web project",
+		description:
+			"An account-scoped provider project that owns web deployment configuration; it does not itself serve an artifact.",
+	}),
+	profile({
 		id: "web.static/v1",
 		primitive: "web",
 		displayName: "Static site",

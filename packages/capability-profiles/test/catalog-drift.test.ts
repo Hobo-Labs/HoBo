@@ -29,7 +29,10 @@ import {
 } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
-import { STANDARD_CAPABILITY_PROFILES } from "../src/index.js";
+import {
+	createCapabilityProfileRegistry,
+	STANDARD_CAPABILITY_PROFILES,
+} from "../src/index.js";
 
 /** The registry's own schema-version id is not a capability anyone can bind. */
 const NOT_A_CAPABILITY = new Set(["hobo.capability-profile/v1"]);
@@ -50,6 +53,19 @@ function familyOf(profileId: string): string {
 }
 
 describe("core's typed catalog matches the standard profile registry", () => {
+	it("does not treat a provider project as a hosted web artifact", () => {
+		const profiles = createCapabilityProfileRegistry(
+			STANDARD_CAPABILITY_PROFILES,
+		);
+		expect(capability.web.project).toBe("web.project/v1");
+		expect(profiles.require(capability.web.project).primitive).toBe("web");
+		expect(
+			profiles.satisfies(capability.web.project, capability.web.hosted),
+		).toBe(false);
+		expect(
+			profiles.satisfies(capability.web.hosted, capability.web.project),
+		).toBe(false);
+	});
 	it("names every profile the registry defines", () => {
 		const missing = registryIds.filter(
 			// SAFETY: the generated catalog IDs are compared as plain wire strings.

@@ -1,12 +1,12 @@
 {
 	"schemaVersion": "hobo.deployment-offer/v1",
-	"offerId": "offer/e357665fdda4d94a540b9f11b78162b59990d1011a4e0871d2176be19a6d4fa0",
+	"offerId": "offer/b95a8f85a1d1c800d8371d2129f943f0d9f4ca8c30ea96e9845ac405486f5741",
 	"recipeId": "recipe.cloudflare-neon.portable-sql-api/v1",
 	"deploymentRef": "junction/recipe-cloudflare-neon-portable-sql-api-v1",
 	"topologyDigest": "sha256:312c55b15dd3ee8f5c515246c61c107d5118a7117a823d53f052c7c11a237813",
-	"resolutionDigest": "sha256:794fa889734f6043155020e6bbf636a48ba1eb744aa181dbc84af216b04e50c6",
+	"resolutionDigest": "sha256:7a6f9ab059d8be16a9c4a430c637dea023ff68a33cd24caabf008e83b0ed1e42",
 	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
-	"profileRegistryDigest": "sha256:4ad6cb0f734c95599f3863736d8da56eae97f43534e257af11f9ed7beb1480ca",
+	"profileRegistryDigest": "sha256:1a4e6a5eb4a8d7ba725d9611c25555484e6d82ce3c0fcd97c5e062d62c207b9a",
 	"placements": [
 		{
 			"placementId": "api",
@@ -118,7 +118,7 @@
 	"signature": {
 		"algorithm": "test.detached-digest/v1",
 		"keyId": "test-key-1",
-		"payloadDigest": "sha256:3c71dda61711a11edf97f48133519ebe4d697f6f6e6c1bdd33e2ba12bf7e6ca2",
-		"signature": "sig:3c71dda61711a11e"
+		"payloadDigest": "sha256:d1b886eef6626b8048fa08bd2ba08a9e1bcdd1f66295c68cc97aa1c05e91bdac",
+		"signature": "sig:d1b886eef6626b80"
 	}
 }

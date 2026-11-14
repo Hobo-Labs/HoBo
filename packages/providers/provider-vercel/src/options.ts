@@ -19,14 +19,6 @@ export const vercel = {
 		blob(options: JsonObject = {}): TypedOptionBlock {
 			return optionBlock("objectStore", "blob", { store: "assets" }, options);
 		},
-		neonPostgres(options: JsonObject = {}): TypedOptionBlock {
-			return optionBlock(
-				"database",
-				"neonPostgres",
-				{ engine: "postgres" },
-				options,
-			);
-		},
 		edgeConfig(options: JsonObject = {}): TypedOptionBlock {
 			return optionBlock("kv", "edgeConfig", { store: "edge-config" }, options);
 		},
