@@ -296,6 +296,45 @@ describeLive("shared PostgreSQL actor leases", () => {
 		}
 	});
 
+	it("refuses a stale holder's snapshot on a protected stream after the lease moves", async () => {
+		const schema = freshSchema(),
+			store = liveStore({
+				schema,
+				protectedActorStreamPrefixes: ["deployment:"],
+			});
+		const key = "deployment:snap";
+		const a = await store.actorLeaseHost.acquire(key, { holderId: "a" });
+		await store.append(key, [{ type: "test.Event" }], {
+			...OPTS,
+			expectedSeq: 0,
+			fenceToken: a.fenceToken,
+		});
+		// The current holder may snapshot; an unfenced snapshot may not.
+		await store.snapshot(key, { by: "a" }, 1, { fenceToken: a.fenceToken });
+		await expect(store.snapshot(key, { by: "anon" }, 1)).rejects.toMatchObject({
+			code: "MISSING_FENCE",
+		});
+		await adminQuery(
+			`UPDATE "${schema}".actor_leases SET expires_at = clock_timestamp() - INTERVAL '1 second' WHERE stream_id = $1`,
+			[key],
+		);
+		const b = await store.actorLeaseHost.acquire(key, { holderId: "b" });
+		await store.snapshot(key, { by: "b" }, 1, { fenceToken: b.fenceToken });
+		await expect(
+			store.snapshot(key, { by: "stale-a" }, 1, { fenceToken: a.fenceToken }),
+		).rejects.toMatchObject({ code: "STALE_FENCE" });
+		expect(await store.loadSnapshot(key)).toMatchObject({
+			seq: 1,
+			state: { by: "b" },
+		});
+		await b.release();
+		// A released lease row still guards the stream.
+		await expect(
+			store.snapshot(key, { by: "late-b" }, 1, { fenceToken: b.fenceToken }),
+		).rejects.toMatchObject({ code: "STALE_FENCE" });
+		await store.snapshot("registry:snap", { free: true }, 0);
+	});
+
 	it("recovers after a process dies while holding a lease", async () => {
 		const schema = freshSchema(),
 			store = liveStore({
