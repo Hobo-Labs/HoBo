@@ -1,4 +1,4 @@
-// HoBo's own release train as delivery-as-code (plan 0024; docs/design/release-channels.md).
+// HoBo's own release train as delivery-as-code (docs/design/release-channels.md).
 //
 // One Yard, `hobo-release`, with a candidate and a stable Camp per artifact
 // family. Every CD command reads it as topology:

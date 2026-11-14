@@ -2,7 +2,7 @@ import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
 /**
- * Webernetes TrafficRouting offerings (plan 0024 WP13, I14; ADR-0143/0144).
+ * Webernetes TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
  *
  * The local yard serves each station at its own loopback, private-network or
  * `.hobo.test` endpoint. Nothing in front of the stations routes traffic, and a

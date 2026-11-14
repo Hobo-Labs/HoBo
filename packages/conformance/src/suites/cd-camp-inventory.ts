@@ -1,4 +1,4 @@
-// CampInventory conformance (plan 0024 D19, I19). Status is merged from named
+// CampInventory conformance (ADR-0182 D19, I19). Status is merged from named
 // sources; agents report facts but can never make a Camp a failover
 // candidate; contradictions and silence taint NO_PLACE automatically.
 import {

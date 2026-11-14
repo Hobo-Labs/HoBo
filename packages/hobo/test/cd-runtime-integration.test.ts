@@ -1,8 +1,7 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof -- SAFETY: integration responses are untyped HTTP bodies read for one field. */
-// End-to-end composition of the real @hobo/cd modules through the hobo host
-// (WP18). Every module is a sibling work package of plan 0024, so this suite
-// runs once they are merged (their built subpaths exist) and reports itself
-// skipped, with the reason, on a WP18-only checkout.
+// End-to-end composition of the real @hobo/cd modules through the hobo host.
+// The suite runs once every module's built subpath exists, and reports itself
+// skipped, with the reason, when one is missing.
 import { existsSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,7 +20,7 @@ function siblingModulesBuilt(): boolean {
 const MERGED = siblingModulesBuilt();
 
 describe.skipIf(!MERGED)(
-	"composed @hobo/cd through the hobo host (binds at merge, plan 0024)",
+	"composed @hobo/cd through the hobo host (runs once its built modules exist)",
 	() => {
 		it("opens the runtime with --simulate and serves read subcommands", async () => {
 			const { openCdRuntime } = await import("../src/cd-runtime.js");

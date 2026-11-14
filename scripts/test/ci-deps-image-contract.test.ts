@@ -391,10 +391,8 @@ describe("CI deps workflow contract", () => {
 		assert.ok(start > -1);
 		assert.ok(end > start);
 		includes(job, "name: CI deps layer (pnpm)");
-		// Not routed: it builds in the box's Docker context, which a
-		// GitHub-hosted machine does not have.
 		includes(job, "needs: [route]");
-		assert.ok(!job.includes("needs.route.outputs.runner"));
+		includes(job, "needs.route.outputs.runner");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");
 		includes(
@@ -425,14 +423,19 @@ describe("CI deps workflow contract", () => {
 			job,
 			"if: ${{ !cancelled() && github.event_name == 'pull_request' }}",
 		);
-		// Not routed: the box's own label on a pull request when committed
-		// runnerRouting.boxRunner makes the route job name it, else the trunk expression.
+		// Use an enrolled box when the fleet is selected. A GitHub-hosted fallback
+		// validates the candidate in its own Docker context without publishing it.
 		includes(
 			job,
-			"    runs-on: ${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || ",
+			"    runs-on: ${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}",
 		);
+		includes(workflow, "box_runner: ${{ steps.route.outputs.box_runner }}");
+		includes(
+			job,
+			"if: steps.scope.outputs.run == 'true' && needs.route.outputs.tier != 'fleet'",
+		);
+		includes(job, 'node-version: "24"');
 		assert.ok(!job.includes("vars."));
-		assert.ok(!job.includes("needs.route.outputs.runner"));
 		assert.ok(!job.includes('docker tag "$candidate" hobo-ci-deps:local'));
 		assert.ok(!job.includes("Promote verified deps image"));
 	});

@@ -20,6 +20,36 @@ import "list"
 // would mean a different instant on every host.
 #OffsetInstant: =~#"^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?([Zz]|[+-]([01][0-9]|2[0-3]):?[0-5][0-9])$"#
 
+// Signed terminal evidence has no raw fence token. The signature covers the
+// canonical JSON of every other field and is verified against the separately
+// enrolled receiver key.
+#FenceOperationText: string & =~"^[^[:cntrl:]]{1,512}$" & !~"^\\s|\\s$"
+#FenceOperationScope: {
+	dataset: #FenceOperationText
+	tenant:  string & =~"^[^[:cntrl:]]{0,512}$" & !~"^\\s|\\s$"
+}
+#FenceOperationClaim: {
+	scope:            #FenceOperationScope
+	operationId:      #FenceOperationText
+	routeDigest:      #Sha256Ref
+	receiverKeyId:   #FenceOperationText
+	fenceTokenDigest: #Sha256Ref
+}
+#FenceOperationReceipt: {
+	scope:            #FenceOperationScope
+	operationId:      #FenceOperationText
+	routeDigest:      #Sha256Ref
+	receiverKeyId:    #FenceOperationText
+	fenceTokenDigest: #Sha256Ref
+	contract:         "hobo.fence-operation-receipt/v1"
+	outcome:          "committed"
+	signature:        =~"^[A-Za-z0-9_-]{85}[AQgw]$"
+}
+#FenceOperationObservation: {
+	claim:  #FenceOperationClaim
+	status: "held" | "completed"
+}
+
 // ── canonical model ────────────────────────────────────────────────────────
 
 #CanonicalType: "bool" | "int64" | "float64" | "decimal" | "string" | "bytes" |

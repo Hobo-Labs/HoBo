@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hobo.hobo.v1;
 
-// Declared CD topology the `hobo` binary loads (plan 0024; packages/hobo/CD.md).
+// Declared CD topology the `hobo` binary loads (packages/hobo/CD.md).
 //
 // `hobo deploy --yard <file>` and HOBO_CD_TOPOLOGY name topology files: a Yard
 // module (`export default yard(...)` from @hobo/yards) or a delivery module

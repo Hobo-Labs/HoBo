@@ -213,7 +213,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   containers of the lane older than 30 minutes. A leaked pair therefore holds memory for at most 25
   minutes and disk until the next job starts on that box.
   The job is in the worker's `heavy` memory class (it installs, builds about two dozen packages and
-  runs five suites). The two servers are **not** counted by admission — up to 2 GiB beside the job
+  runs six package suites, including Broker recovery against PostgreSQL). The two servers are **not** counted by admission — up to 2 GiB beside the job
   that the daemon does not see — which the heavy reservation is meant to leave room for; this has
   not been measured on a box.
   The images are digest-pinned in `packages/data-core/deploy/live-engine-images.json`.
@@ -230,9 +230,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,
   so a cached offline result would replay as a live pass. A green exit is not taken as proof either:
   the live tests skip themselves when their variable is missing, so the step ends with
-  `data-live-servers.mts verify`, which reads the run's output and fails unless each of the five
+  `data-live-servers.mts verify`, which reads the run's output and fails unless each of the six
   packages printed a summary and no test in it was skipped, failed or left todo. The start step
-  prints the server versions and addresses the run was against. Four of these packages run under the root
+  prints the server versions and addresses the run was against. Five of these packages run under the root
   vitest config and `packages/trails` under its own; both apply `HOBO_TEST_MAX_WORKERS` through
   `capVitestWorkers`. The step used to export the cap as `VITEST_MAX_WORKERS`, which Vitest lets
   override every config (single-worker pins included) and which `scripts/test/memory-env.test.ts`

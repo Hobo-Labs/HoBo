@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: the output boundary serializes command data (protobuf records, bigints, plain JSON) to the CLI/MCP envelope; values are only classified to choose an encoding, never trusted as a domain type. */
 /**
- * Rendering for `hobo deploy` CD subcommands (WP18, plan 0024).
+ * Rendering for `hobo deploy` CD subcommands.
  *
  * One structure for every caller: a human at a terminal, an agent through
  * MCP and a script with `--json` all receive the same envelope `data`

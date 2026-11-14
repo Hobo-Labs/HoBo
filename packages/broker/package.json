@@ -24,6 +24,7 @@
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/backend-fleet": "workspace:*",
 		"@hobo/contracts": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/pricing": "workspace:*",
@@ -32,6 +33,7 @@
 		"pg": "8.22.0"
 	},
 	"devDependencies": {
+		"@hobo/data-postgres": "workspace:*",
 		"@types/node": "^22.15.29",
 		"@types/pg": "8.15.5",
 		"vitest": "^4.1.9",

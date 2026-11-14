@@ -1,5 +1,5 @@
 /**
- * Lakebed capsule resolver (plan 0024 WP14, I14; D6, ADR-0127).
+ * Lakebed capsule resolver (ADR-0182 I14, D6; ADR-0127).
  *
  * Lakebed's hosting product is a Capsule deployment. Its realization path is
  * the `lakebed-deploy` driver: one `hobo.driver-program/v1` per deployment id,

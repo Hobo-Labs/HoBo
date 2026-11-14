@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: the HTTP edge: node request headers and error values are untrusted and only copied or stringified. */
 /**
- * `hobo serve cd` — the CD conductor service (WP18, plan 0024, C2/C13).
+ * `hobo serve cd` — the CD conductor service (ADR-0182 C2/C13).
  *
  * One process hosts:
  * - the `@hobo/cd/service` tick loop (sources → … → retention) and a
@@ -26,7 +26,6 @@ import {
 	type FeedResponse,
 } from "@hobo/cd";
 import { defaultRetention } from "@hobo/cd/compose";
-// binds at merge (plan 0024): the service host and read API are WP12.
 import { createCdControlApi, createCdService } from "@hobo/cd/service";
 import type { CdRuntime } from "./cd-runtime.js";
 

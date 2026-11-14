@@ -1,5 +1,5 @@
-// HoBo delivering its own CI relay through `@hobo/cd` (plan 0024; ADR-0179
-// phase 6).
+// HoBo delivering its own CI relay through `@hobo/cd` (ADR-0179 phase
+// 6).
 //
 // `hobo ci deploy` is a thin front over this module: the relay build is
 // recorded as Freight, promoted through the relay's pipeline (preview, then

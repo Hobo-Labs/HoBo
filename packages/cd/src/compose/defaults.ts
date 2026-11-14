@@ -1,32 +1,29 @@
-// Default bindings of the frozen factories and the in-package adapters
-// (WP18, plan 0024). Every import below names a sibling work package's module;
-// they compile once the swarm merges into integration/hobo-cd.
-// binds at merge (plan 0024)
+// Default bindings of the frozen factories and the in-package adapters.
 import type { DurableEventStore } from "@hobo/core";
 import { ReconcilerMode } from "../_generated/cd_pb.js";
-import { createAgentEnrollment, createHttpTransport } from "../agent/index.js"; // binds at merge (plan 0024)
+import { createAgentEnrollment, createHttpTransport } from "../agent/index.js";
 import {
 	createArtifactStore,
 	createArtifactVerifier,
-} from "../artifacts/index.js"; // binds at merge (plan 0024)
-import { createCdAuthorizer } from "../authz/index.js"; // binds at merge (plan 0024)
-import { createFailoverController } from "../failover/index.js"; // binds at merge (plan 0024)
-import { createFanoutController } from "../fanout/index.js"; // binds at merge (plan 0024)
-import { createDeliveryFeedHandler } from "../feed/index.js"; // binds at merge (plan 0024)
-import { createFreightLedger } from "../freight/index.js"; // binds at merge (plan 0024)
+} from "../artifacts/index.js";
+import { createCdAuthorizer } from "../authz/index.js";
+import { createFailoverController } from "../failover/index.js";
+import { createFanoutController } from "../fanout/index.js";
+import { createDeliveryFeedHandler } from "../feed/index.js";
+import { createFreightLedger } from "../freight/index.js";
 import {
 	createFreightIngest,
 	createTrustedPublisherVerifier,
-} from "../ingest/index.js"; // binds at merge (plan 0024)
-import { createCampInventory } from "../inventory/index.js"; // binds at merge (plan 0024)
-import { createPipelineController } from "../pipelines/index.js"; // binds at merge (plan 0024)
-import { createPlacementEngine } from "../placement/index.js"; // binds at merge (plan 0024)
+} from "../ingest/index.js";
+import { createCampInventory } from "../inventory/index.js";
+import { createPipelineController } from "../pipelines/index.js";
+import { createPlacementEngine } from "../placement/index.js";
 import type { CdFactories, Digest, Realizer } from "../ports.js";
 import {
 	createCampPolicy,
 	createPostureService,
 	createShadowRecorder,
-} from "../posture/index.js"; // binds at merge (plan 0024)
+} from "../posture/index.js";
 import {
 	createA2HApprover,
 	createDeployGate,
@@ -34,37 +31,37 @@ import {
 	createPromotionService,
 	type DeployGateDeps,
 	type PlanningDeps,
-} from "../promotion/index.js"; // binds at merge (plan 0024)
-import { createProvenanceVerifier } from "../provenance/index.js"; // binds at merge (plan 0024)
+} from "../promotion/index.js";
+import { createProvenanceVerifier } from "../provenance/index.js";
 import {
 	createCampReconciler,
 	createDriftPolicy,
 	createInProcessTransport,
 	type DriftPolicyOptions,
-} from "../reconcile/index.js"; // binds at merge (plan 0024)
+} from "../reconcile/index.js";
 import {
 	type CutoverTrafficShifterDeps,
 	createCutoverTrafficShifter,
 	createHarnessRolloutEngine,
 	createRolloutOrchestrator,
 	type HarnessRolloutEngineDeps,
-} from "../rollout/index.js"; // binds at merge (plan 0024)
-import { createCdService } from "../service/index.js"; // binds at merge (plan 0024)
-import { createDesiredState } from "../sets/index.js"; // binds at merge (plan 0024)
+} from "../rollout/index.js";
+import { createCdService } from "../service/index.js";
+import { createDesiredState } from "../sets/index.js";
 import {
 	createFreightSources,
 	createSubscriptionDrivers,
-} from "../sources/index.js"; // binds at merge (plan 0024)
-import { createCdTelemetry, createTelemetrySink } from "../telemetry/index.js"; // binds at merge (plan 0024)
+} from "../sources/index.js";
+import { createCdTelemetry, createTelemetrySink } from "../telemetry/index.js";
 import {
 	createHealthSources,
 	createVerificationEngine,
-} from "../verification/index.js"; // binds at merge (plan 0024)
-import { createChangeWindows } from "../windows/index.js"; // binds at merge (plan 0024)
+} from "../verification/index.js";
+import { createChangeWindows } from "../windows/index.js";
 import type { RailCatalog } from "./rails.js";
 import type { CdComposeAdapters, CdComposeScope } from "./wire.js";
 
-/** Every frozen factory bound to its module (binds at merge, plan 0024). */
+/** Every frozen factory bound to its module. */
 export const defaultCdFactories: CdFactories = Object.freeze({
 	createFreightLedger,
 	createTrustedPublisherVerifier,
@@ -97,7 +94,7 @@ export const defaultCdFactories: CdFactories = Object.freeze({
 	createCampPolicy,
 	createShadowRecorder,
 	createPostureService,
-}); // binds at merge (plan 0024)
+});
 
 type ScopeOwned =
 	| "store"
@@ -146,7 +143,7 @@ const MODE_KEY: ReadonlyMap<
 	[ReconcilerMode.PUBLISHER, "publisher"],
 ]);
 
-/** The WP6/WP7/WP10 adapters bound to host inputs (binds at merge, plan 0024). */
+/** The in-package adapters bound to host inputs. */
 export function defaultCdAdapters(host: CdHostInputs): CdComposeAdapters {
 	const routing = host.routing;
 	return Object.freeze({

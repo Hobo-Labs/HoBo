@@ -1,4 +1,4 @@
-// @hobo/policy/posture (plan 0024 D25): the observe-phase posture rule
+// @hobo/policy/posture (ADR-0182 D25): the observe-phase posture rule
 // profile, the pure evaluator and the OSCAL assessment-results export.
 // Dependency-free, like the rest of @hobo/policy.
 export {

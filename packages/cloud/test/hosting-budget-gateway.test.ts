@@ -152,6 +152,33 @@ const command = (deploymentId: string) => ({
 });
 
 describe("gateway financial admission boundary", () => {
+	it("does not replay a completed deployment to a different principal", async () => {
+		const fx = fixtures();
+		expect(
+			(await deploy(fx.deps, command("replay-principal"), context)).status,
+		).toBe("planned");
+		expect(
+			(await deploy(fx.deps, command("replay-principal"), context)).status,
+		).toBe("planned");
+		for (const foreign of [
+			{ kind: "user", id: "other" },
+			{ kind: "service", id: "operator" },
+			{
+				kind: "user",
+				id: "operator",
+				delegatedBy: { kind: "service", id: "other" },
+			},
+		] as const) {
+			await expect(
+				deploy(fx.deps, command("replay-principal"), {
+					tenant: "tenant",
+					actor: foreign,
+				}),
+			).rejects.toThrow("deployment belongs to a different principal");
+		}
+		expect(fx.calls()).toBe(1);
+	});
+
 	it.each([
 		{ policy: { budget: null } },
 		{ policy: { budget: [] } },

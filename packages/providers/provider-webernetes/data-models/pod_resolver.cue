@@ -1,4 +1,4 @@
-// CUE constraints for pod_resolver.proto (plan 0024 WP13).
+// CUE constraints for pod_resolver.proto.
 package provider_webernetes
 
 #PodDigest: =~"^sha256:[a-f0-9]{64}$"

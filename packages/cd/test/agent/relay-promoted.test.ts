@@ -1,5 +1,5 @@
 // Promoted from src/draft/technical-proofs/hobo-relay-contract (auth, SSRF and
-// deny-by-default only; plan 0024 §3, WP11). The proof's reverse tunnel is
+// deny-by-default only). The proof's reverse tunnel is
 // replaced by pull over the delivery feed (C10); its rules carry over:
 //
 //   proof rule                                   → package rule

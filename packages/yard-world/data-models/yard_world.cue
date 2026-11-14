@@ -41,7 +41,7 @@ package yardworld
 
 #CharacterState: 0 | 1 | 2 | 3 | 4
 
-// ── HoBo CD views (plan 0024 WP19) ──────────────────────────────────────────
+// ── HoBo CD views ───────────────────────────────────────────────────────────
 
 #CdResult: "success" | "failure" | "error" | "timeout" | "cancellation" | "skip" | "pending"
 

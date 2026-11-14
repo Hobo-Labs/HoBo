@@ -1,0 +1,36 @@
+name: HoBo hosting evidence (read-only)
+
+# An explicit main-branch observation only. This workflow never deploys or
+# calls the CI relay, and a names-only result is not deployment readiness.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  observe:
+    name: Observe enrolled secret-store metadata
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - uses: ./.github/actions/setup-pnpm
+      - name: Install reviewed dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts --config.confirmModulesPurge=false
+      - name: Build the existing secret-store SDK
+        run: pnpm exec turbo run build --filter=@hobo/secret-store-claim... --concurrency=1 --output-logs=errors-only
+      - name: Observe names only through the enrolled identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --no-warnings scripts/ci/hosting-evidence.mts | tee -a "$GITHUB_STEP_SUMMARY"

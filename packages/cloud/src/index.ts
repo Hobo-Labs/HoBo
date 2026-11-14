@@ -4,7 +4,7 @@
 // DeploymentView projection reconstructs deployment state from the log.
 
 // Resolved Deployment Set and secret-free projections: the CD inputs that
-// @hobo/cd (plan 0024) consumes. The former fixture-only CD plane moved into
+// @hobo/cd consumes. The former fixture-only CD plane moved into
 // @hobo/cd reconcilers and realizers.
 export {
 	createResolvedDeploymentSet,

@@ -1,5 +1,5 @@
 // HoBo's runner fleet delivered by its own @hobo/cd, end to end and offline
-// (plan 0024; packages/ci-gh-actions/deploy/runner-fleet/README.md).
+// (packages/ci-gh-actions/deploy/runner-fleet/README.md).
 //
 // 1. The BUILT binary against the repository's real delivery module: the
 //    agent enrolls by double opt-in, the fleet's Placement is decidable
@@ -101,11 +101,13 @@ import {
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
 import { SupervisedRunnerHost } from "./fixtures/runner-host-supervised.js";
+import { agentRunDuration, slow } from "./support/slow.js";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");
 const BIN = join(PACKAGE, "dist", "bin", "hobo.js");
 const MODULE = "packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts";
+const AGENT_RUN_MS = agentRunDuration();
 // SAFETY: the runner fleet's Camp id for host `box` (hobo-ci-runners/<host id>).
 const BOX = "hobo-ci-runners/box" as CampId;
 const FLEET = "hobo-ci-runner-fleet";
@@ -307,7 +309,7 @@ it.runIf(Boolean(process.env.CI) && !existsSync(BIN))(
 
 describe.skipIf(!existsSync(BIN))(
 	"the runner fleet through the built binary",
-	{ timeout: 180_000 },
+	{ timeout: slow(Math.max(180_000, AGENT_RUN_MS * 2 + 60_000)) },
 	() => {
 		it("enrolls a runner host's agent by double opt-in and decides the fleet's Placement", async () => {
 			const home = await freshDir();
@@ -455,7 +457,7 @@ describe.skipIf(!existsSync(BIN))(
 				home,
 				argv.slice(2),
 				{ HOBO_CD_TOPOLOGY: MODULE, [CD_RUNNER_HOST_ENV]: config },
-				8_000,
+				AGENT_RUN_MS,
 			);
 			expect(runner.exitedEarly, runner.message).toBe(false);
 			expect(runner.ok, runner.message).toBe(true);
@@ -477,7 +479,7 @@ describe.skipIf(!existsSync(BIN))(
 				home,
 				argv.slice(2),
 				{ HOBO_CD_TOPOLOGY: MODULE, [CD_RUNNER_HOST_ENV]: config },
-				8_000,
+				AGENT_RUN_MS,
 			);
 			expect(local.exitedEarly, local.message).toBe(false);
 			expect(local.ok, local.message).toBe(true);

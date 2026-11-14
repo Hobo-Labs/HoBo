@@ -60,6 +60,8 @@ describe("a node's identity key", () => {
 		const folder = directory();
 		const loose = join(folder, "loose.key");
 		writeFileSync(loose, generateMeshIdentity().privateKeyPem, { mode: 0o644 });
+		chmodSync(loose, 0o644);
+		expect(statSync(loose).mode & 0o777).toBe(0o644);
 		await loadMeshIdentity(loose);
 		expect(statSync(loose).mode & 0o777).toBe(0o600);
 		const garbage = join(folder, "garbage.key");
@@ -90,6 +92,8 @@ describe("a node's identity key", () => {
 	it("refuses a key others can read when it cannot be made private", async () => {
 		const path = join(directory(), "loose.key");
 		writeFileSync(path, generateMeshIdentity().privateKeyPem, { mode: 0o644 });
+		chmodSync(path, 0o644);
+		expect(statSync(path).mode & 0o777).toBe(0o644);
 		await expect(
 			loadMeshIdentity(path, {
 				chmod: async () => {

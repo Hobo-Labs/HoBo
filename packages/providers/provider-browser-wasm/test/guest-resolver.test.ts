@@ -1,5 +1,5 @@
 /**
- * WP14 (plan 0024) Browser WASM coverage: I14 realization path (an
+ * Browser WASM coverage: I14 realization path (an
  * observation-only guest resolver over the host origin) + traffic profile,
  * typed refusals, telemetry and resolver conformance on pact-recorded fixtures.
  */

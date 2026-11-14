@@ -1,4 +1,4 @@
-// The CD chaos lane (plan 0024 WP20). Each fault is injected into a world that
+// The CD chaos lane. Each fault is injected into a world that
 // is converging a workload; the suite steps the world, checks the fault's
 // invariants after every step, heals, and requires convergence within a bound.
 // "Never ends wedged" is the shared property: every fault recovers.
@@ -12,7 +12,7 @@ import {
 // public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const CD_CHAOS_SUITE = "hobo.cd.chaos/v1";
 
-// public-contract: the CD chaos faults (plan 0024 WP20).
+// public-contract: the CD chaos faults.
 export const CD_CHAOS_FAULTS = Object.freeze([
 	"reconciler-killed-mid-converge",
 	"agent-partitioned",

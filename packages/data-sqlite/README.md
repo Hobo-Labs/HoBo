@@ -38,9 +38,11 @@ for undeclared fields.
 An existing table with the dataset's name is **adopted**, not replaced — that
 is how a store written before this engine existed comes under it without a copy.
 
-Five metadata tables sit beside the datasets: `hobo_data_datasets` (the schema
+The metadata tables include `hobo_data_datasets` (the schema
 each dataset was ensured with), `hobo_data_journal` (the capture outbox),
 `hobo_data_watermarks`, `hobo_data_fences`, and `hobo_data_subscriptions`.
+Fence operations also use `hobo_data_fence_operations`,
+`hobo_data_fence_policy`, and `hobo_data_fence_receivers`.
 
 A dataset may not be named `hobo_data_*` or `sqlite_*`
 (`INVALID_DATASET_SCHEMA`). Adoption is exactly why: a dataset named
@@ -183,6 +185,19 @@ fence. It is minted with `randomUUID()` — never derived from the scope, the
 journal head or the clock, which repeat when a fence is released and raised
 again — and it is returned by `raise` and nowhere else. No error or message
 carries it; `FencedTenantError` says which tenant is fenced, not with what.
+
+`operationReceivers` enrolls public Ed25519 keys for exact route-operation
+receipts. While a claim is held, writes through this binding, fence release,
+retirement, capture changes and watermark advancement are refused until a matching
+signed terminal receipt. A completed claim remains available for recovery.
+The receiver key set is pinned on first enrollment; key rotation requires a
+separate migration. File-replacement schema operations are unavailable once
+the policy is enrolled, including after reopening without the keys.
+
+SQLite enforces this lock at the HoBo entry point. A separate raw connection
+can bypass it, so a host must prove exclusive file access before using it for
+a handover. Enrolling keys alone does not configure a destination receiver or
+fund the operation.
 
 ## The dual-run port
 

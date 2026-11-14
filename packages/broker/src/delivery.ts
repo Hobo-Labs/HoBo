@@ -1,4 +1,4 @@
-// broker.DeliverySubmitted fact bodies and their upcaster (plan 0024, D14).
+// broker.DeliverySubmitted fact bodies and their upcaster (ADR-0182 D14).
 //
 // v1 (pre-D14) named a delivery engine: { requestId, brokerId, engine:
 // "argo" | "in-proc", target }. v2 is neutral: it names the reconciler mode,

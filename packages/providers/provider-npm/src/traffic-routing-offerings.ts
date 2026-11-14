@@ -4,7 +4,7 @@ import type {
 } from "@hobo/core";
 
 /**
- * npm TrafficRouting offerings (plan 0024, I14; ADR-0143/0144).
+ * npm TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
  *
  * A package registry serves tarballs to installers; it routes no request
  * traffic at all. The closest thing it has to a traffic lever is the dist-tag,

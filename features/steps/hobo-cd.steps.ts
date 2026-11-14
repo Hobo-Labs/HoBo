@@ -1,5 +1,5 @@
 /**
- * Cucumber steps for features/hobo-cd-*.feature (plan 0024 WP20).
+ * Cucumber steps for features/hobo-cd-*.feature.
  *
  * Journeys run on the deterministic journey model (hobo-cd-journey-model.ts);
  * fleet journeys on the conformance kit's reference placement and fan-out

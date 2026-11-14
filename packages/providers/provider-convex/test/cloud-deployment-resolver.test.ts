@@ -1,5 +1,5 @@
 /**
- * WP13 (plan 0024) Convex: the cloud-deployment resolver over the Management
+ * Convex: the cloud-deployment resolver over the Management
  * API (PACT-replayed fixtures), I14 coverage and traffic profile, typed
  * refusals, wire contract and a credential-gated live lane.
  */

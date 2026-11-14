@@ -1,5 +1,5 @@
 /**
- * Flux (FluxCloud / FluxOS) app resolver (plan 0024 WP13, I14; D6).
+ * Flux (FluxCloud / FluxOS) app resolver (ADR-0182 I14, D6).
  *
  * The hosting product is a registered Flux app: a compose of digest-pinned
  * containers that FluxOS schedules onto community or enterprise nodes. Two

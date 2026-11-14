@@ -1,6 +1,6 @@
 /**
  * How the hosted CI relay is delivered: its Freight source and its pipeline,
- * as delivery-as-code records (plan 0024; `packages/hobo/CD.md`). The relay is
+ * as delivery-as-code records (`packages/hobo/CD.md`). The relay is
  * HoBo delivering itself: `hobo ci deploy` records the relay build as Freight,
  * promotes it through this pipeline and the CD gate, and a conductor
  * reconciler realizes it on Vercel from the Yard beside this file

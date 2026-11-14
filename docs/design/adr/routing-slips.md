@@ -41,8 +41,9 @@ never refused; nothing is handed to the owner as a task.
 
 ## Rules {#adr-0181-rules}
 
-- **R1** The relay (fleet host) decides routing. Workers and workflows do not
-  judge capacity.
+- **R1** The relay (fleet host) decides routing. A fleet choice is independently
+  checked against GitHub's observed queue pickup and wait times before use;
+  workers and workflows do not judge host capacity.
 - **R2** No environment variable and no repository variable carries routing
   or fleet information, or a routing setting, anywhere: workflows, actions,
   the route script, the box daemon, the reporter, the hosted relay. Routing
@@ -50,7 +51,8 @@ never refused; nothing is handed to the owner as a task.
   committed configuration (`runnerRouting` in `.hobo/ci.json`).
 - **R3** Unknown changes nothing: with no slip, routing behaves as it did
   before slips (the queue rule).
-- **R4** A box that is only busy with its own jobs is never refused.
+- **R4** A box that is only busy with its own jobs and still takes them in
+  time is never refused merely because several jobs are queued.
 - **R5** Nothing is handed to the owner as a task. What the code cannot do
   itself is stated as a fact in a finding, once.
 
@@ -83,7 +85,13 @@ is.
    clock, names the reader's repository, and every runner it names is one of
    the committed `runnerRouting.labels`. Anything else (no slip, an expired
    or malformed one, another repository, an unknown label, a read error or
-   timeout) is no slip, and the queue rule decides as it does today. No
+   timeout) is no slip, and the queue rule decides as it does today. A fleet
+   choice also requires a recent, timely pickup for that exact label and no
+   job waiting beyond the configured limit. A `fleet-open` choice also honors
+   the queued-job limit; for `fleet-busy`, a young queue alone does not refuse
+   a responsive fleet (R4). When this evidence is missing, the existing queue
+   rule selects a responsive enrolled local box or GitHub-hosted; an unreadable
+   queue selects GitHub-hosted. Explicit route pins still win. No
    signature: the keys a reader could trust would have to be committed by a
    person. Only holders of `contents: write` can move the ref, and the label
    allowlist bounds what a forged slip can do.

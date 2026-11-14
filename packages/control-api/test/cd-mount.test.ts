@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread -- SAFETY: tests read the controlled OpenAPI JSON the server returns and pass an optional mount. */
 /**
- * The `/v1/cd/` mount (plan 0024 WP12). The control API stays free of a
+ * The `/v1/cd/` mount. The control API stays free of a
  * build-time dependency on `@hobo/cd`: it mounts any handler with the
  * delivery-feed shape (`pathPrefix`, `handle(request, signal)`), which
  * `createCdControlApi` from `@hobo/cd/service` satisfies. These tests pin the

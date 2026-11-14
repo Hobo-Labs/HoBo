@@ -9,6 +9,28 @@ Everything here is data, pure functions, and injected ports. There is no
 `src/`: the network arrives as an `UpstashTransport`, credentials leave through a
 `SecretCustodyPort`, and the clock is a `() => number` you supply.
 
+## Private Blob credentials and metered liability
+
+`createUpstashBlobCredentials` exchanges a custody-supplied bucket token for
+a short-lived S3 session using Upstash's credential service, as in the published
+[`@upstash/blob` 0.0.13 SDK](https://www.npmjs.com/package/@upstash/blob/v/0.0.13).
+The caller pins the
+independently observed bucket and R2 account, supplies a transport and clock,
+and reserves and claims each credential request before it is sent. Sessions are
+cached only while their token remains current and are refreshed before expiry.
+An unavailable budget, a foreign endpoint or bucket, a public bucket, or an
+expired session fails closed. Returned errors do not include provider secrets.
+The hosting supervisor supplies the guard using its durable Broker and retains
+ambiguous request reservations until they can be settled.
+
+`estimateUpstashBlobLiability` computes a conservative bound from the caller's
+observed rates and bounded operations, bytes and retention. It does not establish
+an account's prices, free allowance, quota, or spending cap. Upstash is the
+provider boundary; the underlying R2 account is also reported as a failure
+domain so two services backed by the same infrastructure are not mistaken for
+independent replicas. These primitives do not by themselves provision a bucket
+or establish deployment readiness.
+
 ## What the provider actually gives you
 
 | Aspect | Value | Source | Checked |

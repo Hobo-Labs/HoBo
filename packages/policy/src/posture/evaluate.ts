@@ -1,4 +1,4 @@
-// The pure posture evaluator (plan 0024 D25). Same rules and observation in,
+// The pure posture evaluator (ADR-0182 D25). Same rules and observation in,
 // same findings out, in any input order. No clock, RNG, network or model:
 // the Station-side posture service in @hobo/cd calls this; agents never do.
 import type {

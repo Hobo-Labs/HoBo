@@ -654,6 +654,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -673,6 +676,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
       '@hobo/storage-sqlite':
         specifier: workspace:*
         version: link:../storage-sqlite
@@ -1560,6 +1566,9 @@ importers:
 
   packages/data-core:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
@@ -1819,6 +1828,9 @@ importers:
       '@hobo/provider-lakebed':
         specifier: workspace:*
         version: link:../providers/provider-lakebed
+      '@hobo/provider-local':
+        specifier: workspace:*
+        version: link:../providers/provider-local
       '@hobo/provider-manifest':
         specifier: workspace:*
         version: link:../provider-manifest
@@ -2516,6 +2528,25 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+
+  packages/providers/provider-local:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/capability-profiles':
+        specifier: workspace:*
+        version: link:../../capability-profiles
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../../core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/providers/provider-neon:
     dependencies:
@@ -3250,6 +3281,9 @@ importers:
 
   packages/storage-sqlite:
     dependencies:
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/core':
         specifier: workspace:*
         version: link:../core

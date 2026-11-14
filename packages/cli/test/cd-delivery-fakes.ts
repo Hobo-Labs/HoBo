@@ -1,5 +1,5 @@
 // In-process fakes of the frozen @hobo/cd ports `hobo up`/`down`/`build`
-// consume (plan 0024 §7.3: code against frozen ports, write your own fakes).
+// consume (code against frozen ports, write your own fakes).
 //
 // They are deliberately faithful where the CLI depends on behavior: the
 // ledger is idempotent per content id, promotions are idempotent per key and

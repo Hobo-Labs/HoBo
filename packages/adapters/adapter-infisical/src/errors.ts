@@ -25,6 +25,10 @@ export type InfisicalErrorCode =
 	| "rate-limited"
 	/** Still 5xx or unreachable after the retry budget. */
 	| "unavailable"
+	/** The independently enrolled plan-observation lease could not be verified. */
+	| "lease-unverified"
+	/** The host did not reserve and claim a plan-observation attempt. */
+	| "budget-unavailable"
 	/** A secret-protection policy turned a write into a pending approval. */
 	| "approval-required"
 	/** The identity may list the secret but not read its value. */

@@ -1,5 +1,5 @@
 /**
- * GitHub Pages site realizer (plan 0024, HoBo.CD; D6, R2).
+ * GitHub Pages site realizer (HoBo.CD; ADR-0182 D6).
  *
  * The resource is the Pages site of one repository; its desired content is a
  * static-site tree Freight (a tree index plus one blob per file in the

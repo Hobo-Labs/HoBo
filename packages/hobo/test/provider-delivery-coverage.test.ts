@@ -1,5 +1,5 @@
 /**
- * Invariant I14 (plan 0024 WP14): every package under `packages/providers`
+ * Invariant I14 (ADR-0182): every package under `packages/providers`
  * resolves to a realization path and a traffic profile, or to a typed refusal.
  *
  * The catalog's `PROVIDER_DELIVERY_COVERAGE` table is checked against the
@@ -11,7 +11,7 @@
  *
  * `@hobo/hobo` does not depend on every provider package, so each module is
  * loaded from its source entry point. Exports a sibling work package adds
- * (plan 0024 WP13: convex, flux, webernetes, railway coverage) are checked as
+ * (convex, flux, webernetes, railway coverage) are checked as
  * soon as they exist; until then their cases are skipped with that reason.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -42,8 +42,7 @@ const PROVIDERS_ROOT = fileURLToPath(
 );
 const PORTABLE_OFFERINGS = 17;
 const COVERAGE_CONTRACT = "hobo.provider-hosting-coverage/v1";
-const PENDING_SIBLING =
-	"binds when cd/wp13-providers-a merges (plan 0024 WP13 adds this export)";
+const PENDING_SIBLING = "skipped until the provider package adds this export";
 const WP13_PACKAGES = new Set([
 	"@hobo/provider-convex",
 	"@hobo/provider-flux",
@@ -203,6 +202,15 @@ describe("I14: realization path plus traffic profile", () => {
 });
 
 describe("I14: typed refusal for everything that is not a delivery target", () => {
+	it("refuses local delivery until its definitions have an executor", () => {
+		for (const key of ["local", "@hobo/provider-local"]) {
+			const refusal = providerDeliveryRefusal(key);
+			expect(refusal?.code).toBe("RESOLVER_PRODUCT_UNSUPPORTED");
+			expect(refusal?.message).toContain("definitions for selection");
+			expect(refusal?.message).toContain("local apply/down executor");
+		}
+	});
+
 	for (const row of PROVIDER_DELIVERY_COVERAGE) {
 		if (row.realization !== "refused") continue;
 		it(`${row.packageName} refuses with RESOLVER_PRODUCT_UNSUPPORTED and a remediation`, () => {
