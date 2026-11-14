@@ -188,7 +188,14 @@ describe("capabilityManifest", () => {
 		expect(entry).toMatchObject({
 			productId: "vercel.blob/v1",
 			profiles: ["bucket.object/v1"],
+			features: ["durable", "read", "write", "delete"],
 		});
+		expect(
+			capabilityFor("objectStore").satisfies({
+				port: "objectStore",
+				features: ["read", "write", "delete"],
+			}),
+		).toEqual({ kind: "full" });
 		expect(
 			capabilityFor("objectStore").estimateCost({ port: "objectStore" })
 				.pricingStatus,

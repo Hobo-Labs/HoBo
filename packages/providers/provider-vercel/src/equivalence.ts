@@ -15,7 +15,7 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		port: "objectStore",
 		resourceClass: "vercel:blob",
 		providerService: "Vercel Blob",
-		features: ["durable"],
+		features: ["durable", "read", "write", "delete"],
 	},
 	kv: {
 		port: "kv",
