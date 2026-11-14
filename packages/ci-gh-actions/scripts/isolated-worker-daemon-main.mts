@@ -1059,6 +1059,12 @@ try {
 			tenant: core.parseTenantId(tenant),
 			fleet: fleetName,
 			connector: fleetNats.createNatsBusConnector(),
+			// Free inodes and memory PSI on the work volume (L43), as hostSignals.
+			host: fleetAgent.createHostCapacity({
+				slots,
+				workRoot,
+				labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
+			}),
 			admission: {
 				slots,
 				labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
@@ -1759,7 +1765,6 @@ try {
 					drainStartedAtMs: workerDrainStartedAtMs,
 				});
 				workerReconcileMs = Date.now() - workerReconcileStartedAt;
-				liveWorkerLeaseIds = reconciliation.liveLeaseIds;
 				liveLaunchSlotsInUse = countLiveBoxContainers(
 					await store.activeLeases(),
 				);

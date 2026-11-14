@@ -34,9 +34,9 @@ crosses a threshold. The thresholds are main's box worker's
 `psiFullBlock`; `storage-admission.ts` default `workRootBytes`).
 `publishedHealth(refusal, health)` is the health published beside it:
 `DRAINING`, `PRESSURED` for storage or pressure, else the source's.
-`hostSignalsOf(reading)` reads the `hostSignals` (free inodes, memory PSI) that
-`@hobo/fleet-agent`'s host capacity carries beside the frozen
-`CapacitySource` fields.
+`hostSignalsOf(reading)` reads the reading's optional `hostSignals` (free
+inodes, memory PSI; `CapacitySource` amendment 6), which `@hobo/fleet-agent`'s
+host capacity fills, keeping only finite, non-negative figures.
 
 Because such a member's health is not `REACHABLE`, `fleetVerdict` counts a
 current, active member as serving when it is `LIVE`, or `UNHEALTHY` with a

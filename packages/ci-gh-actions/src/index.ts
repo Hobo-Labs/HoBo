@@ -39,6 +39,19 @@ export {
 	reportRelayFailure,
 	setRelayFailureEvents,
 } from "./failure-log.js";
+// HoBo Fleet (ADR-0183): the box worker as a fleet member (L34).
+export {
+	admissionCapacitySource,
+	BOX_ROLES,
+	type BoxMemberOptions,
+	boxEnrollment,
+	capacityFromAdmission,
+	composeFleetDaemon,
+	createJitRegistrationMinter,
+	GITHUB_ACTIONS_JOB,
+	type WorkerAdmission,
+	type WorkerAdmissionSample,
+} from "./fleet-daemon.js";
 // HoBo Fleet (ADR-0183): the `github-actions-job` work kind.
 export {
 	createGithubActionsWorkRunner,

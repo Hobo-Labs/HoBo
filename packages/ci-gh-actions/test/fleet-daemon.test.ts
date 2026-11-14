@@ -33,6 +33,7 @@ import { createMemoryKeyStore } from "@hobo/fleet/keys";
 import { createFakeSandboxDriver } from "@hobo/fleet/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	admissionCapacitySource,
 	BOX_ROLES,
 	boxEnrollment,
 	capacityFromAdmission,
@@ -323,6 +324,44 @@ describe("the box worker's fleet daemon", () => {
 		await allowed.daemon.refreshFleet();
 		expect(allowed.daemon.hostDocker()).toBe(true);
 		await allowed.daemon.agent.stop();
+	});
+});
+
+describe("admissionCapacitySource", () => {
+	const admission = {
+		slots: 4,
+		labels: ["hobo"],
+		read: async () => idle,
+	};
+	const host = (
+		read: () => Promise<never> | ReturnType<typeof hostReading>,
+	) => ({
+		read,
+	});
+	const hostReading = async () => ({
+		...capacityFromAdmission(admission, idle),
+		hostSignals: { freeInodes: 10, psiMemorySome: 30 },
+	});
+
+	it("carries the host's inodes and memory PSI as hostSignals (amendment 6)", async () => {
+		const reading = await admissionCapacitySource(
+			admission,
+			host(hostReading),
+		).read();
+		expect(reading.capacity.freeSlots).toBe(4);
+		expect(reading.hostSignals).toEqual({ freeInodes: 10, psiMemorySome: 30 });
+	});
+
+	it("reads the admission alone without a host, or when the host read fails", async () => {
+		expect(
+			(await admissionCapacitySource(admission).read()).hostSignals,
+		).toBeUndefined();
+		const failing = host(async () => {
+			throw new Error("statfs failed");
+		});
+		const reading = await admissionCapacitySource(admission, failing).read();
+		expect(reading.hostSignals).toBeUndefined();
+		expect(reading.capacity.freeSlots).toBe(4);
 	});
 });
 

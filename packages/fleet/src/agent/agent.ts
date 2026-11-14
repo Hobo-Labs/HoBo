@@ -66,7 +66,7 @@ import {
 	SHORT_BUNDLE_HOURS,
 	transportOf,
 } from "./bundle.js";
-import { countOwnWork, refusingCapacity, selfCapacity } from "./capacity.js";
+import { refusingCapacity, selfCapacity } from "./capacity.js";
 import { createBusLink } from "./link.js";
 import { createStateGate } from "./state.js";
 
@@ -142,8 +142,7 @@ export function fleetAgent(deps: AgentDeps) {
 	const { log } = deps;
 	const gate = createStateGate(deps.keys);
 	const link = createBusLink();
-	// L43: the orders this device runs, and the source its executor fits against.
-	const ownWork = countOwnWork(deps.egress);
+	// L43: the source the executor fits against refuses while the host does.
 	const executorCapacity = refusingCapacity(deps.capacity);
 
 	let keys: DeviceKeys | undefined;
@@ -625,7 +624,7 @@ export function fleetAgent(deps: AgentDeps) {
 				bus: link.bus,
 				runners: deps.runners,
 				sandboxes: deps.sandboxes,
-				egress: ownWork.egress,
+				egress: deps.egress,
 				capacity: executorCapacity,
 				now: deps.now,
 				log,
@@ -671,7 +670,8 @@ export function fleetAgent(deps: AgentDeps) {
 		const read = await deps.capacity.read().catch(() => undefined);
 		const { capacity, health, refusal } = selfCapacity(
 			read,
-			ownWork.running(),
+			// The executor's own work (amendment 6): claims held plus orders running.
+			executors.reduce((sum, executor) => sum + executor.inUse(), 0),
 			draining,
 		);
 		if (health !== lastHealth) {

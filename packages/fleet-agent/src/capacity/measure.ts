@@ -5,15 +5,19 @@
 // still take on the filesystem holding the work root (`statfs` bavail ×
 // bsize). L43 adds the two signals main's `isolated-worker/host-capacity.ts`
 // tracked: free inodes on that filesystem (`statfs` ffree) and memory PSI
-// (`/proc/pressure/memory`, avg10 of "some" and "full"). Those have no field
-// in the frozen `CapacitySource` reading, so they ride beside it as
-// `hostSignals`, which the agent (`@hobo/fleet` observation `refusal.ts`)
+// (`/proc/pressure/memory`, avg10 of "some" and "full"). They fill the
+// reading's optional `hostSignals` (contract amendment 6), which the agent (`@hobo/fleet` observation `refusal.ts`)
 // turns into the observation's `refusal`. A figure that cannot be read is
 // absent (unknown), never zero.
 import { readFile, statfs } from "node:fs/promises";
 import { freemem } from "node:os";
 import { create } from "@bufbuild/protobuf";
-import { type Capacity, CapacitySchema, Health } from "@hobo/fleet";
+import {
+	type Capacity,
+	CapacitySchema,
+	Health,
+	type HostSignals,
+} from "@hobo/fleet";
 
 /** The worker's default `HOBO_CI_WORKER_MEMORY_RESERVE_MB`: memory never offered to work. */
 export const MEMORY_RESERVE_MB = 2_048;
@@ -52,13 +56,6 @@ export type HostReaders = Readonly<{
 		path: string,
 	): Promise<Readonly<{ bavail: number; bsize: number; ffree: number }>>;
 	freemem(): number;
-}>;
-
-/** Free inodes and memory PSI, beside the frozen reading's fields (L43). */
-export type HostSignals = Readonly<{
-	freeInodes?: number;
-	psiMemorySome?: number;
-	psiMemoryFull?: number;
 }>;
 
 /** `HostSignals` while it is being filled in. */

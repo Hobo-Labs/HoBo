@@ -13,6 +13,6 @@
 
 If a figure cannot be read, the record leaves it out, which means unknown. It is never reported as zero. Figures are capped at the largest `uint32`.
 
-`hostSignals` sits beside the frozen `CapacitySource` fields (`capacity`, `health`, `labels`), which have no place for inodes or PSI. The agent in `@hobo/fleet` reads it and derives the observation's `refusal` (`packages/fleet/src/observation/refusal.ts`), so the thresholds live in one place: fewer than 25,000 free inodes is `STORAGE`; PSI avg10 at or over 25 ("some") or 5 ("full") is `PRESSURE`. These are main's box worker's figures (`isolated-worker/host-capacity.ts`: `minInodeMargin`, `psiSomeBlock`, `psiFullBlock`), which L34 deletes.
+`hostSignals` is the optional field `CapacitySource.read()` gained in contract amendment 6, beside `capacity`, `health` and `labels`. The agent in `@hobo/fleet` reads it and derives the observation's `refusal` (`packages/fleet/src/observation/refusal.ts`), so the thresholds live in one place: fewer than 25,000 free inodes is `STORAGE`; PSI avg10 at or over 25 ("some") or 5 ("full") is `PRESSURE`. These are main's box worker's figures (`isolated-worker/host-capacity.ts`: `minInodeMargin`, `psiSomeBlock`, `psiFullBlock`), which L34 deleted; the box worker now reads them through `createHostCapacity` (`packages/ci-gh-actions/src/fleet-daemon.ts`).
 
 Every read goes through `createHostProbes(readers)`: `readFile`, `statfs`, `freemem` and the platform. `NODE_READERS` are the real ones; tests pass fakes, so no real `/proc` is needed.

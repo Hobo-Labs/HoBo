@@ -1,13 +1,9 @@
 /**
- * What the agent knows about its own capacity beyond `deps.capacity` (L43,
- * amendment 4, D60): how many of its own orders are running, and the refusal
- * and health it publishes.
+ * What the agent publishes about its own capacity beyond `deps.capacity` (L43,
+ * amendments 4 and 6, D60): the refusal and health of its self-observation.
  *
- * - The executor opens one egress proxy per order before it creates the
- *   sandbox and closes it after the sandbox is destroyed, whatever the
- *   outcome, so counting open proxies counts the orders it is running. The
- *   executor's own count (claims held for an order, plus running orders) is
- *   private to L04; a claim still waiting for its order is not counted here.
+ * - The agent subtracts its executor's own work (`inUse()`: claims held for
+ *   an order plus orders running) from the source's free slots.
  * - The executor fits work against `deps.capacity`; the agent hands it a
  *   source whose health is `PRESSURED` while the host refuses for storage or
  *   pressure, so it claims nothing the observation says it refuses.
@@ -25,35 +21,7 @@ import {
 	hostSignalsOf,
 	publishedHealth,
 } from "../observation/refusal.js";
-import type { CapacitySource, EgressProxyFactory } from "../ports.js";
-
-/** Counts the orders running through `egress`: one open proxy each. */
-export function countOwnWork(egress: EgressProxyFactory): Readonly<{
-	egress: EgressProxyFactory;
-	running(): number;
-}> {
-	let open = 0;
-	return Object.freeze({
-		egress: Object.freeze({
-			async open(allow: readonly string[]) {
-				const proxy = await egress.open(allow);
-				open += 1;
-				let closed = false;
-				return Object.freeze({
-					url: proxy.url,
-					async close() {
-						if (!closed) {
-							closed = true;
-							open -= 1;
-						}
-						await proxy.close();
-					},
-				});
-			},
-		} satisfies EgressProxyFactory),
-		running: () => open,
-	});
-}
+import type { CapacitySource } from "../ports.js";
 
 /** The source the executor reads: the host's refusal for storage or pressure shows as `PRESSURED`. */
 export function refusingCapacity(source: CapacitySource): CapacitySource {

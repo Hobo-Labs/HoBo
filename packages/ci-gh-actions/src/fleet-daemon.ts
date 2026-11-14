@@ -5,7 +5,8 @@
  * - roles `DISPATCHER` and `EXECUTOR`, asked for at enrollment as a
  *   `DEDICATED` device (`boxEnrollment`);
  * - the worker's memory, storage and host-health admission as its
- *   `CapacitySource` (`capacityFromAdmission`);
+ *   `CapacitySource` (`capacityFromAdmission`), carrying the free inodes and
+ *   memory PSI of `@hobo/fleet-agent`'s `createHostCapacity` as `hostSignals`;
  * - the `github-actions-job` work kind (L16's source and runner);
  * - the sandbox drivers and egress proxy factory of `@hobo/fleet-agent`
  *   (`sandboxDrivers`, `createEgressProxyFactory`), which the caller resolves;
@@ -102,11 +103,30 @@ export function capacityFromAdmission(
 	return { capacity, health, labels: [...worker.labels] };
 }
 
+/**
+ * The admission as a `CapacitySource`. With `host` (`createHostCapacity` of
+ * `@hobo/fleet-agent`), each reading also carries the host's free inodes and
+ * memory PSI as `hostSignals` (contract amendment 6), from which the agent
+ * derives the observation's refusal; a host read that fails leaves them out.
+ */
 export function admissionCapacitySource(
 	admission: WorkerAdmission,
+	host?: CapacitySource,
 ): CapacitySource {
 	return {
-		read: async () => capacityFromAdmission(admission, await admission.read()),
+		read: async () => {
+			const [sample, signals] = await Promise.all([
+				admission.read(),
+				host
+					?.read()
+					.then((reading) => reading.hostSignals)
+					.catch(() => undefined),
+			]);
+			const reading = capacityFromAdmission(admission, sample);
+			return signals === undefined
+				? reading
+				: { ...reading, hostSignals: signals };
+		},
 	};
 }
 
@@ -207,6 +227,8 @@ export type BoxMemberOptions = Readonly<{
 	fleet: string;
 	connector: FleetBusConnector;
 	admission: WorkerAdmission;
+	/** `createHostCapacity` of `@hobo/fleet-agent`: its `hostSignals` (inodes, memory PSI) ride on each reading. */
+	host?: CapacitySource;
 	/** L16's `createGithubActionsWorkSource` and `createGithubActionsWorkRunner`. */
 	work: Readonly<{ source: WorkSource; runner: WorkRunner }>;
 	/** `sandboxDrivers` of `@hobo/fleet-agent`, resolved by the caller. */
@@ -227,7 +249,7 @@ export function composeFleetDaemon(options: BoxMemberOptions) {
 		authorityUrl: options.authorityUrl,
 		tenant: options.tenant,
 		connector: options.connector,
-		capacity: admissionCapacitySource(options.admission),
+		capacity: admissionCapacitySource(options.admission, options.host),
 		runners: [options.work.runner],
 		sources: [options.work.source],
 		sandboxes: options.sandboxes,

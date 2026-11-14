@@ -28,7 +28,6 @@ import {
 	Role,
 	VerdictState,
 } from "../../src/_generated/fleet_pb.js";
-import { countOwnWork } from "../../src/agent/capacity.js";
 import { fleetVerdict, fleetView } from "../../src/observation/index.js";
 import type { CapacitySource, KeyStore } from "../../src/ports.js";
 
@@ -315,31 +314,5 @@ describe("the agent's refusal", () => {
 			VerdictState.NO_CAPACITY,
 		);
 		await box.agent.stop();
-	});
-});
-
-describe("countOwnWork", () => {
-	it("counts each open egress proxy as one running order, once however often it is closed", async () => {
-		const closed: string[] = [];
-		const counted = countOwnWork({
-			async open(allow) {
-				return {
-					url: `http://egress.invalid/${allow.join(",")}`,
-					async close() {
-						closed.push(allow.join(","));
-					},
-				};
-			},
-		});
-		const first = await counted.egress.open(["a"]);
-		const second = await counted.egress.open(["b"]);
-		expect(first.url).toBe("http://egress.invalid/a");
-		expect(counted.running()).toBe(2);
-		await first.close();
-		await first.close();
-		expect(counted.running()).toBe(1);
-		await second.close();
-		expect(counted.running()).toBe(0);
-		expect(closed).toEqual(["a", "a", "b"]);
 	});
 });
