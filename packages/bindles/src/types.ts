@@ -306,6 +306,8 @@ export interface ExternalDependencyOptions {
 	 * service may be an external of a Bindle placed in a Yard; anything else
 	 * another vendor runs belongs to a Yard of its own, joined by a junction
 	 * (externalBoundaryViolations).
+	 * This declaration does not itself prove a Marketplace relationship;
+	 * placement refuses it until that relationship can be verified.
 	 */
 	readonly managedBy?: {
 		readonly provider: string;
