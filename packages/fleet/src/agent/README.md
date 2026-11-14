@@ -63,6 +63,19 @@ the agent is started and connected, for `createBusRelayTransport`.
   started transports, region and bundle sequence. Dispatchers rank only
   accepted, unexpired self-observations. It also signs and publishes, as
   observer, one observation for each `deps.sponsored` member.
+- Each self-observation carries `refusal` (amendment 4, D60; L43), from
+  `deriveRefusal` in `../observation/refusal.ts`: `DRAINING` while draining;
+  `STORAGE` when disk or inodes are short; `PRESSURE` when memory headroom or
+  PSI is over its limit; `OWN_WORK` when every slot runs its own order; else
+  `NONE`. Its `free_slots` is `deps.capacity`'s less the orders it is running,
+  counted by the egress proxies the executor holds open (one per order;
+  `capacity.ts`). A claim still waiting for its order is not counted: the
+  executor's own count is private to `work/`. For `STORAGE` or `PRESSURE` it
+  publishes `PRESSURED` health, and the executor reads `deps.capacity` through
+  `refusingCapacity`, which reports `PRESSURED` too, so it claims nothing it
+  refuses. Inodes and PSI come from the `hostSignals` that
+  `@hobo/fleet-agent`'s `createHostCapacity` carries beside the frozen
+  `CapacitySource` fields.
 - The dispatcher runs while a membership has role `DISPATCHER`; the executor
   (with `deps.egress`) while one has `EXECUTOR`. When the member's
   memberships change (read from the registry each beat and from refresh

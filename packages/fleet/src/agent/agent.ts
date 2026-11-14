@@ -66,6 +66,7 @@ import {
 	SHORT_BUNDLE_HOURS,
 	transportOf,
 } from "./bundle.js";
+import { countOwnWork, refusingCapacity, selfCapacity } from "./capacity.js";
 import { createBusLink } from "./link.js";
 import { createStateGate } from "./state.js";
 
@@ -141,6 +142,9 @@ export function fleetAgent(deps: AgentDeps) {
 	const { log } = deps;
 	const gate = createStateGate(deps.keys);
 	const link = createBusLink();
+	// L43: the orders this device runs, and the source its executor fits against.
+	const ownWork = countOwnWork(deps.egress);
+	const executorCapacity = refusingCapacity(deps.capacity);
 
 	let keys: DeviceKeys | undefined;
 	let member: MemberRecord | undefined;
@@ -621,8 +625,8 @@ export function fleetAgent(deps: AgentDeps) {
 				bus: link.bus,
 				runners: deps.runners,
 				sandboxes: deps.sandboxes,
-				egress: deps.egress,
-				capacity: deps.capacity,
+				egress: ownWork.egress,
+				capacity: executorCapacity,
 				now: deps.now,
 				log,
 			});
@@ -665,9 +669,11 @@ export function fleetAgent(deps: AgentDeps) {
 		if (device === undefined || record === undefined) return;
 		if (link.bus.status() !== "connected") return;
 		const read = await deps.capacity.read().catch(() => undefined);
-		const health = draining
-			? Health.DRAINING
-			: (read?.health ?? Health.UNKNOWN);
+		const { capacity, health, refusal } = selfCapacity(
+			read,
+			ownWork.running(),
+			draining,
+		);
 		if (health !== lastHealth) {
 			lastHealth = health;
 			healthSince = deps.now();
@@ -680,7 +686,8 @@ export function fleetAgent(deps: AgentDeps) {
 			health,
 			failingForMs:
 				health === Health.REACHABLE ? 0 : Math.max(0, issued - healthSince),
-			capacity: read?.capacity,
+			capacity,
+			refusal,
 			labels: [...(read?.labels ?? [])],
 			platform: record.platform,
 			sandboxTiers: [...tiers],

@@ -167,7 +167,10 @@ const REFUSING: ReadonlySet<Refusal> = new Set([
 
 /**
  * Live, active members serving `label` (any label when empty) and their free
- * slots. With no free slot the fleet is `NO_CAPACITY` only when every serving
+ * slots. A member that refuses for pressure, storage or draining also serves
+ * while its observation is current, though its health is not `REACHABLE`
+ * (the agent publishes `PRESSURED` or `DRAINING` beside that refusal, L43),
+ * and its slots never count. With no free slot the fleet is `NO_CAPACITY` only when every serving
  * member refuses for pressure, storage or draining; if any is full only with
  * its own work, or says nothing (`UNSPECIFIED`, an older agent), the fleet is
  * `BUSY` (ADR-0181 R4). When a truncated list shows nobody for the label, the fleet's
@@ -183,12 +186,17 @@ export function buildFleetVerdict(
 	const serving = view.members.filter(
 		(member) =>
 			member.state === MemberState.ACTIVE &&
-			member.availability === Availability.LIVE &&
+			(member.availability === Availability.LIVE ||
+				(member.availability === Availability.UNHEALTHY &&
+					REFUSING.has(member.refusal))) &&
 			(label === "" || member.labels.includes(label)),
 	);
 	let members = serving.length;
+	// A refusing member admits no new work, whatever slots it reports.
 	let freeSlots = serving.reduce(
-		(sum, member) => sum + (member.capacity?.freeSlots ?? 0),
+		(sum, member) =>
+			sum +
+			(REFUSING.has(member.refusal) ? 0 : (member.capacity?.freeSlots ?? 0)),
 		0,
 	);
 	let refused =
