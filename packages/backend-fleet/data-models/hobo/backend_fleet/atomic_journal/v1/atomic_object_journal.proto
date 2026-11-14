@@ -1,0 +1,44 @@
+// Persisted single-object journal voter. The provider supplies the conditional
+// version separately; these records contain no provider credentials.
+syntax = "proto3";
+
+package hobo.backend_fleet.atomic_journal.v1;
+
+message AtomicObjectJournalMember {
+  string id = 1;
+  string provider = 2;
+  string account_id = 3;
+  string resource_id = 4;
+  string incarnation = 5;
+}
+
+message AtomicObjectJournalDocument {
+  string digest = 1;
+  string value = 2;
+}
+
+// Journal assignments cannot nominate a writer; their reason links digests.
+message AtomicObjectJournalAssignment {
+  uint32 epoch = 1;
+  bool sealed = 2;
+  string reason = 3;
+  uint32 decided_at_ms = 4;
+  string decided_by = 5;
+}
+
+message AtomicObjectJournalSeal {
+  string transition_id = 1;
+  uint32 epoch = 2;
+  string digest = 3;
+}
+
+message AtomicObjectJournalState {
+  string contract = 1;
+  string fleet_id = 2;
+  string anchor_digest = 3;
+  AtomicObjectJournalMember member = 4;
+  string initialization_id = 5;
+  repeated AtomicObjectJournalAssignment entries = 6;
+  repeated AtomicObjectJournalDocument documents = 7;
+  optional AtomicObjectJournalSeal seal = 8;
+}

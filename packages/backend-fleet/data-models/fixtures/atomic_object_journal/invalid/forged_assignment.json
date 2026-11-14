@@ -1,0 +1,21 @@
+{
+  "contract": "hobo.atomic-object-journal/v1",
+  "fleetId": "fleet",
+  "anchorDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "member": {
+    "id": "member",
+    "provider": "vercel",
+    "accountId": "account",
+    "resourceId": "store",
+    "incarnation": "generation"
+  },
+  "initializationId": "fresh",
+  "entries": [{
+    "epoch": 1,
+    "sealed": true,
+    "reason": "j:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "decidedAtMs": 0,
+    "decidedBy": "journal"
+  }],
+  "documents": []
+}
