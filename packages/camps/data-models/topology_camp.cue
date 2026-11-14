@@ -10,6 +10,7 @@ package data_models
 
 #CampTopology: {
 	id:               string & !=""
+	logical_id?:      string & !=""
 	env:              string & !=""
 	env_type:         string & !=""
 	provider_id:      string & !=""

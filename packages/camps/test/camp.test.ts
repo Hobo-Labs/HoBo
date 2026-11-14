@@ -27,6 +27,21 @@ describe("camp() — provider-neutral, no bindle ownership", () => {
 		expect((prod as { bindle?: unknown }).bindle).toBeUndefined();
 	});
 
+	it("rejects ambiguous or control-bearing logical Camp identities", () => {
+		for (const logicalId of [
+			"",
+			" production",
+			"production ",
+			"prod\nother",
+			"x".repeat(513),
+		]) {
+			expect(() => camp("prod", { logicalId })).toThrow(/logicalId/);
+		}
+		expect(camp("prod", { logicalId: "checkout/production" }).logicalId).toBe(
+			"checkout/production",
+		);
+	});
+
 	it("rejects bindle ownership on camp", () => {
 		expect(() =>
 			camp("dev", {

@@ -8,6 +8,25 @@ Yard (or from Yard placement policy). Camps do not own Bindles and do not select
 cloud providers. Camps can move between Yards via Trails. See [`ADR.md`](./ADR.md)
 and the [yard-first-placement ADR](../../docs/design/adr/yard-first-placement.md).
 
+Give a Camp a `logicalId` to identify it across independently declared Yard
+placements. Its `id` identifies the current placement, and the Yard determines
+its provider. Attaching an existing Camp to a new Yard retains its logical ID
+and its authored configuration while deriving the new Yard's provider:
+
+```ts
+import { camp } from "@hobo/camps";
+import { yard } from "@hobo/yards";
+
+const production = camp("production", { logicalId: "checkout/production" });
+const east = yard("east", { provider: "aws", camps: [production] });
+const west = yard("west", { provider: "gcp", camps: [production] });
+// Both placements have logicalId "checkout/production".
+```
+
+Declare only the current placement in a CD topology. A live move additionally
+uses a Trail to transfer state and cut over; changing the declaration alone
+does not transfer data or retire the former provider's resources.
+
 **API residual:** `defaultProvider` / `tiers` / `bindings` on `camp()` are
 **rejected at parse** (`Camp must not select a cloud provider`).
 `providerSelection(...)` is a descriptor helper for within-provider mapping /

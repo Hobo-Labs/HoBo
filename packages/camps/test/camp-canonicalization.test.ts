@@ -517,24 +517,35 @@ describe("attachCampToYard", () => {
 			yardId: "eu",
 			providerId: "aws",
 		});
-		// Re-attaching under the same provider must not refuse — but note the id
-		// nests again, which is why callers attach once.
-		expect(() =>
-			attachCampToYard(once, { yardId: "eu", providerId: "aws" }),
-		).not.toThrow();
+		expect(attachCampToYard(once, { yardId: "eu", providerId: "aws" })).toEqual(
+			once,
+		);
 	});
 
-	it("refuses a provider that disagrees with one already derived", () => {
+	it("moves the logical Camp to a new provider Yard without changing the source placement", () => {
 		const attached = attachCampToYard(camp("prod"), {
 			yardId: "eu",
 			providerId: "aws",
 		});
-		// The Yard fixes the provider. A Camp that ended up with two would be
-		// deployed to whichever one the reader happened to look at.
-		expectMigrationRefusal(
-			() => attachCampToYard(attached, { yardId: "us", providerId: "gcp" }),
-			/disagrees with Yard provider/u,
-		);
+		const moved = attachCampToYard(attached, {
+			yardId: "us",
+			providerId: "gcp",
+		});
+		expect(moved).toMatchObject({
+			id: "us/prod",
+			logicalId: "eu/eu/prod",
+			enclosingYardId: "us",
+			derivedProviderId: "gcp",
+		});
+		expect(attached).toMatchObject({
+			id: "eu/prod",
+			logicalId: "eu/eu/prod",
+			enclosingYardId: "eu",
+			derivedProviderId: "aws",
+		});
+		expect(() =>
+			attachCampToYard(attached, { yardId: "eu", providerId: "gcp" }),
+		).toThrow(/disagrees with Yard provider/u);
 	});
 
 	it("refuses a non-Camp, an empty yardId and an empty providerId", () => {
@@ -589,6 +600,27 @@ describe("attachCampToYard", () => {
 			region: "eu",
 			team: "core",
 		});
+		expect(
+			attachCampToYard(attached, { yardId: "eu", providerId: "aws" }),
+		).toEqual(attached);
+		const moved = attachCampToYard(attached, {
+			yardId: "west",
+			providerId: "gcp",
+			resolverConfig: {
+				pins: [{ slot: "kv", resolverId: "firestore" }],
+				properties: { destinationOnly: "yes" },
+			},
+		});
+		expect(moved.resolverConfig.pins).toEqual([
+			{ slot: "kv", resolverId: "firestore" },
+		]);
+		expect(moved.resolverConfig.properties).toEqual({
+			shared: "camp",
+			campOnly: "1",
+			destinationOnly: "yes",
+		});
+		expect(moved.resolverConfig.require).toEqual(["a"]);
+		expect(moved.resolverConfig.labels).toEqual({ team: "core" });
 	});
 
 	it("keeps the Camp's mappings when the Yard supplies none", () => {
@@ -699,6 +731,7 @@ describe("campToShape", () => {
 		// `eu/prod` is an identity within one topology. Carrying it into a shape
 		// would make the shape unusable in a topology with a different Yard.
 		expect(campToShape(attached).id).toBe("prod");
+		expect(campToShape(attached).logicalId).toBe("eu/eu/prod");
 	});
 });
 
