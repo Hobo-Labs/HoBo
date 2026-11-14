@@ -283,3 +283,42 @@ describe("resolveFamilyProject", () => {
 		).toMatchObject({ ok: false });
 	});
 });
+
+describe("provider junction credentials", () => {
+	it("converges with the up that upWith builds from the prepare step's runtimeEnv", async () => {
+		const runtime = runtimeWith(recordingIac());
+		const dir = await project();
+		const seen: string[] = [];
+		const cli = createHoboCli({
+			commands: {
+				cd: createLifecycleFamilyCommand({
+					family: "cd",
+					resolveProject: () => ({
+						ok: true,
+						projectDir: dir,
+						source: "bundled",
+					}),
+					up: createUpCommand({ runtime }),
+					down: createDownCommand({ runtime }),
+					plan: createPlanCommand({ runtime }),
+					prepare: async () => ({
+						kind: "ready",
+						steps: [
+							{ id: "vercel", outcome: "unchanged", detail: "connected" },
+						],
+						runtimeEnv: { VERCEL_TOKEN: "from-the-store" },
+					}),
+					upWith: (env) => {
+						seen.push(Object.keys(env).join(","));
+						return createUpCommand({ runtime });
+					},
+				}),
+			},
+		});
+		const up = await run(cli, ["cd", "up"]);
+		expect(up.exitCode).toBe(0);
+		expect(seen).toEqual(["VERCEL_TOKEN"]);
+		// The credential never reaches the result.
+		expect(JSON.stringify(up.envelope)).not.toContain("from-the-store");
+	});
+});
