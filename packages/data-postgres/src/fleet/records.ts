@@ -24,6 +24,7 @@ import {
 	type MemberRecord,
 	MemberState,
 	type Observation,
+	Refusal,
 	type RegistryView,
 	SandboxTier,
 	type UsageMeasurement,
@@ -196,6 +197,9 @@ export function postgresObservation(
 				used: entry.used,
 			}),
 		),
+		// A storage backend admits no work, so it states no refusal (the
+		// proto3 default; amendment 4, D60).
+		refusal: Refusal.UNSPECIFIED,
 		labels: [],
 		sandboxTiers: [],
 		agentVersion: "",
