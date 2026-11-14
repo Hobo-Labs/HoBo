@@ -679,7 +679,6 @@ describe("prepareVercelConnection", () => {
 				HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
 				HOBO_CD_VERCEL_CLIENT_ID: "oac_test",
 				HOBO_CD_VERCEL_REDIRECT_URI: `http://127.0.0.1:${port}/vercel/callback`,
-				HOBO_CONNECT_UI_COMPOSE: "off",
 			},
 			interactive: true,
 			openStore: opened(store),

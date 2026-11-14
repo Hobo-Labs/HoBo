@@ -2,7 +2,6 @@ import type { CommandResult, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
 	type ConnectPage,
 	type ConnectStep,
-	evaluatorFromEnv,
 	startConnectPage,
 } from "@hobo/connect-ui";
 import {
@@ -193,7 +192,6 @@ export async function prepareVercelConnection(
 	});
 	const page: ConnectPage = await (deps.startPage ?? startConnectPage)({
 		flow,
-		evaluate: evaluatorFromEnv(env, deps.fetch),
 		port: Number(redirect.port),
 		callbackPath: redirect.pathname,
 	});
