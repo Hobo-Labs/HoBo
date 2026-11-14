@@ -39,7 +39,17 @@ export interface ProcessKubectlTransportOptions {
 	readonly kubectlBin?: string;
 	readonly context?: string;
 	readonly env?: NodeJS.ProcessEnv;
+	/**
+	 * Upper bound, in ms, on each read probe (`version`, `cluster-info`).
+	 * A probe answers "is this cluster reachable?", so an unreachable or
+	 * slow API server must come back as 503 within this bound rather than
+	 * after kubectl's own discovery retries. Default 4000.
+	 */
+	readonly probeTimeoutMs?: number;
 }
+
+const DEFAULT_PROBE_TIMEOUT_MS = 4_000;
+const WRITE_TIMEOUT_MS = 120_000;
 
 interface KubectlRunResult {
 	readonly status: number;
@@ -89,18 +99,25 @@ export function createProcessKubectlTransport(
 		return options.context ? ["--context", options.context] : [];
 	}
 
-	function run(args: readonly string[], input?: string): KubectlRunResult {
+	const probeTimeoutMs = options.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
+
+	function run(
+		args: readonly string[],
+		input?: string,
+		timeoutMs: number = WRITE_TIMEOUT_MS,
+	): KubectlRunResult {
 		const result = spawnSync(bin, [...baseArgs(), ...args], {
 			env: { ...env },
 			encoding: "utf8",
 			input,
 			stdio: ["pipe", "pipe", "pipe"],
-			timeout: 120_000,
+			timeout: timeoutMs,
+			killSignal: "SIGKILL",
 		});
 		return {
 			status: result.status ?? 1,
 			stdout: result.stdout ?? "",
-			stderr: result.stderr ?? result.error?.message ?? "",
+			stderr: result.stderr || (result.error?.message ?? ""),
 		};
 	}
 
@@ -128,7 +145,11 @@ export function createProcessKubectlTransport(
 			const body = (request.body ?? {}) as JsonObject;
 
 			if (path === "/kubectl/version") {
-				const result = run(["version", "--client=true", "-o", "json"]);
+				const result = run(
+					["version", "--client=true", "-o", "json"],
+					undefined,
+					probeTimeoutMs,
+				);
 				if (result.status !== 0) {
 					return {
 						status: 503,
@@ -155,7 +176,18 @@ export function createProcessKubectlTransport(
 			}
 
 			if (path === "/kubectl/cluster-info") {
-				const result = run(["cluster-info"]);
+				// Bounded twice: the API request itself, and the process, because
+				// kubectl retries discovery against an unreachable server (with no
+				// kubeconfig, localhost:8080) for longer than a probe may take.
+				const requestTimeoutSeconds = Math.max(
+					1,
+					Math.floor(probeTimeoutMs / 2000),
+				);
+				const result = run(
+					["cluster-info", `--request-timeout=${requestTimeoutSeconds}s`],
+					undefined,
+					probeTimeoutMs,
+				);
 				return {
 					status: result.status === 0 ? 200 : 503,
 					body: {

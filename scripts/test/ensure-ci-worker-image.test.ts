@@ -34,10 +34,33 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("exposes materialize-only without throwing on missing image", () => {
-		const prev = process.env.HOBO_CI_SKIP_GHCR_PULL;
-		process.env.HOBO_CI_SKIP_GHCR_PULL = "1";
-		assert.equal(materializeCiWorkerImageOnly(), null);
-		process.env.HOBO_CI_SKIP_GHCR_PULL = prev;
+		// A stub Docker CLI with nothing local: a self-hosted runner shares the
+		// host's Docker, which may already hold this tree's worker image.
+		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-missing-"));
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				'if [ "$1 $2" = "image inspect" ]; then exit 1; fi',
+				"exit 0",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const prev = {
+			path: process.env.PATH,
+			skip: process.env.HOBO_CI_SKIP_GHCR_PULL,
+		};
+		try {
+			process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+			process.env.HOBO_CI_SKIP_GHCR_PULL = "1";
+			assert.equal(materializeCiWorkerImageOnly(), null);
+		} finally {
+			process.env.PATH = prev.path;
+			if (prev.skip === undefined) delete process.env.HOBO_CI_SKIP_GHCR_PULL;
+			else process.env.HOBO_CI_SKIP_GHCR_PULL = prev.skip;
+			rmSync(bin, { recursive: true, force: true });
+		}
 	});
 
 	it("pulls the worker from GHCR when the registry has it", () => {

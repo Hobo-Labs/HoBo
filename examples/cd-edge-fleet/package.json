@@ -1,0 +1,19 @@
+{
+	"name": "@hobo/example-cd-edge-fleet",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"description": "Fan a release out to a retail edge fleet: Camp sets, a residency-aware Placement, a mandatory pilot group, a failure budget and governed failover.",
+	"scripts": {
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check --no-errors-on-unmatched ."
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "^2.12.1",
+		"@hobo/cd": "workspace:*",
+		"@hobo/conformance": "workspace:*"
+	}
+}

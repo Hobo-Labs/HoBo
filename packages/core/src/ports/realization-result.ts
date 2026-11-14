@@ -1,6 +1,6 @@
 /**
  * Typed realization output contract (`hobo.realization-result/v1`, Plan 25
- * Driver surface, roadmap E20 / 0015 §B deliverable 1).
+ * Driver surface).
  *
  * What a realization engine — an IaC program (terraform/pulumi/crossplane
  * adapters, which already converge on `{resources, stackOutputs, bindings}`)

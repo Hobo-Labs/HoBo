@@ -1,0 +1,143 @@
+{
+  "consumer": { "name": "HoboCdAgentTransport" },
+  "provider": { "name": "HoboCdDeliveryFeed" },
+  "interactions": [
+    {
+      "description": "an agent enrolls its public key with a bootstrap token",
+      "providerState": "a single-use bootstrap token scoped to Camp set fleet",
+      "request": { "method": "POST", "path": "/v1/cd/enrollments", "headers": ["content-type"], "body": ["token", "publicJwk", "claims"] },
+      "response": { "status": 201, "contentType": "application/json", "body": { "ok": true, "value": { "state": "PENDING" } } }
+    },
+    {
+      "description": "a used bootstrap token is refused",
+      "providerState": "the token was consumed by another key",
+      "request": { "method": "POST", "path": "/v1/cd/enrollments", "headers": ["content-type"], "body": ["token", "publicJwk", "claims"] },
+      "response": { "status": 409, "contentType": "application/json", "body": { "ok": false, "code": "token-used" } }
+    },
+    {
+      "description": "activation with only one enrollment grant is refused",
+      "providerState": "the agent's key is approved but it is not accepted",
+      "request": { "method": "POST", "path": "/v1/cd/svid/refresh", "headers": ["dpop", "content-type"], "body": ["reconcilerId"] },
+      "response": { "status": 403, "contentType": "application/json", "body": { "ok": false, "code": "enrollment-incomplete" } }
+    },
+    {
+      "description": "an accepted agent activates a key-bound SVID by key possession",
+      "providerState": "the agent holds both grants",
+      "request": { "method": "POST", "path": "/v1/cd/svid/refresh", "headers": ["dpop", "content-type"], "body": ["reconcilerId"] },
+      "response": { "status": 200, "contentType": "application/json", "body": { "ok": true, "value": { "svid": "<jwt>", "expiresAtMs": 0 } } }
+    },
+    {
+      "description": "an agent refreshes its SVID before expiry",
+      "providerState": "the agent's SVID is within the refresh window",
+      "request": { "method": "POST", "path": "/v1/cd/svid/refresh", "headers": ["authorization", "dpop", "content-type"], "body": [] },
+      "response": { "status": 200, "contentType": "application/json", "body": { "ok": true, "value": { "svid": "<jwt>", "expiresAtMs": 0 } } }
+    },
+    {
+      "description": "an agent claims the per-Camp lease",
+      "providerState": "Camp eu-1 has no lease holder",
+      "request": { "method": "POST", "path": "/v1/cd/leases", "headers": ["authorization", "dpop", "content-type"], "body": ["campId", "holderId", "ttlMs"] },
+      "response": {
+        "status": 201,
+        "contentType": "application/json",
+        "body": { "ok": true, "value": { "campId": "eu-1", "fence": "1" } },
+        "matchingRules": { "$.body.value.fence": { "match": "regex", "regex": "^[1-9][0-9]*$" } }
+      }
+    },
+    {
+      "description": "a second reconciler is refused while the lease is held",
+      "providerState": "Camp eu-1 is leased by another reconciler",
+      "request": { "method": "POST", "path": "/v1/cd/leases", "headers": ["authorization", "dpop", "content-type"], "body": ["campId", "holderId", "ttlMs"] },
+      "response": { "status": 409, "contentType": "application/json", "body": { "ok": false, "code": "lease-held" } }
+    },
+    {
+      "description": "a Camp the agent is not accepted for is refused",
+      "providerState": "the agent is accepted for eu-1 only",
+      "request": { "method": "POST", "path": "/v1/cd/leases", "headers": ["authorization", "dpop", "content-type"], "body": ["campId", "holderId", "ttlMs"] },
+      "response": { "status": 403, "contentType": "application/json", "body": { "ok": false, "code": "camp-not-accepted" } }
+    },
+    {
+      "description": "an agent renews its lease",
+      "providerState": "the agent holds the lease on eu-1",
+      "request": { "method": "POST", "path": "/v1/cd/leases/renew", "headers": ["authorization", "dpop", "content-type"], "body": ["lease"] },
+      "response": { "status": 200, "contentType": "application/json", "body": { "ok": true, "value": { "campId": "eu-1" } } }
+    },
+    {
+      "description": "a revoked agent is refused on its next request",
+      "providerState": "the agent was revoked after claiming",
+      "request": { "method": "POST", "path": "/v1/cd/leases/renew", "headers": ["authorization", "dpop", "content-type"], "body": ["lease"] },
+      "response": { "status": 403, "contentType": "application/json", "body": { "ok": false, "code": "reconciler-revoked" } }
+    },
+    {
+      "description": "an agent releases its lease",
+      "providerState": "the agent holds the lease on eu-1",
+      "request": { "method": "POST", "path": "/v1/cd/leases/release", "headers": ["authorization", "dpop", "content-type"], "body": ["lease"] },
+      "response": { "status": 200, "contentType": "application/json", "body": { "ok": true } }
+    },
+    {
+      "description": "the feed streams DeliveryFeedFrames and ends cleanly",
+      "providerState": "Camp eu-1 has one Set and no checkpoint",
+      "request": { "method": "GET", "path": "/v1/cd/feed", "headers": ["authorization", "dpop"], "query": ["camp", "holder", "fence", "redeliver"] },
+      "response": { "status": 200, "contentType": "text/event-stream", "sse": ["frame", "end"] }
+    },
+    {
+      "description": "a replayed DPoP proof is refused",
+      "providerState": "the exact request was already served",
+      "request": { "method": "GET", "path": "/v1/cd/feed", "headers": ["authorization", "dpop"], "query": ["camp", "holder", "fence"] },
+      "response": { "status": 401, "contentType": "application/json", "body": { "ok": false, "code": "dpop-replayed" } }
+    },
+    {
+      "description": "a stolen SVID presented with another key is refused",
+      "providerState": "an attacker holds the agent's SVID but not its key",
+      "request": { "method": "POST", "path": "/v1/cd/leases", "headers": ["authorization", "dpop", "content-type"], "body": ["campId", "holderId", "ttlMs"] },
+      "response": { "status": 401, "contentType": "application/json", "body": { "ok": false, "code": "dpop-key-mismatch" } }
+    },
+    {
+      "description": "a request without an SVID is refused",
+      "providerState": "no credentials are presented",
+      "request": { "method": "POST", "path": "/v1/cd/leases", "headers": ["content-type"], "body": [] },
+      "response": { "status": 401, "contentType": "application/json", "body": { "ok": false, "code": "svid-required" } }
+    },
+    {
+      "description": "an agent fetches a resolved-set blob by digest",
+      "providerState": "Camp eu-1 has a Set larger than the inline limit",
+      "request": { "method": "GET", "path": "/v1/cd/blobs/{digest}", "headers": ["authorization", "dpop"], "query": ["camp"] },
+      "response": { "status": 200, "contentType": "application/vnd.hobo.resolved-set+json" }
+    },
+    {
+      "description": "a missing blob is a typed refusal",
+      "providerState": "the Set's blob is missing from the artifact store",
+      "request": { "method": "GET", "path": "/v1/cd/blobs/{digest}", "headers": ["authorization", "dpop"], "query": ["camp"] },
+      "response": { "status": 404, "contentType": "application/json", "body": { "ok": false, "code": "blob-missing" } }
+    },
+    {
+      "description": "an agent reports an observation to the Camp status stream",
+      "providerState": "the agent holds the lease on eu-1",
+      "request": { "method": "POST", "path": "/v1/cd/observations", "headers": ["authorization", "dpop", "content-type"], "body": ["lease", "observation"] },
+      "response": {
+        "status": 201,
+        "contentType": "application/json",
+        "body": { "ok": true, "value": { "position": "1" } },
+        "matchingRules": { "$.body.value.position": { "match": "regex", "regex": "^[1-9][0-9]*$" } }
+      }
+    },
+    {
+      "description": "a report with a stale fence is refused",
+      "providerState": "the agent's lease was taken over",
+      "request": { "method": "POST", "path": "/v1/cd/observations", "headers": ["authorization", "dpop", "content-type"], "body": ["lease", "observation"] },
+      "response": { "status": 409, "contentType": "application/json", "body": { "ok": false, "code": "stale-fence" } }
+    },
+    {
+      "description": "an agent commits a checkpoint",
+      "providerState": "the agent holds the lease on eu-1",
+      "request": { "method": "POST", "path": "/v1/cd/checkpoints", "headers": ["authorization", "dpop", "content-type"], "body": ["lease", "position"] },
+      "response": { "status": 200, "contentType": "application/json", "body": { "ok": true, "value": { "position": "1" } } }
+    },
+    {
+      "description": "a checkpoint behind the committed one is refused",
+      "providerState": "a later checkpoint is committed",
+      "request": { "method": "POST", "path": "/v1/cd/checkpoints", "headers": ["authorization", "dpop", "content-type"], "body": ["lease", "position"] },
+      "response": { "status": 409, "contentType": "application/json", "body": { "ok": false, "code": "checkpoint-regression" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

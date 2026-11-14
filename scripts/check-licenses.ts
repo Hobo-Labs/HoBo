@@ -1,5 +1,5 @@
 /**
- * Licence-compliance gate (docs/plans/0009-legal-compliance-audit.md findings 3 and 5).
+ * Licence-compliance gate.
  *
  * Two halves, both cheap enough to run in the ordinary local gate:
  *
@@ -341,8 +341,7 @@ if (failures.length > 0) {
 	console.error(`\nLicence gate failed with ${failures.length} problem(s):\n`);
 	for (const failure of failures) console.error(`  - ${failure}`);
 	console.error(
-		"\nSee docs/plans/0009-legal-compliance-audit.md (findings 3 and 5). To allow a new" +
-			"\ndependency licence, add it to ALLOWED in scripts/check-licenses.ts with a review note.",
+		"\nTo allow a new dependency licence, add it to ALLOWED in scripts/check-licenses.ts with a review note.",
 	);
 	process.exit(1);
 }

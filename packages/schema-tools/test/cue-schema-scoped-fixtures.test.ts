@@ -96,3 +96,63 @@ test("schema-scoped corpora cannot hide legacy package-wide fixtures", async () 
 		),
 	).toBe(true);
 });
+
+async function splitPackage(schemas: Record<string, string>) {
+	const root = await makeTempRepo({ withBufTemplate: false });
+	roots.push(root);
+	const packageDir = join(root, "packages", "split");
+	const dataModelsDir = join(packageDir, "data-models");
+	await mkdir(dataModelsDir, { recursive: true });
+	for (const [name, schema] of Object.entries(schemas))
+		await writeFile(join(dataModelsDir, name), schema);
+	const pkg: DataModelPackage = {
+		name: "split",
+		packageDir,
+		dataModelsDir,
+		generatedDir: join(packageDir, "src", "_generated"),
+		cueSchemas: Object.keys(schemas).map((name) => join(dataModelsDir, name)),
+	};
+	const writeFixture = async (
+		name: string,
+		fixture: Readonly<Record<string, string | number>>,
+	) => {
+		const path = join(dataModelsDir, "fixtures", name);
+		await mkdir(dirname(path), { recursive: true });
+		await writeFile(path, JSON.stringify(fixture));
+	};
+	return { root, pkg, writeFixture };
+}
+
+test("a schema may use a definition from a sibling file of the same CUE package", async () => {
+	const { root, pkg, writeFixture } = await splitPackage({
+		"order.cue":
+			'package shop\n\n#Quantity: int & >0\n#Order: close({kind: "order", qty: #Quantity})\n',
+		"refund.cue":
+			'package shop\n\n#Refund: close({kind: "refund", qty: #Quantity})\n',
+	});
+	await writeFixture("order/valid/good.json", { kind: "order", qty: 1 });
+	await writeFixture("refund/valid/good.json", { kind: "refund", qty: 2 });
+	await writeFixture("refund/invalid/bad.json", { kind: "refund", qty: 0 });
+	const result = await vetCueConstraints(pkg, root);
+	expect(result).toEqual({ ok: true, violations: [] });
+});
+
+test("a second CUE package in the same folder is vetted on its own", async () => {
+	const { root, pkg, writeFixture } = await splitPackage({
+		"order.cue":
+			'package shop\n\n#Order: close({kind: "order", qty: int & >0})\n',
+		"audit_entry.cue":
+			'package shop_audit\n\n#AuditEntry: close({kind: "audit", actor: string & !=""})\n',
+	});
+	await writeFixture("order/valid/good.json", { kind: "order", qty: 1 });
+	await writeFixture("audit_entry/valid/good.json", {
+		kind: "audit",
+		actor: "ops",
+	});
+	await writeFixture("audit_entry/invalid/bad.json", {
+		kind: "audit",
+		actor: "",
+	});
+	const result = await vetCueConstraints(pkg, root);
+	expect(result).toEqual({ ok: true, violations: [] });
+});

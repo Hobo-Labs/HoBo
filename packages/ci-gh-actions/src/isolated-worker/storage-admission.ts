@@ -1,6 +1,9 @@
 import { basename } from "node:path";
 import { selectWorkerImagesForDeletion, type WorkerImage } from "./image-gc.js";
-import type { WorkerStorageReserve } from "./storage-job-classes.js";
+import {
+	DEPS_BUILD_ADMISSION_ID,
+	type WorkerStorageReserve,
+} from "./storage-job-classes.js";
 import {
 	createNodeWorkerStorageFileSystem,
 	type WorkerFileSystemStats,
@@ -169,6 +172,7 @@ export function createWorkerStorageAdmission(options: {
 	defaultJobReserve?: WorkerStorageReserve;
 	admitMaintainIntervalMs?: number;
 	scheduleRetiredSweep?: () => void;
+	drainRetiredSweep?: () => Promise<void>;
 	now?: () => number;
 	log?: WorkerStorageLog;
 }) {
@@ -247,14 +251,20 @@ export function createWorkerStorageAdmission(options: {
 	}
 
 	function reconcile(activeLeases: readonly WorkerStorageLease[]) {
-		const activeJobs = new Set(activeLeases.map((lease) => lease.jobId));
+		const activeHolders = new Set([
+			...activeLeases.map((lease) => lease.id),
+			...activeLeases.map((lease) => lease.jobId),
+		]);
 		const nowMs = now();
-		for (const [jobId, grant] of grants)
+		for (const [holder, grant] of grants) {
+			// The deps image build holds no lease; its grant lives until released.
+			if (holder === DEPS_BUILD_ADMISSION_ID) continue;
 			if (
-				!activeJobs.has(jobId) &&
+				!activeHolders.has(holder) &&
 				nowMs - grant.grantedAtMs > INODE_GRANT_GRACE_MS
 			)
-				grants.delete(jobId);
+				grants.delete(holder);
+		}
 	}
 
 	function reserveShortage(samples: readonly StorageSample[]) {
@@ -308,8 +318,8 @@ export function createWorkerStorageAdmission(options: {
 		return undefined;
 	}
 
-	function grant(jobId: string, samples: readonly StorageSample[]) {
-		grants.set(jobId, {
+	function grant(holder: string, samples: readonly StorageSample[]) {
+		grants.set(holder, {
 			grantedAtMs: now(),
 			ffree: samples.map((entry) => entry.ffree),
 			bfree: samples.map((entry) => entry.bfree),
@@ -328,6 +338,11 @@ export function createWorkerStorageAdmission(options: {
 				message: error instanceof Error ? error.message : "unknown",
 			});
 		}
+	}
+
+	async function sweepRetiredDirectories() {
+		options.scheduleRetiredSweep?.();
+		await options.drainRetiredSweep?.();
 	}
 
 	async function reap() {
@@ -377,6 +392,7 @@ export function createWorkerStorageAdmission(options: {
 		activeLeases: readonly WorkerStorageLease[],
 		maintenance: Readonly<{ pnpmStore?: boolean }> = {},
 	) {
+		await sweepRetiredDirectories();
 		await attempt("builder", () =>
 			options.docker.pruneBuilder(options.builderCacheCap ?? "4GB"),
 		);
@@ -422,8 +438,14 @@ export function createWorkerStorageAdmission(options: {
 	return {
 		reap,
 		maintain,
-		release(jobId: string) {
-			grants.delete(jobId);
+		release(holder: string) {
+			grants.delete(holder);
+		},
+		bindGrant(pendingHolder: string, leaseHolder: string) {
+			const existing = grants.get(pendingHolder);
+			if (!existing) return;
+			grants.delete(pendingHolder);
+			grants.set(leaseHolder, existing);
 		},
 		async admit(
 			activeLeases: readonly WorkerStorageLease[],
@@ -460,6 +482,7 @@ export function createWorkerStorageAdmission(options: {
 				return grant(jobId, before);
 			}
 			const nowMs = now();
+			await sweepRetiredDirectories();
 			if (
 				lastAdmitMaintainMs === undefined ||
 				nowMs - lastAdmitMaintainMs >= admitMaintainIntervalMs
@@ -496,7 +519,19 @@ export function createWorkerStorageAdmission(options: {
 					hardLimitPercent: percent(hardLimit),
 				});
 			}
-			const shortage = reserveShortage(after);
+			let shortage = reserveShortage(after);
+			if (shortage) {
+				await sweepRetiredDirectories();
+				try {
+					after = await sample(jobReserve);
+				} catch (error) {
+					options.log?.("hobo_ci_storage_admission_wait", {
+						message: error instanceof Error ? error.message : "unknown",
+					});
+					return false;
+				}
+				shortage = reserveShortage(after);
+			}
 			if (shortage) {
 				if (!reserveEpisode) {
 					if (shortage.kind === "inode")
@@ -536,3 +571,13 @@ export function createWorkerStorageAdmission(options: {
 export type WorkerStorageAdmission = ReturnType<
 	typeof createWorkerStorageAdmission
 >;
+
+/** Drop inode headroom reserved for a lease and its pre-reserve job holder. */
+export function releaseWorkerStorageGrants(
+	admission: WorkerStorageAdmission | undefined,
+	lease: Readonly<{ id: string; jobId: number }>,
+): void {
+	if (!admission) return;
+	admission.release(lease.id);
+	admission.release(String(lease.jobId));
+}

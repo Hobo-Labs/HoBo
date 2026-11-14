@@ -1,0 +1,121 @@
+package hobo:resolver@0.1.0;
+
+/// Records shared by the host and a resolver component. They mirror
+/// `ResolveRequest`/`ResolveOutcome` in @hobo/core
+/// (`core/src/ports/resource-resolver.ts`). Property bags travel as canonical
+/// JSON text so the component sees exactly the bytes the host hashed.
+///
+/// Credential law (I9): `credential-ref` is a locator, never material. The
+/// host resolves it and attaches it to allowlisted requests made through
+/// `host.authorized-fetch`; the component never receives the value.
+interface types {
+  record resource-ref {
+    slot: string,
+    product-id: string,
+    logical-id: string,
+    physical-id: option<string>,
+  }
+
+  record resolve-request {
+    ref: resource-ref,
+    /// Canonical JSON object: realization parameters, non-sensitive only.
+    desired-json: string,
+    /// Canonical JSON object: last known provider outputs, when present.
+    observed-json: option<string>,
+    credential-ref: string,
+  }
+
+  enum resolver-action { create, update, replace, delete, adopt, noop }
+
+  record resolve-outcome {
+    action: resolver-action,
+    physical-id: string,
+    /// Canonical JSON object, secret-free.
+    outputs-json: string,
+    diagnostics: list<string>,
+  }
+
+  /// `read` may also return observed attributes; the host trims them to the
+  /// Camp's declared observe_fields (D25) before anything is reported.
+  record read-result {
+    outcome: resolve-outcome,
+    attributes: list<tuple<string, string>>,
+  }
+
+  record resource-class {
+    product-id: string,
+    slot: string,
+    /// Fields owned on the target side; never reported as drift (D22).
+    retained-fields: list<string>,
+    observe-fields: list<string>,
+    directives: list<string>,
+  }
+
+  record description {
+    component-id: string,
+    version: string,
+    classes: list<resource-class>,
+  }
+
+  record instance {
+    logical-id: string,
+    physical-id: string,
+  }
+
+  variant resolver-error {
+    /// The provider refused; message is secret-free.
+    rejected(string),
+    unsupported(string),
+  }
+
+  enum log-level { debug, info, warn, error }
+
+  record http-request {
+    method: string,
+    url: string,
+    headers: list<tuple<string, string>>,
+    body: option<string>,
+  }
+
+  record http-response {
+    status: u16,
+    headers: list<tuple<string, string>>,
+    body: string,
+  }
+
+  /// Why the host refused an outbound request. The call that made it fails
+  /// closed even if the component swallows the error.
+  variant egress-error {
+    denied(string),
+  }
+}
+
+/// Host-provided imports.
+interface host {
+  use types.{log-level, http-request, http-response, egress-error};
+
+  log: func(level: log-level, message: string);
+
+  /// Send `request` with the credential named by `credential-ref` attached by
+  /// the host. Only the call's own locator, and only to hosts in the signed
+  /// manifest's credential binding.
+  authorized-fetch: func(request: http-request, credential-ref: string) -> result<http-response, egress-error>;
+}
+
+/// The export every resolver component implements.
+interface resolver {
+  use types.{resolve-request, resolve-outcome, read-result, description, instance, resolver-error};
+
+  describe: func() -> description;
+  reconcile: func(request: resolve-request) -> result<resolve-outcome, resolver-error>;
+  read: func(request: resolve-request) -> result<option<read-result>, resolver-error>;
+  delete: func(request: resolve-request) -> result<_, resolver-error>;
+  instances: func(product-id: string, credential-ref: string) -> result<list<instance>, resolver-error>;
+}
+
+world resolver-component {
+  /// Unauthenticated egress, host-mediated: allowlist and SSRF rules apply.
+  import wasi:http/outgoing-handler@0.2.0;
+  import host;
+  export resolver;
+}

@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package hobo.storage_postgres.v1;
+
+// Store-local records for the PostgreSQL DurableEventStore (plan 0024 D16).
+// The domain EventEnvelope stays in hobo.core.v1; these are configuration and
+// ledger shapes owned by @hobo/storage-postgres. 64-bit positions and fence
+// tokens travel as decimal strings so every language keeps the full range.
+
+// Configuration accepted by createPostgresEventStore. Parsed once into the
+// branded PostgresStoreConfig; every field has a conservative default
+// mirroring CD_DEFAULTS (PostgreSQL >= 16, statement timeout 5 s, pool 10).
+message PostgresStoreConfigRecord {
+  // libpq-style connection string. Never logged; the store reports only host
+  // and database in health detail.
+  string connection_string = 1;
+  // Schema that holds every table of this store (one store namespace).
+  string schema = 2;
+  // Storage partition label reported in subscription records.
+  string partition_id = 3;
+  uint32 pool_size = 4;
+  uint32 statement_timeout_ms = 5;
+  uint32 connection_timeout_ms = 6;
+  uint32 min_server_major_version = 7;
+  uint32 lease_ttl_ms = 8;
+  string application_name = 9;
+}
+
+// One applied migration, as recorded in <schema>.schema_migrations.
+message MigrationRecord {
+  uint32 version = 1;
+  string name = 2;
+  // sha256 hex of the migration SQL; drift refuses startup.
+  string checksum = 3;
+  string applied_at = 4;
+}
+
+// A durable subscription lease row. fence_token only ever increases.
+message SubscriptionLeaseRecord {
+  string subscription_id = 1;
+  string partition_id = 2;
+  string holder_id = 3;
+  string fence_token = 4;
+  string expires_at = 5;
+  bool released = 6;
+}
+
+// One checkpoint movement, as recorded in <schema>.checkpoint_log. The log
+// is the audit trail that proves no checkpoint is lost or duplicated across
+// lease failover: within one subscription, ADVANCE entries strictly increase
+// in position, and only an administrative RESET may move backwards.
+message CheckpointLogRecord {
+  string subscription_id = 1;
+  string partition_id = 2;
+  // Per-subscription entry number, 1-based and gapless.
+  string entry = 3;
+  string position = 4;
+  string fence_token = 5;
+  string holder_id = 6;
+  CheckpointLogKind kind = 7;
+  string committed_at = 8;
+}
+
+enum CheckpointLogKind {
+  CHECKPOINT_LOG_KIND_UNSPECIFIED = 0;
+  CHECKPOINT_LOG_KIND_ADVANCE = 1;
+  CHECKPOINT_LOG_KIND_RESET = 2;
+}
+
+// Typed failure classes surfaced with a remediation string.
+enum StoragePostgresErrorCode {
+  STORAGE_POSTGRES_ERROR_CODE_UNSPECIFIED = 0;
+  STORAGE_POSTGRES_ERROR_CODE_INVALID_CONFIG = 1;
+  STORAGE_POSTGRES_ERROR_CODE_SERVER_TOO_OLD = 2;
+  STORAGE_POSTGRES_ERROR_CODE_MIGRATION_DRIFT = 3;
+  STORAGE_POSTGRES_ERROR_CODE_SCHEMA_AHEAD = 4;
+  STORAGE_POSTGRES_ERROR_CODE_UNAVAILABLE = 5;
+  STORAGE_POSTGRES_ERROR_CODE_STATEMENT_TIMEOUT = 6;
+  STORAGE_POSTGRES_ERROR_CODE_LEASE_HELD = 7;
+  STORAGE_POSTGRES_ERROR_CODE_LEASE_NOT_HELD = 8;
+  STORAGE_POSTGRES_ERROR_CODE_CLOSED = 9;
+  STORAGE_POSTGRES_ERROR_CODE_INVALID_INPUT = 10;
+}
