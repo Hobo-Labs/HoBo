@@ -84,6 +84,8 @@ log recorded, apply only the difference
   converge. The provider receives the desired resource declaration. Failed or
   unsafe orphan deletion leaves the run waiting and retains dependencies;
   unknown orphan dependencies prevent other deletions from being guessed at.
+  A failed update of an existing estate needs human recovery instead of
+  compensating by deleting resources that predate the update.
 - **What-if:** `planDeploymentChanges(plan, events, mode)` is the pure diff
   (`create` / `update` / `no-op` / `delete` / `retain`) that `hobo plan` and
   `hobo up --what-if` print and every run reports as `changes`.

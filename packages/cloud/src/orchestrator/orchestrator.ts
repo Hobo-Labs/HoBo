@@ -218,6 +218,34 @@ export async function runOrchestrator(
 	// Compensation path: a no-go failure triggers deployment.RolledBack + reverse
 	// dependency-order destroys.
 	if (triggeringFailure) {
+		// Compensation deletes resources. An update to an already deployed estate
+		// cannot safely use that create-time rollback: it would destroy resources
+		// that existed before this epoch. Leave the failure durable for an operator
+		// rather than claiming the previous state was restored.
+		const beforeEpoch = initialEvents.filter(
+			(event) => event.seq <= epochStart,
+		);
+		const previousStates = resourceStates(beforeEpoch, plan, deploymentId);
+		if (
+			[...previousStates.values()].some(
+				(state) =>
+					state === "Provisioned" ||
+					state === "Updating" ||
+					state === "Destroying" ||
+					state === "Failed",
+			)
+		) {
+			return {
+				status: "needs-human",
+				deploymentId,
+				provisioned: provisionedList(states),
+				destroyed: destroyedList(states),
+				events,
+				changes,
+				pruned: [],
+				unprunable: [],
+			};
+		}
 		const compensation = await runCompensation(
 			{
 				store: deps.store,

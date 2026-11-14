@@ -178,6 +178,42 @@ describe("idempotent deployment", () => {
 });
 
 describe("upsert", () => {
+	it("does not destroy the existing estate when an update crosses the no-go threshold", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await runOrchestrator(deps(store, iac), plan, "failed-update", {
+			tenant,
+			actor,
+		});
+		iac.calls.length = 0;
+		const changed = {
+			...plan,
+			resources: plan.resources.map((r) =>
+				r.name === "cache" ? { ...r, region: "new-region" } : r,
+			),
+		};
+		const failing: IacProvider = {
+			...iac,
+			async apply(program) {
+				if (program.resourceId === "cache") throw new Error("update failed");
+				return {};
+			},
+		};
+		const result = await runOrchestrator(
+			deps(store, failing),
+			changed,
+			"failed-update",
+			{
+				tenant,
+				actor,
+				noGoThresholdResources: new Set(["cache"]),
+			},
+		);
+		expect(result.status).toBe("needs-human");
+		expect(iac.calls.filter((call) => call.startsWith("destroy:"))).toEqual([]);
+	});
+
 	it("detects later changes to legacy resources when their applied plan is recorded", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
