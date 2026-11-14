@@ -12,8 +12,8 @@ import {
 } from "@hobo/mcp";
 import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
 
-// The MCP stdio protocol layer for the composed `hobo-mcp` binary
-// (docs/plans/0006 item 3-3). Newline-delimited JSON-RPC 2.0 per the MCP
+// The MCP stdio protocol layer for the composed `hobo-mcp` binary.
+// Newline-delimited JSON-RPC 2.0 per the MCP
 // stdio transport; no SDK dependency — the protocol subset the surface needs
 // (initialize / tools/list / tools/call / resources/list / resources/read /
 // ping) is small enough for the standard library. All verb dispatch flows

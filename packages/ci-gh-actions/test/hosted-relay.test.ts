@@ -6,7 +6,7 @@ import {
 	LeaseSchema,
 	OfferSchema,
 } from "@hobo/ci";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HostedRelay, type HostedRelayStore } from "../src/hosted-relay.js";
 import {
 	createHostedRelayRuntime,
@@ -344,6 +344,7 @@ it("reads active leases immediately before storage admission", async () => {
 			return true;
 		},
 		release() {},
+		bindGrant() {},
 		reap: async () => undefined,
 		maintain: async () => undefined,
 	};
@@ -370,6 +371,23 @@ it("cancels and requeues a bridge reservation after isolation becomes required",
 	expect(h.store.get(lease.id)?.state).toBe("cancelled");
 	expect(h.store.pendingJobs()).toMatchObject([{ isolatedRequired: true }]);
 	expect(h.api.dispatches).toBe(0);
+});
+
+it("releases inode grants when a reserved lease is cancelled", async () => {
+	const h = setup();
+	const release = vi.fn();
+	h.relay.options.storageAdmission = {
+		admit: async () => true,
+		release,
+		bindGrant: vi.fn(),
+		reap: async () => undefined,
+		maintain: async () => undefined,
+	};
+	const lease = await reserve(h);
+	h.api.jobStatus = "completed";
+	await h.relay.dispatchPending();
+	expect(release).toHaveBeenCalledWith(lease.id);
+	expect(release).toHaveBeenCalledWith(String(lease.jobId));
 });
 
 it("does not claim an already dispatched bridge after isolation becomes required", async () => {

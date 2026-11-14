@@ -8,8 +8,10 @@
 import {
 	createHash,
 	createHmac,
+	createPublicKey,
 	generateKeyPairSync,
 	randomBytes,
+	sign,
 } from "node:crypto";
 import { create, type JsonValue, toJsonString } from "@bufbuild/protobuf";
 import {
@@ -124,6 +126,24 @@ function configuration(nowMs: number): string {
 	);
 }
 
+/**
+ * The fleet reporter the harness's relay has enrolled for the `hobo-labs`
+ * account (ADR-0180): its key signs reports, and only its public half is in
+ * the configuration.
+ */
+const fleetReporterKey = generateKeyPairSync("ed25519").privateKey;
+export const FLEET_REPORTER = {
+	id: "box-1",
+	publicKey:
+		createPublicKey(fleetReporterKey).export({ format: "jwk" }).x ?? "",
+	sign: (payload: string) =>
+		sign(null, Buffer.from(payload, "utf8"), fleetReporterKey).toString(
+			"base64url",
+		),
+};
+/** The OIDC token the harness's stand-in verifier takes from a workflow of the repository. */
+export const WORKFLOW_TOKEN = "workflow-token-of-org-repo";
+
 /** The owner's onboarding invitation the harness's config service holds. */
 export const INVITATION = "invitation-".padEnd(43, "x");
 
@@ -173,6 +193,16 @@ export function relayEntries(nowMs: number, token: string) {
 		HOBO_CI_SANDBOX_DOMAINS_JSON: '["github.com"]',
 		HOBO_CI_SANDBOX_PLAN: "hobby",
 		HOBO_CI_SANDBOX_PROXY_TOKEN_KEY: key(32),
+		HOBO_CI_FLEET_REPORTERS_JSON: JSON.stringify({
+			reporters: [
+				{
+					id: FLEET_REPORTER.id,
+					publicKey: FLEET_REPORTER.publicKey,
+					accountId: "hobo-labs",
+					labels: ["hobo", "hobo-trunk"],
+				},
+			],
+		}),
 	};
 }
 
@@ -505,6 +535,17 @@ export async function openStatelessRelay(
 		identity: {
 			verify: async () => {
 				throw new Error("no OIDC in these tests");
+			},
+		},
+		workflowIdentity: {
+			verify: async (presented) => {
+				if (presented !== WORKFLOW_TOKEN) throw new Error("invalid identity");
+				return {
+					repository: REPOSITORY,
+					repositoryId: "101",
+					eventName: "schedule",
+					runId: "1",
+				};
 			},
 		},
 		sandboxDrivers: { driver, proxyDriver },

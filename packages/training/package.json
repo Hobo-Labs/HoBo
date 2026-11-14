@@ -28,5 +28,5 @@
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
 	},
-	"description": "HoBo built-in training engine (docs/plans/0017 F26): the OPTO-style propose → score → keep-best optimizer behind core's hobo:training-engine port (ADR-0025), with seeded-PRNG determinism and OpenInference-aligned trace capture into a drainable in-memory sink. Internal-only — never part of the app SDK surface."
+	"description": "HoBo built-in training engine: the OPTO-style propose → score → keep-best optimizer behind core's hobo:training-engine port (ADR-0025), with seeded-PRNG determinism and OpenInference-aligned trace capture into a drainable in-memory sink. Internal-only — never part of the app SDK surface."
 }

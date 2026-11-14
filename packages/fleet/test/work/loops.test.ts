@@ -806,3 +806,92 @@ describe("the oci-command work kind", () => {
 		expect(fenced.status).toBe(ReceiptStatus.FAILED);
 	});
 });
+
+describe("standing offers when an executor starts (L42)", () => {
+	/** A dispatcher whose offer is made before any executor listens. */
+	async function offeredBeforeStart() {
+		const w = await world(1);
+		const member = w.members[0];
+		if (member === undefined) throw new Error("no member");
+		await w.observe([1]);
+		const source = testSource();
+		const dispatcher = createDispatcher({
+			self: w.dispatchers[0]?.keys ?? member.keys,
+			bus: w.bus,
+			sources: [source],
+			report: reports().report,
+			now,
+			log: () => undefined,
+		});
+		const offers: SignedEnvelope[] = [];
+		w.bus.offers.subscribe([FLEET], "start", async (envelope) => {
+			offers.push(envelope);
+		});
+		dispatcher.start();
+		source.queue.push(upstream("standing", now()));
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(offers).toHaveLength(1);
+		return { ...w, member, dispatcher, offers };
+	}
+
+	it("a new executor claims and runs an offer made before it started", async () => {
+		const w = await offeredBeforeStart();
+		// Two minutes later, well inside the offer's ten.
+		await vi.advanceTimersByTimeAsync(120_000);
+		await w.observe([1]);
+		const runner = testRunner();
+		const executor = w.executor({ member: w.member, slots: 1, runner });
+		executor.start();
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(runner.ran.map((run) => run.workKey)).toEqual(["standing"]);
+		await executor.stop();
+		await w.dispatcher.stop();
+	});
+
+	it("a restarted executor whose saved position is past a standing offer (a fleet it has just joined) still claims it", async () => {
+		const w = await offeredBeforeStart();
+		const state = await w.member.store.readState();
+		await w.member.store.writeState({
+			...state,
+			lastSequence: { ...state.lastSequence, offers: 1_000 },
+		});
+		await w.observe([1]);
+		const runner = testRunner();
+		const executor = w.executor({ member: w.member, slots: 1, runner });
+		executor.start();
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(runner.ran.map((run) => run.workKey)).toEqual(["standing"]);
+		await executor.stop();
+		await w.dispatcher.stop();
+	});
+
+	it("handles each standing offer's digest once, however often it is delivered", async () => {
+		const w = await offeredBeforeStart();
+		await w.dispatcher.stop();
+		const [standing] = w.offers;
+		if (standing === undefined) throw new Error("no offer");
+		// No sandbox tier at all: every offer this executor handles is logged unfit.
+		const executor = w.executor({ member: w.member, slots: 1, drivers: [] });
+		executor.start();
+		await vi.advanceTimersByTimeAsync(1_000);
+		await w.bus.offers.publish(standing, FLEET);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(
+			w.logs.lines.filter((line) => line.event === "hobo_fleet_offer_unfit"),
+		).toHaveLength(1);
+		await executor.stop();
+	});
+
+	it("skips an offer that no longer stands", async () => {
+		const w = await offeredBeforeStart();
+		await w.dispatcher.stop();
+		await vi.advanceTimersByTimeAsync(11 * 60_000);
+		await w.observe([1]);
+		const runner = testRunner();
+		const executor = w.executor({ member: w.member, slots: 1, runner });
+		executor.start();
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(runner.ran).toEqual([]);
+		await executor.stop();
+	});
+});

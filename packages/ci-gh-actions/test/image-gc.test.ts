@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+	RELEASE_IMAGE_GC_GRACE_MS,
+	selectReleaseImageTagsForDeletion,
 	selectWorkerImagesForDeletion,
 	selectWorkerImageTagsForDeletion,
 	type WorkerImage,
@@ -94,6 +96,107 @@ describe("worker image garbage collection", () => {
 		expect(selectWorkerImagesForDeletion(images)).toEqual([
 			"hobo-ci-worker:v000000000001",
 		]);
+	});
+
+	const RELEASE_NOW = Date.parse("2026-06-01T00:00:00Z");
+
+	it("removes superseded GHCR release tags and never a candidate tag", () => {
+		const images = [
+			image("hobo-cli:candidate", "2026-01-01T00:00:00Z"),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.1",
+				"2026-01-02T00:00:00Z",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.2",
+				"2026-03-01T00:00:00Z",
+			),
+			image("hobo-code:candidate", "2026-02-01T00:00:00Z", true),
+		];
+		expect(
+			selectReleaseImageTagsForDeletion(images, { nowMs: RELEASE_NOW }),
+		).toEqual(["ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.1"]);
+	});
+
+	it("keeps a candidate and the GHCR tags of the image it names", () => {
+		// push-release-ghcr-images tags `<id>:candidate` for GHCR, then pushes.
+		const images = [
+			image("hobo-cli:candidate", "2026-02-01T00:00:00Z", false, "sha256:new"),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.2",
+				"2026-02-01T00:00:00Z",
+				false,
+				"sha256:new",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:latest",
+				"2026-02-01T00:00:00Z",
+				false,
+				"sha256:new",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.3",
+				"2026-03-01T00:00:00Z",
+				false,
+				"sha256:newer",
+			),
+		];
+		expect(
+			selectReleaseImageTagsForDeletion(images, { nowMs: RELEASE_NOW }),
+		).toEqual([]);
+		expect(
+			selectWorkerImagesForDeletion(images, undefined, { nowMs: RELEASE_NOW }),
+		).toEqual([]);
+	});
+
+	it("keeps a release image a running container uses, under every tag", () => {
+		const images = [
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.1",
+				"2026-01-01T00:00:00Z",
+				true,
+				"sha256:busy",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:previous",
+				"2026-01-01T00:00:00Z",
+				false,
+				"sha256:busy",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.2",
+				"2026-02-01T00:00:00Z",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.3",
+				"2026-03-01T00:00:00Z",
+			),
+		];
+		expect(
+			selectReleaseImageTagsForDeletion(images, { nowMs: RELEASE_NOW }),
+		).toEqual(["ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.2"]);
+	});
+
+	it("keeps a superseded release image until the grace has passed", () => {
+		const images = [
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.1",
+				"2026-05-31T23:30:00Z",
+			),
+			image(
+				"ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.2",
+				"2026-05-31T23:45:00Z",
+			),
+			image("ghcr.io/hobo-labs/hobo/hobo-cli:undated", "not a date"),
+		];
+		expect(
+			selectReleaseImageTagsForDeletion(images, { nowMs: RELEASE_NOW }),
+		).toEqual([]);
+		expect(
+			selectReleaseImageTagsForDeletion(images, {
+				nowMs: RELEASE_NOW + RELEASE_IMAGE_GC_GRACE_MS,
+			}),
+		).toEqual(["ghcr.io/hobo-labs/hobo/hobo-cli:0.0.0-alpha.1"]);
 	});
 
 	it("retains two versions when no current worker image can be identified", () => {

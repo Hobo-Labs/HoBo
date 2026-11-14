@@ -2,7 +2,7 @@
 // @generated from file fleet_agent.proto (package hobo.fleet_agent.v1, syntax proto3)
 /* eslint-disable */
 
-// Local configuration record of @hobo/fleet-agent (ADR-0182). The fleet's
+// Local configuration record of @hobo/fleet-agent (ADR-0183). The fleet's
 // records, ports and signed envelopes are in @hobo/fleet; this package
 // keeps only its own settings here.
 

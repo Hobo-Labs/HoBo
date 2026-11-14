@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -57,6 +63,17 @@ describe("resolveGitMirrorRoot", () => {
 		);
 	});
 
+	it("creates a preferred root that does not exist yet", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-root-"));
+		roots.push(root);
+		const mirrorRoot = join(root, "git");
+		expect(
+			resolveGitMirrorRoot(mirrorRoot, join(root, "fallback-unused")),
+		).toBe(mirrorRoot);
+		expect(existsSync(mirrorRoot)).toBe(true);
+		expect(existsSync(join(root, "fallback-unused"))).toBe(false);
+	});
+
 	it("falls back when the preferred root cannot be created", () => {
 		const fallback = mkdtempSync(join(tmpdir(), "hobo-git-mirror-fb-"));
 		roots.push(fallback);
@@ -100,6 +117,28 @@ describe("resolveGitMirrorRoot", () => {
 			if (priorHome === undefined) delete process.env.HOME;
 			else process.env.HOME = priorHome;
 		}
+	});
+});
+
+describe("createBoxGitMirror mirror path", () => {
+	it("reports a miss instead of throwing when the mirror path cannot be created", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-git-mirror-root-"));
+		roots.push(root);
+		const locked = join(root, "locked");
+		mkdirSync(locked);
+		// A file where the owner directory goes stops mkdir for every user. A
+		// read-only root would not: as root mkdir ignores the mode, and this
+		// test runs as root in containers.
+		writeFileSync(join(locked, "Hobo-Labs"), "");
+		const mirror = createBoxGitMirror({
+			root: locked,
+			repository: "Hobo-Labs/HoBo",
+			originUrl: join(root, "missing"),
+		});
+		const result = await mirror.ensure("a".repeat(40));
+		expect(result.status).toBe("miss");
+		if (result.status === "miss")
+			expect(result.reason).toMatch(/not writable|not creatable/);
 	});
 });
 

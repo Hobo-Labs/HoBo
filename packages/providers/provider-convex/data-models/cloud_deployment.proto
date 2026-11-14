@@ -1,0 +1,24 @@
+syntax = "proto3";
+package hobo.provider.convex.v1;
+
+// Plan 0024 WP13: the outputs the convex.cloud-deployment/v1 resolver reports
+// from two Management API reads. Observation only: no token, no deploy key.
+// Design-time wire view (no buf codegen is wired for this package); the CUE
+// definition #ConvexCloudDeploymentOutputs constrains the same record.
+message ConvexCloudDeploymentOutputs {
+  string team_id = 1;
+  string project_id = 2;
+  string deployment_name = 3;
+  // prod | dev | preview | custom
+  string deployment_type = 4;
+  string deployment_url = 5;
+  string serving_endpoint = 6;
+  bool ready = 7;
+  bool operation_confirmed = 8;
+  bool operation_terminal = 9;
+  bool absence_confirmed = 10;
+  // ready | pending | failed | absent
+  string lifecycle_status = 11;
+  // Always false: code is pushed by the CLI and is not observable here.
+  bool code_version_observed = 12;
+}

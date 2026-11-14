@@ -1,6 +1,6 @@
 name: Deploy hello-bindle (Pulumi live)
 
-# The LIVE Pulumi lane (docs/plans/0006 item 3-2): the real pinned `pulumi`
+# The LIVE Pulumi lane: the real pinned `pulumi`
 # CLI engine drives the same @hobo/iac-pulumi adapter the composed deploy path
 # uses, against real Cloudflare. Manual only; requires CLOUDFLARE_API_TOKEN +
 # CLOUDFLARE_ACCOUNT_ID secrets (Settings → Secrets → Actions). Teardown runs

@@ -1,0 +1,70 @@
+{
+	"consumer": {
+		"name": "HoboCdHttpIndexDriver"
+	},
+	"provider": {
+		"name": "HttpArtifactIndex"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "4.0.0"
+		},
+		"evidence": "Hand-authored HTTP_INDEX contract: a JSON list (or {items}) of {version, url, digest} with optional commit, createdAt, size and mediaType. Verified by contracts/sources.consumer.test.ts."
+	},
+	"interactions": [
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET the artifact index",
+			"providerStates": [
+				{
+					"name": "origin https://downloads.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/web/index.json",
+				"headers": {
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "[{\"version\":\"1.0.0\",\"url\":\"https://downloads.example.com/web/1.0.0.tgz\",\"digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"createdAt\":\"2026-11-01T00:00:00Z\",\"size\":1024},{\"version\":\"1.1.0\",\"url\":\"https://downloads.example.com/web/1.1.0.tgz\",\"digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"commit\":\"cccccccccccccccccccccccccccccccccccccccc\",\"createdAt\":\"2026-11-02T00:00:00Z\"}]",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GET the artifact index in {items} form",
+			"providerStates": [
+				{
+					"name": "origin https://downloads.example.com"
+				}
+			],
+			"request": {
+				"method": "GET",
+				"path": "/web/items.json",
+				"headers": {
+					"accept": "application/json"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"items\":[{\"version\":\"1.0.0\",\"url\":\"https://downloads.example.com/web/1.0.0.tgz\",\"digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"createdAt\":\"2026-11-01T00:00:00Z\",\"size\":1024},{\"version\":\"1.1.0\",\"url\":\"https://downloads.example.com/web/1.1.0.tgz\",\"digest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"commit\":\"cccccccccccccccccccccccccccccccccccccccc\",\"createdAt\":\"2026-11-02T00:00:00Z\"}]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		}
+	]
+}

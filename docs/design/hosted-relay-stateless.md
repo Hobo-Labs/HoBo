@@ -114,8 +114,11 @@ writes to it.
   project and its production environment. It has read access to one project
   environment and nothing else.
 - **CI has its own identity.** The deploy workflow authenticates with GitHub
-  Actions OIDC to a separate admin identity bound to this repository's
-  protected deployment environment. That identity can read the Vercel deploy
+  Actions OIDC to a separate admin identity bound to this repository: the
+  subject GitHub issues for it (the immutable
+  `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/main` form, read from
+  GitHub by `hobo ci secret-store connect`, never a glob) with
+  `repository_id` and `repository_owner_id` pinned. That identity can read the Vercel deploy
   credential and write configuration; the relay's identity can do neither.
 - **What lives there.** Config: accounts, policy, offers (with their declared
   budget caps and whether they are free, prepaid or pay-as-you-go), repository
@@ -874,8 +877,12 @@ Yard, and sets the non-secret settings the chosen rows project, with the two
 Infisical ids given as inputs
 ([`ci-relay-yard.ts`](../../packages/hobo/src/ci-relay-yard.ts)). The
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
-every push to `main` that touches the relay's pnpm-lock closure: it reads the
-Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
+every push to `main` that touches the relay's pnpm-lock closure: after the
+binding exists it runs `hobo ci secret-store verify` (GitHub OIDC audience
+`https://github.com/Hobo-Labs`; failures print `oidc_sub` / `oidc_aud` through
+[`relay-deploy-secret-store-verify-report.mts`](../../scripts/ci/relay-deploy-secret-store-verify-report.mts);
+summaries redact JWT-shaped text; missing stdout JSON fails the step),
+then reads the Vercel token from Infisical with GitHub OIDC, attaches the Upstash cache with
 the Vercel CLI when the project lacks it, deploys with `--target production
 --wait`, and smoke-checks `/healthz` and `/readyz`. Until a secret store is
 bound (`deploy/secret-store.binding.json`, written when the deployment

@@ -11,7 +11,7 @@
  * constant the provider package exports, and nothing in between is typed by
  * hand.
  *
- * The vocabulary is the council's (docs/plans/alchemy-parity/council-decision.md):
+ * The vocabulary is the council's:
  *
  *   - `P0` — catalog only: declarable, no resolver.
  *   - `L1` — simulated: a fake-transport resolver **plus** the six lifecycle

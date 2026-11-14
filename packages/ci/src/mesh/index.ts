@@ -17,6 +17,7 @@ export {
 	type MeshMonitor,
 	type MeshMonitorEvent,
 	meshCapacity,
+	meshLeaderId,
 } from "./monitor.js";
 export {
 	decayMeshReliability,

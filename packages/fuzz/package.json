@@ -29,6 +29,7 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
+		"pretest:property": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test:property": "vitest run test/property",
 		"test:fuzz": "vitest run test/harness test/api",
 		"test:fuzz:nightly": "node --import tsx src/nightly-cli.ts"

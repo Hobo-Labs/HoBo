@@ -5,6 +5,7 @@ import {
 	createMeshMonitor,
 	type MeshNode,
 	meshCapacity,
+	meshLeaderId,
 } from "../src/mesh/index.js";
 
 const NOW = 1_800_000_000_000;
@@ -217,5 +218,28 @@ describe("createMemoryMeshConfig", () => {
 		expect(await config.publish("two", 1)).toEqual({ revision: 2 });
 		expect(await config.publish("three", 1)).toBe("conflict");
 		expect(await config.read()).toEqual({ value: "two", revision: 2 });
+	});
+});
+
+describe("meshLeaderId", () => {
+	it("is the live node with the lowest id, never an expired or forged one", () => {
+		expect(meshLeaderId([node("node-b"), node("node-c")], NOW, "node-c")).toBe(
+			"node-b",
+		);
+		expect(
+			meshLeaderId(
+				[
+					node("node-a", { validUntilMs: NOW - 1 }),
+					node("node-0", { trust: "invalid" }),
+					node("node-c"),
+				],
+				NOW,
+				"node-c",
+			),
+		).toBe("node-c");
+	});
+
+	it("a node that sees no live node leads itself", () => {
+		expect(meshLeaderId([], NOW, "solo")).toBe("solo");
 	});
 });

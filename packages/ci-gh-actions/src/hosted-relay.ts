@@ -28,8 +28,6 @@ import {
 } from "./admission-order.js";
 import type { FleetCapacityWitness } from "./fleet-absorb.js";
 import { fleetPeerAbsorbSlots, fleetWitnessFields } from "./fleet-absorb.js";
-import type { FleetCapacityPublisher } from "./fleet-capacity.js";
-import type { FleetRoutePublisher } from "./fleet-routes.js";
 import {
 	type GithubRun,
 	type GithubTransport,
@@ -43,7 +41,10 @@ import { isIsolatedHostOffer } from "./isolated-backend.js";
 import type { createHeadroomTrunkOverflow } from "./isolated-worker/headroom-trunk-overflow.js";
 import type { WorkerMemoryAdmission } from "./isolated-worker/memory-admission.js";
 import { memoryRequestForStoredJob } from "./isolated-worker/memory-classes.js";
-import type { WorkerStorageAdmission } from "./isolated-worker/storage-admission.js";
+import {
+	releaseWorkerStorageGrants,
+	type WorkerStorageAdmission,
+} from "./isolated-worker/storage-admission.js";
 import type { WorkerStorageReserve } from "./isolated-worker/storage-job-classes.js";
 import { deregisterGithubRunner } from "./jit-runner-deregister.js";
 import { decideFleetGhostRecovery } from "./jit-runner-fleet-recovery.js";
@@ -311,17 +312,11 @@ export class HostedRelay {
 			storageAdmission?: WorkerStorageAdmission;
 			/** Per-job byte/inode reservation for storage admission (learned + class budget). */
 			storageJobReserve?: (jobName: string) => WorkerStorageReserve;
-			/**
-			 * Publishes the fleet route table after each dispatch pass. Unset: the
-			 * relay balances nothing ahead of the queue and every job stays on its
-			 * hobo label.
-			 */
-			fleetRoutes?: Pick<FleetRoutePublisher, "publish">;
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
+			/** Free slots on this box and the rest of the fleet; dispatch reads it. */
 			fleetCapacity?: Readonly<{
-				publish: FleetCapacityPublisher["publish"];
 				snapshot: () => Promise<
 					FleetCapacityWitness & { hoboFreeSlots: number }
 				>;
@@ -1421,6 +1416,11 @@ export class HostedRelay {
 		}
 		return key;
 	}
+
+	private releaseInodeGrants(lease: Readonly<{ id: string; jobId: number }>) {
+		releaseWorkerStorageGrants(this.options.storageAdmission, lease);
+	}
+
 	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<number> {
 		this.dispatchGithubJobCache = new Map();
@@ -1565,7 +1565,9 @@ export class HostedRelay {
 			const headroomFleetDeferMs = this.headroomFleetDeferMs();
 			const runEvent = await this.admissionOrder.event(refOf(job));
 			const mainTrunk = isMainTrunkFleetDeferJob(job.name, runEvent);
-			const fleetDeferDecision = evaluateMainTrunkFleetDefer({
+			const parallelTrunkLaunchCapacity =
+				this.options.parallelLaunchCapacity?.();
+			const fleetDeferBase = {
 				jobName: job.name,
 				isMainTrunkJob: mainTrunk,
 				priorWait,
@@ -1574,7 +1576,12 @@ export class HostedRelay {
 				trunkSlots: this.options.trunkSlots,
 				localTrunkReserved,
 				fleetWitness,
-			});
+			};
+			const fleetDeferDecision = evaluateMainTrunkFleetDefer(
+				parallelTrunkLaunchCapacity === undefined
+					? fleetDeferBase
+					: { ...fleetDeferBase, parallelTrunkLaunchCapacity },
+			);
 			if (mainTrunk || priorWait !== undefined) {
 				this.logTrunkFleetDeferDecision(job, fleetDeferDecision);
 			}
@@ -1597,6 +1604,24 @@ export class HostedRelay {
 			if (storageAdmission) {
 				if (storageRefused) {
 					if (trunk) waitingTrunk.add(this.reportTrunkWait(job, "storage"));
+					continue;
+				}
+				// A grant is headroom held for a job that will run; never take one for
+				// a job GitHub no longer has queued.
+				try {
+					const currentJob = await this.cachedGithubJob(
+						job.installationId,
+						job.repository,
+						job.id,
+					);
+					if (
+						currentJob.status !== "queued" ||
+						currentJob.id !== job.id ||
+						currentJob.run_id !== job.runId ||
+						(currentJob.run_attempt ?? 1) !== job.runAttempt
+					)
+						continue;
+				} catch {
 					continue;
 				}
 				const storageLeases = await this.options.store.activeLeases();
@@ -1675,16 +1700,24 @@ export class HostedRelay {
 							);
 							if (mainTrunk) {
 								const afterWait = this.trunkWaits.get(trunkWaitKey(job));
-								const postDecision = evaluateMainTrunkFleetDefer({
+								const postDeferBase = {
 									jobName: job.name,
-									isMainTrunkJob: true,
+									isMainTrunkJob: true as const,
 									priorWait: afterWait,
 									deferMs: headroomFleetDeferMs,
 									nowMs,
 									trunkSlots: this.options.trunkSlots,
 									localTrunkReserved,
 									fleetWitness,
-								});
+								};
+								const postDecision = evaluateMainTrunkFleetDefer(
+									parallelTrunkLaunchCapacity === undefined
+										? postDeferBase
+										: {
+												...postDeferBase,
+												parallelTrunkLaunchCapacity,
+											},
+								);
 								this.logTrunkFleetDeferDecision(job, postDecision);
 								if (postDecision.action === "defer") {
 									waitingTrunk.add(this.reportTrunkWait(job, "fleet-capacity"));
@@ -1733,6 +1766,7 @@ export class HostedRelay {
 				if (trunk)
 					waitingTrunk.add(this.reportTrunkWait(job, "lease-capacity"));
 			} else {
+				storageAdmission?.bindGrant(storageJobId, lease.id);
 				this.servedRunnerLabels.set(
 					`${job.repository}:${job.id}`,
 					servedRunnerLabel(job.labels),
@@ -1817,6 +1851,7 @@ export class HostedRelay {
 						this.queuedDemand(candidate),
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				this.binding(candidate);
@@ -1841,6 +1876,7 @@ export class HostedRelay {
 						this.now(),
 						preflightRevision,
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				const connection = this.binding(candidate);
@@ -1859,6 +1895,7 @@ export class HostedRelay {
 						demand,
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				if (
@@ -1883,6 +1920,7 @@ export class HostedRelay {
 						this.now(),
 						preflightRevision,
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				if (isolatedHost) {
@@ -1913,6 +1951,7 @@ export class HostedRelay {
 						this.queuedDemand(candidate),
 						this.now(),
 					);
+					this.releaseInodeGrants(candidate);
 					continue;
 				}
 				const lease = await this.options.store.transition(
@@ -1980,63 +2019,7 @@ export class HostedRelay {
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
-		await this.publishFleetRoutes();
-		await this.publishFleetCapacity();
 		return pending.length;
-	}
-	/** One table per connected repository, from the state this pass just left. */
-	private async publishFleetRoutes(): Promise<void> {
-		const publisher = this.options.fleetRoutes;
-		if (!publisher) return;
-		for (const connection of this.options.config.connections) {
-			const account = this.options.config.accounts.find(
-				(entry) => entry.id === connection.accountId,
-			);
-			if (!account) continue;
-			try {
-				await publisher.publish({
-					installationId: connection.installationId,
-					repository: connection.repository,
-					account,
-					leases: () => this.options.store.accountLeases(account.id),
-					isolatedOnly: connection.isolatedOnly,
-					at: this.now(),
-				});
-			} catch {
-				/* Routing ahead of the queue is advisory; admission already ran. */
-			}
-		}
-	}
-	private async publishFleetCapacity(): Promise<void> {
-		const publisher = this.options.fleetCapacity;
-		if (!publisher) return;
-		let snapshot: Readonly<{ hoboFreeSlots: number; arcFreeSlots?: number }>;
-		try {
-			snapshot = await publisher.snapshot();
-		} catch {
-			return;
-		}
-		const at = this.now();
-		for (const connection of this.options.config.connections) {
-			try {
-				const base = {
-					installationId: connection.installationId,
-					repository: connection.repository,
-					hoboFreeSlots: snapshot.hoboFreeSlots,
-					at,
-				};
-				if (snapshot.arcFreeSlots === undefined) {
-					await publisher.publish(base);
-					continue;
-				}
-				await publisher.publish({
-					...base,
-					arcFreeSlots: snapshot.arcFreeSlots,
-				});
-			} catch {
-				/* Advisory only. */
-			}
-		}
 	}
 	async claim(id: string, token: string): Promise<JitBootstrapResponse> {
 		const lease = await this.options.store.get(id);
@@ -2302,5 +2285,6 @@ export class HostedRelay {
 				runnerId: lease.runnerId,
 			},
 		);
+		this.releaseInodeGrants(lease);
 	}
 }

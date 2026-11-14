@@ -5,7 +5,7 @@ import {
 	type UsageEventType,
 } from "../src/index.js";
 
-describe("metering: HoBo Fleet usage types (ADR-0182)", () => {
+describe("metering: HoBo Fleet usage types (ADR-0183)", () => {
 	const fleetTypes: readonly UsageEventType[] = [
 		"fleet.member.active",
 		"fleet.work.sandbox",

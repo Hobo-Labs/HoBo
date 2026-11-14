@@ -1,0 +1,79 @@
+{
+	"consumer": {
+		"name": "HoBoHostingCoordinator"
+	},
+	"provider": {
+		"name": "WebernetesLocalStationHost"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"provenance": "Hand-authored consumer expectations (plan 0024 WP13) for the injected WebernetesStationHost seam and the HTTP readiness probe of the station it stands up. The seam is in-process (messages); only the probe crosses HTTP, and only to the parsed local station host."
+	},
+	"interactions": [
+		{
+			"description": "describe a station the host has never stood up",
+			"request": {
+				"type": "describe",
+				"body": { "stationId": "shop" }
+			},
+			"response": { "body": null }
+		},
+		{
+			"description": "provision a local station",
+			"request": {
+				"type": "provision",
+				"body": { "stationId": "shop" }
+			},
+			"response": {
+				"body": {
+					"stationUrl": "http://127.0.0.1:4321/api/anon/host/shop/",
+					"claimUrl": "http://127.0.0.1:4321/api/anon/host/shop/claim"
+				}
+			}
+		},
+		{
+			"description": "describe a running station",
+			"request": {
+				"type": "describe",
+				"body": { "stationId": "shop" }
+			},
+			"response": {
+				"body": {
+					"state": "running",
+					"stationUrl": "http://127.0.0.1:4321/api/anon/host/shop/",
+					"claimUrl": "http://127.0.0.1:4321/api/anon/host/shop/claim",
+					"artifactDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+				}
+			}
+		},
+		{
+			"description": "probe the running station over HTTP",
+			"request": {
+				"type": "http",
+				"body": {
+					"method": "GET",
+					"url": "http://127.0.0.1:4321/api/anon/host/shop/"
+				}
+			},
+			"response": { "body": { "status": 200 } }
+		},
+		{
+			"description": "release a station",
+			"request": {
+				"type": "release",
+				"body": { "stationId": "shop" }
+			},
+			"response": { "body": {} }
+		},
+		{
+			"description": "describe a released station",
+			"request": {
+				"type": "describe",
+				"body": { "stationId": "shop" }
+			},
+			"response": { "body": { "state": "released" } }
+		}
+	]
+}

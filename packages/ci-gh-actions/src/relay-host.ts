@@ -1,4 +1,9 @@
 import type { ControlAuthenticator } from "./control-auth.js";
+import {
+	createMemoryFleetVerdicts,
+	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
+	type FleetReporter,
+} from "./fleet-verdict.js";
 import type { GithubAppTransport } from "./github.js";
 import {
 	createHostedControlPlane,
@@ -19,6 +24,7 @@ import {
 	createRelayService,
 	type RelayServiceLog,
 } from "./service.js";
+import type { GithubWorkflowVerifier } from "./workflow-oidc.js";
 
 /**
  * An optional CI agent beside the relay (see `@hobo/ci-agent`). The relay
@@ -72,6 +78,14 @@ export function createRelayHost(options: {
 	 * `mesh: "not-configured"`.
 	 */
 	meshNodes?: MeshNodesReader | undefined;
+	/**
+	 * The fleet reporters whose signed reports this host accepts (ADR-0180).
+	 * None unless supplied: every report is then refused and every label is
+	 * served open.
+	 */
+	fleetReporters?: readonly FleetReporter[] | undefined;
+	/** Verifies a workflow's OIDC token for the fleet reporter status route. */
+	workflowIdentity?: GithubWorkflowVerifier | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
 }) {
@@ -83,6 +97,17 @@ export function createRelayHost(options: {
 		} catch {
 			// A failed logger must not fail a tick or a request.
 		}
+	};
+	// Kept in this process: a verdict lapses in minutes and its reporter
+	// repeats it, so a restart costs one report (ADR-0180).
+	const fleetVerdicts = {
+		store: createMemoryFleetVerdicts(() => Date.parse(now())),
+		settings: () => ({
+			reporters: options.fleetReporters ?? [],
+			serving: true,
+			dailyBlockMinutes: FLEET_VERDICT_DAILY_BLOCK_MINUTES,
+		}),
+		workflowIdentity: options.workflowIdentity,
 	};
 	const relay = async () => {
 		const state = await store.configuration();
@@ -113,6 +138,7 @@ export function createRelayHost(options: {
 				// This host's operator owns its provider inventory.
 				fullAccountUpdates: true,
 				meshNodes: options.meshNodes,
+				fleetVerdicts,
 			})(request),
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),

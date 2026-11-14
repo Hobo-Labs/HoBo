@@ -1,6 +1,6 @@
 /**
  * The `github-actions-job` work kind of HoBo Fleet (L16). Signatures frozen by
- * the fleet contract commit (ADR-0182).
+ * the fleet contract commit (ADR-0183).
  */
 import {
 	type Clock,

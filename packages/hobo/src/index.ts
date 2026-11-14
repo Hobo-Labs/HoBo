@@ -139,6 +139,30 @@ export {
 	createCanDeployCommand,
 } from "./can-deploy-command.js";
 export {
+	DELIVERY_MODULE_EXPORTS,
+	type DeliveryModule,
+	loadDeliveryFile,
+	parseDeliveryModule,
+} from "./cd-delivery-module.js";
+export {
+	CD_DEPLOY_ACTIONS,
+	CD_DEPLOY_SUBCOMMANDS,
+	type CdDeployHost,
+	cdDeployUsage,
+	runCdDeploySubcommand,
+} from "./cd-deploy.js";
+export { type CdFormat, cdWire, parseCdFormat } from "./cd-render.js";
+// The CD runtime loads @hobo/cd/compose lazily (deploy-command.openDefaultCdHost).
+export type { CdRuntime, CdRuntimeOptions } from "./cd-runtime.js";
+export type { CdServer } from "./cd-serve.js";
+export { type OpenedCdStore, openCdStore } from "./cd-store.js";
+export {
+	campIdOf,
+	mergeTopologyReaders,
+	staticTopologyReader,
+	yardTopology,
+} from "./cd-topology.js";
+export {
 	type CiRelayDeployInput,
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
@@ -203,8 +227,10 @@ export {
 	type PresentedCredential,
 } from "./credential-presenter.js";
 export {
+	type CdHostOpener,
 	createDeployCommand,
 	type DeployCommandDeps,
+	openDefaultCdHost,
 } from "./deploy-command.js";
 export {
 	type DeployBackend,

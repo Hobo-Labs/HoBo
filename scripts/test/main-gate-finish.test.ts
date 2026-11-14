@@ -35,8 +35,59 @@ describe("main_gate_finish workspace prerequisites", () => {
 	it("waits on main-gate-plan so a failed plan cannot hide behind skipped shards", () => {
 		assert.match(
 			finish,
-			/needs: \[main-gate, main-gate-plan, main_workspace_tests\]/u,
+			/needs: \[route, main-gate, main-gate-plan, main_workspace_tests\]/u,
 		);
+	});
+
+	it("adds up results on a GitHub-hosted machine and runs no repository code", () => {
+		// A fleet runner took 30 s to 2 min to arrive for this arithmetic.
+		assert.match(finish, /^ {4}runs-on: ubuntu-24\.04$/mu);
+		assert.match(finish, /^ {4}permissions: \{\}$/mu);
+		assert.doesNotMatch(finish, /^\s*-?\s*uses:/mu);
+		assert.doesNotMatch(finish, /gitleaks/u);
+	});
+
+	it("accepts a skipped gate only when the merge queue passed this tree", () => {
+		type Case = Readonly<{
+			main: string;
+			green: string;
+			plan?: string;
+			shards?: string;
+			workspace?: string;
+			ok: boolean;
+		}>;
+		const cases: Case[] = [
+			{ main: "skipped", green: "true", ok: true },
+			{ main: "skipped", green: "false", ok: false },
+			{ main: "skipped", green: "", ok: false },
+			{ main: "failure", green: "true", ok: false },
+			{ main: "cancelled", green: "true", ok: false },
+			{ main: "success", green: "true", ok: true },
+			{ main: "success", green: "false", ok: true },
+			// Reuse never excuses the plan job: it holds the secret scan.
+			{ main: "skipped", green: "true", plan: "failure", ok: false },
+			{ main: "skipped", green: "true", plan: "skipped", ok: false },
+			{
+				main: "skipped",
+				green: "true",
+				shards: "[0]",
+				workspace: "failure",
+				ok: false,
+			},
+		];
+		for (const entry of cases) {
+			const run = spawnSync("bash", ["-c", script], {
+				env: {
+					...process.env,
+					MAIN_RESULT: entry.main,
+					MERGE_QUEUE_GREEN: entry.green,
+					PLAN_RESULT: entry.plan ?? "success",
+					PLAN_SHARDS: entry.shards ?? "[]",
+					WORKSPACE_RESULT: entry.workspace ?? "skipped",
+				},
+			});
+			assert.equal(run.status === 0, entry.ok, JSON.stringify(entry));
+		}
 	});
 
 	it("passes finish when the plan emitted no shards (skipped or empty-matrix failure)", () => {

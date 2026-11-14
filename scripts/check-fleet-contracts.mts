@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pnpm run fleet:contracts` (O26, ADR-0182): the frozen contracts did not
+ * `pnpm run fleet:contracts` (O26, ADR-0183): the frozen contracts did not
  * drift. Two checks, both must pass:
  *
  * 1. `scripts/emit-fleet-contracts.mts --check` (the coordinator's emitter):

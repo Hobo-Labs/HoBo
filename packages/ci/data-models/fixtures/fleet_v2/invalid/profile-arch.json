@@ -1,0 +1,8 @@
+{
+  "id": "trusted-arm64",
+  "os": "linux",
+  "architecture": "arm64",
+  "isolation": "trusted-process",
+  "lifecycle": "persistent-capacity",
+  "guarantee": "start-fenced"
+}

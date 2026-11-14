@@ -72,7 +72,7 @@ The COORDINATOR owns all Linear state. Per issue, in order:
    instructions to the coding agent), or re-plan the issue.
 6. Apply `cascadeDeltas` yourself, serially: traceability rows, ledgers, registries, GAPS-style
    registers, Linear comments. Append the outcome (success/failure + failure class + contract
-   defect if any) to `docs/plans/dispatch-log.md`.
+   defect if any) to `.sdlc/dispatch-log.md`.
 
 ## Handback: one schema, two transports
 

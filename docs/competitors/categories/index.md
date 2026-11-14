@@ -12,12 +12,12 @@
 | [Developer Portals & IDPs](developer-portals-idps.md) | 13 |
 | [Infrastructure-from-Code & Authoring](infrastructure-from-code.md) | 12 |
 | [Runtime & Distributed Application Substrates](runtime-substrates.md) | 15 |
-| [Hybrid & Multicloud Enterprise Orchestration](hybrid-multicloud-enterprise.md) | 18 |
+| [Hybrid & Multicloud Enterprise Orchestration](hybrid-multicloud-enterprise.md) | 20 |
 | [Self-Hosted PaaS & Server Deployment](self-hosted-paas.md) | 9 |
 | [Agentic Infrastructure & Operations](agentic-infrastructure.md) | 10 |
 | [Backend & Data Application Platforms](backend-data-platforms.md) | 5 |
-| [Delivery, Release & GitOps](delivery-release-gitops.md) | 11 |
-| [FinOps, Governance & Placement](finops-governance-placement.md) | 13 |
+| [Delivery, Release & GitOps](delivery-release-gitops.md) | 14 |
+| [FinOps, Governance & Placement](finops-governance-placement.md) | 14 |
 | [Identity, Networking & Application Delivery](identity-networking-delivery.md) | 6 |
 
 <!-- END GENERATED: category-index -->

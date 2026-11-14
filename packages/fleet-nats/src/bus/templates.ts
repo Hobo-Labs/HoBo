@@ -154,6 +154,8 @@ export function staticUserPermissions(user: StaticUser): StaticPermissions {
 				],
 				subscribe: ["fleet.>", "_INBOX.>", "$SYS.REQ.USER.AUTH"],
 				denyPublish: [
+					// Only the witness co-signs (§6.7: "the witness on its one subject").
+					AUDIT_SUBJECTS.witness,
 					"$JS.API.STREAM.CREATE.>",
 					"$JS.API.STREAM.UPDATE.>",
 					"$JS.API.STREAM.DELETE.>",

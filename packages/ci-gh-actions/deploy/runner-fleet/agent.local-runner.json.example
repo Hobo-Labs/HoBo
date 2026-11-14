@@ -1,0 +1,11 @@
+{
+	"hostId": "local-dev-1",
+	"hostKind": "local-runner",
+	"credentialRef": "env://HOBO_CI_RELEASE_READ_TOKEN",
+	"worker": { "directory": "/home/dev/hobo/.hobo/ci-local" },
+	"controller": {
+		"mode": "process",
+		"releases": "/var/lib/hobo-ci/controller-releases-source"
+	},
+	"drainDeadlineMs": 7200000
+}
