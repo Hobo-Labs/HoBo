@@ -207,7 +207,7 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: so
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
-	}, 30_000);
+	}, slow(30_000));
 	it("preserves true CommonJS export-assignment callables, constructors and namespace properties", async () => {
 		const root = await mkdtemp(
 			join(tmpdir(), "hobo-ts-imprint-export-equals-"),
