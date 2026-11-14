@@ -150,6 +150,30 @@ whose provider runs it and join the Yards with a Junction. A
 alone is not evidence of a Marketplace relationship and is also refused until
 placement can verify it ([control-plane.md](./control-plane.md)).
 
+### Ceremonies: configure what is missing, don't refuse
+
+Every infrastructure `up` (`hobo up`, `hobo ci up`, `hobo cd up`) holds an
+interactive ceremony for what it is missing, on a local setup page rendered
+with vercel-labs/ui (`@hobo/connect-ui`). It never tells a person to go set
+environment variables.
+
+- **Settings** resolve from the environment, then from what an earlier
+  ceremony saved (`$HOBO_HOME/ceremonies/<family>.json`, non-secrets only),
+  and are asked for only when neither has them. `hobo ci up` asks for the relay
+  URL, the GitHub owner (a user **or** an organization, looked up by login) and
+  the secret store with its coordinates. `hobo cd up` asks for HoBo CD's Vercel
+  Integration and the secret store.
+- **Secrets** (a sign-in token for this run, an Integration's client secret)
+  go only to the owner's secret store and are never saved or shown back.
+- **Providers**: when planning finds a resource no connected provider serves,
+  `hobo up` offers the installable providers that advertise its port, connects
+  the chosen ones (`hobo add`, approving a held one) and runs `up` again.
+- **Agents** can complete a ceremony too (`createAgent`, WebMCP). Handing off
+  to a provider or submitting a secret asks the person.
+- Without a person at a browser, and for `--what-if`, nothing opens. The
+  result names each missing setting, or the `hobo add` that would satisfy each
+  resource.
+
 ### Broker targeting and anonymous deploy
 
 Target resolution for `up` / default remote association:

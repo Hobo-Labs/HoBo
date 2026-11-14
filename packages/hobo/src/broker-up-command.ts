@@ -21,9 +21,9 @@ import {
 
 import { createServer } from "node:net";
 import {
-	externalBoundaryRefusal,
 	type CommandModule,
 	createUpCommand,
+	externalBoundaryRefusal,
 	loadBindleDefinition,
 	loadProjectManifest,
 	type YardRuntime,

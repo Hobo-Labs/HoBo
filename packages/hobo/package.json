@@ -47,6 +47,7 @@
 		"@hobo/cli": "workspace:*",
 		"@hobo/cloud": "workspace:*",
 		"@hobo/conformance": "workspace:*",
+		"@hobo/connect-ui": "workspace:*",
 		"@hobo/connectivity": "workspace:*",
 		"@hobo/contracts": "workspace:*",
 		"@hobo/control-api": "workspace:*",
