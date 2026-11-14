@@ -14,7 +14,9 @@ import {
 	TOPOLOGY_CONTRACT_VERSION,
 } from "./types.js";
 
+// public-contract: stable error code for a Camp attempting to select a provider.
 export const CAMP_MIGRATION_CODE = "camp-provider-selection-forbidden" as const;
+// public-contract: stable error code for a Camp attempting to own a Bindle.
 export const CAMP_BINDLE_OWNERSHIP_FORBIDDEN =
 	"camp-bindle-ownership-forbidden" as const;
 
