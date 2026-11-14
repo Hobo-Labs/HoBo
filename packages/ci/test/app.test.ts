@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { assertNoBindleProviderSelection } from "@hobo/bindles";
 import { describe, expect, it } from "vitest";
 import {
+	CI_RELAY_REPAIR_SCHEDULE,
 	CI_RELAY_RESOURCES,
 	ciCacheBindle,
 	ciConfigBindle,
@@ -13,6 +15,28 @@ import {
 } from "../src/app.js";
 
 describe("the CI SDK application", () => {
+	it("describes the repair schedule that the relay actually deploys", () => {
+		const vercel: unknown = JSON.parse(
+			readFileSync(
+				new URL("../../ci-vercel/vercel.json", import.meta.url),
+				"utf8",
+			),
+		);
+		expect(CI_RELAY_REPAIR_SCHEDULE).toEqual({
+			name: "hobo-ci-repair",
+			cron: "*/15 * * * *",
+			topic: "hobo-ci",
+		});
+		expect(vercel).toMatchObject({
+			schedules: {
+				[CI_RELAY_REPAIR_SCHEDULE.name]: {
+					schedule: CI_RELAY_REPAIR_SCHEDULE.cron,
+					topic: CI_RELAY_REPAIR_SCHEDULE.topic,
+				},
+			},
+		});
+	});
+
 	it("declares the project, native bucket, relay, queues and repair schedule in dependency order", () => {
 		expect(
 			Object.fromEntries(

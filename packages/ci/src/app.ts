@@ -15,8 +15,7 @@ export const CI_RELAY_RESOURCES = Object.freeze({
 export const CI_RELAY_REPAIR_SCHEDULE = Object.freeze({
 	name: CI_RELAY_RESOURCES.schedule,
 	cron: "*/15 * * * *",
-	function: "api/repair",
-	entry: "api/repair.ts",
+	topic: CI_RELAY_RESOURCES.queue,
 } as const);
 
 /** The relay owns its execution, queues, schedule and native Blob storage.

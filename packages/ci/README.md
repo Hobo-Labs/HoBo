@@ -21,7 +21,8 @@ from changing that metadata.
 configuration and runner peers. The relay declares a project, an object-store
 member, its API, queues and repair schedule in dependency order. A host places
 each peer in its provider's Yard and connects it through a Junction; the Bindles
-do not choose a provider or authorize a deployment.
+do not choose a provider or authorize a deployment. The repair schedule's
+declared cadence publishes to the relay's repair queue, not a separate endpoint.
 
 The legacy allocation and sandbox quote implementations live behind
 `@hobo/pricing/legacy`. The original `src/accounting.ts` and
