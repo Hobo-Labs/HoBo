@@ -91,6 +91,8 @@ because Radix positions some shadcn parts with style attributes.
 (`src/client/main.tsx`, React + json-render + the shadcn preset) with esbuild,
 and compiles its Tailwind stylesheet with the HoBo Rubberhose tokens
 (`DESIGN.md`) mapped onto shadcn's variables. Nothing loads from a CDN.
+The package's Biome configuration enables Tailwind directive parsing while
+checking the client, server, scripts, and tests.
 
 ## Tests
 
