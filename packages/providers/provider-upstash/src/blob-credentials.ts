@@ -99,8 +99,9 @@ export function createUpstashBlobCredentials(
 		return at;
 	}
 	async function mint(token: string): Promise<Session> {
+		let guard: () => Promise<void>;
 		try {
-			const guard = await options.reserveMint();
+			guard = await options.reserveMint();
 			await guard();
 		} catch {
 			throw new UpstashBlobCredentialError("budget-unavailable");
@@ -114,6 +115,7 @@ export function createUpstashBlobCredentials(
 				timeoutMs: 10_000,
 				maxResponseBytes: MAX_RESPONSE_BYTES,
 			});
+			await guard();
 		} catch {
 			throw new UpstashBlobCredentialError("unavailable");
 		}
