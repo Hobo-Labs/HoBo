@@ -251,6 +251,8 @@ export {
 // public-contract: the package identity consumers assert in boundary contracts.
 export const HOBO_BROKER_PACKAGE = "@hobo/broker";
 export * from "./budget-authority.js";
+export { createFleetBudgetAdmissionAuthority } from "./budget-fleet.js";
+export { createOperationalFleetBudgetAdmissionAuthority } from "./budget-fleet-operational.js";
 export {
 	type AsyncBudgetAdmissionAuthority,
 	createPostgresBudgetAdmissionAuthority,

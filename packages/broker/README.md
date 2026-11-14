@@ -27,6 +27,14 @@ file or creating one ledger per worker does not establish shared authority.
 The in-memory factory is explicitly marked `persistence: 'memory'` and cannot
 authorize funded Yard hosting.
 
+`createFleetBudgetAdmissionAuthority` replays decisions from a fixed,
+majority-chosen journal. Its inspection calls do not repair an undecided tail.
+For active workloads, `createOperationalFleetBudgetAdmissionAuthority` can
+recover an already offered entry under a separately funded, revalidated actor
+lease before retrying the operation. The host must provide independently
+verified member identities, anti-rollback protection and per-voter funding;
+an actor lease alone does not fence a delayed provider request.
+
 One transaction reserves global money, provider-account ceilings and each named
 free-allocation bucket. Quantities use integer normalized base units; unknown
 accounts, units, periods and expired allowance evidence refuse admission. Every

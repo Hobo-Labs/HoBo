@@ -654,6 +654,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -673,6 +676,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
       '@hobo/storage-sqlite':
         specifier: workspace:*
         version: link:../storage-sqlite
