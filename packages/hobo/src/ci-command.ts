@@ -26,7 +26,6 @@ import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
-import {
 import { CI_DEPLOY_ADOPT_OPTIONS, runCiRelayAdopt } from "./ci-relay-adopt.js";
 import {
 	CI_DEPLOY_ONLY_OPTIONS,
