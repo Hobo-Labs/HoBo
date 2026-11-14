@@ -31,7 +31,6 @@ const activeCiFiles = new Set([
 	"ci-deps-publish.yml",
 	"examples-e2e.yml",
 	"dev-env-smoke.yml",
-	"fleet-enrollment.yml",
 	"pricing-ci.yml",
 	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
@@ -39,7 +38,7 @@ const activeCiFiles = new Set([
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 	// The HoBo Fleet integration lane (ADR-0183): nats-server, the iroh relay
-	// and a rootless OCI runtime, on the integration branch and on demand.
+	// and the pinned gVisor sandbox runtime (D58), on the integration branch and on demand.
 	"fleet-integration.yml",
 ]);
 /**
@@ -196,23 +195,27 @@ const SHARD_RUNS_ON =
  * `runnerRouting` in `.hobo/ci.json`.
  */
 const ROUTING_VARIABLE = /vars\.HOBO_CI_/;
-/** ADR-0181's routing list, exhaustively, with the retired fleet channels. */
+/**
+ * ADR-0181's routing list, exhaustively, with the retired fleet channels.
+ * Whole families are patterns: every `HOBO_CI_FLEET_*` name (the retired
+ * fleet state, capacity and route variables, the hosted verdict's settings)
+ * and every `HOBO_CI_LOCAL_*` name (the retired local-runner switch and its
+ * repository and trust settings) is routing or fleet information, and so is
+ * every NATS and mesh setting of the retired relay mesh under `HOBO_CI_`:
+ * fleet settings come from committed config or enrolled state, never from a
+ * workflow's environment (ADR-0183, design D61). The retired names are listed
+ * by name only in `runnerRouting.retiredVariables` of `.hobo/ci.json`.
+ */
 export const ROUTING_NAMES: readonly string[] = [
 	"HOBO_CI_ROUTE",
 	"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
 	"HOBO_CI_ROUTE_MAX_QUEUED",
 	"HOBO_CI_TRUNK_RUNNER",
-	"HOBO_CI_LOCAL_RUNNER",
 	"HOBO_CI_INCLUDE_OWN_RUN",
 	"HOBO_CI_ATTESTED",
-	"HOBO_CI_FLEET_ROUTES",
-	"HOBO_CI_FLEET_STATE",
-	"HOBO_CI_FLEET_CAPACITY",
-	"HOBO_CI_FLEET_VERDICT_[A-Z0-9_]+",
-	"HOBO_CI_FLEET_REPORTER_ID",
-	"HOBO_CI_FLEET_EXTERNAL_POOLS_JSON",
-	"HOBO_CI_FLEET_REPORTERS_JSON",
-	"HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB",
+	"HOBO_CI_FLEET_[A-Z0-9_]+",
+	"HOBO_CI_LOCAL_[A-Z0-9_]+",
+	"HOBO_CI_(?:NATS|MESH)_[A-Z0-9_]+",
 	"HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS",
 	"HOBO_CI_WORKER_SLOTS",
 	"HOBO_CI_WORKER_TRUNK_SLOTS",

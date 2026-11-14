@@ -71,7 +71,8 @@ export const PAID_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	"HoBo release PR gate (required)",
 	"CI health",
 ]);
-export const FLEET_LABELS: ReadonlySet<string> = new Set([
+/** The self-hosted runner labels a routed job asks for; "fleet" names one thing (design §8.5). */
+export const RUNNER_LABELS: ReadonlySet<string> = new Set([
 	"hobo",
 	"hobo-trunk",
 ]);
@@ -570,7 +571,7 @@ export function signalH6(
 	for (const pages of runs)
 		for (const job of pages.jobs) {
 			if (STALL_EXCLUDED_JOBS.has(job.name)) continue;
-			if (!job.labels.some((label) => FLEET_LABELS.has(label))) continue;
+			if (!job.labels.some((label) => RUNNER_LABELS.has(label))) continue;
 			const waited = waitedMs(job, nowMs);
 			if (waited === undefined || waited <= limitMs) continue;
 			stalls.push(
