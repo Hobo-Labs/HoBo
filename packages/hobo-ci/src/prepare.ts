@@ -68,7 +68,9 @@ function openInBrowser(url: string): void {
 				? "explorer"
 				: "xdg-open";
 	try {
-		spawn(command, [url], { stdio: "ignore", detached: true }).unref();
+		const child = spawn(command, [url], { stdio: "ignore", detached: true });
+		child.on("error", () => undefined);
+		child.unref();
 	} catch {
 		// The URL is printed as well; opening it is a convenience.
 	}
@@ -97,17 +99,31 @@ export async function prepareGithubConnection(
 
 	// Idempotency first: an existing connection means there is nothing to do.
 	const opened = await openStore(preferred);
-	if (opened.ok && (await githubAppConnected(opened.store)))
-		return {
-			kind: "ready",
-			steps: [
-				{
-					id: "github-app",
-					outcome: "unchanged",
-					detail: `already in ${opened.store.id} (${opened.store.reference("HOBO_CI_GITHUB_APP_ID")})`,
-				},
-			],
-		};
+	if (opened.ok) {
+		let connected: boolean;
+		try {
+			connected = await githubAppConnected(opened.store);
+		} catch {
+			return refused(
+				"HOBO_CI_SECRET_STORE_UNAVAILABLE",
+				"Cannot verify the existing GitHub connection in the secret store.",
+				[
+					"Check store access and reconcile any partial credentials before retrying.",
+				],
+			);
+		}
+		if (connected)
+			return {
+				kind: "ready",
+				steps: [
+					{
+						id: "github-app",
+						outcome: "unchanged",
+						detail: `already in ${opened.store.id} (${opened.store.reference("HOBO_CI_GITHUB_APP_ID")})`,
+					},
+				],
+			};
+	}
 	if (input.whatIf)
 		return {
 			kind: "ready",

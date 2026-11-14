@@ -25,12 +25,12 @@ import type {
 // flow), its credentials deposited straight from GitHub's one-time
 // conversion into the owner's secret store.
 //
-// Idempotent: choosing a store that already holds the App's id finishes at
-// once as `unchanged` — re-running `hobo ci up` never creates a second App.
+// Idempotent: a complete stored connection finishes as `unchanged`; an
+// incomplete or unreadable connection must be reconciled before creating one.
 // Secretless: the credentials exist in this process's memory between the
 // conversion and the deposit, and nowhere else. The page sees store
-// references. The deposit writes the App id last, so its presence means
-// every other entry is there too.
+// references. The deposit writes the App id last, but each entry is checked
+// on later runs because a stored entry can be deleted independently.
 
 /** Deposit order: the App id last, so its presence means complete. */
 export const GITHUB_APP_CREDENTIAL_KEYS = Object.freeze([
@@ -42,8 +42,6 @@ export const GITHUB_APP_CREDENTIAL_KEYS = Object.freeze([
 ] as const);
 
 type CredentialKey = (typeof GITHUB_APP_CREDENTIAL_KEYS)[number];
-
-const COMPLETE_MARKER: CredentialKey = "HOBO_CI_GITHUB_APP_ID";
 
 /** GitHub's conversion answer, parsed before any value is trusted. */
 const ConversionSchema = z.object({
@@ -82,12 +80,22 @@ function failed(
 export async function githubAppConnected(
 	store: OpenedSecretStore,
 ): Promise<boolean> {
-	try {
-		const result = await store.port.access(COMPLETE_MARKER);
-		return result.status === "ok";
-	} catch {
-		return false;
+	let present = 0;
+	for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
+		let result: Awaited<ReturnType<typeof store.port.access>>;
+		try {
+			result = await store.port.access(key);
+		} catch {
+			throw new Error("Cannot inspect the existing GitHub connection.");
+		}
+		if (result.status === "ok" && result.material !== "") present += 1;
+		else if (result.status === "ok" || result.code !== "secret-not-found")
+			throw new Error("Cannot inspect the existing GitHub connection.");
 	}
+	if (present === 0) return false;
+	if (present !== GITHUB_APP_CREDENTIAL_KEYS.length)
+		throw new Error("The stored GitHub connection is incomplete.");
+	return true;
 }
 
 function connected(
@@ -139,9 +147,12 @@ export function createGithubConnectFlow(
 
 		async onAction(action, params, current) {
 			if (action === "connect.cancel")
-				return failed("Cancelled. Nothing was created on GitHub.", [
-					"Run hobo ci up again when you are ready.",
-				]);
+				return failed(
+					"Connection cancelled; an App may already exist on GitHub.",
+					[
+						"Check GitHub and the secret store for a partial setup before retrying.",
+					],
+				);
 			if (action === "connect.chooseStore") {
 				if (current.kind !== "choose-secret-store") return { step: current };
 				const choice = (options.stores ?? DEFAULT_SECRET_STORES).find(
@@ -152,7 +163,15 @@ export function createGithubConnectFlow(
 				const opened = await options.openStore(choice.id);
 				if (!opened.ok) return failed(opened.message, opened.remediation);
 				store = opened.store;
-				if (await githubAppConnected(store)) {
+				let alreadyConnected: boolean;
+				try {
+					alreadyConnected = await githubAppConnected(store);
+				} catch {
+					return failed("Cannot verify the existing GitHub connection.", [
+						"Check access and reconcile any partial credentials in the secret store before retrying.",
+					]);
+				}
+				if (alreadyConnected) {
 					outcome = "unchanged";
 					return { step: connected(store, undefined) };
 				}

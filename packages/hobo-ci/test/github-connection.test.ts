@@ -107,6 +107,11 @@ function memoryStore(): OpenedSecretStore & {
 	};
 }
 
+async function seedConnection(store: OpenedSecretStore): Promise<void> {
+	for (const key of GITHUB_APP_CREDENTIAL_KEYS)
+		await store.port.put(key, `fixture-${key}`);
+}
+
 const opened =
 	(store: OpenedSecretStore) => async (): Promise<SecretStoreOpening> => ({
 		ok: true,
@@ -158,7 +163,7 @@ describe("createGithubConnectFlow", () => {
 
 	it("is idempotent: a store that holds the App finishes unchanged without GitHub", async () => {
 		const store = memoryStore();
-		await store.port.put("HOBO_CI_GITHUB_APP_ID", "777");
+		await seedConnection(store);
 		const github = fakeGithub();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
@@ -176,6 +181,31 @@ describe("createGithubConnectFlow", () => {
 		expect(step.step.kind).toBe("connected");
 		expect(flow.outcome()).toBe("unchanged");
 		expect(github.calls).toEqual([]);
+	});
+
+	it("refuses partial credentials instead of creating another App", async () => {
+		const store = memoryStore();
+		await store.port.put("HOBO_CI_GITHUB_APP_ID", "777");
+		const github = fakeGithub();
+		const flow = createGithubConnectFlow({
+			relayUrl: RELAY,
+			ownerId: OWNER_ID,
+			owner: "octo-org",
+			callbackUrl: () => "",
+			openStore: opened(store),
+			fetch: github.fetch,
+		});
+		const result = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		expect(result.step).toMatchObject({
+			kind: "failed",
+			message: "Cannot verify the existing GitHub connection.",
+		});
+		expect(github.calls).toEqual([]);
+		expect(store.names()).toEqual(["HOBO_CI_GITHUB_APP_ID"]);
 	});
 
 	it("refuses a callback whose state does not match, storing nothing", async () => {
@@ -261,7 +291,7 @@ const ENV = {
 describe("prepareGithubConnection", () => {
 	it("reports unchanged without opening a page when the store holds the App", async () => {
 		const store = memoryStore();
-		await store.port.put("HOBO_CI_GITHUB_APP_ID", "777");
+		await seedConnection(store);
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
 			openStore: opened(store),
@@ -273,6 +303,35 @@ describe("prepareGithubConnection", () => {
 			kind: "ready",
 			steps: [{ outcome: "unchanged" }],
 		});
+	});
+
+	it("refuses when store access fails instead of opening setup", async () => {
+		const store = memoryStore();
+		const unavailable: OpenedSecretStore = {
+			...store,
+			port: {
+				...store.port,
+				async access() {
+					return {
+						status: "denied",
+						code: "infisical-forbidden",
+						reason: "unavailable",
+					};
+				},
+			},
+		};
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: ENV,
+			openStore: opened(unavailable),
+			startPage: () => {
+				throw new Error("must not open setup");
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_SECRET_STORE_UNAVAILABLE" },
+		});
+		expect(store.names()).toEqual([]);
 	});
 
 	it("opens nothing for --what-if", async () => {
