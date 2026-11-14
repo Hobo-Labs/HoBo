@@ -20,6 +20,7 @@ import {
 } from "./canonical.js";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
+// public-contract: version tag serialized on Yard topology objects.
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 
 /**
