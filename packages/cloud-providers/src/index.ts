@@ -118,6 +118,14 @@ export {
 	postgresBackendProfiles,
 } from "./postgres-backends.js";
 export {
+	type PlacedPostgresBackend,
+	type PostgresOffer,
+	type PostgresPlacement,
+	type PostgresPlacementRequest,
+	placePostgresFleet,
+	type SkippedPostgresBackend,
+} from "./postgres-placement.js";
+export {
 	COMPUTE_PORT,
 	type EquivalenceClassLike,
 	registeredHostDeclaration,
