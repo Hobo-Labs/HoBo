@@ -180,6 +180,14 @@ the others wait and then see the result. A failed migration rolls back
 completely. Roll replicas forward; never run an older build against a newer
 schema (`schema-ahead`).
 
+Before installing the actor-fence migration or relying on protected prefixes,
+quiesce and stop every older process with journal write credentials. An older
+process that was already running can continue to use its open connection
+without checking the new policy; the deferred trigger checks writes that the
+new store has marked for verification. Role isolation alone does not prove
+that older supervisors have stopped. Start only updated writers before
+enabling the protected workload.
+
 **Readiness.** `store.health()` reports `server-version` and `schema-version`
 checks. Wire it into the service readiness probe (WP12).
 
