@@ -557,10 +557,14 @@ describe("the stateless relay's probes", () => {
 			const base = `http://127.0.0.1:${port}`;
 			const health = await fetch(`${base}/healthz`);
 			expect(health.status).toBe(200);
-			expect(await health.json()).toEqual({ ok: true });
+			expect(await health.json()).toEqual({ ok: true, commit: null });
 			const ready = await fetch(`${base}/readyz`);
 			expect(ready.status).toBe(503);
-			expect(await ready.json()).toEqual({ ready: false, started: false });
+			expect(await ready.json()).toEqual({
+				ready: false,
+				started: false,
+				state: "start-failed",
+			});
 			expect((await fetch(`${base}/github/webhooks`)).status).toBe(503);
 		} finally {
 			await new Promise<void>((resolve, reject) =>

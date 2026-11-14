@@ -350,7 +350,7 @@ message FlagEvaluationRecord {
   string context_digest = 5;
 }
 
-// Staged-rollout target group (plan 0015 §B deliverable 4): ordered groups
+// Staged-rollout target group: ordered groups
 // within a stage, executed in parallel up to concurrency, halting past
 // max_failures, optionally gated by an approval barrier.
 message RolloutTargetGroupRecord {

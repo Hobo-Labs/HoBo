@@ -1,0 +1,36 @@
+syntax = "proto3";
+package hobo.provider.railway.v1;
+
+// Plan 0024 WP13 (invariant I14): the provider's declaration that every
+// hosting product it catalogs has a realization path (a shipped resolver) or a
+// typed refusal, and which traffic offerings it can and cannot realize.
+// Metadata only: no credentials, endpoints or provider responses.
+message HostingCoverage {
+  // Always "hobo.provider-hosting-coverage/v1".
+  string contract = 1;
+  string provider_id = 2;
+  repeated string resolved_product_ids = 3;
+  repeated UnresolvedHostingProduct unresolved = 4;
+  TrafficCoverage traffic = 5;
+}
+
+// A catalogued product refused with RESOLVER_PRODUCT_UNSUPPORTED.
+message UnresolvedHostingProduct {
+  string product_id = 1;
+  string reason = 2;
+  string remediation = 3;
+}
+
+message TrafficCoverage {
+  // TrafficRoutingProviderKind; "other" when the core union has no member.
+  string kind = 1;
+  repeated string offerings = 2;
+  repeated string fallbacks = 3;
+  repeated AbsentTrafficOffering absent = 4;
+}
+
+// ADR-0144: an offering nothing can realize is declared absent, not preview.
+message AbsentTrafficOffering {
+  string offering_id = 1;
+  string reason = 2;
+}

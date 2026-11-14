@@ -48,6 +48,22 @@ verdict may block nothing, that a report cannot stand longer than 180
 seconds and must name its mode, that a reason outside the two is refused,
 that a capacity figure in a verdict is invalid (none leaves the relay), that
 an enrollment holds no private key, and that a status carries no key at all.
+ADR-0181 supersedes the verdict's transport with the routing slip below.
+
+`routing_slip.proto` owns the routing slip (ADR-0181): the box relay's
+current routing answer for one repository, one route per class (`pr`, `fork`,
+`trunk`: runner, tier and a reason code), with its issue and expiry times and
+the writing relay's node and commit. It is the message of a parentless commit
+at `refs/hobo/routing-slip`. `#RoutingSlip` in `onboarding.cue` constrains it,
+and `#RunnerRouting` the committed `runnerRouting` policy in `.hobo/ci.json`
+(no proto: it is authored JSON, parsed by zod in `src/runner-routing.ts`).
+`src/routing-slip.ts` is the only place a slip is parsed and written; the
+route job's dependency-free reader `scripts/ci/runner-routing.mts` agrees with
+it on every fixture. The `routing-slip*` fixtures pin that an expired slip, a
+wrong repository, an unknown or missing class, a figure in a reason, a
+generic label and a reason its tier disagrees with are invalid; the
+`runner-routing*` fixtures pin the committed defaults and refuse a generic
+label or a trunk split that leaves no shared slot.
 
 `relay_cache.proto` owns the records the hosted relay keeps in its cache
 (ADR-0179): the lease record (the `hobo.ci.v1.Lease` as JSON, its job key,

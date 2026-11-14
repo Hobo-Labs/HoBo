@@ -3,7 +3,6 @@ import { ACTIVE_STATES, type CiEvent, type Job, type Lease } from "@hobo/ci";
 import { z } from "zod";
 import { JitBootstrapResponseSchema } from "./_generated/jit_bootstrap_response_pb.js";
 import { createAdmissionOrder } from "./admission-order.js";
-import type { FleetRoutePublisher } from "./fleet-routes.js";
 import { type GithubTransport, getJob } from "./github.js";
 import {
 	HostedRelay,
@@ -162,8 +161,6 @@ export function createHostedRelayRuntime(options: {
 		typeof HostedRelay
 	>[0]["storageJobReserve"];
 	mergeQueuePositions?: MergeQueuePositionSource;
-	/** See `HostedRelay`: publishes the fleet route table after each pass. */
-	fleetRoutes?: Pick<FleetRoutePublisher, "publish"> | undefined;
 	headroomTrunkOverflow?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["headroomTrunkOverflow"];
@@ -297,7 +294,6 @@ export function createHostedRelayRuntime(options: {
 			relayOptions.storageAdmission = options.storageAdmission;
 		if (options.storageJobReserve)
 			relayOptions.storageJobReserve = options.storageJobReserve;
-		if (options.fleetRoutes) relayOptions.fleetRoutes = options.fleetRoutes;
 		if (options.headroomTrunkOverflow)
 			relayOptions.headroomTrunkOverflow = options.headroomTrunkOverflow;
 		if (options.headroomFleetDeferMs !== undefined)

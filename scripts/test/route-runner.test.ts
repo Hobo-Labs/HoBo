@@ -13,11 +13,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
-	askRelay,
+	ABSENT_SLIP_WHYS,
+	askSlip,
 	BURST_SECONDS,
 	chooseRunner,
+	DEFAULT_LOCAL_RUNNER,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
+	DEFAULT_RUNNER_LABELS,
 	fleetLabelFor,
 	hasChosen,
 	type JsonValue,
@@ -28,34 +31,40 @@ import {
 	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
 	main,
+	NO_ROUTING_SLIP,
 	observeQueue,
 	PROBE_POLL_SECONDS,
 	PROBE_WAIT_SECONDS,
 	PROBE_WORKFLOW_PATH,
-	parseFleetVerdict,
-	parseRelayOrigin,
+	parseRouteArgs,
 	parseRouteMode,
 	probeRunIds,
 	type QueueView,
 	RECENT_PICKUP_SECONDS,
-	RELAY_CONFIG_PATH,
-	RELAY_VERDICT_TIMEOUT_SECONDS,
-	type RelayAnswer,
 	type RouteDecision,
 	refusingJobs,
-	relayRefusal,
 	routeAnnotation,
+	routeClass,
 	routeRunner,
+	routeSettings,
 	runsJustAhead,
 	type SeenJob,
+	SLIP_REFUSAL_WHY,
 	SLOW_PICKUP_MEMORY_SECONDS,
 	STALE_WAIT_SECONDS,
 	seenJobs,
 	slowestFinishedRunIds,
+	TRUNK_EVENTS,
 	takingJobs,
 	unfinishedRunIds,
 	workflowFile,
 } from "../ci/route-runner.mts";
+import {
+	ROUTING_SLIP_READ_TIMEOUT_MS,
+	RUNNER_ROUTING_PATH,
+	type RunnerRouting,
+	readRunnerRouting,
+} from "../ci/runner-routing.mts";
 
 const NOW = Date.parse("2026-11-10T18:00:00Z");
 const limits = {
@@ -319,433 +328,318 @@ describe("the routing decision", () => {
 	});
 });
 
-/** The relay's verdict contract, as its provider suite verifies it. */
-const verdictPact: {
-	interactions: {
-		description: string;
-		request: { method: string; path: string };
-		response: { status: number; body: JsonValue };
-	}[];
-} = JSON.parse(
-	readFileSync(
-		new URL(
-			"../../packages/ci-gh-actions/contracts/fleet-verdict-boundary.pact.json",
-			import.meta.url,
-		),
-		"utf8",
-	),
-);
-const pactAnswer = (description: string) => {
-	const found = verdictPact.interactions.find((entry) =>
-		entry.description.startsWith(description),
-	);
-	assert.ok(found, `the Pact has no interaction "${description}"`);
-	return found;
-};
-/** A verdict that blocks these labels. */
-const verdict = (blocked: Record<string, string> = {}): RelayAnswer => ({
-	kind: "verdict",
-	blocked: new Map(Object.entries(blocked)),
+describe("the fleet label a run asks for", () => {
+	it("is the committed trunk label for trunk events, the fleet label otherwise", () => {
+		assert.equal(fleetLabelFor("pull_request"), "hobo");
+		assert.equal(fleetLabelFor("schedule"), "hobo");
+		assert.equal(fleetLabelFor("merge_group"), "hobo-trunk");
+		assert.equal(fleetLabelFor("push"), "hobo-trunk");
+		const labels = {
+			...DEFAULT_RUNNER_LABELS,
+			fleet: "acme",
+			trunk: "acme-trunk",
+		};
+		assert.equal(fleetLabelFor("push", labels), "acme-trunk");
+		assert.equal(fleetLabelFor("pull_request", labels), "acme");
+	});
 });
-const NO_NODE = verdict({ hobo: "no-node" });
-const NO_CAPACITY = verdict({ hobo: "no-capacity" });
-const OPEN = verdict();
 
-describe("the relay the project names", () => {
-	const project = (environment: Record<string, string | boolean>) =>
-		JSON.stringify({
-			defaultEnvironment: "ci",
-			environments: { ci: environment, other: { relayOrigin: "https://x.y" } },
+describe("the run's slip class", () => {
+	const pullRequest = (head: string | null, base: string) => ({
+		pull_request: {
+			head: { repo: head === null ? null : { full_name: head } },
+			base: { repo: { full_name: base } },
+		},
+	});
+	it("is trunk for trunk events, fork for another repository's pull request, else pr", () => {
+		for (const event of TRUNK_EVENTS)
+			assert.equal(routeClass(event, undefined), "trunk", event);
+		assert.equal(
+			routeClass(
+				"pull_request",
+				pullRequest("Hobo-Labs/HoBo", "hobo-labs/hobo"),
+			),
+			"pr",
+		);
+		assert.equal(
+			routeClass("pull_request", pullRequest("someone/HoBo", "Hobo-Labs/HoBo")),
+			"fork",
+		);
+		// A fork whose repository was deleted is still not this repository.
+		assert.equal(
+			routeClass("pull_request", pullRequest(null, "Hobo-Labs/HoBo")),
+			"fork",
+		);
+		assert.equal(routeClass("schedule", undefined), "pr");
+		assert.equal(routeClass("pull_request", undefined), "pr");
+	});
+});
+
+describe("what this run chose, as arguments", () => {
+	it("reads --route, --include-own-run and --attested, in either form", () => {
+		assert.deepEqual(parseRouteArgs([]), {
+			route: "auto",
+			includeOwnRun: false,
+			attested: false,
+		});
+		assert.deepEqual(
+			parseRouteArgs([
+				"--route",
+				"github",
+				"--include-own-run=true",
+				"--attested",
+				"true",
+			]),
+			{ route: "github", includeOwnRun: true, attested: true },
+		);
+		assert.equal(parseRouteArgs(["--route", "hosted"]).route, "auto");
+		assert.equal(parseRouteArgs(["--attested", "yes"]).attested, false);
+	});
+	it("refuses anything else, so the action's fallback says the script did not run", () => {
+		assert.throws(
+			() => parseRouteArgs(["--mode", "fleet"]),
+			/unknown argument/,
+		);
+		assert.throws(() => parseRouteArgs(["--route"]), /needs a value/);
+	});
+});
+
+/** The routing slip fixtures `packages/ci-gh-actions` holds valid. */
+const slipFixture = (name: string): JsonValue =>
+	JSON.parse(
+		readFileSync(
+			new URL(
+				`../../packages/ci-gh-actions/data-models/fixtures/valid/${name}`,
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+/** A minute after the fixtures' slips were issued: they are current. */
+const SLIP_NOW = Date.parse("2026-11-13T16:01:00.000Z");
+const OPEN_SLIP = JSON.stringify(slipFixture("routing-slip.json"));
+const REFUSED_SLIP = JSON.stringify(slipFixture("routing-slip-refused.json"));
+const SLIP_SHA = "5".repeat(40);
+/**
+ * GitHub's Git API with the slip's commit behind `refs/hobo/routing-slip`, or
+ * no such ref when `message` is undefined. Records every URL it was asked.
+ */
+const slipApi =
+	(
+		message: string | undefined,
+		asked: string[] = [],
+		headers: Headers[] = [],
+	): typeof fetch =>
+	async (url, init) => {
+		asked.push(String(url));
+		headers.push(new Headers(init?.headers));
+		if (String(url).endsWith("/git/ref/hobo/routing-slip"))
+			return message === undefined
+				? Response.json({ message: "Not Found" }, { status: 404 })
+				: Response.json({
+						ref: "refs/hobo/routing-slip",
+						object: { type: "commit", sha: SLIP_SHA },
+					});
+		if (String(url).endsWith(`/git/commits/${SLIP_SHA}`))
+			return Response.json({ sha: SLIP_SHA, message });
+		return Response.json({ message: "unexpected" }, { status: 500 });
+	};
+const COMMITTED = readFileSync(
+	new URL("../../.hobo/ci.json", import.meta.url),
+	"utf8",
+);
+/** `.hobo/ci.json` with its `runnerRouting` changed. */
+const withRouting = (
+	change: (
+		routing: { -readonly [K in keyof RunnerRouting]: RunnerRouting[K] },
+	) => void,
+) => {
+	const project = JSON.parse(COMMITTED);
+	change(project.runnerRouting);
+	return JSON.stringify(project);
+};
+
+describe("the routing slip", () => {
+	const ask = (
+		message: string | undefined,
+		routeClassName: "pr" | "fork" | "trunk" = "pr",
+		overrides: { repository?: string; nowMs?: number } = {},
+	) =>
+		askSlip({
+			apiUrl: "https://api.github.test/",
+			repository: overrides.repository ?? "Hobo-Labs/HoBo",
+			token: "job-token",
+			labels: DEFAULT_RUNNER_LABELS,
+			routeClass: routeClassName,
+			nowMs: () => overrides.nowMs ?? SLIP_NOW,
+			fetch: slipApi(message),
 		});
 
-	it("is the default environment's relay origin", () => {
-		assert.equal(
-			parseRelayOrigin(project({ relayOrigin: "https://relay.example/" })),
-			"https://relay.example",
-		);
-	});
-
-	it("is HoBo's hosted relay in this repository", () => {
-		assert.equal(
-			parseRelayOrigin(
-				readFileSync(
-					new URL(`../../${RELAY_CONFIG_PATH}`, import.meta.url),
-					"utf8",
-				),
-			),
-			"https://hobo-ci.vercel.app",
-		);
-	});
-
-	it("is nothing when the file is missing, unreadable or names none", () => {
-		for (const text of [
-			undefined,
-			"",
-			"not json",
-			"[]",
-			"{}",
-			JSON.stringify({ defaultEnvironment: "ci", environments: {} }),
-			project({}),
-			project({ relayOrigin: "not a url" }),
-		])
-			assert.equal(parseRelayOrigin(text), undefined, String(text));
-	});
-
-	it("must be https, but for a loopback relay the environment allows", () => {
-		assert.equal(
-			parseRelayOrigin(project({ relayOrigin: "http://relay.example" })),
-			undefined,
-		);
-		assert.equal(
-			parseRelayOrigin(project({ relayOrigin: "http://127.0.0.1:8787" })),
-			undefined,
-		);
-		assert.equal(
-			parseRelayOrigin(
-				project({
-					relayOrigin: "http://127.0.0.1:8787",
-					allowInsecureLoopback: true,
-				}),
-			),
-			"http://127.0.0.1:8787",
-		);
-		assert.equal(
-			parseRelayOrigin(
-				project({
-					relayOrigin: "http://relay.example",
-					allowInsecureLoopback: true,
-				}),
-			),
-			undefined,
-		);
-		assert.equal(
-			parseRelayOrigin(
-				project({ relayOrigin: "https://user:key@relay.example" }),
-			),
-			undefined,
-		);
-	});
-});
-
-describe("the relay's verdict", () => {
-	it("is read from the answers the relay's contract pins", () => {
-		// Routing is the consumer of these two answers; the relay's provider
-		// suite proves it gives them.
-		const standing = pactAnswer("answer the standing verdict");
+	it("decides the run's class, and says whose slip it was", async () => {
+		const open = await ask(OPEN_SLIP, "trunk");
+		assert.ok(open.ok);
+		assert.deepEqual(open.decision, {
+			tier: "fleet",
+			runner: "hobo-trunk",
+			reason: "relay: slip from oracle-box-1@c7ec8d449, fleet-busy",
+			refusedBy: "none",
+			slip: {
+				kind: "used",
+				reason: "fleet-busy",
+				from: "oracle-box-1@c7ec8d449",
+			},
+		});
+		const refused = await ask(REFUSED_SLIP, "trunk");
+		assert.ok(refused.ok);
 		assert.deepEqual(
-			[...(parseFleetVerdict(standing.response.body, "Hobo-Labs/HoBo") ?? [])],
 			[
-				["hobo", "no-capacity"],
-				["hobo-trunk", "no-node"],
+				refused.decision.tier,
+				refused.decision.runner,
+				refused.decision.refusedBy,
+			],
+			["github", "ubuntu-24.04", "slip"],
+		);
+		assert.match(refused.decision.reason, /, stalled$/);
+	});
+
+	it("sends a fork pull request by its own class, never the trunk one", async () => {
+		const fork = await ask(REFUSED_SLIP, "fork");
+		assert.ok(fork.ok);
+		assert.deepEqual(
+			[fork.decision.runner, fork.decision.slip],
+			[
+				"ubuntu-24.04",
+				{
+					kind: "used",
+					reason: "no-node",
+					from: "oracle-box-1@fa092c44f0a1b2c3d4e5f60718293a4b5c6d7e8f",
+				},
 			],
 		);
-		const none = pactAnswer("answer a repository with no verdict");
-		assert.equal(
-			parseFleetVerdict(none.response.body, "hobo-labs/hobo")?.size,
-			0,
+		const pr = await ask(REFUSED_SLIP, "pr");
+		assert.ok(pr.ok);
+		assert.deepEqual(
+			[pr.decision.tier, pr.decision.runner],
+			["local", "hobo-local-host"],
 		);
 	});
 
-	it("is not read from an answer about another repository, or one that is not the record", () => {
-		const answers: readonly JsonValue[] = [
-			null,
-			"blocked",
-			[],
-			{},
-			{ repository: "hobo-labs/hobo" },
-			{ repository: "hobo-labs/hobo", blocked: [] },
-			{ repository: "hobo-labs/hobo", blocked: { hobo: "no-node" } },
-			{ repository: "hobo-labs/hobo", blocked: { hobo: {} } },
-			{ repository: "hobo-labs/hobo", blocked: { hobo: { reason: 7 } } },
-			// A reason is printed in the job's log: only a short plain token is one.
-			{
-				repository: "hobo-labs/hobo",
-				blocked: { hobo: { reason: "no-node\n::error::owned" } },
-			},
-			{ repository: "acme/app", blocked: { hobo: { reason: "no-node" } } },
-		];
-		for (const answer of answers)
-			assert.equal(
-				parseFleetVerdict(answer, "hobo-labs/hobo"),
-				undefined,
-				JSON.stringify(answer),
-			);
-	});
-
-	it("still blocks for a reason this reader has not seen", () => {
-		const blocked = parseFleetVerdict(
-			{ repository: "a/b", blocked: { hobo: { reason: "draining" } } },
-			"a/b",
-		);
-		assert.match(
-			relayRefusal(
-				{ kind: "verdict", blocked: blocked ?? new Map() },
-				"hobo",
-			) ?? "",
-			/the relay keeps new work off hobo: draining/,
-		);
-	});
-
-	it("refuses only a label it names", () => {
-		const answer = verdict({ hobo: "no-capacity", "hobo-trunk": "no-node" });
-		assert.equal(
-			relayRefusal(answer, "hobo"),
-			"the relay keeps new work off hobo: no node can admit a job and none has a free slot",
-		);
-		assert.equal(
-			relayRefusal(answer, "HOBO-TRUNK"),
-			"the relay keeps new work off HOBO-TRUNK: no live node serves it",
-		);
-		assert.equal(relayRefusal(answer, "hobo-local-host"), undefined);
-		for (const other of [
-			undefined,
-			OPEN,
-			{ kind: "unasked" },
-			{ kind: "unanswered", why: "it could not be reached" },
-		] as const)
-			assert.equal(relayRefusal(other, "hobo"), undefined);
-	});
-});
-
-describe("asking the relay", () => {
-	const ask = (
-		respond: (url: string, init: RequestInit) => Promise<Response> | Response,
-		target: { origin?: string | undefined; repository?: string } = {
-			origin: "https://relay.example",
-		},
-	) =>
-		askRelay({
-			origin: target.origin,
-			repository: target.repository ?? "Hobo-Labs/HoBo",
-			fetch: async (url, init) => respond(String(url), init ?? {}),
-		});
-
-	it("sends no credential when it gets the repository's verdict from the relay", async () => {
-		const standing = pactAnswer("answer the standing verdict");
-		const asked: { url: string; init: RequestInit }[] = [];
-		const answer = await ask((url, init) => {
-			asked.push({ url, init });
-			return Response.json(standing.response.body);
-		});
-		assert.equal(answer.kind, "verdict");
-		assert.equal(
-			answer.kind === "verdict" && answer.blocked.get("hobo"),
-			"no-capacity",
-		);
-		assert.equal(asked.length, 1);
-		assert.equal(
-			asked[0]?.url,
-			"https://relay.example/v1/fleet/verdicts/Hobo-Labs/HoBo",
-		);
-		assert.deepEqual(Object.fromEntries(new Headers(asked[0]?.init.headers)), {
-			accept: "application/json",
-		});
-		assert.equal(asked[0]?.init.redirect, "error");
-	});
-
-	it("does not ask when no relay is named, or the repository is not one", async () => {
-		const never = () => {
-			throw new Error("nothing should be asked");
-		};
-		const origin = "https://relay.example";
-		for (const target of [
-			{ origin: undefined },
-			{ origin, repository: "" },
-			{ origin, repository: "a/b/../c" },
-			{ origin, repository: "a/b?x=1" },
-			// Longer than any owner GitHub has: the relay would answer 404.
-			{ origin, repository: `${"a".repeat(40)}/b` },
-		])
-			assert.deepEqual(await ask(never, target), { kind: "unasked" });
-	});
-
-	it("asks for a managed user's repository, underscore and all", async () => {
+	it("is read with two GET calls and the job's own token, and none at all when absent", async () => {
 		const asked: string[] = [];
-		await ask(
-			(url) => {
-				asked.push(url);
-				return Response.json({ repository: "mona_corp/app", blocked: {} });
-			},
-			{ origin: "https://relay.example", repository: "Mona_Corp/App" },
-		);
+		const headers: Headers[] = [];
+		await askSlip({
+			apiUrl: "https://api.github.test",
+			repository: "Hobo-Labs/HoBo",
+			token: "job-token",
+			labels: DEFAULT_RUNNER_LABELS,
+			routeClass: "pr",
+			nowMs: () => SLIP_NOW,
+			fetch: slipApi(OPEN_SLIP, asked, headers),
+		});
 		assert.deepEqual(asked, [
-			"https://relay.example/v1/fleet/verdicts/Mona_Corp/App",
+			"https://api.github.test/repos/Hobo-Labs/HoBo/git/ref/hobo/routing-slip",
+			`https://api.github.test/repos/Hobo-Labs/HoBo/git/commits/${SLIP_SHA}`,
 		]);
+		for (const header of headers)
+			assert.equal(header.get("authorization"), "Bearer job-token");
+		assert.deepEqual(await ask(undefined), {
+			ok: false,
+			why: NO_ROUTING_SLIP,
+		});
 	});
 
-	it("drops the body of an answer it will not read, so nothing holds the job open", async () => {
-		let cancelled = false;
-		const answer = await ask(
-			() =>
-				new Response(
-					new ReadableStream({
-						cancel() {
-							cancelled = true;
-						},
-					}),
-					{ status: 503 },
-				),
-		);
-		assert.deepEqual(answer, { kind: "unanswered", why: "it answered 503" });
-		assert.equal(cancelled, true);
-	});
-
-	it("reads any failure as no verdict, and says which", async () => {
+	it("is never used expired, for another repository, naming a label the policy does not allow, or malformed", async () => {
+		/** The fields of the slip's wire record these cases change. */
+		type SlipRecord = {
+			version: number;
+			extra?: boolean;
+			classes: { pr: { runner: string; tier: string; reason: string } };
+		};
+		const slip = (change: (record: SlipRecord) => void) => {
+			const record = JSON.parse(OPEN_SLIP);
+			change(record);
+			return JSON.stringify(record);
+		};
 		assert.deepEqual(
-			await ask(() =>
-				Response.json({ error: "service unavailable" }, { status: 503 }),
-			),
-			{ kind: "unanswered", why: "it answered 503" },
-		);
-		assert.deepEqual(await ask(() => new Response("<html>")), {
-			kind: "unanswered",
-			why: "its answer was not a verdict",
-		});
-		assert.deepEqual(await ask(() => Response.json({ blocked: 1 })), {
-			kind: "unanswered",
-			why: "its answer was not a verdict",
-		});
-		assert.deepEqual(
-			await ask(() => {
-				throw new TypeError("fetch failed");
-			}),
-			{ kind: "unanswered", why: "it could not be reached" },
-		);
-		assert.deepEqual(
-			await ask(() => {
-				throw new DOMException("timed out", "TimeoutError");
-			}),
+			await ask(OPEN_SLIP, "pr", { nowMs: SLIP_NOW + 600_000 }),
 			{
-				kind: "unanswered",
-				why: `it did not answer in ${RELAY_VERDICT_TIMEOUT_SECONDS} s`,
+				ok: false,
+				why: "slip expired",
 			},
 		);
-	});
-
-	it("gives up on a relay that does not answer in time", async () => {
-		assert.equal(RELAY_VERDICT_TIMEOUT_SECONDS, 3);
-		// The timeout's own timer does not hold the process open; this does.
-		const awake = setTimeout(() => {}, 10_000);
-		const answer = await ask(
-			(_url, init) =>
-				new Promise<Response>((_resolve, reject) => {
-					assert.ok(init.signal);
-					init.signal.addEventListener("abort", () =>
-						reject(init.signal?.reason),
-					);
-				}),
-		);
-		clearTimeout(awake);
-		assert.deepEqual(answer, {
-			kind: "unanswered",
-			why: "it did not answer in 3 s",
+		assert.deepEqual(await ask(OPEN_SLIP, "pr", { repository: "acme/app" }), {
+			ok: false,
+			why: "slip names another repository",
 		});
-	});
-});
-
-describe("the routing decision with the relay's verdict", () => {
-	it("leaves a fleet the relay keeps work off at once, though the queue shows it taking jobs", () => {
-		assert.equal(decide().tier, "fleet");
-		const routed = decide({ relay: NO_CAPACITY });
-		assert.equal(routed.tier, "github");
-		assert.equal(routed.runner, "ubuntu-24.04");
-		assert.match(routed.reason, /the fleet has nothing waiting/);
-		assert.match(
-			routed.reason,
-			/the relay keeps new work off hobo: no node can admit a job and none has a free slot/,
-		);
-	});
-
-	it("leaves a fleet with no live node at once", () => {
-		const routed = decide({ relay: NO_NODE });
-		assert.equal(routed.tier, "github");
-		assert.match(routed.reason, /no live node serves it/);
-	});
-
-	it("judges the label this run would ask for", () => {
-		const answer = verdict({ "hobo-trunk": "no-node" });
-		assert.equal(decide({ relay: answer }).tier, "fleet");
-		assert.equal(
-			decide({ fleetLabel: "hobo-trunk", relay: answer }).tier,
-			"github",
-		);
 		assert.deepEqual(
-			decide({ fleetLabel: "hobo-trunk", relay: NO_NODE }),
-			decide({ fleetLabel: "hobo-trunk" }),
+			await ask(
+				slip((record) => {
+					record.classes.pr = {
+						runner: "attacker-box",
+						tier: "fleet",
+						reason: "fleet-open",
+					};
+				}),
+			),
+			{ ok: false, why: "slip names a label not in runnerRouting.labels" },
 		);
-	});
-
-	it("never makes a fleet look available: a verdict that blocks nothing does not outvote the queue", () => {
-		assert.deepEqual(decide({ relay: OPEN }), decide());
-		for (const fleet of [
-			idle,
-			{ ...up, queued: 4 },
-			{ ...up, oldestWaitSeconds: 900, queued: 1 },
+		for (const message of [
+			"not json",
+			slip((record) => {
+				record.version = 2;
+			}),
+			slip((record) => {
+				record.extra = true;
+			}),
 		])
-			assert.deepEqual(decide({ fleet, relay: OPEN }), decide({ fleet }));
+			assert.deepEqual(await ask(message), {
+				ok: false,
+				why: "slip malformed",
+			});
+	});
+
+	it("adds at most the three-second limit when GitHub does not answer (M3)", async () => {
+		// A GitHub API that never answers: only the read's own limit ends the wait.
+		const hanging: typeof fetch = (_url, init) =>
+			new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () =>
+					reject(init.signal?.reason),
+				);
+			});
+		const startedMs = performance.now();
+		const reading = await askSlip({
+			apiUrl: "https://api.github.test",
+			repository: "Hobo-Labs/HoBo",
+			token: "job-token",
+			labels: DEFAULT_RUNNER_LABELS,
+			routeClass: "pr",
+			nowMs: () => SLIP_NOW,
+			fetch: hanging,
+		});
+		const tookMs = performance.now() - startedMs;
+		assert.deepEqual(reading, {
+			ok: false,
+			why: "the routing slip was not read in time",
+		});
+		assert.equal(ROUTING_SLIP_READ_TIMEOUT_MS, 3_000);
+		assert.ok(tookMs < ROUTING_SLIP_READ_TIMEOUT_MS + 500, `took ${tookMs} ms`);
+	});
+
+	it("reads an API failure as no slip, and says which", async () => {
+		const failing: typeof fetch = async () =>
+			Response.json({ message: "boom" }, { status: 502 });
 		assert.deepEqual(
-			decide({ undecidedAhead: 2, relay: OPEN }),
-			decide({ undecidedAhead: 2 }),
+			await askSlip({
+				apiUrl: "https://api.github.test",
+				repository: "Hobo-Labs/HoBo",
+				token: "",
+				labels: DEFAULT_RUNNER_LABELS,
+				routeClass: "pr",
+				nowMs: () => SLIP_NOW,
+				fetch: failing,
+			}),
+			{ ok: false, why: "the routing slip could not be read (HTTP 502)" },
 		);
-	});
-
-	it("decides as without a relay when it was not asked", () => {
-		for (const load of [{}, { fleet: idle }, { fleet: { ...up, queued: 4 } }])
-			assert.deepEqual(
-				decide({ ...load, relay: { kind: "unasked" } }),
-				decide(load),
-			);
-	});
-
-	it("decides as without a relay when it gave no verdict, and says it did not", () => {
-		const relay = { kind: "unanswered", why: "it answered 503" } as const;
-		for (const load of [{}, { fleet: idle }, { fleet: { ...up, queued: 4 } }]) {
-			const routed = decide({ ...load, relay });
-			const alone = decide(load);
-			assert.deepEqual(
-				[routed.tier, routed.runner],
-				[alone.tier, alone.runner],
-			);
-			assert.match(
-				routed.reason,
-				/the relay gave no verdict \(it answered 503\)/,
-			);
-		}
-	});
-
-	it("passes over a local box the relay keeps work off, and one it does not name is judged by the queue", () => {
-		const local = {
-			localEnrolled: true,
-			fleet: { ...up, queued: 4 },
-		};
-		assert.equal(decide({ ...local, relay: OPEN }).tier, "local");
-		assert.equal(
-			decide({ ...local, relay: verdict({ "hobo-local-host": "no-node" }) })
-				.tier,
-			"github",
-		);
-	});
-
-	it("goes to the local box when the relay keeps work off the fleet", () => {
-		const routed = decide({ localEnrolled: true, relay: NO_CAPACITY });
-		assert.equal(routed.tier, "local");
-	});
-
-	it("does not move a pinned tier", () => {
-		assert.equal(decide({ mode: "fleet", relay: NO_NODE }).runner, "hobo");
-		assert.equal(
-			decide({ mode: "local", relay: NO_NODE }).runner,
-			"hobo-local-host",
-		);
-	});
-});
-
-describe("the fleet label a run asks for", () => {
-	it("is the trunk label for trunk events unless that is switched off", () => {
-		assert.equal(fleetLabelFor("pull_request", undefined), "hobo");
-		assert.equal(fleetLabelFor("merge_group", undefined), "hobo-trunk");
-		assert.equal(fleetLabelFor("push", ""), "hobo-trunk");
-		assert.equal(fleetLabelFor("push", "false"), "hobo");
 	});
 });
 
@@ -1078,13 +972,10 @@ describe("waiting for the probe", () => {
 		views: readonly QueueView[],
 		overrides: {
 			localEnrolled?: boolean;
-			/** What the relay answers on each look; the last one repeats. */
-			relay?: readonly RelayAnswer[];
 		} = {},
 	) => {
 		let clock = NOW;
 		let looks = 0;
-		let asked = 0;
 		const decision = await chooseRunner({
 			observe: async () => {
 				const view = views[Math.min(looks, views.length - 1)];
@@ -1100,15 +991,8 @@ describe("waiting for the probe", () => {
 			fleetLabel: "hobo",
 			localEnrolled: overrides.localEnrolled ?? false,
 			limits,
-			askRelay: async () => {
-				const answers = overrides.relay ?? [{ kind: "unasked" } as const];
-				asked += 1;
-				const answer = answers[Math.min(asked, answers.length) - 1];
-				assert.ok(answer);
-				return answer;
-			},
 		});
-		return { decision, looks, asked, waited: (clock - NOW) / 1000 };
+		return { decision, looks, waited: (clock - NOW) / 1000 };
 	};
 	const quiet = { jobs: [], undecidedAhead: 0, probeUnderway: false };
 	const probing = { ...quiet, probeUnderway: true };
@@ -1171,39 +1055,6 @@ describe("waiting for the probe", () => {
 		);
 	});
 
-	it("does not wait for the probe on a fleet the relay keeps work off", async () => {
-		// A probe being picked up would not change what the relay decided.
-		const seen = await choose([probing], { relay: [NO_CAPACITY] });
-		assert.deepEqual([seen.decision.tier, seen.waited], ["github", 0]);
-		assert.match(seen.decision.reason, /the relay keeps new work off hobo/);
-	});
-
-	it("waits for the probe as before when the relay blocks nothing, or gave no verdict", async () => {
-		for (const answer of [
-			OPEN,
-			{ kind: "unanswered", why: "it could not be reached" } as const,
-		]) {
-			const seen = await choose([probing, probing, answered], {
-				relay: [answer],
-			});
-			assert.equal(seen.decision.tier, "fleet");
-			assert.equal(seen.waited, 2 * PROBE_POLL_SECONDS);
-		}
-	});
-
-	it("asks the relay afresh on every look, not once", async () => {
-		// Nothing blocked at first, so the probe is waited on; then the relay
-		// keeps work off the fleet, and the wait ends there.
-		const seen = await choose([probing, probing, answered], {
-			relay: [OPEN, NO_NODE],
-		});
-		assert.deepEqual(
-			[seen.decision.tier, seen.looks, seen.asked],
-			["github", 2, 2],
-		);
-		assert.equal(seen.waited, PROBE_POLL_SECONDS);
-	});
-
 	it("falls back to the local box when the probe finds only that", async () => {
 		const seen = await choose(
 			[probing, { ...probing, jobs: [taken("hobo-local-host", 8, -5)] }],
@@ -1214,449 +1065,514 @@ describe("waiting for the probe", () => {
 	});
 });
 
-/** A project file naming a relay, as `.hobo/ci.json` does. */
-const RELAY_CONFIG = JSON.stringify({
-	defaultEnvironment: "ci",
-	environments: { ci: { relayOrigin: "https://relay.example" } },
-});
+/** GitHub's REST API on a local port, answering each path from `answer`. */
+const withGithub = async <T>(
+	answer: (path: string) => JsonValue,
+	run: (apiUrl: string) => Promise<T>,
+) => {
+	const server = createServer((request, response) => {
+		response.setHeader("content-type", "application/json");
+		response.end(JSON.stringify(answer(request.url ?? "")));
+	});
+	await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+	// SAFETY: a server listening on a TCP port reports an AddressInfo.
+	const { port } = server.address() as AddressInfo;
+	try {
+		return await run(`http://127.0.0.1:${port}`);
+	} finally {
+		await new Promise((done) => server.close(done));
+	}
+};
 
-/**
- * A named relay that must not be called: these decisions are made without
- * it, and without this a mistake would ask the real relay `.hobo/ci.json` names.
- */
-const NO_RELAY_CALL = {
-	relayConfig: RELAY_CONFIG,
+/** No routing slip: the relay has written none. */
+const NO_SLIP = { routingConfig: COMMITTED, fetch: slipApi(undefined) };
+/** A slip must not be read here: a pinned or attested run decides without it. */
+const NO_SLIP_CALL = {
+	routingConfig: COMMITTED,
 	fetch: async (): Promise<never> => {
-		throw new Error("the relay must not be asked here");
+		throw new Error("the slip must not be read here");
 	},
 };
 
+/** The lines the script printed, and its decision. */
+const printedBy = async (
+	run: () => Promise<RouteDecision>,
+): Promise<{ decision: RouteDecision; lines: string[] }> => {
+	const lines: string[] = [];
+	const log = console.log;
+	console.log = (...parts: unknown[]) => {
+		lines.push(parts.map(String).join(" "));
+	};
+	try {
+		return { decision: await run(), lines };
+	} finally {
+		console.log = log;
+	}
+};
+const noticesIn = (lines: readonly string[]) =>
+	lines.filter((line) => line.startsWith("::notice title=hobo-ci-route::"));
+const warningsIn = (lines: readonly string[]) =>
+	lines.filter((line) =>
+		line.startsWith("::warning title=hobo-ci-route-fallback::"),
+	);
+/** The `hobo-ci-route` notice a decision should print, field by field. */
+const notice = (fields: {
+	workflow?: string;
+	tier: string;
+	runner: string;
+	slip: string;
+	why: string;
+	refusedBy: string;
+}) =>
+	`::notice title=hobo-ci-route::${JSON.stringify({
+		v: 2,
+		workflow: fields.workflow ?? "",
+		tier: fields.tier,
+		runner: fields.runner,
+		slip: fields.slip,
+		why: fields.why,
+		refusedBy: fields.refusedBy,
+	})}`;
+
+describe("the committed routing policy the route job reads", () => {
+	it("holds the code's defaults, so moving them out of variables changed nothing", () => {
+		const { committed, ...fromFile } = routeSettings(
+			readRunnerRouting(COMMITTED),
+		);
+		const { committed: fromCode, ...defaults } = routeSettings(undefined);
+		assert.deepEqual([committed, fromCode], [true, false]);
+		assert.deepEqual(fromFile, defaults);
+		assert.equal(defaults.localRunner, DEFAULT_LOCAL_RUNNER);
+	});
+
+	it("counts no slip and an expired slip as absent, every other refusal as unusable", () => {
+		assert.deepEqual(ABSENT_SLIP_WHYS, [
+			NO_ROUTING_SLIP,
+			SLIP_REFUSAL_WHY.expired,
+		]);
+	});
+});
+
 describe("the script as a whole", () => {
-	it("uses GitHub-hosted, and says why, when the queue cannot be read", async () => {
-		const decision = await main(
-			{
-				GITHUB_EVENT_NAME: "merge_group",
-				GITHUB_REPOSITORY: "acme/app",
-				GITHUB_RUN_ID: "1",
-				GITHUB_API_URL: "http://127.0.0.1:9",
-			},
-			NO_RELAY_CALL,
+	it("uses GitHub-hosted, and says why, when there is no slip and the queue cannot be read", async () => {
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{
+					GITHUB_EVENT_NAME: "merge_group",
+					GITHUB_REPOSITORY: "acme/app",
+					GITHUB_RUN_ID: "1",
+					GITHUB_API_URL: "http://127.0.0.1:9",
+				},
+				NO_SLIP,
+			),
 		);
 		assert.equal(decision.runner, "ubuntu-24.04");
 		assert.equal(decision.tier, "github");
 		assert.match(decision.reason, /could not be read/);
+		assert.deepEqual(warningsIn(lines), [
+			"::warning title=hobo-ci-route-fallback::routing slip not used (no routing slip); the queue rule decides",
+		]);
 	});
 
-	it("does not read the queue for a pinned tier", async () => {
+	it("does not read the slip or the queue for a tier pinned by argument", async () => {
 		const pinned = await main(
+			["--route", "fleet"],
 			{
 				GITHUB_EVENT_NAME: "merge_group",
-				HOBO_CI_ROUTE: "fleet",
 				GITHUB_API_URL: "http://127.0.0.1:9",
 			},
-			NO_RELAY_CALL,
+			NO_SLIP_CALL,
 		);
 		assert.equal(pinned.runner, "hobo-trunk");
 		const hosted = await main(
+			["--route=github"],
 			{
 				GITHUB_EVENT_NAME: "pull_request",
-				HOBO_CI_ROUTE: "github",
 				GITHUB_API_URL: "http://127.0.0.1:9",
 			},
-			NO_RELAY_CALL,
+			NO_SLIP_CALL,
 		);
 		assert.equal(hosted.runner, "ubuntu-24.04");
-	});
-
-	it("keeps a pinned fleet on the fleet without asking the relay", async () => {
-		const pinned = await main(
+		const fleet = await main(
+			["--route", "fleet"],
 			{
 				GITHUB_EVENT_NAME: "pull_request",
 				GITHUB_REPOSITORY: "acme/app",
-				HOBO_CI_ROUTE: "fleet",
 				GITHUB_API_URL: "http://127.0.0.1:9",
 			},
-			NO_RELAY_CALL,
+			NO_SLIP_CALL,
 		);
-		assert.deepEqual([pinned.tier, pinned.runner], ["fleet", "hobo"]);
+		assert.deepEqual([fleet.tier, fleet.runner], ["fleet", "hobo"]);
 	});
 
-	it("sends what is left of an attested run to GitHub-hosted without reading the queue", async () => {
+	it("follows the committed pin and labels, and a dispatch's own choice over them", async () => {
+		const env = {
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_API_URL: "http://127.0.0.1:9",
+		};
+		const pinnedLocal = withRouting((routing) => {
+			routing.pin = "local";
+			routing.labels = {
+				fleet: "acme",
+				trunk: "acme-trunk",
+				local: "acme-local",
+				github: "ubuntu-24.04",
+				box: "acme-box",
+			};
+		});
+		const local = await main([], env, {
+			...NO_SLIP_CALL,
+			routingConfig: pinnedLocal,
+		});
+		assert.deepEqual([local.tier, local.runner], ["local", "acme-local"]);
+		const dispatched = await main(["--route", "fleet"], env, {
+			...NO_SLIP_CALL,
+			routingConfig: pinnedLocal,
+		});
+		assert.deepEqual(
+			[dispatched.tier, dispatched.runner],
+			["fleet", "acme-trunk"],
+		);
+	});
+
+	it("uses the code's defaults, and says so, when .hobo/ci.json has no runnerRouting", async () => {
+		const decision = await main(
+			["--route", "fleet"],
+			{ GITHUB_EVENT_NAME: "push" },
+			{ ...NO_SLIP_CALL, routingConfig: "{}" },
+		);
+		assert.equal(decision.runner, "hobo-trunk");
+		assert.match(
+			decision.reason,
+			/\.hobo\/ci\.json holds no valid runnerRouting, so the code's defaults apply/,
+		);
+	});
+
+	it("sends what is left of an attested run to GitHub-hosted without reading the slip or the queue", async () => {
 		const attested = await main(
+			["--attested", "true"],
 			{
 				GITHUB_EVENT_NAME: "merge_group",
-				HOBO_CI_ATTESTED: "true",
 				GITHUB_API_URL: "http://127.0.0.1:9",
 			},
-			NO_RELAY_CALL,
+			NO_SLIP_CALL,
 		);
 		assert.equal(attested.runner, "ubuntu-24.04");
 		assert.equal(attested.tier, "github");
 		assert.match(attested.reason, /signed local run/);
 		// A pin is an operator's override: it still wins.
 		const pinned = await main(
+			["--attested", "true", "--route", "fleet"],
 			{
 				GITHUB_EVENT_NAME: "merge_group",
-				HOBO_CI_ATTESTED: "true",
-				HOBO_CI_ROUTE: "fleet",
 				GITHUB_API_URL: "http://127.0.0.1:9",
 			},
-			NO_RELAY_CALL,
+			NO_SLIP_CALL,
 		);
 		assert.equal(pinned.runner, "hobo-trunk");
 		// Anything but the literal `true` is not an attestation.
 		const unattested = await main(
+			["--attested", "false"],
 			{
 				GITHUB_EVENT_NAME: "pull_request",
-				HOBO_CI_ATTESTED: "false",
 				GITHUB_REPOSITORY: "acme/app",
 				GITHUB_RUN_ID: "1",
 				GITHUB_API_URL: "http://127.0.0.1:9",
 			},
-			NO_RELAY_CALL,
+			NO_SLIP,
 		);
 		assert.match(unattested.reason, /could not be read/);
 	});
+
+	it("writes runner, tier and shard_runner as step outputs", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-route-output-"));
+		try {
+			const output = join(dir, "output");
+			writeFileSync(output, "");
+			await main(
+				["--route", "fleet"],
+				{ GITHUB_EVENT_NAME: "push", GITHUB_OUTPUT: output },
+				NO_SLIP_CALL,
+			);
+			assert.equal(
+				readFileSync(output, "utf8"),
+				"box_runner=\nrunner=hobo-trunk\ntier=fleet\nshard_runner=hobo-trunk\n",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("names the box label for the deps-image job only when committed boxRunner is on", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-route-box-"));
+		try {
+			const output = join(dir, "output");
+			const run = async (config: string | undefined) => {
+				writeFileSync(output, "");
+				await main(
+					["--route", "fleet"],
+					{ GITHUB_EVENT_NAME: "pull_request", GITHUB_OUTPUT: output },
+					{ ...NO_SLIP_CALL, routingConfig: config },
+				);
+				return readFileSync(output, "utf8").split("\n")[0];
+			};
+			// Today's behaviour: the committed policy and the code's default leave it off.
+			assert.equal(await run(withRouting(() => {})), "box_runner=");
+			assert.equal(await run("{}"), "box_runner=");
+			assert.equal(
+				await run(
+					withRouting((routing) => {
+						routing.boxRunner = true;
+					}),
+				),
+				"box_runner=hobo-box",
+			);
+			assert.equal(
+				await run(
+					withRouting((routing) => {
+						routing.boxRunner = true;
+						routing.labels = { ...routing.labels, box: "acme-box" };
+					}),
+				),
+				"box_runner=acme-box",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
-describe("the script asking the relay", () => {
+describe("the script reading the slip", () => {
 	/** GitHub's queue with a runner that took the probe's `hobo` job a minute ago. */
-	const withFleetUp = async <T>(run: (apiUrl: string) => Promise<T>) => {
+	const fleetUpPages = (path: string): JsonValue => {
 		const ago = (seconds: number) =>
-			new Date(Date.now() - seconds * 1000).toISOString();
-		const server = createServer((request, response) => {
-			const page = request.url?.includes("/jobs")
-				? {
-						jobs: [
-							{
-								run_id: 40,
-								status: "completed",
-								labels: ["hobo"],
-								runner_name: "hobo-1",
-								created_at: ago(65),
-								started_at: ago(60),
-							},
-						],
-					}
-				: {
-						workflow_runs: [
-							{
-								id: 40,
-								path: PROBE_WORKFLOW_PATH,
-								status: "completed",
-								created_at: ago(65),
-								updated_at: ago(50),
-							},
-						],
-					};
-			response.setHeader("content-type", "application/json");
-			response.end(JSON.stringify(page));
-		});
-		await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-		// SAFETY: a server listening on a TCP port reports an AddressInfo.
-		const { port } = server.address() as AddressInfo;
-		try {
-			return await run(`http://127.0.0.1:${port}`);
-		} finally {
-			await new Promise((done) => server.close(done));
-		}
+			new Date(SLIP_NOW - seconds * 1000).toISOString();
+		return path.includes("/jobs")
+			? {
+					jobs: [
+						{
+							run_id: 40,
+							status: "completed",
+							labels: ["hobo"],
+							runner_name: "hobo-1",
+							created_at: ago(65),
+							started_at: ago(60),
+						},
+					],
+				}
+			: {
+					workflow_runs: [
+						{
+							id: 40,
+							path: PROBE_WORKFLOW_PATH,
+							status: "completed",
+							created_at: ago(65),
+							updated_at: ago(50),
+						},
+					],
+				};
 	};
 	const route = (
 		apiUrl: string,
-		relay: (url: string) => Response,
-		project: { relayConfig: string | undefined } = {
-			relayConfig: RELAY_CONFIG,
-		},
-	) => {
-		const asked: string[] = [];
-		return main(
-			{
-				GITHUB_EVENT_NAME: "pull_request",
-				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
-				GITHUB_RUN_ID: "51",
-				GITHUB_API_URL: apiUrl,
-			},
-			{
-				relayConfig: project.relayConfig,
-				fetch: async (url) => {
-					asked.push(String(url));
-					return relay(String(url));
-				},
-			},
-		).then((decision) => ({ decision, asked }));
-	};
-
-	it("leaves the fleet when the relay it asked keeps work off the run's label", async () => {
-		await withFleetUp(async (apiUrl) => {
-			const standing = pactAnswer("answer the standing verdict");
-			const { decision, asked } = await route(apiUrl, () =>
-				Response.json(standing.response.body),
-			);
-			assert.deepEqual(asked, [
-				"https://relay.example/v1/fleet/verdicts/Hobo-Labs/HoBo",
-			]);
-			assert.deepEqual(
-				[decision.tier, decision.runner],
-				["github", "ubuntu-24.04"],
-			);
-			assert.match(decision.reason, /the relay keeps new work off hobo/);
-		});
-	});
-
-	it("stays on the fleet when the relay blocks nothing", async () => {
-		await withFleetUp(async (apiUrl) => {
-			const none = pactAnswer("answer a repository with no verdict");
-			const { decision } = await route(apiUrl, () =>
-				Response.json(none.response.body),
-			);
-			assert.equal(decision.tier, "fleet");
-			assert.doesNotMatch(decision.reason, /relay/);
-		});
-	});
-
-	it("stays on the fleet, and says the relay gave no verdict, when it fails", async () => {
-		await withFleetUp(async (apiUrl) => {
-			const { decision } = await route(apiUrl, () =>
-				Response.json({ error: "service unavailable" }, { status: 503 }),
-			);
-			assert.equal(decision.tier, "fleet");
-			assert.match(
-				decision.reason,
-				/the relay gave no verdict \(it answered 503\)/,
-			);
-		});
-	});
-
-	it("asks no one when the project names no relay", async () => {
-		await withFleetUp(async (apiUrl) => {
-			const { decision, asked } = await route(
-				apiUrl,
-				() => {
-					throw new Error("no relay is named");
-				},
-				{ relayConfig: undefined },
-			);
-			assert.deepEqual(asked, []);
-			assert.equal(decision.tier, "fleet");
-		});
-	});
-
-	it("takes nothing about the fleet from the environment", async () => {
-		// What a worker once published for routing, handed over the old way.
-		await withFleetUp(async (apiUrl) => {
-			const decision = await main(
+		message: string | undefined,
+		env: Record<string, string> = {},
+		argv: string[] = [],
+	) =>
+		printedBy(() =>
+			main(
+				argv,
 				{
 					GITHUB_EVENT_NAME: "pull_request",
 					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
 					GITHUB_RUN_ID: "51",
 					GITHUB_API_URL: apiUrl,
-					HOBO_CI_FLEET_STATE: JSON.stringify({
-						publishedAt: new Date().toISOString(),
-						labels: { hobo: { nodes: 0, trustedNodes: 0, freeSlots: 0 } },
-					}),
-					HOBO_CI_FLEET_CAPACITY: JSON.stringify({
-						version: 1,
-						admittedParallel: 0,
-						hobo: { freeSlots: 0 },
-						arc: { freeSlots: 0 },
-						trunkMemoryAdmit: false,
-						publishedAt: new Date().toISOString(),
-					}),
+					...env,
 				},
-				{ relayConfig: undefined },
-			);
-			assert.equal(decision.tier, "fleet");
-		});
-	});
-
-	/** The `hobo-ci-route` notice a decision should print, field by field. */
-	const notice = (fields: {
-		workflow?: string;
-		tier: string;
-		runner: string;
-		relay: string;
-		why: string;
-		refusedBy: string;
-	}) =>
-		`::notice title=hobo-ci-route::${JSON.stringify({
-			v: 1,
-			workflow: fields.workflow ?? "",
-			tier: fields.tier,
-			runner: fields.runner,
-			relay: fields.relay,
-			why: fields.why,
-			refusedBy: fields.refusedBy,
-		})}`;
-	/** The `hobo-ci-route` notices the script printed. */
-	const noticesOf = async (
-		run: () => Promise<RouteDecision | Readonly<{ decision: RouteDecision }>>,
-	): Promise<string[]> => {
-		const printed: string[] = [];
-		const log = console.log;
-		console.log = (...parts: unknown[]) => {
-			printed.push(parts.map(String).join(" "));
-		};
-		try {
-			await run();
-		} finally {
-			console.log = log;
-		}
-		return printed.filter((line) =>
-			line.startsWith("::notice title=hobo-ci-route::"),
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: slipApi(message),
+					now: () => SLIP_NOW,
+				},
+			),
 		);
-	};
-	const hosted = { tier: "github", runner: "ubuntu-24.04" };
-	const fleet = { tier: "fleet", runner: "hobo" };
 
-	it("annotates a decision the relay's verdict made", async () => {
-		await withFleetUp(async (apiUrl) => {
-			const standing = pactAnswer("answer the standing verdict");
-			assert.deepEqual(
-				await noticesOf(() =>
-					route(apiUrl, () => Response.json(standing.response.body)),
-				),
-				[notice({ ...hosted, relay: "verdict", why: "", refusedBy: "relay" })],
-			);
-		});
+	it("lets a usable slip decide without reading the queue", async () => {
+		// The queue cannot be read here: only the slip can have decided.
+		const { decision, lines } = await route("http://127.0.0.1:9", REFUSED_SLIP);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["local", "hobo-local-host", "slip"],
+		);
+		assert.match(
+			decision.reason,
+			/^relay: slip from oracle-box-1@fa092c44f\w*, no-capacity$/,
+		);
+		assert.deepEqual(warningsIn(lines), []);
+		assert.deepEqual(noticesIn(lines), [
+			notice({
+				tier: "local",
+				runner: "hobo-local-host",
+				slip: "used",
+				why: "no-capacity",
+				refusedBy: "slip",
+			}),
+		]);
 	});
 
-	it("annotates a relay that gave no verdict, and why", async () => {
-		await withFleetUp(async (apiUrl) => {
-			assert.deepEqual(
-				await noticesOf(() =>
-					route(apiUrl, () =>
-						Response.json({ error: "service unavailable" }, { status: 503 }),
-					),
-				),
+	it("keeps a busy fleet the slip names, whatever the queue shows (R4)", async () => {
+		const { decision } = await route("http://127.0.0.1:9", OPEN_SLIP, {
+			GITHUB_EVENT_NAME: "push",
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", "hobo-trunk", "none"],
+		);
+		assert.match(decision.reason, /fleet-busy/);
+	});
+
+	it("routes a fork pull request by the slip's fork class", async () => {
+		const { decision } = await printedBy(() =>
+			main(
+				[],
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_API_URL: "http://127.0.0.1:9",
+				},
+				{
+					routingConfig: COMMITTED,
+					eventPayload: {
+						pull_request: {
+							head: { repo: { full_name: "someone/HoBo" } },
+							base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+						},
+					},
+					fetch: slipApi(REFUSED_SLIP),
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["github", "ubuntu-24.04"],
+		);
+		assert.match(decision.reason, /no-node$/);
+	});
+
+	it("falls back to the queue at once, and says why, when no slip can be used", async () => {
+		await withGithub(fleetUpPages, async (apiUrl) => {
+			const expired = JSON.parse(OPEN_SLIP);
+			expired.expiresAt = "2026-11-13T16:00:30.000Z";
+			for (const [message, why] of [
+				[undefined, "no routing slip"],
+				[JSON.stringify(expired), "slip expired"],
 				[
+					OPEN_SLIP.replace('"hobo-trunk"', '"elsewhere"'),
+					"slip names a label not in runnerRouting.labels",
+				],
+				["{}", "slip malformed"],
+			] as const) {
+				const { decision, lines } = await route(apiUrl, message);
+				// What the queue alone decides: the fleet took the probe a minute ago.
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo", "none"],
+					why,
+				);
+				assert.deepEqual(warningsIn(lines), [
+					`::warning title=hobo-ci-route-fallback::routing slip not used (${why}); the queue rule decides`,
+				]);
+				assert.deepEqual(noticesIn(lines), [
 					notice({
-						...fleet,
-						relay: "unanswered",
-						why: "it answered 503",
+						tier: "fleet",
+						runner: "hobo",
+						slip: "fallback",
+						why,
 						refusedBy: "none",
 					}),
-				],
-			);
+				]);
+			}
 		});
 	});
 
-	it("annotates why the relay was not asked", async () => {
-		await withFleetUp(async (apiUrl) => {
-			assert.deepEqual(
-				await noticesOf(() =>
-					route(apiUrl, () => Response.json({}), { relayConfig: undefined }),
-				),
-				[
-					notice({
-						...fleet,
-						relay: "unasked",
-						why: "no-relay",
-						refusedBy: "none",
-					}),
-				],
-			);
+	it("takes nothing about routing from the environment", async () => {
+		// What a repository variable or a worker once handed over the old way.
+		await withGithub(fleetUpPages, async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, {
+				HOBO_CI_ROUTE: "github",
+				HOBO_CI_LOCAL_RUNNER: "true",
+				HOBO_CI_TRUNK_RUNNER: "false",
+				HOBO_CI_ROUTE_MAX_WAIT_SECONDS: "1",
+				HOBO_CI_ROUTE_MAX_QUEUED: "1",
+				HOBO_CI_INCLUDE_OWN_RUN: "true",
+				HOBO_CI_ATTESTED: "true",
+				HOBO_CI_FLEET_STATE: JSON.stringify({
+					labels: { hobo: { nodes: 0, freeSlots: 0 } },
+				}),
+			});
+			assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
 		});
-		const env = {
-			GITHUB_EVENT_NAME: "push",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-			GITHUB_WORKFLOW_REF:
-				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
-		};
-		const unasked = (why: string, refusedBy: string) => [
-			notice({
-				workflow: "hobo-ci.yml",
-				...hosted,
-				relay: "unasked",
-				why,
-				refusedBy,
-			}),
-		];
-		assert.deepEqual(
-			await noticesOf(() =>
-				main({ ...env, HOBO_CI_ROUTE: "github" }, NO_RELAY_CALL),
-			),
-			unasked("pinned", "none"),
-		);
-		assert.deepEqual(
-			await noticesOf(() =>
-				main({ ...env, HOBO_CI_ATTESTED: "true" }, NO_RELAY_CALL),
-			),
-			unasked("attested", "none"),
-		);
-		assert.deepEqual(
-			await noticesOf(() =>
-				main(
-					{ ...env, GITHUB_REPOSITORY: "acme/app", GITHUB_RUN_ID: "1" },
-					NO_RELAY_CALL,
-				),
-			),
-			unasked("queue-unread", "queue"),
+		assert.doesNotMatch(
+			readFileSync(new URL("../ci/route-runner.mts", import.meta.url), "utf8"),
+			/env\.(HOBO_CI_|MAIN_WORKSPACE)/,
 		);
 	});
 
-	it("says no-relay whenever no relay is named, whatever else happened", async () => {
+	it("annotates why no slip was read for a pinned or attested run", async () => {
 		const env = {
 			GITHUB_EVENT_NAME: "push",
 			GITHUB_API_URL: "http://127.0.0.1:9",
-			GITHUB_WORKFLOW_REF:
-				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
-		};
-		const noRelay = { ...NO_RELAY_CALL, relayConfig: undefined };
-		const unasked = (refusedBy: string) => [
-			notice({
-				workflow: "hobo-ci.yml",
-				...hosted,
-				relay: "unasked",
-				why: "no-relay",
-				refusedBy,
-			}),
-		];
-		assert.deepEqual(
-			await noticesOf(() =>
-				main(
-					{ ...env, GITHUB_REPOSITORY: "acme/app", GITHUB_RUN_ID: "1" },
-					noRelay,
-				),
-			),
-			unasked("queue"),
-		);
-		assert.deepEqual(
-			await noticesOf(() => main({ ...env, HOBO_CI_ROUTE: "github" }, noRelay)),
-			unasked("none"),
-		);
-		assert.deepEqual(
-			await noticesOf(() =>
-				main({ ...env, HOBO_CI_ATTESTED: "true" }, noRelay),
-			),
-			unasked("none"),
-		);
-	});
-
-	it("says queue-unread only when a relay is named and the queue cannot be read", async () => {
-		const env = {
-			GITHUB_EVENT_NAME: "push",
-			GITHUB_API_URL: "http://127.0.0.1:9",
-			GITHUB_REPOSITORY: "acme/app",
-			GITHUB_RUN_ID: "1",
 			GITHUB_WORKFLOW_REF:
 				"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
 		};
 		const unasked = (why: string) => [
 			notice({
 				workflow: "hobo-ci.yml",
-				...hosted,
-				relay: "unasked",
+				tier: "github",
+				runner: "ubuntu-24.04",
+				slip: "unasked",
 				why,
-				refusedBy: "queue",
+				refusedBy: "none",
 			}),
 		];
 		assert.deepEqual(
-			await noticesOf(() => main(env, NO_RELAY_CALL)),
-			unasked("queue-unread"),
+			noticesIn(
+				(await printedBy(() => main(["--route", "github"], env, NO_SLIP_CALL)))
+					.lines,
+			),
+			unasked("pinned"),
 		);
 		assert.deepEqual(
-			await noticesOf(() => main(env, { relayConfig: undefined })),
-			unasked("no-relay"),
+			noticesIn(
+				(await printedBy(() => main(["--attested", "true"], env, NO_SLIP_CALL)))
+					.lines,
+			),
+			unasked("attested"),
+		);
+		assert.deepEqual(
+			noticesIn(
+				(
+					await printedBy(() =>
+						main(
+							[],
+							{ ...env, GITHUB_REPOSITORY: "acme/app", GITHUB_RUN_ID: "1" },
+							NO_SLIP,
+						),
+					)
+				).lines,
+			),
+			[
+				notice({
+					workflow: "hobo-ci.yml",
+					tier: "github",
+					runner: "ubuntu-24.04",
+					slip: "fallback",
+					why: "no routing slip",
+					refusedBy: "queue",
+				}),
+			],
 		);
 	});
 });
@@ -1665,18 +1581,18 @@ describe("the route notice", () => {
 	it("is one line a workflow command cannot cut short", () => {
 		const line = routeAnnotation(
 			{
-				tier: "fleet",
-				runner: "hobo",
+				tier: "github",
+				runner: "ubuntu-24.04",
 				reason: "",
-				relay: { kind: "unanswered", why: "100% down\nnext" },
+				refusedBy: "queue",
+				slip: { kind: "fallback", why: "100% down\nnext" },
 			},
 			"hobo-ci.yml",
-			"no-relay",
 		);
 		assert.doesNotMatch(line, /\n|\r/);
-		assert.match(line, /^::notice title=hobo-ci-route::\{"v":1,/);
+		assert.match(line, /^::notice title=hobo-ci-route::\{"v":2,/);
 		assert.match(line, /100%25 down/);
-		assert.match(line, /"refusedBy":"none"/);
+		assert.match(line, /"refusedBy":"queue"/);
 	});
 
 	it("names the workflow file the run belongs to", () => {
@@ -1691,6 +1607,132 @@ describe("the route notice", () => {
 			workflowFile({ GITHUB_WORKFLOW: "HoBo CI Fabric" }),
 			"HoBo CI Fabric",
 		);
+	});
+});
+
+/**
+ * Run 43354645076 (push fa092c44f, 2026-11-13; finding 0149) as the route
+ * job saw it: the fleet had one trunk job waiting 356 s and had taken up to
+ * 307 s to pick one up in the last hour; the hosted relay answered 503. The
+ * queue refused the fleet and the run went to GitHub-hosted.
+ */
+describe("replaying the recorded production cases with no slip (M5)", () => {
+	const at = (time: string) => `2026-11-13T${time}Z`;
+	const NOW_149 = Date.parse(at("02:48:19"));
+	const RUN = 43354645076;
+	const pages = (path: string): JsonValue => {
+		if (!path.includes("/jobs"))
+			return {
+				workflow_runs: [
+					{
+						id: RUN,
+						status: "in_progress",
+						created_at: at("02:48:05"),
+						updated_at: at("02:48:11"),
+					},
+					{
+						id: RUN - 9,
+						status: "in_progress",
+						created_at: at("02:30:00"),
+						updated_at: at("02:42:23"),
+					},
+					{
+						id: RUN - 30,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: at("02:40:00"),
+						updated_at: at("02:40:10"),
+					},
+				],
+			};
+		const runId = Number(/\/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+		// The running main run: a trunk job a runner took after 307 s, and one
+		// still waiting since 02:42:23.
+		if (runId === RUN - 9)
+			return {
+				jobs: [
+					{
+						run_id: runId,
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-4c1d9e2a",
+						created_at: at("02:20:00"),
+						started_at: at("02:25:07"),
+					},
+					{
+						run_id: runId,
+						status: "queued",
+						labels: ["hobo-trunk"],
+						created_at: at("02:42:23"),
+					},
+				],
+			};
+		// The probe: a runner took the trunk label's job in 3 s.
+		if (runId === RUN - 30)
+			return {
+				jobs: [
+					{
+						run_id: runId,
+						status: "completed",
+						labels: ["hobo-trunk"],
+						runner_name: "hobo-runner-7x2kq",
+						created_at: at("02:40:00"),
+						started_at: at("02:40:03"),
+					},
+				],
+			};
+		return { jobs: [] };
+	};
+
+	it("sends the run to GitHub-hosted, refused by the queue, as production did", async () => {
+		await withGithub(pages, async (apiUrl) => {
+			const { decision } = await printedBy(() =>
+				main(
+					[],
+					{
+						GITHUB_EVENT_NAME: "push",
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_RUN_ID: String(RUN),
+						GITHUB_API_URL: apiUrl,
+					},
+					{ ...NO_SLIP, now: () => NOW_149 },
+				),
+			);
+			// The notice production printed: tier github, ubuntu-24.04, refused by the queue.
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			assert.match(
+				decision.reason,
+				/^the fleet has 1 waiting, the oldest for 356 s, and in the last 60 minutes took up to 307 s to pick a job up; no local box is enrolled; the limits are 120 s and 4 waiting; no routing slip decided \(no routing slip\)$/,
+			);
+		});
+	});
+
+	it("keeps the fleet under committed limits that allow those waits, so the policy, not a variable, sets them", async () => {
+		await withGithub(pages, async (apiUrl) => {
+			const decision = await main(
+				[],
+				{
+					GITHUB_EVENT_NAME: "push",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_RUN_ID: String(RUN),
+					GITHUB_API_URL: apiUrl,
+				},
+				{
+					fetch: slipApi(undefined),
+					routingConfig: withRouting((routing) => {
+						routing.queue = { maxWaitSeconds: 400, maxQueued: 4 };
+					}),
+					now: () => NOW_149,
+				},
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["fleet", "hobo-trunk"],
+			);
+		});
 	});
 });
 
@@ -1811,8 +1853,6 @@ describe("a second ask within a run", () => {
 			fleetLabel: "hobo-trunk",
 			localEnrolled: false,
 			limits,
-			// The relay blocked nothing: the default minimum of one free runner.
-			askRelay: async () => ({ kind: "verdict", blocked: new Map() }),
 		});
 
 	it("replays finding 142: with include-own-run the plan job's wait sends the shards to GitHub-hosted", async () => {
@@ -1825,6 +1865,32 @@ describe("a second ask within a run", () => {
 		// The route job's reading, which leaves its own run out, kept the fleet.
 		const first = await decide(false);
 		assert.deepEqual([first.tier, first.runner], ["fleet", "hobo-trunk"]);
+	});
+
+	it("replays finding 142 through the script: --include-own-run with no slip sends the shards to GitHub-hosted", async () => {
+		const page = (path: string): JsonValue => {
+			if (!path.includes("/jobs")) return runsPage;
+			const runId = Number(/\/runs\/(\d+)\/jobs/.exec(path)?.[1]);
+			return jobsPages.get(runId) ?? { jobs: [] };
+		};
+		await withGithub(page, async (apiUrl) => {
+			const env = {
+				GITHUB_EVENT_NAME: "push",
+				GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+				GITHUB_RUN_ID: String(RUN),
+				GITHUB_API_URL: apiUrl,
+			};
+			const io = { ...NO_SLIP, now: () => NOW_142 };
+			const { decision: reask } = await printedBy(() =>
+				main(["--include-own-run", "true"], env, io),
+			);
+			assert.deepEqual(
+				[reask.tier, reask.runner, reask.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			const { decision: first } = await printedBy(() => main([], env, io));
+			assert.deepEqual([first.tier, first.runner], ["fleet", "hobo-trunk"]);
+		});
 	});
 
 	it("reads this run's own jobs first, and only when asked to", async () => {
@@ -1858,23 +1924,37 @@ describe("the routing step without a decision", () => {
 		}
 		return body.join("\n");
 	})();
-	/** Runs the step where the routing script was not checked out (finding 146). */
-	const fallBack = (env: Record<string, string>) => {
+	/**
+	 * Runs the step where the routing script was not checked out (finding 146),
+	 * with the action's expressions already replaced as GitHub replaces them.
+	 */
+	const fallBack = (chosen: {
+		route?: string;
+		includeOwnRun?: string;
+		attested?: string;
+	}) => {
+		const expressions = script
+			.replace(/^route='\$\{\{.*\}\}'$/m, `route='${chosen.route ?? "auto"}'`)
+			.replace(
+				/^include_own_run='\$\{\{.*\}\}'$/m,
+				`include_own_run='${chosen.includeOwnRun ?? "false"}'`,
+			)
+			.replace(
+				/^attested='\$\{\{.*\}\}'$/m,
+				`attested='${chosen.attested ?? "false"}'`,
+			);
+		assert.doesNotMatch(expressions, /\$\{\{/);
 		const dir = mkdtempSync(join(tmpdir(), "hobo-route-fallback-"));
 		try {
 			const output = join(dir, "output");
 			writeFileSync(output, "");
-			const run = spawnSync("bash", ["-c", script], {
+			const run = spawnSync("bash", ["-c", expressions], {
 				cwd: dir,
 				encoding: "utf8",
 				env: {
 					PATH: process.env.PATH ?? "",
 					GITHUB_OUTPUT: output,
 					GITHUB_EVENT_NAME: "push",
-					HOBO_CI_ROUTE: "",
-					HOBO_CI_TRUNK_RUNNER: "",
-					HOBO_CI_INCLUDE_OWN_RUN: "",
-					...env,
 				},
 			});
 			assert.equal(run.status, 0, run.stderr);
@@ -1889,17 +1969,37 @@ describe("the routing step without a decision", () => {
 	it("names the fallback in a titled warning, and uses GitHub-hosted", () => {
 		const { stdout, output } = fallBack({});
 		assert.match(stdout, WARNING);
-		assert.equal(output, "runner=ubuntu-24.04\ntier=github\n");
+		assert.equal(
+			output,
+			"runner=ubuntu-24.04\ntier=github\nshard_runner=ubuntu-24.04\n",
+		);
 	});
 
 	it("names the fallback and keeps a pinned fleet on the fleet", () => {
-		const { stdout, output } = fallBack({ HOBO_CI_ROUTE: "fleet" });
+		const { stdout, output } = fallBack({ route: "fleet" });
 		assert.match(stdout, WARNING);
-		assert.equal(output, "runner=hobo-trunk\ntier=fleet\n");
+		assert.equal(
+			output,
+			"runner=hobo-trunk\ntier=fleet\nshard_runner=hobo-trunk\n",
+		);
+	});
+
+	it("passes what the run chose to the script as arguments, never as environment", () => {
+		assert.match(
+			script,
+			/scripts\/ci\/route-runner\.mts \\\n\s+--route "\$\{route\}" --include-own-run "\$\{include_own_run\}" --attested "\$\{attested\}"/,
+		);
+		// Only a fixed literal can come out of each expression.
+		assert.ok(
+			script.includes(
+				`route='\${{ contains(fromJSON('["auto","fleet","local","github"]'), inputs.route) && inputs.route || 'auto' }}'`,
+			),
+		);
+		assert.doesNotMatch(script, /HOBO_CI_/);
 	});
 
 	it("names the fallback and outputs nothing on a second ask, so the run's route stands", () => {
-		const { stdout, output } = fallBack({ HOBO_CI_INCLUDE_OWN_RUN: "true" });
+		const { stdout, output } = fallBack({ includeOwnRun: "true" });
 		assert.match(stdout, WARNING);
 		assert.match(stdout, /keeping the run's route/);
 		assert.equal(output, "");
@@ -1944,6 +2044,7 @@ describe("the workflows that route", () => {
 		assert.deepEqual([...needed].sort(), [
 			"packages/ci/src/fleet-overflow.ts",
 			"scripts/ci/route-runner.mts",
+			"scripts/ci/runner-routing.mts",
 		]);
 		assert.ok(routed.length >= 6, `found ${routed.length} routed workflows`);
 		for (const path of routed) {
@@ -1957,24 +2058,33 @@ describe("the workflows that route", () => {
 		}
 	});
 
-	it("check out the file that names the relay", () => {
+	it("check out the committed routing policy", () => {
 		for (const path of routed)
 			assert.ok(
 				read(path)
 					.split("\n")
-					.some((line) => line.trim() === RELAY_CONFIG_PATH),
-				`${path} does not sparse-checkout ${RELAY_CONFIG_PATH}`,
+					.some((line) => line.trim() === RUNNER_ROUTING_PATH),
+				`${path} does not sparse-checkout ${RUNNER_ROUTING_PATH}`,
 			);
 	});
 
-	it("hand the routing step nothing about the fleet", () => {
-		// The relay is asked at decision time; no input or variable carries
-		// what the fleet can take.
+	it("offer a dispatch's route as a choice", () => {
+		const ci = read(".github/workflows/hobo-ci.yml");
+		assert.match(
+			ci,
+			/ {6}route:\n {8}description: .*\n {8}type: choice\n {8}options: \[auto, fleet, local, github\]\n/,
+		);
+		assert.equal(ci.split("route: ${{ inputs.route || 'auto' }}").length, 3);
+	});
+
+	it("hand the routing step nothing about routing but what the run chose", () => {
+		// The script reads the slip and runnerRouting at decision time; no
+		// repository variable, input or environment variable carries them.
 		const action = read(".github/actions/route-runner/action.yml");
 		for (const path of [".github/actions/route-runner/action.yml", ...routed])
 			assert.doesNotMatch(
 				read(path),
-				/fleet-state|fleet-capacity|HOBO_CI_FLEET_(STATE|CAPACITY|ROUTES)/,
+				/fleet-state|fleet-capacity|vars\.HOBO_CI_|HOBO_CI_(ROUTE|TRUNK_RUNNER|LOCAL_RUNNER|INCLUDE_OWN_RUN|ATTESTED|FLEET_)|local-runner:|trunk-runner:|max-wait-seconds:|max-queued:/,
 				path,
 			);
 		assert.match(action, /scripts\/ci\/route-runner\.mts/);

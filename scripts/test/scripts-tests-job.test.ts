@@ -72,8 +72,7 @@ function step(entry: Job, name: string): Step {
 }
 
 /** The routed `runs-on` expression, as the route job's other consumers use it. */
-const ROUTED =
-	"${{ needs.route.outputs.runner || (vars.HOBO_CI_TRUNK_RUNNER != 'false' && contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+const ROUTED = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 const scripts = job("scripts-tests");
 const gate = job("pr-gate");

@@ -425,11 +425,13 @@ describe("CI deps workflow contract", () => {
 			job,
 			"if: ${{ !cancelled() && github.event_name == 'pull_request' }}",
 		);
-		// Not routed: the box's own label on a pull request (opt-in), else the trunk expression.
+		// Not routed: the box's own label on a pull request when committed
+		// runnerRouting.boxRunner makes the route job name it, else the trunk expression.
 		includes(
 			job,
-			"    runs-on: ${{ github.event_name == 'pull_request' && (vars.HOBO_CI_BOX_RUNNER == 'true' && 'hobo-box' || 'hobo') || ",
+			"    runs-on: ${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || ",
 		);
+		assert.ok(!job.includes("vars."));
 		assert.ok(!job.includes("needs.route.outputs.runner"));
 		assert.ok(!job.includes('docker tag "$candidate" hobo-ci-deps:local'));
 		assert.ok(!job.includes("Promote verified deps image"));

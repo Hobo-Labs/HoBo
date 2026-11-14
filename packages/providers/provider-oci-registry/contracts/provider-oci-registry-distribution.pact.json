@@ -1,0 +1,145 @@
+{
+	"consumer": {
+		"name": "@hobo/provider-oci-registry"
+	},
+	"provider": {
+		"name": "OciDistributionRegistry"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"notes": "Consumer-driven contract for the OCI distribution-spec v1.1 surface the oci-registry.image/v1 realizer uses. Every request the realizer emits must match one interaction by method and path regex; the recorded responses are what test/support/fake-registry.ts replays. Hosts are fixture hosts; the token value is a fixture, never material."
+	},
+	"interactions": [
+		{
+			"description": "an unauthorized request is challenged with a bearer realm",
+			"providerState": "the repository requires a scoped token",
+			"request": { "method": "HEAD", "path": "/v2/team/app/manifests/sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+			"response": {
+				"status": 401,
+				"headers": { "www-authenticate": "Bearer realm=\"https://auth.target.test/token\",service=\"registry.target.test\",scope=\"repository:team/app:pull\"" }
+			},
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/(manifests|blobs|referrers)/.+$" }] } } }
+		},
+		{
+			"description": "the token realm exchanges a basic credential for a scoped token",
+			"providerState": "the credential may pull and push the repository",
+			"request": { "method": "GET", "path": "/token", "query": "service=registry.target.test&scope=repository:team/app:pull,push" },
+			"response": { "status": 200, "body": { "token": "fixture-registry-token-0", "expires_in": 300 } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/token$" }] } } }
+		},
+		{
+			"description": "a token realm that answers with access_token (OAuth2 shape)",
+			"providerState": "the realm follows the OAuth2 response shape",
+			"request": { "method": "GET", "path": "/token", "query": "service=registry.target.test&scope=repository:team/app:pull" },
+			"response": { "status": 200, "body": { "access_token": "fixture-registry-token-1", "expires_in": 300 } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/token$" }] } } }
+		},
+		{
+			"description": "HEAD a manifest that exists reports its digest",
+			"providerState": "the manifest exists",
+			"request": { "method": "HEAD", "path": "/v2/team/app/manifests/stable" },
+			"response": { "status": 200, "headers": { "docker-content-digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "content-type": "application/vnd.oci.image.manifest.v1+json" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/manifests/[A-Za-z0-9_:.-]+$" }] } } }
+		},
+		{
+			"description": "HEAD a manifest that does not exist",
+			"providerState": "the manifest is absent",
+			"request": { "method": "HEAD", "path": "/v2/team/app/manifests/sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+			"response": { "status": 404 },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/manifests/[A-Za-z0-9_:.-]+$" }] } } }
+		},
+		{
+			"description": "GET a manifest by digest returns its exact bytes",
+			"providerState": "the manifest exists",
+			"request": { "method": "GET", "path": "/v2/team/app/manifests/sha256:0000000000000000000000000000000000000000000000000000000000000000", "headers": { "accept": "application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json" } },
+			"response": { "status": 200, "headers": { "content-type": "application/vnd.oci.image.manifest.v1+json" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/manifests/[A-Za-z0-9_:.-]+$" }] } } }
+		},
+		{
+			"description": "HEAD a blob",
+			"providerState": "the blob exists or is absent",
+			"request": { "method": "HEAD", "path": "/v2/team/app/blobs/sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+			"response": { "status": 200, "headers": { "docker-content-digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/blobs/sha256:[a-f0-9]{64}$" }] } } }
+		},
+		{
+			"description": "GET a blob from a source registry, possibly redirected to storage",
+			"providerState": "the blob is served from object storage",
+			"request": { "method": "GET", "path": "/v2/team/app/blobs/sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+			"response": { "status": 307, "headers": { "location": "https://storage.source.test/blobs/sha256/0000000000000000000000000000000000000000000000000000000000000000?X-Signature=fixture" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/blobs/sha256:[a-f0-9]{64}$" }] } } }
+		},
+		{
+			"description": "GET a redirected blob from storage without registry credentials",
+			"providerState": "the storage host serves a presigned URL",
+			"request": { "method": "GET", "path": "/blobs/sha256/0000000000000000000000000000000000000000000000000000000000000000" },
+			"response": { "status": 200 },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/blobs/sha256/[a-f0-9]{64}$" }] } } }
+		},
+		{
+			"description": "cross-repository blob mount succeeds",
+			"providerState": "the blob exists in the source repository on the same registry",
+			"request": { "method": "POST", "path": "/v2/team/app/blobs/uploads/", "query": "mount=sha256:0000000000000000000000000000000000000000000000000000000000000000&from=team/build" },
+			"response": { "status": 201, "headers": { "location": "/v2/team/app/blobs/sha256:0000000000000000000000000000000000000000000000000000000000000000", "docker-content-digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/blobs/uploads/$" }] } } }
+		},
+		{
+			"description": "a declined mount (or a plain upload start) opens an upload session",
+			"providerState": "the registry declines the mount",
+			"request": { "method": "POST", "path": "/v2/team/app/blobs/uploads/" },
+			"response": { "status": 202, "headers": { "location": "/v2/team/app/blobs/uploads/upload-0?_state=s0", "docker-upload-uuid": "upload-0" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/blobs/uploads/$" }] } } }
+		},
+		{
+			"description": "upload one chunk",
+			"providerState": "an upload session is open",
+			"request": { "method": "PATCH", "path": "/v2/team/app/blobs/uploads/upload-0", "headers": { "content-range": "0-1023", "content-type": "application/octet-stream" } },
+			"response": { "status": 202, "headers": { "location": "/v2/team/app/blobs/uploads/upload-0?_state=s1", "range": "0-1023" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/blobs/uploads/[A-Za-z0-9_.-]+$" }] } } }
+		},
+		{
+			"description": "close an upload by digest (monolithic body or empty after chunks)",
+			"providerState": "an upload session is open",
+			"request": { "method": "PUT", "path": "/v2/team/app/blobs/uploads/upload-0", "query": "_state=s0&digest=sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+			"response": { "status": 201, "headers": { "docker-content-digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/blobs/uploads/[A-Za-z0-9_.-]+$" }] } } }
+		},
+		{
+			"description": "PUT a manifest by digest or by a declared tag",
+			"providerState": "every referenced blob and child manifest exists",
+			"request": { "method": "PUT", "path": "/v2/team/app/manifests/sha256:0000000000000000000000000000000000000000000000000000000000000000", "headers": { "content-type": "application/vnd.oci.image.manifest.v1+json" } },
+			"response": { "status": 201, "headers": { "docker-content-digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/manifests/[A-Za-z0-9_:.-]+$" }] } } }
+		},
+		{
+			"description": "GET the referrers of a subject digest (OCI 1.1)",
+			"providerState": "the registry implements the referrers API",
+			"request": { "method": "GET", "path": "/v2/team/app/referrers/sha256:0000000000000000000000000000000000000000000000000000000000000000", "headers": { "accept": "application/vnd.oci.image.index.v1+json" } },
+			"response": { "status": 200, "headers": { "content-type": "application/vnd.oci.image.index.v1+json" }, "body": { "schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json", "manifests": [] } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/referrers/sha256:[a-f0-9]{64}$" }] } } }
+		},
+		{
+			"description": "a registry without the referrers API answers 404",
+			"providerState": "the registry predates OCI 1.1",
+			"request": { "method": "GET", "path": "/v2/team/app/referrers/sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+			"response": { "status": 404 },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/referrers/sha256:[a-f0-9]{64}$" }] } } }
+		},
+		{
+			"description": "DELETE a declared tag or, under policy, a manifest by digest",
+			"providerState": "the registry supports deletion",
+			"request": { "method": "DELETE", "path": "/v2/team/app/manifests/stable" },
+			"response": { "status": 202 },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/manifests/[A-Za-z0-9_:.-]+$" }] } } }
+		},
+		{
+			"description": "a registry that does not delete through the distribution API",
+			"providerState": "deletion is disabled",
+			"request": { "method": "DELETE", "path": "/v2/team/app/manifests/stable" },
+			"response": { "status": 405, "body": { "errors": [{ "code": "UNSUPPORTED", "message": "unsupported" }] } },
+			"matchingRules": { "request": { "path": { "combine": "AND", "matchers": [{ "match": "regex", "regex": "^/v2/.+/manifests/[A-Za-z0-9_:.-]+$" }] } } }
+		}
+	]
+}

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { deflateRawSync } from "node:zlib";
 import {
+	ABSENT_SLIP_WHYS,
 	evaluate,
 	type HealthReport,
 	h2Breaches,
@@ -22,9 +23,15 @@ import {
 	REQUEST_BUDGET,
 	type RunPages,
 	readJsonFromZip,
+	routeEvidence,
+	SLIP_FALLBACK_PREFIX,
 	type StatusReading,
 	type WindowData,
 } from "../ci/ci-health.mts";
+import {
+	ABSENT_SLIP_WHYS as ROUTE_ABSENT_SLIP_WHYS,
+	SLIP_FALLBACK_PREFIX as ROUTE_SLIP_FALLBACK_PREFIX,
+} from "../ci/route-runner.mts";
 
 /**
  * A recorded window, hand-copied from the GitHub REST shapes: the run list
@@ -111,18 +118,22 @@ describe("ci-health signals from recorded pages", () => {
 		);
 	});
 
-	it("H2 is clear when every relay ask got a verdict", () => {
+	it("H2 is clear when every routing slip read was used", () => {
 		assert.equal(clearReport.signals.H2.state, "clear");
 		assert.equal(
 			clearReport.signals.H2.summary,
-			"0 of 4 relay asks unanswered",
+			"0 of 4 routing slips unusable",
 		);
 	});
-	it("H2 breaches when every one of at least 5 asks went unanswered", () => {
+	it("H2 breaches when every one of at least 5 slip reads could not be used, and leaves an absent slip to H3", () => {
 		assert.equal(breachReport.signals.H2.state, "breach");
 		assert.equal(
 			breachReport.signals.H2.summary,
-			"7 of 7 relay asks unanswered",
+			"7 of 7 routing slips unusable",
+		);
+		assert.match(
+			breachReport.signals.H2.evidence[0] ?? "",
+			/: the routing slip was not read in time$/,
 		);
 	});
 	it("H2 counts more than 5% of at least 20, or all of at least 5", () => {
@@ -133,10 +144,10 @@ describe("ci-health signals from recorded pages", () => {
 		assert.equal(h2Breaches(1, 19), false);
 	});
 
-	it("H3 is clear when every route job had a relay to ask", () => {
+	it("H3 is clear when every route job found a current slip", () => {
 		assert.equal(clearReport.signals.H3.state, "clear");
 	});
-	it("H3 breaches on a route notice unasked for no-relay", () => {
+	it("H3 breaches on a route notice that found no routing slip", () => {
 		assert.equal(breachReport.signals.H3.state, "breach");
 		assert.deepEqual(breachReport.signals.H3.evidence, [
 			"https://github.com/Hobo-Labs/HoBo/actions/runs/202",
@@ -177,7 +188,8 @@ describe("ci-health signals from recorded pages", () => {
 	it("H8 is clear under the paid-minutes limit, leaving out the route job and the gates", () => {
 		assert.equal(clearReport.signals.H8.state, "clear");
 		assert.equal(clearReport.paidMinutes.total, 38);
-		assert.equal(clearReport.paidMinutes.byRefusal.queue, 38);
+		// The relay's slip sent that run to GitHub-hosted.
+		assert.equal(clearReport.paidMinutes.byRefusal.slip, 38);
 	});
 	it("H8 breaches over the limit, split by what refused the fleet", () => {
 		assert.equal(breachReport.signals.H8.state, "breach");
@@ -224,14 +236,61 @@ describe("ci-health signals from recorded pages", () => {
 
 describe("ci-health readers", () => {
 	it("reads a route notice and ignores anything else", () => {
+		assert.deepEqual(
+			parseRouteNotice(
+				'{"v":2,"workflow":"hobo-ci.yml","tier":"fleet","runner":"hobo","slip":"fallback","why":"no routing slip","refusedBy":"none"}',
+			),
+			{ slip: "fallback", why: "no routing slip", refusedBy: "none" },
+		);
+		assert.equal(parseRouteNotice("not json"), undefined);
+		// The hosted relay's verdict notice (v1) is no longer read.
 		assert.equal(
 			parseRouteNotice(
 				'{"v":1,"workflow":"hobo-ci.yml","tier":"fleet","runner":"hobo","relay":"verdict","why":"","refusedBy":"none"}',
-			)?.relay,
-			"verdict",
+			),
+			undefined,
 		);
-		assert.equal(parseRouteNotice("not json"), undefined);
 		assert.equal(parseRouteNotice('{"v":2,"relay":"verdict"}'), undefined);
+	});
+	it("holds the route script's slip fallback and absent-slip reasons", () => {
+		assert.equal(SLIP_FALLBACK_PREFIX, ROUTE_SLIP_FALLBACK_PREFIX);
+		assert.deepEqual([...ABSENT_SLIP_WHYS], [...ROUTE_ABSENT_SLIP_WHYS]);
+	});
+	it("counts a route that did not run under H1, and a slip fallback not", () => {
+		const fallback = (message: string) => ({
+			path: ".github",
+			start_line: 1,
+			end_line: 1,
+			annotation_level: "warning",
+			title: "hobo-ci-route-fallback",
+			message,
+			raw_details: "",
+		});
+		const [run] = parseRuns({ workflow_runs: [breach.runs[0] ?? null] });
+		assert.ok(run);
+		const jobs = parseJobs({ jobs: breach.jobs[String(run.id)] ?? [] });
+		const routeJob = jobs.find((job) => job.name === "Route runners");
+		assert.ok(routeJob);
+		const evidence = routeEvidence({
+			run,
+			jobs,
+			annotations: new Map([
+				[
+					routeJob.id,
+					parseAnnotations([
+						fallback(
+							"routing slip not used (no routing slip); the queue rule decides",
+						),
+						fallback(
+							"runner routing did not run (the routing script failed); using GitHub-hosted runners",
+						),
+					]),
+				],
+			]),
+		});
+		assert.deepEqual(evidence.fallbacks, [
+			"runner routing did not run (the routing script failed); using GitHub-hosted runners",
+		]);
 	});
 	it("reads the relay origin from .hobo/ci.json, https only", () => {
 		assert.equal(

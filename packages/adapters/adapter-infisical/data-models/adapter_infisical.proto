@@ -202,7 +202,8 @@ message InfisicalIdentityResponse {
 }
 
 // POST /api/v1/auth/oidc-auth/identities/{identityId}: trust one workload
-// issuer (Vercel's team issuer, GitHub Actions) for one identity.
+// issuer (Vercel's team issuer, GitHub Actions) for one identity. PATCH of the
+// same path takes the same body and replaces an existing trust in place.
 message InfisicalAttachOidcAuthRequest {
   string oidc_discovery_url = 1;
   string bound_issuer = 2;

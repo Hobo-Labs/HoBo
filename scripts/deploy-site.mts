@@ -7,14 +7,23 @@
  * on a stale commit long after `main` moved — nothing recorded how to redo it,
  * so nobody did.
  *
- * The branch is published as a **single orphan commit** holding the built
- * output, matching what is already there. History on `gh-pages` is worthless —
- * it is generated output, recoverable by rebuilding the source commit it names
- * — and keeping it would grow the clone for every deploy.
+ * HoBo delivers its own site through HoBo CD: the exact tree is recorded as
+ * release Freight (a `hobo.static-site-tree/v1` index plus its file blobs in
+ * the CD artifact store) and promoted hobo-release/pages-candidate ->
+ * hobo-release/pages-stable through `hobo deploy`
+ * (scripts/ci/create-github-release.mts). The candidate Camp's realizer,
+ * @hobo/provider-github, publishes it: missing blobs, the tree (whose id it
+ * computed before uploading), and one commit on gh-pages whose parent is the
+ * observed head (a compare-and-swap ref move, never a force push), named
+ * `deploy: <source sha>` so the freshness gate reads it back. Stable
+ * re-observes the same tree live. GITHUB_TOKEN (contents: write) is the
+ * credential the Camp declares (`env://GITHUB_TOKEN`).
  *
  * Usage:
- *   pnpm run site:deploy              # build, then publish
+ *   pnpm run site:deploy              # build, then publish (GITHUB_TOKEN)
  *   pnpm run site:deploy -- --dry-run # build and show what would publish
+ *   node scripts/deploy-site.mts --release-freight <dir>  # record, promote, publish
+ *     (the release workflow; HOBO_RELEASE_CD_HOME, HOBO_RELEASE_REVISION)
  */
 
 import { execFileSync } from "node:child_process";
@@ -26,8 +35,16 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+	promoteReleaseStable,
+	qualifyReleaseCandidate,
+	type ReleaseCdSeams,
+	releaseSource,
+	siteTree,
+} from "./ci/create-github-release.mts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 const SITE_DIR = join(REPO_ROOT, "site");
@@ -118,14 +135,58 @@ function build(): void {
 	}
 }
 
-function publish(sha: string): void {
-	// A throwaway clone keeps the working tree untouched: a checkout of an
-	// orphan branch in place would sweep the repo out from under the build.
+/**
+ * Record the tree as `hobo-release-pages` Freight and promote it
+ * candidate -> stable; the candidate Camp's realizer publishes gh-pages.
+ * Throws unless both qualify.
+ */
+export async function qualifySiteRelease(input: {
+	readonly dist: string;
+	readonly home: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly seams?: ReleaseCdSeams;
+}): Promise<void> {
+	const env = input.env ?? process.env;
+	const tree = siteTree(input.dist);
+	if (tree.files.length === 0)
+		throw new Error(`${input.dist} holds no files to publish`);
+	await qualifyReleaseCandidate({
+		home: input.home,
+		family: "pages",
+		env,
+		stored: [
+			{
+				name: "site",
+				kind: "ARTIFACT_KIND_STATIC_ASSETS",
+				mediaType: "application/vnd.hobo.static-site-tree+json",
+				bytes: tree.index,
+			},
+		],
+		blobs: tree.files.map((file) => file.bytes),
+		// The freshness gate (check-release-pages-stale) reads this back.
+		labels: {
+			"hobo.cd/github.commit-message": `deploy: ${releaseSource(env).commit}`,
+		},
+		...(input.seams ? { seams: input.seams } : undefined),
+	});
+	if (!(await promoteReleaseStable(input.home, env, input.seams)))
+		throw new Error(
+			"release Freight pages blocked at hobo-release/pages-stable",
+		);
+}
+
+function releaseCdHome(): string {
+	return (
+		process.env.HOBO_RELEASE_CD_HOME ||
+		process.env.HOBO_HOME ||
+		join(homedir(), ".hobo")
+	);
+}
+
+async function publish(sha: string): Promise<void> {
+	// A throwaway staging tree: exactly what publishes, site and catalogue.
 	const staging = mkdtempSync(join(tmpdir(), "hobo-pages-"));
 	try {
-		const remote = git(["remote", "get-url", "origin"]);
-		run("git", ["init", "-q", "-b", BRANCH, staging], staging);
-		run("git", ["remote", "add", "origin", remote], staging);
 		run("cp", ["-a", `${DIST_DIR}/.`, staging]);
 		// Nested, not merged: the catalogue is a second Astro build with its own
 		// hashed `_astro/` bundle, and flattening the two into one root would let
@@ -175,39 +236,39 @@ function publish(sha: string): void {
 			);
 		}
 
-		run("git", ["add", "-A"], staging);
-		const message = `deploy: site + media @ ${sha.slice(0, 9)}`;
-		run(
-			"git",
-			[
-				"-c",
-				"user.email=deploy@hobo.invalid",
-				"-c",
-				"user.name=HoBo Deploy",
-				"commit",
-				"-q",
-				"-m",
-				message,
-			],
-			staging,
-		);
-
-		const files = git(["ls-files"], staging).split("\n").filter(Boolean).length;
+		const files = siteTree(staging).files.length;
 		if (dryRun) {
 			console.log(
-				`[dry run] would force-push ${files} files to ${BRANCH} as "${message}"`,
+				`[dry run] would publish ${files} files to ${BRANCH} through hobo-release/pages-candidate (deploy: ${sha})`,
 			);
 			return;
 		}
-		// Force is correct and safe here *only* because the branch is generated
-		// output published as a single orphan commit — never source.
-		run("git", ["push", "--force", "origin", `${BRANCH}:${BRANCH}`], staging);
-		console.log(`published ${files} files to ${BRANCH} — ${message}`);
+		await qualifySiteRelease({
+			dist: staging,
+			home: releaseCdHome(),
+			env: { ...process.env, HOBO_RELEASE_REVISION: sha },
+		});
+		console.log(`published ${files} files to ${BRANCH}: deploy: ${sha}`);
 	} finally {
 		rmSync(staging, { recursive: true, force: true });
 	}
 }
 
-const sha = assertClean();
-build();
-publish(sha);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+	try {
+		const at = process.argv.indexOf("--release-freight");
+		if (at !== -1) {
+			const dist = process.argv[at + 1];
+			if (!dist)
+				throw new Error("--release-freight needs the built site directory");
+			await qualifySiteRelease({ dist: resolve(dist), home: releaseCdHome() });
+		} else {
+			const sha = assertClean();
+			build();
+			await publish(sha);
+		}
+	} catch (error) {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exit(1);
+	}
+}

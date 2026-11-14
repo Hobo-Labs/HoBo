@@ -27,7 +27,7 @@ Collect the **session PR set** (union of):
    titles matching the initiative).
 2. **Branches** with unpushed commits from this session (`git branch -vv`, remotes, stack).
 3. **Dirty working tree** changes produced this session (tracked/untracked product files).
-4. **Stack layers** recorded in `docs/plans/<initiative>/sdlc-state.md` still open.
+4. **Stack layers** recorded in `.sdlc/<initiative>/sdlc-state.md` still open.
 5. **Cloud dispatches** still open for this initiative (handback PRs in state / dispatch-log).
 
 Exclude:
@@ -56,7 +56,7 @@ If the session PR set is empty and the tree is clean relative to `origin/main`, 
    as a required gate.
 8. **Real local gate failures** (`agent:check` / hooks) must be fixed before
    merge — not papered over.
-9. Update **`sdlc-state.md`** + append **`docs/plans/dispatch-log.md`** with outcomes.
+9. Update **`sdlc-state.md`** + append **`.sdlc/dispatch-log.md`** with outcomes.
 10. Prefer **one coherent delivery branch** for uncommitted sequential-fallback work; use
     `gh stack` when 2+ dependent layers remain open.
 11. **`--finish` cannot bypass designer consensus.** Deterministically detect
@@ -75,7 +75,7 @@ gh stack view --json 2>/dev/null || true
 gh pr list --author @me --state open --limit 30
 ```
 
-Read `docs/plans/*/sdlc-state.md` for in-flight initiatives. Build the session PR set.
+Read `.sdlc/*/sdlc-state.md` for in-flight initiatives. Build the session PR set.
 
 ### 1. Stabilize local work (uncommitted / unpushed)
 
@@ -179,7 +179,7 @@ reason the user accepted).
 ### 5. Finalize state
 
 1. `sdlc-state.md` → phase `closed` (or remaining true external blocks listed).
-2. Append `docs/plans/dispatch-log.md` with PR numbers, merge SHAs, failure classes
+2. Append `.sdlc/dispatch-log.md` with PR numbers, merge SHAs, failure classes
    (`billing-budget`, etc.).
 3. If state/log changes remain uncommitted after merges, open a **tiny follow-up PR** (or
    include them in the last layer if not yet merged) — do not leave closed-initiative state

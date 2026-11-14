@@ -1,6 +1,6 @@
 # @hobo/evals
 
-Rubric + **promotion-gate engine** (docs/plans/0017 F25, design PLAN-23):
+Rubric + **promotion-gate engine** (design PLAN-23):
 schema-versioned rubric records, deterministic scored-run reports reusing
 the `@hobo/conformance` suite/report vocabulary (schema id, `ok`,
 machine-readable failure codes, golden first-diffs), and promotion verdicts

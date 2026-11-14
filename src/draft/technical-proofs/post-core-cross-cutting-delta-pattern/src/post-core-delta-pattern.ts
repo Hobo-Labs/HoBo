@@ -91,23 +91,9 @@ export function classifyPostCoreDeltaClaim({
 }
 
 export function assertDocsCarryPostCoreDeltaPattern(repoRootUrl: URL) {
-  const implementationPlan = readText(repoRootUrl, "docs/implementation-plan.md");
   const designIndex = readText(repoRootUrl, "docs/design/index.md");
   const traceability = readText(repoRootUrl, "docs/design/traceability.md");
   const errors = [];
-
-  for (const pattern of [
-    /Post-399 Cross-Cutting Capability Deltas/i,
-    /own Linear project/i,
-    /M0 acceptance record/i,
-    /proof README/i,
-    /traceability row/i,
-    /blocked M1-M4 skeleton/i,
-  ]) {
-    if (!pattern.test(implementationPlan)) {
-      errors.push(`Implementation plan missing ${pattern}.`);
-    }
-  }
 
   if (!/\[.+meta-cloud-broker\.md.+\]/i.test(designIndex)) {
     errors.push("Design index must point to the Meta-cloud Broker design record.");
@@ -120,7 +106,7 @@ export function assertDocsCarryPostCoreDeltaPattern(repoRootUrl: URL) {
     errors.push("Traceability must include the HOBO-524 docs-pattern proof.");
   }
 
-  return { ok: errors.length === 0, errors, implementationPlan, designIndex, traceability };
+  return { ok: errors.length === 0, errors, designIndex, traceability };
 }
 
 function readText(repoRootUrl: URL, relativePath: string) {

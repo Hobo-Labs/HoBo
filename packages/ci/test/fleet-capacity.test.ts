@@ -28,7 +28,7 @@ describe("fleet capacity", () => {
 	});
 });
 
-// Plan 0025, section 6.8: the HOBO_CI_FLEET_CAPACITY record is retired;
+// ADR-0180, "Retirement": the HOBO_CI_FLEET_CAPACITY record is retired;
 // whether the fleet can take a run is the relay's to decide (ADR-0180).
 describe("the retired capacity record", () => {
 	it("is no longer exported or defined", () => {

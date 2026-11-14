@@ -22,7 +22,6 @@ import type { FleetVerdictEvaluation } from "../src/isolated-worker/fleet-verdic
 import {
 	createFleetVerdictReporter,
 	type FleetVerdictReporterOptions,
-	parseFleetVerdictReporterSettings,
 } from "../src/isolated-worker/fleet-verdict-reporter.js";
 import { createFleetVerdictSequence } from "../src/isolated-worker/fleet-verdict-state.js";
 import { LeaseStore } from "../src/store.js";
@@ -32,7 +31,7 @@ import {
 	BOX_1_PUBLIC_KEY,
 } from "./fixtures/fleet-reporter-keys.js";
 
-/** The fleet verdict reporter (plan 0025, 6.2 and 6.3). */
+/** The fleet verdict reporter (ADR-0180 amendment, items 2 and 3). */
 const T0 = Date.parse("2026-11-12T11:14:00.000Z");
 const ORIGIN = "https://ci.hobo.test";
 const identity = meshIdentityFromPem(BOX_1_KEY_PEM);
@@ -503,91 +502,4 @@ describe("the reporter against the hosted relay's handler (B1, B2)", () => {
 			}),
 		);
 	}, 30_000);
-});
-
-describe("the reporter's box settings", () => {
-	const valid = {
-		HOBO_CI_FLEET_VERDICT_MODE: "shadow",
-		HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN: "https://hobo-ci.vercel.app",
-		HOBO_CI_FLEET_REPORTER_ID: "box-1",
-	};
-
-	it("is off by default and needs nothing else then", () => {
-		expect(parseFleetVerdictReporterSettings({}, undefined)).toEqual({
-			mode: "off",
-		});
-	});
-
-	it("reads every setting, with the defaults of 6.3", () => {
-		expect(parseFleetVerdictReporterSettings(valid, undefined)).toEqual({
-			mode: "shadow",
-			origin: "https://hobo-ci.vercel.app",
-			reporterId: "box-1",
-			pools: [],
-			minFreeRunners: 1,
-			enterMs: 60_000,
-			exitMs: 30_000,
-		});
-		expect(
-			parseFleetVerdictReporterSettings(
-				{
-					HOBO_CI_FLEET_VERDICT_MODE: "report",
-					HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN: "https://hobo-ci.vercel.app/",
-					HOBO_CI_FLEET_EXTERNAL_POOLS_JSON:
-						'[{"labels":["hobo","hobo-trunk"],"runnerNamePrefix":"hobo-runner-","maxRunners":1}]',
-					HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS: "2",
-					HOBO_CI_FLEET_VERDICT_ENTER_MS: "90000",
-					HOBO_CI_FLEET_VERDICT_EXIT_MS: "20000",
-				},
-				"mesh-node-7",
-			),
-		).toEqual({
-			mode: "report",
-			origin: "https://hobo-ci.vercel.app",
-			reporterId: "mesh-node-7",
-			pools: [
-				{
-					labels: ["hobo", "hobo-trunk"],
-					runnerNamePrefix: "hobo-runner-",
-					maxRunners: 1,
-				},
-			],
-			minFreeRunners: 2,
-			enterMs: 90_000,
-			exitMs: 20_000,
-		});
-	});
-
-	it.each([
-		[{ HOBO_CI_FLEET_VERDICT_MODE: "on" }, /HOBO_CI_FLEET_VERDICT_MODE/u],
-		[{ HOBO_CI_FLEET_REPORTER_ID: "" }, /missing HOBO_CI_FLEET_REPORTER_ID/u],
-		[
-			{ HOBO_CI_FLEET_REPORTER_ID: "box 1" },
-			/invalid HOBO_CI_FLEET_REPORTER_ID/u,
-		],
-		[
-			{ HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN: "http://hobo-ci.vercel.app" },
-			/RELAY_ORIGIN/u,
-		],
-		[
-			{ HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN: "https://hobo-ci.vercel.app/v1" },
-			/RELAY_ORIGIN/u,
-		],
-		[{ HOBO_CI_FLEET_VERDICT_RELAY_ORIGIN: undefined }, /RELAY_ORIGIN/u],
-		[{ HOBO_CI_FLEET_EXTERNAL_POOLS_JSON: "{}" }, /EXTERNAL_POOLS_JSON/u],
-		[
-			{
-				HOBO_CI_FLEET_EXTERNAL_POOLS_JSON:
-					'[{"labels":["hobo"],"runnerNamePrefix":"a","maxRunners":-1}]',
-			},
-			/EXTERNAL_POOLS_JSON/u,
-		],
-		[{ HOBO_CI_FLEET_VERDICT_MIN_FREE_RUNNERS: "0" }, /MIN_FREE_RUNNERS/u],
-		[{ HOBO_CI_FLEET_VERDICT_ENTER_MS: "5000" }, /ENTER_MS/u],
-		[{ HOBO_CI_FLEET_VERDICT_EXIT_MS: "soon" }, /EXIT_MS/u],
-	])("refuses to start on %j", (change, message) => {
-		expect(() =>
-			parseFleetVerdictReporterSettings({ ...valid, ...change }, undefined),
-		).toThrow(message);
-	});
 });

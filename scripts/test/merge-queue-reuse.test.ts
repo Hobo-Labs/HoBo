@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+	DEFAULT_REUSE_MERGE_QUEUE,
 	decideMergeQueueReuse,
 	fetchMergeGroupRuns,
 	MERGE_GROUP_RUN_LOOKUPS,
 	type MergeGroupRun,
 	type ReuseInput,
+	reuseMergeQueueSetting,
 } from "../ci/merge-queue-reuse.mts";
 
 const HEAD = "f0b586a1a8bb83c39ed13ba11753ef8b2dc66f29";
@@ -33,7 +36,7 @@ function input(overrides: Partial<ReuseInput> = {}): ReuseInput {
 	return {
 		eventName: "push",
 		ref: "refs/heads/main",
-		setting: "",
+		enabled: true,
 		repository: "Hobo-Labs/HoBo",
 		workflowBasename: "hobo-ci.yml",
 		headSha: HEAD,
@@ -69,12 +72,34 @@ describe("merge-queue reuse on main", () => {
 		);
 	});
 
-	it("is off when the repository variable says false", () => {
-		for (const setting of ["false", " FALSE "]) {
-			const decision = decideMergeQueueReuse(input({ setting }));
-			assert.equal(decision.reuse, false);
-			assert.match(decision.reason, /HOBO_CI_MAIN_REUSE_MERGE_QUEUE=false/u);
-		}
+	it("is off when committed runnerRouting.mainGate.reuseMergeQueue is false", () => {
+		const decision = decideMergeQueueReuse(input({ enabled: false }));
+		assert.equal(decision.reuse, false);
+		assert.match(
+			decision.reason,
+			/runnerRouting\.mainGate\.reuseMergeQueue is false/u,
+		);
+	});
+
+	it("reads the setting from .hobo/ci.json, never from the environment", () => {
+		const committed = readFileSync(
+			new URL("../../.hobo/ci.json", import.meta.url),
+			"utf8",
+		);
+		// The committed value is the default an unset variable had: on.
+		assert.equal(DEFAULT_REUSE_MERGE_QUEUE, true);
+		assert.equal(reuseMergeQueueSetting(committed), true);
+		const project = JSON.parse(committed);
+		project.runnerRouting.mainGate.reuseMergeQueue = false;
+		assert.equal(reuseMergeQueueSetting(JSON.stringify(project)), false);
+		// No valid policy, or no file: the default.
+		assert.equal(reuseMergeQueueSetting(undefined), true);
+		assert.equal(reuseMergeQueueSetting("{}"), true);
+		const script = readFileSync(
+			new URL("../ci/merge-queue-reuse.mts", import.meta.url),
+			"utf8",
+		);
+		assert.doesNotMatch(script, /HOBO_CI_MAIN_REUSE_MERGE_QUEUE/u);
 	});
 
 	it("applies only to a push to main", () => {

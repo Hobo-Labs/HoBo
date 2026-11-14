@@ -10,7 +10,6 @@ tags: [hobo, design, ship, instances, go-no-go]
 > **Contract:** [`go-no-go-decision-record.md`](../go-no-go-decision-record.md)  
 > **Ship target:** **B — local-first developer tooling** ([ADR-0140](../adr/07-portability-extensibility.md#adr-0140), [`launch-ship-targets.md`](../launch-ship-targets.md))  
 > **Depends on:** Target A posture ([`go-no-go-repo-public-2026-07-30.md`](./go-no-go-repo-public-2026-07-30.md))  
-> **Audit:** [`0011-ship-readiness-gap-review.md`](../../plans/0011-ship-readiness-gap-review.md)
 
 ## Decision record
 

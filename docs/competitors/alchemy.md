@@ -298,12 +298,12 @@ Risks, stated honestly: **beta instability** (the v1→v2 rewrite replaced the e
 
 ## Refresh 2026-11-08 — beta.85 shipped, beta.86 merged-to-main
 
-Deltas verified against npm, GitHub releases/PRs, and alchemy.run docs; method and unresolved items in [`../plans/alchemy-parity/research.md`](../plans/alchemy-parity/research.md). Body text above is the Aug capture with status/provider/CI claims corrected in place.
+Deltas verified against npm, GitHub releases/PRs, and alchemy.run docs. Body text above is the Aug capture with status/provider/CI claims corrected in place.
 
 - **Shipped since Aug:** GCP, Fly, Hetzner, Railway, Kubernetes, Prisma, Turso, ACME, Stripe v2 (beta.78); `@alchemy.run/domain` (app-level event-sourced DDD/CQRS on Durable Objects + MCP/AI tools — not a control-plane audit log, but the Aug "no MCP / no event log / agents not principals" claims need this qualifier); Effect Workflows; per-cloud state defaults (DynamoDB new AWS default beta.85, GCS, CF-DO); `drift`, programmatic Alchemist API, Provider Contributions; frontend-frameworks x14; AI bindings (Workers AI, Bedrock/AgentCore, Vertex).
 - **beta.86 (merged to main, unpublished on npm at check):** sandbox providers Modal/E2B/Daytona/Archil/Boat behind a unified Sandbox handle; Rivet; Effect Cluster; Domain host-as-Layer; `Resource.lookup`; 16 breaking commits. No milestone or GA date exists; beta.86 post was draft PR #3169.
 - **Not in beta.86:** Vercel full provider and Azure (open draft PRs), Convex/STACKIT (drafts), Portless (open PRs), Netlify (issue-only), Render (no evidence found).
-- **HoBo response:** local-first parity programme in [`../plans/alchemy-parity/`](../plans/alchemy-parity/sdlc-state.md) — measured L1/L2/L3 local levels primary (code-derived table via `@hobo/cloud-providers` `providerParity()`), cloud live parity as fallback. Sandbox/Domain claims rest partly on npm-unpublished packages; treat as merged-not-shipped until a dist-tag proves otherwise.
+- **HoBo response:** local-first parity programme — measured L1/L2/L3 local levels primary (code-derived table via `@hobo/cloud-providers` `providerParity()`), cloud live parity as fallback. Sandbox/Domain claims rest partly on npm-unpublished packages; treat as merged-not-shipped until a dist-tag proves otherwise.
 
 ## Sources
 

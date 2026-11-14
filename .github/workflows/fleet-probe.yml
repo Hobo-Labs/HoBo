@@ -1,6 +1,7 @@
 name: Fleet probe
 
-# One job per self-hosted label, each doing nothing. What it leaves behind is
+# One job per self-hosted label, each doing nothing (the local box's only when
+# .hobo/ci.json enrolls one). What it leaves behind is
 # how long a runner took to pick it up, which the route job of every workflow
 # reads before it sends work to that label (scripts/ci/route-runner.mts): a
 # label no runner has been seen on is not sent work.
@@ -33,7 +34,6 @@ jobs:
 
   trunk-fleet:
     name: hobo-trunk picks a job up
-    if: vars.HOBO_CI_TRUNK_RUNNER != 'false'
     runs-on: hobo-trunk
     concurrency:
       group: fleet-probe-hobo-trunk
@@ -42,9 +42,36 @@ jobs:
     steps:
       - run: "true"
 
+  # Whether a local box is enrolled is committed configuration
+  # (runnerRouting.localRunner in .hobo/ci.json), read with the route job's own
+  # dependency-free reader. GitHub-hosted, so it never waits on a label it probes.
+  local-box-enrolled:
+    name: local box enrolled
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      enrolled: ${{ steps.policy.outputs.enrolled }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ci/runner-routing.mts
+            .hobo/ci.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - id: policy
+        run: echo "enrolled=$(node --no-warnings scripts/ci/runner-routing.mts .hobo/ci.json --get localRunner)" >> "$GITHUB_OUTPUT"
+
   local-box:
     name: hobo-local-host picks a job up
-    if: vars.HOBO_CI_LOCAL_RUNNER == 'true'
+    needs: local-box-enrolled
+    if: needs.local-box-enrolled.outputs.enrolled == 'true'
     runs-on: hobo-local-host
     concurrency:
       group: fleet-probe-hobo-local-host

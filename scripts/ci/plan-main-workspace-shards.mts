@@ -27,24 +27,42 @@ import {
 	fetchLastGreenMainSha,
 	resolveMainTestBase,
 } from "./resolve-main-test-base.mts";
+import {
+	RUNNER_ROUTING_PATH,
+	type RunnerRouting,
+	readRunnerRouting,
+} from "./runner-routing.mts";
 import { loadWorkspaceDurations } from "./workspace-test-durations.mts";
 
 /**
- * How many shards the plan sizes for at once. A tuning setting of this script,
- * not a reading of the fleet: where the shards run is the route's decision
- * (the plan job asks the relay and the queue again before them).
+ * How many shards the plan sizes for at once. Committed routing policy
+ * (`runnerRouting.mainWorkspaceParallelCap` in `.hobo/ci.json`, ADR-0181),
+ * not a reading of the fleet and not an environment variable:
+ * where the shards run is the route's decision (the plan job reads the
+ * routing slip, else the queue, again before them).
  */
 export const DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP = 4;
 
-/** `MAIN_WORKSPACE_PARALLEL_CAP` when it is a whole number from 1 to 8, else the default. */
-export function mainWorkspaceParallelCap(env: NodeJS.ProcessEnv): number {
-	const value = Number(env.MAIN_WORKSPACE_PARALLEL_CAP ?? "");
-	return env.MAIN_WORKSPACE_PARALLEL_CAP?.trim() &&
-		Number.isInteger(value) &&
-		value >= 1 &&
-		value <= 8
-		? value
-		: DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP;
+/** The committed cap (a whole number from 1 to 8, as the reader checks), else the default. */
+export function mainWorkspaceParallelCap(
+	policy: RunnerRouting | undefined,
+): number {
+	return (
+		policy?.mainWorkspaceParallelCap ?? DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP
+	);
+}
+
+/** `runnerRouting` from the checkout's `.hobo/ci.json`, or nothing. */
+export function readCommittedRunnerRouting(
+	root: string = process.cwd(),
+): RunnerRouting | undefined {
+	try {
+		return readRunnerRouting(
+			readFileSync(join(root, RUNNER_ROUTING_PATH), "utf8"),
+		);
+	} catch {
+		return undefined;
+	}
 }
 
 const GITHUB_OUTPUT = process.env.GITHUB_OUTPUT?.trim();
@@ -191,7 +209,7 @@ async function main(): Promise<void> {
 					repo,
 					base ? cliRootFileReader(base) : undefined,
 				);
-	const parallelCap = mainWorkspaceParallelCap(process.env);
+	const parallelCap = mainWorkspaceParallelCap(readCommittedRunnerRouting());
 	const targetSeconds = Number(
 		process.env.MAIN_SHARD_TARGET_SECONDS ??
 			String(MAIN_WORKSPACE_SHARD_TARGET_SECONDS),

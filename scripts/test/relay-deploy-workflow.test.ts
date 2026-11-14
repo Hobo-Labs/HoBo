@@ -11,7 +11,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+	adoptDeadline,
 	decide,
+	RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+	RELAY_DEPLOY_JOB_TIMEOUT_MINUTES,
 	RELAY_EXTRA_INPUTS,
 	RELAY_SECRET_STORE_BINDING,
 	relayInputDirs,
@@ -204,22 +207,101 @@ describe("the relay deploy workflow", () => {
 	it("holds no Vercel token and makes no Vercel API write: Vercel's Git integration deploys", () => {
 		assert.doesNotMatch(
 			workflow,
-			/VERCEL_TOKEN|relay-deploy-credential|ci deploy|vercel@\d|vercel deploy|--token\b/u,
+			/VERCEL_TOKEN|relay-deploy-credential|vercel@\d|vercel deploy|--token\b/u,
 		);
+		// The only `hobo ci deploy` is the observe-only adoption.
+		for (const match of workflow.matchAll(/ci deploy\b[^\n]*/gu))
+			assert.match(match[0], /^ci deploy --adopt\b/u, match[0]);
 		assert.ok(
 			!existsSync(join(root, "scripts/ci/relay-deploy-credential.mts")),
 		);
-		const find = step("Find Vercel's Git deployment of this commit");
-		assert.match(find, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
-		assert.match(
-			find,
-			/repos\/\$GITHUB_REPOSITORY\/deployments\?sha=\$GITHUB_SHA/u,
-		);
-		assert.match(find, /test\("hobo-ci"\)/u);
-		assert.match(find, /environment_url/u);
 	});
 
-	it("verifies the secret store's CI identity by name before looking for the deployment", () => {
+	it("adopts Vercel's deployment of the pushed commit with hobo, reading it with the job's own token", () => {
+		const adopt = step("Adopt Vercel's Git deployment of this commit");
+		assert.match(adopt, /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
+		assert.match(
+			adopt,
+			/node packages\/hobo\/dist\/bin\/hobo\.js ci deploy --adopt/u,
+		);
+		assert.match(adopt, /--cwd packages\/ci-vercel/u);
+		assert.match(adopt, /--sha "\$GITHUB_SHA"/u);
+		// The command's own exit status decides the step: no swallowed failure.
+		assert.match(adopt, /exit "\$status"/u);
+		assert.doesNotMatch(adopt, /--adopt[^\n]*\|\| true/u);
+		// The ad-hoc lookup and smoke check are gone: hobo does both, fail closed.
+		// (The fleet-verdict probe, a separate step, still reads one public URL.)
+		assert.doesNotMatch(workflow, /gh api/u);
+		assert.doesNotMatch(adopt, /curl /u);
+		assert.doesNotMatch(workflow, /curl [^\n]*\/(healthz|readyz)/u);
+	});
+
+	it("fits the deploy job in 20 minutes: the gate's deadline bounds the adoption, the step timeout only backs it up", () => {
+		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
+		assert.ok(deploy, "no deploy job");
+		const jobTimeout = Number(
+			/^ {4}timeout-minutes: (\d+)$/mu.exec(deploy)?.[1],
+		);
+		assert.equal(jobTimeout, RELAY_DEPLOY_JOB_TIMEOUT_MINUTES);
+		assert.ok(jobTimeout <= 20, "every job is capped at 20 minutes");
+		assert.ok(RELAY_DEPLOY_JOB_MARGIN_MINUTES >= 2);
+		// The deadline is counted from the gate's own run, the job's timeout
+		// less the margin.
+		assert.equal(
+			adoptDeadline(Date.UTC(2026, 10, 13, 12)),
+			"2026-11-13T12:17:00.000Z",
+		);
+		const gate = step("Decide whether to deploy");
+		assert.match(gate, /id: gate/u);
+		assert.match(gate, /relay-deploy-gate\.mts/u);
+		const adopt = step("Adopt Vercel's Git deployment of this commit");
+		assert.match(
+			adopt,
+			/ADOPT_DEADLINE: \$\{\{ steps\.gate\.outputs\.deadline \}\}/u,
+		);
+		assert.match(adopt, /--deadline "\$ADOPT_DEADLINE"/u);
+		// The step timeout cannot end the command before its deadline, and no
+		// step may outlast the job.
+		const stepTimeout = Number(/timeout-minutes: (\d+)/u.exec(adopt)?.[1]);
+		assert.ok(
+			stepTimeout >= jobTimeout - RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+			`adopt step timeout ${stepTimeout} would cut the command short of its deadline`,
+		);
+		const steps = workflow.slice(
+			workflow.indexOf("    steps:", workflow.indexOf("\n  deploy:")),
+			workflow.indexOf("\n  app-credentials:"),
+		);
+		for (const match of steps.matchAll(/timeout-minutes: (\d+)/gu))
+			assert.ok(Number(match[1]) <= jobTimeout, match[0]);
+		// The typed reasons a late build or a spent budget end with are named.
+		assert.match(workflow, /HOBO_CI_ADOPT_NOT_READY_IN_BUDGET/u);
+		assert.match(workflow, /HOBO_CI_ADOPT_BUDGET_EXHAUSTED/u);
+	});
+
+	it("verifies at the Yard's production domain, needing no Deployment Protection bypass", () => {
+		// The production origin comes from the committed Yard, not a variable,
+		// and is an https origin with no path.
+		const yardSource = readFileSync(
+			join(root, "packages", "ci-vercel", "deploy", "yard.ts"),
+			"utf8",
+		);
+		const origin = /productionOrigin: "(https:\/\/[^"/]+)"/u.exec(yardSource);
+		assert.ok(origin, "deploy/yard.ts declares no productionOrigin");
+		assert.match(
+			yardSource,
+			/productionOrigin: RELAY_PLACEMENT\.productionOrigin/u,
+		);
+		// Nothing in the workflow reaches past protection or names a probe URL.
+		assert.doesNotMatch(
+			workflow,
+			/protection-bypass|VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-set-bypass-cookie/iu,
+		);
+		const adopt = step("Adopt Vercel's Git deployment of this commit");
+		assert.doesNotMatch(adopt, /https?:\/\//u);
+		assert.match(workflow, /productionOrigin in deploy\/yard\.ts/u);
+	});
+
+	it("verifies the secret store's CI identity by name before adopting the deployment", () => {
 		const verify = step("Verify the secret store connection");
 		assert.match(
 			verify,
@@ -229,7 +311,7 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(verify, /\|\| true/u);
 		assert.ok(
 			workflow.indexOf("ci secret-store verify") <
-				workflow.indexOf("Find Vercel's Git deployment of this commit"),
+				workflow.indexOf("Adopt Vercel's Git deployment of this commit"),
 		);
 	});
 
@@ -257,13 +339,6 @@ describe("the relay deploy workflow", () => {
 			workflow.indexOf("Mask the one-time manifest code") <
 				workflow.indexOf("ci app deposit"),
 		);
-	});
-
-	it("fails the smoke check on a 5xx from /healthz only, and reports /readyz", () => {
-		const smoke = step("Smoke-check /healthz and /readyz");
-		assert.match(smoke, /5\?\?\) echo "::error/u);
-		assert.match(smoke, /probe \/readyz/u);
-		assert.doesNotMatch(smoke.slice(smoke.indexOf("probe /readyz")), /exit 1/u);
 	});
 
 	describe("probes the public origin", () => {
@@ -303,7 +378,9 @@ describe("the relay deploy workflow", () => {
 		it("runs after the existing checks, so it reports on what Vercel already deployed", () => {
 			assert.ok(
 				workflow.indexOf(`- name: ${name}`) >
-					workflow.indexOf("- name: Smoke-check /healthz and /readyz"),
+					workflow.indexOf(
+						"- name: Adopt Vercel's Git deployment of this commit",
+					),
 			);
 			assert.ok(
 				workflow.indexOf(`- name: ${name}`) <

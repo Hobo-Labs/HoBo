@@ -7,7 +7,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
 	mainWorkspaceParallelCap,
+	readCommittedRunnerRouting,
 } from "../ci/plan-main-workspace-shards.mts";
+import { readRunnerRouting } from "../ci/runner-routing.mts";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPTS_CI = join(REPO_ROOT, "scripts", "ci");
@@ -60,28 +62,33 @@ function plan(env: Record<string, string>) {
 }
 
 describe("main-gate-plan install-free", () => {
-	it("sizes shards from its own setting, never from a reading of the fleet", () => {
+	it("sizes shards from committed routing policy, never from a reading of the fleet or the environment", () => {
 		assert.equal(DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP, 4);
-		assert.equal(mainWorkspaceParallelCap({}), 4);
+		assert.equal(mainWorkspaceParallelCap(undefined), 4);
+		const project = JSON.parse(
+			readFileSync(join(REPO_ROOT, ".hobo/ci.json"), "utf8"),
+		);
+		const committed = readRunnerRouting(JSON.stringify(project));
+		assert.ok(committed);
+		assert.deepEqual(readCommittedRunnerRouting(REPO_ROOT), committed);
+		assert.equal(mainWorkspaceParallelCap(committed), 4);
+		project.runnerRouting.mainWorkspaceParallelCap = 2;
 		assert.equal(
-			mainWorkspaceParallelCap({ MAIN_WORKSPACE_PARALLEL_CAP: "2" }),
+			mainWorkspaceParallelCap(readRunnerRouting(JSON.stringify(project))),
 			2,
 		);
-		for (const value of ["", "0", "9", "2.5", "two"])
+		// A cap the policy does not allow makes the whole policy invalid: the default.
+		for (const value of [0, 9, 2.5, "two"]) {
+			project.runnerRouting.mainWorkspaceParallelCap = value;
 			assert.equal(
-				mainWorkspaceParallelCap({ MAIN_WORKSPACE_PARALLEL_CAP: value }),
+				mainWorkspaceParallelCap(readRunnerRouting(JSON.stringify(project))),
 				4,
-				value,
+				String(value),
 			);
-		// What a worker once published reaches it no more (rule R2).
+		}
 		assert.equal(
-			mainWorkspaceParallelCap({
-				HOBO_CI_FLEET_CAPACITY_JSON: JSON.stringify({
-					version: 1,
-					admittedParallel: 1,
-				}),
-			}),
-			4,
+			readCommittedRunnerRouting(join(REPO_ROOT, "nowhere")),
+			undefined,
 		);
 	});
 
@@ -104,9 +111,10 @@ describe("main-gate-plan install-free", () => {
 	});
 
 	it("runs plan-main-workspace-shards without resolving workspace node_modules", () => {
+		// The retired variable no longer reaches it (ADR-0181, R2).
 		const capped = plan({ MAIN_WORKSPACE_PARALLEL_CAP: "2" });
 		assert.equal(capped.status, 0, `${capped.stdout}\n${capped.stderr}`);
-		assert.match(capped.stderr, /parallelCap=2/u);
+		assert.match(capped.stderr, /parallelCap=4/u);
 		const unset = plan({
 			HOBO_CI_FLEET_CAPACITY_JSON: JSON.stringify({
 				version: 1,
