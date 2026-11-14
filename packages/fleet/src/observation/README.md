@@ -19,6 +19,30 @@ from `packages/ci/src/mesh/` (`rendezvous.ts`, `reliability.ts`,
 | `fleetVerdict(view, label, nowMs)` | `OPEN`, `BUSY`, `NO_MEMBER` or `NO_CAPACITY` for live members serving the label. With no free slot it is `NO_CAPACITY` only when every serving member's `refusal` is `PRESSURE`, `STORAGE` or `DRAINING`; otherwise `BUSY`, which routing treats as `OPEN` (amendment 4, D60; ADR-0181 R4). It expires at the earlier of 300 s and the view's `not_after`. A truncated view that lists nobody for the label answers from the fleet's capacity. |
 | `createReliabilityLedger({ halfLifeMs })` | Decayed delivered and dropped counts from receipts: `STARTED` delivers, `ABANDONED` and `REFUSED` drop (taking back a start), `CANCELLED` counts nothing, each order once. Decayed to the newest receipt recorded. |
 
+`refusal.ts` (L43, internal; the frozen barrel does not export it) derives an
+observation's `refusal`. `deriveRefusal({ draining, health, capacity, host })`
+answers `DRAINING` when draining; otherwise `STORAGE` when fewer than 8 GiB
+(`STORAGE_FLOOR_DISK_MB` 8,192) are free under the work root or fewer than
+25,000 inodes (`STORAGE_FLOOR_INODES`); otherwise `PRESSURE` when no memory is
+left above the 2 GiB reserve (`free_memory_mb == 0`), the source reports
+`PRESSURED`, or memory PSI avg10 is at least 25 "some"
+(`PSI_MEMORY_SOME_LIMIT`) or 5 "full" (`PSI_MEMORY_FULL_LIMIT`); otherwise
+`OWN_WORK` when every slot is taken; otherwise `NONE`. Unknown capacity, or a
+member with no slots, says nothing (`UNSPECIFIED`). An absent figure never
+crosses a threshold. The thresholds are main's box worker's
+(`isolated-worker/host-capacity.ts` `minInodeMargin`, `psiSomeBlock`,
+`psiFullBlock`; `storage-admission.ts` default `workRootBytes`).
+`publishedHealth(refusal, health)` is the health published beside it:
+`DRAINING`, `PRESSURED` for storage or pressure, else the source's.
+`hostSignalsOf(reading)` reads the `hostSignals` (free inodes, memory PSI) that
+`@hobo/fleet-agent`'s host capacity carries beside the frozen
+`CapacitySource` fields.
+
+Because such a member's health is not `REACHABLE`, `fleetVerdict` counts a
+current, active member as serving when it is `LIVE`, or `UNHEALTHY` with a
+`PRESSURE`, `STORAGE` or `DRAINING` refusal; a refusing member's slots never
+count.
+
 `packages/fleet/src/verdict-wire.ts` (`@hobo/fleet/verdict-wire`) parses the
 verdict route's protobuf JSON for the route job. It has no imports and loads
 with `node --experimental-strip-types` before anything is installed; a

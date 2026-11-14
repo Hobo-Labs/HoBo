@@ -329,6 +329,52 @@ describe("fleetVerdict", () => {
 		).toBe(VerdictState.BUSY);
 	});
 
+	// L43: an agent that refuses for the host or for draining publishes
+	// `PRESSURED` or `DRAINING` health beside its refusal; it still serves
+	// the label, so the fleet has no capacity rather than no member.
+	it("counts a pressured or draining member that says why as serving and refusing, never its slots", () => {
+		expect(
+			fleetVerdict(
+				view(
+					{
+						health: Health.PRESSURED,
+						capacity: { freeSlots: 2 },
+						refusal: Refusal.PRESSURE,
+					},
+					{
+						health: Health.DRAINING,
+						capacity: { freeSlots: 1 },
+						refusal: Refusal.DRAINING,
+					},
+				),
+				"hobo",
+				NOW,
+			),
+		).toMatchObject({
+			state: VerdictState.NO_CAPACITY,
+			members: 2,
+			freeSlots: 0,
+		});
+		expect(
+			fleetVerdict(
+				view(
+					{ capacity: { freeSlots: 0 }, refusal: Refusal.OWN_WORK },
+					{
+						health: Health.PRESSURED,
+						capacity: { freeSlots: 0 },
+						refusal: Refusal.PRESSURE,
+					},
+				),
+				"hobo",
+				NOW,
+			),
+		).toMatchObject({ state: VerdictState.BUSY, members: 2 });
+		// An unhealthy member that says nothing (an older agent) still does not serve.
+		expect(
+			fleetVerdict(view({ health: Health.PRESSURED }), "hobo", NOW).state,
+		).toBe(VerdictState.NO_MEMBER);
+	});
+
 	it("stays OPEN while a serving member has a free slot, whatever the others refuse", () => {
 		expect(
 			fleetVerdict(
