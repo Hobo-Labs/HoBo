@@ -17,8 +17,8 @@ surfaces.
 
 | Verb | Role | Semantics | Implementation issues |
 |---|---|---|---|
-| `up` | lifecycle | Realize the current object graph: build, plan, gate, provision, and deploy. `--camp`, `--strategy`, `--to`, `--rollback`, `--seed`, and `--restore` select target or revision without adding lifecycle verbs. `--broker` / `--broker-uri` target a remote broker (discovery required); `--anonymous` / `--temporary` request an ephemeral deploy when discovery advertises support. Without a flag, environment, or profile broker selection, use the local embedded broker. | HOBO-130, HOBO-164, HOBO-198, HOBO-203, HOBO-208, HOBO-213, HOBO-219, HOBO-224 |
-| `down` | lifecycle | Tear down what `up` realized, in reverse dependency order. | HOBO-132 |
+| `up` | lifecycle | Realize the current object graph: build, plan, gate, provision, and deploy — Desired State Reconciliation, so a re-run is idempotent and a changed declaration is an upsert. `--what-if` (aliases `--dry-run`, `--preview`) prints the change set and changes nothing; `--mode incremental\|complete` keeps or prunes resources no longer declared. `--camp`, `--strategy`, `--to`, `--rollback`, `--seed`, and `--restore` select target or revision without adding lifecycle verbs. `--broker` / `--broker-uri` target a remote broker (discovery required); `--anonymous` / `--temporary` request an ephemeral deploy when discovery advertises support. Without a flag, environment, or profile broker selection, use the local embedded broker. | HOBO-130, HOBO-164, HOBO-198, HOBO-203, HOBO-208, HOBO-213, HOBO-219, HOBO-224 |
+| `down` | lifecycle | Tear down what `up` realized, in reverse dependency order. `--what-if` (aliases `--dry-run`, `--preview`) lists what would be destroyed. A later `up` re-creates it. | HOBO-132 |
 | `dev` | local loop | Run against `runtime-local` with hot reload, replay, codegen-in-watch, and honest fidelity labels. Every workload lane participates: wasm components in any supported language recompile in-watch and OCI-fallback services restart-on-change per the dev-loop matrix ([ADR-0109](./adr/07-portability-extensibility.md#adr-0109)). | HOBO-122, HOBO-190, HOBO-198, HOBO-392, HOBO-612 (draft POC: `src/draft/technical-proofs/hobo-612-dev-local-loop-poc/`) |
 | `new` | local loop | Scaffold a runnable SDK program. | HOBO-118, HOBO-198 |
 | `login` | identity | Obtain a dev SVID through OIDC; never paste provider keys. Optional `--broker` / `--broker-uri` associates a default remote broker on the HOBO_HOME profile (identity plane; not placement). | HOBO-136, HOBO-184 |
@@ -28,7 +28,8 @@ surfaces.
 | `access` | identity | Request elevated or cross-env access / break-glass (short-lived capability; audited). | ADR-0133 |
 | `feature` | delivery | OpenFeature flags, canary, and experiment observe (`list`, `eval`, `set`, `kill`, `canary`, `experiment`). Sole app evaluation API is OpenFeature; no vendor SDKs. | ADR-0044, ADR-0083 |
 | `deploy` | delivery | HoBo.CD continuous delivery ([ADR-0182](./adr/01-architecture-core.md#adr-0182)): Freight (`freight record/list/show/yank/approve`), sources (`source define/list/poll`), pipelines (`pipeline apply/show/list`, including `--file hobo.delivery.ts`), windows (`window define/list/override`), promotion (`promote`, `status`, `logs`, `rollback`, `reconcile`, `preview`, `verify show`, `metrics`), agents (`agent token/enroll/approve-key/accept/run/revoke`), publishers, fleet (`campset`, `camp`, `placement`, `scores report`, `fanout`, `failover`, `rebalance`) and `compliance show`. Subcommands of one verb, not new verbs; `--simulate` is the only fixture path and labels every result. Secret-free status; no ambient credentials; agent principals propose by default. Reference: `packages/hobo/CD.md`. | ADR-0083, ADR-0008, ADR-0182 |
-| `ci` | delivery | Connect a GitHub repository to isolated CI (`enable`, `connect` alias), inspect its connection (`status`), and manage Actions runs (`list`/`ls`, `inspect`, `logs`, `grep`, `rerun`). Works without a Bindle. `deploy` is the exception: it deploys the hosted relay's own Bindle to Vercel from a git ref (preview by default, `--dry-run` sends nothing). [Setup and Vercel parity](../../packages/hobo/CI.md). | ADR-0071, ADR-0083 |
+| `ci` | delivery | Connect a GitHub repository to isolated CI (`enable`, `connect` alias), inspect its connection (`status`), and manage Actions runs (`list`/`ls`, `inspect`, `logs`, `grep`, `rerun`). Works without a Bindle. **Lifecycle family:** `ci up` / `ci down` / `ci plan` converge the CI project through the same engine as `up`/`down`/`plan` (see [Lifecycle families](#lifecycle-families)). `deploy` is the legacy single-relay path: it deploys the hosted relay's own Bindle to Vercel from a git ref (preview by default, `--dry-run` sends nothing). [Setup and Vercel parity](../../packages/hobo/CI.md). | ADR-0071, ADR-0083 |
+| `cd` | delivery | **Lifecycle family** for the CD project: `cd up` / `cd down` / `cd plan` / `cd status` converge it through the same engine as `up`/`down`/`plan` (see [Lifecycle families](#lifecycle-families)). Any other subcommand is `deploy` (`hobo cd freight list` ≡ `hobo deploy freight list`). | ADR-0182 |
 | `incident` | delivery | CD failure disposition (`status` lists failed, rolled-back and rejected promotions and open failovers; `open` rolls the Camp back through the HoBo.CD gate, then A2H or sandboxed self-heal). Default A2H; self-heal only in ADR-0076 lane; an agent principal's rollback is a proposal. | ADR-0082, ADR-0094, ADR-0076, ADR-0182 |
 | `claim` | identity | Bind an anonymous `npx hobo up` deployment to an account while preserving state and URL. Local: event-store rebind. Remote: `hobo claim <account> --broker <uri> --token <claimToken>` exchanges the claim token without re-provision. Provider ownership is a separate ceremony: `status` lists every claim item with its own deadline and outstanding obligations, `open <item>` redeems that item's one-time action, and `finalize <item>` verifies ownership and discharges obligations before the item may complete. | HOBO-136, HOBO-164, ADR-0151 |
 | `recipes` | read-only | List and inspect deployment recipes (`list`, `show <recipe-id>`): Yards, placements, bootstrap classes, claim terms, and required consents, before any provider login. | ADR-0151 |
@@ -94,6 +95,48 @@ hobo claim acme --to acme
 hobo claim acme --broker https://public.example.com --token <claimToken>
 hobo down --camp pr-123
 ```
+
+### Idempotent deployment and the what-if
+
+`up` is Desired State Reconciliation over the durable log
+([control-plane.md](./control-plane.md#the-resourceactor-reconciliation-fsm)):
+the declaration is compared with what the log recorded, and only the
+difference is applied. The flag names are the ones Bicep, az, wrangler and
+Pulumi users already know:
+
+| Flag | Verbs | Meaning |
+|---|---|---|
+| `--what-if`, `--dry-run`, `--preview` | `up`, `down`, family `up`/`down` | Print the change set (`create` / `update` / `no-op` / `delete` / `retain`, or what `down` destroys); read the log only, call no provider. |
+| `--mode incremental` (default) | `up`, `plan`, family `up`/`plan` | Keep resources the log provisioned but the declaration no longer names (reported `retain`). |
+| `--mode complete` | `up`, `plan`, family `up`/`plan` | Destroy them, dependents first, after the declared resources converge. |
+
+`plan` always reports the same change set beside the plan. Re-running `up`
+with an unchanged declaration calls no provider and records nothing.
+
+### Lifecycle families
+
+A family is a HoBo project of its own, a Bindle with a CLI, whose lifecycle is
+the same three commands pointed at that project instead of the working
+directory. There is no second engine, so every family inherits idempotency,
+upsert, what-if and modes:
+
+```bash
+hobo ci up              # ≡ hobo up   --cwd <the CI project>
+hobo ci up --what-if    # ≡ hobo plan --cwd <the CI project>
+hobo cd down            # ≡ hobo down --cwd <the CD project>
+hobo cd status          # the what-if, read-only
+hobo cd up --mode complete
+```
+
+The project resolves from `--project <dir>`, then `HOBO_CI_PROJECT` /
+`HOBO_CD_PROJECT`, then the project HoBo ships for the family, then the working
+directory when it holds a Bindle. A family may connect a provider before `up`
+converges (the GitHub App for CI, Vercel for CD). That step is idempotent: it
+finds the connection already in the secret store and does nothing, and a
+refused connection stops `up` before anything is created. `hobo ci status`
+keeps inspecting the relay connection. Every other family subcommand keeps its
+existing meaning (`hobo cd <x>` is `hobo deploy <x>`). Families add no
+lifecycle verbs: `up` and `down` remain the only two.
 
 ### Broker targeting and anonymous deploy
 
