@@ -82,9 +82,7 @@ export class ResourceMutationNotSentError extends Error {
 	readonly refusal: unknown;
 	constructor(cause: unknown) {
 		super(
-			cause instanceof Error
-				? cause.message
-				: "provider mutation was not sent",
+			cause instanceof Error ? cause.message : "provider mutation was not sent",
 		);
 		this.name = "ResourceMutationNotSentError";
 		this.refusal = cause;
