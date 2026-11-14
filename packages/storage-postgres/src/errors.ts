@@ -189,6 +189,12 @@ export function translatePgError(error: Error): Error {
 		}
 		return error;
 	}
+	// The deferred actor-commit trigger: the lease lapsed before COMMIT.
+	if (
+		code === "P0001" &&
+		error.message.includes("actor lease expired before protected commit")
+	)
+		return new EventStoreError("STALE_FENCE", error.message);
 	if (code === "57014" || code === "55P03") {
 		return new StoragePostgresError(
 			"statement-timeout",

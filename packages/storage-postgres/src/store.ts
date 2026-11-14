@@ -154,7 +154,7 @@ export interface PostgresEventStore extends DurableEventStore {
 	ready(): Promise<MigrationReport>;
 	fold<S>(
 		streamId: string,
-		opts: { initialState: S; handlers: FoldHandlers<S> },
+		opts: { initialState: S; handlers: FoldHandlers<S>; fenceToken?: bigint },
 	): Promise<FoldResult<S>>;
 	/** A protected or leased stream refuses a snapshot without its live fence. */
 	snapshot(
@@ -971,6 +971,17 @@ SELECT EXISTS (
 		append: ParsedAppend,
 		effects: DurableCommitRequest["effects"],
 	): Promise<DurableCommitResult & { lastPositionRaw: bigint | undefined }> {
+		const effectList = effects ?? [];
+		// An empty commit is a no-op. In particular it must not create a stream
+		// head before the lease boundary has authorized an actual write.
+		if (inputs.length === 0 && effectList.length === 0)
+			return Object.freeze({
+				streamId,
+				appended: [],
+				deduped: [],
+				effects: [],
+				lastPositionRaw: undefined,
+			});
 		const now = clock.now();
 		const actorPolicy = await lockedActorPolicy(client);
 		await client.query(
@@ -991,13 +1002,6 @@ SELECT EXISTS (
 		}
 		const revision = int4(headRow, "revision");
 		const ownerEpoch = int8(headRow, "owner_epoch");
-		await checkActorWrite(
-			client,
-			actorPolicy,
-			streamId,
-			ownerEpoch,
-			append.fenceToken,
-		);
 
 		const keys = inputs.flatMap((input) =>
 			input.idempotencyKey === undefined ? [] : [input.idempotencyKey],
@@ -1034,7 +1038,6 @@ SELECT EXISTS (
 			}
 			toWrite.push(input);
 		}
-		const effectList = effects ?? [];
 		if (toWrite.length === 0 && effectList.length === 0) {
 			return Object.freeze({
 				streamId,
@@ -1044,6 +1047,15 @@ SELECT EXISTS (
 				lastPositionRaw: undefined,
 			});
 		}
+		// Only new writes are fenced: a retry whose events already committed
+		// reads them back above, even after its lease has expired.
+		await checkActorWrite(
+			client,
+			actorPolicy,
+			streamId,
+			ownerEpoch,
+			append.fenceToken,
+		);
 
 		const epoch = nextOwnerEpoch(streamId, ownerEpoch, append.fenceToken);
 		if (toWrite.length > 0 && append.expectedSeq !== revision) {
@@ -1374,6 +1386,7 @@ SELECT EXISTS (
 		streamId: string,
 		event: EventEnvelope,
 		cause: Error,
+		fenceToken: bigint | undefined,
 	): Promise<EventEnvelope> {
 		for await (const candidate of readStream(streamId, 1)) {
 			if (
@@ -1393,10 +1406,10 @@ SELECT EXISTS (
 		if (event.correlationId !== undefined) {
 			appendOptions.correlationId = event.correlationId;
 		}
-		// Quarantine must not bypass fencing: continue at the stream's epoch.
-		if (head !== undefined && head.ownerEpoch > 0n) {
-			appendOptions.fenceToken = head.ownerEpoch;
-		}
+		// The stream head is observable state, not evidence that this caller
+		// holds its lease. Pass only the fence explicitly supplied by the caller;
+		// the regular commit boundary verifies it before writing the marker.
+		if (fenceToken !== undefined) appendOptions.fenceToken = fenceToken;
 		const aggregate = event.type.split(".")[0] ?? "event";
 		const result = await commit({
 			streamId,
@@ -1425,7 +1438,11 @@ SELECT EXISTS (
 
 	async function fold<S>(
 		streamId: string,
-		foldOptions: { initialState: S; handlers: FoldHandlers<S> },
+		foldOptions: {
+			initialState: S;
+			handlers: FoldHandlers<S>;
+			fenceToken?: bigint;
+		},
 	): Promise<FoldResult<S>> {
 		const id = requireNonEmpty(streamId, "streamId");
 		if (foldOptions.initialState === undefined) {
@@ -1459,7 +1476,12 @@ SELECT EXISTS (
 			try {
 				state = cloneJson(handler(cloneJson(state), cloneJson(event)));
 			} catch (caught) {
-				const marker = await appendQuarantine(id, event, asError(caught));
+				const marker = await appendQuarantine(
+					id,
+					event,
+					asError(caught),
+					foldOptions.fenceToken,
+				);
 				const reason = jsonField(marker.data, "reason");
 				quarantined.push({
 					offendingSeq: event.seq,
