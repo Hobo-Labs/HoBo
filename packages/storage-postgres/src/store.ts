@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import {
 	type AppendOptions,
 	type AppendResult,
+	type AsyncActorLease,
+	type AsyncActorLeaseHost,
 	type ClaimSubscriptionOptions,
 	type Clock,
 	type CommitCheckpointOptions,
@@ -47,7 +50,13 @@ import {
 } from "./errors.js";
 import { notifyChannel, quoteSchema, type SchemaName } from "./identifiers.js";
 import { eventIdFor } from "./ids.js";
-import { asError, isJsonNumber, isJsonString, jsonField } from "./json.js";
+import {
+	asError,
+	isJsonNumber,
+	isJsonString,
+	jsonField,
+	parseJsonText,
+} from "./json.js";
 import { type MigrationReport, migrateSchema } from "./migrate.js";
 import { SCHEMA_VERSION } from "./migrations/index.js";
 import {
@@ -56,6 +65,7 @@ import {
 	parseAppendOptions,
 	parseEventInputs,
 	parseLeaseTtl,
+	requireInt8,
 	requireNonEmpty,
 	requireNonNegInt,
 } from "./parse.js";
@@ -104,6 +114,8 @@ export type PostgresEventStoreOptions = Readonly<{
 	telemetry?: StoreTelemetrySink;
 	/** Monotonic milliseconds for durations only; never used in decisions. */
 	monotonicMs?: () => number;
+	/** Immutable schema-wide stream prefixes requiring a live actor lease. */
+	protectedActorStreamPrefixes?: readonly string[];
 }>;
 
 export type StoreHealth = Readonly<{
@@ -116,6 +128,25 @@ export interface PostgresEventStore extends DurableEventStore {
 	readonly schema: SchemaName;
 	readonly partitionId: string;
 	readonly config: PostgresStoreConfig;
+	/** Distributed lease host sharing this journal and its write fence. */
+	readonly actorLeaseHost: AsyncActorLeaseHost;
+	/** Read the installed policy from the primary; does not configure it. */
+	verifyActorStreamProtection(prefix: string): Promise<void>;
+	/** Verify that a separately authenticated application role cannot alter the
+	 * journal or assume a role that can. The supervisor connection remains the
+	 * sole writer; the application must submit changes through that supervisor. */
+	verifyApplicationRoleIsolation(input: {
+		applicationRole: string;
+		protectedPrefix: string;
+		applicationPool: PgPoolLike;
+	}): Promise<
+		Readonly<{
+			database: string;
+			schema: string;
+			applicationRole: string;
+			supervisorRole: string;
+		}>
+	>;
 	/** Connect and migrate (also done lazily by the first operation). */
 	ready(): Promise<MigrationReport>;
 	fold<S>(
@@ -211,6 +242,25 @@ export function createPostgresEventStore(
 	const clock = options.clock ?? systemClock();
 	const monotonic = options.monotonicMs ?? (() => performance.now());
 	const s = quoteSchema(config.schema);
+	const requestedPrefixes =
+		options.protectedActorStreamPrefixes === undefined
+			? undefined
+			: [...new Set(options.protectedActorStreamPrefixes)].sort();
+	if (
+		requestedPrefixes &&
+		(requestedPrefixes.length === 0 ||
+			requestedPrefixes.length > 64 ||
+			requestedPrefixes.some(
+				(prefix) =>
+					!isJsonString(prefix) ||
+					prefix.length === 0 ||
+					Buffer.byteLength(prefix) > 256,
+			))
+	)
+		throw new StoragePostgresError(
+			"invalid-config",
+			"protected actor stream prefixes must be nonempty and bounded",
+		);
 	const metrics = createStoreMetrics(
 		options.telemetry,
 		() => {
@@ -272,6 +322,52 @@ export function createPostgresEventStore(
 				minServerMajorVersion: config.minServerMajorVersion,
 				now: clock.now(),
 			});
+			if (requestedPrefixes) {
+				const wanted = JSON.stringify(requestedPrefixes);
+				await client.query("BEGIN");
+				try {
+					const selected = await client.query(
+						`SELECT prefixes FROM ${s}.actor_lease_policy WHERE id = 1 FOR UPDATE`,
+					);
+					const row = selected.rows[0];
+					if (!row)
+						throw new StoragePostgresError(
+							"unavailable",
+							"actor lease policy is missing",
+						);
+					const stored = text(row, "prefixes");
+					if (stored !== wanted) {
+						const previous = parseJsonText(stored);
+						if (
+							!Array.isArray(previous) ||
+							previous.length > 64 ||
+							previous.some(
+								(prefix) =>
+									!isJsonString(prefix) ||
+									!prefix ||
+									Buffer.byteLength(prefix) > 256 ||
+									!requestedPrefixes.includes(prefix),
+							) ||
+							new Set(previous).size !== previous.length
+						)
+							throw new StoragePostgresError(
+								"invalid-config",
+								"actor lease stream policy may not remove established protection",
+							);
+						// Each append holds a shared lock on this policy row through its
+						// commit. The exclusive lock above drains old writes before the
+						// new protections become effective; no process can downgrade it.
+						await client.query(
+							`UPDATE ${s}.actor_lease_policy SET prefixes = $1 WHERE id = 1`,
+							[wanted],
+						);
+					}
+					await client.query("COMMIT");
+				} catch (error) {
+					await client.query("ROLLBACK");
+					throw error;
+				}
+			}
 			if (report.applied.length > 0) {
 				metrics.emit([
 					{
@@ -354,6 +450,187 @@ export function createPostgresEventStore(
 			}
 		}
 	}
+
+	async function lockedActorPolicy(
+		client: PgClientLike,
+	): Promise<readonly string[]> {
+		// This shared row prevents policy activation racing a transaction that
+		// read the previous policy: the lock remains held through commit.
+		const result = await client.query(
+			`SELECT prefixes FROM ${s}.actor_lease_policy WHERE id = 1 FOR SHARE`,
+		);
+		const row = result.rows[0];
+		if (!row)
+			throw new StoragePostgresError(
+				"unavailable",
+				"actor lease policy is missing",
+			);
+		const value = parseJsonText(text(row, "prefixes"));
+		if (!Array.isArray(value) || value.length > 64)
+			throw new StoragePostgresError(
+				"unavailable",
+				"actor lease policy is invalid",
+			);
+		const prefixes: string[] = [];
+		for (const prefix of value) {
+			if (
+				!isJsonString(prefix) ||
+				prefix.length === 0 ||
+				Buffer.byteLength(prefix) > 256
+			)
+				throw new StoragePostgresError(
+					"unavailable",
+					"actor lease policy is invalid",
+				);
+			prefixes.push(prefix);
+		}
+		return prefixes;
+	}
+	async function requireActorPrimary(client: PgClientLike) {
+		const result = await client.query("SELECT pg_is_in_recovery() AS replica");
+		if (result.rows[0]?.replica !== false)
+			throw new StoragePostgresError(
+				"unavailable",
+				"actor lease authority is not a PostgreSQL primary",
+			);
+	}
+	async function requireActorCommitProtection(client: PgClientLike) {
+		const check = await client.query(
+			`
+SELECT EXISTS (
+  SELECT 1 FROM pg_catalog.pg_trigger t
+  JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = $1 AND c.relname = 'actor_commit_checks' AND
+    t.tgname = 'actor_commit_lease_live' AND t.tgenabled = 'O' AND
+    t.tgdeferrable AND t.tginitdeferred AND NOT t.tgisinternal
+) AS installed`,
+			[config.schema],
+		);
+		if (check.rows[0]?.installed !== true)
+			throw new StoragePostgresError(
+				"invalid-config",
+				"actor commit lease protection is not installed",
+			);
+	}
+	async function lockActorStream(client: PgClientLike, streamId: string) {
+		const timestamp = clock.now();
+		await client.query(
+			`INSERT INTO ${s}.streams (stream_id, revision, owner_epoch, created_at, updated_at)
+			VALUES ($1, 0, 0, $2, $2) ON CONFLICT (stream_id) DO NOTHING`,
+			[streamId, timestamp],
+		);
+		const head = await client.query(
+			`SELECT owner_epoch FROM ${s}.streams WHERE stream_id = $1 FOR UPDATE`,
+			[streamId],
+		);
+		const row = head.rows[0];
+		if (!row)
+			throw new StoragePostgresError(
+				"unavailable",
+				"actor stream head is missing",
+			);
+		return int8(row, "owner_epoch");
+	}
+	async function validActorLease(
+		client: PgClientLike,
+		streamId: string,
+		holderId: string,
+		fenceToken: bigint,
+	) {
+		const ownerEpoch = await lockActorStream(client, streamId);
+		const found = await client.query(
+			`SELECT holder_id, fence_token, (NOT released AND expires_at > clock_timestamp()) AS active
+			FROM ${s}.actor_leases WHERE stream_id = $1`,
+			[streamId],
+		);
+		const row = found.rows[0];
+		if (
+			row?.active !== true ||
+			text(row, "holder_id") !== holderId ||
+			int8(row, "fence_token") !== fenceToken ||
+			ownerEpoch !== fenceToken
+		)
+			throw new StaleFenceError(streamId, fenceToken, ownerEpoch);
+	}
+	const actorLeaseHost: AsyncActorLeaseHost = Object.freeze({
+		async acquire(
+			rawKey: string,
+			request: { holderId: string },
+		): Promise<AsyncActorLease> {
+			const key = requireNonEmpty(rawKey, "actor key");
+			const holderId = requireNonEmpty(request?.holderId, "holderId");
+			if (Buffer.byteLength(key) > 4096 || Buffer.byteLength(holderId) > 512)
+				throw new StoragePostgresError(
+					"invalid-input",
+					"actor lease identity exceeds its bound",
+				);
+			const grant = await tx(async (client) => {
+				await requireActorPrimary(client);
+				await lockedActorPolicy(client);
+				const previous = await lockActorStream(client, key);
+				const found = await client.query(
+					`SELECT (NOT released AND expires_at > clock_timestamp()) AS active FROM ${s}.actor_leases WHERE stream_id = $1`,
+					[key],
+				);
+				if (found.rows[0]?.active === true)
+					throw new StoragePostgresError(
+						"lease-held",
+						"actor stream is already leased",
+					);
+				const fenceToken = requireInt8(previous + 1n, "actor fence");
+				await client.query(
+					`UPDATE ${s}.streams SET owner_epoch = $2, updated_at = $3 WHERE stream_id = $1`,
+					[key, fenceToken.toString(), clock.now()],
+				);
+				const inserted = await client.query(
+					`INSERT INTO ${s}.actor_leases (stream_id, holder_id, fence_token, expires_at, released)
+					VALUES ($1, $2, $3, clock_timestamp() + ($4 * INTERVAL '1 millisecond'), false)
+					ON CONFLICT (stream_id) DO UPDATE SET holder_id = EXCLUDED.holder_id, fence_token = EXCLUDED.fence_token,
+						expires_at = EXCLUDED.expires_at, released = false
+					RETURNING (extract(epoch FROM expires_at) * 1000)::bigint::text AS expires_ms`,
+					[key, holderId, fenceToken.toString(), config.leaseTtlMs],
+				);
+				const row = inserted.rows[0];
+				if (!row)
+					throw new StoragePostgresError(
+						"unavailable",
+						"actor lease could not be recorded",
+					);
+				const expiresMs = Number(text(row, "expires_ms"));
+				if (!Number.isSafeInteger(expiresMs))
+					throw new StoragePostgresError(
+						"unavailable",
+						"actor lease expiry is invalid",
+					);
+				return { fenceToken, expiresAt: new Date(expiresMs).toISOString() };
+			});
+			return Object.freeze({
+				key,
+				holderId,
+				...grant,
+				async revalidate() {
+					await tx(async (client) => {
+						await requireActorPrimary(client);
+						await lockedActorPolicy(client);
+						await validActorLease(client, key, holderId, grant.fenceToken);
+					});
+				},
+				async release() {
+					await tx(async (client) => {
+						await requireActorPrimary(client);
+						await lockedActorPolicy(client);
+						await lockActorStream(client, key);
+						// A delayed release can never release a later holder.
+						await client.query(
+							`UPDATE ${s}.actor_leases SET released = true WHERE stream_id = $1 AND holder_id = $2 AND fence_token = $3`,
+							[key, holderId, grant.fenceToken.toString()],
+						);
+					});
+				},
+			});
+		},
+	});
 
 	/** Run a read-only statement outside a transaction. */
 	async function read<T>(fn: (client: PgClientLike) => Promise<T>): Promise<T> {
@@ -643,6 +920,7 @@ export function createPostgresEventStore(
 		effects: DurableCommitRequest["effects"],
 	): Promise<DurableCommitResult & { lastPositionRaw: bigint | undefined }> {
 		const now = clock.now();
+		const actorPolicy = await lockedActorPolicy(client);
 		await client.query(
 			`INSERT INTO ${s}.streams (stream_id, revision, owner_epoch, created_at, updated_at)
        VALUES ($1, 0, 0, $2, $2) ON CONFLICT (stream_id) DO NOTHING`,
@@ -661,6 +939,34 @@ export function createPostgresEventStore(
 		}
 		const revision = int4(headRow, "revision");
 		const ownerEpoch = int8(headRow, "owner_epoch");
+		const leaseResult = await client.query(
+			`SELECT fence_token, (NOT released AND expires_at > clock_timestamp()) AS active
+			FROM ${s}.actor_leases WHERE stream_id = $1`,
+			[streamId],
+		);
+		const actorLease = leaseResult.rows[0];
+		if (
+			actorLease ||
+			actorPolicy.some((prefix) => streamId.startsWith(prefix))
+		) {
+			await requireActorPrimary(client);
+			if (append.fenceToken === undefined)
+				throw new MissingFenceError(streamId, ownerEpoch);
+			if (
+				actorLease?.active !== true ||
+				int8(actorLease, "fence_token") !== append.fenceToken ||
+				ownerEpoch !== append.fenceToken
+			)
+				throw new StaleFenceError(streamId, append.fenceToken, ownerEpoch);
+			const checkId = randomUUID();
+			await client.query(
+				`INSERT INTO ${s}.actor_commit_checks (id, stream_id, fence_token) VALUES ($1, $2, $3)`,
+				[checkId, streamId, append.fenceToken.toString()],
+			);
+			await client.query(`DELETE FROM ${s}.actor_commit_checks WHERE id = $1`, [
+				checkId,
+			]);
+		}
 
 		const keys = inputs.flatMap((input) =>
 			input.idempotencyKey === undefined ? [] : [input.idempotencyKey],
@@ -1152,6 +1458,158 @@ export function createPostgresEventStore(
 		schema: config.schema,
 		partitionId: config.partitionId,
 		config,
+		actorLeaseHost,
+		async verifyActorStreamProtection(prefix: string) {
+			const expected = requireNonEmpty(prefix, "actor stream prefix");
+			await tx(async (client) => {
+				await requireActorPrimary(client);
+				const policy = await lockedActorPolicy(client);
+				if (!policy.includes(expected))
+					throw new StoragePostgresError(
+						"invalid-config",
+						"required actor stream protection is not installed",
+					);
+				await requireActorCommitProtection(client);
+			});
+		},
+		async verifyApplicationRoleIsolation(input) {
+			const applicationRole = requireNonEmpty(
+				input.applicationRole,
+				"application role",
+			);
+			const prefix = requireNonEmpty(
+				input.protectedPrefix,
+				"actor stream prefix",
+			);
+			if (!/^[a-z_][a-z0-9_]{0,62}(?![\s\S])/u.test(applicationRole))
+				throw new StoragePostgresError(
+					"invalid-input",
+					"application role is invalid",
+				);
+			return tx(async (client) => {
+				await requireActorPrimary(client);
+				const policy = await lockedActorPolicy(client);
+				if (!policy.includes(prefix))
+					throw new StoragePostgresError(
+						"invalid-config",
+						"required actor stream protection is not installed",
+					);
+				await requireActorCommitProtection(client);
+				// All reachable roles are considered, including NOINHERIT grants a
+				// session may explicitly assume with SET ROLE. PUBLIC grants are
+				// included by PostgreSQL's privilege predicates.
+				const result = await client.query(
+					`
+WITH application AS (
+  SELECT oid, rolname FROM pg_catalog.pg_roles WHERE rolname = $1 AND rolcanlogin
+), reachable AS (
+  SELECT r.* FROM pg_catalog.pg_roles r, application a
+  WHERE r.oid = a.oid OR pg_catalog.pg_has_role(a.oid, r.oid, 'MEMBER')
+), protected_schema AS (
+  SELECT oid, nspowner FROM pg_catalog.pg_namespace WHERE nspname = $2
+), protected_tables AS (
+  SELECT c.oid, c.relname, c.relowner FROM pg_catalog.pg_class c, protected_schema s
+  WHERE c.relnamespace = s.oid AND c.relkind IN ('r', 'p')
+), required_tables AS (
+  SELECT unnest(ARRAY['streams','events','snapshots','actor_leases','actor_lease_policy',
+    'actor_commit_checks','queue_messages','durable_timers','cron_schedules','outbox']) AS name
+)
+SELECT a.rolname AS application_role, current_user::text AS supervisor_role,
+  current_database()::text AS database_name, s.oid::text AS schema_id,
+  (pg_catalog.pg_has_role(a.oid, current_user::regrole, 'MEMBER') OR
+   EXISTS (SELECT 1 FROM reachable r WHERE r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR
+     r.rolreplication OR r.rolbypassrls OR r.rolname LIKE 'pg\\_%' ESCAPE '\\' OR
+	 r.oid = s.nspowner OR pg_catalog.has_schema_privilege(r.oid, s.oid, 'CREATE') OR
+	 EXISTS (SELECT 1 FROM pg_catalog.pg_database d WHERE d.datname = current_database() AND d.datdba = r.oid)) OR
+   EXISTS (SELECT 1 FROM reachable r, protected_tables t WHERE r.oid = t.relowner OR
+     pg_catalog.has_table_privilege(r.oid, t.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES') OR
+     pg_catalog.has_any_column_privilege(r.oid, t.oid, 'INSERT,UPDATE,REFERENCES')) OR
+   EXISTS (SELECT 1 FROM reachable r, pg_catalog.pg_class c, pg_catalog.pg_namespace n
+     WHERE c.relnamespace = n.oid AND n.nspname NOT IN ('pg_catalog','information_schema') AND c.relkind IN ('v','m','f') AND
+     pg_catalog.has_table_privilege(r.oid, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) OR
+   EXISTS (SELECT 1 FROM reachable r, pg_catalog.pg_foreign_server f
+     WHERE pg_catalog.has_server_privilege(r.oid, f.oid, 'USAGE')) OR
+   EXISTS (SELECT 1 FROM reachable r, pg_catalog.pg_proc p, pg_catalog.pg_namespace n, pg_catalog.pg_language l
+     WHERE p.pronamespace = n.oid AND p.prolang = l.oid AND n.nspname NOT IN ('pg_catalog','information_schema') AND
+       (p.prosecdef OR l.lanname NOT IN ('sql','plpgsql')) AND pg_catalog.has_function_privilege(r.oid, p.oid, 'EXECUTE'))
+  ) AS unsafe_application,
+  NOT EXISTS (SELECT 1 FROM required_tables x WHERE NOT EXISTS (
+    SELECT 1 FROM protected_tables t WHERE t.relname = x.name AND
+      pg_catalog.has_table_privilege(current_user, t.oid, 'SELECT') AND
+      pg_catalog.has_table_privilege(current_user, t.oid, 'INSERT') AND
+      pg_catalog.has_table_privilege(current_user, t.oid, 'UPDATE') AND
+      pg_catalog.has_table_privilege(current_user, t.oid, 'DELETE')
+  )) AS supervisor_can_write
+FROM application a, protected_schema s`,
+					[applicationRole, config.schema],
+				);
+				const row = result.rows[0];
+				if (
+					row?.unsafe_application !== false ||
+					row.supervisor_can_write !== true ||
+					text(row, "application_role") !== applicationRole ||
+					!text(row, "schema_id")
+				)
+					throw new StoragePostgresError(
+						"invalid-config",
+						"application role can bypass the protected actor stream boundary",
+					);
+				const supervisorRole = text(row, "supervisor_role");
+				if (supervisorRole === applicationRole)
+					throw new StoragePostgresError(
+						"invalid-config",
+						"application and supervisor roles must be separate",
+					);
+				const application = await input.applicationPool.connect();
+				try {
+					const challenge = `hobo-boundary-${randomUUID()}`;
+					await application.query("BEGIN READ ONLY");
+					await application.query(
+						"SELECT set_config('application_name', $1, true)",
+						[challenge],
+					);
+					const observation = await application.query(
+						`
+SELECT current_user::text AS role_name, session_user::text AS login_name,
+  current_database()::text AS database_name, pg_backend_pid()::text AS backend_id,
+  (SELECT oid::text FROM pg_catalog.pg_namespace WHERE nspname = $1) AS schema_id`,
+						[config.schema],
+					);
+					const observed = observation.rows[0];
+					if (
+						!observed ||
+						text(observed, "role_name") !== applicationRole ||
+						text(observed, "login_name") !== applicationRole ||
+						text(observed, "database_name") !== text(row, "database_name") ||
+						text(observed, "schema_id") !== text(row, "schema_id")
+					)
+						throw new StoragePostgresError(
+							"invalid-config",
+							"application credential does not authenticate the restricted role and database",
+						);
+					const witness = await client.query(
+						`
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity
+  WHERE pid = $1::integer AND application_name = $2 AND usename = $3 AND datname = current_database()) AS matched`,
+						[text(observed, "backend_id"), challenge, applicationRole],
+					);
+					if (witness.rows[0]?.matched !== true)
+						throw new StoragePostgresError(
+							"invalid-config",
+							"application and supervisor do not share the verified database authority",
+						);
+				} finally {
+					await application.query("ROLLBACK").catch(() => undefined);
+					application.release();
+				}
+				return Object.freeze({
+					database: text(row, "database_name"),
+					schema: config.schema,
+					applicationRole,
+					supervisorRole,
+				});
+			});
+		},
 		ready,
 
 		async append(

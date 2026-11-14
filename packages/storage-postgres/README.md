@@ -29,6 +29,7 @@ await store.ready(); // optional: connect and migrate now instead of on first us
 |---|---|
 | Expected-version append | The stream row is locked (`SELECT … FOR UPDATE`) and `expectedSeq` compared under the lock; a stale value is `OPTIMISTIC_SEQUENCE_CONFLICT` and nothing is written. |
 | Fenced single writer per stream | `owner_epoch` on the stream row, with `@hobo/storage-sqlite` semantics: the first fenced append enters fenced mode; a lower fence is `STALE_FENCE`; an unfenced write is `MISSING_FENCE`. |
+| Live actor leases | Protected stream prefixes use a PostgreSQL-backed actor lease. A deferred constraint trigger rechecks its exact stream and epoch at transaction commit, so a write delayed past lease expiry or takeover rolls back. |
 | `readAll` by global position, never skipping | Positions come from one `partition_head` row, locked just before the insert and held to commit. They are gapless and become visible in order, so a reader paging by position never passes over a position that commits later. |
 | Atomic staged effects | Queue, actor-signal, timer, cron and outbox effects are inserted in the commit's transaction, with the same identities and dedupe as SQLite. |
 | Fenced subscription leases | `claimSubscription` grants with a fence token that only ever increases (also across release); a live lease held by another holder is `SUBSCRIPTION_LEASE_CONFLICT` (`lease-held`). Renew, release and checkpoint require the current fence. |
@@ -41,6 +42,31 @@ await store.ready(); // optional: connect and migrate now instead of on first us
 `getStreamHead` (synchronous in the port) is not provided, because a server
 cannot answer synchronously. Callers fall back to reading the stream;
 `loadStreamHead` is the asynchronous equivalent.
+
+## Protecting actor streams from direct SQL
+
+Configure `protectedActorStreamPrefixes` on the supervisor's store and verify
+each required prefix with `verifyActorStreamProtection`. Prefixes are recorded
+in PostgreSQL and cannot be removed by a later store configuration. The
+deferred commit check protects writes made through the current store, but a
+database role with direct write privileges could bypass its protocol.
+
+Use a separately authenticated, restricted application role and keep the
+supervisor's writer credentials out of the application. Before enrolling an
+application, call `verifyApplicationRoleIsolation` with that role, the exact
+protected prefix, and a pool authenticated with the actual application
+credential. It checks the database, schema, effective and assumable privileges,
+and live application session against the supervisor's database. It rejects
+direct writes, ownership or role escalation and other executable paths that
+could bypass the boundary. Recheck this proof when credentials or grants can
+change; it does not prevent a database administrator from granting new
+privileges later. Application writes must go through an independently
+authenticated supervisor which enforces the lease protocol.
+The supervisor needs permission to observe the application session in
+`pg_stat_activity` (for example, the PostgreSQL `pg_read_all_stats` role); a
+database superuser is not required. Without that access the check fails closed.
+The migration process also needs database `CREATE` permission when it checks
+or creates the store schema.
 
 ## Architecture
 
