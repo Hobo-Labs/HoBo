@@ -17,13 +17,15 @@ import {
 
 /**
  * Netbird overlay adapter — management API for enrollment, peers, and DNS.
- * Ready when management URL + setup key (join) and/or access token (DNS admin).
+ * Ready when management URL + the join's setup key and/or access token (DNS
+ * admin). The setup key is only ever `OverlayJoinOptions.authKey`: the
+ * one-off key the HoBo Fleet authority minted at enrollment (ADR-0182). There
+ * is no static setup key and none is read from the environment.
  */
 export function createNetbirdOverlay(options?: {
 	readonly metering?: MeteringBus;
 	readonly managementUrl?: string;
 	readonly accessToken?: string;
-	readonly setupKey?: string;
 	readonly fetchImpl?: typeof fetch;
 	readonly api?: NetbirdApiClient;
 }): OverlayNetwork {
@@ -37,14 +39,10 @@ export function createNetbirdOverlay(options?: {
 		if (options?.api) return options.api;
 		if (!managementUrl) return null;
 		const accessToken = options?.accessToken ?? process.env.NETBIRD_TOKEN;
-		const setupKey = options?.setupKey ?? process.env.NETBIRD_SETUP_KEY;
 		return createNetbirdApiClient({
 			managementUrl,
 			...(accessToken !== undefined && accessToken.length > 0
 				? { accessToken }
-				: undefined),
-			...(setupKey !== undefined && setupKey.length > 0
-				? { setupKey }
 				: undefined),
 			...(options?.fetchImpl !== undefined
 				? { fetchImpl: options.fetchImpl }
@@ -109,7 +107,7 @@ export function createNetbirdOverlay(options?: {
 				}
 			} else {
 				notes.push(
-					"netbird: set NETBIRD_MANAGEMENT_URL + NETBIRD_SETUP_KEY (or accessToken) for live join",
+					"netbird: set NETBIRD_MANAGEMENT_URL and join with the OverlayJoin from fleet enrollment for a live join",
 				);
 			}
 

@@ -20,6 +20,7 @@ import {
 	type PeeringEdge,
 	type ResidencyConflict,
 	type YardConnectivityHalfPlan,
+	type YardTrustRecords,
 } from "./types.js";
 
 /**
@@ -74,6 +75,7 @@ export function selectConnectivityTier(
  */
 export function deriveConnectivityPlan(
 	definition: JunctionDefinition,
+	options: Readonly<{ trust?: YardTrustRecords }> = {},
 ): JunctionConnectivityPlan {
 	const members = definition.members;
 	const edges: PeeringEdge[] = [];
@@ -150,7 +152,7 @@ export function deriveConnectivityPlan(
 		edges,
 		halvesByYard,
 		dns: { zone, records },
-		federation: deriveFederationPlan(definition),
+		federation: deriveFederationPlan(definition, options.trust),
 		residencyConflicts,
 	});
 }

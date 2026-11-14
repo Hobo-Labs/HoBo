@@ -3,6 +3,12 @@ export {
 	type ComposedIsolationVerdict,
 } from "./compose.js";
 export {
+	ELEVATED_ACCESS_SCOPE_PORT,
+	type ElevatedAccessRefusal,
+	type ElevatedCapabilityIssuer,
+	type ElevatedCapabilityTrust,
+	type ElevatedCapabilityVerifier,
+	type ElevatedSvidClaims,
 	elevatedDeniedEvent,
 	type MintElevatedInput,
 	mintElevatedAccessCapability,
@@ -60,6 +66,7 @@ export {
 	type EnvNetworkIsolationRegistry,
 	type EnvNetworkIsolationRegistryOptions,
 	type EnvOverlayPlane,
+	type EnvOverlays,
 	envIsolationTags,
 } from "./registry.js";
 export {

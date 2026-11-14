@@ -23,8 +23,11 @@
  * throw — for this component the record is half the deliverable.
  */
 import { describe, expect, test } from "vitest";
-
-import { mintElevatedAccessCapability } from "../src/env-isolation/elevated-capability.js";
+import {
+	type ElevatedCapabilityIssuer,
+	mintElevatedAccessCapability,
+} from "../src/env-isolation/elevated-capability.js";
+import { isJsonString } from "../src/json.js";
 import {
 	createBoundaryPamGateway,
 	createJumpServerPamGateway,
@@ -39,6 +42,7 @@ import type {
 	StationContext,
 } from "../src/pam/types.js";
 import { PAM_GATEWAY_SCHEMA } from "../src/pam/types.js";
+import { createTestElevatedIssuer } from "./support/elevated-issuer.js";
 
 // Anchored to real time rather than a fixed literal. The gateway mints session
 // tokens using its injected `now` but calls `verifySessionToken` *without* a
@@ -47,7 +51,8 @@ import { PAM_GATEWAY_SCHEMA } from "../src/pam/types.js";
 // clock would therefore make every minted token instantly "expired" and the
 // renewal tests would be measuring that mismatch rather than renewal.
 const T0 = new Date().toISOString();
-const HMAC = "test-elevated-secret-not-for-production";
+const ISSUER = createTestElevatedIssuer();
+const TRUST = { issuer: ISSUER.issuerUrl, verify: ISSUER.verify };
 
 function station(
 	isolationClass: IsolationClass = "development",
@@ -68,7 +73,7 @@ function gateway(
 		kind: "native",
 		isolationClass,
 		now: () => T0,
-		elevatedHmacSecret: HMAC,
+		elevatedTrust: TRUST,
 		...overrides,
 	});
 }
@@ -91,7 +96,22 @@ function sessionRequest(
 		target: "ssh:web-1",
 		preferSecretless: true,
 		...overrides,
-	} as SessionRequest;
+	};
+}
+
+/** The `code` an error carries, if it carries a string one. */
+function errorCode(error: Error): string | undefined {
+	return "code" in error && isJsonString(error.code) ? error.code : undefined;
+}
+
+/** A request the type system would refuse, as an unchecked caller would send it. */
+function uncheckedRequest(
+	request: Omit<SessionRequest, "preferSecretless"> & {
+		preferSecretless?: boolean;
+	},
+): SessionRequest {
+	// SAFETY: deliberately not a valid SessionRequest; the gateway's own runtime check is under test.
+	return request as SessionRequest;
 }
 
 /**
@@ -99,32 +119,32 @@ function sessionRequest(
  * required by the mint — a capability with no record of *why* it was granted is
  * not something this system is willing to produce.
  */
-function elevatedToken(
+async function elevatedToken(
 	isolationClass: IsolationClass = "production",
 	overrides: {
 		audience?: string;
 		ttlSeconds?: number;
-		hmacSecret?: string;
+		issuer?: ElevatedCapabilityIssuer;
 	} = {},
-) {
-	return mintElevatedAccessCapability({
+): Promise<string> {
+	const minted = await mintElevatedAccessCapability({
 		subject: "user:alice",
 		isolationClass,
 		issuedBy: "user:bob",
 		evidence: { kind: "dual-approval", ref: "approval-1" },
-		hmacSecret: HMAC,
-		allowDefaultSecret: false,
+		issuer: ISSUER,
 		now: T0,
 		...overrides,
-	}).token;
+	});
+	return minted.token;
 }
 
-async function codeOfAsync(fn: () => Promise<unknown>): Promise<string> {
+async function codeOfAsync<T>(fn: () => Promise<T>): Promise<string> {
 	try {
 		await fn();
 	} catch (error) {
-		const code = (error as { code?: unknown }).code;
-		return typeof code === "string" ? code : `<no code: ${String(error)}>`;
+		const code = error instanceof Error ? errorCode(error) : undefined;
+		return code ?? `<no code: ${String(error)}>`;
 	}
 	return "<did not throw>";
 }
@@ -225,7 +245,7 @@ describe("target registration", () => {
 				isolationClass: "production",
 			});
 		} catch (error) {
-			code = String((error as { code?: unknown }).code);
+			code = String(error instanceof Error ? errorCode(error) : error);
 		}
 		expect(code).toBe("pam-target-env-mismatch");
 	});
@@ -249,10 +269,12 @@ describe("secretless enforcement", () => {
 		const gw = await started();
 		expect(
 			await codeOfAsync(() =>
-				gw.brokerSession({
-					subject: "user:alice",
-					target: "ssh:web-1",
-				} as unknown as SessionRequest),
+				gw.brokerSession(
+					uncheckedRequest({
+						subject: "user:alice",
+						target: "ssh:web-1",
+					}),
+				),
 			),
 		).toBe("secretless-required");
 	});
@@ -261,11 +283,13 @@ describe("secretless enforcement", () => {
 		const gw = await started();
 		expect(
 			await codeOfAsync(() =>
-				gw.brokerSession({
-					subject: "user:alice",
-					target: "ssh:web-1",
-					preferSecretless: false,
-				} as unknown as SessionRequest),
+				gw.brokerSession(
+					uncheckedRequest({
+						subject: "user:alice",
+						target: "ssh:web-1",
+						preferSecretless: false,
+					}),
+				),
 			),
 		).toBe("secretless-required");
 	});
@@ -350,7 +374,7 @@ describe("elevated capability for production", () => {
 						kind: "ssh",
 						isolationClass: "production",
 					},
-					elevatedToken: elevatedToken("production"),
+					elevatedToken: await elevatedToken("production"),
 				}),
 			),
 		).resolves.toBeDefined();
@@ -382,7 +406,7 @@ describe("elevated capability for production", () => {
 		// The token is minted *before* the assertion so a mint failure surfaces
 		// as its own error rather than being swallowed by `codeOfAsync` and
 		// counted as the refusal under test.
-		const staging = elevatedToken("staging");
+		const staging = await elevatedToken("staging");
 		const gw = await started("production");
 		const code = await codeOfAsync(() =>
 			gw.brokerSession(
@@ -400,11 +424,11 @@ describe("elevated capability for production", () => {
 		expect(code).not.toContain("TypeError");
 	});
 
-	test("a token minted under a different secret is refused", async () => {
+	test("a token minted by a different issuer is refused", async () => {
 		// Signature verification actually happening, rather than the token being
-		// parsed and trusted.
-		const foreign = elevatedToken("production", {
-			hmacSecret: "some-other-secret",
+		// parsed and trusted: same issuer URL, another key.
+		const foreign = await elevatedToken("production", {
+			issuer: createTestElevatedIssuer(ISSUER.issuerUrl),
 		});
 		const gw = await started("production");
 		const code = await codeOfAsync(() =>
@@ -644,7 +668,7 @@ describe("handoff to a resident adapter", () => {
 		try {
 			gw.handoffSession("pam_native_ghost");
 		} catch (error) {
-			code = String((error as { code?: unknown }).code);
+			code = String(error instanceof Error ? errorCode(error) : error);
 		}
 		expect(code).toBe("pam-session-not-found");
 	});
@@ -657,7 +681,7 @@ describe("handoff to a resident adapter", () => {
 		try {
 			gw.handoffSession(handle.sessionId);
 		} catch (error) {
-			code = String((error as { code?: unknown }).code);
+			code = String(error instanceof Error ? errorCode(error) : error);
 		}
 		expect(code).toBe("pam-session-not-found");
 	});
@@ -727,10 +751,10 @@ describe("the audit sink", () => {
 		const captured: Array<{ type: string }> = [];
 		const gw = await started("development", {
 			auditSink: {
-				async append(event: { type: string }) {
+				async append(event) {
 					captured.push(event);
 				},
-			} as never,
+			},
 		});
 		await gw.brokerSession(sessionRequest());
 		expect(captured.map((e) => e.type)).toEqual([
@@ -791,7 +815,7 @@ describe("clock consistency between minting and verification", () => {
 			kind: "native",
 			isolationClass: "development",
 			now: () => past,
-			elevatedHmacSecret: HMAC,
+			elevatedTrust: TRUST,
 		});
 		await gw.start(station("development"));
 		const handle = await gw.brokerSession(sessionRequest());

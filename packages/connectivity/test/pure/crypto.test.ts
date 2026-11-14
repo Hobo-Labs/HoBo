@@ -1,21 +1,10 @@
 /**
  * Pure cryptographic unit tests (no HTTP / no PACT boundaries).
- * DPoP ES256, JWT-SVID, and AWS SigV4 math.
+ * AWS SigV4 math. (DPoP lives in @hobo/fleet/keys and JWT-SVIDs in
+ * @hobo/identity, each with its own tests.)
  */
 import { describe, expect, it } from "vitest";
 
-import {
-	createDpopJtiCache,
-	generateDpopKeyPair,
-	mintDpopProof,
-	verifyDpopProof,
-} from "../../src/crypto/dpop.js";
-import {
-	mintJwtSvid,
-	resolveSvidHmacSecret,
-	spiffeIdForAgent,
-	verifyJwtSvid,
-} from "../../src/crypto/jwt-svid.js";
 import { signAwsRequest } from "../../src/dns/aws-sigv4.js";
 import { parseListResourceRecordSets } from "../../src/dns/route53-provider.js";
 
@@ -65,125 +54,5 @@ describe("AWS SigV4 (pure)", () => {
 				"<ResourceRecordSet><Name>a.</Name><Type>A</Type><Value>1.2.3.4</Value></ResourceRecordSet>",
 			),
 		).toHaveLength(1);
-	});
-});
-
-describe("DPoP ES256 + JWT-SVID (pure)", () => {
-	it("mints and verifies DPoP proofs and rejects mismatches / replay", () => {
-		const kp = generateDpopKeyPair();
-		const token = "access-token-value";
-		const htu = "https://broker.example.com/v1/place";
-		const proof = mintDpopProof({
-			keyPair: kp,
-			htm: "POST",
-			htu,
-			accessToken: token,
-		});
-		const cache = createDpopJtiCache();
-		const verified = verifyDpopProof({
-			proof,
-			htm: "POST",
-			htu,
-			accessToken: token,
-			jtiCache: cache,
-		});
-		expect(verified.kid).toBe(kp.kid);
-		expect(() =>
-			verifyDpopProof({
-				proof,
-				htm: "GET",
-				htu,
-				accessToken: token,
-			}),
-		).toThrow(/htm/);
-		expect(() =>
-			verifyDpopProof({
-				proof,
-				htm: "POST",
-				htu: "https://other.example.com/v1/place",
-				accessToken: token,
-			}),
-		).toThrow(/htu/);
-		expect(() =>
-			verifyDpopProof({
-				proof,
-				htm: "POST",
-				htu,
-				accessToken: "different-token",
-			}),
-		).toThrow(/ath/);
-		expect(() =>
-			verifyDpopProof({
-				proof,
-				htm: "POST",
-				htu,
-				accessToken: token,
-				jtiCache: cache,
-			}),
-		).toThrow(/replay/);
-
-		// A correctly signed proof that simply carries no htu claim must be
-		// rejected, not treated as the empty string. The verifier used to
-		// compare `normalizeHtu(payload.htu ?? "")`, so an absent htu passed
-		// whenever the expected htu also normalized to "" — and then returned
-		// `payload.htu!`, i.e. undefined typed as string. `extra` is spread
-		// last by mintDpopProof, so this drops the claim and still signs the
-		// payload with the real key: the signature check cannot mask the hole.
-		const noHtu = mintDpopProof({
-			keyPair: kp,
-			htm: "POST",
-			htu,
-			accessToken: token,
-			extra: { htu: undefined },
-		});
-		expect(() =>
-			verifyDpopProof({
-				proof: noHtu,
-				htm: "POST",
-				htu: "",
-				accessToken: token,
-			}),
-		).toThrow(/htu/);
-	});
-
-	it("mints and verifies audience-bound JWT-SVID; guards production secrets", () => {
-		const spiffeId = spiffeIdForAgent("worker-1");
-		const minted = mintJwtSvid({
-			spiffeId,
-			audience: "https://broker.example.com",
-			hmacSecret: "test-secret",
-		});
-		const claims = verifyJwtSvid({
-			token: minted.token,
-			audience: "https://broker.example.com",
-			hmacSecret: "test-secret",
-		});
-		expect(claims.sub).toBe(spiffeId);
-		expect(claims.jti).toMatch(/^[a-f0-9]{32}$/);
-		expect(() =>
-			verifyJwtSvid({
-				token: minted.token,
-				audience: "https://other.example.com",
-				hmacSecret: "test-secret",
-			}),
-		).toThrow(/audience/);
-		expect(() =>
-			verifyJwtSvid({
-				token: minted.token,
-				audience: "https://broker.example.com",
-				hmacSecret: "wrong-secret",
-			}),
-		).toThrow(/signature/);
-		expect(() =>
-			resolveSvidHmacSecret({
-				env: { NODE_ENV: "production" },
-			}),
-		).toThrow(/required outside development/);
-		expect(
-			resolveSvidHmacSecret({
-				env: { NODE_ENV: "development" },
-				allowDefaultSecret: true,
-			}),
-		).toMatch(/hobo-local/);
 	});
 });

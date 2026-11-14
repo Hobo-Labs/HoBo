@@ -1,3 +1,4 @@
+import type { WitnessedEnvelope } from "@hobo/fleet";
 import type { Yard } from "@hobo/yards";
 
 // public-contract: version tag on every parsed junction record — consumers reject incompatible authoring surfaces.
@@ -98,14 +99,20 @@ export interface DnsRecord {
 	readonly ownerYard: string;
 }
 
-// Trust-anchor exchange entry between two member yards.
+// Trust exchange entry between two member yards: `fromYard`'s HoBo Fleet trust
+// record (ADR-0182), witnessed, for `toYard` to pin. Federation between Yards
+// is an exchange of trust records; there is no second trust format. `null`
+// until `fromYard` has published its trust record.
 // domain-view: kind-discriminated entry; wire form is TrustAnchorExchange in data-models/junction.proto.
 export interface TrustAnchorExchange {
 	readonly kind: "trust-anchor-exchange";
 	readonly fromYard: string;
 	readonly toYard: string;
-	readonly anchorRef: string;
+	readonly trust: WitnessedEnvelope | null;
 }
+
+/** Each member Yard's witnessed fleet trust record, by Yard name. */
+export type YardTrustRecords = Readonly<Record<string, WitnessedEnvelope>>;
 
 // Signed policy-pack distribution entry for one member yard.
 // domain-view: kind-discriminated entry; wire form is PolicyPackDistribution in data-models/junction.proto.

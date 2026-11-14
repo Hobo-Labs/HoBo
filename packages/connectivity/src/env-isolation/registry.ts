@@ -2,10 +2,8 @@
  * EnvNetworkIsolationRegistry — parallel to TenantIsolationRegistry.
  * Soft / hard-overlay / hard-control-plane for environment isolation classes.
  */
-import type { OverlayNetwork, PolicyEngine } from "@hobo/core";
+import type { OverlayNetwork } from "@hobo/core";
 
-import { createNetbirdOverlay } from "../overlay/netbird.js";
-import { createTailscaleOverlay } from "../overlay/tailscale.js";
 import {
 	defaultTierForClass,
 	type IsolationClass,
@@ -48,38 +46,37 @@ export interface EnvNetworkIsolationRegistry {
 	hardFloorOverlayId(cls: IsolationClass): string;
 }
 
+/**
+ * The overlays the registry hands out; it never constructs one. `shared`
+ * serves every soft class; `forClass` gives a hard-isolated class its own.
+ */
+export interface EnvOverlays {
+	readonly shared: OverlayNetwork;
+	readonly forClass?: (cls: IsolationClass) => OverlayNetwork;
+}
+
 export interface EnvNetworkIsolationRegistryOptions {
 	readonly defaultTier?: IsolationTier;
-	readonly sharedOverlay?: OverlayNetwork;
-	readonly policy?: PolicyEngine;
-	readonly overlayProvider?: "tailscale" | "netbird";
-	readonly createOverlayForClass?: (cls: IsolationClass) => OverlayNetwork;
 }
 
 export function createEnvNetworkIsolationRegistry(
+	overlays: EnvOverlays,
 	options: EnvNetworkIsolationRegistryOptions = {},
 ): EnvNetworkIsolationRegistry {
-	const shared =
-		options.sharedOverlay ??
-		(options.overlayProvider === "netbird"
-			? createNetbirdOverlay()
-			: createTailscaleOverlay(
-					options.policy !== undefined ? { policy: options.policy } : {},
-				));
+	const shared = overlays.shared;
 
 	const planes = new Map<IsolationClass, EnvOverlayPlane>();
 	const controlPlanes = new Map<IsolationClass, EnvControlPlanePartition>();
 
 	function createOverlay(cls: IsolationClass): OverlayNetwork {
-		if (options.createOverlayForClass) {
-			return options.createOverlayForClass(cls);
-		}
-		if (options.overlayProvider === "netbird") {
-			return createNetbirdOverlay();
-		}
-		return createTailscaleOverlay(
-			options.policy !== undefined ? { policy: options.policy } : {},
-		);
+		if (overlays.forClass === undefined)
+			throw Object.assign(
+				new Error(
+					`isolation class ${cls} needs its own overlay for a hard tier; pass overlays.forClass`,
+				),
+				{ code: "overlay-required" },
+			);
+		return overlays.forClass(cls);
 	}
 
 	return {

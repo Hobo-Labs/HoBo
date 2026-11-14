@@ -112,14 +112,53 @@ const metering = createMeteringBus([sink]);
 const policy = createTagAclPolicyEngine({ metering });
 const overlay = createTailscaleOverlay({ metering, policy });
 
+// A junction is a HoBo Fleet device with role JUNCTION (ADR-0182). The host
+// composes createFleetAgent (@hobo/fleet/agent) over its own deps; the junction
+// asks for one agent to enroll and one to run with the overlay transport.
 const agent = createJunctionAgent({
   config: { tenantId: "acme", name: "junction-aws-1", role: "junction", env: "dev", cloud: "aws" },
   overlay,
+  fleet: {
+    agent: (extra) =>
+      createFleetAgent({ ...deps, transports: [...deps.transports, ...extra] }),
+    enrollment, // EnrollmentRequest with a bootstrap token; omit once enrolled
+  },
   policy,
   metering,
 });
+// Enrolls (role JUNCTION added), joins the overlay with the single-use
+// OverlayJoin the authority returned, then runs the device agent with
+// createOverlayTransport(overlay).
 await agent.start();
 ```
+
+There is no configured overlay key: the join credential is only ever the
+`OverlayJoin.credential` from enrollment, and Tailscale reads it from a private
+file, never from the command line.
+
+### HoBo Fleet overlay transport (ADR-0182)
+
+`createOverlayTransport(overlay)` is the `overlay` `FleetTransport` of HoBo
+Fleet (design §6.12 item 2): a TCP stream between two devices' overlay
+addresses, for a tenant that already runs Tailscale, NetBird or WireGuard. The
+host joins the overlay first; `start` listens on the device's overlay address
+and answers the identity `overlay:<SEAL key>@<host>:<port>`.
+
+- Every session is end-to-end framed (`frameStream`) with keys from the X25519
+  agreement of the two SEAL keys the grant names, salted with a nonce from each
+  side and the grant's session id, so the overlay sees ciphertext and a replay
+  of a recorded handshake does not authenticate.
+- The acceptor reports the grant's initiator identity to `authorise` only when
+  the dialler proved that identity's SEAL key and connected from its overlay
+  host; otherwise it reports the identity the connection proves, which no
+  grant names. Nothing reaches the handler before `authorise` answers true.
+- `runTransportConformance` passes over a fake `OverlayNetwork` on loopback
+  (`test/overlay-transport.test.ts`, O12).
+- Limit: the session grant names one transport identity per party (the
+  `TRANSPORT` key of the bundle, today the `p2p` endpoint), so an overlay dial
+  needs a grant whose acceptor identity is an overlay identity; the transport
+  answers `unavailable` otherwise, and `selectTransport` falls through to
+  `bus-relay`.
 
 Example Tailscale ACL tags:
 
@@ -244,7 +283,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for Mermaid diagrams covering local nam
 | OPA/Rego policy | `createOpaPolicyEngine({ opaUrl?, regoModulePath? })` + `SAMPLE_HOBO_AUTHZ_REGO` |
 | Billing aggregator | `createBillingAggregator()` as a `MeteringSink` → `closePeriod()` invoices |
 | Traffic routing | `createSimpleTrafficRouting()` offline; Cloudflare, Funnel, production Vercel (RR + routes), dual-layer Lakebed |
-| Hard multi-tenant | `createTenantIsolationRegistry()` with `soft` \| `hard-overlay` \| `hard-control-plane` |
+| Hard multi-tenant | `createTenantIsolationRegistry({ shared, forTenant })` (overlays are parameters; the registry never constructs one) with `soft` \| `hard-overlay` \| `hard-control-plane` |
 | Dynamic DNS heartbeats | `createJunctionDynamicDnsRegistrar` / `createJunctionAgent({ publicDns, dnsTargets })` |
 
 ```ts
@@ -259,8 +298,11 @@ import {
   tenantFromSlug,
 } from "@hobo/connectivity";
 
-// Hard isolation
-const isolation = createTenantIsolationRegistry();
+// Hard isolation: the host passes the overlays it has joined.
+const isolation = createTenantIsolationRegistry({
+  shared: createTailscaleOverlay(),
+  forTenant: () => createTailscaleOverlay(),
+});
 isolation.registerTenant(tenantFromSlug("acme", "hard-control-plane"));
 
 // OPA policy + billing sink
@@ -282,6 +324,7 @@ const agent = createJunctionAgent({
     dnsTargets: [{ resource: "web", app: "myapp", backendUrl: "http://127.0.0.1:7071" }],
   },
   overlay,
+  fleet, // as above: the junction's fleet device
   policy,
   publicDns: dns,
 });
@@ -299,8 +342,9 @@ const invoice = billing.closePeriod({
 | Surface | Implementation |
 |---------|----------------|
 | Route53 | Built-in **AWS SigV4** (no SDK); list + change RR sets |
-| DPoP | Real **ES256 P-256** mint + verify (RFC 9449); keys under `HOBO_HOME/keys/` |
-| JWT-SVID | Audience-bound short-lived SPIFFE JWTs (HS256 local / ES256 issuer keys) |
+| DPoP | Not here: `@hobo/fleet/keys` is the one DPoP implementation (ES256 and EdDSA, RFC 9449) |
+| JWT-SVID | Not here: `@hobo/identity` `JwtSvidIssuer` and `verifyJwtWithJwks` are the one SVID implementation; elevated capabilities are minted and verified through them (no shared secret, no HS256) |
+| Overlay transport | `createOverlayTransport(overlay)`: the HoBo Fleet `overlay` `FleetTransport` (below) |
 | Tailscale MagicDNS | Control-plane **API** split DNS when `TS_API_KEY` set + local `--accept-dns` |
 | Netbird | Management HTTP: enroll, peers, DNS nameserver groups |
 | Billing | Durable JSONL ledger + **Stripe PaymentIntent** REST provider |
@@ -309,7 +353,7 @@ const invoice = billing.closePeriod({
 ## Residual / operational follow-ons
 
 - Multi-process control-plane sharding for hard isolation across clusters
-- SPIRE Workload API fetch as drop-in replacement for local JWT-SVID mint
+- SPIRE Workload API fetch as drop-in replacement for the in-memory-KMS JWT-SVID issuer
 - WebAuthn ceremony for human claim step-up (human-only; agents never hold passkeys)
 - Netbird agent gRPC path if management HTTP enroll is disabled on your build
 
@@ -325,7 +369,9 @@ import {
   DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK,
 } from "@hobo/connectivity";
 
-const membership = new EnvMembershipService({ tenant: "acme" });
+// Memberships bound to a device (nodeId: a fleet MemberId) count only while
+// that member is ACTIVE in the fleet registry passed here.
+const membership = new EnvMembershipService({ tenant: "acme", registry });
 membership.assign({
   principalId: "user:alice",
   isolationClass: "development",
@@ -354,16 +400,21 @@ import {
   mintElevatedAccessCapability,
 } from "@hobo/connectivity";
 
-const elev = mintElevatedAccessCapability({
+// issuer: @hobo/identity JwtSvidIssuer (offline: over createInMemoryKms()).
+const elev = await mintElevatedAccessCapability({
   subject: "user:alice",
   isolationClass: "production",
   issuedBy: "cp-admin",
   evidence: { kind: "dual-approval", ref: "a1" },
-  allowDefaultSecret: true,
+  issuer,
 });
 const gw = createTeleportPamGateway({
   isolationClass: "production",
-  elevatedHmacSecret: process.env.HOBO_SVID_HMAC_SECRET,
+  // Without elevatedTrust every production session is refused.
+  elevatedTrust: {
+    issuer: issuer.issuerUrl,
+    verify: (token, options) => verifyJwtWithJwks(token, issuer.jwks(), options),
+  },
 });
 await gw.start({ stationId: "s1", tenant: "acme", isolationClass: "production", trustDomain: "yard" });
 const session = await gw.brokerSession({

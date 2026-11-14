@@ -3,6 +3,7 @@ import {
 	type LogicalActorIdentity,
 	parseLogicalActorIdentity,
 } from "@hobo/core";
+import { OVERLAY_PROVIDERS, type OverlayProvider } from "@hobo/fleet";
 import {
 	cloneAsJson,
 	isJsonObject,
@@ -11,7 +12,13 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-export type CelldOverlay = "tailscale" | "netbird" | "wireguard";
+/** The overlay providers celld accepts: exactly `OVERLAY_PROVIDERS` of `@hobo/fleet`, so there is one list. */
+export type CelldOverlay = OverlayProvider;
+export const CELLD_OVERLAYS: readonly CelldOverlay[] = OVERLAY_PROVIDERS;
+
+function isCelldOverlay(value: string): value is CelldOverlay {
+	return CELLD_OVERLAYS.some((provider) => provider === value);
+}
 
 export class CelldConfigError extends Error {
 	readonly code:
@@ -43,8 +50,6 @@ export interface CelldRuntimeConfig {
 	readonly isolation: "trusted";
 	readonly svidBindingRef: string;
 }
-
-const OVERLAYS = new Set<CelldOverlay>(["tailscale", "netbird", "wireguard"]);
 
 function requiredString(record: JsonObject, key: string): string {
 	const value = record[key];
@@ -79,16 +84,13 @@ export function parseCelldRuntimeConfig(input: JsonValue): CelldRuntimeConfig {
 		);
 	}
 	const overlayRaw = record.overlay;
-	if (
-		!isJsonString(overlayRaw) ||
-		// SAFETY: assertion required at this I/O or test boundary.
-		!OVERLAYS.has(overlayRaw as CelldOverlay)
-	) {
+	if (!isJsonString(overlayRaw) || !isCelldOverlay(overlayRaw)) {
 		throw new CelldConfigError(
 			"OVERLAY_REQUIRED",
-			"overlay must be tailscale|netbird|wireguard",
+			`overlay must be ${CELLD_OVERLAYS.join("|")}`,
 		);
 	}
+	const overlay: CelldOverlay = overlayRaw;
 	const bucketUri = requiredString(record, "bucketUri");
 	if (!/^(s3|gs|r2):\/\//u.test(bucketUri)) {
 		throw new CelldConfigError(
@@ -120,8 +122,7 @@ export function parseCelldRuntimeConfig(input: JsonValue): CelldRuntimeConfig {
 		bucketSecretRef,
 		advertise: requiredString(record, "advertise"),
 		internalListen: requiredString(record, "internalListen"),
-		// SAFETY: assertion required at this I/O or test boundary.
-		overlay: overlayRaw as CelldOverlay,
+		overlay,
 		operatorPortPublic: false,
 		isolation: "trusted",
 		svidBindingRef: svid,

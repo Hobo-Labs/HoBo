@@ -58,10 +58,16 @@ message DnsRecord {
   string owner_yard = 4;
 }
 
+// from_yard's HoBo Fleet trust record (ADR-0182) for to_yard to pin. Federation
+// between Yards is an exchange of trust records; there is no second trust format.
 message TrustAnchorExchange {
+  reserved 3;
+  reserved "anchor_ref";
   string from_yard = 1;
   string to_yard = 2;
-  string anchor_ref = 3;
+  // A binary hobo.fleet.v1.WitnessedEnvelope over the from_yard TrustRecord
+  // (context hobo-fleet/trust-record/v1); empty until from_yard publishes one.
+  bytes trust = 4;
 }
 
 message PolicyPackDistribution {
