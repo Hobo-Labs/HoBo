@@ -225,7 +225,8 @@ export async function deploy(
 	// The same input as the current generation replays it (idempotent); a
 	// different input after it completed opens the next generation below.
 	if (latest !== undefined && sameInput) {
-		const completed = [...prior]
+		const completed = prior
+			.slice(latestIndex + 1)
 			.reverse()
 			.find(
 				(event) =>
