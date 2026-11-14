@@ -18,6 +18,10 @@
       "types": "./dist/execution.d.ts",
       "default": "./dist/execution.js"
     },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "default": "./dist/app.js"
+    },
     "./store": {
       "types": "./dist/store.d.ts",
       "default": "./dist/store.js"
@@ -51,6 +55,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/bindles": "workspace:*",
     "@hobo/core": "workspace:*",
     "@hobo/broker": "workspace:*",
     "@hobo/dispatcher": "workspace:*",

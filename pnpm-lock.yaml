@@ -820,6 +820,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/bindles':
+        specifier: workspace:*
+        version: link:../bindles
       '@hobo/broker':
         specifier: workspace:*
         version: link:../broker
