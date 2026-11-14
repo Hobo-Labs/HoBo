@@ -8,6 +8,10 @@
 export { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 export {
 	ApprovalMode,
+	type AuditEntry,
+	AuditCheckpointSchema,
+	AuditEntrySchema,
+	CredentialRequestSchema,
 	ClaimSchema,
 	CoordinationMode,
 	DeclareRequestSchema,
@@ -36,11 +40,13 @@ export {
 	SessionPurpose,
 	SessionRequestSchema,
 	type SignedEnvelope,
+	type Signer,
 	SignedEnvelopeSchema,
 	TokenCreateRequestSchema,
 	TrustClass,
 	TrustRecordSchema,
 	ViolationReportSchema,
+	type WorkReceipt,
 	type WorkOffer,
 	WorkOfferSchema,
 	WorkOrigin,
@@ -52,9 +58,22 @@ export {
 	parseMemberName,
 	parseWorkDigest,
 } from "@hobo/fleet";
-export { createMemoryKeyStore, fingerprintWords, jwkThumbprint, sessionKeys, signEnvelope, sponsoredMemberId } from "@hobo/fleet/keys";
+export {
+	createMemoryKeyStore,
+	fingerprintWords,
+	generateDpopKey,
+	jwkThumbprint,
+	mintDpopProof,
+	sessionKeys,
+	signEnvelope,
+	sponsoredMemberId,
+} from "@hobo/fleet/keys";
 export { authoriseSession, frameStream } from "@hobo/fleet/transport";
 export { verifyAuditChain } from "@hobo/fleet/audit";
 export { checkClaim, deriveTrustClass, requiredSandbox, workDigest } from "@hobo/fleet/work";
+// By path, as in world.ts: the `@hobo/fleet/testing` barrel loads vitest.
+export { createFakeSandboxDriver } from "../../fleet/src/testing/plumbing/index.js";
 export * from "./flows.js";
+export * from "./claims.js";
+export { createOneActiveWorld, type OneActiveWorld } from "./one-active.js";
 export * from "./world.js";

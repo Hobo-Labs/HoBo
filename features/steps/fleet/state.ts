@@ -8,7 +8,7 @@
  * it answers. The world is stopped after each scenario.
  */
 import { After, Before, setDefaultTimeout } from "@cucumber/cucumber";
-import { createFleetWorld, type Enrolled, type FleetWorld } from "../../../packages/fleet-authority/acceptance/index.js";
+import { createFleetWorld, type Enrolled, type FleetWorld, type Signer } from "../../../packages/fleet-authority/acceptance/index.js";
 
 setDefaultTimeout(60_000);
 
@@ -20,6 +20,8 @@ export type FleetScenario = {
 	devices: Map<string, Enrolled>;
 	/** What the last refused call answered, as its error code. */
 	refusal: string | undefined;
+	/** A SIGN key the device has rotated away from. */
+	retiredSign: Signer | undefined;
 	/** Free-form values a scenario carries between its steps. */
 	notes: Map<string, string>;
 };
@@ -29,6 +31,7 @@ export const fleet: FleetScenario = {
 	device: undefined,
 	devices: new Map(),
 	refusal: undefined,
+	retiredSign: undefined,
 	notes: new Map(),
 };
 
@@ -52,6 +55,7 @@ Before({ tags: "@fleet" }, () => {
 	fleet.device = undefined;
 	fleet.devices = new Map();
 	fleet.refusal = undefined;
+	fleet.retiredSign = undefined;
 	fleet.notes = new Map();
 });
 

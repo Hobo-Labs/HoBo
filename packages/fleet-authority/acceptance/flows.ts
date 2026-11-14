@@ -23,6 +23,7 @@ import {
 	type SandboxDriver,
 	type WorkReceipt,
 	WorkReceiptSchema,
+	type WorkRunner,
 	type WorkStatus,
 	WorkSubmissionRequestSchema,
 } from "@hobo/fleet";
@@ -58,12 +59,13 @@ export async function enrollDevice(
 		deviceClass?: DeviceClass;
 		sandboxes?: readonly SandboxDriver[];
 		keys?: KeyStore;
+		runners?: readonly WorkRunner[];
 	}>,
 ): Promise<Enrolled> {
 	const built = world.agent({
 		keys: input.keys,
 		sandboxes: input.sandboxes,
-		runners: [createOciCommandRunner()],
+		runners: input.runners ?? [createOciCommandRunner()],
 		sources: (current) => [createOciCommandSource(liveBus(() => current()?.bus()))],
 	});
 	const proof = await input.proof(built.keys);
@@ -120,12 +122,14 @@ export async function signIn(
 	if (started.status !== 200) throw new Error(`signin/start ${started.status}: ${started.text}`);
 	const challenge: { state: string; userCode?: string } = JSON.parse(started.text);
 	const state = challenge.state;
-	const polls: number[] = [];
+	/** Each poll's answer: "ok", or the FleetError code. */
+	const polls: string[] = [];
 	const poll = async () => {
 		const answer = await send("POST", "/v1/fleet/signin/device/poll", JSON.stringify({ state }), {
 			dpop: await dpop("/v1/fleet/signin/device/poll"),
 		});
-		polls.push(answer.status);
+		const body: { code?: string } = answer.status === 200 ? {} : JSON.parse(answer.text);
+		polls.push(answer.status === 200 ? "ok" : (body.code ?? String(answer.status)));
 		return answer;
 	};
 	if (flow === "device-code") await poll();
@@ -226,4 +230,37 @@ export async function finalReceipt(
 	const found = final();
 	if (found === undefined) throw new Error("no receipt");
 	return found;
+}
+
+/** An `oci-command` runner that records the argv it ran and, while held, waits to be released before it succeeds. */
+export function heldRunner() {
+	const ran: string[] = [];
+	let release: (() => void) | undefined;
+	let held: Promise<void> | undefined;
+	const runner: WorkRunner = {
+		kind: "oci-command",
+		async run(input) {
+			ran.push(input.order.parameters.argv ?? "");
+			if (held !== undefined) await held;
+			return {
+				status: ReceiptStatus.SUCCEEDED,
+				reason: "",
+				outputDigest: `sha256:${"0".repeat(64)}`,
+				observedWorkKey: "",
+			};
+		},
+	};
+	return {
+		runner,
+		ran,
+		hold() {
+			held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+		},
+		release() {
+			release?.();
+			held = undefined;
+		},
+	};
 }

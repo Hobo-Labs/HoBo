@@ -23,7 +23,9 @@ import {
 	parseMemberName,
 	ReceiptStatus,
 	Role,
+	SandboxTier,
 	SessionPurpose,
+	TrustClass,
 	sponsoredMemberId,
 	submitJob,
 	TENANT,
@@ -168,6 +170,8 @@ When("the device starts and the developer submits the job {string} to {string}",
 	fleet.notes.set("receipt-status", ReceiptStatus[receipt.status] ?? String(receipt.status));
 	fleet.notes.set("receipt-member", receipt.memberId);
 	fleet.notes.set("receipt-reason", receipt.reason);
+	fleet.notes.set("receipt-trust", TrustClass[receipt.trustClass] ?? "");
+	fleet.notes.set("receipt-tier", SandboxTier[receipt.sandboxTier] ?? "");
 });
 
 Then("the job reaches a SUCCEEDED receipt from the device", async () => {
