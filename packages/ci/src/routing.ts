@@ -343,9 +343,11 @@ export function route(
 		}
 		return [{ offer, free, reservedFree, paid, sandboxReservedAllowance }];
 	});
-	// Legacy fleet routing prefers the box, then ARC, then GitHub overflow.
+	// Legacy runner-tier routing prefers the box, then ARC, then GitHub overflow.
 	// An authored shared policy ranks every admitted offer by its objective.
-	const preferred = common ? candidates : preferFleetCandidates(candidates);
+	const preferred = common
+		? candidates
+		: preferRunnerTierCandidates(candidates);
 	if (preferred.length === 0) return undefined;
 	const cost = (
 		candidate: (typeof candidates)[number],
@@ -406,10 +408,10 @@ export function route(
 
 /**
  * 0 isolated box, 1 kubernetes gh-actions (ARC), 2 GitHub-hosted.
- * For legacy accounts, unranked providers are kept and a worse fleet tier is
+ * For legacy accounts, unranked providers are kept and a worse runner tier is
  * dropped when a better one remains.
  */
-function fleetCandidateRank(offer: Offer): number | undefined {
+function runnerTierCandidateRank(offer: Offer): number | undefined {
 	if (
 		offer.provider === "hobo-box-worker" ||
 		offer.backend === "isolated-container"
@@ -421,18 +423,18 @@ function fleetCandidateRank(offer: Offer): number | undefined {
 	return undefined;
 }
 
-function preferFleetCandidates<T extends { offer: Offer }>(
+function preferRunnerTierCandidates<T extends { offer: Offer }>(
 	candidates: readonly T[],
 ): T[] {
 	let best: number | undefined;
 	for (const candidate of candidates) {
-		const rank = fleetCandidateRank(candidate.offer);
+		const rank = runnerTierCandidateRank(candidate.offer);
 		if (rank === undefined) continue;
 		if (best === undefined || rank < best) best = rank;
 	}
 	if (best === undefined) return [...candidates];
 	return candidates.filter((candidate) => {
-		const rank = fleetCandidateRank(candidate.offer);
+		const rank = runnerTierCandidateRank(candidate.offer);
 		return rank === undefined || rank === best;
 	});
 }

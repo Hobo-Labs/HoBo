@@ -97,5 +97,6 @@ these changes ([design](../../docs/design/hosted-relay-stateless.md)):
   they already were.
 
 Unchanged: the protobuf/CUE contracts, the pure routing SDK, the SQLite actor
-and `SqliteCiStore` for box workers and `hobo ci serve`, the compute fleet in
-`src/fleet/` and the mesh, and the Broker budget ledger library.
+and `SqliteCiStore` for box workers and `hobo ci serve`, runner routing in
+`src/runner-routing/` (formerly `src/fleet/`; the mesh has since moved to
+`@hobo/fleet`), and the Broker budget ledger library.

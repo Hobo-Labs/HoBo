@@ -218,7 +218,7 @@ package ci
 #SequencedCiEvent: {seq: int & >0, event: #CiEvent}
 #CiEventPage: {events?: [...#SequencedCiEvent], cursor?: int & >=0, more?: bool, truncated?: bool}
 
-#Ci: #FleetRoutes | #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
+#Ci: #SandboxMeasuredUsage | #SandboxAllowance | #SandboxPricing | #DesiredCiPolicy | #BudgetSignal | #BudgetRoutingPolicy | #Offer | #Account | #Connection | #Configuration | #ConfigurationState | #ControlRecord | #AccountState | #RepositorySetupRequest | #ReconcileRequest | #ControlCredential | #ControlCredentials | #Job | #Lease | #CiEvent | #Snapshot | #SequencedCiEvent | #CiEventPage | #PipelineStep | #Pipeline | #PipelineStepResult | #PipelineArtifact | #PipelineResult
 
 #PipelineStep: {id: string & !="", argv: [string & !="", ...string], cwd: string, env: [string & !="__proto__"]: string}
 #Pipeline: {
@@ -288,7 +288,7 @@ package ci
  engine?: #CiPolicyDaggerEngine
  location?: "vercel" | "local" | "remote"
  if kind == "local" {runsOn: "hobo-local-host"}
- // Mirror packages/ci/src/fleet-overflow.ts isGithubLatestLabel — never ubuntu-latest for github.
+ // Mirror packages/ci/src/runner-routing/tiers.ts isGithubLatestLabel — never ubuntu-latest for github.
  if kind == "github" {runsOn: != "ubuntu-latest"}
  if scaleSet != _|_ {kind: "kubernetes", engine?: _|_}
  if engine != _|_ {kind: "kubernetes"}
@@ -336,15 +336,4 @@ package ci
  if periodKind == "fixed-window" {periodStartsAtMs: int & >=0, periodEndsAtMs: int & >periodStartsAtMs}
  if periodKind == "manual" {periodStartsAtMs?: _|_, periodEndsAtMs?: _|_}
  constraints?: [...{key: string & !="", workload: string & !="", unit: string & !="", maximum: int & >=0 & <=9007199254740991, target?: string}]
-}
-
-// The HOBO_CI_FLEET_ROUTES repository variable: job class to runs-on label.
-// The three classes the relay publishes are always present; a workflow indexes
-// the value directly, so it is a flat object and not a wrapped message.
-#FleetRouteLabel: string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"^(?i)ubuntu-latest$"
-#FleetRoutes: {
- pr: #FleetRouteLabel
- fork: #FleetRouteLabel
- trunk: #FleetRouteLabel
- [=~"^[a-z][a-z0-9-]{0,39}$"]: #FleetRouteLabel
 }

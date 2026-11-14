@@ -32,14 +32,6 @@
       "types": "./dist/sqlite-store.d.ts",
       "default": "./dist/sqlite-store.js"
     },
-    "./fleet-v2": {
-      "types": "./dist/fleet-v2/index.d.ts",
-      "default": "./dist/fleet-v2/index.js"
-    },
-    "./mesh": {
-      "types": "./dist/mesh/index.d.ts",
-      "default": "./dist/mesh/index.js"
-    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
