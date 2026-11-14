@@ -175,7 +175,7 @@ Yard is the binding authority). It is the one place the provider is named.
 
 | Profile | Offering | Attached by | In Camp |
 |---|---|---|---|
-| `provider.project/v1` | `vercel.project/v1` (`rootDirectory`) | the deploy | both |
+| `web.project/v1` | `vercel.project/v1` (`rootDirectory`) | the deploy | both |
 | `api.http/v1` | `vercel.function/v1` (`api/relay.ts`, 300 s) | the git deployment | both |
 | `service.queue-consumer/v1` | `vercel.function/v1` (`api/queue.ts`, topic `hobo-ci`) | the git deployment | both |
 | `queue.at-least-once/v1`, `queue.delay/v1` | `vercel.queues/v1` (topic `hobo-ci`) | `vercel.json` | both |

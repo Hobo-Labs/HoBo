@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.prisma.claimable-sql-sandbox/v1",
 	"topologyDigest": "sha256:848f2638d620dc45ab2da061e393874c54f2af47e76f21b93473c4109800f897",
-	"resolutionDigest": "sha256:66dac715f3eddb4cdd9cd2b816cde3c9219f34a0656f6959a5b41a81a6a17918",
+	"resolutionDigest": "sha256:025448efee7672678398e7b4eca18691e6b00b5ec1145a75a6e7f3629758ae49",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.prisma.claimable-sql-sandbox/v1",

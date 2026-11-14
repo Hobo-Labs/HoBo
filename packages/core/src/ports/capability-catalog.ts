@@ -63,6 +63,8 @@ export const capability = Object.freeze({
 	 * and requiring `ssr` asks for per-request rendering.
 	 */
 	web: Object.freeze({
+		/** An account-scoped provider project, distinct from a deployed surface. */
+		project: "web.project/v1",
 		/** Prebuilt immutable assets over HTTPS. No server-side rendering. */
 		static: "web.static/v1",
 		/** A provider-managed public origin with a stable hostname and TLS. */

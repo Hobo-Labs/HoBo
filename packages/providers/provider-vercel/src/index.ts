@@ -1,3 +1,4 @@
+export { VercelProjectViewSchema } from "./_generated/provider_vercel_pb.js";
 export {
 	type BuildClaimActionInput,
 	buildClaimAction,
@@ -20,7 +21,9 @@ export {
 	vercelYardSpec,
 } from "./default-yard.js";
 export {
+	createVercelBlobDefinition,
 	createVercelClaimDeploymentDefinition,
+	createVercelProjectDefinition,
 	createVercelSponsoredApiDefinition,
 	createVercelSponsoredWebDefinition,
 	createVercelStaticDeployDefinition,
@@ -82,7 +85,6 @@ export {
 } from "./git-integration-adoption.js";
 export {
 	VERCEL_HOSTING_COVERAGE,
-	VERCEL_NEON_POSTGRES_PRODUCT_ID,
 	VERCEL_UNRESOLVED_PRODUCTS,
 	vercelProductRefusal,
 } from "./hosting-coverage.js";

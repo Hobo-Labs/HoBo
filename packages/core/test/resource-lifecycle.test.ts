@@ -7,6 +7,7 @@ import {
 	ResourceLifecycleObservationRecordSchema,
 } from "../src/ports/resource-lifecycle.js";
 import {
+	createResolverRegistry,
 	RESOLVER_CONTRACT,
 	type ResolveRequest,
 	type ResourceResolver,
@@ -66,6 +67,57 @@ type ResolveOutcomeOutputs =
 	import("../src/ports/resource-resolver.js").ResolveOutcome["outputs"];
 
 describe("provider lifecycle evidence", () => {
+	it("requires an independent scoped absence observation for a missing read", async () => {
+		let calls = 0;
+		let clock = 1000;
+		const missing: ResourceResolver = {
+			...resolver({}),
+			directives: ["operationId"],
+			read: async () => undefined,
+			observeAbsence: async () => {
+				calls++;
+				clock = 1010;
+				return true;
+			},
+		};
+		const registered = createResolverRegistry([missing]).get("test.service");
+		if (!registered) throw new Error("resolver was not registered");
+		const transport = async () => {
+			throw new Error("unused");
+		};
+		const absent = await observeResolverLifecycle({
+			resolver: registered,
+			request,
+			transport,
+			context,
+			nowMs: () => clock,
+		});
+		expect(absent).toMatchObject({
+			status: "absent",
+			operationTerminal: true,
+			physicalId: "resource-1",
+			observedAtMs: 1010,
+		});
+		expect(calls).toBe(1);
+		const unknown = await observeResolverLifecycle({
+			resolver: { ...missing, observeAbsence: async () => false },
+			request,
+			transport,
+			context,
+		});
+		expect(unknown.status).toBe("unknown");
+		const withoutId = await observeResolverLifecycle({
+			resolver: missing,
+			request: {
+				...request,
+				ref: { slot: "service", productId: "test.service", logicalId: "api" },
+			},
+			transport,
+			context,
+		});
+		expect(withoutId.status).toBe("unknown");
+		expect(calls).toBe(1);
+	});
 	it("samples the trusted clock after asynchronous provider IO without allowing future evidence", async () => {
 		let nowMs = 1000;
 		const native = {

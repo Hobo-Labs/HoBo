@@ -22,7 +22,7 @@ function untypedBag<T>(json: string): T {
 
 describe("vercel slot factories", () => {
 	it.each([
-		[project(), "web", "provider.project/v1", VERCEL_PROJECT_PRODUCT_ID],
+		[project(), "web", "web.project/v1", VERCEL_PROJECT_PRODUCT_ID],
 		[
 			edgeFunction(),
 			"service",
@@ -54,6 +54,21 @@ describe("vercel slot factories", () => {
 		).toEqual({ memoryMb: 1024, regions: ["iad1"] });
 		expect(blob({ access: "private" }).properties).toEqual({
 			access: "private",
+		});
+		expect(
+			blob({
+				store: "relay-cache",
+				region: "iad1",
+				access: "private",
+				projectId: "prj_ci",
+				environments: ["production"],
+			}).properties,
+		).toEqual({
+			store: "relay-cache",
+			region: "iad1",
+			access: "private",
+			projectId: "prj_ci",
+			environments: ["production"],
 		});
 		expect(edgeConfig({ itemCountLimit: 32 }).properties).toEqual({
 			itemCountLimit: 32,
