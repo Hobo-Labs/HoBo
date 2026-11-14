@@ -185,6 +185,8 @@ const routedRunsOn = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 /** The main gate's shards: the plan job's second ask, then the run's route, then GitHub-hosted. */
 const shardRunsOn =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
+const mergeShardRunsOn =
+	"${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -373,7 +375,7 @@ on:
 jobs:
   ci-deps-image:
     needs: route
-    if: \${{ !cancelled() && github.event_name == 'pull_request' }}
+    if: \${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}
     runs-on: ${runsOn}
     steps:
       - name: Build
@@ -386,6 +388,15 @@ jobs:
 		await fixture({ "hobo-ci.yml": workflow(depsImageRunsOn, build) }),
 	);
 	assert.equal(boxed.status, 0, boxed.stderr);
+	const unguarded = await lint(
+		await fixture({
+			"hobo-ci.yml": workflow(depsImageRunsOn, build).replace(
+				"needs.route.result == 'success' && ",
+				"",
+			),
+		}),
+	);
+	assert.equal(unguarded.status, 1);
 	for (const runsOn of [trunkRunsOn, "hobo"]) {
 		const shared = await lint(
 			await fixture({ "hobo-ci.yml": workflow(runsOn, build) }),
@@ -549,6 +560,12 @@ test("every trunk-capable CI and release job requests the trunk label by default
 					/^  (main_workspace_tests|main_gate_finish):$/,
 				);
 				assert.match(block, /^    needs: \[route, [^\n]*main-gate-plan/m);
+				continue;
+			}
+			if (runsOn === mergeShardRunsOn) {
+				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
+				assert.equal(lines[start], "  workspace_tests:");
+				assert.match(block, /^    needs: \[route, pr_gate_validation\]/m);
 				continue;
 			}
 			// The deps-image route chooses the box or a hosted Docker context.

@@ -824,6 +824,9 @@ export function localContext(state: {
 		if (path === "github.event.pull_request.number") return "";
 		if (path.startsWith("vars.") || path.startsWith("secrets.")) return "";
 		// A local run is what produces an attestation; it never has one.
+		// The remote route is checked separately by the required gate; locally,
+		// evaluate covered jobs as if that prerequisite succeeded.
+		if (path === "needs.route.result") return "success";
 		if (path === "needs.route.outputs.attested") return "false";
 		if (path === "needs.route.outputs.attested-jobs") return "[]";
 		if (path === "strategy.job-index" && shard) return shard.index;

@@ -12,6 +12,8 @@
  * quickly, no job asking for its label has waited past the limit, and few jobs
  * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
+ * PR fan-outs in hobo-ci and release-hobo additionally require a verified
+ * full-batch reservation before choosing the fleet.
  *
  * The relay decides first, when it has said anything (ADR-0181):
  * the box relay writes a routing slip to `refs/hobo/routing-slip`, and this
@@ -151,8 +153,8 @@ export type RefusedBy = "slip" | "queue" | "none";
  * What became of the routing slip for this decision. `used`: it was consulted,
  * for the relay's `reason`; the queue may still refuse a fleet it named.
  * `fallback`: none could be used, for `why`, and the
- * queue decided. `unasked`: the tier is pinned or a signed local run covers
- * the tree, so no slip was read.
+ * queue decided. `unasked`: a pin, signed local run or batch admission decides
+ * the tier without reading a slip.
  */
 export type SlipAnswer =
 	| Readonly<{ kind: "used"; reason: string; from: string }>
@@ -767,6 +769,84 @@ export type RouteArgs = Readonly<{
 }>;
 
 /**
+ * The independently enrolled supervisor checks the exact workflow bytes and
+ * signed run against its durable capacity claim and Broker admission.  It
+ * must cover every job in the reviewed fan-out and retain both claims until
+ * all possible jobs have stopped. Queue observations are not reservations.
+ * The standalone action has no such authority unless its host supplies one.
+ */
+export type PrBatchCapacityVerifier = (
+	scope: Readonly<{
+		repository: string;
+		repositoryId: number;
+		ownerId: number;
+		runId: number;
+		runAttempt: number;
+		revision: string;
+		workflowRef: string;
+		workflowPath: string;
+		workflow: string;
+		runner: string;
+		boxRunner: string;
+		/** Latest time this routing decision can be made. */
+		decisionDeadlineMs: number;
+		/** Maximum acceptable wait after each job enters the provider queue. */
+		maxQueueWaitSeconds: number;
+	}>,
+) => Promise<boolean>;
+
+function prBatchScope(
+	env: NodeJS.ProcessEnv,
+	runner: string,
+	boxRunner: string,
+	decisionDeadlineMs: number,
+	maxQueueWaitSeconds: number,
+	workflowName: string,
+): Parameters<PrBatchCapacityVerifier>[0] | undefined {
+	const repository = env.GITHUB_REPOSITORY ?? "";
+	const repositoryId = Number(env.GITHUB_REPOSITORY_ID);
+	const ownerId = Number(env.GITHUB_REPOSITORY_OWNER_ID);
+	const runId = Number(env.GITHUB_RUN_ID);
+	const runAttempt = Number(env.GITHUB_RUN_ATTEMPT);
+	const revision = env.GITHUB_SHA ?? "";
+	const workflowRef = env.GITHUB_WORKFLOW_REF ?? "";
+	const workflowPath = `.github/workflows/${workflowName}`;
+	const workflow = readCheckoutFile(env, workflowPath);
+	if (
+		!/^[A-Za-z0-9_.-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/u.test(repository) ||
+		repository.split("/").some((part) => part === "." || part === "..") ||
+		![repositoryId, ownerId, runId, runAttempt].every(
+			(value) => Number.isSafeInteger(value) && value > 0,
+		) ||
+		!/^[a-f0-9]{40}$/u.test(revision) ||
+		!Number.isSafeInteger(decisionDeadlineMs) ||
+		decisionDeadlineMs < 1 ||
+		!Number.isSafeInteger(maxQueueWaitSeconds) ||
+		maxQueueWaitSeconds < 1 ||
+		!workflowRef.startsWith(`${repository}/${workflowPath}@`) ||
+		workflowRef.endsWith("@") ||
+		!workflow ||
+		workflow.length > 1_000_000
+	)
+		return undefined;
+	return Object.freeze({
+		repository,
+		repositoryId,
+		ownerId,
+		runId,
+		runAttempt,
+		revision,
+		workflowRef,
+		workflowPath,
+		workflow,
+		runner,
+		boxRunner,
+		decisionDeadlineMs,
+		maxQueueWaitSeconds,
+	});
+}
+
+/**
  * `--route <auto|fleet|local|github>`, `--include-own-run <true|false>` and
  * `--attested <true|false>`, each also as `--name=value`. Anything else is
  * an error, so the action's fallback says the script did not run.
@@ -906,6 +986,75 @@ const UNREAD: LabelLoad = {
 	slowestRecentPickupSeconds: 0,
 };
 
+/** Read the caller repository, rather than a reusable workflow's repository.
+ * This point-in-time observation covers standard-runner compute pricing only;
+ * it is not a budget admission or a guarantee of later visibility. */
+export async function isPublicCaller(
+	env: NodeJS.ProcessEnv,
+	send: typeof fetch = fetch,
+): Promise<boolean> {
+	const repository = env.GITHUB_REPOSITORY ?? "";
+	const repositoryId = Number(env.GITHUB_REPOSITORY_ID);
+	const ownerId = Number(env.GITHUB_REPOSITORY_OWNER_ID);
+	const token = env.GITHUB_TOKEN ?? "";
+	if (
+		!/^[A-Za-z0-9_.-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/u.test(repository) ||
+		repository.split("/").some((part) => part === "." || part === "..") ||
+		![repositoryId, ownerId].every(
+			(value) => Number.isSafeInteger(value) && value > 0,
+		) ||
+		!token ||
+		token.length > 4096 ||
+		/[\r\n]/u.test(token)
+	)
+		return false;
+	try {
+		const response = await send(`https://api.github.com/repos/${repository}`, {
+			method: "GET",
+			redirect: "error",
+			headers: {
+				Accept: "application/vnd.github+json",
+				Authorization: `Bearer ${token}`,
+				"X-GitHub-Api-Version": "2022-11-28",
+			},
+			signal: AbortSignal.timeout(5_000),
+		});
+		if (response.status !== 200 || !response.body) {
+			await response.body?.cancel();
+			return false;
+		}
+		const reader = response.body.getReader();
+		const chunks: Uint8Array[] = [];
+		let size = 0;
+		try {
+			for (;;) {
+				const part = await reader.read();
+				if (part.done) break;
+				size += part.value.byteLength;
+				if (size > 65_536) return false;
+				chunks.push(part.value);
+			}
+		} finally {
+			await reader.cancel();
+		}
+		// SAFETY: JSON.parse produces a JsonValue, which asObject narrows.
+		const repo = asObject(
+			JSON.parse(Buffer.concat(chunks).toString()) as JsonValue,
+		);
+		const owner = asObject(repo?.owner);
+		return (
+			repo?.id === repositoryId &&
+			owner?.id === ownerId &&
+			repo.private === false &&
+			repo.visibility === "public" &&
+			repo.disabled === false &&
+			repo.archived === false
+		);
+	} catch {
+		return false;
+	}
+}
+
 export async function main(
 	argv: readonly string[],
 	env: NodeJS.ProcessEnv = process.env,
@@ -914,9 +1063,11 @@ export async function main(
 		routingConfig?: string | undefined;
 		/** The event payload; read from `GITHUB_EVENT_PATH` when left out. */
 		eventPayload?: JsonValue | undefined;
-		/** Used for the slip read only. */
+		/** Used for GitHub's routing-slip and public-repository reads. */
 		fetch?: typeof fetch;
 		now?: () => number;
+		/** A trusted host may install the real durable full-run claim verifier. */
+		verifyPrBatchCapacity?: PrBatchCapacityVerifier;
 	}> = {},
 ): Promise<RouteDecision> {
 	const args = parseRouteArgs(argv);
@@ -940,6 +1091,74 @@ export async function main(
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
+	// These PR workflows route independent jobs and, for hobo-ci, up to eight
+	// shards. One recent pickup cannot prove that this whole batch fits.
+	// Preserve explicit pins; a missing or malformed policy is not an auto pin.
+	if (
+		event === "pull_request" &&
+		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
+		!args.includeOwnRun &&
+		mode === "auto"
+	) {
+		if (!settings.committed)
+			throw new Error("PR batch routing requires a valid committed policy");
+		const startedAt = now();
+		const scope = prBatchScope(
+			env,
+			fleetLabel,
+			settings.boxRunner,
+			startedAt + limits.maxWaitSeconds * 1_000,
+			limits.maxWaitSeconds,
+			workflowFile(env),
+		);
+		let capacityHeld = false;
+		if (scope && io.verifyPrBatchCapacity) {
+			try {
+				capacityHeld = await io.verifyPrBatchCapacity(scope);
+			} catch {
+				// An unavailable or stale authority cannot admit the fleet.
+			}
+		}
+		const checkedAt = now();
+		if (
+			capacityHeld &&
+			scope &&
+			Number.isSafeInteger(startedAt) &&
+			startedAt > 0 &&
+			Number.isSafeInteger(checkedAt) &&
+			checkedAt >= startedAt &&
+			checkedAt < scope.decisionDeadlineMs
+		)
+			return report(
+				{
+					tier: "fleet",
+					runner: fleetLabel,
+					reason:
+						"the exact PR batch has an independently verified capacity and Broker claim",
+					refusedBy: "none",
+					slip: { kind: "unasked", why: "batch" },
+				},
+				env,
+			);
+		if (
+			labels.github !== "ubuntu-24.04" ||
+			!(await isPublicCaller(env, io.fetch))
+		)
+			throw new Error(
+				"PR batch hosted-runner public compute evidence is unavailable",
+			);
+		return report(
+			{
+				tier: "github",
+				runner: labels.github,
+				reason:
+					"the full PR batch has no verified fleet capacity and Broker claim; public standard-runner compute was verified",
+				refusedBy: "none",
+				slip: { kind: "unasked", why: "batch" },
+			},
+			env,
+		);
+	}
 	// A signed local run was verified for this tree, so the jobs it covers are
 	// skipped and only a few short ones are left. They go where a job is known
 	// to start, without reading the slip or the queue. A pinned tier is an
@@ -1072,8 +1291,8 @@ export async function main(
 /** How a slip fallback warning starts; the monitor tells it from a route that did not run. */
 export const SLIP_FALLBACK_PREFIX = "routing slip not used";
 
-/** Why no slip was read: the tier is pinned, or a signed local run covers the tree. */
-export type UnaskedWhy = "pinned" | "attested";
+/** Why no slip was read. */
+export type UnaskedWhy = "pinned" | "attested" | "batch";
 
 /** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
 export function workflowFile(env: NodeJS.ProcessEnv): string {

@@ -2,9 +2,11 @@ name: Route runners
 description: >-
   Chooses the runner label this run's jobs ask for: the hobo fleet while it is
   taking jobs, an enrolled local box when it is not, GitHub-hosted when neither
-  is. Never fails: when the queue cannot be read, or the script cannot run,
-  GitHub-hosted is chosen (this step is running there, so it is the one tier
-  known to be up) and a warning says why. Pinned to the fleet, it stays there.
+  is. When the queue cannot be read, or the script cannot run,
+  GitHub-hosted is chosen and a warning says why. Auto-routed pull-request
+  batches require verified public standard-runner pricing or a verified fleet
+  batch claim; if routing fails, they stop before queuing jobs. Pinned to the
+  fleet, it stays there.
   What the fleet can take is not passed in: the script reads the routing slip
   the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
   policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
@@ -117,13 +119,17 @@ runs:
         route='${{ contains(fromJSON('["auto","fleet","local","github"]'), inputs.route) && inputs.route || 'auto' }}'
         include_own_run='${{ inputs.include-own-run == 'true' && 'true' || 'false' }}'
         attested='${{ steps.attest.outputs.attested == 'true' && 'true' || 'false' }}'
+        if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${route}" = "auto" ] && [ -z "${GITHUB_WORKFLOW_REF:-}" ]; then
+          echo "::error title=hobo-ci-route-fallback::PR workflow identity is unavailable; no batch was queued"
+          exit 1
+        fi
         fleet=hobo
         case " push workflow_dispatch merge_group workflow_run " in
           *" ${GITHUB_EVENT_NAME} "*) fleet=hobo-trunk ;;
         esac
-        # Without a decision, the one tier known to be up is the one this step is
-        # running on. A run pinned to the fleet stays on the fleet. A second ask
-        # within a run outputs nothing, so the run's first decision stands.
+        # Without a decision, a PR batch fails closed; other automatic routes use
+        # the tier this step is running on. A run pinned to the fleet stays on
+        # the fleet. A second ask outputs nothing, so the first route stands.
         # The titled warning is what a monitor counts (hobo-ci-route-fallback).
         without_a_decision() {
           if [ "${include_own_run}" = "true" ]; then
@@ -131,6 +137,9 @@ runs:
           elif [ "${route}" = "fleet" ]; then
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); pinned to the fleet"
             { echo "runner=${fleet}"; echo "tier=fleet"; echo "shard_runner=${fleet}"; } >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${route}" = "auto" ] && { [ -z "${GITHUB_WORKFLOW_REF:-}" ] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/hobo-ci.yml@* ]] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/release-hobo.yml@* ]]; }; then
+            echo "::error title=hobo-ci-route-fallback::PR batch routing did not verify a runner ($1); no batch was queued"
+            return 1
           else
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); using GitHub-hosted runners"
             { echo "runner=ubuntu-24.04"; echo "tier=github"; echo "shard_runner=ubuntu-24.04"; } >> "$GITHUB_OUTPUT"
@@ -148,7 +157,7 @@ runs:
           fi
         done
         if [ -z "${node_bin}" ]; then
-          without_a_decision "no Node 22.18 or later on this machine"
+          without_a_decision "no Node 22.18 or later on this machine" || exit 1
           exit 0
         fi
         "${node_bin}" --no-warnings scripts/ci/route-runner.mts \

@@ -421,7 +421,7 @@ describe("CI deps workflow contract", () => {
 	it("runs as its own job on pull requests only, and never promotes there", () => {
 		includes(
 			job,
-			"if: ${{ !cancelled() && github.event_name == 'pull_request' }}",
+			"if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}",
 		);
 		// Use an enrolled box when the fleet is selected. A GitHub-hosted fallback
 		// validates the candidate in its own Docker context without publishing it.
