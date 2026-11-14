@@ -95,119 +95,126 @@ describe("TypeScript app codegen executes the compiler-inferred app contract: so
 			await rm(root, { recursive: true, force: true });
 		}
 	});
-	it("preserves binary file-loader assets through codegen drift checks and native artifact packaging with CSS and JSON imports", async () => {
-		const root = await mkdtemp(join(tmpdir(), "hobo-ts-imprint-assets-"));
-		try {
-			await write(root, "package.json", JSON.stringify({ type: "module" }));
-			await write(
-				root,
-				"tsconfig.json",
-				JSON.stringify({
-					compilerOptions: {
-						target: "ES2022",
-						module: "ESNext",
-						moduleResolution: "Bundler",
-						strict: true,
-						types: [],
-						resolveJsonModule: true,
-					},
-					include: ["source/**/*.ts"],
-				}),
-			);
-			await write(
-				root,
-				"source/assets.d.ts",
-				'declare module "*.png" { const url: string; export default url; } declare module "*.wasm" { const url: string; export default url; } declare module "*.css";',
-			);
-			await write(
-				root,
-				"source/config.json",
-				JSON.stringify({ theme: { title: "imported config" } }),
-			);
-			await write(
-				root,
-				"source/styles.css",
-				'.logo { background-image: url("./logo.png"); color: red; }',
-			);
-			const image = new Uint8Array([
-				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe, 0x80,
-				0x42,
-			]);
-			const wasm = new Uint8Array([
-				0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-			]);
-			await writeFile(join(root, "source/logo.png"), image);
-			await writeFile(join(root, "source/module.wasm"), wasm);
-			await write(
-				root,
-				"source/app.ts",
-				'import image from "./logo.png"; import wasm from "./module.wasm"; import config from "./config.json"; import "./styles.css"; export function assets() { return {image, wasm, title: config.theme.title}; }',
-			);
-			const engine = createTypeScriptProjectCodegenEngine({
-				entrypoints: ["source/app.ts"],
-			});
-			const artifacts = await engine.generate(root);
-			expect(
-				artifacts.find((artifact) => artifact.path.endsWith(".png"))
-					?.binaryContent,
-			).toEqual(image);
-			expect(
-				artifacts.find((artifact) => artifact.path.endsWith(".wasm"))
-					?.binaryContent,
-			).toEqual(wasm);
-			const generated = await runCodegen(
-				{ projectRoot: root, check: false },
-				{ engine },
-			);
-			await runCodegen({ projectRoot: root, check: true }, { engine });
-			const asset = generated.written.find((path) => path.endsWith(".png"));
-			expect(asset).toBeDefined();
-			if (!asset) throw new Error("Expected emitted PNG asset");
-			expect(new Uint8Array(await readFile(join(root, asset)))).toEqual(image);
-			await writeFile(join(root, asset), new Uint8Array([...image, 0x00]));
-			await expect(
-				runCodegen({ projectRoot: root, check: true }, { engine }),
-			).rejects.toMatchObject({ code: "HOBO_CODEGEN_DRIFT" });
-			await runCodegen({ projectRoot: root, check: false }, { engine });
-			await compile(root);
-			// SAFETY: real TS/asset imports above were bundled and the executable client was compiled and packaged.
-			const client = (await import(
-				pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js")).href
-			)) as {
-				app: {
-					"source/app.ts": {
-						assets(): { image: string; wasm: string; title: string };
+	it(
+		"preserves binary file-loader assets through codegen drift checks and native artifact packaging with CSS and JSON imports",
+		async () => {
+			const root = await mkdtemp(join(tmpdir(), "hobo-ts-imprint-assets-"));
+			try {
+				await write(root, "package.json", JSON.stringify({ type: "module" }));
+				await write(
+					root,
+					"tsconfig.json",
+					JSON.stringify({
+						compilerOptions: {
+							target: "ES2022",
+							module: "ESNext",
+							moduleResolution: "Bundler",
+							strict: true,
+							types: [],
+							resolveJsonModule: true,
+						},
+						include: ["source/**/*.ts"],
+					}),
+				);
+				await write(
+					root,
+					"source/assets.d.ts",
+					'declare module "*.png" { const url: string; export default url; } declare module "*.wasm" { const url: string; export default url; } declare module "*.css";',
+				);
+				await write(
+					root,
+					"source/config.json",
+					JSON.stringify({ theme: { title: "imported config" } }),
+				);
+				await write(
+					root,
+					"source/styles.css",
+					'.logo { background-image: url("./logo.png"); color: red; }',
+				);
+				const image = new Uint8Array([
+					0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe,
+					0x80, 0x42,
+				]);
+				const wasm = new Uint8Array([
+					0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+				]);
+				await writeFile(join(root, "source/logo.png"), image);
+				await writeFile(join(root, "source/module.wasm"), wasm);
+				await write(
+					root,
+					"source/app.ts",
+					'import image from "./logo.png"; import wasm from "./module.wasm"; import config from "./config.json"; import "./styles.css"; export function assets() { return {image, wasm, title: config.theme.title}; }',
+				);
+				const engine = createTypeScriptProjectCodegenEngine({
+					entrypoints: ["source/app.ts"],
+				});
+				const artifacts = await engine.generate(root);
+				expect(
+					artifacts.find((artifact) => artifact.path.endsWith(".png"))
+						?.binaryContent,
+				).toEqual(image);
+				expect(
+					artifacts.find((artifact) => artifact.path.endsWith(".wasm"))
+						?.binaryContent,
+				).toEqual(wasm);
+				const generated = await runCodegen(
+					{ projectRoot: root, check: false },
+					{ engine },
+				);
+				await runCodegen({ projectRoot: root, check: true }, { engine });
+				const asset = generated.written.find((path) => path.endsWith(".png"));
+				expect(asset).toBeDefined();
+				if (!asset) throw new Error("Expected emitted PNG asset");
+				expect(new Uint8Array(await readFile(join(root, asset)))).toEqual(
+					image,
+				);
+				await writeFile(join(root, asset), new Uint8Array([...image, 0x00]));
+				await expect(
+					runCodegen({ projectRoot: root, check: true }, { engine }),
+				).rejects.toMatchObject({ code: "HOBO_CODEGEN_DRIFT" });
+				await runCodegen({ projectRoot: root, check: false }, { engine });
+				await compile(root);
+				// SAFETY: real TS/asset imports above were bundled and the executable client was compiled and packaged.
+				const client = (await import(
+					pathToFileURL(join(root, "out/src/_generated/app-imprint/app.js"))
+						.href
+				)) as {
+					app: {
+						"source/app.ts": {
+							assets(): { image: string; wasm: string; title: string };
+						};
 					};
+					resolveAppAsset(path: string): URL;
 				};
-				resolveAppAsset(path: string): URL;
-			};
-			const values = client.app["source/app.ts"].assets();
-			expect(values.title).toBe("imported config");
-			expect(
-				new Uint8Array(await readFile(client.resolveAppAsset(values.image))),
-			).toEqual(image);
-			expect(
-				new Uint8Array(await readFile(client.resolveAppAsset(values.wasm))),
-			).toEqual(wasm);
-			expect(generated.written.some((path) => path.endsWith(".css"))).toBe(
-				true,
-			);
-			await rm(join(root, "source"), { recursive: true, force: true });
-			await rm(join(root, "src"), { recursive: true, force: true });
-			await compilePackagedConsumer(
-				root,
-				`import {app} from "./src/_generated/app-imprint/app.js"; const assets: {image:string;wasm:string;title:string} = app["source/app.ts"].assets(); void assets;`,
-			);
-			const packagedValues = client.app["source/app.ts"].assets();
-			expect(
-				new Uint8Array(
-					await readFile(client.resolveAppAsset(packagedValues.image)),
-				),
-			).toEqual(image);
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	}, slow(30_000));
+				const values = client.app["source/app.ts"].assets();
+				expect(values.title).toBe("imported config");
+				expect(
+					new Uint8Array(await readFile(client.resolveAppAsset(values.image))),
+				).toEqual(image);
+				expect(
+					new Uint8Array(await readFile(client.resolveAppAsset(values.wasm))),
+				).toEqual(wasm);
+				expect(generated.written.some((path) => path.endsWith(".css"))).toBe(
+					true,
+				);
+				await rm(join(root, "source"), { recursive: true, force: true });
+				await rm(join(root, "src"), { recursive: true, force: true });
+				await compilePackagedConsumer(
+					root,
+					`import {app} from "./src/_generated/app-imprint/app.js"; const assets: {image:string;wasm:string;title:string} = app["source/app.ts"].assets(); void assets;`,
+				);
+				const packagedValues = client.app["source/app.ts"].assets();
+				expect(
+					new Uint8Array(
+						await readFile(client.resolveAppAsset(packagedValues.image)),
+					),
+				).toEqual(image);
+			} finally {
+				await rm(root, { recursive: true, force: true });
+			}
+		},
+		slow(30_000),
+	);
 	it("preserves true CommonJS export-assignment callables, constructors and namespace properties", async () => {
 		const root = await mkdtemp(
 			join(tmpdir(), "hobo-ts-imprint-export-equals-"),
