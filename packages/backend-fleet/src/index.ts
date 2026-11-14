@@ -51,6 +51,17 @@ export {
 	isBackendFleetError,
 } from "./errors.js";
 export {
+	createImmutableJournal,
+	type ImmutableJournal,
+	type ImmutableJournalEntry,
+	ImmutableJournalError,
+	type ImmutableJournalMember,
+	type ImmutableJournalOptions,
+	type ImmutableJournalReplica,
+	type ImmutableJournalSeal,
+	type SealableImmutableJournalReplica,
+} from "./immutable-journal.js";
+export {
 	DEFAULT_FLEET_POLICY,
 	decideFleet,
 	FLEET_ACTIONS,

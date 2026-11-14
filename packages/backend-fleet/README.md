@@ -27,6 +27,7 @@ against, and nothing in core needs a fleet.
 | Assignment entries and their identity | `parseFleetAssignment`, `assignmentKey`, `fleetMajority` |
 | The register over any replica | `AssignmentReplica`, `resolveAssignment`, `readCurrentAssignment`, `proposeAssignment`, `bootstrapAssignment`, `completeAssignment`, `overrideAssignment` |
 | The register on a cache | `ephemeralAssignmentReplica`, `ephemeralAssignmentRegister`, `rejoinAssignmentReplicas` |
+| Bounded immutable journal | `createImmutableJournal` |
 | Billing periods and usage units | `billingPeriod`, `FLEET_USAGE_UNITS` |
 | Keep, switch or fail over a database fleet | `decideFleet`, `parseFleetFinancialModel`, `parseFleetPolicy` |
 | Route a loss-tolerant fleet by budget | `routeFleetByBudget`, `parseFleetOffer`, `parseFleetRoutingMarks` |
@@ -53,16 +54,26 @@ port's 30-day TTL cap, and `refresh` resets it (the relay's repair tick calls
 it on every member).
 
 A cache may lose the key (expiry, a flush, eviction). A lost log reads as
-empty: the member stops counting as a holder of anything. The register stays
-safe while every decided entry is held by a majority, which the repair tick
-ensures by copying the current entry onto every member that answers; losing
-the log of any minority after that changes nothing a reader can conclude. A
-log lost while it was part of a *bare* majority, before repair, with another
-holder silent, leaves the register `undecided` (it fails closed), and
-completion re-decides the same entry. `rejoinAssignmentReplicas` seeds an
+empty: the member stops counting as a holder of anything. Losing the log of a
+minority after a decided entry has been copied to all members does not change
+that decision. If a member of a bare majority loses its log while another
+holder is unavailable, however, reachable empty members cannot distinguish
+this loss from a new fleet. Do not bootstrap from an empty cache quorum without
+independent evidence that the fleet is new. `rejoinAssignmentReplicas` seeds an
 emptied member with the current entry only when a majority of all members
 other than itself hold it as their newest, which ordinary repair cannot do
 once old epochs have been trimmed from every log.
+
+### Immutable journal
+
+`createImmutableJournal` builds a bounded command log on durable replicas
+using the assignment register. Its anchor binds the fleet to its ordered
+provider, account, resource and incarnation identities; a majority must agree
+on each entry. Bootstrap requires independent evidence that members are fresh,
+and each operation calls the host's authorization hook. A host must also verify
+failure domains, fund provider calls, quarantine restored replicas and fence
+external effects; the journal itself does not establish those properties or
+implement `DurableEventStore`.
 
 ## Budget routing
 
