@@ -1,16 +1,22 @@
 ---
 type: Design
 title: "CI Relay Mesh"
-description: "Proposal: run the CI relay as a mesh of equal nodes that each read GitHub's queue and agree on who starts a job by arithmetic, so no relay is a single point of failure."
+status: "Superseded by ADR-0183"
+description: "Superseded by ADR-0183 (HoBo Fleet). Historical proposal: run the CI relay as a mesh of equal nodes that each read GitHub's queue and agree on who starts a job by arithmetic, so no relay is a single point of failure."
 tags: [hobo, design, ci]
 ---
 
 # CI Relay Mesh
 
-**Status:** implemented behind a setting. The box worker joins a mesh when
-`HOBO_CI_NATS_URL` is set and is unchanged without it. Proven against a real
-NATS server with several nodes in one process; not yet run with two real boxes.
-[Increments](#increments) lists what is done and what is left.
+**Status:** superseded by [ADR-0183](./adr/fleet.md#adr-0183)
+([HoBo Fleet](./fleet.md)). The mesh code (`@hobo/ci` `mesh/`, the
+`mesh-*.ts` files of `@hobo/ci-gh-actions`, `mesh.proto`) and its settings
+were deleted. What stayed true is folded into the fleet design: ranking by
+weighted rendezvous hashing with a per-rank delay, first-writer-wins claims,
+measured reliability, and a box that runs standalone without the bus. Box
+workers are enrolled fleet devices; NATS runs in operator mode with
+per-device credentials. Kept as a historical record; the settings and files
+named below no longer exist.
 
 ## Why
 

@@ -309,3 +309,37 @@ Hard environment network isolation is a first-class, fail-closed property of the
 
 Elevated production access requires a short-lived capability (`hobo access request`), not network membership alone. Optional Privileged Access Gateway (`@hobo/connectivity` pam/) attaches as a Station Rail capability, is env-scoped, and brokers secretless short-lived sessions (local mint + optional remote HTTP transports). Break-glass is dual-controlled and auto-expires. Conformance: `pnpm --filter @hobo/connectivity test`.
 
+## Fleet devices and the coordination mesh (ADR-0183)
+
+Machines that run work for HoBo (CI boxes, developer laptops, relay hosts,
+delivery agent hosts, junction hosts) are enrolled devices of a fleet
+([HoBo Fleet](./fleet.md), [ADR-0183](./adr/fleet.md#adr-0183)). The security
+properties that matter at this layer:
+
+- **Identity is a key the device generated and never exports.** Every
+  credential it presents is proof of possession of that key (DPoP-bound
+  person tokens and SVIDs, a NATS connect proof over the server's nonce). The
+  one bearer kept on purpose is the relay's account credential, accepted only
+  on read routes and for submitting work.
+- **The bus is not trusted.** NATS runs in operator mode with TLS on every
+  listener, per-device credentials minted by auth callout and permissions
+  templated to the member id; anything that grants trust is signed against a
+  pinned, witnessed trust record and expires, so a hostile bus operator can
+  delay work but never grant it.
+- **Work runs in a single-use sandbox** whose tier (`S1` hardened container,
+  `S2` user-space kernel, `S3` micro-VM) the device chooses from a trust class
+  it derives itself; fork and public work never runs on personal or dedicated
+  devices. Egress goes through the agent's proxy, which allows only the hosts
+  the order names and always blocks link-local and metadata addresses.
+- **Transports** between devices (peer-to-peer, the overlay of
+  [ADR-0122](./adr/07-portability-extensibility.md#adr-0122), the end-to-end
+  encrypted bus relay) open only with an authority-signed session grant.
+  Overlay join credentials are minted by the authority at enrollment; no
+  static overlay key is configured.
+- **Environment membership** (`EnvMembership`) refers to a fleet member id; a
+  membership whose member is not `ACTIVE` is ineffective, so suspending or
+  revoking a device also removes it from every hard-isolated environment.
+
+The threat model, the trust anchor and the failure bounds are in
+[HoBo Fleet](./fleet.md#threat-model); the operator procedures are the
+[fleet runbooks](../maintenance/fleet/index.md).

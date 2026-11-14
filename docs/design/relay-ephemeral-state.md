@@ -169,8 +169,9 @@ chosen only under a declared cap). The assignment log that names the active
 backend is itself kept on the backends through this port, by majority: one
 key per backend, `hobo-ci:<env>:fleet:assignment`, written by
 `putIfAbsent` or `compareAndSet` on the version read
-(`ephemeralAssignmentReplica` in
-[`@hobo/backend-routing`](../../packages/backend-routing/README.md) (formerly `@hobo/backend-fleet`)), with the
+(`ephemeralAssignmentReplica` in `@hobo/fleet/assignment`, the one-active
+register of [HoBo Fleet](./fleet.md); cost-based choosing is
+[`@hobo/backend-routing`](../../packages/backend-routing/README.md)), with the
 30-day TTL refreshed on every write and repair tick. A log a backend loses
 reads as empty and is rejoined from the others. Usage counters live on each
 backend too, `hobo-ci:<env>:fleet:usage:<backend>:<unit>:<YYYY-MM>`. A switch starts the new
@@ -191,7 +192,8 @@ claims durability.
 
 ## Related
 
-- [CI Relay Mesh](./ci-relay-mesh.md) — the relay this state serves.
+- [HoBo Fleet](./fleet.md) — the cache fleet is a local-mode one-active fleet ([ADR-0183](./adr/fleet.md#adr-0183)).
+- [CI Relay Mesh](./ci-relay-mesh.md) — superseded by ADR-0183.
 - [`@hobo/provider-upstash`](../../packages/providers/provider-upstash/README.md) — the REST binding.
 - [`@hobo/provider-turso`](../../packages/providers/provider-turso/README.md) — the libSQL binding.
 - [`@hobo/core` architecture](../../packages/core/ARCHITECTURE.md) — the port contracts.

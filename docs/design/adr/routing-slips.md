@@ -19,6 +19,13 @@ reports behind it). ADR-0180's rule stands: the relay decides, and no
 capacity figure leaves it.
 **Amends:** [CI Relay Mesh](../ci-relay-mesh.md), "Routing reads the mesh when
 it can"; [CI fleet balancing](../ci-fleet-balancing.md), "The route table".
+**Amended by:** [ADR-0183](fleet.md#adr-0183) (2026-11-14). The routing slip
+stays as routing. Its fleet source changes: the issuer computes each
+class's reason from `@hobo/fleet` `fleetVerdict` on the box's fleet view
+(`BUSY` is `fleet-busy`, never a refusal) and takes its leader from rank 0
+of `rankMembers` over the fleet's `DISPATCHER` members, in place of the
+mesh verdict evaluator and `meshLeaderId`. The CI relay mesh named below
+is itself superseded by ADR-0183.
 
 ## Context
 

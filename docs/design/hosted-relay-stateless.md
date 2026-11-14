@@ -8,6 +8,16 @@ tags: [hobo, design, ci, relay, twelve-factor]
 
 # Hosted CI Relay Without Durable State
 
+> **Amended by [ADR-0183](./adr/fleet.md#adr-0183) (HoBo Fleet).** The cache fleet is a
+> local-mode `ONE_ACTIVE` fleet of `@hobo/fleet`: one `BACKEND` member per cache backend,
+> declared by the relay as sponsor, its tick run by `createOneActiveFleet` from
+> `@hobo/fleet/assignment`, the register and the cache-key replica moved there unchanged
+> (stored key and format 1 kept), and `routeFleetByBudget` from `@hobo/backend-routing` as
+> its `chooseAction`. It still needs no other service. Membership changes become decided
+> epochs once the relay's configuration sets `membership_epochs`. The "compute fleet" and
+> the [CI Relay Mesh](./ci-relay-mesh.md) named below are superseded: CI machines are
+> devices of the fleet `hobo`, and choosing a provider by cost is runner routing.
+
 **Status:** design accepted as
 [ADR-0179](./adr/hosted-relay-stateless.md#adr-0179), amended on 2026-11-11
 with [Options routed by budget](#options-routed-by-budget). Implemented so far
@@ -54,10 +64,10 @@ and its short-lived state in a cache whose loss it tolerates.
 | Term | Means |
 |---|---|
 | **Hosted relay** | The relay deployed on Vercel from `@hobo/ci-vercel`: one function, a queue consumer and a schedule |
-| **Relay database fleet** | The machinery that runs the hosted relay on several PostgreSQL databases: store selection, the writer register, replication, failover (`packages/ci-vercel/src/database-*.ts` over `@hobo/data-postgres`'s fleet module). Removed by this design |
-| **Compute fleet** | The machines that run jobs: the mesh, capacity, runner routing and balancing, NATS mesh state (`packages/ci/src/fleet/`, `packages/ci-gh-actions/src/fleet-*.ts`, `mesh-nats.ts`). Unchanged |
+| **Relay database fleet** | Historical: the machinery that ran the hosted relay on several PostgreSQL databases: store selection, the writer register, replication, failover (`packages/ci-vercel/src/database-*.ts` over `@hobo/data-postgres`'s fleet module). Removed by this design |
+| **Compute fleet** | Historical name for the machines that run jobs. Since [ADR-0183](./adr/fleet.md#adr-0183) they are `DEVICE` members of the fleet `hobo` in `@hobo/fleet`, and choosing a runner provider by cost is runner routing (`packages/ci/src/runner-routing/`). Not changed by this design |
 | **Cache** | A store reached through the ephemeral-state port (`EphemeralStatePort`): Redis- or Valkey-protocol, or libSQL. Holds state that may be lost |
-| **Cache fleet** | The cache backends the relay may use, of which exactly one is active, chosen by budget policy ([options](#options-routed-by-budget)). The relay's *state* fleet; not the compute fleet |
+| **Cache fleet** | The cache backends the relay may use, of which exactly one is active, chosen by budget policy ([options](#options-routed-by-budget)): a local-mode `ONE_ACTIVE` fleet of `BACKEND` members in `@hobo/fleet` ([ADR-0183](./adr/fleet.md#adr-0183)) |
 | **Lifecycle driver** | What advances a job's lifecycle steps: Vercel Queues or Vercel Workflows, chosen per job at admission |
 | **Config service** | The service that holds the relay's configuration and secrets. First binding: Infisical Cloud |
 
@@ -554,6 +564,10 @@ because it is a policy with its own records and pact, not a port. Next to
 `decideFleet`, which moves only when the writer is in trouble and judges a
 standby by copy lag, it adds `routeFleetByBudget` for a fleet whose state may
 be lost: it also moves to a cheaper member, and has no lag to judge.
+Since [ADR-0183](./adr/fleet.md#adr-0183) the register, the cache-key replica and
+the member-name parser are in `@hobo/fleet` (`@hobo/fleet/assignment`), health
+eligibility is `eligibleForActive`, and `@hobo/backend-routing` keeps only
+cost-based choosing (`decideFleet`, `routeFleetByBudget`, the financial models).
 
 **As built (phase 4c).** The log lives in `hobo-ci:<env>:fleet:assignment` on
 every member, one `FleetAssignmentLog` value of the newest 32 entries;
@@ -1147,16 +1161,17 @@ Every `hobo_ci_*` table the hosted relay used, and where its job goes:
 
 ## Out of scope and unchanged
 
-- **The compute fleet:** the relay mesh, capacity, runner routing and
-  balancing, NATS mesh state, `packages/ci/src/fleet/*`,
-  `packages/ci-gh-actions/src/fleet-*.ts`, `mesh-nats.ts`.
+- **The machines that run jobs** and how work reaches them, now
+  [HoBo Fleet](./fleet.md) ([ADR-0183](./adr/fleet.md#adr-0183)), and runner
+  routing (`packages/ci/src/runner-routing/`).
 - **`SqliteCiStore`** for local box workers and `hobo ci serve`, and the Node
   service's own control endpoints.
 - **`@hobo/data-postgres`**, including its fleet module. It is a library for
   user workloads; the hosted relay only stops depending on it.
 - **The Broker budget ledger library.**
-- **The box worker's pull admission** and everything in
-  [CI Relay Mesh](./ci-relay-mesh.md) about nodes, claims and trust.
+- **The box worker's pull admission**, and how fleet devices claim work and
+  are trusted ([HoBo Fleet](./fleet.md); the earlier
+  [CI Relay Mesh](./ci-relay-mesh.md) is superseded).
 
 ## Open questions
 
