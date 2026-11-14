@@ -2,8 +2,13 @@ import { spawn } from "node:child_process";
 
 import type { CommandResult, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
+	type ConnectFlow,
 	type ConnectPage,
 	type ConnectStep,
+	configureThen,
+	familySettingsStore,
+	resolveSettings,
+	type SettingsStore,
 	startConnectPage,
 } from "@hobo/connect-ui";
 
@@ -13,9 +18,16 @@ import {
 	resolveGithubAppHost,
 } from "./app-hosts.js";
 import { browserEnvironment } from "./browser-environment.js";
+import {
+	CI_SETTINGS,
+	lookupGithubOwner,
+	resolveGithubAppExpectation,
+	storeSettings,
+} from "./ceremony-settings.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import {
 	type Env,
+	type OpenedSecretStore,
 	openSecretStore,
 	type SecretStoreDeps,
 	type SecretStoreId,
@@ -24,36 +36,41 @@ import {
 
 // `hobo ci up`'s prepare step (cli-spec.md "Lifecycle families"): make sure
 // the GitHub App exists and its credentials are in the owner's secret store
-// before the CI project converges. Idempotent: when the chosen store already
-// holds the App, it reports `unchanged` and opens nothing. `--what-if` opens
-// nothing either. A refused or cancelled connection stops `up` before
-// anything is deployed.
+// before the CI project converges.
 //
-// Configuration (the owner's environment; nothing secret):
-//   HOBO_CI_PUBLIC_URL          the relay's public HTTPS origin
-//   HOBO_CI_GITHUB_OWNER        the login of the user or organization that owns the App
-//   HOBO_CI_GITHUB_OWNER_ID     its numeric id (gh api users/<login> --jq .id)
-//   HOBO_CI_GITHUB_OWNER_TYPE   User (default) or Organization
-//   HOBO_CI_APP_HOST            optional: pin the implemented manifest flow
-//   HOBO_CI_SECRET_STORE        infisical (default) | 1password
+// An interactive ceremony, not a list of environment variables: whatever is
+// not configured (the relay URL, the App's owner, the secret store and its
+// coordinates and sign-in) is asked for on the connect page, checked, and the
+// non-secret answers are saved for the next run under HOBO_HOME. The owner's
+// id and kind (user or organization) come from GitHub's public users API, so
+// only the login is typed. Environment variables of the same names still
+// win, for CI and scripting.
+//
+// Idempotent: a store that already holds the App reports `unchanged` and
+// opens nothing. `--what-if` opens nothing. Without a person at a browser, the
+// step refuses and names each missing setting.
+
+const RELAY_FOLDER = "/hobo-ci-relay";
 
 export interface PrepareGithubDeps extends SecretStoreDeps {
 	readonly env?: Env;
-	/** Whether a person can answer a browser page. Default: stdout is a TTY. */
 	readonly interactive?: boolean;
 	readonly openBrowser?: (url: string) => void;
 	readonly startPage?: typeof startConnectPage;
-	/** How long the page waits for the owner. Default 15 minutes. */
 	readonly timeoutMs?: number;
 	/** Tests inject a store; otherwise `openSecretStore` with the owner's sign-in. */
-	readonly openStore?: (id: SecretStoreId) => Promise<SecretStoreOpening>;
+	readonly openStore?: (
+		id: SecretStoreId,
+		env: Env,
+	) => Promise<SecretStoreOpening>;
+	/** Where answered settings are kept (default HOBO_HOME/ceremonies/ci.json). */
+	readonly settings?: SettingsStore;
 }
 
 function refused(
 	code: string,
 	message: string,
 	remediation: readonly string[],
-	data: Readonly<Record<string, string>> = {},
 ): PrepareOutcome {
 	const result: CommandResult = {
 		ok: false,
@@ -61,7 +78,7 @@ function refused(
 		code,
 		message,
 		remediation,
-		data: { command: "ci", connection: "github", ...data },
+		data: { command: "ci", connection: "github" },
 	};
 	return { kind: "refused", result };
 }
@@ -86,9 +103,8 @@ export function openInBrowser(url: string): void {
 	}
 }
 
-function parseStore(value: string | undefined): SecretStoreId | undefined {
-	if (value === undefined || value === "") return "infisical";
-	return value === "infisical" || value === "1password" ? value : undefined;
+function storeIdOf(value: string | undefined): SecretStoreId {
+	return value === "1password" ? "1password" : "infisical";
 }
 
 /** Connect GitHub for `hobo ci up` (or confirm it is already connected). */
@@ -107,71 +123,63 @@ export async function prepareGithubConnection(
 			`App host ${configuredHost} is not configured or implemented.`,
 			["Use HOBO_CI_APP_HOST=manifest, or unset HOBO_CI_APP_HOST."],
 		);
-	const preferred = parseStore(env.HOBO_CI_SECRET_STORE);
-	if (preferred === undefined)
+	const settings = deps.settings ?? familySettingsStore("ci", env);
+	const saved = await settings.read();
+	const openStore =
+		deps.openStore ??
+		((id: SecretStoreId, storeEnv: Env) => openSecretStore(id, storeEnv, deps));
+
+	const basics = resolveSettings(CI_SETTINGS, env, saved);
+	const configuredStore = basics.values.HOBO_CI_SECRET_STORE;
+	if (
+		configuredStore &&
+		configuredStore !== "infisical" &&
+		configuredStore !== "1password"
+	)
 		return refused(
 			"HOBO_CI_SECRET_STORE_INVALID",
 			"HOBO_CI_SECRET_STORE must be infisical or 1password.",
 			["Unset it to use Infisical, or set it to 1password."],
 		);
-	const openStore =
-		deps.openStore ?? ((id: SecretStoreId) => openSecretStore(id, env, deps));
-	const relayUrl = env.HOBO_CI_PUBLIC_URL;
-	const ownerId = Number(env.HOBO_CI_GITHUB_OWNER_ID);
-	const ownerLogin = env.HOBO_CI_GITHUB_OWNER;
-	const ownerKind = env.HOBO_CI_GITHUB_OWNER_TYPE || "User";
-	const configured:
-		| {
-				relayUrl: string;
-				ownerId: number;
-				ownerLogin: string;
-				ownerKind: GithubAppOwner["kind"];
-		  }
-		| undefined =
-		relayUrl?.startsWith("https://") &&
-		Number.isSafeInteger(ownerId) &&
-		ownerId > 0 &&
-		ownerLogin &&
-		(ownerKind === "User" || ownerKind === "Organization")
-			? { relayUrl, ownerId, ownerLogin, ownerKind }
-			: undefined;
+	const storeId = storeIdOf(basics.values.HOBO_CI_SECRET_STORE);
+	const storeSide = resolveSettings(
+		storeSettings(storeId, RELAY_FOLDER),
+		env,
+		saved,
+	);
 
 	// Idempotency first: an existing connection means there is nothing to do.
-	const opened = await openStore(preferred);
-	if (opened.ok) {
-		let connected: boolean;
-		try {
-			connected = await githubAppConnected(
-				opened.store,
-				async () =>
-					configured && {
-						relayUrl: configured.relayUrl,
-						ownerId: configured.ownerId,
-						ownerType: configured.ownerKind,
-						...(deps.fetch ? { fetch: deps.fetch } : undefined),
-					},
-			);
-		} catch {
-			return refused(
-				"HOBO_CI_SECRET_STORE_UNAVAILABLE",
-				"Cannot verify the existing GitHub connection in the secret store.",
-				[
-					"Check store access, the configured App owner and relay, and reconcile any partial credentials before retrying.",
-				],
-			);
+	if (storeSide.missing.length === 0) {
+		const opened = await openStore(storeId, { ...env, ...storeSide.values });
+		if (opened.ok) {
+			let connected: boolean;
+			try {
+				connected = await githubAppConnected(opened.store, () =>
+					resolveGithubAppExpectation(basics.values, env, deps.fetch),
+				);
+			} catch {
+				return refused(
+					"HOBO_CI_SECRET_STORE_UNAVAILABLE",
+					"Cannot verify the existing GitHub connection in the secret store.",
+					[
+						"Check store access, the configured App owner and relay, and reconcile any partial credentials before retrying.",
+					],
+				);
+			}
+			if (connected)
+				return {
+					kind: "ready",
+					steps: [
+						{
+							id: "github-app",
+							outcome: "unchanged",
+							detail: `already in ${opened.store.id} (${opened.store.reference("HOBO_CI_GITHUB_APP_ID")})`,
+						},
+					],
+				};
 		}
-		if (connected)
-			return {
-				kind: "ready",
-				steps: [
-					{
-						id: "github-app",
-						outcome: "unchanged",
-						detail: `already in ${opened.store.id} (${opened.store.reference("HOBO_CI_GITHUB_APP_ID")})`,
-					},
-				],
-			};
 	}
+	const missing = [...basics.missing, ...storeSide.missing];
 	if (input.whatIf)
 		return {
 			kind: "ready",
@@ -179,66 +187,125 @@ export async function prepareGithubConnection(
 				{
 					id: "github-app",
 					outcome: "would-create",
-					detail: opened.ok
-						? `would create the GitHub App and store its credentials in ${opened.store.id}`
-						: `would create the GitHub App; ${opened.message}`,
+					detail:
+						missing.length === 0
+							? `would create the GitHub App and store its credentials in ${storeId}`
+							: `would ask for ${missing.map((field) => field.label).join(", ")}, then create the GitHub App`,
 				},
 			],
 		};
-
-	if (!configured)
-		return refused(
-			"HOBO_CI_CONNECTION_UNCONFIGURED",
-			"hobo ci up needs to know where the relay runs and who owns the GitHub App.",
-			[
-				"Export HOBO_CI_PUBLIC_URL (the relay's https origin), HOBO_CI_GITHUB_OWNER (the user or organization login), HOBO_CI_GITHUB_OWNER_ID (gh api users/<login> --jq .id) and, for an organization, HOBO_CI_GITHUB_OWNER_TYPE=Organization.",
-			],
-		);
-	const owner: GithubAppOwner = {
-		kind: configured.ownerKind,
-		login: configured.ownerLogin,
-		id: configured.ownerId,
-	};
-	// The path that satisfies the owner: the pinned host when it can serve
-	// it, else one that can. A host that cannot is explained, with the ones
-	// that can, instead of creating an App that would then be refused.
-	const host = resolveGithubAppHost(owner, {
-		configured: env.HOBO_CI_APP_HOST || undefined,
-	});
-	if (!host.ok)
-		return refused(
-			"HOBO_CI_APP_HOST_UNSUPPORTED_OWNER",
-			host.message,
-			host.suggestions.length > 0
-				? host.suggestions.map(
-						(option) =>
-							`Use ${option.label}: HOBO_CI_APP_HOST=${option.id} (or unset HOBO_CI_APP_HOST to let HoBo choose).`,
-					)
-				: [
-						"Configure a host that supports this owner, or use a user-owned App.",
-					],
-		);
-	const interactive = deps.interactive ?? Boolean(process.stdout.isTTY);
-	if (!interactive)
+	if (!(deps.interactive ?? Boolean(process.stdout.isTTY)))
 		return refused(
 			"HOBO_CI_CONNECTION_NEEDS_OWNER",
-			"Connecting GitHub needs the owner at a browser once; this run cannot show a page.",
+			"Connecting GitHub needs the owner at a browser once; this run cannot show the setup page.",
 			[
-				"Run hobo ci up once in a terminal; later runs (and CI) find the connection and skip this step.",
+				"Run hobo ci up once in a terminal; it asks for what is missing and later runs (and CI) find the connection.",
+				...(missing.length > 0
+					? [
+							`Or set ${missing.map((field) => field.name).join(", ")} in the environment.`,
+						]
+					: []),
 			],
 		);
 
 	let page: ConnectPage | undefined;
-	const flow = createGithubConnectFlow({
-		relayUrl: configured.relayUrl,
-		owner,
-		callbackUrl: () => page?.callbackUrl ?? "",
-		openStore,
-		...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+	let github: ReturnType<typeof createGithubConnectFlow> | undefined;
+
+	// The App flow, already in its store: straight to "Create the App".
+	const githubFlowIn = async (
+		store: OpenedSecretStore,
+		owner: GithubAppOwner,
+		relayUrl: string,
+	): Promise<ConnectFlow> => {
+		github = createGithubConnectFlow({
+			relayUrl,
+			owner,
+			callbackUrl: () => page?.callbackUrl ?? "",
+			openStore: async () => ({ ok: true, store }),
+			...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+		});
+		const first = await github.onAction(
+			"connect.chooseStore",
+			{ store: store.id },
+			github.initial,
+		);
+		return { ...github, initial: first.step };
+	};
+
+	const flow = await configureThen({
+		provider: "github",
+		title: "Set up HoBo CI",
+		reason:
+			"hobo ci up needs to know where the relay runs, who owns the GitHub App, and where to keep its credentials.",
+		settings: CI_SETTINGS,
+		missing: basics.missing,
+		known: basics.values,
+		store: settings,
+		async proceed(values) {
+			const relayUrl = values.HOBO_CI_PUBLIC_URL ?? "";
+			const login = values.HOBO_CI_GITHUB_OWNER ?? "";
+			const pinnedId = Number(env.HOBO_CI_GITHUB_OWNER_ID);
+			const pinnedKind = env.HOBO_CI_GITHUB_OWNER_TYPE;
+			const owner: GithubAppOwner | undefined =
+				Number.isSafeInteger(pinnedId) &&
+				pinnedId > 0 &&
+				(pinnedKind === "User" || pinnedKind === "Organization")
+					? { kind: pinnedKind, login, id: pinnedId }
+					: await lookupGithubOwner(login, deps.fetch);
+			if (owner === undefined)
+				return {
+					ok: false,
+					errors: {
+						HOBO_CI_GITHUB_OWNER:
+							"GitHub has no user or organization by that login.",
+					},
+				};
+			const host = resolveGithubAppHost(owner, {
+				configured: env.HOBO_CI_APP_HOST || undefined,
+			});
+			if (!host.ok)
+				return {
+					ok: false,
+					errors: {
+						HOBO_CI_GITHUB_OWNER:
+							`${host.message} ${host.suggestions.map((s) => `Use ${s.label}.`).join(" ")}`.trim(),
+					},
+				};
+			const chosen = storeIdOf(values.HOBO_CI_SECRET_STORE);
+			const sideSettings = storeSettings(chosen, RELAY_FOLDER);
+			const side = resolveSettings(sideSettings, env, await settings.read());
+			const stage = await configureThen({
+				provider: "github",
+				title:
+					chosen === "1password" ? "Connect 1Password" : "Connect Infisical",
+				reason: `HoBo writes the App's credentials straight into ${chosen === "1password" ? "1Password" : "Infisical"}. Coordinates are saved for next time; a sign-in token is used for this run only.`,
+				settings: sideSettings,
+				missing: side.missing,
+				known: side.values,
+				store: settings,
+				async proceed(storeValues) {
+					const opened = await openStore(chosen, { ...env, ...storeValues });
+					if (!opened.ok) {
+						const first =
+							side.missing[0]?.name ?? sideSettings[0]?.field.name ?? "store";
+						return {
+							ok: false,
+							errors: {
+								[first]: `${opened.message} ${opened.remediation.join(" ")}`,
+							},
+						};
+					}
+					return {
+						ok: true,
+						flow: await githubFlowIn(opened.store, owner, relayUrl),
+					};
+				},
+			});
+			return { ok: true, flow: stage };
+		},
 	});
-	page = await (deps.startPage ?? startConnectPage)({
-		flow,
-	});
+
+	page = await (deps.startPage ?? startConnectPage)({ flow });
 	let timer: NodeJS.Timeout | undefined;
 	const timedOut = new Promise<ConnectStep>((resolve) => {
 		timer = setTimeout(
@@ -246,8 +313,8 @@ export async function prepareGithubConnection(
 				resolve({
 					kind: "failed",
 					provider: "github",
-					message: "The connect page was not finished in time.",
-					remediation: ["Run hobo ci up again."],
+					message: "The setup page was not finished in time.",
+					remediation: ["Run hobo ci up again; what you answered is saved."],
 				}),
 			deps.timeoutMs ?? 15 * 60_000,
 		);
@@ -255,7 +322,9 @@ export async function prepareGithubConnection(
 	let step: ConnectStep;
 	let browserLaunched = false;
 	try {
-		input.run.emitProgress(`Connect GitHub in your browser: ${page.url}`);
+		input.run.emitProgress(
+			`Set up GitHub for HoBo CI in your browser: ${page.url}`,
+		);
 		(deps.openBrowser ?? openInBrowser)(page.url);
 		browserLaunched = true;
 		step = await Promise.race([page.done, timedOut]);
@@ -276,7 +345,7 @@ export async function prepareGithubConnection(
 		steps: [
 			{
 				id: "github-app",
-				outcome: flow.outcome() ?? "created",
+				outcome: github?.outcome() ?? "created",
 				detail: `credentials in ${step.store}: ${step.references.join(", ")}`,
 			},
 		],
