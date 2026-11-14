@@ -23,6 +23,7 @@ export interface ManifestResource {
 	readonly type: string;
 	readonly port?: string;
 	readonly paradigm?: string;
+	readonly allow?: readonly string[];
 	readonly connectionString?: string;
 	readonly runtime?: string;
 	readonly exports?: readonly string[];

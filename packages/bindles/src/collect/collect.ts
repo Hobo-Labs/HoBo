@@ -36,7 +36,10 @@ export interface ComponentHostDescriptor {
 // Each factory mirrors a wiring factory, records the handle in declaration
 // order, and returns it so bind maps can reference earlier resources.
 export interface CollectionContext {
-	data(name: string, options?: { paradigm?: string }): ResourceHandle;
+	data(
+		name: string,
+		options?: { paradigm?: string; allow?: readonly string[] },
+	): ResourceHandle;
 	service(
 		name: string,
 		options?: {
