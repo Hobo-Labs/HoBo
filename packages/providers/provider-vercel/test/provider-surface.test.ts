@@ -47,7 +47,14 @@ describe("identity", () => {
 		// The option builders and the capability list have to agree, or a block a
 		// caller can write would name a port this provider does not serve — and
 		// placement would drop it silently rather than refusing it.
-		for (const port of ["compute", "project", "objectStore", "kv"]) {
+		for (const port of [
+			"compute",
+			"project",
+			"objectStore",
+			"kv",
+			"queue",
+			"schedule",
+		]) {
 			expect(provider.capabilities.some((c) => c.port === port)).toBe(true);
 		}
 		expect(provider.capabilities.some((c) => c.port === "database")).toBe(
@@ -181,6 +188,46 @@ describe("capabilityManifest", () => {
 		).toEqual(provider.capabilities.map((c) => c.port).sort());
 	});
 
+	it("identifies the native deployment-owned queue and leaves its price unknown", () => {
+		const entry = provider
+			.capabilityManifest()
+			.capabilities.capabilities.find((c) => c.port === "queue");
+		expect(entry).toMatchObject({
+			productId: "vercel.queues/v1",
+			resourceKind: "deployment-component",
+			profiles: ["queue.at-least-once/v1", "queue.delay/v1"],
+			features: ["queue", "at-least-once", "delay", "managed"],
+		});
+		expect(
+			capabilityFor("queue").estimateCost({ port: "queue" }).pricingStatus,
+		).toBe("unknown");
+		expect(
+			capabilityFor("queue").satisfies({
+				port: "queue",
+				features: ["exactly-once"],
+			}),
+		).toEqual({
+			kind: "partial",
+			missing: ["exactly-once"],
+		});
+	});
+
+	it("identifies the deployment-owned schedule and leaves its price unknown", () => {
+		const entry = provider
+			.capabilityManifest()
+			.capabilities.capabilities.find((c) => c.port === "schedule");
+		expect(entry).toMatchObject({
+			productId: "vercel.schedules/v1",
+			resourceKind: "deployment-component",
+			profiles: ["service.scheduled/v1"],
+			features: ["schedule", "managed"],
+		});
+		expect(
+			capabilityFor("schedule").estimateCost({ port: "schedule" })
+				.pricingStatus,
+		).toBe("unknown");
+	});
+
 	it("identifies the native Blob product and leaves its price unknown", () => {
 		const entry = provider
 			.capabilityManifest()
@@ -252,7 +299,10 @@ describe("realize", () => {
 		// The mapping is the whole point of the equivalence table; realizing two
 		// ports to one class would deploy the wrong product for one of them.
 		const classes = provider.capabilities
-			.filter((c) => c.port !== "project")
+			.filter(
+				(c) =>
+					c.port !== "project" && c.port !== "queue" && c.port !== "schedule",
+			)
 			.map(
 				(c) =>
 					provider.realize({ name: "r", port: c.port }).driver.resources[0]
@@ -265,6 +315,16 @@ describe("realize", () => {
 		expect(() =>
 			provider.realize({ name: "project", port: "project" }),
 		).toThrow(/hosting supervisor/u);
+	});
+	it("requires the supervisor for a deployment-owned queue", () => {
+		expect(() => provider.realize({ name: "q", port: "queue" })).toThrow(
+			/hosting supervisor.*deployment-component resolver/u,
+		);
+	});
+	it("requires the supervisor for a deployment-owned schedule", () => {
+		expect(() => provider.realize({ name: "tick", port: "schedule" })).toThrow(
+			/hosting supervisor.*deployment-component resolver/u,
+		);
 	});
 });
 

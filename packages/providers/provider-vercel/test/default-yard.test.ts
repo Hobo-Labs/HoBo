@@ -109,6 +109,39 @@ describe("default vercel yard", () => {
 		).toEqual({ access: "private" });
 	});
 
+	it("exposes deployment components only when explicitly requested", () => {
+		const rows = vercelYardSpec({
+			gitFunction: { entry: "api/relay.ts" },
+			queue: { topics: ["work"] },
+			schedule: { name: "repair" },
+			cron: { path: "/tick" },
+			sandboxHost: { minimumSlots: 2 },
+		}).bindings;
+		expect(
+			rows
+				.filter((row) => row.productId === "vercel.queues/v1")
+				.map((row) => row.profile),
+		).toEqual(["queue.at-least-once/v1", "queue.delay/v1"]);
+		expect(
+			rows.find((row) => row.productId === "vercel.function/v1"),
+		).toMatchObject({
+			profile: "api.http/v1",
+			properties: { entry: "api/relay.ts" },
+		});
+		expect(
+			rows.find((row) => row.productId === "vercel.cron/v1"),
+		).toMatchObject({
+			profile: "service.scheduled/v1",
+			properties: { path: "/tick" },
+		});
+		expect(
+			rows.find((row) => row.productId === "vercel.sandbox-host/v1"),
+		).toMatchObject({
+			profile: "service.batch/v1",
+			properties: { minimumSlots: 2 },
+		});
+	});
+
 	it("de-duplicates and sorts declared regions", () => {
 		expect(
 			vercelYardSpec({ regions: ["sfo1", "iad1", "sfo1"] }).regions,

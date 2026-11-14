@@ -23,6 +23,18 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		providerService: "Vercel Edge Config",
 		features: ["key-value", "edge"],
 	},
+	queue: {
+		port: "queue",
+		resourceClass: "vercel:deployment-queue",
+		providerService: "Vercel Queues",
+		features: ["queue", "at-least-once", "delay", "managed"],
+	},
+	schedule: {
+		port: "schedule",
+		resourceClass: "vercel:deployment-schedule",
+		providerService: "Vercel Schedules",
+		features: ["schedule", "managed"],
+	},
 } as const);
 
 export type InitialCapabilityPort = keyof typeof EQUIVALENCE_CLASSES;
@@ -36,6 +48,8 @@ export const INITIAL_CAPABILITY_PORTS = Object.freeze([
 	"project",
 	"objectStore",
 	"kv",
+	"queue",
+	"schedule",
 ] as const satisfies readonly InitialCapabilityPort[]);
 
 export function equivalenceForPort(port: InitialCapabilityPort) {

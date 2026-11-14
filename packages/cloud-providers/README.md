@@ -111,7 +111,7 @@ gcp L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
 hetzner L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 hostinger L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 kubernetes L1-DECLARED: 9/9 resolvers declared (conformance not asserted here)
-vercel L1-DECLARED: 4/5 resolvers declared (conformance not asserted here)
+vercel L1-DECLARED: 9/10 resolvers declared (conformance not asserted here)
 ```
 <!-- parity:end -->
 

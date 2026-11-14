@@ -14,7 +14,7 @@ Vercel CloudProvider for HoBo Examples OOB yards.
   owns and pays for the project until a human accepts a project transfer request.
   See below.
 - **Direct-HTTPS deployment path (the default)** — typed slot factories
-  (`project()`, `edgeFunction()`, `blob()`, `edgeConfig()`), REST resource
+  (`project()`, `gitFunction()`, `queue()`, `schedule()`, `cron()`, `sandboxHost()`, `blob()`), REST resource
   resolvers (`vercelResolvers` / `vercelResolverRegistry`), and the default Yard
   catalog (`vercelYardSpec`). No IaC engine, no CLI. See
   [Direct-HTTPS deployment path](#direct-https-deployment-path).
@@ -165,7 +165,7 @@ engine holding a state file, no plan/apply round trip, and no shelling out to
 
 | Module | Exports | What it is |
 | --- | --- | --- |
-| `src/slots.ts` | `staticDeployment`, `project`, `edgeFunction`, `blob`, `edgeConfig`, `vercelSlots` | Typed factories that emit `SlotBinding` records through core's parse boundary |
+| `src/slots.ts` | `staticDeployment`, `project`, `gitFunction`, `queue`, `schedule`, `cron`, `sandboxHost`, `blob`, `edgeConfig`, `vercelSlots` | Typed factories that emit `SlotBinding` records through core's parse boundary |
 | `src/resolvers.ts` | `vercelResolvers`, `vercelResolverRegistry`, `VERCEL_RESOLVER_TRANSPORT_POLICY`, `VERCEL_UNRESOLVED_PRODUCT_IDS` | `ResourceResolver` implementations that converge a resource against the REST API |
 | `src/default-yard.ts` | `vercelYardSpec`, `vercelSlotCatalog`, `vercelYardRows`, `VERCEL_DEFAULT_BINDINGS` | The default Yard catalog as raw, canonically-sorted rows |
 
@@ -181,6 +181,11 @@ boundary rather than here.
 | `staticDeployment(options?)` | `web` | `web.hosted/v1` | `vercel.static-deploy/v1` |
 | `project(options?)` | `web` | `web.project/v1` | `vercel.project/v1` |
 | `edgeFunction(options?)` | `service` | `service.worker/v1` | `vercel.edge-function/v1` |
+| `gitFunction(options?)` | `api` | `api.http/v1` | `vercel.function/v1` |
+| `queue(options?)` | `queue` | `queue.at-least-once/v1` | `vercel.queues/v1` |
+| `schedule(options?)` | `service` | `service.scheduled/v1` | `vercel.schedules/v1` |
+| `cron(options?)` | `service` | `service.scheduled/v1` | `vercel.cron/v1` |
+| `sandboxHost(options?)` | `service` | `service.batch/v1` | `vercel.sandbox-host/v1` |
 | `blob(options?)` | `bucket` | `bucket.object/v1` | `vercel.blob/v1` |
 | `edgeConfig(options?)` | `kv` | `kv.key-value/v1` | `vercel.edge-config/v1` |
 
@@ -222,13 +227,42 @@ a resource behind the caller's back.
 | --- | --- |
 | `vercel.blob/v1` | `GET /v1/storage/stores`, `POST /v1/storage/stores/blob`, `GET /v1/storage/stores/{id}`, project connection `POST`/`PATCH`/`DELETE`, `DELETE /v1/storage/stores/blob/{id}` |
 | `vercel.project/v1` | `POST /v11/projects`, `GET /v9/projects/{idOrName}`, `POST /v9/projects/{idOrName}/link`, `PATCH /v9/projects/{idOrName}`, `DELETE /v9/projects/{idOrName}` |
+| `vercel.function/v1` | Staged Git deployment with `POST /v13/deployments` and scoped deployment/project readback |
+| `vercel.queues/v1`, `vercel.schedules/v1`, `vercel.cron/v1` | Verify components of the exact Git deployment; enable or disable preview schedules via the Vercel Schedules API |
+| `vercel.sandbox-host/v1` | Read the project and Sandbox list; attach only after separate workload authorization, quota and pricing evidence |
 | `vercel.edge-config/v1` | `POST /v1/global-config`, `GET /v1/global-config`, `GET /v1/global-config/{edgeConfigId}`, `PUT /v1/global-config/{edgeConfigId}`, `DELETE /v1/global-config/{edgeConfigId}` |
 
+The planner advertises `vercel.queues/v1` for at-least-once and delayed queues.
+Use the `queue` and `delayedQueue` slot factories to declare topics and their
+consumer entries. Each queue depends on its Git function deployment: the
+supervisor verifies that exact deployment's queue triggers before reporting the
+component ready. There is no standalone queue provisioning path, and the
+provider's price is unknown until the hosting budget authority supplies a
+verified quote. Queue retirement also requires independently verified drain
+and producer fencing.
+
+The `schedule` slot factory declares a private Vercel Schedule with its
+function entry and expected jitter. It is selected as `vercel.schedules/v1`
+and verified against its owning Git deployment; preview activation and
+production routing require the supervisor's separate provider readback.
 `createVercelBlobDefinition` describes the native Blob product with unknown
 conformance and unavailable custody by default; account evidence, quota,
 credentials and a current quote must be verified separately.
 `createVercelProjectDefinition` describes an operator-owned project and also
 requires separately verified ownership, Git linkage, permissions and costs.
+
+Sandbox host selection does not create a VM. The host must supply fresh proof
+for the exact team, project, revision and representative guest/proxy workload:
+runtime identity, Sandbox creation permission, capacity for both VMs, and a
+complete cost quote. Broker admission and reservation are still required for
+each job. Detachment requires an admission fence and drained sessions.
+
+The Git function resolver can receive approved, nonsecret deployment variables
+as `environmentVariables: [{ name, value }]`. `parseVercelGitEnvironment`
+screens the supported public context and fleet values before the supervisor
+records them. The hosting authority must independently verify the signed
+Junction context or fleet, and the resolver includes the canonical values in
+the operation identity. Raw credentials are not deployment variables.
 
 Vercel renamed the Edge Config REST surface to `/v1/global-config` (the path
 parameter is still `edgeConfigId`); the product id keeps the `edge-config` name
