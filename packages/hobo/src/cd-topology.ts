@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: topology files are untrusted module exports; each record is parsed once with its generated cd_topology schema before it is used. */
 /**
- * Declared Camp topology for @hobo/cd (WP18, plan 0024, D19/D20/D22).
+ * Declared Camp topology for @hobo/cd (ADR-0182 D19/D20/D22).
  *
  * `TopologyReader` is composed from `@hobo/yards` Yards and their
  * `@hobo/camps` Camps: the Yard's provider and declared regions, the Camp's

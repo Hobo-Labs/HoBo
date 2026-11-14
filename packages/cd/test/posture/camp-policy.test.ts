@@ -1,4 +1,4 @@
-// CampPolicy (plan 0024 D24, I23): Rail bindings folded from the Camp spec
+// CampPolicy (ADR-0182 D24, I23): Rail bindings folded from the Camp spec
 // stream, written by promotion only. INFORM sets the candidate; ENFORCE swaps
 // the enforced Rail and clears the candidate; restore rolls back.
 import { create, toJson } from "@bufbuild/protobuf";

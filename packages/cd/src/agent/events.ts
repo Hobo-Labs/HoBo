@@ -1,5 +1,5 @@
 // Event names and stream ids the agent module appends beyond the frozen
-// CD_EVENTS / CD_STREAMS (plan 0024 A.6 does not name them). Reported to the
+// CD_EVENTS / CD_STREAMS. Reported to the
 // coordinator as a contract-amendment candidate; until then they are owned
 // here and are wire contract.
 

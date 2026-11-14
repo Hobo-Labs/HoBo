@@ -1,5 +1,5 @@
 /**
- * Delivery coverage (plan 0024 WP13, invariant I14): the shape a hosting
+ * Delivery coverage (ADR-0182 invariant I14): the shape a hosting
  * provider uses to say, for every hosting product it catalogs, whether it has
  * a realization path (a shipped `ResourceResolver`) or a typed refusal, and
  * which traffic offerings it can and cannot realize.

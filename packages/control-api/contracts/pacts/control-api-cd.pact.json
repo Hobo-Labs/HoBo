@@ -3,7 +3,7 @@
 	"provider": { "name": "@hobo/control-api" },
 	"metadata": {
 		"pactSpecification": { "version": "3.0.0" },
-		"description": "CD read API mounted under /v1/cd/ (plan 0024 WP12). Verified against the real handler in packages/cd/test/service/pact.test.ts, and every response body is also checked against GET /v1/cd/openapi.json. Bodies are subset matches; record payloads are canonical protobuf JSON of hobo.cd.v1.",
+		"description": "CD read API mounted under /v1/cd/. Verified against the real handler in packages/cd/test/service/pact.test.ts, and every response body is also checked against GET /v1/cd/openapi.json. Bodies are subset matches; record payloads are canonical protobuf JSON of hobo.cd.v1.",
 		"openapi": "/v1/cd/openapi.json"
 	},
 	"interactions": [

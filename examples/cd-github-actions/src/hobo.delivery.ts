@@ -1,4 +1,4 @@
-// Delivery as code for a Bindle built on GitHub Actions (plan 0024 D3, D4).
+// Delivery as code for a Bindle built on GitHub Actions (ADR-0182 D3, D4).
 // Apply with `hobo deploy pipeline apply --file src/hobo.delivery.ts`.
 //
 // The workflow never holds a HoBo credential. It proves who it is with a

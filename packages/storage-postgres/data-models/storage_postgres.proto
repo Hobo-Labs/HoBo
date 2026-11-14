@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package hobo.storage_postgres.v1;
 
-// Store-local records for the PostgreSQL DurableEventStore (plan 0024 D16).
+// Store-local records for the PostgreSQL DurableEventStore (ADR-0182 D16).
 // The domain EventEnvelope stays in hobo.core.v1; these are configuration and
 // ledger shapes owned by @hobo/storage-postgres. 64-bit positions and fence
 // tokens travel as decimal strings so every language keeps the full range.

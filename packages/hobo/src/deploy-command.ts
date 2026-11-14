@@ -1,5 +1,5 @@
 /**
- * `hobo deploy` — continuous delivery through `@hobo/cd` (plan 0024, C2).
+ * `hobo deploy` — continuous delivery through `@hobo/cd` (ADR-0182 C2).
  *
  * Every CD subcommand (`freight`, `source`, `pipeline`, `window`, `promote`,
  * `status`, `logs`, `rollback`, `reconcile`, `preview`, `verify`, `agent`,

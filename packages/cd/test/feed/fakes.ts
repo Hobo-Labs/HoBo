@@ -1,5 +1,5 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/no-known-value-widening -- SAFETY: test fixtures brand ids they mint, build partial generated records, and read controlled JSON at the test boundary. */
-// Test fakes owned by WP11 (plan 0024 §7.3): an indexed in-memory
+// Test fakes for the delivery feed: an indexed in-memory
 // DurableEventStore with the SQLite journal's per-stream idempotency, CAS,
 // owner-epoch fencing and subscription lease/checkpoint semantics on an
 // injected clock; a DesiredStateReader over the spec stream that tails like

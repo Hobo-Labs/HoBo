@@ -1,5 +1,5 @@
 /**
- * WP14 (plan 0024) Lakebed coverage: I14 realization path (capsule resolver
+ * Lakebed coverage: I14 realization path (capsule resolver
  * over the lakebed-deploy driver seam) + traffic profile, typed refusals,
  * telemetry and resolver conformance on fixtures.
  */

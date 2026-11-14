@@ -2,7 +2,7 @@ import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
 /**
- * Vercel TrafficRouting offerings (ADR-0143/0144; plan 0024 WP14 audit, I14).
+ * Vercel TrafficRouting offerings (ADR-0143/0144; ADR-0182 I14).
  *
  * Realized by `@hobo/connectivity`'s Vercel adapter: Rolling Releases give a
  * weighted canary between two deployments, and project routes give path and

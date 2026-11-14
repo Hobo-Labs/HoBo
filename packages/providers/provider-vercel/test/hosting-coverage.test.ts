@@ -1,5 +1,5 @@
 /**
- * WP14 (plan 0024) Vercel coverage: the traffic-profile audit, the I14
+ * Vercel coverage: the traffic-profile audit, the ADR-0182 I14
  * coverage document, typed refusals, the wire/CUE forms and resolver
  * telemetry. Resolver behavior itself is covered by resolvers.test.ts.
  */

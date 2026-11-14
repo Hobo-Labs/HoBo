@@ -1,4 +1,4 @@
-// Fail-closed adapters for ports a host has not configured (WP18, plan 0024).
+// Fail-closed adapters for ports a host has not configured.
 //
 // Composition never invents a capability. An unconfigured runbook executor or
 // suite runner refuses with a typed reason; an unconfigured traffic shifter

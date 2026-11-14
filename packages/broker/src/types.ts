@@ -40,7 +40,7 @@ export type RejectionPlane = (typeof REJECTION_PLANES)[number];
 export const SCALE_DIRECTIONS = ["up", "down", "zero"] as const;
 export type ScaleDirection = (typeof SCALE_DIRECTIONS)[number];
 
-// public-contract: how a Camp converges (plan 0024, D14). Neutral: the broker
+// public-contract: how a Camp converges (ADR-0182 D14). Neutral: the broker
 // names no GitOps engine, cluster or namespace.
 export const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
 export type ReconcilerModeName = (typeof RECONCILER_MODES)[number];

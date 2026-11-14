@@ -6,7 +6,7 @@ import {
 	railFromBrokerConfig,
 } from "../src/rail.js";
 
-// WP16 (plan 0024, D14, D20): the Rail's opaque `delivery` object and the
+// ADR-0182 D14, D20: the Rail's opaque `delivery` object and the
 // neutral delivery policy. Stations never interprets `delivery`; @hobo/cd
 // parses it as RailDeliveryRecord.
 

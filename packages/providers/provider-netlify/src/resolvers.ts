@@ -807,7 +807,7 @@ export function netlifyResolvers(
 /**
  * The Netlify resolvers behind core's registry lookup. With `metrics` and an
  * injected `nowMs`, every call emits `hobo.cd.resolver.operations` and
- * `hobo.cd.resolver.duration` (plan 0024 WP14).
+ * `hobo.cd.resolver.duration`.
  */
 export function netlifyResolverRegistry(
 	options: NetlifyResolverOptions & ResolverTelemetryOptions,

@@ -41,7 +41,7 @@ const REMEDIATION_OF: Readonly<Record<StoragePostgresFailure, string>> =
 		"invalid-input":
 			"Fix the caller: the named field is outside the EventStore limits (EVENTSTORE_LIMITS) or not a valid value.",
 		"server-too-old":
-			"Upgrade the server to PostgreSQL 16 or newer (plan 0024 R6), or point the store at a supported server.",
+			"Upgrade the server to PostgreSQL 16 or newer, or point the store at a supported server.",
 		"migration-drift":
 			"An applied migration differs from the one this build ships. Restore the shipped migration or run the build that applied it; never edit applied migrations.",
 		"schema-ahead":

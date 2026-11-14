@@ -1,5 +1,5 @@
 /**
- * WP14 (plan 0024) Netlify coverage: the missing traffic profile, the I14
+ * Netlify coverage: the missing traffic profile, the I14
  * coverage document, typed refusals, the wire/CUE forms and resolver
  * telemetry. Resolver behavior itself is covered by resolvers.test.ts.
  */

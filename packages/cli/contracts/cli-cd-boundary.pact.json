@@ -9,7 +9,7 @@
 		"pactSpecification": {
 			"version": "4.0.0"
 		},
-		"evidence": "Hand-authored synchronous-message contract for the hobo up/down/build -> @hobo/cd port boundary (plan 0024 D13). The consumer side is verified by test/cli-cd-boundary.contract.test.ts against the yard-client seam; requests use the frozen ports.ts shapes and protobuf JSON of cd.proto records. Values under matchingRules are regular expressions; every other value is exact."
+		"evidence": "Hand-authored synchronous-message contract for the hobo up/down/build -> @hobo/cd port boundary (ADR-0182 D13). The consumer side is verified by test/cli-cd-boundary.contract.test.ts against the yard-client seam; requests use the frozen ports.ts shapes and protobuf JSON of cd.proto records. Values under matchingRules are regular expressions; every other value is exact."
 	},
 	"interactions": [
 		{

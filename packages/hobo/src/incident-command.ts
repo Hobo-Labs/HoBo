@@ -1,5 +1,5 @@
 /**
- * `hobo incident` — CD failure disposition through `@hobo/cd` (plan 0024).
+ * `hobo incident` — CD failure disposition through `@hobo/cd`.
  *
  * - `status [--camp <a,b>]`: failed, rolled-back and rejected promotions and
  *   open failovers, from the journal (no fixture).

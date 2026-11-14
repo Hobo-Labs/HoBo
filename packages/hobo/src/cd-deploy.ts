@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-shape-in-symbol-names, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: CLI flags and caught errors are untrusted input parsed here (text/list/num/oneOf); result data is an envelope payload serialized by cd-render, never read back. */
 /**
- * `hobo deploy` CD subcommands (WP18, plan 0024, C2).
+ * `hobo deploy` CD subcommands (ADR-0182 C2).
  *
  * Every subcommand is a thin, typed call into the composed
  * `ContinuousDelivery` facade (`@hobo/cd/compose`): this file parses flags,

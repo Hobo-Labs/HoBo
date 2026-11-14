@@ -99,7 +99,7 @@ describe("CI deps image push scope", () => {
 		);
 	});
 
-	it("publishes from a separate bounded workflow on the same runner labels", () => {
+	it("publishes separately from routed PR validation", () => {
 		expect(publisher.on.workflow_run).toEqual({
 			workflows: ["HoBo CI Fabric"],
 			types: ["completed"],
@@ -117,17 +117,13 @@ describe("CI deps image push scope", () => {
 			"cancel-in-progress": true,
 		});
 		expect(job["timeout-minutes"]).toBe(20);
-		// The publisher pushes the fleet's own image and the deps job builds
-		// it in the box's Docker context, so neither is routed. The PR-only deps
-		// job asks for the publisher's label on trunk events and for the box's
-		// own label on pull requests, where it builds the image, when committed
-		// runnerRouting.boxRunner makes the route job name it (box_runner).
-		// Main's plan job follows the route job; with no route it is
-		// GitHub-hosted, and it only looks at the layer when it is the box worker.
-		expect(depsJob["runs-on"]).toBe(
-			`\${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || (${job["runs-on"].slice(4, -3)}) }}`,
-		);
-		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
+		// PR validation follows the chosen fleet or hosted runner; the publisher
+		// alone promotes the box's image after a green main run.
+		expect(depsJob.if).toContain("github.event_name == 'pull_request'");
+		expect(depsJob["runs-on"]).toContain("needs.route.outputs.tier == 'fleet'");
+		expect(depsJob["runs-on"]).toContain("needs.route.outputs.box_runner");
+		expect(depsJob["runs-on"]).toContain("needs.route.outputs.runner");
+		expect(depsJob["runs-on"]).toContain("'ubuntu-24.04'");
 		expect(job["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(mainPlan["runs-on"]).toBe(
 			"${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",

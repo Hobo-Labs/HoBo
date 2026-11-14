@@ -232,11 +232,11 @@ export interface HostingResolverRegistry {
 }
 
 /**
- * Hosting providers `@hobo/hobo` does not depend on (plan 0024 WP13 packages
- * and browser-wasm). The composition root, which does depend on them, binds
- * each package's exported `<name>ResolverRegistry` here; the catalog still
- * pins the verified credential and refuses any resolver outside the provider's
- * declared delivery coverage.
+ * Hosting providers `@hobo/hobo` does not depend on (convex, flux,
+ * webernetes, railway and browser-wasm). The composition root, which does
+ * depend on them, binds each package's exported `<name>ResolverRegistry`
+ * here; the catalog still pins the verified credential and refuses any
+ * resolver outside the provider's declared delivery coverage.
  */
 export type ExternalHostingProviderId =
 	| "convex"
@@ -414,7 +414,7 @@ function refused(
 const NOT_A_TARGET =
 	"bind a hosting provider for delivery; this package is wired by its own port";
 
-/** The I14 table (plan 0024 WP14): one row per `packages/providers/*` package. */
+/** The ADR-0182 I14 table: one row per `packages/providers/*` package. */
 export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 	Object.freeze([
 		hosting("aws", "@hobo/provider-aws", "aws"),

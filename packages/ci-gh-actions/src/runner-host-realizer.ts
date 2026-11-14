@@ -1,7 +1,7 @@
 /**
  * The runner-host realizer: HoBo CD moving one self-hosted runner host (the
  * box worker, a mesh node or a local runner) to a runner controller image
- * digest (plan 0024, decision R2; `deploy/runner-fleet/README.md`).
+ * digest (`deploy/runner-fleet/README.md`).
  *
  * It is a typed `ResourceResolver` from `@hobo/core`, run by `hobo deploy
  * agent run` on the host itself. The resource is the runner controller at an

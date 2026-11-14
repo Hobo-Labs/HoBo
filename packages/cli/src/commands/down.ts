@@ -15,7 +15,7 @@ export interface DownCommandDeps {
 }
 
 // `hobo down` — tear down what up realized. With `runtime.delivery` wired it
-// is a teardown Delta (plan 0024 D13): promotion intent `down` through the
+// is a teardown Delta (ADR-0182 D13): promotion intent `down` through the
 // same gate, converged by the in-process conductor, with progress streamed.
 // Without delivery wired it reconstructs the DeploymentPlan from the Bindle and
 // drives the @hobo/cloud compensation path (legacy). DownResult is unchanged.
