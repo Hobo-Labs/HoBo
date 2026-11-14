@@ -22,6 +22,11 @@ Deliberately not here: no port has a production backend in this package — the
 helpers; implementations live in runtime/provider packages. No I/O, no network,
 no persistence.
 
+`createTrustedVault` keeps its own copies in buffers, clears them on expiry,
+explicit removal, or normal process exit, and does not serialize their values.
+Its string inputs and revealed values may have other copies that JavaScript
+cannot reliably erase; it does not guarantee complete memory zeroization.
+
 ### HONEST SCOPE — deployment phases and schema diff
 
 `ports/phase.ts` (ADR-0158) ships **vocabulary, parse boundaries, and the

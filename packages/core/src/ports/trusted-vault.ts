@@ -9,9 +9,9 @@
  * variable by every child), which is what an untrusted process needs to take
  * it; process memory is not. So:
  *
- * - **Values are buffers that are wiped.** `clear`, an expiry and the process's
- *   `exit` overwrite each buffer with zeros before dropping it, so a value
- *   does not outlive its use in a heap that is later paged or dumped.
+ * - **Stored buffers are wiped.** `clear`, expiry and normal process exit
+ *   overwrite the vault's buffers before dropping them. The input and
+ *   `reveal` are JavaScript strings; their copies cannot be reliably wiped.
  * - **Nothing serializes it.** `JSON.stringify`, `util.inspect` and string
  *   conversion print the entry names only, so a vault that reaches a log or a
  *   result says what it holds, never a value.
@@ -56,19 +56,46 @@ export function createTrustedVault(
 	options: Readonly<{ ttlMs?: number; now?: () => number }> = {},
 ): TrustedVault {
 	const ttlMs = options.ttlMs ?? TRUSTED_VAULT_DEFAULT_TTL_MS;
+	if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0)
+		throw new RangeError(
+			"trusted vault: ttlMs must be a positive safe integer",
+		);
 	const now = options.now ?? Date.now;
 	const entries = new Map<string, Entry>();
+	let expiryTimer: ReturnType<typeof setTimeout> | undefined;
 	const wipe = (name: string) => {
 		const entry = entries.get(name);
 		if (entry === undefined) return;
 		entry.bytes.fill(0);
 		entries.delete(name);
 	};
+	const scheduleExpiry = () => {
+		if (expiryTimer !== undefined) clearTimeout(expiryTimer);
+		expiryTimer = undefined;
+		if (entries.size === 0) {
+			open.delete(vault);
+			return;
+		}
+		open.add(vault);
+		let next = Number.POSITIVE_INFINITY;
+		for (const entry of entries.values())
+			next = Math.min(next, entry.expiresAt);
+		const delay = Math.min(2_147_483_647, Math.max(1, Math.ceil(next - now())));
+		expiryTimer = setTimeout(() => {
+			expiryTimer = undefined;
+			const current = now();
+			for (const [name, entry] of entries)
+				if (current >= entry.expiresAt) wipe(name);
+			scheduleExpiry();
+		}, delay);
+		expiryTimer.unref();
+	};
 	const live = (name: string): Entry | undefined => {
 		const entry = entries.get(name);
 		if (entry === undefined) return undefined;
 		if (now() >= entry.expiresAt) {
 			wipe(name);
+			scheduleExpiry();
 			return undefined;
 		}
 		return entry;
@@ -80,20 +107,27 @@ export function createTrustedVault(
 		toString(): string;
 	} = {
 		put(name, value) {
-			if (!NAME.test(name)) throw new TypeError("trusted vault: bad entry name");
+			if (!NAME.test(name))
+				throw new TypeError("trusted vault: bad entry name");
 			wipe(name);
 			entries.set(name, {
 				bytes: Buffer.from(value, "utf8"),
 				expiresAt: now() + ttlMs,
 			});
+			scheduleExpiry();
 		},
 		has: (name) => live(name) !== undefined,
 		reveal: (name) => live(name)?.bytes.toString("utf8"),
-		drop: wipe,
-		names: () => [...entries.keys()].filter((name) => live(name) !== undefined).sort(),
+		drop(name) {
+			wipe(name);
+			scheduleExpiry();
+		},
+		names: () =>
+			[...entries.keys()].filter((name) => live(name) !== undefined).sort(),
 		clear() {
 			// Deleting the entry being visited is safe while iterating a Map.
 			for (const name of entries.keys()) wipe(name);
+			scheduleExpiry();
 		},
 		toJSON: () => ({ trustedVault: [...entries.keys()].sort() }),
 		toString: describe,
@@ -102,7 +136,6 @@ export function createTrustedVault(
 		value: describe,
 		enumerable: false,
 	});
-	open.add(vault);
 	wipeAllOnExit();
 	return vault;
 }

@@ -1,6 +1,6 @@
 import { inspect } from "node:util";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createTrustedVault } from "../src/index.js";
 
@@ -28,6 +28,24 @@ describe("trusted vault", () => {
 		vault.put("B", "y");
 		vault.clear();
 		expect(vault.names()).toEqual([]);
+	});
+
+	it("removes an untouched value when its lifetime expires", () => {
+		vi.useFakeTimers();
+		try {
+			const vault = createTrustedVault({ ttlMs: 10 });
+			vault.put("EXPIRES", "secret");
+			vi.advanceTimersByTime(10);
+			expect(JSON.stringify(vault)).not.toContain("EXPIRES");
+			expect(vault.reveal("EXPIRES")).toBeUndefined();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("rejects invalid lifetimes", () => {
+		for (const ttlMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+			expect(() => createTrustedVault({ ttlMs })).toThrow();
 	});
 
 	it("refuses an entry name that could smuggle a value", () => {
