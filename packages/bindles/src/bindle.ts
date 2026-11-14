@@ -187,6 +187,7 @@ function createBuilder(): BindleBuilder {
 		secret: () => createBindleResource("secret"),
 		data: () => createBindleResource("data"),
 		schedule: () => createBindleResource("schedule"),
+		project: () => createBindleResource("project"),
 		websocket: (binding?: ComponentBinding) =>
 			createBindleResource("websocket", toHandler(binding)),
 		job: (binding?: ComponentBinding) =>
@@ -404,6 +405,9 @@ export function inferRequirementsFromResources(
 				break;
 			case "data":
 				require.add("data");
+				break;
+			case "project":
+				require.add("project");
 				break;
 			case "secret":
 				require.add("secret");

@@ -47,6 +47,7 @@ export const INFRA_KIT_KINDS = Object.freeze([
 	"secret",
 	"data",
 	"schedule",
+	"project",
 	"external",
 	"container",
 	"flag",

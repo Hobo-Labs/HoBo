@@ -13,6 +13,7 @@ import {
 	job,
 	kv,
 	notify,
+	project,
 	queue,
 	schedule,
 	secret,
@@ -69,6 +70,7 @@ const expectedCatalog = [
 		verbs: ["read", "write", "query", "admin"],
 	},
 	{ factory: "schedule", portRef: ["hobo:scheduler"], verbs: [] },
+	{ factory: "project", portRef: ["hobo:project"], verbs: [] },
 	{
 		factory: "websocket",
 		portRef: ["wasi:websocket", "hobo:websocket"],
@@ -107,6 +109,7 @@ const factories = {
 	secret,
 	data,
 	schedule,
+	project,
 	websocket,
 	job,
 	web,

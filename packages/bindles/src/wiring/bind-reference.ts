@@ -30,6 +30,7 @@ export function data(
 	options: { paradigm?: string } = {},
 ): ResourceHandle {
 	assertResourceName(name, "data.name");
+	const paradigm = options.paradigm ?? "relational";
 
 	return {
 		kind: "resource",
@@ -38,12 +39,17 @@ export function data(
 		port: "hobo:data",
 		clientType: "DataClient",
 		manifest() {
-			return {
+			let resource: ManifestResource = {
 				type: "data.v1",
 				port: "hobo:data",
-				paradigm: options.paradigm ?? "relational",
-				connectionString: `{${name}.connectionString}`,
+				paradigm,
 			};
+			if (paradigm !== "project")
+				resource = {
+					...resource,
+					connectionString: `{${name}.connectionString}`,
+				};
+			return resource;
 		},
 	};
 }

@@ -34,6 +34,7 @@ export const CATALOG_ROWS = [
 		allowVerbs: ["read", "write", "query", "admin"],
 	},
 	{ factory: "schedule", portRef: ["hobo:scheduler"], allowVerbs: [] },
+	{ factory: "project", portRef: ["hobo:project"], allowVerbs: [] },
 	{
 		factory: "websocket",
 		portRef: ["wasi:websocket", "hobo:websocket"],
@@ -94,6 +95,7 @@ export type AllowVerbsByKind = {
 	secret: "put" | "access";
 	data: "read" | "write" | "query" | "admin";
 	schedule: never;
+	project: never;
 	websocket: "accept" | "connect" | "send" | "broadcast" | "subscribe";
 	job: "submit";
 	web: never;
@@ -330,6 +332,7 @@ export interface BindleBuilder {
 	secret(): BindleResource<"secret">;
 	data(): BindleResource<"data">;
 	schedule(): BindleResource<"schedule">;
+	project(): BindleResource<"project">;
 	websocket(binding?: ComponentBinding): BindleResource<"websocket">;
 	job(binding?: ComponentBinding): BindleResource<"job">;
 	service(binding?: ComponentBinding): BindleResource<"service">;
