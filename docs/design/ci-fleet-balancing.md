@@ -171,8 +171,11 @@ The fleet is refused for a class only when no live node serves its label
 (`no-node`), when work assigned to it has started nothing for ten minutes
 (`stalled`), or when every node refuses for a reason other than its own
 running jobs and no counted external pool has a free runner (`no-capacity`).
-A busy box is `fleet-busy`, never refused (R4). A pool that cannot be counted
-is unknown and refuses nothing (R3). The slip is written on a change and as a
+A busy box is `fleet-busy`; a timely pickup and wait check preserves it even
+when several jobs are queued (R4). A fleet slip must have current GitHub
+queue evidence of pickup for its exact label; a stalled or unreadable queue
+sends the run to a responsive enrolled local box or GitHub-hosted. A pool
+that cannot be counted is unknown and refuses nothing (R3). The slip is written on a change and as a
 three-minute heartbeat, capped at 20 writes a minute and 300 an hour, and
 expires ten minutes after it is issued; with no fresh slip the route job falls
 back to the queue rule. The box's slot split, pools and holds are committed in

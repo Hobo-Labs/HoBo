@@ -8,8 +8,10 @@ description: >-
   What the fleet can take is not passed in: the script reads the routing slip
   the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
   policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
-  out that file and scripts/ci/runner-routing.mts. With no usable slip the
-  queue rule decides at once, as before slips.
+  out that file and scripts/ci/runner-routing.mts. A fleet slip is checked
+  against current GitHub queue pickup and wait evidence for its exact label;
+  if it is not taking jobs, the queue selects an enrolled local runner or
+  GitHub-hosted. With no usable slip the queue rule decides, as before slips.
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
   skipped, and what is left goes to GitHub-hosted without reading the queue.
