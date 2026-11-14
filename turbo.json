@@ -67,6 +67,7 @@
     "test:contract:provider": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "//#typecheck:root": {
       "dependsOn": [
+        "@hobo/adapter-infisical#build",
         "@hobo/bindings#build",
         "@hobo/bindles#build",
         "@hobo/ci#build",
@@ -74,9 +75,10 @@
         "@hobo/connectivity#build",
         "@hobo/core#build",
         "@hobo/dispatcher#build",
-        "@hobo/kv-redis-compatible#build"
+        "@hobo/kv-redis-compatible#build",
+        "@hobo/secret-store-claim#build"
       ],
-      "inputs": ["tsconfig.json", "tsconfig.base.json", "scripts/**", "test/**", "!scripts/ci/**"],
+      "inputs": ["tsconfig.json", "tsconfig.base.json", "scripts/**", "test/**"],
       "outputs": []
     },
     "//#test:unit:root:0": {
