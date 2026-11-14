@@ -23,6 +23,10 @@ Capability Manifest.
   direct account origin. A write R2 acknowledges with 200 is reported as
   applied even when the response carries no strong ETag; it then returns no
   `etag`, and the caller re-reads before its next conditional write.
+- `createD1ImmutableJournalReplica()` — a bounded, primary-only D1 voter for
+  HoBo's immutable journal. The voter conditionally appends its assignment log
+  and atomically checks the generation seal when inserting a document, so a
+  delayed write cannot add a new document after that seal.
 
 ## Scope (out)
 
@@ -30,7 +34,14 @@ Capability Manifest.
   emits programs, it does not apply them (temporary Environment Stations are
   the exception below)
 - The Planner (S2-02) and Yard (S2-01)
-- D1, Queues, DNS, Hyperdrive
+- General D1 provisioning, Queues, DNS, Hyperdrive
+
+The D1 voter operates on a separately enrolled Cloudflare-owned database. Its
+host must prove the account, primary endpoint, fresh incarnation and
+anti-rollback state, and fund each bounded provider request through the Broker.
+The voter does not create a database, establish an independent failure domain,
+or fence effects in another provider. An ambiguous request retains its
+financial hold until independently authenticated terminal evidence is available.
 
 ## Temporary Environment Stations (in scope)
 

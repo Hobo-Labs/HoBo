@@ -21,9 +21,12 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/backend-fleet": "workspace:*",
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/core": "workspace:*",
-		"@hobo/provider-redaction": "workspace:*"
+		"@hobo/provider-redaction": "workspace:*",
+		"zod": "^4.1.13"
 	}
 }
