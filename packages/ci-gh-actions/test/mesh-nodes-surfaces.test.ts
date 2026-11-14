@@ -523,5 +523,11 @@ describe("relayFleetReads", () => {
 		const response = await h.get(RELAY_FLEET_MEMBERS_PATH, READER);
 		expect(response.status).toBe(200);
 		expect(requests).toEqual(["GET /v1/fleet/members"]);
+		await reads.fleetView({ fleetId: HOBO });
+		await reads.fleetVerdict({ fleetId: HOBO, label: "hobo" });
+		expect(requests.slice(1)).toEqual([
+			"GET /v1/fleet/fleets/hobo/view",
+			"GET /v1/fleet/fleets/hobo/verdict",
+		]);
 	});
 });

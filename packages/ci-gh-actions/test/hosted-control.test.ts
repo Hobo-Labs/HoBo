@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { create, toJsonString } from "@bufbuild/protobuf";
+import { create, toBinary, toJsonString } from "@bufbuild/protobuf";
 import {
 	AccountSchema,
 	effectiveCiAccount,
@@ -13,7 +13,10 @@ import {
 	SandboxPricingSchema,
 } from "@hobo/ci";
 import {
+	FLEET_VIEW_CONTEXT,
 	type FleetFailure,
+	FleetVerdictSchema,
+	FleetViewSchema,
 	MEMBER_RECORD_CONTEXT,
 	MemberListSchema,
 	parseFleetId,
@@ -23,12 +26,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { foldBudgetSignals } from "../../broker/src/budget-signals.js";
 import { createHostedCiBudgetRoutingBridge } from "../../stations/src/hosted-ci-routing.js";
-import { createCiRelayClient } from "../src/client.js";
+import { ControlError } from "../src/account-operations.js";
+import { CiRelayClientError, createCiRelayClient } from "../src/client.js";
 import {
 	createHostedControlPlane,
+	isConfigWriteRoute,
 	RELAY_FLEET_MEMBERS_PATH,
+	RELAY_READS_NO_FLEET,
 	type RelayFleet,
 	type RelayFleetReads,
+	relayFleetVerdict,
+	relayFleetView,
 } from "../src/hosted-control.js";
 import { HostedRelay } from "../src/hosted-relay.js";
 import {
@@ -1997,5 +2005,455 @@ describe("the relay's fleet route", () => {
 					}),
 				),
 			).toBeUndefined();
+	});
+});
+
+describe("the relay's fleet reads", () => {
+	const fleetId = parseFleetId("hobo");
+	function reads(overrides: Partial<RelayFleetReads>): RelayFleet {
+		const refused = async () =>
+			({ ok: false, error: { code: "unavailable", message: "down" } }) as const;
+		return {
+			fleetId,
+			reads: {
+				listMembers: refused,
+				fleetView: refused,
+				fleetVerdict: refused,
+				...overrides,
+			},
+		};
+	}
+	/** The read is refused with a ControlError of this status and message. */
+	async function refusedWith<T>(
+		work: Promise<T>,
+		status: number,
+		message: string,
+	) {
+		await expect(work).rejects.toBeInstanceOf(ControlError);
+		await expect(work).rejects.toMatchObject({ status, message });
+	}
+
+	it("opens the fleet's view, and refuses another record or a refused read", async () => {
+		const view = create(FleetViewSchema, {});
+		const opened = await relayFleetView(
+			reads({
+				fleetView: async () => ({
+					ok: true,
+					value: create(SignedEnvelopeSchema, {
+						context: FLEET_VIEW_CONTEXT,
+						keyId: "authority#1",
+						payload: toBinary(FleetViewSchema, view),
+						signature: new Uint8Array(64),
+					}),
+				}),
+			}),
+		);
+		expect(toJsonString(FleetViewSchema, opened)).toBe(
+			toJsonString(FleetViewSchema, view),
+		);
+		await refusedWith(
+			relayFleetView(
+				reads({
+					fleetView: async () => ({
+						ok: true,
+						value: create(SignedEnvelopeSchema, {
+							context: MEMBER_RECORD_CONTEXT,
+							keyId: "authority#1",
+							payload: new Uint8Array(),
+							signature: new Uint8Array(64),
+						}),
+					}),
+				}),
+			),
+			502,
+			"the fleet authority answered another record",
+		);
+		await refusedWith(
+			relayFleetView(reads({})),
+			503,
+			"the fleet authority refused the read (unavailable)",
+		);
+		await refusedWith(relayFleetView(undefined), 503, RELAY_READS_NO_FLEET);
+	});
+
+	it("answers the label's verdict, and the authority's code, never its words, when it refuses", async () => {
+		const labels: string[] = [];
+		const verdict = create(FleetVerdictSchema, {
+			fleet: "hobo",
+			label: "hobo",
+		});
+		expect(
+			await relayFleetVerdict(
+				reads({
+					fleetVerdict: async (request) => {
+						labels.push(request.label);
+						return { ok: true, value: verdict };
+					},
+				}),
+				"hobo",
+			),
+		).toBe(verdict);
+		expect(labels).toEqual(["hobo"]);
+		await refusedWith(
+			relayFleetVerdict(
+				reads({
+					fleetVerdict: async () => ({
+						ok: false,
+						error: { code: "member-unknown", message: "secret detail" },
+					}),
+				}),
+				"hobo",
+			),
+			404,
+			"the fleet authority refused the read (member-unknown)",
+		);
+		await refusedWith(
+			relayFleetVerdict(
+				reads({
+					fleetVerdict: async () => ({
+						ok: false,
+						error: { code: "forbidden", message: "secret detail" },
+					}),
+				}),
+				"hobo",
+			),
+			502,
+			"the fleet authority refused the read (forbidden)",
+		);
+	});
+});
+
+describe("the control routes a read-only config relay refuses", () => {
+	it("names every configuration write and record route, and no read", () => {
+		for (const [method, path] of [
+			["GET", "/v2/accounts/self/inbox/quarantine"],
+			["POST", "/v1/accounts/self/repositories/prepare"],
+			["PUT", "/v1/accounts/self/policy"],
+			["PUT", "/v2/accounts/self/policy"],
+			["PUT", "/v2/accounts/self/providers"],
+			["POST", "/v2/accounts/self/signals"],
+			["POST", "/v2/accounts/self/observations"],
+			["POST", "/v2/accounts/self/rate-observations"],
+		] as const)
+			expect(isConfigWriteRoute(method, path)).toBe(true);
+		for (const [method, path] of [
+			["GET", "/v1/accounts/self/policy"],
+			["GET", "/v2/accounts/self/signals"],
+			["PUT", "/v1/accounts/self/leases"],
+			["POST", "/v2/accounts/self/policy"],
+			["GET", RELAY_FLEET_MEMBERS_PATH],
+			["DELETE", "/v1/accounts/self/policy"],
+		] as const)
+			expect(isConfigWriteRoute(method, path)).toBe(false);
+	});
+});
+
+describe("the control plane's request preconditions", () => {
+	function put(
+		t: ReturnType<typeof setup>,
+		headers: Record<string, string>,
+		body = "{}",
+	) {
+		return t.handler(
+			new Request("https://relay.example/v2/accounts/self/policy", {
+				method: "PUT",
+				headers: { authorization: "Bearer admin", ...headers },
+				body,
+			}),
+		);
+	}
+
+	it("needs a configuration revision, a sane one, and a bounded body", async () => {
+		const t = setup();
+		expect((await put(t, {}))?.status).toBe(428);
+		expect((await put(t, { "if-match": "latest" }))?.status).toBe(428);
+		expect(
+			(await put(t, { "if-match": '"99999999999999999999"' }))?.status,
+		).toBe(400);
+		expect(
+			(await put(t, { "if-match": '"1"' }, "x".repeat(1024 * 1024 + 1)))
+				?.status,
+		).toBe(413);
+		expect((await t.store.configuration())?.revision).toBe(1);
+	});
+
+	it("answers the caller's account and installations", async () => {
+		const t = setup();
+		const answer = await t.request("/v1/accounts/self/installations");
+		expect(answer.status).toBe(200);
+		expect(await answer.json()).toEqual({
+			accountId: "account-a",
+			installationIds: [10],
+		});
+	});
+});
+
+describe("the relay client", () => {
+	const ID = "0123abcd-0123-4abc-8def-0123456789ab";
+	type Sent = { url: string; method: string; headers: Headers; body: string };
+	/** A relay that answers every request with an empty protobuf message. */
+	function recording(answer: () => Response = () => new Response("{}")) {
+		const sent: Sent[] = [];
+		const send: typeof globalThis.fetch = async (url, init) => {
+			sent.push({
+				url: String(url),
+				method: init?.method ?? "GET",
+				headers: new Headers(init?.headers),
+				body: init?.body ? String(init.body) : "",
+			});
+			return answer();
+		};
+		return { sent, fetch: send };
+	}
+	function client(
+		send: typeof globalThis.fetch,
+		accountToken: () => string | Promise<string> = () => "admin",
+	) {
+		return createCiRelayClient({
+			origin: "https://relay.example",
+			accountToken,
+			fetch: send,
+		});
+	}
+	/** The call's refusal: the client's own error, as status and message. */
+	async function refusal<T>(
+		work: () => Promise<T>,
+	): Promise<{ status: number; message: string }> {
+		try {
+			await work();
+		} catch (error) {
+			if (error instanceof CiRelayClientError)
+				return { status: error.status, message: error.message };
+			throw error;
+		}
+		throw new Error("the client did not refuse");
+	}
+	function routed(t: ReturnType<typeof setup>): typeof globalThis.fetch {
+		return async (url, init) => {
+			const response = await t.handler(new Request(url, init));
+			if (!response) throw new Error("route missing");
+			return response;
+		};
+	}
+
+	it("accepts only an HTTPS origin, or loopback HTTP when asked", () => {
+		const accountToken = () => "admin";
+		for (const origin of [
+			"not a url",
+			"http://relay.example",
+			"http://127.0.0.1:8080",
+			"https://user:pass@relay.example",
+			"https://relay.example/base",
+			"https://relay.example/?q=1",
+			"https://relay.example/#frag",
+		])
+			expect(() => createCiRelayClient({ origin, accountToken })).toThrow(
+				CiRelayClientError,
+			);
+		expect(() =>
+			createCiRelayClient({
+				origin: "http://localhost:8080",
+				accountToken,
+				allowInsecureLoopback: true,
+			}),
+		).not.toThrow();
+	});
+
+	it("sends each account call to its route, method and revision", async () => {
+		const r = recording();
+		const c = client(r.fetch);
+		await c.getPolicy();
+		await c.putPolicy({ id: "account-a" }, { revision: 3 });
+		await c.putProvider({ id: "offer-a" }, { revision: 4 });
+		await c.getInstallations();
+		await c.prepareRepository({ repository: "org/repo" });
+		await c.getSetup(ID);
+		await c.applySetup(ID);
+		await c.connectSetup(ID, { revision: 5 });
+		await c.getLeases();
+		await c.getLease(ID);
+		await c.reconcileLease(ID, 7);
+		await c.getFleetMembers();
+		const base = "https://relay.example";
+		const bearer = "Bearer admin";
+		expect(
+			r.sent.map((s) => [
+				s.method,
+				s.url,
+				s.headers.get("if-match"),
+				s.headers.get("authorization"),
+			]),
+		).toEqual([
+			["GET", `${base}/v1/accounts/self/policy`, null, bearer],
+			["PUT", `${base}/v1/accounts/self/policy`, '"3"', bearer],
+			["PUT", `${base}/v2/accounts/self/providers`, '"4"', bearer],
+			["GET", `${base}/v1/accounts/self/installations`, null, bearer],
+			["POST", `${base}/v1/accounts/self/repositories/prepare`, null, bearer],
+			["GET", `${base}/v1/accounts/self/repositories/${ID}`, null, bearer],
+			[
+				"POST",
+				`${base}/v1/accounts/self/repositories/${ID}/apply`,
+				null,
+				bearer,
+			],
+			[
+				"POST",
+				`${base}/v1/accounts/self/repositories/${ID}/connect`,
+				'"5"',
+				bearer,
+			],
+			["GET", `${base}/v1/accounts/self/leases`, null, bearer],
+			["GET", `${base}/v1/accounts/self/leases/${ID}`, null, bearer],
+			["POST", `${base}/v1/accounts/self/leases/${ID}/reconcile`, null, bearer],
+			["GET", `${base}/v1/fleet/members`, null, bearer],
+		]);
+		expect(JSON.parse(r.sent[1]?.body ?? "")).toEqual({ id: "account-a" });
+		expect(JSON.parse(r.sent[4]?.body ?? "")).toEqual({
+			repository: "org/repo",
+		});
+		expect(JSON.parse(r.sent[10]?.body ?? "")).toEqual({ hostRunId: 7 });
+		expect(r.sent[0]?.headers.get("content-type")).toBeNull();
+		expect(r.sent[1]?.headers.get("content-type")).toBe("application/json");
+	});
+
+	it("signs an owner session with its header, not a bearer token", async () => {
+		const r = recording();
+		await createCiRelayClient({
+			origin: "https://relay.example",
+			ownerSession: true,
+			fetch: r.fetch,
+		}).getLeases();
+		expect(r.sent[0]?.headers.get("x-hobo-owner-control")).toBe("1");
+		expect(r.sent[0]?.headers.get("authorization")).toBeNull();
+	});
+
+	it("refuses bad identifiers, revisions and credentials before sending", async () => {
+		const r = recording();
+		const c = client(r.fetch);
+		const badIdentifiers: Array<() => Promise<object>> = [
+			() => c.getSetup("not-a-uuid"),
+			() => c.applySetup("../policy"),
+			() => c.connectSetup("x", { revision: 1 }),
+			() => c.getLease(ID.toUpperCase()),
+			() => c.reconcileLease("x", 1),
+		];
+		for (const call of badIdentifiers)
+			expect(await refusal(call)).toEqual({
+				status: 0,
+				message: "invalid operation or lease identifier",
+			});
+		for (const hostRunId of [0, 1.5, Number.MAX_SAFE_INTEGER + 1])
+			expect(await refusal(() => c.reconcileLease(ID, hostRunId))).toEqual({
+				status: 0,
+				message: "invalid host run identifier",
+			});
+		for (const revision of [-1, 0.5, 0x100000000])
+			expect(
+				await refusal(() => c.putPolicy({ id: "a" }, { revision })),
+			).toEqual({ status: 0, message: "invalid configuration revision" });
+		expect(
+			await refusal(() =>
+				client(r.fetch, () => {
+					throw new Error("vault locked");
+				}).getLeases(),
+			),
+		).toEqual({ status: 0, message: "account credentials unavailable" });
+		for (const token of ["", "two words", "x".repeat(1025)])
+			expect(
+				await refusal(() => client(r.fetch, () => token).getLeases()),
+			).toEqual({ status: 0, message: "invalid account credentials" });
+		expect(r.sent).toEqual([]);
+	});
+
+	it("refuses a failed, redirected, foreign, invalid or oversized answer without its body", async () => {
+		expect(
+			await refusal(() =>
+				client(async () => {
+					throw new Error("ECONNRESET secret");
+				}).getLeases(),
+			),
+		).toEqual({
+			status: 0,
+			message: "relay transport failed; operation outcome may be unconfirmed",
+		});
+		const failed = recording(
+			() => new Response("token=secret", { status: 404 }),
+		);
+		expect(await refusal(() => client(failed.fetch).getLeases())).toEqual({
+			status: 404,
+			message: "relay request failed (404)",
+		});
+		const at =
+			(url: string, redirected = false) =>
+			() => {
+				const response = new Response("{}");
+				Object.defineProperty(response, "url", { value: url });
+				Object.defineProperty(response, "redirected", { value: redirected });
+				return response;
+			};
+		const crossed = {
+			status: 200,
+			message: "relay response crossed origin or redirected",
+		};
+		expect(
+			await refusal(() =>
+				client(recording(at("https://evil.example/")).fetch).getLeases(),
+			),
+		).toEqual(crossed);
+		expect(
+			await refusal(() =>
+				client(
+					recording(at("https://relay.example/v1/x", true)).fetch,
+				).getLeases(),
+			),
+		).toEqual(crossed);
+		expect(
+			await refusal(() =>
+				client(recording(at("::not a url")).fetch).getLeases(),
+			),
+		).toEqual({ status: 200, message: "invalid relay response origin" });
+		const unknown = recording(() => new Response('{"unknownField":1}'));
+		expect(await refusal(() => client(unknown.fetch).getLeases())).toEqual({
+			status: 200,
+			message: "invalid protobuf relay response",
+		});
+		const chunk = new Uint8Array(1024 * 1024);
+		let pulls = 0;
+		const huge = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				pulls += 1;
+				controller.enqueue(chunk);
+			},
+		});
+		const oversized = recording(() => new Response(huge));
+		expect(await refusal(() => client(oversized.fetch).getLeases())).toEqual({
+			status: 200,
+			message: "invalid protobuf relay response",
+		});
+		expect(pulls).toBeLessThan(5);
+	});
+
+	it("reads a newer relay's member list past fields it does not know", async () => {
+		const newer = recording(
+			() => new Response('{"members":[],"addedLater":true}'),
+		);
+		expect((await client(newer.fetch).getFleetMembers()).members).toEqual([]);
+	});
+
+	it("reads the hosted control plane's account routes", async () => {
+		const t = setup();
+		const c = client(routed(t));
+		expect(await c.getInstallations()).toMatchObject({
+			accountId: "account-a",
+			installationIds: [10],
+		});
+		expect((await c.getLeases()).leases).toEqual([]);
+		expect(await refusal(() => c.getSetup(ID))).toEqual({
+			status: 404,
+			message: "relay request failed (404)",
+		});
+		expect(
+			await refusal(() => c.putPolicy({ id: "account-a" }, { revision: 1 })),
+		).toEqual({ status: 410, message: "relay request failed (410)" });
 	});
 });
