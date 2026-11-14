@@ -179,6 +179,30 @@ describeLive("PostgreSQL application role isolation", () => {
 				}),
 			).rejects.toThrow(/bypass/u);
 			await adminQuery(`DROP FUNCTION "${schema}".unsafe_application_test()`);
+			// Owning the trigger function would let the app drop it with CASCADE,
+			// even after CREATE on the schema is revoked.
+			await adminQuery(
+				`GRANT CREATE ON SCHEMA "${schema}" TO "${applicationRole}"`,
+			);
+			await adminQuery(
+				`ALTER FUNCTION "${schema}".check_actor_commit_lease() OWNER TO "${applicationRole}"`,
+			);
+			await adminQuery(
+				`REVOKE CREATE ON SCHEMA "${schema}" FROM "${applicationRole}"`,
+			);
+			try {
+				await expect(
+					store.verifyApplicationRoleIsolation({
+						applicationRole,
+						protectedPrefix: "ci-queue:",
+						applicationPool,
+					}),
+				).rejects.toThrow(/bypass/u);
+			} finally {
+				await adminQuery(
+					`ALTER FUNCTION "${schema}".check_actor_commit_lease() OWNER TO "${proof.supervisorRole.replaceAll('"', '""')}"`,
+				);
+			}
 			await expect(
 				store.verifyApplicationRoleIsolation({
 					applicationRole,

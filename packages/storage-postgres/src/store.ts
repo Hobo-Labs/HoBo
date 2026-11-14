@@ -1574,6 +1574,8 @@ SELECT a.rolname AS application_role, current_user::text AS supervisor_role,
    EXISTS (SELECT 1 FROM reachable r, protected_tables t WHERE r.oid = t.relowner OR
      pg_catalog.has_table_privilege(r.oid, t.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES') OR
      pg_catalog.has_any_column_privilege(r.oid, t.oid, 'INSERT,UPDATE,REFERENCES')) OR
+   EXISTS (SELECT 1 FROM reachable r, protected_schema s, pg_catalog.pg_proc p
+     WHERE p.pronamespace = s.oid AND p.proowner = r.oid) OR
    EXISTS (SELECT 1 FROM reachable r, pg_catalog.pg_class c, pg_catalog.pg_namespace n
      WHERE c.relnamespace = n.oid AND n.nspname NOT IN ('pg_catalog','information_schema') AND c.relkind IN ('v','m','f') AND
      pg_catalog.has_table_privilege(r.oid, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) OR

@@ -57,7 +57,7 @@ application, call `verifyApplicationRoleIsolation` with that role, the exact
 protected prefix, and a pool authenticated with the actual application
 credential. It checks the database, schema, effective and assumable privileges,
 and live application session against the supervisor's database. It rejects
-direct writes, ownership or role escalation and other executable paths that
+direct writes, ownership of protected tables or functions, role escalation, and other executable paths that
 could bypass the boundary. Recheck this proof when credentials or grants can
 change; it does not prevent a database administrator from granting new
 privileges later. Application writes must go through an independently
