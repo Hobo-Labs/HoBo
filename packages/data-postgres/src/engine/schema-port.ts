@@ -248,6 +248,7 @@ export function createSchemaPort(
 	const dropSnapshot = async (ref: SchemaSnapshotRef): Promise<void> => {
 		await store.ready();
 		await executor.transaction(async (tx) => {
+			await store.assertSchemaMutationAllowed(tx);
 			const known = await tx.query(
 				`DELETE FROM ${registry} WHERE snapshot_ref = $1::text RETURNING snapshot_ref`,
 				[ref.ref],
@@ -319,6 +320,7 @@ export function createSchemaPort(
 				return Object.freeze({ phase, statements: 0, changes: 0 });
 			}
 			const changes = await executor.transaction(async (tx) => {
+				await store.assertSchemaMutationAllowed(tx);
 				await inNamespace(tx);
 				let total = 0;
 				for (const statement of statements) {
@@ -351,6 +353,7 @@ export function createSchemaPort(
 		async restore(ref: SchemaSnapshotRef): Promise<void> {
 			await store.ready();
 			await executor.transaction(async (tx) => {
+				await store.assertSchemaMutationAllowed(tx);
 				const known = await tx.query(
 					`SELECT tables_json FROM ${registry} WHERE snapshot_ref = $1::text`,
 					[ref.ref],
