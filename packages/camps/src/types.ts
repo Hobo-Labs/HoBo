@@ -62,7 +62,8 @@ export interface ResourceMappingRule {
 /**
  * Provider-neutral Camp shape. A Camp does **not** own a Bindle and does **not**
  * choose a cloud provider. Provider is inherited from the enclosing Yard at
- * placement. Canonical camp identity under a yard is `<yard-id>/<camp-id>`.
+ * placement. Its logical identity survives a move; the Yard-scoped `id` names
+ * one physical placement.
  */
 export interface Camp {
 	readonly kind: "camp";
@@ -92,9 +93,21 @@ export interface Camp {
 	 */
 	readonly derivedProviderId?: string;
 	readonly enclosingYardId?: string;
+	/** Stable logical identity across Yard placements. The placement's `id`
+	 * remains Yard-scoped; this identifier names the same Camp after a move. */
+	readonly logicalId?: string;
+	/** Provider-neutral declaration retained so moving cannot carry source Yard
+	 * resolver overrides into the destination. */
+	readonly placementDeclaration?: {
+		readonly resolverConfig: PrimitiveResolverConfig;
+		readonly resourceMappings: readonly ResourceMappingRule[];
+	};
 }
 
 export interface CampConfig {
+	/** Optional stable identity when a Camp is independently declared in
+	 * multiple Yards. Otherwise the first placement assigns one. */
+	readonly logicalId?: string;
 	readonly envType?: string;
 	/** One of `CAMP_TIERS`; stated, never inferred from the Camp's name. */
 	readonly tier?: string;
@@ -123,6 +136,7 @@ export interface CampConfig {
 
 export interface CampShape {
 	readonly id?: string;
+	readonly logicalId?: string;
 	readonly env?: string;
 	readonly envType?: string;
 	readonly require: readonly string[];

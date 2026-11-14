@@ -151,6 +151,27 @@ describe("nesting replaces attachment", () => {
 		expect(built.camps[0]?.id).toBe("prod-eu/preview");
 		expect(built.camps[0]?.derivedProviderId).toBe("azure");
 	});
+
+	it("preserves a named logical Camp through independently built Yard placements", () => {
+		const source = buildYard("azure", "east", (y) => {
+			y.web(containerApps);
+			y.camp("api", (c) => c.logicalId("shop/api").production());
+		});
+		const destination = buildYard("gcp", "west", (y) => {
+			y.camp("api", (c) => c.logicalId("shop/api").production());
+		});
+		expect(source.camps[0]).toMatchObject({
+			id: "east/api",
+			logicalId: "shop/api",
+			enclosingYardId: "east",
+		});
+		expect(destination.camps[0]).toMatchObject({
+			id: "west/api",
+			logicalId: "shop/api",
+			enclosingYardId: "west",
+			derivedProviderId: "gcp",
+		});
+	});
 });
 
 describe("slot accumulation", () => {

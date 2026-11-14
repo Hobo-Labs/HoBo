@@ -40,6 +40,78 @@ describe("yard() — owns provider; zero camps allowed", () => {
 		expect(localYard.camps[0]?.derivedProviderId).toBe("local");
 		expect(localYard.camps[0]?.id).toBe("local/prod");
 	});
+	it("places the same provider-neutral Camp in another Yard without changing its declaration", () => {
+		const prod = camp("prod", {
+			logicalId: "shop/production",
+			envType: "production",
+			require: ["managed-container-substrate"],
+		});
+		const original = yard("aws-prod", { provider: "aws", camps: [prod] });
+		const destination = yard("azure-prod", {
+			provider: "azure",
+			camps: [prod],
+		});
+		expect(prod.derivedProviderId).toBeUndefined();
+		expect(original.camps[0]).toMatchObject({
+			id: "aws-prod/prod",
+			enclosingYardId: "aws-prod",
+			derivedProviderId: "aws",
+		});
+		expect(destination.camps[0]).toMatchObject({
+			id: "azure-prod/prod",
+			enclosingYardId: "azure-prod",
+			derivedProviderId: "azure",
+		});
+		expect(yardToContract(original).camps).toEqual(
+			yardToContract(destination).camps,
+		);
+		const source = original.camps[0];
+		if (!source) throw new Error("source Camp missing");
+		const moved = yard("azure-moved", { provider: "azure", camps: [source] });
+		expect(yardToContract(moved).camps[0]?.logicalId).toBe("shop/production");
+		expect(moved.camps[0]).toMatchObject({
+			id: "azure-moved/prod",
+			logicalId: "shop/production",
+			enclosingYardId: "azure-moved",
+			derivedProviderId: "azure",
+		});
+		expect(original.camps[0]).toMatchObject({
+			id: "aws-prod/prod",
+			logicalId: "shop/production",
+			enclosingYardId: "aws-prod",
+			derivedProviderId: "aws",
+		});
+		// SAFETY: this round-trip serializes the validated Camp attached above.
+		const restored = JSON.parse(
+			JSON.stringify(original.camps[0]),
+		) as typeof prod;
+		expect(
+			yard("gcp-moved", { provider: "gcp", camps: [restored] }).camps[0],
+		).toMatchObject({
+			id: "gcp-moved/prod",
+			logicalId: "shop/production",
+			enclosingYardId: "gcp-moved",
+			derivedProviderId: "gcp",
+		});
+	});
+	it("retains an explicitly named logical Camp across independently declared placements", () => {
+		const prod = camp("prod", {
+			logicalId: "checkout/production",
+			envType: "production",
+		});
+		const first = yard("aws", { provider: "aws", camps: [prod] });
+		const second = yard("azure", { provider: "azure", camps: [prod] });
+		expect(first.camps[0]).toMatchObject({
+			logicalId: "checkout/production",
+			id: "aws/prod",
+			derivedProviderId: "aws",
+		});
+		expect(second.camps[0]).toMatchObject({
+			logicalId: "checkout/production",
+			id: "azure/prod",
+			derivedProviderId: "azure",
+		});
+	});
 
 	it("rejects camps whose derived provider disagrees", () => {
 		const awsCamp = camp("prod", { envType: "production" });
@@ -53,7 +125,7 @@ describe("yard() — owns provider; zero camps allowed", () => {
 				// SAFETY: `camps: [attached as typeof awsCamp],` is required at this I/O or test boundary.
 				camps: [attached as typeof awsCamp],
 			}),
-		).toThrow(/cannot attach camp with provider/);
+		).toThrow(/disagrees with Yard provider/);
 	});
 
 	it("projects yard to its planning contract", () => {

@@ -87,14 +87,6 @@ export function yard(name: string, config: YardConfig): Yard {
 		if (entry?.kind !== "camp") {
 			throw new TypeError("yard camps must be Camp objects");
 		}
-		if (
-			entry.derivedProviderId !== undefined &&
-			entry.derivedProviderId !== providerId
-		) {
-			throw new Error(
-				`Yard ${name} cannot attach camp with provider ${entry.derivedProviderId} (yard provider is ${providerId})`,
-			);
-		}
 	}
 
 	const attachedCamps = campsInput.map((c) =>
@@ -184,6 +176,7 @@ export function yardToContract(yardObject: Yard): {
  */
 export interface CampContract {
 	readonly id?: string;
+	readonly logicalId?: string;
 	readonly env?: string;
 	readonly envType?: string;
 	readonly require: readonly string[];
@@ -198,6 +191,7 @@ function campToContract(campObject: Camp): CampContract {
 		: campObject.id;
 	return deepFreeze({
 		id: localId,
+		...(campObject.logicalId ? { logicalId: campObject.logicalId } : undefined),
 		env: campObject.env,
 		envType: campObject.envType,
 		require: campObject.require,

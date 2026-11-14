@@ -15,6 +15,8 @@ message CampTopology {
   repeated string prefer = 7;
   map<string, string> labels = 8;
   repeated string runtime_requirements = 9;
+  // Stable Camp identity; id identifies its current Yard placement.
+  string logical_id = 10;
 }
 
 // Legacy wire form retained for migration tooling only.
