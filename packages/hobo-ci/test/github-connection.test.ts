@@ -545,6 +545,31 @@ describe("prepareGithubConnection", () => {
 		}
 	});
 
+	it("refuses an unknown saved or configured secret store before opening it", async () => {
+		for (const [env, saved] of [
+			[{ ...ENV, HOBO_CI_SECRET_STORE: "unknown" }, {}],
+			[
+				{ ...ENV, HOBO_CI_SECRET_STORE: "" },
+				{ HOBO_CI_SECRET_STORE: "unknown" },
+			],
+		] as const) {
+			let opened = false;
+			const outcome = await prepareGithubConnection(prepareInput(), {
+				env,
+				settings: memorySettings(saved),
+				openStore: async () => {
+					opened = true;
+					throw new Error("unexpected store access");
+				},
+			});
+			expect(outcome).toMatchObject({
+				kind: "refused",
+				result: { code: "HOBO_CI_SECRET_STORE_INVALID" },
+			});
+			expect(opened).toBe(false);
+		}
+	});
+
 	it("refuses an unimplemented pinned host before opening a secret store", async () => {
 		let opened = false;
 		const outcome = await prepareGithubConnection(prepareInput(), {
