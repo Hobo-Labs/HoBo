@@ -5,6 +5,7 @@ import {
 	createDevCommand,
 	createDownCommand,
 	createHoboCli,
+	createLifecycleFamilyCommand,
 	createPlanCommand,
 	type DevRuntime,
 	type HoboCli,
@@ -44,6 +45,7 @@ import { createDerivativeCommand } from "./derivative-command.js";
 import { createDoctorCommand } from "./doctor-command.js";
 import { createDriftCommand } from "./drift-command.js";
 import { createEraseCommand } from "./erase-command.js";
+import { resolveCdProject, resolveCiProject } from "./family-projects.js";
 import { createFeatureCommand } from "./feature-command.js";
 import { createGenerateCommand } from "./generate-command.js";
 import type { createProductionHostingExecution } from "./hosting-execution.js";
@@ -190,10 +192,49 @@ export function createComposedHoboCli(
 	// `sandbox` and its `test` alias share one command; each run() boots its OWN
 	// fresh runtime-local Camp (isolation), so no shared runtime is threaded here.
 	const sandbox = createSandboxCommand();
+	// The lifecycle engine every family shares (cli-spec.md "Lifecycle
+	// Semantics"): `hobo up|down|plan` and `hobo ci|cd up|down|plan|status` are
+	// the same three commands, pointed at a different project.
+	// Always place through the embedded broker-runtime (prefer wasm-sandbox
+	// yards). Remote --broker / --anonymous paths use discovery + credential
+	// presenter. The cloud mock `createUpCommand` remains for tests that wire
+	// it directly.
+	const up = createBrokerAwareUpCommand({
+		...(deployRuntime ? { runtime: deployRuntime } : undefined),
+		persistentLocal: !explicitFixture,
+		authMdFetch: options.authMdFetch ?? fetch,
+	});
+	const down = createLocalDeploymentDownCommand(
+		deployRuntime ? createDownCommand({ runtime: deployRuntime }) : undefined,
+	);
+	const plan = createPlanCommand({ runtime });
+	const ci = createCiCommand({ runtime });
+	const deploy = createDeployCommand({ hosting: options.hosting?.supervisor });
 
 	return createHoboCli({
 		commands: {
-			ci: createCiCommand({ runtime }),
+			// `hobo ci up|down|plan` converge the CI project; `hobo ci status`
+			// keeps inspecting the relay connection; every other subcommand is
+			// the existing CI surface.
+			ci: createLifecycleFamilyCommand({
+				family: "ci",
+				resolveProject: resolveCiProject,
+				up,
+				down,
+				plan,
+				status: ci,
+				fallback: ci,
+			}),
+			// `hobo cd up|down|plan|status` converge the CD project; any other
+			// subcommand is `hobo deploy` (freight, pipeline, promote, ...).
+			cd: createLifecycleFamilyCommand({
+				family: "cd",
+				resolveProject: resolveCdProject,
+				up,
+				down,
+				plan,
+				fallback: deploy,
+			}),
 			build: createBuildCommand({ requireRealComponentize: true }),
 			// Local loop: open the Yard, place the Bindle into a Camp, run the Camp's
 			// component host (services__* + bindle env + external-only TCP).
@@ -251,15 +292,8 @@ export function createComposedHoboCli(
 					? { target: options.collectionTarget }
 					: { resolveTarget: resolveProjectCollectionTarget },
 			),
-			plan: createPlanCommand({ runtime }),
-			// Always place through the embedded broker-runtime (prefer wasm-sandbox yards).
-			// Remote --broker / --anonymous paths use discovery + credential presenter.
-			// The cloud mock `createUpCommand` remains for tests that wire it directly.
-			up: createBrokerAwareUpCommand({
-				...(deployRuntime ? { runtime: deployRuntime } : undefined),
-				persistentLocal: !explicitFixture,
-				authMdFetch: options.authMdFetch ?? fetch,
-			}),
+			plan,
+			up,
 			// Identity plane: persist profile + optional default broker association.
 			// The composition root injects the platform fetch — the login/grant
 			// modules never reach for the global, so tests drive them offline.
@@ -279,14 +313,10 @@ export function createComposedHoboCli(
 			// OpenFeature flags + canary/experiment observe (Harness ADR-0083).
 			feature: createFeatureCommand(),
 			// Continuous delivery observe / rollback (attested apply plane).
-			deploy: createDeployCommand({ hosting: options.hosting?.supervisor }),
+			deploy,
 			// CD failure disposition (A2H default / sandboxed self-heal).
 			incident: createIncidentCommand(),
-			down: createLocalDeploymentDownCommand(
-				deployRuntime
-					? createDownCommand({ runtime: deployRuntime })
-					: undefined,
-			),
+			down,
 			doctor: createDoctorCommand(),
 			messaging: createMessagingCommand(),
 			verify: createVerifyCommand(),

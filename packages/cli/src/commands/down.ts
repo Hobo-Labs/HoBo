@@ -1,6 +1,7 @@
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
+import { downWhatIf } from "../cloud/what-if.js";
 import {
 	createYardClient,
 	type ProgressEvent,
@@ -28,7 +29,7 @@ function progressLine(step: ProgressEvent): string {
 export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(deps.runtime),
-		run: async ({ context, emitProgress }) => {
+		run: async ({ context, flags, emitProgress }) => {
 			const { runtime } = deps;
 			if (!runtime) {
 				return stubResult("down");
@@ -49,6 +50,22 @@ export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 				(await loadSession(projectDir)) ??
 				createFixtureSession();
 			const deploymentId = deploymentIdFor(projectDir);
+			// `down --what-if`: what teardown would destroy, destroying nothing.
+			if (flags.whatIf) {
+				const wouldDestroy = await downWhatIf(runtime.store, deploymentId);
+				return {
+					ok: true,
+					status: "ok",
+					code: "HOBO_OK",
+					message: `hobo down --what-if would destroy ${wouldDestroy.length} resources${wouldDestroy.length > 0 ? ` (${wouldDestroy.join(", ")})` : ""}`,
+					data: {
+						command: "down",
+						deploymentId,
+						whatIf: true,
+						wouldDestroy,
+					},
+				};
+			}
 			const yard = createYardClient(runtime);
 			const streamed = runtime.delivery !== undefined;
 			const { result, receipt } = await yard.teardown(bindle, {
