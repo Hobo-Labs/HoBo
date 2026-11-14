@@ -34,24 +34,29 @@ export interface SettingsStore {
 	readonly write: (values: Readonly<Record<string, string>>) => Promise<void>;
 }
 
+function parseSaved(text: string | undefined): Readonly<Record<string, string>> {
+	if (text === undefined || text === "") return {};
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (parsed === null || Array.isArray(parsed) || !(parsed instanceof Object))
+			return {};
+		return Object.fromEntries(
+			Object.entries(parsed).filter(
+				(entry): entry is [string, string] =>
+					Object.prototype.toString.call(entry[1]) === "[object String]",
+			),
+		);
+	} catch {
+		return {};
+	}
+}
+
 /** Settings saved as JSON at `file` (created on first write). */
 export function fileSettingsStore(file: string): SettingsStore {
 	return {
 		async read() {
 			try {
-				const parsed: unknown = JSON.parse(await readFile(file, "utf8"));
-				if (
-					parsed === null ||
-					Array.isArray(parsed) ||
-					!(parsed instanceof Object)
-				)
-					return {};
-				return Object.fromEntries(
-					Object.entries(parsed).filter(
-						(entry): entry is [string, string] =>
-							Object.prototype.toString.call(entry[1]) === "[object String]",
-					),
-				);
+				return parseSaved(await readFile(file, "utf8"));
 			} catch {
 				return {};
 			}
@@ -65,13 +70,28 @@ export function fileSettingsStore(file: string): SettingsStore {
 	};
 }
 
-/** The settings store `hobo <family> up` uses under HOBO_HOME. */
-export function familySettingsStore(
-	family: string,
-	env: Readonly<Record<string, string | undefined>>,
-): SettingsStore {
-	const home = env.HOBO_HOME || path.join(env.HOME || ".", ".hobo");
-	return fileSettingsStore(path.join(home, "ceremonies", `${family}.json`));
+/** One text entry somewhere durable: a secret store entry, for example. */
+export interface SettingsCell {
+	readonly read: () => Promise<string | undefined>;
+	readonly write: (text: string) => Promise<void>;
+}
+
+/**
+ * Settings kept as one JSON document in a cell, typically an entry in the
+ * owner's secret store: they outlive the machine the ceremony ran on, so a
+ * destroyed devbox is set up again by signing in, not by answering again.
+ */
+export function cellSettingsStore(cell: SettingsCell): SettingsStore {
+	return {
+		read: async () => parseSaved(await cell.read()),
+		write: (values) => cell.write(JSON.stringify(values)),
+	};
+}
+
+
+/** Where a run holds the secrets it was given (`TrustedVault`, `@hobo/core`). */
+export interface SecretHolder {
+	reveal(name: string): string | undefined;
 }
 
 export interface ResolvedSettings {
@@ -86,15 +106,18 @@ export function resolveSettings(
 	settings: readonly CeremonySetting[],
 	env: Readonly<Record<string, string | undefined>>,
 	saved: Readonly<Record<string, string>>,
+	vault?: SecretHolder,
 ): ResolvedSettings {
 	const values: Record<string, string> = {};
 	const missing: ConfigField[] = [];
 	for (const setting of settings) {
 		const name = setting.field.name;
+		// A secret comes from the run's trusted vault only: never from the
+		// environment, never from saved settings.
 		const value =
-			env[name] ||
-			(setting.field.kind === "secret" ? undefined : saved[name]) ||
-			setting.fallback;
+			setting.field.kind === "secret"
+				? vault?.reveal(name)
+				: env[name] || saved[name] || setting.fallback;
 		if (value) values[name] = value;
 		else if (setting.field.required) missing.push(setting.field);
 	}
