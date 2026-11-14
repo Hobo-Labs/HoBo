@@ -23,7 +23,8 @@
 			],
 			"links": [],
 			"env": {},
-			"bindings": {}
+			"bindings": {},
+			"bind": ["api"]
 		}
 	}
 }
