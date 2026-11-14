@@ -9,11 +9,9 @@
 // credential's own project, and the deploy identity, which trusts GitHub
 // Actions on `main` through OIDC Auth (no secret zero: `githubActionsJwtSource`
 // asks GitHub for the job's token, which needs `permissions: id-token: write`).
-// It reads `VERCEL_TOKEN` and hands it to the deploy step as a masked
-// environment variable: `::add-mask::` is written to the job log first, then
-// the value goes into the `$GITHUB_ENV` file, which GitHub reads for the
-// following steps and never prints. Nothing here logs, returns or throws the
-// value.
+// It reads `VERCEL_TOKEN` for the deploy command, which uses it in-process.
+// The optional export helper masks a token before writing it to `$GITHUB_ENV`.
+// Neither path logs the credential or includes it in an error.
 //
 // HONEST SCOPE: exercised against fakes of GitHub's token endpoint and of
 // Infisical only. No request has been made from this repository to either.

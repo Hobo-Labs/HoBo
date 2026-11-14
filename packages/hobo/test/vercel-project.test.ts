@@ -1503,6 +1503,22 @@ describe("a transport failure (scripted transport, no network)", () => {
 // `deleteDeployment`) follow the client's rules: a request with nothing to send
 // carries no body (`fetch` refuses a GET with one), the team id is trimmed, and
 // a transport that throws is a redacted VercelTransportError.
+describe("production promotion", () => {
+	it("does not promote when the project lookup lacks a valid project ID", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [reply(200, { id: "not-a-project-id" })],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(
+			client.promoteDeployment("hobo-ci", "dpl_123"),
+		).rejects.toThrow("project read returned an invalid identity");
+		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
+	});
+});
+
 describe("createVercelClient's deployment read and delete (scripted transport, no network)", () => {
 	const READ = "GET /v13/deployments/dpl_1";
 	const DELETE = "DELETE /v13/deployments/dpl_1";

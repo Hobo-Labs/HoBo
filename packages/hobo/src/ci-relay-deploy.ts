@@ -38,10 +38,9 @@
 //
 // The target is chosen HERE, where the deploy is run, not in the Bindle; and
 // it is PREVIEW unless `--target production` says otherwise. Production needs
-// `--sha`: it takes exactly the commit preview verified. The deploy workflow
-// on `main` (`.github/workflows/relay-deploy.yml`) holds no Vercel token and
-// runs `--adopt` instead (`ci-relay-adopt.ts`): the deployment Vercel's Git
-// integration made, observed, recorded and promoted preview then production.
+// `--sha`: it takes exactly the commit preview verified. The workflow obtains
+// its Vercel credential through the separate Infisical deploy project using
+// GitHub OIDC, and drives preview then production through CD.
 //
 // `--provision` first attaches the chosen Marketplace bindings (the cache)
 // with the Vercel CLI, idempotently (`ci-relay-provision.ts`).
@@ -67,6 +66,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { create, toJson } from "@bufbuild/protobuf";
+import { githubActionsJwtSource } from "@hobo/adapter-infisical";
 import {
 	assertNoBindleProviderSelection,
 	type BindleDefinition,
@@ -96,6 +96,8 @@ import {
 	type RelayRealizationFailure,
 	relayCampId,
 } from "./ci-relay-delivery.js";
+import { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
+import { protectedPreviewProbe } from "./ci-relay-preview-probe.js";
 import {
 	type AttachmentResult,
 	describeAttachments,
@@ -176,10 +178,12 @@ export interface CiRelayDeployInput {
 	readonly values: Readonly<
 		Record<string, string | boolean | string[] | undefined>
 	>;
-	// Read for `VERCEL_TOKEN` (a real run only) and `VERCEL_TEAM_ID`.
+	// Local VERCEL_TOKEN or GitHub OIDC for Infisical; VERCEL_TEAM_ID if needed.
 	readonly env: NodeJS.ProcessEnv;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
+	/** Fetch for the GitHub OIDC and Infisical credential exchange. */
+	readonly credentialFetch?: typeof fetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
 	// executable `HOBO_VERCEL_CLI` names, or `vercel` on the PATH.
 	readonly runVercelCli?: VercelCliRunner;
@@ -459,6 +463,17 @@ export async function runCiRelayDeploy(
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
+	const stagedProduction =
+		target === "production" && env.HOBO_CI_RELAY_STAGED_PRODUCTION === "true";
+	if (stagedProduction && values.wait !== true)
+		return usage("A staged production deployment requires --wait.");
+	if (
+		stagedProduction &&
+		relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL) === undefined
+	)
+		return usage(
+			"A staged production deployment requires HOBO_CI_RELAY_PUBLIC_URL to name the public HTTPS origin.",
+		);
 	// The secret store chosen when the relay was first deployed
 	// (`hobo ci secret-store provision`): its committed coordinates fill the
 	// config-service binding's inputs and name the team, so no repository
@@ -595,6 +610,7 @@ export async function runCiRelayDeploy(
 		projectName: project,
 		target,
 		createMissingProject: createProject,
+		...(stagedProduction ? { stageProduction: true } : undefined),
 		configuration: Object.fromEntries(configuration),
 		gitArtifact: {
 			org,
@@ -693,20 +709,51 @@ export async function runCiRelayDeploy(
 		);
 	const wait = values.wait === true;
 	const origin = RELAY_VERIFY_ORIGIN[target];
+	const protectedPreview =
+		target === "preview" &&
+		wait &&
+		env.HOBO_CI_RELAY_PREVIEW_PROBE_OIDC === "true";
+	if (protectedPreview && sha === undefined)
+		return usage("OIDC preview verification needs --sha <commit>.");
 	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))
 		return refused(
 			"HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
 			`--wait verifies ${target} with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
 		);
 
-	const token = env.VERCEL_TOKEN;
+	// An Actions job must use the bound store even if a runner happens to have
+	// an ambient Vercel token; local commands can still use their environment.
+	let token = env.GITHUB_ACTIONS === "true" ? undefined : env.VERCEL_TOKEN;
+	if (
+		storeBinding?.deployProjectId &&
+		env.ACTIONS_ID_TOKEN_REQUEST_URL &&
+		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+	) {
+		try {
+			token = await readRelayDeployToken({
+				binding: storeBinding,
+				env,
+				...(input.credentialFetch !== undefined
+					? { fetch: input.credentialFetch }
+					: undefined),
+			});
+		} catch {
+			return {
+				ok: false,
+				status: "authentication-required",
+				code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+				message:
+					"Could not retrieve the Vercel deployment credential from the configured Infisical deploy project using GitHub OIDC.",
+			};
+		}
+	}
 	if (token === undefined || token === "")
 		return {
 			ok: false,
 			status: "authentication-required",
 			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
 			message:
-				"Set VERCEL_TOKEN to a Vercel access token for the project's scope, or pass --dry-run to see what would be sent. The token is read from the environment only and is never printed.",
+				"Configure a separate Infisical deploy project and GitHub OIDC identity, set VERCEL_TOKEN for a local run, or pass --dry-run to see what would be sent. The token is never printed.",
 		};
 	// Whatever a result says, it does not say the token: a Vercel answer is
 	// redacted where it is read, and this is the last line before the terminal.
@@ -720,6 +767,7 @@ export async function runCiRelayDeploy(
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 		...(teamId !== undefined && teamId !== "" ? { teamId } : undefined),
 	});
+	let deploymentUrl: string | undefined;
 	// The conductor's Vercel side: the git deployment of the commit the
 	// Freight pins, and its readiness. Failures keep the codes and messages
 	// this command always returned.
@@ -779,6 +827,7 @@ export async function runCiRelayDeploy(
 					outputs = await provider.apply(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
+				if (protectedPreview || stagedProduction) deploymentUrl = outputs.url;
 				return {
 					ok: true,
 					outputs: Object.fromEntries(
@@ -818,22 +867,37 @@ export async function runCiRelayDeploy(
 		return usage(
 			`${definition.name} did not compile to a declaration, so there is nothing to record as Freight.`,
 		);
-	// Production is verified at HOBO_CI_RELAY_URL, the production domain: its
-	// /healthz must name the commit just deployed, so an origin still serving
-	// an older deployment fails verification instead of qualifying this one.
-	const productionOrigin =
-		target === "production" && wait && sha !== undefined
-			? relayOrigin(env.HOBO_CI_RELAY_URL)
-			: undefined;
+	// A named origin must serve the pinned commit in either environment: an
+	// older preview must never qualify freight for a production deployment.
+	const verifyOrigin =
+		wait && sha !== undefined ? relayOrigin(env[origin]) : undefined;
+	const baseProbe =
+		input.probe ?? createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
+	const previewProbe =
+		(protectedPreview || stagedProduction) && verifyOrigin !== undefined
+			? protectedPreviewProbe({
+					base: baseProbe,
+					placeholderOrigin: verifyOrigin,
+					deploymentUrl: () => deploymentUrl,
+					...(stagedProduction
+						? { paths: ["/healthz", "/readyz"] as const }
+						: undefined),
+					jwt: githubActionsJwtSource({
+						env,
+						...(input.credentialFetch !== undefined
+							? { fetch: input.credentialFetch }
+							: undefined),
+					}),
+				})
+			: baseProbe;
 	const verify =
-		productionOrigin !== undefined && sha !== undefined
+		verifyOrigin !== undefined && sha !== undefined
 			? {
-					origin: productionOrigin,
-					probe: commitCheckingProbe(
-						input.probe ??
-							createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
-						{ origin: productionOrigin, commit: sha.toLowerCase() },
-					),
+					origin: verifyOrigin,
+					probe: commitCheckingProbe(previewProbe, {
+						origin: verifyOrigin,
+						commit: sha.toLowerCase(),
+					}),
 				}
 			: undefined;
 	const delivered = await deliverRelay({
@@ -875,6 +939,65 @@ export async function runCiRelayDeploy(
 			}).map(([key, value]) => [key, withoutToken(value)]),
 		);
 		const promoted = delivered.report.state === "PROMOTED";
+		if (stagedProduction) {
+			const liveOrigin = relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL);
+			if (!promoted || !safe.deploymentId || !liveOrigin || !sha)
+				return refused(
+					"HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+					"The staged production deployment was not qualified; production traffic was not changed.",
+				);
+			try {
+				await client.promoteDeployment(project, safe.deploymentId);
+			} catch (error) {
+				const failed = realizationFailure(
+					error instanceof Error ? error : new Error("promotion failed"),
+					withoutToken,
+				);
+				return {
+					ok: false,
+					code: failed.code,
+					message: failed.message,
+					data: { ...deliveryData },
+				};
+			}
+			const live = commitCheckingProbe(baseProbe, {
+				origin: liveOrigin,
+				commit: sha.toLowerCase(),
+			});
+			let liveReady = false;
+			for (let attempt = 0; attempt < 24; attempt++) {
+				try {
+					const request = (path: string) =>
+						live.transport({
+							method: "GET",
+							url: `${liveOrigin}${path}`,
+							headers: {},
+							timeoutMs: 10_000,
+							maxResponseBytes: 65_536,
+						});
+					const health = await request("/healthz");
+					const ready = await request("/readyz");
+					if (health.status === 200 && ready.status === 200) {
+						liveReady = true;
+						break;
+					}
+				} catch {
+					/* No answer is not a passing check. */
+				}
+				if (attempt < 23)
+					await (
+						input.sleep ??
+						((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+					)(5_000);
+			}
+			if (!liveReady)
+				return {
+					ok: false,
+					code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.`,
+					data: { ...deliveryData },
+				};
+		}
 		return {
 			code: "HOBO_CI_DEPLOYED",
 			message: [
@@ -938,13 +1061,17 @@ export async function runCiRelayDeploy(
 			},
 		};
 	}
+	const findings = verify?.probe.findings();
 	const why =
-		verify !== undefined && sha !== undefined
-			? relayVerifyFailure(
-					verify.origin,
-					sha.toLowerCase(),
-					verify.probe.findings(),
-				)
+		verify !== undefined && sha !== undefined && findings !== undefined
+			? target === "preview" && findings.servedCommit !== undefined
+				? {
+						code: "HOBO_CI_DEPLOY_COMMIT_MISMATCH",
+						reason: `${verify.origin}/healthz did not name the preview commit ${sha.toLowerCase()}.`,
+						remediation:
+							"Point the preview verification origin at the deployment of this commit and retry.",
+					}
+				: relayVerifyFailure(verify.origin, sha.toLowerCase(), findings)
 			: undefined;
 	return {
 		ok: false,

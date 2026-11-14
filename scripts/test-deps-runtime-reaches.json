@@ -28,6 +28,11 @@
 			"from": "packages/hobo/test/persistent-local-deployment.test.ts",
 			"needs": ["@hobo/bindles#build"],
 			"why": "loads ../../bindles/dist/index.js by URL"
+		},
+		{
+			"from": "packages/hobo/test/ci-relay-deploy.test.ts",
+			"needs": ["@hobo/ci-vercel#build", "@hobo/contracts#build"],
+			"why": "loads the relay's bindle and delivery declarations by URL and exercises the Vercel deployment pact"
 		}
 	]
 }

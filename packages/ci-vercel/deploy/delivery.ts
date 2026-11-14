@@ -31,9 +31,8 @@
  * The probes read an origin, not the deployment just realized; what ties the
  * two together is `/healthz`, which names the commit the deployment was built
  * from (`src/entry.ts`, `VERCEL_GIT_COMMIT_SHA`). `hobo ci deploy` requires
- * production's `/healthz` to name the Freight's commit, so a stale deployment
- * behind the production origin cannot qualify a newer commit. Known gap: the
- * by-hand preview probe does not check the commit. `hobo ci deploy --adopt`
+ * each pinned deployment's `/healthz` to name the Freight's commit, so a stale
+ * origin cannot qualify a newer commit. `hobo ci deploy --adopt`
  * (the token-free mode the deploy workflow runs) verifies preview by the
  * deployment's GitHub record instead, and production at `HOBO_CI_RELAY_URL`
  * or, unset, the Yard's `productionOrigin` (`yard.ts`); it never probes the
