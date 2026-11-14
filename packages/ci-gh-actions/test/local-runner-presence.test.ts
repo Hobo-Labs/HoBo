@@ -79,6 +79,7 @@ describe("local runner presence for the runner-host agent", () => {
 		expect((await jobs.runners())[0]?.presence.busy).toBe(true);
 
 		reporter.observer.ended("delivered");
+		await reporter.settled();
 		await reporter.refresh();
 		expect(await jobs.runners()).toEqual([]);
 		expect(
@@ -101,6 +102,12 @@ describe("local runner presence for the runner-host agent", () => {
 		expect(await reporter.presence()).toMatchObject({
 			runners: [{ name: "r", status: "offline", busy: false }],
 		});
+		// The observer's own refresh writes in the background; wait for it so
+		// the presence file is complete before the state directory is removed.
+		await reporter.settled();
+		expect(
+			JSON.parse(readFileSync(files.runnerPresence, "utf8")).runners,
+		).toMatchObject([{ name: "r", status: "offline", busy: false }]);
 	});
 
 	it("asks GitHub about presence about once in 45 s while checking admission every 5 s", async () => {
