@@ -287,27 +287,47 @@ export function createDurableLifecycleGate(
 		}
 		return state;
 	}
+	/** Acquire budgets. Supervisor transitions fail fast (~800ms) so the caller
+	 * sees contention; finishing or retiring a participant must not leak it, so
+	 * those back off exponentially (10ms doubling to 500ms) for ~60s. Both throw
+	 * once exhausted and callers retry (finish() is idempotent; check status()
+	 * before re-retiring a participant). */
+	const FAST_ACQUIRE = { attempts: 80, maxDelayMs: 10 } as const;
+	const PATIENT_ACQUIRE = { attempts: 130, maxDelayMs: 500 } as const;
 	async function lock<T>(
 		work: (state: State, lease: AsyncActorLease) => Promise<T>,
+		budget: {
+			readonly attempts: number;
+			readonly maxDelayMs: number;
+		} = FAST_ACQUIRE,
 	): Promise<T> {
 		let lease: AsyncActorLease | undefined;
-		for (let i = 0; i < 80 && !lease; i++) {
+		for (let i = 0, delay = 10; i < budget.attempts && !lease; i++) {
 			try {
 				lease = await options.actorHost.acquire(streamId, {
 					holderId: `lifecycle-${randomUUID()}`,
 				});
 			} catch {
-				if (i === 79) fail();
-				await new Promise((resolve) => setTimeout(resolve, 10));
+				if (i === budget.attempts - 1) fail();
+				await new Promise((resolve) => setTimeout(resolve, delay));
+				delay = Math.min(delay * 2, budget.maxDelayMs);
 			}
 		}
 		if (!lease || lease.key !== streamId || lease.fenceToken < 1n) fail();
+		let result: T;
 		try {
 			await lease.revalidate();
-			return await work(await read(), lease);
-		} finally {
-			await lease.release();
+			result = await work(await read(), lease);
+		} catch (error) {
+			await lease.release().catch(() => undefined);
+			throw error;
 		}
+		// The work is committed. A lost release only delays the next holder until
+		// the lease expires; it must never turn a committed result into a failure
+		// (a begin() caller would lose its participant handle and seal() would
+		// wait forever).
+		await lease.release().catch(() => undefined);
+		return result;
 	}
 	async function append(
 		state: State,
@@ -424,7 +444,7 @@ export function createDurableLifecycleGate(
 						if (!state.participants.has(id)) return;
 						if (state.participants.get(id) !== kind) fail();
 						await append(state, lease, "lifecycle.ParticipantFinished", { id });
-					});
+					}, PATIENT_ACQUIRE);
 				},
 			});
 		},
@@ -556,7 +576,7 @@ export function createDurableLifecycleGate(
 					},
 					() => authorize("retire-participant", operationId, state.fenceId),
 				);
-			});
+			}, PATIENT_ACQUIRE);
 		},
 	});
 }

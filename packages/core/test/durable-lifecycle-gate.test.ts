@@ -60,7 +60,8 @@ function fixture() {
 		authorized = true,
 		drained = true,
 		terminated = false,
-		now = 1000;
+		now = 1000,
+		releaseFailures = 0;
 	let onAuthorize: ((action: string) => void) | undefined;
 	const actorHost = {
 		async acquire(key: string, input: { holderId: string }) {
@@ -76,6 +77,11 @@ function fixture() {
 					if (leases.get(key) !== token) throw new Error("stale lease");
 				},
 				async release() {
+					// A lost release leaves the lease held until it expires.
+					if (releaseFailures > 0) {
+						releaseFailures--;
+						throw new Error("release lost");
+					}
 					if (leases.get(key) === token) leases.delete(key);
 				},
 			};
@@ -144,6 +150,25 @@ function fixture() {
 		},
 		onAuthorize(value: ((action: string) => void) | undefined) {
 			onAuthorize = value;
+		},
+		failNextRelease() {
+			releaseFailures++;
+		},
+		/** Simulates lease expiry at the shared authority. */
+		expireLease(key: string) {
+			leases.delete(key);
+		},
+		/** Another holder keeps the lease for `ms` before releasing it. */
+		holdLease(key: string, ms: number) {
+			if (leases.has(key)) throw new Error("busy");
+			const token = ++fence;
+			leases.set(key, token);
+			return new Promise<void>((resolve) =>
+				setTimeout(() => {
+					if (leases.get(key) === token) leases.delete(key);
+					resolve();
+				}, ms),
+			);
 		},
 		close() {},
 	};
@@ -297,6 +322,37 @@ describe("durable application lifecycle gate", () => {
 			f.close();
 		}
 	});
+	it("keeps a committed participant when the lease release fails", async () => {
+		const f = fixture();
+		try {
+			await f.gate.initialize("deploy-1");
+			f.failNextRelease();
+			const participant = await f.gate.begin("worker");
+			expect((await f.gate.status()).participants).toEqual([
+				{ id: participant.id, kind: "worker" },
+			]);
+			f.expireLease(f.gate.streamId);
+			const fenceId = await f.gate.drain("stop-1");
+			expect(await f.gate.seal("stop-1", fenceId)).toBe("waiting");
+			await participant.finish();
+			expect(await f.gate.seal("stop-1", fenceId)).toBe("sealed");
+		} finally {
+			f.close();
+		}
+	});
+	it("finishes a participant while another holder keeps the lease past the default acquire budget", async () => {
+		const f = fixture();
+		try {
+			await f.gate.initialize("deploy-1");
+			const participant = await f.gate.begin("ingress");
+			const held = f.holdLease(f.gate.streamId, 1500);
+			await participant.finish();
+			await held;
+			expect((await f.gate.status()).participants).toHaveLength(0);
+		} finally {
+			f.close();
+		}
+	}, 20_000);
 	it("bounds replay with a checkpoint and rejects an overwritten snapshot", async () => {
 		const f = fixture();
 		try {
