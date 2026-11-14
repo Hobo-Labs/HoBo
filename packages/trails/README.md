@@ -9,6 +9,12 @@ moves over junctions.
 scoped Yard endpoints. It rechecks authorization at each phase, uses the
 data engines' fencing and a compare-and-set routing authority for cutover, and
 holds retirement until the supplied soak decision permits finalization.
+Reauthorization gates only calls that start a forward effect. Releasing a
+fence, stopping a capture or transfer, finishing a journaled rollback, and the
+facts that record a hold, failure or rollback never wait on it. If
+authorization lapses after the source is fenced and before the cutover is
+decided, the run journals a compensating hold and releases the source fence,
+so the source stays writable instead of waiting for a later authorized run.
 
 ## Quick start
 

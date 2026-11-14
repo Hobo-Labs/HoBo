@@ -4,14 +4,17 @@ import {
 	type CopyMigrationOptions,
 	canonicalEncode,
 	type EngineBinding,
+	fenceTokenDigest,
 	foldMigration,
 	getPattern,
 	isJsonString,
+	MIGRATION_EVENTS,
 	type MigrationJournal,
 	type PolicyVerdict,
 	parseDatasetSchema,
 	runOfflineCopy,
 	runSnapshotAndTail,
+	type WriteFencePort,
 } from "@hobo/data-core";
 import type {
 	DataMigrationJournal,
@@ -161,15 +164,42 @@ function endpointIdentity(endpoint: HandoverEndpoint): readonly string[] {
 	];
 }
 
-/* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-object-parameters, anti-slop/no-reflect-get, anti-slop/no-reflect-apply, anti-slop/no-runtime-typeof -- The SDK engine has multiple independently owned dynamic ports. This proxy forwards every method with its original receiver and reauthorizes each dispatch; an empty target also respects frozen-port Proxy invariants. Data-core validates the engine contract. */
+/**
+ * Engine calls that only stop, release or undo, never start a forward effect.
+ * They run without reauthorization: a lapsed authorization must not keep a
+ * store fenced, a subscription pinned or a transfer delivering.
+ */
+const UNWINDING_CALLS: ReadonlySet<string> = new Set([
+	"close",
+	"fence.release",
+	"capture.stop",
+	"nativeTransfer.pause",
+	"nativeTransfer.stop",
+	"schema.restore",
+]);
+
+/**
+ * Facts that record a stop, a compensation or a rollback, or a raise that
+ * already happened. Appending one starts nothing, so it is never gated.
+ */
+const UNWINDING_FACTS: ReadonlySet<string> = new Set([
+	MIGRATION_EVENTS.Held,
+	MIGRATION_EVENTS.Failed,
+	MIGRATION_EVENTS.FenceRaised,
+	MIGRATION_EVENTS.RollbackDecided,
+	MIGRATION_EVENTS.RolledBack,
+]);
+
+/* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-object-parameters, anti-slop/no-reflect-get, anti-slop/no-reflect-apply, anti-slop/no-runtime-typeof -- The SDK engine has multiple independently owned dynamic ports. This proxy forwards every method with its original receiver and reauthorizes each forward dispatch; an empty target also respects frozen-port Proxy invariants. Data-core validates the engine contract. */
 function guardedEngine(
 	engine: HandoverEngine,
-	revalidate: () => Promise<void>,
+	revalidate: (call: string) => Promise<void>,
 ): EngineBinding {
-	// All engine calls, including native operations, revalidate immediately
-	// before dispatch. An already-dispatched request still needs the engine's
-	// own fence and the router's compare-and-set to reject a stale writer.
-	const wrap = (value: object): object =>
+	// Every engine call, including native operations, passes `revalidate`
+	// immediately before dispatch, which reauthorizes forward calls only. An
+	// already-dispatched request still needs the engine's own fence and the
+	// router's compare-and-set to reject a stale writer.
+	const wrap = (value: object, port: string): object =>
 		new Proxy(
 			{},
 			{
@@ -177,7 +207,7 @@ function guardedEngine(
 					const member = Reflect.get(value, key, value);
 					if (typeof member !== "function") return member;
 					return async (...args: never[]) => {
-						await revalidate();
+						await revalidate(`${port}.${String(key)}`);
 						return Reflect.apply(member, value, args);
 					};
 				},
@@ -191,13 +221,13 @@ function guardedEngine(
 				if (key === "declaration") return member;
 				if (typeof member === "function")
 					return async (...args: never[]) => {
-						await revalidate();
+						await revalidate(String(key));
 						return Reflect.apply(member, engine, args);
 					};
 				return member !== null &&
 					typeof member === "object" &&
 					!Array.isArray(member)
-					? wrap(member)
+					? wrap(member, String(key))
 					: member;
 			},
 		},
@@ -343,6 +373,78 @@ export async function inspectDataHandover(input: DataHandoverInput): Promise<
 	return { migrationId, status: "running" };
 }
 
+/**
+ * Authorization lapsed while the source was fenced for a cutover that was
+ * never decided. Data-core compensates only a failed verification, so a lapse
+ * would leave the source refusing writes until a later authorized run. Give
+ * authority back the way data-core does: journal the compensating hold, as a
+ * compare-and-set, then release the fence this migration proves it raised.
+ */
+async function releaseLapsedFence(
+	input: DataHandoverInput,
+	migrationId: string,
+	pattern: "snapshot-and-tail" | "offline-copy",
+	scope: Readonly<{ dataset: string; tenant: string }>,
+): Promise<void> {
+	// SAFETY: the SDK binding's fence port is data-core's WriteFencePort.
+	const fence = input.source.engine.fence as WriteFencePort | undefined;
+	if (fence === undefined) return;
+	const facts = await input.journal.load(migrationId);
+	// SAFETY: the Trails journal is the same JSON fact structure used by data-core.
+	const state = foldMigration(
+		migrationId,
+		facts as Parameters<typeof foldMigration>[1],
+	);
+	if (
+		state.cutOver ||
+		state.rollbackDecided ||
+		state.completedPhases.includes("fence-and-flip")
+	)
+		return;
+	let raised = -1;
+	facts.forEach((fact, index) => {
+		if (
+			fact.type === MIGRATION_EVENTS.FenceRaised &&
+			fact.data.side === "source" &&
+			fact.data.phase === "fence-and-flip"
+		)
+			raised = index;
+	});
+	if (raised < 0 || !(await fence.status(scope)).fenced) return;
+	// Raising a raised fence answers its token and changes nothing.
+	const { fenceToken } = await fence.raise({
+		scope,
+		reason: `migration ${migrationId}`,
+	});
+	// A fence this migration cannot prove it raised is left as it stands.
+	if (fenceTokenDigest(fenceToken) !== facts[raised]?.data.fenceTokenDigest)
+		return;
+	if (
+		!facts
+			.slice(raised + 1)
+			.some(
+				(fact) =>
+					fact.type === MIGRATION_EVENTS.Held && fact.data.compensated === true,
+			)
+	)
+		await input.journal.append(
+			migrationId,
+			{
+				type: MIGRATION_EVENTS.Held,
+				data: {
+					migrationId,
+					phase: pattern === "offline-copy" ? "prepare" : "shift-reads",
+					reason:
+						"authorization lapsed under the fence; the source remains the authority",
+					compensated: true,
+					heldAt: input.clock(),
+				},
+			},
+			facts.length,
+		);
+	await fence.release({ scope, fenceToken });
+}
+
 /** Execute or resume the same scoped migration; a different placement gets a different journal. */
 export async function executeDataHandover(
 	input: DataHandoverInput,
@@ -350,26 +452,42 @@ export async function executeDataHandover(
 	const { source, target, schema, scope, pattern, migrationId } =
 		prepared(input);
 	let phase: HandoverPhase = "plan";
+	// A journaled rollback binds (data-core never puts it to policy again):
+	// what is left of it hands authority back and releases fences, so none of
+	// it waits on reauthorization.
+	let unwinding = false;
+	let lapsed = false;
 	const revalidate = async () => {
 		if (
 			input.source.engine.declaration.engine !== source[4] ||
 			input.target.engine.declaration.engine !== target[4]
 		)
 			throw new Error("data handover engine identity changed");
-		await input.revalidate(phase);
+		try {
+			await input.revalidate(phase);
+		} catch (error) {
+			lapsed = true;
+			throw error;
+		}
+	};
+	const forward = async (call: string) => {
+		if (!unwinding && !UNWINDING_CALLS.has(call)) await revalidate();
 	};
 	const journal: MigrationJournal = {
 		async load(id) {
 			await revalidate();
 			// SAFETY: the Trails journal is the same compare-and-set fact port;
 			// committed facts do not contain undefined JSON values.
-			return (await input.journal.load(id)) as ReturnType<
-				MigrationJournal["load"]
+			const facts = (await input.journal.load(id)) as Awaited<
+				ReturnType<MigrationJournal["load"]>
 			>;
+			if (foldMigration(id, facts).rollbackDecided) unwinding = true;
+			return facts;
 		},
 		async append(id, fact, expectedCount) {
-			await revalidate();
+			if (!unwinding && !UNWINDING_FACTS.has(fact.type)) await revalidate();
 			await input.journal.append(id, fact, expectedCount);
+			if (fact.type === MIGRATION_EVENTS.RollbackDecided) unwinding = true;
 		},
 	};
 	const options: CopyMigrationOptions = {
@@ -390,8 +508,8 @@ export async function executeDataHandover(
 				? undefined
 				: { pauseAfter: input.pauseAfter }),
 		},
-		source: guardedEngine(input.source.engine, revalidate),
-		target: guardedEngine(input.target.engine, revalidate),
+		source: guardedEngine(input.source.engine, forward),
+		target: guardedEngine(input.target.engine, forward),
 		schema,
 		scope,
 		plan: {
@@ -400,7 +518,8 @@ export async function executeDataHandover(
 			dataset: scope.dataset,
 		},
 		async flipAuthority(flip) {
-			await revalidate();
+			// Handing authority back to the source only ever finishes a rollback.
+			if (flip.direction !== "to-source") await forward("flipAuthority");
 			await input.flipAuthority(flip);
 		},
 		async soakDecision() {
@@ -408,10 +527,24 @@ export async function executeDataHandover(
 			return input.soakDecision();
 		},
 	};
-	const result =
-		pattern === "offline-copy"
-			? await runOfflineCopy(options)
-			: await runSnapshotAndTail(options);
+	let result: Awaited<ReturnType<typeof runSnapshotAndTail>>;
+	try {
+		result =
+			pattern === "offline-copy"
+				? await runOfflineCopy(options)
+				: await runSnapshotAndTail(options);
+	} catch (error) {
+		if (!lapsed) throw error;
+		try {
+			await releaseLapsedFence(input, migrationId, pattern, scope);
+		} catch (compensation) {
+			throw new AggregateError(
+				[error, compensation],
+				"data handover authorization lapsed and its fence compensation did not complete",
+			);
+		}
+		throw error;
+	}
 	return Object.freeze({
 		migrationId,
 		status: result.status,
