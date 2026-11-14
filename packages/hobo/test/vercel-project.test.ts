@@ -18,6 +18,7 @@ import {
 	createVercelDeployProvider,
 	type VercelDeployProviderOptions,
 } from "../src/vercel-deploy-provider.js";
+import { slow } from "./support/slow.js";
 
 // The Vercel deploy path deploys first. Create Deployment names its project, and
 // on an account with no project by that name Vercel refuses it:
@@ -759,7 +760,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 	});
 
 	it("stays linear on a long hostile body: 1 MB of breaks and near-misses", {
-		timeout: 60_000,
+		timeout: slow(60_000),
 	}, async () => {
 		// Every character of the token but the last, each followed by a run of
 		// whitespace, control and format characters, over and over: each try
@@ -842,7 +843,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		],
 	])(
 		"stays linear on a 1 MB body of %s",
-		{ timeout: 60_000 },
+		{ timeout: slow(60_000) },
 		async (_case, unit) => {
 			const hostileOf = (length: number) =>
 				unit.repeat(Math.ceil(length / unit.length));
@@ -926,7 +927,7 @@ describe("a refusal's text (scripted transport, no network)", () => {
 		],
 	])(
 		"stays linear on a 1 MB JSON body of %s",
-		{ timeout: 60_000 },
+		{ timeout: slow(60_000) },
 		async (_case, make) => {
 			const body = make(1_000_000);
 			const error = await refusedBy(() => plainReply(404, body));
@@ -1170,17 +1171,23 @@ describe("a refusal's text (scripted transport, no network)", () => {
 			"runs of zeros in references",
 			`&#x${"0 ".repeat(2048)}&#${"0".repeat(2048)}`,
 		],
-	])("stays linear on 1 MB of %s", { timeout: 60_000 }, async (_case, unit) => {
-		const hostileOf = (length: number) =>
-			unit.repeat(Math.ceil(length / unit.length));
-		const hostile = hostileOf(1_000_000);
-		const raw = await refusedBy(() => plainReply(404, hostile));
-		const inJson = await refusedBy(() => plainReply(404, inErrorJson(hostile)));
+	])(
+		"stays linear on 1 MB of %s",
+		{ timeout: slow(60_000) },
+		async (_case, unit) => {
+			const hostileOf = (length: number) =>
+				unit.repeat(Math.ceil(length / unit.length));
+			const hostile = hostileOf(1_000_000);
+			const raw = await refusedBy(() => plainReply(404, hostile));
+			const inJson = await refusedBy(() =>
+				plainReply(404, inErrorJson(hostile)),
+			);
 
-		expect(raw.message.length).toBeLessThanOrEqual(501);
-		expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
-		await expectLinearRefusal(hostileOf);
-	});
+			expect(raw.message.length).toBeLessThanOrEqual(501);
+			expect(inJson.apiMessage?.length).toBeLessThanOrEqual(501);
+			await expectLinearRefusal(hostileOf);
+		},
+	);
 
 	it.each([
 		["valid", "}"],
