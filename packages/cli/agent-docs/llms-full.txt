@@ -95,10 +95,17 @@ Product: hobo
 
 ### ci
 - Role: delivery
-- Summary: Connect a repository and inspect CI runs (connect/list/inspect)
+- Summary: Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project
 - CLI: `hobo ci`
 - MCP tool: `ci`
 - Capability: { port: hobo:mcp, resource: tool:ci, verb: call }
+
+### cd
+- Role: delivery
+- Summary: Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy
+- CLI: `hobo cd`
+- MCP tool: `cd`
+- Capability: { port: hobo:mcp, resource: tool:cd, verb: call }
 
 ### incident
 - Role: delivery

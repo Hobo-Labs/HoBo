@@ -138,12 +138,24 @@
     {
       "name": "ci",
       "role": "delivery",
-      "summary": "Connect a repository and inspect CI runs (connect/list/inspect)",
+      "summary": "Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project",
       "cli": "hobo ci",
       "mcpTool": "ci",
       "capability": {
         "port": "hobo:mcp",
         "resource": "tool:ci",
+        "verb": "call"
+      }
+    },
+    {
+      "name": "cd",
+      "role": "delivery",
+      "summary": "Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy",
+      "cli": "hobo cd",
+      "mcpTool": "cd",
+      "capability": {
+        "port": "hobo:mcp",
+        "resource": "tool:cd",
         "verb": "call"
       }
     },
