@@ -89,6 +89,20 @@ export {
 	type DevServeResult,
 } from "./commands/dev.js";
 export { createDownCommand, type DownCommandDeps } from "./commands/down.js";
+export {
+	createLifecycleFamilyCommand,
+	isLifecycleAction,
+	LIFECYCLE_ACTIONS,
+	type LifecycleAction,
+	type LifecycleFamilySpec,
+	type LifecycleFlags,
+	type PreparedStep,
+	type PrepareInput,
+	type PrepareOutcome,
+	type ProjectResolution,
+	parseLifecycleArgs,
+	resolveFamilyProject,
+} from "./commands/lifecycle-family.js";
 export { createLoginCommand, type LoginCommandDeps } from "./commands/login.js";
 export {
 	scaffoldHoboProject,

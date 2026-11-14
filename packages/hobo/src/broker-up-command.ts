@@ -151,10 +151,64 @@ export function createBrokerAwareUpCommand(
 							"budgeted hosting requires a configured authoritative hosting runtime; placement and local fallback cannot waive financial admission",
 						data: { command: "up", budgetRequired: true },
 					};
+				const unsupportedMode = () => ({
+					ok: false,
+					status: "rejected",
+					code: "HOBO_DEPLOYMENT_MODE_UNSUPPORTED",
+					message: "This broker placement does not support --mode.",
+					remediation: [
+						"Omit --mode, or use a Yard with desired-state delivery.",
+					],
+					data: { command: "up" },
+				});
+				if (flags.mode && target.kind !== "local") return unsupportedMode();
 
 				// Local zero-config: prefer event-sourced Yard lane when runtime is wired
 				// (preserves claim/inspect). Fall back to broker-runtime placement+serve
 				// when a bindle() source is present without a cloud runtime.
+				// `up --what-if`: the change set, never applied. The Yard lane
+				// computes it from the durable log; the local lane only names what
+				// it would place; a remote broker cannot answer it without placing.
+				if (flags.whatIf) {
+					if (target.kind !== "local")
+						return {
+							ok: false,
+							status: "usage_error",
+							code: "HOBO_USAGE",
+							message:
+								"hobo up --what-if is answered by the local Yard; a remote broker has no side-effect-free preview",
+							remediation: ["Run `hobo plan` against the local Yard instead."],
+							data: { command: "up", whatIf: true },
+						};
+					if (yardUp) {
+						const planned = await yardUp.run(input);
+						if (planned.code !== "HOBO_CLI_STUB") return planned;
+					}
+					if (flags.mode) return unsupportedMode();
+					const definition = await loadBindleDefinition(projectDir);
+					return definition === null
+						? {
+								ok: false,
+								status: "no_bindle",
+								code: "HOBO_UP_NO_BINDLE",
+								message: `hobo up --what-if: no loadable bindle in ${projectDir}`,
+								data: { command: "up", whatIf: true, projectDir },
+							}
+						: {
+								ok: true,
+								status: "ok",
+								code: "HOBO_OK",
+								message: `hobo up --what-if would place bindle ${definition.name} on the local Yard`,
+								data: {
+									command: "up",
+									whatIf: true,
+									mode: "local",
+									projectDir,
+									bindle: definition.name,
+								},
+							};
+				}
+
 				if (target.kind === "local") {
 					// Event-sourced Yard lane when runtime is wired (claim/inspect).
 					if (yardUp) {
@@ -174,6 +228,7 @@ export function createBrokerAwareUpCommand(
 							};
 						}
 					}
+					if (flags.mode) return unsupportedMode();
 
 					const definition = await loadBindleDefinition(projectDir);
 					if (definition === null) {

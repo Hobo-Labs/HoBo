@@ -361,7 +361,19 @@ export function planDeploymentChanges(
 	events: readonly EventEnvelope[],
 	mode: DeploymentMode = "incremental",
 ): DeploymentChangeSet {
-	const recorded = recordedResources(events);
+	return planDeploymentChangesFromRecorded(
+		plan,
+		recordedResources(events),
+		mode,
+	);
+}
+
+/** Plan against an already-observed resource set, such as a CD Camp. */
+export function planDeploymentChangesFromRecorded(
+	plan: DeploymentPlan,
+	recorded: ReadonlyMap<string, RecordedResource>,
+	mode: DeploymentMode = "incremental",
+): DeploymentChangeSet {
 	const declared = new Set(plan.resources.map((resource) => resource.name));
 	const changes: ResourceChange[] = plan.resources.map((resource) =>
 		classifyResource(resource, recorded.get(resource.name)),

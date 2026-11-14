@@ -13,6 +13,7 @@ import {
 	type YardSession,
 } from "../cloud/yard-client.js";
 import type { CommandModule } from "../shell/registry.js";
+import { createPlanCommand } from "./plan.js";
 
 export interface UpCommandDeps {
 	// Injected Yard runtime (tests / dev wiring): in-memory/runtime-local
@@ -54,10 +55,27 @@ async function readFreightFile(
 export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(deps.runtime),
-		run: async ({ context, flags, emitProgress }) => {
+		run: async (input) => {
+			const { context, flags, emitProgress } = input;
 			const { runtime } = deps;
 			if (!runtime) {
 				return stubResult("up");
+			}
+			// `up --what-if` is the plan: the change set, never applied.
+			if (flags.whatIf) {
+				const planned = await createPlanCommand({ runtime }).run(input);
+				return {
+					...planned,
+					...(planned.message !== undefined
+						? {
+								message: planned.message.replace(
+									/^hobo plan/,
+									"hobo up --what-if",
+								),
+							}
+						: undefined),
+					data: { ...planned.data, command: "up", whatIf: true },
+				};
 			}
 
 			const projectDir = context.projectDir ?? context.cwd;
@@ -85,6 +103,8 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 			} = {};
 			if (flags.budgetId) config.budgetId = flags.budgetId;
 			if (flags.region) config.region = flags.region;
+			if (flags.mode === "incremental" || flags.mode === "complete")
+				config.mode = flags.mode;
 			const streamed = runtime.delivery !== undefined;
 			const freightManifest = streamed
 				? await readFreightFile(projectDir)

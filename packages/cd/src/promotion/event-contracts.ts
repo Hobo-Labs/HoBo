@@ -51,6 +51,7 @@ const PROMOTION_FIELDS: readonly EventFieldSpec[] = [
 	stringField("idempotencyKey", 16),
 	stringField("fanoutId", 17, OPTIONAL),
 	stringField("subject", 18),
+	stringField("deploymentMode", 19, OPTIONAL),
 ];
 
 const PREVIEW_FIELDS: readonly EventFieldSpec[] = [

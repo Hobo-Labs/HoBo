@@ -113,6 +113,10 @@ A network broker is selected only through `--broker`/`--broker-uri`,
 That endpoint can be self-hosted; "remote" describes transport, not a mandatory
 hosted service. There is no automatic fallback to a hosted broker.
 
+Explicit `--mode` is honored by Yard desired-state delivery. Remote broker
+placement and the embedded broker fallback reject that flag before placement,
+because those paths do not yet implement incremental or complete pruning.
+
 `test/self-hosted-broker.test.ts` runs local placement with remote
 discovery/client factories unavailable. `test/persistent-local-deployment.test.ts`
 executes the product binary in separate processes: `up` returns a reachable app,

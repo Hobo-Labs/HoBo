@@ -1,6 +1,8 @@
+import { collectStream, manifestHostingPolicy } from "@hobo/cloud";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
+import { downWhatIf } from "../cloud/what-if.js";
 import {
 	createYardClient,
 	type ProgressEvent,
@@ -28,7 +30,7 @@ function progressLine(step: ProgressEvent): string {
 export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(deps.runtime),
-		run: async ({ context, emitProgress }) => {
+		run: async ({ context, flags, emitProgress }) => {
 			const { runtime } = deps;
 			if (!runtime) {
 				return stubResult("down");
@@ -49,6 +51,48 @@ export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 				(await loadSession(projectDir)) ??
 				createFixtureSession();
 			const deploymentId = deploymentIdFor(projectDir);
+			// `down --what-if`: what teardown would destroy, destroying nothing.
+			if (flags.whatIf) {
+				const history = await collectStream(
+					runtime.store,
+					`deployment:${deploymentId}`,
+				);
+				let wouldDestroy: string[];
+				try {
+					wouldDestroy = await downWhatIf(
+						runtime.store,
+						deploymentId,
+						runtime.hostingBudgetRequired ||
+							manifestHostingPolicy(bindle).required ||
+							history.some((event) => event.type === "hosting.BudgetReserved")
+							? undefined
+							: runtime.delivery,
+					);
+				} catch (error) {
+					return {
+						ok: false,
+						status: "unavailable",
+						code: "HOBO_PREVIEW_UNAVAILABLE",
+						message: `hobo down --what-if: ${error instanceof Error ? error.message : String(error)}`,
+						remediation: [
+							"Wait for the current deployment to converge, then retry the preview.",
+						],
+						data: { command: "down", deploymentId },
+					};
+				}
+				return {
+					ok: true,
+					status: "ok",
+					code: "HOBO_OK",
+					message: `hobo down --what-if would destroy ${wouldDestroy.length} resources${wouldDestroy.length > 0 ? ` (${wouldDestroy.join(", ")})` : ""}`,
+					data: {
+						command: "down",
+						deploymentId,
+						whatIf: true,
+						wouldDestroy,
+					},
+				};
+			}
 			const yard = createYardClient(runtime);
 			const streamed = runtime.delivery !== undefined;
 			const { result, receipt } = await yard.teardown(bindle, {

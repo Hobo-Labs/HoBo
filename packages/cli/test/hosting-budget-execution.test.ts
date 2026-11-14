@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseManifest } from "@hobo/bindles";
@@ -18,6 +18,8 @@ import {
 	type YardRuntime,
 	type YardSession,
 } from "../src/cloud/yard-client.js";
+import { createPlanCommand } from "../src/commands/plan.js";
+import { createHoboCli } from "../src/index.js";
 import { parseArgv } from "../src/shell/parse.js";
 
 const dispose: (() => void)[] = [];
@@ -190,6 +192,46 @@ function fixture() {
 	};
 }
 describe("production CLI budget execution", () => {
+	it("does not preview an unsupported hosting deployment mode as an executable change", async () => {
+		const fx = fixture();
+		const cwd = mkdtempSync(join(tmpdir(), "cli-hosting-mode-"));
+		dispose.push(() => rmSync(cwd, { recursive: true, force: true }));
+		writeFileSync(
+			join(cwd, "hobo.bindle.json"),
+			JSON.stringify(manifest.value),
+		);
+		const cli = createHoboCli({
+			commands: { plan: createPlanCommand({ runtime: fx.runtime }) },
+		});
+		const result = await cli.run(["plan", "--mode", "complete", "--json"], {
+			cwd,
+		});
+		expect(JSON.parse(result.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_DEPLOYMENT_MODE_UNSUPPORTED",
+		});
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
+	});
+	it("refuses an explicit deployment mode before reserving or invoking a hosting supervisor that cannot honor it", async () => {
+		const fx = fixture();
+		const result = await createYardClient(fx.runtime).up(manifest, {
+			deploymentId: "one",
+			session,
+			config: { mode: "complete" },
+		});
+		expect(result.status).toBe("rejected");
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
+	});
 	it("forwards authoritative admission to the supervisor without legacy provider effects", async () => {
 		const fx = fixture();
 		expect(
