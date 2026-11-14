@@ -9,12 +9,17 @@ moves over junctions.
 scoped Yard endpoints. It rechecks authorization at each phase, uses the
 data engines' fencing and a compare-and-set routing authority for cutover, and
 holds retirement until the supplied soak decision permits finalization.
-Reauthorization gates only calls that start a forward effect. Releasing a
-fence, stopping a capture or transfer, finishing a journaled rollback, and the
-facts that record a hold, failure or rollback never wait on it. If
-authorization lapses after the source is fenced and before the cutover is
-decided, the run journals a compensating hold and releases the source fence,
-so the source stays writable instead of waiting for a later authorized run.
+Every engine call and journal write requires current authorization. If it
+lapses while a source is fenced, the run leaves the fence in place for an
+independently authorized successor; it does not guess that a delayed cleanup
+still owns the Camp. The routing receiver checks the journaled decision and
+native fence token, and conditionally appends against a single logical-Camp
+generation. Its journal must be the authoritative route for every reader and
+writer, and the host must enroll independent native-fence and funding checks.
+The native fence and route journal may belong to different providers. Their
+checks are not atomic together. The SDK does not expose a routing receiver
+until a provider can enforce a logical-Camp operation lock and funding through
+completion, so handover execution remains unavailable in production.
 
 ## Quick start
 
