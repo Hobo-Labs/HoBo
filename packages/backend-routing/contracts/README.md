@@ -1,33 +1,26 @@
 # Contracts
 
-One boundary crosses out of this package: an assignment replica's calls to the
-store that keeps its log. The SQL replica's statements are pinned where it
-lives, in `@hobo/data-postgres`; this package pins the cache replica.
+## `one-active-choose-action.pact.json` — the one-active loop's `chooseAction`
 
-## `ephemeral-assignment-replica.pact.json` — the cache replica's port calls
+`createOneActiveFleet` (`@hobo/fleet/assignment`) is the **consumer**: on each
+tick it hands its `chooseAction` the current assignment and one
+`NamedObservation` per member, and expects one action back. This package is
+the **provider**: `routeFleetByBudget` answers a loss-tolerant fleet (the
+relay's cache fleet), `decideFleet` a database fleet (`@hobo/data-postgres`).
 
-`ephemeralAssignmentReplica` is the **consumer**; any binding of
-`EphemeralStatePort` (`hobo.core.ephemeral-state/v1`: in-memory,
-Valkey/Redis over RESP, Upstash REST, libSQL, Vercel Blob) is the
-**provider**.
+Each interaction is one question: the request path names the function, the
+body the active member, the configured members and their observations (health
+as the `hobo.fleet.v1.Health` value name); the response is the action, its
+target and loss window, its reasons and, where pinned, a standby's reasons.
+Two details are load-bearing: a member's health and its reasons come from
+`eligibleForActive`, so the reason strings are `@hobo/fleet`'s; and a database
+standby that is not `ready` is reported as `schema-not-current`.
 
-Each interaction is one port call: the operation, the key, the stored value
-(a `FleetAssignmentLog` in protobuf JSON, `data-models/backend_fleet.proto`),
-the expected version or TTL, and the port's answer. Two details are
-load-bearing:
+`test/choose-action-pact.test.ts` replays every interaction against the
+functions themselves.
 
-- **Read, check, conditional write.** An `accept` is a `get`, the register's
-  rules applied to what it read, and then `putIfAbsent` (no log yet) or
-  `compareAndSet` on the version read. That sequence is why two writers
-  racing on one backend cannot both extend the log; a duplicate or a gap
-  answers after the read with no write at all.
-- **The TTL is the port's 30-day cap** on every write and on `refresh`.
+## Moved away
 
-`test/replica-pact.test.ts` replays both sides: the consumer side drives the
-replica against a port that answers from the pact and asserts it sends
-exactly these calls and reaches the expected outcomes; the provider side
-runs every call against the in-memory binding with a fixed incarnation and
-clock and compares the answers. Each binding's own conformance suite
-(`EPHEMERAL_STATE_CONFORMANCE_CASES` in `@hobo/kv-redis-compatible`) is what
-makes the other bindings answer the same way; this pact is not replayed
-against Upstash, Turso or Blob themselves.
+The cache replica's pact (`ephemeral-assignment-replica.pact.json`) moved with
+the assignment register to `packages/fleet/contracts/`, and the SQL replica's
+statements are pinned where it lives, in `@hobo/data-postgres`.

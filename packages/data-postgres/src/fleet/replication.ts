@@ -19,12 +19,11 @@
  * about to be, the writer holds an entry saying so (it is always written there
  * first), so it refuses to be overwritten no matter how stale the caller is.
  */
+
+import type { AssignmentEntry } from "@hobo/fleet";
+import { assignmentKey } from "@hobo/fleet/assignment";
 import { PostgresDataError } from "../errors.js";
-import {
-	assignmentKey,
-	type PostgresFleetAssignment,
-	readAssignmentRows,
-} from "./assignment.js";
+import { readAssignmentRows } from "./assignment.js";
 import {
 	FLEET_LOCK_CLASS,
 	type FleetLayout,
@@ -32,9 +31,9 @@ import {
 } from "./layout.js";
 import {
 	column,
-	type FleetBackend,
 	inTransaction,
 	optionalColumn,
+	type PostgresBackend,
 	parseCount,
 	parseFlag,
 	quoteIdentifier,
@@ -95,11 +94,11 @@ export const DEFAULT_REPLICATION_LIMITS: ReplicationLimits = Object.freeze({
 });
 
 export type ReplicationRequest = {
-	readonly source: FleetBackend;
-	readonly target: FleetBackend;
+	readonly source: PostgresBackend;
+	readonly target: PostgresBackend;
 	readonly layout: FleetLayout;
 	/** The decided current assignment, as the caller resolved it by majority. */
-	readonly assignment: PostgresFleetAssignment;
+	readonly assignment: AssignmentEntry;
 	readonly limits?: Partial<ReplicationLimits> | undefined;
 };
 
@@ -353,7 +352,7 @@ async function digestTables(
  * Two backends hold the same data exactly when these lists are equal.
  */
 export async function readDataDigests(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 ): Promise<readonly ReplicatedTable[]> {
 	return inTransaction(
@@ -394,7 +393,7 @@ function sequencePositions(
 
 /** Where every sequence owned by a copied table stands on one backend. */
 export async function readSequencePositions(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 ): Promise<readonly SequencePosition[]> {
 	return sequencePositions(await readCatalog(backend.executor, layout)).map(
@@ -707,7 +706,7 @@ export async function replicateSnapshot(
 
 /** The watermark of one backend, or nothing if it was never a copy target. */
 export async function readWatermark(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 ): Promise<PostgresFleetWatermark | undefined> {
 	const result = await backend.executor.query(

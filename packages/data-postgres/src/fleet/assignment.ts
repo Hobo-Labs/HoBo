@@ -2,81 +2,91 @@
  * The assignment register's SQL replica: one backend's log in a table.
  *
  * The register itself (entries, majority, resolve, propose, bootstrap,
- * complete, override) is engine-neutral and lives in `@hobo/backend-routing`
- * (ADR-0179 phase 4c moved it there so a cache fleet can use it without this
- * package); it is re-exported here under the names this package always had.
- * What stays is how a PostgreSQL backend holds its log: `readAssignmentRows`
- * and `sqlAssignmentReplica`, whose `accept` is one statement.
+ * complete, override, membership epochs) is engine-neutral and lives in
+ * `@hobo/fleet/assignment`. What stays here is how a PostgreSQL backend holds
+ * its log: `readAssignmentRows`, `sqlAssignmentReplica`, whose `accept` is one
+ * statement, and `sqlAssignmentRegister`.
+ *
+ * An entry's member set (written only once the fleet's policy sets
+ * `membership_epochs`) is kept in the nullable `members` column, a sorted
+ * `text[]`; an entry without one leaves it null, so the rows, and the
+ * `assignmentKey` of each, are what they were before member sets existed.
  */
 import {
+	type AssignmentEntry,
 	type AssignmentRegister,
 	type AssignmentReplica,
+	type MemberName,
+	parseMemberName,
+} from "@hobo/fleet";
+import {
 	assignmentKey,
-	type FleetAssignment,
+	parseAssignmentEntry,
 	parseAssignmentRegister,
-	parseFleetAssignment,
-} from "@hobo/backend-routing";
+} from "@hobo/fleet/assignment";
 import { PostgresDataError } from "../errors.js";
 import { FLEET_LOCK_CLASS, type FleetLayout } from "./layout.js";
 import {
 	classifyFleetFailure,
 	column,
-	type FleetBackend,
 	optionalColumn,
+	type PostgresBackend,
 	parseCount,
 	parseFlag,
-	parseFleetBackendId,
 	type SqlRow,
 	type SqlSession,
 	sqlState,
 } from "./sql.js";
 
-export {
-	ASSIGNMENT_ACCEPT_OUTCOMES,
-	type AssignmentAcceptOutcome,
-	type AssignmentContender,
-	type AssignmentOverride,
-	type AssignmentProposal,
-	type AssignmentProposalOutcome,
-	type AssignmentRegister,
-	type AssignmentReplica,
-	type AssignmentReply,
-	type AssignmentResolution,
-	assignmentKey,
-	bootstrapAssignment,
-	completeAssignment,
-	FIRST_ASSIGNMENT_EPOCH,
-	type FleetAssignmentValue,
-	fleetMajority,
-	overrideAssignment,
-	parseAssignmentRegister,
-	parseFleetAssignment,
-	proposeAssignment,
-	readAssignmentReplies,
-	readCurrentAssignment,
-	resolveAssignment,
-} from "@hobo/backend-routing";
+/** A `text[]` read back as text: `{a,b}`. Member names never need quoting. */
+const MEMBER_ARRAY = /^\{[a-z0-9_-]+(?:,[a-z0-9_-]+)*\}$/u;
 
-/** This package's name for an assignment entry; the same parsed type. */
-export type PostgresFleetAssignment = FleetAssignment;
+function membersFromColumn(
+	value: string | undefined,
+): readonly MemberName[] | undefined {
+	if (value === undefined) return undefined;
+	if (!MEMBER_ARRAY.test(value))
+		throw new PostgresDataError(
+			"FLEET_RECORD_INVALID",
+			"members is not a list of member names",
+			{ detail: { column: "members" } },
+		);
+	return value
+		.slice(1, -1)
+		.split(",")
+		.map((name) => parseMemberName(name, "members"));
+}
 
-function assignmentFromRow(row: SqlRow): FleetAssignment {
+/** The `text[]` literal a member set is written as, or null for none. */
+function membersToParameter(
+	members: readonly MemberName[] | undefined,
+): string | null {
+	return members === undefined ? null : `{${members.join(",")}}`;
+}
+
+function assignmentFromRow(row: SqlRow): AssignmentEntry {
 	const loss = optionalColumn(row, "loss_window_ms");
-	return parseFleetAssignment({
+	const active = optionalColumn(row, "active");
+	const target = optionalColumn(row, "target");
+	return parseAssignmentEntry({
 		epoch: parseCount(column(row, "epoch"), "epoch"),
-		active: optionalColumn(row, "active"),
+		active:
+			active === undefined ? undefined : parseMemberName(active, "active"),
 		sealed: parseFlag(column(row, "sealed"), "sealed"),
-		target: optionalColumn(row, "target"),
+		target:
+			target === undefined ? undefined : parseMemberName(target, "target"),
 		reason: column(row, "reason"),
 		lossWindowMs: loss === undefined ? undefined : parseCount(loss, "loss"),
 		decidedAtMs: parseCount(column(row, "decided_at_ms"), "decidedAtMs"),
 		decidedBy: column(row, "decided_by"),
+		members: membersFromColumn(optionalColumn(row, "members")),
 	});
 }
 
 const SELECT_ASSIGNMENT = `epoch::text AS epoch, active, sealed::text AS sealed, target, reason,
 	loss_window_ms::text AS loss_window_ms,
-	round(extract(epoch FROM decided_at) * 1000)::bigint::text AS decided_at_ms, decided_by`;
+	round(extract(epoch FROM decided_at) * 1000)::bigint::text AS decided_at_ms, decided_by,
+	members::text AS members`;
 
 /**
  * Read one backend's log on a given session, newest `limit` entries, ascending.
@@ -86,7 +96,7 @@ export async function readAssignmentRows(
 	session: SqlSession,
 	layout: FleetLayout,
 	limit?: number,
-): Promise<readonly FleetAssignment[]> {
+): Promise<readonly AssignmentEntry[]> {
 	try {
 		const result = await session.query(
 			`SELECT ${SELECT_ASSIGNMENT} FROM ${layout.assignmentTable} ORDER BY epoch DESC LIMIT $1::bigint`,
@@ -109,11 +119,11 @@ export async function readAssignmentRows(
  * inserts only when the highest epoch held is exactly the one before.
  */
 export function sqlAssignmentReplica(
-	backend: FleetBackend,
+	backend: PostgresBackend,
 	layout: FleetLayout,
 ): AssignmentReplica {
 	const table = layout.assignmentTable;
-	const id = parseFleetBackendId(backend.id);
+	const id = parseMemberName(backend.id, "backend");
 	return {
 		id,
 		read: (limit) => readAssignmentRows(backend.executor, layout, limit),
@@ -123,9 +133,9 @@ export function sqlAssignmentReplica(
 					SELECT pg_try_advisory_xact_lock_shared($9::int, hashtext($10)) AS free
 				), inserted AS (
 					INSERT INTO ${table}
-						(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by)
+						(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by, members)
 					SELECT $1::bigint, $2::text, $3::boolean, $4::text, $5::text, $6::bigint,
-						timestamptz 'epoch' + $7::bigint * interval '1 millisecond', $8::text
+						timestamptz 'epoch' + $7::bigint * interval '1 millisecond', $8::text, $11::text[]
 					FROM gate
 					WHERE gate.free
 						AND coalesce((SELECT max(epoch) FROM ${table}), 0) = $1::bigint - 1
@@ -146,6 +156,7 @@ export function sqlAssignmentReplica(
 					assignment.decidedBy,
 					FLEET_LOCK_CLASS,
 					table,
+					membersToParameter(assignment.members),
 				],
 			);
 			const outcome = result.rows[0];
@@ -172,7 +183,7 @@ export function sqlAssignmentReplica(
 
 /** Build the register of a fleet from its backends, in configured order. */
 export function sqlAssignmentRegister(
-	backends: readonly FleetBackend[],
+	backends: readonly PostgresBackend[],
 	layout: FleetLayout,
 ): AssignmentRegister {
 	return parseAssignmentRegister(

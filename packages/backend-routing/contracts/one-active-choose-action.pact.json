@@ -1,0 +1,149 @@
+{
+	"consumer": { "name": "hobo-one-active-loop" },
+	"provider": { "name": "hobo-backend-routing" },
+	"metadata": {
+		"pactSpecification": { "version": "3.0.0" },
+		"notes": "The chooseAction boundary of createOneActiveFleet (@hobo/fleet/assignment): the loop hands the current assignment and one NamedObservation per member (health as the hobo.fleet.v1.Health value name); routeFleetByBudget answers a loss-tolerant fleet, decideFleet a database fleet. Replayed by test/choose-action-pact.test.ts."
+	},
+	"interactions": [
+		{
+			"description": "a free member well inside its allowance is kept",
+			"request": {
+				"path": "/choose/route-by-budget",
+				"body": {
+					"active": "upstash",
+					"members": ["upstash", "valkey"],
+					"observations": [
+						{
+							"name": "upstash",
+							"health": "HEALTH_REACHABLE",
+							"failingForMs": 0,
+							"usage": [{ "unit": "commands", "used": 100000 }]
+						},
+						{
+							"name": "valkey",
+							"health": "HEALTH_REACHABLE",
+							"failingForMs": 0,
+							"usage": []
+						}
+					],
+					"workload": [{ "unit": "commands", "used": 100000 }]
+				}
+			},
+			"response": {
+				"body": { "action": "keep", "reasons": ["writer-healthy"] }
+			}
+		},
+		{
+			"description": "an active member failing past the threshold is left for the best reachable one",
+			"request": {
+				"path": "/choose/route-by-budget",
+				"body": {
+					"active": "upstash",
+					"members": ["upstash", "valkey"],
+					"observations": [
+						{
+							"name": "upstash",
+							"health": "HEALTH_UNREACHABLE",
+							"failingForMs": 120000,
+							"usage": []
+						},
+						{
+							"name": "valkey",
+							"health": "HEALTH_REACHABLE",
+							"failingForMs": 0,
+							"usage": []
+						}
+					],
+					"workload": [{ "unit": "commands", "used": 0 }]
+				}
+			},
+			"response": {
+				"body": {
+					"action": "failover",
+					"target": "valkey",
+					"reasons": ["writer-unreachable"]
+				}
+			}
+		},
+		{
+			"description": "a database fleet fails over to the freshest standby within the recovery point",
+			"request": {
+				"path": "/choose/decide-fleet",
+				"body": {
+					"active": "a",
+					"members": ["a", "b", "c"],
+					"observations": [
+						{
+							"name": "a",
+							"health": "HEALTH_UNREACHABLE",
+							"failingForMs": 3600000,
+							"ready": true,
+							"lagMs": 0,
+							"usage": []
+						},
+						{
+							"name": "b",
+							"health": "HEALTH_REACHABLE",
+							"failingForMs": 0,
+							"ready": true,
+							"lagMs": 540000,
+							"usage": [{ "unit": "operations", "used": 0 }]
+						},
+						{
+							"name": "c",
+							"health": "HEALTH_REACHABLE",
+							"failingForMs": 0,
+							"ready": true,
+							"lagMs": 240000,
+							"usage": [{ "unit": "operations", "used": 0 }]
+						}
+					]
+				}
+			},
+			"response": {
+				"body": {
+					"action": "failover",
+					"target": "c",
+					"lossWindowMs": 240000,
+					"reasons": ["writer-unreachable"]
+				}
+			}
+		},
+		{
+			"description": "a database standby that is not ready is reported as schema-not-current",
+			"request": {
+				"path": "/choose/decide-fleet",
+				"body": {
+					"active": "a",
+					"members": ["a", "b"],
+					"observations": [
+						{
+							"name": "a",
+							"health": "HEALTH_REACHABLE",
+							"failingForMs": 0,
+							"ready": true,
+							"lagMs": 0,
+							"usage": [{ "unit": "operations", "used": 10000 }]
+						},
+						{
+							"name": "b",
+							"health": "HEALTH_REACHABLE",
+							"failingForMs": 0,
+							"ready": false,
+							"lagMs": 60000,
+							"usage": [{ "unit": "operations", "used": 0 }]
+						}
+					]
+				}
+			},
+			"response": {
+				"body": {
+					"action": "keep",
+					"reasons": ["writer-healthy"],
+					"candidateReasons": { "b": ["schema-not-current"] }
+				}
+			}
+		}
+	]
+}

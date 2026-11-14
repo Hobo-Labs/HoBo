@@ -70,7 +70,7 @@ export function billingPeriod(nowMs: number): BillingPeriod {
 	};
 }
 
-// domain-view: a measurement with the unit as its parsed string union; the generated FleetUsageMeasurement in backend_fleet_pb.ts is its wire form.
+// domain-view: a measurement with the unit as its parsed string union; the generated FleetUsageMeasurement in backend_routing_pb.ts is its wire form.
 export type FleetUsageMeasurement = {
 	readonly unit: FleetUsageUnit;
 	/** Measured use: this period's total for a rate, the current size for a level. */

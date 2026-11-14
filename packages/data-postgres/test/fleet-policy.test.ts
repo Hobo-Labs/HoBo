@@ -4,21 +4,28 @@
  * Every plan number in this file is a PLACEHOLDER chosen to make the
  * arithmetic easy to read. None of them describes a real product or price.
  */
-import { describe, expect, it } from "vitest";
 import {
-	billingPeriod,
-	createUsageMeter,
 	DEFAULT_FLEET_POLICY,
 	decideFleet,
 	type FleetBudgetRequest,
 	type FleetDecisionInput,
-	type PostgresFleetAssignment,
-	type PostgresFleetFinancialModel,
-	type PostgresFleetObservation,
-	parseFleetAssignment,
+	type FleetFinancialModel,
 	parseFleetFinancialModel,
-	parseFleetLayout,
 	parseFleetPolicy,
+} from "@hobo/backend-routing";
+import {
+	type AssignmentEntry,
+	Health,
+	type NamedObservation,
+	parseMemberName,
+} from "@hobo/fleet";
+import { parseAssignmentEntry } from "@hobo/fleet/assignment";
+import { describe, expect, it } from "vitest";
+import { postgresObservation } from "../src/fleet/records.js";
+import {
+	billingPeriod,
+	createUsageMeter,
+	parseFleetLayout,
 	type SqlExecutor,
 } from "../src/index.js";
 
@@ -30,17 +37,18 @@ const period = billingPeriod(NOW);
 
 function assignment(
 	active: string,
-	overrides: Partial<PostgresFleetAssignment> = {},
-): PostgresFleetAssignment {
-	return parseFleetAssignment({
+	overrides: Partial<AssignmentEntry> = {},
+): AssignmentEntry {
+	return parseAssignmentEntry({
 		epoch: 4,
-		active,
+		active: parseMemberName(active),
 		sealed: false,
 		target: undefined,
 		reason: "test",
 		lossWindowMs: undefined,
 		decidedAtMs: NOW - 7 * DAY,
 		decidedBy: "test",
+		members: undefined,
 		...overrides,
 	});
 }
@@ -81,27 +89,37 @@ function unverified(backend: string) {
 	});
 }
 
+/** What a tick saw of a backend; `overrides` uses the `Observation` field names. */
+type Seen = Readonly<{
+	health?: Health;
+	failingForMs?: number;
+	ready?: boolean;
+	lagMs?: number | undefined;
+	usage?: readonly Readonly<{ unit: string; used: number }>[];
+}>;
+
 function seen(
 	backend: string,
 	operations: number,
-	overrides: Partial<PostgresFleetObservation> = {},
-): PostgresFleetObservation {
+	overrides: Seen = {},
+): NamedObservation {
 	return {
-		backend,
-		health: "reachable",
-		probeLatencyMs: 10,
-		failingForMs: 0,
-		schemaCurrent: true,
-		standbyLagMs: 5 * 60_000,
-		usage: [{ unit: "operations", used: operations }],
-		...overrides,
+		name: parseMemberName(backend),
+		observation: postgresObservation({
+			health: overrides.health ?? Health.REACHABLE,
+			probeLatencyMs: 10,
+			failingForMs: overrides.failingForMs ?? 0,
+			ready: overrides.ready ?? true,
+			lagMs: "lagMs" in overrides ? overrides.lagMs : 5 * 60_000,
+			usage: overrides.usage ?? [{ unit: "operations", used: operations }],
+		}),
 	};
 }
 
 function input(
 	overrides: Partial<FleetDecisionInput> & {
-		observations: readonly PostgresFleetObservation[];
-		models: readonly PostgresFleetFinancialModel[];
+		observations: readonly NamedObservation[];
+		models: readonly FleetFinancialModel[];
 	},
 ): FleetDecisionInput {
 	return {
@@ -308,8 +326,8 @@ describe("planned switch", () => {
 				observations: [
 					exhausting,
 					seen("b", 0),
-					seen("c", 0, { schemaCurrent: false }),
-					seen("d", 0, { health: "unreachable", failingForMs: HOUR }),
+					seen("c", 0, { ready: false }),
+					seen("d", 0, { health: Health.UNREACHABLE, failingForMs: HOUR }),
 				],
 				models: [
 					capped("a", 100_000),
@@ -404,10 +422,10 @@ describe("planned switch", () => {
 					},
 				],
 			});
-		const sized = (backend: string): PostgresFleetObservation => ({
-			...seen(backend, 0),
-			usage: [{ unit: "storage-bytes", used: 2_000_000_000 }],
-		});
+		const sized = (backend: string): NamedObservation =>
+			seen(backend, 0, {
+				usage: [{ unit: "storage-bytes", used: 2_000_000_000 }],
+			});
 		const decision = decideFleet(
 			input({
 				observations: [sized("a"), sized("b"), sized("c")],
@@ -427,8 +445,10 @@ describe("planned switch", () => {
 });
 
 describe("failover", () => {
-	const down = (failingForMs: number) =>
-		seen("a", 0, { health: "unreachable", failingForMs, usage: [] });
+	const down = (
+		failingForMs: number,
+		usage: readonly Readonly<{ unit: string; used: number }>[] = [],
+	) => seen("a", 0, { health: Health.UNREACHABLE, failingForMs, usage });
 	const models = [
 		capped("a", 100_000),
 		capped("b", 100_000),
@@ -453,8 +473,8 @@ describe("failover", () => {
 			input({
 				observations: [
 					down(2 * 60_000),
-					seen("b", 0, { standbyLagMs: 9 * 60_000 }),
-					seen("c", 0, { standbyLagMs: 4 * 60_000 }),
+					seen("b", 0, { lagMs: 9 * 60_000 }),
+					seen("c", 0, { lagMs: 4 * 60_000 }),
 				],
 				models,
 			}),
@@ -471,7 +491,7 @@ describe("failover", () => {
 		const decision = decideFleet(
 			input({
 				observations: [
-					seen("a", 0, { health: "quota-exhausted", failingForMs: HOUR }),
+					seen("a", 0, { health: Health.QUOTA_EXHAUSTED, failingForMs: HOUR }),
 					seen("b", 0),
 				],
 				models,
@@ -489,8 +509,8 @@ describe("failover", () => {
 			input({
 				observations: [
 					down(HOUR),
-					seen("b", 0, { standbyLagMs: 21 * 60_000 }),
-					seen("c", 0, { standbyLagMs: undefined }),
+					seen("b", 0, { lagMs: 21 * 60_000 }),
+					seen("c", 0, { lagMs: undefined }),
 				],
 				models,
 			}),
@@ -513,12 +533,12 @@ describe("failover", () => {
 				observations: [
 					down(HOUR),
 					seen("b", 0, {
-						health: "auth",
+						health: Health.AUTH,
 						failingForMs: HOUR,
-						standbyLagMs: 1000,
+						lagMs: 1000,
 					}),
-					seen("c", 0, { schemaCurrent: false, standbyLagMs: 1000 }),
-					seen("d", 0, { standbyLagMs: 10 * 60_000 }),
+					seen("c", 0, { ready: false, lagMs: 1000 }),
+					seen("d", 0, { lagMs: 10 * 60_000 }),
 				],
 				models: [...models, capped("d", 100_000)],
 			}),
@@ -542,9 +562,9 @@ describe("failover", () => {
 			input({
 				observations: [
 					// The writer's last measured use is still known to the host.
-					{ ...down(HOUR), usage: [{ unit: "operations", used: 1000 }] },
-					seen("b", 0, { standbyLagMs: 60_000 }),
-					seen("c", 0, { standbyLagMs: 10 * 60_000 }),
+					down(HOUR, [{ unit: "operations", used: 1000 }]),
+					seen("b", 0, { lagMs: 60_000 }),
+					seen("c", 0, { lagMs: 10 * 60_000 }),
 				],
 				models,
 				checkBudget: (request) =>
@@ -561,7 +581,10 @@ describe("holding", () => {
 	it("decides nothing while a switch is in flight", () => {
 		const decision = decideFleet(
 			input({
-				assignment: assignment("a", { sealed: true, target: "b" }),
+				assignment: assignment("a", {
+					sealed: true,
+					target: parseMemberName("b"),
+				}),
 				observations: [seen("a", 0), seen("b", 0)],
 				models: [capped("a", 1), capped("b", 1)],
 			}),
