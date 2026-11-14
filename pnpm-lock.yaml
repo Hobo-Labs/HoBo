@@ -1778,6 +1778,9 @@ importers:
       '@hobo/auth-md':
         specifier: workspace:*
         version: link:../auth-md
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../bindings
@@ -2041,6 +2044,9 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
     devDependencies:
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity

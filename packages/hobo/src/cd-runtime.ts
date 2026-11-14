@@ -285,9 +285,11 @@ export async function openCdRuntime(
 			return refusal(
 				"cd-store-unavailable",
 				error instanceof Error ? error.message : String(error),
-				config.store.backend === "postgres"
-					? "Check HOBO_CD_POSTGRES_URL reachability and that the server is PostgreSQL 16 or later."
-					: "Check that HOBO_HOME is writable (or set HOBO_CD_SQLITE_PATH).",
+				config.store.backend === "postgres-fleet"
+					? "Check that a majority of HOBO_CD_POSTGRES_FLEET members and witnesses are reachable (each HOBO_CD_POSTGRES_URL_<ID>) and run PostgreSQL 16 or later."
+					: config.store.backend === "postgres"
+						? "Check HOBO_CD_POSTGRES_URL reachability and that the server is PostgreSQL 16 or later."
+						: "Check that HOBO_HOME is writable (or set HOBO_CD_SQLITE_PATH).",
 			);
 		}
 		store = opened.store;
