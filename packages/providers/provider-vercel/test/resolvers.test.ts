@@ -7,16 +7,20 @@ import type {
 import { ResolverError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
+	VERCEL_BLOB_PRODUCT_ID,
 	VERCEL_EDGE_CONFIG_PRODUCT_ID,
 	VERCEL_PROJECT_PRODUCT_ID,
 	VERCEL_RESOLVED_PRODUCT_IDS,
 	VERCEL_RESOLVER_TRANSPORT_POLICY,
 	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 	VERCEL_UNRESOLVED_PRODUCT_IDS,
+	type VercelResolverOptions,
 	vercelResolverRegistry,
 	vercelResolvers,
 } from "../src/index.js";
 import {
+	isJsonObject,
+	isJsonString,
 	type JsonObject,
 	type JsonValue,
 	parseJsonObject,
@@ -28,6 +32,7 @@ function options(
 	overrides: {
 		readonly resolveCredential?: (ref: string) => Promise<string>;
 		readonly teamId?: string;
+		readonly verifyUnlinkedProject?: VercelResolverOptions["verifyUnlinkedProject"];
 	} = {},
 ) {
 	return {
@@ -41,6 +46,9 @@ function options(
 			overrides.resolveCredential ?? (async () => "vercel-api-token-value"),
 		...(overrides.teamId !== undefined
 			? { teamId: overrides.teamId }
+			: undefined),
+		...(overrides.verifyUnlinkedProject
+			? { verifyUnlinkedProject: overrides.verifyUnlinkedProject }
 			: undefined),
 	};
 }
@@ -142,10 +150,21 @@ function projectApi(seed: readonly JsonObject[] = []): Handler {
 			request.body === undefined ? {} : parseJsonObject(request.body);
 		if (request.method === "POST" && key === undefined) {
 			sequence += 1;
+			const gitRepository = isJsonObject(body.gitRepository)
+				? body.gitRepository
+				: undefined;
+			const repo = isJsonString(gitRepository?.repo)
+				? gitRepository.repo.split("/")
+				: [];
 			const created = {
 				...body,
 				accountId: "team_hobo",
 				id: `prj_${sequence}`,
+				...(repo.length === 2
+					? {
+							link: { type: "github", org: repo[0] ?? "", repo: repo[1] ?? "" },
+						}
+					: undefined),
 			};
 			store.set(created.id, created);
 			return json(200, created);
@@ -158,6 +177,20 @@ function projectApi(seed: readonly JsonObject[] = []): Handler {
 						return entry.id === idOrName || entry.name === idOrName;
 					});
 		if (target === undefined) return notFound();
+		if (request.method === "POST" && segments[3] === "link") {
+			if (target.link) return json(409, { error: "already linked" });
+			const repo = isJsonString(body.repo) ? body.repo.split("/") : [];
+			const updated = {
+				...target,
+				link: {
+					type: body.type ?? "",
+					org: repo[0] ?? "",
+					repo: repo[1] ?? "",
+				},
+			};
+			store.set(String(target.id), updated);
+			return json(200, updated);
+		}
 		if (request.method === "GET") return json(200, target);
 		if (request.method === "PATCH") {
 			const updated = { ...target, ...body, id: target.id };
@@ -234,6 +267,7 @@ describe("vercel resolver registry", () => {
 	it("registers exactly the products it can converge", () => {
 		const registry = vercelResolverRegistry(options());
 		expect(registry.list().map((entry) => entry.productId)).toEqual([
+			VERCEL_BLOB_PRODUCT_ID,
 			VERCEL_EDGE_CONFIG_PRODUCT_ID,
 			VERCEL_PROJECT_PRODUCT_ID,
 			VERCEL_STATIC_DEPLOY_PRODUCT_ID,
@@ -282,6 +316,208 @@ describe("vercel resolver registry", () => {
 });
 
 describe("vercel.project/v1 resolver", () => {
+	it("creates a Git-linked project, verifies the provider readback and adopts it on retry", async () => {
+		const f = recorded(projectApi());
+		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+		});
+		const request = projectRequest({
+			desired: {
+				repository: "Hobo-Labs/HoBo",
+				rootDirectory: "packages/hobo",
+				operationId: "deploy-1",
+			},
+		});
+		const first = await resolver.reconcile(request, f.transport);
+		expect(first).toMatchObject({
+			action: "create",
+			outputs: { repository: "Hobo-Labs/HoBo" },
+		});
+		const create = f.calls.find((call) => call.method === "POST");
+		expect(new URL(create?.url ?? "").pathname).toBe("/v11/projects");
+		expect(parseJsonObject(create?.body ?? "{}").gitRepository).toEqual({
+			type: "github",
+			repo: "Hobo-Labs/HoBo",
+		});
+		expect(f.calls.at(-1)?.method).toBe("GET");
+		expect((await resolver.reconcile(request, f.transport)).action).toBe(
+			"adopt",
+		);
+		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+	});
+	it("links an existing unlinked project exactly once", async () => {
+		const f = recorded(
+			projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "nextjs",
+				},
+			]),
+		);
+		const approvals: unknown[] = [];
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyUnlinkedProject: async (scope) => {
+				approvals.push(scope);
+				return true;
+			},
+		});
+		const input = projectRequest({
+			desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
+		});
+		expect((await r.reconcile(input, f.transport)).outputs.repository).toBe(
+			"Hobo-Labs/HoBo",
+		);
+		const link = f.calls.find((call) => call.method === "POST");
+		expect(new URL(link?.url ?? "").pathname).toBe("/v9/projects/prj_9/link");
+		expect(parseJsonObject(link?.body ?? "{}")).toEqual({
+			type: "github",
+			repo: "Hobo-Labs/HoBo",
+		});
+		await r.reconcile(input, f.transport);
+		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+		expect(approvals).toEqual([
+			{
+				teamId: "team_hobo",
+				projectId: "prj_9",
+				repository: "Hobo-Labs/HoBo",
+				operationId: "deploy-1",
+			},
+			{
+				teamId: "team_hobo",
+				projectId: "prj_9",
+				repository: "Hobo-Labs/HoBo",
+				operationId: "deploy-1",
+			},
+		]);
+	});
+	it("does not patch or link an unlinked project without exact independent authorization", async () => {
+		for (const proof of [undefined, async () => false]) {
+			const f = recorded(
+				projectApi([
+					{
+						id: "prj_9",
+						name: "storefront",
+						accountId: "team_hobo",
+						framework: "remix",
+					},
+				]),
+			);
+			const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+				teamId: "team_hobo",
+				...(proof ? { verifyUnlinkedProject: proof } : undefined),
+			});
+			const input = projectRequest({
+				desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
+			});
+			await expect(r.reconcile(input, f.transport)).rejects.toThrow(
+				/adoption and Git-link authorization/u,
+			);
+			expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+		}
+	});
+	it("rechecks project-link authorization immediately before the native link", async () => {
+		const f = recorded(
+			projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "nextjs",
+				},
+			]),
+		);
+		let checks = 0;
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyUnlinkedProject: async () => ++checks === 1,
+		});
+		await expect(
+			r.reconcile(
+				projectRequest({
+					desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
+				}),
+				f.transport,
+			),
+		).rejects.toThrow(/adoption and Git-link authorization/u);
+		expect(checks).toBe(2);
+		expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+	});
+	it("refuses to modify or delete a project linked to a different repository", async () => {
+		const f = recorded(
+			projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "remix",
+					link: { type: "github", org: "Other", repo: "other" },
+				},
+			]),
+		);
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, { teamId: "team_hobo" });
+		const input = projectRequest({ desired: { repository: "Hobo-Labs/HoBo" } });
+		await expect(r.reconcile(input, f.transport)).rejects.toThrow(
+			/different Git repository/u,
+		);
+		await expect(r.delete(input, f.transport)).rejects.toThrow(
+			/different Git repository/u,
+		);
+		expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+	});
+	it("handles a single provider Git-link record and refuses ambiguous multiple links", async () => {
+		const row = { type: "github", org: "Hobo-Labs", repo: "HoBo" };
+		const input = projectRequest({ desired: { repository: "Hobo-Labs/HoBo" } });
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, { teamId: "team_hobo" });
+		const linked = recorded(
+			projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "nextjs",
+					link: [row],
+				},
+			]),
+		);
+		expect((await r.reconcile(input, linked.transport)).action).toBe("adopt");
+		const ambiguous = recorded(
+			projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "nextjs",
+					link: [row, row],
+				},
+			]),
+		);
+		await expect(r.reconcile(input, ambiguous.transport)).rejects.toThrow(
+			/different Git repository/u,
+		);
+		expect(ambiguous.calls.every((call) => call.method === "GET")).toBe(true);
+	});
+	it("recovers a lost Git project creation response by observing the existing linked project", async () => {
+		const inner = projectApi();
+		let lost = false;
+		const f = recorded((call) => {
+			const result = inner(call);
+			if (call.method === "POST" && !lost) {
+				lost = true;
+				throw new Error("lost response");
+			}
+			return result;
+		});
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, { teamId: "team_hobo" });
+		const input = projectRequest({
+			desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
+		});
+		await expect(r.reconcile(input, f.transport)).rejects.toThrow();
+		expect((await r.reconcile(input, f.transport)).action).toBe("adopt");
+		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+	});
 	it("creates a project when none exists", async () => {
 		const { transport, calls } = recorded(projectApi());
 		const outcome = await resolverFor(VERCEL_PROJECT_PRODUCT_ID).reconcile(
@@ -386,6 +622,17 @@ describe("vercel.project/v1 resolver", () => {
 			expect(call.url).not.toContain("vercel-api-token-value");
 			expect(call.body ?? "").not.toContain("vercel-api-token-value");
 		}
+	});
+	it("does not expose credential material in a transport failure", async () => {
+		const transport: HttpTransport = async () => {
+			throw new Error("failed with vercel-api-token-value");
+		};
+		await expect(
+			resolverFor(VERCEL_PROJECT_PRODUCT_ID).reconcile(
+				projectRequest(),
+				transport,
+			),
+		).rejects.toThrow("Vercel API transport failed");
 	});
 });
 
@@ -622,7 +869,9 @@ describe("vercel resolver failure modes", () => {
 		]);
 		expect(VERCEL_RESOLVER_TRANSPORT_POLICY.allowedPathPrefixes).toEqual([
 			"/v1/global-config",
+			"/v1/storage/stores",
 			"/v9/projects",
+			"/v11/projects",
 		]);
 	});
 });

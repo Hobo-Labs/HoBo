@@ -53,16 +53,18 @@ anonymous deployment.
 | Provider | Product | Capability profiles | Bootstrap | Claim | Binding |
 | --- | --- | --- | --- | --- | --- |
 | `vercel` | `vercel.sponsored-project-transfer/v1` (application) | `web.static/v1`, `web.hosted/v1`, `api.http/v1` | sponsor-backed; HoBo-owned project in an isolated sponsor team | project transfer request; **1** human action; code valid **24 h**; atomicity `provider-bundled` | `binding.http/v1` |
-| `vercel` + `prisma` | `prisma.postgres/v1` (associated marketplace resource) | `data.postgres/v1` | created inside the sponsored project boundary | transferred in the *same* Vercel ceremony, tracked as its **own** `ClaimItem` | `binding.postgresql/v1`, rotated after claim |
+| `prisma` | `prisma.postgres/v1` (associated marketplace resource) | `data.postgres/v1` | Prisma-owned resource in its own Yard, connected to the Vercel Yard by a Junction | Vercel coordinates one ceremony; the Prisma resource is its **own** `ClaimItem` | `binding.postgresql/v1`, rotated after claim |
 | `vercel` | `vercel.drop-temporary-station/v1` | temporary Environment Station | `anonymous-claimable` | account required to retain — **not** direct anonymous deployment | n/a |
 | `vercel` | `netlify`-style authenticated path | n/a | see `@hobo/provider-netlify` | n/a | n/a |
 
 ### Two ownership facts, one provider ceremony
 
 Vercel presents claiming a project and its connected database as a single
-accept. HoBo models them as **two `ClaimItem`s** (`SPONSORED_CLAIM_ITEM_IDS`:
-`project`, `associated-resource`) under `claimAtomicity: "provider-bundled"`,
-with a dependency edge from project to resource.
+accept. HoBo models them as **two provider-owned `ClaimItem`s**
+(`SPONSORED_CLAIM_ITEM_IDS`: `project`, `associatedResource`) with a dependency
+edge from project to resource. The database stays in the Prisma Yard; the
+shared ceremony does not change provider boundaries. Since a partial transfer
+is possible, the bundle uses `claimAtomicity: "best-effort-saga"`.
 
 This is what makes the failure mode representable: when the project transfers
 and the Prisma resource does not, the shared `@hobo/claims` reducer refuses
@@ -177,7 +179,7 @@ boundary rather than here.
 | Factory | Slot | Profile | Product id |
 | --- | --- | --- | --- |
 | `staticDeployment(options?)` | `web` | `web.hosted/v1` | `vercel.static-deploy/v1` |
-| `project(options?)` | `web` | `provider.project/v1` | `vercel.project/v1` |
+| `project(options?)` | `web` | `web.project/v1` | `vercel.project/v1` |
 | `edgeFunction(options?)` | `service` | `service.worker/v1` | `vercel.edge-function/v1` |
 | `blob(options?)` | `bucket` | `bucket.object/v1` | `vercel.blob/v1` |
 | `edgeConfig(options?)` | `kv` | `kv.key-value/v1` | `vercel.edge-config/v1` |
@@ -218,21 +220,40 @@ a resource behind the caller's back.
 
 | Product id | Endpoints |
 | --- | --- |
-| `vercel.project/v1` | `POST /v9/projects`, `GET /v9/projects/{idOrName}`, `PATCH /v9/projects/{idOrName}`, `DELETE /v9/projects/{idOrName}` |
+| `vercel.blob/v1` | `GET /v1/storage/stores`, `POST /v1/storage/stores/blob`, `GET /v1/storage/stores/{id}`, project connection `POST`/`PATCH`/`DELETE`, `DELETE /v1/storage/stores/blob/{id}` |
+| `vercel.project/v1` | `POST /v11/projects`, `GET /v9/projects/{idOrName}`, `POST /v9/projects/{idOrName}/link`, `PATCH /v9/projects/{idOrName}`, `DELETE /v9/projects/{idOrName}` |
 | `vercel.edge-config/v1` | `POST /v1/global-config`, `GET /v1/global-config`, `GET /v1/global-config/{edgeConfigId}`, `PUT /v1/global-config/{edgeConfigId}`, `DELETE /v1/global-config/{edgeConfigId}` |
+
+`createVercelBlobDefinition` describes the native Blob product with unknown
+conformance and unavailable custody by default; account evidence, quota,
+credentials and a current quote must be verified separately.
+`createVercelProjectDefinition` describes an operator-owned project and also
+requires separately verified ownership, Git linkage, permissions and costs.
 
 Vercel renamed the Edge Config REST surface to `/v1/global-config` (the path
 parameter is still `edgeConfigId`); the product id keeps the `edge-config` name
 the catalog fixes, and the resolver calls the current documented path.
+
+Blob discovery and project connection use the same storage API as Vercel's
+CLI. The resolver requires an explicit team, project ID, region, access mode,
+environments and operation ID, plus a durable mutation journal and shared
+mutation scope. It connects through OIDC without creating a static read-write
+token. A same-name store is adopted only when it is already connected to the
+approved project; an ambiguous or unconnected store requires its exact ID.
+Deletion requires that ID, preserves other projects and environments, and only
+deletes a store when `deleteWhenEmpty` is explicitly set and its observed count
+is zero. The caller must enforce its own retention and writer-quiescence policy.
+An interrupted mutation retains the durable scope as uncertain. Recovery needs
+independent verification of the provider state and the recorded physical ID;
+the current scope has no automatic unlock for an uncertain mutation.
 
 **Endpoints deliberately absent** (`VERCEL_UNRESOLVED_PRODUCT_IDS`):
 
 | Product id | Why there is no resolver |
 | --- | --- |
 | `vercel.edge-function/v1` | A function is produced by a deployment. Vercel documents no endpoint that creates one as a standalone resource, so there is nothing to converge against. |
-| `vercel.blob/v1` | `POST /storage/stores/blob`, `GET /storage/stores/{id}` and `DELETE /storage/stores/blob/{id}` are documented, but **no documented endpoint lists stores by name**. Without name lookup, `reconcile` could not discover an existing store and would create a second one on every retry. A silently non-convergent resolver is worse than an absent one. |
 
-Both product ids stay in the Yard catalog — a Yard declares what can be
+The product id stays in the Yard catalog — a Yard declares what can be
 allocated, and expressing an offering is not the same claim as deploying it. The
 test suite asserts that the set of catalogued rows without a resolver is
 *exactly* `VERCEL_UNRESOLVED_PRODUCT_IDS`, so adding a row without a resolver
@@ -249,7 +270,7 @@ raises `RESOLVER_CREDENTIAL_MISSING` with remediation. The resolved value lives
 in a `SecretValue` and is exposed only by the `authorization` header builder.
 
 Every call goes through core's `guardTransport` with
-`VERCEL_RESOLVER_TRANSPORT_POLICY`: HTTPS only, `api.vercel.com` only, the two
+`VERCEL_RESOLVER_TRANSPORT_POLICY`: HTTPS only, `api.vercel.com` only, the
 allowlisted path prefixes above, no redirect chasing, bounded body and timeout.
 The guard generalizes this package's own `createGuardedTransport` and
 additionally speaks the PATCH that a project update requires. Nothing in this
@@ -275,8 +296,8 @@ setting is a deployment that does not match what was asked for.
   registered in a catalog and matches the Yard's provider is checked at
   resolution time, in the selection path — not here, and not by a naming
   convention (ADR-0144 forbids inferring a provider from an id prefix).
-- **Two of the four catalogued offerings cannot be deployed by this package**
-  (`vercel.blob/v1`, `vercel.edge-function/v1`), for the reasons tabled above. A
+- **Standalone edge functions cannot be deployed by this package**
+  (`vercel.edge-function/v1`), for the reasons tabled above. A
   deploy that selects them fails closed at resolution with no registered
   resolver, rather than appearing to work.
 - **No `replace` path.** A change to a field this package treats as stable is
@@ -411,7 +432,7 @@ The compute manifest publishes `vercel.static-deploy/v1` explicitly.
 `createVercelStaticDeployDefinition()` and `VERCEL_DEFINITIONS` expose the
 matching static/hosted semantics and executor. `staticDeployment({projectId})`
 is the default Yard web offering. `project()` now uses the control-resource
-profile `provider.project/v1`, so a project without a deployed artifact cannot
+profile `web.project/v1`, so a project without a deployed artifact cannot
 satisfy hosted application readiness. An explicitly configured project remains
 available as a control resource. The compute capability no longer claims SSR
 from a static-only deployment driver.
@@ -433,9 +454,8 @@ health evidence.
 ## Observe-only adoption of a Git-integration deployment
 
 `src/git-integration-adoption.ts` is the Vercel side of adopting a deployment
-Vercel's Git integration made, for a publisher that holds no Vercel token
-(`hobo ci deploy --adopt`,
-[`packages/ci-vercel/README.md`](../../ci-vercel/README.md#token-free-relay-mode-hobo-ci-deploy---adopt)).
+Vercel's Git integration made, for a publisher that observes an existing
+deployment without holding a Vercel token.
 Pure functions over the JSON GitHub's Deployments API returns; the caller owns
 the transport and the credential, and nothing here reads the network or the
 environment:
@@ -455,9 +475,9 @@ adopted is GitHub's record id. Exercised against recorded-shape fixtures only
 
 `VERCEL_HOSTING_COVERAGE` (contract `hobo.provider-hosting-coverage/v1`,
 `data-models/hosting_coverage.{proto,cue}`) states, for every catalogued
-product, a shipped resolver (`vercel.edge-config/v1`, `vercel.project/v1`,
+product, a shipped resolver (`vercel.blob/v1`, `vercel.edge-config/v1`, `vercel.project/v1`,
 `vercel.static-deploy/v1`) or a typed refusal with remediation
-(`vercel.blob/v1`, `vercel.edge-function/v1`, `vercel.neon-postgres/v1`);
+(`vercel.edge-function/v1`);
 `vercelProductRefusal(productId)` returns the `RESOLVER_PRODUCT_UNSUPPORTED`
 error. `VERCEL_TRAFFIC_ROUTING_PROFILE` is the audited profile, byte-equal to
 `@hobo/connectivity`'s: `edge.canary` (Rolling Releases), `edge.path`,
@@ -471,8 +491,7 @@ other fourteen portable offerings are declared absent with a reason
 
 | Symptom | Meaning | Action |
 |---|---|---|
-| `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.blob/v1` | no convergent Blob create exists | create the store once and reference it, or bind an objectStore provider with a resolver |
+| `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.blob/v1` | required team, project, environment, or durable coordination is missing | supply the approved binding and durable journal and mutation scope |
 | `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.edge-function/v1` | functions ship inside a deployment | deliver them with the project deployment |
-| `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.neon-postgres/v1` | Vercel Postgres is Neon via the Marketplace | bind `@hobo/provider-neon` |
 | a canary is lowered to `inprocess.weighted` | Rolling Releases were not realizable for the plan | check the two mapped deployment ids; the rung is recorded (`rollout.Lowered`) |
 | no `hobo.cd.resolver.*` metrics | the registry was built without `metrics` and `nowMs` | pass both; a sink without a clock is refused |

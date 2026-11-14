@@ -57,6 +57,14 @@ export type ResourceLifecycleContext = ResourceLifecycleScope & {
 // domain-view: behavioral port; durable metadata is ResourceMutationJournalEntry.
 export interface ResourceMutationJournal {
 	readonly persistence: "durable-cas" | "memory";
+	/** Observe a claim without creating one. A nonterminal claim is uncertain:
+	 * it may have reached the provider even when no acknowledgement was saved.
+	 * Optional for existing journals; resolvers that recover a provider resource
+	 * by deterministic name must require it before adopting an unpinned ID. */
+	inspect?(input: {
+		readonly mutationId: string;
+		readonly requestDigest: string;
+	}): Promise<{ readonly status: "missing" | "acknowledged" | "uncertain" }>;
 	claim(input: {
 		readonly mutationId: string;
 		readonly requestDigest: string;
@@ -65,6 +73,22 @@ export interface ResourceMutationJournal {
 	}>;
 	acknowledge(mutationId: string, requestDigest: string): Promise<void>;
 	uncertain(mutationId: string, requestDigest: string): Promise<void>;
+}
+
+/** A provider may use this only when it can prove no native mutation was sent.
+ * Shared mutation scopes release their lock and rethrow the original refusal;
+ * failures after any possible provider effect remain uncertain. */
+export class ResourceMutationNotSentError extends Error {
+	readonly refusal: unknown;
+	constructor(cause: unknown) {
+		super(
+			cause instanceof Error
+				? cause.message
+				: "provider mutation was not sent",
+		);
+		this.name = "ResourceMutationNotSentError";
+		this.refusal = cause;
+	}
 }
 
 /** Parse provider evidence at the external-data boundary, then bind its scope. */
@@ -258,8 +282,19 @@ export async function observeResolverLifecycle(options: {
 			observation.artifactDigest = outputs.artifactDigest;
 		if (isJsonString(outputs.servingEndpoint))
 			observation.servingEndpoint = outputs.servingEndpoint;
+	} else if (
+		request.ref.physicalId &&
+		resolver.observeAbsence &&
+		(await resolver.observeAbsence(request, transport)) === true
+	) {
+		observation.status = "absent";
+		observation.operationTerminal = true;
+		observation.observedAtMs = options.nowMs?.() ?? context.nowMs;
 	}
 	// Parse protobuf JSON rather than forwarding wire bookkeeping as user data.
 	const { $typeName: _wireType, ...record } = observation;
-	return parseResourceLifecycleObservation(record, observedContext);
+	return parseResourceLifecycleObservation(record, {
+		...observedContext,
+		nowMs: options.nowMs?.() ?? observedContext.nowMs,
+	});
 }

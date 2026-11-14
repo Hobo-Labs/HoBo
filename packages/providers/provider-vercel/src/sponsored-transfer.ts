@@ -278,7 +278,7 @@ export function createVercelSponsoredProjectTransferCandidate(
 		// only becomes true after the documented revocation step below, so the
 		// declaration stops at what the ceremony guarantees.
 		creatorAuthorityAfterClaim: "rotatable",
-		claimAtomicity: "provider-bundled",
+		claimAtomicity: "best-effort-saga",
 		claimActionCount: 1,
 		continuity: {
 			endpoint: "preserved",
@@ -324,12 +324,12 @@ export function assertSponsorBudget(input: {
 /** Stable item ids. Two subjects, because there are two ownership facts. */
 export const SPONSORED_CLAIM_ITEM_IDS = Object.freeze({
 	project: "vercel-project",
-	associatedResource: "vercel-associated-resource",
+	associatedResource: "prisma-resource",
 } as const);
 
 export const SPONSORED_CLAIM_STRATEGY_REFS = Object.freeze({
 	project: `${VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID}#project`,
-	associatedResource: `${VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID}#associated-resource`,
+	associatedResource: "prisma.marketplace-transfer/v1",
 } as const);
 
 export type SponsoredBundleInput = {
@@ -346,10 +346,9 @@ export type SponsoredBundleInput = {
 /**
  * Build the claim bundle.
  *
- * `provider-bundled` is asserted rather than assumed: the shared reducer
- * derives atomicity from the items, and both items name Vercel because Vercel
- * is the party running the single ceremony, even though the second subject is a
- * Prisma Postgres database.
+ * The Vercel project and Prisma database have distinct provider ownership.
+ * Even when Vercel presents one transfer ceremony, partial transfer is
+ * possible, so the shared reducer models it as a cross-provider saga.
  */
 export function createSponsoredProjectTransferBundle(
 	input: SponsoredBundleInput,
@@ -380,7 +379,7 @@ export function createSponsoredProjectTransferBundle(
 		id: SPONSORED_CLAIM_ITEM_IDS.associatedResource,
 		subjectRef: input.resourceSubjectRef,
 		subjectKind: "resource",
-		providerId: VERCEL_PROVIDER_ID,
+		providerId: "prisma",
 		claimStrategyRef: SPONSORED_CLAIM_STRATEGY_REFS.associatedResource,
 		mode: "resource-claim",
 		...(input.oneTimeActionRef !== undefined
@@ -393,7 +392,7 @@ export function createSponsoredProjectTransferBundle(
 			credentials: "rotated",
 		},
 		creatorAuthorityAfterClaim: "unknown",
-		verificationRef: "vercel.verify.associated-resource-probe/v1",
+		verificationRef: "prisma.verify.ownership/v1",
 		postClaimActions: ["rotate-binding", "revoke-bootstrap-authority"],
 		completedPostClaimActions: [],
 		status: "pending",

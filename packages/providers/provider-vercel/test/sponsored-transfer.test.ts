@@ -213,14 +213,16 @@ describe("sponsor budget is a gate, not a preference", () => {
 });
 
 describe("application and database are two ownership facts", () => {
-	it("emits two provider-bundled claim items with distinct subjects", () => {
+	it("keeps project and database ownership with their respective providers", () => {
 		const claim = bundle();
 		expect(claim.items).toHaveLength(2);
-		expect(claim.atomicity).toBe("provider-bundled");
+		expect(claim.atomicity).toBe("best-effort-saga");
 		const [project, resource] = claim.items;
 		expect(project?.subjectKind).toBe("camp");
+		expect(project?.providerId).toBe("vercel");
 		expect(project?.mode).toBe("project-transfer");
 		expect(resource?.subjectKind).toBe("resource");
+		expect(resource?.providerId).toBe("prisma");
 		expect(resource?.mode).toBe("resource-claim");
 		expect(resource?.subjectRef).toContain("prisma-postgres");
 		expect(resource?.postClaimActions).toContain("rotate-binding");
