@@ -4,14 +4,10 @@ import {
 	type ConnectFlow,
 	type ConnectPage,
 	type ConnectStep,
-	composeConnectSpec,
-	connectCandidates,
-	connectCatalog,
 	DEFAULT_SECRET_STORES,
-	deterministicConnectSpec,
-	evaluatorFromEnv,
-	isRenderableConnectSpec,
+	missingRequiredFields,
 	startConnectPage,
+	stepView,
 } from "../src/index.js";
 
 // The connect page: every step renders a valid spec from HoBo's own catalog,
@@ -71,111 +67,83 @@ const STEPS: readonly ConnectStep[] = [
 	FAILED_STEP,
 ];
 
-describe("connectCandidates", () => {
+describe("stepView: the exact component each step needs", () => {
 	it.each(
 		STEPS.map((step) => [step.kind, step] as const),
-	)("every %s candidate's props parse against the catalog", (_kind, step) => {
-		for (const candidate of connectCandidates(step)) {
-			const component = connectCatalog.data.components[candidate.element.type];
-			expect(component, candidate.id).toBeDefined();
-			const parsed = component?.props.safeParse(candidate.element.props);
-			expect(
-				parsed?.success,
-				`${candidate.id}: ${parsed?.error?.message}`,
-			).toBe(true);
-		}
-	});
-});
-
-describe("deterministicConnectSpec", () => {
-	it.each(
-		STEPS.map((step) => [step.kind, step] as const),
-	)("renders a valid spec for %s", (_kind, step) => {
-		const spec = deterministicConnectSpec(step);
-		expect(isRenderableConnectSpec(spec)).toBe(true);
-		expect(spec.elements[spec.root]?.type).toBe("Card");
+	)("generates a named view for %s", (_kind, step) => {
+		const view = stepView(step);
+		expect(view.step).toBe(step.kind);
+		expect(view.title.length).toBeGreaterThan(0);
+		for (const field of view.fields)
+			expect(field.label.length).toBeGreaterThan(0);
+		for (const action of view.actions)
+			expect(action.label.length).toBeGreaterThan(0);
 	});
 
-	it("puts the recommended OIDC store first and binds each choice to the flow action", () => {
-		const spec = deterministicConnectSpec(STORE_STEP);
-		const buttons = Object.values(spec.elements).filter(
-			(e) => e.type === "Button",
-		);
-		expect(buttons[0]?.props).toMatchObject({ variant: "primary" });
-		expect(JSON.stringify(buttons[0]?.on)).toContain('"store":"infisical"');
-		expect(JSON.stringify(buttons)).toContain('"store":"1password"');
-	});
-});
-
-describe("composeConnectSpec", () => {
-	it("is deterministic without an evaluator", async () => {
-		const composed = await composeConnectSpec(APP_STEP);
-		expect(composed.composedBy).toBe("deterministic");
-		expect(composed.fallbackReason).toBeUndefined();
-	});
-
-	type Evaluate = NonNullable<
-		Parameters<typeof composeConnectSpec>[1]
-	>["evaluate"];
-	// A stand-in evaluator: picks "use:<id>" (or the root) for every question.
-	const including: Evaluate = async ({ questions }) => ({
-		answers: Object.fromEntries(
-			Object.entries(questions).map(([id, question]) => {
-				const keys = Object.keys(question.criteria);
-				const choice =
-					keys.find((key) => key.startsWith("use:")) ??
-					keys.find((key) => key === "root") ??
-					keys[0];
-				return [id, { choice: choice ?? "" }];
+	it("asks for the store as one choice, recommended store preselected", () => {
+		const view = stepView(STORE_STEP);
+		expect(view.fields).toEqual([
+			expect.objectContaining({
+				name: "store",
+				kind: "choice",
+				value: "infisical",
 			}),
-		),
-	});
-	const omitting: Evaluate = async ({ questions }) => ({
-		answers: Object.fromEntries(
-			Object.entries(questions).map(([id, question]) => [
-				id,
-				{ choice: Object.keys(question.criteria)[0] ?? "" },
-			]),
-		),
-	});
-
-	it("uses the model's page when it keeps every required element", async () => {
-		const composed = await composeConnectSpec(APP_STEP, {
-			evaluate: including,
+		]);
+		expect(view.actions[0]).toMatchObject({
+			action: "connect.chooseStore",
+			submits: true,
 		});
-		expect(composed.composedBy).toBe("model");
-		expect(isRenderableConnectSpec(composed.spec)).toBe(true);
-		expect(JSON.stringify(composed.spec)).toContain("Continue on GitHub");
 	});
 
-	it("rejects a model page that omits the step's action", async () => {
-		const composed = await composeConnectSpec(APP_STEP, {
-			evaluate: omitting,
+	it("makes a provider hand-off need a person when an agent presses it", () => {
+		for (const step of [APP_STEP, VERCEL_STEP])
+			expect(stepView(step).actions[0]?.confirm).toMatch(/Opens/);
+	});
+
+	it("shows only what a configure step is missing, and never echoes a secret", () => {
+		const view = stepView({
+			kind: "configure",
+			provider: "vercel",
+			title: "Configure HoBo CD's Vercel Integration",
+			reason: "hobo cd up needs these to connect Vercel.",
+			fields: [
+				{
+					name: "HOBO_CD_VERCEL_INTEGRATION",
+					label: "Integration slug",
+					kind: "text",
+					required: true,
+				},
+				{
+					name: "HOBO_CD_VERCEL_CLIENT_SECRET",
+					label: "Client secret",
+					kind: "secret",
+					required: true,
+					value: "must-not-show",
+				},
+			],
 		});
-		expect(composed.composedBy).toBe("deterministic");
-		expect(composed.fallbackReason).toMatch(/omitted .*start/);
-	});
-
-	it("falls back to the deterministic page when the evaluator fails", async () => {
-		const composed = await composeConnectSpec(APP_STEP, {
-			evaluate: async () => {
-				throw new Error("gateway unreachable");
-			},
+		expect(view.fields.map((f) => f.name)).toEqual([
+			"HOBO_CD_VERCEL_INTEGRATION",
+			"HOBO_CD_VERCEL_CLIENT_SECRET",
+		]);
+		expect(view.actions[0]).toMatchObject({
+			action: "connect.submit",
+			submits: true,
 		});
-		expect(composed.composedBy).toBe("deterministic");
-		expect(composed.fallbackReason).toMatch(/gateway unreachable/);
-		expect(isRenderableConnectSpec(composed.spec)).toBe(true);
-	});
-
-	it("configures an evaluator only from OIDC or a gateway key, and honours off", () => {
-		expect(evaluatorFromEnv({})).toBeUndefined();
-		expect(evaluatorFromEnv({ VERCEL_OIDC_TOKEN: "t" })).toBeTypeOf("function");
+		expect(view.actions[0]?.confirm).toMatch(/secret/);
 		expect(
-			evaluatorFromEnv({
-				AI_GATEWAY_API_KEY: "k",
-				HOBO_CONNECT_UI_COMPOSE: "off",
+			missingRequiredFields(view.fields, {
+				HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
 			}),
-		).toBeUndefined();
+		).toEqual(["HOBO_CD_VERCEL_CLIENT_SECRET"]);
+	});
+
+	it("shows references, never values, once connected", () => {
+		const view = stepView(CONNECTED_STEP);
+		expect(view.tone).toBe("success");
+		expect(view.references).toEqual([
+			"infisical://hobo-ci/HOBO_CI_GITHUB_APP_ID",
+		]);
 	});
 });
 

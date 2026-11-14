@@ -9,17 +9,14 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Experimental_CompositionEvaluator as Evaluator } from "@json-render/core";
-
 import { z } from "zod";
-
-import { composeConnectSpec } from "./compose.js";
 import {
 	CONNECT_ACTIONS,
 	type ConnectActionName,
 	type ConnectStep,
 	isTerminalStep,
 } from "./steps.js";
+import { stepView } from "./view.js";
 
 // The connect page a lifecycle opens (`hobo ci up`, `hobo cd up`): a loopback
 // server that renders the current step's composed spec and turns the page's
@@ -33,7 +30,8 @@ import {
 //   sends the browser back to `/s/<token>/callback`, which the flow handles.
 // - No secret value is ever in a response: steps carry store references only.
 // - CSP: scripts and connections are 'self' only. Inline *styles* are allowed
-//   because Radix positions some shadcn parts with style attributes; the page
+//   for component positioning, and images may be data: URIs because
+//   vercel-labs/ui's web.css draws its icons as inline SVG masks; the page
 //   renders no untrusted content.
 
 /** What a flow asks the browser to do next, beside the new step. */
@@ -70,7 +68,6 @@ export interface ConnectFlow {
 
 export interface ConnectPageOptions {
 	readonly flow: ConnectFlow;
-	readonly evaluate?: Evaluator | undefined;
 	/** Directory holding `connect.js` and `connect.css` (the built client). */
 	readonly assetsDir?: string;
 	readonly host?: "127.0.0.1";
@@ -118,7 +115,7 @@ function send(
 		"x-content-type-options": "nosniff",
 		"referrer-policy": "no-referrer",
 		"content-security-policy":
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action https://github.com; frame-ancestors 'none'",
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action https://github.com; frame-ancestors 'none'",
 	});
 	res.end(body);
 }
@@ -213,18 +210,15 @@ export async function startConnectPage(
 		return next;
 	};
 
-	const view = async () => {
-		const composed = await composeConnectSpec(step, {
-			evaluate: options.evaluate,
-		});
-		return JSON.stringify({
+	// The step's generated component (view.ts): exactly the fields, choice
+	// and actions it needs, rendered by the browser with UI SDK parts.
+	const view = async () =>
+		JSON.stringify({
 			step: step.kind,
 			terminal: isTerminalStep(step),
-			composedBy: composed.composedBy,
-			spec: composed.spec,
+			view: stepView(step),
 			directive,
 		});
-	};
 
 	const server = createServer((req, res) => {
 		void (async () => {
