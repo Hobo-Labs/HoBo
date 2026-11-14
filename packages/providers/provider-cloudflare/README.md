@@ -19,6 +19,10 @@ Capability Manifest.
   `@hobo/iac-pulumi.validateIacProgram()` accepts) plus an optional `BuildSpec`
 - Typed `cloudflare.with.worker/r2/kv` option builders
 - Published Capability Manifest (`capabilities.json`, `auth.json`, `cost.json`)
+- `createR2ObjectClient()` — conditional R2 object reads and writes against the
+  direct account origin. A write R2 acknowledges with 200 is reported as
+  applied even when the response carries no strong ETag; it then returns no
+  `etag`, and the caller re-reads before its next conditional write.
 
 ## Scope (out)
 

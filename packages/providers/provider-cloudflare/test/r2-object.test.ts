@@ -11,6 +11,7 @@ function fixture() {
 	const objects = new Map<string, { body: string; etag: string }>();
 	const requests: TransportRequest[] = [];
 	let loseReply = false;
+	let weakReply = false;
 	const transport: HttpTransport = async (request) => {
 		requests.push(request);
 		const current = objects.get(request.url);
@@ -32,6 +33,10 @@ function fixture() {
 			loseReply = false;
 			throw new Error("transport with sensitive text");
 		}
+		if (weakReply) {
+			weakReply = false;
+			return { status: 200, headers: { etag: `W/${etag}` }, body: "" };
+		}
 		return { status: 200, headers: { etag }, body: "" };
 	};
 	const client = createR2ObjectClient({
@@ -51,6 +56,9 @@ function fixture() {
 		requests,
 		loseNextReply() {
 			loseReply = true;
+		},
+		weakenNextReply() {
+			weakReply = true;
 		},
 	};
 }
@@ -126,6 +134,15 @@ describe("R2 direct-origin conditional objects", () => {
 		expect(await client.put("state/key", "late", { kind: "absent" })).toEqual({
 			applied: false,
 		});
+	});
+
+	it("reports an applied write as applied when the acknowledgment carries no strong ETag", async () => {
+		const { client, weakenNextReply } = fixture();
+		weakenNextReply();
+		expect(
+			await client.put("state/key", "committed", { kind: "absent" }),
+		).toEqual({ applied: true });
+		expect(await client.get("state/key")).toMatchObject({ body: "committed" });
 	});
 
 	it("bounds object sizes and refuses malformed coordinates and non-conditional writes", async () => {
