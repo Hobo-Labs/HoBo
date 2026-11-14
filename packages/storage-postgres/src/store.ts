@@ -30,6 +30,7 @@ import {
 	type ResetCheckpointOptions,
 	SnapshotAheadError,
 	type SnapshotRecord,
+	type SnapshotWriteOptions,
 	StaleFenceError,
 	type StreamFilter,
 	type StreamHead,
@@ -123,13 +124,9 @@ export type StoreHealth = Readonly<{
 	checks: readonly Readonly<{ name: string; ok: boolean; detail: string }>[];
 }>;
 
-/** The PostgreSQL DurableEventStore. Every optional port method is present. */
-/** Options for a snapshot write. */
-export interface SnapshotWriteOptions {
-	/** Required on a protected or leased stream: the live actor lease's fence. */
-	readonly fenceToken?: bigint;
-}
+export type { SnapshotWriteOptions } from "@hobo/core";
 
+/** The PostgreSQL DurableEventStore. Every optional port method is present. */
 export interface PostgresEventStore extends DurableEventStore {
 	readonly schema: SchemaName;
 	readonly partitionId: string;

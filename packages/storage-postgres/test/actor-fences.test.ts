@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { createDurableLifecycleGate } from "@hobo/core";
 import { expect, it } from "vitest";
 import { createPgPool, type PgPoolLike } from "../src/index.js";
 import {
@@ -13,6 +14,43 @@ import {
 } from "./support/live.js";
 
 describeLive("shared PostgreSQL actor leases", () => {
+	it("writes lifecycle checkpoints under the active PostgreSQL lease", async () => {
+		const store = liveStore({
+			protectedActorStreamPrefixes: ["hosting-lifecycle-gate:"],
+		});
+		await store.ready();
+		const gate = createDurableLifecycleGate({
+			scope: {
+				tenantId: "tenant",
+				app: "ci",
+				serviceId: "relay",
+				incarnationId: "fleet-1",
+			},
+			store,
+			actorHost: store.actorLeaseHost,
+			actor: { kind: "service", id: "relay" },
+			nowMs: Date.now,
+			authorize: async () => {},
+			verifyDrained: async ({ scopeDigest, fenceId }) => ({
+				scopeDigest,
+				fenceId,
+				queuesDrained: true,
+				sandboxesDrained: true,
+				evidenceRef: "provider:drained",
+				observedAtMs: Date.now(),
+				expiresAtMs: Date.now() + 60_000,
+			}),
+			verifyParticipantTerminated: async () => {},
+		});
+		await gate.initialize("deploy-1");
+		for (let i = 0; i < 64; i++) {
+			const participant = await gate.begin("ingress");
+			await participant.finish();
+		}
+		expect((await store.loadSnapshot(gate.streamId))?.seq).toBe(129);
+		expect((await gate.status()).participants).toHaveLength(0);
+	});
+
 	it("enforces the installed policy across stores and fences a stale writer immediately on takeover", async () => {
 		const schema = freshSchema();
 		const first = liveStore({
