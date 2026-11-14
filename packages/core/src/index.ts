@@ -971,3 +971,8 @@ export {
 	CORE_API_SNAPSHOT,
 	validatePublicTypeSurface,
 } from "./surface-guard.js";
+export {
+	createTrustedVault,
+	TRUSTED_VAULT_DEFAULT_TTL_MS,
+	type TrustedVault,
+} from "./ports/trusted-vault.js";
