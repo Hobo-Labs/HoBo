@@ -399,16 +399,31 @@ export function createOrchestratorRealizer(
 			try {
 				if (diff.changed.length > 0) {
 					const changedNames = new Set(diff.changed.map((r) => r.name));
+					const fullResources = new Map(diff.changed.map((r) => [r.name, r]));
 					// Unchanged dependencies are already provisioned by an earlier Set.
 					const subset = diff.changed.map((r) => ({
 						...r,
 						deps: r.deps.filter((dep) => changedNames.has(dep)),
 					}));
+					// Filtering controls scheduling only. Providers still need the full
+					// desired specification, including already-converged dependencies.
+					const fullSpecExecutor: typeof executor = {
+						run(program, credential, options) {
+							const resource = fullResources.get(program.resourceId);
+							return executor.run(
+								resource
+									? { ...program, resource: structuredClone(resource) }
+									: program,
+								credential,
+								options,
+							);
+						},
+					};
 					const result = await runOrchestrator(
 						{
 							store: d.store,
 							actorHost: d.actorHost,
-							executor,
+							executor: fullSpecExecutor,
 							broker: d.broker,
 						},
 						{
