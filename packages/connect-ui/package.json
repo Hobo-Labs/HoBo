@@ -1,0 +1,45 @@
+{
+	"name": "@hobo/connect-ui",
+	"version": "0.0.1",
+	"license": "MIT",
+	"private": true,
+	"description": "Generative provider-connection pages for HoBo lifecycles (hobo ci up, hobo cd up): a json-render catalog on the shadcn preset, step candidates the flow configures, an AI-composed or deterministic spec, and a loopback page server that turns actions into flow transitions.",
+	"type": "module",
+	"files": [
+		"LICENSE",
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"hobo": {
+		"webUi": true
+	},
+	"dependencies": {
+		"@json-render/core": "0.22.0",
+		"@json-render/react": "0.22.0",
+		"@json-render/shadcn": "0.22.0",
+		"zod": "4.3.6"
+	},
+	"devDependencies": {
+		"@tailwindcss/cli": "4.1.17",
+		"@types/node": "^22.15.29",
+		"@types/react": "19.2.2",
+		"@types/react-dom": "19.2.2",
+		"esbuild": "0.25.12",
+		"react": "19.2.3",
+		"react-dom": "19.2.3",
+		"tailwindcss": "4.1.17",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json && node scripts/build-client.mjs",
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/"
+	}
+}

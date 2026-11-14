@@ -1,0 +1,60 @@
+{
+	"consumer": {
+		"name": "@hobo/connect-ui/client"
+	},
+	"provider": {
+		"name": "connect-page-server"
+	},
+	"interactions": [
+		{
+			"description": "the page reads the current step's composed view",
+			"providerState": "a GitHub connection waiting for a secret store",
+			"request": {
+				"method": "GET",
+				"path": "/view"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"step": "choose-secret-store",
+					"terminal": false,
+					"composedBy": "deterministic",
+					"directive": { "kind": "none" }
+				}
+			}
+		},
+		{
+			"description": "choosing a store moves the flow to the provider's consent step",
+			"providerState": "a GitHub connection waiting for a secret store",
+			"request": {
+				"method": "POST",
+				"path": "/action",
+				"body": { "action": "connect.chooseStore", "params": { "store": "infisical" } }
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"step": "create-github-app",
+					"terminal": false,
+					"directive": { "kind": "none" }
+				}
+			}
+		},
+		{
+			"description": "an action outside the catalog is refused without reaching the flow",
+			"providerState": "a GitHub connection waiting for a secret store",
+			"request": {
+				"method": "POST",
+				"path": "/action",
+				"body": { "action": "connect.delete", "params": {} }
+			},
+			"response": {
+				"status": 400,
+				"body": { "error": "invalid action" }
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": { "version": "2.0.0" }
+	}
+}
