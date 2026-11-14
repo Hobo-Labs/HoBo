@@ -1,8 +1,8 @@
 import { bindle, collectBindleManifest } from "@hobo/bindles";
 import { data } from "@hobo/bindles/wiring";
 import {
-	plan,
 	type PlannerRegistry,
+	plan,
 	type ResourceDefinition,
 } from "@hobo/cloud";
 import { describe, expect, it } from "vitest";
