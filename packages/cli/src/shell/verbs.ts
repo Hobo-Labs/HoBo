@@ -60,7 +60,14 @@ export const CANONICAL_VERBS: readonly Verb[] = [
 	{
 		name: "ci",
 		role: "delivery",
-		summary: "Connect a repository and inspect CI runs (connect/list/inspect)",
+		summary:
+			"Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project",
+	},
+	{
+		name: "cd",
+		role: "delivery",
+		summary:
+			"Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy",
 	},
 	{
 		name: "incident",
@@ -235,7 +242,10 @@ export const projectScopedVerbs = new Set(
 				"new",
 				"doctor",
 				"login",
+				// Lifecycle families resolve their own project (--project,
+				// HOBO_<FAMILY>_PROJECT, the bundled project), never cwd's Bindle.
 				"ci",
+				"cd",
 				"claim",
 				"identity",
 				"trails",
@@ -311,11 +321,35 @@ export function verbHelpText(
 				? "Status: implemented in this composition\n"
 				: "Status: not yet implemented in this composition\n";
 
+	if (verb.name === "cd") {
+		return `HoBo CD
+
+Usage:
+  hobo cd up [--what-if] [--mode incremental|complete] [--project <dir>] [-y]
+  hobo cd down [--what-if] [--project <dir>]
+  hobo cd plan|status [--mode incremental|complete] [--project <dir>]
+  hobo cd <deploy subcommand>     Any hobo deploy subcommand (freight, pipeline, promote, ...)
+
+Role: ${verb.role}
+${statusLine}
+The CD project is a HoBo project. Its lifecycle is the same engine as hobo
+up/down/plan, so re-running up is idempotent, a changed declaration is an
+upsert, down then up re-creates, and --mode complete prunes what is no longer
+declared. --what-if (aliases --dry-run, --preview) prints the change set and
+changes nothing.
+
+Project: --project <dir>, then HOBO_CD_PROJECT, then the bundled CD project,
+then the working directory.
+`;
+	}
+
 	if (verb.name === "ci") {
 		return `HoBo CI
 
 Usage:
   hobo ci [global flags]
+  hobo ci up|down|plan [--what-if] [--mode incremental|complete] [--project <dir>]
+                                   Converge the CI project (same engine as hobo up/down/plan)
   hobo ci enable [--remote <name>] [--relay <https-origin>]
   hobo ci connect                  Alias of enable
   hobo ci connect github           Register, authorize and install the GitHub App
