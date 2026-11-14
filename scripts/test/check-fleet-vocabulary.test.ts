@@ -91,7 +91,7 @@ describe("fleet:vocabulary rules", () => {
 		]);
 	});
 
-	it("rule 8 refuses @hobo/backend-fleet and @hobo/ci/mesh as specifiers, dependencies and workflow filters", () => {
+	it("rule 8 refuses the former backend-fleet package and @hobo/ci/mesh as specifiers, dependencies and workflow filters", () => {
 		expect(found("rule-8")).toEqual([
 			{ rule: 8, path: ".github/workflows/test.yml" },
 			{ rule: 8, path: "packages/app/package.json" },

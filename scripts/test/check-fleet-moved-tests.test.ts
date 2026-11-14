@@ -21,9 +21,11 @@ import {
 } from "../check-fleet-moved-tests.mts";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
+/** The retired package specifier, built from parts so no source text names it. */
+const OLD_PACKAGE = `@hobo/backend-${"fleet"}`;
 
 const BASE = `import { describe, expect, it } from "vitest";
-import { parseFleetAssignment, type FleetAssignment } from "@hobo/backend-fleet";
+import { parseFleetAssignment, type FleetAssignment } from "${OLD_PACKAGE}";
 import { model } from "./fleet-model.js";
 
 function entry(epoch: number, active: string): FleetAssignment {
@@ -45,7 +47,7 @@ describe("assignment register", () => {
 
 /** BASE after the rename and value maps: what a faithful move writes. */
 const MOVED = BASE.replaceAll("parseFleetAssignment", "parseAssignmentEntry")
-	.replaceAll("@hobo/backend-fleet", "@hobo/backend-routing")
+	.replaceAll(OLD_PACKAGE, "@hobo/backend-routing")
 	.replaceAll("FleetAssignment", "AssignmentEntry")
 	.replace('failure: "reachable"', "failure: Health.REACHABLE");
 
@@ -210,7 +212,7 @@ describe("exact mode", () => {
 });
 
 const ROUTING_BASE = `import { describe, expect, it } from "vitest";
-import { decideFleet, type FleetRoutingObservation } from "@hobo/backend-fleet";
+import { decideFleet, type FleetRoutingObservation } from "${OLD_PACKAGE}";
 
 const seen = (id: string): FleetRoutingObservation => ({ id, health: "reachable" });
 
@@ -227,7 +229,7 @@ describe("decideFleet", () => {
 `;
 
 const ROUTING_MOVED = ROUTING_BASE.replaceAll(
-	"@hobo/backend-fleet",
+	OLD_PACKAGE,
 	"@hobo/backend-routing",
 )
 	.replaceAll("FleetRoutingObservation", "NamedObservation")

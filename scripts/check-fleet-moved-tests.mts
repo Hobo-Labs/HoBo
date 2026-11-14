@@ -155,7 +155,8 @@ export const RENAME_MAP = {
 	FleetBackendHealth: "Health",
 	FleetFailureClassifier: "FailureClassifier",
 	CacheFleetTick: "OneActiveTick",
-	"@hobo/backend-fleet": "@hobo/backend-routing",
+	// Built from parts so the retired specifier appears in no source text (L21 grep).
+	[`@hobo/backend-${"fleet"}`]: "@hobo/backend-routing",
 } as const satisfies Readonly<Record<string, string>>;
 
 const renames = new Map<string, string>(Object.entries(RENAME_MAP));

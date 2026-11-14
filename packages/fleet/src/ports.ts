@@ -631,7 +631,7 @@ export interface CapacitySource {
 	>;
 }
 
-// ── One-active assignment (moved from @hobo/backend-fleet, names kept) ─────
+// ── One-active assignment (moved from the former backend-fleet package, names kept) ─────
 export type FailureClassifier = (error: Error | undefined) => Health; // one of UNREACHABLE, QUOTA_EXHAUSTED, AUTH, UNKNOWN
 /** domain-view: today's FleetAssignment (backend-fleet/src/assignment.ts:45) plus `members` (undefined for every entry written without membership epochs); plain numbers and undefined, not the wire's types. Built only by parseAssignmentEntry. */
 export type AssignmentEntry = Readonly<{

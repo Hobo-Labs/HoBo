@@ -507,16 +507,16 @@ export const OUTCOMES: readonly OutcomeSpec[] = [
 	{
 		id: "O32",
 		outcome:
-			"The route job reads the verdict and the release workflow attests the new images",
+			"The route job reads the routing slip and the release workflow attests the new images",
 		checks: [
 			vitest(
-				"scripts/test/route-runner-verdict.test.ts",
+				"scripts/test/route-runner.test.ts",
 				"scripts/test/fleet-release-workflow.test.ts",
 			),
 			"pnpm run actions:lint",
 		],
 		threshold:
-			"OPEN routes as today, NO_MEMBER and NO_CAPACITY refuse the backend, a bad verdict changes nothing; the release workflow builds, attests and adds a bill of materials for each image",
+			"Reasons derived from the slip's fleetVerdict decide the route, BUSY routes fleet-busy, NO_MEMBER and NO_CAPACITY refuse the backend, no slip changes nothing; the release workflow builds, attests and adds a bill of materials for each image",
 		fallbackThreshold:
 			"The job presents the repository-secret account credential instead of the OIDC token; the same routing threshold",
 		assumptions: ["A14"],

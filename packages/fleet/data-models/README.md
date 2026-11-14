@@ -44,7 +44,7 @@ only to break those ties, so `cue vet` can answer for such a value.
 
 `fixtures/valid/` has at least one record per message, each exactly what
 protobuf `toJson` writes for it. `assignment-log-format-1.json` is byte for
-byte what `encodeAssignmentLog` in `@hobo/backend-fleet` (now
+byte what `encodeAssignmentLog` in the former backend-fleet package (now
 `@hobo/backend-routing`) writes, with no trailing newline: the one-active log
 format of today's cache fleet is unchanged. `assignment-log-format-2.json` is a
 format-2 log with a pin and an admission.
