@@ -1,0 +1,29 @@
+{
+	"issue": "HoBo Fleet L26: behaviour and acceptance (wave 6)",
+	"branch": "fleet/L26",
+	"gates": [
+		{ "command": "pnpm run test:behavior", "exitCode": 0 },
+		{ "command": "pnpm run lint:boundaries", "exitCode": 0 },
+		{ "command": "pnpm run lint:test-deps", "exitCode": 0 },
+		{ "command": "pnpm codegen:check", "exitCode": 0 },
+		{ "command": "pnpm exec turbo run test --filter @hobo/fleet-authority", "exitCode": 0 },
+		{ "command": "pnpm --filter @hobo/fleet-authority typecheck", "exitCode": 0 },
+		{ "command": "pnpm run fleet:outcome O2", "exitCode": 0 },
+		{ "command": "pnpm run fleet:outcome O20", "exitCode": 1 }
+	],
+	"cascadeDeltas": [
+		{ "file": "packages/fleet-authority/package.json", "change": "Add @hobo/fleet-agent as a devDependency; the O2 integration test and the soak reach its sandboxDrivers and createEgressProxyFactory by path until then." },
+		{ "file": "packages/fleet-nats/src/bus/callout.ts", "change": "Log the callout decision time as decision_ms on hobo_fleet_bus_status (component callout) and hobo_fleet_callout_refused; O20's callout_p99_ms has no other source and the soak fails without it." },
+		{ "file": "packages/fleet/src/recorder/", "change": "Report the recorder's lag (for example a hobo_fleet_recorder_lag log event or a readable figure); the soak approximates zero lag as the journal count holding still for 15 s." },
+		{ "file": ".github/workflows/fleet-integration.yml", "change": "Run pnpm run fleet:soak on a GitHub-hosted Ubuntu runner after building the :candidate fleet images and provisioning the sandbox runtime (D58); it needs Docker Compose and pulls nats:2.15.3-alpine and openbao/openbao:2.4.1." },
+		{ "file": "cucumber.yaml", "change": "None needed: features/fleet/*.feature and features/steps/**/*.ts are already loaded; test:behavior takes about 65 s longer with the fleet scenarios." }
+	],
+	"requirementChanges": [
+		"The O2 integration test fails, never skips, without nats-server or an S1 driver: L26's skips_allowed is false and O2 takes no fallback, which overrides the skip-outside-CI half of §11.3 rule 10.",
+		"The acceptance world imports the memory plumbing of @hobo/fleet/testing by path, because that barrel loads vitest through the conformance suites and cucumber cannot.",
+		"Behaviour steps reach the fleet packages through packages/fleet-authority/acceptance/index.ts, since the root workspace has no fleet dependencies.",
+		"The soak enrolls a fourth, observer-only member to open the fresh connections new_connection_failures counts; the three working agents are the soak's load.",
+		"The soak's operator signs in through an OIDC issuer the soak serves itself, and OpenBao runs in dev mode with JWT auth in a soak-written compose override; neither is committed under deploy/fleet."
+	],
+	"fallbacks": []
+}
