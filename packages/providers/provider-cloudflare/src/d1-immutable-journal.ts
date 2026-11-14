@@ -474,6 +474,10 @@ export function createD1ImmutableJournalReplica(
 					: "conflict";
 			if (current.seal) throw new D1ImmutableJournalError("generation-sealed");
 			if (proposed.epoch !== current.entries.length + 1) return "gap";
+			// The persisted log holds at most maxEntries + 1 rows; report a full
+			// voter as such rather than as an unverifiable identity.
+			if (proposed.epoch > maxEntries + 1)
+				throw new D1ImmutableJournalError("retention-limit");
 			const body = encode([...current.entries, proposed]);
 			decode(body);
 			const link = /^j:[a-f0-9]{64}:([a-f0-9]{64})$/u.exec(proposed.reason);
@@ -495,11 +499,15 @@ export function createD1ImmutableJournalReplica(
 				)
 					throw error;
 			}
-			const winner = (await log()).entries[proposed.epoch - 1];
+			const observed = await log(),
+				winner = observed.entries[proposed.epoch - 1];
 			if (winner)
 				return assignmentKey(winner) === assignmentKey(proposed)
 					? "duplicate"
 					: "conflict";
+			// No entry at this epoch under a seal: the append can never apply.
+			if (observed.seal)
+				throw new D1ImmutableJournalError("generation-sealed");
 			throw new D1ImmutableJournalError("write-outcome-unknown");
 		},
 		async readDocument(value) {

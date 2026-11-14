@@ -114,7 +114,10 @@ class D1Provider {
 		for (const db of this.databases.values()) db.close();
 	}
 }
-async function fixture(options: { loseCreate?: boolean } = {}) {
+async function fixture(
+	options: { loseCreate?: boolean; maxEntries?: number } = {},
+) {
+	const maxEntries = options.maxEntries ?? 32;
 	const provider = new D1Provider();
 	provider.loseCreate = options.loseCreate ?? false;
 	const accountId = "0123456789abcdef0123456789abcdef";
@@ -142,7 +145,7 @@ async function fixture(options: { loseCreate?: boolean } = {}) {
 			initializationId: `init-${member.id}`,
 			accountId,
 			databaseId: member.resourceId,
-			maxEntries: 32,
+			maxEntries,
 			maxLogBytes: 16_000,
 			maxDocumentBytes: 32_000,
 			maxRequestBytes: 100_000,
@@ -167,7 +170,7 @@ async function fixture(options: { loseCreate?: boolean } = {}) {
 		anchorDigest,
 		replicas: voters.map((voter) => voter.replica),
 		maxEntryBytes: 1024,
-		maxEntries: 32,
+		maxEntries,
 		authorize: async () => {},
 	});
 	await journal.bootstrap(async () => {});
@@ -339,7 +342,7 @@ describe("bounded D1 immutable journal voter", () => {
 			f.provider.loseUpdate = true;
 			expect(await replica.seal(seal)).toBe("duplicate");
 			pause.release();
-			await expect(pending).rejects.toThrow();
+			await expect(pending).rejects.toThrow("generation-sealed");
 			expect(await replica.seal(seal)).toBe("duplicate");
 			expect(
 				await replica.seal({ ...seal, transitionId: "rollover-other" }),
@@ -358,6 +361,46 @@ describe("bounded D1 immutable journal voter", () => {
 				),
 			).rejects.toThrow("generation-sealed");
 			expect(await replica.read()).toHaveLength(1);
+		} finally {
+			f.provider.close();
+		}
+	});
+	it("reports a full voter as at its retention limit and keeps it sealable", async () => {
+		const f = await fixture({ maxEntries: 1 });
+		try {
+			const replica = f.voters[0]?.replica;
+			if (!replica) throw new Error("missing voter");
+			const genesis = (await replica.read())[0];
+			const head = genesis?.reason.split(":")[2];
+			if (!genesis || !head) throw new Error("missing genesis");
+			const digestOf = (value: string) =>
+				createHash("sha256").update(value).digest("hex");
+			const second = digestOf("second");
+			await replica.writeDocument(second, "second");
+			expect(
+				await replica.accept({
+					...genesis,
+					epoch: 2,
+					reason: `j:${head}:${second}`,
+				}),
+			).toBe("accepted");
+			const third = digestOf("third");
+			await replica.writeDocument(third, "third");
+			await expect(
+				replica.accept({
+					...genesis,
+					epoch: 3,
+					reason: `j:${second}:${third}`,
+				}),
+			).rejects.toThrow("retention-limit");
+			expect(await replica.read()).toHaveLength(2);
+			expect(
+				await replica.seal({
+					transitionId: "rollover-full",
+					epoch: 2,
+					digest: second,
+				}),
+			).toBe("sealed");
 		} finally {
 			f.provider.close();
 		}
