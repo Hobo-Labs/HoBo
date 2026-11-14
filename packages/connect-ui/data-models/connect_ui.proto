@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+// Wire records for the provider-connection page's loopback boundary
+// (browser client <-> connect page server). The spec itself is json-render's
+// flat Spec, carried as a google.protobuf.Struct; every other field is HoBo's.
+package hobo.connectui.v1;
+
+import "google/protobuf/struct.proto";
+
+// POST /s/<token>/action: the only request body the server accepts.
+message ConnectActionRequest {
+  // connect.chooseStore | connect.start | connect.cancel
+  string action = 1;
+  // String values only; the flow refuses params it does not expect.
+  map<string, string> params = 2;
+}
+
+// What the browser does next, beside the new step.
+message BrowserDirectiveRecord {
+  // none | navigate | post
+  string kind = 1;
+  string url = 2;
+  map<string, string> fields = 3;
+}
+
+// GET /s/<token>/view and the POST /action response.
+message ConnectViewRecord {
+  // The ConnectStep kind: choose-secret-store | create-github-app |
+  // authorize-vercel | depositing | connected | failed
+  string step = 1;
+  bool terminal = 2;
+  // model | deterministic
+  string composed_by = 3;
+  google.protobuf.Struct spec = 4;
+  BrowserDirectiveRecord directive = 5;
+}
+
+// A terminal step's store references (never values).
+message ConnectedReferences {
+  // github | vercel
+  string provider = 1;
+  // infisical | 1password | bitwarden
+  string store = 2;
+  repeated string references = 3;
+}
