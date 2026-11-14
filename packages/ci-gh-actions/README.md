@@ -925,6 +925,12 @@ with 503 and the MCP tools with `configured: false`, not an error. Routing
 stays with the routing slip (ADR-0181): `routing-slip-decision.ts` evaluates
 it, and a member that is only busy with its own jobs is never refused (R4).
 
+The relay mesh's fleet-state repository variable is no longer in the committed
+`runnerRouting.retiredVariables`, but the slip leader still deletes it at each
+start: `ALWAYS_RETIRED_VARIABLES` in `variable-retirement.ts` adds it to every
+retirement pass, so a repository that still holds the variable loses it
+without anyone listing it again.
+
 ## Tracing
 
 The box worker exports OpenTelemetry traces when `OTEL_EXPORTER_OTLP_ENDPOINT` or

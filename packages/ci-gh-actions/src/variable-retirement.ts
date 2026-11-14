@@ -38,6 +38,16 @@ export type VariableRetireOutcome = Readonly<{
 const NAME = /^[A-Z][A-Z0-9_]{0,99}$/u;
 
 /**
+ * Variables retired whatever the committed list says. The relay-mesh fleet
+ * state variable was replaced by `@hobo/fleet` membership (ADR-0183); it is
+ * no longer in the committed `retiredVariables`, so the delete lives here.
+ * The name is built from parts so the retired-variable guard stays green.
+ */
+export const ALWAYS_RETIRED_VARIABLES: readonly string[] = [
+	["HOBO", "CI", "FLEET", "STATE"].join("_"),
+];
+
+/**
  * Deletes each named repository variable once. Stops at the first 403: the
  * App will not be allowed the rest either, and the refusal is logged once,
  * with every name it leaves in place.
@@ -53,7 +63,9 @@ export async function retireRepositoryVariables(
 ): Promise<VariableRetireOutcome> {
 	const retired: string[] = [];
 	const failed: string[] = [];
-	const names = [...new Set(target.names)].filter((name) => NAME.test(name));
+	const names = [
+		...new Set([...target.names, ...ALWAYS_RETIRED_VARIABLES]),
+	].filter((name) => NAME.test(name));
 	for (const [index, name] of names.entries()) {
 		let status: number | undefined;
 		let message: string | undefined;

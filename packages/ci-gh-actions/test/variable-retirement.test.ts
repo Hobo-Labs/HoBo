@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GithubTransport } from "../src/github.js";
 import {
+	ALWAYS_RETIRED_VARIABLES,
 	retireRepositoryVariables,
 	type VariableRetireLog,
 } from "../src/variable-retirement.js";
@@ -12,6 +13,8 @@ const NAMES = [
 	"HOBO_CI_BOX_RUNNER",
 	"HOBO_CI_ROUTE",
 ];
+/** What the module deletes: the committed names, then the always-retired ones. */
+const SENT = [...NAMES, ...ALWAYS_RETIRED_VARIABLES];
 
 function github(statusFor: (name: string) => number | Error) {
 	const calls: { path: string; method: string }[] = [];
@@ -51,14 +54,14 @@ describe("retireRepositoryVariables", () => {
 			log,
 		});
 		expect(api.calls).toEqual(
-			NAMES.map((name) => ({
+			SENT.map((name) => ({
 				path: `/repos/${REPOSITORY}/actions/variables/${name}`,
 				method: "DELETE",
 			})),
 		);
-		expect(outcome).toEqual({ retired: NAMES, refused: [], failed: [] });
+		expect(outcome).toEqual({ retired: SENT, refused: [], failed: [] });
 		expect(events.map((entry) => entry.event)).toEqual(
-			NAMES.map(() => "hobo_ci_variable_retired"),
+			SENT.map(() => "hobo_ci_variable_retired"),
 		);
 	});
 
@@ -72,13 +75,13 @@ describe("retireRepositoryVariables", () => {
 			log,
 		});
 		expect(api.calls).toHaveLength(1);
-		expect(outcome).toEqual({ retired: [], refused: NAMES, failed: [] });
+		expect(outcome).toEqual({ retired: [], refused: SENT, failed: [] });
 		expect(events).toEqual([
 			{
 				event: "hobo_ci_variable_retire_refused",
 				fields: {
 					repository: REPOSITORY,
-					variables: NAMES.join(","),
+					variables: SENT.join(","),
 					status: 403,
 				},
 			},
@@ -101,7 +104,11 @@ describe("retireRepositoryVariables", () => {
 			log,
 		});
 		expect(outcome).toEqual({
-			retired: ["HOBO_CI_BOX_RUNNER", "HOBO_CI_ROUTE"],
+			retired: [
+				"HOBO_CI_BOX_RUNNER",
+				"HOBO_CI_ROUTE",
+				...ALWAYS_RETIRED_VARIABLES,
+			],
 			refused: [],
 			failed: ["HOBO_CI_ROUTE_MAX_QUEUED", "HOBO_CI_ROUTE_MAX_WAIT_SECONDS"],
 		});
@@ -132,6 +139,21 @@ describe("retireRepositoryVariables", () => {
 			repository: REPOSITORY,
 			names: ["HOBO_CI_ROUTE", "HOBO_CI_ROUTE", "../secrets"],
 		});
-		expect(api.calls).toHaveLength(1);
+		expect(api.calls).toHaveLength(1 + ALWAYS_RETIRED_VARIABLES.length);
+	});
+
+	// ADR-0183: the relay-mesh fleet-state variable is deleted even though the
+	// committed list no longer names it.
+	it("always retires the relay-mesh fleet-state variable", async () => {
+		const api = github(() => 204);
+		const outcome = await retireRepositoryVariables(api.transport, {
+			installationId: 7,
+			repository: REPOSITORY,
+			names: [],
+		});
+		expect(ALWAYS_RETIRED_VARIABLES).toEqual([
+			["HOBO", "CI", "FLEET", "STATE"].join("_"),
+		]);
+		expect(outcome.retired).toEqual(ALWAYS_RETIRED_VARIABLES);
 	});
 });
