@@ -27,10 +27,11 @@ export { BindReferenceError } from "./errors.js";
 
 export function data(
 	name: string,
-	options: { paradigm?: string } = {},
+	options: { paradigm?: string; allow?: readonly string[] } = {},
 ): ResourceHandle {
 	assertResourceName(name, "data.name");
 	const paradigm = options.paradigm ?? "relational";
+	const allow = options.allow ? [...new Set(options.allow)].sort() : undefined;
 
 	return {
 		kind: "resource",
@@ -49,6 +50,7 @@ export function data(
 					...resource,
 					connectionString: `{${name}.connectionString}`,
 				};
+			if (allow?.length) return { ...resource, allow: [...allow] };
 			return resource;
 		},
 	};

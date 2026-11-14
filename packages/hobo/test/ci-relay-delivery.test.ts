@@ -11,7 +11,7 @@ import type { ManifestV1 } from "@hobo/bindles";
 import { FreightSourceRecordSchema } from "@hobo/cd";
 import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import { capability, type HttpTransport } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -241,12 +241,31 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(provider.capabilities.map((capability) => capability.port)).toEqual([
 			"compute",
 			"data",
+			"secretRef",
 		]);
 		const [compute] = provider.capabilities;
 		expect(compute?.satisfies({ port: "database" }).kind).toBe("none");
 		expect(
 			compute?.satisfies({ port: "compute", features: ["gpu"] }).kind,
 		).toBe("partial");
+		const secrets = provider.capabilities.find(
+			(entry) => entry.port === "secretRef",
+		);
+		expect(
+			secrets?.satisfies({ port: "secretRef", features: ["access"] }).kind,
+		).toBe("full");
+		expect(
+			secrets?.satisfies({ port: "secretRef", features: ["put"] }).kind,
+		).toBe("partial");
+		const noProjection = relayYardRegistryProvider({
+			...yard,
+			bindings: yard.bindings.filter(
+				(row) => row.profile !== capability.secretRef.runtimeProjection,
+			),
+		});
+		expect(
+			noProjection.capabilities.some((entry) => entry.port === "secretRef"),
+		).toBe(false);
 	});
 });
 
