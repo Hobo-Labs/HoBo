@@ -97,6 +97,8 @@ export type {
 	ActorLease,
 	ActorLeaseHost,
 	ActorStateHandle,
+	AsyncActorLease,
+	AsyncActorLeaseHost,
 	FoldEvent,
 } from "./ports/actor-host.js";
 export {
@@ -365,6 +367,15 @@ export type {
 	PublicDnsConfig,
 	PublicDnsManager,
 } from "./ports/dns.js";
+export {
+	createDurableLifecycleGate,
+	type DurableLifecycleGate,
+	type DurableLifecycleGateOptions,
+	type DurableLifecycleGateScope,
+	type DurableLifecycleGateStatus,
+	type DurableLifecyclePhase,
+	type LifecycleParticipantKind,
+} from "./ports/durable-lifecycle-gate.js";
 export type {
 	EphemeralEntry,
 	EphemeralKey,
