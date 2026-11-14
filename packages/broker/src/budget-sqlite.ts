@@ -7,6 +7,10 @@ import {
 	BudgetLedgerSnapshotSchema,
 	createBudgetAdmissionAuthority,
 } from "./budget-authority.js";
+import {
+	type BudgetFenceTrust,
+	captureBudgetFenceTrust,
+} from "./budget-fence-settlement.js";
 import { isJsonNumber, isJsonString } from "./json.js";
 
 /** Local durable authority: one shared SQLite file, synchronous transactions,
@@ -15,6 +19,7 @@ import { isJsonNumber, isJsonString } from "./json.js";
 export function createSqliteBudgetAdmissionAuthority(options: {
 	path: string;
 	snapshot: BudgetLedgerSnapshot;
+	fenceTrust?: BudgetFenceTrust;
 	/** Trusted server clock; caller-supplied command timestamps cannot revive evidence. */
 	now?: () => string;
 }): BudgetAdmissionAuthority & {
@@ -30,6 +35,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 		throw new TypeError(
 			"durable budget authority requires a persistent SQLite path",
 		);
+	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
 	const database = new DatabaseSync(options.path);
 	const now = options.now ?? (() => new Date().toISOString());
 	database.exec(
@@ -63,6 +69,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 		return createBudgetAdmissionAuthority({
 			snapshot: base,
 			priorEvents,
+			...(fenceTrust ? { fenceTrust } : undefined),
 			commit(event, expectedSeq) {
 				const head = database
 					.prepare("SELECT MAX(seq) AS seq FROM budget_events")

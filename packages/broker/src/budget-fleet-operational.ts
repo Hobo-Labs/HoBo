@@ -6,6 +6,7 @@ import type {
 	BudgetIdentity,
 	BudgetLedgerSnapshot,
 } from "./budget-authority.js";
+import type { BudgetFenceTrust } from "./budget-fence-settlement.js";
 import { createFleetBudgetAdmissionAuthority } from "./budget-fleet.js";
 
 /** Operational view: recovery is a separately funded mutation guarded by a
@@ -19,6 +20,7 @@ export function createOperationalFleetBudgetAdmissionAuthority(input: {
 	 * journal's original snapshot after an authorized policy/period change. */
 	readonly recoveryIdentity: BudgetIdentity;
 	readonly now?: () => string;
+	readonly fenceTrust?: BudgetFenceTrust;
 	readonly actorHost: AsyncActorLeaseHost;
 	readonly authorizeRecovery: (
 		scope: Readonly<{
@@ -127,6 +129,7 @@ export function createOperationalFleetBudgetAdmissionAuthority(input: {
 	const base = createFleetBudgetAdmissionAuthority({
 		journal,
 		snapshot: input.snapshot,
+		...(input.fenceTrust ? { fenceTrust: input.fenceTrust } : undefined),
 		...(input.now ? { now: input.now } : undefined),
 		recover,
 	});
