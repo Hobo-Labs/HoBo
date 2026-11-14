@@ -12,11 +12,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createTrustedVault } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
 	ignoredSecretEnvNotice,
 	SECRET_ENV_NAMES,
+	scopeRunVault,
 	secretEnvNames,
 	withoutSecretEnv,
 } from "../src/secret-custody.js";
@@ -44,6 +46,17 @@ function files(entry: string): string[] {
 }
 
 describe("secret custody", () => {
+	it("refuses late writes after a run ends and wipes its underlying vault", () => {
+		const underlying = createTrustedVault();
+		const scope = scopeRunVault(underlying);
+		scope.put("TOKEN", "run-secret");
+		scope.clear();
+		expect(underlying.names()).toEqual([]);
+		expect(scope.reveal("TOKEN")).toBeUndefined();
+		expect(() => scope.put("TOKEN", "late-secret")).toThrow(/ended/u);
+		expect(underlying.names()).toEqual([]);
+	});
+
 	it("names secrets in an environment without their values", () => {
 		const env = {
 			PATH: "/usr/bin",

@@ -50,8 +50,9 @@ the committed locator `.hobo/secret-store.json` (which store, its ids, no
 credential). You sign in on the setup page: an Infisical access token from your
 own `infisical login`, the 1Password desktop app (`OP_ACCOUNT`, unlocked with
 your biometrics), or a Bitwarden Secrets Manager machine account token on the
-US or EU cloud. The sign-in's vault buffer is cleared when the run ends, but
-copies of JavaScript strings cannot be reliably erased. In CI, a preconfigured
+US or EU cloud. The sign-in's vault buffer is cleared when setup ends, including
+on refusal or error; a late callback cannot refill it. Copies of JavaScript
+strings cannot be reliably erased. In CI, a preconfigured
 Infisical machine identity with OIDC Auth (`INFISICAL_IDENTITY_ID` in the
 locator) signs in with the job's own OIDC token. Bitwarden has no workload OIDC
 sign-in, so a relay on Bitwarden reads back with its own machine account

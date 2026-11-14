@@ -390,8 +390,11 @@ describe("prepareVercelConnection", () => {
 			kind: "ready",
 			steps: [{ outcome: "unchanged" }],
 		});
-		if (outcome.kind === "ready")
+		if (outcome.kind === "ready") {
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
+			outcome.credentials?.clear();
+			expect(vault.names()).toEqual([]);
+		}
 	});
 
 	it("offers Bitwarden as a secret store", async () => {
@@ -423,6 +426,7 @@ describe("prepareVercelConnection", () => {
 
 	it("refuses a failed secret-store read before opening setup", async () => {
 		const { store, names } = await memoryStore();
+		const vault = signedInVault();
 		const unavailable: OpenedSecretStore = {
 			...store,
 			port: {
@@ -438,7 +442,7 @@ describe("prepareVercelConnection", () => {
 		};
 		const outcome = await prepareVercelConnection(prepareInput(), {
 			env: {},
-			vault: signedInVault(),
+			vault,
 			locator: memorySettings(LOCATOR),
 			openStore: opened(unavailable),
 			startPage: () => {
@@ -450,6 +454,35 @@ describe("prepareVercelConnection", () => {
 			result: { code: "HOBO_CD_SECRET_STORE_UNAVAILABLE" },
 		});
 		expect(names()).not.toContain("HOBO_CD_VERCEL_TOKEN");
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("wipes the setup vault if reading the locator throws", async () => {
+		const vault = signedInVault();
+		await expect(
+			prepareVercelConnection(prepareInput(), {
+				env: {},
+				vault,
+				locator: {
+					read: async () => {
+						throw new Error("locator unavailable");
+					},
+					write: async () => {},
+				},
+			}),
+		).rejects.toThrow("locator unavailable");
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("wipes the setup vault after a read-only what-if", async () => {
+		const vault = signedInVault();
+		const outcome = await prepareVercelConnection(prepareInput(true), {
+			env: {},
+			vault,
+			locator: memorySettings(),
+		});
+		expect(outcome.kind).toBe("ready");
+		expect(vault.names()).toEqual([]);
 	});
 
 	it("does not replace a client secret when its store read is denied", async () => {

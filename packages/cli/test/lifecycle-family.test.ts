@@ -9,6 +9,7 @@ import {
 	type IacProgram,
 	type IacProvider,
 } from "@hobo/cloud";
+import { createTrustedVault } from "@hobo/core";
 import { createInMemoryActorHost } from "@hobo/data";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import {
@@ -16,7 +17,6 @@ import {
 	createRuntimeLocalEventStore,
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
-import { createTrustedVault } from "@hobo/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -287,6 +287,76 @@ describe("resolveFamilyProject", () => {
 });
 
 describe("provider junction credentials", () => {
+	it("wipes credentials if reporting a prepared step throws", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
+		const runtime = runtimeWith(recordingIac());
+		const dir = await project();
+		const cli = createHoboCli({
+			commands: {
+				cd: createLifecycleFamilyCommand({
+					family: "cd",
+					resolveProject: () => ({
+						ok: true,
+						projectDir: dir,
+						source: "bundled",
+					}),
+					up: createUpCommand({ runtime }),
+					down: createDownCommand({ runtime }),
+					plan: createPlanCommand({ runtime }),
+					prepare: async () => ({
+						kind: "ready",
+						steps: [
+							{ id: "vercel", outcome: "unchanged", detail: "connected" },
+						],
+						credentials: vault,
+					}),
+				}),
+			},
+		});
+		const result = await cli.run(["cd", "up"], {
+			cwd: tmpdir(),
+			onProgress: () => {
+				throw new Error("progress output unavailable");
+			},
+		});
+		expect(result.exitCode).not.toBe(0);
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("wipes credentials if constructing the convergence command throws", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
+		const runtime = runtimeWith(recordingIac());
+		const dir = await project();
+		const cli = createHoboCli({
+			commands: {
+				cd: createLifecycleFamilyCommand({
+					family: "cd",
+					resolveProject: () => ({
+						ok: true,
+						projectDir: dir,
+						source: "bundled",
+					}),
+					up: createUpCommand({ runtime }),
+					down: createDownCommand({ runtime }),
+					plan: createPlanCommand({ runtime }),
+					prepare: async () => ({
+						kind: "ready",
+						steps: [],
+						credentials: vault,
+					}),
+					upWith: () => {
+						throw new Error("cannot construct convergence");
+					},
+				}),
+			},
+		});
+		const result = await run(cli, ["cd", "up"]);
+		expect(result.exitCode).not.toBe(0);
+		expect(vault.names()).toEqual([]);
+	});
+
 	it("converges with the up that upWith builds from the prepare step's vault, then wipes it", async () => {
 		const vault = createTrustedVault();
 		vault.put("VERCEL_TOKEN", "from-the-store");

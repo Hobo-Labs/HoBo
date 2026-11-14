@@ -5,6 +5,7 @@ import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
 import {
 	type ConnectPage,
+	type FlowTransition,
 	type SavedSettings,
 	startConnectPage,
 } from "@hobo/connect-ui";
@@ -683,6 +684,7 @@ describe("prepareGithubConnection", () => {
 			kind: "refused",
 			result: { code: "HOBO_CI_SECRET_STORE_UNAVAILABLE" },
 		});
+		expect(vault.names()).toEqual([]);
 	});
 
 	it("verifies a stored connection before reporting it unchanged", async () => {
@@ -777,6 +779,61 @@ describe("prepareGithubConnection", () => {
 			kind: "ready",
 			steps: [{ outcome: "unchanged" }],
 		});
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("wipes the setup vault if reading the locator throws", async () => {
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
+		await expect(
+			prepareGithubConnection(prepareInput(), {
+				env: {},
+				vault,
+				locator: {
+					read: async () => {
+						throw new Error("locator unavailable");
+					},
+					write: async () => {},
+				},
+			}),
+		).rejects.toThrow("locator unavailable");
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("rejects a late sign-in after setup has already ended", async () => {
+		const vault = createTrustedVault();
+		let submitLate: (() => Promise<FlowTransition>) | undefined;
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: {},
+			interactive: true,
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(memoryStore()),
+			openBrowser: () => undefined,
+			startPage: async ({ flow }) => {
+				submitLate = () =>
+					flow.onAction(
+						"connect.submit",
+						{ INFISICAL_TOKEN: "session-token" },
+						flow.initial,
+					);
+				return {
+					url: "http://127.0.0.1:1/",
+					callbackUrl: "http://127.0.0.1:1/callback",
+					done: Promise.resolve({
+						kind: "failed" as const,
+						provider: "github" as const,
+						message: "cancelled",
+						remediation: [],
+					}),
+					close: async () => {},
+				};
+			},
+		});
+		expect(outcome.kind).toBe("refused");
+		if (submitLate === undefined) throw new Error("setup page did not start");
+		await expect(submitLate()).rejects.toThrow("credential run has ended");
+		expect(vault.names()).toEqual([]);
 	});
 
 	it("ignores secrets in the environment, and says so", async () => {

@@ -30,6 +30,7 @@ import {
 import {
 	browserEnvironment,
 	ignoredSecretEnvNotice,
+	scopeRunVault,
 	withoutSecretEnv,
 } from "./secret-custody.js";
 import type { Env, OpenedSecretStore } from "./secret-stores.js";
@@ -145,6 +146,20 @@ export async function prepareGithubConnection(
 	input: PrepareInput,
 	deps: PrepareGithubDeps = {},
 ): Promise<PrepareOutcome> {
+	const vault = scopeRunVault(deps.vault ?? createTrustedVault());
+	try {
+		return await prepareGithubWithVault(input, { ...deps, vault });
+	} finally {
+		// GitHub's credentials are deposited in the store during prepare; the
+		// subsequent convergence does not need the store sign-in.
+		vault.clear();
+	}
+}
+
+async function prepareGithubWithVault(
+	input: PrepareInput,
+	deps: PrepareGithubDeps & { readonly vault: TrustedVault },
+): Promise<PrepareOutcome> {
 	const env = deps.env ?? process.env;
 	const configuredHost = env.HOBO_CI_APP_HOST;
 	if (
@@ -171,7 +186,7 @@ export async function prepareGithubConnection(
 		// The validated choice is a non-secret setting despite its name.
 		plainEnv.HOBO_SECRET_STORE = env.HOBO_SECRET_STORE;
 	}
-	const vault = deps.vault ?? createTrustedVault();
+	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
 	let owner: Awaited<ReturnType<typeof ownerStore>>;
 	try {

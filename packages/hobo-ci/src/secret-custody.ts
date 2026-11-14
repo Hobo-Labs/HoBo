@@ -2,6 +2,7 @@ import {
 	isForbiddenSecretEnvKey,
 	looksLikeSecretEnvValue,
 } from "@hobo/bindles";
+import type { TrustedVault } from "@hobo/core";
 
 import type { Env } from "./secret-stores.js";
 
@@ -45,6 +46,32 @@ const TOKENISH =
 /** An environment after filtering detected secret names and values. */
 export interface PlainEnv {
 	[name: string]: string;
+}
+
+/**
+ * A run owns its vault until clear. A late callback cannot put credentials
+ * back after that boundary, even if its request outlives the setup page.
+ */
+export function scopeRunVault(vault: TrustedVault): TrustedVault {
+	let ended = false;
+	return {
+		put(name, value) {
+			if (ended) throw new Error("credential run has ended");
+			vault.put(name, value);
+		},
+		has: (name) => !ended && vault.has(name),
+		reveal: (name) => (ended ? undefined : vault.reveal(name)),
+		drop: (name) => {
+			if (!ended) vault.drop(name);
+		},
+		names: () => (ended ? [] : vault.names()),
+		clear: () => {
+			if (!ended) {
+				ended = true;
+				vault.clear();
+			}
+		},
+	};
 }
 
 /** True when a variable matches a known secret name or value pattern. */

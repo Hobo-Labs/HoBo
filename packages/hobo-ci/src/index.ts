@@ -42,6 +42,7 @@ export {
 	ignoredSecretEnvNotice,
 	isSecretEnv,
 	SECRET_ENV_NAMES,
+	scopeRunVault,
 	secretEnvNames,
 	withoutSecretEnv,
 } from "./secret-custody.js";

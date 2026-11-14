@@ -18,6 +18,7 @@ import {
 	ownerStore,
 	runPage,
 	SECRET_STORE_LOCATOR_FILE,
+	scopeRunVault,
 	storeIdOf,
 	withoutSecretEnv,
 	workloadOidcOf,
@@ -149,6 +150,22 @@ export async function prepareVercelConnection(
 	input: PrepareInput,
 	deps: PrepareVercelDeps = {},
 ): Promise<PrepareOutcome> {
+	const vault = scopeRunVault(deps.vault ?? createTrustedVault());
+	let handedOff = false;
+	try {
+		const outcome = await prepareVercelWithVault(input, { ...deps, vault });
+		handedOff = outcome.kind === "ready" && outcome.credentials === vault;
+		return outcome;
+	} finally {
+		// The lifecycle owns the vault only after a successful handoff.
+		if (!handedOff) vault.clear();
+	}
+}
+
+async function prepareVercelWithVault(
+	input: PrepareInput,
+	deps: PrepareVercelDeps & { readonly vault: TrustedVault },
+): Promise<PrepareOutcome> {
 	const env = deps.env ?? process.env;
 	const notice = ignoredSecretEnvNotice(env);
 	if (notice !== undefined) input.run.emitProgress(notice);
@@ -165,7 +182,7 @@ export async function prepareVercelConnection(
 		// The validated choice is a non-secret setting despite its name.
 		plainEnv.HOBO_SECRET_STORE = env.HOBO_SECRET_STORE;
 	}
-	const vault = deps.vault ?? createTrustedVault();
+	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
 	let owner: Awaited<ReturnType<typeof ownerStore>>;
 	try {

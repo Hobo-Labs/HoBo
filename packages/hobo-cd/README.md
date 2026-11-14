@@ -58,6 +58,10 @@ the run's trusted vault, in memory); whatever `hobo cd up` is missing is asked
 for and kept **in the secret store** as `HOBO_CD_SETTINGS` (the Integration's
 slug and client id). The client secret is its own store entry, and the Vercel
 token reaches the deploy through the vault, never an environment variable.
+Setup clears the vault on refusal, error or a read-only plan; on success it
+passes the vault to convergence, which clears it when the run ends. A late
+setup callback cannot refill a cleared run's vault. JavaScript string copies
+cannot be reliably erased.
 `HOBO_CD_VERCEL_REDIRECT_URI` (non-secret) may still name the Redirect URL the
 page listens on.
 
