@@ -52,8 +52,10 @@ export {
 	createYardClient,
 	type DownResult,
 	type PlanRendered,
+	planHostingAuthoritatively,
 	type UpResult,
 	type YardClient,
+	type YardPreflightRuntime,
 	type YardRuntime,
 	type YardSession,
 } from "./cloud/yard-client.js";

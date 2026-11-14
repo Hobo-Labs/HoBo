@@ -54,7 +54,7 @@ export interface CliFlags {
 	readonly demo: boolean;
 	/** Deterministic simulator seed for `--demo` (ADR-0147 demo mode). */
 	readonly demoSeed: string | null;
-	/** Target region for residency-aware preflight (`hobo verify --region`). */
+	/** Target region for deployment planning and residency-aware preflight. */
 	readonly region: string | null;
 	readonly budgetId?: string | null;
 	/**
@@ -456,7 +456,7 @@ function parseOption(
 			}
 			throw unknownOption(token, verb);
 		case "--region":
-			if (verb === "verify" || verb === "up") {
+			if (verb === "verify" || verb === "up" || verb === "plan") {
 				flags.region = takeValue(argv, index, token);
 				return index + 1;
 			}
