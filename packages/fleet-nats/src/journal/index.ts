@@ -29,7 +29,7 @@ export async function importJournalEvents(
 	input: Readonly<{ servers: readonly string[]; credentials: string }>,
 	items: readonly JournalImportItem[],
 ): Promise<Outcome<JournalImportResult>> {
-	const transport = await connectJournalTransport(input);
+	const transport = await connectJournalTransport(input, false);
 	try {
 		return await importJournal(transport, items);
 	} finally {

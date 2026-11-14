@@ -52,7 +52,11 @@ function envelope(context: string, payload: string): SignedEnvelope {
 const bytes = (value: SignedEnvelope) => toBinary(SignedEnvelopeSchema, value);
 const garbage = new Uint8Array([0xff, 0xff, 0xff]);
 
-function authorityOn(wire: BusWire, now = Date.now) {
+function authorityOn(
+	wire: BusWire,
+	now = Date.now,
+	role: "authority" | "witness" = "authority",
+) {
 	const pin = authorityPin(() => {
 		throw new Error("no trust record");
 	});
@@ -61,6 +65,7 @@ function authorityOn(wire: BusWire, now = Date.now) {
 		createRegistryView({ wire, pin, now }),
 		pin,
 		now,
+		role,
 	);
 }
 
@@ -287,6 +292,85 @@ describe("the audit log", () => {
 		expect(proposed.map((record) => record.context)).toEqual([
 			TRUST_RECORD_CONTEXT,
 		]);
+	});
+});
+
+describe("the witness side of the audit log", () => {
+	it("hands the witness each authority-signed checkpoint as appended, in order", async () => {
+		const nats = createMemoryNats();
+		const authority = authorityOn(nats.connect());
+		const witness = authorityOn(nats.connect(), Date.now, "witness");
+		await authority.audit.appendCheckpoint(
+			envelope(AUDIT_CHECKPOINT_CONTEXT, "cp1"),
+		);
+		const seen = collector<SignedEnvelope>();
+		const onCheckpoint = witness.audit.onCheckpoint;
+		if (onCheckpoint === undefined) throw new Error("no onCheckpoint");
+		const subscription = onCheckpoint(seen.push);
+		await authority.audit.appendCheckpoint(
+			envelope(AUDIT_CHECKPOINT_CONTEXT, "cp2"),
+		);
+		await nats
+			.connect()
+			.streamPublish(STREAMS.audit, AUDIT_SUBJECTS.checkpoint, garbage);
+		await settle();
+		await subscription.stop();
+		expect(seen.seen.map((checkpoint) => checkpoint.payload)).toEqual([
+			encoder.encode("cp1"),
+			encoder.encode("cp2"),
+		]);
+	});
+
+	it("publishes the witness's co-signatures on fleet.audit.witness, where the authority pairs them", async () => {
+		const nats = createMemoryNats();
+		const authority = authorityOn(nats.connect());
+		const witness = authorityOn(nats.connect(), Date.now, "witness");
+		const checkpoints = collector<WitnessedEnvelope>();
+		const trusts = collector<WitnessedEnvelope>();
+		const proposed = collector<SignedEnvelope>();
+		const subscriptions = [
+			authority.audit.onWitnessed(checkpoints.push),
+			authority.audit.onTrustWitnessed(trusts.push),
+			witness.audit.onTrustProposed(proposed.push),
+		];
+		await authority.audit.appendCheckpoint(
+			envelope(AUDIT_CHECKPOINT_CONTEXT, "cp1"),
+		);
+		await authority.audit.proposeTrust(envelope(TRUST_RECORD_CONTEXT, "t1"));
+		await settle();
+		expect(proposed.seen.map((record) => record.payload)).toEqual([
+			encoder.encode("t1"),
+		]);
+		// The witness appends its co-signatures: never to the authority's subjects.
+		await witness.audit.appendCheckpoint(
+			envelope(AUDIT_CHECKPOINT_CONTEXT, "cp1"),
+		);
+		await witness.audit.proposeTrust(envelope(TRUST_RECORD_CONTEXT, "t1"));
+		await settle();
+		for (const subscription of subscriptions) await subscription.stop();
+		expect(nats.stored(STREAMS.audit).map((m) => m.subject)).toEqual([
+			AUDIT_SUBJECTS.checkpoint,
+			AUDIT_SUBJECTS.trust,
+			AUDIT_SUBJECTS.witness,
+			AUDIT_SUBJECTS.witness,
+		]);
+		expect(checkpoints.seen).toHaveLength(1);
+		expect(checkpoints.seen[0]?.authority?.payload).toEqual(
+			encoder.encode("cp1"),
+		);
+		expect(trusts.seen).toHaveLength(1);
+		expect(trusts.seen[0]?.witness?.payload).toEqual(encoder.encode("t1"));
+	});
+
+	it("refuses to append an audit entry as the witness", async () => {
+		const witness = authorityOn(
+			createMemoryNats().connect(),
+			Date.now,
+			"witness",
+		);
+		await expect(
+			witness.audit.append(create(AuditEntrySchema, { sequence: 1 })),
+		).rejects.toThrow(/witness/u);
 	});
 });
 

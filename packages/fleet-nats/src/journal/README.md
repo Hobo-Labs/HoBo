@@ -30,7 +30,11 @@ the head and returns the record, as the core port's other stores do.
 `getStreamHead` answers the head this store last read or wrote.
 
 `credentials` is the text of a NATS credentials file; empty connects without
-authentication (tests only).
+authentication (tests only). The store connects exactly as the bus does (L42):
+`journalConnectionOptions` is the bus's `connectionOptions`, so TLS is
+required, the CA named by `HOBO_FLEET_NATS_CA` is trusted besides the system
+roots, and only `tls://` or `nats://` URLs are accepted. The store reconnects
+for the life of the process; an import fails fast.
 
 ## Import for a high-availability restore (L41)
 
@@ -64,5 +68,5 @@ in flight). All eight assertions pass against the fake JetStream context in
 - `test/journal/journal.test.ts`, `nats.test.ts`: isolated, against a fake
   JetStream context (`fake-jetstream.ts`, `fake-jetstream-client.ts`).
 - `test/journal/journal.integration.test.ts` (O11): `nats-server` from
-  `HOBO_FLEET_NATS_SERVER_BIN` or `PATH`; fails without it when `CI` is set,
-  otherwise reports one `[A15]` skip.
+  `HOBO_FLEET_NATS_SERVER_BIN` or `PATH`, with TLS required and a throwaway
+  CA; fails without it when `CI` is set, otherwise reports one `[A15]` skip.

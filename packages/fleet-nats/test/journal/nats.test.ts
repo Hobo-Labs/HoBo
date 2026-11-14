@@ -13,6 +13,7 @@ import { topologySpecs } from "../../src/bus/topology.js";
 import { createJournalEventStore } from "../../src/journal/index.js";
 import {
 	connectJournalTransport,
+	journalConnectionOptions,
 	journalTransportOn,
 } from "../../src/journal/nats.js";
 import { openJournalStore } from "../../src/journal/store.js";
@@ -210,6 +211,37 @@ describe("transport answers", () => {
 });
 
 describe("connecting", () => {
+	it("connects the way the bus does: TLS required, HOBO_FLEET_NATS_CA trusted, the URLs checked", () => {
+		const before = process.env.HOBO_FLEET_NATS_CA;
+		try {
+			process.env.HOBO_FLEET_NATS_CA = "/etc/hobo/fleet-ca.pem";
+			const options = journalConnectionOptions({
+				servers: ["tls://nats.fleet.test:4222"],
+				credentials: "",
+			});
+			expect(options.tls).toEqual({ caFile: "/etc/hobo/fleet-ca.pem" });
+			expect(options.servers).toEqual(["nats://nats.fleet.test:4222"]);
+			expect(options.name).toBe("hobo-fleet-journal");
+			expect(options.authenticator).toBeUndefined();
+			delete process.env.HOBO_FLEET_NATS_CA;
+			expect(
+				journalConnectionOptions({
+					servers: ["nats://nats.fleet.test:4222"],
+					credentials: "",
+				}).tls,
+			).toEqual({});
+			expect(() =>
+				journalConnectionOptions({
+					servers: ["http://nats.fleet.test"],
+					credentials: "",
+				}),
+			).toThrow(/tls:\/\/ or nats:\/\//u);
+		} finally {
+			if (before === undefined) delete process.env.HOBO_FLEET_NATS_CA;
+			else process.env.HOBO_FLEET_NATS_CA = before;
+		}
+	});
+
 	it("needs at least one server", async () => {
 		await expect(
 			createJournalEventStore({ servers: [], credentials: "" }),
