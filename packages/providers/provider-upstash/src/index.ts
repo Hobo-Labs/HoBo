@@ -5,6 +5,16 @@ export {
 	UPSTASH_BINDING_PROFILE,
 } from "./binding.js";
 export {
+	createUpstashBlobCredentials,
+	UpstashBlobCredentialError,
+	type UpstashBlobCredentialOptions,
+	upstashBlobFailureDomains,
+} from "./blob-credentials.js";
+export {
+	estimateUpstashBlobLiability,
+	type UpstashMeteredRates,
+} from "./blob-pricing.js";
+export {
 	type CreateDatabaseInput,
 	type CreateDatabaseOutcome,
 	createInMemoryIdempotencyStore,
