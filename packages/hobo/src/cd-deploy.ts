@@ -37,7 +37,10 @@ import {
 	type VerificationId,
 	WindowOverrideRecordSchema,
 } from "@hobo/cd";
+import { generateReconcilerKeys, reconcilerEnrollment } from "@hobo/cd/agent";
 import type { CommandResult } from "@hobo/cli";
+import { parseTenantId } from "@hobo/core";
+import { parseFleetId } from "@hobo/fleet";
 import {
 	type DeliveryModule,
 	deliveryRecordCount,
@@ -53,6 +56,9 @@ import {
 	parseCdFormat,
 } from "./cd-render.js";
 import { isJsonNumber, isJsonString, type JsonObject } from "./json.js";
+
+/** The agent version an enrolling reconciler reports to the fleet (its `agent_version`). */
+const CD_AGENT_VERSION = "1.0.0";
 
 /** What the subcommands run against. */
 export interface CdDeployHost {
@@ -980,7 +986,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			usage:
 				"hobo deploy agent token --camp-set <set> --camp <a,b> [--mode agent|publisher] [--ttl-ms <ms>]",
 			summary:
-				"Issue a single-use bootstrap token scoped to one Camp set (D19)",
+				"Issue a single-use bootstrap token scoped to one Camp set (D19); alias of `hobo fleet token create`",
 			run: async (host, _args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent token"]?.usage ?? "";
 				const campSet = need(text(flags, "camp-set"), "--camp-set", usage);
@@ -1006,53 +1012,136 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			},
 		},
 		"agent enroll": {
+			// The shell's option table (`@hobo/cli` subcommands.ts) still declares
+			// only the pre-fleet `--token` and `--jwk-file` for this subcommand, and
+			// the parity test keeps this usage line naming exactly those; both are
+			// refused here. The enrollment flags (`--token-file`, `--authority`,
+			// `--tenant`, `--fleet`, `--key-dir`, `--camp`) are read below and are
+			// named in the usage line once the shell declares them (a cascade
+			// delta of L19 for the coordinator).
 			usage:
-				"hobo deploy agent enroll --token <bootstrap> --jwk-file <public.jwk.json>",
-			summary: "Enroll an agent's public key; PENDING until both grants (I24)",
+				"hobo deploy agent enroll (enrolls as hobo fleet enroll does; refuses --token and --jwk-file)",
+			summary:
+				"Generate this agent's keys and enroll it; PENDING until both grants (I24); alias of `hobo fleet enroll --token-file`",
 			run: async (host, _args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent enroll"]?.usage ?? "";
-				const token = need(text(flags, "token"), "--token", usage);
-				const jwkFile = need(text(flags, "jwk-file"), "--jwk-file", usage);
-				const { readFile } = await import("node:fs/promises");
-				const { resolve } = await import("node:path");
-				let publicJwk: JsonObject;
-				try {
-					const parsed: unknown = JSON.parse(
-						await readFile(resolve(host.cwd, jwkFile), "utf8"),
-					);
-					if (
-						typeof parsed !== "object" ||
-						parsed === null ||
-						Array.isArray(parsed) ||
-						"d" in parsed
-					)
-						throw new Error(
-							"expected a public JWK object (no private member `d`)",
+				// The agent's keys are generated here, in --key-dir; a JWK from a
+				// file is never taken, and a private one is named as such.
+				const jwkFile = text(flags, "jwk-file");
+				if (jwkFile !== undefined) {
+					const { readFile } = await import("node:fs/promises");
+					const { resolve } = await import("node:path");
+					let isPrivate = false;
+					try {
+						isPrivate = /"d"\s*:/u.test(
+							await readFile(resolve(host.cwd, jwkFile), "utf8"),
 						);
-					// SAFETY: checked to be a JSON object above.
-					publicJwk = parsed as JsonObject;
-				} catch (error) {
+					} catch {
+						// Unreadable: refused below like any other --jwk-file.
+					}
 					return moduleRefusal("agent enroll", format, {
 						code: "agent-jwk-invalid",
-						message: error instanceof Error ? error.message : String(error),
+						message: isPrivate
+							? "--jwk-file holds a private key; the private key never leaves the agent"
+							: "--jwk-file is refused: the fleet enrollment generates the agent's keys",
 						remediation:
-							"Pass the agent's PUBLIC JWK; the private key never leaves the agent.",
+							"Pass --key-dir <dir>; `agent enroll` generates the agent's keys there (as `hobo fleet enroll --token-file` does).",
 					});
 				}
+				// Rule 11: a bootstrap token never travels on a command line.
+				if (flags.token !== undefined)
+					return moduleRefusal("agent enroll", format, {
+						code: "token-on-command-line",
+						message:
+							"--token is refused: a bootstrap token never goes on a command line",
+						remediation:
+							"Write the token to a file readable only by you and pass --token-file <path> (as for `hobo fleet enroll`).",
+					});
+				const tokenFile = need(
+					text(flags, "token-file"),
+					"--token-file",
+					usage,
+				);
+				const authority = need(text(flags, "authority"), "--authority", usage);
+				const tenant = need(text(flags, "tenant"), "--tenant", usage);
+				const fleet = need(text(flags, "fleet"), "--fleet", usage);
+				const keyDir = need(text(flags, "key-dir"), "--key-dir", usage);
+				const { mkdir, readFile, writeFile } = await import("node:fs/promises");
+				const { join, resolve } = await import("node:path");
+				let token: string;
+				try {
+					token = (await readFile(resolve(host.cwd, tokenFile), "utf8")).trim();
+				} catch (error) {
+					return moduleRefusal("agent enroll", format, {
+						code: "token-file-unreadable",
+						message: error instanceof Error ? error.message : String(error),
+						remediation:
+							"Pass --token-file naming the file `agent token` wrote.",
+					});
+				}
+				let fleetId: ReturnType<typeof parseFleetId>;
+				try {
+					fleetId = parseFleetId(fleet);
+				} catch (error) {
+					throw new Usage(
+						error instanceof Error ? error.message : String(error),
+						usage,
+					);
+				}
+				const keys = generateReconcilerKeys();
+				const dir = resolve(host.cwd, keyDir);
+				await mkdir(dir, { recursive: true, mode: 0o700 });
+				try {
+					for (const [name, jwk] of Object.entries(keys))
+						await writeFile(
+							join(dir, `${name}.jwk.json`),
+							JSON.stringify(jwk),
+							{
+								mode: 0o600,
+								flag: "wx",
+							},
+						);
+				} catch (error) {
+					return moduleRefusal("agent enroll", format, {
+						code: "agent-keys-exist",
+						message: error instanceof Error ? error.message : String(error),
+						remediation:
+							"An agent's keys are never replaced in place: pass a new --key-dir, or revoke the old agent first.",
+					});
+				}
+				const built = await reconcilerEnrollment({
+					keys,
+					token,
+					tenant: parseTenantId(tenant),
+					fleet: fleetId,
+					origin: authority,
+					nowMs: host.ctx.now(),
+					agentVersion: CD_AGENT_VERSION,
+				});
 				const result = await host.cd.enrollment.enroll(
-					{ token, publicJwk, claims: [] },
+					{
+						request: built.request,
+						dpopProof: built.dpopProof,
+						campIds: list(flags, "camp").map(asCamp),
+					},
 					host.ctx,
 				);
 				return outcome(host, "agent enroll", format, result, (r) => ({
 					code: "HOBO_CD_AGENT_ENROLLED",
 					summary: `agent ${r.reconciler.reconcilerId} enrolled; next: agent approve-key and agent accept`,
-					data: { reconciler: r.reconciler, state: r.state },
+					data: {
+						reconciler: r.reconciler,
+						state: r.state,
+						memberId: built.memberId,
+						signKeyFile: join(dir, "sign.jwk.json"),
+					},
 				}));
 			},
 		},
 		"agent approve-key": {
 			usage: "hobo deploy agent approve-key <reconciler-id>",
-			summary: "Grant 1: the key belongs to a legitimate agent",
+			summary:
+				"Grant 1: the key belongs to a legitimate agent; alias of `hobo fleet member approve`",
 			run: async (host, args, _flags, format) => {
 				const id = need(
 					args[0],
@@ -1079,7 +1168,8 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent accept": {
 			usage: "hobo deploy agent accept <reconciler-id> --camp <a,b>",
-			summary: "Grant 2: the agent may serve these Camps",
+			summary:
+				"Grant 2: the agent may serve these Camps; alias of `hobo fleet member accept`",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent accept"]?.usage ?? "";
 				const id = need(args[0], "<reconciler-id>", usage);
@@ -1101,7 +1191,7 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 			usage:
 				"hobo deploy agent run --feed <https://station/v1/cd/> --reconciler <id> --key-file <private.jwk.json> --svid-file <svid> --camp <a,b>",
 			summary:
-				"Run this process as an agent-mode reconciler (outbound HTTPS only)",
+				"Run this process as an agent-mode reconciler (outbound HTTPS only); alias of `hobo fleet run`",
 			run: async (host, _args, flags, format) => {
 				if (!host.runAgent)
 					return moduleRefusal("agent run", format, {
@@ -1120,7 +1210,8 @@ export const CD_DEPLOY_SUBCOMMANDS: Readonly<Record<string, Sub>> =
 		},
 		"agent revoke": {
 			usage: "hobo deploy agent revoke <reconciler-id> --reason <text>",
-			summary: "Revoke an agent; refused on its next request",
+			summary:
+				"Revoke an agent; refused on its next request; alias of `hobo fleet member revoke`",
 			run: async (host, args, flags, format) => {
 				const usage = CD_DEPLOY_SUBCOMMANDS["agent revoke"]?.usage ?? "";
 				const id = need(args[0], "<reconciler-id>", usage);

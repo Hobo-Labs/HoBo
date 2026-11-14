@@ -23,6 +23,12 @@ import type {
 	PrincipalRef,
 } from "@hobo/core";
 import {
+	Availability,
+	MemberKind,
+	MemberState,
+	parseFleetId,
+} from "@hobo/fleet";
+import {
 	type CampClaimRecord,
 	CampClaimRecordSchema,
 	type CampConditionRecord,
@@ -46,6 +52,7 @@ import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
 import type {
 	CampId,
 	CampInventory,
+	CampMembers,
 	CampTopology,
 	CampView,
 	CdAction,
@@ -65,6 +72,7 @@ import {
 	defaultStatus,
 	deriveStatus,
 	isAutomaticNoPlace,
+	type MemberLifecycle,
 	negativeSignals,
 	noRunPermitted,
 	sameStatus,
@@ -100,7 +108,23 @@ export type CampInventoryDeps = CdBase & {
 	readonly desired: DesiredStateReader;
 	readonly authorizer: CdAuthorizer;
 	readonly telemetry: TelemetrySink;
+	/** The Camp mapper's fleet registry (L19); absent: no Camp is backed by a member. */
+	readonly members?: CampMembers | undefined;
 };
+
+export type { CampMembers };
+
+const MEMBER_NAME_MAX = 63;
+
+/** The fleet member name of a Camp: its id's last segment as a short lower-case token. */
+export function campMemberName(campId: string): string {
+	const last = campId.slice(campId.lastIndexOf("/") + 1).toLowerCase();
+	const token = last
+		.replace(/[^a-z0-9_-]+/gu, "-")
+		.replace(/^[-_]+/u, "")
+		.slice(0, MEMBER_NAME_MAX);
+	return token === "" ? "camp" : token;
+}
 
 /** Reconcile status events the Station appends on `cd-camp-status-<id>`: each is Station-observed contact. */
 const CONTACT_EVENTS: ReadonlySet<string> = new Set([
@@ -478,6 +502,46 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		return (await d.rails.forCamp(campId))?.failover;
 	}
 
+	/**
+	 * The backing member's lifecycle, read by the Camp mapper. Only a
+	 * reconciler DEVICE has an observer, so only its fleet view entry is read
+	 * (LOST is `observedLost`); an agentless TARGET's reachability stays with
+	 * the signal sources (D11).
+	 */
+	async function memberOf(
+		campId: CampId,
+		topology: CampTopology | undefined,
+	): Promise<MemberLifecycle | undefined> {
+		const members = d.members;
+		if (members === undefined || topology === undefined) return undefined;
+		const fleet = members.fleetOf(topology.yardId);
+		if (fleet === undefined) return undefined;
+		const name = campMemberName(campId);
+		const record = (await members.registry.membersOf(parseFleetId(fleet))).find(
+			(entry) =>
+				entry.memberships.some(
+					(membership) =>
+						membership.fleet === fleet && membership.name === name,
+				),
+		);
+		if (record === undefined)
+			return { active: false, reason: "member-missing" };
+		if (record.state === MemberState.SUSPENDED)
+			return { active: false, reason: "member-suspended" };
+		if (record.state === MemberState.REVOKED)
+			return { active: false, reason: "member-revoked" };
+		if (record.kind !== MemberKind.DEVICE) return { active: true, reason: "" };
+		const view = await members.registry.view(parseFleetId(fleet));
+		const observed = view?.members.find(
+			(entry) => entry.memberId === record.memberId,
+		);
+		return {
+			active: true,
+			reason: "",
+			observedLost: observed?.availability === Availability.LOST,
+		};
+	}
+
 	async function rederive(
 		campId: CampId,
 		status: CampStatusRecord,
@@ -485,17 +549,26 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		contact: ContactState,
 		atMs: number,
 	): Promise<CampStatusRecord> {
+		const member = await memberOf(campId, topology);
 		const first = deriveStatus({
 			previous: status,
 			topology,
 			contact,
 			failover: undefined,
 			atMs,
+			member,
 		});
 		const failover = await failoverFor(campId, first.conditions);
 		return failover === undefined
 			? first
-			: deriveStatus({ previous: status, topology, contact, failover, atMs });
+			: deriveStatus({
+					previous: status,
+					topology,
+					contact,
+					failover,
+					atMs,
+					member,
+				});
 	}
 
 	async function authorize(

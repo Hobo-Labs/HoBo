@@ -1,7 +1,7 @@
 # HoBo's runner fleet, delivered by HoBo CD
 
-HoBo's self-hosted GitHub Actions runner hosts (the box worker, mesh nodes and
-local runners serving `hobo`, `hobo-trunk` and `hobo-local-host`) are Camps
+HoBo's self-hosted GitHub Actions runner hosts (the box worker, enrolled fleet
+devices and developer devices serving `hobo`, `hobo-trunk` and `hobo-local-host`) are Camps
 that `@hobo/cd` manages, the same way any Bindle's Camps are
 ([continuous delivery](../../../../docs/design/continuous-delivery.md),
 [`hobo deploy`](../../../hobo/CD.md)). Job routing does not change: which label
@@ -12,7 +12,7 @@ new one a host at a time.
 
 | File | What it is |
 |---|---|
-| [`hosts.json`](hosts.json) | The declared runner hosts: mesh node id, kind (`box-worker`, `mesh-node`, `local-runner`), the runner labels it serves, and its ring (`pilot` or `fleet`). |
+| [`hosts.json`](hosts.json) | The declared runner hosts: device name in fleet `hobo`, kind (`box-worker`, `fleet-device`, `developer-device`), the runner labels it serves, and its ring (`pilot` or `fleet`). Every host is a `DEVICE` member of fleet `hobo`. |
 | [`hobo.delivery.ts`](hobo.delivery.ts) | The delivery module `hobo deploy pipeline apply --file` applies; built from `hosts.json` by `runnerFleetDelivery` in [`src/runner-fleet-delivery.ts`](../../src/runner-fleet-delivery.ts). |
 | [`hobo-cd-agent.service`](hobo-cd-agent.service), [`agent.env.example`](agent.env.example), [`agent.runner-host.json.example`](agent.runner-host.json.example), [`agent.local-runner.json.example`](agent.local-runner.json.example) | The CD agent each runner host runs beside its controller, and what it is told about its host (`HOBO_CD_RUNNER_HOST`). |
 
@@ -22,7 +22,7 @@ new one a host at a time.
   `hobo.ci/runner-fleet=true`, `hobo.ci/runner-ring=<ring>`,
   `hobo.ci/runner-host=<kind>` and `hobo.ci/serves-<label>=true|false`
   (`runnerFleetTopology`, exported as the module's `camps`). The host id is the
-  host's mesh node id (`HOBO_CI_MESH_NODE_ID`), lowercase.
+  host's device name in fleet `hobo` (the `name` it enrolled with), lowercase.
 - **Camp set** `hobo-ci-runner-fleet`, by the `hobo.ci/runner-fleet` label, for
   the `hobo-ci-runner-fleet` Bindle (`HOBO_CI_COMPONENTS.runnerFleet` in
   `@hobo/cd/compose`). Adding a host is a topology change, not a pipeline change.
@@ -89,10 +89,10 @@ version: one declaration plans every version.
 ## Fleet health feeds Camp inventory
 
 Every observation a runner host's agent reports carries the host's health as
-claims (`runnerHostCampReport`): `hobo.ci/mesh-advert` (`fresh`, `expired` or
-`missing`: the host's own signed advertisement), `hobo.ci/mesh-advert-valid-until`,
-`hobo.ci/runner-host-ready` (the controller observed serving and the advert
-fresh and healthy) and, while the advert is fresh, `label:hobo.ci/serves-<label>`.
+claims (`runnerHostCampReport`): `hobo.ci/observation` (`fresh`, `expired` or
+`missing`: the host's own signed fleet `Observation`), `hobo.ci/observation-valid-until`,
+`hobo.ci/runner-host-ready` (the controller observed serving and the
+observation fresh and healthy) and, while it is fresh, `label:hobo.ci/serves-<label>`.
 The Station's delivery feed, once it has accepted the report (SVID, DPoP,
 lease, fence), passes it to `CampInventory.observe` as health-source
 conditions read at the Station's clock (`runnerHostHealthConditions`, the table
@@ -103,17 +103,27 @@ A host that is not ready carries the `NO_PLACE` taint
 skips it and a fan-out defers it. A host that has never reported is not
 contacted at all and carries the Station's own `hobo.cd/unreachable` taint.
 
-`runnerFleetCampObservations(hosts, nodes, now)` maps the mesh board's view of
-each host to the same table, for a reader of the board:
+The agent's own claims read at the Station's clock:
 
-| Mesh advertisement | REACHABLE | LEASED | READY |
+| Observation | REACHABLE | LEASED | READY |
 |---|---|---|---|
-| fresh, healthy | TRUE `mesh-advert-fresh` | TRUE `mesh-lease-valid-until:<time>` | TRUE `runner-host-healthy` |
-| fresh, draining or host critical | TRUE | TRUE | FALSE `runner-host-draining-or-pressured` |
-| expired | FALSE `mesh-advert-expired` | FALSE `mesh-lease-expired` | FALSE |
-| none | UNKNOWN `mesh-advert-missing` | UNKNOWN | UNKNOWN |
+| fresh, healthy | TRUE `observation-fresh` | TRUE `observation-valid-until:<time>` | TRUE `runner-host-healthy` |
+| fresh, draining or pressured | TRUE | TRUE | FALSE `runner-host-draining-or-pressured` |
+| expired | FALSE `observation-expired` | FALSE `observation-validity-expired` | FALSE |
+| none | UNKNOWN `observation-missing` | UNKNOWN | UNKNOWN |
 
-The labels a host advertises are claims (`label:hobo.ci/serves-<label>`): a host
+`runnerFleetCampObservations(hosts, members, now)` maps the fleet's view of
+each host (its `FleetMemberView` in fleet `hobo`, matched by device name) to
+the same conditions, for a reader of the fleet view:
+
+| Member | REACHABLE | LEASED | READY |
+|---|---|---|---|
+| `ACTIVE`, `LIVE`, `REACHABLE` | TRUE `member-live` | TRUE `member-last-seen:<time>` | TRUE `runner-host-healthy` |
+| `ACTIVE`, `UNHEALTHY`, draining or pressured | TRUE | TRUE | FALSE `runner-host-draining-or-pressured` |
+| `LOST`, or not `ACTIVE` | FALSE `member-lost` / `member-<state>` | FALSE | FALSE |
+| none | UNKNOWN `member-missing` | UNKNOWN | UNKNOWN |
+
+The labels a host reports are claims (`label:hobo.ci/serves-<label>`): a host
 that stopped serving a declared label reads as `CLAIMS_CONSISTENT=false` and is
 not placed. Claims narrow, never grant.
 
@@ -126,14 +136,17 @@ not placed. Claims narrow, never grant.
    ([`hobo deploy`](../../../hobo/CD.md#topology-from-the-repository)):
    `hobo deploy pipeline apply --file packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`, then
    `hobo deploy agent token --camp-set hobo-ci-runner-fleet --camp hobo-ci-runners/<id> --yard packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`.
-2. On the host, make a key pair, keep the private JWK as
-   `~/.config/hobo-cd-agent/agent.jwk.json` (mode 0600), and enroll the public
-   half: `hobo deploy agent enroll --token <token> --jwk-file public.jwk.json`.
+2. On the host, write the token to a file only you can read and enroll:
+   `hobo deploy agent enroll --token-file <file> --authority <fleet authority> --tenant <tenant> --fleet hobo --key-dir ~/.config/hobo-cd-agent`.
+   It generates the agent's keys there (mode 0600; `sign.jwk.json` is the
+   key `agent run` signs with) and enrolls it as a `DEVICE` with role
+   `RECONCILER`; the token never goes on the command line.
 3. On the Station, an operator approves the key and accepts the agent for the
    host's Camp: `hobo deploy agent approve-key <id>`, then
    `hobo deploy agent accept <id> --camp hobo-ci-runners/<id>`.
-4. On the host, save the SVID as `agent.svid` (an empty file is fine: the
-   agent activates one by proving key possession once accepted), fill
+4. On the host, keep the member SVID in `agent.svid` (the fleet agent,
+   `hobo fleet run`, refreshes it; `agent run` re-reads it before each
+   request), fill
    `agent.env` from [`agent.env.example`](agent.env.example) and
    `agent.runner-host.json` from
    [`agent.runner-host.json.example`](agent.runner-host.json.example), and enable
@@ -151,11 +164,12 @@ not placed. Claims narrow, never grant.
 read from the box worker's data directory, the directory of `worker.database`
 (default `HOBO_CI_WORKER_DB`, else the worker's own default path), which the
 controller container must mount from the host: the journal read-only for
-leases, `mesh-advert.json` (the worker's own advert, rewritten every mesh
-beat) and the `admission-paused` marker the agent places to drain the host
+leases, `fleet-observation.json` (the host's own fleet `Observation`,
+rewritten every beat by its fleet agent; the controller digest is its
+`agent_version` or its `hobo.ci/controller-digest=<digest>` label) and the `admission-paused` marker the agent places to drain the host
 (package README, "Job ports from the worker's data directory"). A local
 runner names its state directory instead (`worker: {directory}`): its
-controller writes the advert, the GitHub presence of its registered runner
+fleet agent writes the observation, its controller the GitHub presence of its registered runner
 (`runner-presence.json`) and honours the marker there. A host whose
 controller runs as a process (today's box worker and local runner) sets
 `controller: {mode: "process", releases: "<directory or https:// base URL>"}`

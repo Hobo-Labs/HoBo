@@ -34,7 +34,9 @@ export {
 	runnerHostReferenceParameter,
 } from "./runner-fleet-delivery.js";
 export {
+	CONTROLLER_DIGEST_LABEL,
 	createRunnerHostResolver,
+	observedControllerDigest,
 	RUNNER_HOST_HEALTH_CLAIMS,
 	RUNNER_HOST_PRODUCT_ID,
 	type RunnerControllerProcess,
@@ -53,8 +55,9 @@ export {
 export {
 	createWorkerHostJobs,
 	WORKER_ADMISSION_PAUSED_FILE,
-	WORKER_MESH_ADVERT_FILE,
+	WORKER_OBSERVATION_FILE,
 	WORKER_RUNNER_PRESENCE_FILE,
 	type WorkerHostFiles,
 	workerHostFiles,
+	writeWorkerObservation,
 } from "./runner-host-worker-jobs.js";

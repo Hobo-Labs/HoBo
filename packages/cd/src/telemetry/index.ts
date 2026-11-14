@@ -26,11 +26,11 @@ export {
 	type TelemetryFailureCode,
 } from "./errors.js";
 export {
+	type CampMetricSources,
 	campInventoryPoints,
-	collectFleetMetrics,
+	collectCampMetrics,
 	compliancePoints,
 	FANOUT_SLOT_STATES,
-	type FleetSources,
 	failoverCountPoints,
 	fanoutCampsPoints,
 } from "./fleet.js";

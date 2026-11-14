@@ -30,7 +30,14 @@ import {
 	type TelemetrySink,
 	type TopologyReader,
 } from "@hobo/cd";
-import { type HttpTransport, type JsonObject, stableDigest } from "@hobo/core";
+import { declareCampTarget } from "@hobo/cd/inventory";
+import {
+	type HttpTransport,
+	type JsonObject,
+	stableDigest,
+	type TenantId,
+} from "@hobo/core";
+import type { FleetClient } from "@hobo/fleet";
 import type { ClusterProfileImport } from "../config.js";
 import { KubeFleetError, reason } from "../errors.js";
 import { arrayAt, objectAt, objectsOf, stringAt } from "../json.js";
@@ -92,6 +99,20 @@ export type ClusterProfileInventoryDeps = Readonly<{
 	telemetry?: TelemetrySink;
 	/** Wait between watch retries after a transport failure (default: setTimeout). */
 	delay?: (ms: number, signal: AbortSignal) => Promise<void>;
+	/**
+	 * Fleet membership of the imported clusters (L19): `publish` also declares
+	 * each one as a `TARGET` member of the fleet its Yard maps to. Absent: no
+	 * declaration.
+	 */
+	members?: ClusterProfileMembers;
+}>;
+
+/** Where `publish` declares imported clusters as `TARGET` members. */
+export type ClusterProfileMembers = Readonly<{
+	tenant: TenantId;
+	client: Pick<FleetClient, "declare">;
+	/** The fleet a Yard's Camps are members of; undefined when the Yard has none. */
+	fleetOf(yardId: string): string | undefined;
 }>;
 
 const PAGE = 500;
@@ -299,6 +320,37 @@ export function clusterProfileInventory(
 		}
 	}
 
+	/**
+	 * Declare one imported cluster as a TARGET (secret-free: a reference to
+	 * the profile and a digest of its API endpoints). A refusal is counted and
+	 * the Camp is still observed: until the member exists the Camp mapper
+	 * reads it as `member-missing`, which fails closed (NO_PLACE).
+	 */
+	async function declareTarget(camp: ImportedCamp): Promise<void> {
+		const members = deps.members;
+		if (members === undefined) return;
+		const fleet = members.fleetOf(camp.topology.yardId);
+		if (fleet === undefined) return;
+		const { profileNamespace, profileName } = camp.record;
+		const declared = await declareCampTarget(members.client, {
+			tenant: members.tenant,
+			fleet,
+			campId: camp.topology.campId,
+			displayName: `${profileNamespace}/${profileName}`,
+			credentialRef: `clusterprofile/${profileNamespace}/${profileName}`,
+			endpointDigest: stableDigest(
+				camp.access.map((provider) => provider.server ?? "").sort(),
+			),
+		});
+		if (declared.ok) return;
+		const meter = createMeter(deps.telemetry, now);
+		meter.count(KUBE_FLEET_METRICS.targetDeclareFailures, {
+			hub: config.hub.name,
+			code: declared.reasons[0]?.code ?? "",
+		});
+		await meter.flush();
+	}
+
 	const topology: TopologyReader = Object.freeze({
 		async camps() {
 			return Object.freeze(
@@ -321,6 +373,7 @@ export function clusterProfileInventory(
 			for (const camp of [...state.values()].sort((a, b) =>
 				a.topology.campId.localeCompare(b.topology.campId),
 			)) {
+				await declareTarget(camp);
 				out.push(
 					await inventory.observe(
 						{

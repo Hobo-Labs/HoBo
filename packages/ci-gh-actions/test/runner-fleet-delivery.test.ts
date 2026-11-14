@@ -1,7 +1,15 @@
 /* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unsafe-dictionary-type -- SAFETY: this test's conformance walker is a parse boundary: it reads records as untyped protobuf JSON and checks each key and value against cd.proto's text, so it must accept unknown input. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { MeshNode } from "@hobo/ci/mesh";
+import { create } from "@bufbuild/protobuf";
+import {
+	Availability,
+	type FleetMemberView,
+	FleetMemberViewSchema,
+	Health,
+	MemberKind,
+	MemberState,
+} from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import {
 	parseRunnerHosts,
@@ -29,10 +37,10 @@ const deployDir = join(root, "packages/ci-gh-actions/deploy/runner-fleet");
 
 const HOSTS = [
 	{ id: "box", kind: "box-worker", runnerLabels: ["hobo", "hobo-trunk"] },
-	{ id: "mesh-a", kind: "mesh-node", runnerLabels: ["hobo"], ring: "pilot" },
+	{ id: "mesh-a", kind: "fleet-device", runnerLabels: ["hobo"], ring: "pilot" },
 	{
 		id: "laptop",
-		kind: "local-runner",
+		kind: "developer-device",
 		runnerLabels: ["hobo-local-host"],
 	},
 ];
@@ -133,16 +141,16 @@ describe("runner hosts are parsed once (parse, don't validate)", () => {
 		const parsed = hosts();
 		expect(parsed.map((h) => [h.id, h.kind, h.ring])).toEqual([
 			["box", "box-worker", "fleet"],
-			["laptop", "local-runner", "fleet"],
-			["mesh-a", "mesh-node", "pilot"],
+			["laptop", "developer-device", "fleet"],
+			["mesh-a", "fleet-device", "pilot"],
 		]);
 	});
 
-	it("parseRunnerHosts refuses unknown labels, duplicate ids, a local runner on a fleet label and a fleet with no pilot", () => {
+	it("parseRunnerHosts refuses unknown labels, duplicate ids, a developer device on a fleet label and a fleet with no pilot", () => {
 		const malformed = parseRunnerHosts(
 			JSON.stringify([
 				{ id: "box", kind: "box-worker", runnerLabels: ["hobo-arc"] },
-				{ id: "Bad Id", kind: "local-runner", runnerLabels: ["hobo"] },
+				{ id: "Bad Id", kind: "developer-device", runnerLabels: ["hobo"] },
 			]),
 		);
 		expect(malformed.ok).toBe(false);
@@ -155,9 +163,9 @@ describe("runner hosts are parsed once (parse, don't validate)", () => {
 		const bad = parseRunnerHosts(
 			JSON.stringify([
 				{ id: "box", kind: "box-worker", runnerLabels: ["hobo"] },
-				{ id: "box", kind: "mesh-node", runnerLabels: ["hobo"] },
-				{ id: "laptop", kind: "local-runner", runnerLabels: ["hobo"] },
-				{ id: "x", kind: "mesh-node", runnerLabels: ["hobo-local-host"] },
+				{ id: "box", kind: "fleet-device", runnerLabels: ["hobo"] },
+				{ id: "laptop", kind: "developer-device", runnerLabels: ["hobo"] },
+				{ id: "x", kind: "fleet-device", runnerLabels: ["hobo-local-host"] },
 			]),
 		);
 		expect(bad.ok).toBe(false);
@@ -165,10 +173,10 @@ describe("runner hosts are parsed once (parse, don't validate)", () => {
 		expect(bad.code).toBe("runner-hosts-invalid");
 		expect(bad.problems.join("\n")).toMatch(/duplicate host id box/u);
 		expect(bad.problems.join("\n")).toMatch(
-			/local-runner serves only hobo-local-host/u,
+			/developer-device serves only hobo-local-host/u,
 		);
 		expect(bad.problems.join("\n")).toMatch(
-			/only a local-runner serves hobo-local-host/u,
+			/only a developer-device serves hobo-local-host/u,
 		);
 		expect(bad.problems.join("\n")).toMatch(/no pilot host/u);
 		expect(bad.remediation).toMatch(/hosts\.json/u);
@@ -395,10 +403,10 @@ describe("the delivery module for the runner fleet", () => {
 		expect(runnerHostReferenceParameter("box-worker", "container")).toBe(
 			"image",
 		);
-		expect(runnerHostReferenceParameter("mesh-node", "process")).toBe(
+		expect(runnerHostReferenceParameter("fleet-device", "process")).toBe(
 			"workerRelease",
 		);
-		expect(runnerHostReferenceParameter("local-runner", "process")).toBe(
+		expect(runnerHostReferenceParameter("developer-device", "process")).toBe(
 			"localRunnerRelease",
 		);
 	});
@@ -459,17 +467,22 @@ describe("the delivery module for the runner fleet", () => {
 	});
 });
 
-describe("fleet health and lease signals feed Camp inventory conditions", () => {
+describe("fleet health and membership signals feed Camp inventory conditions", () => {
 	const now = Date.parse("2026-11-12T10:00:00.000Z");
-	const node = (over: Partial<MeshNode>): MeshNode => ({
-		id: "box",
-		freeSlots: 1,
-		healthy: true,
-		labels: ["hobo", "hobo-trunk"],
-		validUntilMs: now + 30_000,
-		sinceMs: now - 60_000,
-		...over,
-	});
+	// The box as fleet `hobo` sees it: a DEVICE member named after the host.
+	const member = (over: Partial<FleetMemberView> = {}): FleetMemberView =>
+		create(FleetMemberViewSchema, {
+			memberId: "member-box",
+			name: "box",
+			kind: MemberKind.DEVICE,
+			state: MemberState.ACTIVE,
+			availability: Availability.LIVE,
+			health: Health.REACHABLE,
+			labels: ["hobo", "hobo-trunk"],
+			since: "2026-11-12T09:59:00.000Z",
+			lastSeen: "2026-11-12T09:59:55.000Z",
+			...over,
+		});
 	const conditions = (
 		observed: ReturnType<typeof runnerFleetCampObservations>,
 		campId: string,
@@ -481,18 +494,15 @@ describe("fleet health and lease signals feed Camp inventory conditions", () => 
 			]),
 		);
 
-	it("a fresh, healthy advertisement is REACHABLE, LEASED and READY from the health source", () => {
-		const observed = runnerFleetCampObservations(hosts(), [node({})], now);
+	it("a live, active, reachable member is REACHABLE, LEASED and READY from the health source", () => {
+		const observed = runnerFleetCampObservations(hosts(), [member()], now);
 		const box = observed.find((o) => o.campId === `${RUNNER_FLEET_YARD}/box`);
 		expect(box?.source).toBe("SIGNAL_SOURCE_HEALTH_SOURCE");
 		expect(conditions(observed, `${RUNNER_FLEET_YARD}/box`)).toEqual({
-			CAMP_CONDITION_TYPE_REACHABLE: [
-				"CONDITION_STATUS_TRUE",
-				"mesh-advert-fresh",
-			],
+			CAMP_CONDITION_TYPE_REACHABLE: ["CONDITION_STATUS_TRUE", "member-live"],
 			CAMP_CONDITION_TYPE_LEASED: [
 				"CONDITION_STATUS_TRUE",
-				"mesh-lease-valid-until:2026-11-12T10:00:30.000Z",
+				"member-last-seen:2026-11-12T09:59:55.000Z",
 			],
 			CAMP_CONDITION_TYPE_READY: [
 				"CONDITION_STATUS_TRUE",
@@ -502,58 +512,75 @@ describe("fleet health and lease signals feed Camp inventory conditions", () => 
 		expect(box?.conditions[0]?.since).toBe("2026-11-12T09:59:00.000Z");
 	});
 
-	it("a draining or pressured host is reachable but not READY", () => {
-		const observed = runnerFleetCampObservations(
+	it("a draining or unhealthy member is reachable but not READY", () => {
+		for (const over of [
+			{ health: Health.DRAINING },
+			{ health: Health.PRESSURED },
+			{ availability: Availability.UNHEALTHY },
+		]) {
+			const observed = runnerFleetCampObservations(
+				hosts(),
+				[member(over)],
+				now,
+			);
+			expect(
+				conditions(observed, `${RUNNER_FLEET_YARD}/box`)
+					.CAMP_CONDITION_TYPE_READY,
+			).toEqual([
+				"CONDITION_STATUS_FALSE",
+				"runner-host-draining-or-pressured",
+			]);
+		}
+	});
+
+	it("a lost or suspended member is all FALSE, and a missing one is unknown, never assumed healthy", () => {
+		const lost = runnerFleetCampObservations(
 			hosts(),
-			[node({ healthy: false })],
+			[member({ availability: Availability.LOST })],
+			now,
+		);
+		expect(conditions(lost, `${RUNNER_FLEET_YARD}/box`)).toEqual({
+			CAMP_CONDITION_TYPE_REACHABLE: ["CONDITION_STATUS_FALSE", "member-lost"],
+			CAMP_CONDITION_TYPE_LEASED: ["CONDITION_STATUS_FALSE", "member-lost"],
+			CAMP_CONDITION_TYPE_READY: ["CONDITION_STATUS_FALSE", "member-lost"],
+		});
+		const suspended = runnerFleetCampObservations(
+			hosts(),
+			[member({ state: MemberState.SUSPENDED })],
 			now,
 		);
 		expect(
-			conditions(observed, `${RUNNER_FLEET_YARD}/box`)
-				.CAMP_CONDITION_TYPE_READY,
-		).toEqual(["CONDITION_STATUS_FALSE", "runner-host-draining-or-pressured"]);
-	});
-
-	it("an expired advertisement loses its lease, and a missing one is unknown, never assumed healthy", () => {
-		const observed = runnerFleetCampObservations(
+			conditions(suspended, `${RUNNER_FLEET_YARD}/box`)
+				.CAMP_CONDITION_TYPE_LEASED,
+		).toEqual(["CONDITION_STATUS_FALSE", "member-suspended"]);
+		expect(suspended[0]?.claims).toEqual([]);
+		expect(conditions(lost, `${RUNNER_FLEET_YARD}/mesh-a`)).toEqual({
+			CAMP_CONDITION_TYPE_REACHABLE: [
+				"CONDITION_STATUS_UNKNOWN",
+				"member-missing",
+			],
+			CAMP_CONDITION_TYPE_LEASED: [
+				"CONDITION_STATUS_UNKNOWN",
+				"member-missing",
+			],
+			CAMP_CONDITION_TYPE_READY: ["CONDITION_STATUS_UNKNOWN", "member-missing"],
+		});
+		// A TARGET of the same name is not the host: only DEVICE members count.
+		const target = runnerFleetCampObservations(
 			hosts(),
-			[node({ validUntilMs: now - 1 })],
+			[member({ kind: MemberKind.TARGET })],
 			now,
 		);
-		expect(conditions(observed, `${RUNNER_FLEET_YARD}/box`)).toEqual({
-			CAMP_CONDITION_TYPE_REACHABLE: [
-				"CONDITION_STATUS_FALSE",
-				"mesh-advert-expired",
-			],
-			CAMP_CONDITION_TYPE_LEASED: [
-				"CONDITION_STATUS_FALSE",
-				"mesh-lease-expired",
-			],
-			CAMP_CONDITION_TYPE_READY: [
-				"CONDITION_STATUS_FALSE",
-				"mesh-advert-expired",
-			],
-		});
-		expect(conditions(observed, `${RUNNER_FLEET_YARD}/mesh-a`)).toEqual({
-			CAMP_CONDITION_TYPE_REACHABLE: [
-				"CONDITION_STATUS_UNKNOWN",
-				"mesh-advert-missing",
-			],
-			CAMP_CONDITION_TYPE_LEASED: [
-				"CONDITION_STATUS_UNKNOWN",
-				"mesh-advert-missing",
-			],
-			CAMP_CONDITION_TYPE_READY: [
-				"CONDITION_STATUS_UNKNOWN",
-				"mesh-advert-missing",
-			],
-		});
+		expect(
+			conditions(target, `${RUNNER_FLEET_YARD}/box`)
+				.CAMP_CONDITION_TYPE_REACHABLE,
+		).toEqual(["CONDITION_STATUS_UNKNOWN", "member-missing"]);
 	});
 
-	it("the labels a host advertises are claims, so a host that stopped serving a declared label reads as inconsistent", () => {
+	it("the labels a member reports are claims, so a host that stopped serving a declared label reads as inconsistent", () => {
 		const observed = runnerFleetCampObservations(
 			hosts(),
-			[node({ labels: ["hobo"] })],
+			[member({ labels: ["hobo"] })],
 			now,
 		);
 		const box = observed.find((o) => o.campId === `${RUNNER_FLEET_YARD}/box`);
@@ -561,19 +588,19 @@ describe("fleet health and lease signals feed Camp inventory conditions", () => 
 			{
 				name: "label:hobo.ci/serves-hobo",
 				value: "true",
-				reportedBy: "mesh:box",
+				reportedBy: "fleet:member-box",
 				observedAt: "2026-11-12T10:00:00.000Z",
 			},
 			{
 				name: "label:hobo.ci/serves-hobo-local-host",
 				value: "false",
-				reportedBy: "mesh:box",
+				reportedBy: "fleet:member-box",
 				observedAt: "2026-11-12T10:00:00.000Z",
 			},
 			{
 				name: "label:hobo.ci/serves-hobo-trunk",
 				value: "false",
-				reportedBy: "mesh:box",
+				reportedBy: "fleet:member-box",
 				observedAt: "2026-11-12T10:00:00.000Z",
 			},
 		]);
@@ -610,7 +637,7 @@ describe("each runner host runs a HoBo CD agent beside its controller", () => {
 	});
 
 	it("the agent does not start before double opt-in enrollment left a key and an SVID", () => {
-		expect(unit).toMatch(/^ConditionPathExists=.*agent\.jwk\.json$/mu);
+		expect(unit).toMatch(/^ConditionPathExists=.*sign\.jwk\.json$/mu);
 		expect(unit).toMatch(/^ConditionPathExists=.*agent\.svid$/mu);
 	});
 

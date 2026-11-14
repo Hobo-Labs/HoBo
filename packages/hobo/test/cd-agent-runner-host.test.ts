@@ -47,18 +47,18 @@ import {
 	parseDeclaredRails,
 } from "../src/cd-declared-rails.js";
 import { parseDeliveryModule } from "../src/cd-delivery-module.js";
+import {
+	FakeRunnerHost,
+	SupervisedRunnerHost,
+	writeReleases,
+} from "../src/cd-runner-host-testing.js";
 import { openCdRuntime, stationOriginOf } from "../src/cd-runtime.js";
 import type { JsonValue } from "../src/json.js";
 import {
 	digestOf,
-	FakeRunnerHost,
 	imageAt,
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
-import {
-	SupervisedRunnerHost,
-	writeReleases,
-} from "./fixtures/runner-host-supervised.js";
 
 // SAFETY: the runner fleet's Camp id for host `box` (hobo-ci-runners/<host id>).
 const BOX = "hobo-ci-runners/box" as CampId;
@@ -158,13 +158,13 @@ describe("runner-host agent config", () => {
 	it("parses a process-mode controller and a local runner's state directory", () => {
 		const parsed = parseRunnerHostAgentConfig({
 			...CONFIG,
-			hostKind: "local-runner",
+			hostKind: "developer-device",
 			worker: { directory: "/home/dev/.hobo/ci-local/" },
 			controller: { mode: "process", releases: "https://releases.hobo.test/w" },
 		});
 		expect(parsed.ok && parsed.value).toEqual({
 			...CONFIG,
-			hostKind: "local-runner",
+			hostKind: "developer-device",
 			workerDatabase: "/home/dev/.hobo/ci-local/worker.sqlite",
 			controller: { mode: "process", releases: "https://releases.hobo.test/w" },
 		});
@@ -251,7 +251,7 @@ describe("agent realizer selection (hobo deploy agent run)", () => {
 	it("registers the realizer on a local runner: its presence is read from its state directory", async () => {
 		await writeConfig({
 			...CONFIG,
-			hostKind: "local-runner",
+			hostKind: "developer-device",
 			controller: { mode: "process", releases: "/var/lib/hobo-ci/releases" },
 		});
 		const chosen = await agentRealizer({
@@ -657,9 +657,9 @@ describe("runner-host health reaches Camp inventory (Station side)", () => {
 					claims: claims.map((claim) => create(CampClaimRecordSchema, claim)),
 				});
 			const expired = [
-				{ name: "hobo.ci/mesh-advert", value: "expired" },
+				{ name: "hobo.ci/observation", value: "expired" },
 				{
-					name: "hobo.ci/mesh-advert-valid-until",
+					name: "hobo.ci/observation-valid-until",
 					value: new Date(nowMs - 1).toISOString(),
 				},
 				{ name: "hobo.ci/runner-host-ready", value: "false" },
@@ -689,13 +689,13 @@ describe("runner-host health reaches Camp inventory (Station side)", () => {
 						c.type === CampConditionType.READY &&
 						c.source === SignalSource.HEALTH_SOURCE,
 				)?.reason,
-			).toBe("mesh-advert-expired");
+			).toBe("observation-expired");
 
 			nowMs += 1_000;
 			const fresh = [
-				{ name: "hobo.ci/mesh-advert", value: "fresh" },
+				{ name: "hobo.ci/observation", value: "fresh" },
 				{
-					name: "hobo.ci/mesh-advert-valid-until",
+					name: "hobo.ci/observation-valid-until",
 					value: new Date(nowMs + 60_000).toISOString(),
 				},
 				{ name: "hobo.ci/runner-host-ready", value: "true" },
@@ -836,14 +836,14 @@ describe("agent run on a host whose controller is a supervised process (in-proce
 	 */
 	async function processAgent(
 		options: Readonly<{
-			hostKind?: "box-worker" | "local-runner";
+			hostKind?: "box-worker" | "developer-device";
 			unhealthy?: (images: string[]) => string[];
 			offline?: boolean;
 		}> = {},
 	) {
 		await writeConfig();
 		const source = join(dir, "releases");
-		const local = options.hostKind === "local-runner";
+		const local = options.hostKind === "developer-device";
 		const releases = await writeReleases(
 			source,
 			[
@@ -953,7 +953,7 @@ describe("agent run on a host whose controller is a supervised process (in-proce
 	});
 
 	it("converges a local runner once its runner is online in GitHub, and not before", async () => {
-		const online = await processAgent({ hostKind: "local-runner" });
+		const online = await processAgent({ hostKind: "developer-device" });
 		const [v1] = online.sets;
 		// A local runner runs its own release, not the box worker's.
 		expect(v1?.localRunnerRelease).toBe(
@@ -965,7 +965,7 @@ describe("agent run on a host whose controller is a supervised process (in-proce
 		expect(online.host.running()).toEqual([online.digests[0]]);
 
 		const offline = await processAgent({
-			hostKind: "local-runner",
+			hostKind: "developer-device",
 			offline: true,
 		});
 		const blocked = await offline.realizer.converge(

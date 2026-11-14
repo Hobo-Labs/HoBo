@@ -33,7 +33,7 @@ describe("delivery feed load baseline", () => {
 			{ length: CAMPS },
 			(_, i) => `camp-${String(i).padStart(4, "0")}`,
 		);
-		const station = createStation({ camps, longPollMs: 1_000 });
+		const station = await createStation({ camps, longPollMs: 1_000 });
 		for (const id of camps) await station.desired.publish(id, resolvedFor(id));
 		const perAgent = CAMPS / AGENTS;
 		const agents = [];

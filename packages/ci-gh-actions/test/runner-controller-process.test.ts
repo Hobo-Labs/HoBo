@@ -10,7 +10,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as pause } from "node:timers/promises";
+import { create } from "@bufbuild/protobuf";
 import { type HttpTransport, ResolverError } from "@hobo/core";
+import { Health, ObservationSchema } from "@hobo/fleet";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type ControllerChild,
@@ -35,7 +37,7 @@ import {
 	type WorkerHostFiles,
 	workerAdmissionPaused,
 	workerHostFiles,
-	writeWorkerMeshAdvert,
+	writeWorkerObservation,
 } from "../src/runner-host-worker-jobs.js";
 
 const dirs: string[] = [];
@@ -415,23 +417,30 @@ async function supervisedHost(
 		else await tick;
 		const child = launcher.live()[0];
 		if (!child?.pid) {
-			await rm(files.meshAdvert, { force: true });
+			await rm(files.observation, { force: true });
 			return;
 		}
 		if (!started.has(child.pid)) started.set(child.pid, nowMs);
-		await writeWorkerMeshAdvert(
+		// The host's fleet agent observes itself; a supervised controller's
+		// digest is its agent version.
+		await writeWorkerObservation(
 			files,
-			{
-				id: "box",
-				freeSlots: 3,
-				totalSlots: 4,
-				healthy: !workerAdmissionPaused(files) && !unhealthy.has(child.digest),
+			create(ObservationSchema, {
+				memberId: "member-box",
+				observerId: "member-box",
+				fleets: ["hobo"],
+				health:
+					!workerAdmissionPaused(files) && !unhealthy.has(child.digest)
+						? Health.REACHABLE
+						: Health.DRAINING,
+				capacity: { freeSlots: 3, totalSlots: 4 },
 				labels: ["hobo", "hobo-trunk"],
-				validUntilMs: nowMs + 60_000,
-				sinceMs: started.get(child.pid) ?? nowMs,
 				platform: { os: "linux", arch: "x64" },
-			},
-			options.anonymous ? undefined : child.digest,
+				agentVersion: options.anonymous ? "1.0.0" : child.digest,
+				since: new Date(started.get(child.pid) ?? nowMs).toISOString(),
+				issuedAt: new Date(nowMs).toISOString(),
+				validUntil: new Date(nowMs + 60_000).toISOString(),
+			}),
 		);
 	}
 	const process = createControllerProcessPort({
@@ -513,7 +522,7 @@ describe("runner-host realizer: a controller that runs as a process", () => {
 		expect(created.outputs.containerId).toBe(
 			`pid:${host.launcher.children[0]?.pid}`,
 		);
-		expect(created.outputs.meshAdvert).toMatchObject({
+		expect(created.outputs.observation).toMatchObject({
 			controllerDigest: d1,
 			healthy: true,
 		});
@@ -561,14 +570,14 @@ describe("runner-host realizer: a controller that runs as a process", () => {
 		expect(workerAdmissionPaused(host.files)).toBe(false);
 	});
 
-	it("does not take an advert that names no controller digest as the new version's", async () => {
+	it("does not take an observation that names no controller digest as the new version's", async () => {
 		const host = await supervisedHost({ anonymous: true });
 		await expect(
 			host.resolver.reconcile(
 				request(host.releases.images[0] ?? ""),
 				transport,
 			),
-		).rejects.toThrow(/the mesh advert names no controller digest/u);
+		).rejects.toThrow(/the fleet observation names no controller digest/u);
 	});
 
 	it("refuses a release that does not verify, keeping the running one", async () => {

@@ -14,8 +14,19 @@ import type {
 	RoutingPlan,
 	RoutingPlanId,
 	RoutingStatus,
+	TenantId,
 	TrafficRoutingOfferingId,
 } from "@hobo/core";
+import type {
+	CredentialRequest,
+	CredentialResponse,
+	EnrollmentAuthority,
+	EnrollmentRequest,
+	FleetClient,
+	FleetId,
+	MemberId,
+	RegistryView,
+} from "@hobo/fleet";
 import type {
 	ArtifactKind,
 	ArtifactRef,
@@ -766,8 +777,31 @@ export interface DeliveryFeedHandler {
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
 }
 
+/**
+ * The fleet authority as the delivery Station uses it (L19). `station` calls
+ * run as the Station's own principal; `forward` calls carry the agent's own
+ * DPoP proof (made for the authority's URL at `origin`), never re-signed.
+ * `authenticate` is the fleet's (member SVID plus DPoP proof).
+ */
+export type DeliveryFleet = Readonly<{
+	tenant: TenantId;
+	/** The fleet named after the Yard the reconcilers join. */
+	fleet: FleetId;
+	/** The authority's public origin, the `htu` of forwarded proofs. */
+	origin: string;
+	station: Pick<FleetClient, "issueToken" | "approveKey" | "accept" | "revoke">;
+	forward(dpopProof: string): Pick<FleetClient, "enroll" | "credentials">;
+	authenticate: EnrollmentAuthority["authenticate"];
+}>;
+
+/**
+ * Reconciler enrollment over the fleet (L19, design §8.2): a reconciler is a
+ * fleet `DEVICE` with role `RECONCILER` in the fleet named after its Yard.
+ * The fleet holds identity (bootstrap tokens, keys, SVIDs, DPoP, revocation);
+ * this port keeps the delivery grants and the Camp scope.
+ */
 export interface AgentEnrollment {
-	/** Single-use bootstrap token scoped to one Camp set (D19). */
+	/** A single-use `hft_` fleet bootstrap token (TokenCreateRequest) scoped to one Camp set (D19). */
 	issueToken(
 		input: Readonly<{
 			campSet: string;
@@ -777,12 +811,12 @@ export interface AgentEnrollment {
 		}>,
 		ctx: CdContext,
 	): Promise<Outcome<Readonly<{ token: string; expiresAtMs: number }>>>;
-	/** Register a public JWK. PENDING until both grants or a Rail auto-accept (I24). */
+	/** Forward the agent's fleet EnrollmentRequest and DPoP proof. PENDING until both grants or a Rail auto-accept (I24). */
 	enroll(
 		input: Readonly<{
-			token: string;
-			publicJwk: JsonObject;
-			claims: readonly CampClaimRecord[];
+			request: EnrollmentRequest;
+			dpopProof: string;
+			campIds: readonly CampId[];
 		}>,
 		ctx: CdContext,
 	): Promise<
@@ -798,29 +832,21 @@ export interface AgentEnrollment {
 		input: Readonly<{ reconcilerId: ReconcilerId; campIds: readonly CampId[] }>,
 		ctx: CdContext,
 	): Promise<Outcome<ReconcilerRecord>>;
-	/** After acceptance, exchange a DPoP proof of key possession for a key-bound JWT-SVID (cnf.jkt). */
-	activate(
-		input: Readonly<{ reconcilerId: ReconcilerId; dpopProof: string }>,
-		ctx: CdContext,
-	): Promise<
-		Outcome<
-			Readonly<{
-				reconciler: ReconcilerRecord;
-				svid: string;
-				expiresAtMs: number;
-			}>
-		>
-	>;
+	/** The fleet `credentials` call with the agent's own DPoP proof: a key-bound member SVID. */
 	refresh(
-		input: Readonly<{ svid: string; dpopProof: string }>,
+		input: Readonly<{
+			memberId: MemberId;
+			request: CredentialRequest;
+			dpopProof: string;
+		}>,
 		ctx: CdContext,
-	): Promise<Outcome<Readonly<{ svid: string; expiresAtMs: number }>>>;
+	): Promise<Outcome<CredentialResponse>>;
 	revoke(
 		reconcilerId: ReconcilerId,
 		reason: string,
 		ctx: CdContext,
 	): Promise<Outcome<ReconcilerRecord>>;
-	/** Verify a request's JWT-SVID and DPoP proof (RFC 9449) with jti replay protection. */
+	/** Verify a request's member SVID and DPoP proof with the fleet's `authenticate`. */
 	verify(request: FeedRequest): Promise<Outcome<ReconcilerRecord>>;
 }
 
@@ -939,6 +965,18 @@ export type CampTopology = Readonly<{
 	envType: string;
 	labels: Readonly<Record<string, string>>;
 	management: CampManagement;
+}>;
+
+/**
+ * Where the Camp mapper reads fleet members (L19): the registry and the
+ * Yard-to-fleet map. Each Camp of a mapped Yard is backed by the member named
+ * `campMemberName(campId)` in that fleet: a `DEVICE` when a reconciler serves
+ * it, else a `TARGET` the Station declared as sponsor.
+ */
+export type CampMembers = Readonly<{
+	registry: Pick<RegistryView, "membersOf" | "view">;
+	/** The fleet a Yard's Camps are members of; undefined when the Yard has none. */
+	fleetOf(yardId: string): string | undefined;
 }>;
 
 export interface TopologyReader {
@@ -1369,12 +1407,13 @@ export interface CdFactories {
 			readonly telemetry: TelemetrySink;
 		},
 	): RolloutOrchestrator;
-	/** "./agent" (WP11) */
+	/** "./agent" (WP11; over the fleet since L19) */
 	createAgentEnrollment(
 		d: CdBase & {
 			readonly authorizer: CdAuthorizer;
 			readonly rails: RailDeliveryReader;
 			readonly inventory: CampInventory;
+			readonly fleet?: DeliveryFleet | undefined;
 		},
 	): AgentEnrollment;
 	/** "./agent" (WP11) */
@@ -1385,6 +1424,8 @@ export interface CdFactories {
 			reconcilerId: ReconcilerId;
 			privateJwk: JsonObject;
 			svid: string;
+			/** The current member SVID, kept fresh by the fleet agent; read before each request when set. */
+			credential?: (() => Promise<string>) | undefined;
 			now: () => number;
 		}>,
 	): ReconcilerTransport;
@@ -1431,6 +1472,7 @@ export interface CdFactories {
 			readonly desired: DesiredStateReader;
 			readonly authorizer: CdAuthorizer;
 			readonly telemetry: TelemetrySink;
+			readonly members?: CampMembers | undefined;
 		},
 	): CampInventory;
 	/** "./placement" (WP22) */

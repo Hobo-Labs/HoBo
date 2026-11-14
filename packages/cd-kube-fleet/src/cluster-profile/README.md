@@ -8,7 +8,7 @@
 | File | Holds |
 |---|---|
 | `parse.ts` | `parseClusterProfile` → `ImportedCamp` (topology, conditions, claims, secret-free `ImportedClusterRecord`, posture attributes, in-memory access providers) or a skip reason. |
-| `inventory.ts` | `clusterProfileInventory`: paged `list`, bounded `watch` with bookmarks and 410 re-list, `topology()` (`TopologyReader`), `publish` (`CampInventory.observe`), `observation` (posture), `access` (host-side credentials). |
+| `inventory.ts` | `clusterProfileInventory`: paged `list`, bounded `watch` with bookmarks and 410 re-list, `topology()` (`TopologyReader`), `publish` (`CampInventory.observe`, plus a `TARGET` declaration per cluster when `members` is set), `observation` (posture), `access` (host-side credentials). |
 
 Mapping:
 

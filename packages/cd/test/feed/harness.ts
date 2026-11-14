@@ -3,9 +3,9 @@
 // delivery feed) and an HttpTransport that carries agent requests into it.
 // The double records every exchange so tests can prove direction (agent →
 // Station only) and that no target credential ever reaches the Station.
-import { create } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import type { HttpTransport, TransportRequest } from "@hobo/core";
-import { createInMemoryKms, JwtSvidIssuer } from "@hobo/identity";
+import { EnrollmentRequestSchema, parseMemberId } from "@hobo/fleet";
 import {
 	type ReconcileObservationRecord,
 	ReconcileObservationRecordSchema,
@@ -14,10 +14,8 @@ import {
 	type SetRecord,
 } from "../../src/_generated/cd_pb.js";
 import {
-	type AgentKeyPair,
 	createAgentEnrollment,
 	createHttpTransport,
-	generateAgentKey,
 } from "../../src/agent/index.js";
 import {
 	createDeliveryFeedHandler,
@@ -29,6 +27,11 @@ import type {
 	ReconcilerLease,
 	ReconcilerTransport,
 } from "../../src/ports.js";
+import {
+	FLEET_ORIGIN,
+	type FleetDevice,
+	fleetFixture,
+} from "../agent/fleet-fixture.js";
 import {
 	asCamp,
 	type Clock,
@@ -64,7 +67,7 @@ export type StationOptions = Partial<
 	clock?: Clock;
 };
 
-export function createStation(options: StationOptions = {}) {
+export async function createStation(options: StationOptions = {}) {
 	const camps = options.camps ?? ["eu-1", "eu-2"];
 	const clock = options.clock ?? createClock();
 	const store = createFakeStore(clock);
@@ -73,14 +76,8 @@ export function createStation(options: StationOptions = {}) {
 	const inventory = createFakeInventory({ fleet: camps });
 	const authorizer = createFakeAuthorizer();
 	const telemetry = createRecordingTelemetry();
-	const kms = createInMemoryKms();
-	kms.generateRsaKey("svid-1");
-	const issuer = new JwtSvidIssuer({
-		issuerUrl: `${BASE_URL}/identity`,
-		kms,
-		activeKeyId: "svid-1",
-		jwksKeyIds: ["svid-1"],
-	});
+	// The Yard's fleet: createTestAuthority holds the reconcilers' identity (L19).
+	const fleet = await fleetFixture(clock.now);
 	const enrollment = createAgentEnrollment({
 		store,
 		tenant: TENANT,
@@ -88,7 +85,7 @@ export function createStation(options: StationOptions = {}) {
 		authorizer,
 		rails: createFakeRails(railWith()),
 		inventory,
-		issuer,
+		fleet: fleet.fleet,
 		telemetry,
 		publicOrigin: BASE_URL,
 	});
@@ -149,7 +146,7 @@ export function createStation(options: StationOptions = {}) {
 		inventory,
 		authorizer,
 		telemetry,
-		issuer,
+		fleet,
 		enrollment,
 		handler,
 		http,
@@ -159,23 +156,28 @@ export function createStation(options: StationOptions = {}) {
 	};
 }
 
-export type Station = ReturnType<typeof createStation>;
+export type Station = Awaited<ReturnType<typeof createStation>>;
 
-/** Enroll over HTTP with a bootstrap token, grant both opt-ins as two operators, return an agent transport. */
+/**
+ * Enroll over HTTP with a fleet bootstrap token (the agent's EnrollmentRequest
+ * and DPoP proof, forwarded to the fleet), grant both opt-ins as two
+ * operators, fetch the member SVID from the fleet, return an agent transport.
+ */
 export async function provisionAgent(
 	station: Station,
 	options: {
 		campIds?: readonly string[];
 		grants?: "both" | "key-only" | "none";
-		key?: AgentKeyPair;
+		device?: FleetDevice;
 	} = {},
 ): Promise<{
-	key: AgentKeyPair;
+	device: FleetDevice;
 	reconcilerId: ReconcilerId;
+	svid: string;
 	transport: ReconcilerTransport;
 }> {
 	const campIds = options.campIds ?? station.camps;
-	const key = options.key ?? generateAgentKey();
+	const device = options.device ?? (await station.fleet.device());
 	const token = await station.enrollment.issueToken(
 		{
 			campSet: "fleet",
@@ -189,17 +191,23 @@ export async function provisionAgent(
 	const response = await station.http({
 		method: "POST",
 		url: `${BASE_URL}/v1/cd/enrollments`,
-		headers: { "content-type": "application/json" },
+		headers: {
+			"content-type": "application/json",
+			dpop: await device.proof("POST", `${FLEET_ORIGIN}/v1/fleet/members`),
+		},
 		body: JSON.stringify({
-			token: token.value.token,
-			publicJwk: key.publicJwk,
-			claims: [{ name: "region", value: "eu-west-1" }],
+			request: toJson(
+				EnrollmentRequestSchema,
+				device.request(token.value.token),
+			),
+			campIds,
 		}),
 		timeoutMs: 1000,
 		maxResponseBytes: 1_000_000,
 	});
-	const reconcilerId = JSON.parse(response.body).value.reconciler
-		.reconcilerId as ReconcilerId;
+	const enrolled = JSON.parse(response.body);
+	if (!enrolled.ok) throw new Error(enrolled.reasons?.[0]?.code);
+	const reconcilerId = enrolled.value.reconciler.reconcilerId as ReconcilerId;
 	const grants = options.grants ?? "both";
 	if (grants !== "none")
 		await station.enrollment.approveKey(
@@ -211,15 +219,19 @@ export async function provisionAgent(
 			{ reconcilerId, campIds: campIds.map(asCamp) },
 			ctxAt(station.clock, { kind: "user", id: "bob" }),
 		);
+	const svid =
+		grants === "both"
+			? await station.fleet.credentials(device, parseMemberId(reconcilerId))
+			: "";
 	const transport = createHttpTransport({
 		baseUrl: BASE_URL,
 		http: station.http,
 		reconcilerId,
-		privateJwk: key.privateJwk,
-		svid: "",
+		privateJwk: device.signPrivateJwk,
+		svid,
 		now: station.clock.now,
 	});
-	return { key, reconcilerId, transport };
+	return { device, reconcilerId, svid, transport };
 }
 
 export function observation(

@@ -11,7 +11,7 @@
  *   - `freightTimeline` and `pipelineGraph` are model views (projections) over
  *     parsed CD spans: where each Freight went, when, with what result; and
  *     which pipeline nodes Freight flows between.
- *   - `fleetView` and `complianceHeatmap` are projections over the
+ *   - `deliveryCampsView` and `complianceHeatmap` are projections over the
  *     `hobo.cd.camp.*` and `hobo.cd.compliance.noncompliant_ratio` gauges:
  *     Camps by condition and taint, and noncompliance by Rail and control.
  *   - `renderPromotionTrace` runs a CD trace through the mapper and reducer
@@ -51,7 +51,7 @@ export const CD_SPAN_ATTR = Object.freeze({
 	node: "hobo.cd.pipeline.node",
 } as const);
 
-/** CD metric names consumed by the fleet views. */
+/** CD metric names consumed by the Camp views. */
 export const CD_FLEET_METRICS = Object.freeze({
 	campCondition: "hobo.cd.camp.condition",
 	campTaint: "hobo.cd.camp.taint",
@@ -333,15 +333,15 @@ export function renderPromotionTrace(
 
 // ── Fleet views (metrics) ─────────────────────────────────────────────────
 
-export interface FleetCampRow {
+export interface DeliveryCampRow {
 	campId: string;
 	/** condition → status (`true` | `false` | `unknown`). */
 	conditions: Record<string, string>;
 	taints: { key: string; effect: string }[];
 }
 
-export interface FleetView {
-	camps: FleetCampRow[];
+export interface DeliveryCampsView {
+	camps: DeliveryCampRow[];
 	/** condition → status → Camp ids. */
 	byCondition: Record<string, Record<string, string[]>>;
 	/** taint effect → Camp ids. */
@@ -380,9 +380,11 @@ function gaugePoints(payload: OtlpMetricsRequest, name: string) {
 }
 
 /** Camps by condition and taint, from `hobo.cd.camp.*` gauges. */
-export function fleetView(payload: OtlpMetricsRequest): FleetView {
-	const rows = new Map<string, FleetCampRow>();
-	const row = (campId: string): FleetCampRow => {
+export function deliveryCampsView(
+	payload: OtlpMetricsRequest,
+): DeliveryCampsView {
+	const rows = new Map<string, DeliveryCampRow>();
+	const row = (campId: string): DeliveryCampRow => {
 		let r = rows.get(campId);
 		if (r === undefined) {
 			r = { campId, conditions: {}, taints: [] };
@@ -430,6 +432,14 @@ export function fleetView(payload: OtlpMetricsRequest): FleetView {
 	}
 	return { camps, byCondition, byTaint, untainted };
 }
+
+/**
+ * @deprecated The old name of `deliveryCampsView` (rule 9 of L24 keeps
+ * `fleet*` names for the fleet packages). Kept only while
+ * `test/cd-views.test.ts`, outside L19's paths, still imports it; the
+ * coordinator renames that import and removes this alias at the wave-5 merge.
+ */
+export const fleetView = deliveryCampsView;
 
 export type HeatBand = "ok" | "watch" | "breach";
 

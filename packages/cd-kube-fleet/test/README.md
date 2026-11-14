@@ -9,7 +9,7 @@
 | `config.test.ts` | Parse boundary and `kube_fleet.cue` agreement. |
 | `kube.test.ts` | API client (credentials, status mapping, watch parsing) and plan resource rendering. |
 | `architecture.test.ts` | I11 scan (no Kubernetes type in `@hobo/cd`), dependencies, no client library, no forbidden fleet-manager resources, public surface. |
-| `kind-lane.test.ts` | Live lane against kind-hosted hubs; skips naming the missing variables. |
+| `kind-lane.integration.test.ts` | Live lane against kind-hosted hubs (`test:integration`, not the unit run); skips naming the missing variables. |
 | `fake-hub.ts` | In-memory Kubernetes API server with simulated OCM work agent and Karmada binding controller. |
 | `fixtures.ts`, `fixtures/` | Resolved sets, inputs, configs, a recorded ClusterProfile list. |
 

@@ -12,6 +12,7 @@ export const KUBE_FLEET_METRICS = Object.freeze({
 	profiles: "hobo.cd.kube_fleet.cluster_profiles",
 	skipped: "hobo.cd.kube_fleet.cluster_profiles.skipped",
 	relists: "hobo.cd.kube_fleet.watch.relists",
+	targetDeclareFailures: "hobo.cd.kube_fleet.target_declare.failures",
 } as const);
 
 export type Meter = Readonly<{

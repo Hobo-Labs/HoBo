@@ -1,6 +1,6 @@
 {
 	"hostId": "local-dev-1",
-	"hostKind": "local-runner",
+	"hostKind": "developer-device",
 	"credentialRef": "env://HOBO_CI_RELEASE_READ_TOKEN",
 	"worker": { "directory": "/home/dev/hobo/.hobo/ci-local" },
 	"controller": {

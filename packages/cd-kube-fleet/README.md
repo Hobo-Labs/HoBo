@@ -19,7 +19,7 @@ Kubernetes type crosses into `@hobo/cd` (I11, `test/architecture.test.ts`).
 |---|---|
 | `ocmRealizer(deps): Realizer` | One ManifestWork per Camp (`hobo-<camp>-<setdigest8>`) in the hub's cluster namespace; feedback rules from `observe_fields`; `deleteOption` from `DepartureAction`; converges only on observed `Applied`/`Available` plus HoBo verification. Never a ManifestWorkReplicaSet or an OCM Placement. |
 | `karmadaRealizer(deps): Realizer` | Resource templates plus a PropagationPolicy pinned to one member (`clusterAffinity.clusterNames: [<member>]`, `Duplicated`, `conflictResolution: Abort`); observation from the ResourceBinding aggregated status. No OverridePolicy, no spread constraints, no failover. |
-| `clusterProfileInventory(deps)` | Lists and watches `multicluster.x-k8s.io/v1alpha1` ClusterProfiles; each becomes an `OBSERVE_ONLY` `CampTopology` whose properties, labels and status are observed **claims** and conditions; access-provider credentials resolve host-side and are never recorded. |
+| `clusterProfileInventory(deps)` | Lists and watches `multicluster.x-k8s.io/v1alpha1` ClusterProfiles; each becomes an `OBSERVE_ONLY` `CampTopology` whose properties, labels and status are observed **claims** and conditions; access-provider credentials resolve host-side and are never recorded. With `members` (tenant, a fleet client and the Yard-to-fleet map), `publish` also declares each imported cluster as a `TARGET` fleet member (`members:declare`, member name from `campMemberName`, id `sponsoredMemberId(tenant, TARGET, fleet, name)`); a refused declaration counts `hobo.cd.kube_fleet.target_declare.failures` and the Camp stays `member-missing` (NO_PLACE) until it succeeds. |
 | `parseOcmRealizerConfig`, `parseKarmadaRealizerConfig`, `parseClusterProfileImport`, `parseKubeHub` | The parse boundary for the configuration records in `data-models/kube_fleet.proto`. |
 | `KUBE_FLEET_FAILURES`, `KubeFleetError` | Typed failure codes, each with its remediation. |
 | `KUBE_FLEET_METRICS` | Metric names emitted through `TelemetrySink`. |
@@ -122,8 +122,11 @@ through the JSON guards in `src/json.ts`.
 
 ### Live kind lane
 
-`test/kind-lane.test.ts` runs both realizers against real hubs and skips with
-the missing variable named when they are absent. To run it:
+`test/kind-lane.integration.test.ts` runs both realizers against real hubs
+and skips with the missing variable named when they are absent. It needs
+`kind` and live hubs, so it is an integration test (rule 10 of the fleet
+design): `pnpm --filter @hobo/cd-kube-fleet test` leaves it out, and
+`test:integration` runs it. To run it:
 
 1. Create a hub and a managed cluster with `kind`, install OCM
    (`clusteradm init` on the hub, `clusteradm join` from the member) and/or
@@ -134,4 +137,4 @@ the missing variable named when they are absent. To run it:
    and/or `HOBO_KIND_KARMADA_API`, `HOBO_KIND_KARMADA_TOKEN`,
    `HOBO_KIND_KARMADA_MEMBER`, plus `NODE_EXTRA_CA_CERTS` pointing at the
    clusters' CA bundle.
-4. `pnpm --filter @hobo/cd-kube-fleet test`.
+4. `pnpm --filter @hobo/cd-kube-fleet test:integration`.

@@ -1,5 +1,5 @@
-# HoBo CD agent beside a runner host's controller (box worker daemon, mesh
-# node or local runner). Outbound HTTPS to the CD Station only; the Station
+# HoBo CD agent beside a runner host's controller (box worker daemon, fleet
+# device or developer device). Outbound HTTPS to the CD Station only; the Station
 # never dials the host. Install as a systemd user unit on the runner host:
 #
 #   install -D -m 0644 hobo-cd-agent.service ~/.config/systemd/user/hobo-cd-agent.service
@@ -14,14 +14,14 @@ Documentation=https://github.com/Hobo-Labs/HoBo/blob/main/packages/ci-gh-actions
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=%h/.config/hobo-cd-agent/agent.env
-ConditionPathExists=%h/.config/hobo-cd-agent/agent.jwk.json
+ConditionPathExists=%h/.config/hobo-cd-agent/sign.jwk.json
 ConditionPathExists=%h/.config/hobo-cd-agent/agent.svid
 
 [Service]
 Type=simple
 EnvironmentFile=%h/.config/hobo-cd-agent/agent.env
 WorkingDirectory=%h/.config/hobo-cd-agent
-ExecStart=/usr/bin/env hobo deploy agent run --feed ${HOBO_CD_FEED_URL} --reconciler ${HOBO_CD_RECONCILER_ID} --key-file agent.jwk.json --svid-file agent.svid --camp ${HOBO_CD_CAMP_ID}
+ExecStart=/usr/bin/env hobo deploy agent run --feed ${HOBO_CD_FEED_URL} --reconciler ${HOBO_CD_RECONCILER_ID} --key-file sign.jwk.json --svid-file agent.svid --camp ${HOBO_CD_CAMP_ID}
 # A refusal (revoked, not accepted, no realizer) is not fixed by restarting fast.
 Restart=on-failure
 RestartSec=300

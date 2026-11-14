@@ -34,7 +34,7 @@ typed failures and a **Runbook** section; `konsistent` enforces the README).
 | `@hobo/cd/verification` | `src/verification/` | Verification engine and health sources (D9, I5) |
 | `@hobo/cd/rollout` | `src/rollout/` | Capability lowering and the rollout orchestrator (D7, D8) |
 | `@hobo/cd/feed` | `src/feed/` | Delivery feed for agents (D5) |
-| `@hobo/cd/agent` | `src/agent/` | Agent identity, DPoP, double opt-in enrollment (D5, D19, I24) |
+| `@hobo/cd/agent` | `src/agent/` | Reconciler enrollment over `@hobo/fleet` (a fleet DEVICE with role RECONCILER), double opt-in, agent transport (D5, D19, I24, L19) |
 | `@hobo/cd/service` | `src/service/` | Service host, tick loop and `/v1/cd/` read API |
 | `@hobo/cd/boundary` | `src/boundary/` | CDEvents, CloudEvents webhooks, the neutral-core scan (D17, I11) |
 | `@hobo/cd/telemetry` | `src/telemetry/` | OTel CI/CD semantic conventions, DORA, alert rules (D17) |
@@ -62,7 +62,7 @@ Frozen contract files (changed only with an ADR-0182 amendment):
 
 `@hobo/cd` is a layer-3 package. It composes `@hobo/cloud`, `@hobo/contracts`,
 `@hobo/identity`, `@hobo/registry`, `@hobo/stations`, `@hobo/policy`,
-`@hobo/dispatcher`, `@hobo/events`, `@hobo/trust` and `@hobo/core`, and imports
+`@hobo/dispatcher`, `@hobo/events`, `@hobo/fleet`, `@hobo/trust` and `@hobo/core`, and imports
 no `provider-*`, `iac-*`, `runtime-*`, `ci*`, `broker`, `cli`, `hobo` or
 `resolver-components` package (I11). Adapter packages around it:
 `@hobo/cd-gitops` (publisher), `@hobo/cd-kube-fleet` (Kubernetes fleet
@@ -82,7 +82,15 @@ names the owning module, whose README has the detailed procedure.
 - **A Camp does not converge.** `hobo deploy camp show <camp>` lists conditions
   and taints. `LEASED=false` or `REACHABLE=false` means no reconciler holds the
   Camp's lease: check the agent (`hobo deploy agent run` logs) or the conductor
-  (`hobo serve cd` `/readyz`).
+  (`hobo serve cd` `/readyz`). The automatic taint `hobo.cd/member-inactive`
+  (NO_PLACE) means the fleet member backing the Camp is suspended, revoked or
+  missing: each Camp of a Yard with a fleet is backed by the member named after
+  the Camp id's last segment in the fleet named after the Yard (a `DEVICE` when
+  a reconciler serves it, else a `TARGET` the Station declares). Check it with
+  `hobo fleet member list`; `hobo fleet member resume` lifts a suspension.
+  Reachability still comes from the signal sources, except that a reconciler
+  device the fleet sees as LOST makes its Camp `REACHABLE=false`
+  (`fleet-member-lost`).
 - **Rollback.** `hobo deploy rollback --camp <camp> --reason <text>`. A refusal
   past a completed Trails `contract` names the compensating `expand`.
 - **Fan-out halted.** `hobo deploy fanout show <id>`, fix the cause, then

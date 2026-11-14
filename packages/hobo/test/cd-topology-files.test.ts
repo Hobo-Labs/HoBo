@@ -280,7 +280,10 @@ describe.skipIf(!existsSync(BIN))(
 				],
 				env,
 			);
-			expect(token.ok, token.message).toBe(true);
+			// The Camp set resolved: the refusal is the missing fleet authority
+			// (enrollment is the fleet's, L19), not the scope.
+			expect(token.ok).toBe(false);
+			expect(token.code).toBe("fleet-unavailable");
 			const unscoped = await deploy(home, [
 				"agent",
 				"token",
@@ -290,6 +293,7 @@ describe.skipIf(!existsSync(BIN))(
 				"hobo-ci-runners/box",
 			]);
 			expect(unscoped.ok).toBe(false);
+			expect(unscoped.code).toBe("token-scope-invalid");
 		});
 
 		it("a malformed topology file refuses the command with its code", async () => {

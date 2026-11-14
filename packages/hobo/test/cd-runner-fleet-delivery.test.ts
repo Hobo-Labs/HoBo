@@ -32,7 +32,7 @@
 // through the desired-state ledger: a fresh host is not placed until its
 // agent has reported, and it reports against a Set.
 import { spawn } from "node:child_process";
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -47,7 +47,6 @@ import {
 	type CdContext,
 	ConditionStatus,
 	DeltaRecordSchema,
-	EnrollmentState,
 	FanoutStrategy,
 	type FeedResponse,
 	type FreightId,
@@ -63,6 +62,12 @@ import {
 	SetOrigin,
 	TaintEffect,
 } from "@hobo/cd";
+import {
+	agentKeyFromJwk,
+	generateReconcilerKeys,
+	inProcessDeliveryFleet,
+	reconcilerEnrollment,
+} from "@hobo/cd/agent";
 import { diffResolvedSets } from "@hobo/cd/sets";
 import { definitionDigest, SOURCE_LABEL } from "@hobo/cd/sources";
 import {
@@ -83,6 +88,18 @@ import type {
 	JsonValue,
 	TransportRequest,
 } from "@hobo/core";
+import { parseTenantId } from "@hobo/core";
+import {
+	ApprovalMode,
+	CoordinationMode,
+	CredentialRequestSchema,
+	FleetRecordSchema,
+	type MemberId,
+	parseFleetId,
+	type VerifiedToken,
+} from "@hobo/fleet";
+import { mintDpopProof } from "@hobo/fleet/keys";
+import { createTestAuthority } from "@hobo/fleet/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentRealizer } from "../src/cd-agent.js";
 import {
@@ -91,16 +108,18 @@ import {
 	RUNNER_HOST_UNREADY_TAINT,
 } from "../src/cd-agent-runner-host.js";
 import { runCdDeploySubcommand } from "../src/cd-deploy.js";
+import {
+	FakeRunnerHost,
+	SupervisedRunnerHost,
+} from "../src/cd-runner-host-testing.js";
 import { agentReconciler, openCdRuntime } from "../src/cd-runtime.js";
 import { openCdStore } from "../src/cd-store.js";
 import { isJsonArray, isJsonObject } from "../src/json.js";
 import {
 	digestOf,
-	FakeRunnerHost,
 	imageAt,
 	runnerHostResolvedSet,
 } from "./fixtures/runner-host-fake.js";
-import { SupervisedRunnerHost } from "./fixtures/runner-host-supervised.js";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");
@@ -182,6 +201,99 @@ function agentKeys(): AgentKeys {
 	// SAFETY: as above.
 	const publicJwk = publicKey.export({ format: "jwk" }) as JsonObject;
 	return { privateJwk, publicJwk };
+}
+
+// The runner hosts are DEVICE members of fleet `hobo` (L19): the Station's
+// reconcilers enroll there, in an authority composed in this process.
+const FLEET_ORIGIN = "https://authority.fleet.test";
+const RUNNER_FLEET = parseFleetId("hobo");
+const FLEET_TENANT = parseTenantId("test");
+
+async function runnerFleetAuthority(now: () => number) {
+	const composed = await createTestAuthority(now);
+	const station: VerifiedToken = {
+		kind: "person",
+		principal: { kind: "service", id: "cd-station" },
+		tenant: FLEET_TENANT,
+		tags: ["fleet-admin"],
+		jkt: "cd-station",
+		expiresAtMs: Number.MAX_SAFE_INTEGER,
+	};
+	const defined = await composed.authority.defineFleet(
+		create(FleetRecordSchema, {
+			fleetId: RUNNER_FLEET,
+			tenant: FLEET_TENANT,
+			owner: "service:cd-station",
+			coordination: CoordinationMode.MANY_ACTIVE,
+			policy: { approval: ApprovalMode.SINGLE },
+		}),
+		station,
+	);
+	if (!defined.ok) throw new Error(`defineFleet: ${defined.error.message}`);
+	return inProcessDeliveryFleet({
+		authority: composed.authority,
+		tenant: FLEET_TENANT,
+		fleet: RUNNER_FLEET,
+		origin: FLEET_ORIGIN,
+		station,
+	});
+}
+
+type RunnerFleet = Awaited<ReturnType<typeof runnerFleetAuthority>>;
+
+/** What `hobo deploy agent enroll --token-file` builds on the host: its own keys and EnrollmentRequest. */
+async function agentEnrollment(token: string, nowMs: number) {
+	const keys = generateReconcilerKeys();
+	const built = await reconcilerEnrollment({
+		keys,
+		token,
+		tenant: FLEET_TENANT,
+		fleet: RUNNER_FLEET,
+		origin: FLEET_ORIGIN,
+		nowMs,
+		agentVersion: "1.0.0",
+	});
+	return { keys, built };
+}
+
+/**
+ * The member SVID as the accepted host's fleet agent keeps it: fetched with
+ * its SIGN key (`credentials`, generation from 0) and refreshed five minutes
+ * before it expires, the way `hobo fleet run` refreshes it.
+ */
+function memberCredential(
+	fleet: RunnerFleet,
+	signJwk: JsonObject,
+	memberId: string,
+	now: () => number,
+): () => Promise<string> {
+	const sign = agentKeyFromJwk(signJwk);
+	const url = `${FLEET_ORIGIN}/v1/fleet/members/${memberId}/credentials`;
+	let generation = 0;
+	let svid = "";
+	let expiresAtMs = 0;
+	return async () => {
+		if (svid !== "" && now() < expiresAtMs - 300_000) return svid;
+		const proof = await mintDpopProof(sign.signer, sign.publicJwk, {
+			htm: "POST",
+			htu: url,
+			nowMs: now(),
+		});
+		const issued = await fleet.forward(proof).credentials({
+			// SAFETY: the member id the fleet just enrolled.
+			memberId: memberId as MemberId,
+			request: create(CredentialRequestSchema, {
+				generation,
+				refreshNonce: randomBytes(16),
+				agentVersion: "1.0.0",
+			}),
+		});
+		if (!issued.ok) throw new Error(`credentials: ${issued.error.message}`);
+		generation = issued.value.generation;
+		svid = issued.value.svid;
+		expiresAtMs = Date.parse(issued.value.svidExpiresAt);
+		return svid;
+	};
 }
 
 type Envelope = Readonly<{
@@ -309,7 +421,7 @@ describe.skipIf(!existsSync(BIN))(
 	"the runner fleet through the built binary",
 	{ timeout: 180_000 },
 	() => {
-		it("enrolls a runner host's agent by double opt-in and decides the fleet's Placement", async () => {
+		it("refuses agent enrollment without a fleet authority and a token on the command line, and decides the fleet's Placement fail-closed", async () => {
 			const home = await freshDir();
 			const applied = await deploy(home, [
 				"pipeline",
@@ -319,9 +431,12 @@ describe.skipIf(!existsSync(BIN))(
 			]);
 			expect(applied.ok, applied.message).toBe(true);
 
-			const keys = agentKeys();
-			const publicFile = join(home, "public.jwk.json");
-			await writeFile(publicFile, JSON.stringify(keys.publicJwk));
+			// Enrollment is the fleet's (L19): a Station composed without a fleet
+			// authority refuses to mint a bootstrap token instead of inventing
+			// one (a token on the command line is refused: cd-agent-aliases.test.ts).
+			// The double opt-in itself runs against an
+			// authority in process (below, "the runner fleet delivered in
+			// process").
 			const token = await deploy(home, [
 				"agent",
 				"token",
@@ -330,40 +445,8 @@ describe.skipIf(!existsSync(BIN))(
 				"--camp",
 				BOX,
 			]);
-			expect(token.ok, token.message).toBe(true);
-			const enrolled = await deploy(home, [
-				"agent",
-				"enroll",
-				"--token",
-				String(pick(token.data, "token")),
-				"--jwk-file",
-				publicFile,
-			]);
-			expect(enrolled.ok, enrolled.message).toBe(true);
-			expect(["ENROLLMENT_STATE_PENDING", EnrollmentState.PENDING]).toContain(
-				pick(enrolled.data, "state"),
-			);
-			const id = String(pick(enrolled.data, "reconciler", "reconcilerId"));
-			// Grant 1 and grant 2 come from separate principals (I24).
-			const approved = await deploy(home, ["agent", "approve-key", id], {
-				HOBO_USER: "ops-alice",
-			});
-			expect(approved.ok, approved.message).toBe(true);
-			const sameHand = await deploy(
-				home,
-				["agent", "accept", id, "--camp", BOX],
-				{ HOBO_USER: "ops-alice" },
-			);
-			expect(sameHand.ok).toBe(false);
-			const accepted = await deploy(
-				home,
-				["agent", "accept", id, "--camp", BOX],
-				{ HOBO_USER: "ops-bob" },
-			);
-			expect(accepted.ok, accepted.message).toBe(true);
-			expect(["ENROLLMENT_STATE_ACCEPTED", EnrollmentState.ACCEPTED]).toContain(
-				pick(accepted.data, "reconciler", "enrollment"),
-			);
+			expect(token.ok).toBe(false);
+			expect(token.code).toBe("fleet-unavailable");
 
 			// The module's Rail approves the fleet's provider: placement no longer
 			// refuses rail-providers-unknown. The box has not contacted the Station
@@ -468,7 +551,7 @@ describe.skipIf(!existsSync(BIN))(
 				config,
 				JSON.stringify({
 					...AGENT_CONFIG,
-					hostKind: "local-runner",
+					hostKind: "developer-device",
 					worker: { directory: workerDir },
 					controller: { mode: "process", releases: join(home, "releases") },
 				}),
@@ -532,7 +615,7 @@ async function openFleet(
 			...declared.value,
 			...fleetHosts.map((id) => ({
 				id,
-				kind: "mesh-node",
+				kind: "fleet-device",
 				runnerLabels: ["hobo"],
 				ring: "fleet",
 			})),
@@ -613,6 +696,7 @@ async function openFleet(
 	// Every accepted report's health ingest must succeed; a failure is
 	// reported here, never dropped.
 	const ingestErrors: Error[] = [];
+	const fleet = await runnerFleetAuthority(now);
 	const opened = await openCdRuntime({
 		env,
 		home,
@@ -621,6 +705,7 @@ async function openFleet(
 		now,
 		topologyFiles: [module],
 		http: registry,
+		fleet,
 		onRunnerHostIngestError: (error) => ingestErrors.push(error),
 		...extra,
 	});
@@ -652,7 +737,6 @@ async function openFleet(
 			}>
 		>();
 		for (const [campId, box] of boxes) {
-			const keys = agentKeys();
 			const token = await station.cd.enrollment.issueToken(
 				{
 					campSet: FLEET,
@@ -663,8 +747,9 @@ async function openFleet(
 				operator("ops-alice"),
 			);
 			if (!token.ok) throw new Error(token.reasons[0]?.message);
+			const { keys, built } = await agentEnrollment(token.value.token, now());
 			const enrolled = await station.cd.enrollment.enroll(
-				{ token: token.value.token, publicJwk: keys.publicJwk, claims: [] },
+				{ request: built.request, dpopProof: built.dpopProof, campIds: [] },
 				operator("ops-alice"),
 			);
 			if (!enrolled.ok) throw new Error(enrolled.reasons[0]?.message);
@@ -705,8 +790,9 @@ async function openFleet(
 			const agent = agentReconciler({
 				feedUrl: "https://station.test/v1/cd/",
 				reconcilerId,
-				privateJwk: keys.privateJwk,
+				privateJwk: keys.sign,
 				svid: "",
+				credential: memberCredential(fleet, keys.sign, reconcilerId, now),
 				campIds: [campId],
 				realizer: chosen.value,
 				store: agentStore.store,
@@ -960,11 +1046,11 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 						],
 						claims: [
 							{
-								name: "hobo.ci/mesh-advert",
+								name: "hobo.ci/observation",
 								value: ready ? "fresh" : "expired",
 							},
 							{
-								name: "hobo.ci/mesh-advert-valid-until",
+								name: "hobo.ci/observation-valid-until",
 								value: new Date(
 									host.nowMs + (ready ? 60_000 : -1),
 								).toISOString(),
@@ -1406,6 +1492,7 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				controller: { mode: "process", releases },
 			}),
 		);
+		const fleet = await runnerFleetAuthority(now);
 		const opened = await openCdRuntime({
 			env: { HOBO_HOME: home },
 			home,
@@ -1414,6 +1501,7 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 			now,
 			topologyFiles: [module],
 			http: registry,
+			fleet,
 		});
 		if (!opened.ok) throw new Error(opened.reasons[0]?.message);
 		const station = opened.value;
@@ -1484,7 +1572,6 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				return recorded.value;
 			}
 
-			const keys = agentKeys();
 			const token = await station.cd.enrollment.issueToken(
 				{
 					campSet: FLEET,
@@ -1495,8 +1582,9 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 				ops,
 			);
 			if (!token.ok) throw new Error(token.reasons[0]?.message);
+			const { keys, built } = await agentEnrollment(token.value.token, now());
 			const enrolled = await station.cd.enrollment.enroll(
-				{ token: token.value.token, publicJwk: keys.publicJwk, claims: [] },
+				{ request: built.request, dpopProof: built.dpopProof, campIds: [] },
 				ops,
 			);
 			if (!enrolled.ok) throw new Error(enrolled.reasons[0]?.message);
@@ -1530,8 +1618,9 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 			const agent = agentReconciler({
 				feedUrl: "https://station.test/v1/cd/",
 				reconcilerId,
-				privateJwk: keys.privateJwk,
+				privateJwk: keys.sign,
 				svid: "",
+				credential: memberCredential(fleet, keys.sign, reconcilerId, now),
 				campIds: [BOX],
 				realizer: chosen.value,
 				store: agentStore.store,
