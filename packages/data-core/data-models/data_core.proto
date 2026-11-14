@@ -16,6 +16,40 @@ syntax = "proto3";
 
 package hobo.data.core.v1;
 
+// The operation claim is durable and contains only a digest of the source
+// fence token. A receiver signs the terminal receipt after committing this
+// exact route decision; a claim without that receipt remains held.
+message FenceOperationScope {
+  string dataset = 1;
+  string tenant = 2;
+}
+
+message FenceOperationClaim {
+  FenceOperationScope scope = 1;
+  string operation_id = 2;
+  string route_digest = 3;
+  string receiver_key_id = 4;
+  string fence_token_digest = 5;
+}
+
+message FenceOperationReceipt {
+  FenceOperationScope scope = 1;
+  string operation_id = 2;
+  string route_digest = 3;
+  string receiver_key_id = 4;
+  string fence_token_digest = 5;
+  string contract = 6; // hobo.fence-operation-receipt/v1
+  string outcome = 7; // committed
+  string signature = 8; // Ed25519, unpadded base64url
+}
+
+// A durable tombstone lets the receiver safely recover after a crash between
+// source completion and release of its own route-operation lock.
+message FenceOperationObservation {
+  FenceOperationClaim claim = 1;
+  string status = 2; // held | completed
+}
+
 // ── canonical model ─────────────────────────────────────────────────────────
 
 enum CanonicalType {
