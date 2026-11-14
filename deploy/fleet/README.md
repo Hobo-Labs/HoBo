@@ -1,8 +1,7 @@
 # HoBo Fleet deployment assets
 
 Everything needed to run a HoBo fleet's server side in either profile of
-[the fleet design](../../docs/design/index.md) (§6.7 NATS topology, §6.16
-deployment): NATS server templates, Compose files, Kubernetes manifests, the
+HoBo Fleet (ADR-0183; [design index](../../docs/design/index.md)): NATS server templates, Compose files, Kubernetes manifests, the
 peer-to-peer relay, the provisioning job, and the systemd, launchd and Windows
 definitions that run `hobo fleet run` on a device. `test/assets.test.ts` (O33)
 holds every file here to the properties below.
@@ -18,6 +17,11 @@ holds every file here to the properties below.
 | `kubernetes/` | The high-availability profile on Kubernetes (`kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/fleet/kubernetes`) |
 | `service/` | `hobo fleet run` as a systemd user unit, a launchd agent and a Windows task (the same shape `hobo fleet service install` writes) |
 | `scripts/dev-tls.sh` | Throwaway CA and certificates for trying the Compose files on one host |
+
+The witness connects with its own NATS user and writes each co-signature to
+`fleet.audit.witness`; the authority pairs it with the checkpoint or trust
+record it signed. No service needs a container or sandbox runtime on the host:
+fleet agents provision their own (ADR-0183 D58).
 
 The release images are defined beside the others:
 `deploy/release-images/hobo-fleet-authority`, `hobo-fleet-witness` and
@@ -75,8 +79,6 @@ The release images are defined beside the others:
 
 ## Known limits
 
-- `hobo-fleet-witness` refuses to start until `@hobo/fleet-nats` exposes the
-  `fleet.audit.witness` publish path; the files compose it anyway.
 - In `compose.standalone.yml` port 443 belongs to the relay, so the NATS
   WebSocket listener is published on 9443 (`HOBO_FLEET_NATS_WSS_PORT`). In
   `compose.ha.yml` the second and third servers and the second relay use the

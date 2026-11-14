@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- HoBo Fleet agent as a Windows task (design §6.15, §6.16): runs at logon,
+<!-- HoBo Fleet agent as a Windows task (ADR-0183): runs at logon,
      as the user, with least privilege, and restarts on failure.
      `hobo fleet service install` writes the same definition for the current
      user; this copy is for image builders and configuration management.

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.19
 # HoBo Fleet authority — runtime-only mise toolchain image with the staged
-# @hobo/fleet-authority application (design §6.15, §6.16). Configuration is a
+# @hobo/fleet-authority application (ADR-0183). Configuration is a
 # mounted FleetAuthorityConfig JSON file; every key comes from OpenBao.
 ARG HOBO_TOOLCHAIN_IMAGE=hobo-ci-worker:local
 ARG HOBO_RELEASE_VERSION=dev

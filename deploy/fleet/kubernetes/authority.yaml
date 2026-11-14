@@ -1,4 +1,4 @@
-# The authority (design §6.15, §6.16, high availability): two or more
+# The authority (ADR-0183, high availability): two or more
 # replicas behind the ingress, all callout responders in one queue group,
 # journalling to FLEET_JOURNAL (no volume). Each replica reads its keys from
 # OpenBao with its own projected service-account token (audience `openbao`),

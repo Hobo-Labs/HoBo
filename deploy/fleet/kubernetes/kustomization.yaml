@@ -1,4 +1,4 @@
-# HoBo Fleet on Kubernetes, high-availability profile (design §6.16).
+# HoBo Fleet on Kubernetes, high-availability profile (ADR-0183).
 # The configuration maps come from the same files the Compose profiles use,
 # one directory up, so build with:
 #   kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/fleet/kubernetes

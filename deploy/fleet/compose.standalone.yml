@@ -1,4 +1,4 @@
-# HoBo Fleet, standalone profile (design §6.16): one NATS server (replicas 1),
+# HoBo Fleet, standalone profile (ADR-0183): one NATS server (replicas 1),
 # one authority on SQLite, the witness on the same host under another user,
 # one peer-to-peer relay, and the provisioning job.
 #
@@ -29,7 +29,7 @@ x-hardening: &hardening
 services:
   nats:
     <<: *hardening
-    # NATS 2.15.3 or later (design §6.7, D13). It runs as the image's root user
+    # NATS 2.15.3 or later (ADR-0183 D13). It runs as the image's root user
     # holding no capability, so it can write its own volume and nothing else.
     image: nats:2.15.3-alpine
     command: ["-c", "/etc/nats/nats.conf"]
@@ -75,7 +75,7 @@ services:
 
   witness:
     <<: *hardening
-    # Another operating-system account than the authority's (design §6.16).
+    # Another operating-system account than the authority's (ADR-0183).
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-witness:${HOBO_FLEET_VERSION:-candidate}
     user: "1001:1001"
     command: ["--config", "/etc/hobo-fleet/witness.json"]
@@ -107,7 +107,7 @@ services:
 
   provision:
     <<: *hardening
-    # `hobo fleet ops provision`: creates the streams and buckets of §6.7. Run
+    # `hobo fleet ops provision`: creates the fleet streams and buckets (ADR-0183). Run
     # by an operator, never by a service: `docker compose run --rm provision`.
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-cli:${HOBO_FLEET_VERSION:-candidate}
     user: "1000:1000"

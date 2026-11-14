@@ -1,4 +1,4 @@
-# Three NATS servers in one cluster (design §6.7, §6.16, high availability),
+# Three NATS servers in one cluster (ADR-0183, high availability),
 # from deploy/fleet/nats/ha.conf. Client 4222 and WebSocket 443 are TLS;
 # cluster routes bind each pod's own address and accept only the other NATS
 # pods (mutual TLS plus the NetworkPolicy below); monitoring is on loopback,
@@ -66,7 +66,7 @@ spec:
                 matchLabels: { app.kubernetes.io/name: hobo-fleet-nats }
       containers:
         - name: nats
-          # NATS 2.15.3 or later (design §6.7, D13).
+          # NATS 2.15.3 or later (ADR-0183 D13).
           image: nats:2.15.3-alpine
           command: ["nats-server"]
           args: ["-c", "/etc/nats/nats.conf"]

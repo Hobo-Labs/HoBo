@@ -1,4 +1,4 @@
-# The peer-to-peer relay (design §6.12, §6.16): iroh-relay from
+# The peer-to-peer relay (ADR-0183): iroh-relay from
 # deploy/fleet/relay/iroh-relay.toml. Run two or more, in different regions
 # (one Deployment per region in production). The relay's TLS certificate is
 # the secret hobo-fleet-relay-tls (relay.pem, relay.key).

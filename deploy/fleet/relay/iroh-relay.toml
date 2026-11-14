@@ -1,4 +1,4 @@
-# HoBo Fleet peer-to-peer relay (design §6.12, §6.16): iroh-relay 1.4.1, the
+# HoBo Fleet peer-to-peer relay (ADR-0183): iroh-relay 1.4.1, the
 # release the pinned @number0/iroh binding is built against. Devices fall back
 # to it when hole punching fails; traffic through it is end-to-end encrypted
 # between the two endpoints. HoBo runs its own relays; the public ones are

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.19
 # HoBo Fleet witness — runtime-only mise toolchain image with the staged
 # @hobo/fleet-authority application, running its hobo-fleet-witness binary
-# (design §6.14, §6.16). It co-signs audit checkpoints and proposed trust
+# (ADR-0183). It co-signs audit checkpoints and proposed trust
 # records; it keeps no state of its own. Run it under another account than the
 # authority (standalone) or on another host (high availability).
 ARG HOBO_TOOLCHAIN_IMAGE=hobo-ci-worker:local

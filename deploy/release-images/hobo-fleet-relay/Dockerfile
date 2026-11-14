@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.19
-# HoBo Fleet peer-to-peer relay (design §6.12, §6.16): iroh-relay 1.4.1, the
+# HoBo Fleet peer-to-peer relay (ADR-0183): iroh-relay 1.4.1, the
 # release the pinned @number0/iroh binding is built against, downloaded from
 # the iroh release and checked against pinned SHA-256 values (the same pins as
 # .github/workflows/fleet-integration.yml). Configuration is a mounted

@@ -1,4 +1,4 @@
-# HoBo Fleet, high-availability profile (design §6.16): three NATS servers in
+# HoBo Fleet, high-availability profile (ADR-0183): three NATS servers in
 # one cluster (replicas 3), two authority replicas journalling to FLEET_JOURNAL
 # and answering auth callouts in one queue group, the witness, two
 # peer-to-peer relays, and the provisioning job.
@@ -30,7 +30,7 @@ x-hardening: &hardening
 
 x-nats: &nats
   <<: *hardening
-  # NATS 2.15.3 or later (design §6.7, D13). It runs as the image's root user
+  # NATS 2.15.3 or later (ADR-0183 D13). It runs as the image's root user
   # holding no capability, so it can write its own volume and nothing else.
   image: nats:2.15.3-alpine
   command: ["-c", "/etc/nats/nats.conf"]
@@ -140,7 +140,7 @@ services:
 
   witness:
     <<: *hardening
-    # A separate host in production (design §6.16); here, another user.
+    # A separate host in production (ADR-0183); here, another user.
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-fleet-witness:${HOBO_FLEET_VERSION:-candidate}
     user: "1001:1001"
     command: ["--config", "/etc/hobo-fleet/witness.json"]
@@ -168,7 +168,7 @@ services:
 
   provision:
     <<: *hardening
-    # `hobo fleet ops provision`: creates the streams and buckets of §6.7 with
+    # `hobo fleet ops provision`: creates the fleet streams and buckets (ADR-0183) with
     # replicas 3. Run by an operator, never by a service.
     image: ${HOBO_FLEET_IMAGE_PREFIX:-ghcr.io/hobo-labs/hobo/}hobo-cli:${HOBO_FLEET_VERSION:-candidate}
     user: "1000:1000"

@@ -1,5 +1,5 @@
 # The provisioning job: `hobo fleet ops provision` creates the streams and
-# buckets of design §6.7 (replicas 3). Run by an operator, never by a service:
+# buckets (ADR-0183; replicas 3). Run by an operator, never by a service:
 #   kubectl -n hobo-fleet delete job hobo-fleet-provision --ignore-not-found
 #   kubectl -n hobo-fleet apply -f provision-job.yaml   (or the kustomization)
 # Its own service account is the only identity OpenBao lets read the

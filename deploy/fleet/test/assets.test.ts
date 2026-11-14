@@ -1,5 +1,5 @@
 /**
- * O33 (design §10.1): the deployment assets of §6.16 are safe as written.
+ * O33 (ADR-0183): the deployment assets are safe as written.
  *
  * Parses both NATS server templates, both Compose files, every Kubernetes
  * manifest and the three service definitions, and asserts:
@@ -571,6 +571,24 @@ describe("release images", () => {
 			expect(source).toMatch(/^ENTRYPOINT \[/mu);
 		});
 	}
+
+	it("the authority and witness images run a binary @hobo/fleet-authority ships", () => {
+		const manifest = fromPlain(
+			JSON.parse(
+				readFileSync(
+					join(repo, "packages/fleet-authority/package.json"),
+					"utf8",
+				),
+			),
+		);
+		const bins = entries(manifest, "bin").map(([name]) => name);
+		for (const image of ["hobo-fleet-authority", "hobo-fleet-witness"]) {
+			const entrypoint =
+				/^ENTRYPOINT \[(.*)\]$/mu.exec(dockerfile(image))?.[1] ?? "";
+			expect(bins).toContain(image);
+			expect(entrypoint).toContain(`"dist/bin/${image}.js"`);
+		}
+	});
 
 	it("the relay image verifies the pinned iroh-relay download", () => {
 		const source = dockerfile("hobo-fleet-relay");
