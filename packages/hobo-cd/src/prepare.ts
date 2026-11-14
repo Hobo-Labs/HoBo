@@ -68,7 +68,9 @@ function openInBrowser(url: string): void {
 				? "explorer"
 				: "xdg-open";
 	try {
-		spawn(command, [url], { stdio: "ignore", detached: true }).unref();
+		const child = spawn(command, [url], { stdio: "ignore", detached: true });
+		child.on("error", () => undefined);
+		child.unref();
 	} catch {
 		// The URL is printed as well.
 	}
@@ -113,19 +115,33 @@ export async function prepareVercelConnection(
 		deps.openStore ?? ((id: SecretStoreId) => openSecretStore(id, env, deps));
 
 	const opened = await openStore(preferredRaw);
-	if (opened.ok && (await vercelConnected(opened.store))) {
-		if (input.whatIf)
-			return {
-				kind: "ready",
-				steps: [
-					{
-						id: "vercel",
-						outcome: "unchanged",
-						detail: `already in ${opened.store.id}`,
-					},
+	if (opened.ok) {
+		let connected: boolean;
+		try {
+			connected = await vercelConnected(opened.store);
+		} catch {
+			return refused(
+				"HOBO_CD_SECRET_STORE_UNAVAILABLE",
+				"Cannot verify the existing Vercel connection in the secret store.",
+				[
+					"Check store access and reconcile any partial credentials before retrying.",
 				],
-			};
-		return ready(opened.store, "unchanged");
+			);
+		}
+		if (connected) {
+			if (input.whatIf)
+				return {
+					kind: "ready",
+					steps: [
+						{
+							id: "vercel",
+							outcome: "unchanged",
+							detail: `already in ${opened.store.id}`,
+						},
+					],
+				};
+			return ready(opened.store, "unchanged");
+		}
 	}
 	if (input.whatIf)
 		return {

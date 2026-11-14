@@ -23,8 +23,8 @@ import { z } from "zod";
 // as `unchanged`. Secretless: the integration's own client secret is read
 // from the store for the one exchange (never from the environment or a
 // file), the access token exists in memory between the exchange and the
-// deposit, and the page sees references. The installation id is written
-// last, so its presence means every other entry is there too.
+// deposit, and the page sees references. Later runs verify the token and
+// installation id before treating the connection as complete.
 
 /** Deposit order: the installation id last, so its presence means complete. */
 export const VERCEL_CONNECTION_KEYS = Object.freeze([
@@ -36,8 +36,6 @@ export const VERCEL_CONNECTION_KEYS = Object.freeze([
 /** The integration's client secret, kept in the store by the integration's owner. */
 // public-contract: the store entry the integration's owner keeps its client secret in.
 export const VERCEL_CLIENT_SECRET_KEY = "HOBO_CD_VERCEL_CLIENT_SECRET";
-
-const COMPLETE_MARKER = "HOBO_CD_VERCEL_INSTALLATION_ID";
 
 /** Vercel's token answer, parsed before any value is trusted. */
 const TokenSchema = z.object({
@@ -76,11 +74,25 @@ function failed(
 export async function vercelConnected(
 	store: OpenedSecretStore,
 ): Promise<boolean> {
-	try {
-		return (await store.port.access(COMPLETE_MARKER)).status === "ok";
-	} catch {
-		return false;
+	const present = new Set<string>();
+	for (const key of VERCEL_CONNECTION_KEYS) {
+		let result: Awaited<ReturnType<typeof store.port.access>>;
+		try {
+			result = await store.port.access(key);
+		} catch {
+			throw new Error("Cannot inspect the existing Vercel connection.");
+		}
+		if (result.status === "ok" && result.material !== "") present.add(key);
+		else if (result.status === "ok" || result.code !== "secret-not-found")
+			throw new Error("Cannot inspect the existing Vercel connection.");
 	}
+	if (present.size === 0) return false;
+	if (
+		!present.has("HOBO_CD_VERCEL_TOKEN") ||
+		!present.has("HOBO_CD_VERCEL_INSTALLATION_ID")
+	)
+		throw new Error("The stored Vercel connection is incomplete.");
+	return true;
 }
 
 function connected(store: OpenedSecretStore): ConnectStep {
@@ -121,9 +133,12 @@ export function createVercelConnectFlow(
 
 		async onAction(action, params, current) {
 			if (action === "connect.cancel")
-				return failed("Cancelled. Nothing was installed on Vercel.", [
-					"Run hobo cd up again when you are ready.",
-				]);
+				return failed(
+					"Connection cancelled; an installation may already exist on Vercel.",
+					[
+						"Check Vercel and the secret store for a partial setup before retrying.",
+					],
+				);
 			if (action === "connect.chooseStore") {
 				if (current.kind !== "choose-secret-store") return { step: current };
 				const choice = (options.stores ?? DEFAULT_SECRET_STORES).find(
@@ -134,7 +149,15 @@ export function createVercelConnectFlow(
 				const opened = await options.openStore(choice.id);
 				if (!opened.ok) return failed(opened.message, opened.remediation);
 				store = opened.store;
-				if (await vercelConnected(store)) {
+				let alreadyConnected: boolean;
+				try {
+					alreadyConnected = await vercelConnected(store);
+				} catch {
+					return failed("Cannot verify the existing Vercel connection.", [
+						"Check access and reconcile any partial credentials in the secret store before retrying.",
+					]);
+				}
+				if (alreadyConnected) {
 					outcome = "unchanged";
 					return { step: connected(store) };
 				}

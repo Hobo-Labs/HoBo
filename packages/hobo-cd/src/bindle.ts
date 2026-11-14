@@ -5,11 +5,14 @@
  * - `cd-api`: the CD service's HTTP surface — the `/v1/cd/` read API, the
  *   agent delivery feed, `/healthz` and `/readyz`.
  * - `cd-tick`: the tick that runs the conductor's reconcile passes.
- * - `cd-journal`: the CD journal. Its requirement (`cdJournal` below) is a
- *   provider-neutral PostgreSQL ask, placed on a fleet of vendors by
- *   `placePostgresFleet` so one vendor's outage is a failover, not a stop.
+ * - `cd-journal`: a generic data resource. `cdJournal` below describes the
+ *   intended PostgreSQL requirement, but is not wired into this Bindle yet.
  * - `cd-config`: the provider connections CD deploys with (the Vercel
  *   junction's references), read only.
+ *
+ * The API has no handler binding and the schedule has no cadence in this
+ * declaration yet. PostgreSQL fleet placement does not provision or replicate
+ * a journal. These resources must be wired before this project can deploy CD.
  *
  * Nothing here names a provider; Vercel is the default *connection* `hobo cd
  * up` makes, chosen where the deploy runs. Loaded by the Bindle loader, not
@@ -25,10 +28,10 @@ export const CD_RESOURCES = Object.freeze({
 	config: "cd-config",
 } as const);
 
-/** What the journal asks of a PostgreSQL backend; any vendor that satisfies it competes. */
+/** Intended PostgreSQL requirement; not yet attached to the journal resource. */
 export const cdJournal = postgres.database({ version: ">=16" });
 
-/** The tick's cadence: one conductor pass a minute. */
+/** Intended cadence; not yet attached to the schedule resource. */
 export const CD_TICK_SCHEDULE = Object.freeze({
 	name: CD_RESOURCES.tick,
 	cron: "* * * * *",
