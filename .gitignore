@@ -131,3 +131,6 @@ reports/mutation/
 # `pnpm run plans:guard` refuses a plan anywhere else.
 /plans/
 /docs/plans/
+
+# fleet:verify run report (CI uploads it as an artifact)
+/fleet-verification.json
