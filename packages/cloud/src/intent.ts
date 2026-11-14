@@ -37,6 +37,12 @@ function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
 	// A provider-owned project groups resources; it does not serve HTTP itself.
 	if ((port === "hobo:data" || port === "data") && paradigm === "project")
 		return { capabilityPort: "project", require: [] };
+	// The Bindle SDK's collection adapter records backing resources as data.v1
+	// and preserves the requested kind in `paradigm`. A bucket must therefore
+	// reach the object-storage planner port even though its wire port is the
+	// generic `hobo:data` collector port.
+	if ((port === "hobo:data" || port === "data") && paradigm === "object")
+		return { capabilityPort: "objectStore", require: ["durable"] };
 	for (const rule of DATA_PORT_RULES) {
 		if (rule.match(port)) {
 			return { capabilityPort: rule.capabilityPort, require: rule.require };
