@@ -18,7 +18,8 @@
 				"merge_base": "${{ steps.merge-group-base.outputs.base }}",
 				"merge_tests": "${{ steps.merge-group-base.outputs.tests }}",
 				"pr_base": "${{ steps.scm-base.outputs.base }}",
-				"shards": "${{ steps.shard-plan.outputs.shards }}"
+				"shards": "${{ steps.shard-plan.outputs.shards }}",
+				"shard_runner": "${{ steps.shard-route.outputs.runner }}"
 			},
 			"steps": [
 				{
@@ -147,6 +148,18 @@
 						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
 					},
 					"local": "run"
+				},
+				{
+					"name": "Route the merge-group shard batch",
+					"id": "shard-route",
+					"if": "github.event_name == 'merge_group'",
+					"env": {
+						"HOBO_PLANNED_SHARDS": "${{ steps.shard-plan.outputs.shards }}",
+						"GITHUB_TOKEN": "${{ github.token }}"
+					},
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/merge-shard-route.mts",
+					"local": "skip",
+					"reason": "the local run executes the planned tests itself; choosing a GitHub runner is only needed before hosted jobs are queued"
 				},
 				{
 					"name": "Impact classification (shadow)",

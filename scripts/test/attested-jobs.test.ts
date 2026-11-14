@@ -78,13 +78,14 @@ describe("the description of the covered jobs", () => {
 			}
 	});
 
-	it("only leaves out a step that sets up or tidies the CI machine, or builds an image", () => {
+	it("only leaves out CI machine setup, hosted routing, or image pipeline steps", () => {
 		const left = plan.flatMap((job) =>
 			job.steps
 				.filter((step) => step.local === "skip" && step.run !== undefined)
 				.map((step) => `${job.id}: ${step.name}`),
 		);
 		assert.deepEqual(left, [
+			"pr_gate_validation: Route the merge-group shard batch",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
 			"pr_affected: Prune Turbo cache",

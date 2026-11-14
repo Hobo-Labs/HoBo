@@ -188,6 +188,10 @@ const ROUTED_RUNS_ON = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 const SHARD_RUNS_ON =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 
+/** The merge-group workspace batch uses its validated plan's route first. */
+const MERGE_SHARD_RUNS_ON =
+	"${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
+
 /**
  * No repository variable reaches a workflow, an action or a template as
  * `vars.HOBO_CI_*`, and no input, output or environment variable carries a
@@ -742,6 +746,11 @@ function lintWorkflowYaml(
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
 			isNonPromotingDepsJob(file, jobLine, block);
+		const mergeShardRoute =
+			runsOn === MERGE_SHARD_RUNS_ON &&
+			file === "hobo-ci.yml" &&
+			jobLine.trim() === "workspace_tests:" &&
+			needsJob(block, "pr_gate_validation");
 		if (
 			activeCiFiles.has(file) &&
 			runsOn !== undefined &&
@@ -749,6 +758,7 @@ function lintWorkflowYaml(
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
+			!mergeShardRoute &&
 			!depsRoute &&
 			!npmOidcHosted &&
 			!alwaysHosted
@@ -764,7 +774,10 @@ function lintWorkflowYaml(
 			);
 		}
 		if (
-			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || depsRoute) &&
+			(runsOn === ROUTED_RUNS_ON ||
+				runsOn === SHARD_RUNS_ON ||
+				mergeShardRoute ||
+				depsRoute) &&
 			!needsRoute(block)
 		) {
 			errors.push(
@@ -781,6 +794,7 @@ function lintWorkflowYaml(
 			runsOn === TRUNK_RUNS_ON ||
 			runsOn === ROUTED_RUNS_ON ||
 			runsOn === SHARD_RUNS_ON ||
+			mergeShardRoute ||
 			depsRoute
 		) {
 			for (const [index, line] of block.entries()) {

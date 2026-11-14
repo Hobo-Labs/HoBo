@@ -352,6 +352,7 @@ jobs:
       merge_tests: ${{ steps.merge-group-base.outputs.tests }}
       pr_base: ${{ steps.scm-base.outputs.base }}
       shards: ${{ steps.shard-plan.outputs.shards }}
+      shard_runner: ${{ steps.shard-route.outputs.runner }}
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
@@ -516,6 +517,15 @@ jobs:
           fi
           echo "workspace test shards: ${shards}"
           echo "shards=${shards}" >> "$GITHUB_OUTPUT"
+      # A recent fleet pickup proves one job can start, not that the planned
+      # concurrent batch fits within the merge queue's deadline.
+      - name: Route the merge-group shard batch
+        id: shard-route
+        if: github.event_name == 'merge_group'
+        env:
+          HOBO_PLANNED_SHARDS: ${{ steps.shard-plan.outputs.shards }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/merge-shard-route.mts
       - name: Impact classification (shadow)
         if: github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'
         continue-on-error: true
@@ -574,7 +584,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read

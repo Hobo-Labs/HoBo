@@ -151,6 +151,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   succeed. The PR merge base is pinned from the event's base SHA and passed to every job, so a later
   target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
   covers failed, cancelled, skipped, and missing results.
+- **Merge-group batch routing.** After the validation job plans its shards, an auto-routed batch of
+  more than one uses the configured `ubuntu-24.04` fallback when a fresh GitHub read confirms the
+  exact caller repository is public. A recent fleet pickup does not establish that the whole batch
+  can start within the queue deadline. Explicit pins, a missing or invalid committed routing policy,
+  a single shard, other events, and a failed or mismatched repository read retain the original route.
+  The visibility observation does not prove future capacity, total job cost, or budget admission.
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
   do not collide on `upload-artifact`)
