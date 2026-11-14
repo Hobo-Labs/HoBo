@@ -1,0 +1,46 @@
+{
+	"name": "@hobo/hobo-ci",
+	"version": "0.0.1",
+	"license": "MIT",
+	"private": true,
+	"description": "HoBo's CI as a HoBo project: a Bindle (the hosted CI relay) deployable with hobo up, a CLI (hobo-ci up|down|plan|status), and the GitHub provider connection hobo ci up runs first — a GitHub App from a reviewed manifest, its credentials deposited straight into a third-party secret store (Infisical OIDC by default, 1Password), on a generative connect page.",
+	"type": "module",
+	"bin": {
+		"hobo-ci": "./dist/cli.js"
+	},
+	"files": [
+		"LICENSE",
+		"dist",
+		"src/bindle.ts"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"dependencies": {
+		"@1password/sdk": "0.5.0",
+		"@hobo/adapter-1password": "workspace:*",
+		"@hobo/adapter-infisical": "workspace:*",
+		"@hobo/bindles": "workspace:*",
+		"@hobo/ci-gh-actions": "workspace:*",
+		"@hobo/cli": "workspace:*",
+		"@hobo/connect-ui": "workspace:*",
+		"@hobo/identity": "workspace:*",
+		"@hobo/kv-redis-compatible": "workspace:*",
+		"zod": "4.3.6"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/"
+	}
+}

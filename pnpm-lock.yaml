@@ -1829,6 +1829,9 @@ importers:
       '@hobo/data':
         specifier: workspace:*
         version: link:../data
+      '@hobo/hobo-ci':
+        specifier: workspace:*
+        version: link:../hobo-ci
       '@hobo/iac-pulumi':
         specifier: workspace:*
         version: link:../iac/iac-pulumi
@@ -2001,6 +2004,46 @@ importers:
       pg:
         specifier: 8.22.0
         version: 8.22.0
+
+  packages/hobo-ci:
+    dependencies:
+      '@1password/sdk':
+        specifier: 0.5.0
+        version: 0.5.0
+      '@hobo/adapter-1password':
+        specifier: workspace:*
+        version: link:../adapters/adapter-1password
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
+      '@hobo/bindles':
+        specifier: workspace:*
+        version: link:../bindles
+      '@hobo/ci-gh-actions':
+        specifier: workspace:*
+        version: link:../ci-gh-actions
+      '@hobo/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@hobo/connect-ui':
+        specifier: workspace:*
+        version: link:../connect-ui
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/kv-redis-compatible':
+        specifier: workspace:*
+        version: link:../kv-redis-compatible
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/iac/iac-crossplane:
     dependencies:
@@ -5052,6 +5095,12 @@ importers:
   src/draft/technical-proofs/yard-topology-manifest-contract: {}
 
 packages:
+
+  '@1password/sdk-core@0.5.0':
+    resolution: {integrity: sha512-9g7LWOKRKdePZ85evVgE9xEom3DAg3hRIyQdOwLPvpL/F7KpDXmUHMi72rsqJxKaDbWApXmrYjDExMSPqUg7xw==}
+
+  '@1password/sdk@0.5.0':
+    resolution: {integrity: sha512-k6kov3pcA7PRg2tev9CgTfEf/3JSyAp11BPQNCEsqAD32QbqM032OXC1rfjyC8Ba0sfH+NHYZxcifUZToyGyYA==}
 
   '@agentclientprotocol/sdk@0.14.1':
     resolution: {integrity: sha512-b6r3PS3Nly+Wyw9U+0nOr47bV8tfS476EgyEMhoKvJCZLbgqoDFN7DJwkxL88RR0aiOqOYV1ZnESHqb+RmdH8w==}
@@ -16877,6 +16926,12 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  '@1password/sdk-core@0.5.0': {}
+
+  '@1password/sdk@0.5.0':
+    dependencies:
+      '@1password/sdk-core': 0.5.0
 
   '@agentclientprotocol/sdk@0.14.1(zod@3.25.76)':
     dependencies:
