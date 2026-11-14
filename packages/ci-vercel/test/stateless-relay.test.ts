@@ -1,16 +1,9 @@
 import { ACTIVE_STATES } from "@hobo/ci";
-import { signedFleetVerdictRequest } from "@hobo/ci-gh-actions";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createHttpEntry } from "../src/entry.js";
 import { RELAY_QUEUE_TOPICS } from "../src/relay-queue.js";
-import {
-	FLEET_REPORTER,
-	INVITATION,
-	ORIGIN,
-	openStatelessRelay,
-	WORKFLOW_TOKEN,
-} from "./stateless-harness.js";
+import { INVITATION, ORIGIN, openStatelessRelay } from "./stateless-harness.js";
 
 const JOB = 4001;
 const MINUTE = 60_000;
@@ -399,104 +392,29 @@ describe("the stateless relay's configuration is read-only", () => {
 		expect(body.error).toMatch(/read-only.*hobo ci.*config service/u);
 	});
 
-	it("keeps a fleet verdict on the cache: reported by an enrolled reporter's signature, read by anyone, gone when it lapses", async () => {
-		const h = await openStatelessRelay();
-		const path = "/v1/fleet/verdicts/Org/Repo";
-		const read = async (at = path) => {
-			const response = await h.relay.handle(new Request(`${ORIGIN}${at}`));
-			expect(response.status).toBe(200);
-			return response.json();
-		};
-		let sequence = h.clock.nowMs();
-		const report = (blocked: string) => {
-			sequence += 1;
-			const signed = signedFleetVerdictRequest({
-				identity: FLEET_REPORTER,
-				reporterId: FLEET_REPORTER.id,
-				origin: ORIGIN,
-				repository: "Org/Repo",
-				body: `{"blocked":${blocked},"ttlSeconds":180,"mode":"report"}`,
-				issuedAt: h.clock.now(),
-				sequence: String(sequence),
-			});
-			return h.relay.handle(
-				new Request(signed.url, {
-					method: "PUT",
-					headers: signed.headers,
-					body: signed.body,
-				}),
-			);
-		};
-		expect(await read()).toEqual({ repository: "org/repo", blocked: {} });
-		// Configuration is read-only here; a verdict is not configuration. An
-		// account bearer is not how a verdict is reported.
-		const bearer = await h.relay.handle(
-			new Request(`${ORIGIN}${path}`, {
-				method: "PUT",
-				headers: {
-					authorization: `Bearer ${h.token}`,
-					"content-type": "application/json",
-				},
-				body: '{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":120,"mode":"report"}',
-			}),
-		);
-		expect(bearer.status).toBe(401);
-		expect(await bearer.json()).toMatchObject({ reason: "unknown-reporter" });
-		expect(
-			h.lines.some(
-				(line) =>
-					line.event === "hobo_ci_fleet_verdict_refused" &&
-					line.reason === "unknown-reporter",
-			),
-		).toBe(true);
-		expect((await report('{"hobo":{"reason":"no-capacity"}}')).status).toBe(
-			200,
-		);
-		expect((await read()).blocked).toEqual({
-			hobo: { reason: "no-capacity" },
-		});
-		h.clock.advance(179_000);
-		expect((await read()).blocked).toEqual({
-			hobo: { reason: "no-capacity" },
-		});
-		h.clock.advance(1_000);
-		expect(await read()).toEqual({ repository: "org/repo", blocked: {} });
-		// The repository's own workflow reads the reporter's status.
-		const status = await h.relay.handle(
-			new Request(`${ORIGIN}/v1/fleet/reporters/Org/Repo`, {
-				headers: { authorization: `Bearer ${WORKFLOW_TOKEN}` },
-			}),
-		);
-		expect(status.status).toBe(200);
-		expect(await status.json()).toMatchObject({
-			repository: "org/repo",
-			reporters: [{ id: "box-1", live: false, state: { mode: "report" } }],
-			dailyBlockMinutes: 240,
-		});
-	});
-
-	it("does not touch the cache for a repository it has no connection to, however it is named", async () => {
+	it("keeps no fleet verdicts on the cache: the device fleet replaced them (ADR-0183)", async () => {
 		const h = await openStatelessRelay();
 		const before = h.cache.meter.usage().total;
-		for (const name of [
-			"acme/unknown",
-			"x1/Repo",
-			`${"a".repeat(39)}/${"b".repeat(100)}`,
-		]) {
-			const response = await h.relay.handle(
-				new Request(`${ORIGIN}/v1/fleet/verdicts/${name}`),
-			);
-			expect(response.status).toBe(200);
-			expect((await response.json()).blocked).toEqual({});
-		}
-		expect(h.cache.meter.usage().total).toBe(before);
-		// An owner longer than GitHub allows names no repository.
-		const long = await h.relay.handle(
-			new Request(
-				`${ORIGIN}/v1/fleet/verdicts/${"a".repeat(100)}/${"b".repeat(100)}`,
-			),
+		const put = await h.relay.handle(
+			new Request(`${ORIGIN}/v1/fleet/verdicts/Org/Repo`, {
+				method: "PUT",
+				headers: { "content-type": "application/json" },
+				body: '{"blocked":{"hobo":{"reason":"no-capacity"}},"ttlSeconds":180,"mode":"report"}',
+			}),
 		);
-		expect(long.status).toBe(404);
+		expect(put.status).toBeGreaterThanOrEqual(400);
+		const read = await h.relay.handle(
+			new Request(`${ORIGIN}/v1/fleet/verdicts/Org/Repo`),
+		);
+		if (read.status === 200) expect((await read.json()).blocked).toEqual({});
+		else expect(read.status).toBe(404);
+		const status = await h.relay.handle(
+			new Request(`${ORIGIN}/v1/fleet/reporters/Org/Repo`, {
+				headers: { authorization: "Bearer workflow-token-of-org-repo" },
+			}),
+		);
+		expect(status.status).not.toBe(200);
+		expect(h.cache.meter.usage().total).toBe(before);
 	});
 
 	it("still serves the policy view, read from the config service", async () => {

@@ -151,7 +151,11 @@ describe("the relay entry", () => {
 			expect((await fetch(`${base}/healthz`)).status).toBe(200);
 			const ready = await fetch(`${base}/readyz`);
 			expect(ready.status).toBe(503);
-			expect(await ready.json()).toEqual({ ready: false, started: false });
+			expect(await ready.json()).toEqual({
+				ready: false,
+				started: false,
+				state: "start-failed",
+			});
 			expect((await fetch(`${base}/github/webhooks`)).status).toBe(503);
 		});
 	});
