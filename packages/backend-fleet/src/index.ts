@@ -95,6 +95,15 @@ export {
 	parseFleetPolicy,
 } from "./policy.js";
 export {
+	type ContinuityFleetPlan,
+	type ContinuityRequest,
+	type ContinuityShortfall,
+	continuityBudgetCheck,
+	continuityFleetPlan,
+	continuityShortfalls,
+	MIN_COPY_INTERVAL_MS,
+} from "./continuity.js";
+export {
 	DEFAULT_FLEET_ROUTING_MARKS,
 	FLEET_OFFER_TIERS,
 	FLEET_ROUTE_ACTIONS,
