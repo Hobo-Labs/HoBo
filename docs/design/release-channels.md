@@ -177,6 +177,9 @@ artifact family and one pipeline per family (`hobo-release-<family>`,
 `candidate` -> `stable`, all at once, one HTTP probe per node). Any CD command
 reads it with `--yard release/hobo-release.delivery.ts`; `hobo deploy pipeline
 apply --file release/hobo-release.delivery.ts` applies the pipelines.
+Each Camp's physical ID is scoped to its provider Yard, while its explicit
+logical ID retains the existing `hobo-release/...` identity used by the
+pipelines and journal.
 
 | Family | Camps | Provider (realizer) | Target and credential | What the realizer does |
 |---|---|---|---|---|

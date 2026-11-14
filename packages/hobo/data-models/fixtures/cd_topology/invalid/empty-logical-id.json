@@ -1,0 +1,7 @@
+{
+  "campId": "new-yard/release",
+  "logicalId": "",
+  "yardId": "new-yard",
+  "provider": "example",
+  "envType": "production"
+}

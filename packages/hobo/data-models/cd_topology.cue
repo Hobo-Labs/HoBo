@@ -18,6 +18,8 @@ package hobo
 	envType: string & !=""
 	labels?: {[string]: string}
 	management?: #CampManagement
+	// Optional stable CD identity when the physical Camp moves between Yards.
+	logicalId?: string & !=""
 }
 
 #CdTopologyYardCamp: {
