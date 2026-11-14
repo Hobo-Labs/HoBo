@@ -1,6 +1,6 @@
 /**
  * The status feed for the availability objectives (L27, design §6.14).
- * Signature frozen by the fleet contract commit (ADR-0182).
+ * Signature frozen by the fleet contract commit (ADR-0183).
  *
  * The authority records one sample per enrollment API request and per NATS
  * callout decision; `tick` turns every finished minute into one `slo.Measured`

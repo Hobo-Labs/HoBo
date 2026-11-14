@@ -1,0 +1,35 @@
+syntax = "proto3";
+package hobo.provider.webernetes.v1;
+
+// Plan 0024 WP13: what the webernetes.pod/v1 resolver reports from the local
+// station host and one HTTP probe. No claim URL (a capability), no credential.
+// Design-time wire view (no buf codegen is wired for this package); the CUE
+// definition #WebernetesPodOutputs constrains the same record.
+message WebernetesPodOutputs {
+  string station_id = 1;
+  // Absent once the station is released.
+  string station_url = 2;
+  // loopback | private-network | overlay
+  string locality = 3;
+  // Only when ready and HTTPS or loopback HTTP (the core lifecycle rule).
+  string serving_endpoint = 4;
+  string artifact_digest = 5;
+  // HTTP status of the readiness probe; 0 when nothing answered.
+  int32 probe_status = 6;
+  bool ready = 7;
+  bool operation_confirmed = 8;
+  bool operation_terminal = 9;
+  bool absence_confirmed = 10;
+  bool retirement_confirmed = 11;
+  // ready | pending | absent
+  string lifecycle_status = 12;
+}
+
+// The station-host seam's description of a station (WebernetesStationRecord).
+message WebernetesStationRecord {
+  // running | released
+  string state = 1;
+  string station_url = 2;
+  string claim_url = 3;
+  string artifact_digest = 4;
+}

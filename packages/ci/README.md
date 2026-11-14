@@ -479,6 +479,63 @@ A signature says which key wrote an advertisement, not what software the node ru
 failure table, the trust model's limits and the remaining increments are in
 [CI Relay Mesh](../../docs/design/ci-relay-mesh.md).
 
+## HoBo's own builds as Freight
+
+HoBo delivers itself through HoBo: when HoBo CI builds `main`, each
+deliverable leaves the run as Freight that a `HOBO_CI` Freight source in
+[`@hobo/cd`](../cd/src/freight/README.md) reads (`src/freight.ts`).
+
+| Deliverable (`HOBO_DELIVERABLES`) | Bindle | CI output path | Kind |
+| --- | --- | --- | --- |
+| `relay` | `hobo-ci-relay` | `relay/bundle` | `FUNCTION_BUNDLE` |
+| `runnerImage` | `hobo-ci-runner-fleet` | `runner-fleet/image` (the OCI image manifest; its sha256 is the image digest) | `OCI_IMAGE` |
+| `cli` | `hobo-cli` | `cli/tarball` | `PACKAGE` (npm) |
+| `sdk` | `hobo-sdk` | `sdk/tarball` | `PACKAGE` (npm) |
+| `site` | `hobo-site` | `site/bundle` | `STATIC_ASSETS` |
+
+The relay and runner-fleet rows are the Bindles and paths `hoboCiDogfoodSources`
+in `@hobo/cd` subscribes to. For each deliverable a build emits three CI
+outputs (`ciFreightOutputs`):
+
+- its bytes at the output path;
+- `<path>.freight.json`, a `hobo.freight-manifest/v1` document. It is the same
+  canonical document `@hobo/cd`'s `writeFreightManifest` writes, byte for
+  byte (`test/fixtures/relay-freight-manifest.json` was written by
+  `@hobo/cd`). `@hobo/ci` cannot import `@hobo/cd`: `@hobo/cd` depends on
+  `@hobo/stations`, which depends on `@hobo/ci`, so the schema is the contract
+  and not a shared module. `writeCiFreightManifest` refuses what the `@hobo/cd`
+  parse boundary refuses, with the same codes (`freight-manifest-invalid`,
+  `freight-secret-in-record`), and never redacts;
+- `freight/provenance.intoto.json`, one in-toto Statement v1 with an SLSA
+  provenance v1 predicate over every deliverable of the run. Each manifest
+  references it by digest. It is unsigned, so the reference says
+  `verified: false` and names no verifier: a source with `requireProvenance`
+  refuses it until a sigstore or `hobo-jwt` signer signs it.
+
+The declaration hash is sha256 over the deliverable's canonical declaration
+(Bindle, output path, kind, ecosystem, media type), so a declaration change
+with the same bytes is new Freight. Every build is bound to one commit; a
+build without a 7-64 hex commit is refused.
+
+A `@hobo/ci` pipeline exposes the outputs with `ciFreightPipelineArtifacts`:
+they become `PipelineArtifact`s of a passing result, which the store journals
+as `ci.PipelineResultObserved`, the event a `HOBO_CI` source's `CiEventReader`
+reads. An output over the one MiB artifact limit is refused, not truncated.
+The event only triggers: the source re-reads each output and checks its
+sha256 before it records Freight (I15).
+
+On GitHub Actions the outputs are files. After a green push to `main`, the
+**Main full gate (finish)** job packs the SDK and the CLI and runs
+`node packages/ci/dist/freight-cli.js --out <dir> --deliverable sdk=<tgz>
+--deliverable cli=<tgz> ...` (`src/freight-cli.ts`), then uploads `<dir>` as
+the `hobo-freight-<sha>` run artifact. `<dir>/ci-result.json` is the passing
+`ci.PipelineResultObserved` lease shape (`ciFreightResult`). The job uses no
+credential and records nothing in CD. Deliverables the workflow does not build
+(relay bundle, runner image, site bundle) are printed as
+`skipped <id>: not built by this run`; nothing is invented for them. Reading
+GitHub run artifacts as a `CiEventReader` is not built yet: today a `HOBO_CI`
+source reads the `@hobo/ci` store.
+
 ## GitHub Actions fabric (Hobo-Labs/HoBo)
 
 Production workflows live under [`.github/workflows/hobo-ci.yml`](../../.github/workflows/hobo-ci.yml)

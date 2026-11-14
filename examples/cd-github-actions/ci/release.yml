@@ -1,0 +1,64 @@
+# Copy to .github/workflows/release.yml in the Bindle's own repository.
+# HoBo.CD needs no stored secret: the job proves its identity with a GitHub
+# OIDC token, and CD checks that token against the TrustedPublisherRecord in
+# src/hobo.delivery.ts (issuer, audience, repository, workflow_ref,
+# environment). The push only nudges: CD still polls GHCR and verifies the
+# digest and the SLSA provenance before it records Freight.
+name: release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  packages: write
+  id-token: write # GitHub OIDC for HoBo trusted publishing and Sigstore
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: release
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ghcr.io/acme/shop:${{ github.sha }}
+  provenance:
+    needs: build
+    permissions:
+      id-token: write
+      packages: write
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+    with:
+      image: ghcr.io/acme/shop
+      digest: ${{ needs.build.outputs.digest }}
+  publish-freight:
+    needs: [build, provenance]
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the HoBo CLI
+        run: npm install --global @hobo/cli
+      - name: Write the Freight manifest (hobo.freight-manifest/v1)
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          jq -n --arg digest "$DIGEST" --arg commit "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
+            --arg decl "sha256:$(sha256sum hobo.bindle.ts | cut -d' ' -f1)" '{
+              schemaVersion: "hobo.freight-manifest/v1",
+              bindle: "acme/shop",
+              declarationHash: $decl,
+              artifacts: [{ name: "app", kind: "ARTIFACT_KIND_OCI_IMAGE", digest: $digest,
+                            coordinate: ("ghcr.io/acme/shop@" + $digest), ecosystem: "oci" }],
+              source: { repository: "https://github.com/acme/shop", commit: $commit,
+                        ciRunId: $run, ciSystem: "github-actions" }
+            }' > freight.json
+      - name: Nudge HoBo.CD with the manifest (trusted publishing)
+        run: |
+          token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=hobo.cd" | jq -r .value)
+          hobo deploy freight record --manifest freight.json --publisher-token-stdin <<<"$token"

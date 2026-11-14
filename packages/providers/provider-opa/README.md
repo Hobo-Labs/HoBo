@@ -1,7 +1,7 @@
 # @hobo/provider-opa
 
 The OPA/Rego policy engine behind the broker's gate-plane port, extracted
-from `@hobo/broker` (docs/plans/0017 F30). The broker depends on this package
+from `@hobo/broker`. The broker depends on this package
 and re-exports `createOpaGatePlane`, so existing imports keep working; the
 dependency points provider->contracts only (no cycle).
 

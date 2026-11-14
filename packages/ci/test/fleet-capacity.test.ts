@@ -1,11 +1,10 @@
+import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-	buildFleetCapacitySnapshot,
-	fleetCapacityVariableValue,
 	memoryAdmitHeadroom,
 	memoryAdmitParallelCount,
-	parseFleetCapacityVariable,
 } from "../src/fleet/capacity.js";
+import * as root from "../src/index.js";
 
 describe("fleet capacity", () => {
 	it("refuses admit when available memory is below reserve + job + volatility", () => {
@@ -27,22 +26,23 @@ describe("fleet capacity", () => {
 			memoryAdmitParallelCount(11_264, request, reserve, volatility, 3),
 		).toBe(2);
 	});
+});
 
-	it("round-trips the published repository variable", () => {
-		const snapshot = buildFleetCapacitySnapshot({
-			atMs: 1_700_000_000_000,
-			availableMb: 2400,
-			reserveMb: 2048,
-			volatilityMb: 1024,
-			freeSlotsHobo: 2,
-			freeSlotsTrunk: 1,
-			requiredMbHobo: 3072,
-			requiredMbTrunk: 4096,
-		});
-		expect(snapshot["hobo-trunk"].admit).toBe(false);
-		const parsed = parseFleetCapacityVariable(
-			fleetCapacityVariableValue(snapshot),
-		);
-		expect(parsed?.["hobo-trunk"].admit).toBe(false);
+// ADR-0180, "Retirement": the HOBO_CI_FLEET_CAPACITY record is retired;
+// whether the fleet can take a run is the relay's to decide (ADR-0180).
+describe("the retired capacity record", () => {
+	it("is no longer exported or defined", () => {
+		const exported = Object.keys(root);
+		for (const name of [
+			"FLEET_CAPACITY_VARIABLE",
+			"fleetCapacitySnapshot",
+			"fleetCapacityVariableValue",
+			"parseFleetCapacityPublished",
+			"mainWorkspaceParallelCap",
+		])
+			expect(exported).not.toContain(name);
+		expect(
+			existsSync(new URL("../src/fleet/capacity-input.ts", import.meta.url)),
+		).toBe(false);
 	});
 });

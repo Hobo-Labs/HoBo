@@ -1,6 +1,6 @@
 /**
  * Operations: key ceremony, rotation, backup and restore (L27).
- * Signatures frozen by the fleet contract commit (ADR-0182). Called by
+ * Signatures frozen by the fleet contract commit (ADR-0183). Called by
  * `hobo fleet ops …` and by the authority service.
  */
 import type { Clock, FleetLog, Outcome } from "@hobo/fleet";

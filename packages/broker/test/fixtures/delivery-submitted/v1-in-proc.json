@@ -1,0 +1,15 @@
+{
+	"input": {
+		"requestId": "req-local-1",
+		"brokerId": "broker:local",
+		"engine": "in-proc",
+		"target": "broker:local"
+	},
+	"expected": {
+		"schema": "hobo.broker.delivery-submitted/v2",
+		"requestId": "req-local-1",
+		"brokerId": "broker:local",
+		"reconcilerMode": "conductor",
+		"target": "broker:local"
+	}
+}

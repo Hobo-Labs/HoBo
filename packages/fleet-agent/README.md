@@ -1,6 +1,6 @@
 # `@hobo/fleet-agent`
 
-What a HoBo Fleet device needs beyond the domain (ADR-0182): key stores, sandbox
+What a HoBo Fleet device needs beyond the domain (ADR-0183): key stores, sandbox
 drivers, the per-order egress proxy, host capacity and service installers. A
 library; it has no binary. `hobo fleet run` and the box worker compose it with
 `createFleetAgent` from `@hobo/fleet/agent`.

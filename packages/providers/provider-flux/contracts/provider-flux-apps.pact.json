@@ -1,0 +1,60 @@
+{
+	"consumer": {
+		"name": "HoBoHostingCoordinator"
+	},
+	"provider": {
+		"name": "FluxOSPublicAPI"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		},
+		"provenance": "Hand-authored consumer expectations (plan 0024 WP13) against the documented public FluxOS API at https://api.runonflux.io (docs.runonflux.io, read 2026-11-12); not provider-verified or captured live traffic. The resolver issues only these two unauthenticated reads and never registers, updates or removes an app."
+	},
+	"interactions": [
+		{
+			"description": "read the registered specification of an app",
+			"request": {
+				"method": "GET",
+				"path": "/apps/appspecifications/hoboshop"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": "success",
+					"data": {
+						"version": 8,
+						"name": "hoboshop",
+						"owner": "1HoBoOwnerAddressExample111111111",
+						"instances": 3,
+						"compose": [
+							{
+								"name": "web",
+								"repotag": "ghcr.io/hobo/shop@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+								"environmentParameters": ["PUBLIC_MODE=demo"]
+							}
+						]
+					}
+				}
+			}
+		},
+		{
+			"description": "read where an app's instances are running",
+			"request": {
+				"method": "GET",
+				"path": "/apps/location/hoboshop"
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"status": "success",
+					"data": [
+						{ "name": "hoboshop", "ip": "203.0.113.10:16127" },
+						{ "name": "hoboshop", "ip": "203.0.113.11:16127" },
+						{ "name": "hoboshop", "ip": "203.0.113.12:16127" }
+					]
+				}
+			}
+		}
+	]
+}

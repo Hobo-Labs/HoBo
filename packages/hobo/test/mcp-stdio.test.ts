@@ -14,7 +14,7 @@ import {
 	serveMcpStdio,
 } from "../src/mcp-stdio.js";
 
-// docs/plans/0006 item 3-3 verification: the runnable MCP surface serves a
+// Verification: the runnable MCP surface serves a
 // tool list with exact parity against CANONICAL_VERBS and dispatches calls
 // through the same composed command registry as the `hobo` binary.
 

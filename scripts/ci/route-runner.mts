@@ -7,39 +7,63 @@
  * Runs first in every workflow, on a GitHub-hosted machine, so the choice does
  * not itself wait on the fleet. It has no dependencies and installs nothing.
  *
- * Availability is read from GitHub's queue, the one thing every backend
+ * Without a slip, availability is read from GitHub's queue, the one thing every backend
  * shares: a backend is taking jobs when it was seen to pick one up recently and
  * quickly, no job asking for its label has waited past the limit, and few jobs
  * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
  *
- * One more signal is used when it is there: the snapshot a worker of the
- * relay mesh publishes to the `HOBO_CI_FLEET_STATE` repository variable (per
- * label, the nodes it ranks and their free slots). A fresh snapshot that
- * shows a label with no node or no free slot counts as that backend refusing
- * jobs, at once and without queue evidence. A snapshot that is missing,
- * unreadable or more than five minutes old changes nothing: the queue is
- * read exactly as before.
+ * The relay decides first, when it has said anything (ADR-0181):
+ * the box relay writes a routing slip to `refs/hobo/routing-slip`, and this
+ * script reads it once (`GET /git/ref`, then `GET /git/commits`, three
+ * seconds together, with the job's own token). A slip that has not expired,
+ * names this repository and names only labels `.hobo/ci.json`'s
+ * `runnerRouting.labels` allows decides the run's class (`pr`, `fork` or
+ * `trunk`), and nothing else is read. With no usable slip the queue decides
+ * at once, exactly as it did before slips (rule R3), and a titled warning
+ * (`hobo-ci-route-fallback`) says why.
+ *
+ * Every setting comes from `runnerRouting` in `.hobo/ci.json` (the pin, the
+ * queue limits, the labels, whether a local box is enrolled), read with the
+ * dependency-free reader `runner-routing.mts`; the code defaults stand in
+ * when the file holds none. What a caller chooses for one run (`--route`,
+ * `--include-own-run`, `--attested`) arrives as arguments. No environment
+ * variable carries routing (rule R2).
  *
  * Runs that start together would each read the same queue before any of them
  * had added to it, so a run waits its turn: while a run that started just
  * ahead has not chosen, this one leaves the self-hosted runners to it.
+ *
+ * A run can ask again later (`--include-own-run true`): the main gate's plan
+ * job does, before its shards. It reads the slip again, which may have
+ * changed; without one, the queue reading keeps the run's own jobs, which by
+ * then are the freshest evidence there is: a plan job that itself waited past
+ * the limit takes the fleet out of the decision.
+ *
+ * Every decision prints one `hobo-ci-route` notice (`routeAnnotation`) that a
+ * monitor reads from the job's check run.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import {
-	FLEET_CAPACITY_VARIABLE,
-	type FleetLabelCapacity,
-	fleetLabelCapacity,
-	parseFleetCapacityVariable,
-} from "../../packages/ci/src/fleet/capacity.ts";
 import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetMember,
 	LOCAL_HOST_RUNNER_LABEL,
 	selectFleetBackend,
 } from "../../packages/ci/src/fleet-overflow.ts";
+import {
+	judgeRoutingSlip,
+	type ParsedRoutingSlip,
+	type RoutingSlipClassName,
+	type RoutingSlipRefusal,
+	RUNNER_ROUTING_PATH,
+	type RunnerRouting,
+	readRoutingSlip,
+	readRunnerRouting,
+	routingLabels,
+} from "./runner-routing.mts";
 
 /** `auto` falls back; the others pin one tier, `fleet` being the behaviour before routing. */
 export const ROUTE_MODES = ["auto", "fleet", "local", "github"] as const;
@@ -96,15 +120,6 @@ export const SLOW_PICKUP_MEMORY_SECONDS = 60 * 60;
  */
 export const MAX_FINISHED_LOOKUPS = 3;
 
-/**
- * How old the mesh's snapshot may be and still count. A worker rewrites it
- * every two minutes while it is up, so an older one is from a worker that
- * has stopped, and says nothing about now.
- */
-export const FLEET_STATE_MAX_AGE_SECONDS = 5 * 60;
-/** How far ahead of this machine's clock a snapshot's timestamp may be. */
-export const FLEET_STATE_MAX_SKEW_SECONDS = 60;
-
 /** A job seen in the queue; `startedAtMs` is set once a runner has taken it. */
 export type SeenJob = Readonly<{
 	runId: number;
@@ -127,10 +142,28 @@ export type LabelLoad = Readonly<{
 	slowestRecentPickupSeconds: number;
 }>;
 
+/** What took the fleet out of a decision: the relay's slip, the queue, or nothing. */
+export type RefusedBy = "slip" | "queue" | "none";
+
+/**
+ * What became of the routing slip for this decision. `used`: it decided, for
+ * the relay's `reason`. `fallback`: none could be used, for `why`, and the
+ * queue decided. `unasked`: the tier is pinned or a signed local run covers
+ * the tree, so no slip was read.
+ */
+export type SlipAnswer =
+	| Readonly<{ kind: "used"; reason: string; from: string }>
+	| Readonly<{ kind: "fallback"; why: string }>
+	| Readonly<{ kind: "unasked"; why: UnaskedWhy }>;
+
 export type RouteDecision = Readonly<{
 	tier: RouteTier;
 	runner: string;
 	reason: string;
+	/** Left out where nothing could have refused the fleet (a pinned tier). */
+	refusedBy?: RefusedBy | undefined;
+	/** What became of the routing slip; left out by the queue rule alone. */
+	slip?: SlipAnswer | undefined;
 }>;
 
 const seconds = (fromMs: number, toMs: number) =>
@@ -199,91 +232,6 @@ export function takingJobs(load: LabelLoad, limits: RouteLimits): boolean {
 	return load.recentPickups > 0 && !refusingJobs(load, limits);
 }
 
-/** What a fresh mesh snapshot says about one label. */
-export type FleetLabelState = Readonly<{ nodes: number; freeSlots: number }>;
-
-/** A mesh snapshot that is fresh enough to use. */
-export type FleetState = Readonly<{
-	ageSeconds: number;
-	labels: ReadonlyMap<string, FleetLabelState>;
-}>;
-
-/**
- * The mesh snapshot in the `HOBO_CI_FLEET_STATE` variable, or `undefined`
- * when there is nothing to go on: no value, not the expected JSON, no
- * timestamp, or one that is older than the limit or from the future. A
- * snapshot is advice from a worker that may have stopped; only a fresh one
- * is believed.
- */
-export function parseFleetState(
-	value: string | undefined,
-	nowMs: number,
-): FleetState | undefined {
-	if (!value?.trim()) return undefined;
-	let document: JsonValue;
-	try {
-		// SAFETY: a JSON document is a JsonValue by construction.
-		document = JSON.parse(value) as JsonValue;
-	} catch {
-		return undefined;
-	}
-	const state = asObject(document);
-	const publishedAtMs = Date.parse(asText(state?.publishedAt) ?? "");
-	const labels = asObject(state?.labels);
-	if (!state || !labels || Number.isNaN(publishedAtMs)) return undefined;
-	const ageMs = nowMs - publishedAtMs;
-	if (
-		ageMs > FLEET_STATE_MAX_AGE_SECONDS * 1000 ||
-		ageMs < -FLEET_STATE_MAX_SKEW_SECONDS * 1000
-	)
-		return undefined;
-	// A count that is there and a number; anything else is not a count.
-	const count = (entry: JsonObject | undefined, name: string) => {
-		const number = asNumber(entry?.[name]);
-		return number !== undefined && Number.isFinite(number)
-			? Math.max(0, Math.floor(number))
-			: undefined;
-	};
-	return {
-		ageSeconds: Math.max(0, Math.floor(ageMs / 1000)),
-		// A label whose entry does not carry both counts says nothing, so it
-		// is left out and is as unknown as a label not listed at all.
-		labels: new Map(
-			Object.entries(labels).flatMap(([label, value]) => {
-				const entry = asObject(value);
-				const nodes = count(entry, "nodes");
-				const freeSlots = count(entry, "freeSlots");
-				return nodes === undefined || freeSlots === undefined
-					? []
-					: [[label.toLowerCase(), { nodes, freeSlots }] as const];
-			}),
-		),
-	};
-}
-
-/**
- * Why the mesh snapshot says a label is refusing jobs, or `undefined` when
- * it does not: no snapshot, the label has a node with a free slot, or the
- * snapshot does not list the label.
- *
- * The worker that publishes the snapshot lists exactly the fleet labels it
- * serves, with zeros when nobody serves them. A label it does not list is
- * one it does not speak for (another worker's label, or the local box), so
- * its absence is unknown, never a refusal.
- */
-export function fleetStateRefusal(
-	state: FleetState | undefined,
-	label: string,
-): string | undefined {
-	const entry = state?.labels.get(label.toLowerCase());
-	if (!state || !entry) return undefined;
-	if (entry.nodes === 0)
-		return `the mesh snapshot (${state.ageSeconds} s old) shows no live node for ${label}`;
-	if (entry.freeSlots === 0)
-		return `the mesh snapshot (${state.ageSeconds} s old) shows no free slot on ${entry.nodes} node(s) for ${label}`;
-	return undefined;
-}
-
 export function parseRouteMode(value: string | undefined): RouteMode {
 	const mode = ROUTE_MODES.find((candidate) => candidate === value?.trim());
 	return mode ?? "auto";
@@ -300,24 +248,27 @@ function describeLoad(name: string, load: LabelLoad): string {
 }
 
 /**
- * The decision, from what the queue shows. `fleetLabel` is the label this run
- * would ask the fleet for (`hobo`, or `hobo-trunk` for trunk events).
+ * The decision, from what the queue shows: the queue rule, which decides
+ * whenever no routing slip can (R3). `fleetLabel` is the label this run would
+ * ask the fleet for (`hobo`, or `hobo-trunk` for trunk events); `localLabel`
+ * and `githubLabel` are the committed `runnerRouting.labels`, the code's
+ * defaults when left out.
  */
 export function routeRunner(input: {
 	mode: RouteMode;
 	fleetLabel: string;
+	localLabel?: string | undefined;
+	githubLabel?: string | undefined;
 	localEnrolled: boolean;
 	limits: RouteLimits;
 	fleet: LabelLoad;
 	local: LabelLoad;
 	/** Runs that started just ahead of this one and have not chosen a runner yet. */
 	undecidedAhead: number;
-	/** Live box headroom from `HOBO_CI_FLEET_CAPACITY`, when published. */
-	fleetCapacity?: FleetLabelCapacity;
-	/** The mesh's snapshot, when one was published recently; see `parseFleetState`. */
-	fleetState?: FleetState | undefined;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
+	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
+	const githubLabel = input.githubLabel ?? DEFAULT_GITHUB_MACHINE_TYPE;
 	if (mode === "fleet")
 		return {
 			tier: "fleet",
@@ -327,67 +278,45 @@ export function routeRunner(input: {
 	if (mode === "github")
 		return {
 			tier: "github",
-			runner: DEFAULT_GITHUB_MACHINE_TYPE,
+			runner: githubLabel,
 			reason: "routing is pinned to GitHub-hosted runners",
 		};
 	if (mode === "local")
 		return {
 			tier: "local",
-			runner: LOCAL_HOST_RUNNER_LABEL,
+			runner: localLabel,
 			reason: "routing is pinned to the local box",
 		};
 	// A run that has not chosen yet is taken to choose a self-hosted runner.
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.undecidedAhead === 0;
-	const capacity = input.fleetCapacity;
-	const fleetAdmits = capacity === undefined || capacity.admit;
-	const fleetSlots =
-		capacity === undefined ? 1 : Math.min(1, Math.max(0, capacity.freeSlots));
-	// What the nodes themselves report, when they reported recently: a label
-	// with no node or no free slot is refusing, whatever the queue shows.
-	const fleetRefusal = fleetStateRefusal(input.fleetState, fleetLabel);
-	const localRefusal = fleetStateRefusal(
-		input.fleetState,
-		LOCAL_HOST_RUNNER_LABEL,
-	);
 	const members = [
 		{
 			id: "fleet",
 			backend: "hobo",
 			enabled: true,
 			runsOn: fleetLabel,
-			freeSlots:
-				first && fleetAdmits && !fleetRefusal && takingJobs(input.fleet, limits)
-					? fleetSlots
-					: 0,
+			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
 		},
 		{
 			id: "local",
 			backend: "local",
 			enabled: input.localEnrolled,
-			runsOn: LOCAL_HOST_RUNNER_LABEL,
-			freeSlots:
-				first && !localRefusal && takingJobs(input.local, limits) ? 1 : 0,
+			runsOn: localLabel,
+			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
 		},
 		{
 			id: "github",
 			backend: "github",
 			enabled: true,
-			runsOn: DEFAULT_GITHUB_MACHINE_TYPE,
+			runsOn: githubLabel,
 			freeSlots: 1,
 		},
 	] satisfies FleetMember[];
 	const selected = selectFleetBackend({ members, currentLabels: [] });
-	const capacityNote =
-		capacity === undefined
-			? "fleet capacity unset"
-			: capacity.admit
-				? `fleet admits ${capacity.requiredMb} MiB jobs (${capacity.freeSlots} slot(s))`
-				: `fleet cannot admit ${capacity.requiredMb} MiB (available ${capacity.availableMb ?? "unknown"} MiB, reserve ${capacity.reserveMb}, volatility ${capacity.volatilityMb})`;
 	const loads = [
 		describeLoad("the fleet", input.fleet),
-		capacityNote,
 		input.localEnrolled
 			? describeLoad("the local box", input.local)
 			: "no local box is enrolled",
@@ -396,19 +325,24 @@ export function routeRunner(input: {
 			: [
 					`${input.undecidedAhead} run(s) started in the ${BURST_SECONDS} s before this one and have not chosen a runner yet`,
 				]),
-		...(fleetRefusal ? [fleetRefusal] : []),
-		...(input.localEnrolled && localRefusal ? [localRefusal] : []),
 	].join("; ");
 	if (!selected || selected.backend === "hobo")
-		return { tier: "fleet", runner: fleetLabel, reason: loads };
+		return {
+			tier: "fleet",
+			runner: fleetLabel,
+			reason: loads,
+			refusedBy: "none",
+		};
 	return {
 		tier: selected.backend === "local" ? "local" : "github",
 		runner: selected.runsOn,
 		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
+		refusedBy: "queue",
 	};
 }
 
-type JsonValue =
+/** A parsed JSON document: what GitHub answers with. */
+export type JsonValue =
 	| null
 	| boolean
 	| number
@@ -612,6 +546,13 @@ export async function observeQueue(input: {
 	labels: readonly string[];
 	limits: RouteLimits;
 	nowMs: number;
+	/**
+	 * Read this run's own jobs first. The route job leaves its run out: at that
+	 * moment the run has queued nothing. A job asking again later in the run
+	 * (the main gate's plan job, before its shards) has no fresher evidence
+	 * than how long the run's own jobs have waited.
+	 */
+	includeOwnRun?: boolean | undefined;
 }): Promise<QueueView> {
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
@@ -622,6 +563,7 @@ export async function observeQueue(input: {
 		);
 	const seen: SeenJob[] = [];
 	for (const runId of [
+		...(input.includeOwnRun ? [input.ownRunId] : []),
 		...probeRunIds(runsPage),
 		...slowestFinishedRunIds(runsPage, input.ownRunId, input.nowMs),
 	])
@@ -652,93 +594,51 @@ export async function observeQueue(input: {
 }
 
 /**
- * Decides, and where a probe might still change the answer, waits for it.
+ * Decides by the queue rule, and where a probe might still change the
+ * answer, waits for it.
  *
  * A wait is worth it only for a backend that is preferred to the one chosen,
  * that no runner has been seen on, and that nothing says is refusing jobs,
  * while a probe is under way and no run ahead has yet to choose. Every other
  * case is decided at once.
  */
-async function readFleetCapacity(
-	read: QueueReader,
-	repository: string,
-	fleetLabel: string,
-): Promise<FleetLabelCapacity | undefined> {
-	try {
-		const page = await read(
-			`/repos/${repository}/actions/variables/${FLEET_CAPACITY_VARIABLE}`,
-		);
-		const raw = asObject(page)?.value;
-		let value: string | undefined;
-		if (tagOf.call(raw) === "[object String]") {
-			// SAFETY: the tag check proves a string primitive.
-			value = raw as string;
-		} else {
-			value = asText(raw) ?? undefined;
-		}
-		const snapshot = parseFleetCapacityVariable(value);
-		if (!snapshot) return undefined;
-		return fleetLabelCapacity(snapshot, fleetLabel);
-	} catch {
-		return undefined;
-	}
-}
-
 export async function chooseRunner(input: {
 	observe: (nowMs: number) => Promise<QueueView>;
 	now: () => number;
 	sleep: (seconds: number) => Promise<void>;
 	mode: RouteMode;
 	fleetLabel: string;
+	localLabel?: string | undefined;
+	githubLabel?: string | undefined;
 	localEnrolled: boolean;
 	limits: RouteLimits;
-	readCapacity?: () => Promise<FleetLabelCapacity | undefined>;
-	/**
-	 * The mesh's snapshot as of a moment, when one is fresh then. Asked again
-	 * on every pass, since a wait for the probe can outlast its freshness.
-	 */
-	fleetState?: (nowMs: number) => FleetState | undefined;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
+	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
 	const startMs = input.now();
 	for (;;) {
 		const nowMs = input.now();
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
-		const local = labelLoad(view.jobs, LOCAL_HOST_RUNNER_LABEL, nowMs);
-		const fleetCapacity = input.readCapacity
-			? await input.readCapacity()
-			: undefined;
-		const fleetState = input.fleetState?.(nowMs);
-		const routed = {
+		const local = labelLoad(view.jobs, localLabel, nowMs);
+		const decision = routeRunner({
 			mode: input.mode,
 			fleetLabel,
+			localLabel,
+			githubLabel: input.githubLabel,
 			localEnrolled,
 			limits,
 			fleet,
 			local,
 			undecidedAhead: view.undecidedAhead,
-			fleetState,
-		};
-		const decision =
-			fleetCapacity === undefined
-				? routeRunner(routed)
-				: routeRunner({ ...routed, fleetCapacity });
-		// A backend the mesh says is refusing is not waited for: a probe being
-		// picked up would not change what its nodes report.
-		const unseen = (load: LabelLoad, refusal: string | undefined) =>
-			load.recentPickups === 0 && !refusingJobs(load, limits) && !refusal;
+		});
+		const unseen = (load: LabelLoad) =>
+			load.recentPickups === 0 && !refusingJobs(load, limits);
 		const probeMayHelp =
 			view.probeUnderway &&
 			view.undecidedAhead === 0 &&
-			((decision.tier !== "fleet" &&
-				unseen(fleet, fleetStateRefusal(fleetState, fleetLabel))) ||
-				(decision.tier === "github" &&
-					localEnrolled &&
-					unseen(
-						local,
-						fleetStateRefusal(fleetState, LOCAL_HOST_RUNNER_LABEL),
-					)));
+			((decision.tier !== "fleet" && unseen(fleet)) ||
+				(decision.tier === "github" && localEnrolled && unseen(local)));
 		const waitedSeconds = seconds(startMs, nowMs);
 		if (!probeMayHelp) return decision;
 		if (waitedSeconds + PROBE_POLL_SECONDS > PROBE_WAIT_SECONDS)
@@ -766,104 +666,409 @@ function githubReader(apiUrl: string, token: string): QueueReader {
 	};
 }
 
-const TRUNK_EVENTS = new Set([
+/** The events whose jobs ask for the trunk label; their class is `trunk`. */
+export const TRUNK_EVENTS: ReadonlySet<string> = new Set([
 	"push",
 	"workflow_dispatch",
 	"merge_group",
 	"workflow_run",
 ]);
 
-/** The label this run asks the fleet for; mirrors what the workflows asked for before routing. */
+/** The labels the code holds, for a `.hobo/ci.json` with no `runnerRouting`. */
+export const DEFAULT_RUNNER_LABELS: RunnerRouting["labels"] = {
+	fleet: "hobo",
+	trunk: "hobo-trunk",
+	local: LOCAL_HOST_RUNNER_LABEL,
+	github: DEFAULT_GITHUB_MACHINE_TYPE,
+	box: "hobo-box",
+};
+/** No local box is enrolled unless committed configuration says so. */
+export const DEFAULT_LOCAL_RUNNER = false;
+/** Pull requests' deps-image job keeps the fleet label unless committed configuration says so. */
+export const DEFAULT_BOX_RUNNER = false;
+
+/** What the route job takes from `runnerRouting`, or the code's defaults. */
+export type RouteSettings = Readonly<{
+	pin: RouteMode;
+	limits: RouteLimits;
+	labels: RunnerRouting["labels"];
+	localRunner: boolean;
+	/**
+	 * The label pull requests' deps-image job asks for (`box_runner`):
+	 * `labels.box` when `runnerRouting.boxRunner` is on, else empty, and the
+	 * job keeps the fleet label.
+	 */
+	boxRunner: string;
+	/** `false` when `.hobo/ci.json` held no valid `runnerRouting`. */
+	committed: boolean;
+}>;
+
+export function routeSettings(
+	policy: RunnerRouting | undefined,
+): RouteSettings {
+	if (policy)
+		return {
+			pin: policy.pin,
+			limits: policy.queue,
+			labels: policy.labels,
+			localRunner: policy.localRunner,
+			boxRunner: policy.boxRunner ? policy.labels.box : "",
+			committed: true,
+		};
+	return {
+		pin: "auto",
+		limits: {
+			maxWaitSeconds: DEFAULT_MAX_WAIT_SECONDS,
+			maxQueued: DEFAULT_MAX_QUEUED,
+		},
+		labels: DEFAULT_RUNNER_LABELS,
+		localRunner: DEFAULT_LOCAL_RUNNER,
+		boxRunner: DEFAULT_BOX_RUNNER ? DEFAULT_RUNNER_LABELS.box : "",
+		committed: false,
+	};
+}
+
+/** The label this run asks the fleet for: the trunk label for trunk events. */
 export function fleetLabelFor(
 	event: string,
-	trunkRunner: string | undefined,
+	labels: RunnerRouting["labels"] = DEFAULT_RUNNER_LABELS,
 ): string {
-	return trunkRunner !== "false" && TRUNK_EVENTS.has(event)
-		? "hobo-trunk"
-		: "hobo";
+	return TRUNK_EVENTS.has(event) ? labels.trunk : labels.fleet;
 }
 
-function positiveInteger(value: string | undefined, fallback: number): number {
-	const parsed = Number(value);
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+/** What the caller chose for this one run, passed as arguments (never as environment). */
+export type RouteArgs = Readonly<{
+	route: RouteMode;
+	includeOwnRun: boolean;
+	attested: boolean;
+}>;
+
+/**
+ * `--route <auto|fleet|local|github>`, `--include-own-run <true|false>` and
+ * `--attested <true|false>`, each also as `--name=value`. Anything else is
+ * an error, so the action's fallback says the script did not run.
+ */
+export function parseRouteArgs(argv: readonly string[]): RouteArgs {
+	const values = new Map<string, string>();
+	for (let index = 0; index < argv.length; index += 1) {
+		const arg = argv[index] ?? "";
+		const match = /^--(route|include-own-run|attested)(?:=(.*))?$/u.exec(arg);
+		if (!match?.[1]) throw new Error(`unknown argument ${arg}`);
+		const value = match[2] ?? argv[(index += 1)];
+		if (value === undefined) throw new Error(`${arg} needs a value`);
+		values.set(match[1], value);
+	}
+	return {
+		route: parseRouteMode(values.get("route")),
+		includeOwnRun: values.get("include-own-run") === "true",
+		attested: values.get("attested") === "true",
+	};
 }
+
+/**
+ * The slip class of this run: `trunk` for trunk events, `fork` for a pull
+ * request whose head is another repository (never the trunk label), else `pr`.
+ */
+export function routeClass(
+	event: string,
+	payload: JsonValue | undefined,
+): RoutingSlipClassName {
+	if (TRUNK_EVENTS.has(event)) return "trunk";
+	const pullRequest = asObject(asObject(payload)?.pull_request);
+	if (!pullRequest) return "pr";
+	const repo = (side: string) =>
+		asText(
+			asObject(asObject(asObject(pullRequest[side])?.repo))?.full_name,
+		)?.toLowerCase();
+	const base = repo("base");
+	return base !== undefined && repo("head") !== base ? "fork" : "pr";
+}
+
+/** The fallback `why` for a slip the reader refused. */
+export const SLIP_REFUSAL_WHY = {
+	malformed: "slip malformed",
+	"wrong-repository": "slip names another repository",
+	"label-not-allowed": "slip names a label not in runnerRouting.labels",
+	expired: "slip expired",
+} as const satisfies Readonly<Record<RoutingSlipRefusal, string>>;
+/** The fallback `why` when the relay has written no slip. */
+export const NO_ROUTING_SLIP = "no routing slip";
+/** The fallbacks that mean no current slip exists, rather than one that could not be used. */
+export const ABSENT_SLIP_WHYS: readonly string[] = [
+	NO_ROUTING_SLIP,
+	SLIP_REFUSAL_WHY.expired,
+];
+
+/** The decision a usable slip makes for this run's class. */
+export function slipDecision(
+	slip: ParsedRoutingSlip,
+	routeClassName: RoutingSlipClassName,
+): RouteDecision {
+	const route = slip.classes[routeClassName];
+	const from = `${slip.relay.nodeId}@${slip.relay.commit}`;
+	return {
+		tier: route.tier,
+		runner: route.runner,
+		reason: `relay: slip from ${from}, ${route.reason}`,
+		refusedBy: route.tier === "fleet" ? "none" : "slip",
+		slip: { kind: "used", reason: route.reason, from },
+	};
+}
+
+export type SlipReading =
+	| Readonly<{ ok: true; decision: RouteDecision }>
+	| Readonly<{ ok: false; why: string }>;
+
+/**
+ * Reads the slip once and judges it: the decision it makes, or why there is
+ * none. Never throws, and takes at most the reader's three seconds.
+ */
+export async function askSlip(input: {
+	apiUrl: string;
+	repository: string;
+	token: string;
+	labels: RunnerRouting["labels"];
+	routeClass: RoutingSlipClassName;
+	nowMs: () => number;
+	fetch?: typeof fetch | undefined;
+}): Promise<SlipReading> {
+	const read = await readRoutingSlip({
+		apiUrl: input.apiUrl,
+		repository: input.repository,
+		token: input.token,
+		fetch: input.fetch,
+	});
+	if (read.kind === "none") return { ok: false, why: read.why };
+	const judged = judgeRoutingSlip(read.text, {
+		repository: input.repository,
+		nowMs: input.nowMs(),
+		labels: routingLabels({ labels: input.labels }),
+	});
+	return judged.ok
+		? { ok: true, decision: slipDecision(judged.slip, input.routeClass) }
+		: { ok: false, why: SLIP_REFUSAL_WHY[judged.why] };
+}
+
+/** A file from the checkout, or nothing when it is not there. */
+function readCheckoutFile(
+	env: NodeJS.ProcessEnv,
+	path: string,
+): string | undefined {
+	try {
+		return readFileSync(
+			join(env.GITHUB_WORKSPACE ?? process.cwd(), path),
+			"utf8",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
+/** The event that started the run, from the file GitHub names, or nothing. */
+function readEventPayload(env: NodeJS.ProcessEnv): JsonValue | undefined {
+	if (!env.GITHUB_EVENT_PATH) return undefined;
+	try {
+		// SAFETY: a JSON document is a JsonValue by construction.
+		return JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8")) as JsonValue;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Nothing seen: what a pinned tier is decided against. */
+const UNREAD: LabelLoad = {
+	queued: 0,
+	oldestWaitSeconds: 0,
+	recentPickups: 0,
+	slowestRecentPickupSeconds: 0,
+};
 
 export async function main(
+	argv: readonly string[],
 	env: NodeJS.ProcessEnv = process.env,
+	io: Readonly<{
+		/** The contents of `.hobo/ci.json`; read from the checkout when left out. */
+		routingConfig?: string | undefined;
+		/** The event payload; read from `GITHUB_EVENT_PATH` when left out. */
+		eventPayload?: JsonValue | undefined;
+		/** Used for the slip read only. */
+		fetch?: typeof fetch;
+		now?: () => number;
+	}> = {},
 ): Promise<RouteDecision> {
-	const fleetLabel = fleetLabelFor(
-		env.GITHUB_EVENT_NAME ?? "",
-		env.HOBO_CI_TRUNK_RUNNER,
+	const args = parseRouteArgs(argv);
+	const settings = routeSettings(
+		readRunnerRouting(
+			"routingConfig" in io
+				? io.routingConfig
+				: readCheckoutFile(env, RUNNER_ROUTING_PATH),
+		),
 	);
-	const mode = parseRouteMode(env.HOBO_CI_ROUTE);
-	const localEnrolled = env.HOBO_CI_LOCAL_RUNNER === "true";
-	const limits = {
-		maxWaitSeconds: positiveInteger(
-			env.HOBO_CI_ROUTE_MAX_WAIT_SECONDS,
-			DEFAULT_MAX_WAIT_SECONDS,
-		),
-		maxQueued: positiveInteger(
-			env.HOBO_CI_ROUTE_MAX_QUEUED,
-			DEFAULT_MAX_QUEUED,
-		),
-	};
-	let decision: RouteDecision;
+	const { labels, limits } = settings;
+	// From committed policy alone, so it is written whatever the route turns out to be.
+	if (env.GITHUB_OUTPUT)
+		appendFileSync(env.GITHUB_OUTPUT, `box_runner=${settings.boxRunner}\n`);
+	const event = env.GITHUB_EVENT_NAME ?? "";
+	const fleetLabel = fleetLabelFor(event, labels);
+	// A dispatch's own choice wins; otherwise the committed pin.
+	const mode = args.route === "auto" ? settings.pin : args.route;
+	const localEnrolled = settings.localRunner;
+	const defaults = settings.committed
+		? ""
+		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
+	const now = io.now ?? Date.now;
 	// A signed local run was verified for this tree, so the jobs it covers are
 	// skipped and only a few short ones are left. They go where a job is known
-	// to start, without reading the queue. A pinned tier is an operator's own
-	// override and still wins.
-	if (mode === "auto" && env.HOBO_CI_ATTESTED === "true") {
-		decision = {
-			tier: "github",
-			runner: DEFAULT_GITHUB_MACHINE_TYPE,
-			reason:
-				"a signed local run covers this tree, so the jobs left do not wait for a fleet",
-		};
-		return report(decision, env);
-	}
-	try {
-		const read = githubReader(
-			env.GITHUB_API_URL ?? "https://api.github.com",
-			env.GITHUB_TOKEN ?? "",
+	// to start, without reading the slip or the queue. A pinned tier is an
+	// operator's own override and still wins.
+	if (mode === "auto" && args.attested)
+		return report(
+			{
+				tier: "github",
+				runner: labels.github,
+				reason: `a signed local run covers this tree, so the jobs left do not wait for a fleet${defaults}`,
+				refusedBy: "none",
+				slip: { kind: "unasked", why: "attested" },
+			},
+			env,
 		);
-		const repository = env.GITHUB_REPOSITORY ?? "";
+	if (mode !== "auto") {
+		const pinned = routeRunner({
+			mode,
+			fleetLabel,
+			localLabel: labels.local,
+			githubLabel: labels.github,
+			localEnrolled,
+			limits,
+			fleet: UNREAD,
+			local: UNREAD,
+			undecidedAhead: 0,
+		});
+		return report(
+			{
+				...pinned,
+				reason: `${pinned.reason}${defaults}`,
+				slip: { kind: "unasked", why: "pinned" },
+			},
+			env,
+		);
+	}
+	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
+	const repository = env.GITHUB_REPOSITORY ?? "";
+	const token = env.GITHUB_TOKEN ?? "";
+	const slip = await askSlip({
+		apiUrl,
+		repository,
+		token,
+		labels,
+		routeClass: routeClass(
+			event,
+			"eventPayload" in io ? io.eventPayload : readEventPayload(env),
+		),
+		nowMs: now,
+		fetch: io.fetch,
+	});
+	if (slip.ok)
+		return report(
+			{ ...slip.decision, reason: `${slip.decision.reason}${defaults}` },
+			env,
+		);
+	// No usable slip: the queue decides at once, as it did before slips (R3).
+	console.log(
+		`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (${slip.why}); the queue rule decides`)}`,
+	);
+	let decision: RouteDecision;
+	try {
+		const read = githubReader(apiUrl, token);
 		decision = await chooseRunner({
 			observe: (nowMs) =>
-				mode === "auto"
-					? observeQueue({
-							read,
-							repository,
-							ownRunId: Number(env.GITHUB_RUN_ID),
-							labels: localEnrolled
-								? [fleetLabel, LOCAL_HOST_RUNNER_LABEL]
-								: [fleetLabel],
-							limits,
-							nowMs,
-						})
-					: Promise.resolve({
-							jobs: [],
-							undecidedAhead: 0,
-							probeUnderway: false,
-						}),
-			now: Date.now,
+				observeQueue({
+					read,
+					repository,
+					ownRunId: Number(env.GITHUB_RUN_ID),
+					labels: localEnrolled ? [fleetLabel, labels.local] : [fleetLabel],
+					limits,
+					nowMs,
+					includeOwnRun: args.includeOwnRun,
+				}),
+			now,
 			sleep: (wait) => delay(wait * 1000),
 			mode,
 			fleetLabel,
+			localLabel: labels.local,
+			githubLabel: labels.github,
 			localEnrolled,
 			limits,
-			readCapacity: () => readFleetCapacity(read, repository, fleetLabel),
-			fleetState: (nowMs) => parseFleetState(env.HOBO_CI_FLEET_STATE, nowMs),
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known
 		// to be up; with the queue unreadable, nothing is known about the others.
 		decision = {
 			tier: "github",
-			runner: DEFAULT_GITHUB_MACHINE_TYPE,
+			runner: labels.github,
 			reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
+			refusedBy: "queue",
 		};
 	}
-	return report(decision, env);
+	return report(
+		{
+			...decision,
+			reason: `${decision.reason}; no routing slip decided (${slip.why})${defaults}`,
+			slip: { kind: "fallback", why: slip.why },
+		},
+		env,
+	);
+}
+
+/** How a slip fallback warning starts; the monitor tells it from a route that did not run. */
+export const SLIP_FALLBACK_PREFIX = "routing slip not used";
+
+/** Why no slip was read: the tier is pinned, or a signed local run covers the tree. */
+export type UnaskedWhy = "pinned" | "attested";
+
+/** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
+export function workflowFile(env: NodeJS.ProcessEnv): string {
+	const path = env.GITHUB_WORKFLOW_REF?.split("@")[0] ?? "";
+	return path.slice(path.lastIndexOf("/") + 1) || (env.GITHUB_WORKFLOW ?? "");
+}
+
+/** A workflow command's message ends at a newline; `%` starts an escape. */
+function escapeCommand(message: string): string {
+	return message
+		.replaceAll("%", "%25")
+		.replaceAll("\r", "%0D")
+		.replaceAll("\n", "%0A");
+}
+
+/** The route notice's record version: 2 carries the slip, 1 carried the hosted relay's verdict. */
+export const ROUTE_NOTICE_VERSION = 2;
+
+/**
+ * The one-line record of a decision a monitor reads from the job's check run
+ * (`::notice title=hobo-ci-route::{...}`): which tier and runner, what became
+ * of the slip and why (the relay's reason when it decided, the fallback when
+ * it did not), and what took the fleet out of the decision.
+ */
+export function routeAnnotation(
+	decision: RouteDecision,
+	workflow: string,
+): string {
+	const slip = decision.slip;
+	const record = {
+		v: ROUTE_NOTICE_VERSION,
+		workflow,
+		tier: decision.tier,
+		runner: decision.runner,
+		slip: slip?.kind ?? "unasked",
+		why:
+			slip?.kind === "used"
+				? slip.reason
+				: slip?.kind === "fallback" || slip?.kind === "unasked"
+					? slip.why
+					: "",
+		refusedBy: decision.refusedBy ?? "none",
+	};
+	return `::notice title=hobo-ci-route::${escapeCommand(JSON.stringify(record))}`;
 }
 
 function report(
@@ -872,10 +1077,12 @@ function report(
 ): RouteDecision {
 	const line = `runner: ${decision.runner} (${decision.tier}): ${decision.reason}`;
 	console.log(line);
+	console.log(routeAnnotation(decision, workflowFile(env)));
+	// The shards follow the run's class: trunk on trunk events, else the run's own.
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
 			env.GITHUB_OUTPUT,
-			`runner=${decision.runner}\ntier=${decision.tier}\n`,
+			`runner=${decision.runner}\ntier=${decision.tier}\nshard_runner=${decision.runner}\n`,
 		);
 	if (env.GITHUB_STEP_SUMMARY)
 		appendFileSync(env.GITHUB_STEP_SUMMARY, `${line}\n`);
@@ -883,4 +1090,5 @@ function report(
 }
 
 const entry = process.argv[1];
-if (entry && import.meta.url === pathToFileURL(entry).href) await main();
+if (entry && import.meta.url === pathToFileURL(entry).href)
+	await main(process.argv.slice(2));

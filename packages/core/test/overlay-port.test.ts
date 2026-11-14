@@ -5,7 +5,7 @@ import {
 	parseTenantId,
 } from "../src/index.js";
 
-describe("overlay port: fleet member binding (ADR-0182)", () => {
+describe("overlay port: fleet member binding (ADR-0183)", () => {
 	const tenantId = parseTenantId("tenant-a");
 
 	it("OverlayIdentity carries an optional fleet member id", () => {

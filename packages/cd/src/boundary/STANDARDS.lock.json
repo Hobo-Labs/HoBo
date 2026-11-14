@@ -1,0 +1,35 @@
+{
+  "standard": "CDEvents",
+  "repository": "https://github.com/cdevents/spec",
+  "tag": "v0.5.1",
+  "specversion": "0.5.1",
+  "pinnedOn": "2026-11-12",
+  "pinnedBy": "WP16 (plan 0024, Part I §I.8 R8)",
+  "evidence": "cdevents.dev/docs names release v0.5.0 as the documented release; the spec repository serves tag v0.5.1 (spec.md context example uses specversion 0.5.1, schemas carry $id https://cdevents.dev/0.5.1/schema/...), and no later tag (v0.5.2, v0.6.0, v1.0.0) resolves on the dispatch date.",
+  "events": {
+    "artifact.published": "dev.cdevents.artifact.published.0.3.0",
+    "service.deployed": "dev.cdevents.service.deployed.0.3.0",
+    "service.upgraded": "dev.cdevents.service.upgraded.0.3.0",
+    "service.rolledback": "dev.cdevents.service.rolledback.0.3.0",
+    "service.removed": "dev.cdevents.service.removed.0.3.0",
+    "environment.created": "dev.cdevents.environment.created.0.3.0",
+    "environment.modified": "dev.cdevents.environment.modified.0.3.0",
+    "environment.deleted": "dev.cdevents.environment.deleted.0.3.0"
+  },
+  "custom": {
+    "namespace": "dev.cdeventsx.hobo-<subject>.<predicate>.<version>",
+    "version": "0.1.0",
+    "rule": "Custom events follow the spec's `dev.cdeventsx.<tool>-<subject>.<predicate>.M.m.p` form with tool `hobo`; content is the secret-free HoBo record that produced the fact."
+  },
+  "cloudevents": {
+    "specversion": "1.0",
+    "binding": "HTTP binary content mode",
+    "contentType": "application/json"
+  },
+  "webhookSignature": {
+    "standard": "Standard Webhooks v1",
+    "headers": ["webhook-id", "webhook-timestamp", "webhook-signature"],
+    "algorithm": "HMAC-SHA256 over `<webhook-id>.<webhook-timestamp>.<body>`, base64, prefixed `v1,`"
+  },
+  "upgrade": "An upgrade is an ordinary later change: bump this file and CDEVENTS_SPEC in cdevents.ts together, regenerate test/boundary/golden/ from the new tag's schemas, and keep the golden tests green."
+}

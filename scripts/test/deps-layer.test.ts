@@ -298,8 +298,15 @@ describe("deps layer linking", () => {
 				),
 				"../../../ci",
 			);
+			// The CI runner image exports HOBO_CI_DEPS_LAYER and the job sets
+			// GITHUB_OUTPUT; neither may reach the script under test.
+			const {
+				HOBO_CI_DEPS_LAYER: _layer,
+				GITHUB_OUTPUT: _output,
+				...inherited
+			} = process.env;
 			const env = {
-				...process.env,
+				...inherited,
 				HOBO_CI_DEPS_EXPECTED_KEY: key,
 				HOBO_CI_DEPS_PAYLOAD: payload,
 			};

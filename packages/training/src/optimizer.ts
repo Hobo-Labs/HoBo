@@ -30,7 +30,7 @@ import {
 } from "./trace-sink.js";
 
 // The built-in OPTO-style optimizer behind core's hobo:training-engine port
-// (ADR-0025, docs/plans/0017 F26). Propose -> score -> keep-best over
+// (ADR-0025). Propose -> score -> keep-best over
 // candidate parameter sets (instruction variant + demo subset drawn from the
 // request's recorded trajectories), deterministic given the required seed.
 // Parse, don't validate: the raw config lowers onto parsed derived types
@@ -95,6 +95,7 @@ export interface BuiltinTrainingEngine extends TrainingEnginePort {
 // not inspected, so `diagnosticJson` renders it as the JSON view the error
 // carries. Narrowing this parameter to `JsonValue` instead pushes the problem
 // onto every call site, several of which legitimately pass `undefined`.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: the value is reported, never inspected; see the comment above.
 function fail(path: string, expected: string, received: unknown): never {
 	throw new TrainingOptimizerParseError(
 		path,

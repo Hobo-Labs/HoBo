@@ -1,0 +1,45 @@
+{
+  "schema": "hobo.golden-replay-corpus-baseline/v1",
+  "entries": [
+    {
+      "key": "policy.BindingChanged@v1#policy-BindingChanged-v1",
+      "bodyDigest": "sha256:03f8aa7362362e348efc4ab442c99e81d556b4fe2c2506f01694069c5e9062f0"
+    },
+    {
+      "key": "policy.BindingChanged@v1#policy-BindingChanged-v1-1",
+      "bodyDigest": "sha256:c1966c63aa6bfa1a2bfce2b24a66bbe979ab5a5a54996e97891f472cd4c8e0a6"
+    },
+    {
+      "key": "policy.BindingChanged@v1#policy-BindingChanged-v1-2",
+      "bodyDigest": "sha256:3f002271e23f9264a96cfa1ced1e2f05125ef2217d91d608657ce5f8dd537611"
+    },
+    {
+      "key": "policy.ShadowDecided@v1#policy-ShadowDecided-v1",
+      "bodyDigest": "sha256:d60ede060960f47c2285c044b326131715599ee9f4d80adc0cfaf7e90f4e4f03"
+    },
+    {
+      "key": "policy.ShadowDecided@v1#policy-ShadowDecided-v1-1",
+      "bodyDigest": "sha256:ac0a965682cede3701232339e6f9762885c8f6e77ee9dbe9d8eb9c6a91ebbb83"
+    },
+    {
+      "key": "compliance.Observed@v1#compliance-Observed-v1",
+      "bodyDigest": "sha256:a743f3cefc7b9ca8a92c2a4937f8f948638def44d5a84f621a009f1ef9d85712"
+    },
+    {
+      "key": "compliance.Observed@v1#compliance-Observed-v1-1",
+      "bodyDigest": "sha256:b0369369ef6dca2e777fcde03dd4ae7562e4794b111d53b428a807259b4f25ed"
+    },
+    {
+      "key": "compliance.Changed@v1#compliance-Changed-v1",
+      "bodyDigest": "sha256:a743f3cefc7b9ca8a92c2a4937f8f948638def44d5a84f621a009f1ef9d85712"
+    },
+    {
+      "key": "posture.RemediationProposed@v1#posture-RemediationProposed-v1",
+      "bodyDigest": "sha256:2c0b90807a0d5cefb71b339fcc7701ada43e9e06a4ec5afba87ea158a91bedaf"
+    },
+    {
+      "key": "posture.RemediationProposed@v1#posture-RemediationProposed-v1-1",
+      "bodyDigest": "sha256:14b5795c062bee931c8d95279069dfa38caad0a0e93667db30974449f994238c"
+    }
+  ]
+}

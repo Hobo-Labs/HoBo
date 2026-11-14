@@ -1,0 +1,90 @@
+{
+	"consumer": {
+		"name": "HoboCdGitopsPublisher"
+	},
+	"provider": {
+		"name": "GiteaForgejoApiV1"
+	},
+	"interactions": [
+		{
+			"description": "read the branch head",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/repos/acme/deploy/branches/main",
+				"headers": {
+					"authorization": "token git-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"name": "main",
+					"commit": {
+						"id": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+					}
+				}
+			}
+		},
+		{
+			"description": "the engine document is not there yet",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/repos/acme/deploy/contents/hobo/camps/camp-prod/argo-cd.application.json",
+				"query": "ref=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"message": "Not Found"
+				}
+			}
+		},
+		{
+			"description": "the set document is not there yet",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/repos/acme/deploy/contents/hobo/camps/camp-prod/manifests/hobo-set.configmap.json",
+				"query": "ref=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+			},
+			"response": {
+				"status": 404,
+				"body": {
+					"message": "Not Found"
+				}
+			}
+		},
+		{
+			"description": "change both files in one commit",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/repos/acme/deploy/contents",
+				"body": {
+					"branch": "main",
+					"files": [
+						{
+							"operation": "create",
+							"path": "hobo/camps/camp-prod/argo-cd.application.json"
+						},
+						{
+							"operation": "create",
+							"path": "hobo/camps/camp-prod/manifests/hobo-set.configmap.json"
+						}
+					]
+				}
+			},
+			"response": {
+				"status": 201,
+				"body": {
+					"commit": {
+						"sha": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5"
+					}
+				}
+			}
+		}
+	],
+	"metadata": {
+		"pactSpecification": {
+			"version": "3.0.0"
+		}
+	}
+}

@@ -348,12 +348,3 @@ package ci
  trunk: #FleetRouteLabel
  [=~"^[a-z][a-z0-9-]{0,39}$"]: #FleetRouteLabel
 }
-
-// HOBO_CI_FLEET_CAPACITY repository variable: admitted parallel trunk slots.
-#FleetCapacityPublished: {
-	version: 1
-	admittedParallel: int & >=0 & <=8
-	hobo?: {freeSlots: int & >=0}
-	arc?: {freeSlots: int & >=0}
-	publishedAt?: string
-}

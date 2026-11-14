@@ -1,0 +1,20 @@
+{
+	"input": {
+		"schema": "hobo.broker.delivery-submitted/v2",
+		"requestId": "req-checkout-2",
+		"brokerId": "broker:yard-1",
+		"reconcilerMode": "publisher",
+		"publisher": "flux",
+		"promotionId": "promo-2",
+		"target": "camp:prod"
+	},
+	"expected": {
+		"schema": "hobo.broker.delivery-submitted/v2",
+		"requestId": "req-checkout-2",
+		"brokerId": "broker:yard-1",
+		"reconcilerMode": "publisher",
+		"publisher": "flux",
+		"promotionId": "promo-2",
+		"target": "camp:prod"
+	}
+}

@@ -1,0 +1,9 @@
+{
+  "repository": "hobo-labs/hobo",
+  "blocked": {
+    "hobo": { "reason": "no-capacity" },
+    "hobo-trunk": { "reason": "no-node" }
+  },
+  "observedAt": "2026-11-12T16:00:05.000Z",
+  "expiresAt": "2026-11-12T16:03:05.000Z"
+}
