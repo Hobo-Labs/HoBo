@@ -14,6 +14,76 @@ import {
 } from "./support/live.js";
 
 describeLive("shared PostgreSQL actor leases", () => {
+	it("requires the current lease fence before a fold may append a quarantine marker", async () => {
+		const schema = freshSchema();
+		const owner = liveStore({
+			schema,
+			protectedActorStreamPrefixes: ["deployment:"],
+		});
+		const observer = liveStore({ schema });
+		const oldLease = await owner.actorLeaseHost.acquire("deployment:poison", {
+			holderId: "old-owner",
+		});
+		await owner.append(oldLease.key, [{ type: "test.Poison" }], {
+			...OPTS,
+			expectedSeq: 0,
+			fenceToken: oldLease.fenceToken,
+		});
+		const handlers = {
+			"test.Poison": () => {
+				throw new Error("poison");
+			},
+		};
+		await expect(
+			observer.fold(oldLease.key, { initialState: {}, handlers }),
+		).rejects.toMatchObject({ code: "MISSING_FENCE" });
+		expect(await collect(observer.read(oldLease.key))).toHaveLength(1);
+		await oldLease.release();
+		const newLease = await owner.actorLeaseHost.acquire(oldLease.key, {
+			holderId: "new-owner",
+		});
+		await expect(
+			observer.fold(oldLease.key, {
+				initialState: {},
+				handlers,
+				fenceToken: oldLease.fenceToken,
+			}),
+		).rejects.toMatchObject({ code: "STALE_FENCE" });
+		expect(await collect(observer.read(oldLease.key))).toHaveLength(1);
+		const result = await owner.fold(oldLease.key, {
+			initialState: {},
+			handlers,
+			fenceToken: newLease.fenceToken,
+		});
+		expect(result.quarantined).toHaveLength(1);
+		expect(await collect(observer.read(oldLease.key))).toHaveLength(2);
+		await newLease.release();
+	});
+
+	it("does not copy a legacy fenced stream's epoch into quarantine writes", async () => {
+		const store = liveStore();
+		await store.append("legacy:poison", [{ type: "test.Poison" }], {
+			...OPTS,
+			expectedSeq: 0,
+			fenceToken: 7n,
+		});
+		const handlers = {
+			"test.Poison": () => {
+				throw new Error("poison");
+			},
+		};
+		await expect(
+			store.fold("legacy:poison", { initialState: {}, handlers }),
+		).rejects.toMatchObject({ code: "MISSING_FENCE" });
+		expect(await collect(store.read("legacy:poison"))).toHaveLength(1);
+		const result = await store.fold("legacy:poison", {
+			initialState: {},
+			handlers,
+			fenceToken: 7n,
+		});
+		expect(result.quarantined).toHaveLength(1);
+	});
+
 	it("writes lifecycle checkpoints under the active PostgreSQL lease", async () => {
 		const store = liveStore({
 			protectedActorStreamPrefixes: ["hosting-lifecycle-gate:"],

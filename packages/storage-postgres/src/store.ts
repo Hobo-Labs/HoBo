@@ -154,7 +154,7 @@ export interface PostgresEventStore extends DurableEventStore {
 	ready(): Promise<MigrationReport>;
 	fold<S>(
 		streamId: string,
-		opts: { initialState: S; handlers: FoldHandlers<S> },
+		opts: { initialState: S; handlers: FoldHandlers<S>; fenceToken?: bigint },
 	): Promise<FoldResult<S>>;
 	/** A protected or leased stream refuses a snapshot without its live fence. */
 	snapshot(
@@ -1376,6 +1376,7 @@ SELECT EXISTS (
 		streamId: string,
 		event: EventEnvelope,
 		cause: Error,
+		fenceToken: bigint | undefined,
 	): Promise<EventEnvelope> {
 		for await (const candidate of readStream(streamId, 1)) {
 			if (
@@ -1395,10 +1396,10 @@ SELECT EXISTS (
 		if (event.correlationId !== undefined) {
 			appendOptions.correlationId = event.correlationId;
 		}
-		// Quarantine must not bypass fencing: continue at the stream's epoch.
-		if (head !== undefined && head.ownerEpoch > 0n) {
-			appendOptions.fenceToken = head.ownerEpoch;
-		}
+		// The stream head is observable state, not evidence that this caller
+		// holds its lease. Pass only the fence explicitly supplied by the caller;
+		// the regular commit boundary verifies it before writing the marker.
+		if (fenceToken !== undefined) appendOptions.fenceToken = fenceToken;
 		const aggregate = event.type.split(".")[0] ?? "event";
 		const result = await commit({
 			streamId,
@@ -1427,7 +1428,11 @@ SELECT EXISTS (
 
 	async function fold<S>(
 		streamId: string,
-		foldOptions: { initialState: S; handlers: FoldHandlers<S> },
+		foldOptions: {
+			initialState: S;
+			handlers: FoldHandlers<S>;
+			fenceToken?: bigint;
+		},
 	): Promise<FoldResult<S>> {
 		const id = requireNonEmpty(streamId, "streamId");
 		if (foldOptions.initialState === undefined) {
@@ -1461,7 +1466,12 @@ SELECT EXISTS (
 			try {
 				state = cloneJson(handler(cloneJson(state), cloneJson(event)));
 			} catch (caught) {
-				const marker = await appendQuarantine(id, event, asError(caught));
+				const marker = await appendQuarantine(
+					id,
+					event,
+					asError(caught),
+					foldOptions.fenceToken,
+				);
 				const reason = jsonField(marker.data, "reason");
 				quarantined.push({
 					offendingSeq: event.seq,
