@@ -58,6 +58,14 @@ export interface CliFlags {
 	readonly region: string | null;
 	readonly budgetId?: string | null;
 	/**
+	 * `--what-if` (aliases `--dry-run`, `--preview`) on `up`/`down`: compute
+	 * and print the change set, change nothing (az/Bicep `what-if`, wrangler
+	 * `--dry-run`, `pulumi preview`).
+	 */
+	readonly whatIf?: boolean;
+	/** `--mode incremental|complete` on `up`/`plan` (Bicep deployment modes). */
+	readonly mode?: string | null;
+	/**
 	 * Options the resolved subcommand declares (`hobo deploy freight record
 	 * --file`), by name without `--`: a value, or `true` for a switch. Empty for
 	 * verbs without a subcommand table (subcommands.ts).
@@ -77,6 +85,13 @@ export interface CliRequest {
 export interface ParseArgvOptions {
 	readonly cwd?: string;
 }
+
+/**
+ * Verbs that own a strict subcommand parser of their own (`hobo ci`, and the
+ * `hobo cd` lifecycle family): the shell keeps output, working directory and
+ * help, and passes every other token through untouched.
+ */
+const RAW_ARG_VERBS: ReadonlySet<string> = new Set(["ci", "cd"]);
 
 export function parseArgv(
 	argv: readonly string[],
@@ -139,6 +154,9 @@ export function parseArgv(
 		region: null as string | null,
 		// SAFETY: mutable parser field is populated only by takeValue's string boundary.
 		budgetId: null as string | null,
+		whatIf: false,
+		// SAFETY: mutable parser field is populated only by takeValue's string boundary.
+		mode: null as string | null,
 	};
 	const args: string[] = [];
 	const subcommandOptions = new Map<string, SubcommandOptionValue>();
@@ -151,20 +169,20 @@ export function parseArgv(
 		}
 
 		if (token === "--") {
-			if (verb === "ci") args.push("--");
+			if (RAW_ARG_VERBS.has(verb ?? "")) args.push("--");
 			args.push(...argv.slice(index + 1));
 			break;
 		}
 
 		if (token.startsWith("-")) {
-			if (verb === "ci" && token.startsWith("--cwd=")) {
+			if (RAW_ARG_VERBS.has(verb ?? "") && token.startsWith("--cwd=")) {
 				const value = token.slice("--cwd=".length);
 				if (!value) throw new UsageError("--cwd requires a directory.");
 				flags.cwd = path.resolve(value);
 				continue;
 			}
 			if (
-				verb === "ci" &&
+				RAW_ARG_VERBS.has(verb ?? "") &&
 				(token === "--format" ||
 					token === "-F" ||
 					token.startsWith("--format="))
@@ -182,7 +200,7 @@ export function parseArgv(
 			// CI owns its strict subcommand parser. Keep its options intact while
 			// the shell continues to own output, working directory, and help.
 			if (
-				verb === "ci" &&
+				RAW_ARG_VERBS.has(verb ?? "") &&
 				!["--json", "--cwd", "--verbose", "-q", "--help", "-h"].includes(token)
 			) {
 				args.push(token);
@@ -340,6 +358,8 @@ function parseOption(
 		demoSeed: string | null;
 		region: string | null;
 		budgetId: string | null;
+		whatIf: boolean;
+		mode: string | null;
 	},
 	verb: string | null,
 ): number {
@@ -465,6 +485,20 @@ function parseOption(
 		case "--budget-id":
 			if (verb === "up" || verb === "plan" || verb === "down") {
 				flags.budgetId = takeValue(argv, index, token);
+				return index + 1;
+			}
+			throw unknownOption(token, verb);
+		case "--what-if":
+		case "--dry-run":
+		case "--preview":
+			if (verb === "up" || verb === "down") {
+				flags.whatIf = true;
+				return index;
+			}
+			throw unknownOption(token, verb);
+		case "--mode":
+			if (verb === "up" || verb === "plan") {
+				flags.mode = takeValue(argv, index, token);
 				return index + 1;
 			}
 			throw unknownOption(token, verb);
