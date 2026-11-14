@@ -1,0 +1,19 @@
+{
+	"issuer": "https://fleet.example.com",
+	"profile": "standalone",
+	"tenant": "example",
+	"natsUrls": ["tls://nats.fleet.example.com:4222"],
+	"relayUrls": ["https://relay.fleet.example.com/"],
+	"minAgentVersion": "0.0.0",
+	"dataDir": "/var/lib/hobo-fleet",
+	"listen": "0.0.0.0:8443",
+	"signIn": [],
+	"secretStore": {
+		"kind": "openbao",
+		"address": "https://openbao.example.com:8200",
+		"role": "hobo-fleet-authority",
+		"tokenFile": "/run/secrets/openbao-token",
+		"mountPath": "secret",
+		"namespace": ""
+	}
+}

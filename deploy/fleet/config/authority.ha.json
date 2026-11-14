@@ -1,0 +1,25 @@
+{
+	"issuer": "https://fleet.example.com",
+	"profile": "high-availability",
+	"tenant": "example",
+	"natsUrls": [
+		"tls://nats-1.fleet.example.com:4222",
+		"tls://nats-2.fleet.example.com:4222",
+		"tls://nats-3.fleet.example.com:4222"
+	],
+	"relayUrls": [
+		"https://relay-1.fleet.example.com/",
+		"https://relay-2.fleet.example.com/"
+	],
+	"minAgentVersion": "0.0.0",
+	"listen": "0.0.0.0:8443",
+	"signIn": [],
+	"secretStore": {
+		"kind": "openbao",
+		"address": "https://openbao.example.com:8200",
+		"role": "hobo-fleet-authority",
+		"tokenFile": "/run/secrets/openbao-token",
+		"mountPath": "secret",
+		"namespace": ""
+	}
+}

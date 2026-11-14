@@ -1,0 +1,14 @@
+{
+	"issuer": "https://fleet.example.com",
+	"profile": "standalone",
+	"tenant": "example",
+	"natsUrls": ["tls://nats.fleet.example.com:4222"],
+	"secretStore": {
+		"kind": "openbao",
+		"address": "https://openbao.example.com:8200",
+		"role": "hobo-fleet-provisioner",
+		"tokenFile": "/run/secrets/openbao-token",
+		"mountPath": "secret",
+		"namespace": ""
+	}
+}
