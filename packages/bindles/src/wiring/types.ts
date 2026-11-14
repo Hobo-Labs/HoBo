@@ -33,6 +33,7 @@ export interface ManifestResource {
 	readonly build?: JsonObject;
 	readonly endpoints?: JsonObject;
 	readonly annotations?: JsonObject;
+	readonly bind?: readonly string[];
 }
 
 export interface WiringManifest {

@@ -110,6 +110,15 @@
       "allowVerbs": []
     },
     {
+      "name": "project",
+      "kind": "resource-factory",
+      "signature": "project(name: string): ResourceHandle<\"project\", never>",
+      "portRef": [
+        "hobo:project"
+      ],
+      "allowVerbs": []
+    },
+    {
       "name": "websocket",
       "kind": "resource-factory",
       "signature": "websocket(name: string): ResourceHandle<\"websocket\", \"accept\" | \"broadcast\" | \"connect\" | \"send\" | \"subscribe\">",
