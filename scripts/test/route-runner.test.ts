@@ -1465,6 +1465,48 @@ describe("the script reading the slip", () => {
 		});
 	});
 
+	it("keeps an open fleet for the earlier undecided run during a burst", async () => {
+		const pages = (path: string): JsonValue => {
+			if (path.includes("/runs/40/jobs"))
+				return { jobs: [pickup("hobo"), pickup("hobo-trunk")] };
+			if (path.includes("/runs/50/jobs"))
+				return { jobs: [{ status: "in_progress" }] };
+			return {
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+					{
+						id: 50,
+						path: ".github/workflows/hobo-ci.yml",
+						status: "in_progress",
+						created_at: new Date(SLIP_NOW - 10_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 10_000).toISOString(),
+					},
+				],
+			};
+		};
+		await withGithub(pages, async (apiUrl) => {
+			const { decision } = await route(apiUrl, OPEN_SLIP);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			assert.match(decision.reason, /1 run\(s\) started/);
+			const busy = await route(apiUrl, OPEN_SLIP, {
+				GITHUB_EVENT_NAME: "push",
+			});
+			assert.deepEqual(
+				[busy.decision.tier, busy.decision.runner, busy.decision.refusedBy],
+				["fleet", "hobo-trunk", "none"],
+			);
+		});
+	});
+
 	it("routes a stalled fleet-open slip to GitHub-hosted and records the queue refusal", async () => {
 		await withGithub(
 			observed(Array.from({ length: 9 }, () => waiting("hobo", 300))),

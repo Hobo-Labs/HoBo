@@ -181,6 +181,11 @@ expires ten minutes after it is issued; with no fresh slip the route job falls
 back to the queue rule. The box's slot split, pools and holds are committed in
 `runnerRouting` (`.hobo/ci.json`), not set on the box.
 
+An open fleet slip also leaves capacity to an earlier run that has not chosen
+its runner yet. The pull-request deps image job uses an enrolled box when the
+fleet is selected; otherwise it can validate the unpromoted image on a
+GitHub-hosted Docker runner, with Node 24 and read-only GHCR access.
+
 The slip does not yet carry the balanced choice between paid label providers
 that the route table computed: its classes say fleet, local box or
 GitHub-hosted. `fleetRouteTable` and `#FleetRoutes` remain in `@hobo/ci` for

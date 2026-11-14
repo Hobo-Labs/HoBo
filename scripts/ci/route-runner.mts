@@ -633,7 +633,11 @@ export async function chooseRunner(input: {
 			input.confirmFleet === "busy"
 				? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
 				: limits;
-		if (input.confirmFleet && takingJobs(fleet, confirmationLimits))
+		if (
+			input.confirmFleet &&
+			(input.confirmFleet === "busy" || view.undecidedAhead === 0) &&
+			takingJobs(fleet, confirmationLimits)
+		)
 			return {
 				tier: "fleet",
 				runner: fleetLabel,
