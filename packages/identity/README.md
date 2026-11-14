@@ -176,7 +176,8 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
   It takes the device's SIGN key (`<member id>#sign`), uses the member id as
   `hostId`, and signs the launch measurement's JSON bytes as a fleet envelope
   under `hobo-fleet/host-attestation/v1`. `hostSignature.algorithm` is
-  `hobo-fleet-envelope/eddsa` or `…/es256`; `value` is
+  `hobo-fleet-envelope/eddsa` or `…/es256` (`envelopeAlgorithmOf` and
+  `envelopeAlgorithmName` map the names); `value` is
   `base64url(payload).base64url(signature)`. `publicKeys()` is empty: the
   verifier passes the SIGN key from the member's key bundle as
   `verificationKey`. `verifyWorkloadAttestation` checks the signature over the

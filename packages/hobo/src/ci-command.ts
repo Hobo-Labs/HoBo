@@ -42,7 +42,7 @@ import {
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
 import { fleetViews } from "./fleet-command.js";
 import { createFleetRuntime } from "./fleet-runtime.js";
-import { fleetStatusTable, type NamedFleetView } from "./fleet-status.js";
+import { type NamedFleetView, renderFleetStatus } from "./fleet-status.js";
 import type { VercelFetch } from "./vercel-client.js";
 
 const execute = promisify(execFile);
@@ -108,7 +108,7 @@ async function fleetSection(
 			data: { error: views.error.code },
 		};
 	return {
-		message: fleetStatusTable(views.value),
+		message: renderFleetStatus(views.value),
 		data: views.value.map((entry) => ({
 			fleet: entry.fleet,
 			members: entry.view?.members.length ?? 0,

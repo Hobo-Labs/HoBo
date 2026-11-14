@@ -14,11 +14,11 @@ const ALGORITHMS: ReadonlyMap<string, KeyAlgorithm> = new Map([
 // public-contract: a device SIGN key id is `<member id>#sign` (the key ids of @hobo/fleet ids.ts).
 export const SIGN_KEY_SUFFIX = "#sign";
 
-export function fleetEnvelopeAlgorithm(name: string): KeyAlgorithm | undefined {
+export function envelopeAlgorithmOf(name: string): KeyAlgorithm | undefined {
 	return ALGORITHMS.get(name);
 }
 
-export function fleetEnvelopeAlgorithmName(algorithm: KeyAlgorithm): string {
+export function envelopeAlgorithmName(algorithm: KeyAlgorithm): string {
 	for (const [name, value] of ALGORITHMS) {
 		if (value === algorithm) return name;
 	}

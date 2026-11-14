@@ -8,7 +8,7 @@ import type { FleetCommandDeps, FleetResult } from "./fleet-command.js";
 import { runFleetCommand } from "./fleet-command.js";
 import { createFleetRuntime } from "./fleet-runtime.js";
 
-export type FleetCliOutput = Readonly<{
+type FleetCliOutput = Readonly<{
 	stdout(text: string): void;
 	stderr(text: string): void;
 }>;

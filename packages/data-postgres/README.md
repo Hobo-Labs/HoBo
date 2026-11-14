@@ -569,6 +569,11 @@ classifies failures as `Health` with `classifyFleetFailure`), control tables,
 usage rows, replication, the Postgres observer and `reconcileFleet`. A backend
 is a `PostgresBackend` (its name in the fleet and its executor).
 
+The package barrel exports this module's `Fleet*` and `FLEET_*` names with a
+`Postgres` / `POSTGRES_` prefix (`PostgresFleetLayout`, `PostgresFleetEvent`,
+`POSTGRES_FLEET_USAGE_UNITS` and the rest), so `fleet` names stay with the
+fleet packages (ADR-0183, `fleet:vocabulary` rule 9).
+
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
 
@@ -924,7 +929,7 @@ that the rest of the package accepts as-is:
 | a log position | `parseLsn` | a 64-bit location | another engine's position being compared as text, or `9/0` sorting after `10/0` |
 | `pgoutput` bytes | `decodePgOutputTransactions` | whole `PgOutputTransaction`s | a partial transaction, a change for an undescribed relation, or an unknown message being skipped |
 | an executor result | `createPgExecutor` | a text-only `PostgresRow` | a driver-parsed number or `Date` slipping past the cast-everything rule |
-| table prefixes | `parseFleetLayout` | `FleetLayout` | a control table that replication would copy, or an identifier that is not plain |
+| table prefixes | `parseFleetLayout` | `FleetLayout` (exported as `PostgresFleetLayout`) | a control table that replication would copy, or an identifier that is not plain |
 | a log row or a proposal | `parseAssignmentEntry` (`@hobo/fleet/assignment`) | `AssignmentEntry` | a sealed entry with no target, a target on an unsealed entry, a negative loss window, an unsorted or inconsistent member set |
 | a plan's numbers | `parseFleetFinancialModel` (`@hobo/backend-routing`) | `FleetFinancialModel` | a metered allowance without a price, two allowances for one unit, numbers with no source or date |
 | policy settings | `parseFleetPolicy` | `FleetPolicy` | a negative objective, a hysteresis factor below 1 |

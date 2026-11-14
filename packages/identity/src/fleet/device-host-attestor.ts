@@ -11,7 +11,7 @@ import {
 	type LaunchMeasurement,
 } from "../attestation.js";
 import {
-	fleetEnvelopeAlgorithmName,
+	envelopeAlgorithmName,
 	launchMeasurementBytes,
 	SIGN_KEY_SUFFIX,
 } from "./host-envelope.js";
@@ -23,7 +23,7 @@ export function deviceHostAttestor(signer: Signer): HostAttestor {
 		);
 	}
 	const memberId = signer.keyId.slice(0, -SIGN_KEY_SUFFIX.length);
-	const algorithm = fleetEnvelopeAlgorithmName(signer.algorithm);
+	const algorithm = envelopeAlgorithmName(signer.algorithm);
 
 	return Object.freeze({
 		async createDocument(input) {

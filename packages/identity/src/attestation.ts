@@ -8,7 +8,7 @@ import {
 } from "@hobo/fleet";
 import { verifyEnvelope } from "@hobo/fleet/keys";
 import {
-	fleetEnvelopeAlgorithm,
+	envelopeAlgorithmOf,
 	launchMeasurementBytes,
 	SIGN_KEY_SUFFIX,
 } from "./fleet/host-envelope.js";
@@ -226,7 +226,7 @@ function verifyHostSignature(
 	}[],
 ): boolean {
 	if (!isPlainObject(signature)) return false;
-	const envelopeAlgorithm = fleetEnvelopeAlgorithm(signature.algorithm);
+	const envelopeAlgorithm = envelopeAlgorithmOf(signature.algorithm);
 	if (envelopeAlgorithm !== undefined) {
 		return verifyFleetEnvelopeSignature(
 			measurement,

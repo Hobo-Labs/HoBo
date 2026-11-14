@@ -37,7 +37,9 @@ import { jwkThumbprint, memberIdFromJwk } from "@hobo/fleet/keys";
 import type { SignInKey } from "./fleet-command.js";
 import { isJsonObject, isJsonString, parseJsonObject } from "./json.js";
 
-export function fleetHome(env: Readonly<Record<string, string | undefined>>) {
+export function hoboFleetHome(
+	env: Readonly<Record<string, string | undefined>>,
+) {
 	const configured = env.HOBO_FLEET_HOME;
 	return configured !== undefined && configured.length > 0
 		? configured

@@ -72,7 +72,7 @@ that table with a recording fake client.
   that looks like a bootstrap token (`hft_…`) are refused with a pointer to
   `--token-file` (`-` reads standard input). `token create` prints the new
   token once and never puts it in `--json` data.
-- **`HOBO_FLEET_HOME`** (default `~/.hobo/fleet`) holds the device key store,
+- **`HOBO_FLEET_HOME`** (default `~/.hobo/fleet`, `hoboFleetHome`) holds the device key store,
   `person.json` (0600: the DPoP-bound person token and the ES256 sign-in key
   it is bound to) and `enrollment.json` (the discovery document; no secret;
   overlay join credentials are used once at enrollment and never written).

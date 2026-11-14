@@ -118,7 +118,7 @@ import type {
 import {
 	deleteEnrollment,
 	deletePerson,
-	fleetHome,
+	hoboFleetHome,
 	newSignInKey,
 	readEnrollment,
 	readPerson,
@@ -135,7 +135,7 @@ import {
 } from "./json.js";
 
 // public-contract: the agent version the CLI reports to the authority.
-export const FLEET_AGENT_VERSION = "0.0.1";
+const FLEET_AGENT_VERSION = "0.0.1";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -148,7 +148,7 @@ function refused<T>(
 
 /** `HOBO_FLEET_KEYSTORE`: `file` (default) or `external-signer:<command>`. */
 export function keyStoreFor(env: Env): Outcome<KeyStore> {
-	const home = fleetHome(env);
+	const home = hoboFleetHome(env);
 	const setting = env.HOBO_FLEET_KEYSTORE ?? "file";
 	if (setting === "file") return { ok: true, value: createFileKeyStore(home) };
 	if (setting.startsWith("external-signer:")) {
@@ -699,7 +699,7 @@ const SESSION_CLOSE_KIND = "session-close";
 
 export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 	const { env, progress } = options;
-	const home = fleetHome(env);
+	const home = hoboFleetHome(env);
 	const log = options.log ?? stderrLog;
 	const fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
 	const openSecrets = options.openSecrets ?? noSecretStore;

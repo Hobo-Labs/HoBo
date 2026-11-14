@@ -131,7 +131,7 @@ function fleetSection(entry: NamedFleetView): string[] {
 }
 
 /** Every fleet's section, separated by a blank line. */
-export function fleetStatusTable(views: readonly NamedFleetView[]): string {
+export function renderFleetStatus(views: readonly NamedFleetView[]): string {
 	if (views.length === 0) return "No fleets.";
 	return views.map((entry) => fleetSection(entry).join("\n")).join("\n\n");
 }

@@ -8,8 +8,8 @@ import { DEFAULT_FLEET_POLICY } from "@hobo/backend-routing";
 import { Health } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import {
-	type FleetEvent,
-	type FleetReconcileOptions,
+	type PostgresFleetEvent as FleetEvent,
+	type PostgresFleetReconcileOptions as FleetReconcileOptions,
 	parseFleetLayout,
 	reconcileFleet,
 } from "../src/index.js";

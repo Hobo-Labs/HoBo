@@ -14,12 +14,12 @@ import {
 import { createMemoryBus } from "@hobo/fleet/testing";
 import { describe, expect, it } from "vitest";
 import { liveBus } from "../src/fleet-runtime.js";
-import { fleetStatusTable } from "../src/fleet-status.js";
+import { renderFleetStatus } from "../src/fleet-status.js";
 
 describe("the fleet status table", () => {
 	it("says when there are no fleets, or no view", () => {
-		expect(fleetStatusTable([])).toBe("No fleets.");
-		expect(fleetStatusTable([{ fleet: "f", view: undefined }])).toBe(
+		expect(renderFleetStatus([])).toBe("No fleets.");
+		expect(renderFleetStatus([{ fleet: "f", view: undefined }])).toBe(
 			"Fleet f: the authority returned no view.",
 		);
 	});
@@ -49,7 +49,7 @@ describe("the fleet status table", () => {
 				{ name: "bare" },
 			],
 		});
-		const lines = fleetStatusTable([{ fleet: "f", view }]).split("\n");
+		const lines = renderFleetStatus([{ fleet: "f", view }]).split("\n");
 		expect(lines[2]).toMatch(
 			/^m_lost\s+suspended\s+lost\s+unreachable\s+-\s+-\s+-\s+0\.50\s+S3$/,
 		);

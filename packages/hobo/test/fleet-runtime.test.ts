@@ -40,7 +40,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	deleteEnrollment,
 	deletePerson,
-	fleetHome,
+	hoboFleetHome,
 	newSignInKey,
 	readEnrollment,
 	readPerson,
@@ -121,8 +121,8 @@ describe("settings from the environment", () => {
 	});
 
 	it("names the home and the service definition paths", () => {
-		expect(fleetHome({ HOBO_FLEET_HOME: "/x" })).toBe("/x");
-		expect(fleetHome({})).toMatch(/\.hobo[\\/]fleet$/);
+		expect(hoboFleetHome({ HOBO_FLEET_HOME: "/x" })).toBe("/x");
+		expect(hoboFleetHome({})).toMatch(/\.hobo[\\/]fleet$/);
 		expect(serviceDefinitionPath("linux", { HOME: "/h" })).toBe(
 			"/h/.config/systemd/user/hobo-fleet.service",
 		);

@@ -45,7 +45,7 @@ import {
 	JwtSvidIssuer,
 	verifyJwtWithJwks,
 } from "@hobo/identity";
-import { fleetHome, readPerson } from "./fleet-home.js";
+import { hoboFleetHome, readPerson } from "./fleet-home.js";
 import type { HoboProfile } from "./hobo-profile.js";
 import { loadHoboProfile } from "./hobo-profile.js";
 import { isJsonObject, isJsonString } from "./json.js";
@@ -259,7 +259,7 @@ export function createCredentialPresenter(options?: {
 
 			// The fleet authority's person token, DPoP-bound to the key `hobo fleet login` holds.
 			if (env.HOBO_FLEET_AUTHORITY_URL) {
-				const person = await readPerson(fleetHome(env));
+				const person = await readPerson(hoboFleetHome(env));
 				if (person !== undefined) {
 					const dpopProof = await verifiedProof(person.key, {
 						htm,

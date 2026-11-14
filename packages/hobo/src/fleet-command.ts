@@ -76,7 +76,7 @@ import {
 	WorkSubmissionRequestSchema,
 } from "@hobo/fleet";
 import type { RotatableKey } from "@hobo/fleet-authority";
-import { fleetStatusTable, type NamedFleetView } from "./fleet-status.js";
+import { type NamedFleetView, renderFleetStatus } from "./fleet-status.js";
 
 // ── Dependencies ───────────────────────────────────────────────────────────
 
@@ -830,7 +830,7 @@ const status: Handler = async (deps, argv) => {
 	if (!client.ok) return failed(client.error, "Fleet status");
 	const shown = await fleetViews(client.value, text(values, "fleet"));
 	if (!shown.ok) return failed(shown.error, "Fleet status");
-	return ok(fleetStatusTable(shown.value), {
+	return ok(renderFleetStatus(shown.value), {
 		fleets: shown.value.map((entry) => ({
 			fleet: entry.fleet,
 			view:
