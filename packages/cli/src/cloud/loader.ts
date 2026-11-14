@@ -192,12 +192,12 @@ export function targetFromBindleDefinition(
 				if (COMPONENT_KINDS.has(record.kind)) {
 					continue;
 				}
-				backing.set(
-					name,
-					collect.data(name, {
-						paradigm: paradigmFor(record.kind),
-					}),
-				);
+				const paradigm = paradigmFor(record.kind);
+				const options =
+					record.kind === "secret" && record.declaredAllow?.length
+						? { paradigm, allow: [...record.declaredAllow] }
+						: { paradigm };
+				backing.set(name, collect.data(name, options));
 			}
 
 			for (const [name, record] of Object.entries(definition.resources)) {

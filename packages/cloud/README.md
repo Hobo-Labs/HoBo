@@ -15,6 +15,12 @@ An SDK `b.bucket()` is collected as data with an object-storage paradigm. The
 planner lowers it to the durable `objectStore` capability, so provider-owned
 bucket implementations can satisfy it without an app selecting a provider.
 
+SDK `b.secret().allow(...)` declarations lower to `secretRef` and preserve
+their requested `access` and `put` operations as required capabilities. A
+read-only provider cannot satisfy a write request. The SDK/CLI planner tests
+cover collection and selection; provider authorization and realization still
+require the provider's own conformance and contract evidence.
+
 ## Budget-aware hosting placement
 
 `plan(bindle, { deploymentId, objective: "maximize-credits", hostingBudget }, registry)`
