@@ -1,7 +1,7 @@
 /**
  * The `@hobo/fleet` records a Postgres fleet hands its one-active loop.
  *
- * A Postgres fleet runs in local mode (design §6.10): the process that writes
+ * A Postgres fleet runs in local mode (ADR-0183): the process that writes
  * the backends' stores runs the loop, and its registry is its configuration.
  * The registry here lists every configured backend as an `ACTIVE` `BACKEND`
  * member of one `ONE_ACTIVE` fleet, under its configured name; which of them

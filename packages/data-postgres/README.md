@@ -580,7 +580,7 @@ Each backend keeps a small append-only log table (the name comes from
 `(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by, members)`
 
 `members` is a nullable `text[]`: the sorted member set an entry carries once
-the fleet runs with `membershipEpochs` (design §6.10), so that adding or
+the fleet runs with `membershipEpochs` (ADR-0183), so that adding or
 removing a backend is itself a decided epoch. It is null on every entry
 written without them, which the configured backends decide, as before;
 `ensureFleetControlTables` adds the column to a log created before it existed.

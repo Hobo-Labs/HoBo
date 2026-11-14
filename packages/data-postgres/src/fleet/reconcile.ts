@@ -3,7 +3,7 @@
  *
  * `reconcileFleet` is the only thing that changes who the writer is. A host
  * calls it on a schedule. The loop is the one every one-active fleet shares
- * (`createOneActiveFleet` of `@hobo/fleet/assignment`, design §6.10); this
+ * (`createOneActiveFleet` of `@hobo/fleet/assignment`, ADR-0183); this
  * module supplies what is Postgres about it:
  *
  * 1. **Settle** the register before the loop runs: complete an interrupted
@@ -177,7 +177,7 @@ export type FleetReconcileOptions = {
 	readonly fleet?: string;
 	/**
 	 * Entries carry member sets and adding or removing a backend is itself a
-	 * decided epoch (design §6.10). Off when absent; turn it on only once every
+	 * decided epoch (ADR-0183). Off when absent; turn it on only once every
 	 * reconciler of the fleet runs code that reads member sets.
 	 */
 	readonly membershipEpochs?: boolean;

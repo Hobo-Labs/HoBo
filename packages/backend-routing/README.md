@@ -7,7 +7,7 @@ what each member costs. Nothing here knows an engine.
 Which member *is* active is not decided here. The assignment register (the
 majority-decided log of who is active), the cache-key replica, member health
 and the one-active loop moved to `@hobo/fleet`
-([design §6.10](../../docs/design/index.md)): `@hobo/fleet/assignment` holds
+([ADR-0183](../../docs/design/adr/index.md)): `@hobo/fleet/assignment` holds
 the register under the names it always had (`proposeAssignment`,
 `readCurrentAssignment`, `ephemeralAssignmentReplica`, …, with
 `AssignmentEntry` for `FleetAssignment`), and `@hobo/fleet/observation` holds
