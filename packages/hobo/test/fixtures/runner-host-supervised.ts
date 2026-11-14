@@ -1,7 +1,7 @@
 // A runner host whose controller is a process its worker daemon supervises,
 // played across the process boundary through the worker's data directory:
 // the real supervisor (`createControllerSupervisor`) with fake children, a
-// worker that rewrites its advert (naming its controller digest) on every
+// fleet agent that rewrites its observation (naming its controller digest) on every
 // beat, and, for a local runner, the GitHub presence its controller reports.
 // The agent's default ports (`createControllerProcessPort`,
 // `createWorkerHostJobs`) read and drive it; `tick` is one pass of the host.
@@ -16,9 +16,10 @@ import {
 	type WorkerHostFiles,
 	workerAdmissionPaused,
 	workerHostFiles,
-	writeWorkerMeshAdvert,
+	writeWorkerObservation,
 	writeWorkerRunnerPresence,
 } from "@hobo/ci-gh-actions";
+import { selfObservation } from "./runner-host-fake.js";
 
 export class SupervisedRunnerHost {
 	nowMs = Date.parse("2026-11-13T10:00:00.000Z");
@@ -34,7 +35,7 @@ export class SupervisedRunnerHost {
 	constructor(
 		readonly options: Readonly<{
 			dataDirectory: string;
-			hostKind?: "box-worker" | "local-runner";
+			hostKind?: "box-worker" | "developer-device";
 			unhealthy?: readonly string[];
 			/** A local runner whose runner never comes online. */
 			offline?: boolean;
@@ -73,9 +74,9 @@ export class SupervisedRunnerHost {
 	async tick(): Promise<void> {
 		await this.#supervisor.tick();
 		const [pid, child] = [...this.#live.entries()][0] ?? [];
-		const local = this.options.hostKind === "local-runner";
+		const local = this.options.hostKind === "developer-device";
 		if (pid === undefined || !child) {
-			await rm(this.files.meshAdvert, { force: true });
+			await rm(this.files.observation, { force: true });
 			if (local)
 				await writeWorkerRunnerPresence(this.files, {
 					observedAtMs: this.nowMs,
@@ -84,19 +85,18 @@ export class SupervisedRunnerHost {
 			return;
 		}
 		const open = !workerAdmissionPaused(this.files);
-		await writeWorkerMeshAdvert(
+		await writeWorkerObservation(
 			this.files,
-			{
-				id: "box",
+			selfObservation({
+				memberId: "member-box",
 				freeSlots: local ? 1 : 3,
 				totalSlots: local ? 1 : 4,
 				healthy: open && !this.options.unhealthy?.includes(child.digest),
 				labels: local ? ["hobo-local-host"] : ["hobo", "hobo-trunk"],
 				validUntilMs: this.nowMs + 60_000,
 				sinceMs: this.started.find((entry) => entry.pid === pid)?.atMs ?? 0,
-				platform: { os: "linux", arch: "x64" },
-			},
-			child.digest,
+				controllerDigest: child.digest,
+			}),
 		);
 		if (local)
 			await writeWorkerRunnerPresence(this.files, {

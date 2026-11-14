@@ -6,7 +6,6 @@
 import { readFileSync } from "node:fs";
 import { createRail } from "@hobo/stations";
 import { describe, expect, it } from "vitest";
-import { parseMeshAdvert } from "../src/mesh-records.js";
 import {
 	parseRunnerHosts,
 	RUNNER_FLEET_CAMP_SET,
@@ -27,14 +26,19 @@ const recorded = JSON.parse(
 		"utf8",
 	),
 );
-const advert = parseMeshAdvert(recorded.meshAdvert);
-if (!advert) throw new Error("fixture mesh advert does not parse");
+// The recorded host's own health facts (its self-observation's validity, start and labels).
+const recordedSelf = JSON.parse(recorded.meshAdvert);
+const advert = {
+	validUntilMs: Number(recordedSelf.validUntilMs),
+	sinceMs: Number(recordedSelf.sinceMs),
+	labels: [...recordedSelf.labels] as string[],
+};
 const NOW = advert.validUntilMs - 30_000;
 const DIGEST = `sha256:${"2".repeat(64)}`;
 
 /** A resolver outcome as the realizer reports it for the recorded box host. */
 function outcomeWith(
-	meshAdvert:
+	observation:
 		| Readonly<{
 				healthy: boolean;
 				validUntilMs: number;
@@ -58,7 +62,7 @@ function outcomeWith(
 			serving,
 			claims: { platform: "linux/x64", capacity: "4" },
 			retained: [],
-			...(meshAdvert ? { meshAdvert } : undefined),
+			...(observation ? { observation } : undefined),
 		},
 		diagnostics: [],
 	};
@@ -124,7 +128,7 @@ describe("runner-host health claims (agent side)", () => {
 });
 
 describe("runner-host health conditions (Station side)", () => {
-	it("maps the claims to the mesh table: fresh and healthy is REACHABLE, LEASED and READY", () => {
+	it("maps the claims to the observation table: fresh and healthy is REACHABLE, LEASED and READY", () => {
 		const { claims } = runnerHostCampReport(outcomeWith(fresh), NOW);
 		const health = runnerHostHealthConditions(claims, NOW);
 		expect(health.advert).toBe("fresh");
@@ -134,13 +138,13 @@ describe("runner-host health conditions (Station side)", () => {
 			[
 				"CAMP_CONDITION_TYPE_REACHABLE",
 				"CONDITION_STATUS_TRUE",
-				"mesh-advert-fresh",
+				"observation-fresh",
 				"SIGNAL_SOURCE_HEALTH_SOURCE",
 			],
 			[
 				"CAMP_CONDITION_TYPE_LEASED",
 				"CONDITION_STATUS_TRUE",
-				`mesh-lease-valid-until:${new Date(advert.validUntilMs).toISOString()}`,
+				`observation-valid-until:${new Date(advert.validUntilMs).toISOString()}`,
 				"SIGNAL_SOURCE_HEALTH_SOURCE",
 			],
 			[

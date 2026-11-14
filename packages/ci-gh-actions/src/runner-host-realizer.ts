@@ -1,6 +1,7 @@
 /**
  * The runner-host realizer: HoBo CD moving one self-hosted runner host (the
- * box worker, a mesh node or a local runner) to a runner controller image
+ * box worker, an enrolled fleet device or a developer device) to a runner
+ * controller image
  * digest (plan 0024, decision R2; `deploy/runner-fleet/README.md`).
  *
  * It is a typed `ResourceResolver` from `@hobo/core`, run by `hobo deploy
@@ -18,17 +19,18 @@
  *   process its worker daemon supervises (`runner-controller-process.ts`):
  *   `stage` a release fetched and verified by digest, `run` it (or none)
  *   by a request generation, read the supervisor's `status`. The digest the
- *   host runs is the status's, and verification also requires the mesh
- *   advert to name it.
+ *   host runs is the status's, and verification also requires the host's own
+ *   fleet observation to name it.
  * - **Jobs** are what the host already knows about its work: its leases
  *   (`ACTIVE_STATES` and `runnerCustody`), its registered runners'
- *   presence, its own signed mesh advertisement, and the admission gate the
+ *   presence, its own signed fleet `Observation` (it is a `DEVICE` member of
+ *   fleet `hobo`), and the admission gate the
  *   worker's drain mode closes.
  *
  * `reconcile` (converge): pull the target by digest, close admission, wait for
  * in-flight jobs to finish up to a deadline, swap the controller, reopen
  * admission and verify by observation (controller running, runner presence,
- * a fresh healthy mesh advert from after the swap). It never picks up, stops
+ * a fresh healthy self-observation from after the swap). It never picks up, stops
  * or cancels a running job: a drain that runs out of time reopens admission
  * and refuses without touching the controller, and a rollback that would
  * stop a controller holding a job leaves it serving and refuses instead. On a
@@ -44,7 +46,7 @@
  *
  * `read` (observe): the controller digest, in-flight jobs and runner
  * presence (retained fields: they change with load, never drift), and the
- * advert's platform and capacity (claims: observed facts that only narrow).
+ * observation's platform and capacity (claims: observed facts that only narrow).
  *
  * Idempotent by digest: a host already serving the target, observed, is a
  * `noop`. Nothing is reported converged that was not observed (I5). The
@@ -52,7 +54,6 @@
  * container engine already holds; this module never resolves or sees it (I9).
  */
 import { ACTIVE_STATES, type Lease } from "@hobo/ci";
-import type { MeshNode } from "@hobo/ci/mesh";
 import {
 	createResolverRegistry,
 	type HttpTransport,
@@ -65,6 +66,7 @@ import {
 	type ResourceResolver,
 	type TrafficRoutingProviderProfile,
 } from "@hobo/core";
+import { Health, type Observation } from "@hobo/fleet";
 import { z } from "zod";
 import type { DepsImageDockerPort } from "./isolated-worker/deps-image.js";
 import type {
@@ -174,9 +176,63 @@ export type RunnerControllerContainers = Pick<
 	Required<Pick<DockerDriver, "inspectImage" | "listWorkerContainers">> &
 	Pick<DepsImageDockerPort, "pull">;
 
-/** The host's mesh advertisement; `controllerDigest` when the advert carries one. */
-export type RunnerHostAdvert = MeshNode &
-	Readonly<{ controllerDigest?: string | undefined }>;
+// public-contract: the label a host's observation carries its controller digest in (`hobo.ci/controller-digest=sha256:<hex>`).
+export const CONTROLLER_DIGEST_LABEL = "hobo.ci/controller-digest";
+
+const DIGEST = /^sha256:[0-9a-f]{64}$/u;
+
+/**
+ * The controller digest a host's observation reports: its `agent_version`
+ * when that is a digest, else its `hobo.ci/controller-digest=<digest>` label.
+ */
+export function observedControllerDigest(
+	observation: Observation,
+): string | undefined {
+	if (DIGEST.test(observation.agentVersion)) return observation.agentVersion;
+	const prefix = `${CONTROLLER_DIGEST_LABEL}=`;
+	const label = observation.labels.find((l) => l.startsWith(prefix));
+	const digest = label?.slice(prefix.length);
+	return digest !== undefined && DIGEST.test(digest) ? digest : undefined;
+}
+
+// domain-view: what the realizer reads from the host's own fleet Observation (times as epoch ms).
+type HostSelf = Readonly<{
+	/** `observer_id` equals `member_id`: the host observed itself. */
+	self: boolean;
+	healthy: boolean;
+	validUntilMs: number;
+	sinceMs?: number | undefined;
+	controllerDigest?: string | undefined;
+	labels: readonly string[];
+	platform?: Readonly<{ os: string; arch: string }> | undefined;
+	totalSlots?: number | undefined;
+	freeSlots: number;
+}>;
+
+function msOf(iso: string): number | undefined {
+	const ms = Date.parse(iso);
+	return Number.isFinite(ms) ? ms : undefined;
+}
+
+function selfOf(observation: Observation | undefined): HostSelf | undefined {
+	if (!observation) return undefined;
+	return {
+		self:
+			observation.memberId !== "" &&
+			observation.observerId === observation.memberId,
+		healthy:
+			observation.health === Health.REACHABLE && observation.ready !== false,
+		validUntilMs: msOf(observation.validUntil) ?? 0,
+		sinceMs: msOf(observation.since),
+		controllerDigest: observedControllerDigest(observation),
+		labels: observation.labels.filter(
+			(l) => !l.startsWith(`${CONTROLLER_DIGEST_LABEL}=`),
+		),
+		platform: observation.platform,
+		totalSlots: observation.capacity?.totalSlots,
+		freeSlots: observation.capacity?.freeSlots ?? 0,
+	};
+}
 
 /** One runner this host registered with GitHub, and its presence. */
 export type RunnerHostRegistration = Readonly<{
@@ -190,8 +246,8 @@ export interface RunnerHostJobs {
 	leases(): Promise<readonly Lease[]>;
 	/** Runners the host registered, with GitHub presence. */
 	runners(): Promise<readonly RunnerHostRegistration[]>;
-	/** The host's own advertisement as the mesh reads it. */
-	meshAdvert(): Promise<RunnerHostAdvert | undefined>;
+	/** The host's own fleet Observation, as it last signed and published it. */
+	observation(): Promise<Observation | undefined>;
 	/** Stop admitting new jobs (the worker's drain mode). Running jobs are untouched. */
 	pauseAdmission(): Promise<void>;
 	/** Admit jobs again. */
@@ -258,7 +314,7 @@ const CONTAINER_METHODS = [
 const PROCESS_METHODS = ["run", "stage", "status"] as const;
 const JOB_METHODS = [
 	"leases",
-	"meshAdvert",
+	"observation",
 	"pauseAdmission",
 	"resumeAdmission",
 	"runners",
@@ -329,7 +385,7 @@ function wired(host: RunnerHostPorts): WiredHost {
 // ── Options and desired state ───────────────────────────────────────────────
 
 export type RunnerHostRealizerOptions = Readonly<{
-	/** The host this agent runs on: its mesh node id, the Camp's last segment. */
+	/** The host this agent runs on: its device name in fleet `hobo`, the Camp's last segment. */
 	hostId: string;
 	/** A local runner keeps a registered runner; JIT hosts register per job. */
 	hostKind: RunnerHostKind;
@@ -461,7 +517,7 @@ type HostSnapshot = Readonly<{
 	inFlightJobs: number;
 	busyRunners: number;
 	onlineRunners: number;
-	advert: RunnerHostAdvert | undefined;
+	advert: HostSelf | undefined;
 }>;
 
 export const controllerContainerName = (digest: string): string =>
@@ -542,11 +598,11 @@ async function listControllers(
 }
 
 async function snapshot(host: WiredHost, requested = 0): Promise<HostSnapshot> {
-	const [controllers, leases, runners, advert] = await Promise.all([
+	const [controllers, leases, runners, observation] = await Promise.all([
 		listControllers(host.controller, requested),
 		host.jobs.leases(),
 		host.jobs.runners(),
-		host.jobs.meshAdvert(),
+		host.jobs.observation(),
 	]);
 	return {
 		controllers,
@@ -556,7 +612,7 @@ async function snapshot(host: WiredHost, requested = 0): Promise<HostSnapshot> {
 		onlineRunners: runners.filter(
 			(runner) => runner.presence.status === "online",
 		).length,
-		advert,
+		advert: selfOf(observation),
 	};
 }
 
@@ -587,35 +643,34 @@ function servingGaps(
 				.map((controller) => controller.digest)
 				.join(", ")})`,
 		);
-	if (input.hostKind === "local-runner" && snap.onlineRunners === 0)
+	if (input.hostKind === "developer-device" && snap.onlineRunners === 0)
 		gaps.push("no registered runner is online");
 	const advert = snap.advert;
-	if (!advert) gaps.push("no mesh advert");
+	if (!advert) gaps.push("no fleet observation");
 	else {
-		if (advert.id !== input.hostId)
-			gaps.push(`the mesh advert names ${advert.id}`);
+		if (!advert.self) gaps.push("the fleet observation is not the host's own");
 		if (advert.validUntilMs <= input.nowMs)
-			gaps.push("the mesh advert expired");
-		if (!advert.healthy) gaps.push("the mesh advert is not healthy");
+			gaps.push("the fleet observation expired");
+		if (!advert.healthy) gaps.push("the fleet observation is not healthy");
 		if (
 			advert.controllerDigest !== undefined &&
 			advert.controllerDigest !== input.digest
 		)
-			gaps.push(`the mesh advert is at ${advert.controllerDigest}`);
+			gaps.push(`the fleet observation is at ${advert.controllerDigest}`);
 		if (input.advertDigestRequired && advert.controllerDigest === undefined)
-			gaps.push("the mesh advert names no controller digest");
+			gaps.push("the fleet observation names no controller digest");
 		if (
 			input.startedAtMs !== undefined &&
 			advert.controllerDigest === undefined &&
 			(advert.sinceMs === undefined || advert.sinceMs < input.startedAtMs)
 		)
-			gaps.push("the mesh advert predates the new controller");
+			gaps.push("the fleet observation predates the new controller");
 	}
 	return gaps;
 }
 
 /** The advert as a resolver outcome reports it. */
-type RunnerHostAdvertOutputs = {
+type RunnerHostObservationOutputs = {
 	healthy: boolean;
 	validUntilMs: number;
 	sinceMs?: number;
@@ -640,7 +695,7 @@ type RunnerHostOutputs = {
 	claims: RunnerHostClaims;
 	retained: string[];
 	freeSlots?: number;
-	meshAdvert?: RunnerHostAdvertOutputs;
+	observation?: RunnerHostObservationOutputs;
 };
 
 function outcome(
@@ -673,15 +728,15 @@ function outcome(
 		const totalSlots = advert.totalSlots ?? advert.freeSlots;
 		claims.capacity = String(Math.max(0, Math.floor(totalSlots)));
 		outputs.freeSlots = Math.max(0, Math.floor(advert.freeSlots));
-		const meshAdvert: RunnerHostAdvertOutputs = {
+		const observed: RunnerHostObservationOutputs = {
 			healthy: advert.healthy,
 			validUntilMs: advert.validUntilMs,
 			labels: [...advert.labels],
 		};
-		if (advert.sinceMs !== undefined) meshAdvert.sinceMs = advert.sinceMs;
+		if (advert.sinceMs !== undefined) observed.sinceMs = advert.sinceMs;
 		if (advert.controllerDigest !== undefined)
-			meshAdvert.controllerDigest = advert.controllerDigest;
-		outputs.meshAdvert = meshAdvert;
+			observed.controllerDigest = advert.controllerDigest;
+		outputs.observation = observed;
 	}
 	return parseResolveOutcome({
 		contract: RESOLVER_CONTRACT,
@@ -727,7 +782,7 @@ export function createRunnerHostResolver(
 	if (!HOST_ID.test(options.hostId))
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
-			`runner-host-id-invalid: ${JSON.stringify(options.hostId)} is not a runner host id (lowercase mesh node id)`,
+			`runner-host-id-invalid: ${JSON.stringify(options.hostId)} is not a runner host id (lowercase device name)`,
 			RUNNER_HOST_PRODUCT_ID,
 		);
 	const hostId = options.hostId;
@@ -1248,10 +1303,10 @@ export type RunnerHostCampReport = Readonly<{
 
 // public-contract: the claims a runner host's CD agent reports about its own health.
 export const RUNNER_HOST_HEALTH_CLAIMS = Object.freeze({
-	/** `fresh`, `expired` or `missing`: the host's own mesh advertisement. */
-	advert: "hobo.ci/mesh-advert",
-	/** ISO time the advertised mesh lease is valid until (absent when missing). */
-	validUntil: "hobo.ci/mesh-advert-valid-until",
+	/** `fresh`, `expired` or `missing`: the host's own fleet observation. */
+	advert: "hobo.ci/observation",
+	/** ISO time the observation is valid until (absent when missing). */
+	validUntil: "hobo.ci/observation-valid-until",
 	/** `true` only when the controller is observed serving and the advert is fresh and healthy. */
 	ready: "hobo.ci/runner-host-ready",
 } as const);
@@ -1366,7 +1421,7 @@ export function runnerHostCampReport(
 		claims: Object.freeze(
 			[
 				...claims,
-				...healthClaims(advertOutputs(outputs.meshAdvert), serving, nowMs),
+				...healthClaims(advertOutputs(outputs.observation), serving, nowMs),
 			].map((claim) => Object.freeze({ ...claim, reportedBy, observedAt })),
 		),
 	});
@@ -1436,8 +1491,8 @@ function healthCondition(
 /**
  * The Station's reading of a runner host's health claims, as the same
  * REACHABLE / LEASED / READY table `runnerFleetCampObservations` applies to
- * the mesh board (deploy/runner-fleet/README.md): fresh and healthy is all
- * TRUE; fresh but draining or pressured is READY false; an advert whose lease
+ * the fleet view (deploy/runner-fleet/README.md): fresh and healthy is all
+ * TRUE; fresh but draining or pressured is READY false; an observation that
  * has lapsed at `nowMs` (the Station's clock, not the agent's) is all FALSE;
  * no evidence is all UNKNOWN, never assumed healthy.
  */
@@ -1462,17 +1517,17 @@ export function runnerHostHealthConditions(
 				healthCondition(
 					"CAMP_CONDITION_TYPE_REACHABLE",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"observation-missing",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_LEASED",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"observation-missing",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_READY",
 					"CONDITION_STATUS_UNKNOWN",
-					"mesh-advert-missing",
+					"observation-missing",
 				),
 			]),
 		});
@@ -1483,17 +1538,17 @@ export function runnerHostHealthConditions(
 				healthCondition(
 					"CAMP_CONDITION_TYPE_REACHABLE",
 					"CONDITION_STATUS_FALSE",
-					"mesh-advert-expired",
+					"observation-expired",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_LEASED",
 					"CONDITION_STATUS_FALSE",
-					"mesh-lease-expired",
+					"observation-validity-expired",
 				),
 				healthCondition(
 					"CAMP_CONDITION_TYPE_READY",
 					"CONDITION_STATUS_FALSE",
-					"mesh-advert-expired",
+					"observation-expired",
 				),
 			]),
 		});
@@ -1503,12 +1558,12 @@ export function runnerHostHealthConditions(
 			healthCondition(
 				"CAMP_CONDITION_TYPE_REACHABLE",
 				"CONDITION_STATUS_TRUE",
-				"mesh-advert-fresh",
+				"observation-fresh",
 			),
 			healthCondition(
 				"CAMP_CONDITION_TYPE_LEASED",
 				"CONDITION_STATUS_TRUE",
-				`mesh-lease-valid-until:${new Date(until).toISOString()}`,
+				`observation-valid-until:${new Date(until).toISOString()}`,
 			),
 			value(RUNNER_HOST_HEALTH_CLAIMS.ready) === "true"
 				? healthCondition(

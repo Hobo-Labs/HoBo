@@ -33,8 +33,8 @@ export type ReconcilerKeys = Readonly<{
 }>;
 
 const BUNDLE_LIFETIME_MS = 24 * 3_600_000;
-// public-contract: the fleet authority's members collection (enroll is POST here).
-export const FLEET_MEMBERS_PATH = "/v1/fleet/members";
+/** The fleet authority's members collection (enroll is POST here). */
+const MEMBERS_PATH = "/v1/fleet/members";
 
 function privateJwkOf(key: KeyObject): JsonObject {
 	const jwk = key.export({ format: "jwk" });
@@ -123,7 +123,7 @@ export async function reconcilerEnrollment(
 	});
 	const dpopProof = await mintDpopProof(identity.signer, identity.publicJwk, {
 		htm: "POST",
-		htu: `${input.origin.replace(/\/+$/u, "")}${FLEET_MEMBERS_PATH}`,
+		htu: `${input.origin.replace(/\/+$/u, "")}${MEMBERS_PATH}`,
 		nowMs: input.nowMs,
 	});
 	return Object.freeze({ memberId, request, dpopProof });

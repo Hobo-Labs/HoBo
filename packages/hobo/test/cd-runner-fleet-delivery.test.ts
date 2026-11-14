@@ -549,7 +549,7 @@ describe.skipIf(!existsSync(BIN))(
 				config,
 				JSON.stringify({
 					...AGENT_CONFIG,
-					hostKind: "local-runner",
+					hostKind: "developer-device",
 					worker: { directory: workerDir },
 					controller: { mode: "process", releases: join(home, "releases") },
 				}),
@@ -613,7 +613,7 @@ async function openFleet(
 			...declared.value,
 			...fleetHosts.map((id) => ({
 				id,
-				kind: "mesh-node",
+				kind: "fleet-device",
 				runnerLabels: ["hobo"],
 				ring: "fleet",
 			})),
@@ -1044,11 +1044,11 @@ describe("the runner fleet delivered in process (durable SQLite, fake runner hos
 						],
 						claims: [
 							{
-								name: "hobo.ci/mesh-advert",
+								name: "hobo.ci/observation",
 								value: ready ? "fresh" : "expired",
 							},
 							{
-								name: "hobo.ci/mesh-advert-valid-until",
+								name: "hobo.ci/observation-valid-until",
 								value: new Date(
 									host.nowMs + (ready ? 60_000 : -1),
 								).toISOString(),

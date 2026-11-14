@@ -649,7 +649,6 @@ export {
 	type RunnerControllerProcess,
 	type RunnerControllerProcessState,
 	type RunnerControllerProcessStatus,
-	type RunnerHostAdvert,
 	type RunnerHostCampReport,
 	type RunnerHostHealth,
 	type RunnerHostJobs,
@@ -675,13 +674,13 @@ export {
 	readWorkerLeases,
 	readWorkerRunnerPresence,
 	WORKER_ADMISSION_PAUSED_FILE,
-	WORKER_MESH_ADVERT_FILE,
+	WORKER_OBSERVATION_FILE,
 	WORKER_RUNNER_PRESENCE_FILE,
 	type WorkerHostFiles,
 	type WorkerRunnerPresence,
 	workerAdmissionPaused,
 	workerHostFiles,
-	writeWorkerMeshAdvert,
+	writeWorkerObservation,
 	writeWorkerRunnerPresence,
 } from "./runner-host-worker-jobs.js";
 export {

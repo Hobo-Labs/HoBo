@@ -1,5 +1,5 @@
 // The runner-host realizer's job ports read from the box worker's data
-// directory: the journal read-only, the advert the worker writes, and the
+// directory: the journal read-only, the observation the host's fleet agent writes, and the
 // admission marker it honours. A second process (the CD agent) reads them;
 // the worker stays the journal's only writer.
 
@@ -11,9 +11,12 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { create, toJsonString } from "@bufbuild/protobuf";
 import { LeaseSchema } from "@hobo/ci";
+import { Health, ObservationSchema } from "@hobo/fleet";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	CONTROLLER_DIGEST_LABEL,
 	inFlightJobCount,
+	observedControllerDigest,
 	runnerHostInterfaceGaps,
 } from "../src/runner-host-realizer.js";
 import {
@@ -24,11 +27,11 @@ import {
 	createWorkerHostJobs,
 	readWorkerLeases,
 	WORKER_ADMISSION_PAUSED_FILE,
-	WORKER_MESH_ADVERT_FILE,
+	WORKER_OBSERVATION_FILE,
 	WORKER_RUNNER_PRESENCE_FILE,
 	workerAdmissionPaused,
 	workerHostFiles,
-	writeWorkerMeshAdvert,
+	writeWorkerObservation,
 	writeWorkerRunnerPresence,
 } from "../src/runner-host-worker-jobs.js";
 
@@ -62,24 +65,28 @@ function journal(path: string, leases: readonly [string, string][]): void {
 	db.close();
 }
 
-const advert = {
-	id: "box",
-	freeSlots: 3,
-	totalSlots: 4,
-	healthy: true,
+// The box's own observation as its fleet agent signs and publishes it.
+const advert = create(ObservationSchema, {
+	memberId: "member-box",
+	observerId: "member-box",
+	fleets: ["hobo"],
+	health: Health.REACHABLE,
+	capacity: { freeSlots: 3, totalSlots: 4 },
 	labels: ["hobo", "hobo-trunk"],
-	validUntilMs: Date.parse("2026-11-12T10:01:00.000Z"),
-	sinceMs: Date.parse("2026-11-12T10:00:00.000Z"),
 	platform: { os: "linux", arch: "x64" },
-};
+	agentVersion: "1.0.0",
+	since: "2026-11-12T10:00:00.000Z",
+	issuedAt: "2026-11-12T10:00:30.000Z",
+	validUntil: "2026-11-12T10:01:00.000Z",
+});
 
 describe("the worker's data directory as the runner-host job ports", () => {
-	it("places the marker and advert beside the worker's journal", () => {
+	it("places the marker and observation beside the worker's journal", () => {
 		const files = workerHostFiles("/var/lib/hobo-ci/worker.sqlite");
 		expect(files).toEqual({
 			database: "/var/lib/hobo-ci/worker.sqlite",
 			admissionPaused: `/var/lib/hobo-ci/${WORKER_ADMISSION_PAUSED_FILE}`,
-			meshAdvert: `/var/lib/hobo-ci/${WORKER_MESH_ADVERT_FILE}`,
+			observation: `/var/lib/hobo-ci/${WORKER_OBSERVATION_FILE}`,
 			runnerPresence: `/var/lib/hobo-ci/${WORKER_RUNNER_PRESENCE_FILE}`,
 			controllerDesired: `/var/lib/hobo-ci/${CONTROLLER_DESIRED_FILE}`,
 			controllerStatus: `/var/lib/hobo-ci/${CONTROLLER_STATUS_FILE}`,
@@ -116,21 +123,27 @@ describe("the worker's data directory as the runner-host job ports", () => {
 		expect(existsSync(join(dir, "worker.sqlite"))).toBe(false);
 	});
 
-	it("reads back the advert the worker wrote, and nothing from a missing or corrupt file", async () => {
+	it("reads back the observation the fleet agent wrote, and nothing from a missing or corrupt file", async () => {
 		const dir = await freshDir();
 		const files = workerHostFiles(join(dir, "worker.sqlite"));
-		const jobs = createWorkerHostJobs({ files, hostKind: "mesh-node" });
-		expect(await jobs.meshAdvert?.()).toBeUndefined();
-		await writeWorkerMeshAdvert(files, advert);
-		expect(await jobs.meshAdvert?.()).toMatchObject(advert);
-		await writeFile(files.meshAdvert, "{not json");
-		expect(await jobs.meshAdvert?.()).toBeUndefined();
+		const jobs = createWorkerHostJobs({ files, hostKind: "fleet-device" });
+		expect(await jobs.observation?.()).toBeUndefined();
+		await writeWorkerObservation(files, advert);
+		expect(await jobs.observation?.()).toEqual(advert);
+		await writeFile(files.observation, "{not json");
+		expect(await jobs.observation?.()).toBeUndefined();
 	});
 
-	it("carries the controller digest a supervised worker names, beside the advert", async () => {
+	it("writes only the host's own observation", async () => {
 		const dir = await freshDir();
 		const files = workerHostFiles(join(dir, "worker.sqlite"));
-		const jobs = createWorkerHostJobs({ files, hostKind: "box-worker" });
+		await expect(
+			writeWorkerObservation(files, { ...advert, observerId: "member-other" }),
+		).rejects.toThrow(/own observation/u);
+		expect(existsSync(files.observation)).toBe(false);
+	});
+
+	it("reads the controller digest from the agent version or the controller-digest label", async () => {
 		const digest = `sha256:${"a".repeat(64)}`;
 		expect(controllerDigestFromEnv({ HOBO_CI_CONTROLLER_DIGEST: digest })).toBe(
 			digest,
@@ -138,17 +151,29 @@ describe("the worker's data directory as the runner-host job ports", () => {
 		expect(
 			controllerDigestFromEnv({ HOBO_CI_CONTROLLER_DIGEST: "latest" }),
 		).toBeUndefined();
-		await writeWorkerMeshAdvert(files, advert);
-		const plain = await jobs.meshAdvert();
-		expect(plain?.controllerDigest).toBeUndefined();
-		await writeWorkerMeshAdvert(files, advert, digest);
-		expect(await jobs.meshAdvert()).toEqual({
-			...plain,
-			controllerDigest: digest,
-		});
-		// An invalid digest is never written.
-		await writeWorkerMeshAdvert(files, advert, "sha256:nope");
-		expect((await jobs.meshAdvert())?.controllerDigest).toBeUndefined();
+		expect(observedControllerDigest(advert)).toBeUndefined();
+		expect(observedControllerDigest({ ...advert, agentVersion: digest })).toBe(
+			digest,
+		);
+		expect(
+			observedControllerDigest({
+				...advert,
+				labels: [...advert.labels, `${CONTROLLER_DIGEST_LABEL}=${digest}`],
+			}),
+		).toBe(digest);
+		// An invalid digest is never read as one.
+		expect(
+			observedControllerDigest({
+				...advert,
+				labels: [`${CONTROLLER_DIGEST_LABEL}=sha256:nope`],
+			}),
+		).toBeUndefined();
+		const dir = await freshDir();
+		const files = workerHostFiles(join(dir, "worker.sqlite"));
+		const jobs = createWorkerHostJobs({ files, hostKind: "box-worker" });
+		await writeWorkerObservation(files, { ...advert, agentVersion: digest });
+		const read = await jobs.observation();
+		expect(read && observedControllerDigest(read)).toBe(digest);
 	});
 
 	it("closes and reopens admission with the marker the worker honours", async () => {
@@ -169,7 +194,11 @@ describe("the worker's data directory as the runner-host job ports", () => {
 
 	it("wires every job port for every host kind, a local runner included", () => {
 		const files = workerHostFiles("/var/lib/hobo-ci/worker.sqlite");
-		for (const hostKind of ["box-worker", "mesh-node", "local-runner"] as const)
+		for (const hostKind of [
+			"box-worker",
+			"fleet-device",
+			"developer-device",
+		] as const)
 			expect(
 				runnerHostInterfaceGaps({
 					jobs: createWorkerHostJobs({ files, hostKind }),
@@ -183,7 +212,7 @@ describe("the worker's data directory as the runner-host job ports", () => {
 		let nowMs = 1_000_000;
 		const local = createWorkerHostJobs({
 			files,
-			hostKind: "local-runner",
+			hostKind: "developer-device",
 			now: () => nowMs,
 		});
 		// No report yet: no runner, never an assumed online one.

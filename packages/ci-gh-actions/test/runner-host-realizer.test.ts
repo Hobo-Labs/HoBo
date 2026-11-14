@@ -6,13 +6,13 @@ import {
 	type ResolveRequest,
 	ResolverError,
 } from "@hobo/core";
+import { Health, type Observation, ObservationSchema } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import { createCliDockerDriver } from "../src/isolated-worker/cli-docker-driver.js";
 import type {
 	DockerContainer,
 	IsolatedContainerSpec,
 } from "../src/isolated-worker/docker-driver.js";
-import { parseMeshAdvert } from "../src/mesh-records.js";
 import {
 	controllerContainerName,
 	createRunnerHostResolver,
@@ -22,7 +22,6 @@ import {
 	RUNNER_HOST_RETAINED_FIELDS,
 	RUNNER_HOST_TRAFFIC_ROUTING_ABSENT,
 	RUNNER_HOST_TRAFFIC_ROUTING_PROFILE,
-	type RunnerHostAdvert,
 	type RunnerHostPorts,
 	type RunnerHostRealizerOptions,
 	runnerHostCampReport,
@@ -42,8 +41,15 @@ const recorded = JSON.parse(
 const PREVIOUS: string = recorded.previousImage;
 const TARGET: string = recorded.targetImage;
 const digestOf = (image: string) => image.slice(image.indexOf("@") + 1);
-const recordedAdvert = parseMeshAdvert(recorded.meshAdvert);
-if (!recordedAdvert) throw new Error("fixture mesh advert does not parse");
+// The recorded box host's own health facts, as its fleet agent would observe itself.
+const recordedSelf = JSON.parse(recorded.meshAdvert);
+const recordedAdvert = {
+	freeSlots: Number(recordedSelf.freeSlots),
+	totalSlots: Number(recordedSelf.totalSlots),
+	labels: [...recordedSelf.labels] as string[],
+	platform: recordedSelf.platform as { os: string; arch: string },
+	sinceMs: Number(recordedSelf.sinceMs),
+};
 const CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
 const transport: HttpTransport = async () => {
 	throw new Error("the runner-host realizer makes no HTTP call");
@@ -69,8 +75,8 @@ type FakeOptions = Readonly<{
 /**
  * A runner host as the realizer sees it: the Docker driver's container
  * semantics (`--rm`, so a stopped controller is gone), the worker's leases,
- * GitHub runner presence, and the host's mesh advert, derived from the
- * recorded advert and whichever controller is running.
+ * GitHub runner presence, and the host's own fleet observation, derived
+ * from the recorded host and whichever controller is running.
  */
 class FakeHost {
 	nowMs: number;
@@ -93,7 +99,7 @@ class FakeHost {
 	leasesFail = false;
 
 	constructor(readonly options: FakeOptions = {}) {
-		this.nowMs = options.startMs ?? recordedAdvert?.sinceMs ?? 0;
+		this.nowMs = options.startMs ?? recordedAdvert.sinceMs ?? 0;
 		this.leases = options.leases ?? [];
 		if (options.running) {
 			this.images.add(options.running);
@@ -219,16 +225,27 @@ function portsOf(host: FakeHost): RunnerHostPorts {
 						presence: { status: github.status, busy: github.busy },
 					}));
 			},
-			async meshAdvert(): Promise<RunnerHostAdvert | undefined> {
+			async observation(): Promise<Observation | undefined> {
 				const live = host.runningController();
-				if (!live || !recordedAdvert) return undefined;
-				return {
-					...recordedAdvert,
-					healthy:
-						host.admission && !host.options.unhealthy?.includes(live.image),
-					validUntilMs: host.nowMs + 60_000,
-					sinceMs: live.startedAtMs ?? 0,
-				};
+				if (!live) return undefined;
+				const healthy =
+					host.admission && !host.options.unhealthy?.includes(live.image);
+				return create(ObservationSchema, {
+					memberId: "member-box",
+					observerId: "member-box",
+					fleets: ["hobo"],
+					health: healthy ? Health.REACHABLE : Health.DRAINING,
+					capacity: {
+						freeSlots: recordedAdvert.freeSlots,
+						totalSlots: recordedAdvert.totalSlots,
+					},
+					labels: recordedAdvert.labels,
+					platform: recordedAdvert.platform,
+					agentVersion: "1.0.0",
+					since: new Date(live.startedAtMs ?? 0).toISOString(),
+					issuedAt: new Date(host.nowMs).toISOString(),
+					validUntil: new Date(host.nowMs + 60_000).toISOString(),
+				});
 			},
 			async pauseAdmission() {
 				host.calls.push("pause");
@@ -298,7 +315,7 @@ describe("runner-host realizer: converge", () => {
 			leases: [lease("0f8fad5b-d9cb-469f-a165-70867728950e", "running")],
 			onTick: (fake) => {
 				// The job finishes ten minutes into the drain.
-				if (fake.nowMs >= (recordedAdvert?.sinceMs ?? 0) + 10 * 60_000)
+				if (fake.nowMs >= (recordedAdvert.sinceMs ?? 0) + 10 * 60_000)
 					fake.leases = fake.leases.map((entry) =>
 						create(LeaseSchema, { ...entry, state: "completed" }),
 					);
@@ -504,7 +521,7 @@ describe("runner-host realizer: converge", () => {
 	it("a local runner is not serving until a registered runner is online", async () => {
 		const host = new FakeHost({ running: TARGET });
 		const resolver = createRunnerHostResolver(
-			host.resolverOptions({ hostKind: "local-runner" }),
+			host.resolverOptions({ hostKind: "developer-device" }),
 		);
 		const error = await refusal(resolver.reconcile(request(TARGET), transport));
 		expect(error.message).toMatch(/^runner-host-target-unobserved: /u);
@@ -539,9 +556,9 @@ describe("runner-host realizer: observe and delete", () => {
 			["label:hobo.ci/serves-hobo", "true"],
 			["label:hobo.ci/serves-hobo-local-host", "false"],
 			["label:hobo.ci/serves-hobo-trunk", "true"],
-			["hobo.ci/mesh-advert", "fresh"],
+			["hobo.ci/observation", "fresh"],
 			[
-				"hobo.ci/mesh-advert-valid-until",
+				"hobo.ci/observation-valid-until",
 				new Date(host.nowMs + 60_000).toISOString(),
 			],
 			["hobo.ci/runner-host-ready", "true"],
@@ -707,7 +724,7 @@ describe.skipIf(!LIVE)(
 					jobs: {
 						leases: async () => [],
 						runners: async () => [],
-						meshAdvert: async () => undefined,
+						observation: async () => undefined,
 						pauseAdmission: async () => undefined,
 						resumeAdmission: async () => undefined,
 					},

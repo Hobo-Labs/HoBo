@@ -25,7 +25,7 @@
  * with `HOBO_CI_CONTROLLER_DIGEST` set, so the worker's advert names its
  * version, and restarts a child that exits on its own, up to a crash limit,
  * after which it reports `failed`. Whether the new version serves is the
- * realizer's call, by observation (status, presence and the mesh advert at
+ * realizer's call, by observation (status, presence and the fleet observation at
  * the new digest); the supervisor only says what it started.
  */
 import { spawn } from "node:child_process";
