@@ -196,8 +196,21 @@ describe("capabilityManifest", () => {
 			productId: "vercel.queues/v1",
 			resourceKind: "deployment-component",
 			profiles: ["queue.at-least-once/v1", "queue.delay/v1"],
-			features: ["queue", "at-least-once", "delay", "managed"],
+			features: [
+				"queue",
+				"at-least-once",
+				"delay",
+				"managed",
+				"enqueue",
+				"dequeue",
+			],
 		});
+		expect(
+			capabilityFor("queue").satisfies({
+				port: "queue",
+				features: ["enqueue", "dequeue"],
+			}),
+		).toEqual({ kind: "full" });
 		expect(
 			capabilityFor("queue").estimateCost({ port: "queue" }).pricingStatus,
 		).toBe("unknown");
