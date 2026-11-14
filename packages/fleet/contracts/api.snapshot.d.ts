@@ -1550,11 +1550,17 @@ export interface EgressProxyFactory {
         close(): Promise<void>;
     }>>;
 }
+export type HostSignals = Readonly<{
+    freeInodes?: number;
+    psiMemorySome?: number;
+    psiMemoryFull?: number;
+}>;
 export interface CapacitySource {
     read(): Promise<Readonly<{
         capacity: Capacity;
         health: Health;
         labels: readonly string[];
+        hostSignals?: HostSignals;
     }>>;
 }
 export type FailureClassifier = (error: Error | undefined) => Health;
@@ -2229,6 +2235,7 @@ export declare function createExecutor(deps: Readonly<{
     drain(): Promise<void>;
     stop(): Promise<void>;
     sandboxOf(orderId: string): Sandbox | undefined;
+    inUse(): number;
 }>;
 export declare function createOciCommandSource(bus: FleetBus): WorkSource;
 export declare function createOciCommandRunner(): WorkRunner;

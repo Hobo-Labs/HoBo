@@ -16,7 +16,7 @@
  * An absent figure is unknown and never crosses a threshold.
  */
 import { type Capacity, Health, Refusal } from "../_generated/fleet_pb.js";
-import type { CapacitySource } from "../ports.js";
+import type { CapacitySource, HostSignals } from "../ports.js";
 
 /** What a `CapacitySource` reads. */
 export type CapacityReading = Awaited<ReturnType<CapacitySource["read"]>>;
@@ -31,15 +31,10 @@ export const PSI_MEMORY_SOME_LIMIT = 25;
 export const PSI_MEMORY_FULL_LIMIT = 5;
 
 /**
- * Host figures the frozen `CapacitySource` reading has no field for. A
- * reading may carry them as `hostSignals` (`@hobo/fleet-agent`'s
- * `createHostCapacity` does); absent means unknown.
+ * Host figures a capacity reading may carry (`CapacitySource` amendment 6;
+ * `@hobo/fleet-agent`'s `createHostCapacity` fills them); absent means unknown.
  */
-export type HostSignals = Readonly<{
-	freeInodes?: number;
-	psiMemorySome?: number;
-	psiMemoryFull?: number;
-}>;
+export type { HostSignals } from "../ports.js";
 
 /** `HostSignals` while it is being filled in. */
 type HostSignalFigures = { -readonly [K in keyof HostSignals]: HostSignals[K] };
@@ -91,9 +86,9 @@ export function publishedHealth(
 	return health ?? Health.UNKNOWN;
 }
 
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: the frozen CapacitySource reading has no field for free inodes or memory PSI (amendment requested by L43), so this is the parse boundary for the `hostSignals` a reading carries beside its port fields; nothing else reads them. */
-function figure(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) && value >= 0
+/** A figure the agent can use: finite and not negative. */
+function figure(value: number | undefined): number | undefined {
+	return value !== undefined && Number.isFinite(value) && value >= 0
 		? value
 		: undefined;
 }
@@ -102,16 +97,14 @@ function figure(value: unknown): number | undefined {
 export function hostSignalsOf(
 	reading: CapacityReading | undefined,
 ): HostSignals {
-	if (reading === undefined || !("hostSignals" in reading)) return {};
-	const raw = reading.hostSignals;
-	if (typeof raw !== "object" || raw === null) return {};
+	const raw = reading?.hostSignals;
+	if (raw === undefined) return {};
 	const signals: HostSignalFigures = {};
-	const freeInodes = figure("freeInodes" in raw ? raw.freeInodes : undefined);
+	const freeInodes = figure(raw.freeInodes);
 	if (freeInodes !== undefined) signals.freeInodes = freeInodes;
-	const some = figure("psiMemorySome" in raw ? raw.psiMemorySome : undefined);
+	const some = figure(raw.psiMemorySome);
 	if (some !== undefined) signals.psiMemorySome = some;
-	const full = figure("psiMemoryFull" in raw ? raw.psiMemoryFull : undefined);
+	const full = figure(raw.psiMemoryFull);
 	if (full !== undefined) signals.psiMemoryFull = full;
 	return signals;
 }
-/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */

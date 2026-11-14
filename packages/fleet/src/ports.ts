@@ -625,9 +625,21 @@ export interface EgressProxyFactory {
 		allow: readonly string[],
 	): Promise<Readonly<{ url: string; close(): Promise<void> }>>;
 }
+/** Host figures a capacity reading may carry beside its capacity (amendment 6, L43): free inodes on the work volume and memory PSI avg10 ("some", "full"). Absent means unknown. */
+export type HostSignals = Readonly<{
+	freeInodes?: number;
+	psiMemorySome?: number;
+	psiMemoryFull?: number;
+}>;
 export interface CapacitySource {
 	read(): Promise<
-		Readonly<{ capacity: Capacity; health: Health; labels: readonly string[] }>
+		Readonly<{
+			capacity: Capacity;
+			health: Health;
+			labels: readonly string[];
+			/** Optional (amendment 6): the agent derives the observation's `refusal` from them. */
+			hostSignals?: HostSignals;
+		}>
 	>;
 }
 

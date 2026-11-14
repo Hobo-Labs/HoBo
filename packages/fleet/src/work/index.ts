@@ -138,6 +138,8 @@ export function createExecutor(
 	drain(): Promise<void>;
 	stop(): Promise<void>;
 	sandboxOf(orderId: string): Sandbox | undefined;
+	/** Claims held for an order plus orders running (amendment 6): the slots this executor's own work takes. */
+	inUse(): number;
 }> {
 	return executor(deps);
 }

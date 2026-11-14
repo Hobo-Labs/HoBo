@@ -662,6 +662,7 @@ export function executor(
 	}
 
 	return {
+		inUse,
 		start() {
 			if (started) return;
 			started = true;
