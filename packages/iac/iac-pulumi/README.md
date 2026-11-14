@@ -40,10 +40,13 @@ The composed runtime's live lane (`HOBO_PULUMI_LIVE=1`, see `@hobo/hobo`
 
 Both engines keep their state under a local `file://` backend. Pulumi encrypts
 the secrets in it with `PULUMI_CONFIG_PASSPHRASE`; an empty passphrase leaves
-them readable by any process that can read the state directory (often a
-temporary one). When the caller supplies none, each engine encrypts with a
-random passphrase that lives only in its own memory and its Pulumi child, and
-stays stable for the engine's life so its own state remains readable to it.
+them readable by any process that can read the state directory. For a retained
+workspace, pass a recoverable non-empty `statePassphrase` from the caller's
+secret store (the legacy `PULUMI_CONFIG_PASSPHRASE` environment variable is
+also accepted). Reuse the same key when reopening the state. Without one,
+operations refuse before creating or changing state. A caller that guarantees a
+workspace is disposable may explicitly set `ephemeralState: true`; its key is
+random, kept in memory, and lost when the process ends.
 
 ## Exports
 

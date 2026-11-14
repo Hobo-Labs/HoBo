@@ -102,6 +102,7 @@ function engine(
 	env: Record<string, string | undefined> = {},
 ) {
 	return createPulumiAutomationApiEngine({
+		ephemeralState: true,
 		workDir: tempDir("hobo-pulumi-auto-work-"),
 		automation: fake.module,
 		env,
@@ -152,6 +153,37 @@ function seedCheckpoint(
 			}),
 	);
 }
+
+describe("persistent state passphrases", () => {
+	it("refuses to create persistent state without a recoverable passphrase", async () => {
+		const fake = fakeAutomation();
+		const workDir = tempDir();
+		const created = createPulumiAutomationApiEngine({
+			workDir,
+			automation: fake.module,
+			env: {},
+		});
+		await expect(created.preview(program())).rejects.toThrow(/passphrase/iu);
+		expect(fake.calls).toEqual([]);
+	});
+
+	it("passes the same supplied key to engines restarted on one work directory", async () => {
+		const fake = fakeAutomation();
+		const workDir = tempDir();
+		for (let run = 0; run < 2; run++) {
+			const created = createPulumiAutomationApiEngine({
+				workDir,
+				automation: fake.module,
+				env: {},
+				statePassphrase: "recoverable-test-passphrase",
+			});
+			await created.preview(program());
+		}
+		expect(fake.envVarsSeen.map((env) => env.PULUMI_CONFIG_PASSPHRASE)).toEqual(
+			["recoverable-test-passphrase", "recoverable-test-passphrase"],
+		);
+	});
+});
 
 describe("the preview verdict matches the CLI engine", () => {
 	it("reports no change for an empty summary", async () => {

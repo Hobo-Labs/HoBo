@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
 	existsSync,
@@ -25,6 +24,7 @@ import {
 	PulumiEngineUnavailableError,
 	renderPulumiYamlProgram,
 } from "./pulumi-cli-engine.js";
+import { requireStatePassphrase, statePassphrase } from "./state-passphrase.js";
 
 // The REAL Pulumi Automation API engine (HOBO-715). Same
 // preview/apply/refresh/destroy shape as the in-memory stand-in and the CLI
@@ -89,6 +89,10 @@ export interface PulumiAutomationApiEngineOptions {
 	// (e.g. CLOUDFLARE_API_TOKEN) for live programs; CLOUDFLARE_ACCOUNT_ID
 	// feeds program config.
 	readonly env?: Record<string, string | undefined>;
+	/** Recoverable key supplied by the caller for retained state. */
+	readonly statePassphrase?: string;
+	/** The caller guarantees this workspace will be discarded at process exit. */
+	readonly ephemeralState?: boolean;
 	// Test seam: inject the automation module instead of importing
 	// @pulumi/pulumi/automation (lets tests drive the engine offline).
 	readonly automation?: AutomationModuleLike;
@@ -102,7 +106,11 @@ export function createPulumiAutomationApiEngine(
 ) {
 	const env = options.env ?? process.env;
 	const stateDir = join(options.workDir, "state");
-	const runPassphrase = randomBytes(32).toString("base64url");
+	const runPassphrase = statePassphrase(
+		options.statePassphrase,
+		env.PULUMI_CONFIG_PASSPHRASE,
+		options.ephemeralState,
+	);
 	const programsDir = join(options.workDir, "programs");
 	let automation: AutomationModuleLike | null = options.automation ?? null;
 
@@ -133,11 +141,7 @@ export function createPulumiAutomationApiEngine(
 				),
 			),
 			PULUMI_BACKEND_URL: `file://${stateDir}`,
-			// An empty passphrase leaves every secret in the state readable by
-			// any process that can read the state directory. Without one, each
-			// engine encrypts with a random passphrase that lives only in this
-			// process's memory and its Pulumi child.
-			PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE || runPassphrase,
+			PULUMI_CONFIG_PASSPHRASE: requireStatePassphrase(runPassphrase),
 			PULUMI_SKIP_UPDATE_CHECK: "true",
 		};
 	}
@@ -167,6 +171,7 @@ export function createPulumiAutomationApiEngine(
 		program: IacProgramLike,
 		resource: IacResourceLike,
 	): Promise<{ stack: AutomationStackLike; stackKey: string }> {
+		requireStatePassphrase(runPassphrase);
 		ensureEngineAvailable();
 		const auto = await loadAutomation();
 		mkdirSync(stateDir, { recursive: true });

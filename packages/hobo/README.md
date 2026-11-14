@@ -184,7 +184,7 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 |---|---|
 | Persistent local Yard worker | Product default with a loadable source Bindle |
 | In-memory Pulumi stand-in | Explicitly injected library/test runtime |
-| Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); its programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept, else in a `hobo-pulumi-live-*` directory removed when the process ends (one `hobo:` line on stderr names it), so set `HOBO_PULUMI_WORKDIR` to keep the state |
+| Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept and requires the same recoverable `PULUMI_CONFIG_PASSPHRASE` on every run, else in a disposable `hobo-pulumi-live-*` directory removed when the process ends (one `hobo:` line on stderr names it) |
 | Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
 | Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
 
