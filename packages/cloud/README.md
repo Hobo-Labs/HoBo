@@ -11,6 +11,10 @@ Commercial provider pricing catalogs use `pricingCatalogHashFromCommercialRefs` 
 `src/commercial-pricing.ts` (sorted product-ref digest) without altering resource
 definition `catalogHashOf`.
 
+An SDK `b.bucket()` is collected as data with an object-storage paradigm. The
+planner lowers it to the durable `objectStore` capability, so provider-owned
+bucket implementations can satisfy it without an app selecting a provider.
+
 ## Budget-aware hosting placement
 
 `plan(bindle, { deploymentId, objective: "maximize-credits", hostingBudget }, registry)`
