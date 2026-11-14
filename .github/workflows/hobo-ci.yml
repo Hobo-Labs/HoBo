@@ -90,7 +90,6 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             scripts/ci/merge-queue-reuse.mts
-            packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
@@ -1053,8 +1052,8 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
-      # After the full checkout: the route script, scripts/ci/runner-routing.mts,
-      # packages/ci/src/fleet-overflow.ts and .hobo/ci.json are not in the bootstrap checkout.
+      # After the full checkout: the route script, scripts/ci/runner-routing.mts
+      # and .hobo/ci.json are not in the bootstrap checkout.
       # Only a run the route job kept on the fleet asks again; one already sent away is not
       # brought back to a fleet whose deps job was skipped. The routing slip is read again (it
       # may have changed); without one, this run's own jobs count (include-own-run): a plan job

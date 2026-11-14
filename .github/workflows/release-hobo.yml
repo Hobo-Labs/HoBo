@@ -240,7 +240,6 @@ jobs:
             .hobo/ci.json
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
-            packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.github/actions/route-runner
         with:
