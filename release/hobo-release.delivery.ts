@@ -1,6 +1,6 @@
 // HoBo's own release train as delivery-as-code (docs/design/release-channels.md).
 //
-// One Yard, `hobo-release`, with a candidate and a stable Camp per artifact
+// One Yard per provider, with a candidate and a stable Camp per artifact
 // family. Every CD command reads it as topology:
 //   hobo deploy camp list --yard release/hobo-release.delivery.ts
 //   hobo deploy pipeline apply --file release/hobo-release.delivery.ts
@@ -28,6 +28,12 @@ const PROVIDER = {
 	npm: "@hobo/provider-npm",
 	oci: "@hobo/provider-oci-registry",
 	pages: "@hobo/provider-github",
+} as const satisfies Record<Family, string>;
+
+const YARD = {
+	npm: "hobo-release-npm",
+	oci: "hobo-release-oci",
+	pages: "hobo-release-pages",
 } as const satisfies Record<Family, string>;
 
 // Where each family publishes. Shared by both channels: candidate realizes the
@@ -130,7 +136,7 @@ function releaseCampId(family: Family, channel: Channel): string {
 export const camps = RELEASE_FAMILIES.flatMap((family) =>
 	RELEASE_CHANNELS.map((channel) => ({
 		campId: releaseCampId(family, channel),
-		yardId: RELEASE_YARD,
+		yardId: YARD[family],
 		provider: PROVIDER[family],
 		envType: channel,
 		labels: {
