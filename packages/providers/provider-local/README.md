@@ -10,9 +10,10 @@ products with no cloud account, key, or call in reach.
 
 The denominator is the localhost seed in `@hobo/yards`
 (`seedLocalhostYard`, ADR-0157) with every host capability present: nine
-distinct `local:*` products over eleven profile rows. `test/definition.test.ts`
-derives both sides from the seed itself — claimed products plus
-`LOCAL_ENGINE_GAPS` must equal the seed exactly.
+distinct `local:*` products over eleven profile rows. The
+`first-party-catalog.test.ts` suite in `@hobo/hobo` derives both sides from the
+seed itself — claimed products plus `LOCAL_ENGINE_GAPS` must equal the seed
+exactly.
 
 ## Claimed (engine traced in `@hobo/runtime-local`, 2026-11-08)
 
