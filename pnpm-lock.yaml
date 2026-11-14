@@ -3281,6 +3281,9 @@ importers:
 
   packages/storage-sqlite:
     dependencies:
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/core':
         specifier: workspace:*
         version: link:../core

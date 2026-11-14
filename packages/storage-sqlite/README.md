@@ -43,3 +43,20 @@ this does not relax the single active storage-owner deployment model.
 clock reopen and independent handles; the generated API execution test covers
 workflow resume after reopen. EventEnvelope wire records and their Protobuf/CUE
 constraints are unchanged; the storage journal tests exercise the append port.
+
+## Quorum-backed EventStore
+
+`createQuorumEventStore` replays a majority-chosen immutable command journal into
+a temporary SQLite view. It preserves event positions, transactional effects and
+snapshots across a surviving provider majority. Optional non-expiring claims
+protect configured stream prefixes and subscription checkpoints; transferring a
+claim requires independently verified stop evidence.
+
+A host must independently enroll the provider failure domains, fund and
+authorize every voter and any recovery, and fence downstream effects. The adapter
+does not itself establish those authorities or make external effects safe.
+Replay is bounded by configured entry and byte limits. `assertQuorumEventStore`
+recognizes an instance created by this module. `quorumEventStoreIdentity` reports
+its immutable construction metadata, and `assertQuorumEventStoreJournal` checks
+the attached journal by identity without exposing write authority. None of
+these verify the fleet's provider enrollment, funding or health.
