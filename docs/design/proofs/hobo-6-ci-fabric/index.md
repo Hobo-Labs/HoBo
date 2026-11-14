@@ -62,7 +62,9 @@ live in [`fixtures.yml`](../../../../.github/workflows/fixtures.yml)
 instead of the whole PR gate, and `hobo-ci.yml` no longer retriggers on label
 events at all; the weekly schedule skips `pr-gate` (it exists for `main-gate`
 and the fixture sweeps); every job carries explicit `timeout-minutes` (≤20 on
-push/PR/merge_group; weekly `main-gate` schedule may use 60) instead of the
+push/PR/merge_group; weekly `main-gate` schedule may use 60; the two
+`fleet-integration.yml` jobs, which provision the fleet's sandbox runtime,
+NATS and relay (ADR-0183), are documented exceptions at 60 and 45) instead of the
 360-minute default; `scripts/test/workflow-job-timeouts.test.ts` fails CI when a
 job omits a timeout or exceeds that cap; gate jobs use Turbo remote cache when
 configured, otherwise `actions/cache` on `.turbo/cache` keyed by commit with an
