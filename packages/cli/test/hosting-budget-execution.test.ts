@@ -342,7 +342,10 @@ describe("production CLI budget execution", () => {
 		});
 		expect(subjects).toEqual(["tenant:hosting"]);
 		expect(JSON.parse(planned.stdout).data.changes).toBeUndefined();
-		const unsupported = await cli.run(["plan", "--mode", "complete", "--json"], { cwd });
+		const unsupported = await cli.run(
+			["plan", "--mode", "complete", "--json"],
+			{ cwd },
+		);
 		expect(JSON.parse(unsupported.stdout)).toMatchObject({
 			ok: false,
 			code: "HOBO_DEPLOYMENT_MODE_UNSUPPORTED",

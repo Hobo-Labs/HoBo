@@ -80,7 +80,9 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 				preflightRuntime?.defaultHostingBudgetId ??
 				runtime?.defaultHostingBudgetId;
 			const hosted = Boolean(
-				preflightRuntime || budgetId || runtime?.hostingBudgetRequired ||
+				preflightRuntime ||
+					budgetId ||
+					runtime?.hostingBudgetRequired ||
 					manifestHostingPolicy(bindle).required,
 			);
 			if (flags.mode && hosted)
@@ -160,7 +162,9 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 						status: "unavailable",
 						code: "HOBO_PREVIEW_UNAVAILABLE",
 						message: `hobo plan: ${error instanceof Error ? error.message : String(error)}`,
-						remediation: ["Wait for the current deployment to converge, then retry the preview."],
+						remediation: [
+							"Wait for the current deployment to converge, then retry the preview.",
+						],
 						data: { command: "plan", deploymentId },
 					};
 				}
@@ -177,7 +181,7 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 					dependencyOrder: rendered.dependencyOrder,
 					resources: rendered.resources,
 					plan: rendered.plan,
-					...(changes ? { changes } : {}),
+					changes,
 				},
 			};
 		},
