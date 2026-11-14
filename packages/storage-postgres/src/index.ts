@@ -56,6 +56,7 @@ export {
 	createPostgresEventStore,
 	type PostgresEventStore,
 	type PostgresEventStoreOptions,
+	type SnapshotWriteOptions,
 	type StoreHealth,
 } from "./store.js";
 export type { CheckpointLogEntry } from "./subscriptions.js";
