@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* The shadcn preset's class names, scanned from the package build. */
+@source "../../node_modules/@json-render/shadcn/dist";
+
+/*
+ * HoBo Rubberhose tokens (DESIGN.md in this package, from site/DESIGN.md):
+ * ink on paper, thick outlines, hard sticker shadows, no soft elevation.
+ * shadcn reads these variables, so every preset component takes the identity.
+ */
+@theme inline {
+	--color-background: var(--paper);
+	--color-foreground: var(--ink);
+	--color-card: var(--paper);
+	--color-card-foreground: var(--ink);
+	--color-primary: var(--ink);
+	--color-primary-foreground: var(--paper);
+	--color-secondary: var(--cream);
+	--color-secondary-foreground: var(--ink);
+	--color-muted: var(--cream);
+	--color-muted-foreground: var(--mute);
+	--color-accent: var(--cream);
+	--color-accent-foreground: var(--ink);
+	--color-destructive: var(--spark);
+	--color-border: var(--ink);
+	--color-input: var(--ink);
+	--color-ring: var(--spark);
+	--radius-lg: 0.25rem;
+	--radius-md: 0.25rem;
+	--radius-sm: 0.125rem;
+}
+
+:root {
+	--ink: #101010;
+	--paper: #ffffff;
+	--cream: #f2f1ec;
+	--mute: #4a4a46;
+	--spark: #c5301c;
+	--go: #14672c;
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--ink: #f2f1ec;
+		--paper: #0a0a0a;
+		--cream: #111111;
+		--mute: #b9b8b1;
+		color-scheme: dark;
+	}
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	padding: 2rem 1rem;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: system-ui, sans-serif;
+	line-height: 1.65;
+}
+
+/* Thick ink outline and a hard offset shadow on every card and button. */
+[data-slot="card"] {
+	border: 3px solid var(--ink);
+	box-shadow: 6px 6px 0 var(--ink);
+}
+
+[data-slot="button"] {
+	border: 2px solid var(--ink);
+	box-shadow: 3px 3px 0 var(--ink);
+}
+
+[data-slot="button"]:focus-visible {
+	outline: 3px solid var(--spark);
+	outline-offset: 2px;
+}
+
+.hobo-connect-loading,
+.hobo-connect-error {
+	max-width: 32rem;
+	margin: 4rem auto;
+	text-align: center;
+}
+
+.hobo-connect-error {
+	color: var(--spark);
+}
+
+a {
+	color: var(--ink);
+	font-weight: 600;
+	text-decoration: underline;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 3px;
+}
