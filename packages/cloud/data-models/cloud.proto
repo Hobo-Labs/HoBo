@@ -272,6 +272,8 @@ message ResourceProvisioningRecord {
   string resource_id = 2;
   string exec_id = 3;
   string program_hash = 4;
+  // desiredSpecHash of the resource being applied; absent on legacy facts.
+  optional string spec_hash = 5;
 }
 
 // resource.Provisioned: apply ok, outputs recorded (unblocks dependents).
@@ -280,6 +282,8 @@ message ResourceProvisionedRecord {
   string resource_id = 2;
   map<string, string> outputs = 3;
   string exec_id = 4;
+  // desiredSpecHash the resource now matches (upsert/no-op detection).
+  optional string spec_hash = 5;
 }
 
 // resource.Failed: apply error with classified reason + no-go threshold flag.

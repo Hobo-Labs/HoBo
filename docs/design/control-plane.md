@@ -49,6 +49,7 @@ stateDiagram-v2
   Failed --> Compensating: saga rollback
   Compensating --> Destroyed
   Destroying --> Destroyed
+  Destroyed --> Provisioning: up declares it again
   Destroyed --> [*]
 ```
 
@@ -58,6 +59,33 @@ stateDiagram-v2
 3. If empty → emit nothing (converged). If non-empty → emit `resource.Provisioning`/`UpdateRequested`, dispatch an `IacProgram` to an Executor.
 4. On `exec.Succeeded` → record outputs, emit `resource.Provisioned`. On `exec.Failed` → emit `resource.Failed` with classified error (retryable vs fatal, see [Plan 5](./reliability-observability-cost.md#plan-05)).
 5. The actor is **edge-triggered** by events and **level-triggered** by a periodic resync (drift). Both paths run the same loop → reconciliation is convergent and safe to repeat (the controller pattern, Kubernetes-style, but event-sourced).
+
+**Desired State Reconciliation (upsert, idempotent deployment, modes).** `up` is
+the same operation Pulumi calls `up`, Terraform splits into `plan`/`apply` and
+Bicep calls an idempotent deployment: declare the goal, compare it with what the
+log recorded, apply only the difference
+(`packages/cloud/src/orchestrator/desired-state.ts`).
+
+- Every declared resource has a `desiredSpecHash` (port, provider, product,
+  strategy, region, realization parameters, sorted deps; never the deployment
+  id). It is recorded on `resource.Provisioning` and `resource.Provisioned`.
+- **Upsert:** never provisioned, or `Destroyed` → create; `Provisioned` from a
+  different hash → `Updating` (in place) → `Provisioned`; same hash → no-op. A
+  `Provisioned` fact older than spec hashes is treated as converged, so an
+  upgrade never re-applies an unchanged estate.
+- **Idempotent:** an unchanged re-run appends no fact, calls no provider and
+  records no second `deployment.Deployed`.
+- **Epochs:** a run sees only the no-go failures after the last
+  `deployment.Deployed`/`deployment.RolledBack`, so a rolled-back `up` or a
+  `down` never blocks the next `up`. A crashed run resumes in its own epoch.
+- **Modes** (Bicep's names): `incremental` (default) keeps resources the log
+  provisioned but the plan no longer declares and reports them `retain`;
+  `complete` destroys them, dependents first, after the declared resources
+  converge. An orphan with no recorded `deployment.Planned` is reported
+  unprunable rather than guessed at.
+- **What-if:** `planDeploymentChanges(plan, events, mode)` is the pure diff
+  (`create` / `update` / `no-op` / `delete` / `retain`) that `hobo plan` and
+  `hobo up --what-if` print and every run reports as `changes`.
 
 **Why actors, not a monolithic engine:** per-resource isolation means one stuck provider call can't block the whole deploy; single-writer leases ([Plan 5](./reliability-observability-cost.md#plan-05)) prevent two reconciles racing on the same resource; and each actor's stream is an independent audit/replay unit.
 
