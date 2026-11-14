@@ -14,6 +14,8 @@ definition `catalogHashOf`.
 An SDK `b.bucket()` is collected as data with an object-storage paradigm. The
 planner lowers it to the durable `objectStore` capability, so provider-owned
 bucket implementations can satisfy it without an app selecting a provider.
+SDK key-value, queue and topic declarations likewise keep their distinct
+capabilities without inventing consistency or message-delivery guarantees.
 
 ## Budget-aware hosting placement
 

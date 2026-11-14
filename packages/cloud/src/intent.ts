@@ -43,6 +43,14 @@ function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
 	// generic `hobo:data` collector port.
 	if ((port === "hobo:data" || port === "data") && paradigm === "object")
 		return { capabilityPort: "objectStore", require: ["durable"] };
+	// An SDK key-value declaration does not assert eventual consistency.
+	// Let its explicit capability requirements select the required guarantees.
+	if ((port === "hobo:data" || port === "data") && paradigm === "key-value")
+		return { capabilityPort: "kv", require: [] };
+	if ((port === "hobo:data" || port === "data") && paradigm === "queue")
+		return { capabilityPort: "queue", require: [] };
+	if ((port === "hobo:data" || port === "data") && paradigm === "topic")
+		return { capabilityPort: "topic", require: [] };
 	for (const rule of DATA_PORT_RULES) {
 		if (rule.match(port)) {
 			return { capabilityPort: rule.capabilityPort, require: rule.require };

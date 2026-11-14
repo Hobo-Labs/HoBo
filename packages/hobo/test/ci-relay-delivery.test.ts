@@ -11,7 +11,7 @@ import type { ManifestV1 } from "@hobo/bindles";
 import { FreightSourceRecordSchema } from "@hobo/cd";
 import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import { capability, type HttpTransport } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -241,12 +241,41 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(provider.capabilities.map((capability) => capability.port)).toEqual([
 			"compute",
 			"data",
+			"kv",
+			"queue",
 		]);
 		const [compute] = provider.capabilities;
 		expect(compute?.satisfies({ port: "database" }).kind).toBe("none");
 		expect(
 			compute?.satisfies({ port: "compute", features: ["gpu"] }).kind,
 		).toBe("partial");
+		for (const port of ["kv", "queue"]) {
+			const entry = provider.capabilities.find((item) => item.port === port);
+			expect(entry?.satisfies({ port })).toEqual({ kind: "full" });
+			expect(entry?.satisfies({ port, features: ["unlisted"] })).toEqual({
+				kind: "partial",
+				missing: ["unlisted"],
+			});
+		}
+	});
+
+	it("does not advertise key-value or queue ports without matching Yard bindings", () => {
+		const withoutDataPorts: Yard = {
+			...yard,
+			bindings: yard.bindings.filter(
+				(row) =>
+					row.profile !== capability.kv.keyValue &&
+					row.profile !== capability.kv.redisCompatible &&
+					row.profile !== capability.kv.valkey &&
+					row.profile !== capability.queue.atLeastOnce &&
+					row.profile !== capability.queue.fifo,
+			),
+		};
+		expect(
+			relayYardRegistryProvider(withoutDataPorts).capabilities.map(
+				(entry) => entry.port,
+			),
+		).toEqual(["compute", "data"]);
 	});
 });
 
