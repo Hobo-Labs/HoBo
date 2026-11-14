@@ -60,6 +60,7 @@ export const LIVE_PACKAGES: readonly string[] = [
 	"@hobo/data-postgres",
 	"@hobo/data-mongodb",
 	"@hobo/trails",
+	"@hobo/broker",
 ];
 
 const PINNED_IMAGE = /^[a-z0-9][a-z0-9./-]*:[\w.-]+@sha256:[0-9a-f]{64}$/u;

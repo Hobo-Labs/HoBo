@@ -1841,6 +1841,7 @@ jobs:
               packages/data-postgres/test/engine-hardening-live.test.ts \
               packages/data-postgres/test/native-live.test.ts \
               packages/data-postgres/test/cross-engine-live.test.ts \
+              packages/broker/test/budget-fleet-postgres.test.ts \
               packages/data-mongodb/test/live.test.ts \
               packages/data-mongodb/test/cross-engine-live.test.ts \
               packages/trails/test/data-patterns-e2e.test.ts \
@@ -1866,6 +1867,7 @@ jobs:
           --filter=@hobo/data-postgres...
           --filter=@hobo/data-mongodb...
           --filter=@hobo/trails...
+          --filter=@hobo/broker...
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       # Sibling containers on the host engine, reached at their bridge address
       # (scripts/ci/data-live-servers.mts). The script prints the two URLs the

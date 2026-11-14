@@ -21,18 +21,22 @@ import { createOperationalFleetBudgetAdmissionAuthority } from "../src/budget-fl
 import { createRecoveryActorFixture } from "./support/recovery-actor.js";
 
 const socket = process.env.HOBO_TEST_JOURNAL_PG_SOCKET;
+const url = process.env.HOBO_TEST_POSTGRES_URL;
+const live = socket || url ? describe : describe.skip;
 const NOW = "2026-10-30T12:00:00Z",
 	UNTIL = "2026-10-31T00:00:00Z";
 
-describe.skipIf(!socket)("majority Broker on PostgreSQL voter records", () => {
+live("majority Broker on PostgreSQL voter records", () => {
 	it("serializes holds and recovers after an isolated voter failure and a lost acknowledgement", async () => {
-		const pool = new Pool({
-			host: socket,
-			port: 25471,
-			user: "hobo_test",
-			database: "postgres",
-			max: 8,
-		});
+		const pool = url
+			? new Pool({ connectionString: url, max: 8 })
+			: new Pool({
+					host: socket,
+					port: 25471,
+					user: "hobo_test",
+					database: "postgres",
+					max: 8,
+				});
 		const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
 		const members: readonly ImmutableJournalMember[] = ["a", "b", "c"].map(
 			(id) => ({
