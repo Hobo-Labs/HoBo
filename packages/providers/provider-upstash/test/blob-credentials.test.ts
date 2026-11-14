@@ -150,7 +150,9 @@ describe("Upstash Blob scoped credentials", () => {
 		f.setIntercept(async () => f.rejectGuard());
 		await expect(f.cache.resolveCredentials()).rejects.toThrow("unavailable");
 		expect(f.requests()).toBe(1);
-		await expect(f.cache.resolveCredentials()).rejects.toThrow("budget-unavailable");
+		await expect(f.cache.resolveCredentials()).rejects.toThrow(
+			"budget-unavailable",
+		);
 		expect(f.requests()).toBe(1);
 	});
 
