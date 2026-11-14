@@ -183,7 +183,7 @@ describe("main full gate workspace sharding", () => {
 		assert.match(deps, /^    needs: \[route\]$/mu);
 		assert.match(
 			deps,
-			/^    if: \$\{\{ !cancelled\(\) && github\.event_name == 'pull_request' \}\}$/mu,
+			/^    if: \$\{\{ !cancelled\(\) && needs\.route\.result == 'success' && github\.event_name == 'pull_request' \}\}$/mu,
 		);
 		const plan = job("main-gate-plan");
 		const check = plan.slice(
