@@ -438,6 +438,7 @@ export type {
 	ReadAllOptions,
 	ResetCheckpointOptions,
 	SnapshotRecord,
+	SnapshotWriteOptions,
 	StreamFilter,
 	StreamHead,
 	Subscription,

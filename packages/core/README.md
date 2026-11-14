@@ -79,6 +79,9 @@ is in `@hobo/cloud-providers`. See
 
 `ports/durable-lifecycle-gate.ts` (`createDurableLifecycleGate`) runs every
 transition under an `AsyncActorLease` on its `hosting-lifecycle-gate:` stream.
+The gate supplies that lease's fence token when it writes a checkpoint
+snapshot. A store used for protected streams must enforce the live token at
+commit; accepting the option alone is not evidence of enforcement.
 Two lease rules keep a participant from leaking:
 
 - **A failed release never undoes a commit.** After the locked work (for

@@ -94,6 +94,19 @@ function fixture() {
 				throw new Error("wrong stream fence");
 			return store.commit(request);
 		},
+		async snapshot(
+			streamId: string,
+			state: JsonValue,
+			seq: number,
+			opts?: { readonly fenceToken?: bigint },
+		) {
+			if (
+				opts?.fenceToken === undefined ||
+				leases.get(streamId) !== opts.fenceToken
+			)
+				throw new Error("wrong snapshot fence");
+			return store.snapshot(streamId, state, seq);
+		},
 	};
 	const options = {
 		scope: {

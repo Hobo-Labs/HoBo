@@ -373,7 +373,9 @@ export function createDurableLifecycleGate(
 					],
 				});
 				await lease.revalidate();
-				await options.store.snapshot(streamId, value, current.seq + 1);
+				await options.store.snapshot(streamId, value, current.seq + 1, {
+					fenceToken: lease.fenceToken,
+				});
 			} catch {
 				// The operation is already committed. A later request replays the
 				// old snapshot and can retry the checkpoint without losing work.
