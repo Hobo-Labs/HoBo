@@ -520,11 +520,30 @@ export function createImmutableJournalRollover(options: {
 		const replies = await Promise.allSettled(
 			replicas.map((replica) => timed(replica.seal(intent.head))),
 		);
-		const confirmed = replies.filter(
+		let confirmed = replies.filter(
 			(reply) =>
 				reply.status === "fulfilled" &&
 				(reply.value === "sealed" || reply.value === "duplicate"),
 		).length;
+		if (confirmed < old.quorum) {
+			// A failed or timed-out response may already have sealed that exact
+			// head. The provider's atomic, idempotent seal can be safely retried;
+			// never count both replies from one member as separate votes.
+			const uncertain = replicas.filter(
+				(_, index) => replies[index]?.status === "rejected",
+			);
+			if (uncertain.length > 0) {
+				await permitted("seal");
+				const retried = await Promise.allSettled(
+					uncertain.map((replica) => timed(replica.seal(intent.head))),
+				);
+				confirmed += retried.filter(
+					(reply) =>
+						reply.status === "fulfilled" &&
+						(reply.value === "sealed" || reply.value === "duplicate"),
+				).length;
+			}
+		}
 		if (confirmed < old.quorum)
 			throw new JournalRolloverError("seal-unconfirmed");
 	}

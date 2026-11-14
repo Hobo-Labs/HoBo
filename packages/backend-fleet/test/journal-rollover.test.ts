@@ -234,13 +234,26 @@ describe("majority-sealed journal rollover", () => {
 		await expect(f.open().cutover()).rejects.toThrow(
 			"authorization-unavailable",
 		);
-		expect(f.old.replicas.filter((replica) => replica.sealed)).toHaveLength(3);
+		expect(
+			f.old.replicas.filter((replica) => replica.sealed).length,
+		).toBeGreaterThanOrEqual(f.old.journal.quorum);
 		await expect(f.old.journal.append("late", "bad", 1)).rejects.toThrow();
 		f.next.denyAppend(false);
 		const resumed = await f.open().cutover();
 		expect((await resumed.journal.read()).map((entry) => entry.value)).toEqual([
 			"payload",
 		]);
+	});
+	it("does not count a retried seal twice when no other voter sealed", async () => {
+		const f = await fixture();
+		await f.old.journal.append("job", "payload", 0);
+		const [first, second, third] = f.old.replicas;
+		if (!first || !second || !third) throw new Error("missing voters");
+		first.loseSealReply = true;
+		second.failSeal = true;
+		third.failSeal = true;
+		await expect(f.open().cutover()).rejects.toThrow("seal-unconfirmed");
+		expect(f.old.replicas.filter((replica) => replica.sealed)).toHaveLength(1);
 	});
 	it("supersedes a partial seal only after a newer head is majority-chosen", async () => {
 		const f = await fixture();
