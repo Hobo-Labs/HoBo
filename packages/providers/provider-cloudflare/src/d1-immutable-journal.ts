@@ -506,8 +506,7 @@ export function createD1ImmutableJournalReplica(
 					? "duplicate"
 					: "conflict";
 			// No entry at this epoch under a seal: the append can never apply.
-			if (observed.seal)
-				throw new D1ImmutableJournalError("generation-sealed");
+			if (observed.seal) throw new D1ImmutableJournalError("generation-sealed");
 			throw new D1ImmutableJournalError("write-outcome-unknown");
 		},
 		async readDocument(value) {
