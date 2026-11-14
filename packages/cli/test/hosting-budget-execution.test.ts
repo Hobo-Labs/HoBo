@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseManifest } from "@hobo/bindles";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
+	type PlanBindingAuthority,
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 import { createInMemoryActorHost } from "@hobo/data";
@@ -15,9 +16,11 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	createYardClient,
+	planHostingAuthoritatively,
 	type YardRuntime,
 	type YardSession,
 } from "../src/cloud/yard-client.js";
+import { createHoboCli, createPlanCommand } from "../src/index.js";
 import { parseArgv } from "../src/shell/parse.js";
 
 const dispose: (() => void)[] = [];
@@ -161,6 +164,16 @@ function fixture() {
 		hostingBudgetAuthority: authority,
 		defaultHostingBudgetId: "hosting",
 		hostingBudgetRequired: true,
+		hostingPlanBinding: async () => ({
+			yard: { yardId: "yard", providerId: "host", bindings: [] },
+			definitions: [],
+			// SAFETY: this fixture declares no profile-specific requirements.
+			profiles: {} as PlanBindingAuthority["profiles"],
+			// SAFETY: this fixture declares no profile-specific requirements.
+			policy: {} as PlanBindingAuthority["policy"],
+			nowMs: 1000,
+			requirements: {},
+		}),
 		hostingExecution: {
 			up: async ({ admission }) => {
 				supervised++;
@@ -190,6 +203,111 @@ function fixture() {
 	};
 }
 describe("production CLI budget execution", () => {
+	it("plans through read-only hosting authority using the authenticated session", async () => {
+		const fx = fixture();
+		const authority = fx.runtime.hostingBudgetAuthority;
+		if (!authority) throw new Error("missing hosting authority");
+		const cwd = mkdtempSync(join(tmpdir(), "cli-hosting-plan-"));
+		dispose.push(() => rmSync(cwd, { recursive: true, force: true }));
+		writeFileSync(
+			join(cwd, "hobo.bindle.json"),
+			JSON.stringify(manifest.value),
+		);
+		const subjects: string[] = [];
+		const preflightRuntime = {
+			registry: {
+				...fx.runtime.registry,
+				refresh: async () => {
+					throw new Error("read-only planning must not refresh mutable state");
+				},
+			},
+			hostingBudgetAuthority: {
+				persistence: authority.persistence,
+				resolve: async (request: Parameters<typeof authority.resolve>[0]) => {
+					subjects.push(`${request.tenantId}:${request.budgetId}`);
+					return authority.resolve(request);
+				},
+			},
+			defaultHostingBudgetId: "hosting",
+			hostingBudgetRequired: true,
+		};
+		const missingSession = createHoboCli({
+			commands: { plan: createPlanCommand({ preflightRuntime }) },
+		});
+		const rejected = await missingSession.run(["plan", "--json"], { cwd });
+		expect(JSON.parse(rejected.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_HOSTING_SESSION_REQUIRED",
+		});
+		expect(subjects).toEqual([]);
+		const foreignTarget = await missingSession.run(
+			["--camp", "another-camp", "plan", "--json"],
+			{ cwd },
+		);
+		expect(JSON.parse(foreignTarget.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_PLAN_TARGET_UNAVAILABLE",
+		});
+		expect(subjects).toEqual([]);
+		const unbound = createHoboCli({
+			commands: { plan: createPlanCommand({ preflightRuntime, session }) },
+		});
+		const missingBinding = await unbound.run(["plan", "--json"], { cwd });
+		expect(JSON.parse(missingBinding.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_PLAN_REJECTED",
+		});
+		expect(subjects).toEqual([]);
+		const binding: PlanBindingAuthority = {
+			yard: { yardId: "yard", providerId: "host", bindings: [] },
+			definitions: [],
+			// SAFETY: no resource has a profile requirement in this fixture.
+			profiles: {} as PlanBindingAuthority["profiles"],
+			// SAFETY: no resource has a profile requirement in this fixture.
+			policy: {} as PlanBindingAuthority["policy"],
+			nowMs: 1000,
+			requirements: {},
+		};
+		const boundRuntime = {
+			...preflightRuntime,
+			hostingPlanBinding: async () => {
+				expect(subjects).toEqual([]);
+				return binding;
+			},
+		};
+		await expect(
+			planHostingAuthoritatively(
+				{
+					...boundRuntime,
+					hostingPlanBinding: async () => {
+						throw new Error("untrusted session");
+					},
+				},
+				manifest,
+				{ deploymentId: "one", session },
+			),
+		).rejects.toThrow("untrusted session");
+		expect(subjects).toEqual([]);
+		const cli = createHoboCli({
+			commands: {
+				plan: createPlanCommand({ preflightRuntime: boundRuntime, session }),
+			},
+		});
+		const planned = await cli.run(["plan", "--region", "us", "--json"], {
+			cwd,
+		});
+		expect(JSON.parse(planned.stdout)).toMatchObject({
+			ok: true,
+			data: { command: "plan", resources: [{ name: "app" }] },
+		});
+		expect(subjects).toEqual(["tenant:hosting"]);
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
+	});
 	it("forwards authoritative admission to the supervisor without legacy provider effects", async () => {
 		const fx = fixture();
 		expect(
@@ -232,6 +350,63 @@ describe("production CLI budget execution", () => {
 			).ok,
 		).toBe(true);
 		expect(fx.counts().reservations).toBe(0);
+	});
+	it("refuses budget-required planning without a host Yard binding", async () => {
+		const fx = fixture();
+		const { hostingPlanBinding: _removed, ...runtime } = fx.runtime;
+		const result = await createYardClient(runtime).planAuthoritatively(
+			manifest,
+			{ deploymentId: "one", session },
+		);
+		expect(result).toMatchObject({ ok: false });
+		if (!result.ok) expect(result.reason).toContain("trusted Yard binding");
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
+	});
+	it("checks trusted Yard product ownership during authoritative planning", async () => {
+		const fx = fixture();
+		let checked = 0;
+		const binding: PlanBindingAuthority = {
+			yard: {
+				yardId: "yard",
+				providerId: "host",
+				bindings: [{ profile: "api.http/v1", productId: "foreign.product/v1" }],
+			},
+			definitions: [],
+			// SAFETY: ownership validation rejects the foreign product before profile selection or policy evaluation.
+			profiles: {} as PlanBindingAuthority["profiles"],
+			// SAFETY: this fixture cannot reach policy evaluation after the ownership rejection.
+			policy: {} as PlanBindingAuthority["policy"],
+			nowMs: 1000,
+			requirements: {},
+		};
+		const client = createYardClient({
+			...fx.runtime,
+			hostingPlanBinding: async ({ deploymentId, session: subject }) => {
+				checked++;
+				expect(deploymentId).toBe("one");
+				expect(subject).toEqual(session);
+				return binding;
+			},
+		});
+		const result = await client.planAuthoritatively(manifest, {
+			deploymentId: "one",
+			session,
+		});
+		expect(result.ok).toBe(false);
+		if (!result.ok)
+			expect(result.reason).toContain("Yard products must belong");
+		expect(checked).toBe(1);
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
 	});
 	it("uses the authored shared objective when resolving authoritative planning evidence", async () => {
 		const fx = fixture();

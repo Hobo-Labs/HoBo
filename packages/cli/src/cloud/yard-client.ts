@@ -44,6 +44,7 @@ import {
 	manifestHostingPolicy,
 	type OrchestratorDeps,
 	type OrchestratorResult,
+	type PlanBindingAuthority,
 	type PlannerRegistry,
 	type PlanRemediation,
 	type PlanResult,
@@ -85,6 +86,12 @@ export interface YardRuntime {
 	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 	readonly defaultHostingBudgetId?: string;
 	readonly hostingBudgetRequired?: boolean;
+	/** Trusted host resolves Yard binding and policy evidence for a deployment. */
+	readonly hostingPlanBinding?: (request: {
+		readonly deploymentId: string;
+		readonly bindle: ManifestV1;
+		readonly session: YardSession;
+	}) => Promise<PlanBindingAuthority>;
 	/** @hobo/cd desired-state delivery (D13). Composed by WP18; absent = legacy direct path. */
 	readonly delivery?: YardDelivery;
 	/** The production hosting supervisor owns provider effects and observed teardown. */
@@ -101,6 +108,18 @@ export interface YardRuntime {
 	};
 }
 
+/** The read-only authority needed to evaluate a hosting plan. */
+export interface YardPreflightRuntime {
+	readonly registry: PlannerRegistry;
+	readonly hostingBudgetAuthority?: Pick<
+		SharedHostingBudgetAuthority,
+		"persistence" | "resolve"
+	>;
+	readonly defaultHostingBudgetId?: string;
+	readonly hostingBudgetRequired?: boolean;
+	readonly hostingPlanBinding?: YardRuntime["hostingPlanBinding"];
+}
+
 export interface DeployConfig {
 	readonly objective?: string;
 	readonly region?: string;
@@ -114,6 +133,10 @@ export interface PlanRenderedSuccess {
 	readonly plan: DeploymentPlan;
 	readonly resources: DeploymentPlan["resources"];
 	readonly dependencyOrder: string[];
+	readonly resourceProviderAccounts?: readonly {
+		readonly resourceName: string;
+		readonly providerAccountId: string;
+	}[];
 }
 
 export interface PlanRenderedRejection {
@@ -364,6 +387,100 @@ function planConfig(
 	};
 }
 
+/** Plan against the same financial and binding authorities used for admission,
+ * without exposing the gateway, event store, broker, or provider effects. */
+export async function planHostingAuthoritatively(
+	runtime: YardPreflightRuntime,
+	bindle: ManifestV1,
+	{
+		deploymentId,
+		session,
+		config,
+		requireYardBinding = runtime.hostingBudgetRequired === true,
+	}: {
+		readonly deploymentId: string;
+		readonly session: YardSession;
+		readonly config?: DeployConfig;
+		/** A hosted preflight must identify its provider boundary. */
+		readonly requireYardBinding?: boolean;
+	},
+): Promise<PlanRendered> {
+	const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
+	const authority = runtime.hostingBudgetAuthority;
+	if (
+		!budgetId ||
+		!authority?.resolve ||
+		authority.persistence !== "durable-cas"
+	)
+		return {
+			ok: false,
+			deploymentId,
+			reason: "authoritative hosting budget is not configured",
+			remediations: [],
+		};
+	// The host binding authenticates the session and identifies the selected
+	// Yard. Resolve it before reading budget evidence for the supplied tenant.
+	const binding = await runtime.hostingPlanBinding?.({
+		deploymentId,
+		bindle,
+		session,
+	});
+	if (requireYardBinding && !binding)
+		return {
+			ok: false,
+			deploymentId,
+			reason: "trusted Yard binding is not configured",
+			remediations: [],
+		};
+	const evidence = await authority.resolve({
+		budgetId,
+		tenantId: session.tenant,
+		bindle,
+		objective:
+			config?.objective ??
+			manifestHostingPolicy(bindle).budgetPolicy?.objective ??
+			"min-cost",
+	});
+	if (
+		evidence.budget.tenantId !== session.tenant ||
+		evidence.budget.budgetId !== budgetId
+	)
+		throw new Error("hosting evidence belongs to another tenant or budget");
+	const result = planDeployment(
+		bindle,
+		{
+			...planConfig(deploymentId, config),
+			hostingBudget: evidence,
+			...(binding ? { binding } : undefined),
+		},
+		runtime.registry,
+	);
+	return result.ok
+		? {
+				ok: true,
+				deploymentId,
+				planHash: result.planHash,
+				plan: result.plan,
+				resources: result.plan.resources,
+				dependencyOrder: result.plan.dependencyOrder,
+				...(result.hostingCommitment
+					? {
+							resourceProviderAccounts:
+								result.hostingCommitment.allocations.map((allocation) => ({
+									resourceName: allocation.resourceName,
+									providerAccountId: allocation.providerAccountId,
+								})),
+						}
+					: undefined),
+			}
+		: {
+				ok: false,
+				deploymentId,
+				reason: result.reason,
+				remediations: result.remediations,
+			};
+}
+
 export function createYardClient(runtime: YardRuntime): YardClient {
 	const gatewayDeps: GatewayDeps = {
 		store: runtime.store,
@@ -396,54 +513,8 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		: undefined;
 
 	const client: YardClient = {
-		async planAuthoritatively(bindle, { deploymentId, session, config }) {
-			const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
-			const authority = runtime.hostingBudgetAuthority;
-			if (
-				!budgetId ||
-				!authority?.resolve ||
-				authority.persistence !== "durable-cas"
-			)
-				return {
-					ok: false,
-					deploymentId,
-					reason: "authoritative hosting budget is not configured",
-					remediations: [],
-				};
-			const evidence = await authority.resolve({
-				budgetId,
-				tenantId: session.tenant,
-				bindle,
-				objective:
-					config?.objective ??
-					manifestHostingPolicy(bindle).budgetPolicy?.objective ??
-					"min-cost",
-			});
-			if (
-				evidence.budget.tenantId !== session.tenant ||
-				evidence.budget.budgetId !== budgetId
-			)
-				throw new Error("hosting evidence belongs to another tenant or budget");
-			const result = planDeployment(
-				bindle,
-				{ ...planConfig(deploymentId, config), hostingBudget: evidence },
-				runtime.registry,
-			);
-			return result.ok
-				? {
-						ok: true,
-						deploymentId,
-						planHash: result.planHash,
-						plan: result.plan,
-						resources: result.plan.resources,
-						dependencyOrder: result.plan.dependencyOrder,
-					}
-				: {
-						ok: false,
-						deploymentId,
-						reason: result.reason,
-						remediations: result.remediations,
-					};
+		planAuthoritatively(bindle, request) {
+			return planHostingAuthoritatively(runtime, bindle, request);
 		},
 		plan(bindle, { deploymentId, config }) {
 			const result = pureplan(bindle, deploymentId, config);

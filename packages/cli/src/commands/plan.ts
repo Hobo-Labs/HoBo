@@ -2,13 +2,23 @@ import { manifestHostingPolicy } from "@hobo/cloud";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
-import { createYardClient, type YardRuntime } from "../cloud/yard-client.js";
+import {
+	createYardClient,
+	planHostingAuthoritatively,
+	type YardPreflightRuntime,
+	type YardRuntime,
+	type YardSession,
+} from "../cloud/yard-client.js";
 import type { CommandModule } from "../shell/registry.js";
 
 export interface PlanCommandDeps {
 	// Injected Yard runtime (tests / dev wiring). Its provider registry drives the
 	// pure Planner; store/executor/broker are unused by the read-only plan path.
 	readonly runtime?: YardRuntime;
+	/** Production planning uses the read-only hosting authority, not the
+	 * mutation-capable Yard runtime. */
+	readonly preflightRuntime?: YardPreflightRuntime;
+	readonly session?: YardSession;
 }
 
 // `hobo plan` — dry-run the up decision (read-only). It parses the project's
@@ -18,12 +28,28 @@ export interface PlanCommandDeps {
 // non-zero. With no runtime injected (adapter-free default), it stays a stub.
 export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 	return {
-		implemented: Boolean(deps.runtime),
-		run: async ({ context, flags }) => {
-			const { runtime } = deps;
-			if (!runtime) {
+		implemented: Boolean(deps.runtime || deps.preflightRuntime),
+		run: async ({ context, flags, args }) => {
+			const { runtime, preflightRuntime } = deps;
+			if (!runtime && !preflightRuntime) {
 				return stubResult("plan");
 			}
+			if (
+				preflightRuntime &&
+				(args.length ||
+					flags.camp ||
+					flags.target ||
+					flags.broker ||
+					flags.brokerUri)
+			)
+				return {
+					ok: false,
+					status: "rejected",
+					code: "HOBO_PLAN_TARGET_UNAVAILABLE",
+					message:
+						"The configured hosting authority cannot verify that target selector",
+					remediation: ["Select the intended project with --cwd and retry."],
+				};
 
 			const projectDir = context.projectDir ?? context.cwd;
 			const bindle = await loadProjectManifest(projectDir);
@@ -33,20 +59,44 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 
 			// Fold any providers installed via `hobo add` from the durable registry
 			// stream into the matchable snapshot before planning.
-			await runtime.registry.refresh?.();
+			if (!preflightRuntime) await runtime?.registry.refresh?.();
 
 			const deploymentId = deploymentIdFor(projectDir);
-			const yard = createYardClient(runtime);
-			const budgetId = flags.budgetId ?? runtime.defaultHostingBudgetId;
+			const budgetId =
+				flags.budgetId ??
+				preflightRuntime?.defaultHostingBudgetId ??
+				runtime?.defaultHostingBudgetId;
+			const session = deps.session ?? (await loadSession(projectDir));
+			if (preflightRuntime && !session)
+				return {
+					ok: false,
+					status: "rejected",
+					code: "HOBO_HOSTING_SESSION_REQUIRED",
+					message: "Log in to the hosting Yard before planning this deployment",
+					remediation: ["Authenticate with hobo login and retry."],
+				};
+			const config = {
+				...(budgetId ? { budgetId } : undefined),
+				...(flags.region ? { region: flags.region } : undefined),
+			};
 			const rendered =
-				budgetId || manifestHostingPolicy(bindle).required
-					? await yard.planAuthoritatively(bindle, {
+				preflightRuntime && session
+					? await planHostingAuthoritatively(preflightRuntime, bindle, {
 							deploymentId,
-							session:
-								(await loadSession(projectDir)) ?? createFixtureSession(),
-							config: budgetId ? { budgetId } : {},
+							session,
+							config,
+							requireYardBinding: true,
 						})
-					: yard.plan(bindle, { deploymentId });
+					: runtime && (budgetId || manifestHostingPolicy(bindle).required)
+						? await planHostingAuthoritatively(runtime, bindle, {
+								deploymentId,
+								session: session ?? createFixtureSession(),
+								config,
+							})
+						: runtime
+							? createYardClient(runtime).plan(bindle, { deploymentId, config })
+							: undefined;
+			if (!rendered) return stubResult("plan");
 
 			if (!rendered.ok) {
 				return {
