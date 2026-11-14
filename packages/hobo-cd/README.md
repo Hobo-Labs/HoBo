@@ -4,9 +4,11 @@ HoBo's CD as a HoBo project:
 
 - **A Bindle** (`src/bindle.ts`): the CD service (`hobo serve cd`: the read
   API, the agent feed, health), its tick, the provider connections it reads,
-  and its journal. The journal's requirement (`cdJournal`) is a
-  provider-neutral `postgres.database({ version: ">=16" })`, placed on a fleet
-  of vendors by `placePostgresFleet`, so one vendor's outage is a failover.
+  and its journal. The Bindle currently declares generic resources: its
+  exported `cdJournal` PostgreSQL requirement and `CD_TICK_SCHEDULE` cadence
+  are not attached, and its API has no handler binding. `placePostgresFleet`
+  ranks candidates; it does not provision or replicate a database. These
+  connections must be implemented before this project can deploy CD.
   It names no provider.
 - **A lifecycle**: `hobo cd up|down|plan|status` (and `hobo up` here) through
   the one HoBo engine. Re-running is idempotent, a changed declaration is an
@@ -21,9 +23,10 @@ HoBo's CD as a HoBo project:
 `prepareVercelConnection` is the family's prepare step, mirroring CI's GitHub
 connection:
 
-1. **Idempotent.** If the store holds the installation
-   (`HOBO_CD_VERCEL_INSTALLATION_ID`, written last), it opens nothing.
-   `--what-if` opens nothing either. Headless runs refuse with the reason.
+1. **Idempotent.** If the installation id and token are readable, it opens
+   nothing. An unreadable or partial connection is refused until reconciled,
+   rather than replaced after a failed read. `--what-if` opens nothing either.
+   Headless runs refuse with the reason.
 2. **Connect page** (`@hobo/connect-ui`). The owner chooses the store
    (Infisical OIDC by default, or 1Password), then installs HoBo CD's Vercel
    Integration. Vercel redirects to the Integration's registered Redirect URL,

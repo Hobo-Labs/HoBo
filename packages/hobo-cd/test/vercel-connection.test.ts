@@ -138,6 +138,7 @@ describe("createVercelConnectFlow", () => {
 
 	it("is idempotent: an installed connection finishes unchanged without Vercel", async () => {
 		const { store } = await memoryStore();
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
 		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
 		const vercel = fakeVercel();
 		const flow = flowWith(store, vercel.fetch);
@@ -149,6 +150,24 @@ describe("createVercelConnectFlow", () => {
 		expect(step.step.kind).toBe("connected");
 		expect(flow.outcome()).toBe("unchanged");
 		expect(vercel.calls).toEqual([]);
+	});
+
+	it("refuses partial stored credentials rather than installing again", async () => {
+		const { store, names } = await memoryStore();
+		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
+		const vercel = fakeVercel();
+		const flow = flowWith(store, vercel.fetch);
+		const result = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		expect(result.step).toMatchObject({
+			kind: "failed",
+			message: "Cannot verify the existing Vercel connection.",
+		});
+		expect(vercel.calls).toEqual([]);
+		expect(names()).not.toContain("HOBO_CD_VERCEL_TOKEN");
 	});
 
 	it("refuses a forged state, a missing integration secret, and a token for someone else", async () => {
@@ -227,6 +246,35 @@ async function freePort(): Promise<number> {
 }
 
 describe("prepareVercelConnection", () => {
+	it("refuses a failed secret-store read before opening setup", async () => {
+		const { store, names } = await memoryStore();
+		const unavailable: OpenedSecretStore = {
+			...store,
+			port: {
+				...store.port,
+				async access() {
+					return {
+						status: "denied",
+						code: "infisical-forbidden",
+						reason: "unavailable",
+					};
+				},
+			},
+		};
+		const outcome = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			openStore: opened(unavailable),
+			startPage: () => {
+				throw new Error("must not open setup");
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_SECRET_STORE_UNAVAILABLE" },
+		});
+		expect(names()).not.toContain("HOBO_CD_VERCEL_TOKEN");
+	});
+
 	it("hands an existing connection's credential to convergence without a page", async () => {
 		const { store } = await memoryStore();
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
