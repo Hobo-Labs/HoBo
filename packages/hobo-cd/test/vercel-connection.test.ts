@@ -3,7 +3,11 @@ import { type AddressInfo, createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
-import { type ConnectPage, type SavedSettings, startConnectPage } from "@hobo/connect-ui";
+import {
+	type ConnectPage,
+	type SavedSettings,
+	startConnectPage,
+} from "@hobo/connect-ui";
 import type { OpenedSecretStore, SecretStoreOpening } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
@@ -343,6 +347,27 @@ describe("prepareVercelConnection", () => {
 		}
 	});
 
+	it("refuses an unknown configured or saved store before opening it", async () => {
+		for (const savedValue of [false, true]) {
+			const settings = memorySettings();
+			if (savedValue) await settings.write({ HOBO_CD_SECRET_STORE: "unknown" });
+			let opened = false;
+			const outcome = await prepareVercelConnection(prepareInput(), {
+				env: savedValue ? {} : { HOBO_CD_SECRET_STORE: "unknown" },
+				settings,
+				openStore: async () => {
+					opened = true;
+					throw new Error("unexpected store access");
+				},
+			});
+			expect(outcome).toMatchObject({
+				kind: "refused",
+				result: { code: "HOBO_CD_SECRET_STORE_INVALID" },
+			});
+			expect(opened).toBe(false);
+		}
+	});
+
 	it("refuses a failed secret-store read before opening setup", async () => {
 		const { store, names } = await memoryStore();
 		const unavailable: OpenedSecretStore = {
@@ -359,7 +384,8 @@ describe("prepareVercelConnection", () => {
 			},
 		};
 		const outcome = await prepareVercelConnection(prepareInput(), {
-			env: {},
+			env: { INFISICAL_PROJECT_ID: "p", INFISICAL_TOKEN: "t" },
+			settings: memorySettings(),
 			openStore: opened(unavailable),
 			startPage: () => {
 				throw new Error("must not open setup");

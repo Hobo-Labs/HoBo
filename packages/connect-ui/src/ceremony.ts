@@ -11,8 +11,8 @@ import { missingRequiredFields } from "./view.js";
 //
 // A setting resolves from the environment first, then from what an earlier
 // ceremony saved, and is asked for only when neither has it. Non-secret
-// settings are saved for the next run; a secret is never saved anywhere but
-// the owner's secret store, and the flow that receives it writes it there.
+// settings are saved for the next run; secrets are passed only to the active
+// flow and may be used for that run or written to the owner's secret store.
 
 /** One setting a lifecycle needs, and how a submitted value is checked. */
 export interface CeremonySetting {
@@ -130,18 +130,54 @@ export interface ConfigureOptions {
 export async function configureThen(
 	options: ConfigureOptions,
 ): Promise<ConnectFlow> {
-	if (options.missing.length === 0) {
+	const bySetting = new Map(options.settings.map((s) => [s.field.name, s]));
+	const fields = [...options.missing];
+	const includeErrorFields = (errors: Readonly<Record<string, string>>) => {
+		const names = new Set(fields.map((field) => field.name));
+		for (const name of Object.keys(errors)) {
+			const field = bySetting.get(name)?.field;
+			if (field && !names.has(name)) {
+				fields.push(field);
+				names.add(name);
+			}
+		}
+	};
+	const problemFor = (setting: CeremonySetting | undefined, value: string) => {
+		if (!setting || !value) return undefined;
+		if (
+			setting.field.kind === "choice" &&
+			setting.field.options &&
+			!setting.field.options.some((option) => option.value === value)
+		)
+			return "Choose one of the listed options.";
+		return setting.validate?.(value);
+	};
+	const invalidKnown: Record<string, string> = {};
+	for (const setting of options.settings) {
+		const value = options.known[setting.field.name] ?? "";
+		const problem = problemFor(setting, value);
+		if (problem) invalidKnown[setting.field.name] = problem;
+	}
+	includeErrorFields(invalidKnown);
+	let initialErrors = invalidKnown;
+	if (fields.length === 0) {
 		const ready = await options.proceed(options.known);
 		if (ready.ok) return ready.flow;
-		return {
-			initial: configureStep(options, options.missing, ready.errors),
-			onAction: async (_action, _params, current) => ({ step: current }),
-		};
+		initialErrors = { ...ready.errors };
+		includeErrorFields(ready.errors);
+		if (fields.length === 0) {
+			const failed = {
+				kind: "failed" as const,
+				provider: options.provider,
+				message: "Could not verify the supplied settings.",
+				remediation: ["Check the configuration and try again."],
+			};
+			return { initial: failed, onAction: async () => ({ step: failed }) };
+		}
 	}
 	let inner: ConnectFlow | undefined;
-	const bySetting = new Map(options.settings.map((s) => [s.field.name, s]));
 	return {
-		initial: configureStep(options, options.missing, {}),
+		initial: configureStep(options, fields, initialErrors, options.known),
 		async onAction(action, params, current): Promise<FlowTransition> {
 			if (inner !== undefined) return inner.onAction(action, params, current);
 			if (action === "connect.cancel")
@@ -149,44 +185,53 @@ export async function configureThen(
 					step: {
 						kind: "failed",
 						provider: options.provider,
-						message: "Cancelled. Nothing was configured or created.",
-						remediation: ["Run the command again when you are ready."],
+						message: "Setup was cancelled.",
+						remediation: [
+							"Check the provider and secret store before retrying.",
+						],
 					},
 				};
 			if (action !== "connect.submit") return { step: current };
 			const submitted: Record<string, string> = {};
-			for (const field of options.missing)
+			for (const field of fields)
 				submitted[field.name] = (params[field.name] ?? "").trim();
 			const errors: Record<string, string> = {};
-			for (const name of missingRequiredFields(options.missing, submitted))
+			for (const name of missingRequiredFields(fields, submitted))
 				errors[name] = "Required.";
-			for (const field of options.missing) {
+			for (const field of fields) {
 				const value = submitted[field.name] ?? "";
-				const problem = value
-					? bySetting.get(field.name)?.validate?.(value)
-					: undefined;
+				const problem = problemFor(bySetting.get(field.name), value);
 				if (problem !== undefined) errors[field.name] = problem;
 			}
 			if (Object.keys(errors).length > 0)
 				return {
-					step: configureStep(options, options.missing, errors, submitted),
+					step: configureStep(options, fields, errors, submitted),
 				};
 			const values = { ...options.known, ...submitted };
 			const ready = await options.proceed(values);
-			if (!ready.ok)
+			if (!ready.ok) {
+				includeErrorFields(ready.errors);
+				if (!Object.keys(ready.errors).some((name) => bySetting.has(name)))
+					return {
+						step: {
+							kind: "failed",
+							provider: options.provider,
+							message: "Could not verify the supplied settings.",
+							remediation: ["Check the configuration and try again."],
+						},
+					};
 				return {
-					step: configureStep(
-						options,
-						options.missing,
-						ready.errors,
-						submitted,
-					),
+					step: configureStep(options, fields, ready.errors, {
+						...options.known,
+						...submitted,
+					}),
 				};
+			}
 			if (options.store !== undefined) {
 				const keep: SavedSettings = {
 					...(await options.store.read()),
 				};
-				for (const field of options.missing)
+				for (const field of fields)
 					if (field.kind !== "secret" && submitted[field.name])
 						keep[field.name] = submitted[field.name] ?? "";
 				await options.store.write(keep);
@@ -215,9 +260,11 @@ function configureStep(
 		fields: fields.map((field) => ({
 			...field,
 			// A secret is never sent back to the page, even after a refusal.
-			...(field.kind !== "secret" && submitted[field.name]
-				? { value: submitted[field.name] }
-				: undefined),
+			...(field.kind === "secret"
+				? { value: "" }
+				: submitted[field.name]
+					? { value: submitted[field.name] }
+					: undefined),
 			...(errors[field.name] !== undefined
 				? { error: errors[field.name] }
 				: undefined),

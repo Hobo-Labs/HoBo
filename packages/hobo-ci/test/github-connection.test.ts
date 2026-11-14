@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
-import { type ConnectPage, type SavedSettings, startConnectPage } from "@hobo/connect-ui";
+import {
+	type ConnectPage,
+	type SavedSettings,
+	startConnectPage,
+} from "@hobo/connect-ui";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
@@ -656,6 +660,7 @@ describe("prepareGithubConnection", () => {
 		};
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
+			settings: memorySettings(),
 			openStore: opened(unavailable),
 			startPage: () => {
 				throw new Error("must not open setup");

@@ -184,7 +184,11 @@ export async function prepareVercelConnection(
 
 	const basics = resolveSettings(CD_SETTINGS, env, saved);
 	const configuredStore = basics.values.HOBO_CD_SECRET_STORE;
-	if (configuredStore && configuredStore !== "infisical" && configuredStore !== "1password")
+	if (
+		configuredStore &&
+		configuredStore !== "infisical" &&
+		configuredStore !== "1password"
+	)
 		return refused(
 			"HOBO_CD_SECRET_STORE_INVALID",
 			"HOBO_CD_SECRET_STORE must be infisical or 1password.",
@@ -207,22 +211,24 @@ export async function prepareVercelConnection(
 				return refused(
 					"HOBO_CD_SECRET_STORE_UNAVAILABLE",
 					"Cannot verify the existing Vercel connection in the secret store.",
-					["Check store access and reconcile any partial credentials before retrying."],
+					[
+						"Check store access and reconcile any partial credentials before retrying.",
+					],
 				);
 			}
 			if (connected) {
-			if (input.whatIf)
-				return {
-					kind: "ready",
-					steps: [
-						{
-							id: "vercel",
-							outcome: "unchanged",
-							detail: `already in ${opened.store.id}`,
-						},
-					],
-				};
-			return ready(opened.store, "unchanged");
+				if (input.whatIf)
+					return {
+						kind: "ready",
+						steps: [
+							{
+								id: "vercel",
+								outcome: "unchanged",
+								detail: `already in ${opened.store.id}`,
+							},
+						],
+					};
+				return ready(opened.store, "unchanged");
 			}
 		}
 	}
