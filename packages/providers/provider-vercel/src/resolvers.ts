@@ -159,6 +159,12 @@ export type VercelResolverOptions = {
 		readonly repository: string;
 		readonly operationId: string;
 	}) => Promise<boolean>;
+	/** Independently authorize deletion of this exact project for this operation. */
+	readonly verifyProjectDeletion?: (input: {
+		readonly teamId: string;
+		readonly projectId: string;
+		readonly operationId: string;
+	}) => Promise<boolean>;
 	/** Trusted durable fence and accounting proof: no queued, delayed or leased
 	 * messages remain and producers stay fenced until the deployment is gone. */
 	readonly verifyQueueDrain?: (input: {
@@ -1004,19 +1010,45 @@ function createProjectResolver(
 				parseJsonObject(JSON.stringify(request)),
 			);
 			assertProduct(parsed, VERCEL_PROJECT_PRODUCT_ID);
+			const target = parsed.ref.physicalId;
+			const operationId = desiredString(
+				parsed.desired,
+				"operationId",
+				VERCEL_PROJECT_PRODUCT_ID,
+			);
+			if (
+				!target ||
+				!options.teamId ||
+				!/^[A-Za-z0-9_-]{1,128}$/u.test(options.teamId) ||
+				!operationId ||
+				!options.verifyProjectDeletion
+			)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"Vercel project deletion requires a physical ID and independent deletion authorization for the team and operation",
+				);
 			const credential = await resolveCredential(options, parsed.credentialRef);
 			const dispatch = guardedDispatch(transport, options, parsed);
-			const target =
-				knownPhysicalId(parsed) ?? parseProjectDesired(parsed).name;
 			const observed = await getProjectView(
 				dispatch,
 				credential,
 				options,
 				target,
-				knownPhysicalId(parsed) !== undefined,
+				true,
 			);
 			if (!observed) return;
 			checkProjectRepository(parseProjectDesired(parsed), observed, false);
+			if (
+				!(await options.verifyProjectDeletion({
+					teamId: options.teamId,
+					projectId: observed.id,
+					operationId,
+				}))
+			)
+				throw new ResolverError(
+					"RESOLVER_PRODUCT_UNSUPPORTED",
+					"Vercel project deletion requires independent deletion authorization for the exact team, project and operation",
+				);
 			const operation = "DELETE /v9/projects/{idOrName}";
 			const response = await callApi(
 				dispatch,

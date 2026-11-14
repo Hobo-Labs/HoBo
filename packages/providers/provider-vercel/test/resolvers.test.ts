@@ -33,6 +33,7 @@ function options(
 		readonly resolveCredential?: (ref: string) => Promise<string>;
 		readonly teamId?: string;
 		readonly verifyUnlinkedProject?: VercelResolverOptions["verifyUnlinkedProject"];
+		readonly verifyProjectDeletion?: VercelResolverOptions["verifyProjectDeletion"];
 	} = {},
 ) {
 	return {
@@ -49,6 +50,9 @@ function options(
 			: undefined),
 		...(overrides.verifyUnlinkedProject
 			? { verifyUnlinkedProject: overrides.verifyUnlinkedProject }
+			: undefined),
+		...(overrides.verifyProjectDeletion
+			? { verifyProjectDeletion: overrides.verifyProjectDeletion }
 			: undefined),
 	};
 }
@@ -457,8 +461,19 @@ describe("vercel.project/v1 resolver", () => {
 				},
 			]),
 		);
-		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, { teamId: "team_hobo" });
-		const input = projectRequest({ desired: { repository: "Hobo-Labs/HoBo" } });
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectDeletion: async () => true,
+		});
+		const input = projectRequest({
+			ref: {
+				slot: "web",
+				productId: VERCEL_PROJECT_PRODUCT_ID,
+				logicalId: "storefront",
+				physicalId: "prj_9",
+			},
+			desired: { repository: "Hobo-Labs/HoBo", operationId: "delete-1" },
+		});
 		await expect(r.reconcile(input, f.transport)).rejects.toThrow(
 			/different Git repository/u,
 		);
@@ -593,12 +608,71 @@ describe("vercel.project/v1 resolver", () => {
 
 	it("deletes, and treats an already-absent project as deleted", async () => {
 		const { transport, calls } = recorded(
-			projectApi([{ id: "prj_9", name: "storefront" }]),
+			projectApi([{ id: "prj_9", name: "storefront", accountId: "team_hobo" }]),
 		);
-		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID);
-		await resolver.delete(projectRequest(), transport);
-		await resolver.delete(projectRequest(), transport);
+		const approved: unknown[] = [];
+		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectDeletion: async (scope) => {
+				approved.push(scope);
+				return true;
+			},
+		});
+		const request = projectRequest({
+			ref: {
+				slot: "web",
+				productId: VERCEL_PROJECT_PRODUCT_ID,
+				logicalId: "storefront",
+				physicalId: "prj_9",
+			},
+			desired: { operationId: "delete-1" },
+		});
+		await resolver.delete(request, transport);
+		await resolver.delete(request, transport);
 		expect(calls.map((call) => call.method)).toEqual(["GET", "DELETE", "GET"]);
+		expect(approved).toEqual([
+			{ teamId: "team_hobo", projectId: "prj_9", operationId: "delete-1" },
+		]);
+	});
+
+	it("does not delete an existing project selected only by name", async () => {
+		const { transport, calls } = recorded(
+			projectApi([{ id: "prj_9", name: "storefront", accountId: "team_hobo" }]),
+		);
+		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+		});
+		await expect(resolver.delete(projectRequest(), transport)).rejects.toThrow(
+			/physical ID and independent deletion authorization/u,
+		);
+		expect(calls.every((call) => call.method !== "DELETE")).toBe(true);
+	});
+
+	it("does not delete a pinned project without approval for the exact scope", async () => {
+		for (const proof of [undefined, async () => false]) {
+			const { transport, calls } = recorded(
+				projectApi([
+					{ id: "prj_9", name: "storefront", accountId: "team_hobo" },
+				]),
+			);
+			const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+				teamId: "team_hobo",
+				...(proof ? { verifyProjectDeletion: proof } : undefined),
+			});
+			const request = projectRequest({
+				ref: {
+					slot: "web",
+					productId: VERCEL_PROJECT_PRODUCT_ID,
+					logicalId: "storefront",
+					physicalId: "prj_9",
+				},
+				desired: { operationId: "delete-1" },
+			});
+			await expect(resolver.delete(request, transport)).rejects.toThrow(
+				/deletion authorization/u,
+			);
+			expect(calls.every((call) => call.method !== "DELETE")).toBe(true);
+		}
 	});
 
 	it("carries teamId onto every call when the token is team scoped", async () => {
