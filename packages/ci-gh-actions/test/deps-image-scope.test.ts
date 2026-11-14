@@ -23,8 +23,9 @@ describe("CI deps image push scope", () => {
 	it("is its own job on pull requests and steps of the plan job on every main run", () => {
 		// Finding 154: on main the check takes seconds, and as a job it cost a
 		// fourth trunk pickup. Still no commit file-list filtering.
+		// The route job (#2022) gates pull-request work before it queues.
 		expect(depsJob.if).toBe(
-			"${{ !cancelled() && github.event_name == 'pull_request' }}",
+			"${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}",
 		);
 		expect(mainPlan.if).toContain(
 			"(github.event_name == 'push' && github.ref == 'refs/heads/main') ||",

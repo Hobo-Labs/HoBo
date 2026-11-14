@@ -1298,6 +1298,9 @@ and an actual nonroot container lifecycle. Live GitHub assignment and vendor
 provisioning remain separate release evidence; failed permissions or missing JIT
 must never be reported as a successful runner test.
 
+The deps-image scope test also checks that pull-request jobs wait for successful
+runner routing; main's deps-image check remains part of the workspace plan.
+
 The bound Actions/act command adapter delegates to the shared Node workspace
 backend in `@hobo/ci/workspace-backend`. The Azure Pipelines sibling
 [`@hobo/ci-ado`](../ci-ado/README.md) uses that same execution implementation;
