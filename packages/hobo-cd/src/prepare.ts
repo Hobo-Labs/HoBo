@@ -18,6 +18,7 @@ import {
 	type SecretStoreDeps,
 	type SecretStoreId,
 	type SecretStoreOpening,
+	storeLabel,
 	storeSettings,
 } from "@hobo/hobo-ci";
 
@@ -145,7 +146,7 @@ function refused(
 }
 
 function storeIdOf(value: string | undefined): SecretStoreId {
-	return value === "1password" ? "1password" : "infisical";
+	return value === "1password" || value === "bitwarden" ? value : "infisical";
 }
 
 async function ready(
@@ -187,12 +188,13 @@ export async function prepareVercelConnection(
 	if (
 		configuredStore &&
 		configuredStore !== "infisical" &&
-		configuredStore !== "1password"
+		configuredStore !== "1password" &&
+		configuredStore !== "bitwarden"
 	)
 		return refused(
 			"HOBO_CD_SECRET_STORE_INVALID",
-			"HOBO_CD_SECRET_STORE must be infisical or 1password.",
-			["Unset it to use Infisical, or set it to 1password."],
+			"HOBO_CD_SECRET_STORE must be infisical, 1password, or bitwarden.",
+			["Unset it to use Infisical, or choose 1password or bitwarden."],
 		);
 	const storeId = storeIdOf(basics.values.HOBO_CD_SECRET_STORE);
 	const storeSide = resolveSettings(
@@ -326,8 +328,8 @@ export async function prepareVercelConnection(
 			const stage = await configureThen({
 				provider: "vercel",
 				title:
-					chosen === "1password" ? "Connect 1Password" : "Connect Infisical",
-				reason: `HoBo keeps the Integration's client secret and the access Vercel grants in ${chosen === "1password" ? "1Password" : "Infisical"}. Coordinates are saved for next time; secrets go only to the store.`,
+					`Connect ${storeLabel(chosen)}`,
+				reason: `HoBo keeps the Integration's client secret and the access Vercel grants in ${storeLabel(chosen)}. Coordinates are saved for next time; secrets go only to the store.`,
 				settings: stageSettings,
 				missing: stageMissing,
 				known: resolved.values,

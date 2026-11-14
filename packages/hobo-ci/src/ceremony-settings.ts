@@ -23,6 +23,11 @@ const githubLogin = (value: string) =>
 		? undefined
 		: "A GitHub user or organization login.";
 
+const uuid = (value: string) =>
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value)
+		? undefined
+		: "A UUID, as the Secrets Manager web app shows it.";
+
 /** What `hobo ci up` needs to know before it can create the App. */
 export const CI_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 	{
@@ -70,11 +75,52 @@ export const CI_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 	},
 ]);
 
+/** A store's name as the person sees it. */
+export function storeLabel(store: string): string {
+	return store === "1password"
+		? "1Password"
+		: store === "bitwarden"
+			? "Bitwarden"
+			: "Infisical";
+}
+
 /** The chosen store's coordinates and sign-in. */
 export function storeSettings(
 	store: string,
 	defaultPath: string,
 ): readonly CeremonySetting[] {
+	if (store === "bitwarden")
+		return [
+			{
+				field: {
+					name: "BWS_ORGANIZATION_ID",
+					label: "Bitwarden organization ID",
+					kind: "text",
+					required: true,
+				},
+				validate: uuid,
+			},
+			{
+				field: {
+					name: "BWS_PROJECT_ID",
+					label: "Bitwarden project ID",
+					description: "The Secrets Manager project the credentials go to.",
+					kind: "text",
+					required: true,
+				},
+				validate: uuid,
+			},
+			{
+				field: {
+					name: "BWS_ACCESS_TOKEN",
+					label: "Bitwarden machine account access token",
+					description:
+						"A token for a machine account with write access to the project. Used for this run only; never saved.",
+					kind: "secret",
+					required: true,
+				},
+			},
+		];
 	return store === "1password"
 		? [
 				{

@@ -140,6 +140,12 @@ export const DEFAULT_SECRET_STORES: readonly SecretStoreOption[] =
 			signIn: "service-account",
 			recommended: false,
 		}),
+		Object.freeze({
+			id: "bitwarden",
+			label: "Bitwarden Secrets Manager",
+			signIn: "service-account",
+			recommended: false,
+		}),
 	] as const satisfies readonly SecretStoreOption[]);
 
 const PROVIDER_LABEL: ReadonlyMap<string, string> = new Map([

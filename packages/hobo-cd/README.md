@@ -28,7 +28,8 @@ connection:
    rather than replaced after a failed read. `--what-if` opens nothing either.
    Headless runs refuse with the reason.
 2. **Connect page** (`@hobo/connect-ui`). The owner chooses the store
-   (Infisical OIDC by default, or 1Password), then installs HoBo CD's Vercel
+   (Infisical OIDC by default, 1Password, or Bitwarden Secrets Manager),
+   then installs HoBo CD's Vercel
    Integration. Vercel redirects to the Integration's registered Redirect URL,
    which the page serves on its fixed loopback port and path. The flow's
    `state` (compared in constant time) ties the answer to this connection.

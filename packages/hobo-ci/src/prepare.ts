@@ -22,6 +22,7 @@ import {
 	CI_SETTINGS,
 	lookupGithubOwner,
 	resolveGithubAppExpectation,
+	storeLabel,
 	storeSettings,
 } from "./ceremony-settings.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
@@ -104,7 +105,7 @@ export function openInBrowser(url: string): void {
 }
 
 function storeIdOf(value: string | undefined): SecretStoreId {
-	return value === "1password" ? "1password" : "infisical";
+	return value === "1password" || value === "bitwarden" ? value : "infisical";
 }
 
 /** Connect GitHub for `hobo ci up` (or confirm it is already connected). */
@@ -134,12 +135,13 @@ export async function prepareGithubConnection(
 	if (
 		configuredStore &&
 		configuredStore !== "infisical" &&
-		configuredStore !== "1password"
+		configuredStore !== "1password" &&
+		configuredStore !== "bitwarden"
 	)
 		return refused(
 			"HOBO_CI_SECRET_STORE_INVALID",
-			"HOBO_CI_SECRET_STORE must be infisical or 1password.",
-			["Unset it to use Infisical, or set it to 1password."],
+			"HOBO_CI_SECRET_STORE must be infisical, 1password, or bitwarden.",
+			["Unset it to use Infisical, or choose 1password or bitwarden."],
 		);
 	const storeId = storeIdOf(basics.values.HOBO_CI_SECRET_STORE);
 	const storeSide = resolveSettings(
@@ -277,8 +279,8 @@ export async function prepareGithubConnection(
 			const stage = await configureThen({
 				provider: "github",
 				title:
-					chosen === "1password" ? "Connect 1Password" : "Connect Infisical",
-				reason: `HoBo writes the App's credentials straight into ${chosen === "1password" ? "1Password" : "Infisical"}. Coordinates are saved for next time; a sign-in token is used for this run only.`,
+					`Connect ${storeLabel(chosen)}`,
+				reason: `HoBo writes the App's credentials straight into ${storeLabel(chosen)}. Coordinates are saved for next time; a sign-in token is used for this run only.`,
 				settings: sideSettings,
 				missing: side.missing,
 				known: side.values,

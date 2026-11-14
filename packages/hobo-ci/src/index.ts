@@ -10,6 +10,7 @@ export {
 	CI_SETTINGS,
 	lookupGithubOwner,
 	resolveGithubAppExpectation,
+	storeLabel,
 	storeSettings,
 } from "./ceremony-settings.js";
 export {
