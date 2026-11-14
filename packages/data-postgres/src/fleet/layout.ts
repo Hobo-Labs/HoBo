@@ -10,7 +10,12 @@ import { PostgresDataError } from "../errors.js";
 import { parseFleetIdentifier } from "./sql.js";
 
 export type FleetLayoutInput = {
-	/** Every table whose name starts with this belongs to the application. */
+	/**
+	 * Every table whose name starts with this belongs to the application. The
+	 * empty prefix copies every table in the schema except the fleet's own
+	 * control tables and `excludedTables`: for an application whose tables
+	 * share no prefix but own their schema (an event store).
+	 */
 	readonly dataPrefix: string;
 	/** Every table whose name starts with this belongs to the fleet. */
 	readonly controlPrefix: string;
@@ -32,7 +37,10 @@ export type FleetLayout = {
 export const FLEET_LOCK_CLASS = 1_212_112_710;
 
 export function parseFleetLayout(input: FleetLayoutInput): FleetLayout {
-	const dataPrefix = parseFleetIdentifier(input.dataPrefix, "dataPrefix");
+	const dataPrefix =
+		input.dataPrefix === ""
+			? ""
+			: parseFleetIdentifier(input.dataPrefix, "dataPrefix");
 	const controlPrefix = parseFleetIdentifier(
 		input.controlPrefix,
 		"controlPrefix",

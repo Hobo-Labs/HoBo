@@ -112,8 +112,8 @@ fleet's policy, is unchanged.
 - `continuityBudgetCheck(plan, host?)`: holds the fleet to its declared monthly
   ceiling before the host's own budget engine decides.
 - `continuityShortfalls(plan, running)`: reports when the running fleet cannot
-  keep the promise (too few standbys, a tick slower than the copy cadence,
-  every member on one vendor).
+  keep the promise (too few standbys, a tick slower than the copy cadence, no
+  quorum to fail over without the operator, every member on one vendor).
 
 Interruption needs no separate mode: a copy is one transaction and a move is a
 sealed register entry, so the next tick completes or undoes whatever an

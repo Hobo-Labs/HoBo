@@ -174,7 +174,38 @@ type CatalogTable = {
 	readonly columns: readonly CatalogColumn[];
 	/** Another table's foreign key points here, so it cannot be truncated alone. */
 	readonly referenced: boolean;
+	/** Copied tables this table's foreign keys point at. */
+	readonly references: readonly string[];
 };
+
+/**
+ * Tables in an order that inserts every referenced row before the rows that
+ * point at it: parents first, ties by name. A cycle of foreign keys has no
+ * such order; its tables are copied in a fixed order and the insert that breaks a key
+ * fails the copy, which leaves the target as it was.
+ */
+export function insertionOrder<T extends Pick<CatalogTable, "name" | "references">>(
+	tables: readonly T[],
+): readonly T[] {
+	const byName = new Map(tables.map((table) => [table.name, table]));
+	const placed = new Set<string>();
+	const visiting = new Set<string>();
+	const ordered: T[] = [];
+	const visit = (table: T) => {
+		if (placed.has(table.name) || visiting.has(table.name)) return;
+		visiting.add(table.name);
+		for (const parent of [...table.references].sort()) {
+			const found = byName.get(parent);
+			if (found !== undefined && parent !== table.name) visit(found);
+		}
+		visiting.delete(table.name);
+		placed.add(table.name);
+		ordered.push(table);
+	};
+	for (const table of [...tables].sort((a, b) => (a.name < b.name ? -1 : 1)))
+		visit(table);
+	return ordered;
+}
 
 /**
  * Make text output identical on both sides. A `timestamptz` is printed in the
@@ -220,9 +251,23 @@ async function readCatalog(
 		ORDER BY c.relname, a.attname`,
 		[layout.dataPrefix],
 	);
+	const keys = await session.query(
+		`SELECT c.relname::text AS table_name, p.relname::text AS parent_name
+		FROM pg_constraint k
+		JOIN pg_class c ON c.oid = k.conrelid
+		JOIN pg_class p ON p.oid = k.confrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE k.contype = 'f' AND n.nspname = current_schema()
+		ORDER BY 1, 2`,
+	);
+	const parents = new Map<string, string[]>();
+	for (const row of keys.rows) {
+		const table = column(row, "table_name");
+		parents.set(table, [...(parents.get(table) ?? []), column(row, "parent_name")]);
+	}
 	const tables = new Map<
 		string,
-		{ columns: CatalogColumn[]; referenced: boolean }
+		{ columns: CatalogColumn[]; referenced: boolean; references: string[] }
 	>();
 	for (const row of result.rows) {
 		const table = column(row, "table_name");
@@ -230,6 +275,9 @@ async function readCatalog(
 		const entry = tables.get(table) ?? {
 			columns: [],
 			referenced: parseFlag(column(row, "referenced"), "referenced"),
+			references: (parents.get(table) ?? []).filter((parent) =>
+				isReplicatedTable(layout, parent),
+			),
 		};
 		const name = optionalColumn(row, "column_name");
 		const position = optionalColumn(row, "sequence_value");
@@ -559,7 +607,7 @@ export async function copySnapshot<T>(
 					await to.query(
 						`TRUNCATE ${rewrite.map((relation) => quoteIdentifier(relation.name)).join(", ")}`,
 					);
-					for (const [index, relation] of rewrite.entries())
+					for (const [index, relation] of insertionOrder(rewrite).entries())
 						await copyTable(
 							from,
 							to,

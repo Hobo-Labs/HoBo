@@ -587,6 +587,20 @@ same code and message it had as a `PostgresDataError`.
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
 
+**Whole-schema fleets.** `parseFleetLayout({ dataPrefix: "" })` copies every
+table in the schema except the control tables and `excludedTables`, for an
+application that owns its schema but whose tables share no prefix (the
+EventStore in `@hobo/storage-postgres`, whose fleet store excludes
+`schema_migrations`). A copy inserts tables parents first (`insertionOrder`),
+so foreign keys hold inside the copy's transaction.
+
+**Witnesses.** `reconcileFleet({ witnesses })` adds members that hold only the
+assignment register: never copied to, never a writer. A writer and one standby
+are two members, and losing either leaves no majority, so a fleet of two holds
+rather than fail over by itself. One witness on a third failure domain makes
+the majority for the cost of a few rows; `continuityShortfalls` in
+`@hobo/backend-fleet` reports a fleet with no quorum.
+
 ### The assignment register: who the writer is
 
 Each backend keeps a small append-only log table (the name comes from

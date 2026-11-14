@@ -81,9 +81,18 @@ describe("continuityShortfalls", () => {
 				tickEveryMs: 900_000,
 				vendors: 1,
 			}).map((s) => s.code),
-		).toEqual(["continuity-copy-too-slow", "continuity-no-vendor-diversity"]);
+		).toEqual([
+			"continuity-copy-too-slow",
+			"continuity-no-quorum",
+			"continuity-no-vendor-diversity",
+		]);
 		expect(
-			continuityShortfalls(plan, { standbys: 1, tickEveryMs: 60_000, vendors: 2 }),
+			continuityShortfalls(plan, {
+				standbys: 1,
+				tickEveryMs: 60_000,
+				vendors: 2,
+				witnesses: 1,
+			}),
 		).toEqual([]);
 	});
 });

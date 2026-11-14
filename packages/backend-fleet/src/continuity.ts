@@ -141,6 +141,7 @@ export type ContinuityShortfall = Readonly<{
 	code:
 		| "continuity-standbys-short"
 		| "continuity-copy-too-slow"
+		| "continuity-no-quorum"
 		| "continuity-no-vendor-diversity";
 	message: string;
 }>;
@@ -155,6 +156,8 @@ export function continuityShortfalls(
 		tickEveryMs: number;
 		/** Distinct vendors across writer and standbys. */
 		vendors: number;
+		/** Register-only members (`reconcileFleet({ witnesses })`). */
+		witnesses?: number;
 	}>,
 ): readonly ContinuityShortfall[] {
 	const shortfalls: ContinuityShortfall[] = [];
@@ -167,6 +170,12 @@ export function continuityShortfalls(
 		shortfalls.push({
 			code: "continuity-copy-too-slow",
 			message: `standbys are copied every ${running.tickEveryMs} ms but the recovery point needs a copy every ${plan.copyEveryMs} ms.`,
+		});
+	const voters = 1 + running.standbys + (running.witnesses ?? 0);
+	if (plan.standbys > 0 && running.standbys > 0 && voters < 3)
+		shortfalls.push({
+			code: "continuity-no-quorum",
+			message: `${voters} members cannot keep a majority when one fails, so a failover waits for the operator. Add a witness (a few rows on any third backend) or another standby.`,
 		});
 	if (plan.standbys > 0 && running.standbys > 0 && running.vendors < 2)
 		shortfalls.push({
