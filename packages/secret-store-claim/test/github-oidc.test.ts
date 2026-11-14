@@ -182,6 +182,8 @@ describe("a denied token's subject against the trust", () => {
 describe("an observed token subject, when GitHub's template cannot be read", () => {
 	// GitHub answers the repository; the Actions settings path is refused, as
 	// a proxied or narrow token sees it.
+	// SAFETY: the resolver calls fetch with a URL and reads only the status and
+	// the JSON body, and this stub answers both for every URL it is given.
 	const send = (async (url: string | URL | Request) =>
 		String(url).endsWith("/actions/oidc/customization/sub")
 			? new Response("{}", { status: 403 })
@@ -199,12 +201,16 @@ describe("an observed token subject, when GitHub's template cannot be read", () 
 			fetch: send,
 			...(observedSubject !== undefined ? { observedSubject } : undefined),
 		});
-	const codeOfAsync = (run: () => Promise<unknown>) =>
-		run().then(
-			() => "ok",
-			(error: unknown) =>
-				error instanceof SecretStoreError ? error.code : "thrown",
-		);
+	const codeOfAsync = async (
+		run: () => Promise<GithubOidcSubject>,
+	): Promise<string> => {
+		try {
+			await run();
+		} catch (error) {
+			return error instanceof SecretStoreError ? error.code : "thrown";
+		}
+		return "ok";
+	};
 
 	it("still fails closed with no observed subject", async () => {
 		expect(await codeOfAsync(() => resolve())).toBe(
