@@ -3,10 +3,12 @@
 The local runner controller (`hobo-local-host`, `pnpm local:runner`) is gone.
 A development machine now joins a HoBo Fleet as an enrolled `PERSONAL`
 executor and runs `hobo fleet run`; it takes the work its owner authored and
-runs each job in a single-use sandbox (design §6.11).
+runs each job in a single-use sandbox ([sandbox tiers](../../docs/design/fleet.md#sandbox-tiers)).
 
-- Quick start and the standing description: `docs/design/fleet.md` (the HoBo
-  Fleet design; its quick start covers enrolling a machine and `hobo fleet run`).
+- Quick start (enrolling a machine and `hobo fleet run`):
+  [docs/maintenance/fleet/quick-start.md](../../docs/maintenance/fleet/quick-start.md).
+- The standing description: [HoBo Fleet](../../docs/design/fleet.md), and its
+  [sandbox tiers](../../docs/design/fleet.md#sandbox-tiers).
 - The device agent's parts (sandbox drivers, egress proxy, key stores, service
   install): [`@hobo/fleet-agent`](../fleet-agent/README.md).
 - The relay's own local contract and broker gate:

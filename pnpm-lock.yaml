@@ -1776,6 +1776,9 @@ importers:
         specifier: workspace:*
         version: link:../status-page
     devDependencies:
+      '@hobo/fleet-agent':
+        specifier: workspace:*
+        version: link:../fleet-agent
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0

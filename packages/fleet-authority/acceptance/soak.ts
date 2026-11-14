@@ -76,13 +76,11 @@ import {
 	createOciCommandRunner,
 	createOciCommandSource,
 } from "@hobo/fleet/work";
+import { createEgressProxyFactory, sandboxDrivers } from "@hobo/fleet-agent";
 import {
 	createJournalEventStore,
 	createNatsBusConnector,
 } from "@hobo/fleet-nats";
-// `@hobo/fleet-agent` is not a dependency of this package (the cascade delta names it).
-import { createEgressProxyFactory } from "../../fleet-agent/src/egress/index.js";
-import { sandboxDrivers } from "../../fleet-agent/src/sandbox/index.js";
 import { openSecrets } from "../src/bin/common.js";
 import { readAuthorityConfig } from "../src/compose/config.js";
 import { readSecretText } from "../src/compose/keys.js";

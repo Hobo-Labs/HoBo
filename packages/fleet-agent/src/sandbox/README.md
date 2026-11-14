@@ -1,9 +1,9 @@
-# Sandbox drivers (L38, L40)
+# Sandbox drivers
 
 `sandboxDrivers({ cap, log })` builds this platform's candidates, runs each
 one's self-test, and answers one driver per tier: the first candidate of that
 tier whose self-test passed, none above `cap` (an `UNSPECIFIED` cap answers
-none). Design: ADR-0183, §6.11 and decision D58 of the fleet design.
+none). Design: ADR-0183, [sandbox tiers](../../../../docs/design/fleet.md#sandbox-tiers) and ADR-0183 decision D58.
 
 | Tier | Platform | Runtime | Status |
 |---|---|---|---|

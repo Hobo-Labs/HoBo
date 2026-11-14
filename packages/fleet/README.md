@@ -17,6 +17,10 @@ a trust boundary, records are signed and credentials issued. In **local mode**
 with the same records and state machine and nothing signed; the hosted relay's
 cache fleet uses it.
 
+Design: [HoBo Fleet](../../docs/design/fleet.md) and
+[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
+[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+
 ## Entry points
 
 | Subpath | Holds |
@@ -34,38 +38,35 @@ cache fleet uses it.
 | `@hobo/fleet/verdict-wire` | `parseFleetVerdict`, a file with no imports for the route job |
 | `@hobo/fleet/testing` | The in-memory bus, event store and fake sandbox, `createTestAuthority`, and the conformance suites |
 
-Each subpath is a barrel that only re-exports the directory of the lane that
-builds it; until a lane lands, its entry points have their final signatures and
-throw `FleetNotImplemented`.
+Each subpath is a barrel that only re-exports its directory under `src/`.
 
-## Landed parts
+## Parts
 
-Each lane writes its part of this README next to its code; the coordinator
-gathers them here as the waves merge.
+Each part has its own README next to its code.
 
-- **Keys** (`@hobo/fleet/keys`, wave 1) —
+- **Keys** (`@hobo/fleet/keys`) —
   [`src/keys/README.md`](src/keys/README.md). JWK parsing and RFC 7638
   thumbprints, member ids (`dev_` + 32 hex of SHA-256 of the thumbprint text;
   `bkd_`/`tgt_` from tenant, kind, fleet and name), signed and witnessed
   envelopes, trust acceptance against the pinned record, RFC 9449 DPoP with
-  `jti` claimed per `dpop:<jkt>`, sealing and session keys with the §7.4
+  `jti` claimed per `dpop:<jkt>`, sealing and session keys with the [signed envelope](../../docs/design/fleet.md#signed-envelope)
   parameters, BIP-39 fingerprint words, and the in-memory key store and
   credential issuer. `node:crypto` only. The memory key store also runs the
   shared `runKeyStoreConformance` suite.
-- **Assignment** (`@hobo/fleet/assignment`, wave 1) —
+- **Assignment** (`@hobo/fleet/assignment`) —
   [`src/assignment/README.md`](src/assignment/README.md). The one-active
   register moved from `@hobo/backend-routing` with its algorithm unchanged,
   log formats 1 and 2, the cache-key replica (stored key
   `hobo:fleet:assignment`), membership epochs (off by default) and
   `createOneActiveFleet`. The loop uses `eligibleForActive` from
   `@hobo/fleet/observation`.
-- **Conformance suites** (`@hobo/fleet/testing`, wave 1) —
+- **Conformance suites** (`@hobo/fleet/testing`) —
   [`src/testing/conformance/README.md`](src/testing/conformance/README.md).
   The seven suites (bus, transport, sandbox logic, sandbox isolation probe,
   key store, replica, journal) every adapter of a fleet port runs against
   itself, and what each `make` must return.
 
-- **Membership** (`@hobo/fleet/membership`, wave 2, L02) —
+- **Membership** (`@hobo/fleet/membership`) —
   [`src/membership/README.md`](src/membership/README.md). The enrollment
   authority: members and bootstrap tokens, approval (`SINGLE`, `DUAL`,
   `AUTO_OWNER`), sponsored members, credentials and session tickets,
@@ -73,45 +74,44 @@ gathers them here as the waves merge.
   implements the member and token methods of `FleetApi` and routes the rest to
   `AuthorityParts`; after each record change it also publishes the signed
   record to the registry straight away.
-- **Sign-in** (`@hobo/fleet/membership`, wave 2, L30) —
+- **Sign-in** (`@hobo/fleet/membership`) —
   [`src/signin/README.md`](src/signin/README.md). `createSignIn`: browser
   (PKCE, loopback redirect) and device-code flows that issue a 15-minute,
   DPoP-bound person token, refreshable for 12 hours.
-- **Observation** (`@hobo/fleet/observation`, wave 2, L03) —
+- **Observation** (`@hobo/fleet/observation`) —
   [`src/observation/README.md`](src/observation/README.md). Signed
   observations and `acceptObservation`, `fitWork`, `eligibleForActive`,
   ranking and claim turns, fleet views and verdicts, `parseFleetVerdict`, and
   the reliability ledger. Moved from `packages/ci/src/mesh/`.
-- **Transport** (`@hobo/fleet/transport`, wave 2, L28) —
+- **Transport** (`@hobo/fleet/transport`) —
   [`src/transport/README.md`](src/transport/README.md). Session
   authorisation, ChaCha20-Poly1305 framing, transport selection (`p2p`, then
   `overlay`, then `bus-relay`), the session server with its private session
   protocol (shell and forward are batched, not interactive), and verified blob
   fetch.
-- **Audit** (`@hobo/fleet/audit`, wave 2, L06) —
+- **Audit** (`@hobo/fleet/audit`) —
   [`src/audit/README.md`](src/audit/README.md). The authority's hash chain
   with checkpoints every 60 s or 1,000 entries, `verifyAuditChain`, and the
   witness that co-signs checkpoints and trust proposals. Only one replica may
   run the chain.
-- **Work** (`@hobo/fleet/work`, wave 3, L04) —
+- **Work** (`@hobo/fleet/work`) —
   [`src/work/README.md`](src/work/README.md). Work digests, trust classes,
   sandbox tiers, the dispatcher's claim rules (`discard`, `not-entitled`,
   `early`, `valid`), the dispatcher and executor loops, order acceptance with
   receipts, the start fence, and the `oci-command` work kind (its work key is
   the submission id).
-- **Recorder and registry projection** (`@hobo/fleet/membership`, wave 3,
-  L31) — [`src/recorder/README.md`](src/recorder/README.md). The recorder
+- **Recorder and registry projection** (`@hobo/fleet/membership`) — [`src/recorder/README.md`](src/recorder/README.md). The recorder
   verifies and journals offers, claims, orders, receipts and session-close
   facts with per-stream resume points, and is the only emitter of the four
   fleet usage types; the projection re-signs member and fleet records (fleet
   records first) and publishes fleet views.
-- **Fleet commands** (`@hobo/fleet/membership`, wave 3, L32) —
+- **Fleet commands** (`@hobo/fleet/membership`) —
   [`src/fleets/README.md`](src/fleets/README.md). `listFleets`, `getFleet`,
   `defineFleet`, `fleetView`, `fleetVerdict`, `grantSession` and
   `submitWork`, journalled on `fleet-fleet-*`, `fleet-session-*` and
   `fleet-work-*`; a fleet's coordination mode is immutable and `submitWork`
   is idempotent while the earlier submission is unexpired.
-- **Agent** (`@hobo/fleet/agent`, wave 4, L07) —
+- **Agent** (`@hobo/fleet/agent`) —
   [`src/agent/README.md`](src/agent/README.md). `createFleetAgent`:
   enrollment (a 24-hour key bundle, retried once as 1 hour when policy
   refuses), credential refresh with a persisted nonce (F19), bundle renewal at
@@ -121,13 +121,13 @@ gathers them here as the waves merge.
   drains and restarts when memberships change), session serving, and control
   messages. It has no initiator API, and a newly joined fleet's offers are
   read from "new".
-- **Client** (`@hobo/fleet/client`, wave 4, L07) —
+- **Client** (`@hobo/fleet/client`) —
   [`src/client/README.md`](src/client/README.md). `createFleetClient`: one
   method per `FleetApi` route except the four browser-only ones, protobuf
   JSON bodies, `FleetFailure` answers (nothing throws), and DPoP per route.
   Its PACT is `contracts/fleet-authority.pact.json`; the in-process authority
   stand-in and memory bus connector are in `examples/`.
-- **Local mode** (`@hobo/fleet/membership`, wave 4, L33) —
+- **Local mode** (`@hobo/fleet/membership`) —
   [`src/local/README.md`](src/local/README.md). `createLocalFleet` composes
   the real enrollment state machine and fleet commands in one process with
   an in-memory event store and registry, nothing signed and no bus. It

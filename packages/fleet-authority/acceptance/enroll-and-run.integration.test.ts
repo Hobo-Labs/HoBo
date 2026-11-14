@@ -23,11 +23,8 @@ import {
 	type SandboxDriver,
 	SandboxTier,
 } from "@hobo/fleet";
+import { createEgressProxyFactory, sandboxDrivers } from "@hobo/fleet-agent";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-// `@hobo/fleet-agent` is not a dependency of this package (the cascade delta names it); its entry
-// points are reached by path, resolving their own imports inside that package.
-import { createEgressProxyFactory } from "../../fleet-agent/src/egress/index.js";
-import { sandboxDrivers } from "../../fleet-agent/src/sandbox/index.js";
 import {
 	browserApproval,
 	enrollDevice,

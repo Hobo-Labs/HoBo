@@ -1,10 +1,10 @@
-# `@hobo/fleet/audit` (L06)
+# `@hobo/fleet/audit`
 
-The tamper-evident audit log of design §6.14: the authority's hash chain, its verification, and the witness that co-signs checkpoints and trust records.
+The tamper-evident audit log of [audit, metering and observability](../../../../docs/design/fleet.md#audit-metering-and-observability): the authority's hash chain, its verification, and the witness that co-signs checkpoints and trust records.
 
 ## Entry points
 
-The frozen entry points of design §7.3 live in `index.ts`. The other modules in this directory belong to this lane and are not part of the contract.
+The frozen entry points of [the ports](../ports.ts) live in `index.ts`. The other modules in this directory belong to this lane and are not part of the contract.
 
 | Entry point | What it does |
 |---|---|

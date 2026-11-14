@@ -1,6 +1,6 @@
-# `src/bus/`: topology, credentials, the auth callout and the bus ports (L08)
+# `src/bus/`: topology, credentials, the auth callout and the bus ports
 
-The four entry points of design §7.3 that this directory implements:
+The four entry points of [the ports](../../../fleet/src/ports.ts) that this directory implements:
 `provisionTopology`, `createNatsBusConnector`, `connectAuthorityBus` and
 `startCalloutResponder` (in `index.ts`). Everything else here is private to
 the lane.
@@ -9,11 +9,11 @@ the lane.
 
 | Module | Holds |
 |---|---|
-| `names.ts` | Stream, bucket, subject and key names of §6.7 |
-| `templates.ts` | The observer, executor and dispatcher permission templates and the static users, verbatim from §6.7 |
+| `names.ts` | Stream, bucket, subject and key names of [NATS topology](../../../../docs/design/fleet.md#nats-topology) |
+| `templates.ts` | The observer, executor and dispatcher permission templates and the static users, verbatim from [NATS topology](../../../../docs/design/fleet.md#nats-topology) |
 | `wire.ts` | `BusWire`, the narrow seam between the ports and a NATS connection |
 | `fleet-bus.ts` | Every port of `FleetBus` and `AuthorityBus` over a `BusWire` |
-| `registry-view.ts` | The verifying `RegistryView` and the device and authority trust pins (§7.4) |
+| `registry-view.ts` | The verifying `RegistryView` and the device and authority trust pins ([signed envelope](../../../../docs/design/fleet.md#signed-envelope)) |
 | `connect-token.ts` | The `ConnectToken` codec and minting |
 | `callout-checks.ts` | The seven checks of the connect sequence |
 | `callout.ts` | One sealed callout exchange: open, verify, check, answer |
@@ -66,7 +66,7 @@ skip without it unless `CI` is set, and the lane's checks run them with it.
   ticket once (recorded in `fleet-replay` under `nats-ticket`). A proof that
   does carry a nonce must carry this connection's. The connector fetches a
   fresh ticket for each connection attempt.
-- **Trust key encoding.** §7.1 encodes an `AUTHORITY` key's value as the raw
+- **Trust key encoding.** [the records](../../../fleet/data-models/fleet.proto) encodes an `AUTHORITY` key's value as the raw
   key, base64url; `runBusConformance` writes RFC 7517 JSON. The view accepts
   both, verifying the signature either way.
 - **The authority's pin.** The authority's view verifies against the trust
@@ -109,7 +109,7 @@ in between.
 
 `connectAuthorityBus` opened with the static `witness` user's credentials is
 the witness's connection (`auditRoleOfCredentials` reads the user name from
-the credentials). §7.3 gives the witness no method of its own to publish a
+the credentials). [The ports](../../../fleet/src/ports.ts) gives the witness no method of its own to publish a
 co-signature, so on that connection the audit log appends co-signatures:
 `appendCheckpoint` and `proposeTrust` write the co-signature of a checkpoint
 or of a proposed trust record to `fleet.audit.witness`, and `append` is
@@ -129,7 +129,7 @@ Each allowed decision is logged as `hobo_fleet_bus_status` with `component`
 template, so that the status feed counts successful callouts toward
 `nats-callout` availability; a refusal is `hobo_fleet_callout_refused`.
 
-## Assumptions (§13)
+## Assumptions
 
 | Id | Result in this lane | Evidence |
 |---|---|---|

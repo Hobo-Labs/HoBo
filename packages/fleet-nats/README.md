@@ -7,6 +7,10 @@ callout from scoped signing keys whose permission templates are fixed to the
 member id; every listener uses TLS. The bus is never trusted: anything that
 grants trust is a signed envelope verified against the pinned trust record.
 
+Design: [HoBo Fleet](../../docs/design/fleet.md) and
+[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
+[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+
 ## Entry points
 
 | Entry point | Does |
@@ -18,25 +22,21 @@ grants trust is a signed envelope verified against the pinned trust record.
 | `createJournalEventStore` | A `FleetEventStore` on the `FLEET_JOURNAL` stream (high-availability profile) |
 | `createBusRelayTransport` | A `FleetTransport` relayed over `fleet.relay.<to>.<session>` |
 
-Until each lane lands, its entry point has its final signature and throws
-`FleetNotImplemented`.
+## Parts
 
-## Landed parts
+Each part has its own README next to its code.
 
-Each lane writes its part of this README next to its code; the coordinator
-gathers them here as the waves merge.
-
-- **Bus** (wave 2, L08) — [`src/bus/README.md`](src/bus/README.md).
+- **Bus** — [`src/bus/README.md`](src/bus/README.md).
   `provisionTopology`, `createNatsBusConnector`, `connectAuthorityBus` and
   `startCalloutResponder` over narrow client ports, with the real
   `@nats-io` client as the default. The authority static user's per-stream
   `$JS.API` grants use one wildcard per stream so its JWT fits nats-server's
   4 KiB control line.
-- **Journal event store** (wave 2, L36) — [`src/journal/README.md`](src/journal/README.md).
+- **Journal event store** — [`src/journal/README.md`](src/journal/README.md).
   `createJournalEventStore` on `FLEET_JOURNAL`: one message per append with
   `Nats-Expected-Last-Subject-Sequence` as the compare-and-set, the fencing
   epoch stored with each batch, and idempotency keys enforced across replicas.
-- **Bus-relay transport** (wave 3, L37) — [`src/relay/README.md`](src/relay/README.md).
+- **Bus-relay transport** — [`src/relay/README.md`](src/relay/README.md).
   `createBusRelayTransport`: sessions as end-to-end encrypted messages on
   `fleet.relay.<to>.<relaySessionId>`, transport identity
   `relay:<SEAL public key>`, credit-based flow control (1 MiB unread, 128 KiB

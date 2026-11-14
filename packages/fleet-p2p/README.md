@@ -5,6 +5,10 @@ device-to-device streams dialled by Ed25519 key over QUIC (iroh), with relay
 fallback, for shells, port forwards and bulk transfer. The only package with the
 native binding.
 
+Design: [HoBo Fleet](../../docs/design/fleet.md) and
+[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
+[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+
 ## Entry points
 
 | Entry point | Does |
@@ -46,7 +50,7 @@ native binding.
   `TRANSPORT` key), every dial fails `unavailable`, and `accept` takes
   nothing; selection moves on to `overlay` and `bus-relay`.
 
-## Assumptions (design §13)
+## Assumptions
 
 | # | Result | How |
 |---|---|---|

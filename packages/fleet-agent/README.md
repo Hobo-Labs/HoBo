@@ -5,6 +5,10 @@ drivers, the per-order egress proxy, host capacity and service installers. A
 library; it has no binary. `hobo fleet run` and the box worker compose it with
 `createFleetAgent` from `@hobo/fleet/agent`.
 
+Design: [HoBo Fleet](../../docs/design/fleet.md) and
+[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
+[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+
 ## Entry points
 
 | Entry point | Does |
@@ -15,30 +19,26 @@ library; it has no binary. `hobo fleet run` and the box worker compose it with
 | `sandboxDrivers` | The sandbox drivers whose self-test passed, up to a tier cap |
 | `createEgressProxyFactory` | One egress proxy per order, exact hosts only |
 
-Until each lane lands, its entry point has its final signature and throws
-`FleetNotImplemented`.
+## Parts
 
-## Landed parts
+Each part has its own README next to its code.
 
-Each lane writes its part of this README next to its code; the coordinator
-gathers them here as the waves merge.
-
-- **Key stores** (wave 2, L10) — [`src/keystore/README.md`](src/keystore/README.md).
+- **Key stores** — [`src/keystore/README.md`](src/keystore/README.md).
   `createFileKeyStore` (EC P-256 identity, Ed25519 `SIGN`, X25519 `SEAL`, tier
   `T0`) and `createExternalSignerKeyStore` (identity key behind a helper
   command speaking `public`, `sign` and `destroy`, tier `T1`). The key
   directory is refused inside a git checkout or when others can read it.
-- **Host capacity** (wave 2, L10) — [`src/capacity/README.md`](src/capacity/README.md).
+- **Host capacity** — [`src/capacity/README.md`](src/capacity/README.md).
   Slots, `MemAvailable` less the 2 GiB worker reserve, and `statfs` disk; an
   unreadable figure is left out, never zero.
-- **Service installers** (wave 2, L10) — [`src/install/README.md`](src/install/README.md).
+- **Service installers** — [`src/install/README.md`](src/install/README.md).
   A systemd user unit, a launchd agent, or a Windows Task Scheduler task; the
   caller enables it.
-- **Sandbox drivers** (wave 2, L38) — [`src/sandbox/README.md`](src/sandbox/README.md).
+- **Sandbox drivers** — [`src/sandbox/README.md`](src/sandbox/README.md).
   `S1` over `crun`/`runc` with bundles the driver writes, `S2` over gVisor
   `runsc`; the `S3` drivers (Kata, Apple `container`) fail their self-test
   closed until the vsock path is built (A11, A12).
-- **Egress proxy** (wave 2, L38) — [`src/egress/README.md`](src/egress/README.md).
+- **Egress proxy** — [`src/egress/README.md`](src/egress/README.md).
   One proxy per order, exact hosts only, the fleet allowlist read on every
   request, loopback, link-local, metadata and multicast always refused.
 

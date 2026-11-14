@@ -1,8 +1,8 @@
-# Local mode (L33)
+# Local mode
 
 `createLocalFleet(init)` is the fleet package for a process that owns its
 whole fleet: the hosted relay's cache backends, the Postgres reconcile
-(design §6.2 "Local mode", D6). There is no authority service and no bus.
+([fleets, members and roles](../../../../docs/design/fleet.md#fleets-members-and-roles) "Local mode", D6). There is no authority service and no bus.
 
 ## What it does
 
@@ -24,7 +24,7 @@ are `sponsoredMemberId(tenant, kind, fleet, name)`, so a second start from
 the same configuration yields the same ids. For a one-active fleet
 `registry.membersOf(fleet)` lists the configured members as **candidates**;
 which members decide an epoch is read from the assignment log, never from
-this registry (§6.10 item 1).
+this registry ([one-active fleets](../../../../docs/design/fleet.md#one-active-fleets-the-assignment-register) item 1).
 
 ## Nothing is signed
 
@@ -55,7 +55,7 @@ code and rule) when:
   approval is read as `AUTO_OWNER`;
 - two configured members share a name (`invalid-request`, rule
   `duplicate-name`);
-- the fleet record or policy fails the §7.2 rules of `defineFleet`
+- the fleet record or policy fails the [the constraints](../../data-models/fleet.cue) rules of `defineFleet`
   (`invalid-request`, `detail.rule` as there);
 - a member fails `declare` (only `BACKEND` and `TARGET` are declared;
   `endpointDigest` is empty or `sha256:<64 hex>`; the kind is allowed by the

@@ -1,6 +1,6 @@
-# Sign-in (L30)
+# Sign-in
 
-`createSignIn` signs a person in to the authority (design §6.5 "People sign
+`createSignIn` signs a person in to the authority ([enrollment](../../../../docs/design/fleet.md#enrollment) "People sign
 in") and issues a **person token**: a 15-minute JWT from the authority's
 `CredentialIssuer`, bound by DPoP (`cnf.jkt`) to the CLI's sign-in key,
 refreshable for 12 hours from sign-in.

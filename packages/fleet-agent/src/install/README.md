@@ -1,4 +1,4 @@
-# Service installers (L10)
+# Service installers
 
 `installService(platform, argv)` writes a definition that runs `argv` as a service for the current user. `argv` is the command line, with an absolute program path first. The function returns `Outcome<string>`, whose value is the path it wrote. If a definition already exists at that path, it is replaced. The function does not enable the service. The caller shows the person the command and runs it:
 
@@ -8,7 +8,7 @@
 | `darwin` | launchd agent `~/Library/LaunchAgents/dev.hobo.fleet.plist` | `launchctl bootstrap gui/$(id -u) <path>` |
 | `win32` | Task Scheduler XML at `%USERPROFILE%\AppData\Local\hobo\hobo-fleet.xml` | `Register-ScheduledTask -TaskName hobo-fleet -Xml (Get-Content -Raw <path>)` |
 
-Each definition restarts the agent when it fails and gives it 120 seconds to drain when it stops. The systemd and launchd definitions record the agent's `HOBO_FLEET_*` variables of §6.15 that are set at install time. They never record `HOBO_FLEET_NATS_SERVER_BIN`, which is for tests only. A Windows task runs with the user's own environment.
+Each definition restarts the agent when it fails and gives it 120 seconds to drain when it stops. The systemd and launchd definitions record the agent's `HOBO_FLEET_*` variables of [surfaces](../../../../docs/design/fleet.md#surfaces) that are set at install time. They never record `HOBO_FLEET_NATS_SERVER_BIN`, which is for tests only. A Windows task runs with the user's own environment.
 
 **Windows is a scheduled task, not a service.** Node cannot answer the Service Control Manager without a native wrapper. The task starts when the user logs on and runs with least privilege.
 

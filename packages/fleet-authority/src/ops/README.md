@@ -1,6 +1,6 @@
-# Operations (L27)
+# Operations
 
-`runCeremony`, `rotateKey`, `backup` and `restore` (design §6.16, §7.3), for
+`runCeremony`, `rotateKey`, `backup` and `restore` ([deployment, availability and operations](../../../../docs/design/fleet.md#deployment-availability-and-operations), [the ports](../../../fleet/src/ports.ts)), for
 both profiles. Each reads the configuration file `OpsContext.configPath`
 names, composes the deployment from it (`compose.ts`), runs, and closes what
 it opened. Every failure is an `Outcome`; nothing is thrown across the entry

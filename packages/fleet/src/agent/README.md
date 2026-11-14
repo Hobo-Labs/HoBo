@@ -1,6 +1,6 @@
-# `@hobo/fleet/agent` (L07)
+# `@hobo/fleet/agent`
 
-The device agent core (design §6.5, §6.7–§6.9, §6.12; failures F1, F4, F7,
+The device agent core ([enrollment](../../../../docs/design/fleet.md#enrollment), [NATS topology](../../../../docs/design/fleet.md#nats-topology), [observations, capacity and reliability](../../../../docs/design/fleet.md#observations-capacity-and-reliability), [many-active fleets](../../../../docs/design/fleet.md#many-active-fleets-offers-claims-orders-and-receipts), [transport](../../../../docs/design/fleet.md#transport); failures F1, F4, F7,
 F16, F18, F19). `hobo fleet run` and the box worker compose it with a key
 store, a bus connector, sandbox drivers, an egress proxy and transports.
 

@@ -1,4 +1,4 @@
-# Acceptance (L26)
+# Acceptance
 
 Behaviour and acceptance for HoBo Fleet (ADR-0183): the cucumber features
 under `features/fleet/`, their steps under `features/steps/fleet/`, the O2
@@ -12,7 +12,7 @@ exported by the package; the modules are test support.
 | `nats.ts` | The world's bus on a real `nats-server`: operator mode, JetStream, TLS, `provisionTopology`, `connectAuthorityBus`, `startCalloutResponder`, `createNatsBusConnector`; and `operatorConf` for a server deployed from the ceremony's seed |
 | `flows.ts`, `claims.ts`, `one-active.ts`, `ephemeral-state.ts` | The O2 flows (enrollment by token, browser approval or workload identity; sign-in through the routes; an own `oci-command` job to its receipt), signed offers and claims, key bundles, a copied key store, an in-memory stream pair, and a local one-active fleet |
 | `enroll-and-run.integration.test.ts` | O2's integration half: `nats-server`, the authority and the real `S1` driver; the token and browser-approval flows each reach `SUCCEEDED` |
-| `soak.ts` | The O20 soak `scripts/fleet-soak.mts` runs (design §10.1 "Soak output") |
+| `soak.ts` | The O20 soak `scripts/fleet-soak.mts` runs; it writes `fleet-soak.json` |
 | `index.ts` | What the root behaviour steps import (the root workspace has no dependency on the fleet packages) |
 
 ## Behaviour (`pnpm run test:behavior`)
@@ -35,8 +35,8 @@ It needs `nats-server` (`HOBO_FLEET_NATS_SERVER_BIN` or on PATH), `openssl`,
 and a host where the `S1` self-test passes (D58: the agent provisions gVisor
 `runsc` into `HOBO_FLEET_SANDBOX_CACHE`, default `/var/lib/hobo-fleet` as
 root). O2 takes no fallback, so the test never skips: without either it
-fails and says which. `@hobo/fleet-agent` is reached by path because it is
-not a dependency of this package.
+fails and says which. `@hobo/fleet-agent` is a devDependency of this
+package, so the drivers come from its package entry point.
 
 ## O20 soak
 

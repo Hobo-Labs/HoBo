@@ -1,12 +1,12 @@
-# `@hobo/fleet/client` (L07)
+# `@hobo/fleet/client`
 
-The typed HTTP client of the authority's API (design §6.15, §7.3).
+The typed HTTP client of the authority's API ([surfaces](../../../../docs/design/fleet.md#surfaces), [the ports](../ports.ts)).
 
 | Entry point | What it does |
 |---|---|
 | `createFleetClient({ origin, fetch, auth })` | One method per route of `FleetApi` except the four browser-only ones |
 
-- Bodies are protobuf JSON of the records of §7.1; answers are read with
+- Bodies are protobuf JSON of the records of [the records](../../data-models/fleet.proto); answers are read with
   unknown fields ignored. An error body is a `FleetError` and comes back as
   the `FleetFailure` it names; any other failing body maps from its HTTP
   status (5xx is `unavailable`). A transport failure is `unavailable`. Nothing

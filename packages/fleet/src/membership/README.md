@@ -1,7 +1,7 @@
-# Enrollment and credentials (L02)
+# Enrollment and credentials
 
 `createEnrollmentAuthority(deps, parts)` is the authority's command side for
-members and bootstrap tokens (design §6.5, §6.6, §6.13, §7.5). It implements
+members and bootstrap tokens ([enrollment](../../../../docs/design/fleet.md#enrollment), [credentials](../../../../docs/design/fleet.md#credentials), [policy, tenancy and residency](../../../../docs/design/fleet.md#policy-tenancy-and-residency), [event family](../../../../docs/design/fleet.md#event-family)). It implements
 the member and token methods of `FleetApi` itself and routes the rest to
 `AuthorityParts`: sign-in to `parts.signIn`; fleets, sessions, work
 submission, views and verdicts to `parts.fleets`; work status and logs to
@@ -20,7 +20,7 @@ instance rebuilt by replay equals a live one (both property-tested).
 |---|---|---|
 | `fleet-token-<sha256>` | `TokenIssued`, `TokenConsumed`, `TokenRevoked` | consumption is a compare-and-set at the token stream's head |
 | `fleet-thumbprint-<thumbprint>` | `ThumbprintBound` | appended at `expectedSeq: 0`; a key bound to another member is `key-known` |
-| `fleet-member-<MemberId>` | the 16 member events of §7.5 | each transition appends at the member stream's head |
+| `fleet-member-<MemberId>` | the 16 member events of the [event family](../../../../docs/design/fleet.md#event-family) | each transition appends at the member stream's head |
 
 Event `data` carries `subject` (the registry key `member.<id>`, else the
 stream id), `subjectSequence` (the record's `record_sequence` after the

@@ -1,4 +1,4 @@
-# Recorder and registry projection (L31)
+# Recorder and registry projection
 
 `createRecorder` and `createRegistryProjection`, re-exported by
 `@hobo/fleet/membership`. Together they are the only emitters of the four
@@ -10,7 +10,7 @@ fleet usage types (D40).
   and session-close facts, and log chunks from the bus.
 - Verifies every envelope against the signer's `SIGN` key in the
   identity-signed key bundle of its registry record, under the one context the
-  §7.4 table lists. Offers and orders must come from a `DISPATCHER` of that
+  [signed envelope](../../../../docs/design/fleet.md#signed-envelope) table lists. Offers and orders must come from a `DISPATCHER` of that
   fleet; claims, receipts, logs and closes must be signed by the member they
   name and published under its subject. A refused envelope is never recorded
   and is counted: `hobo_fleet_bus_status` with `recorder: "unverifiable"`,
@@ -23,7 +23,7 @@ fleet usage types (D40).
   SHA-256 of the signed payload), so a replay, a republish or a second
   replica records each fact once. `start` resumes each subscription from
   `{ after: <highest recorded> }`. Order secrets are never journalled.
-- Log chunks are not journalled: their read store is `FLEET_EVENTS` (§7.5),
+- Log chunks are not journalled: their read store is `FLEET_EVENTS` ([event family](../../../../docs/design/fleet.md#event-family)),
   so that subscription always starts from the oldest retained chunk.
   `workLogs` answers the verified chunks of the latest order, from its
   executor only.

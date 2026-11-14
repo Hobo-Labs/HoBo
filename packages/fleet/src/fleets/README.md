@@ -1,7 +1,7 @@
-# Fleet commands (L32)
+# Fleet commands
 
 `createFleetCommands(deps)` implements the `FleetCommands` part of the
-authority API (design §6.2, §6.9, §6.12, §6.13, §7.5): `listFleets`,
+authority API ([fleets, members and roles](../../../../docs/design/fleet.md#fleets-members-and-roles), [many-active fleets](../../../../docs/design/fleet.md#many-active-fleets-offers-claims-orders-and-receipts), [transport](../../../../docs/design/fleet.md#transport), [policy, tenancy and residency](../../../../docs/design/fleet.md#policy-tenancy-and-residency), [event family](../../../../docs/design/fleet.md#event-family)): `listFleets`,
 `getFleet`, `defineFleet`, `fleetView`, `fleetVerdict`, `grantSession` and
 `submitWork`. `createEnrollmentAuthority` routes those routes here through
 `AuthorityParts.fleets`; local mode calls it with `mode: "local"`.
@@ -9,7 +9,7 @@ authority API (design §6.2, §6.9, §6.12, §6.13, §7.5): `listFleets`,
 ## Behaviour
 
 - **`defineFleet`** (person). Validates the record against the `FleetRecord`
-  and `FleetPolicy` rows of §7.2 (refusal `invalid-request`, `detail.rule`
+  and `FleetPolicy` rows of [the constraints](../../data-models/fleet.cue) (refusal `invalid-request`, `detail.rule`
   names the rule). `ONE_ACTIVE` is refused in `mode: "authority"` with
   `fleet-policy`, rule `one-active-authority` (D39), and accepted in
   `mode: "local"`. A fleet's coordination mode never changes

@@ -1,14 +1,14 @@
 # Observation (`@hobo/fleet/observation`, lane L03)
 
 Signed observations, fit, one-active eligibility, ranking and claim turns,
-fleet views and verdicts, and the reliability ledger (design §6.8). Moved
+fleet views and verdicts, and the reliability ledger ([observations, capacity and reliability](../../../../docs/design/fleet.md#observations-capacity-and-reliability)). Moved
 from `packages/ci/src/mesh/` (`rendezvous.ts`, `reliability.ts`,
 `monitor.ts`, `report.ts`); L15 deletes the originals.
 
 | Entry point | What it does |
 |---|---|
 | `buildObservation(input, signer)` | Local mode (no signer): the observation itself. Authority mode: its protobuf binary signed under `hobo-fleet/observation/v1` with the observer's `SIGN` key. |
-| `acceptObservation(keyed, registry, lastIssuedAtMs, nowMs)` | Every rule of §6.8. A refusal names its rule in `error.detail.reason` (`key-mismatch`, `context`, `observer-unknown`, `observer-not-device`, `observer-not-active`, `bundle-invalid`, `bundle-expired`, `key-unknown`, `signature`, `payload`, `member-unknown`, `not-sponsor`, `member-not-active`, `not-in-fleet`, `time-invalid`, `replayed`, `too-far-ahead`, `expired`); the caller counts it once as `hobo_fleet_observation_rejected`. |
+| `acceptObservation(keyed, registry, lastIssuedAtMs, nowMs)` | Every rule of [observations, capacity and reliability](../../../../docs/design/fleet.md#observations-capacity-and-reliability). A refusal names its rule in `error.detail.reason` (`key-mismatch`, `context`, `observer-unknown`, `observer-not-device`, `observer-not-active`, `bundle-invalid`, `bundle-expired`, `key-unknown`, `signature`, `payload`, `member-unknown`, `not-sponsor`, `member-not-active`, `not-in-fleet`, `time-invalid`, `replayed`, `too-far-ahead`, `expired`); the caller counts it once as `hobo_fleet_observation_rejected`. |
 | `fitWork(observation, needs)` | Copies of the work that fit, or the first thing lacking. A device that is not `REACHABLE` lacks a `slot`. Absent memory, disk or platform constrain nothing; sandbox tiers are never assumed; `docker` needs an `S3_MICROVM` tier. |
 | `failingLongerThan(observation, ms)` | Not `REACHABLE` and `failing_for_ms >= ms`: today's failover threshold. |
 | `eligibleForActive(observations, { mode, recoveryPointMs })` | Today's `decideFleet` health tests and reason strings (`unreachable`, `not-ready`, `never-copied`, `lag 21m exceeds rpo 20m`). |

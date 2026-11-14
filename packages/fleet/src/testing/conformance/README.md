@@ -1,7 +1,7 @@
-# Conformance suites (L29)
+# Conformance suites
 
 The seven suites every adapter of a fleet port runs against itself, exported
-from `@hobo/fleet/testing` (design §7.3). Each `run*` function registers one
+from `@hobo/fleet/testing` ([the ports](../../ports.ts)). Each `run*` function registers one
 vitest `describe` with one `it` per named assertion; call it at the top level
 of the adapter's test file.
 
@@ -38,7 +38,7 @@ of the adapter's test file.
 ## Architecture placement
 
 Test kit only: no commands, events, actors, projections or read stores. The
-suites hold no decisions of the fleet; they state the port contracts of §7.3
+suites hold no decisions of the fleet; they state the port contracts of [the ports](../../ports.ts)
 as named assertions. `test/testing/suites.test.ts` proves O39: the in-memory
 adapters pass, and for each assertion a double broken in exactly that way
 fails exactly that assertion.

@@ -1,8 +1,8 @@
 # `@hobo/fleet/assignment`
 
-The one-active assignment register (design §6.10), moved from
+The one-active assignment register ([one-active fleets](../../../../docs/design/fleet.md#one-active-fleets-the-assignment-register)), moved from
 `@hobo/backend-routing` (`assignment.ts`, `ephemeral-replica.ts`, `backend.ts`)
-with the names of §7.3: `AssignmentEntry`, `AssignmentValue`, `MemberName`,
+with the names of [the ports](../ports.ts): `AssignmentEntry`, `AssignmentValue`, `MemberName`,
 `Health`, `FailureClassifier`. The algorithm is unchanged: every member keeps
 an append-only log, an epoch is decided by a majority of its deciding set, and
 readers fail closed (`no-majority`, `undecided`).

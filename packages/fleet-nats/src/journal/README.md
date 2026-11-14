@@ -1,8 +1,8 @@
-# Journal event store (L36)
+# Journal event store
 
 `createJournalEventStore({ servers, credentials })` returns a `FleetEventStore`
 on the `FLEET_JOURNAL` stream, the event store of the high-availability
-profile (design §6.16). Several authority replicas can share it without a
+profile ([deployment, availability and operations](../../../../docs/design/fleet.md#deployment-availability-and-operations)). Several authority replicas can share it without a
 leader.
 
 ## Layout

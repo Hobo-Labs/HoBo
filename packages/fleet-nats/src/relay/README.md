@@ -1,6 +1,6 @@
-# Bus-relay transport (L37)
+# Bus-relay transport
 
-`createBusRelayTransport(bus)` is the third `FleetTransport` of design §6.12:
+`createBusRelayTransport(bus)` is the third `FleetTransport` of [transport](../../../../docs/design/fleet.md#transport):
 always available, slowest. It carries a session as messages on
 `fleet.relay.<toMemberId>.<relaySessionId>` through the agent's live bus
 (`bus` is the agent's `bus()`; a dial fails `unavailable` while it answers

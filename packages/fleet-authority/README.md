@@ -5,6 +5,10 @@ the composition of the recorder and registry projection, operations (key
 ceremony, rotation, backup, restore), the status feed and the witness. Its
 composition roots are `hobo-fleet-authority` and `hobo-fleet-witness`.
 
+Design: [HoBo Fleet](../../docs/design/fleet.md) and
+[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
+[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+
 ## Entry points
 
 | Entry point | Does |
@@ -15,25 +19,21 @@ composition roots are `hobo-fleet-authority` and `hobo-fleet-witness`.
 | `createStatusFeed` | Emits the availability events of the enrollment API and the NATS callout |
 | `OpsContext`, `RotatableKey` | The operations' inputs |
 
-Until each lane lands, its entry point has its final signature and throws
-`FleetNotImplemented`.
+## Parts
 
-## Landed parts
+Each part has its own README next to its code.
 
-Each lane writes its part of this README next to its code; the coordinator
-gathers them here as the waves merge.
-
-- **Operations** (wave 3, L27) — [`src/ops/README.md`](src/ops/README.md).
+- **Operations** — [`src/ops/README.md`](src/ops/README.md).
   `runCeremony`, `rotateKey`, `backup` and `restore` for both profiles. Each
   reads the JSON configuration at `OpsContext.configPath` and composes the
   deployment itself. Rotation is resumable (add, publish, switch, remove);
   the backup is one `hobo-fleet-backup/v1` file; restore raises the authority
   incarnation in a witnessed trust record. The high-availability restore
   answers `unavailable` until the journal gains an envelope-preserving import.
-- **Status feed** (wave 3, L27) — [`src/status/README.md`](src/status/README.md).
+- **Status feed** — [`src/status/README.md`](src/status/README.md).
   `createStatusFeed`: one `slo.Measured` event per finished minute for the
   enrollment API (target 0.999) and the NATS callout (target 0.9995).
-- **Authority service** (wave 4, L09) —
+- **Authority service** —
   [`src/service/README.md`](src/service/README.md). The HTTP service over
   `EnrollmentAuthority` (41 routes plus `/healthz` and `/readyz`, each with
   its auth mode checked before the method runs), its composition for both
@@ -45,8 +45,15 @@ gathers them here as the waves merge.
   <file>` (OpenBao secret store only). The witness connects with the
   witness user's credentials and publishes its co-signatures through that
   connection's audit log, which writes them to `fleet.audit.witness`
-  (`publishOverAuditLog`, L42). Fallbacks: none.
-
+  (`publishOverAuditLog`). Fallbacks: none.
+- **Acceptance** — [`acceptance/README.md`](acceptance/README.md). The world
+  the root behaviour steps (`features/fleet/`, `pnpm run test:behavior`) run:
+  the real authority behind its HTTP handler with its own trust anchor, on the
+  in-memory bus. `acceptance/enroll-and-run.integration.test.ts` enrolls
+  devices by token and browser approval against `nats-server` and runs an
+  `oci-command` job to `SUCCEEDED` in the real `S1` sandbox; it fails rather
+  than skips when either is missing. `pnpm run fleet:soak` brings up the
+  high-availability profile of `deploy/fleet` and writes `fleet-soak.json`.
 ## Gates
 
 - **TypeScript:** `pnpm --filter @hobo/fleet-authority run build`.
@@ -55,7 +62,8 @@ gathers them here as the waves merge.
   responses are `@hobo/fleet` records. Parse, don't validate: every request body
   is parsed into its derived type (the generated record, constrained) before a command sees it.
 - **PACT:** the HTTP API's consumer pact is
-  `packages/fleet/contracts/fleet-authority.pact.json` (L07). L42 replays it on
+  `packages/fleet/contracts/fleet-authority.pact.json`, written by
+  `@hobo/fleet/client`'s tests. This package replays it on
   the provider side in `test/contracts/fleet-authority.pact.provider.test.ts`:
   every interaction, none skipped, against the real service through
   `test/support/harness.ts` `send()`. A fresh service is brought to each

@@ -1,6 +1,6 @@
-# Host capacity (L10)
+# Host capacity
 
-`createHostCapacity({ slots, workRoot, labels })` returns a `CapacitySource`. Each `read()` measures the host the way the box worker's `free()` does today (design §6.8):
+`createHostCapacity({ slots, workRoot, labels })` returns a `CapacitySource`. Each `read()` measures the host the way the box worker's `free()` does today ([observations, capacity and reliability](../../../../docs/design/fleet.md#observations-capacity-and-reliability)):
 
 | Figure | Source |
 |---|---|

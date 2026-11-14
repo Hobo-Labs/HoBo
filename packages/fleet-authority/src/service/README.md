@@ -1,6 +1,6 @@
-# The authority service (L09)
+# The authority service
 
-The running authority of design §6.15 and §6.16: the HTTP service over
+The running authority of [surfaces](../../../../docs/design/fleet.md#surfaces) and [deployment, availability and operations](../../../../docs/design/fleet.md#deployment-availability-and-operations): the HTTP service over
 `EnrollmentAuthority`, its composition for both profiles from one
 configuration record, the identity pieces it needs, and the
 `hobo-fleet-authority` and `hobo-fleet-witness` binaries. Operations and the
@@ -18,7 +18,7 @@ status feed are L27's (`src/ops/`, `src/status/`).
 
 ## Routes and auth
 
-Every route of §6.15 is exactly one `FleetApi` method (41 routes) plus
+Every route of [surfaces](../../../../docs/design/fleet.md#surfaces) is exactly one `FleetApi` method (41 routes) plus
 `/healthz` and `/readyz` (ready once the registry projection has published
 everything journalled when it started). Each route declares how it admits its
 caller:
@@ -38,7 +38,7 @@ the device-code flow is refused enrollment into a `DUAL` fleet
 (`fleet-policy`, rule `dual-control-device-code`), read from the journal
 (`fleet.PersonSignedIn` names the state, `fleet.SignInStarted` the flow).
 
-Errors are `FleetError` JSON with the status of §7.6. Bounds: 8 KiB URL,
+Errors are `FleetError` JSON with the status of [errors](../../../../docs/design/fleet.md#errors). Bounds: 8 KiB URL,
 256 KiB body (413), 30 s per call (`unavailable`). The only redirects are the
 callback to the approval page and the approval to the CLI's loopback address.
 Every API request is recorded on the status feed (`enrollment-api`, up when
