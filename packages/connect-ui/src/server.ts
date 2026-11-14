@@ -180,13 +180,13 @@ export async function startConnectPage(
 				const result = await run();
 				step = result.step;
 				directive = result.directive ?? { kind: "none" };
-			} catch (error) {
+			} catch {
 				step = {
 					kind: "failed",
 					provider: step.provider,
-					message: error instanceof Error ? error.message : String(error),
+					message: "Connection setup failed.",
 					remediation: [
-						"Run the command again; nothing was left half-created.",
+						"Check the provider and secret store for partially completed setup before retrying.",
 					],
 				};
 				directive = { kind: "none" };

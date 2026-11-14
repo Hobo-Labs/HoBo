@@ -293,12 +293,12 @@ describe("startConnectPage", () => {
 		expect(final).not.toContain("PRIVATE KEY-----");
 	});
 
-	it("turns a flow error into a failed step instead of a crash", async () => {
+	it("does not expose flow errors or claim a partial setup was rolled back", async () => {
 		page = await startConnectPage({
 			flow: {
 				initial: STORE_STEP,
 				async onAction() {
-					throw new Error("store refused the write");
+					throw new Error("store refused secret-token-value");
 				},
 			},
 			assetsDir: "dist/client",
@@ -308,7 +308,13 @@ describe("startConnectPage", () => {
 			headers: { "content-type": "application/json" },
 			body: '{"action":"connect.start","params":{}}',
 		});
-		expect((await res.json()).step).toBe("failed");
-		expect((await page.done).kind).toBe("failed");
+		const view = await res.json();
+		const final = await page.done;
+		expect(view.step).toBe("failed");
+		expect(final.kind).toBe("failed");
+		expect(JSON.stringify({ view, final })).not.toContain("secret-token-value");
+		expect(JSON.stringify({ view, final })).toContain(
+			"partially completed setup",
+		);
 	});
 });
