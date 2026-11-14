@@ -62,6 +62,7 @@ import {
 	type LakebedResolverOptions,
 	lakebedResolverRegistry,
 } from "@hobo/provider-lakebed";
+import { LOCAL_PROVIDER_ID } from "@hobo/provider-local";
 import { createNeonClaimableResolver } from "@hobo/provider-neon";
 import {
 	NETLIFY_STATIC_DEPLOY_PRODUCT_ID,
@@ -501,6 +502,12 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			"@hobo/provider-kafka",
 			"Kafka is a messaging capability realized through the resource graph (realizeKafkaResources, attested apply by ResourceActors, D6), not a hosting product with a resolver.",
 			"declare topics in the Bindle; they are applied as resource-graph changes, or bind a hosted queue such as @hobo/provider-upstash",
+		),
+		refused(
+			LOCAL_PROVIDER_ID,
+			"@hobo/provider-local",
+			"The local provider supplies definitions for selection, but has no delivery resolver or local apply/down executor yet.",
+			"use a delivery-capable hosting provider until local realization is wired into the runtime and composition root",
 		),
 		refused(
 			"opa",

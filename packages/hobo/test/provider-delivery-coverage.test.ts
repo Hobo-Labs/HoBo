@@ -203,6 +203,15 @@ describe("I14: realization path plus traffic profile", () => {
 });
 
 describe("I14: typed refusal for everything that is not a delivery target", () => {
+	it("refuses local delivery until its definitions have an executor", () => {
+		for (const key of ["local", "@hobo/provider-local"]) {
+			const refusal = providerDeliveryRefusal(key);
+			expect(refusal?.code).toBe("RESOLVER_PRODUCT_UNSUPPORTED");
+			expect(refusal?.message).toContain("definitions for selection");
+			expect(refusal?.message).toContain("local apply/down executor");
+		}
+	});
+
 	for (const row of PROVIDER_DELIVERY_COVERAGE) {
 		if (row.realization !== "refused") continue;
 		it(`${row.packageName} refuses with RESOLVER_PRODUCT_UNSUPPORTED and a remediation`, () => {
