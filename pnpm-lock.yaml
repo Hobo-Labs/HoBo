@@ -2028,6 +2028,9 @@ importers:
       '@hobo/connect-ui':
         specifier: workspace:*
         version: link:../connect-ui
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@hobo/data-postgres':
         specifier: workspace:*
         version: link:../data-postgres
@@ -2083,6 +2086,9 @@ importers:
       '@hobo/connect-ui':
         specifier: workspace:*
         version: link:../connect-ui
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
