@@ -939,6 +939,116 @@ jobs:
           ghcr-username: ${{ github.actor }}
           ghcr-token: ${{ secrets.GITHUB_TOKEN }}
 
+  release-service-images:
+    name: Fleet service images (build, provenance, bill of materials)
+    # The fleet authority, its witness and the peer-to-peer relay (design
+    # §6.16, ADR-0183): built from deploy/release-images/hobo-fleet-*/,
+    # exported as OCI layouts and published as release Freight through
+    # hobo deploy like every other release image (the realizer is the only
+    # thing that pushes), then attested with build provenance and a CycloneDX
+    # bill of materials by the same action (R18). The full train only: an
+    # sdk-v or cli-v tag ships none of them. They are not in the train's image
+    # list, so their Freight journal is named hobo-service-freight-<image>,
+    # which the release tag and GitHub Release do not read. One at a time,
+    # because legs on one box share the `*:candidate` tags.
+    if: >-
+      !cancelled() &&
+      needs.release-main-train-gate.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
+      needs.release-hobo-cli.result == 'success' &&
+      !startsWith(github.ref, 'refs/tags/sdk-v') &&
+      !startsWith(github.ref, 'refs/tags/cli-v') &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
+      )
+    needs: [release-main-train-gate, release-oci-build-tag, release-hobo-cli]
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    environment: release
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        image_id: [hobo-fleet-authority, hobo-fleet-witness, hobo-fleet-relay]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
+      HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_REVISION: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: ./.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: ./.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Resolve and validate release version
+        env:
+          HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
+        run: node --no-warnings scripts/ci/materialize-release-version.mts
+      - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      - name: Download the built hobo CLI
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: hobo-release-cli
+          path: ${{ runner.temp }}/hobo-release-cli
+      # Refused unless it is the build job's archive (digest) of this commit.
+      - name: Restore the hobo CLI (release Freight through hobo deploy)
+        env:
+          HOBO_RELEASE_CLI_DIGEST: ${{ needs.release-hobo-cli.outputs.digest }}
+        run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/hobo-release-cli/hobo-release-cli.tgz" --digest "$HOBO_RELEASE_CLI_DIGEST"
+      - name: Build service image, publish it through hobo deploy (release Freight)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/service
+        run: node --no-warnings scripts/ci/push-release-service-image.mts ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-service-digest.txt"
+      - name: Upload the service image Freight journal
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hobo-service-freight-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-cd/service
+          include-hidden-files: true
+      - name: Require a published digest
+        id: digest
+        env:
+          DIGEST_FILE: ${{ runner.temp }}/hobo-service-digest.txt
+        run: |
+          set -euo pipefail
+          if [ ! -s "${DIGEST_FILE}" ]; then
+            echo "::error::no digest recorded for ${{ matrix.image_id }}; publish must record a registry digest"
+            exit 1
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/release-oci-attest
+        if: steps.digest.outputs.present == 'true'
+        with:
+          digest-list-path: ${{ runner.temp }}/hobo-service-digest.txt
+          image-id: ${{ matrix.image_id }}
+          ghcr-username: ${{ github.actor }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+
   release-npm:
     name: npm publish train (SDK allowlist)
     # The @hobo-labs packages have never been published: the first publish

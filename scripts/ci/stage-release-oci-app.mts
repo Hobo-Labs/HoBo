@@ -20,7 +20,7 @@ import {
 
 const defaultRoot = join(import.meta.dirname, "..", "..");
 
-type DeployStage = {
+export type DeployStage = {
 	readonly kind: "deploy";
 	readonly packageName: string;
 	readonly buildFilter: string;
@@ -396,7 +396,7 @@ export function releaseOciDeployArgs(
 	];
 }
 
-function deployPackage(
+export function deployPackage(
 	root: string,
 	stagingRoot: string,
 	spec: DeployStage,
