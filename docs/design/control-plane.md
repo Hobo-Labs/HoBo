@@ -163,9 +163,11 @@ The remediation is always the same: declare the service in a Yard whose
 provider runs it, and join the two Yards with a Junction. The one exception is
 a service the Yard's provider provisions and runs **on our behalf**, a
 Marketplace resource such as Neon, Supabase or Upstash attached through the
-Vercel Marketplace. It is the provider's to run, so it is internal:
-`connectivityId: "<provider>.marketplace/v1"` on a row, or
-`b.external({ managedBy: { provider, via: "marketplace" } })` in a Bindle.
+Vercel Marketplace. The relationship must be verified against the selected
+provider; a Bindle's `managedBy` annotation or a row's `connectivityId` string
+is only a declaration. Placement currently refuses Bindle externals even with
+the annotation. Yard binding validation still accepts the connectivity string
+and needs trusted evidence before its exception can be relied on.
 
 The hosted CI relay is laid out this way (`packages/ci-vercel/deploy/yard.ts`).
 Its Vercel Yard holds Vercel's products plus the Marketplace caches. Infisical

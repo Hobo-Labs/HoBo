@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { bindle, externalBoundaryViolations } from "../src/index.js";
 
 // A Yard holds nothing external: a Bindle's b.external() is refused at
-// placement unless the provider runs it for us (Marketplace).
+// placement until the selected provider's Marketplace relationship is verified.
 
 describe("externalBoundaryViolations", () => {
 	it("refuses an external another vendor runs, naming the junction remediation", () => {
@@ -17,12 +17,16 @@ describe("externalBoundaryViolations", () => {
 		expect(violations[0]?.remediation).toMatch(/its own|junction/);
 	});
 
-	it("keeps a service the provider runs on our behalf", () => {
-		const app = bindle("shop", (b) => ({
-			api: b.api(),
-			db: b.external({ managedBy: { provider: "vercel", via: "marketplace" } }),
-		}));
-		expect(externalBoundaryViolations(app)).toEqual([]);
+	it("does not treat a self-declared marketplace provider as proof", () => {
+		for (const provider of ["vercel", "another-provider", ""]) {
+			const app = bindle("shop", (b) => ({
+				api: b.api(),
+				db: b.external({ managedBy: { provider, via: "marketplace" } }),
+			}));
+			expect(externalBoundaryViolations(app)).toMatchObject([
+				{ resource: "db" },
+			]);
+		}
 	});
 
 	it("has nothing to say about a Bindle with no externals", () => {

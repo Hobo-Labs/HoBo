@@ -145,10 +145,10 @@ lifecycle verbs: `up` and `down` remain the only two.
 Placement refuses a Bindle whose `b.external()` would put an external in a
 Yard (`HOBO_YARD_EXTERNAL_FORBIDDEN`) before anything is planned: `plan`, `up`,
 `up --what-if` and every family lifecycle. Declare that service in a Yard
-whose provider runs it and join the Yards with a Junction, or, for a service
-the provider runs on our behalf (Marketplace), use
-`b.external({ managedBy: { provider, via: "marketplace" } })`
-([control-plane.md](./control-plane.md)).
+whose provider runs it and join the Yards with a Junction. A
+`b.external({ managedBy: { provider, via: "marketplace" } })` annotation
+alone is not evidence of a Marketplace relationship and is also refused until
+placement can verify it ([control-plane.md](./control-plane.md)).
 
 ### Broker targeting and anonymous deploy
 
