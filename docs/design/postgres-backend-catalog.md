@@ -293,6 +293,32 @@ and Railway, which publish compute equivalence classes but no Yard catalog in
 `@hobo/cloud-providers`, so their catalog half is empty. Neon, Prisma Postgres,
 Upstash and Convex are data backends, not compute, and are not hosts.
 
+## Placement: ranking configured PostgreSQL offers
+
+`placePostgresFleet` (`packages/cloud-providers/src/postgres-placement.ts`) is a
+pure ranking helper. It selects a candidate writer and standbys from configured
+offers whose catalog entries satisfy the caller's request. It does not provision
+or connect databases, establish replication, wire the fleet, provide assignment
+authority, enforce failover, or prove runtime readiness. A host must supply and
+verify those capabilities separately, including replication privileges.
+
+- **Probe first.** Offers that failed a probe or have not been probed are
+  reported in `skipped`; with no reachable matching offer the result is
+  `unavailable`.
+- **Cost first for the writer.** Offers rank by known monthly fee (ascending;
+  unknown fees follow known ones), then probe latency and catalog order.
+- **Failure domains.** The host may provide verified, complete failure-domain
+  identifiers for each offer, including shared vendors and infrastructure.
+  Standbys with disjoint supplied domains are preferred, then other vendors,
+  then cost. Missing or overlapping domain evidence, or fewer standbys than
+  requested, makes the result `degraded`. Vendor names alone do not prove
+  independence. The helper cannot verify the host's evidence.
+- **Integration remains the host's responsibility.** `fleetOrder` (writer
+  first) has the shape accepted by `reconcileFleet` in `@hobo/data-postgres`;
+  returning that order does not connect or run it.
+
+Fees and probe results come from the host; the catalog records no prices.
+
 ## Gates
 
 TypeScript (`@hobo/core`, `@hobo/cloud-providers`); protobuf
@@ -308,7 +334,13 @@ this is in-process vocabulary and a read model.
 ## Not done
 
 - No offering is provisioned, connected to, or conformance-tested.
-- No prices or allowances; ranking input belongs in `@hobo/pricing`.
+- No prices or allowances in the catalog; `placePostgresFleet` takes fees from
+  the host, and a pricing feed for them belongs in `@hobo/pricing`.
+- Only Neon and Prisma Postgres have provider packages that provision. Supabase
+  and the other catalog entries can be placed, and a host can bring an existing
+  account, but HoBo does not create one yet.
+- Recipes that name `neon` (`cloudflare-neon`, `cloudflare-neon-upstash`) still
+  pin that vendor; moving them to a `data.postgres` request is follow-up work.
 - The catalog is one central file. Declaring each product in its own provider
   package, as traffic-routing profiles are, is the natural next step once every
   vendor has one.
