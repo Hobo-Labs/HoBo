@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
 	VERCEL_BLOB_PRODUCT_ID,
 	VERCEL_EDGE_CONFIG_PRODUCT_ID,
+	VERCEL_GIT_FUNCTION_PRODUCT_ID,
 	VERCEL_PROJECT_PRODUCT_ID,
 	VERCEL_RESOLVED_PRODUCT_IDS,
 	VERCEL_RESOLVER_TRANSPORT_POLICY,
@@ -268,8 +269,13 @@ describe("vercel resolver registry", () => {
 		const registry = vercelResolverRegistry(options());
 		expect(registry.list().map((entry) => entry.productId)).toEqual([
 			VERCEL_BLOB_PRODUCT_ID,
+			"vercel.cron/v1",
 			VERCEL_EDGE_CONFIG_PRODUCT_ID,
+			VERCEL_GIT_FUNCTION_PRODUCT_ID,
 			VERCEL_PROJECT_PRODUCT_ID,
+			"vercel.queues/v1",
+			"vercel.sandbox-host/v1",
+			"vercel.schedules/v1",
 			VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 		]);
 		expect(registry.get(VERCEL_PROJECT_PRODUCT_ID)?.providerId).toBe("vercel");

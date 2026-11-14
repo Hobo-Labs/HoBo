@@ -23,7 +23,10 @@ export {
 export {
 	createVercelBlobDefinition,
 	createVercelClaimDeploymentDefinition,
+	createVercelDeploymentComponentDefinition,
+	createVercelGitFunctionDefinition,
 	createVercelProjectDefinition,
+	createVercelSandboxHostDefinition,
 	createVercelSponsoredApiDefinition,
 	createVercelSponsoredWebDefinition,
 	createVercelStaticDeployDefinition,
@@ -56,6 +59,24 @@ export {
 	type UnresolvedHostingProduct,
 } from "./delivery-coverage.js";
 export {
+	createVercelDeploymentComponentResolver,
+	VERCEL_CRON_PRODUCT_ID,
+	VERCEL_QUEUE_PRODUCT_ID,
+	VERCEL_SCHEDULE_PRODUCT_ID,
+} from "./deployment-component-resolver.js";
+export {
+	type VercelBillingPlan,
+	type VercelDeploymentComponent,
+	vercelCronMinimumInterval,
+	verifyVercelDeploymentComponent,
+} from "./deployment-components.js";
+export {
+	preflightVercelGitDeployment,
+	VercelDeploymentPreflightError,
+	type VercelDeploymentPreflightEvidence,
+	type VercelDeploymentPreflightInput,
+} from "./deployment-preflight.js";
+export {
 	createVercelStaticDeploymentResolver,
 	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 } from "./deployment-resolver.js";
@@ -71,6 +92,16 @@ export {
 	type InitialCapabilityPort,
 	vercelNativePorts,
 } from "./equivalence.js";
+export { vercelPreviewBranch } from "./git-branch.js";
+export {
+	parseVercelGitEnvironment,
+	type VercelGitEnvironmentScope,
+	type VercelGitEnvironmentVariable,
+} from "./git-deployment-environment.js";
+export {
+	createVercelGitFunctionResolver,
+	VERCEL_GIT_FUNCTION_PRODUCT_ID,
+} from "./git-function-resolver.js";
 export {
 	isVercelGitEnvironment,
 	VERCEL_GIT_BLOCKED_STATES,
@@ -146,7 +177,12 @@ export {
 	VERCEL_RESOLVER_PATH_PREFIXES,
 	VERCEL_RESOLVER_TRANSPORT_POLICY,
 	VERCEL_UNRESOLVED_PRODUCT_IDS,
+	type VercelPreviewSchedulePreparationProof,
+	type VercelPreviewSchedulePreparationScope,
 	type VercelResolverOptions,
+	type VercelScheduleCapacityProof,
+	type VercelScheduleCapacityScope,
+	type VercelSchedulePlan,
 	vercelResolverRegistry,
 	vercelResolvers,
 } from "./resolvers.js";
@@ -160,10 +196,25 @@ export {
 	semanticsToSelectionCandidate,
 } from "./resource-definition.js";
 export {
+	createVercelSandboxHostResolver,
+	preflightVercelSandboxHost,
+	VERCEL_SANDBOX_HOST_PRODUCT_ID,
+	type VercelSandboxHostEvidence,
+	type VercelSandboxHostProof,
+	type VercelSandboxHostScope,
+	type VercelSandboxWorkload,
+} from "./sandbox-host-resolver.js";
+export {
 	blob,
+	cron,
+	delayedQueue,
 	edgeConfig,
 	edgeFunction,
+	gitFunction,
 	project,
+	queue,
+	sandboxHost,
+	schedule,
 	staticDeployment,
 	VERCEL_BLOB_PRODUCT_ID,
 	VERCEL_BLOB_PROFILE,
@@ -175,9 +226,14 @@ export {
 	VERCEL_PROJECT_PROFILE,
 	VERCEL_STATIC_DEPLOY_PROFILE,
 	type VercelBlobSlotOptions,
+	type VercelCronSlotOptions,
 	type VercelEdgeConfigSlotOptions,
 	type VercelEdgeFunctionSlotOptions,
+	type VercelGitFunctionSlotOptions,
 	type VercelProjectSlotOptions,
+	type VercelQueueSlotOptions,
+	type VercelSandboxHostSlotOptions,
+	type VercelScheduleSlotOptions,
 	type VercelStaticDeploySlotOptions,
 	vercelSlots,
 } from "./slots.js";
