@@ -17,6 +17,7 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@hobo/backend-fleet": "workspace:*",
 		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {

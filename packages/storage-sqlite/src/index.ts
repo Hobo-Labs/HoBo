@@ -45,6 +45,19 @@ export {
 	type NodeSqliteDriverOptions,
 } from "./node-driver.js";
 export {
+	assertQuorumEventStore,
+	assertQuorumEventStoreJournal,
+	createQuorumEventStore,
+	type QuorumActorClaim,
+	type QuorumClaimCheckpoint,
+	type QuorumEventStore,
+	type QuorumEventStoreIdentity,
+	type QuorumEventStoreOptions,
+	type QuorumNonExpiringClaims,
+	type QuorumSubscriptionClaim,
+	quorumEventStoreIdentity,
+} from "./quorum-eventstore.js";
+export {
 	LEGACY_SCHEMA_VERSION,
 	LEGACY_V1_SCHEMA_SQL,
 	NATIVE_PRAGMAS,
