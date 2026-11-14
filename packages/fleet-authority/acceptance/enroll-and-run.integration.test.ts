@@ -15,19 +15,33 @@
  * self-test passes (D58: the agent provisions gVisor `runsc` itself), the
  * suite fails and says which.
  */
-import { DeviceClass, type FleetLog, ReceiptStatus, Role, type SandboxDriver, SandboxTier } from "@hobo/fleet";
+import {
+	DeviceClass,
+	type FleetLog,
+	ReceiptStatus,
+	Role,
+	type SandboxDriver,
+	SandboxTier,
+} from "@hobo/fleet";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 // `@hobo/fleet-agent` is not a dependency of this package (the cascade delta names it); its entry
 // points are reached by path, resolving their own imports inside that package.
 import { createEgressProxyFactory } from "../../fleet-agent/src/egress/index.js";
 import { sandboxDrivers } from "../../fleet-agent/src/sandbox/index.js";
-import { browserApproval, enrollDevice, finalReceipt, submitJob, watchReceipts } from "./flows.js";
+import {
+	browserApproval,
+	enrollDevice,
+	finalReceipt,
+	submitJob,
+	watchReceipts,
+} from "./flows.js";
 import { NATS_BINARY, natsBusProvider } from "./nats.js";
 import { createFleetWorld, type FleetWorld } from "./world.js";
 
 const unavailable: string[] = [];
 const log: FleetLog = (event, fields) => {
-	if (event === "hobo_fleet_sandbox_unavailable") unavailable.push(`${fields.tier} ${fields.runtime}: ${fields.reason}`);
+	if (event === "hobo_fleet_sandbox_unavailable")
+		unavailable.push(`${fields.tier} ${fields.runtime}: ${fields.reason}`);
 };
 
 let s1: SandboxDriver | undefined;
@@ -46,8 +60,14 @@ afterEach(async () => {
 const BOTH = [Role.DISPATCHER, Role.EXECUTOR];
 
 async function runOwnJob(flow: "token" | "browser") {
-	expect(NATS_BINARY, "nats-server is not available: set HOBO_FLEET_NATS_SERVER_BIN or put nats-server on PATH").not.toBe("");
-	expect(s1, `no S1 sandbox driver passed its self-test:\n${unavailable.join("\n")}`).toBeDefined();
+	expect(
+		NATS_BINARY,
+		"nats-server is not available: set HOBO_FLEET_NATS_SERVER_BIN or put nats-server on PATH",
+	).not.toBe("");
+	expect(
+		s1,
+		`no S1 sandbox driver passed its self-test:\n${unavailable.join("\n")}`,
+	).toBeDefined();
 	const sandbox = s1;
 	if (sandbox === undefined) return;
 	world = await createFleetWorld({ bus: natsBusProvider });
@@ -58,19 +78,29 @@ async function runOwnJob(flow: "token" | "browser") {
 		fleet: "laptops",
 		name: flow === "token" ? "box" : "laptop",
 		roles: BOTH,
-		deviceClass: flow === "token" ? DeviceClass.DEDICATED : DeviceClass.PERSONAL,
+		deviceClass:
+			flow === "token" ? DeviceClass.DEDICATED : DeviceClass.PERSONAL,
 		sandboxes: [sandbox],
 		egress: createEgressProxyFactory({ fleetAllow: () => [], log }),
-		proof: flow === "token" ? async () => ({ case: "bootstrapToken", value: token }) : (keys) => browserApproval(w, "dev", keys),
+		proof:
+			flow === "token"
+				? async () => ({ case: "bootstrapToken", value: token })
+				: (keys) => browserApproval(w, "dev", keys),
 	});
 	expect(device.response.ok ? "ok" : device.response.error.message).toBe("ok");
 	const receipts = watchReceipts(w);
 	await device.agent.start();
 	expect(device.agent.status().bus).toBe("connected");
-	const submitted = await submitJob(w, "dev", "laptops", ["echo", "hello from the fleet"]);
+	const submitted = await submitJob(w, "dev", "laptops", [
+		"echo",
+		"hello from the fleet",
+	]);
 	const receipt = await finalReceipt(receipts, submitted, 150_000);
 	const self = await device.keys.open();
-	expect({ status: ReceiptStatus[receipt.status], reason: receipt.reason }).toEqual({ status: "SUCCEEDED", reason: "" });
+	expect({
+		status: ReceiptStatus[receipt.status],
+		reason: receipt.reason,
+	}).toEqual({ status: "SUCCEEDED", reason: "" });
 	expect(receipt.memberId).toBe(self.memberId);
 	expect(receipt.sandboxTier).toBe(SandboxTier.S1_CONTAINER);
 	expect(receipt.outputDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);

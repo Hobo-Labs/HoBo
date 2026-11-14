@@ -9,7 +9,8 @@ import type { FleetBus } from "@hobo/fleet";
 export function liveBus(current: () => FleetBus | undefined): FleetBus {
 	const bus = (): FleetBus => {
 		const connected = current();
-		if (connected === undefined) throw new Error("the agent is not connected to its bus");
+		if (connected === undefined)
+			throw new Error("the agent is not connected to its bus");
 		return connected;
 	};
 	return {

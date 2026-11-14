@@ -45,10 +45,10 @@ import {
 	KeyPurpose,
 	type KeyStore,
 	type MemberId,
-	parseFleetId,
-	parseKeyId,
 	type PublicKeyRef,
 	PublicKeyRefSchema,
+	parseFleetId,
+	parseKeyId,
 	type Role,
 	type SandboxDriver,
 	SandboxTier,
@@ -85,7 +85,10 @@ import { createPolicyDecisionRecorder } from "../src/identity/decisions.js";
 import { createStaticPrincipalDirectory } from "../src/identity/directory.js";
 import { createAuthorityHandler } from "../src/service/http.js";
 import { type AuditLogDouble, createAuditLogDouble } from "./audit-log.js";
-import { createMemoryConnector, type MemoryConnector } from "./memory-connector.js";
+import {
+	createMemoryConnector,
+	type MemoryConnector,
+} from "./memory-connector.js";
 
 export const ISSUER = "https://authority.fleet.test";
 export const TENANT: TenantId = parseTenantId("test");
@@ -124,19 +127,31 @@ function worldClock(): WorldClock {
 }
 
 /** An Ed25519 key held in memory, as a `Signer` and as a trust record's key reference. */
-export type HeldKey = Readonly<{ signer: Signer; ref(purpose: KeyPurpose): PublicKeyRef }>;
+export type HeldKey = Readonly<{
+	signer: Signer;
+	ref(purpose: KeyPurpose): PublicKeyRef;
+}>;
 
 export function heldKey(keyId: string): HeldKey {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const id = parseKeyId(keyId);
-	const raw = publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("base64url");
+	const raw = publicKey
+		.export({ format: "der", type: "spki" })
+		.subarray(-32)
+		.toString("base64url");
 	return {
 		signer: {
 			keyId: id,
 			algorithm: KeyAlgorithm.EDDSA,
 			sign: async (bytes) => new Uint8Array(signBytes(null, bytes, privateKey)),
 		},
-		ref: (purpose) => create(PublicKeyRefSchema, { purpose, keyId: id, algorithm: KeyAlgorithm.EDDSA, value: raw }),
+		ref: (purpose) =>
+			create(PublicKeyRefSchema, {
+				purpose,
+				keyId: id,
+				algorithm: KeyAlgorithm.EDDSA,
+				value: raw,
+			}),
 	};
 }
 
@@ -151,7 +166,12 @@ export type OpenedBus = Readonly<{
 	close(): Promise<void>;
 }>;
 export type BusProvider = (
-	input: Readonly<{ trust: TrustRecord; envelope: WitnessedEnvelope; authority: HeldKey; now: Clock }>,
+	input: Readonly<{
+		trust: TrustRecord;
+		envelope: WitnessedEnvelope;
+		authority: HeldKey;
+		now: Clock;
+	}>,
 ) => Promise<OpenedBus>;
 
 /** The memory bus, with an audit log the world's witness can co-sign through. */
@@ -178,8 +198,12 @@ function allowByTag(): PolicyEngine {
 		engineId,
 		async evaluate(request) {
 			const tags = request.subject.tags;
-			const sponsor = request.action === "fleet.member.declare" && tags.some((tag) => tag.startsWith("role:"));
-			return sponsor || tags.includes("fleet-admin") || tags.includes(request.action)
+			const sponsor =
+				request.action === "fleet.member.declare" &&
+				tags.some((tag) => tag.startsWith("role:"));
+			return sponsor ||
+				tags.includes("fleet-admin") ||
+				tags.includes(request.action)
 				? allowDecision(engineId, request, ["tag"])
 				: denyDecision(engineId, request, ["no tag"]);
 		},
@@ -191,13 +215,18 @@ function testProvider(): SignInProvider {
 	return {
 		id: "test",
 		async begin(input) {
-			return { url: `https://idp.test/authorize?state=${encodeURIComponent(input.state)}` };
+			return {
+				url: `https://idp.test/authorize?state=${encodeURIComponent(input.state)}`,
+			};
 		},
 		async complete(input) {
 			const [kind, id] = input.code.split(":");
 			if (kind === "user" && id !== undefined && id.length > 0)
 				return { ok: true, value: { principal: { kind, id }, claims: {} } };
-			return { ok: false, error: { code: "unauthenticated", message: "unknown code" } };
+			return {
+				ok: false,
+				error: { code: "unauthenticated", message: "unknown code" },
+			};
 		},
 	};
 }
@@ -207,7 +236,10 @@ function workloadAssertions(now: Clock): IdentityAssertionVerifier {
 	return {
 		async verifyOidc(assertion) {
 			if (assertion !== WORKLOAD_TOKEN)
-				return { ok: false, error: { code: "unauthenticated", message: "not a workload token" } };
+				return {
+					ok: false,
+					error: { code: "unauthenticated", message: "not a workload token" },
+				};
 			// One token: its id is the same however often it is presented.
 			const tokenId = "jti-1";
 			return {
@@ -216,16 +248,26 @@ function workloadAssertions(now: Clock): IdentityAssertionVerifier {
 					issuer: WORKLOAD_ISSUER,
 					subject: WORKLOAD_SUBJECT,
 					tokenId,
-					claims: { repository: "acme/app", exp: String(Math.floor(now() / 1000) + 300) },
+					claims: {
+						repository: "acme/app",
+						exp: String(Math.floor(now() / 1000) + 300),
+					},
 				},
 			};
 		},
-		verifyCertificateChain: () => ({ ok: false, error: { code: "unauthenticated", message: "no device CA roots" } }),
+		verifyCertificateChain: () => ({
+			ok: false,
+			error: { code: "unauthenticated", message: "no device CA roots" },
+		}),
 	};
 }
 
 /** One HTTP exchange as the agent's fetch saw it, after the authority answered. */
-export type Exchange = Readonly<{ method: string; path: string; status: number }>;
+export type Exchange = Readonly<{
+	method: string;
+	path: string;
+	status: number;
+}>;
 
 export type FleetWorld = Awaited<ReturnType<typeof createFleetWorld>>;
 
@@ -248,12 +290,28 @@ export async function createFleetWorld(
 	});
 	const payload = toBinary(TrustRecordSchema, trust);
 	const envelope = create(WitnessedEnvelopeSchema, {
-		authority: await signEnvelope(authorityKey.signer, TRUST_RECORD_CONTEXT, payload),
-		witness: await signEnvelope(witnessKey.signer, TRUST_RECORD_CONTEXT, payload),
+		authority: await signEnvelope(
+			authorityKey.signer,
+			TRUST_RECORD_CONTEXT,
+			payload,
+		),
+		witness: await signEnvelope(
+			witnessKey.signer,
+			TRUST_RECORD_CONTEXT,
+			payload,
+		),
 	});
-	const opened = await (options.bus ?? memoryBusProvider)({ trust, envelope, authority: authorityKey, now });
+	const opened = await (options.bus ?? memoryBusProvider)({
+		trust,
+		envelope,
+		authority: authorityKey,
+		now,
+	});
 
-	const logged: { event: FleetLogEvent; fields: Readonly<Record<string, string | number | boolean>> }[] = [];
+	const logged: {
+		event: FleetLogEvent;
+		fields: Readonly<Record<string, string | number | boolean>>;
+	}[] = [];
 	const log: FleetLog = (event, fields) => {
 		logged.push({ event, fields });
 		options.log?.(event, fields);
@@ -274,7 +332,12 @@ export async function createFleetWorld(
 				tags: [...TAGS[name]],
 			})),
 		),
-		accounts: { verify: async () => ({ ok: false, error: { code: "unauthenticated", message: "no accounts" } }) },
+		accounts: {
+			verify: async () => ({
+				ok: false,
+				error: { code: "unauthenticated", message: "no accounts" },
+			}),
+		},
 		signIn: [testProvider()],
 		assertions: workloadAssertions(now),
 		recordSigner: authorityKey.signer,
@@ -326,12 +389,20 @@ export async function createFleetWorld(
 	let drop: ((exchange: Exchange) => boolean) | undefined;
 	let reachable = true;
 	const fetchDouble: typeof fetch = async (input, init) => {
-		if (!reachable) throw new TypeError("fetch failed: the authority is unreachable");
+		if (!reachable)
+			throw new TypeError("fetch failed: the authority is unreachable");
 		const request = new Request(input, init);
 		const response = await handler(request);
-		const exchange = { method: request.method, path: new URL(request.url).pathname, status: response.status };
+		const exchange = {
+			method: request.method,
+			path: new URL(request.url).pathname,
+			status: response.status,
+		};
 		exchanges.push(exchange);
-		if (drop?.(exchange) === true) throw new TypeError("fetch failed: the connection reset before the answer");
+		if (drop?.(exchange) === true)
+			throw new TypeError(
+				"fetch failed: the connection reset before the answer",
+			);
 		return response;
 	};
 
@@ -362,11 +433,17 @@ export async function createFleetWorld(
 				tenant: TENANT,
 				owner: `${PEOPLE[owner].kind}:${PEOPLE[owner].id}`,
 				coordination,
-				policy: create(FleetPolicySchema, { approval: ApprovalMode.AUTO_OWNER, ...policy }),
+				policy: create(FleetPolicySchema, {
+					approval: ApprovalMode.AUTO_OWNER,
+					...policy,
+				}),
 			}),
 			caller,
 		);
-		if (!defined.ok) throw new Error(`defineFleet: ${defined.error.code} ${defined.error.message}`);
+		if (!defined.ok)
+			throw new Error(
+				`defineFleet: ${defined.error.code} ${defined.error.message}`,
+			);
 		await runtime.tickOnce();
 	};
 
@@ -389,7 +466,10 @@ export async function createFleetWorld(
 			}),
 			caller,
 		);
-		if (!issued.ok) throw new Error(`issueToken: ${issued.error.code} ${issued.error.message}`);
+		if (!issued.ok)
+			throw new Error(
+				`issueToken: ${issued.error.code} ${issued.error.message}`,
+			);
 		return issued.value.token;
 	};
 
@@ -398,7 +478,9 @@ export async function createFleetWorld(
 		input: Readonly<{
 			keys?: KeyStore | undefined;
 			runners?: readonly WorkRunner[];
-			sources?: (current: () => ReturnType<typeof createFleetAgent> | undefined) => readonly WorkSource[];
+			sources?: (
+				current: () => ReturnType<typeof createFleetAgent> | undefined,
+			) => readonly WorkSource[];
 			sandboxes?: readonly SandboxDriver[] | undefined;
 			egress?: EgressProxyFactory | undefined;
 			slots?: number;
@@ -415,7 +497,9 @@ export async function createFleetWorld(
 			capacity: slots(input.slots ?? 2),
 			runners: input.runners ?? [],
 			sources: input.sources?.(() => built) ?? [],
-			sandboxes: input.sandboxes ?? [createFakeSandboxDriver(SandboxTier.S1_CONTAINER)],
+			sandboxes: input.sandboxes ?? [
+				createFakeSandboxDriver(SandboxTier.S1_CONTAINER),
+			],
 			egress: input.egress ?? closedEgress,
 			transports: [],
 			agentVersion: "1.0.0",
@@ -459,7 +543,8 @@ export async function createFleetWorld(
 			reachable = value;
 		},
 		async stop() {
-			for (const running of agents.splice(0)) await running.stop().catch(() => undefined);
+			for (const running of agents.splice(0))
+				await running.stop().catch(() => undefined);
 			await witness?.stop();
 			await runtime.stop();
 			await opened.close();
@@ -486,7 +571,10 @@ export function slots(count: number): CapacitySource {
 	return {
 		async read() {
 			return {
-				capacity: create(CapacitySchema, { freeSlots: count, totalSlots: count }),
+				capacity: create(CapacitySchema, {
+					freeSlots: count,
+					totalSlots: count,
+				}),
 				health: Health.REACHABLE,
 				labels: [],
 			};

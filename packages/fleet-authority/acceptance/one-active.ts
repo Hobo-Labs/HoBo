@@ -18,9 +18,9 @@ import {
 	Health,
 	MemberKind,
 	type MemberName,
+	ObservationSchema,
 	type OneActiveAction,
 	type OneActiveTick,
-	ObservationSchema,
 	parseFleetId,
 	parseMemberName,
 } from "@hobo/fleet";
@@ -39,7 +39,11 @@ const FLEET = parseFleetId("cache");
 export type OneActiveWorld = Awaited<ReturnType<typeof createOneActiveWorld>>;
 
 export async function createOneActiveWorld(
-	input: Readonly<{ names: readonly string[]; membershipEpochs: boolean; spare?: readonly string[] }>,
+	input: Readonly<{
+		names: readonly string[];
+		membershipEpochs: boolean;
+		spare?: readonly string[];
+	}>,
 ) {
 	let nowMs = Date.parse("2026-11-14T10:00:00.000Z");
 	const now = () => nowMs;
@@ -48,14 +52,18 @@ export async function createOneActiveWorld(
 	const replicaOf = (name: string) => {
 		const existing = replicas.get(name);
 		if (existing !== undefined) return existing;
-		const made = ephemeralAssignmentReplica(createMemoryEphemeralState(now), parseMemberName(name));
+		const made = ephemeralAssignmentReplica(
+			createMemoryEphemeralState(now),
+			parseMemberName(name),
+		);
 		replicas.set(name, made);
 		return made;
 	};
 	const scheduled: [number, number][] = [];
 
 	const loop = async (names: readonly string[]) => {
-		for (const name of names) if (!health.has(name)) health.set(name, Health.REACHABLE);
+		for (const name of names)
+			if (!health.has(name)) health.set(name, Health.REACHABLE);
 		const local = await createLocalFleet({
 			tenant: parseTenantId("local"),
 			fleetId: FLEET,
@@ -82,7 +90,8 @@ export async function createOneActiveWorld(
 			registry: local.registry,
 			register,
 			async observe(member) {
-				const name = member.memberships.find((m) => m.fleet === FLEET)?.name ?? "";
+				const name =
+					member.memberships.find((m) => m.fleet === FLEET)?.name ?? "";
 				const seen = health.get(name) ?? Health.UNKNOWN;
 				return create(ObservationSchema, {
 					memberId: member.memberId,
@@ -92,11 +101,22 @@ export async function createOneActiveWorld(
 			},
 			async chooseAction(asked): Promise<OneActiveAction> {
 				const active = asked.assignment.active;
-				const eligible = asked.eligibility.filter((member) => member.eligible).map((member) => member.name);
-				if (active !== undefined && eligible.includes(active)) return { action: "keep", reasons: ["active-healthy"] };
-				const target: MemberName | undefined = eligible.find((name) => name !== active);
-				if (target === undefined) return { action: "hold", reasons: ["no-eligible-member"] };
-				return { action: "failover", target, lossWindowMs: undefined, reasons: [`active-unhealthy ${active ?? "none"}`] };
+				const eligible = asked.eligibility
+					.filter((member) => member.eligible)
+					.map((member) => member.name);
+				if (active !== undefined && eligible.includes(active))
+					return { action: "keep", reasons: ["active-healthy"] };
+				const target: MemberName | undefined = eligible.find(
+					(name) => name !== active,
+				);
+				if (target === undefined)
+					return { action: "hold", reasons: ["no-eligible-member"] };
+				return {
+					action: "failover",
+					target,
+					lossWindowMs: undefined,
+					reasons: [`active-unhealthy ${active ?? "none"}`],
+				};
 			},
 			async scheduleActivation(epoch, afterMs) {
 				scheduled.push([epoch, afterMs]);
@@ -131,7 +151,8 @@ export async function createOneActiveWorld(
 		sealWaitMs: SEAL_WAIT_MS,
 		async assignment(): Promise<AssignmentEntry> {
 			const resolution = await readCurrentAssignment(current.register);
-			if (resolution.status !== "current") throw new Error(`the register is ${resolution.status}`);
+			if (resolution.status !== "current")
+				throw new Error(`the register is ${resolution.status}`);
 			return resolution.assignment;
 		},
 		/** A new deploy configures these members; the loop is rebuilt over the same replicas. */

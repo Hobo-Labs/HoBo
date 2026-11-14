@@ -36,7 +36,12 @@ export function offerOf(
 	dispatcher: DeviceKeys,
 	fleet: string,
 	nowMs: number,
-	fields: Readonly<{ workKey?: string; author?: string; origin?: WorkOrigin; trustClass?: TrustClass }> = {},
+	fields: Readonly<{
+		workKey?: string;
+		author?: string;
+		origin?: WorkOrigin;
+		trustClass?: TrustClass;
+	}> = {},
 ): WorkOffer {
 	const workKey = fields.workKey ?? "job-1";
 	return create(WorkOfferSchema, {
@@ -58,8 +63,15 @@ export function offerOf(
 	});
 }
 
-export function signOffer(dispatcher: DeviceKeys, offer: WorkOffer): Promise<SignedEnvelope> {
-	return signEnvelope(dispatcher.sign, OFFER_CONTEXT, toBinary(WorkOfferSchema, offer));
+export function signOffer(
+	dispatcher: DeviceKeys,
+	offer: WorkOffer,
+): Promise<SignedEnvelope> {
+	return signEnvelope(
+		dispatcher.sign,
+		OFFER_CONTEXT,
+		toBinary(WorkOfferSchema, offer),
+	);
 }
 
 /** A claim naming `claimant` on `offer`, signed by `signer` (the claimant's own SIGN key unless forged). */
@@ -89,7 +101,11 @@ export function claimOf(
 }
 
 /** Key bundle `sequence` for the device's current SIGN and SEAL keys, signed by its identity key. */
-export function keyBundle(keys: DeviceKeys, sequence: number, nowMs: number): Promise<SignedEnvelope> {
+export function keyBundle(
+	keys: DeviceKeys,
+	sequence: number,
+	nowMs: number,
+): Promise<SignedEnvelope> {
 	return signEnvelope(
 		keys.identity,
 		KEY_BUNDLE_CONTEXT,
@@ -120,7 +136,10 @@ export function keyBundle(keys: DeviceKeys, sequence: number, nowMs: number): Pr
 }
 
 /** A second key store holding the same keys with its own copy of the state: a cloned device (F7). */
-export function copiedKeyStore(original: KeyStore, state: AgentState): KeyStore {
+export function copiedKeyStore(
+	original: KeyStore,
+	state: AgentState,
+): KeyStore {
 	let held = state;
 	return {
 		open: () => original.open(),
@@ -134,9 +153,18 @@ export function copiedKeyStore(original: KeyStore, state: AgentState): KeyStore 
 }
 
 /** Two ends of an in-memory byte stream, as a transport would hand them over; closing either end ends both. */
-export function streamPair(initiator: string, acceptor: string): readonly [FleetStream, FleetStream] {
+export function streamPair(
+	initiator: string,
+	acceptor: string,
+): readonly [FleetStream, FleetStream] {
 	const shared = { closed: false };
-	const end = (peer: string, inbox: Uint8Array[], outbox: Uint8Array[], mine: (() => void)[], theirs: (() => void)[]) => {
+	const end = (
+		peer: string,
+		inbox: Uint8Array[],
+		outbox: Uint8Array[],
+		mine: (() => void)[],
+		theirs: (() => void)[],
+	) => {
 		let sent = 0;
 		let received = 0;
 		const wake = (waiters: (() => void)[]) => {

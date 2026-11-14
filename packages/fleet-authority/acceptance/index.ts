@@ -8,17 +8,19 @@
 export { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 export {
 	ApprovalMode,
-	type AuditEntry,
 	AuditCheckpointSchema,
+	type AuditEntry,
 	AuditEntrySchema,
-	CredentialRequestSchema,
+	CLAIM_CONTEXT,
 	ClaimSchema,
 	CoordinationMode,
+	CredentialRequestSchema,
 	DeclareRequestSchema,
 	DeviceClass,
 	FleetPolicySchema,
 	FleetRecordSchema,
 	Health,
+	KEY_BUNDLE_CONTEXT,
 	KeyAlgorithm,
 	KeyBundleSchema,
 	KeyPurpose,
@@ -29,35 +31,34 @@ export {
 	MemberRecordSchema,
 	MemberState,
 	ObservationSchema,
+	OFFER_CONTEXT,
 	OidcTrustRuleSchema,
 	PublicKeyRefSchema,
+	parseFleetId,
+	parseMemberName,
+	parseWorkDigest,
 	ReceiptStatus,
 	Role,
 	SandboxTier,
+	SESSION_GRANT_CONTEXT,
 	type SessionGrant,
 	SessionGrantSchema,
 	SessionPartySchema,
 	SessionPurpose,
 	SessionRequestSchema,
 	type SignedEnvelope,
-	type Signer,
 	SignedEnvelopeSchema,
+	type Signer,
 	TokenCreateRequestSchema,
 	TrustClass,
 	TrustRecordSchema,
 	ViolationReportSchema,
-	type WorkReceipt,
 	type WorkOffer,
 	WorkOfferSchema,
 	WorkOrigin,
-	CLAIM_CONTEXT,
-	KEY_BUNDLE_CONTEXT,
-	OFFER_CONTEXT,
-	SESSION_GRANT_CONTEXT,
-	parseFleetId,
-	parseMemberName,
-	parseWorkDigest,
+	type WorkReceipt,
 } from "@hobo/fleet";
+export { verifyAuditChain } from "@hobo/fleet/audit";
 export {
 	createMemoryKeyStore,
 	fingerprintWords,
@@ -69,11 +70,15 @@ export {
 	sponsoredMemberId,
 } from "@hobo/fleet/keys";
 export { authoriseSession, frameStream } from "@hobo/fleet/transport";
-export { verifyAuditChain } from "@hobo/fleet/audit";
-export { checkClaim, deriveTrustClass, requiredSandbox, workDigest } from "@hobo/fleet/work";
+export {
+	checkClaim,
+	deriveTrustClass,
+	requiredSandbox,
+	workDigest,
+} from "@hobo/fleet/work";
 // By path, as in world.ts: the `@hobo/fleet/testing` barrel loads vitest.
 export { createFakeSandboxDriver } from "../../fleet/src/testing/plumbing/index.js";
-export * from "./flows.js";
 export * from "./claims.js";
+export * from "./flows.js";
 export { createOneActiveWorld, type OneActiveWorld } from "./one-active.js";
 export * from "./world.js";

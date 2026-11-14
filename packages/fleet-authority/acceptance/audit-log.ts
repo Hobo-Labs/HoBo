@@ -18,13 +18,18 @@ import {
 	WitnessedEnvelopeSchema,
 } from "@hobo/fleet";
 
-type Listener<T> = { handler: (value: T) => Promise<void>; chain: Promise<void> };
+type Listener<T> = {
+	handler: (value: T) => Promise<void>;
+	chain: Promise<void>;
+};
 
 function topic<T>() {
 	const values: T[] = [];
 	const listeners = new Set<Listener<T>>();
 	const deliver = (listener: Listener<T>, value: T) => {
-		listener.chain = listener.chain.then(() => listener.handler(value).catch(() => undefined));
+		listener.chain = listener.chain.then(() =>
+			listener.handler(value).catch(() => undefined),
+		);
 	};
 	return {
 		values,
@@ -46,13 +51,17 @@ function topic<T>() {
 	};
 }
 
-const sameBytes = (a: Uint8Array, b: Uint8Array) => Buffer.from(a).equals(Buffer.from(b));
+const sameBytes = (a: Uint8Array, b: Uint8Array) =>
+	Buffer.from(a).equals(Buffer.from(b));
 
 export type AuditLogDouble = Readonly<{
 	log: AuditLog;
 	entries: readonly AuditEntry[];
 	witnessed: readonly WitnessedEnvelope[];
-	publish(cosignature: SignedEnvelope, of: "checkpoint" | "trust"): Promise<void>;
+	publish(
+		cosignature: SignedEnvelope,
+		of: "checkpoint" | "trust",
+	): Promise<void>;
 }>;
 
 export function createAuditLogDouble(): AuditLogDouble {
@@ -61,19 +70,26 @@ export function createAuditLogDouble(): AuditLogDouble {
 	const witnessed = topic<WitnessedEnvelope>();
 	const proposed = topic<SignedEnvelope>();
 	const trustWitnessed = topic<WitnessedEnvelope>();
-	let pending: { cosignature: SignedEnvelope; of: "checkpoint" | "trust" }[] = [];
+	let pending: { cosignature: SignedEnvelope; of: "checkpoint" | "trust" }[] =
+		[];
 
 	const pair = () => {
 		const waiting = pending;
 		pending = [];
 		for (const item of waiting) {
-			const pool = item.of === "checkpoint" ? checkpoints.values : proposed.values;
-			const authority = pool.find((candidate) => sameBytes(candidate.payload, item.cosignature.payload));
+			const pool =
+				item.of === "checkpoint" ? checkpoints.values : proposed.values;
+			const authority = pool.find((candidate) =>
+				sameBytes(candidate.payload, item.cosignature.payload),
+			);
 			if (authority === undefined) {
 				pending.push(item);
 				continue;
 			}
-			const value = create(WitnessedEnvelopeSchema, { authority, witness: item.cosignature });
+			const value = create(WitnessedEnvelopeSchema, {
+				authority,
+				witness: item.cosignature,
+			});
 			(item.of === "checkpoint" ? witnessed : trustWitnessed).publish(value);
 		}
 	};
@@ -87,7 +103,9 @@ export function createAuditLogDouble(): AuditLogDouble {
 			pair();
 		},
 		async entries(from, to) {
-			return entries.filter((entry) => entry.sequence >= from && entry.sequence <= to);
+			return entries.filter(
+				(entry) => entry.sequence >= from && entry.sequence <= to,
+			);
 		},
 		onWitnessed: (handler) => witnessed.subscribe(handler),
 		onCheckpoint: (handler) => checkpoints.subscribe(handler),
