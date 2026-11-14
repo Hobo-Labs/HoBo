@@ -5,8 +5,9 @@
  * `TopologyReader` is composed from `@hobo/yards` Yards and their
  * `@hobo/camps` Camps: the Yard's provider and declared regions, the Camp's
  * env type and labels. Residency is evaluated only against these declared
- * regions; observed claims never enter here (I19). A Camp id is Yard-scoped
- * (`<yard>/<camp>`), as placement records it.
+ * regions; observed claims never enter here (I19). A physical Camp id is
+ * Yard-scoped (`<yard>/<camp>`). An explicit logical id can preserve CD's
+ * identity when the Camp moves to another Yard.
  *
  * Several readers (Yards, an imported ClusterProfile inventory) merge into
  * one; a Camp id declared twice is a configuration error, never a silent
@@ -165,7 +166,7 @@ export type TopologyOutcome =
 	| TopologyRefusal;
 
 const INVALID_REMEDIATION =
-	"A topology file default-exports a @hobo/yards Yard, or exports `yards` (Yards) and/or `camps` (records with campId `<yard>/<camp>`, yardId, provider, envType, optional regions, labels, stationId, management); see packages/hobo/CD.md.";
+	"A topology file default-exports a @hobo/yards Yard, or exports `yards` (Yards) and/or `camps` (records with campId `<yard>/<camp>`, yardId, provider, envType, optional logicalId, regions, labels, stationId, management); see packages/hobo/CD.md.";
 
 function splitFiles(value: unknown): string[] {
 	return isJsonString(value)
@@ -275,9 +276,27 @@ function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 			"cd-topology-station-mismatch",
 			`${at}: Camp ${parsed.campId} is declared for Station ${parsed.stationId}, not ${stationId}`,
 		);
+	const hasLogicalId =
+		isJsonObject(item) &&
+		(Object.hasOwn(item, "logicalId") || Object.hasOwn(item, "logical_id"));
+	if (
+		hasLogicalId &&
+		(parsed.logicalId === "" ||
+			parsed.logicalId.length > 512 ||
+			parsed.logicalId !== parsed.logicalId.trim() ||
+			Array.from(parsed.logicalId).some((character) => {
+				const code = character.charCodeAt(0);
+				return code < 32 || code === 127;
+			}))
+	)
+		throw new TopologyParseError(
+			"cd-topology-invalid",
+			`${at}: logicalId must be a non-empty stable identity`,
+		);
 	const labels = { ...parsed.labels };
 	return Object.freeze({
-		campId: campIdOf(parsed.yardId, local),
+		// SAFETY: an explicit, validated stable identity or the Yard-scoped id.
+		campId: (parsed.logicalId || campIdOf(parsed.yardId, local)) as CampId,
 		yardId: parsed.yardId,
 		stationId,
 		provider: parsed.provider,

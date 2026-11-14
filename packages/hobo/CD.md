@@ -40,10 +40,13 @@ comma-separated list, the environment's first):
   `hobo-ci-relay/hobo-ci-relay/production`);
 - a **delivery module** that also exports `yards` (Yards) and/or `camps`
   (Camp records: `campId` `<yard>/<camp>`, `yardId`, `provider`, `envType`,
-  optional `regions`, `labels`, `stationId`, `management`), such as the runner
+  optional `logicalId`, `regions`, `labels`, `stationId`, `management`). The
+  physical `campId` must belong to `yardId`; `logicalId`, when supplied,
+  preserves the CD identity used by pipelines and the journal across a move
+  to another Yard. Without it, CD uses `campId`. Examples include the runner
   fleet's
   [`packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`](../ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts)
-  (one Camp per runner host, `hobo-ci-runners/<host>`), or the **release
+  (one Camp per runner host, `hobo-ci-runners/<host>`) and the **release
   topology**
   [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
   (Camps `hobo-release/<npm|oci|pages>-<candidate|stable>`, see

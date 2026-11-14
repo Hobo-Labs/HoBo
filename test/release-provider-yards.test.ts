@@ -5,6 +5,7 @@ describe("release provider boundaries", () => {
 	it("keeps each provider in its own Yard while preserving logical Camp IDs", () => {
 		const byYard = new Map<string, Set<string>>();
 		for (const camp of camps) {
+			expect(camp.campId.startsWith(`${camp.yardId}/`)).toBe(true);
 			const providers = byYard.get(camp.yardId) ?? new Set<string>();
 			providers.add(camp.provider);
 			byYard.set(camp.yardId, providers);
@@ -24,7 +25,7 @@ describe("release provider boundaries", () => {
 			["hobo-release-oci", "@hobo/provider-oci-registry"],
 			["hobo-release-pages", "@hobo/provider-github"],
 		]);
-		expect(camps.map((camp) => camp.campId).sort()).toEqual([
+		expect(camps.map((camp) => camp.logicalId).sort()).toEqual([
 			"hobo-release/npm-candidate",
 			"hobo-release/npm-stable",
 			"hobo-release/oci-candidate",
@@ -32,7 +33,7 @@ describe("release provider boundaries", () => {
 			"hobo-release/pages-candidate",
 			"hobo-release/pages-stable",
 		]);
-		const declared = new Set(camps.map((camp) => camp.campId));
+		const declared = new Set(camps.map((camp) => camp.logicalId));
 		for (const pipeline of pipelines)
 			for (const node of pipeline.nodes)
 				for (const campId of node.campIds)

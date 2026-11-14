@@ -135,7 +135,8 @@ function releaseCampId(family: Family, channel: Channel): string {
 // An empty stationId is the Station the CD runtime composes (HOBO_STATION).
 export const camps = RELEASE_FAMILIES.flatMap((family) =>
 	RELEASE_CHANNELS.map((channel) => ({
-		campId: releaseCampId(family, channel),
+		campId: `${YARD[family]}/${family}-${channel}`,
+		logicalId: releaseCampId(family, channel),
 		yardId: YARD[family],
 		provider: PROVIDER[family],
 		envType: channel,
