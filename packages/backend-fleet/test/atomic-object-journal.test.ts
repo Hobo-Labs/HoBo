@@ -54,7 +54,11 @@ class ObjectStore implements AtomicJournalObject {
 	}
 }
 
-async function fixture(maxObjectBytes = 50_000, maxDocumentBytes = 4_000) {
+async function fixture(
+	maxObjectBytes = 50_000,
+	maxDocumentBytes = 4_000,
+	maxEntries = 32,
+) {
 	const fleetId = "fleet";
 	const members: ImmutableJournalMember[] = ["a", "b", "c"].map((id) => ({
 		id,
@@ -80,7 +84,7 @@ async function fixture(maxObjectBytes = 50_000, maxDocumentBytes = 4_000) {
 			fleetId,
 			anchorDigest,
 			initializationId: `init-${member.id}`,
-			maxEntries: 32,
+			maxEntries,
 			maxDocumentBytes,
 			maxObjectBytes,
 			object,
@@ -93,7 +97,7 @@ async function fixture(maxObjectBytes = 50_000, maxDocumentBytes = 4_000) {
 		anchorDigest,
 		replicas: voters.map((voter) => voter.replica),
 		maxEntryBytes: 1_000,
-		maxEntries: 32,
+		maxEntries,
 		authorize: async () => {},
 	});
 	await journal.bootstrap(async () => {});
@@ -153,6 +157,42 @@ describe("atomic object journal replica", () => {
 		pause.release();
 		await expect(pending).rejects.toThrow("generation-sealed");
 		expect(await replica.read()).toEqual([genesis]);
+	});
+	it("refuses an assignment past the retention bound and stays sealable", async () => {
+		const { voters } = await fixture(50_000, 4_000, 1);
+		const replica = voters[0]?.replica;
+		if (!replica) throw new Error("missing voter");
+		const genesis = (await replica.read())[0],
+			head = genesis?.reason.split(":")[2];
+		if (!genesis || !head) throw new Error("missing head");
+		const first = "second command",
+			firstKey = digest(first);
+		await replica.writeDocument(firstKey, first);
+		expect(
+			await replica.accept({
+				...genesis,
+				epoch: 2,
+				reason: `j:${head}:${firstKey}`,
+			}),
+		).toBe("accepted");
+		const extra = "third command",
+			extraKey = digest(extra);
+		await replica.writeDocument(extraKey, extra);
+		await expect(
+			replica.accept({
+				...genesis,
+				epoch: 3,
+				reason: `j:${firstKey}:${extraKey}`,
+			}),
+		).rejects.toThrow("retention-limit");
+		expect(await replica.read()).toHaveLength(2);
+		expect(
+			await replica.seal({
+				transitionId: "rollover-1",
+				epoch: 2,
+				digest: firstKey,
+			}),
+		).toBe("sealed");
 	});
 	it("allows an identical document retry after sealing without changing the object", async () => {
 		const { stores, voters } = await fixture();

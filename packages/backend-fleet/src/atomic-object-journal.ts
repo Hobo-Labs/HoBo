@@ -364,6 +364,10 @@ export function createAtomicObjectJournalReplica(
 		},
 		async accept(input) {
 			const proposed = parseFleetAssignment(input);
+			// decode() refuses more than maxEntries + 1 rows, so accepting one more
+			// would leave this voter unreadable and unsealable.
+			if (proposed.epoch > maxEntries + 1)
+				throw new AtomicObjectJournalError("retention-limit");
 			for (let attempt = 0; attempt <= maxConflicts; attempt++) {
 				const current = await read();
 				const old = current.entries[proposed.epoch - 1];
