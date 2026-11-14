@@ -34,6 +34,7 @@ export {
 	job,
 	kv,
 	notify,
+	project,
 	queue,
 	rolloutResource,
 	schedule,

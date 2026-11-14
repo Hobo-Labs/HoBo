@@ -78,6 +78,13 @@ export {
 	DEFAULT_COLOS,
 } from "./provider.js";
 export {
+	createR2ObjectClient,
+	type R2Condition,
+	type R2Object,
+	R2ObjectError,
+	type R2ObjectOptions,
+} from "./r2-object.js";
+export {
 	type BuildSpec,
 	isRealizablePort,
 	mergeCloudflareOptions,

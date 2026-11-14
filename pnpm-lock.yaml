@@ -663,6 +663,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/data-core':
+        specifier: workspace:*
+        version: link:../data-core
       '@hobo/pricing':
         specifier: workspace:*
         version: link:../pricing
@@ -675,6 +678,9 @@ importers:
       pg:
         specifier: 8.22.0
         version: 8.22.0
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
     devDependencies:
       '@hobo/data-postgres':
         specifier: workspace:*

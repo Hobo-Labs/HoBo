@@ -35,6 +35,7 @@ import { matchResource } from "./matching.js";
 import { emptyPlacementContext } from "./placement.js";
 import {
 	matchCapabilityRequirement,
+	validateYardBindingOwnership,
 	type YardBindingContext,
 } from "./profile-matching.js";
 
@@ -63,7 +64,7 @@ export interface PlanBindingAuthority {
 	readonly yard: YardBindingContext;
 	/** The capability-profile registry the required profiles resolve against. */
 	readonly profiles: CapabilityProfileRegistry;
-	/** Profile-bearing definitions; legacy port-only definitions are ignored. */
+	/** Complete approved product catalog used to verify every Yard row's ownership. */
 	readonly definitions: readonly ResourceDefinitionVNext[];
 	readonly policy: TrustPolicy;
 	/**
@@ -73,8 +74,8 @@ export interface PlanBindingAuthority {
 	readonly nowMs: number;
 	/**
 	 * Per-resource capability requirements, keyed by resource name. A resource
-	 * with no entry keeps the legacy port-only decision — absent means "this
-	 * pass says nothing about that resource", not "it has no requirements".
+	 * with no entry keeps the port-only decision within the selected Yard's
+	 * provider; absent does not mean the resource has no requirements.
 	 */
 	readonly requirements: Readonly<Record<string, CapabilityRequirement>>;
 	readonly consumableBindingProfiles?: readonly string[];
@@ -124,7 +125,7 @@ export type PlanResult = PlanSuccess | PlanRejection;
 
 // Stable topological order over the bind-edge DAG (Kahn's algorithm with an
 // alphabetical tiebreak, so the dependency order is byte-stable).
-function dependencyOrder(intents: ResourceIntent[]): string[] {
+function dependencyOrder(intents: ResourceIntent[]): string[] | undefined {
 	const names = new Set(intents.map((i) => i.name));
 	const indegree = new Map<string, number>();
 	const dependents = new Map<string, string[]>();
@@ -157,11 +158,8 @@ function dependencyOrder(intents: ResourceIntent[]): string[] {
 			}
 		}
 	}
-	// A cycle would leave nodes unordered; append any stragglers deterministically.
-	for (const name of [...names].sort()) {
-		if (!order.includes(name)) order.push(name);
-	}
-	return order;
+	// A cyclic graph has no safe provision order. Never silently append nodes.
+	return order.length === names.size ? order : undefined;
 }
 
 export function plan(
@@ -193,6 +191,44 @@ export function plan(
 	const lowerOptions: LowerOptions = { objective };
 	if (config.region !== undefined) lowerOptions.region = config.region;
 	const intents = lowerManifest(bindle, lowerOptions);
+	if (config.binding) {
+		const failures = validateYardBindingOwnership(
+			config.binding.yard,
+			config.binding.definitions,
+		);
+		if (failures.length)
+			return {
+				ok: false,
+				deploymentId: config.deploymentId,
+				reason: "plan rejected: Yard products must belong to its provider",
+				remediations: failures.map(({ profile, rejection }) => ({
+					resource: "*",
+					code: rejection.code,
+					requiredPort: profile,
+					requiredFeatures: [],
+					missing: [rejection.code],
+					remediation: rejection.detail,
+				})),
+			};
+	}
+	const order = dependencyOrder(intents);
+	if (!order)
+		return {
+			ok: false,
+			deploymentId: config.deploymentId,
+			reason: "plan rejected: resource dependencies contain a cycle",
+			remediations: [
+				{
+					resource: "*",
+					code: "dependency.cycle",
+					requiredPort: "*",
+					requiredFeatures: [],
+					missing: [],
+					remediation:
+						"Remove the circular dependency so every resource can be provisioned after its dependencies.",
+				},
+			],
+		};
 	// E19: attach per-resource placement criteria to the lowered intents.
 	if (config.placement !== undefined) {
 		for (const intent of intents) {
@@ -259,11 +295,6 @@ export function plan(
 	}
 
 	for (const intent of intents) {
-		const outcome = matchResource(intent, registry, placementContext, hosting);
-		if (!outcome.ok) {
-			remediations.push(outcome.remediation);
-			continue;
-		}
 		// Yard binding authority, when supplied for this resource: the rows
 		// hard-filter the offering and carry the realization parameters. A row
 		// set that admits nothing is a refusal, not a fall-through to the
@@ -271,9 +302,8 @@ export function plan(
 		// and a Yard that cannot satisfy a capability would silently deploy
 		// something it never declared.
 		const requirement = config.binding?.requirements[intent.name];
-		let bound: BoundOffering | undefined = outcome.definition.productId
-			? { productId: outcome.definition.productId }
-			: undefined;
+		let bound: BoundOffering | undefined;
+		let approvedDefinition: { id: string; providerId: string } | undefined;
 		if (config.binding !== undefined && requirement !== undefined) {
 			const authority = config.binding;
 			const profileOutcome = matchCapabilityRequirement({
@@ -294,6 +324,7 @@ export function plan(
 				remediations.push(profileOutcome.remediation);
 				continue;
 			}
+			approvedDefinition = profileOutcome.definition;
 			bound = {
 				...(profileOutcome.definition.semantics?.productId !== undefined
 					? { productId: profileOutcome.definition.semantics.productId }
@@ -308,22 +339,44 @@ export function plan(
 					? { nonPortableRows: profileOutcome.nonPortableRows }
 					: undefined),
 			};
-			if (
-				hosting &&
-				profileOutcome.definition.providerId !== outcome.definition.providerId
-			) {
-				remediations.push({
-					resource: intent.name,
-					code: "budget.binding-provider-mismatch",
-					requiredPort: intent.port,
-					requiredFeatures: intent.require,
-					missing: [],
-					remediation:
-						"binding authority selected a different provider; obtain matching offering quotes before reserving",
-				});
-				continue;
-			}
 		}
+		// Matching must use the selected Yard's provider and the exact definition
+		// chosen by its policy gate, including for non-financial plans.
+		const matchingRegistry: PlannerRegistry =
+			config.binding || approvedDefinition
+				? {
+						catalogHash: registry.catalogHash,
+						definitions: () =>
+							registry
+								.definitions()
+								.filter(
+									(definition) =>
+										(!config.binding ||
+											definition.providerId ===
+												config.binding.yard.providerId) &&
+										(!approvedDefinition ||
+											(definition.id === approvedDefinition.id &&
+												definition.providerId ===
+													approvedDefinition.providerId)),
+								),
+						providers: () => registry.providers(),
+						...(registry.held
+							? { held: () => registry.held?.() ?? [] }
+							: undefined),
+					}
+				: registry;
+		const outcome = matchResource(
+			intent,
+			matchingRegistry,
+			placementContext,
+			hosting,
+		);
+		if (!outcome.ok) {
+			remediations.push(outcome.remediation);
+			continue;
+		}
+		if (!bound && outcome.definition.productId)
+			bound = { productId: outcome.definition.productId };
 		if (hosting) hosting.commit(intent.name, outcome.definition);
 
 		const decision = {
@@ -394,7 +447,7 @@ export function plan(
 	const deploymentPlan: DeploymentPlan = {
 		schema: DEPLOYMENT_PLAN_SCHEMA,
 		resources: resources.sort((a, b) => a.name.localeCompare(b.name)),
-		dependencyOrder: dependencyOrder(intents),
+		dependencyOrder: order,
 		objective,
 	};
 

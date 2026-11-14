@@ -11,6 +11,10 @@ import {
 	BudgetLedgerSnapshotSchema,
 	createBudgetAdmissionAuthority,
 } from "./budget-authority.js";
+import {
+	type BudgetFenceTrust,
+	captureBudgetFenceTrust,
+} from "./budget-fence-settlement.js";
 import type { AsyncBudgetAdmissionAuthority } from "./budget-postgres.js";
 
 type Authority = ReturnType<typeof createBudgetAdmissionAuthority>;
@@ -32,6 +36,7 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	readonly journal: Journal;
 	readonly snapshot: BudgetLedgerSnapshot;
 	readonly now?: () => string;
+	readonly fenceTrust?: BudgetFenceTrust;
 	/** Operational hosts may install a separately funded, actor-authorized
 	 * recovery. Read-only inspection leaves this absent. */
 	readonly recover?: () => Promise<void>;
@@ -43,6 +48,7 @@ export function createFleetBudgetAdmissionAuthority(options: {
 } {
 	const initial = toJsonString(BudgetLedgerSnapshotSchema, options.snapshot);
 	const initialSnapshot = fromJsonString(BudgetLedgerSnapshotSchema, initial);
+	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
 	if (!initialSnapshot.identity?.tenantId || !initialSnapshot.identity.budgetId)
 		throw new Error("complete shared budget ownership required");
 	createBudgetAdmissionAuthority({ snapshot: initialSnapshot });
@@ -121,6 +127,7 @@ export function createFleetBudgetAdmissionAuthority(options: {
 			const authority = createBudgetAdmissionAuthority({
 				snapshot: base,
 				priorEvents,
+				...(fenceTrust ? { fenceTrust } : undefined),
 				commit(event, expectedSeq) {
 					if (seq !== expectedSeq || event.snapshot?.seq !== expectedSeq + 1)
 						throw new Error("budget sequence conflict");

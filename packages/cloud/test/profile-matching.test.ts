@@ -458,7 +458,7 @@ describe("yard binding rows in profile matching", () => {
 			yard: yardContext([
 				{ profile: "data.postgres/v1", productId: "neon.pooled-postgres" },
 				{ profile: "data.postgres/v1", productId: "neon.claimable-postgres" },
-				{ profile: "kv.redis/v1", productId: "somebody.redis" },
+				{ profile: "kv.redis/v1", productId: "neon.sqlite-shim" },
 			]),
 		});
 		expect(outcome.ok).toBe(true);
@@ -628,6 +628,79 @@ describe("yard binding rows in profile matching", () => {
 		);
 	});
 
+	it("rejects a foreign product even when this Bindle does not use its profile", () => {
+		const outcome = matchCapabilityRequirement({
+			resourceName: "db",
+			requirement: postgresRequirement,
+			profiles,
+			definitions: CATALOG,
+			policy,
+			nowMs: NOW,
+			yard: yardContext([
+				{ profile: "data.postgres/v1", productId: "neon.claimable-postgres" },
+				{ profile: "data.sqlite/v1", productId: "cloudflare.temporary-d1" },
+			]),
+		});
+		expect(outcome.ok).toBe(false);
+		if (!outcome.ok)
+			expect(outcome.rejections).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						code: "YARD_BINDING_PROVIDER_MISMATCH",
+						definitionId: "cloudflare.temporary-d1/v1",
+					}),
+				]),
+			);
+	});
+
+	it("cannot select a foreign provider when no product is pinned", () => {
+		const outcome = matchCapabilityRequirement({
+			resourceName: "db",
+			requirement: postgresRequirement,
+			profiles,
+			definitions: [neon],
+			policy,
+			nowMs: NOW,
+			yard: yardContext(
+				[{ profile: "data.postgres/v1", connectivityId: "test.connector/v1" }],
+				{ providerId: "vercel" },
+			),
+		});
+		expect(outcome.ok).toBe(false);
+	});
+
+	it("does not accept an external placeholder even if a catalog mislabels it", () => {
+		const mislabeled = definition(
+			"external.postgres/v1",
+			"neon",
+			semantics({
+				productId: "external.postgres/v1",
+				implementsProfiles: POSTGRES_CLAIM,
+			}),
+		);
+		const outcome = matchCapabilityRequirement({
+			resourceName: "db",
+			requirement: postgresRequirement,
+			profiles,
+			definitions: [mislabeled],
+			policy,
+			nowMs: NOW,
+			yard: yardContext([
+				{ profile: "data.postgres/v1", productId: "external.postgres/v1" },
+			]),
+		});
+		expect(outcome.ok).toBe(false);
+		if (!outcome.ok)
+			expect(outcome.rejections).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						code: "YARD_BINDING_PROVIDER_MISMATCH",
+						definitionId: "external.postgres/v1",
+					}),
+				]),
+			);
+	});
+
 	it("names the rows when they exclude every otherwise-eligible candidate", () => {
 		const outcome = matchCapabilityRequirement({
 			resourceName: "db",
@@ -685,7 +758,7 @@ describe("yard binding rows in profile matching", () => {
 		).toBe(true);
 	});
 
-	it("ignores rows for profiles this requirement does not name", () => {
+	it("does not apply same-provider rows for unrelated profiles", () => {
 		const outcome = matchCapabilityRequirement({
 			resourceName: "db",
 			requirement: postgresRequirement,
@@ -694,7 +767,7 @@ describe("yard binding rows in profile matching", () => {
 			policy,
 			nowMs: NOW,
 			yard: yardContext([
-				{ profile: "kv.redis/v1", productId: "acme.not-registered" },
+				{ profile: "kv.redis/v1", productId: "neon.sqlite-shim" },
 			]),
 		});
 		expect(outcome.ok).toBe(true);
@@ -723,10 +796,14 @@ describe("yard binding rows in profile matching", () => {
 		});
 		expect(baseline.ok && emptyYard.ok).toBe(true);
 		if (!baseline.ok || !emptyYard.ok) return;
-		// Same ranking, same rejections, same hash, same winner — the only
-		// difference is the audit record the Yard's presence adds.
+		// The Yard scopes the catalog to its own provider, while the catalog hash
+		// and ranking of the remaining provider's candidates remain stable.
 		expect(emptyYard.ranking).toEqual(baseline.ranking);
-		expect(emptyYard.rejections).toEqual(baseline.rejections);
+		expect(emptyYard.rejections).toEqual(
+			baseline.rejections.filter(
+				(entry) => entry.definitionId !== "cloudflare.temporary-d1/v1",
+			),
+		);
 		expect(emptyYard.catalogHash).toEqual(baseline.catalogHash);
 		expect(emptyYard.definition.id).toEqual(baseline.definition.id);
 		expect(emptyYard.tie).toEqual(baseline.tie);

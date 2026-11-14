@@ -9,6 +9,10 @@ hash; removing or changing them changes the deployment input. Malformed policy o
 are rejected. Financial enforcement belongs to the hosting planner and shared authority
 ([budgeted hosting transitions](../../docs/design/hosting-budget-transitions.md)).
 
+Use `b.project()` for an infrastructure project that owns or groups other
+resources. It is a deployment dependency, not an HTTP entrypoint; use `b.web()`
+or `b.api()` for the application that serves requests.
+
 The canonical shared budget language is `policy.budgetPolicy` with discriminator
 `hobo.budget-policy/v1`. Parsing uses `@hobo/core`'s typed policy contract and
 rejects unknown controls, unsupported objectives/currencies, malformed funding

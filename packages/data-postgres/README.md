@@ -230,6 +230,7 @@ against the real binding.
 | `executor` | — | How the server is reached. |
 | `namespace` | `public` | Server-side schema holding the dataset tables and the binding's metadata. |
 | `capture` | `true` | `false` omits the capture port for a product without logical decoding; the declaration then drops the port and the `logical-copy` fast path, and capture-dependent patterns become ineligible at selection instead of failing at run time. |
+| `operationReceivers` | none | Independently enrolled Ed25519 receiver keys for exact route-operation receipts. |
 | `schemaTables` | `[]` | Tables the schema port snapshots and restores. |
 | `pageSize` | `1000` | Rows per keyset page when digesting. |
 | `ephemeral` | `false` | `true` makes `close()` drop the namespace, its subscriptions, native transfers and replication slots, and its schema snapshots. For tests and previews; refused for `public`. |
@@ -315,6 +316,20 @@ row: it therefore waits for every writer already past the check to finish, and
 every later writer waits for the fence to commit and then sees it. `retire` takes
 the same row exclusively, so no write — not even the token holder's — can land
 between its digest and its delete.
+
+An optional fence operation holds the source while a route decision is in
+flight. The database serializes the claim with source writes and fence release;
+even a writer holding the old token is refused until the matching receiver
+receipt completes the operation. The source retains completed claims for
+recovery and pins the enrolled receiver keys. Schema mutations and ephemeral
+namespace deletion are unavailable after enrollment; key rotation requires a
+separate migration.
+
+The host must independently verify that ordinary workers cannot act as the
+table owner or a superuser, that prior cleanup workers have stopped, and that
+replication-slot operations are safely controlled. The operation port alone
+does not establish those conditions, configure a destination receiver, or
+fund a handover.
 
 `TRUNCATE` on a dataset table is refused outright (`HB002`): it fires no row
 trigger and names no keys, so it could be neither fenced per tenant nor captured.

@@ -170,9 +170,8 @@ const DATA_PARADIGM: DataParadigmMap = {
 
 // Adapt a bindle() definition into the CollectionTarget run-to-collect runs.
 // Backing resources are declared first so component bind maps can reference
-// their handles; component→component edges (e.g. web dependsOn api) are
-// app-level dependencies that ride outside the manifest bind map, exactly as
-// the static compile treats them.
+// their handles. Resource ordering edges also travel to the manifest;
+// connector references are resolved by the runtime rather than provisioned.
 export function targetFromBindleDefinition(
 	definition: BindleDefinition,
 	componentHost: {
@@ -183,6 +182,9 @@ export function targetFromBindleDefinition(
 	return {
 		bindleId: definition.name,
 		componentHost,
+		dependencies: definition.edges.filter(
+			(edge) => !edge.to.startsWith("connector:"),
+		),
 		define(collect: CollectionContext): void {
 			const backing = new Map<string, ReturnType<CollectionContext["data"]>>();
 
@@ -208,7 +210,8 @@ export function targetFromBindleDefinition(
 						continue;
 					}
 					const handle = backing.get(edge.to);
-					if (handle) {
+					// Projects are ordering dependencies, not runtime data clients.
+					if (handle && definition.resources[edge.to]?.kind !== "project") {
 						bind[edge.to] = handle;
 					}
 				}

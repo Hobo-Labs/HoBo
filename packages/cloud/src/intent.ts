@@ -33,7 +33,10 @@ interface LoweredDataPort {
 	require: string[];
 }
 
-function lowerDataPort(port: string): LoweredDataPort {
+function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
+	// A provider-owned project groups resources; it does not serve HTTP itself.
+	if ((port === "hobo:data" || port === "data") && paradigm === "project")
+		return { capabilityPort: "project", require: [] };
 	for (const rule of DATA_PORT_RULES) {
 		if (rule.match(port)) {
 			return { capabilityPort: rule.capabilityPort, require: rule.require };
@@ -68,7 +71,7 @@ export function lowerManifest(
 				require = ["http"];
 				break;
 			case "data.v1": {
-				const lowered = lowerDataPort(resource.port ?? "");
+				const lowered = lowerDataPort(resource.port ?? "", resource.paradigm);
 				capabilityPort = lowered.capabilityPort;
 				require = lowered.require;
 				break;

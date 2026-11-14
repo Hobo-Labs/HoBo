@@ -4,6 +4,7 @@ import { budgetScopeIdentityKey } from "@hobo/core";
 import {
 	type BudgetAuthorityEvent,
 	BudgetAuthorityEventSchema,
+	BudgetFenceSettlementGuardSchema,
 	type BudgetIdentity,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
@@ -14,6 +15,11 @@ import {
 	type HostingQuote,
 	HostingQuoteSchema,
 } from "./_generated/yard_placement_pb.js";
+import {
+	type BudgetFenceGuardRequest,
+	type BudgetFenceTrust,
+	createBudgetFenceVerifier,
+} from "./budget-fence-settlement.js";
 
 export type {
 	BudgetEntitlement,
@@ -48,7 +54,13 @@ export type BudgetSettlementEvidence = Pick<
 	"usageEvidenceRef" | "sourceStoppedEvidenceRef"
 > &
 	Partial<
-		Pick<GeneratedSettlementEvidence, "providerAccounts" | "entitlementClaims">
+		Pick<
+			GeneratedSettlementEvidence,
+			| "providerAccounts"
+			| "entitlementClaims"
+			| "fenceOperationReceiptJson"
+			| "financeSignature"
+		>
 	>;
 
 export type BudgetAdmissionDeniedCode =
@@ -221,6 +233,8 @@ export interface BudgetAdmissionAuthority {
 		requestDigest: string;
 		quote: HostingQuote;
 		identity: BudgetIdentity;
+		/** Installed and authenticated at initial admission; never added later. */
+		fenceSettlementGuard?: BudgetFenceGuardRequest;
 		expectedSeq: number;
 		now: string;
 	}): BudgetReservation;
@@ -246,6 +260,8 @@ export interface BudgetAdmissionAuthority {
 export function createBudgetAdmissionAuthority(options: {
 	snapshot: BudgetLedgerSnapshot;
 	priorEvents?: readonly BudgetAuthorityEvent[];
+	/** Independently enrolled receiver and financial signing authorities. */
+	fenceTrust?: BudgetFenceTrust;
 	commit?: (event: BudgetAuthorityEvent, expectedSeq: number) => void;
 }): BudgetAdmissionAuthority & {
 	configure(
@@ -257,6 +273,7 @@ export function createBudgetAdmissionAuthority(options: {
 } {
 	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
+	const fenced = createBudgetFenceVerifier(options.fenceTrust);
 	validateBudgetSnapshot(current, current.observedAt);
 	const replayed = new Map<number, string>();
 	const policyFingerprint = (snapshot: BudgetLedgerSnapshot) =>
@@ -381,6 +398,53 @@ export function createBudgetAdmissionAuthority(options: {
 			active().length !== 0
 		)
 			throw new Error("journal period reset discards outstanding commitments");
+		for (const old of reservations.values()) {
+			if (!old.fenceSettlementGuard) continue;
+			const next = event.reservations.find(
+				(row) => row.reservationId === old.reservationId,
+			);
+			if (!next) {
+				if (
+					event.snapshot.identity.periodId === current.identity.periodId ||
+					old.status === "held" ||
+					old.status === "uncertain"
+				)
+					throw new Error("journal removed a fenced reservation");
+				continue;
+			}
+			if (
+				!next.fenceSettlementGuard ||
+				toJsonString(
+					BudgetFenceSettlementGuardSchema,
+					old.fenceSettlementGuard,
+				) !==
+					toJsonString(
+						BudgetFenceSettlementGuardSchema,
+						next.fenceSettlementGuard,
+					) ||
+				old.requestDigest !== next.requestDigest ||
+				old.quoteId !== next.quoteId ||
+				old.quoteDigest !== next.quoteDigest ||
+				old.reservedMicros !== next.reservedMicros ||
+				old.financialPlanHash !== next.financialPlanHash ||
+				JSON.stringify(old.providerAccounts) !==
+					JSON.stringify(next.providerAccounts) ||
+				JSON.stringify(old.entitlementClaims) !==
+					JSON.stringify(next.entitlementClaims) ||
+				!old.identity ||
+				!next.identity ||
+				budgetIdentityKey(old.identity) !== budgetIdentityKey(next.identity) ||
+				(old.executionDigest && old.executionDigest !== next.executionDigest) ||
+				((old.status === "settled" || old.status === "released") &&
+					(old.status !== next.status ||
+						old.actualMicros !== next.actualMicros ||
+						old.usageEvidenceRef !== next.usageEvidenceRef ||
+						old.sourceStoppedEvidenceRef !== next.sourceStoppedEvidenceRef ||
+						JSON.stringify(old.settlementEvidence) !==
+							JSON.stringify(next.settlementEvidence)))
+			)
+				throw new Error("journal changed an immutable fenced reservation");
+		}
 		assertFinancialHistory(event.snapshot, event.type);
 		if (
 			event.snapshot.identity.periodId === current.identity.periodId &&
@@ -409,6 +473,25 @@ export function createBudgetAdmissionAuthority(options: {
 			budgetIdentityKey(row.identity);
 			budgetMicros(row.reservedMicros);
 			budgetMicros(row.actualMicros);
+			const old = reservations.get(row.reservationId);
+			if (row.fenceSettlementGuard) {
+				if (
+					(!old &&
+						(event.type !== "budget.ReservationHeld" ||
+							row.status !== "held" ||
+							row.executionDigest)) ||
+					(old && !old.fenceSettlementGuard)
+				)
+					throw new Error("fenced guard must be present at initial admission");
+				fenced.validate(row);
+				if (row.status === "released" && row.executionDigest)
+					throw new Error("journal released a claimed fenced reservation");
+				if (row.status === "settled") {
+					if (!row.settlementEvidence)
+						throw new Error("journal lacks fenced settlement evidence");
+					fenced.settle(row, row.actualMicros, row.settlementEvidence);
+				}
+			}
 			if (
 				(row.status === "held" || row.status === "uncertain") &&
 				row.identity.periodId !== event.snapshot.identity.periodId
@@ -696,6 +779,13 @@ export function createBudgetAdmissionAuthority(options: {
 				throw new Error(
 					"execution adoption requires the exact live financial reservation",
 				);
+			if (
+				previous.fenceSettlementGuard &&
+				previous.fenceSettlementGuard.executionDigest !== input.executionDigest
+			)
+				throw new Error(
+					"fenced reservation requires its admitted execution identity",
+				);
 			if (previous.executionDigest) {
 				if (previous.executionDigest !== input.executionDigest)
 					throw new Error(
@@ -750,13 +840,31 @@ export function createBudgetAdmissionAuthority(options: {
 					throw new Error("reservation belongs to a superseded budget policy");
 				if (
 					previous.requestDigest !== input.requestDigest ||
-					previous.quoteDigest !== quoteDigest
+					previous.quoteDigest !== quoteDigest ||
+					!!previous.fenceSettlementGuard !== !!input.fenceSettlementGuard ||
+					(input.fenceSettlementGuard &&
+						previous.fenceSettlementGuard &&
+						toJsonString(
+							BudgetFenceSettlementGuardSchema,
+							fenced.createGuard(previous, input.fenceSettlementGuard),
+						) !==
+							toJsonString(
+								BudgetFenceSettlementGuardSchema,
+								previous.fenceSettlementGuard,
+							))
 				)
 					throw new Error("budget reservation replay differs");
 				if (previous.status === "released")
 					throw new Error("released reservation cannot authorize execution");
 				return clone(BudgetReservationSchema, previous);
 			}
+			if (
+				input.fenceSettlementGuard &&
+				(input.quote.yardId !== input.fenceSettlementGuard.destination.yardId ||
+					input.quote.providerId !==
+						input.fenceSettlementGuard.destination.providerId)
+			)
+				throw new Error("fenced destination differs from the admitted quote");
 			if (current.seq !== input.expectedSeq)
 				throw new Error("budget sequence conflict");
 			if (
@@ -830,6 +938,11 @@ export function createBudgetAdmissionAuthority(options: {
 				status: "held",
 				ledgerSeq: current.seq + 1,
 			});
+			if (input.fenceSettlementGuard)
+				reservation.fenceSettlementGuard = fenced.createGuard(
+					reservation,
+					input.fenceSettlementGuard,
+				);
 			const rows = new Map(reservations);
 			rows.set(input.reservationId, reservation);
 			save(
@@ -844,6 +957,9 @@ export function createBudgetAdmissionAuthority(options: {
 				throw new Error(
 					"authoritative usage and confirmed source retirement evidence required",
 				);
+			const existing = reservations.get(id);
+			if (!existing) throw new Error("unknown budget reservation");
+			fenced.settle(existing, actualMicros, evidence);
 			return change(id, "settled", actualMicros, evidence);
 		},
 		uncertain(id) {

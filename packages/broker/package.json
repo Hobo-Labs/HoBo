@@ -27,10 +27,12 @@
 		"@hobo/backend-fleet": "workspace:*",
 		"@hobo/contracts": "workspace:*",
 		"@hobo/core": "workspace:*",
+		"@hobo/data-core": "workspace:*",
 		"@hobo/pricing": "workspace:*",
 		"@hobo/provider-cedar": "workspace:*",
 		"@hobo/provider-opa": "workspace:*",
-		"pg": "8.22.0"
+		"pg": "8.22.0",
+		"zod": "^4.1.13"
 	},
 	"devDependencies": {
 		"@hobo/data-postgres": "workspace:*",

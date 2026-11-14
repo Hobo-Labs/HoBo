@@ -36,6 +36,32 @@ function registry() {
 }
 
 describe("Planner: hello-bindle golden DeploymentPlan DAG", () => {
+	it("refuses cyclic dependencies instead of inventing a provisioning order", () => {
+		const manifest = parseManifest({
+			schema: "hobo.manifest/v1",
+			componentHost: { kind: "wasmtime", version: "1.0.0" },
+			resources: {
+				one: {
+					type: "component.v1",
+					image: "oci://example/one",
+					runtime: "wasm",
+					exports: ["wasi:http/incoming-handler"],
+					bind: ["two"],
+				},
+				two: {
+					type: "component.v1",
+					image: "oci://example/two",
+					runtime: "wasm",
+					exports: ["wasi:http/incoming-handler"],
+					bind: ["one"],
+				},
+			},
+		});
+		const result = plan(manifest, { deploymentId: "cycle" }, registry());
+		expect(result.ok).toBe(false);
+		if (!result.ok)
+			expect(result.remediations[0]?.code).toBe("dependency.cycle");
+	});
 	it("produces the byte-stable golden plan with the recorded content hash", () => {
 		const result = plan(
 			helloBindle(),

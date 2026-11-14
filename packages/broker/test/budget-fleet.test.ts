@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
 	type AssignmentAcceptOutcome,
@@ -9,11 +9,14 @@ import {
 	type ImmutableJournalMember,
 	type ImmutableJournalReplica,
 } from "@hobo/backend-fleet";
+import { canonicalFenceOperationReceipt } from "@hobo/data-core";
 import { describe, expect, it } from "vitest";
 import {
 	BudgetLedgerSnapshotSchema,
 	HostingQuoteSchema,
+	ProviderAccountExposureSchema,
 } from "../src/budget-authority.js";
+import { canonicalBudgetFenceSettlement } from "../src/budget-fence-settlement.js";
 import { createFleetBudgetAdmissionAuthority } from "../src/budget-fleet.js";
 import { createOperationalFleetBudgetAdmissionAuthority } from "../src/budget-fleet-operational.js";
 import { createRecoveryActorFixture } from "./support/recovery-actor.js";
@@ -475,4 +478,215 @@ describe("majority journal financial authority", () => {
 		f.revoke();
 		await expect(first.read(NOW)).rejects.toThrow("authorization-unavailable");
 	});
+});
+
+it("keeps a receiver-bound hold through funded quorum recovery and restart", async () => {
+	const fleet = fixture();
+	const receiver = generateKeyPairSync("ed25519");
+	const finance = generateKeyPairSync("ed25519");
+	const source = {
+		yardId: "source-yard",
+		campId: "old-camp",
+		providerId: "source-provider",
+		providerAccountId: "source-account",
+		resourceId: "source-db",
+		deploymentId: "source-deployment",
+		incarnationId: "source-incarnation",
+		manifestHash: `sha256:${"6".repeat(64)}`,
+		planHash: `sha256:${"7".repeat(64)}`,
+	};
+	const destination = {
+		yardId: "target-yard",
+		campId: "new-camp",
+		providerId: "target-provider",
+		providerAccountId: "target-account",
+		resourceId: "target-db",
+		deploymentId: "target-deployment",
+		incarnationId: "target-incarnation",
+		manifestHash: `sha256:${"8".repeat(64)}`,
+		planHash: `sha256:${"c".repeat(64)}`,
+	};
+	const trust = {
+		receivers: [
+			{
+				keyId: "receiver",
+				publicKey: receiver.publicKey,
+				tenantId: "tenant",
+				sourceScopeTenant: "tenant",
+				dataset: "orders",
+				source,
+				destination,
+			},
+		],
+		finance: [
+			{
+				keyId: "finance",
+				publicKey: finance.publicKey,
+				tenantId: "tenant",
+				budgetId: "budget",
+				providerAccounts: [
+					{
+						providerId: source.providerId,
+						providerAccountId: source.providerAccountId,
+					},
+					{
+						providerId: destination.providerId,
+						providerAccountId: destination.providerAccountId,
+					},
+				],
+			},
+		],
+	};
+	const snapshot = create(BudgetLedgerSnapshotSchema, {
+		identity: {
+			tenantId: "tenant",
+			budgetId: "budget",
+			periodId: "p1",
+			policyRevision: "r1",
+		},
+		limitMicros: 100,
+		observedAt: NOW,
+		validUntil: UNTIL,
+		providerAccounts: [
+			{ providerAccountId: source.providerAccountId, limitMicros: 100 },
+			{ providerAccountId: destination.providerAccountId, limitMicros: 100 },
+		],
+	});
+	if (!snapshot.identity) throw new Error("fixture identity missing");
+	const requestDigest = `sha256:${"a".repeat(64)}`;
+	const executionDigest = `sha256:${"b".repeat(64)}`;
+	const quote = create(HostingQuoteSchema, {
+		quoteId: "quote",
+		yardId: destination.yardId,
+		providerId: destination.providerId,
+		ownerTenantId: "tenant",
+		currency: "USD",
+		totalMicros: 40,
+		liabilityBoundMicros: 60,
+		observedAt: NOW,
+		validUntil: UNTIL,
+		components: [{ name: "move", costMicros: 40 }],
+		requestDigest,
+		financialPlanHash: `sha256:${"c".repeat(64)}`,
+		providerAccounts: [
+			{ providerAccountId: source.providerAccountId, liabilityMicros: 20 },
+			{ providerAccountId: destination.providerAccountId, liabilityMicros: 40 },
+		],
+	});
+	const first = createFleetBudgetAdmissionAuthority({
+		journal: fleet.open(),
+		snapshot,
+		fenceTrust: trust,
+		now: () => NOW,
+	});
+	await first.initializeFresh(async () => {});
+	await first.reserve({
+		reservationId: "move",
+		requestDigest,
+		identity: snapshot.identity,
+		quote,
+		expectedSeq: 0,
+		now: NOW,
+		fenceSettlementGuard: {
+			dataset: "orders",
+			operationId: "move",
+			fenceTokenDigest: `sha256:${"d".repeat(64)}`,
+			receiverKeyId: "receiver",
+			financeKeyId: "finance",
+			logicalCampId: "logical-camp",
+			source,
+			destination,
+			decision: "to-target",
+			executionDigest,
+			expectedRouteGeneration: "42",
+			currentSetId: "old-set",
+			desiredSetId: "new-set",
+			migrationId: "migration-1",
+			decisionHead: "5",
+		},
+	});
+	await first.claimExecution({
+		reservationId: "move",
+		requestDigest,
+		executionDigest,
+	});
+	const held = await first.lookup("move");
+	const guard = held?.fenceSettlementGuard;
+	if (!held || !guard) throw new Error("guarded hold missing");
+	const body = {
+		contract: "hobo.fence-operation-receipt/v1" as const,
+		scope: { dataset: guard.dataset, tenant: guard.scopeTenant },
+		operationId: guard.operationId,
+		routeDigest: guard.routeDigest,
+		receiverKeyId: guard.receiverKeyId,
+		fenceTokenDigest: guard.fenceTokenDigest,
+		outcome: "committed" as const,
+	};
+	const receipt = {
+		...body,
+		signature: sign(
+			null,
+			Buffer.from(canonicalFenceOperationReceipt(body)),
+			receiver.privateKey,
+		).toString("base64url"),
+	};
+	const unsigned = {
+		usageEvidenceRef: "actual",
+		sourceStoppedEvidenceRef: "source-stopped",
+		fenceOperationReceiptJson: JSON.stringify(receipt),
+		providerAccounts: [
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: source.providerAccountId,
+				liabilityMicros: 10,
+			}),
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: destination.providerAccountId,
+				liabilityMicros: 20,
+			}),
+		],
+	};
+	const evidence = {
+		...unsigned,
+		financeSignature: sign(
+			null,
+			Buffer.from(canonicalBudgetFenceSettlement(held, 30, unsigned)),
+			finance.privateKey,
+		).toString("base64url"),
+	};
+	fleet.replicas[0].available = false;
+	const recovered = createOperationalFleetBudgetAdmissionAuthority({
+		journal: fleet.open(),
+		snapshot,
+		recoveryIdentity: snapshot.identity,
+		fenceTrust: trust,
+		now: () => NOW,
+		actorHost: fleet.actorHost,
+		authorizeRecovery: async () => async () => {},
+	});
+	expect((await recovered.lookup("move"))?.status).toBe("held");
+	await expect(
+		recovered.settle("move", 30, { ...evidence, financeSignature: "invalid" }),
+	).rejects.toThrow();
+	expect((await recovered.read(NOW)).reservedMicros).toBe(60);
+	expect((await recovered.settle("move", 30, evidence)).status).toBe("settled");
+	const reopened = createOperationalFleetBudgetAdmissionAuthority({
+		journal: fleet.open(),
+		snapshot,
+		recoveryIdentity: snapshot.identity,
+		fenceTrust: trust,
+		now: () => NOW,
+		actorHost: fleet.actorHost,
+		authorizeRecovery: async () => async () => {},
+	});
+	expect((await reopened.settle("move", 30, evidence)).status).toBe("settled");
+	expect((await reopened.read(NOW)).spentMicros).toBe(30);
+	const noTrust = createOperationalFleetBudgetAdmissionAuthority({
+		journal: fleet.open(),
+		snapshot,
+		recoveryIdentity: snapshot.identity,
+		now: () => NOW,
+		actorHost: fleet.actorHost,
+		authorizeRecovery: async () => async () => {},
+	});
+	await expect(noTrust.read(NOW)).rejects.toThrow("independently enrolled");
 });
