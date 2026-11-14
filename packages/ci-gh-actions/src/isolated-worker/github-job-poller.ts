@@ -84,6 +84,25 @@ export interface GithubJobPollSummary {
 	readonly heldPruneWitness?: HeldJobPollWitness;
 	readonly pausedUntil?: string;
 	readonly rateLimitRemaining?: number;
+	/**
+	 * Present only when the poll completed: the jobs runners hold on fleet
+	 * labels, for the fleet verdict reporter. What is ingested is unchanged.
+	 */
+	readonly fleetJobs?: FleetJobsSeen;
+}
+
+/** A job a runner holds on a fleet label, as the poll read it. */
+export interface FleetJobInProgress {
+	readonly label: string;
+	readonly runnerName: string;
+	/** GitHub's `started_at`; absent when the list did not carry it. */
+	readonly startedAt?: string;
+}
+
+export interface FleetJobsSeen {
+	/** When the poll that read them completed. */
+	readonly completedAt: string;
+	readonly inProgress: readonly FleetJobInProgress[];
 }
 
 export interface GithubReadFailure {
@@ -323,6 +342,7 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 
 	async function poll(): Promise<GithubJobPollSummary> {
 		const waiting: WaitingJob[] = [];
+		const inProgress: FleetJobInProgress[] = [];
 		const witnessTerminalRuns: HeldJobPollWitness["terminalRuns"][number][] =
 			[];
 		const witnessTerminalJobs: HeldJobPollWitness["terminalJobs"][number][] =
@@ -457,7 +477,18 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 					const failedBefore = summary.failed;
 					for (const job of jobs?.jobs ?? []) {
 						const status = PolledStatus.safeParse(job.status);
-						if (!status.success || !servedRunnerLabel(job.labels)) continue;
+						const label = servedRunnerLabel(job.labels);
+						if (!status.success || !label) continue;
+						if (status.data === "in_progress" && job.runner_name)
+							inProgress.push(
+								job.started_at
+									? {
+											label,
+											runnerName: job.runner_name,
+											startedAt: job.started_at,
+										}
+									: { label, runnerName: job.runner_name },
+							);
 						if (status.data === "completed") {
 							witnessTerminalJobs.push({
 								repositoryId: connection.repositoryId,
@@ -635,9 +666,13 @@ export function createGithubJobPoller(options: GithubJobPollerOptions) {
 			terminalRuns: witnessTerminalRuns,
 			terminalJobs: witnessTerminalJobs,
 		};
+		const fleetJobs: FleetJobsSeen = {
+			completedAt: new Date(now()).toISOString(),
+			inProgress,
+		};
 		return rateLimitRemaining === undefined
-			? { ...summary, heldPruneWitness }
-			: { ...summary, heldPruneWitness, rateLimitRemaining };
+			? { ...summary, heldPruneWitness, fleetJobs }
+			: { ...summary, heldPruneWitness, fleetJobs, rateLimitRemaining };
 	}
 
 	return { poll };

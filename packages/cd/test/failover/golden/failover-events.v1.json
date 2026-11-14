@@ -1,0 +1,188 @@
+{
+	"failover.Proposed": {
+		"failover": {
+			"failoverId": "failover-4224c832d9ad6f5884d4b14aaa8a059d",
+			"pipeline": "web",
+			"node": "prod",
+			"fromCampId": "eu-000",
+			"state": "FAILOVER_STATE_PROPOSED",
+			"purge": "PURGE_MODE_GRACEFUL",
+			"triggerTaint": "region-down",
+			"reasons": [
+				{
+					"code": "failover-proposed",
+					"message": "NO_RUN taint region-down outlived its toleration",
+					"remediation": "approve the failover, or let a Rail with automatic failover run it",
+					"subject": "eu-000"
+				}
+			],
+			"updatedAt": "2026-11-12T12:08:00.002Z"
+		},
+		"stationId": "station-eu",
+		"rebalanceId": "",
+		"approved": false,
+		"approvedBy": "",
+		"decisionId": "",
+		"routingPlanId": "",
+		"purged": false,
+		"limit": 0,
+		"startedAtMs": 0,
+		"atMs": 1794485280002
+	},
+	"failover.Started": {
+		"failover": {
+			"failoverId": "failover-4224c832d9ad6f5884d4b14aaa8a059d",
+			"pipeline": "web",
+			"node": "prod",
+			"fromCampId": "eu-000",
+			"toCampId": "eu-spare",
+			"freightId": "sha256:aaaa",
+			"state": "FAILOVER_STATE_REPLACING",
+			"purge": "PURGE_MODE_GRACEFUL",
+			"triggerTaint": "region-down",
+			"decisionId": "redecide-1",
+			"promotionId": "prm-3",
+			"reasons": [
+				{
+					"code": "failover-proposed",
+					"message": "NO_RUN taint region-down outlived its toleration",
+					"remediation": "approve the failover, or let a Rail with automatic failover run it",
+					"subject": "eu-000"
+				}
+			],
+			"updatedAt": "2026-11-12T12:08:00.002Z"
+		},
+		"stationId": "station-eu",
+		"rebalanceId": "",
+		"approved": false,
+		"approvedBy": "",
+		"decisionId": "redecide-1",
+		"routingPlanId": "",
+		"purged": false,
+		"limit": 0,
+		"startedAtMs": 1794485280002,
+		"atMs": 1794485280002
+	},
+	"failover.Progressed": {
+		"failover": {
+			"failoverId": "failover-4224c832d9ad6f5884d4b14aaa8a059d",
+			"pipeline": "web",
+			"node": "prod",
+			"fromCampId": "eu-000",
+			"toCampId": "eu-spare",
+			"freightId": "sha256:aaaa",
+			"state": "FAILOVER_STATE_VERIFYING",
+			"purge": "PURGE_MODE_GRACEFUL",
+			"triggerTaint": "region-down",
+			"decisionId": "redecide-1",
+			"promotionId": "prm-3",
+			"reasons": [
+				{
+					"code": "failover-proposed",
+					"message": "NO_RUN taint region-down outlived its toleration",
+					"remediation": "approve the failover, or let a Rail with automatic failover run it",
+					"subject": "eu-000"
+				}
+			],
+			"updatedAt": "2026-11-12T12:08:00.002Z"
+		},
+		"stationId": "station-eu",
+		"rebalanceId": "",
+		"approved": false,
+		"approvedBy": "",
+		"decisionId": "redecide-1",
+		"routingPlanId": "",
+		"purged": false,
+		"limit": 0,
+		"startedAtMs": 1794485280002,
+		"atMs": 1794485280002
+	},
+	"failover.Completed": {
+		"failover": {
+			"failoverId": "failover-4224c832d9ad6f5884d4b14aaa8a059d",
+			"pipeline": "web",
+			"node": "prod",
+			"fromCampId": "eu-000",
+			"toCampId": "eu-spare",
+			"freightId": "sha256:aaaa",
+			"state": "FAILOVER_STATE_COMPLETED",
+			"purge": "PURGE_MODE_GRACEFUL",
+			"triggerTaint": "region-down",
+			"decisionId": "redecide-1",
+			"promotionId": "prm-3",
+			"reasons": [
+				{
+					"code": "failover-proposed",
+					"message": "NO_RUN taint region-down outlived its toleration",
+					"remediation": "approve the failover, or let a Rail with automatic failover run it",
+					"subject": "eu-000"
+				}
+			],
+			"updatedAt": "2026-11-12T12:09:00.002Z"
+		},
+		"stationId": "station-eu",
+		"rebalanceId": "",
+		"approved": false,
+		"approvedBy": "",
+		"decisionId": "redecide-1",
+		"routingPlanId": "failover-failover-4224c832d9ad6f5884d4b14aaa8a059d",
+		"purged": true,
+		"limit": 0,
+		"startedAtMs": 1794485280002,
+		"atMs": 1794485340002
+	},
+	"failover.Refused": {
+		"failover": {
+			"failoverId": "failover-c25e5247ff2ffb529b827e16ca59bd15",
+			"pipeline": "web",
+			"node": "prod",
+			"fromCampId": "eu-001",
+			"state": "FAILOVER_STATE_REFUSED",
+			"purge": "PURGE_MODE_GRACEFUL",
+			"triggerTaint": "region-down",
+			"reasons": [
+				{
+					"code": "failover-proposed",
+					"message": "NO_RUN taint region-down outlived its toleration",
+					"remediation": "approve the failover, or let a Rail with automatic failover run it",
+					"subject": "eu-001"
+				},
+				{
+					"code": "failover-unsafe",
+					"message": "Camp eu-001 holds the Bindle's data resources (orders-db); failover moves compute only",
+					"remediation": "run a Trails replica handover first: expand a replica of each data resource reachable from the replacement, cut over, then contract; retry the failover once no data lives in the failing Camp",
+					"subject": "eu-001"
+				}
+			],
+			"updatedAt": "2026-11-12T12:20:00.002Z"
+		},
+		"stationId": "station-eu",
+		"rebalanceId": "",
+		"approved": false,
+		"approvedBy": "",
+		"decisionId": "",
+		"routingPlanId": "",
+		"purged": false,
+		"limit": 0,
+		"startedAtMs": 0,
+		"atMs": 1794486000002
+	},
+	"rebalance.Requested": {
+		"rebalance": {
+			"rebalanceId": "530ae899c171ebcdaef4b0fa5aaaf06d",
+			"pipeline": "web",
+			"node": "prod",
+			"decisionId": "redecide-2",
+			"moves": [
+				{
+					"fromCampId": "eu-001",
+					"toCampId": "eu-spare2"
+				}
+			],
+			"reason": "spread",
+			"requestedBy": "user:ops@acme",
+			"requestedAt": "2026-11-12T12:22:00.002Z"
+		},
+		"limit": 1
+	}
+}

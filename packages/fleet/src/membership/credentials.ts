@@ -240,9 +240,11 @@ async function lock(
 	if (appended === "conflict") return "conflict";
 	ctx.logEvents([event], id);
 	await ctx.publish(record);
+	// The generation the authority holds, as the client's contract names it (fleet-authority.pact.json).
 	return refuse(
 		"generation-mismatch",
 		"the refresh generation does not match: the device is locked",
+		{ generation: String(state.generation) },
 	);
 }
 

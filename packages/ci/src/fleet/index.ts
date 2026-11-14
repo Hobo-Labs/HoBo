@@ -10,23 +10,9 @@ export {
 	type FleetRefusalCode,
 } from "./balance.js";
 export {
-	buildFleetCapacitySnapshot,
-	type FleetCapacitySnapshot,
-	type FleetLabelCapacity,
-	fleetLabelCapacity,
 	memoryAdmitHeadroom,
 	memoryAdmitParallelCount,
-	parseFleetCapacityVariable,
 } from "./capacity.js";
-export {
-	DEFAULT_MAIN_WORKSPACE_PARALLEL_CAP,
-	FLEET_CAPACITY_VARIABLE,
-	type FleetCapacityPublished,
-	fleetCapacitySnapshot,
-	fleetCapacityVariableValue,
-	mainWorkspaceParallelCap,
-	parseFleetCapacityPublished,
-} from "./capacity-input.js";
 export {
 	FLEET_PROVIDER_KINDS,
 	type FleetBinding,

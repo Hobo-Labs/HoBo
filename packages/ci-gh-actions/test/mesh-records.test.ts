@@ -13,7 +13,6 @@ import { z } from "zod";
 import {
 	MESH_REPORT_MAX_NODES,
 	meshAdvertJson,
-	meshFleetStateJson,
 	meshNodeReportsForAccount,
 	meshNodeReportsJson,
 	meshNodeReportsMessage,
@@ -523,24 +522,5 @@ describe("bounding and scoping the report", () => {
 		);
 		expect(other.nodes[0]).toEqual(answer.nodes[0]);
 		expect(JSON.stringify(meshNodeReportsJson(other))).not.toContain("alice");
-	});
-});
-
-describe("the routing snapshot", () => {
-	it("is small, ordered, and names labels and counts only", () => {
-		const written = meshFleetStateJson(
-			new Map([
-				["hobo-trunk", { nodes: 0, trustedNodes: 0, freeSlots: 0 }],
-				["hobo", { nodes: 2, trustedNodes: 1, freeSlots: 3 }],
-			]),
-			NOW,
-		);
-		expect(written).toBe(
-			'{"publishedAt":"2026-11-10T02:40:05.000Z","labels":{"hobo":{"nodes":2,"trustedNodes":1,"freeSlots":3},"hobo-trunk":{"nodes":0,"trustedNodes":0,"freeSlots":0}}}',
-		);
-		// The checked-in fixture is this same shape.
-		expect(JSON.parse(fixture("valid/mesh-fleet-state.json"))).toEqual(
-			JSON.parse(written),
-		);
 	});
 });

@@ -28,7 +28,10 @@ import {
 	type WorkerStorageLease,
 	type WorkerStoragePnpmStore,
 } from "../src/isolated-worker/storage-admission.js";
-import { storageReserveForJob } from "../src/isolated-worker/storage-job-classes.js";
+import {
+	DEPS_BUILD_ADMISSION_ID,
+	storageReserveForJob,
+} from "../src/isolated-worker/storage-job-classes.js";
 
 const nodeFs = {
 	chown: vi.fn<typeof chown>(),
@@ -73,11 +76,13 @@ function harness(
 		prune?: WorkerStoragePnpmStore["prune"];
 		now?: () => number;
 		log?: ReturnType<typeof vi.fn>;
+		drainRetiredSweep?: () => Promise<void>;
 	} = {},
 ) {
 	let current = input.before ?? usage(20);
 	const retired: string[] = [];
 	const scheduleRetiredSweep = vi.fn();
+	const drainRetiredSweep = vi.fn(async () => undefined);
 	const fs: WorkerStorageFileSystem = {
 		statfs: vi.fn(async () => current),
 		device: vi.fn(async (path: string) => input.devices?.[path] ?? 1),
@@ -129,6 +134,7 @@ function harness(
 			dockerDataRootBytes: 0,
 		},
 		scheduleRetiredSweep,
+		drainRetiredSweep: input.drainRetiredSweep ?? drainRetiredSweep,
 		now: input.now,
 		log: input.log,
 	});
@@ -139,6 +145,7 @@ function harness(
 		pnpmStore,
 		retired,
 		scheduleRetiredSweep,
+		drainRetiredSweep: input.drainRetiredSweep ?? drainRetiredSweep,
 		setStats(stats: WorkerFileSystemStats) {
 			current = stats;
 		},
@@ -156,6 +163,24 @@ function freeInodes(ffree: number): WorkerFileSystemStats {
 }
 
 describe("worker storage admission", () => {
+	it("sweeps retired workdirs before pressure maintenance", async () => {
+		const h = harness({ before: usage(90), after: usage(80) });
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		expect(h.scheduleRetiredSweep.mock.calls.length).toBeGreaterThanOrEqual(1);
+		expect(h.drainRetiredSweep).toHaveBeenCalled();
+	});
+
+	it("sweeps retired dirs when inode reserve blocks admission", async () => {
+		const h = harness({
+			// One job's shared-device reserve fits; a second does not.
+			before: freeInodes(380_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
+		expect(h.drainRetiredSweep).toHaveBeenCalled();
+	});
+
 	it("dedupes shared-device inode reserves and bins packs concurrent jobs", async () => {
 		const log = vi.fn();
 		const h = harness({
@@ -192,6 +217,28 @@ describe("worker storage admission", () => {
 		).resolves.toBe(true);
 	});
 
+	it("holds the deps image build grant without a lease until it is released", async () => {
+		let nowMs = 0;
+		const reserve = {
+			workRoot: 0,
+			dockerDataRoot: 300_000,
+			workRootBytes: 0,
+			dockerDataRootBytes: 0,
+		};
+		const h = harness({ before: freeInodes(500_000), now: () => nowMs });
+		// A job's grant with no lease lapses after the grace period.
+		await expect(h.admission.admit([], "job-0", reserve)).resolves.toBe(true);
+		nowMs += 60_000;
+		await expect(
+			h.admission.admit([], DEPS_BUILD_ADMISSION_ID, reserve),
+		).resolves.toBe(true);
+		// The build holds no lease, and its grant still counts after the grace period.
+		nowMs += 60_000;
+		await expect(h.admission.admit([], "job-1", reserve)).resolves.toBe(false);
+		h.admission.release(DEPS_BUILD_ADMISSION_ID);
+		await expect(h.admission.admit([], "job-1", reserve)).resolves.toBe(true);
+	});
+
 	it("checks reserves independently on different devices", async () => {
 		const h = harness({
 			before: freeInodes(500_000),
@@ -217,6 +264,35 @@ describe("worker storage admission", () => {
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
 	});
 
+	it("binds a pre-reserve grant to the lease id and releases on terminal cleanup", async () => {
+		const h = harness({
+			before: freeInodes(500_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		for (let i = 0; i < 12; i++) {
+			const jobId = `job-${i}`;
+			const leaseId = `lease-${i}`;
+			await expect(h.admission.admit([], jobId)).resolves.toBe(true);
+			h.admission.bindGrant(jobId, leaseId);
+			h.admission.release(leaseId);
+			h.admission.release(jobId);
+		}
+		await expect(h.admission.admit([], "job-final")).resolves.toBe(true);
+	});
+
+	it("blocks further admission until bound lease grants are released", async () => {
+		const h = harness({
+			before: freeInodes(380_000),
+			jobInodes: { workRoot: 200_000, dockerDataRoot: 170_000 },
+		});
+		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		h.admission.bindGrant("job-1", "lease-1");
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
+		h.admission.release("lease-1");
+		h.admission.release("job-1");
+		await expect(h.admission.admit([], "job-2")).resolves.toBe(true);
+	});
+
 	it("expires a grant without an active lease after the grace period", async () => {
 		let nowMs = 0;
 		const h = harness({
@@ -225,6 +301,7 @@ describe("worker storage admission", () => {
 			now: () => nowMs,
 		});
 		await expect(h.admission.admit([], "job-1")).resolves.toBe(true);
+		h.admission.bindGrant("job-1", "lease-1");
 		nowMs = 15_000;
 		await expect(h.admission.admit([], "job-2")).resolves.toBe(false);
 		nowMs = 15_001;
@@ -483,7 +560,7 @@ describe("worker storage admission", () => {
 		await expect(h.admission.admit(activeLeases, "job-2")).resolves.toBe(true);
 		expect(h.retired).toEqual([`${WORK_ROOT}/.retired/${DEAD}-test`]);
 		expect(h.fs.removeJobDirectory).not.toHaveBeenCalled();
-		expect(h.scheduleRetiredSweep).toHaveBeenCalledOnce();
+		expect(h.scheduleRetiredSweep).toHaveBeenCalled();
 		expect(h.docker.containerExists).not.toHaveBeenCalledWith(LIVE);
 		expect(h.docker.containerExists).toHaveBeenCalledWith(STOPPED);
 	});

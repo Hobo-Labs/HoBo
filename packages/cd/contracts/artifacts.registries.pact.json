@@ -1,0 +1,249 @@
+{
+  "consumer": {
+    "name": "HoboCdArtifactVerifier"
+  },
+  "provider": {
+    "name": "PackageAndImageRegistries"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0.0"
+    },
+    "evidence": "Hand-authored HTTP contract for the registry digest at coordinate, one interaction per ecosystem the hobo:artifact-repo port registers, in each registry's public API shape. Verified by contracts/artifacts.consumer.test.ts against the real verifier.",
+    "bytes": "package tarball bytes v1.2.3"
+  },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read an OCI manifest by digest",
+      "providerStates": [
+        {
+          "name": "ghcr.io/acme/api holds manifest sha256:d012eff2938b216a6d0654b89d501fa8175b1a95b734c9bc8a1ca0b86c2a7871"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v2/acme/api/manifests/sha256:d012eff2938b216a6d0654b89d501fa8175b1a95b734c9bc8a1ca0b86c2a7871",
+        "headers": {
+          "accept": "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.artifact.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "docker-content-digest": "sha256:d012eff2938b216a6d0654b89d501fa8175b1a95b734c9bc8a1ca0b86c2a7871",
+          "content-type": "application/vnd.oci.image.manifest.v1+json"
+        },
+        "body": {
+          "contentType": "application/vnd.oci.image.manifest.v1+json",
+          "encoded": false,
+          "content": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"size\":7},\"layers\":[]}"
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read npm dist.integrity for a pinned version",
+      "providerStates": [
+        {
+          "name": "@acme/api 1.2.3 is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/@acme%2Fapi/1.2.3",
+        "headers": {
+          "accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "name": "@acme/api",
+            "version": "1.2.3",
+            "dist": {
+              "integrity": "sha512-bYYlAfHtXO3+76chlGssvsOpmWMI8fd8D9ryFHgCoP5ZOfEDvhqMOQe/s4DslDTGq/ZK2lVH0EkLRgk5v0awlQ==",
+              "shasum": "2c051545bbb8871bc06ee47bbe595b5afeff3c73",
+              "tarball": "https://registry.npmjs.org/@acme/api/-/api-1.2.3.tgz"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read PyPI digests.sha256 for a release file",
+      "providerStates": [
+        {
+          "name": "acme-api 1.2.3 is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/pypi/acme-api/1.2.3/json",
+        "headers": {
+          "accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "info": {
+              "name": "acme-api",
+              "version": "1.2.3"
+            },
+            "urls": [
+              {
+                "filename": "acme_api-1.2.3-py3-none-any.whl",
+                "digests": {
+                  "sha256": "aac477c441f06dd8119e3edea395af054435efc6e0cb74ae6deb1d0f5e08e08a",
+                  "md5": "b3760779cedce25d392b00b68c1a9fdb"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read the NuGet registration leaf",
+      "providerStates": [
+        {
+          "name": "Acme.Api 1.2.3 is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v3/registration5-semver1/acme.api/1.2.3.json",
+        "headers": {
+          "accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "@id": "https://api.nuget.org/v3/registration5-semver1/acme.api/1.2.3.json",
+            "catalogEntry": "https://api.nuget.org/v3/catalog0/data/2026.11.01.00.00.00/acme.api.1.2.3.json",
+            "listed": true
+          }
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read the NuGet catalog packageHash",
+      "providerStates": [
+        {
+          "name": "Acme.Api 1.2.3 is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v3/catalog0/data/2026.11.01.00.00.00/acme.api.1.2.3.json",
+        "headers": {
+          "accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "id": "Acme.Api",
+            "version": "1.2.3",
+            "packageHash": "bYYlAfHtXO3+76chlGssvsOpmWMI8fd8D9ryFHgCoP5ZOfEDvhqMOQe/s4DslDTGq/ZK2lVH0EkLRgk5v0awlQ==",
+            "packageHashAlgorithm": "SHA512"
+          }
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read a Maven .sha256",
+      "providerStates": [
+        {
+          "name": "com.acme:api:1.2.3 is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/maven2/com/acme/api/1.2.3/api-1.2.3.jar.sha256",
+        "headers": {
+          "accept": "text/plain"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "text/plain",
+          "encoded": false,
+          "content": "aac477c441f06dd8119e3edea395af054435efc6e0cb74ae6deb1d0f5e08e08a"
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read the crates.io sparse index",
+      "providerStates": [
+        {
+          "name": "serde 1.0.1 is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/se/rd/serde",
+        "headers": {
+          "accept": "text/plain"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "text/plain",
+          "encoded": false,
+          "content": "{\"name\":\"serde\",\"vers\":\"1.0.1\",\"deps\":[],\"cksum\":\"aac477c441f06dd8119e3edea395af054435efc6e0cb74ae6deb1d0f5e08e08a\",\"features\":{},\"yanked\":false}\n"
+        }
+      }
+    },
+    {
+      "type": "Synchronous/HTTP",
+      "description": "read the RubyGems version sha",
+      "providerStates": [
+        {
+          "name": "rack 3.1.8 is published"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v2/rubygems/rack/versions/3.1.8.json",
+        "headers": {
+          "accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "contentType": "application/json",
+          "encoded": false,
+          "content": {
+            "name": "rack",
+            "version": "3.1.8",
+            "platform": "ruby",
+            "sha": "aac477c441f06dd8119e3edea395af054435efc6e0cb74ae6deb1d0f5e08e08a"
+          }
+        }
+      }
+    }
+  ]
+}

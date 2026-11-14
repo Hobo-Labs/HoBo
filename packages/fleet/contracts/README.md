@@ -1,6 +1,6 @@
 # Contracts
 
-`@hobo/fleet` is scaffolded by the fleet contract commit (ADR-0182).
+`@hobo/fleet` is scaffolded by the fleet contract commit (ADR-0183).
 `placeholder.pact.json` holds no interactions yet; it exists so the package's
 contract folder is present from the first commit. The lanes that build this
 package add one pact per service boundary it crosses (for the authority, its HTTP API) and replay each from both sides in `test/`.

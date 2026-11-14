@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `pnpm run fleet:outcome <id>` (ADR-0182): runs one system outcome of the
+ * `pnpm run fleet:outcome <id>` (ADR-0183): runs one system outcome of the
  * fleet design and prints its `fleet-verification.json` object,
  * `{ id, pass, command, evidence, measured, fallbacks }`.
  *

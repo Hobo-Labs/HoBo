@@ -1,0 +1,52 @@
+{
+  "consumer": { "name": "HoboCdPromotionAndReconcilers" },
+  "provider": { "name": "HoboCdDesiredState" },
+  "interactions": [
+    {
+      "description": "promotion opens and applies a Delta for an empty Camp",
+      "providerState": "camp prod-aws has no desired state",
+      "request": {
+        "method": "APPLY",
+        "body": { "campId": "prod-aws", "deltaId": "delta-1", "intent": "promote", "origin": "PROMOTION", "gateDecisionId": "gate-1", "resources": "SHOP_V1" }
+      },
+      "response": {
+        "body": {
+          "ok": true,
+          "set": { "schemaVersion": "hobo.cd.set/v1", "campId": "prod-aws", "origin": "SET_ORIGIN_PROMOTION", "gateDecisionId": "gate-1", "predecessorSetId": "" },
+          "events": ["delta.Opened", "delta.Applied", "set.Created"],
+          "stream": "cd-camp-prod-aws",
+          "blob": { "kind": "ARTIFACT_KIND_PACKAGE", "mediaType": "application/vnd.hobo.resolved-set+json" }
+        },
+        "matchingRules": {
+          "$.body.set.setId": { "match": "regex", "regex": "^set_[0-9a-f]{32}$" },
+          "$.body.set.resolvedSetDigest": { "match": "regex", "regex": "^sha256:[0-9a-f]{64}$" },
+          "$.body.set.resolvedSetBytes": { "match": "regex", "regex": "^[1-9][0-9]*$" }
+        }
+      }
+    },
+    {
+      "description": "a reconciler reads the Camp's changes by position and fetches the verified resolved set",
+      "providerState": "camp prod-aws has one applied Set",
+      "request": { "method": "CHANGES", "body": { "campIds": ["prod-aws"] } },
+      "response": {
+        "body": {
+          "frames": [{ "management": "MANAGED", "observeFields": [], "setOrigin": "SET_ORIGIN_PROMOTION" }],
+          "resolved": { "schemaVersion": "hobo.resolved-deployment-set/v1", "campId": "prod-aws", "resources": ["shop.api", "shop.cache", "shop.db"] }
+        }
+      }
+    },
+    {
+      "description": "a second Delta against a stale base is refused with a typed reason",
+      "providerState": "camp prod-aws has one applied Set",
+      "request": { "method": "OPEN", "body": { "campId": "prod-aws", "deltaId": "delta-stale", "intent": "promote", "baseSetId": "set_00000000000000000000000000000000" } },
+      "response": { "body": { "ok": false, "code": "delta-stale-base", "hasRemediation": true } }
+    },
+    {
+      "description": "a reconciler fetching a corrupted blob is blocked with a reason",
+      "providerState": "the Set's blob was corrupted at rest",
+      "request": { "method": "RESOLVED", "body": { "campId": "prod-aws" } },
+      "response": { "body": { "error": "resolved-set-digest-mismatch", "hasRemediation": true } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

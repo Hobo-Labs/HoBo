@@ -1,0 +1,13 @@
+{
+  "repository": "hobo-labs/hobo",
+  "reporters": [
+    {
+      "id": "box-1",
+      "labels": ["hobo"],
+      "live": true,
+      "publicKey": "VQLcrFt00Tc-cySxdYNR4cXm5phbpj5QpvkTWtOr5q8"
+    }
+  ],
+  "allowance": {},
+  "dailyBlockMinutes": 240
+}

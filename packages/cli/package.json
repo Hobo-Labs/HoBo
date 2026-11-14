@@ -24,6 +24,7 @@
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/bindles": "workspace:*",
+		"@hobo/cd": "workspace:*",
 		"@hobo/cloud": "workspace:*",
 		"@hobo/componentize": "workspace:*",
 		"@hobo/core": "workspace:*",

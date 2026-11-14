@@ -11,6 +11,9 @@ export const ISOLATED_JIT_FOREIGN_MESH_IDLE_MS = 3 * 60_000;
 /** Stop a listener that never received a job assignment from GitHub. */
 export const ISOLATED_JIT_UNASSIGNED_IDLE_MS = 10 * 60_000;
 
+/** Bound reserved job still queued while the runner never left `queued`. */
+export const ISOLATED_JIT_QUEUED_BOUND_GRACE_MS = 3 * 60_000;
+
 /** Hard grace after the job budget so idle runners cannot hold memory forever. */
 // public-contract: lease reconciler stops containers after budget plus this grace.
 export const DEFAULT_ISOLATED_TIMEOUT_HARD_GRACE_MS = 5 * 60_000;

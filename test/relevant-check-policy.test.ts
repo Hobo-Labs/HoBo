@@ -75,16 +75,60 @@ function turboTestSelects(checks: Check[], workspace: string) {
 	);
 }
 
-test("external workspace coverage omits only workspace test commands", () => {
+function isScriptsLane(check: Check) {
+	return (
+		check.command === "pnpm" && check.args.join(" ") === "run test:scripts"
+	);
+}
+
+test("external workspace coverage omits only the commands CI runs in their own jobs", () => {
+	// pr_gate_validation passes --external-workspace-tests: workspace_tests
+	// runs the workspace suites and scripts-tests runs the scripts lane.
 	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
 	const normal = plan(files);
 	const external = plan(files, { workspaceTestsCoveredExternally: true });
 	assert.ok(normal.checks.some(isWorkspaceTurboTest));
+	assert.ok(normal.checks.some(isScriptsLane));
 	assert.ok(!external.checks.some(isWorkspaceTurboTest));
+	assert.ok(!external.checks.some(isScriptsLane));
 	assert.deepEqual(external.workspaces, normal.workspaces);
 	assert.deepEqual(
 		external.checks,
-		normal.checks.filter((check) => !isWorkspaceTurboTest(check)),
+		normal.checks.filter(
+			(check) => !isWorkspaceTurboTest(check) && !isScriptsLane(check),
+		),
+	);
+});
+
+test("a change to scripts, root tests or .github selects the scripts lane once", () => {
+	for (const file of [
+		"scripts/ci/route-runner.mts",
+		"scripts/test/route-runner.test.ts",
+		"test/actions-policy.test.ts",
+		".github/workflows/hobo-ci.yml",
+		".github/actions/route-runner/action.yml",
+	]) {
+		const { checks } = plan([file]);
+		assert.equal(checks.filter(isScriptsLane).length, 1, file);
+	}
+});
+
+test("the scripts lane is not selected for other paths, a staged commit, or CI", () => {
+	for (const file of [
+		"packages/ci/src/index.ts",
+		"docs/ci/performance.md",
+		"src/draft/technical-proofs/hobo-auth-authoring-surface/src/index.ts",
+		"scriptsx/example.ts",
+		"testing/example.ts",
+	])
+		assert.ok(!plan([file]).checks.some(isScriptsLane), file);
+	assert.ok(
+		!plan(["scripts/example.ts"], { staged: true }).checks.some(isScriptsLane),
+	);
+	assert.ok(
+		!plan(["scripts/example.ts"], {
+			workspaceTestsCoveredExternally: true,
+		}).checks.some(isScriptsLane),
 	);
 });
 
@@ -661,6 +705,22 @@ test("the behavior lane builds the proofs' dependencies first, serially", () => 
 			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
 	);
 	assert.equal(build?.serial, true);
+});
+
+test("the behavior lane also builds what the root step definitions import", () => {
+	// cucumber.yaml loads every features/steps/**/*.ts file on every run, and
+	// those steps import @hobo/conformance and the CD conformance kit from source,
+	// whose own dependencies resolve through dist/.
+	const { checks } = plan(["cucumber.yaml"]);
+	const build = checks.find(
+		(check) =>
+			check.args.join(" ").startsWith("exec turbo run build") &&
+			check.args.includes("--filter={./src/draft/epic-proofs/*}^..."),
+	);
+	assert.ok(build?.args.includes("--filter=@hobo/conformance^..."));
+	assert.ok(
+		build?.args.includes("--filter=@hobo/example-cd-conformance-kit^..."),
+	);
 });
 
 test("pattern-catalog starter Gherkin is fixture data, not the repo behavior lane", () => {

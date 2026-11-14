@@ -1,6 +1,6 @@
 /**
  * Host capacity (L10, design §6.8). Signature frozen by the fleet contract
- * commit (ADR-0182). How each figure is measured is in `measure.ts`.
+ * commit (ADR-0183). How each figure is measured is in `measure.ts`.
  */
 import type { CapacitySource } from "@hobo/fleet";
 import {

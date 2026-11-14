@@ -193,7 +193,7 @@ describe("HoBo CLI shell", () => {
 			"forge",
 			"train",
 			"crew",
-			// "fleet" is canonical again: HoBo Fleet (ADR-0182) reinstates it.
+			// "fleet" is canonical again: HoBo Fleet (ADR-0183) reinstates it.
 		]) {
 			expect(result.stdout).not.toMatch(new RegExp(`^  ${retired}\\s`, "m"));
 		}

@@ -56,6 +56,9 @@ describe("the relay's Yard", () => {
 			project: "hobo-ci",
 			repository: "Hobo-Labs/HoBo",
 			rootDirectory: "packages/ci-vercel",
+			// The production domain: public under Deployment Protection, where
+			// `hobo ci deploy --adopt` verifies the relay.
+			productionOrigin: "https://hobo-ci.vercel.app",
 		});
 		expect(RELAY_PLACEMENT.rootDirectory).toBe("packages/ci-vercel");
 	});

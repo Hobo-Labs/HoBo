@@ -8,7 +8,6 @@ import { createHash } from "node:crypto";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import type {
 	MeshCapacity,
-	MeshLabelState,
 	MeshNode,
 	MeshNodeReport as MeshNodeReportView,
 	MeshNodesView,
@@ -18,7 +17,6 @@ import type {
 import {
 	type MeshAdvert,
 	MeshAdvertSchema,
-	MeshFleetStateSchema,
 	type MeshNodeReports,
 	MeshNodeReportsSchema,
 	MeshReliabilityRecordSchema,
@@ -401,23 +399,4 @@ export function parseMeshNodeReports(text: string): MeshNodeReports {
 	return fromJsonString(MeshNodeReportsSchema, text, {
 		ignoreUnknownFields: true,
 	});
-}
-
-/** The value of the `HOBO_CI_FLEET_STATE` repository variable. */
-export function meshFleetStateJson(
-	labels: ReadonlyMap<string, MeshLabelState>,
-	nowMs: number,
-): string {
-	return toJsonString(
-		MeshFleetStateSchema,
-		create(MeshFleetStateSchema, {
-			publishedAt: instant(nowMs),
-			labels: Object.fromEntries(
-				[...labels]
-					.sort(([a], [b]) => a.localeCompare(b))
-					.map(([label, state]) => [label, { ...state }]),
-			),
-		}),
-		{ alwaysEmitImplicit: true },
-	);
 }

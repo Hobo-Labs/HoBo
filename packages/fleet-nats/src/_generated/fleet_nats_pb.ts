@@ -2,7 +2,7 @@
 // @generated from file fleet_nats.proto (package hobo.fleet_nats.v1, syntax proto3)
 /* eslint-disable */
 
-// Local configuration record of @hobo/fleet-nats (ADR-0182). The fleet's
+// Local configuration record of @hobo/fleet-nats (ADR-0183). The fleet's
 // records, ports and signed envelopes are in @hobo/fleet; this package
 // keeps only its own settings here.
 

@@ -1,5 +1,6 @@
 {
 	"publicScope": "@hobo-labs",
+	"repository": "https://github.com/Hobo-Labs/HoBo",
 	"packages": {
 		"@hobo/core": "@hobo-labs/core",
 		"@hobo/bindles": "@hobo-labs/bindles",

@@ -16,6 +16,10 @@ import {
 } from "@hobo/core";
 import { NETLIFY_AUTHENTICATED_SITE_DEFINITION_ID } from "./definitions.js";
 import {
+	instrumentResolvers,
+	type ResolverTelemetryOptions,
+} from "./delivery-coverage.js";
+import {
 	isJsonArray,
 	isJsonObject,
 	isJsonString,
@@ -800,6 +804,15 @@ export function netlifyResolvers(
 	]);
 }
 
-export function netlifyResolverRegistry(options: NetlifyResolverOptions) {
-	return createResolverRegistry(netlifyResolvers(options));
+/**
+ * The Netlify resolvers behind core's registry lookup. With `metrics` and an
+ * injected `nowMs`, every call emits `hobo.cd.resolver.operations` and
+ * `hobo.cd.resolver.duration` (plan 0024 WP14).
+ */
+export function netlifyResolverRegistry(
+	options: NetlifyResolverOptions & ResolverTelemetryOptions,
+) {
+	return createResolverRegistry(
+		instrumentResolvers(netlifyResolvers(options), options),
+	);
 }
