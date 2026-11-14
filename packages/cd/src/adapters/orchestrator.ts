@@ -53,7 +53,7 @@ export type HostAttestor = Readonly<{
 	createDocument(input: {
 		launchMeasurement: LaunchMeasurement;
 		claimed?: JsonObject;
-	}): AttestationDocument;
+	}): Promise<AttestationDocument>;
 	publicKeys(): readonly Readonly<{
 		hostId: string;
 		keyId: string;
@@ -257,10 +257,10 @@ export function createOrchestratorRealizer(
 		);
 	}
 
-	function attest(
+	async function attest(
 		input: RealizeInput,
 		nowMs: number,
-	): ReasonRecord | undefined {
+	): Promise<ReasonRecord | undefined> {
 		const runId = `${input.campId}:${input.desired.setId}:${input.fence}`;
 		const launchMeasurement: LaunchMeasurement = {
 			runId,
@@ -281,7 +281,7 @@ export function createOrchestratorRealizer(
 			isolationTier: d.isolationTier ?? "in-process",
 		};
 		try {
-			const document = d.attestor.createDocument({
+			const document = await d.attestor.createDocument({
 				launchMeasurement,
 				claimed: {
 					tenant: d.tenant,
@@ -383,7 +383,7 @@ export function createOrchestratorRealizer(
 						input.campId,
 					),
 				]);
-			const refused = attest(input, ctx.now());
+			const refused = await attest(input, ctx.now());
 			if (refused) return blocked(input, [refused]);
 			const actor: PrincipalRef = {
 				kind: "service",
