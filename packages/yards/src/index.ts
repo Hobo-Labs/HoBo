@@ -8,6 +8,14 @@ export {
 	type YardBindingInput,
 } from "./binding.js";
 export {
+	productVendor,
+	providerKey,
+	providerManagedConnectivity,
+	YardBoundaryError,
+	type YardBoundaryViolation,
+	yardBoundaryViolations,
+} from "./boundaries.js";
+export {
 	BuilderError,
 	type BuilderErrorCode,
 	buildCamp,
