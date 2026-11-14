@@ -177,4 +177,114 @@ describe("Trails durable data handover", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	it("releases the source fence and journals the compensation when authorization lapses under it", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-trail-handover-lapse-"));
+		const store = createRuntimeLocalEventStore({
+			dataDir: join(dir, "journal"),
+			clock: createManualClock(),
+		});
+		const source = createSqliteEngine({
+			path: join(dir, "source.db"),
+			clock: () => NOW,
+		});
+		const target = createSqliteEngine({
+			path: join(dir, "target.db"),
+			clock: () => NOW,
+		});
+		// SAFETY: both journals use the same JSON facts and conditional count.
+		const journal = createEventStoreMigrationJournal(store, {
+			tenant: "acme",
+			actor: { kind: "system", id: "test" },
+		}) as DataMigrationJournal;
+		const router = new Map<string, number>();
+		let writable = "source",
+			revokeUnderFence = true;
+		const fenced = async () =>
+			(await source.fence?.status(scopeOf("orders")))?.fenced === true;
+		const input = () => ({
+			tenant: "acme",
+			campId: "orders",
+			setId: "set_12345678",
+			schema,
+			scope: scopeOf("orders"),
+			journal,
+			clock: () => NOW,
+			source: {
+				yard: "old-yard",
+				provider: "source-provider",
+				accountId: "source-account",
+				resourceId: "source-db",
+				engine: source,
+			},
+			target: {
+				yard: "new-yard",
+				provider: "target-provider",
+				accountId: "target-account",
+				resourceId: "target-db",
+				engine: target,
+			},
+			async revalidate(phase: string) {
+				// Authorization lapses the moment the source is fenced, before
+				// anything is compared under the fence or authority moves.
+				if (revokeUnderFence && phase === "fence-and-flip" && (await fenced()))
+					throw new Error("authorization expired");
+			},
+			policy: () =>
+				evaluateCustodyPath({
+					path,
+					policy: { classification: "public" },
+					now: NOW,
+				}),
+			flipAuthority(move: {
+				migrationId: string;
+				head: number;
+				direction: "to-source" | "to-target";
+			}) {
+				admitAuthorityMove(router, move);
+				writable = move.direction === "to-target" ? "target" : "source";
+			},
+			soakDecision: () => "hold" as const,
+		});
+		try {
+			await source.datasets.ensureDataset(schema);
+			const record = parseCanonicalRecord(schema, { id: "a", total: "1" });
+			await source.records.write({
+				dataset: "orders",
+				mutations: [
+					upsertMutation("", encodeRecordKey(schema, record), record),
+				],
+			});
+			await expect(executeDataHandover(input())).rejects.toThrow(
+				"authorization expired",
+			);
+			expect(writable).toBe("source");
+			expect(await fenced()).toBe(false);
+			const { migrationId } = await inspectDataHandover(input());
+			const facts = await journal.load(migrationId);
+			const raised = facts.findIndex(
+				(fact) =>
+					fact.type === "migration.FenceRaised" && fact.data.side === "source",
+			);
+			expect(raised).toBeGreaterThan(-1);
+			expect(
+				facts
+					.slice(raised + 1)
+					.some(
+						(fact) =>
+							fact.type === "migration.Held" && fact.data.compensated === true,
+					),
+			).toBe(true);
+			// A later authorized run fences afresh and completes the cutover.
+			revokeUnderFence = false;
+			expect((await executeDataHandover(input())).status).toBe("held");
+			expect((await inspectDataHandover(input())).status).toBe("cutover-held");
+			expect(writable).toBe("target");
+		} finally {
+			await source.close();
+			await target.close();
+			store.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
