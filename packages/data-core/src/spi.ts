@@ -10,6 +10,12 @@
  * engine answers synchronously, a networked one does not, and the executors
  * await both the same way.
  */
+
+import type {
+	FenceOperationClaim as FenceOperationClaimWire,
+	FenceOperationObservation as FenceOperationObservationWire,
+	FenceOperationReceipt as FenceOperationReceiptWire,
+} from "./_generated/data_core_pb.js";
 import type { CanonicalRecord, DatasetSchema } from "./canonical.js";
 import type { DatasetDigest } from "./digest.js";
 import type { ChangeEnvelope, Position, RecordMutation } from "./envelope.js";
@@ -327,7 +333,59 @@ export interface FenceStatus {
 	readonly fenced: boolean;
 }
 
+/** A source-side, nonexpiring lock around one exact routing operation. */
+export type FenceOperationClaim = Readonly<
+	Omit<FenceOperationClaimWire, "$typeName" | "$unknown" | "scope"> & {
+		readonly scope: DatasetScope;
+	}
+>;
+/** A destination's signed terminal result for the exact source claim. */
+export type FenceOperationReceipt = Readonly<
+	Omit<
+		FenceOperationReceiptWire,
+		"$typeName" | "$unknown" | "scope" | "contract" | "outcome"
+	> & {
+		readonly scope: DatasetScope;
+		readonly contract: "hobo.fence-operation-receipt/v1";
+		readonly outcome: "committed";
+	}
+>;
+export type FenceOperationObservation = Readonly<
+	Omit<
+		FenceOperationObservationWire,
+		"$typeName" | "$unknown" | "claim" | "status"
+	> & {
+		readonly claim: FenceOperationClaim;
+		readonly status: "held" | "completed";
+	}
+>;
+export interface FenceOperationPort {
+	claim(
+		input: Readonly<{
+			scope: DatasetScope;
+			fenceToken: string;
+			operationId: string;
+			routeDigest: string;
+			receiverKeyId: string;
+		}>,
+	): Awaitable<FenceOperationClaim>;
+	/** Completes only on a signed exact-operation terminal receipt. */
+	complete(receipt: FenceOperationReceipt): Awaitable<void>;
+	/** Without an id, reads the held claim; with one, also reads its durable completion tombstone. */
+	inspect(
+		scope: DatasetScope,
+		operationId?: string,
+	): Awaitable<FenceOperationObservation | undefined>;
+}
+
 export interface WriteFencePort {
+	/**
+	 * Optional source operation lock; absence does not imply one. A host must
+	 * independently verify the source's provider and current placement, its
+	 * enforcement and privileged-writer restrictions, and the receiver's
+	 * identity and funded authority before relying on this port for cutover.
+	 */
+	readonly operation?: FenceOperationPort;
 	/**
 	 * Idempotent: raising a raised fence returns its existing token. A fence
 	 * raised after a release is a new fence with a new token; the old token

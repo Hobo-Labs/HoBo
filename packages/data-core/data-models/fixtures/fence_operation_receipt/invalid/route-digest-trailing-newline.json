@@ -1,0 +1,10 @@
+{
+  "scope": { "dataset": "orders", "tenant": "" },
+  "operationId": "handover-1",
+  "routeDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+  "receiverKeyId": "route-receiver-1",
+  "fenceTokenDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "contract": "hobo.fence-operation-receipt/v1",
+  "outcome": "committed",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}
