@@ -242,6 +242,8 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 			"compute",
 			"data",
 			"secretRef",
+			"kv",
+			"queue",
 		]);
 		const [compute] = provider.capabilities;
 		expect(compute?.satisfies({ port: "database" }).kind).toBe("none");
@@ -266,6 +268,33 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(
 			noProjection.capabilities.some((entry) => entry.port === "secretRef"),
 		).toBe(false);
+		for (const port of ["kv", "queue"]) {
+			const entry = provider.capabilities.find((item) => item.port === port);
+			expect(entry?.satisfies({ port })).toEqual({ kind: "full" });
+			expect(entry?.satisfies({ port, features: ["unlisted"] })).toEqual({
+				kind: "partial",
+				missing: ["unlisted"],
+			});
+		}
+	});
+
+	it("does not advertise key-value or queue ports without matching Yard bindings", () => {
+		const withoutDataPorts: Yard = {
+			...yard,
+			bindings: yard.bindings.filter(
+				(row) =>
+					row.profile !== capability.kv.keyValue &&
+					row.profile !== capability.kv.redisCompatible &&
+					row.profile !== capability.kv.valkey &&
+					row.profile !== capability.queue.atLeastOnce &&
+					row.profile !== capability.queue.fifo,
+			),
+		};
+		expect(
+			relayYardRegistryProvider(withoutDataPorts).capabilities.map(
+				(entry) => entry.port,
+			),
+		).toEqual(["compute", "data", "secretRef"]);
 	});
 });
 
