@@ -155,6 +155,27 @@ export {
 	sessionReplay,
 } from "./session-replay.js";
 export {
+	CONTINUITY_KINDS,
+	CONTINUITY_MIGRATION,
+	CONTINUITY_ON_LOSS,
+	CONTINUITY_OPTION,
+	CONTINUITY_TIER_DEFAULTS,
+	CONTINUITY_TIERS,
+	type ContinuityInput,
+	ContinuityError,
+	type ContinuityMigration,
+	type ContinuityOnLoss,
+	type ContinuityPolicy,
+	type ContinuityTier,
+	type ContinuityViolation,
+	continuity,
+	continuityPolicies,
+	continuityViolations,
+	isContinuityAnnotation,
+	parseContinuityPolicy,
+	readContinuity,
+} from "./continuity.js";
+export {
 	isStatusPageAnnotation,
 	readStatusPageConfig,
 	STATUS_PAGE_OPTION,
