@@ -1155,7 +1155,8 @@ directory is the data directory: agent config `worker.directory`) answers
 `runners` from `runner-presence.json`, which its controller rewrites with
 its registered runner's GitHub presence (`GET .../actions/runners/{id}`
 with its own `gh` credential) and the time it read it
-(`createLocalRunnerPresenceReporter`). Busy is also what the machine sees
+(`createLocalRunnerPresenceReporter`; the session observer's rewrite runs in
+the background, and `settled()` resolves once it has written). Busy is also what the machine sees
 itself (a job's worker log), so a job is never missed while GitHub cannot be
 asked; online is only what GitHub said, and a missing, corrupt or stale
 (over two minutes) report answers no runner. A local runner honours the

@@ -580,14 +580,17 @@ export function createLocalRunnerPresenceReporter(options: {
 	const now = options.now ?? Date.now;
 	const name = repositoryName.parse(options.repository);
 	let current: Readonly<{ id: number; name: string; work: string }> | undefined;
+	// The observer cannot await (the session calls it synchronously), so its
+	// refresh runs in the background; `settled()` lets a caller wait for it.
+	let background: Promise<void> = Promise.resolve();
 	const observer: LocalRunnerSessionObserver = {
 		waiting(work, runner) {
 			current = runner ? { ...runner, work } : undefined;
-			void refresh();
+			background = refresh();
 		},
 		ended() {
 			current = undefined;
-			void refresh();
+			background = refresh();
 		},
 	};
 	async function presence(): Promise<WorkerRunnerPresence> {
@@ -622,6 +625,8 @@ export function createLocalRunnerPresenceReporter(options: {
 		observer,
 		refresh,
 		presence,
+		/** Resolves once the refresh the last observer call started has written. */
+		settled: () => background,
 		/** The registered runner's work folder, while one waits or runs. */
 		work: () => current?.work,
 	};
