@@ -507,12 +507,10 @@ async function place(
 		if (register.stopAfterMajority && holders.length >= required)
 			return { status: "decided", assignment, holders };
 	}
-	const rank = new Map(priority.map((id, index) => [id, index]));
+	const responsive = new Set(priority);
 	const ordered = register.stopAfterMajority
 		? [...register.replicas].sort(
-				(a, b) =>
-					(rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-					(rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+				(a, b) => Number(!responsive.has(a.id)) - Number(!responsive.has(b.id)),
 			)
 		: register.replicas;
 	for (const replica of ordered) {

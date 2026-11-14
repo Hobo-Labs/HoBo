@@ -22,6 +22,7 @@ class Replica implements ImmutableJournalReplica {
 	truncateHistory = false;
 	corruptHistory = false;
 	delayAccept = false;
+	delayGenesis = false;
 	readonly pendingAccepts: (() => void)[] = [];
 	constructor(readonly id: string) {}
 	async read(limit?: number) {
@@ -42,7 +43,10 @@ class Replica implements ImmutableJournalReplica {
 		if (!this.available) throw new Error("provider offline");
 		if (this.refuseAfterGenesis && value.epoch > 1)
 			throw new Error("provider unavailable");
-		if (this.delayAccept && value.epoch > 1)
+		if (
+			(this.delayAccept && value.epoch > 1) ||
+			(this.delayGenesis && value.epoch === 1)
+		)
 			await new Promise<void>((resolve) => this.pendingAccepts.push(resolve));
 		const existing = this.rows.find((entry) => entry.epoch === value.epoch);
 		if (existing)
@@ -93,12 +97,12 @@ function fixture(replicaTimeoutMs = 100) {
 	] as const;
 	let permitted = true;
 	const authorizations: string[] = [];
-	function open() {
+	function open(selected: readonly ImmutableJournalReplica[] = replicas) {
 		return createImmutableJournal({
 			fleetId: "cd-journal",
 			members,
 			anchorDigest,
-			replicas,
+			replicas: selected,
 			maxEntryBytes: 4096,
 			maxEntries: 100,
 			replicaTimeoutMs,
@@ -196,6 +200,68 @@ describe("immutable majority journal", () => {
 		f.replicas[0].hangRead = true;
 		f.replicas[1].hangRead = true;
 		await expect(journal.read()).rejects.toThrow("quorum-unavailable");
+	});
+	it("does not report fresh initialization until every member confirms genesis", async () => {
+		const f = fixture(25);
+		f.replicas[2].delayGenesis = true;
+		await expect(f.open().bootstrap(async () => {})).rejects.toThrow(
+			"freshness-unverified",
+		);
+		expect(f.replicas[2].rows).toHaveLength(0);
+		f.replicas[2].delayGenesis = false;
+		for (const release of f.replicas[2].pendingAccepts.splice(0)) release();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await f.open().bootstrap(async () => {});
+		expect(f.replicas.every((replica) => replica.rows.length === 1)).toBe(true);
+	});
+	it("preserves a winner when concurrent proposers observe voters in different orders", async () => {
+		const f = fixture(250);
+		await f.open().bootstrap(async () => {});
+		let arrivals = 0,
+			release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const orders = [
+			["a", "b", "c"],
+			["b", "c", "a"],
+			["c", "a", "b"],
+		];
+		const writers = orders.map((order) => {
+			let firstOffer = true;
+			return f.open(
+				f.replicas.map((replica) => ({
+					id: replica.id,
+					async read(limit?: number) {
+						if (limit !== 1)
+							await new Promise((resolve) =>
+								setTimeout(resolve, order.indexOf(replica.id) * 8),
+							);
+						return replica.read(limit);
+					},
+					async accept(value: FleetAssignment) {
+						if (firstOffer && value.epoch === 2) {
+							firstOffer = false;
+							if (++arrivals === orders.length) release();
+							await gate;
+						}
+						return replica.accept(value);
+					},
+					readDocument: replica.readDocument.bind(replica),
+					writeDocument: replica.writeDocument.bind(replica),
+				})),
+			);
+		});
+		const outcomes = await Promise.allSettled(
+			writers.map((writer, index) =>
+				writer.append(`race-${index}`, `value-${index}`, 0),
+			),
+		);
+		expect(arrivals).toBe(3);
+		expect(
+			outcomes.filter((result) => result.status === "fulfilled"),
+		).toHaveLength(1);
+		expect(await f.open().read()).toHaveLength(1);
 	});
 	it("retains the same committed history through restart and a provider outage", async () => {
 		const f = fixture();
