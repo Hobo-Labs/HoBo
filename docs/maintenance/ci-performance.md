@@ -157,6 +157,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   can start within the queue deadline. Explicit pins, a missing or invalid committed routing policy,
   a single shard, other events, and a failed or mismatched repository read retain the original route.
   The visibility observation does not prove future capacity, total job cost, or budget admission.
+  The routed workspace shards still check the sibling pins after checkout and before installing;
+  `scripts/test/pins-wiring.test.ts` verifies that order and the shard's runner fallback.
 - **Pull-request batch routing.** Auto-routed PRs in `hobo-ci.yml` and `release-hobo.yml` choose before any
   dependent jobs are queued. A trusted host may select the fleet only after it verifies a
   durable, exact-run capacity claim and Broker admission for the complete reviewed fan-out,
