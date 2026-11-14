@@ -184,6 +184,7 @@ export async function startConnectPage(
 	const done = new Promise<ConnectStep>((resolve) => {
 		settle = resolve;
 	});
+	if (isTerminalStep(step)) settle(step);
 	// One transition at a time: a double click cannot run two provider calls.
 	let queue: Promise<void> = Promise.resolve();
 	const transition = (run: () => Promise<FlowTransition>) => {

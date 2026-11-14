@@ -164,6 +164,16 @@ describe("startConnectPage", () => {
 
 	const SECRET = "-----BEGIN RSA PRIVATE KEY----- never-shown";
 
+	it("settles immediately when a flow starts in a terminal state", async () => {
+		page = await startConnectPage({
+			flow: {
+				initial: FAILED_STEP,
+				onAction: async (_action, _params, current) => ({ step: current }),
+			},
+		});
+		await expect(page.done).resolves.toEqual(FAILED_STEP);
+	}, 2_000);
+
 	function githubFlow(): ConnectFlow {
 		return {
 			initial: STORE_STEP,
