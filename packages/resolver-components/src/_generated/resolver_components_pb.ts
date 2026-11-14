@@ -2,7 +2,7 @@
 // @generated from file resolver_components.proto (package hobo.resolver_components.v1, syntax proto3)
 /* eslint-disable */
 
-// Wire records of @hobo/resolver-components (plan 0024 WP8, D6, I9).
+// Wire records of @hobo/resolver-components (ADR-0182 D6, I9).
 //
 // A hobo:resolver WASM component ships as a signed bundle: a component
 // manifest (this file's ResolverComponentManifestRecord), the component bytes,
