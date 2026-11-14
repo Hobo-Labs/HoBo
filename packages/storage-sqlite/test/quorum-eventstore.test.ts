@@ -332,6 +332,45 @@ describe("quorum transactional event store", () => {
 		await store.close();
 	});
 
+	it("rejects a journal command whose kind only stringifies to an operation", async () => {
+		const f = await fixture();
+		const store = f.open();
+		await store.commit({
+			streamId: "stream",
+			append,
+			events: [{ type: "test.Created" }],
+		});
+		const first = (await f.journal.read())[0];
+		if (!first) throw new Error("initial command missing");
+		// SAFETY: the store produced this envelope in the preceding commit.
+		const initial = JSON.parse(first.value) as {
+			policyDigest: string;
+			timeMs: number;
+		};
+		await f.journal.append(
+			"malformed-kind",
+			JSON.stringify({
+				contract: "hobo.quorum-eventstore-command/v2",
+				kind: ["snapshot"],
+				policyDigest: initial.policyDigest,
+				timeMs: initial.timeMs,
+				arguments: [
+					"object",
+					["seq", 1],
+					["state", ["object"]],
+					["streamId", "stream"],
+				],
+			}),
+			1,
+		);
+		await expect(
+			(async () => {
+				for await (const _event of store.read("stream")) return;
+			})(),
+		).rejects.toThrow(/replay failed/u);
+		await store.close();
+	});
+
 	it("rejects trailing line terminators in claim and policy identities", async () => {
 		const f = await fixture();
 		for (const suffix of ["\n", "\r", "\u2028", "\u2029"]) {

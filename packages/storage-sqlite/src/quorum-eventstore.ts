@@ -263,6 +263,7 @@ function parseCommand(text: string): Command {
 		!("contract" in value) ||
 		value.contract !== "hobo.quorum-eventstore-command/v2" ||
 		!("kind" in value) ||
+		typeof value.kind !== "string" ||
 		![
 			"commit",
 			"snapshot",
@@ -271,7 +272,7 @@ function parseCommand(text: string): Command {
 			"subscription-claim",
 			"subscription-release",
 			"checkpoint",
-		].includes(String(value.kind)) ||
+		].includes(value.kind) ||
 		!("policyDigest" in value) ||
 		typeof value.policyDigest !== "string" ||
 		!/^[a-f0-9]{64}(?![\s\S])/u.test(value.policyDigest) ||
@@ -449,6 +450,8 @@ async function apply(state: Materialized, command: Command): Promise<unknown> {
 		state.checkpoints.set(key, checkpoint);
 		return checkpoint;
 	}
+	if (command.kind !== "snapshot")
+		throw new Error("invalid quorum event operation");
 	if (
 		!("streamId" in args) ||
 		typeof args.streamId !== "string" ||
