@@ -1,5 +1,5 @@
 /**
- * Realization-result conformance suite (roadmap E20 / 0015 §B deliverable 1).
+ * Realization-result conformance suite.
  *
  * Runs against any producer of `hobo.realization-result/v1` candidates — an
  * IaC adapter lane (`fromIacOutputs`), a provider driver/recipe lane

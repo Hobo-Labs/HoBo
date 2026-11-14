@@ -12,6 +12,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 	statSync,
 	writeFileSync,
@@ -31,6 +32,8 @@ export const REPO_ROOT = join(
 	"../../..",
 );
 
+import { PINS_FILE, parsePins } from "../../lib/pins.ts";
+import { overrideEnv } from "../../lib/pins-assets.ts";
 import { type GitConfig, gitEnv } from "./pins-git-support.ts";
 
 export * from "./pins-git-support.ts";
@@ -129,6 +132,35 @@ export interface ScriptRun {
 	readonly stderr: string;
 }
 
+/**
+ * The asset names the script and these tests know: the real manifest's and the
+ * fixtures' (`kit`, `tool`, `x`). Each one's override variable is one the
+ * script reads.
+ */
+const ASSET_NAMES = [
+	...Object.keys(
+		parsePins(readFileSync(join(REPO_ROOT, PINS_FILE), "utf8")).assets,
+	),
+	"kit",
+	"tool",
+	"x",
+];
+
+/**
+ * What the script reads to decide that it is in CI and that an override is
+ * set or allowed (`refuseOverridesInCi`, `statusAsset`). A GitHub-hosted
+ * runner sets `CI` and `GITHUB_ACTIONS`, so a child that inherits them sees
+ * CI whatever the test meant; none of these reach the child unless the test
+ * sets it.
+ */
+export const AMBIENT_PINS_ENV: readonly string[] = [
+	"CI",
+	"GITHUB_ACTIONS",
+	"TF_BUILD",
+	"HOBO_PINS_ALLOW_OVERRIDE",
+	...new Set(ASSET_NAMES.map(overrideEnv)),
+];
+
 /** The argv (after `node`) and environment `runBootstrap` runs the script with. */
 export function scriptCall(
 	root: string,
@@ -136,18 +168,19 @@ export function scriptCall(
 	env: NodeJS.ProcessEnv,
 	more: GitConfig,
 ) {
+	const base = gitEnv(
+		{
+			NODE_NO_WARNINGS: "1",
+			HOME: join(root, ".home"),
+			XDG_CACHE_HOME: join(root, ".cache"),
+			HOBO_PINS_ALLOW_LOCAL: "1",
+		},
+		more,
+	);
+	for (const name of AMBIENT_PINS_ENV) delete base[name];
 	return {
 		argv: ["--experimental-strip-types", SCRIPT, "--root", root, ...args],
-		env: gitEnv(
-			{
-				NODE_NO_WARNINGS: "1",
-				HOME: join(root, ".home"),
-				XDG_CACHE_HOME: join(root, ".cache"),
-				HOBO_PINS_ALLOW_LOCAL: "1",
-				...env,
-			},
-			more,
-		),
+		env: { ...base, ...env },
 	};
 }
 

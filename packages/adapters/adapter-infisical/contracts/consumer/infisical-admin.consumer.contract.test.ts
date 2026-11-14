@@ -22,6 +22,17 @@ const contractsDir = path.resolve(
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 const ADMIN_TOKEN = "fixture-instance-admin-token";
 const PASSWORD = "fixture-bootstrap-password-0123456789";
+// GitHub's immutable subject (owner and repository suffixed with their ids),
+// with the ids pinned again as claims that hold whatever the subject format.
+const DEPLOY_TRUST = {
+	issuer: "https://token.actions.githubusercontent.com",
+	audiences: ["https://github.com/Hobo-Labs"],
+	subject: "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+	claims: {
+		repository_id: "1274791462",
+		repository_owner_id: "344805935",
+	},
+};
 
 let pact: PactDocument;
 let url: string;
@@ -196,12 +207,24 @@ describe("Infisical's admin API (consumer contract)", () => {
 			subject: "owner:hobo-team:project:hobo-ci:environment:production",
 			claims: { owner_id: "team_fixture", project_id: "prj_fixture" },
 		});
-		await admin.attachOidcAuth(deploy.identityId, {
-			issuer: "https://token.actions.githubusercontent.com",
-			audiences: ["https://github.com/Hobo-Labs"],
-			subject: "repo:Hobo-Labs/HoBo:ref:refs/heads/main",
-			claims: {},
+		await admin.attachOidcAuth(deploy.identityId, DEPLOY_TRUST);
+		expectRecorded();
+	});
+
+	it("replaces an existing deploy identity's OIDC trust in place, and names an identity without one", async () => {
+		const admin = createInfisicalAdmin({
+			siteUrl: url,
+			accessToken: ADMIN_TOKEN,
 		});
+		await admin.updateOidcAuth("deploy-identity", DEPLOY_TRUST);
+		expect(
+			await codeOf(admin.updateOidcAuth("no-oidc-identity", DEPLOY_TRUST)),
+		).toBe("not-found");
+		// Repair only: no identity or project is created on the way.
+		expect(seen.map(({ request }) => request.method)).toEqual([
+			"PATCH",
+			"PATCH",
+		]);
 		expectRecorded();
 	});
 

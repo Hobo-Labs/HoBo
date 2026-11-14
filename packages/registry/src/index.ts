@@ -1,4 +1,4 @@
-// @hobo/registry — the Registry catalog service (docs/plans/0017 F24).
+// @hobo/registry — the Registry catalog service.
 //
 // The catalog engine (provider registration/approval facts, the event-backed
 // planner registry fold, and the registry-catalog projection) lives in

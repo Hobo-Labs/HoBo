@@ -12,6 +12,7 @@
 import { hkdfSync } from "node:crypto";
 import type { TenantId } from "@hobo/core";
 import {
+	type Account,
 	type AuthorizationRequest,
 	type ClaimsData,
 	decode,
@@ -208,12 +209,26 @@ export function mintAuthorizationResponse(
 
 /** The account a credentials file's user belongs to. */
 export function accountOfCredentials(credentials: string): string {
+	const claims = userClaimsOf(credentials);
+	return claims.nats.issuer_account ?? claims.iss;
+}
+
+function userClaimsOf(credentials: string): ClaimsData<User> {
 	const jwt = credentials.match(
 		/-----BEGIN NATS USER JWT-----\s*([^\s]+)\s*------END NATS USER JWT------/u,
 	)?.[1];
 	if (jwt === undefined) throw new Error("not a NATS credentials file");
-	const claims: ClaimsData<User> = decode(jwt);
-	return claims.nats.issuer_account ?? claims.iss;
+	return decode(jwt);
+}
+
+/**
+ * Whose audit log a connection with `credentials` holds: the witness's when
+ * the credentials are the static `witness` user's, else the authority's.
+ */
+export function auditRoleOfCredentials(
+	credentials: string,
+): "authority" | "witness" {
+	return userClaimsOf(credentials).name === "witness" ? "witness" : "authority";
 }
 
 export type TenantKeys = Readonly<{
@@ -281,6 +296,49 @@ export type AccountSigningKeys = Readonly<{
 	/** Scoped keys per template (nkey `A…`), each listed with that template's `{{name()}}` permissions. */
 	scoped: Readonly<Record<DeviceTemplate, readonly string[]>>;
 }>;
+
+/**
+ * The signing keys a published tenant account JWT lists, or undefined when
+ * it lists none. Throws when `jwt` is not the JWT of `account`, so that a
+ * reply the caller cannot read is never taken for "no keys".
+ */
+export function signingKeysOfAccountJwt(
+	jwt: string,
+	account: string,
+): AccountSigningKeys | undefined {
+	let claims: ClaimsData<Account>;
+	try {
+		claims = decode(jwt);
+	} catch {
+		throw new Error("the resolver's account JWT does not decode");
+	}
+	if (claims.sub !== account)
+		throw new Error("the resolver answered another account's JWT");
+	const listed = claims.nats.signing_keys ?? [];
+	if (listed.length === 0) return undefined;
+	const plain: string[] = [];
+	const roles: Readonly<{ role: DeviceTemplate; key: string }>[] = [];
+	for (const key of listed) {
+		if (!(key instanceof Object)) {
+			plain.push(key);
+			continue;
+		}
+		const role = DEVICE_TEMPLATES.find((name) => name === key.role);
+		if (role === undefined)
+			throw new Error("the published account lists an unknown scoped role");
+		roles.push({ role, key: key.key });
+	}
+	const keysOf = (template: DeviceTemplate) =>
+		roles.filter((entry) => entry.role === template).map((entry) => entry.key);
+	return {
+		account: plain,
+		scoped: {
+			observer: keysOf("observer"),
+			executor: keysOf("executor"),
+			dispatcher: keysOf("dispatcher"),
+		},
+	};
+}
 
 /** Throws unless `key` is an account public key; never echoes the value, which could be a seed passed by mistake. */
 function checkAccountKey(key: string, place: number): void {
@@ -439,7 +497,9 @@ export async function systemCredentials(
 		user,
 		systemAccount(operatorSigningSeed),
 		{
-			pub: { allow: ["$SYS.REQ.CLAIMS.UPDATE"] },
+			pub: {
+				allow: ["$SYS.REQ.CLAIMS.UPDATE", "$SYS.REQ.ACCOUNT.*.CLAIMS.LOOKUP"],
+			},
 			sub: { allow: ["_INBOX.>"] },
 		},
 	);

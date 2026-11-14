@@ -28,8 +28,8 @@ function complete(): Tree {
 		Object.entries({
 			"packages/fleet/src/events.ts": EVENTS,
 			"docs/design/fleet.md":
-				"# Fleet\n\nSee ADR-0182. Events: `fleet.TokenIssued`, `fleet.TokenRevoked`.\n",
-			"docs/design/adr/fleet.md": "# ADR-0182 and ADR-0122\n",
+				"# Fleet\n\nSee ADR-0183. Events: `fleet.TokenIssued`, `fleet.TokenRevoked`.\n",
+			"docs/design/adr/fleet.md": "# ADR-0183 and ADR-0122\n",
 			"docs/design/adr/index.md":
 				"| # | Decision | File |\n|---|---|---|\n| 0122 | Old | x |\n| 0182 | Fleet | fleet |\n",
 			"docs/design/event-families.md":
@@ -67,7 +67,7 @@ describe("checkFleetDocs", () => {
 		const tree = complete();
 		tree.set(
 			"docs/design/fleet.md",
-			"# Fleet\n\nSee ADR-0182. Events: `fleet.TokenIssued`, `fleet.TokenRevokedLater`.\n",
+			"# Fleet\n\nSee ADR-0183. Events: `fleet.TokenIssued`, `fleet.TokenRevokedLater`.\n",
 		);
 		expect(checkFleetDocs(write(tree))).toEqual([
 			{

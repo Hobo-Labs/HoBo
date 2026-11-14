@@ -212,6 +212,22 @@ run HoBo *inside* a Harness pipeline stage.
 Product gaps identified here (deploy-time verification; richer cost sources) are recorded as lessons
 and belong in their own implementation issues, per the research contract.
 
+
+## HoBo.CD update (2026-11-12)
+
+HoBo now has continuous delivery of its own, `@hobo/cd` ([ADR-0182](../design/adr/01-architecture-core.md#adr-0182), [continuous-delivery.md](../design/continuous-delivery.md)), and took specific ideas
+from Harness CD; the competitor research itself was not re-run.
+
+- **Taken:** Continuous Verification's structure (thresholds, canary versus baseline, fail on no
+  data), freeze windows with recurring schedules, governed overrides and in-flight work finishing
+  its stage, the Delegate's outbound-only network shape, and policy at pipeline events.
+- **Not taken:** ML baselines on the decision path (HoBo uses a deterministic Mann–Whitney U
+  test), a delegate that runs arbitrary tasks (HoBo's agent pulls desired state and runs only typed
+  resolvers), and shell-script custom deployments (replaced by sandboxed `hobo:resolver` WASM
+  components).
+- **Health sources** include Prometheus, HoBo metering and generic HTTP JSON built in, with
+  Datadog, New Relic and CloudWatch as adapters, so verification does not depend on one vendor.
+
 ## Sources
 
 - [Harness Platform docs](https://developer.harness.io/docs/platform/) — shared platform: access, authentication, secrets, delegates, governance, audit (fetched 2026-08-19)

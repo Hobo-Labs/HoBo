@@ -13,7 +13,9 @@ import {
 	liveUrls,
 	MONGO_PRIMARY_PROBE,
 	MONGO_RSEQ_TUNABLE,
+	MONGOSH_HOME,
 	mongoRunArgv,
+	mongoshExecArgv,
 	parseListing,
 	parseLiveEngineImages,
 	postgresRunArgv,
@@ -401,6 +403,49 @@ describe("starting the servers", () => {
 		await assert.rejects(
 			startLiveServers(lane.io, NAMES, IMAGES),
 			/docker inspect failed \(exit 1\): Cannot connect/u,
+		);
+	});
+});
+
+describe("probing MongoDB", () => {
+	// The image sets HOME to /data/db and its entrypoint chowns that tree as it
+	// starts. A mongosh that keeps its lock files there makes the chown fail
+	// ("cannot access ... .json.lock") and the server exit during start-up.
+	it("keeps mongosh's own files out of the data directory", () => {
+		assert.equal(MONGOSH_HOME, "HOME=/tmp");
+		assert.deepEqual(mongoshExecArgv("mongo"), [
+			"exec",
+			"--env",
+			MONGOSH_HOME,
+			"mongo",
+			"mongosh",
+			"--quiet",
+			"--eval",
+		]);
+	});
+
+	it("runs every mongosh the lane starts that way", async () => {
+		const lane = fakeLane(healthy);
+		await startLiveServers(lane.io, NAMES, IMAGES);
+		const shells = lane.calls.filter((args) => args.includes("mongosh"));
+		assert.ok(shells.length >= 2);
+		for (const args of shells)
+			assert.deepEqual(args.slice(0, 4), [
+				"exec",
+				"--env",
+				MONGOSH_HOME,
+				NAMES.mongodb,
+			]);
+	});
+
+	it("gives the compose healthcheck the same home", () => {
+		const compose = readFileSync(
+			"packages/data-core/deploy/compose.live-engines.yml",
+			"utf8",
+		);
+		assert.match(
+			compose,
+			/test:\n\s+- CMD\n\s+- env\n\s+- HOME=\/tmp\n\s+- mongosh\n/u,
 		);
 	});
 });

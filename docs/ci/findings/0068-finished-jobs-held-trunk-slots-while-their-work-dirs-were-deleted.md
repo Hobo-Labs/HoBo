@@ -20,7 +20,7 @@ Two inline paths delayed admission:
 
 ## Fix
 
-Finished or orphaned job directories are now atomically renamed inside the work root to `.retired/<job>-<timestamp>`. This frees the original job path without walking the tree. A single-flight background sweeper deletes retired entries one at a time; triggers during a sweep coalesce into one rerun. Startup and scheduled GC trigger the sweeper, drain-mode shutdown awaits it, and handoff mode leaves remaining work for the successor's startup sweep. Deletion itself is one bottom-up traversal that counts bytes and entries as it removes them.
+Finished or orphaned job directories are now atomically renamed inside the work root to `.retired/<job>-<timestamp>`. This frees the original job path without walking the tree. A single-flight background sweeper deletes retired entries one at a time; triggers during a sweep coalesce into one rerun. Startup and scheduled GC trigger the sweeper, drain-mode shutdown awaits it, and handoff mode leaves remaining work for the successor's startup sweep. Deletion itself is one bottom-up traversal that counts bytes and entries as it removes them. Storage admission under inode pressure or reserve shortage now triggers the sweeper and awaits its drain before maintenance and once more before a final reserve re-check.
 
 Storage admission still grants inode reservations per admitted job, but a dispatch pass stops calling it after the first refusal. Admission-triggered maintenance is limited to once per 60 seconds, with a fresh storage sample on every decision. A trunk-label storage refusal blocks lower ranks and records `hobo_ci_trunk_wait` with `reason: "storage"`.
 

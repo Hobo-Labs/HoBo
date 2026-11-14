@@ -3,7 +3,7 @@
 `createEgressProxyFactory({ fleetAllow, log })` answers an
 `EgressProxyFactory`; each `open(allow)` starts one HTTP proxy on
 `127.0.0.1:<random port>` for one order and answers its `url` and `close`.
-Design: ADR-0182, §6.11 "Egress" of the fleet design.
+Design: ADR-0183, §6.11 "Egress" of the fleet design.
 
 - **What it serves.** `CONNECT host:port` tunnels and absolute-form requests
   (`GET http://host/…` and `GET https://host/…`, which busybox wget sends for

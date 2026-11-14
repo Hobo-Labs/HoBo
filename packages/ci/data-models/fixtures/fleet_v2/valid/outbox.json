@@ -1,0 +1,7 @@
+{
+  "id": "outbox-1",
+  "effectId": "effect-1",
+  "state": "pending",
+  "availableAt": "2026-11-03T00:00:00Z",
+  "createdAt": "2026-11-03T00:00:00Z"
+}

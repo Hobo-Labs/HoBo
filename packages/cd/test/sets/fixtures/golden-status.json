@@ -1,0 +1,108 @@
+{
+  "description": "Recorded status stream cd-camp-status-prod-aws. Seq 1 is a bare ReconcileObservationRecord body (the legacy shape, still read); seq 2-5 are the { schema, observation } envelope the reconcile transport writes (reconcile.cue #ReconcileStatusEvent), including the resource.DriftDetected companion it appends, which is not a status fact; seq 6 is a stale-fence report from a superseded lease holder; seq 7 names a schema this fold does not know. Pinned; folding it must always yield `expected`.",
+  "campId": "prod-aws",
+  "events": [
+    {
+      "type": "deployment.StatusObserved",
+      "data": {
+        "campId": "prod-aws",
+        "setId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reconcilerId": "rec-1",
+        "fenceToken": "1",
+        "status": "RECONCILE_STATUS_CONVERGED",
+        "observedAt": "2026-11-12T00:00:00.000Z"
+      }
+    },
+    {
+      "type": "deployment.ReconcileStarted",
+      "data": {
+        "schema": "hobo.cd.reconcile-status/v1",
+        "observation": {
+          "campId": "prod-aws",
+          "setId": "set_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reconcilerId": "rec-1",
+          "fenceToken": "2",
+          "status": "RECONCILE_STATUS_CONVERGING",
+          "observedAt": "2026-11-12T00:01:00.000Z"
+        }
+      }
+    },
+    {
+      "type": "deployment.StatusObserved",
+      "data": {
+        "schema": "hobo.cd.reconcile-status/v1",
+        "observation": {
+          "campId": "prod-aws",
+          "setId": "set_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reconcilerId": "rec-1",
+          "fenceToken": "2",
+          "status": "RECONCILE_STATUS_CONVERGED",
+          "observedAt": "2026-11-12T00:02:00.000Z"
+        }
+      }
+    },
+    {
+      "type": "resource.DriftDetected",
+      "data": {
+        "schema": "hobo.cd.reconcile-status/v1",
+        "observation": {
+          "campId": "prod-aws",
+          "setId": "set_cccccccccccccccccccccccccccccccc",
+          "reconcilerId": "rec-1",
+          "fenceToken": "2",
+          "status": "RECONCILE_STATUS_DRIFTED",
+          "observedAt": "2026-11-12T00:02:30.000Z"
+        },
+        "drift": []
+      }
+    },
+    {
+      "type": "deployment.Converged",
+      "data": {
+        "schema": "hobo.cd.reconcile-status/v1",
+        "observation": {
+          "campId": "prod-aws",
+          "setId": "set_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "reconcilerId": "rec-1",
+          "fenceToken": "2",
+          "status": "RECONCILE_STATUS_CONVERGED",
+          "observedAt": "2026-11-12T00:02:00.000Z"
+        }
+      }
+    },
+    {
+      "type": "deployment.StatusObserved",
+      "data": {
+        "schema": "hobo.cd.reconcile-status/v1",
+        "observation": {
+          "campId": "prod-aws",
+          "setId": "set_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "reconcilerId": "rec-1",
+          "fenceToken": "1",
+          "status": "RECONCILE_STATUS_DRIFTED",
+          "observedAt": "2026-11-12T00:03:00.000Z"
+        }
+      }
+    },
+    {
+      "type": "deployment.StatusObserved",
+      "data": {
+        "schema": "hobo.cd.reconcile-status/v9",
+        "observation": {
+          "campId": "prod-aws",
+          "setId": "set_dddddddddddddddddddddddddddddddd",
+          "reconcilerId": "rec-1",
+          "fenceToken": "9",
+          "status": "RECONCILE_STATUS_BLOCKED",
+          "observedAt": "2026-11-12T00:04:00.000Z"
+        }
+      }
+    }
+  ],
+  "expected": {
+    "setId": "set_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "fenceToken": "2",
+    "status": "RECONCILE_STATUS_CONVERGED",
+    "observedAt": "2026-11-12T00:02:00.000Z"
+  }
+}

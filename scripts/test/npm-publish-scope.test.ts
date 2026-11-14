@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 
 import {
 	applyScopeToManifest,
+	assertNpmScopeMapAllowlist,
 	loadNpmScopeMap,
 	mapPackageName,
 } from "../ci/npm-publish-scope.mts";
@@ -20,6 +21,23 @@ describe("npm-publish-scope", () => {
 			map,
 		);
 		assert.equal(staged.name, "@hobo-labs/pricing");
+	});
+
+	it("names the source repository npm checks a provenance bundle against", () => {
+		const map = loadNpmScopeMap();
+		const staged = applyScopeToManifest({ name: "@hobo/core" }, map);
+		assert.deepEqual(staged.repository, {
+			type: "git",
+			url: "git+https://github.com/Hobo-Labs/HoBo.git",
+		});
+		assert.throws(
+			() =>
+				assertNpmScopeMapAllowlist({
+					...map,
+					repository: "https://example.com/x",
+				}),
+			/repository must be/,
+		);
 	});
 
 	it("pins mapped workspace deps to the release semver for npm pack", () => {

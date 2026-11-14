@@ -2,14 +2,18 @@
  * Rotating an account signing key on `nats-server` (L41): the account JWT
  * re-issued with a supplied key list is accepted by the full resolver; a
  * static user re-issued under the added key connects; once the key is
- * removed from the list, it no longer does. The provisioned users signed by
- * the account key are unaffected throughout.
+ * removed from the list, it no longer does. Re-running `provisionTopology` in
+ * between keeps the key published. The provisioned users signed by the
+ * account key are unaffected throughout.
  */
 import { createAccount } from "@nats-io/jwt";
 import { credsAuthenticator } from "@nats-io/transport-node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { open } from "../src/bus/connection.js";
-import { publishAccountSigningKeys } from "../src/bus/index.js";
+import {
+	provisionTopology,
+	publishAccountSigningKeys,
+} from "../src/bus/index.js";
 import { staticCredentials, tenantKeys } from "../src/bus/nats-jwt.js";
 import {
 	requireBinary,
@@ -79,6 +83,14 @@ describe.skipIf(SKIP_INTEGRATION)("account signing keys on nats-server", () => {
 		expect(await connects(nats.provisioned.staticCredentials.provisioner)).toBe(
 			true,
 		);
+		// Provisioning again keeps the published key (L42): a rotation is not undone.
+		await provisionTopology({
+			servers: [url],
+			operatorSigningSeed,
+			tenant,
+			replicas: 1,
+		});
+		expect(await connects(reissued)).toBe(true);
 		// Remove: the account no longer lists it; its credentials are refused again.
 		expect((await publish([])).ok).toBe(true);
 		expect(await connects(reissued)).toBe(false);

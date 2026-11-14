@@ -2,7 +2,7 @@
 	"name": "@hobo/fleet",
 	"version": "0.0.1",
 	"license": "MIT",
-	"description": "HoBo Fleet: one package for every fleet (ADR-0182). Member identity, enrollment, the registry, health and capacity observation, many-active work (offers, claims, orders, receipts) and the one-active assignment register, the signed envelope, ports, in-memory adapters, local mode, the typed authority client and the conformance test kits. No I/O beyond node:crypto.",
+	"description": "HoBo Fleet: one package for every fleet (ADR-0183). Member identity, enrollment, the registry, health and capacity observation, many-active work (offers, claims, orders, receipts) and the one-active assignment register, the signed envelope, ports, in-memory adapters, local mode, the typed authority client and the conformance test kits. No I/O beyond node:crypto.",
 	"type": "module",
 	"files": [
 		"LICENSE",

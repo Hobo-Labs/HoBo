@@ -1,0 +1,437 @@
+{
+	"consumer": {
+		"name": "WebhookSenders"
+	},
+	"provider": {
+		"name": "HoboCdFreightSourcesNudge"
+	},
+	"metadata": {
+		"pactSpecification": {
+			"version": "4.0.0"
+		},
+		"evidence": "Hand-authored inbound webhook contract for FreightSources.nudge, one interaction per receiver in the payload and signature form each sender documents (HMAC-SHA256 for GitHub/GHCR/Bitbucket/Gitea/Forgejo; shared token for GitLab, Harbor, ECR EventBridge API destinations, Docker Hub and Pub/Sub push; bearer for CloudEvents). Signatures use the contract secret `contract-secret`. Verified by contracts/sources.consumer.test.ts: valid requests schedule exactly the listed sources and record no Freight; the forged request schedules nothing."
+	},
+	"interactions": [
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GitHub push for a tag",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for github"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/github",
+				"headers": {
+					"X-GitHub-Event": "push",
+					"x-hub-signature-256": "sha256=5ec98aa278ad346d02f5b217e334c819fe6f06eb2cdd56452b6324a2bb9fb9b4"
+				},
+				"body": {
+					"content": "{\"ref\":\"refs/tags/v1.2.0\",\"repository\":{\"clone_url\":\"https://github.com/acme/web.git\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"github\",\"scheduled\":[\"git-web\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GHCR package published (GitHub package event)",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for ghcr"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/ghcr",
+				"headers": {
+					"X-GitHub-Event": "package",
+					"x-hub-signature-256": "sha256=1f8f89277bfca0744cad7eb575ff36953e1557024a62d937275351c21f303260"
+				},
+				"body": {
+					"content": "{\"action\":\"published\",\"package\":{\"name\":\"app\",\"package_type\":\"container\",\"package_version\":{\"package_url\":\"ghcr.io/acme/app:1.2.0\"}}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"ghcr\",\"scheduled\":[\"ghcr-app\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "GitLab tag push",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for gitlab"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/gitlab",
+				"headers": {
+					"X-Gitlab-Event": "Tag Push Hook",
+					"X-Gitlab-Token": "contract-token"
+				},
+				"body": {
+					"content": "{\"object_kind\":\"tag_push\",\"project\":{\"git_http_url\":\"https://gitlab.com/acme/web.git\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"gitlab\",\"scheduled\":[\"gitlab-web\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "Bitbucket Cloud repo push",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for bitbucket"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/bitbucket",
+				"headers": {
+					"X-Event-Key": "repo:push",
+					"x-hub-signature": "sha256=2aa09813a3922929739a7df3b0e9c13d96746da893183de89ffd254ff47e38df"
+				},
+				"body": {
+					"content": "{\"push\":{},\"repository\":{\"full_name\":\"acme/web\",\"links\":{\"html\":{\"href\":\"https://bitbucket.org/acme/web\"}}}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"bitbucket\",\"scheduled\":[\"bitbucket-web\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "Gitea push",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for gitea"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/gitea",
+				"headers": {
+					"X-Gitea-Event": "push",
+					"x-gitea-signature": "567ac420bdbb1a10e6dc294c3832f5b945e5f1c652a5163c52cb1b4a52bf6e4c"
+				},
+				"body": {
+					"content": "{\"ref\":\"refs/heads/main\",\"repository\":{\"clone_url\":\"https://codeberg.org/acme/web.git\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"gitea\",\"scheduled\":[\"gitea-web\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "Forgejo push",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for forgejo"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/forgejo",
+				"headers": {
+					"X-Forgejo-Event": "push",
+					"x-forgejo-signature": "567ac420bdbb1a10e6dc294c3832f5b945e5f1c652a5163c52cb1b4a52bf6e4c"
+				},
+				"body": {
+					"content": "{\"ref\":\"refs/heads/main\",\"repository\":{\"clone_url\":\"https://codeberg.org/acme/web.git\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"forgejo\",\"scheduled\":[\"gitea-web\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "Harbor PUSH_ARTIFACT",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for harbor"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/harbor",
+				"headers": {
+					"Authorization": "contract-token"
+				},
+				"body": {
+					"content": "{\"type\":\"PUSH_ARTIFACT\",\"event_data\":{\"resources\":[{\"resource_url\":\"harbor.example.com/acme/app:1.2.0\",\"digest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}],\"repository\":{\"repo_full_name\":\"acme/app\"}}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"harbor\",\"scheduled\":[\"harbor-app\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "Docker Hub push (token in query)",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for dockerhub"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/dockerhub",
+				"headers": {},
+				"body": {
+					"content": "{\"push_data\":{\"tag\":\"1.2.0\"},\"repository\":{\"repo_name\":\"acme/app\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				},
+				"query": "token=contract-token"
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"dockerhub\",\"scheduled\":[\"dockerhub-app\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "ECR image push via EventBridge API destination",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for ecr"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/ecr",
+				"headers": {
+					"Authorization": "Bearer contract-token"
+				},
+				"body": {
+					"content": "{\"source\":\"aws.ecr\",\"detail-type\":\"ECR Image Action\",\"account\":\"123456789012\",\"region\":\"eu-west-1\",\"detail\":{\"action-type\":\"PUSH\",\"result\":\"SUCCESS\",\"repository-name\":\"acme/app\",\"image-tag\":\"1.2.0\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"ecr\",\"scheduled\":[\"ecr-app\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "Artifact Registry notification via Pub/Sub push (token in query)",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for artifact-registry"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/artifact-registry",
+				"headers": {},
+				"body": {
+					"content": "{\"message\":{\"data\":\"eyJhY3Rpb24iOiJJTlNFUlQiLCJkaWdlc3QiOiJ1cy1kb2NrZXIucGtnLmRldi9hY21lL2FwcHMvYXBwQHNoYTI1NjowMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwidGFnIjoidXMtZG9ja2VyLnBrZy5kZXYvYWNtZS9hcHBzL2FwcDoxLjIuMCJ9\",\"messageId\":\"1\"},\"subscription\":\"projects/acme/subscriptions/gcr\"}",
+					"contentType": "application/json",
+					"encoded": false
+				},
+				"query": "token=contract-token"
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"artifact-registry\",\"scheduled\":[\"gar-app\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "CDEvent artifact.published (generic CloudEvents receiver)",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for cloudevents"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/cloudevents",
+				"headers": {
+					"Authorization": "Bearer contract-token",
+					"Content-Type": "application/cloudevents+json"
+				},
+				"body": {
+					"content": "{\"specversion\":\"1.0\",\"id\":\"e1\",\"source\":\"/ci\",\"type\":\"dev.cdevents.artifact.published.0.2.0\",\"data\":{\"subject\":{\"id\":\"pkg:oci/app@sha256:2222222222222222222222222222222222222222222222222222222222222222?repository_url=ghcr.io/acme/app\"}}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 202,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"content": "{\"receiver\":\"cloudevents\",\"scheduled\":[\"ghcr-app\"]}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			}
+		},
+		{
+			"type": "Synchronous/HTTP",
+			"description": "forged GitHub push (bad signature)",
+			"providerStates": [
+				{
+					"name": "webhook secret configured for github"
+				},
+				{
+					"name": "sources defined for the contract repositories"
+				}
+			],
+			"request": {
+				"method": "POST",
+				"path": "/v1/cd/sources/nudge/github",
+				"headers": {
+					"X-GitHub-Event": "push",
+					"x-hub-signature-256": "sha256=0000000000000000000000000000000000000000000000000000000000000000"
+				},
+				"body": {
+					"content": "{\"ref\":\"refs/tags/v9.9.9\",\"repository\":{\"clone_url\":\"https://github.com/acme/web.git\"}}",
+					"contentType": "application/json",
+					"encoded": false
+				}
+			},
+			"response": {
+				"status": 401,
+				"headers": {
+					"content-type": "application/json"
+				}
+			}
+		}
+	]
+}

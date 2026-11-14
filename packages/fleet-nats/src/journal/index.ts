@@ -1,6 +1,6 @@
 /**
  * The journal event store on `FLEET_JOURNAL` (L36).
- * Signature frozen by the fleet contract commit (ADR-0182).
+ * Signature frozen by the fleet contract commit (ADR-0183).
  */
 import type { FleetEventStore, Outcome } from "@hobo/fleet";
 import {
@@ -29,7 +29,7 @@ export async function importJournalEvents(
 	input: Readonly<{ servers: readonly string[]; credentials: string }>,
 	items: readonly JournalImportItem[],
 ): Promise<Outcome<JournalImportResult>> {
-	const transport = await connectJournalTransport(input);
+	const transport = await connectJournalTransport(input, false);
 	try {
 		return await importJournal(transport, items);
 	} finally {

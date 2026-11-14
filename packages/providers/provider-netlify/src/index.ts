@@ -61,6 +61,21 @@ export {
 	type NetlifyDefinitionOverrides,
 } from "./definitions.js";
 export {
+	type AbsentTrafficOffering,
+	defineHostingCoverage,
+	HOSTING_COVERAGE_CONTRACT,
+	type HostingCoverage,
+	hostingProductRefusal,
+	instrumentResolvers,
+	PORTABLE_TRAFFIC_OFFERING_IDS,
+	RESOLVER_DURATION_METRIC,
+	RESOLVER_OPERATIONS_METRIC,
+	type ResolverMetricPoint,
+	type ResolverMetricSink,
+	type ResolverTelemetryOptions,
+	type UnresolvedHostingProduct,
+} from "./delivery-coverage.js";
+export {
 	type AnonymousDeployObservation,
 	assertClaimActionIsNetlify,
 	type DeployCommandResult,
@@ -75,6 +90,12 @@ export {
 	type InitialCapabilityPort,
 	netlifyNativePorts,
 } from "./equivalence.js";
+export {
+	NETLIFY_FUNCTIONS_PRODUCT_ID,
+	NETLIFY_HOSTING_COVERAGE,
+	NETLIFY_UNRESOLVED_PRODUCTS,
+	netlifyProductRefusal,
+} from "./hosting-coverage.js";
 export { netlify, PROVIDER_TARGET, type TypedOptionBlock } from "./options.js";
 export {
 	ANONYMOUS_ENV_ALLOWLIST,
@@ -149,6 +170,11 @@ export {
 	provisionTemporaryEnvironmentStation,
 	supportsAnonymousTemporaryDeploy,
 } from "./temporary-station.js";
+export {
+	NETLIFY_TRAFFIC_ROUTING_ABSENT,
+	NETLIFY_TRAFFIC_ROUTING_OFFERING_IDS,
+	NETLIFY_TRAFFIC_ROUTING_PROFILE,
+} from "./traffic-routing-offerings.js";
 export {
 	assertAllowedEndpoint,
 	createFetchTransport,

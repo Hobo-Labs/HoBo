@@ -19,9 +19,7 @@ deploy verbs, Gatekeeper engines, or live cloud integration.
 
 ## Source And Pattern
 
-This record follows the post-399 delta pattern from
-[`docs/implementation-plan.md`](../implementation-plan.md) ("Post-399 Cross-Cutting Capability
-Deltas"). Minimum durable records for a cross-cutting capability delta are:
+This record follows the post-399 delta pattern. Minimum durable records for a cross-cutting capability delta are:
 
 1. owning Linear project/issue family (Build S2: First Cloud + Yard);
 2. M0 acceptance record in `docs/design/` with scope in/out and proof expectations (this file);

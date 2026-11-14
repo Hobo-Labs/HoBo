@@ -125,6 +125,17 @@ export type {
 } from "./shell/registry.js";
 export { createCommandRegistry } from "./shell/registry.js";
 export {
+	DEPLOY_SUBCOMMANDS,
+	INCIDENT_SUBCOMMANDS,
+	resolveSubcommand,
+	SERVE_SUBCOMMANDS,
+	type SubcommandOptionKind,
+	type SubcommandOptions,
+	type SubcommandOptionValue,
+	VERB_SUBCOMMANDS,
+	type VerbSubcommandTable,
+} from "./shell/subcommands.js";
+export {
 	CANONICAL_VERBS,
 	GLOBAL_FLAGS,
 	helpText,

@@ -1,6 +1,6 @@
 /**
  * The peer-to-peer transport over iroh (L11). Signature frozen by the fleet
- * contract commit (ADR-0182).
+ * contract commit (ADR-0183).
  */
 import type { FleetTransport } from "@hobo/fleet";
 import { parseRelayUrls } from "./config.js";

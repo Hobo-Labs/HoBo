@@ -1,0 +1,20 @@
+{
+  "id": "claim-1",
+  "key": {
+    "daggerPipeline": {
+      "kind": "dagger-pipeline",
+      "accountId": "hobo-labs",
+      "engineId": "dagger",
+      "pipelineId": "pipeline-1",
+      "pipelineDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "runnerSlotId": "slot-1",
+  "state": "start-authorized",
+  "profileId": "operator-linux-x64",
+  "policyHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "offerId": "dagger-offer",
+  "quoteHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "startAuthorizedAt": "2026-11-03T00:00:00Z",
+  "incarnationId": "incarnation-1"
+}

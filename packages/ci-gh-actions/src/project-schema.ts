@@ -5,6 +5,7 @@ import {
 	CiProjectProviderSchema,
 } from "./project-providers.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
+import { RunnerRoutingSchema } from "./runner-routing.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,80}$/);
@@ -216,6 +217,17 @@ const definitions = z
 	})
 	.strict()
 	.meta({ id: "Definitions" });
+/** An `https` URL and nothing else: the action writes it to `GITHUB_ENV` and sends the token to it. */
+export const TURBO_CACHE_API_PATTERN = /^https:\/\/[A-Za-z0-9._:/-]+$/u;
+export const TurboCacheSchema = z
+	.object({
+		api: z.union([
+			z.literal(""),
+			z.string().max(2048).regex(TURBO_CACHE_API_PATTERN),
+		]),
+	})
+	.strict()
+	.meta({ id: "TurboCache" });
 export const CiProjectDocumentSchema = z
 	.object({
 		$schema: z.string().max(2048).optional(),
@@ -243,6 +255,20 @@ export const CiProjectDocumentSchema = z
 		 * and refuses credential values in it; the agent package owns its shape.
 		 */
 		agent: z.record(z.string(), z.json()).optional(),
+		/**
+		 * Committed routing policy (ADR-0181): labels, limits, the
+		 * box's slot split and the variables the relay retires. Read by the
+		 * route job and the box; never by the relay's environment selection.
+		 */
+		runnerRouting: RunnerRoutingSchema.optional(),
+		/**
+		 * The shared Turborepo cache (`.github/actions/turbo-cache`). `api` is
+		 * the base URL of a self-hosted cache server
+		 * (`packages/ci-gh-actions/deploy/turbo-cache`); empty uses Vercel's. Not
+		 * a secret: the token stays the `TURBO_TOKEN` secret. Committed, so no
+		 * repository variable carries it (ADR-0181).
+		 */
+		turboCache: TurboCacheSchema.optional(),
 	})
 	.strict();
 
@@ -342,6 +368,8 @@ export function resolveCiProjectReferences(
 		$schema: _schema,
 		integrations: _integrations,
 		agent: _agent,
+		runnerRouting: _runnerRouting,
+		turboCache: _turboCache,
 		...document
 	} = input;
 	return expand(z.json().parse(document), 0);

@@ -86,6 +86,26 @@ The design always spoke of Station capabilities informally — PAM is "an option
 
 `hobo station init` (operator path) is unchanged.
 
+## 5a. Rail `delivery` (HoBo.CD)
+
+A Rail may carry an opaque `delivery` JSON object ([ADR-0182](./adr/01-architecture-core.md#adr-0182) D19–D25). It is part of
+the Rail's canonical content and digest; `@hobo/stations` never interprets it,
+and `@hobo/cd` parses it as `RailDeliveryRecord`:
+
+| Field | Meaning |
+|---|---|
+| `camp_sets` | The Camp sets this Station may target. Placement sees only bound sets. |
+| `max_fanout_camps` | The largest Placement decision a fan-out may run (default 1,000). |
+| `failover` | `automatic` (default off), `max_concurrent`, `required_signals`, `allow_immediate_purge`. |
+| `enrollment` | `separate_approvers` (the two enrollment grants come from different principals) and `auto_accept_scopes`. |
+| `posture` | Posture packs with their remediation mode and evaluation intervals. |
+
+Rails published before the field existed have no `delivery` and keep their
+behavior. The neutral `deliveryPolicy` now names a reconciler mode
+(`conductor`, `agent`, `publisher`) instead of an engine
+([delivery-policy-upgrade.md](./delivery-policy-upgrade.md)). Rail versions
+themselves are delivered as Freight ([continuous-delivery.md](./continuous-delivery.md)).
+
 ## 6. Open items
 
 - **Federation** is still follow-on (ADR-0131 §5): fail-closed cross-Station denial is implemented; membership machinery is not designed.

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file secret_store_claim.proto.
  */
 export const file_secret_store_claim: GenFile = /*@__PURE__*/
-  fileDesc("ChhzZWNyZXRfc3RvcmVfY2xhaW0ucHJvdG8SGmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxIvgBChBTZWNyZXRTdG9yZU9mZmVyEgwKBGtpbmQYASABKAkSEgoKcHJlZmVyZW5jZRgCIAEoDRIXCg9jbGFpbV9tZWNoYW5pc20YAyABKAkSHAoUY2xhaW1fd2luZG93X21pbnV0ZXMYBCABKA0SFwoPcnVudGltZV9iaW5kaW5nGAUgASgJEgwKBGNvc3QYBiABKAkSFAoMYXZhaWxhYmlsaXR5GAcgASgJEhIKCnNvdXJjZV91cmwYCCABKAkSEgoKY2hlY2tlZF9hdBgJIAEoCRIQCghwcm92aWRlchgKIAEoCRIUCgxydW50aW1lX2F1dGgYCyABKAkiRgoTU2VjcmV0U3RvcmVFdmlkZW5jZRIMCgRraW5kGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIOCgZkZXRhaWwYAyABKAkiLwoPU2VjcmV0U3RvcmVTa2lwEgwKBGtpbmQYASABKAkSDgoGcmVhc29uGAIgASgJIpMBChRTZWNyZXRTdG9yZVNlbGVjdGlvbhISCgpjYXBhYmlsaXR5GAEgASgJEhUKDXNlbGVjdGVkX2tpbmQYAiABKAkSPAoHc2tpcHBlZBgDIAMoCzIrLmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxLlNlY3JldFN0b3JlU2tpcBISCgpkZWNpZGVkX2F0GAQgASgJIooCChJTZWNyZXRTdG9yZUJpbmRpbmcSDAoEa2luZBgBIAEoCRIQCghlbmRwb2ludBgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEhMKC3NlY3JldF9wYXRoGAUgASgJEhkKEXJlbGF5X2lkZW50aXR5X2lkGAYgASgJEhoKEmRlcGxveV9pZGVudGl0eV9pZBgHIAEoCRIWCg52ZXJjZWxfdGVhbV9pZBgIIAEoCRIXCg9jbGFpbV9idW5kbGVfaWQYCSABKAkSEwoLY2xhaW1fc3RhdGUYCiABKAkSGQoRZGVwbG95X3Byb2plY3RfaWQYCyABKAliBnByb3RvMw");
+  fileDesc("ChhzZWNyZXRfc3RvcmVfY2xhaW0ucHJvdG8SGmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxIvgBChBTZWNyZXRTdG9yZU9mZmVyEgwKBGtpbmQYASABKAkSEgoKcHJlZmVyZW5jZRgCIAEoDRIXCg9jbGFpbV9tZWNoYW5pc20YAyABKAkSHAoUY2xhaW1fd2luZG93X21pbnV0ZXMYBCABKA0SFwoPcnVudGltZV9iaW5kaW5nGAUgASgJEgwKBGNvc3QYBiABKAkSFAoMYXZhaWxhYmlsaXR5GAcgASgJEhIKCnNvdXJjZV91cmwYCCABKAkSEgoKY2hlY2tlZF9hdBgJIAEoCRIQCghwcm92aWRlchgKIAEoCRIUCgxydW50aW1lX2F1dGgYCyABKAkiRgoTU2VjcmV0U3RvcmVFdmlkZW5jZRIMCgRraW5kGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIOCgZkZXRhaWwYAyABKAkiLwoPU2VjcmV0U3RvcmVTa2lwEgwKBGtpbmQYASABKAkSDgoGcmVhc29uGAIgASgJIpMBChRTZWNyZXRTdG9yZVNlbGVjdGlvbhISCgpjYXBhYmlsaXR5GAEgASgJEhUKDXNlbGVjdGVkX2tpbmQYAiABKAkSPAoHc2tpcHBlZBgDIAMoCzIrLmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxLlNlY3JldFN0b3JlU2tpcBISCgpkZWNpZGVkX2F0GAQgASgJIqcCChJTZWNyZXRTdG9yZUJpbmRpbmcSDAoEa2luZBgBIAEoCRIQCghlbmRwb2ludBgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEhMKC3NlY3JldF9wYXRoGAUgASgJEhkKEXJlbGF5X2lkZW50aXR5X2lkGAYgASgJEhoKEmRlcGxveV9pZGVudGl0eV9pZBgHIAEoCRIWCg52ZXJjZWxfdGVhbV9pZBgIIAEoCRIXCg9jbGFpbV9idW5kbGVfaWQYCSABKAkSEwoLY2xhaW1fc3RhdGUYCiABKAkSGQoRZGVwbG95X3Byb2plY3RfaWQYCyABKAkSGwoTZGVwbG95X29pZGNfc3ViamVjdBgMIAEoCSJuChBHaXRodWJSZXBvc2l0b3J5EgoKAmlkGAEgASgDEgwKBG5hbWUYAiABKAkSQAoFb3duZXIYAyABKAsyMS5ob2JvLnNlY3JldF9zdG9yZV9jbGFpbS52MS5HaXRodWJSZXBvc2l0b3J5T3duZXIiMgoVR2l0aHViUmVwb3NpdG9yeU93bmVyEg0KBWxvZ2luGAEgASgJEgoKAmlkGAIgASgDIqQBChlHaXRodWJPaWRjU3ViamVjdFRlbXBsYXRlEhMKC3VzZV9kZWZhdWx0GAEgASgIEhoKEmluY2x1ZGVfY2xhaW1fa2V5cxgCIAMoCRIiChV1c2VfaW1tdXRhYmxlX3N1YmplY3QYAyABKAhIAIgBARIYChBzdWJfY2xhaW1fcHJlZml4GAQgASgJQhgKFl91c2VfaW1tdXRhYmxlX3N1YmplY3RiBnByb3RvMw");
 
 /**
  * One way to satisfy the capability, as HoBo policy ranks it.
@@ -273,6 +273,16 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
    * @generated from field: string deploy_project_id = 11;
    */
   deployProjectId: string;
+
+  /**
+   * The exact OIDC subject the deploy identity trusts, as GitHub issues it
+   * for this repository (`<sub_claim_prefix>:ref:refs/heads/<branch>`). Empty
+   * in bindings recorded before it was kept; `verify` compares a denied
+   * token's `sub` with it.
+   *
+   * @generated from field: string deploy_oidc_subject = 12;
+   */
+  deployOidcSubject: string;
 };
 
 /**
@@ -281,4 +291,93 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
  */
 export const SecretStoreBindingSchema: GenMessage<SecretStoreBinding> = /*@__PURE__*/
   messageDesc(file_secret_store_claim, 4);
+
+/**
+ * GET /repos/{owner}/{repo} on GitHub's REST API, the fields read: the ids a
+ * deploy trust pins, which survive a rename (and a recycled name cannot reuse).
+ *
+ * @generated from message hobo.secret_store_claim.v1.GithubRepository
+ */
+export type GithubRepository = Message<"hobo.secret_store_claim.v1.GithubRepository"> & {
+  /**
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: hobo.secret_store_claim.v1.GithubRepositoryOwner owner = 3;
+   */
+  owner?: GithubRepositoryOwner | undefined;
+};
+
+/**
+ * Describes the message hobo.secret_store_claim.v1.GithubRepository.
+ * Use `create(GithubRepositorySchema)` to create a new message.
+ */
+export const GithubRepositorySchema: GenMessage<GithubRepository> = /*@__PURE__*/
+  messageDesc(file_secret_store_claim, 5);
+
+/**
+ * @generated from message hobo.secret_store_claim.v1.GithubRepositoryOwner
+ */
+export type GithubRepositoryOwner = Message<"hobo.secret_store_claim.v1.GithubRepositoryOwner"> & {
+  /**
+   * @generated from field: string login = 1;
+   */
+  login: string;
+
+  /**
+   * @generated from field: int64 id = 2;
+   */
+  id: bigint;
+};
+
+/**
+ * Describes the message hobo.secret_store_claim.v1.GithubRepositoryOwner.
+ * Use `create(GithubRepositoryOwnerSchema)` to create a new message.
+ */
+export const GithubRepositoryOwnerSchema: GenMessage<GithubRepositoryOwner> = /*@__PURE__*/
+  messageDesc(file_secret_store_claim, 6);
+
+/**
+ * GET /repos/{owner}/{repo}/actions/oidc/customization/sub: the repository's
+ * OIDC subject template. `sub_claim_prefix` is the subject's prefix its
+ * tokens carry, e.g. `repo:<owner>@<ownerId>/<repo>@<repoId>` under the
+ * immutable format.
+ *
+ * @generated from message hobo.secret_store_claim.v1.GithubOidcSubjectTemplate
+ */
+export type GithubOidcSubjectTemplate = Message<"hobo.secret_store_claim.v1.GithubOidcSubjectTemplate"> & {
+  /**
+   * @generated from field: bool use_default = 1;
+   */
+  useDefault: boolean;
+
+  /**
+   * @generated from field: repeated string include_claim_keys = 2;
+   */
+  includeClaimKeys: string[];
+
+  /**
+   * @generated from field: optional bool use_immutable_subject = 3;
+   */
+  useImmutableSubject?: boolean | undefined;
+
+  /**
+   * @generated from field: string sub_claim_prefix = 4;
+   */
+  subClaimPrefix: string;
+};
+
+/**
+ * Describes the message hobo.secret_store_claim.v1.GithubOidcSubjectTemplate.
+ * Use `create(GithubOidcSubjectTemplateSchema)` to create a new message.
+ */
+export const GithubOidcSubjectTemplateSchema: GenMessage<GithubOidcSubjectTemplate> = /*@__PURE__*/
+  messageDesc(file_secret_store_claim, 7);
 

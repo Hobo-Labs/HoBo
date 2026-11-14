@@ -50,6 +50,61 @@ export function parseJwt(value: string): string {
 	return value;
 }
 
+/** OIDC claim hints for operators (sub/aud only). Never includes the JWT. */
+export type JwtOidcClaimHints = Readonly<{ sub?: string; aud?: string }>;
+
+type JwtOidcClaimHintsBuilder = { sub?: string; aud?: string };
+
+/**
+ * OIDC claim hints for operators (sub/aud only). Never returns the JWT itself.
+ */
+const jwtPayloadTag = Object.prototype.toString;
+
+function jwtPayloadObject(
+	value: JsonValue,
+): Readonly<Record<string, JsonValue>> | undefined {
+	// SAFETY: the tag check proves a plain object from JSON.parse of a JWT payload segment.
+	return jwtPayloadTag.call(value) === "[object Object]"
+		? (value as Record<string, JsonValue>)
+		: undefined;
+}
+
+function jwtPayloadString(value: JsonValue | undefined): string | undefined {
+	// SAFETY: the tag check proves a string primitive in the JWT payload.
+	return jwtPayloadTag.call(value) === "[object String]"
+		? (value as string)
+		: undefined;
+}
+
+export function jwtOidcClaimHints(jwt: string): JwtOidcClaimHints {
+	const segment = jwt.split(".")[1];
+	if (segment === undefined) return Object.freeze({});
+	try {
+		const payload: JsonValue = JSON.parse(
+			Buffer.from(segment, "base64url").toString("utf8"),
+		);
+		const record = jwtPayloadObject(payload);
+		if (record === undefined) return Object.freeze({});
+		const hints: JwtOidcClaimHintsBuilder = {};
+		const sub = jwtPayloadString(record.sub);
+		if (sub !== undefined && sub !== "") hints.sub = sub;
+		const aud = record.aud;
+		const audText = jwtPayloadString(aud);
+		if (audText !== undefined && audText !== "") {
+			hints.aud = audText;
+		} else if (Array.isArray(aud)) {
+			const joined = aud
+				.map((entry) => jwtPayloadString(entry))
+				.filter((entry): entry is string => entry !== undefined)
+				.join(",");
+			if (joined !== "") hints.aud = joined;
+		}
+		return Object.freeze(hints);
+	} catch {
+		return Object.freeze({});
+	}
+}
+
 export function oidcAuth(input: {
 	readonly identityId: string | undefined;
 	readonly jwt: JwtSource;

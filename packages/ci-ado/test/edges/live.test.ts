@@ -233,7 +233,12 @@ describe("Azure execution and shutdown edge states", () => {
 });
 
 describe("Azure authentication and transport edges", () => {
-	it("supports the real process environment and default polling interval", async () => {
+	// The only case that waits out the real one-second default poll, so it is the
+	// one a stalled runner fails: it took 10.7 s in merge-group run 43318507956.
+	it("supports the real process environment and default polling interval", {
+		// A timeout given here overrides the config's, so keep HOBO_TEST_TIMEOUT able to raise it.
+		timeout: Math.max(60_000, Number(process.env.HOBO_TEST_TIMEOUT) || 0),
+	}, async () => {
 		const f = await fixture(adoSuccess);
 		const previous = process.env.ADO_TEST_PAT;
 		process.env.ADO_TEST_PAT = "fixture-pat";
