@@ -1,23 +1,14 @@
 /**
  * Vercel: the default Yard, plus the slot factories for authoring your own.
  *
- * `Yard()` returns Vercel's default targets — four offerings. The full
- * allocatable catalog is five: the default plus the opt-in `project()` row,
- * reached with `Yard({ project: {} })`. Unlike Azure or GCP, most
- * Vercel slots hold exactly one entry — not because the catalog is abridged,
- * but because Vercel genuinely ships one product per capability. A single entry
- * here is an accurate catalog, not a selection made early.
+ * `Yard()` returns Vercel's four default offerings. Its project, Git
+ * function, queues, schedules, production cron and Sandbox host are opt-in
+ * native offerings requiring a separately verified deployment scope.
  *
- * SCOPE: part of this catalog is backed by Vercel REST API drivers
- * (`VERCEL_RESOLVED_PRODUCT_IDS`); `vercel.edge-function/v1` has none,
- * for the reasons named in `VERCEL_UNRESOLVED_PRODUCT_IDS`. Native Blob
- * reconciliation requires an approved project, scoped credentials and a
- * durable mutation journal. The opt-in `project()` row is resolved but
- * absent from the bare `Yard()`, so `providerParity()` measures Vercel against
- * the full five-offering catalog, not the four-offering default. Those
- * drivers are proven against an injected fake transport; a live deploy
- * additionally needs real credentials and network egress, which no test here
- * supplies.
+ * `VERCEL_RESOLVED_PRODUCT_IDS` identifies declared provider resolvers;
+ * `vercel.edge-function/v1` is still unresolved. A declaration is not a
+ * capacity, permission, cost or production-readiness claim: live operation
+ * requires scoped credentials, independent evidence and the hosting supervisor.
  */
 import {
 	type VercelYardSpecOptions,
@@ -29,14 +20,25 @@ import { type ComposedYardOptions, composeYard } from "./compose.js";
 
 export {
 	blob,
+	cron,
+	delayedQueue,
 	edgeConfig,
 	edgeFunction,
+	gitFunction,
 	project,
+	queue,
+	sandboxHost,
+	schedule,
 	staticDeployment,
 	type VercelBlobSlotOptions,
+	type VercelCronSlotOptions,
 	type VercelEdgeConfigSlotOptions,
 	type VercelEdgeFunctionSlotOptions,
+	type VercelGitFunctionSlotOptions,
 	type VercelProjectSlotOptions,
+	type VercelQueueSlotOptions,
+	type VercelSandboxHostSlotOptions,
+	type VercelScheduleSlotOptions,
 	type VercelStaticDeploySlotOptions,
 } from "@hobo/provider-vercel";
 
@@ -59,8 +61,8 @@ export interface VercelYardOptions
 		VercelYardSpecOptions {}
 
 /**
- * The default Vercel Yard, canonicalized: the default targets, plus the
- * `project()` row only when `options.project` is given.
+ * The default Vercel Yard, canonicalized. Native project and deployment
+ * component rows are added only when their corresponding options are given.
  */
 export function Yard(options: VercelYardOptions = {}): ParsedYard {
 	return composeYard(
