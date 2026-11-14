@@ -29,6 +29,7 @@ import type {
 	ArtifactStoreConfig,
 	CampId,
 	CampInventory,
+	CampMembers,
 	CampPolicy,
 	CampReconciler,
 	CdAuthorizer,
@@ -175,6 +176,8 @@ export type CdComposeInput = Readonly<{
 	telemetry?: TelemetrySink;
 	telemetryEndpoint?: string;
 	telemetryHeaders?: Readonly<Record<string, string>>;
+	/** The Camp mapper's fleet registry and Yard-to-fleet map (L19); absent: Camps carry no member lifecycle. */
+	members?: CampMembers;
 }>;
 
 export type ComposedContinuousDelivery = ContinuousDelivery &
@@ -333,6 +336,7 @@ export function wireContinuousDelivery(
 			desired,
 			authorizer,
 			telemetry: sink,
+			members: input.members,
 		}),
 	);
 	const placement = put(

@@ -763,6 +763,9 @@ importers:
       '@hobo/events':
         specifier: workspace:*
         version: link:../events
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
@@ -805,6 +808,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/fleet':
+        specifier: workspace:*
+        version: link:../fleet
 
   packages/ci:
     dependencies:
@@ -24909,8 +24915,6 @@ snapshots:
       minipass: 7.1.3
       minipass-sized: 2.0.0
       minizlib: 3.1.0
-    optionalDependencies:
-      iconv-lite: 0.7.2
 
   minipass-flush@1.0.7:
     dependencies:

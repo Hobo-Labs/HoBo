@@ -28,6 +28,7 @@ import type {
 	TelemetrySink,
 } from "../../src/ports.js";
 import {
+	type CampMetricSources,
 	CD_ALERT_RULES,
 	CD_METRICS,
 	CD_SLOS,
@@ -35,7 +36,6 @@ import {
 	collectCampMetrics,
 	compliancePoints,
 	createCdTelemetry,
-	type CampMetricSources,
 	failoverCountPoints,
 	fanoutCampsPoints,
 } from "../../src/telemetry/index.js";

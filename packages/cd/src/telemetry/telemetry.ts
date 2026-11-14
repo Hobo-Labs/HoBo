@@ -20,7 +20,7 @@ import {
 	type DoraQuery,
 } from "./dora.js";
 import { TelemetryError } from "./errors.js";
-import { collectCampMetrics, type CampMetricSources } from "./fleet.js";
+import { type CampMetricSources, collectCampMetrics } from "./fleet.js";
 import { CD_METRICS, HOBO_ATTR } from "./semconv.js";
 
 // public-contract: default DORA window for collected gauges (30 days).

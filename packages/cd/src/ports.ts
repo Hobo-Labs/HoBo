@@ -16,6 +16,7 @@ import type {
 	RoutingStatus,
 	TrafficRoutingOfferingId,
 } from "@hobo/core";
+import type { RegistryView } from "@hobo/fleet";
 import type {
 	ArtifactKind,
 	ArtifactRef,
@@ -941,6 +942,18 @@ export type CampTopology = Readonly<{
 	management: CampManagement;
 }>;
 
+/**
+ * Where the Camp mapper reads fleet members (L19): the registry and the
+ * Yard-to-fleet map. Each Camp of a mapped Yard is backed by the member named
+ * `campMemberName(campId)` in that fleet: a `DEVICE` when a reconciler serves
+ * it, else a `TARGET` the Station declared as sponsor.
+ */
+export type CampMembers = Readonly<{
+	registry: Pick<RegistryView, "membersOf" | "view">;
+	/** The fleet a Yard's Camps are members of; undefined when the Yard has none. */
+	fleetOf(yardId: string): string | undefined;
+}>;
+
 export interface TopologyReader {
 	camps(): Promise<readonly CampTopology[]>;
 	camp(campId: CampId): Promise<CampTopology | undefined>;
@@ -1431,6 +1444,7 @@ export interface CdFactories {
 			readonly desired: DesiredStateReader;
 			readonly authorizer: CdAuthorizer;
 			readonly telemetry: TelemetrySink;
+			readonly members?: CampMembers | undefined;
 		},
 	): CampInventory;
 	/** "./placement" (WP22) */
