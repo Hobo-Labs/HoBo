@@ -14,9 +14,11 @@ import type {
 
 const socket = process.env.HOBO_TEST_JOURNAL_PG_SOCKET;
 const url = process.env.HOBO_TEST_JOURNAL_PG_URL;
+// The live data-engine lane supplies a disposable, trust-authenticated fixture.
+const fixtureUrl = process.env.HOBO_TEST_POSTGRES_URL;
 const port = Number(process.env.HOBO_TEST_JOURNAL_PG_PORT ?? "25471");
 const user = process.env.HOBO_TEST_JOURNAL_PG_USER ?? "hobo_test";
-const live = socket || url ? describe : describe.skip;
+const live = socket || url || fixtureUrl ? describe : describe.skip;
 function testPool(max: number): pg.Pool {
 	if (url)
 		return new pg.Pool({
@@ -24,8 +26,10 @@ function testPool(max: number): pg.Pool {
 			ssl: { rejectUnauthorized: true },
 			max,
 		});
-	if (!socket) throw new Error("test PostgreSQL connection required");
-	return new pg.Pool({ host: socket, port, user, database: "postgres", max });
+	if (socket)
+		return new pg.Pool({ host: socket, port, user, database: "postgres", max });
+	if (fixtureUrl) return new pg.Pool({ connectionString: fixtureUrl, max });
+	throw new Error("test PostgreSQL connection required");
 }
 async function waitForBlockedBackend(pool: pg.Pool, blocker: number) {
 	for (let attempt = 0; attempt < 200; attempt++) {
@@ -419,21 +423,38 @@ live("PostgreSQL immutable journal voter", () => {
 	}, 15_000);
 });
 
-const roleLive = socket ? describe : describe.skip;
+const roleLive = !url && (socket || fixtureUrl) ? describe : describe.skip;
 roleLive("PostgreSQL journal role boundary", () => {
 	it("keeps workload writes fenced by the separate schema owner in both lock orders", async () => {
-		if (!socket) throw new Error("test socket required");
+		if (!socket && !fixtureUrl)
+			throw new Error("test PostgreSQL fixture required");
 		const admin = testPool(6);
 		const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
 		const role = `hjr_runtime_${suffix}`;
 		const schema = `hjr_schema_${suffix}`;
-		const runtimePool = new pg.Pool({
-			host: socket,
-			port,
-			user: role,
-			database: "postgres",
-			max: 6,
-		});
+		let owner = user;
+		let runtimePool: pg.Pool;
+		if (socket) {
+			runtimePool = new pg.Pool({
+				host: socket,
+				port,
+				user: role,
+				database: "postgres",
+				max: 6,
+			});
+		} else {
+			if (!fixtureUrl) throw new Error("test PostgreSQL fixture required");
+			const runtimeUrl = new URL(fixtureUrl);
+			owner = decodeURIComponent(runtimeUrl.username);
+			runtimeUrl.username = role;
+			runtimeUrl.password = "";
+			runtimePool = new pg.Pool({
+				connectionString: runtimeUrl.toString(),
+				max: 6,
+			});
+		}
+		if (!/^[a-z_][a-z0-9_]*$/u.test(owner))
+			throw new Error("test PostgreSQL owner must be a simple role name");
 		let holdSeal = false;
 		let releaseSeal!: () => void;
 		let reportPid!: (pid: number) => void;
@@ -511,7 +532,7 @@ roleLive("PostgreSQL journal role boundary", () => {
 				maxDocumentBytes: 4096,
 				roleBoundary: {
 					schema,
-					ownerRole: user,
+					ownerRole: owner,
 					runtimeRole: role,
 					...(management ? { managementExecutor: ownerExecutor } : undefined),
 				},
@@ -525,7 +546,7 @@ roleLive("PostgreSQL journal role boundary", () => {
 			`INSERT INTO ${schema}.${id}_assignments(epoch,active,sealed,target,reason,loss_window_ms,decided_at,decided_by) VALUES (2,NULL,false,NULL,$1,NULL,timestamptz 'epoch','journal')`;
 		try {
 			await admin.query(`CREATE ROLE ${role} LOGIN NOINHERIT`);
-			await admin.query(`CREATE SCHEMA ${schema} AUTHORIZATION ${user}`);
+			await admin.query(`CREATE SCHEMA ${schema} AUTHORIZATION ${owner}`);
 			for (const instance of [a, b]) {
 				await instance.initializeFresh(async () => {});
 				expect(await instance.replica.accept(initial)).toBe("accepted");
@@ -606,11 +627,11 @@ roleLive("PostgreSQL journal role boundary", () => {
 					"late",
 				),
 			).rejects.toThrow();
-			await admin.query(`GRANT ${user} TO ${role}`);
+			await admin.query(`GRANT ${owner} TO ${role}`);
 			await expect(workload.replica.read()).rejects.toThrow(
 				"runtime-role-unverified",
 			);
-			await admin.query(`REVOKE ${user} FROM ${role}`);
+			await admin.query(`REVOKE ${owner} FROM ${role}`);
 			await admin.query(
 				`GRANT UPDATE(sealed_epoch) ON ${schema}.b_journal_info TO ${role}`,
 			);
