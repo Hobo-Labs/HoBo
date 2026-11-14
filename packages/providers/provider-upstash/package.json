@@ -24,8 +24,8 @@
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/kv-redis-compatible": "workspace:*",
-		"@hobo/provider-cloudflare": "workspace:*",
 		"@hobo/provider-redaction": "workspace:*",
+		"@hobo/r2-object": "workspace:*",
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {

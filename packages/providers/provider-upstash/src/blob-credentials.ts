@@ -38,8 +38,11 @@ export type UpstashBlobCredentialOptions = Readonly<{
 	resolveToken(): Promise<string>;
 	transport: HttpTransport;
 	now(): number;
-	/** Reserve and return a guard that claims the reservation immediately before I/O. */
-	reserveMint(): Promise<() => Promise<void>>;
+	/** Reserve a mint; legacy callbacks claim immediately before I/O. */
+	reserveMint(): Promise<
+		| (() => Promise<void>)
+		| Readonly<{ claim(): Promise<void>; revalidate(): Promise<void> }>
+	>;
 }>;
 
 /** Upstash and the underlying R2 provider are both outage domains. */
@@ -99,10 +102,13 @@ export function createUpstashBlobCredentials(
 		return at;
 	}
 	async function mint(token: string): Promise<Session> {
-		let guard: () => Promise<void>;
+		let admission: Awaited<
+			ReturnType<UpstashBlobCredentialOptions["reserveMint"]>
+		>;
 		try {
-			guard = await options.reserveMint();
-			await guard();
+			admission = await options.reserveMint();
+			if (admission instanceof Function) await admission();
+			else await admission.claim();
 		} catch {
 			throw new UpstashBlobCredentialError("budget-unavailable");
 		}
@@ -115,7 +121,7 @@ export function createUpstashBlobCredentials(
 				timeoutMs: 10_000,
 				maxResponseBytes: MAX_RESPONSE_BYTES,
 			});
-			await guard();
+			if (!(admission instanceof Function)) await admission.revalidate();
 		} catch {
 			throw new UpstashBlobCredentialError("unavailable");
 		}

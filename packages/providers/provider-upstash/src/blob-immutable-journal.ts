@@ -9,7 +9,7 @@ import {
 	type SealableImmutableJournalReplica,
 } from "@hobo/backend-fleet";
 import type { HttpTransport } from "@hobo/core";
-import { createR2ObjectClient } from "@hobo/provider-cloudflare";
+import { createR2ObjectClient } from "@hobo/r2-object";
 import { z } from "zod";
 import {
 	createUpstashBlobCredentials,
@@ -61,7 +61,7 @@ export interface UpstashBlobImmutableJournalOptions {
 	readonly resolveToken: () => Promise<string>;
 	readonly transport: HttpTransport;
 	readonly now: () => number;
-	/** Each credential mint is independently admitted and retains ambiguous holds. */
+	/** Admit each mint and return a reusable guard that revalidates its hold. */
 	readonly authorizeMint: (
 		charge: UpstashBlobJournalMintCharge,
 	) => Promise<() => Promise<void>>;
@@ -253,10 +253,12 @@ export function createUpstashBlobImmutableJournalReplica(
 		resolveToken,
 		transport,
 		now,
-		reserveMint: async () =>
-			guard(() =>
+		reserveMint: async () => {
+			const revalidate = await guard(() =>
 				authorizeMint({ maxRequestBytes: 32_768, maxResponseBytes: 49_152 }),
-			),
+			);
+			return { claim: revalidate, revalidate };
+		},
 	});
 	const objects = createR2ObjectClient({
 		accountId: r2AccountId,

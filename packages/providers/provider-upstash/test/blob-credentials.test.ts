@@ -9,7 +9,7 @@ const account = "0123456789abcdef0123456789abcdef";
 const bucket = "12345678-1234-1234-1234-123456789abc";
 const now = 1_800_000_000_000;
 
-function fixture() {
+function fixture(revalidateAfterResponse = false) {
 	let clock = now;
 	let token = "credential_token_1";
 	let response = {
@@ -49,9 +49,12 @@ function fixture() {
 		reserveMint: async () => {
 			reservations++;
 			if (deny) throw new Error("quota denied");
-			return async () => {
+			const guard = async () => {
 				if (rejectGuard) throw new Error("sensitive-admission-detail");
 			};
+			return revalidateAfterResponse
+				? { claim: guard, revalidate: guard }
+				: guard;
 		},
 	});
 	return {
@@ -140,6 +143,15 @@ describe("Upstash Blob scoped credentials", () => {
 			"budget-unavailable",
 		);
 		expect(f.requests()).toBe(0);
+	});
+
+	it("discards a response when its explicitly revalidated hold is revoked in flight", async () => {
+		const f = fixture(true);
+		f.setIntercept(async () => f.rejectGuard());
+		await expect(f.cache.resolveCredentials()).rejects.toThrow("unavailable");
+		expect(f.requests()).toBe(1);
+		await expect(f.cache.resolveCredentials()).rejects.toThrow("budget-unavailable");
+		expect(f.requests()).toBe(1);
 	});
 
 	it("rejects redirects and never exposes a provider error containing the token", async () => {

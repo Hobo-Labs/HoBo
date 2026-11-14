@@ -1,0 +1,38 @@
+// Models for the R2 conditional object boundary. These records describe the
+// values at the boundary; the R2 HTTP protocol does not serialize protobuf.
+syntax = "proto3";
+
+package hobo.r2_object.v1;
+
+message ObjectScope {
+  string account_id = 1;
+  string bucket = 2;
+  optional string jurisdiction = 3;
+  uint32 max_object_bytes = 4;
+  uint32 timeout_ms = 5;
+}
+
+message ConditionalWrite {
+  string key = 1;
+  string body = 2;
+  oneof condition {
+    bool if_absent = 3;
+    string if_match_etag = 4;
+  }
+}
+
+message ObjectRead {
+  string key = 1;
+}
+
+message ReadObjectResult {
+  string body = 1;
+  string etag = 2;
+}
+
+// If applied is true, the ETag is optional: a 200 response acknowledges the
+// write even when the server does not return a usable strong ETag.
+message ConditionalWriteResult {
+  bool applied = 1;
+  optional string etag = 2;
+}
