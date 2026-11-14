@@ -36,7 +36,6 @@ import {
 } from "@hobo/cd";
 import {
 	collectStream,
-	currentEpochStart,
 	type DeploymentChangeSet,
 	type DeploymentMode,
 	type DeploymentPlan,
@@ -58,8 +57,6 @@ import {
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
-
-import { isJsonObject, isJsonString } from "../json.js";
 
 // The Yard-client seam (S2-08): the single in-process call path the four cloud
 // verbs (login/plan/up/down) share. The CLI dispatch layer is the source of
@@ -160,8 +157,6 @@ export interface UpRealized {
 	readonly changes?: DeploymentChangeSet;
 	/** Undeclared resources `complete` mode destroyed. */
 	readonly pruned?: string[];
-	/** Resources `up` moved off a provider that did not answer, and from which. */
-	readonly rerouted?: readonly { resource: string; from: string }[];
 }
 
 export type UpResult = UpRejected | UpRealized;
@@ -336,35 +331,8 @@ export interface YardClient {
 	) => Promise<Readonly<{ result: DownResult; receipt?: DeliveryReceipt }>>;
 }
 
-/**
- * Resources whose apply failed retryably in this run, with the provider the
- * plan placed them on: a retryable failure is the provider not answering
- * (an outage), which `up` routes around rather than waiting out.
- */
 /** The config the gateway records on `deployment.Requested` and plans with. */
 type GatewayDeployConfig = NonNullable<Parameters<typeof deploy>[1]["config"]>;
-
-function retryableFailures(
-	orchestrated: OrchestratorResult,
-	plan: DeploymentPlan,
-): { resource: string; provider: string }[] {
-	const providers = new Map(plan.resources.map((r) => [r.name, r.provider]));
-	const epoch = currentEpochStart(orchestrated.events);
-	const failed = new Map<string, string>();
-	for (const event of orchestrated.events) {
-		if (event.seq <= epoch || event.type !== "resource.Failed") continue;
-		const data = event.data;
-		if (
-			!isJsonObject(data) ||
-			!isJsonString(data.resourceId) ||
-			data.classification !== "retryable"
-		)
-			continue;
-		const provider = providers.get(data.resourceId);
-		if (provider !== undefined) failed.set(data.resourceId, provider);
-	}
-	return [...failed].map(([resource, provider]) => ({ resource, provider }));
-}
 
 function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 	const progress: ProgressEvent[] = [];
@@ -568,92 +536,72 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				actor: session.principal,
 				correlationId: `deploy:${deploymentId}`,
 			};
-			// Routing around unavailable providers: a provider whose apply fails
-			// retryably this run is treated as down, and `up` re-plans without it
-			// so the resource lands on the next cheapest provider that is up.
-			// Bounded: every pass marks at least one more provider unavailable.
+			// A retryable error does not establish whether apply took effect. Plan
+			// around preexisting availability information only; do not infer an
+			// outage from an apply failure and silently create elsewhere.
 			const { unavailableProviders: initiallyDown, ...baseConfig } =
 				config ?? {};
 			const unavailable = new Set<string>(initiallyDown ?? []);
-			const rerouted: { resource: string; from: string }[] = [];
-			for (;;) {
-				// Recorded on deployment.Requested: identical when nothing is down,
-				// so an unchanged `up` replays its admission instead of opening a
-				// new generation.
-				const effectiveConfig: GatewayDeployConfig = { ...baseConfig };
-				if (unavailable.size > 0)
-					effectiveConfig.unavailableProviders = [...unavailable].sort();
-				if (budgetId) effectiveConfig.budgetId = budgetId;
-				const deployResult: DeployResult = await deploy(
-					gatewayDeps,
-					{
-						deploymentId,
-						bindle,
-						config: effectiveConfig,
-					},
-					context,
-				);
-				if (deployResult.status === "rejected") {
-					return {
-						result: {
-							status: "rejected",
-							deploymentId,
-							reason: deployResult.reason,
-							remediations: deployResult.remediations,
-						},
-					};
-				}
-				if (requiresHosting) {
-					if (!deployResult.hostingReservationId || !runtime.hostingExecution)
-						throw new Error(
-							"budgeted plan has no authoritative reservation or supervisor",
-						);
-					return {
-						result: await runtime.hostingExecution.up({
-							admission: deployResult,
-							session,
-						}),
-					};
-				}
-
-				const orchestrated = await runOrchestrator(
-					orchestratorDeps,
-					deployResult.plan,
-					deploymentId,
-					{
-						tenant: session.tenant,
-						actor: session.principal,
-						correlationId: `deploy:${deploymentId}`,
-						...(config?.mode !== undefined ? { mode: config.mode } : undefined),
-					},
-				);
-
-				const downNow = requiresHosting
-					? []
-					: retryableFailures(orchestrated, deployResult.plan).filter(
-							(entry) => !unavailable.has(entry.provider),
-						);
-				if (orchestrated.status !== "deployed" && downNow.length > 0) {
-					for (const entry of downNow) {
-						unavailable.add(entry.provider);
-						rerouted.push({ resource: entry.resource, from: entry.provider });
-					}
-					continue;
-				}
+			const effectiveConfig: GatewayDeployConfig = { ...baseConfig };
+			if (unavailable.size > 0)
+				effectiveConfig.unavailableProviders = [...unavailable].sort();
+			if (budgetId) effectiveConfig.budgetId = budgetId;
+			const deployResult: DeployResult = await deploy(
+				gatewayDeps,
+				{ deploymentId, bindle, config: effectiveConfig },
+				context,
+			);
+			if (deployResult.status === "rejected") {
 				return {
 					result: {
-						status: orchestrated.status,
+						status: "rejected",
 						deploymentId,
-						planHash: deployResult.planHash,
-						plan: deployResult.plan,
-						provisioned: orchestrated.provisioned,
-						progress: progressFrom(orchestrated.events),
-						changes: orchestrated.changes,
-						pruned: orchestrated.pruned,
-						...(rerouted.length > 0 ? { rerouted } : undefined),
+						reason: deployResult.reason,
+						remediations: deployResult.remediations,
 					},
 				};
 			}
+			if (requiresHosting) {
+				if (!deployResult.hostingReservationId || !runtime.hostingExecution)
+					throw new Error(
+						"budgeted plan has no authoritative reservation or supervisor",
+					);
+				return {
+					result: await runtime.hostingExecution.up({
+						admission: deployResult,
+						session,
+					}),
+				};
+			}
+
+			const orchestrated = await runOrchestrator(
+				orchestratorDeps,
+				deployResult.plan,
+				deploymentId,
+				{
+					tenant: session.tenant,
+					actor: session.principal,
+					correlationId: `deploy:${deploymentId}`,
+					...(config?.mode !== undefined ? { mode: config.mode } : undefined),
+				},
+			);
+			const blocked = (orchestrated.blockedProviderMoves ?? []).map((move) => ({
+				type: "provider.move-blocked",
+				resourceId: move.resource,
+				detail: `Cannot move from ${move.from ?? "an unknown provider"} to ${move.to} until the existing resource and any uncertain effects are reconciled.`,
+			}));
+			return {
+				result: {
+					status: orchestrated.status,
+					deploymentId,
+					planHash: deployResult.planHash,
+					plan: deployResult.plan,
+					provisioned: orchestrated.provisioned,
+					progress: [...progressFrom(orchestrated.events), ...blocked],
+					changes: orchestrated.changes,
+					pruned: orchestrated.pruned,
+				},
+			};
 		},
 
 		async down(bindle, options) {

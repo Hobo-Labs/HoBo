@@ -275,6 +275,8 @@ message ResourceProvisioningRecord {
   string program_hash = 4;
   // desiredSpecHash of the resource being applied; absent on legacy facts.
   optional string spec_hash = 5;
+  // Provider that may have received the apply; absent on legacy facts.
+  optional string provider_id = 6;
 }
 
 // resource.Provisioned: apply ok, outputs recorded (unblocks dependents).

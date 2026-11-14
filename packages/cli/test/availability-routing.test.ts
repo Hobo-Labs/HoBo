@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { parseManifest } from "@hobo/bindles";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
@@ -18,14 +19,14 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+	createFixtureSession,
 	createHoboCli,
 	createUpCommand,
+	createYardClient,
 	type YardRuntime,
 } from "../src/index.js";
-import { isJsonObject, parseJsonObject } from "../src/json.js";
 
-// Neon being unavailable must not stop `up`: when the cheapest provider does
-// not answer, `up` routes the resource to the next cheapest one that does.
+// A failed provider call may have changed infrastructure before it timed out.
 
 const DB_ONLY = {
 	schema: "hobo.manifest/v1",
@@ -69,6 +70,7 @@ afterEach(async () => {
 function runtimeWith(
 	down: ReadonlySet<string>,
 	applied: string[],
+	failAfterEffect = false,
 ): YardRuntime {
 	const iac: IacProvider = {
 		id: "mock",
@@ -76,8 +78,11 @@ function runtimeWith(
 			return { summary: `preview ${program.resourceId}`, changes: 1 };
 		},
 		async apply(program: IacProgram) {
-			if (down.has(program.provider))
+			if (down.has(program.provider)) {
+				if (failAfterEffect)
+					applied.push(`${program.resourceId}@${program.provider}`);
 				throw new Error(`${program.provider} is not answering`);
+			}
 			applied.push(`${program.resourceId}@${program.provider}`);
 			return { endpoint: `${program.resourceId}.${program.provider}` };
 		},
@@ -110,7 +115,7 @@ async function project(): Promise<string> {
 	return dir;
 }
 
-describe("up routes around an unavailable provider", () => {
+describe("availability-aware up", () => {
 	it("deploys on the cheapest provider when it answers", async () => {
 		const applied: string[] = [];
 		const cli = createHoboCli({
@@ -123,41 +128,58 @@ describe("up routes around an unavailable provider", () => {
 		expect(applied).toEqual(["db@neon"]);
 	});
 
-	it("moves the database to Supabase when Neon does not answer, and says so", async () => {
+	it("does not route an uncertain apply to another provider", async () => {
 		const applied: string[] = [];
-		const cli = createHoboCli({
-			commands: {
-				up: createUpCommand({
-					runtime: runtimeWith(new Set(["neon"]), applied),
-				}),
-			},
-		});
-		const result = await cli.run(["up", "--json", "--verbose"], {
-			cwd: await project(),
-		});
-		expect(result.exitCode, result.stderr).toBe(0);
-		expect(applied).toEqual(["db@supabase"]);
-		const envelope = parseJsonObject(result.stdout);
-		expect(envelope.status).toBe("deployed");
-		const data = envelope.data;
-		expect(isJsonObject(data) && JSON.stringify(data.rerouted)).toBe(
-			JSON.stringify([{ resource: "db", from: "neon" }]),
+		const client = createYardClient(
+			runtimeWith(new Set(["neon"]), applied, true),
 		);
+		const bindle = parseManifest(DB_ONLY);
+		const options = {
+			deploymentId: "uncertain",
+			session: createFixtureSession(),
+		};
+		expect((await client.up(bindle, options)).status).toBe("waiting");
+		expect(applied).toEqual(["db@neon"]);
+		const rerun = await client.up(bindle, {
+			...options,
+			config: { unavailableProviders: ["neon"] },
+		});
+		expect(rerun.status).toBe("needs-human");
+		expect(applied).toEqual(["db@neon"]);
 	});
 
-	it("reports every satisfying provider down only when none answers", async () => {
+	it("uses an excluded provider set on a fresh deployment and replays it safely", async () => {
 		const applied: string[] = [];
-		const cli = createHoboCli({
-			commands: {
-				up: createUpCommand({
-					runtime: runtimeWith(new Set(["neon", "supabase"]), applied),
-				}),
-			},
-		});
-		const result = await cli.run(["up", "--json"], { cwd: await project() });
-		expect(result.exitCode).not.toBe(0);
-		expect(result.stdout).toContain("placement.providers-unavailable");
-		expect(applied).toEqual([]);
+		const client = createYardClient(runtimeWith(new Set(), applied));
+		const bindle = parseManifest(DB_ONLY);
+		const options = {
+			deploymentId: "fresh",
+			session: createFixtureSession(),
+			config: { unavailableProviders: ["neon"] },
+		};
+		expect((await client.up(bindle, options)).status).toBe("deployed");
+		expect((await client.up(bindle, options)).status).toBe("deployed");
+		expect(applied).toEqual(["db@supabase"]);
+	});
+
+	it("does not move a previously provisioned database when availability changes", async () => {
+		const applied: string[] = [];
+		const client = createYardClient(runtimeWith(new Set(), applied));
+		const bindle = parseManifest(DB_ONLY);
+		const options = {
+			deploymentId: "existing",
+			session: createFixtureSession(),
+		};
+		expect((await client.up(bindle, options)).status).toBe("deployed");
+		expect(
+			(
+				await client.up(bindle, {
+					...options,
+					config: { unavailableProviders: ["neon"] },
+				})
+			).status,
+		).toBe("needs-human");
+		expect(applied).toEqual(["db@neon"]);
 	});
 });
 

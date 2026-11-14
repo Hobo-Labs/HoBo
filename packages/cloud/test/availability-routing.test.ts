@@ -1,6 +1,17 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { canonicalManifestHash, parseManifest } from "@hobo/bindles";
+import { createInMemoryActorHost } from "@hobo/data";
+import {
+	createManualClock,
+	createRuntimeLocalEventStore,
+} from "@hobo/runtime-local";
 import { describe, expect, it } from "vitest";
 
 import {
+	deploy,
+	deploymentStreamId,
 	matchResource,
 	type PlannerRegistry,
 	type ResourceDefinition,
@@ -50,6 +61,65 @@ const intent: ResourceIntent = {
 };
 
 describe("availability-aware matching", () => {
+	it("does not replay an older completed plan for a newer pending generation", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-gateway-generation-"));
+		const store = createRuntimeLocalEventStore({
+			dataDir: directory,
+			clock: createManualClock(),
+		});
+		try {
+			const bindle = parseManifest({
+				schema: "hobo.manifest/v1",
+				componentHost: { kind: "wasmtime", version: "1.0.0" },
+				resources: { db: { type: "data.v1", port: "sql" } },
+			});
+			const deps = { store, actorHost: createInMemoryActorHost(), registry };
+			const actor = { kind: "user", id: "operator-1" } as const;
+			const context = { tenant: "tenant-a", actor };
+			const first = await deploy(
+				deps,
+				{ deploymentId: "generation", bindle },
+				context,
+			);
+			expect(first.status).toBe("planned");
+			const config = { region: "us-east-1" };
+			const streamId = deploymentStreamId("generation");
+			const lease = deps.actorHost.acquire(streamId, {
+				holderId: "pending-test",
+			});
+			try {
+				await store.append(
+					streamId,
+					[
+						{
+							type: "deployment.Requested",
+							data: {
+								deploymentId: "generation",
+								bindleHash: canonicalManifestHash(bindle),
+								tenant: "tenant-a",
+								config,
+							},
+						},
+					],
+					{
+						expectedSeq: first.seq,
+						tenant: "tenant-a",
+						actor,
+						fenceToken: lease.fenceToken,
+					},
+				);
+			} finally {
+				lease.release();
+			}
+			await expect(
+				deploy(deps, { deploymentId: "generation", bindle, config }, context),
+			).rejects.toThrow(/pending/);
+		} finally {
+			store.close();
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("chooses the cheapest provider when all are up", () => {
 		const outcome = matchResource(intent, registry);
 		expect(outcome.ok && outcome.decision.providerId).toBe("neon");
