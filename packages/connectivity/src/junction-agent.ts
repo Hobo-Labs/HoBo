@@ -1,5 +1,5 @@
 /**
- * The junction agent, rebuilt on the HoBo Fleet device agent (ADR-0182,
+ * The junction agent, rebuilt on the HoBo Fleet device agent (ADR-0183,
  * ledger §8.3): a junction is a fleet device with role `JUNCTION`.
  * Enrollment, credentials, observation and health come from
  * `createFleetAgent`; joining the overlay, metering and dynamic DNS stay here

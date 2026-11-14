@@ -100,7 +100,7 @@ export interface DnsRecord {
 }
 
 // Trust exchange entry between two member yards: `fromYard`'s HoBo Fleet trust
-// record (ADR-0182), witnessed, for `toYard` to pin. Federation between Yards
+// record (ADR-0183), witnessed, for `toYard` to pin. Federation between Yards
 // is an exchange of trust records; there is no second trust format. `null`
 // until `fromYard` has published its trust record.
 // domain-view: kind-discriminated entry; wire form is TrustAnchorExchange in data-models/junction.proto.

@@ -3,7 +3,7 @@
  * Mint only after lower-env authn, step-up, dual approval, or break-glass.
  * Network membership alone is never sufficient.
  *
- * One SVID implementation (ADR-0182, fleet ledger §8.3): a capability is
+ * One SVID implementation (ADR-0183, fleet ledger §8.3): a capability is
  * minted through `@hobo/identity`'s `JwtSvidIssuer` and verified with its
  * `verifyJwtWithJwks` over the issuer's key set, both passed in as the
  * ports below. There is no shared secret and no development default: without

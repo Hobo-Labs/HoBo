@@ -58,7 +58,7 @@ message DnsRecord {
   string owner_yard = 4;
 }
 
-// from_yard's HoBo Fleet trust record (ADR-0182) for to_yard to pin. Federation
+// from_yard's HoBo Fleet trust record (ADR-0183) for to_yard to pin. Federation
 // between Yards is an exchange of trust records; there is no second trust format.
 message TrustAnchorExchange {
   reserved 3;

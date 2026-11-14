@@ -112,7 +112,7 @@ const metering = createMeteringBus([sink]);
 const policy = createTagAclPolicyEngine({ metering });
 const overlay = createTailscaleOverlay({ metering, policy });
 
-// A junction is a HoBo Fleet device with role JUNCTION (ADR-0182). The host
+// A junction is a HoBo Fleet device with role JUNCTION (ADR-0183). The host
 // composes createFleetAgent (@hobo/fleet/agent) over its own deps; the junction
 // asks for one agent to enroll and one to run with the overlay transport.
 const agent = createJunctionAgent({
@@ -136,7 +136,7 @@ There is no configured overlay key: the join credential is only ever the
 `OverlayJoin.credential` from enrollment, and Tailscale reads it from a private
 file, never from the command line.
 
-### HoBo Fleet overlay transport (ADR-0182)
+### HoBo Fleet overlay transport (ADR-0183)
 
 `createOverlayTransport(overlay)` is the `overlay` `FleetTransport` of HoBo
 Fleet (design §6.12 item 2): a TCP stream between two devices' overlay

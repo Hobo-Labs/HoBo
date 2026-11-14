@@ -3,7 +3,7 @@
  * Isolation-critical env: tags cannot be self-assigned by clients.
  *
  * A membership bound to a device (`nodeId`) is a HoBo Fleet member
- * (ADR-0182): it counts only while that member is `ACTIVE` in the fleet
+ * (ADR-0183): it counts only while that member is `ACTIVE` in the fleet
  * registry, as last read by `refresh()`. A suspended, revoked or unknown
  * member, or any device membership when no registry is given, is absent.
  */

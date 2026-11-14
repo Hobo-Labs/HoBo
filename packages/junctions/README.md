@@ -9,7 +9,7 @@ registry bundles) that ride the same member mechanism. Each yard realizes its
 own half.
 
 **Trust is the fleet's trust record.** Federation between Yards is an exchange
-of HoBo Fleet trust records (ADR-0182): each `TrustAnchorExchange` carries the
+of HoBo Fleet trust records (ADR-0183): each `TrustAnchorExchange` carries the
 issuing Yard's witnessed `TrustRecord` envelope (`null` until that Yard has
 published one; pass them as `deriveConnectivityPlan(definition, { trust })`).
 The receiving Yard pins it with `acceptFederatedTrust(exchange, pinned)`, which

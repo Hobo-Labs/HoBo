@@ -1,5 +1,5 @@
 /**
- * The overlay join credential (L14, ADR-0182): it is only ever the
+ * The overlay join credential (L14, ADR-0183): it is only ever the
  * `OverlayJoin.credential` the fleet authority minted at enrollment, handed
  * to `join` by the host. No adapter reads one from the environment or holds
  * a static one, and none passes it on a command line.
