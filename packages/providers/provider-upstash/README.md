@@ -21,7 +21,10 @@ cached only while their token remains current and are refreshed before expiry.
 An unavailable budget, a foreign endpoint or bucket, a public bucket, or an
 expired session fails closed. Returned errors do not include provider secrets.
 The hosting supervisor supplies the guard using its durable Broker and retains
-ambiguous request reservations until they can be settled.
+ambiguous request reservations until they can be settled. A legacy mint guard
+claims once before I/O; callers that need a post-response check provide separate
+claim and revalidation callbacks. The journal uses that two-phase form so it
+does not accept a response after its funding hold is revoked.
 
 `estimateUpstashBlobLiability` computes a conservative bound from the caller's
 observed rates and bounded operations, bytes and retention. It does not establish

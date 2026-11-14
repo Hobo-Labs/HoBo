@@ -99,6 +99,23 @@ describe("workspace-skeleton-boundary pact", () => {
 			/adapters must not import each other/,
 		);
 	});
+
+	it("allows both adapters to use the shared R2 protocol without importing each other", () => {
+		const edges = ["provider-cloudflare", "provider-upstash"].map((provider) =>
+			parseWorkspaceEdge({
+				from: `packages/providers/${provider}`,
+				to: "packages/r2-object",
+			}),
+		);
+		expect(validateBoundaryImports(edges).errors).toEqual([]);
+		const direct = parseWorkspaceEdge({
+			from: "packages/providers/provider-upstash",
+			to: "packages/providers/provider-cloudflare",
+		});
+		expect(validateBoundaryImports([direct]).errors).toContain(
+			"adapters must not import each other: packages/providers/provider-upstash -> packages/providers/provider-cloudflare",
+		);
+	});
 });
 
 /**

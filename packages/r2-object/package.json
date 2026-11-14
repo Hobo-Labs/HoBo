@@ -1,0 +1,29 @@
+{
+	"name": "@hobo/r2-object",
+	"version": "0.0.1",
+	"license": "MIT",
+	"description": "Bounded, conditional R2 object operations shared by storage adapters.",
+	"type": "module",
+	"files": ["LICENSE", "dist"],
+	"publishConfig": { "access": "public" },
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run test/"
+	},
+	"dependencies": {
+		"@hobo/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.29",
+		"vitest": "^4.1.9"
+	}
+}
