@@ -164,6 +164,8 @@ export interface YardBuilder extends YardSlotMethods {
 }
 
 export interface CampBuilder {
+	/** Stable identity preserved when this Camp is placed in another Yard. */
+	logicalId(id: string): CampBuilder;
 	envType(envType: EnvType): CampBuilder;
 	production(): CampBuilder;
 	staging(): CampBuilder;
@@ -254,6 +256,7 @@ export function buildStation(
 }
 
 class CampDraft implements CampBuilder {
+	#logicalId: string | undefined;
 	#envType: string | undefined;
 	#tier: CampTier | undefined;
 	readonly #require: string[] = [];
@@ -265,6 +268,11 @@ class CampDraft implements CampBuilder {
 	#bindle: unknown;
 	#providerAuthored = false;
 	#bindleAuthored = false;
+
+	logicalId(id: string): CampBuilder {
+		this.#logicalId = id;
+		return this;
+	}
 
 	envType(envType: EnvType): CampBuilder {
 		// Typed at the signature, checked at runtime too: a JS caller, a JSON
@@ -359,6 +367,9 @@ class CampDraft implements CampBuilder {
 			? { defaultProvider: this.#provider as ProviderSelection }
 			: undefined;
 		return camp(name, {
+			...(this.#logicalId !== undefined
+				? { logicalId: this.#logicalId }
+				: undefined),
 			...(this.#envType !== undefined ? { envType: this.#envType } : undefined),
 			...(this.#tier !== undefined ? { tier: this.#tier } : undefined),
 			require: [...this.#require],
