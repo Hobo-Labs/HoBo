@@ -37,6 +37,19 @@ take it explicitly.
   `numUsesLimit: 1` spent by one login, writes to the relay's folder and the
   deploy project on that login, then a revoke.
   `valueRef` is the entry's `infisical://` SecretRef.
+- **Plan observation** (`createInfisicalPlanObserver`): an enrolled OIDC
+  identity from `oidcAuth` reads its project and organization plan after the
+  host revalidates the exact lease and reserves and claims each request. The
+  project response must name the enrolled organization. The host independently
+  verifies that organization's root, because Infisical returns the caller's
+  root-org plan.
+  The returned limits are provider reports with freshness unverified: Infisical
+  may serve a cached or fallback plan without identifying it. This observation
+  does not establish available shared-IP capacity, pricing, final usage, or
+  deployment readiness. The request and response shapes follow Infisical's
+  [project](https://github.com/Infisical/infisical/blob/8218dcf23cb99b8a1a55b732879996c4b3092b8a/backend/src/server/routes/v1/project-router.ts)
+  and [plan](https://github.com/Infisical/infisical/blob/8218dcf23cb99b8a1a55b732879996c4b3092b8a/backend/src/ee/routes/v1/license-router.ts)
+  routes.
 - **References**: `infisicalSecretRef(binding, key)` and
   `parseInfisicalSecretRef(ref)` map to the `infisical` scheme of
   [`@hobo/bindings`](../../bindings/src/secret-ref.ts):
