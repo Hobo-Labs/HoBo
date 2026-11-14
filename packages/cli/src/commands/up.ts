@@ -151,12 +151,20 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 				for (const step of result.progress) emitProgress(progressLine(step));
 
 			const deployed = result.status === "deployed";
+			const rerouted =
+				"rerouted" in result && result.rerouted !== undefined
+					? result.rerouted
+					: [];
+			for (const move of rerouted)
+				emitProgress(
+					`rerouted ${move.resource}: ${move.from} did not answer; placed on the next cheapest provider that did`,
+				);
 			return {
 				ok: deployed,
 				status: deployed ? "deployed" : result.status,
 				code: deployed ? "HOBO_OK" : "HOBO_UP_INCOMPLETE",
 				message: deployed
-					? `hobo up deployed ${result.provisioned.length} resources (${result.provisioned.join(", ")})${receipt?.claimHint ? `. ${receipt.claimHint}` : ""}`
+					? `hobo up deployed ${result.provisioned.length} resources (${result.provisioned.join(", ")})${rerouted.length > 0 ? `, routed around ${[...new Set(rerouted.map((move) => move.from))].join(", ")}` : ""}${receipt?.claimHint ? `. ${receipt.claimHint}` : ""}`
 					: `hobo up did not converge (status ${result.status})`,
 				data: {
 					command: "up",
@@ -167,6 +175,7 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 					progress: result.progress,
 					identity: session.principal.id,
 					delivery: receipt,
+					...(rerouted.length > 0 ? { rerouted } : undefined),
 				},
 			};
 		},
