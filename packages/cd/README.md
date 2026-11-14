@@ -34,7 +34,7 @@ typed failures and a **Runbook** section; `konsistent` enforces the README).
 | `@hobo/cd/verification` | `src/verification/` | Verification engine and health sources (D9, I5) |
 | `@hobo/cd/rollout` | `src/rollout/` | Capability lowering and the rollout orchestrator (D7, D8) |
 | `@hobo/cd/feed` | `src/feed/` | Delivery feed for agents (D5) |
-| `@hobo/cd/agent` | `src/agent/` | Agent identity, DPoP, double opt-in enrollment (D5, D19, I24) |
+| `@hobo/cd/agent` | `src/agent/` | Reconciler enrollment over `@hobo/fleet` (a fleet DEVICE with role RECONCILER), double opt-in, agent transport (D5, D19, I24, L19) |
 | `@hobo/cd/service` | `src/service/` | Service host, tick loop and `/v1/cd/` read API |
 | `@hobo/cd/boundary` | `src/boundary/` | CDEvents, CloudEvents webhooks, the neutral-core scan (D17, I11) |
 | `@hobo/cd/telemetry` | `src/telemetry/` | OTel CI/CD semantic conventions, DORA, alert rules (D17) |

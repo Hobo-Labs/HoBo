@@ -7,14 +7,17 @@
 // status, content type, and envelope (ok, value subset, refusal code with a
 // remediation).
 import { readFileSync } from "node:fs";
+import { create, toJson } from "@bufbuild/protobuf";
+import { CredentialRequestSchema, EnrollmentRequestSchema } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import { ReconcileStatus } from "../src/_generated/cd_pb.js";
-import {
-	createDpopProof,
-	createHttpTransport,
-	generateAgentKey,
-} from "../src/agent/index.js";
+import { createHttpTransport } from "../src/agent/index.js";
 import { FEED_ROUTES } from "../src/feed/index.js";
+import {
+	FLEET_ORIGIN,
+	type FleetDevice,
+	freshSignJwk,
+} from "../test/agent/fleet-fixture.js";
 import { asCamp, resolvedFor } from "../test/feed/fakes.js";
 import {
 	BASE_URL,
@@ -68,6 +71,36 @@ async function claimed(station: Station) {
 	return { ...agent, lease: lease.value };
 }
 
+/** The SVID refresh route: the agent's fleet CredentialRequest and a SIGN-key proof for the authority URL. */
+async function refreshThroughFeed(
+	station: Station,
+	device: FleetDevice,
+	memberId: string,
+	generation = 0,
+) {
+	const url = `${FLEET_ORIGIN}/v1/fleet/members/${memberId}/credentials`;
+	await station.http({
+		method: "POST",
+		url: `${BASE_URL}${FEED_ROUTES.svidRefresh}`,
+		headers: {
+			"content-type": "application/json",
+			dpop: await device.proof("POST", url),
+		},
+		body: JSON.stringify({
+			memberId,
+			request: toJson(
+				CredentialRequestSchema,
+				create(CredentialRequestSchema, {
+					generation,
+					refreshNonce: new Uint8Array(16).fill(5),
+				}),
+			),
+		}),
+		timeoutMs: 1000,
+		maxResponseBytes: 1_000_000,
+	});
+}
+
 function last(station: Station, route: string): Exchange {
 	const found = [...station.exchanges]
 		.reverse()
@@ -78,7 +111,9 @@ function last(station: Station, route: string): Exchange {
 
 /** Provider states + consumer actions, keyed by interaction description. */
 const scenarios = {
-	"an agent enrolls its public key with a bootstrap token": async (s) => {
+	"an agent forwards its fleet enrollment with a bootstrap token": async (
+		s,
+	) => {
 		await provisionAgent(s, { grants: "none" });
 		return last(s, FEED_ROUTES.enrollments);
 	},
@@ -86,45 +121,36 @@ const scenarios = {
 		await provisionAgent(s, { grants: "none" });
 		const used = JSON.parse(
 			last(s, FEED_ROUTES.enrollments).request.body ?? "{}",
-		).token;
+		).request.bootstrapToken;
+		const other = await s.fleet.device();
 		await s.http({
 			method: "POST",
 			url: `${BASE_URL}${FEED_ROUTES.enrollments}`,
-			headers: { "content-type": "application/json" },
+			headers: {
+				"content-type": "application/json",
+				dpop: await other.proof("POST", `${FLEET_ORIGIN}/v1/fleet/members`),
+			},
 			body: JSON.stringify({
-				token: used,
-				publicJwk: generateAgentKey().publicJwk,
-				claims: [],
+				request: toJson(EnrollmentRequestSchema, other.request(used)),
+				campIds: [],
 			}),
 			timeoutMs: 1000,
 			maxResponseBytes: 1_000_000,
 		});
 		return last(s, FEED_ROUTES.enrollments);
 	},
-	"activation with only one enrollment grant is refused": async (s) => {
-		const { transport, reconcilerId } = await provisionAgent(s, {
+	"an SVID refresh with only one enrollment grant is refused": async (s) => {
+		const { device, reconcilerId } = await provisionAgent(s, {
 			grants: "key-only",
 		});
-		await transport.claim({
-			reconcilerId,
-			campId: asCamp("eu-1"),
-			holderId: "h",
-			ttlMs: 1000,
-		});
+		await refreshThroughFeed(s, device, reconcilerId);
 		return last(s, FEED_ROUTES.svidRefresh);
 	},
-	"an accepted agent activates a key-bound SVID by key possession": async (
+	"an accepted agent refreshes its member SVID through the fleet": async (
 		s,
 	) => {
-		await claimed(s);
-		return s.exchanges.find((x) =>
-			x.request.url.endsWith(FEED_ROUTES.svidRefresh),
-		) as Exchange;
-	},
-	"an agent refreshes its SVID before expiry": async (s) => {
-		const { transport, lease } = await claimed(s);
-		s.clock.advance(11 * 60_000);
-		await transport.renew(lease);
+		const { device, reconcilerId } = await claimed(s);
+		await refreshThroughFeed(s, device, reconcilerId, 1);
 		return last(s, FEED_ROUTES.svidRefresh);
 	},
 	"an agent claims the per-Camp lease": async (s) => {
@@ -202,7 +228,7 @@ const scenarios = {
 			baseUrl: BASE_URL,
 			http: s.http,
 			reconcilerId,
-			privateJwk: generateAgentKey().privateJwk,
+			privateJwk: freshSignJwk(),
 			svid,
 			now: s.clock.now,
 		});
@@ -341,7 +367,7 @@ describe(`PACT ${pact.consumer.name} → ${pact.provider.name}`, () => {
 
 	for (const interaction of pact.interactions) {
 		it(`${interaction.description} (given ${interaction.providerState})`, async () => {
-			const station = createStation({
+			const station = await createStation({
 				camps: ["eu-1", "eu-2"],
 				longPollMs: 30,
 				heartbeatMs: 10,
@@ -394,22 +420,22 @@ describe(`PACT ${pact.consumer.name} → ${pact.provider.name}`, () => {
 		});
 	}
 
-	it("DPoP proofs on the wire bind htm/htu and are single use", () => {
-		const key = generateAgentKey();
-		const proof = createDpopProof({
-			privateJwk: key.privateJwk,
-			method: "GET",
-			url: `${BASE_URL}/v1/cd/feed?camp=eu-1`,
-			iatSeconds: 1,
-			jti: "a",
-		});
+	it("DPoP proofs on the wire bind htm/htu, carry ath and a fresh jti", async () => {
+		const station = await createStation({ camps: ["eu-1", "eu-2"] });
+		const { svid } = await claimed(station);
+		const claim = last(station, FEED_ROUTES.leases);
 		const payload = JSON.parse(
-			Buffer.from(proof.split(".")[1] ?? "", "base64url").toString("utf8"),
+			Buffer.from(
+				(claim.request.headers.dpop ?? "").split(".")[1] ?? "",
+				"base64url",
+			).toString("utf8"),
 		);
 		expect(payload).toMatchObject({
-			htm: "GET",
-			htu: `${BASE_URL}/v1/cd/feed`,
-			jti: "a",
+			htm: "POST",
+			htu: `${BASE_URL}${FEED_ROUTES.leases}`,
 		});
+		expect(String(payload.jti).length).toBeGreaterThan(8);
+		expect(String(payload.ath).length).toBeGreaterThan(8);
+		expect(claim.request.headers.authorization).toBe(`DPoP ${svid}`);
 	});
 });

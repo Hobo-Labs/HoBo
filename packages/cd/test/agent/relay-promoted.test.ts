@@ -17,7 +17,6 @@ import { ReconcilerMode } from "../../src/_generated/cd_pb.js";
 import {
 	AgentEgressError,
 	createHttpTransport,
-	generateAgentKey,
 	parseStationOrigin,
 	stationTransport,
 } from "../../src/agent/index.js";
@@ -28,6 +27,7 @@ import {
 	resolvedFor,
 } from "../feed/fakes.js";
 import { createStation, provisionAgent } from "../feed/harness.js";
+import { freshSignJwk } from "./fleet-fixture.js";
 
 const echo: HttpTransport = async () => ({
 	status: 200,
@@ -105,7 +105,7 @@ describe("relay proof: outbound-only and SSRF rules for agent egress", () => {
 			baseUrl: "https://station.test",
 			http: redirecting,
 			reconcilerId: asReconciler("agent-x"),
-			privateJwk: generateAgentKey().privateJwk,
+			privateJwk: freshSignJwk(),
 			svid: "",
 			now: createClock().now,
 		});
@@ -123,7 +123,7 @@ describe("relay proof: outbound-only and SSRF rules for agent egress", () => {
 			baseUrl: "https://station.test",
 			http: echo,
 			reconcilerId: asReconciler("agent-x"),
-			privateJwk: generateAgentKey().privateJwk,
+			privateJwk: freshSignJwk(),
 			svid: "",
 			now: createClock().now,
 		});
@@ -141,7 +141,7 @@ describe("relay proof: outbound-only and SSRF rules for agent egress", () => {
 
 describe("relay proof: governed deny-by-default", () => {
 	it("token issue is governed and agents cannot self-enroll or self-grant", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const denied = await station.enrollment.issueToken(
 			{
 				campSet: "fleet",
@@ -168,8 +168,8 @@ describe("relay proof: governed deny-by-default", () => {
 	});
 
 	it("unauthenticated, forged or foreign-issuer SVIDs are refused at the feed", async () => {
-		const station = createStation();
-		const other = createStation();
+		const station = await createStation();
+		const other = await createStation();
 		await other.desired.publish("eu-1", resolvedFor("eu-1"));
 		const foreign = await provisionAgent(other);
 		await foreign.transport.claim({
@@ -185,7 +185,7 @@ describe("relay proof: governed deny-by-default", () => {
 			baseUrl: "https://station.test",
 			http: station.http,
 			reconcilerId: foreign.reconcilerId,
-			privateJwk: foreign.key.privateJwk,
+			privateJwk: foreign.device.signPrivateJwk,
 			svid,
 			now: station.clock.now,
 		});
@@ -199,7 +199,7 @@ describe("relay proof: governed deny-by-default", () => {
 	});
 
 	it("work frames never carry credential material", async () => {
-		const station = createStation();
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = await transport.claim({

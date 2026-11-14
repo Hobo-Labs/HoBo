@@ -11,7 +11,7 @@
 // re-delivers the Camp's current change when nothing newer exists; a cut-off
 // SSE response (no `end` event) resumes with `Last-Event-ID`, so changes are
 // neither skipped nor repeated.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
 	fromJson,
 	type JsonValue as PbJsonValue,
@@ -26,6 +26,7 @@ import {
 	type TransportMethod,
 	type TransportRequest,
 } from "@hobo/core";
+import { mintDpopProof } from "@hobo/fleet/keys";
 import {
 	type DeliveryFeedFrame,
 	DeliveryFeedFrameSchema,
@@ -57,7 +58,6 @@ import type {
 	ReconcilerTransport,
 	Refusal,
 } from "../ports.js";
-import { createDpopProof, type DpopProofInput } from "./dpop.js";
 import {
 	AGENT_MAX_RESPONSE_BYTES,
 	AGENT_MAX_TIMEOUT_MS,
@@ -66,6 +66,7 @@ import {
 	stationTransport,
 } from "./egress.js";
 import { agentRefusal, messageOf } from "./errors.js";
+import { agentKeyFromJwk } from "./fleet-port.js";
 
 export type HttpTransportDeps = Readonly<{
 	baseUrl: string;
@@ -73,6 +74,8 @@ export type HttpTransportDeps = Readonly<{
 	reconcilerId: ReconcilerId;
 	privateJwk: JsonObject;
 	svid: string;
+	/** The current member SVID, kept fresh by the fleet agent (`hobo fleet run`); read before each request when set. */
+	credential?: (() => Promise<string>) | undefined;
 	now: () => number;
 }>;
 
@@ -105,6 +108,7 @@ function expOf(svid: string): number {
 export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 	const origin = parseStationOrigin(d.baseUrl);
 	const http = stationTransport(origin, d.http);
+	const key = agentKeyFromJwk(d.privateJwk);
 	let svid = d.svid;
 	let svidExpiresAtMs = expOf(svid);
 	const inline = new Map<string, string>();
@@ -124,18 +128,15 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 	): Promise<Outcome<Raw>> {
 		const url = `${origin.origin}${path}`;
 		const bearer = options.bearer !== false;
-		const proofBase = {
-			privateJwk: d.privateJwk,
-			method,
-			url,
-			iatSeconds: Math.floor(d.now() / 1000),
-			jti: randomUUID(),
-		};
-		const proofInput: DpopProofInput = bearer
-			? { ...proofBase, accessToken: svid }
-			: proofBase;
+		const proof = await mintDpopProof(
+			key.signer,
+			key.publicJwk,
+			bearer
+				? { htm: method, htu: url, accessToken: svid, nowMs: d.now() }
+				: { htm: method, htu: url, nowMs: d.now() },
+		);
 		const headers = new Map<string, string>([
-			["dpop", createDpopProof(proofInput)],
+			["dpop", proof],
 			["accept", "application/json, text/event-stream"],
 		]);
 		for (const [key, value] of Object.entries(options.headers ?? {}))
@@ -165,38 +166,28 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 		}
 	}
 
+	/**
+	 * The member SVID comes from the fleet: the fleet agent refreshes it
+	 * (`credentials`) and `credential` reads the current one. Without a
+	 * source, an SVID past its expiry is refused here instead of being sent.
+	 */
 	async function ensureSvid(): Promise<Outcome<true>> {
-		if (d.now() < svidExpiresAtMs - CD_DEFAULTS.svidRefreshBeforeExpiryMs)
-			return { ok: true, value: true };
-		const live = d.now() < svidExpiresAtMs;
-		const raw = live
-			? await send("POST", FEED_ROUTES.svidRefresh, { body: {} })
-			: await send("POST", FEED_ROUTES.svidRefresh, {
-					body: { reconcilerId: d.reconcilerId },
-					bearer: false,
-				});
-		if (!raw.ok) return raw;
-		const envelope = parseEnvelope(raw.value.body);
-		if (!envelope.ok) {
-			// An SVID that expired between the check and the call is re-activated by key possession.
-			if (live && envelope.reasons[0]?.code === "svid-expired") {
-				svidExpiresAtMs = 0;
-				return ensureSvid();
+		if (d.credential !== undefined) {
+			try {
+				const current = (await d.credential()).trim();
+				if (current !== svid) {
+					svid = current;
+					svidExpiresAtMs = expOf(current);
+				}
+			} catch (error) {
+				return agentRefusal("svid-required", messageOf(error));
 			}
-			return envelope;
 		}
-		const value = envelope.value;
-		if (
-			!isWireObject(value) ||
-			!isText(value.svid) ||
-			!isNumber(value.expiresAtMs)
-		)
+		if (svidExpiresAtMs !== 0 && d.now() >= svidExpiresAtMs)
 			return agentRefusal(
-				"response-invalid",
-				"svid response lacks svid/expiresAtMs",
+				"svid-expired",
+				`the member SVID expired at ${new Date(svidExpiresAtMs).toISOString()}`,
 			);
-		svid = value.svid;
-		svidExpiresAtMs = value.expiresAtMs;
 		return { ok: true, value: true };
 	}
 

@@ -117,7 +117,7 @@ export type { CampMembers };
 const MEMBER_NAME_MAX = 63;
 
 /** The fleet member name of a Camp: its id's last segment as a short lower-case token. */
-export function campMemberName(campId: CampId): string {
+export function campMemberName(campId: string): string {
 	const last = campId.slice(campId.lastIndexOf("/") + 1).toLowerCase();
 	const token = last
 		.replace(/[^a-z0-9_-]+/gu, "-")

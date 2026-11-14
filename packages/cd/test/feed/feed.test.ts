@@ -3,6 +3,9 @@
 // Station-only egress converges a target with no target credential at the
 // Station; SSE resumes without gaps or duplicates; inline vs digest-only
 // resolved sets; fenced leases, reports and checkpoints; enrollment gating.
+
+import { create, toJson } from "@bufbuild/protobuf";
+import { CredentialRequestSchema, parseMemberId } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import {
 	CampManagement,
@@ -10,15 +13,16 @@ import {
 	ReconcileStatus,
 	SignalSource,
 } from "../../src/_generated/cd_pb.js";
-import { FeedRefusedError } from "../../src/agent/index.js";
 import {
-	CD_EVENTS,
-	CD_STREAMS,
-	ENROLLMENT_INCOMPLETE,
-} from "../../src/events.js";
+	createHttpTransport,
+	FeedRefusedError,
+} from "../../src/agent/index.js";
+import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
 import type { Outcome, ReconcilerLease } from "../../src/ports.js";
+import { FLEET_ORIGIN } from "../agent/fleet-fixture.js";
 import { resolvedFor } from "./fakes.js";
 import {
+	BASE_URL,
 	camp,
 	collect,
 	createStation,
@@ -42,7 +46,7 @@ const signal = () => new AbortController().signal;
 
 describe("Station-only egress (I3)", () => {
 	it("an agent with Station-only egress converges a target; the Station never holds a target credential", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const resolved = resolvedFor("eu-1", ["api", "db"]);
 		const set = await station.desired.publish("eu-1", resolved);
 		const { transport, reconcilerId } = await provisionAgent(station);
@@ -100,10 +104,11 @@ describe("Station-only egress (I3)", () => {
 		expect(plan.secretRefs).toEqual(["secretref://target/db-password"]);
 	});
 
-	it("the first request activates the SVID by key possession and later requests carry it", async () => {
-		const station = createStation();
+	it("every request carries the fleet member SVID and a fresh DPoP proof; there is no activation round-trip", async () => {
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
-		const { transport, reconcilerId } = await provisionAgent(station);
+		const before = station.exchanges.length;
+		const { transport, reconcilerId, svid } = await provisionAgent(station);
 		must(
 			await transport.claim({
 				reconcilerId,
@@ -112,20 +117,37 @@ describe("Station-only egress (I3)", () => {
 				ttlMs: 30_000,
 			}),
 		);
-		const [activation, claim] = station.exchanges.slice(-2);
-		expect(activation?.request.url).toBe(
-			"https://station.test/v1/cd/svid/refresh",
-		);
-		expect(activation?.request.headers.authorization).toBeUndefined();
-		expect(claim?.request.headers.authorization).toMatch(/^DPoP /);
-		expect(claim?.request.headers.dpop).toBeDefined();
+		const sent = station.exchanges.slice(before).map((x) => x.request);
+		expect(sent.map((r) => new URL(r.url).pathname)).toEqual([
+			"/v1/cd/enrollments",
+			"/v1/cd/leases",
+		]);
+		expect(sent[1]?.headers.authorization).toBe(`DPoP ${svid}`);
+		expect(sent[1]?.headers.dpop).toBeDefined();
 	});
 
-	it("refreshes the SVID before expiry and reports the new expiry to CampInventory", async () => {
-		const station = createStation();
+	it("reads a fresh SVID from the credential source and forwards an SVID refresh to the fleet", async () => {
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
-		const { transport, reconcilerId } = await provisionAgent(station);
-		const lease = must(
+		const { device, reconcilerId, svid } = await provisionAgent(station);
+		// The fleet agent rotates the SVID (generation 1); the transport reads it per request.
+		const rotated = await station.fleet.credentials(
+			device,
+			parseMemberId(reconcilerId),
+			1,
+		);
+		let current = svid;
+		const transport = createHttpTransport({
+			baseUrl: BASE_URL,
+			http: station.http,
+			reconcilerId,
+			privateJwk: device.signPrivateJwk,
+			svid,
+			credential: async () => current,
+			now: station.clock.now,
+		});
+		current = rotated;
+		must(
 			await transport.claim({
 				reconcilerId,
 				campId: camp("eu-1"),
@@ -133,29 +155,45 @@ describe("Station-only egress (I3)", () => {
 				ttlMs: 30_000,
 			}),
 		);
-		station.clock.advance(11 * 60_000);
-		must(
-			await transport
-				.renew(lease)
-				.then((r) => (r.ok ? r : { ok: true as const, value: lease })),
+		expect(station.exchanges.at(-1)?.request.headers.authorization).toBe(
+			`DPoP ${rotated}`,
 		);
-		const refreshes = station.exchanges.filter((x) =>
-			x.request.url.endsWith("/svid/refresh"),
-		);
-		expect(refreshes).toHaveLength(2);
-		expect(refreshes[1]?.request.headers.authorization).toMatch(/^DPoP /);
+		// An agent that reaches only the Station refreshes through the feed.
+		const url = `${FLEET_ORIGIN}/v1/fleet/members/${reconcilerId}/credentials`;
+		const refreshed = await station.http({
+			method: "POST",
+			url: `${BASE_URL}/v1/cd/svid/refresh`,
+			headers: {
+				"content-type": "application/json",
+				dpop: await device.proof("POST", url),
+			},
+			body: JSON.stringify({
+				memberId: reconcilerId,
+				request: toJson(
+					CredentialRequestSchema,
+					create(CredentialRequestSchema, {
+						generation: 2,
+						refreshNonce: new Uint8Array(16).fill(3),
+					}),
+				),
+			}),
+			timeoutMs: 1000,
+			maxResponseBytes: 1_000_000,
+		});
+		expect(refreshed.status).toBe(200);
+		expect(JSON.parse(refreshed.body).value.svid).toMatch(/\./u);
 		const credential = station.inventory.observed.filter(
 			(o) =>
 				o.source === SignalSource.STATION &&
 				o.conditions[0]?.status === ConditionStatus.TRUE,
 		);
-		expect(credential.length).toBeGreaterThanOrEqual(4);
+		expect(credential.length).toBeGreaterThanOrEqual(2);
 	});
 });
 
 describe("SSE feed", () => {
 	it("resumes without gaps or duplicates after a dropped connection", async () => {
-		const station = createStation({ maxFramesPerResponse: 100 });
+		const station = await createStation({ maxFramesPerResponse: 100 });
 		const sets = [];
 		for (let i = 0; i < 5; i += 1)
 			sets.push(
@@ -187,7 +225,7 @@ describe("SSE feed", () => {
 	});
 
 	it("resumes after the committed checkpoint: only newer changes, and the current one is re-delivered once per lease", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const first = await station.desired.publish(
 			"eu-1",
 			resolvedFor("eu-1", ["a"]),
@@ -235,7 +273,7 @@ describe("SSE feed", () => {
 	});
 
 	it("sends heartbeats while long-polling and ends with an explicit end event", async () => {
-		const station = createStation({ heartbeatMs: 5, longPollMs: 40 });
+		const station = await createStation({ heartbeatMs: 5, longPollMs: 40 });
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -259,7 +297,7 @@ describe("SSE feed", () => {
 	});
 
 	it("a change published during the long-poll is delivered at once", async () => {
-		const station = createStation({ heartbeatMs: 5, longPollMs: 2_000 });
+		const station = await createStation({ heartbeatMs: 5, longPollMs: 2_000 });
 		await station.desired.publish("eu-1", resolvedFor("eu-1", ["a"]));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -284,7 +322,7 @@ describe("SSE feed", () => {
 	});
 
 	it("bounds frames per response (back-pressure) and continues in the next response", async () => {
-		const station = createStation({ maxFramesPerResponse: 2 });
+		const station = await createStation({ maxFramesPerResponse: 2 });
 		for (let i = 0; i < 5; i += 1)
 			await station.desired.publish("eu-1", resolvedFor("eu-1", [`s${i}`]));
 		const { transport, reconcilerId } = await provisionAgent(station);
@@ -305,7 +343,7 @@ describe("SSE feed", () => {
 	});
 
 	it("inlines resolved sets up to 256 KiB and sends larger ones by digest", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const small = await station.desired.publish(
 			"eu-1",
 			resolvedFor("eu-1", ["a"]),
@@ -348,7 +386,7 @@ describe("SSE feed", () => {
 	});
 
 	it("a missing or corrupt blob is a typed refusal at the agent", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const missing = await station.desired.publish(
 			"eu-1",
 			resolvedFor("eu-1", ["a"], 300_000),
@@ -380,7 +418,7 @@ describe("SSE feed", () => {
 	});
 
 	it("OBSERVE_ONLY declared topology wins in the frame", async () => {
-		const station = createStation({ observeOnly: ["eu-1"] });
+		const station = await createStation({ observeOnly: ["eu-1"] });
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -399,7 +437,7 @@ describe("SSE feed", () => {
 
 describe("fenced leases, reports and checkpoints (I4)", () => {
 	it("two reconcilers, one Camp: one writer; the other is refused and a stale fence cannot write", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const a = await provisionAgent(station);
 		const b = await provisionAgent(station);
@@ -454,7 +492,7 @@ describe("fenced leases, reports and checkpoints (I4)", () => {
 	});
 
 	it("checkpoints are monotonic and observations must carry the lease stamp and declared attributes only", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -502,7 +540,7 @@ describe("fenced leases, reports and checkpoints (I4)", () => {
 	});
 
 	it("reports land on the status stream, never the spec stream", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const set = await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -544,10 +582,10 @@ describe("fenced leases, reports and checkpoints (I4)", () => {
 });
 
 describe("enrollment gating at the feed (I24)", () => {
-	it("a reconciler with only one enrollment grant is refused with enrollment-incomplete", async () => {
-		const station = createStation();
+	it("a reconciler with only one enrollment grant gets no member SVID, so the feed refuses it", async () => {
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
-		const { transport, reconcilerId } = await provisionAgent(station, {
+		const { transport, reconcilerId, device } = await provisionAgent(station, {
 			grants: "key-only",
 		});
 		expect(
@@ -559,12 +597,14 @@ describe("enrollment gating at the feed (I24)", () => {
 					ttlMs: 30_000,
 				}),
 			),
-		).toBe(ENROLLMENT_INCOMPLETE);
-		expect(station.exchanges.at(-1)?.status).toBe(403);
+		).toBe("svid-required");
+		expect(station.exchanges.at(-1)?.status).toBe(401);
+		// The fleet member stays PENDING until both grants: the fleet issues no SVID.
+		await expect(station.fleet.credentials(device)).rejects.toThrow();
 	});
 
 	it("a Camp the reconciler is not accepted for is refused", async () => {
-		const station = createStation({ camps: ["eu-1", "eu-2"] });
+		const station = await createStation({ camps: ["eu-1", "eu-2"] });
 		await station.desired.publish("eu-2", resolvedFor("eu-2"));
 		const { transport, reconcilerId } = await provisionAgent(station, {
 			campIds: ["eu-1"],
@@ -582,7 +622,7 @@ describe("enrollment gating at the feed (I24)", () => {
 	});
 
 	it("a revoked agent mid-feed is refused on the next request", async () => {
-		const station = createStation();
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(
@@ -608,7 +648,7 @@ describe("enrollment gating at the feed (I24)", () => {
 	});
 
 	it("unauthenticated requests and unknown routes are refused with typed envelopes", async () => {
-		const station = createStation();
+		const station = await createStation();
 		const send = (method: "GET" | "POST", path: string, body?: string) =>
 			station.http({
 				method,
@@ -636,11 +676,11 @@ describe("enrollment gating at the feed (I24)", () => {
 					)
 				).body,
 			).reasons[0].code,
-		).toBe("jwk-invalid");
+		).toBe("request-invalid");
 	});
 
 	it("emits feed metrics through the TelemetrySink", async () => {
-		const station = createStation();
+		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { transport, reconcilerId } = await provisionAgent(station);
 		const lease = must(

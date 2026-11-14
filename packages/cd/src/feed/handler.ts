@@ -21,10 +21,17 @@ import {
 	type JsonValue as PbJsonValue,
 	toJson,
 } from "@bufbuild/protobuf";
-import type { EventPosition, JsonObject } from "@hobo/core";
+import type { EventPosition } from "@hobo/core";
 import {
-	type CampClaimRecord,
-	CampClaimRecordSchema,
+	type CredentialRequest,
+	CredentialRequestSchema,
+	CredentialResponseSchema,
+	type EnrollmentRequest,
+	EnrollmentRequestSchema,
+	type MemberId,
+	parseMemberId,
+} from "@hobo/fleet";
+import {
 	EnrollmentState,
 	type ReasonRecord,
 	type ReconcileObservationRecord,
@@ -60,7 +67,7 @@ import type {
 import { feedRefusal, statusFor } from "./errors.js";
 import { buildFrame, frameJson, verifiedBlob } from "./frames.js";
 import { createFeedJournal } from "./journal.js";
-import { headerOf, isNumber } from "./json.js";
+import { headerOf, isNumber, texts } from "./json.js";
 import {
 	encodeEnd,
 	encodeFrame,
@@ -173,27 +180,33 @@ export function createDeliveryFeedHandler(
 	}
 
 	// ── Routes ───────────────────────────────────────────────────────────
-	async function enroll(body: WireObject): Promise<FeedResponse> {
-		const token = text(body.token);
-		const publicJwk = body.publicJwk;
-		if (!token || !isWireObject(publicJwk))
+	async function enroll(
+		request: FeedRequest,
+		body: WireObject,
+	): Promise<FeedResponse> {
+		const proof = headerOf(request.headers, "dpop");
+		if (!proof || !isWireObject(body.request))
 			return refuse(
-				feedRefusal("request-invalid", "send token and publicJwk").reasons,
+				feedRefusal(
+					"request-invalid",
+					"send a fleet EnrollmentRequest as `request` and a DPoP proof header",
+				).reasons,
 			);
-		let claims: CampClaimRecord[] = [];
+		let enrollment: EnrollmentRequest;
 		try {
-			claims = (Array.isArray(body.claims) ? body.claims : []).map((c) =>
-				fromJson(CampClaimRecordSchema, c, { ignoreUnknownFields: false }),
-			);
+			enrollment = fromJson(EnrollmentRequestSchema, body.request, {
+				ignoreUnknownFields: false,
+			});
 		} catch {
 			return refuse(
-				feedRefusal("request-invalid", "claims must be CampClaimRecord JSON")
+				feedRefusal("request-invalid", "request must be EnrollmentRequest JSON")
 					.reasons,
 			);
 		}
+		// SAFETY: Camp ids from the wire; the enrollment checks them against the token's scope.
+		const campIds = texts(body.campIds) as CampId[];
 		const result = await d.enrollment.enroll(
-			// SAFETY: a JSON object from the wire; parsePublicJwk in the enrollment narrows it.
-			{ token, publicJwk: publicJwk as JsonObject, claims },
+			{ request: enrollment, dpopProof: proof, campIds },
 			ctxFor({ kind: "agent", id: "bootstrap" }),
 		);
 		if (!result.ok) return refuse(result.reasons);
@@ -215,44 +228,36 @@ export function createDeliveryFeedHandler(
 			return refuse(
 				feedRefusal("request-invalid", "send a DPoP proof header").reasons,
 			);
-		const authorization = /^DPoP\s+(\S+)$/u.exec(
-			headerOf(request.headers, "authorization") ?? "",
-		);
-		if (authorization?.[1]) {
-			const refreshed = await d.enrollment.refresh(
-				{ svid: authorization[1], dpopProof: proof },
-				ctxFor({ kind: "agent", id: "svid-refresh" }),
-			);
-			return refreshed.ok
-				? respond(
-						200,
-						okBody({
-							svid: refreshed.value.svid,
-							expiresAtMs: refreshed.value.expiresAtMs,
-						}),
-					)
-				: refuse(refreshed.reasons);
-		}
-		const reconcilerId = text(body.reconcilerId);
-		if (!reconcilerId)
+		const memberText = text(body.memberId);
+		if (!memberText || !isWireObject(body.request))
 			return refuse(
-				feedRefusal("request-invalid", "activation needs reconcilerId").reasons,
+				feedRefusal(
+					"request-invalid",
+					"send memberId and a fleet CredentialRequest as `request`",
+				).reasons,
 			);
-		const activated = await d.enrollment.activate(
-			// SAFETY: the enrollment loads the record by this id or refuses.
-			{ reconcilerId: reconcilerId as ReconcilerId, dpopProof: proof },
-			ctxFor({ kind: "agent", id: `cd-reconciler:${reconcilerId}` }),
+		let memberId: MemberId;
+		let credential: CredentialRequest;
+		try {
+			memberId = parseMemberId(memberText);
+			credential = fromJson(CredentialRequestSchema, body.request, {
+				ignoreUnknownFields: false,
+			});
+		} catch {
+			return refuse(
+				feedRefusal(
+					"request-invalid",
+					"memberId must be a fleet member id and request a CredentialRequest",
+				).reasons,
+			);
+		}
+		const refreshed = await d.enrollment.refresh(
+			{ memberId, request: credential, dpopProof: proof },
+			ctxFor({ kind: "agent", id: `cd-reconciler:${memberId}` }),
 		);
-		return activated.ok
-			? respond(
-					200,
-					okBody({
-						reconciler: recordJson(activated.value.reconciler),
-						svid: activated.value.svid,
-						expiresAtMs: activated.value.expiresAtMs,
-					}),
-				)
-			: refuse(activated.reasons);
+		return refreshed.ok
+			? respond(200, okBody(toJson(CredentialResponseSchema, refreshed.value)))
+			: refuse(refreshed.reasons);
 	}
 
 	async function claim(
@@ -615,7 +620,7 @@ export function createDeliveryFeedHandler(
 			if (!parsed.ok) return refuse(parsed.reasons);
 			body = parsed.value;
 		}
-		if (path === FEED_ROUTES.enrollments) return enroll(body);
+		if (path === FEED_ROUTES.enrollments) return enroll(request, body);
 		if (path === FEED_ROUTES.svidRefresh) return svid(request, body);
 		const auth = await authenticated(request);
 		if (!auth.ok) return refuse(auth.reasons);
