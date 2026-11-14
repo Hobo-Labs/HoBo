@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
+import type { JsonValue } from "@bufbuild/protobuf";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import type { ControlAuthenticator } from "./control-auth.js";
 import { reportRelayFailure } from "./failure-log.js";
+import type { RelayFleet } from "./hosted-control.js";
 import type { HostedRelay } from "./hosted-relay.js";
-import type { MeshNodesReader } from "./mesh-nodes-reader.js";
 import { createCursorCodecs } from "./relay-mcp-cursor.js";
 import {
 	createRelayMcpServer,
@@ -33,8 +34,8 @@ export type RelayMcpOptions = Readonly<{
 	authenticate: ControlAuthenticator;
 	/** The relay's readiness, as `/readyz` reports it. */
 	ready: () => Promise<boolean>;
-	/** What the relay mesh looks like from this host; absent when it has none. */
-	meshNodes?: MeshNodesReader | undefined;
+	/** The device fleet this host shows, read from its authority; absent when it has none. */
+	fleet?: RelayFleet | undefined;
 	/** The relay's public origin: the only `Origin` a browser may send. */
 	publicOrigin: string;
 	sessions: RelayMcpSessions;
@@ -96,6 +97,25 @@ const PUMP_PAGE = 500;
 /** The longest the subscription pump waits between tries while the store fails. */
 const PUMP_BACKOFF_MAX_MS = 60_000;
 const Json = z.json();
+/**
+ * How deep a posted value may nest. A JSON-RPC message is a few levels; the
+ * bound is checked without recursion, so whether a body is refused does not
+ * depend on how much stack the host's thread has.
+ */
+const MAX_JSON_DEPTH = 100;
+
+function deeperThan(value: JsonValue, limit: number): boolean {
+	const pending: Array<readonly [JsonValue, number]> = [[value, 1]];
+	for (let next = pending.pop(); next; next = pending.pop()) {
+		const [node, depth] = next;
+		// A string, number, boolean or null nests nothing.
+		if (!(node instanceof Object)) continue;
+		if (depth > limit) return true;
+		for (const child of Array.isArray(node) ? node : Object.values(node))
+			if (child !== undefined) pending.push([child, depth + 1]);
+	}
+	return false;
+}
 const Batch = z.array(z.unknown());
 const Initialize = z.object({ method: z.literal("initialize") });
 
@@ -184,7 +204,7 @@ function parsePosted(
 	try {
 		// Strict UTF-8, and a byte-order mark is not skipped: a body another
 		// parser would accept after stripping one is refused here.
-		const parsed: unknown = JSON.parse(
+		const parsed: JsonValue = JSON.parse(
 			new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body),
 		);
 		const batch = Batch.safeParse(parsed);
@@ -194,8 +214,9 @@ function parsePosted(
 				messages: batch.data.length,
 				opensSession: false,
 			};
-		// Inside the `try`: nesting deep enough to exhaust the stack in this
-		// walk is a body this parse does not accept, not a relay failure.
+		// Nesting past the bound is a body this parse does not accept, not a
+		// relay failure; the walk below never sees it.
+		if (deeperThan(parsed, MAX_JSON_DEPTH)) return undefined;
 		const message = Json.safeParse(parsed);
 		if (!message.success) return undefined;
 		return {
@@ -389,7 +410,7 @@ export function createRelayMcp(options: RelayMcpOptions): RelayMcp {
 		store: options.store,
 		relay: options.relay,
 		ready: options.ready,
-		meshNodes: options.meshNodes,
+		fleet: options.fleet,
 		engineId: options.engineId ?? "gh-actions",
 		waitDefaultMs,
 		waitMaxMs,

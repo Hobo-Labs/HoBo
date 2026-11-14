@@ -1,10 +1,21 @@
-import { create, type DescMessage, toJsonString } from "@bufbuild/protobuf";
+import {
+	create,
+	type DescMessage,
+	type JsonValue,
+	toJson,
+	toJsonString,
+} from "@bufbuild/protobuf";
 import {
 	accountOwnsJob,
 	type CiObserver,
 	type Lease,
 	type SequencedCiEvent,
 } from "@hobo/ci";
+import {
+	FleetVerdictSchema,
+	FleetViewSchema,
+	MemberRecordSchema,
+} from "@hobo/fleet";
 import {
 	McpServer,
 	ResourceTemplate,
@@ -21,7 +32,6 @@ import {
 	UnsubscribeRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { MeshNodeReportsSchema } from "./_generated/mesh_pb.js";
 import {
 	type RelayMcpEvent,
 	RelayMcpEventsSchema,
@@ -43,12 +53,14 @@ import {
 	retryQuarantinedDelivery,
 } from "./account-operations.js";
 import { reportRelayFailure } from "./failure-log.js";
-import type { HostedRelay } from "./hosted-relay.js";
 import {
-	createMeshNodesReader,
-	type MeshNodesReader,
-} from "./mesh-nodes-reader.js";
-import { meshNodeReportsForAccount } from "./mesh-records.js";
+	type RelayFleet,
+	relayFleetMemberList,
+	relayFleetVerdict,
+	relayFleetView,
+	relayMemberRecords,
+} from "./hosted-control.js";
+import type { HostedRelay } from "./hosted-relay.js";
 import { CURSOR_START, type CursorCodec } from "./relay-mcp-cursor.js";
 import {
 	eventView,
@@ -63,8 +75,8 @@ export const RELAY_MCP_LEASES_URI = "hobo-ci://leases";
 export const RELAY_MCP_EVENTS_URI = "hobo-ci://events";
 // public-contract: the MCP resource URI template of one lease.
 export const RELAY_MCP_LEASE_URI_TEMPLATE = "hobo-ci://leases/{leaseId}";
-// public-contract: the MCP resource URI of the relay mesh's nodes.
-export const RELAY_MCP_MESH_NODES_URI = "hobo-ci://mesh/nodes";
+// public-contract: the MCP resource URI of the members of the fleet the relay reads.
+export const RELAY_MCP_FLEET_MEMBERS_URI = "hobo-ci://fleet/members";
 
 const LEASE_ID =
 	/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -112,10 +124,11 @@ export type RelayMcpServices = Readonly<{
 	relay: () => Promise<Pick<HostedRelay, "reconcile">>;
 	ready: () => Promise<boolean>;
 	/**
-	 * What the relay mesh looks like from this host. Absent on a host with no
-	 * mesh: `list_mesh_nodes` then answers `mesh: "not-configured"`.
+	 * The device fleet this host shows, read from its authority. Absent on a
+	 * host with none: `list_fleet_members` then answers `configured: false`,
+	 * and the view and verdict tools refuse.
 	 */
-	meshNodes?: MeshNodesReader | undefined;
+	fleet?: RelayFleet | undefined;
 	engineId: string;
 	waitDefaultMs: number;
 	waitMaxMs: number;
@@ -214,6 +227,22 @@ function resource<Desc extends DescMessage>(
 				text: toJsonString(schema, message, { alwaysEmitImplicit: true }),
 			},
 		],
+	};
+}
+
+/** `list_fleet_members`: the records as protobuf JSON, in a plain answer. */
+type FleetMembersAnswer = Readonly<{
+	configured: boolean;
+	fleet: string;
+	members: JsonValue[];
+}>;
+
+/** A tool result that is not one generated message. */
+function json(answer: FleetMembersAnswer): CallToolResult {
+	const text = JSON.stringify(answer);
+	return {
+		content: [{ type: "text", text }],
+		structuredContent: Structured.parse(JSON.parse(text)),
 	};
 }
 
@@ -530,6 +559,10 @@ const Repository = z
 	.min(1)
 	.max(200)
 	.describe("A repository as owner/name; case is ignored.");
+const Label = z
+	.string()
+	.regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/)
+	.describe("A runner label, for example hobo or hobo-trunk.");
 const EventTypes = z
 	.array(z.string().regex(/^ci\.[A-Za-z]{1,60}$/))
 	.max(32)
@@ -541,7 +574,7 @@ const INSTRUCTIONS = [
 	"The HoBo CI relay: leases (a runner reserved for one GitHub Actions job), queued jobs and the journal of every change to them, for the authenticated account only.",
 	"To follow job state without polling, call wait_for_events with the cursor of your last result; it returns as soon as something changes, or with timedOut true. Start from list_events or list_leases.",
 	"On a host that keeps sessions (get_relay_status reports subscriptions: true) you can instead subscribe to hobo-ci://events, hobo-ci://leases or hobo-ci://leases/{leaseId} and read the resource when notified.",
-	"list_mesh_nodes (or the hobo-ci://mesh/nodes resource) shows the runner nodes behind the relay: which are live, their free capacity and how far each is trusted. It belongs to the relay, not to one account, and a relay with no mesh answers mesh: not-configured.",
+	"list_fleet_members (or the hobo-ci://fleet/members resource), get_fleet_view and get_fleet_verdict show the fleet of machines behind the relay as its fleet authority sees it: members and their state, live capacity, and whether new work for a label should go to the fleet. They only read; the fleet belongs to the relay, not to one account, and a relay with no fleet answers configured: false.",
 ].join(" ");
 
 /**
@@ -551,22 +584,17 @@ const INSTRUCTIONS = [
  */
 export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 	const { store } = services;
-	// The same reader the HTTP route uses; a host without a mesh has the one
-	// that answers "not-configured".
-	const meshNodes = services.meshNodes ?? createMeshNodesReader();
-	// A machine running jobs for one repository is shown in full only to the
-	// account that owns that repository; see `meshNodeReportsForAccount`.
-	const meshNodesFor = async (accountId: string) => {
-		const connections =
-			(await store.configuration())?.configuration?.connections ?? [];
-		return meshNodeReportsForAccount(
-			await meshNodes(),
-			new Set(
-				connections
-					.filter((entry) => entry.accountId === accountId)
-					.map((entry) => entry.repository),
-			),
-		);
+	// The fleet's members as plain records, the same list the HTTP route
+	// answers signed.
+	const fleetMembers = async (): Promise<FleetMembersAnswer> => {
+		if (!services.fleet) return { configured: false, fleet: "", members: [] };
+		return {
+			configured: true,
+			fleet: services.fleet.fleetId,
+			members: relayMemberRecords(
+				await relayFleetMemberList(services.fleet),
+			).map((record) => toJson(MemberRecordSchema, record)),
+		};
 	};
 	const server = new McpServer(
 		{ name: "hobo-ci-relay", version: "1.0.0" },
@@ -792,26 +820,57 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 						accountCalls: services.accountCalls,
 						accountWaits: services.accountWaits,
 						requestMessages: services.requestMessages,
+						// Named `mesh` in `RelayMcpStatus` until its proto renames it.
 						mesh:
-							services.meshNodes === undefined
-								? "not-configured"
-								: "configured",
+							services.fleet === undefined ? "not-configured" : "configured",
 					}),
 				);
 			}),
 	);
 
 	server.registerTool(
-		"list_mesh_nodes",
+		"list_fleet_members",
 		{
-			title: "List the relay mesh's nodes",
+			title: "List the relay fleet's members",
 			description:
-				'Every node of the relay mesh as this relay sees it: its state (live, unhealthy, or lost once it stops advertising) and since when, total and free runner slots, free memory and disk, platform, labels, the share of recent jobs it delivered, and its trust level. `trusted` means its signing key is in the mesh\'s trusted set, `unverified` that the key is not, `invalid` that its signature failed (such a node is never ranked). A signature shows which key wrote an advertisement, not what software the node runs. `mesh: "not-configured"` means this relay has no mesh; that is an answer, not a failure.',
+				"Every member of the fleet behind the relay as its fleet authority recorded it: id, kind, display name, state (pending, active, suspended, locked, revoked, rejected), memberships and roles, platform, attestation tier and agent version. `configured: false` means this relay reads no fleet; that is an answer, not a failure.",
 			annotations: readOnly,
 		},
 		(extra) =>
-			asTool(services, "list_mesh_nodes", READ_SCOPE, extra, async (caller) =>
-				result(MeshNodeReportsSchema, await meshNodesFor(caller.accountId)),
+			asTool(services, "list_fleet_members", READ_SCOPE, extra, async () =>
+				json(await fleetMembers()),
+			),
+	);
+
+	server.registerTool(
+		"get_fleet_view",
+		{
+			title: "Fleet view",
+			description:
+				"The fleet's live view from its authority: each member's availability, health, free and total slots, memory, disk, labels, sandbox tiers and measured reliability, with the fleet's total capacity.",
+			annotations: readOnly,
+		},
+		(extra) =>
+			asTool(services, "get_fleet_view", READ_SCOPE, extra, async () =>
+				result(FleetViewSchema, await relayFleetView(services.fleet)),
+			),
+	);
+
+	server.registerTool(
+		"get_fleet_verdict",
+		{
+			title: "Fleet verdict",
+			description:
+				"Whether new work for one runner label should go to the fleet now: OPEN, BUSY (its members are busy with their own work; routing treats it as open), NO_CAPACITY or NO_MEMBER, with the members and free slots counted and until when the answer holds.",
+			inputSchema: { label: Label },
+			annotations: readOnly,
+		},
+		({ label }, extra) =>
+			asTool(services, "get_fleet_verdict", READ_SCOPE, extra, async () =>
+				result(
+					FleetVerdictSchema,
+					await relayFleetVerdict(services.fleet, label),
+				),
 			),
 	);
 
@@ -1000,22 +1059,24 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 	);
 
 	server.registerResource(
-		"mesh-nodes",
-		RELAY_MCP_MESH_NODES_URI,
+		"fleet-members",
+		RELAY_MCP_FLEET_MEMBERS_URI,
 		{
-			title: "Mesh nodes",
+			title: "Fleet members",
 			description:
-				"The relay mesh's nodes: availability, capacity and trust, with a capacity summary. The same answer as list_mesh_nodes.",
+				"The members of the fleet behind the relay, as its fleet authority recorded them. The same answer as list_fleet_members.",
 			mimeType: "application/json",
 		},
 		(uri, extra) =>
-			asResource(services, extra, async (caller) =>
-				resource(
-					uri,
-					MeshNodeReportsSchema,
-					await meshNodesFor(caller.accountId),
-				),
-			),
+			asResource(services, extra, async () => ({
+				contents: [
+					{
+						uri: uri.href,
+						mimeType: "application/json",
+						text: JSON.stringify(await fleetMembers()),
+					},
+				],
+			})),
 	);
 
 	const subscriptions = services.subscriptions;

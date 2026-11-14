@@ -1,4 +1,5 @@
 import type { CloudEvent } from "@hobo/core";
+import { FLEET_EVENT_TYPES, FLEET_LOG_EVENTS } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import {
 	CI_INFRA_EVENT_TYPES,
@@ -76,33 +77,58 @@ describe("toCiCloudEvent", () => {
 		).toBeUndefined();
 	});
 
-	it("gives every fact a past-tense ci.* type", () => {
+	it("gives every fact a past-tense ci.* or fleet.* type", () => {
 		const types = [...CI_INFRA_EVENT_TYPES.values()];
 		expect(new Set(types).size).toBe(types.length);
-		for (const type of types) expect(type).toMatch(/^ci\.[A-Z][A-Za-z]+$/);
+		for (const type of types)
+			expect(type).toMatch(/^(ci|fleet)\.[A-Z][A-Za-z]+$/);
 		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_relay_init_failed")).toBe(
 			"ci.RelayStartFailed",
 		);
-		// What a mesh node says about the jobs it took is delivered too.
-		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_mesh_job_dropped")).toBe(
-			"ci.MeshJobDropped",
+	});
+
+	it("types every fleet log event in the fleet.* family and keeps no mesh type", () => {
+		// The mesh is gone (ADR-0183): its log names and its ci.Mesh* types with it.
+		for (const [name, type] of CI_INFRA_EVENT_TYPES) {
+			expect(name).not.toMatch(/^hobo_ci_(mesh|fleet)_/u);
+			expect(type).not.toMatch(/^ci\.(Mesh|Fleet)/u);
+		}
+		// Every log event of the fleet family is a fleet.* fact, and one with a
+		// stream keeps its stored event type.
+		for (const name of FLEET_LOG_EVENTS)
+			expect(CI_INFRA_EVENT_TYPES.get(name)).toMatch(/^fleet\.[A-Z]/u);
+		for (const type of FLEET_EVENT_TYPES)
+			expect([...CI_INFRA_EVENT_TYPES.values()]).toContain(type);
+		expect(CI_INFRA_EVENT_TYPES.get("hobo_fleet_member_revoked")).toBe(
+			"fleet.MemberRevoked",
 		);
-		expect(CI_INFRA_EVENT_TYPES.get("hobo_ci_mesh_reliability")).toBe(
-			"ci.MeshReliabilityChanged",
+		expect(CI_INFRA_EVENT_TYPES.get("hobo_fleet_sign_in_started")).toBe(
+			"fleet.SignInStarted",
 		);
-		// The fleet verdict's reporter and the relay that refuses its reports
-		// (ADR-0180) are named before either emits.
+		expect(CI_INFRA_EVENT_TYPES.get("hobo_fleet_capacity_exhausted")).toBe(
+			"fleet.CapacityExhausted",
+		);
 		expect(
-			[
-				"hobo_ci_fleet_verdict_state",
-				"hobo_ci_fleet_verdict_unaccounted_runner",
-				"hobo_ci_fleet_verdict_refused",
-			].map((name) => CI_INFRA_EVENT_TYPES.get(name)),
-		).toEqual([
-			"ci.FleetVerdictStateReported",
-			"ci.FleetVerdictUnaccountedRunnerSeen",
-			"ci.FleetVerdictReportRefused",
-		]);
+			[...CI_INFRA_EVENT_TYPES.keys()].filter((name) =>
+				name.startsWith("hobo_fleet_"),
+			),
+		).toEqual([...FLEET_LOG_EVENTS]);
+	});
+
+	it("maps a fleet log event to a fleet.* CloudEvent", () => {
+		expect(
+			toCiCloudEvent({
+				name: "hobo_fleet_work_claimed",
+				fields: { fleet: "hobo", member: "box-a" },
+				source: SOURCE,
+				seq: 3,
+				id: "evt-2",
+				time: "2026-11-10T02:18:05.000Z",
+			}),
+		).toMatchObject({
+			type: "fleet.WorkClaimed",
+			data: { fleet: "hobo", member: "box-a" },
+		});
 	});
 });
 
