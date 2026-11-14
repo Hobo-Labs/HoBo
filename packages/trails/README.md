@@ -5,6 +5,11 @@ runbooks/recipes. Platform continuous identity duals remain hands-off (zero
 Bindle config); app-authored Trails cover schema/data transforms and cross-cloud
 moves over junctions.
 
+`executeDataHandover` resumes a journaled data copy between independently
+scoped Yard endpoints. It rechecks authorization at each phase, uses the
+data engines' fencing and a compare-and-set routing authority for cutover, and
+holds retirement until the supplied soak decision permits finalization.
+
 ## Quick start
 
 ```ts
