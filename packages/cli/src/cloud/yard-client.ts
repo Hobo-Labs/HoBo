@@ -2,6 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import {
 	canonicalManifestHash,
 	type ManifestV1,
+	parseManifest,
 	serializeManifest,
 } from "@hobo/bindles";
 import type {
@@ -43,6 +44,7 @@ import {
 	deploy,
 	type GatewayContext,
 	type GatewayDeps,
+	lowerManifest,
 	manifestHostingPolicy,
 	type OrchestratorDeps,
 	type OrchestratorResult,
@@ -484,6 +486,15 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				runtime.hostingBudgetRequired === true ||
 				budgetId !== undefined ||
 				manifestHostingPolicy(bindle).required;
+			if (requiresHosting && config?.mode !== undefined)
+				return {
+					result: {
+						status: "rejected",
+						deploymentId,
+						reason: "budgeted hosting does not support deployment modes",
+						remediations: [],
+					},
+				};
 			if (requiresHosting && (!runtime.hostingExecution || !budgetId))
 				return {
 					result: {
@@ -1018,6 +1029,31 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 		return (await cd.desired.resolved(set)).plan;
 	}
 
+	async function needsCompletePrune(
+		set: SetRecord,
+		freight: FreightRecord,
+	): Promise<boolean> {
+		const digest = freight.manifest?.declarationHash;
+		if (!digest || !isDigest(digest)) return true;
+		const bytes = await cd.artifacts.get(digest);
+		if (!bytes) return true;
+		try {
+			const declaration = parseManifest(
+				JSON.parse(new TextDecoder().decode(bytes)),
+			);
+			if (canonicalManifestHash(declaration) !== digest) return true;
+			const declared = new Set(
+				lowerManifest(declaration).map((resource) => resource.name),
+			);
+			return (await planOf(set)).resources.some(
+				(resource) => !declared.has(resource.name),
+			);
+		} catch {
+			// Let promotion's normal declaration validation reject corrupt data.
+			return true;
+		}
+	}
+
 	function reconcilerFor(campId: CampId, deploymentId: string): CampReconciler {
 		return cd.createReconciler({
 			mode: ReconcilerMode.CONDUCTOR,
@@ -1055,6 +1091,7 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				options.onProgress?.(event);
 			};
 			const mode = modeOf(options);
+			const deploymentMode = options.config?.mode ?? "incremental";
 			const finish = async (
 				result: UpResult,
 				receipt: Omit<DeliveryReceipt, "campId" | "mode">,
@@ -1133,14 +1170,17 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				const alreadyDesired =
 					before !== undefined &&
 					before.freightId === freight.freightId &&
-					before.origin !== SetOrigin.TEARDOWN;
+					before.origin !== SetOrigin.TEARDOWN &&
+					(deploymentMode !== "complete" ||
+						!(await needsCompletePrune(before, freight)));
 				if (!alreadyDesired) {
 					const promoted = await cd.promotions.promote(
 						{
 							freightId: freightIdOf(freight.freightId),
 							targets: [campId],
-							idempotencyKey: `up|${campId}|${freight.freightId}|${before?.setId ?? "genesis"}`,
+							idempotencyKey: `up|${campId}|${freight.freightId}|${before?.setId ?? "genesis"}|${deploymentMode}`,
 							intent: "up",
+							deploymentMode,
 						},
 						ctx,
 					);
@@ -1347,7 +1387,7 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 }
 
 // Brands are minted only from ids the CD ports returned or the caller named.
-function campIdOf(value: string): CampId {
+export function campIdOf(value: string): CampId {
 	// SAFETY: a Camp id is an opaque string; the brand marks where it came from.
 	return value as CampId;
 }

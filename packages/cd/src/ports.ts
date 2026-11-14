@@ -433,6 +433,7 @@ export interface SetResolver {
 			freight: FreightRecord;
 			campId: CampId;
 			intent: DeltaIntent;
+			deploymentMode?: "incremental" | "complete";
 			base?: SetRecord;
 			sourceCampId?: CampId;
 		}>,
@@ -493,6 +494,8 @@ export type PromoteRequest = Readonly<{
 	/** Set by FanoutController; the gate then checks the fan-out aggregate. */
 	fanoutId?: FanoutId;
 	intent?: DeltaIntent;
+	/** How an up promotion handles resources absent from its declaration. */
+	deploymentMode?: "incremental" | "complete";
 }>;
 
 export interface PromotionService {

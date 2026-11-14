@@ -17,6 +17,7 @@ export {
 	orphansToPrune,
 	parseDeploymentMode,
 	planDeploymentChanges,
+	planDeploymentChangesFromRecorded,
 	type RecordedResource,
 	type ResourceChange,
 	type ResourceChangeAction,

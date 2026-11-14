@@ -159,6 +159,9 @@ describe("parseLifecycleArgs", () => {
 		expect(parseLifecycleArgs(["--preview"]).ok).toBe(true);
 		expect(parseLifecycleArgs(["--mode", "replace"]).ok).toBe(false);
 		expect(parseLifecycleArgs(["--force"]).ok).toBe(false);
+		expect(parseLifecycleArgs(["--yes=false"]).ok).toBe(false);
+		expect(parseLifecycleArgs(["--what-if=false"]).ok).toBe(false);
+		expect(parseLifecycleArgs(["--project="]).ok).toBe(false);
 	});
 });
 

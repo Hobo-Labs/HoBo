@@ -46,6 +46,15 @@ Canonical verbs: **43**, defined in `src/shell/verbs.ts` — including lifecycle
 
 Global flags: `--json`, `--camp <camp>`, `--cwd <path>`, `--verbose`, `-q`, `--help`.
 
+Yard desired-state delivery retains resources omitted from a declaration by
+default; use `--mode complete` to remove them through the deployment gate.
+Broker placement and budgeted hosting refuse an explicit `--mode` until their
+execution paths can honor it. `hobo up
+--what-if` and `hobo down --what-if` report changes without applying them and
+require the current CD Set to have a converged observation. Revision selectors
+and rollback cannot be combined with `--what-if`; rollback restores the prior
+Set exactly and cannot be combined with `--mode`.
+
 Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
 own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,
 `INCIDENT_SUBCOMMANDS`, `SERVE_SUBCOMMANDS`). Each is a typed value or switch;

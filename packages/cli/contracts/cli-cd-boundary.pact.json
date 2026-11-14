@@ -64,7 +64,8 @@
 				"port": "PromotionService.promote",
 				"contents": {
 					"targets": ["pact-cd"],
-					"intent": "up"
+					"intent": "up",
+					"deploymentMode": "incremental"
 				}
 			},
 			"response": {
@@ -74,7 +75,7 @@
 			},
 			"matchingRules": {
 				"request.freightId": "^sha256:[0-9a-f]{64}$",
-				"request.idempotencyKey": "^up\\|pact-cd\\|sha256:[0-9a-f]{64}\\|genesis$",
+				"request.idempotencyKey": "^up\\|pact-cd\\|sha256:[0-9a-f]{64}\\|genesis\\|incremental$",
 				"response.promotionId": "^.+$"
 			}
 		},

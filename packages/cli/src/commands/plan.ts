@@ -1,4 +1,4 @@
-import { manifestHostingPolicy } from "@hobo/cloud";
+import { manifestHostingPolicy, parseDeploymentMode } from "@hobo/cloud";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
@@ -25,6 +25,18 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 			if (!runtime) {
 				return stubResult("plan");
 			}
+			let mode: ReturnType<typeof parseDeploymentMode>;
+			try {
+				mode = parseDeploymentMode(flags.mode);
+			} catch (error) {
+				return {
+					ok: false,
+					status: "usage_error",
+					code: "HOBO_USAGE",
+					message: `hobo plan: ${error instanceof Error ? error.message : String(error)}`,
+					remediation: ["Pass --mode incremental or --mode complete."],
+				};
+			}
 
 			const projectDir = context.projectDir ?? context.cwd;
 			const bindle = await loadProjectManifest(projectDir);
@@ -39,15 +51,37 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 			const deploymentId = deploymentIdFor(projectDir);
 			const yard = createYardClient(runtime);
 			const budgetId = flags.budgetId ?? runtime.defaultHostingBudgetId;
+			if (
+				flags.mode &&
+				(budgetId ||
+					runtime.hostingBudgetRequired ||
+					manifestHostingPolicy(bindle).required)
+			)
+				return {
+					ok: false,
+					status: "rejected",
+					code: "HOBO_DEPLOYMENT_MODE_UNSUPPORTED",
+					message: "Budgeted hosting does not support --mode.",
+					remediation: ["Omit --mode for this hosting deployment."],
+					data: { command: "plan", deploymentId },
+				};
 			const rendered =
-				budgetId || manifestHostingPolicy(bindle).required
+				budgetId ||
+				runtime.hostingBudgetRequired ||
+				manifestHostingPolicy(bindle).required
 					? await yard.planAuthoritatively(bindle, {
 							deploymentId,
 							session:
 								(await loadSession(projectDir)) ?? createFixtureSession(),
-							config: budgetId ? { budgetId } : {},
+							config: {
+								...(budgetId ? { budgetId } : undefined),
+								...(flags.region ? { region: flags.region } : undefined),
+							},
 						})
-					: yard.plan(bindle, { deploymentId });
+					: yard.plan(bindle, {
+							deploymentId,
+							config: flags.region ? { region: flags.region } : {},
+						});
 
 			if (!rendered.ok) {
 				return {
@@ -75,15 +109,22 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 					runtime.store,
 					deploymentId,
 					rendered.plan,
-					flags.mode,
+					mode,
+					budgetId ||
+						runtime.hostingBudgetRequired ||
+						manifestHostingPolicy(bindle).required
+						? undefined
+						: runtime.delivery,
 				);
 			} catch (error) {
 				return {
 					ok: false,
-					status: "usage_error",
-					code: "HOBO_USAGE",
+					status: "unavailable",
+					code: "HOBO_PREVIEW_UNAVAILABLE",
 					message: `hobo plan: ${error instanceof Error ? error.message : String(error)}`,
-					remediation: ["Pass --mode incremental or --mode complete."],
+					remediation: [
+						"Wait for the current deployment to converge, then retry the preview.",
+					],
 					data: { command: "plan", deploymentId },
 				};
 			}

@@ -156,6 +156,7 @@ export {
 	orphansToPrune,
 	parseDeploymentMode,
 	planDeploymentChanges,
+	planDeploymentChangesFromRecorded,
 	RESOURCE_ACTOR_STATES,
 	type ReconcileContext,
 	type ReconcileOutcome,

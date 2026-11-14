@@ -182,6 +182,7 @@ type Envelope = {
 		deploymentId: string;
 		provisioned: string[];
 		destroyed: string[];
+		wouldDestroy: string[];
 		identity: string;
 		progress: Array<{ type: string; resourceId?: string; detail: string }>;
 		delivery?: {
@@ -221,6 +222,128 @@ function count(types: readonly string[], type: string): number {
 }
 
 describe("hobo up declares desired state (D13)", () => {
+	it("previews the live CD deployment instead of an empty cloud stream", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime, store } = harness();
+			const cli = cliFor(runtime);
+			expect((await cli.run(["up", "--json"], { cwd })).exitCode).toBe(0);
+			const before = await journal(store);
+			const preview = await cli.run(["up", "--what-if", "--json"], { cwd });
+			expect(preview.exitCode).toBe(0);
+			// SAFETY: the CLI emits its JSON envelope at this test boundary.
+			const up = JSON.parse(preview.stdout) as {
+				data: { changes: { converged: boolean } };
+			};
+			expect(up.data.changes.converged).toBe(true);
+			const downPreview = await cli.run(["down", "--what-if", "--json"], {
+				cwd,
+			});
+			expect(downPreview.exitCode).toBe(0);
+			// SAFETY: the CLI emits its JSON envelope at this test boundary.
+			const down = JSON.parse(downPreview.stdout) as {
+				data: { wouldDestroy: string[] };
+			};
+			expect(down.data.wouldDestroy).toEqual(["assets", "service", "sessions"]);
+			expect(await journal(store)).toEqual(before);
+		});
+	});
+
+	it("refuses a preview when the current CD Set has not converged", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime, store } = harness({ stall: true });
+			const cli = cliFor(runtime);
+			expect((await cli.run(["up", "--json"], { cwd })).exitCode).not.toBe(0);
+			const before = await journal(store);
+			for (const args of [
+				["up", "--what-if"],
+				["down", "--what-if"],
+			]) {
+				const result = await cli.run([...args, "--json"], { cwd });
+				expect(result.exitCode).not.toBe(0);
+				expect(envelopeOf(result.stdout).code).toBe("HOBO_PREVIEW_UNAVAILABLE");
+			}
+			expect(await journal(store)).toEqual(before);
+		});
+	});
+
+	it("refuses an invalid deployment mode before recording or applying anything", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime, store } = harness();
+			const result = await cliFor(runtime).run(
+				["up", "--mode", "complet", "--json"],
+				{ cwd },
+			);
+			expect(result.exitCode).not.toBe(0);
+			expect(await journal(store)).toEqual([]);
+		});
+	});
+
+	it("preserves omitted resources by default and prunes them on a later complete up of the same revision", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime, store, fake } = harness();
+			const cli = cliFor(runtime);
+			expect((await cli.run(["up", "--json"], { cwd })).exitCode).toBe(0);
+			const reduced = {
+				...HELLO_BINDLE,
+				resources: {
+					service: { ...HELLO_BINDLE.resources.service, bind: ["sessions"] },
+					sessions: HELLO_BINDLE.resources.sessions,
+				},
+			};
+			await writeBindle(cwd, reduced);
+			expect((await cli.run(["up", "--json"], { cwd })).exitCode).toBe(0);
+			const incremental = envelopeOf(
+				(await cli.run(["down", "--what-if", "--json"], { cwd })).stdout,
+			);
+			expect(incremental.data.wouldDestroy).toEqual([
+				"assets",
+				"service",
+				"sessions",
+			]);
+			const completeUp = await cli.run(["up", "--mode", "complete", "--json"], {
+				cwd,
+			});
+			expect(completeUp.exitCode).toBe(0);
+			const campId = envelopeOf(completeUp.stdout).data.delivery?.campId ?? "";
+			const complete = envelopeOf(
+				(await cli.run(["down", "--what-if", "--json"], { cwd })).stdout,
+			);
+			expect(complete.data.wouldDestroy).toEqual(["service", "sessions"]);
+			const setCount = (await campSets(store, campId)).length;
+			expect(
+				(await cli.run(["up", "--mode", "complete", "--json"], { cwd }))
+					.exitCode,
+			).toBe(0);
+			expect(await campSets(store, campId)).toHaveLength(setCount);
+			expect(
+				fake.calls
+					.filter((call) => call.port === "promotions.promote")
+					.map((call) => call.input),
+			).toMatchObject([
+				{ deploymentMode: "incremental" },
+				{ deploymentMode: "incremental" },
+				{ deploymentMode: "complete" },
+			]);
+		});
+	});
+
+	it("refuses unsupported revision previews and rollback modes without changing the journal", async () => {
+		await withProject(HELLO_BINDLE, async (cwd) => {
+			const { runtime, store } = harness();
+			const cli = cliFor(runtime);
+			for (const args of [
+				["up", "--what-if", "--to", "old"],
+				["up", "--what-if", "--rollback"],
+				["up", "--rollback", "--mode", "complete"],
+			]) {
+				expect((await cli.run([...args, "--json"], { cwd })).exitCode).not.toBe(
+					0,
+				);
+			}
+			expect(await journal(store)).toEqual([]);
+		});
+	});
+
 	it("records LOCAL_BUILD Freight, promotes it into the deployment Camp and converges it in-process", async () => {
 		await withProject(HELLO_BINDLE, async (cwd) => {
 			const { runtime, fake } = harness();

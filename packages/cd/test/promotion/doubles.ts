@@ -513,11 +513,21 @@ export function resolvedFor(
 
 export class FakeResolver implements SetResolver {
 	readonly providers = new Map<string, string>();
-	readonly calls: { campId: string; intent: string }[] = [];
+	readonly calls: {
+		campId: string;
+		intent: string;
+		deploymentMode?: "incremental" | "complete";
+	}[] = [];
 	refuse: string | undefined;
 	constructor(private readonly desired: FakeDesired) {}
 	async resolve(input: Parameters<SetResolver["resolve"]>[0], ctx: CdContext) {
-		this.calls.push({ campId: input.campId, intent: input.intent });
+		const call: (typeof this.calls)[number] = {
+			campId: input.campId,
+			intent: input.intent,
+		};
+		if (input.deploymentMode !== undefined)
+			call.deploymentMode = input.deploymentMode;
+		this.calls.push(call);
 		if (this.refuse)
 			return {
 				ok: false as const,

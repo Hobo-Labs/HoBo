@@ -1026,6 +1026,20 @@ This section records every decision in one place.
 
 The numeric defaults are `CD_DEFAULTS` and `CD_RAMP_DEFAULTS` in `packages/cd/src/events.ts`. Each invariant I1–I24 has a named test in the owning module.
 
+### Amendment (2026-11-14: `up` deployment modes)
+
+D13's `up` promotion records an optional `deployment_mode` on
+`PromotionRecord` (protobuf field 19) and carries it through `PromoteRequest`
+and `SetResolver`. Incremental `up` retains omitted resources, their prior
+Matching selections and dependencies in the next resolved Set; complete `up`
+omits them so the ordinary gated reconciliation removes them. The mode is
+part of promotion idempotency and is replayed from the journal after a restart.
+Old requests with no mode keep their original resolution behavior. Rollback
+still restores the previous Set exactly. Deployments using this amendment must
+upgrade all promotion workers before issuing mode-bearing requests: older
+workers ignore unknown protobuf JSON fields and cannot enforce incremental
+retention.
+
 ### Consequences
 - **(+)** One delivery path: `hobo up`/`down`, `hobo deploy *`, broker `deliver`, pipelines, MCP and agents all deliver through `@hobo/cd`, and every state rebuilds from the journal.
 - **(+)** No toolset is required: any registry or Git host by polling, any CI by OIDC or attestation. Argo CD, Flux, Karmada and OCM are optional targets behind adapters.

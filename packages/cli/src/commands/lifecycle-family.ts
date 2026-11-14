@@ -137,12 +137,20 @@ export function parseLifecycleArgs(
 				: [raw, undefined];
 		if (!LIFECYCLE_FLAG_NAMES.has(token))
 			return { ok: false, message: `Unknown option or argument "${raw}".` };
+		if (
+			inline !== undefined &&
+			(token === "--what-if" ||
+				token === "--dry-run" ||
+				token === "--preview" ||
+				token === "--yes")
+		)
+			return { ok: false, message: `${token} does not take a value.` };
 		if (token === "--what-if" || token === "--dry-run" || token === "--preview")
 			whatIf = true;
 		else if (token === "--yes" || token === "-y") yes = true;
 		else {
 			const value = inline ?? args[index + 1];
-			if (value === undefined || value.startsWith("-"))
+			if (value === undefined || value === "" || value.startsWith("-"))
 				return { ok: false, message: `${token} requires a value.` };
 			if (inline === undefined) index += 1;
 			if (token === "--mode") mode = value;

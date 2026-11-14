@@ -709,6 +709,23 @@ export function createPromotionService(
 			campId,
 			intent: view.intent,
 		};
+		if (
+			view.request.deploymentMode === "incremental" ||
+			view.request.deploymentMode === "complete"
+		)
+			resolveInput.deploymentMode = view.request.deploymentMode;
+		else if (view.request.deploymentMode !== "")
+			return {
+				ok: false,
+				reasons: [
+					reason(
+						PROMOTION_REASON.invalidRequest,
+						"invalid recorded deployment mode",
+						"Start a new promotion with a valid mode.",
+						campId,
+					),
+				],
+			};
 		if (current) resolveInput.base = current;
 		if (view.request.sourceCampId !== "")
 			resolveInput.sourceCampId = asCamp(view.request.sourceCampId);
@@ -1746,6 +1763,10 @@ export function createPromotionService(
 		if (
 			input.targets.length === 0 ||
 			input.idempotencyKey === "" ||
+			(input.deploymentMode !== undefined &&
+				(intent !== "up" ||
+					(input.deploymentMode !== "incremental" &&
+						input.deploymentMode !== "complete"))) ||
 			new Set(input.targets).size !== input.targets.length
 		)
 			return refusal(
@@ -1757,6 +1778,7 @@ export function createPromotionService(
 		if (existing) {
 			const same =
 				existing.view.request.freightId === input.freightId &&
+				existing.view.request.deploymentMode === (input.deploymentMode ?? "") &&
 				canonicalJson([...existing.view.request.targetCampIds].sort()) ===
 					canonicalJson([...input.targets].sort());
 			return same
@@ -1866,6 +1888,7 @@ export function createPromotionService(
 			idempotencyKey: input.idempotencyKey,
 			fanoutId: input.fanoutId ?? "",
 			subject: rail ? FreightSubject.RAIL : FreightSubject.BINDLE,
+			deploymentMode: input.deploymentMode ?? "",
 			gateDecisionId: "",
 		});
 		const events = [

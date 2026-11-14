@@ -128,6 +128,10 @@ hobo cd status          # the what-if, read-only
 hobo cd up --mode complete
 ```
 
+Explicit `--mode` is supported by the Yard desired-state and direct
+orchestrator lanes; broker placement and budgeted hosting refuse it until
+their execution paths can honor it.
+
 The project resolves from `--project <dir>`, then `HOBO_CI_PROJECT` /
 `HOBO_CD_PROJECT`, then the project HoBo ships for the family, then the working
 directory when it holds a Bindle. A family may connect a provider before `up`

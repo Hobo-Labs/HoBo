@@ -151,6 +151,17 @@ export function createBrokerAwareUpCommand(
 							"budgeted hosting requires a configured authoritative hosting runtime; placement and local fallback cannot waive financial admission",
 						data: { command: "up", budgetRequired: true },
 					};
+				const unsupportedMode = () => ({
+					ok: false,
+					status: "rejected",
+					code: "HOBO_DEPLOYMENT_MODE_UNSUPPORTED",
+					message: "This broker placement does not support --mode.",
+					remediation: [
+						"Omit --mode, or use a Yard with desired-state delivery.",
+					],
+					data: { command: "up" },
+				});
+				if (flags.mode && target.kind !== "local") return unsupportedMode();
 
 				// Local zero-config: prefer event-sourced Yard lane when runtime is wired
 				// (preserves claim/inspect). Fall back to broker-runtime placement+serve
@@ -173,6 +184,7 @@ export function createBrokerAwareUpCommand(
 						const planned = await yardUp.run(input);
 						if (planned.code !== "HOBO_CLI_STUB") return planned;
 					}
+					if (flags.mode) return unsupportedMode();
 					const definition = await loadBindleDefinition(projectDir);
 					return definition === null
 						? {
@@ -216,6 +228,7 @@ export function createBrokerAwareUpCommand(
 							};
 						}
 					}
+					if (flags.mode) return unsupportedMode();
 
 					const definition = await loadBindleDefinition(projectDir);
 					if (definition === null) {

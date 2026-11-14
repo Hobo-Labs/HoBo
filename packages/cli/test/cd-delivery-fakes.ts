@@ -364,6 +364,7 @@ export function createFakeDelivery(input: {
 		freightRecord: FreightRecord,
 		campId: string,
 		intent: DeltaIntent,
+		deploymentMode?: "incremental" | "complete",
 	): Promise<ResolvedDeploymentSet | ReasonRecord> {
 		const gatekeeper = {
 			decision: "allow" as const,
@@ -406,11 +407,34 @@ export function createFakeDelivery(input: {
 				planned.reason,
 				"fix the declaration",
 			);
+		const base = await desired.current(campId);
+		const before = base ? await resolvedOf(base) : undefined;
+		const declared = new Set(
+			planned.plan.resources.map((resource) => resource.name),
+		);
+		const retained =
+			intent === "up" && deploymentMode === "incremental" && before
+				? before.plan.resources.filter(
+						(resource) => !declared.has(resource.name),
+					)
+				: [];
+		const retainedNames = new Set(retained.map((resource) => resource.name));
 		return createResolvedDeploymentSet({
 			tenant,
 			environment: campId,
 			campId,
-			plan: planned.plan,
+			plan: {
+				...planned.plan,
+				resources: [...planned.plan.resources, ...retained].sort((a, b) =>
+					a.name.localeCompare(b.name),
+				),
+				dependencyOrder: [
+					...planned.plan.dependencyOrder,
+					...(before?.plan.dependencyOrder.filter((name) =>
+						retainedNames.has(name),
+					) ?? []),
+				],
+			},
 			matches: [],
 			gatekeeper,
 		});
@@ -480,6 +504,7 @@ export function createFakeDelivery(input: {
 				freightRecord,
 				campId,
 				request.intent ?? "promote",
+				request.deploymentMode,
 			);
 			if (!("plan" in resolved)) {
 				record.state = PromotionState.REJECTED;

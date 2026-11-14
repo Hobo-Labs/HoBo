@@ -35,6 +35,30 @@ function withPipeline(h: ReturnType<typeof harness>) {
 }
 
 describe("promotion saga (WP6)", () => {
+	it("persists the requested up mode, passes it to resolution, and rejects reuse with another mode", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		const request = {
+			freightId: fid("f1"),
+			targets: [camp("dev-1")],
+			idempotencyKey: "up-mode",
+			intent: "up" as const,
+			deploymentMode: "incremental" as const,
+		};
+		const result = await h.service.promote(request, h.ctx());
+		if (!result.ok) throw new Error("expected up promotion");
+		expect(h.resolver.calls[0]?.deploymentMode).toBe("incremental");
+		expect(
+			(await h.restart().get(pid(result.value.promotionId)))?.deploymentMode,
+		).toBe("incremental");
+		const reused = await h.service.promote(
+			{ ...request, deploymentMode: "complete" },
+			h.ctx(),
+		);
+		expect(reused.ok).toBe(false);
+		if (!reused.ok)
+			expect(reused.reasons[0]?.code).toBe(PROMOTION_REASON.idempotencyReused);
+	});
 	it("I1 across two providers: the same Freight reaches both Camps unrebuilt and the infrastructure diff is shown", async () => {
 		const h = harness();
 		withPipeline(h);

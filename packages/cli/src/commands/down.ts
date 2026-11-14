@@ -1,3 +1,4 @@
+import { collectStream, manifestHostingPolicy } from "@hobo/cloud";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
@@ -52,7 +53,33 @@ export function createDownCommand(deps: DownCommandDeps = {}): CommandModule {
 			const deploymentId = deploymentIdFor(projectDir);
 			// `down --what-if`: what teardown would destroy, destroying nothing.
 			if (flags.whatIf) {
-				const wouldDestroy = await downWhatIf(runtime.store, deploymentId);
+				const history = await collectStream(
+					runtime.store,
+					`deployment:${deploymentId}`,
+				);
+				let wouldDestroy: string[];
+				try {
+					wouldDestroy = await downWhatIf(
+						runtime.store,
+						deploymentId,
+						runtime.hostingBudgetRequired ||
+							manifestHostingPolicy(bindle).required ||
+							history.some((event) => event.type === "hosting.BudgetReserved")
+							? undefined
+							: runtime.delivery,
+					);
+				} catch (error) {
+					return {
+						ok: false,
+						status: "unavailable",
+						code: "HOBO_PREVIEW_UNAVAILABLE",
+						message: `hobo down --what-if: ${error instanceof Error ? error.message : String(error)}`,
+						remediation: [
+							"Wait for the current deployment to converge, then retry the preview.",
+						],
+						data: { command: "down", deploymentId },
+					};
+				}
 				return {
 					ok: true,
 					status: "ok",

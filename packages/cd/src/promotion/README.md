@@ -70,6 +70,14 @@ gate once the TTL passes and records `env.Expired`.
 binding (`INFORM` candidate or `ENFORCE`) through `CampPolicy.bind` instead of
 a Set, and moves no traffic.
 
+An `up` request may specify `deploymentMode`: `incremental` keeps previously
+resolved resources omitted from the new declaration, while `complete` removes
+them through the normal gate and reconciler. The request records the mode so
+retries and restarts resolve the same desired state; an idempotency key cannot
+be reused with another mode. Requests without a mode retain legacy behavior.
+Upgrade all promotion workers before submitting mode-bearing requests, as
+older workers ignore the added field and cannot enforce retention.
+
 ## Journal schema (`cd-promotion-<id>`)
 
 | Event | Body |

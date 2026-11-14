@@ -239,6 +239,16 @@ export function parseArgv(
 			["Pass either `--to <revision>` or `--rollback`, not both."],
 		);
 	}
+	if (verb === "up" && flags.rollback && flags.mode) {
+		throw new UsageError(
+			"--mode cannot be combined with --rollback; rollback restores the previous Set exactly.",
+		);
+	}
+	if (verb === "up" && flags.whatIf && (flags.to || flags.rollback)) {
+		throw new UsageError(
+			"--what-if cannot preview a selected revision or rollback yet.",
+		);
+	}
 
 	const verbTable = verb === null ? undefined : VERB_SUBCOMMANDS.get(verb);
 	if (verbTable) refuseUndeclared(verbTable, verb, args, subcommandOptions);
@@ -498,7 +508,10 @@ function parseOption(
 			throw unknownOption(token, verb);
 		case "--mode":
 			if (verb === "up" || verb === "plan") {
-				flags.mode = takeValue(argv, index, token);
+				const mode = takeValue(argv, index, token);
+				if (mode !== "incremental" && mode !== "complete")
+					throw new UsageError('--mode must be "incremental" or "complete".');
+				flags.mode = mode;
 				return index + 1;
 			}
 			throw unknownOption(token, verb);
