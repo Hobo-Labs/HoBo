@@ -171,11 +171,15 @@ artifact as Freight with provenance, and lets the Camps' realizers publish
 
 The topology is delivery-as-code:
 [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
-declares the Yard `hobo-release` with a candidate and a stable Camp per
+declares separate provider Yards `hobo-release-npm`, `hobo-release-oci` and
+`hobo-release-pages`, with a candidate and a stable Camp per
 artifact family and one pipeline per family (`hobo-release-<family>`,
 `candidate` -> `stable`, all at once, one HTTP probe per node). Any CD command
 reads it with `--yard release/hobo-release.delivery.ts`; `hobo deploy pipeline
 apply --file release/hobo-release.delivery.ts` applies the pipelines.
+Each Camp's physical ID is scoped to its provider Yard, while its explicit
+logical ID retains the existing `hobo-release/...` identity used by the
+pipelines and journal.
 
 | Family | Camps | Provider (realizer) | Target and credential | What the realizer does |
 |---|---|---|---|---|

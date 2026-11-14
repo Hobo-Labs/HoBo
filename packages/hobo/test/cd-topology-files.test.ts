@@ -131,6 +131,73 @@ describe("topology files (parse once with the generated schemas)", () => {
 		expect(box?.management).toBe(CampManagement.MANAGED);
 	});
 
+	it("keeps a Camp's CD identity when its physical Yard changes", () => {
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{
+						campId: "new-yard/release",
+						logicalId: "old-yard/release",
+						yardId: "new-yard",
+						provider: "example",
+						envType: "production",
+					},
+				],
+			},
+			{ stationId: "local", source: "moved.ts" },
+		);
+		expect(parsed.ok, parsed.ok ? "" : parsed.message).toBe(true);
+		if (!parsed.ok) return;
+		expect(parsed.value[0]).toMatchObject({
+			campId: "old-yard/release",
+			yardId: "new-yard",
+			provider: "example",
+		});
+	});
+
+	it("still refuses a physical Camp id outside its declared Yard", () => {
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{
+						campId: "other-yard/release",
+						logicalId: "old-yard/release",
+						yardId: "new-yard",
+						provider: "example",
+						envType: "production",
+					},
+				],
+			},
+			{ stationId: "local", source: "bad.ts" },
+		);
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) expect(parsed.code).toBe("cd-topology-invalid");
+	});
+
+	it.each([
+		"",
+		" old-yard/release ",
+		"old-yard/\nrelease",
+		"x".repeat(513),
+	])("refuses an invalid stable identity: %s", (logicalId) => {
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{
+						campId: "new-yard/release",
+						logicalId,
+						yardId: "new-yard",
+						provider: "example",
+						envType: "production",
+					},
+				],
+			},
+			{ stationId: "local", source: "bad.ts" },
+		);
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) expect(parsed.code).toBe("cd-topology-invalid");
+	});
+
 	it("refuses a malformed Camp record", () => {
 		const parsed = parseTopologyExports(
 			{ camps: [{ campId: "x/y", yardId: "x", envTyp: "ci" }] },

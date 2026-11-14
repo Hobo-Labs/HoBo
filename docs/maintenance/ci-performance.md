@@ -95,6 +95,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   on a cold worker; a timeout cancels the gate and does not count as a passing check.
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
+- **Loaded local release checks.** Set `HOBO_TEST_TIMEOUT` to a larger duration in milliseconds
+  when a busy machine needs more time for release integration tests. The OCI deploy test retains
+  its six-minute default and the freight realization suite retains its two-minute default; smaller
+  or invalid values cannot reduce those limits. For example, `HOBO_TEST_TIMEOUT=900000` allows
+  either check up to fifteen minutes without changing its assertions.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
 - **Main full gate workspace sharding.** `main-gate-plan` (runner image only; install-free mise turbo — [finding 93](../ci/findings/0093-main-sub3m-plan-pickup-shards.md), [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
   base and prints a duration-balanced shard matrix capped by `MAIN_WORKSPACE_PARALLEL_CAP` (default four

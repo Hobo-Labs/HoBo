@@ -19,6 +19,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { slow } from "../../packages/hobo/test/support/slow.js";
 import {
 	HOBO_CLI_DIST,
 	openReleaseCd,
@@ -142,7 +143,7 @@ function journalText(home: string): string {
 
 describe.skipIf(!built)(
 	"HoBo releases realize through @hobo/cd (offline)",
-	{ timeout: 120_000 },
+	{ timeout: slow(120_000) },
 	() => {
 		beforeAll(async () => {
 			const registry = await import(
