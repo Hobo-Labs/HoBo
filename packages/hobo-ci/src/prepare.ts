@@ -8,6 +8,7 @@ import {
 	startConnectPage,
 } from "@hobo/connect-ui";
 
+import { type GithubAppOwner, resolveGithubAppHost } from "./app-hosts.js";
 import { browserEnvironment } from "./browser-environment.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import {
@@ -27,9 +28,10 @@ import {
 //
 // Configuration (the owner's environment; nothing secret):
 //   HOBO_CI_PUBLIC_URL          the relay's public HTTPS origin
-//   HOBO_CI_GITHUB_OWNER_ID     numeric id of the GitHub user who owns the App
-//   HOBO_CI_GITHUB_OWNER        that user's login (shown on the page)
-// The App is user-owned: the reviewed verifier accepts no other owner type.
+//   HOBO_CI_GITHUB_OWNER        the login of the user or organization that owns the App
+//   HOBO_CI_GITHUB_OWNER_ID     its numeric id (gh api users/<login> --jq .id)
+//   HOBO_CI_GITHUB_OWNER_TYPE   User (default) or Organization
+//   HOBO_CI_APP_HOST            optional: pin how the App is hosted (manifest | hosted-relay)
 //   HOBO_CI_SECRET_STORE        infisical (default) | 1password
 
 export interface PrepareGithubDeps extends SecretStoreDeps {
@@ -103,13 +105,15 @@ export async function prepareGithubConnection(
 		deps.openStore ?? ((id: SecretStoreId) => openSecretStore(id, env, deps));
 	const relayUrl = env.HOBO_CI_PUBLIC_URL;
 	const ownerId = Number(env.HOBO_CI_GITHUB_OWNER_ID);
-	const owner = env.HOBO_CI_GITHUB_OWNER;
+	const ownerLogin = env.HOBO_CI_GITHUB_OWNER;
+	const ownerKind = env.HOBO_CI_GITHUB_OWNER_TYPE || "User";
 	const configured =
 		relayUrl?.startsWith("https://") &&
 		Number.isSafeInteger(ownerId) &&
 		ownerId > 0 &&
-		owner
-			? { relayUrl, ownerId, owner }
+		ownerLogin &&
+		(ownerKind === "User" || ownerKind === "Organization")
+			? { relayUrl, ownerId, ownerLogin, ownerKind }
 			: undefined;
 
 	// Idempotency first: an existing connection means there is nothing to do.
@@ -123,6 +127,7 @@ export async function prepareGithubConnection(
 					configured && {
 						relayUrl: configured.relayUrl,
 						ownerId: configured.ownerId,
+						ownerType: configured.ownerKind,
 						...(deps.fetch ? { fetch: deps.fetch } : undefined),
 					},
 			);
@@ -166,14 +171,33 @@ export async function prepareGithubConnection(
 			"HOBO_CI_CONNECTION_UNCONFIGURED",
 			"hobo ci up needs to know where the relay runs and who owns the GitHub App.",
 			[
-				"Export HOBO_CI_PUBLIC_URL (the relay's https origin), HOBO_CI_GITHUB_OWNER (your login) and HOBO_CI_GITHUB_OWNER_ID (gh api user --jq .id).",
+				"Export HOBO_CI_PUBLIC_URL (the relay's https origin), HOBO_CI_GITHUB_OWNER (the user or organization login), HOBO_CI_GITHUB_OWNER_ID (gh api users/<login> --jq .id) and, for an organization, HOBO_CI_GITHUB_OWNER_TYPE=Organization.",
 			],
 		);
-	const {
-		relayUrl: configuredRelay,
-		ownerId: configuredOwnerId,
-		owner: configuredOwner,
-	} = configured;
+	const owner: GithubAppOwner = {
+		kind: configured.ownerKind,
+		login: configured.ownerLogin,
+		id: configured.ownerId,
+	};
+	// The path that satisfies the owner: the pinned host when it can serve
+	// it, else one that can. A host that cannot is explained, with the ones
+	// that can, instead of creating an App that would then be refused.
+	const host = resolveGithubAppHost(owner, {
+		configured: env.HOBO_CI_APP_HOST || undefined,
+	});
+	if (!host.ok)
+		return refused(
+			"HOBO_CI_APP_HOST_UNSUPPORTED_OWNER",
+			host.message,
+			host.suggestions.length > 0
+				? host.suggestions.map(
+						(option) =>
+							`Use ${option.label}: HOBO_CI_APP_HOST=${option.id} (or unset HOBO_CI_APP_HOST to let HoBo choose).`,
+					)
+				: [
+						"Configure a host that supports this owner, or use a user-owned App.",
+					],
+		);
 	const interactive = deps.interactive ?? Boolean(process.stdout.isTTY);
 	if (!interactive)
 		return refused(
@@ -186,9 +210,8 @@ export async function prepareGithubConnection(
 
 	let page: ConnectPage | undefined;
 	const flow = createGithubConnectFlow({
-		relayUrl: configuredRelay,
-		ownerId: configuredOwnerId,
-		owner: configuredOwner,
+		relayUrl: configured.relayUrl,
+		owner,
 		callbackUrl: () => page?.callbackUrl ?? "",
 		openStore,
 		...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),

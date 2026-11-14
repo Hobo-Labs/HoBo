@@ -10,9 +10,11 @@ import { describe, expect, it } from "vitest";
 import {
 	createGithubConnectFlow,
 	GITHUB_APP_CREDENTIAL_KEYS,
+	type GithubAppHost,
 	githubAppConnected,
 	type OpenedSecretStore,
 	prepareGithubConnection,
+	resolveGithubAppHost,
 	type SecretStoreOpening,
 } from "../src/index.js";
 
@@ -65,7 +67,7 @@ const PACT_CALLS = PACT.interactions.map(
 
 // GitHub, answering from the pact: the reviewed permissions and events are
 // added to the App bodies and the per-run key replaces the pem placeholder.
-function fakeGithub(ownerId = OWNER_ID): FakeGithub {
+function fakeGithub(ownerId = OWNER_ID, ownerType = "User"): FakeGithub {
 	const calls: string[] = [];
 	return {
 		calls,
@@ -96,7 +98,7 @@ function fakeGithub(ownerId = OWNER_ID): FakeGithub {
 				...declared,
 				...("owner" in declared
 					? {
-							owner: { id: ownerId, type: "User" },
+							owner: { id: ownerId, type: ownerType },
 							permissions: reviewed.defaultPermissions,
 							events: reviewed.defaultEvents,
 						}
@@ -155,8 +157,7 @@ describe("createGithubConnectFlow", () => {
 		const github = fakeGithub();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "http://127.0.0.1:1/s/t/callback",
 			openStore: opened(store),
 			fetch: github.fetch,
@@ -198,8 +199,7 @@ describe("createGithubConnectFlow", () => {
 		const github = fakeGithub();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(store),
 			fetch: github.fetch,
@@ -220,8 +220,7 @@ describe("createGithubConnectFlow", () => {
 		const github = fakeGithub(9999);
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(store),
 			fetch: github.fetch,
@@ -237,14 +236,47 @@ describe("createGithubConnectFlow", () => {
 		expect(store.names()).toHaveLength(GITHUB_APP_CREDENTIAL_KEYS.length);
 	});
 
+	it("checks the stored App's owner kind as well as its numeric ID", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const github = fakeGithub(OWNER_ID, "Organization");
+		const makeFlow = (kind: "User" | "Organization") =>
+			createGithubConnectFlow({
+				relayUrl: RELAY,
+				owner: { kind, login: "octo", id: OWNER_ID },
+				callbackUrl: () => "",
+				openStore: opened(store),
+				fetch: github.fetch,
+			});
+		const wrong = makeFlow("User");
+		expect(
+			(
+				await wrong.onAction(
+					"connect.chooseStore",
+					{ store: "infisical" },
+					wrong.initial,
+				)
+			).step.kind,
+		).toBe("failed");
+		const correct = makeFlow("Organization");
+		expect(
+			(
+				await correct.onAction(
+					"connect.chooseStore",
+					{ store: "infisical" },
+					correct.initial,
+				)
+			).step.kind,
+		).toBe("connected");
+	});
+
 	it("refuses a stored App whose webhook points to another relay", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
 		const github = fakeGithub();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(store),
 			fetch: async (input, init) => {
@@ -279,8 +311,7 @@ describe("createGithubConnectFlow", () => {
 		const github = fakeGithub();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(store),
 			fetch: github.fetch,
@@ -308,8 +339,7 @@ describe("createGithubConnectFlow", () => {
 		const github = fakeGithub();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(withoutMaterial),
 			fetch: github.fetch,
@@ -329,8 +359,7 @@ describe("createGithubConnectFlow", () => {
 		const github = fakeGithub();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(store),
 			fetch: github.fetch,
@@ -352,8 +381,7 @@ describe("createGithubConnectFlow", () => {
 		const store = memoryStore();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(store),
 			fetch: fakeGithub().fetch,
@@ -377,8 +405,7 @@ describe("createGithubConnectFlow", () => {
 		const store = memoryStore();
 		const flow = createGithubConnectFlow({
 			relayUrl: RELAY,
-			ownerId: OWNER_ID,
-			owner: "octo-org",
+			owner: { kind: "User", login: "octo", id: OWNER_ID },
 			callbackUrl: () => "",
 			openStore: opened(store),
 			fetch: fakeGithub(9999).fetch,
@@ -643,5 +670,96 @@ describe("prepareGithubConnection", () => {
 		// The browser was redirected and then shown the finished step.
 		await browsing;
 		expect(landed).toEqual([303, "connected"]);
+	});
+});
+
+describe("organization-owned Apps", () => {
+	it("creates the App under the organization and verifies it as the organization's", async () => {
+		const store = memoryStore();
+		const flow = createGithubConnectFlow({
+			relayUrl: RELAY,
+			owner: { kind: "Organization", login: "octo-org", id: OWNER_ID },
+			callbackUrl: () => "http://127.0.0.1:1/s/t/callback",
+			openStore: opened(store),
+			fetch: fakeGithub(OWNER_ID, "Organization").fetch,
+			randomState: () => "org-state",
+		});
+		const chosen = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		const started = await flow.onAction("connect.start", {}, chosen.step);
+		expect(started.directive).toMatchObject({
+			kind: "post",
+			url: "https://github.com/organizations/octo-org/settings/apps/new?state=org-state",
+		});
+		const done = await flow.onCallback?.(
+			new URLSearchParams({ code: "one-time-code", state: "org-state" }),
+			started.step,
+		);
+		expect(done?.step.kind).toBe("connected");
+	});
+
+	it("refuses an App GitHub created for a different kind of owner than asked", async () => {
+		const store = memoryStore();
+		const flow = createGithubConnectFlow({
+			relayUrl: RELAY,
+			owner: { kind: "Organization", login: "octo-org", id: OWNER_ID },
+			callbackUrl: () => "",
+			openStore: opened(store),
+			fetch: fakeGithub(OWNER_ID, "User").fetch,
+			randomState: () => "s",
+		});
+		const chosen = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		const started = await flow.onAction("connect.start", {}, chosen.step);
+		const done = await flow.onCallback?.(
+			new URLSearchParams({ code: "one-time-code", state: "s" }),
+			started.step,
+		);
+		expect(done?.step.kind).toBe("failed");
+		expect(store.names()).toEqual([]);
+	});
+});
+
+describe("resolveGithubAppHost", () => {
+	const userOnly: GithubAppHost = {
+		id: "user-only",
+		label: "A user-only host",
+		ownerKinds: ["User"],
+	};
+	const both: GithubAppHost = {
+		id: "both",
+		label: "A host for both",
+		ownerKinds: ["User", "Organization"],
+	};
+	const org = { kind: "Organization", login: "octo-org", id: 1 } as const;
+
+	it("explains a pinned host that cannot serve the owner and suggests the ones that can", () => {
+		const resolution = resolveGithubAppHost(org, {
+			configured: "user-only",
+			hosts: [userOnly, both],
+		});
+		expect(resolution).toMatchObject({ ok: false, suggestions: [both] });
+		expect(resolution.ok ? "" : resolution.message).toMatch(
+			/only supports Apps owned by users.*organization/,
+		);
+	});
+
+	it("reduces to the host that satisfies the owner when none is pinned", () => {
+		expect(
+			resolveGithubAppHost(org, { hosts: [userOnly, both] }),
+		).toMatchObject({ ok: true, host: both });
+	});
+
+	it("HoBo's own hosts serve users and organizations", () => {
+		expect(resolveGithubAppHost(org)).toMatchObject({ ok: true });
+		expect(resolveGithubAppHost({ ...org, kind: "User" })).toMatchObject({
+			ok: true,
+		});
 	});
 });
