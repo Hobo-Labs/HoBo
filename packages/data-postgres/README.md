@@ -847,9 +847,9 @@ schema seam and the budget check. Every tick, in order:
 
 | Move | Entries written | What bounds the loss |
 |---|---|---|
-| Planned switch | `sealed = true, target = T`; wait `leaseMs + graceMs`; copy once more; `active = T` | Nothing is lost: nobody writes while sealed, and the final copy has lag 0 |
+| Planned switch | `sealed = true, target = T`; wait `leaseMs + graceMs`; copy once more; `active = T` | A delayed in-flight write can land after the final copy and be lost; a transaction-boundary fence is required |
 | Switch that cannot finish | `sealed = true, target = T`; the final copy fails; `active = old writer` again (`switch-aborted:<why>`) | Nothing: the old writer never stopped being the source |
-| Unplanned failover | `active = T, loss_window_ms = T's lag` | Writes after T's snapshot are lost; `loss_window_ms` is the upper bound |
+| Unplanned failover | `active = T, loss_window_ms = T's lag` | Writes after T's snapshot are lost; delayed writes on the old writer are not included in `loss_window_ms` |
 
 A backend that returns after losing the writer role holds an entry saying it
 was the writer. Its log is repaired with the decided entries it missed, and it
@@ -877,8 +877,9 @@ Events are reported through `log` as data (`replication`, `decision`,
   closed. That is by design: a double fault stops the application instead of
   risking two writers.
 - Instances that can still reach an old writer the reconciler could not reach
-  keep writing to it for at most one lease after a failover. Those writes are
-  lost and are not counted in `loss_window_ms`.
+  may dispatch writes under a cached lease. In-flight writes can complete
+  after that lease expires; they are lost and are not counted in
+  `loss_window_ms`.
 
 ### Usage metering
 

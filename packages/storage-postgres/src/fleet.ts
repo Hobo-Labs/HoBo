@@ -3,25 +3,26 @@
  *
  * One backend is the writer; the others are standbys on other vendors. Which
  * one writes is the fleet's assignment register (`@hobo/data-postgres`),
- * kept on every member and decided by majority, so no single vendor is a
- * dependency:
+ * kept on every member and decided by majority. This experimental store does
+ * not yet fence in-flight writes at the database transaction boundary, so a
+ * move can lose writes and must not be relied on for safe failover:
  *
  * - **Every call goes to the writer.** The store resolves the assignment and
  *   trusts it for `leaseMs`, measured from when the read started. A sealed
  *   fleet (a planned move in flight), an undecided epoch or no majority
  *   refuses the call with a retryable `unavailable`; the caller retries and
- *   nothing is written to a member that may be overwritten.
+ *   a new call. A call already dispatched under a prior lease can still write.
  * - **`tick()` keeps the fleet converged.** It runs `reconcileFleet` with the
  *   policy the Bindle declared (`continuityFleetPlan`): settle the register,
  *   probe, copy the writer to every standby, measure, decide, act. The host
  *   calls it on the copy cadence. A tick that is interrupted (the process
  *   dies, a connection drops mid-copy) leaves nothing half done: a copy is
  *   one transaction on the standby, and a move is a sealed register entry
- *   that the next tick completes or undoes. Interruption delays convergence;
- *   it never loses it.
+ *   that the next tick completes or undoes. A delayed write can land after the
+ *   final copy and be lost when the old writer is overwritten.
  * - **A move follows the writer.** When the register names a new writer, the
  *   next call opens that member's store; live subscriptions move with it.
- *   Delivery across a move is at least once, as across any reconnect.
+ *   Delivery across a move is not yet proven when writes race the move.
  *
  * The copy is a snapshot of every table in the store's schema except the
  * fleet's own control tables and `schema_migrations` (each member migrates
@@ -147,7 +148,10 @@ function executorOf(pool: PgPoolLike): SqlExecutor {
 			),
 		);
 	const sessionOf = (client: Awaited<ReturnType<PgPoolLike["connect"]>>) => ({
-		async query(sql: string, parameters?: readonly (string | number | boolean | null)[]) {
+		async query(
+			sql: string,
+			parameters?: readonly (string | number | boolean | null)[],
+		) {
 			const result = await client.query(sql, parameters);
 			return { rows: asText(result.rows) };
 		},

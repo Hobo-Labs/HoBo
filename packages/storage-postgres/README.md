@@ -91,19 +91,20 @@ goes through `parseEventEnvelope`).
 
 ## On a fleet of vendors
 
-`createPostgresFleetEventStore({ members, witnesses, plan, decidedBy })` puts
-the store on several PostgreSQL backends, one writer and standbys on other
-vendors, so one vendor's outage is a failover rather than a stop:
+`createPostgresFleetEventStore({ members, witnesses, plan, decidedBy })` is an
+experimental store on several PostgreSQL backends. It does not fence an
+in-flight write at the database commit boundary. A delayed write can reach the
+old writer after the final copy and be lost, so this fleet must not be relied
+on for safe failover. Member names also do not verify independent vendors.
 
-- Every call goes to the writer the fleet's assignment register names
+- Calls use a time-limited cached writer resolved from the assignment register
   (`@hobo/data-postgres`, decided by majority across members and witnesses).
-  A sealed fleet, an undecided epoch or no majority refuses the call with a
-  retryable `unavailable`.
+  A fresh resolution refuses a sealed fleet, undecided epoch or no majority;
+  cached or in-flight operations can still reach the previous writer.
 - `tick()` runs `reconcileFleet` with the declared policy (`plan`, from
-  `continuityFleetPlan` in `@hobo/backend-fleet`): copy the writer to every
-  standby, fail over within the recovery point, switch away from a backend
-  whose allowance or budget runs out. The host runs it on the plan's copy
-  cadence.
+  `continuityFleetPlan` in `@hobo/backend-fleet`) to copy standbys and decide
+  whether to switch writers. Its recovery point and failover safety are not
+  established while in-flight writes remain unfenced.
 - **Interrupted work resumes.** A copy is one transaction on the standby, so an
   interrupted one leaves it as it was and the next tick copies it whole; a
   move is a sealed register entry the next tick completes or undoes.
@@ -112,8 +113,8 @@ vendors, so one vendor's outage is a failover rather than a stop:
 - With two members and no witness, losing one leaves no majority: the fleet
   holds (and says so) instead of guessing. Give it a witness (a few rows on a
   third backend) to fail over on its own.
-- Live subscriptions follow the writer; delivery across a move is at least
-  once.
+- Live subscriptions follow the writer, but delivery across a move is not yet
+  proven when writes race the move.
 
 ## Defaults
 

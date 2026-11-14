@@ -75,17 +75,16 @@ qualifies and soaks, defers a tainted host and catches it up once it recovers.
 - **`compose-store-multinode`** — more than one replica (`HOBO_CD_REPLICAS`) on
   SQLite. Set `HOBO_CD_POSTGRES_URL` (PostgreSQL 16 or later) or a fleet
   (below); SQLite is for a single conductor process (R6).
-- **A journal on several vendors** — `HOBO_CD_POSTGRES_FLEET=neon-eu,supabase`
+- **Experimental journal fleet** — `HOBO_CD_POSTGRES_FLEET=neon-eu,supabase`
   names a writer and standbys; each member's URL is its own variable
   (`HOBO_CD_POSTGRES_URL_NEON_EU`, as a marketplace integration injects it), so
   no list of connection strings exists. `HOBO_CD_POSTGRES_WITNESSES` names
   register-only members the same way. The fleet runs by the journal's declared
-  continuity policy (`@hobo/hobo-cd` `CD_CONTINUITY`): copied every 150 s,
-  failing over after a minute within a 5-minute recovery point, and moving off
-  a backend whose allowance runs out. Opening runs one tick, which settles
-  anything an interrupted run left. `hobo_cd_journal_continuity_short` on
-  stderr names what the configured fleet lacks (a standby, a quorum, a second
-  vendor); the journal still serves.
+  continuity policy (`@hobo/hobo-cd` `CD_CONTINUITY`). The implementation does
+  not yet fence in-flight writes at commit, and member names do not prove
+  independent failure domains; do not rely on it for safe failover. Opening
+  runs one tick. `hobo_cd_journal_continuity_short` on stderr reports known
+  shortfalls and unverified vendor diversity; the journal still serves.
 - **`compose-store-invalid` / `compose-artifacts-invalid`** — fix the named
   environment variable; the message names it.
 - **`rail-delivery-invalid` metric rising** — a Station's Rail `delivery`
