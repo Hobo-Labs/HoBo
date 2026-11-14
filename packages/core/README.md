@@ -75,6 +75,28 @@ one that does not. Core holds no vendor facts; the PostgreSQL catalog built from
 is in `@hobo/cloud-providers`. See
 [`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
 
+## Durable lifecycle gate leases
+
+`ports/durable-lifecycle-gate.ts` (`createDurableLifecycleGate`) runs every
+transition under an `AsyncActorLease` on its `hosting-lifecycle-gate:` stream.
+Two lease rules keep a participant from leaking:
+
+- **A failed release never undoes a commit.** After the locked work (for
+  example the `ParticipantStarted` append in `begin()`) has committed, an error
+  from `lease.release()` is swallowed: the lease expires on its own, and
+  `begin()` still returns the participant handle, so `finish()` can remove it
+  and `seal()` can complete. If the work itself fails, that error is the one
+  thrown.
+- **Finish and retire wait out contention.** Supervisor transitions
+  (`initialize`, `drain`, `seal`, `resumeDrain`, `stop`, `open`) give up on a
+  busy lease after about 800ms. `finish()` and `retireParticipant()` back off
+  exponentially (10ms doubling to 500ms) for about 60s, which covers a `stop()`
+  holding the lease through a slow `verifyDrained`. Every call still throws
+  once its budget runs out, and callers retry: `finish()` on a removed
+  participant is a no-op, and a retried `retireParticipant()` that throws
+  should be followed by a `status()` read to see whether the participant has
+  already gone.
+
 ## Commands
 
 ```bash
