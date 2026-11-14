@@ -9,6 +9,10 @@ import {
 	BudgetLedgerSnapshotSchema,
 	createBudgetAdmissionAuthority,
 } from "./budget-authority.js";
+import {
+	type BudgetFenceTrust,
+	captureBudgetFenceTrust,
+} from "./budget-fence-settlement.js";
 
 type Authority = ReturnType<typeof createBudgetAdmissionAuthority>;
 /** Asynchronous view of the SAME financial authority used by local hosting and CI. */
@@ -27,6 +31,7 @@ export type AsyncBudgetAdmissionAuthority = {
 export function createPostgresBudgetAdmissionAuthority(options: {
 	pool: Pool;
 	snapshot: BudgetLedgerSnapshot;
+	fenceTrust?: BudgetFenceTrust;
 	now?: () => string;
 	/** Bound pool starvation, including a CI transaction holding the same pool. */
 	connectionTimeoutMs?: number;
@@ -37,6 +42,7 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 	configure(...args: Parameters<Authority["configure"]>): Promise<void>;
 } {
 	const owner = options.snapshot.identity;
+	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
 	if (!owner?.tenantId || !owner.budgetId)
 		throw new Error("complete shared budget ownership required");
 	const partition = createHash("sha256")
@@ -147,6 +153,7 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 			const authority = createBudgetAdmissionAuthority({
 				snapshot: base,
 				priorEvents,
+				...(fenceTrust ? { fenceTrust } : undefined),
 				commit(event, expectedSeq) {
 					if (seq !== expectedSeq || event.snapshot?.seq !== expectedSeq + 1)
 						throw new Error("budget sequence conflict");

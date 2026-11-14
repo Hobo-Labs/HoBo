@@ -136,6 +136,48 @@ message BudgetSettlementEvidence {
   string source_stopped_evidence_ref = 2;
   repeated ProviderAccountExposure provider_accounts = 3;
   repeated EntitlementClaim entitlement_claims = 4;
+  // A receiver receipt and independent finance signature are required when the
+  // original reservation carries a fenced route guard.
+  string fence_operation_receipt_json = 5;
+  string finance_signature = 6;
+}
+
+message BudgetFencedPlacement {
+  string yard_id = 1;
+  string camp_id = 2;
+  string provider_id = 3;
+  string provider_account_id = 4;
+  string resource_id = 5;
+  string deployment_id = 6;
+  string incarnation_id = 7;
+  string manifest_hash = 8;
+  string plan_hash = 9;
+}
+
+// Immutable, non-secret scope pinned at initial reservation, not retrofitted
+// after execution. The route digest binds this scope to the exact budget,
+// request and quote; the keys are independently enrolled public keys.
+message BudgetFenceSettlementGuard {
+  string contract = 1;
+  string dataset = 2;
+  string scope_tenant = 3;
+  string operation_id = 4;
+  string fence_token_digest = 5;
+  string receiver_key_id = 6;
+  string receiver_public_key = 7;
+  string finance_key_id = 8;
+  string finance_public_key = 9;
+  string logical_camp_id = 10;
+  BudgetFencedPlacement source = 11;
+  BudgetFencedPlacement destination = 12;
+  string decision = 13;
+  string execution_digest = 14;
+  string route_digest = 15;
+  string expected_route_generation = 16;
+  string current_set_id = 17;
+  string desired_set_id = 18;
+  string migration_id = 19;
+  string decision_head = 20;
 }
 
 message HostingQuoteComponent {
@@ -181,6 +223,8 @@ message BudgetReservation {
   BudgetSettlementEvidence settlement_evidence = 14;
   string execution_digest = 15;
   string financial_plan_hash = 16;
+  // Field 17 is allocated by the shared subscope work.
+  BudgetFenceSettlementGuard fence_settlement_guard = 18;
 }
 
 message BudgetAuthorityEvent {

@@ -68,6 +68,26 @@ a concurrent unused cancellation cannot release in-flight provisioning liability
 An identical claimed generation retry inspects the original operation instead of
 provisioning it again; unknown outcomes retain their financial exposure.
 
+For a cross-provider route operation, the initial reservation may pin a fenced
+settlement guard. It binds the budget, quote, execution, logical Camp, source
+and destination placements and their deployment, incarnation, manifest and plan
+identities, source fence, current and desired Sets, expected
+receiver route generation, Trails migration and decision head, route decision
+and separately enrolled receiver and financial authority keys. A later claim
+cannot change that scope.
+The hold remains reserved until the receiver signs the exact committed route and
+the financial authority independently signs the final usage and source-stop
+evidence. Both proofs and the guard are checked again when replaying the journal.
+Keep historical public enrollments available while their records remain in the
+journal. An unsigned or uncertain result leaves the hold in place.
+
+The host must authenticate those enrollments and use a receiver that atomically
+holds the source operation and commits the route before signing. The finance
+signer must independently establish final usage and permanent source retirement;
+the signatures do not themselves provide either capability. This interface does
+not enroll a receiver, authenticate a provider, or make a route operation safe on
+its own. Production readiness must continue to verify the complete host path.
+
 Generated wire records live in `data-models/yard_placement.proto`; constraints
 live in `data-models/budget.cue`. The message Pact is hand-authored offline port
 evidence, not provider-verified billing evidence. Regression tests exercise the
