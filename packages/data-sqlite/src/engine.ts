@@ -5,7 +5,7 @@
  * it is what lets the same store back the synchronous ports `@hobo/trails`
  * runs its live lanes on.
  */
-import { randomUUID } from "node:crypto";
+import { type KeyObject, randomUUID } from "node:crypto";
 import { constants, copyFileSync, existsSync } from "node:fs";
 import type { DatabaseSync, SQLInputValue, StatementSync } from "node:sqlite";
 import {
@@ -139,6 +139,11 @@ export interface SqliteEngineOptions {
 	/** Store file path, or `:memory:`. A file is required for the schema port. */
 	readonly path: string;
 	readonly clock?: () => string;
+	/** Trusted routing receivers that can issue exact-operation receipts. */
+	readonly operationReceivers?: ReadonlyMap<
+		string,
+		string | Buffer | KeyObject
+	>;
 }
 
 export interface SqliteEngine extends EngineBinding {
@@ -146,7 +151,10 @@ export interface SqliteEngine extends EngineBinding {
 	readonly store: SqliteDatasetStore;
 }
 
-function declarationFor(fileBacked: boolean): EngineDeclaration {
+function declarationFor(
+	schemaAllowed: boolean,
+	operationFenceEnabled: boolean,
+): EngineDeclaration {
 	return parseEngineDeclaration({
 		engine: SQLITE_ENGINE_ID,
 		profile: SQLITE_ENGINE_PROFILE,
@@ -160,7 +168,7 @@ function declarationFor(fileBacked: boolean): EngineDeclaration {
 			"verify",
 			"fence",
 			"retire",
-			...(fileBacked ? ["schema"] : []),
+			...(schemaAllowed ? ["schema"] : []),
 		],
 		captureOrdering: "global",
 		fenceEnforcement: "entry-point",
@@ -168,7 +176,12 @@ function declarationFor(fileBacked: boolean): EngineDeclaration {
 		ddlTransactional: true,
 		nativeProfiles: [],
 		typeMapping: SQLITE_TYPE_MAPPING,
-		impedance: [...SQLITE_IMPEDANCE_CODES],
+		impedance: [
+			...SQLITE_IMPEDANCE_CODES,
+			...(operationFenceEnabled
+				? ["SQLITE_SCHEMA_DISABLED_FOR_FENCE_OPERATIONS"]
+				: []),
+		],
 	});
 }
 
@@ -178,6 +191,7 @@ export interface SqliteSchemaHost {
 	connection(): DatabaseSync;
 	transaction<T>(body: () => T): T;
 	reopen(replaceFile: () => void): void;
+	operationFenceEnabled?(): boolean;
 }
 
 /** The schema port with synchronous signatures, as SQLite answers them. */
@@ -252,6 +266,10 @@ export function createSchemaPort(
 			// One transaction per phase: SQLite DDL is transactional, so a
 			// failing statement leaves nothing of the phase behind.
 			const changes = host.transaction(() => {
+				if (host.operationFenceEnabled?.())
+					throw new Error(
+						"schema mutation is unavailable while native fence operations are enabled",
+					);
 				const db = host.connection();
 				const before = totalChanges(db);
 				for (const statement of statements) {
@@ -274,6 +292,10 @@ export function createSchemaPort(
 			);
 		},
 		restore(ref: SchemaSnapshotRef): void {
+			if (host.operationFenceEnabled?.())
+				throw new Error(
+					"schema restore is unavailable while native fence operations are enabled",
+				);
 			if (!existsSync(ref.ref)) {
 				throw new Error(`snapshot ${ref.ref} is missing; cannot restore`);
 			}
@@ -284,11 +306,20 @@ export function createSchemaPort(
 
 export function createSqliteEngine(options: SqliteEngineOptions): SqliteEngine {
 	const clock = options.clock ?? (() => new Date().toISOString());
-	const store = new SqliteDatasetStore({ path: options.path, clock });
+	const receivers = new Map(options.operationReceivers ?? []);
+	const store = new SqliteDatasetStore({
+		path: options.path,
+		clock,
+		operationReceivers: receivers,
+	});
 	const fileBacked = options.path !== ":memory:";
+	// File-replacement restores cannot be fenced by a database row across close
+	// and reopen. Do not expose schema mutation on this lock-enabled binding.
+	const operationFenceEnabled = store.operationFenceEnabled();
+	const schemaAllowed = fileBacked && !operationFenceEnabled;
 	const binding: SqliteEngine = {
 		store,
-		declaration: declarationFor(fileBacked),
+		declaration: declarationFor(schemaAllowed, operationFenceEnabled),
 		datasets: {
 			ensureDataset(schema: DatasetSchema) {
 				return {
@@ -364,6 +395,21 @@ export function createSqliteEngine(options: SqliteEngineOptions): SqliteEngine {
 			},
 		},
 		fence: {
+			...(receivers.size
+				? {
+						operation: {
+							claim(input) {
+								return store.claimFenceOperation(input);
+							},
+							complete(receipt) {
+								store.completeFenceOperation(receipt);
+							},
+							inspect(scope, operationId) {
+								return store.inspectFenceOperation(scope, operationId);
+							},
+						},
+					}
+				: undefined),
 			raise(request) {
 				return { fenceToken: store.raiseFence(request.scope) };
 			},
@@ -385,7 +431,7 @@ export function createSqliteEngine(options: SqliteEngineOptions): SqliteEngine {
 				};
 			},
 		},
-		...(fileBacked ? { schema: createSchemaPort(store, clock) } : undefined),
+		...(schemaAllowed ? { schema: createSchemaPort(store, clock) } : undefined),
 		close() {
 			store.close();
 		},
