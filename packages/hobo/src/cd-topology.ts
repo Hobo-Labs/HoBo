@@ -111,8 +111,12 @@ export function staticTopologyReader(
 	camps: readonly CampTopology[],
 ): TopologyReader {
 	const byId = new Map<string, CampTopology>();
+	const physical = new Set<string>();
 	for (const camp of camps) {
 		if (byId.has(camp.campId)) throw new TopologyConflictError(camp.campId);
+		const physicalId = camp.physicalCampId ?? camp.campId;
+		if (physical.has(physicalId)) throw new TopologyConflictError(physicalId);
+		physical.add(physicalId);
 		byId.set(camp.campId, camp);
 	}
 	const all = Object.freeze([...byId.values()]);
@@ -128,9 +132,14 @@ export function mergeTopologyReaders(
 ): TopologyReader {
 	async function all(): Promise<readonly CampTopology[]> {
 		const seen = new Map<string, CampTopology>();
+		const physical = new Set<string>();
 		for (const reader of readers) {
 			for (const camp of await reader.camps()) {
 				if (seen.has(camp.campId)) throw new TopologyConflictError(camp.campId);
+				const physicalId = camp.physicalCampId ?? camp.campId;
+				if (physical.has(physicalId))
+					throw new TopologyConflictError(physicalId);
+				physical.add(physicalId);
 				seen.set(camp.campId, camp);
 			}
 		}
@@ -294,9 +303,13 @@ function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 			`${at}: logicalId must be a non-empty stable identity`,
 		);
 	const labels = { ...parsed.labels };
+	const physicalCampId = campIdOf(parsed.yardId, local);
 	return Object.freeze({
 		// SAFETY: an explicit, validated stable identity or the Yard-scoped id.
-		campId: (parsed.logicalId || campIdOf(parsed.yardId, local)) as CampId,
+		campId: (parsed.logicalId || physicalCampId) as CampId,
+		...(parsed.logicalId && parsed.logicalId !== physicalCampId
+			? { physicalCampId }
+			: undefined),
 		yardId: parsed.yardId,
 		stationId,
 		provider: parsed.provider,

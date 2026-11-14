@@ -43,7 +43,9 @@ comma-separated list, the environment's first):
   optional `logicalId`, `regions`, `labels`, `stationId`, `management`). The
   physical `campId` must belong to `yardId`; `logicalId`, when supplied,
   preserves the CD identity used by pipelines and the journal across a move
-  to another Yard. Without it, CD uses `campId`. Examples include the runner
+  to another Yard. Without it, CD uses `campId`. CD keeps the physical ID
+  alongside the logical alias and refuses duplicate physical Camps, including
+  declarations loaded from different topology sources. Examples include the runner
   fleet's
   [`packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`](../ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts)
   (one Camp per runner host, `hobo-ci-runners/<host>`) and the **release

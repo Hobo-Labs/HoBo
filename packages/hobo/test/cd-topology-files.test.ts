@@ -17,7 +17,9 @@ import { CampManagement } from "@hobo/cd";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	loadTopologyFiles,
+	mergeTopologyReaders,
 	parseTopologyExports,
+	staticTopologyReader,
 	topologyFilesOf,
 } from "../src/cd-topology.js";
 
@@ -150,9 +152,38 @@ describe("topology files (parse once with the generated schemas)", () => {
 		if (!parsed.ok) return;
 		expect(parsed.value[0]).toMatchObject({
 			campId: "old-yard/release",
+			physicalCampId: "new-yard/release",
 			yardId: "new-yard",
 			provider: "example",
 		});
+	});
+
+	it("refuses two logical Camps that name the same physical Camp", async () => {
+		const camp = {
+			campId: "new-yard/release",
+			yardId: "new-yard",
+			provider: "example",
+			envType: "production",
+		};
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{ ...camp, logicalId: "old-yard/a" },
+					{ ...camp, logicalId: "old-yard/b" },
+				],
+			},
+			{ stationId: "local", source: "duplicates.ts" },
+		);
+		if (!parsed.ok) throw new Error(parsed.message);
+		expect(() => staticTopologyReader(parsed.value)).toThrow(/duplicate-camp/u);
+		const first = parsed.value[0];
+		const second = parsed.value[1];
+		if (!first || !second) throw new Error("expected two Camps");
+		const combined = mergeTopologyReaders([
+			staticTopologyReader([first]),
+			staticTopologyReader([second]),
+		]);
+		await expect(combined.camps()).rejects.toThrow(/duplicate-camp/u);
 	});
 
 	it("still refuses a physical Camp id outside its declared Yard", () => {
@@ -288,6 +319,20 @@ describe.skipIf(!existsSync(BIN))(
 	"hobo deploy resolves repo-declared Camps (built binary)",
 	{ timeout: 120_000 },
 	() => {
+		it("camp list preserves both release Camp identities across the CLI boundary", async () => {
+			const home = await freshHome();
+			const listed = await deploy(home, [
+				"camp",
+				"list",
+				"--yard",
+				"release/hobo-release.delivery.ts",
+			]);
+			expect(listed.ok, listed.message).toBe(true);
+			const text = JSON.stringify(listed.data);
+			expect(text).toContain("hobo-release/npm-candidate");
+			expect(text).toContain("hobo-release-npm/npm-candidate");
+		});
+
 		it("camp list shows the relay's preview and production Camps from its Yard module", async () => {
 			const home = await freshHome();
 			const listed = await deploy(home, ["camp", "list", "--yard", RELAY_YARD]);
