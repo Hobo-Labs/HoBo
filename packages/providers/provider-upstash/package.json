@@ -26,7 +26,6 @@
 		"@hobo/provider-redaction": "workspace:*"
 	},
 	"devDependencies": {
-		"@hobo/broker": "workspace:*",
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"

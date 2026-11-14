@@ -20,6 +20,8 @@ and reserves and claims each credential request before it is sent. Sessions are
 cached only while their token remains current and are refreshed before expiry.
 An unavailable budget, a foreign endpoint or bucket, a public bucket, or an
 expired session fails closed. Returned errors do not include provider secrets.
+The hosting supervisor supplies the guard using its durable Broker and retains
+ambiguous request reservations until they can be settled.
 
 `estimateUpstashBlobLiability` computes a conservative bound from the caller's
 observed rates and bounded operations, bytes and retention. It does not establish

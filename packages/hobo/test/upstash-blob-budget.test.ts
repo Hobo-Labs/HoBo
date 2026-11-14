@@ -9,8 +9,8 @@ import {
 	HostingQuoteSchema,
 	ProviderAccountExposureSchema,
 } from "@hobo/broker";
+import { createUpstashBlobCredentials } from "@hobo/provider-upstash";
 import { describe, expect, it } from "vitest";
-import { createUpstashBlobCredentials } from "../src/blob-credentials.js";
 
 const now = 1_800_000_000_000;
 const instant = new Date(now).toISOString();
