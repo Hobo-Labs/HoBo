@@ -23,6 +23,8 @@ const trunk =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
 const routed = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const depsRunner =
+	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 
 function lintJobs(jobs: string): number | null {
 	const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
@@ -104,6 +106,45 @@ function lintRunner(
 }
 
 describe("Actions runner policy", () => {
+	it("allows the deps-image fallback only for PR validation without promotion", () => {
+		const deps =
+			"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote";
+		const job = (
+			name: string,
+			runner: string,
+			run: string,
+			needs = "    needs: route\n",
+			condition = "    if: ${{ !cancelled() && github.event_name == 'pull_request' }}\n",
+		) =>
+			`name: fixture\non:\n  pull_request:\njobs:\n${routeJob}  ${name}:\n${needs}${condition}    runs-on: ${runner}\n    steps:\n      - name: Build\n        run: ${run}\n`;
+		assert.equal(
+			lintFile("hobo-ci.yml", job("ci-deps-image", depsRunner, deps)),
+			0,
+		);
+		assert.notEqual(lintFile("hobo-ci.yml", job("other", depsRunner, deps)), 0);
+		assert.notEqual(
+			lintFile("hobo-ci.yml", job("ci-deps-image", depsRunner, deps, "")),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"hobo-ci.yml",
+				job("ci-deps-image", depsRunner, deps, undefined, ""),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"hobo-ci.yml",
+				job("ci-deps-image", depsRunner, deps.replace(" --no-promote", "")),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile("hobo-ci.yml", job("ci-deps-image", routed, deps)),
+			0,
+		);
+	});
 	it("allows the one GitHub-hosted runner needed for npm trusted publishing", () => {
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),

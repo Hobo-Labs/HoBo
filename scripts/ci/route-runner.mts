@@ -7,7 +7,7 @@
  * Runs first in every workflow, on a GitHub-hosted machine, so the choice does
  * not itself wait on the fleet. It has no dependencies and installs nothing.
  *
- * Without a slip, availability is read from GitHub's queue, the one thing every backend
+ * Availability is read from GitHub's queue, the one thing every backend
  * shares: a backend is taking jobs when it was seen to pick one up recently and
  * quickly, no job asking for its label has waited past the limit, and few jobs
  * are already waiting for it. Nothing is asked of the fleet itself,
@@ -18,9 +18,11 @@
  * script reads it once (`GET /git/ref`, then `GET /git/commits`, three
  * seconds together, with the job's own token). A slip that has not expired,
  * names this repository and names only labels `.hobo/ci.json`'s
- * `runnerRouting.labels` allows decides the run's class (`pr`, `fork` or
- * `trunk`), and nothing else is read. With no usable slip the queue decides
- * at once, exactly as it did before slips (rule R3), and a titled warning
+ * `runnerRouting.labels` allows chooses the run's class (`pr`, `fork` or
+ * `trunk`). A fleet choice also needs current pickup and wait evidence for
+ * its exact label; if it lacks that evidence, the queue rule chooses a
+ * fallback. Non-fleet choices do not need a queue read. With no usable slip
+ * the queue decides as before slips (rule R3), and a titled warning
  * (`hobo-ci-route-fallback`) says why.
  *
  * Every setting comes from `runnerRouting` in `.hobo/ci.json` (the pin, the
@@ -36,7 +38,7 @@
  *
  * A run can ask again later (`--include-own-run true`): the main gate's plan
  * job does, before its shards. It reads the slip again, which may have
- * changed; without one, the queue reading keeps the run's own jobs, which by
+ * changed; the queue reading keeps the run's own jobs, which by
  * then are the freshest evidence there is: a plan job that itself waited past
  * the limit takes the fleet out of the decision.
  *
@@ -146,8 +148,9 @@ export type LabelLoad = Readonly<{
 export type RefusedBy = "slip" | "queue" | "none";
 
 /**
- * What became of the routing slip for this decision. `used`: it decided, for
- * the relay's `reason`. `fallback`: none could be used, for `why`, and the
+ * What became of the routing slip for this decision. `used`: it was consulted,
+ * for the relay's `reason`; the queue may still refuse a fleet it named.
+ * `fallback`: none could be used, for `why`, and the
  * queue decided. `unasked`: the tier is pinned or a signed local run covers
  * the tree, so no slip was read.
  */
@@ -249,7 +252,8 @@ function describeLoad(name: string, load: LabelLoad): string {
 
 /**
  * The decision, from what the queue shows: the queue rule, which decides
- * whenever no routing slip can (R3). `fleetLabel` is the label this run would
+ * whenever no routing slip can (R3), or the chosen fleet is not taking jobs.
+ * `fleetLabel` is the label this run would
  * ask the fleet for (`hobo`, or `hobo-trunk` for trunk events); `localLabel`
  * and `githubLabel` are the committed `runnerRouting.labels`, the code's
  * defaults when left out.
@@ -612,6 +616,8 @@ export async function chooseRunner(input: {
 	githubLabel?: string | undefined;
 	localEnrolled: boolean;
 	limits: RouteLimits;
+	/** Confirm a fleet slip against the exact label before trusting it. */
+	confirmFleet?: "open" | "busy" | undefined;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
@@ -621,6 +627,23 @@ export async function chooseRunner(input: {
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
 		const local = labelLoad(view.jobs, localLabel, nowMs);
+		// Busy alone does not refuse a healthy fleet (R4). Unlike a fleet-open
+		// claim, a busy claim is not contradicted merely by a full young queue.
+		const confirmationLimits =
+			input.confirmFleet === "busy"
+				? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
+				: limits;
+		if (
+			input.confirmFleet &&
+			(input.confirmFleet === "busy" || view.undecidedAhead === 0) &&
+			takingJobs(fleet, confirmationLimits)
+		)
+			return {
+				tier: "fleet",
+				runner: fleetLabel,
+				reason: describeLoad("the fleet", fleet),
+				refusedBy: "none",
+			};
 		const decision = routeRunner({
 			mode: input.mode,
 			fleetLabel,
@@ -968,15 +991,29 @@ export async function main(
 		nowMs: now,
 		fetch: io.fetch,
 	});
-	if (slip.ok)
+	if (slip.ok && slip.decision.tier !== "fleet")
 		return report(
 			{ ...slip.decision, reason: `${slip.decision.reason}${defaults}` },
 			env,
 		);
-	// No usable slip: the queue decides at once, as it did before slips (R3).
-	console.log(
-		`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (${slip.why}); the queue rule decides`)}`,
-	);
+	// No usable slip, or a fleet slip requiring an independent queue check.
+	if (!slip.ok)
+		console.log(
+			`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (${slip.why}); the queue rule decides`)}`,
+		);
+	const observedFleetLabel = slip.ok ? slip.decision.runner : fleetLabel;
+	const confirmFleet = slip.ok
+		? slip.decision.slip?.kind === "used" &&
+			slip.decision.slip.reason === "fleet-busy"
+			? "busy"
+			: "open"
+		: undefined;
+	// When a busy slip is valid, a full young queue does not end observation:
+	// later runs may still show a job that has already waited too long.
+	const observationLimits =
+		confirmFleet === "busy"
+			? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
+			: limits;
 	let decision: RouteDecision;
 	try {
 		const read = githubReader(apiUrl, token);
@@ -986,19 +1023,22 @@ export async function main(
 					read,
 					repository,
 					ownRunId: Number(env.GITHUB_RUN_ID),
-					labels: localEnrolled ? [fleetLabel, labels.local] : [fleetLabel],
-					limits,
+					labels: localEnrolled
+						? [observedFleetLabel, labels.local]
+						: [observedFleetLabel],
+					limits: observationLimits,
 					nowMs,
 					includeOwnRun: args.includeOwnRun,
 				}),
 			now,
 			sleep: (wait) => delay(wait * 1000),
 			mode,
-			fleetLabel,
+			fleetLabel: observedFleetLabel,
 			localLabel: labels.local,
 			githubLabel: labels.github,
 			localEnrolled,
 			limits,
+			confirmFleet,
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known
@@ -1010,6 +1050,15 @@ export async function main(
 			refusedBy: "queue",
 		};
 	}
+	if (slip.ok)
+		return report(
+			{
+				...decision,
+				reason: `${slip.decision.reason}; ${decision.reason}${defaults}`,
+				slip: slip.decision.slip,
+			},
+			env,
+		);
 	return report(
 		{
 			...decision,
