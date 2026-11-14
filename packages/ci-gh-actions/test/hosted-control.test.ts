@@ -12,12 +12,24 @@ import {
 	SandboxAllowanceSchema,
 	SandboxPricingSchema,
 } from "@hobo/ci";
+import {
+	type FleetFailure,
+	MEMBER_RECORD_CONTEXT,
+	MemberListSchema,
+	parseFleetId,
+	SignedEnvelopeSchema,
+} from "@hobo/fleet";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { foldBudgetSignals } from "../../broker/src/budget-signals.js";
 import { createHostedCiBudgetRoutingBridge } from "../../stations/src/hosted-ci-routing.js";
 import { createCiRelayClient } from "../src/client.js";
-import { createHostedControlPlane } from "../src/hosted-control.js";
+import {
+	createHostedControlPlane,
+	RELAY_FLEET_MEMBERS_PATH,
+	type RelayFleet,
+	type RelayFleetReads,
+} from "../src/hosted-control.js";
 import { HostedRelay } from "../src/hosted-relay.js";
 import {
 	type OnboardingGithubPort,
@@ -39,6 +51,7 @@ function setup(
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	},
+	fleet?: RelayFleet,
 ) {
 	const h = harness();
 	stores.push(h.store);
@@ -185,6 +198,7 @@ function setup(
 		assets: { workflow: "fixture", bootstrap: "fixture" },
 	};
 	if (runtimeDiagnostic) controlOptions.runtimeDiagnostic = runtimeDiagnostic;
+	if (fleet) controlOptions.fleet = fleet;
 	const handler = createHostedControlPlane(controlOptions);
 	async function request<T>(
 		path: string,
@@ -1892,4 +1906,96 @@ it("refuses generic native backend inventory that this GitHub runner control can
 	).toBe(409);
 	expect(t.h.store.configuration()?.revision).toBe(2);
 	expect(t.h.api.dispatches).toBe(0);
+});
+
+describe("the relay's fleet route", () => {
+	const members = create(MemberListSchema, {
+		members: [
+			create(SignedEnvelopeSchema, {
+				context: MEMBER_RECORD_CONTEXT,
+				keyId: "authority#1",
+				payload: new Uint8Array([8, 1]),
+				signature: new Uint8Array(64),
+			}),
+		],
+	});
+	/** A recording fake of the client's reads: the only methods the relay holds. */
+	function recording(failure?: FleetFailure) {
+		const calls: string[] = [];
+		const reads: RelayFleetReads = {
+			listMembers: async (request) => {
+				calls.push(`listMembers:${request.fleet ?? ""}`);
+				return failure
+					? { ok: false, error: failure }
+					: { ok: true, value: members };
+			},
+			fleetView: async () => {
+				calls.push("fleetView");
+				return { ok: false, error: { code: "forbidden", message: "" } };
+			},
+			fleetVerdict: async () => {
+				calls.push("fleetVerdict");
+				return { ok: false, error: { code: "forbidden", message: "" } };
+			},
+		};
+		return { calls, fleet: { reads, fleetId: parseFleetId("hobo") } };
+	}
+
+	it("answers the signed member list of the relay's fleet to a reader", async () => {
+		const fake = recording();
+		const t = setup(undefined, fake.fleet);
+		const answer = await t.request(RELAY_FLEET_MEMBERS_PATH);
+		expect(answer.status).toBe(200);
+		expect(toJsonString(MemberListSchema, members)).toBe(await answer.text());
+		expect(fake.calls).toEqual(["listMembers:hobo"]);
+	});
+
+	it("needs the read scope, takes no write and reaches the authority for neither", async () => {
+		const fake = recording();
+		const t = setup(undefined, fake.fleet);
+		expect(
+			(await t.request(RELAY_FLEET_MEMBERS_PATH, "GET", "observer")).status,
+		).toBe(403);
+		expect(
+			(await t.request(RELAY_FLEET_MEMBERS_PATH, "GET", "nobody")).status,
+		).toBe(401);
+		for (const method of ["POST", "PUT", "DELETE"])
+			expect((await t.request(RELAY_FLEET_MEMBERS_PATH, method)).status).toBe(
+				405,
+			);
+		expect(fake.calls).toEqual([]);
+	});
+
+	it("answers 503 on a relay that reads no fleet, and the authority's code when it refuses", async () => {
+		const t = setup();
+		const none = await t.request(RELAY_FLEET_MEMBERS_PATH);
+		expect(none.status).toBe(503);
+		expect(await none.json()).toEqual({ error: "this relay reads no fleet" });
+		const refused = recording({
+			code: "fleet-unknown",
+			message: "no such fleet hobo",
+		});
+		const r = setup(undefined, refused.fleet);
+		const answer = await r.request(RELAY_FLEET_MEMBERS_PATH);
+		expect(answer.status).toBe(404);
+		expect(await answer.json()).toEqual({
+			error: "the fleet authority refused the read (fleet-unknown)",
+		});
+	});
+
+	it("serves no mesh route and no hosted verdict or reporter route", async () => {
+		const t = setup(undefined, recording().fleet);
+		for (const path of [
+			"/v1/mesh/nodes",
+			"/v1/fleet/verdicts/org/repo",
+			"/v1/fleet/reporters/org/repo",
+		])
+			expect(
+				await t.handler(
+					new Request(`https://relay.example${path}`, {
+						headers: { authorization: "Bearer admin" },
+					}),
+				),
+			).toBeUndefined();
+	});
 });

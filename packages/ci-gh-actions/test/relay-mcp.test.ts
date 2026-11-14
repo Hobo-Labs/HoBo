@@ -29,11 +29,13 @@ import { config, job, NOW, SECRET } from "./fixtures.js";
 const ORIGIN = "https://ci.example.test";
 const LATER = "2026-10-26T12:01:00Z";
 const TOOLS = [
+	"get_fleet_verdict",
+	"get_fleet_view",
 	"get_lease",
 	"get_relay_status",
 	"list_events",
+	"list_fleet_members",
 	"list_leases",
-	"list_mesh_nodes",
 	"list_pending_jobs",
 	"list_quarantined_webhooks",
 	"reconcile_lease",
@@ -412,7 +414,11 @@ describe("relay MCP tools and resources", () => {
 			(await a.client.listResources()).resources
 				.map((entry) => entry.uri)
 				.sort(),
-		).toEqual(["hobo-ci://events", "hobo-ci://leases", "hobo-ci://mesh/nodes"]);
+		).toEqual([
+			"hobo-ci://events",
+			"hobo-ci://fleet/members",
+			"hobo-ci://leases",
+		]);
 		expect(
 			(await a.client.listResourceTemplates()).resourceTemplates.map(
 				(entry) => entry.uriTemplate,
@@ -498,7 +504,7 @@ describe("relay MCP tools and resources", () => {
 			accountCalls: 8,
 			accountWaits: 8,
 			requestMessages: 8,
-			// This host reads no mesh, and says so.
+			// This host reads no fleet, and says so (the field keeps its proto name).
 			mesh: "not-configured",
 		});
 
