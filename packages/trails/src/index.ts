@@ -80,6 +80,18 @@ export {
 	type TrailIdentityProgress,
 } from "./identity-trail.js";
 export {
+	type DataHandoverInput,
+	type DataHandoverResult,
+	executeDataHandover,
+	inspectDataHandover,
+	type HandoverEndpoint,
+	type HandoverEngine,
+	type HandoverPhase,
+	type HandoverRole,
+	type HandoverSchema,
+	type HandoverVerdict,
+} from "./data-handover.js";
+export {
 	type CompatGateEvidence,
 	type DataMigrationJournal,
 	type DataMigrationPlan,
