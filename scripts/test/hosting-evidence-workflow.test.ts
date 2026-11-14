@@ -34,7 +34,11 @@ const baseEnv = {
 	ACTIONS_ID_TOKEN_REQUEST_TOKEN: "oidc-request-token",
 };
 
-type FakeOptions = Readonly<{ listStatus?: number }>;
+type FakeOptions = Readonly<{
+	listStatus?: number;
+	metadataDenied?: boolean;
+	appId?: string;
+}>;
 function fakeTransport(options: FakeOptions = {}) {
 	const calls: { method: string; url: URL }[] = [];
 	const send: typeof fetch = async (resource, init) => {
@@ -63,6 +67,54 @@ function fakeTransport(options: FakeOptions = {}) {
 					tokenType: "Bearer",
 				}),
 			);
+		if (url.pathname.startsWith("/api/v1/projects/")) {
+			assert.equal(method, "GET");
+			if (options.metadataDenied) return answer(403, "{}");
+			return answer(
+				200,
+				JSON.stringify({
+					project: {
+						id: JSON.parse(bindingText).projectId,
+						environments: [{ slug: "prod" }, { slug: "dev" }],
+					},
+				}),
+			);
+		}
+		if (url.pathname === "/api/v2/folders") {
+			assert.equal(method, "GET");
+			assert.equal(
+				url.searchParams.get("projectId"),
+				JSON.parse(bindingText).projectId,
+			);
+			assert.equal(url.searchParams.get("recursive"), "false");
+			if (url.searchParams.get("environment") === "dev")
+				return answer(403, "{}");
+			const path = url.searchParams.get("path");
+			return answer(
+				200,
+				JSON.stringify({
+					folders:
+						path === "/"
+							? [{ name: "hobo-ci-relay" }, { name: "operations" }]
+							: [],
+				}),
+			);
+		}
+		if (url.pathname === "/api/v4/secrets/HOBO_CI_GITHUB_APP_ID") {
+			assert.equal(method, "GET");
+			assert.equal(url.searchParams.get("viewSecretValue"), "true");
+			assert.equal(url.searchParams.get("secretPath"), "/hobo-ci-relay");
+			return answer(
+				200,
+				JSON.stringify({
+					secret: {
+						secretKey: "HOBO_CI_GITHUB_APP_ID",
+						secretValue: options.appId,
+						version: 1,
+					},
+				}),
+			);
+		}
 		assert.equal(url.pathname, "/api/v4/secrets");
 		assert.equal(method, "GET");
 		assert.equal(url.searchParams.get("viewSecretValue"), "false");
@@ -74,12 +126,27 @@ function fakeTransport(options: FakeOptions = {}) {
 				options.listStatus,
 				JSON.stringify({ error: "hidden-access-token" }),
 			);
+		if (url.searchParams.get("secretPath") === "/operations")
+			return answer(
+				200,
+				JSON.stringify({
+					secrets: [
+						{ secretKey: "CLOUDFLARE_API_TOKEN", version: 1 },
+						{ secretKey: "PRIVATE_UNRELATED_NAME", version: 1 },
+					],
+				}),
+			);
+		if (url.searchParams.get("secretPath") === "/")
+			return answer(200, JSON.stringify({ secrets: [] }));
 		return answer(
 			200,
 			JSON.stringify({
 				secrets: [
 					{ secretKey: "HOBO_CI_CONFIG_JSON", version: 2 },
 					{ secretKey: "VERCEL_TOKEN", version: 1 },
+					...(options.appId
+						? [{ secretKey: "HOBO_CI_GITHUB_APP_ID", version: 1 }]
+						: []),
 					{
 						secretKey: "CUSTOM_SECRET_NAME",
 						version: 1,
@@ -104,16 +171,36 @@ describe("trusted-main hosting evidence", () => {
 			status: "observed",
 			storeAccess: "names-only",
 			knownNamesPresent: ["HOBO_CI_CONFIG_JSON", "VERCEL_TOKEN"],
+			scopeDiscovery: "partial",
+			knownLocations: [
+				{
+					environment: "prod",
+					path: "/hobo-ci-relay",
+					names: ["HOBO_CI_CONFIG_JSON", "VERCEL_TOKEN"],
+				},
+				{
+					environment: "prod",
+					path: "/operations",
+					names: ["CLOUDFLARE_API_TOKEN"],
+				},
+			],
 			ciCanDeploy: "not-evaluated",
 			cdCanDeploy: "not-evaluated",
 		});
-		assert.deepEqual(
-			fake.calls.map(({ method, url }) => [method, url.hostname, url.pathname]),
-			[
-				["GET", "pipelines.actions.githubusercontent.com", "/run/oidc"],
-				["POST", "app.infisical.com", "/api/v1/auth/oidc-auth/login"],
-				["GET", "app.infisical.com", "/api/v4/secrets"],
-			],
+		assert.equal(
+			fake.calls.filter(
+				({ url }) => url.pathname === "/api/v1/auth/oidc-auth/login",
+			).length,
+			1,
+		);
+		assert.equal(
+			fake.calls.every(
+				({ method, url }) =>
+					method === "GET" ||
+					(method === "POST" &&
+						url.pathname === "/api/v1/auth/oidc-auth/login"),
+			),
+			true,
 		);
 		const output = JSON.stringify(result);
 		for (const secret of [
@@ -121,9 +208,52 @@ describe("trusted-main hosting evidence", () => {
 			"hidden-access-token",
 			"hidden-provider-secret",
 			"CUSTOM_SECRET_NAME",
+			"PRIVATE_UNRELATED_NAME",
 		]) {
 			assert.equal(output.includes(secret), false);
 		}
+	});
+
+	it("reads only the public numeric GitHub App ID from the original enrolled folder", async () => {
+		const fake = fakeTransport({ appId: "5497843" });
+		const result = await inspectHostingEvidence({
+			env: baseEnv,
+			bindingText,
+			fetch: fake.send,
+		});
+		assert.equal(result.ciGithubAppId, "5497843");
+		assert.equal(
+			fake.calls.filter(({ url }) =>
+				url.pathname.startsWith("/api/v4/secrets/"),
+			).length,
+			1,
+		);
+		const bad = await inspectHostingEvidence({
+			env: baseEnv,
+			bindingText,
+			fetch: fakeTransport({ appId: "not-a-public-id-secret" }).send,
+		});
+		assert.equal(bad.ciGithubAppId, undefined);
+		assert.equal(JSON.stringify(bad).includes("not-a-public-id-secret"), false);
+	});
+
+	it("does not guess folders or environments when provider metadata is denied", async () => {
+		const fake = fakeTransport({ metadataDenied: true });
+		const result = await inspectHostingEvidence({
+			env: baseEnv,
+			bindingText,
+			fetch: fake.send,
+		});
+		assert.equal(result.status, "observed");
+		assert.equal(result.scopeDiscovery, "unavailable");
+		assert.equal(
+			fake.calls.filter(({ url }) => url.pathname === "/api/v2/folders").length,
+			0,
+		);
+		assert.equal(
+			fake.calls.filter(({ url }) => url.pathname === "/api/v4/secrets").length,
+			1,
+		);
 	});
 
 	it("refuses non-main, wrong repository, wrong workflow, and untrusted OIDC origins before any request", async () => {
