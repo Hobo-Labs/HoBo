@@ -124,6 +124,12 @@ export type StoreHealth = Readonly<{
 }>;
 
 /** The PostgreSQL DurableEventStore. Every optional port method is present. */
+/** Options for a snapshot write. */
+export interface SnapshotWriteOptions {
+	/** Required on a protected or leased stream: the live actor lease's fence. */
+	readonly fenceToken?: bigint;
+}
+
 export interface PostgresEventStore extends DurableEventStore {
 	readonly schema: SchemaName;
 	readonly partitionId: string;
@@ -153,6 +159,13 @@ export interface PostgresEventStore extends DurableEventStore {
 		streamId: string,
 		opts: { initialState: S; handlers: FoldHandlers<S> },
 	): Promise<FoldResult<S>>;
+	/** A protected or leased stream refuses a snapshot without its live fence. */
+	snapshot(
+		streamId: string,
+		state: JsonValue,
+		seq: number,
+		opts?: SnapshotWriteOptions,
+	): Promise<SnapshotRecord>;
 	loadSnapshot<S>(streamId: string): Promise<SnapshotRecord<S> | undefined>;
 	/** Asynchronous stream head (the port's synchronous `getStreamHead` cannot reach a server). */
 	loadStreamHead(streamId: string): Promise<StreamHead | undefined>;
@@ -912,6 +925,48 @@ SELECT EXISTS (
 		});
 	}
 
+	/**
+	 * Refuse a write to a protected or leased stream unless `fenceToken` names
+	 * the live lease and the head's owner epoch. Call with the stream head row
+	 * locked FOR UPDATE and the actor policy row locked.
+	 */
+	async function checkActorWrite(
+		client: PgClientLike,
+		actorPolicy: readonly string[],
+		streamId: string,
+		ownerEpoch: bigint,
+		fenceToken: bigint | undefined,
+	): Promise<void> {
+		const leaseResult = await client.query(
+			`SELECT fence_token, (NOT released AND expires_at > clock_timestamp()) AS active
+			FROM ${s}.actor_leases WHERE stream_id = $1`,
+			[streamId],
+		);
+		const actorLease = leaseResult.rows[0];
+		if (
+			!actorLease &&
+			!actorPolicy.some((prefix) => streamId.startsWith(prefix))
+		)
+			return;
+		await requireActorPrimary(client);
+		if (fenceToken === undefined)
+			throw new MissingFenceError(streamId, ownerEpoch);
+		if (
+			actorLease?.active !== true ||
+			int8(actorLease, "fence_token") !== fenceToken ||
+			ownerEpoch !== fenceToken
+		)
+			throw new StaleFenceError(streamId, fenceToken, ownerEpoch);
+		const checkId = randomUUID();
+		await client.query(
+			`INSERT INTO ${s}.actor_commit_checks (id, stream_id, fence_token) VALUES ($1, $2, $3)`,
+			[checkId, streamId, fenceToken.toString()],
+		);
+		await client.query(`DELETE FROM ${s}.actor_commit_checks WHERE id = $1`, [
+			checkId,
+		]);
+	}
+
 	async function commitIn(
 		client: PgClientLike,
 		streamId: string,
@@ -939,34 +994,13 @@ SELECT EXISTS (
 		}
 		const revision = int4(headRow, "revision");
 		const ownerEpoch = int8(headRow, "owner_epoch");
-		const leaseResult = await client.query(
-			`SELECT fence_token, (NOT released AND expires_at > clock_timestamp()) AS active
-			FROM ${s}.actor_leases WHERE stream_id = $1`,
-			[streamId],
+		await checkActorWrite(
+			client,
+			actorPolicy,
+			streamId,
+			ownerEpoch,
+			append.fenceToken,
 		);
-		const actorLease = leaseResult.rows[0];
-		if (
-			actorLease ||
-			actorPolicy.some((prefix) => streamId.startsWith(prefix))
-		) {
-			await requireActorPrimary(client);
-			if (append.fenceToken === undefined)
-				throw new MissingFenceError(streamId, ownerEpoch);
-			if (
-				actorLease?.active !== true ||
-				int8(actorLease, "fence_token") !== append.fenceToken ||
-				ownerEpoch !== append.fenceToken
-			)
-				throw new StaleFenceError(streamId, append.fenceToken, ownerEpoch);
-			const checkId = randomUUID();
-			await client.query(
-				`INSERT INTO ${s}.actor_commit_checks (id, stream_id, fence_token) VALUES ($1, $2, $3)`,
-				[checkId, streamId, append.fenceToken.toString()],
-			);
-			await client.query(`DELETE FROM ${s}.actor_commit_checks WHERE id = $1`, [
-				checkId,
-			]);
-		}
 
 		const keys = inputs.flatMap((input) =>
 			input.idempotencyKey === undefined ? [] : [input.idempotencyKey],
@@ -1250,9 +1284,14 @@ SELECT EXISTS (
 		streamId: string,
 		state: JsonValue,
 		seq: number,
+		opts?: SnapshotWriteOptions,
 	): Promise<SnapshotRecord> {
 		const id = requireNonEmpty(streamId, "streamId");
 		const snapshotSeq = requireNonNegInt(seq, "seq");
+		const fenceToken =
+			opts?.fenceToken === undefined
+				? undefined
+				: requireInt8(opts.fenceToken, "fenceToken");
 		let stateText: string | undefined;
 		try {
 			stateText = JSON.stringify(state ?? null);
@@ -1268,17 +1307,31 @@ SELECT EXISTS (
 		const savedAt = clock.now();
 		const encoded = stateText;
 		await tx(async (client) => {
+			const actorPolicy = await lockedActorPolicy(client);
 			await client.query(
 				`INSERT INTO ${s}.streams (stream_id, revision, owner_epoch, created_at, updated_at)
          VALUES ($1, 0, 0, $2, $2) ON CONFLICT (stream_id) DO NOTHING`,
 				[id, savedAt],
 			);
+			// FOR UPDATE serialises against acquire's owner-epoch bump, as appends do.
 			const head = await client.query(
-				`SELECT revision FROM ${s}.streams WHERE stream_id = $1 FOR SHARE`,
+				`SELECT revision, owner_epoch FROM ${s}.streams WHERE stream_id = $1 FOR UPDATE`,
 				[id],
 			);
-			const headSeq =
-				head.rows[0] === undefined ? 0 : int4(head.rows[0], "revision");
+			const headRow = head.rows[0];
+			if (headRow === undefined)
+				throw new EventStoreError(
+					"INTEGRITY_FAILURE",
+					`stream head missing for ${id}`,
+				);
+			const headSeq = int4(headRow, "revision");
+			await checkActorWrite(
+				client,
+				actorPolicy,
+				id,
+				int8(headRow, "owner_epoch"),
+				fenceToken,
+			);
 			if (snapshotSeq > headSeq)
 				throw new SnapshotAheadError(id, snapshotSeq, headSeq);
 			await client.query(
