@@ -113,12 +113,13 @@ fleet's policy, is unchanged.
   ceiling before the host's own budget engine decides.
 - `continuityShortfalls(plan, running)`: reports when the running fleet cannot
   keep the promise (too few standbys, a tick slower than the copy cadence, no
-  quorum to fail over without the operator, every member on one vendor).
+  quorum to fail over without the operator, every member on one vendor). If
+  the caller cannot verify vendor diversity, it reports that uncertainty.
 
-Interruption needs no separate mode: a copy is one transaction and a move is a
-sealed register entry, so the next tick completes or undoes whatever an
-interrupted one left. Schema: `data-models/backend_fleet.{proto,cue}`
-`ContinuityFleetPlan`.
+A copy is one transaction and a move is a sealed register entry, so the next
+tick can complete or undo interrupted control-plane work. This alone does
+not fence writes or prove data continuity. Schema:
+`data-models/backend_fleet.{proto,cue}` `ContinuityFleetPlan`.
 
 ## Gates
 

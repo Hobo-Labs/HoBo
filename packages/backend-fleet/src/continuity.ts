@@ -142,7 +142,8 @@ export type ContinuityShortfall = Readonly<{
 		| "continuity-standbys-short"
 		| "continuity-copy-too-slow"
 		| "continuity-no-quorum"
-		| "continuity-no-vendor-diversity";
+		| "continuity-no-vendor-diversity"
+		| "continuity-vendor-diversity-unknown";
 	message: string;
 }>;
 
@@ -154,8 +155,8 @@ export function continuityShortfalls(
 		standbys: number;
 		/** How often the host actually runs the fleet's tick. */
 		tickEveryMs: number;
-		/** Distinct vendors across writer and standbys. */
-		vendors: number;
+		/** Verified distinct vendors across writer and standbys, if known. */
+		vendors?: number;
 		/** Register-only members (`reconcileFleet({ witnesses })`). */
 		witnesses?: number;
 	}>,
@@ -177,7 +178,21 @@ export function continuityShortfalls(
 			code: "continuity-no-quorum",
 			message: `${voters} members cannot keep a majority when one fails, so a failover waits for the operator. Add a witness (a few rows on any third backend) or another standby.`,
 		});
-	if (plan.standbys > 0 && running.standbys > 0 && running.vendors < 2)
+	if (
+		plan.standbys > 0 &&
+		running.standbys > 0 &&
+		running.vendors === undefined
+	)
+		shortfalls.push({
+			code: "continuity-vendor-diversity-unknown",
+			message:
+				"backend failure-domain diversity is unverified; distinct member names do not establish independent vendors.",
+		});
+	else if (
+		plan.standbys > 0 &&
+		running.standbys > 0 &&
+		(running.vendors ?? 0) < 2
+	)
 		shortfalls.push({
 			code: "continuity-no-vendor-diversity",
 			message:

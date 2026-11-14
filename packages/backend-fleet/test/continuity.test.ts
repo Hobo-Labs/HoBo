@@ -68,12 +68,23 @@ describe("continuityBudgetCheck", () => {
 });
 
 describe("continuityShortfalls", () => {
+	it("reports unverified failure domains even when multiple members are configured", () => {
+		const plan = continuityFleetPlan(standard);
+		expect(
+			continuityShortfalls(plan, { standbys: 2, tickEveryMs: 60_000 }).map(
+				(shortfall) => shortfall.code,
+			),
+		).toEqual(["continuity-vendor-diversity-unknown"]);
+	});
+
 	it("reports a fleet that cannot keep the promise", () => {
 		const plan = continuityFleetPlan(standard);
 		expect(
-			continuityShortfalls(plan, { standbys: 0, tickEveryMs: 60_000, vendors: 1 }).map(
-				(s) => s.code,
-			),
+			continuityShortfalls(plan, {
+				standbys: 0,
+				tickEveryMs: 60_000,
+				vendors: 1,
+			}).map((s) => s.code),
 		).toEqual(["continuity-standbys-short"]);
 		expect(
 			continuityShortfalls(plan, {
