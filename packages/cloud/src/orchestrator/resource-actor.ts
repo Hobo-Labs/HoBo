@@ -24,7 +24,7 @@ import {
 import { isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
-import { desiredSpecHash } from "./desired-state.js";
+import { desiredSpecHash, recordedResources } from "./desired-state.js";
 
 // The ResourceActor reconciliation FSM (control-plane.md "The ResourceActor
 // reconciliation FSM"). Each resource in a plan gets a durable virtual actor
@@ -77,6 +77,7 @@ export function foldResourceActor(
 	events: Iterable<EventEnvelope>,
 	resource: ResourcePlan,
 ): ResourceActorSnapshot {
+	const history = Array.isArray(events) ? events : [...events];
 	const snapshot: ResourceActorSnapshot = {
 		deploymentId: resource.deploymentId ?? "",
 		resourceId: resource.name,
@@ -86,7 +87,7 @@ export function foldResourceActor(
 		deps: [...resource.deps],
 	};
 
-	for (const event of events) {
+	for (const event of history) {
 		// SAFETY: `const data = event.data as {` is required at this I/O or test boundary.
 		const data = event.data as {
 			resourceId?: string;
@@ -128,6 +129,14 @@ export function foldResourceActor(
 			default:
 				break;
 		}
+	}
+	// Old facts have no hash. When their original plan is in the log, derive
+	// the baseline from that plan rather than ignoring every subsequent change.
+	if (snapshot.state === "Provisioned" && snapshot.specHash === undefined) {
+		const recordedHash = recordedResources(history).get(
+			resource.name,
+		)?.specHash;
+		if (recordedHash !== undefined) snapshot.specHash = recordedHash;
 	}
 	return snapshot;
 }
@@ -177,6 +186,7 @@ export function iacProgramFor(
 				: "pulumi",
 		action,
 		stackName: `${tenant}/${deploymentId}/${resource.name}`,
+		resource: structuredClone(resource),
 	};
 }
 
@@ -191,8 +201,8 @@ function finalStateHash(resourceId: string): string {
 /**
  * True when a resource's recorded state already matches its declaration, so
  * reconciling it must call no provider: it is Provisioned from the same
- * desired spec, or Provisioned by a fact that predates spec hashes (treated as
- * converged so an upgrade never re-applies an unchanged estate).
+ * desired spec, or Provisioned by a legacy fact whose original plan is not
+ * available (treated as converged rather than guessing what was applied).
  */
 export function isConverged(
 	snapshot: ResourceActorSnapshot,

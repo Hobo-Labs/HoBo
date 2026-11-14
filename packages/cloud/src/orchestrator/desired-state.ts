@@ -28,8 +28,8 @@ import type { DeploymentPlan, ResourcePlan } from "../plan-types.js";
 //
 // A desired spec is identified by `desiredSpecHash`. The hash is recorded on
 // `resource.Provisioning` and `resource.Provisioned`. A Provisioned fact written
-// before hashes existed carries none; it is treated as converged, so upgrading
-// HoBo never re-applies an estate nobody changed.
+// before hashes existed carries none; its contemporaneous plan supplies the
+// baseline when available. With no recorded plan it is treated as converged.
 
 export type DeploymentMode = "incremental" | "complete";
 
@@ -188,10 +188,7 @@ function plannedResources(event: EventEnvelope): readonly ResourcePlan[] {
 export function recordedResources(
 	events: readonly EventEnvelope[],
 ): ReadonlyMap<string, RecordedResource> {
-	const states = new Map<
-		string,
-		{ state: RecordedResource["state"]; specHash?: string }
-	>();
+	const states = new Map<string, Omit<RecordedResource, "resourceId">>();
 	const plans = new Map<string, ResourcePlan>();
 	for (const event of events) {
 		if (event.type === CLOUD_EVENTS.DeploymentPlanned) {
@@ -203,19 +200,48 @@ export function recordedResources(
 		if (resourceId === undefined) continue;
 		const previous = states.get(resourceId);
 		switch (event.type) {
-			case CLOUD_EVENTS.ResourceProvisioning:
+			case CLOUD_EVENTS.ResourceProvisioning: {
+				const targetHash = specHashOf(event);
+				const candidate = plans.get(resourceId);
+				// A failed in-place update can leave either version at the provider.
+				// Do not guess which plan can safely destroy it.
+				const plan =
+					previous !== undefined &&
+					previous.state !== "Destroyed" &&
+					previous.specHash !== undefined
+						? targetHash !== undefined && targetHash === previous.specHash
+							? previous.plan
+							: undefined
+						: candidate &&
+								(targetHash === undefined ||
+									desiredSpecHash(candidate) === targetHash)
+							? candidate
+							: undefined;
 				states.set(resourceId, {
 					state: "Provisioning",
 					...(previous?.specHash !== undefined
 						? { specHash: previous.specHash }
 						: undefined),
+					...(plan !== undefined ? { plan } : undefined),
 				});
 				break;
+			}
 			case CLOUD_EVENTS.ResourceProvisioned: {
-				const specHash = specHashOf(event);
+				const eventHash = specHashOf(event);
+				const candidate = plans.get(resourceId);
+				const plan =
+					candidate &&
+					(eventHash === undefined || desiredSpecHash(candidate) === eventHash)
+						? candidate
+						: undefined;
+				// A legacy fact can be compared with its contemporaneous recorded
+				// plan, without treating every future declaration as unchanged.
+				const specHash =
+					eventHash ?? (plan ? desiredSpecHash(plan) : undefined);
 				states.set(resourceId, {
 					state: "Provisioned",
 					...(specHash !== undefined ? { specHash } : undefined),
+					...(plan !== undefined ? { plan } : undefined),
 				});
 				break;
 			}
@@ -234,11 +260,9 @@ export function recordedResources(
 	}
 	const out = new Map<string, RecordedResource>();
 	for (const [resourceId, recorded] of states) {
-		const plan = plans.get(resourceId);
 		out.set(resourceId, {
 			resourceId,
 			...recorded,
-			...(plan !== undefined ? { plan } : undefined),
 		});
 	}
 	return out;

@@ -217,6 +217,7 @@ message IacProgram {
   string driver = 5;               // iac driver: pulumi | terraform | container | ...
   string action = 6;               // "preview" | "apply" | "destroy"
   string stack_name = 7;           // per-resource stack key: tenant/deployment/resource
+  ResourcePlan resource = 8;       // desired declaration to realize, when supplied
 }
 
 // A short-lived, capability-scoped token injected per-exec (control-plane.md:

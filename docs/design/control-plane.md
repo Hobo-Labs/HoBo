@@ -71,8 +71,8 @@ log recorded, apply only the difference
   id). It is recorded on `resource.Provisioning` and `resource.Provisioned`.
 - **Upsert:** never provisioned, or `Destroyed` → create; `Provisioned` from a
   different hash → `Updating` (in place) → `Provisioned`; same hash → no-op. A
-  `Provisioned` fact older than spec hashes is treated as converged, so an
-  upgrade never re-applies an unchanged estate.
+  `Provisioned` fact older than spec hashes uses its recorded plan as the
+  baseline when available; otherwise it is treated as converged.
 - **Idempotent:** an unchanged re-run appends no fact, calls no provider and
   records no second `deployment.Deployed`.
 - **Epochs:** a run sees only the no-go failures after the last
@@ -81,8 +81,9 @@ log recorded, apply only the difference
 - **Modes** (Bicep's names): `incremental` (default) keeps resources the log
   provisioned but the plan no longer declares and reports them `retain`;
   `complete` destroys them, dependents first, after the declared resources
-  converge. An orphan with no recorded `deployment.Planned` is reported
-  unprunable rather than guessed at.
+  converge. The provider receives the desired resource declaration. Failed or
+  unsafe orphan deletion leaves the run waiting and retains dependencies;
+  unknown orphan dependencies prevent other deletions from being guessed at.
 - **What-if:** `planDeploymentChanges(plan, events, mode)` is the pure diff
   (`create` / `update` / `no-op` / `delete` / `retain`) that `hobo plan` and
   `hobo up --what-if` print and every run reports as `changes`.

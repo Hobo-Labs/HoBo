@@ -107,9 +107,18 @@ function resourceStates(
 
 function depsProvisioned(
 	resource: ResourcePlan,
-	states: Map<string, ResourceActorState>,
+	snapshots: Map<string, ResourceActorSnapshot>,
+	resources: Map<string, ResourcePlan>,
 ): boolean {
-	return resource.deps.every((dep) => states.get(dep) === "Provisioned");
+	return resource.deps.every((dep) => {
+		const snapshot = snapshots.get(dep);
+		const desired = resources.get(dep);
+		return (
+			snapshot !== undefined &&
+			desired !== undefined &&
+			isConverged(snapshot, desired)
+		);
+	});
 }
 
 // Run the choreography to convergence: reconcile any resource whose deps are all
@@ -148,6 +157,9 @@ export async function runOrchestrator(
 	// failures belong to an `up` that already ended.
 	const epochStart = currentEpochStart(initialEvents);
 	const changes = planDeploymentChanges(plan, initialEvents, mode);
+	const resources = new Map(
+		plan.resources.map((resource) => [resource.name, resource]),
+	);
 	// Each resource is applied at most once per run: a retryable failure is
 	// reported as `waiting`, not retried in a hot loop.
 	const attempted = new Set<string>();
@@ -156,9 +168,6 @@ export async function runOrchestrator(
 		progressed = false;
 		const events = await collectStream(deps.store, stream);
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
-		const states = new Map(
-			[...snapshots].map(([name, snapshot]) => [name, snapshot.state]),
-		);
 
 		// A no-go failure in this epoch short-circuits to compensation.
 		const failed = events.find(
@@ -181,7 +190,7 @@ export async function runOrchestrator(
 			if (snapshot && isConverged(snapshot, resource)) continue;
 			if (snapshot?.state === "Destroying") continue;
 			if (attempted.has(resource.name)) continue;
-			if (!depsProvisioned(resource, states)) continue;
+			if (!depsProvisioned(resource, snapshots, resources)) continue;
 			attempted.add(resource.name);
 
 			const outcome = await reconcileResource(
@@ -247,13 +256,35 @@ export async function runOrchestrator(
 	// log provisioned but the plan no longer declares, dependents first.
 	const pruned: string[] = [];
 	let unprunable: string[] = [];
-	const declaredConverged = plan.resources.every(
-		(r) => states.get(r.name) === "Provisioned",
-	);
-	if (mode === "complete" && declaredConverged) {
+	const declaredConverged = () => {
+		const snapshots = resourceSnapshots(events, plan, deploymentId);
+		return plan.resources.every((resource) => {
+			const snapshot = snapshots.get(resource.name);
+			return snapshot !== undefined && isConverged(snapshot, resource);
+		});
+	};
+	if (mode === "complete" && declaredConverged()) {
 		const orphans = orphansToPrune(plan, events);
 		unprunable = [...orphans.unknown];
+		// A live declared resource may still reference an undeclared one. An
+		// orphan without a recorded plan may depend on any other orphan, so
+		// preserve all known orphans until its dependencies can be recovered.
+		const blocked = new Set(
+			plan.resources.flatMap((resource) => resource.deps),
+		);
+		const remaining = new Set(orphans.ordered.map((orphan) => orphan.name));
+		if (orphans.unknown.length > 0)
+			for (const orphan of orphans.ordered) blocked.add(orphan.name);
 		for (const orphan of orphans.ordered) {
+			const hasLiveDependent = orphans.ordered.some(
+				(other) =>
+					remaining.has(other.name) && other.deps.includes(orphan.name),
+			);
+			if (blocked.has(orphan.name) || hasLiveDependent) {
+				unprunable.push(orphan.name);
+				for (const dependency of orphan.deps) blocked.add(dependency);
+				continue;
+			}
 			const outcome = await destroyResource(
 				actorDeps,
 				{ ...orphan, deploymentId },
@@ -261,9 +292,11 @@ export async function runOrchestrator(
 			);
 			if (outcome.kind === "failed") {
 				unprunable.push(orphan.name);
+				for (const dependency of orphan.deps) blocked.add(dependency);
 				continue;
 			}
 			if (outcome.kind === "destroyed") pruned.push(orphan.name);
+			remaining.delete(orphan.name);
 		}
 		if (pruned.length > 0) {
 			events = await collectStream(deps.store, stream);
@@ -272,9 +305,7 @@ export async function runOrchestrator(
 	}
 
 	// All actors Provisioned → drive deployment.Deployed (choreography terminal).
-	const allProvisioned = plan.resources.every(
-		(r) => states.get(r.name) === "Provisioned",
-	);
+	const allProvisioned = declaredConverged() && unprunable.length === 0;
 	// Deployed is recorded once per change: an idempotent re-run that changed
 	// nothing appends nothing.
 	if (allProvisioned && changedSinceLastDeployed(events)) {

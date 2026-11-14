@@ -181,6 +181,7 @@ package hobo
 	driver:       string & !=""
 	action:       "preview" | "apply" | "destroy"
 	stackName:    string & !=""
+	resource?:    #ResourcePlan
 }
 
 #ScopedCredential: {

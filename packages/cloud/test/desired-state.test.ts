@@ -15,6 +15,7 @@ import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
 	type DeploymentPlan,
+	deploymentDeployed,
 	deploymentPlanned,
 	desiredSpecHash,
 	type IacProgram,
@@ -23,6 +24,7 @@ import {
 	orphansToPrune,
 	parseDeploymentMode,
 	planDeploymentChanges,
+	resourceProvisioned,
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
@@ -176,6 +178,132 @@ describe("idempotent deployment", () => {
 });
 
 describe("upsert", () => {
+	it("detects later changes to legacy resources when their applied plan is recorded", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const fixture = loadPlan();
+		const plan = {
+			...fixture,
+			resources: fixture.resources.filter((r) => r.name === "network"),
+		};
+		await recordPlan(store, "legacy-plan", plan);
+		const stream = "deployment:legacy-plan";
+		const events = await drain(store, stream);
+		await emit(
+			store,
+			stream,
+			[
+				resourceProvisioned({
+					deploymentId: "legacy-plan",
+					resourceId: "network",
+					outputs: {},
+					execId: "legacy",
+				}),
+				deploymentDeployed({
+					deploymentId: "legacy-plan",
+					setId: "legacy-set",
+					resourceIds: ["network"],
+				}),
+			],
+			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
+		);
+		await runOrchestrator(deps(store, iac), plan, "legacy-plan", {
+			tenant,
+			actor,
+		});
+		expect(iac.calls).toEqual([]);
+
+		const changed = {
+			...plan,
+			resources: plan.resources.map((r) => ({ ...r, region: "new-region" })),
+		};
+		await recordPlan(store, "legacy-plan", changed);
+		const whatIf = planDeploymentChanges(changed, await drain(store, stream));
+		expect(whatIf.changes[0]?.action).toBe("update");
+		const result = await runOrchestrator(
+			deps(store, iac),
+			changed,
+			"legacy-plan",
+			{ tenant, actor },
+		);
+		expect(iac.calls).toEqual(["apply:network"]);
+		expect(result.status).toBe("deployed");
+	});
+
+	it("sends the changed resource declaration to the provider", async () => {
+		const store = freshStore();
+		const recorded: IacProgram[] = [];
+		const iac: IacProvider = {
+			...recordingIac(),
+			async apply(program) {
+				recorded.push(program);
+				return {};
+			},
+		};
+		const plan = loadPlan();
+		await runOrchestrator(deps(store, iac), plan, "provider-spec", {
+			tenant,
+			actor,
+		});
+		recorded.length = 0;
+		const changed = {
+			...plan,
+			resources: plan.resources.map((r) =>
+				r.name === "cache"
+					? {
+							...r,
+							region: "new-region",
+							productId: "new-product",
+							realizationParameters: { size: "large" },
+						}
+					: r,
+			),
+		};
+		const result = await runOrchestrator(
+			deps(store, iac),
+			changed,
+			"provider-spec",
+			{ tenant, actor },
+		);
+		expect(result.status).toBe("deployed");
+		expect(recorded).toHaveLength(1);
+		expect(recorded[0]?.resource).toMatchObject({
+			name: "cache",
+			region: "new-region",
+			productId: "new-product",
+			realizationParameters: { size: "large" },
+		});
+	});
+
+	it("updates dependencies before their dependents even when the plan lists the dependent first", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await runOrchestrator(deps(store, iac), plan, "update-order", {
+			tenant,
+			actor,
+		});
+		iac.calls.length = 0;
+		const changed = {
+			...plan,
+			resources: [...plan.resources]
+				.reverse()
+				.map((r) =>
+					r.name === "api" || r.name === "database"
+						? { ...r, region: "new-region" }
+						: r,
+				),
+		};
+		const result = await runOrchestrator(
+			deps(store, iac),
+			changed,
+			"update-order",
+			{ tenant, actor },
+		);
+		expect(result.status).toBe("deployed");
+		expect(iac.calls).toEqual(["apply:database", "apply:api"]);
+	});
+
 	it("updates only the resource whose declared spec changed", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
@@ -278,6 +406,138 @@ describe("create/destroy cycle", () => {
 });
 
 describe("deployment modes", () => {
+	it("does not delete an orphan involved in a dependency cycle", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const fixture = loadPlan();
+		const template = fixture.resources[0];
+		if (!template) throw new Error("missing fixture resource");
+		const cyclic = {
+			...fixture,
+			resources: [
+				{ ...template, name: "a", deps: ["b"] },
+				{ ...template, name: "b", deps: ["a"] },
+			],
+		};
+		await recordPlan(store, "orphan-cycle", cyclic);
+		const stream = "deployment:orphan-cycle";
+		const events = await drain(store, stream);
+		await emit(
+			store,
+			stream,
+			cyclic.resources.map((resource) =>
+				resourceProvisioned({
+					deploymentId: "orphan-cycle",
+					resourceId: resource.name,
+					outputs: {},
+					execId: resource.name,
+					specHash: desiredSpecHash(resource),
+				}),
+			),
+			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
+		);
+		const result = await runOrchestrator(
+			deps(store, iac),
+			{ ...cyclic, resources: [] },
+			"orphan-cycle",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(result.status).toBe("waiting");
+		expect(result.unprunable).toEqual(["a", "b"]);
+		expect(iac.calls).toEqual([]);
+	});
+
+	it("does not guess which plan to destroy after a failed in-place update", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const fixture = loadPlan();
+		const plan = {
+			...fixture,
+			resources: fixture.resources.filter((r) => r.name === "network"),
+		};
+		await recordPlan(store, "uncertain-update", plan);
+		await runOrchestrator(deps(store, iac), plan, "uncertain-update", {
+			tenant,
+			actor,
+		});
+		const changed = {
+			...plan,
+			resources: plan.resources.map((r) => ({
+				...r,
+				provider: "new-provider",
+			})),
+		};
+		await recordPlan(store, "uncertain-update", changed);
+		const failing: IacProvider = {
+			...iac,
+			async apply() {
+				throw new Error("partial update");
+			},
+		};
+		const update = await runOrchestrator(
+			deps(store, failing),
+			changed,
+			"uncertain-update",
+			{ tenant, actor },
+		);
+		expect(update.status).toBe("waiting");
+		const retried = await runOrchestrator(
+			deps(store, failing),
+			changed,
+			"uncertain-update",
+			{ tenant, actor },
+		);
+		expect(retried.status).toBe("waiting");
+		iac.calls.length = 0;
+		const result = await runOrchestrator(
+			deps(store, iac),
+			{ ...plan, resources: [] },
+			"uncertain-update",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(result.status).toBe("waiting");
+		expect(result.unprunable).toEqual(["network"]);
+		expect(iac.calls).toEqual([]);
+	});
+
+	it("uses the applied plan when an unapplied later plan changes the provider", async () => {
+		const store = freshStore();
+		const destroyed: IacProgram[] = [];
+		const iac: IacProvider = {
+			...recordingIac(),
+			async destroy(program) {
+				destroyed.push(program);
+			},
+		};
+		const fixture = loadPlan();
+		const plan = {
+			...fixture,
+			resources: fixture.resources.filter((r) => r.name === "network"),
+		};
+		await recordPlan(store, "applied-plan", plan);
+		await runOrchestrator(deps(store, iac), plan, "applied-plan", {
+			tenant,
+			actor,
+		});
+		await recordPlan(store, "applied-plan", {
+			...plan,
+			resources: plan.resources.map((r) => ({
+				...r,
+				provider: "unapplied-provider",
+			})),
+		});
+		const result = await runOrchestrator(
+			deps(store, iac),
+			{ ...plan, resources: [] },
+			"applied-plan",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(result.status).toBe("deployed");
+		expect(destroyed.map((program) => program.provider)).toEqual([
+			plan.resources[0]?.provider,
+		]);
+	});
+
 	it("incremental retains undeclared resources; complete prunes them dependents-first", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
@@ -337,5 +597,141 @@ describe("deployment modes", () => {
 		expect(orphansToPrune(smaller, events).unknown.length).toBe(
 			plan.resources.length - 1,
 		);
+	});
+
+	it("keeps dependencies of a failed deletion and resumes pruning on retry", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await recordPlan(store, "prune-failure", plan);
+		await runOrchestrator(deps(store, iac), plan, "prune-failure", {
+			tenant,
+			actor,
+		});
+		const smaller = {
+			...plan,
+			resources: plan.resources.filter(
+				(r) => r.name !== "web" && r.name !== "api",
+			),
+		};
+		iac.calls.length = 0;
+		const failing: IacProvider = {
+			...iac,
+			async destroy(program) {
+				iac.calls.push(`destroy:${program.resourceId}`);
+				if (program.resourceId === "web")
+					throw new Error("provider unavailable");
+			},
+		};
+		const failed = await runOrchestrator(
+			deps(store, failing),
+			smaller,
+			"prune-failure",
+			{
+				tenant,
+				actor,
+				mode: "complete",
+			},
+		);
+		expect(iac.calls).toEqual(["destroy:web"]);
+		expect(failed.status).toBe("waiting");
+		expect(failed.unprunable).toEqual(["api", "web"]);
+		expect(
+			failed.events.filter((e) => e.type === "deployment.Deployed"),
+		).toHaveLength(1);
+
+		iac.calls.length = 0;
+		const retried = await runOrchestrator(
+			deps(store, iac),
+			smaller,
+			"prune-failure",
+			{
+				tenant,
+				actor,
+				mode: "complete",
+			},
+		);
+		expect(iac.calls).toEqual(["destroy:web", "destroy:api"]);
+		expect(retried.status).toBe("deployed");
+		expect(retried.unprunable).toEqual([]);
+	});
+
+	it("does not prune known resources when an orphan has no recorded dependencies", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await recordPlan(store, "unknown-deps", {
+			...plan,
+			resources: plan.resources.filter((r) => r.name !== "web"),
+		});
+		await runOrchestrator(deps(store, iac), plan, "unknown-deps", {
+			tenant,
+			actor,
+		});
+		iac.calls.length = 0;
+		const result = await runOrchestrator(
+			deps(store, iac),
+			{
+				...plan,
+				resources: plan.resources.filter(
+					(r) => r.name !== "web" && r.name !== "api",
+				),
+			},
+			"unknown-deps",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(iac.calls).toEqual([]);
+		expect(result.status).toBe("waiting");
+		expect(result.unprunable).toEqual(["api", "web"]);
+	});
+
+	it("does not prune a dependency still referenced by a declared resource", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await recordPlan(store, "declared-deps", plan);
+		await runOrchestrator(deps(store, iac), plan, "declared-deps", {
+			tenant,
+			actor,
+		});
+		iac.calls.length = 0;
+		const result = await runOrchestrator(
+			deps(store, iac),
+			{
+				...plan,
+				resources: plan.resources.filter((r) => r.name !== "api"),
+			},
+			"declared-deps",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(iac.calls).toEqual([]);
+		expect(result.status).toBe("waiting");
+		expect(result.unprunable).toEqual(["api"]);
+	});
+
+	it("does not report a blocked update as deployed", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await runOrchestrator(deps(store, iac), plan, "blocked-update", {
+			tenant,
+			actor,
+		});
+		iac.calls.length = 0;
+		const result = await runOrchestrator(
+			deps(store, iac),
+			{
+				...plan,
+				resources: plan.resources.map((r) =>
+					r.name === "web"
+						? { ...r, deps: ["missing"], region: "new-region" }
+						: r,
+				),
+			},
+			"blocked-update",
+			{ tenant, actor },
+		);
+		expect(iac.calls).toEqual([]);
+		expect(result.status).toBe("waiting");
 	});
 });
