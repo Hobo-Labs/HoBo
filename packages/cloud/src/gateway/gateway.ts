@@ -165,6 +165,10 @@ export async function deploy(
 			throw new UnauthorizedCommandError(
 				"deployment belongs to a different tenant",
 			);
+		if (canonicalJson(original.actor) !== canonicalJson(context.actor))
+			throw new UnauthorizedCommandError(
+				"deployment belongs to a different principal",
+			);
 		if (
 			original.data.bindleHash !== bindleHash ||
 			canonicalJson(original.data.config ?? {}) !==
