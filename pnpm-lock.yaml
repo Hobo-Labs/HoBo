@@ -1850,6 +1850,9 @@ importers:
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
+      '@hobo/junctions':
+        specifier: workspace:*
+        version: link:../junctions
       '@hobo/management':
         specifier: workspace:*
         version: link:../management

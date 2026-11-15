@@ -1,4 +1,6 @@
-import path from "node:path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { CommandModule, CommandRunInput } from "@hobo/cli";
@@ -164,7 +166,8 @@ describe("hobo ci up through the relay's Yards", () => {
 				},
 			},
 		);
-		await plan.run(input("/nowhere"));
+		// A directory with no relay project in or beside it.
+		await plan.run(input(mkdtempSync(join(tmpdir(), "hobo-no-relay-"))));
 		expect(fellBack).toBe(true);
 	});
 });

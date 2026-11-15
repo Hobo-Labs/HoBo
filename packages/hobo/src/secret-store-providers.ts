@@ -11,6 +11,10 @@ import type { RegistrableProvider } from "@hobo/cloud";
 // resolves at run time with its own sign-in. No value passes through the plan,
 // the journal or a provider's realization.
 //
+// The composed deploy executor runs such a placement as a reference
+// (`secret-ref-executor.ts`), across the provider junction that joins the
+// reader's Yard to the store's.
+//
 // Both operations the SDK declares on a secret resource (`access`, `put`) are
 // ones every store here serves. A store's sign-in and coordinates come from
 // the owner's ceremony (`@hobo/hobo-ci` `ownerStore`), not from this

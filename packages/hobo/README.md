@@ -188,6 +188,17 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 | Direct-HTTP Cloudflare resolver plane | A brokered or explicitly injected `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
 | Direct-HTTP Vercel resolver plane | A brokered or explicitly injected `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
 
+Whichever lane runs, a placement on a secret store (`hobo add infisical |
+bitwarden | 1password`, port `secretRef`) is executed by
+`withSecretRefExecution` (`src/secret-ref-executor.ts`): it opens the owner's
+store without a page (the committed `.hobo/secret-store.json`), refuses a store
+that did not open (`HOBO_SECRET_REF_STORE_UNAVAILABLE`) or is not the one the
+plan chose (`HOBO_SECRET_REF_STORE_MISMATCH`), and returns the reference the
+workload reads at run time; nothing is provisioned, and destroy leaves the
+store's entries alone. The store's service is internal to a Yard of its own,
+joined to the Yard of each provider whose resources read the secret by a
+provider junction (`secretRefJunctions`), named in the placement's outputs.
+
 The composed `hobo` never takes a real deploy token from its own process
 environment: `deployEnvironment()` in `src/compose.ts` drops a
 `VERCEL_TOKEN` or `CLOUDFLARE_API_TOKEN` that is not an OpenSesame `osr_`

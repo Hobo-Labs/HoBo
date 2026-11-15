@@ -82,17 +82,24 @@ import {
 	registerProviderFact,
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
-import type {
-	CloudProvider,
-	ComponentHostEvent,
-	DurableEventStore,
-	EventStore,
-	HttpTransport,
-	InterfaceId,
-	ParsedComponentDescriptor,
-	ProviderDescriptor,
+import {
+	type CloudProvider,
+	type ComponentHostEvent,
+	createTrustedVault,
+	type DurableEventStore,
+	type EventStore,
+	type HttpTransport,
+	type InterfaceId,
+	type ParsedComponentDescriptor,
+	type ProviderDescriptor,
 } from "@hobo/core";
 import { createInMemoryActorHost } from "@hobo/data";
+import {
+	type OpenedSecretStore,
+	ownerStore,
+	withoutSecretEnv,
+	workloadOidcOf,
+} from "@hobo/hobo-ci";
 import {
 	createPulumiAutomationAdapter,
 	createPulumiAutomationApiEngine,
@@ -131,6 +138,7 @@ import {
 	createFetchHttpTransport,
 	createResolverBackedIacProvider,
 } from "./resolver-iac-provider.js";
+import { withSecretRefExecution } from "./secret-ref-executor.js";
 import type { FetchHandler } from "./servable-entrypoints.js";
 
 function asFetchHandler(
@@ -262,6 +270,10 @@ export interface SelectIacProviderDeps {
 	// a fake to drive the REAL resolvers over a modelled provider account without
 	// a live token or a real socket.
 	readonly resolverTransport?: HttpTransport;
+	// The owner's secret store, for `secretRef` placements
+	// (`secret-ref-executor.ts`). By default it is opened without a page from
+	// the locator committed in the working directory.
+	readonly openSecretStore?: () => Promise<OpenedSecretStore | undefined>;
 }
 
 // Per-store, per-lane Pulumi adapter memo. Sharing ONE adapter (and therefore
@@ -594,6 +606,35 @@ function resolverBackedProviderFor(
 // `VERCEL_ORG_ID`, names, or in the token's own scope when neither does
 // (`vercelTeamIdOf`).
 export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
+	// A placement on a secret store realizes a reference: whichever lane
+	// executes the rest, the store's placements are executed here.
+	return withSecretRefExecution(selectDeployLane(deps), {
+		open: deps.openSecretStore ?? (() => openOwnerSecretStore(deps.env)),
+		store: deps.store,
+	});
+}
+
+/** The owner's store, opened without a page (`ownerStore`), or none. */
+async function openOwnerSecretStore(
+	injected: NodeJS.ProcessEnv | undefined,
+): Promise<OpenedSecretStore | undefined> {
+	const env = injected ?? process.env;
+	const signIn = createTrustedVault();
+	const workloadOidc = workloadOidcOf(env);
+	try {
+		return (
+			await ownerStore("cd", signIn, {
+				env: withoutSecretEnv(env),
+				cwd: process.cwd(),
+				...(workloadOidc !== undefined ? { workloadOidc } : undefined),
+			})
+		).opened;
+	} finally {
+		signIn.clear();
+	}
+}
+
+function selectDeployLane(deps: SelectIacProviderDeps): IacProvider {
 	const env = deployEnvironment(deps.env);
 	if (usesOpenSesameCredentials(env)) requireOpenSesameSurrogate(env);
 	const estateAdapter = selectPulumiEstateAdapter(deps);

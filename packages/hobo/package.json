@@ -57,6 +57,7 @@
 		"@hobo/hobo-cd": "workspace:*",
 		"@hobo/hobo-ci": "workspace:*",
 		"@hobo/iac-pulumi": "workspace:*",
+		"@hobo/junctions": "workspace:*",
 		"@hobo/identity": "workspace:*",
 		"@hobo/management": "workspace:*",
 		"@hobo/mcp": "workspace:*",

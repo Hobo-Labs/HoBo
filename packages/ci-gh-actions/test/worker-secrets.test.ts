@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -46,7 +49,9 @@ const child = (source: string) =>
 
 describe("waitForWorkerStart", () => {
 	it("reports a spawn failure instead of waiting for readiness", async () => {
-		const worker = spawn("/nonexistent/hobo-worker-binary", [], {
+		// A binary in a fresh empty directory: it does not exist, and nothing here creates it.
+		const missing = join(mkdtempSync(join(tmpdir(), "hobo-worker-")), "absent");
+		const worker = spawn(missing, [], {
 			stdio: ["ignore", "ignore", "pipe"],
 		});
 		// Keep the before-fix failure inside this test rather than crashing Vitest.
