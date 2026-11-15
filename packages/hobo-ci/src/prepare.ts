@@ -15,6 +15,7 @@ import {
 	GITHUB_APP_HOSTS,
 	type GithubAppOwner,
 	resolveGithubAppHost,
+	validGithubOrganizationLogin,
 } from "./app-hosts.js";
 import {
 	CI_SETTINGS,
@@ -164,6 +165,16 @@ async function prepareGithubWithVault(
 	deps: PrepareGithubDeps & { readonly vault: TrustedVault },
 ): Promise<PrepareOutcome> {
 	const env = deps.env ?? process.env;
+	if (
+		env.HOBO_CI_GITHUB_OWNER_TYPE === "Organization" &&
+		env.HOBO_CI_GITHUB_OWNER !== undefined &&
+		!validGithubOrganizationLogin(env.HOBO_CI_GITHUB_OWNER)
+	)
+		return refused(
+			"HOBO_CI_GITHUB_OWNER_INVALID",
+			"The GitHub organization login is invalid.",
+			["Set HOBO_CI_GITHUB_OWNER to the organization's GitHub login."],
+		);
 	const configuredHost = env.HOBO_CI_APP_HOST;
 	if (
 		configuredHost &&

@@ -12,6 +12,11 @@ export interface GithubAppOwner {
 	readonly id: number;
 }
 
+/** GitHub account logins use alphanumerics and single interior hyphens. */
+export function validGithubOrganizationLogin(login: string): boolean {
+	return /^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(login);
+}
+
 /** A way of creating and holding the CI GitHub App connection. */
 export interface GithubAppHost {
 	readonly id: string;

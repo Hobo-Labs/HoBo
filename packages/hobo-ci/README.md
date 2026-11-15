@@ -74,7 +74,8 @@ signing in; nothing else is asked.
 the owner's ID and type. `HOBO_CI_APP_HOST` pins the host; an unknown or
 unimplemented host is refused before opening the store. If a host cannot
 serve the owner's kind, setup names a compatible host instead of creating an
-App that would be refused.
+App that would be refused. An invalid organization login supplied in the
+environment is refused before the store or App page is opened.
 
 ## Continuity
 
