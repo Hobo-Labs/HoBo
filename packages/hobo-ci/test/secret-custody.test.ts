@@ -16,6 +16,7 @@ import { createTrustedVault } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
+	browserEnvironment,
 	ignoredSecretEnvNotice,
 	SECRET_ENV_NAMES,
 	scopeRunVault,
@@ -46,6 +47,16 @@ function files(entry: string): string[] {
 }
 
 describe("secret custody", () => {
+	it("omits secret-shaped values even under an allowed desktop name", () => {
+		expect(
+			browserEnvironment({
+				PATH: "/usr/bin",
+				HOME: "https://user:password@example.invalid",
+				OTHER: "opaque-credential",
+			}),
+		).toEqual({ PATH: "/usr/bin" });
+	});
+
 	it("refuses late writes after a run ends and wipes its underlying vault", () => {
 		const underlying = createTrustedVault();
 		const scope = scopeRunVault(underlying);

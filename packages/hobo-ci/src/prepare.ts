@@ -16,7 +16,6 @@ import {
 	type GithubAppOwner,
 	resolveGithubAppHost,
 } from "./app-hosts.js";
-import { browserEnvironment } from "./browser-environment.js";
 import { CI_SETTINGS, lookupGithubOwner, resolveGithubAppExpectation } from "./ceremony-settings.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import {
