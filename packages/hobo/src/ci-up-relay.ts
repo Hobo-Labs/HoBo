@@ -146,9 +146,16 @@ export function createCiRelayUpCommand(
 			input.emitProgress(
 				`delivering ${head.ref}@${head.sha.slice(0, 12)} to the relay's preview on Vercel`,
 			);
+			const team = credentials.reveal("VERCEL_TEAM_ID");
+			const values = {
+				ref: head.ref,
+				sha: head.sha,
+				target: "preview",
+				team,
+			};
 			return (deps.deploy ?? runCiRelayDeploy)({
 				cwd: relayDir,
-				values: { ref: head.ref, sha: head.sha, target: "preview" },
+				values,
 				env: deps.env ?? process.env,
 				credentials,
 				emitProgress: input.emitProgress,

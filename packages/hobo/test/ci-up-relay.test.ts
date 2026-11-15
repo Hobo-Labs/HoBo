@@ -6,13 +6,16 @@ import { createTrustedVault } from "@hobo/core";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runCiRelayDeploy } from "../src/ci-relay-deploy.js";
+import type { runCiRelayDeploy } from "../src/ci-relay-deploy.js";
 import {
 	createCiRelayPlanCommand,
 	createCiRelayUpCommand,
 	relayProjectDirFor,
 } from "../src/ci-up-relay.js";
-import { createComposedHoboCli, createDefaultYardRuntime } from "../src/index.js";
+import {
+	createComposedHoboCli,
+	createDefaultYardRuntime,
+} from "../src/index.js";
 
 const packages = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const CI_PROJECT = path.join(packages, "hobo-ci");
@@ -36,7 +39,9 @@ const never: CommandModule = {
 	},
 };
 
-function input(projectDir = CI_PROJECT): CommandRunInput & { progress: string[] } {
+function input(
+	projectDir = CI_PROJECT,
+): CommandRunInput & { progress: string[] } {
 	const progress: string[] = [];
 	// SAFETY: the relay plan and up read only the project, the cwd flag and emitProgress.
 	const run = {
@@ -61,7 +66,8 @@ describe("hobo ci up through the relay's Yards", () => {
 		stores.push(runtime.store as RuntimeLocalEventStore);
 		const cli = createComposedHoboCli({ yardRuntime: runtime });
 		const plan = envelope(
-			(await cli.run(["ci", "plan", "--json"], { cwd: CI_PROJECT, env: {} })).stdout,
+			(await cli.run(["ci", "plan", "--json"], { cwd: CI_PROJECT, env: {} }))
+				.stdout,
 		);
 		expect(plan.ok, JSON.stringify(plan.data?.remediations)).toBe(true);
 		const providers = new Map<string, string>(
@@ -95,7 +101,13 @@ describe("hobo ci up through the relay's Yards", () => {
 			head: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
 			deploy: async (request) => {
 				delivered = request;
-				return { ok: true, status: "deployed", code: "HOBO_OK", message: "ok", data: {} };
+				return {
+					ok: true,
+					status: "deployed",
+					code: "HOBO_OK",
+					message: "ok",
+					data: {},
+				};
 			},
 		});
 		const result = await up.run(input());
@@ -105,19 +117,53 @@ describe("hobo ci up through the relay's Yards", () => {
 			ref: "feature/x",
 			sha: "a".repeat(40),
 			target: "preview",
+			team: undefined,
 		});
-		expect(delivered?.credentials?.reveal("VERCEL_TOKEN")).toBe("from-the-store");
+		expect(delivered?.credentials?.reveal("VERCEL_TOKEN")).toBe(
+			"from-the-store",
+		);
+	});
+
+	it("deploys to the Vercel team saved alongside the token", async () => {
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "from-the-store");
+		vault.put("VERCEL_TEAM_ID", "team_saved");
+		let delivered: Parameters<typeof runCiRelayDeploy>[0] | undefined;
+		const up = createCiRelayUpCommand(vault, never, {
+			head: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
+			deploy: async (request) => {
+				delivered = request;
+				return {
+					ok: true,
+					status: "deployed",
+					code: "HOBO_OK",
+					message: "ok",
+					data: {},
+				};
+			},
+		});
+		await up.run(input());
+		expect(delivered?.values.team).toBe("team_saved");
 	});
 
 	it("plan falls back for a project with no relay Yard", async () => {
 		let fellBack = false;
-		const plan = createCiRelayPlanCommand(createDefaultYardRuntime({ env: {} }), {
-			implemented: true,
-			run: async () => {
-				fellBack = true;
-				return { ok: true, status: "ok", code: "HOBO_OK", message: "", data: {} };
+		const plan = createCiRelayPlanCommand(
+			createDefaultYardRuntime({ env: {} }),
+			{
+				implemented: true,
+				run: async () => {
+					fellBack = true;
+					return {
+						ok: true,
+						status: "ok",
+						code: "HOBO_OK",
+						message: "",
+						data: {},
+					};
+				},
 			},
-		});
+		);
 		await plan.run(input("/nowhere"));
 		expect(fellBack).toBe(true);
 	});
