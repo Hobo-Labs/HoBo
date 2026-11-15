@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-
 import type { CommandModule, CommandRunInput } from "@hobo/cli";
 import {
 	type CeremonySetting,
@@ -8,6 +6,7 @@ import {
 	configureThen,
 	startConnectPage,
 } from "@hobo/connect-ui";
+import { openInBrowser } from "@hobo/hobo-ci";
 
 import { isJsonArray, isJsonObject, isJsonString } from "./json.js";
 
@@ -43,20 +42,6 @@ export interface ProviderCeremonyDeps {
 	readonly openBrowser?: (url: string) => void;
 	readonly startPage?: typeof startConnectPage;
 	readonly timeoutMs?: number;
-}
-
-function openInBrowser(url: string): void {
-	const command =
-		process.platform === "darwin"
-			? "open"
-			: process.platform === "win32"
-				? "explorer"
-				: "xdg-open";
-	try {
-		spawn(command, [url], { stdio: "ignore", detached: true }).unref();
-	} catch {
-		// The URL is printed as well.
-	}
 }
 
 function gapsOf(
@@ -191,29 +176,31 @@ export function createProviderCeremonyUp(
 			const page: ConnectPage = await (deps.startPage ?? startConnectPage)({
 				flow,
 			});
-			input.emitProgress(
-				`Choose providers for this deployment in your browser: ${page.url}`,
-			);
-			(deps.openBrowser ?? openInBrowser)(page.url);
 			let timer: NodeJS.Timeout | undefined;
-			const timedOut = new Promise<ConnectStep>((resolve) => {
-				timer = setTimeout(
-					() =>
-						resolve({
-							kind: "failed",
-							provider: "hobo",
-							message: "The setup page was not finished in time.",
-							remediation: suggestions,
-						}),
-					deps.timeoutMs ?? 15 * 60_000,
-				);
-			});
+			let browserLaunched = false;
 			let step: ConnectStep;
 			try {
+				input.emitProgress(
+					`Choose providers for this deployment in your browser: ${page.url}`,
+				);
+				(deps.openBrowser ?? openInBrowser)(page.url);
+				browserLaunched = true;
+				const timedOut = new Promise<ConnectStep>((resolve) => {
+					timer = setTimeout(
+						() =>
+							resolve({
+								kind: "failed",
+								provider: "hobo",
+								message: "The setup page was not finished in time.",
+								remediation: suggestions,
+							}),
+						deps.timeoutMs ?? 15 * 60_000,
+					);
+				});
 				step = await Promise.race([page.done, timedOut]);
 			} finally {
 				clearTimeout(timer);
-				await page.close({ graceMs: 10_000 });
+				await page.close({ graceMs: browserLaunched ? 10_000 : 0 });
 			}
 			if (step.kind !== "connected")
 				return {

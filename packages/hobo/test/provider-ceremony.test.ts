@@ -1,4 +1,5 @@
 import type { CommandModule, CommandRunInput } from "@hobo/cli";
+import { type ConnectPage, startConnectPage } from "@hobo/connect-ui";
 import { describe, expect, it } from "vitest";
 
 import { createProviderCeremonyUp } from "../src/provider-ceremony.js";
@@ -79,6 +80,55 @@ const candidates = (port: string) =>
 	port === "sql" ? ["neon", "supabase"] : [];
 
 describe("hobo up's provider ceremony", () => {
+	it("closes the real page if progress reporting or browser launch throws", async () => {
+		for (const failure of ["progress", "browser"] as const) {
+			const { add } = fakeAdd();
+			const run = input();
+			let page: ConnectPage | undefined;
+			const closeGrace: number[] = [];
+			try {
+				await expect(
+					createProviderCeremonyUp(fakeUp([rejected]), {
+						add,
+						candidates,
+						interactive: true,
+						startPage: async (options) => {
+							page = await startConnectPage(options);
+							const started = page;
+							return {
+								...started,
+								async close(options) {
+									closeGrace.push(options?.graceMs ?? 0);
+									await started.close(options);
+								},
+							};
+						},
+						openBrowser: () => {
+							if (failure === "browser") throw new Error("browser failed");
+						},
+					}).run(
+						failure === "progress"
+							? {
+									...run,
+									emitProgress: () => {
+										throw new Error("progress failed");
+									},
+								}
+							: run,
+					),
+				).rejects.toThrow(`${failure} failed`);
+				expect(page).toBeDefined();
+				expect(closeGrace).toEqual([0]);
+				if (page === undefined) throw new Error("page did not start");
+				await expect(
+					fetch(page.url, { signal: AbortSignal.timeout(1_000) }),
+				).rejects.toThrow();
+			} finally {
+				await page?.close({ graceMs: 0 });
+			}
+		}
+	});
+
 	it("passes a plan that resolves straight through", async () => {
 		const up = fakeUp([
 			{ ok: true, status: "deployed", code: "HOBO_OK", message: "ok" },
