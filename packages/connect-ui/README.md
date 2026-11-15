@@ -71,8 +71,11 @@ provider whose redirect URL is registered.
   `connect.cancel`), Zod-parsed.
 - `GET callback` is where a provider sends the browser back.
 
-Transitions run one at a time, a flow error becomes a `failed` step, and
-`close({ graceMs })` waits until the browser has seen the finished step.
+Transitions run one at a time. Actions not offered by the current step, and
+in-flight actions whose step has advanced, are ignored. Repeated starts reuse
+the pending provider handoff until its callback or another transition. A flow
+error becomes a `failed` step, and `close({ graceMs })` waits until the browser
+has seen the finished step.
 
 CSP: scripts and connections are `'self'` only and forms post only to
 `https://github.com`. Images may be `data:` because `web.css` draws its icons
