@@ -193,9 +193,9 @@ environment: `deployEnvironment()` in `src/compose.ts` drops a
 `VERCEL_TOKEN` or `CLOUDFLARE_API_TOKEN` that is not an OpenSesame `osr_`
 surrogate before IaC selection, so a token exported in a shell (and visible to
 every child process) selects nothing and the run falls back to the local Yard.
-The token reaches the resolver plane only as a surrogate (the OpenSesame
-relaunch below) or through an injected environment built from the owner's
-secret store (`hobo ci up` reads it into the run's trusted vault).
+The resolver plane receives a surrogate (the OpenSesame relaunch below) or a
+credential explicitly supplied by an embedding host. For relay delivery,
+`hobo ci up` passes the owner's store credential in the run's trusted vault.
 
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
@@ -401,7 +401,7 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
 | `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
 | `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
-| `--wait` | wait up to 15 minutes for READY; ERROR, CANCELED or the timeout is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
 
 A real run needs the deploy token in the owner's secret store. An embedding
