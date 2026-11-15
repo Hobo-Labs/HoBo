@@ -121,7 +121,14 @@ export async function prepareGithubConnection(
 	const ownerId = Number(env.HOBO_CI_GITHUB_OWNER_ID);
 	const ownerLogin = env.HOBO_CI_GITHUB_OWNER;
 	const ownerKind = env.HOBO_CI_GITHUB_OWNER_TYPE || "User";
-	const configured =
+	const configured:
+		| {
+				relayUrl: string;
+				ownerId: number;
+				ownerLogin: string;
+				ownerKind: GithubAppOwner["kind"];
+		  }
+		| undefined =
 		relayUrl?.startsWith("https://") &&
 		Number.isSafeInteger(ownerId) &&
 		ownerId > 0 &&
