@@ -11,7 +11,10 @@ import {
 	DesiredCiPolicySchema,
 	defineCiPolicy,
 } from "@hobo/ci";
-import { createAdmissionOrder } from "@hobo/ci-gh-actions";
+import {
+	createAdmissionOrder,
+	createGithubAppManifest,
+} from "@hobo/ci-gh-actions";
 import { startRelayFromEnvironment } from "@hobo/ci-gh-actions/cli-serve";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
@@ -121,6 +124,43 @@ function memoryStore(entries: Readonly<Record<string, string>>) {
 		for (const [name, value] of Object.entries(entries))
 			await port.put(name, value);
 		return store;
+	};
+}
+
+const githubRelay = "https://ci.hobo.example";
+const githubOwnerEnv = {
+	HOBO_CI_GITHUB_OWNER_ID: "42",
+	HOBO_CI_GITHUB_OWNER_TYPE: "User",
+};
+const githubSettings = JSON.stringify({
+	HOBO_CI_PUBLIC_URL: githubRelay,
+	HOBO_CI_GITHUB_OWNER: "octo",
+});
+function fakeAppFetch(ownerId = 42): typeof fetch {
+	const manifest = createGithubAppManifest({
+		name: "HoBo CI",
+		relayUrl: githubRelay,
+		manifestCallbackUrl: `${githubRelay}/v1/app-bootstrap/callback`,
+		installationCallbackUrl: `${githubRelay}/v1/app-registration/install-callback`,
+	});
+	return async (input) => {
+		const path = new URL(String(input)).pathname;
+		if (path === "/app")
+			return Response.json({
+				id: 4242,
+				slug: "hobo-ci",
+				owner: { id: ownerId, type: "User" },
+				external_url: githubRelay,
+				permissions: manifest.defaultPermissions,
+				events: manifest.defaultEvents,
+			});
+		if (path === "/app/hook/config")
+			return Response.json({
+				url: `${githubRelay}/github/webhooks`,
+				content_type: "json",
+				insecure_ssl: "0",
+			});
+		return new Response(null, { status: 404 });
 	};
 }
 
@@ -647,9 +687,11 @@ describe("hobo ci serve with the owner's secret store", () => {
 				home,
 				installationId: "1",
 			},
-			env: {},
+			env: githubOwnerEnv,
+			fetch: fakeAppFetch(),
 			git,
 			openStore: memoryStore({
+				HOBO_CI_SETTINGS: githubSettings,
 				HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
 				HOBO_CI_WEBHOOK_SECRET: secret,
 				HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
@@ -684,6 +726,45 @@ describe("hobo ci serve with the owner's secret store", () => {
 		} finally {
 			await handle.stop();
 		}
+	});
+
+	it("does not start the relay when the stored App belongs to a different owner", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-store-"));
+		directories.push(home);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		let started = false;
+		await expect(
+			startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					port: String(await testPort()),
+					home,
+					installationId: "1",
+				},
+				env: githubOwnerEnv,
+				git,
+				fetch: fakeAppFetch(99),
+				openStore: memoryStore({
+					HOBO_CI_SETTINGS: githubSettings,
+					HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
+					HOBO_CI_WEBHOOK_SECRET: "stored-webhook-secret-0123456789abcdef",
+					HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
+					HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.client",
+					HOBO_CI_GITHUB_APP_ID: "4242",
+				}),
+				startRelay: async () => {
+					started = true;
+					throw new Error("unexpected relay start");
+				},
+			}),
+		).rejects.toThrow();
+		expect(started).toBe(false);
 	});
 });
 
@@ -721,12 +802,15 @@ describe("hobo ci serve --with-worker", () => {
 						withWorker: true,
 					},
 					env: {
+						...githubOwnerEnv,
 						WORKER_REPORT: report,
 						HOBO_CI_WORKER_START_TIMEOUT_MS: "20000",
 					},
 					git,
+					fetch: fakeAppFetch(),
 					workerScript,
 					openStore: memoryStore({
+						HOBO_CI_SETTINGS: githubSettings,
 						HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
 						HOBO_CI_WEBHOOK_SECRET: "stored-webhook-secret-0123456789abcdef",
 						HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",

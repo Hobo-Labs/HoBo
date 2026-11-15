@@ -871,11 +871,13 @@ describe("prepareGithubConnection", () => {
 	it("hands the Vercel connection hobo cd up keeps in the store to the relay deploy", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
+		await seedSettings(store);
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", "vercel-token");
 		const vault = createTrustedVault();
 		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
+			fetch: fakeGithub().fetch,
 			vault,
 			locator: memorySettings(LOCATOR),
 			openStore: signedIn(store),
@@ -1178,16 +1180,48 @@ describe("organization-owned Apps", () => {
 });
 
 describe("loadGithubAppCredentials", () => {
-	it("reads a complete connection into the vault, and nothing for none", async () => {
+	it("loads exactly the values verified, and does nothing for an empty store", async () => {
 		const store = memoryStore();
 		const empty = createTrustedVault();
-		expect(await loadGithubAppCredentials(store, empty)).toBe(false);
+		let resolved = false;
+		expect(
+			await loadGithubAppCredentials(store, empty, async () => {
+				resolved = true;
+				return undefined;
+			}),
+		).toBe(false);
+		expect(resolved).toBe(false);
 		expect(empty.names()).toEqual([]);
 		await seedConnection(store);
+		const accesses = new Map<string, number>();
+		const tracked: OpenedSecretStore = {
+			...store,
+			port: {
+				...store.port,
+				async access(key) {
+					accesses.set(key, (accesses.get(key) ?? 0) + 1);
+					return store.port.access(key);
+				},
+			},
+		};
+		const github = fakeGithub();
 		const vault = createTrustedVault();
-		expect(await loadGithubAppCredentials(store, vault)).toBe(true);
-		for (const key of GITHUB_APP_CREDENTIAL_KEYS)
-			expect(vault.reveal(key)).toBe(`fixture-${key}`);
+		expect(
+			await loadGithubAppCredentials(tracked, vault, async () => ({
+				relayUrl: RELAY,
+				ownerId: OWNER_ID,
+				ownerType: "User",
+				fetch: github.fetch,
+			})),
+		).toBe(true);
+		for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
+			expect(accesses.get(key)).toBe(1);
+			const result = await store.port.access(key);
+			expect(vault.reveal(key)).toBe(
+				result.status === "ok" ? result.material : undefined,
+			);
+		}
+		expect(github.calls).toEqual(PACT_CALLS.slice(1));
 	});
 
 	it("refuses a partial connection", async () => {
@@ -1196,6 +1230,26 @@ describe("loadGithubAppCredentials", () => {
 		await expect(
 			loadGithubAppCredentials(store, createTrustedVault()),
 		).rejects.toThrow(/incomplete/);
+	});
+
+	it("does not load an App without a matching owner and relay", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const vault = createTrustedVault();
+		await expect(loadGithubAppCredentials(store, vault)).rejects.toThrow(
+			/identity/,
+		);
+		const github = fakeGithub(9999);
+		await expect(
+			loadGithubAppCredentials(store, vault, async () => ({
+				relayUrl: RELAY,
+				ownerId: OWNER_ID,
+				ownerType: "User",
+				fetch: github.fetch,
+			})),
+		).rejects.toThrow();
+		expect(vault.names()).toEqual([]);
+		expect(github.calls).toEqual(["GET /app"]);
 	});
 });
 

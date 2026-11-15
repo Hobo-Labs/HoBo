@@ -142,11 +142,12 @@ export async function githubAppConnected(
 export async function loadGithubAppCredentials(
 	store: OpenedSecretStore,
 	vault: TrustedVault,
+	resolveExpected?: () => Promise<GithubAppExpectation | undefined>,
 ): Promise<boolean> {
-	if (!(await githubAppConnected(store))) return false;
+	const values = await checkedGithubAppCredentials(store, resolveExpected);
+	if (!values) return false;
 	for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
-		const result = await store.port.access(key);
-		const material = result.status === "ok" ? result.material : undefined;
+		const material = values.get(key);
 		if (!material)
 			throw new Error("The stored GitHub connection is incomplete.");
 		vault.put(key, material);

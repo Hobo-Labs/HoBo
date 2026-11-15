@@ -28,11 +28,15 @@ import {
 } from "@hobo/ci-gh-actions/cli-serve";
 import { parseCiAgentBlock } from "@hobo/ci-gh-actions/project-config";
 import type { CommandResult } from "@hobo/cli";
+import { resolveSettings } from "@hobo/connect-ui";
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
+	CI_SETTINGS,
+	familySettings,
 	loadGithubAppCredentials,
 	type OpenedSecretStore,
 	ownerStore,
+	resolveGithubAppExpectation,
 	SECRET_STORE_LOCATOR_FILE,
 	withoutSecretEnv,
 	workloadOidcOf,
@@ -550,6 +554,8 @@ const ACCOUNT_TOKEN_ENTRY = "HOBO_CI_ACCOUNT_TOKEN";
 async function loadStoredConnection(
 	open: () => Promise<OpenedSecretStore | undefined>,
 	vault: TrustedVault,
+	env: NodeJS.ProcessEnv,
+	fetchImpl?: typeof fetch,
 ): Promise<boolean> {
 	const store = await open().catch(() => {
 		throw new Error("Cannot open the owner's secret store.");
@@ -560,7 +566,15 @@ async function loadStoredConnection(
 		.catch(() => undefined);
 	if (token?.status === "ok" && token.material)
 		vault.put(ACCOUNT_TOKEN_ENTRY, token.material);
-	return loadGithubAppCredentials(store, vault);
+	return loadGithubAppCredentials(store, vault, async () => {
+		const plainEnv = withoutSecretEnv(env);
+		const basics = resolveSettings(
+			CI_SETTINGS,
+			plainEnv,
+			await familySettings(store, "ci").read(),
+		);
+		return resolveGithubAppExpectation(basics.values, plainEnv, fetchImpl);
+	});
 }
 
 /** The owner's store, opened without a page: the committed locator and a non-interactive sign-in. */
@@ -745,6 +759,8 @@ export async function startCiServe(input: {
 	emitProgress?: (message: string) => void;
 	/** The owner's secret store (test seam); by default opened from the committed locator. */
 	openStore?: () => Promise<OpenedSecretStore | undefined>;
+	/** GitHub verification seam for lifecycle tests. */
+	fetch?: typeof fetch;
 	/** Relay startup seam for lifecycle tests. */
 	startRelay?: RelayStarter;
 	/** The worker script to run (test seam); the isolated worker daemon by default. */
@@ -780,6 +796,8 @@ export async function startCiServe(input: {
 			(await loadStoredConnection(
 				input.openStore ?? ownerStoreOpener(input.env, input.cwd),
 				vault,
+				input.env,
+				input.fetch,
 			));
 		const configuredEnv = fromStore
 			? input.env
