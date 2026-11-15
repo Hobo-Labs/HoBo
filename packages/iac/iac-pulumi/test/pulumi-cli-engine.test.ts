@@ -150,6 +150,29 @@ describe("pulumi CLI engine (3-2)", () => {
 		).toThrowError(unsupported);
 	});
 
+	it("does not ignore malformed dependencies or accept an empty Worker name", () => {
+		for (const bindings of [
+			[
+				{ resource: "api", resourceType: "cloudflare:workers-script" },
+				"not-a-binding",
+			],
+			[{ resource: "", resourceType: "cloudflare:workers-script" }],
+		]) {
+			expect(() =>
+				renderPulumiYamlProgram(
+					{
+						name: "repair",
+						type: "cloudflare:cron-trigger",
+						inputs: { options: { cron: "*/15 * * * *" }, bindings },
+					},
+					{ accountId: "acct-123" },
+				),
+			).toThrowError(
+				expect.objectContaining({ code: PULUMI_UNSUPPORTED_RESOURCE }),
+			);
+		}
+	});
+
 	it("fails closed on resource classes with no real translation", () => {
 		expect(() =>
 			renderPulumiYamlProgram(

@@ -45,6 +45,17 @@ const child = (source: string) =>
 	});
 
 describe("waitForWorkerStart", () => {
+	it("reports a spawn failure instead of waiting for readiness", async () => {
+		const worker = spawn("/nonexistent/hobo-worker-binary", [], {
+			stdio: ["ignore", "ignore", "pipe"],
+		});
+		// Keep the before-fix failure inside this test rather than crashing Vitest.
+		worker.on("error", () => {});
+		await expect(
+			waitForWorkerStart(worker, { timeoutMs: 200 }),
+		).rejects.toThrow(/could not start/u);
+	});
+
 	it("resolves when the worker logs that it started", async () => {
 		const worker = child(
 			`console.error(JSON.stringify({event:${JSON.stringify(WORKER_STARTED_EVENT)}})); setTimeout(()=>{}, 5000)`,

@@ -124,6 +124,22 @@ describe("hello-bindle realizes end-to-end", () => {
 });
 
 describe("bindings say what they point at", () => {
+	it("does not label a different provider's compute resource as a Cloudflare Worker", () => {
+		const { iac } = realizeResourcePlans([
+			{ name: "foreign", port: "compute", provider: "vercel" },
+			{
+				name: "repair",
+				port: "schedule",
+				provider: "cloudflare",
+				deps: ["foreign"],
+			},
+		]);
+		const repair = iac.resources.find((resource) => resource.name === "repair");
+		assert.deepEqual(repair?.inputs.bindings, [
+			{ resource: "foreign", ref: "${resources.foreign.outputs.binding}" },
+		]);
+	});
+
 	it("types each dependency with its sibling's resource class", () => {
 		const plans: ResourcePlan[] = [
 			{ name: "api", port: "compute", provider: "cloudflare" },

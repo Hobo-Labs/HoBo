@@ -197,6 +197,7 @@ export function realizeResourcePlans(
 	}
 	const classOf = new Map(
 		plans.flatMap((plan) =>
+			plan.provider === CLOUDFLARE_PROVIDER_TARGET &&
 			isRealizablePort(plan.port)
 				? [[plan.name, resolveEquivalence(plan.port).resourceClass] as const]
 				: [],

@@ -594,6 +594,32 @@ describe("hobo ci serve with a CI agent", () => {
 });
 
 describe("hobo ci serve with the owner's secret store", () => {
+	it("does not fall back to another App when a configured store cannot open", async () => {
+		const cwd = await projectRoot();
+		await writeFile(join(cwd, ".hobo", "secret-store.json"), "{}");
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-store-"));
+		directories.push(home);
+		let started = false;
+		await expect(
+			startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					port: String(await testPort()),
+					home,
+					installationId: "1",
+				},
+				env: {},
+				git,
+				startRelay: async () => {
+					started = true;
+					throw new Error("unexpected relay start");
+				},
+			}),
+		).rejects.toThrow(/Cannot open the owner's secret store/u);
+		expect(started).toBe(false);
+	});
+
 	it("serves the App connection hobo ci up deposited, with nothing on disk", async () => {
 		const cwd = await projectRoot();
 		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-store-"));

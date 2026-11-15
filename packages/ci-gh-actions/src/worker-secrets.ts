@@ -91,6 +91,15 @@ export function waitForWorkerStart(
 					`the CI worker exited before it started (${code !== null ? `exit ${code}` : `signal ${signal}`}); its log is above`,
 				),
 			);
+		worker.on("error", () => {
+			if (settled) {
+				options.forward?.(
+					Buffer.from("the CI worker encountered a process error\n"),
+				);
+				return;
+			}
+			finish(new Error("the CI worker could not start"));
+		});
 		worker.on("exit", onExit);
 		worker.stderr?.on("data", (chunk: Buffer) => {
 			options.forward?.(chunk);

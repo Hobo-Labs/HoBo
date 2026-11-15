@@ -174,12 +174,15 @@ function cronTrigger(
 	const workers = dependencies.flatMap((binding) => {
 		const name = binding.resource ?? binding.providerResourceId;
 		return binding.resourceType === "cloudflare:workers-script" &&
-			isJsonString(name)
+			isJsonString(name) &&
+			name.length > 0
 			? [name]
 			: [];
 	});
 	const scriptName = workers[0];
 	if (
+		!isJsonArray(bindings) ||
+		bindings.length !== dependencies.length ||
 		dependencies.length !== 1 ||
 		workers.length !== 1 ||
 		scriptName === undefined
