@@ -1,16 +1,15 @@
 /** Upstash-owned, non-TTL journal voter over its private R2 bucket. */
 import { createHash } from "node:crypto";
 import {
-	assignmentKey,
-	type FleetAssignment,
+	AtomicObjectJournalError,
+	type AtomicJournalObject,
+	createAtomicObjectJournalReplica,
 	type ImmutableJournalMember,
-	type ImmutableJournalSeal,
 	parseFleetAssignment,
 	type SealableImmutableJournalReplica,
 } from "@hobo/backend-fleet";
 import type { HttpTransport } from "@hobo/core";
 import { createR2ObjectClient } from "@hobo/r2-object";
-import { z } from "zod";
 import {
 	createUpstashBlobCredentials,
 	upstashBlobFailureDomains,
@@ -22,17 +21,6 @@ const hash = (value: string) =>
 	createHash("sha256").update(value).digest("hex");
 const HASH = /^[a-f0-9]{64}$/u,
 	NAME = /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,255}$/u;
-const ROOT = "0".repeat(64);
-const row = z.strictObject({
-	epoch: z.number().int().positive().safe(),
-	active: z.string().optional(),
-	sealed: z.boolean(),
-	target: z.string().optional(),
-	reason: z.string(),
-	lossWindowMs: z.number().int().nonnegative().safe().optional(),
-	decidedAtMs: z.number().int().nonnegative().safe(),
-	decidedBy: z.string(),
-});
 export type UpstashBlobJournalCharge = Readonly<{
 	operation: "read" | "write";
 	maxRequestBytes: number;
@@ -55,6 +43,7 @@ export interface UpstashBlobImmutableJournalOptions {
 	readonly credentialRef: string;
 	readonly namespace: string;
 	readonly maxEntries: number;
+	/** Maximum bytes of the combined assignments, documents and seal. */
 	readonly maxLogBytes: number;
 	readonly maxDocumentBytes: number;
 	readonly maxObjectBytes: number;
@@ -87,6 +76,7 @@ export type UpstashBlobImmutableJournalIdentity = Readonly<{
 	credentialRef: string;
 	namespace: string;
 	maxObjectBytes: number;
+	maxStateBytes: number;
 	failureDomains: readonly string[];
 }>;
 const bindings = new WeakMap<
@@ -137,10 +127,9 @@ export function assertUpstashBlobImmutableJournalWiring(
 	}
 }
 
-/** R2 origin ETag CAS serializes the complete assignment log and seal. Immutable
- * documents use create-only PUT; a lost response is reconciled by exact readback.
- * External custody, quota, anti-rollback and failure-domain evidence remain
- * the supervisor's responsibility. */
+/** R2 origin ETag CAS fences documents, assignments and the seal together.
+ * A lost response is reconciled by exact readback. External custody, quota,
+ * anti-rollback and failure-domain evidence remain the supervisor's responsibility. */
 export function createUpstashBlobImmutableJournalReplica(
 	options: UpstashBlobImmutableJournalOptions,
 ): Readonly<{
@@ -178,14 +167,6 @@ export function createUpstashBlobImmutableJournalReplica(
 		fleetId,
 		members,
 	});
-	const genesis = JSON.stringify({
-		contract: "hobo.immutable-journal-command/v1",
-		position: 0,
-		previous: ROOT,
-		operationId: "genesis",
-		value: anchor,
-	});
-	const genesisDigest = hash(genesis);
 	let domains: readonly string[];
 	try {
 		domains = Object.freeze([
@@ -286,250 +267,74 @@ export function createUpstashBlobImmutableJournalReplica(
 			return response;
 		},
 	});
-	const envelope = z.strictObject({
-		contract: z.literal("hobo.upstash-blob-journal/v1"),
-		anchorDigest: z.literal(anchorDigest),
-		fleetId: z.literal(fleetId),
-		member: z.strictObject({
-			id: z.literal(member.id),
-			provider: z.literal(member.provider),
-			accountId: z.literal(member.accountId),
-			resourceId: z.literal(member.resourceId),
-			incarnation: z.literal(member.incarnation),
-		}),
-		initializationId: z.literal(initializationId),
-		entries: z.array(row).max(maxEntries + 1),
-		seal: z
-			.strictObject({
-				transitionId: z.string().regex(NAME),
-				epoch: z.number().int().positive().safe(),
-				digest: z.string().regex(HASH),
-			})
-			.optional(),
-	});
-	const logPath = `${namespace}/assignments`,
-		docPath = (digest: string) => `${namespace}/documents/${digest}`;
-	function encode(
-		entries: readonly FleetAssignment[],
-		seal?: ImmutableJournalSeal,
-	) {
-		return JSON.stringify({
-			contract: "hobo.upstash-blob-journal/v1",
-			anchorDigest,
-			fleetId,
+	// The old split format used this same key for its assignment log. Opening
+	// that format as atomic state fails closed; no split-format object is replaced.
+	const statePath = `${namespace}/assignments`;
+	const object: AtomicJournalObject = {
+		async read() {
+			const result = await objects.get(statePath);
+			return result ? { body: result.body, version: result.etag } : undefined;
+		},
+		async create(body) {
+			const result = await objects.put(statePath, body, { kind: "absent" });
+			return result.applied ? "created" : "conflict";
+		},
+		async replace(body, expectedVersion) {
+			const result = await objects.put(statePath, body, {
+				kind: "match",
+				etag: expectedVersion,
+			});
+			return result.applied ? "written" : "conflict";
+		},
+	};
+	async function invoke<T>(work: () => Promise<T>): Promise<T> {
+		try {
+			return await work();
+		} catch (error) {
+			if (error instanceof AtomicObjectJournalError)
+				throw new UpstashBlobImmutableJournalError(error.reason);
+			throw error;
+		}
+	}
+	let atomic: ReturnType<typeof createAtomicObjectJournalReplica>;
+	try {
+		atomic = createAtomicObjectJournalReplica({
 			member,
+			members,
+			fleetId,
+			anchorDigest,
 			initializationId,
-			entries,
-			...(seal ? { seal } : undefined),
+			maxEntries,
+			maxDocumentBytes,
+			maxObjectBytes: maxLogBytes,
+			object,
 		});
-	}
-	function decode(body: string) {
-		if (Buffer.byteLength(body, "utf8") > maxLogBytes)
-			throw new UpstashBlobImmutableJournalError("invalid-log");
-		let value: z.infer<typeof envelope>;
-		try {
-			value = envelope.parse(JSON.parse(body));
-		} catch {
-			throw new UpstashBlobImmutableJournalError("identity-unverified");
-		}
-		let previous = ROOT;
-		const entries = value.entries.map((entry, index) => {
-			let parsed: FleetAssignment;
-			try {
-				parsed = parseFleetAssignment({
-					epoch: entry.epoch,
-					active: entry.active,
-					sealed: entry.sealed,
-					target: entry.target,
-					reason: entry.reason,
-					lossWindowMs: entry.lossWindowMs,
-					decidedAtMs: entry.decidedAtMs,
-					decidedBy: entry.decidedBy,
-				});
-			} catch {
-				throw new UpstashBlobImmutableJournalError("invalid-log");
-			}
-			const link = /^j:([a-f0-9]{64}):([a-f0-9]{64})$/u.exec(parsed.reason);
-			if (
-				parsed.epoch !== index + 1 ||
-				parsed.active !== undefined ||
-				parsed.target !== undefined ||
-				parsed.sealed ||
-				parsed.lossWindowMs !== undefined ||
-				parsed.decidedAtMs !== 0 ||
-				parsed.decidedBy !== "journal" ||
-				!link ||
-				link[1] !== previous ||
-				(index === 0 && link[2] !== genesisDigest)
-			)
-				throw new UpstashBlobImmutableJournalError("invalid-log");
-			previous = link[2] ?? "";
-			return parsed;
-		});
-		if (
-			value.seal &&
-			(value.seal.epoch !== entries.length || value.seal.digest !== previous)
-		)
-			throw new UpstashBlobImmutableJournalError("invalid-seal");
-		return { entries, ...(value.seal ? { seal: value.seal } : undefined) };
-	}
-	async function get(path: string, maxBytes: number) {
-		let value: Awaited<ReturnType<typeof objects.get>>;
-		try {
-			value = await objects.get(path);
-		} catch {
-			throw new UpstashBlobImmutableJournalError("read-unavailable");
-		}
-		if (value && Buffer.byteLength(value.body, "utf8") > maxBytes)
-			throw new UpstashBlobImmutableJournalError("invalid-response");
-		return value;
-	}
-	async function put(path: string, body: string, etag?: string) {
-		try {
-			const result = await objects.put(
-				path,
-				body,
-				etag === undefined ? { kind: "absent" } : { kind: "match", etag },
-			);
-			if (!result.applied) throw new Error("condition failed");
-		} catch {
-			throw new UpstashBlobImmutableJournalError("write-outcome-unknown");
-		}
-	}
-	async function log() {
-		const result = await get(logPath, maxLogBytes);
-		if (!result)
-			throw new UpstashBlobImmutableJournalError("identity-unverified");
-		return { ...decode(result.body), etag: result.etag };
+	} catch (error) {
+		if (error instanceof AtomicObjectJournalError)
+			throw new UpstashBlobImmutableJournalError(error.reason);
+		throw error;
 	}
 	const replica: SealableImmutableJournalReplica = {
 		id: member.id,
-		async read(limit) {
-			if (
-				limit !== undefined &&
-				(!Number.isSafeInteger(limit) || limit < 1 || limit > maxEntries + 1)
-			)
-				throw new UpstashBlobImmutableJournalError("invalid-limit");
-			const { entries } = await log();
-			return entries.slice(-(limit ?? entries.length));
+		read: (limit) => invoke(() => atomic.replica.read(limit)),
+		readDocument: (digest) => invoke(() => atomic.replica.readDocument(digest)),
+		async writeDocument(digest, body) {
+			if (!isJsonString(body))
+				throw new UpstashBlobImmutableJournalError("invalid-document");
+			return invoke(() => atomic.replica.writeDocument(digest, body));
 		},
 		async accept(input) {
-			let proposed: FleetAssignment;
+			let parsed: ReturnType<typeof parseFleetAssignment>;
 			try {
-				proposed = parseFleetAssignment(input);
+				parsed = parseFleetAssignment(input);
 			} catch {
 				throw new UpstashBlobImmutableJournalError("invalid-assignment");
 			}
-			const current = await log(),
-				existing = current.entries[proposed.epoch - 1];
-			if (existing)
-				return assignmentKey(existing) === assignmentKey(proposed)
-					? "duplicate"
-					: "conflict";
-			if (current.seal)
-				throw new UpstashBlobImmutableJournalError("generation-sealed");
-			if (proposed.epoch !== current.entries.length + 1) return "gap";
-			const body = encode([...current.entries, proposed]);
-			decode(body);
-			if (Buffer.byteLength(body, "utf8") > maxLogBytes)
-				throw new UpstashBlobImmutableJournalError("log-full");
-			const link = /^j:[a-f0-9]{64}:([a-f0-9]{64})$/u.exec(proposed.reason);
-			if (!link?.[1] || (await replica.readDocument(link[1])) === undefined)
-				throw new UpstashBlobImmutableJournalError("document-unavailable");
-			try {
-				await put(logPath, body, current.etag);
-				return "accepted";
-			} catch (error) {
-				if (
-					!(error instanceof UpstashBlobImmutableJournalError) ||
-					error.reason !== "write-outcome-unknown"
-				)
-					throw error;
-				const observed = await log(),
-					winner = observed.entries[proposed.epoch - 1];
-				if (winner)
-					return assignmentKey(winner) === assignmentKey(proposed)
-						? "duplicate"
-						: "conflict";
-				throw new UpstashBlobImmutableJournalError("write-outcome-unknown");
-			}
+			return invoke(() => atomic.replica.accept(parsed));
 		},
-		async readDocument(digest) {
-			if (!HASH.test(digest))
-				throw new UpstashBlobImmutableJournalError("invalid-digest");
-			await log();
-			const result = await get(docPath(digest), maxDocumentBytes);
-			if (!result) return undefined;
-			if (hash(result.body) !== digest)
-				throw new UpstashBlobImmutableJournalError("invalid-document");
-			return result.body;
-		},
-		async writeDocument(digest, body) {
-			if (
-				!HASH.test(digest) ||
-				!isJsonString(body) ||
-				Buffer.byteLength(body, "utf8") > maxDocumentBytes ||
-				hash(body) !== digest
-			)
-				throw new UpstashBlobImmutableJournalError("invalid-document");
-			if ((await log()).seal)
-				throw new UpstashBlobImmutableJournalError("generation-sealed");
-			try {
-				await put(docPath(digest), body);
-			} catch (error) {
-				if (
-					!(error instanceof UpstashBlobImmutableJournalError) ||
-					error.reason !== "write-outcome-unknown"
-				)
-					throw error;
-				const observed = await get(docPath(digest), maxDocumentBytes);
-				if (!observed)
-					throw new UpstashBlobImmutableJournalError("write-outcome-unknown");
-				if (observed.body !== body)
-					throw new UpstashBlobImmutableJournalError("immutable-conflict");
-			}
-		},
-		async seal(raw) {
-			const input = Object.freeze({ ...raw });
-			if (
-				!NAME.test(input.transitionId) ||
-				!Number.isSafeInteger(input.epoch) ||
-				input.epoch < 1 ||
-				!HASH.test(input.digest)
-			)
-				throw new UpstashBlobImmutableJournalError("invalid-seal");
-			const current = await log(),
-				matches = (value: ImmutableJournalSeal | undefined) =>
-					!!value &&
-					value.transitionId === input.transitionId &&
-					value.epoch === input.epoch &&
-					value.digest === input.digest;
-			if (current.seal) return matches(current.seal) ? "duplicate" : "conflict";
-			const head = current.entries.at(-1);
-			if (
-				head?.epoch !== input.epoch ||
-				head.reason.split(":")[2] !== input.digest
-			)
-				return "conflict";
-			const body = encode(current.entries, input);
-			decode(body);
-			try {
-				await put(logPath, body, current.etag);
-				return "sealed";
-			} catch (error) {
-				if (
-					!(error instanceof UpstashBlobImmutableJournalError) ||
-					error.reason !== "write-outcome-unknown"
-				)
-					throw error;
-				const observed = await log();
-				if (matches(observed.seal)) return "duplicate";
-				if (observed.seal || observed.entries.length !== input.epoch)
-					return "conflict";
-				throw new UpstashBlobImmutableJournalError("write-outcome-unknown");
-			}
-		},
+		seal: (input) => invoke(() => atomic.replica.seal(input)),
 	};
+	Object.freeze(replica);
 	bindings.set(
 		replica,
 		Object.freeze({
@@ -544,6 +349,7 @@ export function createUpstashBlobImmutableJournalReplica(
 				credentialRef,
 				namespace,
 				maxObjectBytes,
+				maxStateBytes: maxLogBytes,
 				failureDomains: domains,
 			}),
 			transport,
@@ -553,25 +359,11 @@ export function createUpstashBlobImmutableJournalReplica(
 		}),
 	);
 	return Object.freeze({
-		replica: Object.freeze(replica),
+		replica,
 		async initializeFresh(verifyFresh) {
 			if (!(verifyFresh instanceof Function))
 				throw new UpstashBlobImmutableJournalError("freshness-unverified");
-			try {
-				await verifyFresh(member, initializationId);
-			} catch {
-				throw new UpstashBlobImmutableJournalError("freshness-unverified");
-			}
-			try {
-				await put(logPath, encode([]));
-			} catch (error) {
-				if (
-					!(error instanceof UpstashBlobImmutableJournalError) ||
-					error.reason !== "write-outcome-unknown"
-				)
-					throw error;
-				await log();
-			}
+			return invoke(() => atomic.initializeFresh(verifyFresh));
 		},
 	});
 }

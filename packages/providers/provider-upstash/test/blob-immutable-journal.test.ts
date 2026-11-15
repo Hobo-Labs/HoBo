@@ -326,6 +326,145 @@ describe("Upstash private Blob immutable voter", () => {
 			/sealed/u,
 		);
 	});
+	it("fences a document request delayed until after the generation seal", async () => {
+		const f = fixture(),
+			voters = f.open(),
+			voter = voters[0]?.replica;
+		if (!voter) throw new Error("missing voter");
+		for (const entry of voters) await entry.initializeFresh(async () => {});
+		await f.journal(voters).bootstrap(async () => {});
+		const head = (await voter.read(1))[0];
+		const digest = head?.reason.split(":")[2];
+		if (!head || !digest) throw new Error("missing head");
+		let release = () => {},
+			signal = () => {},
+			blocked = true;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const started = new Promise<void>((resolve) => {
+			signal = resolve;
+		});
+		f.setIntercept(async (request) => {
+			if (
+				blocked &&
+				request.method === "PUT" &&
+				request.url.includes("hobo-journal-a/") &&
+				(request.url.includes("/documents/") ||
+					request.url.endsWith("/assignments"))
+			) {
+				blocked = false;
+				signal();
+				await gate;
+			}
+		});
+		const value = "delayed after seal",
+			key = hash(value);
+		const delayed = voter.writeDocument(key, value);
+		await started;
+		expect(
+			await voter.seal({ transitionId: "cutover", epoch: head.epoch, digest }),
+		).toBe("sealed");
+		release();
+		await expect(delayed).rejects.toThrow(/sealed/u);
+		expect(await voter.readDocument(key)).toBeUndefined();
+	});
+	it("fences a timed-out document request delivered after the seal", async () => {
+		const f = fixture(),
+			voters = f.open(),
+			voter = voters[0]?.replica;
+		const options = f.options[0];
+		if (!voter || !options) throw new Error("missing voter");
+		for (const entry of voters) await entry.initializeFresh(async () => {});
+		await f.journal(voters).bootstrap(async () => {});
+		const head = (await voter.read(1))[0];
+		const digest = head?.reason.split(":")[2];
+		if (!head || !digest) throw new Error("missing head");
+		let delayed: TransportRequest | undefined;
+		f.setIntercept(async (request) => {
+			if (
+				!delayed &&
+				request.method === "PUT" &&
+				request.url.includes("hobo-journal-a/") &&
+				request.url.endsWith("/assignments")
+			) {
+				delayed = request;
+				throw new Error("delivery uncertain");
+			}
+		});
+		const value = "timed-out document",
+			key = hash(value);
+		await expect(voter.writeDocument(key, value)).rejects.toThrow(
+			/write-outcome-unknown/u,
+		);
+		f.setIntercept(undefined);
+		expect(
+			await voter.seal({ transitionId: "cutover", epoch: head.epoch, digest }),
+		).toBe("sealed");
+		if (!delayed) throw new Error("missing delayed request");
+		expect((await options.transport(delayed)).status).toBe(412);
+		expect(await voter.readDocument(key)).toBeUndefined();
+	});
+	it("refuses a legacy split-format voter without replacing its data", async () => {
+		const f = fixture(),
+			voter = f.open()[0],
+			options = f.options[0];
+		if (!voter || !options) throw new Error("missing voter");
+		const prefix = `https://${options.r2AccountId}.r2.cloudflarestorage.com/${options.bucketId}/${options.namespace}`;
+		const state = JSON.stringify({
+			contract: "hobo.upstash-blob-journal/v1",
+			fleetId: options.fleetId,
+			anchorDigest: options.anchorDigest,
+			member: options.member,
+			initializationId: options.initializationId,
+			entries: [],
+		});
+		const document = "legacy data",
+			documentKey = `${prefix}/documents/${hash(document)}`;
+		f.objects.set(`${prefix}/assignments`, {
+			body: state,
+			etag: `"${hash(state)}"`,
+		});
+		f.objects.set(documentKey, { body: document, etag: `"${hash(document)}"` });
+		await expect(voter.initializeFresh(async () => {})).rejects.toThrow(
+			/identity-unverified/u,
+		);
+		await expect(voter.replica.read()).rejects.toThrow(/identity-unverified/u);
+		expect(f.objects.get(`${prefix}/assignments`)?.body).toBe(state);
+		expect(f.objects.get(documentKey)?.body).toBe(document);
+	});
+	it("bounds the combined state while reserving room to seal", async () => {
+		const f = fixture();
+		const voters = f.options.map((options) =>
+			createUpstashBlobImmutableJournalReplica({
+				...options,
+				maxLogBytes: 3_000,
+				maxDocumentBytes: 2_000,
+			}),
+		);
+		for (const voter of voters) await voter.initializeFresh(async () => {});
+		await f.journal(voters).bootstrap(async () => {});
+		const voter = voters[0]?.replica;
+		if (!voter) throw new Error("missing voter");
+		let full = false;
+		for (let i = 0; i < 10; i++) {
+			const value = `${i}${"x".repeat(700)}`;
+			try {
+				await voter.writeDocument(hash(value), value);
+			} catch (error) {
+				expect(String(error)).toMatch(/object-full/u);
+				full = true;
+				break;
+			}
+		}
+		expect(full).toBe(true);
+		const head = (await voter.read(1))[0],
+			digest = head?.reason.split(":")[2];
+		if (!head || !digest) throw new Error("missing head");
+		expect(
+			await voter.seal({ transitionId: "bounded", epoch: head.epoch, digest }),
+		).toBe("sealed");
+	});
 	it("refuses missing identity, unavailable funding and revoked mint authority", async () => {
 		const f = fixture(),
 			first = f.open()[0];
@@ -385,13 +524,20 @@ describe("Upstash private Blob immutable voter", () => {
 		for (const voter of voters) await voter.initializeFresh(async () => {});
 		await f.journal(voters).bootstrap(async () => {});
 		const key = [...f.objects.keys()].find(
-			(url) => url.includes("hobo-journal-a/") && url.includes("/documents/"),
+			(url) => url.includes("hobo-journal-a/") && url.endsWith("/assignments"),
 		);
-		if (!key) throw new Error("missing test document");
-		const prior = f.objects.get(key),
-			digest = key.split("/").at(-1);
-		if (!prior || !digest) throw new Error("missing test document");
-		f.objects.set(key, { ...prior, body: "corrupt" });
+		if (!key) throw new Error("missing test state");
+		const prior = f.objects.get(key);
+		if (!prior) throw new Error("missing test state");
+		// SAFETY: the atomic voter in this fixture just wrote this state successfully.
+		const state = JSON.parse(prior.body) as {
+			documents: { digest: string; value: string }[];
+		};
+		const document = state.documents[0];
+		if (!document) throw new Error("missing test document");
+		const digest = document.digest;
+		document.value = "corrupt";
+		f.objects.set(key, { ...prior, body: JSON.stringify(state) });
 		await expect(first.replica.readDocument(digest)).rejects.toThrow(
 			/invalid-document/u,
 		);

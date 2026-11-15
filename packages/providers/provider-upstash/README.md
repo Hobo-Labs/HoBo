@@ -37,12 +37,22 @@ or establish deployment readiness.
 ### Private Blob journal voter
 
 `createUpstashBlobImmutableJournalReplica` stores an anchored journal member in
-an Upstash-owned private bucket. Create-only document writes and conditional
-ETag updates serialize the assignment log and its seal; a lost write response
-is reconciled by reading the exact stored value. A sealed log cannot accept a
-late assignment. `initializeFresh` requires an independently verified fresh
-member, and a missing or mismatched existing identity is never initialized
-automatically.
+an Upstash-owned private bucket. Documents, assignments and the seal share one
+conditional ETag update, so a delayed document or assignment cannot cross a
+successful seal. A lost write response is reconciled by reading the exact
+stored value. `maxLogBytes` now bounds that entire object, including documents;
+the state may fill before an individual document reaches `maxDocumentBytes`.
+The voter reserves space for the seal. `initializeFresh` requires an
+independently verified fresh member and namespace, and a missing or mismatched
+existing identity is never initialized automatically.
+
+The earlier experimental format stored documents separately and did not fence
+an in-flight document write at the seal. The new format refuses to open or
+overwrite its assignment object; it does not migrate existing data. Before
+moving an existing generation, the host must independently fence and drain all
+old writers and in-flight requests, then use an authenticated rollover into a
+verified fresh incarnation. A missing assignment object is not evidence that a
+namespace with old documents or uncertain writes is fresh.
 
 The supervisor opens `createUpstashBlobJournalTransport` for the independently
 observed R2 account, bucket, namespace and object bound. It uses Node HTTPS with
