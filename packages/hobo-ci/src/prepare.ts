@@ -101,19 +101,37 @@ export async function prepareGithubConnection(
 		);
 	const openStore =
 		deps.openStore ?? ((id: SecretStoreId) => openSecretStore(id, env, deps));
+	const relayUrl = env.HOBO_CI_PUBLIC_URL;
+	const ownerId = Number(env.HOBO_CI_GITHUB_OWNER_ID);
+	const owner = env.HOBO_CI_GITHUB_OWNER;
+	const configured =
+		relayUrl?.startsWith("https://") &&
+		Number.isSafeInteger(ownerId) &&
+		ownerId > 0 &&
+		owner
+			? { relayUrl, ownerId, owner }
+			: undefined;
 
 	// Idempotency first: an existing connection means there is nothing to do.
 	const opened = await openStore(preferred);
 	if (opened.ok) {
 		let connected: boolean;
 		try {
-			connected = await githubAppConnected(opened.store);
+			connected = await githubAppConnected(
+				opened.store,
+				async () =>
+					configured && {
+						relayUrl: configured.relayUrl,
+						ownerId: configured.ownerId,
+						...(deps.fetch ? { fetch: deps.fetch } : undefined),
+					},
+			);
 		} catch {
 			return refused(
 				"HOBO_CI_SECRET_STORE_UNAVAILABLE",
 				"Cannot verify the existing GitHub connection in the secret store.",
 				[
-					"Check store access and reconcile any partial credentials before retrying.",
+					"Check store access, the configured App owner and relay, and reconcile any partial credentials before retrying.",
 				],
 			);
 		}
@@ -143,15 +161,7 @@ export async function prepareGithubConnection(
 			],
 		};
 
-	const relayUrl = env.HOBO_CI_PUBLIC_URL;
-	const ownerId = Number(env.HOBO_CI_GITHUB_OWNER_ID);
-	const owner = env.HOBO_CI_GITHUB_OWNER;
-	if (
-		!relayUrl?.startsWith("https://") ||
-		!Number.isSafeInteger(ownerId) ||
-		ownerId <= 0 ||
-		!owner
-	)
+	if (!configured)
 		return refused(
 			"HOBO_CI_CONNECTION_UNCONFIGURED",
 			"hobo ci up needs to know where the relay runs and who owns the GitHub App.",
@@ -159,6 +169,11 @@ export async function prepareGithubConnection(
 				"Export HOBO_CI_PUBLIC_URL (the relay's https origin), HOBO_CI_GITHUB_OWNER (your login) and HOBO_CI_GITHUB_OWNER_ID (gh api user --jq .id).",
 			],
 		);
+	const {
+		relayUrl: configuredRelay,
+		ownerId: configuredOwnerId,
+		owner: configuredOwner,
+	} = configured;
 	const interactive = deps.interactive ?? Boolean(process.stdout.isTTY);
 	if (!interactive)
 		return refused(
@@ -171,9 +186,9 @@ export async function prepareGithubConnection(
 
 	let page: ConnectPage | undefined;
 	const flow = createGithubConnectFlow({
-		relayUrl,
-		ownerId,
-		owner,
+		relayUrl: configuredRelay,
+		ownerId: configuredOwnerId,
+		owner: configuredOwner,
 		callbackUrl: () => page?.callbackUrl ?? "",
 		openStore,
 		...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),

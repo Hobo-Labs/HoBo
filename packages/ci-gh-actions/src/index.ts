@@ -122,7 +122,10 @@ export {
 	getRun,
 	githubApiUrl,
 } from "./github.js";
-export { verifyConvertedGithubApp } from "./github-app-manifest-validation.js";
+export {
+	verifyConvertedGithubApp,
+	verifyStoredGithubApp,
+} from "./github-app-manifest-validation.js";
 export { withGithubReadCache } from "./github-read-cache.js";
 export {
 	createHostedControlPlane,

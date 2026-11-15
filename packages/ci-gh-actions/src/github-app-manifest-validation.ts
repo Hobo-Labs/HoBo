@@ -17,16 +17,33 @@ const Hook = z.object({
 	insecure_ssl: z.literal("0"),
 });
 
-/** Validate the converted App before credentials enter the account vault. */
-export async function verifyConvertedGithubApp(options: {
+type GithubAppVerificationOptions = {
 	appId: number;
 	pem: string;
-	metadata: unknown;
 	expectedOrigin: string;
 	expectedOwnerId: number;
 	fetch?: typeof fetch;
 	now?: () => number;
-}): Promise<void> {
+};
+
+/** Validate the converted App before credentials enter the account vault. */
+export async function verifyConvertedGithubApp(
+	options: GithubAppVerificationOptions & { metadata: unknown },
+): Promise<void> {
+	await verifyGithubApp(options, App.parse(options.metadata));
+}
+
+/** Recheck a stored App's key, owner, permissions and webhook against GitHub. */
+export async function verifyStoredGithubApp(
+	options: GithubAppVerificationOptions,
+): Promise<void> {
+	await verifyGithubApp(options);
+}
+
+async function verifyGithubApp(
+	options: GithubAppVerificationOptions,
+	converted?: z.infer<typeof App>,
+): Promise<void> {
 	const appId = Id.parse(options.appId);
 	const ownerId = Id.parse(options.expectedOwnerId);
 	const origin = new URL(options.expectedOrigin);
@@ -49,7 +66,6 @@ export async function verifyConvertedGithubApp(options: {
 		expected.defaultPermissions,
 	).sort();
 	const expectedEvents = [...expected.defaultEvents].sort();
-	const converted = App.parse(options.metadata);
 	function check(app: z.infer<typeof App>) {
 		const external = new URL(app.external_url);
 		if (
@@ -69,7 +85,7 @@ export async function verifyConvertedGithubApp(options: {
 				"GitHub App manifest does not match reviewed configuration",
 			);
 	}
-	check(converted);
+	if (converted) check(converted);
 	const now = Math.floor((options.now ?? Date.now)() / 1000);
 	if (!Number.isSafeInteger(now) || now < 60)
 		throw new Error("invalid GitHub App verification time");
@@ -101,7 +117,7 @@ export async function verifyConvertedGithubApp(options: {
 	};
 	const live = App.parse(await request("/app"));
 	check(live);
-	if (live.slug !== converted.slug)
+	if (converted && live.slug !== converted.slug)
 		throw new Error("GitHub App identity changed during verification");
 	const hook = Hook.parse(await request("/app/hook/config"));
 	if (hook.url !== `${origin.origin}/github/webhooks`)

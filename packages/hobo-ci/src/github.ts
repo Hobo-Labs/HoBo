@@ -4,6 +4,7 @@ import {
 	createGithubAppManifest,
 	githubAppManifestJson,
 	verifyConvertedGithubApp,
+	verifyStoredGithubApp,
 } from "@hobo/ci-gh-actions";
 import {
 	type ConnectFlow,
@@ -76,11 +77,17 @@ function failed(
 	return { step: { kind: "failed", provider: "github", message, remediation } };
 }
 
-/** True when the store already holds a complete App connection. */
-export async function githubAppConnected(
+export type GithubAppExpectation = Readonly<{
+	relayUrl: string;
+	ownerId: number;
+	fetch?: typeof fetch;
+}>;
+
+async function checkedGithubAppCredentials(
 	store: OpenedSecretStore,
-): Promise<boolean> {
-	let present = 0;
+	resolveExpected?: () => Promise<GithubAppExpectation | undefined>,
+): Promise<ReadonlyMap<CredentialKey, string> | undefined> {
+	const values = new Map<CredentialKey, string>();
 	for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
 		let result: Awaited<ReturnType<typeof store.port.access>>;
 		try {
@@ -88,14 +95,41 @@ export async function githubAppConnected(
 		} catch {
 			throw new Error("Cannot inspect the existing GitHub connection.");
 		}
-		if (result.status === "ok" && result.material !== "") present += 1;
+		if (
+			result.status === "ok" &&
+			result.material !== undefined &&
+			result.material !== ""
+		)
+			values.set(key, result.material);
 		else if (result.status === "ok" || result.code !== "secret-not-found")
 			throw new Error("Cannot inspect the existing GitHub connection.");
 	}
-	if (present === 0) return false;
-	if (present !== GITHUB_APP_CREDENTIAL_KEYS.length)
+	if (values.size === 0) return undefined;
+	if (values.size !== GITHUB_APP_CREDENTIAL_KEYS.length)
 		throw new Error("The stored GitHub connection is incomplete.");
-	return true;
+	const expected = await resolveExpected?.();
+	const appId = values.get("HOBO_CI_GITHUB_APP_ID");
+	const pem = values.get("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
+	if (!expected || !appId || !/^[1-9][0-9]*$/u.test(appId) || !pem)
+		throw new Error("Cannot verify the stored GitHub App's identity.");
+	await verifyStoredGithubApp({
+		appId: Number(appId),
+		pem,
+		expectedOrigin: expected.relayUrl,
+		expectedOwnerId: expected.ownerId,
+		...(expected.fetch ? { fetch: expected.fetch } : undefined),
+	});
+	return values;
+}
+
+/** True when the store holds a complete App whose identity still matches. */
+export async function githubAppConnected(
+	store: OpenedSecretStore,
+	resolveExpected?: () => Promise<GithubAppExpectation | undefined>,
+): Promise<boolean> {
+	return (
+		(await checkedGithubAppCredentials(store, resolveExpected)) !== undefined
+	);
 }
 
 function connected(
@@ -165,7 +199,11 @@ export function createGithubConnectFlow(
 				store = opened.store;
 				let alreadyConnected: boolean;
 				try {
-					alreadyConnected = await githubAppConnected(store);
+					alreadyConnected = await githubAppConnected(store, async () => ({
+						relayUrl: options.relayUrl,
+						ownerId: options.ownerId,
+						fetch: send,
+					}));
 				} catch {
 					return failed("Cannot verify the existing GitHub connection.", [
 						"Check access and reconcile any partial credentials in the secret store before retrying.",

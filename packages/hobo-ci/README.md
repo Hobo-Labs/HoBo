@@ -21,10 +21,12 @@ Before the project converges, the family's prepare step
 (`prepareGithubConnection`) makes sure a GitHub App exists and its
 credentials are in the owner's secret store.
 
-1. **Idempotent.** If all App credentials are readable, it reports
-   `unchanged` and opens nothing. An unreadable or partial connection is
-   refused until it is reconciled; it is never replaced on a failed read.
-   `--what-if` opens nothing either.
+1. **Idempotent.** If all App credentials are readable, HoBo rechecks the
+   signed App identity, owner, reviewed permissions and webhook against
+   GitHub before reporting `unchanged`. An unreadable, partial or unverifiable
+   connection is refused instead of being replaced. This check does not prove
+   that the stored webhook or OAuth secrets work end to end. `--what-if`
+   opens nothing either.
 2. **A generative connect page** (`@hobo/connect-ui`, json-render on
    shadcn/ui) opens in the browser. The owner chooses the store (Infisical
    Cloud with OIDC by default, or 1Password) and confirms GitHub's App screen,

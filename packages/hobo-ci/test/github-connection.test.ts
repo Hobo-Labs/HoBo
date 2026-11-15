@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createVerify, generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createGithubConnectFlow,
 	GITHUB_APP_CREDENTIAL_KEYS,
+	githubAppConnected,
 	type OpenedSecretStore,
 	prepareGithubConnection,
 	type SecretStoreOpening,
@@ -22,7 +23,9 @@ import {
 
 const RELAY = "https://ci.hobo.example";
 const OWNER_ID = 4242;
-const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+	modulusLength: 2048,
+});
 const PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
 
 const reviewed = createGithubAppManifest({
@@ -70,6 +73,18 @@ function fakeGithub(ownerId = OWNER_ID): FakeGithub {
 			const url = new URL(String(input));
 			const call = `${init?.method ?? "GET"} ${url.pathname}`;
 			calls.push(call);
+			if (call.startsWith("GET /app")) {
+				const bearer = new Headers(init?.headers).get("authorization");
+				const parts = bearer?.replace(/^Bearer /u, "").split(".") ?? [];
+				if (
+					parts.length !== 3 ||
+					!parts[2] ||
+					!createVerify("RSA-SHA256")
+						.update(`${parts[0]}.${parts[1]}`)
+						.verify(publicKey, Buffer.from(parts[2], "base64url"))
+				)
+					return new Response(null, { status: 401 });
+			}
 			const interaction = PACT.interactions.find(
 				(candidate) =>
 					`${candidate.request.method} ${candidate.request.path}` === call,
@@ -109,8 +124,15 @@ function memoryStore(): OpenedSecretStore & {
 }
 
 async function seedConnection(store: OpenedSecretStore): Promise<void> {
+	const values = {
+		HOBO_CI_GITHUB_APP_PRIVATE_KEY: PEM,
+		HOBO_CI_WEBHOOK_SECRET: "whsec-test",
+		HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret-test",
+		HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.test",
+		HOBO_CI_GITHUB_APP_ID: "777",
+	};
 	for (const key of GITHUB_APP_CREDENTIAL_KEYS)
-		await store.port.put(key, `fixture-${key}`);
+		await store.port.put(key, values[key]);
 }
 
 const opened =
@@ -120,6 +142,14 @@ const opened =
 	});
 
 describe("createGithubConnectFlow", () => {
+	it("does not resolve a GitHub identity when no credentials exist", async () => {
+		const store = memoryStore();
+		await expect(
+			githubAppConnected(store, async () => {
+				throw new Error("unexpected lookup");
+			}),
+		).resolves.toBe(false);
+	});
 	it("creates the App, deposits every credential (id last), and shows references only", async () => {
 		const store = memoryStore();
 		const github = fakeGithub();
@@ -162,7 +192,7 @@ describe("createGithubConnectFlow", () => {
 		expect(github.calls).toEqual(PACT_CALLS);
 	});
 
-	it("is idempotent: a store that holds the App finishes unchanged without GitHub", async () => {
+	it("reuses a stored App only after checking its live identity and webhook", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
 		const github = fakeGithub();
@@ -181,6 +211,115 @@ describe("createGithubConnectFlow", () => {
 		);
 		expect(step.step.kind).toBe("connected");
 		expect(flow.outcome()).toBe("unchanged");
+		expect(github.calls).toEqual(PACT_CALLS.slice(1));
+	});
+
+	it("does not reuse stored credentials for an App owned by another account", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const github = fakeGithub(9999);
+		const flow = createGithubConnectFlow({
+			relayUrl: RELAY,
+			ownerId: OWNER_ID,
+			owner: "octo-org",
+			callbackUrl: () => "",
+			openStore: opened(store),
+			fetch: github.fetch,
+		});
+		const result = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		expect(result.step.kind).toBe("failed");
+		expect(flow.outcome()).toBeUndefined();
+		expect(github.calls).toEqual(["GET /app"]);
+		expect(store.names()).toHaveLength(GITHUB_APP_CREDENTIAL_KEYS.length);
+	});
+
+	it("refuses a stored App whose webhook points to another relay", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const github = fakeGithub();
+		const flow = createGithubConnectFlow({
+			relayUrl: RELAY,
+			ownerId: OWNER_ID,
+			owner: "octo-org",
+			callbackUrl: () => "",
+			openStore: opened(store),
+			fetch: async (input, init) => {
+				if (new URL(String(input)).pathname === "/app/hook/config")
+					return Response.json({
+						url: "https://other.test/github/webhooks",
+						content_type: "json",
+						insecure_ssl: "0",
+					});
+				return github.fetch(input, init);
+			},
+		});
+		const result = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		expect(result.step.kind).toBe("failed");
+		expect(flow.outcome()).toBeUndefined();
+	});
+
+	it("refuses a stored private key that does not belong to the App", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const { privateKey: otherKey } = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+		});
+		await store.port.put(
+			"HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+			otherKey.export({ type: "pkcs1", format: "pem" }).toString(),
+		);
+		const github = fakeGithub();
+		const flow = createGithubConnectFlow({
+			relayUrl: RELAY,
+			ownerId: OWNER_ID,
+			owner: "octo-org",
+			callbackUrl: () => "",
+			openStore: opened(store),
+			fetch: github.fetch,
+		});
+		const result = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		expect(result.step.kind).toBe("failed");
+		expect(github.calls).toEqual(["GET /app"]);
+	});
+
+	it("refuses a secret-store response that contains no material", async () => {
+		const store = memoryStore();
+		const withoutMaterial: OpenedSecretStore = {
+			...store,
+			port: {
+				...store.port,
+				async access() {
+					return { status: "ok", valueRef: "fixture", source: "static-escape" };
+				},
+			},
+		};
+		const github = fakeGithub();
+		const flow = createGithubConnectFlow({
+			relayUrl: RELAY,
+			ownerId: OWNER_ID,
+			owner: "octo-org",
+			callbackUrl: () => "",
+			openStore: opened(withoutMaterial),
+			fetch: github.fetch,
+		});
+		const result = await flow.onAction(
+			"connect.chooseStore",
+			{ store: "infisical" },
+			flow.initial,
+		);
+		expect(result.step.kind).toBe("failed");
 		expect(github.calls).toEqual([]);
 	});
 
@@ -345,9 +484,11 @@ describe("prepareGithubConnection", () => {
 	it("reports unchanged without opening a page when the store holds the App", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
+		const github = fakeGithub();
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
 			openStore: opened(store),
+			fetch: github.fetch,
 			startPage: () => {
 				throw new Error("no page should open");
 			},
@@ -356,6 +497,40 @@ describe("prepareGithubConnection", () => {
 			kind: "ready",
 			steps: [{ outcome: "unchanged" }],
 		});
+		expect(github.calls).toEqual(PACT_CALLS.slice(1));
+	});
+
+	it("refuses to reuse stored credentials when the configured owner differs", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const github = fakeGithub(9999);
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: ENV,
+			openStore: opened(store),
+			fetch: github.fetch,
+			startPage: () => {
+				throw new Error("must not create a replacement");
+			},
+		});
+		expect(outcome).toMatchObject({ kind: "refused" });
+		expect(github.calls).toEqual(["GET /app"]);
+		expect(store.names()).toHaveLength(GITHUB_APP_CREDENTIAL_KEYS.length);
+	});
+
+	it("does not reuse stored credentials without a configured owner and relay", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const github = fakeGithub();
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: {},
+			openStore: opened(store),
+			fetch: github.fetch,
+			startPage: () => {
+				throw new Error("must not create a replacement");
+			},
+		});
+		expect(outcome).toMatchObject({ kind: "refused" });
+		expect(github.calls).toEqual([]);
 	});
 
 	it("refuses when store access fails instead of opening setup", async () => {
