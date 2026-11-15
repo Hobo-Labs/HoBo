@@ -1,5 +1,6 @@
 import { createHmac, generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create, toJsonString } from "@bufbuild/protobuf";
@@ -11,6 +12,7 @@ import {
 	defineCiPolicy,
 } from "@hobo/ci";
 import { createAdmissionOrder } from "@hobo/ci-gh-actions";
+import { startRelayFromEnvironment } from "@hobo/ci-gh-actions/cli-serve";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,6 +21,7 @@ import { importGithubKey } from "../src/ci-github-keys.js";
 import {
 	ciWorkerEnvironment,
 	resolveCiServePlan,
+	runCiServe,
 	startCiServe,
 	startPullAdmission,
 } from "../src/ci-serve.js";
@@ -124,6 +127,17 @@ function memoryStore(entries: Readonly<Record<string, string>>) {
 /** No store opens (the default opener would read the committed locator). */
 const noStore = async () => undefined;
 
+async function testPort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.listen(0, "127.0.0.1", () => {
+			const port = ListenAddress.parse(server.address()).port;
+			server.close((error) => (error ? reject(error) : resolve(port)));
+		});
+		server.on("error", reject);
+	});
+}
+
 describe("hobo ci serve multi-engine", () => {
 	it.each([
 		{ HOBO_CI_GITHUB_APP_ID: "123" },
@@ -168,6 +182,156 @@ describe("hobo ci serve multi-engine", () => {
 			/HOBO_CI_GITHUB_APP_PRIVATE_KEY, HOBO_CI_ACCOUNT_TOKEN in the environment are not read/,
 		);
 		await expect(started).rejects.not.toThrow(value);
+	});
+
+	it("does not start a worker without a credential-safe handoff", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-worker-refusal-"));
+		directories.push(home);
+		let handle: Awaited<ReturnType<typeof startCiServe>> | undefined;
+		let failure: unknown;
+		try {
+			handle = await startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					admission: "push",
+					port: String(await testPort()),
+					home,
+					withWorker: true,
+				},
+				env: { HOBO_CI_WORKER_BUILD: "0" },
+				git,
+				openStore: noStore,
+			});
+		} catch (error) {
+			failure = error;
+		} finally {
+			await handle?.stop();
+		}
+		expect(failure).toBeInstanceOf(Error);
+		expect(String(failure)).toContain("credential-safe worker handoff");
+	});
+
+	it("refuses a failed store opening without exposing its diagnostic", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-store-refusal-"));
+		directories.push(home);
+		const diagnostic = "fixture-sensitive-store-diagnostic";
+		let handle: Awaited<ReturnType<typeof startCiServe>> | undefined;
+		let failure: unknown;
+		try {
+			handle = await startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					admission: "push",
+					port: String(await testPort()),
+					home,
+				},
+				env: {},
+				git,
+				openStore: async () => {
+					throw new Error(diagnostic);
+				},
+			});
+		} catch (error) {
+			failure = error;
+		} finally {
+			await handle?.stop();
+		}
+		expect(failure).toBeInstanceOf(Error);
+		expect(String(failure)).toContain("Cannot open the owner's secret store");
+		expect(String(failure)).not.toContain(diagnostic);
+	});
+
+	it("stops the relay when reporting readiness throws", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-ready-refusal-"));
+		directories.push(home);
+		let running:
+			| Awaited<ReturnType<typeof startRelayFromEnvironment>>
+			| undefined;
+		let stopped = false;
+		try {
+			await expect(
+				startCiServe({
+					cwd,
+					options: {
+						environment: "local",
+						admission: "push",
+						port: String(await testPort()),
+						home,
+					},
+					env: {},
+					git,
+					openStore: noStore,
+					startRelay: async (env, ports) => {
+						const relay = await startRelayFromEnvironment(env, ports);
+						running = relay;
+						return {
+							...relay,
+							async stop() {
+								stopped = true;
+								await relay.stop();
+							},
+						};
+					},
+					emitProgress: (message) => {
+						if (message.includes('"event":"serve.ready"'))
+							throw new Error("progress failed");
+					},
+				}),
+			).rejects.toThrow("progress failed");
+			expect(running).toBeDefined();
+			expect(stopped).toBe(true);
+		} finally {
+			if (!stopped) await running?.stop();
+		}
+	});
+
+	it("stops the relay when the command cannot report its listening address", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-listening-refusal-"));
+		directories.push(home);
+		let running:
+			| Awaited<ReturnType<typeof startRelayFromEnvironment>>
+			| undefined;
+		let stopped = false;
+		try {
+			const result = await runCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					admission: "push",
+					port: String(await testPort()),
+					home,
+				},
+				env: {},
+				git,
+				waitUntilSignal: false,
+				startRelay: async (env, ports) => {
+					const relay = await startRelayFromEnvironment(env, ports);
+					running = relay;
+					return {
+						...relay,
+						async stop() {
+							stopped = true;
+							await relay.stop();
+						},
+					};
+				},
+				emitProgress: (message) => {
+					if (message.startsWith("HoBo CI relay listening"))
+						throw new Error("listening report failed");
+				},
+			});
+			expect(result.message).toContain("listening report failed");
+			expect(running).toBeDefined();
+			expect(stopped).toBe(true);
+		} finally {
+			if (!stopped) await running?.stop();
+		}
 	});
 
 	it("print-config lists resolved engines", async () => {

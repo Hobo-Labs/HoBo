@@ -77,16 +77,12 @@ binds **127.0.0.1** by default; non-loopback binds require an explicit public
 **`--origin`** (HTTPS, matching `relayOrigin`) or **`--allow-insecure`**. Use
 **`--host 0.0.0.0`** and **`--port`** for containers; keep **`--origin`** on the
 public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
-`X-Forwarded-Proto`). GitHub App credentials load from `HOBO_CI_GITHUB_APP_*` /
-`*_FILE` env vars (never printed). Optional **`HOBO_CI_INGRESS_FORWARD_SECRET`**
-verifies ingress-forwarded webhooks. **`--print-config`** shows the resolved
-plan with secrets redacted. **`--with-worker`** starts the isolated-container
-sidecar with its own lease journal: local SQLite at
-`<HOBO_HOME>/ci/serve/worker.sqlite` (override `HOBO_CI_WORKER_DB`) that polls
-GitHub for `runs-on: hobo` jobs. `"store": { "kind": "sqlite" }` is the only
-store kind; the shared Postgres store was removed with the hosted relay's
-database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)).
-Graceful shutdown on SIGINT/SIGTERM.
+`X-Forwarded-Proto`). GitHub App credentials load from mounted files or the
+owner's secret store. An optional **`HOBO_CI_INGRESS_FORWARD_SECRET_FILE`**
+names the file used to verify ingress-forwarded webhooks. **`--print-config`**
+shows the resolved plan with secrets redacted. **`--with-worker`** is refused
+until a credential-safe handoff to the worker is available. The relay shuts
+down gracefully on SIGINT/SIGTERM.
 
 When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
 [CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue
@@ -118,7 +114,7 @@ environment names (`HOBO_CI_GITHUB_APP_KEY_FILE` and the related `_FILE`
 variables, as a unit); else the connection `hobo ci up` deposited in your secret
 store (the committed `.hobo/secret-store.json`), read into the run's trusted
 vault and handed to the relay in memory, so no key or webhook secret is written
-to disk or put in the relay's or the `--with-worker` process's environment;
+to disk or put in the relay's environment;
 else this imported version. It never reads a secret value from its
 environment: `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`,
 `HOBO_CI_ACCOUNT_TOKEN` or `HOBO_CI_INGRESS_FORWARD_SECRET` set there stops

@@ -137,6 +137,10 @@ export function ciWorkerEnvironment(input: {
 }
 
 type RunningRelay = Awaited<ReturnType<typeof startRelayFromEnvironment>>;
+type RelayStarter = (
+	env: NodeJS.ProcessEnv,
+	ports: { readonly secrets: RelaySecrets },
+) => Promise<RunningRelay>;
 
 /**
  * The relay's startup with the CI agent beside it, from `@hobo/ci-agent`. The
@@ -543,7 +547,9 @@ async function loadStoredConnection(
 	open: () => Promise<OpenedSecretStore | undefined>,
 	vault: TrustedVault,
 ): Promise<boolean> {
-	const store = await open().catch(() => undefined);
+	const store = await open().catch(() => {
+		throw new Error("Cannot open the owner's secret store.");
+	});
 	if (store === undefined) return false;
 	const token = await store.port
 		.access(ACCOUNT_TOKEN_ENTRY)
@@ -728,8 +734,14 @@ export async function startCiServe(input: {
 	emitProgress?: (message: string) => void;
 	/** The owner's secret store (test seam); by default opened from the committed locator. */
 	openStore?: () => Promise<OpenedSecretStore | undefined>;
+	/** Relay startup seam for lifecycle tests. */
+	startRelay?: RelayStarter;
 }): Promise<CiServeHandle> {
 	refuseInlineSecrets(input.env);
+	if (input.options.withWorker)
+		throw new Error(
+			"The credential-safe worker handoff is not available yet; start without --with-worker.",
+		);
 	const plan = await resolveCiServePlan(input);
 	const home = resolve(
 		input.cwd,
@@ -742,181 +754,199 @@ export async function startCiServe(input: {
 	// What the owner's store gives this run lives in this vault, in memory,
 	// and is wiped when the relay stops.
 	const vault = createTrustedVault();
-	// Explicitly mounted App files win as a unit; then the store's connection;
-	// then a key imported under HOBO_HOME.
-	const filesConfigured = Boolean(
-		input.env.HOBO_CI_GITHUB_APP_KEY_FILE ||
-			input.env.HOBO_CI_GITHUB_APP_ID ||
-			input.env.HOBO_CI_GITHUB_APP_ID_FILE ||
-			input.env.HOBO_CI_WEBHOOK_SECRET_FILE,
-	);
-	const fromStore =
-		!filesConfigured &&
-		(await loadStoredConnection(
-			input.openStore ?? ownerStoreOpener(input.env, input.cwd),
-			vault,
-		));
-	const configuredEnv = fromStore
-		? input.env
-		: await githubKeyEnvironment(input.env, home);
-	let credentials: ServeCredentials;
+	let startupRelay: RunningRelay | undefined;
+	let pollStop: (() => void) | undefined;
+	let worker: ChildProcess | undefined;
 	try {
-		credentials = await ensureCredentials(
+		// Explicitly mounted App files win as a unit; then the store's connection;
+		// then a key imported under HOBO_HOME.
+		const filesConfigured = Boolean(
+			input.env.HOBO_CI_GITHUB_APP_KEY_FILE ||
+				input.env.HOBO_CI_GITHUB_APP_ID ||
+				input.env.HOBO_CI_GITHUB_APP_ID_FILE ||
+				input.env.HOBO_CI_WEBHOOK_SECRET_FILE,
+		);
+		const fromStore =
+			!filesConfigured &&
+			(await loadStoredConnection(
+				input.openStore ?? ownerStoreOpener(input.env, input.cwd),
+				vault,
+			));
+		const configuredEnv = fromStore
+			? input.env
+			: await githubKeyEnvironment(input.env, home);
+		const credentials = await ensureCredentials(
 			configuredEnv,
 			stateDir,
 			requireRealCredentials,
 			plan.installationId,
 			vault,
 		);
+		const dbPath = input.options.db ?? join(stateDir, "relay.sqlite");
+		const seedConfig = join(stateDir, "config.json");
+		if (
+			!(await access(seedConfig, constants.R_OK).then(
+				() => true,
+				() => false,
+			))
+		) {
+			await writeFile(
+				seedConfig,
+				toJsonString(
+					ConfigurationSchema,
+					create(ConfigurationSchema, { accounts: [], connections: [] }),
+				),
+				{ mode: 0o600 },
+			);
+		}
+		const relayEnv: NodeJS.ProcessEnv = { ...configuredEnv };
+		relayEnv.HOBO_CI_PUBLIC_URL = plan.publicOrigin;
+		relayEnv.HOBO_CI_HOST = plan.host;
+		relayEnv.HOBO_CI_PORT = String(plan.port);
+		if (plan.allowInsecureLoopback)
+			relayEnv.HOBO_CI_ALLOW_INSECURE_LOOPBACK = "1";
+		relayEnv.HOBO_CI_GITHUB_APP_ID = credentials.appId;
+		// The relay is handed its secrets in memory (below); its environment names
+		// none, so the worker it may spawn inherits none.
+		delete relayEnv.HOBO_CI_GITHUB_APP_KEY_FILE;
+		delete relayEnv.HOBO_CI_WEBHOOK_SECRET_FILE;
+		delete relayEnv.HOBO_CI_INGRESS_FORWARD_SECRET_FILE;
+		relayEnv.HOBO_CI_CONTROL_TOKENS_FILE = credentials.tokenPath;
+		const ingressForward = await readOptionalSecret(
+			input.env,
+			"HOBO_CI_INGRESS_FORWARD_SECRET",
+			vault,
+		);
+		if (
+			ingressForward !== undefined &&
+			Buffer.byteLength(ingressForward, "utf8") < 32
+		)
+			throw new Error(
+				"HOBO_CI_INGRESS_FORWARD_SECRET must be at least 32 bytes",
+			);
+		const secrets: RelaySecrets = {
+			githubAppPrivateKey: credentials.privateKey,
+			webhookSecret: credentials.webhookSecret,
+			...(ingressForward !== undefined
+				? { ingressForwardSecret: ingressForward }
+				: undefined),
+		};
+		if (plan.trustProxy) relayEnv.HOBO_CI_TRUST_PROXY = "1";
+		relayEnv.HOBO_CI_DB = dbPath;
+		relayEnv.HOBO_CI_CONFIG = seedConfig;
+		const stubEngines = plan.engines.filter(
+			(engine) => engine !== "gh-actions",
+		);
+		if (stubEngines.length > 0)
+			relayEnv.HOBO_CI_STUB_ENGINES = stubEngines.join(",");
+		if (!plan.engines.includes("gh-actions"))
+			throw new Error(
+				"gh-actions engine is required for local relay serve today",
+			);
+		// The agent is part of the project's configuration: an `agent` block turns
+		// it on. It keeps its journal and clones under this serve's state.
+		const agentBlock = input.options.noAgent
+			? undefined
+			: parseCiAgentBlock(await readFile(plan.configPath, "utf8"));
+		let startRelay: RelayStarter =
+			input.startRelay ?? startRelayFromEnvironment;
+		if (agentBlock !== undefined) {
+			relayEnv.HOBO_CI_AGENT_CONFIG = plan.configPath;
+			relayEnv.HOBO_CI_AGENT_DIR = join(stateDir, "agent");
+			startRelay = await loadAgentRelay();
+		}
+		serveLog(input.emitProgress, {
+			ts: new Date().toISOString(),
+			level: "info",
+			event: "serve.starting",
+			environment: plan.environmentName,
+			publicOrigin: plan.publicOrigin,
+			bind: { host: plan.host, port: plan.port },
+			admission: plan.admission,
+			trustProxy: plan.trustProxy,
+			engines: plan.engines,
+			agent: agentBlock !== undefined,
+		});
+		const running = await startRelay(relayEnv, { secrets });
+		startupRelay = running;
+		if (plan.admission === "pull") {
+			if (plan.installationId === undefined)
+				throw new Error("pull admission requires --installation-id");
+			const github = createGithubAppTransport({
+				appId: credentials.appId,
+				privateKey: credentials.privateKey,
+			});
+			const poll = startPullAdmission({
+				github,
+				relay: running,
+				repository: plan.repository,
+				installationId: plan.installationId,
+				emitProgress: input.emitProgress,
+			});
+			pollStop = () => poll.stop();
+		}
+		if (input.options.withWorker) {
+			const workerEnv = ciWorkerEnvironment({
+				relayEnv,
+				store: plan.workerStore,
+				stateDir,
+			});
+			const script = fileURLToPath(
+				new URL(
+					"../../ci-gh-actions/scripts/isolated-worker-daemon.mts",
+					import.meta.url,
+				),
+			);
+			worker = spawn(process.execPath, ["--import", "tsx", script], {
+				env: workerEnv,
+				stdio: "inherit",
+			});
+		}
+		await running.service.checkReadiness();
+		serveLog(input.emitProgress, {
+			ts: new Date().toISOString(),
+			level: "info",
+			event: "serve.ready",
+			publicOrigin: plan.publicOrigin,
+		});
+		return {
+			origin: plan.publicOrigin,
+			plan,
+			async stop() {
+				pollStop?.();
+				if (worker) worker.kill("SIGTERM");
+				try {
+					await running.stop();
+				} finally {
+					vault.clear();
+				}
+			},
+		};
 	} catch (error) {
-		vault.clear();
-		throw error;
-	}
-	const dbPath = input.options.db ?? join(stateDir, "relay.sqlite");
-	const seedConfig = join(stateDir, "config.json");
-	if (
-		!(await access(seedConfig, constants.R_OK).then(
-			() => true,
-			() => false,
-		))
-	) {
-		await writeFile(
-			seedConfig,
-			toJsonString(
-				ConfigurationSchema,
-				create(ConfigurationSchema, { accounts: [], connections: [] }),
-			),
-			{ mode: 0o600 },
-		);
-	}
-	const relayEnv: NodeJS.ProcessEnv = { ...configuredEnv };
-	relayEnv.HOBO_CI_PUBLIC_URL = plan.publicOrigin;
-	relayEnv.HOBO_CI_HOST = plan.host;
-	relayEnv.HOBO_CI_PORT = String(plan.port);
-	if (plan.allowInsecureLoopback)
-		relayEnv.HOBO_CI_ALLOW_INSECURE_LOOPBACK = "1";
-	relayEnv.HOBO_CI_GITHUB_APP_ID = credentials.appId;
-	// The relay is handed its secrets in memory (below); its environment names
-	// none, so the worker it may spawn inherits none.
-	delete relayEnv.HOBO_CI_GITHUB_APP_KEY_FILE;
-	delete relayEnv.HOBO_CI_WEBHOOK_SECRET_FILE;
-	delete relayEnv.HOBO_CI_INGRESS_FORWARD_SECRET_FILE;
-	relayEnv.HOBO_CI_CONTROL_TOKENS_FILE = credentials.tokenPath;
-	const ingressForward = await readOptionalSecret(
-		input.env,
-		"HOBO_CI_INGRESS_FORWARD_SECRET",
-		vault,
-	);
-	if (
-		ingressForward !== undefined &&
-		Buffer.byteLength(ingressForward, "utf8") < 32
-	)
-		throw new Error("HOBO_CI_INGRESS_FORWARD_SECRET must be at least 32 bytes");
-	const secrets: RelaySecrets = {
-		githubAppPrivateKey: credentials.privateKey,
-		webhookSecret: credentials.webhookSecret,
-		...(ingressForward !== undefined
-			? { ingressForwardSecret: ingressForward }
-			: undefined),
-	};
-	if (plan.trustProxy) relayEnv.HOBO_CI_TRUST_PROXY = "1";
-	relayEnv.HOBO_CI_DB = dbPath;
-	relayEnv.HOBO_CI_CONFIG = seedConfig;
-	const stubEngines = plan.engines.filter((engine) => engine !== "gh-actions");
-	if (stubEngines.length > 0)
-		relayEnv.HOBO_CI_STUB_ENGINES = stubEngines.join(",");
-	if (!plan.engines.includes("gh-actions"))
-		throw new Error(
-			"gh-actions engine is required for local relay serve today",
-		);
-	// The agent is part of the project's configuration: an `agent` block turns
-	// it on. It keeps its journal and clones under this serve's state.
-	const agentBlock = input.options.noAgent
-		? undefined
-		: parseCiAgentBlock(await readFile(plan.configPath, "utf8"));
-	let startRelay: (
-		env: NodeJS.ProcessEnv,
-		ports: { readonly secrets: RelaySecrets },
-	) => Promise<RunningRelay> = startRelayFromEnvironment;
-	if (agentBlock !== undefined) {
-		relayEnv.HOBO_CI_AGENT_CONFIG = plan.configPath;
-		relayEnv.HOBO_CI_AGENT_DIR = join(stateDir, "agent");
-		startRelay = await loadAgentRelay();
-	}
-	serveLog(input.emitProgress, {
-		ts: new Date().toISOString(),
-		level: "info",
-		event: "serve.starting",
-		environment: plan.environmentName,
-		publicOrigin: plan.publicOrigin,
-		bind: { host: plan.host, port: plan.port },
-		admission: plan.admission,
-		trustProxy: plan.trustProxy,
-		engines: plan.engines,
-		agent: agentBlock !== undefined,
-	});
-	let running: RunningRelay;
-	try {
-		running = await startRelay(relayEnv, { secrets });
-	} catch (error) {
-		vault.clear();
-		throw error;
-	}
-	let pollStop: (() => void) | undefined;
-	let worker: ChildProcess | undefined;
-	if (plan.admission === "pull") {
-		if (plan.installationId === undefined)
-			throw new Error("pull admission requires --installation-id");
-		const github = createGithubAppTransport({
-			appId: credentials.appId,
-			privateKey: credentials.privateKey,
-		});
-		const poll = startPullAdmission({
-			github,
-			relay: running,
-			repository: plan.repository,
-			installationId: plan.installationId,
-			emitProgress: input.emitProgress,
-		});
-		pollStop = () => poll.stop();
-	}
-	if (input.options.withWorker) {
-		const workerEnv = ciWorkerEnvironment({
-			relayEnv,
-			store: plan.workerStore,
-			stateDir,
-		});
-		const script = fileURLToPath(
-			new URL(
-				"../../ci-gh-actions/scripts/isolated-worker-daemon.mts",
-				import.meta.url,
-			),
-		);
-		worker = spawn(process.execPath, ["--import", "tsx", script], {
-			env: workerEnv,
-			stdio: "inherit",
-		});
-	}
-	await running.service.checkReadiness();
-	serveLog(input.emitProgress, {
-		ts: new Date().toISOString(),
-		level: "info",
-		event: "serve.ready",
-		publicOrigin: plan.publicOrigin,
-	});
-	return {
-		origin: plan.publicOrigin,
-		plan,
-		async stop() {
+		const cleanupErrors: unknown[] = [];
+		try {
 			pollStop?.();
-			if (worker) worker.kill("SIGTERM");
-			try {
-				await running.stop();
-			} finally {
-				vault.clear();
-			}
-		},
-	};
+		} catch (cleanupError) {
+			cleanupErrors.push(cleanupError);
+		}
+		try {
+			worker?.kill("SIGTERM");
+		} catch (cleanupError) {
+			cleanupErrors.push(cleanupError);
+		}
+		try {
+			await startupRelay?.stop();
+		} catch (cleanupError) {
+			cleanupErrors.push(cleanupError);
+		}
+		vault.clear();
+		if (cleanupErrors.length > 0)
+			throw new AggregateError(
+				[error, ...cleanupErrors],
+				"CI relay startup and cleanup failed",
+			);
+		throw error;
+	}
 }
 
 export async function runCiServe(input: {
@@ -926,6 +956,8 @@ export async function runCiServe(input: {
 	git: (args: readonly string[], cwd: string) => Promise<string>;
 	emitProgress?: (message: string) => void;
 	waitUntilSignal?: boolean;
+	/** Relay startup seam for lifecycle tests. */
+	startRelay?: RelayStarter;
 }): Promise<CommandResult> {
 	try {
 		if (input.options.printConfig) {
@@ -935,9 +967,21 @@ export async function runCiServe(input: {
 			};
 		}
 		const handle = await startCiServe(input);
-		input.emitProgress?.(
-			`HoBo CI relay listening on ${handle.origin} (bind ${handle.plan.host}:${handle.plan.port}, ${handle.plan.admission} admission, environment ${handle.plan.environmentName}).`,
-		);
+		try {
+			input.emitProgress?.(
+				`HoBo CI relay listening on ${handle.origin} (bind ${handle.plan.host}:${handle.plan.port}, ${handle.plan.admission} admission, environment ${handle.plan.environmentName}).`,
+			);
+		} catch (error) {
+			try {
+				await handle.stop();
+			} catch (cleanupError) {
+				throw new AggregateError(
+					[error, cleanupError],
+					"CI relay reporting and cleanup failed",
+				);
+			}
+			throw error;
+		}
 		if (input.waitUntilSignal === false) {
 			return {
 				message: `Serving HoBo CI at ${handle.origin}`,
