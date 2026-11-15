@@ -15,7 +15,10 @@ import {
 } from "@hobo/connect-ui";
 import { z } from "zod";
 
-import type { GithubAppOwner } from "./app-hosts.js";
+import {
+	type GithubAppOwner,
+	validGithubOrganizationLogin,
+} from "./app-hosts.js";
 import type {
 	OpenedSecretStore,
 	SecretStoreId,
@@ -190,6 +193,15 @@ export function createGithubConnectFlow(
 				);
 			if (action === "connect.chooseStore") {
 				if (current.kind !== "choose-secret-store") return { step: current };
+				// A dot segment would be normalized out of the GitHub URL, potentially
+				// posting the manifest to the user's App screen instead of the org's.
+				if (
+					options.owner.kind === "Organization" &&
+					!validGithubOrganizationLogin(options.owner.login)
+				)
+					return failed("The GitHub organization login is invalid.", [
+						"Provide the organization's GitHub login and run hobo ci up again.",
+					]);
 				const choice = (options.stores ?? DEFAULT_SECRET_STORES).find(
 					(option) => option.id === params.store,
 				);

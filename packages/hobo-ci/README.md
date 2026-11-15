@@ -60,6 +60,7 @@ the page (a sign-in token for this run, none other) go only to the secret store.
 **Users or organizations own the App.** The App is created under the owner's
 settings (an organization's when it is one) and verified as that owner's
 (`verifyConvertedGithubApp` with `expectedOwnerId` and `expectedOwnerType`).
+An invalid organization login is refused before setup opens its store or App page.
 How the App is hosted is resolved for the owner (`resolveGithubAppHost`):
 `HOBO_CI_APP_HOST` pins a host. If a pinned host cannot serve the owner's kind,
 `hobo ci up` says so and names the hosts that can, rather than creating an App
