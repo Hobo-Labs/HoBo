@@ -80,9 +80,15 @@ public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
 `X-Forwarded-Proto`). GitHub App credentials load from mounted files or the
 owner's secret store. An optional **`HOBO_CI_INGRESS_FORWARD_SECRET_FILE`**
 names the file used to verify ingress-forwarded webhooks. **`--print-config`**
-shows the resolved plan with secrets redacted. **`--with-worker`** is refused
-until a credential-safe handoff to the worker is available. The relay shuts
-down gracefully on SIGINT/SIGTERM.
+shows the resolved plan with secrets redacted. **`--with-worker`** starts the
+isolated-container sidecar with its own lease journal (local SQLite at
+`<HOBO_HOME>/ci/serve/worker.sqlite`, override `HOBO_CI_WORKER_DB`) and hands it
+the App key and webhook secret on an inherited pipe (`HOBO_CI_WORKER_SECRETS_FD`,
+written once and closed), never its environment or a file. `ci serve` reports
+serving only after the worker logs `hobo_ci_isolated_worker_started`; a worker
+that exits first, or does not start within `HOBO_CI_WORKER_START_TIMEOUT_MS`
+(10 minutes, as it may build first), stops the relay and fails the command.
+The relay shuts down gracefully on SIGINT/SIGTERM.
 
 When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
 [CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue

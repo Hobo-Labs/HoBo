@@ -13,3 +13,11 @@ export { type RelaySecrets, startRelayFromEnvironment } from "./main.js";
 export type { CiWorkerStore } from "./project-config.js";
 export { loadCiProjectFromDirectory } from "./project-config-loader.js";
 export { type CiJobAdmission, inferJobAdmission } from "./relay-routing.js";
+export {
+	readHandedWorkerSecrets,
+	WORKER_SECRETS_FD,
+	WORKER_STARTED_EVENT,
+	type WorkerSecrets,
+	waitForWorkerStart,
+	workerSecretsPayload,
+} from "./worker-secrets.js";

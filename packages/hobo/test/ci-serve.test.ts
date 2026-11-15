@@ -184,35 +184,6 @@ describe("hobo ci serve multi-engine", () => {
 		await expect(started).rejects.not.toThrow(value);
 	});
 
-	it("does not start a worker without a credential-safe handoff", async () => {
-		const cwd = await projectRoot();
-		const home = await mkdtemp(join(tmpdir(), "hobo-ci-worker-refusal-"));
-		directories.push(home);
-		let handle: Awaited<ReturnType<typeof startCiServe>> | undefined;
-		let failure: unknown;
-		try {
-			handle = await startCiServe({
-				cwd,
-				options: {
-					environment: "local",
-					admission: "push",
-					port: String(await testPort()),
-					home,
-					withWorker: true,
-				},
-				env: { HOBO_CI_WORKER_BUILD: "0" },
-				git,
-				openStore: noStore,
-			});
-		} catch (error) {
-			failure = error;
-		} finally {
-			await handle?.stop();
-		}
-		expect(failure).toBeInstanceOf(Error);
-		expect(String(failure)).toContain("credential-safe worker handoff");
-	});
-
 	it("refuses a failed store opening without exposing its diagnostic", async () => {
 		const cwd = await projectRoot();
 		const home = await mkdtemp(join(tmpdir(), "hobo-ci-store-refusal-"));
@@ -687,6 +658,95 @@ describe("hobo ci serve with the owner's secret store", () => {
 		} finally {
 			await handle.stop();
 		}
+	});
+});
+
+describe("hobo ci serve --with-worker", () => {
+	async function serveWithWorker(workerSource: string) {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-worker-"));
+		directories.push(home);
+		const workerScript = join(home, "worker.mjs");
+		await writeFile(workerScript, workerSource);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		const { createServer } = await import("node:net");
+		const port = await new Promise<number>((resolve, reject) => {
+			const server = createServer();
+			server.listen(0, "127.0.0.1", () => {
+				const picked = ListenAddress.parse(server.address()).port;
+				server.close((error) => (error ? reject(error) : resolve(picked)));
+			});
+		});
+		const report = join(home, "worker-report.json");
+		return {
+			report,
+			start: () =>
+				startCiServe({
+					cwd,
+					options: {
+						environment: "local",
+						port: String(port),
+						home,
+						installationId: "1",
+						withWorker: true,
+					},
+					env: {
+						WORKER_REPORT: report,
+						HOBO_CI_WORKER_START_TIMEOUT_MS: "20000",
+					},
+					git,
+					workerScript,
+					openStore: memoryStore({
+						HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
+						HOBO_CI_WEBHOOK_SECRET: "stored-webhook-secret-0123456789abcdef",
+						HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
+						HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.client",
+						HOBO_CI_GITHUB_APP_ID: "4242",
+						HOBO_CI_ACCOUNT_TOKEN: "stored-account-token-0123456789abcdef",
+					}),
+				}),
+		};
+	}
+
+	it("hands the worker its App key on a pipe, never its environment, and waits until it starts", async () => {
+		// The worker reads the handed secrets the way the real one does.
+		const { report, start } = await serveWithWorker(`
+import { readFileSync, writeFileSync } from "node:fs";
+const handed = JSON.parse(readFileSync(Number(process.env.HOBO_CI_WORKER_SECRETS_FD), "utf8"));
+const envText = JSON.stringify(process.env);
+writeFileSync(process.env.WORKER_REPORT, JSON.stringify({
+	keyHanded: handed.githubAppPrivateKey.includes("PRIVATE KEY"),
+	secretHanded: handed.webhookSecret.length >= 32,
+	keyInEnv: envText.includes("PRIVATE KEY") || "HOBO_CI_GITHUB_APP_KEY_FILE" in process.env,
+	secretInEnv: envText.includes("stored-webhook-secret"),
+	appId: process.env.HOBO_CI_GITHUB_APP_ID,
+}));
+console.error(JSON.stringify({ event: "hobo_ci_isolated_worker_started" }));
+setInterval(() => {}, 1000);
+`);
+		const handle = await start();
+		try {
+			expect(JSON.parse(await readFile(report, "utf8"))).toEqual({
+				keyHanded: true,
+				secretHanded: true,
+				keyInEnv: false,
+				secretInEnv: false,
+				appId: "4242",
+			});
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	it("does not report serving when the worker exits before it starts", async () => {
+		const { start } = await serveWithWorker("process.exit(4);\n");
+		await expect(start()).rejects.toThrow(
+			/CI worker exited before it started \(exit 4\)/u,
+		);
 	});
 });
 

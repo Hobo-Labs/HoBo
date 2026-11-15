@@ -22,6 +22,9 @@ import {
 	type RelaySecrets,
 	resolveEnvironmentEngines,
 	startRelayFromEnvironment,
+	WORKER_SECRETS_FD,
+	waitForWorkerStart,
+	workerSecretsPayload,
 } from "@hobo/ci-gh-actions/cli-serve";
 import { parseCiAgentBlock } from "@hobo/ci-gh-actions/project-config";
 import type { CommandResult } from "@hobo/cli";
@@ -736,12 +739,10 @@ export async function startCiServe(input: {
 	openStore?: () => Promise<OpenedSecretStore | undefined>;
 	/** Relay startup seam for lifecycle tests. */
 	startRelay?: RelayStarter;
+	/** The worker script to run (test seam); the isolated worker daemon by default. */
+	workerScript?: string;
 }): Promise<CiServeHandle> {
 	refuseInlineSecrets(input.env);
-	if (input.options.withWorker)
-		throw new Error(
-			"The credential-safe worker handoff is not available yet; start without --with-worker.",
-		);
 	const plan = await resolveCiServePlan(input);
 	const home = resolve(
 		input.cwd,
@@ -891,15 +892,43 @@ export async function startCiServe(input: {
 				store: plan.workerStore,
 				stateDir,
 			});
-			const script = fileURLToPath(
-				new URL(
-					"../../ci-gh-actions/scripts/isolated-worker-daemon.mts",
-					import.meta.url,
-				),
-			);
-			worker = spawn(process.execPath, ["--import", "tsx", script], {
+			const script =
+				input.workerScript ??
+				fileURLToPath(
+					new URL(
+						"../../ci-gh-actions/scripts/isolated-worker-daemon.mts",
+						import.meta.url,
+					),
+				);
+			// The App key and webhook secret go to the worker on an inherited pipe
+			// (fd 3), written once and closed: in neither its environment nor a file.
+			workerEnv[WORKER_SECRETS_FD] = "3";
+			const started = spawn(process.execPath, ["--import", "tsx", script], {
 				env: workerEnv,
-				stdio: "inherit",
+				stdio: ["ignore", "inherit", "pipe", "pipe"],
+			});
+			worker = started;
+			const pipe = started.stdio[3];
+			if (pipe === null || pipe === undefined || !("end" in pipe))
+				throw new Error("the CI worker's secrets pipe did not open");
+			pipe.on("error", () => {});
+			pipe.end(
+				workerSecretsPayload({
+					githubAppPrivateKey: credentials.privateKey,
+					webhookSecret: credentials.webhookSecret,
+				}),
+			);
+			// Serving is reported only once the worker says it is serving; an
+			// early exit or a timeout fails startup, which stops the relay.
+			const timeoutMs = Number(
+				input.env.HOBO_CI_WORKER_START_TIMEOUT_MS ?? "600000",
+			);
+			await waitForWorkerStart(started, {
+				timeoutMs:
+					Number.isSafeInteger(timeoutMs) && timeoutMs > 0
+						? timeoutMs
+						: 600_000,
+				forward: (chunk) => process.stderr.write(chunk),
 			});
 		}
 		await running.service.checkReadiness();

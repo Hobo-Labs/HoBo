@@ -710,6 +710,14 @@ export {
 } from "./webhook-ingress.js";
 export { createWebhookRepair } from "./webhook-repair.js";
 export {
+	readHandedWorkerSecrets,
+	WORKER_SECRETS_FD,
+	WORKER_STARTED_EVENT,
+	type WorkerSecrets,
+	waitForWorkerStart,
+	workerSecretsPayload,
+} from "./worker-secrets.js";
+export {
 	createGithubWorkflowVerifier,
 	type GithubWorkflowClaims,
 	type GithubWorkflowVerifier,
