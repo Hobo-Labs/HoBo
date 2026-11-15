@@ -16,6 +16,7 @@ import {
 } from "@hobo/hobo-ci";
 
 import { resolveVercelJunction } from "./junction.js";
+import { parseVercelRedirect } from "./redirect.js";
 import { createVercelConnectFlow, vercelConnected } from "./vercel.js";
 
 // `hobo cd up`'s prepare step: make sure the Vercel connection exists in the
@@ -150,18 +151,16 @@ export async function prepareVercelConnection(
 				"Export HOBO_CD_VERCEL_INTEGRATION (its slug) and HOBO_CD_VERCEL_CLIENT_ID; its Redirect URL must be HOBO_CD_VERCEL_REDIRECT_URI (default http://127.0.0.1:8792/vercel/callback).",
 			],
 		);
-	const redirect = new URL(
+	const redirect = parseVercelRedirect(
 		env.HOBO_CD_VERCEL_REDIRECT_URI || DEFAULT_VERCEL_REDIRECT_URI,
 	);
-	if (
-		redirect.protocol !== "http:" ||
-		redirect.hostname !== "127.0.0.1" ||
-		redirect.port === ""
-	)
+	if (redirect === undefined)
 		return refused(
 			"HOBO_CD_REDIRECT_INVALID",
 			"The Integration's Redirect URL must be a loopback URL with a port (http://127.0.0.1:<port>/<path>).",
-			[],
+			[
+				`Register ${DEFAULT_VERCEL_REDIRECT_URI} as the Integration's Redirect URL, or set HOBO_CD_VERCEL_REDIRECT_URI to the one it has.`,
+			],
 		);
 	if (!(deps.interactive ?? Boolean(process.stdout.isTTY)))
 		return refused(

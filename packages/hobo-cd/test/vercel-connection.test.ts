@@ -247,6 +247,31 @@ async function freePort(): Promise<number> {
 }
 
 describe("prepareVercelConnection", () => {
+	it.each([
+		"not-a-url",
+		"https://127.0.0.1:8792/vercel/callback",
+		"http://example.test:8792/vercel/callback",
+		"http://127.0.0.1/vercel/callback",
+	])("refuses an invalid redirect URL before opening setup: %s", async (url) => {
+		const { store } = await memoryStore();
+		const outcome = await prepareVercelConnection(prepareInput(), {
+			env: {
+				HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
+				HOBO_CD_VERCEL_CLIENT_ID: "oac_test",
+				HOBO_CD_VERCEL_REDIRECT_URI: url,
+			},
+			interactive: true,
+			openStore: opened(store),
+			startPage: () => {
+				throw new Error("must not open setup");
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_REDIRECT_INVALID" },
+		});
+	});
+
 	it("closes the real setup page if progress or browser launch throws", async () => {
 		for (const failure of ["progress", "browser"] as const) {
 			const input = prepareInput();
