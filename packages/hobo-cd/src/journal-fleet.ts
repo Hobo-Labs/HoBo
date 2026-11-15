@@ -35,6 +35,8 @@ export interface JournalMemberProvisioner {
 		readonly member: string;
 		/** Stable for this member of this fleet: a retry adopts, never duplicates. */
 		readonly idempotencyKey: string;
+		/** The owner's store: where a provisioner keeps its durable claim. */
+		readonly store: OpenedSecretStore;
 	}): Promise<{
 		readonly connectionString: string;
 		readonly claimUrl?: string;
@@ -153,6 +155,7 @@ export async function prepareJournalFleet(input: {
 		const created = await provisioner.create({
 			member: member.id,
 			idempotencyKey: `hobo-cd-journal:${member.id}`,
+			store,
 		});
 		if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
 			throw new Error(

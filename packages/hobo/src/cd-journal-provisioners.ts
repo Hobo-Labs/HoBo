@@ -1,9 +1,10 @@
 import type { JournalMemberProvisioner } from "@hobo/hobo-cd";
+import { createFetchTransport, createNeonClient } from "@hobo/provider-neon";
+
 import {
-	createFetchTransport,
-	createNeonClient,
-	type IdempotencyStore,
-} from "@hobo/provider-neon";
+	type DurableClaimStore,
+	secretStoreClaims,
+} from "./secret-store-claims.js";
 
 // The databases `hobo cd up` creates for the CD journal's fleet.
 //
@@ -16,26 +17,34 @@ import {
 // claim link is kept in the owner's store, and claiming keeps the connection
 // string working.
 
-/** An owner-scoped, durable private store with atomic claim. */
-type DurableIdempotencyStore = IdempotencyStore & {
-	readonly durability: "durable";
-};
-
 /** Neon Claimable Postgres as a journal member provisioner. */
 export function neonJournalProvisioner(
 	fetchImpl: typeof globalThis.fetch = globalThis.fetch,
-	store?: DurableIdempotencyStore,
+	/** Test seam: the claim store; by default the owner's store (`secret-store-claims.ts`). */
+	claims?: (
+		store: Parameters<JournalMemberProvisioner["create"]>[0]["store"],
+	) => DurableClaimStore,
 ): JournalMemberProvisioner {
 	return {
 		plan: "neon-claimable",
-		async create({ idempotencyKey }) {
+		async create({ idempotencyKey, store: owner }) {
 			// Neon has no server-side idempotency. An in-memory claim cannot
 			// prevent a second process or a retry after a crash from creating
-			// another anonymous database and losing the first credential.
-			if (store?.durability !== "durable")
+			// another anonymous database and losing the first credential, so
+			// the claim is kept in the owner's store, made with its atomic
+			// create; a store without one is refused (the error says so).
+			let store: DurableClaimStore;
+			try {
+				store = (
+					claims ??
+					((opened) =>
+						secretStoreClaims(opened, { prefix: "HOBO_CD_JOURNAL_CLAIM_" }))
+				)(owner);
+			} catch (error) {
 				throw new Error(
-					"Cannot provision the CD journal until a durable, atomic, owner-scoped idempotency store is available.",
+					`Cannot provision the CD journal until a durable, atomic, owner-scoped idempotency store is available: ${error instanceof Error ? error.message : String(error)}`,
 				);
+			}
 			const client = createNeonClient({
 				transport: createFetchTransport({ fetchImpl }),
 				store,
