@@ -20,6 +20,10 @@ Capability Manifest.
   `client(port, outputs)`
 - `realize(plan)` emits a Pulumi `IacProgram` (the exact shape
   `@hobo/iac-pulumi.validateIacProgram()` accepts) plus an optional `BuildSpec`
+- The direct Cron Triggers resolver can observe existing schedules, but refuses
+  additions and removals: Cloudflare's update replaces the Worker's whole
+  schedule list, and this resolver has no verified concurrency fence or
+  ownership evidence for individual triggers.
 - Typed `cloudflare.with.worker/r2/kv` option builders
 - Published Capability Manifest (`capabilities.json`, `auth.json`, `cost.json`)
 - `createR2ObjectClient()` — conditional R2 object reads and writes against the

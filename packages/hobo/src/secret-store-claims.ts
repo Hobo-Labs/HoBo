@@ -9,7 +9,9 @@ import { z } from "zod";
 // Each attempt at an intent is its own entry, `<prefix><intent>.<n>`, made
 // with the store's atomic create-if-absent (`SecretsPort.createOnly`): of two
 // machines claiming attempt n, exactly one creates it, and the other sees the
-// winner's record. A definitely failed attempt is followed by attempt n + 1;
+// winner's record. Its terminal outcome is a separate immutable entry, so a
+// delayed writer cannot overwrite a later attempt. A definitely failed attempt
+// is followed by attempt n + 1;
 // an in-flight one is never taken over, so a crash mid-create is adopted or
 // refused, never repeated. Records (and the database ids in them) stay in
 // private custody: the secret store.
@@ -61,22 +63,38 @@ export function secretStoreClaims(
 	)
 		throw new ClaimStoreUnavailableError(store.id);
 
-	const read = async (
+	// A provisioner creates a store per operation. An instance cannot claim the
+	// same key twice: the IdempotencyStore interface carries no attempt token on
+	// put, so reusing it could let an old callback finish a newer attempt.
+	const claimedKeys = new Set<string>();
+	const held = new Map<string, { attempt: number; ref: string }>();
+
+	const readEntry = async (
 		key: string,
-		attempt: number,
+		name: string,
 	): Promise<IdempotencyRecord | undefined> => {
-		const result = await store.port.access(
-			entryName(options.prefix, key, attempt),
-		);
+		const result = await store.port.access(name);
 		if (result.status !== "ok") {
 			if (result.code === "secret-not-found") return undefined;
 			throw new Error(`Cannot read the provisioning claim from ${store.id}.`);
 		}
 		const parsed = Attempt.safeParse(JSON.parse(result.material ?? "null"));
-		if (!parsed.success)
+		if (!parsed.success || parsed.data.key !== key)
 			throw new Error(`The provisioning claim in ${store.id} is not valid.`);
 		const { databaseId, ...rest } = parsed.data;
 		return databaseId === undefined ? rest : { ...rest, databaseId };
+	};
+
+	const read = async (key: string, attempt: number) => {
+		const name = entryName(options.prefix, key, attempt);
+		const claim = await readEntry(key, name);
+		// Older records stored terminal outcomes in the claim entry itself.
+		if (claim === undefined || claim.state !== "in-flight") return claim;
+		const terminal = await readEntry(key, `${name}_RESULT`);
+		if (terminal === undefined) return claim;
+		if (terminal.state === "in-flight" || terminal.ref !== claim.ref)
+			throw new Error(`The provisioning claim in ${store.id} is not valid.`);
+		return terminal;
 	};
 
 	/** The newest attempt and its number, or none. */
@@ -99,7 +117,13 @@ export function secretStoreClaims(
 			return (await latest(key))?.record;
 		},
 		async claim(record) {
+			if (record.state !== "in-flight" || record.databaseId !== undefined)
+				throw new Error("A provisioning claim must start in flight.");
+			if (claimedKeys.has(record.key))
+				throw new Error("A claim store instance cannot reuse an intent.");
 			const newest = await latest(record.key);
+			if (claimedKeys.has(record.key))
+				throw new Error("A claim store instance cannot reuse an intent.");
 			if (newest !== undefined && newest.record.state !== "failed")
 				return false;
 			const attempt = (newest?.attempt ?? 0) + 1;
@@ -107,19 +131,32 @@ export function secretStoreClaims(
 				entryName(options.prefix, record.key, attempt),
 				JSON.stringify(record),
 			);
+			if (outcome.created) {
+				claimedKeys.add(record.key);
+				held.set(record.key, { attempt, ref: record.ref });
+			}
 			return outcome.created;
 		},
 		async put(record) {
-			// Only the claim's owner writes after claiming: it updates its own attempt.
-			const newest = await latest(record.key);
-			if (newest === undefined)
+			const claim = held.get(record.key);
+			if (
+				claim === undefined ||
+				claim.ref !== record.ref ||
+				record.state === "in-flight" ||
+				(record.state === "created") !== (record.databaseId !== undefined)
+			)
 				throw new Error(
-					`No claim is held for ${record.key}; claim before recording an outcome.`,
+					`No matching claim is held for ${record.key}, or its outcome is invalid.`,
 				);
-			await store.port.put(
-				entryName(options.prefix, record.key, newest.attempt),
+			// Consume before awaiting, including when the provider result is
+			// ambiguous: no other callback may finish this attempt differently.
+			held.delete(record.key);
+			const outcome = await createOnly(
+				`${entryName(options.prefix, record.key, claim.attempt)}_RESULT`,
 				JSON.stringify(record),
 			);
+			if (!outcome.created)
+				throw new Error(`The claim outcome for ${record.key} already exists.`);
 		},
 	};
 }

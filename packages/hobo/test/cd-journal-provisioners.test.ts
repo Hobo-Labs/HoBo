@@ -90,7 +90,7 @@ describe("the CD journal provisioner", () => {
 		expect(posts()).toBe(1);
 		// The claim, with the database id, is in the store.
 		const claim = await store.port.access(
-			"HOBO_CD_JOURNAL_CLAIM_HOBO_CD_JOURNAL_JOURNAL_1_1",
+			"HOBO_CD_JOURNAL_CLAIM_HOBO_CD_JOURNAL_JOURNAL_1_1_RESULT",
 		);
 		expect(
 			claim.status === "ok" && JSON.parse(claim.material ?? "{}"),
@@ -125,8 +125,73 @@ describe("the CD journal provisioner", () => {
 			connectionString: created.connection_string,
 		});
 		const second = await store.port.access(
-			"HOBO_CD_JOURNAL_CLAIM_HOBO_CD_JOURNAL_JOURNAL_2_2",
+			"HOBO_CD_JOURNAL_CLAIM_HOBO_CD_JOURNAL_JOURNAL_2_2_RESULT",
 		);
 		expect(second.status).toBe("ok");
+	});
+
+	it("refuses colliding intent names instead of adopting another intent", async () => {
+		const store = memoryStore();
+		const first = fixtureClaims(store);
+		const other = fixtureClaims(store);
+		const claim = {
+			key: "journal-a/b",
+			state: "in-flight" as const,
+			ref: "hobo-cd",
+			attemptedAtMs: 1,
+		};
+		expect(await first.claim(claim)).toBe(true);
+		await expect(other.get("journal-a-b")).rejects.toThrow(/not valid/);
+		await expect(other.claim({ ...claim, key: "journal-a-b" })).rejects.toThrow(
+			/not valid/,
+		);
+	});
+
+	it("cannot let an old claimant finish or overwrite a later attempt", async () => {
+		const store = memoryStore();
+		const first = fixtureClaims(store);
+		const second = fixtureClaims(store);
+		const claim = {
+			key: "journal-1",
+			state: "in-flight" as const,
+			ref: "hobo-cd",
+			attemptedAtMs: 1,
+		};
+		expect(await first.claim(claim)).toBe(true);
+		await first.put({ ...claim, state: "failed" });
+		expect(await second.claim({ ...claim, attemptedAtMs: 2 })).toBe(true);
+		await expect(
+			first.put({ ...claim, state: "created", databaseId: "old-db" }),
+		).rejects.toThrow(/No matching claim/);
+		await expect(first.claim(claim)).rejects.toThrow(/cannot reuse/);
+		expect(await second.get(claim.key)).toMatchObject({
+			state: "in-flight",
+			attemptedAtMs: 2,
+		});
+	});
+
+	it("preserves and adopts a terminal record from the earlier format", async () => {
+		const store = memoryStore();
+		const legacy = {
+			key: "journal-legacy",
+			state: "created",
+			ref: "hobo-cd",
+			attemptedAtMs: 1,
+			databaseId: "legacy-db",
+		};
+		await store.port.put(
+			"HOBO_CD_JOURNAL_CLAIM_JOURNAL_LEGACY_1",
+			JSON.stringify(legacy),
+		);
+		const claims = fixtureClaims(store);
+		expect(await claims.get(legacy.key)).toEqual(legacy);
+		expect(
+			await claims.claim({
+				key: legacy.key,
+				state: "in-flight",
+				ref: legacy.ref,
+				attemptedAtMs: 2,
+			}),
+		).toBe(false);
 	});
 });

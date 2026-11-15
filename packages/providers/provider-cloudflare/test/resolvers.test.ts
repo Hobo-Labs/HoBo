@@ -1257,37 +1257,45 @@ describe("Cron Triggers resolver", () => {
 		return { fake, crons: () => crons };
 	}
 
-	it("adds its cron to the Worker, keeping the triggers already there, once", async () => {
+	it("refuses to replace a Worker's list when adding a trigger", async () => {
 		const { fake, crons } = worker(["0 0 * * *"]);
 		const resolver = resolverFor(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID);
-		const first = await resolver.reconcile(
-			request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
-				logicalId: "repair",
-				desired,
-			}),
-			fake.transport,
-		);
-		expect(first.action).toBe("create");
-		expect(first.physicalId).toBe("api:*/15 * * * *");
-		expect(crons()).toEqual(["0 0 * * *", "*/15 * * * *"]);
-		const second = await resolver.reconcile(
-			request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
-				logicalId: "repair",
-				physicalId: first.physicalId,
-				desired,
-			}),
-			fake.transport,
-		);
-		expect(second.action).toBe("noop");
-		expect(fake.countOf("PUT", SCHEDULES)).toBe(1);
-		await resolver.delete(
-			request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
-				logicalId: "repair",
-				desired,
-			}),
-			fake.transport,
-		);
+		await expect(
+			resolver.reconcile(
+				request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
+					logicalId: "repair",
+					desired,
+				}),
+				fake.transport,
+			),
+		).rejects.toThrow(/concurrent changes/);
 		expect(crons()).toEqual(["0 0 * * *"]);
+		expect(fake.countOf("PUT", SCHEDULES)).toBe(0);
+	});
+
+	it("observes an existing trigger but does not remove an unowned one", async () => {
+		const { fake, crons } = worker(["0 0 * * *", desired.cron]);
+		const resolver = resolverFor(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID);
+		const existing = await resolver.reconcile(
+			request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
+				logicalId: "repair",
+				physicalId: "api:*/15 * * * *",
+				desired,
+			}),
+			fake.transport,
+		);
+		expect(existing.action).toBe("noop");
+		await expect(
+			resolver.delete(
+				request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
+					logicalId: "repair",
+					desired,
+				}),
+				fake.transport,
+			),
+		).rejects.toThrow(/ownership verified/);
+		expect(crons()).toEqual(["0 0 * * *", desired.cron]);
+		expect(fake.countOf("PUT", SCHEDULES)).toBe(0);
 	});
 
 	it("refuses without a Worker, a cadence, or a deployed Worker", async () => {
@@ -1310,6 +1318,30 @@ describe("Cron Triggers resolver", () => {
 				);
 			}),
 		).toBe("RESOLVER_PROVIDER_REJECTED");
+		expect(fake.countOf("PUT", SCHEDULES)).toBe(0);
+	});
+
+	it("refuses invalid Worker path segments and malformed schedule lists", async () => {
+		const resolver = resolverFor(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID);
+		const fake = fakeTransport(() =>
+			ok({ schedules: [{ cron: desired.cron }, {}] }),
+		);
+		for (const target of ["..", ".", "../api", "api\\other"])
+			await expect(
+				resolver.read(
+					request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
+						desired: { ...desired, target },
+					}),
+					fake.transport,
+				),
+			).rejects.toThrow(/invalid Worker name/);
+		expect(fake.calls).toHaveLength(0);
+		await expect(
+			resolver.read(
+				request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, { desired }),
+				fake.transport,
+			),
+		).rejects.toThrow(/invalid schedule/);
 		expect(fake.countOf("PUT", SCHEDULES)).toBe(0);
 	});
 });

@@ -1157,9 +1157,10 @@ const QUEUES_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 //
 // A Cron Trigger belongs to the Worker it runs: the plan names that Worker
 // (`desired.target`, the schedule's one dependency) and the cadence
-// (`desired.cron`, the Bindle's cadence trait). The schedules endpoint sets a
-// script's whole list, so a reconcile reads it, adds this cron if missing, and
-// keeps every other trigger the script has; a delete removes only this one.
+// (`desired.cron`, the Bindle's cadence trait). The schedules endpoint replaces
+// a script's whole list. Without a provider-enforced conditional update and
+// evidence of ownership, writing that list can erase another actor's changes.
+// Observation remains available; mutations refuse until they can be fenced.
 
 const CRON_FIELDS = /^\S+(\s+\S+){4}$/u;
 
@@ -1176,6 +1177,18 @@ function cronTarget(context: CloudflareResolverContext): CronTarget {
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
 			`${CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID}: schedule ${context.name} names no Worker to run (desired.target); a Cron Trigger runs a Worker's scheduled handler, so it needs one`,
+		);
+	if (
+		script === "." ||
+		script === ".." ||
+		/[\\/]/u.test(script) ||
+		[...script].some(
+			(char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+		)
+	)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			`${CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID}: invalid Worker name in schedule target`,
 		);
 	if (cron === undefined || !CRON_FIELDS.test(cron.trim()))
 		throw new ResolverError(
@@ -1206,27 +1219,23 @@ async function readSchedules(
 			"RESOLVER_OUTPUT_UNPARSEABLE",
 			`${label}: the answer has no schedules list`,
 		);
-	return schedules.flatMap((entry) => {
+	return schedules.map((entry) => {
 		const cron = isJsonObject(entry)
 			? optionalString(entry, "cron")
 			: undefined;
-		return cron === undefined ? [] : [cron];
+		if (cron === undefined)
+			throw new ResolverError(
+				"RESOLVER_OUTPUT_UNPARSEABLE",
+				`${label}: the answer contains an invalid schedule`,
+			);
+		return cron;
 	});
 }
 
-async function writeSchedules(
-	context: CloudflareResolverContext,
-	script: string,
-	crons: readonly string[],
-): Promise<void> {
-	const label = `cron triggers update ${script}`;
-	parseEnvelope(
-		await send(context.transport, context.token, {
-			method: "PUT",
-			path: schedulesPath(context, script),
-			json: crons.map((cron) => ({ cron })),
-		}),
-		label,
+function refuseScheduleMutation(): never {
+	throw new ResolverError(
+		"RESOLVER_PRODUCT_UNSUPPORTED",
+		"Cloudflare schedule mutations replace the Worker's entire trigger list. They are refused until concurrent changes can be fenced and trigger ownership verified.",
 	);
 }
 
@@ -1257,18 +1266,13 @@ const CRON_TRIGGERS_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 				{ script, cron },
 				[],
 			);
-		await writeSchedules(context, script, [...current, cron]);
-		return outcome("create", `${script}:${cron}`, { script, cron }, []);
+		return refuseScheduleMutation();
 	},
 	async remove(context) {
 		const { script, cron } = cronTarget(context);
 		const current = await readSchedules(context, script);
 		if (current === undefined || !current.includes(cron)) return;
-		await writeSchedules(
-			context,
-			script,
-			current.filter((entry) => entry !== cron),
-		);
+		refuseScheduleMutation();
 	},
 };
 
