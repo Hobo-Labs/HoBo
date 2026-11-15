@@ -145,6 +145,16 @@ async function seedConnection(store: OpenedSecretStore): Promise<void> {
 		await store.port.put(key, values[key]);
 }
 
+async function seedSettings(store: OpenedSecretStore): Promise<void> {
+	await store.port.put(
+		"HOBO_CI_SETTINGS",
+		JSON.stringify({
+			HOBO_CI_PUBLIC_URL: RELAY,
+			HOBO_CI_GITHUB_OWNER: "octo",
+		}),
+	);
+}
+
 const opened =
 	(store: OpenedSecretStore) => async (): Promise<SecretStoreOpening> => ({
 		ok: true,
@@ -598,6 +608,7 @@ describe("prepareGithubConnection", () => {
 	it("uses a configured Bitwarden store to find an existing connection", async () => {
 		const store = { ...memoryStore(), id: "bitwarden" as const };
 		await seedConnection(store);
+		await seedSettings(store);
 		const github = fakeGithub();
 		const vault = createTrustedVault();
 		vault.put("BWS_ACCESS_TOKEN", "token");
@@ -690,25 +701,39 @@ describe("prepareGithubConnection", () => {
 	it("verifies a stored connection before reporting it unchanged", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
+		await seedSettings(store);
 		const github = fakeGithub();
 		const vault = createTrustedVault();
 		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
-			env: ENV, vault, locator: memorySettings(LOCATOR),
-			openStore: signedIn(store), fetch: github.fetch,
-			startPage: () => { throw new Error("must not open setup"); },
+			env: ENV,
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
+			fetch: github.fetch,
+			startPage: () => {
+				throw new Error("must not open setup");
+			},
 		});
-		expect(outcome).toMatchObject({ kind: "ready", steps: [{ outcome: "unchanged" }] });
+		expect(outcome).toMatchObject({
+			kind: "ready",
+			steps: [{ outcome: "unchanged" }],
+		});
 		expect(github.calls).toEqual(PACT_CALLS.slice(1));
 	});
 
 	it("refuses to reuse stored credentials when the configured owner differs", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
+		await seedSettings(store);
 		const github = fakeGithub(9999);
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
-			openStore: opened(store),
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
 			fetch: github.fetch,
 			startPage: () => {
 				throw new Error("must not create a replacement");
@@ -716,16 +741,20 @@ describe("prepareGithubConnection", () => {
 		});
 		expect(outcome).toMatchObject({ kind: "refused" });
 		expect(github.calls).toEqual(["GET /app"]);
-		expect(store.names()).toHaveLength(GITHUB_APP_CREDENTIAL_KEYS.length);
+		expect(store.names()).toHaveLength(GITHUB_APP_CREDENTIAL_KEYS.length + 1);
 	});
 
 	it("does not reuse stored credentials without a configured owner and relay", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
 		const github = fakeGithub();
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
-			openStore: opened(store),
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
 			fetch: github.fetch,
 			startPage: () => {
 				throw new Error("must not create a replacement");
@@ -764,10 +793,12 @@ describe("prepareGithubConnection", () => {
 	it("reports unchanged without a page when this run's vault already signs in", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
+		await seedSettings(store);
 		const vault = createTrustedVault();
 		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
+			fetch: fakeGithub().fetch,
 			vault,
 			locator: memorySettings(LOCATOR),
 			openStore: signedIn(store),
@@ -873,9 +904,12 @@ describe("prepareGithubConnection", () => {
 	it("a CI run signs in with its own OIDC token through the preconfigured identity", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
+		await seedSettings(store);
 		let signedInWith: Readonly<Record<string, string | undefined>> = {};
 		const outcome = await prepareGithubConnection(prepareInput(), {
+			fetch: fakeGithub().fetch,
 			env: {
+				...ENV,
 				ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example/",
 				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-request",
 			},

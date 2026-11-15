@@ -16,7 +16,11 @@ import {
 	type GithubAppOwner,
 	resolveGithubAppHost,
 } from "./app-hosts.js";
-import { CI_SETTINGS, lookupGithubOwner, resolveGithubAppExpectation } from "./ceremony-settings.js";
+import {
+	CI_SETTINGS,
+	lookupGithubOwner,
+	resolveGithubAppExpectation,
+} from "./ceremony-settings.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import {
 	familySettings,
@@ -203,7 +207,11 @@ async function prepareGithubWithVault(
 
 	// Verify the same saved owner and relay the ceremony uses for this store.
 	const expectedFor = (store: OpenedSecretStore) => async () => {
-		const basics = resolveSettings(CI_SETTINGS, plainEnv, await familySettings(store, "ci").read());
+		const basics = resolveSettings(
+			CI_SETTINGS,
+			plainEnv,
+			await familySettings(store, "ci").read(),
+		);
 		return resolveGithubAppExpectation(basics.values, plainEnv, deps.fetch);
 	};
 
@@ -211,7 +219,8 @@ async function prepareGithubWithVault(
 	let connected = false;
 	try {
 		connected =
-			owner.opened !== undefined && (await githubAppConnected(owner.opened, expectedFor(owner.opened)));
+			owner.opened !== undefined &&
+			(await githubAppConnected(owner.opened, expectedFor(owner.opened)));
 	} catch {
 		return refused(
 			"HOBO_CI_SECRET_STORE_UNAVAILABLE",
@@ -299,7 +308,8 @@ async function prepareGithubWithVault(
 		async proceed(store) {
 			// Signed in: a store that holds the App needs nothing more.
 			try {
-				if (await githubAppConnected(store, expectedFor(store))) return connectedStep(store);
+				if (await githubAppConnected(store, expectedFor(store)))
+					return connectedStep(store);
 			} catch {
 				return {
 					initial: {
