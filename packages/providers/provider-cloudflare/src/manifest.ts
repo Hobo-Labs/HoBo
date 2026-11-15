@@ -12,14 +12,13 @@ import {
 	parseJsonValue,
 } from "./json.js";
 
-// public-contract: capability-manifest bundle schema id (registry parity).
-
 /** The resolver product each published port is served by. */
 const PRODUCT_BY_PORT: ReadonlyMap<string, string> = new Map([
 	["compute", "cloudflare.workers/v1"],
 	["queue", "cloudflare.queues/v1"],
 	["schedule", "cloudflare.cron-triggers/v1"],
 ]);
+// public-contract: capability-manifest bundle schema id (registry parity).
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
 // public-contract: capabilities document schema id.
 export const CAPABILITIES_SCHEMA = "hobo.capabilities/v1";
