@@ -15,6 +15,7 @@ import {
 	GITHUB_APP_HOSTS,
 	type GithubAppOwner,
 	resolveGithubAppHost,
+	validGithubOrganizationLogin,
 } from "./app-hosts.js";
 import {
 	CI_SETTINGS,
@@ -162,7 +163,9 @@ async function loadDeployCredentials(
 ): Promise<void> {
 	const read = async (entry: string) => {
 		const result = await store.port.access(entry).catch(() => undefined);
-		return result?.status === "ok" && result.material ? result.material : undefined;
+		return result?.status === "ok" && result.material
+			? result.material
+			: undefined;
 	};
 	const token = await read(VERCEL_DEPLOY_ENTRIES.token);
 	if (token !== undefined) vault.put("VERCEL_TOKEN", token);
@@ -197,6 +200,16 @@ async function prepareGithubWithVault(
 ): Promise<PrepareOutcome> {
 	const handoff = deps.handoff;
 	const env = deps.env ?? process.env;
+	if (
+		env.HOBO_CI_GITHUB_OWNER_TYPE === "Organization" &&
+		env.HOBO_CI_GITHUB_OWNER !== undefined &&
+		!validGithubOrganizationLogin(env.HOBO_CI_GITHUB_OWNER)
+	)
+		return refused(
+			"HOBO_CI_GITHUB_OWNER_INVALID",
+			"The GitHub organization login is invalid.",
+			["Set HOBO_CI_GITHUB_OWNER to the organization's GitHub login."],
+		);
 	const configuredHost = env.HOBO_CI_APP_HOST;
 	if (
 		configuredHost &&
