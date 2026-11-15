@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import { type ConnectPage, startConnectPage } from "@hobo/connect-ui";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
@@ -289,6 +290,58 @@ const ENV = {
 };
 
 describe("prepareGithubConnection", () => {
+	it("closes the real setup page if progress or browser launch throws", async () => {
+		for (const failure of ["progress", "browser"] as const) {
+			const input = prepareInput();
+			let page: ConnectPage | undefined;
+			const closeGrace: number[] = [];
+			try {
+				await expect(
+					prepareGithubConnection(
+						failure === "progress"
+							? {
+									...input,
+									run: {
+										...input.run,
+										emitProgress: () => {
+											throw new Error("progress failed");
+										},
+									},
+								}
+							: input,
+						{
+							env: { ...ENV, HOBO_CONNECT_UI_COMPOSE: "off" },
+							interactive: true,
+							openStore: opened(memoryStore()),
+							startPage: async (options) => {
+								page = await startConnectPage(options);
+								const started = page;
+								return {
+									...started,
+									async close(options) {
+										closeGrace.push(options?.graceMs ?? 0);
+										await started.close(options);
+									},
+								};
+							},
+							openBrowser: () => {
+								throw new Error("browser failed");
+							},
+						},
+					),
+				).rejects.toThrow(`${failure} failed`);
+				expect(page).toBeDefined();
+				expect(closeGrace).toEqual([0]);
+				if (page === undefined) throw new Error("page did not start");
+				await expect(
+					fetch(page.url, { signal: AbortSignal.timeout(1_000) }),
+				).rejects.toThrow();
+			} finally {
+				await page?.close();
+			}
+		}
+	});
+
 	it("reports unchanged without opening a page when the store holds the App", async () => {
 		const store = memoryStore();
 		await seedConnection(store);

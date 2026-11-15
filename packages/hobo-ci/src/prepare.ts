@@ -177,9 +177,6 @@ export async function prepareGithubConnection(
 		flow,
 		evaluate: evaluatorFromEnv(env, deps.fetch),
 	});
-	input.run.emitProgress(`Connect GitHub in your browser: ${page.url}`);
-	(deps.openBrowser ?? openInBrowser)(page.url);
-
 	let timer: NodeJS.Timeout | undefined;
 	const timedOut = new Promise<ConnectStep>((resolve) => {
 		timer = setTimeout(
@@ -194,12 +191,17 @@ export async function prepareGithubConnection(
 		);
 	});
 	let step: ConnectStep;
+	let browserLaunched = false;
 	try {
+		input.run.emitProgress(`Connect GitHub in your browser: ${page.url}`);
+		(deps.openBrowser ?? openInBrowser)(page.url);
+		browserLaunched = true;
 		step = await Promise.race([page.done, timedOut]);
 	} finally {
 		clearTimeout(timer);
-		// Let the browser land on the finished step before the page goes away.
-		await page.close({ graceMs: 10_000 });
+		// Give a launched browser time to show the final step; on startup
+		// failure there is no browser to wait for, so close immediately.
+		await page.close({ graceMs: browserLaunched ? 10_000 : 0 });
 	}
 	if (step.kind !== "connected")
 		return refused(
