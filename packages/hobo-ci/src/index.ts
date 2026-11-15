@@ -19,6 +19,7 @@ export {
 	type GithubAppExpectation,
 	type GithubConnectOptions,
 	githubAppConnected,
+	loadGithubAppCredentials,
 } from "./github.js";
 export {
 	familySettings,

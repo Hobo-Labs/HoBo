@@ -11,6 +11,8 @@ import {
 	defineCiPolicy,
 } from "@hobo/ci";
 import { createAdmissionOrder } from "@hobo/ci-gh-actions";
+import type { OpenedSecretStore } from "@hobo/hobo-ci";
+import { createMemorySecretsPort } from "@hobo/identity";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { importGithubKey } from "../src/ci-github-keys.js";
@@ -104,12 +106,29 @@ function withStore(store: Readonly<Record<string, string>>): string {
 
 const git = async () => "git@github.com:example/project.git";
 
+/** The owner's store, holding what a test puts in it (memory only). */
+function memoryStore(entries: Readonly<Record<string, string>>) {
+	const port = createMemorySecretsPort({ id: "memory" });
+	const store: OpenedSecretStore = {
+		id: "infisical",
+		port,
+		reference: (name) => `infisical://proj/prod/hobo-ci/${name}`,
+	};
+	return async () => {
+		for (const [name, value] of Object.entries(entries))
+			await port.put(name, value);
+		return store;
+	};
+}
+
+/** No store opens (the default opener would read the committed locator). */
+const noStore = async () => undefined;
+
 describe("hobo ci serve multi-engine", () => {
 	it.each([
 		{ HOBO_CI_GITHUB_APP_ID: "123" },
 		{ HOBO_CI_GITHUB_APP_ID_FILE: "app-id" },
 		{ HOBO_CI_GITHUB_APP_KEY_FILE: "missing-key.pem" },
-		{ HOBO_CI_GITHUB_APP_PRIVATE_KEY: "unused" },
 	])("refuses incomplete App configuration instead of starting with fixture credentials", async (env) => {
 		const cwd = await projectRoot();
 		const home = await mkdtemp(join(tmpdir(), "hobo-ci-incomplete-app-"));
@@ -125,10 +144,30 @@ describe("hobo ci serve multi-engine", () => {
 				},
 				env,
 				git,
+				openStore: noStore,
 			}),
 		).rejects.toThrow(
 			"GitHub App configuration requires a readable HOBO_CI_GITHUB_APP_KEY_FILE",
 		);
+	});
+
+	it("never reads a secret value from the environment, and names it without its value", async () => {
+		const cwd = await projectRoot();
+		const value = "inline-secret-value-0123456789abcdef";
+		const started = startCiServe({
+			cwd,
+			options: { environment: "local", port: "31235" },
+			env: {
+				HOBO_CI_GITHUB_APP_PRIVATE_KEY: value,
+				HOBO_CI_ACCOUNT_TOKEN: value,
+			},
+			git,
+			openStore: noStore,
+		});
+		await expect(started).rejects.toThrow(
+			/HOBO_CI_GITHUB_APP_PRIVATE_KEY, HOBO_CI_ACCOUNT_TOKEN in the environment are not read/,
+		);
+		await expect(started).rejects.not.toThrow(value);
 	});
 
 	it("print-config lists resolved engines", async () => {
@@ -234,13 +273,14 @@ describe("hobo ci serve multi-engine", () => {
 			},
 			git,
 		};
-		await expect(startCiServe({ ...serveInput, env: {} })).rejects.toThrow(
-			"real App credentials require a CI account token",
-		);
+		await expect(
+			startCiServe({ ...serveInput, env: {}, openStore: noStore }),
+		).rejects.toThrow("real App credentials require a CI account token");
 		const accountToken = "test-account-token-0123456789abcdef";
 		const handle = await startCiServe({
 			...serveInput,
-			env: { HOBO_CI_ACCOUNT_TOKEN: accountToken },
+			env: {},
+			openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
 		});
 		try {
 			const control = await readFile(
@@ -363,7 +403,8 @@ describe("hobo ci serve with a CI agent", () => {
 		const events: string[] = [];
 		const handle = await startCiServe({
 			...input,
-			env: { HOBO_CI_ACCOUNT_TOKEN: accountToken, TEST_MODEL_KEY: "not-real" },
+			env: { TEST_MODEL_KEY: "not-real" },
+			openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
 			emitProgress: (message) => events.push(message),
 		});
 		try {
@@ -391,7 +432,8 @@ describe("hobo ci serve with a CI agent", () => {
 				...input,
 				options: { ...input.options, ...options },
 				// No model key: without the agent, none is needed.
-				env: { HOBO_CI_ACCOUNT_TOKEN: accountToken },
+				env: {},
+				openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
 			});
 			try {
 				expect(
@@ -407,8 +449,80 @@ describe("hobo ci serve with a CI agent", () => {
 	it("refuses to serve when the agent's model credential is not in the environment", async () => {
 		const { input } = await serveInput({ ...minimalProject, agent });
 		await expect(
-			startCiServe({ ...input, env: { HOBO_CI_ACCOUNT_TOKEN: accountToken } }),
+			startCiServe({
+				...input,
+				env: {},
+				openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
+			}),
 		).rejects.toThrow("CI agent credential is not set: env:TEST_MODEL_KEY");
+	});
+});
+
+describe("hobo ci serve with the owner's secret store", () => {
+	it("serves the App connection hobo ci up deposited, with nothing on disk", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-store-"));
+		directories.push(home);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		const secret = "stored-webhook-secret-0123456789abcdef";
+		const accountToken = "stored-account-token-0123456789abcdef";
+		const { createServer } = await import("node:net");
+		const port = await new Promise<number>((resolve, reject) => {
+			const server = createServer();
+			server.listen(0, "127.0.0.1", () => {
+				const picked = ListenAddress.parse(server.address()).port;
+				server.close((error) => (error ? reject(error) : resolve(picked)));
+			});
+		});
+		const handle = await startCiServe({
+			cwd,
+			options: {
+				environment: "local",
+				port: String(port),
+				home,
+				installationId: "1",
+			},
+			env: {},
+			git,
+			openStore: memoryStore({
+				HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
+				HOBO_CI_WEBHOOK_SECRET: secret,
+				HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
+				HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.client",
+				HOBO_CI_GITHUB_APP_ID: "4242",
+				HOBO_CI_ACCOUNT_TOKEN: accountToken,
+			}),
+		});
+		try {
+			const body = "{}";
+			const webhook = await fetch(
+				`http://127.0.0.1:${port}/engines/gh-actions/github/webhooks`,
+				{
+					method: "POST",
+					headers: {
+						"x-github-event": "ping",
+						"x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+					},
+					body,
+				},
+			);
+			expect(webhook.status).toBe(202);
+			// The key and the secret were handed over in memory: no file holds them.
+			const state = join(home, "ci", "serve");
+			await expect(readFile(join(state, "github-app.pem"))).rejects.toThrow();
+			const control = await readFile(
+				join(state, "control-tokens.json"),
+				"utf8",
+			);
+			expect(control).not.toContain(accountToken);
+			expect(control).not.toContain(secret);
+		} finally {
+			await handle.stop();
+		}
 	});
 });
 

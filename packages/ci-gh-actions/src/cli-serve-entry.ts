@@ -9,7 +9,7 @@ export {
 	describeWaitingJobs,
 } from "./isolated-worker/github-job-poller.js";
 export { createPollIngestCoalesce } from "./isolated-worker/poll-ingest-coalesce.js";
-export { startRelayFromEnvironment } from "./main.js";
+export { type RelaySecrets, startRelayFromEnvironment } from "./main.js";
 export type { CiWorkerStore } from "./project-config.js";
 export { loadCiProjectFromDirectory } from "./project-config-loader.js";
 export { type CiJobAdmission, inferJobAdmission } from "./relay-routing.js";

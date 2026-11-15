@@ -113,13 +113,21 @@ active version. It stores files with owner-only permissions under
 `HOBO_HOME/ci/github-credentials/`, refuses a HoBo home inside a Git
 checkout, and never prints the key or secret. File import currently requires
 POSIX permissions; on Windows use the relay's mounted secret files instead.
-`hobo ci serve` and its
-`--with-worker` process use this version when no explicit App credential
-environment is set; explicit environment credentials take precedence as a unit.
+`hobo ci serve` takes the App's credentials, in this order: mounted files the
+environment names (`HOBO_CI_GITHUB_APP_KEY_FILE` and the related `_FILE`
+variables, as a unit); else the connection `hobo ci up` deposited in your secret
+store (the committed `.hobo/secret-store.json`), read into the run's trusted
+vault and handed to the relay in memory, so no key or webhook secret is written
+to disk or put in the relay's or the `--with-worker` process's environment;
+else this imported version. It never reads a secret value from its
+environment: `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`,
+`HOBO_CI_ACCOUNT_TOKEN` or `HOBO_CI_INGRESS_FORWARD_SECRET` set there stops
+startup, naming the variable and not its value.
 Incomplete or unreadable App credentials fail startup rather than falling back
-to the local fixture App.
-With real App credentials, `ci serve` also requires `HOBO_CI_ACCOUNT_TOKEN`,
-`HOBO_CI_ACCOUNT_TOKEN_FILE`, or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
+to the local fixture App (whose throwaway key is held in memory only).
+With real App credentials, `ci serve` also requires a CI account token
+(`HOBO_CI_ACCOUNT_TOKEN` in your secret store, or a file named by
+`HOBO_CI_ACCOUNT_TOKEN_FILE`) or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
 the local control-token configuration, it grants the explicitly selected
 `--installation-id` to the local account and stores only the token's hash. A
 supplied control-token file remains authoritative.

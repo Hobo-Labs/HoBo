@@ -19,11 +19,20 @@ import {
 	inferJobAdmission,
 	inventoryCiEnginesFromRepository,
 	loadCiProjectFromDirectory,
+	type RelaySecrets,
 	resolveEnvironmentEngines,
 	startRelayFromEnvironment,
 } from "@hobo/ci-gh-actions/cli-serve";
 import { parseCiAgentBlock } from "@hobo/ci-gh-actions/project-config";
 import type { CommandResult } from "@hobo/cli";
+import { createTrustedVault, type TrustedVault } from "@hobo/core";
+import {
+	loadGithubAppCredentials,
+	type OpenedSecretStore,
+	ownerStore,
+	withoutSecretEnv,
+	workloadOidcOf,
+} from "@hobo/hobo-ci";
 import { z } from "zod";
 import { githubKeyEnvironment } from "./ci-github-keys.js";
 import { ciRepositoryFromRemote } from "./ci-repository.js";
@@ -482,25 +491,88 @@ export async function resolveCiServePlan(input: {
 	return { ...planBase, installationId };
 }
 
-async function readSecret(
-	env: NodeJS.ProcessEnv,
-	name: string,
-): Promise<string> {
-	const file = env[`${name}_FILE`];
-	if (file) return boundedText(resolve(file), 65536);
-	const value = env[name];
-	if (!value) throw new Error(`missing ${name}`);
-	return value.trimEnd();
+// Secrets `ci serve` reads: from a mounted file the environment names
+// (`<NAME>_FILE`), else from the run's trusted vault, which holds what the
+// owner's secret store gave this run. Never from a value in the environment,
+// where every child process would inherit it.
+const INLINE_SECRETS = Object.freeze([
+	"HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+	"HOBO_CI_WEBHOOK_SECRET",
+	"HOBO_CI_ACCOUNT_TOKEN",
+	"HOBO_CI_INGRESS_FORWARD_SECRET",
+] as const);
+
+/** Refuse secret values set in the environment, naming them (never their values). */
+export function refuseInlineSecrets(env: NodeJS.ProcessEnv): void {
+	const named = INLINE_SECRETS.filter((name) => env[name]);
+	if (named.length === 0) return;
+	throw new Error(
+		`${named.join(", ")} in the environment ${named.length === 1 ? "is" : "are"} not read. Keep ${named.length === 1 ? "it" : "them"} in your secret store (hobo ci up connects GitHub there), or mount ${named.length === 1 ? "it as a file" : "each as a file"} and name the file with ${named.map((name) => `${name}_FILE`).join(", ")}.`,
+	);
 }
 
 async function readOptionalSecret(
 	env: NodeJS.ProcessEnv,
 	name: string,
+	vault?: TrustedVault,
 ): Promise<string | undefined> {
 	const file = env[`${name}_FILE`];
-	if (file) return boundedText(resolve(file), 65536);
-	const value = env[name];
-	return value ? value.trimEnd() : undefined;
+	if (file) return (await boundedText(resolve(file), 65536)).trimEnd();
+	return vault?.reveal(name);
+}
+
+async function readSecret(
+	env: NodeJS.ProcessEnv,
+	name: string,
+	vault?: TrustedVault,
+): Promise<string> {
+	const value = await readOptionalSecret(env, name, vault);
+	if (!value) throw new Error(`missing ${name}`);
+	return value;
+}
+
+/** The store entry an account token for the local control plane may be kept in. */
+const ACCOUNT_TOKEN_ENTRY = "HOBO_CI_ACCOUNT_TOKEN";
+
+/**
+ * Read the GitHub App connection `hobo ci up` deposited from the owner's store
+ * into `vault`, and the account token when the store keeps one (with or
+ * without a connection). False when no store opens or it holds no connection.
+ */
+async function loadStoredConnection(
+	open: () => Promise<OpenedSecretStore | undefined>,
+	vault: TrustedVault,
+): Promise<boolean> {
+	const store = await open().catch(() => undefined);
+	if (store === undefined) return false;
+	const token = await store.port
+		.access(ACCOUNT_TOKEN_ENTRY)
+		.catch(() => undefined);
+	if (token?.status === "ok" && token.material)
+		vault.put(ACCOUNT_TOKEN_ENTRY, token.material);
+	return loadGithubAppCredentials(store, vault);
+}
+
+/** The owner's store, opened without a page: the committed locator and a non-interactive sign-in. */
+function ownerStoreOpener(
+	env: NodeJS.ProcessEnv,
+	cwd: string,
+): () => Promise<OpenedSecretStore | undefined> {
+	return async () => {
+		const signIn = createTrustedVault();
+		const workloadOidc = workloadOidcOf(env);
+		try {
+			return (
+				await ownerStore("ci", signIn, {
+					env: withoutSecretEnv(env),
+					cwd,
+					...(workloadOidc !== undefined ? { workloadOidc } : undefined),
+				})
+			).opened;
+		} finally {
+			signIn.clear();
+		}
+	};
 }
 
 function serveLog(
@@ -510,20 +582,25 @@ function serveLog(
 	emit?.(`${JSON.stringify(entry)}\n`);
 }
 
+interface ServeCredentials {
+	/** The App key's file, when it came from one (the relay is handed the key itself). */
+	readonly keyPath: string | undefined;
+	readonly privateKey: string;
+	readonly tokenPath: string;
+	readonly webhookSecret: string;
+	readonly appId: string;
+}
+
 async function ensureCredentials(
 	env: NodeJS.ProcessEnv,
 	directory: string,
 	requireRealCredentials: boolean,
-	installationId?: number,
-): Promise<{
-	keyPath: string;
-	tokenPath: string;
-	webhookSecret: string;
-	appId: string;
-}> {
+	installationId: number | undefined,
+	vault: TrustedVault,
+): Promise<ServeCredentials> {
 	await mkdir(directory, { recursive: true, mode: 0o700 });
-	const keyPath = join(directory, "github-app.pem");
 	const tokenPath = join(directory, "control-tokens.json");
+	const fromStore = vault.has("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
 	const configuredKeyPath = env.HOBO_CI_GITHUB_APP_KEY_FILE;
 	const hasKeyFile =
 		configuredKeyPath !== undefined &&
@@ -536,31 +613,31 @@ async function ensureCredentials(
 		env.HOBO_CI_GITHUB_APP_ID ||
 			env.HOBO_CI_GITHUB_APP_ID_FILE ||
 			configuredKeyPath ||
-			env.HOBO_CI_GITHUB_APP_PRIVATE_KEY ||
 			env.HOBO_CI_GITHUB_APP_PRIVATE_KEY_FILE ||
-			env.HOBO_CI_WEBHOOK_SECRET ||
 			env.HOBO_CI_WEBHOOK_SECRET_FILE,
 	);
 	if (appConfigurationPresent && !hasKeyFile)
 		throw new Error(
 			"GitHub App configuration requires a readable HOBO_CI_GITHUB_APP_KEY_FILE",
 		);
-	if (requireRealCredentials && !hasKeyFile)
+	if (requireRealCredentials && !hasKeyFile && !fromStore)
 		throw new Error(
-			"remote bind requires GitHub App credentials (HOBO_CI_GITHUB_APP_KEY_FILE and related secrets)",
+			"remote bind requires GitHub App credentials: connect GitHub with hobo ci up (they go to your secret store), or mount HOBO_CI_GITHUB_APP_KEY_FILE and the related files",
 		);
-	if (hasKeyFile) {
-		const webhookSecret = await readSecret(env, "HOBO_CI_WEBHOOK_SECRET");
+	if (hasKeyFile || fromStore) {
+		const webhookSecret = await readSecret(
+			env,
+			"HOBO_CI_WEBHOOK_SECRET",
+			fromStore ? vault : undefined,
+		);
 		if (webhookSecret.length < 32)
 			throw new Error("HOBO_CI_WEBHOOK_SECRET must be at least 32 characters");
 		let controlPath = env.HOBO_CI_CONTROL_TOKENS_FILE ?? tokenPath;
 		if (!env.HOBO_CI_CONTROL_TOKENS_FILE) {
-			const token = (
-				await readOptionalSecret(env, "HOBO_CI_ACCOUNT_TOKEN")
-			)?.trimEnd();
+			const token = await readOptionalSecret(env, ACCOUNT_TOKEN_ENTRY, vault);
 			if (!token || token.length < 32 || /\s/.test(token))
 				throw new Error(
-					"real App credentials require a CI account token of at least 32 characters or HOBO_CI_CONTROL_TOKENS_FILE",
+					`real App credentials require a CI account token of at least 32 characters (${ACCOUNT_TOKEN_ENTRY} in your secret store, or a file named by ${ACCOUNT_TOKEN_ENTRY}_FILE) or HOBO_CI_CONTROL_TOKENS_FILE`,
 				);
 			await writeFile(
 				tokenPath,
@@ -584,11 +661,27 @@ async function ensureCredentials(
 			);
 			controlPath = tokenPath;
 		}
+		if (fromStore)
+			return {
+				keyPath: undefined,
+				privateKey: await readSecret(
+					{},
+					"HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+					vault,
+				),
+				tokenPath: controlPath,
+				webhookSecret,
+				appId: await readSecret({}, "HOBO_CI_GITHUB_APP_ID", vault),
+			};
 		return {
 			keyPath: configuredKeyPath,
+			privateKey: await boundedText(String(configuredKeyPath), 65536),
 			tokenPath: controlPath,
 			webhookSecret,
-			appId: await readSecret(env, "HOBO_CI_GITHUB_APP_ID"),
+			// An App id names the App; it is not a secret.
+			appId:
+				env.HOBO_CI_GITHUB_APP_ID?.trim() ||
+				(await readSecret(env, "HOBO_CI_GITHUB_APP_ID")),
 		};
 	}
 	const pair = generateKeyPairSync("rsa", {
@@ -596,7 +689,7 @@ async function ensureCredentials(
 		privateKeyEncoding: { type: "pkcs8", format: "pem" },
 		publicKeyEncoding: { type: "spki", format: "pem" },
 	});
-	await writeFile(keyPath, pair.privateKey, { mode: 0o600 });
+	// A throwaway key for a loopback relay, held in memory only.
 	const webhookSecret = `synthetic-webhook-secret-${createHash("sha256").update(directory).digest("hex")}`;
 	const token = `synthetic-local-token-${createHash("sha256").update(directory).digest("hex")}`;
 	await writeFile(
@@ -619,7 +712,8 @@ async function ensureCredentials(
 		{ mode: 0o600 },
 	);
 	return {
-		keyPath,
+		keyPath: undefined,
+		privateKey: pair.privateKey,
 		tokenPath,
 		webhookSecret,
 		appId: env.HOBO_CI_GITHUB_APP_ID ?? "123456",
@@ -632,7 +726,10 @@ export async function startCiServe(input: {
 	env: NodeJS.ProcessEnv;
 	git: (args: readonly string[], cwd: string) => Promise<string>;
 	emitProgress?: (message: string) => void;
+	/** The owner's secret store (test seam); by default opened from the committed locator. */
+	openStore?: () => Promise<OpenedSecretStore | undefined>;
 }): Promise<CiServeHandle> {
+	refuseInlineSecrets(input.env);
 	const plan = await resolveCiServePlan(input);
 	const home = resolve(
 		input.cwd,
@@ -642,13 +739,39 @@ export async function startCiServe(input: {
 	await mkdir(stateDir, { recursive: true, mode: 0o700 });
 	const requireRealCredentials =
 		!LOOPBACK.has(plan.host) && !plan.allowInsecureLoopback;
-	const configuredEnv = await githubKeyEnvironment(input.env, home);
-	const credentials = await ensureCredentials(
-		configuredEnv,
-		stateDir,
-		requireRealCredentials,
-		plan.installationId,
+	// What the owner's store gives this run lives in this vault, in memory,
+	// and is wiped when the relay stops.
+	const vault = createTrustedVault();
+	// Explicitly mounted App files win as a unit; then the store's connection;
+	// then a key imported under HOBO_HOME.
+	const filesConfigured = Boolean(
+		input.env.HOBO_CI_GITHUB_APP_KEY_FILE ||
+			input.env.HOBO_CI_GITHUB_APP_ID ||
+			input.env.HOBO_CI_GITHUB_APP_ID_FILE ||
+			input.env.HOBO_CI_WEBHOOK_SECRET_FILE,
 	);
+	const fromStore =
+		!filesConfigured &&
+		(await loadStoredConnection(
+			input.openStore ?? ownerStoreOpener(input.env, input.cwd),
+			vault,
+		));
+	const configuredEnv = fromStore
+		? input.env
+		: await githubKeyEnvironment(input.env, home);
+	let credentials: ServeCredentials;
+	try {
+		credentials = await ensureCredentials(
+			configuredEnv,
+			stateDir,
+			requireRealCredentials,
+			plan.installationId,
+			vault,
+		);
+	} catch (error) {
+		vault.clear();
+		throw error;
+	}
 	const dbPath = input.options.db ?? join(stateDir, "relay.sqlite");
 	const seedConfig = join(stateDir, "config.json");
 	if (
@@ -673,24 +796,29 @@ export async function startCiServe(input: {
 	if (plan.allowInsecureLoopback)
 		relayEnv.HOBO_CI_ALLOW_INSECURE_LOOPBACK = "1";
 	relayEnv.HOBO_CI_GITHUB_APP_ID = credentials.appId;
-	relayEnv.HOBO_CI_GITHUB_APP_KEY_FILE = credentials.keyPath;
+	// The relay is handed its secrets in memory (below); its environment names
+	// none, so the worker it may spawn inherits none.
+	delete relayEnv.HOBO_CI_GITHUB_APP_KEY_FILE;
+	delete relayEnv.HOBO_CI_WEBHOOK_SECRET_FILE;
+	delete relayEnv.HOBO_CI_INGRESS_FORWARD_SECRET_FILE;
 	relayEnv.HOBO_CI_CONTROL_TOKENS_FILE = credentials.tokenPath;
-	if (configuredEnv.HOBO_CI_WEBHOOK_SECRET_FILE) {
-		delete relayEnv.HOBO_CI_WEBHOOK_SECRET;
-	} else {
-		relayEnv.HOBO_CI_WEBHOOK_SECRET = credentials.webhookSecret;
-	}
 	const ingressForward = await readOptionalSecret(
 		input.env,
 		"HOBO_CI_INGRESS_FORWARD_SECRET",
+		vault,
 	);
-	if (ingressForward !== undefined) {
-		if (Buffer.byteLength(ingressForward, "utf8") < 32)
-			throw new Error(
-				"HOBO_CI_INGRESS_FORWARD_SECRET must be at least 32 bytes",
-			);
-		relayEnv.HOBO_CI_INGRESS_FORWARD_SECRET = ingressForward;
-	}
+	if (
+		ingressForward !== undefined &&
+		Buffer.byteLength(ingressForward, "utf8") < 32
+	)
+		throw new Error("HOBO_CI_INGRESS_FORWARD_SECRET must be at least 32 bytes");
+	const secrets: RelaySecrets = {
+		githubAppPrivateKey: credentials.privateKey,
+		webhookSecret: credentials.webhookSecret,
+		...(ingressForward !== undefined
+			? { ingressForwardSecret: ingressForward }
+			: undefined),
+	};
 	if (plan.trustProxy) relayEnv.HOBO_CI_TRUST_PROXY = "1";
 	relayEnv.HOBO_CI_DB = dbPath;
 	relayEnv.HOBO_CI_CONFIG = seedConfig;
@@ -706,8 +834,10 @@ export async function startCiServe(input: {
 	const agentBlock = input.options.noAgent
 		? undefined
 		: parseCiAgentBlock(await readFile(plan.configPath, "utf8"));
-	let startRelay: (env: NodeJS.ProcessEnv) => Promise<RunningRelay> =
-		startRelayFromEnvironment;
+	let startRelay: (
+		env: NodeJS.ProcessEnv,
+		ports: { readonly secrets: RelaySecrets },
+	) => Promise<RunningRelay> = startRelayFromEnvironment;
 	if (agentBlock !== undefined) {
 		relayEnv.HOBO_CI_AGENT_CONFIG = plan.configPath;
 		relayEnv.HOBO_CI_AGENT_DIR = join(stateDir, "agent");
@@ -725,7 +855,13 @@ export async function startCiServe(input: {
 		engines: plan.engines,
 		agent: agentBlock !== undefined,
 	});
-	const running = await startRelay(relayEnv);
+	let running: RunningRelay;
+	try {
+		running = await startRelay(relayEnv, { secrets });
+	} catch (error) {
+		vault.clear();
+		throw error;
+	}
 	let pollStop: (() => void) | undefined;
 	let worker: ChildProcess | undefined;
 	if (plan.admission === "pull") {
@@ -733,7 +869,7 @@ export async function startCiServe(input: {
 			throw new Error("pull admission requires --installation-id");
 		const github = createGithubAppTransport({
 			appId: credentials.appId,
-			privateKey: await readFile(credentials.keyPath, "utf8"),
+			privateKey: credentials.privateKey,
 		});
 		const poll = startPullAdmission({
 			github,
@@ -774,7 +910,11 @@ export async function startCiServe(input: {
 		async stop() {
 			pollStop?.();
 			if (worker) worker.kill("SIGTERM");
-			await running.stop();
+			try {
+				await running.stop();
+			} finally {
+				vault.clear();
+			}
 		},
 	};
 }

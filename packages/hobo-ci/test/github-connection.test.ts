@@ -19,6 +19,7 @@ import {
 	GITHUB_APP_CREDENTIAL_KEYS,
 	type GithubAppHost,
 	githubAppConnected,
+	loadGithubAppCredentials,
 	type OpenedSecretStore,
 	prepareGithubConnection,
 	resolveGithubAppExpectation,
@@ -883,9 +884,9 @@ describe("prepareGithubConnection", () => {
 		expect(outcome.kind === "ready" && outcome.credentials?.names()).toEqual([
 			"VERCEL_TOKEN",
 		]);
-		expect(outcome.kind === "ready" && outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(
-			"vercel-token",
-		);
+		expect(
+			outcome.kind === "ready" && outcome.credentials?.reveal("VERCEL_TOKEN"),
+		).toBe("vercel-token");
 	});
 
 	it("ignores secrets in the environment, and says so", async () => {
@@ -1173,6 +1174,28 @@ describe("organization-owned Apps", () => {
 		);
 		expect(done?.step.kind).toBe("failed");
 		expect(store.names()).toEqual([]);
+	});
+});
+
+describe("loadGithubAppCredentials", () => {
+	it("reads a complete connection into the vault, and nothing for none", async () => {
+		const store = memoryStore();
+		const empty = createTrustedVault();
+		expect(await loadGithubAppCredentials(store, empty)).toBe(false);
+		expect(empty.names()).toEqual([]);
+		await seedConnection(store);
+		const vault = createTrustedVault();
+		expect(await loadGithubAppCredentials(store, vault)).toBe(true);
+		for (const key of GITHUB_APP_CREDENTIAL_KEYS)
+			expect(vault.reveal(key)).toBe(`fixture-${key}`);
+	});
+
+	it("refuses a partial connection", async () => {
+		const store = memoryStore();
+		await store.port.put("HOBO_CI_GITHUB_APP_ID", "1");
+		await expect(
+			loadGithubAppCredentials(store, createTrustedVault()),
+		).rejects.toThrow(/incomplete/);
 	});
 });
 
