@@ -185,8 +185,8 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 | Persistent local Yard worker | Product default with a loadable source Bindle |
 | In-memory Pulumi stand-in | Explicitly injected library/test runtime |
 | Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept and encrypted under a passphrase the owner provisions once in the secret store as `HOBO_PULUMI_STATE_PASSPHRASE` (`src/owner-keys.ts` reads it into the process's trusted vault; a missing key is refused because the store has no atomic create). If the workspace already has state, provision its original passphrase. `PULUMI_CONFIG_PASSPHRASE` in the environment is not read. Without a retained workspace, a disposable `hobo-pulumi-live-*` directory is removed when the process ends (one `hobo:` line on stderr names it) |
-| Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
-| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
+| Direct-HTTP Cloudflare resolver plane | A brokered or explicitly injected `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
+| Direct-HTTP Vercel resolver plane | A brokered or explicitly injected `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
 
 The composed `hobo` never takes a real deploy token from its own process
 environment: `deployEnvironment()` in `src/compose.ts` drops a
@@ -368,8 +368,9 @@ non-secret settings), and realizes it as one git-source Vercel deployment
 through the git-artifact mode above: the non-secret settings first, then each of
 the Bindle's resources applied through the provider the Yard names, which
 deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
-otherwise). Production is deployed by the workflow on `main`
-(`.github/workflows/relay-deploy.yml`), not by hand.
+otherwise). The workflow on `main` (`.github/workflows/relay-deploy.yml`)
+currently adopts and verifies a Git-sourced deployment; it does not run this
+deploy command.
 
 Delivery planning also reads declared secret projections from Yards in the
 relay's own Junction, keeping each projection under its source Yard. A declared
@@ -381,9 +382,9 @@ verified; the changed cross-Yard path still needs that evidence.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
   --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# What the workflow on main runs: production, the Infisical ids the production
-# Camp's config-service binding asks for, the cache attached first.
-VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref main \
+# From an authorized GitHub Actions job with id-token: write and a committed
+# secret-store binding: production, with the cache attached first.
+hobo ci deploy --cwd packages/ci-vercel --ref main \
   --sha <40-hex commit> --team team_… --target production \
   --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
 ```
@@ -403,10 +404,14 @@ VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--wait` | wait up to 15 minutes for READY; ERROR, CANCELED or the timeout is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
 
-What it needs: `VERCEL_TOKEN` in the environment for a real run (never printed,
-never logged, and not read at all by a dry run), a project whose settings build
-`packages/ci-vercel` (or `--root-directory`), and Vercel's GitHub integration
-able to read the repository.
+A real run needs the deploy token in the owner's secret store. An embedding
+caller can provide it in a run-scoped vault; a GitHub Actions job with
+`id-token: write` can read it through the committed secret-store binding. A
+`VERCEL_TOKEN` supplied in the command's environment is ignored. When
+`--provision` runs the Vercel CLI, HoBo passes that child the token from the
+vault. The target project must build `packages/ci-vercel` (or the chosen
+`--root-directory`), and Vercel's GitHub integration must be able to read the
+repository.
 
 What it deliberately does not do:
 
@@ -642,8 +647,8 @@ become `ResolveRequest.desired`.
    lane (unchanged);
 2. no cloud credential at all → the library runtime's in-memory Pulumi backend;
    product `up` uses the persistent local source-Bindle path instead;
-3. a cloud credential → the exact-resource resolver plane (Cloudflare when
-   `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` are set, else Vercel).
+3. a cloud credential accepted by the composition → the exact-resource
+   resolver plane (Cloudflare with a token and account ID, else Vercel).
 
 The committed hello-bindle upload helpers require explicit `fixtureArtifact:true`
 and are never selected by environment. Their teardown performs native deletion

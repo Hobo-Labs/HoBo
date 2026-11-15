@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { isLifecycleAction } from "@hobo/cli";
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
 	type OpenedSecretStore,
@@ -50,6 +51,8 @@ export interface LoadOwnerKeysInput {
 	/** The verb and its first argument: only the keys it uses are read. */
 	readonly verb: string | null;
 	readonly subcommand: string;
+	/** Help renders without accessing owner keys. */
+	readonly help?: boolean;
 	/** Where the store locator is committed (the verb's working directory). */
 	readonly cwd: string;
 	readonly vault?: TrustedVault;
@@ -74,17 +77,29 @@ async function openOwnerStore(
 	}
 }
 
+/** CI lifecycle commands other than status compose a local Yard. */
+export function ciUsesYard(subcommand: string): boolean {
+	return isLifecycleAction(subcommand) && subcommand !== "status";
+}
+
 /** Which keys this invocation uses (nothing opens the store for a verb that uses none). */
 export function ownerKeysFor(
-	input: Pick<LoadOwnerKeysInput, "env" | "verb" | "subcommand">,
+	input: Pick<LoadOwnerKeysInput, "env" | "verb" | "subcommand" | "help">,
 ): readonly string[] {
+	if (input.help || input.verb === null) return [];
 	const keys: string[] = [];
 	if (
 		input.verb === "claim" ||
 		(input.verb === "ci" && input.subcommand === "secret-store")
 	)
 		keys.push(CLAIM_ACTION_KEY);
-	if (input.env.HOBO_PULUMI_LIVE === "1" && input.env.HOBO_PULUMI_WORKDIR)
+	// These CI commands run without composing the Yard or its Pulumi backend.
+	const ciWithoutYard = input.verb === "ci" && !ciUsesYard(input.subcommand);
+	if (
+		!ciWithoutYard &&
+		input.env.HOBO_PULUMI_LIVE === "1" &&
+		input.env.HOBO_PULUMI_WORKDIR
+	)
 		keys.push(PULUMI_STATE_KEY);
 	return keys;
 }

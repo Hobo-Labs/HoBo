@@ -10,6 +10,7 @@ import { deploymentImported, deploymentViewProjection } from "@hobo/cloud";
 import type { EventInput, PrincipalRef } from "@hobo/core";
 import { PULUMI_STATE_PASSPHRASE_MISSING } from "@hobo/iac-pulumi";
 import {
+	deployEnvironment,
 	type EstateResourceState,
 	readPulumiEstate,
 	selectPulumiEstateAdapter,
@@ -25,8 +26,8 @@ import type { PulumiAutomationAdapter } from "./pulumi-iac-provider.js";
 export interface ImportCommandDeps {
 	// The shared Yard runtime whose durable log records the adoption.
 	readonly runtime?: YardRuntime;
-	// Credential env consulted to pick the estate backend (same precedence as
-	// `hobo up`/`hobo drift`). Defaults to `process.env`.
+	// Explicit environment snapshot for tests or an embedding host. Without one,
+	// use the same filtered process environment as `hobo up`/`hobo drift`.
 	readonly env?: Record<string, string | undefined>;
 	// Explicit Pulumi adapter override (tests): discover the estate from THIS
 	// adapter's state backend.
@@ -107,7 +108,7 @@ export function createImportCommand(
 				};
 			}
 
-			const env = deps.env ?? process.env;
+			const env = deployEnvironment(deps.env);
 			const projectDir = context.projectDir ?? flags.cwd ?? context.cwd;
 			const deploymentId = deploymentIdFor(projectDir);
 			const stream = `deployment:${deploymentId}`;

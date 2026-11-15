@@ -16,6 +16,7 @@ import { PULUMI_STATE_PASSPHRASE_MISSING } from "@hobo/iac-pulumi";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import type { CloudflareFetch } from "./cloudflare-client.js";
 import {
+	deployEnvironment,
 	type EstateResourceState,
 	readPulumiEstate,
 	selectIacProvider,
@@ -33,9 +34,8 @@ export interface DriftCommandDeps {
 	// The realize()-capable CloudProviders the IaC bridge drives. Defaults to the
 	// same @hobo/provider-cloudflare the default runtime registers.
 	readonly providers?: readonly CloudProvider[];
-	// Credential env consulted to pick the drift backend (same precedence as
-	// `hobo up`). Defaults to `process.env`, so `drift` checks against whichever
-	// backend would actually deploy.
+	// Explicit environment snapshot for tests or an embedding host. Without one,
+	// use the same filtered process environment as the composed `hobo up`.
 	readonly env?: Record<string, string | undefined>;
 	// Explicit Pulumi adapter override (tests): forces the Pulumi lane and reads
 	// the estate from THIS adapter's state backend.
@@ -98,7 +98,7 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 				};
 			}
 
-			const env = deps.env ?? process.env;
+			const env = deployEnvironment(deps.env);
 			const target = describeDeployTarget(env);
 			const backend =
 				env.HOBO_PULUMI_LIVE === "1" ? "pulumi-live" : target.backend;

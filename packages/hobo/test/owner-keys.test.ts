@@ -48,6 +48,30 @@ describe("ownerKeysFor", () => {
 		expect(
 			ownerKeysFor({ env: live("/w"), verb: "up", subcommand: "" }),
 		).toEqual([PULUMI_STATE_KEY]);
+		for (const subcommand of ["status", "runs", "serve", "deploy", ""]) {
+			expect(ownerKeysFor({ env: live("/w"), verb: "ci", subcommand })).toEqual(
+				[],
+			);
+		}
+		for (const subcommand of ["up", "down", "plan"]) {
+			expect(ownerKeysFor({ env: live("/w"), verb: "ci", subcommand })).toEqual(
+				[PULUMI_STATE_KEY],
+			);
+		}
+		expect(
+			ownerKeysFor({ env: live("/w"), verb: "ci", subcommand: "secret-store" }),
+		).toEqual([CLAIM_ACTION_KEY]);
+		expect(
+			ownerKeysFor({
+				env: live("/w"),
+				verb: "claim",
+				subcommand: "open",
+				help: true,
+			}),
+		).toEqual([]);
+		expect(
+			ownerKeysFor({ env: live("/w"), verb: null, subcommand: "" }),
+		).toEqual([]);
 		// A disposable workspace keeps its key in memory; no store is needed.
 		expect(
 			ownerKeysFor({
@@ -60,6 +84,23 @@ describe("ownerKeysFor", () => {
 });
 
 describe("loadOwnerKeys", () => {
+	it("does not open the owner store for CI status when retained Pulumi is configured", async () => {
+		let opened = false;
+		const outcome = await loadOwnerKeys({
+			env: live("/retained"),
+			cwd: tmpdir(),
+			verb: "ci",
+			subcommand: "status",
+			open: async () => {
+				opened = true;
+				throw new Error("store unavailable");
+			},
+			vault: createTrustedVault(),
+		});
+		expect(outcome).toEqual({ kind: "loaded", keys: [] });
+		expect(opened).toBe(false);
+	});
+
 	it("loads the same pre-provisioned key on each machine", async () => {
 		const workdir = await mkdtemp(path.join(tmpdir(), "hobo-owner-keys-"));
 		directories.push(workdir);

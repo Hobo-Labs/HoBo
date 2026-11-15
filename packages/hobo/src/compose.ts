@@ -455,14 +455,16 @@ const OPENSESAME_SURROGATE = new RegExp(SURROGATE_PATTERN, "u");
 export function deployEnvironment(
 	injected?: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
-	if (injected !== undefined) return injected;
-	const kept: NodeJS.ProcessEnv = { ...process.env };
-	for (const name of DEPLOY_TOKEN_VARIABLES) {
-		const value = kept[name];
-		if (value !== undefined && !OPENSESAME_SURROGATE.test(value))
-			delete kept[name];
+	const kept: NodeJS.ProcessEnv = { ...(injected ?? process.env) };
+	if (injected === undefined) {
+		for (const name of DEPLOY_TOKEN_VARIABLES) {
+			const value = kept[name];
+			if (value !== undefined && !OPENSESAME_SURROGATE.test(value))
+				delete kept[name];
+		}
 	}
-	// The retained Pulumi workspace's key comes from the owner's store.
+	// Never fall back to an environment key for retained Pulumi state, even
+	// when a caller supplies an environment snapshot (as drift/import do).
 	delete kept.PULUMI_CONFIG_PASSPHRASE;
 	return kept;
 }
