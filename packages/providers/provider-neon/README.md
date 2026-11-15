@@ -20,7 +20,9 @@ allocate a second project. A host must declare the `neon-managed-logical/v1`
 identity namespace only after verifying that the scope has no earlier
 experimental operations, or migrating their identity records and journal
 claims under an exclusive fence. Unresolved outcomes remain blocked; migration
-is not automated. A recorded result is read back against the exact
+is not automated. The durable journal must use the mutation ID as its unique
+key and reject a changed request digest, rather than treating the two fields as
+a composite key. A recorded result is read back against the exact
 organization, region, quotas, direct endpoint and database. The direct session
 uses hostname-verified TLS and checks PostgreSQL identity, write permission and
 `LISTEN`/`NOTIFY`. It requires SCRAM channel binding and refuses a server that

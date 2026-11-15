@@ -138,6 +138,9 @@ export interface NeonManagedAuthorization {
 export interface NeonManagedPostgresOptions {
 	readonly scope: ClaimableResolverScope;
 	readonly deriveOperationKey: ClaimableOperationKeyDeriver;
+	/** Both inspect and claim must use mutationId as their unique key, reject a
+	 * different requestDigest for an existing key, and share durable CAS state.
+	 * Keying by the pair would permit a second create when the retry key changes. */
 	readonly journal: ResourceMutationJournal & {
 		inspect(input: {
 			readonly mutationId: string;
