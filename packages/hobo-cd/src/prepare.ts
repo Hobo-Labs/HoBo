@@ -207,9 +207,6 @@ export async function prepareVercelConnection(
 		port: Number(redirect.port),
 		callbackPath: redirect.pathname,
 	});
-	input.run.emitProgress(`Connect Vercel in your browser: ${page.url}`);
-	(deps.openBrowser ?? openInBrowser)(page.url);
-
 	let timer: NodeJS.Timeout | undefined;
 	const timedOut = new Promise<ConnectStep>((resolve) => {
 		timer = setTimeout(
@@ -224,11 +221,17 @@ export async function prepareVercelConnection(
 		);
 	});
 	let step: ConnectStep;
+	let browserLaunched = false;
 	try {
+		input.run.emitProgress(`Connect Vercel in your browser: ${page.url}`);
+		(deps.openBrowser ?? openInBrowser)(page.url);
+		browserLaunched = true;
 		step = await Promise.race([page.done, timedOut]);
 	} finally {
 		clearTimeout(timer);
-		await page.close({ graceMs: 10_000 });
+		// Give a launched browser time to show the final step; on startup
+		// failure there is no browser to wait for, so close immediately.
+		await page.close({ graceMs: browserLaunched ? 10_000 : 0 });
 	}
 	if (step.kind !== "connected" || chosen === undefined)
 		return refused(
