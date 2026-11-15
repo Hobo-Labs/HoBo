@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-
 import type { CommandResult, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
 	type ConnectPage,
@@ -10,6 +8,7 @@ import {
 import {
 	type Env,
 	type OpenedSecretStore,
+	openInBrowser,
 	openSecretStore,
 	type SecretStoreDeps,
 	type SecretStoreId,
@@ -58,22 +57,6 @@ function refused(
 		data: { command: "cd", connection: "vercel" },
 	};
 	return { kind: "refused", result };
-}
-
-function openInBrowser(url: string): void {
-	const command =
-		process.platform === "darwin"
-			? "open"
-			: process.platform === "win32"
-				? "explorer"
-				: "xdg-open";
-	try {
-		const child = spawn(command, [url], { stdio: "ignore", detached: true });
-		child.on("error", () => undefined);
-		child.unref();
-	} catch {
-		// The URL is printed as well.
-	}
 }
 
 async function ready(
