@@ -534,6 +534,57 @@ describe("prepareVercelConnection", () => {
 		});
 	});
 
+	it("shows a field error for a malformed redirect saved in the store", async () => {
+		const { store } = await memoryStore(false);
+		await store.port.put(
+			"HOBO_CD_SETTINGS",
+			JSON.stringify({ HOBO_CD_VERCEL_REDIRECT_URI: "not-a-url" }),
+		);
+		const outcome = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			interactive: true,
+			vault: signedInVault(),
+			locator: memorySettings(LOCATOR),
+			openStore: opened(store),
+			startPage: async ({ flow }) => {
+				const submitted = await flow.onAction(
+					"connect.submit",
+					{
+						HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
+						HOBO_CD_VERCEL_CLIENT_ID: "oac_test",
+						HOBO_CD_VERCEL_CLIENT_SECRET: "integration-client-secret",
+					},
+					flow.initial,
+				);
+				expect(submitted.step).toMatchObject({
+					kind: "configure",
+					fields: expect.arrayContaining([
+						expect.objectContaining({
+							name: "HOBO_CD_VERCEL_REDIRECT_URI",
+							error: expect.stringContaining("This run serves"),
+						}),
+					]),
+				});
+				return {
+					url: "http://127.0.0.1:1/",
+					callbackUrl: "http://127.0.0.1:1/callback",
+					done: Promise.resolve({
+						kind: "failed",
+						provider: "vercel",
+						message: "test finished",
+						remediation: [],
+					}),
+					close: async () => {},
+				};
+			},
+			openBrowser: () => undefined,
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_VERCEL_NOT_CONNECTED" },
+		});
+	});
+
 	it("hands an existing connection's credential to convergence without a page", async () => {
 		const { store } = await memoryStore();
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
