@@ -218,6 +218,8 @@ export function toRegistrableProvider(
 }
 
 export interface DefaultYardRuntimeOptions {
+	/** Project whose committed secret-store locator the deploy executor may open. */
+	readonly projectDir?: string;
 	// Durable event-store data directory. Defaults to a fresh OS temp dir
 	// (`hobo-yard-*`; the mocked lane is ephemeral) that this process owns and
 	// removes when it exits, an uncaught error included (owned-temp-dir.ts), so no
@@ -252,6 +254,8 @@ export interface DefaultYardRuntimeOptions {
 }
 
 export interface SelectIacProviderDeps {
+	/** Project whose committed secret-store locator may be opened. */
+	readonly projectDir?: string;
 	// The durable event store the Pulumi-backed provider reads plans from.
 	readonly store: EventStore;
 	// The real CloudProviders whose `realize()` the Pulumi bridge drives.
@@ -273,7 +277,9 @@ export interface SelectIacProviderDeps {
 	// The owner's secret store, for `secretRef` placements
 	// (`secret-ref-executor.ts`). By default it is opened without a page from
 	// the locator committed in the working directory.
-	readonly openSecretStore?: () => Promise<OpenedSecretStore | undefined>;
+	readonly openSecretStore?: (
+		projectDir: string | undefined,
+	) => Promise<OpenedSecretStore | undefined>;
 }
 
 // Per-store, per-lane Pulumi adapter memo. Sharing ONE adapter (and therefore
@@ -608,8 +614,12 @@ function resolverBackedProviderFor(
 export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
 	// A placement on a secret store realizes a reference: whichever lane
 	// executes the rest, the store's placements are executed here.
+	const open = deps.openSecretStore;
 	return withSecretRefExecution(selectDeployLane(deps), {
-		open: deps.openSecretStore ?? (() => openOwnerSecretStore(deps.env)),
+		open:
+			open === undefined
+				? () => openOwnerSecretStore(deps.env, deps.projectDir)
+				: () => open(deps.projectDir),
 		store: deps.store,
 	});
 }
@@ -617,7 +627,11 @@ export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
 /** The owner's store, opened without a page (`ownerStore`), or none. */
 async function openOwnerSecretStore(
 	injected: NodeJS.ProcessEnv | undefined,
+	projectDir: string | undefined,
 ): Promise<OpenedSecretStore | undefined> {
+	// A long-lived library runtime can serve several project directories; an
+	// ambient process cwd does not establish which one's locator was selected.
+	if (projectDir === undefined || !isAbsolute(projectDir)) return undefined;
 	const env = injected ?? process.env;
 	const signIn = createTrustedVault();
 	const workloadOidc = workloadOidcOf(env);
@@ -625,7 +639,7 @@ async function openOwnerSecretStore(
 		return (
 			await ownerStore("cd", signIn, {
 				env: withoutSecretEnv(env),
-				cwd: process.cwd(),
+				cwd: projectDir,
 				...(workloadOidc !== undefined ? { workloadOidc } : undefined),
 			})
 		).opened;
@@ -696,6 +710,9 @@ function createYardRuntimeOverStore(
 			iac: selectIacProvider({
 				store,
 				providers: [cloudflare],
+				...(options.projectDir !== undefined
+					? { projectDir: options.projectDir }
+					: undefined),
 				...(options.iacAdapter !== undefined
 					? { adapter: options.iacAdapter }
 					: undefined),

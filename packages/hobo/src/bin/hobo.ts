@@ -88,6 +88,7 @@ async function runComposed(
 	const runtime = createDefaultYardRuntime({
 		dataDir: join(defaultHoboHome(), "runtime"),
 		...options,
+		projectDir: workingDirOf(args, process.cwd()),
 	});
 	await bootstrapDefaultProviders(runtime, [
 		toRegistrableProvider(createCloudflareProvider()),

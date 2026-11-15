@@ -22,8 +22,8 @@ import { planFromStream } from "./resolver-iac-provider.js";
 // The store is another vendor's service, so it is internal to a Yard of its
 // own (`secretStoreYard`), never to the workload's: the placement is joined by
 // a provider junction, one per provider whose resources read the secret
-// (`secretRefJunctions`, from the recorded plan). The junction is named in the
-// outputs, so what reads the secret, and across which boundary, is on record.
+// (`secretRefJunctions`, from the recorded plan). The outputs name these
+// declarations; they do not provision or verify provider connectivity.
 //
 // Every other program goes to the IaC provider this wraps.
 
@@ -115,10 +115,17 @@ export function withSecretRefExecution(
 			`deployment:${program.deploymentId}`,
 		);
 		const nodes = planFromStream(events)?.resources ?? [];
-		if (!nodes.some((node) => node.name === program.resourceId))
+		const node = nodes.find(
+			(candidate) => candidate.name === program.resourceId,
+		);
+		if (
+			node === undefined ||
+			node.port !== "secretRef" ||
+			node.provider !== program.provider
+		)
 			throw new SecretRefExecutionError(
 				"HOBO_SECRET_REF_UNPLANNED",
-				`${program.resourceId} is not in deployment ${program.deploymentId}'s plan; plan before applying.`,
+				`${program.resourceId} is not planned on ${program.provider} as a secret reference in deployment ${program.deploymentId}; plan before applying.`,
 			);
 		const junctions = secretRefJunctions(
 			program.deploymentId,
@@ -130,7 +137,7 @@ export function withSecretRefExecution(
 		if (opened === undefined)
 			throw new SecretRefExecutionError(
 				"HOBO_SECRET_REF_STORE_UNAVAILABLE",
-				`${program.resourceId} is placed on ${program.provider}, and the owner's secret store did not open; sign in to it (the committed .hobo/secret-store.json names it) and run again.`,
+				`${program.resourceId} is placed on ${program.provider}, and the owner's secret store did not open; select the project and sign in to the store named by its committed .hobo/secret-store.json, then run again.`,
 			);
 		if (opened.id !== wanted)
 			throw new SecretRefExecutionError(

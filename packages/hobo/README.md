@@ -195,9 +195,13 @@ store without a page (the committed `.hobo/secret-store.json`), refuses a store
 that did not open (`HOBO_SECRET_REF_STORE_UNAVAILABLE`) or is not the one the
 plan chose (`HOBO_SECRET_REF_STORE_MISMATCH`), and returns the reference the
 workload reads at run time; nothing is provisioned, and destroy leaves the
-store's entries alone. The store's service is internal to a Yard of its own,
-joined to the Yard of each provider whose resources read the secret by a
-provider junction (`secretRefJunctions`), named in the placement's outputs.
+store's entries alone. The placement's outputs name the provider junctions
+needed between the store's Yard and its readers (`secretRefJunctions`). These
+declarations do not provision or verify connectivity or workload credentials.
+The binary reads the locator from the project selected by `--cwd`. Embedding
+hosts must pass an absolute `projectDir` to `createDefaultYardRuntime` (or
+provide a store opener when selecting an IaC provider); without one, secret
+references refuse rather than reading a different project's locator.
 
 The composed `hobo` never takes a real deploy token from its own process
 environment: `deployEnvironment()` in `src/compose.ts` drops a

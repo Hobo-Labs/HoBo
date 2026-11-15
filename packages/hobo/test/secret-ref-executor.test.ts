@@ -19,7 +19,7 @@ import {
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
-
+import { selectIacProvider } from "../src/compose.js";
 import {
 	secretRefJunctions,
 	withSecretRefExecution,
@@ -166,6 +166,42 @@ describe("secretRef execution", () => {
 				store,
 			}).apply(program("unplanned", "secret-store:bitwarden")),
 		).rejects.toMatchObject({ code: "HOBO_SECRET_REF_UNPLANNED" });
+	});
+
+	it("refuses a secret-store program whose resource or provider does not match the recorded plan", async () => {
+		let opened = 0;
+		const iac = withSecretRefExecution(lane().inner, {
+			open: async () => {
+				opened += 1;
+				return bitwarden();
+			},
+			store: await recorded(),
+		});
+		for (const input of [
+			program("api", "secret-store:bitwarden"),
+			program("config", "secret-store:infisical"),
+		])
+			await expect(iac.apply(input)).rejects.toMatchObject({
+				code: "HOBO_SECRET_REF_UNPLANNED",
+			});
+		expect(opened).toBe(0);
+	});
+
+	it("opens the selected project's secret store instead of the process directory", async () => {
+		const projectDir = join(tmpdir(), "selected-hobo-project");
+		let selected: string | undefined;
+		const iac = selectIacProvider({
+			store: await recorded(),
+			providers: [],
+			env: {},
+			projectDir,
+			openSecretStore: async (dir) => {
+				selected = dir;
+				return bitwarden();
+			},
+		});
+		await iac.apply(program("config", "secret-store:bitwarden"));
+		expect(selected).toBe(projectDir);
 	});
 
 	it("joins each reader's provider Yard to the store's Yard", () => {
