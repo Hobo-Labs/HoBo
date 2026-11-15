@@ -18,6 +18,7 @@ import {
 	githubAppConnected,
 	type OpenedSecretStore,
 	prepareGithubConnection,
+	resolveGithubAppExpectation,
 	resolveGithubAppHost,
 	type SecretStoreOpening,
 } from "../src/index.js";
@@ -148,6 +149,30 @@ const opened =
 	});
 
 describe("createGithubConnectFlow", () => {
+	it("resolves an existing App's configured owner and relay without looking up incomplete settings", async () => {
+		const calls: string[] = [];
+		const lookup: typeof fetch = async (input) => {
+			calls.push(String(input));
+			return Response.json({
+				id: OWNER_ID,
+				type: "Organization",
+				login: "octo",
+			});
+		};
+		expect(await resolveGithubAppExpectation({}, {}, lookup)).toBeUndefined();
+		expect(calls).toEqual([]);
+		const expected = await resolveGithubAppExpectation(
+			{ HOBO_CI_PUBLIC_URL: RELAY, HOBO_CI_GITHUB_OWNER: "octo" },
+			{},
+			lookup,
+		);
+		expect(expected).toMatchObject({
+			relayUrl: RELAY,
+			ownerId: OWNER_ID,
+			ownerType: "Organization",
+		});
+		expect(calls).toEqual(["https://api.github.com/users/octo"]);
+	});
 	it("does not resolve a GitHub identity when no credentials exist", async () => {
 		const store = memoryStore();
 		await expect(

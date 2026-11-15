@@ -179,7 +179,7 @@ export async function resolveGithubAppExpectation(
 		return undefined;
 	const id = Number(env.HOBO_CI_GITHUB_OWNER_ID);
 	const kind = env.HOBO_CI_GITHUB_OWNER_TYPE;
-	const owner =
+	const owner: Pick<GithubAppOwner, "id" | "kind"> | undefined =
 		Number.isSafeInteger(id) &&
 		id > 0 &&
 		(kind === "User" || kind === "Organization")
