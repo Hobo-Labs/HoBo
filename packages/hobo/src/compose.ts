@@ -122,6 +122,7 @@ import {
 	type ProductionHostingExecutionOptions,
 } from "./hosting-execution.js";
 import { ownedTempDir } from "./owned-temp-dir.js";
+import { ownerKeys, PULUMI_STATE_KEY } from "./owner-keys.js";
 import {
 	createPulumiBackedIacProvider,
 	type PulumiAutomationAdapter,
@@ -337,18 +338,30 @@ export function selectPulumiEstateAdapter(
 			// recoverable passphrase. Only our owned temporary directory may use
 			// an in-memory random key.
 			const ephemeralState = env.HOBO_PULUMI_WORKDIR === undefined;
+			// A retained workspace's key is the owner's, from their secret store
+			// (`owner-keys.ts`); PULUMI_CONFIG_PASSPHRASE in this process's
+			// environment is not read.
+			const kept = ownerKeys.reveal(PULUMI_STATE_KEY);
+			const statePassphrase =
+				kept !== undefined ? { statePassphrase: kept } : undefined;
 			const engine = useCliEngine
 				? createPulumiCliAutomationEngine({
 						workDir,
 						env,
 						ephemeralState,
+						...statePassphrase,
 						// Test seam mirroring the engine's own binary gate: point at a
 						// non-existent binary to exercise the typed fail-closed path.
 						...(env.HOBO_PULUMI_BIN !== undefined
 							? { pulumiBin: env.HOBO_PULUMI_BIN }
 							: undefined),
 					})
-				: createPulumiAutomationApiEngine({ workDir, env, ephemeralState });
+				: createPulumiAutomationApiEngine({
+						workDir,
+						env,
+						ephemeralState,
+						...statePassphrase,
+					});
 			// SAFETY: assertion required at this I/O or test boundary.
 			return createPulumiAutomationAdapter({
 				engine,
@@ -449,6 +462,8 @@ export function deployEnvironment(
 		if (value !== undefined && !OPENSESAME_SURROGATE.test(value))
 			delete kept[name];
 	}
+	// The retained Pulumi workspace's key comes from the owner's store.
+	delete kept.PULUMI_CONFIG_PASSPHRASE;
 	return kept;
 }
 

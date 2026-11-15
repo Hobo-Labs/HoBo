@@ -34,6 +34,7 @@ import {
 } from "../credentials-opensesame.js";
 import { createBareMetalProvider } from "../local-provider.js";
 import { removeOwnedDirsOnSignals } from "../owned-temp-dir.js";
+import { loadOwnerKeys } from "../owner-keys.js";
 
 // The real composed `hobo` binary. Unlike @hobo/cli's bare bin (which calls
 // createHoboCli() un-injected, leaving the cloud verbs as shell stubs), this
@@ -63,6 +64,18 @@ async function runComposed(
 		subcommand = parsed.args[0] ?? "";
 	} catch {
 		return writeResult(await createHoboCli().run(args));
+	}
+	// Keys the owner keeps across runs (the retained Pulumi workspace's, the
+	// claim actions'), read from their secret store into this process's vault.
+	const keys = await loadOwnerKeys({
+		env: process.env,
+		cwd: workingDirOf(args, process.cwd()),
+		verb,
+		subcommand,
+	});
+	if (keys.kind === "refused") {
+		process.stderr.write(`hobo: ${keys.message} (${keys.code})\n`);
+		return 1;
 	}
 	// `hobo ci up|down|plan` converge the CI project through the Yard like any
 	// lifecycle, so only the relay/run subcommands take this shortcut.

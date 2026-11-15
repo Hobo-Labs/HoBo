@@ -442,7 +442,7 @@ describe("createDriftCommand", () => {
 				ok: false,
 				code: "HOBO_PULUMI_UNAVAILABLE",
 				data: { engineCode: "pulumi-state-passphrase-missing" },
-				remediation: [expect.stringContaining("PULUMI_CONFIG_PASSPHRASE")],
+				remediation: [expect.stringContaining("HOBO_PULUMI_STATE_PASSPHRASE")],
 			});
 		});
 	});

@@ -163,7 +163,7 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 						remediation:
 							error.code === PULUMI_STATE_PASSPHRASE_MISSING
 								? [
-										"Supply the original PULUMI_CONFIG_PASSPHRASE for this retained workspace.",
+										"Keep the passphrase this retained workspace was made with in your secret store as HOBO_PULUMI_STATE_PASSPHRASE; hobo reads it from there (PULUMI_CONFIG_PASSPHRASE in the environment is not read).",
 									]
 								: [
 										"Install the pinned pulumi CLI (or unset HOBO_PULUMI_LIVE to use the in-memory lane).",

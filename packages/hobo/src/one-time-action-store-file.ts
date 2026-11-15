@@ -28,16 +28,19 @@ import {
 	type RedeemOneTimeActionInput,
 } from "@hobo/claims";
 
+import { CLAIM_ACTION_KEY, ownerKeys } from "./owner-keys.js";
+
 // A one-time action that only exists in memory is a claim ceremony that cannot
 // survive the process that started it — and the ceremony is, by definition,
 // the step a human performs later. This is the durable store: sealed at rest
 // under a local key, single-use enforced by an atomic rename, and audited
 // without ever recording the bearer value.
 //
-// The key lives in HOBO_HOME because that is the same trust boundary the
-// Station's own material sits behind. It is not a secrets manager and does not
-// pretend to be one; a hosted control plane uses the Camp secrets port
-// instead.
+// The key is the owner's: kept in their secret store and read into this
+// process's trusted vault before the verb runs (`owner-keys.ts`), so it is on
+// no disk, and a destroyed machine loses no pending action's key. Without a
+// store, a key file in HOBO_HOME is the local fallback; a hosted control plane
+// uses the Camp secrets port instead.
 
 const ACTIONS_DIRECTORY = "claims/actions";
 const KEY_FILE = "claims/action-key";
@@ -131,8 +134,24 @@ function constantTimeEquals(left: string, right: string): boolean {
 }
 
 export interface FileOneTimeActionStoreOptions {
-	/** HOBO_HOME. Actions and the sealing key live beneath it. */
+	/** HOBO_HOME. Sealed actions live beneath it. */
 	readonly home: string;
+	/**
+	 * The sealing key (32 bytes, base64), from the owner's secret store
+	 * (`owner-keys.ts`, `HOBO_CLAIM_ACTION_KEY`). Without one, a key file under
+	 * HOBO_HOME is used: the local, store-less mode.
+	 */
+	readonly key?: string;
+}
+
+function parseKey(text: string): Buffer {
+	const key = Buffer.from(text.trim(), "base64");
+	if (key.length !== 32)
+		throw new ClaimError(
+			"ONE_TIME_ACTION_REPLAYED",
+			"the one-time-action key in the secret store is malformed; replace it only if you accept losing every pending claim action",
+		);
+	return key;
 }
 
 export function createFileOneTimeActionStore(
@@ -140,7 +159,8 @@ export function createFileOneTimeActionStore(
 ): OneTimeActionStore {
 	const directory = join(options.home, ACTIONS_DIRECTORY);
 	ensureDirectory(directory);
-	const key = loadKey(options.home);
+	const kept = options.key ?? ownerKeys.reveal(CLAIM_ACTION_KEY);
+	const key = kept !== undefined ? parseKey(kept) : loadKey(options.home);
 	const auditLog: OneTimeActionAudit[] = [];
 
 	const pathFor = (id: string) => join(directory, `${safeId(id)}.json`);
