@@ -15,8 +15,8 @@ import {
 } from "../src/owner-keys.js";
 
 // The owner's keys live in their secret store and reach the composed process
-// only through its trusted vault: made once, reused by every later run (on
-// any machine that signs in to the same store), never on disk.
+// only through its trusted vault: provisioned once and reused by later runs,
+// including on another machine that signs in to the same store.
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -60,10 +60,11 @@ describe("ownerKeysFor", () => {
 });
 
 describe("loadOwnerKeys", () => {
-	it("makes a key once, keeps it in the store, and the next run reads the same one", async () => {
+	it("loads the same pre-provisioned key on each machine", async () => {
 		const workdir = await mkdtemp(path.join(tmpdir(), "hobo-owner-keys-"));
 		directories.push(workdir);
 		const { port, open } = memoryStore();
+		await port.put(PULUMI_STATE_KEY, "owner-provisioned-passphrase");
 		const first = createTrustedVault();
 		const input = {
 			env: live(workdir),
@@ -77,13 +78,82 @@ describe("loadOwnerKeys", () => {
 			keys: [PULUMI_STATE_KEY],
 		});
 		const made = first.reveal(PULUMI_STATE_KEY);
-		expect(made).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+		expect(made).toBe("owner-provisioned-passphrase");
 		const stored = await port.access(PULUMI_STATE_KEY);
 		expect(stored.status === "ok" && stored.material).toBe(made);
 		// A new machine: a new vault, the same store, the same key.
 		const second = createTrustedVault();
 		await loadOwnerKeys({ ...input, vault: second });
 		expect(second.reveal(PULUMI_STATE_KEY)).toBe(made);
+	});
+
+	it("refuses concurrent initialization when the store has no atomic create", async () => {
+		const workdir = await mkdtemp(path.join(tmpdir(), "hobo-owner-keys-"));
+		directories.push(workdir);
+		const { port, open } = memoryStore();
+		const vaults = [createTrustedVault(), createTrustedVault()];
+		const outcomes = await Promise.all(
+			vaults.map((vault) =>
+				loadOwnerKeys({
+					env: live(workdir),
+					cwd: workdir,
+					verb: "up",
+					subcommand: "",
+					open,
+					vault,
+				}),
+			),
+		);
+		expect(outcomes).toEqual([
+			expect.objectContaining({
+				kind: "refused",
+				code: "HOBO_OWNER_KEY_MISSING",
+			}),
+			expect.objectContaining({
+				kind: "refused",
+				code: "HOBO_OWNER_KEY_MISSING",
+			}),
+		]);
+		expect(vaults.map((vault) => vault.reveal(PULUMI_STATE_KEY))).toEqual([
+			undefined,
+			undefined,
+		]);
+		expect((await port.access(PULUMI_STATE_KEY)).status).not.toBe("ok");
+	});
+
+	it("refuses instead of falling back when the configured store cannot open or read", async () => {
+		const workdir = await mkdtemp(path.join(tmpdir(), "hobo-owner-keys-"));
+		directories.push(workdir);
+		await mkdir(path.join(workdir, ".hobo"));
+		const { writeFile } = await import("node:fs/promises");
+		await writeFile(path.join(workdir, ".hobo", "secret-store.json"), "{}");
+		const input = {
+			env: {},
+			cwd: workdir,
+			verb: "claim",
+			subcommand: "open",
+			vault: createTrustedVault(),
+		};
+		for (const open of [
+			async () => undefined,
+			async () => {
+				throw new Error("sensitive detail");
+			},
+		]) {
+			const outcome = await loadOwnerKeys({ ...input, open });
+			expect(outcome).toMatchObject({
+				kind: "refused",
+				code: "HOBO_OWNER_STORE_UNAVAILABLE",
+			});
+			expect(JSON.stringify(outcome)).not.toContain("sensitive detail");
+		}
+		const { store } = memoryStore();
+		store.port.access = async () => {
+			throw new Error("sensitive detail");
+		};
+		expect(
+			await loadOwnerKeys({ ...input, open: async () => store }),
+		).toMatchObject({ kind: "refused", code: "HOBO_OWNER_STORE_UNAVAILABLE" });
 	});
 
 	it("refuses a retained workspace with state whose key the store does not hold", async () => {
@@ -127,7 +197,8 @@ describe("the claim action store's key", () => {
 		const home = await mkdtemp(path.join(tmpdir(), "hobo-owner-claims-"));
 		directories.push(home);
 		const vault = createTrustedVault();
-		const { open } = memoryStore();
+		const { open, port } = memoryStore();
+		await port.put(CLAIM_ACTION_KEY, Buffer.alloc(32, 7).toString("base64"));
 		await loadOwnerKeys({
 			env: {},
 			cwd: home,

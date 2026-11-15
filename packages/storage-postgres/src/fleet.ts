@@ -38,6 +38,7 @@
  * on the new writer.
  */
 import {
+	assignmentKey,
 	type ContinuityFleetPlan,
 	continuityBudgetCheck,
 	type FleetBudgetCheck,
@@ -61,10 +62,12 @@ import type {
 	Subscription,
 } from "@hobo/core";
 import {
+	FLEET_LOCK_CLASS,
 	type FleetBackend,
 	type FleetReconcileReport,
 	type FleetSchemaRole,
 	parseFleetLayout,
+	readAssignmentRows,
 	reconcileFleet,
 	type SqlExecutor,
 	type SqlSession,
@@ -145,8 +148,8 @@ export interface PostgresFleetEventStore extends DurableEventStore {
 	backups(): Promise<readonly FleetBackup[]>;
 	/**
 	 * Copy a backup (the newest by default) into a member's journal. The
-	 * member the register names writer is refused unless its journal is empty
-	 * (a replaced database): otherwise that would overwrite writes.
+	 * member the register names writer is refused; restore to a standby first
+	 * so a concurrent write or promotion cannot be overwritten.
 	 */
 	restore(input: {
 		readonly into: string;
@@ -485,20 +488,33 @@ export function createPostgresFleetEventStore(
 					`the fleet's register is ${current.status}; restore needs a decided writer`,
 				);
 			await storeFor(into).ready();
-			// The writer only when it is a replaced, empty database: anything else
-			// would overwrite writes the backup does not hold.
-			if (current.assignment.active === into) {
-				const held = await target.executor.query(
-					`SELECT EXISTS (SELECT 1 FROM ${quoteSchema(schemaName)}.events)::text AS any`,
-				);
-				if (held.rows[0]?.any !== "false")
-					throw unavailable(
-						`${into} is the fleet's writer and holds events; restore into a standby, then move to it`,
-					);
-			}
 			return backups.restore({
 				target: target.executor,
 				...(name !== undefined ? { name } : undefined),
+				admit: async (to) => {
+					// Replication and assignment acceptance use this same advisory
+					// lock. Hold it for the entire restore, not just the check.
+					const lock = await to.query(
+						"SELECT pg_try_advisory_xact_lock($1::int, hashtext($2))::text AS locked",
+						[FLEET_LOCK_CLASS, layout.assignmentTable],
+					);
+					if (lock.rows[0]?.locked !== "true")
+						throw unavailable(`${into} is busy with another fleet operation`);
+					// All fleet writes take SHARE on this table before touching the
+					// journal. EXCLUSIVE waits for them and prevents new writes or
+					// a local promotion until the restore commits.
+					await to.query(`LOCK TABLE ${registerTable} IN EXCLUSIVE MODE`);
+					const local = (await readAssignmentRows(to, layout, 1)).at(-1);
+					if (
+						local === undefined ||
+						assignmentKey(local) !== assignmentKey(current.assignment)
+					)
+						throw unavailable(`${into}'s assignment changed; retry restore`);
+					if (local.active === into)
+						throw unavailable(
+							`${into} is the fleet's writer; restore into a standby, then move to it`,
+						);
+				},
 			});
 		},
 		async append(

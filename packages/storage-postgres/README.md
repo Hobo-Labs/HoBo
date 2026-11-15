@@ -118,8 +118,8 @@ Member names do not verify independent vendors.
   (`<schema>_b<taken-at-ms>`), catalogued in the same transaction, so a backup
   is whole or absent; the oldest beyond `backupsKept` are dropped after a new
   one commits. The schedule is the catalog, so whichever process ticks takes
-  the next one. `restore({ into, name? })` copies one back, into a standby, or
-  into the writer only when its journal is empty (a replaced database). With
+  the next one. `restore({ into, name? })` copies one back into a standby;
+  the target is fenced against writes and promotion throughout the copy. With
   nowhere to keep backups, the fleet takes none and `backupsPlaced()` is false,
   which `continuityShortfalls` reports.
 - Per-member cost models (`models`, `FleetFinancialModel`) keep a move off a

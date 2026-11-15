@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -6,6 +5,7 @@ import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
 	type OpenedSecretStore,
 	ownerStore,
+	SECRET_STORE_LOCATOR_FILE,
 	withoutSecretEnv,
 } from "@hobo/hobo-ci";
 
@@ -21,10 +21,9 @@ import {
 //                                 on every run.
 //   HOBO_CLAIM_ACTION_KEY         seals pending claim actions under HOBO_HOME.
 //
-// A key the store does not hold yet is made here (32 random bytes) and put in
-// the store before it is used, so it is never only in memory. The one refusal:
-// a retained Pulumi workspace that already has state but no key in the store,
-// whose original passphrase only the owner knows.
+// A missing key must be provisioned once by the owner. SecretsPort has no
+// atomic create, so generating and putting a key here could race another
+// machine and make its state or pending claim actions unreadable.
 
 // public-contract: the store entry an owner keeps the retained Pulumi passphrase in.
 export const PULUMI_STATE_KEY = "HOBO_PULUMI_STATE_PASSPHRASE";
@@ -39,7 +38,10 @@ export type OwnerKeysOutcome =
 	| { readonly kind: "no-store" }
 	| {
 			readonly kind: "refused";
-			readonly code: "HOBO_PULUMI_STATE_KEY_MISSING";
+			readonly code:
+				| "HOBO_PULUMI_STATE_KEY_MISSING"
+				| "HOBO_OWNER_KEY_MISSING"
+				| "HOBO_OWNER_STORE_UNAVAILABLE";
 			readonly message: string;
 	  };
 
@@ -67,8 +69,6 @@ async function openOwnerStore(
 			cwd: input.cwd,
 		});
 		return owner.opened;
-	} catch {
-		return undefined;
 	} finally {
 		signIn.clear();
 	}
@@ -89,42 +89,64 @@ export function ownerKeysFor(
 	return keys;
 }
 
-/** Read (or make and keep) the owner's keys into the vault. */
+/** Read the owner's pre-provisioned keys into the vault. */
 export async function loadOwnerKeys(
 	input: LoadOwnerKeysInput,
 ): Promise<OwnerKeysOutcome> {
 	const vault = input.vault ?? ownerKeys;
 	const keys = ownerKeysFor(input);
 	if (keys.length === 0) return { kind: "loaded", keys: [] };
-	const store = await openOwnerStore(input);
-	if (store === undefined) return { kind: "no-store" };
+	const unavailable = (): OwnerKeysOutcome => {
+		vault.clear();
+		return {
+			kind: "refused",
+			code: "HOBO_OWNER_STORE_UNAVAILABLE",
+			message:
+				"Cannot open or read the owner's secret store; reconnect it before using retained state or claim actions.",
+		};
+	};
+	let store: OpenedSecretStore | undefined;
+	try {
+		store = await openOwnerStore(input);
+	} catch {
+		return unavailable();
+	}
+	if (store === undefined) {
+		if (
+			existsSync(path.join(input.cwd, SECRET_STORE_LOCATOR_FILE)) ||
+			input.env.HOBO_SECRET_STORE
+		)
+			return unavailable();
+		return { kind: "no-store" };
+	}
 	const loaded: string[] = [];
 	for (const name of keys) {
 		const read = await store.port.access(name).catch(() => undefined);
-		if (read === undefined) return { kind: "no-store" };
+		if (read === undefined) return unavailable();
 		if (read.status === "ok" && read.material) {
 			vault.put(name, read.material);
 			loaded.push(name);
 			continue;
 		}
 		if (read.status === "ok" || read.code !== "secret-not-found")
-			return { kind: "no-store" };
+			return unavailable();
 		if (
 			name === PULUMI_STATE_KEY &&
 			existsSync(path.join(String(input.env.HOBO_PULUMI_WORKDIR), "state"))
-		)
+		) {
+			vault.clear();
 			return {
 				kind: "refused",
 				code: "HOBO_PULUMI_STATE_KEY_MISSING",
 				message: `The retained Pulumi workspace has state, and ${store.id} holds no ${PULUMI_STATE_KEY}. Put the passphrase that workspace was made with in ${store.reference(PULUMI_STATE_KEY)}, then run again.`,
 			};
-		const made =
-			name === CLAIM_ACTION_KEY
-				? randomBytes(32).toString("base64")
-				: randomBytes(32).toString("base64url");
-		await store.port.put(name, made);
-		vault.put(name, made);
-		loaded.push(name);
+		}
+		vault.clear();
+		return {
+			kind: "refused",
+			code: "HOBO_OWNER_KEY_MISSING",
+			message: `Provision ${store.reference(name)} once in the owner's secret store before retrying. If this key already protects state or pending claims, use the original key.`,
+		};
 	}
 	return { kind: "loaded", keys: loaded };
 }

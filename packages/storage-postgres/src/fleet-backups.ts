@@ -58,6 +58,8 @@ export interface FleetBackups {
 	restore(input: {
 		readonly target: SqlExecutor;
 		readonly name?: string;
+		/** Fence and admit the target inside the copy's transaction. */
+		readonly admit: (target: SqlSession) => Promise<void>;
 	}): Promise<FleetBackup>;
 }
 
@@ -197,7 +199,7 @@ export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
 				};
 			}
 		},
-		async restore({ target, name }) {
+		async restore({ target, name, admit }) {
 			const held = await list();
 			const chosen =
 				name === undefined
@@ -216,7 +218,7 @@ export function createFleetBackups(options: FleetBackupsOptions): FleetBackups {
 					source: options.executor(pool),
 					target,
 					layout: options.layout,
-					admit: async () => {},
+					admit,
 					record: async () => undefined,
 				});
 			} finally {

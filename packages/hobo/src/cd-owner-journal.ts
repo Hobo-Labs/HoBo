@@ -51,11 +51,12 @@ export async function withOwnerJournalFleet(
 						})
 					).opened;
 	} catch {
-		store = undefined;
+		throw new Error("Cannot open the owner's secret store for the CD journal.");
 	} finally {
 		signIn.clear();
 	}
-	if (store === undefined) return { env };
+	if (store === undefined)
+		throw new Error("Cannot open the owner's secret store for the CD journal.");
 	const fleet = await journalFleetRuntime(store);
 	if (Object.keys(fleet.env).length === 0) return { env };
 	return { env: { ...env, ...fleet.env }, readSecret: fleet.readSecret };

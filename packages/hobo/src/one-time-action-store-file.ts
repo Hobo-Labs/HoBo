@@ -161,6 +161,18 @@ export function createFileOneTimeActionStore(
 	ensureDirectory(directory);
 	const kept = options.key ?? ownerKeys.reveal(CLAIM_ACTION_KEY);
 	const key = kept !== undefined ? parseKey(kept) : loadKey(options.home);
+	const localKeyFile = join(options.home, KEY_FILE);
+	if (kept !== undefined && existsSync(localKeyFile)) {
+		const localKey = Buffer.from(
+			readFileSync(localKeyFile, "utf8").trim(),
+			"base64",
+		);
+		if (localKey.length !== 32 || !timingSafeEqual(key, localKey))
+			throw new ClaimError(
+				"ONE_TIME_ACTION_REPLAYED",
+				"the secret-store key does not match the existing local key; keep the original key to preserve pending claim actions",
+			);
+	}
 	const auditLog: OneTimeActionAudit[] = [];
 
 	const pathFor = (id: string) => join(directory, `${safeId(id)}.json`);
@@ -254,8 +266,24 @@ export function createFileOneTimeActionStore(
 				throw deny();
 			}
 
-			// Claim the redemption before decrypting: the rename is the atomic
-			// single-use gate, so two concurrent redemptions cannot both win.
+			// A missing or changed key must not consume a still-recoverable action.
+			let value: string;
+			try {
+				const decipher = createDecipheriv(
+					"aes-256-gcm",
+					key,
+					Buffer.from(record.iv, "base64"),
+				);
+				decipher.setAuthTag(Buffer.from(record.tag, "base64"));
+				value = Buffer.concat([
+					decipher.update(Buffer.from(record.ciphertext, "base64")),
+					decipher.final(),
+				]).toString("utf8");
+			} catch {
+				throw deny();
+			}
+			// The rename is the atomic single-use gate. Decrypt first, but only
+			// return the value after winning the rename against other redeemers.
 			if (record.singleUse) {
 				try {
 					renameSync(path, `${path}${REDEEMED_SUFFIX}`);
@@ -268,16 +296,6 @@ export function createFileOneTimeActionStore(
 				}
 			}
 
-			const decipher = createDecipheriv(
-				"aes-256-gcm",
-				key,
-				Buffer.from(record.iv, "base64"),
-			);
-			decipher.setAuthTag(Buffer.from(record.tag, "base64"));
-			const value = Buffer.concat([
-				decipher.update(Buffer.from(record.ciphertext, "base64")),
-				decipher.final(),
-			]).toString("utf8");
 			auditLog.push({ id: input.id, outcome: "redeemed", at: input.now });
 			return { id: input.id, value };
 		},

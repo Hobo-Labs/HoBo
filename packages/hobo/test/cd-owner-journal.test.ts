@@ -64,4 +64,17 @@ describe("withOwnerJournalFleet", () => {
 		// No committed locator in the directory: the store is not opened.
 		expect(await withOwnerJournalFleet({}, tmpdir())).toEqual({ env: {} });
 	});
+
+	it("refuses a configured store that cannot be opened instead of starting a different journal", async () => {
+		for (const open of [
+			async () => undefined,
+			async () => {
+				throw new Error("private sign-in detail");
+			},
+		]) {
+			await expect(withOwnerJournalFleet({}, tmpdir(), open)).rejects.toThrow(
+				/cannot open the owner's secret store/i,
+			);
+		}
+	});
 });

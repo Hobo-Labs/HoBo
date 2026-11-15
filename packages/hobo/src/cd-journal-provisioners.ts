@@ -1,8 +1,8 @@
 import type { JournalMemberProvisioner } from "@hobo/hobo-cd";
 import {
 	createFetchTransport,
-	createInMemoryIdempotencyStore,
 	createNeonClient,
+	type IdempotencyStore,
 } from "@hobo/provider-neon";
 
 // The databases `hobo cd up` creates for the CD journal's fleet.
@@ -16,19 +16,31 @@ import {
 // claim link is kept in the owner's store, and claiming keeps the connection
 // string working.
 
+/** An owner-scoped, durable private store with atomic claim. */
+type DurableIdempotencyStore = IdempotencyStore & {
+	readonly durability: "durable";
+};
+
 /** Neon Claimable Postgres as a journal member provisioner. */
 export function neonJournalProvisioner(
 	fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+	store?: DurableIdempotencyStore,
 ): JournalMemberProvisioner {
-	const client = createNeonClient({
-		transport: createFetchTransport({ fetchImpl }),
-		// One run's retries; across runs the store's entries are the record.
-		store: createInMemoryIdempotencyStore(),
-		clock: () => Date.now(),
-	});
 	return {
 		plan: "neon-claimable",
 		async create({ idempotencyKey }) {
+			// Neon has no server-side idempotency. An in-memory claim cannot
+			// prevent a second process or a retry after a crash from creating
+			// another anonymous database and losing the first credential.
+			if (store?.durability !== "durable")
+				throw new Error(
+					"Cannot provision the CD journal until a durable, atomic, owner-scoped idempotency store is available.",
+				);
+			const client = createNeonClient({
+				transport: createFetchTransport({ fetchImpl }),
+				store,
+				clock: () => Date.now(),
+			});
 			const { response } = await client.createDatabase({
 				ref: "hobo-cd",
 				idempotencyKey,
