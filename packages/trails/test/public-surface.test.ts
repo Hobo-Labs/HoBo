@@ -11,6 +11,10 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = join(packageRoot, "dist");
 
 describe("Trails public surface is sealed", () => {
+	it("does not expose a receiver before its native Camp lock exists", async () => {
+		const api = await import("../dist/index.js");
+		expect("createDurableHandoverRouter" in api).toBe(false);
+	}, 30_000);
 	it("dist declarations import no @hobo/* or other external packages", () => {
 		const files = readdirSync(distDir).filter((f) => f.endsWith(".d.ts"));
 		expect(files.length).toBeGreaterThan(0);
