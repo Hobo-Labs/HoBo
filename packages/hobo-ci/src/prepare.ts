@@ -144,14 +144,43 @@ export async function runPage(
 	}
 }
 
+/**
+ * The relay deploys to Vercel. `hobo cd up` connects HoBo's Vercel account and
+ * keeps the access token in the owner's store; `hobo ci up` reads it into the
+ * run's vault for its deploy (never an environment variable). Absent, the
+ * deploy refuses and points at `hobo cd up`.
+ */
+// public-contract: the store entries hobo cd up keeps the Vercel connection in.
+export const VERCEL_DEPLOY_ENTRIES = Object.freeze({
+	token: "HOBO_CD_VERCEL_TOKEN",
+	team: "HOBO_CD_VERCEL_TEAM_ID",
+});
+
+async function loadDeployCredentials(
+	store: OpenedSecretStore,
+	vault: TrustedVault,
+): Promise<void> {
+	const read = async (entry: string) => {
+		const result = await store.port.access(entry).catch(() => undefined);
+		return result?.status === "ok" && result.material ? result.material : undefined;
+	};
+	const token = await read(VERCEL_DEPLOY_ENTRIES.token);
+	if (token !== undefined) vault.put("VERCEL_TOKEN", token);
+	const team = await read(VERCEL_DEPLOY_ENTRIES.team);
+	if (team !== undefined) vault.put("VERCEL_TEAM_ID", team);
+}
+
 /** Connect GitHub for `hobo ci up` (or confirm it is already connected). */
 export async function prepareGithubConnection(
 	input: PrepareInput,
 	deps: PrepareGithubDeps = {},
 ): Promise<PrepareOutcome> {
 	const vault = scopeRunVault(deps.vault ?? createTrustedVault());
+	// What the convergence needs, and nothing else: the relay deploy's Vercel
+	// connection. The store sign-in stays in `vault` and ends with prepare.
+	const handoff = createTrustedVault();
 	try {
-		return await prepareGithubWithVault(input, { ...deps, vault });
+		return await prepareGithubWithVault(input, { ...deps, vault, handoff });
 	} finally {
 		// GitHub's credentials are deposited in the store during prepare; the
 		// subsequent convergence does not need the store sign-in.
@@ -161,8 +190,12 @@ export async function prepareGithubConnection(
 
 async function prepareGithubWithVault(
 	input: PrepareInput,
-	deps: PrepareGithubDeps & { readonly vault: TrustedVault },
+	deps: PrepareGithubDeps & {
+		readonly vault: TrustedVault;
+		readonly handoff: TrustedVault;
+	},
 ): Promise<PrepareOutcome> {
+	const handoff = deps.handoff;
 	const env = deps.env ?? process.env;
 	const configuredHost = env.HOBO_CI_APP_HOST;
 	if (
@@ -230,9 +263,11 @@ async function prepareGithubWithVault(
 			],
 		);
 	}
-	if (owner.opened !== undefined && connected)
+	if (owner.opened !== undefined && connected) {
+		await loadDeployCredentials(owner.opened, handoff);
 		return {
 			kind: "ready",
+			credentials: handoff,
 			steps: [
 				{
 					id: "github-app",
@@ -241,6 +276,7 @@ async function prepareGithubWithVault(
 				},
 			],
 		};
+	}
 	if (input.whatIf)
 		return {
 			kind: "ready",
@@ -266,6 +302,7 @@ async function prepareGithubWithVault(
 		);
 
 	let page: ConnectPage | undefined;
+	let signedInStore: OpenedSecretStore | undefined;
 	let github: ReturnType<typeof createGithubConnectFlow> | undefined;
 
 	// The App flow, already in its store: straight to "Create the App".
@@ -306,6 +343,7 @@ async function prepareGithubWithVault(
 		reason:
 			"hobo ci up keeps the GitHub App's credentials, and what you tell it here, in your secret store.",
 		async proceed(store) {
+			signedInStore = store;
 			// Signed in: a store that holds the App needs nothing more.
 			try {
 				if (await githubAppConnected(store, expectedFor(store)))
@@ -397,8 +435,11 @@ async function prepareGithubWithVault(
 			step.kind === "failed" ? step.message : "GitHub was not connected.",
 			step.kind === "failed" ? step.remediation : [],
 		);
+	if (signedInStore !== undefined)
+		await loadDeployCredentials(signedInStore, handoff);
 	return {
 		kind: "ready",
+		credentials: handoff,
 		steps: [
 			{
 				id: "github-app",

@@ -76,6 +76,18 @@ unimplemented host is refused before opening the store. If a host cannot
 serve the owner's kind, setup names a compatible host instead of creating an
 App that would be refused.
 
+## Where `hobo ci up` places the relay
+
+`hobo ci plan` and `hobo ci up --what-if` plan against the relay's own Yards
+(`packages/ci-vercel/deploy/yard.ts`): the Vercel project `hobo-ci` (Functions,
+Queues, Cron Jobs, the Marketplace cache) and the Yards its junction joins (the
+config service's secret projection, the non-Vercel caches). Every relay resource
+places there, whatever providers this machine has registered. `hobo ci up`
+delivers the current branch to the project's preview, as `hobo ci deploy` does,
+with the Vercel connection `hobo cd up` keeps in your secret store; the prepare
+step hands only that connection on, in a trusted vault, and ends the store
+sign-in. Production is `hobo ci deploy --target production --sha <commit>`.
+
 ## Continuity
 
 The relay this project deploys declares a `continuity` policy on every

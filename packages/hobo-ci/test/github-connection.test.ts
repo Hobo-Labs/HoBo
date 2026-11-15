@@ -867,6 +867,27 @@ describe("prepareGithubConnection", () => {
 		expect(vault.names()).toEqual([]);
 	});
 
+	it("hands the Vercel connection hobo cd up keeps in the store to the relay deploy", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", "vercel-token");
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: ENV,
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
+		});
+		// Only the deploy's connection is handed on; the store sign-in ended with prepare.
+		expect(outcome.kind === "ready" && outcome.credentials?.names()).toEqual([
+			"VERCEL_TOKEN",
+		]);
+		expect(outcome.kind === "ready" && outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(
+			"vercel-token",
+		);
+	});
+
 	it("ignores secrets in the environment, and says so", async () => {
 		const store = memoryStore();
 		await seedConnection(store);

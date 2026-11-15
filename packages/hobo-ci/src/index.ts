@@ -35,6 +35,7 @@ export {
 	type PrepareGithubDeps,
 	prepareGithubConnection,
 	runPage,
+	VERCEL_DEPLOY_ENTRIES,
 	workloadOidcOf,
 } from "./prepare.js";
 export { ciProjectDir } from "./project.js";
