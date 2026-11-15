@@ -7,6 +7,7 @@ import type {
 import { ResolverError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
+	CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID,
 	CLOUDFLARE_D1_PRODUCT_ID,
 	CLOUDFLARE_KV_PRODUCT_ID,
 	CLOUDFLARE_PAGES_PRODUCT_ID,
@@ -19,7 +20,12 @@ import {
 	guardedCloudflareTransport,
 	redactCloudflareText,
 } from "../src/index.js";
-import type { JsonValue } from "../src/json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+	parseJsonValue,
+} from "../src/json.js";
 
 const ACCOUNT_ID = "acct-1234";
 const CREDENTIAL_REF = "env://CLOUDFLARE_API_TOKEN";
@@ -129,6 +135,7 @@ const SLOTS = {
 	[CLOUDFLARE_QUEUES_PRODUCT_ID]: "queue",
 	[CLOUDFLARE_WORKERS_PRODUCT_ID]: "service",
 	[CLOUDFLARE_PAGES_PRODUCT_ID]: "web",
+	[CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID]: "schedule",
 } as const satisfies Record<string, ResolveRequest["ref"]["slot"]>;
 
 function request(
@@ -1222,5 +1229,87 @@ describe("Workers native lifecycle and serving proof", () => {
 			).rejects.toThrow();
 			expect(fake.calls).toHaveLength(0);
 		}
+	});
+});
+
+describe("Cron Triggers resolver", () => {
+	const SCHEDULES = `/client/v4/accounts/${ACCOUNT_ID}/workers/scripts/api/schedules`;
+	const desired = { target: "api", cron: "*/15 * * * *" };
+
+	/** A Worker `api` whose schedule list the fake keeps. */
+	function worker(initial: readonly string[] | undefined) {
+		let crons = initial === undefined ? undefined : [...initial];
+		const fake = fakeTransport((call) => {
+			if (call.path !== SCHEDULES) return missing();
+			if (crons === undefined) return missing();
+			if (call.method === "PUT") {
+				const written = parseJsonValue(call.body ?? "[]");
+				crons = Array.isArray(written)
+					? written.flatMap((entry) =>
+							isJsonObject(entry) && isJsonString(entry.cron)
+								? [entry.cron]
+								: [],
+						)
+					: [];
+			}
+			return ok({ schedules: crons.map((cron) => ({ cron })) });
+		});
+		return { fake, crons: () => crons };
+	}
+
+	it("adds its cron to the Worker, keeping the triggers already there, once", async () => {
+		const { fake, crons } = worker(["0 0 * * *"]);
+		const resolver = resolverFor(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID);
+		const first = await resolver.reconcile(
+			request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
+				logicalId: "repair",
+				desired,
+			}),
+			fake.transport,
+		);
+		expect(first.action).toBe("create");
+		expect(first.physicalId).toBe("api:*/15 * * * *");
+		expect(crons()).toEqual(["0 0 * * *", "*/15 * * * *"]);
+		const second = await resolver.reconcile(
+			request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
+				logicalId: "repair",
+				physicalId: first.physicalId,
+				desired,
+			}),
+			fake.transport,
+		);
+		expect(second.action).toBe("noop");
+		expect(fake.countOf("PUT", SCHEDULES)).toBe(1);
+		await resolver.delete(
+			request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, {
+				logicalId: "repair",
+				desired,
+			}),
+			fake.transport,
+		);
+		expect(crons()).toEqual(["0 0 * * *"]);
+	});
+
+	it("refuses without a Worker, a cadence, or a deployed Worker", async () => {
+		const resolver = resolverFor(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID);
+		const { fake } = worker(undefined);
+		for (const partial of [{ cron: "*/15 * * * *" }, { target: "api" }])
+			expect(
+				await refusalCode(async () => {
+					await resolver.reconcile(
+						request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, { desired: partial }),
+						fake.transport,
+					);
+				}),
+			).toBe("RESOLVER_PRODUCT_UNSUPPORTED");
+		expect(
+			await refusalCode(async () => {
+				await resolver.reconcile(
+					request(CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, { desired }),
+					fake.transport,
+				);
+			}),
+		).toBe("RESOLVER_PROVIDER_REJECTED");
+		expect(fake.countOf("PUT", SCHEDULES)).toBe(0);
 	});
 });

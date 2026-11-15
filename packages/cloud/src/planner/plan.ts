@@ -81,6 +81,27 @@ export interface PlanBindingAuthority {
 	readonly consumableBindingProfiles?: readonly string[];
 }
 
+
+/**
+ * A node's realization parameters: what its Yard binding row set, plus, for a
+ * schedule, its declared cadence (`cron`) and the one resource it runs
+ * (`target`). A provider runs the cadence its own way (a Cron Trigger on a
+ * Worker, a Vercel schedule on a queue topic); the declaration wins over a
+ * row that sets the same key.
+ */
+function realizationParametersOf(
+	intent: ResourceIntent,
+	fromRow: JsonObject | undefined,
+): JsonObject | undefined {
+	if (intent.cadence === undefined) return fromRow;
+	const target = intent.deps.length === 1 ? intent.deps[0] : undefined;
+	return {
+		...fromRow,
+		cron: intent.cadence,
+		...(target !== undefined ? { target } : undefined),
+	};
+}
+
 /** What a Yard-bound match contributes to both the decision and the plan node. */
 type BoundOffering = {
 	readonly productId?: string;
@@ -413,8 +434,14 @@ export function plan(
 			...(bound?.productId !== undefined
 				? { productId: bound.productId }
 				: undefined),
-			...(bound?.realizationParameters !== undefined
-				? { realizationParameters: bound.realizationParameters }
+			...(realizationParametersOf(intent, bound?.realizationParameters) !==
+			undefined
+				? {
+						realizationParameters: realizationParametersOf(
+							intent,
+							bound?.realizationParameters,
+						),
+					}
 				: undefined),
 			...(bound?.nonPortableRows !== undefined
 				? { nonPortableRows: bound.nonPortableRows }

@@ -52,12 +52,13 @@ realizes into Pulumi Cloudflare v6 resources, and refuses any other class with
 
 A cron trigger is refused rather than created with a guessed cadence or
 target when it has no `cron` option, or when its one dependency is not a typed
-Workers script. The realizer (`realizeResourcePlans` in
-`@hobo/provider-cloudflare`) records each binding's `resourceType` from its
-sibling plans; an untyped binding, or one on a queue, is not a Worker. The CI
-relay's repair schedule depends on the queue `hobo-ci` and declares its
-cadence outside the Bindle, so it does not deploy through this lane until its
-Worker and cadence are wired.
+Workers script. The cadence comes from the Bindle's `cadence` trait: the
+planner puts it in the node's realization parameters, and the Cloudflare
+realizer turns it into the `cron` option. The realizer (`realizeResourcePlans`
+in `@hobo/provider-cloudflare`) records each binding's `resourceType` from its
+sibling plans; an untyped binding, or one on a queue, is not a Worker. A
+schedule on a queue, like the CI relay's repair schedule, is a Vercel schedule
+(`vercel.json`), never a Cron Trigger.
 
 ### State secrets
 

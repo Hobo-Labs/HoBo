@@ -213,6 +213,11 @@ export const capability = Object.freeze({
 		/** A WebSocket connection. */
 		websocket: "realtime.websocket/v1",
 	}),
+	/** Running something on a clock: a queue message or an invocation. */
+	schedule: Object.freeze({
+		/** A five-field cron expression, run at least once per tick. */
+		cron: "schedule.cron/v1",
+	}),
 } as const);
 
 /** The profile ids a given slot may hold. */

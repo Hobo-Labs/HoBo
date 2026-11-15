@@ -1,20 +1,24 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
 	type CommandModule,
 	type CommandResult,
+	compileProjectManifest,
 	createPlanCommand,
 	type YardRuntime,
 } from "@hobo/cli";
-import { createRegistryFromProviders } from "@hobo/cloud";
+import { createRegistryFromProviders, lowerManifest } from "@hobo/cloud";
 import type { TrustedVault } from "@hobo/core";
 import { withoutSecretEnv } from "@hobo/hobo-ci";
+import { vercelPlatformDrift } from "@hobo/provider-vercel";
 
 import { relayYardRegistryProvider } from "./ci-relay-delivery.js";
 import { runCiRelayDeploy } from "./ci-relay-deploy.js";
 import { loadRelayJoinedYards, loadRelayYard } from "./ci-relay-yard.js";
+import { parseJsonValue } from "./json.js";
 
 // `hobo ci up|plan` place the CI project through the relay's own Yards
 // (`packages/ci-vercel/deploy/yard.ts`): the Vercel Yard that runs the relay as
@@ -109,6 +113,23 @@ function gitHead(
 	);
 }
 
+/**
+ * How the relay's vercel.json differs from its plan: the Bindle lowered to
+ * intents (queues, and the schedule with its cadence), checked against the
+ * committed platform configuration (`vercelPlatformDrift`).
+ */
+export async function relayPlatformDrift(
+	relayDir: string,
+	/** Test seam: the platform configuration's text; the committed file by default. */
+	readConfig: () => Promise<string> = () =>
+		readFile(path.join(relayDir, "vercel.json"), "utf8"),
+): Promise<readonly string[]> {
+	const manifest = await compileProjectManifest(relayDir);
+	if (manifest === null) return ["the relay project has no loadable Bindle"];
+	const config = parseJsonValue(await readConfig());
+	return vercelPlatformDrift(config, lowerManifest(manifest));
+}
+
 export interface CiRelayUpDeps {
 	readonly deploy?: typeof runCiRelayDeploy;
 	readonly head?: typeof gitHead;
@@ -126,6 +147,17 @@ export function createCiRelayUpCommand(
 		async run(input) {
 			const relayDir = relayProjectDirFor(projectOf(input));
 			if (relayDir === undefined) return fallback.run(input);
+			// Vercel runs the relay's schedule and queues from vercel.json, so
+			// the deployment must hold what the plan says before it ships.
+			const drift = await relayPlatformDrift(relayDir);
+			if (drift.length > 0)
+				return refused(
+					"HOBO_CI_UP_PLATFORM_DRIFT",
+					`The relay's vercel.json does not hold what its plan asks: ${drift.join("; ")}.`,
+					[
+						"Update packages/ci-vercel/vercel.json to match the relay's Bindle (src/bindle.ts), or the Bindle to match it, then run hobo ci up again.",
+					],
+				);
 			if (!credentials.has("VERCEL_TOKEN"))
 				return refused(
 					"HOBO_CI_UP_VERCEL_NOT_CONNECTED",

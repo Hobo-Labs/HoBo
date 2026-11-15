@@ -13,6 +13,13 @@ import {
 } from "./json.js";
 
 // public-contract: capability-manifest bundle schema id (registry parity).
+
+/** The resolver product each published port is served by. */
+const PRODUCT_BY_PORT: ReadonlyMap<string, string> = new Map([
+	["compute", "cloudflare.workers/v1"],
+	["queue", "cloudflare.queues/v1"],
+	["schedule", "cloudflare.cron-triggers/v1"],
+]);
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
 // public-contract: capabilities document schema id.
 export const CAPABILITIES_SCHEMA = "hobo.capabilities/v1";
@@ -67,8 +74,9 @@ export function publishCapabilityManifest(
 			const mapping = EQUIVALENCE_CLASSES[port];
 			return {
 				port: mapping.port,
-				...(mapping.port === "compute"
-					? { productId: "cloudflare.workers/v1" }
+				// The product a resolver is keyed to, where one serves the port.
+				...(PRODUCT_BY_PORT.has(mapping.port)
+					? { productId: PRODUCT_BY_PORT.get(mapping.port) }
 					: undefined),
 				interface: `hobo:${mapping.port}/${mapping.resourceClass}`,
 				version: "0.1.0",

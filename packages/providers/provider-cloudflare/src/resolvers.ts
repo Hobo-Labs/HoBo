@@ -76,7 +76,7 @@ import {
 	type JsonValue,
 	parseJsonObject,
 } from "./json.js";
-import { d1, kv, pages, queues, r2, workers } from "./slots.js";
+import { cronTriggers, d1, kv, pages, queues, r2, workers } from "./slots.js";
 import {
 	CLOUDFLARE_MAX_RESPONSE_BYTES,
 	CLOUDFLARE_MAX_TIMEOUT_MS,
@@ -106,10 +106,15 @@ export const CLOUDFLARE_KV_PRODUCT_ID = productIdOf(kv(), "kv");
 export const CLOUDFLARE_QUEUES_PRODUCT_ID = productIdOf(queues(), "queues");
 export const CLOUDFLARE_WORKERS_PRODUCT_ID = productIdOf(workers(), "workers");
 export const CLOUDFLARE_PAGES_PRODUCT_ID = productIdOf(pages(), "pages");
+export const CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID = productIdOf(
+	cronTriggers(),
+	"cronTriggers",
+);
 
 /** Every product this module resolves, id-sorted for a deterministic registry. */
 export const CLOUDFLARE_RESOLVED_PRODUCT_IDS = Object.freeze(
 	[
+		CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID,
 		CLOUDFLARE_D1_PRODUCT_ID,
 		CLOUDFLARE_KV_PRODUCT_ID,
 		CLOUDFLARE_PAGES_PRODUCT_ID,
@@ -1147,6 +1152,127 @@ const QUEUES_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
 };
 
 // ---------------------------------------------------------------------------
+// Cron Triggers — /client/v4/accounts/{account_id}/workers/scripts/{script}/schedules
+// ---------------------------------------------------------------------------
+//
+// A Cron Trigger belongs to the Worker it runs: the plan names that Worker
+// (`desired.target`, the schedule's one dependency) and the cadence
+// (`desired.cron`, the Bindle's cadence trait). The schedules endpoint sets a
+// script's whole list, so a reconcile reads it, adds this cron if missing, and
+// keeps every other trigger the script has; a delete removes only this one.
+
+const CRON_FIELDS = /^\S+(\s+\S+){4}$/u;
+
+/** The Worker a Cron Trigger runs and its five-field cron. */
+interface CronTarget {
+	readonly script: string;
+	readonly cron: string;
+}
+
+function cronTarget(context: CloudflareResolverContext): CronTarget {
+	const script = optionalString(context.desired, "target");
+	const cron = optionalString(context.desired, "cron");
+	if (script === undefined || script.trim().length === 0)
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			`${CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID}: schedule ${context.name} names no Worker to run (desired.target); a Cron Trigger runs a Worker's scheduled handler, so it needs one`,
+		);
+	if (cron === undefined || !CRON_FIELDS.test(cron.trim()))
+		throw new ResolverError(
+			"RESOLVER_PRODUCT_UNSUPPORTED",
+			`${CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID}: schedule ${context.name} has no five-field cron (desired.cron); declare it with the cadence trait`,
+		);
+	return { script, cron: cron.trim() };
+}
+
+function schedulesPath(context: CloudflareResolverContext, script: string) {
+	return `/accounts/${encodeURIComponent(context.accountId)}/workers/scripts/${encodeURIComponent(script)}/schedules`;
+}
+
+async function readSchedules(
+	context: CloudflareResolverContext,
+	script: string,
+): Promise<readonly string[] | undefined> {
+	const label = `cron triggers read ${script}`;
+	const response = await send(context.transport, context.token, {
+		method: "GET",
+		path: schedulesPath(context, script),
+	});
+	if (isNotFound(response)) return undefined;
+	const result = resultObject(parseEnvelope(response, label), label);
+	const schedules = result.schedules;
+	if (!Array.isArray(schedules))
+		throw new ResolverError(
+			"RESOLVER_OUTPUT_UNPARSEABLE",
+			`${label}: the answer has no schedules list`,
+		);
+	return schedules.flatMap((entry) => {
+		const cron = isJsonObject(entry)
+			? optionalString(entry, "cron")
+			: undefined;
+		return cron === undefined ? [] : [cron];
+	});
+}
+
+async function writeSchedules(
+	context: CloudflareResolverContext,
+	script: string,
+	crons: readonly string[],
+): Promise<void> {
+	const label = `cron triggers update ${script}`;
+	parseEnvelope(
+		await send(context.transport, context.token, {
+			method: "PUT",
+			path: schedulesPath(context, script),
+			json: crons.map((cron) => ({ cron })),
+		}),
+		label,
+	);
+}
+
+const CRON_TRIGGERS_SPEC: Omit<CloudflareResolverSpec, "productId"> = {
+	async read(context) {
+		const { script, cron } = cronTarget(context);
+		const current = await readSchedules(context, script);
+		if (current === undefined || !current.includes(cron)) return undefined;
+		return outcome(
+			settledAction(context),
+			`${script}:${cron}`,
+			{ script, cron },
+			[],
+		);
+	},
+	async reconcile(context) {
+		const { script, cron } = cronTarget(context);
+		const current = await readSchedules(context, script);
+		if (current === undefined)
+			throw new ResolverError(
+				"RESOLVER_PROVIDER_REJECTED",
+				`${CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID}: the Worker ${script} that schedule ${context.name} runs does not exist yet; deploy it first (the schedule depends on it)`,
+			);
+		if (current.includes(cron))
+			return outcome(
+				settledAction(context),
+				`${script}:${cron}`,
+				{ script, cron },
+				[],
+			);
+		await writeSchedules(context, script, [...current, cron]);
+		return outcome("create", `${script}:${cron}`, { script, cron }, []);
+	},
+	async remove(context) {
+		const { script, cron } = cronTarget(context);
+		const current = await readSchedules(context, script);
+		if (current === undefined || !current.includes(cron)) return;
+		await writeSchedules(
+			context,
+			script,
+			current.filter((entry) => entry !== cron),
+		);
+	},
+};
+
+// ---------------------------------------------------------------------------
 // Worker scripts — /client/v4/accounts/{account_id}/workers/scripts/{name}
 // ---------------------------------------------------------------------------
 
@@ -1698,6 +1824,7 @@ export function cloudflareResolvers(
 	options: CloudflareResolverOptions,
 ): readonly ResourceResolver[] {
 	const specs: readonly CloudflareResolverSpec[] = [
+		{ productId: CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID, ...CRON_TRIGGERS_SPEC },
 		{ productId: CLOUDFLARE_D1_PRODUCT_ID, ...D1_SPEC },
 		{ productId: CLOUDFLARE_KV_PRODUCT_ID, ...KV_SPEC },
 		{ productId: CLOUDFLARE_PAGES_PRODUCT_ID, ...PAGES_SPEC },

@@ -176,6 +176,14 @@ export {
 	readContinuity,
 } from "./continuity.js";
 export {
+	CADENCE_OPTION,
+	CadenceError,
+	type CadenceViolation,
+	cadence,
+	cadenceViolations,
+	readCadence,
+} from "./cadence.js";
+export {
 	isStatusPageAnnotation,
 	readStatusPageConfig,
 	STATUS_PAGE_OPTION,

@@ -6,6 +6,7 @@ import {
 	CLOUDFLARE_PROVIDER_TARGET,
 	type HelloBindlePlan,
 } from "./hello-bindle.js";
+import { CLOUDFLARE_PROVIDER_ID } from "./manifest.js";
 import {
 	CLOUDFLARE_IAC_PROVIDER,
 	IAC_PROGRAM_API_VERSION,
@@ -14,7 +15,7 @@ import {
 	type IacProgram,
 	type IacResource,
 } from "./iac-program.js";
-import type { JsonObject } from "./json.js";
+import { isJsonString, type JsonObject } from "./json.js";
 import type { ResourcePlan } from "./types.js";
 
 // A container/CI image the build machine produces for a realized resource
@@ -125,7 +126,15 @@ function buildResource(
 		port: plan.port,
 		providerService: mapping.providerService,
 		features: [...mapping.features],
-		options: mergeCloudflareOptions(plan.options),
+		options: {
+			...mergeCloudflareOptions(plan.options),
+			// A schedule's declared cadence (the Bindle's cadence trait, carried
+			// by the plan) is the Cron Trigger's `cron`.
+			...(plan.port === "schedule" &&
+			isJsonString(plan.realizationParameters?.cron)
+				? { cron: plan.realizationParameters.cron }
+				: undefined),
+		},
 		bindings,
 		...(plan.region === undefined ? undefined : { region: plan.region }),
 	};
@@ -188,6 +197,15 @@ export function realizeResourcePlan(plan: ResourcePlan): {
  * Realize a whole DeploymentPlan (multiple resources with bind edges) into one
  * multi-resource IacProgram whose bind references resolve across resources.
  */
+/**
+ * The ids a plan node names Cloudflare by: the planner records the registered
+ * provider (`@hobo/provider-cloudflare`), hand-built plans the short target.
+ */
+const CLOUDFLARE_PLAN_PROVIDERS: ReadonlySet<string> = new Set([
+	CLOUDFLARE_PROVIDER_TARGET,
+	CLOUDFLARE_PROVIDER_ID,
+]);
+
 export function realizeResourcePlans(
 	plans: ResourcePlan[],
 	options: { deploymentId?: string } = {},
@@ -197,7 +215,7 @@ export function realizeResourcePlans(
 	}
 	const classOf = new Map(
 		plans.flatMap((plan) =>
-			plan.provider === CLOUDFLARE_PROVIDER_TARGET &&
+			CLOUDFLARE_PLAN_PROVIDERS.has(plan.provider) &&
 			isRealizablePort(plan.port)
 				? [[plan.name, resolveEquivalence(plan.port).resourceClass] as const]
 				: [],
