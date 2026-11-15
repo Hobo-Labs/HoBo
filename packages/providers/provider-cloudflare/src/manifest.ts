@@ -98,11 +98,13 @@ export function publishCapabilityManifest(
 			"web/service": "cloudflare.workers.request",
 			kv: "cloudflare.kv.read",
 			objectStore: "cloudflare.r2.storage.gb-month",
+			schedule: "cloudflare.workers.cron-trigger",
 		}[port];
 		const unit = {
 			"web/service": "request",
 			kv: "operation",
 			objectStore: "GB-month",
+			schedule: "invocation",
 		}[port];
 		return {
 			port: mapping.port,

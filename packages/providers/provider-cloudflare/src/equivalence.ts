@@ -17,6 +17,14 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		providerService: "R2",
 		features: ["durable", "s3-compatible"],
 	},
+	// Cron Triggers: a cron expression on a Worker that runs its `scheduled`
+	// handler. Attached to the Worker it triggers; nothing else is provisioned.
+	schedule: {
+		port: "schedule",
+		resourceClass: "cloudflare:cron-trigger",
+		providerService: "Cron Triggers",
+		features: ["cron", "worker-trigger", "managed"],
+	},
 } as const);
 
 export type InitialCapabilityPort = keyof typeof EQUIVALENCE_CLASSES;
@@ -25,6 +33,7 @@ export const INITIAL_CAPABILITY_PORTS = Object.freeze([
 	"web/service",
 	"kv",
 	"objectStore",
+	"schedule",
 ] as const satisfies readonly InitialCapabilityPort[]);
 
 export function equivalenceForPort(port: InitialCapabilityPort) {

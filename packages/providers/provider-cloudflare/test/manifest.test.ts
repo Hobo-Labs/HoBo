@@ -22,13 +22,13 @@ describe("Capability Manifest publication (FR-031)", () => {
 		if (!isJsonArray(listed)) {
 			throw new Error("expected capabilities.capabilities to be an array");
 		}
-		assert.equal(listed.length, 3);
+		assert.equal(listed.length, 4);
 		assert.deepEqual(
 			listed
 				.map((entry) => (isJsonObject(entry) ? entry.port : undefined))
 				.filter(isJsonString)
 				.sort(),
-			["compute", "kv", "objectStore"],
+			["compute", "kv", "objectStore", "schedule"],
 		);
 		const compute = listed.find(
 			(entry) => isJsonObject(entry) && entry.port === "compute",
@@ -72,6 +72,7 @@ describe("CloudProvider.capabilityManifest() shape", () => {
 			"compute",
 			"kv",
 			"objectStore",
+			"schedule",
 		]);
 		assert.equal(
 			// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
@@ -86,8 +87,8 @@ describe("CloudProvider.capabilityManifest() shape", () => {
 	});
 });
 
-describe("Equivalence-class mappings (all three initial ports)", () => {
-	it("maps web/service, kv, and objectStore to Cloudflare resource classes", () => {
+describe("Equivalence-class mappings (all four initial ports)", () => {
+	it("maps web/service, kv, objectStore and schedule to Cloudflare resource classes", () => {
 		assert.equal(
 			equivalenceForPort("web/service").resourceClass,
 			"cloudflare:workers-script",
@@ -100,10 +101,15 @@ describe("Equivalence-class mappings (all three initial ports)", () => {
 			equivalenceForPort("objectStore").resourceClass,
 			"cloudflare:r2-bucket",
 		);
+		assert.equal(
+			equivalenceForPort("schedule").resourceClass,
+			"cloudflare:cron-trigger",
+		);
 		assert.deepEqual(INITIAL_CAPABILITY_PORTS, [
 			"web/service",
 			"kv",
 			"objectStore",
+			"schedule",
 		]);
 	});
 

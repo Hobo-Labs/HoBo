@@ -30,6 +30,7 @@ const PORT_TO_CLASS = {
 	compute: "web/service",
 	kv: "kv",
 	objectStore: "objectStore",
+	schedule: "schedule",
 } as const satisfies Record<string, InitialCapabilityPort>;
 
 export type RealizablePort = keyof typeof PORT_TO_CLASS;
@@ -45,6 +46,8 @@ function outputsForClass(resourceClass: string): readonly string[] {
 			return ["namespaceId", "binding"];
 		case "cloudflare:r2-bucket":
 			return ["bucketName", "endpoint", "binding"];
+		case "cloudflare:cron-trigger":
+			return ["cron", "binding"];
 		default:
 			return ["binding"];
 	}
@@ -58,6 +61,8 @@ function primaryOutput(resourceClass: string): string {
 			return "namespaceId";
 		case "cloudflare:r2-bucket":
 			return "bucketName";
+		case "cloudflare:cron-trigger":
+			return "cron";
 		default:
 			return "binding";
 	}
