@@ -23,8 +23,8 @@ import { z } from "zod";
 // as `unchanged`. Secretless: the integration's own client secret is read
 // from the store for the one exchange (never from the environment or a
 // file), the access token exists in memory between the exchange and the
-// deposit, and the page sees references. Later runs verify the token and
-// installation id before treating the connection as complete.
+// deposit, and the page sees references. Later runs require readable token,
+// installation id and explicit account scope; they do not verify them online.
 
 /** Deposit order: the installation id last, so its presence means complete. */
 export const VERCEL_CONNECTION_KEYS = Object.freeze([
@@ -32,6 +32,7 @@ export const VERCEL_CONNECTION_KEYS = Object.freeze([
 	"HOBO_CD_VERCEL_TEAM_ID",
 	"HOBO_CD_VERCEL_INSTALLATION_ID",
 ] as const);
+const PERSONAL_SCOPE = "personal";
 
 /** The integration's client secret, kept in the store by the integration's owner. */
 // public-contract: the store entry the integration's owner keeps its client secret in.
@@ -70,11 +71,29 @@ function failed(
 	return { step: { kind: "failed", provider: "vercel", message, remediation } };
 }
 
-/** True when the store already holds a complete Vercel connection. */
-export async function vercelConnected(
+export type StoredVercelConnection = Readonly<{
+	token: string;
+	teamId: string | undefined;
+	installationId: string;
+}>;
+
+export function sameVercelConnection(
+	left: StoredVercelConnection,
+	right: StoredVercelConnection,
+): boolean {
+	return (
+		sameState(left.token, right.token) &&
+		left.teamId === right.teamId &&
+		left.installationId === right.installationId
+	);
+}
+
+/** Read the whole connection, including an explicit personal-account marker.
+ * Missing, partial or unreadable data must not change account scope. */
+export async function readVercelConnection(
 	store: OpenedSecretStore,
-): Promise<boolean> {
-	const present = new Set<string>();
+): Promise<StoredVercelConnection | undefined> {
+	const values = new Map<string, string>();
 	for (const key of VERCEL_CONNECTION_KEYS) {
 		let result: Awaited<ReturnType<typeof store.port.access>>;
 		try {
@@ -82,17 +101,42 @@ export async function vercelConnected(
 		} catch {
 			throw new Error("Cannot inspect the existing Vercel connection.");
 		}
-		if (result.status === "ok" && result.material !== "") present.add(key);
-		else if (result.status === "ok" || result.code !== "secret-not-found")
+		if (result.status === "ok") {
+			const material = z.string().safeParse(result.material);
+			if (!material.success)
+				throw new Error("Cannot inspect the existing Vercel connection.");
+			values.set(key, material.data);
+		} else if (result.code !== "secret-not-found")
 			throw new Error("Cannot inspect the existing Vercel connection.");
 	}
-	if (present.size === 0) return false;
+	if (values.size === 0) return undefined;
+	const token = values.get("HOBO_CD_VERCEL_TOKEN");
+	const team = values.get("HOBO_CD_VERCEL_TEAM_ID");
+	const installationId = values.get("HOBO_CD_VERCEL_INSTALLATION_ID");
 	if (
-		!present.has("HOBO_CD_VERCEL_TOKEN") ||
-		!present.has("HOBO_CD_VERCEL_INSTALLATION_ID")
+		token === undefined ||
+		token.length === 0 ||
+		token.length > 4096 ||
+		team === undefined ||
+		(team !== "" &&
+			team !== PERSONAL_SCOPE &&
+			!/^team_[A-Za-z0-9]{1,64}$/u.test(team)) ||
+		installationId === undefined ||
+		!/^icfg_[A-Za-z0-9]{1,64}$/u.test(installationId)
 	)
 		throw new Error("The stored Vercel connection is incomplete.");
-	return true;
+	return {
+		token,
+		teamId: team === "" || team === PERSONAL_SCOPE ? undefined : team,
+		installationId,
+	};
+}
+
+/** True when the store already holds a complete Vercel connection. */
+export async function vercelConnected(
+	store: OpenedSecretStore,
+): Promise<boolean> {
+	return (await readVercelConnection(store)) !== undefined;
 }
 
 function connected(store: OpenedSecretStore): ConnectStep {
@@ -117,11 +161,14 @@ export function createVercelConnectFlow(
 	options: VercelConnectOptions,
 ): ConnectFlow & {
 	readonly outcome: () => "created" | "unchanged" | undefined;
+	/** Compare a fresh read without exposing the saved credential. */
+	readonly matchesConnection: (candidate: StoredVercelConnection) => boolean;
 } {
 	const send = options.fetch ?? fetch;
 	let store: OpenedSecretStore | undefined;
 	let state: string | undefined;
 	let outcome: "created" | "unchanged" | undefined;
+	let expected: StoredVercelConnection | undefined;
 
 	return {
 		initial: {
@@ -130,6 +177,8 @@ export function createVercelConnectFlow(
 			stores: options.stores ?? DEFAULT_SECRET_STORES,
 		},
 		outcome: () => outcome,
+		matchesConnection: (candidate) =>
+			expected !== undefined && sameVercelConnection(expected, candidate),
 
 		async onAction(action, params, current) {
 			if (action === "connect.cancel")
@@ -149,15 +198,16 @@ export function createVercelConnectFlow(
 				const opened = await options.openStore(choice.id);
 				if (!opened.ok) return failed(opened.message, opened.remediation);
 				store = opened.store;
-				let alreadyConnected: boolean;
+				let existing: StoredVercelConnection | undefined;
 				try {
-					alreadyConnected = await vercelConnected(store);
+					existing = await readVercelConnection(store);
 				} catch {
 					return failed("Cannot verify the existing Vercel connection.", [
 						"Check access and reconcile any partial credentials in the secret store before retrying.",
 					]);
 				}
-				if (alreadyConnected) {
+				if (existing) {
+					expected = existing;
 					outcome = "unchanged";
 					return { step: connected(store) };
 				}
@@ -252,14 +302,12 @@ export function createVercelConnectFlow(
 
 			const values = {
 				HOBO_CD_VERCEL_TOKEN: token.access_token,
-				HOBO_CD_VERCEL_TEAM_ID: token.team_id ?? "",
+				HOBO_CD_VERCEL_TEAM_ID: token.team_id ?? PERSONAL_SCOPE,
 				HOBO_CD_VERCEL_INSTALLATION_ID: token.installation_id,
 			} satisfies Readonly<
 				Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
 			>;
 			for (const key of VERCEL_CONNECTION_KEYS) {
-				// A personal-account installation has no team.
-				if (values[key] === "") continue;
 				try {
 					await store.port.put(key, values[key]);
 				} catch {
@@ -269,6 +317,11 @@ export function createVercelConnectFlow(
 					);
 				}
 			}
+			expected = {
+				token: token.access_token,
+				teamId: token.team_id ?? undefined,
+				installationId: token.installation_id,
+			};
 			outcome = "created";
 			return { step: connected(store) };
 		},
