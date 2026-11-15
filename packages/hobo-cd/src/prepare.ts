@@ -25,8 +25,10 @@ import { resolveVercelJunction } from "./junction.js";
 import { parseVercelRedirect } from "./redirect.js";
 import {
 	createVercelConnectFlow,
+	readVercelConnection,
+	type StoredVercelConnection,
+	sameVercelConnection,
 	VERCEL_CLIENT_SECRET_KEY,
-	vercelConnected,
 } from "./vercel.js";
 
 // `hobo cd up`'s prepare step: an interactive ceremony that sets up whatever
@@ -151,8 +153,9 @@ function storeIdOf(value: string | undefined): SecretStoreId {
 async function ready(
 	store: OpenedSecretStore,
 	outcome: "created" | "unchanged",
+	matches?: (connection: StoredVercelConnection) => boolean,
 ): Promise<PrepareOutcome> {
-	const resolved = await resolveVercelJunction(store);
+	const resolved = await resolveVercelJunction(store, matches);
 	if (!resolved.ok)
 		return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", resolved.message, [
 			"Run hobo cd up again; if it persists, check access to the secret store.",
@@ -204,9 +207,9 @@ export async function prepareVercelConnection(
 	if (storeSide.missing.length === 0) {
 		const opened = await openStore(storeId, { ...env, ...storeSide.values });
 		if (opened.ok) {
-			let connected: boolean;
+			let connection: Awaited<ReturnType<typeof readVercelConnection>>;
 			try {
-				connected = await vercelConnected(opened.store);
+				connection = await readVercelConnection(opened.store);
 			} catch {
 				return refused(
 					"HOBO_CD_SECRET_STORE_UNAVAILABLE",
@@ -216,7 +219,7 @@ export async function prepareVercelConnection(
 					],
 				);
 			}
-			if (connected) {
+			if (connection) {
 				if (input.whatIf)
 					return {
 						kind: "ready",
@@ -228,7 +231,9 @@ export async function prepareVercelConnection(
 							},
 						],
 					};
-				return ready(opened.store, "unchanged");
+				return ready(opened.store, "unchanged", (current) =>
+					sameVercelConnection(connection, current),
+				);
 			}
 		}
 	}
@@ -402,5 +407,15 @@ export async function prepareVercelConnection(
 			step.kind === "failed" ? step.message : "Vercel was not connected.",
 			step.kind === "failed" ? step.remediation : [],
 		);
-	return ready(connectedStore, vercel?.outcome() ?? "created");
+	if (vercel === undefined)
+		return refused(
+			"HOBO_CD_VERCEL_NOT_CONNECTED",
+			"Vercel connection evidence is missing.",
+			["Run hobo cd up again."],
+		);
+	return ready(
+		connectedStore,
+		vercel.outcome() ?? "created",
+		vercel.matchesConnection,
+	);
 }

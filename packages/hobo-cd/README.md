@@ -23,9 +23,12 @@ HoBo's CD as a HoBo project:
 `prepareVercelConnection` is the family's prepare step, mirroring CI's GitHub
 connection:
 
-1. **Idempotent.** If the installation id and token are readable, it opens
-   nothing. An unreadable or partial connection is refused until reconciled,
-   rather than replaced after a failed read. `--what-if` opens nothing either.
+1. **Idempotent.** If the installation id, token and explicit account scope are
+   readable, it opens nothing. The stored `personal` marker (or an explicitly
+   empty value) means a personal account; missing, unreadable or changed scope
+   is refused until reconciled. Earlier personal installations omitted the
+   marker: verify their scope before adding it. Later runs do not verify the
+   connection online. `--what-if` opens nothing either.
    Headless runs refuse with the reason.
 2. **Connect page** (`@hobo/connect-ui`). The owner chooses the store
    (Infisical OIDC by default, or 1Password), then installs HoBo CD's Vercel
