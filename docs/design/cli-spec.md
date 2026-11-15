@@ -142,6 +142,16 @@ keeps inspecting the relay connection. Every other family subcommand keeps its
 existing meaning (`hobo cd <x>` is `hobo deploy <x>`). Families add no
 lifecycle verbs: `up` and `down` remain the only two.
 
+`hobo ci plan` and `hobo ci up --what-if` place the CI project through the
+relay's own Yards (`packages/ci-vercel/deploy/yard.ts`: the Vercel project
+`hobo-ci` and the Yards its junction joins), never through whatever providers
+are registered on the machine, so the plan is the relay's real placement.
+`hobo ci up` then delivers the current branch to that project's preview the way
+`hobo ci deploy` does, with the Vercel connection `hobo cd up` keeps in the
+owner's secret store (handed to the deploy in a trusted vault; without it, `up`
+refuses and points at `hobo cd up`). Production stays an explicit promotion:
+`hobo ci deploy --target production --sha <commit>`.
+
 Placement refuses a Bindle whose `b.external()` would put an external in a
 Yard (`HOBO_YARD_EXTERNAL_FORBIDDEN`) before anything is planned: `plan`, `up`,
 `up --what-if` and every family lifecycle. Declare that service in a Yard

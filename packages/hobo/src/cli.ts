@@ -39,6 +39,10 @@ import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
 import { createCiCommand } from "./ci-command.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
+import {
+	createCiRelayPlanCommand,
+	createCiRelayUpCommand,
+} from "./ci-up-relay.js";
 import { createClaimCommand } from "./claim-command.js";
 import {
 	createDefaultYardRuntime,
@@ -68,7 +72,6 @@ import { createLogsCommand } from "./logs-command.js";
 import { createMessagingCommand } from "./messaging-command.js";
 import { createOfferCommand } from "./offer-command.js";
 import { createProviderCeremonyUp } from "./provider-ceremony.js";
-import { createSecretStoreProvider } from "./secret-store-providers.js";
 import { createRecipesCommand } from "./recipes-command.js";
 import { createRegistryCommand } from "./registry-command.js";
 import { createReplayCommand } from "./replay-command.js";
@@ -80,6 +83,7 @@ import {
 	createWasmRuntimeCatalogEntry,
 } from "./runtime-catalog.js";
 import { createSandboxCommand } from "./sandbox-command.js";
+import { createSecretStoreProvider } from "./secret-store-providers.js";
 import { createServeControlCommand } from "./serve-control-command.js";
 import { createStationCommand } from "./station-command.js";
 import { createTrailsCommand } from "./trails-command.js";
@@ -249,10 +253,13 @@ export function createComposedHoboCli(
 				resolveProject: resolveCiProject,
 				up,
 				down,
-				plan,
 				// GitHub first: the App and its credentials in the owner's secret
 				// store, via the generative connect page (idempotent).
 				prepare: (input) => prepareGithubConnection(input),
+				// The relay is placed through its own Yards (the Vercel project
+				// hobo-ci and the Yards its junction joins), and `up` delivers it.
+				plan: createCiRelayPlanCommand(runtime, plan),
+				upWith: (credentials) => createCiRelayUpCommand(credentials, up),
 				status: ci,
 				fallback: ci,
 			}),
@@ -276,7 +283,8 @@ export function createComposedHoboCli(
 							executor: createInProcessExecutor({
 								iac: createVercelDeployProvider({
 									token: credentials.reveal("VERCEL_TOKEN") ?? "",
-									...((team) => (team !== undefined ? { teamId: team } : undefined))(
+									...((team) =>
+										team !== undefined ? { teamId: team } : undefined)(
 										credentials.reveal("VERCEL_TEAM_ID"),
 									),
 									projectName: "hobo-cd",
