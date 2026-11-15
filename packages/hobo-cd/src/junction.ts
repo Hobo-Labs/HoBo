@@ -2,6 +2,7 @@ import type { TrustedVault } from "@hobo/core";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { type JunctionDefinition, junction } from "@hobo/junctions";
 import { yard } from "@hobo/yards";
+import { readVercelConnection, type StoredVercelConnection } from "./vercel.js";
 
 // The Vercel provider junction (docs/design/control-plane.md "Yard scope &
 // multi-Yard (the Junction)").
@@ -52,21 +53,30 @@ export type JunctionCredentials =
 export async function resolveVercelJunction(
 	store: OpenedSecretStore,
 	vault: TrustedVault,
+	matches?: (connection: StoredVercelConnection) => boolean,
 ): Promise<JunctionCredentials> {
-	const token = await store.port
-		.access("HOBO_CD_VERCEL_TOKEN")
-		.catch(() => undefined);
-	if (token?.status !== "ok" || token.material === undefined)
+	let connection: Awaited<ReturnType<typeof readVercelConnection>>;
+	try {
+		connection = await readVercelConnection(store);
+	} catch {
 		return {
 			ok: false,
-			message: `The Vercel token is not readable from ${store.id}.`,
+			message: `The Vercel connection is incomplete or unreadable in ${store.id}.`,
 		};
-	const team = await store.port
-		.access("HOBO_CD_VERCEL_TEAM_ID")
-		.catch(() => undefined);
-	const teamId =
-		team?.status === "ok" && team.material ? team.material : undefined;
-	vault.put("VERCEL_TOKEN", token.material);
+	}
+	if (!connection)
+		return {
+			ok: false,
+			message: `The Vercel connection is not present in ${store.id}.`,
+		};
+	if (matches && !matches(connection))
+		return {
+			ok: false,
+			message: `The Vercel connection changed while reading ${store.id}.`,
+		};
+	const { token, teamId } = connection;
+	vault.put("VERCEL_TOKEN", token);
 	if (teamId !== undefined) vault.put("VERCEL_TEAM_ID", teamId);
+	else vault.drop("VERCEL_TEAM_ID");
 	return { ok: true, junction: vercelJunction(teamId), teamId };
 }

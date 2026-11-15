@@ -21,9 +21,13 @@ HoBo's CD as a HoBo project:
 `prepareVercelConnection` is the family's prepare step, mirroring CI's GitHub
 connection:
 
-1. **Idempotent.** If the store holds the installation
-   (`HOBO_CD_VERCEL_INSTALLATION_ID`, written last), it opens nothing.
-   `--what-if` opens nothing either. Headless runs refuse with the reason.
+1. **Idempotent.** If the installation id, token and explicit account scope are
+   readable, it opens nothing. The stored `personal` marker (or an explicitly
+   empty value) means a personal account; missing, unreadable or changed scope
+   is refused until reconciled. Earlier personal installations omitted the
+   marker: verify their scope before adding it. Later runs do not verify the
+   connection online. `--what-if` opens nothing either.
+   Headless runs refuse with the reason.
 2. **Connect page** (`@hobo/connect-ui`). The owner chooses the store
    (Infisical OIDC by default, 1Password, or Bitwarden Secrets Manager),
    then installs HoBo CD's Vercel
@@ -44,7 +48,7 @@ Yards hold only what is internal to their provider: the CD project runs in
 internal to `vercelYard` (`provider: "vercel"`). Neither marks anything
 external. `vercelJunction()` joins them (`@hobo/junctions`).
 
-`resolveVercelJunction(store)` reads the junction's credential from the owner's
+`resolveVercelJunction(store, vault)` reads the junction's credential from the owner's
 store for one convergence. The composed `hobo` converges `hobo cd up` with
 the same journal, registry and actor host (one writer), and an executor whose
 IaC provider is the Vercel deploy provider built from that credential. The

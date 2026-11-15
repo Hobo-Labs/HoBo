@@ -32,8 +32,10 @@ import { resolveVercelJunction } from "./junction.js";
 import { parseVercelRedirect } from "./redirect.js";
 import {
 	createVercelConnectFlow,
+	readVercelConnection,
+	type StoredVercelConnection,
+	sameVercelConnection,
 	VERCEL_CLIENT_SECRET_KEY,
-	vercelConnected,
 } from "./vercel.js";
 
 // `hobo cd up`'s prepare step: an interactive ceremony that sets up whatever
@@ -157,14 +159,23 @@ async function ready(
 	outcome: "created" | "unchanged",
 	vault: TrustedVault,
 	provisioners: readonly JournalMemberProvisioner[] | undefined,
+	matches: (connection: StoredVercelConnection) => boolean,
 ): Promise<PrepareOutcome> {
-	const resolved = await resolveVercelJunction(store, vault);
+	const resolved = await resolveVercelJunction(store, vault, matches);
 	if (!resolved.ok)
 		return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", resolved.message, [
 			"Run hobo cd up again; if it persists, check access to the secret store.",
 		]);
 	const journal = await journalStep(store, provisioners, false);
 	if (!Array.isArray(journal)) return journal;
+	// Provisioning may take time; confirm the selected scope is still current.
+	if (provisioners !== undefined && provisioners.length > 0) {
+		const current = await resolveVercelJunction(store, vault, matches);
+		if (!current.ok)
+			return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", current.message, [
+				"Run hobo cd up again; if it persists, check access to the secret store.",
+			]);
+	}
 	return {
 		kind: "ready",
 		steps: [
@@ -232,10 +243,12 @@ async function prepareVercelWithVault(
 		]);
 	}
 
-	let connected = false;
+	let connection: StoredVercelConnection | undefined;
 	try {
-		connected =
-			owner.opened !== undefined && (await vercelConnected(owner.opened));
+		connection =
+			owner.opened !== undefined
+				? await readVercelConnection(owner.opened)
+				: undefined;
 	} catch {
 		return refused(
 			"HOBO_CD_SECRET_STORE_UNAVAILABLE",
@@ -245,7 +258,7 @@ async function prepareVercelWithVault(
 			],
 		);
 	}
-	if (owner.opened !== undefined && connected) {
+	if (owner.opened !== undefined && connection !== undefined) {
 		if (input.whatIf) {
 			const journal = await journalStep(
 				owner.opened,
@@ -265,7 +278,14 @@ async function prepareVercelWithVault(
 				],
 			};
 		}
-		return ready(owner.opened, "unchanged", vault, deps.journalProvisioners);
+		const expected = connection;
+		return ready(
+			owner.opened,
+			"unchanged",
+			vault,
+			deps.journalProvisioners,
+			(current) => sameVercelConnection(expected, current),
+		);
 	}
 	if (input.whatIf)
 		return {
@@ -293,6 +313,7 @@ async function prepareVercelWithVault(
 
 	let vercel: ReturnType<typeof createVercelConnectFlow> | undefined;
 	let connectedStore: OpenedSecretStore | undefined;
+	let selectedConnection: StoredVercelConnection | undefined;
 	const unavailableFlow = (): ConnectFlow => ({
 		initial: {
 			kind: "failed",
@@ -345,13 +366,14 @@ async function prepareVercelWithVault(
 			"hobo cd up keeps the access Vercel grants, the Integration's client secret and what you tell it here in your secret store.",
 		async proceed(store) {
 			connectedStore = store;
-			let alreadyConnected: boolean;
+			let alreadyConnected: StoredVercelConnection | undefined;
 			try {
-				alreadyConnected = await vercelConnected(store);
+				alreadyConnected = await readVercelConnection(store);
 			} catch {
 				return unavailableFlow();
 			}
-			if (alreadyConnected)
+			if (alreadyConnected) {
+				selectedConnection = alreadyConnected;
 				return {
 					initial: {
 						kind: "connected",
@@ -363,6 +385,7 @@ async function prepareVercelWithVault(
 					},
 					onAction: async (_action, _params, current) => ({ step: current }),
 				};
+			}
 			const settings = familySettings(store, "cd");
 			const basics = resolveSettings(
 				CD_SETTINGS,
@@ -449,10 +472,24 @@ async function prepareVercelWithVault(
 			step.kind === "failed" ? step.message : "Vercel was not connected.",
 			step.kind === "failed" ? step.remediation : [],
 		);
+	const selected = selectedConnection;
+	const matches =
+		vercel?.matchesConnection ??
+		(selected
+			? (current: StoredVercelConnection) =>
+					sameVercelConnection(selected, current)
+			: undefined);
+	if (matches === undefined)
+		return refused(
+			"HOBO_CD_VERCEL_NOT_CONNECTED",
+			"Vercel connection evidence is missing.",
+			["Run hobo cd up again."],
+		);
 	return ready(
 		connectedStore,
 		vercel?.outcome() ?? "unchanged",
 		vault,
 		deps.journalProvisioners,
+		matches,
 	);
 }
