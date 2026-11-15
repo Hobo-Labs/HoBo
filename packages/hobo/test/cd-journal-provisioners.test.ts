@@ -147,6 +147,17 @@ describe("the CD journal provisioner", () => {
 		);
 	});
 
+	it("does not disclose malformed stored material in a parse error", async () => {
+		const store = memoryStore();
+		await store.port.put(
+			"HOBO_CD_JOURNAL_CLAIM_JOURNAL_1_1",
+			"sensitive-malformed-claim-material",
+		);
+		await expect(fixtureClaims(store).get("journal-1")).rejects.toThrow(
+			/^The provisioning claim in infisical is not valid\.$/u,
+		);
+	});
+
 	it("cannot let an old claimant finish or overwrite a later attempt", async () => {
 		const store = memoryStore();
 		const first = fixtureClaims(store);

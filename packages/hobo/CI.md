@@ -5,6 +5,12 @@ workflows. Run `hobo ci` or `hobo ci --help` for help. No Bindle, Station setup,
 SDK script, or workspace package invocation is needed.
 CI commands work before local Yard provisioning and do not initialize its journal.
 
+For a relay Git deployment, `hobo ci up` plans and checks the declaration,
+Yard and `vercel.json` from the selected commit, then delivers that same tree.
+It refuses if that tree cannot be inspected, contains symlinks or submodules,
+exceeds 5,000 files or 32 MiB, or cannot load its installed dependencies. These
+limits apply to the relay project's committed files, not the working tree.
+
 ## Connect once
 
 Your relay operator supplies an HTTPS origin and a CI account credential. Export

@@ -1,6 +1,14 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
@@ -116,11 +124,11 @@ function gitHead(
 /**
  * How the relay's vercel.json differs from its plan: the Bindle lowered to
  * intents (queues, and the schedule with its cadence), checked against the
- * committed platform configuration (`vercelPlatformDrift`).
+ * platform configuration in that directory (`vercelPlatformDrift`).
  */
 export async function relayPlatformDrift(
 	relayDir: string,
-	/** Test seam: the platform configuration's text; the committed file by default. */
+	/** Test seam: the platform configuration's text. */
 	readConfig: () => Promise<string> = () =>
 		readFile(path.join(relayDir, "vercel.json"), "utf8"),
 ): Promise<readonly string[]> {
@@ -130,9 +138,122 @@ export async function relayPlatformDrift(
 	return vercelPlatformDrift(config, lowerManifest(manifest));
 }
 
+/** Materialize exactly the source tree a Git deployment will receive. */
+export async function relayCommitSnapshot(
+	relayDir: string,
+	sha: string,
+): Promise<{ dir: string; close(): Promise<void> }> {
+	if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(sha))
+		throw new Error("The relay commit is not a complete Git object id.");
+	const git = (args: readonly string[]): Promise<Buffer> =>
+		new Promise((resolve, reject) =>
+			execFile(
+				"git",
+				[...args],
+				{
+					cwd: relayDir,
+					env: withoutSecretEnv(process.env),
+					encoding: "buffer",
+					maxBuffer: 32 * 1024 * 1024,
+					timeout: 30_000,
+				},
+				(error, stdout) => {
+					if (error) reject(error);
+					else resolve(stdout);
+				},
+			),
+		);
+	const prefix = (await git(["rev-parse", "--show-prefix"]))
+		.toString("utf8")
+		.replace(/\r?\n$/u, "")
+		.replace(/\/$/u, "");
+	const tree = prefix.length === 0 ? sha : `${sha}:${prefix}`;
+	const listing = await git(["ls-tree", "--full-tree", "-r", "-z", tree]);
+	if (!Buffer.from(listing.toString("utf8"), "utf8").equals(listing))
+		throw new Error("The committed relay tree contains a non-UTF-8 path.");
+	// The scratch tree is outside the checkout so another Git operation cannot
+	// accidentally stage it. Its dependency lookup uses the project's install.
+	const root = await mkdtemp(path.join(tmpdir(), "hobo-ci-commit-"));
+	try {
+		const source = path.join(root, "source");
+		await mkdir(source);
+		let ancestor = path.resolve(relayDir);
+		while (true) {
+			const modules = path.join(ancestor, "node_modules");
+			if (existsSync(modules)) {
+				await symlink(
+					modules,
+					path.join(root, "node_modules"),
+					process.platform === "win32" ? "junction" : "dir",
+				);
+				break;
+			}
+			const parent = path.dirname(ancestor);
+			if (parent === ancestor) break;
+			ancestor = parent;
+		}
+		const entries = listing.toString("utf8").split("\0").filter(Boolean);
+		if (entries.length > 5_000)
+			throw new Error("The committed relay tree is too large to inspect.");
+		let total = 0;
+		for (const entry of entries) {
+			const tab = entry.indexOf("\t");
+			const meta = entry
+				.slice(0, tab)
+				.match(/^(100644|100755) blob ([a-f0-9]{40}(?:[a-f0-9]{24})?)$/u);
+			const name = entry.slice(tab + 1);
+			const parts = name.split("/");
+			if (
+				tab < 0 ||
+				meta === null ||
+				parts.some(
+					(part) =>
+						!part || part === "." || part === ".." || /[\\:]/u.test(part),
+				)
+			)
+				throw new Error(
+					"The committed relay tree contains an unsupported path or file type.",
+				);
+			const oid = meta[2];
+			if (oid === undefined) throw new Error("Invalid Git tree entry.");
+			const content = await git(["cat-file", "blob", oid]);
+			total += content.length;
+			if (total > 32 * 1024 * 1024)
+				throw new Error("The committed relay tree is too large to inspect.");
+			const destination = path.join(source, ...parts);
+			await mkdir(path.dirname(destination), { recursive: true });
+			await writeFile(destination, content, {
+				mode: meta[1] === "100755" ? 0o755 : 0o644,
+			});
+		}
+		return {
+			dir: source,
+			close: () => rm(root, { recursive: true, force: true }),
+		};
+	} catch (error) {
+		await rm(root, { recursive: true, force: true });
+		throw error;
+	}
+}
+
+/** Check a Git commit's declaration and platform configuration. */
+export async function relayCommitPlatformDrift(
+	relayDir: string,
+	sha: string,
+): Promise<readonly string[]> {
+	const snapshot = await relayCommitSnapshot(relayDir, sha);
+	try {
+		return await relayPlatformDrift(snapshot.dir);
+	} finally {
+		await snapshot.close().catch(() => undefined);
+	}
+}
+
 export interface CiRelayUpDeps {
 	readonly deploy?: typeof runCiRelayDeploy;
 	readonly head?: typeof gitHead;
+	readonly snapshot?: typeof relayCommitSnapshot;
+	readonly platformDrift?: typeof relayPlatformDrift;
 	readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -147,17 +268,6 @@ export function createCiRelayUpCommand(
 		async run(input) {
 			const relayDir = relayProjectDirFor(projectOf(input));
 			if (relayDir === undefined) return fallback.run(input);
-			// Vercel runs the relay's schedule and queues from vercel.json, so
-			// the deployment must hold what the plan says before it ships.
-			const drift = await relayPlatformDrift(relayDir);
-			if (drift.length > 0)
-				return refused(
-					"HOBO_CI_UP_PLATFORM_DRIFT",
-					`The relay's vercel.json does not hold what its plan asks: ${drift.join("; ")}.`,
-					[
-						"Update packages/ci-vercel/vercel.json to match the relay's Bindle (src/bindle.ts), or the Bindle to match it, then run hobo ci up again.",
-					],
-				);
 			if (!credentials.has("VERCEL_TOKEN"))
 				return refused(
 					"HOBO_CI_UP_VERCEL_NOT_CONNECTED",
@@ -175,23 +285,68 @@ export function createCiRelayUpCommand(
 						"Check out the branch to deploy (pushed to GitHub), or use hobo ci deploy --ref <ref>.",
 					],
 				);
-			input.emitProgress(
-				`delivering ${head.ref}@${head.sha.slice(0, 12)} to the relay's preview on Vercel`,
-			);
-			const team = credentials.reveal("VERCEL_TEAM_ID");
-			const values = {
-				ref: head.ref,
-				sha: head.sha,
-				target: "preview",
-				team,
-			};
-			return (deps.deploy ?? runCiRelayDeploy)({
-				cwd: relayDir,
-				values,
-				env: deps.env ?? process.env,
-				credentials,
-				emitProgress: input.emitProgress,
-			});
+			// A Git deployment uses head.sha, not the caller's possibly dirty
+			// checkout. Plan and check that exact commit before delivery.
+			let snapshot: Awaited<ReturnType<typeof relayCommitSnapshot>>;
+			try {
+				snapshot = await (deps.snapshot ?? relayCommitSnapshot)(
+					relayDir,
+					head.sha,
+				);
+			} catch {
+				return refused(
+					"HOBO_CI_UP_SOURCE_UNAVAILABLE",
+					"Cannot inspect the relay's committed source before deployment.",
+					[
+						"Make the selected commit and its project dependencies available locally, then retry.",
+					],
+				);
+			}
+			try {
+				let drift: readonly string[];
+				try {
+					drift = await (deps.platformDrift ?? relayPlatformDrift)(
+						snapshot.dir,
+					);
+				} catch {
+					return refused(
+						"HOBO_CI_UP_SOURCE_UNAVAILABLE",
+						"Cannot inspect the relay's committed source before deployment.",
+						[
+							"Make the selected commit and its project dependencies available locally, then retry.",
+						],
+					);
+				}
+				if (drift.length > 0)
+					return refused(
+						"HOBO_CI_UP_PLATFORM_DRIFT",
+						`The relay's committed vercel.json does not hold what its plan asks: ${drift.join("; ")}.`,
+						[
+							"Commit a vercel.json that matches the relay's Bindle, then run hobo ci up again.",
+						],
+					);
+				input.emitProgress(
+					`delivering ${head.ref}@${head.sha.slice(0, 12)} to the relay's preview on Vercel`,
+				);
+				const team = credentials.reveal("VERCEL_TEAM_ID");
+				const values = {
+					ref: head.ref,
+					sha: head.sha,
+					target: "preview",
+					team,
+				};
+				return await (deps.deploy ?? runCiRelayDeploy)({
+					cwd: snapshot.dir,
+					values,
+					env: deps.env ?? process.env,
+					credentials,
+					emitProgress: input.emitProgress,
+				});
+			} finally {
+				// Cleanup cannot turn an accepted deployment into an ambiguous
+				// failure that a caller might retry.
+				await snapshot.close().catch(() => undefined);
+			}
 		},
 	};
 }

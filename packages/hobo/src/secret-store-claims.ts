@@ -78,7 +78,13 @@ export function secretStoreClaims(
 			if (result.code === "secret-not-found") return undefined;
 			throw new Error(`Cannot read the provisioning claim from ${store.id}.`);
 		}
-		const parsed = Attempt.safeParse(JSON.parse(result.material ?? "null"));
+		let parsed: ReturnType<typeof Attempt.safeParse>;
+		try {
+			parsed = Attempt.safeParse(JSON.parse(result.material ?? "null"));
+		} catch {
+			// JSON's parser error may quote part of the stored material.
+			throw new Error(`The provisioning claim in ${store.id} is not valid.`);
+		}
 		if (!parsed.success || parsed.data.key !== key)
 			throw new Error(`The provisioning claim in ${store.id} is not valid.`);
 		const { databaseId, ...rest } = parsed.data;
