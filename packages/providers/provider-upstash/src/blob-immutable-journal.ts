@@ -1,8 +1,8 @@
 /** Upstash-owned, non-TTL journal voter over its private R2 bucket. */
 import { createHash } from "node:crypto";
 import {
-	AtomicObjectJournalError,
 	type AtomicJournalObject,
+	AtomicObjectJournalError,
 	createAtomicObjectJournalReplica,
 	type ImmutableJournalMember,
 	parseFleetAssignment,
