@@ -36,6 +36,23 @@ The composed runtime's live lane (`HOBO_PULUMI_LIVE=1`, see `@hobo/hobo`
 `compose.ts`) defaults to the Automation API engine; `HOBO_PULUMI_LIVE_ENGINE=cli`
 (or setting `HOBO_PULUMI_BIN`) selects the CLI engine instead.
 
+### Translations
+
+`renderPulumiYamlProgram` turns the resource classes `@hobo/provider-cloudflare`
+realizes into Pulumi Cloudflare v6 resources, and refuses any other class with
+`pulumi-unsupported-resource-type`:
+
+| HoBo class | Pulumi type | Inputs |
+|---|---|---|
+| `cloudflare:workers-script` | `cloudflare:WorkersScript` | `name`, `content` |
+| `cloudflare:kv-namespace` | `cloudflare:WorkersKvNamespace` | `title` |
+| `cloudflare:r2-bucket` | `cloudflare:R2Bucket` | `name` |
+| `cloudflare:queue` | `cloudflare:Queue` | `queueName` |
+| `cloudflare:cron-trigger` | `cloudflare:WorkersCronTrigger` | `scriptName` (its one Worker dependency), `schedules: [{ cron }]` from the Cloudflare option `cron` |
+
+A cron trigger with no `cron` option, or without exactly one Worker to run, is
+refused rather than created with a guessed cadence or target.
+
 ### State secrets
 
 Both engines keep their state under a local `file://` backend. Pulumi encrypts

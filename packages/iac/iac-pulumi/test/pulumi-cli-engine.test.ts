@@ -55,10 +55,65 @@ describe("pulumi CLI engine (3-2)", () => {
 
 	it("covers every realize() resource class with a real type token", () => {
 		expect(Object.keys(PULUMI_YAML_TYPE_TOKENS).sort()).toEqual([
+			"cloudflare:cron-trigger",
 			"cloudflare:kv-namespace",
+			"cloudflare:queue",
 			"cloudflare:r2-bucket",
 			"cloudflare:workers-script",
 		]);
+	});
+
+	it("renders a Queue and a cron trigger on the Worker it runs", () => {
+		const queue = renderPulumiYamlProgram(
+			{ name: "jobs", type: "cloudflare:queue", outputs: ["queueName"] },
+			{ accountId: "acct-123" },
+		);
+		expect(queue).toContain("type: cloudflare:Queue");
+		expect(queue).toContain('"queueName":"jobs"');
+		expect(queue).toContain("queueName: ${jobs.queueName}");
+		const trigger = renderPulumiYamlProgram(
+			{
+				name: "repair",
+				type: "cloudflare:cron-trigger",
+				inputs: {
+					options: { cron: "*/15 * * * *" },
+					bindings: [
+						{ resource: "api", ref: "${resources.api.outputs.binding}" },
+					],
+				},
+				outputs: ["cron"],
+			},
+			{ accountId: "acct-123" },
+		);
+		expect(trigger).toContain("type: cloudflare:WorkersCronTrigger");
+		expect(trigger).toContain('"scriptName":"api"');
+		expect(trigger).toContain('"schedules":[{"cron":"*/15 * * * *"}]');
+	});
+
+	it("refuses a cron trigger without a cadence or a single Worker", () => {
+		const unsupported = expect.objectContaining({
+			code: PULUMI_UNSUPPORTED_RESOURCE,
+		});
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: { bindings: [{ resource: "api" }] },
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: { options: { cron: "0 * * * *" }, bindings: [] },
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
 	});
 
 	it("fails closed on resource classes with no real translation", () => {
