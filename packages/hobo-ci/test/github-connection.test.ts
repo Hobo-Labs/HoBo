@@ -577,6 +577,7 @@ describe("prepareGithubConnection", () => {
 	it("uses a configured Bitwarden store to find an existing GitHub connection", async () => {
 		const store = { ...memoryStore(), id: "bitwarden" as const };
 		await seedConnection(store);
+		const github = fakeGithub();
 		let selected = "";
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {
@@ -587,6 +588,7 @@ describe("prepareGithubConnection", () => {
 				BWS_ACCESS_TOKEN: "token",
 			},
 			settings: memorySettings(),
+			fetch: github.fetch,
 			openStore: async (id) => {
 				selected = id;
 				return { ok: true, store };
@@ -596,6 +598,7 @@ describe("prepareGithubConnection", () => {
 			},
 		});
 		expect(selected).toBe("bitwarden");
+		expect(github.calls).toEqual(PACT_CALLS.slice(1));
 		expect(outcome).toMatchObject({
 			kind: "ready",
 			steps: [{ outcome: "unchanged" }],
