@@ -188,6 +188,15 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 | Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
 | Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
 
+The composed `hobo` never takes a real deploy token from its own process
+environment: `deployEnvironment()` in `src/compose.ts` drops a
+`VERCEL_TOKEN` or `CLOUDFLARE_API_TOKEN` that is not an OpenSesame `osr_`
+surrogate before IaC selection, so a token exported in a shell (and visible to
+every child process) selects nothing and the run falls back to the local Yard.
+The token reaches the resolver plane only as a surrogate (the OpenSesame
+relaunch below) or through an injected environment built from the owner's
+secret store (`hobo ci up` reads it into the run's trusted vault).
+
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
 `selectIacProvider` never picks) deploys first, with one

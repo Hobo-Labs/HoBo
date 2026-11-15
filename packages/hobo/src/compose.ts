@@ -1,3 +1,4 @@
+import { SURROGATE_PATTERN } from "@hobo/adapter-opensesame";
 import {
 	isJsonObject,
 	isJsonString,
@@ -310,7 +311,7 @@ function temporaryLiveWorkDir(): string {
 export function selectPulumiEstateAdapter(
 	deps: Pick<SelectIacProviderDeps, "store" | "env" | "adapter">,
 ): PulumiAutomationAdapter | undefined {
-	const env = deps.env ?? process.env;
+	const env = deployEnvironment(deps.env);
 	if (deps.adapter !== undefined) {
 		const byLane = pulumiAdaptersByStore.get(deps.store) ?? new Map();
 		byLane.set("memory", deps.adapter);
@@ -421,6 +422,34 @@ export function readPulumiEstate(
 		}
 	}
 	return estate.sort((a, b) => a.resource.localeCompare(b.resource));
+}
+
+// Deploy credentials and the process environment. A real provider token is a
+// secret, and HoBo does not read secrets from the environment: the token a
+// deploy uses comes from the owner's secret store, handed over in a trusted
+// vault (`hobo cd up`'s junction), or arrives as an explicitly injected record
+// (an embedder, a test). The one exception is OpenSesame (ADR-0170): its run
+// puts a surrogate (`osr_…`) in the variable, which only its proxy can redeem,
+// so the process environment never holds the real token. Any other value of
+// these variables in the process environment is ignored.
+const DEPLOY_TOKEN_VARIABLES = [
+	"VERCEL_TOKEN",
+	"CLOUDFLARE_API_TOKEN",
+] as const;
+const OPENSESAME_SURROGATE = new RegExp(SURROGATE_PATTERN, "u");
+
+/** The environment a composition reads deploy settings from (see above). */
+export function deployEnvironment(
+	injected?: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+	if (injected !== undefined) return injected;
+	const kept: NodeJS.ProcessEnv = { ...process.env };
+	for (const name of DEPLOY_TOKEN_VARIABLES) {
+		const value = kept[name];
+		if (value !== undefined && !OPENSESAME_SURROGATE.test(value))
+			delete kept[name];
+	}
+	return kept;
 }
 
 // Credential LOCATORS for the resolver lane. The composition root is the host:
@@ -548,7 +577,7 @@ function resolverBackedProviderFor(
 // `VERCEL_ORG_ID`, names, or in the token's own scope when neither does
 // (`vercelTeamIdOf`).
 export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
-	const env = deps.env ?? process.env;
+	const env = deployEnvironment(deps.env);
 	if (usesOpenSesameCredentials(env)) requireOpenSesameSurrogate(env);
 	const estateAdapter = selectPulumiEstateAdapter(deps);
 	if (estateAdapter !== undefined) {
@@ -591,7 +620,7 @@ function createYardRuntimeOverStore(
 	// One CloudProvider instance, shared between the planner registry (capability
 	// negotiation) and the IaC bridge (realize() on the deploy path).
 	const cloudflare = createCloudflareProvider();
-	const environment = options.env ?? process.env;
+	const environment = deployEnvironment(options.env);
 	const hostingBudgetRequired =
 		options.iacAdapter === undefined &&
 		(environment.HOBO_PULUMI_LIVE === "1" ||

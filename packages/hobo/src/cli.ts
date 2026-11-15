@@ -46,6 +46,7 @@ import {
 import { createClaimCommand } from "./claim-command.js";
 import {
 	createDefaultYardRuntime,
+	deployEnvironment,
 	resolveProjectCollectionTarget,
 	resolveProjectDevRuntime,
 	toRegistrableProvider,
@@ -199,12 +200,13 @@ export function createComposedHoboCli(
 		: baseRuntime;
 	const explicitFixture =
 		options.yardRuntime !== undefined && options.requireRealExecution !== true;
+	const deployEnv = deployEnvironment();
 	const cloudConfigured =
 		options.hosting !== undefined ||
-		process.env.HOBO_PULUMI_LIVE === "1" ||
+		deployEnv.HOBO_PULUMI_LIVE === "1" ||
 		Boolean(
-			(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) ||
-				process.env.VERCEL_TOKEN,
+			(deployEnv.CLOUDFLARE_API_TOKEN && deployEnv.CLOUDFLARE_ACCOUNT_ID) ||
+				deployEnv.VERCEL_TOKEN,
 		);
 	const deployRuntime =
 		explicitFixture || cloudConfigured ? runtime : undefined;
