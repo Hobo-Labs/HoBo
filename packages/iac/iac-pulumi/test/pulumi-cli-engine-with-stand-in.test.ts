@@ -191,7 +191,12 @@ describe("rendering a Pulumi YAML program", () => {
 		const required = new Map<string, JsonObject>([
 			[
 				"cloudflare:cron-trigger",
-				{ options: { cron: "0 * * * *" }, bindings: [{ resource: "api" }] },
+				{
+					options: { cron: "0 * * * *" },
+					bindings: [
+						{ resource: "api", resourceType: "cloudflare:workers-script" },
+					],
+				},
 			],
 		]);
 		for (const type of Object.keys(PULUMI_YAML_TYPE_TOKENS)) {

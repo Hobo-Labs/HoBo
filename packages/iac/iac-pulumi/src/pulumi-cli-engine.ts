@@ -166,18 +166,27 @@ function cronTrigger(
 			`cron trigger ${resource.name} has no cron expression (the Cloudflare option \`cron\`, five fields)`,
 		);
 	const bindings = resource.inputs?.bindings;
-	const workers = isJsonArray(bindings)
-		? bindings.flatMap((binding) => {
-				if (!isJsonObject(binding)) return [];
-				const name = binding.resource ?? binding.providerResourceId;
-				return isJsonString(name) ? [name] : [];
-			})
+	const dependencies = isJsonArray(bindings)
+		? bindings.filter(isJsonObject)
 		: [];
+	// Only a dependency the realizer typed as a Workers script is a Worker to
+	// run: a sole dependency on a queue or a store is not one.
+	const workers = dependencies.flatMap((binding) => {
+		const name = binding.resource ?? binding.providerResourceId;
+		return binding.resourceType === "cloudflare:workers-script" &&
+			isJsonString(name)
+			? [name]
+			: [];
+	});
 	const scriptName = workers[0];
-	if (workers.length !== 1 || scriptName === undefined)
+	if (
+		dependencies.length !== 1 ||
+		workers.length !== 1 ||
+		scriptName === undefined
+	)
 		throw new PulumiEngineUnavailableError(
 			PULUMI_UNSUPPORTED_RESOURCE,
-			`cron trigger ${resource.name} must depend on exactly one Worker to run; it depends on ${workers.length}`,
+			`cron trigger ${resource.name} must depend on exactly one Workers script to run; it depends on ${dependencies.length} resource(s), ${workers.length} of them a Workers script`,
 		);
 	return { scriptName, cron: cron.trim() };
 }

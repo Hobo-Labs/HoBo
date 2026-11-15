@@ -48,10 +48,16 @@ realizes into Pulumi Cloudflare v6 resources, and refuses any other class with
 | `cloudflare:kv-namespace` | `cloudflare:WorkersKvNamespace` | `title` |
 | `cloudflare:r2-bucket` | `cloudflare:R2Bucket` | `name` |
 | `cloudflare:queue` | `cloudflare:Queue` | `queueName` |
-| `cloudflare:cron-trigger` | `cloudflare:WorkersCronTrigger` | `scriptName` (its one Worker dependency), `schedules: [{ cron }]` from the Cloudflare option `cron` |
+| `cloudflare:cron-trigger` | `cloudflare:WorkersCronTrigger` | `scriptName` (its one dependency, which the Cloudflare realizer must type as `cloudflare:workers-script`), `schedules: [{ cron }]` from the Cloudflare option `cron` |
 
-A cron trigger with no `cron` option, or without exactly one Worker to run, is
-refused rather than created with a guessed cadence or target.
+A cron trigger is refused rather than created with a guessed cadence or
+target when it has no `cron` option, or when its one dependency is not a typed
+Workers script. The realizer (`realizeResourcePlans` in
+`@hobo/provider-cloudflare`) records each binding's `resourceType` from its
+sibling plans; an untyped binding, or one on a queue, is not a Worker. The CI
+relay's repair schedule depends on the queue `hobo-ci` and declares its
+cadence outside the Bindle, so it does not deploy through this lane until its
+Worker and cadence are wired.
 
 ### State secrets
 

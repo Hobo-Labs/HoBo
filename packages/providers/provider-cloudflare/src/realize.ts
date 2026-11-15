@@ -101,14 +101,25 @@ export function mergeCloudflareOptions(
 	return merged;
 }
 
-function buildResource(plan: ResourcePlan, withBindRefs: boolean): IacResource {
+function buildResource(
+	plan: ResourcePlan,
+	withBindRefs: boolean,
+	/** Each sibling's resource class, so a binding says what it points at. */
+	classOf: ReadonlyMap<string, string> = new Map(),
+): IacResource {
 	const mapping = resolveEquivalence(plan.port);
 	const resourceClass = mapping.resourceClass;
-	const bindings = (plan.deps ?? []).map((dep) =>
-		withBindRefs
-			? { resource: dep, ref: `\${resources.${dep}.outputs.binding}` }
-			: { providerResourceId: dep },
-	);
+	const bindings = (plan.deps ?? []).map((dep) => {
+		const resourceType = classOf.get(dep);
+		const typed = resourceType === undefined ? undefined : { resourceType };
+		return withBindRefs
+			? {
+					resource: dep,
+					ref: `\${resources.${dep}.outputs.binding}`,
+					...typed,
+				}
+			: { providerResourceId: dep, ...typed };
+	});
 
 	const inputs = {
 		port: plan.port,
@@ -184,7 +195,14 @@ export function realizeResourcePlans(
 	if (plans.length === 0) {
 		throw new Error("cannot realize an empty deployment plan");
 	}
-	const resources = plans.map((plan) => buildResource(plan, true));
+	const classOf = new Map(
+		plans.flatMap((plan) =>
+			isRealizablePort(plan.port)
+				? [[plan.name, resolveEquivalence(plan.port).resourceClass] as const]
+				: [],
+		),
+	);
+	const resources = plans.map((plan) => buildResource(plan, true, classOf));
 	const deploymentId = options.deploymentId ?? "hello-bindle-cloudflare";
 	const first = resources[0];
 	if (first === undefined) {

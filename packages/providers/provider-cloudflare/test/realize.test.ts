@@ -8,6 +8,7 @@ import {
 	type ResourcePlan,
 	realizeHelloBindle,
 	realizeResourcePlan,
+	realizeResourcePlans,
 } from "../src/index.js";
 import type { JsonObject } from "../src/json.js";
 
@@ -119,5 +120,39 @@ describe("hello-bindle realizes end-to-end", () => {
 			],
 		);
 		assert.equal(build?.artifacts[0]?.id, "hello-bindle-wasm");
+	});
+});
+
+describe("bindings say what they point at", () => {
+	it("types each dependency with its sibling's resource class", () => {
+		const plans: ResourcePlan[] = [
+			{ name: "api", port: "compute", provider: "cloudflare" },
+			{ name: "hobo-ci", port: "queue", provider: "cloudflare" },
+			{ name: "tick", port: "schedule", provider: "cloudflare", deps: ["api"] },
+			{
+				name: "repair",
+				port: "schedule",
+				provider: "cloudflare",
+				deps: ["hobo-ci"],
+			},
+		];
+		const { iac } = realizeResourcePlans(plans);
+		const bindingsOf = (name: string) =>
+			iac.resources.find((resource) => resource.name === name)?.inputs.bindings;
+		assert.deepEqual(bindingsOf("tick"), [
+			{
+				resource: "api",
+				ref: "${resources.api.outputs.binding}",
+				resourceType: "cloudflare:workers-script",
+			},
+		]);
+		// The relay's repair schedule depends on a queue, and says so.
+		assert.deepEqual(bindingsOf("repair"), [
+			{
+				resource: "hobo-ci",
+				ref: "${resources.hobo-ci.outputs.binding}",
+				resourceType: "cloudflare:queue",
+			},
+		]);
 	});
 });

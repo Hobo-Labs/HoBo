@@ -78,7 +78,11 @@ describe("pulumi CLI engine (3-2)", () => {
 				inputs: {
 					options: { cron: "*/15 * * * *" },
 					bindings: [
-						{ resource: "api", ref: "${resources.api.outputs.binding}" },
+						{
+							resource: "api",
+							ref: "${resources.api.outputs.binding}",
+							resourceType: "cloudflare:workers-script",
+						},
 					],
 				},
 				outputs: ["cron"],
@@ -110,6 +114,36 @@ describe("pulumi CLI engine (3-2)", () => {
 					name: "repair",
 					type: "cloudflare:cron-trigger",
 					inputs: { options: { cron: "0 * * * *" }, bindings: [] },
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
+		// The relay's repair schedule depends on a queue: not a Worker to run.
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: {
+						options: { cron: "0 * * * *" },
+						bindings: [
+							{ resource: "hobo-ci", resourceType: "cloudflare:queue" },
+						],
+					},
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
+		// An untyped dependency is not assumed to be one either.
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: {
+						options: { cron: "0 * * * *" },
+						bindings: [{ resource: "api" }],
+					},
 				},
 				{ accountId: "a" },
 			),
