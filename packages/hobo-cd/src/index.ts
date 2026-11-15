@@ -1,5 +1,22 @@
 export { CD_CONTINUITY, cdJournalContinuity } from "./continuity.js";
 export {
+	CD_JOURNAL_MEMBER_PLANS,
+	journalMemberModels,
+	UnknownMemberPlanError,
+} from "./fleet-plans.js";
+export {
+	JOURNAL_FLEET_SETTING,
+	JOURNAL_WITNESS_SETTING,
+	type JournalFleetLayout,
+	type JournalFleetMember,
+	type JournalMemberProvisioner,
+	journalFleetLayout,
+	journalFleetRuntime,
+	journalMemberClaimEntry,
+	journalMemberUrlEntry,
+	prepareJournalFleet,
+} from "./journal-fleet.js";
+export {
 	cdYard,
 	type JunctionCredentials,
 	resolveVercelJunction,

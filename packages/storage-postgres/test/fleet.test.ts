@@ -223,6 +223,125 @@ describeLive("PostgreSQL EventStore on a fleet", () => {
 		}
 	});
 
+	it("fences a write under a stale lease at the commit boundary", {
+		timeout: 60_000,
+	}, async () => {
+		const a = await freshDatabase("fa");
+		const b = await freshDatabase("fb");
+		const w = await freshDatabase("fw");
+		const outage: Outage = { down: new Set(), dropOnce: new Set() };
+		// A lease long enough that the store never re-reads the register.
+		const store = await createPostgresFleetEventStore({
+			members: [a, b],
+			witnesses: [w],
+			plan,
+			decidedBy: "fleet-test",
+			leaseMs: 3_600_000,
+			graceMs: 0,
+			pool: switchable(outage),
+		});
+		try {
+			await store.tick();
+			await store.append("f", [{ type: "f.Started", data: {} }], {
+				...OPTS,
+				expectedSeq: 0,
+			});
+			expect(store.writer()).toBe("fa");
+			// Another process moves the writer: the entry reaches the old writer's
+			// copy of the register, and this store's lease still names it.
+			const register = new pg.Client({ connectionString: a.connectionString });
+			await register.connect();
+			try {
+				await register.query(
+					`INSERT INTO hobo_eventstore.hobo_fleet_assignments
+						(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by)
+					SELECT max(epoch) + 1, 'fb', false, NULL, 'failover', 0, now(), 'other'
+					FROM hobo_eventstore.hobo_fleet_assignments`,
+				);
+			} finally {
+				await register.end();
+			}
+			await expect(
+				store.append("f", [{ type: "f.Late", data: {} }], {
+					...OPTS,
+					expectedSeq: 1,
+				}),
+			).rejects.toThrow(/no longer the fleet's writer/);
+			expect(await rows(a)).toBe(1);
+		} finally {
+			await store.end();
+		}
+	});
+
+	it("takes scheduled backups on the witness, prunes them, and restores one", {
+		timeout: 60_000,
+	}, async () => {
+		const a = await freshDatabase("ba");
+		const w = await freshDatabase("bw");
+		const outage: Outage = { down: new Set(), dropOnce: new Set() };
+		let clock = 1_000_000;
+		const store = await createPostgresFleetEventStore({
+			members: [a],
+			witnesses: [w],
+			plan: continuityFleetPlan({
+				tier: "standard",
+				onLoss: "restore",
+				recoveryPointMs: 60 * 60_000,
+				failoverAfterMs: 1_000,
+				standbys: 0,
+				migration: "on-failure",
+				backupEveryMs: 60_000,
+				backupsKept: 2,
+			}),
+			decidedBy: "fleet-test",
+			leaseMs: 0,
+			graceMs: 0,
+			now: () => clock,
+			pool: switchable(outage),
+		});
+		try {
+			// The first tick backs up the (empty) journal; within the period,
+			// a tick takes none.
+			expect((await store.tick()).backup?.kind).toBe("taken");
+			await store.append("b", [{ type: "b.One", data: {} }], {
+				...OPTS,
+				expectedSeq: 0,
+			});
+			clock += 30_000;
+			expect((await store.tick()).backup?.kind).toBe("not-due");
+			// Two more periods: three taken, two kept.
+			for (const n of [2, 3]) {
+				await store.append("b", [{ type: `b.N${n}`, data: {} }], {
+					...OPTS,
+					expectedSeq: n - 1,
+				});
+				clock += 60_000;
+				const outcome = (await store.tick()).backup;
+				expect(outcome?.kind).toBe("taken");
+			}
+			const held = await store.backups();
+			expect(held.map((backup) => backup.rows > 0)).toEqual([true, true]);
+			expect(held[0]?.takenAtMs).toBeGreaterThan(held[1]?.takenAtMs ?? 0);
+			// The writer holds events, so restoring over it is refused.
+			await expect(store.restore({ into: "ba" })).rejects.toThrow(
+				/holds events/,
+			);
+			// A replaced, empty writer gets the newest backup back.
+			const admin = new pg.Client({ connectionString: a.connectionString });
+			await admin.connect();
+			try {
+				await admin.query("TRUNCATE hobo_eventstore.events CASCADE");
+			} finally {
+				await admin.end();
+			}
+			const restored = await store.restore({ into: "ba" });
+			expect(restored.name).toBe(held[0]?.name);
+			expect(await rows(a)).toBe(3);
+		} finally {
+			await store.end();
+		}
+	});
+
 	it("without a witness, a fleet of two holds rather than guess", {
 		timeout: 60_000,
 	}, async () => {

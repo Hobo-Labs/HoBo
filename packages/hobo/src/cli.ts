@@ -37,6 +37,7 @@ import { createAuthMdIdentityCommand } from "./auth-md-command.js";
 import { createBrokerCommand } from "./broker-command.js";
 import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
+import { defaultJournalProvisioners } from "./cd-journal-provisioners.js";
 import { createCiCommand } from "./ci-command.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
 import {
@@ -277,7 +278,11 @@ export function createComposedHoboCli(
 				// the same journal, registry and actor host (one writer), with an
 				// executor whose IaC provider deploys with the junction's token,
 				// resolved from the owner's secret store for this run only.
-				prepare: (input) => prepareVercelConnection(input),
+				// hobo cd up also provisions the CD journal's fleet.
+				prepare: (input) =>
+					prepareVercelConnection(input, {
+						journalProvisioners: defaultJournalProvisioners(),
+					}),
 				upWith: (credentials) =>
 					createBrokerAwareUpCommand({
 						runtime: {

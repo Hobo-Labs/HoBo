@@ -13,8 +13,9 @@
  * The API has no handler binding and the schedule has no cadence in this
  * declaration yet. PostgreSQL fleet placement does not provision or replicate
  * a journal. These resources must be wired before this project can deploy CD.
- * Continuity annotations describe desired policy; they do not establish a
- * safely fenced fleet, independent failure domains, or working backups.
+ * Continuity annotations are the policy the journal's fleet runs by (fenced
+ * writes, standbys, scheduled backups); independent failure domains are the
+ * placement's to establish, and are reported when unverified.
  *
  * Nothing here names a provider; Vercel is the default *connection* `hobo cd
  * up` makes, chosen where the deploy runs. Loaded by the Bindle loader, not

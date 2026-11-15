@@ -24,6 +24,10 @@ import {
 	workloadOidcOf,
 } from "@hobo/hobo-ci";
 
+import {
+	type JournalMemberProvisioner,
+	prepareJournalFleet,
+} from "./journal-fleet.js";
 import { resolveVercelJunction } from "./junction.js";
 import { parseVercelRedirect } from "./redirect.js";
 import {
@@ -104,6 +108,12 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly timeoutMs?: number;
 	/** The run's trusted vault; a fresh one by default. */
 	readonly vault?: TrustedVault;
+	/**
+	 * What creates the CD journal's fleet members (`journal-fleet.ts`). With
+	 * none, `hobo cd up` provisions no journal and the CD runtime keeps its
+	 * single-process SQLite journal.
+	 */
+	readonly journalProvisioners?: readonly JournalMemberProvisioner[];
 }
 
 function refused(
@@ -122,16 +132,39 @@ function refused(
 	return { kind: "refused", result };
 }
 
+/** The journal fleet's step, or the refusal that stops the run. */
+async function journalStep(
+	store: OpenedSecretStore,
+	provisioners: readonly JournalMemberProvisioner[] | undefined,
+	whatIf: boolean,
+) {
+	if (provisioners === undefined || provisioners.length === 0) return [];
+	try {
+		return [await prepareJournalFleet({ store, provisioners, whatIf })];
+	} catch (error) {
+		return refused(
+			"HOBO_CD_JOURNAL_NOT_PROVISIONED",
+			`The CD journal's fleet could not be provisioned: ${error instanceof Error ? error.message : String(error)}`,
+			[
+				"Run hobo cd up again: members already in your secret store are kept, and only the missing ones are created.",
+			],
+		);
+	}
+}
+
 async function ready(
 	store: OpenedSecretStore,
 	outcome: "created" | "unchanged",
 	vault: TrustedVault,
+	provisioners: readonly JournalMemberProvisioner[] | undefined,
 ): Promise<PrepareOutcome> {
 	const resolved = await resolveVercelJunction(store, vault);
 	if (!resolved.ok)
 		return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", resolved.message, [
 			"Run hobo cd up again; if it persists, check access to the secret store.",
 		]);
+	const journal = await journalStep(store, provisioners, false);
+	if (!Array.isArray(journal)) return journal;
 	return {
 		kind: "ready",
 		steps: [
@@ -140,6 +173,7 @@ async function ready(
 				outcome,
 				detail: `junction ${resolved.junction.name} (${resolved.junction.yards.map((y) => y.name).join(" <-> ")}); credential in ${store.id}`,
 			},
+			...journal,
 		],
 		credentials: vault,
 	};
@@ -212,7 +246,13 @@ async function prepareVercelWithVault(
 		);
 	}
 	if (owner.opened !== undefined && connected) {
-		if (input.whatIf)
+		if (input.whatIf) {
+			const journal = await journalStep(
+				owner.opened,
+				deps.journalProvisioners,
+				true,
+			);
+			if (!Array.isArray(journal)) return journal;
 			return {
 				kind: "ready",
 				steps: [
@@ -221,9 +261,11 @@ async function prepareVercelWithVault(
 						outcome: "unchanged",
 						detail: `already in ${owner.opened.id}`,
 					},
+					...journal,
 				],
 			};
-		return ready(owner.opened, "unchanged", vault);
+		}
+		return ready(owner.opened, "unchanged", vault, deps.journalProvisioners);
 	}
 	if (input.whatIf)
 		return {
@@ -407,5 +449,10 @@ async function prepareVercelWithVault(
 			step.kind === "failed" ? step.message : "Vercel was not connected.",
 			step.kind === "failed" ? step.remediation : [],
 		);
-	return ready(connectedStore, vercel?.outcome() ?? "unchanged", vault);
+	return ready(
+		connectedStore,
+		vercel?.outcome() ?? "unchanged",
+		vault,
+		deps.journalProvisioners,
+	);
 }
