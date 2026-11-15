@@ -44,6 +44,9 @@ integration (`OP_ACCOUNT`, unlocked with your biometrics), or a service
 account token where no desktop app runs. HoBo writes none of these anywhere.
 The relay reads the credentials back with its own workload identity (OIDC),
 so no secret is put in the repository, a CI variable or the page.
+When updating an existing 1Password item, HoBo preserves its other metadata and
+refuses the update if the item changed since it was read. Displayed 1Password
+references point to the item's `password` field.
 
 Configuration (environment, nothing secret): `HOBO_CI_PUBLIC_URL`,
 `HOBO_CI_GITHUB_OWNER`, `HOBO_CI_GITHUB_OWNER_ID`, optional

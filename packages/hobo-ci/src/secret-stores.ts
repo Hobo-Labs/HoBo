@@ -1,5 +1,6 @@
 import {
 	createOnePasswordSecretsPort,
+	ONE_PASSWORD_VALUE_FIELD,
 	type OnePasswordSdkClient,
 	onePasswordBinding,
 } from "@hobo/adapter-1password";
@@ -54,17 +55,22 @@ export interface SecretStoreDeps {
 }
 
 type Sdk = typeof import("@1password/sdk");
-type SdkClient = Awaited<ReturnType<Sdk["createClient"]>>;
+type SdkClient = {
+	readonly items: Pick<
+		Awaited<ReturnType<Sdk["createClient"]>>["items"],
+		"list" | "get" | "create" | "put"
+	>;
+};
 type SdkItem = Awaited<ReturnType<SdkClient["items"]["get"]>>;
 
 /**
  * The real SDK client behind the adapter's port. The port carries the SDK's
  * string enums as strings; they are parsed back by membership (an unknown
- * category or field type is refused, never cast). `put` needs the whole SDK
- * item, so each item the port hands out remembers the one it came from.
+ * category or field type is refused, never cast). Before an update, fetch the
+ * whole SDK item again and verify its version and field identities so SDK-only
+ * metadata is retained and concurrent changes are not overwritten.
  */
-function sdkPort(sdk: Sdk, client: SdkClient): OnePasswordSdkClient {
-	const originals = new WeakMap<object, SdkItem>();
+export function sdkPort(sdk: Sdk, client: SdkClient): OnePasswordSdkClient {
 	const categories: readonly string[] = Object.values(sdk.ItemCategory);
 	const fieldTypes: readonly string[] = Object.values(sdk.ItemFieldType);
 	const category = (value: string) => {
@@ -96,7 +102,6 @@ function sdkPort(sdk: Sdk, client: SdkClient): OnePasswordSdkClient {
 			})),
 			version: item.version,
 		};
-		originals.set(ported, item);
 		return ported;
 	};
 	return {
@@ -116,17 +121,46 @@ function sdkPort(sdk: Sdk, client: SdkClient): OnePasswordSdkClient {
 					}),
 				),
 			put: async (item) => {
-				const original = originals.get(item);
-				if (original === undefined)
-					throw new Error("put needs an item read through this client");
+				const original = await client.items.get(item.vaultId, item.id);
+				if (
+					original.id !== item.id ||
+					original.vaultId !== item.vaultId ||
+					original.version !== item.version ||
+					original.title !== item.title ||
+					original.category !== item.category ||
+					original.fields.length !== item.fields.length ||
+					original.fields.filter(
+						(field) => field.id === ONE_PASSWORD_VALUE_FIELD,
+					).length !== 1
+				)
+					throw new Error(
+						"1Password item changed or has an invalid password field",
+					);
+				const pending = new Map(
+					item.fields.map((field) => [
+						JSON.stringify([field.id, field.sectionId ?? null]),
+						field,
+					]),
+				);
+				if (pending.size !== item.fields.length)
+					throw new Error("1Password item has ambiguous fields");
+				const fields = original.fields.map((field) => {
+					const key = JSON.stringify([field.id, field.sectionId ?? null]);
+					const updated = pending.get(key);
+					if (
+						!updated ||
+						updated.title !== field.title ||
+						updated.fieldType !== field.fieldType
+					)
+						throw new Error("1Password item fields changed");
+					pending.delete(key);
+					return { ...field, value: updated.value };
+				});
+				if (pending.size) throw new Error("1Password item fields changed");
 				return toPort(
 					await client.items.put({
 						...original,
-						title: item.title,
-						fields: item.fields.map((field) => ({
-							...field,
-							fieldType: fieldType(field.fieldType),
-						})),
+						fields,
 					}),
 				);
 			},
@@ -208,13 +242,18 @@ export async function openSecretStore(
 				const client = await (deps.onePasswordClient ?? onePasswordSdkClient)(
 					env,
 				);
-				const binding = onePasswordBinding({ vaultId });
+				const binding = onePasswordBinding({
+					vaultId,
+					authMode: env.OP_ACCOUNT ? "desktop-app" : "service-account",
+					...(env.OP_ACCOUNT ? { accountName: env.OP_ACCOUNT } : undefined),
+				});
 				return {
 					ok: true,
 					store: {
 						id,
 						port: createOnePasswordSecretsPort({ client, binding }),
-						reference: (name) => `op://${vaultId}/${name}/value`,
+						reference: (name) =>
+							`op://${vaultId}/${name}/${ONE_PASSWORD_VALUE_FIELD}`,
 					},
 				};
 			} catch {
