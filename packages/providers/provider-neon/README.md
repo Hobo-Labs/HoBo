@@ -14,7 +14,13 @@ not infer spending authority or capacity from the declaration.
 
 The resolver uses the Neon Management API on `console.neon.tech`. A project
 create is sent at most once: an unresolved response with no recorded native
-identity remains blocked. A recorded result is read back against the exact
+identity remains blocked. The creation claim and identity record are keyed by
+the logical resource and deployment incarnation, so changing a retry key cannot
+allocate a second project. A host must declare the `neon-managed-logical/v1`
+identity namespace only after verifying that the scope has no earlier
+experimental operations, or migrating their identity records and journal
+claims under an exclusive fence. Unresolved outcomes remain blocked; migration
+is not automated. A recorded result is read back against the exact
 organization, region, quotas, direct endpoint and database. The direct session
 uses hostname-verified TLS and checks PostgreSQL identity, write permission and
 `LISTEN`/`NOTIFY`. It requires SCRAM channel binding and refuses a server that

@@ -35,6 +35,9 @@ import {
 // public-contract: stable product identity shared by SDK declarations and provider bindings.
 export const NEON_MANAGED_POSTGRES_PRODUCT_ID = "neon.managed-postgres/v1";
 
+// public-contract: host assertion that logical identity records and claims use the new namespace.
+export const NEON_MANAGED_LOGICAL_NAMESPACE = "neon-managed-logical/v1";
+
 /** Registration is not evidence of a funded account or a healthy database. */
 export function createNeonManagedPostgresCandidate(
 	input: {
@@ -106,9 +109,13 @@ export interface NeonManagedProjectIdentity {
 }
 
 /** The record is immutable and may only be written after the exact create
- * response has been received. It binds a private operation to native IDs. */
+ * response has been received. It binds a logical resource to native IDs.
+ * The host must declare this namespace only after confirming there are no
+ * earlier experimental records or migrating their records and journal claims
+ * under an exclusive fence. Unresolved outcomes must remain blocked. */
 export interface NeonManagedProjectRepository {
 	readonly persistence: "durable-cas";
+	readonly identityNamespace: typeof NEON_MANAGED_LOGICAL_NAMESPACE;
 	read(key: string): Promise<NeonManagedProjectIdentity | undefined>;
 	create(key: string, identity: NeonManagedProjectIdentity): Promise<void>;
 }
@@ -546,6 +553,7 @@ export function createNeonManagedPostgresResolver(
 		options.journal.persistence !== "durable-cas" ||
 		!(options.journal.inspect instanceof Function) ||
 		options.repository.persistence !== "durable-cas" ||
+		options.repository.identityNamespace !== NEON_MANAGED_LOGICAL_NAMESPACE ||
 		!(options.repository.read instanceof Function) ||
 		!(options.repository.create instanceof Function) ||
 		!(options.revalidateBeforeWrite instanceof Function) ||
@@ -609,7 +617,11 @@ export function createNeonManagedPostgresResolver(
 			settings: { quota: wireQuota(limits) },
 		};
 		const desiredDigest = `sha256:${hash(JSON.stringify(desired))}`;
-		const key = `neon-managed:${hash(JSON.stringify([scope.tenantId, scope.providerAccountId, scope.scopeId, request.ref.logicalId, operationKey]))}`;
+		// A retry key may change, but it must not create a second project for the
+		// same logical resource in one deployment incarnation. The request digest
+		// still binds the claimed operation to the exact desired configuration.
+		const resourceRef = await claimableResourceRef(scope, request);
+		const key = `neon-managed:logical:${hash(resourceRef)}`;
 		return { name, desired, desiredDigest, key, mutationId: `${key}:create` };
 	}
 	async function authorize(

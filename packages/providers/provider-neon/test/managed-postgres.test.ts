@@ -9,6 +9,7 @@ import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
 import {
 	createNeonManagedPostgresCandidate,
 	createNeonManagedPostgresResolver,
+	NEON_MANAGED_LOGICAL_NAMESPACE,
 	NEON_MANAGED_POSTGRES_PRODUCT_ID,
 	type NeonManagedPostgresOptions,
 	type NeonManagedProjectIdentity,
@@ -94,6 +95,7 @@ function fixture() {
 		journal,
 		repository: {
 			persistence: "durable-cas",
+			identityNamespace: NEON_MANAGED_LOGICAL_NAMESPACE,
 			async read(key) {
 				return records.get(key);
 			},
@@ -342,6 +344,72 @@ describe("account-owned Neon PostgreSQL", () => {
 		).rejects.toThrow("inventory");
 		expect(f.stats().posts).toBe(0);
 	});
+	it("refuses a repository that has not declared the migrated logical namespace", () => {
+		const f = fixture();
+		Reflect.deleteProperty(f.options.repository, "identityNamespace");
+		expect(() => createNeonManagedPostgresResolver(f.options)).toThrow(
+			"scoped durable authority",
+		);
+		expect(f.stats().posts).toBe(0);
+	});
+
+	it("serializes concurrent create attempts with different retry keys for one resource", async () => {
+		const f = fixture();
+		const resolver = createNeonManagedPostgresResolver(f.options);
+		const changed = {
+			...request,
+			desired: { ...request.desired, idempotencyKey: "different-attempt" },
+		};
+		const results = await Promise.allSettled([
+			resolver.reconcile(request, f.transport),
+			resolver.reconcile(changed, f.transport),
+		]);
+		expect(
+			results.filter((result) => result.status === "fulfilled"),
+		).toHaveLength(1);
+		expect(f.stats().posts).toBe(1);
+	});
+
+	it("keeps different deployment incarnations in separate creation scopes", async () => {
+		const f = fixture();
+		const first = createNeonManagedPostgresResolver(f.options);
+		const second = createNeonManagedPostgresResolver({
+			...f.options,
+			scope: { ...f.options.scope, scopeId: "deployment-2" },
+		});
+		expect((await first.reconcile(request, f.transport)).action).toBe("create");
+		expect((await second.reconcile(request, f.transport)).action).toBe(
+			"create",
+		);
+		expect(f.stats().posts).toBe(2);
+		expect(f.records.size).toBe(2);
+	});
+
+	it("does not create another project when the idempotency key changes for the same resource", async () => {
+		const f = fixture();
+		const resolver = createNeonManagedPostgresResolver(f.options);
+		await resolver.reconcile(request, f.transport);
+		const changed = {
+			...request,
+			desired: { ...request.desired, idempotencyKey: "different-attempt" },
+		};
+		await expect(resolver.reconcile(changed, f.transport)).rejects.toThrow();
+		expect(f.stats().posts).toBe(1);
+	});
+
+	it("does not retry an uncertain project under a different idempotency key", async () => {
+		const f = fixture();
+		f.loseResponse();
+		const resolver = createNeonManagedPostgresResolver(f.options);
+		await expect(resolver.reconcile(request, f.transport)).rejects.toThrow();
+		const changed = {
+			...request,
+			desired: { ...request.desired, idempotencyKey: "different-attempt" },
+		};
+		await expect(resolver.reconcile(changed, f.transport)).rejects.toThrow();
+		expect(f.stats().posts).toBe(1);
+	});
+
 	it("creates once, verifies the direct session and stores only references in the result", async () => {
 		const f = fixture(),
 			resolver = createNeonManagedPostgresResolver(f.options);

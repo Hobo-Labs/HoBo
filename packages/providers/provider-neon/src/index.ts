@@ -82,6 +82,7 @@ export {
 export {
 	createNeonManagedPostgresCandidate,
 	createNeonManagedPostgresResolver,
+	NEON_MANAGED_LOGICAL_NAMESPACE,
 	NEON_MANAGED_POSTGRES_PRODUCT_ID,
 	type NeonManagedAuthorization,
 	type NeonManagedPostgresOptions,
