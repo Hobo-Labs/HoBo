@@ -317,6 +317,25 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 		)
 	)
 		offered.push({ port: "secretRef", features: ["access"] });
+	// SDK data resources retain their kind during planning. Expose the new
+	// ports only when the Yard binds an implementation of that kind.
+	if (
+		yard.bindings.some(
+			(row) =>
+				row.profile === capability.kv.keyValue ||
+				row.profile === capability.kv.redisCompatible ||
+				row.profile === capability.kv.valkey,
+		)
+	)
+		offered.push({ port: "kv", features: none });
+	if (
+		yard.bindings.some(
+			(row) =>
+				row.profile === capability.queue.atLeastOnce ||
+				row.profile === capability.queue.fifo,
+		)
+	)
+		offered.push({ port: "queue", features: none });
 	return {
 		id: `yard:${yard.name}`,
 		regions: [...yard.regions],
