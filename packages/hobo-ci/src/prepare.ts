@@ -8,6 +8,7 @@ import {
 	startConnectPage,
 } from "@hobo/connect-ui";
 
+import { browserEnvironment } from "./browser-environment.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import {
 	type Env,
@@ -60,7 +61,7 @@ function refused(
 	return { kind: "refused", result };
 }
 
-function openInBrowser(url: string): void {
+export function openInBrowser(url: string): void {
 	const command =
 		process.platform === "darwin"
 			? "open"
@@ -68,7 +69,11 @@ function openInBrowser(url: string): void {
 				? "explorer"
 				: "xdg-open";
 	try {
-		const child = spawn(command, [url], { stdio: "ignore", detached: true });
+		const child = spawn(command, [url], {
+			stdio: "ignore",
+			detached: true,
+			env: browserEnvironment(process.env),
+		});
 		child.on("error", () => undefined);
 		child.unref();
 	} catch {

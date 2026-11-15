@@ -4,7 +4,11 @@ export {
 	type GithubConnectOptions,
 	githubAppConnected,
 } from "./github.js";
-export { type PrepareGithubDeps, prepareGithubConnection } from "./prepare.js";
+export {
+	openInBrowser,
+	type PrepareGithubDeps,
+	prepareGithubConnection,
+} from "./prepare.js";
 export { ciProjectDir } from "./project.js";
 export {
 	type Env,
