@@ -55,6 +55,11 @@ require the current CD Set to have a converged observation. Revision selectors
 and rollback cannot be combined with `--what-if`; rollback restores the prior
 Set exactly and cannot be combined with `--mode`.
 
+Budgeted hosting plans require a trusted Yard binding before reading budget
+evidence and reject target selectors that the hosting authority cannot verify.
+`up --what-if` uses the same session selection as `up`, including an anonymous
+session when `--anonymous` or `--temporary` is selected.
+
 Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
 own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,
 `INCIDENT_SUBCOMMANDS`, `SERVE_SUBCOMMANDS`). Each is a typed value or switch;

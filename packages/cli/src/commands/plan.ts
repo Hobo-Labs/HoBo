@@ -47,8 +47,25 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 					remediation: ["Pass --mode incremental or --mode complete."],
 				};
 			}
+			const projectDir = context.projectDir ?? context.cwd;
+			const bindle = await loadProjectManifest(projectDir);
+			if (!bindle) {
+				return stubResult("plan");
+			}
+
+			const deploymentId = deploymentIdFor(projectDir);
+			const budgetId =
+				flags.budgetId ??
+				preflightRuntime?.defaultHostingBudgetId ??
+				runtime?.defaultHostingBudgetId;
+			const hosted = Boolean(
+				preflightRuntime ||
+					budgetId ||
+					runtime?.hostingBudgetRequired ||
+					manifestHostingPolicy(bindle).required,
+			);
 			if (
-				preflightRuntime &&
+				hosted &&
 				(args.length ||
 					flags.camp ||
 					flags.target ||
@@ -63,28 +80,6 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 						"The configured hosting authority cannot verify that target selector",
 					remediation: ["Select the intended project with --cwd and retry."],
 				};
-
-			const projectDir = context.projectDir ?? context.cwd;
-			const bindle = await loadProjectManifest(projectDir);
-			if (!bindle) {
-				return stubResult("plan");
-			}
-
-			// Fold any providers installed via `hobo add` from the durable registry
-			// stream into the matchable snapshot before planning.
-			if (!preflightRuntime) await runtime?.registry.refresh?.();
-
-			const deploymentId = deploymentIdFor(projectDir);
-			const budgetId =
-				flags.budgetId ??
-				preflightRuntime?.defaultHostingBudgetId ??
-				runtime?.defaultHostingBudgetId;
-			const hosted = Boolean(
-				preflightRuntime ||
-					budgetId ||
-					runtime?.hostingBudgetRequired ||
-					manifestHostingPolicy(bindle).required,
-			);
 			if (flags.mode && hosted)
 				return {
 					ok: false,
@@ -94,6 +89,9 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 					remediation: ["Omit --mode for this hosting deployment."],
 					data: { command: "plan", deploymentId },
 				};
+			// Fold installed providers into ordinary runtime planning only after
+			// refusing selectors the hosting authority cannot verify.
+			if (!preflightRuntime) await runtime?.registry.refresh?.();
 			const session = deps.session ?? (await loadSession(projectDir));
 			if (preflightRuntime && !session)
 				return {
@@ -113,7 +111,6 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 							deploymentId,
 							session,
 							config,
-							requireYardBinding: true,
 						})
 					: runtime && hosted
 						? await planHostingAuthoritatively(runtime, bindle, {

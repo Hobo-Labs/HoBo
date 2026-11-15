@@ -63,7 +63,14 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 			}
 			// `up --what-if` is the plan: the change set, never applied.
 			if (flags.whatIf) {
-				const planned = await createPlanCommand({ runtime }).run(input);
+				const session =
+					flags.anonymous || flags.temporary
+						? createFixtureSession()
+						: deps.session;
+				const planned = await createPlanCommand({
+					runtime,
+					...(session ? { session } : undefined),
+				}).run(input);
 				return {
 					...planned,
 					...(planned.message !== undefined

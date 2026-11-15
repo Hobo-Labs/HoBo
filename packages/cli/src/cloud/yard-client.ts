@@ -406,13 +406,10 @@ export async function planHostingAuthoritatively(
 		deploymentId,
 		session,
 		config,
-		requireYardBinding = runtime.hostingBudgetRequired === true,
 	}: {
 		readonly deploymentId: string;
 		readonly session: YardSession;
 		readonly config?: DeployConfig;
-		/** A hosted preflight must identify its provider boundary. */
-		readonly requireYardBinding?: boolean;
 	},
 ): Promise<PlanRendered> {
 	const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
@@ -435,7 +432,7 @@ export async function planHostingAuthoritatively(
 		bindle,
 		session,
 	});
-	if (requireYardBinding && !binding)
+	if (!binding)
 		return {
 			ok: false,
 			deploymentId,
@@ -461,7 +458,7 @@ export async function planHostingAuthoritatively(
 		{
 			...planConfig(deploymentId, config),
 			hostingBudget: evidence,
-			...(binding ? { binding } : undefined),
+			binding,
 		},
 		runtime.registry,
 	);

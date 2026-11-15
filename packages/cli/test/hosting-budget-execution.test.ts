@@ -5,6 +5,7 @@ import { parseManifest } from "@hobo/bindles";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
+	type PlanBindingAuthority,
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 import { createInMemoryActorHost } from "@hobo/data";
@@ -13,6 +14,7 @@ import {
 	createRuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
+import { persistSession } from "../src/cloud/session.js";
 import {
 	createYardClient,
 	planHostingAuthoritatively,
@@ -20,6 +22,7 @@ import {
 	type YardSession,
 } from "../src/cloud/yard-client.js";
 import { createPlanCommand } from "../src/commands/plan.js";
+import { createUpCommand } from "../src/commands/up.js";
 import { createHoboCli } from "../src/index.js";
 import { parseArgv } from "../src/shell/parse.js";
 
@@ -203,6 +206,140 @@ function fixture() {
 	};
 }
 describe("production CLI budget execution", () => {
+	it("rejects unverified target selectors for a budgeted runtime before consulting the registry or authority", async () => {
+		const fx = fixture();
+		const cwd = mkdtempSync(join(tmpdir(), "cli-hosting-target-"));
+		dispose.push(() => rmSync(cwd, { recursive: true, force: true }));
+		writeFileSync(
+			join(cwd, "hobo.bindle.json"),
+			JSON.stringify(manifest.value),
+		);
+		let refreshes = 0;
+		let bindings = 0;
+		const runtime: YardRuntime = {
+			...fx.runtime,
+			registry: {
+				...fx.runtime.registry,
+				refresh: async () => {
+					refreshes++;
+				},
+			},
+			hostingPlanBinding: async (request) => {
+				bindings++;
+				if (!fx.runtime.hostingPlanBinding) throw new Error("missing binding");
+				return fx.runtime.hostingPlanBinding(request);
+			},
+		};
+		const cli = createHoboCli({
+			commands: {
+				plan: createPlanCommand({ runtime, session }),
+				up: createUpCommand({ runtime, session }),
+			},
+		});
+		for (const args of [
+			["--camp", "foreign", "plan", "--json"],
+			["plan", "--target", "foreign", "--json"],
+			["plan", "foreign", "--json"],
+			["--camp", "foreign", "up", "--what-if", "--json"],
+			["up", "--what-if", "--broker", "https://foreign.test", "--json"],
+			["up", "--what-if", "--broker-uri", "https://foreign.test", "--json"],
+		]) {
+			const result = await cli.run(args, { cwd });
+			expect(JSON.parse(result.stdout)).toMatchObject({
+				ok: false,
+				code: "HOBO_PLAN_TARGET_UNAVAILABLE",
+			});
+		}
+		const { defaultHostingBudgetId: _defaultBudgetId, ...budgetOnlyRuntime } =
+			runtime;
+		const budgetOnly = createHoboCli({
+			commands: {
+				plan: createPlanCommand({
+					runtime: { ...budgetOnlyRuntime, hostingBudgetRequired: false },
+					session,
+				}),
+			},
+		});
+		const explicitBudget = await budgetOnly.run(
+			["plan", "--budget", "hosting", "--target", "foreign", "--json"],
+			{ cwd },
+		);
+		expect(JSON.parse(explicitBudget.stdout)).toMatchObject({
+			ok: false,
+			code: "HOBO_PLAN_TARGET_UNAVAILABLE",
+		});
+		expect({ refreshes, bindings }).toEqual({ refreshes: 0, bindings: 0 });
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
+	});
+	it("uses the requested session for what-if and does not borrow it for anonymous previews", async () => {
+		const fx = fixture();
+		const cwd = mkdtempSync(join(tmpdir(), "cli-hosting-preview-session-"));
+		dispose.push(() => rmSync(cwd, { recursive: true, force: true }));
+		writeFileSync(
+			join(cwd, "hobo.bindle.json"),
+			JSON.stringify(manifest.value),
+		);
+		const seen: YardSession[] = [];
+		const runtime: YardRuntime = {
+			...fx.runtime,
+			hostingPlanBinding: async (request) => {
+				seen.push(request.session);
+				if (!fx.runtime.hostingPlanBinding) throw new Error("missing binding");
+				return fx.runtime.hostingPlanBinding(request);
+			},
+		};
+		const cli = createHoboCli({
+			commands: { up: createUpCommand({ runtime, session }) },
+		});
+		const preview = await cli.run(["up", "--what-if", "--json"], { cwd });
+		expect(JSON.parse(preview.stdout)).toMatchObject({ ok: true });
+		expect(seen[0]).toEqual(session);
+		await persistSession(cwd, session);
+		await cli.run(["up", "--what-if", "--anonymous", "--json"], { cwd });
+		expect(seen[1]).toMatchObject({
+			tenant: "hobo-dev",
+			principal: { id: "user:anonymous" },
+		});
+		await cli.run(["up", "--what-if", "--temporary", "--json"], { cwd });
+		expect(seen[2]).toMatchObject({
+			tenant: "hobo-dev",
+			principal: { id: "user:anonymous" },
+		});
+		expect(fx.counts()).toEqual({
+			legacyWrites: 0,
+			reservations: 0,
+			supervised: 0,
+			teardowns: 0,
+		});
+	});
+	it("never resolves budget evidence without a trusted binding even when hosting is optional", async () => {
+		const fx = fixture();
+		const { hostingPlanBinding: _binding, ...runtime } = fx.runtime;
+		const authority = fx.runtime.hostingBudgetAuthority;
+		if (!authority) throw new Error("missing hosting authority");
+		let resolutions = 0;
+		const result = await createYardClient({
+			...runtime,
+			hostingBudgetRequired: false,
+			hostingBudgetAuthority: {
+				...authority,
+				resolve: async (request) => {
+					resolutions++;
+					return authority.resolve(request);
+				},
+			},
+		}).planAuthoritatively(manifest, { deploymentId: "one", session });
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "trusted Yard binding is not configured",
+		});
+		expect(resolutions).toBe(0);
+	});
 	it("does not preview an unsupported hosting deployment mode as an executable change", async () => {
 		const fx = fixture();
 		const cwd = mkdtempSync(join(tmpdir(), "cli-hosting-mode-"));
