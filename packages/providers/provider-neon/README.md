@@ -25,7 +25,8 @@ key and reject a changed request digest, rather than treating the two fields as
 a composite key. A recorded result is read back against the exact
 organization, region, quotas, direct endpoint and database. The direct session
 uses hostname-verified TLS and checks PostgreSQL identity, write permission and
-`LISTEN`/`NOTIFY`. It requires SCRAM channel binding and refuses a server that
+`LISTEN`/`NOTIFY`. Malformed credential encodings are rejected before the
+session or secret-store write. It requires SCRAM channel binding and refuses a server that
 offers only ordinary SCRAM, MD5, or trust authentication. The owner connection
 URI preserves `channel_binding=require` in management-only custody,
 while the resolver returns only its reference. The owner is not a workload

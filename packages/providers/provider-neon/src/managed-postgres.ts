@@ -865,8 +865,12 @@ export function createNeonManagedPostgresResolver(
 		if (!isJsonString(raw))
 			return refuse("Neon database credential is unavailable");
 		let uri: URL;
+		let username: string;
+		let password: string;
 		try {
 			uri = new URL(raw);
+			username = decodeURIComponent(uri.username);
+			password = decodeURIComponent(uri.password);
 		} catch {
 			return refuse("Neon database credential is invalid");
 		}
@@ -876,7 +880,7 @@ export function createNeonManagedPostgresResolver(
 			uri.hostname !== native.host ||
 			Number(uri.port || 5432) !== 5432 ||
 			uri.pathname !== `/${database}` ||
-			decodeURIComponent(uri.username) !== role ||
+			username !== role ||
 			!uri.password ||
 			uri.hash ||
 			parameters.some(
@@ -892,7 +896,6 @@ export function createNeonManagedPostgresResolver(
 			return refuse(
 				"Neon credential differs from its verified direct endpoint",
 			);
-		const password = decodeURIComponent(uri.password);
 		uri.search = "";
 		uri.searchParams.set("sslmode", "verify-full");
 		uri.searchParams.set("channel_binding", "require");

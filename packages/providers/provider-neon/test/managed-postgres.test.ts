@@ -545,6 +545,34 @@ describe("account-owned Neon PostgreSQL", () => {
 		expect(c.stats().secretWrites).toBe(0);
 	});
 
+	it.each([
+		["%FF", "fake-value"],
+		["hobo_journal_owner", "%FF"],
+	])("rejects malformed credential encoding without probing or storing it", async (username, password) => {
+		const f = fixture();
+		const transport: HttpTransport = async (call) => {
+			if (new URL(call.url).pathname.endsWith("/connection_uri"))
+				return {
+					status: 200,
+					headers: {},
+					body: JSON.stringify({
+						uri: `postgresql://${username}:${password}@ep-ready.us-east-1.aws.neon.tech/hobo_journal?sslmode=require&channel_binding=require`,
+					}),
+				};
+			return f.transport(call);
+		};
+		await expect(
+			createNeonManagedPostgresResolver(f.options).reconcile(
+				request,
+				transport,
+			),
+		).rejects.toMatchObject({
+			code: "RESOLVER_PROVIDER_REJECTED",
+			message: "Neon database credential is invalid",
+		});
+		expect(f.stats()).toMatchObject({ secretWrites: 0, probes: 0 });
+	});
+
 	it("does not recreate missing or changed custody on a read", async () => {
 		const f = fixture(),
 			resolver = createNeonManagedPostgresResolver(f.options);
