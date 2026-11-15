@@ -16,7 +16,12 @@ import {
 
 import { resolveVercelJunction } from "./junction.js";
 import { parseVercelRedirect } from "./redirect.js";
-import { createVercelConnectFlow, vercelConnected } from "./vercel.js";
+import {
+	createVercelConnectFlow,
+	readVercelConnection,
+	type StoredVercelConnection,
+	sameVercelConnection,
+} from "./vercel.js";
 
 // `hobo cd up`'s prepare step: make sure the Vercel connection exists in the
 // owner's secret store, then resolve the Vercel junction's credential for
@@ -62,8 +67,9 @@ function refused(
 async function ready(
 	store: OpenedSecretStore,
 	outcome: "created" | "unchanged",
+	matches?: (connection: StoredVercelConnection) => boolean,
 ): Promise<PrepareOutcome> {
-	const resolved = await resolveVercelJunction(store);
+	const resolved = await resolveVercelJunction(store, matches);
 	if (!resolved.ok)
 		return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", resolved.message, [
 			"Run hobo cd up again; if it persists, check access to the secret store.",
@@ -99,9 +105,9 @@ export async function prepareVercelConnection(
 
 	const opened = await openStore(preferredRaw);
 	if (opened.ok) {
-		let connected: boolean;
+		let connection: Awaited<ReturnType<typeof readVercelConnection>>;
 		try {
-			connected = await vercelConnected(opened.store);
+			connection = await readVercelConnection(opened.store);
 		} catch {
 			return refused(
 				"HOBO_CD_SECRET_STORE_UNAVAILABLE",
@@ -111,7 +117,7 @@ export async function prepareVercelConnection(
 				],
 			);
 		}
-		if (connected) {
+		if (connection) {
 			if (input.whatIf)
 				return {
 					kind: "ready",
@@ -123,7 +129,9 @@ export async function prepareVercelConnection(
 						},
 					],
 				};
-			return ready(opened.store, "unchanged");
+			return ready(opened.store, "unchanged", (current) =>
+				sameVercelConnection(connection, current),
+			);
 		}
 	}
 	if (input.whatIf)
@@ -219,5 +227,5 @@ export async function prepareVercelConnection(
 			step.kind === "failed" ? step.message : "Vercel was not connected.",
 			step.kind === "failed" ? step.remediation : [],
 		);
-	return ready(chosen, flow.outcome() ?? "created");
+	return ready(chosen, flow.outcome() ?? "created", flow.matchesConnection);
 }
