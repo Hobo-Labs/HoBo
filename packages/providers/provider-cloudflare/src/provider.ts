@@ -30,6 +30,7 @@ const COST_FACTS = {
 	"web/service": { sku: "cloudflare.workers.request", unit: "request" },
 	kv: { sku: "cloudflare.kv.read", unit: "operation" },
 	objectStore: { sku: "cloudflare.r2.storage.gb-month", unit: "GB-month" },
+	queue: { sku: "cloudflare.queues.operation", unit: "operation" },
 	schedule: { sku: "cloudflare.workers.cron-trigger", unit: "invocation" },
 } as const;
 
@@ -73,6 +74,8 @@ function classForPort(port: string): InitialCapabilityPort | undefined {
 			return "kv";
 		case "objectStore":
 			return "objectStore";
+		case "queue":
+			return "queue";
 		case "schedule":
 			return "schedule";
 		default:

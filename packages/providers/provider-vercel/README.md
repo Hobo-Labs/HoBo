@@ -3,7 +3,8 @@
 Vercel CloudProvider for HoBo Examples OOB yards.
 
 - Equivalence → default Resource Definitions (`EQUIVALENCE_CLASSES` / `createVercelProvider`):
-  compute, objectStore, database, kv and **schedule** (Vercel Cron Jobs, `vercel:cron-job`:
+  compute, objectStore, database, kv, **queue** (Vercel Queues, `vercel:queue`: at-least-once
+  delivery to a consumer function of the deployment, with delays) and **schedule** (Vercel Cron Jobs, `vercel:cron-job`:
   a cron expression in the project's `vercel.json` that calls one of the deployment's
   own paths with the project's `CRON_SECRET`; realized with that deployment)
 - Matching `satisfies` full|partial|none + typed impedance (`vercelImpedanceFindings`)

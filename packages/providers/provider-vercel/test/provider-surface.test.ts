@@ -204,8 +204,8 @@ describe("realize", () => {
 	it("refuses a port it cannot realize, naming the port", () => {
 		// Named because a placement that reached here picked the wrong provider,
 		// and the reader needs to know which port did it.
-		expect(() => provider.realize({ name: "q", port: "queue" })).toThrow(
-			/cannot realize port queue/u,
+		expect(() => provider.realize({ name: "q", port: "topic" })).toThrow(
+			/cannot realize port topic/u,
 		);
 	});
 });
@@ -228,8 +228,8 @@ describe("client", () => {
 	});
 
 	it("refuses a client for a port it has none for", () => {
-		expect(() => provider.client("queue", {})).toThrow(
-			/no client for port queue/u,
+		expect(() => provider.client("topic", {})).toThrow(
+			/no client for port topic/u,
 		);
 	});
 });

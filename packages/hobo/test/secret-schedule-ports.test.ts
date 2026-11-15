@@ -33,7 +33,7 @@ describe("the secretRef and schedule ports", () => {
 		expect(manifest).toContain('"realizes":"reference"');
 	});
 
-	it("places the CI relay's config on the secret store and its repair schedule on Cron Triggers", async () => {
+	it("places every CI relay resource on Cloudflare and the secret store, with no cloud account", async () => {
 		const manifest = await compileProjectManifest(CI_PROJECT);
 		if (manifest === null) throw new Error("the CI project has no manifest");
 		const registry = createRegistryFromProviders([
@@ -44,7 +44,8 @@ describe("the secretRef and schedule ports", () => {
 		const unmet = result.ok
 			? []
 			: result.remediations.map((r) => `${r.resource}:${r.requiredPort}`);
-		// Only the queues remain: no default provider serves them yet.
-		expect(unmet.filter((entry) => !entry.endsWith(":queue"))).toEqual([]);
+		// Everything places: Workers, KV, Queues and Cron Triggers on Cloudflare,
+		// the config on the secret store.
+		expect(unmet).toEqual([]);
 	});
 });

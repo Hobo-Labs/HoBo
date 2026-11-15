@@ -30,6 +30,7 @@ const PORT_TO_CLASS = {
 	compute: "web/service",
 	kv: "kv",
 	objectStore: "objectStore",
+	queue: "queue",
 	schedule: "schedule",
 } as const satisfies Record<string, InitialCapabilityPort>;
 
@@ -46,6 +47,8 @@ function outputsForClass(resourceClass: string): readonly string[] {
 			return ["namespaceId", "binding"];
 		case "cloudflare:r2-bucket":
 			return ["bucketName", "endpoint", "binding"];
+		case "cloudflare:queue":
+			return ["queueName", "binding"];
 		case "cloudflare:cron-trigger":
 			return ["cron", "binding"];
 		default:
@@ -61,6 +64,8 @@ function primaryOutput(resourceClass: string): string {
 			return "namespaceId";
 		case "cloudflare:r2-bucket":
 			return "bucketName";
+		case "cloudflare:queue":
+			return "queueName";
 		case "cloudflare:cron-trigger":
 			return "cron";
 		default:
