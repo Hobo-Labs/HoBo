@@ -10,7 +10,7 @@ import {
 	parseBudgetPolicy,
 } from "@hobo/core";
 import { type LowerOptions, lowerManifest } from "../intent.js";
-import type { JsonObject } from "../json.js";
+import type { JsonBag, JsonObject } from "../json.js";
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,
@@ -81,7 +81,6 @@ export interface PlanBindingAuthority {
 	readonly consumableBindingProfiles?: readonly string[];
 }
 
-
 /**
  * A node's realization parameters: what its Yard binding row set, plus, for a
  * schedule, its declared cadence (`cron`) and the one resource it runs
@@ -95,11 +94,15 @@ function realizationParametersOf(
 ): JsonObject | undefined {
 	if (intent.cadence === undefined) return fromRow;
 	const target = intent.deps.length === 1 ? intent.deps[0] : undefined;
-	return {
+	const result: JsonBag = {
 		...fromRow,
 		cron: intent.cadence,
-		...(target !== undefined ? { target } : undefined),
 	};
+	// A Yard may configure provider details, but cannot choose the resource a
+	// schedule runs. An invalid dependency list must not fall back to its row.
+	if (target === undefined) delete result.target;
+	else result.target = target;
+	return result;
 }
 
 /** What a Yard-bound match contributes to both the decision and the plan node. */
