@@ -1,4 +1,8 @@
-import { type ContinuityPolicy, continuity, readContinuity } from "@hobo/bindles";
+import {
+	type ContinuityPolicy,
+	continuity,
+	readContinuity,
+} from "@hobo/bindles";
 
 // HoBo CD's continuity policies, declared once and attached to its Bindle
 // (`bindle.ts`) with `.with(...)`. Each is the cheapest tier that keeps what
