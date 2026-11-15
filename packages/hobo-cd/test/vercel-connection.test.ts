@@ -3,6 +3,7 @@ import { type AddressInfo, createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import { type ConnectPage, startConnectPage } from "@hobo/connect-ui";
 import type { OpenedSecretStore, SecretStoreOpening } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
@@ -246,6 +247,65 @@ async function freePort(): Promise<number> {
 }
 
 describe("prepareVercelConnection", () => {
+	it("closes the real setup page if progress or browser launch throws", async () => {
+		for (const failure of ["progress", "browser"] as const) {
+			const input = prepareInput();
+			const { store } = await memoryStore();
+			const port = await freePort();
+			let page: ConnectPage | undefined;
+			const closeGrace: number[] = [];
+			try {
+				await expect(
+					prepareVercelConnection(
+						failure === "progress"
+							? {
+									...input,
+									run: {
+										...input.run,
+										emitProgress: () => {
+											throw new Error("progress failed");
+										},
+									},
+								}
+							: input,
+						{
+							env: {
+								HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
+								HOBO_CD_VERCEL_CLIENT_ID: "oac_test",
+								HOBO_CD_VERCEL_REDIRECT_URI: `http://127.0.0.1:${port}/vercel/callback`,
+								HOBO_CONNECT_UI_COMPOSE: "off",
+							},
+							interactive: true,
+							openStore: opened(store),
+							startPage: async (options) => {
+								page = await startConnectPage(options);
+								const started = page;
+								return {
+									...started,
+									async close(options) {
+										closeGrace.push(options?.graceMs ?? 0);
+										await started.close(options);
+									},
+								};
+							},
+							openBrowser: () => {
+								throw new Error("browser failed");
+							},
+						},
+					),
+				).rejects.toThrow(`${failure} failed`);
+				expect(page).toBeDefined();
+				expect(closeGrace).toEqual([0]);
+				if (page === undefined) throw new Error("page did not start");
+				await expect(
+					fetch(page.url, { signal: AbortSignal.timeout(1_000) }),
+				).rejects.toThrow();
+			} finally {
+				await page?.close();
+			}
+		}
+	});
+
 	it("refuses a failed secret-store read before opening setup", async () => {
 		const { store, names } = await memoryStore();
 		const unavailable: OpenedSecretStore = {
