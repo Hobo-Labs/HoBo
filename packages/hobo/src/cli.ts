@@ -68,6 +68,7 @@ import { createLogsCommand } from "./logs-command.js";
 import { createMessagingCommand } from "./messaging-command.js";
 import { createOfferCommand } from "./offer-command.js";
 import { createProviderCeremonyUp } from "./provider-ceremony.js";
+import { createSecretStoreProvider } from "./secret-store-providers.js";
 import { createRecipesCommand } from "./recipes-command.js";
 import { createRegistryCommand } from "./registry-command.js";
 import { createReplayCommand } from "./replay-command.js";
@@ -163,6 +164,11 @@ registerInstallable("runner-blacksmith", () => createBlacksmithCatalogEntry());
 // The Depot remote-build specialist: shared-cache economics make its warm
 // builds competitive with "free" cold options (HOBO-720).
 registerInstallable("runner-depot", () => createDepotCatalogEntry());
+// The owner's secret stores serve the `secretRef` port with references only,
+// each in a Yard of its own: `hobo add infisical | bitwarden | 1password`.
+registerInstallable("infisical", () => createSecretStoreProvider("infisical"));
+registerInstallable("bitwarden", () => createSecretStoreProvider("bitwarden"));
+registerInstallable("1password", () => createSecretStoreProvider("1password"));
 // Local provider — installable via `hobo add local`; default provider id for
 // local Yard topologies (`hobo yard init`).
 registerInstallable("local", () => createLocalProvider());
@@ -223,7 +229,13 @@ export function createComposedHoboCli(
 	const down = createLocalDeploymentDownCommand(
 		deployRuntime ? createDownCommand({ runtime: deployRuntime }) : undefined,
 	);
-	const plan = createPlanCommand({ runtime });
+	// `plan` (and every `--what-if`) never opens a page, but a rejection for a
+	// missing provider says which `hobo add` would satisfy each resource.
+	const plan = createProviderCeremonyUp(createPlanCommand({ runtime }), {
+		add,
+		candidates: installableProvidersFor,
+		interactive: false,
+	});
 	const ci = createCiCommand({ runtime });
 	const deploy = createDeployCommand({ hosting: options.hosting?.supervisor });
 
