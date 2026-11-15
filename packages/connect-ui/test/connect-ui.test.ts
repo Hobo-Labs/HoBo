@@ -292,7 +292,7 @@ describe("startConnectPage", () => {
 		const res = await fetch(`${page.url}action`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: '{"action":"connect.start","params":{}}',
+			body: '{"action":"connect.chooseStore","params":{"store":"infisical"}}',
 		});
 		const view = await res.json();
 		const final = await page.done;
