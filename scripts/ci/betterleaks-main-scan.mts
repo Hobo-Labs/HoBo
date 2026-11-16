@@ -1,9 +1,9 @@
 /**
  * Main full gate secret scan. Sparse S0 uses `filter: blob:none`; unbounded
- * `gitleaks git` then hangs on promisor blob fetches and never writes the
+ * `betterleaks git` then hangs on promisor blob fetches and never writes the
  * exit file (Fabric 42016105215). Push scans the landed range; schedule and
  * other events backfill blobs then scan full history. Either path wraps
- * gitleaks in a timeout that always writes `$dir/exit`.
+ * betterleaks in a timeout that always writes `$dir/exit`.
  */
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -25,9 +25,9 @@ export const FULL_FETCH_TIMEOUT_SECONDS = 300;
 export const FULL_SCAN_TIMEOUT_SECONDS = 600;
 export const RANGE_WAIT_SECONDS = 105;
 export const FULL_WAIT_SECONDS = 720;
-export const GITLEAKS_BASELINE_REL = "docs/ci/gitleaks-main-baseline.sha";
+export const BETTERLEAKS_BASELINE_REL = "docs/ci/betterleaks-main-baseline.sha";
 
-export type GitleaksScanPlan =
+export type BetterleaksScanPlan =
 	| {
 			mode: "range";
 			logOpts: string;
@@ -50,10 +50,10 @@ export type WaitVerdict =
 	| "timeout"
 	| "waiting";
 
-export function readGitleaksBaselineSha(
+export function readBetterleaksBaselineSha(
 	root: string = process.cwd(),
 ): string | undefined {
-	const path = join(root, GITLEAKS_BASELINE_REL);
+	const path = join(root, BETTERLEAKS_BASELINE_REL);
 	if (!existsSync(path)) return undefined;
 	const sha = readFileSync(path, "utf8").trim();
 	return /^[0-9a-f]{40}$/iu.test(sha) ? sha : undefined;
@@ -67,7 +67,7 @@ export function isAncestor(ancestor: string, commit: string): boolean {
 	);
 }
 
-export function planMainGitleaksScan(input: {
+export function planMainBetterleaksScan(input: {
 	eventName: string;
 	pushBefore: string | undefined;
 	sha: string;
@@ -76,7 +76,7 @@ export function planMainGitleaksScan(input: {
 	/** The last main commit whose Fabric push run went green. */
 	lastGreenSha?: string;
 	isAncestor?: (ancestor: string, commit: string) => boolean;
-}): GitleaksScanPlan {
+}): BetterleaksScanPlan {
 	const ancestorOk = input.isAncestor ?? isAncestor;
 	const before = input.pushBefore?.trim() ?? "";
 	if (
@@ -127,11 +127,11 @@ export function planMainGitleaksScan(input: {
 	};
 }
 
-export function gitleaksArgs(plan: GitleaksScanPlan): readonly string[] {
+export function betterleaksArgs(plan: BetterleaksScanPlan): readonly string[] {
 	const args = [
 		"git",
 		"--config",
-		".gitleaks.toml",
+		".betterleaks.toml",
 		"--redact",
 		"--exit-code",
 		"1",
@@ -234,7 +234,7 @@ function runTimed(
  * other steps use it. Such a scan is left to the last step.
  */
 export function deferredByRangeOnly(
-	plan: GitleaksScanPlan,
+	plan: BetterleaksScanPlan,
 	rangeOnly: boolean,
 ): boolean {
 	return rangeOnly && plan.fetchBlobs;
@@ -250,8 +250,8 @@ export async function runBackgroundScan(
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "pid"), `${process.pid}\n`);
 	writeFileSync(join(dir, "log"), "");
-	const baselineSha = readGitleaksBaselineSha();
-	const planInput: Parameters<typeof planMainGitleaksScan>[0] = {
+	const baselineSha = readBetterleaksBaselineSha();
+	const planInput: Parameters<typeof planMainBetterleaksScan>[0] = {
 		eventName: process.env.EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? "",
 		pushBefore: process.env.PUSH_BEFORE ?? process.env.GITHUB_EVENT_BEFORE,
 		sha: process.env.SCAN_SHA ?? process.env.GITHUB_SHA ?? "",
@@ -270,7 +270,7 @@ export async function runBackgroundScan(
 		}).catch(() => undefined);
 		if (lastGreen !== undefined) planInput.lastGreenSha = lastGreen;
 	}
-	const plan = planMainGitleaksScan(planInput);
+	const plan = planMainBetterleaksScan(planInput);
 	if (deferredByRangeOnly(plan, options.rangeOnly === true)) {
 		rmSync(join(dir, "pid"), { force: true });
 		writeFileSync(join(dir, DEFERRED_MARKER), "full\n");
@@ -280,13 +280,13 @@ export async function runBackgroundScan(
 	writeFileSync(join(dir, "wait"), `${plan.waitSeconds}\n`);
 	appendLog(
 		dir,
-		`gitleaks-main-scan mode=${plan.mode} fetchBlobs=${plan.fetchBlobs} timeout=${plan.timeoutSeconds}s\n`,
+		`betterleaks-main-scan mode=${plan.mode} fetchBlobs=${plan.fetchBlobs} timeout=${plan.timeoutSeconds}s\n`,
 	);
 	try {
 		if (plan.fetchBlobs) {
 			appendLog(
 				dir,
-				"fetching blobs (--no-filter) before full-history gitleaks\n",
+				"fetching blobs (--no-filter) before full-history betterleaks\n",
 			);
 			await runTimed(
 				"git",
@@ -296,8 +296,8 @@ export async function runBackgroundScan(
 			);
 		}
 		const status = await runTimed(
-			"gitleaks",
-			gitleaksArgs(plan),
+			"betterleaks",
+			betterleaksArgs(plan),
 			plan.timeoutSeconds * 1_000,
 			(chunk) => appendLog(dir, chunk),
 		);
@@ -372,7 +372,7 @@ if (
 	const dir = dirFlag >= 0 ? process.argv[dirFlag + 1] : undefined;
 	if ((command !== "--background" && command !== "--wait") || !dir) {
 		console.error(
-			"gitleaks-main-scan: --background [--range-only]|--wait --dir <path>",
+			"betterleaks-main-scan: --background [--range-only]|--wait --dir <path>",
 		);
 		process.exit(1);
 	}

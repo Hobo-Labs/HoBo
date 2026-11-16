@@ -131,7 +131,7 @@ function rootConfigIsPackageLaneInput(
  * conservative until someone decides otherwise.
  */
 const CI_ONLY_TOOLS: ReadonlySet<string> = new Set([
-	"gitleaks",
+	"betterleaks",
 	"shellcheck",
 	"syft",
 ]);

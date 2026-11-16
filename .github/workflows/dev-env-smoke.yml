@@ -22,6 +22,11 @@ jobs:
     name: mise install + build smoke
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 15
+    # Smoke the checkout's pins, not the ones the fleet image baked into
+    # /etc/mise/config.toml from whichever commit last built it (as build.sh
+    # does): a PR that swaps a tool otherwise fails `<tool> is not in the lockfile`.
+    env:
+      MISE_IGNORED_CONFIG_PATHS: /etc/mise/config.toml
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
