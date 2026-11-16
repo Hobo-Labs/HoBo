@@ -29,6 +29,7 @@ import {
 	OAUTH_SIGN_IN,
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
+import { createOnePasswordConnectClient } from "./onepassword-connect.js";
 
 // The third-party secret stores a provider connection deposits into.
 // Where a store is (its coordinates: ids, a region) is non-secret and comes
@@ -420,14 +421,28 @@ export async function openSecretStore(
 					],
 				};
 			try {
-				const client = await (deps.onePasswordClient ?? onePasswordSdkClient)(
-					coordinates,
-					signIn,
-				);
+				// The owner's Connect server, when named: a bearer token only,
+				// which the egress proxy injects when the run holds none.
+				const client = coordinates.OP_CONNECT_HOST
+					? createOnePasswordConnectClient({
+							host: coordinates.OP_CONNECT_HOST,
+							token:
+								signIn.reveal("OP_CONNECT_TOKEN") ?? EGRESS_PROXY_PLACEHOLDER,
+							...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+						})
+					: await (deps.onePasswordClient ?? onePasswordSdkClient)(
+							coordinates,
+							signIn,
+						);
 				const binding = onePasswordBinding({
 					vaultId,
-					authMode: env.OP_ACCOUNT ? "desktop-app" : "service-account",
-					...(env.OP_ACCOUNT ? { accountName: env.OP_ACCOUNT } : undefined),
+					authMode:
+						env.OP_ACCOUNT && !coordinates.OP_CONNECT_HOST
+							? "desktop-app"
+							: "service-account",
+					...(env.OP_ACCOUNT && !coordinates.OP_CONNECT_HOST
+						? { accountName: env.OP_ACCOUNT }
+						: undefined),
 				});
 				return {
 					ok: true,

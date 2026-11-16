@@ -309,7 +309,10 @@ describe("prepareVercelConnection", () => {
 				},
 				{
 					env: {},
-					locator: memorySettings(),
+					locator: memorySettings({
+						HOBO_SECRET_STORE: "infisical",
+						INFISICAL_PROJECT_ID: "proj",
+					}),
 					startPage: () => {
 						throw new Error("the silent page must not be started");
 					},

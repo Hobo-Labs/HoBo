@@ -43,6 +43,21 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(mirror).toBe(SKILL);
 	});
 
+	it("asks the owner to choose among all three stores with a picker before anything else", () => {
+		const choice = HAND_OFF.indexOf("STORE_CHOICE");
+		expect(choice).toBeGreaterThan(-1);
+		expect(choice).toBeLessThan(HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX));
+		const step = HAND_OFF.slice(
+			choice,
+			HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX),
+		);
+		expect(step).toMatch(/AskUserQuestion/u);
+		for (const store of ["Infisical", "1Password", "Bitwarden"])
+			expect(step).toContain(`**${store}**`);
+		expect(step).toMatch(/OP_CONNECT_HOST/u);
+		expect(step).toMatch(/own terminal/u);
+	});
+
 	it("routes the credential line: steps and guide first, then the credential form, then wait", () => {
 		const at = HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX);
 		expect(at).toBeGreaterThan(-1);

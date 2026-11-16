@@ -58,6 +58,22 @@ export const EGRESS_PROXY_SIGN_IN = "egress-proxy";
 export const INFISICAL_TOKEN_AUTH_DOCS =
 	"https://infisical.com/docs/documentation/platform/identities/token-auth";
 
+// public-contract: the progress line a handed-off run prints when the owner has not chosen a store.
+export const OWNER_STORE_CHOICE_LINE_PREFIX = "HOBO_OWNER_STORE_CHOICE";
+
+/**
+ * The stores the owner can choose for a handed-off run, each with what it
+ * needs. Names, settings and places only.
+ */
+export function storeChoiceGuidance(verb: "ci" | "cd"): readonly string[] {
+	return [
+		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
+		`infisical: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
+		`1password: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
+		`bitwarden: BWS_ORGANIZATION_ID and BWS_PROJECT_ID (BWS_SERVER us or eu). Bitwarden Secrets Manager decrypts in the client, so its access token must be in the run: the owner runs hobo ${verb} up in their own terminal and types it on the setup page.`,
+	];
+}
+
 /**
  * How the owner lets a run that shows no page into the store: every path the
  * store supports, each with where to do it. Names and places only.
@@ -66,6 +82,11 @@ export function storeSignInGuidance(
 	store: SecretStoreId,
 	verb: "ci" | "cd",
 ): readonly string[] {
+	if (store === "1password")
+		return [
+			`Remote agent (no page): set OP_CONNECT_HOST to your 1Password Connect server's https origin (guide: https://www.1password.dev/connect/), issue it a token with access to the vault, and give the token only in the agent session's credential form for that host; the run holds a placeholder the proxy replaces.`,
+			`Your own machine: run hobo ${verb} up in a terminal; the 1Password desktop app unlocks the vault (OP_ACCOUNT).`,
+		];
 	if (store !== "infisical")
 		return [
 			`Run hobo ${verb} up yourself in a terminal: the setup page asks for the ${store} sign-in and keeps it in this run's memory only.`,
@@ -166,10 +187,17 @@ export interface OwnerStoreDeps extends SecretStoreDeps {
 
 export interface OwnerStore {
 	readonly id: SecretStoreId;
+	/**
+	 * Whether the owner chose the store (the locator or the run's settings
+	 * name it), rather than the default applying. A handed-off run asks first.
+	 */
+	readonly chosen: boolean;
 	/** Locator fields the page must ask for, and the sign-in when none is in hand. */
 	readonly missing: readonly ConfigField[];
 	/** Whether supplying an egress-proxy credential can open the configured store. */
 	readonly canAwaitEgressCredential: boolean;
+	/** The host whose credential the egress proxy injects, when it can. */
+	readonly egressCredentialHost: string | undefined;
 	/** The store, opened without the page when the locator and a sign-in allow it. */
 	readonly opened: OpenedSecretStore | undefined;
 	/**
@@ -246,6 +274,18 @@ export async function ownerStore(
 	// the application's client id and secret.
 	const oauthSignIn =
 		id === "infisical" && resolved.values.INFISICAL_SIGN_IN === OAUTH_SIGN_IN;
+	// 1Password through the owner's Connect server: a bearer token the egress
+	// proxy injects on the way to it, so no desktop app and no token here.
+	const connectHost = (() => {
+		if (id !== "1password" || !resolved.values.OP_CONNECT_HOST)
+			return undefined;
+		try {
+			const url = new URL(resolved.values.OP_CONNECT_HOST);
+			return url.protocol === "https:" ? url.host : undefined;
+		} catch {
+			return undefined;
+		}
+	})();
 	const oauthMissing = oauthSignIn
 		? side
 				.map((setting) => setting.field)
@@ -261,8 +301,9 @@ export async function ownerStore(
 		...resolved.missing.filter(
 			(field) =>
 				!(
-					(workloadSignIn || proxySignIn || oauthSignIn) &&
-					field.name === "INFISICAL_TOKEN"
+					((workloadSignIn || proxySignIn || oauthSignIn) &&
+						field.name === "INFISICAL_TOKEN") ||
+					(connectHost !== undefined && field.name === "OP_ACCOUNT")
 				),
 		),
 		...oauthMissing,
@@ -276,9 +317,17 @@ export async function ownerStore(
 
 	return {
 		id,
+		chosen: Boolean(env.HOBO_SECRET_STORE || saved.HOBO_SECRET_STORE),
 		missing: [...choice.missing, ...missingSide],
 		canAwaitEgressCredential:
-			proxySignIn && choice.missing.length === 0 && missingSide.length === 0,
+			(proxySignIn || connectHost !== undefined) &&
+			choice.missing.length === 0 &&
+			missingSide.length === 0,
+		egressCredentialHost: proxySignIn
+			? new URL(
+					resolved.values.INFISICAL_SITE_URL ?? "https://app.infisical.com",
+				).host
+			: connectHost,
 		opened,
 		async stage({ provider, reason, proceed }) {
 			if (opened !== undefined) return proceed(opened);

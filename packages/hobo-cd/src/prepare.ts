@@ -24,6 +24,7 @@ import {
 	scopeRunVault,
 	showOwnerPage,
 	storeAnswers,
+	storeChoiceGuidance,
 	storeIdOf,
 	storeSignInGuidance,
 	withoutSecretEnv,
@@ -265,6 +266,13 @@ async function prepareVercelWithVault(
 	let owner: Awaited<ReturnType<typeof ownerStore>>;
 	try {
 		owner = await openOwner();
+		// The owner chooses their store; a handed-off run never assumes one.
+		if (input.handOff === true && !input.whatIf && !owner.chosen)
+			return refused(
+				"HOBO_CD_STORE_CHOICE",
+				"Choose your secret store first: Infisical, 1Password or Bitwarden.",
+				storeChoiceGuidance("cd"),
+			);
 		// The owner is needed only if the store does not answer yet: a silent
 		// run cannot ask, so it refuses before waiting.
 		const needsOwner =

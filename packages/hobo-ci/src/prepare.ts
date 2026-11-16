@@ -31,6 +31,7 @@ import {
 	type OwnerStoreDeps,
 	ownerStore,
 	SECRET_STORE_LOCATOR_FILE,
+	storeChoiceGuidance,
 	storeIdOf,
 	storeSignInGuidance,
 } from "./owner-store.js";
@@ -297,6 +298,13 @@ async function prepareGithubWithVault(
 	let owner: Awaited<ReturnType<typeof ownerStore>>;
 	try {
 		owner = await openOwner();
+		// The owner chooses their store; a handed-off run never assumes one.
+		if (input.handOff === true && !input.whatIf && !owner.chosen)
+			return refused(
+				"HOBO_CI_STORE_CHOICE",
+				"Choose your secret store first: Infisical, 1Password or Bitwarden.",
+				storeChoiceGuidance("ci"),
+			);
 		// The owner is needed only if the store does not answer yet: a silent
 		// run cannot ask, so it refuses before waiting.
 		const needsOwner =

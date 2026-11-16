@@ -49,11 +49,13 @@ export {
 	familySettings,
 	INFISICAL_TOKEN_AUTH_DOCS,
 	InvalidSecretStoreError,
+	OWNER_STORE_CHOICE_LINE_PREFIX,
 	type OwnerStore,
 	type OwnerStoreDeps,
 	ownerStore,
 	SECRET_STORE_LOCATOR_FILE,
 	STORE_CHOICE,
+	storeChoiceGuidance,
 	storeIdOf,
 	storeSignInGuidance,
 } from "./owner-store.js";

@@ -135,6 +135,16 @@ export function storeSettings(
 						required: true,
 					},
 				},
+				{
+					field: {
+						name: "OP_CONNECT_HOST",
+						label: "1Password Connect server (optional)",
+						description:
+							"The https origin of your own 1Password Connect server. With it, a run on a remote box reaches your vault through Connect, and the agent's egress proxy adds your Connect token: no desktop app and no token in the run.",
+						kind: "text",
+						required: false,
+					},
+				},
 			]
 		: [
 				{

@@ -221,6 +221,18 @@ environment variables.
   (`packages/hobo-ci/test/evals`, `packages/hobo-cd/test/evals`) hold both
   lifecycles and the hobo-deploy skill to this: no loopback line, post-back
   into the same run, and a refusal with outside paths when nobody acts.
+- **The owner chooses the store.** A handed-off run never assumes one: with
+  none chosen it refuses with `HOBO_CI_STORE_CHOICE` / `HOBO_CD_STORE_CHOICE`
+  and one `HOBO_OWNER_STORE_CHOICE` line per option (Infisical, 1Password,
+  Bitwarden), and the agent asks with a picker. From a remote box,
+  Infisical signs in with a Token Auth token the egress proxy injects, and
+  1Password through the owner's 1Password Connect server
+  (`OP_CONNECT_HOST`; its access token is a bearer the proxy injects:
+  `createOnePasswordConnectClient` over the same `1password` SecretsPort).
+  Bitwarden Secrets Manager decrypts in its client with key material in its
+  access token, so it signs in only at the owner's own terminal. The
+  post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
+  host.
 - **A provider's redirect to a remote run** (`hobo ci app create
   --hand-off`; GitHub's App manifest code). The run listens on 127.0.0.1
   only, under one unguessable path that takes one callback with a state

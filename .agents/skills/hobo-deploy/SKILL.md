@@ -197,17 +197,26 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
 
 1. Run `hobo <ci|cd> up --hand-off` in the background (never `--json` or
    `-q`: they hide the lines). Watch its output.
-2. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is
+2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): ask the owner
+   with a picker (`AskUserQuestion`) between **Infisical**, **1Password** and
+   **Bitwarden**, each option described by its line from the refusal. Then
+   ask for that store's non-secret ids the refusal names (Infisical:
+   `INFISICAL_PROJECT_ID`; 1Password: `OP_VAULT_ID`, and for a remote box
+   `OP_CONNECT_HOST`, their Connect server; Bitwarden: `BWS_ORGANIZATION_ID`,
+   `BWS_PROJECT_ID`), and run again with `HOBO_SECRET_STORE` and those ids
+   set (ids are not secrets). Bitwarden decrypts in its client, so from a
+   remote box tell the owner plainly it needs their own terminal.
+3. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is
    waiting for the owner's store sign-in. In **one** message, give the owner
    the steps from that line and the guide link exactly as printed, and ask
    them to say when the token is ready. Then call `request_credential` with
    that `host` (the form cannot show links or steps, which is why they come
    first). Once they save it, the run continues by itself; do not rerun it.
    If they decline the form, show the other paths the run's refusal names.
-3. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any
+4. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any
    device, check the code is `<code>`, and approve." The run waits for the
    approval and continues by itself.
-4. When the run ends: report its last lines. If it refused, show its code
+5. When the run ends: report its last lines. If it refused, show its code
    and **every** remediation line it printed, unparaphrased; do not reduce
    them to one option.
 

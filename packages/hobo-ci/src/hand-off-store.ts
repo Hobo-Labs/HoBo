@@ -16,6 +16,8 @@ import type { OwnerStore } from "./owner-store.js";
 
 // public-contract: the prefix of the one progress line naming the credential a handed-off run waits for.
 export const OWNER_CREDENTIAL_LINE_PREFIX = "HOBO_OWNER_CREDENTIAL";
+// public-contract: 1Password's guide to the Connect server and the access token a handed-off run needs.
+export const ONE_PASSWORD_CONNECT_GUIDE = "https://www.1password.dev/connect/";
 // public-contract: Infisical's guide to the Token Auth identity the owner creates for a handed-off run.
 export const INFISICAL_TOKEN_AUTH_GUIDE =
 	"https://infisical.com/docs/documentation/platform/identities/token-auth";
@@ -38,6 +40,19 @@ export async function storeAnswers(
 		read !== undefined &&
 		(read.status === "ok" || read.code === "secret-not-found")
 	);
+}
+
+/** What the owner gives, for the store they chose, and where. */
+function credentialLine(
+	owner: OwnerStore,
+	family: "ci" | "cd",
+	timeoutMs: number,
+): string {
+	const host = owner.egressCredentialHost ?? "app.infisical.com";
+	const wait = `This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`;
+	if (owner.id === "1password")
+		return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${ONE_PASSWORD_CONNECT_GUIDE} — in 1Password: Developer → Connect servers → your server → Issue token, with access to the store's vault only. Then give the token to the agent's session in its credential form for ${host}, never in chat. ${wait}`;
+	return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${INFISICAL_TOKEN_AUTH_GUIDE} — at https://app.infisical.com: Organization → Access Control → Identities → Create Identity "hobo-${family}-owner" (organization role No Access); add Token Auth and create a token (TTL 3600); add the identity to the store's project with a write role. Then give the token to the agent's session in its credential form for ${host}, never in chat. ${wait}`;
 }
 
 export interface HandOffStoreOptions {
@@ -69,9 +84,7 @@ export async function awaitHandOffStore(
 	if (await storeAnswers(owner, options.family)) return owner;
 	// A proxy credential cannot repair missing coordinates or another sign-in.
 	if (!owner.canAwaitEgressCredential) return { ...owner, opened: undefined };
-	options.emit(
-		`${OWNER_CREDENTIAL_LINE_PREFIX} host=app.infisical.com guide=${INFISICAL_TOKEN_AUTH_GUIDE} — at https://app.infisical.com: Organization → Access Control → Identities → Create Identity "hobo-${options.family}-owner" (organization role No Access); add Token Auth and create a token (TTL 3600); add the identity to the store's project with a write role. Then give the token to the agent's session in its credential form for app.infisical.com, never in chat. This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`,
-	);
+	options.emit(credentialLine(owner, options.family, timeoutMs));
 	while (now() < deadline) {
 		await sleep(options.intervalMs ?? 10_000);
 		owner = await options.open();
