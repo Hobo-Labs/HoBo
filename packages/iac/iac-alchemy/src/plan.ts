@@ -30,6 +30,7 @@ export class AlchemyIacError extends Error {
 			code === "ADMISSION_OUTCOME_UNKNOWN" ||
 			code === "ADMISSION_RECEIPT_INVALID" ||
 			code === "EXECUTION_IN_PROGRESS" ||
+			code === "EXECUTION_OUTCOME_UNRESOLVED" ||
 			code === "EXECUTION_ALREADY_CLAIMED" ||
 			admission?.status === "uncertain" ||
 			admission?.status === "replay" ||

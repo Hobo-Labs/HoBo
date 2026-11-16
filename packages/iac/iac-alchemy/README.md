@@ -171,6 +171,8 @@ instances or process restarts, the host must use the same stable request ID for
 the same logical attempt so the durable admission authority can recognize a
 replay. A malformed or unreadable admission receipt requires reconciliation:
 the authority may already have reserved funds even if the receipt is unusable.
+An instance also blocks subsequent attempts after any outcome requiring
+reconciliation; the host must resolve the previous attempt before replacing it.
 
 Plan fingerprints are bounded and include inspectable resource inputs,
 bindings, state and source identity. Plans with stack actions, partial

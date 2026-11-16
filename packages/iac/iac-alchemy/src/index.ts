@@ -328,6 +328,7 @@ export function createAlchemyIacProvider<
 	const previews = new Map<string, string>();
 	const claimed = new Map<string, string>();
 	const running = new Set<string>();
+	const unresolved = new Set<string>();
 	const checkProgram = (input: IacProgram) => {
 		const captured = captureAlchemyProgram(input);
 		const program = captured.program;
@@ -720,6 +721,17 @@ export function createAlchemyIacProvider<
 		requireDestroy = false,
 	) => {
 		const { program, key } = checkProgram(input);
+		if (unresolved.has(key)) {
+			const reservationId = claimed.get(key);
+			throw new AlchemyIacError(
+				reservationId === undefined
+					? "EXECUTION_OUTCOME_UNRESOLVED"
+					: "EXECUTION_ALREADY_CLAIMED",
+				"the previous execution must be reconciled before another attempt",
+				undefined,
+				reservationId,
+			);
+		}
 		if (running.has(key))
 			throw new AlchemyIacError(
 				"EXECUTION_IN_PROGRESS",
@@ -733,6 +745,10 @@ export function createAlchemyIacProvider<
 		running.add(key);
 		try {
 			return await executeUnlocked(program, requestId, expected, requireDestroy);
+		} catch (error) {
+			if (error instanceof AlchemyIacError && error.requiresReconciliation)
+				unresolved.add(key);
+			throw error;
 		} finally {
 			running.delete(key);
 		}

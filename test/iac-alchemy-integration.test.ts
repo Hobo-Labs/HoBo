@@ -91,6 +91,7 @@ function setup(
 		failApply?: boolean;
 		badAdmission?: boolean;
 		unreadableReceipt?: boolean;
+		loseAdmissionResponse?: boolean;
 		beforeAdmission?: () => Promise<void>;
 		onReceipt?: (receipt: IacTargetAdmissionDecision) => void;
 		targetId?: string;
@@ -316,6 +317,7 @@ function setup(
 							await options.beforeAdmission();
 						const receipt = await financial.admit(requestId, plan, expected);
 						options.onReceipt?.(receipt);
+						if (options.loseAdmissionResponse) throw new Error("response lost");
 						if (options.unreadableReceipt) {
 							Object.defineProperty(receipt, "budget", {
 								get() {
@@ -1049,6 +1051,14 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 			expect(fixture.applied()).toBe(0);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "another-attempt"),
+			).rejects.toMatchObject({
+				code: "EXECUTION_OUTCOME_UNRESOLVED",
+				requiresReconciliation: true,
+			});
+			expect(fixture.issued()).toBe(1);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
 			fixture.authority.close();
 		}
@@ -1070,6 +1080,30 @@ describe("Alchemy IaC provider against the real library", () => {
 			if (original?.budget === undefined) throw new Error("receipt missing");
 			original.budget.reservation = "not-created";
 			expect(result.admission.budget.reservation).toBe("held");
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("does not retry after an admission response is lost", async () => {
+		const fixture = setup({ loseAdmissionResponse: true });
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "lost-response"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_OUTCOME_UNKNOWN",
+				requiresReconciliation: true,
+			});
+			await expect(
+				fixture.provider.applyWithAdmission(program, "another-attempt"),
+			).rejects.toMatchObject({
+				code: "EXECUTION_OUTCOME_UNRESOLVED",
+				requiresReconciliation: true,
+			});
+			expect(fixture.issued()).toBe(1);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			expect(fixture.applied()).toBe(0);
 		} finally {
 			fixture.authority.close();
 		}
