@@ -12,11 +12,14 @@ name: Actions lock
 #
 # GitHub-hosted on purpose: it reads only public action repositories through
 # the GitHub API and runs no repository code.
+#
+# A required status check on main, so it runs on every pull request and merge
+# group with no path filter: a required check that never reports blocks the PR,
+# and one missing from the merge queue times the entry out. It also catches a
+# locked pin that stopped verifying upstream, which no file change in the PR shows.
 on:
   pull_request:
-    paths:
-      - .github/workflows/**
-      - .github/actions/**
+  merge_group:
   push:
     branches: [main]
     paths:
@@ -34,7 +37,8 @@ permissions:
 
 concurrency:
   group: actions-lock-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a newer push to the same PR cancels; merge-queue runs always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   GH_ACTIONS_LOCK_VERSION: v0.4.1
@@ -45,7 +49,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -77,7 +81,7 @@ jobs:
           exit "$status"
       - name: Upload the regenerated lockfile patch
         if: failure() && steps.verify.outputs.patch == '1'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: actions-lock-patch
           path: ${{ runner.temp }}/actions-lock.patch
