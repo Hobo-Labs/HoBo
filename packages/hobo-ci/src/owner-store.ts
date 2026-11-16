@@ -97,7 +97,7 @@ export function storeSignInGuidance(
 	if (store === "bitwarden")
 		return [
 			`Fewest steps: copy your personal API key from ${bitwardenApiKeyPage("us")} (bitwarden.eu: ${bitwardenApiKeyPage("eu")}; Account settings → Security → Keys → View API key) into this environment's settings as BW_CLIENTID and BW_CLIENTSECRET (never in chat). The run then asks you to approve one login request in a Bitwarden app you are signed in to, and creates the Secrets Manager project, machine account and a one-day access token itself.`,
-			`Or give this environment an existing machine account's access token as BWS_ACCESS_TOKEN. If Bitwarden refuses it (invalid_client), it was revoked or expired: remove it and use the API key instead.`,
+			`Or give this environment an existing machine account's access token as BWS_ACCESS_TOKEN. If Bitwarden refuses it (invalid_client), it was revoked or expired: add the API key above and the run replaces it with a new one.`,
 		];
 	if (store !== "infisical")
 		return [

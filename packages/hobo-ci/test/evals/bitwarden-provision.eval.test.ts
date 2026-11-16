@@ -266,7 +266,7 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 		expect(refusal?.code).toBe("HOBO_CI_HANDOFF_SILENT");
 	});
 
-	it("does nothing when the run already has a token or has no API key", async () => {
+	it("does nothing without an API key, and replaces a refused token with one", async () => {
 		const server = fakeBitwarden();
 		const vault = createTrustedVault();
 		const options = {
@@ -277,13 +277,17 @@ describe("EVAL Bitwarden sign-in: from the environment's API key to the run's va
 			fetch: server.fetch,
 			emit: () => undefined,
 			silent: false,
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
 		};
+		vault.put("BWS_ACCESS_TOKEN", "0.revoked.secret:key");
 		expect(await ensureBitwardenSignIn(options)).toBeUndefined();
-		vault.put("BWS_ACCESS_TOKEN", "0.a.b:c");
+		expect(server.calls).toHaveLength(0);
+		expect(vault.reveal("BWS_ACCESS_TOKEN")).toBe("0.revoked.secret:key");
 		vault.put("BW_CLIENTID", API_KEY.clientId);
 		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
 		expect(await ensureBitwardenSignIn(options)).toBeUndefined();
-		expect(server.calls).toHaveLength(0);
+		expect(vault.reveal("BWS_ACCESS_TOKEN")).toMatch(/^0\.66666666-/u);
 	});
 });
 

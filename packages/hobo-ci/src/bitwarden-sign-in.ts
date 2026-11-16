@@ -37,17 +37,21 @@ export interface EnsureBitwardenSignInOptions {
 /**
  * Give a run whose owner chose Bitwarden an access token when the
  * environment provided none, from the owner's personal API key and one
- * approved login request. Returns nothing when the run already has a token or
- * has no API key either (the caller then names both ways in), or the refusal.
+ * approved login request. The caller calls it only when the store did not
+ * open, so a token already in the vault was refused and is replaced. Returns
+ * nothing when there is no API key (the caller then names both ways in), or
+ * the refusal.
  */
 export async function ensureBitwardenSignIn(
 	options: EnsureBitwardenSignInOptions,
 ): Promise<BitwardenSignInRefusal | undefined> {
 	const { vault } = options;
-	if (vault.has("BWS_ACCESS_TOKEN")) return undefined;
 	const clientId = vault.reveal("BW_CLIENTID");
 	const clientSecret = vault.reveal("BW_CLIENTSECRET");
 	if (clientId === undefined || clientSecret === undefined) return undefined;
+	// Called only when the store did not open: a token in hand was refused
+	// (revoked or expired), so the API key replaces it with a new one.
+	vault.drop("BWS_ACCESS_TOKEN");
 	const fam = options.family.toUpperCase();
 	if (options.silent)
 		return {
