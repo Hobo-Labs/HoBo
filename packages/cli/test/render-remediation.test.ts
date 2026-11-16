@@ -33,4 +33,22 @@ describe("renderSuccess", () => {
 		expect(out.stdout).toContain("HOBO_CI_STORE_NEEDS_SIGN_IN");
 		expect(out.stdout).toContain("- First path.\n- Second path.");
 	});
+
+	it("prints a refusal's code even when it has no remediation", () => {
+		const out = renderSuccess({
+			verb: "ci",
+			// SAFETY: the renderer reads only these output flags.
+			flags: { json: false, quiet: false } as Parameters<
+				typeof renderSuccess
+			>[0]["flags"],
+			context,
+			result: {
+				ok: false,
+				code: "HOBO_CI_REFUSED",
+				message: "Cannot continue.",
+			},
+		});
+		expect(out.exitCode).toBe(1);
+		expect(out.stdout).toContain("HOBO_CI_REFUSED");
+	});
 });
