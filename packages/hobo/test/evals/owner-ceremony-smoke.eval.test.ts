@@ -21,8 +21,8 @@ import { startTlsWorld } from "./support/tls-world.js";
 
 // SMOKE: the real `hobo-mcp` binary, as the owner's host runs it on a remote
 // box, driven exactly as that host does: its declared capabilities (taken
-// from the live host's initialize), `cd up --hand-off`, `capture_secret`,
-// the owner's answers to each prompt, and `cd up` again. Nothing in this
+// from the live host's initialize), one `cd up --hand-off`, and the owner's
+// answers to the forms it asks for. Nothing in this
 // test reaches past the process's stdio but a fake Infisical on 127.0.0.1.
 // Every step the owner sees is checked in the order they would see it.
 
@@ -102,7 +102,7 @@ function startServer(env: NodeJS.ProcessEnv) {
 }
 
 describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
-	it("cd up: sign-in link prompt, then the paste form, then provisioning", async () => {
+	it("cd up in one call: every owner step a form carrying its link, nothing relayed", async () => {
 		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
 		// The providers at their real hostnames, behind an inspecting proxy
 		// that trusts only its own CA: real-internet egress, or egress that
@@ -151,38 +151,27 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					capabilities: LIVE_HOST,
 				}),
 			);
-			// 1. cd up: refuses with the sign-in line.
-			const first = JSON.stringify(
-				await server.answer(
-					server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO }),
-				),
-			);
-			const signIn = /HOBO_OWNER_SIGN_IN url=(\S+?) capture=(\w+)/u.exec(first);
-			trail.push(
-				`cd: ${signIn === null ? first.slice(0, 300) : "sign-in link"}`,
-			);
-			expect(signIn).not.toBeNull();
-			// 2. capture: the host is asked to show the link FIRST.
-			const capture = server.tool("capture_secret", {
-				name: signIn?.[2] ?? "",
+			// One cd up, start to end: every step the owner takes is a form in
+			// their host, its link inside it, asked in this call. Nothing is
+			// relayed through the agent.
+			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
+			const formParams = z.object({
+				message: z.string(),
+				requestedSchema: z.object({
+					properties: z.record(z.string(), z.json()),
+				}),
 			});
-			const linkPrompt = await server.next(
+			// 1. The sign-in form: Infisical's link, then the paste field.
+			const signInForm = await server.next(
 				(m) => m.method === "elicitation/create",
 			);
-			const link = z
-				.object({
-					mode: z.literal("url"),
-					url: z.string(),
-					message: z.string(),
-				})
-				.parse(linkPrompt.params);
-			trail.push(`prompt 1: link ${link.url}`);
-			expect(link.url).toBe(signIn?.[1]);
-			server.send({
-				jsonrpc: "2.0",
-				id: linkPrompt.id ?? null,
-				result: { action: "accept" },
-			});
+			const signIn = formParams.parse(signInForm.params);
+			trail.push(`form 1: ${JSON.stringify(signIn.message)}`);
+			const signInUrl = /https:\/\/app\.infisical\.com\/login\S*/u.exec(
+				signIn.message,
+			)?.[0];
+			expect(signInUrl).toBeDefined();
+			expect(Object.keys(signIn.requestedSchema.properties)).toEqual(["value"]);
 			// The owner signs in; Infisical gives them the session to copy.
 			const jwt = api.signIn();
 			const copied = Buffer.from(
@@ -192,91 +181,36 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					privateKey: "",
 				}),
 			).toString("base64");
-			// 3. then the one-field paste form.
-			const form = await server.next((m) => m.method === "elicitation/create");
-			const formParams = z
-				.object({
-					message: z.string(),
-					requestedSchema: z.object({
-						properties: z.record(z.string(), z.json()),
-					}),
-				})
-				.parse(form.params);
-			trail.push(`prompt 2: form "${formParams.message}"`);
-			expect(Object.keys(formParams.requestedSchema.properties)).toEqual([
-				"value",
-			]);
 			server.send({
 				jsonrpc: "2.0",
-				id: form.id ?? null,
+				id: signInForm.id ?? null,
 				result: { action: "accept", content: { value: copied } },
 			});
-			const stored = JSON.stringify(await server.answer(capture));
-			trail.push(
-				`capture: ${stored.includes('"status":"stored"') ? "stored" : stored.slice(0, 300)}`,
-			);
-			expect(stored).toContain('"linkShownBy":"host"');
-			expect(stored).not.toContain(copied);
-			// 4. cd up again: provisions through Infisical's API, opens the store,
-			// and starts Vercel's device grant off the request path: it returns
-			// at once, and the host shows Vercel's own link.
-			const second = JSON.stringify(
-				await server.answer(
-					server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO }),
-				),
-			);
-			trail.push(
-				`cd again: ${/"code\\":\\"(\w+)/u.exec(second)?.[1] ?? second.slice(0, 400)}`,
-			);
-			expect(api.calls).toContain("POST /api/v1/identities");
-			expect(second).toContain("HOBO_CD_VERCEL_AWAITING_APPROVAL");
-			expect(second).not.toMatch(/HANDOFF_SILENT|--json/u);
-			const vercelPrompt = await server.next(
+			// 2. The run provisions through Infisical's API, opens the store and
+			// starts Vercel's device grant: its link and code in the next form.
+			const vercelForm = await server.next(
 				(m) => m.method === "elicitation/create",
 			);
-			const vercelLink = z
-				.object({
-					mode: z.literal("url"),
-					url: z.string(),
-					message: z.string(),
-					elicitationId: z.string().min(1),
-				})
-				.parse(vercelPrompt.params);
-			// The owner opens it (the host's link prompt).
+			const approve = formParams.parse(vercelForm.params);
+			trail.push(`form 2: ${JSON.stringify(approve.message)}`);
+			expect(api.calls).toContain("POST /api/v1/identities");
+			const vercelUrl = /https:\/\/vercel\.com\/oauth\/device\S*/u.exec(
+				approve.message,
+			)?.[0];
+			expect(vercelUrl).toBeDefined();
+			// The owner submits before Vercel has registered the approval: the
+			// run waits for the grant's own outcome, not the click.
 			server.send({
 				jsonrpc: "2.0",
-				id: vercelPrompt.id ?? null,
-				result: { action: "accept" },
+				id: vercelForm.id ?? null,
+				result: { action: "accept", content: { done: true } },
 			});
-			trail.push(`prompt 3: link ${vercelLink.url}`);
-			expect(new URL(vercelLink.url).hostname).toMatch(/(^|\.)vercel\.com$/u);
-			expect(second).toContain(vercelLink.url);
-			// 5. cd up while the owner has not approved yet: the same link, no new grant.
-			const third = JSON.stringify(
-				await server.answer(
-					server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO }),
-				),
-			);
-			trail.push(
-				`cd pending: ${/"code\\":\\"(\w+)/u.exec(third)?.[1] ?? third.slice(0, 400)}`,
-			);
-			expect(third).toContain(vercelLink.url);
-			// 6. The owner approves on Vercel. The server completes the link prompt
-			// when the grant behind it ends: the event, no polling.
-			vercel.approve(vercelLink.url);
-			await server.next(
-				(m) =>
-					m.method === "notifications/elicitation/complete" &&
-					JSON.stringify(m.params).includes(vercelLink.elicitationId),
-			);
-			trail.push("vercel: approved, prompt completed");
-			// 7. cd up: the connection is in the store; the run converges.
-			const fourth = JSON.stringify(
-				await server.answer(
-					server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO }),
-				),
-			);
-			trail.push(`cd after approval: ${fourth.slice(0, 900)}`);
+			vercel.approve(vercelUrl ?? "");
+			trail.push("vercel: approved");
+			// 3. The same call converges as far as the ceremony goes.
+			const fourth = JSON.stringify(await server.answer(run));
+			trail.push(`cd: ${fourth.slice(0, 900)}`);
+			expect(fourth).not.toContain(copied);
 			expect(world.blocked).toEqual([]);
 			// Every provider call went through the box's proxy: a call that
 			// bypassed it (Node's global fetch ignores HTTPS_PROXY) would reach

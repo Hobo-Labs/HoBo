@@ -362,20 +362,27 @@ environment variables.
   value goes host to server, never to the model); a host with neither is
   refused (`SECRET_CAPTURE_NO_OWNER_FORM`), never sent to a box-served page
   or a port preview the owner may not see. Every capture result carries
-  `hostSupport`. A host's form blocks the chat, so a sign-in link is shown
-  in chat first and the form opens only once the owner has copied the
-  value; the form is one short line and one field. Nothing is timed: a form
+  `hostSupport`. Through the HoBo MCP server the run asks the owner itself,
+  in the call that needs it: every step is a form in the owner's host, its
+  link alone on its own line inside it (Infisical's sign-in link with the
+  paste field; Vercel's approval link and code with a Done button, after
+  which the call waits on the grant's own outcome). No URL-mode link prompt
+  is sent (a host may declare it and never show it), and no link is left
+  for the agent to relay in chat: the spec model's "owner links reach the
+  owner in the host" fails any result that asks the owner to open a link
+  the host did not show them. The repository's `.mcp.json` gives the
+  server's calls 30 minutes, so a form stays open while the owner signs in. Nothing is timed: a form
   stays open until the owner answers or the host cancels the call
   (`notifications/cancelled`), which withdraws exactly that call's prompts
-  (`SECRET_CAPTURE_NOT_ANSWERED`). No tool call blocks on a person: through
-  the MCP server, `cd`'s Vercel device grant runs off the request path (the
-  owner channel's jobs), shows its link as the host's link prompt, returns
-  `HOBO_CD_VERCEL_AWAITING_APPROVAL` at once, and writes the connection to
-  the store when approved (RFC 8628 polling on an injectable clock). The
-  store sign-in HoBo created is kept in the server's memory (the owner
-  channel's vault) so the owner signs in once. When a job ends, the link prompt it showed is
-  completed (`notifications/elicitation/complete`), so the host and the
-  agent know without polling. Egress is applied to the whole process at
+  (`SECRET_CAPTURE_NOT_ANSWERED`). Through the MCP server, `cd`'s Vercel
+  device grant runs off the request path (the owner channel's jobs) and
+  writes the connection to the store when approved (RFC 8628 polling on an
+  injectable clock); the call waits on the owner's form and then on the
+  grant's outcome, an event, not a poll of its own. A form the owner closed
+  comes back on the next run with the same link and code. Only a host that
+  shows no form gets `HOBO_CD_VERCEL_AWAITING_APPROVAL` at once. The store
+  sign-in HoBo created is kept in the server's memory (the owner channel's
+  vault) so the owner signs in once. Egress is applied to the whole process at
   start (`applyEgressToProcess`: Node's global dispatcher, built on the
   first request so an unused CA path cannot stop a run): every fetch honours
   the box's proxy, bypass list and CA. The Infisical store offers a verified

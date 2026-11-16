@@ -253,21 +253,16 @@ checks it.
    why they come first. Once they save it, the run continues by itself; do
    not rerun it. If they decline the form, show the other paths the run's
    refusal names.
-4. On `HOBO_OWNER_SIGN_IN url=<url> capture=<name>` (Infisical's sign-in,
-   or GitHub's App creation, from a remote box): call `capture_secret` with
-   `name: <name>`. The server shows the owner the link first, as their
-   host's own clickable link prompt, and the one-field paste form only after
-   it (it stays open until the owner answers it, or the host cancels the
-   call); the result says `linkShownBy: "host"`.
-   If it answers `SECRET_CAPTURE_LINK_FIRST` (a host with no link prompt),
-   the link comes first, in chat, and you end your turn: a clickable link on
-   its own line (`**[Sign in to Infisical](<url>)**`, or
-   `**[Create the GitHub App](<url>)**`) and one short step ("When it says
-   *Unable to reach CLI*, click **Copy to clipboard**, then tell me" /
-   "Click **Create GitHub App**, copy the code HoBo's page shows, then tell
-   me"). Do not call `capture_secret` again in that turn: its form blocks
-   the chat. When the owner says they copied it, call it with
-   `linkShown: true`. Then run the lifecycle again.
+4. **Through the HoBo MCP server, the run asks the owner itself.** On a
+   host that shows forms, one `cd` (or `ci`) call shows every step as a
+   form in the owner's host, its link inside it: Infisical's sign-in link
+   with the paste field, then Vercel's approval link and code with a
+   **Done** button. You call the lifecycle and wait; you never relay a
+   link, a code or a step in chat, and you never call `capture_secret` for
+   a value the run is waiting on. If the call ends with
+   `HOBO_OWNER_SIGN_IN` or `HOBO_CD_VERCEL_AWAITING_APPROVAL` (the owner
+   closed a form), run the lifecycle again: the same form comes back.
+   Only a host that shows no form gets a refusal to act on in chat (below).
    Never ask for the value in chat, and never use `request_credential` for
    it (that form feeds the network proxy, not the run).
    On `HOBO_OWNER_CAPTURE name=<name> guide=<url>` (one line per value: a
@@ -290,13 +285,11 @@ checks it.
    and continues; do not rerun it. On `HOBO_*_BITWARDEN_ORGANIZATION`, ask
    which organization with a picker (each `BWS_ORGANIZATION_ID=` line is an
    option) and run again with it.
-6. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say once "Approve HoBo
-   CD on Vercel in the link prompt, on any device (the code is `<code>`),
-   then tell me", end your turn, and when they say approved, run the
-   lifecycle again. Through the HoBo MCP server the run has already shown
-   that link as the host's own link prompt and returned
-   (`HOBO_CD_VERCEL_AWAITING_APPROVAL`); the grant completes in the server
-   and writes the connection to the store. At a terminal, the run waits and
+6. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd), from a host that shows
+   no form: say once "Approve HoBo CD on Vercel at `<link>`, on any device
+   (the code is `<code>`), then tell me", end your turn, and when they say
+   approved, run the lifecycle again; the grant completes in the server and
+   writes the connection to the store. At a terminal, the run waits and
    continues by itself.
 7. When the run ends: report its last lines. If it refused, show its code
    and **every** remediation line it printed, unparaphrased; do not reduce

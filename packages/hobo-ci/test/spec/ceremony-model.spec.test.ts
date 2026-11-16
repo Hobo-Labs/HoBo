@@ -62,16 +62,6 @@ const refused = (
 			isError: true,
 		},
 	});
-const linkPrompt = (
-	requestId: string,
-	url: string,
-	elicitationId = `e-${requestId}`,
-) =>
-	toHost({
-		id: requestId,
-		method: "elicitation/create",
-		params: { mode: "url", elicitationId, url, message: "Open it." },
-	});
 const form = (requestId: string, message: string) =>
 	toHost({
 		id: requestId,
@@ -95,45 +85,54 @@ function verdicts(wire: readonly WireMessage[], secrets: string[] = []) {
 }
 
 describe("SPEC ceremony model: the derived properties catch the real failures", () => {
-	it("holds on the ceremony done right (link prompt, then form, then device link)", () => {
+	it("holds on the ceremony done right: one cd call, every step a form carrying its link", () => {
 		const cd = call("cd");
-		const capture = call("capture_secret", { name: "INFISICAL_CLI_SESSION" });
-		const again = call("cd");
-		const last = call("cd");
+		const result = verdicts([
+			cd.wire,
+			// The run asks for the sign-in itself: the link in the form.
+			form(
+				"hobo-1",
+				`Sign in to Infisical. When it says Unable to reach CLI, click Copy to clipboard.\n\n${SIGN_IN}\n\nPaste what Infisical copied after you signed in.`,
+			),
+			answer("hobo-1", "accept"),
+			// Vercel's approval: its link and code in a form, submitted when done.
+			form(
+				"hobo-2",
+				"Approve HoBo CD on Vercel (code AB-12), then submit.\n\nhttps://vercel.com/oauth/device?user_code=AB-12",
+			),
+			answer("hobo-2", "accept"),
+			refused(cd.id, "HOBO_PLAN_REJECTED", ["cd-config: no provider"]),
+		]);
+		for (const verdict of Object.values(result))
+			expect(verdict).toMatchObject({ holds: true });
+	});
+
+	it("catches the live run's failure: a link the agent had to relay in chat", () => {
+		const cd = call("cd");
 		const result = verdicts([
 			cd.wire,
 			refused(cd.id, "HOBO_CD_INFISICAL_SIGN_IN", [
 				SIGN_IN_LINE,
 				"Then run again.",
 			]),
-			capture.wire,
-			linkPrompt("hobo-1", SIGN_IN),
-			answer("hobo-1", "accept"),
-			form("hobo-2", "Paste what Infisical copied after you signed in."),
-			answer("hobo-2", "accept"),
-			toHost({
-				id: capture.id,
-				result: { content: [{ type: "text", text: "stored" }] },
-			}),
-			again.wire,
-			linkPrompt(
-				"hobo-3",
-				"https://vercel.com/oauth/device?user_code=AB-12",
-				"dev-1",
-			),
-			refused(again.id, "HOBO_CD_VERCEL_AWAITING_APPROVAL", [
-				"HOBO_OWNER_DEVICE https://vercel.com/oauth/device?user_code=AB-12 code=AB-12",
-				"Approve it, then run hobo cd up --hand-off again.",
-			]),
-			toHost({
-				method: "notifications/elicitation/complete",
-				params: { elicitationId: "dev-1" },
-			}),
-			last.wire,
-			refused(last.id, "HOBO_PLAN_REJECTED", ["cd-config: no provider"]),
 		]);
-		for (const verdict of Object.values(result))
-			expect(verdict).toMatchObject({ holds: true });
+		expect(result["owner links reach the owner in the host"]).toMatchObject({
+			holds: false,
+			at: 1,
+		});
+	});
+
+	it("catches a device link sent only as a link prompt the host may not show, then refused to the agent", () => {
+		const cd = call("cd");
+		const result = verdicts([
+			cd.wire,
+			refused(cd.id, "HOBO_CD_VERCEL_AWAITING_APPROVAL", [
+				"HOBO_OWNER_DEVICE https://vercel.com/oauth/device?user_code=AB-12 code=AB-12",
+			]),
+		]);
+		expect(result["owner links reach the owner in the host"]).toMatchObject({
+			holds: false,
+		});
 	});
 
 	it("catches the paste form shown before the sign-in link (the owner had nothing to paste)", () => {

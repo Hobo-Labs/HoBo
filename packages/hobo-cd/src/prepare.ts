@@ -624,8 +624,45 @@ async function prepareVercelWithVault(
 						`Approve HoBo CD on Vercel at that link (the code is ${code}), then run hobo cd up --hand-off again.`,
 					],
 				);
+			// A host that shows forms: the link in one, which the owner submits
+			// once they approved; the grant's own outcome then ends the step in
+			// this same call. Nothing is relayed through the agent. `undefined`
+			// when this host shows no form.
+			const viaForm = async (
+				link: string,
+				code: string,
+			): Promise<PrepareOutcome | undefined> => {
+				const approved = await deps.ownerChannel
+					?.confirm?.({
+						url: link,
+						message: `Approve HoBo CD on Vercel (code ${code}), then submit.`,
+					})
+					.catch(() => false);
+				if (approved === undefined) return undefined;
+				if (!approved) return awaiting(link, code);
+				const outcome = await jobs.outcome(key);
+				jobs.forget(key);
+				if (outcome?.state === "done")
+					return ready(
+						store,
+						"created",
+						vault,
+						deps.journalProvisioners,
+						() => true,
+					);
+				if (outcome?.state === "failed")
+					return refused(outcome.code, outcome.message, [
+						"Run hobo cd up --hand-off again for a new code.",
+					]);
+				return awaiting(link, code);
+			};
 			const job = jobs.status(key);
-			if (job?.state === "pending") return awaiting(job.link, job.code);
+			// Still waiting on the owner (a form they closed, say): the same
+			// link and code again, in the form.
+			if (job?.state === "pending")
+				return (
+					(await viaForm(job.link, job.code)) ?? awaiting(job.link, job.code)
+				);
 			jobs.forget(key);
 			if (job?.state === "failed")
 				return refused(job.code, job.message, [
@@ -693,6 +730,8 @@ async function prepareVercelWithVault(
 					}
 				},
 			);
+			const asked = await viaForm(grant.link, grant.code);
+			if (asked !== undefined) return asked;
 			void deps.ownerChannel
 				?.show?.(
 					grant.link,

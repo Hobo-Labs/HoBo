@@ -233,23 +233,34 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		await client.close();
 	});
 
-	it("the form is minimal: a short title, one short line, no link or repeated prose", async () => {
+	it("the form is minimal: the link alone on its own line, a short title, nothing said twice", async () => {
 		// Derived from the owner's screenshot: the link was not clickable and
 		// was buried in a paragraph that repeated itself; label and description
-		// said the same thing twice. The link belongs in chat, before the form.
+		// said the same thing twice. The link stands alone on its own line.
+		const link = "https://app.infisical.com/login?callback_port=31222";
 		const client = host({ elicitation: {} }, { remote: true });
 		await client.init();
 		await client.owner.openUrl(
-			"https://app.infisical.com/login?callback_port=31222",
+			link,
 			"Sign in to Infisical.",
 			INFISICAL_CLI_SESSION,
 		);
+		await client.owner.captureSecret({
+			name: INFISICAL_CLI_SESSION,
+			title: "Infisical session",
+			instructions: "",
+		});
 		const mine = client.capture();
 		const form = await client.fill({ value: COPIED });
 		const field = form.requestedSchema.properties.value;
-		expect(form.message.length).toBeLessThanOrEqual(100);
-		expect(form.message).not.toMatch(/https?:\/\//u);
-		const sentences = form.message.split(/(?<=\.)\s+/u);
+		const lines = form.message.split("\n").filter((line) => line !== "");
+		expect(lines).toContain(link);
+		const prose = lines.filter((line) => line !== link);
+		for (const line of prose) {
+			expect(line).not.toMatch(/https?:\/\//u);
+			expect(line.length).toBeLessThanOrEqual(100);
+		}
+		const sentences = prose.join(" ").split(/(?<=\.)\s+/u);
 		expect(new Set(sentences).size).toBe(sentences.length);
 		expect((field?.title ?? "").length).toBeLessThanOrEqual(30);
 		expect(field?.title ?? "").not.toMatch(/\(|“/u);
@@ -421,10 +432,12 @@ describe("EVAL owner form reach: every hand-over reads at a glance", () => {
 	});
 });
 
-describe("EVAL owner form reach: the link reaches the owner before any form", () => {
-	// Derived from the live run: the paste form opened first, and the owner
-	// had no link and nothing to paste. The host declares URL-mode
-	// elicitation, so the server itself shows the link, then the form.
+describe("EVAL owner form reach: the link reaches the owner in the form itself", () => {
+	// Derived from the live runs: first the paste form opened with no link
+	// (nothing to paste); then the link went as a URL-mode prompt, which the
+	// owner's app never showed, and the agent relayed it in chat. The host
+	// shows forms, so the link goes in the form: one form, the link on its
+	// own line, the paste field under it. No link prompt is ever sent.
 	const SIGN_IN_URL = "https://app.infisical.com/login?callback_port=56037";
 	const BOTH = { elicitation: { form: {}, url: {} } };
 	async function pendingSignIn(client: ReturnType<typeof host>) {
@@ -440,53 +453,57 @@ describe("EVAL owner form reach: the link reaches the owner before any form", ()
 		});
 	}
 
-	it("the host shows the sign-in link (a clickable prompt) first, and the paste form only after it", async () => {
+	it("one form: the sign-in link on its own line, then the paste field", async () => {
 		const client = host(BOTH, { remote: true });
 		await client.init();
 		await pendingSignIn(client);
 		const mine = client.capture();
-		const link = await client.openLink();
-		expect(link.url).toBe(SIGN_IN_URL);
-		expect(link.message.length).toBeLessThanOrEqual(120);
 		const form = await client.fill({ value: COPIED });
-		expect(form.message).not.toContain("http");
+		expect(form.message.split("\n")).toContain(SIGN_IN_URL);
 		const result = toolResult.parse((await client.answer(mine)).result);
-		expect(result.structuredContent).toMatchObject({ status: "stored" });
+		expect(result.structuredContent).toMatchObject({
+			status: "stored",
+			linkShownBy: "form",
+		});
 		await client.close();
 	});
 
-	it("the owner declines the link: no paste form opens", async () => {
+	it("no URL-mode link prompt is ever sent, even to a host that declares URL mode", async () => {
 		const client = host(BOTH, { remote: true });
 		await client.init();
 		await pendingSignIn(client);
 		const mine = client.capture();
-		await client.openLink("decline");
+		await client.fill({ value: COPIED });
+		await client.answer(mine);
+		expect(client.seen.some((line) => line.includes('"mode":"url"'))).toBe(
+			false,
+		);
+		await client.close();
+	});
+
+	it("a host without URL mode gets the same one form, with no detour through chat", async () => {
+		const client = host({ elicitation: {} }, { remote: true });
+		await client.init();
+		await pendingSignIn(client);
+		const mine = client.capture();
+		const form = await client.fill({ value: COPIED });
+		expect(form.message).toContain(SIGN_IN_URL);
+		const done = toolResult.parse((await client.answer(mine)).result);
+		expect(done.structuredContent).toMatchObject({ status: "stored" });
+		expect(JSON.stringify(done)).not.toContain("SECRET_CAPTURE_LINK_FIRST");
+		await client.close();
+	});
+
+	it("the owner declines the form: nothing captured, and it says so", async () => {
+		const client = host(BOTH, { remote: true });
+		await client.init();
+		await pendingSignIn(client);
+		const mine = client.capture();
+		await client.fill(undefined, "decline");
 		const result = toolResult.parse((await client.answer(mine)).result);
 		expect(result.structuredContent).toMatchObject({
 			code: "SECRET_CAPTURE_DECLINED",
 		});
-		await client.close();
-	});
-
-	it("a host without URL mode: no form until the agent has shown the link in chat", async () => {
-		const client = host({ elicitation: {} }, { remote: true });
-		await client.init();
-		await pendingSignIn(client);
-		const refused = toolResult.parse(
-			(await client.answer(client.capture())).result,
-		);
-		expect(refused.structuredContent).toMatchObject({
-			code: "SECRET_CAPTURE_LINK_FIRST",
-			link: SIGN_IN_URL,
-		});
-		// Shown in chat, and the owner said they copied it: now the form.
-		const mine = client.call("tools/call", {
-			name: "capture_secret",
-			arguments: { name: INFISICAL_CLI_SESSION, linkShown: true },
-		});
-		await client.fill({ value: COPIED });
-		const done = toolResult.parse((await client.answer(mine)).result);
-		expect(done.structuredContent).toMatchObject({ status: "stored" });
 		await client.close();
 	});
 

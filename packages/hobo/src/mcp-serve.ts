@@ -1,3 +1,4 @@
+import type { DeviceClock } from "@hobo/hobo-cd";
 import { applyEgressToProcess, isRemoteBox } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
 
@@ -30,6 +31,98 @@ import { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
  * answered the host's `initialize` (see mcp-handshake.ts).
  */
 
+/**
+ * The HoBo MCP server's parts, wired once for the binary and its evals: the
+ * owner channel, whose every step is a form in the owner's host asked in the
+ * call that needs it; the composed CLI on that channel; the secret capture
+ * and store choice apps; and the session they share.
+ */
+export function composeHoboMcp(options: {
+	/** Where the server writes (its notifications go here too). */
+	readonly output: NodeJS.WritableStream;
+	/** Where the capture connector keeps its non-secret state. */
+	readonly projectDir: string;
+	/** The owner is not at this machine (a remote dev box). */
+	readonly remote: boolean;
+	/** The device grant's clock (evals pass a virtual one). */
+	readonly clock?: DeviceClock;
+}) {
+	// The owner's channel: what they hand over through the capture form waits
+	// here, in memory, for the ceremony run through this server.
+	// The session exists once the transport starts; prompts go through it.
+	let session: McpStdioSession | undefined;
+	let capture: ReturnType<typeof createOwnerCaptureApp> | undefined;
+	/** The host's forms, when it said at initialize that it shows them. */
+	const forms = () =>
+		session?.support.formElicitation === true ? session : undefined;
+	const owner = createMcpOwnerChannel({
+		// Every step that needs the owner is a form in their host, asked in
+		// the call that needs it: nothing is relayed through the agent.
+		form: (params) =>
+			forms()?.request?.("elicitation/create", params) ?? undefined,
+		ask: async (name) => {
+			const host = forms();
+			if (host === undefined || capture === undefined) return false;
+			const outcome = await capture.callTool(
+				"capture_secret",
+				{ name },
+				host.support,
+			);
+			return outcome.kind === "result" && outcome.result.isError !== true;
+		},
+		// Prompts go through the session; the run keeps going meanwhile.
+		prompt: async (params) => {
+			await session?.request?.("elicitation/create", params);
+		},
+		notify: (method, params) => {
+			options.output.write(
+				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
+			);
+		},
+	});
+	const server = createHoboMcpServer({
+		cli: createComposedHoboCli({
+			ownerChannel: owner,
+			...(options.clock !== undefined ? { clock: options.clock } : undefined),
+		}),
+	});
+	// The secret-capture MCP App (ADR-0179 amendment "Deploy secrets captured
+	// by an MCP App into the secret store"): values the owner types go from
+	// the form to this process to the store the relay's binding names, and
+	// never into a tool result. URL elicitation completion is the one
+	// notification this server sends.
+	capture = createOwnerCaptureApp({
+		owner,
+		remote: options.remote,
+		elicit: (params) => {
+			const request = session?.request;
+			if (request === undefined)
+				return Promise.reject(new Error("the transport is not connected"));
+			return request("elicitation/create", params);
+		},
+		connector: createInfisicalCaptureConnector({
+			projectDir: options.projectDir,
+		}),
+		notify: (method, params) => {
+			options.output.write(
+				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
+			);
+		},
+	});
+	session = createMcpStdioSession(capture, createStoreChoiceApp());
+	const ready = capture;
+	return {
+		owner,
+		server,
+		session,
+		/** Stop whatever still waits on the owner and close open captures. */
+		async close() {
+			owner.jobs.close();
+			await ready.close();
+		},
+	};
+}
+
 // The runnable MCP control surface: the composed
 // hobo CLI (default LOCAL/MOCKED lane; live lanes stay credential-gated by
 // env) exposed over MCP stdio. Every tool call dispatches through the same
@@ -46,61 +139,23 @@ export async function serveHoboMcp(
 	// The box's egress (proxy, bypass list, CA), for every fetch in this
 	// process, before anything connects.
 	applyEgressToProcess(process.env);
-	// The owner's channel: what they hand over through the capture form waits
-	// here, in memory, for the ceremony run through this server.
-	// The session exists once the transport starts; prompts go through it.
-	let session: McpStdioSession | undefined;
-	const owner = createMcpOwnerChannel({
-		// Prompts go through the session; the run keeps going meanwhile.
-		prompt: async (params) => {
-			await session?.request?.("elicitation/create", params);
-		},
-		notify: (method, params) => {
-			io.output.write(
-				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
-			);
-		},
-	});
-	const server = createHoboMcpServer({
-		cli: createComposedHoboCli({ ownerChannel: owner }),
-	});
-	// The secret-capture MCP App (ADR-0179 amendment "Deploy secrets captured
-	// by an MCP App into the secret store"): values the owner types go from
-	// the form to this process to the store the relay's binding names, and
-	// never into a tool result. URL elicitation completion is the one
-	// notification this server sends.
-	const capture = createOwnerCaptureApp({
-		owner,
+	const composed = composeHoboMcp({
+		output: io.output,
+		projectDir: secretCaptureProjectDir(process.cwd(), process.env),
 		remote: isRemoteBox(),
-		elicit: (params) => {
-			const request = session?.request;
-			if (request === undefined)
-				return Promise.reject(new Error("the transport is not connected"));
-			return request("elicitation/create", params);
-		},
-		connector: createInfisicalCaptureConnector({
-			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
-		}),
-		notify: (method, params) => {
-			io.output.write(
-				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
-			);
-		},
 	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp());
 	try {
 		await serveMcpStdio({
-			server,
+			server: composed.server,
 			auth: localOperatorAuth(),
 			input: io.input,
 			output: io.output,
-			session,
+			session: composed.session,
 		});
 	} finally {
 		// Closes open captures, stops the page and revokes the writer token,
 		// and stops any step still waiting on the owner.
-		owner.jobs.close();
-		await capture.close();
+		await composed.close();
 	}
 	return 0;
 }

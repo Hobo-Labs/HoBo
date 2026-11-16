@@ -7,7 +7,8 @@
         "--import",
         "tsx",
         "packages/hobo/src/bin/hobo-mcp.ts"
-      ]
+      ],
+      "timeout": 1800000
     },
     "headroom": {
       "command": "bash",

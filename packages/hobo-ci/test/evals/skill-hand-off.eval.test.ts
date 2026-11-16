@@ -157,11 +157,9 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/eval:hand-off-transcript/u);
 	});
 
-	it("runs through the HoBo MCP server and hands the remote sign-in over in the capture form", () => {
+	it("runs through the HoBo MCP server, which asks the owner itself", () => {
 		expect(HAND_OFF).toMatch(/through the \*\*HoBo MCP server\*\*/u);
-		expect(HAND_OFF).toMatch(/HOBO_OWNER_SIGN_IN url=<url> capture=<name>/u);
-		expect(HAND_OFF).toMatch(/Copy to\s+clipboard/u);
-		expect(HAND_OFF).toMatch(/capture_secret/u);
+		expect(HAND_OFF).toMatch(/the run asks the owner itself/u);
 		expect(HAND_OFF).toMatch(/Never ask for the value\s+in chat/u);
 	});
 
@@ -196,31 +194,34 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/elicitation form/u);
 	});
 
-	it("never opens the paste form before the owner has the sign-in link", () => {
-		// Derived from the live runs: the form opened first, twice, and the
-		// owner had no link and nothing to paste.
+	it("through MCP, never relays a link in chat: every step is a form carrying its link", () => {
+		// Derived from the live runs: the paste form opened with no link; then
+		// the links went as prompts the owner's app never showed, and the
+		// agent relayed them in chat, which the owner rejected.
 		const step = HAND_OFF.slice(
-			HAND_OFF.indexOf("4. On `HOBO_OWNER_SIGN_IN"),
-			HAND_OFF.indexOf("On `HOBO_OWNER_CAPTURE"),
+			HAND_OFF.indexOf("4. **Through the HoBo MCP server"),
+			HAND_OFF.indexOf("5. On `HOBO_OWNER_BITWARDEN_APPROVE"),
 		);
-		expect(step).toMatch(/shows the owner the link first/u);
-		expect(step).toMatch(/SECRET_CAPTURE_LINK_FIRST/u);
-		expect(step).toMatch(/link comes first, in chat, and you end your turn/u);
-		expect(step).toMatch(/\[Sign in to Infisical\]\(<url>\)/u);
-		expect(step).toMatch(/linkShown: true/u);
+		expect(step).toMatch(/its link inside it/u);
+		expect(step).toMatch(/never relay a\s+link/u);
+		expect(step).toMatch(
+			/never call `capture_secret` for\s+a value the run is waiting on/u,
+		);
+		expect(step).toMatch(/run the lifecycle again: the same form comes back/u);
+		expect(step).not.toMatch(/linkShown|LINK_FIRST|link prompt/u);
 		// Nothing is timed: the form waits for the owner or the host's cancel.
 		expect(step).not.toMatch(/minutes/u);
-		expect(step).toMatch(/until the owner answers it, or the host cancels/u);
 	});
 
-	it("through MCP, the device step ends the turn and runs again once the owner approved", () => {
+	it("a host with no form: the device step ends the turn and runs again once the owner approved", () => {
 		// Derived from the real-binary smoke: the run used to wait inside the
 		// call on a link nobody could see.
 		const step = HAND_OFF.slice(
 			HAND_OFF.indexOf("6. On `HOBO_OWNER_DEVICE"),
 			HAND_OFF.indexOf("7. When the run ends"),
 		);
-		expect(step).toMatch(/HOBO_CD_VERCEL_AWAITING_APPROVAL/u);
+		// Only a host that shows no form gets the line in chat.
+		expect(step).toMatch(/from a host that shows\s+no form/u);
 		expect(step).toMatch(/end your turn/u);
 		expect(step).toMatch(/run the\s+lifecycle\s+again/u);
 	});

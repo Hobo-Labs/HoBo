@@ -13,26 +13,14 @@ import {
 	secretStoreLocatorPath,
 	type WireMessage,
 } from "@hobo/hobo-ci";
-import { createHoboMcpServer } from "@hobo/mcp";
 import fc from "fast-check";
 import { getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { createComposedHoboCli } from "../../src/cli.js";
 import type { JsonObject } from "../../src/json.js";
-import {
-	createMcpOwnerChannel,
-	createOwnerCaptureApp,
-	INFISICAL_CLI_SESSION,
-} from "../../src/mcp-owner-channel.js";
-import { createInfisicalCaptureConnector } from "../../src/mcp-secret-capture.js";
-import {
-	createMcpStdioSession,
-	localOperatorAuth,
-	type McpStdioSession,
-	serveMcpStdio,
-} from "../../src/mcp-stdio.js";
+import { composeHoboMcp } from "../../src/mcp-serve.js";
+import { localOperatorAuth, serveMcpStdio } from "../../src/mcp-stdio.js";
 import {
 	copiedSession,
 	startFakeInfisical,
@@ -142,46 +130,30 @@ async function runSchedule(schedule: Schedule) {
 	const story: string[] = [];
 	const clock = virtualClock();
 	const owner = { ...schedule };
-	// Resolved each time the owner has acted on a Vercel link prompt.
+	// Resolved each time the owner has acted on Vercel's form.
 	let vercelActed = Promise.withResolvers<void>();
+	// The owner has handed over a valid session at least once.
+	let signedIn = false;
 
-	// One HoBo MCP server, as the host runs it; `restart` starts a fresh one.
+	// One HoBo MCP server, wired as the binary wires it; `restart` starts a
+	// fresh one.
 	function startServer() {
 		const toServer = new PassThrough();
 		const fromServer = new PassThrough();
-		let session: McpStdioSession | undefined;
-		const channel = createMcpOwnerChannel({
-			prompt: async (params) => {
-				await session?.request?.("elicitation/create", params);
-			},
-			notify: (method, params) => {
-				fromServer.write(
-					`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
-				);
-			},
+		const composed = composeHoboMcp({
+			output: fromServer,
+			projectDir: config,
+			remote: true,
+			clock,
 		});
-		session = createMcpStdioSession(
-			createOwnerCaptureApp({
-				owner: channel,
-				connector: createInfisicalCaptureConnector({ projectDir: config }),
-				remote: true,
-				elicit: (params) => {
-					const request = session?.request;
-					if (request === undefined) throw new Error("no transport");
-					return request("elicitation/create", params);
-				},
-			}),
-		);
 		const serving = serveMcpStdio({
-			server: createHoboMcpServer({
-				cli: createComposedHoboCli({ ownerChannel: channel, clock }),
-			}),
+			server: composed.server,
 			auth: localOperatorAuth({}),
 			input: toServer,
 			output: fromServer,
-			session,
-		});
-		return { toServer, fromServer, channel, serving };
+			session: composed.session,
+		}).finally(() => composed.close());
+		return { toServer, fromServer, serving };
 	}
 
 	let server = startServer();
@@ -220,38 +192,38 @@ async function runSchedule(schedule: Schedule) {
 	};
 	listen(server.fromServer);
 
-	/** The owner, at their host's prompts. */
+	/** The owner, at the forms their host shows. */
 	async function answerPrompt(prompt: Message) {
 		const id = prompt.id ?? null;
-		const params = z
-			.object({ mode: z.string().optional(), url: z.string().optional() })
+		const { message: said } = z
+			.object({ message: z.string() })
 			.parse(prompt.params);
-		if (params.mode === "url" && params.url !== undefined) {
-			const url = new URL(params.url);
-			if (url.hostname === "app.infisical.com") {
-				if (owner.declineSignInLink > 0) {
-					owner.declineSignInLink -= 1;
-					return send({ jsonrpc: "2.0", id, result: { action: "decline" } });
-				}
-				return send({ jsonrpc: "2.0", id, result: { action: "accept" } });
-			}
-			// Vercel's device link: open it, then approve or deny on Vercel.
+		const vercelLink = /https:\/\/vercel\.com\/\S+/u.exec(said)?.[0];
+		if (vercelLink !== undefined) {
+			// Vercel's approval form: approve or deny there, then submit.
+			story.push("form: vercel");
 			const acted = vercelActed;
 			if (owner.declineVercelLink > 0) {
 				owner.declineVercelLink -= 1;
 				send({ jsonrpc: "2.0", id, result: { action: "decline" } });
 				return acted.resolve();
 			}
-			send({ jsonrpc: "2.0", id, result: { action: "accept" } });
 			if (owner.denyVercel > 0) {
 				owner.denyVercel -= 1;
-				vercel.deny(params.url);
-			} else vercel.approve(params.url);
+				vercel.deny(vercelLink);
+			} else vercel.approve(vercelLink);
+			send({
+				jsonrpc: "2.0",
+				id,
+				result: { action: "accept", content: { done: true } },
+			});
 			return acted.resolve();
 		}
-		// The paste form.
-		if (owner.declineForm > 0) {
-			owner.declineForm -= 1;
+		// The sign-in form: Infisical's link, and the paste field.
+		story.push("form: sign-in");
+		if (owner.declineSignInLink > 0 || owner.declineForm > 0) {
+			if (owner.declineSignInLink > 0) owner.declineSignInLink -= 1;
+			else owner.declineForm -= 1;
 			return send({ jsonrpc: "2.0", id, result: { action: "decline" } });
 		}
 		if (owner.wrongPaste > 0) {
@@ -265,10 +237,11 @@ async function runSchedule(schedule: Schedule) {
 		const jwt = api.signIn();
 		const copied = copiedSession(jwt);
 		secrets.push(jwt, copied);
+		signedIn = true;
 		if (owner.infisicalFault === "expired") {
 			// The session lapses before the run uses it: one more sign-in.
 			owner.infisicalFault = "none";
-			setImmediate(() => api.expireAll());
+			api.expireAll();
 		}
 		return send({
 			jsonrpc: "2.0",
@@ -301,59 +274,46 @@ async function runSchedule(schedule: Schedule) {
 	});
 	await next((m) => m.id === ids);
 
-	// The agent, by the hobo-deploy skill: run, act on what the run says, run again.
+	// The agent, by the hobo-deploy skill: run cd; the owner answers the
+	// forms it asks for; after a refusal, run it again. Nothing else.
 	try {
 		for (let step = 0; step < 16; step += 1) {
-			const ran = await call("cd", { args: ["up", "--hand-off"], cwd: REPO });
-			const code = /\\"code\\":\\"(\w+)\\"/u.exec(ran)?.[1];
-			story.push(`cd: ${code ?? ran.slice(0, 300)}`);
-			if (code === "HOBO_CD_INFISICAL_SIGN_IN") {
-				for (let ask = 0; ask < 4; ask += 1) {
-					const captured = await call("capture_secret", {
-						name: INFISICAL_CLI_SESSION,
-					});
-					story.push(
-						`capture: ${/SECRET_CAPTURE_[A-Z_]+|stored/u.exec(captured)?.[0] ?? captured.slice(0, 120)}`,
-					);
-					if (
-						captured.includes('\\"status\\":\\"stored\\"') ||
-						captured.includes('"status":"stored"')
-					)
-						break;
-				}
-				if (owner.restartAfterCapture) {
-					owner.restartAfterCapture = false;
-					server.toServer.end();
-					await server.serving;
-					server = startServer();
-					listen(server.fromServer);
-					ids += 1;
-					send({
-						jsonrpc: "2.0",
-						id: ids,
-						method: "initialize",
-						params: { protocolVersion: "2025-11-25", capabilities: LIVE_HOST },
-					});
-					await next((m) => m.id === ids);
-				}
-				continue;
-			}
-			if (code === "HOBO_CD_VERCEL_AWAITING_APPROVAL") {
-				// Time passes only once the owner has acted on the link; then
-				// until the event the server sends when the grant ends.
-				await vercelActed.promise;
+			let settled = false;
+			const pending = call("cd", {
+				args: ["up", "--hand-off"],
+				cwd: REPO,
+			}).then((ran) => {
+				settled = true;
+				return ran;
+			});
+			// Time passes only once the owner has acted on Vercel's form, and
+			// only while the call that waits on the grant is open.
+			while (!settled) {
+				await Promise.race([pending, vercelActed.promise]);
+				if (settled) break;
 				vercelActed = Promise.withResolvers<void>();
-				let done = false;
-				const completed = next(
-					(m) => m.method === "notifications/elicitation/complete",
-				).then(() => {
-					done = true;
-				});
-				while (!done) {
+				while (!settled) {
 					clock.advance();
 					await new Promise<void>((resolve) => setImmediate(resolve));
 				}
-				await completed;
+			}
+			const ran = await pending;
+			const code = /\\"code\\":\\"(\w+)\\"/u.exec(ran)?.[1];
+			story.push(`cd: ${code ?? ran.slice(0, 300)}`);
+			if (owner.restartAfterCapture && signedIn) {
+				owner.restartAfterCapture = false;
+				server.toServer.end();
+				await server.serving;
+				server = startServer();
+				listen(server.fromServer);
+				ids += 1;
+				send({
+					jsonrpc: "2.0",
+					id: ids,
+					method: "initialize",
+					params: { protocolVersion: "2025-11-25", capabilities: LIVE_HOST },
+				});
+				await next((m) => m.id === ids);
 				continue;
 			}
 			if (

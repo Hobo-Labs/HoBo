@@ -316,16 +316,6 @@ type FormAnswer =
 	| Readonly<{ action: "accept"; value: string }>
 	| Readonly<{ action: "decline" | "cancel" | "unanswered" }>;
 
-/** The host's answer to a link prompt (URL mode): consent only, no content. */
-function parseLinkAnswer(
-	answer: JsonValue | undefined,
-): Readonly<{ action: "accept" | "decline" | "cancel" | "unanswered" }> {
-	const action = objectAt(answer, "action");
-	return action === "accept" || action === "decline" || action === "cancel"
-		? { action }
-		: { action: "unanswered" };
-}
-
 /** The host's answer to `elicitation/create`, parsed where it enters. */
 function parseFormAnswer(answer: JsonValue | undefined): FormAnswer {
 	const action = objectAt(answer, "action");
@@ -579,19 +569,24 @@ export function createSecretCaptureApp(
 	 * never through a tool result, the chat or the model. A value of the
 	 * wrong shape is asked again with the reason (never the value).
 	 */
-	async function askInForm(ticket: Ticket): Promise<SecretCaptureToolResult> {
+	async function askInForm(
+		ticket: Ticket,
+		link?: Readonly<{ url: string; message: string }>,
+	): Promise<SecretCaptureToolResult> {
 		const elicit = options.elicit;
 		let problem: string | undefined;
 		while (ticket.state === "awaiting-owner") {
-			// One short line and one field: the link and steps were given in
-			// chat before the form opened, where a link can be clicked.
+			// One field; the link, when the value comes from one, on its own
+			// line above it.
+			const said =
+				problem === undefined ? ticket.spec.purpose : `${problem} Try again.`;
 			const answer = parseFormAnswer(
 				await (
 					elicit?.({
 						message:
-							problem === undefined
-								? ticket.spec.purpose
-								: `${problem} Try again.`,
+							link === undefined
+								? said
+								: `${link.message}\n\n${link.url}\n\n${said}`,
 						requestedSchema: {
 							type: "object",
 							properties: {
@@ -769,68 +764,23 @@ export function createSecretCaptureApp(
 		if (channel === "form-elicitation") {
 			tickets.set(ticket.id, ticket);
 			emit("secret.CaptureOpened", ticketFields(ticket));
+			// A pending link goes in the form itself: a host may show forms and
+			// no link prompt, and the owner needs the link to have anything to
+			// paste. (`linkShown` is accepted and changes nothing.)
 			const link = options.linkFor?.(spec.name);
-			if (link !== undefined && objectAt(args, "linkShown") !== true) {
-				if (!support.urlElicitation) {
-					// No link prompt in this host: the agent shows the link in
-					// chat first, and asks again once the owner copied the value.
-					shut(ticket, "closed");
-					emit("secret.CaptureClosed", ticketFields(ticket));
-					const refused = refusalResult(
-						new SecretCaptureError(
-							"SECRET_CAPTURE_LINK_FIRST",
-							`There is nothing to paste yet: the owner must open ${link.url} first.`,
-							`Show the owner that link in chat, on its own line, and end your turn. When they say they copied the value, call ${CAPTURE_SECRET_TOOL} again with linkShown: true.`,
-						),
-						spec.name,
-					);
-					const view = refused.structuredContent;
-					return {
-						kind: "result",
-						result: {
-							...refused,
-							structuredContent: isJsonObject(view)
-								? { ...view, link: link.url }
-								: view,
-						},
-					};
-				}
-				// The host's own clickable link prompt, then the paste form.
-				const opened = parseLinkAnswer(
-					await (
-						options.elicit?.({
-							mode: "url",
-							elicitationId: ticket.id,
-							url: link.url,
-							message: link.message,
-						}) ?? Promise.resolve(undefined)
-					).catch(() => undefined),
-				);
-				if (opened.action !== "accept") {
-					shut(ticket, "closed");
-					emit("secret.CaptureClosed", ticketFields(ticket));
-					throw new SecretCaptureError(
-						"SECRET_CAPTURE_DECLINED",
-						opened.action === "unanswered"
-							? `The host closed the link prompt before the owner answered; ${spec.name} was not captured.`
-							: `The owner ${opened.action === "decline" ? "declined" : "closed"} the link; ${spec.name} was not captured.`,
-						`Ask again with ${CAPTURE_SECRET_TOOL} when they are ready.`,
-					);
-				}
-				// Said in the result, so the agent (and the audit) knows the owner
-				// had the link before the form.
-				const result = await askInForm(ticket);
-				return {
-					kind: "result",
-					result: {
-						...result,
-						structuredContent: isJsonObject(result.structuredContent)
-							? { ...result.structuredContent, linkShownBy: "host" }
-							: result.structuredContent,
-					},
-				};
-			}
-			return { kind: "result", result: await askInForm(ticket) };
+			const result = await askInForm(ticket, link);
+			return {
+				kind: "result",
+				result:
+					link === undefined
+						? result
+						: {
+								...result,
+								structuredContent: isJsonObject(result.structuredContent)
+									? { ...result.structuredContent, linkShownBy: "form" }
+									: result.structuredContent,
+							},
+			};
 		}
 		if (channel !== "mcp-app") {
 			const token = randomBytes(32).toString("base64url");
@@ -1163,7 +1113,7 @@ export function createSecretCaptureApp(
 						linkShown: {
 							type: "boolean",
 							description:
-								"Only after SECRET_CAPTURE_LINK_FIRST: you showed the owner the link in chat and they said they copied the value.",
+								"Not needed: a pending link is shown in the form itself. Accepted for older agents; changes nothing.",
 						},
 					},
 					required: ["name"],

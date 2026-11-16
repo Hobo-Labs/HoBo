@@ -25,6 +25,18 @@ export interface OwnerChannel {
 	 */
 	show?(url: string, message: string): Promise<void>;
 	/**
+	 * Ask the owner to do something at a link and say when it is done: one
+	 * form, the link in it, answered when they have. `true` once they
+	 * confirm; `false` when they declined or the host closed the form;
+	 * `undefined` when this host shows no form (the caller falls back).
+	 * Through the HoBo MCP server: the host's own form, since the host shows
+	 * forms where it may show no link prompt.
+	 */
+	confirm?(request: {
+		readonly url: string;
+		readonly message: string;
+	}): Promise<boolean | undefined>;
+	/**
 	 * Work that waits on the owner, run off the request path (a device grant
 	 * the owner approves): the call that starts it returns at once, and a
 	 * later call reads its state. Only where the channel outlives a call.
@@ -69,6 +81,8 @@ export interface OwnerJobs {
 		pending: { readonly link: string; readonly code: string },
 		job: (signal: AbortSignal) => Promise<OwnerJobOutcome>,
 	): void;
+	/** The job's outcome once it ends (at once when none runs under `key`). */
+	outcome(key: string): Promise<OwnerJobState | undefined>;
 	/** Drop a finished job's record, so the next call starts afresh. */
 	forget(key: string): void;
 	/** Every job started so far has ended (for status tools and specs). */
@@ -87,6 +101,7 @@ export function createOwnerJobs(
 	} = {},
 ): OwnerJobs {
 	const states = new Map<string, OwnerJobState>();
+	const ends = new Map<string, Promise<void>>();
 	const running = new Set<Promise<void>>();
 	const abort = new AbortController();
 	return {
@@ -106,7 +121,15 @@ export function createOwnerJobs(
 				}),
 			);
 			running.add(done);
-			void done.finally(() => running.delete(done));
+			ends.set(key, done);
+			void done.finally(() => {
+				running.delete(done);
+				if (ends.get(key) === done) ends.delete(key);
+			});
+		},
+		async outcome(key) {
+			await ends.get(key);
+			return states.get(key);
 		},
 		forget(key) {
 			if (states.get(key)?.state !== "pending") states.delete(key);

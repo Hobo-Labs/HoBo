@@ -266,19 +266,36 @@ export const CEREMONY = {
 			/PLAN_REJECTED/u.test(event.code)),
 } as const;
 
+/** The URLs a form's message carries, each on its own line. */
+function urlsIn(text: string): URL[] {
+	return text.split(/\s+/u).flatMap((word) => {
+		if (!/^https?:\/\//u.test(word)) return [];
+		try {
+			return [new URL(word)];
+		} catch {
+			return [];
+		}
+	});
+}
+
+/** The links the host showed the owner: a link prompt, or a form carrying it. */
+function shownLinks(event: CeremonyEvent): URL[] {
+	if (event.kind === "form") return urlsIn(event.message);
+	if (event.kind !== "link") return [];
+	try {
+		return [new URL(event.url)];
+	} catch {
+		return [];
+	}
+}
+
 const linkOpened =
 	(matches: (url: URL) => boolean): Formula<CeremonyEvent> =>
 	(trace, at) =>
-		once(
-			atom<CeremonyEvent>((event) => {
-				if (event.kind !== "link") return false;
-				try {
-					return matches(new URL(event.url));
-				} catch {
-					return false;
-				}
-			}),
-		)(trace, at);
+		once(atom<CeremonyEvent>((event) => shownLinks(event).some(matches)))(
+			trace,
+			at,
+		);
 
 /** The properties every run of the ceremony must satisfy, derived from `CEREMONY`. */
 export function ceremonyProperties(
@@ -338,6 +355,29 @@ export function ceremonyProperties(
 					readOwnerTurn(false, event.lines).kind !== "dead-end",
 			),
 		),
+	});
+	// Every link a result asks the owner to open was shown to them by the
+	// host first (a form or a link prompt), never left for the agent to
+	// relay as chat text.
+	properties.push({
+		name: "owner links reach the owner in the host",
+		kind: "invariant",
+		invariant: (trace, at) => {
+			const event = trace[at];
+			if (event?.kind !== "result") return true;
+			const asked = event.lines.flatMap((line) =>
+				/^HOBO_OWNER_(SIGN_IN|DEVICE)\b/u.test(line)
+					? urlsIn(line.replace(/^\S+ (url=)?/u, ""))
+					: [],
+			);
+			return asked.every((url) =>
+				once(
+					atom<CeremonyEvent>((prior) =>
+						shownLinks(prior).some((shown) => shown.href === url.href),
+					),
+				)(trace, at),
+			);
+		},
 	});
 	// A completion names a link the host was shown.
 	properties.push({

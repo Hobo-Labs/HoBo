@@ -18,8 +18,13 @@ import {
 	secretCaptureSpec,
 } from "@hobo/mcp";
 
+import { z } from "zod";
+
 import type { JsonObject, JsonValue } from "./json.js";
 import { RELAY_SECRET_CAPTURE_SPECS } from "./mcp-secret-capture.js";
+
+/** A form the owner submitted (not declined, not closed). */
+const Accepted = z.object({ action: z.literal("accept") });
 
 /**
  * The owner channel of a ceremony run through the HoBo MCP server (an agent
@@ -44,6 +49,19 @@ export function createMcpOwnerChannel(
 		readonly prompt?: (params: JsonObject) => Promise<void>;
 		/** Send the host a notification. */
 		readonly notify?: (method: string, params: JsonValue) => void;
+		/**
+		 * Ask the host for a form and wait for the owner's answer; `undefined`
+		 * when this host shows no forms (it said so at initialize).
+		 */
+		readonly form?: (
+			params: JsonObject,
+		) => Promise<JsonValue | undefined> | undefined;
+		/**
+		 * Open the capture form for a value the waiting run needs now (its
+		 * link in the form); the value the owner submits is deposited here.
+		 * `false` when this host shows no form.
+		 */
+		readonly ask?: (name: string) => Promise<boolean>;
 	} = {},
 ): McpOwnerChannel {
 	const held = new Map<string, string>();
@@ -62,6 +80,10 @@ export function createMcpOwnerChannel(
 			opened.delete(name);
 			if (link !== undefined) links.set(name, link);
 			else links.delete(name);
+			// A host that shows forms: the run asks the owner now, the link in
+			// the form, and goes on with what they submit in this same call.
+			if (!held.has(name) && link !== undefined)
+				await options.ask?.(name).catch(() => false);
 			const value = held.get(name);
 			held.delete(name);
 			if (value !== undefined) links.delete(name);
@@ -79,6 +101,19 @@ export function createMcpOwnerChannel(
 			const elicitationId = `hobo-${randomUUID()}`;
 			prompted.set(url, elicitationId);
 			await options.prompt?.({ mode: "url", elicitationId, url, message });
+		},
+		async confirm({ url, message }) {
+			const answer = options.form?.({
+				message: `${message}\n\n${url}`,
+				requestedSchema: {
+					type: "object",
+					properties: {
+						done: { type: "boolean", title: "Done", default: true },
+					},
+				},
+			});
+			if (answer === undefined) return undefined;
+			return Accepted.safeParse(await answer).success;
 		},
 		// Steps that wait on the owner run here, off the request path, for as
 		// long as this server lives; when one ends, the prompt it showed is
