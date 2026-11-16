@@ -22,6 +22,7 @@ import {
 	scopeRunVault,
 	showOwnerPage,
 	storeIdOf,
+	storeSignInGuidance,
 	withoutSecretEnv,
 	workloadOidcOf,
 } from "@hobo/hobo-ci";
@@ -327,9 +328,10 @@ async function prepareVercelWithVault(
 		if (owner.opened === undefined)
 			return refused(
 				"HOBO_CD_STORE_NEEDS_SIGN_IN",
-				`A handed-off run cannot show a sign-in page: ${owner.id} must open without one.`,
+				`A handed-off run shows no sign-in page: ${owner.id} must open without one.`,
 				[
-					`Commit ${SECRET_STORE_LOCATOR_FILE} with the store's ids, run with the non-secret setting INFISICAL_SIGN_IN=egress-proxy, and give the agent's session an Infisical access token for app.infisical.com in its credential form (never in chat, env or a file); or run hobo cd up yourself in a terminal.`,
+					`The store's ids are committed in ${SECRET_STORE_LOCATOR_FILE}.`,
+					...storeSignInGuidance(owner.id, "cd"),
 				],
 			);
 		const store = owner.opened;

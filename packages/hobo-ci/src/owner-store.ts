@@ -50,6 +50,32 @@ export const SECRET_STORE_LOCATOR_FILE = ".hobo/secret-store.json";
 // public-contract: the locator's INFISICAL_SIGN_IN value for a sign-in the agent's egress proxy injects.
 export const EGRESS_PROXY_SIGN_IN = "egress-proxy";
 
+// public-contract: Infisical's guide to the Token Auth identity a remote agent's run signs in with.
+export const INFISICAL_TOKEN_AUTH_DOCS =
+	"https://infisical.com/docs/documentation/platform/identities/token-auth";
+// public-contract: Infisical's guide to the OAuth application a local read-only sign-in uses.
+export const INFISICAL_OAUTH_DOCS =
+	"https://infisical.com/docs/documentation/platform/oauth-applications/authorization-code";
+
+/**
+ * How the owner lets a run that shows no page into the store: every path the
+ * store supports, each with where to do it. Names and places only.
+ */
+export function storeSignInGuidance(
+	store: SecretStoreId,
+	verb: "ci" | "cd",
+): readonly string[] {
+	if (store !== "infisical")
+		return [
+			`Run hobo ${verb} up yourself in a terminal: the setup page asks for the ${store} sign-in and keeps it in this run's memory only.`,
+		];
+	return [
+		`Remote agent (no page): at https://app.infisical.com go to Organization → Access Control → Identities (guide: ${INFISICAL_TOKEN_AUTH_DOCS}), Create Identity "hobo-${verb}-owner" (organization role No Access), add Token Auth and create a token (TTL 3600), and add the identity to the store's project with a write role. Type the token only into the agent session's credential form for app.infisical.com; the run uses INFISICAL_SIGN_IN=${EGRESS_PROXY_SIGN_IN} and holds a placeholder.`,
+		`Your own machine: run hobo ${verb} up in a terminal; the setup page asks for the token, or sign in with an Infisical OAuth application (INFISICAL_SIGN_IN=oauth, guide: ${INFISICAL_OAUTH_DOCS}) to read the store with a browser approval; its tokens are read-only, so a run that must write still needs a token.`,
+		`CI: give the locator an INFISICAL_IDENTITY_ID with OIDC Auth that trusts the workflow; the run signs in with its own OIDC token.`,
+	];
+}
+
 /** Which store, as the ceremony asks it. */
 export const STORE_CHOICE: CeremonySetting = {
 	field: {

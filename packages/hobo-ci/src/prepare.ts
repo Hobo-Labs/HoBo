@@ -30,6 +30,7 @@ import {
 	ownerStore,
 	SECRET_STORE_LOCATOR_FILE,
 	storeIdOf,
+	storeSignInGuidance,
 } from "./owner-store.js";
 import {
 	browserEnvironment,
@@ -344,6 +345,29 @@ async function prepareGithubWithVault(
 			"The owner hand-off needs progress output. Omit --json and -q, then retry.",
 			["Run hobo ci up --hand-off without --json or -q."],
 		);
+	// Handed off, the owner may be anywhere, so nothing is served here. The
+	// store must open without a page, and the App must already be in it:
+	// creating one needs GitHub's own page, whose redirect returns either to
+	// this machine (a terminal run) or to the relay (--via-workflow).
+	if (input.handOff === true) {
+		if (owner.opened === undefined)
+			return refused(
+				"HOBO_CI_STORE_NEEDS_SIGN_IN",
+				`A handed-off run shows no sign-in page: ${owner.id} must open without one.`,
+				[
+					`The store's ids are committed in ${SECRET_STORE_LOCATOR_FILE}.`,
+					...storeSignInGuidance(owner.id, "ci"),
+				],
+			);
+		return refused(
+			"HOBO_CI_APP_NEEDS_OWNER",
+			`${owner.opened.id} holds no GitHub App for HoBo CI, and creating one needs GitHub's page, which a handed-off run cannot receive.`,
+			[
+				"Run hobo ci up yourself in a terminal: GitHub's page redirects back to your machine.",
+				"Or, with the relay up, run hobo ci app create --via-workflow: GitHub hands its one-time code to the relay and the deploy workflow stores the App's credentials.",
+			],
+		);
+	}
 	if (!canReachOwner(deps.interactive, input.handOff))
 		return refused(
 			"HOBO_CI_CONNECTION_NEEDS_OWNER",

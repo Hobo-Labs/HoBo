@@ -22,7 +22,10 @@ export {
 	loadGithubAppCredentials,
 } from "./github.js";
 export {
+	EGRESS_PROXY_SIGN_IN,
 	familySettings,
+	INFISICAL_OAUTH_DOCS,
+	INFISICAL_TOKEN_AUTH_DOCS,
 	InvalidSecretStoreError,
 	type OwnerStore,
 	type OwnerStoreDeps,
@@ -30,6 +33,7 @@ export {
 	SECRET_STORE_LOCATOR_FILE,
 	STORE_CHOICE,
 	storeIdOf,
+	storeSignInGuidance,
 } from "./owner-store.js";
 export {
 	canReachOwner,

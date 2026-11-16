@@ -1,8 +1,13 @@
+import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
 import {
 	canReachOwner,
+	INFISICAL_TOKEN_AUTH_DOCS,
+	type OpenedSecretStore,
 	OWNER_PAGE_LINE_PREFIX,
+	prepareGithubConnection,
 	showOwnerPage,
 } from "../src/index.js";
 
@@ -46,5 +51,74 @@ describe("owner hand-off", () => {
 			openBrowser: (url) => opened.push(url),
 		});
 		expect(opened).toEqual(["http://127.0.0.1:1/s/x"]);
+	});
+});
+
+describe("hobo ci up --hand-off", () => {
+	function input(): PrepareInput {
+		const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
+			emitProgress: () => undefined,
+			// SAFETY: the preparation fixture reads only these two output flags.
+			flags: { json: false, quiet: false } as CommandRunInput["flags"],
+		};
+		// SAFETY: prepareGithubConnection reads only progress and these output flags.
+		return {
+			action: "up",
+			projectDir: "/tmp/hobo-ci",
+			whatIf: false,
+			yes: false,
+			handOff: true,
+			run: run as CommandRunInput,
+		};
+	}
+	const locator = {
+		read: async () => ({
+			HOBO_SECRET_STORE: "infisical",
+			INFISICAL_PROJECT_ID: "proj",
+		}),
+		write: async () => undefined,
+	};
+	const noPage = () => {
+		throw new Error("a handed-off run must not serve a page");
+	};
+
+	it("names every way into the store when it cannot open without a page", async () => {
+		const outcome = await prepareGithubConnection(input(), {
+			env: {},
+			locator,
+			openStore: async () => ({
+				ok: false,
+				message: "Not signed in to Infisical.",
+				remediation: [],
+			}),
+			startPage: noPage,
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
+		});
+		const text = JSON.stringify(outcome);
+		expect(text).toContain(INFISICAL_TOKEN_AUTH_DOCS);
+		expect(text).toContain("INFISICAL_SIGN_IN=oauth");
+		expect(text).toContain("INFISICAL_IDENTITY_ID");
+	});
+
+	it("refuses to create the App without GitHub's page, naming the paths that can", async () => {
+		const store: OpenedSecretStore = {
+			id: "infisical",
+			port: createMemorySecretsPort({ id: "memory" }),
+			reference: (name) => `infisical://proj/prod/hobo-ci/${name}`,
+		};
+		const outcome = await prepareGithubConnection(input(), {
+			env: { INFISICAL_SIGN_IN: "egress-proxy" },
+			locator,
+			openStore: async () => ({ ok: true, store }),
+			startPage: noPage,
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_APP_NEEDS_OWNER" },
+		});
+		expect(JSON.stringify(outcome)).toContain("--via-workflow");
 	});
 });

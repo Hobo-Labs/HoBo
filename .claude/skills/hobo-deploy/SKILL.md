@@ -192,16 +192,18 @@ An agent never answers a ceremony itself and never stops at
 `HOBO_*_CONNECTION_NEEDS_OWNER`. Run the verb with `--hand-off` in the
 background (without `--json` or `-q`).
 
-For CI, the run serves a loopback page and prints its full, unguessable
-`HOBO_OWNER_PAGE <url> port=<n>` line. Give the owner the full URL. If the
-run is remote, the owner needs an authenticated tunnel that binds
-`127.0.0.1:<n>` on their machine and forwards to the same port on the
-agent's machine. They open the URL through the tunnel and keep it open until
-the provider returns to the loopback callback. A preview alone does not
-forward that callback.
+A handed-off run serves nothing on the agent's machine and nothing redirects
+back to it, so the owner can be anywhere. When it cannot go on, it refuses
+and names every way forward with where to do it: show the owner those lines,
+don't paraphrase them into one option.
 
-For CD, the handed-off run serves nothing on the agent's machine and nothing
-redirects back to it, so the owner can be anywhere:
+For CI (`HOBO_CI_*`), the store must open without a page
+(`HOBO_CI_STORE_NEEDS_SIGN_IN` otherwise, as for CD below) and already hold
+the GitHub App. Creating the App needs GitHub's own page, so a handed-off run
+refuses with `HOBO_CI_APP_NEEDS_OWNER`: the owner runs `hobo ci up` in a
+terminal, or `hobo ci app create --via-workflow` once the relay is up.
+
+For CD:
 
 1. **The store opens without a page.** Commit `.hobo/secret-store.json`
    (store and ids only). On a remote box, run with the non-secret setting
@@ -212,6 +214,15 @@ redirects back to it, so the owner can be anywhere:
    it in Infisical's web app (a machine identity with **Token Auth**, added
    to the project with a write role) and types it only into that form.
    Otherwise the run refuses with `HOBO_CD_STORE_NEEDS_SIGN_IN`.
+
+   The credential form is the session's own: it cannot show a link or
+   steps. So **first** give the owner, in one message: the guide
+   (https://infisical.com/docs/documentation/platform/identities/token-auth),
+   where to click in https://app.infisical.com (Organization → Access
+   Control → Identities → Create Identity), the identity's name, Token Auth
+   with TTL 3600, and the project and role. Open the form only after they
+   say the token is ready. If they decline it, show the other paths the
+   refusal names (a terminal run, an OAuth read-only sign-in, CI's OIDC).
 2. **Vercel by device grant.** The run prints one
    `HOBO_OWNER_DEVICE <link> code=<code>` line. Say: "Open `<link>` on any
    device, check the code is `<code>`, and approve." The run waits (ten
