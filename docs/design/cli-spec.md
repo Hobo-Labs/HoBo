@@ -215,6 +215,9 @@ environment variables.
   the store as `hobo-ci-writer` with GitHub OIDC (`INFISICAL_IDENTITY_ID` in
   the committed locator), runs `hobo cd up --hand-off`, and shows the
   `HOBO_OWNER_DEVICE` line in its job summary for the owner to approve.
+- **A refusal is never a dead end.** Human output prints a result that did
+  not succeed with its code and every remediation line, not only its
+  message; `--json` carries the same lines in `remediation`.
 - Without a person at a browser and without `--hand-off`, and for
   `--what-if`, nothing opens. The
   result says what it would sign in to and ask for, points CI at a
