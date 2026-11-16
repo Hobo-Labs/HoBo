@@ -1,10 +1,3 @@
-/**
- * Evidence capture tour (AGENTS.md mandatory).
- *
- * Produces Playwright screenshots + MP4 recordings under public/shots/.
- * Self-report without these files is rejected.
- */
-
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -28,7 +21,7 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createControlApiServer } from "@hobo/control-api";
-import { must } from "@hobo/core/total-access";
+import { chromium, type Page } from "playwright";
 import {
 	connectionAuthorize,
 	connectionCreate,
@@ -40,9 +33,49 @@ import {
 	stationUp,
 } from "@hobo/management";
 
-const playwright = await import(
-	"/home/codex/.local/lib/node_modules/playwright/index.mjs"
-);
+type YardState = {
+	ready: boolean;
+	connCount: number;
+	trafficRate: number;
+	bootstrapActive: boolean;
+	bo: { x: number; y: number };
+	zone: string;
+	sheetOpen: boolean;
+	sheetKind: string | null;
+	animId: string;
+};
+
+type YardTestApi = {
+	ready: boolean;
+	frameCount: number;
+	state: () => YardState;
+	commands: {
+		advanceFrame: (milliseconds: number) => void;
+		selectZone: (zone: string) => void;
+		dismissSheet: () => void;
+		showAnim: (animation: string) => void;
+	};
+};
+
+declare global {
+	interface Window {
+		__TEST__: YardTestApi;
+	}
+}
+
+type EvidenceReport = {
+	gameUrl: string;
+	apiUrl: string;
+	checks: string[];
+	errors: string[];
+	skillStack: string[];
+	recordings: string[];
+	initialState?: YardState;
+	pixelSample?: { dark: number; bo: { x: number; y: number } };
+	consoleErrors?: string[];
+};
+
+type ImageDiff = { ok: boolean; detail: string };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = join(ROOT, "public");
@@ -64,17 +97,18 @@ for (const d of [SHOTS, RECORDINGS, BASELINES, EXP_EVIDENCE]) {
 	mkdirSync(d, { recursive: true });
 }
 
-const MIME: Record<string, string> = {
-	".html": "text/html; charset=utf-8",
-	".js": "text/javascript; charset=utf-8",
-	".css": "text/css; charset=utf-8",
-	".json": "application/json",
-	".png": "image/png",
-	".jpg": "image/jpeg",
-	".jpeg": "image/jpeg",
-	".svg": "image/svg+xml",
-	".gif": "image/gif",
-};
+const MIME = new Map([
+	[".html", "text/html; charset=utf-8"],
+	[".js", "text/javascript; charset=utf-8"],
+	[".css", "text/css; charset=utf-8"],
+	[".json", "application/json"],
+	[".png", "image/png"],
+	[".jpg", "image/jpeg"],
+	[".jpeg", "image/jpeg"],
+	[".svg", "image/svg+xml"],
+	[".ttf", "font/ttf"],
+	[".gif", "image/gif"],
+]);
 
 function staticHandler(base: string) {
 	return (req: IncomingMessage, res: ServerResponse) => {
@@ -94,7 +128,7 @@ function staticHandler(base: string) {
 			}
 			const ext = extname(file);
 			res.writeHead(200, {
-				"content-type": MIME[ext] || "application/octet-stream",
+				"content-type": MIME.get(ext) || "application/octet-stream",
 				"cache-control": "no-store",
 			});
 			res.end(readFileSync(file));
@@ -134,11 +168,7 @@ function webmToMp4(webm: string, mp4: string): void {
 	}
 }
 
-function imgdiff(
-	baseline: string,
-	current: string,
-	out: string,
-): { ok: boolean; detail: string } {
+function imgdiff(baseline: string, current: string, out: string): ImageDiff {
 	if (!existsSync(baseline)) {
 		copyFileSync(current, baseline);
 		return { ok: true, detail: "baseline created" };
@@ -167,8 +197,7 @@ function imgdiff(
 	if (/Pillow is required|ModuleNotFoundError/i.test(detail)) {
 		return { ok: true, detail: `imgdiff skipped (deps): ${detail}` };
 	}
-	// Full-page shots still move slightly (font AA / subpixel). Accept moderate RMS
-	// by refreshing baseline when under a soft ceiling; hard-fail only large drifts.
+
 	const rmsMatch = detail.match(/RMS=([0-9.]+)/i);
 	const rms = rmsMatch ? Number(rmsMatch[1]) : NaN;
 	if (Number.isFinite(rms) && rms <= 25) {
@@ -185,20 +214,15 @@ function sleep(ms: number) {
 	return new Promise((r) => setTimeout(r, ms));
 }
 
-async function advance(page: import("playwright").Page, n: number) {
+async function advance(page: Page, n: number) {
 	for (let i = 0; i < n; i++) {
 		await page.evaluate(() => {
-			(
-				window as unknown as {
-					__TEST__: { commands: { advanceFrame: () => void } };
-				}
-			).__TEST__.commands.advanceFrame(16.67);
+			window.__TEST__.commands.advanceFrame(16.67);
 		});
 	}
 	await page.waitForTimeout(50);
 }
 
-// --- seed fixtures ---
 const hoboHome = mkdtempSync(join(tmpdir(), "hobo-yard-play-"));
 const ctx = createManagementContext({ hoboHome });
 stationInit(ctx, { name: "local", tenant: "local" });
@@ -209,7 +233,10 @@ const pub = stationRailsPublish(ctx, {
 	name: "prod",
 	version: "1.0.0",
 });
-const hash = String((pub.data as { contentHash: string }).contentHash);
+const hash = String(pub.data?.contentHash ?? "");
+if (!pub.ok || !/^sha256:[a-f0-9]{64}$/u.test(hash)) {
+	throw new Error("Rail publication did not return a valid content hash");
+}
 stationRailsApprove(ctx, { stationId: "station:local", hashOrId: hash });
 stationRailsActivate(ctx, { stationId: "station:local", hashOrId: hash });
 connectionCreate(ctx, {
@@ -236,7 +263,7 @@ await new Promise<void>((resolve) =>
 	staticSrv.listen(0, "127.0.0.1", () => resolve()),
 );
 const staticAddr = staticSrv.address();
-if (!staticAddr || typeof staticAddr === "string") {
+if (!(staticAddr instanceof Object) || !("port" in staticAddr)) {
 	throw new Error("static bind failed");
 }
 const origin = `http://127.0.0.1:${staticAddr.port}`;
@@ -247,23 +274,23 @@ console.log("HOBO_HOME", hoboHome);
 console.log("API", api.url);
 console.log("GAME", gameUrl);
 
-const browser = await playwright.chromium.launch({ headless: true });
-const report: Record<string, unknown> = {
+const browser = await chromium.launch({ headless: true });
+const report: EvidenceReport = {
 	gameUrl,
 	apiUrl: api.url,
-	checks: [] as string[],
-	errors: [] as string[],
+	checks: [],
+	errors: [],
 	skillStack: ["gamedev-assets", "phaser-gamedev", "playwright-testing"],
-	recordings: [] as string[],
+	recordings: [],
 };
 
 function check(name: string, ok: boolean, detail?: string) {
 	const line = ok
 		? `PASS ${name}${detail ? ` — ${detail}` : ""}`
 		: `FAIL ${name}${detail ? ` — ${detail}` : ""}`;
-	(report.checks as string[]).push(line);
+	report.checks.push(line);
 	console.log(line);
-	if (!ok) (report.errors as string[]).push(line);
+	if (!ok) report.errors.push(line);
 }
 
 const videoDirs: string[] = [];
@@ -271,7 +298,7 @@ const videoDirs: string[] = [];
 async function withRecording(
 	name: string,
 	viewport: { width: number; height: number },
-	fn: (page: import("playwright").Page) => Promise<void>,
+	fn: (page: Page) => Promise<void>,
 ): Promise<string> {
 	const videoDir = mkdtempSync(join(tmpdir(), `yard-vid-${name}-`));
 	videoDirs.push(videoDir);
@@ -284,10 +311,7 @@ async function withRecording(
 		},
 	});
 	const page = await context.newPage();
-	// Captured before teardown: `finally` below is teardown only, so that a throw
-	// from `fn` propagates. It used to hold the whole finalization including a
-	// `return` and a `throw`, either of which discards whatever the demo body
-	// threw — a broken demo reported success.
+
 	const vid = page.video();
 	try {
 		await fn(page);
@@ -295,21 +319,20 @@ async function withRecording(
 		await page.close();
 		await context.close();
 	}
-	// Playwright finalizes video after context close. Only reached when `fn` returned.
+
 	if (vid) {
 		const webmPath = await vid.path();
 		const mp4 = join(RECORDINGS, `${name}.mp4`);
-		// wait briefly if file not yet flushed
+
 		for (let i = 0; i < 20 && !existsSync(webmPath); i++) await sleep(100);
 		if (!existsSync(webmPath)) {
-			// fallback: pick any webm in dir
 			const found = readdirSync(videoDir).find((f) => f.endsWith(".webm"));
 			if (!found) throw new Error(`no webm for ${name} in ${videoDir}`);
 			webmToMp4(join(videoDir, found), mp4);
 		} else {
 			webmToMp4(webmPath, mp4);
 		}
-		(report.recordings as string[]).push(mp4);
+		report.recordings.push(mp4);
 		console.log("recorded", mp4, statSync(mp4).size, "bytes");
 		return mp4;
 	}
@@ -317,7 +340,6 @@ async function withRecording(
 }
 
 try {
-	// ========== Recording 01: full yard loop ==========
 	await withRecording(
 		"01-yard-loop",
 		{ width: 1400, height: 920 },
@@ -329,42 +351,29 @@ try {
 			page.on("pageerror", (err) => consoleErrors.push(String(err)));
 
 			await page.goto(gameUrl, { waitUntil: "networkidle", timeout: 30000 });
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 20000,
+			});
 			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 20000 },
-			);
-			await page.waitForFunction(
-				() =>
-					((window as unknown as { __TEST__?: { frameCount?: number } })
-						.__TEST__?.frameCount ?? 0) >= 8,
+				() => (window.__TEST__?.frameCount ?? 0) >= 8,
 				null,
 				{ timeout: 10000 },
 			);
 
-			const st = await page.evaluate(() =>
-				(
-					window as unknown as { __TEST__: { state: () => unknown } }
-				).__TEST__.state(),
-			);
+			const st = await page.evaluate(() => window.__TEST__.state());
 			report.initialState = st;
-			check("test seam ready", Boolean((st as { ready: boolean }).ready));
+			check("test seam ready", Boolean(st.ready));
 			check(
 				"connection authorized present",
-				(st as { connCount: number }).connCount >= 1,
-				`conn=${(st as { connCount: number }).connCount}`,
+				st.connCount >= 1,
+				`conn=${st.connCount}`,
 			);
 			check(
 				"traffic rate > 0",
-				(st as { trafficRate: number }).trafficRate > 0,
-				`traffic=${(st as { trafficRate: number }).trafficRate}`,
+				st.trafficRate > 0,
+				`traffic=${st.trafficRate}`,
 			);
-			check(
-				"bootstrap inactive",
-				(st as { bootstrapActive: boolean }).bootstrapActive === false,
-			);
+			check("bootstrap inactive", st.bootstrapActive === false);
 
 			await page.screenshot({
 				path: join(SHOTS, "01-boot-live.png"),
@@ -377,7 +386,6 @@ try {
 			);
 			check("imgdiff boot", d1.ok, d1.detail);
 
-			// Walk zones with real wall-clock so video has motion
 			for (const zone of [
 				"connectionBay",
 				"costBooth",
@@ -387,11 +395,7 @@ try {
 				"activeRailTrack",
 			] as const) {
 				await page.evaluate((z) => {
-					(
-						window as unknown as {
-							__TEST__: { commands: { selectZone: (x: string) => void } };
-						}
-					).__TEST__.commands.selectZone(z);
+					window.__TEST__.commands.selectZone(z);
 				}, zone);
 				await advance(page, 45);
 				await sleep(400);
@@ -406,24 +410,18 @@ try {
 				.screenshot({ path: join(SHOTS, "canvas-only.png") });
 
 			const pixelSample = await page.evaluate(() => {
-				const c = document.getElementById("yard") as HTMLCanvasElement;
-				const ctx = must(c.getContext("2d"), "c.getContext('2d')");
-				const st = (
-					window as unknown as {
-						__TEST__: { state: () => { bo: { x: number; y: number } } };
-					}
-				).__TEST__.state();
+				const canvas = document.getElementById("yard");
+				if (!(canvas instanceof HTMLCanvasElement))
+					throw new Error("Yard canvas is unavailable");
+				const context = canvas.getContext("2d");
+				if (!context) throw new Error("Yard canvas context is unavailable");
+				const st = window.__TEST__.state();
 				const x0 = Math.max(0, st.bo.x - 50);
 				const y0 = Math.max(0, st.bo.y - 120);
-				const data = ctx.getImageData(x0, y0, 100, 130).data;
+				const data = context.getImageData(x0, y0, 100, 130).data;
 				let dark = 0;
 				for (let i = 0; i < data.length; i += 4) {
-					if (
-						must(data[i], "data[i]") +
-							must(data[i + 1], "data[i + 1]") +
-							must(data[i + 2], "data[i + 2]") <
-						90
-					)
+					if ((data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0) < 90)
 						dark++;
 				}
 				return { dark, bo: st.bo };
@@ -444,41 +442,20 @@ try {
 		},
 	);
 
-	// ========== Recording 02: connection sheet ==========
 	await withRecording(
 		"02-connection-sheet",
 		{ width: 1400, height: 920 },
 		async (page) => {
 			await page.goto(gameUrl, { waitUntil: "networkidle", timeout: 30000 });
-			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 20000 },
-			);
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 20000,
+			});
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { selectZone: (z: string) => void } };
-					}
-				).__TEST__.commands.selectZone("connectionBay");
+				window.__TEST__.commands.selectZone("connectionBay");
 			});
 			await advance(page, 80);
 			await sleep(800);
-			const stBay = await page.evaluate(() =>
-				(
-					window as unknown as {
-						__TEST__: {
-							state: () => {
-								zone: string;
-								sheetOpen: boolean;
-								sheetKind: string | null;
-							};
-						};
-					}
-				).__TEST__.state(),
-			);
+			const stBay = await page.evaluate(() => window.__TEST__.state());
 			check(
 				"connection bay zone",
 				stBay.zone === "connectionBay",
@@ -495,122 +472,71 @@ try {
 				join(SHOTS, "02-connection-bay-sheet.diff.png"),
 			);
 			check("imgdiff connection bay", d2.ok, d2.detail);
-			// interact with sheet UI
+
 			await page
 				.locator("#sheet-confirm")
 				.click()
 				.catch(() => {});
 			await sleep(600);
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { dismissSheet: () => void } };
-					}
-				).__TEST__.commands.dismissSheet();
+				window.__TEST__.commands.dismissSheet();
 			});
 			await sleep(400);
 		},
 	);
 
-	// ========== Recording 03: AnimTest east/west ==========
 	await withRecording(
 		"03-bo-walk-east-west",
 		{ width: 720, height: 560 },
 		async (page) => {
 			await page.goto(animUrl, { waitUntil: "networkidle", timeout: 30000 });
-			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 15000 },
-			);
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 15000,
+			});
 			for (const anim of ["bo.idle", "bo.walk.east", "bo.walk.west"] as const) {
 				await page.evaluate((id) => {
-					(
-						window as unknown as {
-							__TEST__: { commands: { showAnim: (a: string) => void } };
-						}
-					).__TEST__.commands.showAnim(id);
+					window.__TEST__.commands.showAnim(id);
 				}, anim);
-				// let many frames play for visible motion in video
+
 				await sleep(anim === "bo.idle" ? 900 : 1600);
 				const path = join(SHOTS, `anim-${anim.replace(/\./g, "-")}.png`);
 				await page.screenshot({ path });
-				const stA = await page.evaluate(() =>
-					(
-						window as unknown as {
-							__TEST__: { state: () => { animId: string } };
-						}
-					).__TEST__.state(),
-				);
+				const stA = await page.evaluate(() => window.__TEST__.state());
 				check(`anim harness ${anim}`, stA.animId === anim, stA.animId);
 			}
-			// east then west back-to-back for flip proof
+
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { showAnim: (a: string) => void } };
-					}
-				).__TEST__.commands.showAnim("bo.walk.east");
+				window.__TEST__.commands.showAnim("bo.walk.east");
 			});
 			await sleep(1200);
 			await page.evaluate(() => {
-				(
-					window as unknown as {
-						__TEST__: { commands: { showAnim: (a: string) => void } };
-					}
-				).__TEST__.commands.showAnim("bo.walk.west");
+				window.__TEST__.commands.showAnim("bo.walk.west");
 			});
 			await sleep(1200);
 		},
 	);
 
-	// ========== Recording 04: rail / cost / doctor ==========
 	await withRecording(
 		"04-rail-cost-doctor",
 		{ width: 1400, height: 920 },
 		async (page) => {
 			await page.goto(gameUrl, { waitUntil: "networkidle", timeout: 30000 });
-			await page.waitForFunction(
-				() =>
-					(window as unknown as { __TEST__?: { ready?: boolean } }).__TEST__
-						?.ready === true,
-				null,
-				{ timeout: 20000 },
-			);
+			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {
+				timeout: 20000,
+			});
 			for (const [zone, shot] of [
 				["policyBoard", "04-policy-board.png"],
 				["costBooth", "03-cost-booth.png"],
 				["errorBunker", "05-error-bunker.png"],
 			] as const) {
 				await page.evaluate((z) => {
-					(
-						window as unknown as {
-							__TEST__: {
-								commands: {
-									dismissSheet: () => void;
-									selectZone: (x: string) => void;
-								};
-							};
-						}
-					).__TEST__.commands.dismissSheet();
-					(
-						window as unknown as {
-							__TEST__: { commands: { selectZone: (x: string) => void } };
-						}
-					).__TEST__.commands.selectZone(z);
+					window.__TEST__.commands.dismissSheet();
+					window.__TEST__.commands.selectZone(z);
 				}, zone);
 				await advance(page, 70);
 				await sleep(700);
 				await page.screenshot({ path: join(SHOTS, shot), fullPage: true });
-				const stZ = await page.evaluate(() =>
-					(
-						window as unknown as {
-							__TEST__: { state: () => { zone: string } };
-						}
-					).__TEST__.state(),
-				);
+				const stZ = await page.evaluate(() => window.__TEST__.state());
 				check(`${zone} zone`, stZ.zone === zone, `zone=${stZ.zone}`);
 			}
 			await page.screenshot({
@@ -622,7 +548,7 @@ try {
 	);
 } catch (err) {
 	const msg = err instanceof Error ? err.message : String(err);
-	(report.errors as string[]).push(msg);
+	report.errors.push(msg);
 	console.error(err);
 } finally {
 	await browser.close();
@@ -634,7 +560,6 @@ try {
 	}
 }
 
-// --- evidence manifest + sync to exp-proof ---
 const evidenceFiles = [
 	"evidence-manifest.json",
 	"visual-report.json",
@@ -660,9 +585,7 @@ for (const rel of evidenceFiles) {
 	if (rel === "evidence-manifest.json") continue;
 	const abs = join(SHOTS, rel);
 	if (!existsSync(abs)) {
-		(report.errors as string[]).push(
-			`missing evidence file after capture: ${rel}`,
-		);
+		report.errors.push(`missing evidence file after capture: ${rel}`);
 		continue;
 	}
 	files[rel] = { bytes: statSync(abs).size, sha256: sha256File(abs) };
@@ -678,7 +601,6 @@ const manifest = {
 	files,
 };
 
-// placeholder entry filled after write
 writeFileSync(
 	join(SHOTS, "visual-report.json"),
 	`${JSON.stringify(report, null, 2)}\n`,
@@ -689,33 +611,8 @@ files["visual-report.json"] = {
 };
 
 const manifestPath = join(SHOTS, "evidence-manifest.json");
-// write without self-hash first, then include self
-const manifestBody = {
-	...manifest,
-	files: {
-		...files,
-	},
-};
-writeFileSync(manifestPath, `${JSON.stringify(manifestBody, null, 2)}\n`);
-// re-read with self entry
-const finalFiles = {
-	...files,
-	"evidence-manifest.json": {
-		bytes: statSync(manifestPath).size,
-		sha256: sha256File(manifestPath),
-	},
-};
-// Note: self-hash in manifest will mismatch if we rewrite — store digest of content without self entry
-const manifestFinal = {
-	...manifest,
-	files: finalFiles,
-	// selfDigest is of the pre-self version; evidence-check validates other files strictly
-	manifestNote:
-		"evidence-manifest.json sha256 is of on-disk file after write; re-run evidence:check validates all other files strictly",
-};
-writeFileSync(manifestPath, `${JSON.stringify(manifestFinal, null, 2)}\n`);
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-// Sync key evidence into UX proof package
 const syncList = [
 	"01-boot-live.png",
 	"02-connection-bay-sheet.png",
@@ -738,7 +635,7 @@ for (const rel of syncList) {
 
 console.log("report", join(SHOTS, "visual-report.json"));
 console.log("manifest", manifestPath);
-if ((report.errors as string[]).length > 0) {
+if (report.errors.length > 0) {
 	console.error("EVIDENCE CAPTURE FAILED");
 	process.exit(1);
 }

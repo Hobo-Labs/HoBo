@@ -1,8 +1,3 @@
-/**
- * Long-lived local Yard demo: control-api + static game host.
- * Usage: pnpm --filter @hobo/control-yard run serve
- */
-
 import {
 	existsSync,
 	mkdtempSync,
@@ -34,18 +29,19 @@ const HOST = process.env.HOBO_YARD_HOST ?? "0.0.0.0";
 const GAME_PORT = Number(process.env.HOBO_YARD_PORT ?? 8788);
 const API_PORT = Number(process.env.HOBO_CONTROL_PORT ?? 8790);
 
-const MIME: Record<string, string> = {
-	".html": "text/html; charset=utf-8",
-	".js": "text/javascript; charset=utf-8",
-	".css": "text/css; charset=utf-8",
-	".json": "application/json",
-	".png": "image/png",
-	".jpg": "image/jpeg",
-	".jpeg": "image/jpeg",
-	".svg": "image/svg+xml",
-	".gif": "image/gif",
-	".mp4": "video/mp4",
-};
+const MIME = new Map([
+	[".html", "text/html; charset=utf-8"],
+	[".js", "text/javascript; charset=utf-8"],
+	[".css", "text/css; charset=utf-8"],
+	[".json", "application/json"],
+	[".png", "image/png"],
+	[".jpg", "image/jpeg"],
+	[".jpeg", "image/jpeg"],
+	[".svg", "image/svg+xml"],
+	[".ttf", "font/ttf"],
+	[".gif", "image/gif"],
+	[".mp4", "video/mp4"],
+]);
 
 function serveDir(base: string) {
 	return (
@@ -68,7 +64,7 @@ function serveDir(base: string) {
 			}
 			const ext = extname(file);
 			res.writeHead(200, {
-				"content-type": MIME[ext] || "application/octet-stream",
+				"content-type": MIME.get(ext) || "application/octet-stream",
 				"cache-control": "no-store",
 				"access-control-allow-origin": "*",
 			});
@@ -93,10 +89,12 @@ const pub = stationRailsPublish(ctx, {
 	name: "prod",
 	version: "1.0.0",
 });
-const hash = String((pub.data as { contentHash: string }).contentHash);
+const hash = String(pub.data?.contentHash ?? "");
+if (!pub.ok || !/^sha256:[a-f0-9]{64}$/u.test(hash)) {
+	throw new Error("Rail publication did not return a valid content hash");
+}
 stationRailsApprove(ctx, { stationId: "station:local", hashOrId: hash });
 stationRailsActivate(ctx, { stationId: "station:local", hashOrId: hash });
-// ensure one authorized connection for a lively yard
 try {
 	connectionCreate(ctx, {
 		provider: "asana",
@@ -104,9 +102,7 @@ try {
 		stationId: "station:local",
 	});
 	connectionAuthorize(ctx, { idOrAlias: "work" });
-} catch {
-	/* already present */
-}
+} catch {}
 
 const api = await createControlApiServer({
 	hoboHome,
@@ -128,7 +124,6 @@ await new Promise<void>((resolve, reject) => {
 	staticSrv.on("error", reject);
 });
 
-// Prefer localhost for browser links
 const browserHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
 const apiUrl = HOST === "0.0.0.0" ? `http://127.0.0.1:${api.port}` : api.url;
 const gameUrl = `http://${browserHost}:${GAME_PORT}/?api=${encodeURIComponent(apiUrl)}`;
