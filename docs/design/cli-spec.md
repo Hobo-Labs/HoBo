@@ -249,7 +249,18 @@ environment variables.
   run as Bitwarden's clients do it (`bitwarden-crypto.ts`, checked against
   Bitwarden's SDK test vectors); account and organization keys are zeroed
   before it returns, the token goes only to the run's vault, and the
-  locator keeps the ids and a stable device id (`BITWARDEN_DEVICE_ID`). The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
+  locator keeps the ids and a stable device id (`BITWARDEN_DEVICE_ID`).
+  **Vaultwarden** (or self-hosted Bitwarden) is the same flow against the
+  owner's own server: `BITWARDEN_SERVER_URL` (a parsed https origin) points
+  the API at `<origin>/api` and sign-in at `<origin>/identity`, for both
+  provisioning and the Secrets Manager SDK. Vaultwarden has no Secrets
+  Manager, so where the chosen organization lacks it the run finds or
+  creates the collection `hobo` and keeps each secret as a secure note
+  there (`createBitwardenVaultSecretsPort`: name and value encrypted with
+  the organization key, one version per secret, its revision date); the
+  locator records `BITWARDEN_STORAGE=vault` and `BITWARDEN_COLLECTION_ID`,
+  and each run holds the organization key in memory after the owner's
+  approval. The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
   host.
 - **A provider's redirect to a remote run** (`hobo ci app create
   --hand-off`; GitHub's App manifest code). The run listens on 127.0.0.1

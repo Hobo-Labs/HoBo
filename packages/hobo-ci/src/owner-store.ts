@@ -14,7 +14,10 @@ import {
 import type { TrustedVault } from "@hobo/core";
 import { z } from "zod";
 
-import { bitwardenApiKeyPage } from "./bitwarden-provision.js";
+import {
+	bitwardenApiKeyPage,
+	bitwardenEndpoints,
+} from "./bitwarden-provision.js";
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
 import { INFISICAL_OAUTH_DOCS, OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import { type HttpsOrigin, parseHttpsOrigin } from "./parsed-values.js";
@@ -77,7 +80,7 @@ export function storeChoiceGuidance(
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
 		`infisical${note("infisical")}: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
 		`1password${note("1password")}: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
-		`bitwarden${note("bitwarden")}: nothing else to set up. Once chosen, the run signs in with the environment's Secrets Manager access token (BWS_ACCESS_TOKEN) if there is one; otherwise, with your personal API key (BW_CLIENTID, BW_CLIENTSECRET) and one login request you approve in a Bitwarden app, it finds your organization and creates the project, machine account and a one-day access token itself (BWS_SERVER us or eu; BWS_ORGANIZATION_ID only if you have several organizations). Both are moved into the run's trusted vault and out of the environment.`,
+		`bitwarden${note("bitwarden")}: Bitwarden or Vaultwarden, nothing else to set up (Vaultwarden or self-hosted: BITWARDEN_SERVER_URL, its https origin). Once chosen, the run signs in with the environment's Secrets Manager access token (BWS_ACCESS_TOKEN) if there is one; otherwise, with your personal API key (BW_CLIENTID, BW_CLIENTSECRET) and one login request you approve in a Bitwarden app, it finds your organization and creates what it needs itself: Secrets Manager's project, machine account and a one-day token, or, without Secrets Manager (Vaultwarden), a collection of secure notes (BWS_SERVER us or eu; BWS_ORGANIZATION_ID only if you have several organizations). Both are moved into the run's trusted vault and out of the environment.`,
 	];
 }
 
@@ -96,7 +99,8 @@ export function storeSignInGuidance(
 		];
 	if (store === "bitwarden")
 		return [
-			`Fewest steps: copy your personal API key from ${bitwardenApiKeyPage("us")} (bitwarden.eu: ${bitwardenApiKeyPage("eu")}; Account settings → Security → Keys → View API key) into this environment's settings as BW_CLIENTID and BW_CLIENTSECRET (never in chat). The run then asks you to approve one login request in a Bitwarden app you are signed in to, and creates the Secrets Manager project, machine account and a one-day access token itself.`,
+			`Fewest steps: copy your personal API key from ${bitwardenApiKeyPage(bitwardenEndpoints("us"))} (bitwarden.eu: ${bitwardenApiKeyPage(bitwardenEndpoints("eu"))}; Vaultwarden or self-hosted: <your server>/#/settings/security/security-keys; Account settings → Security → Keys → View API key) into this environment's settings as BW_CLIENTID and BW_CLIENTSECRET (never in chat). The run then asks you to approve one login request in a Bitwarden app you are signed in to, and creates the rest itself: Secrets Manager's project, machine account and a one-day access token, or, where there is no Secrets Manager (Vaultwarden), a collection whose secure notes hold the secrets.`,
+			`Vaultwarden or a self-hosted Bitwarden server: also set BITWARDEN_SERVER_URL to its https origin (a non-secret setting).`,
 			`Or give this environment an existing machine account's access token as BWS_ACCESS_TOKEN. If Bitwarden refuses it (invalid_client), it was revoked or expired: add the API key above and the run replaces it with a new one.`,
 		];
 	if (store !== "infisical")
@@ -132,7 +136,7 @@ export const STORE_CHOICE: CeremonySetting = {
 			},
 			{
 				value: "bitwarden",
-				label: "Bitwarden Secrets Manager",
+				label: "Bitwarden or Vaultwarden",
 				description:
 					"A machine account's access token; workloads use their own machine account.",
 			},
@@ -322,7 +326,13 @@ export async function ownerStore(
 				!(
 					((workloadSignIn || proxySignIn || oauthSignIn) &&
 						field.name === "INFISICAL_TOKEN") ||
-					(connectHost !== undefined && field.name === "OP_ACCOUNT")
+					(connectHost !== undefined && field.name === "OP_ACCOUNT") ||
+					// Vault storage (Vaultwarden): no project and no access token;
+					// the API key and the organization key sign it in.
+					(id === "bitwarden" &&
+						resolved.values.BITWARDEN_STORAGE === "vault" &&
+						(field.name === "BWS_PROJECT_ID" ||
+							field.name === "BWS_ACCESS_TOKEN"))
 				),
 		),
 		...oauthMissing,

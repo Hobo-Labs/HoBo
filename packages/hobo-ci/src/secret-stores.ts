@@ -22,6 +22,14 @@ import {
 import type { SecretHolder, SecretStoreOption } from "@hobo/connect-ui";
 import type { SecretsPort } from "@hobo/identity";
 import {
+	bitwardenEndpoints,
+	parseBitwardenApiKey,
+	parseBitwardenDeviceId,
+	parseBitwardenId,
+	parseBitwardenServer,
+} from "./bitwarden-provision.js";
+import { createBitwardenVaultSecretsPort } from "./bitwarden-vault-port.js";
+import {
 	INFISICAL_OAUTH_DOCS,
 	INFISICAL_OAUTH_REDIRECT_URI,
 	InfisicalOAuthError,
@@ -261,10 +269,19 @@ export const BITWARDEN_SERVERS = Object.freeze({
 	},
 });
 
+/** The server: BITWARDEN_SERVER_URL (Vaultwarden, self-hosted), else the cloud. */
 function bitwardenServer(coordinates: Env) {
-	return coordinates.BWS_SERVER === "eu"
-		? BITWARDEN_SERVERS.eu
-		: BITWARDEN_SERVERS.us;
+	// Parsed where it enters: a malformed origin is refused, not followed.
+	const endpoints = bitwardenEndpoints(
+		parseBitwardenServer(coordinates.BWS_SERVER),
+		coordinates.BITWARDEN_SERVER_URL
+			? parseHttpsOrigin(
+					"BITWARDEN_SERVER_URL",
+					coordinates.BITWARDEN_SERVER_URL,
+				)
+			: undefined,
+	);
+	return { apiUrl: endpoints.api, identityUrl: endpoints.identity };
 }
 
 async function bitwardenSdkClient(
@@ -483,6 +500,10 @@ export async function openSecretStore(
 			}
 		}
 		case "bitwarden": {
+			// No Secrets Manager (Vaultwarden): the organization's vault holds
+			// the secrets, opened with the organization key this run holds.
+			if (coordinates.BITWARDEN_STORAGE === "vault")
+				return openBitwardenVault(coordinates, signIn, deps);
 			let binding: ReturnType<typeof bitwardenBinding>;
 			try {
 				binding = bitwardenBinding({
@@ -522,5 +543,68 @@ export async function openSecretStore(
 				};
 			}
 		}
+	}
+}
+
+/** The Bitwarden-compatible vault store, when this run holds its sign-in. */
+function openBitwardenVault(
+	coordinates: Env,
+	signIn: SecretHolder,
+	deps: SecretStoreDeps,
+): SecretStoreOpening {
+	const clientId = signIn.reveal("BW_CLIENTID");
+	const clientSecret = signIn.reveal("BW_CLIENTSECRET");
+	const organizationKey = signIn.reveal("BITWARDEN_ORG_KEY");
+	if (!clientId || !clientSecret || !organizationKey)
+		return {
+			ok: false,
+			message: "This run holds no sign-in for the Bitwarden vault yet.",
+			remediation: [
+				"Give this environment your personal API key (BW_CLIENTID, BW_CLIENTSECRET) and approve the login request the run asks for.",
+			],
+		};
+	try {
+		const endpoints = bitwardenEndpoints(
+			parseBitwardenServer(coordinates.BWS_SERVER),
+			coordinates.BITWARDEN_SERVER_URL
+				? parseHttpsOrigin(
+						"BITWARDEN_SERVER_URL",
+						coordinates.BITWARDEN_SERVER_URL,
+					)
+				: undefined,
+		);
+		const organizationId = parseBitwardenId(
+			"BWS_ORGANIZATION_ID",
+			coordinates.BWS_ORGANIZATION_ID ?? "",
+		);
+		const collectionId = parseBitwardenId(
+			"BITWARDEN_COLLECTION_ID",
+			coordinates.BITWARDEN_COLLECTION_ID ?? "",
+		);
+		const port = createBitwardenVaultSecretsPort({
+			endpoints,
+			apiKey: parseBitwardenApiKey(clientId, clientSecret),
+			deviceId: parseBitwardenDeviceId(coordinates.BITWARDEN_DEVICE_ID ?? ""),
+			organizationId,
+			collectionId,
+			organizationKey: Buffer.from(organizationKey, "base64"),
+			fetch: deps.fetch ?? fetch,
+		});
+		return {
+			ok: true,
+			store: {
+				id: "bitwarden",
+				port,
+				reference: (name) =>
+					`bitwarden-vault://${organizationId}/${collectionId}/${encodeURIComponent(name)}`,
+			},
+		};
+	} catch (error) {
+		if (!(error instanceof SettingParseError)) throw error;
+		return {
+			ok: false,
+			message: error.message,
+			remediation: [`Fix ${error.setting}: ${error.rule}.`],
+		};
 	}
 }

@@ -2,6 +2,7 @@ import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
 
 import {
+	bitwardenEndpoints,
 	newBitwardenDeviceId,
 	parseBitwardenApiKey,
 	parseBitwardenDeviceId,
@@ -9,7 +10,7 @@ import {
 	parseBitwardenServer,
 	provisionBitwardenAccessToken,
 } from "./bitwarden-provision.js";
-import { SettingParseError } from "./parsed-values.js";
+import { parseHttpsOrigin, SettingParseError } from "./parsed-values.js";
 
 export interface BitwardenSignInRefusal {
 	readonly code: string;
@@ -52,6 +53,7 @@ export async function ensureBitwardenSignIn(
 	// Called only when the store did not open: a token in hand was refused
 	// (revoked or expired), so the API key replaces it with a new one.
 	vault.drop("BWS_ACCESS_TOKEN");
+	vault.drop("BITWARDEN_ORG_KEY");
 	const fam = options.family.toUpperCase();
 	if (options.silent)
 		return {
@@ -65,7 +67,13 @@ export async function ensureBitwardenSignIn(
 		options.env[name] || saved[name] || undefined;
 	try {
 		const apiKey = parseBitwardenApiKey(clientId, clientSecret);
-		const server = parseBitwardenServer(setting("BWS_SERVER"));
+		const region = parseBitwardenServer(setting("BWS_SERVER"));
+		const serverUrlText = setting("BITWARDEN_SERVER_URL");
+		const serverUrl =
+			serverUrlText !== undefined
+				? parseHttpsOrigin("BITWARDEN_SERVER_URL", serverUrlText)
+				: undefined;
+		const endpoints = bitwardenEndpoints(region, serverUrl);
 		const organization = setting("BWS_ORGANIZATION_ID");
 		const project = setting("BWS_PROJECT_ID");
 		// A stable device id: Bitwarden knows the device after its first
@@ -79,7 +87,7 @@ export async function ensureBitwardenSignIn(
 			await options.locator.write({ ...saved, BITWARDEN_DEVICE_ID: deviceId });
 		const result = await provisionBitwardenAccessToken({
 			family: options.family,
-			server,
+			endpoints,
 			apiKey,
 			deviceId,
 			...(organization !== undefined
@@ -102,13 +110,33 @@ export async function ensureBitwardenSignIn(
 				: undefined),
 		});
 		if (result.kind === "refused") return result;
-		vault.put("BWS_ACCESS_TOKEN", result.token);
 		const latest = await options.locator.read();
+		const where = {
+			BITWARDEN_DEVICE_ID: deviceId,
+			BWS_SERVER: region,
+			...(serverUrl !== undefined
+				? { BITWARDEN_SERVER_URL: serverUrl }
+				: undefined),
+			BWS_ORGANIZATION_ID: result.organizationId,
+		};
+		if (result.kind === "vault") {
+			vault.put("BITWARDEN_ORG_KEY", result.organizationKey);
+			await options.locator.write({
+				...latest,
+				...where,
+				BITWARDEN_STORAGE: "vault",
+				BITWARDEN_COLLECTION_ID: result.collectionId,
+			});
+			options.emit(
+				`The Bitwarden vault is ready: secure notes in the collection "hobo" of organization ${result.organizationId}; this run holds the organization key in memory only.`,
+			);
+			return undefined;
+		}
+		vault.put("BWS_ACCESS_TOKEN", result.token);
 		await options.locator.write({
 			...latest,
-			BITWARDEN_DEVICE_ID: deviceId,
-			BWS_SERVER: server,
-			BWS_ORGANIZATION_ID: result.organizationId,
+			...where,
+			BITWARDEN_STORAGE: "secrets-manager",
 			BWS_PROJECT_ID: result.projectId,
 		});
 		options.emit(

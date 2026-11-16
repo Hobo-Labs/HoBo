@@ -9,6 +9,7 @@ import {
 	fingerprintPhrase,
 } from "../../src/bitwarden-crypto.js";
 import {
+	bitwardenEndpoints,
 	OWNER_BITWARDEN_APPROVE_LINE_PREFIX,
 	parseBitwardenApiKey,
 	parseBitwardenDeviceId,
@@ -16,9 +17,11 @@ import {
 } from "../../src/bitwarden-provision.js";
 import { ensureBitwardenSignIn } from "../../src/bitwarden-sign-in.js";
 import {
+	openSecretStore,
 	prepareGithubConnection,
 	type SecretStoreOpening,
 } from "../../src/index.js";
+import { parseHttpsOrigin } from "../../src/parsed-values.js";
 import {
 	API_KEY,
 	type FakeBitwardenOptions,
@@ -26,6 +29,7 @@ import {
 	ORG_ID,
 	OTHER_ORG_ID,
 	OWNER_EMAIL,
+	VAULTWARDEN_ORIGIN,
 } from "../support/fake-bitwarden.js";
 
 // EVAL: the owner chose Bitwarden and gave no Secrets Manager access token.
@@ -46,7 +50,7 @@ async function provision(
 	const lines: string[] = [];
 	const result = await provisionBitwardenAccessToken({
 		family: "cd",
-		server: "us",
+		endpoints: bitwardenEndpoints("us"),
 		apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
 		deviceId: DEVICE,
 		...(extra.organizationId !== undefined
@@ -369,5 +373,154 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain("MintedClientSecret0123");
 		expect(all).not.toMatch(/\b(127\.0\.0\.1|localhost)\b/u);
+	});
+});
+
+describe("EVAL Vaultwarden: the same one approval, against the owner's own server", () => {
+	const endpoints = bitwardenEndpoints(
+		"us",
+		parseHttpsOrigin("BITWARDEN_SERVER_URL", VAULTWARDEN_ORIGIN),
+	);
+
+	it("signs in to the overridden server only and keeps secrets in a collection", async () => {
+		const server = fakeBitwarden({ vaultwarden: true });
+		const lines: string[] = [];
+		const result = await provisionBitwardenAccessToken({
+			family: "cd",
+			endpoints,
+			apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
+			deviceId: DEVICE,
+			fetch: server.fetch,
+			emit: (line) => lines.push(line),
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		if (result.kind !== "vault")
+			throw new Error(`not vault storage: ${JSON.stringify(result)}`);
+		expect(server.strayHosts).toEqual([]);
+		expect(server.calls).not.toContain(
+			"POST /organizations/" + ORG_ID + "/projects",
+		);
+		expect(server.collections).toHaveLength(1);
+		expect(
+			decryptEncString(
+				server.collections[0]?.name ?? "",
+				server.orgKey,
+			).toString(),
+		).toBe("hobo");
+		expect(result.collectionId).toBe("88888888-8888-4888-8888-888888888888");
+		expect(
+			Buffer.from(result.organizationKey, "base64").equals(server.orgKey),
+		).toBe(true);
+		const approve = lines.find((l) =>
+			l.startsWith(OWNER_BITWARDEN_APPROVE_LINE_PREFIX),
+		);
+		expect(approve).toContain("server=vault.example.com");
+		expect(approve).toMatch(/secure notes in the collection "hobo"/u);
+	});
+
+	it("opens a store whose secrets are encrypted secure notes, read back and updated", async () => {
+		const server = fakeBitwarden({ vaultwarden: true });
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		vault.put("BITWARDEN_ORG_KEY", server.orgKey.toString("base64"));
+		server.collections.push({
+			id: "88888888-8888-4888-8888-888888888888",
+			organizationId: ORG_ID,
+			name: "unused",
+		});
+		const opening = await openSecretStore(
+			"bitwarden",
+			{
+				BITWARDEN_STORAGE: "vault",
+				BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN,
+				BITWARDEN_DEVICE_ID: DEVICE,
+				BWS_ORGANIZATION_ID: ORG_ID,
+				BITWARDEN_COLLECTION_ID: "88888888-8888-4888-8888-888888888888",
+			},
+			vault,
+			{ fetch: server.fetch },
+		);
+		if (!opening.ok) throw new Error(opening.message);
+		const port = opening.store.port;
+		expect((await port.access("HOBO_CD_SETTINGS")).status).toBe("denied");
+		await port.put("HOBO_CD_SETTINGS", '{"a":"1"}');
+		const first = await port.access("HOBO_CD_SETTINGS");
+		expect(first).toMatchObject({ status: "ok", material: '{"a":"1"}' });
+		await port.put("HOBO_CD_SETTINGS", '{"a":"2"}');
+		expect(await port.access("HOBO_CD_SETTINGS")).toMatchObject({
+			material: '{"a":"2"}',
+		});
+		expect(server.ciphers).toHaveLength(1);
+		expect(await port.createOnly?.("HOBO_CD_SETTINGS", "x")).toEqual({
+			created: false,
+		});
+		// At rest, Vaultwarden holds ciphertext only.
+		const stored = JSON.stringify(server.ciphers);
+		expect(stored).not.toContain("HOBO_CD_SETTINGS");
+		expect(stored).not.toContain('{\\"a\\"');
+		expect(server.strayHosts).toEqual([]);
+	});
+
+	it("hobo ci up --hand-off with BITWARDEN_SERVER_URL ends with the vault store open", async () => {
+		const server = fakeBitwarden({ vaultwarden: true });
+		const shown: string[] = [];
+		const saved = new Map<string, string>();
+		const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
+			emitProgress: (line) => shown.push(line),
+			// SAFETY: the preparation reads only progress and these output flags.
+			flags: { json: false, quiet: false } as CommandRunInput["flags"],
+		};
+		// SAFETY: the preparation reads only progress and these output flags.
+		const input = {
+			action: "up",
+			projectDir: "/box/project",
+			whatIf: false,
+			yes: false,
+			handOff: true,
+			run: run as CommandRunInput,
+		} as PrepareInput;
+		await prepareGithubConnection(input, {
+			env: {
+				HOBO_SECRET_STORE: "bitwarden",
+				BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN,
+				BW_CLIENTID: API_KEY.clientId,
+				BW_CLIENTSECRET: API_KEY.clientSecret,
+			},
+			vault: createTrustedVault(),
+			locator: {
+				read: async () => Object.fromEntries(saved),
+				write: async (values) => {
+					saved.clear();
+					for (const [name, value] of Object.entries(values))
+						saved.set(name, value);
+				},
+			},
+			fetch: server.fetch,
+			sleep: async () => undefined,
+			handOffTimeoutMs: 60_000,
+			startPage: () => {
+				throw new Error("a handed-off run serves no page");
+			},
+		});
+		expect(Object.fromEntries(saved)).toMatchObject({
+			BITWARDEN_STORAGE: "vault",
+			BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN,
+			BWS_ORGANIZATION_ID: ORG_ID,
+			BITWARDEN_COLLECTION_ID: "88888888-8888-4888-8888-888888888888",
+		});
+		// The store answered: the run read its settings from Vaultwarden.
+		expect(
+			server.calls.filter((c) => c === "GET /sync").length,
+		).toBeGreaterThan(1);
+		expect(server.strayHosts).toEqual([]);
+		const all = shown.join("\n");
+		expect(all).toContain("server=vault.example.com");
+		expect(all).not.toContain(API_KEY.clientSecret);
+		expect(all).not.toContain(server.orgKey.toString("base64"));
+		expect(JSON.stringify(Object.fromEntries(saved))).not.toContain(
+			server.orgKey.toString("base64"),
+		);
 	});
 });

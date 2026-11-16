@@ -202,7 +202,9 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
    **Bitwarden**, each option described by its line from the refusal. Then
    ask for that store's non-secret ids the refusal names (Infisical:
    `INFISICAL_PROJECT_ID`; 1Password: `OP_VAULT_ID`, and for a remote box
-   `OP_CONNECT_HOST`, their Connect server; Bitwarden: none), and run again
+   `OP_CONNECT_HOST`, their Connect server; Bitwarden: none, except
+   `BITWARDEN_SERVER_URL` (the https origin) when the owner runs
+   **Vaultwarden** or a self-hosted Bitwarden server), and run again
    with `HOBO_SECRET_STORE` and those ids set (ids are not secrets).
    Bitwarden Secrets Manager is used through its API from any box: the run
    takes the access token the environment provides (`BWS_ACCESS_TOKEN`) into
@@ -230,7 +232,9 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
    approve the login request from HoBo whose fingerprint phrase is
    `<phrase>`." The run then creates the Secrets Manager project and machine
    account `hobo`, grants it the project, and mints a one-day access token
-   into its vault by itself; do not rerun it. On
+   into its vault by itself; on Vaultwarden (no Secrets Manager) it keeps
+   the secrets as encrypted secure notes in the organization's collection
+   `hobo`, holding the organization key in memory. Do not rerun it. On
    `HOBO_*_BITWARDEN_ORGANIZATION`, ask which organization with a picker
    (each `BWS_ORGANIZATION_ID=` line is an option) and run again with it.
 5. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any

@@ -15,7 +15,7 @@ import {
 	symmetricKey,
 	wipe,
 } from "./bitwarden-crypto.js";
-import { SettingParseError } from "./parsed-values.js";
+import { type HttpsOrigin, SettingParseError } from "./parsed-values.js";
 
 /**
  * Provision Bitwarden Secrets Manager for a run that has no access token.
@@ -35,12 +35,18 @@ import { SettingParseError } from "./parsed-values.js";
  *    line with the fingerprint phrase. The owner approves it in any Bitwarden
  *    app they are signed in to; that app hands over the account key,
  *    encrypted to this run's one-time RSA key.
- * 4. With it, the run finds or creates the project `hobo` and the machine
+ * 4. With it, where the organization has Secrets Manager, the run finds or
+ *    creates the project `hobo` and the machine
  *    account `hobo`, grants the machine account read and write on the
  *    project, and creates an access token that expires in a day. Names and
  *    keys are encrypted here, exactly as Bitwarden's own clients do it.
  *
- * The token goes to the caller (the run's vault); the account and
+ *    Without Secrets Manager (Vaultwarden has none; `BITWARDEN_SERVER_URL`
+ *    points the run at it), it finds or creates the collection `hobo` and
+ *    hands back the organization key, with which the vault store keeps
+ *    secrets as encrypted secure notes there.
+ *
+ * The token (or organization key) goes to the caller (the run's vault); the account and
  * organization keys are zeroed before this returns. Nothing is written to
  * disk except non-secret ids, which the caller keeps in the locator.
  */
@@ -74,9 +80,36 @@ const SERVERS = {
 	Readonly<Record<"api" | "identity" | "vault", string>>
 >;
 
+/**
+ * Where a Bitwarden-compatible server answers: Bitwarden's US or EU cloud, or
+ * a self-hosted server at one origin (Vaultwarden, or self-hosted Bitwarden),
+ * whose API is `<origin>/api` and identity server `<origin>/identity`.
+ */
+export interface BitwardenEndpoints {
+	readonly api: string;
+	readonly identity: string;
+	readonly vault: string;
+	/** Whether this is a self-hosted server (`BITWARDEN_SERVER_URL`). */
+	readonly selfHosted: boolean;
+}
+
+export function bitwardenEndpoints(
+	region: BitwardenServer,
+	serverUrl?: HttpsOrigin,
+): BitwardenEndpoints {
+	if (serverUrl !== undefined)
+		return {
+			api: `${serverUrl}/api`,
+			identity: `${serverUrl}/identity`,
+			vault: serverUrl,
+			selfHosted: true,
+		};
+	return { ...SERVERS[region], selfHosted: false };
+}
+
 /** Where the owner copies their personal API key. */
-export function bitwardenApiKeyPage(server: BitwardenServer): string {
-	return `${SERVERS[server].vault}/#/settings/security/security-keys`;
+export function bitwardenApiKeyPage(endpoints: BitwardenEndpoints): string {
+	return `${endpoints.vault}/#/settings/security/security-keys`;
 }
 
 declare const apiKeyBrand: unique symbol;
@@ -146,7 +179,7 @@ export function parseBitwardenServer(
 
 export interface BitwardenProvisionOptions {
 	readonly family: "ci" | "cd";
-	readonly server: BitwardenServer;
+	readonly endpoints: BitwardenEndpoints;
 	readonly apiKey: BitwardenApiKey;
 	readonly deviceId: BitwardenDeviceId;
 	readonly organizationId?: BitwardenId;
@@ -169,6 +202,18 @@ export type BitwardenProvisionResult =
 			readonly token: string;
 			readonly organizationId: BitwardenId;
 			readonly projectId: BitwardenId;
+	  }
+	| {
+			/**
+			 * No Secrets Manager (Vaultwarden, or an organization without it):
+			 * secrets are secure notes in the organization's collection `hobo`,
+			 * read and written with the organization key the run holds.
+			 */
+			readonly kind: "vault";
+			/** The organization key, base64: for the run's vault only. */
+			readonly organizationKey: string;
+			readonly organizationId: BitwardenId;
+			readonly collectionId: BitwardenId;
 	  }
 	| {
 			readonly kind: "refused";
@@ -194,6 +239,7 @@ const profileResponse = z.object({
 			id: z.string(),
 			name: z.string(),
 			key: z.string().nullish(),
+			organizationUserId: z.string().nullish(),
 			enabled: z.boolean().optional(),
 			useSecretsManager: z.boolean().optional(),
 			accessSecretsManager: z.boolean().optional(),
@@ -201,6 +247,15 @@ const profileResponse = z.object({
 	),
 });
 const created = z.object({ id: z.string() });
+const syncCollections = z.object({
+	collections: z.array(
+		z.object({
+			id: z.string(),
+			organizationId: z.string(),
+			name: z.string().nullish(),
+		}),
+	),
+});
 const authResponse = z.object({
 	key: z.string().nullish(),
 	masterPasswordHash: z.string().nullish(),
@@ -245,7 +300,7 @@ export async function provisionBitwardenAccessToken(
 	options: BitwardenProvisionOptions,
 ): Promise<BitwardenProvisionResult> {
 	const fam = options.family.toUpperCase();
-	const server = SERVERS[options.server];
+	const server = options.endpoints;
 	const deviceHeaders = {
 		"Device-Type": "25",
 		"Device-Identifier": options.deviceId,
@@ -310,7 +365,7 @@ export async function provisionBitwardenAccessToken(
 				`HOBO_${fam}_BITWARDEN_API_KEY_REJECTED`,
 				`Bitwarden refused the personal API key (HTTP ${signIn.status}).`,
 				[
-					`Copy your personal API key again from ${bitwardenApiKeyPage(options.server)} (Account settings → Security → Keys → View API key) and update BW_CLIENTID and BW_CLIENTSECRET in this environment's settings. If your account is on bitwarden.eu, set BWS_SERVER=eu.`,
+					`Copy your personal API key again from ${bitwardenApiKeyPage(server)} (Account settings → Security → Keys → View API key) and update BW_CLIENTID and BW_CLIENTSECRET in this environment's settings. ${server.selfHosted ? `This run signs in to ${server.vault} (BITWARDEN_SERVER_URL).` : "If your account is on bitwarden.eu, set BWS_SERVER=eu; on Vaultwarden or a self-hosted server, set BITWARDEN_SERVER_URL to its https origin."}`,
 				],
 			);
 		const bearer = tokenResponse.parse(await signIn.json()).access_token;
@@ -323,35 +378,44 @@ export async function provisionBitwardenAccessToken(
 			`${server.api}/accounts/profile`,
 			{ headers: authed },
 		);
-		const usable = profile.organizations.filter(
-			(org) =>
-				org.enabled !== false &&
-				org.useSecretsManager === true &&
-				org.accessSecretsManager !== false,
+		// Prefer an organization with Secrets Manager; without one (Vaultwarden
+		// has none), any organization holds the secrets as vault items.
+		const member = profile.organizations.filter(
+			(org) => org.enabled !== false && Boolean(org.key),
 		);
+		const withSecretsManager = member.filter(
+			(org) =>
+				org.useSecretsManager === true && org.accessSecretsManager !== false,
+		);
+		const usable = withSecretsManager.length > 0 ? withSecretsManager : member;
 		const organization =
 			options.organizationId !== undefined
-				? usable.find((org) => org.id.toLowerCase() === options.organizationId)
+				? member.find((org) => org.id.toLowerCase() === options.organizationId)
 				: usable.length === 1
 					? usable[0]
 					: undefined;
 		if (organization === undefined)
 			throw new ProvisionRefusal(
 				`HOBO_${fam}_BITWARDEN_ORGANIZATION`,
-				usable.length === 0
-					? "None of your Bitwarden organizations has Secrets Manager with access for you."
+				member.length === 0
+					? "You belong to no confirmed organization: the secrets go into one."
 					: options.organizationId !== undefined
-						? "BWS_ORGANIZATION_ID is not one of your organizations with Secrets Manager."
-						: "You belong to more than one organization with Secrets Manager: choose one.",
-				usable.length === 0
+						? "BWS_ORGANIZATION_ID is not one of your organizations."
+						: "You belong to more than one organization: choose one.",
+				member.length === 0
 					? [
-							"Enable Secrets Manager for an organization and give yourself access: https://bitwarden.com/help/secrets-manager-quick-start/",
+							`Create an organization (a free one is enough) at ${server.vault}/#/create-organization, or ask an admin to confirm your membership, then retry.`,
 						]
 					: usable.map(
 							(org) =>
 								`BWS_ORGANIZATION_ID=${org.id} — ${org.name} (a non-secret setting)`,
 						),
 			);
+		const storage =
+			organization.useSecretsManager === true &&
+			organization.accessSecretsManager !== false
+				? "secrets-manager"
+				: "vault";
 		const organizationId = parseBitwardenId(
 			"BWS_ORGANIZATION_ID",
 			organization.id,
@@ -390,7 +454,7 @@ export async function provisionBitwardenAccessToken(
 		const now = options.now ?? Date.now;
 		const timeoutMs = options.timeoutMs ?? 15 * 60_000;
 		options.emit(
-			`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} account=${profile.email} phrase=${phrase} — open a Bitwarden app you are signed in to (mobile, desktop, browser extension or web vault), approve the login request from "HoBo" whose fingerprint phrase is ${phrase}. This run creates the Secrets Manager project and machine account "${BITWARDEN_PROVISIONED_NAME}" and a one-day access token itself, and waits ${Math.round(timeoutMs / 60_000)} minutes.`,
+			`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} account=${profile.email} server=${new URL(server.vault).host} phrase=${phrase} — open a Bitwarden app signed in to that server (mobile, desktop, browser extension or web vault), approve the login request from "HoBo" whose fingerprint phrase is ${phrase}. ${storage === "vault" ? `This run then keeps its secrets as secure notes in the collection "${BITWARDEN_PROVISIONED_NAME}" of ${organization.name}` : `This run then creates the Secrets Manager project and machine account "${BITWARDEN_PROVISIONED_NAME}" and a one-day access token itself`}, and waits ${Math.round(timeoutMs / 60_000)} minutes.`,
 		);
 		const deadline = now() + timeoutMs;
 		let approved: z.infer<typeof authResponse> | undefined;
@@ -458,6 +522,56 @@ export async function provisionBitwardenAccessToken(
 				return undefined;
 			}
 		};
+
+		// 5a. No Secrets Manager: the collection `hobo`, found or created.
+		if (storage === "vault") {
+			const sync = await call(
+				"listing collections",
+				syncCollections,
+				`${server.api}/sync?excludeDomains=true`,
+				{ headers: authed },
+			);
+			const found = sync.collections.find(
+				(collection) =>
+					collection.organizationId.toLowerCase() === organizationId &&
+					nameOf(collection.name) === BITWARDEN_PROVISIONED_NAME,
+			);
+			const collection =
+				found ??
+				(await call(
+					"creating the collection",
+					created,
+					`${server.api}/organizations/${organizationId}/collections`,
+					{
+						method: "POST",
+						headers: json,
+						body: JSON.stringify({
+							name: encryptEncString(BITWARDEN_PROVISIONED_NAME, orgKey),
+							externalId: null,
+							groups: [],
+							users: organization.organizationUserId
+								? [
+										{
+											id: organization.organizationUserId,
+											readOnly: false,
+											hidePasswords: false,
+											manage: true,
+										},
+									]
+								: [],
+						}),
+					},
+				));
+			return {
+				kind: "vault",
+				organizationKey: orgKey.toString("base64"),
+				organizationId,
+				collectionId: parseBitwardenId(
+					"BITWARDEN_COLLECTION_ID",
+					collection.id,
+				),
+			};
+		}
 
 		// 5. The project: the given one, else `hobo`, found or created.
 		let projectId = options.projectId;

@@ -104,10 +104,23 @@ describe("Bitwarden Secrets Manager", () => {
 		const fields = storeSettings("bitwarden", "/unused").map((s) => s.field);
 		expect(fields.map((field) => field.name)).toEqual([
 			"BWS_SERVER",
+			"BITWARDEN_SERVER_URL",
+			"BITWARDEN_STORAGE",
+			"BITWARDEN_COLLECTION_ID",
+			"BITWARDEN_DEVICE_ID",
 			"BWS_ORGANIZATION_ID",
 			"BWS_PROJECT_ID",
 			"BWS_ACCESS_TOKEN",
 		]);
+		// The Vaultwarden and vault-storage settings are optional: the page
+		// never asks for them; the run fills them in when it provisions.
+		for (const name of [
+			"BITWARDEN_SERVER_URL",
+			"BITWARDEN_STORAGE",
+			"BITWARDEN_COLLECTION_ID",
+			"BITWARDEN_DEVICE_ID",
+		])
+			expect(fields.find((f) => f.name === name)?.required).toBe(false);
 		expect(fields.find((f) => f.name === "BWS_ACCESS_TOKEN")?.kind).toBe(
 			"secret",
 		);

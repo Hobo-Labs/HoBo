@@ -23,6 +23,7 @@ export const API_KEY = {
 	clientId: "user.0c7e4c1a-7a0e-4a65-9c2e-2f1b8f0d1e2a",
 	clientSecret: "Zq8pX1vL0rT5mN3bW7yK2cD9fG4hJ6",
 };
+export const VAULTWARDEN_ORIGIN = "https://vault.example.com";
 export const ORG_ID = "6b1f2a3c-4d5e-4f60-8a7b-9c0d1e2f3a4b";
 export const OTHER_ORG_ID = "7c2a3b4d-5e6f-4071-9b8c-0d1e2f3a4b5c";
 
@@ -34,6 +35,11 @@ export interface FakeBitwardenOptions {
 	readonly existing?: boolean;
 	/** An approving app that hands over the 32-byte master key (older clients). */
 	readonly legacyMasterKey?: boolean;
+	/**
+	 * Vaultwarden at VAULTWARDEN_ORIGIN: one origin (`/api`, `/identity`), no
+	 * Secrets Manager; secrets are secure notes in a collection.
+	 */
+	readonly vaultwarden?: boolean;
 }
 
 export interface FakeBitwarden {
@@ -51,6 +57,19 @@ export interface FakeBitwarden {
 		expireAt: string;
 	}[];
 	readonly calls: string[];
+	readonly collections: { id: string; organizationId: string; name: string }[];
+	readonly ciphers: {
+		id: string;
+		type: number;
+		organizationId: string;
+		collectionIds: string[];
+		name: string;
+		notes: string;
+		revisionDate: string;
+		deletedDate: null;
+	}[];
+	/** Requests that went to a host other than the configured server. */
+	readonly strayHosts: string[];
 }
 
 export function fakeBitwarden(
@@ -129,10 +148,19 @@ export function fakeBitwarden(
 		),
 		tokens: [],
 		calls: [],
+		collections: [],
+		ciphers: [],
+		strayHosts: [],
 	};
 	let requestSeen = 0;
 	const fetchImpl: typeof fetch = async (input, init) => {
 		const url = new URL(String(input));
+		if (options.vaultwarden) {
+			// Everything goes to the one origin; strip its route prefixes.
+			if (url.origin !== VAULTWARDEN_ORIGIN) state.strayHosts.push(url.host);
+			url.pathname = url.pathname.replace(/^\/(api|identity)(?=\/)/u, "");
+		} else if (!/^(api|identity)\.bitwarden\.com$/u.test(url.host))
+			state.strayHosts.push(url.host);
 		const method = init?.method ?? "GET";
 		const headers = new Headers(init?.headers);
 		state.calls.push(`${method} ${url.pathname}`);
@@ -157,7 +185,8 @@ export function fakeBitwarden(
 					name: "Acme",
 					key: seal(orgKey, user.publicKey),
 					enabled: true,
-					useSecretsManager: true,
+					useSecretsManager: !options.vaultwarden,
+					organizationUserId: "77777777-7777-4777-8777-777777777777",
 					accessSecretsManager: true,
 				},
 				...((options.organizations ?? 1) > 1
@@ -167,7 +196,8 @@ export function fakeBitwarden(
 								name: "Side project",
 								key: seal(otherOrgKey, user.publicKey),
 								enabled: true,
-								useSecretsManager: true,
+								useSecretsManager: !options.vaultwarden,
+								organizationUserId: "77777777-7777-4777-8777-777777777777",
 								accessSecretsManager: true,
 							},
 						]
@@ -216,6 +246,63 @@ export function fakeBitwarden(
 		if (!bearer)
 			return Response.json({ message: "unauthorized" }, { status: 401 });
 		const org = `/organizations/${ORG_ID}`;
+		if (url.pathname === "/sync")
+			return Response.json({
+				collections: state.collections,
+				ciphers: state.ciphers,
+			});
+		if (url.pathname === `${org}/collections` && method === "POST") {
+			const body = JSON.parse(String(init?.body));
+			decryptEncString(body.name, orgKey);
+			if (body.users?.[0]?.manage !== true)
+				return Response.json(
+					{ message: "creator not managing" },
+					{ status: 400 },
+				);
+			const collection = {
+				id: "88888888-8888-4888-8888-888888888888",
+				organizationId: ORG_ID,
+				name: body.name,
+			};
+			state.collections.push(collection);
+			return Response.json(collection);
+		}
+		let revision = 0;
+		const nextRevision = () =>
+			new Date(
+				Date.parse("2026-11-16T12:00:00Z") +
+					++revision * 1000 +
+					state.ciphers.length,
+			).toISOString();
+		if (url.pathname === "/ciphers/create" && method === "POST") {
+			const body = JSON.parse(String(init?.body));
+			const cipher = {
+				id: `99999999-9999-4999-8999-${String(state.ciphers.length).padStart(12, "0")}`,
+				type: body.cipher.type,
+				organizationId: body.cipher.organizationId,
+				collectionIds: body.collectionIds,
+				name: body.cipher.name,
+				notes: body.cipher.notes,
+				revisionDate: nextRevision(),
+				deletedDate: null,
+			};
+			state.ciphers.push(cipher);
+			return Response.json(cipher);
+		}
+		const cipherPath = /^\/ciphers\/([^/]+)$/u.exec(url.pathname);
+		if (cipherPath !== null && method === "PUT") {
+			const body = JSON.parse(String(init?.body));
+			const cipher = state.ciphers.find((c) => c.id === cipherPath[1]);
+			if (cipher === undefined) return Response.json({}, { status: 404 });
+			if (body.lastKnownRevisionDate !== cipher.revisionDate)
+				return Response.json({ message: "stale" }, { status: 400 });
+			cipher.name = body.name;
+			cipher.notes = body.notes;
+			cipher.revisionDate = new Date(
+				Date.parse(cipher.revisionDate) + 60_000,
+			).toISOString();
+			return Response.json(cipher);
+		}
 		if (url.pathname === `${org}/projects` && method === "GET")
 			return Response.json({ data: state.projects });
 		if (url.pathname === `${org}/projects` && method === "POST") {

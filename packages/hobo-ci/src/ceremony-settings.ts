@@ -91,6 +91,51 @@ export function storeSettings(
 			},
 			{
 				field: {
+					name: "BITWARDEN_SERVER_URL",
+					label: "Self-hosted server (Vaultwarden or Bitwarden)",
+					description:
+						"Its https origin, for example https://vault.example.com. Leave empty for Bitwarden's cloud.",
+					kind: "text",
+					required: false,
+				},
+				validate: checkedBy(parseHttpsOrigin, "BITWARDEN_SERVER_URL"),
+			},
+			{
+				field: {
+					name: "BITWARDEN_STORAGE",
+					label: "Where the secrets are kept",
+					description:
+						"Secrets Manager where the organization has it; otherwise secure notes in its vault (Vaultwarden).",
+					kind: "choice",
+					required: false,
+					value: "secrets-manager",
+					options: [
+						{ value: "secrets-manager", label: "Secrets Manager" },
+						{ value: "vault", label: "Vault (secure notes in a collection)" },
+					],
+				},
+			},
+			{
+				field: {
+					name: "BITWARDEN_COLLECTION_ID",
+					label: "Bitwarden collection ID",
+					description: "The collection the secure notes go to (vault storage).",
+					kind: "text",
+					required: false,
+				},
+				validate: uuid,
+			},
+			{
+				field: {
+					name: "BITWARDEN_DEVICE_ID",
+					label: "This run's Bitwarden device ID",
+					kind: "text",
+					required: false,
+				},
+				validate: uuid,
+			},
+			{
+				field: {
 					name: "BWS_ORGANIZATION_ID",
 					label: "Bitwarden organization ID",
 					kind: "text",
