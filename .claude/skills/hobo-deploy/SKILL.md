@@ -218,7 +218,8 @@ placeholder, unless it runs as a workload with its own OIDC. An explicit
 sign-in choice is preserved; `ci` reads the relay's own folder
 (`/hobo-ci-relay`), so the relay's existing GitHub App is reused. Creating a
 new App needs GitHub's page, so a handed-off `ci` refuses with
-`HOBO_CI_APP_NEEDS_OWNER` and names `hobo ci app create --via-workflow`.
+`HOBO_CI_APP_NEEDS_OWNER` and names only the owner's own terminal run:
+never route the App's one-time code through a relay or any shared service.
 
 **At the owner's own terminal** (no `--hand-off`), the run serves the local
 setup page (`HOBO_OWNER_PAGE`) and opens their browser; there they may also

@@ -392,8 +392,9 @@ async function prepareGithubWithVault(
 		);
 	// Handed off, the owner may be anywhere, so nothing is served here. The
 	// store must open without a page, and the App must already be in it:
-	// creating one needs GitHub's own page, whose redirect returns either to
-	// this machine (a terminal run) or to the relay (--via-workflow).
+	// creating one needs GitHub's own page, whose one-time code must come back
+	// to the owner's own run. Only their terminal receives it: no HoBo service
+	// may broker it, since the App's keys are theirs.
 	if (input.handOff === true) {
 		if (owner.opened === undefined)
 			return refused(
@@ -408,8 +409,8 @@ async function prepareGithubWithVault(
 			"HOBO_CI_APP_NEEDS_OWNER",
 			`${owner.opened.id} holds no GitHub App for HoBo CI, and creating one needs GitHub's page, which a handed-off run cannot receive.`,
 			[
-				"Run hobo ci up yourself in a terminal: GitHub's page redirects back to your machine.",
-				"Or, with the relay up, run hobo ci app create --via-workflow: GitHub hands its one-time code to the relay and the deploy workflow stores the App's credentials.",
+				"Run hobo ci up yourself in a terminal: GitHub's page redirects back to your machine, and the App's credentials go straight to your store.",
+				"After that, a handed-off hobo ci up reuses the App from your store.",
 			],
 		);
 	}

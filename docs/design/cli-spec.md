@@ -210,8 +210,9 @@ environment variables.
   store path with its guide (`storeSignInGuidance`). CI reads the relay's own
   folder (`/hobo-ci-relay`), so the relay's existing GitHub App is reused;
   it needs the App already in the store: creating one needs GitHub's page, so it refuses with
-  `HOBO_CI_APP_NEEDS_OWNER` (a terminal run, or `hobo ci app create
-  --via-workflow` through the relay). CD connects Vercel with the OAuth
+  `HOBO_CI_APP_NEEDS_OWNER`, naming only the owner's own terminal run: GitHub's
+  one-time code must reach the owner's run, never a HoBo service that would
+  broker their App's keys. CD connects Vercel with the OAuth
   device grant: one `HOBO_OWNER_DEVICE <link> code=<code>` line, approved on
   vercel.com from any device. `--json` and `-q` are refused because they
   hide those lines (only when the owner is actually needed: an existing

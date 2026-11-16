@@ -124,7 +124,11 @@ describe("hobo ci up --hand-off", () => {
 			kind: "refused",
 			result: { code: "HOBO_CI_APP_NEEDS_OWNER" },
 		});
-		expect(JSON.stringify(outcome)).toContain("--via-workflow");
+		const text = JSON.stringify(outcome);
+		expect(text).toContain("in a terminal");
+		// No HoBo service brokers the App's one-time code.
+		expect(text).not.toContain("--via-workflow");
+		expect(text).not.toMatch(/relay/u);
 	});
 
 	it("honors an explicitly saved OAuth choice instead of switching to the proxy", async () => {
