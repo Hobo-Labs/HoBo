@@ -65,8 +65,8 @@ jobs:
             gh actions-lock --verify || status=$?
             [ "$status" -eq 0 ] && exit 0
           fi
-          # Regenerate with the same tool so the patch is what it would write.
-          gh actions-lock --migrate-local-actions --no-interactive ${RELOCK:+--relock} || true
+          # Keep full-SHA uses intact; the default narrowing rewrites them to tags.
+          gh actions-lock --migrate-local-actions --no-interactive --no-narrow ${RELOCK:+--relock} || true
           git add --intent-to-add .github/workflows/actions.lock 2>/dev/null || true
           git diff --binary > "$RUNNER_TEMP/actions-lock.patch"
           if [ -s "$RUNNER_TEMP/actions-lock.patch" ]; then
