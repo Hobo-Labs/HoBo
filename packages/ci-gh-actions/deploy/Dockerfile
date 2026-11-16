@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.19
 # The release build records the resolved digest; operators should publish and deploy by digest.
-FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS build
+FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS build
 ENV CI=1 TURBO_TELEMETRY_DISABLED=1
 WORKDIR /build
 RUN --mount=type=secret,id=proxy_ca \
@@ -19,7 +19,7 @@ RUN --mount=type=secret,id=proxy_ca \
     pnpm exec turbo run build --filter=@hobo/ci-gh-actions && \
     pnpm --filter @hobo/ci-gh-actions deploy --prod --offline --config.inject-workspace-packages=true /out
 
-FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS runtime
+FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS runtime
 ENV NODE_ENV=production HOBO_CI_HOST=0.0.0.0 HOBO_CI_PORT=8787 HOBO_CI_DB=/var/lib/hobo-ci/relay.sqlite
 WORKDIR /app
 COPY --from=build --chown=1000:1000 /out /app
