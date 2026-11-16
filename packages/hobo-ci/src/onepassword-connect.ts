@@ -14,6 +14,7 @@
  */
 
 import {
+	ONE_PASSWORD_VALUE_FIELD,
 	OnePasswordError,
 	type OnePasswordItem,
 	type OnePasswordItemCreateParams,
@@ -193,13 +194,58 @@ export function createOnePasswordConnectClient(
 				);
 			},
 			async put(item) {
+				const path = `${vaultPath(item.vaultId)}/${encodeURIComponent(item.id)}`;
+				// Connect's PUT replaces the whole item, including metadata that the
+				// port does not carry. Re-read it and patch only the secret value.
+				const raw = await call("read secret", ConnectItem, "GET", path);
+				const current = toItem(raw);
+				if (
+					raw.version === undefined ||
+					current.version !== item.version ||
+					current.id !== item.id ||
+					current.vaultId !== item.vaultId ||
+					current.title !== item.title ||
+					current.category !== item.category ||
+					current.fields.length !== item.fields.length ||
+					current.fields.filter(
+						(field) => field.id === ONE_PASSWORD_VALUE_FIELD,
+					).length !== 1
+				)
+					throw new OnePasswordError("update secret", "invalid-response");
+				const pending = new Map(
+					item.fields.map((field) => [
+						JSON.stringify([field.id, field.sectionId ?? null]),
+						field,
+					]),
+				);
+				if (pending.size !== item.fields.length)
+					throw new OnePasswordError("update secret", "invalid-response");
+				let value: string | undefined;
+				for (const field of current.fields) {
+					const key = JSON.stringify([field.id, field.sectionId ?? null]);
+					const updated = pending.get(key);
+					if (
+						updated === undefined ||
+						updated.title !== field.title ||
+						updated.fieldType !== field.fieldType ||
+						(field.id !== ONE_PASSWORD_VALUE_FIELD &&
+							updated.value !== field.value)
+					)
+						throw new OnePasswordError("update secret", "invalid-response");
+					pending.delete(key);
+					if (field.id === ONE_PASSWORD_VALUE_FIELD) value = updated.value;
+				}
+				if (pending.size || value === undefined)
+					throw new OnePasswordError("update secret", "invalid-response");
 				return toItem(
 					await call(
 						"update secret",
 						ConnectItem,
-						"PUT",
-						`${vaultPath(item.vaultId)}/${encodeURIComponent(item.id)}`,
-						toConnectBody(item),
+						"PATCH",
+						path,
+						JSON.stringify([
+							{ op: "add", path: "/fields/password/value", value },
+						]),
 					),
 				);
 			},

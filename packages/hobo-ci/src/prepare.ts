@@ -22,6 +22,7 @@ import {
 	lookupGithubOwner,
 	resolveGithubAppExpectation,
 } from "./ceremony-settings.js";
+import { lazyEgressFetch } from "./egress.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
 import {
@@ -227,7 +228,12 @@ export async function prepareGithubConnection(
 	// connection. The store sign-in stays in `vault` and ends with prepare.
 	const handoff = createTrustedVault();
 	try {
-		return await prepareGithubWithVault(input, { ...deps, vault, handoff });
+		return await prepareGithubWithVault(input, {
+			...deps,
+			fetch: deps.fetch ?? lazyEgressFetch(deps.env ?? process.env),
+			vault,
+			handoff,
+		});
 	} finally {
 		// GitHub's credentials are deposited in the store during prepare; the
 		// subsequent convergence does not need the store sign-in.
