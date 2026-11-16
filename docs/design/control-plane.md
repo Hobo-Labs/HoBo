@@ -90,6 +90,36 @@ log recorded, apply only the difference
   (`create` / `update` / `no-op` / `delete` / `retain`) that `hobo plan` and
   `hobo up --what-if` print and every run reports as `changes`.
 
+**Planning around an unavailable provider.** Matching can exclude providers
+known to be unavailable before any resource is created.
+
+- **Matching** takes `unavailableProviders` (`PlanConfig`): their candidates
+  are rejected as `provider-unavailable`, and the next-ranked candidate that
+  satisfies the resource wins.
+- **`up`** does not infer an outage from an apply error. A timeout can occur
+  after the provider created a resource, so retrying on another provider could
+  create a second resource or abandon data. It reports the incomplete run for
+  reconciliation instead. The orchestrator refuses a provider change for a
+  resource with recorded or uncertain effects until a fenced handover exists.
+  New `resource.Provisioning` facts record the provider before dispatch; older
+  facts use their recorded plan or an exact spec hash, and otherwise fail
+  closed. Upgrade every writer before relying on this guard: an older writer
+  does not enforce it or record the provider.
+- **No provider left.** Only when every satisfying provider is down does
+  planning refuse, with `placement.providers-unavailable` naming them and
+  saying to configure another vendor, e.g. Supabase beside Neon. The fleet
+  placement functions rank candidates; they do not provision, replicate, or
+  fail over a database at runtime.
+
+**Generational admission.** The gateway admits a deployment per generation: a
+`deployment.Requested` opens one, and its `Planned` or `PlanRejected` closes it.
+The same input replays the current generation (idempotent). A different input
+after it completed opens the next one, so an edited project can declare its
+next desired state. A pending generation never replays an older plan, and a
+different input while one is pending is refused. Ownership is bound by the first request, and a
+budgeted deployment keeps its input bound: it changes through a hosting
+transition, never by reserving twice.
+
 **Why actors, not a monolithic engine:** per-resource isolation means one stuck provider call can't block the whole deploy; single-writer leases ([Plan 5](./reliability-observability-cost.md#plan-05)) prevent two reconciles racing on the same resource; and each actor's stream is an independent audit/replay unit.
 
 ### Choreography over orchestration (and why)

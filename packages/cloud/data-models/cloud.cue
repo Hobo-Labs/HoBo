@@ -230,6 +230,7 @@ package hobo
 	execId:       string & !=""
 	programHash:  string & !=""
 	specHash?:    =~"^sha256:[0-9a-f]{64}$"
+	providerId?:  string & !=""
 }
 
 #ResourceProvisionedRecord: {
