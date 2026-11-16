@@ -177,6 +177,34 @@ function host(capabilities: JsonObject, options: { remote: boolean }) {
 const SENDS_TO_A_FORM =
 	/\b(open|use|type|paste|enter)\b[^.]{0,60}\b(form|page|preview|pane)\b/iu;
 
+describe("owner handoff links", () => {
+	it("keeps concurrent ceremonies' links with their own captures", async () => {
+		const owner = createMcpOwnerChannel();
+		const handoff = async (name: string, url: string) => {
+			await owner.openUrl(url, `Open ${name}`, name);
+			await owner.captureSecret({ name, title: name, instructions: "" });
+		};
+		await Promise.all([
+			handoff("infisical", "https://example.com/infisical"),
+			handoff("github", "https://example.com/github"),
+		]);
+		expect(owner.linkFor("infisical")?.url).toBe(
+			"https://example.com/infisical",
+		);
+		expect(owner.linkFor("github")?.url).toBe("https://example.com/github");
+		owner.deposit("infisical", "session");
+		expect(
+			await owner.captureSecret({
+				name: "infisical",
+				title: "",
+				instructions: "",
+			}),
+		).toBe("session");
+		expect(owner.linkFor("infisical")).toBeUndefined();
+		expect(owner.linkFor("github")?.url).toBe("https://example.com/github");
+	});
+});
+
 describe("EVAL owner form reach: the owner sees a form the host renders", () => {
 	it("remote, host with form elicitation and no MCP Apps: the host's own form takes the value to the run", async () => {
 		const client = host({ elicitation: {} }, { remote: true });
@@ -214,6 +242,7 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		await client.owner.openUrl(
 			"https://app.infisical.com/login?callback_port=31222",
 			"Sign in to Infisical.",
+			INFISICAL_CLI_SESSION,
 		);
 		const mine = client.capture();
 		const form = await client.fill({ value: COPIED });
@@ -369,7 +398,11 @@ describe("EVAL owner form reach: the link reaches the owner before any form", ()
 	const SIGN_IN_URL = "https://app.infisical.com/login?callback_port=56037";
 	const BOTH = { elicitation: { form: {}, url: {} } };
 	async function pendingSignIn(client: ReturnType<typeof host>) {
-		await client.owner.openUrl(SIGN_IN_URL, "Sign in to Infisical.");
+		await client.owner.openUrl(
+			SIGN_IN_URL,
+			"Sign in to Infisical.",
+			INFISICAL_CLI_SESSION,
+		);
 		await client.owner.captureSecret({
 			name: INFISICAL_CLI_SESSION,
 			title: "Infisical session",

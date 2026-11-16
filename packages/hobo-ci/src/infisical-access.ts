@@ -172,6 +172,7 @@ export async function provisionInfisicalAccess(
 			await options.owner.openUrl(
 				signInUrl,
 				"Sign in to Infisical. When it says Unable to reach CLI, click Copy to clipboard.",
+				INFISICAL_CLI_SESSION_CAPTURE,
 			);
 			const copied = await options.owner.captureSecret({
 				name: INFISICAL_CLI_SESSION_CAPTURE,
