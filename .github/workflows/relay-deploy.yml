@@ -65,7 +65,7 @@ jobs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -96,7 +96,7 @@ jobs:
       deployments: read
       id-token: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 2
@@ -240,7 +240,7 @@ jobs:
         env:
           HOBO_APP_MANIFEST_CODE: ${{ github.event.inputs.manifest_code }}
         run: echo "::add-mask::$HOBO_APP_MANIFEST_CODE"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1

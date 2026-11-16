@@ -63,13 +63,13 @@ describe("action-pin-allowlist.json", () => {
 		expect(
 			isActionPinAllowlisted(
 				"actions/checkout",
-				"11bd71901bbe5b1630ceea73d27597364c9af683",
+				"3d3c42e5aac5ba805825da76410c181273ba90b1",
 			),
 		).toBe(true);
 		expect(
 			await verifyPinnedActionSha(
 				"actions/checkout",
-				"11bd71901bbe5b1630ceea73d27597364c9af683",
+				"3d3c42e5aac5ba805825da76410c181273ba90b1",
 				"test",
 				{},
 			),
