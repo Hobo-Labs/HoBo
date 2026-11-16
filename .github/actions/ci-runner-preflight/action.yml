@@ -34,6 +34,15 @@ runs:
             || echo "::warning::docker container prune failed"
           docker system df || true
         fi
+    # The fleet image bakes the tool pins of whichever commit last built it into
+    # /etc/mise/config.toml. The checkout's mise.toml/mise.lock are the pins this
+    # job tests (as in build.sh), so the rest of the job ignores the baked file;
+    # otherwise a PR that swaps a tool fails `<tool> is not in the lockfile`.
+    - name: Use the checkout's mise pins
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml${MISE_IGNORED_CONFIG_PATHS:+:${MISE_IGNORED_CONFIG_PATHS}}" >> "$GITHUB_ENV"
     # A job routed to a GitHub-hosted machine gets the pinned toolchain here;
     # a no-op on the fleet's image. Its PATH additions reach the next step.
     - name: Toolchain for a GitHub-hosted machine

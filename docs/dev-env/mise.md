@@ -55,7 +55,7 @@ mise refuses to run untrusted config:
 - **`MISE_TRUSTED_CONFIG_PATHS`** — colon-separated allowlist (CI/devcontainer).
 - **`mise settings set trusted_config_paths`** — persistent trust.
 
-HoBo CI sets trust via mise-action (`install: true` trusts the checkout). The fleet image bakes `/etc/mise/config.toml` from whichever commit last built it, so jobs that check the checkout's pins (`build.sh`, the `dev-env-smoke` mise job) set `MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`; otherwise a PR that swaps a tool fails `mise install --locked` with `<tool> is not in the lockfile`. Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
+HoBo CI sets trust via mise-action (`install: true` trusts the checkout). The fleet image bakes `/etc/mise/config.toml` from whichever commit last built it, so `build.sh`, the `dev-env-smoke` mise job and every job that runs `ci-runner-preflight` (which exports it to the rest of the job) set `MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`, so the checkout's pins rule; otherwise a PR that swaps a tool fails `mise install --locked` with `<tool> is not in the lockfile`. Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
 
 ## `mise activate` vs shims
 
