@@ -18,7 +18,7 @@ import { z } from "zod";
  * ends with the ask still owed is one finding.
  */
 
-export type AskKind = "choice" | "credential" | "capture" | "preview";
+export type AskKind = "choice" | "credential" | "capture";
 
 export type TranscriptBlock =
 	| { readonly kind: "text"; readonly text: string }
@@ -50,8 +50,15 @@ export interface HandOffFinding {
 	 *   questions (a store's follow-up asked before the owner chose it).
 	 * - `chosen-store-only`: after the owner chose a store, a question named
 	 *   another one.
+	 * - `phantom-form`: the agent sent the owner to a form or page after a
+	 *   capture whose form the host never showed (a page served on the box,
+	 *   or a refusal for lack of any form).
 	 */
-	readonly rule: "structured-ask" | "store-choice-alone" | "chosen-store-only";
+	readonly rule:
+		| "structured-ask"
+		| "store-choice-alone"
+		| "chosen-store-only"
+		| "phantom-form";
 	readonly ask: AskKind;
 	/** The owner-facing line that opened the obligation. */
 	readonly line: string;
@@ -68,8 +75,6 @@ export const STRUCTURED_ASK_TOOLS = {
 	// A value the waiting run itself reads: only HoBo's capture reaches it
 	// (the session's credential form feeds the network proxy, not the run).
 	capture: /^mcp__[\w-]+__capture_secret$/u,
-	// A form served on the box: shown through the host's port preview.
-	preview: /^(mcp__[\w-]+__)?report_preview_port$/u,
 } satisfies Readonly<Record<AskKind, RegExp>>;
 
 /** Owner-facing lines as the CLI prints them (not source code that names them). */
@@ -79,8 +84,6 @@ const OWNER_LINES: readonly { readonly ask: AskKind; readonly re: RegExp }[] = [
 	{ ask: "credential", re: /^HOBO_OWNER_CREDENTIAL host=\S+/mu },
 	{ ask: "capture", re: /HOBO_OWNER_SIGN_IN url=\S+ capture=\S+/u },
 	{ ask: "capture", re: /^HOBO_OWNER_CAPTURE name=\S+/mu },
-	// Anywhere in a result: hosts may hand the model structuredContent as JSON.
-	{ ask: "preview", re: /HOBO_OWNER_PREVIEW port=\d+/u },
 ];
 
 const ASK_DETAIL = {
@@ -90,9 +93,17 @@ const ASK_DETAIL = {
 		"The turn ended without the session's credential form (request_credential) for the line's host.",
 	capture:
 		"The turn ended without HoBo's secret capture (capture_secret) for the value the run is waiting for; the run reads it only from there, never from chat or the session's credential form.",
-	preview:
-		"The turn ended without showing the owner the form's port through the host's preview (report_preview_port); the owner cannot reach this box's ports any other way.",
 } satisfies Readonly<Record<AskKind, string>>;
+
+/** A capture result whose form the owner never saw: a box-served page, or none at all. */
+const NO_HOST_FORM =
+	/"channel":\s*"(preview-page|loopback-page|url-elicitation)"|SECRET_CAPTURE_NO_OWNER_FORM/u;
+/** A capture result whose form the host showed, or that completed. */
+const HOST_FORM =
+	/"channel":\s*"(mcp-app|form-elicitation)"|"status":\s*"(stored|authorized)"/u;
+/** Words that send the owner to a form or page. */
+const SENDS_TO_A_FORM =
+	/\b(open|use|type|paste|enter|fill)\b[^.]{0,80}\b(form|page|preview|pane)\b/iu;
 
 /** A result that means the ask never reached the owner or was not answered. */
 const NOT_COMPLETED =
@@ -268,6 +279,9 @@ export function auditHandOff(
 	const storeAsks = new Set<string>();
 	let chosen: StoreId | undefined;
 	let sawTurn = false;
+	// Captures in flight, and whether the last one left the owner without a form.
+	const captures = new Set<string>();
+	let noHostForm = false;
 	for (const event of events) {
 		if (startsTurn(event)) {
 			if (sawTurn) endTurn(event.at);
@@ -277,7 +291,22 @@ export function auditHandOff(
 		}
 		sawTurn = true;
 		for (const b of event.blocks) {
+			if (
+				b.kind === "text" &&
+				event.role === "assistant" &&
+				noHostForm &&
+				SENDS_TO_A_FORM.test(b.text)
+			)
+				findings.push({
+					rule: "phantom-form",
+					ask: "capture",
+					line: "capture_secret",
+					at: event.at,
+					detail:
+						"The agent sent the owner to a form or page after a capture whose form the host never showed. Say the host cannot collect it, never point at a form that is not there.",
+				});
 			if (b.kind === "tool_use") {
+				if (/^mcp__[\w-]+__capture_secret$/u.test(b.name)) captures.add(b.id);
 				const choiceAt = b.questions.findIndex(
 					(q) => storesNamed(q).length >= 2,
 				);
@@ -304,17 +333,14 @@ export function auditHandOff(
 								detail: `The owner chose ${chosen}, but a later question asked about ${other.join(", ")}. Follow-ups are about the chosen store only.`,
 							});
 					}
-				for (const ask of [
-					"choice",
-					"credential",
-					"capture",
-					"preview",
-				] as const)
+				for (const ask of ["choice", "credential", "capture"] as const)
 					if (STRUCTURED_ASK_TOOLS[ask].test(b.name)) {
 						pending.set(b.id, [...(pending.get(b.id) ?? []), ask]);
 						askedThisTurn.add(ask);
 					}
 			} else if (b.kind === "tool_result") {
+				if (captures.delete(b.toolUseId))
+					noHostForm = NO_HOST_FORM.test(b.text) && !HOST_FORM.test(b.text);
 				if (storeAsks.delete(b.toolUseId) && !NOT_COMPLETED.test(b.text))
 					chosen = chosenStore(b.text) ?? chosen;
 				const asks = pending.get(b.toolUseId);

@@ -355,10 +355,11 @@ environment variables.
   reads from `OP_SECRET_KEY` and standard input in a throwaway
   `OP_CONFIG_DIR`; a CI setting). Several captures are taken only once all
   have arrived. On a remote box whose host shows no MCP Apps,
-  `capture_secret` serves the form at `/` of its own port for the host's
-  port preview (`HOBO_OWNER_PREVIEW port= pairing=`); the forwarder picks
-  Host and Origin, so a pairing code given in chat, five guesses at most,
-  stands in for those checks. Infisical provisioning reuses an identity,
+  `capture_secret` asks in the host's own elicitation form (one field; the
+  value goes host to server, never to the model); a host with neither is
+  refused (`SECRET_CAPTURE_NO_OWNER_FORM`), never sent to a box-served page
+  or a port preview the owner may not see. Every capture result carries
+  `hostSupport`. Infisical provisioning reuses an identity,
   auth method and membership a failed run left behind, retries dropped
   connections and 5xx answers, names a proxy that refuses the tunnel (407)
   as the proxy, and turns an expired session into a fresh sign-in link.

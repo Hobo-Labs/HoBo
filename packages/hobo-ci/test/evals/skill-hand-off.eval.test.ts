@@ -113,12 +113,8 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(page).toBeGreaterThan(
 			HAND_OFF.indexOf("At the owner's own terminal"),
 		);
-		// The port preview shows only HoBo's pairing-protected capture form
-		// (HOBO_OWNER_PREVIEW), never the setup page.
-		const preview = HAND_OFF.indexOf("report_preview_port");
-		expect(HAND_OFF.slice(preview - 400, preview)).toMatch(
-			/HOBO_OWNER_PREVIEW/u,
-		);
+		// A port preview showed this owner nothing: never route a form there.
+		expect(HAND_OFF).not.toMatch(/report_preview_port/u);
 		expect(HAND_OFF).toMatch(/Never give the owner a `127\.0\.0\.1`/u);
 	});
 
@@ -188,14 +184,15 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		for (const prefix of [
 			OWNER_SIGN_IN_LINE_PREFIX,
 			OWNER_CAPTURE_LINE_PREFIX,
-			"HOBO_OWNER_PREVIEW",
 			OWNER_CREDENTIAL_LINE_PREFIX,
 			DEVICE_PREFIX,
 			"HOBO_OWNER_BITWARDEN_APPROVE",
 		])
 			expect(HAND_OFF).toContain(prefix);
 		expect(HAND_OFF).toMatch(/GITHUB_APP_CODE/u);
-		expect(HAND_OFF).toMatch(/report_preview_port/u);
-		expect(HAND_OFF).toMatch(/pairing code/u);
+		// The form is the host's: HoBo's MCP App or the host's elicitation form,
+		// and a host with neither is said plainly, never papered over.
+		expect(HAND_OFF).toMatch(/SECRET_CAPTURE_NO_OWNER_FORM/u);
+		expect(HAND_OFF).toMatch(/elicitation form/u);
 	});
 });

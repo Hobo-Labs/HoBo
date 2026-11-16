@@ -269,12 +269,13 @@ checks it.
    give the owner the guide link and call `capture_secret` once per `name`,
    one form at a time; run again when all are in. The run spends none of
    them until all have arrived.
-   When `capture_secret`'s result starts with `HOBO_OWNER_PREVIEW port=<port>
-   pairing=<code>` (a remote box whose host shows no HoBo form): show that
-   port to the owner with your host's port preview (Claude Code:
-   `report_preview_port`; Codespaces or VS Code: forward the port; Coder:
-   its port link) and tell them the pairing code to type with the value.
-   Never open, fetch or submit that page yourself.
+   `capture_secret` shows the owner a form their host renders: HoBo's MCP
+   App, or, where the host has none, the host's own elicitation form (its
+   result's `hostSupport` says which). Tell the owner to use the form only
+   when the result shows one (`channel` `mcp-app`, or `status: stored` from
+   the elicitation form). On `SECRET_CAPTURE_NO_OWNER_FORM` (a remote box
+   whose host shows neither), say this host cannot collect the value and
+   name a host that can; never send them to a page, a preview or the chat.
 5. On `HOBO_OWNER_BITWARDEN_APPROVE server=<host> phrase=<phrase>`: say
    "Open a Bitwarden app signed in to `<host>` and approve the login request
    from HoBo whose fingerprint phrase is `<phrase>`." The run then sets up

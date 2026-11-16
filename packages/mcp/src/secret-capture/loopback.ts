@@ -45,19 +45,6 @@ export interface LoopbackCaptureHandlers {
 	): Promise<LoopbackAnswer>;
 }
 
-/**
- * Preview mode: the same form, served at `/` of its own port for a host's
- * port preview or forwarding (a remote dev box: Claude Code's preview,
- * Codespaces, VS Code or Coder port forwarding). The forwarder chooses the
- * `Host` and `Origin` the page sees, so they are not checked; instead the
- * owner types a pairing code the agent gives them in chat, which no other
- * process on the box knows, and a wrong code counts against the capture.
- */
-export interface PreviewCaptureHandlers extends LoopbackCaptureHandlers {
-	/** The open capture shown at `/`, if any. */
-	current(): string | undefined;
-}
-
 export interface LoopbackCapturePage {
 	/** `http://127.0.0.1:<port>` */
 	readonly origin: string;
@@ -116,40 +103,27 @@ async function readBody(request: IncomingMessage): Promise<string | undefined> {
 }
 
 export async function startLoopbackCapturePage(
-	handlers: LoopbackCaptureHandlers | PreviewCaptureHandlers,
-	mode: "loopback" | "preview" = "loopback",
+	handlers: LoopbackCaptureHandlers,
 ): Promise<LoopbackCapturePage> {
 	let origin = "";
 	let host = "";
-	const preview =
-		mode === "preview" && "current" in handlers ? handlers : undefined;
 
 	async function handle(
 		request: IncomingMessage,
 		response: ServerResponse,
 	): Promise<void> {
 		// DNS rebinding: a name that resolves here is still not this origin.
-		// (A preview's forwarder picks the Host; its pairing code stands in.)
-		if (preview === undefined && request.headers.host !== host) {
+		if (request.headers.host !== host) {
 			reply(response, 421, "misdirected", "text/plain; charset=utf-8");
 			return;
 		}
 		const url = new URL(request.url ?? "/", origin);
 		const match = PAGE_PATH.exec(url.pathname);
-		const ticketId =
-			preview !== undefined && url.pathname === "/"
-				? preview.current()
-				: preview === undefined
-					? match?.[1]
-					: undefined;
-		if (ticketId === undefined || url.search !== "") {
-			if (preview !== undefined && url.pathname === "/") {
-				reply(response, 410, CLOSED_PAGE, "text/html; charset=utf-8");
-				return;
-			}
+		if (!match || url.search !== "") {
 			reply(response, 404, "not found", "text/plain; charset=utf-8");
 			return;
 		}
+		const ticketId = match[1] ?? "";
 		if (request.method === "GET") {
 			const nonce = randomBytes(18).toString("base64url");
 			const page = handlers.page(ticketId, nonce);
@@ -166,9 +140,8 @@ export async function startLoopbackCapturePage(
 		}
 		const fetchSite = request.headers["sec-fetch-site"];
 		if (
-			(preview === undefined &&
-				(request.headers.origin !== origin ||
-					(fetchSite !== undefined && fetchSite !== "same-origin"))) ||
+			request.headers.origin !== origin ||
+			(fetchSite !== undefined && fetchSite !== "same-origin") ||
 			!(request.headers["content-type"] ?? "").startsWith("application/json")
 		) {
 			replyJson(response, 403, {

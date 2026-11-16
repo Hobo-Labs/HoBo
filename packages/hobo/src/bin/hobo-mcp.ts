@@ -21,6 +21,7 @@ import {
 import {
 	createMcpStdioSession,
 	localOperatorAuth,
+	type McpStdioSession,
 	serveMcpStdio,
 } from "../mcp-stdio.js";
 import { createStoreChoiceApp } from "../mcp-store-choice.js";
@@ -45,11 +46,20 @@ async function serve(): Promise<number> {
 	// the form to this process to the store the relay's binding names, and
 	// never into a tool result. URL elicitation completion is the one
 	// notification this server sends.
+	// The session exists once the transport starts; elicitation goes through it.
+	let session: McpStdioSession | undefined;
 	const capture = createSecretCaptureApp({
 		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
 		handoff: async (secret) => owner.deposit(secret.name, secret.reveal()),
-		// The owner is elsewhere: no page on this box's 127.0.0.1 for them.
+		// The owner is elsewhere: no page on this box's 127.0.0.1 for them;
+		// the host's own elicitation form asks when it shows no MCP App.
 		remote: isRemoteBox(),
+		elicit: (params) => {
+			const request = session?.request;
+			if (request === undefined)
+				return Promise.reject(new Error("the transport is not connected"));
+			return request("elicitation/create", params);
+		},
 		connector: createInfisicalCaptureConnector({
 			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
 		}),
@@ -59,13 +69,14 @@ async function serve(): Promise<number> {
 			);
 		},
 	});
+	session = createMcpStdioSession(capture, createStoreChoiceApp());
 	try {
 		await serveMcpStdio({
 			server,
 			auth: localOperatorAuth(),
 			input: process.stdin,
 			output: process.stdout,
-			session: createMcpStdioSession(capture, createStoreChoiceApp()),
+			session,
 		});
 	} finally {
 		// Closes open captures, stops the page and revokes the writer token.
