@@ -12,6 +12,8 @@ import {
 	type YardRuntime,
 } from "@hobo/cli";
 import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
+import { createInProcessExecutor } from "@hobo/cloud";
+import { prepareVercelConnection } from "@hobo/hobo-cd";
 import { prepareGithubConnection } from "@hobo/hobo-ci";
 import { createAwsProvider } from "@hobo/provider-aws";
 import { createAzureProvider } from "@hobo/provider-azure";
@@ -75,6 +77,7 @@ import { createSandboxCommand } from "./sandbox-command.js";
 import { createServeControlCommand } from "./serve-control-command.js";
 import { createStationCommand } from "./station-command.js";
 import { createTrailsCommand } from "./trails-command.js";
+import { createVercelDeployProvider } from "./vercel-deploy-provider.js";
 import { createVerifyCommand } from "./verify-command.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 import { createYardCommand } from "./yard-command.js";
@@ -237,6 +240,28 @@ export function createComposedHoboCli(
 				up,
 				down,
 				plan,
+				// Vercel first, then converge through the Vercel provider junction:
+				// the same journal, registry and actor host (one writer), with an
+				// executor whose IaC provider deploys with the junction's token,
+				// resolved from the owner's secret store for this run only.
+				prepare: (input) => prepareVercelConnection(input),
+				upWith: (junctionEnv) =>
+					createBrokerAwareUpCommand({
+						runtime: {
+							...runtime,
+							executor: createInProcessExecutor({
+								iac: createVercelDeployProvider({
+									token: junctionEnv.VERCEL_TOKEN ?? "",
+									...(junctionEnv.VERCEL_TEAM_ID !== undefined
+										? { teamId: junctionEnv.VERCEL_TEAM_ID }
+										: undefined),
+									projectName: "hobo-cd",
+								}),
+							}),
+						},
+						persistentLocal: !explicitFixture,
+						authMdFetch: options.authMdFetch ?? fetch,
+					}),
 				fallback: deploy,
 			}),
 			build: createBuildCommand({ requireRealComponentize: true }),
