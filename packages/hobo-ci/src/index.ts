@@ -22,6 +22,12 @@ export {
 	loadGithubAppCredentials,
 } from "./github.js";
 export {
+	awaitHandOffStore,
+	INFISICAL_TOKEN_AUTH_GUIDE,
+	OWNER_CREDENTIAL_LINE_PREFIX,
+	storeAnswers,
+} from "./hand-off-store.js";
+export {
 	INFISICAL_OAUTH_DOCS,
 	INFISICAL_OAUTH_REDIRECT_URI,
 	INFISICAL_OAUTH_SCOPE,
@@ -32,6 +38,7 @@ export {
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
 export {
+	CI_RELAY_FOLDER,
 	EGRESS_PROXY_SIGN_IN,
 	familySettings,
 	INFISICAL_TOKEN_AUTH_DOCS,

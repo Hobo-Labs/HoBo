@@ -252,6 +252,8 @@ describe("hobo cd up --hand-off", () => {
 				message: "Not signed in to Infisical.",
 				remediation: [],
 			}),
+			sleep: async () => undefined,
+			handOffTimeoutMs: 1,
 			startPage: () => {
 				throw new Error("a handed-off run must not serve a page");
 			},

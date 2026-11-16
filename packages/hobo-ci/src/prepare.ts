@@ -23,7 +23,9 @@ import {
 	resolveGithubAppExpectation,
 } from "./ceremony-settings.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
+import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
 import {
+	EGRESS_PROXY_SIGN_IN,
 	familySettings,
 	InvalidSecretStoreError,
 	type OwnerStoreDeps,
@@ -60,6 +62,10 @@ import type { Env, OpenedSecretStore } from "./secret-stores.js";
 
 export interface PrepareGithubDeps extends OwnerStoreDeps {
 	readonly interactive?: boolean;
+	/** How a handed-off run waits between store probes (tests make it instant). */
+	readonly sleep?: (ms: number) => Promise<void>;
+	/** How long a handed-off run waits for the owner's sign-in. */
+	readonly handOffTimeoutMs?: number;
 	readonly openBrowser?: (url: string) => void;
 	readonly startPage?: typeof startConnectPage;
 	readonly timeoutMs?: number;
@@ -272,9 +278,16 @@ async function prepareGithubWithVault(
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
-	let owner: Awaited<ReturnType<typeof ownerStore>>;
-	try {
-		owner = await ownerStore("ci", vault, {
+	// Handed off, no page can ask for a sign-in: the store signs in through
+	// the agent's egress proxy unless this run is a workload with its own OIDC.
+	if (
+		input.handOff === true &&
+		plainEnv.INFISICAL_SIGN_IN === undefined &&
+		workloadOidc === undefined
+	)
+		plainEnv.INFISICAL_SIGN_IN = EGRESS_PROXY_SIGN_IN;
+	const openOwner = () =>
+		ownerStore("ci", vault, {
 			...deps,
 			env: plainEnv,
 			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
@@ -286,6 +299,31 @@ async function prepareGithubWithVault(
 				emit: (line) => input.run.emitProgress(line),
 			},
 		});
+	let owner: Awaited<ReturnType<typeof ownerStore>>;
+	try {
+		owner = await openOwner();
+		// The owner is needed only if the store does not answer yet: a silent
+		// run cannot ask, so it refuses before waiting.
+		const needsOwner =
+			input.handOff === true &&
+			!input.whatIf &&
+			!(await storeAnswers(owner, "ci"));
+		if (needsOwner && (input.run.flags.json || input.run.flags.quiet))
+			return refused(
+				"HOBO_CI_HANDOFF_SILENT",
+				"The owner hand-off needs progress output. Omit --json and -q, then retry.",
+				["Run hobo ci up --hand-off without --json or -q."],
+			);
+		if (needsOwner)
+			owner = await awaitHandOffStore({
+				family: "ci",
+				open: openOwner,
+				emit: (line) => input.run.emitProgress(line),
+				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+				...(deps.handOffTimeoutMs !== undefined
+					? { timeoutMs: deps.handOffTimeoutMs }
+					: undefined),
+			});
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;
 		return refused("HOBO_CI_SECRET_STORE_INVALID", error.message, [

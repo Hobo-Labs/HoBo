@@ -91,6 +91,8 @@ describe("hobo ci up --hand-off", () => {
 				message: "Not signed in to Infisical.",
 				remediation: [],
 			}),
+			sleep: async () => undefined,
+			handOffTimeoutMs: 1,
 			startPage: noPage,
 		});
 		expect(outcome).toMatchObject({

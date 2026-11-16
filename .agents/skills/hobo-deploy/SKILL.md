@@ -188,68 +188,54 @@ they paste (identifiers, not secrets).
 
 ## Running `hobo ci up` / `hobo cd up` for the owner
 
-An agent never answers a ceremony itself and never stops at
-`HOBO_*_CONNECTION_NEEDS_OWNER`. Run the verb with `--hand-off` in the
-background (without `--json` or `-q`).
+You are usually in a box the owner cannot reach (a remote managed session).
+Never give the owner a `127.0.0.1`/`localhost` link, a port to forward, or a
+tunnel to set up: they cannot complete those. A handed-off run serves
+nothing in the box and nothing calls back into it. Instead it names what it
+needs on one line, waits, and **picks up what the owner did outside, in the
+same run** (post-back). Your job is to relay each line, act on it, and wait.
 
-A handed-off run serves nothing on the agent's machine and nothing redirects
-back to it, so the owner can be anywhere. When it cannot go on, it refuses
-and names every way forward with where to do it: show the owner those lines,
-don't paraphrase them into one option.
+1. Run `hobo <ci|cd> up --hand-off` in the background (never `--json` or
+   `-q`: they hide the lines). Watch its output.
+2. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is
+   waiting for the owner's store sign-in. In **one** message, give the owner
+   the steps from that line and the guide link exactly as printed, and ask
+   them to say when the token is ready. Then call `request_credential` with
+   that `host` (the form cannot show links or steps, which is why they come
+   first). Once they save it, the run continues by itself; do not rerun it.
+   If they decline the form, show the other paths the run's refusal names.
+3. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any
+   device, check the code is `<code>`, and approve." The run waits for the
+   approval and continues by itself.
+4. When the run ends: report its last lines. If it refused, show its code
+   and **every** remediation line it printed, unparaphrased; do not reduce
+   them to one option.
 
-For CI (`HOBO_CI_*`), the store must open without a page
-(`HOBO_CI_STORE_NEEDS_SIGN_IN` otherwise, as for CD below) and already hold
-the GitHub App. Creating the App needs GitHub's own page, so a handed-off run
-refuses with `HOBO_CI_APP_NEEDS_OWNER`: the owner runs `hobo ci up` in a
-terminal, or `hobo ci app create --via-workflow` once the relay is up.
+What the run already does, so don't do it yourself: a handed-off run signs
+in to Infisical through the session's egress proxy (`INFISICAL_SIGN_IN`
+defaults to `egress-proxy`), holding only a placeholder; `ci` reads the
+relay's own folder (`/hobo-ci-relay`), so the relay's existing GitHub App is
+reused. Creating a new App needs GitHub's page, so a handed-off `ci` refuses
+with `HOBO_CI_APP_NEEDS_OWNER` and names `hobo ci app create --via-workflow`.
 
-For CD:
+**With nobody typing a token (CI's OIDC).** Dispatch `relay-deploy.yml` on
+`main` with input `connect: cd` (GitHub MCP `actions_run_trigger`). Its
+`owner-connect` job signs in as `hobo-ci-writer` with its own GitHub OIDC
+token and runs `hobo cd up --hand-off`; read the `HOBO_OWNER_DEVICE` line
+from the job summary and relay it as in step 3. The workflow must be on
+`main`.
 
-1. **The store opens without a page.** Commit `.hobo/secret-store.json`
-   (store and ids only). On a remote box, run with the non-secret setting
-   `INFISICAL_SIGN_IN=egress-proxy`: the run holds a placeholder and the
-   session's egress proxy injects the owner's Infisical access token on the
-   way to `app.infisical.com`. Get that token with the session's credential
-   form (`request_credential`, host `app.infisical.com`): the owner creates
-   it in Infisical's web app (a machine identity with **Token Auth**, added
-   to the project with a write role) and types it only into that form.
-   Otherwise the run refuses with `HOBO_CD_STORE_NEEDS_SIGN_IN`.
+**At the owner's own terminal** (no `--hand-off`), the run serves the local
+setup page (`HOBO_OWNER_PAGE`) and opens their browser; there they may also
+sign in to Infisical by approving an OAuth application
+(`INFISICAL_SIGN_IN=oauth`: Organization Settings → OAuth Applications →
+Add, Name `HoBo`, Access token lifetime 1 Hours, Flow **Authorization
+code**, Redirect URI `http://127.0.0.1:8793/infisical/callback`, **Require
+PKCE** on). That page is for their machine only, never a remote box. OAuth
+tokens only read secrets, so writes still need a token or CI's OIDC.
 
-   The credential form is the session's own: it cannot show a link or
-   steps. So **first** give the owner, in one message: the guide
-   (https://infisical.com/docs/documentation/platform/identities/token-auth),
-   where to click in https://app.infisical.com (Organization → Access
-   Control → Identities → Create Identity), the identity's name, Token Auth
-   with TTL 3600, and the project and role. Open the form only after they
-   say the token is ready. If they decline it, show the other paths the
-   refusal names (a terminal run, an OAuth read-only sign-in, CI's OIDC).
-2. **Vercel by device grant.** The run prints one
-   `HOBO_OWNER_DEVICE <link> code=<code>` line. Say: "Open `<link>` on any
-   device, check the code is `<code>`, and approve." The run waits (ten
-   minutes), then keeps the token in the store. Name the team with the
-   non-secret `HOBO_CD_VERCEL_TEAM_ID` when the account has several.
-
-**Writes with nobody typing a token (CI's OIDC).** When the owner wants no
-token in any form and isn't at a terminal, dispatch the relay deploy
-workflow on `main` with input `connect: cd` (GitHub MCP
-`actions_run_trigger`, workflow `relay-deploy.yml`, ref `main`). Its
-`owner-connect` job signs in to the store as `hobo-ci-writer` with its own
-GitHub OIDC token (`INFISICAL_IDENTITY_ID` in the committed locator) and
-runs `hobo cd up --hand-off`. Read the `HOBO_OWNER_DEVICE` line from the
-job's summary or log and give the owner the link and code exactly as in step
-2. The workflow must be on `main` for this to run.
-
-In a terminal (no `--hand-off`), the run still serves the local setup page
-(`HOBO_OWNER_PAGE`) and opens the browser. There the owner may also sign in
-to Infisical by approving an OAuth application (`INFISICAL_SIGN_IN=oauth`):
-under Organization Settings → OAuth Applications → Add, Name `HoBo`, Access
-token lifetime 1 Hours, Flow **Authorization code**, Redirect URI
-`http://127.0.0.1:8793/infisical/callback`, **Require PKCE** on; the client id
-and secret go on the setup page. Its tokens only read secrets: use it when
-the store already holds the connections, a token or CI's OIDC to write.
-
-Never fetch or submit a page or approve a code yourself. Secret variables in
-the agent's environment are ignored on purpose.
+Never fetch or submit a page, approve a code, or read a secret yourself.
+Secret variables in the agent's environment are ignored on purpose.
 
 ## Reporting
 

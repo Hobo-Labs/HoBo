@@ -48,6 +48,9 @@ import {
 // public-contract: the committed, non-secret locator of the owner's secret store.
 export const SECRET_STORE_LOCATOR_FILE = ".hobo/secret-store.json";
 
+// public-contract: the Infisical folder of the relay's own credentials, which hobo ci up reads and keeps.
+export const CI_RELAY_FOLDER = "/hobo-ci-relay";
+
 // public-contract: the locator's INFISICAL_SIGN_IN value for a sign-in the agent's egress proxy injects.
 export const EGRESS_PROXY_SIGN_IN = "egress-proxy";
 
@@ -213,7 +216,10 @@ export async function ownerStore(
 	const saved = await locator.read();
 	const choice = resolveSettings([STORE_CHOICE], env, saved);
 	const id = storeIdOf(choice.values.HOBO_SECRET_STORE);
-	const folder = `/hobo-${family}`;
+	// CI's credentials are the relay's own (the GitHub App it runs): they
+	// live in the relay's folder, which its deploy workflow writes, so an
+	// App made once is found by every later hobo ci up.
+	const folder = family === "ci" ? CI_RELAY_FOLDER : `/hobo-${family}`;
 	const side = storeSettings(id, folder);
 	const resolved = resolveSettings(side, env, saved, vault);
 	// A workload with a preconfigured OIDC identity needs no typed token.

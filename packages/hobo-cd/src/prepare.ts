@@ -9,7 +9,9 @@ import {
 } from "@hobo/connect-ui";
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
+	awaitHandOffStore,
 	canReachOwner,
+	EGRESS_PROXY_SIGN_IN,
 	familySettings,
 	InvalidSecretStoreError,
 	ignoredSecretEnvNotice,
@@ -21,6 +23,7 @@ import {
 	SECRET_STORE_LOCATOR_FILE,
 	scopeRunVault,
 	showOwnerPage,
+	storeAnswers,
 	storeIdOf,
 	storeSignInGuidance,
 	withoutSecretEnv,
@@ -118,8 +121,10 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly openBrowser?: (url: string) => void;
 	readonly startPage?: typeof startConnectPage;
 	readonly timeoutMs?: number;
-	/** How the device grant waits between polls (tests make it instant). */
+	/** How the device grant and store probes wait (tests make it instant). */
 	readonly sleep?: (ms: number) => Promise<void>;
+	/** How long a handed-off run waits for the owner's sign-in. */
+	readonly handOffTimeoutMs?: number;
 	/** The run's trusted vault; a fresh one by default. */
 	readonly vault?: TrustedVault;
 	/**
@@ -241,9 +246,16 @@ async function prepareVercelWithVault(
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
-	let owner: Awaited<ReturnType<typeof ownerStore>>;
-	try {
-		owner = await ownerStore("cd", vault, {
+	// Handed off, no page can ask for a sign-in: the store signs in through
+	// the agent's egress proxy unless this run is a workload with its own OIDC.
+	if (
+		input.handOff === true &&
+		plainEnv.INFISICAL_SIGN_IN === undefined &&
+		workloadOidc === undefined
+	)
+		plainEnv.INFISICAL_SIGN_IN = EGRESS_PROXY_SIGN_IN;
+	const openOwner = () =>
+		ownerStore("cd", vault, {
 			...deps,
 			env: plainEnv,
 			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
@@ -255,6 +267,31 @@ async function prepareVercelWithVault(
 				emit: (line) => input.run.emitProgress(line),
 			},
 		});
+	let owner: Awaited<ReturnType<typeof ownerStore>>;
+	try {
+		owner = await openOwner();
+		// The owner is needed only if the store does not answer yet: a silent
+		// run cannot ask, so it refuses before waiting.
+		const needsOwner =
+			input.handOff === true &&
+			!input.whatIf &&
+			!(await storeAnswers(owner, "cd"));
+		if (needsOwner && (input.run.flags.json || input.run.flags.quiet))
+			return refused(
+				"HOBO_CD_HANDOFF_SILENT",
+				"The owner hand-off needs progress output. Omit --json and -q, then retry.",
+				["Run hobo cd up --hand-off without --json or -q."],
+			);
+		if (needsOwner)
+			owner = await awaitHandOffStore({
+				family: "cd",
+				open: openOwner,
+				emit: (line) => input.run.emitProgress(line),
+				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+				...(deps.handOffTimeoutMs !== undefined
+					? { timeoutMs: deps.handOffTimeoutMs }
+					: undefined),
+			});
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;
 		return refused("HOBO_CD_SECRET_STORE_INVALID", error.message, [

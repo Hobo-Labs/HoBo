@@ -199,17 +199,26 @@ environment variables.
 - **An agent hands the ceremony to the person** (`--hand-off`): the run
   serves nothing on the agent's machine and nothing redirects back to it, so
   the person can be anywhere. The store must open without a page (a
-  workload's OIDC, or `INFISICAL_SIGN_IN=egress-proxy`: the run sends a
-  placeholder and the agent's egress proxy injects the owner's Infisical
-  access token, given out of band); otherwise the run refuses with
+  workload's OIDC, or `INFISICAL_SIGN_IN=egress-proxy`, the hand-off default:
+  the run sends a placeholder and the agent's egress proxy injects the
+  owner's Infisical access token, given out of band). Post-back: until the
+  store answers, the run prints one `HOBO_OWNER_CREDENTIAL host=<host>
+  guide=<url> — <steps>` line and polls (`awaitHandOffStore`), carrying on in
+  the same run once the owner's token arrives; at its deadline it refuses with
   `HOBO_CI_STORE_NEEDS_SIGN_IN` / `HOBO_CD_STORE_NEEDS_SIGN_IN`, naming every
-  store path with its guide (`storeSignInGuidance`). CI needs the GitHub App
-  already in the store: creating one needs GitHub's page, so it refuses with
+  store path with its guide (`storeSignInGuidance`). CI reads the relay's own
+  folder (`/hobo-ci-relay`), so the relay's existing GitHub App is reused;
+  it needs the App already in the store: creating one needs GitHub's page, so it refuses with
   `HOBO_CI_APP_NEEDS_OWNER` (a terminal run, or `hobo ci app create
   --via-workflow` through the relay). CD connects Vercel with the OAuth
   device grant: one `HOBO_OWNER_DEVICE <link> code=<code>` line, approved on
   vercel.com from any device. `--json` and `-q` are refused because they
-  hide those lines. The agent never answers the ceremony itself. With no
+  hide those lines (only when the owner is actually needed: an existing
+  connection still converges silently). The agent never answers the
+  ceremony itself. The remote-box evals
+  (`packages/hobo-ci/test/evals`, `packages/hobo-cd/test/evals`) hold both
+  lifecycles and the hobo-deploy skill to this: no loopback line, post-back
+  into the same run, and a refusal with outside paths when nobody acts. With no
   token anyone types, the owner (or their agent) dispatches the relay deploy
   workflow on `main` with `connect: cd`: its `owner-connect` job signs in to
   the store as `hobo-ci-writer` with GitHub OIDC (`INFISICAL_IDENTITY_ID` in
