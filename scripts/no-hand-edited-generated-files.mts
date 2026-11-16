@@ -22,6 +22,10 @@ const generator = files.some(
 		) ||
 		// The relay's offer manifests: `generate-offers.mts` lowers them.
 		/^packages\/ci-vercel\/offers\/[^/]+\.provider\.yaml$/.test(file) ||
+		// The relay's embedded host workflow and bootstrap: `generate-assets.mts`
+		// copies them into relay-assets.ts.
+		file === "packages/ci-gh-actions/templates/hobo-ci-host.yml" ||
+		file === "packages/ci-gh-actions/src/bootstrap.ts" ||
 		/^src\/draft\/technical-proofs\/s0-04-protobuf-cue-codegen\/packages\/schema-tools\/(src\/(?!_generated\/)|package\.json)/.test(
 			file,
 		) ||
