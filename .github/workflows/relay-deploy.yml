@@ -300,6 +300,7 @@ jobs:
         with:
           clean: false
           fetch-depth: 1
+          submodules: recursive
           persist-credentials: false
       - uses: ./.github/actions/ci-runner-preflight
       - uses: ./.github/actions/pnpm-store

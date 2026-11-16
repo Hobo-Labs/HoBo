@@ -225,8 +225,8 @@ environment variables.
   the committed locator), runs `hobo cd up --hand-off`, and shows the
   `HOBO_OWNER_DEVICE` line in its job summary for the owner to approve.
 - **A refusal is never a dead end.** Human output prints a result that did
-  not succeed with its code and every remediation line, not only its
-  message; `--json` carries the same lines in `remediation`.
+  not succeed with its code and every remediation line, even when there are
+  no suggested actions; `--json` carries those lines in `remediation`.
 - Without a person at a browser and without `--hand-off`, and for
   `--what-if`, nothing opens. The
   result says what it would sign in to and ask for, points CI at a
