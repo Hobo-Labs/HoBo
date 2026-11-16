@@ -236,9 +236,19 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 			},
 			[CLOUD_EVENTS.ResourceFailed]: (row, event) => {
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
-				const data = event.data as { deploymentId: string; resourceId: string };
+				const data = event.data as {
+					deploymentId: string;
+					resourceId: string;
+					requiresReconciliation?: boolean;
+				};
 				const next = base(row, data.deploymentId);
-				setLifecycle(next, data.resourceId, "failed");
+				setLifecycle(
+					next,
+					data.resourceId,
+					data.requiresReconciliation === true
+						? "reconciliation-required"
+						: "failed",
+				);
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroying]: (row, event) => {

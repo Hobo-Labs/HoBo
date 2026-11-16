@@ -196,6 +196,20 @@ export async function runOrchestrator(
 		progressed = false;
 		const events = await collectStream(deps.store, stream);
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
+		const states = resourceStates(events, plan, deploymentId);
+		// A possibly-applied resource must be reconciled before any retry or rollback.
+		if ([...states.values()].includes("ReconciliationRequired")) {
+			return {
+				status: "needs-human",
+				deploymentId,
+				provisioned: provisionedList(states),
+				destroyed: destroyedList(states),
+				events,
+				changes,
+				pruned: [],
+				unprunable: [],
+			};
+		}
 
 		// A no-go failure in this epoch short-circuits to compensation.
 		const failed = events.find(

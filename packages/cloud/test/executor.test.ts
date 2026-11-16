@@ -64,6 +64,75 @@ function cred(resourceId = "api") {
 }
 
 describe("Executor: sandboxed preview+apply against an injected IacProvider", () => {
+	it("requires reconciliation when a provider error cannot be inspected", async () => {
+		const iac = mockIac();
+		iac.apply = async () => {
+			throw Object.defineProperty(
+				new Error("failed"),
+				"requiresReconciliation",
+				{
+					get() {
+						throw new Error("unreadable");
+					},
+				},
+			);
+		};
+		const result = await createInProcessExecutor({ iac }).run(
+			program(),
+			cred(),
+		);
+		expect(result).toMatchObject({
+			status: "failed",
+			classification: "fatal",
+			requiresReconciliation: true,
+			reconciliationOperation: "apply",
+		});
+	});
+	it("requires reconciliation instead of retrying an ambiguous provider outcome", async () => {
+		const iac = mockIac();
+		iac.apply = async () => {
+			throw Object.assign(
+				new Error("provider outcome requires reconciliation"),
+				{
+					requiresReconciliation: true,
+					reservationId: "iac:reservation-1",
+				},
+			);
+		};
+		const result = await createInProcessExecutor({ iac }).run(
+			program(),
+			cred(),
+		);
+		expect(result).toMatchObject({
+			status: "failed",
+			classification: "fatal",
+			requiresReconciliation: true,
+			reservationId: "iac:reservation-1",
+			reconciliationOperation: "apply",
+		});
+		expect(result.events.at(-1)?.data).toMatchObject({
+			requiresReconciliation: true,
+			reservationId: "iac:reservation-1",
+			reconciliationOperation: "apply",
+		});
+	});
+	it("does not apply or destroy a preview-only program", async () => {
+		let calls = 0;
+		const iac = mockIac();
+		iac.apply = async () => {
+			calls++;
+			return {};
+		};
+		iac.destroy = async () => {
+			calls++;
+		};
+		const result = await createInProcessExecutor({ iac }).run(
+			program({ action: "preview" }),
+			cred(),
+		);
+		expect(result.status).toBe("succeeded");
+		expect(calls).toBe(0);
+	});
 	it("runs preview then apply and streams a terminal exec.Succeeded with outputs", async () => {
 		const executor = createInProcessExecutor({ iac: mockIac() });
 		const result = await executor.run(program(), cred());

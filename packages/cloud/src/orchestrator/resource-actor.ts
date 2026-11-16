@@ -9,6 +9,7 @@ import {
 	execSucceeded,
 	resourceDestroyed,
 	resourceFailed,
+	type ResourceFailedData,
 	resourceProvisioned,
 	resourceProvisioning,
 	tokenGranted,
@@ -45,6 +46,7 @@ export const RESOURCE_ACTOR_STATES = Object.freeze([
 	"Provisioned",
 	"Updating",
 	"Failed",
+	"ReconciliationRequired",
 	"Compensating",
 	"Destroying",
 	"Destroyed",
@@ -98,6 +100,7 @@ export function foldResourceActor(
 			resourceId?: string;
 			outputs?: Record<string, string>;
 			specHash?: string;
+			requiresReconciliation?: boolean;
 		};
 		if (data.resourceId !== resource.name) continue;
 		switch (event.type) {
@@ -118,7 +121,10 @@ export function foldResourceActor(
 				else delete snapshot.specHash;
 				break;
 			case CLOUD_EVENTS.ResourceFailed:
-				snapshot.state = "Failed";
+				snapshot.state =
+					data.requiresReconciliation === true
+						? "ReconciliationRequired"
+						: "Failed";
 				snapshot.sequence += 1;
 				break;
 			case CLOUD_EVENTS.ResourceDestroying:
@@ -172,6 +178,7 @@ export type ReconcileOutcome =
 	  }
 	| { kind: "provisioned"; snapshot: ResourceActorSnapshot; execId: string }
 	| { kind: "updated"; snapshot: ResourceActorSnapshot; execId: string }
+	| { kind: "reconciliation-required"; snapshot: ResourceActorSnapshot }
 	| {
 			kind: "failed";
 			snapshot: ResourceActorSnapshot;
@@ -265,6 +272,9 @@ export async function reconcileResource(
 		const updating =
 			snapshot.state === "Provisioned" || snapshot.state === "Updating";
 		const specHash = desiredSpecHash(resource);
+		if (snapshot.state === "ReconciliationRequired") {
+			return { kind: "reconciliation-required", snapshot };
+		}
 
 		const fenceToken = currentFenceToken(deps.store, stream);
 		const appendOpts = {
@@ -341,20 +351,40 @@ export async function reconcileResource(
 
 			if (result.status === "failed") {
 				const crossed =
-					ctx.noGoThresholdResources?.has(resource.name) ??
-					result.classification === "fatal";
+					result.requiresReconciliation === true
+						? false
+						: (ctx.noGoThresholdResources?.has(resource.name) ??
+							result.classification === "fatal");
+				const failureBase = {
+					deploymentId: ctx.deploymentId,
+					resourceId: resource.name,
+					reason: result.reason,
+				};
+				const failure: ResourceFailedData =
+					result.requiresReconciliation === true
+						? {
+								...failureBase,
+								classification: "fatal",
+								crossedNoGoThreshold: false,
+								requiresReconciliation: true,
+								reconciliationOperation: "apply",
+							}
+						: {
+								...failureBase,
+								classification: result.classification,
+								crossedNoGoThreshold: crossed,
+							};
+				if (
+					failure.requiresReconciliation === true &&
+					result.reservationId !== undefined
+				)
+					failure.reservationId = result.reservationId;
 				const emitted = await emit(
 					deps.store,
 					stream,
 					[
 						tokenGranted(grant),
-						resourceFailed({
-							deploymentId: ctx.deploymentId,
-							resourceId: resource.name,
-							reason: result.reason,
-							classification: result.classification,
-							crossedNoGoThreshold: crossed,
-						}),
+						resourceFailed(failure),
 						tokenRevoked({ grantId: grant.grantId, reason: "apply failed" }),
 					],
 					{ expectedSeq: lastSeq, ...appendOpts },
@@ -365,6 +395,8 @@ export async function reconcileResource(
 					...resource,
 					deploymentId: ctx.deploymentId,
 				});
+				if (result.requiresReconciliation === true)
+					return { kind: "reconciliation-required", snapshot };
 				return {
 					kind: "failed",
 					snapshot,
@@ -442,6 +474,12 @@ export async function destroyResource(
 			deploymentId: ctx.deploymentId,
 		});
 		if (snapshot.state === "Destroyed") return { kind: "converged", snapshot };
+		if (snapshot.state === "ReconciliationRequired")
+			return {
+				kind: "failed",
+				snapshot,
+				reason: "reconciliation required before destroy",
+			};
 
 		const fenceToken = currentFenceToken(deps.store, stream);
 		const appendOpts = {
@@ -475,6 +513,26 @@ export async function destroyResource(
 		try {
 			const result = await deps.executor.run(program, credential);
 			if (result.status === "failed") {
+				if (result.requiresReconciliation === true) {
+					const failure: ResourceFailedData = {
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						reason: result.reason,
+						classification: "fatal",
+						crossedNoGoThreshold: false,
+						requiresReconciliation: true,
+						reconciliationOperation: "destroy",
+					};
+					if (result.reservationId !== undefined)
+						failure.reservationId = result.reservationId;
+					const emitted = await emit(
+						deps.store,
+						stream,
+						[resourceFailed(failure)],
+						{ expectedSeq: lastSeq, ...appendOpts },
+					);
+					lastSeq = emitted.seq;
+				}
 				events = await collectStream(deps.store, stream);
 				snapshot = foldResourceActor(events, {
 					...resource,

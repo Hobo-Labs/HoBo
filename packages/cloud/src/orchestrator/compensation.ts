@@ -111,6 +111,15 @@ export async function runCompensation(
 	};
 
 	let events = await collectStream(deps.store, stream);
+	if (
+		plan.resources.some(
+			(resource) =>
+				foldResourceActor(events, { ...resource, deploymentId }).state ===
+				"ReconciliationRequired",
+		)
+	) {
+		return { status: "needs-human", destroyedOrder: [], events };
+	}
 
 	// Emit deployment.RolledBack once (idempotent — resume-safe). The stream is
 	// fenced by the leased writes that came before; continue under the current
@@ -160,6 +169,8 @@ export async function runCompensation(
 				foldResourceActor(events, { ...r, deploymentId }).state,
 			]),
 		);
+		if ([...states.values()].includes("ReconciliationRequired"))
+			return { status: "needs-human", destroyedOrder, events };
 
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
 			const state = states.get(resourceId);
