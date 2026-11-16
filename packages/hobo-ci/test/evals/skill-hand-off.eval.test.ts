@@ -196,19 +196,32 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/elicitation form/u);
 	});
 
-	it("gives the sign-in link in chat first and opens the form only after the owner copied the value", () => {
-		// Derived from the live run: the form opened at once, blocked the chat,
-		// and the link was unclickable prose inside it.
+	it("never opens the paste form before the owner has the sign-in link", () => {
+		// Derived from the live runs: the form opened first, twice, and the
+		// owner had no link and nothing to paste.
 		const step = HAND_OFF.slice(
 			HAND_OFF.indexOf("4. On `HOBO_OWNER_SIGN_IN"),
 			HAND_OFF.indexOf("On `HOBO_OWNER_CAPTURE"),
 		);
-		expect(step).toMatch(/link first, in chat, and end your turn/u);
+		expect(step).toMatch(/shows the owner the link first/u);
+		expect(step).toMatch(/SECRET_CAPTURE_LINK_FIRST/u);
+		expect(step).toMatch(/link comes first, in chat, and you end your turn/u);
 		expect(step).toMatch(/\[Sign in to Infisical\]\(<url>\)/u);
-		expect(step).toMatch(/Do not call `capture_secret`\s+in this turn/u);
-		expect(step.indexOf("When the owner says they copied it")).toBeGreaterThan(
-			step.indexOf("link first"),
+		expect(step).toMatch(/linkShown: true/u);
+		// Nothing is timed: the form waits for the owner or the host's cancel.
+		expect(step).not.toMatch(/minutes/u);
+		expect(step).toMatch(/until the owner answers it, or the host cancels/u);
+	});
+
+	it("through MCP, the device step ends the turn and runs again once the owner approved", () => {
+		// Derived from the real-binary smoke: the run used to wait inside the
+		// call on a link nobody could see.
+		const step = HAND_OFF.slice(
+			HAND_OFF.indexOf("6. On `HOBO_OWNER_DEVICE"),
+			HAND_OFF.indexOf("7. When the run ends"),
 		);
-		expect(step).toMatch(/ten\s+minutes/u);
+		expect(step).toMatch(/HOBO_CD_VERCEL_AWAITING_APPROVAL/u);
+		expect(step).toMatch(/end your turn/u);
+		expect(step).toMatch(/run the\s+lifecycle\s+again/u);
 	});
 });

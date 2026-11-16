@@ -70,6 +70,8 @@ export interface VercelDeviceOptions {
 	readonly clientId?: string;
 	/** One progress line; the token never goes through it. */
 	readonly emit: (line: string) => void;
+	/** The link and code, as soon as Vercel issues them (an owner channel shows them). */
+	readonly onLink?: (link: string, code: string) => void;
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly now?: () => number;
 }
@@ -84,22 +86,29 @@ function form(fields: Readonly<Record<string, string>>): URLSearchParams {
 }
 
 /** Ask the owner to approve on vercel.com, then wait for the token. */
-export async function vercelDeviceToken(
-	options: VercelDeviceOptions,
-): Promise<VercelDeviceToken> {
+/** A device grant Vercel issued: what the owner opens, and what the run polls with. */
+export interface VercelDeviceGrant {
+	readonly link: string;
+	readonly code: string;
+	readonly deviceCode: string;
+	readonly clientId: string;
+	/** Seconds between polls, as Vercel asked (RFC 8628 §3.2). */
+	readonly intervalSeconds: number;
+	readonly expiresInSeconds: number;
+}
+
+/** Ask Vercel for a device grant: one request, no waiting. */
+export async function startVercelDeviceGrant(options: {
+	readonly fetch?: typeof fetch;
+	readonly clientId?: string;
+}): Promise<VercelDeviceGrant> {
 	const http = options.fetch ?? fetch;
 	const clientId = options.clientId ?? VERCEL_CLI_DEVICE_CLIENT_ID;
-	const sleep =
-		options.sleep ??
-		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-	const now = options.now ?? Date.now;
-
 	const started = await http(VERCEL_DEVICE_AUTHORIZATION_URL, {
 		method: "POST",
 		headers: { "content-type": "application/x-www-form-urlencoded" },
 		body: form({ client_id: clientId }),
 		redirect: "error",
-		signal: AbortSignal.timeout(10_000),
 	}).catch(() => undefined);
 	const parsed = DeviceAuthorization.safeParse(
 		started?.ok ? await started.json().catch(() => null) : null,
@@ -110,27 +119,81 @@ export async function vercelDeviceToken(
 			"Vercel did not start a device sign-in.",
 		);
 	const grant = parsed.data;
-	const link = grant.verification_uri_complete ?? grant.verification_uri;
-	options.emit(
-		`${OWNER_DEVICE_LINE_PREFIX} ${link} code=${grant.user_code} — Connect Vercel for HoBo CD: open the link on any device, confirm the code and approve; this run waits ${Math.round(grant.expires_in / 60)} minutes.`,
-	);
+	return {
+		link: grant.verification_uri_complete ?? grant.verification_uri,
+		code: grant.user_code,
+		deviceCode: grant.device_code,
+		clientId,
+		intervalSeconds: grant.interval ?? 5,
+		expiresInSeconds: grant.expires_in,
+	};
+}
 
-	let interval = (grant.interval ?? 5) * 1000;
-	const deadline = now() + grant.expires_in * 1000;
-	while (now() < deadline) {
-		await sleep(Math.max(0, Math.min(interval, deadline - now())));
-		if (now() >= deadline) break;
+/** Time as a port: the system's, or a virtual one a spec drives. */
+export interface DeviceClock {
+	readonly now: () => number;
+	/** Wait `ms`, or until `signal` aborts. */
+	readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
+export const SYSTEM_CLOCK: DeviceClock = {
+	now: Date.now,
+	sleep: (ms, signal) =>
+		new Promise<void>((resolve) => {
+			if (signal?.aborted === true) return resolve();
+			const timer = setTimeout(resolve, ms);
+			signal?.addEventListener(
+				"abort",
+				() => {
+					clearTimeout(timer);
+					resolve();
+				},
+				{ once: true },
+			);
+		}),
+};
+
+/**
+ * Poll for the grant's token as RFC 8628 prescribes: every `interval`
+ * seconds, five more after `slow_down`, until approved, denied, expired, or
+ * `signal` aborts. Polling is the protocol (Vercel has no push); the clock
+ * is a port, so it runs off the request path in production and on virtual
+ * time in specs.
+ */
+export async function awaitVercelDeviceToken(
+	grant: VercelDeviceGrant,
+	options: {
+		readonly fetch?: typeof fetch;
+		readonly clock?: DeviceClock;
+		readonly signal?: AbortSignal;
+	} = {},
+): Promise<VercelDeviceToken> {
+	const http = options.fetch ?? fetch;
+	const clock = options.clock ?? SYSTEM_CLOCK;
+	let interval = grant.intervalSeconds * 1000;
+	const deadline = clock.now() + grant.expiresInSeconds * 1000;
+	while (clock.now() < deadline) {
+		await clock.sleep(
+			Math.max(0, Math.min(interval, deadline - clock.now())),
+			options.signal,
+		);
+		if (options.signal?.aborted === true)
+			throw new VercelDeviceError(
+				"HOBO_CD_VERCEL_DEVICE_FAILED",
+				"The Vercel sign-in was stopped before it was approved.",
+			);
+		if (clock.now() >= deadline) break;
 		const reply = await http(VERCEL_DEVICE_TOKEN_URL, {
 			method: "POST",
 			headers: { "content-type": "application/x-www-form-urlencoded" },
 			redirect: "error",
-			signal: AbortSignal.timeout(
-				Math.max(1, Math.min(10_000, deadline - now())),
-			),
+			...(options.signal !== undefined
+				? { signal: options.signal }
+				: undefined),
 			body: form({
 				grant_type: DEVICE_CODE_GRANT,
-				device_code: grant.device_code,
-				client_id: clientId,
+				device_code: grant.deviceCode,
+				client_id: grant.clientId,
 			}),
 		}).catch(() => undefined);
 		if (reply === undefined) continue;
@@ -165,6 +228,29 @@ export async function vercelDeviceToken(
 		"HOBO_CD_VERCEL_DEVICE_EXPIRED",
 		"The Vercel sign-in code expired before it was approved.",
 	);
+}
+
+/** At the owner's terminal: start the grant, print its line, wait for the token. */
+export async function vercelDeviceToken(
+	options: VercelDeviceOptions,
+): Promise<VercelDeviceToken> {
+	const grant = await startVercelDeviceGrant({
+		...(options.fetch !== undefined ? { fetch: options.fetch } : undefined),
+		...(options.clientId !== undefined
+			? { clientId: options.clientId }
+			: undefined),
+	});
+	options.onLink?.(grant.link, grant.code);
+	options.emit(
+		`${OWNER_DEVICE_LINE_PREFIX} ${grant.link} code=${grant.code} — Connect Vercel for HoBo CD: open the link on any device, confirm the code and approve; this run waits ${Math.round(grant.expiresInSeconds / 60)} minutes.`,
+	);
+	return awaitVercelDeviceToken(grant, {
+		...(options.fetch !== undefined ? { fetch: options.fetch } : undefined),
+		clock: {
+			now: options.now ?? SYSTEM_CLOCK.now,
+			sleep: options.sleep ?? SYSTEM_CLOCK.sleep,
+		},
+	});
 }
 
 /**

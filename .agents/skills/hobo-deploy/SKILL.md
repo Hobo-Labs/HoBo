@@ -254,20 +254,20 @@ checks it.
    not rerun it. If they decline the form, show the other paths the run's
    refusal names.
 4. On `HOBO_OWNER_SIGN_IN url=<url> capture=<name>` (Infisical's sign-in,
-   or GitHub's App creation, from a remote box), two turns:
-   1. **The link first, in chat, and end your turn.** A clickable link on
-      its own line, then one short step. Infisical:
-      `**[Sign in to Infisical](<url>)**` then "When it says *Unable to reach
-      CLI*, click **Copy to clipboard**, then tell me." GitHub App
-      (`capture=GITHUB_APP_CODE`): `**[Create the GitHub App](<url>)**` then
-      "Click **Create GitHub App**; copy the code HoBo's page shows, then
-      tell me." Nothing else in that message. Do not call `capture_secret`
-      in this turn: its form blocks the chat, so the owner would never see
-      the link.
-   2. **When the owner says they copied it**, call `capture_secret` with
-      `name: <name>`. Their host shows a one-field form (they have ten
-      minutes); the value goes only to the waiting run. Then run the
-      lifecycle again.
+   or GitHub's App creation, from a remote box): call `capture_secret` with
+   `name: <name>`. The server shows the owner the link first, as their
+   host's own clickable link prompt, and the one-field paste form only after
+   it (it stays open until the owner answers it, or the host cancels the
+   call); the result says `linkShownBy: "host"`.
+   If it answers `SECRET_CAPTURE_LINK_FIRST` (a host with no link prompt),
+   the link comes first, in chat, and you end your turn: a clickable link on
+   its own line (`**[Sign in to Infisical](<url>)**`, or
+   `**[Create the GitHub App](<url>)**`) and one short step ("When it says
+   *Unable to reach CLI*, click **Copy to clipboard**, then tell me" /
+   "Click **Create GitHub App**, copy the code HoBo's page shows, then tell
+   me"). Do not call `capture_secret` again in that turn: its form blocks
+   the chat. When the owner says they copied it, call it with
+   `linkShown: true`. Then run the lifecycle again.
    Never ask for the value in chat, and never use `request_credential` for
    it (that form feeds the network proxy, not the run).
    On `HOBO_OWNER_CAPTURE name=<name> guide=<url>` (one line per value: a
@@ -290,9 +290,14 @@ checks it.
    and continues; do not rerun it. On `HOBO_*_BITWARDEN_ORGANIZATION`, ask
    which organization with a picker (each `BWS_ORGANIZATION_ID=` line is an
    option) and run again with it.
-6. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any
-   device, check the code is `<code>`, and approve." The run waits for the
-   approval and continues by itself.
+6. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say once "Approve HoBo
+   CD on Vercel in the link prompt, on any device (the code is `<code>`),
+   then tell me", end your turn, and when they say approved, run the
+   lifecycle again. Through the HoBo MCP server the run has already shown
+   that link as the host's own link prompt and returned
+   (`HOBO_CD_VERCEL_AWAITING_APPROVAL`); the grant completes in the server
+   and writes the connection to the store. At a terminal, the run waits and
+   continues by itself.
 7. When the run ends: report its last lines. If it refused, show its code
    and **every** remediation line it printed, unparaphrased; do not reduce
    them to one option.

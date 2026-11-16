@@ -361,9 +361,16 @@ environment variables.
   or a port preview the owner may not see. Every capture result carries
   `hostSupport`. A host's form blocks the chat, so a sign-in link is shown
   in chat first and the form opens only once the owner has copied the
-  value; the form is one short line and one field. The host's tool limit
-  is ten minutes (`MCP_TOOL_TIMEOUT` in `.claude/settings.json`) and the
-  server answers `SECRET_CAPTURE_NOT_ANSWERED` just before it. Infisical provisioning reuses an identity,
+  value; the form is one short line and one field. Nothing is timed: a form
+  stays open until the owner answers or the host cancels the call
+  (`notifications/cancelled`), which withdraws exactly that call's prompts
+  (`SECRET_CAPTURE_NOT_ANSWERED`). No tool call blocks on a person: through
+  the MCP server, `cd`'s Vercel device grant runs off the request path (the
+  owner channel's jobs), shows its link as the host's link prompt, returns
+  `HOBO_CD_VERCEL_AWAITING_APPROVAL` at once, and writes the connection to
+  the store when approved (RFC 8628 polling on an injectable clock). The
+  store sign-in HoBo created is kept in the server's memory (the owner
+  channel's vault) so the owner signs in once. Infisical provisioning reuses an identity,
   auth method and membership a failed run left behind, retries dropped
   connections and 5xx answers, names a proxy that refuses the tunnel (407)
   as the proxy, and turns an expired session into a fresh sign-in link.

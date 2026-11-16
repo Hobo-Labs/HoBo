@@ -171,7 +171,7 @@ export async function provisionInfisicalAccess(
 		if (why === undefined) {
 			await options.owner.openUrl(
 				signInUrl,
-				"Sign in to Infisical (your organization's SSO or MFA as usual). HoBo sets up its own access with this sign-in.",
+				"Sign in to Infisical. When it says Unable to reach CLI, click Copy to clipboard.",
 			);
 			const copied = await options.owner.captureSecret({
 				name: INFISICAL_CLI_SESSION_CAPTURE,

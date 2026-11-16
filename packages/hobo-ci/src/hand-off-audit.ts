@@ -288,6 +288,7 @@ export function auditHandOff(
 	let sawTurn = false;
 	// Captures in flight, and whether the last one left the owner without a form.
 	const captures = new Set<string>();
+	const earlyCaptures = new Set<string>();
 	let noHostForm = false;
 	// The last sign-in line: its link, the turn it arrived in, and the turn
 	// the agent showed it to the owner.
@@ -328,14 +329,7 @@ export function auditHandOff(
 				if (/^mcp__[\w-]+__capture_secret$/u.test(b.name)) {
 					captures.add(b.id);
 					if (signIn?.turn === turn && signIn.shownTurn === undefined)
-						findings.push({
-							rule: "form-before-link",
-							ask: "capture",
-							line: `HOBO_OWNER_SIGN_IN url=${signIn.url}`,
-							at: event.at,
-							detail:
-								"The capture form opened in the turn the sign-in link arrived, before the owner had the link. Show the link in chat first (on its own line, clickable), wait until the owner says they copied the value, then open the form.",
-						});
+						earlyCaptures.add(b.id);
 				}
 				const choiceAt = b.questions.findIndex(
 					(q) => storesNamed(q).length >= 2,
@@ -369,6 +363,20 @@ export function auditHandOff(
 						askedThisTurn.add(ask);
 					}
 			} else if (b.kind === "tool_result") {
+				// A form opened before the owner had the link, unless the host
+				// itself showed the link first (or the server refused for it).
+				if (
+					earlyCaptures.delete(b.toolUseId) &&
+					!/"linkShownBy":\s*"host"|SECRET_CAPTURE_LINK_FIRST/u.test(b.text)
+				)
+					findings.push({
+						rule: "form-before-link",
+						ask: "capture",
+						line: `HOBO_OWNER_SIGN_IN url=${signIn?.url ?? ""}`,
+						at: event.at,
+						detail:
+							"The capture form opened before the owner had the sign-in link, and the host did not show it first. Show the link in chat (on its own line, clickable), wait until the owner says they copied the value, then open the form.",
+					});
 				if (captures.delete(b.toolUseId))
 					noHostForm = NO_HOST_FORM.test(b.text) && !HOST_FORM.test(b.text);
 				if (storeAsks.delete(b.toolUseId) && !NOT_COMPLETED.test(b.text))

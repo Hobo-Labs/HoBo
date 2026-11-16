@@ -189,6 +189,18 @@ export function storeSettings(
 					fallback: defaultPath,
 				},
 				{
+					// The owner's Infisical: US cloud unless they saved another (EU,
+					// self-hosted). Provisioning and the store use the same one.
+					field: {
+						name: "INFISICAL_SITE_URL",
+						label: "Infisical address",
+						kind: "url",
+						required: false,
+					},
+					fallback: "https://app.infisical.com",
+					validate: httpsOrigin,
+				},
+				{
 					field: {
 						name: "INFISICAL_IDENTITY_ID",
 						label: "Infisical machine identity for workloads (optional)",

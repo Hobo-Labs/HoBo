@@ -134,6 +134,10 @@ export async function createAppRemotely(options: {
 		],
 	});
 
+	await options.owner.openUrl(
+		link,
+		"Create the GitHub App, then copy the code HoBo's page shows.",
+	);
 	const pasted = await options.owner.captureSecret({
 		name: GITHUB_APP_CODE_CAPTURE,
 		title: "GitHub App code",

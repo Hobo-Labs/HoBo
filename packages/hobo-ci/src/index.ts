@@ -91,8 +91,13 @@ export {
 } from "./onepassword-access.js";
 export {
 	captureAll,
+	createOwnerJobs,
+	KEPT_STORE_SIGN_INS,
 	OWNER_CAPTURE_LINE_PREFIX,
 	type OwnerChannel,
+	type OwnerJobOutcome,
+	type OwnerJobState,
+	type OwnerJobs,
 	ownerCaptureLine,
 } from "./owner-channel.js";
 export {

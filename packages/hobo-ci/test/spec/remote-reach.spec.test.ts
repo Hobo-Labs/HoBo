@@ -209,3 +209,34 @@ describe("SPEC remote reach: Infisical's API origin is the owner's own", () => {
 		expect(origins).toEqual(["https://eu.infisical.com"]);
 	});
 });
+
+describe("SPEC remote reach: the store opens at the owner's own Infisical", () => {
+	it("an EU or self-hosted Infisical store opens at the site the owner saved, as provisioning does", async () => {
+		// Derived from the real-binary smoke: the identity was provisioned on the
+		// owner's site, then the store opened against US cloud and never answered.
+		const sites: (string | undefined)[] = [];
+		await prepareGithubConnection(handOff(), {
+			env: {},
+			locator: {
+				read: async () => ({
+					HOBO_SECRET_STORE: "infisical",
+					INFISICAL_PROJECT_ID: "proj",
+					INFISICAL_SITE_URL: "https://eu.infisical.com",
+					INFISICAL_SIGN_IN: "egress-proxy",
+				}),
+				write: async () => undefined,
+			},
+			openStore: async (_id, coordinates) => {
+				sites.push(coordinates.INFISICAL_SITE_URL);
+				return { ok: false, message: "x", remediation: [] };
+			},
+			sleep: async () => undefined,
+			handOffTimeoutMs: 1,
+			startPage: () => {
+				throw new Error("no page");
+			},
+		});
+		expect(sites.length).toBeGreaterThan(0);
+		expect(new Set(sites)).toEqual(new Set(["https://eu.infisical.com"]));
+	});
+});

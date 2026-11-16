@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 
-import { createHoboMcpServer, SECRET_CAPTURE_FORM_TIMEOUT_MS } from "@hobo/mcp";
+import { createHoboMcpServer } from "@hobo/mcp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -56,6 +56,12 @@ const elicitParams = z.object({
 		required: z.array(z.string()),
 	}),
 });
+const linkParams = z.object({
+	mode: z.literal("url"),
+	url: z.string(),
+	message: z.string(),
+	elicitationId: z.string(),
+});
 const toolResult = z.object({
 	content: z.array(z.object({ text: z.string() })),
 	structuredContent: message.optional(),
@@ -68,10 +74,7 @@ const COPIED = Buffer.from(
 ).toString("base64");
 
 /** A host on the other end of the stdio transport, with a capability profile. */
-function host(
-	capabilities: JsonObject,
-	options: { remote: boolean; elicitTimeoutMs?: number },
-) {
+function host(capabilities: JsonObject, options: { remote: boolean }) {
 	const toServer = new PassThrough();
 	const fromServer = new PassThrough();
 	const owner = createMcpOwnerChannel();
@@ -82,9 +85,6 @@ function host(
 				projectDir: mkdtempSync(path.join(tmpdir(), "hobo-owner-form-")),
 			}),
 			remote: options.remote,
-			...(options.elicitTimeoutMs !== undefined
-				? { elicitTimeoutMs: options.elicitTimeoutMs }
-				: undefined),
 			elicit: (params) => {
 				const request = session.request;
 				if (request === undefined) throw new Error("no transport");
@@ -158,6 +158,14 @@ function host(
 			});
 			return elicitParams.parse(request.params);
 		},
+		/** The owner answers the host's link prompt (URL-mode elicitation). */
+		async openLink(action = "accept") {
+			const request = await next((m) => m.method === "elicitation/create");
+			send({ jsonrpc: "2.0", id: request.id ?? null, result: { action } });
+			return linkParams.parse(request.params);
+		},
+		/** The next elicitation the host was asked for, of either kind. */
+		peek: () => next((m) => m.method === "elicitation/create"),
 		async close() {
 			toServer.end();
 			await serving;
@@ -220,25 +228,28 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		await client.close();
 	});
 
-	it("the owner does not answer before the host's limit: the server answers first, captures nothing, and the next call opens a fresh form", async () => {
-		// Derived from the live run: the host gives up on a question after 60s;
-		// the form opened before the owner had signed in and copied the value.
-		const client = host(
-			{ elicitation: {} },
-			{ remote: true, elicitTimeoutMs: 50 },
-		);
+	it("the host cancels the call while the form is open: the form is withdrawn, nothing captured, and the next call opens a fresh one", async () => {
+		// No timers anywhere: the host's cancel is the event. Derived from the
+		// live run, where the host gave up on the call and the form went stale.
+		const client = host({ elicitation: {} }, { remote: true });
 		await client.init();
 		const first = client.capture();
-		await client.next((m) => m.method === "elicitation/create");
-		// Nobody answers.
+		const form = await client.next((m) => m.method === "elicitation/create");
+		client.send({
+			jsonrpc: "2.0",
+			method: "notifications/cancelled",
+			params: { requestId: first, reason: "user stopped waiting" },
+		});
+		// The server tells the host to close the form it asked for.
+		const withdrawn = await client.next(
+			(m) => m.method === "notifications/cancelled",
+		);
+		expect(withdrawn.params).toMatchObject({ requestId: form.id });
 		const result = toolResult.parse((await client.answer(first)).result);
-		expect(result.isError).toBe(true);
 		expect(result.structuredContent).toMatchObject({
 			code: "SECRET_CAPTURE_NOT_ANSWERED",
 		});
-		expect(JSON.stringify(result)).toMatch(/ready|copied|again/iu);
 		expect(client.owner.holds(INFISICAL_CLI_SESSION)).toBe(false);
-		// Asked again once the owner is ready: a new form, not the dead one.
 		const second = client.capture();
 		await client.fill({ value: COPIED });
 		const done = toolResult.parse((await client.answer(second)).result);
@@ -351,24 +362,78 @@ describe("EVAL owner form reach: every hand-over reads at a glance", () => {
 	});
 });
 
-describe("EVAL owner form reach: the owner has ten minutes", () => {
-	it("the host's tool limit is ten minutes, and the server answers just before it", () => {
-		// Derived from the live run: the host cut the question off at 60s.
-		const settings = z
-			.object({ env: z.object({ MCP_TOOL_TIMEOUT: z.string() }) })
-			.parse(
-				JSON.parse(
-					readFileSync(
-						new URL("../../../../.claude/settings.json", import.meta.url),
-						"utf8",
-					),
-				),
-			);
-		const hostLimit = Number(settings.env.MCP_TOOL_TIMEOUT);
-		expect(hostLimit).toBe(10 * 60_000);
-		expect(SECRET_CAPTURE_FORM_TIMEOUT_MS).toBeLessThan(hostLimit);
-		expect(SECRET_CAPTURE_FORM_TIMEOUT_MS).toBeGreaterThanOrEqual(
-			hostLimit - 30_000,
+describe("EVAL owner form reach: the link reaches the owner before any form", () => {
+	// Derived from the live run: the paste form opened first, and the owner
+	// had no link and nothing to paste. The host declares URL-mode
+	// elicitation, so the server itself shows the link, then the form.
+	const SIGN_IN_URL = "https://app.infisical.com/login?callback_port=56037";
+	const BOTH = { elicitation: { form: {}, url: {} } };
+	async function pendingSignIn(client: ReturnType<typeof host>) {
+		await client.owner.openUrl(SIGN_IN_URL, "Sign in to Infisical.");
+		await client.owner.captureSecret({
+			name: INFISICAL_CLI_SESSION,
+			title: "Infisical session",
+			instructions: "",
+		});
+	}
+
+	it("the host shows the sign-in link (a clickable prompt) first, and the paste form only after it", async () => {
+		const client = host(BOTH, { remote: true });
+		await client.init();
+		await pendingSignIn(client);
+		const mine = client.capture();
+		const link = await client.openLink();
+		expect(link.url).toBe(SIGN_IN_URL);
+		expect(link.message.length).toBeLessThanOrEqual(120);
+		const form = await client.fill({ value: COPIED });
+		expect(form.message).not.toContain("http");
+		const result = toolResult.parse((await client.answer(mine)).result);
+		expect(result.structuredContent).toMatchObject({ status: "stored" });
+		await client.close();
+	});
+
+	it("the owner declines the link: no paste form opens", async () => {
+		const client = host(BOTH, { remote: true });
+		await client.init();
+		await pendingSignIn(client);
+		const mine = client.capture();
+		await client.openLink("decline");
+		const result = toolResult.parse((await client.answer(mine)).result);
+		expect(result.structuredContent).toMatchObject({
+			code: "SECRET_CAPTURE_DECLINED",
+		});
+		await client.close();
+	});
+
+	it("a host without URL mode: no form until the agent has shown the link in chat", async () => {
+		const client = host({ elicitation: {} }, { remote: true });
+		await client.init();
+		await pendingSignIn(client);
+		const refused = toolResult.parse(
+			(await client.answer(client.capture())).result,
 		);
+		expect(refused.structuredContent).toMatchObject({
+			code: "SECRET_CAPTURE_LINK_FIRST",
+			link: SIGN_IN_URL,
+		});
+		// Shown in chat, and the owner said they copied it: now the form.
+		const mine = client.call("tools/call", {
+			name: "capture_secret",
+			arguments: { name: INFISICAL_CLI_SESSION, linkShown: true },
+		});
+		await client.fill({ value: COPIED });
+		const done = toolResult.parse((await client.answer(mine)).result);
+		expect(done.structuredContent).toMatchObject({ status: "stored" });
+		await client.close();
+	});
+
+	it("a value with no link to open (a setting) gets the form at once", async () => {
+		const client = host(BOTH, { remote: true });
+		await client.init();
+		const mine = client.capture();
+		const first = elicitParams.safeParse((await client.peek()).params);
+		expect(first.success).toBe(true);
+		await client.close();
+		void mine;
 	});
 });

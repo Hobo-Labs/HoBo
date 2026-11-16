@@ -284,6 +284,10 @@ export interface OwnerStore {
 	readonly egressCredentialHost: HttpsOrigin | undefined;
 	/** The store, opened without the page when the locator and a sign-in allow it. */
 	readonly opened: OpenedSecretStore | undefined;
+	/** Why it is not open: the settings it lacks, or the store's own answer. */
+	readonly unopened:
+		| { readonly message: string; readonly remediation: readonly string[] }
+		| undefined;
 	/**
 	 * A ceremony stage: ask what is missing of the locator and the sign-in,
 	 * open the store, then continue with `proceed`.
@@ -446,10 +450,23 @@ export async function ownerStore(
 	];
 
 	let opened: OpenedSecretStore | undefined;
-	if (choice.missing.length === 0 && missingSide.length === 0) {
+	let unopened: OwnerStore["unopened"];
+	const lacking = [...choice.missing, ...missingSide];
+	if (lacking.length === 0) {
 		const attempt = await open(id, coordinates, vault);
 		if (attempt.ok) opened = attempt.store;
-	}
+		else
+			unopened = {
+				message: attempt.message,
+				remediation: attempt.remediation,
+			};
+	} else
+		unopened = {
+			message: `${storeLabel(id)} needs ${lacking.map((field) => field.label).join(", ")} before it can open.`,
+			remediation: [
+				`Give ${lacking.map((field) => field.label).join(", ")} when the agent asks (the store choice form).`,
+			],
+		};
 
 	return {
 		id,
@@ -466,6 +483,7 @@ export async function ownerStore(
 				)
 			: connectHost,
 		opened,
+		unopened,
 		async stage({ provider, reason, proceed }) {
 			if (opened !== undefined) return proceed(opened);
 			const signInStage = async (chosen: SecretStoreId) => {

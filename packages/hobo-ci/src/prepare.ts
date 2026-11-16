@@ -28,7 +28,11 @@ import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
 import { provisionInfisicalAccess } from "./infisical-access.js";
 import { provisionOnePasswordAccess } from "./onepassword-access.js";
-import { captureAll, ownerCaptureLine } from "./owner-channel.js";
+import {
+	captureAll,
+	KEPT_STORE_SIGN_INS,
+	ownerCaptureLine,
+} from "./owner-channel.js";
 import {
 	familySettings,
 	InvalidSecretStoreError,
@@ -247,6 +251,12 @@ export async function prepareGithubConnection(
 			handoff,
 		});
 	} finally {
+		// What signs this run in to the store stays for the next run, in the
+		// owner channel's memory only.
+		for (const name of KEPT_STORE_SIGN_INS) {
+			const value = vault.reveal(name);
+			if (value !== undefined) deps.ownerChannel?.vault?.put(name, value);
+		}
 		// GitHub's credentials are deposited in the store during prepare; the
 		// subsequent convergence does not need the store sign-in.
 		vault.clear();
@@ -341,7 +351,24 @@ async function prepareGithubWithVault(
 		});
 	let owner: Awaited<ReturnType<typeof ownerStore>>;
 	try {
+		// A store sign-in an earlier run kept (the owner signed in once).
+		const kept = deps.ownerChannel?.vault;
+		const restored = KEPT_STORE_SIGN_INS.filter((name) => {
+			const value = kept?.reveal(name);
+			if (value === undefined || vault.has(name)) return false;
+			vault.put(name, value);
+			return true;
+		});
 		owner = await openOwner();
+		// The store refused it (expired, revoked): forget it and go on as if
+		// it never was, so a stale token cannot wedge later runs.
+		if (owner.opened === undefined && restored.length > 0) {
+			for (const name of restored) {
+				vault.drop(name);
+				kept?.drop(name);
+			}
+			owner = await openOwner();
+		}
 		// The owner chooses their store; a handed-off run never assumes one.
 		if (input.handOff === true && !input.whatIf && !owner.chosen)
 			return refused(
@@ -487,6 +514,20 @@ async function prepareGithubWithVault(
 			input.handOff === true &&
 			!input.whatIf &&
 			!(await storeAnswers(owner, "ci"));
+		// Through the HoBo MCP server (--json, an owner channel) no progress
+		// line reaches anyone: say why the store did not open, never wait.
+		if (
+			needsOwner &&
+			deps.ownerChannel !== undefined &&
+			(input.run.flags.json || input.run.flags.quiet)
+		)
+			return refused(
+				"HOBO_CI_STORE_UNAVAILABLE",
+				owner.unopened?.message ?? `${owner.id} did not answer this run.`,
+				owner.unopened?.remediation ?? [
+					"Run again: HoBo signs in to the store afresh.",
+				],
+			);
 		if (
 			needsOwner &&
 			owner.canAwaitEgressCredential &&
@@ -568,7 +609,13 @@ async function prepareGithubWithVault(
 				},
 			],
 		};
-	if (input.handOff === true && (input.run.flags.json || input.run.flags.quiet))
+	// Through the HoBo MCP server the owner channel carries every owner step;
+	// only a plain --json run cannot reach the owner.
+	if (
+		input.handOff === true &&
+		deps.ownerChannel === undefined &&
+		(input.run.flags.json || input.run.flags.quiet)
+	)
 		return refused(
 			"HOBO_CI_HANDOFF_SILENT",
 			"The owner hand-off needs progress output. Omit --json and -q, then retry.",

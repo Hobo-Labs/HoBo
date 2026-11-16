@@ -17,6 +17,7 @@ import {
 	hoboToolsDir,
 	InvalidSecretStoreError,
 	ignoredSecretEnvNotice,
+	KEPT_STORE_SIGN_INS,
 	lazyEgressFetch,
 	type OpenedSecretStore,
 	type OwnerStoreDeps,
@@ -52,8 +53,13 @@ import {
 	VERCEL_CONNECTION_KEYS,
 } from "./vercel.js";
 import {
+	awaitVercelDeviceToken,
+	OWNER_DEVICE_LINE_PREFIX,
+	SYSTEM_CLOCK,
+	startVercelDeviceGrant,
 	VERCEL_DEVICE_INSTALLATION,
 	VercelDeviceError,
+	type VercelDeviceGrant,
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "./vercel-device.js";
@@ -130,6 +136,8 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly timeoutMs?: number;
 	/** How the device grant and store probes wait (tests make it instant). */
 	readonly sleep?: (ms: number) => Promise<void>;
+	/** The device grant's clock (tests drive it virtually). */
+	readonly now?: () => number;
 	/** How long a handed-off run waits for the owner's sign-in. */
 	readonly handOffTimeoutMs?: number;
 	/** The run's trusted vault; a fresh one by default. */
@@ -230,6 +238,12 @@ export async function prepareVercelConnection(
 		handedOff = outcome.kind === "ready" && outcome.credentials === vault;
 		return outcome;
 	} finally {
+		// What signs this run in to the store stays for the next run, in the
+		// owner channel's memory only.
+		for (const name of KEPT_STORE_SIGN_INS) {
+			const value = vault.reveal(name);
+			if (value !== undefined) deps.ownerChannel?.vault?.put(name, value);
+		}
 		// The lifecycle owns the vault only after a successful handoff.
 		if (!handedOff) vault.clear();
 	}
@@ -299,7 +313,24 @@ async function prepareVercelWithVault(
 		});
 	let owner: Awaited<ReturnType<typeof ownerStore>>;
 	try {
+		// A store sign-in an earlier run kept (the owner signed in once).
+		const kept = deps.ownerChannel?.vault;
+		const restored = KEPT_STORE_SIGN_INS.filter((name) => {
+			const value = kept?.reveal(name);
+			if (value === undefined || vault.has(name)) return false;
+			vault.put(name, value);
+			return true;
+		});
 		owner = await openOwner();
+		// The store refused it (expired, revoked): forget it and go on as if
+		// it never was, so a stale token cannot wedge later runs.
+		if (owner.opened === undefined && restored.length > 0) {
+			for (const name of restored) {
+				vault.drop(name);
+				kept?.drop(name);
+			}
+			owner = await openOwner();
+		}
 		// The owner chooses their store; a handed-off run never assumes one.
 		if (input.handOff === true && !input.whatIf && !owner.chosen)
 			return refused(
@@ -445,6 +476,20 @@ async function prepareVercelWithVault(
 			input.handOff === true &&
 			!input.whatIf &&
 			!(await storeAnswers(owner, "cd"));
+		// Through the HoBo MCP server (--json, an owner channel) no progress
+		// line reaches anyone: say why the store did not open, never wait.
+		if (
+			needsOwner &&
+			deps.ownerChannel !== undefined &&
+			(input.run.flags.json || input.run.flags.quiet)
+		)
+			return refused(
+				"HOBO_CD_STORE_UNAVAILABLE",
+				owner.unopened?.message ?? `${owner.id} did not answer this run.`,
+				owner.unopened?.remediation ?? [
+					"Run again: HoBo signs in to the store afresh.",
+				],
+			);
 		if (
 			needsOwner &&
 			owner.canAwaitEgressCredential &&
@@ -531,7 +576,13 @@ async function prepareVercelWithVault(
 				},
 			],
 		};
-	if (input.handOff === true && (input.run.flags.json || input.run.flags.quiet))
+	// Through the HoBo MCP server the owner channel carries every owner step;
+	// only a plain --json run cannot reach the owner.
+	if (
+		input.handOff === true &&
+		deps.ownerChannel === undefined &&
+		(input.run.flags.json || input.run.flags.quiet)
+	)
 		return refused(
 			"HOBO_CD_HANDOFF_SILENT",
 			"The owner hand-off needs progress output. Omit --json and -q, then retry.",
@@ -554,6 +605,96 @@ async function prepareVercelWithVault(
 			);
 		const store = owner.opened;
 		const http = deps.fetch ?? fetch;
+		// Through the HoBo MCP server no call may block on a person: the grant
+		// runs off the request path and writes the connection to the store;
+		// the next call finds it there (the "unchanged" path above).
+		const jobs = deps.ownerChannel?.jobs;
+		if (jobs !== undefined) {
+			const key = `vercel-device:${store.reference("HOBO_CD_VERCEL_TOKEN")}`;
+			const awaiting = (link: string, code: string) =>
+				refused(
+					"HOBO_CD_VERCEL_AWAITING_APPROVAL",
+					"Waiting for you to approve HoBo CD on Vercel.",
+					[
+						`${OWNER_DEVICE_LINE_PREFIX} ${link} code=${code}`,
+						`Approve HoBo CD on Vercel at that link (the code is ${code}), then run hobo cd up --hand-off again.`,
+					],
+				);
+			const job = jobs.status(key);
+			if (job?.state === "pending") return awaiting(job.link, job.code);
+			jobs.forget(key);
+			if (job?.state === "failed")
+				return refused(job.code, job.message, [
+					"Run hobo cd up --hand-off again for a new code.",
+				]);
+			let grant: VercelDeviceGrant;
+			try {
+				grant = await startVercelDeviceGrant({
+					fetch: http,
+					...(plainEnv.HOBO_CD_VERCEL_DEVICE_CLIENT_ID
+						? { clientId: plainEnv.HOBO_CD_VERCEL_DEVICE_CLIENT_ID }
+						: undefined),
+				});
+			} catch (error) {
+				if (!(error instanceof VercelDeviceError)) throw error;
+				return refused(error.code, error.message, [
+					"Run hobo cd up --hand-off again for a new code.",
+				]);
+			}
+			jobs.start(
+				key,
+				{ link: grant.link, code: grant.code },
+				async (signal) => {
+					try {
+						const { token } = await awaitVercelDeviceToken(grant, {
+							fetch: http,
+							signal,
+							clock: {
+								now: deps.now ?? SYSTEM_CLOCK.now,
+								sleep:
+									deps.sleep !== undefined
+										? (ms) => deps.sleep?.(ms) ?? Promise.resolve()
+										: SYSTEM_CLOCK.sleep,
+							},
+						});
+						const teamId = await vercelDeviceTeam(
+							token,
+							plainEnv.HOBO_CD_VERCEL_TEAM_ID,
+							http,
+						);
+						const values = {
+							HOBO_CD_VERCEL_TOKEN: token,
+							HOBO_CD_VERCEL_TEAM_ID: teamId,
+							HOBO_CD_VERCEL_INSTALLATION_ID: VERCEL_DEVICE_INSTALLATION,
+						} satisfies Readonly<
+							Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
+						>;
+						for (const name of VERCEL_CONNECTION_KEYS)
+							await store.port.put(name, values[name]);
+						return { state: "done" };
+					} catch (error) {
+						if (error instanceof VercelDeviceError)
+							return {
+								state: "failed",
+								code: error.code,
+								message: error.message,
+							};
+						return {
+							state: "failed",
+							code: "HOBO_CD_SECRET_STORE_UNAVAILABLE",
+							message: `Could not keep the Vercel connection in ${store.id}.`,
+						};
+					}
+				},
+			);
+			void deps.ownerChannel
+				?.show?.(
+					grant.link,
+					`Approve HoBo CD on Vercel; the code is ${grant.code}.`,
+				)
+				.catch(() => undefined);
+			return awaiting(grant.link, grant.code);
+		}
 		try {
 			const { token } = await vercelDeviceToken({
 				fetch: http,

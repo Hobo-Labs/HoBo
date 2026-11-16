@@ -1,3 +1,5 @@
+import type { TrustedVault } from "@hobo/core";
+
 /**
  * How a ceremony reaches the owner when they are not at the machine (a
  * remote dev box run by an agent): a link they open in their own browser,
@@ -16,6 +18,99 @@ export interface OwnerChannel {
 	}): Promise<string | undefined>;
 	/** Whether a value the owner handed over is waiting, without taking it. */
 	holds(name: string): boolean;
+	/**
+	 * Show the owner a link now, while the run waits on what they do there (a
+	 * device code to approve). Through the HoBo MCP server: the host's own
+	 * link prompt, since no progress line reaches them.
+	 */
+	show?(url: string, message: string): Promise<void>;
+	/**
+	 * Work that waits on the owner, run off the request path (a device grant
+	 * the owner approves): the call that starts it returns at once, and a
+	 * later call reads its state. Only where the channel outlives a call.
+	 */
+	readonly jobs?: OwnerJobs;
+	/**
+	 * A trusted vault that outlives a run (the MCP server's memory, never a
+	 * file): the store sign-in HoBo created, so the owner signs in once.
+	 */
+	readonly vault?: TrustedVault;
+}
+
+/** The store sign-ins a run may keep in the owner channel's vault. */
+export const KEPT_STORE_SIGN_INS = [
+	"INFISICAL_TOKEN",
+	"OP_SERVICE_ACCOUNT_TOKEN",
+	"BWS_ACCESS_TOKEN",
+] as const;
+
+/** A job's state, as a later call reads it. */
+export type OwnerJobState =
+	| {
+			readonly state: "pending";
+			readonly link: string;
+			readonly code: string;
+	  }
+	| { readonly state: "done" }
+	| {
+			readonly state: "failed";
+			readonly code: string;
+			readonly message: string;
+	  };
+
+/** How a job ended: it reports this itself, so nothing is thrown past it. */
+export type OwnerJobOutcome = Exclude<OwnerJobState, { state: "pending" }>;
+
+export interface OwnerJobs {
+	status(key: string): OwnerJobState | undefined;
+	/** Start a job unless one runs under `key`; it ends with its outcome. */
+	start(
+		key: string,
+		pending: { readonly link: string; readonly code: string },
+		job: (signal: AbortSignal) => Promise<OwnerJobOutcome>,
+	): void;
+	/** Drop a finished job's record, so the next call starts afresh. */
+	forget(key: string): void;
+	/** Every job started so far has ended (for status tools and specs). */
+	settled(): Promise<void>;
+	/** Abort every running job (the server is closing). */
+	close(): void;
+}
+
+export function createOwnerJobs(): OwnerJobs {
+	const states = new Map<string, OwnerJobState>();
+	const running = new Set<Promise<void>>();
+	const abort = new AbortController();
+	return {
+		status: (key) => states.get(key),
+		start(key, pending, job) {
+			if (states.get(key)?.state === "pending") return;
+			states.set(key, { state: "pending", ...pending });
+			const done = job(abort.signal).then(
+				(outcome) => {
+					states.set(key, outcome);
+				},
+				() => {
+					states.set(key, {
+						state: "failed",
+						code: "HOBO_OWNER_JOB_FAILED",
+						message: "The background step stopped unexpectedly.",
+					});
+				},
+			);
+			running.add(done);
+			void done.finally(() => running.delete(done));
+		},
+		forget(key) {
+			if (states.get(key)?.state !== "pending") states.delete(key);
+		},
+		async settled() {
+			while (running.size > 0) await Promise.all(running);
+		},
+		close() {
+			abort.abort();
+		},
+	};
 }
 
 // public-contract: the prefix of a line asking the owner to hand one value to the waiting run.

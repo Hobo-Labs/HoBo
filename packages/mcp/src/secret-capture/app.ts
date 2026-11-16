@@ -277,11 +277,13 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	 */
 	remote?: boolean;
 	/**
-	 * How long the host's form may stay open before the server answers
-	 * "not answered" itself: just under the host's own tool limit (ten
-	 * minutes, `MCP_TOOL_TIMEOUT` in the project's Claude Code settings).
+	 * The link the waiting run gave for a value (a sign-in to complete before
+	 * there is anything to paste). The owner gets it before any form: the
+	 * host's own link prompt (URL-mode elicitation) where it has one.
 	 */
-	elicitTimeoutMs?: number;
+	linkFor?: (
+		name: string,
+	) => Readonly<{ url: string; message: string }> | undefined;
 	/** Ask the host for a form (`elicitation/create`), answered by the owner. */
 	elicit?: (params: JsonObject) => Promise<JsonValue | undefined>;
 }>;
@@ -307,6 +309,16 @@ const TICKET_ID = /^cap_[A-Za-z0-9_-]{22}$/u;
 type FormAnswer =
 	| Readonly<{ action: "accept"; value: string }>
 	| Readonly<{ action: "decline" | "cancel" | "unanswered" }>;
+
+/** The host's answer to a link prompt (URL mode): consent only, no content. */
+function parseLinkAnswer(
+	answer: JsonValue | undefined,
+): Readonly<{ action: "accept" | "decline" | "cancel" | "unanswered" }> {
+	const action = objectAt(answer, "action");
+	return action === "accept" || action === "decline" || action === "cancel"
+		? { action }
+		: { action: "unanswered" };
+}
 
 /** The host's answer to `elicitation/create`, parsed where it enters. */
 function parseFormAnswer(answer: JsonValue | undefined): FormAnswer {
@@ -376,20 +388,6 @@ function refusalResult(
 	};
 }
 
-// public-contract: how long a host's form waits for the owner: just under the host's ten-minute tool limit.
-export const SECRET_CAPTURE_FORM_TIMEOUT_MS = 590_000;
-
-/** The answer, or undefined once `ms` pass without one. */
-function withinTime<T>(answer: Promise<T>, ms: number): Promise<T | undefined> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	return Promise.race([
-		answer,
-		new Promise<undefined>((resolve) => {
-			timer = setTimeout(() => resolve(undefined), ms);
-		}),
-	]).finally(() => clearTimeout(timer));
-}
-
 /** A capture's result says what the host can show the owner, so the agent never guesses. */
 function withHostSupport(
 	tool: string,
@@ -424,8 +422,6 @@ export function createSecretCaptureApp(
 	const ttlMs = options.ttlMs ?? 10 * 60_000;
 	const maxOpen = options.maxOpen ?? 8;
 	const maxAttempts = options.maxAttempts ?? 5;
-	const elicitTimeoutMs =
-		options.elicitTimeoutMs ?? SECRET_CAPTURE_FORM_TIMEOUT_MS;
 	const specs = new Map(options.specs.map((spec) => [spec.name, spec]));
 	const writerSpecs = options.specs.filter((spec) => spec.target === "writer");
 	const tickets = new Map<string, Ticket>();
@@ -583,34 +579,36 @@ export function createSecretCaptureApp(
 		while (ticket.state === "awaiting-owner") {
 			// One short line and one field: the link and steps were given in
 			// chat before the form opened, where a link can be clicked.
-			const answer = await withinTime(
-				elicit?.({
-					message:
-						problem === undefined
-							? ticket.spec.purpose
-							: `${problem} Try again.`,
-					requestedSchema: {
-						type: "object",
-						properties: {
-							value: {
-								type: "string",
-								title: ticket.spec.label,
-								minLength: ticket.spec.minBytes,
-								maxLength: ticket.spec.maxBytes,
+			const answer = parseFormAnswer(
+				await (
+					elicit?.({
+						message:
+							problem === undefined
+								? ticket.spec.purpose
+								: `${problem} Try again.`,
+						requestedSchema: {
+							type: "object",
+							properties: {
+								value: {
+									type: "string",
+									title: ticket.spec.label,
+									minLength: ticket.spec.minBytes,
+									maxLength: ticket.spec.maxBytes,
+								},
 							},
+							required: ["value"],
 						},
-						required: ["value"],
-					},
-				}).then(parseFormAnswer, () => parseFormAnswer(undefined)),
-				elicitTimeoutMs,
+					}) ?? Promise.resolve(undefined)
+				).catch(() => undefined),
 			);
-			if (answer === undefined) {
+			// Withdrawn, not answered: the host cancelled the call that asked.
+			if (answer.action === "unanswered") {
 				shut(ticket, "closed");
 				emit("secret.CaptureClosed", ticketFields(ticket));
 				throw new SecretCaptureError(
 					"SECRET_CAPTURE_NOT_ANSWERED",
-					`The owner did not answer the form within ${Math.round(elicitTimeoutMs / 60_000)} minutes; nothing was captured.`,
-					`Once the owner says the value is ready (copied), call ${CAPTURE_SECRET_TOOL} again: a fresh form opens.`,
+					"The host closed the form before the owner answered; nothing was captured.",
+					`Once the owner is ready, call ${CAPTURE_SECRET_TOOL} again: a fresh form opens.`,
 				);
 			}
 			if (answer.action !== "accept") {
@@ -762,6 +760,67 @@ export function createSecretCaptureApp(
 		if (channel === "form-elicitation") {
 			tickets.set(ticket.id, ticket);
 			emit("secret.CaptureOpened", ticketFields(ticket));
+			const link = options.linkFor?.(spec.name);
+			if (link !== undefined && objectAt(args, "linkShown") !== true) {
+				if (!support.urlElicitation) {
+					// No link prompt in this host: the agent shows the link in
+					// chat first, and asks again once the owner copied the value.
+					shut(ticket, "closed");
+					emit("secret.CaptureClosed", ticketFields(ticket));
+					const refused = refusalResult(
+						new SecretCaptureError(
+							"SECRET_CAPTURE_LINK_FIRST",
+							`There is nothing to paste yet: the owner must open ${link.url} first.`,
+							`Show the owner that link in chat, on its own line, and end your turn. When they say they copied the value, call ${CAPTURE_SECRET_TOOL} again with linkShown: true.`,
+						),
+						spec.name,
+					);
+					const view = refused.structuredContent;
+					return {
+						kind: "result",
+						result: {
+							...refused,
+							structuredContent: isJsonObject(view)
+								? { ...view, link: link.url }
+								: view,
+						},
+					};
+				}
+				// The host's own clickable link prompt, then the paste form.
+				const opened = parseLinkAnswer(
+					await (
+						options.elicit?.({
+							mode: "url",
+							elicitationId: ticket.id,
+							url: link.url,
+							message: link.message,
+						}) ?? Promise.resolve(undefined)
+					).catch(() => undefined),
+				);
+				if (opened.action !== "accept") {
+					shut(ticket, "closed");
+					emit("secret.CaptureClosed", ticketFields(ticket));
+					throw new SecretCaptureError(
+						"SECRET_CAPTURE_DECLINED",
+						opened.action === "unanswered"
+							? `The host closed the link prompt before the owner answered; ${spec.name} was not captured.`
+							: `The owner ${opened.action === "decline" ? "declined" : "closed"} the link; ${spec.name} was not captured.`,
+						`Ask again with ${CAPTURE_SECRET_TOOL} when they are ready.`,
+					);
+				}
+				// Said in the result, so the agent (and the audit) knows the owner
+				// had the link before the form.
+				const result = await askInForm(ticket);
+				return {
+					kind: "result",
+					result: {
+						...result,
+						structuredContent: isJsonObject(result.structuredContent)
+							? { ...result.structuredContent, linkShownBy: "host" }
+							: result.structuredContent,
+					},
+				};
+			}
 			return { kind: "result", result: await askInForm(ticket) };
 		}
 		if (channel !== "mcp-app") {
@@ -1091,6 +1150,11 @@ export function createSecretCaptureApp(
 							type: "boolean",
 							description:
 								"Open a new capture even if this name was just stored.",
+						},
+						linkShown: {
+							type: "boolean",
+							description:
+								"Only after SECRET_CAPTURE_LINK_FIRST: you showed the owner the link in chat and they said they copied the value.",
 						},
 					},
 					required: ["name"],

@@ -1,9 +1,12 @@
+import { createTrustedVault } from "@hobo/core";
 import {
 	BITWARDEN_API_KEY_CAPTURES,
+	createOwnerJobs,
 	GITHUB_APP_CODE_CAPTURE,
 	INFISICAL_CLI_SESSION_CAPTURE,
 	ONE_PASSWORD_SIGN_IN_CAPTURES,
 	type OwnerChannel,
+	type OwnerJobs,
 } from "@hobo/hobo-ci";
 import {
 	createSecretCaptureApp,
@@ -26,16 +29,31 @@ import { RELAY_SECRET_CAPTURE_SPECS } from "./mcp-secret-capture.js";
  * chat, a file or a log, and each value is taken once.
  */
 export interface McpOwnerChannel extends OwnerChannel {
+	readonly jobs: OwnerJobs;
 	/** Hold a value the owner submitted through the capture form. */
 	deposit(name: string, value: string): void;
+	/** The link the waiting run gave for a value, to show before its form. */
+	linkFor(name: string): Readonly<{ url: string; message: string }> | undefined;
 }
 
-export function createMcpOwnerChannel(): McpOwnerChannel {
+export function createMcpOwnerChannel(
+	options: {
+		/** Ask the host to show a link now (URL-mode elicitation). */
+		readonly show?: (url: string, message: string) => Promise<void>;
+	} = {},
+): McpOwnerChannel {
 	const held = new Map<string, string>();
+	const links = new Map<string, { url: string; message: string }>();
+	let opened: { url: string; message: string } | undefined;
 	return {
-		// The link travels in the run's refusal; the agent shows it in chat.
-		openUrl: async () => undefined,
+		// The run names its link, then asks for what it gives back: the two
+		// travel together, so the owner gets the link before the form.
+		async openUrl(url, message) {
+			opened = { url, message };
+		},
 		async captureSecret({ name }) {
+			if (opened !== undefined) links.set(name, opened);
+			opened = undefined;
 			const value = held.get(name);
 			held.delete(name);
 			return value;
@@ -44,6 +62,14 @@ export function createMcpOwnerChannel(): McpOwnerChannel {
 		deposit(name, value) {
 			held.set(name, value);
 		},
+		linkFor: (name) => links.get(name),
+		...(options.show !== undefined ? { show: options.show } : undefined),
+		// Steps that wait on the owner run here, off the request path, for as
+		// long as this server lives.
+		jobs: createOwnerJobs(),
+		// The store sign-in HoBo created, kept in this process's memory so the
+		// owner signs in once; never a file, gone when the server stops.
+		vault: createTrustedVault(),
 	};
 }
 
@@ -139,8 +165,6 @@ export function createOwnerCaptureApp(options: {
 	readonly remote: boolean;
 	readonly elicit: (params: JsonObject) => Promise<JsonValue | undefined>;
 	readonly notify?: (method: string, params: JsonValue) => void;
-	/** How long the host's form waits (the default sits just under the host's ten minutes). */
-	readonly elicitTimeoutMs?: number;
 }): SecretCaptureApp {
 	return createSecretCaptureApp({
 		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
@@ -149,10 +173,8 @@ export function createOwnerCaptureApp(options: {
 		// The owner is elsewhere: no page on this box's 127.0.0.1 for them;
 		// the host's own elicitation form asks when it shows no MCP App.
 		remote: options.remote,
+		linkFor: (name) => options.owner.linkFor(name),
 		elicit: options.elicit,
-		...(options.elicitTimeoutMs !== undefined
-			? { elicitTimeoutMs: options.elicitTimeoutMs }
-			: undefined),
 		connector: options.connector,
 		...(options.notify !== undefined ? { notify: options.notify } : undefined),
 	});

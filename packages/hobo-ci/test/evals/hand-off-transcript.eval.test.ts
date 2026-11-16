@@ -407,6 +407,24 @@ describe("EVAL hand-off transcript: a remote sign-in goes through the capture fo
 		);
 	});
 
+	it("passes: a host with a link prompt shows the link itself before the form, in one call", () => {
+		const transcript = jsonl([
+			user("go"),
+			assistant([toolUse("run", "mcp__hobo__cd")]),
+			user([toolResult("run", `refused\n${SIGN_IN}`)]),
+			assistant([toolUse("cap", "mcp__hobo__capture_secret")]),
+			user([
+				toolResult(
+					"cap",
+					JSON.stringify({ status: "stored", linkShownBy: "host" }),
+				),
+			]),
+			assistant([text("Stored; running again.")]),
+			user("ok"),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toEqual([]);
+	});
+
 	it("passes: the link in chat first, the owner copies, then the host's form", () => {
 		const URL = SIGN_IN.split(" ")[1]?.replace("url=", "") ?? "";
 		const transcript = jsonl([

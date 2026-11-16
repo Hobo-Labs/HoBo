@@ -38,12 +38,17 @@ export {
 	vercelConnected,
 } from "./vercel.js";
 export {
+	awaitVercelDeviceToken,
+	type DeviceClock,
 	OWNER_DEVICE_LINE_PREFIX,
+	SYSTEM_CLOCK,
+	startVercelDeviceGrant,
 	VERCEL_CLI_DEVICE_CLIENT_ID,
 	VERCEL_DEVICE_AUTHORIZATION_URL,
 	VERCEL_DEVICE_INSTALLATION,
 	VERCEL_DEVICE_TOKEN_URL,
 	VercelDeviceError,
+	type VercelDeviceGrant,
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "./vercel-device.js";

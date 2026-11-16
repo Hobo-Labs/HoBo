@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
+
 import { isRemoteBox } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
 
@@ -36,7 +38,23 @@ async function serve(): Promise<number> {
 	removeOwnedDirsOnSignals();
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
-	const owner = createMcpOwnerChannel();
+	// The session exists once the transport starts; prompts go through it.
+	let session: McpStdioSession | undefined;
+	const owner = createMcpOwnerChannel({
+		// A link the owner must open while a run waits (Vercel's device
+		// code): the host's own link prompt, since no progress line reaches
+		// them through MCP. Not awaited: the run keeps polling meanwhile.
+		show: async (url, message) => {
+			const request = session?.request;
+			if (request === undefined) return;
+			await request("elicitation/create", {
+				mode: "url",
+				elicitationId: `hobo-${randomUUID()}`,
+				url,
+				message,
+			});
+		},
+	});
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli({ ownerChannel: owner }),
 	});
@@ -45,8 +63,6 @@ async function serve(): Promise<number> {
 	// the form to this process to the store the relay's binding names, and
 	// never into a tool result. URL elicitation completion is the one
 	// notification this server sends.
-	// The session exists once the transport starts; elicitation goes through it.
-	let session: McpStdioSession | undefined;
 	const capture = createOwnerCaptureApp({
 		owner,
 		remote: isRemoteBox(),
@@ -75,7 +91,9 @@ async function serve(): Promise<number> {
 			session,
 		});
 	} finally {
-		// Closes open captures, stops the page and revokes the writer token.
+		// Closes open captures, stops the page and revokes the writer token,
+		// and stops any step still waiting on the owner.
+		owner.jobs.close();
 		await capture.close();
 	}
 	return 0;

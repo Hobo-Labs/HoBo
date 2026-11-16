@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	type AuthContext,
 	capabilityForTool,
@@ -10,6 +11,7 @@ import {
 	type SecretCaptureHostSupport,
 	scopeAuthorizesCapability,
 } from "@hobo/mcp";
+import { z } from "zod";
 import {
 	isJsonObject,
 	isJsonString,
@@ -157,6 +159,11 @@ export async function handleMcpMessage(
 			const requested = (request.params as { protocolVersion?: string })
 				?.protocolVersion;
 			if (session !== undefined) {
+				// What this host declared, for diagnosing what it can show the
+				// owner (capabilities only: nothing secret is in them).
+				process.stderr.write(
+					`hobo-mcp: client capabilities ${JSON.stringify(request.params?.capabilities ?? null)}\n`,
+				);
 				session.support = negotiateSecretCaptureSupport(
 					request.params?.capabilities,
 				);
@@ -346,6 +353,9 @@ export async function handleMcpMessage(
 	}
 }
 
+/** A JSON-RPC request id (a string or a number), as the map key we keep. */
+const REQUEST_ID = z.union([z.string(), z.number()]).transform(String);
+
 // Serve newline-delimited JSON-RPC over the given streams until input ends.
 // Two-way: a tool call may send the client a request (an elicitation) and
 // wait for its answer, so each incoming request is handled without blocking
@@ -360,17 +370,41 @@ export async function serveMcpStdio(options: {
 	const write = (message: JsonObject | JsonRpcResponse) =>
 		options.output.write(`${JSON.stringify(message)}\n`);
 	const waiting = new Map<string, (answer: JsonValue | undefined) => void>();
+	// Which of the client's requests each of ours was sent for, so a
+	// cancelled tool call withdraws exactly its own prompts (no timers: the
+	// host's cancel is the event).
+	const asking = new AsyncLocalStorage<Set<string>>();
+	const askedFor = new Map<string, Set<string>>();
 	let next = 0;
 	if (options.session !== undefined)
 		options.session.request = (method, params) => {
 			next += 1;
 			const id = `hobo-${next}`;
+			asking.getStore()?.add(id);
 			const answer = new Promise<JsonValue | undefined>((resolve) => {
 				waiting.set(id, resolve);
 			});
 			write({ jsonrpc: "2.0", id, method, params });
 			return answer;
 		};
+	/** The client cancelled one of its requests: withdraw what it asked for. */
+	const cancelled = (requestId: string) => {
+		for (const id of askedFor.get(requestId) ?? []) {
+			const resolve = waiting.get(id);
+			if (resolve === undefined) continue;
+			waiting.delete(id);
+			write({
+				jsonrpc: "2.0",
+				method: "notifications/cancelled",
+				params: {
+					requestId: id,
+					reason: "The tool call that asked for it was cancelled.",
+				},
+			});
+			resolve(undefined);
+		}
+		askedFor.delete(requestId);
+	};
 	const inFlight = new Set<Promise<void>>();
 	let buffer = "";
 	for await (const chunk of options.input) {
@@ -399,14 +433,30 @@ export async function serveMcpStdio(options: {
 				resolve?.(parsed.error !== undefined ? undefined : parsed.result);
 				continue;
 			}
-			const handled = handleMcpMessage(
-				options.server,
-				options.auth,
-				line,
-				options.session,
-			).then((response) => {
-				if (response !== null) write(response);
-			});
+			if (isJsonObject(parsed) && parsed.method === "notifications/cancelled") {
+				const target = isJsonObject(parsed.params)
+					? parsed.params.requestId
+					: undefined;
+				const requestId = REQUEST_ID.safeParse(target);
+				if (requestId.success) cancelled(requestId.data);
+				continue;
+			}
+			const own = new Set<string>();
+			const parsedId = REQUEST_ID.safeParse(
+				isJsonObject(parsed) ? parsed.id : undefined,
+			);
+			const incoming = parsedId.success ? parsedId.data : undefined;
+			if (incoming !== undefined) askedFor.set(incoming, own);
+			const handled = asking
+				.run(own, () =>
+					handleMcpMessage(options.server, options.auth, line, options.session),
+				)
+				.then((response) => {
+					if (response !== null) write(response);
+				})
+				.finally(() => {
+					if (incoming !== undefined) askedFor.delete(incoming);
+				});
 			inFlight.add(handled);
 			void handled.finally(() => inFlight.delete(handled));
 		}
