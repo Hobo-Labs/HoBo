@@ -58,7 +58,8 @@ import "list"
 }
 
 #MachineAdvert: {
-	id:      string & !=""
+	id:        string & !=""
+	accountId: string & !=""
 	name:    string & !=""
 	runsOn:  #RunnerLabel
 	labels: [...#RunnerLabel] & list.MaxItems(32)

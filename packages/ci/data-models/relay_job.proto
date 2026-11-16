@@ -104,6 +104,8 @@ message MachineAdvert {
   string isolation = 16;
   // When it last took a job (epoch ms); zero when it never has.
   double last_picked_at_ms = 17;
+  // The HoBo account whose jobs it serves.
+  string account_id = 18;
 }
 
 // One job's outcome at a hosted runner type.

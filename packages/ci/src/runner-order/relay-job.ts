@@ -333,6 +333,7 @@ export function defineMachineAdvert(
 	advert: MachineAdvert,
 ): ParsedRelayRecord<MachineAdvert> {
 	need(advert.id.length > 0, "a machine needs an id");
+	need(advert.accountId.length > 0, "a machine names the account it serves");
 	need(advert.name.length > 0, "a machine needs a name");
 	need(advert.runsOn.length > 0, "a machine needs its runs-on label");
 	need(oneOf(MACHINE_OSES, advert.os), "os is linux, macos or windows");

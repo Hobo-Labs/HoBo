@@ -76,6 +76,20 @@ export {
 	skipsUnhealthy,
 	stepKey,
 } from "./order.js";
+export type {
+	InsightRunQuery,
+	InsightStore,
+	MachineRegistry,
+	MinutesReader,
+	ProviderHealthStore,
+	RelayChecks,
+	RouteDecisionQuery,
+	RouteFactsSource,
+	RouteJournal,
+	RunnerOrderLookup,
+	RunnerOrderSource,
+	SpendReader,
+} from "./ports.js";
 export {
 	DEFAULT_RUNNER_AUTO_SIZE,
 	GITHUB_HOSTED_SIZES,
