@@ -243,3 +243,39 @@ message HostingPolicyProof {
   string evidence_ref = 6;
   bool obligations_satisfied = 7;
 }
+
+// A trusted host verifies this separately from developer-authored pricing.
+message IacTargetLiabilityEvidence {
+  string evidence_ref = 1;
+  string target_id = 2;
+  string tenant_id = 3;
+  string plan_digest = 4;
+  string inventory_hash = 5;
+  string model_hash = 6;
+  string quote_hash = 7;
+  optional double maximum_micros = 8;
+  string observed_at = 9;
+  string valid_until = 10;
+  repeated ProviderAccountExposure provider_accounts = 11;
+}
+
+message IacBudgetDisclosure {
+  string evaluation = 1;
+  string reservation = 2;
+}
+
+message IacTargetAdmissionDecision {
+  string request_id = 1;
+  string target_id = 2;
+  string status = 3;
+  string code = 4;
+  string message = 5;
+  IacBudgetDisclosure budget = 6;
+  string request_digest = 7;
+  string inventory_hash = 8;
+  string model_hash = 9;
+  string quote_hash = 10;
+  HostingQuote quote = 11;
+  BudgetReservation reservation = 12;
+  HostingPolicyProof policy_proof = 13;
+}
