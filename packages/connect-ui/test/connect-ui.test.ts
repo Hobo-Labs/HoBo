@@ -318,3 +318,35 @@ describe("startConnectPage", () => {
 		);
 	});
 });
+
+describe("startConnectPage with a fixed callback path", () => {
+	it("routes a pre-registered redirect URL to the flow's callback", async () => {
+		const page = await startConnectPage({
+			flow: {
+				initial: VERCEL_STEP,
+				async onAction(_action, _params, current) {
+					return { step: current };
+				},
+				async onCallback(query) {
+					return query.get("code") === "c"
+						? { step: CONNECTED_STEP }
+						: { step: FAILED_STEP };
+				},
+			},
+			callbackPath: "/vercel/callback",
+			assetsDir: "dist/client",
+		});
+		try {
+			expect(page.callbackUrl).toMatch(
+				/^http:\/\/127\.0\.0\.1:\d+\/vercel\/callback$/,
+			);
+			const res = await fetch(`${page.callbackUrl}?code=c`, {
+				redirect: "manual",
+			});
+			expect(res.status).toBe(303);
+			expect((await page.done).kind).toBe("connected");
+		} finally {
+			await page.close();
+		}
+	});
+});

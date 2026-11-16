@@ -52,6 +52,7 @@
 		"@hobo/control-api": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/data": "workspace:*",
+		"@hobo/hobo-cd": "workspace:*",
 		"@hobo/hobo-ci": "workspace:*",
 		"@hobo/iac-pulumi": "workspace:*",
 		"@hobo/identity": "workspace:*",
