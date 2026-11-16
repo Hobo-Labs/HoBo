@@ -12,11 +12,14 @@ name: Actions lock
 #
 # GitHub-hosted on purpose: it reads only public action repositories through
 # the GitHub API and runs no repository code.
+#
+# A required status check on main, so it runs on every pull request and merge
+# group with no path filter: a required check that never reports blocks the PR,
+# and one missing from the merge queue times the entry out. It also catches a
+# locked pin that stopped verifying upstream, which no file change in the PR shows.
 on:
   pull_request:
-    paths:
-      - .github/workflows/**
-      - .github/actions/**
+  merge_group:
   push:
     branches: [main]
     paths:
@@ -34,7 +37,8 @@ permissions:
 
 concurrency:
   group: actions-lock-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a newer push to the same PR cancels; merge-queue runs always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   GH_ACTIONS_LOCK_VERSION: v0.4.1
