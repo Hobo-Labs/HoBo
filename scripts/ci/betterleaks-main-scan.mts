@@ -144,6 +144,100 @@ export function gitFetchBlobArgs(): readonly string[] {
 	return ["fetch", "--refetch", "--no-filter"];
 }
 
+/** Fetch both sides of every change, including files deleted within the range. */
+export function prefetchRangeBlobs(
+	logOpts: string,
+	timeoutMs: number,
+	cwd: string = process.cwd(),
+	env: NodeJS.ProcessEnv = process.env,
+): number {
+	if (!/^[0-9a-f]{40}\.\.[0-9a-f]{40}$/iu.test(logOpts)) {
+		throw new Error("invalid secret scan commit range");
+	}
+	const deadline = Date.now() + timeoutMs;
+	const remaining = (): number => {
+		const ms = deadline - Date.now();
+		if (ms <= 0) throw new Error("secret scan blob prefetch timed out");
+		return ms;
+	};
+	const changes = spawnSync(
+		"git",
+		[
+			"log",
+			"--format=",
+			"--raw",
+			"--no-abbrev",
+			"--no-renames",
+			"-m",
+			"-z",
+			logOpts,
+		],
+		{
+			cwd,
+			env,
+			encoding: "utf8",
+			maxBuffer: 64 * 1024 * 1024,
+			timeout: remaining(),
+		},
+	);
+	if (changes.error || changes.status !== 0) {
+		throw new Error("could not enumerate secret scan range changes");
+	}
+	const records = changes.stdout.split("\0");
+	if (records.pop() !== "" || records.length % 2 !== 0) {
+		throw new Error("invalid git change records for secret scan");
+	}
+	const blobs = new Set<string>();
+	for (let i = 0; i < records.length; i += 2) {
+		const match =
+			/^:([0-7]{6}) ([0-7]{6}) ([0-9a-f]{40}) ([0-9a-f]{40}) [A-Z]$/u.exec(
+				records[i] ?? "",
+			);
+		if (!match || !records[i + 1]) {
+			throw new Error("invalid git change record for secret scan");
+		}
+		for (const [mode, oid] of [
+			[match[1], match[3]],
+			[match[2], match[4]],
+		]) {
+			if (mode === "000000" || mode === "160000") continue;
+			if (
+				!mode ||
+				!oid ||
+				!/^(100[0-7]{3}|120000)$/u.test(mode) ||
+				oid === ZERO_SHA
+			) {
+				throw new Error("invalid git blob in secret scan range");
+			}
+			blobs.add(oid);
+		}
+	}
+	if (blobs.size === 0) return 0;
+	const ids = [...blobs];
+	const fetched = spawnSync(
+		"git",
+		["cat-file", "--batch-check=%(objectname) %(objecttype)"],
+		{
+			cwd,
+			env,
+			encoding: "utf8",
+			input: `${ids.join("\n")}\n`,
+			maxBuffer: 64 * 1024 * 1024,
+			timeout: remaining(),
+		},
+	);
+	const results = fetched.stdout?.trimEnd().split("\n") ?? [];
+	if (
+		fetched.error ||
+		fetched.status !== 0 ||
+		results.length !== ids.length ||
+		results.some((line, i) => line !== `${ids[i]} blob`)
+	) {
+		throw new Error("could not fetch every blob in secret scan range");
+	}
+	return ids.length;
+}
+
 export function pollScanWait(input: {
 	exitPath: string;
 	logPath: string;
@@ -283,22 +377,36 @@ export async function runBackgroundScan(
 		`betterleaks-main-scan mode=${plan.mode} fetchBlobs=${plan.fetchBlobs} timeout=${plan.timeoutSeconds}s\n`,
 	);
 	try {
+		const deadline = Date.now() + plan.timeoutSeconds * 1_000;
 		if (plan.fetchBlobs) {
 			appendLog(
 				dir,
 				"fetching blobs (--no-filter) before full-history betterleaks\n",
 			);
-			await runTimed(
+			const fetchStatus = await runTimed(
 				"git",
 				[...gitFetchBlobArgs()],
 				FULL_FETCH_TIMEOUT_SECONDS * 1_000,
 				(chunk) => appendLog(dir, chunk),
 			);
+			if (fetchStatus !== 0) throw new Error("full-history blob fetch failed");
+		} else {
+			const count = prefetchRangeBlobs(
+				plan.logOpts,
+				plan.timeoutSeconds * 1_000,
+			);
+			appendLog(dir, `prefetched ${count} blobs in secret scan range\n`);
 		}
+		const scanTimeout =
+			plan.mode === "range"
+				? deadline - Date.now()
+				: plan.timeoutSeconds * 1_000;
+		if (scanTimeout <= 0)
+			throw new Error("secret scan range timed out before scanning");
 		const status = await runTimed(
 			"betterleaks",
 			betterleaksArgs(plan),
-			plan.timeoutSeconds * 1_000,
+			scanTimeout,
 			(chunk) => appendLog(dir, chunk),
 		);
 		writeExitFile(dir, status);
