@@ -32,30 +32,37 @@ const CREDENTIAL_REF = "hobo-token://vercel/deploy";
 /** A CAS journal that remembers claims, so a retry can recognise its own
  * creation the way a durable journal does. */
 function memoryCasJournal() {
-	const entries = new Map<string, "pending" | "acknowledged" | "uncertain">();
-	const status = (mutationId: string) => {
+	const entries = new Map<
+		string,
+		{ digest: string; status: "pending" | "acknowledged" | "uncertain" }
+	>();
+	type Key = { readonly mutationId: string; readonly requestDigest: string };
+	const status = ({ mutationId, requestDigest }: Key) => {
 		const entry = entries.get(mutationId);
 		if (entry === undefined) return "missing" as const;
-		return entry === "acknowledged"
+		// Inspect and claim must name the same request, as a durable journal does.
+		if (entry.digest !== requestDigest) throw new Error("digest conflict");
+		return entry.status === "acknowledged"
 			? ("acknowledged" as const)
 			: ("uncertain" as const);
 	};
 	return {
 		persistence: "durable-cas" as const,
-		inspect: async (input: { readonly mutationId: string }) => ({
-			status: status(input.mutationId),
-		}),
-		claim: async (input: { readonly mutationId: string }) => {
-			const prior = status(input.mutationId);
+		inspect: async (input: Key) => ({ status: status(input) }),
+		claim: async (input: Key) => {
+			const prior = status(input);
 			if (prior !== "missing") return { status: prior };
-			entries.set(input.mutationId, "pending");
+			entries.set(input.mutationId, {
+				digest: input.requestDigest,
+				status: "pending",
+			});
 			return { status: "claimed" as const };
 		},
-		acknowledge: async (mutationId: string) => {
-			entries.set(mutationId, "acknowledged");
+		acknowledge: async (mutationId: string, digest: string) => {
+			entries.set(mutationId, { digest, status: "acknowledged" });
 		},
-		uncertain: async (mutationId: string) => {
-			entries.set(mutationId, "uncertain");
+		uncertain: async (mutationId: string, digest: string) => {
+			entries.set(mutationId, { digest, status: "uncertain" });
 		},
 	};
 }
@@ -629,8 +636,38 @@ describe("vercel.project/v1 resolver", () => {
 			desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
 		});
 		await expect(r.reconcile(input, f.transport)).rejects.toThrow();
-		// The journal holds this operation's own create, so the project found by
-		// name is observed as ours, not adopted as a third party's.
+		// A lost response leaves the create uncertain: it proves nothing about who
+		// made the same-name project, so recovery stays adoption.
+		expect((await r.reconcile(input, f.transport)).action).toBe("adopt");
+		expect(actions).toEqual(["adopt"]);
+		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+	});
+	it("observes its own acknowledged creation when the readback failed", async () => {
+		const inner = projectApi();
+		let created = false;
+		let failed = false;
+		const f = recorded((call) => {
+			const result = inner(call);
+			if (call.method === "POST") created = true;
+			else if (created && !failed) {
+				failed = true;
+				throw new Error("readback lost");
+			}
+			return result;
+		});
+		const actions: string[] = [];
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectControl: async (scope) => {
+				actions.push(scope.action);
+				return true;
+			},
+		});
+		const input = projectRequest({
+			desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
+		});
+		await expect(r.reconcile(input, f.transport)).rejects.toThrow();
+		// The create was acknowledged, so the project found by name is ours.
 		expect((await r.reconcile(input, f.transport)).action).toBe("noop");
 		expect(actions).toEqual(["observe"]);
 		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);

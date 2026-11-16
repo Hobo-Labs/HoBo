@@ -1018,9 +1018,10 @@ function projectCreateRequest(
 	};
 }
 
-/** Whether the journal holds this operation's own creation POST: a project
- * found by name after a lost create response or a failed readback is then the
- * one this resolver created, not a third party's. */
+/** Whether the journal holds this operation's own acknowledged creation POST:
+ * a project found by name after a failed readback is then the one this
+ * resolver created. An uncertain create (lost response or a definite refusal
+ * such as a same-name 409) proves nothing, so that project stays adoption. */
 async function createdByThisOperation(
 	options: VercelResolverOptions,
 	request: ResolveRequest,
@@ -1039,7 +1040,7 @@ async function createdByThisOperation(
 		`${VERCEL_API_BASE}${create.path}`,
 		JSON.stringify(create.body),
 	);
-	return (await journal.inspect(key)).status !== "missing";
+	return (await journal.inspect(key)).status === "acknowledged";
 }
 
 async function requireProjectControl(

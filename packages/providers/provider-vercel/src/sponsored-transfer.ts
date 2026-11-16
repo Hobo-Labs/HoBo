@@ -321,15 +321,19 @@ export function assertSponsorBudget(input: {
 	}
 }
 
+/** Only providers whose claim and ownership verifier HoBo models end to end. */
+export type ModelledAssociatedResourceProvider =
+	(typeof MODELLED_ASSOCIATED_RESOURCE)["marketplaceProvider"];
+
 /** Stable item ids. Two subjects, because there are two ownership facts. */
 export const SPONSORED_CLAIM_ITEM_IDS = Object.freeze({
 	project: "vercel-project",
-	associatedResource: "associated-resource",
+	associatedResource: "prisma-resource",
 } as const);
 
 export const SPONSORED_CLAIM_STRATEGY_REFS = Object.freeze({
 	project: `${VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID}#project`,
-	associatedResource: (provider: ResourceTransferCapableProvider) =>
+	associatedResource: (provider: ModelledAssociatedResourceProvider) =>
 		`${provider}.marketplace-transfer/v1` as const,
 } as const);
 
@@ -340,7 +344,7 @@ export type SponsoredBundleInput = {
 	readonly resourceSubjectRef: string;
 	/** Marketplace provider that owns the associated resource. Its claim and
 	 * ownership verifier are that provider's, never another provider's. */
-	readonly associatedResourceProvider: ResourceTransferCapableProvider;
+	readonly associatedResourceProvider: ModelledAssociatedResourceProvider;
 	/** Provider-issued instant the 24 hour transfer code stops working. */
 	readonly transferCodeExpiresAt: Instant;
 	/** Opaque handle into the one-time action store. Never the claim URL. */
@@ -477,7 +481,7 @@ export type SponsoredBootstrapInput = {
 	readonly projectSubjectRef: string;
 	readonly resourceSubjectRef: string;
 	/** Marketplace provider that owns the associated resource. */
-	readonly associatedResourceProvider: ResourceTransferCapableProvider;
+	readonly associatedResourceProvider: ModelledAssociatedResourceProvider;
 	/** One key per logical attempt, so a retried provision cannot double-create. */
 	readonly idempotencyKey: string;
 };
