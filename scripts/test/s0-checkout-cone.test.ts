@@ -52,7 +52,7 @@ describe("Main full gate S0 sparse checkout", () => {
 	it("bootstraps local actions before using hobo-checkout", () => {
 		const bootstrap = mainGate.indexOf(`uses: actions/checkout@${checkoutSha}`);
 		const localCheckout = mainGate.indexOf(
-			"uses: ./.github/actions/hobo-checkout",
+			"uses: $/.github/actions/hobo-checkout",
 		);
 		expect(bootstrap).toBeGreaterThan(-1);
 		expect(localCheckout).toBeGreaterThan(bootstrap);
@@ -62,36 +62,36 @@ describe("Main full gate S0 sparse checkout", () => {
 
 	it("retains full history but skips submodules", () => {
 		expect(mainGate).toMatch(
-			/name: Checkout \(sparse S0, full history\)\n        uses: \.\/\.github\/actions\/hobo-checkout\n        with:\n          fetch-depth: 0\n          sparse-paths: \$\{\{ env\.S0_SPARSE_PATHS \}\}\n          submodules: "false"/,
+			/name: Checkout \(sparse S0, full history\)\n        uses: \$\/\.github\/actions\/hobo-checkout\n        with:\n          fetch-depth: 0\n          sparse-paths: \$\{\{ env\.S0_SPARSE_PATHS \}\}\n          submodules: "false"/,
 		);
 	});
 
-	it("keeps gitleaks out of the S0 job (the plan job runs the full-history scan)", () => {
+	it("keeps betterleaks out of the S0 job (the plan job runs the full-history scan)", () => {
 		const checkout = mainGate.indexOf(
 			"name: Checkout (sparse S0, full history)",
 		);
 		const preflight = mainGate.indexOf(
-			"uses: ./.github/actions/ci-runner-preflight",
+			"uses: $/.github/actions/ci-runner-preflight",
 		);
 		expect(preflight).toBeGreaterThan(checkout);
-		expect(mainGate).not.toContain("gitleaks-main-scan.mts");
+		expect(mainGate).not.toContain("betterleaks-main-scan.mts");
 		expect(mainGate).not.toContain("name: Workspace tests");
 		const finish = workflow.slice(
 			workflow.indexOf("\n  main_gate_finish:"),
 			workflow.indexOf("\n  artifact-trust:"),
 		);
-		expect(finish).not.toContain("gitleaks-main-scan.mts");
+		expect(finish).not.toContain("betterleaks-main-scan.mts");
 		const plan = workflow.slice(
 			workflow.indexOf("\n  main-gate-plan:"),
 			workflow.indexOf("\n  main-gate:"),
 		);
-		expect(plan).toContain("gitleaks-main-scan.mts --background");
-		expect(plan).toContain("gitleaks-main-scan.mts --wait");
+		expect(plan).toContain("betterleaks-main-scan.mts --background");
+		expect(plan).toContain("betterleaks-main-scan.mts --wait");
 		const imageJob = workflow.slice(
 			workflow.indexOf("\n  ci-runner-image:"),
 			workflow.indexOf("\n  main-gate-plan:"),
 		);
-		expect(imageJob).not.toContain("gitleaks-main-scan");
+		expect(imageJob).not.toContain("betterleaks-main-scan");
 	});
 
 	it("covers every required S0 input", () => {
@@ -138,7 +138,7 @@ describe("Main full gate S0 sparse checkout", () => {
 	it("fetches the ts-autocode pin before deps-layer or install", () => {
 		const fetch = mainGate.indexOf("pnpm run pins:fetch ts-autocode");
 		const preflight = mainGate.indexOf(
-			"uses: ./.github/actions/ci-runner-preflight",
+			"uses: $/.github/actions/ci-runner-preflight",
 		);
 		const link = mainGate.indexOf("name: Link deps layer");
 		const install = mainGate.indexOf("name: Install dependencies");

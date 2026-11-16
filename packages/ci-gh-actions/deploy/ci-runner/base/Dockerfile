@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.19
 # Digest-pinned OS layer for `mise oci build` ([oci].from). System packages + Actions runner
-# bundle only — Node/pnpm/cue/turbo/gitleaks come from mise.lock tool layers.
+# bundle only — Node/pnpm/cue/turbo/betterleaks come from mise.lock tool layers.
 # Build from deploy/ci-runner (small context); see build.sh.
 #   docker build -f base/Dockerfile -t hobo-ci-runner-base:local .
 FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3

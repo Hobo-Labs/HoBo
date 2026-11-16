@@ -77,7 +77,7 @@ jobs:
             .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
-        uses: ./.github/actions/route-runner
+        uses: $/.github/actions/route-runner
         with:
           token: ${{ github.token }}
 
@@ -114,9 +114,9 @@ jobs:
             --event "$GITHUB_EVENT_NAME" --from "${BEFORE:-}" --to "$GITHUB_SHA" \
             --github-output "$GITHUB_OUTPUT"
       - if: steps.gate.outputs.run == 'true'
-        uses: ./.github/actions/ci-runner-preflight
+        uses: $/.github/actions/ci-runner-preflight
       - if: steps.gate.outputs.run == 'true'
-        uses: ./.github/actions/pnpm-store
+        uses: $/.github/actions/pnpm-store
       - if: steps.gate.outputs.run == 'true'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build the verify tool
@@ -244,8 +244,8 @@ jobs:
         with:
           clean: false
           fetch-depth: 1
-      - uses: ./.github/actions/ci-runner-preflight
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build the deposit tool
         timeout-minutes: 10

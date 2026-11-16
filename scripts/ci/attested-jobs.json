@@ -28,13 +28,13 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
 				{
 					"name": "Turbo cache",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
@@ -44,7 +44,7 @@
 					"local": "run"
 				},
 				{
-					"uses": "./.github/actions/pnpm-store",
+					"uses": "$/.github/actions/pnpm-store",
 					"local": "skip",
 					"reason": "restores a CI package store; a local run uses the developer's own store"
 				},
@@ -195,14 +195,14 @@
 				{
 					"name": "Save Turbo cache",
 					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
 				{
 					"name": "CI trace",
 					"if": "always()",
-					"uses": "./.github/actions/ci-trace",
+					"uses": "$/.github/actions/ci-trace",
 					"local": "skip",
 					"reason": "exports CI timing spans; it checks nothing"
 				}
@@ -238,7 +238,7 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/hobo-repo-checkout",
+					"uses": "$/.github/actions/hobo-repo-checkout",
 					"with": {
 						"fetch-depth": "0",
 						"submodules": "recursive",
@@ -249,13 +249,13 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
 				{
 					"name": "Turbo cache",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
@@ -265,7 +265,7 @@
 					"local": "run"
 				},
 				{
-					"uses": "./.github/actions/pnpm-store",
+					"uses": "$/.github/actions/pnpm-store",
 					"local": "skip",
 					"reason": "restores a CI package store; a local run uses the developer's own store"
 				},
@@ -318,14 +318,14 @@
 				{
 					"name": "Save Turbo cache",
 					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
 				{
 					"name": "CI trace",
 					"if": "always()",
-					"uses": "./.github/actions/ci-trace",
+					"uses": "$/.github/actions/ci-trace",
 					"local": "skip",
 					"reason": "exports CI timing spans; it checks nothing"
 				}
@@ -360,7 +360,7 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/hobo-repo-checkout",
+					"uses": "$/.github/actions/hobo-repo-checkout",
 					"with": {
 						"fetch-depth": "0",
 						"submodules": "recursive",
@@ -371,13 +371,13 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
 				{
 					"name": "Turbo cache",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
@@ -387,7 +387,7 @@
 					"local": "run"
 				},
 				{
-					"uses": "./.github/actions/pnpm-store",
+					"uses": "$/.github/actions/pnpm-store",
 					"local": "skip",
 					"reason": "restores a CI package store; a local run uses the developer's own store"
 				},
@@ -439,14 +439,14 @@
 				{
 					"name": "Save Turbo cache",
 					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
 				{
 					"name": "CI trace",
 					"if": "always()",
-					"uses": "./.github/actions/ci-trace",
+					"uses": "$/.github/actions/ci-trace",
 					"local": "skip",
 					"reason": "exports CI timing spans; it checks nothing"
 				}
@@ -472,7 +472,7 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
@@ -485,13 +485,13 @@
 				{
 					"name": "Turbo cache",
 					"if": "steps.scope.outputs.run == 'true'",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
 				{
 					"if": "steps.scope.outputs.run == 'true'",
-					"uses": "./.github/actions/pnpm-store",
+					"uses": "$/.github/actions/pnpm-store",
 					"local": "skip",
 					"reason": "restores a CI package store; a local run uses the developer's own store"
 				},
@@ -524,14 +524,14 @@
 				{
 					"name": "Save Turbo cache",
 					"if": "always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
 				{
 					"name": "CI trace",
 					"if": "always()",
-					"uses": "./.github/actions/ci-trace",
+					"uses": "$/.github/actions/ci-trace",
 					"local": "skip",
 					"reason": "exports CI timing spans; it checks nothing"
 				}
@@ -557,7 +557,7 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
@@ -600,7 +600,7 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
@@ -640,13 +640,13 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
 				{
 					"name": "Scan git history for secrets",
-					"run": "set -euo pipefail\ngitleaks git --config .gitleaks.toml --redact --exit-code 1 \\\n  --log-opts=\"${{ github.event.pull_request.base.sha }}..${{ github.sha }}\"\n",
+					"run": "set -euo pipefail\nbetterleaks git --config .betterleaks.toml --redact --exit-code 1 \\\n  --log-opts=\"${{ github.event.pull_request.base.sha }}..${{ github.sha }}\"\n",
 					"local": "run"
 				}
 			]
@@ -670,12 +670,12 @@
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/hobo-checkout",
+					"uses": "$/.github/actions/hobo-checkout",
 					"local": "skip",
 					"reason": "the run happens in the developer's own checkout of the tested tree"
 				},
 				{
-					"uses": "./.github/actions/ci-runner-preflight",
+					"uses": "$/.github/actions/ci-runner-preflight",
 					"local": "skip",
 					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
 				},
@@ -685,7 +685,7 @@
 					"local": "run"
 				},
 				{
-					"uses": "./.github/actions/pnpm-store",
+					"uses": "$/.github/actions/pnpm-store",
 					"local": "skip",
 					"reason": "restores a CI package store; a local run uses the developer's own store"
 				},
@@ -715,7 +715,7 @@
 				},
 				{
 					"name": "Turbo cache",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				},
@@ -782,7 +782,7 @@
 				{
 					"name": "Save Turbo cache",
 					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
-					"uses": "./.github/actions/turbo-cache",
+					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
 				}
