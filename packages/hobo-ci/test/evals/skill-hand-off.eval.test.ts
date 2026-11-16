@@ -195,4 +195,20 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/SECRET_CAPTURE_NO_OWNER_FORM/u);
 		expect(HAND_OFF).toMatch(/elicitation form/u);
 	});
+
+	it("gives the sign-in link in chat first and opens the form only after the owner copied the value", () => {
+		// Derived from the live run: the form opened at once, blocked the chat,
+		// and the link was unclickable prose inside it.
+		const step = HAND_OFF.slice(
+			HAND_OFF.indexOf("4. On `HOBO_OWNER_SIGN_IN"),
+			HAND_OFF.indexOf("On `HOBO_OWNER_CAPTURE"),
+		);
+		expect(step).toMatch(/link first, in chat, and end your turn/u);
+		expect(step).toMatch(/\[Sign in to Infisical\]\(<url>\)/u);
+		expect(step).toMatch(/Do not call `capture_secret`\s+in this turn/u);
+		expect(step.indexOf("When the owner says they copied it")).toBeGreaterThan(
+			step.indexOf("link first"),
+		);
+		expect(step).toMatch(/ten\s+minutes/u);
+	});
 });

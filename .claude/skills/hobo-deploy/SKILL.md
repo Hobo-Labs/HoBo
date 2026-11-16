@@ -254,14 +254,20 @@ checks it.
    not rerun it. If they decline the form, show the other paths the run's
    refusal names.
 4. On `HOBO_OWNER_SIGN_IN url=<url> capture=<name>` (Infisical's sign-in,
-   or GitHub's App creation, from a remote box): in one message give the
-   owner the link exactly as printed and what to do there. Infisical: "Sign
-   in as usual; when it says *Unable to reach CLI*, click **Copy to
-   clipboard**." GitHub App (`capture=GITHUB_APP_CODE`): "Click **Create
-   GitHub App**; GitHub returns to HoBo's page, which shows a single-use
-   code." Then call the HoBo MCP server's `capture_secret` with
-   `name: <name>`: the owner pastes it into the form, which seals it for the
-   waiting run only. When they say it is done, run the lifecycle again.
+   or GitHub's App creation, from a remote box), two turns:
+   1. **The link first, in chat, and end your turn.** A clickable link on
+      its own line, then one short step. Infisical:
+      `**[Sign in to Infisical](<url>)**` then "When it says *Unable to reach
+      CLI*, click **Copy to clipboard**, then tell me." GitHub App
+      (`capture=GITHUB_APP_CODE`): `**[Create the GitHub App](<url>)**` then
+      "Click **Create GitHub App**; copy the code HoBo's page shows, then
+      tell me." Nothing else in that message. Do not call `capture_secret`
+      in this turn: its form blocks the chat, so the owner would never see
+      the link.
+   2. **When the owner says they copied it**, call `capture_secret` with
+      `name: <name>`. Their host shows a one-field form (they have ten
+      minutes); the value goes only to the waiting run. Then run the
+      lifecycle again.
    Never ask for the value in chat, and never use `request_credential` for
    it (that form feeds the network proxy, not the run).
    On `HOBO_OWNER_CAPTURE name=<name> guide=<url>` (one line per value: a

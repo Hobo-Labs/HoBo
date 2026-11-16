@@ -382,7 +382,11 @@ describe("EVAL hand-off transcript: a remote sign-in goes through the capture fo
 		expect(auditHandOff(parseClaudeTranscript(asked))).toEqual([]);
 	});
 
-	it("passes when the agent opens the HoBo capture form", () => {
+	it("flags opening the form in the turn the sign-in link arrived (the owner never had the link)", () => {
+		// Derived from the live run: cd refused with the link, and the agent
+		// called capture_secret at once. The host's form blocked the chat; the
+		// owner had no link to sign in with, and the form timed out.
+		const URL = SIGN_IN.split(" ")[1]?.replace("url=", "") ?? "";
 		const transcript = jsonl([
 			user("go"),
 			assistant([toolUse("run", "mcp__hobo__cd")]),
@@ -391,17 +395,60 @@ describe("EVAL hand-off transcript: a remote sign-in goes through the capture fo
 			user([
 				toolResult(
 					"cap",
-					"The owner is entering INFISICAL_CLI_SESSION in the HoBo form",
+					"MCP server tool capture_secret timed out after 60s. The server asked the user a question, and no answer came.",
+					true,
 				),
 			]),
+			assistant([text(`Sign in at ${URL}`)]),
+			user("I couldn't click it."),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toContainEqual(
+			expect.objectContaining({ rule: "form-before-link" }),
+		);
+	});
+
+	it("passes: the link in chat first, the owner copies, then the host's form", () => {
+		const URL = SIGN_IN.split(" ")[1]?.replace("url=", "") ?? "";
+		const transcript = jsonl([
+			user("go"),
+			assistant([toolUse("run", "mcp__hobo__cd")]),
+			user([toolResult("run", `refused\n${SIGN_IN}`)]),
 			assistant([
 				text(
-					"Sign in at the link, then paste Infisical's copied value into the form.",
+					`**[Sign in to Infisical](${URL})**\n\nWhen it says *Unable to reach CLI*, click **Copy to clipboard** and tell me.`,
 				),
 			]),
-			user("done"),
+			user("copied"),
+			assistant([toolUse("cap", "mcp__hobo__capture_secret")]),
+			user([
+				toolResult(
+					"cap",
+					JSON.stringify({
+						status: "stored",
+						hostSupport: { formElicitation: true },
+					}),
+				),
+			]),
+			assistant([text("Stored; running again.")]),
+			user("ok"),
 		]);
 		expect(auditHandOff(parseClaudeTranscript(transcript))).toEqual([]);
+	});
+
+	it("still flags a turn that shows the link but never opens the form after the owner says they copied it", () => {
+		const URL = SIGN_IN.split(" ")[1]?.replace("url=", "") ?? "";
+		const transcript = jsonl([
+			user("go"),
+			assistant([toolUse("run", "mcp__hobo__cd")]),
+			user([toolResult("run", `refused\n${SIGN_IN}`)]),
+			assistant([text(`[Sign in to Infisical](${URL})`)]),
+			user("copied"),
+			assistant([text("Paste it here.")]),
+			user("ok"),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+			{ rule: "structured-ask", ask: "capture" },
+		]);
 	});
 });
 

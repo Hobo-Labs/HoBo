@@ -277,11 +277,11 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	 */
 	remote?: boolean;
 	/**
-	 * What the waiting run asked the owner to do for a value (a link and its
-	 * steps). Shown in the form itself: while a host's form is open, the
-	 * owner sees only the form.
+	 * How long the host's form may stay open before the server answers
+	 * "not answered" itself: just under the host's own tool limit (ten
+	 * minutes, `MCP_TOOL_TIMEOUT` in the project's Claude Code settings).
 	 */
-	guidanceFor?: (name: string) => string | undefined;
+	elicitTimeoutMs?: number;
 	/** Ask the host for a form (`elicitation/create`), answered by the owner. */
 	elicit?: (params: JsonObject) => Promise<JsonValue | undefined>;
 }>;
@@ -376,6 +376,20 @@ function refusalResult(
 	};
 }
 
+// public-contract: how long a host's form waits for the owner: just under the host's ten-minute tool limit.
+export const SECRET_CAPTURE_FORM_TIMEOUT_MS = 590_000;
+
+/** The answer, or undefined once `ms` pass without one. */
+function withinTime<T>(answer: Promise<T>, ms: number): Promise<T | undefined> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	return Promise.race([
+		answer,
+		new Promise<undefined>((resolve) => {
+			timer = setTimeout(() => resolve(undefined), ms);
+		}),
+	]).finally(() => clearTimeout(timer));
+}
+
 /** A capture's result says what the host can show the owner, so the agent never guesses. */
 function withHostSupport(
 	tool: string,
@@ -410,6 +424,8 @@ export function createSecretCaptureApp(
 	const ttlMs = options.ttlMs ?? 10 * 60_000;
 	const maxOpen = options.maxOpen ?? 8;
 	const maxAttempts = options.maxAttempts ?? 5;
+	const elicitTimeoutMs =
+		options.elicitTimeoutMs ?? SECRET_CAPTURE_FORM_TIMEOUT_MS;
 	const specs = new Map(options.specs.map((spec) => [spec.name, spec]));
 	const writerSpecs = options.specs.filter((spec) => spec.target === "writer");
 	const tickets = new Map<string, Ticket>();
@@ -565,33 +581,38 @@ export function createSecretCaptureApp(
 		const elicit = options.elicit;
 		let problem: string | undefined;
 		while (ticket.state === "awaiting-owner") {
-			const answer = parseFormAnswer(
-				await elicit?.({
-					message: [
-						`HoBo: ${ticket.spec.label}.`,
-						options.guidanceFor?.(ticket.spec.name) ?? ticket.spec.purpose,
+			// One short line and one field: the link and steps were given in
+			// chat before the form opened, where a link can be clicked.
+			const answer = await withinTime(
+				elicit?.({
+					message:
 						problem === undefined
-							? ""
-							: `That was not accepted: ${problem} Enter it again.`,
-						"It goes only to HoBo's waiting run, never to the agent or the chat.",
-					]
-						.filter((part) => part !== "")
-						.join(" "),
+							? ticket.spec.purpose
+							: `${problem} Try again.`,
 					requestedSchema: {
 						type: "object",
 						properties: {
 							value: {
 								type: "string",
 								title: ticket.spec.label,
-								description: ticket.spec.purpose,
 								minLength: ticket.spec.minBytes,
 								maxLength: ticket.spec.maxBytes,
 							},
 						},
 						required: ["value"],
 					},
-				}).catch(() => undefined),
+				}).then(parseFormAnswer, () => parseFormAnswer(undefined)),
+				elicitTimeoutMs,
 			);
+			if (answer === undefined) {
+				shut(ticket, "closed");
+				emit("secret.CaptureClosed", ticketFields(ticket));
+				throw new SecretCaptureError(
+					"SECRET_CAPTURE_NOT_ANSWERED",
+					`The owner did not answer the form within ${Math.round(elicitTimeoutMs / 60_000)} minutes; nothing was captured.`,
+					`Once the owner says the value is ready (copied), call ${CAPTURE_SECRET_TOOL} again: a fresh form opens.`,
+				);
+			}
 			if (answer.action !== "accept") {
 				shut(ticket, "closed");
 				emit("secret.CaptureClosed", ticketFields(ticket));

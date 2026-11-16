@@ -1,9 +1,9 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 
-import { createHoboMcpServer } from "@hobo/mcp";
+import { createHoboMcpServer, SECRET_CAPTURE_FORM_TIMEOUT_MS } from "@hobo/mcp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -13,6 +13,7 @@ import {
 	createMcpOwnerChannel,
 	createOwnerCaptureApp,
 	INFISICAL_CLI_SESSION,
+	OWNER_HANDOFF_SPECS,
 } from "../../src/mcp-owner-channel.js";
 import { createInfisicalCaptureConnector } from "../../src/mcp-secret-capture.js";
 import {
@@ -46,7 +47,11 @@ const elicitParams = z.object({
 		type: z.literal("object"),
 		properties: z.record(
 			z.string(),
-			z.object({ type: z.literal("string"), title: z.string().optional() }),
+			z.object({
+				type: z.literal("string"),
+				title: z.string().optional(),
+				description: z.string().optional(),
+			}),
 		),
 		required: z.array(z.string()),
 	}),
@@ -63,7 +68,10 @@ const COPIED = Buffer.from(
 ).toString("base64");
 
 /** A host on the other end of the stdio transport, with a capability profile. */
-function host(capabilities: JsonObject, options: { remote: boolean }) {
+function host(
+	capabilities: JsonObject,
+	options: { remote: boolean; elicitTimeoutMs?: number },
+) {
 	const toServer = new PassThrough();
 	const fromServer = new PassThrough();
 	const owner = createMcpOwnerChannel();
@@ -74,6 +82,9 @@ function host(capabilities: JsonObject, options: { remote: boolean }) {
 				projectDir: mkdtempSync(path.join(tmpdir(), "hobo-owner-form-")),
 			}),
 			remote: options.remote,
+			...(options.elicitTimeoutMs !== undefined
+				? { elicitTimeoutMs: options.elicitTimeoutMs }
+				: undefined),
 			elicit: (params) => {
 				const request = session.request;
 				if (request === undefined) throw new Error("no transport");
@@ -186,25 +197,52 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		await client.close();
 	});
 
-	it("the form itself carries the sign-in link and the steps: the owner cannot see chat while it is open", async () => {
-		// Derived from the live run: the host's form blocks the tool call, so
-		// the agent's message with the link would arrive only after the form.
+	it("the form is minimal: a short title, one short line, no link or repeated prose", async () => {
+		// Derived from the owner's screenshot: the link was not clickable and
+		// was buried in a paragraph that repeated itself; label and description
+		// said the same thing twice. The link belongs in chat, before the form.
 		const client = host({ elicitation: {} }, { remote: true });
 		await client.init();
-		const signIn = "https://app.infisical.com/login?callback_port=31222";
-		// What the waiting run does first: show the link, then ask for the value.
-		await client.owner.openUrl(signIn, "Sign in to Infisical.");
-		await client.owner.captureSecret({
-			name: INFISICAL_CLI_SESSION,
-			title: "Infisical sign-in",
-			instructions:
-				'When Infisical says "Unable to reach CLI", click Copy to clipboard and paste it here.',
-		});
+		await client.owner.openUrl(
+			"https://app.infisical.com/login?callback_port=31222",
+			"Sign in to Infisical.",
+		);
 		const mine = client.capture();
 		const form = await client.fill({ value: COPIED });
-		expect(form.message).toContain(signIn);
-		expect(form.message).toMatch(/Unable to reach CLI/u);
+		const field = form.requestedSchema.properties.value;
+		expect(form.message.length).toBeLessThanOrEqual(100);
+		expect(form.message).not.toMatch(/https?:\/\//u);
+		const sentences = form.message.split(/(?<=\.)\s+/u);
+		expect(new Set(sentences).size).toBe(sentences.length);
+		expect((field?.title ?? "").length).toBeLessThanOrEqual(30);
+		expect(field?.title ?? "").not.toMatch(/\(|“/u);
 		await client.answer(mine);
+		await client.close();
+	});
+
+	it("the owner does not answer before the host's limit: the server answers first, captures nothing, and the next call opens a fresh form", async () => {
+		// Derived from the live run: the host gives up on a question after 60s;
+		// the form opened before the owner had signed in and copied the value.
+		const client = host(
+			{ elicitation: {} },
+			{ remote: true, elicitTimeoutMs: 50 },
+		);
+		await client.init();
+		const first = client.capture();
+		await client.next((m) => m.method === "elicitation/create");
+		// Nobody answers.
+		const result = toolResult.parse((await client.answer(first)).result);
+		expect(result.isError).toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			code: "SECRET_CAPTURE_NOT_ANSWERED",
+		});
+		expect(JSON.stringify(result)).toMatch(/ready|copied|again/iu);
+		expect(client.owner.holds(INFISICAL_CLI_SESSION)).toBe(false);
+		// Asked again once the owner is ready: a new form, not the dead one.
+		const second = client.capture();
+		await client.fill({ value: COPIED });
+		const done = toolResult.parse((await client.answer(second)).result);
+		expect(done.structuredContent).toMatchObject({ status: "stored" });
 		await client.close();
 	});
 
@@ -300,5 +338,37 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 			hostSupport: { apps: false, formElicitation: true },
 		});
 		await client.close();
+	});
+});
+
+describe("EVAL owner form reach: every hand-over reads at a glance", () => {
+	it("each value's title and line are short and say it once", () => {
+		for (const spec of OWNER_HANDOFF_SPECS) {
+			expect(spec.label.length, spec.name).toBeLessThanOrEqual(30);
+			expect(spec.label, spec.name).not.toMatch(/\(|“/u);
+			expect(spec.purpose.length, spec.name).toBeLessThanOrEqual(90);
+		}
+	});
+});
+
+describe("EVAL owner form reach: the owner has ten minutes", () => {
+	it("the host's tool limit is ten minutes, and the server answers just before it", () => {
+		// Derived from the live run: the host cut the question off at 60s.
+		const settings = z
+			.object({ env: z.object({ MCP_TOOL_TIMEOUT: z.string() }) })
+			.parse(
+				JSON.parse(
+					readFileSync(
+						new URL("../../../../.claude/settings.json", import.meta.url),
+						"utf8",
+					),
+				),
+			);
+		const hostLimit = Number(settings.env.MCP_TOOL_TIMEOUT);
+		expect(hostLimit).toBe(10 * 60_000);
+		expect(SECRET_CAPTURE_FORM_TIMEOUT_MS).toBeLessThan(hostLimit);
+		expect(SECRET_CAPTURE_FORM_TIMEOUT_MS).toBeGreaterThanOrEqual(
+			hostLimit - 30_000,
+		);
 	});
 });

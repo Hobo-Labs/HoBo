@@ -50,6 +50,9 @@ export interface HandOffFinding {
 	 *   questions (a store's follow-up asked before the owner chose it).
 	 * - `chosen-store-only`: after the owner chose a store, a question named
 	 *   another one.
+	 * - `form-before-link`: the agent opened the capture form in the turn a
+	 *   sign-in link arrived, before the owner had the link: a host's form
+	 *   blocks the chat, so the owner could not see or click it.
 	 * - `phantom-form`: the agent sent the owner to a form or page after a
 	 *   capture whose form the host never showed (a page served on the box,
 	 *   or a refusal for lack of any form).
@@ -58,7 +61,8 @@ export interface HandOffFinding {
 		| "structured-ask"
 		| "store-choice-alone"
 		| "chosen-store-only"
-		| "phantom-form";
+		| "phantom-form"
+		| "form-before-link";
 	readonly ask: AskKind;
 	/** The owner-facing line that opened the obligation. */
 	readonly line: string;
@@ -265,6 +269,9 @@ export function auditHandOff(
 			// A turn that issued the ask is not a failure, even if it did not
 			// complete (interrupted, restarted); the next turn must ask again.
 			if (askedThisTurn.has(ask)) continue;
+			// A sign-in link shown in chat this turn: the form is due next turn,
+			// once the owner has signed in and copied the value.
+			if (ask === "capture" && signIn?.shownTurn === turn) continue;
 			findings.push({
 				rule: "structured-ask",
 				ask,
@@ -282,9 +289,14 @@ export function auditHandOff(
 	// Captures in flight, and whether the last one left the owner without a form.
 	const captures = new Set<string>();
 	let noHostForm = false;
+	// The last sign-in line: its link, the turn it arrived in, and the turn
+	// the agent showed it to the owner.
+	let signIn: { url: string; turn: number; shownTurn?: number } | undefined;
+	let turn = 0;
 	for (const event of events) {
 		if (startsTurn(event)) {
 			if (sawTurn) endTurn(event.at);
+			turn += 1;
 			askedThisTurn.clear();
 			sawTurn = true;
 			continue;
@@ -305,8 +317,26 @@ export function auditHandOff(
 					detail:
 						"The agent sent the owner to a form or page after a capture whose form the host never showed. Say the host cannot collect it, never point at a form that is not there.",
 				});
+			if (
+				b.kind === "text" &&
+				event.role === "assistant" &&
+				signIn !== undefined &&
+				b.text.includes(signIn.url)
+			)
+				signIn.shownTurn = turn;
 			if (b.kind === "tool_use") {
-				if (/^mcp__[\w-]+__capture_secret$/u.test(b.name)) captures.add(b.id);
+				if (/^mcp__[\w-]+__capture_secret$/u.test(b.name)) {
+					captures.add(b.id);
+					if (signIn?.turn === turn && signIn.shownTurn === undefined)
+						findings.push({
+							rule: "form-before-link",
+							ask: "capture",
+							line: `HOBO_OWNER_SIGN_IN url=${signIn.url}`,
+							at: event.at,
+							detail:
+								"The capture form opened in the turn the sign-in link arrived, before the owner had the link. Show the link in chat first (on its own line, clickable), wait until the owner says they copied the value, then open the form.",
+						});
+				}
 				const choiceAt = b.questions.findIndex(
 					(q) => storesNamed(q).length >= 2,
 				);
@@ -356,6 +386,8 @@ export function auditHandOff(
 					const match = owner.re.exec(b.text);
 					if (match === null) continue;
 					owed.set(owner.ask, match[0]);
+					const link = /HOBO_OWNER_SIGN_IN url=(\S+)/u.exec(match[0]);
+					if (link?.[1] !== undefined) signIn = { url: link[1], turn };
 					// A new store choice: the owner chooses again.
 					if (/STORE_CHOICE/u.test(match[0])) chosen = undefined;
 				}

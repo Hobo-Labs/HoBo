@@ -359,7 +359,11 @@ environment variables.
   value goes host to server, never to the model); a host with neither is
   refused (`SECRET_CAPTURE_NO_OWNER_FORM`), never sent to a box-served page
   or a port preview the owner may not see. Every capture result carries
-  `hostSupport`. Infisical provisioning reuses an identity,
+  `hostSupport`. A host's form blocks the chat, so a sign-in link is shown
+  in chat first and the form opens only once the owner has copied the
+  value; the form is one short line and one field. The host's tool limit
+  is ten minutes (`MCP_TOOL_TIMEOUT` in `.claude/settings.json`) and the
+  server answers `SECRET_CAPTURE_NOT_ANSWERED` just before it. Infisical provisioning reuses an identity,
   auth method and membership a failed run left behind, retries dropped
   connections and 5xx answers, names a proxy that refuses the tunnel (407)
   as the proxy, and turns an expired session into a fresh sign-in link.
