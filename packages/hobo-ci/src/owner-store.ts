@@ -23,7 +23,9 @@ import {
 	bitwardenEndpoints,
 } from "./bitwarden-provision.js";
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
-import { INFISICAL_OAUTH_DOCS, OAUTH_SIGN_IN } from "./infisical-oauth.js";
+import type { provisionInfisicalAccess } from "./infisical-access.js";
+import { OAUTH_SIGN_IN } from "./infisical-oauth.js";
+import type { provisionOnePasswordAccess } from "./onepassword-access.js";
 import { type HttpsOrigin, parseHttpsOrigin } from "./parsed-values.js";
 import {
 	type Env,
@@ -33,6 +35,7 @@ import {
 	type SecretStoreId,
 	type SecretStoreOpening,
 } from "./secret-stores.js";
+import type { RunCommand } from "./store-cli.js";
 
 // The owner's secret store, as the first stage of every lifecycle ceremony.
 //
@@ -116,8 +119,8 @@ export function storeChoiceGuidance(
 		configured.has(store) ? " (configured here: its sign-in is provided)" : "";
 	return [
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
-		`infisical${note("infisical")}: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
-		`1password${note("1password")}: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
+		`infisical${note("infisical")}: its project ID (INFISICAL_PROJECT_ID). Once chosen, HoBo installs Infisical's CLI if it is missing, uses your existing Infisical sign-in or has you sign in once in your browser, and creates its own machine identity, access and project membership through Infisical's API.`,
+		`1password${note("1password")}: the vault ID (OP_VAULT_ID). Once chosen, HoBo installs the 1Password CLI if it is missing, uses your existing 1Password sign-in or your 1Password app's approval, and creates its own service account for that vault.`,
 		`bitwarden${note("bitwarden")}: nothing to look up. Once chosen, the run asks for your personal API key and one approval in a Bitwarden app, and sets up the rest itself. Optional: BITWARDEN_SERVER_URL for a self-hosted server.`,
 	];
 }
@@ -132,21 +135,16 @@ export function storeSignInGuidance(
 ): readonly string[] {
 	if (store === "1password")
 		return [
-			`Remote agent (no page): set OP_CONNECT_HOST to your 1Password Connect server's https origin (guide: https://www.1password.dev/connect/), issue it a token with access to the vault, and give the token only in the agent session's credential form for that host; the run holds a placeholder the proxy replaces.`,
-			`Your own machine: run hobo ${verb} up in a terminal; the 1Password desktop app unlocks the vault (OP_ACCOUNT).`,
+			`Sign in to 1Password once when the run asks (your 1Password app approves it); HoBo creates its own service account for the vault through the 1Password CLI.`,
+			`The 1Password app approves sign-ins on the machine it runs on: run hobo ${verb} up on your own machine once.`,
 		];
 	if (store === "bitwarden")
 		return [
-			`Your personal API key (${bitwardenApiKeyPage(bitwardenEndpoints("us"))}, or on bitwarden.eu or your own server the same page: Account settings → Security → Keys → View API key). From a remote box, give it in the agent session's credential form for Bitwarden's identity host as a username (client_id) and password (client_secret), never in chat; at your own terminal, the setup page asks for it. Then approve the one login request the run shows, in a Bitwarden app you are signed in to.`,
-		];
-	if (store !== "infisical")
-		return [
-			`Run hobo ${verb} up yourself in a terminal: the setup page asks for the ${store} sign-in and keeps it in this run's memory only.`,
+			`Your personal API key (${bitwardenApiKeyPage(bitwardenEndpoints("us"))}, or on bitwarden.eu or your own server the same page: Account settings → Security → Keys → View API key). From a remote box, give it in the agent session's credential form for Bitwarden's identity host as a username (client_id) and password (client_secret), never in chat; on your own machine, the setup page asks for it. Then approve the one login request the run shows, in a Bitwarden app you are signed in to.`,
 		];
 	return [
-		`Remote agent (no page): at https://app.infisical.com go to Organization → Access Control → Identities (guide: ${INFISICAL_TOKEN_AUTH_DOCS}), Create Identity "hobo-${verb}-owner" (organization role No Access), add Token Auth and create a token (TTL 3600), and add the identity to the store's project with a write role. Select INFISICAL_SIGN_IN=${EGRESS_PROXY_SIGN_IN} in the environment or store locator, and type the token only into the agent session's credential form for app.infisical.com; the run holds a placeholder.`,
-		`Your own machine: run hobo ${verb} up in a terminal; the setup page asks for the token, or sign in with an Infisical OAuth application (INFISICAL_SIGN_IN=oauth, guide: ${INFISICAL_OAUTH_DOCS}) to read the store with a browser approval; its tokens are read-only, so a run that must write still needs a token.`,
-		`CI: give the locator an INFISICAL_IDENTITY_ID with OIDC Auth that trusts the workflow; the run signs in with its own OIDC token.`,
+		`Sign in to Infisical once in your browser when the run opens it; HoBo creates its own machine identity, access and project membership through Infisical's API.`,
+		`Infisical's browser sign-in returns to the machine you sign in from: run hobo ${verb} up on your own machine once.`,
 	];
 }
 
@@ -235,6 +233,14 @@ export interface OwnerStoreDeps extends SecretStoreDeps {
 		coordinates: Env,
 		signIn: SecretHolder,
 	) => Promise<SecretStoreOpening>;
+	/** Provision Infisical access (tests inject a fake; the API and CLI otherwise). */
+	readonly infisicalAccess?: typeof provisionInfisicalAccess;
+	/** Provision 1Password access (tests inject a fake; the CLI otherwise). */
+	readonly onePasswordAccess?: typeof provisionOnePasswordAccess;
+	/** How the ceremony runs a store's CLI (tests inject a fake machine). */
+	readonly runCommand?: RunCommand;
+	/** Where an executable is on PATH. */
+	readonly which?: (bin: string) => Promise<string | undefined>;
 	/**
 	 * Runs on the setup page after its secrets are in the vault and before the
 	 * store opens: Bitwarden provisions its access there, from the API key the

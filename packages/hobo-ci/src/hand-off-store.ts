@@ -43,8 +43,8 @@ export async function storeAnswers(
 }
 
 /** What the owner gives, for the store they chose, and where. */
-function credentialLine(
-	owner: OwnerStore,
+export function credentialLine(
+	owner: Pick<OwnerStore, "id" | "egressCredentialHost">,
 	family: "ci" | "cd",
 	timeoutMs: number,
 ): string {
@@ -54,8 +54,8 @@ function credentialLine(
 			: "app.infisical.com";
 	const wait = `This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`;
 	if (owner.id === "1password")
-		return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${ONE_PASSWORD_CONNECT_GUIDE} — in 1Password: Developer → Connect servers → your server → Issue token, with access to the store's vault only. Then give the token to the agent's session in its credential form for ${host}, never in chat. ${wait}`;
-	return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${INFISICAL_TOKEN_AUTH_GUIDE} — at https://app.infisical.com: Organization → Access Control → Identities → Create Identity "hobo-${family}-owner" (organization role No Access); add Token Auth and create a token (TTL 3600); add the identity to the store's project with a write role. Then give the token to the agent's session in its credential form for ${host}, never in chat. ${wait}`;
+		return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${ONE_PASSWORD_CONNECT_GUIDE} — this run signs in to your 1Password Connect server through the session's egress proxy (OP_CONNECT_HOST). Save the server's access in the agent's credential form for ${host}, never in chat. ${wait}`;
+	return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${INFISICAL_TOKEN_AUTH_GUIDE} — this run signs in to Infisical through the session's egress proxy (INFISICAL_SIGN_IN=egress-proxy). Save your Infisical access in the agent's credential form for ${host}, never in chat. ${wait}`;
 }
 
 export interface HandOffStoreOptions {

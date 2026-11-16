@@ -12,9 +12,9 @@ import {
 	adoptStoreSignIn,
 	awaitHandOffStore,
 	canReachOwner,
-	EGRESS_PROXY_SIGN_IN,
 	ensureBitwardenSignIn,
 	familySettings,
+	hoboToolsDir,
 	InvalidSecretStoreError,
 	ignoredSecretEnvNotice,
 	lazyEgressFetch,
@@ -23,6 +23,8 @@ import {
 	openInBrowser,
 	ownerLocator,
 	ownerStore,
+	provisionInfisicalAccess,
+	provisionOnePasswordAccess,
 	runPage,
 	scopeRunVault,
 	showOwnerPage,
@@ -286,9 +288,6 @@ async function prepareVercelWithVault(
 				});
 				return refusal === undefined ? { ok: true } : { ok: false, ...refusal };
 			},
-			...(input.handOff === true && workloadOidc === undefined
-				? { defaultInfisicalSignIn: EGRESS_PROXY_SIGN_IN }
-				: undefined),
 			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
 			// An OAuth sign-in approves in this machine's browser: a terminal
 			// run only, never a handed-off one.
@@ -310,6 +309,91 @@ async function prepareVercelWithVault(
 					storeSignIn ? new Set(["bitwarden"] as const) : undefined,
 				),
 			);
+		// The owner chose Infisical: HoBo installs its CLI, uses the owner's
+		// session (or one browser sign-in) and creates its own identity and
+		// access through Infisical's API. Nothing is provisioned by hand.
+		if (
+			owner.id === "infisical" &&
+			// Only with the machine its caller hands it (the composed CLI).
+			deps.runCommand !== undefined &&
+			owner.chosen &&
+			!input.whatIf &&
+			owner.opened === undefined &&
+			!vault.has("INFISICAL_TOKEN") &&
+			workloadOidc === undefined &&
+			// A sign-in the owner chose explicitly (OAuth, the egress proxy) stands.
+			!plainEnv.INFISICAL_SIGN_IN &&
+			!(await ownerLocator(deps).read()).INFISICAL_SIGN_IN
+		) {
+			const locator = ownerLocator(deps);
+			const projectId =
+				plainEnv.INFISICAL_PROJECT_ID ??
+				(await locator.read()).INFISICAL_PROJECT_ID;
+			if (projectId !== undefined && projectId !== "") {
+				const access = await (deps.infisicalAccess ?? provisionInfisicalAccess)(
+					{
+						family: "cd",
+						projectId,
+						run: deps.runCommand,
+						which: deps.which ?? (async () => undefined),
+						toolsDir: hoboToolsDir(),
+						fetch: deps.fetch ?? fetch,
+						emit: (line) => input.run.emitProgress(line),
+						interactive: input.handOff !== true,
+					},
+				);
+				if (access.kind === "refused")
+					return refused(access.code, access.message, access.remediation);
+				if (access.token !== undefined)
+					vault.put("INFISICAL_TOKEN", access.token);
+				await locator.write({
+					...(await locator.read()),
+					INFISICAL_IDENTITY_ID: access.identityId,
+				});
+				owner = await openOwner();
+			}
+		}
+		// The owner chose 1Password: HoBo installs its CLI, uses the owner's
+		// session (or one sign-in their 1Password app approves) and creates its
+		// own vault-scoped service account. Nothing is provisioned by hand.
+		if (
+			owner.id === "1password" &&
+			// Only with the machine its caller hands it (the composed CLI).
+			deps.runCommand !== undefined &&
+			owner.chosen &&
+			!input.whatIf &&
+			owner.opened === undefined &&
+			!vault.has("OP_SERVICE_ACCOUNT_TOKEN") &&
+			// A sign-in the owner chose explicitly (desktop app, Connect) stands.
+			!plainEnv.OP_ACCOUNT &&
+			!plainEnv.OP_CONNECT_HOST
+		) {
+			const locator = ownerLocator(deps);
+			const saved = await locator.read();
+			const vaultId = plainEnv.OP_VAULT_ID ?? saved.OP_VAULT_ID;
+			if (
+				vaultId !== undefined &&
+				vaultId !== "" &&
+				!saved.OP_ACCOUNT &&
+				!saved.OP_CONNECT_HOST
+			) {
+				const access = await (
+					deps.onePasswordAccess ?? provisionOnePasswordAccess
+				)({
+					family: "cd",
+					vaultId,
+					run: deps.runCommand,
+					which: deps.which ?? (async () => undefined),
+					toolsDir: hoboToolsDir(),
+					emit: (line) => input.run.emitProgress(line),
+					interactive: input.handOff !== true,
+				});
+				if (access.kind === "refused")
+					return refused(access.code, access.message, access.remediation);
+				vault.put("OP_SERVICE_ACCOUNT_TOKEN", access.token);
+				owner = await openOwner();
+			}
+		}
 		// The owner chose Bitwarden and gave no access token: with their
 		// personal API key the run creates its own, after one approval.
 		if (

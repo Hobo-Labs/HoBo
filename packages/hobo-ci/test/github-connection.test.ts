@@ -506,10 +506,11 @@ const ENV = {
 	HOBO_CI_GITHUB_OWNER_TYPE: "User",
 };
 
-/** The committed locator of a store that is already set up. */
+/** The locator of a store set up to sign in with a token typed on the page. */
 const LOCATOR = {
 	HOBO_SECRET_STORE: "infisical",
 	INFISICAL_PROJECT_ID: "proj",
+	INFISICAL_SIGN_IN: "typed",
 };
 
 function memorySettings(initial: SavedSettings = {}) {
@@ -583,9 +584,11 @@ describe("prepareGithubConnection", () => {
 						prepareGithubConnection(input, {
 							env: {},
 							fetch: async () => new Response(null, { status: 401 }),
+							// The owner chose the egress proxy: the run would wait for it.
 							locator: memorySettings({
 								HOBO_SECRET_STORE: "infisical",
 								INFISICAL_PROJECT_ID: "proj",
+								INFISICAL_SIGN_IN: "egress-proxy",
 							}),
 							startPage: () => {
 								throw new Error("the silent page must not be started");
@@ -620,9 +623,11 @@ describe("prepareGithubConnection", () => {
 				{
 					env: {},
 					fetch: async () => new Response(null, { status: 401 }),
+					// The owner chose the egress proxy: the run would wait for it.
 					locator: memorySettings({
 						HOBO_SECRET_STORE: "infisical",
 						INFISICAL_PROJECT_ID: "proj",
+						INFISICAL_SIGN_IN: "egress-proxy",
 					}),
 					startPage: () => {
 						throw new Error("the silent page must not be started");
@@ -1116,8 +1121,11 @@ describe("prepareGithubConnection", () => {
 			kind: "ready",
 			steps: [{ id: "github-app", outcome: "created" }],
 		});
-		// On disk (committed): where the store is. Never the token.
-		expect(locator.saved()).toEqual(LOCATOR);
+		// In the owner's settings: where the store is. Never the token.
+		expect(locator.saved()).toEqual({
+			HOBO_SECRET_STORE: "infisical",
+			INFISICAL_PROJECT_ID: "proj",
+		});
 		// In the store: what the ceremony was told, beside the App.
 		const kept = await store.port.access("HOBO_CI_SETTINGS");
 		expect(kept.status === "ok" && JSON.parse(kept.material ?? "{}")).toEqual({

@@ -83,7 +83,7 @@ describe("hobo ci up --hand-off", () => {
 		throw new Error("a handed-off run must not serve a page");
 	};
 
-	it("names every way into the store when it cannot open without a page", async () => {
+	it("without an Infisical session, asks for one sign-in and never for hand-made identities", async () => {
 		const outcome = await prepareGithubConnection(input(), {
 			env: {},
 			locator,
@@ -92,20 +92,23 @@ describe("hobo ci up --hand-off", () => {
 				message: "Not signed in to Infisical.",
 				remediation: [],
 			}),
+			// A remote box with no Infisical CLI and so no session.
+			runCommand: async () => ({ code: 127, stdout: "", stderr: "not found" }),
+			which: async () => undefined,
 			sleep: async () => undefined,
 			handOffTimeoutMs: 1,
 			startPage: noPage,
 		});
 		expect(outcome).toMatchObject({
 			kind: "refused",
-			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
+			result: { code: "HOBO_CI_INFISICAL_SIGN_IN" },
 		});
 		const text = JSON.stringify(outcome);
-		expect(text).toContain("Choose the store and give its non-secret ids");
-		expect(text).not.toContain("ids are committed");
-		expect(text).toContain(INFISICAL_TOKEN_AUTH_DOCS);
-		expect(text).toContain("INFISICAL_SIGN_IN=oauth");
-		expect(text).toContain("INFISICAL_IDENTITY_ID");
+		expect(text).toMatch(/sign in once/u);
+		expect(text).toMatch(/installs Infisical's CLI/u);
+		// HoBo creates the identity and its access itself.
+		expect(text).not.toMatch(/Create Identity|Token Auth|create a token/u);
+		expect(text).not.toContain(INFISICAL_TOKEN_AUTH_DOCS);
 	});
 
 	it("refuses to create the App without GitHub's page, naming the paths that can", async () => {

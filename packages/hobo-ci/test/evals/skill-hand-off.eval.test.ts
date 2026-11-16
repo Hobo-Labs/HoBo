@@ -64,6 +64,11 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 		// The choice is a picker the host renders, never prose.
 		expect(step).toMatch(/choose_secret_store/u);
+		// The run sets up its own access; nothing is provisioned by hand.
+		expect(step).toMatch(/installs the\s+store's CLI/u);
+		expect(step).toMatch(
+			/Never\s+relay\s+instructions\s+to\s+create\s+identities/u,
+		);
 		// The store alone; then only the chosen store's follow-ups.
 		expect(step).toMatch(/the store \*\*alone\*\*, one question/u);
 		expect(step).toMatch(/nothing\s+about\s+the\s+other\s+stores/u);

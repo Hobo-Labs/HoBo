@@ -240,7 +240,7 @@ describe("hobo cd up --hand-off", () => {
 		expect(lines.join("\n")).not.toContain(TOKEN);
 	});
 
-	it("refuses when the store cannot open without a page", async () => {
+	it("without an Infisical session, asks for one sign-in, never hand-made identities", async () => {
 		const outcome = await prepareVercelConnection(handOffInput([]), {
 			env: {},
 			locator: locator({
@@ -252,6 +252,9 @@ describe("hobo cd up --hand-off", () => {
 				message: "Not signed in to Infisical.",
 				remediation: [],
 			}),
+			// A remote box with no Infisical CLI and so no session.
+			runCommand: async () => ({ code: 127, stdout: "", stderr: "not found" }),
+			which: async () => undefined,
 			sleep: async () => undefined,
 			handOffTimeoutMs: 1,
 			startPage: () => {
@@ -260,11 +263,10 @@ describe("hobo cd up --hand-off", () => {
 		});
 		expect(outcome).toMatchObject({
 			kind: "refused",
-			result: { code: "HOBO_CD_STORE_NEEDS_SIGN_IN" },
+			result: { code: "HOBO_CD_INFISICAL_SIGN_IN" },
 		});
-		expect(JSON.stringify(outcome)).toContain(
-			"Choose the store and give its non-secret ids",
-		);
-		expect(JSON.stringify(outcome)).not.toContain("ids are committed");
+		const text = JSON.stringify(outcome);
+		expect(text).toMatch(/sign in once/u);
+		expect(text).not.toMatch(/Create Identity|Token Auth|create a token/u);
 	});
 });

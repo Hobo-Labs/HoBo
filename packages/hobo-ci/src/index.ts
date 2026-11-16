@@ -59,6 +59,12 @@ export {
 	storeAnswers,
 } from "./hand-off-store.js";
 export {
+	type InfisicalAccess,
+	type InfisicalAccessOptions,
+	provisionInfisicalAccess,
+	type WorkloadOidc,
+} from "./infisical-access.js";
+export {
 	INFISICAL_OAUTH_DOCS,
 	INFISICAL_OAUTH_REDIRECT_URI,
 	INFISICAL_OAUTH_SCOPE,
@@ -68,6 +74,15 @@ export {
 	OAUTH_SIGN_IN,
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
+export {
+	currentPlatform,
+	ONE_PASSWORD_CLI_VERSION,
+	type OnePasswordAccess,
+	type OnePasswordAccessOptions,
+	onePasswordCli,
+	type Platform,
+	provisionOnePasswordAccess,
+} from "./onepassword-access.js";
 export {
 	CI_RELAY_FOLDER,
 	EGRESS_PROXY_SIGN_IN,
@@ -148,3 +163,14 @@ export {
 	type SecretStoreId,
 	type SecretStoreOpening,
 } from "./secret-stores.js";
+export {
+	type CommandResult,
+	ensureStoreCli,
+	hoboToolsDir,
+	INFISICAL_CLI,
+	INFISICAL_CLI_VERSION,
+	machineRunner,
+	type RunCommand,
+	type StoreCli,
+	whichOnPath,
+} from "./store-cli.js";

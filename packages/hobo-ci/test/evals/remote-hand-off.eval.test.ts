@@ -159,10 +159,13 @@ function storeOpener(session: ReturnType<typeof remoteSession>) {
 	};
 }
 
+// The owner chose to sign this run in through the session's egress proxy
+// (an explicit choice; by default HoBo provisions its own Infisical access).
 const LOCATOR = {
 	read: async () => ({
 		HOBO_SECRET_STORE: "infisical",
 		INFISICAL_PROJECT_ID: "proj",
+		INFISICAL_SIGN_IN: "egress-proxy",
 	}),
 	write: async () => undefined,
 };

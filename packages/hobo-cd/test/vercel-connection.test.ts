@@ -274,9 +274,11 @@ async function freePort(): Promise<number> {
 	});
 }
 
+/** A store set up to sign in with a token typed on the setup page. */
 const LOCATOR = {
 	HOBO_SECRET_STORE: "infisical",
 	INFISICAL_PROJECT_ID: "proj",
+	INFISICAL_SIGN_IN: "typed",
 };
 
 /** A run whose vault already holds the store's sign-in. */
@@ -310,9 +312,11 @@ describe("prepareVercelConnection", () => {
 				{
 					env: {},
 					fetch: async () => new Response(null, { status: 401 }),
+					// The owner chose the egress proxy: the run would wait for it.
 					locator: memorySettings({
 						HOBO_SECRET_STORE: "infisical",
 						INFISICAL_PROJECT_ID: "proj",
+						INFISICAL_SIGN_IN: "egress-proxy",
 					}),
 					startPage: () => {
 						throw new Error("the silent page must not be started");

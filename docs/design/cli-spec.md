@@ -231,6 +231,27 @@ environment variables.
   1Password through the owner's 1Password Connect server
   (`OP_CONNECT_HOST`; its access token is a bearer the proxy injects:
   `createOnePasswordConnectClient` over the same `1password` SecretsPort).
+  **No manual provisioning (Infisical, 1Password).** Once the owner chooses
+  the store, the run sets up its own access with the provider's CLI and API
+  (`provisionInfisicalAccess`, `provisionOnePasswordAccess`; specified in
+  `packages/hobo-ci/test/spec/`). It installs the store's CLI when it is
+  missing into HoBo's tools directory (`~/.local/share/hobo/tools`, never
+  globally: `@infisical/cli` from npm, `op` from 1Password's download),
+  uses an existing CLI session, or has the owner sign in once (Infisical in
+  the browser; 1Password approved in the 1Password app). Then it creates,
+  through Infisical's API, a machine identity with OIDC Auth bound to the
+  workload's issuer where there is one (no bearer token exists) or Token
+  Auth otherwise, its project membership and this run's token; for
+  1Password, a one-day service account scoped to the one vault
+  (`op service-account create`; 1Password has no OIDC sign-in for service
+  accounts). Infisical's browser sign-in hands the session to
+  `127.0.0.1:<callback_port>` on the machine the browser runs on, and
+  1Password's app approves sign-ins on its own machine, so a remote run
+  without an existing session refuses with `HOBO_*_INFISICAL_SIGN_IN` /
+  `HOBO_*_ONEPASSWORD_SIGN_IN` and names the owner's own machine. A sign-in
+  the owner chose explicitly (`INFISICAL_SIGN_IN`, `OP_ACCOUNT`,
+  `OP_CONNECT_HOST`) stands. Only the composed CLI hands `prepare` the
+  machine (`runCommand`), so no test runs real commands.
   Bitwarden Secrets Manager is used through its API from any box: the
   access token the environment provides (`BWS_ACCESS_TOKEN`) is the one
   sign-in a run takes from its environment, moved into its trusted vault

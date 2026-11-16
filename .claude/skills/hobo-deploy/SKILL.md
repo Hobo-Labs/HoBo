@@ -220,7 +220,19 @@ checks it.
    `BITWARDEN_SERVER_URL`, if self-hosted). Record them with
    `submit_store_choice` (or, without the HoBo server, run again with
    `HOBO_SECRET_STORE` and those ids set).
-   Then run again. The choice is always the owner's: a provided token only
+   Then run again: for Infisical and 1Password the run installs the
+   store's CLI into HoBo's tools directory if it is missing, uses the
+   owner's existing CLI session or has them sign in once (Infisical in the
+   browser; 1Password approved in the 1Password app), and creates its own
+   access through the provider's API or CLI (an Infisical machine identity
+   with OIDC Auth where the workload has an issuer, else Token Auth; a
+   one-day, vault-scoped 1Password service account). Never relay
+   instructions to create identities, tokens, service accounts or Connect
+   servers by hand; if a line says that, it is a bug to fix, not a step
+   for the owner. On `HOBO_*_INFISICAL_SIGN_IN` or
+   `HOBO_*_ONEPASSWORD_SIGN_IN` from a remote box, say the one sign-in has
+   to happen once on the owner's own machine, and why the refusal gives.
+   The choice is always the owner's: a provided token only
    marks a store "configured here"; never pick a store for them because its
    token is present. Never ask the owner to set environment variables, never
    send them to a terminal, and never ask them to create identities or

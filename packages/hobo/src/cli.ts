@@ -14,7 +14,11 @@ import {
 import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
 import { createInProcessExecutor } from "@hobo/cloud";
 import { prepareVercelConnection } from "@hobo/hobo-cd";
-import { prepareGithubConnection } from "@hobo/hobo-ci";
+import {
+	machineRunner,
+	prepareGithubConnection,
+	whichOnPath,
+} from "@hobo/hobo-ci";
 import { createAwsProvider } from "@hobo/provider-aws";
 import { createAzureProvider } from "@hobo/provider-azure";
 import { createDigitalOceanProvider } from "@hobo/provider-digitalocean";
@@ -258,7 +262,12 @@ export function createComposedHoboCli(
 				down,
 				// GitHub first: the App and its credentials in the owner's secret
 				// store, via the generative connect page (idempotent).
-				prepare: (input) => prepareGithubConnection(input),
+				// The machine: install and run the chosen store's CLI.
+				prepare: (input) =>
+					prepareGithubConnection(input, {
+						runCommand: machineRunner(),
+						which: (bin) => whichOnPath(bin),
+					}),
 				// The relay is placed through its own Yards (the Vercel project
 				// hobo-ci and the Yards its junction joins), and `up` delivers it.
 				plan: createCiRelayPlanCommand(runtime, plan),
@@ -282,6 +291,8 @@ export function createComposedHoboCli(
 				prepare: (input) =>
 					prepareVercelConnection(input, {
 						journalProvisioners: defaultJournalProvisioners(),
+						runCommand: machineRunner(),
+						which: (bin) => whichOnPath(bin),
 					}),
 				upWith: (credentials) =>
 					createBrokerAwareUpCommand({
