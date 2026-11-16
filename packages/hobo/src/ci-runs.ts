@@ -35,7 +35,8 @@ export class CiProcessError extends Error {
 	}
 }
 
-const execute: CiRunExec = (file, args, options) =>
+/** Run one subprocess (gh or git) and collect its output. */
+export const runCiProcess: CiRunExec = (file, args, options) =>
 	new Promise((resolve, reject) => {
 		execFile(
 			file,
@@ -196,7 +197,7 @@ export async function runCiRuns(input: {
 	sleep?: (ms: number) => Promise<void>;
 }): Promise<CommandResult> {
 	const { command, repository, cwd, args, options } = input;
-	const exec = input.execFile ?? execute;
+	const exec = input.execFile ?? runCiProcess;
 	const env = { ...(input.env ?? process.env) };
 	delete env.HOBO_CI_ACCOUNT_TOKEN;
 	delete env.HOBO_CI_ACCOUNT_TOKEN_FILE;

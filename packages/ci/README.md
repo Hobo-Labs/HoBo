@@ -391,6 +391,25 @@ retries are in [RUNNER-ORDER.md](RUNNER-ORDER.md). The command family is
 event payload, so a projection of "where did this job run, and why" replays
 from the journal without re-walking anything.
 
+## CI insights
+
+`@hobo/ci/insights` holds the reports that turn a repository's runs into
+answers. They are pure functions over plain run, job and step values
+(`InsightRun`, `InsightJob`, `InsightStep`); whoever reads GitHub or a relay
+journal parses into those types first.
+
+| Report | Answers |
+| --- | --- |
+| `ciSignals(runs)` | Where time or money went that did not have to: `no-concurrency`, `same-commit`, `short-jobs` (cost); `queue-waits`, `slowest-job`, `flaky-jobs`, `runner-failures` (speed); `docs-changes`, `wide-fanout` (complexity). A signal is `shown` once it covers 30 minutes and 1% of all job minutes |
+| `runnerTimes`, `jobTimes`, `workflowTimes` | Per runner: jobs, share started, median wait, median and p90 run time, success rate. Per job: the same by runner, the fastest runner, and the speed-up against a baseline |
+| `diagnoseFailure({ job, logTail, annotations })` | The first failed step, a log excerpt ending at the last error, a kind (`infra`, `config`, `lint`, `build`, `test`, `flaky`, `unclear`) and whether a re-run is likely to pass. The pattern tables are exported; nothing is sent to a model |
+| `checkPullRequestTitle(title)` | Whether a title is a Conventional Commits title, with the reason when it is not |
+
+A re-run is only ever called likely to pass for a runner or network failure.
+A failed test with a timing hint is `flaky` with the outlook left `unknown`.
+`hobo ci signals` and `hobo ci diagnose` print these reports from GitHub's
+own run history ([CLI](../hobo/CI.md#signals-and-diagnosis)).
+
 ## Persistent platform policy
 
 `LeaseStore.configure(configuration, expectedRevision, at)` commits generated

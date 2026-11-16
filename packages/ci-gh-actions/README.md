@@ -749,6 +749,52 @@ repository and label at once, since GitHub can assign a job to either runner.
 Switch the active App/relay ownership before using another environment. Local
 offline tests can use simulated GitHub delivery; see [local deployment](deploy/README.md).
 
+### The committed runner order
+
+`.hobo/ci.json` can also hold `runnerOrder`: the ordered runner types a relay
+job is answered against, with an included-minutes limit on `github`, a monthly
+spend limit on a hosted provider, a retry policy and the size `auto` means.
+Like `runnerRouting`, it is committed configuration, so no variable carries
+it. The record and its rules are `RunnerOrder` in
+[`@hobo/ci`](../ci/RUNNER-ORDER.md); `RunnerOrderDocumentSchema` describes the
+block for the editor schema and fails the project parse on a broken order
+with the parser's own sentence.
+
+```json
+{
+  "runnerOrder": {
+    "steps": [
+      { "key": "fleet" },
+      { "key": "machine" },
+      { "key": "github", "minutesLimitPercent": 80 },
+      { "key": "depot", "spendLimitUsd": 100 },
+      { "key": "github" }
+    ],
+    "autoSizeVcpus": 4
+  }
+}
+```
+
+`parseCiRunnerOrder(json)` reads the block: the committed order, or the
+default (`fleet`, `machine`, `github`) when the file has none. A block that
+is there but broken is not silently replaced; the result carries `problem`
+and `source: "default"`, so a caller can refuse to route on an order nobody
+wrote. `hobo ci route` walks the order for one job and shows every step
+passed over. Nothing in the relay reads `runnerOrder` yet.
+
+### Moving workflow jobs to the fleet
+
+`planWorkflow(file, source)` reads one workflow file and gives every job a
+verdict: `ready` (its `runs-on` is a single GitHub-hosted Linux x64 label),
+`routed` (already a fleet label) or `skipped` with one of
+`WORKFLOW_SKIP_REASONS`. `applyWorkflowPlan(file, source, jobs)` rewrites the
+`runs-on` of the ready jobs named, by splicing the value's own bytes: comments,
+quoting, line endings and anchors elsewhere in the file are untouched, the old
+label is kept as a trailing comment, and applying twice changes nothing. A job
+whose `runs-on` cannot be changed alone (it sits behind a YAML anchor) is
+refused rather than changed in two places. Both are pure; `hobo ci init` is
+the command over them ([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
+
 ## Connect a repository
 
 Use `createCiRelayClient` from `@hobo/ci-gh-actions/client` or the root SDK. Its

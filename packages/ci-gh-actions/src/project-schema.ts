@@ -5,6 +5,7 @@ import {
 	CiProjectProviderSchema,
 } from "./project-providers.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
+import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
@@ -262,6 +263,12 @@ export const CiProjectDocumentSchema = z
 		 */
 		runnerRouting: RunnerRoutingSchema.optional(),
 		/**
+		 * The committed runner order (`@hobo/ci`, RUNNER-ORDER.md): the ordered
+		 * runner types a relay job is answered against. Absent means the default
+		 * order: the fleet, then machines, then GitHub-hosted.
+		 */
+		runnerOrder: RunnerOrderDocumentSchema.optional(),
+		/**
 		 * The shared Turborepo cache (`.github/actions/turbo-cache`). `api` is
 		 * the base URL of a self-hosted cache server
 		 * (`packages/ci-gh-actions/deploy/turbo-cache`); empty uses Vercel's. Not
@@ -369,6 +376,7 @@ export function resolveCiProjectReferences(
 		integrations: _integrations,
 		agent: _agent,
 		runnerRouting: _runnerRouting,
+		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
 		...document
 	} = input;
