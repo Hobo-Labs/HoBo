@@ -10,6 +10,23 @@ RivetKit 3 runtime dependency.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 
+`mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
+mapping for each declared primitive. Mappings declare their Alchemy resource
+types, supported operations and annotations, and whether they bind application
+entrypoints. The adapter processes dependencies first, supplies their Alchemy
+resources and the original entrypoint to the mapper, and rejects missing
+mappings, unbound dependencies, unsupported permissions or annotations, and
+cycles. `describeAlchemyPrimitiveSupport` reports supported, partial and
+unsupported entries for a supplied primitive catalog, including the declared
+entrypoint and annotation support.
+
+These mappings are supplied by the provider or developer: the adapter does not
+claim that every HoBo primitive has an equivalent in every Alchemy provider.
+The mapper is responsible for actually implementing the declared operations,
+application logic and bindings; its declarations are not a conformance proof.
+Alchemy components that generate stack actions or executable plan values remain
+subject to the plan-inspection restrictions below.
+
 Create a target with `alchemyTarget({ targetId, tenantId, stackName, stage,
 programResourceId, sourceDigest, inventoryEvidenceRef, resources })`. Each
 resource scope names its Alchemy FQN and resource type plus its underlying

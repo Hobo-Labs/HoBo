@@ -2,20 +2,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	RivetCloud,
-	Rivet,
-	create,
-	inMemoryState,
-	Resource,
-	Stack,
-	Alchemist,
-	Output,
-	Provider,
-	Effect,
-	Layer,
-} from "../packages/iac/iac-alchemy/test/imports.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { bindle } from "../packages/bindles/dist/index.js";
+import { CATALOG_ROWS } from "../packages/bindles/dist/types.js";
 import {
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
@@ -33,18 +22,34 @@ import {
 	rankIacTargets,
 } from "../packages/dispatcher/src/iac-target-routing.js";
 import {
+	AlchemyIacError,
+	type AlchemyPrimitiveMapper,
+	alchemyTarget,
+	createAlchemyIacProvider,
+	describeAlchemyPrimitiveSupport,
+	type IacProgram,
+	mapBindleToAlchemy,
+} from "../packages/iac/iac-alchemy/src/index.js";
+import {
+	Alchemist,
+	create,
+	Effect,
+	inMemoryState,
+	Layer,
+	Output,
+	Provider,
+	Resource,
+	Rivet,
+	RivetCloud,
+	Stack,
+} from "../packages/iac/iac-alchemy/test/imports.js";
+import {
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
 	usage,
 	workload,
 } from "../packages/pricing/test/fixtures.js";
-import {
-	alchemyTarget,
-	AlchemyIacError,
-	createAlchemyIacProvider,
-	type IacProgram,
-} from "../packages/iac/iac-alchemy/src/index.js";
 
 const NOW = "2026-01-02T00:00:00Z";
 const END = "2026-01-31T23:59:59Z";
@@ -313,6 +318,69 @@ function setup(
 }
 
 describe("Alchemy IaC provider against the real library", () => {
+	it("accepts HoBo bindle declarations and reports every catalog primitive", () => {
+		const application = bindle("storefront", (builder) => {
+			const store = builder.bucket().allow("read", "write");
+			const queue = builder.queue().allow("enqueue", "dequeue");
+			const web = builder
+				.web(() => () => new Response("ok"))
+				.dependsOn(store, queue);
+			return { store, queue, web };
+		});
+		type Entrypoint = NonNullable<ReturnType<typeof application.entrypoint>>;
+		type Mapper = AlchemyPrimitiveMapper<
+			Entrypoint,
+			typeof application.requirements,
+			Provider.Provider<Demo>
+		>;
+		const createMapper = (
+			operations: string[],
+			bindsEntrypoint: boolean,
+			annotations: string[] = [],
+		): Mapper => ({
+			resourceTypes: ["Demo.Widget"],
+			operations,
+			annotations,
+			bindsEntrypoint,
+			build: (input) =>
+				Effect.gen(function* () {
+					const primary = yield* Widget(input.declaration.name, { size: 1 });
+					const mapped = {
+						primary,
+						resources: [primary],
+						boundDependencies: Object.keys(input.dependencies),
+					};
+					return input.entrypoint === undefined
+						? mapped
+						: { ...mapped, boundEntrypoint: input.entrypoint };
+				}),
+		});
+		const mappings = {
+			bucket: createMapper(["read", "write"], false),
+			queue: createMapper(["enqueue", "dequeue"], false),
+			web: createMapper([], true, ["hobo:session-replay"]),
+		};
+		const coverage = describeAlchemyPrimitiveSupport(CATALOG_ROWS, mappings);
+		expect(coverage).toHaveLength(CATALOG_ROWS.length);
+		expect(coverage.find((entry) => entry.kind === "bucket")).toMatchObject({
+			status: "partial",
+			unsupportedOperations: ["delete"],
+		});
+		expect(coverage.find((entry) => entry.kind === "queue")).toMatchObject({
+			status: "supported",
+		});
+		expect(coverage.find((entry) => entry.kind === "web")).toMatchObject({
+			status: "supported",
+			bindsEntrypoint: true,
+		});
+		expect(coverage.find((entry) => entry.kind === "topic")).toMatchObject({
+			status: "unsupported",
+		});
+		expect(Effect.isEffect(mapBindleToAlchemy(application, mappings))).toBe(
+			true,
+		);
+	});
+
 	it("uses the RivetKit major required by the external Rivet provider", () => {
 		const require = createRequire(
 			new URL("../packages/iac/iac-alchemy/package.json", import.meta.url),
