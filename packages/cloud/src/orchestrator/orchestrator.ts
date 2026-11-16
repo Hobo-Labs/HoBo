@@ -21,6 +21,7 @@ import {
 import {
 	destroyResource,
 	foldResourceActor,
+	hasUnresolvedReconciliation,
 	isConverged,
 	type ReconcileContext,
 	type ResourceActorDeps,
@@ -198,7 +199,7 @@ export async function runOrchestrator(
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
 		const states = resourceStates(events, plan, deploymentId);
 		// A possibly-applied resource must be reconciled before any retry or rollback.
-		if ([...states.values()].includes("ReconciliationRequired")) {
+		if (hasUnresolvedReconciliation(events)) {
 			return {
 				status: "needs-human",
 				deploymentId,
@@ -378,6 +379,20 @@ export async function runOrchestrator(
 			);
 			if (outcome.kind === "failed") {
 				unprunable.push(orphan.name);
+				if (outcome.snapshot.state === "ReconciliationRequired") {
+					events = await collectStream(deps.store, stream);
+					states = resourceStates(events, plan, deploymentId);
+					return {
+						status: "needs-human",
+						deploymentId,
+						provisioned: provisionedList(states),
+						destroyed: destroyedList(states),
+						events,
+						changes,
+						pruned,
+						unprunable: [...unprunable].sort(),
+					};
+				}
 				for (const dependency of orphan.deps) blocked.add(dependency);
 				continue;
 			}

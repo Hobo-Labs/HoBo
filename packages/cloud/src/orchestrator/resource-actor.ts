@@ -22,7 +22,7 @@ import {
 	type Executor,
 	type IacProgram,
 } from "../executor/executor.js";
-import { isJsonString } from "../json.js";
+import { isJsonObject, isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
 import {
@@ -75,6 +75,30 @@ export function resourceActorKey(
 	resourceId: string,
 ): string {
 	return `resource:${deploymentId}:${resourceId}`;
+}
+
+/** Find unresolved effects even when the latest plan no longer declares them. */
+export function hasUnresolvedReconciliation(
+	events: readonly EventEnvelope[],
+): boolean {
+	const unresolved = new Set<string>();
+	for (const event of events) {
+		if (!isJsonObject(event.data) || !isJsonString(event.data.resourceId))
+			continue;
+		const resourceId = event.data.resourceId;
+		if (
+			event.type === CLOUD_EVENTS.ResourceFailed &&
+			event.data.requiresReconciliation === true
+		) {
+			unresolved.add(resourceId);
+		} else if (
+			event.type === CLOUD_EVENTS.ResourceProvisioned ||
+			event.type === CLOUD_EVENTS.ResourceDestroyed
+		) {
+			unresolved.delete(resourceId);
+		}
+	}
+	return unresolved.size > 0;
 }
 
 // Fold a resource's own facts (filtered from the deployment stream) into its FSM

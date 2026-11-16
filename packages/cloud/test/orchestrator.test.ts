@@ -468,6 +468,30 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 		expect(compensation.events.map((event) => event.type)).not.toContain(
 			"deployment.RolledBack",
 		);
+		const revisedPlan = {
+			...plan,
+			resources: plan.resources.filter((resource) => resource.name !== "web"),
+			dependencyOrder: plan.dependencyOrder.filter((name) => name !== "web"),
+		};
+		const revised = await runOrchestrator(
+			deps,
+			revisedPlan,
+			"shop-uncertain",
+			context,
+		);
+		expect(revised.status).toBe("needs-human");
+		expect(revised.events).toHaveLength(first.events.length);
+		const revisedCompensation = await runCompensation(
+			deps,
+			revisedPlan,
+			"shop-uncertain",
+			{ resourceId: "web", reason: "manual" },
+			{ tenant, actor },
+		);
+		expect(revisedCompensation.status).toBe("needs-human");
+		expect(revisedCompensation.events.map((event) => event.type)).not.toContain(
+			"deployment.RolledBack",
+		);
 		expect(destroys).toBe(0);
 	});
 

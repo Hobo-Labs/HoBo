@@ -13,6 +13,7 @@ import { collectStream, currentFenceToken } from "../store/index.js";
 import {
 	destroyResource,
 	foldResourceActor,
+	hasUnresolvedReconciliation,
 	type ResourceActorDeps,
 	type ResourceActorState,
 } from "./resource-actor.js";
@@ -111,13 +112,7 @@ export async function runCompensation(
 	};
 
 	let events = await collectStream(deps.store, stream);
-	if (
-		plan.resources.some(
-			(resource) =>
-				foldResourceActor(events, { ...resource, deploymentId }).state ===
-				"ReconciliationRequired",
-		)
-	) {
+	if (hasUnresolvedReconciliation(events)) {
 		return { status: "needs-human", destroyedOrder: [], events };
 	}
 
@@ -169,7 +164,7 @@ export async function runCompensation(
 				foldResourceActor(events, { ...r, deploymentId }).state,
 			]),
 		);
-		if ([...states.values()].includes("ReconciliationRequired"))
+		if (hasUnresolvedReconciliation(events))
 			return { status: "needs-human", destroyedOrder, events };
 
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
