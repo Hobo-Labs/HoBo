@@ -24,7 +24,12 @@ import {
 import { isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
-import { desiredSpecHash, recordedResources } from "./desired-state.js";
+import {
+	type BlockedProviderMove,
+	blockedProviderMove,
+	desiredSpecHash,
+	recordedResources,
+} from "./desired-state.js";
 
 // The ResourceActor reconciliation FSM (control-plane.md "The ResourceActor
 // reconciliation FSM"). Each resource in a plan gets a durable virtual actor
@@ -160,6 +165,11 @@ export interface ReconcileContext {
 
 export type ReconcileOutcome =
 	| { kind: "converged"; snapshot: ResourceActorSnapshot }
+	| {
+			kind: "blocked";
+			snapshot: ResourceActorSnapshot;
+			move: BlockedProviderMove;
+	  }
 	| { kind: "provisioned"; snapshot: ResourceActorSnapshot; execId: string }
 	| { kind: "updated"; snapshot: ResourceActorSnapshot; execId: string }
 	| {
@@ -237,6 +247,13 @@ export async function reconcileResource(
 			...resource,
 			deploymentId: ctx.deploymentId,
 		});
+		// Recheck under the actor lease: another reconciliation may have
+		// recorded an apply since the orchestrator inspected its snapshot.
+		const move = blockedProviderMove(
+			recordedResources(events).get(resource.name),
+			resource,
+		);
+		if (move) return { kind: "blocked", snapshot, move };
 
 		// Converged: nothing to do (empty diff — the controller no-op). A
 		// Destroyed resource is not converged: `up` declares it should exist, so
@@ -311,6 +328,7 @@ export async function reconcileResource(
 							execId: provisioningId,
 							programHash,
 							specHash,
+							providerId: resource.provider,
 						}),
 					],
 					{ expectedSeq: lastSeq, ...appendOpts },

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { externalBoundaryRefusal } from "../cloud/boundaries.js";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
@@ -90,6 +91,10 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 			if (!bindle) {
 				return stubResult("up");
 			}
+
+			// A Yard holds nothing external: refuse before planning.
+			const boundary = await externalBoundaryRefusal(projectDir, "up");
+			if (boundary !== undefined) return boundary;
 
 			// Fold any providers installed via `hobo add` from the durable registry
 			// stream into the matchable snapshot before planning.

@@ -98,6 +98,7 @@ import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
+import { loadRelayJoinedYards } from "./ci-relay-yard.js";
 import {
 	isJsonObject,
 	isJsonString,
@@ -295,10 +296,18 @@ function describeReasons(reasons: readonly ReasonRecord[]): string {
  * binding rows cover, in its regions, and nothing else. Realized only by the
  * relay's git deployment.
  */
-export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
+export function relayYardRegistryProvider(
+	yard: Yard,
+	joinedSecretProjection = false,
+): RegistrableProvider {
 	const productIds = [
 		...new Set(
 			yard.bindings
+				.filter(
+					(row) =>
+						!joinedSecretProjection ||
+						row.profile === capability.secretRef.runtimeProjection,
+				)
 				.map((row) => row.productId)
 				.filter((id): id is string => id !== undefined && id !== ""),
 		),
@@ -306,10 +315,13 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 	// An HTTP compute entry only when the Yard binds the HTTP API profile.
 	const http = yard.bindings.some((row) => row.profile === capability.api.http);
 	const none: readonly string[] = [];
-	const offered: { port: string; features: readonly string[] }[] = [
-		{ port: "compute", features: http ? ["http"] : none },
-		{ port: "data", features: none },
-	];
+	const offered: { port: string; features: readonly string[] }[] =
+		joinedSecretProjection
+			? []
+			: [
+					{ port: "compute", features: http ? ["http"] : none },
+					{ port: "data", features: none },
+				];
 	// A runtime projection can read secrets; it does not imply write access.
 	if (
 		yard.bindings.some(
@@ -320,6 +332,7 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 	// SDK data resources retain their kind during planning. Expose the new
 	// ports only when the Yard binds an implementation of that kind.
 	if (
+		!joinedSecretProjection &&
 		yard.bindings.some(
 			(row) =>
 				row.profile === capability.kv.keyValue ||
@@ -329,6 +342,7 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 	)
 		offered.push({ port: "kv", features: none });
 	if (
+		!joinedSecretProjection &&
 		yard.bindings.some(
 			(row) =>
 				row.profile === capability.queue.atLeastOnce ||
@@ -368,7 +382,9 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 						port,
 						features: [...features],
 						productIds,
-						realizedBy: "relay git deployment",
+						realizedBy: joinedSecretProjection
+							? "declared joined Yard secret projection"
+							: "relay git deployment",
 					})),
 				},
 				cost: { facts: [] },
@@ -760,8 +776,10 @@ async function deliverWith(
 	);
 	const railCatalog = createJournalRailCatalog({ store });
 	const policyPack = createCdBaselinePack();
+	const joined = await loadRelayJoinedYards(input.cwd, input.yard);
 	const registry = createRegistryFromProviders([
 		relayYardRegistryProvider(input.yard),
+		...joined.map((yard) => relayYardRegistryProvider(yard, true)),
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
 	const suites = input.suites;

@@ -27,6 +27,7 @@ export {
 	type ContainerBuildFn,
 	validateContainerArchive,
 } from "./build/container-build.js";
+export { externalBoundaryRefusal } from "./cloud/boundaries.js";
 export {
 	BINDLE_SOURCE_CANDIDATES,
 	compileProjectManifest,
