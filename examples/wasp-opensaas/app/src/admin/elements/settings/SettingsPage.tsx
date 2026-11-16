@@ -1,6 +1,7 @@
-import { FileText, Mail, Upload, User } from "lucide-react";
-import { FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { type AuthUser } from "wasp/auth";
+import { saveAdminProfile } from "wasp/client/operations";
+import * as z from "zod";
 import { Button } from "../../../client/components/ui/button";
 import {
   Card,
@@ -14,189 +15,200 @@ import { Textarea } from "../../../client/components/ui/textarea";
 import { Breadcrumb } from "../../layout/Breadcrumb";
 import { DefaultLayout } from "../../layout/DefaultLayout";
 
+const maxPhotoBytes = 256 * 1024;
+
+type Profile = {
+  fullName: string | null;
+  phoneNumber: string | null;
+  bio: string | null;
+  profilePhoto: string | null;
+};
+
 export function SettingsPage({ user }: { user: AuthUser }) {
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    // TODO implement
+  const [saved, setSaved] = useState<Profile>({
+    fullName: user.fullName,
+    phoneNumber: user.phoneNumber,
+    bio: user.bio,
+    profilePhoto: user.profilePhoto,
+  });
+  const [draft, setDraft] = useState(saved);
+  const [saving, setSaving] = useState(false);
+  const [readingPhoto, setReadingPhoto] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  function changePhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    if (
+      !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
+      file.size > maxPhotoBytes
+    ) {
+      setError("Choose a PNG, JPEG, or WebP image no larger than 256 KB.");
+      return;
+    }
+    const reader = new FileReader();
+    setReadingPhoto(true);
+    reader.onerror = () => {
+      setReadingPhoto(false);
+      setError("The image could not be read.");
+    };
+    reader.onload = () => {
+      setReadingPhoto(false);
+      const result = z.string().safeParse(reader.result);
+      if (!result.success) {
+        setError("The image could not be read.");
+        return;
+      }
+      setDraft((current) => ({ ...current, profilePhoto: result.data }));
+      setError("");
+      setNotice("");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    alert("Not yet implemented");
-  };
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const profile = await saveAdminProfile({
+        fullName: draft.fullName ?? "",
+        phoneNumber: draft.phoneNumber ?? "",
+        bio: draft.bio ?? "",
+        profilePhoto: draft.profilePhoto,
+      });
+      setSaved(profile);
+      setDraft(profile);
+      setNotice("Settings saved.");
+    } catch {
+      setError("Settings could not be saved. Check the fields and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <DefaultLayout user={user}>
-      <div className="max-w-270 mx-auto">
+      <div className="mx-auto max-w-4xl">
         <Breadcrumb pageName="Settings" />
-
-        <div className="grid grid-cols-5 gap-8">
-          <div className="col-span-5 xl:col-span-3">
-            <Card>
-              <CardHeader>
-                <CardTitle>Personal Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit}>
-                  <div className="mb-5.5 gap-5.5 flex flex-col sm:flex-row">
-                    <div className="w-full sm:w-1/2">
-                      <Label
-                        htmlFor="full-name"
-                        className="text-foreground mb-3 block text-sm font-medium"
-                      >
-                        Full Name
-                      </Label>
-                      <div className="relative">
-                        <User className="text-muted-foreground left-4.5 absolute top-2 h-5 w-5" />
-                        <Input
-                          className="pl-11.5"
-                          type="text"
-                          name="fullName"
-                          id="full-name"
-                          placeholder="Devid Jhon"
-                          defaultValue="Devid Jhon"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="w-full sm:w-1/2">
-                      <Label
-                        htmlFor="phone-number"
-                        className="text-foreground mb-3 block text-sm font-medium"
-                      >
-                        Phone Number
-                      </Label>
-                      <Input
-                        type=""
-                        name="phoneNumber"
-                        id="phone-number"
-                        placeholder="+990 3343 7865"
-                        defaultValue="+990 3343 7865"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mb-5.5">
-                    <Label
-                      htmlFor="email-address"
-                      className="text-foreground mb-3 block text-sm font-medium"
-                    >
-                      Email Address
-                    </Label>
-                    <div className="relative">
-                      <Mail className="text-muted-foreground left-4.5 absolute top-2 h-5 w-5" />
-                      <Input
-                        className="pl-11.5"
-                        type="email"
-                        name="emailAddress"
-                        id="email-address"
-                        placeholder="devidjond45@gmail.com"
-                        defaultValue="devidjond45@gmail.com"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mb-5.5">
-                    <Label
-                      htmlFor="username"
-                      className="text-foreground mb-3 block text-sm font-medium"
-                    >
-                      Username
-                    </Label>
-                    <Input
-                      type="text"
-                      name="Username"
-                      id="username"
-                      placeholder="devidjhon24"
-                      defaultValue="devidjhon24"
-                    />
-                  </div>
-
-                  <div className="mb-5.5">
-                    <Label
-                      htmlFor="bio"
-                      className="text-foreground mb-3 block text-sm font-medium"
-                    >
-                      BIO
-                    </Label>
-                    <div className="relative">
-                      <FileText className="text-muted-foreground left-4.5 absolute top-4 h-5 w-5" />
-                      <Textarea
-                        className="border-border bg-background text-foreground focus:border-primary pr-4.5 pl-11.5 focus-visible:outline-hidden w-full rounded border py-3"
-                        name="bio"
-                        id="bio"
-                        rows={6}
-                        placeholder="Write your bio here"
-                        defaultValue="Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque posuere fermentum urna, eu condimentum mauris tempus ut. Donec fermentum blandit aliquet."
-                      ></Textarea>
-                    </div>
-                  </div>
-
-                  <div className="gap-4.5 flex justify-end">
-                    <Button variant="outline" type="submit">
-                      Cancel
-                    </Button>
-                    <Button type="submit">Save</Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
+        <form
+          onSubmit={(event) => void handleSubmit(event)}
+          className="space-y-6"
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle>Personal information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="full-name">Full name</Label>
+                  <Input
+                    id="full-name"
+                    maxLength={100}
+                    value={draft.fullName ?? ""}
+                    onChange={(event) =>
+                      setDraft({ ...draft, fullName: event.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone-number">Phone number</Label>
+                  <Input
+                    id="phone-number"
+                    type="tel"
+                    maxLength={40}
+                    value={draft.phoneNumber ?? ""}
+                    onChange={(event) =>
+                      setDraft({ ...draft, phoneNumber: event.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="email-address">Email address</Label>
+                  <Input id="email-address" value={user.email ?? ""} readOnly />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input id="username" value={user.username ?? ""} readOnly />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bio">Bio</Label>
+                <Textarea
+                  id="bio"
+                  rows={5}
+                  maxLength={1000}
+                  value={draft.bio ?? ""}
+                  onChange={(event) =>
+                    setDraft({ ...draft, bio: event.target.value })
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Profile photo</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {draft.profilePhoto && (
+                <img
+                  className="h-20 w-20 rounded-full object-cover"
+                  src={draft.profilePhoto}
+                  alt="Profile preview"
+                />
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="profile-photo">Choose a photo</Label>
+                <Input
+                  id="profile-photo"
+                  type="file"
+                  disabled={saving || readingPhoto}
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={changePhoto}
+                />
+                <p className="text-muted-foreground text-sm">
+                  PNG, JPEG, or WebP, up to 256 KB.
+                </p>
+              </div>
+              {draft.profilePhoto && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={saving || readingPhoto}
+                  onClick={() => setDraft({ ...draft, profilePhoto: null })}
+                >
+                  Remove photo
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+          {error && <p role="alert">{error}</p>}
+          {notice && <p role="status">{notice}</p>}
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving || readingPhoto}
+              onClick={() => {
+                setDraft(saved);
+                setError("");
+                setNotice("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving || readingPhoto}>
+              {saving ? "Saving…" : "Save settings"}
+            </Button>
           </div>
-          <div className="col-span-5 xl:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Your Photo</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form action="#">
-                  <div className="mb-4 flex items-center gap-3">
-                    <div className="h-14 w-14 rounded-full">
-                      {/* <img src={userThree} alt="User" /> */}
-                    </div>
-                    <div>
-                      <span className="text-foreground mb-1.5">
-                        Edit your photo
-                      </span>
-                      <span className="flex gap-2.5">
-                        <button className="hover:text-primary text-sm">
-                          Delete
-                        </button>
-                        <button className="hover:text-primary text-sm">
-                          Update
-                        </button>
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    id="FileUpload"
-                    className="border-primary bg-background mb-5.5 sm:py-7.5 relative block w-full cursor-pointer appearance-none rounded border-2 border-dashed px-4 py-4"
-                  >
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="outline-hidden absolute inset-0 z-50 m-0 h-full w-full cursor-pointer p-0 opacity-0"
-                    />
-                    <div className="flex flex-col items-center justify-center space-y-3">
-                      <span className="border-border bg-background flex h-10 w-10 items-center justify-center rounded-full border">
-                        <Upload className="text-primary h-4 w-4" />
-                      </span>
-                      <p>
-                        <span className="text-primary">Click to upload</span> or
-                        drag and drop
-                      </p>
-                      <p className="mt-1.5">SVG, PNG, JPG or GIF</p>
-                      <p>(max, 800 X 800px)</p>
-                    </div>
-                  </div>
-
-                  <div className="gap-4.5 flex justify-end">
-                    <Button variant="outline" type="submit">
-                      Cancel
-                    </Button>
-                    <Button type="submit">Save</Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        </form>
       </div>
     </DefaultLayout>
   );
