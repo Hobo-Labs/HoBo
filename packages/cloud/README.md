@@ -30,6 +30,7 @@ operation and any reservation ID. The resource actor persists
 retrying or compensating, including after replay. The deployment view exposes
 the affected resources and reservations, and drift remains unknown until the
 outcome is reconciled.
+That guard also follows resources removed from a later deployment plan.
 
 ## Budget-aware hosting placement
 
