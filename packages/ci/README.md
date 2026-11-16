@@ -552,6 +552,9 @@ GitHub's native merge queue on `main`. Optional local signoff (`gh-signoff`,
 Basecamp) does not replace the authoritative CI gate. Third-party actions pin
 full commit SHAs (catalog: [`.github/action-pins.env`](../../.github/action-pins.env);
 enforced by `pnpm run actions:lint`).
+Changes to the relay host template or bootstrap account for its embedded
+`relay-assets.ts` output only; unrelated generated files still need their own
+source or generator change.
 Every action a workflow or in-repo composite action runs, direct or
 transitive, is also locked in
 [`.github/workflows/actions.lock`](../../.github/workflows/actions.lock) by
