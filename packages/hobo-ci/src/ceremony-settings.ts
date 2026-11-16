@@ -94,7 +94,7 @@ export function storeSettings(
 					name: "BITWARDEN_SERVER_URL",
 					label: "Self-hosted server (optional)",
 					description:
-						"Only if your vault is on your own server, such as Vaultwarden: its https address.",
+						"Only if your vault is self-hosted: its https address.",
 					kind: "text",
 					required: false,
 				},

@@ -81,7 +81,6 @@ export async function ensureBitwardenSignIn(
 					"Your self-hosted Bitwarden server reads the API key only from the sign-in request itself, so a remote run cannot take it through the session's credential form.",
 				remediation: [
 					`Run hobo ${options.family} up at your own terminal: the setup page asks for your personal API key (${bitwardenApiKeyPage(endpoints)}).`,
-					"Or add BW_CLIENTID and BW_CLIENTSECRET to this environment's secrets; the run moves them into its memory and out of the environment.",
 				],
 			};
 		else apiKey = { kind: "egress-proxy" };
@@ -171,7 +170,7 @@ export async function ensureBitwardenSignIn(
 			code: `HOBO_${fam}_SETTING_INVALID`,
 			message: error.message,
 			remediation: [
-				`Fix ${error.setting} in this environment's settings: ${error.rule}.`,
+				`Enter ${error.setting} again when the run asks: ${error.rule}.`,
 			],
 		};
 	}

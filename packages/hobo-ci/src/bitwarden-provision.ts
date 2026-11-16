@@ -759,7 +759,7 @@ export async function provisionBitwardenAccessToken(
 				code: `HOBO_${fam}_BITWARDEN_ACCOUNT`,
 				message: error.message,
 				remediation: [
-					"Provide a Secrets Manager access token instead (BWS_ACCESS_TOKEN in this environment's settings).",
+					"Run again: the run asks for your personal API key and one approval, and sets up its access again.",
 				],
 			};
 		throw error;

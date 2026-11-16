@@ -269,7 +269,7 @@ export const BITWARDEN_SERVERS = Object.freeze({
 	},
 });
 
-/** The server: BITWARDEN_SERVER_URL (Vaultwarden, self-hosted), else the cloud. */
+/** The server: BITWARDEN_SERVER_URL (self-hosted), else the cloud. */
 function bitwardenServer(coordinates: Env) {
 	// Parsed where it enters: a malformed origin is refused, not followed.
 	const endpoints = bitwardenEndpoints(
@@ -560,7 +560,7 @@ function openBitwardenVault(
 			ok: false,
 			message: "This run holds no sign-in for the Bitwarden vault yet.",
 			remediation: [
-				"Give this environment your personal API key (BW_CLIENTID, BW_CLIENTSECRET) and approve the login request the run asks for.",
+				"Run again: the run asks for your personal API key and one approved login request.",
 			],
 		};
 	try {
