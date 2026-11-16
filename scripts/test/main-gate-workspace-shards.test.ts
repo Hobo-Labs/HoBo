@@ -68,8 +68,8 @@ describe("main full gate workspace sharding", () => {
 			planStart,
 			workflow.indexOf("  main-gate:", planStart),
 		);
-		assert.match(plan, /gitleaks-main-scan\.mts --background/u);
-		assert.match(plan, /gitleaks-main-scan\.mts --wait/u);
+		assert.match(plan, /betterleaks-main-scan\.mts --background/u);
+		assert.match(plan, /betterleaks-main-scan\.mts --wait/u);
 	});
 
 	it("skips the gate and plans no shards when the merge queue passed the tree", () => {
@@ -152,7 +152,7 @@ describe("main full gate workspace sharding", () => {
 			steps.indexOf("\n      - ", reroute),
 		);
 		assert.match(step, /if: needs\.route\.outputs\.tier == 'fleet'/u);
-		assert.match(step, /uses: \.\/\.github\/actions\/route-runner/u);
+		assert.match(step, /uses: \$\/\.github\/actions\/route-runner/u);
 		assert.match(step, /token: \$\{\{ github\.token \}\}/u);
 		for (const input of [
 			"route: ${{ inputs.route || 'auto' }}",

@@ -20,6 +20,7 @@ import type {
 /** Required Camp component-host runtimes implied by bindle dependencies. */
 export type RequiredRuntimeKind = "wasm" | "oci";
 
+// public-contract: serialized option name read by brokers and Camp hosts.
 export const DEPENDENCY_OPTION = "dependency" as const;
 
 /**
@@ -35,6 +36,10 @@ export function dependencyAnnotation(config: {
 	readonly endpoints?: JsonObject;
 	readonly connectionString?: string;
 	readonly env?: Readonly<Record<string, string>>;
+	readonly managedBy?: {
+		readonly provider: string;
+		readonly via: "marketplace";
+	};
 }): ProviderAnnotation {
 	const frozen: JsonBag = {
 		runtime: config.runtime,
@@ -49,6 +54,11 @@ export function dependencyAnnotation(config: {
 		frozen.connectionString = config.connectionString;
 	}
 	if (config.env !== undefined) frozen.env = { ...config.env };
+	if (config.managedBy !== undefined)
+		frozen.managedBy = {
+			provider: config.managedBy.provider,
+			via: config.managedBy.via,
+		};
 	return Object.freeze({
 		provider: "hobo",
 		option: DEPENDENCY_OPTION,
@@ -67,6 +77,9 @@ export function externalDependencyAnnotation(
 			: undefined),
 		...(options.endpoints !== undefined
 			? { endpoints: options.endpoints }
+			: undefined),
+		...(options.managedBy !== undefined
+			? { managedBy: options.managedBy }
 			: undefined),
 	});
 }

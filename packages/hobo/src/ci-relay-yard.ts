@@ -27,7 +27,12 @@ import { pathToFileURL } from "node:url";
 
 import { TOPOLOGY_CONTRACT_VERSION, type Yard } from "@hobo/yards";
 
-import { isJsonArray, isJsonObject, isJsonString } from "./json.js";
+import {
+	isJsonArray,
+	isJsonObject,
+	isJsonString,
+	type JsonValue,
+} from "./json.js";
 import {
 	refusedEnvKeyReason,
 	refusedEnvValueReason,
@@ -121,6 +126,41 @@ function isYard<T>(value: T): value is T & Yard {
 // The Yard the project at `projectDir` declares, or undefined when it has no
 // Yard source. A source that does not import, or exports no Yard, is refused:
 // a deploy that silently fell back to another placement would be worse.
+/**
+ * The Yards the relay's junction joins to its own (the config service's,
+ * the non-Vercel caches'): the module's `relayJunction` export minus the
+ * relay's Yard. Empty when the module declares no junction.
+ */
+export async function loadRelayJoinedYards(
+	projectDir: string,
+	relay: Yard,
+): Promise<readonly Yard[]> {
+	for (const candidate of RELAY_YARD_SOURCE_CANDIDATES) {
+		const absolute = path.join(projectDir, candidate);
+		if (!existsSync(absolute)) continue;
+		const module: object = await import(pathToFileURL(absolute).href);
+		const declared = Object.entries(module).find(
+			([name]) => name === "relayJunction",
+		)?.[1];
+		if (
+			!isJsonObject(declared) ||
+			declared.kind !== "junction" ||
+			declared.contract !== "hobo.junction-objects/v1" ||
+			!isJsonArray(declared.yards)
+		)
+			return [];
+		const members: readonly JsonValue[] = declared.yards;
+		// A junction that does not include this very Yard does not authorize its
+		// members to supply capabilities to the relay.
+		if (!members.some((member) => isYard(member) && member === relay))
+			return [];
+		return members.flatMap((member) =>
+			isYard(member) && member.name !== relay.name ? [member] : [],
+		);
+	}
+	return [];
+}
+
 export async function loadRelayYard(
 	projectDir: string,
 ): Promise<Yard | undefined> {
@@ -244,6 +284,13 @@ function placementProperty(yard: Yard, key: string): string | undefined {
 export function resolveRelayPlacement(
 	yard: Yard,
 	target: RelayTarget,
+	/**
+	 * Yards the relay's junction joins to its own. A Yard holds only what its
+	 * provider runs, so a service another vendor runs (the config service) is
+	 * a row of a joined Yard; a Camp requirement the relay's Yard has no row
+	 * for is satisfied from them.
+	 */
+	joined: readonly Yard[] = [],
 ): RelayPlacement {
 	const camps = yard.camps.filter((entry) => entry.envType === target);
 	if (camps.length === 0)
@@ -262,15 +309,25 @@ export function resolveRelayPlacement(
 
 	// ADR-0151: the required profiles are the hard gate; the canonical row
 	// order (`parseYardBindings`) is the lexicographic one.
+	// One canonical order across the junction (ADR-0151: rows never rank; the
+	// order is lexicographic), so splitting a Yard changes nothing a deploy
+	// chooses or prints.
+	const key = (row: Yard["bindings"][number]) =>
+		`${row.profile}\u0000${row.productId ?? ""}\u0000${row.connectivityId ?? ""}`;
+	const rows = [yard, ...joined]
+		.flatMap((member) => member.bindings.map((row) => ({ row, member })))
+		.sort((a, b) =>
+			key(a.row) < key(b.row) ? -1 : key(a.row) > key(b.row) ? 1 : 0,
+		);
 	const chosen = new Set<Yard["bindings"][number]>();
 	for (const profile of camp.require) {
-		const first = yard.bindings.find((row) => row.profile === profile);
+		const first = rows.find((entry) => entry.row.profile === profile);
 		if (first === undefined)
 			return refuse(
 				"HOBO_CI_DEPLOY_BINDING_UNAVAILABLE",
-				`Camp ${camp.id} requires ${profile}, and Yard ${yard.name} has no row for it.`,
+				`Camp ${camp.id} requires ${profile}, and neither Yard ${yard.name} nor a Yard joined to it has a row for it.`,
 			);
-		chosen.add(first);
+		chosen.add(first.row);
 	}
 
 	const settings = new Map<string, string>();
@@ -290,8 +347,8 @@ export function resolveRelayPlacement(
 			settings.set(name, value);
 		}
 	};
-	const bindings = yard.bindings.map((row): PlacedBinding => {
-		const where = `The ${row.profile} row (${row.productId ?? row.connectivityId ?? "-"}) of Yard ${yard.name}`;
+	const bindings = rows.map(({ row, member }): PlacedBinding => {
+		const where = `The ${row.profile} row (${row.productId ?? row.connectivityId ?? "-"}) of Yard ${member.name}`;
 		const rowSettings = settingsOf(where, row.properties);
 		const rowInputs = inputsOf(where, row.properties);
 		const attachment = attachmentOf(row);

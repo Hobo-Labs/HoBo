@@ -1487,7 +1487,9 @@ the same port, each record short-lived:
   gets a ten-minute owner session that stands for the onboarding control
   token. App registration (the manifest flow) answers 410; `hobo ci` creates
   the App. A verified installation is usable for a day and logged by id for
-  `hobo ci` to write into the config service.
+  `hobo ci` to write into the config service. Manifest verification defaults to
+  a user-owned App; organization ownership must be requested explicitly and
+  still matches the expected account ID on both converted and live metadata.
 - **Proxy VM meter**: `recordSandboxProxyMeter` keeps what the proxy VM
   counted; settlement charges the larger of it and the store's own counters,
   and uses it alone when the cache lost them, so a lease rebuilt after a cache

@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+// Wire records for the CD project's Vercel connection and junction. No record
+// carries a credential value.
+package hobo.hobo_cd.v1;
+
+// What `hobo cd up` needs to connect Vercel (the owner's environment).
+message VercelConnectionConfig {
+  // HoBo CD's Integration slug and client id.
+  string integration_slug = 1;
+  string client_id = 2;
+  // The Redirect URL registered on the Integration console (loopback).
+  string redirect_uri = 3;
+  // infisical | 1password
+  string secret_store = 4;
+}
+
+// The prepare step's report for the Vercel connection.
+message VercelConnectionStep {
+  // Always "vercel".
+  string id = 1;
+  // created | unchanged | would-create
+  string outcome = 2;
+  string detail = 3;
+}
+
+// The Vercel provider junction: the CD Yard joined to the Vercel Yard.
+message VercelJunctionRecord {
+  string junction = 1;
+  // The member Yards; each holds only what is internal to its provider.
+  repeated string yards = 2;
+  // The store the junction's credential is read from (by reference).
+  string store = 3;
+}

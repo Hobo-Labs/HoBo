@@ -76,6 +76,13 @@ export function matchResource(
 	registry: PlannerRegistry,
 	placementContext?: PlacementContext,
 	hosting?: HostingPlanningPass,
+	/**
+	 * Providers that are not answering right now. Routing, not refusal: their
+	 * candidates are rejected (`provider-unavailable`) and the next-ranked
+	 * available candidate wins, so one provider's outage moves the resource to
+	 * the cheapest provider that is up.
+	 */
+	unavailable?: ReadonlySet<string>,
 ): MatchOutcome {
 	const supported =
 		intent.objective === "min-cost" ||
@@ -101,8 +108,17 @@ export function matchResource(
 	const accepted: ResourceDefinition[] = [];
 	const rejectedCandidates: { definitionId: string; reason: string }[] = [];
 	let lastMissing: string[] = [];
+	const unavailableHits: string[] = [];
 
 	for (const candidate of candidates) {
+		if (unavailable?.has(candidate.providerId)) {
+			unavailableHits.push(candidate.providerId);
+			rejectedCandidates.push({
+				definitionId: candidate.id,
+				reason: "provider-unavailable",
+			});
+			continue;
+		}
 		const verdict = candidate.satisfies({
 			port: intent.port,
 			features: intent.require,
@@ -128,6 +144,22 @@ export function matchResource(
 		}
 	}
 
+	if (accepted.length === 0 && unavailableHits.length > 0) {
+		// Every provider that could serve this resource is down. Say so: the
+		// cure is another configured provider, not a different capability.
+		const down = [...new Set(unavailableHits)].sort();
+		return {
+			ok: false,
+			remediation: {
+				resource: intent.name,
+				code: "placement.providers-unavailable",
+				requiredPort: intent.port,
+				requiredFeatures: intent.require,
+				missing: [],
+				remediation: `every registered provider that satisfies port ${intent.port} for resource ${intent.name} is unavailable (${down.join(", ")}); register and approve another provider for it (for PostgreSQL, a second vendor such as Supabase beside Neon) so routing has somewhere to go`,
+			},
+		};
+	}
 	if (accepted.length === 0) {
 		// Unsatisfiable: emit machine-readable remediation an agent can act on.
 		// First preference: a provider that is INSTALLED but not APPROVED and

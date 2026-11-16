@@ -1,9 +1,9 @@
 import { camp } from "@hobo/camps";
 import { describe, expect, it } from "vitest";
-
 import {
 	YARD_BINDING_CONTRACT,
 	YardBindingError,
+	YardBoundaryError,
 	yard,
 	yardToContract,
 } from "../src/index.js";
@@ -215,13 +215,72 @@ describe("yard() — capability binding rows", () => {
 		expect(code).toBe("YARD_BINDING_PIN_CONFLICT");
 	});
 
-	it("does not infer a product's provider from its id at parse time", () => {
-		// Provider coherence is a resolution-time gate (the catalog lives there);
-		// inferring it from an id prefix here would make naming load-bearing.
-		const y = yard("aws-prod", {
-			provider: "aws",
-			bindings: [{ profile: "kv.key-value/v1", productId: "gcp:memorystore" }],
+	it("refuses a binding another vendor runs: it needs its own Yard and a junction", () => {
+		// Domain and provider boundaries (boundaries.ts): nothing in a Yard is
+		// external. A product id names its vendor (`<vendor>.<product>/vN` or
+		// `<vendor>:<product>`), so a foreign product is refused at parse time.
+		expect(() =>
+			yard("aws-prod", {
+				provider: "aws",
+				bindings: [
+					{ profile: "kv.key-value/v1", productId: "gcp:memorystore" },
+				],
+			}),
+		).toThrow(YardBoundaryError);
+		try {
+			yard("aws-prod", {
+				provider: "aws",
+				bindings: [
+					{ profile: "kv.key-value/v1", productId: "gcp:memorystore" },
+				],
+			});
+		} catch (error) {
+			expect(error).toMatchObject({
+				code: "YARD_EXTERNAL_FORBIDDEN",
+				violations: [{ productId: "gcp:memorystore", vendor: "gcp" }],
+			});
+		}
+	});
+
+	it("keeps a service the provider runs on our behalf (Marketplace) internal", () => {
+		const y = yard("vercel-prod", {
+			provider: "vercel",
+			bindings: [
+				{
+					profile: "kv.redis-compatible/v1",
+					productId: "upstash.redis/v1",
+					connectivityId: "vercel.marketplace/v1",
+				},
+				{
+					profile: "data.postgres/v1",
+					productId: "neon.postgres/v1",
+					connectivityId: "vercel.marketplace/v1",
+				},
+				{
+					profile: "data.postgres/v1",
+					productId: "supabase.postgres/v1",
+					connectivityId: "vercel.marketplace/v1",
+				},
+				{ profile: "api.http/v1", productId: "vercel.function/v1" },
+			],
 		});
-		expect(y.bindings[0]?.productId).toBe("gcp:memorystore");
+		expect(y.bindings).toHaveLength(4);
+		// The same products held directly (not via the provider) are refused.
+		expect(() =>
+			yard("vercel-prod", {
+				provider: "vercel",
+				bindings: [
+					{ profile: "data.postgres/v1", productId: "neon.postgres/v1" },
+				],
+			}),
+		).toThrow(/neon\.postgres\/v1 in a Yard whose provider is neon/);
+	});
+
+	it("accepts a provider package id as the Yard's provider", () => {
+		const y = yard("cf", {
+			provider: "@hobo/provider-cloudflare",
+			bindings: [{ profile: "data.sql/v1", productId: "cloudflare.d1/v1" }],
+		});
+		expect(y.bindings).toHaveLength(1);
 	});
 });

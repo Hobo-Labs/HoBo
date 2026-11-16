@@ -182,7 +182,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		// The pinned toolchain (Node 24 from mise.toml) is in place first:
 		// under Node 22 pnpm prints an engine warning into turbo's JSON.
 		const names = scripts.steps.map((entry) => entry.uses || entry.name);
-		const preflight = names.indexOf("./.github/actions/ci-runner-preflight");
+		const preflight = names.indexOf("$/.github/actions/ci-runner-preflight");
 		assert.ok(preflight >= 0, "the job runs ci-runner-preflight");
 		assert.ok(preflight < names.indexOf(LANE));
 		assert.ok(names.indexOf(SCOPE) < names.indexOf(LANE));

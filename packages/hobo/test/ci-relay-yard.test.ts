@@ -1,10 +1,11 @@
 import { fileURLToPath } from "node:url";
 
 import { camp } from "@hobo/camps";
-import { type YardBindingInput, yard } from "@hobo/yards";
+import { type YardBindingInput, YardBoundaryError, yard } from "@hobo/yards";
 import { describe, expect, it } from "vitest";
 
 import {
+	loadRelayJoinedYards,
 	loadRelayYard,
 	RelayPlacementRefusal,
 	resolveRelayPlacement,
@@ -33,6 +34,17 @@ const configService: YardBindingInput = {
 		inputs: ["INFISICAL_PROJECT_ID", "INFISICAL_IDENTITY_ID"],
 	},
 };
+
+// The config service is Infisical's: its row lives in Infisical's Yard,
+// joined to the relay's Vercel Yard by the relay's junction.
+const configYard = yard("relay-config", {
+	provider: "infisical",
+	bindings: [configService],
+});
+
+function configYardWith(row: YardBindingInput) {
+	return yard("relay-config", { provider: "infisical", bindings: [row] });
+}
 
 function relayYard(
 	bindings: readonly YardBindingInput[],
@@ -68,8 +80,9 @@ function refusal(run: () => void): RelayPlacementRefusal {
 describe("resolveRelayPlacement", () => {
 	it("chooses the Camp the target names, and the rows its required profiles have", () => {
 		const placement = resolveRelayPlacement(
-			relayYard([marketplace, configService]),
+			relayYard([marketplace]),
 			"production",
+			[configYard],
 		);
 		expect(placement).toMatchObject({
 			yard: "relay",
@@ -100,8 +113,9 @@ describe("resolveRelayPlacement", () => {
 
 	it("projects nothing from a row its Camp does not require", () => {
 		const placement = resolveRelayPlacement(
-			relayYard([marketplace, configService]),
+			relayYard([marketplace]),
 			"preview",
+			[configYard],
 		);
 		expect(placement.camp).toBe("relay/preview");
 		expect([...placement.settings]).toEqual([]);
@@ -114,15 +128,19 @@ describe("resolveRelayPlacement", () => {
 	});
 
 	it("chooses the first row of a profile in canonical order, whatever order it was written in", () => {
+		// Two offerings Vercel provisions and runs for us (Marketplace), so
+		// both are internal to the Vercel Yard.
 		const aiven: YardBindingInput = {
 			profile: VALKEY,
 			productId: "aiven.valkey/v1",
-			connectivityId: "config-service.url/v1",
+			connectivityId: "vercel.marketplace/v1",
+			properties: { integration: "aiven", resource: "relay-cache" },
 		};
 		const selfHosted: YardBindingInput = {
 			profile: VALKEY,
-			productId: "valkey.self-hosted/v1",
-			connectivityId: "config-service.url/v1",
+			productId: "upstash.valkey/v1",
+			connectivityId: "vercel.marketplace/v1",
+			properties: { integration: "upstash", resource: "relay-cache" },
 		};
 		const camps = [camp("preview", { envType: "preview", require: [VALKEY] })];
 		for (const rows of [
@@ -139,6 +157,12 @@ describe("resolveRelayPlacement", () => {
 					.map((binding) => binding.productId),
 			).toEqual(["aiven.valkey/v1"]);
 		}
+	});
+
+	it("refuses another vendor's service inside the Vercel Yard; it belongs to its own Yard", () => {
+		expect(() => relayYard([marketplace, configService])).toThrow(
+			YardBoundaryError,
+		);
 	});
 
 	it("fails closed on a required profile the Yard has no row for", () => {
@@ -179,13 +203,9 @@ describe("resolveRelayPlacement", () => {
 			{ HOBO_CI_PUBLIC_URL: "https://user:synthetic-pw@ci.example.test" },
 		]) {
 			const error = refusal(() =>
-				resolveRelayPlacement(
-					relayYard([
-						marketplace,
-						{ ...configService, properties: { settings } },
-					]),
-					"production",
-				),
+				resolveRelayPlacement(relayYard([marketplace]), "production", [
+					configYardWith({ ...configService, properties: { settings } }),
+				]),
 			);
 			expect(error.code).toBe("HOBO_CI_DEPLOY_SETTING_REFUSED");
 			expect(error.message).not.toContain("synthetic");
@@ -194,16 +214,12 @@ describe("resolveRelayPlacement", () => {
 
 	it("refuses an input that names a credential", () => {
 		const error = refusal(() =>
-			resolveRelayPlacement(
-				relayYard([
-					marketplace,
-					{
-						...configService,
-						properties: { inputs: ["INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"] },
-					},
-				]),
-				"production",
-			),
+			resolveRelayPlacement(relayYard([marketplace]), "production", [
+				configYardWith({
+					...configService,
+					properties: { inputs: ["INFISICAL_UNIVERSAL_AUTH_CLIENT_ID"] },
+				}),
+			]),
 		);
 		expect(error.code).toBe("HOBO_CI_DEPLOY_SETTING_REFUSED");
 	});
@@ -219,16 +235,16 @@ describe("resolveRelayPlacement", () => {
 							settings: { HOBO_CI_CONFIG_SERVICE: "env" },
 						},
 					},
-					configService,
 				]),
 				"production",
+				[configYard],
 			),
 		);
 		expect(disagreeing.code).toBe("HOBO_CI_DEPLOY_BINDING_CONFLICT");
 		const both = refusal(() =>
 			resolveRelayPlacement(
 				relayYard(
-					[marketplace, configService],
+					[marketplace],
 					[
 						camp("production", {
 							envType: "production",
@@ -240,6 +256,7 @@ describe("resolveRelayPlacement", () => {
 					],
 				),
 				"production",
+				[configYard],
 			),
 		);
 		expect(both.code).toBe("HOBO_CI_DEPLOY_BINDING_CONFLICT");
@@ -266,9 +283,21 @@ describe("loadRelayYard", () => {
 		);
 		expect(loaded?.name).toBe("hobo-ci-relay");
 		expect(loaded?.providerId).toBe("vercel");
+		const relayDir = fileURLToPath(
+			new URL("../../ci-vercel/", import.meta.url),
+		);
+		const joined =
+			loaded === undefined ? [] : await loadRelayJoinedYards(relayDir, loaded);
+		// Infisical, Aiven and self-hosted Valkey each have a Yard of their own.
+		expect(joined.map((member) => [member.name, member.providerId])).toEqual([
+			["hobo-ci-relay-config", "infisical"],
+			["hobo-ci-relay-cache-aiven", "aiven"],
+			["hobo-ci-relay-cache-valkey", "valkey"],
+		]);
 		const production = resolveRelayPlacement(
 			loaded ?? relayYard([]),
 			"production",
+			joined,
 		);
 		expect(production.inputs).toEqual([
 			"INFISICAL_IDENTITY_ID",

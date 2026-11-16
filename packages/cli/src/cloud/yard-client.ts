@@ -111,6 +111,8 @@ export interface DeployConfig {
 	readonly budgetId?: string;
 	/** Bicep deployment mode: `complete` prunes resources no longer declared. */
 	readonly mode?: DeploymentMode;
+	/** Providers known to be down before planning (a health probe's answer). */
+	readonly unavailableProviders?: readonly string[];
 }
 
 export interface PlanRenderedSuccess {
@@ -329,6 +331,9 @@ export interface YardClient {
 	) => Promise<Readonly<{ result: DownResult; receipt?: DeliveryReceipt }>>;
 }
 
+/** The config the gateway records on `deployment.Requested` and plans with. */
+type GatewayDeployConfig = NonNullable<Parameters<typeof deploy>[1]["config"]>;
+
 function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 	const progress: ProgressEvent[] = [];
 	for (const event of events) {
@@ -531,15 +536,19 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				actor: session.principal,
 				correlationId: `deploy:${deploymentId}`,
 			};
-			const effectiveConfig = { ...config };
+			// A retryable error does not establish whether apply took effect. Plan
+			// around preexisting availability information only; do not infer an
+			// outage from an apply failure and silently create elsewhere.
+			const { unavailableProviders: initiallyDown, ...baseConfig } =
+				config ?? {};
+			const unavailable = new Set<string>(initiallyDown ?? []);
+			const effectiveConfig: GatewayDeployConfig = { ...baseConfig };
+			if (unavailable.size > 0)
+				effectiveConfig.unavailableProviders = [...unavailable].sort();
 			if (budgetId) effectiveConfig.budgetId = budgetId;
 			const deployResult: DeployResult = await deploy(
 				gatewayDeps,
-				{
-					deploymentId,
-					bindle,
-					config: effectiveConfig,
-				},
+				{ deploymentId, bindle, config: effectiveConfig },
 				context,
 			);
 			if (deployResult.status === "rejected") {
@@ -576,7 +585,11 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					...(config?.mode !== undefined ? { mode: config.mode } : undefined),
 				},
 			);
-
+			const blocked = (orchestrated.blockedProviderMoves ?? []).map((move) => ({
+				type: "provider.move-blocked",
+				resourceId: move.resource,
+				detail: `Cannot move from ${move.from ?? "an unknown provider"} to ${move.to} until the existing resource and any uncertain effects are reconciled.`,
+			}));
 			return {
 				result: {
 					status: orchestrated.status,
@@ -584,7 +597,7 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					planHash: deployResult.planHash,
 					plan: deployResult.plan,
 					provisioned: orchestrated.provisioned,
-					progress: progressFrom(orchestrated.events),
+					progress: [...progressFrom(orchestrated.events), ...blocked],
 					changes: orchestrated.changes,
 					pruned: orchestrated.pruned,
 				},
