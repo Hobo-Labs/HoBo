@@ -314,7 +314,7 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 		expect(all).not.toContain("0.machine.secret:key");
 	});
 
-	it("without a token says how the environment provides one, never the owner's terminal", async () => {
+	it("without a token or API key names the API-key path first, never the owner's terminal", async () => {
 		const shown: string[] = [];
 		const outcome = await prepareVercelConnection(
 			handOff((l) => shown.push(l)),
@@ -331,8 +331,40 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 			result: { code: "HOBO_CD_STORE_NEEDS_SIGN_IN" },
 		});
 		const all = text(shown, outcome);
-		expect(all).toMatch(/BWS_ACCESS_TOKEN in the environment's settings/u);
+		expect(all).toMatch(/BW_CLIENTID and BW_CLIENTSECRET/u);
+		expect(all).toMatch(/approve one login request/u);
+		expect(all).toMatch(/security-keys/u);
+		expect(all).toMatch(/BWS_ACCESS_TOKEN/u);
 		expect(all).not.toMatch(/terminal/u);
+	});
+});
+
+describe("EVAL store choice: Bitwarden with only the owner's API key", () => {
+	it("says exactly what to fix when Bitwarden rejects the API key, and never prints it", async () => {
+		const shown: string[] = [];
+		const secret = "Zq8pX1vL0rT5mN3bW7yK2cD9fG4hJ6";
+		const outcome = await prepareVercelConnection(
+			handOff((l) => shown.push(l)),
+			{
+				env: {
+					HOBO_SECRET_STORE: "bitwarden",
+					BW_CLIENTID: "user.0c7e4c1a-7a0e-4a65-9c2e-2f1b8f0d1e2a",
+					BW_CLIENTSECRET: secret,
+				},
+				locator: { read: async () => ({}), write: async () => undefined },
+				fetch: async () =>
+					Response.json({ error: "invalid_client" }, { status: 400 }),
+				sleep: async () => undefined,
+				startPage: noPage,
+			},
+		);
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED" },
+		});
+		const all = text(shown, outcome);
+		expect(all).toMatch(/View API key/u);
+		expect(all).not.toContain(secret);
 	});
 });
 

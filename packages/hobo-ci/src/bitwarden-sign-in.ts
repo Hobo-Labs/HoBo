@@ -1,0 +1,124 @@
+import type { SettingsStore } from "@hobo/connect-ui";
+import type { TrustedVault } from "@hobo/core";
+
+import {
+	newBitwardenDeviceId,
+	parseBitwardenApiKey,
+	parseBitwardenDeviceId,
+	parseBitwardenId,
+	parseBitwardenServer,
+	provisionBitwardenAccessToken,
+} from "./bitwarden-provision.js";
+import { SettingParseError } from "./parsed-values.js";
+
+export interface BitwardenSignInRefusal {
+	readonly code: string;
+	readonly message: string;
+	readonly remediation: readonly string[];
+}
+
+export interface EnsureBitwardenSignInOptions {
+	readonly family: "ci" | "cd";
+	/** The run's vault: the API key in, the access token out. */
+	readonly vault: TrustedVault;
+	/** Non-secret settings (BWS_SERVER, BWS_ORGANIZATION_ID, BWS_PROJECT_ID). */
+	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The committed locator: ids and this run's device id are kept there. */
+	readonly locator: SettingsStore;
+	readonly fetch: typeof fetch;
+	readonly emit: (line: string) => void;
+	/** Whether the run prints progress; the approval line needs it. */
+	readonly silent: boolean;
+	readonly sleep?: (ms: number) => Promise<void>;
+	readonly now?: () => number;
+	readonly timeoutMs?: number;
+}
+
+/**
+ * Give a run whose owner chose Bitwarden an access token when the
+ * environment provided none, from the owner's personal API key and one
+ * approved login request. Returns nothing when the run already has a token or
+ * has no API key either (the caller then names both ways in), or the refusal.
+ */
+export async function ensureBitwardenSignIn(
+	options: EnsureBitwardenSignInOptions,
+): Promise<BitwardenSignInRefusal | undefined> {
+	const { vault } = options;
+	if (vault.has("BWS_ACCESS_TOKEN")) return undefined;
+	const clientId = vault.reveal("BW_CLIENTID");
+	const clientSecret = vault.reveal("BW_CLIENTSECRET");
+	if (clientId === undefined || clientSecret === undefined) return undefined;
+	const fam = options.family.toUpperCase();
+	if (options.silent)
+		return {
+			code: `HOBO_${fam}_HANDOFF_SILENT`,
+			message:
+				"Approving the Bitwarden login request needs progress output. Omit --json and -q, then retry.",
+			remediation: [`Run hobo ${options.family} up without --json or -q.`],
+		};
+	const saved = await options.locator.read();
+	const setting = (name: string) =>
+		options.env[name] || saved[name] || undefined;
+	try {
+		const apiKey = parseBitwardenApiKey(clientId, clientSecret);
+		const server = parseBitwardenServer(setting("BWS_SERVER"));
+		const organization = setting("BWS_ORGANIZATION_ID");
+		const project = setting("BWS_PROJECT_ID");
+		// A stable device id: Bitwarden knows the device after its first
+		// sign-in, and the owner is not mailed about a new device every run.
+		const deviceText = saved.BITWARDEN_DEVICE_ID;
+		const deviceId =
+			deviceText !== undefined
+				? parseBitwardenDeviceId(deviceText)
+				: newBitwardenDeviceId();
+		if (deviceText === undefined)
+			await options.locator.write({ ...saved, BITWARDEN_DEVICE_ID: deviceId });
+		const result = await provisionBitwardenAccessToken({
+			family: options.family,
+			server,
+			apiKey,
+			deviceId,
+			...(organization !== undefined
+				? {
+						organizationId: parseBitwardenId(
+							"BWS_ORGANIZATION_ID",
+							organization,
+						),
+					}
+				: undefined),
+			...(project !== undefined
+				? { projectId: parseBitwardenId("BWS_PROJECT_ID", project) }
+				: undefined),
+			fetch: options.fetch,
+			emit: options.emit,
+			...(options.sleep !== undefined ? { sleep: options.sleep } : undefined),
+			...(options.now !== undefined ? { now: options.now } : undefined),
+			...(options.timeoutMs !== undefined
+				? { timeoutMs: options.timeoutMs }
+				: undefined),
+		});
+		if (result.kind === "refused") return result;
+		vault.put("BWS_ACCESS_TOKEN", result.token);
+		const latest = await options.locator.read();
+		await options.locator.write({
+			...latest,
+			BITWARDEN_DEVICE_ID: deviceId,
+			BWS_SERVER: server,
+			BWS_ORGANIZATION_ID: result.organizationId,
+			BWS_PROJECT_ID: result.projectId,
+		});
+		options.emit(
+			`Bitwarden Secrets Manager is ready: project and machine account "hobo" in organization ${result.organizationId}, with a one-day access token held in this run's vault.`,
+		);
+		return undefined;
+	} catch (error) {
+		if (!(error instanceof SettingParseError)) throw error;
+		return {
+			code: `HOBO_${fam}_SETTING_INVALID`,
+			message: error.message,
+			remediation: [
+				`Fix ${error.setting} in this environment's settings: ${error.rule}.`,
+			],
+		};
+	}
+}

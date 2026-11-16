@@ -1,0 +1,369 @@
+import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import { createTrustedVault } from "@hobo/core";
+import { createMemorySecretsPort } from "@hobo/identity";
+import { describe, expect, it } from "vitest";
+
+import {
+	accessTokenKey,
+	decryptEncString,
+	fingerprintPhrase,
+} from "../../src/bitwarden-crypto.js";
+import {
+	OWNER_BITWARDEN_APPROVE_LINE_PREFIX,
+	parseBitwardenApiKey,
+	parseBitwardenDeviceId,
+	provisionBitwardenAccessToken,
+} from "../../src/bitwarden-provision.js";
+import { ensureBitwardenSignIn } from "../../src/bitwarden-sign-in.js";
+import {
+	prepareGithubConnection,
+	type SecretStoreOpening,
+} from "../../src/index.js";
+import {
+	API_KEY,
+	type FakeBitwardenOptions,
+	fakeBitwarden,
+	ORG_ID,
+	OTHER_ORG_ID,
+	OWNER_EMAIL,
+} from "../support/fake-bitwarden.js";
+
+// EVAL: the owner chose Bitwarden and gave no Secrets Manager access token.
+// With their personal API key (in the environment's settings) the run does
+// everything Bitwarden's API allows: it signs in, picks the organization,
+// asks the owner to approve one login request (showing the same fingerprint
+// phrase their app shows), then creates the project, machine account, grant
+// and a one-day access token itself. The owner creates no identity and
+// copies no token; no secret reaches the output.
+
+const DEVICE = parseBitwardenDeviceId("8d0f3c2e-1b4a-4c5d-9e6f-7a8b9c0d1e2f");
+
+async function provision(
+	options: FakeBitwardenOptions = {},
+	extra: { organizationId?: string } = {},
+) {
+	const server = fakeBitwarden(options);
+	const lines: string[] = [];
+	const result = await provisionBitwardenAccessToken({
+		family: "cd",
+		server: "us",
+		apiKey: parseBitwardenApiKey(API_KEY.clientId, API_KEY.clientSecret),
+		deviceId: DEVICE,
+		...(extra.organizationId !== undefined
+			? // SAFETY: test ids are UUIDs.
+				{ organizationId: extra.organizationId as never }
+			: undefined),
+		fetch: server.fetch,
+		emit: (line) => lines.push(line),
+		sleep: async () => undefined,
+		now: (() => {
+			let t = Date.parse("2026-11-16T12:00:00Z");
+			return () => (t += 1_000);
+		})(),
+		timeoutMs: 60_000,
+	});
+	return { server, lines, result };
+}
+
+describe("EVAL Bitwarden provisioning: one approval, no copied token", () => {
+	it("creates the project, machine account, grant and a working access token", async () => {
+		const { server, lines, result } = await provision();
+		if (result.kind !== "provisioned")
+			throw new Error(`refused: ${JSON.stringify(result)}`);
+
+		// The device signed in before it asked: Bitwarden only accepts login
+		// requests from a device it knows.
+		expect(server.calls.indexOf("POST /connect/token")).toBeLessThan(
+			server.calls.indexOf("POST /auth-requests/"),
+		);
+		// One owner step, with the phrase their app shows for this request.
+		const approve = lines.filter((l) =>
+			l.startsWith(`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} `),
+		);
+		expect(approve).toHaveLength(1);
+		const request = server.requests[0];
+		if (request === undefined) throw new Error("no login request");
+		const phrase = fingerprintPhrase(
+			OWNER_EMAIL,
+			Buffer.from(request.publicKey, "base64"),
+		);
+		expect(approve[0]).toContain(`phrase=${phrase}`);
+
+		// Created as Bitwarden's clients create them: names encrypted with the
+		// organization key.
+		expect(result.organizationId).toBe(ORG_ID);
+		expect(server.projects).toHaveLength(1);
+		expect(
+			decryptEncString(
+				server.projects[0]?.name ?? "",
+				server.orgKey,
+			).toString(),
+		).toBe("hobo");
+		expect(
+			decryptEncString(
+				server.accounts[0]?.name ?? "",
+				server.orgKey,
+			).toString(),
+		).toBe("hobo");
+		expect(server.grants.get(server.accounts[0]?.id ?? "")).toEqual([
+			{ grantedId: result.projectId, read: true, write: true },
+		]);
+
+		// The token opens the organization key the way the SDK opens it.
+		const match = /^0\.([^.]+)\.([^:]+):(.+)$/u.exec(result.token);
+		expect(match?.[1]).toBe("66666666-6666-4666-8666-666666666666");
+		const seed = Buffer.from(match?.[3] ?? "", "base64");
+		expect(seed).toHaveLength(16);
+		const minted = server.tokens[0];
+		if (minted === undefined) throw new Error("no token minted");
+		const payload = JSON.parse(
+			decryptEncString(
+				minted.encryptedPayload,
+				accessTokenKey(seed),
+			).toString(),
+		);
+		expect(
+			Buffer.from(payload.encryptionKey, "base64").equals(server.orgKey),
+		).toBe(true);
+		// Short-lived: a day, not forever.
+		const lifetime =
+			Date.parse(minted.expireAt) - Date.parse("2026-11-16T12:00:00Z");
+		expect(lifetime).toBeGreaterThan(23 * 3_600_000);
+		expect(lifetime).toBeLessThan(25 * 3_600_000);
+
+		const all = lines.join("\n");
+		expect(all).not.toContain(API_KEY.clientSecret);
+		expect(all).not.toContain("MintedClientSecret0123");
+	});
+
+	it("reuses an existing project and machine account, keeping their other grants", async () => {
+		const { server, result } = await provision({ existing: true });
+		if (result.kind !== "provisioned")
+			throw new Error(`refused: ${JSON.stringify(result)}`);
+		expect(result.projectId).toBe("22222222-2222-4222-8222-222222222222");
+		expect(server.projects).toHaveLength(2);
+		expect(server.accounts).toHaveLength(1);
+		expect(server.grants.get("33333333-3333-4333-8333-333333333333")).toEqual([
+			{
+				grantedId: "11111111-1111-4111-8111-111111111111",
+				read: true,
+				write: false,
+			},
+			{ grantedId: result.projectId, read: true, write: true },
+		]);
+	});
+
+	it("accepts an approval from an older app that hands over the master key", async () => {
+		const { result } = await provision({ legacyMasterKey: true });
+		expect(result.kind).toBe("provisioned");
+	});
+
+	it("asks which organization before bothering the owner, when there are several", async () => {
+		const { server, lines, result } = await provision({ organizations: 2 });
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_BITWARDEN_ORGANIZATION",
+		});
+		if (result.kind !== "refused") return;
+		expect(result.remediation.join("\n")).toContain(
+			`BWS_ORGANIZATION_ID=${OTHER_ORG_ID}`,
+		);
+		expect(server.requests).toHaveLength(0);
+		expect(lines).toHaveLength(0);
+		const chosen = await provision(
+			{ organizations: 2 },
+			{ organizationId: ORG_ID },
+		);
+		expect(chosen.result.kind).toBe("provisioned");
+	});
+
+	it("refuses clearly when the owner denies the request", async () => {
+		const { server, result } = await provision({ approve: "deny" });
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_BITWARDEN_DENIED",
+		});
+		expect(server.tokens).toHaveLength(0);
+	});
+
+	it("stops waiting at the deadline and says where approvals appear", async () => {
+		const { result } = await provision({ approve: "never" });
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_BITWARDEN_NOT_APPROVED",
+		});
+		if (result.kind === "refused")
+			expect(result.remediation.join(" ")).toMatch(/Approve login requests/u);
+	});
+
+	it("refuses an organization API key where it is read", () => {
+		expect(() =>
+			parseBitwardenApiKey(
+				"organization.0c7e4c1a-7a0e-4a65-9c2e-2f1b8f0d1e2a",
+				API_KEY.clientSecret,
+			),
+		).toThrow(/personal API key/u);
+	});
+});
+
+describe("EVAL Bitwarden sign-in: from the environment's API key to the run's vault", () => {
+	it("moves the new token into the vault and the ids into the locator", async () => {
+		const server = fakeBitwarden();
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		const saved = new Map<string, string>();
+		const lines: string[] = [];
+		const refusal = await ensureBitwardenSignIn({
+			family: "ci",
+			vault,
+			env: {},
+			locator: {
+				read: async () => Object.fromEntries(saved),
+				write: async (values) => {
+					saved.clear();
+					for (const [name, value] of Object.entries(values))
+						saved.set(name, value);
+				},
+			},
+			fetch: server.fetch,
+			emit: (line) => lines.push(line),
+			silent: false,
+			sleep: async () => undefined,
+			timeoutMs: 60_000,
+		});
+		expect(refusal).toBeUndefined();
+		expect(vault.reveal("BWS_ACCESS_TOKEN")).toMatch(/^0\./u);
+		expect(Object.fromEntries(saved)).toMatchObject({
+			BWS_SERVER: "us",
+			BWS_ORGANIZATION_ID: ORG_ID,
+			BWS_PROJECT_ID: "44444444-4444-4444-8444-444444444444",
+		});
+		// The device id is kept, so the next run is the same known device.
+		expect(saved.get("BITWARDEN_DEVICE_ID")).toMatch(/^[0-9a-f-]{36}$/u);
+		// The locator holds ids only.
+		expect(JSON.stringify(Object.fromEntries(saved))).not.toMatch(
+			/MintedClientSecret|Zq8pX1/u,
+		);
+		expect(lines.join("\n")).not.toContain(
+			vault.reveal("BWS_ACCESS_TOKEN") ?? "-",
+		);
+	});
+
+	it("needs progress output to show the approval", async () => {
+		const vault = createTrustedVault();
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		const refusal = await ensureBitwardenSignIn({
+			family: "ci",
+			vault,
+			env: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: fakeBitwarden().fetch,
+			emit: () => undefined,
+			silent: true,
+		});
+		expect(refusal?.code).toBe("HOBO_CI_HANDOFF_SILENT");
+	});
+
+	it("does nothing when the run already has a token or has no API key", async () => {
+		const server = fakeBitwarden();
+		const vault = createTrustedVault();
+		const options = {
+			family: "ci" as const,
+			vault,
+			env: {},
+			locator: { read: async () => ({}), write: async () => undefined },
+			fetch: server.fetch,
+			emit: () => undefined,
+			silent: false,
+		};
+		expect(await ensureBitwardenSignIn(options)).toBeUndefined();
+		vault.put("BWS_ACCESS_TOKEN", "0.a.b:c");
+		vault.put("BW_CLIENTID", API_KEY.clientId);
+		vault.put("BW_CLIENTSECRET", API_KEY.clientSecret);
+		expect(await ensureBitwardenSignIn(options)).toBeUndefined();
+		expect(server.calls).toHaveLength(0);
+	});
+});
+
+describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key provided", () => {
+	it("asks for one approval, then opens the store with the token it created", async () => {
+		const server = fakeBitwarden();
+		const shown: string[] = [];
+		const saved = new Map<string, string>();
+		const opened = new Map<string, string>();
+		const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
+			emitProgress: (line) => shown.push(line),
+			// SAFETY: the preparation reads only progress and these output flags.
+			flags: { json: false, quiet: false } as CommandRunInput["flags"],
+		};
+		// SAFETY: the preparation reads only progress and these output flags.
+		const input = {
+			action: "up",
+			projectDir: "/box/project",
+			whatIf: false,
+			yes: false,
+			handOff: true,
+			run: run as CommandRunInput,
+		} as PrepareInput;
+		await prepareGithubConnection(input, {
+			env: {
+				HOBO_SECRET_STORE: "bitwarden",
+				BW_CLIENTID: API_KEY.clientId,
+				BW_CLIENTSECRET: API_KEY.clientSecret,
+			},
+			vault: createTrustedVault(),
+			locator: {
+				read: async () => Object.fromEntries(saved),
+				write: async (values) => {
+					saved.clear();
+					for (const [name, value] of Object.entries(values))
+						saved.set(name, value);
+				},
+			},
+			openStore: async (
+				id,
+				coordinates,
+				signIn,
+			): Promise<SecretStoreOpening> => {
+				const token = signIn.reveal("BWS_ACCESS_TOKEN");
+				if (id !== "bitwarden" || token === undefined)
+					return { ok: false, message: "no sign-in", remediation: [] };
+				opened.set("token", token);
+				for (const [name, value] of Object.entries(coordinates))
+					if (value !== undefined) opened.set(name, value);
+				return {
+					ok: true,
+					store: {
+						id: "bitwarden",
+						port: createMemorySecretsPort({ id: "memory" }),
+						reference: (name) => `bws://${name}`,
+					},
+				};
+			},
+			fetch: server.fetch,
+			sleep: async () => undefined,
+			handOffTimeoutMs: 60_000,
+			startPage: () => {
+				throw new Error("a handed-off run serves no page");
+			},
+		});
+		expect(opened.get("token")).toMatch(
+			/^0\.66666666-6666-4666-8666-666666666666\./u,
+		);
+		expect(Object.fromEntries(opened)).toMatchObject({
+			BWS_ORGANIZATION_ID: ORG_ID,
+			BWS_PROJECT_ID: "44444444-4444-4444-8444-444444444444",
+		});
+		expect(
+			shown.filter((l) =>
+				l.startsWith(`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} `),
+			),
+		).toHaveLength(1);
+		const all = shown.join("\n");
+		expect(all).not.toContain(API_KEY.clientSecret);
+		expect(all).not.toContain("MintedClientSecret0123");
+		expect(all).not.toMatch(/\b(127\.0\.0\.1|localhost)\b/u);
+	});
+});

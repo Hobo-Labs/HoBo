@@ -14,6 +14,7 @@ import {
 import type { TrustedVault } from "@hobo/core";
 import { z } from "zod";
 
+import { bitwardenApiKeyPage } from "./bitwarden-provision.js";
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
 import { INFISICAL_OAUTH_DOCS, OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import { type HttpsOrigin, parseHttpsOrigin } from "./parsed-values.js";
@@ -76,7 +77,7 @@ export function storeChoiceGuidance(
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
 		`infisical${note("infisical")}: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
 		`1password${note("1password")}: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
-		`bitwarden${note("bitwarden")}: BWS_ORGANIZATION_ID and BWS_PROJECT_ID (BWS_SERVER us or eu). Once chosen, the run signs in with the Bitwarden Secrets Manager access token the environment provides (BWS_ACCESS_TOKEN), moved into its trusted vault and out of the environment; nothing is typed.`,
+		`bitwarden${note("bitwarden")}: nothing else to set up. Once chosen, the run signs in with the environment's Secrets Manager access token (BWS_ACCESS_TOKEN) if there is one; otherwise, with your personal API key (BW_CLIENTID, BW_CLIENTSECRET) and one login request you approve in a Bitwarden app, it finds your organization and creates the project, machine account and a one-day access token itself (BWS_SERVER us or eu; BWS_ORGANIZATION_ID only if you have several organizations). Both are moved into the run's trusted vault and out of the environment.`,
 	];
 }
 
@@ -95,7 +96,8 @@ export function storeSignInGuidance(
 		];
 	if (store === "bitwarden")
 		return [
-			`Give this environment the Bitwarden Secrets Manager access token of a machine account with access to the project, as BWS_ACCESS_TOKEN in the environment's settings (never in chat); the run moves it into its trusted vault and signs in through Bitwarden's API. If Bitwarden refuses it (invalid_client), the token was revoked or expired: issue a new one for the machine account.`,
+			`Fewest steps: copy your personal API key from ${bitwardenApiKeyPage("us")} (bitwarden.eu: ${bitwardenApiKeyPage("eu")}; Account settings → Security → Keys → View API key) into this environment's settings as BW_CLIENTID and BW_CLIENTSECRET (never in chat). The run then asks you to approve one login request in a Bitwarden app you are signed in to, and creates the Secrets Manager project, machine account and a one-day access token itself.`,
+			`Or give this environment an existing machine account's access token as BWS_ACCESS_TOKEN. If Bitwarden refuses it (invalid_client), it was revoked or expired: remove it and use the API key instead.`,
 		];
 	if (store !== "infisical")
 		return [
@@ -239,6 +241,19 @@ function nonSecret(
 	return out;
 }
 
+/** The committed locator a run reads its store's coordinates from. */
+export function ownerLocator(deps: {
+	readonly locator?: SettingsStore;
+	readonly cwd?: string;
+}): SettingsStore {
+	return (
+		deps.locator ??
+		fileSettingsStore(
+			path.join(deps.cwd ?? process.cwd(), SECRET_STORE_LOCATOR_FILE),
+		)
+	);
+}
+
 /** Find the owner's store: committed locator, the run's vault, or a workload's OIDC. */
 export async function ownerStore(
 	family: "ci" | "cd",
@@ -246,11 +261,7 @@ export async function ownerStore(
 	deps: OwnerStoreDeps = {},
 ): Promise<OwnerStore> {
 	const suppliedEnv = deps.env ?? {};
-	const locator =
-		deps.locator ??
-		fileSettingsStore(
-			path.join(deps.cwd ?? process.cwd(), SECRET_STORE_LOCATOR_FILE),
-		);
+	const locator = ownerLocator(deps);
 	const open =
 		deps.openStore ??
 		((id: SecretStoreId, coordinates: Env, signIn: SecretHolder) =>

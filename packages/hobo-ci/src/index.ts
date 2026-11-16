@@ -7,6 +7,22 @@ export {
 	resolveGithubAppHost,
 } from "./app-hosts.js";
 export {
+	accessTokenKey,
+	accessTokenMaterial,
+	decryptEncString,
+	encryptEncString,
+	fingerprintPhrase,
+} from "./bitwarden-crypto.js";
+export {
+	BITWARDEN_API_KEY_ENV,
+	BITWARDEN_PROVISIONED_NAME,
+	bitwardenApiKeyPage,
+	OWNER_BITWARDEN_APPROVE_LINE_PREFIX,
+	parseBitwardenApiKey,
+	provisionBitwardenAccessToken,
+} from "./bitwarden-provision.js";
+export { ensureBitwardenSignIn } from "./bitwarden-sign-in.js";
+export {
 	CI_SETTINGS,
 	lookupGithubOwner,
 	resolveGithubAppExpectation,
@@ -53,6 +69,7 @@ export {
 	OWNER_STORE_CHOICE_LINE_PREFIX,
 	type OwnerStore,
 	type OwnerStoreDeps,
+	ownerLocator,
 	ownerStore,
 	SECRET_STORE_LOCATOR_FILE,
 	STORE_CHOICE,

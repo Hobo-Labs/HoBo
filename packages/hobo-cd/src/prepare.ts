@@ -13,6 +13,7 @@ import {
 	awaitHandOffStore,
 	canReachOwner,
 	EGRESS_PROXY_SIGN_IN,
+	ensureBitwardenSignIn,
 	familySettings,
 	InvalidSecretStoreError,
 	ignoredSecretEnvNotice,
@@ -20,6 +21,7 @@ import {
 	type OpenedSecretStore,
 	type OwnerStoreDeps,
 	openInBrowser,
+	ownerLocator,
 	ownerStore,
 	runPage,
 	SECRET_STORE_LOCATOR_FILE,
@@ -291,6 +293,31 @@ async function prepareVercelWithVault(
 					storeSignIn ? new Set(["bitwarden"] as const) : undefined,
 				),
 			);
+		// The owner chose Bitwarden and gave no access token: with their
+		// personal API key the run creates its own, after one approval.
+		if (
+			owner.id === "bitwarden" &&
+			owner.chosen &&
+			!input.whatIf &&
+			owner.opened === undefined
+		) {
+			const refusal = await ensureBitwardenSignIn({
+				family: "cd",
+				vault,
+				env: plainEnv,
+				locator: ownerLocator(deps),
+				fetch: deps.fetch ?? fetch,
+				emit: (line) => input.run.emitProgress(line),
+				silent: input.run.flags.json || input.run.flags.quiet,
+				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+				...(deps.handOffTimeoutMs !== undefined
+					? { timeoutMs: deps.handOffTimeoutMs }
+					: undefined),
+			});
+			if (refusal !== undefined)
+				return refused(refusal.code, refusal.message, refusal.remediation);
+			owner = await openOwner();
+		}
 		// The owner is needed only if the store does not answer yet: a silent
 		// run cannot ask, so it refuses before waiting.
 		const needsOwner =

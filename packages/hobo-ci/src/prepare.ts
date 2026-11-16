@@ -17,6 +17,7 @@ import {
 	resolveGithubAppHost,
 	validGithubOrganizationLogin,
 } from "./app-hosts.js";
+import { ensureBitwardenSignIn } from "./bitwarden-sign-in.js";
 import {
 	CI_SETTINGS,
 	lookupGithubOwner,
@@ -30,6 +31,7 @@ import {
 	familySettings,
 	InvalidSecretStoreError,
 	type OwnerStoreDeps,
+	ownerLocator,
 	ownerStore,
 	SECRET_STORE_LOCATOR_FILE,
 	storeChoiceGuidance,
@@ -324,6 +326,31 @@ async function prepareGithubWithVault(
 					storeSignIn ? new Set(["bitwarden"] as const) : undefined,
 				),
 			);
+		// The owner chose Bitwarden and gave no access token: with their
+		// personal API key the run creates its own, after one approval.
+		if (
+			owner.id === "bitwarden" &&
+			owner.chosen &&
+			!input.whatIf &&
+			owner.opened === undefined
+		) {
+			const refusal = await ensureBitwardenSignIn({
+				family: "ci",
+				vault,
+				env: plainEnv,
+				locator: ownerLocator(deps),
+				fetch: deps.fetch ?? fetch,
+				emit: (line) => input.run.emitProgress(line),
+				silent: input.run.flags.json || input.run.flags.quiet,
+				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+				...(deps.handOffTimeoutMs !== undefined
+					? { timeoutMs: deps.handOffTimeoutMs }
+					: undefined),
+			});
+			if (refusal !== undefined)
+				return refused(refusal.code, refusal.message, refusal.remediation);
+			owner = await openOwner();
+		}
 		// The owner is needed only if the store does not answer yet: a silent
 		// run cannot ask, so it refuses before waiting.
 		const needsOwner =

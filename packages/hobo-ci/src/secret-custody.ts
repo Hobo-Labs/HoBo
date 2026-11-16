@@ -164,15 +164,32 @@ export const STORE_SIGN_IN_ENV = [
 	"BITWARDEN_ACCESS_TOKEN",
 ] as const;
 
+/**
+ * The owner's Bitwarden personal API key (the names `bw login --apikey`
+ * reads). With no access token, a run signs in with it and, once the owner
+ * approves one login request, creates its own Secrets Manager token. Adopted
+ * into the vault like the token.
+ */
+export const BITWARDEN_API_KEY_SIGN_IN_ENV = [
+	"BW_CLIENTID",
+	"BW_CLIENTSECRET",
+] as const;
+
 /** The environment without the store sign-in names (adopted, not ignored). */
 export function withoutStoreSignIn(env: Env): Env {
-	const adopted = new Set<string>(STORE_SIGN_IN_ENV);
+	const adopted = new Set<string>([
+		...STORE_SIGN_IN_ENV,
+		...BITWARDEN_API_KEY_SIGN_IN_ENV,
+	]);
 	return Object.fromEntries(
 		Object.entries(env).filter(([name]) => !adopted.has(name)),
 	);
 }
 
-/** Move the environment's store sign-in into `vault`; true when there was one. */
+/**
+ * Move the environment's Bitwarden sign-in (an access token, or the personal
+ * API key that provisions one) into `vault`; true when there was one.
+ */
 export function adoptStoreSignIn(
 	env: Record<string, string | undefined>,
 	vault: Pick<TrustedVault, "put">,
@@ -186,6 +203,14 @@ export function adoptStoreSignIn(
 		}
 		delete env[name];
 	}
+	const clientId = env.BW_CLIENTID;
+	const clientSecret = env.BW_CLIENTSECRET;
+	if (clientId && clientSecret) {
+		vault.put("BW_CLIENTID", clientId);
+		vault.put("BW_CLIENTSECRET", clientSecret);
+		adopted = true;
+	}
+	for (const name of BITWARDEN_API_KEY_SIGN_IN_ENV) delete env[name];
 	return adopted;
 }
 

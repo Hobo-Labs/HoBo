@@ -235,7 +235,21 @@ environment variables.
   and out of the process environment (`adoptStoreSignIn`). A provided token
   only marks Bitwarden "configured here" in the picker: choosing a store is
   always the owner's step (`HOBO_*_STORE_CHOICE` until `HOBO_SECRET_STORE`
-  is set), and the token is used only once they choose Bitwarden. The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
+  is set), and the token is used only once they choose Bitwarden. With no
+  token, the run provisions one (`provisionBitwardenAccessToken`): it signs
+  in with the owner's personal API key (`BW_CLIENTID`/`BW_CLIENTSECRET`,
+  adopted into the vault like the token), which makes its device one
+  Bitwarden knows (a "log in with device" request is accepted only from a
+  known device); picks the organization with Secrets Manager (or
+  `BWS_ORGANIZATION_ID`) before asking anything; sends one login request and
+  prints `HOBO_OWNER_BITWARDEN_APPROVE account=<email> phrase=<fingerprint>`;
+  and, once the owner approves it in a signed-in Bitwarden app, finds or
+  creates the project and machine account `hobo`, grants it read and write,
+  and creates a one-day access token. Names and keys are encrypted in the
+  run as Bitwarden's clients do it (`bitwarden-crypto.ts`, checked against
+  Bitwarden's SDK test vectors); account and organization keys are zeroed
+  before it returns, the token goes only to the run's vault, and the
+  locator keeps the ids and a stable device id (`BITWARDEN_DEVICE_ID`). The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
   host.
 - **A provider's redirect to a remote run** (`hobo ci app create
   --hand-off`; GitHub's App manifest code). The run listens on 127.0.0.1
