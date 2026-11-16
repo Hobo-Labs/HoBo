@@ -83,7 +83,7 @@ const PROBE_GATE_JOB = `  local-box-enrolled:
     outputs:
       enrolled: \${{ steps.policy.outputs.enrolled }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -91,7 +91,7 @@ const PROBE_GATE_JOB = `  local-box-enrolled:
           sparse-checkout: |
             scripts/ci/runner-routing.mts
             .hobo/ci.json
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
       - id: policy
@@ -551,11 +551,11 @@ function isNpmOidcHostedReleaseJob(
 }
 
 const acceptanceDigest =
-	"ae9f17ce8d8d862722d50c0bd6b66077275edd376c068aaa42112e7ba7e150df";
+	"431c63f690bf69cbed136cd784200a5a257fb3abb6a8abbe1b200274f029bb1a";
 const hostingEvidenceDigest =
-	"b7a43ad1d6344ca55925ccfcc676dfc62300350190c7429ea399e5a0d433fd8f";
+	"2f1da81a27494c207180d16754b41b869ce2615b5cdfd7ed20d4a559be152de7";
 const vercelEvidenceDigest =
-	"ff78bed0ce6b56e1945cdddc66d517dfa7b2be9a4404623519f6a29123c4e016";
+	"c1b554ca60b0d0c1002bac7801a1dbb3b78b9fb1a25192bf9f8193b610f5d324";
 
 const TRUNK_EVENTS = new Set([
 	"push",

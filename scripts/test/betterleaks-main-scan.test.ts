@@ -1,15 +1,25 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { pathToFileURL } from "node:url";
 import {
+	betterleaksArgs,
 	deferredByRangeOnly,
 	FULL_WAIT_SECONDS,
 	gitFetchBlobArgs,
-	betterleaksArgs,
 	planMainBetterleaksScan,
 	pollScanWait,
+	prefetchRangeBlobs,
 	RANGE_WAIT_SECONDS,
 	writeExitFile,
 	ZERO_SHA,
@@ -121,6 +131,106 @@ describe("planMainBetterleaksScan", () => {
 		});
 		assert.equal(plan.mode, "full");
 		assert.equal(plan.fetchBlobs, true);
+	});
+});
+
+describe("range scan blob prefetch", () => {
+	function fixture() {
+		const root = mkdtempSync(join(tmpdir(), "betterleaks-promisor-"));
+		const remote = join(root, "remote.git");
+		const source = join(root, "source");
+		const clone = join(root, "clone");
+		const env = { ...process.env };
+		for (const key of Object.keys(env)) {
+			if (key.startsWith("GIT_")) delete env[key];
+		}
+		const globalConfig = join(root, "gitconfig");
+		writeFileSync(globalConfig, "");
+		env.GIT_CONFIG_GLOBAL = globalConfig;
+		env.GIT_CONFIG_NOSYSTEM = "1";
+		env.GIT_TERMINAL_PROMPT = "0";
+		mkdirSync(source);
+		const git = (cwd: string, ...args: string[]): string =>
+			execFileSync("git", args, {
+				cwd,
+				encoding: "utf8",
+				env,
+			}).trim();
+		git(root, "init", "--bare", "--initial-branch=main", remote);
+		git(remote, "config", "uploadpack.allowFilter", "true");
+		git(source, "init", "--initial-branch=main");
+		git(source, "config", "user.name", "Test");
+		git(source, "config", "user.email", "test@example.invalid");
+		git(source, "config", "commit.gpgsign", "false");
+		writeFileSync(join(source, ":deleted\nfile"), "old scan content\n");
+		git(source, "add", ".");
+		git(source, "commit", "-m", "initial");
+		const before = git(source, "rev-parse", "HEAD");
+		const oldBlob = git(source, "rev-parse", "HEAD::deleted\nfile");
+		rmSync(join(source, ":deleted\nfile"));
+		writeFileSync(join(source, "transient"), "intermediate scan content\n");
+		git(source, "add", "-A");
+		git(source, "commit", "-m", "replace");
+		const transientBlob = git(source, "rev-parse", "HEAD:transient");
+		rmSync(join(source, "transient"));
+		writeFileSync(join(source, "retained"), "current scan content\n");
+		git(source, "add", "-A");
+		git(source, "commit", "-m", "replace again");
+		const head = git(source, "rev-parse", "HEAD");
+		git(source, "push", pathToFileURL(remote).href, "main");
+		git(root, "clone", "--filter=blob:none", pathToFileURL(remote).href, clone);
+		return {
+			root,
+			clone,
+			remote,
+			range: `${before}..${head}`,
+			oldBlob,
+			transientBlob,
+			env,
+		};
+	}
+
+	it("fetches deleted and intermediate blobs from a real partial clone", () => {
+		const f = fixture();
+		try {
+			const gitNoFetch = (...args: string[]): string =>
+				execFileSync("git", args, {
+					cwd: f.clone,
+					encoding: "utf8",
+					env: { ...f.env, GIT_NO_LAZY_FETCH: "1" },
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+			assert.throws(() => gitNoFetch("cat-file", "-e", f.oldBlob));
+			assert.throws(() => gitNoFetch("cat-file", "-e", f.transientBlob));
+			assert.ok(prefetchRangeBlobs(f.range, 30_000, f.clone, f.env) >= 3);
+			gitNoFetch("cat-file", "-e", f.oldBlob);
+			gitNoFetch("cat-file", "-e", f.transientBlob);
+			const patch = gitNoFetch("log", "-p", "--no-ext-diff", f.range);
+			assert.match(patch, /old scan content/u);
+			assert.match(patch, /intermediate scan content/u);
+		} finally {
+			rmSync(f.root, { recursive: true, force: true });
+		}
+	});
+
+	it("fails closed if a required blob cannot be fetched", () => {
+		const f = fixture();
+		try {
+			renameSync(f.remote, `${f.remote}.offline`);
+			assert.throws(
+				() => prefetchRangeBlobs(f.range, 30_000, f.clone, f.env),
+				/could not fetch every blob/u,
+			);
+		} finally {
+			rmSync(f.root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects anything other than an explicit commit range", () => {
+		assert.throws(
+			() => prefetchRangeBlobs("--all", 1_000),
+			/invalid secret scan commit range/u,
+		);
 	});
 });
 
