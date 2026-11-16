@@ -331,6 +331,27 @@ describe("EVAL hand-off transcript: a remote sign-in goes through the capture fo
 		]);
 	});
 
+	it("a preview line inside a JSON tool result still obliges the agent to show the port", () => {
+		// Some hosts hand the model only structuredContent, as JSON text.
+		const json = JSON.stringify({
+			ticketId: "cap_x",
+			channel: "preview-page",
+			ownerLine: "HOBO_OWNER_PREVIEW port=41877 pairing=K7QM-3XPA",
+		});
+		const transcript = jsonl([
+			user("go"),
+			assistant([toolUse("run", "mcp__hobo__cd")]),
+			user([toolResult("run", `refused\n${SIGN_IN}`)]),
+			assistant([toolUse("cap", "mcp__hobo__capture_secret")]),
+			user([toolResult("cap", json)]),
+			assistant([text("Paste it into the form.")]),
+			user("done"),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+			{ ask: "preview" },
+		]);
+	});
+
 	it("passes when the agent opens the HoBo capture form", () => {
 		const transcript = jsonl([
 			user("go"),

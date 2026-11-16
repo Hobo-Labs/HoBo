@@ -335,6 +335,11 @@ type TicketView = {
 	ref?: string;
 	key?: CapturePublicKey;
 	url?: string;
+	/** Preview page: the owner line, its parts, and what the agent does next. */
+	ownerLine?: string;
+	port?: number;
+	pairing?: string;
+	nextStep?: string;
 };
 
 function refusalResult(
@@ -450,7 +455,24 @@ export function createSecretCaptureApp(
 		if (ticket.ref !== undefined) shown.ref = ticket.ref;
 		if (open) shown.key = { ...ticket.publicKey };
 		if (open && ticket.url !== undefined) shown.url = ticket.url;
+		// Everything the agent must act on, here too: some hosts show the
+		// model a tool's structuredContent and nothing else.
+		if (
+			open &&
+			ticket.channel === "preview-page" &&
+			ticket.port !== undefined &&
+			ticket.pairing !== undefined
+		) {
+			shown.ownerLine = `${OWNER_PREVIEW_LINE_PREFIX} port=${ticket.port} pairing=${ticket.pairing}`;
+			shown.port = ticket.port;
+			shown.pairing = ticket.pairing;
+			shown.nextStep = previewInstructions(ticket);
+		}
 		return shown;
+	}
+
+	function previewInstructions(ticket: Ticket): string {
+		return `This host shows no HoBo form, and the owner is not at this machine, so the form is served on port ${ticket.port ?? 0} for your host's port preview. Show that port to the owner with your host's preview or port forwarding (Claude Code: report_preview_port; Codespaces or VS Code: forward the port; Coder: its port link). Tell the owner the pairing code ${ticket.pairing ?? ""}: they type it with ${ticket.spec.name} in the form. Do not open, fetch or submit the page yourself, and never ask for the value in the chat. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`;
 	}
 
 	function pageTicket(ticket: Ticket): SecretCapturePageTicket {
@@ -744,7 +766,7 @@ export function createSecretCaptureApp(
 					content: [
 						{
 							type: "text",
-							text: `${OWNER_PREVIEW_LINE_PREFIX} port=${ticket.port ?? 0} pairing=${ticket.pairing ?? ""}\nThis host shows no HoBo form, and the owner is not at this machine, so the form is served on port ${ticket.port ?? 0} for your host's port preview. Show that port to the owner with your host's preview or port forwarding (Claude Code: report_preview_port; Codespaces or VS Code: forward the port; Coder: its port link). Tell the owner the pairing code ${ticket.pairing ?? ""}: they type it with ${ticket.spec.name} in the form. Do not open, fetch or submit the page yourself, and never ask for the value in the chat. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`,
+							text: `${OWNER_PREVIEW_LINE_PREFIX} port=${ticket.port ?? 0} pairing=${ticket.pairing ?? ""}\n${previewInstructions(ticket)}`,
 						},
 					],
 					structuredContent: shown,

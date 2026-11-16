@@ -94,6 +94,34 @@ const FORWARDED = {
 };
 
 describe("secret capture on a remote box without MCP Apps", () => {
+	it("puts what the agent must do in structuredContent too: some hosts show the model only that", async () => {
+		// The live failure: the host passed on structuredContent alone, so the
+		// port and pairing code (only in the text) never reached the agent.
+		const raw = await remoteApp([]).callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: SESSION.name },
+			NO_HOST_SUPPORT,
+		);
+		const outcome = opened.parse(raw);
+		const structured = z
+			.object({
+				result: z.object({
+					structuredContent: z.object({
+						ownerLine: z.string(),
+						port: z.number(),
+						pairing: z.string(),
+						nextStep: z.string(),
+					}),
+				}),
+			})
+			.parse(raw).result.structuredContent;
+		expect(structured.ownerLine).toBe(
+			`${OWNER_PREVIEW_LINE_PREFIX} port=${structured.port} pairing=${structured.pairing}`,
+		);
+		expect(structured.nextStep).toMatch(/report_preview_port/u);
+		expect(outcome.result.content[0]?.text).toContain(structured.ownerLine);
+	});
+
 	it("never offers a page on this machine; names the port and a pairing code instead", async () => {
 		const { text } = await open(remoteApp([]));
 		expect(text).not.toMatch(

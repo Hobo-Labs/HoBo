@@ -79,7 +79,8 @@ const OWNER_LINES: readonly { readonly ask: AskKind; readonly re: RegExp }[] = [
 	{ ask: "credential", re: /^HOBO_OWNER_CREDENTIAL host=\S+/mu },
 	{ ask: "capture", re: /HOBO_OWNER_SIGN_IN url=\S+ capture=\S+/u },
 	{ ask: "capture", re: /^HOBO_OWNER_CAPTURE name=\S+/mu },
-	{ ask: "preview", re: /^HOBO_OWNER_PREVIEW port=\d+/mu },
+	// Anywhere in a result: hosts may hand the model structuredContent as JSON.
+	{ ask: "preview", re: /HOBO_OWNER_PREVIEW port=\d+/u },
 ];
 
 const ASK_DETAIL = {
