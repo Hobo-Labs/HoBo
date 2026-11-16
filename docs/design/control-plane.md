@@ -146,6 +146,38 @@ flowchart TB
   Y1 <-.->|signed policy packs + registry bundles + cross-cloud policy| Y2
 ```
 
+**Nothing in a Yard is external.** A Yard holds only what is internal to its
+provider, so domain and provider boundaries stay where the Junction can see
+them. Two rules enforce this:
+
+- **Yard rows.** `yard()` refuses a binding whose product another vendor runs
+  (`YARD_EXTERNAL_FORBIDDEN`, `@hobo/yards` `yardBoundaryViolations`). The
+  vendor is the product id's prefix: `<vendor>.<product>/vN` or
+  `<vendor>:<product>`.
+- **Bindles.** Placement (`hobo plan`, `hobo up`, every lifecycle family and
+  `--what-if`) refuses a Bindle whose `b.external()` would put an external in
+  the Yard (`HOBO_YARD_EXTERNAL_FORBIDDEN`, `@hobo/bindles`
+  `externalBoundaryViolations`). `hobo dev` places nothing and is unaffected.
+
+The remediation is always the same: declare the service in a Yard whose
+provider runs it, and join the two Yards with a Junction. The one exception is
+a service the Yard's provider provisions and runs **on our behalf**, a
+Marketplace resource such as Neon, Supabase or Upstash attached through the
+Vercel Marketplace. The relationship must be verified against the selected
+provider; a Bindle's `managedBy` annotation or a row's `connectivityId` string
+is only a declaration. Placement currently refuses Bindle externals even with
+the annotation. Yard binding validation still accepts the connectivity string
+and needs trusted evidence before its exception can be relied on.
+
+The hosted CI relay is laid out this way (`packages/ci-vercel/deploy/yard.ts`).
+Its Vercel Yard holds Vercel's products plus the Marketplace caches. Infisical
+(the config service), Aiven Valkey and a self-hosted Valkey each have a Yard of
+their own, all joined by `relayJunction`. `hobo ci deploy` satisfies a Camp
+requirement from a joined Yard's rows in one canonical order across the
+Junction, so the split changes nothing a deploy chooses or prints. The CD
+project's Vercel provider junction (`@hobo/hobo-cd`) joins the CD Yard to a
+Vercel Yard the same way.
+
 ### Providers, IaC & build/VM adapters
 
 Reference implementation: the [Providers, IaC & Build Adapters epic rollup](../../src/draft/epic-proofs/providers-iac-build-adapters/README.md) synthesizes provider package shape, conformance, equivalence, manifests, realize/IaC/build/driver adapters, provider matrix, generation certification, Resource Packs, drift/import/partial-apply safety, and the multi-cloud shop gate with mocked boundaries and Pact fixtures.

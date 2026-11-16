@@ -23,6 +23,7 @@ import { createServer } from "node:net";
 import {
 	type CommandModule,
 	createUpCommand,
+	externalBoundaryRefusal,
 	loadBindleDefinition,
 	loadProjectManifest,
 	type YardRuntime,
@@ -123,6 +124,9 @@ export function createBrokerAwareUpCommand(
 					? flags.home
 					: defaultHoboHome(env);
 
+			// Every lane places into a Yard, and a Yard holds nothing external.
+			const boundary = await externalBoundaryRefusal(projectDir, "up");
+			if (boundary !== undefined) return boundary;
 			try {
 				const target = resolveBrokerTarget({
 					flags: {

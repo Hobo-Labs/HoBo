@@ -362,6 +362,11 @@ deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
 otherwise). Production is deployed by the workflow on `main`
 (`.github/workflows/relay-deploy.yml`), not by hand.
 
+Delivery planning also reads declared secret projections from Yards in the
+relay's own Junction, keeping each projection under its source Yard. A declared
+Junction is not evidence that provider ownership or connectivity has been
+verified; the changed cross-Yard path still needs that evidence.
+
 ```sh
 # From the repository root. Nothing is sent; no token is read.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
