@@ -37,6 +37,14 @@ on:
         description: The numeric GitHub id of the App's owner
         required: false
         default: ""
+      connect:
+        description: "Connect a lifecycle as the owner's hand-off (cd - approve Vercel's device code from the job summary)"
+        required: false
+        default: ""
+      vercel_team:
+        description: The Vercel team id or slug a cd connection deploys to (non-secret)
+        required: false
+        default: team_BRBUnG6uGhSsVV3EG5GFV3FM
 
 permissions:
   contents: read
@@ -84,7 +92,7 @@ jobs:
   deploy:
     name: Deploy the hosted CI relay (production)
     needs: route
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == '' && github.event.inputs.connect == ''
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts. The
@@ -268,3 +276,47 @@ jobs:
           status=$?
           node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/app-deposit.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
+
+  # The owner's hand-off when nobody can type a token: on `main`, this job
+  # signs in to the owner's store as `hobo-ci-writer` with its own GitHub
+  # Actions OIDC token (INFISICAL_IDENTITY_ID in .hobo/secret-store.json) and
+  # runs `hobo <family> up --hand-off`. For cd, Vercel is connected with the
+  # OAuth device grant: the job summary shows one HOBO_OWNER_DEVICE line with
+  # a link and a code, which the owner approves on vercel.com from any
+  # device. The token goes straight into the store; the log never holds it.
+  owner-connect:
+    needs: route
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.connect == 'cd'
+    # The route job picks the label; scripts/lint-actions.ts allows this expression.
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          clean: false
+          fetch-depth: 1
+      - uses: ./.github/actions/ci-runner-preflight
+      - uses: ./.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build hobo
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          pnpm exec turbo run build \
+            --filter=@hobo/hobo... \
+            --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Connect and converge (approve the HOBO_OWNER_DEVICE link)
+        env:
+          HOBO_CD_VERCEL_TEAM_ID: ${{ github.event.inputs.vercel_team }}
+        run: |
+          set -euo pipefail
+          node packages/hobo/dist/bin/hobo.js cd up --hand-off 2>&1 \
+            | while IFS= read -r line; do
+                printf '%s\n' "$line"
+                case "$line" in
+                  HOBO_OWNER_DEVICE*) printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY" ;;
+                esac
+              done

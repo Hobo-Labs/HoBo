@@ -209,7 +209,12 @@ environment variables.
   --via-workflow` through the relay). CD connects Vercel with the OAuth
   device grant: one `HOBO_OWNER_DEVICE <link> code=<code>` line, approved on
   vercel.com from any device. `--json` and `-q` are refused because they
-  hide those lines. The agent never answers the ceremony itself.
+  hide those lines. The agent never answers the ceremony itself. With no
+  token anyone types, the owner (or their agent) dispatches the relay deploy
+  workflow on `main` with `connect: cd`: its `owner-connect` job signs in to
+  the store as `hobo-ci-writer` with GitHub OIDC (`INFISICAL_IDENTITY_ID` in
+  the committed locator), runs `hobo cd up --hand-off`, and shows the
+  `HOBO_OWNER_DEVICE` line in its job summary for the owner to approve.
 - Without a person at a browser and without `--hand-off`, and for
   `--what-if`, nothing opens. The
   result says what it would sign in to and ask for, points CI at a

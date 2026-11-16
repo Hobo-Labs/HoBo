@@ -229,6 +229,16 @@ For CD:
    minutes), then keeps the token in the store. Name the team with the
    non-secret `HOBO_CD_VERCEL_TEAM_ID` when the account has several.
 
+**Writes with nobody typing a token (CI's OIDC).** When the owner wants no
+token in any form and isn't at a terminal, dispatch the relay deploy
+workflow on `main` with input `connect: cd` (GitHub MCP
+`actions_run_trigger`, workflow `relay-deploy.yml`, ref `main`). Its
+`owner-connect` job signs in to the store as `hobo-ci-writer` with its own
+GitHub OIDC token (`INFISICAL_IDENTITY_ID` in the committed locator) and
+runs `hobo cd up --hand-off`. Read the `HOBO_OWNER_DEVICE` line from the
+job's summary or log and give the owner the link and code exactly as in step
+2. The workflow must be on `main` for this to run.
+
 In a terminal (no `--hand-off`), the run still serves the local setup page
 (`HOBO_OWNER_PAGE`) and opens the browser. There the owner may also sign in
 to Infisical by approving an OAuth application (`INFISICAL_SIGN_IN=oauth`):
