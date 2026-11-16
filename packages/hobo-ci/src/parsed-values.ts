@@ -59,8 +59,10 @@ export function parseHttpsOrigin(setting: string, text: string): HttpsOrigin {
 	return url.origin as HttpsOrigin;
 }
 
+// IPv6 unspecified, loopback and IPv4-mapped forms start with ::; fc00::/7
+// is unique-local, fe80::/10 is link-local and ff00::/8 is multicast.
 const PRIVATE_HOST =
-	/^(localhost|\[::1\]|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/u;
+	/^(localhost|\[(?:::|f[c-f])|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/u;
 
 export function parsePublicOrigin(setting: string, text: string): PublicOrigin {
 	const origin = parseHttpsOrigin(setting, text);
