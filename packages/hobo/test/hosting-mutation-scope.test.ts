@@ -5,6 +5,7 @@ import {
 	createManualClock,
 	createRuntimeLocalEventStore,
 } from "@hobo/runtime-local";
+import { ResourceMutationNotSentError } from "@hobo/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDurableHostingMutationScope } from "../src/hosting-mutation-scope.js";
 
@@ -81,6 +82,16 @@ describe("durable native shared-parent mutation serialization", () => {
 			}),
 		).rejects.toThrow("uncertain");
 		expect(effects).toBe(0);
+	});
+	it("releases the scope and rethrows the refusal when the provider proves nothing was sent", async () => {
+		const connect = fixture();
+		const refusal = new Error("store differs from the desired settings");
+		await expect(
+			connect().run(scope, async () => {
+				throw new ResourceMutationNotSentError(refusal);
+			}),
+		).rejects.toBe(refusal);
+		expect(await connect().run(scope, async () => "next")).toBe("next");
 	});
 	it("allows independent native parents without serializing unrelated accounts", async () => {
 		const connect = fixture(),

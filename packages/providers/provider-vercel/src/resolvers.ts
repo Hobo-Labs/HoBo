@@ -366,6 +366,37 @@ type Dispatch = HttpTransport;
  * calls the network directly, and no unguarded transport is ever handed a
  * credential.
  */
+/** Journal identity of one creation POST: the same key a retry inspects to
+ * recognise a resource this resolver itself created. */
+type CreationKey = {
+	readonly mutationId: string;
+	readonly requestDigest: string;
+};
+
+function creationKey(
+	options: VercelResolverOptions,
+	request: ResolveRequest,
+	url: string,
+	body: string | undefined,
+): CreationKey {
+	const mutationId = JSON.stringify([
+		"vercel",
+		options.teamId ?? "personal",
+		request.ref.productId,
+		request.ref.logicalId,
+		...(request.ref.productId === VERCEL_BLOB_PRODUCT_ID ||
+		(request.ref.productId === VERCEL_PROJECT_PRODUCT_ID &&
+			request.desired.operationId !== undefined)
+			? [request.desired.operationId ?? ""]
+			: []),
+		url,
+	]);
+	const requestDigest = `sha256:${createHash("sha256")
+		.update(JSON.stringify({ url, body: body ?? "" }))
+		.digest("hex")}`;
+	return { mutationId, requestDigest };
+}
+
 function guardedDispatch(
 	transport: HttpTransport,
 	options: VercelResolverOptions,
@@ -379,21 +410,12 @@ function guardedDispatch(
 				"RESOLVER_PRODUCT_UNSUPPORTED",
 				"vercel resource creation requires a durable mutation journal",
 			);
-		const mutationId = JSON.stringify([
-			"vercel",
-			options.teamId ?? "personal",
-			request.ref.productId,
-			request.ref.logicalId,
-			...(request.ref.productId === VERCEL_BLOB_PRODUCT_ID ||
-			(request.ref.productId === VERCEL_PROJECT_PRODUCT_ID &&
-				request.desired.operationId !== undefined)
-				? [request.desired.operationId ?? ""]
-				: []),
+		const { mutationId, requestDigest } = creationKey(
+			options,
+			request,
 			outbound.url,
-		]);
-		const requestDigest = `sha256:${createHash("sha256")
-			.update(JSON.stringify({ url: outbound.url, body: outbound.body ?? "" }))
-			.digest("hex")}`;
+			outbound.body,
+		);
 		const claim = await options.mutationJournal.claim({
 			mutationId,
 			requestDigest,
@@ -975,6 +997,51 @@ function checkProjectRepository(
 		);
 }
 
+type ProjectCreateRequest = {
+	readonly path: string;
+	readonly body: JsonObject;
+};
+
+function projectCreateRequest(
+	desired: ProjectDesired,
+	options: VercelResolverOptions,
+): ProjectCreateRequest {
+	return {
+		path: `${desired.repository ? "/v11/projects" : "/v9/projects"}${teamQuery(options.teamId)}`,
+		body: {
+			name: desired.name,
+			...desired.settings,
+			...(desired.repository
+				? { gitRepository: { type: "github", repo: desired.repository } }
+				: undefined),
+		},
+	};
+}
+
+/** Whether the journal holds this operation's own creation POST: a project
+ * found by name after a lost create response or a failed readback is then the
+ * one this resolver created, not a third party's. */
+async function createdByThisOperation(
+	options: VercelResolverOptions,
+	request: ResolveRequest,
+	create: ProjectCreateRequest,
+): Promise<boolean> {
+	const journal = options.mutationJournal;
+	if (
+		journal?.persistence !== "durable-cas" ||
+		journal.inspect === undefined ||
+		request.desired.operationId === undefined
+	)
+		return false;
+	const key = creationKey(
+		options,
+		request,
+		`${VERCEL_API_BASE}${create.path}`,
+		JSON.stringify(create.body),
+	);
+	return (await journal.inspect(key)).status !== "missing";
+}
+
 async function requireProjectControl(
 	options: VercelResolverOptions,
 	request: ResolveRequest,
@@ -1033,11 +1100,27 @@ function createProjectResolver(
 				known !== undefined,
 			);
 
+			const create = projectCreateRequest(desired, options);
 			if (observed === undefined) {
 				if (known !== undefined)
 					throw new ResolverError(
 						"RESOLVER_PRODUCT_UNSUPPORTED",
 						"known vercel project is absent; a fresh resource needs a new approved identity",
+					);
+				// Never create what every later reconcile, read and delete would
+				// refuse: those all need the team and the operation.
+				if (
+					!options.teamId ||
+					!/^[A-Za-z0-9_-]{1,128}$/u.test(options.teamId) ||
+					!desiredString(
+						parsed.desired,
+						"operationId",
+						VERCEL_PROJECT_PRODUCT_ID,
+					)
+				)
+					throw new ResolverError(
+						"RESOLVER_PRODUCT_UNSUPPORTED",
+						"Vercel project creation requires a team scope and an operation ID",
 					);
 				const operation = desired.repository
 					? "POST /v11/projects"
@@ -1045,19 +1128,7 @@ function createProjectResolver(
 				const response = await callApi(
 					dispatch,
 					credential,
-					{
-						method: "POST",
-						path: `${desired.repository ? "/v11/projects" : "/v9/projects"}${teamQuery(options.teamId)}`,
-						body: {
-							name: desired.name,
-							...desired.settings,
-							...(desired.repository
-								? {
-										gitRepository: { type: "github", repo: desired.repository },
-									}
-								: undefined),
-						},
-					},
+					{ method: "POST", path: create.path, body: create.body },
 					options.call ?? {},
 				);
 				if (response.status !== 200 && response.status !== 201) {
@@ -1092,14 +1163,21 @@ function createProjectResolver(
 			}
 
 			checkProjectRepository(desired, observed, true);
+			// Only a pinned ID or this operation's own journaled creation makes the
+			// project ours; anything found by name or by a caller-supplied
+			// observation is adoption of a project this run did not create.
+			const owned =
+				(parsed.ref.physicalId !== undefined &&
+					parsed.ref.physicalId.length > 0) ||
+				(await createdByThisOperation(options, parsed, create));
 			await requireProjectControl(
 				options,
 				parsed,
 				observed,
-				known === undefined ? "adopt" : "observe",
+				owned ? "observe" : "adopt",
 			);
-			const verifyUnlinked = async () => {
-				if (!desired.repository || observed.hasGitLink) return;
+			const verifyUnlinked = async (current: ProjectView) => {
+				if (!desired.repository || current.hasGitLink) return;
 				const operationId = desiredString(
 					parsed.desired,
 					"operationId",
@@ -1111,7 +1189,7 @@ function createProjectResolver(
 					!options.verifyUnlinkedProject ||
 					!(await options.verifyUnlinkedProject({
 						teamId: options.teamId,
-						projectId: observed.id,
+						projectId: current.id,
 						repository: desired.repository,
 						operationId,
 					}))
@@ -1121,13 +1199,13 @@ function createProjectResolver(
 						"Vercel unlinked project requires independently verified adoption and Git-link authorization",
 					);
 			};
-			await verifyUnlinked();
+			await verifyUnlinked(observed);
 			const delta = projectDelta(desired, observed);
 			if (
 				Object.keys(delta).length === 0 &&
 				(!desired.repository || observed.repository === desired.repository)
 			) {
-				return known === undefined
+				return !owned
 					? outcomeOf("adopt", observed.id, projectOutputs(observed), [
 							`adopted the existing vercel project ${observed.name}; it matches the desired settings and this run did not create it`,
 						])
@@ -1179,7 +1257,29 @@ function createProjectResolver(
 				}
 			}
 			if (desired.repository && !view.hasGitLink) {
-				await verifyUnlinked();
+				// Re-read right before the link: the decision to link rests on the
+				// project still being unlinked and in this team, not on a snapshot
+				// taken before the authorization checks and any PATCH.
+				const current = await getProjectView(
+					dispatch,
+					credential,
+					options,
+					view.id,
+					true,
+				);
+				if (!current || current.id !== view.id)
+					throw unparseable(
+						"POST /v9/projects/{idOrName}/link",
+						"project is not independently observable before Git linkage",
+					);
+				checkProjectRepository(desired, current, true);
+				if (current.hasGitLink)
+					throw new ResolverError(
+						"RESOLVER_PROVIDER_REJECTED",
+						"Vercel project was linked concurrently; reconcile again to observe it",
+					);
+				view = current;
+				await verifyUnlinked(view);
 				await requireProjectControl(options, parsed, view, "link");
 				const operation = "POST /v9/projects/{idOrName}/link";
 				const response = await callApi(
@@ -1776,6 +1876,30 @@ async function resolveBlobProject(
 	request: ResolveRequest,
 	desired: BlobRequested,
 ): Promise<BlobDesired> {
+	const resolved = await resolveBlobProjectOrGone(
+		dispatch,
+		credential,
+		options,
+		request,
+		desired,
+		false,
+	);
+	return resolved.desired;
+}
+
+/**
+ * The approved project for a Blob request. With `allowGone`, a project pinned
+ * by ID that the team no longer has is reported as gone instead of refused, so
+ * retirement and absence can still reason about the store it left behind.
+ */
+async function resolveBlobProjectOrGone(
+	dispatch: Dispatch,
+	credential: SecretValue,
+	options: VercelResolverOptions,
+	request: ResolveRequest,
+	desired: BlobRequested,
+	allowGone: boolean,
+): Promise<{ readonly desired: BlobDesired; readonly projectGone: boolean }> {
 	const prior = request.observed?.projectId;
 	if (
 		prior !== undefined &&
@@ -1806,6 +1930,8 @@ async function resolveBlobProject(
 		selected,
 		projectId !== undefined,
 	);
+	if (!project && allowGone && projectId !== undefined)
+		return { desired: { ...desired, projectId }, projectGone: true };
 	if (!project || !/^prj_[A-Za-z0-9_-]{1,128}$/u.test(project.id))
 		throw new ResolverError(
 			"RESOLVER_PROVIDER_REJECTED",
@@ -1816,7 +1942,7 @@ async function resolveBlobProject(
 			"RESOLVER_PROVIDER_REJECTED",
 			"returned project identity differs from the approved project name",
 		);
-	return { ...desired, projectId: project.id };
+	return { desired: { ...desired, projectId: project.id }, projectGone: false };
 }
 
 function blobView(
@@ -2088,19 +2214,22 @@ function assertBlobConnectionsObserved(view: BlobView) {
 async function runBlobMutation<T>(
 	options: VercelResolverOptions,
 	scope: ReturnType<typeof requireBlobScope>,
-	dispatch: Dispatch,
-	action: (tracked: Dispatch) => Promise<T>,
+	transport: HttpTransport,
+	request: ResolveRequest,
+	action: (dispatch: Dispatch) => Promise<T>,
 ): Promise<T> {
 	const mutationScope = options.mutationScope;
 	if (!mutationScope) throw new Error("Blob mutation scope unavailable");
 	return mutationScope.run(scope, async () => {
+		// Counted at the raw transport, behind the transport guard and the
+		// journal claim: a refusal from either sent nothing to Vercel.
 		let attempted = false;
-		const tracked: Dispatch = async (outbound) => {
+		const counted: HttpTransport = async (outbound) => {
 			if (outbound.method !== "GET") attempted = true;
-			return dispatch(outbound);
+			return transport(outbound);
 		};
 		try {
-			return await action(tracked);
+			return await action(guardedDispatch(counted, options, request));
 		} catch (error) {
 			if (!attempted) throw new ResourceMutationNotSentError(error);
 			throw error;
@@ -2122,19 +2251,31 @@ function createBlobResolver(options: VercelResolverOptions): ResourceResolver {
 			assertBlobTeam(options, requested);
 			const credential = await resolveCredential(options, parsed.credentialRef);
 			const dispatch = guardedDispatch(transport, options, parsed);
-			const desired = await resolveBlobProject(
+			const known = knownPhysicalId(parsed);
+			const { desired, projectGone } = await resolveBlobProjectOrGone(
 				dispatch,
 				credential,
 				options,
 				parsed,
 				requested,
+				known !== undefined,
 			);
+			if (projectGone && known !== undefined) {
+				// Retirement deletes the store before its project; a store that
+				// outlived its project is a leftover to retire, never a match.
+				if (!(await getBlob(dispatch, credential, options, known)))
+					return undefined;
+				throw new ResolverError(
+					"RESOLVER_PROVIDER_REJECTED",
+					"Blob store outlived its pinned Vercel project; retire the store",
+				);
+			}
 			const view = await lookupBlob(
 				dispatch,
 				credential,
 				options,
 				desired,
-				knownPhysicalId(parsed),
+				known,
 			);
 			return view
 				? outcomeOf("noop", view.id, blobOutputs(view, desired), [])
@@ -2154,12 +2295,15 @@ function createBlobResolver(options: VercelResolverOptions): ResourceResolver {
 				);
 			const credential = await resolveCredential(options, parsed.credentialRef);
 			const dispatch = guardedDispatch(transport, options, parsed);
-			await resolveBlobProject(
+			// Absence is a fact about the store alone; the project may already be
+			// retired, so only its pinned identity is validated here.
+			await resolveBlobProjectOrGone(
 				dispatch,
 				credential,
 				options,
 				parsed,
 				requested,
+				true,
 			);
 			const stores = await listBlobStores(dispatch, credential, options);
 			if (stores.some((store) => store.id === parsed.ref.physicalId))
@@ -2185,7 +2329,8 @@ function createBlobResolver(options: VercelResolverOptions): ResourceResolver {
 			return runBlobMutation(
 				options,
 				scope,
-				guardedDispatch(transport, options, parsed),
+				transport,
+				parsed,
 				async (dispatch) => {
 					const desired = await resolveBlobProject(
 						dispatch,
@@ -2352,19 +2497,32 @@ function createBlobResolver(options: VercelResolverOptions): ResourceResolver {
 			await runBlobMutation(
 				options,
 				scope,
-				guardedDispatch(transport, options, parsed),
+				transport,
+				parsed,
 				async (dispatch) => {
-					const desired = await resolveBlobProject(
+					const { desired, projectGone } = await resolveBlobProjectOrGone(
 						dispatch,
 						credential,
 						options,
 						parsed,
 						requested,
+						true,
 					);
 					let view = await getBlob(dispatch, credential, options, id);
 					if (!view) return;
 					assertBlobSettings(view, desired);
 					assertBlobConnectionsObserved(view);
+					if (projectGone) {
+						// The project and its connection are gone. Only an unconnected,
+						// verified-empty store may still be deleted; anything else
+						// belongs to someone else or holds data.
+						if (view.connections.length > 0)
+							throw new ResolverError(
+								"RESOLVER_PROVIDER_REJECTED",
+								"Blob store of a deleted project still has other project connections",
+							);
+						if (!desired.deleteWhenEmpty) return;
+					}
 					const matches = view.connections.filter(
 						(entry) =>
 							entry.projectId === desired.projectId &&
@@ -2399,7 +2557,12 @@ function createBlobResolver(options: VercelResolverOptions): ResourceResolver {
 								method: remaining.length ? "PATCH" : "DELETE",
 								path: `/v1/storage/stores/${encodeURIComponent(id)}/connections/${encodeURIComponent(connection.id)}${teamQuery(options.teamId)}`,
 								...(remaining.length
-									? { body: { envVarEnvironments: remaining } }
+									? {
+											body: {
+												envVarEnvironments: remaining,
+												skipReadWriteToken: true,
+											},
+										}
 									: undefined),
 							},
 							options.call ?? {},
@@ -2424,6 +2587,18 @@ function createBlobResolver(options: VercelResolverOptions): ResourceResolver {
 							throw unparseable(
 								op,
 								"requested environments still have a connection",
+							);
+						// A partial retire must not leave a static token behind.
+						if (
+							view.connections.some(
+								(entry) =>
+									entry.projectId === desired.projectId &&
+									entry.environmentVariables?.includes("BLOB_READ_WRITE_TOKEN"),
+							)
+						)
+							throw unparseable(
+								op,
+								"remaining Blob connection is no longer OIDC-only",
 							);
 					}
 					if (desired.deleteWhenEmpty && view.connections.length === 0) {

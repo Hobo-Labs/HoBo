@@ -324,12 +324,13 @@ export function assertSponsorBudget(input: {
 /** Stable item ids. Two subjects, because there are two ownership facts. */
 export const SPONSORED_CLAIM_ITEM_IDS = Object.freeze({
 	project: "vercel-project",
-	associatedResource: "prisma-resource",
+	associatedResource: "associated-resource",
 } as const);
 
 export const SPONSORED_CLAIM_STRATEGY_REFS = Object.freeze({
 	project: `${VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID}#project`,
-	associatedResource: "prisma.marketplace-transfer/v1",
+	associatedResource: (provider: ResourceTransferCapableProvider) =>
+		`${provider}.marketplace-transfer/v1` as const,
 } as const);
 
 export type SponsoredBundleInput = {
@@ -337,6 +338,9 @@ export type SponsoredBundleInput = {
 	readonly deploymentRef: string;
 	readonly projectSubjectRef: string;
 	readonly resourceSubjectRef: string;
+	/** Marketplace provider that owns the associated resource. Its claim and
+	 * ownership verifier are that provider's, never another provider's. */
+	readonly associatedResourceProvider: ResourceTransferCapableProvider;
 	/** Provider-issued instant the 24 hour transfer code stops working. */
 	readonly transferCodeExpiresAt: Instant;
 	/** Opaque handle into the one-time action store. Never the claim URL. */
@@ -346,7 +350,7 @@ export type SponsoredBundleInput = {
 /**
  * Build the claim bundle.
  *
- * The Vercel project and Prisma database have distinct provider ownership.
+ * The Vercel project and the marketplace resource have distinct provider ownership.
  * Even when Vercel presents one transfer ceremony, partial transfer is
  * possible, so the shared reducer models it as a cross-provider saga.
  */
@@ -379,8 +383,10 @@ export function createSponsoredProjectTransferBundle(
 		id: SPONSORED_CLAIM_ITEM_IDS.associatedResource,
 		subjectRef: input.resourceSubjectRef,
 		subjectKind: "resource",
-		providerId: "prisma",
-		claimStrategyRef: SPONSORED_CLAIM_STRATEGY_REFS.associatedResource,
+		providerId: input.associatedResourceProvider,
+		claimStrategyRef: SPONSORED_CLAIM_STRATEGY_REFS.associatedResource(
+			input.associatedResourceProvider,
+		),
 		mode: "resource-claim",
 		...(input.oneTimeActionRef !== undefined
 			? { oneTimeActionRef: input.oneTimeActionRef }
@@ -392,7 +398,7 @@ export function createSponsoredProjectTransferBundle(
 			credentials: "rotated",
 		},
 		creatorAuthorityAfterClaim: "unknown",
-		verificationRef: "prisma.verify.ownership/v1",
+		verificationRef: `${input.associatedResourceProvider}.verify.ownership/v1`,
 		postClaimActions: ["rotate-binding", "revoke-bootstrap-authority"],
 		completedPostClaimActions: [],
 		status: "pending",
@@ -470,6 +476,8 @@ export type SponsoredBootstrapInput = {
 	readonly lease: GuestLease;
 	readonly projectSubjectRef: string;
 	readonly resourceSubjectRef: string;
+	/** Marketplace provider that owns the associated resource. */
+	readonly associatedResourceProvider: ResourceTransferCapableProvider;
 	/** One key per logical attempt, so a retried provision cannot double-create. */
 	readonly idempotencyKey: string;
 };
@@ -513,7 +521,7 @@ export function sponsoredProjectTransferBootstrapCommands(
 			kind: "RecordProvisionedSubject",
 			subjectRef: input.resourceSubjectRef,
 			subjectKind: "resource",
-			providerId: VERCEL_PROVIDER_ID,
+			providerId: input.associatedResourceProvider,
 			idempotencyKey: `${input.idempotencyKey}:resource`,
 		},
 	];

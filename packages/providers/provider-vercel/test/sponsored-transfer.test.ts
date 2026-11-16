@@ -47,6 +47,7 @@ function bundle() {
 		deploymentRef: "deployment-1",
 		projectSubjectRef: PROJECT_SUBJECT,
 		resourceSubjectRef: RESOURCE_SUBJECT,
+		associatedResourceProvider: "prisma",
 		transferCodeExpiresAt: TRANSFER_DEADLINE,
 		oneTimeActionRef: "ota-1",
 	});
@@ -69,6 +70,7 @@ function provisioned() {
 		lease,
 		projectSubjectRef: PROJECT_SUBJECT,
 		resourceSubjectRef: RESOURCE_SUBJECT,
+		associatedResourceProvider: "prisma",
 		idempotencyKey: "attempt-1",
 	});
 	for (const command of commands) {

@@ -85,6 +85,7 @@ function fixture(seed: Store[] = []) {
 		seed.map((store) => [store.id, structuredClone(store)]),
 	);
 	const calls: TransportRequest[] = [];
+	const project = { gone: false };
 	const json = (status: number, value: JsonValue): TransportResponse => ({
 		status,
 		headers: {},
@@ -98,7 +99,9 @@ function fixture(seed: Store[] = []) {
 			url.pathname === `/v9/projects/${projectId}` ||
 			url.pathname === "/v9/projects/hobo-ci"
 		)
-			return json(200, { id: projectId, name: "hobo-ci", accountId: team });
+			return project.gone
+				? json(404, {})
+				: json(200, { id: projectId, name: "hobo-ci", accountId: team });
 		if (url.pathname === "/v1/storage/stores" && input.method === "GET")
 			return json(200, { stores: [...stores.values()] });
 		if (url.pathname === "/v1/storage/stores/blob" && input.method === "POST") {
@@ -177,7 +180,7 @@ function fixture(seed: Store[] = []) {
 		},
 	}).get(VERCEL_BLOB_PRODUCT_ID);
 	if (!resolver) throw new Error("missing Blob resolver");
-	return { stores, calls, transport, resolver };
+	return { stores, calls, transport, resolver, project };
 }
 function store(overrides: Partial<Store> = {}): Store {
 	return {
@@ -586,6 +589,55 @@ describe("Vercel Blob provider lifecycle", () => {
 				(call) => call.method === "POST",
 			),
 		).toBe(false);
+	});
+	it("observes absence and retires a leftover store after its project is deleted", async () => {
+		const retired = fixture([store()]);
+		await retired.resolver.delete(pinned(), retired.transport);
+		retired.project.gone = true;
+		retired.stores.delete("store_1");
+		expect(await retired.resolver.read?.(pinned(), retired.transport)).toBe(
+			undefined,
+		);
+		expect(
+			await retired.resolver.observeAbsence?.(pinned(), retired.transport),
+		).toBe(true);
+
+		const leftover = fixture([store({ projectsMetadata: [] })]);
+		leftover.project.gone = true;
+		await expect(
+			leftover.resolver.read?.(pinned(), leftover.transport),
+		).rejects.toThrow(/outlived its pinned Vercel project/u);
+		await leftover.resolver.delete(
+			pinned("store_1", ["production"], { deleteWhenEmpty: true }),
+			leftover.transport,
+		);
+		expect(leftover.stores.has("store_1")).toBe(false);
+	});
+	it("does not delete a deleted project's store that holds data or other connections", async () => {
+		for (const seed of [
+			store({ projectsMetadata: [], count: 3 }),
+			store({
+				projectsMetadata: [
+					{
+						id: "conn_9",
+						projectId: "prj_other",
+						environments: ["production"],
+						environmentVariables: ["BLOB_STORE_ID"],
+					},
+				],
+			}),
+		]) {
+			const api = fixture([seed]);
+			api.project.gone = true;
+			await expect(
+				api.resolver.delete(
+					pinned("store_1", ["production"], { deleteWhenEmpty: true }),
+					api.transport,
+				),
+			).rejects.toThrow(/verified empty|other project connections/u);
+			expect(api.calls.every((call) => call.method === "GET")).toBe(true);
+			expect(api.stores.has("store_1")).toBe(true);
+		}
 	});
 	it("keeps authoritative absence observation available when telemetry is enabled", async () => {
 		const api = fixture();
