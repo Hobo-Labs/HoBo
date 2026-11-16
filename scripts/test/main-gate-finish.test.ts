@@ -44,7 +44,7 @@ describe("main_gate_finish workspace prerequisites", () => {
 		assert.match(finish, /^ {4}runs-on: ubuntu-24\.04$/mu);
 		assert.match(finish, /^ {4}permissions: \{\}$/mu);
 		assert.doesNotMatch(finish, /^\s*-?\s*uses:/mu);
-		assert.doesNotMatch(finish, /gitleaks/u);
+		assert.doesNotMatch(finish, /betterleaks/u);
 	});
 
 	it("accepts a skipped gate only when the merge queue passed this tree", () => {

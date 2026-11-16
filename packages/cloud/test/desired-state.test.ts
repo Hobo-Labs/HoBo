@@ -24,6 +24,7 @@ import {
 	orphansToPrune,
 	parseDeploymentMode,
 	planDeploymentChanges,
+	reconcileResource,
 	resourceProvisioned,
 	runCompensation,
 	runOrchestrator,
@@ -152,6 +153,31 @@ describe("parseDeploymentMode", () => {
 });
 
 describe("idempotent deployment", () => {
+	it("rechecks provider ownership under the resource lease before applying a stale plan", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		const resource = plan.resources[0];
+		if (!resource) throw new Error("fixture has no resource");
+		const runtime = deps(store, iac);
+		await runOrchestrator(runtime, plan, "stale-plan", { tenant, actor });
+		iac.calls.length = 0;
+		const outcome = await reconcileResource(
+			runtime,
+			{ ...resource, provider: "different-provider" },
+			{ deploymentId: "stale-plan", tenant, actor },
+		);
+		expect(outcome).toMatchObject({
+			kind: "blocked",
+			move: {
+				resource: resource.name,
+				from: resource.provider,
+				to: "different-provider",
+			},
+		});
+		expect(iac.calls).toEqual([]);
+	});
+
 	it("re-running an unchanged plan calls no provider and appends no fact", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
@@ -500,7 +526,7 @@ describe("deployment modes", () => {
 			...plan,
 			resources: plan.resources.map((r) => ({
 				...r,
-				provider: "new-provider",
+				region: "new-region",
 			})),
 		};
 		await recordPlan(store, "uncertain-update", changed);

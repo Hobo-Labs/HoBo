@@ -9,6 +9,7 @@ import {
 	type YardBinding,
 	type YardBindingInput,
 } from "./binding.js";
+import { YardBoundaryError, yardBoundaryViolations } from "./boundaries.js";
 import {
 	assertNoCredentials,
 	canonicalizeLabels,
@@ -107,6 +108,10 @@ export function yard(name: string, config: YardConfig): Yard {
 	const bindings = parseYardBindings(config.bindings, {
 		pinnedSlots: resolverDefaults.pins.map((pin) => pin.slot),
 	});
+	// Nothing in a Yard is external (boundaries.ts): a binding another vendor
+	// runs needs its own Yard and a junction, unless the provider runs it for us.
+	const violations = yardBoundaryViolations(name, providerId, bindings);
+	if (violations.length > 0) throw new YardBoundaryError(violations);
 
 	return deepFreeze({
 		kind: "yard" as const,

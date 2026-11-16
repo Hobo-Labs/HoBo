@@ -197,7 +197,7 @@ describe("the relay deploy workflow", () => {
 
 	it("routes the deploy like hobo-ci.yml, so a busy fleet does not hold it", () => {
 		assert.match(workflow, /^ {2}route:\n/mu);
-		assert.match(workflow, /uses: \.\/\.github\/actions\/route-runner/u);
+		assert.match(workflow, /uses: \$\/\.github\/actions\/route-runner/u);
 		assert.match(workflow, / {4}needs: route\n/u);
 		assert.match(
 			workflow,

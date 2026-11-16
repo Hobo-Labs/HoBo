@@ -78,6 +78,7 @@ import {
 	relayVerifyFailure,
 } from "./ci-relay-verify.js";
 import {
+	loadRelayJoinedYards,
 	loadRelayYard,
 	RelayPlacementRefusal,
 	resolveRelayPlacement,
@@ -336,7 +337,11 @@ export async function runCiRelayAdopt(
 				code: "HOBO_CI_DEPLOY_YARD_PROVIDER",
 				message: `Yard ${yard.name} places the relay on ${yard.providerId}; --adopt observes Vercel Git-integration deployments only.`,
 			};
-		placement = resolveRelayPlacement(yard, "production");
+		placement = resolveRelayPlacement(
+			yard,
+			"production",
+			await loadRelayJoinedYards(input.cwd, yard),
+		);
 	} catch (error) {
 		if (error instanceof RelayPlacementRefusal)
 			return {

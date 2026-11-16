@@ -300,6 +300,19 @@ export type ComponentBinding = BindleEntrypoint | DeclaredComponent;
 export interface ExternalDependencyOptions {
 	readonly connectionString?: string;
 	readonly endpoints?: Readonly<Record<string, string>>;
+	/**
+	 * The provider that provisions and runs this service on our behalf (Neon
+	 * or Supabase attached through the Vercel Marketplace). Only such a
+	 * service may be an external of a Bindle placed in a Yard; anything else
+	 * another vendor runs belongs to a Yard of its own, joined by a junction
+	 * (externalBoundaryViolations).
+	 * This declaration does not itself prove a Marketplace relationship;
+	 * placement refuses it until that relationship can be verified.
+	 */
+	readonly managedBy?: {
+		readonly provider: string;
+		readonly via: "marketplace";
+	};
 }
 
 export interface ContainerDependencyOptions {
