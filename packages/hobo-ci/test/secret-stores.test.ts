@@ -102,28 +102,21 @@ describe("Bitwarden Secrets Manager", () => {
 			expect.objectContaining({ value: "bitwarden" }),
 		);
 		const fields = storeSettings("bitwarden", "/unused").map((s) => s.field);
+		// The page asks only for the personal API key; the server URL and the
+		// organization (if several) are optional; what the run provisions
+		// (project, collection, device) never appears here.
 		expect(fields.map((field) => field.name)).toEqual([
 			"BWS_SERVER",
 			"BITWARDEN_SERVER_URL",
-			"BITWARDEN_STORAGE",
-			"BITWARDEN_COLLECTION_ID",
-			"BITWARDEN_DEVICE_ID",
+			"BW_CLIENTID",
+			"BW_CLIENTSECRET",
 			"BWS_ORGANIZATION_ID",
-			"BWS_PROJECT_ID",
-			"BWS_ACCESS_TOKEN",
 		]);
-		// The Vaultwarden and vault-storage settings are optional: the page
-		// never asks for them; the run fills them in when it provisions.
-		for (const name of [
-			"BITWARDEN_SERVER_URL",
-			"BITWARDEN_STORAGE",
-			"BITWARDEN_COLLECTION_ID",
-			"BITWARDEN_DEVICE_ID",
-		])
-			expect(fields.find((f) => f.name === name)?.required).toBe(false);
-		expect(fields.find((f) => f.name === "BWS_ACCESS_TOKEN")?.kind).toBe(
+		expect(fields.find((f) => f.name === "BW_CLIENTSECRET")?.kind).toBe(
 			"secret",
 		);
+		for (const name of ["BITWARDEN_SERVER_URL", "BWS_ORGANIZATION_ID"])
+			expect(fields.find((f) => f.name === name)?.required).toBe(false);
 	});
 
 	it("writes into the bound project and names entries by reference", async () => {

@@ -55,18 +55,19 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		for (const store of ["Infisical", "1Password", "Bitwarden"])
 			expect(step).toContain(`**${store}**`);
 		expect(step).toMatch(/OP_CONNECT_HOST/u);
-		// Bitwarden Secrets Manager through its API, never the owner's terminal.
-		expect(step).toMatch(/Never send the owner to a\s+terminal for it/u);
-		expect(step).toMatch(/never ask the owner to create identities or tokens/u);
-		// Bitwarden without a token: the API key and one approval, no copied token.
+		// Never env, never the owner's terminal, never hand-made identities.
+		expect(step).toMatch(
+			/Never ask the owner to set\s+environment variables, never send them to a terminal/u,
+		);
+		expect(step).toMatch(/never ask\s+them to create identities or tokens/u);
+		// Bitwarden: the API key through the credential form, then one approval.
 		expect(HAND_OFF).toMatch(/HOBO_OWNER_BITWARDEN_APPROVE/u);
-		expect(HAND_OFF).toMatch(/BW_CLIENTID/u);
-		expect(HAND_OFF).toMatch(/Vaultwarden/u);
+		expect(HAND_OFF).toMatch(/suggested_type: "basic"/u);
 		expect(HAND_OFF).toMatch(/BITWARDEN_SERVER_URL/u);
-		expect(HAND_OFF).toMatch(/never in\s+chat/u);
+		expect(HAND_OFF).not.toMatch(/BW_CLIENTID|Vaultwarden/u);
 		// The choice is the owner's: a present token never picks the store.
 		expect(step).toMatch(
-			/never pick a store for them\s+because its token is present/u,
+			/never pick a store for\s+them because its token is present/u,
 		);
 	});
 
@@ -81,7 +82,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		const form = step.indexOf("request_credential");
 		expect(steps).toBeGreaterThan(-1);
 		expect(form).toBeGreaterThan(steps);
-		expect(step).toMatch(/continues by itself; do not rerun it/u);
+		expect(step).toMatch(/continues by itself; do\s+not rerun it/u);
 		expect(step).toMatch(/decline/u);
 	});
 

@@ -24,7 +24,6 @@ import {
 	ownerLocator,
 	ownerStore,
 	runPage,
-	SECRET_STORE_LOCATOR_FILE,
 	scopeRunVault,
 	showOwnerPage,
 	storeAnswers,
@@ -269,6 +268,24 @@ async function prepareVercelWithVault(
 		ownerStore("cd", vault, {
 			...deps,
 			env: plainEnv,
+			// The setup page collected Bitwarden's API key: provision from it
+			// (one approved login request) before the store opens.
+			beforeOpen: async (id, values) => {
+				if (id !== "bitwarden") return { ok: true };
+				if (values.BW_CLIENTID) vault.put("BW_CLIENTID", values.BW_CLIENTID);
+				const refusal = await ensureBitwardenSignIn({
+					family: "cd",
+					vault,
+					env: { ...plainEnv, ...values },
+					locator: ownerLocator(deps),
+					fetch: deps.fetch ?? fetch,
+					emit: (line) => input.run.emitProgress(line),
+					silent: false,
+					handOff: false,
+					...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+				});
+				return refusal === undefined ? { ok: true } : { ok: false, ...refusal };
+			},
 			...(input.handOff === true && workloadOidc === undefined
 				? { defaultInfisicalSignIn: EGRESS_PROXY_SIGN_IN }
 				: undefined),
@@ -309,6 +326,7 @@ async function prepareVercelWithVault(
 				fetch: deps.fetch ?? fetch,
 				emit: (line) => input.run.emitProgress(line),
 				silent: input.run.flags.json || input.run.flags.quiet,
+				handOff: input.handOff === true,
 				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
 				...(deps.handOffTimeoutMs !== undefined
 					? { timeoutMs: deps.handOffTimeoutMs }
@@ -427,7 +445,7 @@ async function prepareVercelWithVault(
 				"HOBO_CD_STORE_NEEDS_SIGN_IN",
 				`A handed-off run shows no sign-in page: ${owner.id} must open without one.`,
 				[
-					`Configure the store's non-secret ids in ${SECRET_STORE_LOCATOR_FILE}.`,
+					"Choose the store and give its non-secret ids when the run asks; they are kept in your own HoBo settings.",
 					...storeSignInGuidance(owner.id, "cd"),
 				],
 			);
@@ -483,7 +501,7 @@ async function prepareVercelWithVault(
 			[
 				"Run hobo cd up once in a terminal; it asks for what is missing and keeps it in your secret store.",
 				"An agent can run hobo cd up --hand-off with a store that opens without a page; the owner approves Vercel using a device code.",
-				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID in ${SECRET_STORE_LOCATOR_FILE}) so the run signs in with its own OIDC token.`,
+				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID, a non-secret setting) so the run signs in with its own OIDC token.`,
 			],
 		);
 

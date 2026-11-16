@@ -1,8 +1,11 @@
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
 import { createTrustedVault } from "@hobo/core";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
-
 import {
 	accessTokenKey,
 	decryptEncString,
@@ -16,11 +19,13 @@ import {
 	provisionBitwardenAccessToken,
 } from "../../src/bitwarden-provision.js";
 import { ensureBitwardenSignIn } from "../../src/bitwarden-sign-in.js";
+import { OWNER_CREDENTIAL_LINE_PREFIX } from "../../src/hand-off-store.js";
 import {
 	openSecretStore,
 	prepareGithubConnection,
 	type SecretStoreOpening,
 } from "../../src/index.js";
+import { ownerLocator, secretStoreLocatorPath } from "../../src/owner-store.js";
 import { parseHttpsOrigin } from "../../src/parsed-values.js";
 import {
 	API_KEY,
@@ -522,5 +527,157 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 		expect(JSON.stringify(Object.fromEntries(saved))).not.toContain(
 			server.orgKey.toString("base64"),
 		);
+	});
+});
+
+/** The agent's remote session: its credential form and egress proxy. */
+function remoteSession(fetchImpl: typeof fetch) {
+	let saved: { username: string; password: string } | undefined;
+	const proxied: typeof fetch = async (input, init) => {
+		const url = new URL(String(input));
+		const headers = new Headers(init?.headers);
+		// The proxy injects the saved credential for its host, as HTTP Basic.
+		if (saved !== undefined && url.host === "identity.bitwarden.com")
+			headers.set(
+				"Authorization",
+				`Basic ${Buffer.from(`${saved.username}:${saved.password}`).toString("base64")}`,
+			);
+		return fetchImpl(input, { ...init, headers });
+	};
+	return {
+		fetch: proxied,
+		save(username: string, password: string) {
+			saved = { username, password };
+		},
+	};
+}
+
+function handedOff(see: (line: string) => void): PrepareInput {
+	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
+		emitProgress: see,
+		// SAFETY: the preparation reads only progress and these output flags.
+		flags: { json: false, quiet: false } as CommandRunInput["flags"],
+	};
+	// SAFETY: the preparation reads only progress and these output flags.
+	return {
+		action: "up",
+		projectDir: "/box/project",
+		whatIf: false,
+		yes: false,
+		handOff: true,
+		run: run as CommandRunInput,
+	} as PrepareInput;
+}
+
+describe("EVAL remote box, no keys anywhere: the ceremony collects the API key", () => {
+	it("asks once through the session's credential form, never holds the secret, and opens the store", async () => {
+		const server = fakeBitwarden();
+		const session = remoteSession(server.fetch);
+		const shown: string[] = [];
+		const opened = new Map<string, string>();
+		await prepareGithubConnection(
+			handedOff((line) => {
+				shown.push(line);
+				// The owner, outside the box, does what the line says.
+				if (
+					line.startsWith(
+						`${OWNER_CREDENTIAL_LINE_PREFIX} host=identity.bitwarden.com`,
+					)
+				)
+					session.save(API_KEY.clientId, API_KEY.clientSecret);
+			}),
+			{
+				env: { HOBO_SECRET_STORE: "bitwarden" },
+				vault: createTrustedVault(),
+				locator: { read: async () => ({}), write: async () => undefined },
+				openStore: async (
+					id,
+					_coordinates,
+					signIn,
+				): Promise<SecretStoreOpening> => {
+					const token = signIn.reveal("BWS_ACCESS_TOKEN");
+					if (id !== "bitwarden" || token === undefined)
+						return { ok: false, message: "no sign-in", remediation: [] };
+					opened.set("token", token);
+					return {
+						ok: true,
+						store: {
+							id: "bitwarden",
+							port: createMemorySecretsPort({ id: "memory" }),
+							reference: (name) => `bws://${name}`,
+						},
+					};
+				},
+				fetch: session.fetch,
+				sleep: async () => undefined,
+				handOffTimeoutMs: 60_000,
+				startPage: () => {
+					throw new Error("a handed-off run serves no page");
+				},
+			},
+		);
+		expect(opened.get("token")).toMatch(/^0\.66666666-/u);
+		// One credential request, then one approval; no environment variable.
+		expect(
+			shown.filter((l) => l.startsWith(OWNER_CREDENTIAL_LINE_PREFIX)),
+		).toHaveLength(1);
+		expect(
+			shown.filter((l) => l.startsWith(OWNER_BITWARDEN_APPROVE_LINE_PREFIX)),
+		).toHaveLength(1);
+		// The run never sent (so never held) the client secret.
+		expect(server.signInBodies.join("&")).not.toContain(API_KEY.clientSecret);
+		const all = shown.join("\n");
+		expect(all).not.toContain(API_KEY.clientSecret);
+		expect(all).not.toContain(OWNER_EMAIL);
+		expect(all).not.toMatch(/environment's settings|BW_CLIENTID/u);
+	});
+
+	it("on a self-hosted server, says why the form cannot carry the key and where the ceremony asks instead", async () => {
+		const shown: string[] = [];
+		const outcome = await prepareGithubConnection(
+			handedOff((l) => shown.push(l)),
+			{
+				env: {
+					HOBO_SECRET_STORE: "bitwarden",
+					BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN,
+				},
+				vault: createTrustedVault(),
+				locator: { read: async () => ({}), write: async () => undefined },
+				fetch: fakeBitwarden({ vaultwarden: true }).fetch,
+				sleep: async () => undefined,
+				startPage: () => {
+					throw new Error("a handed-off run serves no page");
+				},
+			},
+		);
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_BITWARDEN_NEEDS_API_KEY" },
+		});
+		expect(JSON.stringify(outcome)).toMatch(
+			/setup page asks for your personal API key/u,
+		);
+	});
+});
+
+describe("EVAL the locator lives in the owner's HoBo settings, never the repository", () => {
+	it("writes ids to the user's config, and moves a stray in-tree locator out", async () => {
+		const project = await mkdtemp(path.join(tmpdir(), "hobo-project-"));
+		const config = await mkdtemp(path.join(tmpdir(), "hobo-config-"));
+		const env = { XDG_CONFIG_HOME: config };
+		const where = secretStoreLocatorPath(project, env);
+		expect(where.startsWith(config)).toBe(true);
+		expect(where.startsWith(project)).toBe(false);
+		await mkdir(path.join(project, ".hobo"));
+		const stray = path.join(project, ".hobo", "secret-store.json");
+		await writeFile(stray, JSON.stringify({ HOBO_SECRET_STORE: "infisical" }));
+		const locator = ownerLocator({ cwd: project, env });
+		expect(await locator.read()).toEqual({ HOBO_SECRET_STORE: "infisical" });
+		expect(existsSync(stray)).toBe(false);
+		expect(existsSync(where)).toBe(true);
+		await locator.write({ HOBO_SECRET_STORE: "bitwarden" });
+		expect(await ownerLocator({ cwd: project, env }).read()).toEqual({
+			HOBO_SECRET_STORE: "bitwarden",
+		});
 	});
 });

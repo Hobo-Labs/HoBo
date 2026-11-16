@@ -4,14 +4,14 @@ import path from "node:path";
 import { isLifecycleAction } from "@hobo/cli";
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
+	hasSecretStoreLocator,
 	type OpenedSecretStore,
 	ownerStore,
-	SECRET_STORE_LOCATOR_FILE,
 	withoutSecretEnv,
 } from "@hobo/hobo-ci";
 
 // Keys the composed `hobo` keeps for the owner across runs, held in the owner's
-// secret store (the committed locator `.hobo/secret-store.json`) and read into
+// secret store (found through the owner's locator in their HoBo settings) and read into
 // this process's trusted vault before a verb runs. Nothing here is read from
 // the environment or written to disk, so a devbox that is destroyed loses
 // nothing: the next one signs in to the same store and finds the same keys.
@@ -128,7 +128,7 @@ export async function loadOwnerKeys(
 	}
 	if (store === undefined) {
 		if (
-			existsSync(path.join(input.cwd, SECRET_STORE_LOCATOR_FILE)) ||
+			hasSecretStoreLocator(input.cwd, input.env) ||
 			input.env.HOBO_SECRET_STORE
 		)
 			return unavailable();

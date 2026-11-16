@@ -56,8 +56,9 @@ token is held in memory for the run and is never written to a file, an
 environment file, a log or a result.
 
 Configuration is a **ceremony**, not a list of environment variables, and it
-survives the machine: the store is found through the committed locator
-`.hobo/secret-store.json` and signed in to on the page (the sign-in is held in
+survives the machine: the store is found through a locator of ids in
+the owner's HoBo settings (`~/.config/hobo/projects/<project>/secret-store.json`,
+never the repository) and signed in to on the page (the sign-in is held in
 the run's trusted vault, in memory); whatever `hobo cd up` is missing is asked
 for and kept **in the secret store** as `HOBO_CD_SETTINGS` (the Integration's
 slug and client id). The client secret is its own store entry, and the Vercel

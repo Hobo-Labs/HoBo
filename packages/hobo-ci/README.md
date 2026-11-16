@@ -46,8 +46,9 @@ secret-shaped values, but that heuristic cannot identify every possible secret.
 The browser opener receives only an allowlist of desktop and process-location
 variables; loader hooks and arbitrary application variables are excluded.
 Other CI paths still read credentials from the environment. The store is found through
-the committed locator `.hobo/secret-store.json` (which store, its ids, no
-credential). You sign in on the setup page: an Infisical access token from your
+a locator in the owner's HoBo settings
+(`~/.config/hobo/projects/<project>/secret-store.json`, never the repository:
+which store, its ids, no credential). You sign in on the setup page: an Infisical access token from your
 own `infisical login`, the 1Password desktop app (`OP_ACCOUNT`, unlocked with
 your biometrics), or a Bitwarden Secrets Manager machine account token on the
 US or EU cloud. The sign-in's vault buffer is cleared when setup ends, including

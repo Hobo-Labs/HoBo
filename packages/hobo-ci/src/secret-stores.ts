@@ -555,7 +555,7 @@ function openBitwardenVault(
 	const clientId = signIn.reveal("BW_CLIENTID");
 	const clientSecret = signIn.reveal("BW_CLIENTSECRET");
 	const organizationKey = signIn.reveal("BITWARDEN_ORG_KEY");
-	if (!clientId || !clientSecret || !organizationKey)
+	if (!organizationKey)
 		return {
 			ok: false,
 			message: "This run holds no sign-in for the Bitwarden vault yet.",
@@ -583,7 +583,11 @@ function openBitwardenVault(
 		);
 		const port = createBitwardenVaultSecretsPort({
 			endpoints,
-			apiKey: parseBitwardenApiKey(clientId, clientSecret),
+			// The key the ceremony collected, or the one the egress proxy injects.
+			apiKey:
+				clientId && clientSecret
+					? parseBitwardenApiKey(clientId, clientSecret)
+					: { kind: "egress-proxy" },
 			deviceId: parseBitwardenDeviceId(coordinates.BITWARDEN_DEVICE_ID ?? ""),
 			organizationId,
 			collectionId,

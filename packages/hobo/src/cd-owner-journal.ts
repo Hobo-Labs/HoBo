@@ -1,12 +1,10 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 
 import { createTrustedVault } from "@hobo/core";
 import { journalFleetRuntime } from "@hobo/hobo-cd";
 import {
+	hasSecretStoreLocator,
 	type OpenedSecretStore,
 	ownerStore,
-	SECRET_STORE_LOCATOR_FILE,
 	withoutSecretEnv,
 	workloadOidcOf,
 } from "@hobo/hobo-ci";
@@ -32,8 +30,7 @@ export async function withOwnerJournalFleet(
 	if (
 		env.HOBO_CD_POSTGRES_FLEET !== undefined ||
 		env.HOBO_CD_POSTGRES_URL !== undefined ||
-		(open === undefined &&
-			!existsSync(path.join(cwd, SECRET_STORE_LOCATOR_FILE)))
+		(open === undefined && !hasSecretStoreLocator(cwd, env))
 	)
 		return { env };
 	const signIn = createTrustedVault();

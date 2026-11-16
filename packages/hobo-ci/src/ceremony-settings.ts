@@ -78,7 +78,7 @@ export function storeSettings(
 					name: "BWS_SERVER",
 					label: "Bitwarden cloud",
 					description:
-						"Where your Bitwarden account lives; a token works only there.",
+						"Where your Bitwarden account lives; a key works only there.",
 					kind: "choice",
 					required: true,
 					value: "us",
@@ -92,9 +92,9 @@ export function storeSettings(
 			{
 				field: {
 					name: "BITWARDEN_SERVER_URL",
-					label: "Self-hosted server (Vaultwarden or Bitwarden)",
+					label: "Self-hosted server (optional)",
 					description:
-						"Its https origin, for example https://vault.example.com. Leave empty for Bitwarden's cloud.",
+						"Only if your vault is on your own server, such as Vaultwarden: its https address.",
 					kind: "text",
 					required: false,
 				},
@@ -102,66 +102,31 @@ export function storeSettings(
 			},
 			{
 				field: {
-					name: "BITWARDEN_STORAGE",
-					label: "Where the secrets are kept",
+					name: "BW_CLIENTID",
+					label: "Personal API key: client_id",
 					description:
-						"Secrets Manager where the organization has it; otherwise secure notes in its vault (Vaultwarden).",
-					kind: "choice",
-					required: false,
-					value: "secrets-manager",
-					options: [
-						{ value: "secrets-manager", label: "Secrets Manager" },
-						{ value: "vault", label: "Vault (secure notes in a collection)" },
-					],
+						"Account settings → Security → Keys → View API key. HoBo then asks you to approve one login request and sets up the rest itself.",
+					kind: "text",
+					required: true,
 				},
 			},
 			{
 				field: {
-					name: "BITWARDEN_COLLECTION_ID",
-					label: "Bitwarden collection ID",
-					description: "The collection the secure notes go to (vault storage).",
-					kind: "text",
-					required: false,
+					name: "BW_CLIENTSECRET",
+					label: "Personal API key: client_secret",
+					description: "Used for this run only; never saved.",
+					kind: "secret",
+					required: true,
 				},
-				validate: uuid,
-			},
-			{
-				field: {
-					name: "BITWARDEN_DEVICE_ID",
-					label: "This run's Bitwarden device ID",
-					kind: "text",
-					required: false,
-				},
-				validate: uuid,
 			},
 			{
 				field: {
 					name: "BWS_ORGANIZATION_ID",
-					label: "Bitwarden organization ID",
+					label: "Organization ID (only if you belong to several)",
 					kind: "text",
-					required: true,
+					required: false,
 				},
 				validate: uuid,
-			},
-			{
-				field: {
-					name: "BWS_PROJECT_ID",
-					label: "Bitwarden project ID",
-					description: "The Secrets Manager project the credentials go to.",
-					kind: "text",
-					required: true,
-				},
-				validate: uuid,
-			},
-			{
-				field: {
-					name: "BWS_ACCESS_TOKEN",
-					label: "Bitwarden machine account access token",
-					description:
-						"A token for a machine account with write access to the project. Used for this run only; never saved.",
-					kind: "secret",
-					required: true,
-				},
 			},
 		];
 	return store === "1password"

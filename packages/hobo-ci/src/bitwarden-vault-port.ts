@@ -6,11 +6,12 @@ import {
 	encryptEncString,
 	symmetricKey,
 } from "./bitwarden-crypto.js";
-import type {
-	BitwardenApiKey,
-	BitwardenDeviceId,
-	BitwardenEndpoints,
-	BitwardenId,
+import {
+	type BitwardenDeviceId,
+	type BitwardenEndpoints,
+	type BitwardenId,
+	type BitwardenSignInKey,
+	bitwardenSignIn,
 } from "./bitwarden-provision.js";
 
 /**
@@ -28,7 +29,7 @@ import type {
 
 export interface BitwardenVaultPortOptions {
 	readonly endpoints: BitwardenEndpoints;
-	readonly apiKey: BitwardenApiKey;
+	readonly apiKey: BitwardenSignInKey;
 	readonly deviceId: BitwardenDeviceId;
 	readonly organizationId: BitwardenId;
 	readonly collectionId: BitwardenId;
@@ -79,25 +80,11 @@ export function createBitwardenVaultSecretsPort(
 	let bearer: string | undefined;
 
 	const signIn = async () => {
-		const response = await options.fetch(
-			`${endpoints.identity}/connect/token`,
-			{
-				method: "POST",
-				headers: {
-					"Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
-					Accept: "application/json",
-					...device,
-				},
-				body: new URLSearchParams({
-					grant_type: "client_credentials",
-					scope: "api",
-					client_id: options.apiKey.clientId,
-					client_secret: options.apiKey.clientSecret,
-					deviceType: "25",
-					deviceIdentifier: options.deviceId,
-					deviceName: "HoBo",
-				}),
-			},
+		const response = await bitwardenSignIn(
+			endpoints,
+			options.apiKey,
+			options.deviceId,
+			options.fetch,
 		);
 		if (!response.ok)
 			throw new Error(

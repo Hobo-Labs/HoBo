@@ -2,6 +2,8 @@ import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
 
 import {
+	type BitwardenSignInKey,
+	bitwardenApiKeyPage,
 	bitwardenEndpoints,
 	newBitwardenDeviceId,
 	parseBitwardenApiKey,
@@ -28,6 +30,8 @@ export interface EnsureBitwardenSignInOptions {
 	readonly locator: SettingsStore;
 	readonly fetch: typeof fetch;
 	readonly emit: (line: string) => void;
+	/** A handed-off run (a remote box): the API key may come through the egress proxy. */
+	readonly handOff: boolean;
 	/** Whether the run prints progress; the approval line needs it. */
 	readonly silent: boolean;
 	readonly sleep?: (ms: number) => Promise<void>;
@@ -47,26 +51,11 @@ export async function ensureBitwardenSignIn(
 	options: EnsureBitwardenSignInOptions,
 ): Promise<BitwardenSignInRefusal | undefined> {
 	const { vault } = options;
-	const clientId = vault.reveal("BW_CLIENTID");
-	const clientSecret = vault.reveal("BW_CLIENTSECRET");
-	if (clientId === undefined || clientSecret === undefined) return undefined;
-	// Called only when the store did not open: a token in hand was refused
-	// (revoked or expired), so the API key replaces it with a new one.
-	vault.drop("BWS_ACCESS_TOKEN");
-	vault.drop("BITWARDEN_ORG_KEY");
 	const fam = options.family.toUpperCase();
-	if (options.silent)
-		return {
-			code: `HOBO_${fam}_HANDOFF_SILENT`,
-			message:
-				"Approving the Bitwarden login request needs progress output. Omit --json and -q, then retry.",
-			remediation: [`Run hobo ${options.family} up without --json or -q.`],
-		};
 	const saved = await options.locator.read();
 	const setting = (name: string) =>
 		options.env[name] || saved[name] || undefined;
 	try {
-		const apiKey = parseBitwardenApiKey(clientId, clientSecret);
 		const region = parseBitwardenServer(setting("BWS_SERVER"));
 		const serverUrlText = setting("BITWARDEN_SERVER_URL");
 		const serverUrl =
@@ -74,6 +63,39 @@ export async function ensureBitwardenSignIn(
 				? parseHttpsOrigin("BITWARDEN_SERVER_URL", serverUrlText)
 				: undefined;
 		const endpoints = bitwardenEndpoints(region, serverUrl);
+		// The API key the ceremony collected (the setup page, or the
+		// environment), else, from a remote box, the one the session's egress
+		// proxy injects as HTTP Basic client authentication.
+		const clientId = vault.reveal("BW_CLIENTID") ?? setting("BW_CLIENTID");
+		const clientSecret = vault.reveal("BW_CLIENTSECRET");
+		let apiKey: BitwardenSignInKey;
+		if (clientId !== undefined && clientSecret !== undefined)
+			apiKey = parseBitwardenApiKey(clientId, clientSecret);
+		else if (!options.handOff) return undefined;
+		else if (endpoints.selfHosted)
+			// A self-hosted server reads the key only from the request body,
+			// which the proxy cannot fill.
+			return {
+				code: `HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
+				message:
+					"Your self-hosted Bitwarden server reads the API key only from the sign-in request itself, so a remote run cannot take it through the session's credential form.",
+				remediation: [
+					`Run hobo ${options.family} up at your own terminal: the setup page asks for your personal API key (${bitwardenApiKeyPage(endpoints)}).`,
+					"Or add BW_CLIENTID and BW_CLIENTSECRET to this environment's secrets; the run moves them into its memory and out of the environment.",
+				],
+			};
+		else apiKey = { kind: "egress-proxy" };
+		// Called only when the store did not open: a token in hand was refused
+		// (revoked or expired), so the API key replaces it with a new one.
+		vault.drop("BWS_ACCESS_TOKEN");
+		vault.drop("BITWARDEN_ORG_KEY");
+		if (options.silent)
+			return {
+				code: `HOBO_${fam}_HANDOFF_SILENT`,
+				message:
+					"Approving the Bitwarden login request needs progress output. Omit --json and -q, then retry.",
+				remediation: [`Run hobo ${options.family} up without --json or -q.`],
+			};
 		const organization = setting("BWS_ORGANIZATION_ID");
 		const project = setting("BWS_PROJECT_ID");
 		// A stable device id: Bitwarden knows the device after its first

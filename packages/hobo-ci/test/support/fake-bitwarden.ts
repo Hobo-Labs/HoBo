@@ -70,6 +70,8 @@ export interface FakeBitwarden {
 	}[];
 	/** Requests that went to a host other than the configured server. */
 	readonly strayHosts: string[];
+	/** Every sign-in request's form body, to show what the run sent. */
+	readonly signInBodies: string[];
 }
 
 export function fakeBitwarden(
@@ -151,6 +153,7 @@ export function fakeBitwarden(
 		collections: [],
 		ciphers: [],
 		strayHosts: [],
+		signInBodies: [],
 	};
 	let requestSeen = 0;
 	const fetchImpl: typeof fetch = async (input, init) => {
@@ -167,10 +170,21 @@ export function fakeBitwarden(
 		const bearer = headers.get("authorization") === "Bearer user-session";
 		if (url.pathname === "/connect/token") {
 			const form = new URLSearchParams(String(init?.body));
-			if (
-				form.get("client_id") !== API_KEY.clientId ||
-				form.get("client_secret") !== API_KEY.clientSecret
-			)
+			state.signInBodies.push(form.toString());
+			// Client authentication in the body, or (Bitwarden's cloud, not
+			// Vaultwarden) as HTTP Basic, as an egress proxy injects it.
+			const basic = headers.get("authorization")?.match(/^Basic (.+)$/u)?.[1];
+			const [basicId, basicSecret] = basic
+				? Buffer.from(basic, "base64").toString().split(":")
+				: [];
+			const viaBasic =
+				!options.vaultwarden &&
+				basicId === API_KEY.clientId &&
+				basicSecret === API_KEY.clientSecret;
+			const viaBody =
+				form.get("client_id") === API_KEY.clientId &&
+				form.get("client_secret") === API_KEY.clientSecret;
+			if (!viaBasic && !viaBody)
 				return Response.json({ error: "invalid_client" }, { status: 400 });
 			state.knownDevices.add(form.get("deviceIdentifier") ?? "");
 			return Response.json({

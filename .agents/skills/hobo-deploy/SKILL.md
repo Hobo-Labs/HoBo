@@ -202,41 +202,34 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
    **Bitwarden**, each option described by its line from the refusal. Then
    ask for that store's non-secret ids the refusal names (Infisical:
    `INFISICAL_PROJECT_ID`; 1Password: `OP_VAULT_ID`, and for a remote box
-   `OP_CONNECT_HOST`, their Connect server; Bitwarden: none, except
-   `BITWARDEN_SERVER_URL` (the https origin) when the owner runs
-   **Vaultwarden** or a self-hosted Bitwarden server), and run again
-   with `HOBO_SECRET_STORE` and those ids set (ids are not secrets).
-   Bitwarden Secrets Manager is used through its API from any box: the run
-   takes the access token the environment provides (`BWS_ACCESS_TOKEN`) into
-   its trusted vault once the owner chose Bitwarden; with no token, it
-   provisions one itself from the owner's personal API key (step 4). The
-   choice is always the owner's: a provided token only marks
-   a store "configured here" in the picker; never pick a store for them
-   because its token is present. Never send the owner to a
-   terminal for it, and never ask the owner to create identities or tokens
-   by hand when the store's API can do it.
+   `OP_CONNECT_HOST`, their Connect server; Bitwarden: none; only if their
+   vault is on their own server, its address as `BITWARDEN_SERVER_URL`), and
+   run again with `HOBO_SECRET_STORE` and those ids set (ids are not
+   secrets; the run keeps them in the owner's own HoBo settings, never in
+   the repository). The choice is always the owner's: a provided token only
+   marks a store "configured here" in the picker; never pick a store for
+   them because its token is present. Never ask the owner to set
+   environment variables, never send them to a terminal, and never ask
+   them to create identities or tokens by hand when the store's API can do
+   it: the run's own lines ask for what it needs.
 3. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is
-   waiting for the owner's store sign-in. In **one** message, give the owner
-   the steps from that line and the guide link exactly as printed, and ask
-   them to say when the token is ready. Then call `request_credential` with
-   that `host` (the form cannot show links or steps, which is why they come
-   first). Once they save it, the run continues by itself; do not rerun it.
-   If they decline the form, show the other paths the run's refusal names.
-4. On `HOBO_*_STORE_NEEDS_SIGN_IN` with Bitwarden chosen and neither a
-   token nor an API key in the environment: ask the owner, in one message,
-   to copy their **personal API key** from the link the refusal prints
-   (Account settings → Security → Keys → View API key) into this
-   environment's settings as `BW_CLIENTID` and `BW_CLIENTSECRET` (never in
-   chat), then run again. On `HOBO_OWNER_BITWARDEN_APPROVE account=<email>
-   phrase=<phrase>`: say "Open a Bitwarden app you are signed in to and
-   approve the login request from HoBo whose fingerprint phrase is
-   `<phrase>`." The run then creates the Secrets Manager project and machine
-   account `hobo`, grants it the project, and mints a one-day access token
-   into its vault by itself; on Vaultwarden (no Secrets Manager) it keeps
-   the secrets as encrypted secure notes in the organization's collection
-   `hobo`, holding the organization key in memory. Do not rerun it. On
-   `HOBO_*_BITWARDEN_ORGANIZATION`, ask which organization with a picker
-   (each `BWS_ORGANIZATION_ID=` line is an option) and run again with it.
+   waiting for a credential. In **one** message, give the owner the steps
+   from that line and the guide link exactly as printed, and ask them to
+   say when it is ready. Then call `request_credential` with that `host`;
+   if the line asks for a **username and password** (Bitwarden's personal
+   API key: username = client_id, password = client_secret), pass
+   `suggested_type: "basic"`. The form cannot show links or steps, which is
+   why they come first. Once they save it, the run continues by itself; do
+   not rerun it. If they decline the form, show the other paths the run's
+   refusal names.
+4. On `HOBO_OWNER_BITWARDEN_APPROVE server=<host> phrase=<phrase>`: say
+   "Open a Bitwarden app signed in to `<host>` and approve the login request
+   from HoBo whose fingerprint phrase is `<phrase>`." The run then sets up
+   its own access (a project, machine account and one-day token, or a
+   collection of encrypted notes where the server has no Secrets Manager)
+   and continues; do not rerun it. On `HOBO_*_BITWARDEN_ORGANIZATION`, ask
+   which organization with a picker (each `BWS_ORGANIZATION_ID=` line is an
+   option) and run again with it.
 5. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any
    device, check the code is `<code>`, and approve." The run waits for the
    approval and continues by itself.

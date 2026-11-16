@@ -169,8 +169,10 @@ environment variables.
 
 - **The secret store first.** Where it is (Infisical, 1Password or Bitwarden,
   and its project, vault or organization ids, plus an optional OIDC identity
-  for CI) is a non-secret locator committed with the repository
-  (`.hobo/secret-store.json`). The sign-in is held in the run's trusted
+  for CI) is a locator of ids in the owner's own HoBo settings
+  (`~/.config/hobo/projects/<project>/secret-store.json`, mode 0600, never
+  in the repository; an older in-tree `.hobo/secret-store.json` is moved
+  there on first read). No secret is ever written to it. The sign-in is held in the run's trusted
   vault (memory only, wiped when the run ends) and is one of
   (`INFISICAL_SIGN_IN`, a non-secret setting): a token typed on the page
   (`typed`, the default; or unlocked by the 1Password desktop app); a token
@@ -237,12 +239,18 @@ environment variables.
   always the owner's step (`HOBO_*_STORE_CHOICE` until `HOBO_SECRET_STORE`
   is set), and the token is used only once they choose Bitwarden. With no
   token, the run provisions one (`provisionBitwardenAccessToken`): it signs
-  in with the owner's personal API key (`BW_CLIENTID`/`BW_CLIENTSECRET`,
-  adopted into the vault like the token), which makes its device one
+  in with the owner's personal API key, which the ceremony collects: the
+  setup page asks for it at the owner's terminal, and from a remote box the
+  run prints `HOBO_OWNER_CREDENTIAL host=identity.bitwarden.com` and the
+  owner saves it in the session's credential form as a username (client_id)
+  and password (client_secret), which the egress proxy sends as HTTP Basic
+  client authentication (RFC 6749 §2.3.1; the run never holds it). Optional
+  environment variables (`BW_CLIENTID`/`BW_CLIENTSECRET`) are adopted into
+  the vault like the token. Signing in makes the run's device one
   Bitwarden knows (a "log in with device" request is accepted only from a
   known device); picks the organization with Secrets Manager (or
   `BWS_ORGANIZATION_ID`) before asking anything; sends one login request and
-  prints `HOBO_OWNER_BITWARDEN_APPROVE account=<email> phrase=<fingerprint>`;
+  prints `HOBO_OWNER_BITWARDEN_APPROVE server=<host> phrase=<fingerprint>`;
   and, once the owner approves it in a signed-in Bitwarden app, finds or
   creates the project and machine account `hobo`, grants it read and write,
   and creates a one-day access token. Names and keys are encrypted in the
@@ -258,9 +266,13 @@ environment variables.
   creates the collection `hobo` and keeps each secret as a secure note
   there (`createBitwardenVaultSecretsPort`: name and value encrypted with
   the organization key, one version per secret, its revision date); the
-  locator records `BITWARDEN_STORAGE=vault` and `BITWARDEN_COLLECTION_ID`,
-  and each run holds the organization key in memory after the owner's
-  approval. The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
+  locator records `BITWARDEN_STORAGE=vault` and `BITWARDEN_COLLECTION_ID`
+  (internal ids, never page fields: the page shows only the optional
+  server address), and each run holds the organization key in memory after
+  the owner's approval. A self-hosted server reads the API key only from
+  the request body, which an egress proxy cannot fill, so a remote run
+  against one refuses with `HOBO_*_BITWARDEN_NEEDS_API_KEY` and names the
+  setup page at the owner's terminal. The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
   host.
 - **A provider's redirect to a remote run** (`hobo ci app create
   --hand-off`; GitHub's App manifest code). The run listens on 127.0.0.1

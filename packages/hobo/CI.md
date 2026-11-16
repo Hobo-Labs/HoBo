@@ -124,7 +124,7 @@ POSIX permissions; on Windows use the relay's mounted secret files instead.
 `hobo ci serve` takes the App's credentials, in this order: mounted files the
 environment names (`HOBO_CI_GITHUB_APP_KEY_FILE` and the related `_FILE`
 variables, as a unit); else the connection `hobo ci up` deposited in your secret
-store (the committed `.hobo/secret-store.json`), read into the run's trusted
+store (found through the locator in the owner's HoBo settings), read into the run's trusted
 vault and handed to the relay in memory, so no key or webhook secret is written
 to disk or put in the relay's environment;
 else this imported version. It never reads a secret value from its

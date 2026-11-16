@@ -263,7 +263,7 @@ describe("hobo cd up --hand-off", () => {
 			result: { code: "HOBO_CD_STORE_NEEDS_SIGN_IN" },
 		});
 		expect(JSON.stringify(outcome)).toContain(
-			"Configure the store's non-secret ids",
+			"Choose the store and give its non-secret ids",
 		);
 		expect(JSON.stringify(outcome)).not.toContain("ids are committed");
 	});

@@ -191,7 +191,7 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 Whichever lane runs, a placement on a secret store (`hobo add infisical |
 bitwarden | 1password`, port `secretRef`) is executed by
 `withSecretRefExecution` (`src/secret-ref-executor.ts`): it opens the owner's
-store without a page (the committed `.hobo/secret-store.json`), refuses a store
+store without a page (found through the locator in the owner's HoBo settings), refuses a store
 that did not open (`HOBO_SECRET_REF_STORE_UNAVAILABLE`) or is not the one the
 plan chose (`HOBO_SECRET_REF_STORE_MISMATCH`), and returns the reference the
 workload reads at run time; nothing is provisioned, and destroy leaves the

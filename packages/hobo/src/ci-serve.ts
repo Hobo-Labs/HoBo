@@ -33,11 +33,11 @@ import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
 	CI_SETTINGS,
 	familySettings,
+	hasSecretStoreLocator,
 	loadGithubAppCredentials,
 	type OpenedSecretStore,
 	ownerStore,
 	resolveGithubAppExpectation,
-	SECRET_STORE_LOCATOR_FILE,
 	withoutSecretEnv,
 	workloadOidcOf,
 } from "@hobo/hobo-ci";
@@ -592,11 +592,7 @@ function ownerStoreOpener(
 				...(workloadOidc !== undefined ? { workloadOidc } : undefined),
 			});
 			const configured =
-				Boolean(env.HOBO_SECRET_STORE) ||
-				(await access(join(cwd, SECRET_STORE_LOCATOR_FILE)).then(
-					() => true,
-					() => false,
-				));
+				Boolean(env.HOBO_SECRET_STORE) || hasSecretStoreLocator(cwd, env);
 			if (owner.opened === undefined && configured)
 				throw new Error("Cannot open the owner's secret store.");
 			return owner.opened;

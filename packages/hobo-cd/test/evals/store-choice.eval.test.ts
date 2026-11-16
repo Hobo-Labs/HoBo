@@ -314,28 +314,44 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 		expect(all).not.toContain("0.machine.secret:key");
 	});
 
-	it("without a token or API key names the API-key path first, never the owner's terminal", async () => {
+	it("without a token or API key asks for the API key through the session's credential form, never env or a terminal", async () => {
 		const shown: string[] = [];
+		const asked: string[] = [];
 		const outcome = await prepareVercelConnection(
 			handOff((l) => shown.push(l)),
 			{
-				env: { ...ids, HOBO_SECRET_STORE: "bitwarden" },
+				env: { HOBO_SECRET_STORE: "bitwarden" },
 				locator: { read: async () => ({}), write: async () => undefined },
+				// Bitwarden as the box reaches it: the owner has not saved the
+				// key in the session's credential form, so nothing is injected.
+				fetch: async (input, init) => {
+					asked.push(String(input));
+					expect(String(init?.body)).not.toMatch(/client_secret/u);
+					return Response.json({ error: "invalid_client" }, { status: 400 });
+				},
 				sleep: async () => undefined,
-				handOffTimeoutMs: 200,
+				handOffTimeoutMs: 1,
 				startPage: noPage,
 			},
 		);
 		expect(outcome).toMatchObject({
 			kind: "refused",
-			result: { code: "HOBO_CD_STORE_NEEDS_SIGN_IN" },
+			result: { code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED" },
 		});
+		const credential = shown.find((l) =>
+			l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `),
+		);
+		expect(credential).toContain("host=identity.bitwarden.com");
+		expect(credential).toMatch(/security-keys/u);
+		expect(credential).toMatch(
+			/username = client_id, password = client_secret/u,
+		);
+		expect(
+			asked.every((url) => url.startsWith("https://identity.bitwarden.com/")),
+		).toBe(true);
 		const all = text(shown, outcome);
-		expect(all).toMatch(/BW_CLIENTID and BW_CLIENTSECRET/u);
-		expect(all).toMatch(/approve one login request/u);
-		expect(all).toMatch(/security-keys/u);
-		expect(all).toMatch(/BWS_ACCESS_TOKEN/u);
 		expect(all).not.toMatch(/terminal/u);
+		expect(all).not.toMatch(/environment's settings/u);
 	});
 });
 

@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 
 import {
@@ -36,8 +40,9 @@ import {
 //
 // - **Where the store is** (which provider; its project, vault or
 //   organization ids; for workloads, the OIDC identity that signs in): the
-//   locator, a non-secret JSON file committed with the repository
-//   (`.hobo/secret-store.json`). A fresh clone has it.
+//   locator, a JSON file of ids in the owner's own HoBo settings
+//   (`~/.config/hobo/projects/<project>/secret-store.json`, mode 0600),
+//   never in the repository. No secret is ever written to it.
 // - **Everything a lifecycle was told** (the relay URL, the GitHub App's owner,
 //   the Vercel Integration's ids): one JSON entry per family in the store
 //   itself (`HOBO_CI_SETTINGS`, `HOBO_CD_SETTINGS`), beside the credentials
@@ -50,8 +55,41 @@ import {
 // So a destroyed devbox is set up again by signing in once: nothing is asked
 // twice, and no secret is on its disk.
 
-// public-contract: the committed, non-secret locator of the owner's secret store.
+// public-contract: where an older HoBo kept the locator in the working tree; moved out on first read.
 export const SECRET_STORE_LOCATOR_FILE = ".hobo/secret-store.json";
+
+/**
+ * The locator's path in the owner's user settings, one per project (its
+ * absolute path): `$XDG_CONFIG_HOME/hobo/projects/<name>-<hash>/secret-store.json`,
+ * or under `~/.config` without XDG_CONFIG_HOME. Never inside the repository.
+ */
+export function secretStoreLocatorPath(
+	cwd: string,
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+	const root = path.resolve(cwd);
+	const base =
+		env.XDG_CONFIG_HOME || path.join(env.HOME || homedir(), ".config");
+	const key = createHash("sha256").update(root).digest("hex").slice(0, 16);
+	return path.join(
+		base,
+		"hobo",
+		"projects",
+		`${path.basename(root)}-${key}`,
+		"secret-store.json",
+	);
+}
+
+/** Whether the owner has a locator for this project (or a legacy one in the tree). */
+export function hasSecretStoreLocator(
+	cwd: string,
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+	return (
+		existsSync(secretStoreLocatorPath(cwd, env)) ||
+		existsSync(path.join(cwd, SECRET_STORE_LOCATOR_FILE))
+	);
+}
 
 // public-contract: the Infisical folder of the relay's own credentials, which hobo ci up reads and keeps.
 export const CI_RELAY_FOLDER = "/hobo-ci-relay";
@@ -80,7 +118,7 @@ export function storeChoiceGuidance(
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
 		`infisical${note("infisical")}: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
 		`1password${note("1password")}: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
-		`bitwarden${note("bitwarden")}: Bitwarden or Vaultwarden, nothing else to set up (Vaultwarden or self-hosted: BITWARDEN_SERVER_URL, its https origin). Once chosen, the run signs in with the environment's Secrets Manager access token (BWS_ACCESS_TOKEN) if there is one; otherwise, with your personal API key (BW_CLIENTID, BW_CLIENTSECRET) and one login request you approve in a Bitwarden app, it finds your organization and creates what it needs itself: Secrets Manager's project, machine account and a one-day token, or, without Secrets Manager (Vaultwarden), a collection of secure notes (BWS_SERVER us or eu; BWS_ORGANIZATION_ID only if you have several organizations). Both are moved into the run's trusted vault and out of the environment.`,
+		`bitwarden${note("bitwarden")}: nothing to look up. Once chosen, the run asks for your personal API key and one approval in a Bitwarden app, and sets up the rest itself. Optional: BITWARDEN_SERVER_URL for a self-hosted server.`,
 	];
 }
 
@@ -99,9 +137,7 @@ export function storeSignInGuidance(
 		];
 	if (store === "bitwarden")
 		return [
-			`Fewest steps: copy your personal API key from ${bitwardenApiKeyPage(bitwardenEndpoints("us"))} (bitwarden.eu: ${bitwardenApiKeyPage(bitwardenEndpoints("eu"))}; Vaultwarden or self-hosted: <your server>/#/settings/security/security-keys; Account settings → Security → Keys → View API key) into this environment's settings as BW_CLIENTID and BW_CLIENTSECRET (never in chat). The run then asks you to approve one login request in a Bitwarden app you are signed in to, and creates the rest itself: Secrets Manager's project, machine account and a one-day access token, or, where there is no Secrets Manager (Vaultwarden), a collection whose secure notes hold the secrets.`,
-			`Vaultwarden or a self-hosted Bitwarden server: also set BITWARDEN_SERVER_URL to its https origin (a non-secret setting).`,
-			`Or give this environment an existing machine account's access token as BWS_ACCESS_TOKEN. If Bitwarden refuses it (invalid_client), it was revoked or expired: add the API key above and the run replaces it with a new one.`,
+			`Your personal API key (${bitwardenApiKeyPage(bitwardenEndpoints("us"))}, or on bitwarden.eu or your own server the same page: Account settings → Security → Keys → View API key). From a remote box, give it in the agent session's credential form for Bitwarden's identity host as a username (client_id) and password (client_secret), never in chat; at your own terminal, the setup page asks for it. Then approve the one login request the run shows, in a Bitwarden app you are signed in to.`,
 		];
 	if (store !== "infisical")
 		return [
@@ -136,7 +172,7 @@ export const STORE_CHOICE: CeremonySetting = {
 			},
 			{
 				value: "bitwarden",
-				label: "Bitwarden or Vaultwarden",
+				label: "Bitwarden",
 				description:
 					"A machine account's access token; workloads use their own machine account.",
 			},
@@ -199,7 +235,32 @@ export interface OwnerStoreDeps extends SecretStoreDeps {
 		coordinates: Env,
 		signIn: SecretHolder,
 	) => Promise<SecretStoreOpening>;
+	/**
+	 * Runs on the setup page after its secrets are in the vault and before the
+	 * store opens: Bitwarden provisions its access there, from the API key the
+	 * page collected and one approved login request.
+	 */
+	readonly beforeOpen?: (
+		id: SecretStoreId,
+		values: Readonly<Record<string, string>>,
+	) => Promise<
+		| { readonly ok: true }
+		| {
+				readonly ok: false;
+				readonly message: string;
+				readonly remediation: readonly string[];
+		  }
+	>;
 }
+
+/** Ids a Bitwarden run provisions and keeps in the locator; not page fields. */
+export const BITWARDEN_INTERNAL_SETTINGS = [
+	"BWS_ORGANIZATION_ID",
+	"BWS_PROJECT_ID",
+	"BITWARDEN_STORAGE",
+	"BITWARDEN_COLLECTION_ID",
+	"BITWARDEN_DEVICE_ID",
+] as const;
 
 export interface OwnerStore {
 	readonly id: SecretStoreId;
@@ -245,17 +306,33 @@ function nonSecret(
 	return out;
 }
 
-/** The committed locator a run reads its store's coordinates from. */
+/**
+ * The locator a run reads its store's ids from: the owner's user settings. A
+ * locator an older HoBo left in the working tree is moved there on first read
+ * and removed from the tree.
+ */
 export function ownerLocator(deps: {
 	readonly locator?: SettingsStore;
 	readonly cwd?: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
 }): SettingsStore {
-	return (
-		deps.locator ??
-		fileSettingsStore(
-			path.join(deps.cwd ?? process.cwd(), SECRET_STORE_LOCATOR_FILE),
-		)
-	);
+	if (deps.locator !== undefined) return deps.locator;
+	const cwd = deps.cwd ?? process.cwd();
+	const user = fileSettingsStore(secretStoreLocatorPath(cwd, deps.env));
+	const legacyPath = path.join(cwd, SECRET_STORE_LOCATOR_FILE);
+	const legacy = fileSettingsStore(legacyPath);
+	return {
+		async read() {
+			const saved = await user.read();
+			if (Object.keys(saved).length > 0 || !existsSync(legacyPath))
+				return saved;
+			const moved = await legacy.read();
+			await user.write(moved);
+			await rm(legacyPath, { force: true });
+			return moved;
+		},
+		write: (values) => user.write(values),
+	};
 }
 
 /** Find the owner's store: committed locator, the run's vault, or a workload's OIDC. */
@@ -265,7 +342,14 @@ export async function ownerStore(
 	deps: OwnerStoreDeps = {},
 ): Promise<OwnerStore> {
 	const suppliedEnv = deps.env ?? {};
-	const locator = ownerLocator(deps);
+	const locator = ownerLocator({
+		...deps,
+		env: {
+			XDG_CONFIG_HOME:
+				suppliedEnv.XDG_CONFIG_HOME ?? process.env.XDG_CONFIG_HOME,
+			HOME: suppliedEnv.HOME ?? process.env.HOME,
+		},
+	});
 	const open =
 		deps.openStore ??
 		((id: SecretStoreId, coordinates: Env, signIn: SecretHolder) =>
@@ -288,6 +372,23 @@ export async function ownerStore(
 	const folder = family === "ci" ? CI_RELAY_FOLDER : `/hobo-${family}`;
 	const side = storeSettings(id, folder);
 	const resolved = resolveSettings(side, env, saved, vault);
+	// Bitwarden's provisioned ids (project, storage, collection, device) are
+	// kept in the locator by the run, never asked for on the page.
+	const internal = (from: Readonly<Record<string, string | undefined>>) =>
+		Object.fromEntries(
+			BITWARDEN_INTERNAL_SETTINGS.flatMap((name) => {
+				const value = env[name] || from[name];
+				return value ? [[name, value]] : [];
+			}),
+		);
+	const coordinates =
+		id === "bitwarden"
+			? { ...internal(saved), ...resolved.values }
+			: resolved.values;
+	const bitwardenSignedIn =
+		vault.has("BWS_ACCESS_TOKEN") ||
+		vault.has("BITWARDEN_ORG_KEY") ||
+		(vault.has("BW_CLIENTID") && vault.has("BW_CLIENTSECRET"));
 	// A workload with a preconfigured OIDC identity needs no typed token.
 	const workloadSignIn =
 		id === "infisical" &&
@@ -327,12 +428,11 @@ export async function ownerStore(
 					((workloadSignIn || proxySignIn || oauthSignIn) &&
 						field.name === "INFISICAL_TOKEN") ||
 					(connectHost !== undefined && field.name === "OP_ACCOUNT") ||
-					// Vault storage (Vaultwarden): no project and no access token;
-					// the API key and the organization key sign it in.
+					// Bitwarden: the API key is asked for only while the run holds
+					// no sign-in (a token, the organization key, or the key itself).
 					(id === "bitwarden" &&
-						resolved.values.BITWARDEN_STORAGE === "vault" &&
-						(field.name === "BWS_PROJECT_ID" ||
-							field.name === "BWS_ACCESS_TOKEN"))
+						bitwardenSignedIn &&
+						(field.name === "BW_CLIENTID" || field.name === "BW_CLIENTSECRET"))
 				),
 		),
 		...oauthMissing,
@@ -340,7 +440,7 @@ export async function ownerStore(
 
 	let opened: OpenedSecretStore | undefined;
 	if (choice.missing.length === 0 && missingSide.length === 0) {
-		const attempt = await open(id, resolved.values, vault);
+		const attempt = await open(id, coordinates, vault);
 		if (attempt.ok) opened = attempt.store;
 	}
 
@@ -372,7 +472,7 @@ export async function ownerStore(
 				return configureThen({
 					provider,
 					title: `Sign in to ${storeLabel(chosen)}`,
-					reason: `${reason} Where the store is, is saved in ${SECRET_STORE_LOCATOR_FILE} (commit it); the sign-in is held in memory for this run only.`,
+					reason: `${reason} Which store and its ids are kept in your own HoBo settings, not the repository; the sign-in is held in memory for this run only.`,
 					settings,
 					missing: known.missing,
 					known: known.values,
@@ -383,9 +483,24 @@ export async function ownerStore(
 								const value = values[setting.field.name];
 								if (value) vault.put(setting.field.name, value);
 							}
+						const prepared = await deps.beforeOpen?.(chosen, values);
+						if (prepared !== undefined && !prepared.ok)
+							return {
+								ok: false,
+								errors: {
+									[settings.find((s) => s.field.kind === "secret")?.field
+										.name ?? STORE_CHOICE.field.name]:
+										`${prepared.message} ${prepared.remediation.join(" ")}`,
+								},
+							};
 						const attempt = await open(
 							chosen,
-							nonSecret(settings, values),
+							chosen === "bitwarden"
+								? {
+										...internal(await locator.read()),
+										...nonSecret(settings, values),
+									}
+								: nonSecret(settings, values),
 							vault,
 						);
 						if (!attempt.ok) {
