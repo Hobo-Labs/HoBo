@@ -2098,6 +2098,9 @@ importers:
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible
+      undici:
+        specifier: 7.29.0
+        version: 7.29.0
       zod:
         specifier: 4.3.6
         version: 4.3.6

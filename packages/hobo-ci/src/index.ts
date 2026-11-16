@@ -14,6 +14,12 @@ export {
 	storeSettings,
 } from "./ceremony-settings.js";
 export {
+	childEgressEnv,
+	type Egress,
+	egressFetch,
+	egressFrom,
+} from "./egress.js";
+export {
 	createGithubConnectFlow,
 	GITHUB_APP_CREDENTIAL_KEYS,
 	type GithubAppExpectation,
@@ -64,6 +70,20 @@ export {
 } from "./prepare.js";
 export { ciProjectDir } from "./project.js";
 export {
+	type OpenTunnel,
+	openTunnel,
+	RECEIVER_THROUGH_PROXY,
+	REDIRECT_RECEIVER_SETTING,
+	REDIRECT_RECEIVERS,
+	type RedirectReceiver,
+	RedirectReceiverError,
+	type RedirectReceiverId,
+	redirectReceiverFrom,
+	safePublicOrigin,
+	type TunnelCommand,
+	tunnelCommand,
+} from "./redirect-receiver.js";
+export {
 	ignoredSecretEnvNotice,
 	isSecretEnv,
 	SECRET_ENV_NAMES,
@@ -73,6 +93,7 @@ export {
 } from "./secret-custody.js";
 export {
 	BITWARDEN_SERVERS,
+	EGRESS_PROXY_PLACEHOLDER,
 	type Env,
 	type OpenedSecretStore,
 	openSecretStore,

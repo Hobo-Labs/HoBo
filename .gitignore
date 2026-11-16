@@ -56,7 +56,6 @@ packages/ci-gh-actions/deploy/ci-runner/base/playwright-cache/*
 !.hobo/dagger.json
 !.hobo/ci.json
 !.hobo/ci-attestors.json
-!.hobo/secret-store.json
 # Turbo's --anon-profile output from the workspace-test commands (CI and pnpm ci:attest).
 /turbo-profile.json
 /turbo-profile.json.md

@@ -221,6 +221,26 @@ environment variables.
   (`packages/hobo-ci/test/evals`, `packages/hobo-cd/test/evals`) hold both
   lifecycles and the hobo-deploy skill to this: no loopback line, post-back
   into the same run, and a refusal with outside paths when nobody acts.
+- **A provider's redirect to a remote run** (`hobo ci app create
+  --hand-off`; GitHub's App manifest code). The run listens on 127.0.0.1
+  only, under one unguessable path that takes one callback with a state
+  check. A configured receiver (`--receiver` / `HOBO_REDIRECT_RECEIVER`:
+  `cloudflared`, `ngrok`, `localtunnel`, `devtunnel`, `pangolin`, `command`)
+  is the owner's own outbound-only dev tunnel: its client dials out to the
+  provider's edge, the run proves the tunnel carries a request before it
+  shows the link (`HOBO_OWNER_APP <https url>`), and the tunnel closes with
+  the run. HoBo runs no receiver. Without one, or when it fails, the owner's
+  hand-off carries the result: `paste` (default; a static page shows
+  GitHub's single-use `code~state`, which the agent writes to the run's
+  stdin) or `store` (`HOBO_OWNER_APP_REGISTER`: GitHub's prefilled form, the
+  owner stores the App, the run checks it with GitHub).
+- **Egress is read once, up front** (`egressFrom`): the HTTPS proxy the
+  environment requires, its bypass list and CA bundle. The run's own
+  requests go through it (`egressFetch`), tunnel CLIs start with it and no
+  secret variable, and a receiver whose client cannot use a required proxy
+  (cloudflared, localtunnel, pangolin) is never started: the run says why
+  on one `HOBO_REDIRECT_RECEIVER_EGRESS` line and goes straight to the
+  hand-off. Evals: `packages/hobo/test/evals`, `packages/hobo-ci/test/evals`.
 - **A refusal is never a dead end.** Human output prints a result that did
   not succeed with its code and every remediation line, even when there are
   no suggested actions; `--json` carries those lines in `remediation`.

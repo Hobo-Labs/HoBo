@@ -211,6 +211,38 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
    and **every** remediation line it printed, unparaphrased; do not reduce
    them to one option.
 
+**Creating the GitHub App for the owner.** Run
+`hobo ci app create --relay <relay origin> --owner-id <owner's numeric id>
+--hand-off` in the background, with a stdin you can write to (a named pipe:
+`mkfifo app.in; hobo ... < app.in &`). It prints one line; act on it:
+
+- **With a receiver**: the owner's own outbound-only tunnel
+  (`--receiver cloudflared|ngrok|localtunnel|devtunnel|pangolin|command`, or
+  the non-secret `HOBO_REDIRECT_RECEIVER`). Line:
+  `HOBO_OWNER_APP <https url>`. Say: "Open `<url>` on any device and click
+  **Create GitHub App**." GitHub sends their browser back through the tunnel
+  to this run, which stores the App; nothing else is reachable and the
+  tunnel closes with the run. The run proves the tunnel carries a request
+  before it shows the link. Proxies are handled for you: the run reads the
+  environment's HTTPS proxy, bypass list and CA bundle up front, gives them
+  to the tunnel CLI, and never starts a receiver that cannot use a required
+  proxy (cloudflared, localtunnel, pangolin). On any `HOBO_REDIRECT_RECEIVER_*`
+  line (no CLI, not signed in, proxy, no connection) a handed-off run falls
+  back by itself to the paste hand-off below: relay its next line.
+- **No receiver, paste** (default; `HOBO_APP_HANDOFF=paste`). Line:
+  `HOBO_OWNER_APP <page>#<manifest>`. Say: "Open `<link>` on any device and
+  click **Create GitHub App**. GitHub then shows a single-use code on that
+  page: send it to me." Write their `code~state` to the run's stdin at once
+  (`printf '%s\n' '<code~state>' > app.in`); never repeat it, store it or
+  put it anywhere else. The run refuses a code GitHub did not issue for it.
+- **No receiver, store** (`HOBO_APP_HANDOFF=store`). Line:
+  `HOBO_OWNER_APP_REGISTER <github url> — <steps>`. Give the owner the link
+  and steps exactly as printed; they create the App with their account and
+  put its credentials in their own store. The run waits, then checks the App
+  with GitHub.
+
+Never point the owner at the relay or any shared service for the App's code.
+
 What the run already does, so don't do it yourself: a handed-off run signs
 in to Infisical through the session's egress proxy (`INFISICAL_SIGN_IN`
 defaults to `egress-proxy` when no sign-in was selected), holding only a

@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"license": "MIT",
 	"private": true,
-	"description": "HoBo's CI as a HoBo project: a Bindle (the hosted CI relay) deployable with hobo up, a CLI (hobo-ci up|down|plan|status), and the GitHub provider connection hobo ci up runs first — a GitHub App from a reviewed manifest, its credentials deposited straight into a third-party secret store (Infisical OIDC by default, 1Password), on a generative connect page.",
+	"description": "HoBo's CI as a HoBo project: a Bindle (the hosted CI relay) deployable with hobo up, a CLI (hobo-ci up|down|plan|status), and the GitHub provider connection hobo ci up runs first \u2014 a GitHub App from a reviewed manifest, its credentials deposited straight into a third-party secret store (Infisical OIDC by default, 1Password), on a generative connect page.",
 	"type": "module",
 	"bin": {
 		"hobo-ci": "./dist/cli.js"
@@ -32,6 +32,7 @@
 		"@hobo/core": "workspace:*",
 		"@hobo/identity": "workspace:*",
 		"@hobo/kv-redis-compatible": "workspace:*",
+		"undici": "7.29.0",
 		"zod": "4.3.6"
 	},
 	"optionalDependencies": {
