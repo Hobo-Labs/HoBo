@@ -206,8 +206,10 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
    `BWS_PROJECT_ID`), and run again with `HOBO_SECRET_STORE` and those ids
    set (ids are not secrets). Bitwarden Secrets Manager is used through its
    API from any box: the run takes the access token the environment provides
-   (`BWS_ACCESS_TOKEN`) into its trusted vault, and when that token is
-   present it is the store without asking. Never send the owner to a
+   (`BWS_ACCESS_TOKEN`) into its trusted vault once the owner chose
+   Bitwarden. The choice is always the owner's: a provided token only marks
+   a store "configured here" in the picker; never pick a store for them
+   because its token is present. Never send the owner to a
    terminal for it, and never ask the owner to create identities or tokens
    by hand when the store's API can do it.
 3. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is

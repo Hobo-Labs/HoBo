@@ -58,6 +58,10 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		// Bitwarden Secrets Manager through its API, never the owner's terminal.
 		expect(step).toMatch(/Never send the owner to a\s+terminal for it/u);
 		expect(step).toMatch(/never ask the owner to create identities or tokens/u);
+		// The choice is the owner's: a present token never picks the store.
+		expect(step).toMatch(
+			/never pick a store for them\s+because its token is present/u,
+		);
 	});
 
 	it("routes the credential line: steps and guide first, then the credential form, then wait", () => {

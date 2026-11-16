@@ -232,8 +232,10 @@ environment variables.
   Bitwarden Secrets Manager is used through its API from any box: the
   access token the environment provides (`BWS_ACCESS_TOKEN`) is the one
   sign-in a run takes from its environment, moved into its trusted vault
-  and out of the process environment (`adoptStoreSignIn`), and with it the
-  store is Bitwarden unless the owner chose another. The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
+  and out of the process environment (`adoptStoreSignIn`). A provided token
+  only marks Bitwarden "configured here" in the picker: choosing a store is
+  always the owner's step (`HOBO_*_STORE_CHOICE` until `HOBO_SECRET_STORE`
+  is set), and the token is used only once they choose Bitwarden. The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
   host.
 - **A provider's redirect to a remote run** (`hobo ci app create
   --hand-off`; GitHub's App manifest code). The run listens on 127.0.0.1

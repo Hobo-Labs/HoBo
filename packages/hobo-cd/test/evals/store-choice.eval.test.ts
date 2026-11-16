@@ -223,13 +223,41 @@ describe("EVAL store choice: 1Password through the owner's Connect server", () =
 	});
 });
 
+describe("EVAL store choice: a provided token is never the owner's choice", () => {
+	it("still asks the owner to choose, marking the configured store, and opens none", async () => {
+		const shown: string[] = [];
+		let opened = false;
+		const outcome = await prepareVercelConnection(
+			handOff((l) => shown.push(l)),
+			{
+				env: { BWS_ACCESS_TOKEN: "0.machine.secret:key" },
+				locator: { read: async () => ({}), write: async () => undefined },
+				openStore: async () => {
+					opened = true;
+					return { ok: false, message: "must not open", remediation: [] };
+				},
+				startPage: noPage,
+			},
+		);
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_STORE_CHOICE" },
+		});
+		const all = text(shown, outcome);
+		expect(all).toMatch(/bitwarden \(configured here/u);
+		expect(all).not.toMatch(/infisical \(configured here/u);
+		expect(opened).toBe(false);
+		expect(all).not.toContain("0.machine.secret:key");
+	});
+});
+
 describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any box", () => {
 	const ids = {
 		BWS_ORGANIZATION_ID: "00000000-0000-4000-8000-000000000001",
 		BWS_PROJECT_ID: "00000000-0000-4000-8000-000000000002",
 	};
 
-	it("signs in with the environment's access token from the vault and connects Vercel, asking the owner for no credential", async () => {
+	it("once chosen, signs in with the environment's access token from the vault and connects Vercel, asking the owner for no credential", async () => {
 		const shown: string[] = [];
 		const port = createMemorySecretsPort({ id: "memory" });
 		let signedInWith: string | undefined;
@@ -239,8 +267,12 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 				shown.push(line);
 			}),
 			{
-				// No store chosen: the environment provides Bitwarden's sign-in.
-				env: { ...ids, BWS_ACCESS_TOKEN: "0.machine.secret:key" },
+				// The owner chose Bitwarden; the environment provides its sign-in.
+				env: {
+					...ids,
+					HOBO_SECRET_STORE: "bitwarden",
+					BWS_ACCESS_TOKEN: "0.machine.secret:key",
+				},
 				locator: { read: async () => ({}), write: async () => undefined },
 				openStore: async (
 					id,

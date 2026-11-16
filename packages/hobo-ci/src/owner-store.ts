@@ -66,12 +66,17 @@ export const OWNER_STORE_CHOICE_LINE_PREFIX = "HOBO_OWNER_STORE_CHOICE";
  * The stores the owner can choose for a handed-off run, each with what it
  * needs. Names, settings and places only.
  */
-export function storeChoiceGuidance(): readonly string[] {
+export function storeChoiceGuidance(
+	/** Stores whose sign-in this environment already provides: noted, never chosen. */
+	configured: ReadonlySet<SecretStoreId> = new Set(),
+): readonly string[] {
+	const note = (store: SecretStoreId) =>
+		configured.has(store) ? " (configured here: its sign-in is provided)" : "";
 	return [
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
-		`infisical: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
-		`1password: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
-		`bitwarden: BWS_ORGANIZATION_ID and BWS_PROJECT_ID (BWS_SERVER us or eu). The run signs in with the Bitwarden Secrets Manager access token the environment provides (BWS_ACCESS_TOKEN), moved into its trusted vault and out of the environment; nothing is typed.`,
+		`infisical${note("infisical")}: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
+		`1password${note("1password")}: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
+		`bitwarden${note("bitwarden")}: BWS_ORGANIZATION_ID and BWS_PROJECT_ID (BWS_SERVER us or eu). Once chosen, the run signs in with the Bitwarden Secrets Manager access token the environment provides (BWS_ACCESS_TOKEN), moved into its trusted vault and out of the environment; nothing is typed.`,
 	];
 }
 
@@ -180,11 +185,6 @@ export interface OwnerStoreDeps extends SecretStoreDeps {
 	readonly env?: Env;
 	/** A fallback only when neither the environment nor locator chose a sign-in. */
 	readonly defaultInfisicalSignIn?: typeof EGRESS_PROXY_SIGN_IN;
-	/**
-	 * The store, only when neither the environment nor the locator chose one:
-	 * the environment provides its sign-in (a Bitwarden access token).
-	 */
-	readonly defaultStore?: SecretStoreId;
 	/** Where the locator is committed; the working directory by default. */
 	readonly cwd?: string;
 	readonly locator?: SettingsStore;
@@ -263,13 +263,9 @@ export async function ownerStore(
 			? { ...suppliedEnv, INFISICAL_SIGN_IN: deps.defaultInfisicalSignIn }
 			: suppliedEnv;
 	const ownerChose = Boolean(env.HOBO_SECRET_STORE || saved.HOBO_SECRET_STORE);
-	const choice = resolveSettings(
-		[STORE_CHOICE],
-		!ownerChose && deps.defaultStore !== undefined
-			? { ...env, HOBO_SECRET_STORE: deps.defaultStore }
-			: env,
-		saved,
-	);
+	// Only the owner chooses: a token in the environment says a provider is
+	// configured and reachable, never that the owner chose it.
+	const choice = resolveSettings([STORE_CHOICE], env, saved);
 	const id = storeIdOf(choice.values.HOBO_SECRET_STORE);
 	// CI's credentials are the relay's own (the GitHub App it runs): they
 	// live in the relay's folder, which its deploy workflow writes, so an
@@ -329,7 +325,7 @@ export async function ownerStore(
 
 	return {
 		id,
-		chosen: ownerChose || deps.defaultStore !== undefined,
+		chosen: ownerChose,
 		missing: [...choice.missing, ...missingSide],
 		canAwaitEgressCredential:
 			(proxySignIn || connectHost !== undefined) &&

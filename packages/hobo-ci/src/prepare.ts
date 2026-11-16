@@ -265,8 +265,8 @@ async function prepareGithubWithVault(
 			["Use HOBO_CI_APP_HOST=manifest, or unset HOBO_CI_APP_HOST."],
 		);
 	// The environment's own store sign-in (a Bitwarden Secrets Manager access
-	// token) moves into this run's vault and leaves the environment; with it
-	// the store is Bitwarden unless the owner chose another.
+	// token) moves into this run's vault and leaves the environment. It says
+	// Bitwarden is configured here; it is used only if the owner chose it.
 	const storeSignIn = adoptStoreSignIn(
 		deps.env === undefined ? process.env : { ...deps.env },
 		deps.vault,
@@ -298,9 +298,6 @@ async function prepareGithubWithVault(
 				? { defaultInfisicalSignIn: EGRESS_PROXY_SIGN_IN }
 				: undefined),
 			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
-			// The environment provided the store's sign-in: Bitwarden, unless
-			// the owner chose another store.
-			...(storeSignIn ? { defaultStore: "bitwarden" as const } : undefined),
 			// An OAuth sign-in approves in this machine's browser: a terminal
 			// run only, never a handed-off one.
 			noBrowser: input.handOff === true || input.whatIf,
@@ -317,7 +314,9 @@ async function prepareGithubWithVault(
 			return refused(
 				"HOBO_CI_STORE_CHOICE",
 				"Choose your secret store first: Infisical, 1Password or Bitwarden.",
-				storeChoiceGuidance(),
+				storeChoiceGuidance(
+					storeSignIn ? new Set(["bitwarden"] as const) : undefined,
+				),
 			);
 		// The owner is needed only if the store does not answer yet: a silent
 		// run cannot ask, so it refuses before waiting.
