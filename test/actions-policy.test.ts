@@ -161,10 +161,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
 `;
@@ -217,7 +217,7 @@ jobs:
     if: \${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           sparse-checkout: .github/actions
       - uses: ./.github/actions/ci-runner-preflight
@@ -254,7 +254,7 @@ jobs:
   pr-gate:
     runs-on: ${runsOn}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683${inputs}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1${inputs}
 `;
 	assert.equal(
 		(
@@ -633,7 +633,7 @@ for (const [name, original, changed] of [
 	["unbounded timeout", "    timeout-minutes: 10\n", ""],
 	[
 		"floating action",
-		"actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+		"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
 		"actions/checkout@v4",
 	],
 	[
