@@ -84,7 +84,12 @@ export interface ConnectPage {
 	readonly callbackUrl: string;
 	/** Settles with the terminal step (connected or failed). */
 	readonly done: Promise<ConnectStep>;
-	readonly close: () => Promise<void>;
+	/**
+	 * Stop serving. With `graceMs`, first wait (at most that long) until the
+	 * browser has been shown the terminal step, so a provider's redirect back
+	 * lands on "connected" instead of a closed port. In-flight responses finish.
+	 */
+	readonly close: (options?: { readonly graceMs?: number }) => Promise<void>;
 }
 
 const DEFAULT_ASSETS = path.join(
@@ -168,6 +173,10 @@ export async function startConnectPage(
 	let step: ConnectStep = options.flow.initial;
 	let directive: BrowserDirective = { kind: "none" };
 	let settle: (step: ConnectStep) => void = () => undefined;
+	let terminalShown: () => void = () => undefined;
+	const terminalViewed = new Promise<void>((resolve) => {
+		terminalShown = resolve;
+	});
 	const done = new Promise<ConnectStep>((resolve) => {
 		settle = resolve;
 	});
@@ -228,8 +237,12 @@ export async function startConnectPage(
 					route.endsWith(".js") ? "text/javascript" : "text/css",
 					await readFile(path.join(assetsDir, route)),
 				);
-			if (req.method === "GET" && route === "view")
-				return send(res, 200, "application/json", await view());
+			if (req.method === "GET" && route === "view") {
+				const body = await view();
+				send(res, 200, "application/json", body);
+				if (isTerminalStep(step)) terminalShown();
+				return;
+			}
 			if (req.method === "POST" && route === "action") {
 				const parsed = parseActionBody(await readBody(req));
 				if (parsed === undefined)
@@ -272,10 +285,23 @@ export async function startConnectPage(
 		url: `${origin}${base}`,
 		callbackUrl: `${origin}${base}callback`,
 		done,
-		close: () =>
-			new Promise<void>((resolve) => {
-				server.closeAllConnections();
+		close: async (closeOptions = {}) => {
+			const graceMs = closeOptions.graceMs ?? 0;
+			if (graceMs > 0) {
+				let timer: NodeJS.Timeout | undefined;
+				await Promise.race([
+					terminalViewed,
+					new Promise<void>((resolve) => {
+						timer = setTimeout(resolve, graceMs);
+					}),
+				]);
+				clearTimeout(timer);
+			}
+			await new Promise<void>((resolve) => {
+				// Finish responses in flight; drop only idle keep-alive sockets.
 				server.close(() => resolve());
-			}),
+				server.closeIdleConnections();
+			});
+		},
 	};
 }

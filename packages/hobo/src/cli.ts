@@ -12,6 +12,7 @@ import {
 	type YardRuntime,
 } from "@hobo/cli";
 import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
+import { prepareGithubConnection } from "@hobo/hobo-ci";
 import { createAwsProvider } from "@hobo/provider-aws";
 import { createAzureProvider } from "@hobo/provider-azure";
 import { createDigitalOceanProvider } from "@hobo/provider-digitalocean";
@@ -222,6 +223,9 @@ export function createComposedHoboCli(
 				up,
 				down,
 				plan,
+				// GitHub first: the App and its credentials in the owner's secret
+				// store, via the generative connect page (idempotent).
+				prepare: (input) => prepareGithubConnection(input),
 				status: ci,
 				fallback: ci,
 			}),

@@ -156,6 +156,11 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
+	// `hobo ci up` / `hobo cd up` as HoBo projects: the CI and CD projects and
+	// the setup page they open, composed by `packages/hobo` at layer 3.
+	"packages/connect-ui",
+	"packages/hobo-ci",
+	"packages/hobo-cd",
 	// HoBo.CD (ADR-0182) is the delivery sibling of HoBo.CI and
 	// sits at layer 3 beside it. `@hobo/cd` composes Matching, Gatekeeper,
 	// the Harness and SVIDs through their existing packages; the three

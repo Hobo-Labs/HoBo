@@ -7,7 +7,12 @@ import { defaultHoboHome } from "../bare-metal-yard.js";
 
 register();
 
-import { createHoboCli, type HoboCli, parseArgv } from "@hobo/cli";
+import {
+	createHoboCli,
+	type HoboCli,
+	isLifecycleAction,
+	parseArgv,
+} from "@hobo/cli";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import { createCiCommand } from "../ci-command.js";
 
@@ -51,12 +56,21 @@ async function runComposed(
 	// CI talks to its account relay and GitHub directly. It must work before
 	// local Yard provisioning and without creating an unrelated SQLite journal.
 	let verb: string | null;
+	let subcommand: string;
 	try {
-		verb = parseArgv(args).verb;
+		const parsed = parseArgv(args);
+		verb = parsed.verb;
+		subcommand = parsed.args[0] ?? "";
 	} catch {
 		return writeResult(await createHoboCli().run(args));
 	}
-	if (verb === "ci")
+	// `hobo ci up|down|plan` converge the CI project through the Yard like any
+	// lifecycle, so only the relay/run subcommands take this shortcut.
+	// (`status` stays here: it inspects the relay connection.)
+	if (
+		verb === "ci" &&
+		(!isLifecycleAction(subcommand) || subcommand === "status")
+	)
 		return writeResult(
 			await createHoboCli({ commands: { ci: createCiCommand() } }).run(args),
 		);
