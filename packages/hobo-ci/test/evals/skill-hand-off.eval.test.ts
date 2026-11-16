@@ -93,6 +93,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		const unopened: OwnerStore = {
 			id: "infisical",
 			missing: [],
+			canAwaitEgressCredential: true,
 			opened: undefined,
 			stage: async () => {
 				throw new Error("no page");

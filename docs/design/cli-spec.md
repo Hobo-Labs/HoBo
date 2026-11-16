@@ -199,7 +199,8 @@ environment variables.
 - **An agent hands the ceremony to the person** (`--hand-off`): the run
   serves nothing on the agent's machine and nothing redirects back to it, so
   the person can be anywhere. The store must open without a page (a
-  workload's OIDC, or `INFISICAL_SIGN_IN=egress-proxy`, the hand-off default:
+  workload's OIDC, or `INFISICAL_SIGN_IN=egress-proxy`, the hand-off default
+  when no sign-in was selected (an explicit choice is preserved):
   the run sends a placeholder and the agent's egress proxy injects the
   owner's Infisical access token, given out of band). Post-back: until the
   store answers, the run prints one `HOBO_OWNER_CREDENTIAL host=<host>

@@ -12,7 +12,7 @@ name: HoBo relay deploy
 # production domain (/healthz names the commit served, /readyz answers 200).
 #
 # The relay deploy job reads no repository secret or variable for its config.
-# The separate manual owner-connect job can connect Vercel and converge CD.
+# The separate manual owner-connect job can connect and converge CI or CD.
 # The store's
 # coordinates (ids and an origin, no credential) are committed to
 # packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself

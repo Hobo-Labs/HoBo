@@ -67,8 +67,8 @@ export async function awaitHandOffStore(
 	const deadline = now() + timeoutMs;
 	let owner = await options.open();
 	if (await storeAnswers(owner, options.family)) return owner;
-	// Only Infisical has an out-of-band sign-in the proxy can inject.
-	if (owner.id !== "infisical") return { ...owner, opened: undefined };
+	// A proxy credential cannot repair missing coordinates or another sign-in.
+	if (!owner.canAwaitEgressCredential) return { ...owner, opened: undefined };
 	options.emit(
 		`${OWNER_CREDENTIAL_LINE_PREFIX} host=app.infisical.com guide=${INFISICAL_TOKEN_AUTH_GUIDE} — at https://app.infisical.com: Organization → Access Control → Identities → Create Identity "hobo-${options.family}-owner" (organization role No Access); add Token Auth and create a token (TTL 3600); add the identity to the store's project with a write role. Then give the token to the agent's session in its credential form for app.infisical.com, never in chat. This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`,
 	);
@@ -76,6 +76,7 @@ export async function awaitHandOffStore(
 		await sleep(options.intervalMs ?? 10_000);
 		owner = await options.open();
 		if (await storeAnswers(owner, options.family)) return owner;
+		if (!owner.canAwaitEgressCredential) return { ...owner, opened: undefined };
 	}
 	return { ...owner, opened: undefined };
 }

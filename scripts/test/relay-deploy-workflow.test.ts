@@ -210,7 +210,7 @@ describe("the relay deploy workflow", () => {
 		const owner = job("owner-connect");
 		assert.match(
 			owner,
-			/if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.connect == 'cd'/u,
+			/if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch' && \(github\.event\.inputs\.connect == 'ci' \|\| github\.event\.inputs\.connect == 'cd'\)/u,
 		);
 		assert.match(owner, / {6}id-token: write\n/u);
 		assert.match(owner, /submodules: recursive/u);
@@ -219,7 +219,8 @@ describe("the relay deploy workflow", () => {
 			owner,
 			/HOBO_CD_VERCEL_TEAM_ID: \$\{\{ github\.event\.inputs\.vercel_team \}\}/u,
 		);
-		assert.match(owner, /hobo\.js cd up --hand-off/u);
+		assert.match(owner, /FAMILY: \$\{\{ github\.event\.inputs\.connect \}\}/u);
+		assert.match(owner, /hobo\.js "\$FAMILY" up --hand-off/u);
 		assert.doesNotMatch(owner, /\$\{\{\s*secrets\./u);
 	});
 
