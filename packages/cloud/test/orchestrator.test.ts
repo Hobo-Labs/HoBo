@@ -449,14 +449,87 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 				...lastEvent,
 				seq: lastEvent.seq + 1,
 				type,
-				data: { resourceId: "web" },
+				data: { deploymentId: "shop-uncertain", resourceId: "web" },
 			};
+			const history = [...first.events, later];
 			expect(
-				foldResourceActor([...first.events, later], {
+				foldResourceActor(history, {
 					...web,
 					deploymentId: "shop-uncertain",
 				}).state,
 			).toBe("ReconciliationRequired");
+			expect(
+				deploymentViewProjection.get(
+					deploymentViewProjection.fold(history),
+					"shop-uncertain",
+				),
+			).toMatchObject({
+				status: "needs-human",
+				resources: { web: "reconciliation-required" },
+			});
+			expect(
+				topologyViewProjection.get(
+					topologyViewProjection.fold(history),
+					"shop-uncertain",
+				)?.nodes,
+			).toContainEqual(
+				expect.objectContaining({
+					id: "resource:web",
+					lifecycle: "reconciliation-required",
+				}),
+			);
+		}
+		const deploymentFacts = [
+			{
+				type: "deployment.Requested",
+				data: { deploymentId: "shop-uncertain", bindleHash: "new" },
+			},
+			{
+				type: "deployment.Imported",
+				data: {
+					deploymentId: "shop-uncertain",
+					bindleHash: "new",
+					resources: ["web"],
+				},
+			},
+			{
+				type: "deployment.Planned",
+				data: { deploymentId: "shop-uncertain", planHash: "new", plan },
+			},
+			{
+				type: "deployment.PlanRejected",
+				data: {
+					deploymentId: "shop-uncertain",
+					reason: "rejected",
+					remediations: [],
+				},
+			},
+		];
+		for (const fact of deploymentFacts) {
+			const history = [
+				...first.events,
+				{ ...lastEvent, ...fact, seq: lastEvent.seq + 1 },
+			];
+			expect(
+				deploymentViewProjection.get(
+					deploymentViewProjection.fold(history),
+					"shop-uncertain",
+				),
+			).toMatchObject({
+				status: "needs-human",
+				resources: { web: "reconciliation-required" },
+			});
+			expect(
+				topologyViewProjection.get(
+					topologyViewProjection.fold(history),
+					"shop-uncertain",
+				)?.nodes,
+			).toContainEqual(
+				expect.objectContaining({
+					id: "resource:web",
+					lifecycle: "reconciliation-required",
+				}),
+			);
 		}
 		const direct = await reconcileResource(deps, web, {
 			deploymentId: "shop-uncertain",

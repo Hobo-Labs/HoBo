@@ -103,7 +103,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				// SAFETY: `const data = event.data as { deploymentId: string; bindleHash: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; bindleHash: string };
 				const next = base(row, data.deploymentId);
-				next.status = "requested";
+				if (next.reconciliations === undefined) next.status = "requested";
 				next.bindleHash = data.bindleHash;
 				// Seed ownership from the requesting principal (the envelope actor).
 				if (next.owner === undefined && event.actor) {
@@ -121,11 +121,12 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const next = base(row, data.deploymentId);
 				// The estate already exists: mark it deployed + adopted, each resource
 				// provisioned. No provisioning ran — this records external reality.
-				next.status = "deployed";
+				if (next.reconciliations === undefined) next.status = "deployed";
 				next.bindleHash = data.bindleHash;
 				next.imported = true;
 				for (const resourceId of data.resources) {
-					next.resources[resourceId] = "provisioned";
+					if (next.reconciliations?.[resourceId] === undefined)
+						next.resources[resourceId] = "provisioned";
 				}
 				if (next.owner === undefined && event.actor) {
 					next.owner = { kind: event.actor.kind, id: event.actor.id };
@@ -175,7 +176,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					plan: DeploymentPlan;
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "planned";
+				if (next.reconciliations === undefined) next.status = "planned";
 				next.planHash = data.planHash;
 				next.plan = data.plan;
 				return next;
@@ -188,7 +189,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					remediations: PlanRemediation[];
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "rejected";
+				if (next.reconciliations === undefined) next.status = "rejected";
 				next.rejection = {
 					reason: data.reason,
 					remediations: data.remediations,
@@ -199,7 +200,8 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "provisioning";
+				if (next.reconciliations?.[data.resourceId] === undefined)
+					next.resources[data.resourceId] = "provisioning";
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceProvisioned]: (row, event) => {
@@ -238,7 +240,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					if (data.reservationId !== undefined)
 						reconciliation.reservationId = data.reservationId;
 					next.reconciliations[data.resourceId] = reconciliation;
-				} else {
+				} else if (next.reconciliations?.[data.resourceId] === undefined) {
 					next.resources[data.resourceId] = "failed";
 				}
 				return next;
@@ -247,7 +249,8 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "destroying";
+				if (next.reconciliations?.[data.resourceId] === undefined)
+					next.resources[data.resourceId] = "destroying";
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroyed]: (row, event) => {
