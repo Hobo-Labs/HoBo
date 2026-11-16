@@ -1,28 +1,30 @@
 # `@hobo/runtime-rivet`
 
-Optional **Camp runtime** realizing HoBo `actor()` / `agent()` grains on a
-HoBo-owned **actor-local journal**. Rivet is a resolver, not a topology noun
-and not an authoring model.
+Optional **Camp runtime** with a HoBo-owned local journal and Rivet-compatible
+actor keys. The current host is a local oracle; it does not place actors in a
+Rivet engine.
 
 | HoBo contract | Realization |
 |---|---|
-| `ActorHost` / `defineActor` | Rivet placement + compound key |
-| Event facts | `hobo_events` + stream-head CAS in actor SQLite |
+| `ActorHost` / `defineActor` | Local host + Rivet-compatible compound key |
+| Event facts | `hobo_events` + stream-head CAS in local SQLite |
 | Durable mailbox | action-first `hobo_inbox` (not raw Rivet queue) |
 | Effects | `hobo_outbox` staged with facts; dispatch after commit |
 
-**ADR-0031 stands:** in-process wasm / native local remains the fallback.
-Rivet is the *preferred compatible* resolver when Matching evidence is current.
-
-Published `rivetkit` 2.3.10 `.cjs` uses `import.meta`, so `require("rivetkit")`
-throws. Adapters and CJS hosts must `await import("rivetkit")` via
-`loadRivetkit()`. Live tests fail closed: missing package, CJS load error,
-engine start failure, or a non-`pong` action is a test failure — never a skip.
+RivetKit, its WASM package, and the Rivet Engine image are pinned to 3.0.0.
+`loadRivetkit()` uses dynamic import for ESM and CommonJS hosts. The live tests
+exercise the pinned upstream engine separately from the HoBo local host and
+fail if the engine or an actor action fails.
 
 ## Fidelity
 
-- Default `local-sqlite`: `node:sqlite` behind the same journal schema Rivet `c.db` will host.
-- `rivetkit` is advertised only after a pinned package + conformance digest exist.
+- `local-sqlite` uses `node:sqlite` for the local HoBo journal.
+- `runner`, `serverless`, and `managed` modes are rejected until a Rivet-backed
+  HoBo host is implemented and verified. A local journal cannot be labeled
+  `rivetkit`.
+- The 3.0.0 pin does not migrate data from an existing Rivet 2 engine. An
+  operator must establish and verify an upstream migration before upgrading
+  an existing deployment.
 - Raw Rivet queue **receive-loss** is not HoBo at-least-once. Inbox rows are authority.
 
 ```ts
