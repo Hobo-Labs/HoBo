@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -234,6 +235,48 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(workflow, /gh api/u);
 		assert.doesNotMatch(adopt, /curl /u);
 		assert.doesNotMatch(workflow, /curl [^\n]*\/(healthz|readyz)/u);
+	});
+
+	it("reports an adoption refusal before preserving its nonzero exit status", () => {
+		const work = mkdtempSync(join(tmpdir(), "relay-adopt-report-"));
+		try {
+			const bin = join(work, "packages/hobo/dist/bin");
+			mkdirSync(bin, { recursive: true });
+			writeFileSync(
+				join(bin, "hobo.js"),
+				'process.stdout.write(JSON.stringify({code:"HOBO_TEST_REFUSED",message:"deployment unavailable"})); process.exitCode = 27;',
+			);
+			const summary = join(work, "summary.md");
+			const lines = step("Adopt Vercel's Git deployment of this commit").split(
+				"\n",
+			);
+			const start = lines.findIndex((line) => line.trim() === "run: |");
+			assert.notEqual(start, -1);
+			const script = lines
+				.slice(start + 1)
+				.map((line) => line.replace(/^ {10}/u, ""))
+				.join("\n");
+			const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], {
+				cwd: work,
+				encoding: "utf8",
+				env: {
+					...process.env,
+					RUNNER_TEMP: work,
+					GITHUB_STEP_SUMMARY: summary,
+					GITHUB_SHA: "test",
+					GITHUB_REF_NAME: "main",
+					ADOPT_DEADLINE: "test",
+				},
+			});
+			assert.equal(result.status, 27);
+			assert.match(result.stdout, /HOBO_TEST_REFUSED: deployment unavailable/u);
+			assert.match(
+				readFileSync(summary, "utf8"),
+				/HOBO_TEST_REFUSED: deployment unavailable/u,
+			);
+		} finally {
+			rmSync(work, { recursive: true, force: true });
+		}
 	});
 
 	it("fits the deploy job in 20 minutes: the gate's deadline bounds the adoption, the step timeout only backs it up", () => {
