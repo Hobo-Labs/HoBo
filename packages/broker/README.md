@@ -11,6 +11,7 @@ execution once. Each decision discloses budget evaluation and reservation
 state. An uncertain write or execution claim must be reconciled; it is never
 permission to retry the provider call. The host remains responsible for
 verifying inventory completeness and eventual usage and source-stop evidence.
+Price ranking alone does not create a reservation; admission is the budget gate.
 `createIacFinancialServices` combines these checks into an injectable port for
 IaC adapters. Its optional `pricing` model is developer supplied; the trusted
 host still provides liability issuance and verification, policy and authority.
