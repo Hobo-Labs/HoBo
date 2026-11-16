@@ -18,10 +18,46 @@ export interface SecretStoreOption {
 	readonly recommended: boolean;
 }
 
-export type ConnectProvider = "github" | "vercel";
+/**
+ * The provider a ceremony connects: `github` and `vercel` for `hobo ci up` and
+ * `hobo cd up`, or any provider id `hobo up` needs to satisfy a resource.
+ */
+export type ConnectProvider = string;
+
+/** One setting a `configure` step asks for. */
+export interface ConfigField {
+	readonly name: string;
+	readonly label: string;
+	readonly description?: string;
+	/**
+	 * `secret` is never shown back or kept by the page: the flow writes it
+	 * straight to the secret store. `choice` offers `options`.
+	 */
+	readonly kind: "text" | "url" | "secret" | "choice";
+	readonly required: boolean;
+	readonly value?: string;
+	readonly options?: readonly {
+		readonly value: string;
+		readonly label: string;
+		readonly description?: string;
+	}[];
+	/** A server-side error to show under the field after a refused submit. */
+	readonly error?: string;
+}
 
 // domain-view: parse-don't-validate parsed/derived step the flow returns; its wire form is ConnectViewRecord.step in data-models/connect_ui.proto.
 export type ConnectStep =
+	| {
+			/**
+			 * Collect what is missing to finish the flow: settings (kept in the
+			 * project's configuration) and secrets (written to the store only).
+			 */
+			readonly kind: "configure";
+			readonly provider: ConnectProvider;
+			readonly title: string;
+			readonly reason: string;
+			readonly fields: readonly ConfigField[];
+	  }
 	| {
 			readonly kind: "choose-secret-store";
 			readonly provider: ConnectProvider;
@@ -74,6 +110,7 @@ export function isTerminalStep(step: ConnectStep): boolean {
 
 /** The actions a connect page may dispatch. The flow decides each one. */
 export const CONNECT_ACTIONS = Object.freeze([
+	"connect.submit",
 	"connect.chooseStore",
 	"connect.start",
 	"connect.cancel",
@@ -104,13 +141,20 @@ export const DEFAULT_SECRET_STORES: readonly SecretStoreOption[] =
 		}),
 	] as const satisfies readonly SecretStoreOption[]);
 
-const PROVIDER_LABEL: Readonly<Record<ConnectProvider, string>> = Object.freeze(
-	{
-		github: "GitHub",
-		vercel: "Vercel",
-	},
-);
+const PROVIDER_LABEL: ReadonlyMap<string, string> = new Map([
+	["github", "GitHub"],
+	["vercel", "Vercel"],
+	["neon", "Neon"],
+	["supabase", "Supabase"],
+	["cloudflare", "Cloudflare"],
+	["infisical", "Infisical"],
+]);
 
 export function providerLabel(provider: ConnectProvider): string {
-	return PROVIDER_LABEL[provider];
+	return (
+		PROVIDER_LABEL.get(provider) ??
+		provider
+			.replace(/^@hobo\/provider-/u, "")
+			.replace(/^./u, (c) => c.toUpperCase())
+	);
 }

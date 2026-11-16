@@ -642,7 +642,7 @@ describe("prepareGithubConnection", () => {
 		let browsing: Promise<unknown> = Promise.resolve();
 		const github = fakeGithub();
 		const outcome = await prepareGithubConnection(prepareInput(), {
-			env: { ...ENV, HOBO_CONNECT_UI_COMPOSE: "off" },
+			env: ENV,
 			interactive: true,
 			openStore: opened(store),
 			fetch: github.fetch,

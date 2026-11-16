@@ -4,7 +4,6 @@ import type { CommandResult, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
 	type ConnectPage,
 	type ConnectStep,
-	evaluatorFromEnv,
 	startConnectPage,
 } from "@hobo/connect-ui";
 
@@ -250,7 +249,6 @@ export async function prepareGithubConnection(
 	});
 	page = await (deps.startPage ?? startConnectPage)({
 		flow,
-		evaluate: evaluatorFromEnv(env, deps.fetch),
 	});
 	let timer: NodeJS.Timeout | undefined;
 	const timedOut = new Promise<ConnectStep>((resolve) => {
