@@ -74,7 +74,16 @@ export interface PrepareInput {
  * the step's envelope (a refused connection never half-deploys).
  */
 export type PrepareOutcome =
-	| { readonly kind: "ready"; readonly steps: readonly PreparedStep[] }
+	| {
+			readonly kind: "ready";
+			readonly steps: readonly PreparedStep[];
+			/**
+			 * Credentials a provider junction resolved from the owner's secret
+			 * store for this run only, handed to `upWith`. Held in memory; never
+			 * written, printed or put in a result.
+			 */
+			readonly runtimeEnv?: Readonly<Record<string, string>>;
+	  }
 	| { readonly kind: "refused"; readonly result: CommandResult };
 
 export interface PreparedStep {
@@ -97,6 +106,14 @@ export interface LifecycleFamilySpec {
 	readonly plan: CommandModule;
 	/** Provider connections that must exist before `up` converges. */
 	readonly prepare?: (input: PrepareInput) => Promise<PrepareOutcome>;
+	/**
+	 * Build the `up` that converges with a junction's credentials (the
+	 * prepare step's `runtimeEnv`). Absent, or with no `runtimeEnv`, `up` is
+	 * used as is.
+	 */
+	readonly upWith?: (
+		runtimeEnv: Readonly<Record<string, string>>,
+	) => CommandModule;
 	/**
 	 * The family's observed status (`hobo ci status` inspects the relay
 	 * connection). Receives the raw args. Default: the read-only what-if.
@@ -314,6 +331,7 @@ export function createLifecycleFamilyCommand(
 			};
 
 			let prepared: readonly PreparedStep[] = [];
+			let runtimeEnv: Readonly<Record<string, string>> | undefined;
 			if (action === "up" && spec.prepare) {
 				const outcome = await spec.prepare({
 					action: "up",
@@ -325,6 +343,7 @@ export function createLifecycleFamilyCommand(
 				if (outcome.kind === "refused")
 					return withFamily(outcome.result, spec.family, action, project);
 				prepared = outcome.steps;
+				runtimeEnv = outcome.runtimeEnv;
 				for (const step of prepared)
 					input.emitProgress(
 						`prepare ${step.id}: ${step.outcome} (${step.detail})`,
@@ -337,7 +356,9 @@ export function createLifecycleFamilyCommand(
 				action === "status" || (action === "up" && flags.whatIf)
 					? spec.plan
 					: action === "up"
-						? spec.up
+						? runtimeEnv !== undefined && spec.upWith !== undefined
+							? spec.upWith(runtimeEnv)
+							: spec.up
 						: action === "down"
 							? spec.down
 							: spec.plan;

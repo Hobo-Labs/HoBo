@@ -4,6 +4,7 @@ import {
 	type ProjectResolution,
 	resolveFamilyProject,
 } from "@hobo/cli";
+import { cdProjectDir } from "@hobo/hobo-cd";
 import { ciProjectDir } from "@hobo/hobo-ci";
 
 // Where `hobo ci` and `hobo cd` find their HoBo project: `--project`, then
@@ -12,8 +13,8 @@ import { ciProjectDir } from "@hobo/hobo-ci";
 
 /** The CI project HoBo ships: `@hobo/hobo-ci` (its `src/bindle.ts`). */
 const BUNDLED_CI_PROJECT: string | undefined = ciProjectDir();
-/** The CD project HoBo ships; set once `@hobo/hobo-cd` exists. */
-const BUNDLED_CD_PROJECT: string | undefined = undefined;
+/** The CD project HoBo ships: `@hobo/hobo-cd` (its `src/bindle.ts`). */
+const BUNDLED_CD_PROJECT: string | undefined = cdProjectDir();
 
 function resolve(
 	family: "ci" | "cd",
