@@ -289,6 +289,11 @@ export async function openTunnel(
 	tunnel: TunnelCommand,
 	deps: ReceiverDeps = {},
 ): Promise<OpenTunnel> {
+	// Validate a configured address before starting any subprocess.
+	const fixedOrigin =
+		tunnel.fixedOrigin === undefined
+			? undefined
+			: safePublicOrigin(tunnel.fixedOrigin);
 	const start =
 		deps.spawn ??
 		((command: string, args: readonly string[], env: NodeJS.ProcessEnv) =>
@@ -310,9 +315,46 @@ export async function openTunnel(
 	const close = async () => {
 		child.kill("SIGTERM");
 	};
-	if (tunnel.fixedOrigin !== undefined)
-		return { publicOrigin: safePublicOrigin(tunnel.fixedOrigin), close };
 	try {
+		if (fixedOrigin !== undefined) {
+			// A fixed address is not evidence that the CLI started: spawn errors
+			// arrive asynchronously, after spawn() has returned its child.
+			await new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(
+					() =>
+						reject(
+							new RedirectReceiverError(
+								"HOBO_REDIRECT_RECEIVER_FAILED",
+								`${tunnel.command} did not start in time.`,
+							),
+						),
+					deps.timeoutMs ?? 60_000,
+				);
+				child.once("spawn", () => {
+					clearTimeout(timer);
+					resolve();
+				});
+				child.once("error", () => {
+					clearTimeout(timer);
+					reject(
+						new RedirectReceiverError(
+							"HOBO_REDIRECT_RECEIVER_MISSING",
+							`${tunnel.command} is not installed or could not start; install it and sign in with your own account.`,
+						),
+					);
+				});
+				child.once("exit", () => {
+					clearTimeout(timer);
+					reject(
+						new RedirectReceiverError(
+							"HOBO_REDIRECT_RECEIVER_FAILED",
+							`${tunnel.command} exited before it started.`,
+						),
+					);
+				});
+			});
+			return { publicOrigin: fixedOrigin, close };
+		}
 		const origin = await new Promise<string>((resolve, reject) => {
 			let seen = "";
 			const timer = setTimeout(

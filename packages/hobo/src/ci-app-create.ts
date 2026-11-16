@@ -283,24 +283,32 @@ async function manifestCallback(input: {
 				input.probeTimeoutMs ?? 60_000,
 			);
 	} catch (error) {
-		await tunnel?.close();
-		server.close();
+		try {
+			await tunnel?.close();
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
 		throw error;
 	}
 	const origin = tunnel?.publicOrigin ?? `http://127.0.0.1:${port}`;
-	manifest = input.manifestFor(`${origin}${base}callback`);
-	const timer = setTimeout(
-		() => settle.reject(new Error("timed out")),
-		input.timeoutMs,
-	);
-	input.show(`${origin}${base}`);
+	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
+		manifest = input.manifestFor(`${origin}${base}callback`);
+		timer = setTimeout(
+			() => settle.reject(new Error("timed out")),
+			input.timeoutMs,
+		);
+		input.show(`${origin}${base}`);
 		return await result;
 	} finally {
-		clearTimeout(timer);
-		await tunnel?.close();
-		server.closeAllConnections();
-		server.close();
+		if (timer !== undefined) clearTimeout(timer);
+		try {
+			await tunnel?.close();
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
 	}
 }
 
@@ -347,13 +355,14 @@ type ConfigServiceResolution =
 /** Build the config service from the owner's environment, or explain what is missing. */
 function configServiceFromEnv(
 	env: AppCreateOptions["env"],
+	send: typeof fetch | undefined,
 ): ConfigServiceResolution {
 	let auth: ReturnType<typeof ownerAuthFromEnv>;
 	try {
 		// With the agent's egress proxy signing in (INFISICAL_SIGN_IN), this run
 		// sends a placeholder the proxy replaces with the owner's own token.
 		auth = ownerAuthFromEnv(
-			env.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN && !env.INFISICAL_TOKEN
+			env.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN
 				? { INFISICAL_TOKEN: EGRESS_PROXY_PLACEHOLDER }
 				: env,
 		);
@@ -374,6 +383,7 @@ function configServiceFromEnv(
 		const client = createInfisicalClient({
 			binding: infisicalBindingFromEnv(env),
 			auth,
+			...(send !== undefined ? { fetch: send } : undefined),
 		});
 		return {
 			ok: true,
@@ -576,7 +586,7 @@ export async function runCiAppCreate(
 		? undefined
 		: options.configService
 			? { ok: true, service: options.configService }
-			: configServiceFromEnv(options.env);
+			: configServiceFromEnv(options.env, options.fetch);
 	if (resolution !== undefined && !resolution.ok)
 		return failed("HOBO_CI_CONFIG_SERVICE_UNCONFIGURED", resolution.message);
 	const service = resolution?.ok === true ? resolution.service : undefined;

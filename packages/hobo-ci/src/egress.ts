@@ -1,4 +1,6 @@
-import { EnvHttpProxyAgent } from "undici";
+import { readFileSync } from "node:fs";
+import { getCACertificates } from "node:tls";
+import { Agent, EnvHttpProxyAgent } from "undici";
 
 import { withoutSecretEnv } from "./secret-custody.js";
 
@@ -54,15 +56,34 @@ export function egressFrom(
 
 /** A `fetch` that goes through the required proxy, honouring its bypass list. */
 export function egressFetch(egress: Egress): typeof fetch {
-	if (egress.proxy === undefined) return fetch;
-	const dispatcher = new EnvHttpProxyAgent({
-		httpProxy: egress.proxy,
-		httpsProxy: egress.proxy,
-		...(egress.noProxy !== undefined ? { noProxy: egress.noProxy } : undefined),
-	});
+	const tls =
+		egress.caFile === undefined
+			? undefined
+			: {
+					ca: [
+						...getCACertificates("default"),
+						readFileSync(egress.caFile, "utf8"),
+					],
+				};
+	if (egress.proxy === undefined && tls === undefined) return fetch;
+	const dispatcher =
+		egress.proxy === undefined
+			? new Agent(tls === undefined ? undefined : { connect: tls })
+			: new EnvHttpProxyAgent({
+					httpProxy: egress.proxy,
+					httpsProxy: egress.proxy,
+					// An absent bypass list is an empty snapshot, not permission to
+					// inherit a different NO_PROXY from the ambient process.
+					noProxy: egress.noProxy ?? "",
+					...(tls !== undefined
+						? { connect: tls, requestTls: tls, proxyTls: tls }
+						: undefined),
+				});
 	// Node's fetch is undici's and takes its dispatcher as a request option.
 	return (input, init) => {
-		const routed: RequestInit & { readonly dispatcher: EnvHttpProxyAgent } = {
+		const routed: RequestInit & {
+			readonly dispatcher: Agent | EnvHttpProxyAgent;
+		} = {
 			...init,
 			dispatcher,
 		};

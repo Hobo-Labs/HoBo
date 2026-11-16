@@ -575,6 +575,13 @@ export function createCiCommand(
 						error instanceof Error ? error.message : "Unknown receiver.",
 					);
 				}
+				if (
+					(values["hand-off"] === true || receiver !== undefined) &&
+					(flags.json || flags.quiet)
+				)
+					return usage(
+						"The App hand-off needs progress output. Omit --json and -q, then retry.",
+					);
 				return runCiAppCreate({
 					relay: values.relay === undefined ? undefined : String(values.relay),
 					ownerId:

@@ -1,10 +1,18 @@
+import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	childEgressEnv,
+	egressFetch,
 	egressFrom,
 	RECEIVER_THROUGH_PROXY,
 	REDIRECT_RECEIVERS,
@@ -33,6 +41,89 @@ function fakeCli(output: string) {
 }
 
 describe("EVAL egress: proxies are detected and honoured up front", () => {
+	it("trusts the configured CA for both proxy and bypass connections", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "hobo-egress-ca-"));
+		const keyPath = join(dir, "server.key");
+		const certPath = join(dir, "server.pem");
+		execFileSync(
+			"openssl",
+			[
+				"req",
+				"-x509",
+				"-newkey",
+				"rsa:2048",
+				"-nodes",
+				"-days",
+				"1",
+				"-subj",
+				"/CN=localhost",
+				"-addext",
+				"subjectAltName=IP:127.0.0.1",
+				"-keyout",
+				keyPath,
+				"-out",
+				certPath,
+			],
+			{ stdio: "ignore" },
+		);
+		const server = createHttpsServer(
+			{ key: await readFile(keyPath), cert: await readFile(certPath) },
+			(_request, response) => {
+				response.setHeader("connection", "close");
+				response.end("ok");
+			},
+		);
+		await new Promise<void>((resolve) =>
+			server.listen(0, "127.0.0.1", resolve),
+		);
+		const address = server.address();
+		if (!address || !(address instanceof Object))
+			throw new Error("HTTPS fixture did not bind");
+		let connects = 0;
+		const proxy = createHttpServer();
+		proxy.on("connect", (_request, socket, head) => {
+			connects += 1;
+			const upstream = connect(address.port, "127.0.0.1", () => {
+				socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+				if (head.length) upstream.write(head);
+				socket.pipe(upstream).pipe(socket);
+			});
+			upstream.on("error", () => socket.destroy());
+			socket.on("error", () => upstream.destroy());
+		});
+		await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+		const proxyAddress = proxy.address();
+		if (!proxyAddress || !(proxyAddress instanceof Object))
+			throw new Error("proxy fixture did not bind");
+		const url = `https://127.0.0.1:${address.port}/`;
+		const proxyUrl = `http://127.0.0.1:${proxyAddress.port}`;
+		try {
+			// A snapshot with no bypass list must not inherit a later ambient one.
+			vi.stubEnv("NO_PROXY", "127.0.0.1");
+			vi.stubEnv("no_proxy", "127.0.0.1");
+			for (const config of [
+				{ proxy: undefined, noProxy: undefined, caFile: certPath },
+				{ proxy: proxyUrl, noProxy: undefined, caFile: certPath },
+				{ proxy: proxyUrl, noProxy: "", caFile: certPath },
+				{ proxy: proxyUrl, noProxy: "127.0.0.1", caFile: certPath },
+			]) {
+				const send = egressFetch(config);
+				const response = await send(url, { signal: AbortSignal.timeout(5000) });
+				expect(await response.text()).toBe("ok");
+			}
+			expect(connects).toBe(2);
+		} finally {
+			vi.unstubAllEnvs();
+			server.closeAllConnections();
+			proxy.closeAllConnections();
+			await Promise.all([
+				new Promise<void>((resolve) => server.close(() => resolve())),
+				new Promise<void>((resolve) => proxy.close(() => resolve())),
+			]);
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("reads the proxy, bypass list and CA bundle from either spelling", () => {
 		expect(egressFrom(SANDBOX)).toEqual({
 			proxy: SANDBOX.HTTPS_PROXY,

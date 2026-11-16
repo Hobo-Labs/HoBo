@@ -8,6 +8,7 @@ import {
 } from "@hobo/adapter-infisical";
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import {
+	EGRESS_PROXY_PLACEHOLDER,
 	openTunnel,
 	type RedirectReceiver,
 	redirectReceiverFrom,
@@ -155,6 +156,28 @@ const lineOf = (lines: readonly string[], prefix: string) =>
 	lines.find((line) => line.startsWith(`${prefix} `)) ?? "";
 
 describe("EVAL remote box: hobo ci app create through the owner's tunnel", () => {
+	it("closes the receiver if reporting its link fails", async () => {
+		const net = tunnel();
+		const result = await runCiAppCreate({
+			relay: RELAY,
+			ownerId: String(OWNER),
+			replace: false,
+			interactive: false,
+			handOff: true,
+			receiver: net.receiver,
+			tunnelProbe: (url) => net.edge(String(url)),
+			env: {},
+			configService: ownerStore().service,
+			fetch: github().http,
+			emitProgress: (line) => {
+				if (line.startsWith(`${OWNER_APP_LINE_PREFIX} `))
+					throw new Error("progress output unavailable");
+			},
+		});
+		expect(result.ok).toBe(false);
+		expect(net.closed()).toBe(true);
+	});
+
 	it("creates the App: GitHub's redirect comes through the tunnel to the same run", async () => {
 		const store = ownerStore();
 		const gh = github();
@@ -387,6 +410,42 @@ describe("EVAL remote box: hobo ci app create through the owner's tunnel", () =>
 });
 
 describe("EVAL remote box: hobo ci app create with no receiver (owner hand-off)", () => {
+	it("routes Infisical through the selected fetch and sends only the proxy marker", async () => {
+		const requests: Array<{ url: string; authorization: string | null }> = [];
+		const routed: typeof fetch = async (input, init) => {
+			requests.push({
+				url: String(input),
+				authorization: new Headers(init?.headers).get("authorization"),
+			});
+			return Response.json({ message: "denied" }, { status: 403 });
+		};
+		const result = await runCiAppCreate({
+			relay: RELAY,
+			ownerId: String(OWNER),
+			replace: false,
+			interactive: false,
+			handOff: true,
+			env: {
+				INFISICAL_SITE_URL: "http://127.0.0.1:1",
+				INFISICAL_PROJECT_ID: "proj-1",
+				INFISICAL_ENVIRONMENT: "prod",
+				INFISICAL_SECRET_PATH: "/hobo-ci-relay",
+				INFISICAL_SIGN_IN: "egress-proxy",
+				INFISICAL_TOKEN: "stale-token-from-another-sign-in",
+			},
+			fetch: routed,
+			emitProgress: () => {},
+		});
+		expect(result).toMatchObject({ code: "HOBO_CI_CONFIG_SERVICE_ERROR" });
+		expect(requests).toHaveLength(1);
+		expect(requests[0]?.url).toMatch(
+			/^http:\/\/127\.0\.0\.1:1\/api\/v4\/secrets\?/u,
+		);
+		expect(requests[0]?.authorization).toBe(
+			`Bearer ${EGRESS_PROXY_PLACEHOLDER}`,
+		);
+	});
+
 	it("paste: the owner carries GitHub's single-use code back, and nothing connects to the box", async () => {
 		const store = ownerStore();
 		const gh = github();
@@ -509,6 +568,77 @@ function fakeCli(output: string) {
 }
 
 describe("EVAL receivers: each provider's CLI output gives a safe public origin", () => {
+	it("rejects an unsafe fixed address before starting a tunnel", async () => {
+		let started = false;
+		await expect(
+			openTunnel(
+				{
+					command: "tunnel",
+					args: [],
+					urlPattern: /$^/u,
+					fixedOrigin: "https://127.0.0.1",
+				},
+				{
+					spawn: () => {
+						started = true;
+						// SAFETY: the fake exposes the child events and streams openTunnel uses.
+						return fakeCli("") as never;
+					},
+				},
+			),
+		).rejects.toMatchObject({ code: "HOBO_REDIRECT_RECEIVER_UNSAFE" });
+		expect(started).toBe(false);
+	});
+
+	it("waits for a fixed-address tunnel to start and reports a missing executable", async () => {
+		const child = fakeCli("");
+		// Keep the failed implementation's asynchronous error from escaping the test.
+		child.on("error", () => {});
+		setTimeout(() => child.emit("error", new Error("ENOENT")), 5);
+		await expect(
+			openTunnel(
+				{
+					command: "missing-tunnel",
+					args: [],
+					urlPattern: /$^/u,
+					fixedOrigin: "https://owner.example",
+				},
+				// SAFETY: the fake exposes the child events and streams openTunnel uses.
+				{ spawn: () => child as never },
+			),
+		).rejects.toMatchObject({ code: "HOBO_REDIRECT_RECEIVER_MISSING" });
+		expect(child.killed).toBe(true);
+	});
+
+	it("reports a real missing fixed-address tunnel executable", async () => {
+		await expect(
+			openTunnel({
+				command: "/__hobo_missing_tunnel__/not-installed",
+				args: [],
+				urlPattern: /$^/u,
+				fixedOrigin: "https://owner.example",
+			}),
+		).rejects.toMatchObject({ code: "HOBO_REDIRECT_RECEIVER_MISSING" });
+	});
+
+	it("accepts a fixed-address tunnel only after its process starts", async () => {
+		const child = fakeCli("");
+		setTimeout(() => child.emit("spawn"), 5);
+		const open = await openTunnel(
+			{
+				command: "tunnel",
+				args: [],
+				urlPattern: /$^/u,
+				fixedOrigin: "https://owner.example",
+			},
+			// SAFETY: the fake exposes the child events and streams openTunnel uses.
+			{ spawn: () => child as never },
+		);
+		expect(open.publicOrigin).toBe("https://owner.example");
+		await open.close();
+		expect(child.killed).toBe(true);
+	});
+
 	const cases = [
 		[
 			"cloudflared",
