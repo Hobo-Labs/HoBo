@@ -47,7 +47,7 @@ runs:
         echo "subject-name=${name}" >> "$GITHUB_OUTPUT"
         echo "subject-digest=${digest}" >> "$GITHUB_OUTPUT"
     - name: Provenance attestation
-      uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
       with:
         subject-name: ${{ steps.meta.outputs.subject-name }}
         subject-digest: ${{ steps.meta.outputs.subject-digest }}
@@ -86,7 +86,7 @@ runs:
         fi
         echo "path=${sbom_path}" >> "$GITHUB_OUTPUT"
     - name: SBOM attestation
-      uses: actions/attest-sbom@115c3be05ff3974bcbd596578934b3f9ce39bf68
+      uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e
       with:
         subject-name: ${{ steps.meta.outputs.subject-name }}
         subject-digest: ${{ steps.meta.outputs.subject-digest }}
