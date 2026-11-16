@@ -31,6 +31,7 @@ retrying or compensating, including after replay. The deployment view exposes
 the affected resources and reservations, and drift remains unknown until the
 outcome is reconciled.
 That guard also follows resources removed from a later deployment plan.
+Nonterminal resource events cannot clear an unresolved outcome during replay.
 
 ## Budget-aware hosting placement
 

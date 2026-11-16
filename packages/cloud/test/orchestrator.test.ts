@@ -438,6 +438,26 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 		expect(destroys).toBe(0);
 		const web = plan.resources.find((resource) => resource.name === "web");
 		if (web === undefined) throw new Error("web resource missing");
+		const lastEvent = first.events.at(-1);
+		if (lastEvent === undefined) throw new Error("events missing");
+		for (const type of [
+			"resource.Provisioning",
+			"resource.Destroying",
+			"resource.Failed",
+		]) {
+			const later = {
+				...lastEvent,
+				seq: lastEvent.seq + 1,
+				type,
+				data: { resourceId: "web" },
+			};
+			expect(
+				foldResourceActor([...first.events, later], {
+					...web,
+					deploymentId: "shop-uncertain",
+				}).state,
+			).toBe("ReconciliationRequired");
+		}
 		const direct = await reconcileResource(deps, web, {
 			deploymentId: "shop-uncertain",
 			tenant,

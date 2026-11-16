@@ -129,6 +129,10 @@ export function foldResourceActor(
 		if (data.resourceId !== resource.name) continue;
 		switch (event.type) {
 			case CLOUD_EVENTS.ResourceProvisioning:
+				if (snapshot.state === "ReconciliationRequired") {
+					snapshot.sequence += 1;
+					break;
+				}
 				// Re-applying a provisioned resource is an in-place update (upsert);
 				// its outputs stay readable until the new apply replaces them.
 				snapshot.state =
@@ -145,6 +149,13 @@ export function foldResourceActor(
 				else delete snapshot.specHash;
 				break;
 			case CLOUD_EVENTS.ResourceFailed:
+				if (
+					snapshot.state === "ReconciliationRequired" &&
+					data.requiresReconciliation !== true
+				) {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state =
 					data.requiresReconciliation === true
 						? "ReconciliationRequired"
@@ -152,6 +163,10 @@ export function foldResourceActor(
 				snapshot.sequence += 1;
 				break;
 			case CLOUD_EVENTS.ResourceDestroying:
+				if (snapshot.state === "ReconciliationRequired") {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state = "Destroying";
 				snapshot.sequence += 1;
 				break;
