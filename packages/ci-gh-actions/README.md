@@ -1583,3 +1583,24 @@ estimate of about 25 assumed one command per ring append and no routing reads.
   plus the last 50 ended leases per account.
 - Shared-budget settlement (`reconcileSharedBudget`,
   `releaseUnusedSharedBudget`): budget-policy accounts are never admitted.
+
+## Relay job seams
+
+A relay job (ADR-0183, [`packages/ci/RELAY-JOB.md`](../ci/RELAY-JOB.md)) is
+answered by `answerRelayJob` from `@hobo/ci`. This package holds the two seams
+on its GitHub side:
+
+- [`src/runner-protocol/port.ts`](src/runner-protocol/port.ts): the runner
+  protocol a relay-mode node answers over. `RunnerServiceClient.open` signs in
+  as a one-job runner (`ParsedJitConfig`, whose fields follow the
+  `.runner` and `.credentials` files of `actions/runner`) and gives a
+  `RunnerSession` that takes the next job, completes it with an answer and
+  closes. `InMemoryRunnerService` is a fake that gives each job to one session
+  only; `runnerServiceClientConformance` is the test every real client must
+  pass. No client that speaks to GitHub exists yet, so the channel is built,
+  not proven.
+- [`test/support/github-simulator-port.ts`](test/support/github-simulator-port.ts):
+  the interface of the GitHub simulator the parity scenarios run against:
+  one `fetch` for REST, billing and the runner service, `queueJob`, `deliver`
+  (webhooks to a handler), `advance` (its clock), `dropNextWebhook`, and reads
+  of its runners and jobs.
