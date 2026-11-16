@@ -1,8 +1,14 @@
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
-import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import {
+	type CommandRunInput,
+	createHoboCli,
+	createLifecycleFamilyCommand,
+	type PrepareInput,
+} from "@hobo/cli";
 import {
 	type ConnectPage,
 	type FlowTransition,
@@ -476,17 +482,19 @@ function prepareInput(
 	whatIf = false,
 ): PrepareInput & { readonly progress: string[] } {
 	const progress: string[] = [];
-	const run: Pick<CommandRunInput, "emitProgress"> = {
+	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: (message: string) => {
 			progress.push(message);
 		},
+		// SAFETY: the preparation fixture reads only these two output flags.
+		flags: { json: false, quiet: false } as CommandRunInput["flags"],
 	};
 	return {
 		action: "up",
 		projectDir: "/tmp/hobo-ci",
 		whatIf,
 		yes: false,
-		// SAFETY: prepareGithubConnection reads only run.emitProgress.
+		// SAFETY: prepareGithubConnection reads only progress and these output flags.
 		run: run as CommandRunInput,
 		progress,
 	};
@@ -553,6 +561,72 @@ function githubWithUsers(kind: "User" | "Organization") {
 }
 
 describe("prepareGithubConnection", () => {
+	it("reports a silent hand-off through the CLI instead of waiting for a hidden page", async () => {
+		const unused = {
+			run: async () => {
+				throw new Error("a refused hand-off must not converge");
+			},
+		};
+		const cli = createHoboCli({
+			commands: {
+				ci: createLifecycleFamilyCommand({
+					family: "ci",
+					resolveProject: () => ({
+						ok: true,
+						projectDir: tmpdir(),
+						source: "test",
+					}),
+					up: unused,
+					down: unused,
+					plan: unused,
+					prepare: (input) =>
+						prepareGithubConnection(input, {
+							env: {},
+							locator: memorySettings(),
+							startPage: () => {
+								throw new Error("the silent page must not be started");
+							},
+						}),
+				}),
+			},
+		});
+		for (const mode of ["--json", "-q"]) {
+			const progress: string[] = [];
+			const result = await cli.run(["ci", "up", "--hand-off", mode], {
+				cwd: tmpdir(),
+				onProgress: (message) => progress.push(message),
+			});
+			expect(result.exitCode).not.toBe(0);
+			expect(`${result.stdout}${result.stderr}`).toContain(
+				"The owner hand-off needs progress output",
+			);
+			expect(progress).toEqual([]);
+		}
+	});
+
+	it("refuses a silent owner hand-off before starting the page", async () => {
+		for (const mode of ["json", "quiet"] as const) {
+			const input = prepareInput();
+			const outcome = await prepareGithubConnection(
+				{
+					...input,
+					handOff: true,
+					run: { ...input.run, flags: { ...input.run.flags, [mode]: true } },
+				},
+				{
+					env: {},
+					locator: memorySettings(),
+					startPage: () => {
+						throw new Error("the silent page must not be started");
+					},
+				},
+			);
+			expect(outcome).toMatchObject({
+				kind: "refused",
+				result: { code: "HOBO_CI_HANDOFF_SILENT" },
+			});
+		}
+	});
 	it("closes the real setup page if progress or browser launch throws", async () => {
 		for (const failure of ["progress", "browser"] as const) {
 			const input = prepareInput();
@@ -699,23 +773,31 @@ describe("prepareGithubConnection", () => {
 		expect(vault.names()).toEqual([]);
 	});
 
-	it("verifies a stored connection before reporting it unchanged", async () => {
+	it("reuses a verified connection even when a hand-off would be silent", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
 		await seedSettings(store);
 		const github = fakeGithub();
 		const vault = createTrustedVault();
 		vault.put("INFISICAL_TOKEN", "session-token");
-		const outcome = await prepareGithubConnection(prepareInput(), {
-			env: ENV,
-			vault,
-			locator: memorySettings(LOCATOR),
-			openStore: signedIn(store),
-			fetch: github.fetch,
-			startPage: () => {
-				throw new Error("must not open setup");
+		const input = prepareInput();
+		const outcome = await prepareGithubConnection(
+			{
+				...input,
+				handOff: true,
+				run: { ...input.run, flags: { ...input.run.flags, json: true } },
 			},
-		});
+			{
+				env: ENV,
+				vault,
+				locator: memorySettings(LOCATOR),
+				openStore: signedIn(store),
+				fetch: github.fetch,
+				startPage: () => {
+					throw new Error("must not open setup");
+				},
+			},
+		);
 		expect(outcome).toMatchObject({
 			kind: "ready",
 			steps: [{ outcome: "unchanged" }],

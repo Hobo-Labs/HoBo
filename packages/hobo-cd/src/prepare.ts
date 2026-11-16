@@ -303,6 +303,12 @@ async function prepareVercelWithVault(
 				},
 			],
 		};
+	if (input.handOff === true && (input.run.flags.json || input.run.flags.quiet))
+		return refused(
+			"HOBO_CD_HANDOFF_SILENT",
+			"The owner hand-off needs progress output. Omit --json and -q, then retry.",
+			["Run hobo cd up --hand-off without --json or -q."],
+		);
 	if (!canReachOwner(deps.interactive, input.handOff))
 		return refused(
 			"HOBO_CD_CONNECTION_NEEDS_OWNER",
