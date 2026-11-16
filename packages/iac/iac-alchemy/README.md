@@ -18,6 +18,7 @@ resources and the original entrypoint to the mapper, and rejects missing
 mappings, unbound dependencies, unsupported permissions or annotations, and
 cycles. The dependency kinds recorded on each declaration must agree with the
 graph, including dependencies omitted from the returned bindle.
+Only explicit registry entries count as mappings.
 `describeAlchemyPrimitiveSupport` reports supported, partial and
 unsupported entries for a supplied primitive catalog, including the declared
 entrypoint and annotation support.

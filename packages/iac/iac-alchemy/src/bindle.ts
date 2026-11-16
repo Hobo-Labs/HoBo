@@ -86,7 +86,9 @@ export function describeAlchemyPrimitiveSupport<
 			"primitive catalog must be bounded and unique",
 		);
 	return catalog.map((entry) => {
-		const candidate = mappers[entry.factory];
+		const candidate = Object.hasOwn(mappers, entry.factory)
+			? mappers[entry.factory]
+			: undefined;
 		const mapper =
 			candidate !== undefined &&
 			candidate.resourceTypes.length > 0 &&
@@ -158,7 +160,9 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 		OrderedPrimitive<Entrypoint, Requirements, Services>
 	>();
 	for (const [name, declaration] of entries) {
-		const mapper = mappers[declaration.kind];
+		const mapper = Object.hasOwn(mappers, declaration.kind)
+			? mappers[declaration.kind]
+			: undefined;
 		if (
 			!validName(name) ||
 			!validName(declaration.kind) ||

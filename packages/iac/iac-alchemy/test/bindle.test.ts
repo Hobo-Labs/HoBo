@@ -214,6 +214,32 @@ describe("explicit Alchemy primitive mapping", () => {
 		]);
 	});
 
+	it("does not treat inherited object properties as provider mappings", () => {
+		const catalog = [{ factory: "toString", allowVerbs: [] }];
+		expect(describeAlchemyPrimitiveSupport(catalog, {})).toMatchObject([
+			{ status: "unsupported" },
+		]);
+		const input = {
+			name: "unmapped",
+			resources: {
+				x: {
+					kind: "toString",
+					name: "x",
+					stableId: "toString:x",
+					declaredAllow: [],
+					dependsOn: [],
+					annotations: [],
+				},
+			},
+			edges: [],
+			requirements: {},
+			entrypoint: () => undefined,
+		};
+		expect(() => mapBindleToAlchemy(input, {})).toThrow(
+			"PRIMITIVE_UNSUPPORTED",
+		);
+	});
+
 	it.each([
 		"entrypoint",
 		"resource-type",
