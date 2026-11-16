@@ -241,6 +241,24 @@ test("staged relevant checks pass staged mode to standards", () => {
 	assert.equal(check.args.includes("--base=origin/main"), true);
 });
 
+test("all changed scopes select the shared source policy with the correct snapshot", () => {
+	for (const files of [["packages/cli/src/index.ts"], ["docs/usage.md"]]) {
+		const committed = plan(files).checks.find(
+			(check) => check.args[1] === "source:guard",
+		);
+		const staged = plan(files, { staged: true }).checks.find(
+			(check) => check.args[1] === "source:guard",
+		);
+		assert.deepEqual(committed?.args, [
+			"run",
+			"source:guard",
+			"--",
+			"--base=origin/main",
+		]);
+		assert.deepEqual(staged?.args, ["run", "source:guard", "--", "--staged"]);
+	}
+});
+
 test("source changes select the Biome formatting lane", () => {
 	const { checks } = plan(["packages/core/src/index.ts"]);
 

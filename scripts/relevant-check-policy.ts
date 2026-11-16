@@ -304,6 +304,16 @@ export function selectRelevantChecks(
 		]);
 
 	const checks: Check[] = [];
+	checks.push({
+		command: "pnpm",
+		args: [
+			"run",
+			"source:guard",
+			"--",
+			staged ? "--staged" : `--base=${options.base}`,
+		],
+		reason: "new code and documents must follow the common repository rules",
+	});
 
 	if (rootConfigChanged) {
 		checks.push({

@@ -1,13 +1,29 @@
+# Repository rules for every agent
+
+These rules apply to every agent, plugin, skill, and harness and take precedence
+over conflicting repository workflow guidance.
+
+- Write self-documenting code. Do not add explanatory comments, commented-out
+  code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
+  and functions to make intent clear. Retain only required license notices and
+  directives consumed by compilers or tools.
+- Complete unfinished work when it is found. Do not hide it by deleting its
+  marker or by moving it into a backlog.
+- Do not create or retain planning documents, roadmaps, or design documents.
+  Implement their outstanding work, then remove them. Keep user and operator
+  documentation about behavior that actually exists.
+- These rules apply even when a plugin or skill requests a plan or design
+  artifact. Work directly from the request and report concrete blockers.
+
 # Agent tooling for this repo
 
 This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
 
 | Tool | Type | What it does | Invoke |
 |---|---|---|---|
-| **sdlc** (repo-local) | skill | Full-loop coordinator: brainstorm → plan → issues → subagents (incremental checkins) → **GitHub stacked PRs** (`gh stack`) → bottom-up rubber-duck/adversarial review → fix comments/checks → squash-merge each PR. **`--finish`** lands the session (commit, rebase, PR, squash-merge all session PRs). Mirrored for all agents. | `sdlc`, `/sdlc --finish`, stacked multi-phase work |
+| **sdlc** (repo-local) | skill | Coordinates implementation and review across harnesses under the repository rules above. | `sdlc`, `/sdlc --finish` |
 | **gh-stack** (repo-local) | skill + CLI ext | Non-interactive rules for official `github/gh-stack` (`gh extension install github/gh-stack`). | `gh stack init\|add\|submit\|sync\|merge` |
-| **improve** (`shadcn/improve`) | skill (read-only) | Audits the codebase and writes prioritized implementation **plans** to `plans/`, which git ignores, for other agents to execute. They are never committed. Never edits source. | `/improve`, `/improve quick`, `/improve security`, `/improve execute <plan>` |
-| **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: structured **brainstorming**, plan-writing, TDD, systematic debugging, subagent-driven dev, and code-review workflows. No keys. | `brainstorming`, `writing-plans`, `requesting-code-review`, `subagent-driven-development`, `systematic-debugging`, … (14 skills) |
+| **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: TDD, systematic debugging, and code-review workflows. Planning and design artifact workflows are prohibited by the repository rules above. No keys. | `requesting-code-review`, `systematic-debugging` |
 | **impeccable** (`pbakaus/impeccable`) | skill (design) | A **design language** for AI harnesses: 23 commands from `shape`/`critique`/`audit`/`polish` to dials like `bolder`/`quieter`/`colorize`. **Always-on for UI/TUI/dashboard work** — do not wait for the user to invoke it (see **Design system + lint** below). No keys, but not offline: a daily update check to `impeccable.style` from `scripts/context.mjs` run as a command — the hook does **not** fetch (disabled here by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`). `/impeccable init` writes `PRODUCT.md` only — `site/DESIGN.md` stays the design authority (ADR-0149). | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |
 | **Higgsfield MCP** (`mcp.higgsfield.ai`) | MCP (hosted, official) | Image/video generation across 30+ models. Account **OAuth**, no API key stored in-repo; project-scoped so it needs human approval before use. Sends prompts to Higgsfield. | `mcp__higgsfield__*` |
 | **mattpocock/skills** (`mattpocock/skills`) | skills collection | Engineering disciplines: **`grill-with-docs`** (relentless design interview that writes ADRs + glossary), `domain-modeling`, `codebase-design`, `diagnosing-bugs`, `tdd`, `to-prd`, `to-issues`, `prototype`, … No keys. | `/grill-with-docs`, `/ask-matt`, `/domain-modeling`, `/setup-matt-pocock-skills` (one-time config) |
@@ -22,7 +38,7 @@ This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub
 | **SkillOpt** (`microsoft/SkillOpt`) | optimizer / research harness | Trains reusable markdown skills from scored rollouts and exports `best_skill.md` artifacts for multiple harnesses. Optional, not runtime config. | `skillopt-train`; `scripts/skillopt-sleep.sh status|dry-run|run|adopt`; installed from microsoft/SkillOpt |
 | **anti-slop** (`dmmulroy/anti-slop`) | vendored Oxlint plugin + skill | Opinionated lint rules rejecting low-evidence/low-signal TS patterns (chained assertions, `unknown` contracts, ad hoc `typeof`, module mocking, unjustified casts). Vendored at `tools/oxlint/anti-slop/`, configured in `oxlint.config.ts`. Local, no keys. Pre-commit / `agent:check` run `lint:slop:changed` on touched TS/JS (`--deny-warnings`); full-repo `lint:slop` is opt-in because of a large pre-existing backlog. Each copy (tools + both skill assets) carries `MANIFEST.sha256`; `scripts/test/anti-slop-vendor.test.ts` is the drift gate (ADR-0173). | `pnpm run lint:slop:changed`; `pnpm run lint:slop`; reinstall/refresh via the `install-anti-slop` skill (all agents) |
 
-How they fit together: **Serena** gives agents semantic code tools, **superpowers** + **mattpocock/skills** supply the *workflow & rigor* (brainstorm → grill-with-docs → plan → build/TDD → review), **improve** decides *what* to do, **ponytail** keeps the code itself minimal (YAGNI / stdlib-first), **impeccable** + `pnpm run design:lint` are the standing visual quality loop (not opt-in), **headroom** + **RTK** + **caveman** keep token use down (context-in, shell-output, and agent-output — complementary), **gbrain** remembers across sessions, and **SkillOpt** is reserved for offline improvement of reusable skills when we have scored tasks.
+How they fit together: **Serena** gives agents semantic code tools, **superpowers** and **mattpocock/skills** supply workflow and review techniques, **ponytail** keeps code minimal, **impeccable** and `pnpm run design:lint` support visual quality, **headroom**, **RTK**, and **caveman** reduce token use, **gbrain** supplies memory, and **SkillOpt** supports offline improvement of reusable skills. All remain subject to the repository rules above.
 
 ## Repo-local repo skill
 
@@ -40,12 +56,7 @@ The skill defaults to local hybrid retrieval: OKF `index.md` files, `tgrep` when
 
 ## Repo-local sdlc skill + implementer/reviewer subagents
 
-The repo-local **sdlc** skill (mirrored in `.agents/skills/sdlc` and `.claude/skills/sdlc` — Claude Code, Cursor, Codex, Grok, and any agent that loads those trees) coordinates full-loop feature development: brainstorm → adversarial/rubber-duck hardening → plan mode over the draft-proof cascade (technical → epic; experience proofs in parallel; projects aggregate) → Linear capture as one-shot issues (verifiable outputs + required draft artifacts named per issue) → **permission-gated** dispatch through a harness-detected backend matrix (see `references/dispatch.md`): cloud coding agents (GitHub coding agent via MCP/`gh agent-task`, Codex cloud, Cursor background) are preferred for isolated one-shot issues; local subagent worktrees handle shared-file-adjacent work; a sequential fallback keeps the loop alive when no delegation capability probes true. **Leverage subagents as much as possible**; implementers **commit incrementally** (red→green→commit, not one dump at the end). For multi-step/phase/task work the **parent** opens a **GitHub stacked PR** with the official `gh stack` extension (`github/gh-stack`, also documented in the companion **`gh-stack`** skill). Every backend receives the same one-shot issue contract and returns the same handback schema — `.sdlc/report.json` in a worktree, or a fenced `sdlc-report` JSON block in the PR body for cloud dispatches. The Claude Code backend is two subagent definitions under `.claude/agents/`:
-
-- **implementer** — one Linear issue, one isolated worktree, strict red/green TDD/BDD/ATDD (the acceptance checklist becomes the failing tests: unit, PACT contract, cucumber feature, bench), **incremental checkins**. Zero Linear access; never edits shared files; hands back `.sdlc/report.json` with gates, cascade deltas, and requirement discoveries.
-- **reviewer** — read-only; independently re-runs the gates and walks the acceptance checklist (cloud PRs get the same walk against a local checkout of the PR branch).
-
-The coordinator owns ALL Linear state, shared-file mutations, and **stack topology** (single-writer). When implementation is done, the parent **must close every opened PR from the bottom up**: rubber-duck + adversarial review of each layer, address all PR comments and review feedback, fix required status checks that actually ran, then **squash-merge** that PR (`gh stack merge <pr> --yes --squash` or `gh pr merge --squash`) and sync before moving up the stack. **Billing/spending-limit/quota CI failures do not block squash-merge** — document them on the PR and merge anyway (use `--admin` if protection requires green checks). An issue is Done only when checks are green **or only billing-red**, independent review passes, comments are resolved, and the PR is squash-merged — never on an implementation agent's self-report. Durable loop state lives in `.sdlc/<initiative>/sdlc-state.md`; dispatch outcomes feed `.sdlc/dispatch-log.md`, which the next Linear-planning pass consults to improve issue contracts.
+The repo-local **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/skills/sdlc`. It coordinates implementation and review while following the repository rules above. Do not create planning state or design documents, even when an older skill reference requests them.
 
 **Stacked PRs install:** `gh extension install github/gh-stack` (also via `scripts/setup-agent-tools.sh` common layer). Local git defaults `rerere.enabled=true` and `remote.pushDefault=origin` are applied by `scripts/install-hooks.mts` / the setup script.
 
@@ -436,14 +447,12 @@ Local and CI gates enforce this with `pnpm run docs:freshness`: code changes und
 
 ## Plans are not committed
 
-A plan is a working document for people and agents who are still deciding. It is never committed, pushed or put in a pull request, whoever wrote it and however finished it looks. The repository keeps no plans directory.
-
-- **What counts.** An implementation plan, a delivery plan, a roadmap of work to do, a backlog staged for import, a swarm or one-shot agent instruction, planning state, or any document that says what will be built rather than what was decided.
-- **Where a plan lives.** Outside the repository: a session scratch folder, or a document the owner asked for. `sdlc` keeps its working state in `.sdlc/`, which git ignores. Git also ignores `plans/` and `docs/plans/`, so a tool that writes there, such as `/improve`, cannot get a plan committed.
-- **What is committed instead.** The decision, once made: an ADR or a design document.
-- **No references to plans.** Code, comments, package metadata and documents do not cite a plan, by path or by number. Cite the ADR, the design document or the issue. Ids that only a plan defined (work packages, register entries, section numbers) go with it; decision, invariant and defect ids an ADR records are cited through that ADR, such as `ADR-0182 D14`.
-- **Asked for a plan, deliver a document.** Write it where the owner can read it and stop. Do not commit it, do not open a pull request for it, and do not treat a session's default git instructions as permission to.
-- **The gate.** `pnpm run plans:guard` fails when a tracked or staged Markdown file has the frontmatter type `Plan`, `Implementation Plan`, `Delivery Plan` or `One-Shot Agent Instruction`, or when anything under `plans/` or `docs/plans/` is tracked. The pre-commit hook runs it on staged files, and the docs checks run it over the whole tree. Do not rename a plan's type to get past it.
+The repository does not keep plans, roadmaps, or design documents. Implement
+their outstanding work before removing existing artifacts. The existing
+`plans:guard` checks tracked plan documents. `source:guard` checks added or
+changed planning and design documents and new comments in JavaScript, TypeScript,
+shell, Python, CSS, and HTML; the common rule above applies to every language.
+Both run through the shared pre-commit and CI checks.
 
 ## Legal hygiene rules
 
@@ -458,7 +467,7 @@ These are cheap to honor and expensive to unwind.
 
 ## Keys & risks (read before enabling gbrain)
 - **gbrain needs an initialized embedding provider.** `gbrain init --pglite` can use local Ollama with no key or egress. Remote `OPENAI_API_KEY` / `ZEROENTROPY_API_KEY` / `VOYAGE_API_KEY` providers receive embedding/query text and may cost money; don't send them sensitive content. Configure remote keys via `.env` (see `.env.example`).
-- **Serena / headroom / RTK / improve / caveman / ponytail / superpowers** need **no keys** and run locally; superpowers has optional telemetry (set `SUPERPOWERS_DISABLE_TELEMETRY=1` to disable).
+- **Serena / headroom / RTK / caveman / ponytail / superpowers** need **no keys** and run locally; superpowers has optional telemetry (set `SUPERPOWERS_DISABLE_TELEMETRY=1` to disable).
 - **SkillOpt** is installed from `microsoft/SkillOpt`; its default sleep mock backend is no-spend, but real `codex`, `claude`, OpenAI, Azure OpenAI, Qwen, or MiniMax backends use the credentials/budget you configure.
 - **caveman** was installed via a `curl … | bash` shim (forwarding to `npx github:JuliusBrussee/caveman`); the pinned installer is handled in `scripts/setup-agent-tools.sh`.
 - Committing `.mcp.json` / `.cursor/mcp.json` means opening this repo in Claude Code or Cursor will prompt to launch the `serena`, `headroom`, and `gbrain` MCP servers. Decline if you don't want them.
@@ -468,7 +477,7 @@ These are cheap to honor and expensive to unwind.
 - **Cursor** — `.cursor/mcp.json` (same three servers).
 - **Codex** — trusted projects load `.codex/config.toml`; copy its `[mcp_servers.*]` tables into `~/.codex/config.toml`, or run `codex mcp add …`, only for a global fallback (see the setup script).
 
-Progressive setup: run `bash scripts/setup-agent-tools.sh --common-only --no-gbrain` first (this is also the devcontainer default), then run `bash scripts/setup-agent-tools.sh --agent claude-code|cursor|codex|copilot --no-gbrain` only for the client you actually use. Shared MCP launchers should live in `scripts/` first (for example `scripts/agent-mcp-serena.sh`) and then be referenced by `.mcp.json`, `.cursor/mcp.json`, and `.codex/config.toml`. When one agent-specific config changes, update the other supported configs in the same commit or document why it does not apply. Skills (`repo`, `draft`, `improve`, `caveman`, `ponytail`) live in `.claude/skills/` (Claude Code) and `.agents/skills/` (Cursor + Codex). ponytail is invocation-based here (`/ponytail …`), not always-on — run `/ponytail` to activate it for a session (it can be made always-on via `/plugin install ponytail@ponytail` in Claude Code if you want that).
+Progressive setup: run `bash scripts/setup-agent-tools.sh --common-only --no-gbrain` first (this is also the devcontainer default), then run `bash scripts/setup-agent-tools.sh --agent claude-code|cursor|codex|copilot --no-gbrain` only for the client you actually use. Shared MCP launchers should live in `scripts/` first (for example `scripts/agent-mcp-serena.sh`) and then be referenced by `.mcp.json`, `.cursor/mcp.json`, and `.codex/config.toml`. When one agent-specific config changes, update the other supported configs in the same commit or document why it does not apply. Skills (`repo`, `draft`, `caveman`, `ponytail`) live in `.claude/skills/` (Claude Code) and `.agents/skills/` (Cursor + Codex). ponytail is invocation-based here (`/ponytail …`), not always-on — run `/ponytail` to activate it for a session (it can be made always-on via `/plugin install ponytail@ponytail` in Claude Code if you want that).
 
 ## Superpowers plugin (Claude Code · Codex · Copilot)
 `superpowers` is a **plugin** (not a skills-dir install), from the `obra/superpowers-marketplace`. It's wired repo-portably for **Claude Code** via [`.claude/settings.json`](.claude/settings.json) (`extraKnownMarketplaces` + `enabledPlugins`), so it auto-enables when you open the repo. For **Codex** and **GitHub Copilot CLI**, install per-machine (the setup script runs these if those CLIs are present):
@@ -480,7 +489,7 @@ codex plugin marketplace add obra/superpowers-marketplace && codex plugin instal
 # GitHub Copilot CLI:
 copilot plugin marketplace add obra/superpowers-marketplace && copilot plugin install superpowers@superpowers-marketplace
 ```
-Skills load at **session start** (a SessionStart hook), so enable it, then start a fresh session to use `brainstorming`, `writing-plans`, `requesting-code-review`, etc.
+Skills load at **session start** (a SessionStart hook). Every skill remains subject to the repository rules above.
 
 <!-- caveman:begin — terse-output directive. Caveman mode is INSTALLED and ON by default.
      To disable: delete `.cursor/rules/caveman.mdc`, remove this block, and run

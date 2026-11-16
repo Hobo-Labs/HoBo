@@ -245,7 +245,7 @@ fi
 # Agent-specific layer: only for the supported agents selected by --agent/--agents.
 say "skills CLI installs -> selected Claude Code/Cursor/Codex skill dirs"
 if have npx; then
-  for spec in "shadcn/improve" "DietrichGebert/ponytail" "mattpocock/skills"; do
+  for spec in "DietrichGebert/ponytail" "mattpocock/skills"; do
     for ag in claude-code cursor codex; do
       want_agent "$ag" || continue
       NPX --yes skills add "$spec" --project --copy -a "$ag" -s '*' -y \
