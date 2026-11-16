@@ -143,6 +143,12 @@ export function commentsIn(file: string, text: string): Comment[] {
 	);
 	const found = new Map<number, Comment>();
 	function visit(node: ts.Node): void {
+		if (ts.isJSDoc(node)) {
+			const start = node.getStart(source);
+			const end = node.getEnd();
+			found.set(start, { start, end, text: text.slice(start, end) });
+			return;
+		}
 		const children = node.getChildren(source);
 		if (children.length > 0) {
 			for (const child of children) visit(child);
