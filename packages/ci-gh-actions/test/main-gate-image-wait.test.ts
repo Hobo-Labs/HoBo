@@ -90,10 +90,10 @@ describe("Main full gate image dependency", () => {
 		const checkoutIndex = mainGate.steps.findIndex(
 			(step) =>
 				step.name === checkout &&
-				step.uses === "./.github/actions/hobo-checkout",
+				step.uses === "$/.github/actions/hobo-checkout",
 		);
 		const preflightIndex = mainGate.steps.findIndex(
-			(step) => step.uses === "./.github/actions/ci-runner-preflight",
+			(step) => step.uses === "$/.github/actions/ci-runner-preflight",
 		);
 		expect(checkoutIndex).toBeGreaterThanOrEqual(0);
 		expect(preflightIndex).toBe(checkoutIndex + 1);

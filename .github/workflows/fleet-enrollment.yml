@@ -31,7 +31,7 @@ jobs:
         with:
           submodules: recursive
           clean: false
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Check sibling pins (offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
@@ -54,7 +54,7 @@ jobs:
           fetch-depth: 2
           submodules: recursive
           clean: false
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Check sibling pins (offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false

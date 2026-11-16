@@ -557,7 +557,10 @@ transitive, is also locked in
 [`.github/workflows/actions.lock`](../../.github/workflows/actions.lock) by
 `gh actions-lock` (`gh extension install github/gh-actions-lock`). Same-repo
 actions use the self-repository `uses: $/.github/actions/<name>` form (runner
-2.336.0+), so the lockfile covers what they call. The `actions-lock` workflow
+2.336.0+), so the lockfile covers what they call; `actions:lint` accepts
+both forms. Workflows keep full-SHA `uses:` pins, and the lockfile keys those
+entries by the same SHA with the release tag recorded as `ref`, so a run is
+pinned whether or not lockfile enforcement is on. The `actions-lock` workflow
 runs `gh actions-lock --verify` on workflow changes; when it fails it uploads
 the patch the tool would write as the `actions-lock-patch` artifact. Dependabot
 ([`.github/dependabot.yml`](../../.github/dependabot.yml)) proposes npm, Actions

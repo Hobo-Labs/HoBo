@@ -209,7 +209,7 @@ describe("range-only early start", () => {
 describe("main-gate wiring", () => {
 	it("starts the range scan beside the plan and leaves a full scan to the last step", () => {
 		const preflight = mainGatePlan.indexOf(
-			"./.github/actions/ci-runner-preflight",
+			"$/.github/actions/ci-runner-preflight",
 		);
 		const start = mainGatePlan.indexOf("name: Start secret scan");
 		const plan = mainGatePlan.indexOf("name: Plan workspace shards");
@@ -268,7 +268,7 @@ describe("main-gate wiring", () => {
 	it("scans a full-history checkout, after preflight, as the last and unconditional step", () => {
 		const checkout = mainGatePlan.indexOf("          fetch-depth: 0");
 		const preflight = mainGatePlan.indexOf(
-			"./.github/actions/ci-runner-preflight",
+			"$/.github/actions/ci-runner-preflight",
 		);
 		const plan = mainGatePlan.indexOf("name: Plan workspace shards");
 		const scan = mainGatePlan.indexOf("name: Secret scan (full history)");

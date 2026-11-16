@@ -94,7 +94,7 @@ jobs:
             scripts/ci/merge-queue-reuse.mts
             packages/ci/src/fleet-overflow.ts
       - id: route
-        uses: ./.github/actions/route-runner
+        uses: $/.github/actions/route-runner
         with:
           token: ${{ github.token }}
           route: ${{ inputs.route || 'auto' }}
@@ -167,9 +167,9 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts --materialize-only
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
       - name: Install root deps for shell lint
         if: steps.rebuild.outputs.needed == 'true' && steps.materialize.outcome != 'success'
@@ -362,18 +362,18 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 0
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
@@ -566,12 +566,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
 
   workspace_tests:
     name: Workspace test shard ${{ matrix.shard }}
@@ -599,17 +599,17 @@ jobs:
           filter: blob:none
           fetch-tags: false
           clean: false
-      - uses: ./.github/actions/hobo-repo-checkout
+      - uses: $/.github/actions/hobo-repo-checkout
         with:
           fetch-depth: 0
           submodules: recursive
           marker: scripts/ci/ci-trace.mts
           bootstrap-composite-actions: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -617,7 +617,7 @@ jobs:
           preferred-job: pr_gate_validation
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
@@ -671,12 +671,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
         with:
           disambiguator: ${{ matrix.shard }}
 
@@ -698,17 +698,17 @@ jobs:
           filter: blob:none
           fetch-tags: false
           clean: false
-      - uses: ./.github/actions/hobo-repo-checkout
+      - uses: $/.github/actions/hobo-repo-checkout
         with:
           fetch-depth: 0
           submodules: recursive
           marker: scripts/ci/ci-trace.mts
           bootstrap-composite-actions: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -716,7 +716,7 @@ jobs:
           preferred-job: pr_gate_validation
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
@@ -759,12 +759,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
 
   scripts-tests:
     name: Scripts tests
@@ -790,7 +790,7 @@ jobs:
           fetch-depth: 2
       # The pinned toolchain from mise.toml (Node 24), on the fleet or a GitHub-hosted
       # machine. Under Node 22 pnpm prints an engine warning into turbo's JSON.
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Decide whether the change reaches scripts, tests or workflows
         id: scope
         env:
@@ -816,7 +816,7 @@ jobs:
             echo "Nothing under scripts/, test/ or .github/ changed; skipping the scripts lane"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - name: Link deps layer
         if: steps.scope.outputs.run == 'true'
@@ -833,7 +833,7 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: Turbo cache
         if: steps.scope.outputs.run == 'true'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -875,12 +875,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
 
   pr-gate:
     name: PR impact gate
@@ -963,7 +963,7 @@ jobs:
           clean: false
           # Depth 2 holds the PR merge commit and its first parent (the base tip).
           fetch-depth: 2
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Decide whether the diff reaches packages, pins or submodules
         id: scope
         run: |
@@ -986,12 +986,12 @@ jobs:
           fi
       - name: Turbo cache
         if: steps.scope.outputs.run == 'true'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - if: steps.scope.outputs.run == 'true'
         run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
@@ -1008,12 +1008,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
 
   main-gate-plan:
     name: Main workspace plan
@@ -1072,13 +1072,13 @@ jobs:
       - name: Ask again before the shards
         id: reroute
         if: needs.route.outputs.tier == 'fleet'
-        uses: ./.github/actions/route-runner
+        uses: $/.github/actions/route-runner
         with:
           token: ${{ github.token }}
           route: ${{ inputs.route || 'auto' }}
           attest: "false"
           include-own-run: "true"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         with:
           install-toolchain: false
       # The secret scan starts here and runs beside the deps and plan steps; the last
@@ -1329,12 +1329,12 @@ jobs:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
       - name: Checkout (sparse S0, full history)
-        uses: ./.github/actions/hobo-checkout
+        uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 0
           sparse-paths: ${{ env.S0_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         with:
           browser: "true"
       - name: Fetch pinned ts-autocode
@@ -1351,7 +1351,7 @@ jobs:
           fi
           pnpm run pins:fetch ts-autocode
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -1378,7 +1378,7 @@ jobs:
         run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Seed the pnpm store cache for PRs
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: ./.github/actions/pnpm-store
+        uses: $/.github/actions/pnpm-store
         with:
           mode: save
       - name: Resolve the previous main commit and the gate scope
@@ -1442,12 +1442,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
 
   main_workspace_tests:
     name: Main workspace test shard ${{ matrix.shard }}
@@ -1480,7 +1480,7 @@ jobs:
           filter: blob:none
           fetch-tags: false
           clean: false
-      - uses: ./.github/actions/hobo-repo-checkout
+      - uses: $/.github/actions/hobo-repo-checkout
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -1492,9 +1492,9 @@ jobs:
       - name: Check deps layer match
         id: deps-layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -1505,7 +1505,7 @@ jobs:
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - name: Restore pnpm store
         if: steps.deps-layer.outputs.match != 'true'
-        uses: ./.github/actions/pnpm-store
+        uses: $/.github/actions/pnpm-store
       - name: Verify deps layer sibling links
         if: steps.deps-layer.outputs.match == 'true'
         run: node --import tsx scripts/ensure-ts-autocode-links.mts
@@ -1546,12 +1546,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
         with:
           disambiguator: ${{ matrix.shard }}
 
@@ -1622,13 +1622,13 @@ jobs:
           filter: blob:none
           fetch-tags: false
           clean: false
-      - uses: ./.github/actions/hobo-repo-checkout
+      - uses: $/.github/actions/hobo-repo-checkout
         with:
           fetch-depth: 1
           submodules: recursive
           bootstrap-composite-actions: "false"
           marker: packages/ci/src/freight-cli.ts
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode for HoBo's own Freight
         run: pnpm run pins:fetch ts-autocode
       - name: Install dependencies for HoBo's own Freight
@@ -1685,7 +1685,7 @@ jobs:
           clean: false
           # Depth 2 holds the PR merge commit and its first parent (the base tip).
           fetch-depth: 2
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Decide whether the diff reaches the artifact trust proof
         id: scope
         run: |
@@ -1724,7 +1724,7 @@ jobs:
           submodules: recursive
           clean: false
           fetch-depth: 2
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Decide whether the diff reaches the cold dev loop
         id: scope
         run: |
@@ -1829,7 +1829,7 @@ jobs:
           clean: false
           # Depth 2 holds the PR merge commit and its first parent (the base tip).
           fetch-depth: 2
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Decide whether the diff reaches the live data-engine suites
         id: scope
         run: |
@@ -1859,12 +1859,12 @@ jobs:
               >> "$GITHUB_OUTPUT"
       - name: Turbo cache
         if: steps.scope.outputs.run == 'true'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - if: steps.scope.outputs.run == 'true'
         run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
@@ -1918,12 +1918,12 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
       - name: CI trace
         if: always()
-        uses: ./.github/actions/ci-trace
+        uses: $/.github/actions/ci-trace
 
   ci-guard:
     name: CI fabric contract guard
@@ -1939,7 +1939,7 @@ jobs:
         with:
           submodules: recursive
           clean: false
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
       - name: CI runner image contract (manifest)
         run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
@@ -1962,7 +1962,7 @@ jobs:
         with:
           clean: false
           fetch-depth: 0
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Scan git history for secrets
         run: |
           set -euo pipefail

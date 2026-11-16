@@ -52,7 +52,7 @@ describe("Main full gate S0 sparse checkout", () => {
 	it("bootstraps local actions before using hobo-checkout", () => {
 		const bootstrap = mainGate.indexOf(`uses: actions/checkout@${checkoutSha}`);
 		const localCheckout = mainGate.indexOf(
-			"uses: ./.github/actions/hobo-checkout",
+			"uses: $/.github/actions/hobo-checkout",
 		);
 		expect(bootstrap).toBeGreaterThan(-1);
 		expect(localCheckout).toBeGreaterThan(bootstrap);
@@ -62,7 +62,7 @@ describe("Main full gate S0 sparse checkout", () => {
 
 	it("retains full history but skips submodules", () => {
 		expect(mainGate).toMatch(
-			/name: Checkout \(sparse S0, full history\)\n        uses: \.\/\.github\/actions\/hobo-checkout\n        with:\n          fetch-depth: 0\n          sparse-paths: \$\{\{ env\.S0_SPARSE_PATHS \}\}\n          submodules: "false"/,
+			/name: Checkout \(sparse S0, full history\)\n        uses: \$\/\.github\/actions\/hobo-checkout\n        with:\n          fetch-depth: 0\n          sparse-paths: \$\{\{ env\.S0_SPARSE_PATHS \}\}\n          submodules: "false"/,
 		);
 	});
 
@@ -71,7 +71,7 @@ describe("Main full gate S0 sparse checkout", () => {
 			"name: Checkout (sparse S0, full history)",
 		);
 		const preflight = mainGate.indexOf(
-			"uses: ./.github/actions/ci-runner-preflight",
+			"uses: $/.github/actions/ci-runner-preflight",
 		);
 		expect(preflight).toBeGreaterThan(checkout);
 		expect(mainGate).not.toContain("betterleaks-main-scan.mts");
@@ -138,7 +138,7 @@ describe("Main full gate S0 sparse checkout", () => {
 	it("fetches the ts-autocode pin before deps-layer or install", () => {
 		const fetch = mainGate.indexOf("pnpm run pins:fetch ts-autocode");
 		const preflight = mainGate.indexOf(
-			"uses: ./.github/actions/ci-runner-preflight",
+			"uses: $/.github/actions/ci-runner-preflight",
 		);
 		const link = mainGate.indexOf("name: Link deps layer");
 		const install = mainGate.indexOf("name: Install dependencies");
