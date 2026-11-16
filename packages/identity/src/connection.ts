@@ -216,6 +216,11 @@ export class ConnectionService {
 			}
 		}
 		const id = `conn_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+		if (this.byId.has(id)) {
+			throw Object.assign(new Error("generated connection id already exists"), {
+				code: "connection-id-conflict",
+			});
+		}
 		const time = this.now();
 		const flow = input.flow ?? "oauth2-obo";
 		const scopes = Object.freeze([...(input.scopes ?? [])]);
@@ -255,6 +260,11 @@ export class ConnectionService {
 		}
 		assertSameTenant(existing.tenant, this.tenant);
 		assertSubjectMayManage(existing, input.actor);
+		if (existing.status === "revoked") {
+			throw Object.assign(new Error("cannot authorize a revoked connection"), {
+				code: "connection-revoked",
+			});
+		}
 
 		const time = this.now();
 		const started = createConnectionAuthorizationStartedEvent({
@@ -391,6 +401,11 @@ export class ConnectionService {
 		reason: string;
 	}): ConnectionMutationResult {
 		const existing = this.require(input.idOrAlias);
+		if (existing.status === "revoked") {
+			throw Object.assign(new Error("cannot update a revoked connection"), {
+				code: "connection-revoked",
+			});
+		}
 		const event = createConnectionHealthChangedEvent({
 			connectionId: existing.id,
 			tenant: this.tenant,
@@ -594,6 +609,9 @@ export class ConnectionService {
 		const time = event.time;
 
 		if (event.type === CONNECTION_EVENTS.Created) {
+			// A duplicate creation fact must not replace an existing aggregate,
+			// especially one whose credentials have already been revoked.
+			if (existing) return;
 			const alias = isJsonString(event.data.alias)
 				? event.data.alias
 				: undefined;
@@ -636,6 +654,16 @@ export class ConnectionService {
 		}
 
 		if (!existing) return;
+		// Revocation is terminal even when replay encounters a late health,
+		// authorization, or rotation fact written by an older implementation.
+		if (
+			existing.status === "revoked" &&
+			(event.type === CONNECTION_EVENTS.Authorized ||
+				event.type === CONNECTION_EVENTS.HealthChanged ||
+				event.type === CONNECTION_EVENTS.NeedsReauth ||
+				event.type === CONNECTION_EVENTS.Rotated)
+		)
+			return;
 
 		if (event.type === CONNECTION_EVENTS.Authorized) {
 			const grantedScopes = Object.freeze([

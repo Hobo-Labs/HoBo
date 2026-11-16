@@ -176,6 +176,10 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
   `createContractAssertedHarnessFixtures`, `enrichEvaluationContext`,
   `selectFeatureFlagBackend`, `flag.*` / `rollout.*` / `experiment.*` events.
 
+## Connection revocation
+
+Provider connection revocation is terminal. Authorizing or marking a revoked connection for reauthorization is rejected; create a new connection instead. Replay also ignores late authorization, health, rotation, and duplicate creation facts that would revive the revoked connection.
+
 ## Verification
 
 ```sh
