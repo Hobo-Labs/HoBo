@@ -60,8 +60,6 @@ function protoFields(source: string, message: string): readonly string[] {
 		.slice(start + 1, end)
 		.replace(/\/\*[\s\S]*?\*\//gu, "")
 		.replace(/\/\/[^\n]*/gu, "");
-	// SAFETY: the pattern has one capture group and it always participates in a
-	// match, so field[1] is a string.
 	return [
 		...body.matchAll(
 			/(?:^|\n)\s*(?:optional\s+|repeated\s+)?[\w.<>, ]+?\s+([a-z_][\w]*)\s*=\s*\d+\s*;/gu,
@@ -93,7 +91,6 @@ describe("the wire contracts, read instead of the TypeScript", () => {
 			"region",
 			"objective",
 			"placement",
-			"cadence",
 		]);
 		expect(
 			protoFields(REQUIREMENT_PROTO, "CapabilityRequirement").length,
@@ -163,8 +160,6 @@ describe("the projection, performed rather than argued about", () => {
 	it("loses all four to the capability requirement — silently, without a refusal", () => {
 		// The only projection that exists: the required profiles are the ask, and
 		// everything else is offered alongside to see whether it is carried.
-		// SAFETY: deliberately off-contract input; the test asserts the parser drops
-		// the fields it does not know rather than relying on their types.
 		const projected = parseCapabilityRequirement({
 			requiredProfiles: INTENT.require.map((profileId) => ({ profileId })),
 			name: INTENT.name,

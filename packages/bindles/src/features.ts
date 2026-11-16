@@ -189,7 +189,7 @@ export function featureSpecsToStoreInputs(decl: FeaturesDeclaration): readonly {
 	readonly defaultVariant?: string;
 	readonly killSwitch?: boolean;
 	readonly metadata?: Readonly<Record<string, string>>;
-	readonly targeting?: NonNullable<FeatureFlagSpec["targeting"]>;
+	readonly targeting?: FeatureFlagSpec["targeting"];
 }[] {
 	return Object.freeze(
 		Object.entries(decl.features).map(([key, spec]) => {

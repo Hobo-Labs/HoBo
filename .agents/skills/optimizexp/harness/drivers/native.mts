@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+	existsSync,
 	mkdirSync,
 	readdirSync,
 	renameSync,
@@ -55,7 +56,7 @@ export function captureNative(
 				return [file, `${stat.mtimeMs}:${stat.size}`];
 			}),
 		);
-		const r = spawnSync("bash", ["-c", cmd], {
+		const r = spawnSync("bash", ["-lc", cmd], {
 			cwd: input.cwd,
 			env: { ...process.env, OUT_DIR: outDir },
 			encoding: "utf8",

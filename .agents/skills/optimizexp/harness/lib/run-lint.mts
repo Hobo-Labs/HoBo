@@ -215,7 +215,7 @@ export function lintRun(options: LintRunOptions): RunLintResult {
 
 	// 4. Cited evidence must hold together (sha-matched, reviewed, replayable).
 	for (const dir of citedEvidenceDirs(summary, repoRoot)) {
-		const evidenceProblems = validateEvidenceReview(dir, repoRoot);
+		const evidenceProblems = validateEvidenceReview(dir);
 		for (const p of evidenceProblems) {
 			problems.push(`${path.relative(repoRoot, dir)}: ${p}`);
 		}

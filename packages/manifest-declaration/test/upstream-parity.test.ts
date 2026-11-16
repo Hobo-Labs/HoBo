@@ -154,7 +154,7 @@ describe("the wire schema covers the declared shape", () => {
 		}
 
 		// If this ever becomes empty the assertions below stop meaning anything.
-		expect(optionalScalars).toEqual(["region", "cadence"]);
+		expect(optionalScalars).toEqual(["region"]);
 		for (const field of optionalScalars) {
 			expect(PROTO).toMatch(
 				new RegExp(`optional\\s+\\w+\\s+${field}\\s*=\\s*\\d+;`, "u"),

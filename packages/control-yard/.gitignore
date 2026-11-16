@@ -3,5 +3,3 @@ dist/
 node_modules/
 assets/_generative-archive/
 public/shots/*.diff.png
-public/shots/.capture-incomplete
-public/shots/.capture-lock/

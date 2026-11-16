@@ -67,13 +67,6 @@ const integer = (key: string, description: string) =>
 /** web */
 const WEB: readonly CapabilityProfileDescriptor[] = [
 	profile({
-		id: "web.project/v1",
-		primitive: "web",
-		displayName: "Provider web project",
-		description:
-			"An account-scoped provider project that owns web deployment configuration; it does not itself serve an artifact.",
-	}),
-	profile({
 		id: "web.static/v1",
 		primitive: "web",
 		displayName: "Static site",
@@ -156,17 +149,6 @@ const SERVICE: readonly CapabilityProfileDescriptor[] = [
 		description:
 			"Time-triggered execution. Never inferred from the ability to run a worker — it requires explicit product evidence and conformance.",
 		refines: ["service.worker/v1"],
-		features: [bool("cronExpressions", "Accepts cron-syntax schedules.")],
-	}),
-	profile({
-		// The `schedule` slot's profile (core's capability.schedule.cron). Its
-		// primitive is `service`: a schedule invokes compute (a Worker, or the
-		// consumer of the queue it sends to); the primitive set stays closed.
-		id: "schedule.cron/v1",
-		primitive: "service",
-		displayName: "Cron schedule",
-		description:
-			"A five-field cron cadence that runs its target at least once per tick: a Cron Trigger on a Worker, or a scheduled message on a queue.",
 		features: [bool("cronExpressions", "Accepts cron-syntax schedules.")],
 	}),
 	profile({

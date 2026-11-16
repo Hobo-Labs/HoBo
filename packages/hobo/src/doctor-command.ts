@@ -13,7 +13,6 @@ import {
 } from "@hobo/trails";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { buildBindingDeliveryDoctorSection } from "./binding-delivery-doctor.js";
-import { deployEnvironment } from "./compose.js";
 import {
 	type DeployTargetDescription,
 	describeDeployTarget,
@@ -34,30 +33,22 @@ interface StationDoctorReport {
 }
 
 export interface DoctorCommandDeps {
-	// Explicit environment snapshot for tests or an embedding host. Without one,
-	// use the same filtered process environment as the composed deploy path.
+	// The environment consulted for deploy credentials. Defaults to `process.env`.
+	// Injectable so a test can drive every backend lane without mutating the
+	// ambient process environment.
 	readonly env?: Record<string, string | undefined>;
 }
 
 // Turn the deploy-target description into operator-facing remediation lines.
-// Plain ambient tokens are ignored by the composed deploy path; recommend an
-// approved credential source instead of claiming an environment token works.
+// When already live, there is nothing to remediate; otherwise emit one line per
+// real backend naming the exact env var(s) still missing to activate it — this
+// is the answer to "how do I go live?" straight from the binary.
 function remediationFor(target: DeployTargetDescription): string[] {
 	if (target.live) return [];
-	return target.activate.map((option) => {
-		if (option.backend === "vercel" && option.missing.includes("VERCEL_TOKEN"))
-			return "Configure an approved Vercel credential source; plain VERCEL_TOKEN in the process environment is ignored.";
-		if (
-			option.backend === "cloudflare" &&
-			option.missing.includes("CLOUDFLARE_API_TOKEN")
-		) {
-			const account = option.missing.includes("CLOUDFLARE_ACCOUNT_ID")
-				? " Set CLOUDFLARE_ACCOUNT_ID for cloudflare."
-				: "";
-			return `Configure an approved Cloudflare credential source; plain CLOUDFLARE_API_TOKEN in the process environment is ignored.${account}`;
-		}
-		return `Set ${option.missing.join(" + ")} to deploy for real via ${option.backend}.`;
-	});
+	return target.activate.map(
+		(option) =>
+			`Set ${option.missing.join(" + ")} to deploy for real via ${option.backend}.`,
+	);
 }
 
 // `hobo doctor` — report the deploy target the current environment selects and,
@@ -71,7 +62,7 @@ export function createDoctorCommand(
 ): CommandModule {
 	return {
 		run: async ({ emitProgress }) => {
-			const env = deployEnvironment(deps.env);
+			const env = deps.env ?? process.env;
 			const target = describeDeployTarget(env);
 			emitProgress(target.summary);
 

@@ -75,26 +75,12 @@ function defaultWorkspacePackageExists(workspace: string) {
 	return existsSync(`${workspace}/package.json`);
 }
 
-function defaultWorkspaceTestInfo(
-	workspace: string,
-): { name: string; narrow: boolean } | undefined {
+function defaultWorkspacePackageName(workspace: string): string | undefined {
 	try {
-		const manifest: {
-			name?: string;
-			scripts?: { test?: string; pretest?: string; posttest?: string };
-		} = JSON.parse(readFileSync(`${workspace}/package.json`, "utf8"));
-		if (!manifest.name) return undefined;
-		const { test, pretest, posttest } = manifest.scripts ?? {};
-		return {
-			name: manifest.name,
-			narrow:
-				test === "vitest run" &&
-				posttest === undefined &&
-				(pretest === undefined ||
-					/^node --experimental-strip-types (?:\.\.\/)+scripts\/ensure-built\.mts$/u.test(
-						pretest,
-					)),
-		};
+		const manifest: { name?: string } = JSON.parse(
+			readFileSync(`${workspace}/package.json`, "utf8"),
+		);
+		return manifest.name;
 	} catch {
 		return undefined;
 	}
@@ -135,16 +121,10 @@ function defaultImportsTsAutocode(file: string) {
 export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/attestation.test.ts",
 	"scripts/test/verify-attestation.test.ts",
-	"scripts/test/trusted-route.test.ts",
 	"scripts/test/attested-jobs.test.ts",
 	"scripts/test/merge-group-gate.test.ts",
 	"scripts/test/lint-actions-runner.test.ts",
 	"scripts/test/local-attest.test.ts",
-	"scripts/test/fleet-signoff.test.ts",
-	"scripts/test/github-pr-target.test.ts",
-	"scripts/test/github-status-permission.test.ts",
-	"scripts/test/github-merge-group.test.ts",
-	"scripts/test/local-merge-group.test.ts",
 ];
 
 const SIGNED_LOCAL_RUN_GUARDED = new Set([
@@ -156,11 +136,6 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/attestation.mts",
 	"scripts/ci/verify-attestation.mts",
 	"scripts/ci/local-attest.mts",
-	"scripts/ci/fleet-signoff.mts",
-	"scripts/ci/github-pr-target.mts",
-	"scripts/ci/github-target.mts",
-	"scripts/ci/github-status-permission.mts",
-	"scripts/ci/github-merge-group.mts",
 	"scripts/ci/route-runner.mts",
 	// The route script loads it, so it is on the attested path too.
 	"scripts/ci/runner-routing.mts",
@@ -275,13 +250,11 @@ export function selectRelevantChecks(
 		touched(["apps/web", "packages/ui", "site"]) ||
 		touchedAny([
 			/\.(tsx|jsx|css|astro)$/u,
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
+			/^scripts\/check-visual-tokens\.mts$/u,
 		]);
-	const designMdChanged =
+	const visualTokensChanged =
 		touchedAny([
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
+			/^scripts\/check-visual-tokens\.mts$/u,
 			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
 		]) || uiChanged;
 	const behaviorChanged =
@@ -467,9 +440,9 @@ export function selectRelevantChecks(
 			files.some((file) => file.startsWith(`${workspace}/vitest.config.`)) ||
 			(testFiles.length > 0 && vitestPaths.length === 0);
 		if (requiresFullWorkspaceTest) return [];
-		const testInfo = defaultWorkspaceTestInfo(workspace);
-		if (!testInfo?.narrow) return [];
-		return [{ workspace, packageName: testInfo.name, vitestPaths }];
+		const packageName = defaultWorkspacePackageName(workspace);
+		if (!packageName) return [];
+		return [{ workspace, packageName, vitestPaths }];
 	});
 	const narrowWorkspaces = new Set(
 		narrowWorkspaceTests.map(({ workspace }) => workspace),
@@ -495,29 +468,6 @@ export function selectRelevantChecks(
 				reason: `workspace tests for ${turboWorkspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
 			});
 		}
-	}
-
-	if (
-		narrowWorkspaceTests.length > 0 &&
-		!options.workspaceTestsCoveredExternally
-	) {
-		checks.push({
-			command: "pnpm",
-			args: [
-				"exec",
-				"turbo",
-				"run",
-				"build",
-				...narrowWorkspaceTests.map(
-					({ workspace }) => `--filter=./${workspace}`,
-				),
-				"--output-logs=new-only",
-				turboConcurrencyArg(),
-			],
-			reason:
-				"build each narrow-test workspace and its dependencies before running its selected tests",
-			serial: true,
-		});
 	}
 
 	for (const {
@@ -757,25 +707,6 @@ export function selectRelevantChecks(
 			reason: "agent workflow/eval changed; live evals are manual only",
 		});
 
-	const openSaasVitestInputs = (file: string) => {
-		const normalized = file.replaceAll("\\", "/");
-		return (
-			normalized.startsWith("examples/wasp-opensaas/app/src/") ||
-			normalized.startsWith("examples/wasp-opensaas/app/test/") ||
-			normalized.startsWith("examples/wasp-opensaas/app/scripts/") ||
-			normalized === "examples/wasp-opensaas/app/package.json" ||
-			normalized === "examples/wasp-opensaas/app/vitest.config.ts"
-		);
-	};
-	if (files.some(openSaasVitestInputs)) {
-		checks.push({
-			command: "npm",
-			args: ["--prefix", "examples/wasp-opensaas/app", "run", "ci:test:unit"],
-			reason:
-				"Open SaaS example app source/tests changed; npm ci:test:unit lane (not a pnpm workspace)",
-		});
-	}
-
 	if (touched(["scripts", "test", "tests"]) || rootConfigChanged) {
 		checks.push({
 			command: "pnpm",
@@ -868,14 +799,12 @@ export function selectRelevantChecks(
 		});
 	}
 
-	// Google DESIGN.md visual contract for every web UI package (site + future apps).
-	// Pre-commit routes here via check:relevant:staged when UI/DESIGN.md changes.
-	if (designMdChanged || automationChanged) {
+	if (visualTokensChanged || automationChanged) {
 		checks.push({
 			command: "pnpm",
 			args: ["run", "design:lint"],
 			reason:
-				"web UI or DESIGN.md changed; Google designmd lint must pass for all web UI projects",
+				"UI changes must preserve the implemented palette contrast requirements",
 		});
 	}
 
@@ -929,7 +858,7 @@ export function selectRelevantChecks(
 		schemaChanged && "schema",
 		pactChanged && "contract",
 		uiChanged && "ui",
-		designMdChanged && "design-md",
+		visualTokensChanged && "visual-tokens",
 		behaviorChanged && "behavior",
 		visualChanged && "visual",
 		agentEvalChanged && "agent-eval",

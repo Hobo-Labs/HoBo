@@ -50,17 +50,3 @@ message BindleGraph {
   map<string, BindleResourceRecord> resources = 2;
   repeated BindleEdge edges = 3;
 }
-
-// The continuity trait's config (`continuity()`, src/continuity.ts): a
-// stateful resource's HA/DR, replication and migration policy.
-message ContinuityPolicy {
-  string tier = 1;
-  string on_loss = 2;
-  int64 recovery_point_ms = 3;
-  int64 failover_after_ms = 4;
-  int32 standbys = 5;
-  string migration = 6;
-  int64 backup_every_ms = 7;
-  int32 backups_kept = 8;
-  optional int64 monthly_budget_micros = 9;
-}

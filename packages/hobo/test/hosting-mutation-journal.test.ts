@@ -66,30 +66,6 @@ describe("durable provider mutation claims", () => {
 			).status,
 		).toBe("uncertain");
 	});
-	it("inspects a claim without creating one, across a reopen", async () => {
-		const fx = fixture();
-		const mutationId = "vercel:create:project";
-		const { journal } = fx.connect();
-		expect(await journal.inspect?.({ mutationId, requestDigest })).toEqual({
-			status: "missing",
-		});
-		expect(await journal.claim({ mutationId, requestDigest })).toEqual({
-			status: "claimed",
-		});
-		expect(await journal.inspect?.({ mutationId, requestDigest })).toEqual({
-			status: "uncertain",
-		});
-		await journal.acknowledge(mutationId, requestDigest);
-		expect(
-			await fx.connect().journal.inspect?.({ mutationId, requestDigest }),
-		).toEqual({ status: "acknowledged" });
-		await expect(
-			journal.inspect?.({
-				mutationId,
-				requestDigest: `sha256:${"b".repeat(64)}`,
-			}),
-		).rejects.toThrow("different request");
-	});
 	it("replays acknowledgement and rejects changed-request reuse", async () => {
 		const { journal } = fixture().connect();
 		await journal.claim({ mutationId: "create:app", requestDigest });

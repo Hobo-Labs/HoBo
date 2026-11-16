@@ -1,26 +1,26 @@
-/**
- * The secret-capture form, one page for both channels:
- *
- * - `mcp-app`: the `ui://hobo/secret-capture` resource an MCP Apps host
- *   renders in its sandboxed iframe. It learns its ticket from the
- *   `ui/notifications/tool-result` of `capture_secret`, seals the value with
- *   Web Crypto, and calls the app-only `submit_secret_value` tool through the
- *   host (`tools/call` over `postMessage`). It never sends
- *   `ui/message` or `ui/update-model-context`, so nothing it holds is put in
- *   front of the model.
- * - `loopback`: the page the MCP server itself serves on 127.0.0.1 when the
- *   host has no MCP Apps support. Its ticket is embedded; its one-time token
- *   is the URL fragment; it POSTs the sealed value to its own origin.
- *
- * Visual contract: `packages/mcp/DESIGN.md` (HoBo Rubberhose tokens from
- * `site/DESIGN.md`): ink on paper, paper on ink at night, thick ink rules, a
- * sticker shadow on the one pressable, spark only for focus and the error
- * rule, go only for the stored rule. No external fonts, images or scripts.
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { SECRET_CAPTURE_SEAL_SOURCE } from "./seal.js";
 
-/** The hex values this surface may use; the design-lint test holds it to them. */
+
 export const SECRET_CAPTURE_TOKEN_VALUES: ReadonlySet<string> = new Set([
 	"#ffffff",
 	"#101010",
@@ -36,12 +36,10 @@ export const SECRET_CAPTURE_TOKEN_VALUES: ReadonlySet<string> = new Set([
 	"#f2f1ec",
 ]);
 
-/** What the loopback page embeds about its ticket. No value, no token. */
+
 export type SecretCapturePageTicket = Readonly<{
 	ticketId: string;
 	name: string;
-	/** Where the value goes: a store, or (`handoff`) only the run waiting for it. */
-	target: string;
 	label: string;
 	purpose: string;
 	charset: string;
@@ -54,12 +52,12 @@ export type SecretCapturePageOptions =
 	| Readonly<{ mode: "mcp-app" }>
 	| Readonly<{
 			mode: "loopback";
-			/** The CSP nonce for this response's one style and two scripts. */
+
 			nonce: string;
 			ticket: SecretCapturePageTicket;
 	  }>;
 
-/** JSON for a `<script type="application/json">`: nothing in it can end the element. */
+
 type PageConfig = Readonly<{
 	mode: "mcp-app" | "loopback";
 	ticket?: SecretCapturePageTicket;
@@ -191,7 +189,7 @@ button:disabled { cursor: progress; opacity: 0.6; }
 }
 `;
 
-/** The page's behaviour; `MODE` is replaced per channel. */
+
 const SCRIPT = `(function () {
   "use strict";
   ${SECRET_CAPTURE_SEAL_SOURCE}
@@ -212,9 +210,7 @@ const SCRIPT = `(function () {
   function finish(answer) {
     clearFields();
     form.hidden = true;
-    done.textContent = String(answer.ref || "").indexOf("handoff://") === 0
-      ? "Handed to the waiting run. You can close this."
-      : (answer.status === "authorized" ? "Writes authorized for this session (" : "Stored in the secret store as ") + answer.ref + (answer.status === "authorized" ? "). " : ". ") + "You can close this.";
+    done.textContent = (answer.status === "authorized" ? "Writes authorized for this session (" : "Stored in the secret store as ") + answer.ref + (answer.status === "authorized" ? "). " : ". ") + "You can close this.";
     done.hidden = false;
     resize();
   }
@@ -224,13 +220,6 @@ const SCRIPT = `(function () {
     el("capture-purpose").textContent = next.purpose || "";
     el("capture-name").textContent = next.name;
     el("capture-waiting").hidden = true;
-    // A hand-over goes only to the run waiting for it, never to a store.
-    var handoff = next.target === "handoff";
-    el("capture-caption").textContent = handoff ? "HoBo deploy · hand-over" : "HoBo deploy · secret store";
-    el("capture-help").textContent = handoff
-      ? "It is encrypted in this window and goes only to the run waiting for it. The agent never sees it, and it is not shown here again."
-      : "It is encrypted in this window and written straight to the secret store. The agent never sees it, and it is not shown here again.";
-    submit.textContent = handoff ? "Hand it over" : "Store it";
     if (next.state === "stored" || next.state === "authorized") { finish({ status: next.state, ref: next.ref }); return; }
     var multiline = next.charset === "printable-multiline";
     multi.hidden = !multiline;
@@ -360,7 +349,7 @@ export function renderSecretCaptureHtml(
 </head>
 <body>
 <main class="card" aria-labelledby="capture-title">
-<p id="capture-caption" class="caption">HoBo deploy · secret store</p>
+<p class="caption">HoBo deploy · secret store</p>
 <h1 id="capture-title">Add <span id="capture-label">a secret</span></h1>
 <p id="capture-purpose" class="purpose"></p>
 <p id="capture-waiting" class="note">Waiting for the agent's request.</p>

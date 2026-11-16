@@ -970,10 +970,7 @@ export class SqliteJournal {
 
 			for (const row of candidates) {
 				const messageId = asText(row.message_id, "message_id");
-				const attempt = nextDeliveryAttempt(
-					row.delivery_attempt,
-					"delivery_attempt",
-				);
+				const attempt = asNumber(row.delivery_attempt, "delivery_attempt") + 1;
 				this.db
 					.prepare(
 						`UPDATE queue_messages
@@ -1010,19 +1007,16 @@ export class SqliteJournal {
 		messageId: string,
 		leaseId: string,
 		leaseFence: bigint,
-		deliveryAttempt: number,
 	): boolean {
-		if (!Number.isSafeInteger(deliveryAttempt) || deliveryAttempt < 1)
-			return false;
 		const now = this.clock.now();
 		const result = this.db
 			.prepare(
 				`UPDATE queue_messages
          SET state = 'completed', completed_at = ?, lease_id = NULL, lease_fence = NULL, lease_expires_at = NULL
-          WHERE message_id = ? AND state = 'leased'
-            AND lease_id = ? AND lease_fence = ? AND delivery_attempt = ?`,
+         WHERE message_id = ? AND state = 'leased'
+           AND lease_id = ? AND lease_fence = ?`,
 			)
-			.run(now, messageId, leaseId, leaseFence, deliveryAttempt);
+			.run(now, messageId, leaseId, leaseFence);
 		return result.changes === 1;
 	}
 
@@ -1041,7 +1035,6 @@ export class SqliteJournal {
 		headers: Record<string, string>;
 		leaseId: string;
 		leaseFence: bigint;
-		deliveryAttempt: number;
 	}> {
 		const now = this.clock.now();
 		const expiresAt = new Date(
@@ -1055,7 +1048,6 @@ export class SqliteJournal {
 			headers: Record<string, string>;
 			leaseId: string;
 			leaseFence: bigint;
-			deliveryAttempt: number;
 		}> = [];
 		this.db.beginImmediate();
 		try {
@@ -1077,10 +1069,6 @@ export class SqliteJournal {
 				.all(now, input.limit);
 			for (const row of rows) {
 				const outboxId = asText(row.outbox_id, "outbox_id");
-				const deliveryAttempt = nextDeliveryAttempt(
-					row.attempt_count,
-					"attempt_count",
-				);
 				this.db
 					.prepare(
 						`UPDATE outbox
@@ -1108,7 +1096,6 @@ export class SqliteJournal {
 					headers,
 					leaseId: input.leaseId,
 					leaseFence: input.leaseFence,
-					deliveryAttempt,
 				});
 			}
 			this.db.commit();
@@ -1123,23 +1110,16 @@ export class SqliteJournal {
 		}
 	}
 
-	ackOutbox(
-		outboxId: string,
-		leaseId: string,
-		leaseFence: bigint,
-		deliveryAttempt: number,
-	): boolean {
-		if (!Number.isSafeInteger(deliveryAttempt) || deliveryAttempt < 1)
-			return false;
+	ackOutbox(outboxId: string, leaseId: string, leaseFence: bigint): boolean {
 		const now = this.clock.now();
 		const result = this.db
 			.prepare(
 				`UPDATE outbox
          SET state = 'acked', acknowledged_at = ?, lease_id = NULL, lease_fence = NULL, lease_expires_at = NULL
          WHERE outbox_id = ? AND state = 'leased'
-           AND lease_id = ? AND lease_fence = ? AND attempt_count = ?`,
+           AND lease_id = ? AND lease_fence = ?`,
 			)
-			.run(now, outboxId, leaseId, leaseFence, deliveryAttempt);
+			.run(now, outboxId, leaseId, leaseFence);
 		return result.changes === 1;
 	}
 
@@ -1606,18 +1586,6 @@ function requireNonNegInt<T>(value: T, field: string): number {
 		throw new TypeError(`${field} must be a non-negative safe integer`);
 	}
 	return value;
-}
-
-function nextDeliveryAttempt<T>(value: T, field: string): number {
-	const previous = asNumber(value, field);
-	if (
-		!Number.isSafeInteger(previous) ||
-		previous < 0 ||
-		previous >= Number.MAX_SAFE_INTEGER
-	) {
-		throw new RangeError(`${field} cannot be incremented safely`);
-	}
-	return previous + 1;
 }
 
 function cloneJson<T>(value: T): T {

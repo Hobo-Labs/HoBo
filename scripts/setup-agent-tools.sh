@@ -266,11 +266,7 @@ if have npx; then
   if [ "${#CAVEMAN_ARGS[@]}" -gt 0 ]; then
     NPX -y "github:JuliusBrussee/caveman" "${CAVEMAN_ARGS[@]}" --with-init --no-hooks \
       && echo "  installed" || echo "  FAILED"
-    rm -rf .windsurf .clinerules .opencode
-    if ! git ls-files --error-unmatch .github/copilot-instructions.md >/dev/null 2>&1; then
-      rm -f .github/copilot-instructions.md
-      rmdir .github 2>/dev/null || true
-    fi
+    rm -rf .windsurf .clinerules .opencode; rm -f .github/copilot-instructions.md; rmdir .github 2>/dev/null || true
   else echo "  SKIP: no selected caveman-capable agent"; fi
 else echo "  SKIP: npx missing"; fi
 

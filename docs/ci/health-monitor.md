@@ -49,7 +49,7 @@ with that note.
 overruled because GitHub did not confirm timely pickup), `fallback` (no slip could be used and the
 queue rule decided; `why` says which: `no routing slip`, `slip expired`, `slip malformed`, `slip names another
 repository`, `slip names a label not in runnerRouting.labels`, or the Git API failure) or `unasked` (`why`:
-`pinned` or `batch`). `refusedBy` is `slip`, `queue` or `none`. A slip fallback also prints a
+`pinned` or `attested`). `refusedBy` is `slip`, `queue` or `none`. A slip fallback also prints a
 `hobo-ci-route-fallback` warning that starts `routing slip not used`; the monitor reads the notice for it, and
 counts under H1 only the warnings that say the route did not run at all. Version-1 notices (the hosted relay's
 `relay`/`verdict` fields) are no longer read.

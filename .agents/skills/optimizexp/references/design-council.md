@@ -253,7 +253,7 @@ current-head validation does not fail on reviewed recordings or screenshots.
 
 A change is design-relevant when paths or acceptance tags touch user-facing web,
 TUI, CLI, docs, SDK/API, configuration, onboarding, examples, brand, motion,
-interaction, `DESIGN.md`, design tokens, components, public errors, or OptimizeXP
+interaction, design tokens, components, public errors, or OptimizeXP
 evidence; when user/coordinator explicitly requests review; or when a prior
 council cycle exists. A purely internal refactor may use a machine-readable,
 justified exemption. Skipping silently is invalid.

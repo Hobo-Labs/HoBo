@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createComposedHoboCli } from "../src/cli.js";
 import { createDoctorCommand } from "../src/doctor-command.js";
@@ -21,30 +21,7 @@ function runInput(emit: (m: string) => void) {
 	};
 }
 
-afterEach(() => vi.unstubAllEnvs());
-
 describe("createDoctorCommand", () => {
-	it("does not report ambient provider tokens as usable deployment credentials", async () => {
-		const home = mkdtempSync(join(tmpdir(), "hobo-doctor-ambient-"));
-		try {
-			vi.stubEnv("HOBO_HOME", home);
-			vi.stubEnv("HOBO_CREDENTIALS", undefined);
-			vi.stubEnv("HOBO_OPENSESAME_CHILD", undefined);
-			vi.stubEnv("CLOUDFLARE_API_TOKEN", undefined);
-			vi.stubEnv("VERCEL_TOKEN", "ambient-test-token");
-			const result = await createDoctorCommand().run(runInput(() => {}));
-			expect(result).toMatchObject({
-				status: "in-memory",
-				data: { backend: "in-memory", live: false },
-			});
-			expect(result.remediation).toContain(
-				"Configure an approved Vercel credential source; plain VERCEL_TOKEN in the process environment is ignored.",
-			);
-		} finally {
-			rmSync(home, { recursive: true, force: true });
-		}
-	});
-
 	it("reports a live Cloudflare target", async () => {
 		const progress: string[] = [];
 		const command = createDoctorCommand({
@@ -109,8 +86,8 @@ describe("createDoctorCommand", () => {
 		expect(result.code).toBe("HOBO_DEPLOY_MOCKED");
 		expect(result.remediation).toEqual(
 			expect.arrayContaining([
-				"Configure an approved Vercel credential source; plain VERCEL_TOKEN in the process environment is ignored.",
-				"Configure an approved Cloudflare credential source; plain CLOUDFLARE_API_TOKEN in the process environment is ignored. Set CLOUDFLARE_ACCOUNT_ID for cloudflare.",
+				"Set VERCEL_TOKEN to deploy for real via vercel.",
+				"Set CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID to deploy for real via cloudflare.",
 			]),
 		);
 		expect(result.data).toMatchObject({

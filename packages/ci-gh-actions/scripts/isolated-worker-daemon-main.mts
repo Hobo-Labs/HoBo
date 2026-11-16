@@ -80,7 +80,6 @@ import {
 	ROUTING_SLIP_SAMPLE_MS,
 	readAvailableMemoryMb,
 	readBoxRoutingPolicy,
-	readHandedWorkerSecrets,
 	readHostHealthSample,
 	readHostMemory,
 	readHostResourcePressureSample,
@@ -280,14 +279,9 @@ const plan = resolveWorkerStorePlan(
 	routing.box.jobAdmission,
 );
 const appId = required("HOBO_CI_GITHUB_APP_ID");
-// A supervising host (hobo ci serve --with-worker) hands the key and the
-// webhook secret over on an inherited pipe, not the environment or a file.
-const handed = readHandedWorkerSecrets(process.env);
-const privateKey =
-	handed?.githubAppPrivateKey ??
-	(process.env.HOBO_CI_GITHUB_APP_KEY_FILE
-		? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
-		: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY"));
+const privateKey = process.env.HOBO_CI_GITHUB_APP_KEY_FILE
+	? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
+	: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
 // A worker's configuration is its own file or variable. One that has
 // neither and is told where a mesh is asks the mesh, so adding a box takes a
 // NATS address and App credentials and nothing else.
@@ -318,10 +312,9 @@ const publicOrigin =
 		: required("HOBO_CI_PUBLIC_URL");
 // The secret only authenticates pushed webhooks; pull mode never verifies one.
 const webhookSecret =
-	handed?.webhookSecret ??
-	(plan.admission === "pull" && !process.env.HOBO_CI_WEBHOOK_SECRET
+	plan.admission === "pull" && !process.env.HOBO_CI_WEBHOOK_SECRET
 		? randomBytes(32).toString("hex")
-		: required("HOBO_CI_WEBHOOK_SECRET"));
+		: required("HOBO_CI_WEBHOOK_SECRET");
 // Slots bound container count only. Memory admission also requires active + reserved
 // requests (including a warm container) to fit the host/cgroup budget, and reserves
 // the heavy class for trunk. While a trunk lease is active, prCapWithTrunk limits

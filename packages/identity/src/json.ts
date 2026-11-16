@@ -44,20 +44,6 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 	return tagOf.call(value) === "[object Array]";
 }
 
-export function sameJson<T, U>(left: T, right: U): boolean {
-	const canonical = (value: T | U) =>
-		JSON.stringify(value, (_key, item: JsonValue) =>
-			isJsonObject(item)
-				? Object.fromEntries(
-						Object.entries(item).sort(([a], [b]) =>
-							a < b ? -1 : a > b ? 1 : 0,
-						),
-					)
-				: item,
-		);
-	return canonical(left) === canonical(right);
-}
-
 /** Clone a domain value across the JSON document boundary. */
 export function cloneAsJson<T>(value: T): JsonValue {
 	return parseJsonValue(JSON.stringify(value ?? null));

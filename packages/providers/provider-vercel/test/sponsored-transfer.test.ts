@@ -47,7 +47,6 @@ function bundle() {
 		deploymentRef: "deployment-1",
 		projectSubjectRef: PROJECT_SUBJECT,
 		resourceSubjectRef: RESOURCE_SUBJECT,
-		associatedResourceProvider: "prisma",
 		transferCodeExpiresAt: TRANSFER_DEADLINE,
 		oneTimeActionRef: "ota-1",
 	});
@@ -70,7 +69,6 @@ function provisioned() {
 		lease,
 		projectSubjectRef: PROJECT_SUBJECT,
 		resourceSubjectRef: RESOURCE_SUBJECT,
-		associatedResourceProvider: "prisma",
 		idempotencyKey: "attempt-1",
 	});
 	for (const command of commands) {
@@ -215,16 +213,14 @@ describe("sponsor budget is a gate, not a preference", () => {
 });
 
 describe("application and database are two ownership facts", () => {
-	it("keeps project and database ownership with their respective providers", () => {
+	it("emits two provider-bundled claim items with distinct subjects", () => {
 		const claim = bundle();
 		expect(claim.items).toHaveLength(2);
-		expect(claim.atomicity).toBe("best-effort-saga");
+		expect(claim.atomicity).toBe("provider-bundled");
 		const [project, resource] = claim.items;
 		expect(project?.subjectKind).toBe("camp");
-		expect(project?.providerId).toBe("vercel");
 		expect(project?.mode).toBe("project-transfer");
 		expect(resource?.subjectKind).toBe("resource");
-		expect(resource?.providerId).toBe("prisma");
 		expect(resource?.mode).toBe("resource-claim");
 		expect(resource?.subjectRef).toContain("prisma-postgres");
 		expect(resource?.postClaimActions).toContain("rotate-binding");

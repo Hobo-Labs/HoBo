@@ -75,9 +75,9 @@ export function sheetForConnectionCreate(
 			}),
 			field({
 				name: "alias",
-				label: "Alias (optional)",
+				label: "Alias",
 				type: "string",
-				value: "",
+				value: "work",
 			}),
 			field({
 				name: "scopes",
@@ -225,8 +225,6 @@ export function sheetForDoctor(snap?: YardProjectionSnapshot): GenerativeSheet {
 	});
 }
 
-type SheetValues = Record<string, string | number>;
-
 export type SheetConfirmHandlers = Readonly<{
 	connectionCreate: (input: {
 		provider: string;
@@ -237,19 +235,24 @@ export type SheetConfirmHandlers = Readonly<{
 	connectionAuthorize: (input: { idOrAlias: string }) => ManagementResult;
 	stationRailsActivate: (input: { hashOrId: string }) => ManagementResult;
 	stationRailsApprove: (input: { hashOrId: string }) => ManagementResult;
-	stationRailsPublish: (input: SheetValues) => ManagementResult;
+	stationRailsPublish: (input: Record<string, unknown>) => ManagementResult;
 	doctorSnapshot: () => ManagementResult;
 }>;
 
 /** Confirm a sheet with field values → management op. */
 export function confirmSheet(
 	sheet: GenerativeSheet,
-	values: SheetValues,
+	values: Record<string, string | number>,
 	handlers: SheetConfirmHandlers,
 ): ManagementResult {
 	switch (sheet.confirmOp) {
 		case "connectionCreate": {
-			const input: Parameters<SheetConfirmHandlers["connectionCreate"]>[0] = {
+			const input: {
+				provider: string;
+				alias?: string;
+				scopes?: string[];
+				stationId?: string;
+			} = {
 				provider: String(values.provider ?? ""),
 			};
 			if (values.alias !== undefined && String(values.alias).length > 0) {

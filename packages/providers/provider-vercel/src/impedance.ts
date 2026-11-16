@@ -1,5 +1,5 @@
 // Impedance boundaries for Vercel (ADR-0144 pattern — typed evidence for
-// PortabilityReport). A Yard advertises only its provider's products.
+// PortabilityReport). Marketplace Neon/Upstash are integration-backed.
 
 // public-contract: versions provider impedance reports.
 export const VERCEL_IMPEDANCE_SCHEMA = "hobo.provider-impedance/v1";
@@ -22,19 +22,19 @@ export function vercelImpedanceFindings(input: {
 	const findings: ImpedanceFinding[] = [];
 	if (input.paradigm === "relational" || input.paradigm === "postgres") {
 		findings.push({
-			code: "no-native-postgres",
-			severity: "block",
+			code: "integration-backed-database",
+			severity: "warn",
 			message:
-				"Vercel has no native Postgres product; declare the database provider in its own Yard and connect the Yards through a Junction",
+				"native postgres on Vercel is marketplace Neon (integration-backed); declare integration or match another provider",
 		});
 	}
 	const features = input.features ?? [];
 	if (features.includes("queue")) {
 		findings.push({
-			code: "queue-resolver-unavailable",
+			code: "no-native-queue",
 			severity: "block",
 			message:
-				"Vercel Queues belong to a Git deployment; this provider version has no deployment-component queue resolver",
+				"Vercel has no native queue port; prefer in-memory degrade or select a provider that advertises queue",
 		});
 	}
 	return findings;

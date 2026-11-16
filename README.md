@@ -22,13 +22,6 @@ The [Vercel package](./packages/ci-vercel/README.md) also runs Vercel CI-tagged
 Turbo checks locally with `pnpm ci:local`; keep hosted CI disabled to avoid
 Vercel CI compute charges.
 
-The AWS and Vercel provider tests also have vendor-emulator coverage. The
-[AWS lane](./packages/providers/provider-aws/README.md#aws-emulator-lane)
-is opt-in and starts AWS Emulator locally; the
-[Vercel lane](./packages/providers/provider-vercel/README.md#local-vercel-api-emulation)
-uses Vercel Labs' API emulator in-process. Each documents the scenarios and
-service limitations it covers.
-
 ## HoBo.CD
 
 [HoBo.CD](./packages/cd/README.md) is the delivery sibling of HoBo.CI

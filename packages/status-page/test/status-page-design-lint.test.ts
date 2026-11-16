@@ -1,8 +1,3 @@
-/**
- * Design-lint gate for the rendered status-page surface (DESIGN.md).
- * Token-only hexes, no SaaS palette, no soft elevation, sticker shadows on
- * pressables only.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -67,7 +62,7 @@ function renderedSurface(): string {
 const html = renderedSurface();
 
 describe("status-page design lint (HoBo Rubberhose)", () => {
-	it("uses only DESIGN.md palette hexes", () => {
+	it("uses only implemented palette tokens", () => {
 		const hexes = html.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
 		for (const hex of hexes) {
 			expect(
@@ -91,7 +86,6 @@ describe("status-page design lint (HoBo Rubberhose)", () => {
 
 	it("uses thick ink outlines, never 1px hairlines", () => {
 		expect(html).toContain("border:3px solid");
-		// 1px hairline borders are banned; the 1px pressed-state shadow is canon.
 		expect(html).not.toMatch(/border[^;{}]*:\s*1px/);
 		expect(html).not.toMatch(/\b1px\s+solid\b/);
 	});

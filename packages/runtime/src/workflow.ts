@@ -5,8 +5,6 @@
 // tip. The journal it writes is the same `run.*` shape the existing replay
 // engine (`./replay`) verifies, so a completed run is replay-equivalent.
 
-import { randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import {
 	type Capability,
 	type CtxEffects,
@@ -32,22 +30,6 @@ import {
 } from "./replay/store.js";
 import { runWithRetries } from "./step.js";
 import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
-import {
-	captureWorkflowInput,
-	captureWorkflowResult,
-	type ParsedRunStepCompleted,
-	type ParsedRunStepFailed,
-	parseRunCompletedFact,
-	parseRunFailedFact,
-	parseRunStartedFact,
-	parseRunStepCompletedFact,
-	parseRunStepFailedFact,
-	parseRunStepScheduledFact,
-	readJournaledWorkflowResult,
-	replayStepCompletedResult,
-	requireWorkflowRunId,
-	terminalCompletedHandleResult,
-} from "./workflow-value.js";
 
 /** Durability primitives are always granted; effect capabilities are declared. */
 const DURABILITY_CAPABILITIES: readonly Capability[] = [
@@ -124,10 +106,10 @@ export interface WorkflowEngineOptions {
 
 export interface WorkflowEngine {
 	readonly store: EventStoreWriter;
+	/** Fresh run: journals `run.Started`, then executes to completion/failure. */
 	start<A, R>(
 		def: WorkflowDefinition<A, R>,
 		args: A,
-		options?: { runId?: string },
 	): Promise<WorkflowRunHandle<R>>;
 	/** Resume after a host restart: replays the journal, continues from the tip. */
 	resume<A, R>(
@@ -148,30 +130,6 @@ const DEFAULT_TOKEN_BROKER: TokenBroker = (request: WitTokenRequest) =>
 		ref: `stub://${request.provider}/${request.scope}`,
 	}) satisfies WitTokenHandle;
 
-function listStepOutcomeIndices(
-	journal: ReadonlyArray<{ type: string; data: JsonValue }>,
-): number[] {
-	const indices: number[] = [];
-	for (const event of journal) {
-		if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-			const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
-			indices.push(fact.index);
-		} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-			const fact = parseRunStepFailedFact(cloneAsJson(event.data));
-			indices.push(fact.index);
-		}
-	}
-	return indices;
-}
-
-function maxStepOutcomeIndex(indices: number[]): number {
-	let max = -1;
-	for (const index of indices) {
-		if (index > max) max = index;
-	}
-	return max;
-}
-
 export function createWorkflowEngine(
 	options: WorkflowEngineOptions = {},
 ): WorkflowEngine {
@@ -179,6 +137,8 @@ export function createWorkflowEngine(
 	const seed = options.seed ?? "hobo-runtime-authoring-seed";
 	const tokenBroker = options.tokenBroker ?? DEFAULT_TOKEN_BROKER;
 	const actorHost = options.actorHost;
+
+	let runCounter = 0;
 
 	async function execute<A, R>(
 		def: WorkflowDefinition<A, R>,
@@ -188,161 +148,8 @@ export function createWorkflowEngine(
 		const streamId = `run/${runId}`;
 		const journal = await store.readStream(streamId);
 		let seq = journal.at(-1)?.seq ?? 0;
-		const startedEvents = journal.filter(
-			(event) => event.type === "run.Started",
-		);
-		if (startedEvents.length !== 1) {
-			throw new Error(
-				startedEvents.length > 1
-					? `duplicate run.Started for ${runId}`
-					: `missing run.Started for ${runId}`,
-			);
-		}
-		const started = startedEvents[0];
-		if (!started || !isRecord(started.data)) {
-			throw new Error(`missing run.Started for ${runId}`);
-		}
-		const startedFact = parseRunStartedFact(started.data, seed);
-		const input = captureWorkflowInput(args);
-		if (!isDeepStrictEqual(startedFact.args, cloneAsJson(input))) {
-			throw new Error(`workflow input differs from run.Started for ${runId}`);
-		}
-		const runArgs = input;
-		if (
-			startedFact.workflowName !== undefined &&
-			startedFact.workflowName !== def.name
-		) {
-			throw new Error(`workflow name differs from run.Started for ${runId}`);
-		}
-		const scheduledSteps = new Map<number, string>();
-		for (const event of journal) {
-			if (event.type !== "run.StepScheduled") continue;
-			const fact = parseRunStepScheduledFact(cloneAsJson(event.data));
-			const previous = scheduledSteps.get(fact.index);
-			if (previous !== undefined && previous !== fact.name) {
-				throw new Error(`step name differs from journal for ${runId}`);
-			}
-			scheduledSteps.set(fact.index, fact.name);
-		}
-		const stepOutcomeCounts = new Map<
-			string,
-			{ completed: number; failed: number }
-		>();
-		for (const event of journal) {
-			if (event.type === "run.StepCompleted") {
-				if (!isRecord(event.data)) {
-					throw new Error(`invalid run.StepCompleted for ${runId}`);
-				}
-				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
-				const scheduled = scheduledSteps.get(fact.index);
-				if (scheduled !== undefined && scheduled !== fact.name) {
-					throw new Error(`step name differs from journal for ${runId}`);
-				}
-				const key = String(fact.index);
-				const counts = stepOutcomeCounts.get(key) ?? {
-					completed: 0,
-					failed: 0,
-				};
-				counts.completed += 1;
-				stepOutcomeCounts.set(key, counts);
-			} else if (event.type === "run.StepFailed") {
-				if (!isRecord(event.data)) {
-					throw new Error(`invalid run.StepFailed for ${runId}`);
-				}
-				const fact = parseRunStepFailedFact(cloneAsJson(event.data));
-				const scheduled = scheduledSteps.get(fact.index);
-				if (scheduled !== undefined && scheduled !== fact.name) {
-					throw new Error(`step name differs from journal for ${runId}`);
-				}
-				const key = String(fact.index);
-				const counts = stepOutcomeCounts.get(key) ?? {
-					completed: 0,
-					failed: 0,
-				};
-				counts.failed += 1;
-				stepOutcomeCounts.set(key, counts);
-			}
-		}
-		for (const counts of stepOutcomeCounts.values()) {
-			if (counts.completed > 1) {
-				throw new Error(`duplicate run.StepCompleted for ${runId}`);
-			}
-			if (counts.failed > 1) {
-				throw new Error(`duplicate run.StepFailed for ${runId}`);
-			}
-			if (counts.completed > 0 && counts.failed > 0) {
-				throw new Error(`conflicting step outcomes for ${runId}`);
-			}
-		}
-		const journaledOutcomeIndices = listStepOutcomeIndices(journal);
-		const unconsumedOutcomes = new Set(journaledOutcomeIndices);
-		if (journaledOutcomeIndices.length > 0) {
-			const outcomeIndexSet = new Set(journaledOutcomeIndices);
-			const maxOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
-			if (
-				!Number.isSafeInteger(maxOutcomeIndex) ||
-				maxOutcomeIndex > 1_000_000
-			) {
-				throw new Error(`invalid step journal for ${runId}`);
-			}
-			for (let index = 0; index < maxOutcomeIndex; index += 1) {
-				if (!outcomeIndexSet.has(index) && !scheduledSteps.has(index)) {
-					throw new Error(`gapped step journal for ${runId}`);
-				}
-			}
-		}
-		const terminals = journal.filter(
-			(event) => event.type === "run.Completed" || event.type === "run.Failed",
-		);
-		if (terminals.length > 1) {
-			throw new Error(`duplicate terminal facts for ${runId}`);
-		}
-		const terminal = terminals[0];
-		if (terminal) {
-			const terminalIndex = journal.indexOf(terminal);
-			if (terminalIndex >= 0) {
-				for (const event of journal.slice(terminalIndex + 1)) {
-					if (event.type.startsWith("run.")) {
-						throw new Error(`events after terminal for ${runId}`);
-					}
-				}
-			}
-			const data = cloneAsJson(terminal.data);
-			if (!isRecord(data)) {
-				throw new Error(`invalid ${terminal.type} for ${runId}`);
-			}
-			if (terminal.type === "run.Completed") {
-				const stored = parseRunCompletedFact(cloneAsJson(data));
-				const journaled = readJournaledWorkflowResult(stored);
-				const result = terminalCompletedHandleResult<R>(journaled);
-				return { runId, status: "completed", result, error: undefined };
-			}
-			const failedFact = parseRunFailedFact(cloneAsJson(data));
-			const failure: NonNullable<WorkflowRunHandle<R>["error"]> = {
-				code: "workflow.failed",
-				message: failedFact.message,
-			};
-			if (failedFact.step !== undefined) failure.step = failedFact.step;
-			return {
-				runId,
-				status: "failed",
-				result: undefined,
-				error: failure,
-			};
-		}
-		const runSeed = startedFact.seed;
-
-		function assertNoTerminalBeforeRunEvent(type: string): void {
-			if (!type.startsWith("run.")) return;
-			for (const event of journal) {
-				if (event.type === "run.Completed" || event.type === "run.Failed") {
-					throw new Error(`events after terminal for ${runId}`);
-				}
-			}
-		}
 
 		async function appendEvent<T>(type: string, data: T): Promise<number> {
-			assertNoTerminalBeforeRunEvent(type);
 			const payload = cloneAsJson(data);
 			seq += 1;
 			const envelope = nextEnvelope(streamId, seq, type, payload, {
@@ -353,60 +160,26 @@ export function createWorkflowEngine(
 			return seq;
 		}
 
+		if (!journal.some((event) => event.type === "run.Started")) {
+			await appendEvent("run.Started", { seed, args });
+		}
+
 		let stepIndex = 0;
 		let sleepIndex = 0;
-		let replayError: Error | undefined;
-		function assertReplayConsistent(): void {
-			if (replayError) throw replayError;
-		}
-		function rejectReplay(message: string): never {
-			replayError = new Error(message);
-			throw replayError;
-		}
-		function rejectStepName(): never {
-			return rejectReplay(`step name differs from journal for ${runId}`);
-		}
-		function assertConsumedOutcomes(): void {
-			assertReplayConsistent();
-			if (unconsumedOutcomes.size > 0) {
-				throw new Error(`unconsumed step outcome for ${runId}`);
-			}
-		}
 		const deterministic = createDeterministicContext({
-			seed: runSeed,
+			seed,
 			mode: "live",
 			eventKey: `${streamId}:orchestration`,
 		});
 
-		const stepRecordedAtIndex = (index: number) => {
-			let completed: ParsedRunStepCompleted | undefined;
-			let failed: ParsedRunStepFailed | undefined;
-			for (const event of journal) {
-				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
-					if (fact.index === index) completed = fact;
-				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
-					if (fact.index === index) failed = fact;
-				}
-			}
-			return { completed, failed };
-		};
-
-		const stepOutcomesFor = (name: string, index: number) => {
-			const completed: typeof journal = [];
-			const failed: typeof journal = [];
-			for (const event of journal) {
-				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
-					if (fact.name === name && fact.index === index) completed.push(event);
-				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
-					if (fact.name === name && fact.index === index) failed.push(event);
-				}
-			}
-			return { completed, failed };
-		};
+		const findCompletedStep = (name: string, index: number) =>
+			journal.find(
+				(event) =>
+					event.type === "run.StepCompleted" &&
+					isRecord(event.data) &&
+					event.data.name === name &&
+					event.data.index === index,
+			);
 
 		const effects: CtxEffects = {
 			async step<T>(
@@ -414,44 +187,17 @@ export function createWorkflowEngine(
 				fn: () => Promise<T> | T,
 				opts?: StepOptions,
 			): Promise<T> {
-				assertReplayConsistent();
 				const index = stepIndex;
 				stepIndex += 1;
-				const scheduled = scheduledSteps.get(index);
-				if (scheduled !== undefined && scheduled !== name) {
-					rejectStepName();
-				}
-				const recorded = stepRecordedAtIndex(index);
-				if (recorded.completed && recorded.completed.name !== name) {
-					rejectStepName();
-				}
-				if (recorded.failed && recorded.failed.name !== name) {
-					rejectStepName();
-				}
-				const { completed, failed } = stepOutcomesFor(name, index);
-				const completedEvent = completed[0];
-				if (completedEvent && isRecord(completedEvent.data)) {
-					const result = replayStepCompletedResult<T>(
-						cloneAsJson(completedEvent.data),
-					);
-					unconsumedOutcomes.delete(index);
-					return result;
-				}
-				const failedEvent = failed[0];
-				if (failedEvent && isRecord(failedEvent.data)) {
-					const stepFailed = parseRunStepFailedFact(
-						cloneAsJson(failedEvent.data),
-					);
-					unconsumedOutcomes.delete(index);
-					throw new WorkflowFailure(stepFailed.message, {
-						step: stepFailed.name,
-					});
+				const completed = findCompletedStep(name, index);
+				if (completed && isRecord(completed.data)) {
+					// Journaled on a prior attempt — short-circuit, do NOT re-run.
+					// SAFETY: assertion to `ed.data.result as T; }` is required at this boundary.
+					return completed.data.result as T;
 				}
 				await appendEvent("run.StepScheduled", { name, index });
-				assertReplayConsistent();
 				try {
-					const value = await runWithRetries(name, fn, opts ?? {});
-					const result = captureWorkflowResult(value, name);
+					const result = await runWithRetries(name, fn, opts ?? {});
 					await appendEvent("run.StepCompleted", { name, index, result });
 					return result;
 				} catch (error) {
@@ -466,7 +212,6 @@ export function createWorkflowEngine(
 				}
 			},
 			async sleep(durationMs, sleepOptions) {
-				assertReplayConsistent();
 				const index = sleepIndex;
 				sleepIndex += 1;
 				const scheduled = journal.find(
@@ -477,7 +222,9 @@ export function createWorkflowEngine(
 				);
 				if (scheduled && isRecord(scheduled.data)) {
 					if (scheduled.data.delayMs !== durationMs) {
-						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+						throw new WorkflowFailure("sleep schedule diverged on replay", {
+							step: `sleep:${index}`,
+						});
 					}
 					return;
 				}
@@ -488,15 +235,11 @@ export function createWorkflowEngine(
 				await appendEvent("run.SleepScheduled", data);
 			},
 			async emit(type, data) {
-				assertReplayConsistent();
 				return appendEvent(type, data ?? null);
 			},
 			now: () => deterministic.now(),
 			random: (label) => deterministic.random(label),
-			token(request) {
-				assertReplayConsistent();
-				return tokenBroker(request);
-			},
+			token: tokenBroker,
 			...(actorHost
 				? {
 						actor(ref: { typeName: string; key: string }) {
@@ -508,7 +251,6 @@ export function createWorkflowEngine(
 									type: string;
 									[key: string]: JsonValue;
 								}) {
-									assertReplayConsistent();
 									const lease = host.acquire(actorKey, {
 										holderId: `${runId}:signal`,
 									});
@@ -521,7 +263,6 @@ export function createWorkflowEngine(
 									return appended.seq;
 								},
 								async state<S = JsonValue>() {
-									assertReplayConsistent();
 									return host
 										.state<S>(actorKey, {
 											// SAFETY: assertion to `, ` is required at this boundary.
@@ -551,38 +292,24 @@ export function createWorkflowEngine(
 			capabilities: def.capabilities,
 			effects,
 		});
-		const ctx: WorkflowContext = Object.freeze({
-			...base,
-			runId,
-			seed: runSeed,
-		});
+		const ctx: WorkflowContext = Object.freeze({ ...base, runId, seed });
 
 		try {
-			const value = await def.run(ctx, runArgs);
-			assertConsumedOutcomes();
-			const result = captureWorkflowResult(value);
+			const result = await def.run(ctx, args);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
 			if (error instanceof WorkflowFailure) {
-				assertConsumedOutcomes();
-				const failureData: JsonBag = {
-					message: error.message,
-				};
-				const failure: NonNullable<WorkflowRunHandle<R>["error"]> = {
-					code: error.code,
-					message: error.message,
-				};
-				if (error.step !== undefined) {
-					failureData.step = error.step;
-					failure.step = error.step;
-				}
-				await appendEvent("run.Failed", failureData);
+				await appendEvent("run.Failed", { message: error.message });
 				return {
 					runId,
 					status: "failed",
 					result: undefined,
-					error: failure,
+					error: {
+						code: error.code,
+						message: error.message,
+						...(error.step !== undefined ? { step: error.step } : undefined),
+					},
 				};
 			}
 			// Any other throw models an infrastructure crash: the journal keeps the
@@ -593,30 +320,16 @@ export function createWorkflowEngine(
 
 	return {
 		store,
-		async start(def, args, startOptions) {
-			const requestedRunId = startOptions?.runId;
-			const runId = requireWorkflowRunId(
-				requestedRunId === undefined ? `run-${randomUUID()}` : requestedRunId,
-			);
-			const input = captureWorkflowInput(args);
-			const streamId = `run/${runId}`;
-			const started = nextEnvelope(
-				streamId,
-				1,
-				"run.Started",
-				cloneAsJson({ seed, args: input, workflowName: def.name }),
-			);
-			await recordEffect(store, started, 0);
-			return execute(def, runId, input);
+		async start(def, args) {
+			runCounter += 1;
+			const runId = `run-${runCounter}`;
+			return execute(def, runId, args);
 		},
 		async resume(def, runId, args) {
-			const id = requireWorkflowRunId(runId);
-			const input = captureWorkflowInput(args);
-			return execute(def, id, input);
+			return execute(def, runId, args);
 		},
 		async journal(runId) {
-			const id = requireWorkflowRunId(runId);
-			const events = await store.readStream(`run/${id}`);
+			const events = await store.readStream(`run/${runId}`);
 			return events.map((event) => ({
 				type: event.type,
 				data: cloneAsJson(event.data),

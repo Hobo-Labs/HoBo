@@ -64,34 +64,10 @@ function diffArgs(mode: Mode): string[] {
 	return ["diff", mergeBase, "HEAD"];
 }
 
-function mergeParentDiffs(mode: Mode): string[][] {
-	if (mode.kind !== "staged") return [];
-	const path = git(["rev-parse", "--git-path", "MERGE_HEAD"]).trim();
-	let contents: string;
-	try {
-		contents = readFileSync(path, "utf8");
-	} catch (error) {
-		if (error instanceof Error && "code" in error && error.code === "ENOENT")
-			return [];
-		throw error;
-	}
-	const heads = contents.split("\n").filter(Boolean);
-	if (heads.length === 0) throw new Error("MERGE_HEAD is empty");
-	return heads.map((head) => {
-		const commit = git([
-			"rev-parse",
-			"--verify",
-			"--end-of-options",
-			`${head}^{commit}`,
-		]).trim();
-		return ["diff", "--cached", commit];
-	});
-}
-
 function names(args: string[], filter: string): string[] {
 	return git([
 		...args,
-		"--find-renames",
+		"--no-renames",
 		"--name-only",
 		`--diff-filter=${filter}`,
 		"-z",
@@ -99,25 +75,6 @@ function names(args: string[], filter: string): string[] {
 	])
 		.split("\0")
 		.filter(Boolean);
-}
-
-function renameSources(args: string[]): Map<string, string> {
-	const entries = git([
-		...args,
-		"--find-renames",
-		"--name-status",
-		"--diff-filter=R",
-		"-z",
-		"--",
-	]).split("\0");
-	const sources = new Map<string, string>();
-	for (let index = 0; index + 2 < entries.length; index += 3) {
-		const source = entries[index + 1];
-		const destination = entries[index + 2];
-		if (source !== undefined && destination !== undefined)
-			sources.set(destination, source);
-	}
-	return sources;
 }
 
 function untrackedFiles(mode: Mode): string[] {
@@ -236,17 +193,17 @@ export function commentViolations(
 	file: string,
 	text: string,
 	added: Set<number>,
-	parentAdditions: readonly Set<number>[] = [],
 ): Violation[] {
 	return commentLocations(file, text).flatMap((comment) => {
 		const { first, last } = comment;
-		const intersects = (lines: Set<number>) => {
-			for (let line = first; line <= last; line++) {
-				if (lines.has(line)) return true;
+		let intersects = false;
+		for (let line = first; line <= last; line++) {
+			if (added.has(line)) {
+				intersects = true;
+				break;
 			}
-			return false;
-		};
-		if (!intersects(added) || !parentAdditions.every(intersects)) return [];
+		}
+		if (!intersects) return [];
 		if (first === 1 && comment.text.startsWith("#!")) return [];
 		if (
 			!DEFERRED.test(comment.text) &&
@@ -288,20 +245,11 @@ export function documentViolation(
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
-	const renamed = renameSources(args);
-	const parents = mergeParentDiffs(mode).map((parentArgs) => ({
-		args: parentArgs,
-		files: new Set(names(parentArgs, "ACMRT")),
-		renamed: renameSources(parentArgs),
-	}));
 	const files = [...new Set([...names(args, "ACMRT"), ...untracked])];
 	const violations: Violation[] = [];
 	for (const file of files) {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
-		if (
-			/\.mdx?$/iu.test(file) &&
-			parents.every((parent) => parent.files.has(file))
-		) {
+		if (/\.mdx?$/iu.test(file)) {
 			const reason = documentViolation(file, contents(mode, file));
 			if (reason) violations.push({ file, line: 1, message: reason });
 		}
@@ -313,36 +261,20 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		)
 			continue;
 		const text = contents(mode, file);
-		const source = renamed.get(file);
 		const added = untracked.includes(file)
 			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
 			: addedLineNumbers(
 					git([
 						...args,
-						"--find-renames",
+						"--no-renames",
 						"--no-color",
 						"--no-ext-diff",
 						"--unified=0",
 						"--",
-						...(source === undefined ? [file] : [source, file]),
+						file,
 					]),
 				);
-		const parentAdditions = parents.map((parent) => {
-			if (!parent.files.has(file)) return new Set<number>();
-			const parentSource = parent.renamed.get(file);
-			return addedLineNumbers(
-				git([
-					...parent.args,
-					"--find-renames",
-					"--no-color",
-					"--no-ext-diff",
-					"--unified=0",
-					"--",
-					...(parentSource === undefined ? [file] : [parentSource, file]),
-				]),
-			);
-		});
-		violations.push(...commentViolations(file, text, added, parentAdditions));
+		violations.push(...commentViolations(file, text, added));
 	}
 	return violations;
 }

@@ -137,9 +137,6 @@ export interface ProgressEvent {
 	readonly type: string;
 	readonly resourceId?: string;
 	readonly detail: string;
-	readonly reconciliation?: {
-		readonly operation: "apply" | "destroy" | "unknown";
-	};
 }
 
 export interface UpRejected {
@@ -160,8 +157,6 @@ export interface UpRealized {
 	readonly changes?: DeploymentChangeSet;
 	/** Undeclared resources `complete` mode destroyed. */
 	readonly pruned?: string[];
-	readonly pendingOperations?: OrchestratorResult["pendingOperations"];
-	readonly transitionBlock?: OrchestratorResult["transitionBlock"];
 }
 
 export type UpResult = UpRejected | UpRealized;
@@ -353,36 +348,13 @@ function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 			resourceId?: string;
 			summary?: string;
 			reason?: string;
-			requiresReconciliation?: boolean;
-			reconciliationOperation?: string;
 		};
 		const resourceId = data.resourceId;
-		const reconciliation: ProgressEvent["reconciliation"] =
-			data.requiresReconciliation === true
-				? {
-						operation:
-							data.reconciliationOperation === "apply" ||
-							data.reconciliationOperation === "destroy"
-								? data.reconciliationOperation
-								: ("unknown" as const),
-					}
-				: undefined;
-		const detail = reconciliation
-			? `The ${reconciliation.operation} outcome is unknown or unverified. Reconcile the provider before retrying.${data.reason ? ` ${data.reason}` : ""}`
-			: (data.summary ?? data.reason ?? event.type);
+		const detail = data.summary ?? data.reason ?? event.type;
 		progress.push(
 			resourceId !== undefined
-				? {
-						type: event.type,
-						resourceId,
-						detail,
-						...(reconciliation && { reconciliation }),
-					}
-				: {
-						type: event.type,
-						detail,
-						...(reconciliation && { reconciliation }),
-					},
+				? { type: event.type, resourceId, detail }
+				: { type: event.type, detail },
 		);
 	}
 	return progress;
@@ -628,12 +600,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					progress: [...progressFrom(orchestrated.events), ...blocked],
 					changes: orchestrated.changes,
 					pruned: orchestrated.pruned,
-					...(orchestrated.pendingOperations !== undefined && {
-						pendingOperations: orchestrated.pendingOperations,
-					}),
-					...(orchestrated.transitionBlock !== undefined && {
-						transitionBlock: orchestrated.transitionBlock,
-					}),
 				},
 			};
 		},

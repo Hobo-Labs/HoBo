@@ -193,35 +193,6 @@ test("lockfile importer-only changes do not select all-package Turbo", () => {
 	);
 });
 
-test("Open SaaS vitest lane tracks implementation inputs only", () => {
-	const npmLane = (checks: ReturnType<typeof plan>["checks"]) =>
-		checks.some(
-			(check) =>
-				check.command === "npm" &&
-				check.args.join(" ") ===
-					"--prefix examples/wasp-opensaas/app run ci:test:unit",
-		);
-
-	const triggers = [
-		"examples/wasp-opensaas/app/src/analytics/stats.ts",
-		"examples/wasp-opensaas/app/test/color-mode.test.tsx",
-		"examples/wasp-opensaas/app/scripts/ensure-vitest-install.mts",
-		"examples/wasp-opensaas/app/package.json",
-		"examples/wasp-opensaas/app/vitest.config.ts",
-	];
-	for (const file of triggers) {
-		assert.equal(npmLane(plan([file]).checks), true, file);
-	}
-
-	const negatives = [
-		"examples/wasp-opensaas/app/README.md",
-		"examples/wasp-opensaas/app/docs/note.md",
-	];
-	for (const file of negatives) {
-		assert.equal(npmLane(plan([file]).checks), false, file);
-	}
-});
-
 test("--build still selects all-package Turbo", () => {
 	const { checks } = plan(["docs/agent-tooling.md"], { includeBuild: true });
 
@@ -644,31 +615,6 @@ test("staged test-only package changes run vitest on package-relative paths", ()
 	assert.equal(turboTestSelects(checks, "packages/rift"), false);
 });
 
-test("narrow staged workspace tests build their package and dependencies first", () => {
-	const { checks } = plan(["packages/rift/test/rift.test.ts"], {
-		staged: true,
-	});
-	const build = checks.findIndex(
-		(check) =>
-			check.args.slice(0, 4).join(" ") === "exec turbo run build" &&
-			check.args.includes("--filter=./packages/rift"),
-	);
-	const testRun = checks.findIndex(narrowVitestCheck);
-	assert.ok(build >= 0);
-	assert.equal(checks[build]?.serial, true);
-	assert.ok(testRun > build);
-});
-
-test("staged tests preserve package-specific test and pretest commands", () => {
-	for (const workspace of ["packages/cli", "packages/broker"]) {
-		const { checks } = plan([`${workspace}/test/example.test.ts`], {
-			staged: true,
-		});
-		assert.equal(turboTestSelects(checks, workspace), true, workspace);
-		assert.equal(checks.some(narrowVitestCheck), false, workspace);
-	}
-});
-
 test("examples package source changes select architecture guard and workspace tests", () => {
 	const { checks, workspaces } = plan(["examples/hello-bindle/src/main.ts"], {
 		workspacePackageExists: () => true,
@@ -1085,10 +1031,6 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		"scripts/test/attested-jobs.test.ts",
 		"scripts/test/merge-group-gate.test.ts",
 		"scripts/test/lint-actions-runner.test.ts",
-		"scripts/test/github-pr-target.test.ts",
-		"scripts/test/github-status-permission.test.ts",
-		"scripts/test/github-merge-group.test.ts",
-		"scripts/test/local-merge-group.test.ts",
 	];
 	const runsGuards = (checks: Check[]) => {
 		const tests = checks.find(
@@ -1119,13 +1061,6 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		"scripts/lint-actions.ts",
 		".hobo/ci-attestors.json",
 		"scripts/ci/local-attest.mts",
-		"scripts/ci/github-target.mts",
-		"scripts/ci/github-pr-target.mts",
-		"scripts/ci/github-status-permission.mts",
-		"scripts/ci/github-merge-group.mts",
-		"scripts/test/github-status-permission.test.ts",
-		"scripts/test/github-merge-group.test.ts",
-		"scripts/test/local-merge-group.test.ts",
 		"scripts/test/merge-group-gate.test.ts",
 	]) {
 		for (const overrides of [

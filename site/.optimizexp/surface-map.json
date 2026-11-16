@@ -1,22 +1,31 @@
 {
   "schemaVersion": 1,
   "projectId": "site",
-  "scannedAt": "2026-11-17T18:35:43.829Z",
+  "scannedAt": "2026-07-31T20:12:04.858Z",
   "productName": "hobo-site",
   "packageDir": "site",
-  "cliAssessment": {
-    "status": "not-applicable",
-    "scope": "package.json bin",
-    "evidence": "site/package.json: no package bin is declared"
-  },
   "binaries": [],
-  "binAssessments": [],
   "defaultEntry": null,
   "nonInteractiveHelp": null,
   "commands": [],
-  "interactiveSurfaces": [],
+  "interactiveSurfaces": [
+    {
+      "id": "default-tty-chat",
+      "entry": "bare-tty",
+      "driver": "tui",
+      "slashCommands": [
+        "/verbs",
+        "/agent",
+        "/config",
+        "/help"
+      ]
+    }
+  ],
   "requiredJourneys": [
-    "happy-critical-path"
+    "help-discoverability",
+    "happy-critical-path",
+    "failure-actionable",
+    "in-session-discoverability"
   ],
   "probes": []
 }

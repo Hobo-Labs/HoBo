@@ -38,13 +38,11 @@ export {
 	type FleetBackend,
 	type FleetMember,
 	type FleetSelection,
-	type FleetVerificationSelection,
 	isGithubLatestLabel,
 	isIsolatedFleetProvider,
 	isOverflowRunnerLabel,
 	queuedDemandLabels,
 	selectFleetBackend,
-	selectFleetVerification,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
 export * from "./fleet-v2/index.js";

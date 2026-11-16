@@ -153,13 +153,6 @@ export interface ResourcePlan {
 	region?: string;
 	deploymentId?: string;
 	build?: { artifactId: string; source: string; target: string };
-	/**
-	 * What the plan decided for this node beyond its port: a Yard binding
-	 * row's parameters and, for a schedule, its declared `cron` and the one
-	 * resource it runs (`target`). Provider-neutral keys; a realizer reads the
-	 * ones it knows.
-	 */
-	realizationParameters?: JsonObject;
 }
 
 /**

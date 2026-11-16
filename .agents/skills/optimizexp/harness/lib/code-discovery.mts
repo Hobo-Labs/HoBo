@@ -46,61 +46,15 @@ export function extractCommandHints(text: string): string[] {
 		const cmd = m[1]!.trim();
 		if (cmd.length > 0 && cmd.length < 200) hints.add(cmd);
 	}
-	const prose = text.replace(/`[^`]+`/g, " ");
 	for (const m of text.matchAll(
 		/\b(?:pnpm|npm|yarn|bun)(?:\s+run)?\s+([a-zA-Z0-9:_:.-]+)/g,
 	)) {
 		hints.add(`pnpm run ${m[1]}`);
 	}
-	for (const m of prose.matchAll(/\bhobo[ \t]+[a-z][a-z0-9:-]*(?![a-z0-9:-]|[ \t]*[;&|<>()`$])/gi)) {
+	for (const m of text.matchAll(/\bhobo\s+[a-z][a-z0-9:-]*/gi)) {
 		hints.add(m[0]!);
 	}
 	return [...hints];
-}
-
-function literalShellWords(command: string): { value: string; quoted: boolean }[] | null {
-	const words: { value: string; quoted: boolean }[] = [];
-	let word = "";
-	let quoted = false;
-	let active = false;
-	let quote: "'" | '"' | null = null;
-	for (let i = 0; i < command.length; i++) {
-		const char = command[i]!;
-		if (quote === "'") {
-			if (char === "'") quote = null;
-			else if (/[\x00-\x1f\x7f]/.test(char)) return null;
-			else word += char;
-		} else if (quote === '"') {
-			if (char === '"') quote = null;
-			else if (char === "$" || char === "`" || /[\x00-\x1f\x7f]/.test(char)) return null;
-			else if (char === "\\") {
-				const next = command[++i];
-				if (!next || !'"\\$`'.includes(next)) return null;
-				word += next;
-			} else word += char;
-		} else if (char === " " || char === "\t") {
-			if (active) words.push({ value: word, quoted });
-			word = "";
-			quoted = false;
-			active = false;
-		} else if (char === "'" || char === '"') {
-			quote = char;
-			quoted = true;
-			active = true;
-		} else if (char === "\\") {
-			const next = command[++i];
-			if (!next || !/^[ -~]$/.test(next)) return null;
-			word += next;
-			quoted = true;
-			active = true;
-		} else if (/^[a-zA-Z0-9_./@:+,=-]$/.test(char)) {
-			word += char;
-			active = true;
-		} else return null;
-	}
-	if (quote !== null) return null;
-	if (active) words.push({ value: word, quoted });
-	return words;
 }
 
 /** Live / egress package scripts must never be default feature primary for offline AX/DX. */
@@ -199,10 +153,6 @@ export function discoverCode(input: {
 		collectFeatureText(input.featureDir),
 	].join("\n");
 	const hints = extractCommandHints(text);
-	for (const candidate of [input.seed, ...(input.surfaces ?? [])]) {
-		const command = candidate.trim();
-		if (/^hobo[ \t]+(?:--help|-h)$/i.test(command)) hints.push(command);
-	}
 	// Also pull product bin verbs from EXPERIENCE.md
 	const expPath = path.join(input.featureDir, "EXPERIENCE.md");
 	if (existsSync(expPath)) {
@@ -236,13 +186,18 @@ export function discoverCode(input: {
 		"discoverability",
 	]);
 	const isPlausibleProductCli = (raw: string): string | null => {
-		const cmd = raw.trim();
-		const parts = cmd.length <= 120 ? literalShellWords(cmd) : null;
-		if (!parts || parts[0]?.value.toLowerCase() !== "hobo" ||
-			!parts[1] || !(/^[a-z]/i.test(parts[1].value) || ["--help", "-h"].includes(parts[1].value))) return null;
+		const cmd = raw.split("\n")[0]!.trim().slice(0, 120);
+		if (!/^hobo(?![\w-])\s+[a-z]/i.test(cmd)) {
+			return null;
+		}
+		const parts = cmd.split(/\s+/);
+		const bin = parts[0]!.toLowerCase();
+		if (bin !== "hobo") return null;
 		for (const p of parts.slice(1)) {
-			const t = p.value.toLowerCase();
-			if (!p.quoted && (glue.has(t) || t.endsWith(":") || p.value.length > 48)) return null;
+			const t = p.toLowerCase();
+			if (glue.has(t)) return null;
+			if (t.endsWith(":")) return null;
+			if (p.length > 48) return null;
 		}
 		return cmd;
 	};

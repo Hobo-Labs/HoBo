@@ -1,4 +1,5 @@
 {
+  "$comment": "Repo policy: no silent network egress from a vendored skill. The call is in scripts/context.mjs and fires only when that file is run AS A COMMAND (the per-edit hook does not fetch — hook-lib.mjs imports only extractPlatform/loadContext, and the fetch sits behind cli()). This file is only half the control: upstream reads it relative to process.cwd(), so it covers repo-root sessions and NOT `cd site && ...`. The cwd-independent control is IMPECCABLE_NO_UPDATE_CHECK=1, set in .claude/settings.json `env`, which covers Claude Code sessions. Residual: a Codex/Cursor/Copilot session running an impeccable command from a subdirectory still makes the once-a-day request. scripts/generate-image.mjs (api.openai.com) and scripts/concept-seed.mjs (impeccable.style/api/roll) are separate opt-in commands.",
   "updateCheck": false,
   "detector": {
     "ignoreRules": [],

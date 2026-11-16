@@ -67,34 +67,6 @@ async function drain(store: RuntimeLocalEventStore, streamId: string) {
 }
 
 describe("Gateway: Deploy command -> events -> DeploymentView projection", () => {
-	it("refuses foreign deployment history even when the request fact is missing", async () => {
-		const store = freshStore();
-		await store.append(
-			deploymentStreamId("foreign-history"),
-			[
-				{
-					type: "resource.Provisioned",
-					data: {
-						deploymentId: "foreign-history",
-						resourceId: "service",
-						outputs: {},
-						execId: "prior",
-					},
-				},
-			],
-			{ tenant: "tenant-b", actor, expectedSeq: 0 },
-		);
-		await expect(
-			deploy(
-				deps(store),
-				{ deploymentId: "foreign-history", bindle: helloBindle() },
-				{ tenant: "tenant-a", actor },
-			),
-		).rejects.toBeInstanceOf(UnauthorizedCommandError);
-		expect(
-			await drain(store, deploymentStreamId("foreign-history")),
-		).toHaveLength(1);
-	});
 	it("round-trips a Deploy to a queryable planned projection", async () => {
 		const store = freshStore();
 		const result = await deploy(

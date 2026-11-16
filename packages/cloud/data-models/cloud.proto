@@ -218,7 +218,6 @@ message IacProgram {
   string action = 6;               // "preview" | "apply" | "destroy"
   string stack_name = 7;           // per-resource stack key: tenant/deployment/resource
   ResourcePlan resource = 8;       // desired declaration to realize, when supplied
-  optional string operation_generation = 9; // persisted before provider work, reused on retry
 }
 
 // A short-lived, capability-scoped token injected per-exec (control-plane.md:
@@ -256,16 +255,13 @@ message ExecFailedRecord {
   string exec_id = 1;
   string classification = 2;       // "retryable" | "fatal"
   string reason = 3;
-  optional bool requires_reconciliation = 4;
-  optional string reservation_id = 5;
-  optional string reconciliation_operation = 6; // "preview" | "apply" | "destroy"
 }
 
 // The durable ResourceActor FSM snapshot, folded from the resource's own facts.
 message ResourceActorSnapshot {
   string deployment_id = 1;
   string resource_id = 2;
-  string state = 3;                // Pending|Planning|Provisioning|Provisioned|Updating|Failed|ReconciliationRequired|Compensating|Destroying|Destroyed
+  string state = 3;                // Pending|Planning|Provisioning|Provisioned|Updating|Failed|Compensating|Destroying|Destroyed
   uint32 sequence = 4;
   map<string, string> outputs = 5;
   repeated string deps = 6;
@@ -281,7 +277,6 @@ message ResourceProvisioningRecord {
   optional string spec_hash = 5;
   // Provider that may have received the apply; absent on legacy facts.
   optional string provider_id = 6;
-  optional string operation_generation = 7; // absent on legacy in-flight operations
 }
 
 // resource.Provisioned: apply ok, outputs recorded (unblocks dependents).
@@ -301,28 +296,6 @@ message ResourceFailedRecord {
   string reason = 3;
   string classification = 4;       // "retryable" | "fatal"
   bool crossed_no_go_threshold = 5;
-  optional bool requires_reconciliation = 6;
-  optional string reservation_id = 7;
-  optional string reconciliation_operation = 8; // "apply" | "destroy"
-}
-
-// A host has verified the exact provider outcome and financial disposition.
-message ResourceReconciledRecord {
-  string deployment_id = 1;
-  string resource_id = 2;
-  string failure_event_id = 3;
-  string operation = 4;             // "apply" | "destroy"
-  string outcome = 5;               // "applied" | "destroyed" | "no-effect"
-  string evidence_ref = 6;
-  string financial_evidence_ref = 7;
-  string financial_disposition = 8; // "none" | "held" | "settled" | "released"
-  optional string reservation_id = 9;
-  string claim_digest = 10;
-  map<string, string> outputs = 11;
-  optional string exec_id = 12;
-  optional string spec_hash = 13;
-  optional string final_state_hash = 14;
-  optional string restored_state = 15; // "provisioned" | "destroyed" | "failed" after no-effect
 }
 
 // resource.Destroying: choreographed compensation started for this actor.
@@ -330,9 +303,6 @@ message ResourceDestroyingRecord {
   string deployment_id = 1;
   string resource_id = 2;
   string reason = 3;
-  optional string operation_generation = 4;
-  optional string program_hash = 5;
-  optional string spec_hash = 6;
 }
 
 // resource.Destroyed: compensation applied; slice removed.
@@ -349,35 +319,11 @@ message DeploymentDeployedRecord {
   repeated string resource_ids = 3;
 }
 
-// deployment.RolledBack: compensation completed after the transition closed.
+// deployment.RolledBack: a no-go failure crossed threshold; saga compensates.
 message DeploymentRolledBackRecord {
   string deployment_id = 1;
   string target_set_id = 2;
   string reason = 3;
-}
-
-// deployment.TransitionStarted / deployment.TransitionCompleted: CAS-fenced work.
-message DeploymentTransitionRecord {
-  string deployment_id = 1;
-  string transition_id = 2;
-  string kind = 3; // "rollback" | "prune"
-  string plan_hash = 4;
-  repeated string resource_ids = 5;
-  optional string trigger_resource = 6;
-  optional string reason = 7;
-}
-
-message ReopenedResource {
-  string resource_id = 1;
-  string spec_hash = 2;
-}
-
-// deployment.Reopened: explicitly start a new reviewed run after rollback.
-message DeploymentReopenedRecord {
-  string deployment_id = 1;
-  string rollback_event_id = 2;
-  string plan_hash = 3;
-  repeated ReopenedResource resources = 4;
 }
 
 // ---- S3-04: CredentialAudit projection (ai-native-agent-auth.md §6.2/§6.8) ----
@@ -490,9 +436,7 @@ message TopologyNode {
   string port = 4;                 // resource nodes: capability class
   string provider_id = 5;          // resource/yard nodes: backing provider
   string region = 6;
-  string lifecycle = 7;            // resource nodes: provisioning|provisioned|failed|reconciliation-required|destroying|destroyed
-  optional string reconciliation_event_id = 8;
-  repeated string other_reconciliation_event_ids = 9;
+  string lifecycle = 7;            // resource nodes: provisioning|provisioned|failed|destroying|destroyed
 }
 
 message TopologyEdge {

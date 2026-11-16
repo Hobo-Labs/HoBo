@@ -3,7 +3,7 @@
 // closed step and directive kinds, and store references that are references.
 package connect_ui
 
-#ConnectActionName: "connect.submit" | "connect.chooseStore" | "connect.start" | "connect.cancel"
+#ConnectActionName: "connect.chooseStore" | "connect.start" | "connect.cancel"
 #StoreId:           "infisical" | "1password" | "bitwarden"
 #Provider:          "github" | "vercel"
 
@@ -19,12 +19,12 @@ package connect_ui
 }
 
 #ConnectViewRecord: {
-	step:     "configure" | "choose-secret-store" | "create-github-app" | "authorize-vercel" | "depositing" | "connected" | "failed"
-	terminal: bool
-	view: {
-		title: string & !=""
-		fields: [...{name: string & !="", label: string & !="", kind: "text" | "url" | "secret" | "choice", ...}]
-		actions: [...{action: #ConnectActionName, label: string & !="", ...}]
+	step:       "choose-secret-store" | "create-github-app" | "authorize-vercel" | "depositing" | "connected" | "failed"
+	terminal:   bool
+	composedBy: "model" | "deterministic"
+	spec: {
+		root: string & !=""
+		elements: {[string]: {type: string & !="", ...}}
 		...
 	}
 	directive: #BrowserDirectiveRecord

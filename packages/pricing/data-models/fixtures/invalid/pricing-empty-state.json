@@ -1,8 +1,0 @@
-{
-  "catalog": {
-    "schema": "hobo.pricing.catalog/v1",
-    "catalogHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-    "products": [], "rateCards": [], "allowances": [], "credits": [], "commitments": []
-  },
-  "availability": {}
-}

@@ -7,21 +7,16 @@ import {
 	type IacOutputs,
 	type IacProgram,
 	type IacProvider,
+	type ResourcePlan,
 } from "@hobo/cloud";
 import type {
 	CloudProvider,
 	EventEnvelope,
 	EventStore,
 	IacProgramDocument,
-	ResourcePlan,
 } from "@hobo/core";
 import { createPulumiAutomationAdapter } from "@hobo/iac-pulumi";
-import {
-	isJsonString,
-	type JsonObject,
-	type JsonValue,
-	parseJsonObject,
-} from "./json.js";
+import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
 
 // ---------------------------------------------------------------------------
 // The REAL IaC backend on the deploy path (S0-01 integration gap closed).
@@ -167,18 +162,9 @@ export function createPulumiBackedIacProvider(
 				`pulumi-iac-provider: no realize()-capable provider for ${program.provider}`,
 			);
 		}
-		const { realizationParameters, ...planned } = resource;
 		const resourcePlan: ResourcePlan = {
-			...planned,
+			...resource,
 			deploymentId: program.deploymentId,
-			// Re-parsed at the port: the plan's JSON type is its own package's.
-			...(realizationParameters !== undefined
-				? {
-						realizationParameters: parseJsonObject(
-							JSON.stringify(realizationParameters),
-						),
-					}
-				: undefined),
 		};
 		const { iac } = provider.realize(resourcePlan);
 		return iac;

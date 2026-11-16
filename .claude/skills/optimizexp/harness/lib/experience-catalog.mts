@@ -6,9 +6,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import path from "node:path";
 import { repoRoot } from "./paths.mts";
 import type { ProjectRef } from "./projects.mts";
-import { readSurfaceMap, surfaceMapDigest, validateSurfaceMap, validateCurrentSurface, type CliAssessment, type SurfaceMap } from "./surface-map.mts";
+import { readSurfaceMap, type SurfaceMap } from "./surface-map.mts";
 import { listPersonaMetas } from "./persona-resolve.mts";
-import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 
 export type CatalogPriority = "P0" | "P1" | "P2";
 
@@ -30,11 +29,6 @@ export type ExperienceCatalog = {
 	schemaVersion: 1;
 	projectId: string;
 	builtAt: string;
-	coverageScope?: "primary-bin";
-	cliAssessment?: CliAssessment;
-	surfaceMapDigest?: string;
-	surfaceProblems?: string[];
-	unverifiedGoals?: { personaId: string; goal: string; reason: string }[];
 	experiences: ExperienceRow[];
 };
 
@@ -48,19 +42,6 @@ function slug(s: string): string {
 
 function productSlug(map: SurfaceMap): string {
 	return slug(map.productName || map.projectId);
-}
-
-function wantsCostGoal(personaId: string, body: string): boolean {
-	return /\b(?:finops|cost[- ]controller|cost information|cost estimate|estimated? costs?|budget information)\b/i.test(`${personaId} ${body}`);
-}
-
-function costCommand(map: SurfaceMap): SurfaceMap["commands"][number] | undefined {
-	return map.commands.find((command) => {
-		if (command.id !== "cost" && command.id !== "plan") return false;
-		const summary = command.summary ?? "";
-		if (/\b(?:no|not|never|without|unavailable|unknown|unsupported)\b/i.test(summary)) return false;
-		return command.id === "cost" || /\b(?:costs?|pricing|prices?|budget|spend|charges?)\b/i.test(summary);
-	});
 }
 
 /**
@@ -107,9 +88,8 @@ export function buildExperienceCatalog(input: {
 				: ["developer"];
 
 	const prod = productSlug(map);
-	const bin = map.defaultEntry?.command ?? map.binaries[0]?.name ?? null;
+	const bin = map.defaultEntry?.command ?? map.binaries[0]?.name ?? "app";
 	const rows: ExperienceRow[] = [];
-	const unverifiedGoals: NonNullable<ExperienceCatalog["unverifiedGoals"]> = [];
 	const seen = new Set<string>();
 
 	const add = (row: ExperienceRow) => {
@@ -121,7 +101,7 @@ export function buildExperienceCatalog(input: {
 
 	for (const personaId of personaIds) {
 		// P0: default entry
-		if (bin) {
+		if (map.defaultEntry || map.binaries.length) {
 			const interactive = Boolean(map.defaultEntry?.interactive);
 			add({
 				experienceId: interactive ? "cold-start-tty-chat" : "cold-start-cli",
@@ -132,10 +112,13 @@ export function buildExperienceCatalog(input: {
 				entryCommand: bin,
 				driver: interactive ? "tui" : "cli",
 				observableSuccess: interactive
-					? "The documented entry and help path are visible"
+					? "Discoverability strip / HoBo branding; slash commands or help path visible"
 					: "Helpful default or usage without silent hang",
 				observableFailure: "Hang, empty chrome, or wrong-product branding only",
-				confusionRisks: ["wrong entry point", "unclear default behavior"],
+				confusionRisks: [
+					"stock Pi / third-party agent UI",
+					"wrong binary (control-plane vs coding harness)",
+				],
 				priority: "P0",
 				featureId: `${prod}-default-entry`,
 				source: ["surface-map.defaultEntry", "mandatory-p0"],
@@ -145,11 +128,11 @@ export function buildExperienceCatalog(input: {
 					experienceId: "in-session-discoverability",
 					personaId,
 					intent: "From inside the interactive session, find product surfaces without leaving",
-					entryCommand: `${bin}  # use the documented in-session help`,
+					entryCommand: `${bin}  # then /verbs or in-session help`,
 					driver: "tui",
-					observableSuccess: "The documented in-session help path is visible",
+					observableSuccess: "Slash commands list product verbs (agent/config/…)",
 					observableFailure: "Only third-party defaults; no product map",
-					confusionRisks: ["undiscoverable in-session help"],
+					confusionRisks: ["no slash commands for product surfaces"],
 					priority: "P0",
 					featureId: `${prod}-default-entry`,
 					source: ["surface-map.interactiveSurfaces", "mandatory-p0"],
@@ -157,11 +140,12 @@ export function buildExperienceCatalog(input: {
 			}
 		}
 
-		if (map.nonInteractiveHelp) add({
+		// P0: help
+		add({
 			experienceId: "help-discoverability",
 			personaId,
 			intent: "List verbs and next steps without tribal knowledge",
-			entryCommand: map.nonInteractiveHelp.command,
+			entryCommand: map.nonInteractiveHelp?.command ?? `${bin} help`,
 			driver: "cli",
 			observableSuccess: "Verb list + First run / examples",
 			observableFailure: "Empty help or wrong product help",
@@ -172,7 +156,7 @@ export function buildExperienceCatalog(input: {
 		});
 
 		// P0: failure path (generic bad verb)
-		if (bin) add({
+		add({
 			experienceId: "failure-actionable",
 			personaId,
 			intent: "Mistype or unknown verb yields actionable remediation",
@@ -189,10 +173,6 @@ export function buildExperienceCatalog(input: {
 		// Persona-linked inventory commands from map
 		const personaPath = findPersonaPath(root, personaId);
 		const personaBody = personaPath ? readFileSync(personaPath, "utf8") : "";
-		if (wantsCostGoal(personaId, personaBody) &&
-			!costCommand(map)) {
-			unverifiedGoals.push({ personaId, goal: "inspect cost information", reason: "no observed cost command or cost-specific plan help in the package surface" });
-		}
 		const wants = inferPersonaSurfaces(personaId, personaBody, map);
 		for (const w of wants) {
 			add({
@@ -215,15 +195,6 @@ export function buildExperienceCatalog(input: {
 		schemaVersion: 1,
 		projectId: map.projectId,
 		builtAt: new Date().toISOString(),
-		...(map.coverageScope ? { coverageScope: map.coverageScope } : {}),
-		cliAssessment: map.cliAssessment ?? {
-			status: "unverified",
-			scope: "package.json bin",
-			evidence: "surface map has no package-bin assessment",
-		},
-		surfaceMapDigest: surfaceMapDigest(map),
-		surfaceProblems: validateSurfaceMap(map),
-		unverifiedGoals,
 		experiences: rows,
 	};
 }
@@ -265,27 +236,31 @@ function inferPersonaSurfaces(
 	map: SurfaceMap,
 ): Omit<ExperienceRow, "personaId">[] {
 	const prod = productSlug(map);
-	const bin = map.defaultEntry?.command ?? map.binaries[0]?.name ?? null;
+	const bin = map.defaultEntry?.command ?? map.binaries[0]?.name ?? "app";
 	const out: Omit<ExperienceRow, "personaId">[] = [];
-	if (!bin) return out;
+	const cmd = (id: string) =>
+		map.commands.find((c) => c.id === id) ?? { id, argv: [id], kind: "verb" };
 
 	const pushVerb = (
 		verb: string,
 		experienceId: string,
 		intent: string,
 		priority: CatalogPriority = "P0",
-		observableSuccess = `Command ${verb} returns documented output`,
-		observableFailure = "Missing verb or opaque error",
 	) => {
-		const c = map.commands.find((command) => command.id === verb);
-		if (!c) return;
+		if (!map.commands.some((c) => c.id === verb) && map.commands.length > 0) {
+			// still allow if body strongly wants it
+			if (!new RegExp(verb, "i").test(body) && !new RegExp(verb, "i").test(personaId)) {
+				return;
+			}
+		}
+		const c = cmd(verb);
 		out.push({
 			experienceId,
 			intent,
 			entryCommand: `${bin} ${c.argv.join(" ")}`,
 			driver: "cli",
-			observableSuccess,
-			observableFailure,
+			observableSuccess: `Command ${verb} prints clear product chrome`,
+			observableFailure: "Missing verb or opaque error",
 			confusionRisks: [],
 			priority,
 			featureId: `${prod}-${verb}`,
@@ -297,38 +272,30 @@ function inferPersonaSurfaces(
 		pushVerb("agent", "agent-native-inventory", "Audit human-free auth + MCP/ACP readiness");
 		pushVerb("auth", "agent-human-free-auth", "Login without browser device-code as agent");
 	}
-	if (wantsCostGoal(personaId, body)) {
-		const command = costCommand(map);
-		if (command?.id === "cost") {
-			pushVerb("cost", "cost-zero-path", "Inspect cost and budget information", "P0", "The output reports cost or budget information", "Cost or budget information is missing or unavailable, or the command errors");
-		} else if (command?.id === "plan") {
-			pushVerb("plan", "plan-cost", "Inspect the deployment plan for cost information", "P0", "The output reports cost or budget information", "Cost or budget information is missing or unavailable, or the command errors");
-		}
+	if (/cost|budget|\$0|free-local|open-source/i.test(personaId + body)) {
+		pushVerb("cost", "cost-zero-path", "See $0 path, budget, savings without secrets");
 	}
 	if (/vim|neovim|editor-vim|cli-native/i.test(personaId + body)) {
-		pushVerb("edit", "edit-workflow", "Inspect the documented edit workflow");
+		pushVerb("edit", "edit-nvim-bridge", "Open managed nvim pane / bridge contract");
 	}
 	if (/config|setup|stack|hermetic|nix|devenv/i.test(personaId + body)) {
 		pushVerb("config", "config-setup-inventory", "List env/flags by preferred stack");
 	}
 	if (/harness|pi|flue|self-improve/i.test(personaId + body)) {
-		pushVerb("harness", "harness-inventory", "Inspect the documented agent harness");
+		pushVerb("harness", "harness-dual-surface", "See Pi/Flue dual surface + self-improve");
 	}
-	const cursorGuide = map.commands.find(
-		(command) => command.id === "guide" && command.argv.includes("--cursor"),
-	);
-	if (cursorGuide && /cursor/i.test(personaId + body)) {
+	if (/cursor/i.test(personaId + body)) {
 		out.push({
 			experienceId: "guide-cursor-map",
 			intent: "Map Cursor features to product verbs",
-			entryCommand: `${bin} ${cursorGuide.argv.join(" ")}`,
+			entryCommand: `${bin} guide --cursor`,
 			driver: "cli",
 			observableSuccess: "Cursor map with honest residual",
 			observableFailure: "Claude-only guide with no cursor path",
 			confusionRisks: [],
 			priority: "P0",
 			featureId: `${prod}-guide-cursor`,
-			source: ["persona-goals", "surface-map.commands.guide"],
+			source: ["persona-goals"],
 		});
 	}
 	if (/claude-code|app-builder/i.test(personaId + body)) {
@@ -338,7 +305,7 @@ function inferPersonaSurfaces(
 		pushVerb("attach", "remote-attach-dev-terminal", "Reattach dev-terminal / named endpoint");
 	}
 	if (/herdr|mux|pane|highlight/i.test(personaId + body)) {
-		pushVerb("status", "status-inspection", "Inspect the documented status surface");
+		pushVerb("status", "herdr-mux-status", "See multi-pane mux chrome + capabilities");
 	}
 	if (/grok|tasks|workflow/i.test(personaId + body)) {
 		pushVerb("tasks", "tasks-board", "See background task board");
@@ -363,7 +330,6 @@ export function writeExperienceCatalog(
 	project: ProjectRef,
 	root = repoRoot(),
 ): string {
-	assertSafeOptimizexpWriteScopes(root, [project.path]);
 	const p = catalogPath(project, root);
 	mkdirSync(path.dirname(p), { recursive: true });
 	writeFileSync(p, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
@@ -372,14 +338,6 @@ export function writeExperienceCatalog(
 		`# Experience catalog — ${catalog.projectId}`,
 		"",
 		`Built: ${catalog.builtAt}`,
-		"",
-		`Package-bin CLI: ${catalog.cliAssessment?.status ?? "unverified"} — ${catalog.cliAssessment?.evidence ?? "no manifest assessment"}.`,
-		catalog.coverageScope === "primary-bin"
-			? "Coverage is limited to the primary package binary; secondary binaries and other surfaces are not assessed here."
-			: "This covers the package.json bin field only; other CLI and non-CLI surfaces are not assessed here.",
-		`Surface validation: ${catalog.surfaceProblems?.length ? `unverified — ${catalog.surfaceProblems.join("; ")}` : catalog.surfaceProblems ? "no map problems" : "unverified — no validation result"}.`,
-		"Map validation checks the recorded shape; it is not runtime evidence or complete experience coverage.",
-		`Unverified persona goals: ${catalog.unverifiedGoals?.length ? catalog.unverifiedGoals.map((goal) => `${goal.personaId}: ${goal.goal} (${goal.reason})`).join("; ") : catalog.unverifiedGoals ? "none recorded" : "unknown"}.`,
 		"",
 		"| experienceId | persona | P | entry | featureId |",
 		"|---|---|---|---|---|",
@@ -404,14 +362,7 @@ export function readExperienceCatalog(
 	const p = catalogPath(project, root);
 	if (!existsSync(p)) return null;
 	try {
-		const catalog: unknown = JSON.parse(readFileSync(p, "utf8"));
-		const record = (value: unknown): value is Record<string, unknown> =>
-			value !== null && typeof value === "object" && !Array.isArray(value);
-		if (!record(catalog) || typeof catalog.schemaVersion !== "number" || typeof catalog.projectId !== "string" || typeof catalog.builtAt !== "string" ||
-			!Array.isArray(catalog.experiences) || !catalog.experiences.every((row) => record(row) &&
-				["experienceId", "personaId", "entryCommand", "driver", "priority", "featureId", "intent"].every((key) => typeof row[key] === "string")) ||
-			(catalog.unverifiedGoals !== undefined && (!Array.isArray(catalog.unverifiedGoals) || !catalog.unverifiedGoals.every((goal) => record(goal) && typeof goal.personaId === "string" && typeof goal.goal === "string" && typeof goal.reason === "string")))) return null;
-		return catalog as ExperienceCatalog;
+		return JSON.parse(readFileSync(p, "utf8")) as ExperienceCatalog;
 	} catch {
 		return null;
 	}
@@ -421,62 +372,8 @@ export function readExperienceCatalog(
 export function validateCatalogCoverage(
 	catalog: ExperienceCatalog,
 	personaIds: string[],
-	map?: SurfaceMap,
-	options?: { root: string; confirmedSurfaces?: string[]; freshProbe?: boolean },
 ): string[] {
 	const problems: string[] = [];
-	if (!map || !catalog.surfaceMapDigest || catalog.surfaceMapDigest !== surfaceMapDigest(map)) {
-		return ["catalog is unverified or stale: surface map changed; rebuild the catalog"];
-	}
-	if (catalog.coverageScope !== map.coverageScope) return ["catalog coverage scope differs from surface map"];
-	const mapProblems = validateSurfaceMap(map);
-	if (mapProblems.length) return mapProblems.map((problem) => `surface discovery is unverified: ${problem}`);
-	const assessment = catalog.cliAssessment;
-	if (!assessment || assessment.scope !== "package.json bin" || typeof assessment.evidence !== "string" || !assessment.evidence.trim() || !["present", "not-applicable", "unverified"].includes(assessment.status)) {
-		return ["package-bin CLI coverage is unverified: no manifest assessment"];
-	}
-	if (assessment.status === "unverified") {
-		return [`package-bin CLI coverage is unverified: ${assessment.evidence}`];
-	}
-	if (!Array.isArray(catalog.surfaceProblems) || !catalog.surfaceProblems.every((problem) => typeof problem === "string")) {
-		return ["surface discovery is unverified: no surface validation result"];
-	}
-	if (catalog.surfaceProblems.length) {
-		return catalog.surfaceProblems.map((problem) => `surface discovery is unverified: ${problem}`);
-	}
-	if (assessment.status === "present") {
-		if (!options) return ["surface observation is unverified: current executable and environment have not been checked"];
-		const current = validateCurrentSurface(map, options.root, options);
-		if (current.length) return current;
-	}
-	if (map.coverageScope === "primary-bin") {
-		const bin = map.binaries[0]?.name;
-		const entries = new Set([
-			map.defaultEntry?.command,
-			map.nonInteractiveHelp?.command,
-			...map.commands.map((command) => `${bin} ${command.argv.join(" ")}`),
-			...(map.requiredJourneys.includes("failure-actionable") ? [`${bin} not-a-real-verb-zz`] : []),
-			...(map.defaultEntry?.interactive && map.interactiveSurfaces.length ? [`${bin}  # use the documented in-session help`] : []),
-		]);
-		for (const row of catalog.experiences) {
-			if ((row.driver !== "cli" && row.driver !== "tui") || !entries.has(row.entryCommand)) {
-				problems.push(`experience ${row.experienceId} is outside primary-bin scope`);
-			}
-		}
-	}
-	if (assessment.status === "not-applicable" && catalog.experiences.length === 0) {
-		return [];
-	}
-	if (assessment.status === "present") {
-		for (const goal of catalog.unverifiedGoals ?? []) {
-			if (!personaIds.length || personaIds.includes(goal.personaId)) {
-				problems.push(`persona ${goal.personaId} goal is unverified: ${goal.goal} (${goal.reason})`);
-			}
-		}
-	}
-	if (!catalog.experiences.some((e) => e.priority === "P0")) {
-		problems.push("catalog has no P0 experiences");
-	}
 	for (const id of personaIds) {
 		const p0 = catalog.experiences.filter(
 			(e) => e.personaId === id && e.priority === "P0",
@@ -488,7 +385,7 @@ export function validateCatalogCoverage(
 	const hasDefault = catalog.experiences.some((e) =>
 		e.experienceId.startsWith("cold-start"),
 	);
-	if (assessment.status === "present" && !hasDefault && catalog.experiences.length > 0) {
+	if (!hasDefault && catalog.experiences.length > 0) {
 		problems.push("catalog missing cold-start default-entry experiences");
 	}
 	return problems;

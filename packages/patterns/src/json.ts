@@ -6,7 +6,8 @@
  * it wraps a primitive in a new object and returns an object unchanged.
  *
  * The guards are shallow: they establish only the outermost kind of a value
- * that `JSON.parse` produced. Only primitive strings and plain objects in
+ * that `JSON.parse` produced. They are stricter than the tag-based guards in
+ * `packages/code/src/json.ts`: only primitive strings and plain objects in
  * this realm qualify. Callers re-guard every leaf they read, which is what
  * keeps each field's refusal specific.
  */

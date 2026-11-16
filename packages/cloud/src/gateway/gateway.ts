@@ -21,10 +21,6 @@ import {
 } from "../events.js";
 import type { SharedHostingBudgetAuthority } from "../hosting-transition/budget-authority.js";
 import { isJsonObject, isJsonString } from "../json.js";
-import {
-	DeploymentHistoryScopeError,
-	readDeploymentHistory,
-} from "../orchestrator/history-scope.js";
 import type {
 	DeploymentPlan,
 	MatchDecided,
@@ -177,20 +173,8 @@ export async function deploy(
 
 	const streamId = deploymentStreamId(command.deploymentId);
 	const bindleHash = canonicalManifestHash(command.bindle);
-	let prior: EventEnvelope[];
-	try {
-		prior = await readDeploymentHistory(
-			deps.store,
-			command.deploymentId,
-			context.tenant,
-		);
-	} catch (error) {
-		if (error instanceof DeploymentHistoryScopeError)
-			throw new UnauthorizedCommandError(
-				"deployment history belongs to a different tenant or deployment",
-			);
-		throw error;
-	}
+	const prior: EventEnvelope[] = [];
+	for await (const event of deps.store.read(streamId)) prior.push(event);
 	const original = prior.find((event) => event.type === "deployment.Requested");
 	if (original && isJsonObject(original.data)) {
 		// Ownership is bound by the first request, for every generation.

@@ -36,8 +36,7 @@ Everything the tests assert runs on production packages, offline:
   `mint-broker-token` step are journaled as `run.StepScheduled` /
   `run.StepCompleted` events; after a simulated host crash a fresh engine over
   the same store resumes the run and completed steps are read back from the
-  journal, never re-run. The host supplies the run ID at start and retains it
-  so it can identify the journal after a crash.
+  journal, never re-run.
 - **Replay == live** — the journal replays through `@hobo/runtime/replay`'s
   `replayRun` and reproduces the live result exactly.
 - **Deny-by-default capabilities** — an agent that never declared

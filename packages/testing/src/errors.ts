@@ -18,8 +18,6 @@ export const TEST_HARNESS_ERROR_CODES: readonly string[] = Object.freeze([
 	"HARNESS_CREDENTIALS_REQUIRED",
 	"HARNESS_CYCLIC_DEPENDENCY",
 	"HARNESS_ENDPOINT_UNAVAILABLE",
-	"HARNESS_EMULATOR_INVALID",
-	"HARNESS_EMULATOR_UNAVAILABLE",
 	"HARNESS_LANE_INVALID",
 	"HARNESS_LANE_UNIMPLEMENTED",
 	"HARNESS_READINESS_EXHAUSTED",
@@ -39,8 +37,6 @@ export type TestHarnessErrorCode =
 	| "HARNESS_CREDENTIALS_REQUIRED"
 	| "HARNESS_CYCLIC_DEPENDENCY"
 	| "HARNESS_ENDPOINT_UNAVAILABLE"
-	| "HARNESS_EMULATOR_INVALID"
-	| "HARNESS_EMULATOR_UNAVAILABLE"
 	| "HARNESS_LANE_INVALID"
 	| "HARNESS_LANE_UNIMPLEMENTED"
 	| "HARNESS_READINESS_EXHAUSTED"
@@ -73,7 +69,6 @@ export class TestHarnessError extends Error {
 	}
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: caught values must be narrowed at this error boundary.
 export function isTestHarnessError(value: unknown): value is TestHarnessError {
 	return value instanceof TestHarnessError;
 }

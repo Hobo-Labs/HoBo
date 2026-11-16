@@ -40,6 +40,7 @@ message FidelityAssertionRecord {
 message FidelityReportRecord {
   map<string, uint32> by_fidelity = 1;
   repeated FidelityAssertionRecord asserted_against = 2;
+  // False whenever any entry in asserted_against is mocked.
   bool prod_readiness_claimable = 3;
 }
 

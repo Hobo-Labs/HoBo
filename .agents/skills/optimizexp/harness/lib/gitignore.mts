@@ -10,7 +10,6 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 import {
 	globalScope,
 	repoRoot,
@@ -298,7 +297,6 @@ export function ensureGlobalGitignore(
 	gi: OptimizexpGitignoreConfig,
 	root = repoRoot(),
 ): { path: string; written: boolean; reason: string } {
-	assertSafeOptimizexpWriteScopes(root, [""]);
 	return ensureGitignoreForScope(
 		globalScope(root),
 		mergeGitignoreConfig(skillBuiltinGitignoreConfig("global"), gi),
@@ -310,7 +308,6 @@ export function ensureProjectGitignore(
 	gi: OptimizexpGitignoreConfig,
 	root = repoRoot(),
 ): { path: string; written: boolean; reason: string } {
-	assertSafeOptimizexpWriteScopes(root, [project.path]);
 	const scope = scopeForProject(project, root);
 	if (scope.global) {
 		return ensureGlobalGitignore(gi, root);

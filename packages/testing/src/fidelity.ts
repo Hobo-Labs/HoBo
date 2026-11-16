@@ -10,13 +10,16 @@
  * *observable through this package's surface*, not to what could in principle
  * be simulated:
  *
- * - `simulated` — a served HTTP entrypoint or an accessible local service port
- *   backed by the in-memory implementation. Neither is a deployed provider.
+ * - `simulated` — an HTTP-shaped resource whose collected entrypoint resolved
+ *   to a real fetch handler and is served on a real loopback listener. Real
+ *   application code executes and real HTTP crosses the wire; it is not the
+ *   deployed wasm component on the deployed host, so it is not `real`.
  * - `camp-only` — kinds this lane structurally cannot exercise (`container`,
  *   `wasm-component`): they need a container engine or wasm execution.
- * - `mocked` — a caller-supplied mock or a placeholder with no engine behind
- *   it. Unsupported kinds do not become simulated just because a possible
- *   implementation exists elsewhere.
+ * - `mocked` — everything else. A handle and a binding locator exist; no
+ *   engine runs behind them. Labelling these `simulated` because an in-memory
+ *   map *could* back them would be the overclaim; nothing in `DeployedGraph`
+ *   exposes such a store, so nothing simulated is observable.
  * - `real` — never produced by the in-process lane. It is reserved for the
  *   `ephemeral-camp` lane and for the day `runtime-local` executes real
  *   component bytes.
@@ -59,6 +62,6 @@ export function inProcessFidelity(kind: string, served: boolean): Fidelity {
 	return "mocked";
 }
 
-export function emptyFidelityCounts() {
+export function emptyFidelityCounts(): Record<Fidelity, number> {
 	return { real: 0, simulated: 0, mocked: 0, "camp-only": 0 };
 }

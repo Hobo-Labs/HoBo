@@ -1,4 +1,3 @@
-import type { TrustedVault } from "@hobo/core";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { type JunctionDefinition, junction } from "@hobo/junctions";
 import { yard } from "@hobo/yards";
@@ -40,19 +39,14 @@ export type JunctionCredentials =
 	| {
 			readonly ok: true;
 			readonly junction: JunctionDefinition;
-			/** The team the deploy targets, when the Integration names one. */
-			readonly teamId: string | undefined;
+			/** For this run only: the deploy provider's token and team. */
+			readonly runtimeEnv: Readonly<Record<string, string>>;
 	  }
 	| { readonly ok: false; readonly message: string };
 
-/**
- * Resolve the Vercel junction's credential from the owner's store into the
- * run's trusted vault (`VERCEL_TOKEN`, `VERCEL_TEAM_ID`): memory only, for the
- * deploy this run makes.
- */
+/** Resolve the Vercel junction's credential from the owner's store. */
 export async function resolveVercelJunction(
 	store: OpenedSecretStore,
-	vault: TrustedVault,
 	matches?: (connection: StoredVercelConnection) => boolean,
 ): Promise<JunctionCredentials> {
 	let connection: Awaited<ReturnType<typeof readVercelConnection>>;
@@ -75,8 +69,12 @@ export async function resolveVercelJunction(
 			message: `The Vercel connection changed while reading ${store.id}.`,
 		};
 	const { token, teamId } = connection;
-	vault.put("VERCEL_TOKEN", token);
-	if (teamId !== undefined) vault.put("VERCEL_TEAM_ID", teamId);
-	else vault.drop("VERCEL_TEAM_ID");
-	return { ok: true, junction: vercelJunction(teamId), teamId };
+	return {
+		ok: true,
+		junction: vercelJunction(teamId),
+		runtimeEnv: {
+			VERCEL_TOKEN: token,
+			...(teamId !== undefined ? { VERCEL_TEAM_ID: teamId } : undefined),
+		},
+	};
 }

@@ -1231,15 +1231,6 @@ describe("product-specific behaviour", () => {
 			.map((call) => call.body ?? "");
 		expect(bodies).toHaveLength(1);
 		expect(bodies[0]).not.toContain("SecretString");
-		expect(bodies[0]).not.toContain("SecretBinary");
-		const token = parseJsonObject(bodies[0] ?? "{}").ClientRequestToken;
-		expect(token).toMatch(/^[a-f0-9]{64}$/u);
-		const retry = harness();
-		await retry.reconcile(productAt(5));
-		const retryBody = retry.aws.calls.find((call) =>
-			hasTarget(call, "CreateSecret"),
-		)?.body;
-		expect(parseJsonObject(retryBody ?? "{}").ClientRequestToken).toBe(token);
 		expect(outcome.outputs.arn).toMatch(/^arn:aws:secretsmanager:/u);
 		expect(outcome.diagnostics.join(" ")).toMatch(/no version/u);
 	});

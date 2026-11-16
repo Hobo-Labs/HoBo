@@ -41,8 +41,7 @@ type AnySlotOptions =
 	| KvOptions
 	| QueuesOptions
 	| WorkersOptions
-	| PagesOptions
-	| CronTriggersOptions;
+	| PagesOptions;
 
 function present(options: AnySlotOptions) {
 	const out = {};
@@ -111,21 +110,6 @@ export function queues(options?: QueuesOptions): SlotBinding {
 		slot: "queue",
 		profile: capability.queue.atLeastOnce,
 		productId: "cloudflare.queues/v1",
-		properties: present(options ?? {}),
-	});
-}
-
-export interface CronTriggersOptions {
-	/** The five-field cron expression; the plan's declared cadence otherwise. */
-	readonly cron?: string;
-}
-
-/** Cloudflare Cron Trigger on a Worker — slot `schedule`, profile `schedule.cron/v1`. */
-export function cronTriggers(options?: CronTriggersOptions): SlotBinding {
-	return slotBinding({
-		slot: "schedule",
-		profile: capability.schedule.cron,
-		productId: "cloudflare.cron-triggers/v1",
 		properties: present(options ?? {}),
 	});
 }

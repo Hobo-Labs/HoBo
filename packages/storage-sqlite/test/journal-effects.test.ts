@@ -8,11 +8,6 @@
  * command must not double-send, and a refused commit must not leave an effect
  * behind.
  */
-import type {
-	CronEffectInput,
-	DurableEffectInput,
-	OutboxEffectInput,
-} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryNodeSqliteDriver, SqliteJournal } from "../src/index.js";
@@ -53,7 +48,7 @@ function claim(j: SqliteJournal, limit = 10, leaseFence = 1n) {
 
 function commit(
 	j: SqliteJournal,
-	effects: DurableEffectInput[],
+	effects: unknown[],
 	expectedSeq = 0,
 	type = "a.A",
 ) {
@@ -62,12 +57,10 @@ function commit(
 		events: [{ type, data: {} }],
 		append: { expectedSeq, actor, tenant: "t" },
 		effects,
-	});
+	} as never);
 }
 
-function outboxEffect(
-	overrides: Partial<OutboxEffectInput> = {},
-): OutboxEffectInput {
+function outboxEffect(overrides: Record<string, unknown> = {}) {
 	return {
 		kind: "outbox",
 		destination: "webhook:acme",
@@ -77,7 +70,7 @@ function outboxEffect(
 	};
 }
 
-function cronEffect(overrides: Partial<CronEffectInput> = {}): CronEffectInput {
+function cronEffect(overrides: Record<string, unknown> = {}) {
 	return {
 		kind: "cron",
 		scheduleId: "nightly",
@@ -154,7 +147,6 @@ describe("outbox effects", () => {
 					row?.outboxId ?? "",
 					row?.leaseId ?? "",
 					row?.leaseFence ?? 0n,
-					row?.deliveryAttempt ?? 0,
 				),
 			).toBe(true);
 			// Acked rows are not re-delivered; a second claim must find nothing.
@@ -177,17 +169,11 @@ describe("outbox effects", () => {
 					row?.outboxId ?? "",
 					"not-the-lease",
 					row?.leaseFence ?? 0n,
-					row?.deliveryAttempt ?? 0,
 				),
 			).toBe(false);
-			expect(
-				j.ackOutbox(
-					row?.outboxId ?? "",
-					row?.leaseId ?? "",
-					999n,
-					row?.deliveryAttempt ?? 0,
-				),
-			).toBe(false);
+			expect(j.ackOutbox(row?.outboxId ?? "", row?.leaseId ?? "", 999n)).toBe(
+				false,
+			);
 		} finally {
 			j.close();
 		}

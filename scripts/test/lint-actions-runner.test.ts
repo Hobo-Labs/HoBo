@@ -108,13 +108,28 @@ function lintRunner(
 }
 
 describe("Actions runner policy", () => {
-	it("rejects a shard route selected by the proposed change", () => {
+	it("limits the merge-group batch route to the workspace job with both dependencies", () => {
 		const workflow = (jobId: string, needs: string) =>
 			`name: fixture\non:\n  merge_group:\njobs:\n${routeJob}  ${jobId}:\n    needs: ${needs}\n    runs-on: ${mergeShardRunner}\n    steps:\n      - run: echo ok\n  trunk:\n    runs-on: ${trunk}\n    steps:\n      - run: echo ok\n`;
-		assert.notEqual(
+		assert.equal(
 			lintFile(
 				"hobo-ci.yml",
 				workflow("workspace_tests", "[route, pr_gate_validation]"),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile("hobo-ci.yml", workflow("other", "[route, pr_gate_validation]")),
+			0,
+		);
+		assert.notEqual(
+			lintFile("hobo-ci.yml", workflow("workspace_tests", "route")),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"hobo-ci.yml",
+				workflow("workspace_tests", "pr_gate_validation"),
 			),
 			0,
 		);

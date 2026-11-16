@@ -96,19 +96,18 @@ function definition(
 	providerId: string,
 	productId: string,
 	profileId: string,
-	port = "kv",
 ): ResourceDefinitionVNext {
 	return parseResourceDefinitionVNext({
 		id,
 		providerId,
-		port,
+		port: "kv",
 		features: [],
 		regions: [],
 		specificity: 1,
 		priority: 1,
 		cost: { sku: id, unit: "hour", marginalPrice: "0" },
 		satisfies: (req) =>
-			req.port === port ? { kind: "full" } : { kind: "none" },
+			req.port === "kv" ? { kind: "full" } : { kind: "none" },
 		semantics: semantics({
 			productId,
 			implementsProfiles: [
@@ -200,77 +199,6 @@ const kvYard = (
 });
 
 describe("plan() with Yard binding authority", () => {
-	it("only takes a schedule's target from its single dependency", () => {
-		const schedule = definition(
-			"cloudflare.schedule/v1",
-			"cloudflare",
-			"cloudflare.schedule/v1",
-			"service.scheduled/v1",
-			"schedule",
-		);
-		for (const [bind, target] of [
-			[[], undefined],
-			[["left", "right"], undefined],
-			[["left"], "left"],
-		] as const) {
-			const manifest = parseManifest({
-				schema: "hobo.manifest/v1",
-				componentHost: { kind: "wasmtime", version: "1.0.0" },
-				resources: {
-					left: { type: "data.v1", port: "schedule" },
-					right: { type: "data.v1", port: "schedule" },
-					tick: {
-						type: "data.v1",
-						port: "schedule",
-						bind,
-						annotations: { cadence: "*/5 * * * *" },
-					},
-				},
-			});
-			const result = plan(
-				manifest,
-				{
-					deploymentId: "schedule-target",
-					binding: authority(
-						{
-							yardId: "yard:edge",
-							providerId: "cloudflare",
-							bindings: [
-								{
-									profile: "service.scheduled/v1",
-									productId: schedule.id,
-									properties: {
-										target: "someone-elses-worker",
-										cron: "0 0 * * *",
-									},
-								},
-							],
-						},
-						{
-							definitions: [schedule],
-							requirements: {
-								tick: parseCapabilityRequirement({
-									requiredProfiles: [
-										{ profileId: "service.scheduled/v1", versionRange: ">=1" },
-									],
-								}),
-							},
-						},
-					),
-				},
-				{ ...registry(), definitions: () => [schedule] },
-			);
-			expect(result.ok, JSON.stringify(result)).toBe(true);
-			if (!result.ok) return;
-			const parameters = result.plan.resources.find(
-				(resource) => resource.name === "tick",
-			)?.realizationParameters;
-			if (target === undefined)
-				expect(parameters).toEqual({ cron: "*/5 * * * *" });
-			else expect(parameters).toEqual({ cron: "*/5 * * * *", target });
-		}
-	});
-
 	it("lands the selected product on both the decision and the plan node", () => {
 		const result = plan(
 			helloBindle(),

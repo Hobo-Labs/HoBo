@@ -1117,10 +1117,11 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	const withTiered = (...others: string[]) => [...tiered, ...others].sort();
 
 	// Suites that merge the root config without a deep tier to leave out:
+	// `packages/cli` (its script builds first), `packages/secret-store-claim`,
+	// and the auth authoring proof (which raises its timeouts for tsc fixtures).
 	const merging = [
 		"packages/cli",
 		"packages/hobo",
-		"packages/iac/iac-alchemy",
 		"packages/secret-store-claim",
 		"src/draft/technical-proofs/hobo-auth-authoring-surface",
 	];

@@ -330,34 +330,6 @@ describe("the audit trail", () => {
 });
 
 describe("the sealing key", () => {
-	it("refuses to switch away from an existing local key", async () => {
-		const dir = home();
-		const original = createFileOneTimeActionStore({ home: dir });
-		await original.put(action());
-		expect(() =>
-			createFileOneTimeActionStore({
-				home: dir,
-				key: Buffer.alloc(32, 7).toString("base64"),
-			}),
-		).toThrow(/key.*does not match/i);
-		expect((await original.redeem(redemption())).value).toBe(SECRET);
-	});
-
-	it("does not consume an action when the supplied key cannot decrypt it", async () => {
-		const dir = home();
-		const original = createFileOneTimeActionStore({
-			home: dir,
-			key: Buffer.alloc(32, 1).toString("base64"),
-		});
-		await original.put(action());
-		const wrong = createFileOneTimeActionStore({
-			home: dir,
-			key: Buffer.alloc(32, 2).toString("base64"),
-		});
-		await expect(wrong.redeem(redemption())).rejects.toThrow();
-		expect((await original.redeem(redemption())).value).toBe(SECRET);
-	});
-
 	it("survives the process that created it", async () => {
 		// The whole reason this store is on disk: the human performs the ceremony
 		// later, quite possibly after a restart.

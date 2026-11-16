@@ -227,13 +227,6 @@ All offline; nothing contacts Vercel.
 | `blob-pact.test.ts` | The HTTP pact from both sides ([contracts](./contracts/README.md)) |
 | `env.test.ts` | Names and presence, never a token; the store id reaches every call |
 
-The HTTP fixture above is HoBo's test emulator, not Vercel Labs' emulator.
-As of `@emulators/vercel` 0.13.1, the latter accepts only public Blob uploads,
-whereas this binding requires private uploads and origin reads. It therefore
-cannot run this conformance suite without changing the behavior under test.
-The Vercel CloudProvider uses the vendor emulator for supported project APIs
-([details](../provider-vercel/README.md#local-vercel-api-emulation)).
-
 The in-memory store (`createMemoryBlobSdk`, exported for relay tests) throws
 the SDK's own error classes and hands out ETags from one increasing counter.
 The concurrency cases (32 racing `putIfAbsent`s, 50 concurrent increments

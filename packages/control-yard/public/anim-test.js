@@ -61,16 +61,11 @@ function draw(now) {
 	const sx = sheet.margin + col * (sheet.frameWidth + sheet.spacing);
 	const sy = sheet.margin + row * (sheet.frameHeight + sheet.spacing);
 	const img = images[sheet.id];
-	const padding = 32;
-	const scale = Math.min(
-		animId.includes("guest") ? 3 : 1.6,
-		(canvas.width - 2 * padding) / sheet.frameWidth,
-		(canvas.height - 2 * padding) / sheet.frameHeight,
-	);
+	const scale = animId.includes("guest") ? 3 : 1.6;
 	const dw = sheet.frameWidth * scale;
 	const dh = sheet.frameHeight * scale;
 	const cx = canvas.width / 2;
-	const cy = Math.max(canvas.height / 2 + 40, dh + padding);
+	const cy = canvas.height / 2 + 40;
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(
 		img,

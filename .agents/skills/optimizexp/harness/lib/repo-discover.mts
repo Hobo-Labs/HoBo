@@ -50,7 +50,7 @@ export type ProductDiscovery = {
 	selectedProjects: string[];
 	signals: {
 		hasSite: boolean;
-		hasDesignMd: boolean;
+		hasVisualTokens: boolean;
 		hasCli: boolean;
 		hasMcp: boolean;
 		hasAgentsMd: boolean;
@@ -182,13 +182,13 @@ export function discoverProduct(
 		(existsSync(path.join(root, "site")) ||
 			existsSync(path.join(root, "apps/web")) ||
 			existsSync(path.join(root, "web")));
-	const designMdCandidates = [
-		path.join(root, "site/DESIGN.md"),
-		path.join(root, "DESIGN.md"),
-		path.join(root, "docs/DESIGN.md"),
+	const visualTokenCandidates = [
+		path.join(root, "site/src/styles/global.css"),
+		path.join(root, "site/src/styles/tokens.css"),
+		path.join(root, "src/styles/tokens.css"),
 	];
-	const designMd = designMdCandidates.find((p) => existsSync(p));
-	const hasDesignMd = Boolean(designMd) && (includes("site") || includes("root"));
+	const visualTokens = visualTokenCandidates.find((p) => existsSync(p));
+	const hasVisualTokens = Boolean(visualTokens) && (includes("site") || includes("root"));
 	const hasCli =
 		includes("cli", "hobo", "root") &&
 		(packages.includes("cli") ||
@@ -229,14 +229,14 @@ export function discoverProduct(
 	const projectList = listProjects(root);
 
 	// --- Personas aligned to product ---
-	if (hasSite || hasDesignMd) {
+	if (hasSite || hasVisualTokens) {
 		personaPlans.push({
 			id: "product-end-user",
 			experiences: ["ux"],
 			interfaces: ["web", "docs"],
 			priority: 20,
 			seed: `End user evaluating or using ${productName} through the public website and docs. Scans quickly; abandons confusing paths. Product: ${productSummary.slice(0, 160)}`,
-			source: ["README.md", siteRoot ? "site/" : "", designMd || ""].filter(Boolean),
+			source: ["README.md", siteRoot ? "site/" : "", visualTokens || ""].filter(Boolean),
 			projects: hasSite ? ["site"] : ["root"],
 		});
 		personaPlans.push({
@@ -244,14 +244,14 @@ export function discoverProduct(
 			experiences: ["ux"],
 			interfaces: ["web", "docs"],
 			priority: 25,
-			seed: `Product/brand designer for ${productName}'s public UI. Needs a design contract agents follow${hasDesignMd ? " (DESIGN.md present)" : ""}, inclusive visuals, and lintable tokens.`,
-			source: [designMd || "site/", "README.md"].filter(Boolean),
+			seed: `Product/brand designer for ${productName}'s public UI. Needs consistent implemented tokens, inclusive visuals, and verifiable contrast.`,
+			source: [visualTokens || "site/", "README.md"].filter(Boolean),
 			projects: hasSite ? ["site"] : ["root"],
 		});
 	} else if (includes("site")) {
-		notes.push("site project selected but no site/DESIGN.md on disk — skipped UX personas.");
+		notes.push("No selected site or UI token source was found; skipped UX personas.");
 	} else {
-		notes.push("No site/DESIGN.md in selected projects — skipped default UX personas.");
+		notes.push("No selected site or UI token source was found; skipped default UX personas.");
 	}
 
 	if ((hasCli || scriptNames.length > 0 || packages.length > 0) && includes("root", "cli", "hobo")) {
@@ -343,19 +343,19 @@ export function discoverProduct(
 			projects: ["site"],
 		});
 	}
-	if (hasDesignMd) {
+	if (hasVisualTokens) {
 		featurePlans.push({
 			id: "design-system-contract",
 			title: "Design system contract is agent-followable",
-			seed: `A designer or agent edits UI using the DESIGN.md contract; design lint (or equivalent) fails closed on contrast/token breaks with file references.`,
+			seed: `A designer or agent edits implemented UI tokens; visual checks fail on contrast violations with file references.`,
 			experiences: ["ux", "dx"],
 			driver: "cli",
 			surfaces: scripts["design:lint"]
 				? ["pnpm run design:lint"]
-				: designMd
-					? [`file:${path.relative(root, designMd)}`]
+				: visualTokens
+					? [`file:${path.relative(root, visualTokens)}`]
 					: [],
-			source: [designMd || "DESIGN.md"],
+			source: [visualTokens || "site/src/styles/global.css"],
 			personaExperiences: ["ux", "dx"],
 			projects: hasSite ? ["site", "root"] : ["root"],
 		});
@@ -536,7 +536,7 @@ export function discoverProduct(
 			: selection.projects.map((p) => p.id),
 		signals: {
 			hasSite,
-			hasDesignMd,
+			hasVisualTokens,
 			hasCli,
 			hasMcp,
 			hasAgentsMd,

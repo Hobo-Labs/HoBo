@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { join } from "node:path";
-import { applyEgressToProcess } from "@hobo/hobo-ci";
 // Register TypeScript bindle sources before composing the CLI so `hobo dev`
 // runs the flagship src/bindle.ts authoring path without a separate build.
 import { register } from "tsx/esm/api";
@@ -8,7 +7,12 @@ import { defaultHoboHome } from "../bare-metal-yard.js";
 
 register();
 
-import { createHoboCli, type HoboCli, parseArgv } from "@hobo/cli";
+import {
+	createHoboCli,
+	type HoboCli,
+	isLifecycleAction,
+	parseArgv,
+} from "@hobo/cli";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import { createCiCommand } from "../ci-command.js";
 
@@ -30,7 +34,6 @@ import {
 } from "../credentials-opensesame.js";
 import { createBareMetalProvider } from "../local-provider.js";
 import { removeOwnedDirsOnSignals } from "../owned-temp-dir.js";
-import { ciUsesYard, loadOwnerKeys } from "../owner-keys.js";
 
 // The real composed `hobo` binary. Unlike @hobo/cli's bare bin (which calls
 // createHoboCli() un-injected, leaving the cloud verbs as shell stubs), this
@@ -54,45 +57,29 @@ async function runComposed(
 	// local Yard provisioning and without creating an unrelated SQLite journal.
 	let verb: string | null;
 	let subcommand: string;
-	let help: boolean;
 	try {
 		const parsed = parseArgv(args);
 		verb = parsed.verb;
 		subcommand = parsed.args[0] ?? "";
-		help = parsed.help;
 	} catch {
 		return writeResult(await createHoboCli().run(args));
-	}
-	// Keys the owner keeps across runs (the retained Pulumi workspace's, the
-	// claim actions'), read from their secret store into this process's vault.
-	const keys = await loadOwnerKeys({
-		env: process.env,
-		cwd: workingDirOf(args, process.cwd()),
-		verb,
-		subcommand,
-		help,
-	});
-	if (keys.kind === "refused") {
-		process.stderr.write(`hobo: ${keys.message} (${keys.code})\n`);
-		return 1;
 	}
 	// `hobo ci up|down|plan` converge the CI project through the Yard like any
 	// lifecycle, so only the relay/run subcommands take this shortcut.
 	// (`status` stays here: it inspects the relay connection.)
-	if (verb === "ci" && !ciUsesYard(subcommand))
+	if (
+		verb === "ci" &&
+		(!isLifecycleAction(subcommand) || subcommand === "status")
+	)
 		return writeResult(
 			await createHoboCli({ commands: { ci: createCiCommand() } }).run(args),
 		);
 	// The live Pulumi lane's temporary workspace is removed on exit; as the entry
 	// point, this process has owned temporary directories removed on a signal too.
 	removeOwnedDirsOnSignals();
-	// The box's egress (proxy, bypass list, CA), for every fetch in this
-	// process, before anything connects.
-	applyEgressToProcess(process.env);
 	const runtime = createDefaultYardRuntime({
 		dataDir: join(defaultHoboHome(), "runtime"),
 		...options,
-		projectDir: workingDirOf(args, process.cwd()),
 	});
 	await bootstrapDefaultProviders(runtime, [
 		toRegistrableProvider(createCloudflareProvider()),

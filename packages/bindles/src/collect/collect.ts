@@ -38,11 +38,7 @@ export interface ComponentHostDescriptor {
 export interface CollectionContext {
 	data(
 		name: string,
-		options?: {
-			paradigm?: string;
-			allow?: readonly string[];
-			annotations?: JsonObject;
-		},
+		options?: { paradigm?: string; allow?: readonly string[] },
 	): ResourceHandle;
 	service(
 		name: string,

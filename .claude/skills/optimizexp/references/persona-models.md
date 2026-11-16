@@ -160,7 +160,7 @@ When resolving personas for a run (and for `--init`):
 | Persona field | Affects |
 |---|---|
 | low noveltySeeking | higher weight on noveltyTax breaches; lower excitement from gimmicks |
-| high aestheticSensitivity | stricter visualClutter threshold already; harsher ease/optimality if DESIGN.md fails |
+| high aestheticSensitivity | stricter visualClutter threshold already; harsher ease/optimality if visual contrast checks fail |
 | low trustInAutomation | AX delight requires fail-closed honesty; dark patterns → harms↑ |
 | junior + low timeBudget | informationDensity and featureSprawl heavily penalized |
 | coding-agent segment | contextSwitchTax and skill sprawl dominate |

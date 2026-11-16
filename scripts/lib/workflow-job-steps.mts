@@ -82,13 +82,7 @@ export function workflowJob(text: string, jobId: string): WorkflowJob {
 		steps: (asList(source.steps) ?? []).map(workflowStep),
 	};
 	const condition = asText(source.if);
-	const shard = asObject(asObject(source.strategy)?.matrix)?.shard;
-	const values = asList(shard);
-	const matrix =
-		asText(shard) ??
-		(values?.every((value) => Number.isInteger(value))
-			? `\${{ fromJSON('${JSON.stringify(values)}') }}`
-			: undefined);
+	const matrix = asText(asObject(asObject(source.strategy)?.matrix)?.shard);
 	if (condition !== undefined) job.if = condition;
 	if (matrix !== undefined) job.matrix = matrix;
 	return job;

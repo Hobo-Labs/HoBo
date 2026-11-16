@@ -47,7 +47,7 @@ export type Layout = Readonly<{
 	trafficEmitter: Readonly<{ x: number; y: number; width: number }>;
 }>;
 
-const ZONES = {
+const ZONES: Record<ZoneId, ZoneLayout> = {
 	platformRest: {
 		id: "platformRest",
 		label: "Platform Rest",
@@ -125,7 +125,7 @@ const ZONES = {
 		anchorX: 140,
 		anchorY: 230,
 	},
-} satisfies Record<ZoneId, ZoneLayout>;
+};
 
 export const YARD_LAYOUT: Layout = Object.freeze({
 	width: YARD_WIDTH,
@@ -142,7 +142,7 @@ export const YARD_LAYOUT: Layout = Object.freeze({
 		overlay: 50,
 	}),
 	speechBubble: Object.freeze({ offsetY: -90, maxWidth: 220 }),
-	costMeter: Object.freeze({ x: 1020, y: 170, width: 160, height: 18 }),
+	costMeter: Object.freeze({ x: 1020, y: 150, width: 160, height: 18 }),
 	trafficEmitter: Object.freeze({ x: 140, y: 330, width: 1000 }),
 });
 
@@ -160,7 +160,7 @@ export function zoneAt(x: number, y: number): ZoneId | null {
 	return null;
 }
 
-export function zoneAnchor(id: ZoneId) {
+export function zoneAnchor(id: ZoneId): { x: number; y: number } {
 	const z = YARD_LAYOUT.zones[id];
 	return { x: z.anchorX, y: z.anchorY };
 }

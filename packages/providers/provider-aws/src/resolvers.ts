@@ -80,11 +80,7 @@ import {
 	type TransportMethod,
 	type TransportResponse,
 } from "@hobo/core";
-import {
-	type AwsCredentials,
-	sha256Hex,
-	signAwsRequest,
-} from "@hobo/core/aws-sigv4";
+import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
 import {
 	createProviderRedactor,
 	type ProviderRedactionProfile,
@@ -2236,16 +2232,6 @@ const SECRETS_MANAGER_SPEC: Omit<AwsResolverSpec, "productId"> = {
 				context,
 				await secretsCall(context, "CreateSecret", {
 					Name: context.name,
-					// AWS SDKs inject this idempotency token; raw HTTP callers must
-					// supply one even when no initial secret version is written.
-					// https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_CreateSecret.html
-					ClientRequestToken: sha256Hex(
-						JSON.stringify([
-							"hobo.secrets-manager.create/v1",
-							context.region,
-							context.name,
-						]),
-					),
 					...(description === undefined
 						? undefined
 						: { Description: description }),

@@ -3,9 +3,7 @@ import {
 	createOnePasswordSecretsPort,
 	onePasswordBinding,
 } from "@hobo/adapter-1password";
-import { createTrustedVault } from "@hobo/core";
 import { describe, expect, it } from "vitest";
-import { ownerStore } from "../src/owner-store.js";
 import { openSecretStore, sdkPort } from "../src/secret-stores.js";
 
 const VAULT = "a".repeat(26);
@@ -81,60 +79,6 @@ function sdkFixture(changeOnSecondRead = false, duplicatePassword = false) {
 }
 
 describe("1Password SDK bridge", () => {
-	it.each([
-		"ci",
-		"cd",
-	] as const)("opens the %s owner store using a privately held service account", async (family) => {
-		const fx = sdkFixture();
-		const vault = createTrustedVault();
-		vault.put("OP_SERVICE_ACCOUNT_TOKEN", "fixture-service-account");
-		const owner = await ownerStore(family, vault, {
-			locator: {
-				read: async () => ({
-					HOBO_SECRET_STORE: "1password",
-					OP_VAULT_ID: VAULT,
-				}),
-				write: async () => undefined,
-			},
-			onePasswordClient: async (_coordinates, holder) => {
-				expect(holder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(
-					"fixture-service-account",
-				);
-				return fx.client;
-			},
-		});
-		expect(owner.missing).toEqual([]);
-		expect(await owner.opened?.port.access(NAME)).toMatchObject({
-			status: "ok",
-			material: "original-value",
-		});
-		expect(JSON.stringify(owner)).not.toContain("fixture-service-account");
-		vault.clear();
-	});
-
-	it("does not treat an empty service-account credential as a sign-in", async () => {
-		const vault = createTrustedVault();
-		vault.put("OP_SERVICE_ACCOUNT_TOKEN", "");
-		let attempted = false;
-		const owner = await ownerStore("cd", vault, {
-			locator: {
-				read: async () => ({
-					HOBO_SECRET_STORE: "1password",
-					OP_VAULT_ID: VAULT,
-				}),
-				write: async () => undefined,
-			},
-			onePasswordClient: async () => {
-				attempted = true;
-				return sdkFixture().client;
-			},
-		});
-		expect(owner.opened).toBeUndefined();
-		expect(owner.missing.map((field) => field.name)).toContain("OP_ACCOUNT");
-		expect(attempted).toBe(false);
-		vault.clear();
-	});
-
 	it("updates an existing secret while preserving the full SDK item", async () => {
 		const fx = sdkFixture();
 		const port = createOnePasswordSecretsPort({
@@ -192,34 +136,17 @@ describe("1Password SDK bridge", () => {
 
 	it("returns a reference to the actual 1Password password field", async () => {
 		const fx = sdkFixture();
-		for (const entry of [
-			{ coordinates: { OP_VAULT_ID: VAULT }, token: "fixture" },
-			{
-				coordinates: { OP_VAULT_ID: VAULT, OP_ACCOUNT: "owner@example.test" },
-				token: undefined,
-			},
+		for (const env of [
+			{ OP_VAULT_ID: VAULT, OP_SERVICE_ACCOUNT_TOKEN: "fixture" },
+			{ OP_VAULT_ID: VAULT, OP_ACCOUNT: "owner@example.test" },
 		]) {
-			const signIn = createTrustedVault();
-			if (entry.token) signIn.put("OP_SERVICE_ACCOUNT_TOKEN", entry.token);
-			const opened = await openSecretStore(
-				"1password",
-				entry.coordinates,
-				signIn,
-				{
-					onePasswordClient: async (coordinates, credentialHolder) => {
-						expect(coordinates).toEqual(entry.coordinates);
-						expect(credentialHolder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(
-							entry.token,
-						);
-						return fx.client;
-					},
-				},
-			);
+			const opened = await openSecretStore("1password", env, {
+				onePasswordClient: async () => fx.client,
+			});
 			if (!opened.ok) throw new Error("store not opened");
 			expect(opened.store.reference(NAME)).toBe(
 				`op://${VAULT}/${NAME}/password`,
 			);
-			signIn.clear();
 		}
 	});
 });

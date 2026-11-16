@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {

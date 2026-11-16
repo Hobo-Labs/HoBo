@@ -1,11 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import {
-	assertNoBindleProviderSelection,
-	CONTINUITY_KINDS,
-	continuityPolicies,
-	continuityViolations,
-	readCadence,
-} from "@hobo/bindles";
+import { assertNoBindleProviderSelection } from "@hobo/bindles";
 import { describe, expect, it } from "vitest";
 import relay, {
 	RELAY_REPAIR_SCHEDULE,
@@ -207,10 +201,6 @@ describe("the declaration and the platform configuration agree", () => {
 			topic: "hobo-ci",
 		});
 		expect(RELAY_REPAIR_SCHEDULE.name).toBe(RELAY_RESOURCES.schedule);
-		// The cadence is declared on the schedule itself, where the planner reads it.
-		expect(
-			readCadence(relay.resources[RELAY_RESOURCES.schedule]?.annotations ?? []),
-		).toBe(RELAY_REPAIR_SCHEDULE.cron);
 		expect(RELAY_REPAIR_SCHEDULE.topic).toBe(RELAY_RESOURCES.queue);
 
 		// On this branch `vercel.json` declares no schedule: the hosted relay is
@@ -291,19 +281,5 @@ describe("the declared settings and the deployed code agree", () => {
 		// A secret is never a value set at deploy time.
 		for (const [name, field] of fields)
 			expect(field.source === "camp-value", name).toBe(!field.sensitive);
-	});
-});
-
-describe("relay continuity", () => {
-	it("declares a policy on every stateful resource and none elsewhere", () => {
-		const policies = continuityPolicies(relay);
-		for (const resource of Object.values(relay.resources))
-			expect(policies.has(resource.name)).toBe(
-				CONTINUITY_KINDS.has(resource.kind),
-			);
-		expect(continuityViolations(relay)).toEqual([]);
-		// GitHub is the source of truth: nothing in the relay is copied.
-		for (const policy of policies.values())
-			expect(policy).toMatchObject({ onLoss: "rebuild", standbys: 0 });
 	});
 });

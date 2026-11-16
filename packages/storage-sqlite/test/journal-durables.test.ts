@@ -320,13 +320,13 @@ describe("completeMessage is fenced", () => {
 
 	it("completes work held at the right lease and fence", () => {
 		const { j, messageId } = leased();
-		expect(j.completeMessage(messageId, "w1", 7n, 1)).toBe(true);
+		expect(j.completeMessage(messageId, "w1", 7n)).toBe(true);
 		j.close();
 	});
 
 	it("refuses completion from a different holder", () => {
 		const { j, messageId } = leased();
-		expect(j.completeMessage(messageId, "w2", 7n, 1)).toBe(false);
+		expect(j.completeMessage(messageId, "w2", 7n)).toBe(false);
 		j.close();
 	});
 
@@ -334,27 +334,27 @@ describe("completeMessage is fenced", () => {
 		// The case that matters: a slow worker waking after a takeover must not
 		// overwrite the new holder's outcome, or the takeover was pointless.
 		const { j, messageId } = leased();
-		expect(j.completeMessage(messageId, "w1", 6n, 1)).toBe(false);
+		expect(j.completeMessage(messageId, "w1", 6n)).toBe(false);
 		j.close();
 	});
 
 	it("reports false rather than throwing for an unknown message", () => {
 		const { j } = journal();
-		expect(j.completeMessage("absent", "w1", 1n, 1)).toBe(false);
+		expect(j.completeMessage("absent", "w1", 1n)).toBe(false);
 		j.close();
 	});
 
 	it("refuses a second completion of the same message", () => {
 		// Idempotent in effect but honest about it: the second call says no.
 		const { j, messageId } = leased();
-		j.completeMessage(messageId, "w1", 7n, 1);
-		expect(j.completeMessage(messageId, "w1", 7n, 1)).toBe(false);
+		j.completeMessage(messageId, "w1", 7n);
+		expect(j.completeMessage(messageId, "w1", 7n)).toBe(false);
 		j.close();
 	});
 
 	it("does not redeliver a completed message", () => {
 		const { j, clock, messageId } = leased();
-		j.completeMessage(messageId, "w1", 7n, 1);
+		j.completeMessage(messageId, "w1", 7n);
 		clock.advance(60_000);
 		expect(
 			j.leaseMessages({

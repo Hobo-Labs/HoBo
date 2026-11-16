@@ -1,51 +1,94 @@
 {
   "schemaVersion": 1,
   "projectId": "hobo",
-  "scannedAt": "2026-11-17T18:35:43.786Z",
+  "scannedAt": "2026-07-31T23:42:24.533Z",
   "productName": "hobo",
   "packageDir": "packages/hobo",
-  "cliAssessment": {
-    "status": "present",
-    "scope": "package.json bin",
-    "evidence": "packages/hobo/package.json: declares hobo=./dist/bin/hobo.js, hobo-mcp=./dist/bin/hobo-mcp.js"
-  },
   "binaries": [
     {
       "name": "hobo",
-      "binPath": "packages/hobo/dist/bin/hobo.js",
+      "binPath": "/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/hobo/dist/bin/hobo.js",
       "packageName": "@hobo/hobo"
     },
     {
       "name": "hobo-mcp",
-      "binPath": "packages/hobo/dist/bin/hobo-mcp.js",
+      "binPath": "/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/hobo/dist/bin/hobo-mcp.js",
       "packageName": "@hobo/hobo"
-    }
-  ],
-  "binAssessments": [
-    {
-      "name": "hobo",
-      "status": "unverified",
-      "evidence": "primary binary help was not observed"
-    },
-    {
-      "name": "hobo-mcp",
-      "status": "unverified",
-      "evidence": "additional binary was not assessed; it may use a non-CLI protocol"
     }
   ],
   "defaultEntry": {
     "command": "hobo",
-    "interactive": false,
-    "driver": "cli",
-    "notes": "from package bin"
+    "interactive": true,
+    "driver": "tui",
+    "notes": "interactive markers in README"
   },
-  "nonInteractiveHelp": null,
-  "commands": [],
-  "interactiveSurfaces": [],
+  "nonInteractiveHelp": {
+    "command": "hobo help",
+    "driver": "cli"
+  },
+  "commands": [
+    {
+      "id": "help",
+      "argv": [
+        "help"
+      ],
+      "kind": "discoverability"
+    },
+    {
+      "id": "status",
+      "argv": [
+        "status"
+      ],
+      "kind": "verb"
+    },
+    {
+      "id": "auth",
+      "argv": [
+        "auth"
+      ],
+      "kind": "verb"
+    },
+    {
+      "id": "config",
+      "argv": [
+        "config"
+      ],
+      "kind": "verb"
+    },
+    {
+      "id": "agent",
+      "argv": [
+        "agent"
+      ],
+      "kind": "verb"
+    }
+  ],
+  "interactiveSurfaces": [
+    {
+      "id": "default-tty-chat",
+      "entry": "bare-tty",
+      "driver": "tui",
+      "slashCommands": [
+        "/verbs",
+        "/agent",
+        "/config",
+        "/help"
+      ]
+    }
+  ],
   "requiredJourneys": [
     "default-entry-cold-start",
+    "help-discoverability",
+    "happy-critical-path",
     "failure-actionable",
-    "happy-critical-path"
+    "in-session-discoverability"
   ],
-  "probes": []
+  "probes": [
+    {
+      "command": "node \"/home/codex/.herdr/worktrees/hobo/hobo-devx/packages/hobo/dist/bin/hobo.js\" help",
+      "exitCode": 2,
+      "stdoutDigest": "9501e02d51745995",
+      "capturedAt": "2026-07-31T23:42:23.562Z"
+    }
+  ]
 }

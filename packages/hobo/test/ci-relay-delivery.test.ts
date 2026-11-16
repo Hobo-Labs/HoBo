@@ -240,9 +240,9 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(provider.regions).toEqual(["iad1"]);
 		expect(provider.capabilities.map((capability) => capability.port)).toEqual([
 			"compute",
+			"data",
 			"kv",
 			"queue",
-			"schedule",
 		]);
 		const [compute] = provider.capabilities;
 		expect(compute?.satisfies({ port: "database" }).kind).toBe("none");
@@ -257,15 +257,6 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 				missing: ["unlisted"],
 			});
 		}
-		const withoutQueue = relayYardRegistryProvider({
-			...yard,
-			bindings: yard.bindings.filter(
-				(row) => row.profile !== capability.queue.atLeastOnce,
-			),
-		});
-		expect(
-			withoutQueue.capabilities.some((entry) => entry.port === "queue"),
-		).toBe(false);
 	});
 
 	it("keeps a joined secret projection under its own Yard and does not invent other capabilities", async () => {
@@ -330,29 +321,7 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 			relayYardRegistryProvider(withoutDataPorts).capabilities.map(
 				(entry) => entry.port,
 			),
-		).toEqual(["compute", "schedule"]);
-	});
-
-	it("recognizes generic key-value and FIFO bindings without inventing guarantees", () => {
-		const alternate: Yard = {
-			...yard,
-			bindings: yard.bindings.map((row) =>
-				row.profile === capability.kv.redisCompatible
-					? { ...row, profile: capability.kv.keyValue }
-					: row.profile === capability.queue.atLeastOnce
-						? { ...row, profile: capability.queue.fifo }
-						: row,
-			),
-		};
-		const provider = relayYardRegistryProvider(alternate);
-		const kv = provider.capabilities.find((entry) => entry.port === "kv");
-		const queue = provider.capabilities.find((entry) => entry.port === "queue");
-		expect(kv?.satisfies({ port: "kv" })).toEqual({ kind: "full" });
-		expect(kv?.satisfies({ port: "kv", features: ["eventual"] })).toEqual({
-			kind: "partial",
-			missing: ["eventual"],
-		});
-		expect(queue?.satisfies({ port: "queue" })).toEqual({ kind: "full" });
+		).toEqual(["compute", "data"]);
 	});
 });
 

@@ -12,13 +12,7 @@ import {
 } from "../_generated/secret_capture_pb.js";
 import { SecretCaptureError } from "./errors.js";
 
-/**
- * Where a captured value goes: the store's runtime or deploy folder, the
- * store's one-use writer sign-in, or `handoff`: straight to the ceremony
- * running in this process, in memory, never to a store (a provider's sign-in
- * the run needs before any store exists).
- */
-export type SecretCaptureTarget = "runtime" | "deploy" | "writer" | "handoff";
+export type SecretCaptureTarget = "runtime" | "deploy" | "writer";
 export type SecretCaptureCharset = "printable-line" | "printable-multiline";
 
 /** The largest value any capture accepts (a 4096-bit PEM key fits many times over). */
@@ -57,7 +51,7 @@ function invalid(): never {
 export function parseSecretCaptureSpec(
 	record: SecretCaptureSpec,
 ): ParsedSecretCaptureSpec {
-	const target = (["runtime", "deploy", "writer", "handoff"] as const).find(
+	const target = (["runtime", "deploy", "writer"] as const).find(
 		(candidate) => candidate === record.target,
 	);
 	const charset = (["printable-line", "printable-multiline"] as const).find(

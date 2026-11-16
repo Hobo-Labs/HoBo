@@ -24,12 +24,10 @@ import {
 const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");
 const BIN = join(PACKAGE, "dist", "bin", "hobo.js");
-const RELAY_YARD = join(REPO, "packages/ci-vercel/deploy/yard.ts");
-const RELAY_DELIVERY = join(REPO, "packages/ci-vercel/deploy/delivery.ts");
-const RUNNER_FLEET = join(
-	REPO,
-	"packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts",
-);
+const RELAY_YARD = "packages/ci-vercel/deploy/yard.ts";
+const RELAY_DELIVERY = "packages/ci-vercel/deploy/delivery.ts";
+const RUNNER_FLEET =
+	"packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts";
 
 const homes: string[] = [];
 afterEach(async () => {
@@ -50,28 +48,24 @@ type Envelope = Readonly<{
 	data?: object;
 }>;
 
-/** Use an isolated project while loading the repository's real topology modules. */
+/** One `hobo deploy … --json` run of the built binary from the repo root. */
 function deploy(
 	home: string,
 	argv: readonly string[],
 	env: Readonly<Record<string, string>> = {},
 ): Promise<Envelope> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(
-			process.execPath,
-			[BIN, "deploy", ...argv, "--cwd", home, "--json"],
-			{
-				cwd: REPO,
-				env: {
-					PATH: process.env.PATH ?? "",
-					HOME: home,
-					HOBO_HOME: home,
-					NODE_NO_WARNINGS: "1",
-					...env,
-				},
-				stdio: ["ignore", "pipe", "pipe"],
+		const child = spawn(process.execPath, [BIN, "deploy", ...argv, "--json"], {
+			cwd: REPO,
+			env: {
+				PATH: process.env.PATH ?? "",
+				HOME: home,
+				HOBO_HOME: home,
+				NODE_NO_WARNINGS: "1",
+				...env,
 			},
-		);
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 		let stdout = "";
 		let stderr = "";
 		child.stdout.on("data", (chunk: Buffer) => {

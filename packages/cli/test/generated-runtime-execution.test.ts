@@ -177,12 +177,6 @@ registerWorkflow("a/b", input => String(input)+":first");
 registerWorkflow("a", input => String(input)+":second");
 assert.equal((await runWorkflow("a/b","one","c")).result,"one:first");
 assert.equal((await runWorkflow("a","two","b/c")).result,"two:second");
-const legacyStream = "run/generated/tenant-a/project-a/support/a%2Fb/legacy-args";
-await store.append(legacyStream,[
-  {type:"run.Started",v:1,data:{seed:"legacy",workflowName:"a/b",args:null}},
-  {type:"run.Completed",v:1,data:{result:"from-journal"}},
-],{expectedSeq:0,actor:{kind:"service",id:"legacy"},tenant:"tenant-a",project:"project-a"});
-assert.equal((await runWorkflow("a/b",null,"legacy-args")).result,"from-journal");
 const third = {...ticket,id:"t-3",title:"third"};
 const changed = {...ticket,id:"t-2",title:"updated from tail"};
 await store.append(resourceStream,[
@@ -215,12 +209,8 @@ assert.deepEqual(await useTicketQuery(),[changed,third]);
 registerStep("ticket.validate",()=>{throw new Error("completed effect re-executed");});
 registerStep("ticket.enrich",()=>{throw new Error("completed effect re-executed");});
 registerWorkflow("ticket.triage",["ticket.validate","ticket.enrich"]);
-const workflowStream = "run/generated/tenant-a/project-a/support/ticket.triage/stable-run";
-const workflowRevision = store.getStreamHead?.(workflowStream)?.revision;
-assert.ok(workflowRevision);
 const resumed = await runWorkflow("ticket.triage",ticket,"stable-run");
 assert.deepEqual(resumed.result,first.result);
-assert.equal(store.getStreamHead?.(workflowStream)?.revision,workflowRevision);
 await assert.rejects(()=>runWorkflow("ticket.triage",{...ticket,title:"changed-input"},"stable-run"),/different input/);
 assert.equal(await api.resources.ticket.remove("t-2"),true);
 assert.equal(await api.resources.ticket.remove("t-2"),false);

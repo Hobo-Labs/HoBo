@@ -34,19 +34,18 @@ const HOST = process.env.HOBO_YARD_HOST ?? "0.0.0.0";
 const GAME_PORT = Number(process.env.HOBO_YARD_PORT ?? 8788);
 const API_PORT = Number(process.env.HOBO_CONTROL_PORT ?? 8790);
 
-const MIME = new Map([
-	[".html", "text/html; charset=utf-8"],
-	[".js", "text/javascript; charset=utf-8"],
-	[".css", "text/css; charset=utf-8"],
-	[".json", "application/json"],
-	[".png", "image/png"],
-	[".jpg", "image/jpeg"],
-	[".jpeg", "image/jpeg"],
-	[".svg", "image/svg+xml"],
-	[".ttf", "font/ttf"],
-	[".gif", "image/gif"],
-	[".mp4", "video/mp4"],
-]);
+const MIME: Record<string, string> = {
+	".html": "text/html; charset=utf-8",
+	".js": "text/javascript; charset=utf-8",
+	".css": "text/css; charset=utf-8",
+	".json": "application/json",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".svg": "image/svg+xml",
+	".gif": "image/gif",
+	".mp4": "video/mp4",
+};
 
 function serveDir(base: string) {
 	return (
@@ -69,7 +68,7 @@ function serveDir(base: string) {
 			}
 			const ext = extname(file);
 			res.writeHead(200, {
-				"content-type": MIME.get(ext) || "application/octet-stream",
+				"content-type": MIME[ext] || "application/octet-stream",
 				"cache-control": "no-store",
 				"access-control-allow-origin": "*",
 			});
@@ -94,9 +93,7 @@ const pub = stationRailsPublish(ctx, {
 	name: "prod",
 	version: "1.0.0",
 });
-if (!pub.ok || !pub.data)
-	throw new Error(`could not publish rail: ${pub.message}`);
-const hash = String(pub.data.contentHash);
+const hash = String((pub.data as { contentHash: string }).contentHash);
 stationRailsApprove(ctx, { stationId: "station:local", hashOrId: hash });
 stationRailsActivate(ctx, { stationId: "station:local", hashOrId: hash });
 // ensure one authorized connection for a lively yard

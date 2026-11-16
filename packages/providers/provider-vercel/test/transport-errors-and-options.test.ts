@@ -682,14 +682,11 @@ describe("VercelProviderError", () => {
 });
 
 describe("authoring options", () => {
-	it("does not expose external databases as Vercel products", () => {
-		expect(vercel.with).not.toHaveProperty("neonPostgres");
-		expect(vercel.with).not.toHaveProperty("prismaPostgres");
-	});
 	it("names vercel as the provider target on every block", () => {
 		for (const block of [
 			vercel.with.web(),
 			vercel.with.blob(),
+			vercel.with.neonPostgres(),
 			vercel.with.edgeConfig(),
 		]) {
 			expect(block.providerId).toBe(PROVIDER_TARGET);
@@ -708,12 +705,13 @@ describe("authoring options", () => {
 	it("targets the right port for each product", () => {
 		expect(vercel.with.web().port).toBe("compute");
 		expect(vercel.with.blob().port).toBe("objectStore");
+		expect(vercel.with.neonPostgres().port).toBe("database");
 		expect(vercel.with.edgeConfig().port).toBe("kv");
 	});
 
 	it("names each option so two blocks on one port stay distinguishable", () => {
 		expect(vercel.with.web().optionName).toBe("web");
-		expect(vercel.with.blob().optionName).toBe("blob");
+		expect(vercel.with.neonPostgres().optionName).toBe("neonPostgres");
 	});
 
 	it("supplies a working default per product", () => {
@@ -722,6 +720,7 @@ describe("authoring options", () => {
 		// simplest possible block.
 		expect(vercel.with.web().options).toEqual({ framework: "nextjs" });
 		expect(vercel.with.blob().options).toEqual({ store: "assets" });
+		expect(vercel.with.neonPostgres().options).toEqual({ engine: "postgres" });
 		expect(vercel.with.edgeConfig().options).toEqual({ store: "edge-config" });
 	});
 

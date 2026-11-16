@@ -1,9 +1,9 @@
 {
-	"consumer": { "name": "HoboBindleTestSuite" },
-	"provider": { "name": "HoboAppTestHarness" },
+	"consumer": { "name": "hobo-bindle-test-suite" },
+	"provider": { "name": "hobo-app-test-harness" },
 	"interactions": [
 		{
-			"description": "the default lane reports deployment-time fidelity and planned teardown without claiming readiness",
+			"description": "the default lane deploys the collected graph in-process and attests every handle",
 			"request": {
 				"method": "POST",
 				"path": "/harness/deploy",
@@ -19,27 +19,28 @@
 						{
 							"alias": "api",
 							"kind": "api",
-							"fidelity": "simulated"
+							"fidelity": "simulated",
+							"endpoint": "http://127.0.0.1:44301"
 						},
-						{ "alias": "cache", "kind": "kv", "fidelity": "simulated" },
-						{ "alias": "db", "kind": "data", "fidelity": "simulated" }
+						{ "alias": "cache", "kind": "kv", "fidelity": "mocked" },
+						{ "alias": "db", "kind": "data", "fidelity": "mocked" }
 					],
 					"fidelity": {
 						"by_fidelity": {
 							"real": 0,
-							"simulated": 3,
-							"mocked": 0,
+							"simulated": 1,
+							"mocked": 2,
 							"camp-only": 0
 						},
 						"asserted_against": [],
-						"prod_readiness_claimable": false
+						"prod_readiness_claimable": true
 					},
 					"teardown_order": ["api", "db", "cache"]
 				}
 			}
 		},
 		{
-			"description": "accessing simulated resources does not claim production readiness",
+			"description": "a suite that asserted against a mocked handle cannot claim prod-readiness",
 			"request": {
 				"method": "GET",
 				"path": "/harness/fidelity",
@@ -50,13 +51,13 @@
 				"body": {
 					"by_fidelity": {
 						"real": 0,
-						"simulated": 3,
-						"mocked": 0,
+						"simulated": 1,
+						"mocked": 2,
 						"camp-only": 0
 					},
 					"asserted_against": [
 						{ "alias": "api", "fidelity": "simulated" },
-						{ "alias": "db", "fidelity": "simulated" }
+						{ "alias": "db", "fidelity": "mocked" }
 					],
 					"prod_readiness_claimable": false
 				}
@@ -73,6 +74,7 @@
 				"status": 409,
 				"body": {
 					"code": "HARNESS_YARD_REQUIRED",
+					"message": "the ephemeral-camp lane was selected without a Yard",
 					"remediation": "pass an explicit Yard — createTestHarness({ lane: 'ephemeral-camp', yard }) — the lane never falls back to in-process"
 				}
 			}
@@ -88,6 +90,7 @@
 				"status": 409,
 				"body": {
 					"code": "HARNESS_READINESS_REJECTED",
+					"message": "http://127.0.0.1:44301/private answered 401; a deliberate rejection is an answer, not a propagation delay",
 					"remediation": "fix the request (credentials, path, or method) — retrying a 400/401/403 cannot make it succeed"
 				}
 			}
@@ -108,10 +111,10 @@
 				"status": 422,
 				"body": {
 					"code": "HARNESS_CREDENTIAL_NOT_A_REF",
+					"message": "HOBO_TESTING_CAMP_CREDENTIAL_REF does not hold a secretRef locator",
 					"remediation": "broker the credential and reference it (vault://, aws-sm://, hobo-secret://, …); a pasted token value is refused by design (ADR-0113)"
 				}
 			}
 		}
-	],
-	"metadata": { "pactSpecification": { "version": "3.0.0" } }
+	]
 }

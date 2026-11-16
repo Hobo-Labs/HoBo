@@ -486,10 +486,6 @@ class YardDraft implements YardBuilder {
 		return this.slot("webhook", ...bindings);
 	}
 
-	schedule(...bindings: SlotBinding[]): this {
-		return this.slot("schedule", ...bindings);
-	}
-
 	standardCamps(envType: EnvType, tiers?: readonly CampTier[]): this {
 		// Delegates to @hobo/camps rather than re-deriving the set, so the
 		// vocabulary has exactly one implementation and the builder cannot drift

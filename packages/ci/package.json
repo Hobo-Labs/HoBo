@@ -18,10 +18,6 @@
       "types": "./dist/execution.d.ts",
       "default": "./dist/execution.js"
     },
-    "./testing": {
-      "types": "./dist/testing.d.ts",
-      "default": "./dist/testing.js"
-    },
     "./app": {
       "types": "./dist/app.d.ts",
       "default": "./dist/app.js"

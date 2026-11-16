@@ -25,8 +25,6 @@ export type CliCaptureResult = {
 	timing: CaptureTiming;
 	screen: { cols: number | null; rows: number | null };
 	primaryFile: string;
-	degraded: boolean;
-	notes: string[];
 	/**
 	 * Honest kind: a buffered one-shot capture is a `transcript`, never a
 	 * `recording`. Only a real timed recording (asciinema via the tui driver)
@@ -52,38 +50,31 @@ export function captureCli(
 	// pipefail so `cmd | head` reports the failing command's status, not head's 0
 	const wrapped = `set -o pipefail; ${input.command}`;
 	return new Promise((resolve) => {
-		const child = spawn("bash", ["-c", wrapped], {
+		const child = spawn("bash", ["-lc", wrapped], {
 			cwd: input.cwd,
 			env: { ...process.env, ...input.env },
 		});
-		const limit = 8 * 1024 * 1024;
-		const stdoutCapture: { chunks: Buffer[]; bytes: number; truncated: boolean } = { chunks: [], bytes: 0, truncated: false };
-		const stderrCapture: { chunks: Buffer[]; bytes: number; truncated: boolean } = { chunks: [], bytes: 0, truncated: false };
+		let stdoutRaw = "";
+		let stderrRaw = "";
 		let firstOutputAt: number | null = null;
 		const markFirst = () => {
 			if (firstOutputAt === null) firstOutputAt = Date.now();
 		};
-		const append = (capture: typeof stdoutCapture, chunk: Buffer) => {
+		child.stdout.setEncoding("utf8");
+		child.stderr.setEncoding("utf8");
+		child.stdout.on("data", (chunk: string) => {
 			markFirst();
-			const remaining = limit - capture.bytes;
-			if (chunk.length > remaining) capture.truncated = true;
-			if (remaining > 0) {
-				const kept = chunk.subarray(0, remaining);
-				capture.chunks.push(kept);
-				capture.bytes += kept.length;
-			}
-		};
-		child.stdout.on("data", (chunk: Buffer) => append(stdoutCapture, chunk));
-		child.stderr.on("data", (chunk: Buffer) => append(stderrCapture, chunk));
+			if (stdoutRaw.length < 8 * 1024 * 1024) stdoutRaw += chunk;
+		});
+		child.stderr.on("data", (chunk: string) => {
+			markFirst();
+			if (stderrRaw.length < 8 * 1024 * 1024) stderrRaw += chunk;
+		});
 		const timeout = setTimeout(
 			() => child.kill("SIGKILL"),
 			input.timeoutMs ?? 120_000,
 		);
-		let finished = false;
-		let spawnError = "";
 		const finish = (status: number | null) => {
-			if (finished) return;
-			finished = true;
 			clearTimeout(timeout);
 			const durationMs = Date.now() - started;
 			const timing: CaptureTiming = {
@@ -91,14 +82,8 @@ export function captureCli(
 				timeToFirstOutputMs:
 					firstOutputAt === null ? null : firstOutputAt - started,
 			};
-			const stdout = redactText(Buffer.concat(stdoutCapture.chunks).toString("utf8"));
-			const stderr = redactText([Buffer.concat(stderrCapture.chunks).toString("utf8"), spawnError].filter(Boolean).join("\n"));
-			const notes = [
-				...(stdoutCapture.truncated ? [`stdout truncated after ${limit} bytes`] : []),
-				...(stderrCapture.truncated ? [`stderr truncated after ${limit} bytes`] : []),
-				...(status === null ? ["capture process did not exit normally"] : []),
-			];
-			const degraded = notes.length > 0;
+			const stdout = redactText(stdoutRaw);
+			const stderr = redactText(stderrRaw);
 			const combinedText = `${stdout}\n${stderr}`;
 			// Prefer spawn status; if still 0, recover body-level lifecycle failures
 			let exitCode: number | null = status;
@@ -120,8 +105,6 @@ export function captureCli(
 				`cwd: ${input.cwd}`,
 				`exitCode: ${exitCode}`,
 				`spawnStatus: ${status}`,
-				`degraded: ${degraded}`,
-				...notes.map((note) => `note: ${note}`),
 				`durationMs: ${durationMs}`,
 				`timeToFirstOutputMs: ${timing.timeToFirstOutputMs ?? "none"}`,
 				`screen: ${screen.cols ?? "?"}x${screen.rows ?? "?"} (cols x rows)`,
@@ -148,11 +131,9 @@ export function captureCli(
 				screen,
 				primaryFile,
 				kind: "transcript",
-				degraded,
-				notes,
 			});
 		};
-		child.on("error", (error) => { spawnError = `spawn error: ${error.message}`; finish(null); });
+		child.on("error", () => finish(null));
 		child.on("close", (code) => finish(code));
 	});
 }

@@ -121,26 +121,6 @@ export function createBindlesPublicApiSnapshot(
 		"STATUS_PAGE_OPTION",
 		"isStatusPageAnnotation",
 		"readStatusPageConfig",
-		// Continuity trait: HA/DR, replication and migration policy (ADR-0145)
-		"continuity",
-		"CONTINUITY_KINDS",
-		"CONTINUITY_MIGRATION",
-		"CONTINUITY_ON_LOSS",
-		"CONTINUITY_OPTION",
-		"CONTINUITY_TIER_DEFAULTS",
-		"CONTINUITY_TIERS",
-		"ContinuityError",
-		"continuityPolicies",
-		"continuityViolations",
-		"isContinuityAnnotation",
-		"parseContinuityPolicy",
-		"readContinuity",
-		// Cadence trait: when a schedule runs (ADR-0145)
-		"cadence",
-		"CADENCE_OPTION",
-		"CadenceError",
-		"cadenceViolations",
-		"readCadence",
 		// App Kit taxonomy (prefer over "membrane types" at Bindle layer)
 		"APP_KIT_KINDS",
 		"HTTP_APP_KIT_KINDS",
@@ -531,106 +511,6 @@ export function createBindlesPublicApiSnapshot(
 				kind: "status-page-helper",
 				signature:
 					"readStatusPageConfig(annotations: readonly ProviderAnnotation[]): StatusPageBindleConfig | null",
-			},
-			{
-				name: "continuity",
-				kind: "continuity-annotation",
-				signature: "continuity(input?: ContinuityInput): ProviderAnnotation",
-			},
-			{
-				name: "CONTINUITY_OPTION",
-				kind: "continuity-constant",
-				signature: 'const CONTINUITY_OPTION: "continuity"',
-			},
-			{
-				name: "CONTINUITY_TIERS",
-				kind: "continuity-constant",
-				signature:
-					'const CONTINUITY_TIERS: readonly ["rebuildable","standard","critical"]',
-			},
-			{
-				name: "CONTINUITY_ON_LOSS",
-				kind: "continuity-constant",
-				signature: 'const CONTINUITY_ON_LOSS: readonly ["rebuild","restore"]',
-			},
-			{
-				name: "CONTINUITY_MIGRATION",
-				kind: "continuity-constant",
-				signature:
-					'const CONTINUITY_MIGRATION: readonly ["continuous","on-failure"]',
-			},
-			{
-				name: "CONTINUITY_KINDS",
-				kind: "continuity-constant",
-				signature: "const CONTINUITY_KINDS: ReadonlySet<string>",
-			},
-			{
-				name: "CONTINUITY_TIER_DEFAULTS",
-				kind: "continuity-constant",
-				signature:
-					"const CONTINUITY_TIER_DEFAULTS: Readonly<Record<ContinuityTier, ContinuityPolicy>>",
-			},
-			{
-				name: "ContinuityError",
-				kind: "continuity-error",
-				signature: "class ContinuityError extends TypeError",
-			},
-			{
-				name: "parseContinuityPolicy",
-				kind: "continuity-helper",
-				signature:
-					"parseContinuityPolicy(input: ContinuityInput): ContinuityPolicy",
-			},
-			{
-				name: "isContinuityAnnotation",
-				kind: "continuity-helper",
-				signature:
-					"isContinuityAnnotation(annotation: ProviderAnnotation): boolean",
-			},
-			{
-				name: "readContinuity",
-				kind: "continuity-helper",
-				signature:
-					"readContinuity(annotations: readonly ProviderAnnotation[]): ContinuityPolicy | null",
-			},
-			{
-				name: "continuityPolicies",
-				kind: "continuity-helper",
-				signature:
-					"continuityPolicies(definition: BindleDefinition): ReadonlyMap<string, ContinuityPolicy>",
-			},
-			{
-				name: "continuityViolations",
-				kind: "continuity-helper",
-				signature:
-					"continuityViolations(definition: BindleDefinition): readonly ContinuityViolation[]",
-			},
-			{
-				name: "cadence",
-				kind: "cadence-annotation",
-				signature: "cadence(cron: string): ProviderAnnotation",
-			},
-			{
-				name: "CADENCE_OPTION",
-				kind: "cadence-constant",
-				signature: 'const CADENCE_OPTION: "cadence"',
-			},
-			{
-				name: "CadenceError",
-				kind: "cadence-error",
-				signature: "class CadenceError extends TypeError",
-			},
-			{
-				name: "readCadence",
-				kind: "cadence-helper",
-				signature:
-					"readCadence(annotations: readonly ProviderAnnotation[]): string | undefined",
-			},
-			{
-				name: "cadenceViolations",
-				kind: "cadence-helper",
-				signature:
-					"cadenceViolations(definition: BindleDefinition): readonly CadenceViolation[]",
 			},
 			{
 				name: "APP_KIT_KINDS",

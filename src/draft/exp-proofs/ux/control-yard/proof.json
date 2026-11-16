@@ -12,7 +12,9 @@
       "docs/design/adr/07-portability-extensibility.md#adr-0135",
       "docs/design/cli-spec.md",
       "docs/design/accessibility-usability-launch-baseline.md",
-      "packages/control-yard/DESIGN.md"
+      "packages/control-yard/docs/validation/HYX-RUBRIC.md",
+      "packages/control-yard/docs/validation/hyx-rubric.yaml",
+      "packages/control-yard/docs/validation/feel-budgets.json"
     ]
   },
   "artifacts": {
@@ -30,51 +32,52 @@
   },
   "waivers": [],
   "acceptance": {
-    "$comment": "Informational for reviewers; proofManifestSchema ignores unknown keys. A null gate means no complete current executable acceptance gate is recorded; partial evidence may exist.",
+    "$comment": "Informational for reviewers; proofManifestSchema ignores unknown keys. Each criterion names the executable gate that decides it.",
+    "rubric": "packages/control-yard/docs/validation/hyx-rubric.yaml",
+    "scenarios": [
+      "packages/control-yard/src/scenarios/quiet-yard.ts",
+      "packages/control-yard/src/scenarios/incident-storm.ts",
+      "packages/control-yard/src/scenarios/quota-exhaustion.ts",
+      "packages/control-yard/src/scenarios/revoked-connection.ts",
+      "packages/control-yard/src/scenarios/deploy-saga.ts",
+      "packages/control-yard/src/scenarios/first-run.ts"
+    ],
     "criteria": [
       {
         "id": "ACC-CORE-LOOP",
         "text": "The waybill desk offers exactly the real work the projection contains, and Highball is reached only from a genuinely clean board.",
-        "gate": null,
-        "evidenceStatus": "unverified"
+        "gate": "pnpm run test:behavior (features/control-yard-core-loop.feature)"
       },
       {
         "id": "ACC-LIVENESS",
         "text": "Every scenario beat marked mustChange moves pixels inside its own layout-derived region AND satisfies its seamPredicate - pixels changed and the seam agrees why.",
-        "gate": null,
-        "evidenceStatus": "unverified"
+        "gate": "pnpm --filter @hobo/pixel-village run e2e (test/e2e/liveness.spec.ts)"
       },
       {
         "id": "ACC-DUALITY",
         "text": "Motion/stillness duality: the idle yard reads alive with motion allowed, and holds still (never blank) under prefers-reduced-motion, within feel-budgets.json reducedMotion.maxChangedPixelPct.",
-        "gate": null,
-        "evidenceStatus": "unverified"
+        "gate": "pnpm --filter @hobo/pixel-village run e2e (test/e2e/feel.spec.ts)"
       },
       {
         "id": "ACC-CLIPS",
         "text": "Every character clip in assets/assets_index.json is reachable from some scenario+tick, or is listed in KNOWN_UNBOUND_CLIPS with a written reason.",
-        "gate": null,
-        "evidenceStatus": "unverified"
+        "gate": "pnpm --filter @hobo/pixel-village run e2e (test/e2e/feel.spec.ts)"
       },
       {
         "id": "ACC-A11Y",
         "text": "A keyboard-only path reaches and confirms a command sheet; every keyboard stop carries a visible focus treatment in both themes; axe-core reports no serious/critical violations on the DOM chrome.",
-        "gate": null,
-        "evidenceStatus": "unverified"
+        "gate": "pnpm --filter @hobo/pixel-village run e2e (test/e2e/access-trust.spec.ts)"
       },
       {
         "id": "ACC-TRUST",
         "text": "Synthetic data is labelled SIMULATED (presenter item plus seam world.demo) and live data is not; reduced-motion information parity holds for incident beats.",
-        "gate": null,
-        "evidenceStatus": "unverified"
+        "gate": "pnpm --filter @hobo/pixel-village run e2e (test/e2e/access-trust.spec.ts)"
       },
       {
         "id": "ACC-HYX",
         "text": "An experience-review report exists at public/shots/experience-review.json, and no HYX item median has dropped by 1.0 or more against its trailing-5 median.",
-        "gate": null,
-        "evidenceStatus": "unverified"
+        "gate": "pnpm --filter @hobo/pixel-village run review:experience; run review:drift (advisory; --strict at milestones)"
       }
-    ],
-    "retiredCoverage": "The pixel-village core-loop, scenario, browser and experience-review gates and their validation fixtures were removed with that package. Partial Yard tests and captured evidence remain, but the criteria lack complete current executable acceptance gates."
+    ]
   }
 }

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cloud.proto.
  */
 export const file_cloud: GenFile = /*@__PURE__*/
-  fileDesc("CgtjbG91ZC5wcm90bxINaG9iby5jbG91ZC52MSLIAQoOUmVzb3VyY2VJbnRlbnQSDAoEbmFtZRgBIAEoCRIMCgRwb3J0GAIgASgJEg8KB3JlcXVpcmUYAyADKAkSDgoGcHJlZmVyGAQgAygJEhMKC25lZ290aWF0aW9uGAUgASgJEgwKBGRlcHMYBiADKAkSDgoGcmVnaW9uGAcgASgJEhEKCW9iamVjdGl2ZRgIIAEoCRIzCglwbGFjZW1lbnQYCSABKAsyIC5ob2JvLmNsb3VkLnYxLlBsYWNlbWVudENyaXRlcmlhIkQKGVBsYWNlbWVudFByb3BlcnR5U2VsZWN0b3ISCwoDa2V5GAEgASgJEgoKAm9wGAIgASgJEg4KBnZhbHVlcxgDIAMoCSJJChVQbGFjZW1lbnRBZmZpbml0eVJ1bGUSDAoEbW9kZRgBIAEoCRITCgt0YXJnZXRfcG9ydBgCIAEoCRINCgVzY29wZRgDIAEoCSIkCg9QbGFjZW1lbnRTcHJlYWQSEQoJZGltZW5zaW9uGAEgASgJIh8KDlBsYWNlbWVudFBpY2tOEg0KBWNvdW50GAEgASgNIukBChFQbGFjZW1lbnRDcml0ZXJpYRI7CglzZWxlY3RvcnMYASADKAsyKC5ob2JvLmNsb3VkLnYxLlBsYWNlbWVudFByb3BlcnR5U2VsZWN0b3ISOAoKYWZmaW5pdGllcxgCIAMoCzIkLmhvYm8uY2xvdWQudjEuUGxhY2VtZW50QWZmaW5pdHlSdWxlEi4KBnNwcmVhZBgDIAEoCzIeLmhvYm8uY2xvdWQudjEuUGxhY2VtZW50U3ByZWFkEi0KBnBpY2tfbhgEIAEoCzIdLmhvYm8uY2xvdWQudjEuUGxhY2VtZW50UGlja04ipQIKFVJlc291cmNlRGVmaW5pdGlvblJlZhIKCgJpZBgBIAEoCRITCgtwcm92aWRlcl9pZBgCIAEoCRIMCgRwb3J0GAMgASgJEhAKCGZlYXR1cmVzGAQgAygJEg8KB3JlZ2lvbnMYBSADKAkSEwoLc3BlY2lmaWNpdHkYBiABKA0SEAoIcHJpb3JpdHkYByABKA0SEAoIY29zdF9za3UYCCABKAkSEQoJY29zdF91bml0GAkgASgJEhYKDm1hcmdpbmFsX3ByaWNlGAogASgJEhsKDnByaWNpbmdfc3RhdHVzGAsgASgJSACIAQESFwoKcHJvZHVjdF9pZBgMIAEoCUgBiAEBQhEKD19wcmljaW5nX3N0YXR1c0INCgtfcHJvZHVjdF9pZCIyChFDYXBhYmlsaXR5VmVyZGljdBIMCgRraW5kGAEgASgJEg8KB21pc3NpbmcYAiADKAkiZAoPUmFua2VkQ2FuZGlkYXRlEhUKDWRlZmluaXRpb25faWQYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkSEwoLc3BlY2lmaWNpdHkYAyABKA0SEAoIcHJpb3JpdHkYBCABKA0iOgoRUmVqZWN0ZWRDYW5kaWRhdGUSFQoNZGVmaW5pdGlvbl9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAki0wQKDE1hdGNoRGVjaWRlZBIVCg1kZXBsb3ltZW50X2lkGAEgASgJEhAKCHJlc291cmNlGAIgASgJEg4KBndpbm5lchgDIAEoCRITCgtwcm92aWRlcl9pZBgEIAEoCRIMCgRwb3J0GAUgASgJEhMKC3NwZWNpZmljaXR5GAYgASgNEhAKCHJlamVjdGVkGAcgAygJEhEKCW9iamVjdGl2ZRgIIAEoCRIOCgZyZWdpb24YCSABKAkSEQoJcmF0aW9uYWxlGAogASgJEhQKDGNhdGFsb2dfaGFzaBgLIAEoCRIvCgdyYW5raW5nGAwgAygLMh4uaG9iby5jbG91ZC52MS5SYW5rZWRDYW5kaWRhdGUSPQoTcmVqZWN0ZWRfY2FuZGlkYXRlcxgNIAMoCzIgLmhvYm8uY2xvdWQudjEuUmVqZWN0ZWRDYW5kaWRhdGUSCwoDdGllGA4gASgIEhwKFGNhdGFsb2dfY29udGVudF9oYXNoGA8gASgJEhIKCnByb2R1Y3RfaWQYECABKAkSFAoMYXBwbGllZF9yb3dzGBEgAygJElYKFnJlYWxpemF0aW9uX3BhcmFtZXRlcnMYEiADKAsyNi5ob2JvLmNsb3VkLnYxLk1hdGNoRGVjaWRlZC5SZWFsaXphdGlvblBhcmFtZXRlcnNFbnRyeRIZChFub25fcG9ydGFibGVfcm93cxgTIAMoCRo8ChpSZWFsaXphdGlvblBhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIsgCCgxSZXNvdXJjZVBsYW4SDAoEbmFtZRgBIAEoCRIMCgRwb3J0GAIgASgJEhAKCHByb3ZpZGVyGAMgASgJEgwKBGRlcHMYBCADKAkSEAoIc3RyYXRlZ3kYBSABKAkSDgoGcmVnaW9uGAYgASgJEhUKDWRlcGxveW1lbnRfaWQYByABKAkSEgoKcHJvZHVjdF9pZBgIIAEoCRJWChZyZWFsaXphdGlvbl9wYXJhbWV0ZXJzGAkgAygLMjYuaG9iby5jbG91ZC52MS5SZXNvdXJjZVBsYW4uUmVhbGl6YXRpb25QYXJhbWV0ZXJzRW50cnkSGQoRbm9uX3BvcnRhYmxlX3Jvd3MYCiADKAkaPAoaUmVhbGl6YXRpb25QYXJhbWV0ZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJ9Cg5EZXBsb3ltZW50UGxhbhIOCgZzY2hlbWEYASABKAkSLgoJcmVzb3VyY2VzGAIgAygLMhsuaG9iby5jbG91ZC52MS5SZXNvdXJjZVBsYW4SGAoQZGVwZW5kZW5jeV9vcmRlchgDIAMoCRIRCglvYmplY3RpdmUYBCABKAkiagoRRGVwbG95bWVudFBsYW5uZWQSFQoNZGVwbG95bWVudF9pZBgBIAEoCRIRCglwbGFuX2hhc2gYAiABKAkSKwoEcGxhbhgDIAEoCzIdLmhvYm8uY2xvdWQudjEuRGVwbG95bWVudFBsYW4ipQEKD1BsYW5SZW1lZGlhdGlvbhIQCghyZXNvdXJjZRgBIAEoCRIMCgRjb2RlGAIgASgJEhUKDXJlcXVpcmVkX3BvcnQYAyABKAkSGQoRcmVxdWlyZWRfZmVhdHVyZXMYBCADKAkSDwoHbWlzc2luZxgFIAMoCRIaChJzdWdnZXN0ZWRfcHJvdmlkZXIYBiABKAkSEwoLcmVtZWRpYXRpb24YByABKAkidQoWRGVwbG95bWVudFBsYW5SZWplY3RlZBIVCg1kZXBsb3ltZW50X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCRI0CgxyZW1lZGlhdGlvbnMYAyADKAsyHi5ob2JvLmNsb3VkLnYxLlBsYW5SZW1lZGlhdGlvbiKFAQoUUmVnaXN0cnlDYXRhbG9nRW50cnkSEwoLcHJvdmlkZXJfaWQYASABKAkSOQoLZGVmaW5pdGlvbnMYAiADKAsyJC5ob2JvLmNsb3VkLnYxLlJlc291cmNlRGVmaW5pdGlvblJlZhIdChVtYW5pZmVzdF9pbmRleF9kaWdlc3QYAyABKAkiQgoWUHJvdmlkZXJBcHByb3ZlZFJlY29yZBITCgtwcm92aWRlcl9pZBgBIAEoCRITCgthcHByb3ZlZF9ieRgCIAEoCSL9AQoKSWFjUHJvZ3JhbRISCgpwcm9ncmFtX2lkGAEgASgJEhUKDWRlcGxveW1lbnRfaWQYAiABKAkSEwoLcmVzb3VyY2VfaWQYAyABKAkSEAoIcHJvdmlkZXIYBCABKAkSDgoGZHJpdmVyGAUgASgJEg4KBmFjdGlvbhgGIAEoCRISCgpzdGFja19uYW1lGAcgASgJEi0KCHJlc291cmNlGAggASgLMhsuaG9iby5jbG91ZC52MS5SZXNvdXJjZVBsYW4SIQoUb3BlcmF0aW9uX2dlbmVyYXRpb24YCSABKAlIAIgBAUIXChVfb3BlcmF0aW9uX2dlbmVyYXRpb24iUwoQU2NvcGVkQ3JlZGVudGlhbBIKCgJpZBgBIAEoCRINCgVzY29wZRgCIAEoCRITCgt0dGxfc2Vjb25kcxgDIAEoDRIPCgdhbWJpZW50GAQgASgIIkEKEEV4ZWNPdXRwdXRSZWNvcmQSDwoHZXhlY19pZBgBIAEoCRIOCgZzdHJlYW0YAiABKAkSDAoEbGluZRgDIAEoCSJDCg5FeGVjRGlmZlJlY29yZBIPCgdleGVjX2lkGAEgASgJEg8KB3N1bW1hcnkYAiABKAkSDwoHY2hhbmdlcxgDIAEoDSKuAQoTRXhlY1N1Y2NlZWRlZFJlY29yZBIPCgdleGVjX2lkGAEgASgJEhQKDG91dHB1dHNfaGFzaBgCIAEoCRJACgdvdXRwdXRzGAMgAygLMi8uaG9iby5jbG91ZC52MS5FeGVjU3VjY2VlZGVkUmVjb3JkLk91dHB1dHNFbnRyeRouCgxPdXRwdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKBAgoQRXhlY0ZhaWxlZFJlY29yZBIPCgdleGVjX2lkGAEgASgJEhYKDmNsYXNzaWZpY2F0aW9uGAIgASgJEg4KBnJlYXNvbhgDIAEoCRIkChdyZXF1aXJlc19yZWNvbmNpbGlhdGlvbhgEIAEoCEgAiAEBEhsKDnJlc2VydmF0aW9uX2lkGAUgASgJSAGIAQESJQoYcmVjb25jaWxpYXRpb25fb3BlcmF0aW9uGAYgASgJSAKIAQFCGgoYX3JlcXVpcmVzX3JlY29uY2lsaWF0aW9uQhEKD19yZXNlcnZhdGlvbl9pZEIbChlfcmVjb25jaWxpYXRpb25fb3BlcmF0aW9uIuYBChVSZXNvdXJjZUFjdG9yU25hcHNob3QSFQoNZGVwbG95bWVudF9pZBgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRINCgVzdGF0ZRgDIAEoCRIQCghzZXF1ZW5jZRgEIAEoDRJCCgdvdXRwdXRzGAUgAygLMjEuaG9iby5jbG91ZC52MS5SZXNvdXJjZUFjdG9yU25hcHNob3QuT3V0cHV0c0VudHJ5EgwKBGRlcHMYBiADKAkaLgoMT3V0cHV0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi+wEKGlJlc291cmNlUHJvdmlzaW9uaW5nUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSEwoLcmVzb3VyY2VfaWQYAiABKAkSDwoHZXhlY19pZBgDIAEoCRIUCgxwcm9ncmFtX2hhc2gYBCABKAkSFgoJc3BlY19oYXNoGAUgASgJSACIAQESGAoLcHJvdmlkZXJfaWQYBiABKAlIAYgBARIhChRvcGVyYXRpb25fZ2VuZXJhdGlvbhgHIAEoCUgCiAEBQgwKCl9zcGVjX2hhc2hCDgoMX3Byb3ZpZGVyX2lkQhcKFV9vcGVyYXRpb25fZ2VuZXJhdGlvbiL2AQoZUmVzb3VyY2VQcm92aXNpb25lZFJlY29yZBIVCg1kZXBsb3ltZW50X2lkGAEgASgJEhMKC3Jlc291cmNlX2lkGAIgASgJEkYKB291dHB1dHMYAyADKAsyNS5ob2JvLmNsb3VkLnYxLlJlc291cmNlUHJvdmlzaW9uZWRSZWNvcmQuT3V0cHV0c0VudHJ5Eg8KB2V4ZWNfaWQYBCABKAkSFgoJc3BlY19oYXNoGAUgASgJSACIAQEaLgoMT3V0cHV0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCDAoKX3NwZWNfaGFzaCLBAgoUUmVzb3VyY2VGYWlsZWRSZWNvcmQSFQoNZGVwbG95bWVudF9pZBgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkSFgoOY2xhc3NpZmljYXRpb24YBCABKAkSHwoXY3Jvc3NlZF9ub19nb190aHJlc2hvbGQYBSABKAgSJAoXcmVxdWlyZXNfcmVjb25jaWxpYXRpb24YBiABKAhIAIgBARIbCg5yZXNlcnZhdGlvbl9pZBgHIAEoCUgBiAEBEiUKGHJlY29uY2lsaWF0aW9uX29wZXJhdGlvbhgIIAEoCUgCiAEBQhoKGF9yZXF1aXJlc19yZWNvbmNpbGlhdGlvbkIRCg9fcmVzZXJ2YXRpb25faWRCGwoZX3JlY29uY2lsaWF0aW9uX29wZXJhdGlvbiLCBAoYUmVzb3VyY2VSZWNvbmNpbGVkUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSEwoLcmVzb3VyY2VfaWQYAiABKAkSGAoQZmFpbHVyZV9ldmVudF9pZBgDIAEoCRIRCglvcGVyYXRpb24YBCABKAkSDwoHb3V0Y29tZRgFIAEoCRIUCgxldmlkZW5jZV9yZWYYBiABKAkSHgoWZmluYW5jaWFsX2V2aWRlbmNlX3JlZhgHIAEoCRIdChVmaW5hbmNpYWxfZGlzcG9zaXRpb24YCCABKAkSGwoOcmVzZXJ2YXRpb25faWQYCSABKAlIAIgBARIUCgxjbGFpbV9kaWdlc3QYCiABKAkSRQoHb3V0cHV0cxgLIAMoCzI0LmhvYm8uY2xvdWQudjEuUmVzb3VyY2VSZWNvbmNpbGVkUmVjb3JkLk91dHB1dHNFbnRyeRIUCgdleGVjX2lkGAwgASgJSAGIAQESFgoJc3BlY19oYXNoGA0gASgJSAKIAQESHQoQZmluYWxfc3RhdGVfaGFzaBgOIAEoCUgDiAEBEhsKDnJlc3RvcmVkX3N0YXRlGA8gASgJSASIAQEaLgoMT3V0cHV0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCEQoPX3Jlc2VydmF0aW9uX2lkQgoKCF9leGVjX2lkQgwKCl9zcGVjX2hhc2hCEwoRX2ZpbmFsX3N0YXRlX2hhc2hCEQoPX3Jlc3RvcmVkX3N0YXRlIuQBChhSZXNvdXJjZURlc3Ryb3lpbmdSZWNvcmQSFQoNZGVwbG95bWVudF9pZBgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkSIQoUb3BlcmF0aW9uX2dlbmVyYXRpb24YBCABKAlIAIgBARIZCgxwcm9ncmFtX2hhc2gYBSABKAlIAYgBARIWCglzcGVjX2hhc2gYBiABKAlIAogBAUIXChVfb3BlcmF0aW9uX2dlbmVyYXRpb25CDwoNX3Byb2dyYW1faGFzaEIMCgpfc3BlY19oYXNoIl8KF1Jlc291cmNlRGVzdHJveWVkUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSEwoLcmVzb3VyY2VfaWQYAiABKAkSGAoQZmluYWxfc3RhdGVfaGFzaBgDIAEoCSJXChhEZXBsb3ltZW50RGVwbG95ZWRSZWNvcmQSFQoNZGVwbG95bWVudF9pZBgBIAEoCRIOCgZzZXRfaWQYAiABKAkSFAoMcmVzb3VyY2VfaWRzGAMgAygJIloKGkRlcGxveW1lbnRSb2xsZWRCYWNrUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSFQoNdGFyZ2V0X3NldF9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAki1QEKGkRlcGxveW1lbnRUcmFuc2l0aW9uUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSFQoNdHJhbnNpdGlvbl9pZBgCIAEoCRIMCgRraW5kGAMgASgJEhEKCXBsYW5faGFzaBgEIAEoCRIUCgxyZXNvdXJjZV9pZHMYBSADKAkSHQoQdHJpZ2dlcl9yZXNvdXJjZRgGIAEoCUgAiAEBEhMKBnJlYXNvbhgHIAEoCUgBiAEBQhMKEV90cmlnZ2VyX3Jlc291cmNlQgkKB19yZWFzb24iOgoQUmVvcGVuZWRSZXNvdXJjZRITCgtyZXNvdXJjZV9pZBgBIAEoCRIRCglzcGVjX2hhc2gYAiABKAkikwEKGERlcGxveW1lbnRSZW9wZW5lZFJlY29yZBIVCg1kZXBsb3ltZW50X2lkGAEgASgJEhkKEXJvbGxiYWNrX2V2ZW50X2lkGAIgASgJEhEKCXBsYW5faGFzaBgDIAEoCRIyCglyZXNvdXJjZXMYBCADKAsyHy5ob2JvLmNsb3VkLnYxLlJlb3BlbmVkUmVzb3VyY2UiRgoUQ3JlZGVudGlhbEF1ZGl0U2NvcGUSDAoEcG9ydBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRIOCgZhY3Rpb24YAyABKAki+QEKFENyZWRlbnRpYWxHcmFudEF1ZGl0EhAKCGdyYW50X2lkGAEgASgJEhQKDHN2aWRfc3ViamVjdBgCIAEoCRIyCgVzY29wZRgDIAEoCzIjLmhvYm8uY2xvdWQudjEuQ3JlZGVudGlhbEF1ZGl0U2NvcGUSEQoJdG9rZW5fcmVmGAQgASgJEg4KBnN0YXR1cxgFIAEoCRISCgpncmFudGVkX2F0GAYgASgJEg8KB3VzZWRfYXQYByABKAkSEgoKcmV2b2tlZF9hdBgIIAEoCRIWCg5yZXZva2VkX3JlYXNvbhgJIAEoCRIRCgl1c2VfY291bnQYCiABKA0iSwocQ3JlZGVudGlhbEF1ZGl0VGltZWxpbmVFbnRyeRILCgNzZXEYASABKA0SDAoEdHlwZRgCIAEoCRIQCghncmFudF9pZBgDIAEoCSKMAgoVQ3JlZGVudGlhbEF1ZGl0UmVjb3JkEhYKDmNvcnJlbGF0aW9uX2lkGAEgASgJEjMKBmdyYW50cxgCIAMoCzIjLmhvYm8uY2xvdWQudjEuQ3JlZGVudGlhbEdyYW50QXVkaXQSFAoMaWRlbnRpdHlfaWRzGAMgAygJEhMKC3Nlc3Npb25faWRzGAQgAygJEj0KCHRpbWVsaW5lGAUgAygLMisuaG9iby5jbG91ZC52MS5DcmVkZW50aWFsQXVkaXRUaW1lbGluZUVudHJ5EhMKC2dyYW50X2NvdW50GAYgASgNEhEKCXVzZV9jb3VudBgHIAEoDRIUCgxyZXZva2VfY291bnQYCCABKA0i4QEKG1Jlc29sdmVkRGVwbG95bWVudFNldFJlY29yZBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIOCgZzZXRfaWQYAiABKAkSDgoGdGVuYW50GAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEg8KB2NhbXBfaWQYBSABKAkSEQoJcGxhbl9oYXNoGAYgASgJEhQKDGNvbnRlbnRfaGFzaBgHIAEoCRIeChZnYXRla2VlcGVyX2RlY2lzaW9uX2lkGAggASgJEhsKE2dhdGVrZWVwZXJfZGVjaXNpb24YCSABKAkivAEKF0F0dGVzdGVkUHJpbmNpcGFsUmVjb3JkEhQKDHN2aWRfc3ViamVjdBgBIAEoCRITCgtpZGVudGl0eV9pZBgCIAEoCRIOCgZ0ZW5hbnQYAyABKAkSEwoLY29kZV9kaWdlc3QYBCABKAkSHgoWY29tcG9uZW50X2ltYWdlX2RpZ2VzdBgFIAEoCRIZChFhdHRlc3RhdGlvbl9zdGF0ZRgGIAEoCRIWCg5pc29sYXRpb25fdGllchgHIAEoCSJpChZTZWNyZXRGcmVlU3RhdHVzUmVjb3JkEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhMKC3Jlc291cmNlX2lkGAIgASgJEg0KBXN0YXRlGAMgASgJEhMKC3NlY3JldF9mcmVlGAQgASgIIugBChRTYWZldHlFbnZlbG9wZVJlY29yZBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIUCgxibGFzdF9yYWRpdXMYAiABKAkSEgoKcmV2ZXJzaWJsZRgDIAEoCBIVCg1zcGVuZF9jYXBfdXNkGAQgASgNEhsKE2VzdGltYXRlZF9zcGVuZF91c2QYBSABKA0SFgoOc2VsZl9jYXVzYXRpb24YBiABKAgSFAoMbWF4X2F0dGVtcHRzGAcgASgNEhUKDWF0dGVtcHRzX3VzZWQYCCABKA0SFQoNcmVxdWlyZXNfbGFuZRgJIAEoCCLEAQoQQTJISGFuZG9mZlJlY29yZBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRITCgtpbmNpZGVudF9pZBgCIAEoCRIOCgZzaWduYWwYAyABKAkSDgoGdGVuYW50GAQgASgJEhMKC2Vudmlyb25tZW50GAUgASgJEhUKDWRlcGxveW1lbnRfaWQYBiABKAkSDgoGc2V0X2lkGAcgASgJEhAKCGRlYWRsaW5lGAggASgJEhUKDW9ibGlnYXRpb25faWQYCSABKAki5wEKDFRvcG9sb2d5Tm9kZRIKCgJpZBgBIAEoCRIMCgRraW5kGAIgASgJEg0KBWxhYmVsGAMgASgJEgwKBHBvcnQYBCABKAkSEwoLcHJvdmlkZXJfaWQYBSABKAkSDgoGcmVnaW9uGAYgASgJEhEKCWxpZmVjeWNsZRgHIAEoCRIkChdyZWNvbmNpbGlhdGlvbl9ldmVudF9pZBgIIAEoCUgAiAEBEiYKHm90aGVyX3JlY29uY2lsaWF0aW9uX2V2ZW50X2lkcxgJIAMoCUIaChhfcmVjb25jaWxpYXRpb25fZXZlbnRfaWQiRgoMVG9wb2xvZ3lFZGdlEgwKBGZyb20YASABKAkSCgoCdG8YAiABKAkSDAoEa2luZBgDIAEoCRIOCgZyZWdpb24YBCABKAkilQEKD1RvcG9sb2d5Vmlld1JvdxIVCg1kZXBsb3ltZW50X2lkGAEgASgJEhMKC2JpbmRsZV9oYXNoGAIgASgJEioKBW5vZGVzGAMgAygLMhsuaG9iby5jbG91ZC52MS5Ub3BvbG9neU5vZGUSKgoFZWRnZXMYBCADKAsyGy5ob2JvLmNsb3VkLnYxLlRvcG9sb2d5RWRnZSK9AQoPTGFuZUdyYW50UmVjb3JkEg8KB2xhbmVfaWQYASABKAkSDgoGdGVuYW50GAIgASgJEhIKCm1lbWJlcnNoaXAYAyABKAkSFQoNZm9ya19vbl90b3VjaBgEIAEoCBIkChxiYXNlbGluZV9zaW5nbGVfd3JpdGVyX2xlYXNlGAUgASgIEhkKEWJhc2VsaW5lX211dGF0aW9uGAYgASgIEh0KFWV4dGVybmFsX3NpZGVfZWZmZWN0cxgHIAEoCWIGcHJvdG8z");
+  fileDesc("CgtjbG91ZC5wcm90bxINaG9iby5jbG91ZC52MSLIAQoOUmVzb3VyY2VJbnRlbnQSDAoEbmFtZRgBIAEoCRIMCgRwb3J0GAIgASgJEg8KB3JlcXVpcmUYAyADKAkSDgoGcHJlZmVyGAQgAygJEhMKC25lZ290aWF0aW9uGAUgASgJEgwKBGRlcHMYBiADKAkSDgoGcmVnaW9uGAcgASgJEhEKCW9iamVjdGl2ZRgIIAEoCRIzCglwbGFjZW1lbnQYCSABKAsyIC5ob2JvLmNsb3VkLnYxLlBsYWNlbWVudENyaXRlcmlhIkQKGVBsYWNlbWVudFByb3BlcnR5U2VsZWN0b3ISCwoDa2V5GAEgASgJEgoKAm9wGAIgASgJEg4KBnZhbHVlcxgDIAMoCSJJChVQbGFjZW1lbnRBZmZpbml0eVJ1bGUSDAoEbW9kZRgBIAEoCRITCgt0YXJnZXRfcG9ydBgCIAEoCRINCgVzY29wZRgDIAEoCSIkCg9QbGFjZW1lbnRTcHJlYWQSEQoJZGltZW5zaW9uGAEgASgJIh8KDlBsYWNlbWVudFBpY2tOEg0KBWNvdW50GAEgASgNIukBChFQbGFjZW1lbnRDcml0ZXJpYRI7CglzZWxlY3RvcnMYASADKAsyKC5ob2JvLmNsb3VkLnYxLlBsYWNlbWVudFByb3BlcnR5U2VsZWN0b3ISOAoKYWZmaW5pdGllcxgCIAMoCzIkLmhvYm8uY2xvdWQudjEuUGxhY2VtZW50QWZmaW5pdHlSdWxlEi4KBnNwcmVhZBgDIAEoCzIeLmhvYm8uY2xvdWQudjEuUGxhY2VtZW50U3ByZWFkEi0KBnBpY2tfbhgEIAEoCzIdLmhvYm8uY2xvdWQudjEuUGxhY2VtZW50UGlja04ipQIKFVJlc291cmNlRGVmaW5pdGlvblJlZhIKCgJpZBgBIAEoCRITCgtwcm92aWRlcl9pZBgCIAEoCRIMCgRwb3J0GAMgASgJEhAKCGZlYXR1cmVzGAQgAygJEg8KB3JlZ2lvbnMYBSADKAkSEwoLc3BlY2lmaWNpdHkYBiABKA0SEAoIcHJpb3JpdHkYByABKA0SEAoIY29zdF9za3UYCCABKAkSEQoJY29zdF91bml0GAkgASgJEhYKDm1hcmdpbmFsX3ByaWNlGAogASgJEhsKDnByaWNpbmdfc3RhdHVzGAsgASgJSACIAQESFwoKcHJvZHVjdF9pZBgMIAEoCUgBiAEBQhEKD19wcmljaW5nX3N0YXR1c0INCgtfcHJvZHVjdF9pZCIyChFDYXBhYmlsaXR5VmVyZGljdBIMCgRraW5kGAEgASgJEg8KB21pc3NpbmcYAiADKAkiZAoPUmFua2VkQ2FuZGlkYXRlEhUKDWRlZmluaXRpb25faWQYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkSEwoLc3BlY2lmaWNpdHkYAyABKA0SEAoIcHJpb3JpdHkYBCABKA0iOgoRUmVqZWN0ZWRDYW5kaWRhdGUSFQoNZGVmaW5pdGlvbl9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAki0wQKDE1hdGNoRGVjaWRlZBIVCg1kZXBsb3ltZW50X2lkGAEgASgJEhAKCHJlc291cmNlGAIgASgJEg4KBndpbm5lchgDIAEoCRITCgtwcm92aWRlcl9pZBgEIAEoCRIMCgRwb3J0GAUgASgJEhMKC3NwZWNpZmljaXR5GAYgASgNEhAKCHJlamVjdGVkGAcgAygJEhEKCW9iamVjdGl2ZRgIIAEoCRIOCgZyZWdpb24YCSABKAkSEQoJcmF0aW9uYWxlGAogASgJEhQKDGNhdGFsb2dfaGFzaBgLIAEoCRIvCgdyYW5raW5nGAwgAygLMh4uaG9iby5jbG91ZC52MS5SYW5rZWRDYW5kaWRhdGUSPQoTcmVqZWN0ZWRfY2FuZGlkYXRlcxgNIAMoCzIgLmhvYm8uY2xvdWQudjEuUmVqZWN0ZWRDYW5kaWRhdGUSCwoDdGllGA4gASgIEhwKFGNhdGFsb2dfY29udGVudF9oYXNoGA8gASgJEhIKCnByb2R1Y3RfaWQYECABKAkSFAoMYXBwbGllZF9yb3dzGBEgAygJElYKFnJlYWxpemF0aW9uX3BhcmFtZXRlcnMYEiADKAsyNi5ob2JvLmNsb3VkLnYxLk1hdGNoRGVjaWRlZC5SZWFsaXphdGlvblBhcmFtZXRlcnNFbnRyeRIZChFub25fcG9ydGFibGVfcm93cxgTIAMoCRo8ChpSZWFsaXphdGlvblBhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIsgCCgxSZXNvdXJjZVBsYW4SDAoEbmFtZRgBIAEoCRIMCgRwb3J0GAIgASgJEhAKCHByb3ZpZGVyGAMgASgJEgwKBGRlcHMYBCADKAkSEAoIc3RyYXRlZ3kYBSABKAkSDgoGcmVnaW9uGAYgASgJEhUKDWRlcGxveW1lbnRfaWQYByABKAkSEgoKcHJvZHVjdF9pZBgIIAEoCRJWChZyZWFsaXphdGlvbl9wYXJhbWV0ZXJzGAkgAygLMjYuaG9iby5jbG91ZC52MS5SZXNvdXJjZVBsYW4uUmVhbGl6YXRpb25QYXJhbWV0ZXJzRW50cnkSGQoRbm9uX3BvcnRhYmxlX3Jvd3MYCiADKAkaPAoaUmVhbGl6YXRpb25QYXJhbWV0ZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJ9Cg5EZXBsb3ltZW50UGxhbhIOCgZzY2hlbWEYASABKAkSLgoJcmVzb3VyY2VzGAIgAygLMhsuaG9iby5jbG91ZC52MS5SZXNvdXJjZVBsYW4SGAoQZGVwZW5kZW5jeV9vcmRlchgDIAMoCRIRCglvYmplY3RpdmUYBCABKAkiagoRRGVwbG95bWVudFBsYW5uZWQSFQoNZGVwbG95bWVudF9pZBgBIAEoCRIRCglwbGFuX2hhc2gYAiABKAkSKwoEcGxhbhgDIAEoCzIdLmhvYm8uY2xvdWQudjEuRGVwbG95bWVudFBsYW4ipQEKD1BsYW5SZW1lZGlhdGlvbhIQCghyZXNvdXJjZRgBIAEoCRIMCgRjb2RlGAIgASgJEhUKDXJlcXVpcmVkX3BvcnQYAyABKAkSGQoRcmVxdWlyZWRfZmVhdHVyZXMYBCADKAkSDwoHbWlzc2luZxgFIAMoCRIaChJzdWdnZXN0ZWRfcHJvdmlkZXIYBiABKAkSEwoLcmVtZWRpYXRpb24YByABKAkidQoWRGVwbG95bWVudFBsYW5SZWplY3RlZBIVCg1kZXBsb3ltZW50X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCRI0CgxyZW1lZGlhdGlvbnMYAyADKAsyHi5ob2JvLmNsb3VkLnYxLlBsYW5SZW1lZGlhdGlvbiKFAQoUUmVnaXN0cnlDYXRhbG9nRW50cnkSEwoLcHJvdmlkZXJfaWQYASABKAkSOQoLZGVmaW5pdGlvbnMYAiADKAsyJC5ob2JvLmNsb3VkLnYxLlJlc291cmNlRGVmaW5pdGlvblJlZhIdChVtYW5pZmVzdF9pbmRleF9kaWdlc3QYAyABKAkiQgoWUHJvdmlkZXJBcHByb3ZlZFJlY29yZBITCgtwcm92aWRlcl9pZBgBIAEoCRITCgthcHByb3ZlZF9ieRgCIAEoCSLBAQoKSWFjUHJvZ3JhbRISCgpwcm9ncmFtX2lkGAEgASgJEhUKDWRlcGxveW1lbnRfaWQYAiABKAkSEwoLcmVzb3VyY2VfaWQYAyABKAkSEAoIcHJvdmlkZXIYBCABKAkSDgoGZHJpdmVyGAUgASgJEg4KBmFjdGlvbhgGIAEoCRISCgpzdGFja19uYW1lGAcgASgJEi0KCHJlc291cmNlGAggASgLMhsuaG9iby5jbG91ZC52MS5SZXNvdXJjZVBsYW4iUwoQU2NvcGVkQ3JlZGVudGlhbBIKCgJpZBgBIAEoCRINCgVzY29wZRgCIAEoCRITCgt0dGxfc2Vjb25kcxgDIAEoDRIPCgdhbWJpZW50GAQgASgIIkEKEEV4ZWNPdXRwdXRSZWNvcmQSDwoHZXhlY19pZBgBIAEoCRIOCgZzdHJlYW0YAiABKAkSDAoEbGluZRgDIAEoCSJDCg5FeGVjRGlmZlJlY29yZBIPCgdleGVjX2lkGAEgASgJEg8KB3N1bW1hcnkYAiABKAkSDwoHY2hhbmdlcxgDIAEoDSKuAQoTRXhlY1N1Y2NlZWRlZFJlY29yZBIPCgdleGVjX2lkGAEgASgJEhQKDG91dHB1dHNfaGFzaBgCIAEoCRJACgdvdXRwdXRzGAMgAygLMi8uaG9iby5jbG91ZC52MS5FeGVjU3VjY2VlZGVkUmVjb3JkLk91dHB1dHNFbnRyeRouCgxPdXRwdXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJLChBFeGVjRmFpbGVkUmVjb3JkEg8KB2V4ZWNfaWQYASABKAkSFgoOY2xhc3NpZmljYXRpb24YAiABKAkSDgoGcmVhc29uGAMgASgJIuYBChVSZXNvdXJjZUFjdG9yU25hcHNob3QSFQoNZGVwbG95bWVudF9pZBgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRINCgVzdGF0ZRgDIAEoCRIQCghzZXF1ZW5jZRgEIAEoDRJCCgdvdXRwdXRzGAUgAygLMjEuaG9iby5jbG91ZC52MS5SZXNvdXJjZUFjdG9yU25hcHNob3QuT3V0cHV0c0VudHJ5EgwKBGRlcHMYBiADKAkaLgoMT3V0cHV0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEivwEKGlJlc291cmNlUHJvdmlzaW9uaW5nUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSEwoLcmVzb3VyY2VfaWQYAiABKAkSDwoHZXhlY19pZBgDIAEoCRIUCgxwcm9ncmFtX2hhc2gYBCABKAkSFgoJc3BlY19oYXNoGAUgASgJSACIAQESGAoLcHJvdmlkZXJfaWQYBiABKAlIAYgBAUIMCgpfc3BlY19oYXNoQg4KDF9wcm92aWRlcl9pZCL2AQoZUmVzb3VyY2VQcm92aXNpb25lZFJlY29yZBIVCg1kZXBsb3ltZW50X2lkGAEgASgJEhMKC3Jlc291cmNlX2lkGAIgASgJEkYKB291dHB1dHMYAyADKAsyNS5ob2JvLmNsb3VkLnYxLlJlc291cmNlUHJvdmlzaW9uZWRSZWNvcmQuT3V0cHV0c0VudHJ5Eg8KB2V4ZWNfaWQYBCABKAkSFgoJc3BlY19oYXNoGAUgASgJSACIAQEaLgoMT3V0cHV0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCDAoKX3NwZWNfaGFzaCKLAQoUUmVzb3VyY2VGYWlsZWRSZWNvcmQSFQoNZGVwbG95bWVudF9pZBgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkSFgoOY2xhc3NpZmljYXRpb24YBCABKAkSHwoXY3Jvc3NlZF9ub19nb190aHJlc2hvbGQYBSABKAgiVgoYUmVzb3VyY2VEZXN0cm95aW5nUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSEwoLcmVzb3VyY2VfaWQYAiABKAkSDgoGcmVhc29uGAMgASgJIl8KF1Jlc291cmNlRGVzdHJveWVkUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSEwoLcmVzb3VyY2VfaWQYAiABKAkSGAoQZmluYWxfc3RhdGVfaGFzaBgDIAEoCSJXChhEZXBsb3ltZW50RGVwbG95ZWRSZWNvcmQSFQoNZGVwbG95bWVudF9pZBgBIAEoCRIOCgZzZXRfaWQYAiABKAkSFAoMcmVzb3VyY2VfaWRzGAMgAygJIloKGkRlcGxveW1lbnRSb2xsZWRCYWNrUmVjb3JkEhUKDWRlcGxveW1lbnRfaWQYASABKAkSFQoNdGFyZ2V0X3NldF9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiRgoUQ3JlZGVudGlhbEF1ZGl0U2NvcGUSDAoEcG9ydBgBIAEoCRIQCghyZXNvdXJjZRgCIAEoCRIOCgZhY3Rpb24YAyABKAki+QEKFENyZWRlbnRpYWxHcmFudEF1ZGl0EhAKCGdyYW50X2lkGAEgASgJEhQKDHN2aWRfc3ViamVjdBgCIAEoCRIyCgVzY29wZRgDIAEoCzIjLmhvYm8uY2xvdWQudjEuQ3JlZGVudGlhbEF1ZGl0U2NvcGUSEQoJdG9rZW5fcmVmGAQgASgJEg4KBnN0YXR1cxgFIAEoCRISCgpncmFudGVkX2F0GAYgASgJEg8KB3VzZWRfYXQYByABKAkSEgoKcmV2b2tlZF9hdBgIIAEoCRIWCg5yZXZva2VkX3JlYXNvbhgJIAEoCRIRCgl1c2VfY291bnQYCiABKA0iSwocQ3JlZGVudGlhbEF1ZGl0VGltZWxpbmVFbnRyeRILCgNzZXEYASABKA0SDAoEdHlwZRgCIAEoCRIQCghncmFudF9pZBgDIAEoCSKMAgoVQ3JlZGVudGlhbEF1ZGl0UmVjb3JkEhYKDmNvcnJlbGF0aW9uX2lkGAEgASgJEjMKBmdyYW50cxgCIAMoCzIjLmhvYm8uY2xvdWQudjEuQ3JlZGVudGlhbEdyYW50QXVkaXQSFAoMaWRlbnRpdHlfaWRzGAMgAygJEhMKC3Nlc3Npb25faWRzGAQgAygJEj0KCHRpbWVsaW5lGAUgAygLMisuaG9iby5jbG91ZC52MS5DcmVkZW50aWFsQXVkaXRUaW1lbGluZUVudHJ5EhMKC2dyYW50X2NvdW50GAYgASgNEhEKCXVzZV9jb3VudBgHIAEoDRIUCgxyZXZva2VfY291bnQYCCABKA0i4QEKG1Jlc29sdmVkRGVwbG95bWVudFNldFJlY29yZBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIOCgZzZXRfaWQYAiABKAkSDgoGdGVuYW50GAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEg8KB2NhbXBfaWQYBSABKAkSEQoJcGxhbl9oYXNoGAYgASgJEhQKDGNvbnRlbnRfaGFzaBgHIAEoCRIeChZnYXRla2VlcGVyX2RlY2lzaW9uX2lkGAggASgJEhsKE2dhdGVrZWVwZXJfZGVjaXNpb24YCSABKAkivAEKF0F0dGVzdGVkUHJpbmNpcGFsUmVjb3JkEhQKDHN2aWRfc3ViamVjdBgBIAEoCRITCgtpZGVudGl0eV9pZBgCIAEoCRIOCgZ0ZW5hbnQYAyABKAkSEwoLY29kZV9kaWdlc3QYBCABKAkSHgoWY29tcG9uZW50X2ltYWdlX2RpZ2VzdBgFIAEoCRIZChFhdHRlc3RhdGlvbl9zdGF0ZRgGIAEoCRIWCg5pc29sYXRpb25fdGllchgHIAEoCSJpChZTZWNyZXRGcmVlU3RhdHVzUmVjb3JkEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhMKC3Jlc291cmNlX2lkGAIgASgJEg0KBXN0YXRlGAMgASgJEhMKC3NlY3JldF9mcmVlGAQgASgIIugBChRTYWZldHlFbnZlbG9wZVJlY29yZBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIUCgxibGFzdF9yYWRpdXMYAiABKAkSEgoKcmV2ZXJzaWJsZRgDIAEoCBIVCg1zcGVuZF9jYXBfdXNkGAQgASgNEhsKE2VzdGltYXRlZF9zcGVuZF91c2QYBSABKA0SFgoOc2VsZl9jYXVzYXRpb24YBiABKAgSFAoMbWF4X2F0dGVtcHRzGAcgASgNEhUKDWF0dGVtcHRzX3VzZWQYCCABKA0SFQoNcmVxdWlyZXNfbGFuZRgJIAEoCCLEAQoQQTJISGFuZG9mZlJlY29yZBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRITCgtpbmNpZGVudF9pZBgCIAEoCRIOCgZzaWduYWwYAyABKAkSDgoGdGVuYW50GAQgASgJEhMKC2Vudmlyb25tZW50GAUgASgJEhUKDWRlcGxveW1lbnRfaWQYBiABKAkSDgoGc2V0X2lkGAcgASgJEhAKCGRlYWRsaW5lGAggASgJEhUKDW9ibGlnYXRpb25faWQYCSABKAkifQoMVG9wb2xvZ3lOb2RlEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSDQoFbGFiZWwYAyABKAkSDAoEcG9ydBgEIAEoCRITCgtwcm92aWRlcl9pZBgFIAEoCRIOCgZyZWdpb24YBiABKAkSEQoJbGlmZWN5Y2xlGAcgASgJIkYKDFRvcG9sb2d5RWRnZRIMCgRmcm9tGAEgASgJEgoKAnRvGAIgASgJEgwKBGtpbmQYAyABKAkSDgoGcmVnaW9uGAQgASgJIpUBCg9Ub3BvbG9neVZpZXdSb3cSFQoNZGVwbG95bWVudF9pZBgBIAEoCRITCgtiaW5kbGVfaGFzaBgCIAEoCRIqCgVub2RlcxgDIAMoCzIbLmhvYm8uY2xvdWQudjEuVG9wb2xvZ3lOb2RlEioKBWVkZ2VzGAQgAygLMhsuaG9iby5jbG91ZC52MS5Ub3BvbG9neUVkZ2UivQEKD0xhbmVHcmFudFJlY29yZBIPCgdsYW5lX2lkGAEgASgJEg4KBnRlbmFudBgCIAEoCRISCgptZW1iZXJzaGlwGAMgASgJEhUKDWZvcmtfb25fdG91Y2gYBCABKAgSJAocYmFzZWxpbmVfc2luZ2xlX3dyaXRlcl9sZWFzZRgFIAEoCBIZChFiYXNlbGluZV9tdXRhdGlvbhgGIAEoCBIdChVleHRlcm5hbF9zaWRlX2VmZmVjdHMYByABKAliBnByb3RvMw");
 
 /**
  * Step 0 output: a manifest IR node lowered to a provider-neutral intent.
@@ -842,13 +842,6 @@ export type IacProgram = Message<"hobo.cloud.v1.IacProgram"> & {
    * @generated from field: hobo.cloud.v1.ResourcePlan resource = 8;
    */
   resource?: ResourcePlan | undefined;
-
-  /**
-   * persisted before provider work, reused on retry
-   *
-   * @generated from field: optional string operation_generation = 9;
-   */
-  operationGeneration?: string | undefined;
 };
 
 /**
@@ -1008,23 +1001,6 @@ export type ExecFailedRecord = Message<"hobo.cloud.v1.ExecFailedRecord"> & {
    * @generated from field: string reason = 3;
    */
   reason: string;
-
-  /**
-   * @generated from field: optional bool requires_reconciliation = 4;
-   */
-  requiresReconciliation?: boolean | undefined;
-
-  /**
-   * @generated from field: optional string reservation_id = 5;
-   */
-  reservationId?: string | undefined;
-
-  /**
-   * "preview" | "apply" | "destroy"
-   *
-   * @generated from field: optional string reconciliation_operation = 6;
-   */
-  reconciliationOperation?: string | undefined;
 };
 
 /**
@@ -1051,7 +1027,7 @@ export type ResourceActorSnapshot = Message<"hobo.cloud.v1.ResourceActorSnapshot
   resourceId: string;
 
   /**
-   * Pending|Planning|Provisioning|Provisioned|Updating|Failed|ReconciliationRequired|Compensating|Destroying|Destroyed
+   * Pending|Planning|Provisioning|Provisioned|Updating|Failed|Compensating|Destroying|Destroyed
    *
    * @generated from field: string state = 3;
    */
@@ -1119,13 +1095,6 @@ export type ResourceProvisioningRecord = Message<"hobo.cloud.v1.ResourceProvisio
    * @generated from field: optional string provider_id = 6;
    */
   providerId?: string | undefined;
-
-  /**
-   * absent on legacy in-flight operations
-   *
-   * @generated from field: optional string operation_generation = 7;
-   */
-  operationGeneration?: string | undefined;
 };
 
 /**
@@ -1208,23 +1177,6 @@ export type ResourceFailedRecord = Message<"hobo.cloud.v1.ResourceFailedRecord">
    * @generated from field: bool crossed_no_go_threshold = 5;
    */
   crossedNoGoThreshold: boolean;
-
-  /**
-   * @generated from field: optional bool requires_reconciliation = 6;
-   */
-  requiresReconciliation?: boolean | undefined;
-
-  /**
-   * @generated from field: optional string reservation_id = 7;
-   */
-  reservationId?: string | undefined;
-
-  /**
-   * "apply" | "destroy"
-   *
-   * @generated from field: optional string reconciliation_operation = 8;
-   */
-  reconciliationOperation?: string | undefined;
 };
 
 /**
@@ -1233,103 +1185,6 @@ export type ResourceFailedRecord = Message<"hobo.cloud.v1.ResourceFailedRecord">
  */
 export const ResourceFailedRecordSchema: GenMessage<ResourceFailedRecord> = /*@__PURE__*/
   messageDesc(file_cloud, 27);
-
-/**
- * A host has verified the exact provider outcome and financial disposition.
- *
- * @generated from message hobo.cloud.v1.ResourceReconciledRecord
- */
-export type ResourceReconciledRecord = Message<"hobo.cloud.v1.ResourceReconciledRecord"> & {
-  /**
-   * @generated from field: string deployment_id = 1;
-   */
-  deploymentId: string;
-
-  /**
-   * @generated from field: string resource_id = 2;
-   */
-  resourceId: string;
-
-  /**
-   * @generated from field: string failure_event_id = 3;
-   */
-  failureEventId: string;
-
-  /**
-   * "apply" | "destroy"
-   *
-   * @generated from field: string operation = 4;
-   */
-  operation: string;
-
-  /**
-   * "applied" | "destroyed" | "no-effect"
-   *
-   * @generated from field: string outcome = 5;
-   */
-  outcome: string;
-
-  /**
-   * @generated from field: string evidence_ref = 6;
-   */
-  evidenceRef: string;
-
-  /**
-   * @generated from field: string financial_evidence_ref = 7;
-   */
-  financialEvidenceRef: string;
-
-  /**
-   * "none" | "held" | "settled" | "released"
-   *
-   * @generated from field: string financial_disposition = 8;
-   */
-  financialDisposition: string;
-
-  /**
-   * @generated from field: optional string reservation_id = 9;
-   */
-  reservationId?: string | undefined;
-
-  /**
-   * @generated from field: string claim_digest = 10;
-   */
-  claimDigest: string;
-
-  /**
-   * @generated from field: map<string, string> outputs = 11;
-   */
-  outputs: { [key: string]: string };
-
-  /**
-   * @generated from field: optional string exec_id = 12;
-   */
-  execId?: string | undefined;
-
-  /**
-   * @generated from field: optional string spec_hash = 13;
-   */
-  specHash?: string | undefined;
-
-  /**
-   * @generated from field: optional string final_state_hash = 14;
-   */
-  finalStateHash?: string | undefined;
-
-  /**
-   * "provisioned" | "destroyed" | "failed" after no-effect
-   *
-   * @generated from field: optional string restored_state = 15;
-   */
-  restoredState?: string | undefined;
-};
-
-/**
- * Describes the message hobo.cloud.v1.ResourceReconciledRecord.
- * Use `create(ResourceReconciledRecordSchema)` to create a new message.
- */
-export const ResourceReconciledRecordSchema: GenMessage<ResourceReconciledRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 28);
 
 /**
  * resource.Destroying: choreographed compensation started for this actor.
@@ -1351,21 +1206,6 @@ export type ResourceDestroyingRecord = Message<"hobo.cloud.v1.ResourceDestroying
    * @generated from field: string reason = 3;
    */
   reason: string;
-
-  /**
-   * @generated from field: optional string operation_generation = 4;
-   */
-  operationGeneration?: string | undefined;
-
-  /**
-   * @generated from field: optional string program_hash = 5;
-   */
-  programHash?: string | undefined;
-
-  /**
-   * @generated from field: optional string spec_hash = 6;
-   */
-  specHash?: string | undefined;
 };
 
 /**
@@ -1373,7 +1213,7 @@ export type ResourceDestroyingRecord = Message<"hobo.cloud.v1.ResourceDestroying
  * Use `create(ResourceDestroyingRecordSchema)` to create a new message.
  */
 export const ResourceDestroyingRecordSchema: GenMessage<ResourceDestroyingRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 29);
+  messageDesc(file_cloud, 28);
 
 /**
  * resource.Destroyed: compensation applied; slice removed.
@@ -1402,7 +1242,7 @@ export type ResourceDestroyedRecord = Message<"hobo.cloud.v1.ResourceDestroyedRe
  * Use `create(ResourceDestroyedRecordSchema)` to create a new message.
  */
 export const ResourceDestroyedRecordSchema: GenMessage<ResourceDestroyedRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 30);
+  messageDesc(file_cloud, 29);
 
 /**
  * deployment.Deployed: every resource actor reached Provisioned.
@@ -1431,10 +1271,10 @@ export type DeploymentDeployedRecord = Message<"hobo.cloud.v1.DeploymentDeployed
  * Use `create(DeploymentDeployedRecordSchema)` to create a new message.
  */
 export const DeploymentDeployedRecordSchema: GenMessage<DeploymentDeployedRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 31);
+  messageDesc(file_cloud, 30);
 
 /**
- * deployment.RolledBack: compensation completed after the transition closed.
+ * deployment.RolledBack: a no-go failure crossed threshold; saga compensates.
  *
  * @generated from message hobo.cloud.v1.DeploymentRolledBackRecord
  */
@@ -1460,114 +1300,7 @@ export type DeploymentRolledBackRecord = Message<"hobo.cloud.v1.DeploymentRolled
  * Use `create(DeploymentRolledBackRecordSchema)` to create a new message.
  */
 export const DeploymentRolledBackRecordSchema: GenMessage<DeploymentRolledBackRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 32);
-
-/**
- * deployment.TransitionStarted / deployment.TransitionCompleted: CAS-fenced work.
- *
- * @generated from message hobo.cloud.v1.DeploymentTransitionRecord
- */
-export type DeploymentTransitionRecord = Message<"hobo.cloud.v1.DeploymentTransitionRecord"> & {
-  /**
-   * @generated from field: string deployment_id = 1;
-   */
-  deploymentId: string;
-
-  /**
-   * @generated from field: string transition_id = 2;
-   */
-  transitionId: string;
-
-  /**
-   * "rollback" | "prune"
-   *
-   * @generated from field: string kind = 3;
-   */
-  kind: string;
-
-  /**
-   * @generated from field: string plan_hash = 4;
-   */
-  planHash: string;
-
-  /**
-   * @generated from field: repeated string resource_ids = 5;
-   */
-  resourceIds: string[];
-
-  /**
-   * @generated from field: optional string trigger_resource = 6;
-   */
-  triggerResource?: string | undefined;
-
-  /**
-   * @generated from field: optional string reason = 7;
-   */
-  reason?: string | undefined;
-};
-
-/**
- * Describes the message hobo.cloud.v1.DeploymentTransitionRecord.
- * Use `create(DeploymentTransitionRecordSchema)` to create a new message.
- */
-export const DeploymentTransitionRecordSchema: GenMessage<DeploymentTransitionRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 33);
-
-/**
- * @generated from message hobo.cloud.v1.ReopenedResource
- */
-export type ReopenedResource = Message<"hobo.cloud.v1.ReopenedResource"> & {
-  /**
-   * @generated from field: string resource_id = 1;
-   */
-  resourceId: string;
-
-  /**
-   * @generated from field: string spec_hash = 2;
-   */
-  specHash: string;
-};
-
-/**
- * Describes the message hobo.cloud.v1.ReopenedResource.
- * Use `create(ReopenedResourceSchema)` to create a new message.
- */
-export const ReopenedResourceSchema: GenMessage<ReopenedResource> = /*@__PURE__*/
-  messageDesc(file_cloud, 34);
-
-/**
- * deployment.Reopened: explicitly start a new reviewed run after rollback.
- *
- * @generated from message hobo.cloud.v1.DeploymentReopenedRecord
- */
-export type DeploymentReopenedRecord = Message<"hobo.cloud.v1.DeploymentReopenedRecord"> & {
-  /**
-   * @generated from field: string deployment_id = 1;
-   */
-  deploymentId: string;
-
-  /**
-   * @generated from field: string rollback_event_id = 2;
-   */
-  rollbackEventId: string;
-
-  /**
-   * @generated from field: string plan_hash = 3;
-   */
-  planHash: string;
-
-  /**
-   * @generated from field: repeated hobo.cloud.v1.ReopenedResource resources = 4;
-   */
-  resources: ReopenedResource[];
-};
-
-/**
- * Describes the message hobo.cloud.v1.DeploymentReopenedRecord.
- * Use `create(DeploymentReopenedRecordSchema)` to create a new message.
- */
-export const DeploymentReopenedRecordSchema: GenMessage<DeploymentReopenedRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 35);
+  messageDesc(file_cloud, 31);
 
 /**
  * @generated from message hobo.cloud.v1.CredentialAuditScope
@@ -1594,7 +1327,7 @@ export type CredentialAuditScope = Message<"hobo.cloud.v1.CredentialAuditScope">
  * Use `create(CredentialAuditScopeSchema)` to create a new message.
  */
 export const CredentialAuditScopeSchema: GenMessage<CredentialAuditScope> = /*@__PURE__*/
-  messageDesc(file_cloud, 36);
+  messageDesc(file_cloud, 32);
 
 /**
  * The per-grant lifecycle fold: grant -> use -> revoke.
@@ -1660,7 +1393,7 @@ export type CredentialGrantAudit = Message<"hobo.cloud.v1.CredentialGrantAudit">
  * Use `create(CredentialGrantAuditSchema)` to create a new message.
  */
 export const CredentialGrantAuditSchema: GenMessage<CredentialGrantAudit> = /*@__PURE__*/
-  messageDesc(file_cloud, 37);
+  messageDesc(file_cloud, 33);
 
 /**
  * A single ordered step in a correlation's credential timeline.
@@ -1689,7 +1422,7 @@ export type CredentialAuditTimelineEntry = Message<"hobo.cloud.v1.CredentialAudi
  * Use `create(CredentialAuditTimelineEntrySchema)` to create a new message.
  */
 export const CredentialAuditTimelineEntrySchema: GenMessage<CredentialAuditTimelineEntry> = /*@__PURE__*/
-  messageDesc(file_cloud, 38);
+  messageDesc(file_cloud, 34);
 
 /**
  * The CredentialAudit read-model row, one per correlationId.
@@ -1743,7 +1476,7 @@ export type CredentialAuditRecord = Message<"hobo.cloud.v1.CredentialAuditRecord
  * Use `create(CredentialAuditRecordSchema)` to create a new message.
  */
 export const CredentialAuditRecordSchema: GenMessage<CredentialAuditRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 39);
+  messageDesc(file_cloud, 35);
 
 /**
  * Continuous Delivery plane (attested apply + progressive + A2H).
@@ -1802,7 +1535,7 @@ export type ResolvedDeploymentSetRecord = Message<"hobo.cloud.v1.ResolvedDeploym
  * Use `create(ResolvedDeploymentSetRecordSchema)` to create a new message.
  */
 export const ResolvedDeploymentSetRecordSchema: GenMessage<ResolvedDeploymentSetRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 40);
+  messageDesc(file_cloud, 36);
 
 /**
  * @generated from message hobo.cloud.v1.AttestedPrincipalRecord
@@ -1849,7 +1582,7 @@ export type AttestedPrincipalRecord = Message<"hobo.cloud.v1.AttestedPrincipalRe
  * Use `create(AttestedPrincipalRecordSchema)` to create a new message.
  */
 export const AttestedPrincipalRecordSchema: GenMessage<AttestedPrincipalRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 41);
+  messageDesc(file_cloud, 37);
 
 /**
  * @generated from message hobo.cloud.v1.SecretFreeStatusRecord
@@ -1881,7 +1614,7 @@ export type SecretFreeStatusRecord = Message<"hobo.cloud.v1.SecretFreeStatusReco
  * Use `create(SecretFreeStatusRecordSchema)` to create a new message.
  */
 export const SecretFreeStatusRecordSchema: GenMessage<SecretFreeStatusRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 42);
+  messageDesc(file_cloud, 38);
 
 /**
  * @generated from message hobo.cloud.v1.SafetyEnvelopeRecord
@@ -1938,7 +1671,7 @@ export type SafetyEnvelopeRecord = Message<"hobo.cloud.v1.SafetyEnvelopeRecord">
  * Use `create(SafetyEnvelopeRecordSchema)` to create a new message.
  */
 export const SafetyEnvelopeRecordSchema: GenMessage<SafetyEnvelopeRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 43);
+  messageDesc(file_cloud, 39);
 
 /**
  * @generated from message hobo.cloud.v1.A2HHandoffRecord
@@ -1995,7 +1728,7 @@ export type A2HHandoffRecord = Message<"hobo.cloud.v1.A2HHandoffRecord"> & {
  * Use `create(A2HHandoffRecordSchema)` to create a new message.
  */
 export const A2HHandoffRecordSchema: GenMessage<A2HHandoffRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 44);
+  messageDesc(file_cloud, 40);
 
 /**
  * @generated from message hobo.cloud.v1.TopologyNode
@@ -2040,21 +1773,11 @@ export type TopologyNode = Message<"hobo.cloud.v1.TopologyNode"> & {
   region: string;
 
   /**
-   * resource nodes: provisioning|provisioned|failed|reconciliation-required|destroying|destroyed
+   * resource nodes: provisioning|provisioned|failed|destroying|destroyed
    *
    * @generated from field: string lifecycle = 7;
    */
   lifecycle: string;
-
-  /**
-   * @generated from field: optional string reconciliation_event_id = 8;
-   */
-  reconciliationEventId?: string | undefined;
-
-  /**
-   * @generated from field: repeated string other_reconciliation_event_ids = 9;
-   */
-  otherReconciliationEventIds: string[];
 };
 
 /**
@@ -2062,7 +1785,7 @@ export type TopologyNode = Message<"hobo.cloud.v1.TopologyNode"> & {
  * Use `create(TopologyNodeSchema)` to create a new message.
  */
 export const TopologyNodeSchema: GenMessage<TopologyNode> = /*@__PURE__*/
-  messageDesc(file_cloud, 45);
+  messageDesc(file_cloud, 41);
 
 /**
  * @generated from message hobo.cloud.v1.TopologyEdge
@@ -2096,7 +1819,7 @@ export type TopologyEdge = Message<"hobo.cloud.v1.TopologyEdge"> & {
  * Use `create(TopologyEdgeSchema)` to create a new message.
  */
 export const TopologyEdgeSchema: GenMessage<TopologyEdge> = /*@__PURE__*/
-  messageDesc(file_cloud, 46);
+  messageDesc(file_cloud, 42);
 
 /**
  * @generated from message hobo.cloud.v1.TopologyViewRow
@@ -2128,7 +1851,7 @@ export type TopologyViewRow = Message<"hobo.cloud.v1.TopologyViewRow"> & {
  * Use `create(TopologyViewRowSchema)` to create a new message.
  */
 export const TopologyViewRowSchema: GenMessage<TopologyViewRow> = /*@__PURE__*/
-  messageDesc(file_cloud, 47);
+  messageDesc(file_cloud, 43);
 
 /**
  * @generated from message hobo.cloud.v1.LaneGrantRecord
@@ -2175,5 +1898,5 @@ export type LaneGrantRecord = Message<"hobo.cloud.v1.LaneGrantRecord"> & {
  * Use `create(LaneGrantRecordSchema)` to create a new message.
  */
 export const LaneGrantRecordSchema: GenMessage<LaneGrantRecord> = /*@__PURE__*/
-  messageDesc(file_cloud, 48);
+  messageDesc(file_cloud, 44);
 

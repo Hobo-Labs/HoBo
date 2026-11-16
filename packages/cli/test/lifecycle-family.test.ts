@@ -9,7 +9,6 @@ import {
 	type IacProgram,
 	type IacProvider,
 } from "@hobo/cloud";
-import { createTrustedVault } from "@hobo/core";
 import { createInMemoryActorHost } from "@hobo/data";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import {
@@ -156,19 +155,8 @@ describe("parseLifecycleArgs", () => {
 		const parsed = parseLifecycleArgs(["--dry-run", "--mode=complete", "-y"]);
 		expect(parsed).toEqual({
 			ok: true,
-			flags: {
-				whatIf: true,
-				mode: "complete",
-				project: null,
-				yes: true,
-				handOff: false,
-			},
+			flags: { whatIf: true, mode: "complete", project: null, yes: true },
 		});
-		expect(parseLifecycleArgs(["--hand-off"])).toMatchObject({
-			ok: true,
-			flags: { handOff: true },
-		});
-		expect(parseLifecycleArgs(["--hand-off=yes"]).ok).toBe(false);
 		expect(parseLifecycleArgs(["--preview"]).ok).toBe(true);
 		expect(parseLifecycleArgs(["--mode", "replace"]).ok).toBe(false);
 		expect(parseLifecycleArgs(["--force"]).ok).toBe(false);
@@ -266,13 +254,7 @@ describe("resolveFamilyProject", () => {
 	it("prefers --project, then HOBO_<FAMILY>_PROJECT, then the bundled project", async () => {
 		const a = await project();
 		const b = await project();
-		const flags = {
-			whatIf: false,
-			mode: null,
-			project: null,
-			yes: false,
-			handOff: false,
-		};
+		const flags = { whatIf: false, mode: null, project: null, yes: false };
 		expect(
 			resolveFamilyProject({
 				family: "ci",
@@ -304,79 +286,7 @@ describe("resolveFamilyProject", () => {
 });
 
 describe("provider junction credentials", () => {
-	it("wipes credentials if reporting a prepared step throws", async () => {
-		const vault = createTrustedVault();
-		vault.put("VERCEL_TOKEN", "from-the-store");
-		const runtime = runtimeWith(recordingIac());
-		const dir = await project();
-		const cli = createHoboCli({
-			commands: {
-				cd: createLifecycleFamilyCommand({
-					family: "cd",
-					resolveProject: () => ({
-						ok: true,
-						projectDir: dir,
-						source: "bundled",
-					}),
-					up: createUpCommand({ runtime }),
-					down: createDownCommand({ runtime }),
-					plan: createPlanCommand({ runtime }),
-					prepare: async () => ({
-						kind: "ready",
-						steps: [
-							{ id: "vercel", outcome: "unchanged", detail: "connected" },
-						],
-						credentials: vault,
-					}),
-				}),
-			},
-		});
-		const result = await cli.run(["cd", "up"], {
-			cwd: tmpdir(),
-			onProgress: () => {
-				throw new Error("progress output unavailable");
-			},
-		});
-		expect(result.exitCode).not.toBe(0);
-		expect(vault.names()).toEqual([]);
-	});
-
-	it("wipes credentials if constructing the convergence command throws", async () => {
-		const vault = createTrustedVault();
-		vault.put("VERCEL_TOKEN", "from-the-store");
-		const runtime = runtimeWith(recordingIac());
-		const dir = await project();
-		const cli = createHoboCli({
-			commands: {
-				cd: createLifecycleFamilyCommand({
-					family: "cd",
-					resolveProject: () => ({
-						ok: true,
-						projectDir: dir,
-						source: "bundled",
-					}),
-					up: createUpCommand({ runtime }),
-					down: createDownCommand({ runtime }),
-					plan: createPlanCommand({ runtime }),
-					prepare: async () => ({
-						kind: "ready",
-						steps: [],
-						credentials: vault,
-					}),
-					upWith: () => {
-						throw new Error("cannot construct convergence");
-					},
-				}),
-			},
-		});
-		const result = await run(cli, ["cd", "up"]);
-		expect(result.exitCode).not.toBe(0);
-		expect(vault.names()).toEqual([]);
-	});
-
-	it("converges with the up that upWith builds from the prepare step's vault, then wipes it", async () => {
-		const vault = createTrustedVault();
-		vault.put("VERCEL_TOKEN", "from-the-store");
+	it("converges with the up that upWith builds from the prepare step's runtimeEnv", async () => {
 		const runtime = runtimeWith(recordingIac());
 		const dir = await project();
 		const seen: string[] = [];
@@ -397,10 +307,10 @@ describe("provider junction credentials", () => {
 						steps: [
 							{ id: "vercel", outcome: "unchanged", detail: "connected" },
 						],
-						credentials: vault,
+						runtimeEnv: { VERCEL_TOKEN: "from-the-store" },
 					}),
-					upWith: (credentials) => {
-						seen.push(credentials.names().join(","));
+					upWith: (env) => {
+						seen.push(Object.keys(env).join(","));
 						return createUpCommand({ runtime });
 					},
 				}),
@@ -409,8 +319,6 @@ describe("provider junction credentials", () => {
 		const up = await run(cli, ["cd", "up"]);
 		expect(up.exitCode).toBe(0);
 		expect(seen).toEqual(["VERCEL_TOKEN"]);
-		// The run's credentials end with the run.
-		expect(vault.names()).toEqual([]);
 		// The credential never reaches the result.
 		expect(JSON.stringify(up.envelope)).not.toContain("from-the-store");
 	});

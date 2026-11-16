@@ -315,7 +315,6 @@ export function instrumentResolvers(
 	return Object.freeze(
 		resolvers.map((resolver): ResourceResolver => {
 			const read = resolver.read;
-			const observeAbsence = resolver.observeAbsence;
 			const base: ResourceResolver = {
 				providerId: resolver.providerId,
 				productId: resolver.productId,
@@ -347,22 +346,9 @@ export function instrumentResolvers(
 									(value) => (value === undefined ? "absent" : value.action),
 								),
 						};
-			const observable: ResourceResolver =
-				observeAbsence === undefined
-					? readable
-					: {
-							...readable,
-							observeAbsence: (request, transport) =>
-								measured(
-									resolver,
-									"observeAbsence",
-									() => observeAbsence.call(resolver, request, transport),
-									(value) => (value ? "absent" : "present"),
-								),
-						};
 			return resolver.directives === undefined
-				? observable
-				: { ...observable, directives: resolver.directives };
+				? readable
+				: { ...readable, directives: resolver.directives };
 		}),
 	);
 }

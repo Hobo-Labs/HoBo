@@ -17,7 +17,7 @@ import {
 import {
 	FeatureFlagStore as BuiltInStore,
 	type DetailEvaluation,
-	type FeatureFlagPort,
+	type FeatureFlagStore,
 	type FlagEvalContext,
 	type FlagValue,
 } from "./feature-flag-store.js";
@@ -25,9 +25,9 @@ import type { RolloutPolicy, RolloutState } from "./harness-delivery.js";
 import type {
 	ExperimentAssignment,
 	ExperimentDefinition,
-	ExperimentPort,
+	OpenExperimentEngine,
 } from "./harness-experiment.js";
-import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
+import type { JsonObject, JsonValue } from "./json.js";
 
 // public-contract: OFREP residual adapter schema version.
 export const OFREP_RESIDUAL_SCHEMA = "hobo.ofrep-residual/v1" as const;
@@ -262,6 +262,7 @@ export type ExperimentAnalysisResult = Readonly<{
 	variantCounts: Readonly<Record<string, number>>;
 	totalAssigned: number;
 	totalExposed: number;
+	/** Simple majority winner among variants with assignments; inconclusive if tie/empty. */
 	verdict: "ship" | "do-not-ship" | "inconclusive";
 	winningVariant?: string;
 	exportPayload: Readonly<{
@@ -271,38 +272,48 @@ export type ExperimentAnalysisResult = Readonly<{
 	}>;
 }>;
 
-export type ExperimentExposureRecord = Readonly<{
-	experiment: string;
-	flag: string;
-	variant: string;
-	assignedVariant?: string;
-	reason?: string;
-	subjectKeyHash: string;
-	at: string;
-}>;
-
 export type ExperimentAnalysisPort = Readonly<{
 	analyze(
 		experiment: ExperimentDefinition,
 		assignments: readonly ExperimentAssignment[],
 		exposedCount: number,
-		exposures?: readonly ExperimentExposureRecord[],
 	): ExperimentAnalysisResult;
 }>;
 
+/**
+ * Built-in baseline analysis: count assignments, pick majority variant, export JSON.
+ * Not a commercial stats engine — adapters (GrowthBook/Statsig) plug in here.
+ */
 export function createBuiltinExperimentAnalysis(): ExperimentAnalysisPort {
 	// SAFETY: builtin analysis port is ExperimentAnalysisPort at this boundary.
 	return Object.freeze({
 		analyze(experiment, assignments, exposedCount) {
-			const counts = new Map<string, number>(
-				experiment.variants.map((variant) => [variant, 0]),
-			);
+			const variantCounts: Record<string, number> = {};
+			for (const v of experiment.variants) variantCounts[v] = 0;
 			for (const a of assignments) {
-				counts.set(a.variant, (counts.get(a.variant) ?? 0) + 1);
+				variantCounts[a.variant] = (variantCounts[a.variant] ?? 0) + 1;
 			}
-			const variantCounts = Object.freeze(Object.fromEntries(counts));
 			const totalAssigned = assignments.length;
-			const verdict = "inconclusive" as const;
+			let winningVariant: string | undefined;
+			let max = -1;
+			let tie = false;
+			for (const [v, c] of Object.entries(variantCounts)) {
+				if (c > max) {
+					max = c;
+					winningVariant = v;
+					tie = false;
+				} else if (c === max && c > 0) {
+					tie = true;
+				}
+			}
+			const verdict: ExperimentAnalysisResult["verdict"] =
+				totalAssigned === 0 || tie || max <= 0
+					? "inconclusive"
+					: winningVariant === "treatment" || winningVariant === "on"
+						? "ship"
+						: winningVariant === "control" || winningVariant === "off"
+							? "do-not-ship"
+							: "inconclusive";
 			const body = Object.freeze({
 				experiment: experiment.name,
 				flag: experiment.flag,
@@ -311,6 +322,7 @@ export function createBuiltinExperimentAnalysis(): ExperimentAnalysisPort {
 				totalAssigned,
 				totalExposed: exposedCount,
 				verdict,
+				...(winningVariant !== undefined ? { winningVariant } : undefined),
 				metrics: experiment.metrics ?? [],
 			});
 			const contentHash =
@@ -318,10 +330,13 @@ export function createBuiltinExperimentAnalysis(): ExperimentAnalysisPort {
 			return Object.freeze({
 				schemaVersion: EXPERIMENT_ANALYSIS_SCHEMA,
 				experiment: experiment.name,
-				variantCounts,
+				variantCounts: Object.freeze({ ...variantCounts }),
 				totalAssigned,
 				totalExposed: exposedCount,
 				verdict,
+				...(winningVariant !== undefined && !tie
+					? { winningVariant }
+					: undefined),
 				exportPayload: Object.freeze({
 					format: "json" as const,
 					contentHash,
@@ -345,13 +360,8 @@ export function createResidualExperimentAnalysis(options: {
 	// SAFETY: assertion to ` as FetchLike); return Objec` is required at this boundary.
 	const fetchImpl = options.fetchImpl ?? (globalThis.fetch as FetchLike);
 	return Object.freeze({
-		analyze(experiment, assignments, exposedCount, exposures) {
-			const baseline = fallback.analyze(
-				experiment,
-				assignments,
-				exposedCount,
-				exposures,
-			);
+		analyze(experiment, assignments, exposedCount) {
+			const baseline = fallback.analyze(experiment, assignments, exposedCount);
 			// Fire-and-forget shape: sync analyze returns baseline; residual is optional enrich.
 			void fetchImpl(options.endpointUrl, {
 				method: "POST",
@@ -365,7 +375,7 @@ export function createResidualExperimentAnalysis(options: {
 
 /** Analyze via experiment engine event log (assignments already sticky). */
 export function analyzeExperimentFromEngine(
-	engine: ExperimentPort,
+	engine: OpenExperimentEngine,
 	experimentName: string,
 	analysis: ExperimentAnalysisPort = createBuiltinExperimentAnalysis(),
 ): ExperimentAnalysisResult | null {
@@ -387,27 +397,11 @@ export function analyzeExperimentFromEngine(
 				assignedAt: e.time,
 			}),
 		);
-	const exposures: ExperimentExposureRecord[] = engine.events
-		.filter(
-			(e) =>
-				e.type === "experiment.Exposed" && e.data.experiment === experimentName,
-		)
-		.map((e) =>
-			Object.freeze({
-				experiment: experimentName,
-				flag: String(e.data.flag ?? def.flag),
-				variant: String(e.data.variant ?? "control"),
-				...(isJsonString(e.data.assignedVariant)
-					? { assignedVariant: e.data.assignedVariant }
-					: undefined),
-				...(isJsonString(e.data.reason)
-					? { reason: e.data.reason }
-					: undefined),
-				subjectKeyHash: String(e.data.subjectKeyHash ?? "unknown"),
-				at: e.time,
-			}),
-		);
-	return analysis.analyze(def, assignments, exposures.length, exposures);
+	const exposedCount = engine.events.filter(
+		(e) =>
+			e.type === "experiment.Exposed" && e.data.experiment === experimentName,
+	).length;
+	return analysis.analyze(def, assignments, exposedCount);
 }
 
 // ---------------------------------------------------------------------------
@@ -427,7 +421,7 @@ export type MediatedFlagEvaluator = Readonly<{
  * Build a mediated evaluator: prefers built-in store; residual OFREP only when ranked available.
  */
 export function createMediatedFlagEvaluator(options: {
-	readonly store: FeatureFlagPort;
+	readonly store: FeatureFlagStore;
 	readonly residual?: ReturnType<typeof createOfrepResidualBackend>;
 	readonly residualAvailable?: boolean;
 }): MediatedFlagEvaluator {

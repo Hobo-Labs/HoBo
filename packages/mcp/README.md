@@ -40,7 +40,7 @@ the protocol over `postMessage` itself, and the composing server
 | Piece | File |
 |---|---|
 | Tools, resource, tickets, channel choice | `src/secret-capture/app.ts` (`createSecretCaptureApp`) |
-| The form (MCP App resource and loopback page) | `src/secret-capture/html.ts`; visual contract [`DESIGN.md`](./DESIGN.md) |
+| The form (MCP App resource and loopback page) | `src/secret-capture/html.ts` |
 | Sealing (ECDH-ES P-256, HKDF-SHA256, AES-256-GCM) | `src/secret-capture/seal.ts`; the browser source `SECRET_CAPTURE_SEAL_SOURCE` is what the tests run |
 | Loopback fallback page | `src/secret-capture/loopback.ts` |
 | Size, charset and shape checks; the redacting value | `src/secret-capture/value.ts` (`CapturedSecret`) |

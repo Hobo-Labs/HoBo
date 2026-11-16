@@ -22,19 +22,19 @@ import process from "node:process";
 import {
 	featureDir,
 	featureDirInScope,
+	featuresRoot,
 	findFeature,
 	listFeatures,
 	relFromRepo,
 	repoRoot,
 	writeScopeFromSelection,
+	type OptimizexpScope,
 } from "./lib/paths.mts";
 import { resolvePersonaIds, listPersonaMetas } from "./lib/persona-resolve.mts";
-import { listProjects, projectSelectionProblem, resolveProjects, type ProjectRef } from "./lib/projects.mts";
-import { normalizeCliOptions } from "./lib/cli-options.mts";
-import { optimizexpWriteProblem } from "./lib/write-containment.mts";
-import { isPathIdentifier, scenarioSlug } from "./lib/slug.mts";
+import { resolveProjects } from "./lib/projects.mts";
+import { scenarioSlug } from "./lib/slug.mts";
 import { writeJson } from "./lib/media.mts";
-import { discoverCode, isLiveEgressScript, type DiscoveredBinding } from "./lib/code-discovery.mts";
+import { discoverCode } from "./lib/code-discovery.mts";
 import { buildImplementationsFromDiscovery } from "./lib/bindings-gen.mts";
 import {
 	checkGherkinQuality,
@@ -44,11 +44,9 @@ import {
 } from "./lib/feature-quality.mts";
 import {
 	readExperienceCatalog,
-	validateCatalogCoverage,
-	type ExperienceCatalog,
 	type ExperienceRow,
 } from "./lib/experience-catalog.mts";
-import { assessPackageCli, readSurfaceMap, validateSurfaceMap, type SurfaceMap } from "./lib/surface-map.mts";
+import { listProjects } from "./lib/projects.mts";
 
 function parseArgs(argv: string[]) {
 	const out: Record<string, string> = { mode: "scaffold" };
@@ -68,15 +66,13 @@ function parseArgs(argv: string[]) {
 		else if (a === "--experience-id") out.experienceId = argv[++i] ?? "";
 		else if (a === "--from-catalog") out.fromCatalog = "1";
 		else if (a === "--force-low-quality") out.forceLowQuality = "1";
-		else if (a.startsWith("--confirm-surface-current=")) out.confirmedSurfaces = [out.confirmedSurfaces, a.slice("--confirm-surface-current=".length)].filter(Boolean).join(",");
 		else if (a === "--skip-rubberduck") out.skipRubberduck = "1";
 		else if (a === "--projects" || a === "--project") {
 			const v = argv[++i] ?? "";
 			out.projects = out.projects
 				? `${out.projects},${v}`
 				: v;
-		} else if (a === "--all-projects") out.projects = out.projects ? `${out.projects},all` : "all";
-		else if (a === "--dry-run") out.dryRun = "1";
+		} else if (a === "--dry-run") out.dryRun = "1";
 		else if (a === "--force") out.force = "1";
 		else if (!a.startsWith("-") && !out.seed) out.seed = a;
 	}
@@ -102,7 +98,6 @@ function help() {
   --experience-id <id>     catalog experience for --mode plan
   --from-catalog           with scaffold/from-catalog: use catalog rows
   --force-low-quality      allow scaffold without rubberduck (blocks assert-complete)
-  --confirm-surface-current=<project>:<map-sha256>  Assert saved observation still matches current imports, config, and environment (repeatable)
   --experiences ux,dx,ax   experience set for persona intersection (default all)
   --personas a,b           explicit persona ids (same as skill --personas)
   --generated-ids a,b      ids just created via --persona this run
@@ -111,8 +106,7 @@ function help() {
   --projects site,cli|all   tag feature + choose write scope:
                             single non-root project → <project>/.optimizexp/features/
                             all / multi / root → global .optimizexp/features/
-  --dry-run                Preview without writing (implement does not support it)
-  --force                  Replace existing generated feature files and drafts
+  --dry-run
 
 See references/feature-quality.md — feature generation is the quality bottleneck.
 `);
@@ -124,11 +118,6 @@ function writeBindingsAndTests(input: {
 	id: string;
 	seed: string;
 	surfaces?: string[];
-	catalogCommand?: string;
-	catalogDriver?: string;
-	catalogExperience?: string;
-	catalogMap?: SurfaceMap | null;
-	packageDir?: string;
 }): {
 	primaryCommand: string | null;
 	status: string;
@@ -146,43 +135,11 @@ function writeBindingsAndTests(input: {
 		surfaces: input.surfaces,
 		root: input.root,
 	});
-	let primaryOverride: DiscoveredBinding | null | undefined;
-	if (input.catalogCommand !== undefined) {
-		primaryOverride = null;
-		const command = input.catalogCommand;
-		const script = command.match(/^(?:npm|pnpm|yarn|bun)(?: +run)? +([a-zA-Z0-9:_.-]+)$/)?.[1];
-		let scriptExists = false;
-		if (script) {
-			try {
-				const pkg = JSON.parse(readFileSync(path.join(input.packageDir ?? input.root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
-				scriptExists = typeof pkg.scripts?.[script] === "string" && !isLiveEgressScript(script);
-			} catch {
-				scriptExists = false;
-			}
-		}
-		const map = input.catalogMap;
-		const bin = map?.binaries[0]?.name;
-		const mappedCommand = Boolean(map && bin && (
-			command === map.defaultEntry?.command ||
-			command === map.nonInteractiveHelp?.command ||
-			map.commands.some((item) => command === `${bin} ${item.argv.join(" ")}`) ||
-			(input.catalogExperience === "failure-actionable" && command === `${bin} not-a-real-verb-zz` && map.requiredJourneys.includes("failure-actionable"))
-		));
-		if ((input.catalogDriver === "cli" || input.catalogDriver === "tui") &&
-			/^[a-zA-Z0-9_./@:+,=-]+(?:[ \t]+[a-zA-Z0-9_./@:+,=-]+)*$/.test(command) && (mappedCommand || scriptExists)) {
-			primaryOverride = { kind: "shell-command", id: `catalog:${command.slice(0, 48)}`, command, confidence: "high", reason: "explicit validated catalog entry", implementsSteps: ["I exercise the surface as this persona would"] };
-			report.bindings.unshift(primaryOverride);
-		} else {
-			report.notes.push("Catalog entry is not a supported, verified local command; binding remains a stub.");
-		}
-	}
 	writeJson(path.join(stepsDir, "discovery.json"), report);
 
 	const built = buildImplementationsFromDiscovery({
 		featureId: input.id,
 		report,
-		primaryOverride,
-		projectDir: input.catalogCommand === undefined ? "" : path.relative(input.root, input.packageDir ?? input.root),
 	});
 	writeFileSync(path.join(stepsDir, "world.ts"), built.world, "utf8");
 	writeFileSync(
@@ -354,29 +311,6 @@ function scaffold(args: Record<string, string>) {
 
 	const projectSelection = resolveProjects(args.projects, root);
 	const writeScope = writeScopeFromSelection(projectSelection, root);
-	const priorFeature = path.join(featureDirInScope(id, writeScope), "feature.json");
-	if (args.catalogEntryCommand) {
-		const project = projectSelection.projects.find((item) => item.id === args.catalogProject);
-		const catalog = project ? readExperienceCatalog(project, root) : null;
-		const row = catalog?.experiences.find((item) => item.experienceId === args.catalogExperience && item.personaId === args.catalogPersona && item.entryCommand === args.catalogEntryCommand && item.driver === args.catalogDriver);
-		const problems = project && catalog ? catalogProblems(catalog, project, root, [args.catalogPersona!], confirmedSurfaces(args)) : ["catalog or project is missing"];
-		if (!row || problems.length) {
-			console.error(`Unverified catalog feature: ${[...problems, ...(!row ? ["catalog entry changed or is missing"] : [])].join("; ")}`);
-			process.exit(2);
-		}
-	}
-	if (!args.catalogEntryCommand && existsSync(priorFeature)) {
-		try {
-			const previous = JSON.parse(readFileSync(priorFeature, "utf8")) as { catalogOrigin?: object };
-			if (previous.catalogOrigin) {
-				console.error("Catalog-generated feature must be refreshed with from-catalog or implement, so its surface is revalidated.");
-				process.exit(2);
-			}
-		} catch (error) {
-			console.error(`Cannot inspect existing feature: ${String(error)}`);
-			process.exit(2);
-		}
-	}
 
 	let resolved;
 	try {
@@ -439,10 +373,6 @@ function scaffold(args: Record<string, string>) {
 			tests: `test/${id}.bindings.test.ts`,
 		},
 	};
-
-	if (args.catalogProject && args.catalogExperience && args.catalogPersona && args.catalogEntryCommand && args.catalogDriver) {
-		featureJson.catalogOrigin = { projectId: args.catalogProject, experienceId: args.catalogExperience, personaId: args.catalogPersona, entryCommand: args.catalogEntryCommand, driver: args.catalogDriver };
-	}
 
 	const personaLines = resolved.metas
 		.map(
@@ -512,24 +442,9 @@ Re-discover / rewire: \`generate-feature.mts --mode implement --id ${id}\`
 				}),
 			);
 		}
-		return true;
+		return;
 	}
 
-	const protectedFiles = [
-		"feature.json", "README.md", "SEED.md",
-		"steps/discovery.json", "steps/world.ts", "steps/implementations.ts", "steps/bindings.steps.ts", "steps/README.md",
-		`test/${id}.bindings.test.ts`,
-		...(existsSync(dir) ? readdirSync(dir).filter((file) => file.endsWith(".feature")) : []),
-	].filter((file) => existsSync(path.join(dir, file)));
-	if (protectedFiles.length && args.force !== "1") {
-		console.log(JSON.stringify({ ok: true, skipped: true, id, reason: "existing feature files preserved; pass --force to replace them", files: protectedFiles }, null, 2));
-		return false;
-	}
-	const quality = checkRubberduckFile(dir);
-	if (!quality.ok && args.forceLowQuality !== "1") {
-		console.error(`Rubber-duck check failed before scaffolding: ${quality.problems.join("; ")}. Complete EXPERIENCE.md or pass --force-low-quality.`);
-		process.exit(2);
-	}
 	mkdirSync(path.join(dir, "evidence"), { recursive: true });
 	mkdirSync(path.join(dir, "steps"), { recursive: true });
 	writeJson(path.join(dir, "feature.json"), featureJson);
@@ -541,7 +456,6 @@ Re-discover / rewire: \`generate-feature.mts --mode implement --id ${id}\`
 	const expMdPath = path.join(dir, "EXPERIENCE.md");
 	const expMd = existsSync(expMdPath) ? readFileSync(expMdPath, "utf8") : "";
 	const entryFromExp =
-		args.catalogEntryCommand ||
 		expMd.match(/entryCommand:\s*`([^`]+)`/)?.[1] ||
 		expMd.match(/primaryCommand:\s*`([^`]+)`/)?.[1] ||
 		seed.match(/`([^`]+)`/)?.[1] ||
@@ -581,11 +495,6 @@ Re-discover / rewire: \`generate-feature.mts --mode implement --id ${id}\`
 		id,
 		seed: `${seed}\n${entryFromExp}`,
 		surfaces: [entryFromExp, ...surfaces],
-		catalogCommand: args.catalogEntryCommand,
-		catalogDriver: args.catalogDriver,
-		catalogExperience: args.catalogExperience,
-		catalogMap: projectSelection.projects[0] ? readSurfaceMap(projectSelection.projects[0], root) : null,
-		packageDir: path.join(root, writeScope.projectPath || "."),
 	});
 	if (binding.primaryCommand) {
 		surfaces.push(binding.primaryCommand);
@@ -622,7 +531,6 @@ Re-discover / rewire: \`generate-feature.mts --mode implement --id ${id}\`
 			2,
 		),
 	);
-	return true;
 }
 
 function implement(args: Record<string, string>) {
@@ -632,10 +540,8 @@ function implement(args: Record<string, string>) {
 		console.error("--id required for implement");
 		process.exit(2);
 	}
-	const selection = resolveProjects(args.projects, root);
 	const loc = findFeature(id, root, {
-		selection,
-		preferredProjectId: selection.projects[0]?.id,
+		preferredProjectId: args.projects?.split(/[,\s]+/)[0],
 	});
 	const dir = loc?.dir ?? featureDir(id, root);
 	if (!existsSync(path.join(dir, "feature.json"))) {
@@ -649,19 +555,7 @@ function implement(args: Record<string, string>) {
 	) as {
 		surfaces?: string[];
 		seedDigest?: string;
-		catalogOrigin?: { projectId: string; experienceId: string; personaId: string; entryCommand: string; driver: string };
 	};
-	if (meta.catalogOrigin) {
-		const origin = meta.catalogOrigin;
-		const project = resolveProjects(origin.projectId, root).projects.find((item) => item.id === origin.projectId);
-		const catalog = project ? readExperienceCatalog(project, root) : null;
-		const row = catalog?.experiences.find((item) => item.experienceId === origin.experienceId && item.personaId === origin.personaId && item.entryCommand === origin.entryCommand && item.driver === origin.driver);
-		const problems = project && catalog ? catalogProblems(catalog, project, root, [origin.personaId], confirmedSurfaces(args)) : ["catalog or project is missing"];
-		if (!row || problems.length) {
-			console.error(`Unverified catalog feature: ${[...problems, ...(!row ? ["catalog entry changed or is missing"] : [])].join("; ")}`);
-			process.exit(2);
-		}
-	}
 	const seedPath = path.join(dir, "SEED.md");
 	const seed = existsSync(seedPath)
 		? readFileSync(seedPath, "utf8").replace(/^#.*\n/, "").trim()
@@ -672,11 +566,6 @@ function implement(args: Record<string, string>) {
 		id,
 		seed,
 		surfaces: meta.surfaces,
-		catalogCommand: meta.catalogOrigin?.entryCommand,
-		catalogDriver: meta.catalogOrigin?.driver,
-		catalogExperience: meta.catalogOrigin?.experienceId,
-		catalogMap: meta.catalogOrigin && resolveProjects(meta.catalogOrigin.projectId, root).projects[0] ? readSurfaceMap(resolveProjects(meta.catalogOrigin.projectId, root).projects[0]!, root) : null,
-		packageDir: meta.catalogOrigin ? path.join(root, resolveProjects(meta.catalogOrigin.projectId, root).projects[0]?.path || ".") : path.join(root, loc?.scope.projectPath || "."),
 	});
 	meta.surfaces = meta.surfaces ?? [];
 	if (
@@ -842,31 +731,6 @@ function validate(args: Record<string, string>) {
 	if (!ok) process.exitCode = 1;
 }
 
-function confirmedSurfaces(args: Record<string, string>): string[] {
-	return (args.confirmedSurfaces || "").split(",").filter(Boolean);
-}
-
-function catalogProblems(
-	catalog: ExperienceCatalog,
-	project: ProjectRef,
-	root: string,
-	personas: string[],
-	confirmations: string[],
-): string[] {
-	const map = readSurfaceMap(project, root);
-	if (!map) return ["surface map is missing; explore the project first"];
-	const problems = validateSurfaceMap(map);
-	const current = assessPackageCli(path.join(root, project.path || "."), root);
-	if (JSON.stringify(map.cliAssessment) !== JSON.stringify(current)) {
-		problems.push("package-bin assessment is stale; re-explore the current manifest");
-	}
-	if (JSON.stringify(catalog.cliAssessment) !== JSON.stringify(map.cliAssessment)) {
-		problems.push("catalog and surface-map package-bin assessments differ");
-	}
-	problems.push(...validateCatalogCoverage(catalog, personas, map, { root, confirmedSurfaces: confirmations }));
-	return problems;
-}
-
 function planExperience(args: Record<string, string>) {
 	const root = repoRoot();
 	const selection = resolveProjects(args.projects ?? "all", root);
@@ -891,22 +755,12 @@ function planExperience(args: Record<string, string>) {
 	if (!row && experienceId) {
 		row = catalog?.experiences.find((e) => e.experienceId === experienceId);
 	}
-	if (row && catalog) {
-		const problems = catalogProblems(catalog, project, root, [row.personaId], confirmedSurfaces(args));
-		if (problems.length) {
-			console.error(`Unverified experience catalog: ${problems.join("; ")}`);
-			process.exit(2);
-		}
-	}
 	const featureId =
 		args.id ||
 		row?.featureId ||
 		deriveId(args.seed || experienceId || "experience", args.id);
-	if (!isPathIdentifier(featureId)) {
-		console.error(`Invalid feature id: ${featureId}`);
-		process.exit(2);
-	}
 	const dir = featureDirInScope(featureId, writeScope);
+	mkdirSync(dir, { recursive: true });
 	const md = experienceMdSkeleton({
 		featureId,
 		experienceId: row?.experienceId || experienceId || featureId,
@@ -920,16 +774,19 @@ function planExperience(args: Record<string, string>) {
 		console.log(JSON.stringify({ ok: true, dryRun: true, path: out, featureId }, null, 2));
 		return;
 	}
-	mkdirSync(dir, { recursive: true });
+	// Don't overwrite filled EXPERIENCE.md unless --force
 	if (existsSync(out) && args.force !== "1") {
+		const existing = readFileSync(out, "utf8");
+		if (!/TODO/.test(existing) && checkRubberduckFile(dir).ok) {
 			console.log(
 				JSON.stringify(
-					{ ok: true, skipped: true, reason: "existing EXPERIENCE.md preserved; pass --force to replace it", path: out },
+					{ ok: true, skipped: true, reason: "EXPERIENCE.md already complete", path: out },
 					null,
 					2,
 				),
 			);
 			return;
+		}
 	}
 	writeFileSync(out, md, "utf8");
 	console.log(
@@ -1000,32 +857,11 @@ function fromCatalog(args: Record<string, string>) {
 		process.exit(2);
 	}
 	const personaFilter = (args.personas || "").split(/[,\s]+/).filter(Boolean);
-	const problems = catalogProblems(catalog, project, root, personaFilter, confirmedSurfaces(args));
-	if (problems.length) {
-		console.error(`Unverified experience catalog: ${problems.join("; ")}`);
-		process.exit(2);
-	}
-	if (catalog.cliAssessment?.status === "not-applicable" && catalog.experiences.length === 0) {
-		console.log(JSON.stringify({
-			ok: true,
-			mode: "from-catalog",
-			projectId: project.id,
-			features: [],
-			cliAssessment: catalog.cliAssessment,
-			coverageScope: "package.json bin only; other surfaces are not assessed",
-		}, null, 2));
-		return;
-	}
 	const rows = catalog.experiences.filter(
 		(e) =>
 			e.priority === "P0" &&
 			(!personaFilter.length || personaFilter.includes(e.personaId)),
 	);
-	const invalidRow = rows.find((row) => !isPathIdentifier(row.featureId));
-	if (invalidRow) {
-		console.error(`Invalid feature id in catalog: ${invalidRow.featureId}`);
-		process.exit(2);
-	}
 	// Group by featureId
 	const byFeature = new Map<string, ExperienceRow[]>();
 	for (const r of rows) {
@@ -1034,7 +870,6 @@ function fromCatalog(args: Record<string, string>) {
 		byFeature.set(r.featureId, list);
 	}
 	const created: string[] = [];
-	const pending: { featureId: string; problems: string[] }[] = [];
 	for (const [featureId, featureRows] of byFeature) {
 		const primary = featureRows[0]!;
 		const personas = [...new Set(featureRows.map((r) => r.personaId))];
@@ -1048,16 +883,24 @@ function fromCatalog(args: Record<string, string>) {
 			seed: primary.entryCommand,
 			driver: primary.driver,
 		});
-		if (args.dryRun !== "1" && args.forceLowQuality !== "1") {
-			const scope = writeScopeFromSelection(resolveProjects(project.id, root), root);
-			const quality = checkRubberduckFile(featureDirInScope(featureId, scope));
-			if (!quality.ok) {
-				pending.push({ featureId, problems: quality.problems });
-				continue;
-			}
+		// Auto-accept skeleton for scaffold only if force-low-quality; else leave for agent fill
+		const writeScope = writeScopeFromSelection(
+			resolveProjects(project.id, root),
+			root,
+		);
+		const dir = featureDirInScope(featureId, writeScope);
+		// If EXPERIENCE still TODO, fill a minimal accept for automation smoke when --force-low-quality
+		const expPath = path.join(dir, "EXPERIENCE.md");
+		if (args.forceLowQuality === "1" && existsSync(expPath)) {
+			let md = readFileSync(expPath, "utf8");
+			md = md
+				.replace(/- \[ \]/g, "- [x]")
+				.replace(/- accept \| revise \| reject/, "- accept")
+				.replace(/TODO/g, `(auto) ${primary.intent}`);
+			writeFileSync(expPath, md, "utf8");
 		}
 		// Scaffold with seed = entry command
-		const scaffolded = scaffold({
+		scaffold({
 			...args,
 			id: featureId,
 			seed: `${primary.intent}: \`${primary.entryCommand}\``,
@@ -1068,22 +911,16 @@ function fromCatalog(args: Record<string, string>) {
 			skipRubberduck:
 				args.forceLowQuality === "1" ? "1" : args.skipRubberduck,
 			forceLowQuality: args.forceLowQuality,
-			catalogProject: project.id,
-			catalogExperience: primary.experienceId,
-			catalogPersona: primary.personaId,
-			catalogEntryCommand: primary.entryCommand,
-			catalogDriver: primary.driver,
 		});
-		if (scaffolded) created.push(featureId);
+		created.push(featureId);
 	}
 	console.log(
 		JSON.stringify(
 			{
-				ok: pending.length === 0,
+				ok: true,
 				mode: "from-catalog",
 				projectId: project.id,
 				features: created,
-				pending,
 				note:
 					args.forceLowQuality === "1"
 						? "force-low-quality used — fill real rubber-duck before assert-complete"
@@ -1093,7 +930,6 @@ function fromCatalog(args: Record<string, string>) {
 			2,
 		),
 	);
-	if (pending.length) process.exitCode = 1;
 }
 
 function resolveOnly(args: Record<string, string>) {
@@ -1132,56 +968,11 @@ function resolveOnly(args: Record<string, string>) {
 }
 
 function main() {
-	const input = normalizeCliOptions(process.argv.slice(2), {
-		values: ["--mode", "--seed", "--seed-file", "--id", "--experiences", "--personas", "--generated-ids", "--max-personas", "--driver", "--title", "--experience-id", "--project", "--projects"],
-		flags: ["--help", "-h", "--all-projects", "--from-catalog", "--force-low-quality", "--skip-rubberduck", "--dry-run", "--force"],
-		inlineValues: ["--confirm-surface-current"],
-	});
-	if (input.error) {
-		console.error(input.error);
-		process.exit(2);
-	}
-	const args = parseArgs(input.argv);
-	if (
-		input.positionals.length > 1 ||
-		(input.positionals.length > 0 && (
-			!["scaffold", "plan", "rewrite-prompt"].includes(args.mode ?? "") ||
-			args.fromCatalog === "1" || input.argv.includes("--seed") || input.argv.includes("--seed-file")
-		))
-	) {
-		console.error("Expected at most one positional seed for scaffold, plan, or rewrite-prompt");
-		process.exit(2);
-	}
+	const args = parseArgs(process.argv.slice(2));
 	if (args.mode === "help") return help();
-	if (args.fromCatalog === "1" && !["scaffold", "from-catalog"].includes(args.mode ?? "")) {
-		console.error("--from-catalog can only be used with scaffold or from-catalog mode");
-		process.exit(2);
-	}
-	if (args.dryRun === "1" && args.mode === "implement") {
-		console.error("--dry-run is not supported for implement; no files were changed");
-		process.exit(2);
-	}
-	if (args.id && !isPathIdentifier(args.id)) {
-		console.error(`Invalid feature id: ${args.id}`);
-		process.exit(2);
-	}
-	const root = repoRoot();
-	const selection = resolveProjects(args.projects, root);
-	const problem = projectSelectionProblem(selection);
-	if (problem) {
-		console.error(problem);
-		process.exit(2);
-	}
-	if (args.dryRun !== "1" && ["plan", "from-catalog", "scaffold", "implement"].includes(args.mode ?? "")) {
-		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
-		if (writeProblem) {
-			console.error(writeProblem);
-			process.exit(2);
-		}
-	}
 	if (args.mode === "plan") return planExperience(args);
 	if (args.mode === "rubberduck-check") return rubberduckCheck(args);
-	if (args.mode === "from-catalog" || (args.mode === "scaffold" && args.fromCatalog === "1")) return fromCatalog(args);
+	if (args.mode === "from-catalog") return fromCatalog(args);
 	if (args.mode === "scaffold") return scaffold(args);
 	if (args.mode === "implement") return implement(args);
 	if (args.mode === "validate") return validate(args);

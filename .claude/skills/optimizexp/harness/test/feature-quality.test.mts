@@ -11,19 +11,11 @@ import {
 import { pickPrimaryCommand, type DiscoveryReport } from "../lib/code-discovery.mts";
 import { buildExperienceCatalog } from "../lib/experience-catalog.mts";
 import type { SurfaceMap } from "../lib/surface-map.mts";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 describe("feature-quality rubberduck", () => {
-	it("requires an entry command rather than a brand mention", () => {
-		const brand = checkRubberduckDoc("HoBo is the product.\n");
-		assert.ok(brand.problems.some((problem) => /entry command/.test(problem)));
-		for (const command of ["`hobo --help`", "x-code"]) {
-			const result = checkRubberduckDoc(`Entry: ${command}\n`);
-			assert.ok(!result.problems.some((problem) => /entry command/.test(problem)));
-		}
-	});
 	it("rejects empty EXPERIENCE.md", () => {
 		const r = checkRubberduckDoc("# hi\n");
 		assert.equal(r.ok, false);

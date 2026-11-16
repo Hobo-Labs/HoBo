@@ -4,7 +4,7 @@
  * No parallel flag system.
  */
 import {
-	type FeatureFlagPort,
+	type FeatureFlagStore,
 	type FlagDefinition,
 	migrationCohortFlagKey,
 } from "./feature-flag-store.js";
@@ -39,7 +39,7 @@ export function createMigrationCohortFlag(input: {
 	readonly migrationId: string;
 	readonly tenant: string;
 	readonly percentage?: number;
-	readonly store?: FeatureFlagPort;
+	readonly store?: FeatureFlagStore;
 }): MigrationCohortFlag {
 	const flagKey = migrationCohortFlagKey(input.migrationId);
 	const percentage = input.percentage ?? 0;
@@ -75,7 +75,7 @@ export function advanceMigrationRamp(input: {
 	readonly service: IdentityMigrationService;
 	readonly targetPercent: number;
 	readonly dualConsistencyOk: boolean;
-	readonly store?: FeatureFlagPort;
+	readonly store?: FeatureFlagStore;
 }): MigrationRampAdvance {
 	const snap = input.service.snapshot();
 	if (!snap) {
@@ -134,7 +134,7 @@ export function advanceMigrationRamp(input: {
 export function principalInMigrationCohort(input: {
 	readonly principalRef: string;
 	readonly percentage: number;
-	readonly store?: FeatureFlagPort;
+	readonly store?: FeatureFlagStore;
 	readonly migrationId?: string;
 	readonly tenant?: string;
 }): boolean {

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
 	existsSync,
-	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
@@ -9,7 +8,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
 import path from "node:path";
 
 export function sha256File(filePath: string): string {
@@ -33,10 +31,9 @@ export function writeJson(filePath: string, data: unknown): void {
 	writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
 }
 
-export function which(bin: string, env: NodeJS.ProcessEnv = process.env): string | null {
-	const r = spawnSync("bash", ["-c", 'command -v -- "$1"', "--", bin], {
+export function which(bin: string): string | null {
+	const r = spawnSync("bash", ["-lc", `command -v ${bin}`], {
 		encoding: "utf8",
-		env,
 	});
 	const out = (r.stdout || "").trim();
 	return r.status === 0 && out ? out : null;
@@ -50,63 +47,65 @@ export function tryStitchFrames(
 	const frames = readdirSync(framesDir)
 		.filter((f) => /\.(png|jpe?g|webp)$/i.test(f))
 		.sort()
-		.map((f) => path.resolve(framesDir, f));
+		.map((f) => path.join(framesDir, f));
 	if (frames.length === 0) return null;
 
 	const ffmpeg = which("ffmpeg");
 	if (ffmpeg && frames.length >= 2) {
 		const mp4 = `${outBase}.mp4`;
-		const scratch = mkdtempSync(path.join(tmpdir(), "optimizexp-stitch-"));
-		const listFile = path.join(scratch, "frames.txt");
+		// pattern: frames must be sequential; copy to numbered list via concat demuxer
+		const listFile = path.join(framesDir, "_list.txt");
 		const listBody = frames
 			.map((f) => `file '${f.replace(/'/g, `'\\''`)}'\nduration 0.8`)
 			.join("\n");
-		try {
-			writeFileSync(listFile, `${listBody}\n`, "utf8");
-			const r = spawnSync(
-				ffmpeg,
-				[
-					"-y",
-					"-f",
-					"concat",
-					"-safe",
-					"0",
-					"-i",
-					listFile,
-					"-vsync",
-					"vfr",
-					"-pix_fmt",
-					"yuv420p",
-					mp4,
-				],
-				{ encoding: "utf8" },
-			);
-			if (r.status === 0 && existsSync(mp4)) {
-				return { file: mp4, kind: "video" };
-			}
-			const gif = `${outBase}.gif`;
-			const g = spawnSync(
-				ffmpeg,
-				[
-					"-y",
-					"-f",
-					"concat",
-					"-safe",
-					"0",
-					"-i",
-					listFile,
-					"-vf",
-					"fps=2,scale=800:-1:flags=lanczos",
-					gif,
-				],
-				{ encoding: "utf8" },
-			);
-			if (g.status === 0 && existsSync(gif)) {
-				return { file: gif, kind: "gif" };
-			}
-		} finally {
-			rmSync(scratch, { recursive: true, force: true });
+		writeFileSync(listFile, `${listBody}\n`, "utf8");
+		const r = spawnSync(
+			ffmpeg,
+			[
+				"-y",
+				"-f",
+				"concat",
+				"-safe",
+				"0",
+				"-i",
+				listFile,
+				"-vsync",
+				"vfr",
+				"-pix_fmt",
+				"yuv420p",
+				mp4,
+			],
+			{ encoding: "utf8" },
+		);
+		rmSync(listFile, { force: true });
+		if (r.status === 0 && existsSync(mp4)) {
+			return { file: mp4, kind: "video" };
 		}
+		// gif fallback via ffmpeg
+		const gif = `${outBase}.gif`;
+		const g = spawnSync(
+			ffmpeg,
+			[
+				"-y",
+				"-f",
+				"concat",
+				"-safe",
+				"0",
+				"-i",
+				listFile,
+				"-vf",
+				"fps=2,scale=800:-1:flags=lanczos",
+				gif,
+			],
+			{ encoding: "utf8" },
+		);
+		// rewrite list for gif attempt
+		writeFileSync(listFile, `${listBody}\n`, "utf8");
+		if (g.status === 0 && existsSync(gif)) {
+			rmSync(listFile, { force: true });
+			return { file: gif, kind: "gif" };
+		}
+		rmSync(listFile, { force: true });
 	}
 
 	// single frame → primary png copy reference

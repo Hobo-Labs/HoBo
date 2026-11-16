@@ -672,7 +672,6 @@ export {
 	type ResourceMutationJournal,
 	type ResourceMutationJournalEntry,
 	ResourceMutationJournalEntrySchema,
-	ResourceMutationNotSentError,
 } from "./ports/resource-lifecycle.js";
 export type {
 	ResolvedResourceRef,
@@ -931,11 +930,6 @@ export {
 	TrainingEngineParseError,
 	TrajectoryRewardSchema,
 } from "./ports/training-engine.js";
-export {
-	createTrustedVault,
-	TRUSTED_VAULT_DEFAULT_TTL_MS,
-	type TrustedVault,
-} from "./ports/trusted-vault.js";
 export type {
 	ComponentRegistration,
 	EstablishedLink,

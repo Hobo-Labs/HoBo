@@ -11,6 +11,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { YardProjectionSnapshot } from "@hobo/management";
 import {
 	connectionCreate,
 	createManagementContext,
@@ -21,7 +22,6 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-	type AnimationDef,
 	allAssetPaths,
 	animationFrameList,
 	assetsRoot,
@@ -33,7 +33,6 @@ import {
 	loadAssetIndex,
 	phaserSpritesheetConfigs,
 	resolveAnimation,
-	type SpritesheetDef,
 	seededRandom,
 	selectZoneWithSnapshot,
 	sheetAbsolutePath,
@@ -60,10 +59,8 @@ function snapshot(options: { withConnection?: boolean; up?: boolean } = {}) {
 		connectionCreate(ctx, { provider: "github", alias: "gh" });
 	}
 	if (options.up) stationUp(ctx, "station:local");
-	const result = projectYardSnapshot(ctx, { stationId: "station:local" });
-	if (!result.ok || !result.data)
-		throw new Error(`could not project the test station: ${result.message}`);
-	return result.data;
+	return projectYardSnapshot(ctx, "station:local")
+		.data as unknown as YardProjectionSnapshot;
 }
 
 describe("yard engine — snapshot application", () => {
@@ -264,7 +261,7 @@ describe("yard engine — tick", () => {
 		// Drive the emitter directly: the projection's traffic rate depends on
 		// metering this test does not control, and the pool behaviour is what is
 		// under test.
-		engine.visual = { ...visual, traffic: { active: true, rate: 1 } };
+		engine.visual = { ...visual, traffic: { active: true, rate: 1 } } as never;
 
 		engine.tick(1);
 		const alive = engine.particles.filter((p) => p.alive);
@@ -294,7 +291,7 @@ describe("yard engine — tick", () => {
 		engine.visual = {
 			...visual,
 			traffic: { active: true, rate: 10_000 },
-		};
+		} as never;
 		engine.tick(1);
 		// An absurd rate must not produce more particles than the pool holds —
 		// the emit loop walks the pool, so the cap is structural.
@@ -305,7 +302,10 @@ describe("yard engine — tick", () => {
 });
 
 describe("test seam", () => {
-	function host(overrides: Partial<YardTestHost> = {}) {
+	function host(overrides: Partial<YardTestHost> = {}): {
+		host: YardTestHost;
+		calls: string[];
+	} {
 		const calls: string[] = [];
 		const base: YardTestHost = {
 			getBo: () => ({ x: 1, y: 2, animationId: "bo.idle", facing: "east" }),
@@ -358,7 +358,7 @@ describe("test seam", () => {
 		const seam = createTestSeam(
 			host({
 				getSnap: () => snap,
-				getZone: () => "costBooth",
+				getZone: () => "costBooth" as ZoneId,
 				isSheetOpen: () => true,
 				sheetKind: () => "cost",
 			}).host,
@@ -502,7 +502,8 @@ describe("isTestMode", () => {
 		// Left as-is: this is a dev affordance rather than a security boundary,
 		// and tightening it to require `=1` would break a bare `?test`, which
 		// is the form a human is most likely to type. Flagged rather than
-		// changed.
+		// changed. The same expression is duplicated in
+		// `@hobo/pixel-village`'s `test-seam.ts`.
 		expect(isTestMode("?test=0").testMode).toBe(true);
 		expect(isTestMode("?test=false").testMode).toBe(true);
 		expect(isTestMode("?test").testMode).toBe(true);
@@ -535,25 +536,6 @@ describe("isTestMode", () => {
 
 describe("asset index", () => {
 	const index = loadAssetIndex();
-	const sheetFixture: SpritesheetDef = {
-		id: "test-sheet",
-		path: "test-sheet.png",
-		frameWidth: 1,
-		frameHeight: 1,
-		columns: 1,
-		rows: 1,
-		margin: 0,
-		spacing: 0,
-		origin: { x: 0, y: 0 },
-		animations: {},
-	};
-	const animationFixture: AnimationDef = {
-		id: "test-animation",
-		sourceClipName: "test-animation",
-		frames: "all",
-		frameRate: 1,
-		repeat: 0,
-	};
 
 	it("resolves every declared animation id to a real sheet and clip", () => {
 		for (const animationId of Object.keys(index.animationIds)) {
@@ -574,7 +556,7 @@ describe("asset index", () => {
 			...index,
 			animationIds: { "x.y": { sheet: "no-sheet", animation: "no-clip" } },
 		};
-		expect(() => resolveAnimation(broken, "x.y")).toThrowError(
+		expect(() => resolveAnimation(broken as never, "x.y")).toThrowError(
 			/unknown sheet for animation/u,
 		);
 		const firstSheet = Object.keys(index.spritesheets)[0] ?? "";
@@ -584,7 +566,7 @@ describe("asset index", () => {
 		};
 		// Three distinct messages because the three failures have three
 		// different fixes: a typo in the id map, a missing sheet, a renamed clip.
-		expect(() => resolveAnimation(badClip, "x.y")).toThrowError(
+		expect(() => resolveAnimation(badClip as never, "x.y")).toThrowError(
 			/unknown animation no-clip on sheet/u,
 		);
 	});
@@ -595,14 +577,13 @@ describe("asset index", () => {
 		// and the sprite would jitter.
 		expect(
 			expectedSheetPixelSize({
-				...sheetFixture,
 				columns: 4,
 				rows: 2,
 				frameWidth: 100,
 				frameHeight: 50,
 				margin: 5,
 				spacing: 2,
-			}),
+			} as never),
 		).toEqual({ width: 4 * 100 + 10 + 3 * 2, height: 2 * 50 + 10 + 1 * 2 });
 	});
 
@@ -611,52 +592,49 @@ describe("asset index", () => {
 		// a naive `columns - 1` on a zero-column sheet would subtract spacing.
 		expect(
 			expectedSheetPixelSize({
-				...sheetFixture,
 				columns: 1,
 				rows: 1,
 				frameWidth: 10,
 				frameHeight: 10,
 				margin: 0,
 				spacing: 4,
-			}),
+			} as never),
 		).toEqual({ width: 10, height: 10 });
 		expect(
 			expectedSheetPixelSize({
-				...sheetFixture,
 				columns: 0,
 				rows: 0,
 				frameWidth: 10,
 				frameHeight: 10,
 				margin: 0,
 				spacing: 4,
-			}),
+			} as never),
 		).toEqual({ width: 0, height: 0 });
 	});
 
 	it("counts frames as columns times rows", () => {
-		expect(frameCount({ ...sheetFixture, columns: 4, rows: 3 })).toBe(12);
+		expect(frameCount({ columns: 4, rows: 3 } as never)).toBe(12);
 	});
 
 	it("expands an 'all' frame list, honouring an explicit frameCount", () => {
-		const sheet = { ...sheetFixture, columns: 3, rows: 2 };
-		expect(animationFrameList(sheet, animationFixture)).toEqual([
+		const sheet = { columns: 3, rows: 2 } as never;
+		expect(animationFrameList(sheet, { frames: "all" } as never)).toEqual([
 			0, 1, 2, 3, 4, 5,
 		]);
 		// An explicit count wins: a sheet can carry trailing empty frames that
 		// must not be played.
 		expect(
-			animationFrameList(sheet, { ...animationFixture, frameCount: 3 }),
+			animationFrameList(sheet, { frames: "all", frameCount: 3 } as never),
 		).toEqual([0, 1, 2]);
 	});
 
 	it("copies an explicit frame list rather than aliasing it", () => {
 		const frames = [2, 0, 1];
 		const result = animationFrameList(
-			{ ...sheetFixture, columns: 3, rows: 1 },
+			{ columns: 3, rows: 1 } as never,
 			{
-				...animationFixture,
 				frames,
-			},
+			} as never,
 		);
 		result.push(9);
 		// Order is preserved (a clip can play frames out of order) and the
@@ -716,7 +694,9 @@ describe("asset index", () => {
 	it("tolerates an index with no backgrounds or images", () => {
 		// Both categories are optional in the v2 shape; the `?? {}` fallbacks are
 		// what let an index that predates them still load.
-		expect(allAssetPaths({ spritesheets: {}, animationIds: {} })).toEqual([]);
+		expect(
+			allAssetPaths({ spritesheets: {}, animationIds: {} } as never),
+		).toEqual([]);
 	});
 
 	it("loads from an explicit path as well as the default", () => {

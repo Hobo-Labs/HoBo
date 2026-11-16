@@ -106,10 +106,7 @@ import { agentRunDuration, slow } from "./support/slow.js";
 const PACKAGE = join(import.meta.dirname, "..");
 const REPO = join(PACKAGE, "..", "..");
 const BIN = join(PACKAGE, "dist", "bin", "hobo.js");
-const MODULE = join(
-	REPO,
-	"packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts",
-);
+const MODULE = "packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts";
 const AGENT_RUN_MS = agentRunDuration();
 // SAFETY: the runner fleet's Camp id for host `box` (hobo-ci-runners/<host id>).
 const BOX = "hobo-ci-runners/box" as CampId;
@@ -196,29 +193,25 @@ type Envelope = Readonly<{
 	data?: JsonObject;
 }>;
 
-/** Use an isolated project while loading the repository's real delivery module. */
+/** One `hobo deploy … --json` run of the built binary from the repo root. */
 function deploy(
 	home: string,
 	argv: readonly string[],
 	env: Readonly<Record<string, string>> = {},
 ): Promise<Envelope> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(
-			process.execPath,
-			[BIN, "deploy", ...argv, "--cwd", home, "--json"],
-			{
-				cwd: REPO,
-				env: {
-					PATH: process.env.PATH ?? "",
-					HOME: home,
-					HOBO_HOME: home,
-					NODE_NO_WARNINGS: "1",
-					HOBO_CD_TOPOLOGY: MODULE,
-					...env,
-				},
-				stdio: ["ignore", "pipe", "pipe"],
+		const child = spawn(process.execPath, [BIN, "deploy", ...argv, "--json"], {
+			cwd: REPO,
+			env: {
+				PATH: process.env.PATH ?? "",
+				HOME: home,
+				HOBO_HOME: home,
+				NODE_NO_WARNINGS: "1",
+				HOBO_CD_TOPOLOGY: MODULE,
+				...env,
 			},
-		);
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 		let stdout = "";
 		let stderr = "";
 		child.stdout.on("data", (chunk: Buffer) => {
@@ -251,7 +244,7 @@ function runAgentFor(
 	return new Promise((resolve, reject) => {
 		const child = spawn(
 			process.execPath,
-			[BIN, "deploy", "agent", "run", ...argv, "--cwd", home, "--json"],
+			[BIN, "deploy", "agent", "run", ...argv, "--json"],
 			{
 				cwd: REPO,
 				env: {

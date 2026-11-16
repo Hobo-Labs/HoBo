@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	cp,
-	mkdir,
 	mkdtemp,
 	readdir,
 	readFile,
@@ -38,12 +37,6 @@ const HOBO_DEP_DIRS = [
 
 export const GENERATION_TARGETS = [
 	{ witPath: "wit", worldName: "sdk", outSubdir: "sdk", stagedHoboOnly: true },
-	{
-		witPath: "wit",
-		worldName: "local-services",
-		outSubdir: "local-services",
-		stagedWasiServices: true,
-	},
 	{
 		witPath: "wit/deps/hobo-runtime/hobo-runtime.wit",
 		worldName: "runtime-primitives",
@@ -107,9 +100,10 @@ export const GENERATION_TARGETS = [
 ] as const;
 
 export function digestSource(source: string | Buffer): string {
-	const bytes = Buffer.isBuffer(source)
-		? source
-		: Buffer.from(source.replace(/\r\n/g, "\n"), "utf8");
+	const bytes =
+		typeof source === "string"
+			? Buffer.from(source.replace(/\r\n/g, "\n"), "utf8")
+			: source;
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
@@ -125,23 +119,6 @@ async function stageHoboSdkWitRoot(): Promise<string> {
 	return stagedRoot;
 }
 
-async function stageWasiServicesWitRoot(): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), "hobo-wit-services-"));
-	await writeFile(
-		join(root, "local-services.wit"),
-		`package hobo:test-services@0.1.0;\nworld local-services {\n  import wasi:keyvalue/store@0.2.0;\n  import wasi:blobstore/blobstore@0.2.0;\n}\n`,
-	);
-	for (const [name, source] of [
-		["keyvalue", "wasi-keyvalue-store.wit"],
-		["blobstore", "wasi-blobstore-blobstore.wit"],
-	] as const) {
-		const dir = join(root, "deps", name);
-		await mkdir(dir, { recursive: true });
-		await cp(join(WIT_ROOT, "deps", source), join(dir, source));
-	}
-	return root;
-}
-
 export async function writeGeneratedBindings(
 	options: { outDir?: string } = {},
 ): Promise<string[]> {
@@ -150,7 +127,6 @@ export async function writeGeneratedBindings(
 
 	const allFiles: string[] = [];
 	let stagedRoot: string | undefined;
-	let stagedWasiRoot: string | undefined;
 
 	try {
 		for (const target of GENERATION_TARGETS) {
@@ -159,9 +135,6 @@ export async function writeGeneratedBindings(
 			if ("stagedHoboOnly" in target && target.stagedHoboOnly) {
 				stagedRoot ??= await stageHoboSdkWitRoot();
 				witInput = stagedRoot;
-			} else if ("stagedWasiServices" in target && target.stagedWasiServices) {
-				stagedWasiRoot ??= await stageWasiServicesWitRoot();
-				witInput = stagedWasiRoot;
 			} else {
 				witInput = join(PACKAGE_ROOT, target.witPath);
 			}
@@ -189,9 +162,6 @@ export async function writeGeneratedBindings(
 	} finally {
 		if (stagedRoot) {
 			await rm(stagedRoot, { recursive: true, force: true });
-		}
-		if (stagedWasiRoot) {
-			await rm(stagedWasiRoot, { recursive: true, force: true });
 		}
 	}
 

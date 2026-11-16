@@ -1,10 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { isPathIdentifier } from "./slug.mts";
 import {
 	listProjects,
-	projectSelectionProblem,
 	type ProjectRef,
 	type ProjectSelection,
 } from "./projects.mts";
@@ -131,8 +129,6 @@ export function writeScopeFromSelection(
 	selection: ProjectSelection,
 	root = repoRoot(),
 ): OptimizexpScope {
-	const problem = projectSelectionProblem(selection);
-	if (problem) throw new Error(problem);
 	if (selection.allProjects || selection.projects.length !== 1) {
 		return globalScope(root);
 	}
@@ -174,7 +170,6 @@ export function featuresRoot(
  * Prefer `featureDirInScope(id, scope)` for project-local writes.
  */
 export function featureDir(featureId: string, root = repoRoot()): string {
-	if (!isPathIdentifier(featureId)) throw new Error(`Invalid feature id: ${featureId}`);
 	return path.join(featuresRoot(root), featureId);
 }
 
@@ -182,7 +177,6 @@ export function featureDirInScope(
 	featureId: string,
 	scope: OptimizexpScope,
 ): string {
-	if (!isPathIdentifier(featureId)) throw new Error(`Invalid feature id: ${featureId}`);
 	return path.join(featuresRoot(scope), featureId);
 }
 
@@ -191,7 +185,6 @@ export function evidenceDir(
 	scenario: string,
 	root = repoRoot(),
 ): string {
-	if (!isPathIdentifier(scenario)) throw new Error(`Invalid scenario id: ${scenario}`);
 	return path.join(featureDir(featureId, root), "evidence", scenario);
 }
 
@@ -200,7 +193,6 @@ export function evidenceDirInScope(
 	scenario: string,
 	scope: OptimizexpScope,
 ): string {
-	if (!isPathIdentifier(scenario)) throw new Error(`Invalid scenario id: ${scenario}`);
 	return path.join(
 		featureDirInScope(featureId, scope),
 		"evidence",

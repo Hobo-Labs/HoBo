@@ -60,7 +60,7 @@ describe("ResourceIntent against the capability requirement", () => {
 		const requirement = new Set(
 			fieldNames(declaredFields(REQUIREMENT, "CapabilityRequirement")),
 		);
-		expect(intent.size).toBe(10);
+		expect(intent.size).toBe(9);
 		expect(requirement.size).toBe(9);
 		expect([...intent].filter((field) => requirement.has(field))).toEqual([]);
 	});

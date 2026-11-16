@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { developerPricing, pricingUnavailable } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
 import { decideDispatchV2 } from "../../src/dispatcher-v2.js";
 import {
@@ -51,30 +50,5 @@ describe("dispatcher v2 decision boundary consumer", () => {
 		const interaction = pact.interactions[1];
 
 		expect(decision).toMatchObject(interaction.response.body);
-	});
-
-	it("discloses supplied pricing and excludes unavailable pricing", () => {
-		const decision = decideDispatchV2({
-			dispatchId: "pricing-availability-pact",
-			category: "runner",
-			candidates: [
-				{ providerId: "unpriced", pricing: pricingUnavailable("no model") },
-				{
-					providerId: "priced",
-					pricing: developerPricing(
-						{
-							modelId: "my-contract",
-							revision: "2",
-							tenantId: "tenant-a",
-							providerId: "priced",
-							providerAccountRef: "priced",
-							productId: "runner",
-						},
-						dispatchQuoteScenario("priced", "0.1"),
-					),
-				},
-			],
-		});
-		expect(decision).toMatchObject(pact.interactions[2].response.body);
 	});
 });

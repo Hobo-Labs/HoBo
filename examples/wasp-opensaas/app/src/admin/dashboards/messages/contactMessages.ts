@@ -5,14 +5,9 @@ const pageSize = 20;
 const pageSchema = z.object({ page: z.number().int().min(0).max(100_000) });
 const messageSchema = z.object({ id: z.string().uuid() });
 
-type ContactFormMessageDelegate = Pick<
-  PrismaClient["contactFormMessage"],
-  "findMany" | "count" | "updateMany"
->;
-
 type MessageContext = {
   user: { isAdmin: boolean } | null | undefined;
-  messages: ContactFormMessageDelegate;
+  messages: PrismaClient["contactFormMessage"];
 };
 
 export class ContactMessageError extends Error {

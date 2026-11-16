@@ -21,9 +21,8 @@ timestamp: 2026-07-30T00:00:00Z
 
 ## HoBo anchors
 
-- `site/DESIGN.md` — agent-facing design contract
 - `site/src/styles/global.css` — runtime tokens
-- `design-md` skill — lint + export commands
+- `design-md` skill — visual checks against implemented tokens
 - Exp proofs under `src/draft/exp-proofs/ux/`
 
 ## Friction / uncertainty checks
@@ -44,7 +43,6 @@ timestamp: 2026-07-30T00:00:00Z
 
 ```bash
 pnpm --filter hobo-site run design:lint
-pnpm --filter hobo-site run design:spec
 ```
 
 ## Bus expectation sketch
@@ -52,7 +50,7 @@ pnpm --filter hobo-site run design:spec
 ```gherkin
 Feature: Design token lint
   Scenario: Agent updates a color token
-    Given site/DESIGN.md defines spark
+    Given the implemented CSS defines the palette
     When I run design:lint after a token edit
     Then contrast and structural rules fail closed with file references
 ```

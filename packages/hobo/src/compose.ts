@@ -1,4 +1,3 @@
-import { SURROGATE_PATTERN } from "@hobo/adapter-opensesame";
 import {
 	isJsonObject,
 	isJsonString,
@@ -82,24 +81,17 @@ import {
 	registerProviderFact,
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
-import {
-	type CloudProvider,
-	type ComponentHostEvent,
-	createTrustedVault,
-	type DurableEventStore,
-	type EventStore,
-	type HttpTransport,
-	type InterfaceId,
-	type ParsedComponentDescriptor,
-	type ProviderDescriptor,
+import type {
+	CloudProvider,
+	ComponentHostEvent,
+	DurableEventStore,
+	EventStore,
+	HttpTransport,
+	InterfaceId,
+	ParsedComponentDescriptor,
+	ProviderDescriptor,
 } from "@hobo/core";
 import { createInMemoryActorHost } from "@hobo/data";
-import {
-	type OpenedSecretStore,
-	ownerStore,
-	withoutSecretEnv,
-	workloadOidcOf,
-} from "@hobo/hobo-ci";
 import {
 	createPulumiAutomationAdapter,
 	createPulumiAutomationApiEngine,
@@ -129,7 +121,6 @@ import {
 	type ProductionHostingExecutionOptions,
 } from "./hosting-execution.js";
 import { ownedTempDir } from "./owned-temp-dir.js";
-import { ownerKeys, PULUMI_STATE_KEY } from "./owner-keys.js";
 import {
 	createPulumiBackedIacProvider,
 	type PulumiAutomationAdapter,
@@ -138,7 +129,6 @@ import {
 	createFetchHttpTransport,
 	createResolverBackedIacProvider,
 } from "./resolver-iac-provider.js";
-import { withSecretRefExecution } from "./secret-ref-executor.js";
 import type { FetchHandler } from "./servable-entrypoints.js";
 
 function asFetchHandler(
@@ -218,8 +208,6 @@ export function toRegistrableProvider(
 }
 
 export interface DefaultYardRuntimeOptions {
-	/** Project whose committed secret-store locator the deploy executor may open. */
-	readonly projectDir?: string;
 	// Durable event-store data directory. Defaults to a fresh OS temp dir
 	// (`hobo-yard-*`; the mocked lane is ephemeral) that this process owns and
 	// removes when it exits, an uncaught error included (owned-temp-dir.ts), so no
@@ -254,8 +242,6 @@ export interface DefaultYardRuntimeOptions {
 }
 
 export interface SelectIacProviderDeps {
-	/** Project whose committed secret-store locator may be opened. */
-	readonly projectDir?: string;
 	// The durable event store the Pulumi-backed provider reads plans from.
 	readonly store: EventStore;
 	// The real CloudProviders whose `realize()` the Pulumi bridge drives.
@@ -274,12 +260,6 @@ export interface SelectIacProviderDeps {
 	// a fake to drive the REAL resolvers over a modelled provider account without
 	// a live token or a real socket.
 	readonly resolverTransport?: HttpTransport;
-	// The owner's secret store, for `secretRef` placements
-	// (`secret-ref-executor.ts`). By default it is opened without a page from
-	// the locator committed in the working directory.
-	readonly openSecretStore?: (
-		projectDir: string | undefined,
-	) => Promise<OpenedSecretStore | undefined>;
 }
 
 // Per-store, per-lane Pulumi adapter memo. Sharing ONE adapter (and therefore
@@ -330,7 +310,7 @@ function temporaryLiveWorkDir(): string {
 export function selectPulumiEstateAdapter(
 	deps: Pick<SelectIacProviderDeps, "store" | "env" | "adapter">,
 ): PulumiAutomationAdapter | undefined {
-	const env = deployEnvironment(deps.env);
+	const env = deps.env ?? process.env;
 	if (deps.adapter !== undefined) {
 		const byLane = pulumiAdaptersByStore.get(deps.store) ?? new Map();
 		byLane.set("memory", deps.adapter);
@@ -352,34 +332,17 @@ export function selectPulumiEstateAdapter(
 			const useCliEngine =
 				env.HOBO_PULUMI_LIVE_ENGINE === "cli" ||
 				env.HOBO_PULUMI_BIN !== undefined;
-			// A caller-named workspace survives this process and must use a
-			// recoverable passphrase. Only our owned temporary directory may use
-			// an in-memory random key.
-			const ephemeralState = env.HOBO_PULUMI_WORKDIR === undefined;
-			// A retained workspace's key is the owner's, from their secret store
-			// (`owner-keys.ts`); PULUMI_CONFIG_PASSPHRASE in this process's
-			// environment is not read.
-			const kept = ownerKeys.reveal(PULUMI_STATE_KEY);
-			const statePassphrase =
-				kept !== undefined ? { statePassphrase: kept } : undefined;
 			const engine = useCliEngine
 				? createPulumiCliAutomationEngine({
 						workDir,
 						env,
-						ephemeralState,
-						...statePassphrase,
 						// Test seam mirroring the engine's own binary gate: point at a
 						// non-existent binary to exercise the typed fail-closed path.
 						...(env.HOBO_PULUMI_BIN !== undefined
 							? { pulumiBin: env.HOBO_PULUMI_BIN }
 							: undefined),
 					})
-				: createPulumiAutomationApiEngine({
-						workDir,
-						env,
-						ephemeralState,
-						...statePassphrase,
-					});
+				: createPulumiAutomationApiEngine({ workDir, env });
 			// SAFETY: assertion required at this I/O or test boundary.
 			return createPulumiAutomationAdapter({
 				engine,
@@ -453,38 +416,6 @@ export function readPulumiEstate(
 		}
 	}
 	return estate.sort((a, b) => a.resource.localeCompare(b.resource));
-}
-
-// Deploy credentials and the process environment. A real provider token is a
-// secret, and HoBo does not read secrets from the environment: the token a
-// deploy uses comes from the owner's secret store, handed over in a trusted
-// vault (`hobo cd up`'s junction), or arrives as an explicitly injected record
-// (an embedder, a test). The one exception is OpenSesame (ADR-0170): its run
-// puts a surrogate (`osr_…`) in the variable, which only its proxy can redeem,
-// so the process environment never holds the real token. Any other value of
-// these variables in the process environment is ignored.
-const DEPLOY_TOKEN_VARIABLES = [
-	"VERCEL_TOKEN",
-	"CLOUDFLARE_API_TOKEN",
-] as const;
-const OPENSESAME_SURROGATE = new RegExp(SURROGATE_PATTERN, "u");
-
-/** The environment a composition reads deploy settings from (see above). */
-export function deployEnvironment(
-	injected?: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
-	const kept: NodeJS.ProcessEnv = { ...(injected ?? process.env) };
-	if (injected === undefined) {
-		for (const name of DEPLOY_TOKEN_VARIABLES) {
-			const value = kept[name];
-			if (value !== undefined && !OPENSESAME_SURROGATE.test(value))
-				delete kept[name];
-		}
-	}
-	// Never fall back to an environment key for retained Pulumi state, even
-	// when a caller supplies an environment snapshot (as drift/import do).
-	delete kept.PULUMI_CONFIG_PASSPHRASE;
-	return kept;
 }
 
 // Credential LOCATORS for the resolver lane. The composition root is the host:
@@ -612,44 +543,7 @@ function resolverBackedProviderFor(
 // `VERCEL_ORG_ID`, names, or in the token's own scope when neither does
 // (`vercelTeamIdOf`).
 export function selectIacProvider(deps: SelectIacProviderDeps): IacProvider {
-	// A placement on a secret store realizes a reference: whichever lane
-	// executes the rest, the store's placements are executed here.
-	const open = deps.openSecretStore;
-	return withSecretRefExecution(selectDeployLane(deps), {
-		open:
-			open === undefined
-				? () => openOwnerSecretStore(deps.env, deps.projectDir)
-				: () => open(deps.projectDir),
-		store: deps.store,
-	});
-}
-
-/** The owner's store, opened without a page (`ownerStore`), or none. */
-async function openOwnerSecretStore(
-	injected: NodeJS.ProcessEnv | undefined,
-	projectDir: string | undefined,
-): Promise<OpenedSecretStore | undefined> {
-	// A long-lived library runtime can serve several project directories; an
-	// ambient process cwd does not establish which one's locator was selected.
-	if (projectDir === undefined || !isAbsolute(projectDir)) return undefined;
-	const env = injected ?? process.env;
-	const signIn = createTrustedVault();
-	const workloadOidc = workloadOidcOf(env);
-	try {
-		return (
-			await ownerStore("cd", signIn, {
-				env: withoutSecretEnv(env),
-				cwd: projectDir,
-				...(workloadOidc !== undefined ? { workloadOidc } : undefined),
-			})
-		).opened;
-	} finally {
-		signIn.clear();
-	}
-}
-
-function selectDeployLane(deps: SelectIacProviderDeps): IacProvider {
-	const env = deployEnvironment(deps.env);
+	const env = deps.env ?? process.env;
 	if (usesOpenSesameCredentials(env)) requireOpenSesameSurrogate(env);
 	const estateAdapter = selectPulumiEstateAdapter(deps);
 	if (estateAdapter !== undefined) {
@@ -692,7 +586,7 @@ function createYardRuntimeOverStore(
 	// One CloudProvider instance, shared between the planner registry (capability
 	// negotiation) and the IaC bridge (realize() on the deploy path).
 	const cloudflare = createCloudflareProvider();
-	const environment = deployEnvironment(options.env);
+	const environment = options.env ?? process.env;
 	const hostingBudgetRequired =
 		options.iacAdapter === undefined &&
 		(environment.HOBO_PULUMI_LIVE === "1" ||
@@ -710,9 +604,6 @@ function createYardRuntimeOverStore(
 			iac: selectIacProvider({
 				store,
 				providers: [cloudflare],
-				...(options.projectDir !== undefined
-					? { projectDir: options.projectDir }
-					: undefined),
 				...(options.iacAdapter !== undefined
 					? { adapter: options.iacAdapter }
 					: undefined),

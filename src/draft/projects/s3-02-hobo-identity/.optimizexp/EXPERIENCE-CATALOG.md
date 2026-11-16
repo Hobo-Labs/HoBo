@@ -1,12 +1,161 @@
 # Experience catalog — s3-02-hobo-identity
 
-Built: 2026-11-17T18:35:43.926Z
-
-Package-bin CLI: not-applicable — src/draft/projects/s3-02-hobo-identity/package.json: no package bin is declared.
-This covers the package.json bin field only; other CLI and non-CLI surfaces are not assessed here.
-Surface validation: no map problems.
-Map validation checks the recorded shape; it is not runtime evidence or complete experience coverage.
-Unverified persona goals: role-finops: inspect cost information (no observed cost command or cost-specific plan help in the package surface).
+Built: 2026-07-31T20:11:22.179Z
 
 | experienceId | persona | P | entry | featureId |
 |---|---|---|---|---|
+| help-discoverability | agent-operator | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | agent-operator | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | agent-operator | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | agent-operator | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| guide-cursor-map | agent-operator | P0 | `app guide --cursor` | hobo-draft-s3-02-hobo-identity-guide-cursor |
+| tasks-board | agent-operator | P0 | `app tasks` | hobo-draft-s3-02-hobo-identity-tasks |
+| help-discoverability | designer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | designer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| help-discoverability | coding-agent | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | coding-agent | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| agent-native-inventory | coding-agent | P0 | `app agent` | hobo-draft-s3-02-hobo-identity-agent |
+| agent-human-free-auth | coding-agent | P0 | `app auth` | hobo-draft-s3-02-hobo-identity-auth |
+| cost-zero-path | coding-agent | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | coding-agent | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| help-discoverability | end-user | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | end-user | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| help-discoverability | platform-engineer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | platform-engineer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| config-setup-inventory | platform-engineer | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| guide-cursor-map | platform-engineer | P0 | `app guide --cursor` | hobo-draft-s3-02-hobo-identity-guide-cursor |
+| help-discoverability | protocol-native-coding-agent | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | protocol-native-coding-agent | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| agent-native-inventory | protocol-native-coding-agent | P0 | `app agent` | hobo-draft-s3-02-hobo-identity-agent |
+| agent-human-free-auth | protocol-native-coding-agent | P0 | `app auth` | hobo-draft-s3-02-hobo-identity-auth |
+| cost-zero-path | protocol-native-coding-agent | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | protocol-native-coding-agent | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | protocol-native-coding-agent | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| remote-attach-dev-terminal | protocol-native-coding-agent | P0 | `app attach` | hobo-draft-s3-02-hobo-identity-attach |
+| herdr-mux-status | protocol-native-coding-agent | P0 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| help-discoverability | ai-automation-engineer-pi-flue | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | ai-automation-engineer-pi-flue | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| agent-native-inventory | ai-automation-engineer-pi-flue | P0 | `app agent` | hobo-draft-s3-02-hobo-identity-agent |
+| agent-human-free-auth | ai-automation-engineer-pi-flue | P0 | `app auth` | hobo-draft-s3-02-hobo-identity-auth |
+| cost-zero-path | ai-automation-engineer-pi-flue | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | ai-automation-engineer-pi-flue | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | ai-automation-engineer-pi-flue | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| herdr-mux-status | ai-automation-engineer-pi-flue | P0 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| help-discoverability | cost-conscious-open-source-dev | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | cost-conscious-open-source-dev | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| agent-native-inventory | cost-conscious-open-source-dev | P0 | `app agent` | hobo-draft-s3-02-hobo-identity-agent |
+| agent-human-free-auth | cost-conscious-open-source-dev | P0 | `app auth` | hobo-draft-s3-02-hobo-identity-auth |
+| cost-zero-path | cost-conscious-open-source-dev | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | cost-conscious-open-source-dev | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | cost-conscious-open-source-dev | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| help-discoverability | advanced-cli-native-vim-engineer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | advanced-cli-native-vim-engineer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | advanced-cli-native-vim-engineer | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| edit-nvim-bridge | advanced-cli-native-vim-engineer | P0 | `app edit` | hobo-draft-s3-02-hobo-identity-edit |
+| config-setup-inventory | advanced-cli-native-vim-engineer | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | advanced-cli-native-vim-engineer | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| guide-cursor-map | advanced-cli-native-vim-engineer | P0 | `app guide --cursor` | hobo-draft-s3-02-hobo-identity-guide-cursor |
+| remote-attach-dev-terminal | advanced-cli-native-vim-engineer | P0 | `app attach` | hobo-draft-s3-02-hobo-identity-attach |
+| herdr-mux-status | advanced-cli-native-vim-engineer | P0 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| tasks-board | advanced-cli-native-vim-engineer | P0 | `app tasks` | hobo-draft-s3-02-hobo-identity-tasks |
+| help-discoverability | claude-code-advanced-app-builder | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | claude-code-advanced-app-builder | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | claude-code-advanced-app-builder | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | claude-code-advanced-app-builder | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | claude-code-advanced-app-builder | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| guide-claude-map | claude-code-advanced-app-builder | P0 | `app guide` | hobo-draft-s3-02-hobo-identity-guide |
+| remote-attach-dev-terminal | claude-code-advanced-app-builder | P0 | `app attach` | hobo-draft-s3-02-hobo-identity-attach |
+| tasks-board | claude-code-advanced-app-builder | P0 | `app tasks` | hobo-draft-s3-02-hobo-identity-tasks |
+| help-discoverability | cursor-power-user | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | cursor-power-user | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | cursor-power-user | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | cursor-power-user | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | cursor-power-user | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| guide-cursor-map | cursor-power-user | P0 | `app guide --cursor` | hobo-draft-s3-02-hobo-identity-guide-cursor |
+| tasks-board | cursor-power-user | P0 | `app tasks` | hobo-draft-s3-02-hobo-identity-tasks |
+| help-discoverability | developer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | developer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | developer | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | developer | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | developer | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| status-chrome | developer | P1 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| help-discoverability | new-gen-ai-native-grok-build-user | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | new-gen-ai-native-grok-build-user | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| agent-native-inventory | new-gen-ai-native-grok-build-user | P0 | `app agent` | hobo-draft-s3-02-hobo-identity-agent |
+| agent-human-free-auth | new-gen-ai-native-grok-build-user | P0 | `app auth` | hobo-draft-s3-02-hobo-identity-auth |
+| cost-zero-path | new-gen-ai-native-grok-build-user | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | new-gen-ai-native-grok-build-user | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| herdr-mux-status | new-gen-ai-native-grok-build-user | P0 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| tasks-board | new-gen-ai-native-grok-build-user | P0 | `app tasks` | hobo-draft-s3-02-hobo-identity-tasks |
+| help-discoverability | product-app-developer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | product-app-developer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | product-app-developer | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | product-app-developer | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | product-app-developer | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| help-discoverability | senior-dev-tmux-mosh-tailscale | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | senior-dev-tmux-mosh-tailscale | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | senior-dev-tmux-mosh-tailscale | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | senior-dev-tmux-mosh-tailscale | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | senior-dev-tmux-mosh-tailscale | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| remote-attach-dev-terminal | senior-dev-tmux-mosh-tailscale | P0 | `app attach` | hobo-draft-s3-02-hobo-identity-attach |
+| herdr-mux-status | senior-dev-tmux-mosh-tailscale | P0 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| help-discoverability | product-agent-operator | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | product-agent-operator | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | product-agent-operator | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | product-agent-operator | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| help-discoverability | senior-engineer-advanced-herdr-user | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | senior-engineer-advanced-herdr-user | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | senior-engineer-advanced-herdr-user | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | senior-engineer-advanced-herdr-user | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | senior-engineer-advanced-herdr-user | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| guide-cursor-map | senior-engineer-advanced-herdr-user | P0 | `app guide --cursor` | hobo-draft-s3-02-hobo-identity-guide-cursor |
+| remote-attach-dev-terminal | senior-engineer-advanced-herdr-user | P0 | `app attach` | hobo-draft-s3-02-hobo-identity-attach |
+| herdr-mux-status | senior-engineer-advanced-herdr-user | P0 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| help-discoverability | github-copilot-cli-advanced-user | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | github-copilot-cli-advanced-user | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | github-copilot-cli-advanced-user | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | github-copilot-cli-advanced-user | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | github-copilot-cli-advanced-user | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| remote-attach-dev-terminal | github-copilot-cli-advanced-user | P0 | `app attach` | hobo-draft-s3-02-hobo-identity-attach |
+| help-discoverability | product-platform-engineer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | product-platform-engineer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | product-platform-engineer | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | product-platform-engineer | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| help-discoverability | product-coding-agent | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | product-coding-agent | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| agent-native-inventory | product-coding-agent | P0 | `app agent` | hobo-draft-s3-02-hobo-identity-agent |
+| agent-human-free-auth | product-coding-agent | P0 | `app auth` | hobo-draft-s3-02-hobo-identity-auth |
+| cost-zero-path | product-coding-agent | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | product-coding-agent | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | product-coding-agent | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| help-discoverability | advanced-nix-devenv-developer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | advanced-nix-devenv-developer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | advanced-nix-devenv-developer | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| config-setup-inventory | advanced-nix-devenv-developer | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | advanced-nix-devenv-developer | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| herdr-mux-status | advanced-nix-devenv-developer | P0 | `app status` | hobo-draft-s3-02-hobo-identity-status |
+| help-discoverability | product-end-user | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | product-end-user | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | product-end-user | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| help-discoverability | product-designer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | product-designer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | product-designer | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| help-discoverability | junior-typescript-developer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | junior-typescript-developer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| config-setup-inventory | junior-typescript-developer | P0 | `app config` | hobo-draft-s3-02-hobo-identity-config |
+| harness-dual-surface | junior-typescript-developer | P0 | `app harness` | hobo-draft-s3-02-hobo-identity-harness |
+| help-discoverability | junior-frontend | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | junior-frontend | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| help-discoverability | junior-mobile-designer | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | junior-mobile-designer | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| cost-zero-path | junior-mobile-designer | P0 | `app cost` | hobo-draft-s3-02-hobo-identity-cost |
+| help-discoverability | role-developers | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | role-developers | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| help-discoverability | role-devsecops | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | role-devsecops | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| help-discoverability | role-finops | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | role-finops | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| help-discoverability | role-platform-engineers | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | role-platform-engineers | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |
+| help-discoverability | role-sre | P0 | `app help` | hobo-draft-s3-02-hobo-identity-help-discoverability |
+| failure-actionable | role-sre | P0 | `app not-a-real-verb-zz` | hobo-draft-s3-02-hobo-identity-failure-actionable |

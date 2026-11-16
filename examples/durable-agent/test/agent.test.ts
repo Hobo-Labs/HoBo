@@ -48,7 +48,6 @@ describe("durable-agent", () => {
 
 	it("survives a host crash: resumes from the journal without re-running the tool", async () => {
 		const engine = createWorkflowEngine();
-		const runId = "run-1";
 		let toolCalls = 0;
 		let crashed = false;
 		const flaky = agent<{ orderId: string }, string>({
@@ -73,14 +72,14 @@ describe("durable-agent", () => {
 			},
 		});
 
-		await expect(
-			engine.start(flaky, { orderId: "ord-9" }, { runId }),
-		).rejects.toThrow("SIMULATED_HOST_CRASH");
+		await expect(engine.start(flaky, { orderId: "ord-9" })).rejects.toThrow(
+			"SIMULATED_HOST_CRASH",
+		);
 		expect(toolCalls).toBe(1);
 
 		// A brand-new engine over the SAME durable store resumes the run.
 		const restarted = createWorkflowEngine({ store: engine.store });
-		const handle = await restarted.resume(flaky, runId, {
+		const handle = await restarted.resume(flaky, "run-1", {
 			orderId: "ord-9",
 		});
 

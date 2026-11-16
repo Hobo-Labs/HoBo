@@ -428,10 +428,10 @@ describe("both ownership facts are verified independently", () => {
 			},
 			associatedResource: resource,
 			projectItemId: "vercel-project",
-			resourceItemId: "prisma-resource",
+			resourceItemId: "vercel-associated-resource",
 		});
 		expect(summary.bothSubjectsVerified).toBe(false);
-		expect(summary.repairRequiredFor).toEqual(["prisma-resource"]);
+		expect(summary.repairRequiredFor).toEqual(["vercel-associated-resource"]);
 	});
 
 	it("verifies the acceptance callback signature before believing the body", () => {

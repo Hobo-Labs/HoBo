@@ -4,7 +4,9 @@
 import {
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -12,7 +14,6 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { repoRoot } from "./paths.mts";
 import type { ProjectRef } from "./projects.mts";
-import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 
 export type SurfaceDriver = "cli" | "tui" | "web" | "native";
 
@@ -23,26 +24,17 @@ export type SurfaceCommand = {
 	summary?: string;
 };
 
-export type CliAssessment = {
-	status: "present" | "not-applicable" | "unverified";
-	scope: "package.json bin";
-	evidence: string;
-};
-
 export type SurfaceMap = {
 	schemaVersion: 1;
 	projectId: string;
 	scannedAt: string;
 	productName: string;
 	packageDir: string;
-	coverageScope?: "primary-bin";
-	cliAssessment?: CliAssessment;
 	binaries: {
 		name: string;
 		binPath: string;
 		packageName?: string;
 	}[];
-	binAssessments?: { name: string; status: "observed-help" | "unverified"; evidence: string }[];
 	defaultEntry: {
 		command: string;
 		interactive: boolean;
@@ -64,46 +56,11 @@ export type SurfaceMap = {
 		stdoutDigest: string;
 		capturedAt: string;
 		notes?: string;
-		binName?: string;
-		kind?: "help";
-		executableDigest?: string;
 	}[];
 };
 
 function digestText(s: string): string {
 	return createHash("sha256").update(s.slice(0, 8000)).digest("hex").slice(0, 16);
-}
-
-export function surfaceMapDigest(map: SurfaceMap): string {
-	return createHash("sha256").update(JSON.stringify(map)).digest("hex");
-}
-
-function executableDigest(file: string): string | null {
-	try {
-		return createHash("sha256").update(readFileSync(file)).digest("hex");
-	} catch {
-		return null;
-	}
-}
-
-export function validateCurrentSurface(map: SurfaceMap, root: string, options?: {
-	confirmedSurfaces?: string[];
-	freshProbe?: boolean;
-}): string[] {
-	if (map.cliAssessment?.status !== "present" || map.binaries.length === 0) return [];
-	const primary = map.binaries[0]!;
-	const probe = map.probes.find((item) => item.binName === primary.name && item.kind === "help" && item.exitCode === 0);
-	if (!probe?.executableDigest || !/^[a-f0-9]{64}$/.test(probe.executableDigest)) {
-		return [`binary ${primary.name} observation is unverified: no executable digest`];
-	}
-	if (executableDigest(path.resolve(root, primary.binPath)) !== probe.executableDigest) {
-		return [`binary ${primary.name} observation is stale: executable changed or is unreadable`];
-	}
-	const assertion = `${map.projectId}:${surfaceMapDigest(map)}`;
-	if (options?.freshProbe !== true && !options?.confirmedSurfaces?.includes(assertion)) {
-		return [`surface observation is unverified: independently confirm imports, configuration, and environment, then pass --confirm-surface-current=${assertion}`];
-	}
-	return [];
 }
 
 function readJsonSafe<T>(p: string): T | null {
@@ -115,96 +72,41 @@ function readJsonSafe<T>(p: string): T | null {
 	}
 }
 
-function inspectPackageBins(
-	packageDir: string,
-	root: string,
-): { assessment: CliAssessment; binaries: SurfaceMap["binaries"] } {
-	const pkgPath = path.join(packageDir, "package.json");
-	const pkg = readJsonSafe<{
-		name?: string;
-		bin?: unknown;
-	}>(pkgPath);
-	const evidencePath = path.relative(root, pkgPath).split(path.sep).join("/");
-	const result = (status: CliAssessment["status"], detail: string) => ({
-		assessment: {
-			status,
-			scope: "package.json bin" as const,
-			evidence: `${evidencePath}: ${detail}`,
-		},
-		binaries: [],
-	});
-	if (!pkg || typeof pkg !== "object" || Array.isArray(pkg)) {
-		return result("unverified", "manifest missing or invalid");
-	}
-	if (!Object.hasOwn(pkg, "bin")) {
-		return result("not-applicable", "no package bin is declared");
-	}
-	const binField = pkg.bin;
-	let entries: [string, string][];
-	if (typeof binField === "string" && binField.trim()) {
-		const binName = typeof pkg.name === "string" && pkg.name.trim()
-			? pkg.name.split("/").at(-1)
-			: undefined;
-		if (!binName) return result("unverified", "string bin requires a package name");
-		entries = [[binName, binField]];
-	} else if (
-		binField &&
-		typeof binField === "object" &&
-		!Array.isArray(binField)
-	) {
-		const raw = Object.entries(binField);
-		if (raw.length === 0)
-			return result("not-applicable", "package bin is empty");
-		entries = [];
-		for (const [name, value] of raw) {
-			if (!name.trim() || typeof value !== "string" || !value.trim()) {
-				return result("unverified", "package bin entries are malformed");
-			}
-			entries.push([name, value]);
-		}
-	} else {
-		return result("unverified", "package bin is malformed");
-	}
-	const out: SurfaceMap["binaries"] = [];
-	for (const [name, rel] of entries) {
-		const abs = path.resolve(packageDir, rel);
-		out.push({
-			name,
-			binPath: path.relative(root, abs).split(path.sep).join("/"),
-			packageName: typeof pkg.name === "string" ? pkg.name : undefined,
-		});
-	}
-	return {
-		assessment: {
-			status: "present",
-			scope: "package.json bin",
-			evidence: `${evidencePath}: declares ${entries.map(([name, rel]) => `${name}=${rel}`).join(", ")}`,
-		},
-		binaries: out,
-	};
-}
-
-export function assessPackageCli(
-	packageDir: string,
-	root: string,
-): CliAssessment {
-	return inspectPackageBins(packageDir, root).assessment;
-}
-
+/** Prefer project package.json bin over monorepo root. */
 export function discoverPackageBins(
 	packageDir: string,
 	root: string,
 ): SurfaceMap["binaries"] {
-	return inspectPackageBins(packageDir, root).binaries;
+	const pkgPath = path.join(packageDir, "package.json");
+	const pkg = readJsonSafe<{
+		name?: string;
+		bin?: string | Record<string, string>;
+	}>(pkgPath);
+	if (!pkg?.bin) return [];
+	const out: SurfaceMap["binaries"] = [];
+	const binField = pkg.bin;
+	const entries =
+		typeof binField === "string"
+			? [[path.basename(packageDir), binField] as const]
+			: Object.entries(binField);
+	for (const [name, rel] of entries) {
+		const abs = path.resolve(packageDir, rel);
+		out.push({
+			name,
+			binPath: existsSync(abs) ? abs : path.join(packageDir, rel),
+			packageName: pkg.name,
+		});
+	}
+	void root;
+	return out;
 }
 
 function probeCommand(
 	command: string,
-	args: string[],
 	cwd: string,
 	timeoutMs = 20_000,
-): { probe: SurfaceMap["probes"][0]; stdout: string } {
-	const r = spawnSync(command, args, {
+): SurfaceMap["probes"][0] {
+	const r = spawnSync("bash", ["-lc", command], {
 		cwd,
 		encoding: "utf8",
 		timeout: timeoutMs,
@@ -217,15 +119,63 @@ function probeCommand(
 	});
 	const combined = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
 	return {
-		probe: {
-			command: [command, ...args].map((arg) => JSON.stringify(arg)).join(" "),
-			exitCode: r.status,
-			stdoutDigest: digestText(combined),
-			capturedAt: new Date().toISOString(),
-			notes: r.error ? String(r.error.message) : undefined,
-		},
-		stdout: r.stdout ?? "",
+		command,
+		exitCode: r.status,
+		stdoutDigest: digestText(combined),
+		capturedAt: new Date().toISOString(),
+		notes: r.error ? String(r.error.message) : undefined,
 	};
+}
+
+/** Parse HOBO_*_VERBS = [ "a", "b" ] arrays from package sources. */
+function parseVerbEnumFromSources(packageDir: string): string[] {
+	const found: string[] = [];
+	const dirs = [
+		path.join(packageDir, "src"),
+		path.join(packageDir, "dist"),
+	];
+	for (const dir of dirs) {
+		if (!existsSync(dir)) continue;
+		const stack = [dir];
+		while (stack.length) {
+			const cur = stack.pop()!;
+			let entries: string[] = [];
+			try {
+				entries = readdirSync(cur);
+			} catch {
+				continue;
+			}
+			for (const f of entries) {
+				const abs = path.join(cur, f);
+				if (f === "node_modules" || f === "_generated") continue;
+				try {
+					if (statSync(abs).isDirectory()) {
+						stack.push(abs);
+						continue;
+					}
+				} catch {
+					continue;
+				}
+				if (!/\.(ts|js)$/.test(f)) continue;
+				if (f.includes(".test.")) continue;
+				let text = "";
+				try {
+					text = readFileSync(abs, "utf8");
+				} catch {
+					continue;
+				}
+				const m = text.match(
+					/HOBO_[A-Z0-9_]*VERBS\s*=\s*\[([\s\S]*?)\]\s*as\s*const/,
+				);
+				if (!m) continue;
+				for (const q of m[1]!.matchAll(/"([a-z][a-z0-9-]*)"/g)) {
+					if (!found.includes(q[1]!)) found.push(q[1]!);
+				}
+			}
+		}
+		if (found.length) break;
+	}
+	return found;
 }
 
 function parseVerbsFromHelp(helpText: string): SurfaceCommand[] {
@@ -248,22 +198,31 @@ function parseVerbsFromHelp(helpText: string): SurfaceCommand[] {
 	return cmds;
 }
 
-function detectInteractiveFromSources(packageDir: string, primaryBin: string): {
+function detectInteractiveFromSources(packageDir: string): {
 	interactive: boolean;
 	notes: string[];
 } {
 	const notes: string[] = [];
-	const relativeBin = path.relative(packageDir, primaryBin);
-	const sourceBin = path.join(packageDir, relativeBin.replace(/^dist[/\\]/, "src/").replace(/\.[cm]?js$/, ".ts"));
-	const candidates = new Set([primaryBin, sourceBin]);
+	const candidates = [
+		path.join(packageDir, "src/bin"),
+		path.join(packageDir, "dist/bin"),
+		path.join(packageDir, "bin"),
+	];
 	let interactive = false;
-	for (const file of candidates) {
-		if (!existsSync(file)) continue;
+	for (const dir of candidates) {
+		if (!existsSync(dir)) continue;
 		try {
-			const text = readFileSync(file, "utf8");
-			if (/title screen|launchPi|chatVerb|interactive\s+(?:TTY|session|shell)/i.test(text)) {
-				interactive = true;
-				notes.push(`interactive markers in ${path.relative(packageDir, file)}`);
+			for (const f of readdirSync(dir)) {
+				if (!/\.(ts|js|mjs|cjs)$/.test(f)) continue;
+				const text = readFileSync(path.join(dir, f), "utf8");
+				if (
+					/isTTY|title screen|launchPi|interactive|chatVerb|asciinema|splash/i.test(
+						text,
+					)
+				) {
+					interactive = true;
+					notes.push(`interactive markers in ${path.join(dir, f)}`);
+				}
 			}
 		} catch {
 			/* ignore */
@@ -272,11 +231,7 @@ function detectInteractiveFromSources(packageDir: string, primaryBin: string): {
 	const readme = path.join(packageDir, "README.md");
 	if (existsSync(readme)) {
 		const t = readFileSync(readme, "utf8");
-		const positiveDefault = t.split("\n").some((line) =>
-			!/\b(?:not|no|never)\b/i.test(line) &&
-			/\b(?:default|bare)\b[^\n]{0,100}\b(?:TTY|chat surface)\b|\binteractive\s+TTY\b[^\n]{0,60}\bby default\b/i.test(line),
-		);
-		if (positiveDefault) {
+		if (/bare.*TTY|interactive TTY|chat surface|Pi/i.test(t)) {
 			interactive = true;
 			notes.push("interactive markers in README");
 		}
@@ -290,67 +245,70 @@ function detectInteractiveFromSources(packageDir: string, primaryBin: string): {
 export function buildSurfaceMap(input: {
 	project: ProjectRef;
 	root?: string;
-	probeBinary?: boolean;
+	/** Skip live probes (unit tests) */
 	skipProbes?: boolean;
-	primaryBinOnly?: boolean;
 }): SurfaceMap {
 	const root = input.root ?? repoRoot();
 	const packageDir = path.join(root, input.project.path || ".");
 	const pkg = readJsonSafe<{ name?: string; description?: string }>(
 		path.join(packageDir, "package.json"),
 	);
-	const { assessment: cliAssessment, binaries } = inspectPackageBins(packageDir, root);
+	const binaries = discoverPackageBins(packageDir, root);
 	const primaryBin = binaries[0] ?? null;
-	const detection = primaryBin ? detectInteractiveFromSources(packageDir, path.resolve(root, primaryBin.binPath)) : { interactive: false, notes: [] };
-	const { interactive, notes: iNotes } = detection;
+	const { interactive, notes: iNotes } = detectInteractiveFromSources(packageDir);
 
 	const commands: SurfaceCommand[] = [];
 	const probes: SurfaceMap["probes"] = [];
 	let helpCmd: string | null = null;
 
-	const binAssessments: NonNullable<SurfaceMap["binAssessments"]> = binaries.map((bin, index) => ({
-		name: bin.name,
-		status: "unverified",
-		evidence: index === 0 ? "primary binary help was not observed" : "additional binary was not assessed; it may use a non-CLI protocol",
-	}));
+	// Static verb enum from source (works offline / skipProbes)
+	const verbEnum = parseVerbEnumFromSources(packageDir);
+	for (const id of verbEnum) {
+		commands.push({
+			id,
+			argv: [id],
+			kind: id === "help" ? "discoverability" : "verb",
+		});
+	}
 
-	if (primaryBin && input.probeBinary === true && !input.skipProbes) {
+	if (primaryBin && !input.skipProbes) {
 		const binName = primaryBin.name;
-		const absoluteBin = path.resolve(root, primaryBin.binPath);
-		if (!existsSync(absoluteBin)) {
-			probes.push({
-				command: `${binName} --help`,
-				exitCode: null,
-				stdoutDigest: digestText(""),
-				capturedAt: new Date().toISOString(),
-				notes: "declared binary is not built; no PATH fallback was run",
-			});
-		} else {
-			const isNodeScript = /\.[cm]?[jt]s$/.test(absoluteBin);
-			const command = isNodeScript ? process.execPath : absoluteBin;
-			const args = isNodeScript ? [absoluteBin, "--help"] : ["--help"];
-			const before = executableDigest(absoluteBin);
-			const { probe, stdout } = probeCommand(command, args, packageDir);
-			const after = executableDigest(absoluteBin);
-			probe.binName = binName;
-			probe.kind = "help";
-			if (before && before === after) probe.executableDigest = before;
-			else probe.notes = "executable changed or was unreadable during the probe";
-			probes.push(probe);
-			if (probe.exitCode === 0 && probe.executableDigest) {
-				binAssessments[0] = { name: binName, status: "observed-help", evidence: "successful explicit --help probe with unchanged executable bytes" };
-				helpCmd = `${binName} --help`;
-				for (const c of parseVerbsFromHelp(stdout)) {
-					if (!commands.some((x) => x.id === c.id)) commands.push(c);
-				}
-			}
+		// Prefer built dist via node when path is .js; else pnpm exec
+		const runHelp =
+			primaryBin.binPath.endsWith(".js") && existsSync(primaryBin.binPath)
+				? `node ${JSON.stringify(primaryBin.binPath)} help`
+				: `pnpm --filter ${pkg?.name ?? binName} exec ${binName} help 2>/dev/null || ${binName} help`;
+		const helpProbe = probeCommand(runHelp, packageDir);
+		probes.push(helpProbe);
+		helpCmd = `${binName} help`;
+		const r = spawnSync("bash", ["-lc", runHelp], {
+			cwd: packageDir,
+			encoding: "utf8",
+			timeout: 20_000,
+			env: { ...process.env, CI: "1" },
+			maxBuffer: 2 * 1024 * 1024,
+		});
+		const helpText = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
+		for (const c of parseVerbsFromHelp(helpText)) {
+			if (!commands.some((x) => x.id === c.id)) commands.push(c);
 		}
 	}
 
-	const requiredJourneys = ["happy-critical-path"];
-	if (helpCmd) requiredJourneys.unshift("help-discoverability");
-	if (primaryBin)
-		requiredJourneys.unshift("default-entry-cold-start", "failure-actionable");
+	if (primaryBin && commands.length === 0) {
+		for (const id of ["help", "status", "auth", "config", "agent"]) {
+			commands.push({
+				id,
+				argv: [id],
+				kind: id === "help" ? "discoverability" : "verb",
+			});
+		}
+	}
+	if (primaryBin && !helpCmd) {
+		helpCmd = `${primaryBin.name} help`;
+	}
+
+	const requiredJourneys = ["help-discoverability", "happy-critical-path", "failure-actionable"];
+	if (primaryBin) requiredJourneys.unshift("default-entry-cold-start");
 	if (interactive) requiredJourneys.push("in-session-discoverability");
 
 	const interactiveSurfaces: SurfaceMap["interactiveSurfaces"] = interactive
@@ -359,7 +317,7 @@ export function buildSurfaceMap(input: {
 					id: "default-tty-chat",
 					entry: "bare-tty",
 					driver: "tui",
-					slashCommands: [],
+					slashCommands: ["/verbs", "/agent", "/config", "/help"].filter(Boolean),
 				},
 			]
 		: [];
@@ -370,10 +328,7 @@ export function buildSurfaceMap(input: {
 		scannedAt: new Date().toISOString(),
 		productName: primaryBin?.name ?? pkg?.name ?? input.project.id,
 		packageDir: input.project.path || ".",
-		...(input.primaryBinOnly ? { coverageScope: "primary-bin" as const } : {}),
-		cliAssessment,
 		binaries,
-		binAssessments,
 		defaultEntry: primaryBin
 			? {
 					command: primaryBin.name,
@@ -382,7 +337,9 @@ export function buildSurfaceMap(input: {
 					notes: iNotes.join("; ") || "from package bin",
 				}
 			: null,
-		nonInteractiveHelp: helpCmd ? { command: helpCmd, driver: "cli" } : null,
+		nonInteractiveHelp: helpCmd
+			? { command: `${primaryBin!.name} help`, driver: "cli" }
+			: null,
 		commands,
 		interactiveSurfaces,
 		requiredJourneys,
@@ -399,7 +356,6 @@ export function surfaceMapPath(project: ProjectRef, root = repoRoot()): string {
 }
 
 export function writeSurfaceMap(map: SurfaceMap, project: ProjectRef, root = repoRoot()): string {
-	assertSafeOptimizexpWriteScopes(root, [project.path]);
 	const p = surfaceMapPath(project, root);
 	mkdirSync(path.dirname(p), { recursive: true });
 	writeFileSync(p, `${JSON.stringify(map, null, 2)}\n`, "utf8");
@@ -407,84 +363,19 @@ export function writeSurfaceMap(map: SurfaceMap, project: ProjectRef, root = rep
 }
 
 export function readSurfaceMap(project: ProjectRef, root = repoRoot()): SurfaceMap | null {
-	const map = readJsonSafe<unknown>(surfaceMapPath(project, root));
-	const record = (value: unknown): value is Record<string, unknown> =>
-		value !== null && typeof value === "object" && !Array.isArray(value);
-	const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
-	if (!record(map) || typeof map.schemaVersion !== "number" || typeof map.projectId !== "string" ||
-		typeof map.scannedAt !== "string" || typeof map.productName !== "string" || typeof map.packageDir !== "string" ||
-		!Array.isArray(map.binaries) || !map.binaries.every((bin) => record(bin) && typeof bin.name === "string" && typeof bin.binPath === "string") ||
-		!Array.isArray(map.commands) || !map.commands.every((command) => record(command) && typeof command.id === "string" && strings(command.argv) && typeof command.kind === "string" && (command.summary === undefined || typeof command.summary === "string")) ||
-		!Array.isArray(map.interactiveSurfaces) || !map.interactiveSurfaces.every((surface) => record(surface) && typeof surface.id === "string" && typeof surface.entry === "string" && typeof surface.driver === "string") ||
-		!strings(map.requiredJourneys) || !Array.isArray(map.probes) || !map.probes.every(record) ||
-		(map.binAssessments !== undefined && (!Array.isArray(map.binAssessments) || !map.binAssessments.every((item) => record(item) && typeof item.name === "string" && typeof item.status === "string"))) ||
-		(map.defaultEntry !== null && (!record(map.defaultEntry) || typeof map.defaultEntry.command !== "string" || typeof map.defaultEntry.interactive !== "boolean")) ||
-		(map.nonInteractiveHelp !== null && (!record(map.nonInteractiveHelp) || typeof map.nonInteractiveHelp.command !== "string"))) return null;
-	return map as SurfaceMap;
+	return readJsonSafe<SurfaceMap>(surfaceMapPath(project, root));
 }
 
 export function validateSurfaceMap(map: SurfaceMap): string[] {
 	const problems: string[] = [];
 	if (map.schemaVersion !== 1) problems.push("schemaVersion must be 1");
 	if (!map.projectId) problems.push("projectId required");
-	if (map.coverageScope !== undefined && map.coverageScope !== "primary-bin") problems.push("unknown coverage scope");
-	if (map.coverageScope === "primary-bin" && !map.binaries.length) problems.push("primary-bin scope requires a declared binary");
-	if (map.coverageScope === "primary-bin" && map.defaultEntry && map.defaultEntry.command !== map.binaries[0]?.name) problems.push("default entry must name the primary binary");
-	if (map.coverageScope === "primary-bin" && map.nonInteractiveHelp && map.nonInteractiveHelp.command !== `${map.binaries[0]?.name} --help`) problems.push("help entry must name the primary binary");
-	if (map.coverageScope === "primary-bin" && map.commands.some((command) => command.argv.length !== 1 || command.argv[0] !== command.id || !/^[a-z][a-z0-9-]{1,24}$/.test(command.id))) problems.push("primary-bin commands must be single observed verbs");
-	if (
-		!map.cliAssessment ||
-		map.cliAssessment.scope !== "package.json bin" ||
-		typeof map.cliAssessment.evidence !== "string" ||
-		!map.cliAssessment.evidence.trim() ||
-		!["present", "not-applicable", "unverified"].includes(
-			map.cliAssessment.status,
-		)
-	) {
-		problems.push(
-			"package-bin CLI applicability is unverified: no manifest assessment",
-		);
-	} else if (map.cliAssessment.status === "unverified") {
-		problems.push(
-			`package-bin CLI applicability is unverified: ${map.cliAssessment.evidence}`,
-		);
-	} else if (
-		(map.cliAssessment.status === "present") !==
-		map.binaries.length > 0
-	) {
-		problems.push("package-bin assessment conflicts with discovered binaries");
-	}
-	const assessments = Array.isArray(map.binAssessments) ? map.binAssessments : [];
-	for (const [index, bin] of map.binaries.entries()) {
-		if (index > 0) {
-			if (map.coverageScope === "primary-bin") {
-				const matches = assessments.filter((assessment) => assessment.name === bin.name);
-				if (matches.length !== 1 || matches[0]?.status !== "unverified" || map.probes.some((probe) => probe.binName === bin.name)) {
-					problems.push(`binary ${bin.name} must remain unverified outside primary-bin scope`);
-				}
-				continue;
-			}
-			problems.push(`binary ${bin.name} is unverified; secondary-bin journeys are not assessed`);
-			continue;
-		}
-		const matches = assessments.filter((assessment) => assessment.name === bin.name);
-		if (matches.length !== 1 || matches[0]?.status !== "observed-help" ||
-			!map.probes.some((probe) => probe.binName === bin.name && probe.kind === "help" && probe.exitCode === 0 && /^[a-f0-9]{64}$/.test(probe.executableDigest ?? ""))) {
-			problems.push(`binary ${bin.name} is unverified; no matching successful help observation`);
-		}
-	}
-	if (assessments.some((assessment) => !map.binaries.some((bin) => bin.name === assessment.name))) {
-		problems.push("binary assessment names an undeclared bin");
-	}
 	// Library packages / site without package.json bin are valid — no default CLI entry.
 	if (map.binaries.length > 0 && !map.defaultEntry) {
 		problems.push("defaultEntry required when binaries exist");
 	}
 	if (map.commands.length === 0 && map.binaries.length > 0) {
 		problems.push("commands empty despite binaries");
-	}
-	if (map.cliAssessment?.status === "present" && !map.nonInteractiveHelp) {
-		problems.push("package CLI help is unverified");
 	}
 	if (
 		map.defaultEntry?.interactive &&

@@ -32,7 +32,7 @@ Rules:
 | **web** | Browser video recording (Playwright / browser MCP) | Screenshot sequence → stitch to video → GIF |
 | **native** | Computer-use / OS recorder video | Screenshots at key moments → stitch → GIF |
 | **tui** | Terminal recording (asciinema cast / script) + screen size | Full terminal transcript + cols×rows + optional PNG of terminal if available |
-| **cli** (non-TUI) | One-shot stdout/stderr/exit transcript (`primary.txt`) | Output beyond 8 MiB per stream is truncated and marked degraded |
+| **cli** (non-TUI) | Replayable asciicast (`primary.cast`) + HTML player + transcript | Transcript only when recording is impossible; mark degraded |
 | **api** | Replayable Playwright/API script plus sanitized HAR or structured request/response trace | A raw log is supporting evidence only; preserve status, headers, payload, timing, and correlation id |
 | **docs** | Rendered page screenshot or HTML snapshot | Markdown excerpt + path |
 
@@ -63,8 +63,8 @@ from a sanitized script/HAR/trace.
   "runId": "20260730-dx-baseline",
   "screen": { "cols": 120, "rows": 40, "widthPx": null, "heightPx": null },
   "primary": {
-    "file": "primary.txt",
-    "kind": "transcript",
+    "file": "primary.cast",
+    "kind": "recording",
     "bytes": 4096,
     "sha256": "…"
   },
@@ -82,8 +82,8 @@ from a sanitized script/HAR/trace.
 ```json
 {
   "scenarioSlug": "staged-skill-edit-selects-skill-gates",
-  "primaryPath": "primary.txt",
-  "kind": "transcript",
+  "primaryPath": "primary.cast",
+  "kind": "recording",
   "updatedAt": "2026-07-30T21:00:00.000Z",
   "overridesPrevious": true
 }
@@ -91,12 +91,8 @@ from a sanitized script/HAR/trace.
 
 ## Independent review (required before scoring)
 
-Capture writes `review.json` with `status: "pending"`. Strict validation
-checks the current primary bytes against `meta.json`, requires
-the manifest to name the same file and kind, and verifies the accepted review
-against that digest. Pending evidence may be posted for review, but cannot
-support scoring until review succeeds. Unmatched evidence directories fail
-strict validation. A human or independent agent reviews playback with:
+Capture writes `review.json` with `status: "pending"`. Playback must be
+reviewed by a human or independent agent:
 
 ```bash
 node --import tsx .agents/skills/optimizexp/harness/capture-evidence.mts \
@@ -107,11 +103,6 @@ node --import tsx .agents/skills/optimizexp/harness/capture-evidence.mts \
 
 The reviewer must confirm identity, relevance, and full-journey coverage. The
 review stores the primary SHA-256; recapture invalidates the prior review.
-Review checks the current artifact and proposed decision before replacing the
-prior review. A deliberate `--relevant no` or `--complete no` records a
-rejection and revokes acceptance; invalid inputs, short notes, or mismatched
-artifact bytes preserve the previous review. Rejections return a nonzero exit
-status because they cannot support scoring.
 Strict validation and `assert-complete` reject pending/partial/degraded,
 hash-mismatched, or claim-incomplete evidence.
 

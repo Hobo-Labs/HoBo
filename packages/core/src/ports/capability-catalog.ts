@@ -63,8 +63,6 @@ export const capability = Object.freeze({
 	 * and requiring `ssr` asks for per-request rendering.
 	 */
 	web: Object.freeze({
-		/** An account-scoped provider project, distinct from a deployed surface. */
-		project: "web.project/v1",
 		/** Prebuilt immutable assets over HTTPS. No server-side rendering. */
 		static: "web.static/v1",
 		/** A provider-managed public origin with a stable hostname and TLS. */
@@ -214,11 +212,6 @@ export const capability = Object.freeze({
 		sse: "realtime.sse/v1",
 		/** A WebSocket connection. */
 		websocket: "realtime.websocket/v1",
-	}),
-	/** Running something on a clock: a queue message or an invocation. */
-	schedule: Object.freeze({
-		/** A five-field cron expression, run at least once per tick. */
-		cron: "schedule.cron/v1",
 	}),
 } as const);
 

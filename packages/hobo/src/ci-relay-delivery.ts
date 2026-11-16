@@ -312,28 +312,16 @@ export function relayYardRegistryProvider(
 				.filter((id): id is string => id !== undefined && id !== ""),
 		),
 	].sort();
-	const has = (profile: string) =>
-		yard.bindings.some((row) => row.profile === profile);
-	const offered: { port: string; features: readonly string[] }[] = [];
-	if (!joinedSecretProjection) {
-		if (has(capability.api.http))
-			offered.push({ port: "compute", features: ["http"] });
-		if (
-			has(capability.kv.keyValue) ||
-			has(capability.kv.redisCompatible) ||
-			has(capability.kv.valkey)
-		)
-			offered.push({
-				port: "kv",
-				features: has(capability.kv.redisCompatible) ? ["eventual"] : [],
-			});
-		if (has(capability.queue.atLeastOnce) || has(capability.queue.fifo))
-			offered.push({ port: "queue", features: [] });
-		if (has(capability.service.scheduled))
-			offered.push({ port: "schedule", features: [] });
-		if (has(capability.data.postgres) || has(capability.data.relational))
-			offered.push({ port: "database", features: [] });
-	}
+	// An HTTP compute entry only when the Yard binds the HTTP API profile.
+	const http = yard.bindings.some((row) => row.profile === capability.api.http);
+	const none: readonly string[] = [];
+	const offered: { port: string; features: readonly string[] }[] =
+		joinedSecretProjection
+			? []
+			: [
+					{ port: "compute", features: http ? ["http"] : none },
+					{ port: "data", features: none },
+				];
 	// A runtime projection can read secrets; it does not imply write access.
 	if (
 		yard.bindings.some(
@@ -341,6 +329,27 @@ export function relayYardRegistryProvider(
 		)
 	)
 		offered.push({ port: "secretRef", features: ["access"] });
+	// SDK data resources retain their kind during planning. Expose the new
+	// ports only when the Yard binds an implementation of that kind.
+	if (
+		!joinedSecretProjection &&
+		yard.bindings.some(
+			(row) =>
+				row.profile === capability.kv.keyValue ||
+				row.profile === capability.kv.redisCompatible ||
+				row.profile === capability.kv.valkey,
+		)
+	)
+		offered.push({ port: "kv", features: none });
+	if (
+		!joinedSecretProjection &&
+		yard.bindings.some(
+			(row) =>
+				row.profile === capability.queue.atLeastOnce ||
+				row.profile === capability.queue.fifo,
+		)
+	)
+		offered.push({ port: "queue", features: none });
 	return {
 		id: `yard:${yard.name}`,
 		regions: [...yard.regions],

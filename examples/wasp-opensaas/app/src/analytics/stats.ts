@@ -4,7 +4,6 @@ import {
   getDailyPageViews,
   getSources,
 } from "./providers/plausibleAnalyticsUtils";
-import { visitorCountFromProvider } from "./visitorCount";
 
 import { paymentProcessor } from "../payment/paymentProcessor";
 import { SubscriptionStatus } from "../payment/plans";
@@ -93,12 +92,9 @@ export const calculateDailyStatsJob: CalculateDailyStatsJob<
     const sources = await getSources();
 
     for (const source of sources) {
-      let visitors: number;
-      try {
-        visitors = visitorCountFromProvider(source.visitors);
-      } catch (cause) {
-        throw new Error(`Invalid visitor count for ${source.source}`, { cause });
-      }
+      const visitors = Number(source.visitors);
+      if (!Number.isSafeInteger(visitors) || visitors < 0)
+        throw new Error(`Invalid visitor count for ${source.source}`);
       await context.entities.PageViewSource.upsert({
         where: {
           date_name: {

@@ -28,9 +28,6 @@ export interface TopologyNode {
 	region?: string;
 	/** Resource nodes: lifecycle folded from resource.* facts. */
 	lifecycle?: ResourceLifecycle;
-
-	reconciliationEventId?: string;
-	otherReconciliationEventIds?: string[];
 }
 
 export type TopologyEdgeKind = "binding" | "placement";
@@ -69,8 +66,6 @@ function upsertNode(row: TopologyViewRow, node: TopologyNode): void {
 		if (node.providerId !== undefined) existing.providerId = node.providerId;
 		if (node.region !== undefined) existing.region = node.region;
 		if (node.lifecycle !== undefined) existing.lifecycle = node.lifecycle;
-		if (node.reconciliationEventId !== undefined)
-			existing.reconciliationEventId = node.reconciliationEventId;
 		return;
 	}
 	row.nodes = [...row.nodes, node].sort((a, b) => a.id.localeCompare(b.id));
@@ -135,16 +130,6 @@ function setLifecycle(
 	resourceId: string,
 	lifecycle: ResourceLifecycle,
 ): void {
-	const previous = row.nodes.find(
-		(node) => node.id === resourceNodeId(resourceId),
-	);
-	if (
-		previous?.lifecycle === "reconciliation-required" &&
-		(lifecycle === "provisioning" ||
-			lifecycle === "destroying" ||
-			lifecycle === "failed")
-	)
-		return;
 	upsertNode(row, {
 		id: resourceNodeId(resourceId),
 		kind: "resource",
@@ -186,11 +171,7 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 					label: data.bindleHash,
 				});
 				for (const resourceId of data.resources) {
-					const node = next.nodes.find(
-						(entry) => entry.id === resourceNodeId(resourceId),
-					);
-					if (node?.lifecycle !== "reconciliation-required")
-						setLifecycle(next, resourceId, "provisioned");
+					setLifecycle(next, resourceId, "provisioned");
 				}
 				return next;
 			},
@@ -250,96 +231,14 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				const node = next.nodes.find(
-					(entry) => entry.id === resourceNodeId(data.resourceId),
-				);
-				if (node?.reconciliationEventId === undefined) {
-					setLifecycle(next, data.resourceId, "provisioned");
-					if (node !== undefined) {
-						delete node.reconciliationEventId;
-						delete node.otherReconciliationEventIds;
-					}
-				}
+				setLifecycle(next, data.resourceId, "provisioned");
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceFailed]: (row, event) => {
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
-				const data = event.data as {
-					deploymentId: string;
-					resourceId: string;
-					requiresReconciliation?: boolean;
-				};
+				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				setLifecycle(
-					next,
-					data.resourceId,
-					data.requiresReconciliation === true
-						? "reconciliation-required"
-						: "failed",
-				);
-				if (data.requiresReconciliation === true) {
-					const node = next.nodes.find(
-						(entry) => entry.id === resourceNodeId(data.resourceId),
-					);
-					if (node !== undefined) {
-						if (node.reconciliationEventId !== undefined)
-							node.otherReconciliationEventIds = [
-								...(node.otherReconciliationEventIds ?? []),
-								node.reconciliationEventId,
-							];
-						node.reconciliationEventId = event.id;
-					}
-				}
-				return next;
-			},
-			[CLOUD_EVENTS.ResourceReconciled]: (row, event) => {
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: resource.Reconciled is the verified recovery fact from this package.
-				const data = event.data as {
-					deploymentId: string;
-					resourceId: string;
-					failureEventId: string;
-					outcome: string;
-					restoredState?: string;
-				};
-				const next = base(row, data.deploymentId);
-				const node = next.nodes.find(
-					(entry) => entry.id === resourceNodeId(data.resourceId),
-				);
-				if (
-					["no-effect", "applied", "destroyed"].includes(data.outcome) &&
-					(data.outcome !== "no-effect" ||
-						(data.restoredState !== undefined &&
-							["provisioned", "destroyed", "failed"].includes(
-								data.restoredState,
-							))) &&
-					node?.reconciliationEventId !== undefined
-				) {
-					const ids = [
-						...(node.otherReconciliationEventIds ?? []),
-						node.reconciliationEventId,
-					];
-					const remaining = ids.filter((id) => id !== data.failureEventId);
-					if (remaining.length < ids.length) {
-						const last = remaining.at(-1);
-						if (last === undefined) {
-							node.lifecycle =
-								data.outcome === "applied" ||
-								data.restoredState === "provisioned"
-									? "provisioned"
-									: data.outcome === "destroyed" ||
-											data.restoredState === "destroyed"
-										? "destroyed"
-										: "failed";
-							delete node.reconciliationEventId;
-							delete node.otherReconciliationEventIds;
-						} else {
-							node.reconciliationEventId = last;
-							if (remaining.length === 1)
-								delete node.otherReconciliationEventIds;
-							else node.otherReconciliationEventIds = remaining.slice(0, -1);
-						}
-					}
-				}
+				setLifecycle(next, data.resourceId, "failed");
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroying]: (row, event) => {
@@ -353,16 +252,7 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				const node = next.nodes.find(
-					(entry) => entry.id === resourceNodeId(data.resourceId),
-				);
-				if (node?.reconciliationEventId === undefined) {
-					setLifecycle(next, data.resourceId, "destroyed");
-					if (node !== undefined) {
-						delete node.reconciliationEventId;
-						delete node.otherReconciliationEventIds;
-					}
-				}
+				setLifecycle(next, data.resourceId, "destroyed");
 				return next;
 			},
 		},

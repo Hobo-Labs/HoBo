@@ -1,20 +1,17 @@
 {
-  "gameUrl": "http://127.0.0.1:37757/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36805",
-  "apiUrl": "http://127.0.0.1:36805",
+  "gameUrl": "http://127.0.0.1:34263/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A40673",
+  "apiUrl": "http://127.0.0.1:40673",
   "checks": [
     "PASS test seam ready",
-    "PASS initial Bo facing matches its source — bo.walk.east, facing=east (rendered-walk)",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
     "PASS imgdiff boot — match",
-    "PASS sampled Bo facing matches its source — bo.walk.east, facing=east (rendered-walk)",
-    "PASS canvas dark ink near Bo — dark=5009",
+    "PASS canvas dark ink near Bo — dark=5010",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
-    "PASS imgdiff connection bay — accepted image drift (RMS=13.91 ≤ 25)",
-    "PASS connection created and sheet closed — default optional alias omitted",
+    "PASS imgdiff connection bay — match",
     "PASS anim harness bo.idle — bo.idle",
     "PASS anim harness bo.walk.east — bo.walk.east",
     "PASS anim harness bo.walk.west — bo.walk.west",
@@ -29,24 +26,22 @@
     "playwright-testing"
   ],
   "recordings": [
-    "recordings/01-yard-loop.mp4",
-    "recordings/02-connection-sheet.mp4",
-    "recordings/03-bo-walk-east-west.mp4",
-    "recordings/04-rail-cost-doctor.mp4"
+    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/01-yard-loop.mp4",
+    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/02-connection-sheet.mp4",
+    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/03-bo-walk-east-west.mp4",
+    "/home/codex/.grok/worktrees/repos-hobo/2026-07-27-391c87d8/packages/control-yard/public/shots/recordings/04-rail-cost-doctor.mp4"
   ],
   "initialState": {
     "scene": "Yard",
     "ready": true,
     "seed": 42,
-    "frameCount": 8,
+    "frameCount": 22,
     "zone": "activeRailTrack",
     "bo": {
-      "x": 211,
-      "y": 589,
+      "x": 248,
+      "y": 569,
       "animationId": "bo.walk.east",
-      "facing": "east",
-      "facingSource": "rendered-walk",
-      "projectedFacing": "west"
+      "facing": "west"
     },
     "occupyMode": "occupying",
     "connCount": 1,
@@ -58,14 +53,12 @@
     "hazards": []
   },
   "pixelSample": {
-    "dark": 5009,
+    "dark": 5010,
     "bo": {
-      "x": 579,
-      "y": 375,
+      "x": 620,
+      "y": 363,
       "animationId": "bo.walk.east",
-      "facing": "east",
-      "facingSource": "rendered-walk",
-      "projectedFacing": "west"
+      "facing": "west"
     }
   },
   "consoleErrors": []

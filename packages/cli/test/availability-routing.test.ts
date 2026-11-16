@@ -138,19 +138,7 @@ describe("availability-aware up", () => {
 			deploymentId: "uncertain",
 			session: createFixtureSession(),
 		};
-		const initial = await client.up(bindle, options);
-		expect(initial.status).toBe("needs-human");
-		if (initial.status === "rejected") throw new Error(initial.reason);
-		expect(initial.progress).toContainEqual(
-			expect.objectContaining({
-				type: "resource.Failed",
-				resourceId: "db",
-				reconciliation: { operation: "apply" },
-				detail: expect.stringContaining(
-					"Reconcile the provider before retrying",
-				),
-			}),
-		);
+		expect((await client.up(bindle, options)).status).toBe("waiting");
 		expect(applied).toEqual(["db@neon"]);
 		const rerun = await client.up(bindle, {
 			...options,

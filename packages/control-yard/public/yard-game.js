@@ -117,7 +117,7 @@ const LAYOUT = {
 			anchorY: 230,
 		},
 	},
-	costMeter: { x: 1020, y: 170, width: 160, height: 18 },
+	costMeter: { x: 1020, y: 150, width: 160, height: 18 },
 	trafficEmitter: { x: 140, y: 330, width: 1000 },
 };
 
@@ -180,7 +180,6 @@ async function bootAssets() {
 	for (const img of Object.values(assetIndex.images)) {
 		images[img.id] = await loadImage(img.path);
 	}
-	// site ink-on-paper parallax plates only (DESIGN.md: traced art, never generative glop)
 	for (const optional of [
 		"trail.png",
 		"trail-front.png",
@@ -349,7 +348,7 @@ function sheetForZone(zone, s) {
 			confirmOp: "connectionCreate",
 			fields: [
 				{ name: "provider", label: "Provider", type: "string", value: "asana" },
-				{ name: "alias", label: "Alias (optional)", type: "string", value: "" },
+				{ name: "alias", label: "Alias", type: "string", value: "work" },
 				{
 					name: "stationId",
 					label: "Station",
@@ -658,7 +657,7 @@ async function confirmSheet() {
 				method: "POST",
 				body: JSON.stringify({
 					provider: values.provider,
-					alias: values.alias || undefined,
+					alias: values.alias,
 					stationId: values.stationId || "station:local",
 				}),
 			});
@@ -697,7 +696,6 @@ async function confirmSheet() {
 }
 
 function drawBackground() {
-	// DESIGN.md: ink on paper — pure paper ground, no SaaS sky gradients
 	ctx.fillStyle = "#ffffff";
 	ctx.fillRect(0, 0, LAYOUT.width, LAYOUT.height);
 
@@ -746,7 +744,6 @@ function drawBackground() {
 	ctx.lineTo(LAYOUT.width, LAYOUT.groundY);
 	ctx.stroke();
 
-	// clouds keep white (DESIGN.md: clouds are keep, not invert)
 	if (images["cloud-1.png"]) {
 		ctx.drawImage(images["cloud-1.png"], 60, 24, 200, 80);
 		ctx.drawImage(images["cloud-1.png"], 920, 40, 240, 90);
@@ -857,7 +854,6 @@ function drawConnectionBays(v) {
 		const bx = z.x + 24 + (i % 3) * 80;
 		const by = z.y + 40 + Math.floor(i / 3) * 70;
 		const visual = c?.visual || "closed";
-		// ink/paper status: go/spark accents only (DESIGN.md)
 		const fill =
 			visual === "authorized"
 				? "#14672c"
@@ -1135,25 +1131,6 @@ function selectZoneById(zone) {
 	document.body.dataset.lastClickZone = zone;
 }
 
-function boDirection() {
-	const projectedFacing = visual?.facing ?? null;
-	const renderedFacing =
-		state.animId === "bo.walk.east"
-			? "east"
-			: state.animId === "bo.walk.west"
-				? "west"
-				: null;
-	return {
-		facing: renderedFacing ?? projectedFacing ?? "east",
-		facingSource: renderedFacing
-			? "rendered-walk"
-			: projectedFacing
-				? "projected"
-				: "default",
-		projectedFacing,
-	};
-}
-
 // playwright-testing seam (stable, serializable — no engine objects)
 window.__TEST__ = {
 	ready: false,
@@ -1170,7 +1147,7 @@ window.__TEST__ = {
 			x: Math.round(state.bo.x),
 			y: Math.round(state.bo.y),
 			animationId: state.animId,
-			...boDirection(),
+			facing: visual?.facing ?? "east",
 		},
 		occupyMode: snap?.occupyMode ?? null,
 		connCount: snap?.connections?.length ?? 0,

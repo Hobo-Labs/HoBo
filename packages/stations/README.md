@@ -39,10 +39,6 @@ export const acme = station("acme-platform", {
 
 CLI (ops/setup, not lifecycle verbs): `hobo station init|up|down|status|rails *`.
 
-Station initialization does not discover host capabilities or register a Yard.
-`seedLocalhostYard` in `@hobo/yards` derives rows and unavailable profiles from
-caller-provided observations; Yard registration is a separate operation.
-
 ## Station capabilities (ADR-0155)
 
 `stationCapability()` declares a schema-versioned facility a Station offers its
@@ -94,7 +90,7 @@ Ordering here is a canonical sort on identifiers, carrying no preference.
 
 Catalogs are taken **structurally** (`StationYardCatalogInput` mirrors
 `YardBindingInput` without importing `@hobo/yards`) — Station is not app-topology
-containment (ADR-0131: a Yard seed is separate from a Station), so the
+containment (ADR-0131: a Station *seeds* a Yard, it does not contain one), so the
 aggregation takes the data and leaves the layer dependency un-taken. The record
 holds identifiers only, never realization parameters, so it cannot carry a
 credential.

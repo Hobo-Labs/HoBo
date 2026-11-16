@@ -1,10 +1,3 @@
----
-type: Reference
-title: "Hosting evidence observation"
-description: "Read-only observations of secret-store access by the main-branch Actions identity."
-tags: [hobo, ci, hosting, evidence]
----
-
 # Hosting evidence observation
 
 The manually dispatched `HoBo hosting evidence (read-only)` workflow checks

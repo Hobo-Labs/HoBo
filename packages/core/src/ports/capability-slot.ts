@@ -52,7 +52,6 @@ export const CAPABILITY_SLOTS = Object.freeze([
 	"topic",
 	"secretRef",
 	"webhook",
-	"schedule",
 ] as const);
 export type CapabilitySlot = (typeof CAPABILITY_SLOTS)[number];
 

@@ -353,7 +353,7 @@ describe("selectIacProvider env-gated selection (Cloudflare + Vercel + fallback)
 		restore("VERCEL_TOKEN", savedVercel);
 	});
 
-	it("ignores a real CLOUDFLARE_API_TOKEN in the process environment: secrets come from the store", () => {
+	it("selects the REAL Cloudflare provider when both CF envs are set (via process.env)", () => {
 		savedCfToken = process.env.CLOUDFLARE_API_TOKEN;
 		savedCfAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
 		process.env.CLOUDFLARE_API_TOKEN = "cf_from_env";
@@ -362,7 +362,7 @@ describe("selectIacProvider env-gated selection (Cloudflare + Vercel + fallback)
 			...pulumiDeps,
 			cloudflareFetch: cfFetch,
 		});
-		expect(provider.id).toMatch(/^pulumi-backed:/);
+		expect(provider.id).toMatch(/^resolver-backed:/);
 	});
 
 	it("Cloudflare takes precedence over Vercel when both credentials are present", () => {

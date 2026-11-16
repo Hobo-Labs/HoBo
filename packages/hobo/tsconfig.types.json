@@ -5,7 +5,6 @@
 		"rootDir": "."
 	},
 	"include": [
-		"test/feature-command.test.ts",
 		"test/vercel-client.test-d.ts",
 		"test/vercel-project.test.ts",
 		"test/vercel-deploy.test.ts",

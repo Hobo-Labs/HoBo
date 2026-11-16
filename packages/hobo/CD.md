@@ -201,12 +201,6 @@ may also export topology (`yards`, `camps`; see above), which is read, not
 applied. An unknown export or a malformed record refuses the whole file before
 anything is applied.
 
-The pinned Git source reader is a building block for source delivery. It reads
-literal repository-relative paths from a full commit ID, ignoring checkout edits
-and untracked files. It rejects unsafe paths, symlinks, submodules, missing Git
-objects, and snapshots above its file-count or byte limits; it does not fetch
-missing objects. Reading a snapshot does not deploy it.
-
 ```ts
 // hobo.delivery.ts
 export const camps = [

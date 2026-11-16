@@ -204,9 +204,8 @@ The generated `api-tree.ts`, `hooks.ts`, `steps.ts`, `workflows.ts` and
 represent the same parsed model. The generated runtime accepts the application's
 existing core EventStore, writes version-checked resource facts, rebuilds
 projections, maintains snapshots, and delivers real subscriptions. Its workflow
-adapter uses the existing runtime workflow engine, claims a fresh run before
-execution, and resumes committed steps after reopening the durable store.
-Retrying a terminal run returns its recorded result without executing it again.
+adapter uses the existing runtime workflow engine and resumes committed steps
+after reopening the durable store.
 
 ```ts
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";

@@ -36,9 +36,10 @@ export default defineConfig({
     // What a bare root run must not collect.
     //
     // Vitest's include glob is repo-wide, and without this the root config
-    // reached files outside its intended scope, so `pnpm run test:smoke`
+    // reached three kinds of file it cannot execute, so `pnpm run test:smoke`
     // reported ~40 failures on a clean tree and no real regression could be
-    // seen through the noise. The exclusions cover:
+    // seen through the noise. None of these are skipped — each runs under the
+    // runner that owns it:
     //
     //  - `external/` is vendored third-party source. `external/ts-autocode` is
     //    a git submodule with its own repository and CI; `external/pixel-agents`
@@ -47,9 +48,9 @@ export default defineConfig({
     //  - `dist/` is build output. Every compiled `*.test.js` there is a second,
     //    staler copy of a source test that already runs, so collecting it doubles
     //    the suite and reports failures against code nobody edited.
-    //  - `**/e2e/**` and `**/*.spec.ts` can contain suites for other runners.
-    //    They are not run by this root config; for example, Bombadil browser
-    //    specs run through their evaluation harness when present.
+    //  - Playwright specs drive a real browser through `@playwright/test`, whose
+    //    `test.describe` has no meaning under vitest. They run from their own
+    //    Playwright configuration.
     //
     // The bare root run is still not the repo-wide gate — packages carry their
     // own vitest configs with their own environments and setup files, and running

@@ -26,18 +26,11 @@
  * binding the wrong value, which surfaces much later as a broken connection
  * rather than as a deploy error.
  */
-import {
-	chmodSync,
-	existsSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { JsonObject } from "../src/json.js";
+
 import {
 	createPulumiCliAutomationEngine,
 	PULUMI_CLI_MISSING,
@@ -80,7 +73,6 @@ function fakePulumi(body: string): string {
 
 function engine(body = "process.exit(0);") {
 	return createPulumiCliAutomationEngine({
-		ephemeralState: true,
 		workDir: tempDir("hobo-pulumi-work-"),
 		pulumiBin: fakePulumi(body),
 		// The stand-in is a node script, so its shebang needs node on PATH.
@@ -89,29 +81,29 @@ function engine(body = "process.exit(0);") {
 }
 
 /** A program with one Cloudflare KV resource. */
-const program = (type = "cloudflare:kv-namespace") => ({
-	deploymentId: "dep-1",
-	resources: [{ name: "cache", type, outputs: ["namespaceId"] }],
-});
+const program = (type = "cloudflare:kv-namespace") =>
+	({
+		deploymentId: "dep-1",
+		resources: [{ name: "cache", type, outputs: ["namespaceId"] }],
+		// SAFETY: the engine reads exactly the fields named above.
+	}) as never;
 
 /** Render one resource of the given type. */
-interface RenderFixture {
-	name: string;
-	type: string;
-	outputs?: readonly string[];
-	inputs?: JsonObject;
-}
-
 const render = (
 	type: string,
 	outputs?: readonly string[],
-	inputs?: JsonObject,
-) => {
-	const resource: RenderFixture = { name: "res", type };
-	if (outputs !== undefined) resource.outputs = outputs;
-	if (inputs !== undefined) resource.inputs = inputs;
-	return renderPulumiYamlProgram(resource, { accountId: "acct-1" });
-};
+	inputs?: Record<string, unknown>,
+) =>
+	renderPulumiYamlProgram(
+		// SAFETY: the renderer reads exactly the fields named here.
+		{
+			name: "res",
+			type,
+			...(outputs ? { outputs } : {}),
+			...(inputs ? { inputs } : {}),
+		} as never,
+		{ accountId: "acct-1" },
+	);
 
 describe("rendering a Pulumi YAML program", () => {
 	it("names the program after the resource", () => {
@@ -179,28 +171,17 @@ describe("rendering a Pulumi YAML program", () => {
 			expect.unreachable("expected the renderer to refuse");
 		} catch (error) {
 			// A caller choosing a fallback lane needs the code, not the prose.
-			if (!(error instanceof PulumiEngineUnavailableError)) throw error;
-			expect(error.code).toBe(PULUMI_UNSUPPORTED_RESOURCE);
+			expect((error as { code?: string }).code).toBe(
+				PULUMI_UNSUPPORTED_RESOURCE,
+			);
 		}
 	});
 
 	it("renders every type it claims to support", () => {
 		// The token table is the lane's public claim about what it can deploy;
 		// a listed type that throws is a lie in the capability matrix.
-		// A cron trigger is only real with its cadence and the Worker it runs.
-		const required = new Map<string, JsonObject>([
-			[
-				"cloudflare:cron-trigger",
-				{
-					options: { cron: "0 * * * *" },
-					bindings: [
-						{ resource: "api", resourceType: "cloudflare:workers-script" },
-					],
-				},
-			],
-		]);
 		for (const type of Object.keys(PULUMI_YAML_TYPE_TOKENS)) {
-			expect(() => render(type, undefined, required.get(type))).not.toThrow();
+			expect(() => render(type)).not.toThrow();
 		}
 	});
 });
@@ -276,7 +257,6 @@ describe("resolving declared outputs", () => {
 describe("gating on the CLI", () => {
 	it("refuses a snapshot when the binary is missing", () => {
 		const created = createPulumiCliAutomationEngine({
-			ephemeralState: true,
 			workDir: tempDir(),
 			pulumiBin: join(tempDir(), "not-installed"),
 			env: { PATH: dirname(process.execPath) },
@@ -286,7 +266,6 @@ describe("gating on the CLI", () => {
 
 	it("codes a missing CLI so a caller can fall back", () => {
 		const created = createPulumiCliAutomationEngine({
-			ephemeralState: true,
 			workDir: tempDir(),
 			pulumiBin: join(tempDir(), "not-installed"),
 			env: { PATH: dirname(process.execPath) },
@@ -295,15 +274,13 @@ describe("gating on the CLI", () => {
 			created.snapshot();
 			expect.unreachable("expected the engine to refuse");
 		} catch (error) {
-			if (!(error instanceof PulumiEngineUnavailableError)) throw error;
-			expect(error.code).toBe(PULUMI_CLI_MISSING);
+			expect((error as { code?: string }).code).toBe(PULUMI_CLI_MISSING);
 		}
 	});
 
 	it("names the binary it could not run", () => {
 		const missing = join(tempDir(), "not-installed");
 		const created = createPulumiCliAutomationEngine({
-			ephemeralState: true,
 			workDir: tempDir(),
 			pulumiBin: missing,
 			env: { PATH: dirname(process.execPath) },
@@ -313,7 +290,6 @@ describe("gating on the CLI", () => {
 
 	it("refuses a preview when the binary is missing", async () => {
 		const created = createPulumiCliAutomationEngine({
-			ephemeralState: true,
 			workDir: tempDir(),
 			pulumiBin: join(tempDir(), "not-installed"),
 			env: { PATH: dirname(process.execPath) },
@@ -341,7 +317,6 @@ describe("gating on the CLI", () => {
 		);
 		chmodSync(bin, 0o755);
 		const created = createPulumiCliAutomationEngine({
-			ephemeralState: true,
 			workDir: tempDir("hobo-pulumi-work-"),
 			pulumiBin: bin,
 			env: { PATH: dirname(process.execPath) },
@@ -356,44 +331,10 @@ describe("gating on the CLI", () => {
 });
 
 describe("keeping state local", () => {
-	it("refuses persistent state without a recoverable passphrase", async () => {
-		const workDir = tempDir("hobo-pulumi-work-");
-		const created = createPulumiCliAutomationEngine({
-			workDir,
-			pulumiBin: fakePulumi("process.exit(0);"),
-			env: { PATH: dirname(process.execPath) },
-		});
-		await expect(created.preview(program())).rejects.toThrow(/passphrase/iu);
-		expect(existsSync(join(workDir, "state"))).toBe(false);
-	});
-
-	it("passes the same supplied key to CLI engines restarted on one work directory", async () => {
-		const workDir = tempDir("hobo-pulumi-work-");
-		const log = join(tempDir("hobo-pulumi-log-"), "passphrase.log");
-		const bin = fakePulumi(`
-			require("node:fs").appendFileSync(${JSON.stringify(log)}, String(process.env.PULUMI_CONFIG_PASSPHRASE) + "\\n");
-			if (argv[0] === "preview") process.stdout.write("{}");
-			process.exit(0);
-		`);
-		for (let run = 0; run < 2; run++) {
-			const created = createPulumiCliAutomationEngine({
-				workDir,
-				pulumiBin: bin,
-				env: { PATH: dirname(process.execPath) },
-				statePassphrase: "recoverable-test-passphrase",
-			});
-			await created.preview(program());
-		}
-		const seen = readFileSync(log, "utf8").trim().split("\n");
-		expect(seen.length).toBeGreaterThanOrEqual(2);
-		expect(new Set(seen)).toEqual(new Set(["recoverable-test-passphrase"]));
-	});
-
 	it("points the backend at its own work directory", async () => {
 		const workDir = tempDir("hobo-pulumi-work-");
 		const log = join(tempDir("hobo-pulumi-log-"), "env.log");
 		const created = createPulumiCliAutomationEngine({
-			ephemeralState: true,
 			workDir,
 			pulumiBin: fakePulumi(`
 				require("node:fs").appendFileSync(
@@ -409,6 +350,7 @@ describe("keeping state local", () => {
 		// circuits before invoking the CLI at all, so a snapshot-based assertion
 		// would observe nothing and pass for the wrong reason.
 		await created.preview(program());
+		const { readFileSync } = require("node:fs") as typeof import("node:fs");
 		// The backend must be a local file:// URL under this engine's own
 		// directory. Anything else would reach a real Pulumi Cloud organisation.
 		expect(readFileSync(log, "utf8")).toContain(`file://${workDir}`);
@@ -417,7 +359,6 @@ describe("keeping state local", () => {
 	it("never points the backend at a hosted organisation", async () => {
 		const log = join(tempDir("hobo-pulumi-log-"), "env.log");
 		const created = createPulumiCliAutomationEngine({
-			ephemeralState: true,
 			workDir: tempDir("hobo-pulumi-work-"),
 			pulumiBin: fakePulumi(`
 				require("node:fs").appendFileSync(
@@ -436,6 +377,7 @@ describe("keeping state local", () => {
 			},
 		});
 		await created.preview(program());
+		const { readFileSync } = require("node:fs") as typeof import("node:fs");
 		expect(readFileSync(log, "utf8")).not.toContain("api.pulumi.com");
 	});
 
@@ -506,6 +448,7 @@ describe("previewing a program", () => {
 			process.exit(0);
 		`);
 		await created.preview(program());
+		const { readFileSync } = require("node:fs") as typeof import("node:fs");
 		const calls = readFileSync(log, "utf8");
 		// A preview against no selected stack runs against whatever was last
 		// selected — which is another resource's state.
@@ -520,6 +463,7 @@ describe("previewing a program", () => {
 			process.exit(0);
 		`);
 		await created.preview(program());
+		const { readFileSync } = require("node:fs") as typeof import("node:fs");
 		// `--create` makes the first deploy of a resource work without a
 		// separate bootstrap step.
 		expect(readFileSync(log, "utf8")).toContain("--create");

@@ -154,20 +154,6 @@ A product has plans; a plan has charges; a charge is one of:
 A charge's `when` map becomes rate-card selectors, so one plan can price by
 model, region, or any workload attribute.
 
-SDK callers can inspect `toPricingCatalog(parsedManifest)`: `undefined` means
-the manifest has no declared billing model; otherwise `rated` lists the
-product/plan pairs that lowered to rate cards, and `unrated` names unsupported
-plans and reasons. A rated plan still needs current account evidence, usage and
-complete target coverage before it can support a routing quote. Developer-owned
-terms can be supplied separately through `@hobo/pricing`'s `developerPricing`;
-they do not turn an IaC provider into an authenticated price source.
-
-`describePricingSupport(manifest)` is the explicit discovery surface: it
-returns `supported`, `partial`, or `unavailable`, along with the rated and
-unrated plans. `unavailable` includes a reason distinguishing absent terms
-from terms the rating kernel cannot execute. This describes model support, not
-whether a particular tenant's spending is authorized.
-
 Fail-closed rules worth knowing:
 
 - **Money is a decimal string end to end.** YAML `amount: 0.10` is read from its

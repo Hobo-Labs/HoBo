@@ -125,18 +125,6 @@ export function createDurableHostingMutationJournal(options: {
 	}
 	return {
 		persistence: "durable-cas",
-		async inspect({ mutationId, requestDigest }) {
-			digest(requestDigest);
-			const current = await read(mutationId);
-			if (!current.entry) return { status: "missing" };
-			verify(current.entry, requestDigest);
-			return {
-				status:
-					current.entry.status === "acknowledged"
-						? "acknowledged"
-						: "uncertain",
-			};
-		},
 		async claim({ mutationId, requestDigest }) {
 			digest(requestDigest);
 			const current = await read(mutationId);

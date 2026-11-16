@@ -995,8 +995,9 @@ export function planDependentTests(
 	}
 	// A package that declares no dependency can still reach a change: a path
 	// outside every package (the root vitest config, a shared setup file, a doc
-	// a test reads), or another package's file it imports by relative path. Only
-	// a closure that actually reaches it counts: walking every package strictly
+	// a test reads), or another package's file it imports by relative path
+	// (`packages/code` importing `../../cli/src/cloud/loader.js`). Only a
+	// closure that actually reaches it counts: walking every package strictly
 	// would run all of them for a docs edit.
 	const bystanders = repo.workspaces
 		.map((ws) => ws.dir)

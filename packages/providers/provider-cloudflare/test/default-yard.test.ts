@@ -29,7 +29,6 @@ describe("the default Cloudflare Yard is a catalog of what CAN be allocated", ()
 			"data",
 			"kv",
 			"queue",
-			"schedule",
 			"service",
 			"web",
 		]);

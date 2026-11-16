@@ -188,8 +188,7 @@ const SLOT_BY_PLAN_PORT: ReadonlyMap<string, CapabilitySlot> = new Map<
 	["objectStore", "bucket"],
 ]);
 
-/** The deployment's newest recorded plan. */
-export function planFromStream(
+function planFromStream(
 	events: readonly EventEnvelope[],
 ): DeploymentPlan | undefined {
 	let plan: DeploymentPlan | undefined;

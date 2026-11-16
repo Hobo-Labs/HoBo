@@ -46,8 +46,6 @@ describe("Registry: catalog from a provider capabilityManifest()", () => {
 			"compute",
 			"kv",
 			"objectStore",
-			"queue",
-			"schedule",
 		]);
 		const compute = defs.find((d) => d.port === "compute");
 		expect(compute?.providerId).toBe("@hobo/provider-cloudflare");
@@ -65,7 +63,7 @@ describe("Registry: catalog from a provider capabilityManifest()", () => {
 		const a = createRegistryFromProviders([createCloudflareProvider()]);
 		const b = createRegistryFromProviders([createCloudflareProvider()]);
 		expect(a.catalogHash).toBe(b.catalogHash);
-		expect(a.definitions()).toHaveLength(5);
+		expect(a.definitions()).toHaveLength(3);
 	});
 });
 
@@ -227,7 +225,7 @@ describe("Registry: event-backed registry (HOBO-710)", () => {
 
 		// The live base definition wins; the recorded one is not double-counted.
 		expect(registry.providers()).toEqual(["@hobo/provider-cloudflare"]);
-		expect(registry.definitions()).toHaveLength(5);
+		expect(registry.definitions()).toHaveLength(3);
 	});
 });
 
@@ -251,14 +249,8 @@ describe("Registry: catalog projection over provider.Registered", () => {
 			view,
 			"@hobo/provider-cloudflare",
 		);
-		expect(row?.ports).toEqual([
-			"compute",
-			"kv",
-			"objectStore",
-			"queue",
-			"schedule",
-		]);
-		expect(row?.definitionCount).toBe(5);
+		expect(row?.ports).toEqual(["compute", "kv", "objectStore"]);
+		expect(row?.definitionCount).toBe(3);
 		expect(row?.manifestIndexDigest).toMatch(/^sha256:/);
 	});
 

@@ -7,6 +7,7 @@ import {
 	AccountSchema,
 	ConfigurationSchema,
 	OfferSchema,
+	PipelineStepResultSchema,
 } from "../src/_generated/ci_pb.js";
 import {
 	BackendUnavailableError,
@@ -16,10 +17,6 @@ import {
 } from "../src/execution.js";
 import { PipelineScheduler } from "../src/scheduler.js";
 import { LeaseStore } from "../src/store.js";
-import {
-	createScriptedPipelineBackend,
-	type ScriptedPipelineBackendOptions,
-} from "../src/testing.js";
 
 const NOW = "2026-10-27T12:00:00Z";
 const stores = new Set<LeaseStore>();
@@ -88,18 +85,26 @@ function finalUsage(scope: PipelineUsageScope) {
 function backend(
 	observe?: PipelineBackend["observeFinalUsage"],
 ): PipelineBackend {
-	const options: ScriptedPipelineBackendOptions = {
+	const result: PipelineBackend = {
 		kind: "gh-actions",
 		capabilities: ["commands", "cancellation"],
-		open(_input, _signal, scope) {
+		async open(_input, _signal, scope) {
 			if (!scope) throw new Error("execution scope missing");
 			scope.authorizeAllocation();
 			scope.recordExternalOperationId("execution-1");
+			return {
+				async run(step) {
+					return create(PipelineStepResultSchema, { id: step.id });
+				},
+				async artifact() {
+					throw new Error("no artifacts");
+				},
+				async close() {},
+			};
 		},
 	};
-	return createScriptedPipelineBackend(
-		observe ? { ...options, observeFinalUsage: observe } : options,
-	).port;
+	if (observe) result.observeFinalUsage = observe;
+	return result;
 }
 
 describe("native CI usage finality and persisted execution binding", () => {

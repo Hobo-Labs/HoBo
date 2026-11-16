@@ -9,7 +9,3 @@ export function scenarioSlug(name: string): string {
 		.replace(/-+/g, "-")
 		.slice(0, 120);
 }
-
-export function isPathIdentifier(value: string): boolean {
-	return typeof value === "string" && /^[a-z0-9][a-z0-9._-]*$/i.test(value);
-}

@@ -5,11 +5,7 @@ import {
 	BudgetAuthorityEventSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
-	captureIacPricedSettlementTrust,
-	captureIacUnpricedScopeTrust,
 	createBudgetAdmissionAuthority,
-	type IacPricedSettlementTrust,
-	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
 	type BudgetFenceTrust,
@@ -24,8 +20,6 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 	path: string;
 	snapshot: BudgetLedgerSnapshot;
 	fenceTrust?: BudgetFenceTrust;
-	unpricedScopeTrust?: IacUnpricedScopeTrust;
-	iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	/** Trusted server clock; caller-supplied command timestamps cannot revive evidence. */
 	now?: () => string;
 }): BudgetAdmissionAuthority & {
@@ -42,26 +36,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 			"durable budget authority requires a persistent SQLite path",
 		);
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
-	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
-		options.unpricedScopeTrust,
-	);
-	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
-		options.iacPricedSettlementTrust,
-	);
 	const database = new DatabaseSync(options.path);
-	try {
-		const main = database
-			.prepare("PRAGMA database_list")
-			.all()
-			.find((entry) => entry.name === "main");
-		if (!isJsonString(main?.file) || main.file.length === 0)
-			throw new TypeError(
-				"durable budget authority requires a persistent SQLite file",
-			);
-	} catch (error) {
-		database.close();
-		throw error;
-	}
 	const now = options.now ?? (() => new Date().toISOString());
 	database.exec(
 		"PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS budget_base(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS budget_events(seq INTEGER PRIMARY KEY, body TEXT NOT NULL)",
@@ -95,8 +70,6 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 			snapshot: base,
 			priorEvents,
 			...(fenceTrust ? { fenceTrust } : undefined),
-			...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
-			...(iacPricedSettlementTrust ? { iacPricedSettlementTrust } : undefined),
 			commit(event, expectedSeq) {
 				const head = database
 					.prepare("SELECT MAX(seq) AS seq FROM budget_events")
@@ -141,26 +114,11 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 		claimExecution(input) {
 			return transaction((port) => {
 				port.read(now());
-				return port.claimExecution({ ...input, now: now() });
+				return port.claimExecution(input);
 			});
 		},
 		reserve(input) {
 			return transaction((port) => port.reserve({ ...input, now: now() }));
-		},
-		reserveUnbounded(input) {
-			return transaction((port) =>
-				port.reserveUnbounded({ ...input, now: now() }),
-			);
-		},
-		revalidateUnbounded(input) {
-			return transaction((port) =>
-				port.revalidateUnbounded({ ...input, now: now() }),
-			);
-		},
-		revalidatePriced(input) {
-			return transaction((port) =>
-				port.revalidatePriced({ ...input, now: now() }),
-			);
 		},
 		settle(id, actualMicros, evidence) {
 			return transaction((port) => port.settle(id, actualMicros, evidence));

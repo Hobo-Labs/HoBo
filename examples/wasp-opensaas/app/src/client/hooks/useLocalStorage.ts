@@ -1,78 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ZodType } from "zod";
 
 type SetValue<T> = T | ((val: T) => T);
-
-function safeSetItem(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    return;
-  }
-}
-
-function readStoredValue<T>(
-  key: string,
-  initialValue: T,
-  schema: ZodType<T>,
-): T {
-  if (!globalThis.window) {
-    return initialValue;
-  }
-  try {
-    const item = window.localStorage.getItem(key);
-    if (item === null) {
-      return initialValue;
-    }
-    return schema.parse(JSON.parse(item));
-  } catch {
-    return initialValue;
-  }
-}
 
 export function useLocalStorage<T>(
   key: string,
   initialValue: T,
   schema: ZodType<T>,
 ): [T, (value: SetValue<T>) => void] {
-  const [storedValue, setStoredValue] = useState<T>(() =>
-    readStoredValue(key, initialValue, schema),
-  );
-  const skipPersist = useRef(true);
-
-  useEffect(() => {
+  const [storedValue, setStoredValue] = useState<T>(() => {
     if (!globalThis.window) {
-      return;
+      return initialValue;
     }
-    skipPersist.current = true;
+
     try {
       const item = window.localStorage.getItem(key);
-      if (item === null) {
-        setStoredValue(initialValue);
-        safeSetItem(key, JSON.stringify(initialValue));
-        return;
-      }
-      setStoredValue(schema.parse(JSON.parse(item)));
+      return item === null ? initialValue : schema.parse(JSON.parse(item));
     } catch {
-      setStoredValue(initialValue);
-      safeSetItem(key, JSON.stringify(initialValue));
+      return initialValue;
     }
-  }, [key, initialValue, schema]);
+  });
 
   useEffect(() => {
-    if (!globalThis.window) {
-      return;
-    }
-    if (skipPersist.current) {
-      skipPersist.current = false;
-      return;
-    }
     try {
-      const item = window.localStorage.getItem(key);
-      const serialized = JSON.stringify(storedValue);
-      if (item !== serialized) {
-        safeSetItem(key, serialized);
-      }
+      const value = JSON.stringify(storedValue);
+      if (value !== undefined) window.localStorage.setItem(key, value);
     } catch (error) {
       console.warn("Unable to save preference", error);
     }

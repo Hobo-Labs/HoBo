@@ -5,14 +5,9 @@ import {
 	type FinancialStateView,
 	FinancialStateViewSchema,
 	type GrantScope,
-	type Money,
-	type Quantity,
 	type QuoteScenario,
 } from "./_generated/pricing_pb.js";
-import { parseDecimal } from "./decimal.js";
 import { stableHash } from "./json.js";
-import { legacyPricingOrder, type PricingOrder } from "./ordering.js";
-import { legacyPricingTimeOrder, type PricingTimeOrder } from "./time-order.js";
 import type { PricingRejectionCode } from "./types.js";
 
 const UTC_PATTERN =
@@ -94,10 +89,7 @@ export function stateHashOf(state: FinancialStateView): string {
 	);
 }
 
-export function validateScenarioState(
-	scenario: QuoteScenario,
-	allowDestroy = false,
-): void {
+export function validateScenarioState(scenario: QuoteScenario): void {
 	const catalog = scenario.catalog;
 	const state = scenario.state;
 	if (catalog === undefined || state === undefined) {
@@ -109,8 +101,7 @@ export function validateScenarioState(
 	if (
 		!new Set(["place", "dispatch", "rebalance", "migrate", "cancel"]).has(
 			scenario.action,
-		) &&
-		!(allowDestroy && scenario.action === "destroy")
+		)
 	) {
 		throw new PricingFault("INVALID_PRICING_INPUT", "unknown quote action");
 	}
@@ -208,18 +199,6 @@ export function validateScenarioState(
 		);
 	}
 	for (const allowance of state.allowances) {
-		if (allowance.grant === undefined) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"allowance grant is required",
-			);
-		}
-		if (allowance.grant.tenantId !== state.tenantId) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"allowance tenant differs from financial state",
-			);
-		}
 		validateEvidence(
 			allowance.grant?.evidence,
 			scenario.at,
@@ -237,18 +216,6 @@ export function validateScenarioState(
 		}
 	}
 	for (const credit of state.credits) {
-		if (credit.grant === undefined) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"credit grant is required",
-			);
-		}
-		if (credit.grant.tenantId !== state.tenantId) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"credit tenant differs from financial state",
-			);
-		}
 		validateEvidence(
 			credit.grant?.evidence,
 			scenario.at,
@@ -266,15 +233,6 @@ export function validateScenarioState(
 		}
 	}
 	for (const commitment of state.commitments) {
-		if (commitment.commitment === undefined) {
-			throw new PricingFault("INVALID_PRICING_INPUT", "commitment is required");
-		}
-		if (commitment.commitment.tenantId !== state.tenantId) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"commitment tenant differs from financial state",
-			);
-		}
 		validateEvidence(
 			commitment.commitment?.evidence,
 			scenario.at,
@@ -293,218 +251,26 @@ export function validateScenarioState(
 	}
 }
 
-export function validateV2FinancialIdentities(
-	state: FinancialStateView | undefined,
-): void {
-	if (state === undefined)
-		throw new PricingFault(
-			"INCOMPLETE_FINANCIAL_STATE",
-			"financial state is required",
-		);
-	const ids = [
-		...state.allowances.map((item) => item.grant?.id),
-		...state.credits.map((item) => item.grant?.id),
-		...state.commitments.map((item) => item.commitment?.id),
-	];
-	const seen = new Set<string>();
-	for (const id of ids) {
-		if (
-			id === undefined ||
-			id.length === 0 ||
-			id.length > 200 ||
-			id.trim() !== id ||
-			/[\p{Cc}]/u.test(id) ||
-			seen.has(id)
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"allowances, credits and commitments require distinct bounded identities",
-			);
-		seen.add(id);
-	}
-}
-
-function validateBalance(
-	value: Money | Quantity | undefined,
-	path: string,
-): void {
-	const decimal = value === undefined ? undefined : parseDecimal(value.decimal);
-	if (
-		value === undefined ||
-		decimal === undefined ||
-		decimal.coefficient < 0n ||
-		("currency" in value
-			? !/^[A-Z]{3}$/u.test(value.currency)
-			: value.unit.length === 0)
-	)
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			`${path} requires a nonnegative amount with a valid unit`,
-		);
-}
-
-function validateBalanceValue(
-	value:
-		| { readonly case: "money"; readonly value: Money }
-		| { readonly case: "quantity"; readonly value: Quantity }
-		| { readonly case: undefined }
-		| undefined,
-	path: string,
-): void {
-	validateBalance(value?.case === undefined ? undefined : value.value, path);
-}
-
-export function validateV2FinancialBalances(state: FinancialStateView): void {
-	for (const allowance of state.allowances) {
-		validateBalance(allowance.grant?.included, "allowance.included");
-		validateBalance(allowance.remaining, "allowance.remaining");
-		validateBalance(allowance.used, "allowance.used");
-	}
-	for (const credit of state.credits) {
-		validateBalanceValue(credit.grant?.faceValue?.value, "credit.faceValue");
-		validateBalanceValue(credit.remaining?.value, "credit.remaining");
-		validateBalanceValue(credit.used?.value, "credit.used");
-		validateBalance(credit.remainingBasis, "credit.remainingBasis");
-		validateBalance(credit.usedBasis, "credit.usedBasis");
-		const basis = credit.grant?.economicBasis;
-		if (
-			basis === undefined ||
-			!["zero", "face-value", "acquisition"].includes(basis.kind) ||
-			(basis.kind !== "acquisition" && basis.acquisitionAmount !== undefined)
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"credit economic basis terms are invalid",
-			);
-		if (basis.kind === "acquisition")
-			validateBalance(basis.acquisitionAmount, "credit.acquisitionAmount");
-		const face = credit.grant?.faceValue?.value;
-		if (face?.case === "money") {
-			for (const balance of [credit.remaining?.value, credit.used?.value]) {
-				if (balance?.case !== "money")
-					throw new PricingFault(
-						"PRICING_MODEL_UNSUPPORTED",
-						"money credit balances must use money",
-					);
-				if (balance.value.currency !== face.value.currency)
-					throw new PricingFault("CROSS_CURRENCY", "credit currencies differ");
-			}
-			for (const amount of [
-				credit.remainingBasis,
-				credit.usedBasis,
-				basis?.acquisitionAmount,
-			]) {
-				if (amount !== undefined && amount.currency !== face.value.currency)
-					throw new PricingFault(
-						"CROSS_CURRENCY",
-						"credit basis currency differs",
-					);
-			}
-		}
-		if (
-			credit.grant?.derivedFrom !== undefined &&
-			(basis?.kind === "face-value" ||
-				(basis?.kind === "acquisition" &&
-					parseDecimal(basis.acquisitionAmount?.decimal ?? "")?.coefficient !==
-						0n))
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"derived credits must have zero economic basis",
-			);
-		if (
-			(basis.kind === "zero" || credit.grant?.derivedFrom !== undefined) &&
-			[credit.remainingBasis, credit.usedBasis].some(
-				(amount) => parseDecimal(amount?.decimal ?? "")?.coefficient !== 0n,
-			)
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"zero-basis credits cannot retain or consume economic basis",
-			);
-	}
-	for (const commitment of state.commitments) {
-		validateBalanceValue(
-			commitment.commitment?.amount?.value,
-			"commitment.amount",
-		);
-		validateBalanceValue(commitment.remaining?.value, "commitment.remaining");
-		validateBalanceValue(commitment.used?.value, "commitment.used");
-		const amount = commitment.commitment?.amount?.value;
-		const kind = commitment.commitment?.kind;
-		if (
-			(kind !== "spend" && kind !== "usage") ||
-			(kind === "spend" && amount?.case !== "money") ||
-			(kind === "usage" && amount?.case !== "quantity")
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"commitment kind and amount do not agree",
-			);
-		if (amount?.case === "money") {
-			for (const balance of [
-				commitment.remaining?.value,
-				commitment.used?.value,
-			]) {
-				if (balance?.case !== "money")
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						"money commitments require money balances",
-					);
-				if (balance.value.currency !== amount.value.currency)
-					throw new PricingFault(
-						"CROSS_CURRENCY",
-						"commitment currencies differ",
-					);
-			}
-		}
-	}
-}
-
-function validateGrantScope(scope: GrantScope | undefined): void {
-	if (
-		scope === undefined ||
-		[
-			...scope.productIds,
-			...scope.rateCardIds,
-			...scope.chargeIds,
-			...scope.dimensions,
-		].some((value) => value.length === 0)
-	)
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			"financial grants require an explicit scope with nonempty identifiers",
-		);
-}
-
-export function validateV2GrantScopes(state: FinancialStateView): void {
-	for (const allowance of state.allowances)
-		validateGrantScope(allowance.grant?.scope);
-	for (const credit of state.credits) validateGrantScope(credit.grant?.scope);
-	for (const commitment of state.commitments)
-		validateGrantScope(commitment.commitment?.scope);
-}
-
-export function workingState(
-	state: FinancialStateView,
-	order: PricingOrder = legacyPricingOrder,
-	timeOrder: PricingTimeOrder = legacyPricingTimeOrder,
-): FinancialStateView {
+export function workingState(state: FinancialStateView): FinancialStateView {
 	const working = clone(FinancialStateViewSchema, state);
 	working.allowances.sort(
 		(left, right) =>
 			(left.grant?.priority ?? 0) - (right.grant?.priority ?? 0) ||
-			timeOrder(left.grant?.effective?.end, right.grant?.effective?.end) ||
-			order(left.grant?.id ?? "", right.grant?.id ?? ""),
+			(left.grant?.effective?.end ?? "9999").localeCompare(
+				right.grant?.effective?.end ?? "9999",
+			) ||
+			(left.grant?.id ?? "").localeCompare(right.grant?.id ?? ""),
 	);
 	working.credits.sort(
 		(left, right) =>
 			(left.grant?.priority ?? 0) - (right.grant?.priority ?? 0) ||
-			timeOrder(left.grant?.effective?.end, right.grant?.effective?.end) ||
-			order(left.grant?.id ?? "", right.grant?.id ?? ""),
+			(left.grant?.effective?.end ?? "9999").localeCompare(
+				right.grant?.effective?.end ?? "9999",
+			) ||
+			(left.grant?.id ?? "").localeCompare(right.grant?.id ?? ""),
 	);
 	working.commitments.sort((left, right) =>
-		order(left.commitment?.id ?? "", right.commitment?.id ?? ""),
+		(left.commitment?.id ?? "").localeCompare(right.commitment?.id ?? ""),
 	);
 	return working;
 }

@@ -27,14 +27,9 @@ describe("@hobo/provider-vercel", () => {
 		expect(VERCEL_DROP_URL).toBe("https://vercel.com/drop");
 	});
 
-	it("reports the unavailable deployment-component queue resolver", () => {
+	it("records queue impedance (prefer degrade / other provider)", () => {
 		const findings = vercelImpedanceFindings({ features: ["queue"] });
-		expect(findings).toEqual([
-			expect.objectContaining({
-				code: "queue-resolver-unavailable",
-				severity: "block",
-			}),
-		]);
+		expect(findings.some((f) => f.code === "no-native-queue")).toBe(true);
 	});
 
 	it("parses Drop / vercel deploy output", () => {

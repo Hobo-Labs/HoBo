@@ -26,8 +26,6 @@ export interface IacProgram {
 	driver: string;
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
-
-	operationGeneration?: string;
 	/** The declaration the provider must realize, when supplied by the orchestrator. */
 	resource?: ResourcePlan;
 }
@@ -96,44 +94,16 @@ export interface ExecResultSucceeded {
 	sandbox: ExecSandboxContext;
 }
 
-interface ExecResultFailureBase {
+export interface ExecResultFailed {
 	status: "failed";
 	execId: string;
 	events: ExecEvent[];
+	classification: "retryable" | "fatal";
 	reason: string;
 	sandbox: ExecSandboxContext;
 }
 
-export type ExecResultFailed = ExecResultFailureBase &
-	(
-		| {
-				classification: "retryable" | "fatal";
-				requiresReconciliation?: false;
-				reservationId?: never;
-				reconciliationOperation?: never;
-		  }
-		| {
-				classification: "fatal";
-				requiresReconciliation: true;
-				reservationId?: string;
-				reconciliationOperation: IacProgram["action"];
-		  }
-	);
-
 export type ExecResult = ExecResultSucceeded | ExecResultFailed;
-
-interface ReconciliationMetadata {
-	requiresReconciliation: true;
-	reconciliationOperation: IacProgram["action"];
-	reservationId?: string;
-}
-
-interface ProviderFailure {
-	reason: string;
-	requiresReconciliation: boolean;
-	provesNotStarted: boolean;
-	reservationId?: string;
-}
 
 export interface ExecRunOptions {
 	// An explicitly-injected environment snapshot the sandbox is allowed to see.
@@ -182,18 +152,6 @@ function hashRef(value: HashRefInput): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }
 
-export function iacExecutionId(program: IacProgram): string {
-	const digest =
-		program.operationGeneration === undefined
-			? hashRef({ programId: program.programId, action: program.action })
-			: hashRef({
-					programId: program.programId,
-					action: program.action,
-					operationGeneration: program.operationGeneration,
-				});
-	return `exec-${program.action}-${program.operationGeneration === undefined ? digest.slice(7, 19) : digest.slice(7)}`;
-}
-
 // The sandboxed, in-process Executor. It scopes creds per-exec (only the injected
 // token), asserts no ambient cloud creds, bounds egress to the allowlist, runs
 // preview then apply against the injected IacProvider, and streams exec.* events.
@@ -206,7 +164,7 @@ export function createInProcessExecutor(
 
 	return {
 		async run(program, credential, runOptions = {}) {
-			const execId = iacExecutionId(program);
+			const execId = `exec-${program.action}-${hashRef({ programId: program.programId, action: program.action }).slice(7, 19)}`;
 			const events: ExecEvent[] = [];
 			let seq = 0;
 			const push = (type: ExecEventType, data: JsonObject): void => {
@@ -275,26 +233,13 @@ export function createInProcessExecutor(
 				}
 			}
 
-			let mutationStarted = false;
 			try {
 				// preview then apply, inside the sandbox (control-plane.md resolution
 				// pipeline step 4: "IaC adapter runs preview then apply … with scoped creds").
 				const diff = await iac.preview(program);
 				push("exec.Diff", { summary: diff.summary, changes: diff.changes });
-				if (program.action === "preview") {
-					push("exec.Succeeded", { outputsHash: hashRef({}) });
-					return {
-						status: "succeeded",
-						execId,
-						events,
-						outputs: {},
-						diff,
-						sandbox,
-					};
-				}
 
 				if (program.action === "destroy") {
-					mutationStarted = true;
 					await iac.destroy(program);
 					push("exec.Succeeded", {
 						outputsHash: hashRef({ destroyed: program.resourceId }),
@@ -309,82 +254,25 @@ export function createInProcessExecutor(
 					};
 				}
 
-				mutationStarted = true;
 				const outputs = await iac.apply(program);
 				push("exec.Succeeded", { outputsHash: hashRef(outputs) });
 				return { status: "succeeded", execId, events, outputs, diff, sandbox };
 			} catch (error) {
-				const failure = readProviderFailure(error);
-				const uncertain =
-					failure.requiresReconciliation ||
-					failure.reservationId !== undefined ||
-					(mutationStarted && !failure.provesNotStarted);
-				const reconciliation: ReconciliationMetadata = {
-					requiresReconciliation: true,
-					reconciliationOperation: program.action,
-				};
-				if (failure.reservationId !== undefined)
-					reconciliation.reservationId = failure.reservationId;
+				const reason = error instanceof Error ? error.message : String(error);
+				// Provider/apply errors are classified retryable by default; a caller
+				// (the ResourceActor) decides whether the failure crosses the no-go
+				// threshold (control-plane.md reconcile loop step 4).
 				return fail(
 					events,
 					push,
 					sandbox,
-					uncertain ? "fatal" : "retryable",
-					`executor.apply_failed: ${failure.reason}`,
-					uncertain ? reconciliation : undefined,
+					"retryable",
+					`executor.apply_failed: ${reason}`,
 				);
 			}
 		},
 	};
 }
-
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters -- SAFETY: provider-thrown values cross an untrusted boundary and may contain throwing accessors. */
-function readProviderFailure(error: unknown): ProviderFailure {
-	try {
-		const reason = (
-			error instanceof Error ? error.message : String(error)
-		).slice(0, 4096);
-		const requiresReconciliation =
-			typeof error === "object" &&
-			error !== null &&
-			"requiresReconciliation" in error &&
-			error.requiresReconciliation === true;
-
-		const provesNotStarted =
-			typeof error === "object" &&
-			error !== null &&
-			Object.getOwnPropertyDescriptor(error, "requiresReconciliation")
-				?.value === false &&
-			Object.getOwnPropertyDescriptor(error, "executionOutcome")?.value ===
-				"not-started";
-		const candidateId =
-			typeof error === "object" && error !== null && "reservationId" in error
-				? error.reservationId
-				: undefined;
-		if (
-			typeof candidateId === "string" &&
-			candidateId.length > 0 &&
-			candidateId.length <= 204 &&
-			candidateId.trim() === candidateId &&
-			!/[\p{Cc}]/u.test(candidateId)
-		) {
-			return {
-				reason,
-				requiresReconciliation,
-				provesNotStarted,
-				reservationId: candidateId,
-			};
-		}
-		return { reason, requiresReconciliation, provesNotStarted };
-	} catch {
-		return {
-			reason: "uninspectable provider failure",
-			requiresReconciliation: true,
-			provesNotStarted: false,
-		};
-	}
-}
-/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
 
 function fail(
 	events: ExecEvent[],
@@ -392,20 +280,7 @@ function fail(
 	sandbox: ExecSandboxContext,
 	classification: "retryable" | "fatal",
 	reason: string,
-	reconciliation?: ReconciliationMetadata,
 ): ExecResultFailed {
-	if (reconciliation !== undefined) {
-		push("exec.Failed", { classification: "fatal", reason, ...reconciliation });
-		return {
-			status: "failed",
-			execId: sandbox.execId,
-			events,
-			classification: "fatal",
-			reason,
-			...reconciliation,
-			sandbox,
-		};
-	}
 	push("exec.Failed", { classification, reason });
 	return {
 		status: "failed",

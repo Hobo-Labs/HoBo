@@ -122,11 +122,7 @@ export async function readVercelConnection(
 			team !== PERSONAL_SCOPE &&
 			!/^team_[A-Za-z0-9]{1,64}$/u.test(team)) ||
 		installationId === undefined ||
-		// An Integration's installation, or a device-grant connection (none).
-		!(
-			/^icfg_[A-Za-z0-9]{1,64}$/u.test(installationId) ||
-			installationId === "device-grant"
-		)
+		!/^icfg_[A-Za-z0-9]{1,64}$/u.test(installationId)
 	)
 		throw new Error("The stored Vercel connection is incomplete.");
 	return {

@@ -14,7 +14,7 @@ seedDigest: "3644375018c32301"
 
 ## Who I am
 
-FinOps practitioner responsible for cloud/tooling spend at a small company trying HoBo. My journey covers pricing and free-tier claims, provider-terms docs, and any CLI verb that can create billable resources (`up`, provider setup). I want plan-time cost estimates before spending, but `hobo plan` does not currently report a monetary estimate. I judge whether claims carry sources and dates I can audit.
+FinOps practitioner responsible for cloud/tooling spend at a small company trying HoBo. My journey is the money surface: the cost signals `hobo plan` reports, pricing and free-tier claims on the site, provider-terms docs, and any CLI verb that can create billable resources (`up`, provider setup). I judge whether HoBo tells me the cost of something **before** it happens, and whether claims carry sources and dates I can audit.
 
 ## Market segment
 
@@ -61,7 +61,7 @@ FinOps practitioner responsible for cloud/tooling spend at a small company tryin
 ## Goals
 
 - Every billable action is preceded by an estimate or an explicit "this provisions paid resources" warning.
-- Plan-time cost estimates are accurate, dated, and exportable (CSV/JSON) for my reports; this remains an unmet goal for `hobo plan`.
+- `hobo plan` cost output is accurate, dated, and exportable (CSV/JSON) for my reports.
 - Free-tier guidance respects provider terms — no pooling, no account rotation tricks (ADR-0129).
 
 ## Constraints

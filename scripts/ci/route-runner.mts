@@ -55,7 +55,7 @@ import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetMember,
 	LOCAL_HOST_RUNNER_LABEL,
-	selectFleetVerification,
+	selectFleetBackend,
 } from "../../packages/ci/src/fleet-overflow.ts";
 import {
 	judgeRoutingSlip,
@@ -153,7 +153,7 @@ export type RefusedBy = "slip" | "queue" | "none";
  * What became of the routing slip for this decision. `used`: it was consulted,
  * for the relay's `reason`; the queue may still refuse a fleet it named.
  * `fallback`: none could be used, for `why`, and the
- * queue decided. `unasked`: a pin or batch admission decides
+ * queue decided. `unasked`: a pin, signed local run or batch admission decides
  * the tier without reading a slip.
  */
 export type SlipAnswer =
@@ -320,14 +320,7 @@ export function routeRunner(input: {
 			freeSlots: 1,
 		},
 	] satisfies FleetMember[];
-	// The workflow needs an actual runner. The same fleet selector offers
-	// local signoff to the opted-in local coordinator, never as runs-on here.
-	const choice = selectFleetVerification({
-		members,
-		unknownMembers: [],
-		localSignoffEnabled: false,
-	});
-	const selected = choice.kind === "runner" ? choice.runner : undefined;
+	const selected = selectFleetBackend({ members, currentLabels: [] });
 	const loads = [
 		describeLoad("the fleet", input.fleet),
 		input.localEnrolled
@@ -566,8 +559,6 @@ export async function observeQueue(input: {
 	 * than how long the run's own jobs have waited.
 	 */
 	includeOwnRun?: boolean | undefined;
-	/** Read all bounded candidates even after current labels appear to refuse. */
-	exhaustLookups?: boolean | undefined;
 }): Promise<QueueView> {
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
@@ -594,7 +585,7 @@ export async function observeQueue(input: {
 		const allRefusing = input.labels.every((label) =>
 			refusingJobs(labelLoad(seen, label, input.nowMs), input.limits),
 		);
-		if (allRefusing && input.exhaustLookups !== true) break;
+		if (allRefusing) break;
 		const jobsPage = await jobsOf(runId);
 		seen.push(...seenJobs(jobsPage));
 		if (ahead.includes(runId) && hasChosen(jobsPage)) undecidedAhead -= 1;
@@ -976,17 +967,6 @@ function readCheckoutFile(
 	}
 }
 
-function readRoutingPolicy(): string | undefined {
-	try {
-		return readFileSync(
-			join(import.meta.dirname, "../..", RUNNER_ROUTING_PATH),
-			"utf8",
-		);
-	} catch {
-		return undefined;
-	}
-}
-
 /** The event that started the run, from the file GitHub names, or nothing. */
 function readEventPayload(env: NodeJS.ProcessEnv): JsonValue | undefined {
 	if (!env.GITHUB_EVENT_PATH) return undefined;
@@ -1093,52 +1073,26 @@ export async function main(
 	const args = parseRouteArgs(argv);
 	const settings = routeSettings(
 		readRunnerRouting(
-			"routingConfig" in io ? io.routingConfig : readRoutingPolicy(),
+			"routingConfig" in io
+				? io.routingConfig
+				: readCheckoutFile(env, RUNNER_ROUTING_PATH),
 		),
 	);
 	const { labels, limits } = settings;
+	// From committed policy alone, so it is written whatever the route turns out to be.
+	if (env.GITHUB_OUTPUT)
+		appendFileSync(env.GITHUB_OUTPUT, `box_runner=${settings.boxRunner}\n`);
 	const event = env.GITHUB_EVENT_NAME ?? "";
 	const fleetLabel = fleetLabelFor(event, labels);
 	// A dispatch's own choice wins; otherwise the committed pin.
 	const mode = args.route === "auto" ? settings.pin : args.route;
-	const mergeBatch =
-		event === "merge_group" &&
-		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
-		mode === "auto";
-	if (env.GITHUB_OUTPUT)
-		appendFileSync(
-			env.GITHUB_OUTPUT,
-			`box_runner=${mergeBatch ? "" : settings.boxRunner}\n`,
-		);
 	const localEnrolled = settings.localRunner;
 	const defaults = settings.committed
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
-	if (mergeBatch) {
-		if (!settings.committed)
-			throw new Error(
-				"merge-group batch routing requires a valid committed policy",
-			);
-		if (
-			labels.github !== "ubuntu-24.04" ||
-			!(await isPublicCaller(env, io.fetch))
-		)
-			throw new Error(
-				"merge-group batch public compute evidence is unavailable",
-			);
-		return report(
-			{
-				tier: "github",
-				runner: labels.github,
-				reason:
-					"the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
-				refusedBy: "none",
-				slip: { kind: "unasked", why: "batch" },
-			},
-			env,
-		);
-	}
+	// These PR workflows route independent jobs and, for hobo-ci, up to eight
+	// shards. One recent pickup cannot prove that this whole batch fits.
 	// Preserve explicit pins; a missing or malformed policy is not an auto pin.
 	if (
 		event === "pull_request" &&
@@ -1205,8 +1159,21 @@ export async function main(
 			env,
 		);
 	}
-	// Local evidence covers only its named jobs. Remaining jobs follow the
-	// same fleet decision as any other run, including its pins and slip.
+	// A signed local run was verified for this tree, so the jobs it covers are
+	// skipped and only a few short ones are left. They go where a job is known
+	// to start, without reading the slip or the queue. A pinned tier is an
+	// operator's own override and still wins.
+	if (mode === "auto" && args.attested)
+		return report(
+			{
+				tier: "github",
+				runner: labels.github,
+				reason: `a signed local run covers this tree, so the jobs left do not wait for a fleet${defaults}`,
+				refusedBy: "none",
+				slip: { kind: "unasked", why: "attested" },
+			},
+			env,
+		);
 	if (mode !== "auto") {
 		const pinned = routeRunner({
 			mode,
@@ -1325,7 +1292,7 @@ export async function main(
 export const SLIP_FALLBACK_PREFIX = "routing slip not used";
 
 /** Why no slip was read. */
-export type UnaskedWhy = "pinned" | "batch";
+export type UnaskedWhy = "pinned" | "attested" | "batch";
 
 /** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
 export function workflowFile(env: NodeJS.ProcessEnv): string {
