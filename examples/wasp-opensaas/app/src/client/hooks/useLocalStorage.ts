@@ -1,44 +1,32 @@
 import { useEffect, useState } from "react";
+import type { ZodType } from "zod";
 
 type SetValue<T> = T | ((val: T) => T);
 
 export function useLocalStorage<T>(
   key: string,
   initialValue: T,
+  schema: ZodType<T>,
 ): [T, (value: SetValue<T>) => void] {
-  // State to store our value
-  // Pass  initial state function to useState so logic is only executed once
   const [storedValue, setStoredValue] = useState<T>(() => {
-    if (window === undefined) {
+    if (!globalThis.window) {
       return initialValue;
     }
 
     try {
-      // Get from local storage by key
       const item = window.localStorage.getItem(key);
-      // Parse stored json or if none return initialValue
-      // SAFETY: assertion to `JSON.parse(item) as T` is required at this boundary.
-      return item ? (JSON.parse(item) as T) : initialValue;
-    } catch (error) {
-      // If error also return initialValue
-      console.log(error);
+      return item === null ? initialValue : schema.parse(JSON.parse(item));
+    } catch {
       return initialValue;
     }
   });
 
-  // useEffect to update local storage when the state changes
   useEffect(() => {
     try {
-      // Allow value to be a function so we have same API as useState
-      const valueToStore =
-        (Object.prototype.toString.call(storedValue) === "[object Function]" || Object.prototype.toString.call(storedValue) === "[object AsyncFunction]")
-          ? storedValue(storedValue)
-          : storedValue;
-      // Save state
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      const value = JSON.stringify(storedValue);
+      if (value !== undefined) window.localStorage.setItem(key, value);
     } catch (error) {
-      // A more advanced implementation would handle the error case
-      console.log(error);
+      console.warn("Unable to save preference", error);
     }
   }, [key, storedValue]);
 

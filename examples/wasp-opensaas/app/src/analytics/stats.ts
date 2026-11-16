@@ -4,7 +4,7 @@ import {
   getDailyPageViews,
   getSources,
 } from "./providers/plausibleAnalyticsUtils";
-// import { getDailyPageViews, getSources } from './providers/googleAnalyticsUtils';
+
 import { paymentProcessor } from "../payment/paymentProcessor";
 import { SubscriptionStatus } from "../payment/plans";
 
@@ -34,8 +34,7 @@ export const calculateDailyStatsJob: CalculateDailyStatsJob<
     });
 
     const userCount = await context.entities.User.count({});
-    // users can have paid but canceled subscriptions which terminate at the end of the period
-    // we don't want to count those users as current paying users
+
     const paidUserCount = await context.entities.User.count({
       where: {
         subscriptionStatus: SubscriptionStatus.Active,
@@ -93,10 +92,9 @@ export const calculateDailyStatsJob: CalculateDailyStatsJob<
     const sources = await getSources();
 
     for (const source of sources) {
-      let visitors = source.visitors;
-      if (Object.prototype.toString.call(source.visitors) !== "[object Number]") {
-        visitors = parseInt(source.visitors);
-      }
+      const visitors = Number(source.visitors);
+      if (!Number.isSafeInteger(visitors) || visitors < 0)
+        throw new Error(`Invalid visitor count for ${source.source}`);
       await context.entities.PageViewSource.upsert({
         where: {
           date_name: {
@@ -121,7 +119,9 @@ export const calculateDailyStatsJob: CalculateDailyStatsJob<
     console.error("Error calculating daily stats: ", error);
     await context.entities.Logs.create({
       data: {
-        message: `Error calculating daily stats: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Error calculating daily stats: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         level: "job-error",
       },
     });

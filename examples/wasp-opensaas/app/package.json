@@ -3,6 +3,9 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "scripts": {
+    "test:unit": "vitest run --config vitest.config.ts"
+  },
   "workspaces": [
     ".wasp/out/*",
     ".wasp/out/sdk/wasp"
@@ -51,11 +54,13 @@
   },
   "devDependencies": {
     "@faker-js/faker": "8.3.1",
+    "@testing-library/react": "^16.3.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.7",
     "@wasp.sh/spec": "file:.wasp/spec",
+    "jsdom": "^27.4.0",
     "prisma": "5.19.1",
     "typescript": "6.0.3",
     "vite": "^8.1.0",

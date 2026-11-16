@@ -1,4 +1,4 @@
-# <YOUR_APP_NAME>
+# Open SaaS example
 
 Built with [Wasp](https://wasp.sh), based on the [Open Saas](https://opensaas.sh) template.
 
@@ -10,3 +10,9 @@ Built with [Wasp](https://wasp.sh), based on the [Open Saas](https://opensaas.sh
 - Run the database with `wasp start db` and leave it running.
 - Run `wasp start` and leave it running.
 - [OPTIONAL]: If this is the first time starting the app, or you've just made changes to your entities/prisma schema, also run `wasp db migrate-dev`.
+
+### Verification
+
+Run `npm run test:unit` for the local browser-state and payment-boundary tests.
+Run `wasp compile` to check the generated SDK and application types; a running
+PostgreSQL instance is needed to verify that database migrations are current.
