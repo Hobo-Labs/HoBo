@@ -232,7 +232,12 @@ requires separately verified ownership, Git linkage, permissions and costs.
 Observing, adopting, updating or linking an existing project requires a
 `verifyProjectControl` authorization bound to the exact team, project,
 operation, action and desired settings. The resolver rechecks it before each
-update or link; a name or repository match alone is not control evidence.
+update or link, and re-reads the project right before linking so a concurrent
+link is refused rather than overwritten; a name or repository match alone is
+not control evidence. A project found by name is adoption unless the durable
+journal holds this operation's own creation (`inspect`), which makes it an
+observation of the resolver's own project. Creation itself needs the team and
+operation ID, so the resolver never creates a project it could not manage.
 Deleting a project requires its recorded physical ID, team and operation ID,
 plus an independently supplied `verifyProjectDeletion` authorization for that
 exact scope. A same-name project or matching Git repository is not deletion
@@ -252,7 +257,11 @@ approved project; an ambiguous or unconnected store requires its exact ID.
 Deletion requires that ID, preserves other projects and environments, and only
 deletes a store when `deleteWhenEmpty` is explicitly set and its observed count
 is zero. The caller must enforce its own retention and writer-quiescence policy.
-An interrupted mutation retains the durable scope as uncertain. Recovery needs
+Once its pinned project is deleted, a missing store reads as absent, and only an
+unconnected, verified-empty store may still be deleted. A partial retire keeps
+the remaining connection OIDC-only.
+An interrupted mutation retains the durable scope as uncertain; a refusal that
+provably sent nothing (`ResourceMutationNotSentError`) releases it. Recovery needs
 independent verification of the provider state and the recorded physical ID;
 the current scope has no automatic unlock for an uncertain mutation.
 

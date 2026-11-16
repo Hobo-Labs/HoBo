@@ -28,6 +28,37 @@ import {
 
 const CREDENTIAL_REF = "hobo-token://vercel/deploy";
 
+/** A CAS journal that remembers claims, so a retry can recognise its own
+ * creation the way a durable journal does. */
+function memoryCasJournal() {
+	const entries = new Map<string, "pending" | "acknowledged" | "uncertain">();
+	const status = (mutationId: string) => {
+		const entry = entries.get(mutationId);
+		if (entry === undefined) return "missing" as const;
+		return entry === "acknowledged"
+			? ("acknowledged" as const)
+			: ("uncertain" as const);
+	};
+	return {
+		persistence: "durable-cas" as const,
+		inspect: async (input: { readonly mutationId: string }) => ({
+			status: status(input.mutationId),
+		}),
+		claim: async (input: { readonly mutationId: string }) => {
+			const prior = status(input.mutationId);
+			if (prior !== "missing") return { status: prior };
+			entries.set(input.mutationId, "pending");
+			return { status: "claimed" as const };
+		},
+		acknowledge: async (mutationId: string) => {
+			entries.set(mutationId, "acknowledged");
+		},
+		uncertain: async (mutationId: string) => {
+			entries.set(mutationId, "uncertain");
+		},
+	};
+}
+
 function options(
 	overrides: {
 		readonly resolveCredential?: (ref: string) => Promise<string>;
@@ -40,12 +71,7 @@ function options(
 	} = {},
 ) {
 	return {
-		mutationJournal: {
-			persistence: "durable-cas" as const,
-			claim: async () => ({ status: "claimed" as const }),
-			acknowledge: async () => {},
-			uncertain: async () => {},
-		},
+		mutationJournal: memoryCasJournal(),
 		resolveCredential:
 			overrides.resolveCredential ?? (async () => "vercel-api-token-value"),
 		...(overrides.teamId !== undefined
@@ -341,7 +367,7 @@ describe("vercel resolver registry", () => {
 });
 
 describe("vercel.project/v1 resolver", () => {
-	it("creates a Git-linked project, verifies the provider readback and adopts it on retry", async () => {
+	it("creates a Git-linked project, verifies the provider readback and observes it as its own on retry", async () => {
 		const f = recorded(projectApi());
 		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
 			teamId: "team_hobo",
@@ -366,7 +392,7 @@ describe("vercel.project/v1 resolver", () => {
 		});
 		expect(f.calls.at(-1)?.method).toBe("GET");
 		expect((await resolver.reconcile(request, f.transport)).action).toBe(
-			"adopt",
+			"noop",
 		);
 		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
 	});
@@ -417,6 +443,45 @@ describe("vercel.project/v1 resolver", () => {
 				operationId: "deploy-1",
 			},
 		]);
+	});
+	it("re-reads the project before linking and refuses a link made concurrently", async () => {
+		for (const repo of ["HoBo", "Other"]) {
+			const inner = projectApi([
+				{
+					id: "prj_9",
+					name: "storefront",
+					accountId: "team_hobo",
+					framework: "nextjs",
+				},
+			]);
+			let gets = 0;
+			const f = recorded((call) => {
+				const result = inner(call);
+				if (call.method !== "GET" || ++gets < 2) return result;
+				// Someone links the project between observation and the link POST.
+				const body = parseJsonObject(result.body);
+				return {
+					...result,
+					body: JSON.stringify({
+						...body,
+						link: { type: "github", org: "Hobo-Labs", repo },
+					}),
+				};
+			});
+			const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+				teamId: "team_hobo",
+				verifyUnlinkedProject: async () => true,
+			});
+			await expect(
+				r.reconcile(
+					projectRequest({
+						desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
+					}),
+					f.transport,
+				),
+			).rejects.toThrow(/linked concurrently|different Git repository/u);
+			expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+		}
 	});
 	it("does not patch or link an unlinked project without exact independent authorization", async () => {
 		for (const proof of [undefined, async () => false]) {
@@ -546,13 +611,64 @@ describe("vercel.project/v1 resolver", () => {
 			}
 			return result;
 		});
-		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, { teamId: "team_hobo" });
+		const actions: string[] = [];
+		const r = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectControl: async (scope) => {
+				actions.push(scope.action);
+				return true;
+			},
+		});
 		const input = projectRequest({
 			desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
 		});
 		await expect(r.reconcile(input, f.transport)).rejects.toThrow();
-		expect((await r.reconcile(input, f.transport)).action).toBe("adopt");
+		// The journal holds this operation's own create, so the project found by
+		// name is observed as ours, not adopted as a third party's.
+		expect((await r.reconcile(input, f.transport)).action).toBe("noop");
+		expect(actions).toEqual(["observe"]);
 		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+	});
+	it("treats a same-name project as adoption when this operation's journal never created it", async () => {
+		const f = recorded(projectApi());
+		const input = projectRequest({ desired: { operationId: "deploy-1" } });
+		await resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+		}).reconcile(input, f.transport);
+		const actions: string[] = [];
+		const other = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectControl: async (scope) => {
+				actions.push(scope.action);
+				return true;
+			},
+		});
+		expect((await other.reconcile(input, f.transport)).action).toBe("adopt");
+		const observedOnly = projectRequest({
+			desired: { operationId: "deploy-2" },
+			observed: { id: "prj_1" },
+		});
+		expect((await other.reconcile(observedOnly, f.transport)).action).toBe(
+			"adopt",
+		);
+		expect(actions).toEqual(["adopt", "adopt"]);
+	});
+	it("does not create a project it could not manage afterwards", async () => {
+		for (const [teamId, desired] of [
+			[undefined, { operationId: "deploy-1" }],
+			// The fixture default supplies an operation ID; drop it.
+			["team_hobo", { operationId: undefined }],
+		] as const) {
+			const f = recorded(projectApi());
+			const r = vercelResolvers({
+				...options(teamId ? { teamId } : {}),
+				verifyProjectControl: async () => true,
+			}).find((candidate) => candidate.productId === VERCEL_PROJECT_PRODUCT_ID);
+			await expect(
+				r?.reconcile(projectRequest({ desired }), f.transport),
+			).rejects.toThrow(/team scope and an operation ID/u);
+			expect(f.calls.every((call) => call.method === "GET")).toBe(true);
+		}
 	});
 	it("creates a project when none exists", async () => {
 		const { transport, calls } = recorded(projectApi());
@@ -576,7 +692,7 @@ describe("vercel.project/v1 resolver", () => {
 		const first = await resolver.reconcile(projectRequest(), transport);
 		const second = await resolver.reconcile(projectRequest(), transport);
 		expect(second.physicalId).toBe(first.physicalId);
-		expect(second.action).toBe("adopt");
+		expect(second.action).toBe("noop");
 		expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
 	});
 
