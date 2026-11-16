@@ -172,13 +172,26 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			expect(field.format).not.toBe("password");
 		}
 		expect(JSON.stringify(params)).not.toMatch(/Vaultwarden/u);
-		// The owner picks Infisical and gives its project id.
+		// The first form is the store alone: no other store's fields.
+		expect(Object.keys(params.requestedSchema.properties)).toEqual(["store"]);
 		client.send({
 			jsonrpc: "2.0",
 			id: elicit.id ?? null,
+			result: { action: "accept", content: { store: "infisical" } },
+		});
+		// Then only Infisical's own field; nothing about 1Password or Bitwarden.
+		const follow = await client.next((m) => m.method === "elicitation/create");
+		const fields = elicitSchema.parse(follow.params);
+		expect(Object.keys(fields.requestedSchema.properties)).toEqual([
+			"INFISICAL_PROJECT_ID",
+		]);
+		expect(JSON.stringify(fields)).not.toMatch(/1Password|Bitwarden/u);
+		client.send({
+			jsonrpc: "2.0",
+			id: follow.id ?? null,
 			result: {
 				action: "accept",
-				content: { store: "infisical", INFISICAL_PROJECT_ID: "proj-123" },
+				content: { INFISICAL_PROJECT_ID: "proj-123" },
 			},
 		});
 		const done = toolResult(await client.answer(pending));
@@ -223,10 +236,16 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 		client.send({
 			jsonrpc: "2.0",
 			id: elicit.id ?? null,
-			result: {
-				action: "accept",
-				content: { store: "1password", OP_VAULT_ID: "vault-1" },
-			},
+			result: { action: "accept", content: { store: "1password" } },
+		});
+		const follow = await client.next((m) => m.method === "elicitation/create");
+		expect(
+			Object.keys(elicitSchema.parse(follow.params).requestedSchema.properties),
+		).toEqual(["OP_VAULT_ID", "OP_CONNECT_HOST"]);
+		client.send({
+			jsonrpc: "2.0",
+			id: follow.id ?? null,
+			result: { action: "accept", content: { OP_VAULT_ID: "vault-1" } },
 		});
 		const done = toolResult(await client.answer(pending));
 		expect(done.isError).toBe(true);
@@ -294,6 +313,37 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			options: ["Infisical", "1Password", "Bitwarden"],
 		});
 		expect(client.saved.size).toBe(0);
+		await client.close();
+	});
+
+	it("asks Bitwarden only its optional server, and nothing about the other stores", async () => {
+		const client = connect({ elicitation: {} });
+		await client.init();
+		const pending = client.call("tools/call", {
+			name: CHOOSE_SECRET_STORE_TOOL,
+			arguments: { family: "ci" },
+		});
+		const elicit = await client.next((m) => m.method === "elicitation/create");
+		client.send({
+			jsonrpc: "2.0",
+			id: elicit.id ?? null,
+			result: { action: "accept", content: { store: "bitwarden" } },
+		});
+		const follow = await client.next((m) => m.method === "elicitation/create");
+		const fields = elicitSchema.parse(follow.params);
+		expect(Object.keys(fields.requestedSchema.properties)).toEqual([
+			"BITWARDEN_SERVER_URL",
+		]);
+		expect(JSON.stringify(fields)).not.toMatch(/Infisical|1Password/u);
+		client.send({
+			jsonrpc: "2.0",
+			id: follow.id ?? null,
+			result: { action: "accept", content: {} },
+		});
+		await client.answer(pending);
+		expect(Object.fromEntries(client.saved)).toEqual({
+			HOBO_SECRET_STORE: "bitwarden",
+		});
 		await client.close();
 	});
 });

@@ -59,9 +59,14 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(step).toMatch(
 			/Never ask the owner to set\s+environment\s+variables,\s+never\s+send\s+them\s+to\s+a\s+terminal/u,
 		);
-		expect(step).toMatch(/never\s+ask\s+them\s+to\s+create\s+identities\s+or\s+tokens/u);
+		expect(step).toMatch(
+			/never\s+ask\s+them\s+to\s+create\s+identities\s+or\s+tokens/u,
+		);
 		// The choice is a picker the host renders, never prose.
 		expect(step).toMatch(/choose_secret_store/u);
+		// The store alone; then only the chosen store's follow-ups.
+		expect(step).toMatch(/the store \*\*alone\*\*, one question/u);
+		expect(step).toMatch(/nothing\s+about\s+the\s+other\s+stores/u);
 		expect(step).toMatch(/AskUserQuestion/u);
 		// Bitwarden: the API key through the credential form, then one approval.
 		expect(HAND_OFF).toMatch(/HOBO_OWNER_BITWARDEN_APPROVE/u);

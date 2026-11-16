@@ -26,6 +26,8 @@ export type TranscriptBlock =
 			readonly kind: "tool_use";
 			readonly id: string;
 			readonly name: string;
+			/** A picker's questions: each one's text, header and options together. */
+			readonly questions: readonly string[];
 	  }
 	| {
 			readonly kind: "tool_result";
@@ -42,7 +44,14 @@ export interface TranscriptEvent {
 }
 
 export interface HandOffFinding {
-	readonly rule: "structured-ask";
+	/**
+	 * - `structured-ask`: a turn ended with an owner-facing line unasked.
+	 * - `store-choice-alone`: the store choice shared its picker with other
+	 *   questions (a store's follow-up asked before the owner chose it).
+	 * - `chosen-store-only`: after the owner chose a store, a question named
+	 *   another one.
+	 */
+	readonly rule: "structured-ask" | "store-choice-alone" | "chosen-store-only";
 	readonly ask: AskKind;
 	/** The owner-facing line that opened the obligation. */
 	readonly line: string;
@@ -78,15 +87,54 @@ const resultText = z
 	])
 	.catch("");
 
+/** A picker's questions, as text the audit can search. */
+const askedQuestions = z
+	.object({
+		questions: z.array(
+			z.object({
+				question: z.string(),
+				header: z.string().optional(),
+				options: z
+					.array(
+						z.object({
+							label: z.string(),
+							description: z.string().optional(),
+						}),
+					)
+					.optional(),
+			}),
+		),
+	})
+	.transform((input) =>
+		input.questions.map((q) =>
+			[
+				q.header ?? "",
+				q.question,
+				...(q.options ?? []).flatMap((o) => [o.label, o.description ?? ""]),
+			].join("\n"),
+		),
+	)
+	.catch([]);
+
 /** One content block, parsed straight into the audit's own type. */
 const block = z.discriminatedUnion("type", [
 	z
 		.object({ type: z.literal("text"), text: z.string() })
 		.transform((b): TranscriptBlock => ({ kind: "text", text: b.text })),
 	z
-		.object({ type: z.literal("tool_use"), id: z.string(), name: z.string() })
+		.object({
+			type: z.literal("tool_use"),
+			id: z.string(),
+			name: z.string(),
+			input: askedQuestions.optional(),
+		})
 		.transform(
-			(b): TranscriptBlock => ({ kind: "tool_use", id: b.id, name: b.name }),
+			(b): TranscriptBlock => ({
+				kind: "tool_use",
+				id: b.id,
+				name: b.name,
+				questions: b.input ?? [],
+			}),
 		),
 	z
 		.object({
@@ -145,6 +193,26 @@ export function parseClaudeTranscript(jsonl: string): TranscriptEvent[] {
 	return events;
 }
 
+/** The three stores, as an owner-facing question names them. */
+const STORES = [
+	{ id: "infisical", re: /\binfisical\b/iu },
+	{ id: "1password", re: /\b1password\b/iu },
+	{ id: "bitwarden", re: /\b(bitwarden|vaultwarden)\b/iu },
+] as const;
+type StoreId = (typeof STORES)[number]["id"];
+
+const storesNamed = (text: string): StoreId[] =>
+	STORES.filter((store) => store.re.test(text)).map((store) => store.id);
+
+/** The store a completed store-choice ask settled on, if its result names one. */
+function chosenStore(result: string): StoreId | undefined {
+	// AskUserQuestion: "<question>"="<answer>"; choose_secret_store: "chose <Store>".
+	const answer =
+		/"="([^"]*)"/u.exec(result)?.[1] ?? /\bchose (\w+)/u.exec(result)?.[1];
+	const named = answer === undefined ? [] : storesNamed(answer);
+	return named.length === 1 ? named[0] : undefined;
+}
+
 /** A user event with no tool result: a person, or the host, started a new turn. */
 function startsTurn(event: TranscriptEvent): boolean {
 	return (
@@ -178,6 +246,9 @@ export function auditHandOff(
 		}
 	};
 	const askedThisTurn = new Set<AskKind>();
+	// The store choice: its ask in flight, and the store the owner chose.
+	const storeAsks = new Set<string>();
+	let chosen: StoreId | undefined;
 	let sawTurn = false;
 	for (const event of events) {
 		if (startsTurn(event)) {
@@ -189,12 +260,40 @@ export function auditHandOff(
 		sawTurn = true;
 		for (const b of event.blocks) {
 			if (b.kind === "tool_use") {
+				const choiceAt = b.questions.findIndex(
+					(q) => storesNamed(q).length >= 2,
+				);
+				if (choiceAt !== -1) {
+					storeAsks.add(b.id);
+					if (b.questions.length > 1)
+						findings.push({
+							rule: "store-choice-alone",
+							ask: "choice",
+							line: "HOBO_*_STORE_CHOICE",
+							at: event.at,
+							detail:
+								"The store choice shared its picker with other questions. Ask it alone; ask the chosen store's follow-ups only after the owner answers.",
+						});
+				} else if (chosen !== undefined)
+					for (const q of b.questions) {
+						const other = storesNamed(q).filter((id) => id !== chosen);
+						if (other.length > 0)
+							findings.push({
+								rule: "chosen-store-only",
+								ask: "choice",
+								line: "HOBO_*_STORE_CHOICE",
+								at: event.at,
+								detail: `The owner chose ${chosen}, but a later question asked about ${other.join(", ")}. Follow-ups are about the chosen store only.`,
+							});
+					}
 				for (const ask of ["choice", "credential"] as const)
 					if (STRUCTURED_ASK_TOOLS[ask].test(b.name)) {
 						pending.set(b.id, ask);
 						askedThisTurn.add(ask);
 					}
 			} else if (b.kind === "tool_result") {
+				if (storeAsks.delete(b.toolUseId) && !NOT_COMPLETED.test(b.text))
+					chosen = chosenStore(b.text) ?? chosen;
 				const ask = pending.get(b.toolUseId);
 				if (ask !== undefined) {
 					pending.delete(b.toolUseId);
@@ -204,7 +303,10 @@ export function auditHandOff(
 				}
 				for (const owner of OWNER_LINES) {
 					const match = owner.re.exec(b.text);
-					if (match !== null) owed.set(owner.ask, match[0]);
+					if (match === null) continue;
+					owed.set(owner.ask, match[0]);
+					// A new store choice: the owner chooses again.
+					if (/STORE_CHOICE/u.test(match[0])) chosen = undefined;
 				}
 			}
 		}

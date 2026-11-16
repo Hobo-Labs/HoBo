@@ -13,12 +13,35 @@ import {
 // an ask did not complete. The first case is the failure the owner hit: the
 // picker was interrupted by a restart and every later turn asked in prose.
 
-const toolUse = (id: string, name: string) => ({
+type Question = {
+	question: string;
+	header: string;
+	options: { label: string; description: string }[];
+};
+const toolUse = (
+	id: string,
+	name: string,
+	input: { questions?: Question[] } = {},
+) => ({
 	type: "tool_use" as const,
 	id,
 	name,
-	input: {},
+	input,
 });
+const question = (
+	header: string,
+	text: string,
+	labels: readonly string[],
+): Question => ({
+	header,
+	question: text,
+	options: labels.map((label) => ({ label, description: "" })),
+});
+const STORE_QUESTION = question(
+	"Store",
+	"Which secret store should hobo cd up use?",
+	["Infisical", "1Password", "Bitwarden"],
+);
 const toolResult = (id: string, text: string, isError = false) => ({
 	type: "tool_result" as const,
 	tool_use_id: id,
@@ -192,6 +215,101 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 			]),
 			assistant([text("That is where the refusal is made.")]),
 			user("ok"),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toEqual([]);
+	});
+});
+
+describe("EVAL hand-off transcript: once a store is chosen, ask only about it", () => {
+	it("flags a store choice that shares its picker with another store's follow-up", () => {
+		// What the owner hit: store and Bitwarden server in one picker; they
+		// chose Infisical and still had to answer a Bitwarden question.
+		const transcript = jsonl([
+			...runAndRead,
+			assistant([
+				toolUse("ask", "AskUserQuestion", {
+					questions: [
+						STORE_QUESTION,
+						question(
+							"Bitwarden",
+							"If you choose Bitwarden: where does your vault live?",
+							["bitwarden.com (US)", "bitwarden.eu", "Self-hosted"],
+						),
+					],
+				}),
+			]),
+			user([
+				toolResult(
+					"ask",
+					'Your questions have been answered: "Which secret store should hobo cd up use?"="Infisical", "If you choose Bitwarden: where does your vault live?"="bitwarden.com (US)".',
+				),
+			]),
+			assistant([text("Infisical it is.")]),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+			{ rule: "store-choice-alone" },
+		]);
+	});
+
+	it("flags a follow-up that names another store after the owner chose one", () => {
+		const transcript = jsonl([
+			...runAndRead,
+			assistant([
+				toolUse("ask", "AskUserQuestion", { questions: [STORE_QUESTION] }),
+			]),
+			user([
+				toolResult(
+					"ask",
+					'"Which secret store should hobo cd up use?"="Infisical"',
+				),
+			]),
+			assistant([
+				toolUse("next", "AskUserQuestion", {
+					questions: [
+						question("Server", "Is your Bitwarden vault self-hosted?", [
+							"Yes",
+							"No",
+						]),
+					],
+				}),
+			]),
+			user([toolResult("next", '"Is your Bitwarden vault self-hosted?"="No"')]),
+			assistant([text("ok")]),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+			{ rule: "chosen-store-only" },
+		]);
+	});
+
+	it("passes the store alone, then only the chosen store's follow-up", () => {
+		const transcript = jsonl([
+			...runAndRead,
+			assistant([
+				toolUse("ask", "AskUserQuestion", { questions: [STORE_QUESTION] }),
+			]),
+			user([
+				toolResult(
+					"ask",
+					'"Which secret store should hobo cd up use?"="Infisical"',
+				),
+			]),
+			assistant([
+				toolUse("project", "AskUserQuestion", {
+					questions: [
+						question("Infisical", "Which Infisical project?", [
+							"The relay's project",
+							"Another project",
+						]),
+					],
+				}),
+			]),
+			user([
+				toolResult(
+					"project",
+					'"Which Infisical project?"="The relay\'s project"',
+				),
+			]),
+			assistant([text("Running again with Infisical.")]),
 		]);
 		expect(auditHandOff(parseClaudeTranscript(transcript))).toEqual([]);
 	});

@@ -212,12 +212,14 @@ checks it.
    elicitation form, or an MCP App widget) and saves the answer in the
    owner's HoBo settings, never the repository. If it says the host renders
    neither, or the HoBo server is not connected, ask with your host's own
-   picker (`AskUserQuestion`), each option described by its line from the
-   refusal, then ask for that store's non-secret ids the same way
-   (Infisical: `INFISICAL_PROJECT_ID`; 1Password: `OP_VAULT_ID`, and for a
-   remote box `OP_CONNECT_HOST`; Bitwarden: none, only `BITWARDEN_SERVER_URL`
-   if self-hosted), and record them with `submit_store_choice` (or, without
-   the HoBo server, run again with `HOBO_SECRET_STORE` and those ids set).
+   picker (`AskUserQuestion`): the store **alone**, one question, each
+   option described by its line from the refusal. Only after the owner
+   answers, ask that store's own non-secret ids the same way, and nothing
+   about the other stores (Infisical: `INFISICAL_PROJECT_ID`; 1Password:
+   `OP_VAULT_ID`, and for a remote box `OP_CONNECT_HOST`; Bitwarden: only
+   `BITWARDEN_SERVER_URL`, if self-hosted). Record them with
+   `submit_store_choice` (or, without the HoBo server, run again with
+   `HOBO_SECRET_STORE` and those ids set).
    Then run again. The choice is always the owner's: a provided token only
    marks a store "configured here"; never pick a store for them because its
    token is present. Never ask the owner to set environment variables, never

@@ -126,11 +126,46 @@ export const STORE_CHOICE_PROPERTIES: JsonObject = {
 	},
 };
 
+/**
+ * The first form: the store alone. A store's own fields come in a second
+ * form, after the owner chose it, so no one is asked about a store they did
+ * not choose.
+ */
 export const STORE_CHOICE_SCHEMA: JsonObject = {
 	type: "object",
-	properties: STORE_CHOICE_PROPERTIES,
+	properties: { store: STORE_CHOICE_PROPERTIES.store ?? null },
 	required: ["store"],
 };
+
+/** The second form: only the chosen store's non-secret fields. */
+export function storeFieldsSchema(
+	store: "infisical" | "1password" | "bitwarden",
+): JsonObject {
+	const pick = (names: readonly string[]): JsonObject =>
+		Object.fromEntries(
+			names.map((name) => [name, STORE_CHOICE_PROPERTIES[name] ?? null]),
+		);
+	switch (store) {
+		case "infisical":
+			return {
+				type: "object",
+				properties: pick(["INFISICAL_PROJECT_ID"]),
+				required: ["INFISICAL_PROJECT_ID"],
+			};
+		case "1password":
+			return {
+				type: "object",
+				properties: pick(["OP_VAULT_ID", "OP_CONNECT_HOST"]),
+				required: ["OP_VAULT_ID"],
+			};
+		case "bitwarden":
+			return {
+				type: "object",
+				properties: pick(["BITWARDEN_SERVER_URL"]),
+				required: [],
+			};
+	}
+}
 
 export class StoreChoiceInvalid extends Error {
 	constructor(readonly rule: string) {
@@ -260,6 +295,10 @@ export interface StoreChoiceApp {
 		request: ClientRequest | undefined,
 	): Promise<CallToolResult>;
 }
+
+const storeOnly = z.object({
+	store: z.enum(["infisical", "1password", "bitwarden"]),
+});
 
 const elicitResult = z.object({
 	action: z.enum(["accept", "decline", "cancel"]),
@@ -404,20 +443,39 @@ export function createStoreChoiceApp(
 			const family = args.family === "ci" ? "ci" : "cd";
 			if (tool === SUBMIT_STORE_CHOICE_TOOL) return record(cwd, family, args);
 			if (support.formElicitation && request !== undefined) {
-				const answer = elicitResult.safeParse(
-					await request("elicitation/create", {
-						message: `Choose where HoBo keeps this project's secrets (hobo ${family} up). ${STORE_OPTIONS.map((o) => `${o.label}: ${o.needs}.`).join(" ")} The store's sign-in is asked for separately, in the session's credential form.`,
-						requestedSchema: STORE_CHOICE_SCHEMA,
-					}),
-				);
-				const action = answer.success ? answer.data.action : "unanswered";
-				if (!answer.success || answer.data.action !== "accept")
-					return result(
+				const unanswered = (action: string) =>
+					result(
 						`The owner ${action === "decline" ? "declined" : "closed"} the store picker; nothing was recorded. Ask again with ${CHOOSE_SECRET_STORE_TOOL} when they are ready.`,
 						{ status: action },
 					);
-				const content = answer.data.content;
-				return record(cwd, family, isJsonObject(content) ? content : undefined);
+				// First the store, alone.
+				const first = elicitResult.safeParse(
+					await request("elicitation/create", {
+						message: `Choose where HoBo keeps this project's secrets (hobo ${family} up). Its sign-in is asked for separately, in the session's credential form.`,
+						requestedSchema: STORE_CHOICE_SCHEMA,
+					}),
+				);
+				if (!first.success || first.data.action !== "accept")
+					return unanswered(first.success ? first.data.action : "unanswered");
+				const picked = storeOnly.safeParse(first.data.content);
+				if (!picked.success) return record(cwd, family, undefined);
+				const store = picked.data.store;
+				const label = STORE_OPTIONS.find((o) => o.id === store)?.label ?? store;
+				// Then only that store's own fields.
+				const second = elicitResult.safeParse(
+					await request("elicitation/create", {
+						message: `${label}: ${STORE_OPTIONS.find((o) => o.id === store)?.needs ?? ""}.`,
+						requestedSchema: storeFieldsSchema(store),
+					}),
+				);
+				if (!second.success || second.data.action !== "accept")
+					return unanswered(second.success ? second.data.action : "unanswered");
+				const fields = second.data.content;
+				return record(
+					cwd,
+					family,
+					isJsonObject(fields) ? { ...fields, store } : { store },
+				);
 			}
 			if (support.apps)
 				return {
@@ -428,7 +486,7 @@ export function createStoreChoiceApp(
 					_meta: { "ui/resourceUri": STORE_CHOICE_RESOURCE_URI },
 				};
 			return result(
-				`This host renders neither MCP elicitation nor MCP Apps. Ask the owner with your host's own picker (AskUserQuestion), never in prose: ${STORE_OPTIONS.map((o) => `${o.label} (${o.needs})`).join("; ")}. Then record the answer with ${SUBMIT_STORE_CHOICE_TOOL}.`,
+				`This host renders neither MCP elicitation nor MCP Apps. Ask the owner with your host's own picker (AskUserQuestion), never in prose. Ask the store alone first: ${STORE_OPTIONS.map((o) => `${o.label} (${o.needs})`).join("; ")}. Then ask only the chosen store's own follow-up, never about the others, and record the answer with ${SUBMIT_STORE_CHOICE_TOOL}.`,
 				{
 					status: "use-host-picker",
 					options: STORE_OPTIONS.map((o) => o.label),
