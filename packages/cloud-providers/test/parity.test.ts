@@ -7,7 +7,7 @@
  * 2 of 5 — while the constants in the provider packages said 8, some, and 5.
  * Each prose number was right once. None of them was checked.
  *
- * So the assertions here restate no count except Vercel's 3/5, which pins why
+ * So the assertions here restate no count except Vercel's 4/5, which pins why
  * its catalog is widened. The catalog side is read through the exported
  * `PARITY_SOURCES` (no hand twin of its Yard calls); the resolved side is
  * imported straight from each provider package's `*_RESOLVED_PRODUCT_IDS`, so
@@ -248,9 +248,9 @@ describe("vercel's widened catalog", () => {
 		expect(full).toContain("vercel.project/v1");
 	});
 
-	it("providerParity() reports vercel as 3/5", () => {
+	it("providerParity() reports vercel as 4/5", () => {
 		const row = providerParity().find((r) => r.provider === "vercel");
-		expect(row?.denominator).toBe("3/5");
+		expect(row?.denominator).toBe("4/5");
 	});
 });
 
