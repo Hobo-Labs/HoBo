@@ -52,3 +52,15 @@ constrains them: a minutes limit only on `github`, a spend limit only on a
 hosted provider, and a decision whose fields agree with its outcome. Step
 uniqueness is a cross-element rule `parseRunnerOrder` enforces. Fixtures are
 under `fixtures/runner_route/`.
+
+`relay_job.proto` owns what a relay job carries between its parts
+(ADR-0183): the message an answerer receives (`RelayJobMessage`), what it
+completes the job with (`RelayJobAnswer`), the route journal entry
+(`RunnerRouteEvent`), a machine's advert (`MachineAdvert`), a stored provider
+health record (`ProviderHealthRecord`) and one run attempt's facts (`RunFact`,
+`JobFact`, `StepFact`, field for field what the insight reports read).
+`relay_job.cue` constrains them: a failed answer carries an annotation saying
+why, and a decision is on `runner.route.Decided` and nowhere else. It imports
+`runner_route.proto`, so this folder's `buf.gen.yaml` generates `.js` import
+paths. Fixtures are under `fixtures/relay_job/`; the parsers are in
+`src/runner-order/relay-job.ts`.
