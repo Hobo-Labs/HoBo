@@ -15,8 +15,9 @@ over conflicting repository workflow guidance.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
 
-Run `pnpm run source:guard -- --worktree` while editing. The pre-commit hook
-checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
+Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
+and Copilot. Run `pnpm run source:guard -- --worktree` when checking manually;
+the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
 CSS, HTML, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, Ruby, Lua, and Swift; the same rule applies to every other language.
 

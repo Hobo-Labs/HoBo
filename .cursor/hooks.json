@@ -12,6 +12,12 @@
         "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/ensure-hooks-path.sh\" >/dev/null 2>&1; exit 0",
         "timeout": 10
       }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
+        "timeout": 60
+      }
     ]
   }
 }
