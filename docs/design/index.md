@@ -46,7 +46,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`adr/02-identity-security.md`](./adr/02-identity-security.md#adr-0146) | **ADR-0146** — Typed legal geography (JurisdictionId, DataClassification), fail-closed `evaluateResidency` + residency gate/policy pack, control→evidence packs | — |
 | [`launch-ship-targets.md`](./launch-ship-targets.md) | Human-facing summary of ADR-0140 ship targets, S-stage interim cutlines, and claim rules | — |
 | [`instances/`](./instances/README.md) | Populated readiness dashboard, go/no-go, accepted-risk, and residual human-blocker **instances** (dated snapshots; contracts stay in sibling docs) | — |
-| [`pre-public-secret-scan.md`](./pre-public-secret-scan.md) | Target A runbook: full-history gitleaks before repo-public flip; evidence rules | — |
+| [`pre-public-secret-scan.md`](./pre-public-secret-scan.md) | Target A runbook: full-history Betterleaks scan before repo-public flip; evidence rules | — |
 | [`adr/07-portability-extensibility.md`](./adr/07-portability-extensibility.md#adr-0147) | **ADR-0147** — HoBo Yard v2 (HIGHBALL): Phaser browser host required; `@hobo/yard-world` shared world model; OTLP-observed yard; provenance-badged signals | — |
 | [`adr/07-portability-extensibility.md`](./adr/07-portability-extensibility.md#adr-0148) | **ADR-0148** — Pixel-RPG identity: sourced CC0 pixel art replaces the traced rubberhose surface | — |
 | [`asset-sourcing-policy.md`](./asset-sourcing-policy.md) | Asset sourcing policy for the HIGHBALL! game surface: PD trace plates, CC0 audio, OFL fonts, re-inked references, license allowlist + CREDITS.md provenance | — |
