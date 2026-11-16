@@ -79,7 +79,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
           clean: false
           fetch-depth: 1
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Ask GHCR for this commit's worker image
         id: status
         env:

@@ -2280,7 +2280,7 @@ describe("the workflows that route", () => {
 	const routed = readdirSync(join(root, ".github/workflows"))
 		.map((name) => `.github/workflows/${name}`)
 		.filter((path) =>
-			read(path).includes("uses: ./.github/actions/route-runner"),
+			read(path).includes("uses: $/.github/actions/route-runner"),
 		);
 
 	// A file the script loads and a workflow does not check out stops the
