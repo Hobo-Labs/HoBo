@@ -180,6 +180,34 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
 
 Provider connection revocation is terminal. Authorizing or marking a revoked connection for reauthorization is rejected; create a new connection instead. Replay also ignores late authorization, health, rotation, and duplicate creation facts that would revive the revoked connection.
 
+The `verify-connection-lifecycle` skill checks that rule with generated
+command and replay histories and a bounded TLA+ model. This chart summarizes
+the model; it is not a live provider trace:
+
+```mermaid
+---
+title: "Connect and revoke a provider connection"
+---
+stateDiagram-v2
+  s0: No connection
+  s1: Awaiting authorization
+  s2: Connection active
+  s3: Authorization needs renewal
+  s4: Connection revoked
+  [*] --> s0
+  s0 --> s1: create connection
+  s1 --> s2: authorize connection or rotate credential
+  s1 --> s3: mark authorization expired
+  s1 --> s4: revoke connection
+  s2 --> s3: mark authorization expired
+  s2 --> s4: revoke connection
+  s3 --> s2: authorize connection or rotate credential
+  s3 --> s4: revoke connection
+```
+
+TLC explores one connection and one subject; six same-label steps are hidden.
+The model does not prove provider revocation or credential-vault behavior.
+
 ## Verification
 
 ```sh
