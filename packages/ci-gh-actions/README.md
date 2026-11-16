@@ -478,6 +478,8 @@ are included. The runtime uses Node 24, UID/GID 1000, a read-only root filesyste
 a writable temporary directory and one persistent SQLite directory. A kernel
 `flock` fences each partition's owner; process death releases the lock without
 unsafe stale-PID removal. Kubernetes uses one replica and `Recreate`.
+The relay's build and runtime images track the Node 24 LTS line used by the
+repository toolchain; update both image digests together.
 
 The tested container lifecycle includes authenticated policy changes, restart
 persistence, duplicate-owner refusal, online backup, graceful SIGTERM and offline
