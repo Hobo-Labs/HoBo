@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 
 import { storeSettings } from "../src/ceremony-settings.js";
 import { STORE_CHOICE } from "../src/owner-store.js";
-import { openSecretStore } from "../src/secret-stores.js";
+import {
+	EGRESS_PROXY_PLACEHOLDER,
+	openSecretStore,
+} from "../src/secret-stores.js";
 
 function signedIn(token = "machine-token") {
 	const vault = createTrustedVault();
@@ -17,6 +20,32 @@ function signedIn(token = "machine-token") {
 
 const ORG = "11111111-2222-4333-8444-555555555555";
 const PROJECT = "66666666-7777-4888-9999-aaaaaaaaaaaa";
+
+it("uses the proxy marker rather than a token retained from an earlier choice", async () => {
+	const vault = createTrustedVault();
+	vault.put("INFISICAL_TOKEN", "old-writable-token");
+	let authorization: string | null = null;
+	const opened = await openSecretStore(
+		"infisical",
+		{
+			INFISICAL_SIGN_IN: "egress-proxy",
+			INFISICAL_PROJECT_ID: "proj",
+			INFISICAL_ENVIRONMENT: "prod",
+			INFISICAL_SECRET_PATH: "/hobo-ci",
+		},
+		vault,
+		{
+			fetch: async (_input, init) => {
+				authorization = new Headers(init?.headers).get("authorization");
+				return Response.json({}, { status: 403 });
+			},
+		},
+	);
+	expect(opened.ok).toBe(true);
+	if (!opened.ok) throw new Error("not opened");
+	await opened.store.port.access("NAME");
+	expect(authorization).toBe(`Bearer ${EGRESS_PROXY_PLACEHOLDER}`);
+});
 
 function fakeBitwarden(): BitwardenSdkClient {
 	const secrets: BitwardenSecret[] = [];

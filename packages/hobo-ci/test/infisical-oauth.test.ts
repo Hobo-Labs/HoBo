@@ -191,4 +191,44 @@ describe("openSecretStore with INFISICAL_SIGN_IN=oauth", () => {
 		expect(opening.ok).toBe(false);
 		expect(started).toBe(false);
 	});
+
+	it("does not reuse a writable token or workload identity when OAuth was selected", async () => {
+		const vault = signIn();
+		vault.put("INFISICAL_TOKEN", "old-writable-token");
+		let approvals = 0;
+		const opening = await openSecretStore(
+			"infisical",
+			{ ...coordinates, INFISICAL_IDENTITY_ID: "identity" },
+			vault,
+			{
+				workloadOidc: { ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.test" },
+				oauthBrowser: { open: () => undefined, emit: () => undefined },
+				infisicalOAuth: async () => {
+					approvals += 1;
+					return "oauth-access-token";
+				},
+			},
+		);
+		expect(approvals).toBe(1);
+		expect(opening.ok).toBe(true);
+		if (!opening.ok) throw new Error("not opened");
+		await expect(opening.store.port.put("X", "y")).rejects.toBeInstanceOf(
+			InfisicalReadOnlyError,
+		);
+	});
+
+	it("does not fall back to a writable credential without the OAuth browser", async () => {
+		const vault = signIn();
+		vault.put("INFISICAL_TOKEN", "old-writable-token");
+		const opening = await openSecretStore(
+			"infisical",
+			{ ...coordinates, INFISICAL_IDENTITY_ID: "identity" },
+			vault,
+			{
+				noBrowser: true,
+				workloadOidc: { ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.test" },
+			},
+		);
+		expect(opening.ok).toBe(false);
+	});
 });

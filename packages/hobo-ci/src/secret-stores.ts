@@ -288,26 +288,30 @@ export async function openSecretStore(
 ): Promise<SecretStoreOpening> {
 	// The adapters read their inputs from an env-shaped record: build it in
 	// memory from the coordinates and the vault, never from process.env.
+	const oauthSelected = coordinates.INFISICAL_SIGN_IN === OAUTH_SIGN_IN;
 	const env: Env = {
 		...coordinates,
-		INFISICAL_TOKEN:
-			signIn.reveal("INFISICAL_TOKEN") ??
-			// The egress proxy replaces this bearer with the owner's token on
-			// the way to Infisical; the real one never reaches this process.
-			(coordinates.INFISICAL_SIGN_IN === "egress-proxy"
+		// An explicit sign-in choice must not silently reuse a token from an
+		// earlier choice. OAuth is read-only; the proxy receives only its marker.
+		INFISICAL_TOKEN: oauthSelected
+			? undefined
+			: coordinates.INFISICAL_SIGN_IN === "egress-proxy"
 				? EGRESS_PROXY_PLACEHOLDER
-				: undefined),
+				: signIn.reveal("INFISICAL_TOKEN"),
 	};
 	switch (id) {
 		case "infisical": {
 			let auth: ReturnType<typeof ownerAuthFromEnv>;
-			try {
-				auth = ownerAuthFromEnv(env);
-			} catch {
-				auth = undefined;
+			if (!oauthSelected) {
+				try {
+					auth = ownerAuthFromEnv(env);
+				} catch {
+					auth = undefined;
+				}
 			}
 			if (
 				auth === undefined &&
+				!oauthSelected &&
 				coordinates.INFISICAL_IDENTITY_ID &&
 				deps.workloadOidc?.ACTIONS_ID_TOKEN_REQUEST_URL
 			) {
@@ -325,10 +329,7 @@ export async function openSecretStore(
 			}
 			// The OAuth application sign-in: a browser approval, read-only.
 			let readOnly = false;
-			if (
-				auth === undefined &&
-				coordinates.INFISICAL_SIGN_IN === OAUTH_SIGN_IN
-			) {
+			if (auth === undefined && oauthSelected) {
 				const clientId = coordinates.INFISICAL_OAUTH_CLIENT_ID;
 				const clientSecret = signIn.reveal("INFISICAL_OAUTH_CLIENT_SECRET");
 				if (deps.noBrowser === true || deps.oauthBrowser === undefined)
