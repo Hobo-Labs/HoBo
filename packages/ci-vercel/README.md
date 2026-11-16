@@ -318,8 +318,9 @@ A manual run with `connect: cd` instead starts the `owner-connect` job.
 It signs in to the configured store with the job's GitHub OIDC identity and
 runs `hobo cd up --hand-off`; the owner approves the Vercel device code shown
 in the job summary. That command can create or update CD resources. The
-optional `vercel_team` input names the target team.
-This job does not run on a push, and the normal relay deploy is skipped for
+optional `vercel_team` input names the target team. The job checks out the
+pinned submodule before installing dependencies, so it can run on a fresh
+runner. It does not run on a push, and the normal relay deploy is skipped for
 that handoff.
 
 In production the relay reads its store's coordinates from the committed

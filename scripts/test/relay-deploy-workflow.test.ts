@@ -213,6 +213,7 @@ describe("the relay deploy workflow", () => {
 			/if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.connect == 'cd'/u,
 		);
 		assert.match(owner, / {6}id-token: write\n/u);
+		assert.match(owner, /submodules: recursive/u);
 		assert.match(owner, /persist-credentials: false/u);
 		assert.match(
 			owner,
