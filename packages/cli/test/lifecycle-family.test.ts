@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
@@ -320,5 +321,26 @@ describe("provider junction credentials", () => {
 		expect(seen).toEqual(["VERCEL_TOKEN"]);
 		// The credential never reaches the result.
 		expect(JSON.stringify(up.envelope)).not.toContain("from-the-store");
+	});
+});
+
+describe("a Yard holds nothing external", () => {
+	it("plan, up and up --what-if refuse a Bindle with an unmanaged external", async () => {
+		const fixture = fileURLToPath(
+			new URL("./fixtures/external-bindle/", import.meta.url),
+		);
+		const iac = recordingIac();
+		const cli = familyCli(runtimeWith(iac), fixture);
+		for (const args of [
+			["cd", "plan"],
+			["cd", "up"],
+			["cd", "up", "--what-if"],
+		]) {
+			const result = await run(cli, args);
+			expect(result.exitCode, args.join(" ")).not.toBe(0);
+			expect(result.envelope.code).toBe("HOBO_YARD_EXTERNAL_FORBIDDEN");
+			expect(JSON.stringify(result.envelope)).toContain("junction");
+		}
+		expect(iac.calls).toEqual([]);
 	});
 });

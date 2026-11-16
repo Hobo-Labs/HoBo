@@ -54,8 +54,14 @@ const healthFile = "ci-health.yml";
 const hostingEvidenceFile = "hosting-evidence.yml";
 /** A manually dispatched, scoped Vercel credential observation. */
 const vercelEvidenceFile = "vercel-credential-evidence.yml";
+/**
+ * GitHub-hosted `gh actions-lock --verify` of .github/workflows/actions.lock;
+ * it reads public action repositories only and runs no repository code.
+ */
+const actionsLockFile = "actions-lock.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
+	actionsLockFile,
 	probeFile,
 	healthFile,
 	hostingEvidenceFile,
@@ -341,7 +347,9 @@ function isAlwaysHostedJob(
 	if (runsOn !== HOSTED_RUNS_ON) return false;
 	if (/^  route:$/.test(jobLine))
 		return block.some(
-			(line) => line.trim() === "uses: ./.github/actions/route-runner",
+			(line) =>
+				line.trim() === "uses: ./.github/actions/route-runner" ||
+				line.trim() === "uses: $/.github/actions/route-runner",
 		);
 	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
 	if (/^  ci-health:$/.test(jobLine))
@@ -545,9 +553,9 @@ function isNpmOidcHostedReleaseJob(
 const acceptanceDigest =
 	"ae9f17ce8d8d862722d50c0bd6b66077275edd376c068aaa42112e7ba7e150df";
 const hostingEvidenceDigest =
-	"e7e56b78f1f8d2942d17b704fc662144743bc843661aecdce91b9eda5a6c8e12";
+	"b7a43ad1d6344ca55925ccfcc676dfc62300350190c7429ea399e5a0d433fd8f";
 const vercelEvidenceDigest =
-	"81c4b5bb849f8ea95d57f2c3271a75458351e5937361d50c8c0a4ca7b60057c8";
+	"ff78bed0ce6b56e1945cdddc66d517dfa7b2be9a4404623519f6a29123c4e016";
 
 const TRUNK_EVENTS = new Set([
 	"push",
@@ -584,7 +592,7 @@ function collectPinnedActionRefs(text: string): Map<string, Set<string>> {
 		if (!match) continue;
 		const action = match[1];
 		const sha = match[2];
-		if (!action || !sha || action.startsWith("./")) continue;
+		if (!action || !sha || /^[.$]\//.test(action)) continue;
 		const segments = action.split("/");
 		const repo =
 			segments.length >= 2
@@ -622,7 +630,7 @@ function lintPinnedActionRefs(
 		const action = match[1];
 		const ref = match[2];
 		if (!action || !ref) continue;
-		if (ref.startsWith("./")) continue;
+		if (/^[.$]\//.test(ref)) continue;
 		if (!/^[0-9a-f]{40}$/.test(ref)) {
 			errors.push(
 				`${file}:${index + 1}: ${action} must pin a full commit SHA, not @${ref}`,
@@ -669,12 +677,16 @@ function lintLocalActionsNeedCheckoutFirst(
 				)
 					return true;
 				return (
-					/^\s+- uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
-					/^\s+uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
-					/^\s+- uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+					/^\s+- uses: [.$]\/\.github\/actions\/hobo-checkout\s*$/.test(
 						entry,
 					) ||
-					/^\s+uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(entry)
+					/^\s+uses: [.$]\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+- uses: [.$]\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+						entry,
+					) ||
+					/^\s+uses: [.$]\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+						entry,
+					)
 				);
 			})
 		) {

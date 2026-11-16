@@ -231,7 +231,7 @@ describe("determinism", () => {
 		const yardA = buildYard("azure", "a", (y) => {
 			y.web(containerApps);
 		});
-		const yardB = buildYard("aws", "b", (y) => {
+		const yardB = buildYard("azure", "b", (y) => {
 			y.data(postgres);
 		});
 

@@ -51,12 +51,22 @@ refuses the update if the item changed since it was read. Displayed 1Password
 references point to the item's `password` field.
 
 Configuration (environment, nothing secret): `HOBO_CI_PUBLIC_URL`,
-`HOBO_CI_GITHUB_OWNER`, `HOBO_CI_GITHUB_OWNER_ID`, optional
-`HOBO_CI_SECRET_STORE` (`infisical` | `1password`), and the store's
-coordinates (`INFISICAL_PROJECT_ID` / `INFISICAL_ENVIRONMENT` /
-`INFISICAL_SECRET_PATH`, or `OP_VAULT_ID`). The App is user-owned: the reviewed
-verifier accepts no other owner type, so an organization-owned App would be
-created and then refused.
+`HOBO_CI_GITHUB_OWNER`, `HOBO_CI_GITHUB_OWNER_ID`, `HOBO_CI_GITHUB_OWNER_TYPE`
+(`User` by default, or `Organization`), optional `HOBO_CI_SECRET_STORE`
+(`infisical` | `1password`), and the store's coordinates (`INFISICAL_PROJECT_ID` /
+`INFISICAL_ENVIRONMENT` / `INFISICAL_SECRET_PATH`, or `OP_VAULT_ID`).
+
+**Users or organizations own the App.** The App is created under the owner's
+settings (an organization's when it is one) and verified as that owner's
+(`verifyConvertedGithubApp` with `expectedOwnerId` and `expectedOwnerType`).
+An invalid organization login is refused before setup opens its store or App page.
+How the App is hosted is resolved for the owner (`resolveGithubAppHost`):
+`HOBO_CI_APP_HOST` pins a host. If a pinned host cannot serve the owner's kind,
+`hobo ci up` says so and names the hosts that can, rather than creating an App
+that would then be refused. Unpinned, resolution takes the first host that
+satisfies every criterion. The implemented `manifest` host supports both
+owner kinds. An unknown host or the not-yet-wired `hosted-relay` option is
+refused rather than silently starting the local manifest flow.
 
 ## Architecture rules (AGENTS.md)
 

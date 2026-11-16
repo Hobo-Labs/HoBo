@@ -41,6 +41,7 @@ function fixture(
 	metadata: FixtureObject = app(),
 	live: FixtureObject = app(),
 	config: FixtureObject = hook(),
+	ownerType?: "User" | "Organization",
 ) {
 	const calls: string[] = [];
 	return {
@@ -52,6 +53,7 @@ function fixture(
 				metadata,
 				expectedOrigin: origin,
 				expectedOwnerId: 123,
+				...(ownerType ? { expectedOwnerType: ownerType } : undefined),
 				now: () => 2_000_000,
 				fetch: async (url, init) => {
 					const path = String(url);
@@ -92,7 +94,6 @@ it("verifies the converted owner, signed App identity, reviewed manifest and web
 it("rejects malformed or escalated conversion metadata before network access", async () => {
 	for (const invalid of [
 		{ ...app(), owner: { id: 124, type: "User" } },
-		{ ...app(), owner: { id: 123, type: "Organization" } },
 		{ ...app(), id: 43 },
 		{ ...app(), external_url: "https://attacker.test" },
 		{ ...app(), external_url: `${origin}/?redirect=1` },
@@ -112,7 +113,6 @@ it("rejects changed App identity, permissions, events or webhook configuration",
 	for (const [live, config] of [
 		[{ ...app(), slug: "another-app" }, hook()],
 		[{ ...app(), owner: { id: 124, type: "User" } }, hook()],
-		[{ ...app(), owner: { id: 123, type: "Organization" } }, hook()],
 		[
 			{ ...app(), permissions: { ...app().permissions, members: "write" } },
 			hook(),
@@ -154,4 +154,43 @@ it("fails closed on invalid signing keys and GitHub verification errors", async 
 		}),
 	).rejects.toThrow("GitHub App verification failed");
 	expect(calls).toBe(1);
+});
+
+it("accepts an App owned by an organization, matched by the organization's id", async () => {
+	const org = { ...app(), owner: { id: 123, type: "Organization" } };
+	await expect(
+		fixture(org, org, hook(), "Organization").run(),
+	).resolves.toBeUndefined();
+});
+
+it("retains user-only verification when the caller does not opt into organizations", async () => {
+	const org = { ...app(), owner: { id: 123, type: "Organization" } };
+	const check = fixture(org, org);
+	await expect(check.run()).rejects.toThrow(
+		"does not match reviewed configuration",
+	);
+	expect(check.calls).toEqual([]);
+});
+
+it("refuses an organization-owned App whose id is not the one that asked", async () => {
+	const other = { ...app(), owner: { id: 999, type: "Organization" } };
+	await expect(
+		fixture(other, other, hook(), "Organization").run(),
+	).rejects.toThrow("does not match reviewed configuration");
+});
+
+it("holds the owner type when the caller pins it", async () => {
+	const org = { ...app(), owner: { id: 123, type: "Organization" } };
+	await expect(
+		verifyConvertedGithubApp({
+			appId: 42,
+			pem: privateKey,
+			metadata: org,
+			expectedOrigin: origin,
+			expectedOwnerId: 123,
+			expectedOwnerType: "User",
+			now: () => 2_000_000,
+			fetch: async () => new Response("{}"),
+		}),
+	).rejects.toThrow("does not match reviewed configuration");
 });

@@ -243,7 +243,7 @@ jobs:
             scripts/ci/verify-attestation.mts
             packages/ci/src/fleet-overflow.ts
       - id: route
-        uses: ./.github/actions/route-runner
+        uses: $/.github/actions/route-runner
         with:
           token: ${{ github.token }}
 
@@ -267,7 +267,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         if: >-
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
@@ -335,15 +335,15 @@ jobs:
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 2
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install
         run: |
           set -euo pipefail
@@ -387,7 +387,7 @@ jobs:
           path: /tmp/hobo-ci-job-logs/release-contract-vitest.log
           if-no-files-found: ignore
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -495,7 +495,7 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
 
@@ -523,15 +523,15 @@ jobs:
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install
         run: |
           set -euo pipefail
@@ -543,7 +543,7 @@ jobs:
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -574,7 +574,7 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
 
@@ -627,7 +627,7 @@ jobs:
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
@@ -635,7 +635,7 @@ jobs:
           submodules: "false"
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build the hobo CLI (release Freight through hobo deploy)
         run: >-
@@ -698,13 +698,13 @@ jobs:
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 5
         # Without a token the GHCR pull is never tried, and a runner that does not
@@ -822,15 +822,15 @@ jobs:
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Resolve and validate release version
         env:
@@ -933,7 +933,7 @@ jobs:
             exit 1
           fi
           echo "present=true" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/release-oci-attest
+      - uses: $/.github/actions/release-oci-attest
         if: steps.digest.outputs.present == 'true'
         with:
           digest-list-path: ${{ runner.temp }}/hobo-release-digest/hobo-release-digest.txt
@@ -987,7 +987,7 @@ jobs:
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
@@ -995,7 +995,7 @@ jobs:
           submodules: "false"
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Resolve and validate release version
         env:
@@ -1123,13 +1123,13 @@ jobs:
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       # The gate answered before this job waited for a runner and for the
       # publish slot; another run may have published a newer commit since.
       - name: Is gh-pages still behind this commit?
@@ -1146,7 +1146,7 @@ jobs:
       - if: steps.fresh.outputs.deploy == 'true'
         run: pnpm run pins:fetch ts-autocode
       - if: steps.fresh.outputs.deploy == 'true'
-        uses: ./.github/actions/pnpm-store
+        uses: $/.github/actions/pnpm-store
       - if: steps.fresh.outputs.deploy == 'true'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build hobo-site workspace deps for prebuild
@@ -1225,9 +1225,9 @@ jobs:
           clean: false
           ref: ${{ needs.release-main-train-gate.outputs.release_sha }}
           fetch-depth: 0
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package
@@ -1308,9 +1308,9 @@ jobs:
         with:
           clean: false
           fetch-depth: 1
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package

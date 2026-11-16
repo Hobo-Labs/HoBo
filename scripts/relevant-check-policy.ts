@@ -547,8 +547,8 @@ export function selectRelevantChecks(
 	if (
 		files.some(
 			(file) =>
-				file === "scripts/ci/gitleaks-main-scan.mts" ||
-				file === "scripts/test/gitleaks-main-scan.test.ts" ||
+				file === "scripts/ci/betterleaks-main-scan.mts" ||
+				file === "scripts/test/betterleaks-main-scan.test.ts" ||
 				file === ".github/workflows/hobo-ci.yml",
 		)
 	) {
@@ -558,10 +558,10 @@ export function selectRelevantChecks(
 				"--import",
 				"tsx",
 				"--test",
-				"scripts/test/gitleaks-main-scan.test.ts",
+				"scripts/test/betterleaks-main-scan.test.ts",
 			],
 			reason:
-				"blobless main-gate gitleaks must write an exit file and bound the wait (finding 75)",
+				"blobless main-gate betterleaks must write an exit file and bound the wait (finding 75)",
 		});
 	}
 

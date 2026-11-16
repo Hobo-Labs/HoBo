@@ -7,6 +7,7 @@ import relayYard, {
 	RELAY_CONFIG_SERVICE,
 	RELAY_PLACEMENT,
 	RELAY_PLATFORM,
+	relayJunction,
 } from "../deploy/yard.js";
 import { RELAY_REPAIR_SCHEDULE, RELAY_RESOURCES } from "../src/bindle.js";
 
@@ -35,8 +36,11 @@ interface PlatformConfig {
 // SAFETY: vercel.json is this package's own committed platform configuration.
 const platform = JSON.parse(text("vercel.json")) as PlatformConfig;
 
+// Rows across the relay's junction: the Vercel Yard and every Yard joined to
+// it (a service another vendor runs lives in that vendor's Yard).
+const junctionRows = relayJunction.yards.flatMap((member) => member.bindings);
 const rowsOf = (profile: string) =>
-	relayYard.bindings.filter((row) => row.profile === profile);
+	junctionRows.filter((row) => row.profile === profile);
 
 const campOf = (name: string) => {
 	const found = relayYard.camps.find(
@@ -125,8 +129,27 @@ describe("the relay's Yard", () => {
 		expect(RELAY_CONFIG_SERVICE.secretPath).toBe("/hobo-ci-relay");
 	});
 
+	it("keeps every Yard inside its provider: other vendors' services have their own Yard", () => {
+		expect(
+			relayJunction.yards.map((member) => [member.name, member.providerId]),
+		).toEqual([
+			["hobo-ci-relay", "vercel"],
+			["hobo-ci-relay-config", "infisical"],
+			["hobo-ci-relay-cache-aiven", "aiven"],
+			["hobo-ci-relay-cache-valkey", "valkey"],
+		]);
+		// In the Vercel Yard: Vercel's products, and what Vercel runs for us.
+		for (const row of relayYard.bindings)
+			expect(
+				row.productId === undefined ||
+					row.productId.startsWith("vercel.") ||
+					row.connectivityId === "vercel.marketplace/v1",
+				`${row.productId}`,
+			).toBe(true);
+	});
+
 	it("declares every cache backend, and requires the Marketplace Redis one", () => {
-		const backends = relayYard.bindings
+		const backends = junctionRows
 			.filter((row) =>
 				[
 					"upstash.redis/v1",

@@ -146,6 +146,33 @@ export interface RecordedResource {
 	readonly specHash?: string;
 	/** The last plan that declared it, from `deployment.Planned`. */
 	readonly plan?: ResourcePlan;
+	/** Provider that may own it, when established by a provisioning fact or plan. */
+	readonly providerId?: string;
+}
+
+export interface BlockedProviderMove {
+	readonly resource: string;
+	readonly from?: string;
+	readonly to: string;
+}
+
+/** Refuse a provider move unless no previous effects exist or ownership agrees. */
+export function blockedProviderMove(
+	previous: RecordedResource | undefined,
+	resource: ResourcePlan,
+): BlockedProviderMove | undefined {
+	if (previous === undefined || previous.state === "Destroyed")
+		return undefined;
+	const provider = previous.providerId;
+	if (provider === resource.provider) return undefined;
+	// A legacy hash covers the provider as well as the rest of the declaration.
+	if (provider === undefined && previous.specHash === desiredSpecHash(resource))
+		return undefined;
+	return {
+		resource: resource.name,
+		...(provider !== undefined ? { from: provider } : undefined),
+		to: resource.provider,
+	};
 }
 
 function resourceIdOf(event: EventEnvelope): string | undefined {
@@ -157,6 +184,14 @@ function resourceIdOf(event: EventEnvelope): string | undefined {
 function specHashOf(event: EventEnvelope): string | undefined {
 	return isJsonObject(event.data) && isJsonString(event.data.specHash)
 		? event.data.specHash
+		: undefined;
+}
+
+function providerIdOf(event: EventEnvelope): string | undefined {
+	return isJsonObject(event.data) &&
+		isJsonString(event.data.providerId) &&
+		event.data.providerId !== ""
+		? event.data.providerId
 		: undefined;
 }
 
@@ -203,6 +238,13 @@ export function recordedResources(
 			case CLOUD_EVENTS.ResourceProvisioning: {
 				const targetHash = specHashOf(event);
 				const candidate = plans.get(resourceId);
+				const targetProvider = providerIdOf(event) ?? candidate?.provider;
+				const providerId =
+					previous && previous.state !== "Destroyed"
+						? previous.providerId === targetProvider
+							? previous.providerId
+							: undefined
+						: targetProvider;
 				// A failed in-place update can leave either version at the provider.
 				// Do not guess which plan can safely destroy it.
 				const plan =
@@ -223,6 +265,7 @@ export function recordedResources(
 						? { specHash: previous.specHash }
 						: undefined),
 					...(plan !== undefined ? { plan } : undefined),
+					...(providerId !== undefined ? { providerId } : undefined),
 				});
 				break;
 			}
@@ -238,10 +281,12 @@ export function recordedResources(
 				// plan, without treating every future declaration as unchanged.
 				const specHash =
 					eventHash ?? (plan ? desiredSpecHash(plan) : undefined);
+				const providerId = previous ? previous.providerId : candidate?.provider;
 				states.set(resourceId, {
 					state: "Provisioned",
 					...(specHash !== undefined ? { specHash } : undefined),
 					...(plan !== undefined ? { plan } : undefined),
+					...(providerId !== undefined ? { providerId } : undefined),
 				});
 				break;
 			}

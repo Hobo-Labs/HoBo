@@ -30,11 +30,17 @@
  * holds the relay's secrets.
  *
  * Product ids: `vercel.project/v1` is the provider-vercel catalog's. The others
- * (`vercel.function/v1`, `vercel.queues/v1`, `vercel.schedules/v1`,
- * `upstash.redis/v1`, `turso.database/v1`, `aiven.valkey/v1`,
- * `valkey.self-hosted/v1`, `infisical.secrets/v1`) name offerings this Yard
- * declares and `hobo ci deploy` realizes through its git deployment and its
- * provisioning step; no provider package resolves them yet.
+ * (`vercel.function/v1`, `vercel.queues/v1`, `vercel.schedules/v1`, and the
+ * Marketplace-attached `upstash.redis/v1` and `turso.database/v1`) name
+ * offerings this Yard declares and `hobo ci deploy` realizes through its git
+ * deployment and its provisioning step; no provider package resolves them yet.
+ *
+ * A Yard holds nothing external (docs/design/control-plane.md, "Nothing in a
+ * Yard is external"). The services other vendors run for the relay — the
+ * Infisical config service (`infisical.secrets/v1`), Aiven Valkey
+ * (`aiven.valkey/v1`) and a self-hosted Valkey (`valkey.self-hosted/v1`) — are
+ * in Yards of their own at the end of this file, joined to this one by
+ * `relayJunction`.
  *
  * Like the Bindle, this file is a declaration, not deployed code: nothing in
  * `api/` or `src/` imports it, and the build Vercel runs leaves `deploy/` out.
@@ -42,6 +48,7 @@
  */
 import { camp } from "@hobo/camps";
 import { capability } from "@hobo/core";
+import { junction } from "@hobo/junctions";
 import { project } from "@hobo/provider-vercel";
 import { yard } from "@hobo/yards";
 
@@ -101,7 +108,13 @@ const COMMON_REQUIREMENTS = [
 	PROJECT.profile,
 ];
 
-export default yard("hobo-ci-relay", {
+/**
+ * The relay's own Yard: what Vercel runs. Its products are Vercel's, plus the
+ * caches Vercel provisions and runs on our behalf through its Marketplace
+ * (`vercel.marketplace/v1`). Nothing here is external: a service another
+ * vendor runs has a Yard of its own below, joined by `junction`.
+ */
+const RELAY_YARD = yard("hobo-ci-relay", {
 	provider: "vercel",
 	regions: ["iad1"],
 	properties: {
@@ -183,44 +196,6 @@ export default yard("hobo-ci-relay", {
 			connectivityId: "vercel.oidc/v1",
 			properties: { store: RELAY_CACHE_RESOURCE, access: "private" },
 		},
-		{
-			profile: capability.kv.valkey,
-			productId: "aiven.valkey/v1",
-			connectivityId: "config-service.url/v1",
-			properties: { configServiceEntry: "VALKEY_URL" },
-		},
-		{
-			profile: capability.kv.valkey,
-			productId: "valkey.self-hosted/v1",
-			connectivityId: "config-service.url/v1",
-			properties: { configServiceEntry: "VALKEY_URL" },
-		},
-		// The config service, read with the deployment's own Vercel OIDC token
-		// through Infisical OIDC Auth. WHICH store it is is not declared here:
-		// HoBo routes `secrets.config-service/v1` when the deployment runs
-		// (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
-		// chosen at deploy, provisioned by claim") and commits the store's
-		// coordinates to `deploy/secret-store.binding.json`, which fills the
-		// three inputs. Nothing is pre-provisioned by hand, and nothing is a
-		// Vercel or GitHub secret or variable.
-		{
-			profile: capability.secretRef.runtimeProjection,
-			productId: "infisical.secrets/v1",
-			connectivityId: "infisical.oidc-auth/v1",
-			properties: {
-				capability: RELAY_CONFIG_SERVICE.capability,
-				bindingFile: RELAY_CONFIG_SERVICE.bindingFile,
-				settings: {
-					HOBO_CI_CONFIG_SERVICE: "infisical",
-					INFISICAL_SECRET_PATH: RELAY_CONFIG_SERVICE.secretPath,
-				},
-				inputs: [
-					"INFISICAL_IDENTITY_ID",
-					"INFISICAL_PROJECT_ID",
-					"INFISICAL_SITE_URL",
-				],
-			},
-		},
 	],
 	camps: [
 		// A merge to `main` deploys here. The relay reads Infisical's `prod`
@@ -244,5 +219,85 @@ export default yard("hobo-ci-relay", {
 			envType: "preview",
 			require: COMMON_REQUIREMENTS,
 		}),
+	],
+});
+
+export default RELAY_YARD;
+
+/**
+ * The config service's Yard. Infisical runs the store the relay reads with its
+ * own Vercel OIDC token (Infisical OIDC Auth); it is not Vercel's, so it is
+ * internal to a Yard whose provider is Infisical.
+ */
+// The config service, read with the deployment's own Vercel OIDC token
+// through Infisical OIDC Auth. WHICH store it is is not declared here:
+// HoBo routes `secrets.config-service/v1` when the deployment runs
+// (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
+// chosen at deploy, provisioned by claim") and commits the store's
+// coordinates to `deploy/secret-store.binding.json`, which fills the
+// three inputs. Nothing is pre-provisioned by hand, and nothing is a
+// Vercel or GitHub secret or variable.
+export const relayConfigYard = yard("hobo-ci-relay-config", {
+	provider: "infisical",
+	bindings: [
+		{
+			profile: capability.secretRef.runtimeProjection,
+			productId: "infisical.secrets/v1",
+			connectivityId: "infisical.oidc-auth/v1",
+			properties: {
+				capability: RELAY_CONFIG_SERVICE.capability,
+				bindingFile: RELAY_CONFIG_SERVICE.bindingFile,
+				settings: {
+					HOBO_CI_CONFIG_SERVICE: "infisical",
+					INFISICAL_SECRET_PATH: RELAY_CONFIG_SERVICE.secretPath,
+				},
+				inputs: [
+					"INFISICAL_IDENTITY_ID",
+					"INFISICAL_PROJECT_ID",
+					"INFISICAL_SITE_URL",
+				],
+			},
+		},
+	],
+});
+
+/** The Aiven-run Valkey cache offering, in Aiven's Yard. */
+export const relayAivenCacheYard = yard("hobo-ci-relay-cache-aiven", {
+	provider: "aiven",
+	bindings: [
+		{
+			profile: capability.kv.valkey,
+			productId: "aiven.valkey/v1",
+			connectivityId: "config-service.url/v1",
+			properties: { configServiceEntry: "VALKEY_URL" },
+		},
+	],
+});
+
+/** A self-hosted Valkey cache offering, in its own Yard. */
+export const relaySelfHostedCacheYard = yard("hobo-ci-relay-cache-valkey", {
+	provider: "valkey",
+	bindings: [
+		{
+			profile: capability.kv.valkey,
+			productId: "valkey.self-hosted/v1",
+			connectivityId: "config-service.url/v1",
+			properties: { configServiceEntry: "VALKEY_URL" },
+		},
+	],
+});
+
+/**
+ * The relay's junction: the Vercel Yard joined to every Yard whose service it
+ * uses. `hobo ci deploy` places the relay in the Vercel Yard's Camp and
+ * satisfies a Camp requirement from a joined Yard's rows when the Vercel Yard
+ * has none (the config service, for production).
+ */
+export const relayJunction = junction("hobo-ci-relay", {
+	yards: [
+		RELAY_YARD,
+		relayConfigYard,
+		relayAivenCacheYard,
+		relaySelfHostedCacheYard,
 	],
 });

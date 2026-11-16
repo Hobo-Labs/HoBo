@@ -103,6 +103,12 @@ export interface PlanConfig {
 	binding?: PlanBindingAuthority;
 	/** Trusted, pinned financial evidence. Planning allocates it read-only. */
 	hostingBudget?: HostingPlanningInput;
+	/**
+	 * Providers observed unavailable (a failed health probe, or an apply that
+	 * failed retryably this run). Matching routes around them to the next
+	 * cheapest provider that satisfies the resource; it never waits for them.
+	 */
+	unavailableProviders?: readonly string[];
 }
 
 export interface PlanSuccess {
@@ -167,6 +173,9 @@ export function plan(
 	config: PlanConfig,
 	registry: PlannerRegistry,
 ): PlanResult {
+	const unavailable: ReadonlySet<string> = new Set(
+		config.unavailableProviders ?? [],
+	);
 	let authored: ReturnType<typeof manifestHostingPolicy>;
 	let pinnedPolicy: ReturnType<typeof parseBudgetPolicy> | undefined;
 	try {
@@ -370,6 +379,7 @@ export function plan(
 			matchingRegistry,
 			placementContext,
 			hosting,
+			unavailable,
 		);
 		if (!outcome.ok) {
 			remediations.push(outcome.remediation);
