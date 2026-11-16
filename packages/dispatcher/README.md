@@ -35,6 +35,40 @@ never fall back to list price. `DispatchCostQuote` omits the advisory
 `allocatedEffective` field. V1 source and replay behavior remain untouched; a
 fixed-fixture SHA-256 golden pins the complete v1 decision.
 
+Candidates may instead supply `pricing: pricingUnavailable(reason)` or
+`pricing: developerPricing(scope, scenario)` from `@hobo/pricing`.
+Unavailable pricing is rejected with `PRICING_MODEL_UNAVAILABLE`; supplied
+terms are checked against the candidate provider, tenant, account and product,
+and their model ID and revision accompany the ranked quote and decision fact.
+The checks cover the supplied scenario, not an independently verified IaC
+inventory. The v2 dispatcher ranks estimates; it does **not** apply a budget,
+reserve funds or authorize a provider call. Every v2 success and rejection
+reports `budget: { evaluation: "not-evaluated", reservation: "not-created" }`;
+successful `dispatch.Decided` facts carry the same disclosure. Budgeted hosting still needs the
+broker's trusted whole-request quote, bound, policy decision and durable hold.
+
+`rankIacTargets` ranks whole-target assessments for one tenant, workload,
+action and quote interval. It returns excluded targets and `coverage: "partial"`
+when any cannot be compared or priced. Its budget disclosure says no budget
+was evaluated and no reservation created; use the broker admission authority
+before executing the chosen target. The caller must establish that its common
+workload reference identifies equivalent work across candidates.
+
+`executeRankedIacTargets` accepts that ranking and an execution callback for
+each ranked target. It passes the same request ID and that target's inventory,
+model and quote hashes to every callback, and tries
+the next target only after an explicit denial with no reservation. A replay,
+lost response, malformed receipt or uncertain reservation stops the route.
+The result lists every attempt and its budget disclosure. A contradictory
+denial stops routing. If a matching admission proves a reservation is held but
+the provider cannot return usable outputs, the result remains uncertain and
+reports that hold; it also reports a completed execution when the provider can
+establish one. Callbacks must use
+the request ID with the same durable budget authority so a retry cannot claim
+another target under a different reservation. They must pass the expected
+hashes into admission and check the resulting receipt before any provider
+effect; checking only after the callback returns is too late.
+
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
 `reserve({ expectedSeq, reservationId, providerId, dimension, units, unitCost?,

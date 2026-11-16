@@ -1,0 +1,695 @@
+import {
+	createTargetPricingInventory,
+	targetPricingModel,
+	targetPricingUnavailable,
+} from "@hobo/pricing";
+import { describe, expect, it } from "vitest";
+import {
+	makeScenario,
+	perUnitCharge,
+	usage,
+	workload,
+} from "../../pricing/test/fixtures.js";
+import {
+	executeRankedIacTargets,
+	rankIacTargets,
+} from "../src/iac-target-routing.js";
+
+const digest = `sha256:${"a".repeat(64)}`;
+function candidate(targetId: string, price: string) {
+	const scenario = makeScenario({
+		charges: [perUnitCharge("runtime", "minute", price)],
+		candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+	});
+	const inventory = createTargetPricingInventory({
+		targetId,
+		tenantId: "tenant-a",
+		planDigest: digest,
+		complete: true,
+		evidenceRef: "inventory:1",
+		resources: [
+			{
+				resourceId: "service",
+				providerId: "sandbox",
+				providerAccountRef: "account-a",
+				productId: "sandbox",
+			},
+		],
+	});
+	return {
+		inventory,
+		pricing: targetPricingModel({
+			modelId: `terms-${targetId}`,
+			revision: "1",
+			planDigest: digest,
+			scenario,
+			bindings: [{ resourceId: "service", candidateIndex: 0 }],
+		}),
+		workloadRef: "workload:1",
+	};
+}
+function request(candidates: ReturnType<typeof candidate>[]) {
+	const first = candidates[0];
+	if (
+		first?.pricing.state.case !== "model" ||
+		first.pricing.state.value.scenario === undefined
+	)
+		throw new Error("fixture missing");
+	const { at, horizon, action } = first.pricing.state.value.scenario;
+	return {
+		tenantId: "tenant-a",
+		workloadRef: "workload:1",
+		at,
+		horizon,
+		action,
+		candidates,
+	};
+}
+
+describe("whole-target price ranking", () => {
+	it("ranks complete targets and reports unknown prices and the absence of budget admission", () => {
+		const expensive = candidate("expensive", "1");
+		const cheap = candidate("cheap", "0.25");
+		const unknown = candidate("unknown", "1");
+		unknown.pricing = targetPricingUnavailable("no model");
+		const result = rankIacTargets(request([expensive, cheap, unknown]));
+		expect(result).toMatchObject({
+			coverage: "partial",
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			ranking: [
+				{ targetId: "cheap", incrementalBilled: { decimal: "1" } },
+				{ targetId: "expensive" },
+			],
+			rejected: [{ targetId: "unknown", code: "PRICING_MODEL_UNAVAILABLE" }],
+		});
+	});
+
+	it("excludes different workloads, tenants or quote horizons", () => {
+		const good = candidate("good", "1");
+		const otherWorkload = {
+			...candidate("other-workload", "1"),
+			workloadRef: "workload:2",
+		};
+		const otherTenant = candidate("other-tenant", "1");
+		otherTenant.inventory.tenantId = "tenant-b";
+		const otherHorizon = candidate("other-horizon", "1");
+		if (
+			otherHorizon.pricing.state.case !== "model" ||
+			otherHorizon.pricing.state.value.scenario === undefined
+		)
+			throw new Error("fixture missing");
+		otherHorizon.pricing.state.value.scenario.horizon = "2026-01-10T00:00:00Z";
+		const result = rankIacTargets(
+			request([good, otherWorkload, otherTenant, otherHorizon]),
+		);
+		expect(result.ranking.map((entry) => entry.targetId)).toEqual(["good"]);
+		expect(result.rejected.map((entry) => entry.code)).toEqual([
+			"PRICING_NOT_COMPARABLE",
+			"PRICING_NOT_COMPARABLE",
+			"PRICING_NOT_COMPARABLE",
+		]);
+	});
+
+	it("rejects duplicate target identifiers instead of choosing ambiguously", () => {
+		const result = rankIacTargets(
+			request([candidate("same", "1"), candidate("same", "2")]),
+		);
+		expect(result).toMatchObject({
+			ranking: [],
+			code: "ROUTING_INPUT_INVALID",
+		});
+	});
+});
+
+describe("budget-aware target execution", () => {
+	function decision(
+		targetId: string,
+		status: "admitted" | "denied" | "uncertain" | "replay",
+	) {
+		const base = {
+			requestId: "route-1",
+			targetId,
+			status,
+			code:
+				status === "denied"
+					? "budget.exhausted"
+					: status === "uncertain"
+						? "RESERVATION_OUTCOME_UNKNOWN"
+						: status === "replay"
+							? "EXECUTION_ALREADY_CLAIMED"
+							: "",
+			message: "",
+			budget:
+				status === "denied"
+					? { evaluation: "denied", reservation: "not-created" }
+					: status === "uncertain"
+						? { evaluation: "unavailable", reservation: "unknown" }
+						: { evaluation: "allowed", reservation: "held" },
+		};
+		return status === "admitted" || status === "replay"
+			? { ...base, reservation: { reservationId: "iac:route-1" } }
+			: base;
+	}
+	it("tries the next ranked target only after a definitive refusal without a reservation", async () => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		const calls: string[] = [];
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (id) => {
+						calls.push(`${id}/cheap`);
+						throw { admission: decision("cheap", "denied") };
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (id, expected) => {
+						calls.push(`${id}/expensive`);
+						return {
+							outputs: {},
+							admission: { ...decision("expensive", "admitted"), ...expected },
+						};
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "selected",
+			targetId: "expensive",
+			budget: { evaluation: "allowed", reservation: "held" },
+			attempts: [
+				{ targetId: "cheap", status: "denied" },
+				{ targetId: "expensive", status: "admitted" },
+			],
+		});
+		expect(calls).toEqual(["route-1/cheap", "route-1/expensive"]);
+	});
+
+	it.each([
+		"returned-denial",
+		"uncertain-denial",
+		"receipt-with-reservation",
+		"error-with-reservation",
+	] as const)("does not fall back on an inconsistent %s", async (mode) => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		let next = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						const admission = decision("cheap", "denied");
+						if (mode === "returned-denial") return { outputs: {}, admission };
+						if (mode === "receipt-with-reservation")
+							throw {
+								admission: {
+									...admission,
+									reservation: { reservationId: "iac:route-1" },
+								},
+							};
+						if (mode === "error-with-reservation")
+							throw { admission, reservationId: "iac:route-1" };
+						throw { admission, requiresReconciliation: true };
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (_id, expected) => {
+						next++;
+						return {
+							outputs: {},
+							admission: { ...decision("expensive", "admitted"), ...expected },
+						};
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+		expect(next).toBe(0);
+	});
+	it("preserves a verified budget hold when execution completed but outputs are unavailable", async () => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		let next = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => {
+						throw {
+							code: "OUTPUT_UNREPRESENTABLE",
+							requiresReconciliation: true,
+							executionOutcome: "completed",
+							reservationId: "iac:route-1",
+							admission: { ...decision("cheap", "admitted"), ...expected },
+						};
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (_id, expected) => {
+						next++;
+						return {
+							outputs: {},
+							admission: { ...decision("expensive", "admitted"), ...expected },
+						};
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			code: "OUTPUT_UNREPRESENTABLE",
+			targetId: "cheap",
+			executionOutcome: "completed",
+			reservationId: "iac:route-1",
+			budget: { evaluation: "allowed", reservation: "held" },
+		});
+		expect(next).toBe(0);
+	});
+	it.each([
+		"uncertain",
+		"replay",
+		"lost-error",
+	] as const)("does not try another target after %s", async (mode) => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		let next = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						if (mode === "lost-error") throw new Error("lost response");
+						throw { admission: decision("cheap", mode) };
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (_id, expected) => {
+						next++;
+						return {
+							outputs: {},
+							admission: { ...decision("expensive", "admitted"), ...expected },
+						};
+					},
+				},
+			],
+		});
+		expect(result.status).toBe(mode === "replay" ? "replay" : "uncertain");
+		if (mode === "replay") expect(result.reservationId).toBe("iac:route-1");
+		expect(next).toBe(0);
+	});
+
+	it("does not trust a replay receipt for a different reservation", async () => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						throw {
+							admission: {
+								...decision("cheap", "replay"),
+								reservation: { reservationId: "iac:other" },
+							},
+						};
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+	});
+	it("treats a receipt for another request as uncertain and stops", async () => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		let next = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						throw {
+							admission: { ...decision("cheap", "denied"), requestId: "other" },
+						};
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (_id, expected) => {
+						next++;
+						return {
+							outputs: {},
+							admission: { ...decision("expensive", "admitted"), ...expected },
+						};
+					},
+				},
+			],
+		});
+		expect(result.status).toBe("uncertain");
+		expect(next).toBe(0);
+	});
+
+	it("does not trust a successful receipt for a different reservation", async () => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => ({
+						outputs: {},
+						admission: {
+							...decision("cheap", "admitted"),
+							...expected,
+							reservation: { reservationId: "iac:other" },
+						},
+					}),
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+	});
+
+	it.each([
+		null,
+		0,
+		"invalid",
+		[],
+	])("stops safely on malformed admission %j", async (bad) => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						throw { admission: bad };
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+	});
+
+	it("treats throwing receipt accessors as uncertain", async () => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		const admission = Object.defineProperty({}, "requestId", {
+			get() {
+				throw new Error("unreadable");
+			},
+		});
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						throw { admission };
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+	});
+
+	it("returns the validated receipt, not a mutable provider-owned object", async () => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		let providerReceipt: ReturnType<typeof decision> | undefined;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => {
+						providerReceipt = { ...decision("cheap", "admitted"), ...expected };
+						return { outputs: {}, admission: providerReceipt };
+					},
+				},
+			],
+		});
+		expect(result.status).toBe("selected");
+		if (providerReceipt === undefined)
+			throw new Error("provider was not called");
+		providerReceipt.budget.reservation = "not-created";
+		expect(result.admission?.budget?.reservation).toBe("held");
+	});
+
+	it("does not invoke getters in provider outputs", async () => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		let calls = 0;
+		const outputs = Object.defineProperty({}, "output", {
+			enumerable: true,
+			get() {
+				calls++;
+				return "value";
+			},
+		});
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => ({
+						outputs,
+						admission: { ...decision("cheap", "admitted"), ...expected },
+					}),
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "allowed", reservation: "held" },
+		});
+		expect(calls).toBe(0);
+	});
+
+	it.each([
+		null,
+		1,
+		["value"],
+		{ output: 1 },
+	])("retains the hold when provider outputs are malformed: %j", async (bad) => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => ({
+						// SAFETY: deliberately violate the provider contract to test the boundary parser.
+						outputs: bad as Record<string, string>,
+						admission: { ...decision("cheap", "admitted"), ...expected },
+					}),
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			reservationId: "iac:route-1",
+			budget: { evaluation: "allowed", reservation: "held" },
+		});
+	});
+
+	it("reports partial coverage when a ranked quote changes before admission", async () => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						throw {
+							admission: {
+								...decision("cheap", "denied"),
+								code: "ROUTING_QUOTE_CHANGED",
+							},
+						};
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (_id, expected) => ({
+						outputs: {},
+						admission: { ...decision("expensive", "admitted"), ...expected },
+					}),
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "selected",
+			targetId: "expensive",
+			coverage: "partial",
+		});
+	});
+
+	it("matches the bounded routing oracle for all three-target outcome combinations", async () => {
+		const states = ["denied", "admitted", "uncertain", "replay"] as const;
+		const ids = ["a", "b", "c"] as const;
+		const ranking = rankIacTargets(
+			request(ids.map((id) => candidate(id, "1"))),
+		);
+		for (const a of states)
+			for (const b of states)
+				for (const c of states) {
+					const outcomes = [a, b, c] as const;
+					const calls: string[] = [];
+					const result = await executeRankedIacTargets({
+						requestId: "route-1",
+						ranking,
+						candidates: ids.map((targetId, index) => ({
+							targetId,
+							run: async (_id, expected) => {
+								calls.push(targetId);
+								const state = outcomes[index];
+								if (state === undefined)
+									throw new Error("missing oracle state");
+								const receipt = { ...decision(targetId, state), ...expected };
+								if (state === "admitted")
+									return { outputs: {}, admission: receipt };
+								throw { admission: receipt };
+							},
+						})),
+					});
+					const firstFinal = outcomes.findIndex((state) => state !== "denied");
+					const expectedCalls = firstFinal < 0 ? ids.length : firstFinal + 1;
+					const expectedStatus =
+						firstFinal < 0
+							? "denied"
+							: outcomes[firstFinal] === "admitted"
+								? "selected"
+								: outcomes[firstFinal];
+					expect(result.status, `${a}/${b}/${c}`).toBe(expectedStatus);
+					expect(calls, `${a}/${b}/${c}`).toEqual(ids.slice(0, expectedCalls));
+					expect(result.attempts).toHaveLength(expectedCalls);
+				}
+	});
+
+	it("stops at every terminal position within the 256-target limit", async () => {
+		const seed = rankIacTargets(request([candidate("seed", "1")]));
+		const first = seed.ranking[0];
+		if (first === undefined) throw new Error("seed ranking missing");
+		const ranking = {
+			...seed,
+			ranking: Array.from({ length: 256 }, (_, index) => ({
+				...first,
+				targetId: `target-${String(index).padStart(3, "0")}`,
+				rank: index + 1,
+			})),
+		};
+		for (const terminal of ["admitted", "uncertain", "replay"] as const) {
+			for (let stop = 0; stop < ranking.ranking.length; stop++) {
+				let calls = 0;
+				const result = await executeRankedIacTargets({
+					requestId: "route-1",
+					ranking,
+					candidates: ranking.ranking.map((entry, index) => ({
+						targetId: entry.targetId,
+						run: async (_id, expected) => {
+							calls++;
+							if (index < stop)
+								throw { admission: decision(entry.targetId, "denied") };
+							if (index > stop)
+								throw new Error("routing continued after a terminal outcome");
+							const receipt = {
+								...decision(entry.targetId, terminal),
+								...expected,
+							};
+							if (terminal === "admitted")
+								return { outputs: {}, admission: receipt };
+							throw { admission: receipt };
+						},
+					})),
+				});
+				expect(result.status, `${terminal}/${stop}`).toBe(
+					terminal === "admitted" ? "selected" : terminal,
+				);
+				expect(calls, `${terminal}/${stop}`).toBe(stop + 1);
+			}
+		}
+		const denied = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: ranking.ranking.map((entry) => ({
+				targetId: entry.targetId,
+				run: async () => {
+					throw { admission: decision(entry.targetId, "denied") };
+				},
+			})),
+		});
+		expect(denied).toMatchObject({
+			status: "denied",
+			code: "NO_ADMISSIBLE_TARGET",
+			budget: { evaluation: "denied", reservation: "not-created" },
+		});
+		expect(denied.attempts).toHaveLength(256);
+		const oversizedRanking = {
+			...ranking,
+			ranking: [
+				...ranking.ranking,
+				{ ...first, targetId: "target-overflow", rank: 257 },
+			],
+		};
+		let extraCalls = 0;
+		const oversized = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking: oversizedRanking,
+			candidates: oversizedRanking.ranking.map((entry) => ({
+				targetId: entry.targetId,
+				run: async () => {
+					extraCalls++;
+					throw new Error("must not run");
+				},
+			})),
+		});
+		expect(oversized).toMatchObject({
+			status: "denied",
+			code: "ROUTING_INPUT_INVALID",
+		});
+		expect(extraCalls).toBe(0);
+	}, 20_000);
+});
