@@ -1,5 +1,9 @@
 import type { CommandRunInput, PrepareInput, PrepareOutcome } from "@hobo/cli";
-import { OWNER_CREDENTIAL_LINE_PREFIX } from "@hobo/hobo-ci";
+import {
+	OWNER_CREDENTIAL_LINE_PREFIX,
+	type SecretStoreOpening,
+} from "@hobo/hobo-ci";
+import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -13,8 +17,9 @@ import {
 // Bitwarden), and a handed-off `hobo cd up` on a box they cannot reach does
 // what that store allows: it asks for the choice when none was made, signs in
 // to 1Password through the owner's Connect server with a token the egress
-// proxy injects (the run never holds it), and sends Bitwarden, whose client
-// must hold its decryption key, to the owner's own terminal.
+// proxy injects (the run never holds it), and uses Bitwarden Secrets
+// Manager through its API with the access token the environment provides,
+// moved into the run's vault: no owner credential, no terminal.
 
 const LOOPBACK = /\b(127\.0\.0\.1|localhost)\b/u;
 const CONNECT = "https://connect.owner.example";
@@ -218,17 +223,66 @@ describe("EVAL store choice: 1Password through the owner's Connect server", () =
 	});
 });
 
-describe("EVAL store choice: Bitwarden must be signed in at the owner's terminal", () => {
-	it("refuses a handed-off run with the terminal path, offering no credential it cannot use", async () => {
+describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any box", () => {
+	const ids = {
+		BWS_ORGANIZATION_ID: "00000000-0000-4000-8000-000000000001",
+		BWS_PROJECT_ID: "00000000-0000-4000-8000-000000000002",
+	};
+
+	it("signs in with the environment's access token from the vault and connects Vercel, asking the owner for no credential", async () => {
+		const shown: string[] = [];
+		const port = createMemorySecretsPort({ id: "memory" });
+		let signedInWith: string | undefined;
+		let opened: string | undefined;
+		const outcome = await prepareVercelConnection(
+			handOff((line) => {
+				shown.push(line);
+			}),
+			{
+				// No store chosen: the environment provides Bitwarden's sign-in.
+				env: { ...ids, BWS_ACCESS_TOKEN: "0.machine.secret:key" },
+				locator: { read: async () => ({}), write: async () => undefined },
+				openStore: async (
+					id,
+					_coordinates,
+					signIn,
+				): Promise<SecretStoreOpening> => {
+					opened = id;
+					signedInWith = signIn.reveal("BWS_ACCESS_TOKEN");
+					return {
+						ok: true,
+						store: {
+							id: "bitwarden",
+							port,
+							reference: (name) => `bws://project/${name}`,
+						},
+					};
+				},
+				fetch: vercelOnly(),
+				sleep: async () => undefined,
+				handOffTimeoutMs: 200,
+				startPage: noPage,
+			},
+		);
+		if (outcome.kind !== "ready")
+			throw new Error(`refused: ${JSON.stringify(outcome)}`);
+		expect(opened).toBe("bitwarden");
+		expect(signedInWith).toBe("0.machine.secret:key");
+		expect((await port.access("HOBO_CD_VERCEL_TOKEN")).status).toBe("ok");
+		const all = shown.join("\n");
+		expect(
+			shown.some((l) => l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `)),
+		).toBe(false);
+		expect(all).not.toMatch(/terminal/u);
+		expect(all).not.toContain("0.machine.secret:key");
+	});
+
+	it("without a token says how the environment provides one, never the owner's terminal", async () => {
 		const shown: string[] = [];
 		const outcome = await prepareVercelConnection(
 			handOff((l) => shown.push(l)),
 			{
-				env: {
-					HOBO_SECRET_STORE: "bitwarden",
-					BWS_ORGANIZATION_ID: "00000000-0000-4000-8000-000000000001",
-					BWS_PROJECT_ID: "00000000-0000-4000-8000-000000000002",
-				},
+				env: { ...ids, HOBO_SECRET_STORE: "bitwarden" },
 				locator: { read: async () => ({}), write: async () => undefined },
 				sleep: async () => undefined,
 				handOffTimeoutMs: 200,
@@ -239,9 +293,33 @@ describe("EVAL store choice: Bitwarden must be signed in at the owner's terminal
 			kind: "refused",
 			result: { code: "HOBO_CD_STORE_NEEDS_SIGN_IN" },
 		});
-		expect(shown.some((l) => l.startsWith(OWNER_CREDENTIAL_LINE_PREFIX))).toBe(
-			false,
-		);
-		expect(text(shown, outcome)).toMatch(/terminal/u);
+		const all = text(shown, outcome);
+		expect(all).toMatch(/BWS_ACCESS_TOKEN in the environment's settings/u);
+		expect(all).not.toMatch(/terminal/u);
 	});
 });
+
+/** Vercel's device grant, approved at once. */
+function vercelOnly(): typeof fetch {
+	return async (input) => {
+		const url = String(input);
+		if (url === VERCEL_DEVICE_AUTHORIZATION_URL)
+			return Response.json({
+				device_code: "dc",
+				user_code: "AAAA-BBBB",
+				verification_uri: "https://vercel.com/device",
+				verification_uri_complete:
+					"https://vercel.com/device?user_code=AAAA-BBBB",
+				expires_in: 600,
+				interval: 5,
+			});
+		if (url === VERCEL_DEVICE_TOKEN_URL)
+			return Response.json({ access_token: "vercel-token" });
+		if (url.startsWith("https://api.vercel.com/v2/teams"))
+			return Response.json({
+				teams: [{ id: "team_abc", slug: "acme" }],
+				pagination: { next: null },
+			});
+		return new Response("{}", { status: 404 });
+	};
+}

@@ -9,6 +9,7 @@ import {
 } from "@hobo/connect-ui";
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
+	adoptStoreSignIn,
 	awaitHandOffStore,
 	canReachOwner,
 	EGRESS_PROXY_SIGN_IN,
@@ -28,6 +29,7 @@ import {
 	storeIdOf,
 	storeSignInGuidance,
 	withoutSecretEnv,
+	withoutStoreSignIn,
 	workloadOidcOf,
 } from "@hobo/hobo-ci";
 
@@ -230,7 +232,16 @@ async function prepareVercelWithVault(
 	deps: PrepareVercelDeps & { readonly vault: TrustedVault },
 ): Promise<PrepareOutcome> {
 	const env = deps.env ?? process.env;
-	const notice = ignoredSecretEnvNotice(env);
+	// The environment's own store sign-in (a Bitwarden Secrets Manager access
+	// token) moves into this run's vault and leaves the environment; with it
+	// the store is Bitwarden unless the owner chose another.
+	const storeSignIn = adoptStoreSignIn(
+		deps.env === undefined ? process.env : { ...deps.env },
+		deps.vault,
+	);
+	const notice = ignoredSecretEnvNotice(
+		storeSignIn ? withoutStoreSignIn(env) : env,
+	);
 	if (notice !== undefined) input.run.emitProgress(notice);
 	const plainEnv = withoutSecretEnv(env);
 	if (env.HOBO_SECRET_STORE) {
@@ -255,6 +266,9 @@ async function prepareVercelWithVault(
 				? { defaultInfisicalSignIn: EGRESS_PROXY_SIGN_IN }
 				: undefined),
 			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
+			// The environment provided the store's sign-in: Bitwarden, unless
+			// the owner chose another store.
+			...(storeSignIn ? { defaultStore: "bitwarden" as const } : undefined),
 			// An OAuth sign-in approves in this machine's browser: a terminal
 			// run only, never a handed-off one.
 			noBrowser: input.handOff === true || input.whatIf,
@@ -271,7 +285,7 @@ async function prepareVercelWithVault(
 			return refused(
 				"HOBO_CD_STORE_CHOICE",
 				"Choose your secret store first: Infisical, 1Password or Bitwarden.",
-				storeChoiceGuidance("cd"),
+				storeChoiceGuidance(),
 			);
 		// The owner is needed only if the store does not answer yet: a silent
 		// run cannot ask, so it refuses before waiting.

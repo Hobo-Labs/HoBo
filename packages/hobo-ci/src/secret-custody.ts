@@ -152,6 +152,43 @@ export function browserEnvironment(env: Env): PlainEnv {
 	return kept;
 }
 
+/**
+ * The one sign-in a run takes from its environment: the store's own, which the
+ * environment's owner provides for the agent (a Bitwarden Secrets Manager
+ * machine account's access token). It is moved into the run's trusted vault
+ * and removed from this process's environment, so no child process inherits
+ * it; every other credential then comes from the store.
+ */
+export const STORE_SIGN_IN_ENV = [
+	"BWS_ACCESS_TOKEN",
+	"BITWARDEN_ACCESS_TOKEN",
+] as const;
+
+/** The environment without the store sign-in names (adopted, not ignored). */
+export function withoutStoreSignIn(env: Env): Env {
+	const adopted = new Set<string>(STORE_SIGN_IN_ENV);
+	return Object.fromEntries(
+		Object.entries(env).filter(([name]) => !adopted.has(name)),
+	);
+}
+
+/** Move the environment's store sign-in into `vault`; true when there was one. */
+export function adoptStoreSignIn(
+	env: Record<string, string | undefined>,
+	vault: Pick<TrustedVault, "put">,
+): boolean {
+	let adopted = false;
+	for (const name of STORE_SIGN_IN_ENV) {
+		const value = env[name];
+		if (value !== undefined && value !== "" && !adopted) {
+			vault.put("BWS_ACCESS_TOKEN", value);
+			adopted = true;
+		}
+		delete env[name];
+	}
+	return adopted;
+}
+
 /** One line saying which secrets were ignored, or nothing. */
 export function ignoredSecretEnvNotice(env: Env): string | undefined {
 	const names = secretEnvNames(env).filter(

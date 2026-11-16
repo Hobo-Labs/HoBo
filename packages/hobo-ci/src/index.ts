@@ -100,12 +100,15 @@ export {
 	tunnelCommand,
 } from "./redirect-receiver.js";
 export {
+	adoptStoreSignIn,
 	ignoredSecretEnvNotice,
 	isSecretEnv,
 	SECRET_ENV_NAMES,
+	STORE_SIGN_IN_ENV,
 	scopeRunVault,
 	secretEnvNames,
 	withoutSecretEnv,
+	withoutStoreSignIn,
 } from "./secret-custody.js";
 export {
 	BITWARDEN_SERVERS,

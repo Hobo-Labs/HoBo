@@ -87,3 +87,19 @@ describe("parsed settings", () => {
 		);
 	});
 });
+
+describe("the environment's store sign-in", () => {
+	it("moves Bitwarden's access token into the vault and out of the environment", async () => {
+		const { adoptStoreSignIn } = await import("../src/index.js");
+		const env: NodeJS.ProcessEnv = {
+			BWS_ACCESS_TOKEN: "0.id.secret:key",
+			BITWARDEN_ACCESS_TOKEN: "0.id.secret:key",
+			PATH: "/usr/bin",
+		};
+		const vault = createTrustedVault();
+		expect(adoptStoreSignIn(env, vault)).toBe(true);
+		expect(vault.reveal("BWS_ACCESS_TOKEN")).toBe("0.id.secret:key");
+		expect(env).toEqual({ PATH: "/usr/bin" });
+		expect(adoptStoreSignIn({}, createTrustedVault())).toBe(false);
+	});
+});

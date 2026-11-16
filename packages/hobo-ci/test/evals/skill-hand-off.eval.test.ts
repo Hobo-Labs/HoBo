@@ -55,7 +55,9 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		for (const store of ["Infisical", "1Password", "Bitwarden"])
 			expect(step).toContain(`**${store}**`);
 		expect(step).toMatch(/OP_CONNECT_HOST/u);
-		expect(step).toMatch(/own terminal/u);
+		// Bitwarden Secrets Manager through its API, never the owner's terminal.
+		expect(step).toMatch(/Never send the owner to a\s+terminal for it/u);
+		expect(step).toMatch(/never ask the owner to create identities or tokens/u);
 	});
 
 	it("routes the credential line: steps and guide first, then the credential form, then wait", () => {

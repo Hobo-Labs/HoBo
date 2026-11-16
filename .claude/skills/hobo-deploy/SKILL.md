@@ -204,8 +204,12 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
    `INFISICAL_PROJECT_ID`; 1Password: `OP_VAULT_ID`, and for a remote box
    `OP_CONNECT_HOST`, their Connect server; Bitwarden: `BWS_ORGANIZATION_ID`,
    `BWS_PROJECT_ID`), and run again with `HOBO_SECRET_STORE` and those ids
-   set (ids are not secrets). Bitwarden decrypts in its client, so from a
-   remote box tell the owner plainly it needs their own terminal.
+   set (ids are not secrets). Bitwarden Secrets Manager is used through its
+   API from any box: the run takes the access token the environment provides
+   (`BWS_ACCESS_TOKEN`) into its trusted vault, and when that token is
+   present it is the store without asking. Never send the owner to a
+   terminal for it, and never ask the owner to create identities or tokens
+   by hand when the store's API can do it.
 3. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is
    waiting for the owner's store sign-in. In **one** message, give the owner
    the steps from that line and the guide link exactly as printed, and ask

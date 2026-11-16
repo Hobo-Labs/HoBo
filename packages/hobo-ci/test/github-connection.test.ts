@@ -994,8 +994,10 @@ describe("prepareGithubConnection", () => {
 			steps: [{ outcome: "would-create" }],
 		});
 		expect(JSON.stringify(outcome)).toMatch(/would sign in to infisical/);
+		// INFISICAL_TOKEN is ignored; the Bitwarden access token is the store's
+		// own sign-in, adopted into the vault, so it is not reported as ignored.
 		expect(input.progress.join("\n")).toMatch(
-			/Setup ignored these known secret environment variables: BWS_ACCESS_TOKEN, INFISICAL_TOKEN/,
+			/Setup ignored these known secret environment variables: INFISICAL_TOKEN\./,
 		);
 	});
 

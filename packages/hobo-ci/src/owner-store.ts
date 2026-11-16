@@ -66,12 +66,12 @@ export const OWNER_STORE_CHOICE_LINE_PREFIX = "HOBO_OWNER_STORE_CHOICE";
  * The stores the owner can choose for a handed-off run, each with what it
  * needs. Names, settings and places only.
  */
-export function storeChoiceGuidance(verb: "ci" | "cd"): readonly string[] {
+export function storeChoiceGuidance(): readonly string[] {
 	return [
 		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
 		`infisical: INFISICAL_PROJECT_ID (and INFISICAL_ENVIRONMENT, default prod). From a remote box the owner gives a Token Auth token in the session's credential form for app.infisical.com (guide: ${INFISICAL_TOKEN_AUTH_DOCS}).`,
 		`1password: OP_VAULT_ID and, from a remote box, OP_CONNECT_HOST, the https origin of the owner's 1Password Connect server; the owner gives its access token in the session's credential form for that host. At their own terminal, OP_ACCOUNT unlocks with the 1Password desktop app instead.`,
-		`bitwarden: BWS_ORGANIZATION_ID and BWS_PROJECT_ID (BWS_SERVER us or eu). Bitwarden Secrets Manager decrypts in the client, so its access token must be in the run: the owner runs hobo ${verb} up in their own terminal and types it on the setup page.`,
+		`bitwarden: BWS_ORGANIZATION_ID and BWS_PROJECT_ID (BWS_SERVER us or eu). The run signs in with the Bitwarden Secrets Manager access token the environment provides (BWS_ACCESS_TOKEN), moved into its trusted vault and out of the environment; nothing is typed.`,
 	];
 }
 
@@ -87,6 +87,10 @@ export function storeSignInGuidance(
 		return [
 			`Remote agent (no page): set OP_CONNECT_HOST to your 1Password Connect server's https origin (guide: https://www.1password.dev/connect/), issue it a token with access to the vault, and give the token only in the agent session's credential form for that host; the run holds a placeholder the proxy replaces.`,
 			`Your own machine: run hobo ${verb} up in a terminal; the 1Password desktop app unlocks the vault (OP_ACCOUNT).`,
+		];
+	if (store === "bitwarden")
+		return [
+			`Give this environment the Bitwarden Secrets Manager access token of a machine account with access to the project, as BWS_ACCESS_TOKEN in the environment's settings (never in chat); the run moves it into its trusted vault and signs in through Bitwarden's API. If Bitwarden refuses it (invalid_client), the token was revoked or expired: issue a new one for the machine account.`,
 		];
 	if (store !== "infisical")
 		return [
@@ -176,6 +180,11 @@ export interface OwnerStoreDeps extends SecretStoreDeps {
 	readonly env?: Env;
 	/** A fallback only when neither the environment nor locator chose a sign-in. */
 	readonly defaultInfisicalSignIn?: typeof EGRESS_PROXY_SIGN_IN;
+	/**
+	 * The store, only when neither the environment nor the locator chose one:
+	 * the environment provides its sign-in (a Bitwarden access token).
+	 */
+	readonly defaultStore?: SecretStoreId;
 	/** Where the locator is committed; the working directory by default. */
 	readonly cwd?: string;
 	readonly locator?: SettingsStore;
@@ -253,7 +262,14 @@ export async function ownerStore(
 		deps.defaultInfisicalSignIn !== undefined
 			? { ...suppliedEnv, INFISICAL_SIGN_IN: deps.defaultInfisicalSignIn }
 			: suppliedEnv;
-	const choice = resolveSettings([STORE_CHOICE], env, saved);
+	const ownerChose = Boolean(env.HOBO_SECRET_STORE || saved.HOBO_SECRET_STORE);
+	const choice = resolveSettings(
+		[STORE_CHOICE],
+		!ownerChose && deps.defaultStore !== undefined
+			? { ...env, HOBO_SECRET_STORE: deps.defaultStore }
+			: env,
+		saved,
+	);
 	const id = storeIdOf(choice.values.HOBO_SECRET_STORE);
 	// CI's credentials are the relay's own (the GitHub App it runs): they
 	// live in the relay's folder, which its deploy workflow writes, so an
@@ -313,7 +329,7 @@ export async function ownerStore(
 
 	return {
 		id,
-		chosen: Boolean(env.HOBO_SECRET_STORE || saved.HOBO_SECRET_STORE),
+		chosen: ownerChose || deps.defaultStore !== undefined,
 		missing: [...choice.missing, ...missingSide],
 		canAwaitEgressCredential:
 			(proxySignIn || connectHost !== undefined) &&

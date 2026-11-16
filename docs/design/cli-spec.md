@@ -229,9 +229,11 @@ environment variables.
   1Password through the owner's 1Password Connect server
   (`OP_CONNECT_HOST`; its access token is a bearer the proxy injects:
   `createOnePasswordConnectClient` over the same `1password` SecretsPort).
-  Bitwarden Secrets Manager decrypts in its client with key material in its
-  access token, so it signs in only at the owner's own terminal. The
-  post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
+  Bitwarden Secrets Manager is used through its API from any box: the
+  access token the environment provides (`BWS_ACCESS_TOKEN`) is the one
+  sign-in a run takes from its environment, moved into its trusted vault
+  and out of the process environment (`adoptStoreSignIn`), and with it the
+  store is Bitwarden unless the owner chose another. The post-back wait (`HOBO_OWNER_CREDENTIAL host=<host>`) names the store's own
   host.
 - **A provider's redirect to a remote run** (`hobo ci app create
   --hand-off`; GitHub's App manifest code). The run listens on 127.0.0.1
