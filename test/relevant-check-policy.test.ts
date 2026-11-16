@@ -846,27 +846,29 @@ test("unrelated changes do not select the anti-slop drift test", () => {
 	}
 });
 
-const isGitleaksMainScanTest = (check: {
+const isBetterleaksMainScanTest = (check: {
 	command: string;
 	args: readonly string[];
 }) =>
 	check.command === "node" &&
 	check.args.join(" ") ===
-		"--import tsx --test scripts/test/gitleaks-main-scan.test.ts";
+		"--import tsx --test scripts/test/betterleaks-main-scan.test.ts";
 
-test("a main-gate gitleaks hang-contract edit selects its regression test", () => {
+test("a main-gate betterleaks hang-contract edit selects its regression test", () => {
 	for (const file of [
-		"scripts/ci/gitleaks-main-scan.mts",
-		"scripts/test/gitleaks-main-scan.test.ts",
+		"scripts/ci/betterleaks-main-scan.mts",
+		"scripts/test/betterleaks-main-scan.test.ts",
 		".github/workflows/hobo-ci.yml",
 	]) {
-		assert.ok(plan([file]).checks.some(isGitleaksMainScanTest), file);
+		assert.ok(plan([file]).checks.some(isBetterleaksMainScanTest), file);
 	}
 });
 
-test("unrelated changes do not select the gitleaks hang-contract test", () => {
+test("unrelated changes do not select the betterleaks hang-contract test", () => {
 	assert.ok(
-		!plan(["packages/core/src/index.ts"]).checks.some(isGitleaksMainScanTest),
+		!plan(["packages/core/src/index.ts"]).checks.some(
+			isBetterleaksMainScanTest,
+		),
 	);
 });
 

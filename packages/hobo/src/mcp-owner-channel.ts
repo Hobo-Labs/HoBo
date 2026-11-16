@@ -50,18 +50,21 @@ export function createMcpOwnerChannel(
 	const links = new Map<string, { url: string; message: string }>();
 	// The link prompts shown, by link: completed when the job behind one ends.
 	const prompted = new Map<string, string>();
-	let opened: { url: string; message: string } | undefined;
+	// Each capture's link, by its name: shown before that capture's form.
+	const opened = new Map<string, { url: string; message: string }>();
 	return {
-		// The run names its link, then asks for what it gives back: the two
-		// travel together, so the owner gets the link before the form.
-		async openUrl(url, message) {
-			opened = { url, message };
+		// Key the link by its capture: concurrent runs may interleave here.
+		async openUrl(url, message, captureName) {
+			opened.set(captureName, { url, message });
 		},
 		async captureSecret({ name }) {
-			if (opened !== undefined) links.set(name, opened);
-			opened = undefined;
+			const link = opened.get(name);
+			opened.delete(name);
+			if (link !== undefined) links.set(name, link);
+			else links.delete(name);
 			const value = held.get(name);
 			held.delete(name);
+			if (value !== undefined) links.delete(name);
 			return value;
 		},
 		holds: (name) => held.has(name),

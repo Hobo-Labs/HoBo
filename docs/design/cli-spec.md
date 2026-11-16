@@ -349,11 +349,14 @@ environment variables.
   capture (`target: handoff`), never chat or the session's credential form:
   `HOBO_OWNER_SIGN_IN url= capture=` (open a link, then hand back what it
   shows: Infisical's copied session; GitHub's App code from the static
-  hand-off page, whose state nonce lives in the owner's HoBo settings) and
-  `HOBO_OWNER_CAPTURE name= guide=` (one value each: a self-hosted
+  hand-off page, whose state nonce lives in the owner's HoBo settings). A
+  link is associated with its named capture, so concurrent hand-offs do not
+  show one provider's link for another provider's form; consuming the value
+  clears that link. `HOBO_OWNER_CAPTURE name= guide=` covers
+  one value each: a self-hosted
   Bitwarden API key; a remote 1Password sign-in, which `op account add`
   reads from `OP_SECRET_KEY` and standard input in a throwaway
-  `OP_CONFIG_DIR`; a CI setting). Several captures are taken only once all
+  `OP_CONFIG_DIR`; a CI setting. Several captures are taken only once all
   have arrived. On a remote box whose host shows no MCP Apps,
   `capture_secret` asks in the host's own elicitation form (one field; the
   value goes host to server, never to the model); a host with neither is

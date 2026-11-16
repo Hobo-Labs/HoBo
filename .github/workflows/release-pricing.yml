@@ -51,7 +51,7 @@ jobs:
             .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
-        uses: ./.github/actions/route-runner
+        uses: $/.github/actions/route-runner
         with:
           token: ${{ github.token }}
 
@@ -65,10 +65,10 @@ jobs:
         with:
           submodules: recursive
           clean: false
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: npm scope map contract
         run: pnpm exec vitest run scripts/test/npm-publish-scope.test.ts
@@ -83,13 +83,13 @@ jobs:
         with:
           submodules: recursive
           clean: false
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -97,7 +97,7 @@ jobs:
       - run: pnpm exec turbo run build test --filter=@hobo/pricing --concurrency=1
       - name: Save Turbo cache
         if: always()
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
 
@@ -110,10 +110,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           clean: false
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - run: pnpm exec turbo run build --filter=@hobo/pricing --concurrency=1
       - name: npm pack dry-run (scoped staging)
@@ -141,10 +141,10 @@ jobs:
         with:
           submodules: recursive
           clean: false
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - run: pnpm exec turbo run build --filter=@hobo/pricing --concurrency=1
       - name: npm publish with provenance (requires NPM_TOKEN)

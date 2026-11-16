@@ -1,3 +1,7 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import { getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -38,10 +42,13 @@ describe("SPEC process egress: every fetch in the process honours the proxy", ()
 	it("opens the CA bundle only when a request needs it: a bad path fails that request, not the process", async () => {
 		// Derived from the OpenSesame bin test: a run configured with a CA it
 		// never uses must still start.
+		const absent = path.join(
+			mkdtempSync(path.join(tmpdir(), "hobo-egress-")),
+			"absent-ca.pem",
+		);
 		expect(() =>
-			applyEgressToProcess({ NODE_EXTRA_CA_CERTS: "/nonexistent/run-ca.pem" }),
+			applyEgressToProcess({ NODE_EXTRA_CA_CERTS: absent }),
 		).not.toThrow();
 		await expect(fetch("https://example.invalid/")).rejects.toThrow();
 	});
 });
-

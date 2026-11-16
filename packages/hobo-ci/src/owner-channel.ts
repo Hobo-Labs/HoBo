@@ -8,8 +8,8 @@ import type { TrustedVault } from "@hobo/core";
  * HoBo MCP App's secret capture, for one).
  */
 export interface OwnerChannel {
-	/** Show the owner a link to open on their own device, and why. */
-	openUrl(url: string, message: string): Promise<void>;
+	/** Show the owner a link for the named capture, and why. */
+	openUrl(url: string, message: string, captureName: string): Promise<void>;
 	/** Ask for a secret; `undefined` when the owner declined or did not answer. */
 	captureSecret(request: {
 		readonly name: string;

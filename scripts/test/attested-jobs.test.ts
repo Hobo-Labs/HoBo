@@ -190,7 +190,7 @@ describe("skipping a covered job in the workflows", () => {
 				text.indexOf("\n  route:\n"),
 				text.indexOf(
 					"\n  ",
-					text.indexOf("uses: ./.github/actions/route-runner"),
+					text.indexOf("uses: $/.github/actions/route-runner"),
 				),
 			);
 			for (const needed of [
