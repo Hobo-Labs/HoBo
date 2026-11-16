@@ -561,8 +561,11 @@ actions use the self-repository `uses: $/.github/actions/<name>` form (runner
 both forms, and the workflow tests under `scripts/test/` expect `$/`. Workflows keep full-SHA `uses:` pins, and the lockfile keys those
 entries by the same SHA with the release tag recorded as `ref`, so a run is
 pinned whether or not lockfile enforcement is on. The `actions-lock` workflow
-runs `gh actions-lock --verify` on workflow changes; when it fails it uploads
-the patch the tool would write as the `actions-lock-patch` artifact. Dependabot
+runs `gh actions-lock --verify` on every pull request and merge group, as a
+required status check on `main`; when it fails it uploads
+the patch the tool would write as the `actions-lock-patch` artifact. [`.github/CODEOWNERS`](../../.github/CODEOWNERS) assigns the lockfile
+an owner, so its changes need code-owner review when the `main` ruleset
+requires it. Dependabot
 ([`.github/dependabot.yml`](../../.github/dependabot.yml)) proposes npm, Actions
 and Docker version updates only after a 7-day cooldown and regenerates the
 lockfile with each Actions bump. Secrets are scanned with Betterleaks (pinned
