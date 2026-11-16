@@ -59,6 +59,34 @@ can cause retries during a rolling upgrade. Existing databases already persist
 the attempt counters, so no schema migration is required. Delivery remains
 at-least-once and external side effects still need idempotency.
 
+The `verify-outbox-lease` skill checks the same rule for queue and outbox
+receipts using generated histories and a bounded TLA+ model. This statechart
+summarizes the checked model, not a live delivery trace:
+
+```mermaid
+---
+title: "Deliver a durable message"
+---
+stateDiagram-v2
+  s0: Message waiting
+  s1: First delivery held
+  s2: Message acknowledged
+  s3: Lease eligible for reclaim
+  s4: Replacement delivery held
+  [*] --> s0
+  s0 --> s1: claim delivery
+  s1 --> s2: acknowledge with current receipt or acknowledge with matching receipt
+  s1 --> s3: visibility timeout passes
+  s3 --> s4: reclaim with a new attempt
+  s3 --> s2: acknowledge with current receipt or acknowledge with matching receipt
+  s4 --> s2: acknowledge with current receipt or acknowledge with matching receipt
+  s4 --> s3: visibility timeout passes
+```
+
+The chart hides 264 steps whose visible label does not change. The model
+explores three attempts for one message, including repeated lease IDs and fences;
+it does not prove external delivery or exactly-once effects.
+
 ## Quorum-backed EventStore
 
 `createQuorumEventStore` replays a majority-chosen immutable command journal into
