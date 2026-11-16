@@ -78,7 +78,7 @@ jobs:
       # committed runnerRouting.mainGate.reuseMergeQueue is `false`, and whenever it cannot be shown.
       merge-queue-green: ${{ steps.route.outputs.merge-queue-green }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -133,7 +133,7 @@ jobs:
     steps:
       # No submodules: the diff only needs the gitlink, not ts-autocode's tree. Depth 2 gives
       # HEAD~1 for the image-input diff; the full-history secret scan lives in main-gate.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 2
@@ -192,7 +192,7 @@ jobs:
           bash packages/ci-gh-actions/deploy/ci-runner/build.sh"
       - name: Upload CI runner image build log
         if: failure() && steps.ci_runner_image_build.outcome == 'failure'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ci-runner-oci-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/ci-runner-oci-build.log
@@ -225,7 +225,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -270,7 +270,7 @@ jobs:
             if [ -z "$changed" ]; then run=false; fi
           fi
           echo "run=${run}" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: steps.scope.outputs.run == 'true' && needs.route.outputs.tier != 'fleet'
         with:
           node-version: "24"
@@ -357,7 +357,7 @@ jobs:
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -591,7 +591,7 @@ jobs:
       contents: read
     steps:
       - name: Resolve repo-local actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
@@ -690,7 +690,7 @@ jobs:
       contents: read
     steps:
       - name: Resolve repo-local actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
@@ -782,7 +782,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -957,7 +957,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -1048,7 +1048,7 @@ jobs:
       shard_runner: ${{ steps.reroute.outputs.shard_runner || needs.route.outputs.shard_runner }}
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           clean: false
@@ -1057,7 +1057,7 @@ jobs:
           fetch-tags: false
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -1161,7 +1161,7 @@ jobs:
       - name: Restore main workspace plan cache
         id: plan-cache
         if: needs.route.outputs.merge-queue-green != 'true'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}/hobo-main-gate-plan
           key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
@@ -1183,7 +1183,7 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/plan-main-workspace-shards.mts
       - name: Save main workspace plan cache
         if: always() && needs.route.outputs.merge-queue-green != 'true' && steps.plan-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}/hobo-main-gate-plan
           key: main-gate-plan-${{ github.sha }}-${{ hashFiles('scripts/ci/plan-main-workspace-shards.mts', 'scripts/ci/dependent-tests.mts', 'scripts/ci/workspace-test-durations.json', 'scripts/ci/turbo-invoke.mts') }}
@@ -1320,7 +1320,7 @@ jobs:
         media/package.json
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
@@ -1472,7 +1472,7 @@ jobs:
       contents: read
     steps:
       - name: Resolve repo-local actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
@@ -1614,7 +1614,7 @@ jobs:
       contents: read
     steps:
       - name: Resolve repo-local actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
@@ -1664,7 +1664,7 @@ jobs:
             --deliverable "sdk=$(ls "$FREIGHT_IN"/sdk/*.tgz)" \
             --deliverable "cli=$(ls "$FREIGHT_IN"/cli/*.tgz)"
       - name: Expose HoBo's own Freight as CI outputs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hobo-freight-${{ github.sha }}
           path: ${{ runner.temp }}/hobo-freight
@@ -1679,7 +1679,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -1719,7 +1719,7 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -1823,7 +1823,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -1935,7 +1935,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           submodules: recursive
           clean: false
@@ -1958,7 +1958,7 @@ jobs:
       contents: read
     steps:
       # No submodules: betterleaks scans this repository's history, not ts-autocode's.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 0

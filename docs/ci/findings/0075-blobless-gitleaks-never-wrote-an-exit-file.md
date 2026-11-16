@@ -36,6 +36,13 @@ shell `mv …/exit` that the wait step needs.
 Sparse S0 stays in place for the rest of the gate. The daily schedule is the regular
 full-history path.
 
+On 2026-11-16, [main run 43943762654](https://github.com/Hobo-Labs/HoBo/actions/runs/43943762654)
+failed after #2045 deleted `.gitleaks.toml`: the range scanner could not read its old blob in
+the partial clone. Before scanning a range, `betterleaks-main-scan.mts` now enumerates both
+blob IDs for every change in every commit, fetches missing blobs through Git's promisor remote,
+and fails if any are unavailable. This includes deleted and intermediate files rather than
+only the two endpoint trees. Prefetch and scan share the existing 90-second range budget.
+
 ## Verification
 
 `scripts/test/gitleaks-main-scan.test.ts` pins the range vs full plans, `--no-filter` backfill,
