@@ -44,6 +44,21 @@ clock reopen and independent handles; the generated API execution test covers
 workflow resume after reopen. EventEnvelope wire records and their Protobuf/CUE
 constraints are unchanged; the storage journal tests exercise the append port.
 
+## Queue and outbox delivery fencing
+
+`leaseMessages` and `claimOutbox` return a persistent `deliveryAttempt` for
+each receipt. Pass that value, together with the receipt's ID, lease ID, and
+fence, to `completeMessage` or `ackOutbox`. The attempt increases on every
+reclaim, even when a worker reuses the same lease ID and fence, so an earlier
+receipt cannot complete a replacement lease. A visibility timeout permits
+reclaim; the current receipt remains valid until another worker reclaims it.
+
+The completion methods now require the attempt argument. Older callers that
+omit it receive `false` and must be updated to use the returned receipt; this
+can cause retries during a rolling upgrade. Existing databases already persist
+the attempt counters, so no schema migration is required. Delivery remains
+at-least-once and external side effects still need idempotency.
+
 ## Quorum-backed EventStore
 
 `createQuorumEventStore` replays a majority-chosen immutable command journal into
