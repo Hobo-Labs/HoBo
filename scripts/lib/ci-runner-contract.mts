@@ -24,7 +24,7 @@ export const CI_RUNNER_IMAGE_VERSION_INPUTS = [
 
 /** Digest-pinned debian:bookworm-slim for the CI runner base layer (must match base/Dockerfile FROM). */
 export const CI_RUNNER_DEBIAN_BOOKWORM_SLIM =
-	"debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3";
+	"debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc";
 
 export const CI_RUNNER_TURBO_AUBE_LOCK_DIR = ".mise/locks/turbo/2.11.10";
 
