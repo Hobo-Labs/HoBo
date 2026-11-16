@@ -21,10 +21,19 @@ export interface CommandResult {
 }
 
 /** Run a command; `interactive` lets the owner see and answer it (a sign-in). */
+/** Variables for one command only, as name and value pairs (secrets never go on its command line). */
+export type CommandEnv = readonly (readonly [string, string])[];
+
 export type RunCommand = (
 	command: string,
 	args: readonly string[],
-	options?: { readonly interactive?: boolean },
+	options?: {
+		readonly interactive?: boolean;
+		/** Added to the command's environment, for this command only. */
+		readonly env?: CommandEnv;
+		/** Written to the command's standard input, then closed. */
+		readonly input?: string;
+	},
 ) => Promise<CommandResult>;
 
 export interface StoreCli {
@@ -141,15 +150,20 @@ export function machineRunner(
 				);
 				return;
 			}
-			execFile(
+			const child = execFile(
 				command,
 				[...args],
-				{ env: childEnv, maxBuffer: 16 * 1024 * 1024 },
+				{
+					env: { ...childEnv, ...Object.fromEntries(options?.env ?? []) },
+					maxBuffer: 16 * 1024 * 1024,
+				},
 				(error, stdout, stderr) => {
 					const exit = z.object({ code: z.number() }).safeParse(error);
 					const code = error === null ? 0 : exit.success ? exit.data.code : 127;
 					resolve({ code, stdout: String(stdout), stderr: String(stderr) });
 				},
 			);
+			if (options?.input !== undefined) child.stdin?.end(options.input);
+			else child.stdin?.end();
 		});
 }

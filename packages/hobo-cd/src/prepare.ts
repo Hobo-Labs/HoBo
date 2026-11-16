@@ -340,6 +340,10 @@ async function prepareVercelWithVault(
 						fetch: deps.fetch ?? fetch,
 						emit: (line) => input.run.emitProgress(line),
 						interactive: input.handOff !== true,
+						apiOrigin:
+							plainEnv.INFISICAL_SITE_URL ??
+							(await locator.read()).INFISICAL_SITE_URL ??
+							"https://app.infisical.com",
 						...(deps.ownerChannel !== undefined
 							? { owner: deps.ownerChannel }
 							: undefined),
@@ -390,6 +394,15 @@ async function prepareVercelWithVault(
 					toolsDir: hoboToolsDir(),
 					emit: (line) => input.run.emitProgress(line),
 					interactive: input.handOff !== true,
+					...(deps.ownerChannel !== undefined
+						? { owner: deps.ownerChannel }
+						: undefined),
+					...((plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS)
+						? {
+								signInAddress:
+									plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS,
+							}
+						: undefined),
 				});
 				if (access.kind === "refused")
 					return refused(access.code, access.message, access.remediation);
@@ -414,6 +427,9 @@ async function prepareVercelWithVault(
 				emit: (line) => input.run.emitProgress(line),
 				silent: input.run.flags.json || input.run.flags.quiet,
 				handOff: input.handOff === true,
+				...(deps.ownerChannel !== undefined
+					? { owner: deps.ownerChannel }
+					: undefined),
 				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
 				...(deps.handOffTimeoutMs !== undefined
 					? { timeoutMs: deps.handOffTimeoutMs }

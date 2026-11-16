@@ -12,7 +12,18 @@ import {
 	parseBitwardenServer,
 	provisionBitwardenAccessToken,
 } from "./bitwarden-provision.js";
+import {
+	captureAll,
+	type OwnerChannel,
+	ownerCaptureLine,
+} from "./owner-channel.js";
 import { parseHttpsOrigin, SettingParseError } from "./parsed-values.js";
+
+// public-contract: the capture names of a Bitwarden personal API key handed to a waiting run.
+export const BITWARDEN_API_KEY_CAPTURES = [
+	"BW_CLIENTID",
+	"BW_CLIENTSECRET",
+] as const;
 
 export interface BitwardenSignInRefusal {
 	readonly code: string;
@@ -37,6 +48,8 @@ export interface EnsureBitwardenSignInOptions {
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly now?: () => number;
 	readonly timeoutMs?: number;
+	/** How to reach an owner who is not at this machine (a remote dev box). */
+	readonly owner?: OwnerChannel;
 }
 
 /**
@@ -72,18 +85,46 @@ export async function ensureBitwardenSignIn(
 		if (clientId !== undefined && clientSecret !== undefined)
 			apiKey = parseBitwardenApiKey(clientId, clientSecret);
 		else if (!options.handOff) return undefined;
-		else if (endpoints.selfHosted)
-			// A self-hosted server reads the key only from the request body,
-			// which the proxy cannot fill.
-			return {
-				code: `HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
-				message:
-					"Your self-hosted Bitwarden server reads the API key only from the sign-in request itself, so a remote run cannot take it through the session's credential form.",
-				remediation: [
-					`Run hobo ${options.family} up at your own terminal: the setup page asks for your personal API key (${bitwardenApiKeyPage(endpoints)}).`,
-				],
-			};
-		else apiKey = { kind: "egress-proxy" };
+		else if (endpoints.selfHosted) {
+			// A self-hosted server reads the key only from the sign-in request's
+			// body, which the session's proxy cannot fill: the owner hands it to
+			// this run through the HoBo MCP App's secret capture instead.
+			const page = bitwardenApiKeyPage(endpoints);
+			const given =
+				options.owner === undefined
+					? undefined
+					: await captureAll(options.owner, [
+							{
+								name: "BW_CLIENTID",
+								title: "Bitwarden API key: client_id",
+								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_id.`,
+							},
+							{
+								name: "BW_CLIENTSECRET",
+								title: "Bitwarden API key: client_secret",
+								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
+							},
+						]);
+			if (given === undefined)
+				return {
+					code: `HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
+					message:
+						"Your self-hosted Bitwarden server reads your personal API key only from the sign-in request itself; hand it to this run once.",
+					remediation:
+						options.owner === undefined
+							? [
+									`Run hobo ${options.family} up through the HoBo MCP server (its ci and cd tools): its secret form takes your personal API key (${page}) straight to the run.`,
+								]
+							: [
+									...BITWARDEN_API_KEY_CAPTURES.map((name) =>
+										ownerCaptureLine(name, page),
+									),
+									"In your Bitwarden vault: Account settings → Security → Keys → View API key. Hand over client_id and client_secret in the HoBo MCP App's secret form; they go only to this run.",
+									"Then run again: HoBo creates its own access token after the one login request you approve.",
+								],
+				};
+			apiKey = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
+		} else apiKey = { kind: "egress-proxy" };
 		// Called only when the store did not open: a token in hand was refused
 		// (revoked or expired), so the API key replaces it with a new one.
 		vault.drop("BWS_ACCESS_TOKEN");
@@ -169,9 +210,19 @@ export async function ensureBitwardenSignIn(
 		return {
 			code: `HOBO_${fam}_SETTING_INVALID`,
 			message: error.message,
-			remediation: [
-				`Enter ${error.setting} again when the run asks: ${error.rule}.`,
-			],
+			remediation:
+				options.owner !== undefined &&
+				BITWARDEN_API_KEY_CAPTURES.some((name) => name === error.setting)
+					? [
+							...BITWARDEN_API_KEY_CAPTURES.map((name) =>
+								ownerCaptureLine(
+									name,
+									bitwardenApiKeyPage(bitwardenEndpoints("us")),
+								),
+							),
+							`Hand over ${error.setting} again in the HoBo MCP App's secret form: ${error.rule}. Then run again.`,
+						]
+					: [`Enter ${error.setting} again when the run asks: ${error.rule}.`],
 		};
 	}
 }

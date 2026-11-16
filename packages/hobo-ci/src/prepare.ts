@@ -28,6 +28,7 @@ import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
 import { provisionInfisicalAccess } from "./infisical-access.js";
 import { provisionOnePasswordAccess } from "./onepassword-access.js";
+import { captureAll, ownerCaptureLine } from "./owner-channel.js";
 import {
 	familySettings,
 	InvalidSecretStoreError,
@@ -38,6 +39,14 @@ import {
 	storeIdOf,
 	storeSignInGuidance,
 } from "./owner-store.js";
+import { APP_HANDOFF_PAGE, createAppRemotely } from "./remote-app.js";
+
+/** Where the owner finds each CI setting a remote run asks for. */
+const CI_SETTING_GUIDES = new Map([
+	["HOBO_CI_PUBLIC_URL", "https://vercel.com/dashboard"],
+	["HOBO_CI_GITHUB_OWNER", "https://github.com/settings/profile"],
+]);
+
 import {
 	adoptStoreSignIn,
 	browserEnvironment,
@@ -373,6 +382,10 @@ async function prepareGithubWithVault(
 						fetch: deps.fetch ?? fetch,
 						emit: (line) => input.run.emitProgress(line),
 						interactive: input.handOff !== true,
+						apiOrigin:
+							plainEnv.INFISICAL_SITE_URL ??
+							(await locator.read()).INFISICAL_SITE_URL ??
+							"https://app.infisical.com",
 						...(deps.ownerChannel !== undefined
 							? { owner: deps.ownerChannel }
 							: undefined),
@@ -423,6 +436,15 @@ async function prepareGithubWithVault(
 					toolsDir: hoboToolsDir(),
 					emit: (line) => input.run.emitProgress(line),
 					interactive: input.handOff !== true,
+					...(deps.ownerChannel !== undefined
+						? { owner: deps.ownerChannel }
+						: undefined),
+					...((plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS)
+						? {
+								signInAddress:
+									plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS,
+							}
+						: undefined),
 				});
 				if (access.kind === "refused")
 					return refused(access.code, access.message, access.remediation);
@@ -447,6 +469,9 @@ async function prepareGithubWithVault(
 				emit: (line) => input.run.emitProgress(line),
 				silent: input.run.flags.json || input.run.flags.quiet,
 				handOff: input.handOff === true,
+				...(deps.ownerChannel !== undefined
+					? { owner: deps.ownerChannel }
+					: undefined),
 				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
 				...(deps.handOffTimeoutMs !== undefined
 					? { timeoutMs: deps.handOffTimeoutMs }
@@ -564,21 +589,108 @@ async function prepareGithubWithVault(
 					...storeSignInGuidance(owner.id, "ci"),
 				],
 			);
-		return refused(
-			"HOBO_CI_APP_NEEDS_OWNER",
-			`${owner.opened.id} holds no GitHub App for HoBo CI, and creating one needs GitHub's page, which a handed-off run cannot receive.`,
-			[
-				"Run hobo ci up yourself in a terminal: GitHub's page redirects back to your machine, and the App's credentials go straight to your store.",
-				"After that, a handed-off hobo ci up reuses the App from your store.",
-			],
+		// No page here: the App is created from the owner's own browser, on
+		// any device, and its one-time code comes back through the owner
+		// channel (see remote-app.ts).
+		if (deps.ownerChannel === undefined)
+			return refused(
+				"HOBO_CI_APP_NEEDS_OWNER",
+				`${owner.opened.id} holds no GitHub App for HoBo CI, and creating one needs you once, on GitHub's own page.`,
+				[
+					"Run hobo ci up through the HoBo MCP server (its ci tool): it gives you GitHub's page as a link you open on any device, and takes GitHub's one-time code back in its secret form.",
+				],
+			);
+		const ciSettings = familySettings(owner.opened, "ci");
+		let basics = resolveSettings(
+			CI_SETTINGS,
+			plainEnv,
+			await ciSettings.read(),
 		);
+		if (basics.missing.length > 0) {
+			// Non-secret, but asked the same way as everything else a remote
+			// owner gives: the HoBo MCP App's form, straight to this run.
+			const missing = CI_SETTINGS.filter((setting) =>
+				basics.missing.some((field) => field.name === setting.field.name),
+			);
+			const given = await captureAll(
+				deps.ownerChannel,
+				missing.map((setting) => ({
+					name: setting.field.name,
+					title: setting.field.label,
+					instructions: setting.field.description ?? setting.field.label,
+				})),
+			);
+			const invalid =
+				given === undefined
+					? []
+					: missing.flatMap((setting, at) => {
+							const problem = setting.validate?.(given[at] ?? "");
+							return problem === undefined
+								? []
+								: [`${setting.field.label}: ${problem}`];
+						});
+			if (given === undefined || invalid.length > 0)
+				return refused(
+					"HOBO_CI_SETTINGS_NEEDED",
+					invalid.length > 0
+						? `Those settings were not accepted. ${invalid.join(" ")}`
+						: `Creating HoBo CI's GitHub App needs ${missing.map((setting) => setting.field.label).join(" and ")}.`,
+					[
+						...missing.map((setting) =>
+							ownerCaptureLine(
+								setting.field.name,
+								CI_SETTING_GUIDES.get(setting.field.name) ?? APP_HANDOFF_PAGE,
+							),
+						),
+						`Give ${missing.map((setting) => `${setting.field.label} (${setting.field.description ?? ""})`).join(" and ")} in the HoBo MCP App's form; they are kept in your secret store with HoBo CI's other settings.`,
+						"Then run again.",
+					],
+				);
+			await ciSettings.write({
+				...(await ciSettings.read()),
+				...Object.fromEntries(
+					missing.map((setting, at) => [setting.field.name, given[at] ?? ""]),
+				),
+			});
+			basics = resolveSettings(CI_SETTINGS, plainEnv, await ciSettings.read());
+		}
+		const login = basics.values.HOBO_CI_GITHUB_OWNER ?? "";
+		const appOwner = await lookupGithubOwner(login, deps.fetch);
+		if (appOwner === undefined)
+			return refused(
+				"HOBO_CI_GITHUB_OWNER_UNKNOWN",
+				`GitHub has no user or organization named ${login}.`,
+				["Correct HOBO_CI_GITHUB_OWNER when the agent asks, then run again."],
+			);
+		const created = await createAppRemotely({
+			store: owner.opened,
+			relayUrl: basics.values.HOBO_CI_PUBLIC_URL ?? "",
+			appOwner,
+			owner: deps.ownerChannel,
+			locator: ownerLocator(deps),
+			...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+		});
+		if (created.kind === "refused")
+			return refused(created.code, created.message, created.remediation);
+		await loadDeployCredentials(owner.opened, handoff);
+		return {
+			kind: "ready",
+			credentials: handoff,
+			steps: [
+				{
+					id: "github-app",
+					outcome: created.kind,
+					detail: `credentials in ${owner.opened.id} (${owner.opened.reference("HOBO_CI_GITHUB_APP_ID")})`,
+				},
+			],
+		};
 	}
 	if (!canReachOwner(deps.interactive, input.handOff))
 		return refused(
 			"HOBO_CI_CONNECTION_NEEDS_OWNER",
 			"Connecting GitHub needs the owner at a browser once; this run cannot show the setup page.",
 			[
-				"Run hobo ci up once in a terminal; it asks for what is missing and keeps it in your secret store.",
+				"Run hobo ci up --hand-off through the HoBo MCP server (its ci tool): it brings each step to you as a link or a form, wherever you are, and keeps what you give it in your secret store.",
 				"An agent can run hobo ci up --hand-off with a preconnected store and GitHub App; otherwise the run reports the available owner actions.",
 				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID, a non-secret setting) so the run signs in with its own OIDC token.`,
 			],

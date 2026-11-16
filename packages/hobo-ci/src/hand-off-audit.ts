@@ -18,7 +18,7 @@ import { z } from "zod";
  * ends with the ask still owed is one finding.
  */
 
-export type AskKind = "choice" | "credential";
+export type AskKind = "choice" | "credential" | "capture" | "preview";
 
 export type TranscriptBlock =
 	| { readonly kind: "text"; readonly text: string }
@@ -65,6 +65,11 @@ export const STRUCTURED_ASK_TOOLS = {
 	choice: /^(AskUserQuestion|mcp__[\w-]+__choose_secret_store)$/u,
 	credential:
 		/^((mcp__[\w-]+__)?request_credential|mcp__[\w-]+__capture_secret)$/u,
+	// A value the waiting run itself reads: only HoBo's capture reaches it
+	// (the session's credential form feeds the network proxy, not the run).
+	capture: /^mcp__[\w-]+__capture_secret$/u,
+	// A form served on the box: shown through the host's port preview.
+	preview: /^(mcp__[\w-]+__)?report_preview_port$/u,
 } satisfies Readonly<Record<AskKind, RegExp>>;
 
 /** Owner-facing lines as the CLI prints them (not source code that names them). */
@@ -72,8 +77,21 @@ const OWNER_LINES: readonly { readonly ask: AskKind; readonly re: RegExp }[] = [
 	{ ask: "choice", re: /^HOBO_C[ID]_STORE_CHOICE$/mu },
 	{ ask: "choice", re: /^HOBO_C[ID]_BITWARDEN_ORGANIZATION$/mu },
 	{ ask: "credential", re: /^HOBO_OWNER_CREDENTIAL host=\S+/mu },
-	{ ask: "credential", re: /HOBO_OWNER_SIGN_IN url=\S+ capture=\S+/u },
+	{ ask: "capture", re: /HOBO_OWNER_SIGN_IN url=\S+ capture=\S+/u },
+	{ ask: "capture", re: /^HOBO_OWNER_CAPTURE name=\S+/mu },
+	{ ask: "preview", re: /^HOBO_OWNER_PREVIEW port=\d+/mu },
 ];
+
+const ASK_DETAIL = {
+	choice:
+		"The turn ended without a completed structured choice (choose_secret_store or AskUserQuestion); asking in prose, or not re-asking after an interrupted picker, leaves the owner without the widget.",
+	credential:
+		"The turn ended without the session's credential form (request_credential) for the line's host.",
+	capture:
+		"The turn ended without HoBo's secret capture (capture_secret) for the value the run is waiting for; the run reads it only from there, never from chat or the session's credential form.",
+	preview:
+		"The turn ended without showing the owner the form's port through the host's preview (report_preview_port); the owner cannot reach this box's ports any other way.",
+} satisfies Readonly<Record<AskKind, string>>;
 
 /** A result that means the ask never reached the owner or was not answered. */
 const NOT_COMPLETED =
@@ -229,7 +247,7 @@ export function auditHandOff(
 	const findings: HandOffFinding[] = [];
 	const owed = new Map<AskKind, string>();
 	// Asks issued, awaiting their result: tool-use id → kind.
-	const pending = new Map<string, AskKind>();
+	const pending = new Map<string, AskKind[]>();
 	const endTurn = (at: number) => {
 		for (const [ask, opened] of owed) {
 			// A turn that issued the ask is not a failure, even if it did not
@@ -240,10 +258,7 @@ export function auditHandOff(
 				ask,
 				line: opened,
 				at,
-				detail:
-					ask === "choice"
-						? "The turn ended without a completed structured choice (choose_secret_store or AskUserQuestion); asking in prose, or not re-asking after an interrupted picker, leaves the owner without the widget."
-						: "The turn ended without the session's credential form (request_credential) for the line's host.",
+				detail: ASK_DETAIL[ask],
 			});
 		}
 	};
@@ -288,21 +303,28 @@ export function auditHandOff(
 								detail: `The owner chose ${chosen}, but a later question asked about ${other.join(", ")}. Follow-ups are about the chosen store only.`,
 							});
 					}
-				for (const ask of ["choice", "credential"] as const)
+				for (const ask of [
+					"choice",
+					"credential",
+					"capture",
+					"preview",
+				] as const)
 					if (STRUCTURED_ASK_TOOLS[ask].test(b.name)) {
-						pending.set(b.id, ask);
+						pending.set(b.id, [...(pending.get(b.id) ?? []), ask]);
 						askedThisTurn.add(ask);
 					}
 			} else if (b.kind === "tool_result") {
 				if (storeAsks.delete(b.toolUseId) && !NOT_COMPLETED.test(b.text))
 					chosen = chosenStore(b.text) ?? chosen;
-				const ask = pending.get(b.toolUseId);
-				if (ask !== undefined) {
+				const asks = pending.get(b.toolUseId);
+				if (asks !== undefined) {
 					pending.delete(b.toolUseId);
 					// Only a completed ask settles what is owed.
-					if (!b.isError && !NOT_COMPLETED.test(b.text)) owed.delete(ask);
-					continue;
+					if (!b.isError && !NOT_COMPLETED.test(b.text))
+						for (const ask of asks) owed.delete(ask);
 				}
+				// An ask's own result can open the next obligation (a capture
+				// served for the host's preview names its port).
 				for (const owner of OWNER_LINES) {
 					const match = owner.re.exec(b.text);
 					if (match === null) continue;

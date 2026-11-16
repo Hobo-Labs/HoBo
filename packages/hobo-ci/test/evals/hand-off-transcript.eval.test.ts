@@ -327,7 +327,7 @@ describe("EVAL hand-off transcript: a remote sign-in goes through the capture fo
 			user("ok"),
 		]);
 		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
-			{ rule: "structured-ask", ask: "credential" },
+			{ rule: "structured-ask", ask: "capture" },
 		]);
 	});
 

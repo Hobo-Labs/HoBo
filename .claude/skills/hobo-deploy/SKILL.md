@@ -234,9 +234,9 @@ checks it.
    one-day, vault-scoped 1Password service account). Never relay
    instructions to create identities, tokens, service accounts or Connect
    servers by hand; if a line says that, it is a bug to fix, not a step
-   for the owner. On `HOBO_*_INFISICAL_SIGN_IN` or
-   `HOBO_*_ONEPASSWORD_SIGN_IN` from a remote box, say the one sign-in has
-   to happen once on the owner's own machine, and why the refusal gives.
+   for the owner. From a remote box every step reaches the owner where they
+   are (a link, a form): never tell them to use their own machine, a
+   terminal or this box's `127.0.0.1`; a line that does is a bug to fix.
    The choice is always the owner's: a provided token only
    marks a store "configured here"; never pick a store for them because its
    token is present. Never ask the owner to set environment variables, never
@@ -253,14 +253,28 @@ checks it.
    why they come first. Once they save it, the run continues by itself; do
    not rerun it. If they decline the form, show the other paths the run's
    refusal names.
-4. On `HOBO_OWNER_SIGN_IN url=<url> capture=<name>` (Infisical from a
-   remote box): in one message, give the owner the link and say: "Sign in
-   to Infisical there as usual. When it says *Unable to reach CLI*, click
-   **Copy to clipboard**." Then call the HoBo MCP server's `capture_secret`
-   with `name: <name>`: the owner pastes it into the form it shows, which
-   seals it for this run only. When they say it is done, run the lifecycle
-   again: it creates its own identity and access. Never ask for the value
-   in chat.
+4. On `HOBO_OWNER_SIGN_IN url=<url> capture=<name>` (Infisical's sign-in,
+   or GitHub's App creation, from a remote box): in one message give the
+   owner the link exactly as printed and what to do there. Infisical: "Sign
+   in as usual; when it says *Unable to reach CLI*, click **Copy to
+   clipboard**." GitHub App (`capture=GITHUB_APP_CODE`): "Click **Create
+   GitHub App**; GitHub returns to HoBo's page, which shows a single-use
+   code." Then call the HoBo MCP server's `capture_secret` with
+   `name: <name>`: the owner pastes it into the form, which seals it for the
+   waiting run only. When they say it is done, run the lifecycle again.
+   Never ask for the value in chat, and never use `request_credential` for
+   it (that form feeds the network proxy, not the run).
+   On `HOBO_OWNER_CAPTURE name=<name> guide=<url>` (one line per value: a
+   self-hosted Bitwarden API key, a remote 1Password sign-in, a CI setting):
+   give the owner the guide link and call `capture_secret` once per `name`,
+   one form at a time; run again when all are in. The run spends none of
+   them until all have arrived.
+   When `capture_secret`'s result starts with `HOBO_OWNER_PREVIEW port=<port>
+   pairing=<code>` (a remote box whose host shows no HoBo form): show that
+   port to the owner with your host's port preview (Claude Code:
+   `report_preview_port`; Codespaces or VS Code: forward the port; Coder:
+   its port link) and tell them the pairing code to type with the value.
+   Never open, fetch or submit that page yourself.
 5. On `HOBO_OWNER_BITWARDEN_APPROVE server=<host> phrase=<phrase>`: say
    "Open a Bitwarden app signed in to `<host>` and approve the login request
    from HoBo whose fingerprint phrase is `<phrase>`." The run then sets up
@@ -314,9 +328,11 @@ defaults to `egress-proxy` when no sign-in was selected), holding only a
 placeholder, unless it runs as a workload with its own OIDC. An explicit
 sign-in choice is preserved; `ci` reads the relay's own folder
 (`/hobo-ci-relay`), so the relay's existing GitHub App is reused. Creating a
-new App needs GitHub's page, so a handed-off `ci` refuses with
-`HOBO_CI_APP_NEEDS_OWNER` and names only the owner's own terminal run:
-never route the App's one-time code through a relay or any shared service.
+new App needs GitHub's page: a handed-off `ci` refuses with
+`HOBO_CI_APP_NEEDS_OWNER` and a `HOBO_OWNER_SIGN_IN … capture=GITHUB_APP_CODE`
+link to HoBo's static hand-off page (step 4), which the owner opens on any
+device; GitHub's one-time code comes back only through the capture form.
+Never route it through a relay or any shared service.
 
 **At the owner's own terminal** (no `--hand-off`), the run serves the local
 setup page (`HOBO_OWNER_PAGE`) and opens their browser; there they may also

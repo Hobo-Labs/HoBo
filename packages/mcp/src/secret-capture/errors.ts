@@ -25,6 +25,8 @@ export type SecretCaptureCode =
 	| "SECRET_CAPTURE_ATTEMPTS_EXHAUSTED"
 	| "SECRET_CAPTURE_INVALID_INPUT"
 	| "SECRET_CAPTURE_WRITER_CLIENT_ID_REQUIRED"
+	/** A remote owner's form was submitted without this capture's pairing code. */
+	| "SECRET_CAPTURE_PAIRING_INVALID"
 	/** The app-only submit tool was called by a host that did not negotiate MCP Apps. */
 	| "MCP_APPS_NOT_NEGOTIATED";
 

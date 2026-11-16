@@ -55,12 +55,15 @@ export type SecretCapturePageOptions =
 			/** The CSP nonce for this response's one style and two scripts. */
 			nonce: string;
 			ticket: SecretCapturePageTicket;
+			/** Served through a host's port preview: the owner types the agent's pairing code. */
+			pairing?: boolean;
 	  }>;
 
 /** JSON for a `<script type="application/json">`: nothing in it can end the element. */
 type PageConfig = Readonly<{
 	mode: "mcp-app" | "loopback";
 	ticket?: SecretCapturePageTicket;
+	pairing?: boolean;
 }>;
 
 function embedJson(value: PageConfig): string {
@@ -253,7 +256,7 @@ const SCRIPT = `(function () {
       return fetch(window.location.pathname, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: window.location.hash.slice(1), sealed: sealed }),
+        body: JSON.stringify({ token: config.pairing ? el("capture-pairing").value.trim() : window.location.hash.slice(1), sealed: sealed }),
         credentials: "omit",
         cache: "no-store",
         redirect: "error",
@@ -292,6 +295,7 @@ const SCRIPT = `(function () {
   });
 
   if (config.mode === "loopback") {
+    if (config.pairing) el("capture-pairing-row").hidden = false;
     show(config.ticket);
     return;
   }
@@ -336,7 +340,11 @@ export function renderSecretCaptureHtml(
 	const nonce = options.mode === "loopback" ? ` nonce="${options.nonce}"` : "";
 	const config: PageConfig =
 		options.mode === "loopback"
-			? { mode: "loopback", ticket: options.ticket }
+			? {
+					mode: "loopback",
+					ticket: options.ticket,
+					...(options.pairing === true ? { pairing: true } : undefined),
+				}
 			: { mode: "mcp-app" };
 	return `<!doctype html>
 <html lang="en">
@@ -354,6 +362,8 @@ export function renderSecretCaptureHtml(
 <p id="capture-purpose" class="purpose"></p>
 <p id="capture-waiting" class="note">Waiting for the agent's request.</p>
 <form id="capture-form" hidden novalidate autocomplete="off">
+<p id="capture-pairing-row" hidden><label for="capture-pairing">Pairing code (the agent gives it to you in chat)</label>
+<input id="capture-pairing" name="capture-pairing" type="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text"></p>
 <label id="capture-field-label" for="capture-line">Value of <code id="capture-name"></code></label>
 <input id="capture-line" name="capture-line" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="capture-help capture-error">
 <textarea id="capture-multi" name="capture-multi" rows="8" hidden autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="capture-help capture-error"></textarea>

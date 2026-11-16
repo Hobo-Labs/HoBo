@@ -281,7 +281,7 @@ describe("EVAL remote box: hobo ci up --hand-off", () => {
 		expectNoLoopback(ownerFacingText(owner.shown, outcome));
 	});
 
-	it("without an App, refuses naming only the owner's own terminal, never a broker", async () => {
+	it("without an App or an owner channel, names the HoBo MCP route, never a terminal or a broker", async () => {
 		const session = remoteSession();
 		const owner = ownerOutside({
 			session,
@@ -302,7 +302,8 @@ describe("EVAL remote box: hobo ci up --hand-off", () => {
 		});
 		const text = ownerFacingText(owner.shown, outcome);
 		expectNoLoopback(text);
-		expect(text.join("\n")).toContain("in a terminal");
+		expect(text.join("\n")).toContain("through the HoBo MCP server");
+		expect(text.join("\n")).not.toMatch(/terminal/u);
 		expect(text.join("\n")).not.toContain("--via-workflow");
 		expect(text.join("\n")).not.toMatch(/relay/u);
 	});

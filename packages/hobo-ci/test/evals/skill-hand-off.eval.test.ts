@@ -5,9 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import {
 	awaitHandOffStore,
+	OWNER_CAPTURE_LINE_PREFIX,
 	OWNER_CREDENTIAL_LINE_PREFIX,
 	OWNER_PAGE_LINE_PREFIX,
+	OWNER_SIGN_IN_LINE_PREFIX,
 	type OwnerStore,
+	REMOTE_INFEASIBLE,
 } from "../../src/index.js";
 
 // EVAL: the hobo-deploy skill is what an agent in a remote box follows when it
@@ -110,7 +113,12 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(page).toBeGreaterThan(
 			HAND_OFF.indexOf("At the owner's own terminal"),
 		);
-		expect(HAND_OFF).not.toMatch(/report_preview_port/u);
+		// The port preview shows only HoBo's pairing-protected capture form
+		// (HOBO_OWNER_PREVIEW), never the setup page.
+		const preview = HAND_OFF.indexOf("report_preview_port");
+		expect(HAND_OFF.slice(preview - 400, preview)).toMatch(
+			/HOBO_OWNER_PREVIEW/u,
+		);
 		expect(HAND_OFF).toMatch(/Never give the owner a `127\.0\.0\.1`/u);
 	});
 
@@ -156,8 +164,38 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 	it("runs through the HoBo MCP server and hands the remote sign-in over in the capture form", () => {
 		expect(HAND_OFF).toMatch(/through the \*\*HoBo MCP server\*\*/u);
 		expect(HAND_OFF).toMatch(/HOBO_OWNER_SIGN_IN url=<url> capture=<name>/u);
-		expect(HAND_OFF).toMatch(/Copy to clipboard/u);
+		expect(HAND_OFF).toMatch(/Copy to\s+clipboard/u);
 		expect(HAND_OFF).toMatch(/capture_secret/u);
 		expect(HAND_OFF).toMatch(/Never ask for the value\s+in chat/u);
+	});
+
+	it("never tells the agent to send a remote owner anywhere they cannot reach", () => {
+		// The skill is followed on remote boxes: the same rule as the run's lines.
+		const remote = HAND_OFF.slice(
+			0,
+			HAND_OFF.indexOf("**At the owner's own terminal**"),
+		);
+		const offending = remote.split("\n").filter(
+			(line) =>
+				REMOTE_INFEASIBLE.test(line) &&
+				// Rules that forbid it name it; they are not instructions to do it.
+				!/\bnever\b|\bnot\b|a bug to fix/iu.test(line),
+		);
+		expect(offending).toEqual([]);
+	});
+
+	it("routes every line a remote run hands the owner", () => {
+		for (const prefix of [
+			OWNER_SIGN_IN_LINE_PREFIX,
+			OWNER_CAPTURE_LINE_PREFIX,
+			"HOBO_OWNER_PREVIEW",
+			OWNER_CREDENTIAL_LINE_PREFIX,
+			DEVICE_PREFIX,
+			"HOBO_OWNER_BITWARDEN_APPROVE",
+		])
+			expect(HAND_OFF).toContain(prefix);
+		expect(HAND_OFF).toMatch(/GITHUB_APP_CODE/u);
+		expect(HAND_OFF).toMatch(/report_preview_port/u);
+		expect(HAND_OFF).toMatch(/pairing code/u);
 	});
 });

@@ -21,7 +21,10 @@ export {
 	parseBitwardenApiKey,
 	provisionBitwardenAccessToken,
 } from "./bitwarden-provision.js";
-export { ensureBitwardenSignIn } from "./bitwarden-sign-in.js";
+export {
+	BITWARDEN_API_KEY_CAPTURES,
+	ensureBitwardenSignIn,
+} from "./bitwarden-sign-in.js";
 export {
 	CI_SETTINGS,
 	lookupGithubOwner,
@@ -59,6 +62,7 @@ export {
 	storeAnswers,
 } from "./hand-off-store.js";
 export {
+	INFISICAL_CLI_SESSION_CAPTURE,
 	type InfisicalAccess,
 	type InfisicalAccessOptions,
 	OWNER_SIGN_IN_LINE_PREFIX,
@@ -78,13 +82,19 @@ export {
 export {
 	currentPlatform,
 	ONE_PASSWORD_CLI_VERSION,
+	ONE_PASSWORD_SIGN_IN_CAPTURES,
 	type OnePasswordAccess,
 	type OnePasswordAccessOptions,
 	onePasswordCli,
 	type Platform,
 	provisionOnePasswordAccess,
 } from "./onepassword-access.js";
-export type { OwnerChannel } from "./owner-channel.js";
+export {
+	captureAll,
+	OWNER_CAPTURE_LINE_PREFIX,
+	type OwnerChannel,
+	ownerCaptureLine,
+} from "./owner-channel.js";
 export {
 	CI_RELAY_FOLDER,
 	EGRESS_PROXY_SIGN_IN,
@@ -145,6 +155,17 @@ export {
 	tunnelCommand,
 } from "./redirect-receiver.js";
 export {
+	APP_HANDOFF_PAGE,
+	createAppRemotely,
+	GITHUB_APP_CODE_CAPTURE,
+	type RemoteAppOutcome,
+} from "./remote-app.js";
+export {
+	isRemoteBox,
+	REMOTE_INFEASIBLE,
+	remoteInfeasible,
+} from "./remote-reach.js";
+export {
 	adoptStoreSignIn,
 	ignoredSecretEnvNotice,
 	isSecretEnv,
@@ -166,6 +187,7 @@ export {
 	type SecretStoreOpening,
 } from "./secret-stores.js";
 export {
+	type CommandEnv,
 	type CommandResult,
 	ensureStoreCli,
 	hoboToolsDir,

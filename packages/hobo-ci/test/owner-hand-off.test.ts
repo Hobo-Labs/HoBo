@@ -129,7 +129,9 @@ describe("hobo ci up --hand-off", () => {
 			result: { code: "HOBO_CI_APP_NEEDS_OWNER" },
 		});
 		const text = JSON.stringify(outcome);
-		expect(text).toContain("in a terminal");
+		// No owner channel (a plain CLI run): the HoBo MCP route, not a terminal.
+		expect(text).toContain("through the HoBo MCP server");
+		expect(text).not.toMatch(/terminal/u);
 		// No HoBo service brokers the App's one-time code.
 		expect(text).not.toContain("--via-workflow");
 		expect(text).not.toMatch(/relay/u);

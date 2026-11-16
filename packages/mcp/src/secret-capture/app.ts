@@ -88,7 +88,9 @@ export const SECRET_CAPTURE_TOOL_NAMES: readonly string[] = Object.freeze([
 export type SecretCaptureChannel =
 	| "mcp-app"
 	| "url-elicitation"
-	| "loopback-page";
+	| "loopback-page"
+	/** A remote box's form, behind the host's port preview, with a pairing code. */
+	| "preview-page";
 type TicketState =
 	| "awaiting-owner"
 	| "stored"
@@ -255,6 +257,12 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	 * refused.
 	 */
 	handoff?: (secret: CapturedSecret) => Promise<void>;
+	/**
+	 * The owner is not at this machine (a remote dev box): a page on its
+	 * 127.0.0.1 cannot reach them. A host without MCP Apps gets the form on
+	 * its own port for the host's port preview, with a pairing code, instead.
+	 */
+	remote?: boolean;
 }>;
 
 type Ticket = {
@@ -271,9 +279,31 @@ type Ticket = {
 	url: string | undefined;
 	ref: string | undefined;
 	attempts: number;
+	/** Preview page only: the code the owner types, and the page's port. */
+	pairing?: string;
+	port?: number;
 };
 
 const TICKET_ID = /^cap_[A-Za-z0-9_-]{22}$/u;
+
+// public-contract: the line naming the port a remote owner's form is served on, and its pairing code.
+export const OWNER_PREVIEW_LINE_PREFIX = "HOBO_OWNER_PREVIEW";
+/** No 0/O, 1/I/L: read aloud and typed by a person. */
+const PAIRING_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/** Eight characters as XXXX-XXXX: 40 bits, and five guesses close the capture. */
+function newPairingCode(): string {
+	const bytes = randomBytes(8);
+	const chars = [...bytes].map(
+		(byte) => PAIRING_ALPHABET[byte % PAIRING_ALPHABET.length] ?? "A",
+	);
+	return `${chars.slice(0, 4).join("")}-${chars.slice(4).join("")}`;
+}
+
+function normalizePairing(text: string): string {
+	const compact = text.toUpperCase().replace(/[^A-Z0-9]/gu, "");
+	return `${compact.slice(0, 4)}-${compact.slice(4)}`;
+}
 const CLIENT_ID = /^[A-Za-z0-9-]{1,64}$/u;
 const MAX_EVENTS = 1000;
 
@@ -349,6 +379,7 @@ export function createSecretCaptureApp(
 	const log: SecretCaptureEvent[] = [];
 	let seq = 0;
 	let page: Promise<LoopbackCapturePage> | undefined;
+	let previewPage: Promise<LoopbackCapturePage> | undefined;
 
 	function emit(
 		type: SecretCaptureEventType,
@@ -480,6 +511,68 @@ export function createSecretCaptureApp(
 		return page;
 	}
 
+	function preview(): Promise<LoopbackCapturePage> {
+		previewPage ??= startLoopbackCapturePage(
+			{
+				current() {
+					sweep();
+					return [...tickets.values()]
+						.filter(
+							(ticket) =>
+								ticket.state === "awaiting-owner" &&
+								ticket.channel === "preview-page",
+						)
+						.at(-1)?.id;
+				},
+				page(id, nonce) {
+					const ticket = openTicket(id);
+					if (ticket?.channel !== "preview-page") return undefined;
+					return renderSecretCaptureHtml({
+						mode: "loopback",
+						nonce,
+						ticket: pageTicket(ticket),
+						pairing: true,
+					});
+				},
+				async submit(id, token, sealed): Promise<LoopbackAnswer> {
+					const ticket = openTicket(id);
+					if (
+						ticket?.channel !== "preview-page" ||
+						ticket.tokenDigest === undefined
+					)
+						return {
+							status: 404,
+							body: {
+								code: "SECRET_CAPTURE_UNKNOWN_TICKET",
+								message: "This capture is closed.",
+							},
+						};
+					const presented = digest(normalizePairing(token));
+					if (!timingSafeEqual(presented, ticket.tokenDigest)) {
+						// A guess counts against the capture, like a bad value.
+						const refusal = failed(
+							ticket,
+							new SecretCaptureError(
+								"SECRET_CAPTURE_PAIRING_INVALID",
+								"That pairing code is not this capture's. Use the one the agent gave you.",
+							),
+							"secret.CaptureRejected",
+							"SECRET_CAPTURE_PAIRING_INVALID",
+						);
+						return { status: 403, body: refusal.structuredContent };
+					}
+					const outcome = await submit(ticket, sealed);
+					return {
+						status: outcome.isError ? 422 : 200,
+						body: outcome.structuredContent,
+					};
+				},
+			},
+			"preview",
+		);
+		return previewPage;
+	}
+
 	async function refuseIfNotWritable(
 		spec: ParsedSecretCaptureSpec,
 	): Promise<SecretCaptureError | undefined> {
@@ -565,13 +658,16 @@ export function createSecretCaptureApp(
 				`Finish them, or call ${END_SECRET_CAPTURE_TOOL}.`,
 			);
 		const channel: SecretCaptureChannel =
-			requested === "loopback-page"
-				? "loopback-page"
-				: support.apps
-					? "mcp-app"
-					: support.urlElicitation
-						? "url-elicitation"
-						: "loopback-page";
+			support.apps && requested === "auto"
+				? "mcp-app"
+				: options.remote === true
+					? // A page on this box's 127.0.0.1 never reaches a remote owner.
+						"preview-page"
+					: requested === "loopback-page"
+						? "loopback-page"
+						: support.urlElicitation
+							? "url-elicitation"
+							: "loopback-page";
 		const keys = createCaptureKeyPair();
 		const opened = now();
 		const ticket: Ticket = {
@@ -589,7 +685,12 @@ export function createSecretCaptureApp(
 			ref: undefined,
 			attempts: 0,
 		};
-		if (channel !== "mcp-app") {
+		if (channel === "preview-page") {
+			const pairing = newPairingCode();
+			ticket.tokenDigest = digest(pairing);
+			ticket.pairing = pairing;
+			ticket.port = Number(new URL((await preview()).origin).port);
+		} else if (channel !== "mcp-app") {
 			const token = randomBytes(32).toString("base64url");
 			ticket.tokenDigest = digest(token);
 			ticket.url = `${(await loopback()).origin}/capture/${ticket.id}#${token}`;
@@ -634,6 +735,20 @@ export function createSecretCaptureApp(
 							},
 						],
 					},
+				},
+			};
+		if (ticket.channel === "preview-page")
+			return {
+				kind: "result",
+				result: {
+					content: [
+						{
+							type: "text",
+							text: `${OWNER_PREVIEW_LINE_PREFIX} port=${ticket.port ?? 0} pairing=${ticket.pairing ?? ""}\nThis host shows no HoBo form, and the owner is not at this machine, so the form is served on port ${ticket.port ?? 0} for your host's port preview. Show that port to the owner with your host's preview or port forwarding (Claude Code: report_preview_port; Codespaces or VS Code: forward the port; Coder: its port link). Tell the owner the pairing code ${ticket.pairing ?? ""}: they type it with ${ticket.spec.name} in the form. Do not open, fetch or submit the page yourself, and never ask for the value in the chat. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`,
+						},
+					],
+					structuredContent: shown,
+					isError: false,
 				},
 			};
 		const text =

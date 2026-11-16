@@ -1,8 +1,5 @@
-import { createVerify, generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { generateKeyPairSync } from "node:crypto";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import {
 	type CommandRunInput,
 	createHoboCli,
@@ -32,6 +29,7 @@ import {
 	resolveGithubAppHost,
 	type SecretStoreOpening,
 } from "../src/index.js";
+import { pactGithub } from "./support/fake-github.js";
 
 // `hobo ci up`'s GitHub connection: a GitHub App from the reviewed manifest,
 // credentials straight into the secret store, idempotent on re-run. GitHub is
@@ -40,93 +38,7 @@ import {
 
 const RELAY = "https://ci.hobo.example";
 const OWNER_ID = 4242;
-const { privateKey, publicKey } = generateKeyPairSync("rsa", {
-	modulusLength: 2048,
-});
-const PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
-
-const reviewed = createGithubAppManifest({
-	name: "HoBo CI",
-	relayUrl: RELAY,
-	manifestCallbackUrl: `${RELAY}/v1/app-bootstrap/callback`,
-	installationCallbackUrl: `${RELAY}/v1/app-registration/install-callback`,
-});
-
-interface FakeGithub {
-	readonly fetch: typeof fetch;
-	readonly calls: string[];
-}
-
-interface PactInteraction {
-	readonly request: { readonly method: string; readonly path: string };
-	readonly response: { readonly status: number; readonly body: object };
-}
-
-// The provider side of contracts/pacts/github-app-manifest.pact.json.
-const PACT: { readonly interactions: readonly PactInteraction[] } = JSON.parse(
-	readFileSync(
-		fileURLToPath(
-			new URL(
-				"../contracts/pacts/github-app-manifest.pact.json",
-				import.meta.url,
-			),
-		),
-		"utf8",
-	),
-);
-
-/** The pact's requests, in order: what the flow must call. */
-const PACT_CALLS = PACT.interactions.map(
-	(interaction) => `${interaction.request.method} ${interaction.request.path}`,
-);
-
-// GitHub, answering from the pact: the reviewed permissions and events are
-// added to the App bodies and the per-run key replaces the pem placeholder.
-function fakeGithub(ownerId = OWNER_ID, ownerType = "User"): FakeGithub {
-	const calls: string[] = [];
-	return {
-		calls,
-		async fetch(input, init) {
-			const url = new URL(String(input));
-			const call = `${init?.method ?? "GET"} ${url.pathname}`;
-			calls.push(call);
-			if (call.startsWith("GET /app")) {
-				const bearer = new Headers(init?.headers).get("authorization");
-				const parts = bearer?.replace(/^Bearer /u, "").split(".") ?? [];
-				if (
-					parts.length !== 3 ||
-					!parts[2] ||
-					!createVerify("RSA-SHA256")
-						.update(`${parts[0]}.${parts[1]}`)
-						.verify(publicKey, Buffer.from(parts[2], "base64url"))
-				)
-					return new Response(null, { status: 401 });
-			}
-			const interaction = PACT.interactions.find(
-				(candidate) =>
-					`${candidate.request.method} ${candidate.request.path}` === call,
-			);
-			if (interaction === undefined)
-				return new Response('{"message":"not found"}', { status: 404 });
-			const declared = interaction.response.body;
-			const body = {
-				...declared,
-				...("owner" in declared
-					? {
-							owner: { id: ownerId, type: ownerType },
-							permissions: reviewed.defaultPermissions,
-							events: reviewed.defaultEvents,
-						}
-					: undefined),
-				...("pem" in declared ? { pem: PEM } : undefined),
-			};
-			return new Response(JSON.stringify(body), {
-				status: interaction.response.status,
-				headers: { "content-type": "application/json" },
-			});
-		},
-	};
-}
+const { PEM, PACT_CALLS, fakeGithub } = pactGithub(RELAY, OWNER_ID);
 
 function memoryStore(): OpenedSecretStore & {
 	readonly names: () => readonly string[];

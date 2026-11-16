@@ -77,6 +77,9 @@ function fakeInfisical() {
 			new Headers(init?.headers).get("authorization") !== `Bearer ${USER_JWT}`
 		)
 			return Response.json({ message: "unauthorized" }, { status: 401 });
+		// Nothing provisioned yet: no identity, no project member.
+		if ((init?.method ?? "GET") === "GET")
+			return Response.json({ identityMemberships: [], totalCount: 0 });
 		if (url.pathname === "/api/v1/identities")
 			return Response.json({ identity: { id: "ident-1" } });
 		if (url.pathname.endsWith("/tokens"))

@@ -340,6 +340,29 @@ environment variables.
   preconfigured OIDC identity, or names the `hobo add` that would satisfy each
   resource.
 
+- **Every step reachable from a remote box.** A handed-off run's owner may
+  be anywhere: no step sends them to a terminal, their own machine or the
+  box's `127.0.0.1` (`remoteInfeasible` in `@hobo/hobo-ci` names such
+  lines, and `test/spec/remote-*.spec.test.ts` drive each ceremony through a
+  simulated remote owner, with a failure injected at every step). Values
+  the waiting run itself reads go through the HoBo MCP server's secret
+  capture (`target: handoff`), never chat or the session's credential form:
+  `HOBO_OWNER_SIGN_IN url= capture=` (open a link, then hand back what it
+  shows: Infisical's copied session; GitHub's App code from the static
+  hand-off page, whose state nonce lives in the owner's HoBo settings) and
+  `HOBO_OWNER_CAPTURE name= guide=` (one value each: a self-hosted
+  Bitwarden API key; a remote 1Password sign-in, which `op account add`
+  reads from `OP_SECRET_KEY` and standard input in a throwaway
+  `OP_CONFIG_DIR`; a CI setting). Several captures are taken only once all
+  have arrived. On a remote box whose host shows no MCP Apps,
+  `capture_secret` serves the form at `/` of its own port for the host's
+  port preview (`HOBO_OWNER_PREVIEW port= pairing=`); the forwarder picks
+  Host and Origin, so a pairing code given in chat, five guesses at most,
+  stands in for those checks. Infisical provisioning reuses an identity,
+  auth method and membership a failed run left behind, retries dropped
+  connections and 5xx answers, names a proxy that refuses the tunnel (407)
+  as the proxy, and turns an expired session into a fresh sign-in link.
+
 ### Broker targeting and anonymous deploy
 
 Target resolution for `up` / default remote association:

@@ -404,7 +404,7 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 			throw new Error(`not vault storage: ${JSON.stringify(result)}`);
 		expect(server.strayHosts).toEqual([]);
 		expect(server.calls).not.toContain(
-			"POST /organizations/" + ORG_ID + "/projects",
+			`POST /organizations/${ORG_ID}/projects`,
 		);
 		expect(server.collections).toHaveLength(1);
 		expect(
@@ -632,7 +632,7 @@ describe("EVAL remote box, no keys anywhere: the ceremony collects the API key",
 		expect(all).not.toMatch(/environment's settings|BW_CLIENTID/u);
 	});
 
-	it("on a self-hosted server, says why the form cannot carry the key and where the ceremony asks instead", async () => {
+	it("on a self-hosted server, says why the credential form cannot carry the key and names a route that can", async () => {
 		const shown: string[] = [];
 		const outcome = await prepareGithubConnection(
 			handedOff((l) => shown.push(l)),
@@ -654,9 +654,10 @@ describe("EVAL remote box, no keys anywhere: the ceremony collects the API key",
 			kind: "refused",
 			result: { code: "HOBO_CI_BITWARDEN_NEEDS_API_KEY" },
 		});
-		expect(JSON.stringify(outcome)).toMatch(
-			/setup page asks for your personal API key/u,
-		);
+		// No owner channel here: it names the HoBo MCP route, whose secret form
+		// takes the key straight to the run; never a terminal on the box.
+		expect(JSON.stringify(outcome)).toMatch(/through the HoBo MCP server/u);
+		expect(JSON.stringify(outcome)).not.toMatch(/terminal|this machine/u);
 	});
 });
 

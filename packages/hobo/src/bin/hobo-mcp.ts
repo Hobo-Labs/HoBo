@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isRemoteBox } from "@hobo/hobo-ci";
 import { createHoboMcpServer, createSecretCaptureApp } from "@hobo/mcp";
 
 import { createComposedHoboCli } from "../cli.js";
@@ -47,6 +48,8 @@ async function serve(): Promise<number> {
 	const capture = createSecretCaptureApp({
 		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
 		handoff: async (secret) => owner.deposit(secret.name, secret.reveal()),
+		// The owner is elsewhere: no page on this box's 127.0.0.1 for them.
+		remote: isRemoteBox(),
 		connector: createInfisicalCaptureConnector({
 			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
 		}),

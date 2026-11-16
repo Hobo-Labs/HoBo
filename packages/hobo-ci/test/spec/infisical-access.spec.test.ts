@@ -43,6 +43,14 @@ function fakeInfisical() {
 		});
 		if (auth !== `Bearer ${USER_JWT}`)
 			return Response.json({ message: "unauthorized" }, { status: 401 });
+		// Nothing provisioned yet: no identity, no project member.
+		if (url.pathname === `/api/v2/organizations/${ORG}/identity-memberships`)
+			return Response.json({ identityMemberships: [], totalCount: 0 });
+		if (
+			url.pathname === `/api/v1/projects/${PROJECT}/memberships/identities` &&
+			(init?.method ?? "GET") === "GET"
+		)
+			return Response.json({ identityMemberships: [], totalCount: 0 });
 		if (url.pathname === "/api/v1/identities")
 			return Response.json({ identity: { id: "ident-1", name: body.name } });
 		if (url.pathname === "/api/v1/auth/token-auth/identities/ident-1")
@@ -167,12 +175,14 @@ describe("SPEC R1 + R4: HoBo creates the identity through the API", () => {
 			base(fakeMachine({ cliOnPath: true, signedIn: true }), api),
 		);
 		expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+			`GET /api/v2/organizations/${ORG}/identity-memberships`,
 			"POST /api/v1/identities",
 			"POST /api/v1/auth/token-auth/identities/ident-1",
+			`GET /api/v1/projects/${PROJECT}/memberships/identities`,
 			`POST /api/v1/projects/${PROJECT}/memberships/identities/ident-1`,
 			"POST /api/v1/auth/token-auth/identities/ident-1/tokens",
 		]);
-		expect(api.calls[0]?.body).toMatchObject({
+		expect(api.calls[1]?.body).toMatchObject({
 			organizationId: ORG,
 			role: "no-access",
 		});
@@ -255,6 +265,7 @@ describe("SPEC R8: a remote box signs in through the owner channel", () => {
 					asked.push(request.instructions);
 					return answer;
 				},
+				holds: () => answer !== undefined,
 			},
 		};
 	}
@@ -309,12 +320,15 @@ describe("SPEC R8: a remote box signs in through the owner channel", () => {
 			interactive: false,
 			owner: owner.channel,
 		});
+		// Asked again at once: the refusal carries a fresh sign-in link.
 		expect(result).toMatchObject({
 			kind: "refused",
-			code: "HOBO_CD_INFISICAL_SESSION",
+			code: "HOBO_CD_INFISICAL_SIGN_IN",
 		});
-		if (result.kind === "refused")
+		if (result.kind === "refused") {
 			expect(result.message).not.toContain("not-a-session");
+			expect(result.remediation[0]).toMatch(/^HOBO_OWNER_SIGN_IN url=/u);
+		}
 	});
 
 	it("records nothing when the owner does not answer", async () => {

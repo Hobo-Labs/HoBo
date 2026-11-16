@@ -136,16 +136,14 @@ export function storeSignInGuidance(
 ): readonly string[] {
 	if (store === "1password")
 		return [
-			`Sign in to 1Password once when the run asks (your 1Password app approves it); HoBo creates its own service account for the vault through the 1Password CLI.`,
-			`The 1Password app approves sign-ins on the machine it runs on: run hobo ${verb} up on your own machine once.`,
+			`Sign in to 1Password once when the run asks; HoBo creates its own service account for the vault through the 1Password CLI. From a remote box, the run asks for your sign-in in the HoBo MCP App's secret form, which only this run reads.`,
 		];
 	if (store === "bitwarden")
 		return [
-			`Your personal API key (${bitwardenApiKeyPage(bitwardenEndpoints("us"))}, or on bitwarden.eu or your own server the same page: Account settings → Security → Keys → View API key). From a remote box, give it in the agent session's credential form for Bitwarden's identity host as a username (client_id) and password (client_secret), never in chat; on your own machine, the setup page asks for it. Then approve the one login request the run shows, in a Bitwarden app you are signed in to.`,
+			`Your personal API key (${bitwardenApiKeyPage(bitwardenEndpoints("us"))}, or on bitwarden.eu or your own server the same page: Account settings → Security → Keys → View API key). The run asks for it in a form, never in chat: from a remote box, the agent session's credential form for Bitwarden's identity host (client_id as the username, client_secret as the password) or the HoBo MCP App's secret form. Then approve the one login request the run shows, in a Bitwarden app you are signed in to.`,
 		];
 	return [
-		`Sign in to Infisical once in your browser when the run opens it; HoBo creates its own machine identity, access and project membership through Infisical's API.`,
-		`Infisical's browser sign-in returns to the machine you sign in from: run hobo ${verb} up on your own machine once.`,
+		`Sign in to Infisical once from any device when the run gives you its link; HoBo creates its own machine identity, access and project membership through Infisical's API. From a remote box, hand over what Infisical's "Copy to clipboard" copies in the HoBo MCP App's secret form (hobo ${verb} up through the HoBo MCP server).`,
 	];
 }
 
