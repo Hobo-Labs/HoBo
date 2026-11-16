@@ -1,7 +1,11 @@
 import type { CeremonySetting } from "@hobo/connect-ui";
-
 import type { GithubAppOwner } from "./app-hosts.js";
 import type { GithubAppExpectation } from "./github.js";
+import {
+	checkedBy,
+	parseHttpsOrigin,
+	parseOnePasswordVaultId,
+} from "./parsed-values.js";
 
 // The settings a lifecycle's provider connections need, as ceremony fields:
 // asked for on the connect page when neither the environment nor an earlier
@@ -124,6 +128,7 @@ export function storeSettings(
 						kind: "text",
 						required: true,
 					},
+					validate: checkedBy(parseOnePasswordVaultId, "OP_VAULT_ID"),
 				},
 				{
 					field: {
@@ -144,6 +149,7 @@ export function storeSettings(
 						kind: "text",
 						required: false,
 					},
+					validate: checkedBy(parseHttpsOrigin, "OP_CONNECT_HOST"),
 				},
 			]
 		: [

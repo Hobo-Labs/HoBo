@@ -21,6 +21,8 @@ import {
 } from "@hobo/adapter-1password";
 import { z } from "zod";
 
+import type { HttpsOrigin } from "./parsed-values.js";
+
 const ConnectField = z.object({
 	id: z.string(),
 	label: z.string().optional(),
@@ -99,8 +101,8 @@ function toConnectBody(
 }
 
 export interface OnePasswordConnectOptions {
-	/** The owner's Connect server: an https origin. */
-	readonly host: string;
+	/** The owner's Connect server, parsed where it was read. */
+	readonly host: HttpsOrigin;
 	/**
 	 * The access token, or a placeholder the agent's egress proxy replaces
 	 * with the owner's token on the way to `host`.
@@ -113,8 +115,6 @@ export function createOnePasswordConnectClient(
 	options: OnePasswordConnectOptions,
 ): OnePasswordSdkClient {
 	const origin = new URL(options.host);
-	if (origin.protocol !== "https:" || origin.pathname !== "/")
-		throw new OnePasswordError("configure connect", "invalid-input");
 	const http = options.fetch ?? fetch;
 
 	/** One request, its answer parsed by `schema` at this boundary. */

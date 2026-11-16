@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { getCACertificates } from "node:tls";
 import { Agent, EnvHttpProxyAgent } from "undici";
 
+import { type ProxyUrl, parseProxyUrl } from "./parsed-values.js";
 import { withoutSecretEnv } from "./secret-custody.js";
 
 /**
@@ -21,7 +22,7 @@ import { withoutSecretEnv } from "./secret-custody.js";
 
 export interface Egress {
 	/** The proxy every https request must use, or none (direct). */
-	readonly proxy: string | undefined;
+	readonly proxy: ProxyUrl | undefined;
 	/** Hosts that bypass the proxy, as the environment lists them. */
 	readonly noProxy: string | undefined;
 	/** The CA bundle that trusts the proxy's certificates, if any. */
@@ -44,7 +45,18 @@ export function egressFrom(
 	env: Readonly<Record<string, string | undefined>>,
 ): Egress {
 	return {
-		proxy: first(env, ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]),
+		proxy: (() => {
+			const text = first(env, [
+				"HTTPS_PROXY",
+				"https_proxy",
+				"ALL_PROXY",
+				"all_proxy",
+			]);
+			// Parsed where it enters: a malformed proxy is refused up front.
+			return text === undefined
+				? undefined
+				: parseProxyUrl("HTTPS_PROXY", text);
+		})(),
 		noProxy: first(env, ["NO_PROXY", "no_proxy"]),
 		caFile: first(env, [
 			"NODE_EXTRA_CA_CERTS",

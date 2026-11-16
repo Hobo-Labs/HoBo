@@ -19,8 +19,10 @@ import {
 } from "@hobo/cli";
 import type { HttpTransport, TrustedVault } from "@hobo/core";
 import {
+	type AppHandOffMode,
 	egressFetch,
 	egressFrom,
+	parseAppHandOffMode,
 	REDIRECT_RECEIVER_SETTING,
 	type RedirectReceiver,
 	redirectReceiverFrom,
@@ -562,8 +564,14 @@ export function createCiCommand(
 					!values["non-interactive"];
 				// The owner's outbound-only tunnel: --receiver, else the
 				// non-secret HOBO_REDIRECT_RECEIVER; none means the hand-off.
+				// Both, and the hand-off mode, are parsed here, at the boundary.
 				let receiver: RedirectReceiver | undefined;
+				let handOffMode: AppHandOffMode;
 				try {
+					handOffMode = parseAppHandOffMode(
+						"HOBO_APP_HANDOFF",
+						(deps.env ?? process.env).HOBO_APP_HANDOFF,
+					);
 					receiver = redirectReceiverFrom({
 						...withoutSecretEnv(deps.env ?? process.env),
 						...(values.receiver !== undefined
@@ -592,6 +600,7 @@ export function createCiCommand(
 					replace: values.yes === true,
 					viaWorkflow: values["via-workflow"] === true,
 					handOff: values["hand-off"] === true,
+					handOffMode,
 					receiver,
 					// Every request of this run goes through the proxy the
 					// environment requires, read once up front.

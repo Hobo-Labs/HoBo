@@ -1,6 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
 
 import { childEgressEnv, type Egress, egressFrom } from "./egress.js";
+import {
+	type PublicOrigin,
+	parsePublicOrigin,
+	SettingParseError,
+} from "./parsed-values.js";
 
 /**
  * How a provider's browser redirect (GitHub's App manifest code, an OAuth
@@ -57,7 +62,7 @@ export const RECEIVER_THROUGH_PROXY: ReadonlyMap<RedirectReceiverId, boolean> =
 
 /** A running tunnel: its public origin, ended with the run. */
 export interface OpenTunnel {
-	readonly publicOrigin: string;
+	readonly publicOrigin: PublicOrigin;
 	readonly close: () => Promise<void>;
 }
 
@@ -88,7 +93,7 @@ export interface TunnelCommand {
 	/** The public HTTPS origin, matched in the CLI's output (group 1 or whole). */
 	readonly urlPattern: RegExp;
 	/** A fixed public origin, for tunnels whose address is configured, not printed. */
-	readonly fixedOrigin?: string;
+	readonly fixedOrigin?: PublicOrigin;
 }
 
 /** The tunnel CLI each receiver runs, from non-secret settings only. */
@@ -188,7 +193,7 @@ export function tunnelCommand(
 
 /** A tunnel whose public address is configured, not printed. */
 interface FixedOrigin {
-	readonly fixedOrigin: string;
+	readonly fixedOrigin: PublicOrigin;
 }
 
 function originSetting(
@@ -200,39 +205,21 @@ function originSetting(
 			"HOBO_REDIRECT_RECEIVER_MISSING",
 			"This tunnel's public address is configured, not printed: set HOBO_REDIRECT_PUBLIC_ORIGIN to the https origin routed to it.",
 		);
-	return { fixedOrigin: origin };
+	// Parsed when the receiver is built: a bad origin never reaches a tunnel.
+	return { fixedOrigin: safePublicOrigin(origin) };
 }
 
 /** Only a public https origin with no path, query or credentials. */
-export function safePublicOrigin(text: string): string {
-	let url: URL;
+export function safePublicOrigin(text: string): PublicOrigin {
 	try {
-		url = new URL(text);
-	} catch {
+		return parsePublicOrigin("the tunnel's public address", text);
+	} catch (error) {
+		if (!(error instanceof SettingParseError)) throw error;
 		throw new RedirectReceiverError(
 			"HOBO_REDIRECT_RECEIVER_UNSAFE",
-			"The tunnel's address is not a URL.",
+			error.message,
 		);
 	}
-	const host = url.hostname;
-	if (
-		url.protocol !== "https:" ||
-		url.username !== "" ||
-		url.password !== "" ||
-		(url.pathname !== "/" && url.pathname !== "") ||
-		url.search !== "" ||
-		url.hash !== "" ||
-		host === "localhost" ||
-		/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/u.test(
-			host,
-		) ||
-		host === "[::1]"
-	)
-		throw new RedirectReceiverError(
-			"HOBO_REDIRECT_RECEIVER_UNSAFE",
-			`The tunnel's address ${url.origin} is not a public https origin.`,
-		);
-	return url.origin;
 }
 
 export interface ReceiverDeps {

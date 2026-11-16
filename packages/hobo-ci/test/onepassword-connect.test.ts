@@ -4,12 +4,17 @@ import {
 } from "@hobo/adapter-1password";
 import { describe, expect, it } from "vitest";
 
+import { parseHttpsOrigin } from "../src/index.js";
 import { createOnePasswordConnectClient } from "../src/onepassword-connect.js";
 
 // 1Password Connect through the same SecretsPort as the SDK: one Password
 // item per secret, its value in the `password` field, a bearer token only.
 
 const VAULT = "k2l3m4n5o6p7q8r9s0t1u2v3w4";
+const CONNECT_HOST = parseHttpsOrigin(
+	"OP_CONNECT_HOST",
+	"https://connect.owner.example",
+);
 const binding = onePasswordBinding({
 	vaultId: VAULT,
 	authMode: "service-account",
@@ -78,7 +83,7 @@ describe("1Password Connect", () => {
 		const server = connect();
 		const port = createOnePasswordSecretsPort({
 			client: createOnePasswordConnectClient({
-				host: "https://connect.owner.example",
+				host: CONNECT_HOST,
 				token: "connect-token",
 				fetch: server.http,
 			}),
@@ -96,7 +101,7 @@ describe("1Password Connect", () => {
 	it("reads as denied, not missing, until the owner's token reaches the request", async () => {
 		const port = createOnePasswordSecretsPort({
 			client: createOnePasswordConnectClient({
-				host: "https://connect.owner.example",
+				host: CONNECT_HOST,
 				token: "placeholder",
 				fetch: connect().http,
 			}),
@@ -105,15 +110,5 @@ describe("1Password Connect", () => {
 		const read = await port.access("HOBO_CD_SETTINGS");
 		expect(read.status).toBe("denied");
 		expect(read).not.toMatchObject({ code: "secret-not-found" });
-	});
-
-	it("refuses a Connect host that is not an https origin", () => {
-		for (const host of [
-			"http://connect.example",
-			"https://connect.example/path",
-		])
-			expect(() =>
-				createOnePasswordConnectClient({ host, token: "t" }),
-			).toThrow();
 	});
 });

@@ -48,7 +48,10 @@ function credentialLine(
 	family: "ci" | "cd",
 	timeoutMs: number,
 ): string {
-	const host = owner.egressCredentialHost ?? "app.infisical.com";
+	const host =
+		owner.egressCredentialHost !== undefined
+			? new URL(owner.egressCredentialHost).host
+			: "app.infisical.com";
 	const wait = `This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`;
 	if (owner.id === "1password")
 		return `${OWNER_CREDENTIAL_LINE_PREFIX} host=${host} guide=${ONE_PASSWORD_CONNECT_GUIDE} — in 1Password: Developer → Connect servers → your server → Issue token, with access to the store's vault only. Then give the token to the agent's session in its credential form for ${host}, never in chat. ${wait}`;

@@ -438,7 +438,7 @@ describe("prepareVercelConnection", () => {
 				const connected = await flow.onAction(
 					"connect.submit",
 					{
-						OP_VAULT_ID: "vault",
+						OP_VAULT_ID: "k2l3m4n5o6p7q8r9s0t1u2v3w4",
 						OP_ACCOUNT: "account",
 					},
 					selected.step,

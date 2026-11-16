@@ -246,6 +246,12 @@ environment variables.
   GitHub's single-use `code~state`, which the agent writes to the run's
   stdin) or `store` (`HOBO_OWNER_APP_REGISTER`: GitHub's prefilled form, the
   owner stores the App, the run checks it with GitHub).
+- **Ceremony settings are parsed, not validated** (`parsed-values.ts`): each
+  outside value (a 1Password vault id, a Connect host, a tunnel's public
+  address, the proxy URL, the App hand-off mode) becomes a branded type where
+  it enters, or is refused there by name (`SettingParseError`). Code past the
+  parser takes only the brand, and the setup page's check is derived from the
+  same parser (`checkedBy`), so one rule lives in one place.
 - **Egress is read once, up front** (`egressFrom`): the HTTPS proxy the
   environment requires, its bypass list and CA bundle. The run's own
   requests go through it (`egressFetch`), tunnel CLIs start with it and no

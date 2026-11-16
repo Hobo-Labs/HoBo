@@ -60,6 +60,20 @@ export {
 	storeSignInGuidance,
 } from "./owner-store.js";
 export {
+	type AppHandOffMode,
+	checkedBy,
+	type HttpsOrigin,
+	type OnePasswordVaultId,
+	type ProxyUrl,
+	type PublicOrigin,
+	parseAppHandOffMode,
+	parseHttpsOrigin,
+	parseOnePasswordVaultId,
+	parseProxyUrl,
+	parsePublicOrigin,
+	SettingParseError,
+} from "./parsed-values.js";
+export {
 	canReachOwner,
 	OWNER_PAGE_LINE_PREFIX,
 	openInBrowser,

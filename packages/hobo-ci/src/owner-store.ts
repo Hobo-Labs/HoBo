@@ -16,6 +16,7 @@ import { z } from "zod";
 
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
 import { INFISICAL_OAUTH_DOCS, OAUTH_SIGN_IN } from "./infisical-oauth.js";
+import { type HttpsOrigin, parseHttpsOrigin } from "./parsed-values.js";
 import {
 	type Env,
 	type OpenedSecretStore,
@@ -197,7 +198,7 @@ export interface OwnerStore {
 	/** Whether supplying an egress-proxy credential can open the configured store. */
 	readonly canAwaitEgressCredential: boolean;
 	/** The host whose credential the egress proxy injects, when it can. */
-	readonly egressCredentialHost: string | undefined;
+	readonly egressCredentialHost: HttpsOrigin | undefined;
 	/** The store, opened without the page when the locator and a sign-in allow it. */
 	readonly opened: OpenedSecretStore | undefined;
 	/**
@@ -276,16 +277,11 @@ export async function ownerStore(
 		id === "infisical" && resolved.values.INFISICAL_SIGN_IN === OAUTH_SIGN_IN;
 	// 1Password through the owner's Connect server: a bearer token the egress
 	// proxy injects on the way to it, so no desktop app and no token here.
-	const connectHost = (() => {
-		if (id !== "1password" || !resolved.values.OP_CONNECT_HOST)
-			return undefined;
-		try {
-			const url = new URL(resolved.values.OP_CONNECT_HOST);
-			return url.protocol === "https:" ? url.host : undefined;
-		} catch {
-			return undefined;
-		}
-	})();
+	// Parsed where it enters: a malformed host was already refused as missing.
+	const connectHost =
+		id === "1password" && resolved.values.OP_CONNECT_HOST
+			? parseHttpsOrigin("OP_CONNECT_HOST", resolved.values.OP_CONNECT_HOST)
+			: undefined;
 	const oauthMissing = oauthSignIn
 		? side
 				.map((setting) => setting.field)
@@ -324,9 +320,10 @@ export async function ownerStore(
 			choice.missing.length === 0 &&
 			missingSide.length === 0,
 		egressCredentialHost: proxySignIn
-			? new URL(
+			? parseHttpsOrigin(
+					"INFISICAL_SITE_URL",
 					resolved.values.INFISICAL_SITE_URL ?? "https://app.infisical.com",
-				).host
+				)
 			: connectHost,
 		opened,
 		async stage({ provider, reason, proceed }) {

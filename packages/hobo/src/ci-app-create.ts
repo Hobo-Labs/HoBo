@@ -43,6 +43,7 @@ import {
 } from "@hobo/ci-gh-actions";
 import type { CommandResult } from "@hobo/cli";
 import {
+	type AppHandOffMode,
 	EGRESS_PROXY_PLACEHOLDER,
 	EGRESS_PROXY_SIGN_IN,
 	type OpenTunnel,
@@ -117,6 +118,8 @@ export type AppCreateOptions = Readonly<{
 	tunnelProbe?: typeof fetch | undefined;
 	/** How long to wait for a tunnel to carry its first request. Default 60s. */
 	tunnelProbeTimeoutMs?: number | undefined;
+	/** The hand-off mode, parsed at the CLI boundary; `paste` when unset. */
+	handOffMode?: AppHandOffMode | undefined;
 	/** The owner's pasted code (paste hand-off): one line from stdin by default. */
 	readCode?: (() => Promise<string>) | undefined;
 	/** Tests inject the dispatch; otherwise `gh workflow run` with the inputs on stdin. */
@@ -631,12 +634,12 @@ export async function runCiAppCreate(
 		return githubAppManifestJson(manifest);
 	};
 	// Handed off with no receiver, the owner's hand-off carries the result.
-	const handOff =
+	// Handed off with no receiver, the owner's hand-off carries the result,
+	// in the mode the CLI parsed (paste by default).
+	const handOff: AppHandOffMode | undefined =
 		options.handOff === true && options.receiver === undefined
-			? (options.env.HOBO_APP_HANDOFF ?? "paste")
+			? (options.handOffMode ?? "paste")
 			: undefined;
-	if (handOff !== undefined && handOff !== "paste" && handOff !== "store")
-		return usage("HOBO_APP_HANDOFF must be paste or store.");
 	if (handOff === "store") {
 		if (service === undefined)
 			return usage(

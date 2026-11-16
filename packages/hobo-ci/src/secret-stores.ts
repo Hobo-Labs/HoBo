@@ -30,6 +30,13 @@ import {
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
 import { createOnePasswordConnectClient } from "./onepassword-connect.js";
+import {
+	type HttpsOrigin,
+	type OnePasswordVaultId,
+	parseHttpsOrigin,
+	parseOnePasswordVaultId,
+	SettingParseError,
+} from "./parsed-values.js";
 
 // The third-party secret stores a provider connection deposits into.
 // Where a store is (its coordinates: ids, a region) is non-secret and comes
@@ -411,7 +418,21 @@ export async function openSecretStore(
 			}
 		}
 		case "1password": {
-			const vaultId = coordinates.OP_VAULT_ID;
+			// Parsed here, where the coordinates enter: a malformed id or host
+			// is refused by name, never passed on.
+			let vaultId: OnePasswordVaultId | undefined;
+			let connectHost: HttpsOrigin | undefined;
+			try {
+				vaultId = coordinates.OP_VAULT_ID
+					? parseOnePasswordVaultId("OP_VAULT_ID", coordinates.OP_VAULT_ID)
+					: undefined;
+				connectHost = coordinates.OP_CONNECT_HOST
+					? parseHttpsOrigin("OP_CONNECT_HOST", coordinates.OP_CONNECT_HOST)
+					: undefined;
+			} catch (error) {
+				if (!(error instanceof SettingParseError)) throw error;
+				return { ok: false, message: error.message, remediation: [] };
+			}
 			if (!vaultId)
 				return {
 					ok: false,
@@ -423,9 +444,9 @@ export async function openSecretStore(
 			try {
 				// The owner's Connect server, when named: a bearer token only,
 				// which the egress proxy injects when the run holds none.
-				const client = coordinates.OP_CONNECT_HOST
+				const client = connectHost
 					? createOnePasswordConnectClient({
-							host: coordinates.OP_CONNECT_HOST,
+							host: connectHost,
 							token:
 								signIn.reveal("OP_CONNECT_TOKEN") ?? EGRESS_PROXY_PLACEHOLDER,
 							...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
@@ -437,10 +458,8 @@ export async function openSecretStore(
 				const binding = onePasswordBinding({
 					vaultId,
 					authMode:
-						env.OP_ACCOUNT && !coordinates.OP_CONNECT_HOST
-							? "desktop-app"
-							: "service-account",
-					...(env.OP_ACCOUNT && !coordinates.OP_CONNECT_HOST
+						env.OP_ACCOUNT && !connectHost ? "desktop-app" : "service-account",
+					...(env.OP_ACCOUNT && !connectHost
 						? { accountName: env.OP_ACCOUNT }
 						: undefined),
 				});
