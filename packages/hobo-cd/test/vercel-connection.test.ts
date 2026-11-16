@@ -309,6 +309,7 @@ describe("prepareVercelConnection", () => {
 				},
 				{
 					env: {},
+					fetch: async () => new Response(null, { status: 401 }),
 					locator: memorySettings({
 						HOBO_SECRET_STORE: "infisical",
 						INFISICAL_PROJECT_ID: "proj",

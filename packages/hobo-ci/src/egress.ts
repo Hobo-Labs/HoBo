@@ -103,6 +103,18 @@ export function egressFetch(egress: Egress): typeof fetch {
 	};
 }
 
+/** Snapshot egress now, but open the CA bundle only if a request is made. */
+export function lazyEgressFetch(
+	env: Readonly<Record<string, string | undefined>>,
+): typeof fetch {
+	const egress = egressFrom(env);
+	let send: typeof fetch | undefined;
+	return (input, init) => {
+		send ??= egressFetch(egress);
+		return send(input, init);
+	};
+}
+
 /**
  * The environment a tunnel CLI starts with: this process's, minus every
  * secret variable, plus the proxy and CA settings in each spelling the CLIs

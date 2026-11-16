@@ -23,6 +23,7 @@ const binding = onePasswordBinding({
 function connect(token = "connect-token") {
 	const items = new Map<string, { id: string; title: string; value: string }>();
 	const seen: string[] = [];
+	const writes: { method: string; body: unknown }[] = [];
 	const http = async (input: string | URL | Request, init?: RequestInit) => {
 		const url = new URL(String(input));
 		seen.push(`${init?.method ?? "GET"} ${url.pathname}`);
@@ -71,11 +72,19 @@ function connect(token = "connect-token") {
 			);
 		const item = items.get(url.pathname.slice(base.length + 1));
 		if (item === undefined) return new Response(null, { status: 404 });
-		if (init?.method === "PUT")
-			item.value = JSON.parse(String(init.body)).fields[0].value;
+		if (init?.method === "PUT") {
+			const body = JSON.parse(String(init.body));
+			writes.push({ method: "PUT", body });
+			item.value = body.fields[0].value;
+		}
+		if (init?.method === "PATCH") {
+			const body = JSON.parse(String(init.body));
+			writes.push({ method: "PATCH", body });
+			item.value = body[0].value;
+		}
 		return Response.json(view(item));
 	};
-	return { http, seen };
+	return { http, seen, writes };
 }
 
 describe("1Password Connect", () => {
@@ -93,9 +102,45 @@ describe("1Password Connect", () => {
 		expect((await port.access("HOBO_CD_VERCEL_TOKEN")).material).toBe("first");
 		await port.put("HOBO_CD_VERCEL_TOKEN", "second");
 		expect((await port.access("HOBO_CD_VERCEL_TOKEN")).material).toBe("second");
+		expect(server.writes).toEqual([
+			{
+				method: "PATCH",
+				body: [{ op: "add", path: "/fields/password/value", value: "second" }],
+			},
+		]);
 		expect(await port.access("MISSING")).toMatchObject({
 			code: "secret-not-found",
 		});
+	});
+
+	it("refuses an update when the item changed after it was read", async () => {
+		let reads = 0;
+		const writes: string[] = [];
+		const item = {
+			id: "item-id",
+			title: "HOBO_CD_SETTINGS",
+			category: "PASSWORD",
+			vault: { id: VAULT },
+			tags: ["hobo", "owner-tag"],
+			urls: [{ href: "https://owner.example" }],
+			fields: [{ id: "password", type: "CONCEALED", value: "before" }],
+		};
+		const client = createOnePasswordConnectClient({
+			host: CONNECT_HOST,
+			token: "connect-token",
+			fetch: async (_input, init) => {
+				if (init?.method !== "GET") writes.push(init?.method ?? "");
+				return Response.json({ ...item, version: ++reads });
+			},
+		});
+		const old = await client.items.get(VAULT, item.id);
+		await expect(
+			client.items.put({
+				...old,
+				fields: old.fields.map((field) => ({ ...field, value: "after" })),
+			}),
+		).rejects.toThrow();
+		expect(writes).toEqual([]);
 	});
 
 	it("reads as denied, not missing, until the owner's token reaches the request", async () => {

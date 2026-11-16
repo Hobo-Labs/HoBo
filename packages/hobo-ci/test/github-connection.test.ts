@@ -582,6 +582,7 @@ describe("prepareGithubConnection", () => {
 					prepare: (input) =>
 						prepareGithubConnection(input, {
 							env: {},
+							fetch: async () => new Response(null, { status: 401 }),
 							locator: memorySettings({
 								HOBO_SECRET_STORE: "infisical",
 								INFISICAL_PROJECT_ID: "proj",
@@ -618,6 +619,7 @@ describe("prepareGithubConnection", () => {
 				},
 				{
 					env: {},
+					fetch: async () => new Response(null, { status: 401 }),
 					locator: memorySettings({
 						HOBO_SECRET_STORE: "infisical",
 						INFISICAL_PROJECT_ID: "proj",

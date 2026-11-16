@@ -24,6 +24,8 @@ describe("parsed settings", () => {
 			"http://connect.example",
 			"https://connect.example/v1",
 			"https://u:p@connect.example",
+			"https://connect.example/?token=secret",
+			"https://connect.example/#fragment",
 			"connect.example",
 		])
 			expect(() => parseHttpsOrigin("OP_CONNECT_HOST", bad)).toThrow(

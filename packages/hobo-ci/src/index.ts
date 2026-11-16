@@ -18,6 +18,7 @@ export {
 	type Egress,
 	egressFetch,
 	egressFrom,
+	lazyEgressFetch,
 } from "./egress.js";
 export {
 	createGithubConnectFlow,

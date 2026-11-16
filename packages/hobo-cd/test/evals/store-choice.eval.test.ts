@@ -122,11 +122,16 @@ function connectBehindProxy() {
 			const id = url.pathname.slice(base.length + 1);
 			const item = items.get(id);
 			if (item === undefined) return new Response(null, { status: 404 });
-			if (init?.method === "PUT") {
+			if (init?.method === "PATCH") {
 				const body = JSON.parse(String(init.body));
-				item.value = body.fields.find(
-					(f: { id: string }) => f.id === "password",
-				).value;
+				expect(body).toEqual([
+					{
+						op: "add",
+						path: "/fields/password/value",
+						value: expect.any(String),
+					},
+				]);
+				item.value = body[0].value;
 				item.version += 1;
 			}
 			return Response.json(view(item));

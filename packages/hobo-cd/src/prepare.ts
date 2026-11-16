@@ -16,6 +16,7 @@ import {
 	familySettings,
 	InvalidSecretStoreError,
 	ignoredSecretEnvNotice,
+	lazyEgressFetch,
 	type OpenedSecretStore,
 	type OwnerStoreDeps,
 	openInBrowser,
@@ -218,7 +219,11 @@ export async function prepareVercelConnection(
 	const vault = scopeRunVault(deps.vault ?? createTrustedVault());
 	let handedOff = false;
 	try {
-		const outcome = await prepareVercelWithVault(input, { ...deps, vault });
+		const outcome = await prepareVercelWithVault(input, {
+			...deps,
+			fetch: deps.fetch ?? lazyEgressFetch(deps.env ?? process.env),
+			vault,
+		});
 		handedOff = outcome.kind === "ready" && outcome.credentials === vault;
 		return outcome;
 	} finally {
