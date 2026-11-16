@@ -1,11 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ResourceMutationNotSentError } from "@hobo/core";
 import {
 	createManualClock,
 	createRuntimeLocalEventStore,
 } from "@hobo/runtime-local";
-import { ResourceMutationNotSentError } from "@hobo/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDurableHostingMutationScope } from "../src/hosting-mutation-scope.js";
 

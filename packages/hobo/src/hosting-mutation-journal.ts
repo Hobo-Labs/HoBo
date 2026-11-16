@@ -132,7 +132,9 @@ export function createDurableHostingMutationJournal(options: {
 			verify(current.entry, requestDigest);
 			return {
 				status:
-					current.entry.status === "acknowledged" ? "acknowledged" : "uncertain",
+					current.entry.status === "acknowledged"
+						? "acknowledged"
+						: "uncertain",
 			};
 		},
 		async claim({ mutationId, requestDigest }) {
