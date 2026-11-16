@@ -35,17 +35,6 @@ const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
 const inputDirs = relayInputDirs(lockfile);
 const configured = "bound" as const;
 
-/** The block of one job, excluding the other jobs. */
-function job(name: string): string {
-	const lines = workflow.split("\n");
-	const start = lines.findIndex((line) => line === `  ${name}:`);
-	assert.notEqual(start, -1, `no job named ${name}`);
-	const end = lines.findIndex(
-		(line, index) => index > start && /^ {2}[a-z][\w-]*:$/u.test(line),
-	);
-	return lines.slice(start, end === -1 ? undefined : end).join("\n");
-}
-
 /** The block of one step, from its `- name:` line to the next step. */
 function step(name: string): string {
 	const lines = workflow.split("\n");
@@ -164,12 +153,12 @@ describe("the relay deploy workflow", () => {
 			workflow,
 			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n {4}inputs:\n/mu,
 		);
-		// The App's code and ids, plus the explicit CD owner handoff.
+		// The only dispatch inputs: the App's one-time code and two ids.
 		assert.deepEqual(
 			[...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu)].map(
 				(match) => match[1],
 			),
-			["manifest_code", "relay", "owner_id", "connect", "vercel_team"],
+			["manifest_code", "relay", "owner_id"],
 		);
 		assert.match(
 			workflow,
@@ -201,26 +190,9 @@ describe("the relay deploy workflow", () => {
 					line,
 				);
 		assert.doesNotMatch(
-			job("deploy"),
+			workflow,
 			/INFISICAL_|VERCEL_TEAM_ID|HOBO_CI_RELAY_URL/u,
 		);
-	});
-
-	it("starts the owner connection only on an explicit main-branch dispatch", () => {
-		const owner = job("owner-connect");
-		assert.match(
-			owner,
-			/if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.connect == 'cd'/u,
-		);
-		assert.match(owner, / {6}id-token: write\n/u);
-		assert.match(owner, /submodules: recursive/u);
-		assert.match(owner, /persist-credentials: false/u);
-		assert.match(
-			owner,
-			/HOBO_CD_VERCEL_TEAM_ID: \$\{\{ github\.event\.inputs\.vercel_team \}\}/u,
-		);
-		assert.match(owner, /hobo\.js cd up --hand-off/u);
-		assert.doesNotMatch(owner, /\$\{\{\s*secrets\./u);
 	});
 
 	it("routes the deploy like hobo-ci.yml, so a busy fleet does not hold it", () => {
@@ -233,14 +205,13 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("the relay deploy job adopts without a Vercel token or API write", () => {
-		const deploy = job("deploy");
+	it("holds no Vercel token and makes no Vercel API write: Vercel's Git integration deploys", () => {
 		assert.doesNotMatch(
-			deploy,
+			workflow,
 			/VERCEL_TOKEN|relay-deploy-credential|vercel@\d|vercel deploy|--token\b/u,
 		);
 		// The only `hobo ci deploy` is the observe-only adoption.
-		for (const match of deploy.matchAll(/ci deploy\b[^\n]*/gu))
+		for (const match of workflow.matchAll(/ci deploy\b[^\n]*/gu))
 			assert.match(match[0], /^ci deploy --adopt\b/u, match[0]);
 		assert.ok(
 			!existsSync(join(root, "scripts/ci/relay-deploy-credential.mts")),

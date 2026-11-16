@@ -218,14 +218,7 @@ environment variables.
   ceremony itself. The remote-box evals
   (`packages/hobo-ci/test/evals`, `packages/hobo-cd/test/evals`) hold both
   lifecycles and the hobo-deploy skill to this: no loopback line, post-back
-  into the same run, and a refusal with outside paths when nobody acts. With no
-  token anyone types, the owner (or their agent) dispatches the relay deploy
-  workflow on `main` with `connect: ci` or `connect: cd`: its `owner-connect` job signs in to
-  the store as `hobo-ci-writer` with GitHub OIDC (`INFISICAL_IDENTITY_ID` in
-  the committed locator), runs `hobo <ci|cd> up --hand-off`, and shows any owner line (for cd, the
-  `HOBO_OWNER_DEVICE` line) in its job summary. The agent dispatches it
-  itself, so the owner types nothing; `ci` with the relay's App asks them
-  for nothing at all.
+  into the same run, and a refusal with outside paths when nobody acts.
 - **A refusal is never a dead end.** Human output prints a result that did
   not succeed with its code and every remediation line, even when there are
   no suggested actions; `--json` carries those lines in `remediation`.

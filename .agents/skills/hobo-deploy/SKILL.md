@@ -195,19 +195,6 @@ nothing in the box and nothing calls back into it. Instead it names what it
 needs on one line, waits, and **picks up what the owner did outside, in the
 same run** (post-back). Your job is to relay each line, act on it, and wait.
 
-**First, do it yourself with CI's OIDC identity: the owner types nothing.**
-Dispatch `relay-deploy.yml` on `main` with input `connect: ci` or
-`connect: cd` (GitHub MCP `actions_run_trigger`; you do this, not the
-owner). Its `owner-connect` job signs in to the store as `hobo-ci-writer`
-with its own GitHub OIDC token and runs `hobo <ci|cd> up --hand-off`. Watch
-the run (`actions_get` / job logs). For `ci` with the relay's App the owner
-is asked for nothing. For `cd`, relay only the `HOBO_OWNER_DEVICE` line from
-the job summary (step 3 below). This needs the workflow on `main`: if it is
-not there yet, say so plainly and ask the owner to merge (their decision),
-then fall back to the in-box run below only if they want it sooner.
-
-**Fallback: the run in your box.**
-
 1. Run `hobo <ci|cd> up --hand-off` in the background (never `--json` or
    `-q`: they hide the lines). Watch its output.
 2. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is

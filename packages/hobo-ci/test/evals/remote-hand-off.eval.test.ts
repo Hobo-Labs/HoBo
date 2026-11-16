@@ -278,66 +278,6 @@ describe("EVAL remote box: hobo ci up --hand-off", () => {
 		expectNoLoopback(ownerFacingText(owner.shown, outcome));
 	});
 
-	it("asks the owner for nothing when it runs as CI's OIDC identity (the agent dispatches it)", async () => {
-		const shown: string[] = [];
-		const port = createMemorySecretsPort({ id: "memory" });
-		const store: OpenedSecretStore = {
-			id: "infisical",
-			port,
-			reference: (name) => `infisical://proj/prod/hobo-ci-relay/${name}`,
-		};
-		const seed = {
-			HOBO_CI_GITHUB_APP_PRIVATE_KEY: PEM,
-			HOBO_CI_WEBHOOK_SECRET: "whsec",
-			HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
-			HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.test",
-			HOBO_CI_GITHUB_APP_ID: "777",
-			HOBO_CI_SETTINGS: JSON.stringify({
-				HOBO_CI_PUBLIC_URL: "https://ci.hobo.example",
-				HOBO_CI_GITHUB_OWNER: "octo",
-			}),
-		};
-		for (const [name, value] of Object.entries(seed))
-			await port.put(name, value);
-		let opened: Readonly<Record<string, string | undefined>> = {};
-		const outcome = await prepareGithubConnection(
-			handOffInput((line) => shown.push(line)),
-			{
-				env: {
-					HOBO_CI_GITHUB_OWNER_ID: "4242",
-					HOBO_CI_GITHUB_OWNER_TYPE: "User",
-				},
-				vault: createTrustedVault(),
-				locator: {
-					read: async () => ({
-						HOBO_SECRET_STORE: "infisical",
-						INFISICAL_PROJECT_ID: "proj",
-						INFISICAL_IDENTITY_ID: "writer-identity",
-					}),
-					write: async () => undefined,
-				},
-				// GitHub Actions' own OIDC request variables, never a secret.
-				workloadOidc: {
-					ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.test/x",
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-request",
-				},
-				openStore: async (_id, coordinates) => {
-					opened = coordinates;
-					return { ok: true, store };
-				},
-				fetch: github(),
-				sleep: async () => undefined,
-				startPage: noPage,
-			},
-		);
-		if (outcome.kind !== "ready")
-			throw new Error(`refused: ${JSON.stringify(outcome)}`);
-		expect(opened.INFISICAL_IDENTITY_ID).toBe("writer-identity");
-		expect(opened.INFISICAL_SIGN_IN).not.toBe("egress-proxy");
-		expect(opened.INFISICAL_SECRET_PATH).toBe("/hobo-ci-relay");
-		expect(shown.filter((line) => line.startsWith("HOBO_OWNER_"))).toEqual([]);
-	});
-
 	it("without an App, refuses with a path the owner can take from outside", async () => {
 		const session = remoteSession();
 		const owner = ownerOutside({

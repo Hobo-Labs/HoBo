@@ -314,15 +314,6 @@ it masks the code and runs `hobo ci app deposit`, which converts it and
 writes the App's credentials into the store as `hobo-ci-writer`
 ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first)).
 
-A manual run with `connect: cd` instead starts the `owner-connect` job.
-It signs in to the configured store with the job's GitHub OIDC identity and
-runs `hobo cd up --hand-off`; the owner approves the Vercel device code shown
-in the job summary. That command can create or update CD resources. The
-optional `vercel_team` input names the target team. The job checks out the
-pinned submodule before installing dependencies, so it can run on a fresh
-runner. It does not run on a push, and the normal relay deploy is skipped for
-that handoff.
-
 In production the relay reads its store's coordinates from the committed
 binding (bundled through `vercel.json` `includeFiles`), and derives its
 session key, Sandbox proxy key and `CRON_SECRET` from the App private key
@@ -330,7 +321,7 @@ session key, Sandbox proxy key and `CRON_SECRET` from the App private key
 
 #### Token-free relay mode (`hobo ci deploy --adopt`)
 
-The relay deploy job holds no Vercel token, so it does not deploy: it adopts.
+The workflow holds no Vercel token, so it does not deploy: it adopts.
 `hobo ci deploy --adopt --sha <commit>` is a publisher with an observe-only
 realization:
 
