@@ -47,6 +47,9 @@ import {
 // public-contract: the committed, non-secret locator of the owner's secret store.
 export const SECRET_STORE_LOCATOR_FILE = ".hobo/secret-store.json";
 
+// public-contract: the locator's INFISICAL_SIGN_IN value for a sign-in the agent's egress proxy injects.
+export const EGRESS_PROXY_SIGN_IN = "egress-proxy";
+
 /** Which store, as the ceremony asks it. */
 export const STORE_CHOICE: CeremonySetting = {
 	field: {
@@ -194,8 +197,14 @@ export async function ownerStore(
 		id === "infisical" &&
 		Boolean(resolved.values.INFISICAL_IDENTITY_ID) &&
 		Boolean(deps.workloadOidc?.ACTIONS_ID_TOKEN_REQUEST_URL);
+	// The agent's egress proxy injects the owner's token into requests to
+	// Infisical: this run holds only a placeholder and asks for nothing.
+	const proxySignIn =
+		id === "infisical" &&
+		resolved.values.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN;
 	const missingSide = resolved.missing.filter(
-		(field) => !(workloadSignIn && field.name === "INFISICAL_TOKEN"),
+		(field) =>
+			!((workloadSignIn || proxySignIn) && field.name === "INFISICAL_TOKEN"),
 	);
 
 	let opened: OpenedSecretStore | undefined;

@@ -190,17 +190,16 @@ environment variables.
   the chosen ones (`hobo add`, approving a held one) and runs `up` again.
 - **Agents** can complete a ceremony too (`createAgent`, WebMCP). Handing off
   to a provider or submitting a secret asks the person.
-- **An agent hands the page to the person** (`--hand-off`): the run serves
-  the page without a terminal, opens no browser, and names it on one
-  `HOBO_OWNER_PAGE <url> port=<n>` progress line whose `<url>` is the page's
-  origin: its first visit opens the session (once), so the agent hands over
-  that link and the run waits for the person. If the run needs a page,
-  `--json` and `-q` are refused because they hide the progress line. For a
-  remote run, the person's browser needs an authenticated tunnel that binds
-  the same loopback port on their machine and forwards it to the run: the
-  provider returns to that loopback address after authorization. An HTTPS
-  preview by itself does not forward that callback. The agent never answers
-  the page itself.
+- **An agent hands the ceremony to the person** (`--hand-off`): the run
+  serves nothing on the agent's machine and nothing redirects back to it,
+  so the person can be anywhere. The store must open without a page (a
+  workload's OIDC, or `INFISICAL_SIGN_IN=egress-proxy`: the run sends a
+  placeholder and the agent's egress proxy injects the owner's Infisical
+  access token, given out of band); otherwise the run refuses with
+  `HOBO_CD_STORE_NEEDS_SIGN_IN`. Vercel is connected with the OAuth device
+  grant: one `HOBO_OWNER_DEVICE <link> code=<code>` line, approved on
+  vercel.com from any device. `--json` and `-q` are refused because they
+  hide that line. The agent never answers the ceremony itself.
 - Without a person at a browser and without `--hand-off`, and for
   `--what-if`, nothing opens. The
   result says what it would sign in to and ask for, points CI at a

@@ -175,6 +175,25 @@ export function storeSettings(
 				},
 				{
 					field: {
+						name: "INFISICAL_SIGN_IN",
+						label: "How this machine signs in to Infisical",
+						description:
+							"typed: you type an access token on this page. egress-proxy: the run holds no token; the agent's egress proxy injects one you gave it out of band (for an agent's remote box you cannot reach).",
+						kind: "choice",
+						required: false,
+						value: "typed",
+						options: [
+							{ value: "typed", label: "Type a token here" },
+							{
+								value: "egress-proxy",
+								label: "Injected by the agent's egress proxy",
+							},
+						],
+					},
+					fallback: "typed",
+				},
+				{
+					field: {
 						name: "INFISICAL_TOKEN",
 						label: "Infisical access token",
 						description:

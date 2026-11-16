@@ -37,3 +37,13 @@ export {
 	type VercelConnectOptions,
 	vercelConnected,
 } from "./vercel.js";
+export {
+	OWNER_DEVICE_LINE_PREFIX,
+	VERCEL_CLI_DEVICE_CLIENT_ID,
+	VERCEL_DEVICE_AUTHORIZATION_URL,
+	VERCEL_DEVICE_INSTALLATION,
+	VERCEL_DEVICE_TOKEN_URL,
+	VercelDeviceError,
+	vercelDeviceTeam,
+	vercelDeviceToken,
+} from "./vercel-device.js";

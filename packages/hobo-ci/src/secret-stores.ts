@@ -255,6 +255,10 @@ async function bitwardenSdkClient(
 	return client;
 }
 
+// public-contract: the bearer an egress-proxy sign-in sends; the proxy swaps in the owner's Infisical token.
+export const EGRESS_PROXY_PLACEHOLDER =
+	"hobo-egress-proxy-injects-the-infisical-token";
+
 /** Open the chosen store with the owner's own sign-in, or say how to sign in. */
 export async function openSecretStore(
 	id: SecretStoreId,
@@ -266,7 +270,13 @@ export async function openSecretStore(
 	// memory from the coordinates and the vault, never from process.env.
 	const env: Env = {
 		...coordinates,
-		INFISICAL_TOKEN: signIn.reveal("INFISICAL_TOKEN"),
+		INFISICAL_TOKEN:
+			signIn.reveal("INFISICAL_TOKEN") ??
+			// The egress proxy replaces this bearer with the owner's token on
+			// the way to Infisical; the real one never reaches this process.
+			(coordinates.INFISICAL_SIGN_IN === "egress-proxy"
+				? EGRESS_PROXY_PLACEHOLDER
+				: undefined),
 	};
 	switch (id) {
 		case "infisical": {

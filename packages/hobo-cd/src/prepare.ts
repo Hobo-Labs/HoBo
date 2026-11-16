@@ -38,7 +38,14 @@ import {
 	type StoredVercelConnection,
 	sameVercelConnection,
 	VERCEL_CLIENT_SECRET_KEY,
+	VERCEL_CONNECTION_KEYS,
 } from "./vercel.js";
+import {
+	VERCEL_DEVICE_INSTALLATION,
+	VercelDeviceError,
+	vercelDeviceTeam,
+	vercelDeviceToken,
+} from "./vercel-device.js";
 
 // `hobo cd up`'s prepare step: an interactive ceremony that sets up whatever
 // the Vercel connection is missing — HoBo CD's Vercel Integration (slug and
@@ -110,6 +117,8 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly openBrowser?: (url: string) => void;
 	readonly startPage?: typeof startConnectPage;
 	readonly timeoutMs?: number;
+	/** How the device grant waits between polls (tests make it instant). */
+	readonly sleep?: (ms: number) => Promise<void>;
 	/** The run's trusted vault; a fresh one by default. */
 	readonly vault?: TrustedVault;
 	/**
@@ -309,6 +318,65 @@ async function prepareVercelWithVault(
 			"The owner hand-off needs progress output. Omit --json and -q, then retry.",
 			["Run hobo cd up --hand-off without --json or -q."],
 		);
+	// Handed off, the owner may be anywhere: nothing is served here and
+	// nothing redirects back to this machine. Vercel is connected with the
+	// device grant (the owner approves on vercel.com); the store must already
+	// open without a page (a workload's OIDC, or a sign-in the agent's egress
+	// proxy injects: INFISICAL_SIGN_IN "egress-proxy" in the locator).
+	if (input.handOff === true) {
+		if (owner.opened === undefined)
+			return refused(
+				"HOBO_CD_STORE_NEEDS_SIGN_IN",
+				`A handed-off run cannot show a sign-in page: ${owner.id} must open without one.`,
+				[
+					`Commit ${SECRET_STORE_LOCATOR_FILE} with the store's ids, run with the non-secret setting INFISICAL_SIGN_IN=egress-proxy, and give the agent's session an Infisical access token for app.infisical.com in its credential form (never in chat, env or a file); or run hobo cd up yourself in a terminal.`,
+				],
+			);
+		const store = owner.opened;
+		const http = deps.fetch ?? fetch;
+		try {
+			const { token } = await vercelDeviceToken({
+				fetch: http,
+				...(plainEnv.HOBO_CD_VERCEL_DEVICE_CLIENT_ID
+					? { clientId: plainEnv.HOBO_CD_VERCEL_DEVICE_CLIENT_ID }
+					: undefined),
+				emit: (line) => input.run.emitProgress(line),
+				...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+			});
+			const teamId = await vercelDeviceTeam(
+				token,
+				plainEnv.HOBO_CD_VERCEL_TEAM_ID,
+				http,
+			);
+			const values = {
+				HOBO_CD_VERCEL_TOKEN: token,
+				HOBO_CD_VERCEL_TEAM_ID: teamId,
+				HOBO_CD_VERCEL_INSTALLATION_ID: VERCEL_DEVICE_INSTALLATION,
+			} satisfies Readonly<
+				Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
+			>;
+			for (const key of VERCEL_CONNECTION_KEYS)
+				await store.port.put(key, values[key]);
+			const expected: StoredVercelConnection = {
+				token,
+				teamId,
+				installationId: VERCEL_DEVICE_INSTALLATION,
+			};
+			return ready(store, "created", vault, deps.journalProvisioners, (c) =>
+				sameVercelConnection(expected, c),
+			);
+		} catch (error) {
+			if (error instanceof VercelDeviceError)
+				return refused(error.code, error.message, [
+					"Run hobo cd up --hand-off again for a new code.",
+				]);
+			return refused(
+				"HOBO_CD_SECRET_STORE_UNAVAILABLE",
+				`Could not keep the Vercel connection in ${store.id}.`,
+				[`Fix access to ${store.id} and run hobo cd up --hand-off again.`],
+			);
+		}
+	}
 	if (!canReachOwner(deps.interactive, input.handOff))
 		return refused(
 			"HOBO_CD_CONNECTION_NEEDS_OWNER",
@@ -462,7 +530,6 @@ async function prepareVercelWithVault(
 		flow,
 		port: Number(redirect.port),
 		callbackPath: redirect.pathname,
-		entryOnce: input.handOff === true,
 	});
 	const step = await runPage(
 		page,

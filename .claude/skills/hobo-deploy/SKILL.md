@@ -190,24 +190,30 @@ they paste (identifiers, not secrets).
 
 An agent never answers a ceremony itself and never stops at
 `HOBO_*_CONNECTION_NEEDS_OWNER`. Run the verb with `--hand-off` in the
-background: it serves the setup page (store sign-in first, then the
-provider) and prints one `HOBO_OWNER_PAGE <url> port=<n>` line, then waits
-for the owner. Omit `--json` and `-q`: they suppress that line. Pass the page
-on and wait for "done":
+background (without `--json` or `-q`). A handed-off run serves nothing on
+the agent's machine and nothing redirects back to it, so the owner can be
+anywhere:
 
-The line's `<url>` is the page's origin (`http://127.0.0.1:<n>/`): its
-first visit opens the setup session, once, so it is the whole link.
+1. **The store opens without a page.** Commit `.hobo/secret-store.json`
+   (store and ids only). On a remote box, run with the non-secret setting
+   `INFISICAL_SIGN_IN=egress-proxy`: the run holds a placeholder and the
+   session's egress proxy injects the owner's Infisical access token on the
+   way to `app.infisical.com`. Get that token with the session's credential
+   form (`request_credential`, host `app.infisical.com`): the owner creates
+   it in Infisical's web app (a machine identity with **Token Auth**, added
+   to the project with a write role) and types it only into that form.
+   Otherwise the run refuses with `HOBO_CD_STORE_NEEDS_SIGN_IN`.
+2. **Vercel by device grant.** The run prints one
+   `HOBO_OWNER_DEVICE <link> code=<code>` line. Say: "Open `<link>` on any
+   device, check the code is `<code>`, and approve." The run waits (ten
+   minutes), then keeps the token in the store. Name the team with the
+   non-secret `HOBO_CD_VERCEL_TEAM_ID` when the account has several.
 
-- On the owner's own machine: "Open this link: `<url>`."
-- In a cloud session: the owner needs an authenticated tunnel that binds
-  `127.0.0.1:<n>` on their machine and forwards to the same port on the
-  agent's machine. They open `<url>` through that tunnel and keep it open
-  until the provider returns to the loopback callback. An HTTPS preview
-  (`report_preview_port`) opens the page from its root too, but alone it
-  does not forward that callback.
+In a terminal (no `--hand-off`), the run still serves the local setup page
+(`HOBO_OWNER_PAGE`) and opens the browser.
 
-Never fetch or submit the page yourself. Secret variables in the agent's
-environment are ignored on purpose; the owner signs in on the page.
+Never fetch or submit a page or approve a code yourself. Secret variables in
+the agent's environment are ignored on purpose.
 
 ## Reporting
 
