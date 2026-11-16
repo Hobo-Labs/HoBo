@@ -1,26 +1,26 @@
-/**
- * The secret-capture form, one page for both channels:
- *
- * - `mcp-app`: the `ui://hobo/secret-capture` resource an MCP Apps host
- *   renders in its sandboxed iframe. It learns its ticket from the
- *   `ui/notifications/tool-result` of `capture_secret`, seals the value with
- *   Web Crypto, and calls the app-only `submit_secret_value` tool through the
- *   host (`tools/call` over `postMessage`). It never sends
- *   `ui/message` or `ui/update-model-context`, so nothing it holds is put in
- *   front of the model.
- * - `loopback`: the page the MCP server itself serves on 127.0.0.1 when the
- *   host has no MCP Apps support. Its ticket is embedded; its one-time token
- *   is the URL fragment; it POSTs the sealed value to its own origin.
- *
- * Visual contract: `packages/mcp/DESIGN.md` (HoBo Rubberhose tokens from
- * `site/DESIGN.md`): ink on paper, paper on ink at night, thick ink rules, a
- * sticker shadow on the one pressable, spark only for focus and the error
- * rule, go only for the stored rule. No external fonts, images or scripts.
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { SECRET_CAPTURE_SEAL_SOURCE } from "./seal.js";
 
-/** The hex values this surface may use; the design-lint test holds it to them. */
+
 export const SECRET_CAPTURE_TOKEN_VALUES: ReadonlySet<string> = new Set([
 	"#ffffff",
 	"#101010",
@@ -36,7 +36,7 @@ export const SECRET_CAPTURE_TOKEN_VALUES: ReadonlySet<string> = new Set([
 	"#f2f1ec",
 ]);
 
-/** What the loopback page embeds about its ticket. No value, no token. */
+
 export type SecretCapturePageTicket = Readonly<{
 	ticketId: string;
 	name: string;
@@ -52,12 +52,12 @@ export type SecretCapturePageOptions =
 	| Readonly<{ mode: "mcp-app" }>
 	| Readonly<{
 			mode: "loopback";
-			/** The CSP nonce for this response's one style and two scripts. */
+
 			nonce: string;
 			ticket: SecretCapturePageTicket;
 	  }>;
 
-/** JSON for a `<script type="application/json">`: nothing in it can end the element. */
+
 type PageConfig = Readonly<{
 	mode: "mcp-app" | "loopback";
 	ticket?: SecretCapturePageTicket;
@@ -189,7 +189,7 @@ button:disabled { cursor: progress; opacity: 0.6; }
 }
 `;
 
-/** The page's behaviour; `MODE` is replaced per channel. */
+
 const SCRIPT = `(function () {
   "use strict";
   ${SECRET_CAPTURE_SEAL_SOURCE}

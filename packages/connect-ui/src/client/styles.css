@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
-/* The shadcn preset's class names, scanned from the package build. */
+
 @source "../../node_modules/@json-render/shadcn/dist";
 
-/*
- * HoBo Rubberhose tokens (DESIGN.md in this package, from site/DESIGN.md):
- * ink on paper, thick outlines, hard sticker shadows, no soft elevation.
- * shadcn reads these variables, so every preset component takes the identity.
- */
+
+
+
+
+
 @theme inline {
 	--color-background: var(--paper);
 	--color-foreground: var(--ink);
@@ -60,7 +60,7 @@ body {
 	line-height: 1.65;
 }
 
-/* Thick ink outline and a hard offset shadow on every card and button. */
+
 [data-slot="card"] {
 	border: 3px solid var(--ink);
 	box-shadow: 6px 6px 0 var(--ink);

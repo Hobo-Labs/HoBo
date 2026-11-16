@@ -180,7 +180,6 @@ async function bootAssets() {
 	for (const img of Object.values(assetIndex.images)) {
 		images[img.id] = await loadImage(img.path);
 	}
-	// site ink-on-paper parallax plates only (DESIGN.md: traced art, never generative glop)
 	for (const optional of [
 		"trail.png",
 		"trail-front.png",
@@ -527,7 +526,7 @@ function closeSheet() {
 async function api(path, init) {
 	const res = await fetch(`${API}${path}`, {
 		...init,
-		headers: { "content-type": "application/json", ...(init?.headers || {}) },
+		headers: { "content-type": "application/json", ...init?.headers },
 	});
 	const body = await res.json();
 	if (!body.ok && res.status >= 400) {
@@ -697,7 +696,6 @@ async function confirmSheet() {
 }
 
 function drawBackground() {
-	// DESIGN.md: ink on paper — pure paper ground, no SaaS sky gradients
 	ctx.fillStyle = "#ffffff";
 	ctx.fillRect(0, 0, LAYOUT.width, LAYOUT.height);
 
@@ -746,7 +744,6 @@ function drawBackground() {
 	ctx.lineTo(LAYOUT.width, LAYOUT.groundY);
 	ctx.stroke();
 
-	// clouds keep white (DESIGN.md: clouds are keep, not invert)
 	if (images["cloud-1.png"]) {
 		ctx.drawImage(images["cloud-1.png"], 60, 24, 200, 80);
 		ctx.drawImage(images["cloud-1.png"], 920, 40, 240, 90);
@@ -857,7 +854,6 @@ function drawConnectionBays(v) {
 		const bx = z.x + 24 + (i % 3) * 80;
 		const by = z.y + 40 + Math.floor(i / 3) * 70;
 		const visual = c?.visual || "closed";
-		// ink/paper status: go/spark accents only (DESIGN.md)
 		const fill =
 			visual === "authorized"
 				? "#14672c"

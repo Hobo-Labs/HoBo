@@ -62,5 +62,5 @@ package is the `SecretStoreConnector` port it is given; it imports no store
 adapter. Each step is an audited `secret.Capture*` fact
 (`hobo.secret-capture/v1`, references only). Its records are generated from
 `data-models/secret_capture.proto` (this package's first `buf.yaml` module),
-and its form follows [`DESIGN.md`](./DESIGN.md).
+and its form follows `src/secret-capture/html.ts`.
 

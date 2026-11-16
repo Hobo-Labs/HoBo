@@ -550,7 +550,7 @@ Scanned: ${discovery.scannedAt}
 | Signal | Value |
 |---|---|
 | site | ${discovery.signals.hasSite} |
-| DESIGN.md | ${discovery.signals.hasDesignMd} |
+| UI token source | ${discovery.signals.hasVisualTokens} |
 | CLI packages | ${discovery.signals.hasCli} |
 | MCP | ${discovery.signals.hasMcp} |
 | AGENTS.md | ${discovery.signals.hasAgentsMd} |

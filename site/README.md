@@ -57,39 +57,13 @@ pnpm --filter hobo-site codegen    # regenerate protobuf TS and vet CUE
 ```
 
 
-## Design system (DESIGN.md)
+## Visual system
 
-Visual identity for agents lives in **[`DESIGN.md`](./DESIGN.md)** — Google’s open
-[DESIGN.md](https://github.com/google-labs-code/design.md) format (`@google/design.md`).
-
-Aesthetic: **Steamboat Willie / Cuphead / rubberhose** (thick ink, sticker shadows,
-film grain, Chewy title cards, B&W day/night inversion). Runtime CSS remains
-`src/styles/global.css`; keep the two aligned.
-
-### Repo-wide gate (pre-commit)
-
-Every **web UI** package must ship a root `DESIGN.md`. Discovery:
-
-| Signal | Meaning |
-|---|---|
-| Path is `site/` | Always a web UI root |
-| `"hobo": { "webUi": true }` in package.json | Explicit web UI |
-| Depends on `astro` / `next` / `nuxt` / … | Framework-hosted web app |
-| Already has `DESIGN.md` | Opt-in visual contract |
-
-Lint all of them with the same CLI:
-
-```sh
-pnpm run design:lint                            # all web UI DESIGN.md files (pre-commit)
-pnpm --filter hobo-site run design:lint         # this package only
-pnpm --filter hobo-site run design:export:css   # Tailwind v4 @theme export
-pnpm --filter hobo-site run design:export:dtcg  # W3C design tokens
-```
-
-`pnpm run check:relevant:staged` (the pre-commit path) selects `design:lint` when
-`DESIGN.md`, `site/` UI sources, or `scripts/check-design-md.mts` change.
-
-Agent skill mirrors: `.agents/skills/design-md` and `.claude/skills/design-md`.
+The site uses the HoBo Rubberhose identity: thick ink, sticker shadows, title
+cards, and light/dark inversion. The implemented tokens are in
+`src/styles/global.css`. Run `pnpm run design:lint` from the repository root to
+check contrast in the site and connection UI palettes, and run the affected
+package's rendered-surface tests for UI changes.
 
 ## Layout
 
@@ -124,7 +98,7 @@ Agent skill mirrors: `.agents/skills/design-md` and `.claude/skills/design-md`.
 - **Voice:** playful "homeward bound" theme — the guiding principle is continuous
   migration to the cheapest home that passes policy. Whimsy in the prose, precision in
   the tables and code.
-- **Design language:** strict black-and-white **rubberhose** 1930s cartoon (Steamboat Willie / Cuphead / Fleischer) — see `DESIGN.md`. All artwork is *supplied*
+- **Design language:** strict black-and-white **rubberhose** 1930s cartoon (Steamboat Willie / Cuphead / Fleischer) — see `src/styles/global.css`. All artwork is *supplied*
   (never procedural): Bo's sprite sheets, the scenery plates, the landmarks beside
   the trail and the cast of hobits are files, traced or generated-then-reviewed,
   and used as given. White paper/black ink by day, exact inversion at night —
