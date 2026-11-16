@@ -3,7 +3,7 @@
 # bundle only — Node/pnpm/cue/turbo/betterleaks come from mise.lock tool layers.
 # Build from deploy/ci-runner (small context); see build.sh.
 #   docker build -f base/Dockerfile -t hobo-ci-runner-base:local .
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 ARG RUNNER_VERSION=2.338.2
 ARG RUNNER_SHA256_X64=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40

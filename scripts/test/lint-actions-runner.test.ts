@@ -83,7 +83,7 @@ function lintFile(file: string, text: string): number | null {
 }
 
 const routeJob =
-	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
 function lintRunner(
 	file: string,
@@ -265,7 +265,7 @@ describe("Actions runner policy", () => {
 		// An action input by that name.
 		const uses = (input: string) =>
 			job(
-				`    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          clean: false\n      - uses: ./.github/actions/route-runner\n        with:\n          ${input}: hobo\n`,
+				`    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          clean: false\n      - uses: ./.github/actions/route-runner\n        with:\n          ${input}: hobo\n`,
 			);
 		assert.equal(uses("route"), 0);
 		assert.notEqual(uses("fleet-routes"), 0);
@@ -423,13 +423,13 @@ describe("Actions runner policy", () => {
 		);
 		assert.notEqual(
 			lintJobs(
-				"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n",
+				"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
 			),
 			0,
 		);
 		assert.notEqual(
 			lintJobs(
-				"  build:\n    if: ${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n",
+				"  build:\n    if: ${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
 			),
 			0,
 		);
@@ -458,7 +458,7 @@ describe("Actions runner policy", () => {
 	const skipFor = (id: string) =>
 		`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
 	const attestingRoute = (sparse: string) =>
-		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
+		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
 	const verifierFiles =
 		"            scripts/ci/attestation.mts\n            scripts/ci/verify-attestation.mts\n";
 	const skippable = (id: string, condition: string, needs = "route") =>
@@ -646,7 +646,7 @@ describe("Actions runner policy", () => {
 		);
 		assert.notEqual(
 			probe(
-				"    runs-on: hobo\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n",
+				"    runs-on: hobo\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
 			),
 			0,
 		);
