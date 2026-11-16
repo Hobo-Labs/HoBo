@@ -276,6 +276,12 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	 * sent to a page the owner cannot see.
 	 */
 	remote?: boolean;
+	/**
+	 * What the waiting run asked the owner to do for a value (a link and its
+	 * steps). Shown in the form itself: while a host's form is open, the
+	 * owner sees only the form.
+	 */
+	guidanceFor?: (name: string) => string | undefined;
 	/** Ask the host for a form (`elicitation/create`), answered by the owner. */
 	elicit?: (params: JsonObject) => Promise<JsonValue | undefined>;
 }>;
@@ -561,7 +567,16 @@ export function createSecretCaptureApp(
 		while (ticket.state === "awaiting-owner") {
 			const answer = parseFormAnswer(
 				await elicit?.({
-					message: `HoBo: ${ticket.spec.label}. ${ticket.spec.purpose}${problem === undefined ? "" : ` That was not accepted: ${problem} Enter it again.`} It goes only to HoBo, never to the agent or the chat.`,
+					message: [
+						`HoBo: ${ticket.spec.label}.`,
+						options.guidanceFor?.(ticket.spec.name) ?? ticket.spec.purpose,
+						problem === undefined
+							? ""
+							: `That was not accepted: ${problem} Enter it again.`,
+						"It goes only to HoBo's waiting run, never to the agent or the chat.",
+					]
+						.filter((part) => part !== "")
+						.join(" "),
 					requestedSchema: {
 						type: "object",
 						properties: {

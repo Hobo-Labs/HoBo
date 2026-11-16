@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 
-import { createHoboMcpServer, createSecretCaptureApp } from "@hobo/mcp";
+import { createHoboMcpServer } from "@hobo/mcp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -11,13 +11,10 @@ import { createComposedHoboCli } from "../../src/cli.js";
 import type { JsonObject } from "../../src/json.js";
 import {
 	createMcpOwnerChannel,
+	createOwnerCaptureApp,
 	INFISICAL_CLI_SESSION,
-	OWNER_HANDOFF_SPECS,
 } from "../../src/mcp-owner-channel.js";
-import {
-	createInfisicalCaptureConnector,
-	RELAY_SECRET_CAPTURE_SPECS,
-} from "../../src/mcp-secret-capture.js";
+import { createInfisicalCaptureConnector } from "../../src/mcp-secret-capture.js";
 import {
 	createMcpStdioSession,
 	localOperatorAuth,
@@ -71,12 +68,11 @@ function host(capabilities: JsonObject, options: { remote: boolean }) {
 	const fromServer = new PassThrough();
 	const owner = createMcpOwnerChannel();
 	const session = createMcpStdioSession(
-		createSecretCaptureApp({
-			specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
+		createOwnerCaptureApp({
+			owner,
 			connector: createInfisicalCaptureConnector({
 				projectDir: mkdtempSync(path.join(tmpdir(), "hobo-owner-form-")),
 			}),
-			handoff: async (secret) => owner.deposit(secret.name, secret.reveal()),
 			remote: options.remote,
 			elicit: (params) => {
 				const request = session.request;
@@ -187,6 +183,28 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 			}),
 		).toBe(COPIED);
 		expect(client.seen.join("\n")).not.toContain(COPIED);
+		await client.close();
+	});
+
+	it("the form itself carries the sign-in link and the steps: the owner cannot see chat while it is open", async () => {
+		// Derived from the live run: the host's form blocks the tool call, so
+		// the agent's message with the link would arrive only after the form.
+		const client = host({ elicitation: {} }, { remote: true });
+		await client.init();
+		const signIn = "https://app.infisical.com/login?callback_port=31222";
+		// What the waiting run does first: show the link, then ask for the value.
+		await client.owner.openUrl(signIn, "Sign in to Infisical.");
+		await client.owner.captureSecret({
+			name: INFISICAL_CLI_SESSION,
+			title: "Infisical sign-in",
+			instructions:
+				'When Infisical says "Unable to reach CLI", click Copy to clipboard and paste it here.',
+		});
+		const mine = client.capture();
+		const form = await client.fill({ value: COPIED });
+		expect(form.message).toContain(signIn);
+		expect(form.message).toMatch(/Unable to reach CLI/u);
+		await client.answer(mine);
 		await client.close();
 	});
 

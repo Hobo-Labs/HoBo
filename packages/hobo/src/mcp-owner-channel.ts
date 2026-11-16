@@ -5,7 +5,16 @@ import {
 	ONE_PASSWORD_SIGN_IN_CAPTURES,
 	type OwnerChannel,
 } from "@hobo/hobo-ci";
-import { type ParsedSecretCaptureSpec, secretCaptureSpec } from "@hobo/mcp";
+import {
+	createSecretCaptureApp,
+	type ParsedSecretCaptureSpec,
+	type SecretCaptureApp,
+	type SecretStoreConnector,
+	secretCaptureSpec,
+} from "@hobo/mcp";
+
+import type { JsonObject, JsonValue } from "./json.js";
+import { RELAY_SECRET_CAPTURE_SPECS } from "./mcp-secret-capture.js";
 
 /**
  * The owner channel of a ceremony run through the HoBo MCP server (an agent
@@ -19,22 +28,41 @@ import { type ParsedSecretCaptureSpec, secretCaptureSpec } from "@hobo/mcp";
 export interface McpOwnerChannel extends OwnerChannel {
 	/** Hold a value the owner submitted through the capture form. */
 	deposit(name: string, value: string): void;
+	/**
+	 * What the waiting run asked the owner to do for a value: its link and
+	 * steps, for the form itself. While a host's form is open the owner sees
+	 * only the form, never the agent's message.
+	 */
+	guidance(name: string): string | undefined;
 }
 
 export function createMcpOwnerChannel(): McpOwnerChannel {
 	const held = new Map<string, string>();
+	const asked = new Map<string, string>();
+	let link: { url: string; message: string } | undefined;
 	return {
-		// The link travels in the run's refusal; nothing else is shown here.
-		openUrl: async () => undefined,
-		holds: (name) => held.has(name),
-		async captureSecret({ name }) {
+		// The link travels in the run's refusal, and in the form that asks
+		// for what it gives back.
+		async openUrl(url, message) {
+			link = { url, message };
+		},
+		async captureSecret({ name, instructions }) {
+			asked.set(
+				name,
+				[link === undefined ? "" : `${link.message} ${link.url}`, instructions]
+					.filter((part) => part !== "")
+					.join(" "),
+			);
+			link = undefined;
 			const value = held.get(name);
 			held.delete(name);
 			return value;
 		},
+		holds: (name) => held.has(name),
 		deposit(name, value) {
 			held.set(name, value);
 		},
+		guidance: (name) => asked.get(name),
 	};
 }
 
@@ -122,3 +150,25 @@ export const OWNER_HANDOFF_SPECS: readonly ParsedSecretCaptureSpec[] =
 			{ minBytes: 1, maxBytes: 39, pattern: "^[A-Za-z0-9-]{1,39}$" },
 		),
 	]);
+
+/** The capture app of the HoBo MCP server: relay secrets, and hand-overs to a waiting run. */
+export function createOwnerCaptureApp(options: {
+	readonly owner: McpOwnerChannel;
+	readonly connector: SecretStoreConnector;
+	readonly remote: boolean;
+	readonly elicit: (params: JsonObject) => Promise<JsonValue | undefined>;
+	readonly notify?: (method: string, params: JsonValue) => void;
+}): SecretCaptureApp {
+	return createSecretCaptureApp({
+		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
+		handoff: async (secret) =>
+			options.owner.deposit(secret.name, secret.reveal()),
+		guidanceFor: (name) => options.owner.guidance(name),
+		// The owner is elsewhere: no page on this box's 127.0.0.1 for them;
+		// the host's own elicitation form asks when it shows no MCP App.
+		remote: options.remote,
+		elicit: options.elicit,
+		connector: options.connector,
+		...(options.notify !== undefined ? { notify: options.notify } : undefined),
+	});
+}

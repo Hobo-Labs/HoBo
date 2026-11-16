@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { isRemoteBox } from "@hobo/hobo-ci";
-import { createHoboMcpServer, createSecretCaptureApp } from "@hobo/mcp";
+import { createHoboMcpServer } from "@hobo/mcp";
 
 import { createComposedHoboCli } from "../cli.js";
 import {
@@ -11,11 +11,10 @@ import {
 } from "../credentials-opensesame.js";
 import {
 	createMcpOwnerChannel,
-	OWNER_HANDOFF_SPECS,
+	createOwnerCaptureApp,
 } from "../mcp-owner-channel.js";
 import {
 	createInfisicalCaptureConnector,
-	RELAY_SECRET_CAPTURE_SPECS,
 	secretCaptureProjectDir,
 } from "../mcp-secret-capture.js";
 import {
@@ -48,11 +47,8 @@ async function serve(): Promise<number> {
 	// notification this server sends.
 	// The session exists once the transport starts; elicitation goes through it.
 	let session: McpStdioSession | undefined;
-	const capture = createSecretCaptureApp({
-		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
-		handoff: async (secret) => owner.deposit(secret.name, secret.reveal()),
-		// The owner is elsewhere: no page on this box's 127.0.0.1 for them;
-		// the host's own elicitation form asks when it shows no MCP App.
+	const capture = createOwnerCaptureApp({
+		owner,
 		remote: isRemoteBox(),
 		elicit: (params) => {
 			const request = session?.request;
