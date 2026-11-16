@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { getCACertificates } from "node:tls";
-import { Agent, EnvHttpProxyAgent } from "undici";
+import {
+	Agent,
+	Dispatcher,
+	EnvHttpProxyAgent,
+	setGlobalDispatcher,
+} from "undici";
 
 import { type ProxyUrl, parseProxyUrl } from "./parsed-values.js";
 import { withoutSecretEnv } from "./secret-custody.js";
@@ -66,8 +71,10 @@ export function egressFrom(
 	};
 }
 
-/** A `fetch` that goes through the required proxy, honouring its bypass list. */
-export function egressFetch(egress: Egress): typeof fetch {
+/** The dispatcher the egress requires, or none when the defaults serve. */
+function egressDispatcher(
+	egress: Egress,
+): Agent | EnvHttpProxyAgent | undefined {
 	const tls =
 		egress.caFile === undefined
 			? undefined
@@ -77,20 +84,25 @@ export function egressFetch(egress: Egress): typeof fetch {
 						readFileSync(egress.caFile, "utf8"),
 					],
 				};
-	if (egress.proxy === undefined && tls === undefined) return fetch;
-	const dispatcher =
-		egress.proxy === undefined
-			? new Agent(tls === undefined ? undefined : { connect: tls })
-			: new EnvHttpProxyAgent({
-					httpProxy: egress.proxy,
-					httpsProxy: egress.proxy,
-					// An absent bypass list is an empty snapshot, not permission to
-					// inherit a different NO_PROXY from the ambient process.
-					noProxy: egress.noProxy ?? "",
-					...(tls !== undefined
-						? { connect: tls, requestTls: tls, proxyTls: tls }
-						: undefined),
-				});
+	if (egress.proxy === undefined && tls === undefined) return undefined;
+	return egress.proxy === undefined
+		? new Agent(tls === undefined ? undefined : { connect: tls })
+		: new EnvHttpProxyAgent({
+				httpProxy: egress.proxy,
+				httpsProxy: egress.proxy,
+				// An absent bypass list is an empty snapshot, not permission to
+				// inherit a different NO_PROXY from the ambient process.
+				noProxy: egress.noProxy ?? "",
+				...(tls !== undefined
+					? { connect: tls, requestTls: tls, proxyTls: tls }
+					: undefined),
+			});
+}
+
+/** A `fetch` that goes through the required proxy, honouring its bypass list. */
+export function egressFetch(egress: Egress): typeof fetch {
+	const dispatcher = egressDispatcher(egress);
+	if (dispatcher === undefined) return fetch;
 	// Node's fetch is undici's and takes its dispatcher as a request option.
 	return (input, init) => {
 		const routed: RequestInit & {
@@ -101,6 +113,63 @@ export function egressFetch(egress: Egress): typeof fetch {
 		};
 		return fetch(input, routed);
 	};
+}
+
+/**
+ * Apply the environment's egress to the whole process, once, before anything
+ * connects: Node's global fetch (and anything built on it) then honours the
+ * proxy, its bypass list and its CA, wherever a call site forgot to route
+ * through `egressFetch`. Node's built-in fetch reads the dispatcher undici
+ * installs globally.
+ */
+export function applyEgressToProcess(
+	env: Readonly<Record<string, string | undefined>>,
+): void {
+	const egress = egressFrom(env);
+	if (egress.proxy === undefined && egress.caFile === undefined) return;
+	setGlobalDispatcher(new LazyEgressDispatcher(egress));
+}
+
+/**
+ * The egress dispatcher, built on the first request: the CA bundle is opened
+ * only when something connects, so a run configured with a CA it never uses
+ * still starts, and a bad path fails the requests that need it.
+ */
+class LazyEgressDispatcher extends Dispatcher {
+	#inner: Dispatcher | undefined;
+	readonly #egress: Egress;
+	constructor(egress: Egress) {
+		super();
+		this.#egress = egress;
+	}
+	#target(): Dispatcher {
+		if (this.#inner === undefined)
+			try {
+				this.#inner = egressDispatcher(this.#egress) ?? new Agent();
+			} catch (error) {
+				// The egress cannot be built (an unreadable CA bundle): every
+				// connection fails with that reason, through undici's own error
+				// path, so each request rejects with it as the cause.
+				const failure =
+					error instanceof Error ? error : new Error("egress unavailable");
+				this.#inner = new Agent({
+					connect: (_options, callback) => callback(failure, null),
+				});
+			}
+		return this.#inner;
+	}
+	override dispatch(
+		options: Dispatcher.DispatchOptions,
+		handler: Dispatcher.DispatchHandler,
+	): boolean {
+		return this.#target().dispatch(options, handler);
+	}
+	override async close(): Promise<void> {
+		await this.#inner?.close();
+	}
+	override async destroy(): Promise<void> {
+		await this.#inner?.destroy();
+	}
 }
 
 /** Snapshot egress now, but open the CA bundle only if a request is made. */

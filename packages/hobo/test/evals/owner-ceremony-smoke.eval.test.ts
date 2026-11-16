@@ -1,5 +1,5 @@
-import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,8 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { startFakeInfisical } from "./support/fake-infisical-api.js";
+import { fakeNeon, fakeVercel } from "./support/fake-providers.js";
+import { startTlsWorld } from "./support/tls-world.js";
 
 // SMOKE: the real `hobo-mcp` binary, as the owner's host runs it on a remote
 // box, driven exactly as that host does: its declared capabilities (taken
@@ -85,44 +87,16 @@ function startServer(env: NodeJS.ProcessEnv) {
 describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 	it("cd up: sign-in link prompt, then the paste form, then provisioning", async () => {
 		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
-		// Infisical over https with a certificate only this run trusts, plus
-		// the box's own CA bundle so real hosts behind its proxy still verify.
-		const keyPath = path.join(config, "infisical.key");
-		const certPath = path.join(config, "infisical.pem");
-		execFileSync(
-			"openssl",
-			[
-				"req",
-				"-x509",
-				"-newkey",
-				"rsa:2048",
-				"-nodes",
-				"-days",
-				"1",
-				"-subj",
-				"/CN=127.0.0.1",
-				"-addext",
-				"subjectAltName=IP:127.0.0.1",
-				"-keyout",
-				keyPath,
-				"-out",
-				certPath,
-			],
-			{ stdio: "ignore" },
-		);
-		const bundle = path.join(config, "ca-bundle.pem");
-		writeFileSync(
-			bundle,
-			[
-				process.env.NODE_EXTRA_CA_CERTS === undefined
-					? ""
-					: readFileSync(process.env.NODE_EXTRA_CA_CERTS, "utf8"),
-				readFileSync(certPath, "utf8"),
-			].join("\n"),
-		);
-		const api = await startFakeInfisical("org-1", {
-			key: readFileSync(keyPath, "utf8"),
-			cert: readFileSync(certPath, "utf8"),
+		// The providers at their real hostnames, behind an inspecting proxy
+		// that trusts only its own CA: real-internet egress, or egress that
+		// bypasses the proxy, fails instead of passing silently.
+		const api = await startFakeInfisical("org-1");
+		const vercel = fakeVercel();
+		const neon = fakeNeon();
+		const world = await startTlsWorld({
+			"app.infisical.com": api.handle,
+			"api.vercel.com": vercel.handle,
+			"neon.new": neon.handle,
 		});
 		const locator = secretStoreLocatorPath(REPO, { XDG_CONFIG_HOME: config });
 		mkdirSync(path.dirname(locator), { recursive: true });
@@ -131,17 +105,28 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			JSON.stringify({
 				HOBO_SECRET_STORE: "infisical",
 				INFISICAL_PROJECT_ID: "proj-1",
-				INFISICAL_SITE_URL: api.origin,
 			}),
 		);
 		const server = startServer({
 			...process.env,
 			XDG_CONFIG_HOME: config,
 			CLAUDE_CODE_REMOTE: "true",
-			NODE_EXTRA_CA_CERTS: bundle,
-			NO_PROXY: `${process.env.NO_PROXY ?? ""},127.0.0.1,localhost`,
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
 		});
 		const trail: string[] = [];
+		// Each step as it happens: a stalled step is visible, not lost.
+		const push = trail.push.bind(trail);
+		trail.push = (...items: string[]) => {
+			for (const item of items)
+				process.stderr.write(`SMOKE ${item.slice(0, 600)}\n`);
+			return push(...items);
+		};
 		try {
 			await server.answer(
 				server.call("initialize", {
@@ -237,8 +222,15 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					mode: z.literal("url"),
 					url: z.string(),
 					message: z.string(),
+					elicitationId: z.string().min(1),
 				})
 				.parse(vercelPrompt.params);
+			// The owner opens it (the host's link prompt).
+			server.send({
+				jsonrpc: "2.0",
+				id: vercelPrompt.id ?? null,
+				result: { action: "accept" },
+			});
 			trail.push(`prompt 3: link ${vercelLink.url}`);
 			expect(new URL(vercelLink.url).hostname).toMatch(/(^|\.)vercel\.com$/u);
 			expect(second).toContain(vercelLink.url);
@@ -252,12 +244,50 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				`cd pending: ${/"code\\":\\"(\w+)/u.exec(third)?.[1] ?? third.slice(0, 400)}`,
 			);
 			expect(third).toContain(vercelLink.url);
+			// 6. The owner approves on Vercel. The server completes the link prompt
+			// when the grant behind it ends: the event, no polling.
+			vercel.approve(vercelLink.url);
+			await server.next(
+				(m) =>
+					m.method === "notifications/elicitation/complete" &&
+					JSON.stringify(m.params).includes(vercelLink.elicitationId),
+			);
+			trail.push("vercel: approved, prompt completed");
+			// 7. cd up: the connection is in the store; the run converges.
+			const fourth = JSON.stringify(
+				await server.answer(
+					server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO }),
+				),
+			);
+			trail.push(`cd after approval: ${fourth.slice(0, 900)}`);
+			expect(world.blocked).toEqual([]);
+			// Every provider call went through the box's proxy: a call that
+			// bypassed it (Node's global fetch ignores HTTPS_PROXY) would reach
+			// the internet directly, or fail on an enterprise network.
+			expect(world.requests).toContainEqual(
+				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
+			);
+			// Nothing more is asked of the owner: no sign-in, approval, store or
+			// hand-off refusal remains. What follows is the CD project's own
+			// convergence (see the todo below).
+			expect(fourth).not.toMatch(
+				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
+			);
 		} finally {
 			process.stdout.write(
-				`\nSMOKE TRAIL\n${trail.join("\n")}\nINFISICAL CALLS ${api.calls.join(", ")}\n`,
+				`\nSMOKE TRAIL\n${trail.join("\n")}\nREQUESTS ${world.requests.join(" | ")}\nBLOCKED ${world.blocked.join(", ")}\nSTDERR ${server.stderr().slice(-1500)}\n`,
 			);
 			server.stop();
+			await world.close();
 			await api.close();
 		}
 	}, 120_000);
+
+	// The CD project's own declaration (packages/hobo-cd/src/bindle.ts) says
+	// its resources must be wired before it can deploy: the API has no handler
+	// binding, the schedule no cadence, and cd-config / cd-journal no
+	// providers in the composed runtime. The plan is rejected there today.
+	it.todo(
+		"cd up converges the CD project after the ceremony (the hobo-cd Bindle is not deployable yet)",
+	);
 });

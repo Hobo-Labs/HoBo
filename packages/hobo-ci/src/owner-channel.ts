@@ -77,7 +77,15 @@ export interface OwnerJobs {
 	close(): void;
 }
 
-export function createOwnerJobs(): OwnerJobs {
+export function createOwnerJobs(
+	options: {
+		/** A job ended: the channel can say so (complete the prompt it showed). */
+		readonly onSettled?: (
+			pending: { readonly link: string; readonly code: string },
+			outcome: OwnerJobOutcome,
+		) => void;
+	} = {},
+): OwnerJobs {
 	const states = new Map<string, OwnerJobState>();
 	const running = new Set<Promise<void>>();
 	const abort = new AbortController();
@@ -86,17 +94,16 @@ export function createOwnerJobs(): OwnerJobs {
 		start(key, pending, job) {
 			if (states.get(key)?.state === "pending") return;
 			states.set(key, { state: "pending", ...pending });
-			const done = job(abort.signal).then(
-				(outcome) => {
-					states.set(key, outcome);
-				},
-				() => {
-					states.set(key, {
-						state: "failed",
-						code: "HOBO_OWNER_JOB_FAILED",
-						message: "The background step stopped unexpectedly.",
-					});
-				},
+			const settle = (outcome: OwnerJobOutcome) => {
+				states.set(key, outcome);
+				options.onSettled?.(pending, outcome);
+			};
+			const done = job(abort.signal).then(settle, () =>
+				settle({
+					state: "failed",
+					code: "HOBO_OWNER_JOB_FAILED",
+					message: "The background step stopped unexpectedly.",
+				}),
 			);
 			running.add(done);
 			void done.finally(() => running.delete(done));

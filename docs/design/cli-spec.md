@@ -370,7 +370,17 @@ environment variables.
   `HOBO_CD_VERCEL_AWAITING_APPROVAL` at once, and writes the connection to
   the store when approved (RFC 8628 polling on an injectable clock). The
   store sign-in HoBo created is kept in the server's memory (the owner
-  channel's vault) so the owner signs in once. Infisical provisioning reuses an identity,
+  channel's vault) so the owner signs in once. When a job ends, the link prompt it showed is
+  completed (`notifications/elicitation/complete`), so the host and the
+  agent know without polling. Egress is applied to the whole process at
+  start (`applyEgressToProcess`: Node's global dispatcher, built on the
+  first request so an unused CA path cannot stop a run): every fetch honours
+  the box's proxy, bypass list and CA. The Infisical store offers a verified
+  create-only (Infisical refuses an existing key; the entry is read back),
+  so the CD journal's provisioning claim works on it. The real-binary smoke
+  (`packages/hobo/test/evals/owner-ceremony-smoke.eval.test.ts`) drives the
+  ceremony as the live host does, through a TLS-inspecting proxy answering
+  as the providers' real hosts, and fails on any egress outside it. Infisical provisioning reuses an identity,
   auth method and membership a failed run left behind, retries dropped
   connections and 5xx answers, names a proxy that refuses the tunnel (407)
   as the proxy, and turns an expired session into a fresh sign-in link.

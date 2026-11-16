@@ -152,7 +152,12 @@ export async function startFakeInfisical(
 				if (held === undefined)
 					return send(404, { message: `Secret with name '${key}' not found` });
 				secrets.set(key, { value, version: held.version + 1 });
-			} else secrets.set(key, { value, version: 1 });
+			} else {
+				// As Infisical: a key that exists is refused, the original kept.
+				if (held !== undefined)
+					return send(400, { message: `Secret '${key}' already exists` });
+				secrets.set(key, { value, version: 1 });
+			}
 			return send(200, {
 				secret: { secretKey: key, version: secrets.get(key)?.version ?? 1 },
 			});
@@ -235,6 +240,8 @@ export async function startFakeInfisical(
 	// SAFETY: a server listening on a TCP port reports an AddressInfo.
 	const { port } = server.address() as AddressInfo;
 	return {
+		/** The handler, for a TLS world that answers as app.infisical.com. */
+		handle,
 		origin: `${tls === undefined ? "http" : "https"}://127.0.0.1:${port}`,
 		/** Requests that did not come through a proxy tunnel. */
 		direct: () => direct,

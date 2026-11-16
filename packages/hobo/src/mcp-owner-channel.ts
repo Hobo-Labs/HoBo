@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { createTrustedVault } from "@hobo/core";
 import {
 	BITWARDEN_API_KEY_CAPTURES,
@@ -38,12 +40,16 @@ export interface McpOwnerChannel extends OwnerChannel {
 
 export function createMcpOwnerChannel(
 	options: {
-		/** Ask the host to show a link now (URL-mode elicitation). */
-		readonly show?: (url: string, message: string) => Promise<void>;
+		/** Ask the host for a prompt (`elicitation/create`). */
+		readonly prompt?: (params: JsonObject) => Promise<void>;
+		/** Send the host a notification. */
+		readonly notify?: (method: string, params: JsonValue) => void;
 	} = {},
 ): McpOwnerChannel {
 	const held = new Map<string, string>();
 	const links = new Map<string, { url: string; message: string }>();
+	// The link prompts shown, by link: completed when the job behind one ends.
+	const prompted = new Map<string, string>();
 	let opened: { url: string; message: string } | undefined;
 	return {
 		// The run names its link, then asks for what it gives back: the two
@@ -63,10 +69,27 @@ export function createMcpOwnerChannel(
 			held.set(name, value);
 		},
 		linkFor: (name) => links.get(name),
-		...(options.show !== undefined ? { show: options.show } : undefined),
+		// A link the owner opens while a step waits on them (Vercel's device
+		// code): the host's own link prompt, since no progress line reaches
+		// them through MCP.
+		async show(url, message) {
+			const elicitationId = `hobo-${randomUUID()}`;
+			prompted.set(url, elicitationId);
+			await options.prompt?.({ mode: "url", elicitationId, url, message });
+		},
 		// Steps that wait on the owner run here, off the request path, for as
-		// long as this server lives.
-		jobs: createOwnerJobs(),
+		// long as this server lives; when one ends, the prompt it showed is
+		// completed, so the host (and the agent) know without asking.
+		jobs: createOwnerJobs({
+			onSettled: (pending) => {
+				const elicitationId = prompted.get(pending.link);
+				if (elicitationId === undefined) return;
+				prompted.delete(pending.link);
+				options.notify?.("notifications/elicitation/complete", {
+					elicitationId,
+				});
+			},
+		}),
 		// The store sign-in HoBo created, kept in this process's memory so the
 		// owner signs in once; never a file, gone when the server stops.
 		vault: createTrustedVault(),

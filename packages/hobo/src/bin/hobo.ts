@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { join } from "node:path";
+import { applyEgressToProcess } from "@hobo/hobo-ci";
 // Register TypeScript bindle sources before composing the CLI so `hobo dev`
 // runs the flagship src/bindle.ts authoring path without a separate build.
 import { register } from "tsx/esm/api";
@@ -85,6 +86,9 @@ async function runComposed(
 	// The live Pulumi lane's temporary workspace is removed on exit; as the entry
 	// point, this process has owned temporary directories removed on a signal too.
 	removeOwnedDirsOnSignals();
+	// The box's egress (proxy, bypass list, CA), for every fetch in this
+	// process, before anything connects.
+	applyEgressToProcess(process.env);
 	const runtime = createDefaultYardRuntime({
 		dataDir: join(defaultHoboHome(), "runtime"),
 		...options,

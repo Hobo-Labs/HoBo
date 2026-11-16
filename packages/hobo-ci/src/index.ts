@@ -33,6 +33,7 @@ export {
 	storeSettings,
 } from "./ceremony-settings.js";
 export {
+	applyEgressToProcess,
 	childEgressEnv,
 	type Egress,
 	egressFetch,

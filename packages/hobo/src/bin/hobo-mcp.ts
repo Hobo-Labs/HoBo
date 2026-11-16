@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-import { randomUUID } from "node:crypto";
-
-import { isRemoteBox } from "@hobo/hobo-ci";
+import { applyEgressToProcess, isRemoteBox } from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
 
 import { createComposedHoboCli } from "../cli.js";
@@ -36,23 +34,22 @@ async function serve(): Promise<number> {
 	// The default runtime's throwaway event store is removed on exit; as the
 	// entry point, this process has it removed on a signal too.
 	removeOwnedDirsOnSignals();
+	// The box's egress (proxy, bypass list, CA), for every fetch in this
+	// process, before anything connects.
+	applyEgressToProcess(process.env);
 	// The owner's channel: what they hand over through the capture form waits
 	// here, in memory, for the ceremony run through this server.
 	// The session exists once the transport starts; prompts go through it.
 	let session: McpStdioSession | undefined;
 	const owner = createMcpOwnerChannel({
-		// A link the owner must open while a run waits (Vercel's device
-		// code): the host's own link prompt, since no progress line reaches
-		// them through MCP. Not awaited: the run keeps polling meanwhile.
-		show: async (url, message) => {
-			const request = session?.request;
-			if (request === undefined) return;
-			await request("elicitation/create", {
-				mode: "url",
-				elicitationId: `hobo-${randomUUID()}`,
-				url,
-				message,
-			});
+		// Prompts go through the session; the run keeps going meanwhile.
+		prompt: async (params) => {
+			await session?.request?.("elicitation/create", params);
+		},
+		notify: (method, params) => {
+			process.stdout.write(
+				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
+			);
 		},
 	});
 	const server = createHoboMcpServer({
