@@ -409,7 +409,9 @@ adds wait, not evidence. When a stage runs out:
 
 None of them changes anything on Vercel, and the deployment is not lost: the
 next push to `main`, or a re-run of the workflow for the same commit, adopts
-it (the CD journal keeps the in-flight promotion). In the relay deploy
+it (the CD journal keeps the in-flight promotion). The workflow prints the
+adoption result and records it in the job summary even when the command fails,
+then preserves its nonzero status. In the relay deploy
 workflow the gate step (`scripts/ci/relay-deploy-gate.mts`, right after
 checkout) sets the deadline to the job's 20 minutes less a 3-minute margin,
 so the install and build come out of the adopt budget and the command ends
