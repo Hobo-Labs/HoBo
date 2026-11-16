@@ -30,6 +30,7 @@ const declaration = {
 			name: "store",
 			stableId: "bucket:store",
 			declaredAllow: ["read", "write"],
+			dependsOn: [],
 			annotations: [],
 		},
 		queue: {
@@ -37,6 +38,7 @@ const declaration = {
 			name: "queue",
 			stableId: "queue:queue",
 			declaredAllow: ["enqueue", "dequeue"],
+			dependsOn: [],
 			annotations: [],
 		},
 		web: {
@@ -44,6 +46,7 @@ const declaration = {
 			name: "web",
 			stableId: "web:web",
 			declaredAllow: [],
+			dependsOn: ["bucket", "queue"],
 			annotations: [],
 		},
 	},
@@ -229,7 +232,7 @@ describe("explicit Alchemy primitive mapping", () => {
 		};
 		const one = {
 			...declaration,
-			resources: { web: declaration.resources.web },
+			resources: { web: { ...declaration.resources.web, dependsOn: [] } },
 			edges: [],
 		};
 		const registry = {
@@ -307,21 +310,24 @@ describe("explicit Alchemy primitive mapping", () => {
 		const possible = names.flatMap((from) =>
 			names.filter((to) => to !== from).map((to) => ({ from, to })),
 		);
-		const resources = Object.fromEntries(
-			names.map((name) => [
-				name,
-				{
-					kind: "bucket",
-					name,
-					stableId: `bucket:${name}`,
-					declaredAllow: [],
-					annotations: [],
-				},
-			]),
-		);
 		for (let mask = 0; mask < 1 << possible.length; mask++) {
 			const edges = possible.filter(
 				(_edge, index) => (mask & (1 << index)) !== 0,
+			);
+			const resources = Object.fromEntries(
+				names.map((name) => [
+					name,
+					{
+						kind: "bucket",
+						name,
+						stableId: `bucket:${name}`,
+						declaredAllow: [],
+						annotations: [],
+						dependsOn: edges
+							.filter((edge) => edge.from === name)
+							.map(() => "bucket"),
+					},
+				]),
 			);
 			const reaches = names.map((from) =>
 				names.map((to) =>

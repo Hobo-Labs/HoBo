@@ -8,6 +8,7 @@ export interface PrimitiveDeclaration {
 	readonly name: string;
 	readonly stableId: string;
 	readonly declaredAllow: readonly string[];
+	readonly dependsOn: readonly string[];
 	readonly annotations: readonly {
 		readonly provider: string;
 		readonly option: string;
@@ -75,6 +76,9 @@ export function describeAlchemyPrimitiveSupport<
 ): AlchemyPrimitiveSupport[] {
 	if (
 		catalog.length > 256 ||
+		catalog.some(
+			(entry) => !validName(entry.factory) || entry.allowVerbs.length > 256,
+		) ||
 		new Set(catalog.map((entry) => entry.factory)).size !== catalog.length
 	)
 		throw new AlchemyIacError(
@@ -83,7 +87,15 @@ export function describeAlchemyPrimitiveSupport<
 		);
 	return catalog.map((entry) => {
 		const candidate = mappers[entry.factory];
-		const mapper = candidate?.resourceTypes.length ? candidate : undefined;
+		const mapper =
+			candidate !== undefined &&
+			candidate.resourceTypes.length > 0 &&
+			candidate.resourceTypes.length <= 256 &&
+			candidate.resourceTypes.every(validName) &&
+			candidate.operations.length <= 256 &&
+			candidate.annotations.length <= 256
+				? candidate
+				: undefined;
 		const supportedOperations = entry.allowVerbs.filter((verb) =>
 			mapper?.operations.includes(verb),
 		);
@@ -152,7 +164,11 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			!validName(declaration.kind) ||
 			name !== declaration.name ||
 			declaration.stableId !== `${declaration.kind}:${name}` ||
+			!Array.isArray(declaration.declaredAllow) ||
+			!Array.isArray(declaration.dependsOn) ||
+			!Array.isArray(declaration.annotations) ||
 			declaration.declaredAllow.length > 256 ||
+			declaration.dependsOn.length > 256 ||
 			declaration.annotations.length > 256 ||
 			new Set(declaration.declaredAllow).size !==
 				declaration.declaredAllow.length
@@ -210,6 +226,20 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			);
 		seen.add(key);
 		row.dependencies.push(edge.to);
+	}
+	for (const row of rows.values()) {
+		const declaredKinds = [...row.declaration.dependsOn].sort();
+		const mappedKinds = row.dependencies
+			.map((dependency) => rows.get(dependency)?.declaration.kind)
+			.sort();
+		if (
+			declaredKinds.length !== mappedKinds.length ||
+			declaredKinds.some((kind, index) => kind !== mappedKinds[index])
+		)
+			throw new AlchemyIacError(
+				"BINDLE_GRAPH_UNSUPPORTED",
+				`resource ${row.declaration.name} has an unrepresented dependency`,
+			);
 	}
 	const pending = new Set(rows.keys());
 	const order: OrderedPrimitive<Entrypoint, Requirements, Services>[] = [];

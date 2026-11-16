@@ -16,7 +16,9 @@ types, supported operations and annotations, and whether they bind application
 entrypoints. The adapter processes dependencies first, supplies their Alchemy
 resources and the original entrypoint to the mapper, and rejects missing
 mappings, unbound dependencies, unsupported permissions or annotations, and
-cycles. `describeAlchemyPrimitiveSupport` reports supported, partial and
+cycles. The dependency kinds recorded on each declaration must agree with the
+graph, including dependencies omitted from the returned bindle.
+`describeAlchemyPrimitiveSupport` reports supported, partial and
 unsupported entries for a supplied primitive catalog, including the declared
 entrypoint and annotation support.
 

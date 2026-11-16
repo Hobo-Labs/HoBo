@@ -379,6 +379,15 @@ describe("Alchemy IaC provider against the real library", () => {
 		expect(Effect.isEffect(mapBindleToAlchemy(application, mappings))).toBe(
 			true,
 		);
+		const missingDependency = bindle("missing-dependency", (builder) => {
+			const queue = builder.queue();
+			return {
+				web: builder.web(() => () => new Response("ok")).dependsOn(queue),
+			};
+		});
+		expect(() => mapBindleToAlchemy(missingDependency, mappings)).toThrow(
+			"BINDLE_GRAPH_UNSUPPORTED",
+		);
 	});
 
 	it("uses the RivetKit major required by the external Rivet provider", () => {
