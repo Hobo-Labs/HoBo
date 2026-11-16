@@ -57,9 +57,12 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(step).toMatch(/OP_CONNECT_HOST/u);
 		// Never env, never the owner's terminal, never hand-made identities.
 		expect(step).toMatch(
-			/Never ask the owner to set\s+environment variables, never send them to a terminal/u,
+			/Never ask the owner to set\s+environment\s+variables,\s+never\s+send\s+them\s+to\s+a\s+terminal/u,
 		);
-		expect(step).toMatch(/never ask\s+them to create identities or tokens/u);
+		expect(step).toMatch(/never\s+ask\s+them\s+to\s+create\s+identities\s+or\s+tokens/u);
+		// The choice is a picker the host renders, never prose.
+		expect(step).toMatch(/choose_secret_store/u);
+		expect(step).toMatch(/AskUserQuestion/u);
 		// Bitwarden: the API key through the credential form, then one approval.
 		expect(HAND_OFF).toMatch(/HOBO_OWNER_BITWARDEN_APPROVE/u);
 		expect(HAND_OFF).toMatch(/suggested_type: "basic"/u);
@@ -67,7 +70,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).not.toMatch(/BW_CLIENTID|Vaultwarden/u);
 		// The choice is the owner's: a present token never picks the store.
 		expect(step).toMatch(
-			/never pick a store for\s+them because its token is present/u,
+			/never\s+pick\s+a\s+store\s+for\s+them\s+because\s+its\s+token\s+is\s+present/u,
 		);
 	});
 
@@ -132,5 +135,11 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 			/^HOBO_OWNER_CREDENTIAL host=app\.infisical\.com guide=https:\/\/\S+ — .+/u,
 		);
 		expect(line).not.toMatch(/127\.0\.0\.1|localhost/u);
+	});
+
+	it("requires a structured ask for every owner-facing line, re-issued after an interruption", () => {
+		expect(HAND_OFF).toMatch(/never a question in\s+prose/u);
+		expect(HAND_OFF).toMatch(/issue it again as the first thing you\s+do/u);
+		expect(HAND_OFF).toMatch(/eval:hand-off-transcript/u);
 	});
 });

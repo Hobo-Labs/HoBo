@@ -189,6 +189,9 @@ A **semantic-code MCP server**: it gives coding agents IDE-like symbol search, r
 ### RTK — `rtk-ai/rtk` (Apache-2.0)
 A **Rust Token Killer command proxy** that compresses noisy shell-command output before it reaches coding agents. It is local, uses no API keys, and supports direct use (`rtk git status`, `rtk pnpm test:file <file>`, `rtk gain`) plus hook initialization for Claude Code/Copilot (`rtk init -g`), Codex (`rtk init -g --codex`), and Cursor (`rtk init -g --agent cursor`). The setup script installs it in the common/devcontainer layer when possible (existing `rtk`, Homebrew, Cargo, then upstream install script) and initializes hooks only in the selected agent-specific layer.
 
+### hobo — HoBo's own MCP server (this repo)
+`.mcp.json` runs it from source (`node --import tsx packages/hobo/src/bin/hobo-mcp.ts`; no keys). Besides the CLI verbs it serves the owner-facing experiences the **hobo-deploy** skill relies on: the secret-capture MCP App, and **`choose_secret_store`**, the secret-store picker a handed-off `hobo ci|cd up` needs (`HOBO_*_STORE_CHOICE`). It shows a form elicitation where the client supports MCP elicitation, an MCP App widget where the host renders MCP Apps, and otherwise tells the agent to use its own picker and record the answer with `submit_store_choice`. The answer goes to the owner's HoBo settings, never the repository. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript: every owner-facing line must get a structured ask, re-issued after an interruption, never a question in prose.
+
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress|retrieve|stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy: `headroom proxy --port 8787` then `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude` (optional; see `headroom mcp --help`).
 
@@ -306,14 +309,14 @@ bash scripts/setup-agent-tools.sh --agent copilot --no-gbrain
 The common layer installs agent-agnostic runtimes (`tgrep`, repo-pinned `ast-grep`, `rtk`, `serena`, `headroom`, `skillopt-train`, `skillopt-sleep`, and the **`github/gh-stack`** GitHub CLI extension for stacked PRs) and leaves per-agent plugin/skill registration alone. Agent-specific layers only install shims for the selected supported client. Devcontainers run the common layer by default through [`.devcontainer/post-create.sh`](../.devcontainer/post-create.sh), avoiding prompts, global CLI mutations, and optional gbrain setup during container creation.
 
 ## Per-agent wiring
-| | MCP servers (Serena, headroom, gbrain, Higgsfield) | Skills (improve, mattpocock, caveman, ponytail, impeccable) | Plugin / optimizer |
+| | MCP servers (hobo, Serena, headroom, gbrain, Higgsfield) | Skills (improve, mattpocock, caveman, ponytail, impeccable) | Plugin / optimizer |
 |---|---|---|---|
 | **Claude Code** | `.mcp.json` (auto-discovered) | `.claude/skills/` (incl. mattpocock) | `.claude/settings.json` for Superpowers; SkillOpt can run offline |
 | **Cursor** | `.cursor/mcp.json` | `.agents/skills/` + `.cursor/rules/` (caveman) | — (no plugin support) |
 | **Codex** | trusted-project `.codex/config.toml`; copy to `~/.codex/config.toml` or use `codex mcp add …` for a global fallback | `.agents/skills/` + `AGENTS.md` | `codex plugin marketplace add/install` (per-machine); SkillOpt can run offline |
 | **GitHub Copilot CLI** | — | — | `copilot plugin marketplace add/install` (per-machine) |
 
-Committed so a clone is wired up: `.mcp.json`, `.cursor/`, `.codex/config.toml`, `.claude/skills/`, `.agents/skills/`, shared MCP wrapper scripts, `AGENTS.md`, `CLAUDE.md`, `skills-lock.json`. Opening the repo in Claude Code/Cursor will prompt to start the `serena` + `headroom` + `gbrain` MCP servers — decline if unwanted.
+Committed so a clone is wired up: `.mcp.json`, `.cursor/`, `.codex/config.toml`, `.claude/skills/`, `.agents/skills/`, shared MCP wrapper scripts, `AGENTS.md`, `CLAUDE.md`, `skills-lock.json`. Opening the repo in Claude Code/Cursor will prompt to start the `hobo` + `serena` + `headroom` + `gbrain` MCP servers — decline if unwanted.
 
 ## Install
 ```bash

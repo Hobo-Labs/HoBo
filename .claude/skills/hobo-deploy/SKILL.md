@@ -195,23 +195,35 @@ nothing in the box and nothing calls back into it. Instead it names what it
 needs on one line, waits, and **picks up what the owner did outside, in the
 same run** (post-back). Your job is to relay each line, act on it, and wait.
 
+**Every owner-facing line gets a structured ask, never a question in
+prose.** A choice goes to a picker the host renders, a credential to the
+session's credential form. If an ask does not complete (interrupted, the
+session restarted, the form closed), issue it again as the first thing you
+do, before any other reply. Ending a turn with a choice or credential still
+unasked is a failure; `pnpm run eval:hand-off-transcript <transcript>`
+checks it.
+
 1. Run `hobo <ci|cd> up --hand-off` in the background (never `--json` or
    `-q`: they hide the lines). Watch its output.
-2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): ask the owner
-   with a picker (`AskUserQuestion`) between **Infisical**, **1Password** and
-   **Bitwarden**, each option described by its line from the refusal. Then
-   ask for that store's non-secret ids the refusal names (Infisical:
-   `INFISICAL_PROJECT_ID`; 1Password: `OP_VAULT_ID`, and for a remote box
-   `OP_CONNECT_HOST`, their Connect server; Bitwarden: none; only if their
-   vault is on their own server, its address as `BITWARDEN_SERVER_URL`), and
-   run again with `HOBO_SECRET_STORE` and those ids set (ids are not
-   secrets; the run keeps them in the owner's own HoBo settings, never in
-   the repository). The choice is always the owner's: a provided token only
-   marks a store "configured here" in the picker; never pick a store for
-   them because its token is present. Never ask the owner to set
-   environment variables, never send them to a terminal, and never ask
-   them to create identities or tokens by hand when the store's API can do
-   it: the run's own lines ask for what it needs.
+2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): call the
+   HoBo MCP server's **`choose_secret_store`** (`mcp__hobo__choose_secret_store`,
+   `family` ci or cd). It shows the owner a picker of **Infisical**,
+   **1Password** and **Bitwarden** with each store's non-secret ids (an
+   elicitation form, or an MCP App widget) and saves the answer in the
+   owner's HoBo settings, never the repository. If it says the host renders
+   neither, or the HoBo server is not connected, ask with your host's own
+   picker (`AskUserQuestion`), each option described by its line from the
+   refusal, then ask for that store's non-secret ids the same way
+   (Infisical: `INFISICAL_PROJECT_ID`; 1Password: `OP_VAULT_ID`, and for a
+   remote box `OP_CONNECT_HOST`; Bitwarden: none, only `BITWARDEN_SERVER_URL`
+   if self-hosted), and record them with `submit_store_choice` (or, without
+   the HoBo server, run again with `HOBO_SECRET_STORE` and those ids set).
+   Then run again. The choice is always the owner's: a provided token only
+   marks a store "configured here"; never pick a store for them because its
+   token is present. Never ask the owner to set environment variables, never
+   send them to a terminal, and never ask them to create identities or
+   tokens by hand when the store's API can do it: the run's own lines ask for
+   what it needs.
 3. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is
    waiting for a credential. In **one** message, give the owner the steps
    from that line and the guide link exactly as printed, and ask them to

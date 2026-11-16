@@ -10,7 +10,20 @@ import {
 	type SecretCaptureHostSupport,
 	scopeAuthorizesCapability,
 } from "@hobo/mcp";
-import { isJsonObject, isJsonString, type JsonObject } from "./json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "./json.js";
+import {
+	type ClientRequest,
+	NO_STORE_CHOICE_SUPPORT,
+	negotiateStoreChoiceSupport,
+	STORE_CHOICE_TOOL_NAMES,
+	type StoreChoiceApp,
+	type StoreChoiceSupport,
+} from "./mcp-store-choice.js";
 
 // The MCP stdio protocol layer for the composed `hobo-mcp` binary.
 // Newline-delimited JSON-RPC 2.0 per the MCP
@@ -65,6 +78,7 @@ export function localOperatorAuth(
 	const tools = [
 		...MCP_TOOL_SURFACE.map((tool) => tool.name),
 		...SECRET_CAPTURE_TOOL_NAMES,
+		...STORE_CHOICE_TOOL_NAMES,
 	].filter((name) => restrict === null || restrict.has(name));
 	return {
 		subject: env.HOBO_MCP_SUBJECT ?? "local-operator",
@@ -91,12 +105,23 @@ export function localOperatorAuth(
 export interface McpStdioSession {
 	readonly capture: SecretCaptureApp;
 	support: SecretCaptureHostSupport;
+	/** The secret-store choice: an elicitation, a widget or the host's picker. */
+	readonly storeChoice?: StoreChoiceApp;
+	storeSupport: StoreChoiceSupport;
+	/** Send a request to the client (set by the transport: elicitation). */
+	request?: ClientRequest;
 }
 
 export function createMcpStdioSession(
 	capture: SecretCaptureApp,
+	storeChoice?: StoreChoiceApp,
 ): McpStdioSession {
-	return { capture, support: NO_HOST_SUPPORT };
+	return {
+		capture,
+		support: NO_HOST_SUPPORT,
+		storeSupport: NO_STORE_CHOICE_SUPPORT,
+		...(storeChoice !== undefined ? { storeChoice } : undefined),
+	};
 }
 
 function captureAllowed(auth: AuthContext, tool: string): boolean {
@@ -131,10 +156,14 @@ export async function handleMcpMessage(
 			// SAFETY: assertion required at this I/O or test boundary.
 			const requested = (request.params as { protocolVersion?: string })
 				?.protocolVersion;
-			if (session !== undefined)
+			if (session !== undefined) {
 				session.support = negotiateSecretCaptureSupport(
 					request.params?.capabilities,
 				);
+				session.storeSupport = negotiateStoreChoiceSupport(
+					request.params?.capabilities,
+				);
+			}
 			return {
 				jsonrpc: "2.0",
 				id,
@@ -172,6 +201,11 @@ export async function handleMcpMessage(
 							: session.capture
 									.tools(session.support)
 									.filter((tool) => captureAllowed(auth, tool.name))),
+						...(session?.storeChoice === undefined
+							? []
+							: session.storeChoice
+									.tools(session.storeSupport)
+									.filter((tool) => captureAllowed(auth, tool.name))),
 					],
 				},
 			};
@@ -183,14 +217,19 @@ export async function handleMcpMessage(
 					resources:
 						session === undefined
 							? []
-							: session.capture.resources(session.support),
+							: [
+									...session.capture.resources(session.support),
+									...(session.storeChoice?.resources(session.storeSupport) ??
+										[]),
+								],
 				},
 			};
 		case "resources/read": {
 			const uri = request.params?.uri;
 			const contents =
 				session !== undefined && isJsonString(uri)
-					? session.capture.readResource(uri)
+					? (session.capture.readResource(uri) ??
+						session.storeChoice?.readResource(uri))
 					: undefined;
 			if (contents === undefined)
 				return {
@@ -212,6 +251,29 @@ export async function handleMcpMessage(
 					id,
 					error: { code: -32602, message: "tools/call requires params.name" },
 				};
+			}
+			if (session?.storeChoice?.handles(params.name)) {
+				if (!captureAllowed(auth, params.name))
+					return {
+						jsonrpc: "2.0",
+						id,
+						result: {
+							content: [
+								{
+									type: "text",
+									text: `MCP_SCOPE_DENIED: ${params.name} is not in this caller's scope.`,
+								},
+							],
+							isError: true,
+						},
+					};
+				const outcome = await session.storeChoice.callTool(
+					params.name,
+					isJsonObject(params.arguments) ? params.arguments : {},
+					session.storeSupport,
+					session.request,
+				);
+				return { jsonrpc: "2.0", id, result: outcome };
 			}
 			if (session?.capture.handles(params.name)) {
 				if (!captureAllowed(auth, params.name))
@@ -285,6 +347,9 @@ export async function handleMcpMessage(
 }
 
 // Serve newline-delimited JSON-RPC over the given streams until input ends.
+// Two-way: a tool call may send the client a request (an elicitation) and
+// wait for its answer, so each incoming request is handled without blocking
+// the reader, and a response to one of the server's requests is routed back.
 export async function serveMcpStdio(options: {
 	readonly server: HoboMcpServer;
 	readonly auth: AuthContext;
@@ -292,6 +357,21 @@ export async function serveMcpStdio(options: {
 	readonly output: NodeJS.WritableStream;
 	readonly session?: McpStdioSession;
 }): Promise<void> {
+	const write = (message: JsonObject | JsonRpcResponse) =>
+		options.output.write(`${JSON.stringify(message)}\n`);
+	const waiting = new Map<string, (answer: JsonValue | undefined) => void>();
+	let next = 0;
+	if (options.session !== undefined)
+		options.session.request = (method, params) => {
+			next += 1;
+			const id = `hobo-${next}`;
+			const answer = new Promise<JsonValue | undefined>((resolve) => {
+				waiting.set(id, resolve);
+			});
+			write({ jsonrpc: "2.0", id, method, params });
+			return answer;
+		};
+	const inFlight = new Set<Promise<void>>();
 	let buffer = "";
 	for await (const chunk of options.input) {
 		buffer += chunk.toString();
@@ -299,18 +379,39 @@ export async function serveMcpStdio(options: {
 		while (newline !== -1) {
 			const line = buffer.slice(0, newline).trim();
 			buffer = buffer.slice(newline + 1);
-			if (line.length > 0) {
-				const response = await handleMcpMessage(
-					options.server,
-					options.auth,
-					line,
-					options.session,
-				);
-				if (response !== null) {
-					options.output.write(`${JSON.stringify(response)}\n`);
-				}
-			}
 			newline = buffer.indexOf("\n");
+			if (line.length === 0) continue;
+			let parsed: JsonValue | undefined;
+			try {
+				parsed = JSON.parse(line);
+			} catch {
+				parsed = undefined;
+			}
+			// The client's answer to one of this server's requests.
+			if (
+				isJsonObject(parsed) &&
+				parsed.method === undefined &&
+				isJsonString(parsed.id) &&
+				waiting.has(parsed.id)
+			) {
+				const resolve = waiting.get(parsed.id);
+				waiting.delete(parsed.id);
+				resolve?.(parsed.error !== undefined ? undefined : parsed.result);
+				continue;
+			}
+			const handled = handleMcpMessage(
+				options.server,
+				options.auth,
+				line,
+				options.session,
+			).then((response) => {
+				if (response !== null) write(response);
+			});
+			inFlight.add(handled);
+			void handled.finally(() => inFlight.delete(handled));
 		}
 	}
+	// Input ended: an elicitation still open will never be answered.
+	for (const resolve of waiting.values()) resolve(undefined);
+	await Promise.all(inFlight);
 }

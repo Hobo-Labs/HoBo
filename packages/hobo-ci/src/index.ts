@@ -45,6 +45,14 @@ export {
 	loadGithubAppCredentials,
 } from "./github.js";
 export {
+	type AskKind,
+	auditHandOff,
+	type HandOffFinding,
+	parseClaudeTranscript,
+	STRUCTURED_ASK_TOOLS,
+	type TranscriptEvent,
+} from "./hand-off-audit.js";
+export {
 	awaitHandOffStore,
 	INFISICAL_TOKEN_AUTH_GUIDE,
 	OWNER_CREDENTIAL_LINE_PREFIX,

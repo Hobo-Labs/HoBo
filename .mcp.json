@@ -1,6 +1,14 @@
 {
-  "$comment": "Project-scoped MCP servers for Claude Code (auto-discovered). serena = semantic code retrieval/editing through language servers (no keys); headroom = local token-compression (no keys); gbrain = knowledge-graph memory via scripts/agent-mcp-gbrain.sh (fails closed without binary/provider; run gbrain init and choose local Ollama or an API-key provider; remote providers receive embedding/query text); higgsfield = official hosted image/video generation at mcp.higgsfield.ai (account OAuth, no key stored here; project scope means a human must approve it before use; prompt content is sent to Higgsfield). See AUTH.md, AGENTS.md and docs/agent-tooling.md. Install binaries with: bash scripts/setup-agent-tools.sh --help",
+  "$comment": "Project-scoped MCP servers for Claude Code (auto-discovered). hobo = HoBo's own MCP server from source (the CLI verbs, the secret-capture MCP App, and the store-choice picker the hobo-deploy skill uses; no keys); serena = semantic code retrieval/editing through language servers (no keys); headroom = local token-compression (no keys); gbrain = knowledge-graph memory via scripts/agent-mcp-gbrain.sh (fails closed without binary/provider; run gbrain init and choose local Ollama or an API-key provider; remote providers receive embedding/query text); higgsfield = official hosted image/video generation at mcp.higgsfield.ai (account OAuth, no key stored here; project scope means a human must approve it before use; prompt content is sent to Higgsfield). See AUTH.md, AGENTS.md and docs/agent-tooling.md. Install binaries with: bash scripts/setup-agent-tools.sh --help",
   "mcpServers": {
+    "hobo": {
+      "command": "node",
+      "args": [
+        "--import",
+        "tsx",
+        "packages/hobo/src/bin/hobo-mcp.ts"
+      ]
+    },
     "headroom": {
       "command": "bash",
       "args": [

@@ -18,6 +18,7 @@ import {
 	localOperatorAuth,
 	serveMcpStdio,
 } from "../mcp-stdio.js";
+import { createStoreChoiceApp } from "../mcp-store-choice.js";
 import { removeOwnedDirsOnSignals } from "../owned-temp-dir.js";
 
 // The runnable MCP control surface: the composed
@@ -51,7 +52,7 @@ async function serve(): Promise<number> {
 			auth: localOperatorAuth(),
 			input: process.stdin,
 			output: process.stdout,
-			session: createMcpStdioSession(capture),
+			session: createMcpStdioSession(capture, createStoreChoiceApp()),
 		});
 	} finally {
 		// Closes open captures, stops the page and revokes the writer token.
