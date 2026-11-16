@@ -558,7 +558,7 @@ transitive, is also locked in
 `gh actions-lock` (`gh extension install github/gh-actions-lock`). Same-repo
 actions use the self-repository `uses: $/.github/actions/<name>` form (runner
 2.336.0+), so the lockfile covers what they call; `actions:lint` accepts
-both forms. Workflows keep full-SHA `uses:` pins, and the lockfile keys those
+both forms, and the workflow tests under `scripts/test/` expect `$/`. Workflows keep full-SHA `uses:` pins, and the lockfile keys those
 entries by the same SHA with the release tag recorded as `ref`, so a run is
 pinned whether or not lockfile enforcement is on. The `actions-lock` workflow
 runs `gh actions-lock --verify` on workflow changes; when it fails it uploads

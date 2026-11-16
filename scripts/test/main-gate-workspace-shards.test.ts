@@ -152,7 +152,7 @@ describe("main full gate workspace sharding", () => {
 			steps.indexOf("\n      - ", reroute),
 		);
 		assert.match(step, /if: needs\.route\.outputs\.tier == 'fleet'/u);
-		assert.match(step, /uses: \.\/\.github\/actions\/route-runner/u);
+		assert.match(step, /uses: \$\/\.github\/actions\/route-runner/u);
 		assert.match(step, /token: \$\{\{ github\.token \}\}/u);
 		for (const input of [
 			"route: ${{ inputs.route || 'auto' }}",
