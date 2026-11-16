@@ -195,6 +195,31 @@ describe("SPEC remote Infisical: sign-in", () => {
 		expect(result).toMatchObject({ kind: "ready" });
 	});
 
+	it("the session expires after the hand-over: the refusal registers its new link, so the next form follows it", async () => {
+		// Found by the ceremony explorer: the expired-session refusal named a
+		// link but never registered it, so the next capture showed the paste
+		// form with no link before it.
+		const { infisical, proxy } = await remoteBox();
+		const owner = heldOwnerChannel();
+		const provision = provisioner(infisical, proxy, { owner });
+		owner.deposit("INFISICAL_CLI_SESSION", copiedSession(infisical.signIn()));
+		infisical.expireAll();
+		const access = await provision();
+		expect(access).toMatchObject({ kind: "refused" });
+		const step = readOwnerTurn(false, turn(access).lines, [infisical.origin]);
+		expect(step).toMatchObject({ kind: "act", action: { kind: "sign-in" } });
+		const shown =
+			step.kind === "act" && step.action.kind === "sign-in"
+				? step.action.url
+				: undefined;
+		const registered = owner.opened.at(-1);
+		expect(registered?.capture).toBe("INFISICAL_CLI_SESSION");
+		const link = new URL(registered?.url ?? "");
+		expect(`${link.pathname}${link.search}`).toBe(
+			`${shown?.pathname}${shown?.search}`,
+		);
+	});
+
 	it("the session expires between the hand-over and the API calls: a new link, not a permissions error", async () => {
 		const { infisical, proxy } = await remoteBox();
 		const owner = heldOwnerChannel();

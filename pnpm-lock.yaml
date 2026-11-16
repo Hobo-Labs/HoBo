@@ -1995,6 +1995,9 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
+      '@antithesishq/bombadil':
+        specifier: 0.7.10
+        version: 0.7.10
       '@hobo/ci-agent':
         specifier: workspace:*
         version: link:../ci-agent
@@ -2016,9 +2019,15 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       pg:
         specifier: 8.22.0
         version: 8.22.0
+      undici:
+        specifier: 7.29.0
+        version: 7.29.0
 
   packages/hobo-cd:
     dependencies:
@@ -2108,6 +2117,9 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -5294,6 +5306,10 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  '@antithesishq/bombadil@0.7.10':
+    resolution: {integrity: sha512-71aLKQBB3GNDBQZXU6MCKbt99dl9I+/pjg0EfGD9eCKXDIqpKPXD2rFH6yCJude37RGtnKq6hZFfZhuTp+Tykg==}
+    hasBin: true
 
   '@arizeai/openinference-semantic-conventions@2.5.0':
     resolution: {integrity: sha512-4ZeSwiFX3YxB0WSE6x568wM4PVHiYmz3yiOxic6WGKVrE/KIGggMFP/eqUNQhikBKP68IDV0qiILlZAIYnheAQ==}
@@ -16277,6 +16293,8 @@ snapshots:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
       zod: 3.25.76
+
+  '@antithesishq/bombadil@0.7.10': {}
 
   '@arizeai/openinference-semantic-conventions@2.5.0': {}
 

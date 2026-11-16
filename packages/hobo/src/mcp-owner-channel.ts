@@ -196,6 +196,7 @@ export function createOwnerCaptureApp(options: {
 		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
 		handoff: async (secret) =>
 			options.owner.deposit(secret.name, secret.reveal()),
+		handoffHeld: (name) => options.owner.holds(name),
 		// The owner is elsewhere: no page on this box's 127.0.0.1 for them;
 		// the host's own elicitation form asks when it shows no MCP App.
 		remote: options.remote,

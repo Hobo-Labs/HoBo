@@ -11,7 +11,10 @@ import { bodyOf, json, type ProviderHandler } from "./tls-world.js";
 /** api.vercel.com: the device grant (RFC 8628), teams, and deployments. */
 export function fakeVercel() {
 	const calls: string[] = [];
-	const grants = new Map<string, { code: string; approved: boolean }>();
+	const grants = new Map<
+		string,
+		{ code: string; approved: boolean; denied: boolean }
+	>();
 	const tokens = new Set<string>();
 	const deployments: string[] = [];
 	const handle: ProviderHandler = async (request, response) => {
@@ -26,13 +29,13 @@ export function fakeVercel() {
 			const deviceCode = randomUUID();
 			const code =
 				`${randomUUID().slice(0, 4)}-${randomUUID().slice(0, 4)}`.toUpperCase();
-			grants.set(deviceCode, { code, approved: false });
+			grants.set(deviceCode, { code, approved: false, denied: false });
 			return json(response, 200, {
 				device_code: deviceCode,
 				user_code: code,
 				verification_uri: "https://vercel.com/oauth/device",
 				verification_uri_complete: `https://vercel.com/oauth/device?user_code=${code}`,
-				expires_in: 900,
+				expires_in: 60,
 				interval: 5,
 			});
 		}
@@ -77,6 +80,12 @@ export function fakeVercel() {
 		handle,
 		calls,
 		deployments,
+		/** The owner declines on Vercel the grant whose link they were shown. */
+		deny(link: string) {
+			const code = new URL(link).searchParams.get("user_code");
+			for (const grant of grants.values())
+				if (grant.code === code) grant.denied = true;
+		},
 		/** The owner approves the grant whose link they were shown. */
 		approve(link: string) {
 			const code = new URL(link).searchParams.get("user_code");

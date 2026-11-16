@@ -168,29 +168,30 @@ export async function provisionInfisicalAccess(
 				`Infisical then says "Unable to reach CLI": its Copy to clipboard copies your session. Hand it over with the HoBo MCP server's secret capture (name ${INFISICAL_CLI_SESSION_CAPTURE}); it goes only to this run.`,
 				"Then run again: HoBo creates its machine identity, access and project membership itself.",
 			]);
-		if (why === undefined) {
-			await options.owner.openUrl(
-				signInUrl,
-				"Sign in to Infisical. When it says Unable to reach CLI, click Copy to clipboard.",
-				INFISICAL_CLI_SESSION_CAPTURE,
-			);
-			const copied = await options.owner.captureSecret({
-				name: INFISICAL_CLI_SESSION_CAPTURE,
-				title: "Infisical sign-in",
-				instructions:
-					'After you sign in, Infisical says "Unable to reach CLI": click Copy to clipboard and paste it here. It goes only to this run, never into chat.',
-			});
-			if (copied === undefined)
-				return signInRefusal(
+		// Every sign-in refusal registers its link, so the capture that
+		// follows shows it before the paste form (an expired session too).
+		await options.owner.openUrl(
+			signInUrl,
+			"Sign in to Infisical. When it says Unable to reach CLI, click Copy to clipboard.",
+			INFISICAL_CLI_SESSION_CAPTURE,
+		);
+		const copied = await options.owner.captureSecret({
+			name: INFISICAL_CLI_SESSION_CAPTURE,
+			title: "Infisical sign-in",
+			instructions:
+				'After you sign in, Infisical says "Unable to reach CLI": click Copy to clipboard and paste it here. It goes only to this run, never into chat.',
+		});
+		if (copied === undefined)
+			return signInRefusal(
+				why ??
 					"Sign in to Infisical once; this run sets up its own access with that sign-in.",
-				);
-			const session = sessionFromCopied(copied);
-			if (session !== undefined && organizationOf(session) !== undefined)
-				return { kind: "session", jwt: session };
-			why =
-				"What was handed over is not the session Infisical shows after signing in. Sign in again and use its Copy to clipboard button.";
-		}
-		return signInRefusal(why);
+			);
+		const session = sessionFromCopied(copied);
+		if (session !== undefined && organizationOf(session) !== undefined)
+			return { kind: "session", jwt: session };
+		return signInRefusal(
+			"What was handed over is not the session Infisical shows after signing in. Sign in again and use its Copy to clipboard button.",
+		);
 	};
 
 	let fromCli = cliHere !== undefined ? await cliSession(cliHere) : undefined;
@@ -392,22 +393,22 @@ export async function provisionInfisicalAccess(
 			if (error instanceof InfisicalApiRefusal && error.status === 401) {
 				// The session expired or was revoked. A session from this box's
 				// CLI gives way to a fresh sign-in from wherever the owner is.
-				if (session === fromCli && !options.interactive) {
-					fromCli = undefined;
-					const next = await remoteSession(undefined);
-					if (next.kind !== "session") return next;
-					session = next.jwt;
-					continue;
-				}
-				return options.interactive
-					? refused("SIGN_IN", "Your Infisical session has expired.", [
-							"Run again and sign in once more in the browser window Infisical opens.",
-						])
-					: await asRefusal(
-							remoteSession(
-								"Your Infisical session has expired; sign in once more.",
-							),
-						);
+				if (options.interactive)
+					return refused("SIGN_IN", "Your Infisical session has expired.", [
+						"Run again and sign in once more in the browser window Infisical opens.",
+					]);
+				// A fresh sign-in from wherever the owner is: one already handed
+				// over is used now; otherwise the refusal shows its link again.
+				const expired = session !== fromCli;
+				fromCli = undefined;
+				const next = await remoteSession(
+					expired
+						? "Your Infisical session has expired; sign in once more."
+						: undefined,
+				);
+				if (next.kind !== "session") return next;
+				session = next.jwt;
+				continue;
 			}
 			if (error instanceof InfisicalApiRefusal && error.status === 403)
 				return refused("API", error.message, [
@@ -434,15 +435,6 @@ export async function provisionInfisicalAccess(
 			throw error;
 		}
 	}
-}
-
-async function asRefusal(
-	pending: Promise<SessionOrRefusal>,
-): Promise<InfisicalAccess> {
-	const next = await pending;
-	if (next.kind === "session")
-		throw new Error("a refusal was expected after an expired session");
-	return next;
 }
 
 type SessionOrRefusal =

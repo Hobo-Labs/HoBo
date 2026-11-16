@@ -33,6 +33,28 @@ export {
 	storeSettings,
 } from "./ceremony-settings.js";
 export {
+	always,
+	atom,
+	check,
+	eventually,
+	type Formula,
+	implies,
+	next,
+	not,
+	once,
+	type Property,
+	type Verdict,
+	within,
+} from "./ceremony-spec/ltl.js";
+export {
+	CEREMONY,
+	type CeremonyEvent,
+	ceremonyProperties,
+	eventsFromWire,
+	REACHES_FRONTIER,
+	type WireMessage,
+} from "./ceremony-spec/model.js";
+export {
 	applyEgressToProcess,
 	childEgressEnv,
 	type Egress,
@@ -90,6 +112,11 @@ export {
 	type Platform,
 	provisionOnePasswordAccess,
 } from "./onepassword-access.js";
+export {
+	type OwnerAction,
+	type OwnerStep,
+	readOwnerTurn,
+} from "./owner-actions.js";
 export {
 	captureAll,
 	createOwnerJobs,

@@ -13,7 +13,7 @@ import {
 } from "@hobo/cli";
 import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
 import { createInProcessExecutor } from "@hobo/cloud";
-import { prepareVercelConnection } from "@hobo/hobo-cd";
+import { type DeviceClock, prepareVercelConnection } from "@hobo/hobo-cd";
 import {
 	machineRunner,
 	type OwnerChannel,
@@ -111,6 +111,11 @@ export interface ComposedHoboCliOptions {
 	 * server's channel); without it, a remote run says where to run instead.
 	 */
 	readonly ownerChannel?: OwnerChannel;
+	/**
+	 * The clock steps that wait on a provider use (the Vercel device grant's
+	 * polling, RFC 8628): the system's by default; a spec drives it virtually.
+	 */
+	readonly clock?: DeviceClock;
 	/** The production host supplies trusted financial and provider wiring. */
 	readonly hosting?: {
 		readonly budgetId: string;
@@ -275,6 +280,9 @@ export function createComposedHoboCli(
 						...(options.ownerChannel !== undefined
 							? { ownerChannel: options.ownerChannel }
 							: undefined),
+						...(options.clock !== undefined
+							? { now: options.clock.now, sleep: options.clock.sleep }
+							: undefined),
 						which: (bin) => whichOnPath(bin),
 					}),
 				// The relay is placed through its own Yards (the Vercel project
@@ -303,6 +311,9 @@ export function createComposedHoboCli(
 						runCommand: machineRunner(),
 						...(options.ownerChannel !== undefined
 							? { ownerChannel: options.ownerChannel }
+							: undefined),
+						...(options.clock !== undefined
+							? { now: options.clock.now, sleep: options.clock.sleep }
 							: undefined),
 						which: (bin) => whichOnPath(bin),
 					}),

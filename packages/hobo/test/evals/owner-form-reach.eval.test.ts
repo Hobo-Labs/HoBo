@@ -286,6 +286,36 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		await client.close();
 	});
 
+	it("a value the run has taken is asked for afresh: a second capture opens a new form", async () => {
+		// Found by the ceremony explorer: the session expired after the
+		// hand-over, the run asked for a new sign-in, and capture_secret
+		// answered with the old, already-used ticket ("stored"); the owner
+		// could never hand over the new session.
+		const client = host({ elicitation: {} }, { remote: true });
+		await client.init();
+		const first = client.capture();
+		await client.fill({ value: COPIED });
+		await client.answer(first);
+		// The run takes it.
+		expect(
+			await client.owner.captureSecret({
+				name: INFISICAL_CLI_SESSION,
+				title: "",
+				instructions: "",
+			}),
+		).toBe(COPIED);
+		// Asked again: a fresh form, and the new value reaches the run.
+		const second = client.capture();
+		const again = Buffer.from(
+			JSON.stringify({ JTWToken: "h.e30.t", email: "owner@example.com" }),
+		).toString("base64");
+		await client.fill({ value: again });
+		const done = toolResult.parse((await client.answer(second)).result);
+		expect(done.structuredContent).toMatchObject({ status: "stored" });
+		expect(client.owner.holds(INFISICAL_CLI_SESSION)).toBe(true);
+		await client.close();
+	});
+
 	it("remote: never a box-local page or a port preview the owner may not see", async () => {
 		for (const capabilities of [
 			{ elicitation: {} },

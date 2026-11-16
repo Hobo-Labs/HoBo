@@ -386,7 +386,25 @@ environment variables.
   as the providers' real hosts, and fails on any egress outside it. Infisical provisioning reuses an identity,
   auth method and membership a failed run left behind, retries dropped
   connections and 5xx answers, names a proxy that refuses the tunnel (407)
-  as the proxy, and turns an expired session into a fresh sign-in link.
+  as the proxy, and turns an expired session into a fresh sign-in link
+  (registered with the owner channel, so the next form follows it). A
+  hand-over a run has taken is spent: `capture_secret` asked again for it
+  opens a new form, never the old "stored" answer.
+
+  The ceremony is also a spec (`packages/hobo-ci/src/ceremony-spec/`): one
+  declaration (`CEREMONY`: captures and their links, awaiting codes,
+  forbidden wording, the frontier) from which LTLf properties are derived
+  (link before form, link before waiting, no dead end, completion follows
+  its link, no secret to the host, eventually the frontier). They are
+  checked on the JSON-RPC wire (`eventsFromWire`) of the real-binary smoke,
+  of every schedule a bounded exhaustive explorer generates (owner choices
+  times provider faults, on explicit virtual time) and of fast-check's
+  random deeper schedules, shrunk to the smallest failing one
+  (`packages/hobo/test/evals/ceremony-explorer.eval.test.ts`). HoBo's two
+  browser pages, the secret-capture page and the GitHub App hand-off page,
+  are explored by Bombadil against LTL specs (`packages/hobo/test/bombadil/`;
+  `browser-pages.bombadil.eval.test.ts`), each also run against a page broken
+  on purpose so every property is shown to fail when it should.
 
 ### Broker targeting and anonymous deploy
 

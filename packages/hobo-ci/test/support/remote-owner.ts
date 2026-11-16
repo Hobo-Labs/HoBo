@@ -2,9 +2,8 @@ import { createServer, type IncomingMessage, request } from "node:http";
 import { type AddressInfo, connect } from "node:net";
 
 import type { PrepareOutcome } from "@hobo/cli";
-
+import { readOwnerTurn } from "../../src/owner-actions.js";
 import type { OwnerChannel } from "../../src/owner-channel.js";
-import { remoteInfeasible } from "../../src/remote-reach.js";
 
 /**
  * A remote dev box's owner, simulated. They are not at the box: they have a
@@ -20,40 +19,11 @@ import { remoteInfeasible } from "../../src/remote-reach.js";
  * A dead end fails the eval whatever the wording was.
  */
 
-export type OwnerAction =
-	| { readonly kind: "store-choice" }
-	| {
-			readonly kind: "sign-in";
-			readonly url: URL;
-			readonly capture: string;
-	  }
-	| { readonly kind: "credential"; readonly host: string }
-	/** HoBo MCP App secret forms, one per value the waiting run named. */
-	| { readonly kind: "capture"; readonly names: readonly string[] }
-	| { readonly kind: "device"; readonly line: string }
-	| { readonly kind: "bitwarden-approve"; readonly line: string }
-	/** The agent runs the ceremony through the HoBo MCP server instead. */
-	| { readonly kind: "use-mcp" }
-	/** Nothing for the owner to do: the agent runs again (a transient refusal). */
-	| { readonly kind: "run-again" };
-
-export type OwnerStep =
-	| { readonly kind: "ready" }
-	| { readonly kind: "act"; readonly action: OwnerAction }
-	| {
-			readonly kind: "dead-end";
-			readonly reason: string;
-			readonly lines: readonly string[];
-	  };
-
-const SIGN_IN = /HOBO_OWNER_SIGN_IN url=(\S+) capture=(\S+)/u;
-const CREDENTIAL = /^HOBO_OWNER_CREDENTIAL host=(\S+)/u;
-const CAPTURE = /^HOBO_OWNER_CAPTURE name=(\S+) guide=(\S+)/u;
-const STORE_CHOICE = /^HOBO_C[ID]_STORE_CHOICE$|HOBO_OWNER_STORE_CHOICE/u;
-const DEVICE = /^HOBO_OWNER_DEVICE\b/u;
-const BITWARDEN_APPROVE = /^HOBO_OWNER_BITWARDEN_APPROVE\b/u;
-const PUBLIC_STAND_IN = "https://provider.example";
-const LOOPBACK = /^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/u;
+export {
+	type OwnerAction,
+	type OwnerStep,
+	readOwnerTurn,
+} from "../../src/owner-actions.js";
 
 /** Every line a run showed: its progress, then its refusal. */
 export function ownerLines(
@@ -68,82 +38,6 @@ export function ownerLines(
 		result.message ?? "",
 		...(result.remediation ?? []),
 	];
-}
-
-/** What a remote owner can do next with what the run showed. */
-export function readOwnerTurn(
-	ready: boolean,
-	shown: readonly string[],
-	/** Test servers standing in for a provider's public site (its https origin). */
-	publicOrigins: readonly string[] = [],
-): OwnerStep {
-	const lines = shown.map((line) =>
-		publicOrigins.reduce(
-			(text, origin) => text.split(origin).join(PUBLIC_STAND_IN),
-			line,
-		),
-	);
-	const infeasible = remoteInfeasible(lines);
-	if (infeasible.length > 0)
-		return {
-			kind: "dead-end",
-			reason:
-				"The run told a remote owner to do something only possible at the box.",
-			lines: infeasible,
-		};
-	if (ready) return { kind: "ready" };
-	const captures: string[] = [];
-	for (const line of lines) {
-		const capture = CAPTURE.exec(line);
-		if (capture === null) continue;
-		const guide = new URL(capture[2] ?? "");
-		if (guide.protocol !== "https:" || LOOPBACK.test(guide.hostname))
-			return {
-				kind: "dead-end",
-				reason: "A guide page the owner's browser cannot open.",
-				lines: [line],
-			};
-		captures.push(capture[1] ?? "");
-	}
-	if (captures.length > 0)
-		return { kind: "act", action: { kind: "capture", names: captures } };
-	for (const line of lines) {
-		const signIn = SIGN_IN.exec(line);
-		if (signIn !== null) {
-			const url = new URL(signIn[1] ?? "");
-			if (url.protocol !== "https:" || LOOPBACK.test(url.hostname))
-				return {
-					kind: "dead-end",
-					reason: "A sign-in link the owner's browser cannot open.",
-					lines: [line],
-				};
-			return {
-				kind: "act",
-				action: { kind: "sign-in", url, capture: signIn[2] ?? "" },
-			};
-		}
-		const credential = CREDENTIAL.exec(line);
-		if (credential !== null)
-			return {
-				kind: "act",
-				action: { kind: "credential", host: credential[1] ?? "" },
-			};
-		if (STORE_CHOICE.test(line))
-			return { kind: "act", action: { kind: "store-choice" } };
-		if (DEVICE.test(line))
-			return { kind: "act", action: { kind: "device", line } };
-		if (BITWARDEN_APPROVE.test(line))
-			return { kind: "act", action: { kind: "bitwarden-approve", line } };
-	}
-	if (lines.some((line) => /through the HoBo MCP server/u.test(line)))
-		return { kind: "act", action: { kind: "use-mcp" } };
-	if (lines.some((line) => /^Run again\b/u.test(line)))
-		return { kind: "act", action: { kind: "run-again" } };
-	return {
-		kind: "dead-end",
-		reason: "The run refused with nothing a remote owner can act on.",
-		lines,
-	};
 }
 
 /** What the simulated owner does for each action; absent means they cannot. */
@@ -237,11 +131,17 @@ async function act<F>(
  */
 export function heldOwnerChannel() {
 	let held = new Map<string, string>();
+	/** The links the run registered for its captures, in order. */
+	const opened: { url: string; capture: string }[] = [];
 	const channel: OwnerChannel & {
 		deposit(name: string, value: string): void;
 		restart(): void;
+		readonly opened: typeof opened;
 	} = {
-		openUrl: async () => undefined,
+		opened,
+		openUrl: async (url, _message, capture) => {
+			opened.push({ url, capture });
+		},
 		holds: (name) => held.has(name),
 		async captureSecret({ name }) {
 			const value = held.get(name);

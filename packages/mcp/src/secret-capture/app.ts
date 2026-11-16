@@ -270,6 +270,12 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	 */
 	handoff?: (secret: CapturedSecret) => Promise<void>;
 	/**
+	 * Whether a handed-over value is still waiting for its run. A hand-over
+	 * the run has taken is spent: asked for again, the owner gets a new form,
+	 * not the old "stored" answer. Without it, a hand-over is always spent.
+	 */
+	handoffHeld?: (name: string) => boolean;
+	/**
 	 * The owner is not at this machine (a remote dev box): a page on its
 	 * 127.0.0.1 can never reach them. Without MCP Apps the host's own
 	 * elicitation form asks instead; a host with neither is refused, never
@@ -711,7 +717,10 @@ export function createSecretCaptureApp(
 			!replace &&
 			(previous.state === "awaiting-owner" ||
 				((previous.state === "stored" || previous.state === "authorized") &&
-					now() < previous.expiresAtMs))
+					now() < previous.expiresAtMs &&
+					// A hand-over the run already took is spent: ask afresh.
+					(previous.spec.target !== "handoff" ||
+						options.handoffHeld?.(previous.spec.name) === true)))
 		)
 			return answerFor(previous, support);
 		if (previous?.state === "awaiting-owner") {

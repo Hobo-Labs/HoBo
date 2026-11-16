@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { secretStoreLocatorPath } from "@hobo/hobo-ci";
+import {
+	ceremonyProperties,
+	check,
+	eventsFromWire,
+	REACHES_FRONTIER,
+	secretStoreLocatorPath,
+	type WireMessage,
+} from "@hobo/hobo-ci";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -35,6 +42,8 @@ function startServer(env: NodeJS.ProcessEnv) {
 		{ cwd: REPO, env, stdio: ["pipe", "pipe", "pipe"] },
 	);
 	const inbox: Message[] = [];
+	// The whole exchange, both ways, for the spec model's properties.
+	const wire: WireMessage[] = [];
 	const waiters: (() => void)[] = [];
 	let buffer = "";
 	let stderr = "";
@@ -46,7 +55,10 @@ function startServer(env: NodeJS.ProcessEnv) {
 		let nl = buffer.indexOf("\n");
 		while (nl !== -1) {
 			const line = buffer.slice(0, nl);
-			if (line.trim() !== "") inbox.push(message.parse(JSON.parse(line)));
+			if (line.trim() !== "") {
+				wire.push({ to: "host", message: line });
+				inbox.push(message.parse(JSON.parse(line)));
+			}
 			buffer = buffer.slice(nl + 1);
 			nl = buffer.indexOf("\n");
 		}
@@ -61,7 +73,11 @@ function startServer(env: NodeJS.ProcessEnv) {
 		}
 	};
 	let id = 0;
-	const send = (m: Message) => child.stdin.write(`${JSON.stringify(m)}\n`);
+	const send = (m: Message) => {
+		const line = JSON.stringify(m);
+		wire.push({ to: "server", message: line });
+		return child.stdin.write(`${line}\n`);
+	};
 	const call = (method: string, params: Message) => {
 		id += 1;
 		send({ jsonrpc: "2.0", id, method, params });
@@ -75,6 +91,7 @@ function startServer(env: NodeJS.ProcessEnv) {
 		call,
 		answer,
 		stderr: () => stderr,
+		wire,
 		tool: (name: string, args: Message) =>
 			call("tools/call", { name, arguments: args }),
 		stop: () => {
@@ -273,6 +290,18 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
+			// Runtime verification: every property derived from the ceremony's
+			// spec holds on this real run, and it reached the frontier.
+			const events = eventsFromWire(server.wire);
+			const verdicts = [
+				...ceremonyProperties({ secrets: [copied, jwt] }),
+				REACHES_FRONTIER,
+			].map((property) => check(property, events));
+			for (const verdict of verdicts)
+				trail.push(
+					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
+				);
+			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
 		} finally {
 			process.stdout.write(
 				`\nSMOKE TRAIL\n${trail.join("\n")}\nREQUESTS ${world.requests.join(" | ")}\nBLOCKED ${world.blocked.join(", ")}\nSTDERR ${server.stderr().slice(-1500)}\n`,

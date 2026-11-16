@@ -108,6 +108,7 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@antithesishq/bombadil": "0.7.10",
 		"@hobo/ci-agent": "workspace:*",
 		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
@@ -115,7 +116,9 @@
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
-		"pg": "8.22.0"
+		"fast-check": "^4.3.0",
+		"pg": "8.22.0",
+		"undici": "7.29.0"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
