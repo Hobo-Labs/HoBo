@@ -177,7 +177,11 @@ export async function startConnectPage(
 	let step: ConnectStep = options.flow.initial;
 	let directive: BrowserDirective = { kind: "none" };
 	let pendingHandoff:
-		| { readonly step: ConnectStep; readonly directive: BrowserDirective }
+		| {
+				readonly previousStep: ConnectStep;
+				readonly step: ConnectStep;
+				readonly directive: BrowserDirective;
+		  }
 		| undefined;
 	let settle: (step: ConnectStep) => void = () => undefined;
 	let terminalShown: () => void = () => undefined;
@@ -266,6 +270,15 @@ export async function startConnectPage(
 						'{"error":"invalid action"}',
 					);
 				await transition(async () => {
+					// A flow may return a fresh object for the same handoff step.
+					// Reuse its directive for requests queued against either object.
+					if (
+						parsed.action === "connect.start" &&
+						pendingHandoff?.step === step &&
+						(observedStep === pendingHandoff.previousStep ||
+							observedStep === step)
+					)
+						return { step, directive: pendingHandoff.directive };
 					if (
 						step !== observedStep ||
 						!stepView(step).actions.some(
@@ -273,13 +286,6 @@ export async function startConnectPage(
 						)
 					)
 						return { step };
-					// A start handoff holds a single-use provider state. Reuse it for
-					// duplicate clicks instead of invalidating the first browser redirect.
-					if (
-						parsed.action === "connect.start" &&
-						pendingHandoff?.step === step
-					)
-						return { step, directive: pendingHandoff.directive };
 					const previous = step;
 					const result = await options.flow.onAction(
 						parsed.action,
@@ -292,7 +298,11 @@ export async function startConnectPage(
 						result.step.provider === previous.provider &&
 						result.directive !== undefined &&
 						result.directive.kind !== "none"
-							? { step: result.step, directive: result.directive }
+							? {
+									previousStep: previous,
+									step: result.step,
+									directive: result.directive,
+								}
 							: undefined;
 					return result;
 				});
