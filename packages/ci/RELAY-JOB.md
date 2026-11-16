@@ -71,3 +71,32 @@ conformance function per port (`routeJournalConformance(make)` and so on).
 A conformance function throws a `PortConformanceError` naming the first rule a
 port breaks. The fakes pass their own; a real port's test calls the same
 function with its own factory.
+
+## Answering a relay job
+
+`answerRelayJob(message, deps)` in
+[`src/runner-order/answer.ts`](src/runner-order/answer.ts) is the one function
+both modes call. In order, it:
+
+1. Reads the message. One it cannot read still gets a failed answer naming the
+   broken rule, so the job is completed rather than left queued.
+2. Gives a job made only of check steps to `deps.checks`, when there is one.
+   Without it, every relay job is routed.
+3. Journals `runner.route.Requested`.
+4. Asks the order source for the repository's order at the workflow's ref. A
+   broken order is refused with the parser's sentence and no facts are read.
+5. Reads the job's own `size` (the vCPUs `auto` asks for) and `first` (a runner
+   type to try first). A value it cannot read fails the job with one sentence.
+6. Gathers facts, walks the order and journals `runner.route.Decided` with the
+   decision.
+7. Maps the decision to an answer:
+
+| Decision | Conclusion | Outputs | Annotation |
+| --- | --- | --- | --- |
+| `routed` | `succeeded` | `runner`, `step`, `outcome`, `reason` | A warning when an unhealthy runner type took the job because nothing else could |
+| `waiting` | `succeeded` | The busy step's label as `runner` | A notice that the job is queued |
+| `none` | `failed` | `outcome: none` and the `reason` | An error with the reason |
+
+The job behind a failed relay is skipped by GitHub, so it never waits for a
+runner that will not come. A redelivered relay job is journaled once: the
+journal keeps one entry per job id and event type.

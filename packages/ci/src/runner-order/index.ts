@@ -3,6 +3,12 @@
  * walk that answers one relay job against it. See `./decide.ts` for the
  * rules and `../../RUNNER-ORDER.md` for the model.
  */
+
+export {
+	type AnswerRelayJobDeps,
+	answerRelayJob,
+	workflowGitRef,
+} from "./answer.js";
 export {
 	decideRunnerRoute,
 	describeDecision,
