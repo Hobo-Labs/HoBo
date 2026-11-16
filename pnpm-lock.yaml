@@ -1062,6 +1062,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/junctions':
+        specifier: workspace:*
+        version: link:../junctions
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible

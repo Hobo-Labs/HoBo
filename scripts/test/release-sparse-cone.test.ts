@@ -62,7 +62,7 @@ function parseJobHoboCheckoutSparsePaths(
 		throw new Error(`workflow missing job ${jobName}`);
 	}
 	const jobBlock = workflowText.slice(jobStart);
-	const checkoutMarker = "./.github/actions/hobo-checkout";
+	const checkoutMarker = "$/.github/actions/hobo-checkout";
 	const checkoutIdx = jobBlock.indexOf(checkoutMarker);
 	if (checkoutIdx < 0) {
 		throw new Error(`${jobName} missing hobo-checkout step`);
@@ -299,7 +299,7 @@ describe("release-hobo affected image job", () => {
 			jobStart,
 			nextJob === -1 ? undefined : nextJob,
 		);
-		expect(block).toContain("./.github/actions/ci-runner-preflight");
+		expect(block).toContain("$/.github/actions/ci-runner-preflight");
 		expect(block).toContain("scripts/ci/ensure-nbgv-toolchain.mts");
 		expect(block).toMatch(/Prepare nbgv dotnet[\s\S]*timeout-minutes: 5/u);
 		expect(block).not.toMatch(/jdx\/mise-action@/u);

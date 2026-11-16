@@ -59,7 +59,7 @@ runs:
           .env.example
           .gitattributes
           .gitignore
-          .gitleaks.toml
+          .betterleaks.toml
           .gitmodules
           .mcp.json
           AGENTS.md

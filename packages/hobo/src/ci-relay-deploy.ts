@@ -109,6 +109,7 @@ import {
 	relayVerifyFailure,
 } from "./ci-relay-verify.js";
 import {
+	loadRelayJoinedYards,
 	loadRelayYard,
 	type RelayPlacement,
 	RelayPlacementRefusal,
@@ -524,7 +525,11 @@ export async function runCiRelayDeploy(
 				"HOBO_CI_DEPLOY_YARD_PROVIDER",
 				`Yard ${yard.name} places ${definition.name} on ${yard.providerId}; hobo ci deploy realizes Vercel Yards only.`,
 			);
-		placement = resolveRelayPlacement(yard, target);
+		placement = resolveRelayPlacement(
+			yard,
+			target,
+			await loadRelayJoinedYards(input.cwd, yard),
+		);
 		relayYard = yard;
 	} catch (error) {
 		if (error instanceof RelayPlacementRefusal)

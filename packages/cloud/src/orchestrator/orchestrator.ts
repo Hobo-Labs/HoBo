@@ -8,12 +8,15 @@ import type { DeploymentPlan, ResourcePlan } from "../plan-types.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
 import { type CompensationResult, runCompensation } from "./compensation.js";
 import {
+	type BlockedProviderMove,
+	blockedProviderMove,
 	changedSinceLastDeployed,
 	currentEpochStart,
 	type DeploymentChangeSet,
 	type DeploymentMode,
 	orphansToPrune,
 	planDeploymentChanges,
+	recordedResources,
 } from "./desired-state.js";
 import {
 	destroyResource,
@@ -74,6 +77,8 @@ export interface OrchestratorResult {
 	pruned: string[];
 	/** Undeclared resources `complete` mode could not destroy (no recorded plan). */
 	unprunable: string[];
+	/** Provider changes refused until the prior resource's effects are reconciled. */
+	blockedProviderMoves?: readonly BlockedProviderMove[];
 }
 
 function streamId(deploymentId: string): string {
@@ -157,12 +162,35 @@ export async function runOrchestrator(
 	// failures belong to an `up` that already ended.
 	const epochStart = currentEpochStart(initialEvents);
 	const changes = planDeploymentChanges(plan, initialEvents, mode);
+	// Provisioning is recorded before dispatch, so even a failed or interrupted
+	// call may have created state. A new provider cannot take over that resource
+	// without a fenced handover. Unknown ownership must fail closed too.
+	const recorded = recordedResources(initialEvents);
+	const blockedProviderMoves = plan.resources.flatMap((resource) => {
+		const blocked = blockedProviderMove(recorded.get(resource.name), resource);
+		return blocked === undefined ? [] : [blocked];
+	});
+	if (blockedProviderMoves.length > 0) {
+		const states = resourceStates(initialEvents, plan, deploymentId);
+		return {
+			status: "needs-human",
+			deploymentId,
+			provisioned: provisionedList(states),
+			destroyed: destroyedList(states),
+			events: initialEvents,
+			changes,
+			pruned: [],
+			unprunable: [],
+			blockedProviderMoves,
+		};
+	}
 	const resources = new Map(
 		plan.resources.map((resource) => [resource.name, resource]),
 	);
 	// Each resource is applied at most once per run: a retryable failure is
 	// reported as `waiting`, not retried in a hot loop.
 	const attempted = new Set<string>();
+	let lateBlocked: BlockedProviderMove | undefined;
 
 	while (progressed) {
 		progressed = false;
@@ -199,6 +227,10 @@ export async function runOrchestrator(
 				reconcileCtx,
 			);
 			progressed = true;
+			if (outcome.kind === "blocked") {
+				lateBlocked = outcome.move;
+				break;
+			}
 			if (outcome.kind === "failed" && outcome.crossedNoGoThreshold) {
 				triggeringFailure = {
 					resourceId: resource.name,
@@ -209,11 +241,23 @@ export async function runOrchestrator(
 			break;
 		}
 
-		if (triggeringFailure) break;
+		if (triggeringFailure || lateBlocked) break;
 	}
 
 	let events = await collectStream(deps.store, stream);
 	let states = resourceStates(events, plan, deploymentId);
+	if (lateBlocked)
+		return {
+			status: "needs-human",
+			deploymentId,
+			provisioned: provisionedList(states),
+			destroyed: destroyedList(states),
+			events,
+			changes,
+			pruned: [],
+			unprunable: [],
+			blockedProviderMoves: [lateBlocked],
+		};
 
 	// Compensation path: a no-go failure triggers deployment.RolledBack + reverse
 	// dependency-order destroys.
