@@ -284,6 +284,10 @@ export interface OwnerStore {
 	readonly egressCredentialHost: HttpsOrigin | undefined;
 	/** The store, opened without the page when the locator and a sign-in allow it. */
 	readonly opened: OpenedSecretStore | undefined;
+	/** Infisical only: the folder the store opens on (environment and path). */
+	readonly infisicalFolder:
+		| { readonly environment: string; readonly path: string }
+		| undefined;
 	/** Why it is not open: the settings it lacks, or the store's own answer. */
 	readonly unopened:
 		| { readonly message: string; readonly remediation: readonly string[] }
@@ -483,6 +487,13 @@ export async function ownerStore(
 				)
 			: connectHost,
 		opened,
+		infisicalFolder:
+			id === "infisical"
+				? {
+						environment: resolved.values.INFISICAL_ENVIRONMENT ?? "prod",
+						path: resolved.values.INFISICAL_SECRET_PATH ?? folder,
+					}
+				: undefined,
 		unopened,
 		async stage({ provider, reason, proceed }) {
 			if (opened !== undefined) return proceed(opened);

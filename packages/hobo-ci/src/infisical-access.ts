@@ -58,6 +58,12 @@ export interface InfisicalAccessOptions {
 	readonly exists?: (file: string) => boolean;
 	/** How to reach an owner who is not at this machine (a remote dev box). */
 	readonly owner?: OwnerChannel;
+	/**
+	 * The folder the store reads and writes (its environment and path):
+	 * created here if missing, since Infisical writes into no folder that does
+	 * not exist and the identity HoBo creates is only a project member.
+	 */
+	readonly folder?: { readonly environment: string; readonly path: string };
 	/** Backoff between retried API calls (tests pass a no-op). */
 	readonly sleep?: (ms: number) => Promise<void>;
 }
@@ -79,6 +85,11 @@ export type InfisicalAccess =
 
 /** A JSON request body: strings, numbers and nested objects of them. */
 type ApiBody = { readonly [key: string]: string | number | ApiBody };
+
+/** A project folder's subfolders (`GET /api/v1/folders`). */
+const projectFolders = z.object({
+	folders: z.array(z.object({ name: z.string() })),
+});
 
 /** What Infisical's "Copy to clipboard" holds: base64 of its CLI login. */
 const copiedLogin = z.object({ JTWToken: z.string().min(1) });
@@ -350,6 +361,28 @@ export async function provisionInfisicalAccess(
 				`/api/v1/projects/${options.projectId}/memberships/identities/${identityId}`,
 				{ role: "member" },
 			);
+		// The store's folder, each level created only if missing.
+		if (options.folder !== undefined) {
+			const { environment } = options.folder;
+			let parent = "/";
+			for (const name of options.folder.path.split("/").filter(Boolean)) {
+				const listed = await call(
+					`listing the folders in ${parent}`,
+					projectFolders,
+					"GET",
+					`/api/v1/folders?${new URLSearchParams({ workspaceId: options.projectId, environment, path: parent })}`,
+				);
+				if (!listed.folders.some((folder) => folder.name === name))
+					await call(
+						`creating the folder ${name} in ${parent}`,
+						z.unknown(),
+						"POST",
+						"/api/v1/folders",
+						{ workspaceId: options.projectId, environment, name, path: parent },
+					);
+				parent = `${parent === "/" ? "" : parent}/${name}`;
+			}
+		}
 		if (oidc !== undefined)
 			return {
 				kind: "ready",

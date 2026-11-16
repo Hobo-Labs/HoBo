@@ -31,6 +31,7 @@ import {
 	showOwnerPage,
 	storeAnswers,
 	storeChoiceGuidance,
+	storeFailureReason,
 	storeIdOf,
 	storeSignInGuidance,
 	withoutSecretEnv,
@@ -378,6 +379,9 @@ async function prepareVercelWithVault(
 						...(deps.ownerChannel !== undefined
 							? { owner: deps.ownerChannel }
 							: undefined),
+						...(owner.infisicalFolder !== undefined
+							? { folder: owner.infisicalFolder }
+							: undefined),
 					},
 				);
 				if (access.kind === "refused")
@@ -679,10 +683,12 @@ async function prepareVercelWithVault(
 								code: error.code,
 								message: error.message,
 							};
+						const why =
+							error instanceof Error ? storeFailureReason(error) : undefined;
 						return {
 							state: "failed",
 							code: "HOBO_CD_SECRET_STORE_UNAVAILABLE",
-							message: `Could not keep the Vercel connection in ${store.id}.`,
+							message: `Could not keep the Vercel connection in ${store.id}${why === undefined ? "" : ` (${why})`}.`,
 						};
 					}
 				},
@@ -731,9 +737,11 @@ async function prepareVercelWithVault(
 				return refused(error.code, error.message, [
 					"Run hobo cd up --hand-off again for a new code.",
 				]);
+			const why =
+				error instanceof Error ? storeFailureReason(error) : undefined;
 			return refused(
 				"HOBO_CD_SECRET_STORE_UNAVAILABLE",
-				`Could not keep the Vercel connection in ${store.id}.`,
+				`Could not keep the Vercel connection in ${store.id}${why === undefined ? "" : ` (${why})`}.`,
 				[`Fix access to ${store.id} and run hobo cd up --hand-off again.`],
 			);
 		}

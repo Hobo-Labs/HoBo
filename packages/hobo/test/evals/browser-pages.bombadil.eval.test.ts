@@ -73,6 +73,11 @@ async function openBrowser(url: string) {
 			"--headless=new",
 			"--no-sandbox",
 			"--disable-gpu",
+			// Under a loaded test run Chromium throttles a page it thinks is
+			// in the background, and Bombadil's screenshots of it stall.
+			"--disable-renderer-backgrounding",
+			"--disable-background-timer-throttling",
+			"--disable-backgrounding-occluded-windows",
 			"--remote-debugging-port=0",
 			`--user-data-dir=${profile}`,
 			url,
@@ -103,7 +108,7 @@ async function openBrowser(url: string) {
 }
 
 /** Bombadil explores `url` against `spec`; the violations it reports, if any. */
-async function explore(url: string, spec: string) {
+async function exploreOnce(url: string, spec: string) {
 	const page = await openBrowser(url);
 	const output = scratchDir("hobo-bombadil-out-");
 	try {
@@ -143,6 +148,19 @@ async function explore(url: string, spec: string) {
 	} finally {
 		await page.close();
 	}
+}
+
+/**
+ * Bombadil explores `url` against `spec`. A run its browser driver could not
+ * finish (it says "driver error", e.g. a screenshot the starved browser never
+ * took) and that found no violation is run once more: that is the browser,
+ * not the page. A violation is never retried.
+ */
+async function explore(url: string, spec: string) {
+	const first = await exploreOnce(url, spec);
+	return first.violated.length === 0 && /driver error/u.test(first.said)
+		? exploreOnce(url, spec)
+		: first;
 }
 
 /** A static server for `site/public`, with one route that may be overridden. */

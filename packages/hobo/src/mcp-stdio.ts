@@ -18,6 +18,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
+import { initializeResult } from "./mcp-handshake.js";
 import {
 	type ClientRequest,
 	NO_STORE_CHOICE_SUPPORT,
@@ -38,12 +39,11 @@ import {
 // secret-capture MCP App's tools and its `ui://` resource are served beside
 // the verbs, gated by the same SVID scope; their results never hold a value.
 
-// public-contract: the MCP protocol revision this stdio server speaks.
-export const HOBO_MCP_PROTOCOL_VERSION = "2025-06-18";
-// public-contract: the serverInfo.name MCP clients display and configure by.
-export const HOBO_MCP_SERVER_NAME = "hobo-mcp";
-// public-contract: the serverInfo.version reported in the MCP handshake.
-export const HOBO_MCP_SERVER_VERSION = "0.0.1";
+export {
+	HOBO_MCP_PROTOCOL_VERSION,
+	HOBO_MCP_SERVER_NAME,
+	HOBO_MCP_SERVER_VERSION,
+} from "./mcp-handshake.js";
 
 interface JsonRpcRequest {
 	readonly jsonrpc: "2.0";
@@ -174,17 +174,7 @@ export async function handleMcpMessage(
 			return {
 				jsonrpc: "2.0",
 				id,
-				result: {
-					protocolVersion: requested ?? HOBO_MCP_PROTOCOL_VERSION,
-					capabilities:
-						session === undefined
-							? { tools: {} }
-							: { tools: {}, resources: {} },
-					serverInfo: {
-						name: HOBO_MCP_SERVER_NAME,
-						version: HOBO_MCP_SERVER_VERSION,
-					},
-				},
+				result: initializeResult(requested, session !== undefined),
 			};
 		}
 		case "notifications/initialized":

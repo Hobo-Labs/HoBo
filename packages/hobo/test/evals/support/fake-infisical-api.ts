@@ -92,7 +92,10 @@ export async function startFakeInfisical(
 	const sessions = new Set<string>();
 	const identities = new Map<string, Identity>();
 	const members = new Set<string>();
+	/** Secrets by environment, folder and key, as Infisical keeps them. */
 	const secrets = new Map<string, { value: string; version: number }>();
+	/** Folders by environment and path; each environment starts with its root. */
+	const folders = new Set(["dev:/", "staging:/", "prod:/"]);
 	const calls: string[] = [];
 	const tunnelled = new Set<number>();
 	/** Per route, the statuses to answer next, in order; 0 drops the connection. */
@@ -118,25 +121,72 @@ export async function startFakeInfisical(
 			"",
 		);
 		if (!sessions.has(bearer)) return send(401, { message: "Token expired" });
+		if (url.pathname === "/api/v1/folders") {
+			if (method === "GET") {
+				const environment = url.searchParams.get("environment") ?? "";
+				const parent = url.searchParams.get("path") ?? "/";
+				if (!folders.has(`${environment}:${parent}`))
+					return send(404, { message: "Folder not found" });
+				const prefix = parent === "/" ? "/" : `${parent}/`;
+				return send(200, {
+					folders: [...folders]
+						.filter((held) => held.startsWith(`${environment}:${prefix}`))
+						.map((held) => held.slice(environment.length + 1 + prefix.length))
+						.filter((name) => name !== "" && !name.includes("/"))
+						.map((name) => ({ id: `folder-${name}`, name })),
+				});
+			}
+			const wanted = JSON.parse(body);
+			const parent = String(wanted.path ?? "/");
+			const environment = String(wanted.environment);
+			const path = `${parent === "/" ? "" : parent}/${String(wanted.name)}`;
+			if (!folders.has(`${environment}:${parent}`))
+				return send(404, { message: "Folder not found" });
+			if (folders.has(`${environment}:${path}`))
+				return send(400, { message: "Folder already exists" });
+			folders.add(`${environment}:${path}`);
+			return send(200, {
+				folder: { id: `folder-${String(wanted.name)}`, name: wanted.name },
+			});
+		}
 		const secretRoute = /^\/api\/v4\/secrets(?:\/([^/]+))?$/u.exec(
 			url.pathname,
 		);
 		if (secretRoute !== null) {
 			const key = decodeURIComponent(secretRoute[1] ?? "");
+			// Where: the query on a read, the body on a write.
+			const where =
+				method === "GET"
+					? {
+							environment: url.searchParams.get("environment") ?? "",
+							secretPath: url.searchParams.get("secretPath") ?? "/",
+						}
+					: JSON.parse(body);
+			const folder = `${String(where.environment)}:${String(where.secretPath ?? "/")}`;
+			// As Infisical: nothing is read from or written to a folder that
+			// does not exist.
+			if (!folders.has(folder))
+				return send(404, {
+					message: `Folder with path '${String(where.secretPath)}' in environment '${String(where.environment)}' was not found`,
+				});
+			const inFolder = [...secrets].filter(([held]) =>
+				held.startsWith(`${folder}:`),
+			);
 			if (key === "" && method === "GET")
 				return send(200, {
-					secrets: [...secrets].map(([secretKey, held]) => ({
-						secretKey,
+					secrets: inFolder.map(([held, kept]) => ({
+						secretKey: held.slice(folder.length + 1),
 						secretValue:
 							url.searchParams.get("viewSecretValue") === "false"
 								? ""
-								: held.value,
-						version: held.version,
+								: kept.value,
+						version: kept.version,
 						secretValueHidden:
 							url.searchParams.get("viewSecretValue") === "false",
 					})),
 				});
-			const held = secrets.get(key);
+			const at = `${folder}:${key}`;
+			const held = secrets.get(at);
 			if (method === "GET")
 				return held === undefined
 					? send(404, { message: `Secret with name '${key}' not found` })
@@ -147,19 +197,19 @@ export async function startFakeInfisical(
 								version: held.version,
 							},
 						});
-			const value = String(JSON.parse(body).secretValue);
+			const value = String(where.secretValue);
 			if (method === "PATCH") {
 				if (held === undefined)
 					return send(404, { message: `Secret with name '${key}' not found` });
-				secrets.set(key, { value, version: held.version + 1 });
+				secrets.set(at, { value, version: held.version + 1 });
 			} else {
 				// As Infisical: a key that exists is refused, the original kept.
 				if (held !== undefined)
 					return send(400, { message: `Secret '${key}' already exists` });
-				secrets.set(key, { value, version: 1 });
+				secrets.set(at, { value, version: 1 });
 			}
 			return send(200, {
-				secret: { secretKey: key, version: secrets.get(key)?.version ?? 1 },
+				secret: { secretKey: key, version: secrets.get(at)?.version ?? 1 },
 			});
 		}
 		const project = /^\/api\/v1\/projects\/([^/]+)$/u.exec(url.pathname);
@@ -251,7 +301,8 @@ export async function startFakeInfisical(
 		identities,
 		faults,
 		/** The names held in the store (never the values). */
-		secretNames: () => [...secrets.keys()],
+		secretNames: () =>
+			[...secrets.keys()].map((at) => at.split(":").at(-1) ?? at),
 		/** The owner signs in: a fresh session, as Infisical's web app issues. */
 		signIn() {
 			const jwt = jwtFor(organizationId, randomUUID());

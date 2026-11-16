@@ -1,106 +1,96 @@
 #!/usr/bin/env node
-import { applyEgressToProcess, isRemoteBox } from "@hobo/hobo-ci";
-import { createHoboMcpServer } from "@hobo/mcp";
+import { createInterface } from "node:readline";
+import { PassThrough, Writable } from "node:stream";
 
-import { createComposedHoboCli } from "../cli.js";
-import {
-	relaunchInputFor,
-	relaunchMcpUnderOpenSesame,
-	reportingCredentialRefusals,
-	wantsOpenSesameRelaunch,
-} from "../credentials-opensesame.js";
-import {
-	createMcpOwnerChannel,
-	createOwnerCaptureApp,
-} from "../mcp-owner-channel.js";
-import {
-	createInfisicalCaptureConnector,
-	secretCaptureProjectDir,
-} from "../mcp-secret-capture.js";
-import {
-	createMcpStdioSession,
-	localOperatorAuth,
-	type McpStdioSession,
-	serveMcpStdio,
-} from "../mcp-stdio.js";
-import { createStoreChoiceApp } from "../mcp-store-choice.js";
-import { removeOwnedDirsOnSignals } from "../owned-temp-dir.js";
+import { z } from "zod";
 
-// The runnable MCP control surface: the composed
-// hobo CLI (default LOCAL/MOCKED lane; live lanes stay credential-gated by
-// env) exposed over MCP stdio. Every tool call dispatches through the same
-// command registry as the `hobo` binary — one surface, two transports.
-async function serve(): Promise<number> {
-	// The default runtime's throwaway event store is removed on exit; as the
-	// entry point, this process has it removed on a signal too.
-	removeOwnedDirsOnSignals();
-	// The box's egress (proxy, bypass list, CA), for every fetch in this
-	// process, before anything connects.
-	applyEgressToProcess(process.env);
-	// The owner's channel: what they hand over through the capture form waits
-	// here, in memory, for the ceremony run through this server.
-	// The session exists once the transport starts; prompts go through it.
-	let session: McpStdioSession | undefined;
-	const owner = createMcpOwnerChannel({
-		// Prompts go through the session; the run keeps going meanwhile.
-		prompt: async (params) => {
-			await session?.request?.("elicitation/create", params);
-		},
-		notify: (method, params) => {
-			process.stdout.write(
-				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
-			);
-		},
-	});
-	const server = createHoboMcpServer({
-		cli: createComposedHoboCli({ ownerChannel: owner }),
-	});
-	// The secret-capture MCP App (ADR-0179 amendment "Deploy secrets captured
-	// by an MCP App into the secret store"): values the owner types go from
-	// the form to this process to the store the relay's binding names, and
-	// never into a tool result. URL elicitation completion is the one
-	// notification this server sends.
-	const capture = createOwnerCaptureApp({
-		owner,
-		remote: isRemoteBox(),
-		elicit: (params) => {
-			const request = session?.request;
-			if (request === undefined)
-				return Promise.reject(new Error("the transport is not connected"));
-			return request("elicitation/create", params);
-		},
-		connector: createInfisicalCaptureConnector({
-			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
-		}),
-		notify: (method, params) => {
-			process.stdout.write(
-				`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`,
-			);
-		},
-	});
-	session = createMcpStdioSession(capture, createStoreChoiceApp());
+import { initializeResult, OPENSESAME_CREDENTIALS } from "../mcp-handshake.js";
+
+// The `hobo-mcp` entry point. A host starts it and waits a fixed time (30
+// seconds in Claude Code) for the answer to `initialize`; on a machine that
+// has just booted, loading the composed CLI can take longer than that. So
+// this file imports nothing heavy: it answers `initialize` at once from the
+// handshake module, and hands every line, `initialize` included, to the full
+// server as soon as it has loaded (mcp-serve.ts), dropping the full server's
+// own answer to that one `initialize`. Requests that arrive meanwhile wait in
+// order; nothing is timed.
+
+/** The host's `initialize`, the one request answered here. */
+const Initialize = z.object({
+	jsonrpc: z.literal("2.0"),
+	id: z.union([z.string(), z.number()]),
+	method: z.literal("initialize"),
+	params: z
+		.object({ protocolVersion: z.string().optional() })
+		.loose()
+		.optional(),
+});
+/** A successful response (a result, no method) and the request it answers. */
+const Response = z.object({
+	id: z.union([z.string(), z.number(), z.null()]),
+	method: z.undefined().optional(),
+	result: z.record(z.string(), z.json()),
+});
+
+const parsed = <T>(schema: z.ZodType<T>, line: string): T | undefined => {
 	try {
-		await serveMcpStdio({
-			server,
-			auth: localOperatorAuth(),
-			input: process.stdin,
-			output: process.stdout,
-			session,
-		});
-	} finally {
-		// Closes open captures, stops the page and revokes the writer token,
-		// and stops any step still waiting on the owner.
-		owner.jobs.close();
-		await capture.close();
+		const result = schema.safeParse(JSON.parse(line));
+		return result.success ? result.data : undefined;
+	} catch {
+		return undefined;
 	}
-	return 0;
+};
+
+async function main(): Promise<number> {
+	// Under OpenSesame the server relaunches itself with stdin passed
+	// through, so this process must not read stdin first.
+	if (process.env.HOBO_CREDENTIALS === OPENSESAME_CREDENTIALS)
+		return (await import("../mcp-serve.js")).runHoboMcp();
+	const toServer = new PassThrough();
+	let answered: string | undefined;
+	const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+	lines.on("line", (line) => {
+		const initialize =
+			answered === undefined ? parsed(Initialize, line) : undefined;
+		if (initialize !== undefined) {
+			answered = String(initialize.id);
+			process.stdout.write(
+				`${JSON.stringify({
+					jsonrpc: "2.0",
+					id: initialize.id,
+					result: initializeResult(initialize.params?.protocolVersion, true),
+				})}\n`,
+			);
+		}
+		toServer.write(`${line}\n`);
+	});
+	lines.on("close", () => toServer.end());
+	// The full server's output, less its answer to the `initialize` already
+	// answered above.
+	let pending = "";
+	let dropped = false;
+	const fromServer = new Writable({
+		write(chunk: Buffer | string, _encoding, done) {
+			pending += chunk.toString();
+			for (
+				let nl = pending.indexOf("\n");
+				nl !== -1;
+				nl = pending.indexOf("\n")
+			) {
+				const line = pending.slice(0, nl + 1);
+				pending = pending.slice(nl + 1);
+				const response = dropped ? undefined : parsed(Response, line);
+				if (response !== undefined && String(response.id) === answered) {
+					dropped = true;
+					continue;
+				}
+				process.stdout.write(line);
+			}
+			done();
+		},
+	});
+	const { serveHoboMcpOn } = await import("../mcp-serve.js");
+	return serveHoboMcpOn({ input: toServer, output: fromServer });
 }
 
-// HOBO_CREDENTIALS=opensesame (ADR-0170): its tools run the same verbs as
-// `hobo`, `up` among them, so it relaunches under OpenSesame as `hobo` does,
-// stdin and stdout passing through to the relaunched server; it needs
-// OPENSESAME_STORE_PASSWORD for that (credentials-opensesame.ts says why). A
-// credential refusal when the server is composed is one `hobo:` line and 1.
-process.exitCode = wantsOpenSesameRelaunch(process.env)
-	? await relaunchMcpUnderOpenSesame(relaunchInputFor(process))
-	: await reportingCredentialRefusals(serve);
+process.exitCode = await main();

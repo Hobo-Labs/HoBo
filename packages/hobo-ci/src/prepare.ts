@@ -416,6 +416,9 @@ async function prepareGithubWithVault(
 						...(deps.ownerChannel !== undefined
 							? { owner: deps.ownerChannel }
 							: undefined),
+						...(owner.infisicalFolder !== undefined
+							? { folder: owner.infisicalFolder }
+							: undefined),
 					},
 				);
 				if (access.kind === "refused")

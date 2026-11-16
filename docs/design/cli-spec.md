@@ -386,7 +386,10 @@ environment variables.
   as the providers' real hosts, and fails on any egress outside it. Infisical provisioning reuses an identity,
   auth method and membership a failed run left behind, retries dropped
   connections and 5xx answers, names a proxy that refuses the tunnel (407)
-  as the proxy, and turns an expired session into a fresh sign-in link
+  as the proxy, creates the store's folder (each level only if missing:
+  Infisical writes into no folder that does not exist, and the identity it
+  creates is only a project member), and turns an expired session into a
+  fresh sign-in link
   (registered with the owner channel, so the next form follows it). A
   hand-over a run has taken is spent: `capture_secret` asked again for it
   opens a new form, never the old "stored" answer.
@@ -405,6 +408,17 @@ environment variables.
   are explored by Bombadil against LTL specs (`packages/hobo/test/bombadil/`;
   `browser-pages.bombadil.eval.test.ts`), each also run against a page broken
   on purpose so every property is shown to fail when it should.
+
+  `hobo-mcp` answers the host's `initialize` before the full server has
+  loaded (`src/mcp-handshake.ts`, `src/bin/hobo-mcp.ts`): a host waits a
+  fixed time for that answer (30 seconds in Claude Code) and gives up on
+  the server for the session otherwise, and on a machine that has just
+  booted the full server can take longer to load. Every line, `initialize`
+  included, reaches the full server once it has loaded, so it still learns
+  the host's capabilities; the host gets one answer to `initialize`
+  (`test/mcp-cold-start.test.ts`, which holds the load with a module hook,
+  not a timer). Under `HOBO_CREDENTIALS=opensesame` the server relaunches
+  with stdin passed through, so the early answer is skipped there.
 
 ### Broker targeting and anonymous deploy
 

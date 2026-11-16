@@ -231,3 +231,5 @@ export {
 	type StoreCli,
 	whichOnPath,
 } from "./store-cli.js";
+
+export { storeFailureReason } from "./store-failure.js";
