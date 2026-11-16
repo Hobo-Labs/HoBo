@@ -13,6 +13,6 @@ Built with [Wasp](https://wasp.sh), based on the [Open Saas](https://opensaas.sh
 
 ### Verification
 
-Run `npm run test:unit` for the local browser-state and payment-boundary tests.
+Run `npm run test:unit` for the local browser-state, message indicator, and payment-boundary tests. Set `TEST_DATABASE_URL` to an isolated PostgreSQL database with the application schema applied to include the message operation tests.
 Run `wasp compile` to check the generated SDK and application types; a running
 PostgreSQL instance is needed to verify that database migrations are current.
