@@ -79,13 +79,6 @@ export interface ConnectPageOptions {
 	 * flow's own state check is what protects it; use it with a fixed `port`.
 	 */
 	readonly callbackPath?: string;
-	/**
-	 * Handed off by an agent: the owner opens the page from a link that can
-	 * only name the port (a cloud session's preview opens `/`). The first
-	 * `GET /` is redirected to the session path, once; every later request
-	 * to `/` is a 404 again, so the page stays unguessable after it is opened.
-	 */
-	readonly entryOnce?: boolean;
 }
 
 export interface ConnectPage {
@@ -180,7 +173,6 @@ export async function startConnectPage(
 ): Promise<ConnectPage> {
 	const token = randomBytes(24).toString("base64url");
 	const base = `/s/${token}/`;
-	let entryOpen = options.entryOnce === true;
 	const assetsDir = options.assetsDir ?? DEFAULT_ASSETS;
 	let step: ConnectStep = options.flow.initial;
 	let directive: BrowserDirective = { kind: "none" };
@@ -235,21 +227,6 @@ export async function startConnectPage(
 	const server = createServer((req, res) => {
 		void (async () => {
 			const url = new URL(req.url ?? "/", "http://127.0.0.1");
-			if (
-				entryOpen &&
-				req.method === "GET" &&
-				url.pathname === "/" &&
-				url.search === ""
-			) {
-				entryOpen = false;
-				res.writeHead(302, {
-					location: base,
-					"cache-control": "no-store",
-					"referrer-policy": "no-referrer",
-				});
-				res.end();
-				return;
-			}
 			const fixedCallback =
 				options.callbackPath !== undefined &&
 				url.pathname === options.callbackPath;

@@ -190,9 +190,18 @@ they paste (identifiers, not secrets).
 
 An agent never answers a ceremony itself and never stops at
 `HOBO_*_CONNECTION_NEEDS_OWNER`. Run the verb with `--hand-off` in the
-background (without `--json` or `-q`). A handed-off run serves nothing on
-the agent's machine and nothing redirects back to it, so the owner can be
-anywhere:
+background (without `--json` or `-q`).
+
+For CI, the run serves a loopback page and prints its full, unguessable
+`HOBO_OWNER_PAGE <url> port=<n>` line. Give the owner the full URL. If the
+run is remote, the owner needs an authenticated tunnel that binds
+`127.0.0.1:<n>` on their machine and forwards to the same port on the
+agent's machine. They open the URL through the tunnel and keep it open until
+the provider returns to the loopback callback. A preview alone does not
+forward that callback.
+
+For CD, the handed-off run serves nothing on the agent's machine and nothing
+redirects back to it, so the owner can be anywhere:
 
 1. **The store opens without a page.** Commit `.hobo/secret-store.json`
    (store and ids only). On a remote box, run with the non-secret setting

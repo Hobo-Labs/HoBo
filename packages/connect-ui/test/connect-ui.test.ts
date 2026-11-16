@@ -235,32 +235,18 @@ describe("startConnectPage", () => {
 		expect((await fetch(`${origin}/s/wrong-token/view`)).status).toBe(404);
 	});
 
-	it("handed off, opens the session from its root exactly once", async () => {
-		page = await startConnectPage({
-			flow: githubFlow(),
-			assetsDir: "dist/client",
-			entryOnce: true,
-		});
-		const origin = new URL(page.url).origin;
-		const first = await fetch(`${origin}/`, { redirect: "manual" });
-		expect(first.status).toBe(302);
-		expect(new URL(first.headers.get("location") ?? "", origin).href).toBe(
-			page.url,
-		);
-		expect((await fetch(`${origin}/`, { redirect: "manual" })).status).toBe(
-			404,
-		);
-	});
-
-	it("without a hand-off, its root is not found", async () => {
+	it("does not disclose the session path to visitors at its root", async () => {
 		page = await startConnectPage({
 			flow: githubFlow(),
 			assetsDir: "dist/client",
 		});
 		const origin = new URL(page.url).origin;
-		expect((await fetch(`${origin}/`, { redirect: "manual" })).status).toBe(
-			404,
-		);
+		for (let attempt = 0; attempt < 2; attempt++) {
+			const response = await fetch(`${origin}/`, { redirect: "manual" });
+			expect(response.status).toBe(404);
+			expect(response.headers.get("location")).toBeNull();
+		}
+		expect((await fetch(page.url)).status).toBe(200);
 	});
 
 	it("moves the step only through the flow and finishes on the provider callback", async () => {

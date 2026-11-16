@@ -190,9 +190,12 @@ environment variables.
   the chosen ones (`hobo add`, approving a held one) and runs `up` again.
 - **Agents** can complete a ceremony too (`createAgent`, WebMCP). Handing off
   to a provider or submitting a secret asks the person.
-- **An agent hands the ceremony to the person** (`--hand-off`): the run
-  serves nothing on the agent's machine and nothing redirects back to it,
-  so the person can be anywhere. The store must open without a page (a
+- **An agent hands the ceremony to the person** (`--hand-off`): CI serves a
+  loopback setup page and names its full, unguessable `HOBO_OWNER_PAGE` URL.
+  If the run is remote, the owner needs an authenticated tunnel to that
+  loopback port so the provider callback also reaches it. CD serves nothing
+  on the agent's machine and nothing redirects back to it, so the person can
+  be anywhere. For CD, the store must open without a page (a
   workload's OIDC, or `INFISICAL_SIGN_IN=egress-proxy`: the run sends a
   placeholder and the agent's egress proxy injects the owner's Infisical
   access token, given out of band); otherwise the run refuses with

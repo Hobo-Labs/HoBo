@@ -106,13 +106,9 @@ export function showOwnerPage(options: {
 	readonly openBrowser: (url: string) => void;
 }): void {
 	if (options.handOff === true) {
-		// The page was started with `entryOnce`: its root opens the session the
-		// first time, so the link is only the origin, and works from a preview
-		// that can name nothing but the port.
-		const entry = new URL(options.url).origin;
 		const port = new URL(options.url).port;
 		options.emit(
-			`${OWNER_PAGE_LINE_PREFIX} ${entry}/ port=${port} — ${options.what}; give the owner this link (in a cloud session, forward the port: the preview opens it) and wait (this run waits for them).`,
+			`${OWNER_PAGE_LINE_PREFIX} ${options.url} port=${port} — ${options.what}; give this page to the owner and wait (this run waits for them).`,
 		);
 		return;
 	}
@@ -473,10 +469,7 @@ async function prepareGithubWithVault(
 		},
 	});
 
-	page = await (deps.startPage ?? startConnectPage)({
-		flow,
-		entryOnce: input.handOff === true,
-	});
+	page = await (deps.startPage ?? startConnectPage)({ flow });
 	const activePage = page;
 	const step = await runPage(
 		activePage,

@@ -49,6 +49,7 @@ const TokenReply = z.object({
 
 const Teams = z.object({
 	teams: z.array(z.object({ id: z.string(), slug: z.string() })),
+	pagination: z.object({ next: z.number().int().nonnegative().nullable() }),
 });
 
 export class VercelDeviceError extends Error {
@@ -97,6 +98,8 @@ export async function vercelDeviceToken(
 		method: "POST",
 		headers: { "content-type": "application/x-www-form-urlencoded" },
 		body: form({ client_id: clientId }),
+		redirect: "error",
+		signal: AbortSignal.timeout(10_000),
 	}).catch(() => undefined);
 	const parsed = DeviceAuthorization.safeParse(
 		started?.ok ? await started.json().catch(() => null) : null,
@@ -115,10 +118,15 @@ export async function vercelDeviceToken(
 	let interval = (grant.interval ?? 5) * 1000;
 	const deadline = now() + grant.expires_in * 1000;
 	while (now() < deadline) {
-		await sleep(interval);
+		await sleep(Math.max(0, Math.min(interval, deadline - now())));
+		if (now() >= deadline) break;
 		const reply = await http(VERCEL_DEVICE_TOKEN_URL, {
 			method: "POST",
 			headers: { "content-type": "application/x-www-form-urlencoded" },
+			redirect: "error",
+			signal: AbortSignal.timeout(
+				Math.max(1, Math.min(10_000, deadline - now())),
+			),
 			body: form({
 				grant_type: DEVICE_CODE_GRANT,
 				device_code: grant.device_code,
@@ -169,27 +177,48 @@ export async function vercelDeviceTeam(
 	named: string | undefined,
 	http: typeof fetch = fetch,
 ): Promise<string> {
-	const reply = await http("https://api.vercel.com/v2/teams", {
-		headers: { authorization: `Bearer ${token}` },
-	}).catch(() => undefined);
-	const parsed = Teams.safeParse(
-		reply?.ok ? await reply.json().catch(() => null) : null,
-	);
-	if (!parsed.success)
+	const teams: Array<{ id: string; slug: string }> = [];
+	const seen = new Set<number>();
+	let cursor: number | undefined;
+	let complete = false;
+	for (let page = 0; page < 100; page++) {
+		const url = new URL("https://api.vercel.com/v2/teams");
+		if (cursor !== undefined) url.searchParams.set("until", String(cursor));
+		const reply = await http(url, {
+			headers: { authorization: `Bearer ${token}` },
+			redirect: "error",
+			signal: AbortSignal.timeout(10_000),
+		}).catch(() => undefined);
+		const parsed = Teams.safeParse(
+			reply?.ok ? await reply.json().catch(() => null) : null,
+		);
+		if (!parsed.success) break;
+		teams.push(...parsed.data.teams);
+		if (named !== undefined && named !== "") {
+			const match = parsed.data.teams.find(
+				(t) => t.id === named || t.slug === named,
+			);
+			if (match !== undefined) return match.id;
+		}
+		const next = parsed.data.pagination.next;
+		if (next === null) {
+			complete = true;
+			break;
+		}
+		if (seen.has(next)) break;
+		seen.add(next);
+		cursor = next;
+	}
+	if (!complete)
 		throw new VercelDeviceError(
 			"HOBO_CD_VERCEL_DEVICE_FAILED",
-			"Cannot list the Vercel teams the sign-in can reach.",
+			"Cannot list all Vercel teams the sign-in can reach.",
 		);
-	const teams = parsed.data.teams;
-	if (named !== undefined && named !== "") {
-		const match = teams.find((t) => t.id === named || t.slug === named);
-		if (match === undefined)
-			throw new VercelDeviceError(
-				"HOBO_CD_VERCEL_TEAM_AMBIGUOUS",
-				`The Vercel sign-in cannot reach team ${named}.`,
-			);
-		return match.id;
-	}
+	if (named !== undefined && named !== "")
+		throw new VercelDeviceError(
+			"HOBO_CD_VERCEL_TEAM_AMBIGUOUS",
+			`The Vercel sign-in cannot reach team ${named}.`,
+		);
 	const [only] = teams;
 	if (only !== undefined && teams.length === 1) return only.id;
 	throw new VercelDeviceError(

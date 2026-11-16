@@ -47,7 +47,7 @@ function fakeVercel(
 				: Response.json({ error: reply }, { status: 400 });
 		}
 		if (url === "https://api.vercel.com/v2/teams")
-			return Response.json({ teams });
+			return Response.json({ teams, pagination: { next: null } });
 		return new Response("{}", { status: 404 });
 	};
 	return { http, calls };
@@ -91,6 +91,32 @@ describe("vercelDeviceToken", () => {
 				}),
 			).rejects.toMatchObject({ code });
 	});
+
+	it("does not poll after the device code expires", async () => {
+		let time = 0;
+		const calls: string[] = [];
+		await expect(
+			vercelDeviceToken({
+				fetch: async (input) => {
+					calls.push(String(input));
+					return Response.json({
+						device_code: "dev-code",
+						user_code: "ABCD-EFGH",
+						verification_uri: "https://vercel.com/device",
+						expires_in: 3,
+						interval: 5,
+					});
+				},
+				emit: () => undefined,
+				now: () => time,
+				sleep: async (ms) => {
+					time += ms;
+				},
+			}),
+		).rejects.toMatchObject({ code: "HOBO_CD_VERCEL_DEVICE_EXPIRED" });
+		expect(calls).toEqual([VERCEL_DEVICE_AUTHORIZATION_URL]);
+		expect(time).toBe(3000);
+	});
 });
 
 describe("vercelDeviceTeam", () => {
@@ -109,6 +135,46 @@ describe("vercelDeviceTeam", () => {
 		await expect(vercelDeviceTeam(TOKEN, undefined, two)).rejects.toMatchObject(
 			{ code: "HOBO_CD_VERCEL_TEAM_AMBIGUOUS" },
 		);
+	});
+
+	it("follows team pages before selecting a sole team or a named team", async () => {
+		const calls: string[] = [];
+		const http = async (input: string | URL | Request) => {
+			const url = new URL(String(input));
+			calls.push(url.toString());
+			return url.searchParams.has("until")
+				? Response.json({
+						teams: [{ id: "team_xyz", slug: "other" }],
+						pagination: { next: null },
+					})
+				: Response.json({
+						teams: [{ id: "team_abc", slug: "acme" }],
+						pagination: { next: 123 },
+					});
+		};
+		await expect(
+			vercelDeviceTeam(TOKEN, undefined, http),
+		).rejects.toMatchObject({ code: "HOBO_CD_VERCEL_TEAM_AMBIGUOUS" });
+		expect(calls).toEqual([
+			"https://api.vercel.com/v2/teams",
+			"https://api.vercel.com/v2/teams?until=123",
+		]);
+		expect(await vercelDeviceTeam(TOKEN, "other", http)).toBe("team_xyz");
+	});
+
+	it("fails closed if pagination is missing or repeats a cursor", async () => {
+		for (const http of [
+			async () => Response.json({ teams: [{ id: "team_abc", slug: "acme" }] }),
+			async () =>
+				Response.json({
+					teams: [{ id: "team_abc", slug: "acme" }],
+					pagination: { next: 123 },
+				}),
+		]) {
+			await expect(
+				vercelDeviceTeam(TOKEN, undefined, http),
+			).rejects.toMatchObject({ code: "HOBO_CD_VERCEL_DEVICE_FAILED" });
+		}
 	});
 });
 
