@@ -192,9 +192,10 @@ environment variables.
   to a provider or submitting a secret asks the person.
 - **An agent hands the page to the person** (`--hand-off`): the run serves
   the page without a terminal, opens no browser, and names it on one
-  `HOBO_OWNER_PAGE <url> port=<n>` progress line; the agent gives that page
-  to the person (a cloud agent forwards the port) and the run waits for
-  them. The agent never answers the page itself.
+  `HOBO_OWNER_PAGE <url> port=<n>` progress line whose `<url>` is the page's
+  origin: its first visit opens the session (once), so the agent hands over
+  that link, or a cloud agent forwards the port and the preview opens it.
+  The run waits for the person. The agent never answers the page itself.
 - Without a person at a browser and without `--hand-off`, and for
   `--what-if`, nothing opens. The
   result says what it would sign in to and ask for, points CI at a

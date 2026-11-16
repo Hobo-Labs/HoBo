@@ -31,7 +31,7 @@ describe("owner hand-off", () => {
 		expect(lines).toHaveLength(1);
 		expect(lines[0]).toMatch(
 			new RegExp(
-				`^${OWNER_PAGE_LINE_PREFIX} http://127\\.0\\.0\\.1:43117/s/abc port=43117 `,
+				`^${OWNER_PAGE_LINE_PREFIX} http://127\\.0\\.0\\.1:43117/ port=43117 `,
 			),
 		);
 	});

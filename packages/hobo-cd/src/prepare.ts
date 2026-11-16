@@ -456,6 +456,7 @@ async function prepareVercelWithVault(
 		flow,
 		port: Number(redirect.port),
 		callbackPath: redirect.pathname,
+		entryOnce: input.handOff === true,
 	});
 	const step = await runPage(
 		page,
