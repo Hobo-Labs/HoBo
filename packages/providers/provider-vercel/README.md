@@ -234,10 +234,9 @@ Observing, adopting, updating or linking an existing project requires a
 operation, action and desired settings. The resolver rechecks it before each
 update or link, and re-reads the project right before linking so a concurrent
 link is refused rather than overwritten; a name or repository match alone is
-not control evidence. A project found by name is adoption unless the durable
-journal holds this operation's own acknowledged creation (`inspect`), which
-makes it an observation of the resolver's own project; an uncertain create
-(a lost response or a same-name refusal) stays adoption. Creation itself needs the team and
+not control evidence. A project found without its recorded physical ID requires
+adoption authorization, even after a journaled create: the claim does not bind
+the observed project to that request. Creation itself needs the team and
 operation ID, so the resolver never creates a project it could not manage.
 Deleting a project requires its recorded physical ID, team and operation ID,
 plus an independently supplied `verifyProjectDeletion` authorization for that

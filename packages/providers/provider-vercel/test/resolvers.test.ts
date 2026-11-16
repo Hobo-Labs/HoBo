@@ -374,7 +374,7 @@ describe("vercel resolver registry", () => {
 });
 
 describe("vercel.project/v1 resolver", () => {
-	it("creates a Git-linked project, verifies the provider readback and observes it as its own on retry", async () => {
+	it("creates a Git-linked project and requires adoption for an unpinned retry", async () => {
 		const f = recorded(projectApi());
 		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
 			teamId: "team_hobo",
@@ -399,7 +399,7 @@ describe("vercel.project/v1 resolver", () => {
 		});
 		expect(f.calls.at(-1)?.method).toBe("GET");
 		expect((await resolver.reconcile(request, f.transport)).action).toBe(
-			"noop",
+			"adopt",
 		);
 		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
 	});
@@ -636,7 +636,7 @@ describe("vercel.project/v1 resolver", () => {
 		expect(actions).toEqual(["adopt"]);
 		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
 	});
-	it("observes its own acknowledged creation when the readback failed", async () => {
+	it("requires adoption when the readback after acknowledged creation failed", async () => {
 		const inner = projectApi();
 		let created = false;
 		let failed = false;
@@ -661,9 +661,9 @@ describe("vercel.project/v1 resolver", () => {
 			desired: { repository: "Hobo-Labs/HoBo", operationId: "deploy-1" },
 		});
 		await expect(r.reconcile(input, f.transport)).rejects.toThrow();
-		// The create was acknowledged, so the project found by name is ours.
-		expect((await r.reconcile(input, f.transport)).action).toBe("noop");
-		expect(actions).toEqual(["observe"]);
+		// An acknowledgement does not bind the project later found by name.
+		expect((await r.reconcile(input, f.transport)).action).toBe("adopt");
+		expect(actions).toEqual(["adopt"]);
 		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
 	});
 	it("treats a same-name project as adoption when this operation's journal never created it", async () => {
@@ -689,6 +689,34 @@ describe("vercel.project/v1 resolver", () => {
 			"adopt",
 		);
 		expect(actions).toEqual(["adopt", "adopt"]);
+	});
+	it("requires adoption authority if an acknowledged project is replaced", async () => {
+		const original = projectApi();
+		const replacement = projectApi([
+			{ id: "prj_other", name: "storefront", framework: "nextjs" },
+		]);
+		let replaced = false;
+		const f = recorded((call) => (replaced ? replacement : original)(call));
+		const actions: string[] = [];
+		const resolver = resolverFor(VERCEL_PROJECT_PRODUCT_ID, {
+			teamId: "team_hobo",
+			verifyProjectControl: async (scope) => {
+				actions.push(scope.action);
+				return scope.action === "observe";
+			},
+		});
+		const input = projectRequest({
+			desired: { operationId: "deploy-replace" },
+		});
+		expect((await resolver.reconcile(input, f.transport)).physicalId).toBe(
+			"prj_1",
+		);
+		replaced = true;
+		await expect(resolver.reconcile(input, f.transport)).rejects.toThrow(
+			/project control authorization/u,
+		);
+		expect(actions).toEqual(["adopt"]);
+		expect(f.calls.filter((call) => call.method === "POST")).toHaveLength(1);
 	});
 	it("does not create a project it could not manage afterwards", async () => {
 		for (const [teamId, desired] of [
@@ -729,7 +757,7 @@ describe("vercel.project/v1 resolver", () => {
 		const first = await resolver.reconcile(projectRequest(), transport);
 		const second = await resolver.reconcile(projectRequest(), transport);
 		expect(second.physicalId).toBe(first.physicalId);
-		expect(second.action).toBe("noop");
+		expect(second.action).toBe("adopt");
 		expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
 	});
 
