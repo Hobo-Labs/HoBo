@@ -526,7 +526,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			// The route job chooses the runner, so it cannot wait on one.
 			if ((lines[start] ?? "") === "  route:") {
 				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
-				assert.match(block, /uses: \.\/\.github\/actions\/route-runner$/m);
+				assert.match(block, /uses: \$\/\.github\/actions\/route-runner$/m);
 				continue;
 			}
 			// A required gate runs no action on GitHub-hosted too. `always()` is for

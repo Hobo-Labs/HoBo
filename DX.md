@@ -9,7 +9,7 @@ HoBo is a **reference implementation** for the portfolio DX baseline. The canoni
 - **Turborepo** with `globalDependencies`, `envMode: strict`, md-ignoring test `inputs`, `--affected`.
 - **Biome** (format) + **ast-grep** + **konsistent** (structure).
 - **Native git hooks** (`core.hooksPath=.githooks`, fail-open `prepare`); relevant-check `pre-commit` maps changed paths → minimal check set.
-- **Thin, affected, env-only CI** (cross-OS SHA-256 digest parity, offline `docker --network=none` gates, gitleaks). No deployment (design-phase).
+- **Thin, affected, env-only CI** (cross-OS SHA-256 digest parity, offline `docker --network=none` gates, Betterleaks secret scan). No deployment (design-phase).
 
 ## Residual improvements (Advanced)
 - [x] Turbo remote cache in CI when `TURBO_TOKEN` / `TURBO_TEAM` are set; `actions/cache` fallback on `.turbo/cache`.

@@ -351,7 +351,7 @@ describe("the HoBo CI Fabric workflow writes HoBo's own Freight", () => {
 		expect(jobBlock("main_gate_finish")).toMatch(
 			/needs: \[[^\]]*main-gate-plan/,
 		);
-		expect(jobBlock("main-gate-plan")).toContain("gitleaks-main-scan.mts");
+		expect(jobBlock("main-gate-plan")).toContain("betterleaks-main-scan.mts");
 	});
 
 	it("exposes the Freight as a run artifact without any credential", () => {
