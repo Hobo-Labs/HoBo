@@ -35,6 +35,17 @@ const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
 const inputDirs = relayInputDirs(lockfile);
 const configured = "bound" as const;
 
+/** The block of one job, excluding the other jobs. */
+function job(name: string): string {
+	const lines = workflow.split("\n");
+	const start = lines.findIndex((line) => line === `  ${name}:`);
+	assert.notEqual(start, -1, `no job named ${name}`);
+	const end = lines.findIndex(
+		(line, index) => index > start && /^ {2}[a-z][\w-]*:$/u.test(line),
+	);
+	return lines.slice(start, end === -1 ? undefined : end).join("\n");
+}
+
 /** The block of one step, from its `- name:` line to the next step. */
 function step(name: string): string {
 	const lines = workflow.split("\n");
@@ -189,16 +200,14 @@ describe("the relay deploy workflow", () => {
 					/vars\.HOBO_CI_(ROUTE|LOCAL_RUNNER|ROUTE_MAX_WAIT_SECONDS|ROUTE_MAX_QUEUED|TRUNK_RUNNER)\b/u,
 					line,
 				);
-		const deploy = workflow
-			.split("\n  deploy:\n")[1]
-			?.split(/\n  [a-z][\w-]*:\n/u)[0];
-		assert.ok(deploy, "expected the relay deploy job");
-		assert.doesNotMatch(deploy, /INFISICAL_|VERCEL_TEAM_ID|HOBO_CI_RELAY_URL/u);
+		assert.doesNotMatch(
+			job("deploy"),
+			/INFISICAL_|VERCEL_TEAM_ID|HOBO_CI_RELAY_URL/u,
+		);
 	});
 
 	it("starts the owner connection only on an explicit main-branch dispatch", () => {
-		const owner = workflow.split("\n  owner-connect:\n")[1];
-		assert.ok(owner, "expected the owner-connect job");
+		const owner = job("owner-connect");
 		assert.match(
 			owner,
 			/if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.connect == 'cd'/u,
@@ -223,13 +232,14 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("holds no Vercel token and makes no Vercel API write: Vercel's Git integration deploys", () => {
+	it("the relay deploy job adopts without a Vercel token or API write", () => {
+		const deploy = job("deploy");
 		assert.doesNotMatch(
-			workflow,
+			deploy,
 			/VERCEL_TOKEN|relay-deploy-credential|vercel@\d|vercel deploy|--token\b/u,
 		);
 		// The only `hobo ci deploy` is the observe-only adoption.
-		for (const match of workflow.matchAll(/ci deploy\b[^\n]*/gu))
+		for (const match of deploy.matchAll(/ci deploy\b[^\n]*/gu))
 			assert.match(match[0], /^ci deploy --adopt\b/u, match[0]);
 		assert.ok(
 			!existsSync(join(root, "scripts/ci/relay-deploy-credential.mts")),

@@ -3,15 +3,17 @@ name: HoBo relay deploy
 # The hosted CI relay deploys to its Vercel project `hobo-ci` through
 # Vercel's Git integration: a push to `main` builds and promotes it, exactly as
 # it has been deployed so far (ADR-0179 amendment "Secretless first";
-# docs/design/hosted-relay-stateless.md). This workflow deploys nothing and
-# holds no Vercel token: it checks, by identity name, that the relay's secret
+# docs/design/hosted-relay-stateless.md). The relay deploy job does not create
+# a deployment or hold a Vercel token: it checks that the relay's secret
 # store accepts this repository's GitHub OIDC token, then
 # `hobo ci deploy --adopt` finds the deployment Vercel reported for the pushed
 # commit through GitHub's Deployments API and promotes it through @hobo/cd,
 # preview then production, with fail-closed verification at the relay's
 # production domain (/healthz names the commit served, /readyz answers 200).
 #
-# No secret and no repository variable configures this workflow. The store's
+# The relay deploy job reads no repository secret or variable for its config.
+# The separate manual owner-connect job can connect Vercel and converge CD.
+# The store's
 # coordinates (ids and an origin, no credential) are committed to
 # packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
 # reads in production. Until a store is bound the job ends with a notice and
