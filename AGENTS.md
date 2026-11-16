@@ -15,6 +15,11 @@ over conflicting repository workflow guidance.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
 
+Run `pnpm run source:guard -- --worktree` while editing. The pre-commit hook
+checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
+CSS, HTML, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
+Kotlin, Ruby, Lua, and Swift; the same rule applies to every other language.
+
 # Agent tooling for this repo
 
 This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
