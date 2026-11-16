@@ -260,5 +260,9 @@ describe("hobo cd up --hand-off", () => {
 			kind: "refused",
 			result: { code: "HOBO_CD_STORE_NEEDS_SIGN_IN" },
 		});
+		expect(JSON.stringify(outcome)).toContain(
+			"Configure the store's non-secret ids",
+		);
+		expect(JSON.stringify(outcome)).not.toContain("ids are committed");
 	});
 });

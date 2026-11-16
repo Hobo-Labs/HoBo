@@ -153,12 +153,12 @@ describe("the relay deploy workflow", () => {
 			workflow,
 			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n {4}inputs:\n/mu,
 		);
-		// The only dispatch inputs: the App's one-time code and two ids.
+		// The App's code and ids, plus the explicit CD owner handoff.
 		assert.deepEqual(
 			[...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu)].map(
 				(match) => match[1],
 			),
-			["manifest_code", "relay", "owner_id"],
+			["manifest_code", "relay", "owner_id", "connect", "vercel_team"],
 		);
 		assert.match(
 			workflow,
@@ -189,10 +189,28 @@ describe("the relay deploy workflow", () => {
 					/vars\.HOBO_CI_(ROUTE|LOCAL_RUNNER|ROUTE_MAX_WAIT_SECONDS|ROUTE_MAX_QUEUED|TRUNK_RUNNER)\b/u,
 					line,
 				);
-		assert.doesNotMatch(
-			workflow,
-			/INFISICAL_|VERCEL_TEAM_ID|HOBO_CI_RELAY_URL/u,
+		const deploy = workflow
+			.split("\n  deploy:\n")[1]
+			?.split(/\n  [a-z][\w-]*:\n/u)[0];
+		assert.ok(deploy, "expected the relay deploy job");
+		assert.doesNotMatch(deploy, /INFISICAL_|VERCEL_TEAM_ID|HOBO_CI_RELAY_URL/u);
+	});
+
+	it("starts the owner connection only on an explicit main-branch dispatch", () => {
+		const owner = workflow.split("\n  owner-connect:\n")[1];
+		assert.ok(owner, "expected the owner-connect job");
+		assert.match(
+			owner,
+			/if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.connect == 'cd'/u,
 		);
+		assert.match(owner, / {6}id-token: write\n/u);
+		assert.match(owner, /persist-credentials: false/u);
+		assert.match(
+			owner,
+			/HOBO_CD_VERCEL_TEAM_ID: \$\{\{ github\.event\.inputs\.vercel_team \}\}/u,
+		);
+		assert.match(owner, /hobo\.js cd up --hand-off/u);
+		assert.doesNotMatch(owner, /\$\{\{\s*secrets\./u);
 	});
 
 	it("routes the deploy like hobo-ci.yml, so a busy fleet does not hold it", () => {

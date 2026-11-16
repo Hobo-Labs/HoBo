@@ -289,7 +289,7 @@ jobs:
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.connect == 'cd'
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
@@ -298,6 +298,7 @@ jobs:
         with:
           clean: false
           fetch-depth: 1
+          persist-credentials: false
       - uses: ./.github/actions/ci-runner-preflight
       - uses: ./.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false

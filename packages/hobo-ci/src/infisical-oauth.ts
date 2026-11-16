@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
+import { parseInfisicalBinding } from "@hobo/adapter-infisical";
 import type { SecretsPort } from "@hobo/identity";
 import { z } from "zod";
 
@@ -81,6 +82,20 @@ function base64url(bytes: Buffer): string {
 export async function infisicalOAuthToken(
 	options: InfisicalOAuthOptions,
 ): Promise<string> {
+	let site: string;
+	try {
+		site = parseInfisicalBinding({
+			siteUrl: options.siteUrl,
+			projectId: "oauth",
+			environment: "prod",
+			secretPath: "/",
+		}).siteUrl;
+	} catch {
+		throw new InfisicalOAuthError(
+			"HOBO_INFISICAL_OAUTH_FAILED",
+			"The Infisical site must be an HTTPS origin, or an HTTP loopback origin.",
+		);
+	}
 	const redirect = new URL(options.redirectUri ?? INFISICAL_OAUTH_REDIRECT_URI);
 	if (redirect.protocol !== "http:" || redirect.hostname !== "127.0.0.1")
 		throw new InfisicalOAuthError(
@@ -137,7 +152,7 @@ export async function infisicalOAuthToken(
 		options.timeoutMs ?? 10 * 60_000,
 	);
 	try {
-		const authorize = new URL("/api/v1/oauth/authorize", options.siteUrl);
+		const authorize = new URL("/api/v1/oauth/authorize", site);
 		authorize.search = new URLSearchParams({
 			response_type: "code",
 			client_id: options.clientId,
@@ -165,8 +180,10 @@ export async function infisicalOAuthToken(
 			);
 
 		const http = options.fetch ?? fetch;
-		const reply = await http(new URL("/api/v1/oauth/token", options.siteUrl), {
+		const reply = await http(new URL("/api/v1/oauth/token", site), {
 			method: "POST",
+			redirect: "error",
+			signal: AbortSignal.timeout(10_000),
 			headers: {
 				"content-type": "application/x-www-form-urlencoded",
 				authorization: `Basic ${Buffer.from(

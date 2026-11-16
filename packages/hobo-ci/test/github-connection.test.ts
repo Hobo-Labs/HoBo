@@ -1005,6 +1005,7 @@ describe("prepareGithubConnection", () => {
 			result: { code: "HOBO_CI_CONNECTION_NEEDS_OWNER" },
 		});
 		expect(JSON.stringify(outcome)).toContain("INFISICAL_IDENTITY_ID");
+		expect(JSON.stringify(outcome)).not.toContain("HOBO_OWNER_PAGE");
 	});
 
 	it("a CI run signs in with its own OIDC token through the preconfigured identity", async () => {

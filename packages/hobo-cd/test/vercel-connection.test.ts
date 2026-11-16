@@ -996,6 +996,7 @@ describe("prepareVercelConnection", () => {
 			result: { code: "HOBO_CD_CONNECTION_NEEDS_OWNER" },
 		});
 		expect(JSON.stringify(outcome)).toContain("INFISICAL_IDENTITY_ID");
+		expect(JSON.stringify(outcome)).not.toContain("HOBO_OWNER_PAGE");
 	});
 
 	it("sets everything up through the ceremony: the client secret lands in the store, never in settings", async () => {

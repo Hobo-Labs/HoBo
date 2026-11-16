@@ -18,13 +18,14 @@ import {
 const SITE = "https://infisical.test";
 
 function fakeInfisical() {
-	const seen = new Map<"body" | "auth", string>();
+	const seen = new Map<"body" | "auth" | "redirect", string>();
 	const http = async (input: string | URL | Request, init?: RequestInit) => {
 		const url = new URL(String(input));
 		if (url.pathname !== "/api/v1/oauth/token")
 			return new Response("{}", { status: 404 });
 		seen.set("body", String(init?.body));
 		seen.set("auth", new Headers(init?.headers).get("authorization") ?? "");
+		seen.set("redirect", String(init?.redirect));
 		return Response.json({
 			access_token: "oauth-access-token",
 			token_type: "Bearer",
@@ -85,6 +86,33 @@ describe("infisicalOAuthToken", () => {
 		expect(seen.get("auth")).toBe(
 			`Basic ${Buffer.from("client-1:secret-1").toString("base64")}`,
 		);
+		expect(seen.get("redirect")).toBe("error");
+	});
+
+	it("refuses an insecure or non-origin site before opening a browser or sending credentials", async () => {
+		for (const siteUrl of [
+			"http://infisical.example",
+			"https://infisical.example/other",
+			"https://user:password@infisical.example",
+		]) {
+			let contacted = false;
+			await expect(
+				infisicalOAuthToken({
+					siteUrl,
+					clientId: "client-1",
+					clientSecret: "secret-1",
+					openBrowser: () => {
+						contacted = true;
+					},
+					emit: () => undefined,
+					fetch: async () => {
+						contacted = true;
+						return new Response();
+					},
+				}),
+			).rejects.toMatchObject({ code: "HOBO_INFISICAL_OAUTH_FAILED" });
+			expect(contacted).toBe(false);
+		}
 	});
 
 	it("refuses a declined sign-in, and ignores a callback with another state", async () => {

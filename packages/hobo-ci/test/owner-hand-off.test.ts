@@ -98,6 +98,8 @@ describe("hobo ci up --hand-off", () => {
 			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
 		});
 		const text = JSON.stringify(outcome);
+		expect(text).toContain("Configure the store's non-secret ids");
+		expect(text).not.toContain("ids are committed");
 		expect(text).toContain(INFISICAL_TOKEN_AUTH_DOCS);
 		expect(text).toContain("INFISICAL_SIGN_IN=oauth");
 		expect(text).toContain("INFISICAL_IDENTITY_ID");

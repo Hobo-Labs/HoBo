@@ -337,7 +337,7 @@ async function prepareVercelWithVault(
 				"HOBO_CD_STORE_NEEDS_SIGN_IN",
 				`A handed-off run shows no sign-in page: ${owner.id} must open without one.`,
 				[
-					`The store's ids are committed in ${SECRET_STORE_LOCATOR_FILE}.`,
+					`Configure the store's non-secret ids in ${SECRET_STORE_LOCATOR_FILE}.`,
 					...storeSignInGuidance(owner.id, "cd"),
 				],
 			);
@@ -392,7 +392,7 @@ async function prepareVercelWithVault(
 			"Connecting Vercel needs the owner at a browser once; this run cannot show the setup page.",
 			[
 				"Run hobo cd up once in a terminal; it asks for what is missing and keeps it in your secret store.",
-				"An agent runs hobo cd up --hand-off: the run serves the page and names it on a HOBO_OWNER_PAGE line for the agent to give the owner.",
+				"An agent can run hobo cd up --hand-off with a store that opens without a page; the owner approves Vercel using a device code.",
 				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID in ${SECRET_STORE_LOCATOR_FILE}) so the run signs in with its own OIDC token.`,
 			],
 		);
