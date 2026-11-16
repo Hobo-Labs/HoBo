@@ -11,6 +11,7 @@ import {
 	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
 	HostingPolicyProofSchema,
+	type IacTargetAdmissionDecision,
 	IacTargetLiabilityEvidenceSchema,
 } from "../packages/broker/src/index.js";
 import {
@@ -89,6 +90,9 @@ function setup(
 		withPricing?: boolean;
 		failApply?: boolean;
 		badAdmission?: boolean;
+		unreadableReceipt?: boolean;
+		beforeAdmission?: () => Promise<void>;
+		onReceipt?: (receipt: IacTargetAdmissionDecision) => void;
 		targetId?: string;
 		stackName?: string;
 		liabilityMicros?: number;
@@ -305,7 +309,23 @@ function setup(
 						budget: { evaluation: "unavailable", reservation: "unknown" },
 					}),
 				}
-			: financial,
+			: {
+					...financial,
+					admit: async (requestId, plan, expected) => {
+						if (options.beforeAdmission !== undefined)
+							await options.beforeAdmission();
+						const receipt = await financial.admit(requestId, plan, expected);
+						options.onReceipt?.(receipt);
+						if (options.unreadableReceipt) {
+							Object.defineProperty(receipt, "budget", {
+								get() {
+									throw new Error("unreadable receipt");
+								},
+							});
+						}
+						return receipt;
+					},
+				},
 	});
 	return {
 		provider,
@@ -1012,6 +1032,105 @@ describe("Alchemy IaC provider against the real library", () => {
 			);
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("requires reconciliation when an admitted receipt cannot be inspected", async () => {
+		const fixture = setup({ unreadableReceipt: true });
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "unreadable"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_RECEIPT_INVALID",
+				requiresReconciliation: true,
+			});
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			expect(fixture.applied()).toBe(0);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("returns an independent validated admission receipt", async () => {
+		let original: IacTargetAdmissionDecision | undefined;
+		const fixture = setup({
+			onReceipt: (receipt) => {
+				original = receipt;
+			},
+		});
+		try {
+			await fixture.provider.preview(program);
+			const result = await fixture.provider.applyWithAdmission(
+				program,
+				"receipt-copy",
+			);
+			if (original?.budget === undefined) throw new Error("receipt missing");
+			original.budget.reservation = "not-created";
+			expect(result.admission.budget.reservation).toBe("held");
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("does not start a concurrent execution of the same program with a different request id", async () => {
+		let release = () => {};
+		let started = () => {};
+		let admissions = 0;
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const firstStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const fixture = setup({
+			beforeAdmission: async () => {
+				if (++admissions === 1) {
+					started();
+					await pending;
+				}
+			},
+		});
+		try {
+			await fixture.provider.preview(program);
+			const first = fixture.provider.applyWithAdmission(program, "first");
+			await firstStarted;
+			const second = fixture.provider.applyWithAdmission(program, "second");
+			const observed = await Promise.race([
+				second.then(
+					() => ({ code: "unexpected-success" }),
+					(error) => error,
+				),
+				new Promise((resolve) =>
+					setTimeout(() => resolve({ code: "timeout" }), 250),
+				),
+			]);
+			release();
+			await Promise.allSettled([first, second]);
+			expect(observed).toMatchObject({
+				code: "EXECUTION_IN_PROGRESS",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(1);
+		} finally {
+			release();
+			fixture.authority.close();
+		}
+	});
+
+	it("does not destroy infrastructure through the apply entrypoint", async () => {
+		const fixture = setup();
+		try {
+			await fixture.provider.preview(program);
+			await fixture.provider.apply(program);
+			const destroy = { ...program, action: "destroy" as const };
+			await fixture.provider.preview(destroy);
+			await expect(
+				fixture.provider.applyWithAdmission(destroy),
+			).rejects.toMatchObject({ code: "PROGRAM_SCOPE_MISMATCH" });
+			expect(fixture.deleted()).toBe(0);
 		} finally {
 			fixture.authority.close();
 		}

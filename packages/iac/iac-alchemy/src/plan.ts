@@ -28,6 +28,8 @@ export class AlchemyIacError extends Error {
 		this.requiresReconciliation =
 			reservationId !== undefined ||
 			code === "ADMISSION_OUTCOME_UNKNOWN" ||
+			code === "ADMISSION_RECEIPT_INVALID" ||
+			code === "EXECUTION_IN_PROGRESS" ||
 			code === "EXECUTION_ALREADY_CLAIMED" ||
 			admission?.status === "uncertain" ||
 			admission?.status === "replay" ||

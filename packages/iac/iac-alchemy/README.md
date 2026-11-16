@@ -166,6 +166,12 @@ outcome. Replay cannot authorize another provider call. Destroy follows the
 same preview and admission sequence. Refresh reports an error if Alchemy skips a
 resource instead of calling the target in sync.
 
+One adapter instance refuses concurrent execution of the same program. Across
+instances or process restarts, the host must use the same stable request ID for
+the same logical attempt so the durable admission authority can recognize a
+replay. A malformed or unreadable admission receipt requires reconciliation:
+the authority may already have reserved funds even if the receipt is unusable.
+
 Plan fingerprints are bounded and include inspectable resource inputs,
 bindings, state and source identity. Plans with stack actions, partial
 selection, unscoped or executable output expressions, exotic values, missing
