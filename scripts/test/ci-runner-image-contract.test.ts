@@ -365,7 +365,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 		const toml = readFileSync(join(root, MISE_TOML), "utf8");
 		expect(toml).toContain("[oci]");
 		expect(toml).toContain('user = "1000:1000"');
-		expect(toml).toContain("gitleaks");
+		expect(toml).toContain("betterleaks");
 		expect(toml).toContain("shellcheck");
 		expect(toml).toContain("127.0.0.1:5000");
 	});
@@ -378,8 +378,8 @@ describe("ci-runner image contract (repo manifests)", () => {
 			(match) => match[1],
 		);
 		expect(tools).toEqual([
+			"betterleaks",
 			"cue",
-			"gitleaks",
 			"node",
 			"pnpm",
 			"shellcheck",
@@ -468,7 +468,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(lockedTools).toContain("shellcheck");
 		for (const tool of lockedTools) {
 			const versionArgs =
-				tool === "cue" || tool === "gitleaks" || tool === "syft"
+				tool === "cue" || tool === "betterleaks" || tool === "syft"
 					? "version"
 					: "--version";
 			expect(fallback, `${tool} in monolithic image`).toContain(
@@ -508,8 +508,8 @@ describe("ci-runner image contract (repo manifests)", () => {
 		};
 		evaluateCiRunnerContract(root, { run });
 		const tools = [
+			"betterleaks",
 			"cue",
-			"gitleaks",
 			"node",
 			"pnpm",
 			"shellcheck",

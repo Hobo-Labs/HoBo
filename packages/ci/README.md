@@ -552,6 +552,22 @@ GitHub's native merge queue on `main`. Optional local signoff (`gh-signoff`,
 Basecamp) does not replace the authoritative CI gate. Third-party actions pin
 full commit SHAs (catalog: [`.github/action-pins.env`](../../.github/action-pins.env);
 enforced by `pnpm run actions:lint`).
+Every action a workflow or in-repo composite action runs, direct or
+transitive, is also locked in
+[`.github/workflows/actions.lock`](../../.github/workflows/actions.lock) by
+`gh actions-lock` (`gh extension install github/gh-actions-lock`). Same-repo
+actions use the self-repository `uses: $/.github/actions/<name>` form (runner
+2.336.0+), so the lockfile covers what they call; `actions:lint` accepts
+both forms, and the workflow tests under `scripts/test/` expect `$/`. Workflows keep full-SHA `uses:` pins, and the lockfile keys those
+entries by the same SHA with the release tag recorded as `ref`, so a run is
+pinned whether or not lockfile enforcement is on. The `actions-lock` workflow
+runs `gh actions-lock --verify` on workflow changes; when it fails it uploads
+the patch the tool would write as the `actions-lock-patch` artifact. Dependabot
+([`.github/dependabot.yml`](../../.github/dependabot.yml)) proposes npm, Actions
+and Docker version updates only after a 7-day cooldown and regenerates the
+lockfile with each Actions bump. Secrets are scanned with Betterleaks (pinned
+in `mise.toml`, config `.betterleaks.toml`): staged changes in the pre-commit
+hook (`pnpm run secrets:staged`), history in the main gate.
 
 One-time org transfer steps:
 

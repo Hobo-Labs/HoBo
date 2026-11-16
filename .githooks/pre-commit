@@ -35,4 +35,6 @@ fi
 run generated:guard
 # Plans are never committed (AGENTS.md, "Plans are not committed").
 run plans:guard -- --staged
+# Staged secrets are refused before they reach history (Betterleaks, mise.toml).
+run secrets:staged
 run check:relevant:staged -- --base="$BASE"
