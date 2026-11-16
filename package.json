@@ -142,6 +142,7 @@
 	},
 	"devDependencies": {
 		"@ast-grep/cli": "^0.44.0",
+		"@astrojs/compiler": "2.13.1",
 		"@biomejs/biome": "^2.5.2",
 		"@bufbuild/buf": "1.71.0",
 		"@bufbuild/protoc-gen-es": "2.12.1",

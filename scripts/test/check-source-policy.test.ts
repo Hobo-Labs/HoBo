@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-	mkdtempSync,
 	mkdirSync,
+	mkdtempSync,
 	rmSync,
 	unlinkSync,
 	writeFileSync,
@@ -12,8 +12,8 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import {
 	addedLineNumbers,
-	commentViolations,
 	commentsIn,
+	commentViolations,
 	documentViolation,
 } from "../check-source-policy.mts";
 
@@ -217,6 +217,40 @@ e: ##"raw \##(2 + // raw interpolation
 		}
 	});
 
+	it("checks Astro frontmatter, markup, expressions, attributes, scripts, and styles", () => {
+		const text = [
+			"---",
+			'const url = "https://example.test/*literal*/";',
+			"const count = 1; // frontmatter",
+			"---",
+			'<section title="<!-- literal -->">你好',
+			"<!-- markup",
+			"more markup -->",
+			"<div data-count={",
+			"  /* attribute */ count",
+			"} {...( /* spread */ props )} title=`literal ${/* template */ count}`>",
+			"{count ? <strong>{/* nested */ count}</strong> : /* alternate */ 0}",
+			'<script>const url = "https://example.test"; // script',
+			"</script>",
+			'<style>.x::after { content: "/* literal */" } /* style */</style>',
+			"</div></section>",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations(
+				"example.astro",
+				text,
+				new Set(text.split("\n").map((_, index) => index + 1)),
+			).map((item) => item.line),
+			[3, 6, 9, 10, 10, 11, 11, 12, 14],
+		);
+		assert.deepEqual(
+			commentViolations("example.astro", text, new Set([7])).map(
+				(item) => item.line,
+			),
+			[6],
+		);
+	});
+
 	it("preserves actual licensing and tool directives without exempting arbitrary banner comments", () => {
 		assert.equal(
 			commentViolations("x.ts", "/*! @license MIT */\n", new Set([1])).length,
@@ -298,6 +332,19 @@ e: ##"raw \##(2 + // raw interpolation
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /schema\.cue:1/u);
 		assert.match(result.stderr, /\.impeccable\/design\.json:1/u);
+	});
+
+	it("rejects new Astro comments in the staged snapshot", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"page.astro",
+			"---\nconst x = 1;\n---\n<p>{x}</p>\n<!-- explanation -->\n",
+		);
+		git(repo, "add", "page.astro");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /page\.astro:5/u);
 	});
 
 	it("checks filenames containing Git pathspec metacharacters literally", () => {
