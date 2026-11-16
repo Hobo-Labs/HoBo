@@ -208,6 +208,42 @@ function vercel() {
 }
 
 describe("EVAL remote box: hobo cd up --hand-off", () => {
+	it("does not switch a saved OAuth choice to the egress proxy", async () => {
+		const lines: string[] = [];
+		let sleeps = 0;
+		const outcome = await prepareVercelConnection(
+			handOffInput((line) => lines.push(line)),
+			{
+				env: {},
+				locator: {
+					read: async () => ({
+						HOBO_SECRET_STORE: "infisical",
+						INFISICAL_PROJECT_ID: "proj",
+						INFISICAL_SIGN_IN: "oauth",
+						INFISICAL_OAUTH_CLIENT_ID: "client-id",
+					}),
+					write: async () => undefined,
+				},
+				openStore: async () => {
+					throw new Error("OAuth credentials are missing");
+				},
+				sleep: async () => {
+					sleeps += 1;
+				},
+				handOffTimeoutMs: 1,
+				startPage: noPage,
+			},
+		);
+		expect(sleeps).toBe(0);
+		expect(
+			lines.some((line) => line.startsWith(OWNER_CREDENTIAL_LINE_PREFIX)),
+		).toBe(false);
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_STORE_NEEDS_SIGN_IN" },
+		});
+	});
+
 	it("completes from outside: the credential and the device code post back into the same run", async () => {
 		const session = remoteSession();
 		const provider = vercel();

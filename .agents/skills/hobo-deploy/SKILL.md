@@ -213,8 +213,9 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
 
 What the run already does, so don't do it yourself: a handed-off run signs
 in to Infisical through the session's egress proxy (`INFISICAL_SIGN_IN`
-defaults to `egress-proxy`), holding only a placeholder, unless it runs as a
-workload with its own OIDC; `ci` reads the relay's own folder
+defaults to `egress-proxy` when no sign-in was selected), holding only a
+placeholder, unless it runs as a workload with its own OIDC. An explicit
+sign-in choice is preserved; `ci` reads the relay's own folder
 (`/hobo-ci-relay`), so the relay's existing GitHub App is reused. Creating a
 new App needs GitHub's page, so a handed-off `ci` refuses with
 `HOBO_CI_APP_NEEDS_OWNER` and names `hobo ci app create --via-workflow`.

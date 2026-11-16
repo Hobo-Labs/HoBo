@@ -1,4 +1,5 @@
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import { createTrustedVault } from "@hobo/core";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
@@ -124,5 +125,86 @@ describe("hobo ci up --hand-off", () => {
 			result: { code: "HOBO_CI_APP_NEEDS_OWNER" },
 		});
 		expect(JSON.stringify(outcome)).toContain("--via-workflow");
+	});
+
+	it("honors an explicitly saved OAuth choice instead of switching to the proxy", async () => {
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_OAUTH_CLIENT_SECRET", "fixture-client-secret");
+		const attempts: string[] = [];
+		const lines: string[] = [];
+		let sleeps = 0;
+		const request = input();
+		const outcome = await prepareGithubConnection(
+			{
+				...request,
+				run: { ...request.run, emitProgress: (line) => lines.push(line) },
+			},
+			{
+				env: {},
+				vault,
+				locator: {
+					read: async () => ({
+						HOBO_SECRET_STORE: "infisical",
+						INFISICAL_PROJECT_ID: "proj",
+						INFISICAL_SIGN_IN: "oauth",
+						INFISICAL_OAUTH_CLIENT_ID: "client-id",
+					}),
+					write: async () => undefined,
+				},
+				openStore: async (_id, coordinates) => {
+					attempts.push(coordinates.INFISICAL_SIGN_IN ?? "none");
+					return { ok: false, message: "Browser unavailable", remediation: [] };
+				},
+				sleep: async () => {
+					sleeps += 1;
+				},
+				handOffTimeoutMs: 1,
+				startPage: noPage,
+			},
+		);
+		expect(attempts).toEqual(["oauth"]);
+		expect(sleeps).toBe(0);
+		expect(lines.some((line) => line.startsWith("HOBO_OWNER_CREDENTIAL"))).toBe(
+			false,
+		);
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
+		});
+	});
+
+	it("does not wait for a token when the store locator is incomplete", async () => {
+		const lines: string[] = [];
+		let sleeps = 0;
+		const request = input();
+		const outcome = await prepareGithubConnection(
+			{
+				...request,
+				run: { ...request.run, emitProgress: (line) => lines.push(line) },
+			},
+			{
+				env: {},
+				locator: {
+					read: async () => ({ HOBO_SECRET_STORE: "infisical" }),
+					write: async () => undefined,
+				},
+				sleep: async () => {
+					sleeps += 1;
+				},
+				handOffTimeoutMs: 1,
+				startPage: noPage,
+			},
+		);
+		expect(sleeps).toBe(0);
+		expect(lines.some((line) => line.startsWith("HOBO_OWNER_CREDENTIAL"))).toBe(
+			false,
+		);
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_STORE_NEEDS_SIGN_IN" },
+		});
+		expect(JSON.stringify(outcome)).toContain(
+			"Configure the store's non-secret ids",
+		);
 	});
 });

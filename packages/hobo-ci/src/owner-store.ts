@@ -71,7 +71,7 @@ export function storeSignInGuidance(
 			`Run hobo ${verb} up yourself in a terminal: the setup page asks for the ${store} sign-in and keeps it in this run's memory only.`,
 		];
 	return [
-		`Remote agent (no page): at https://app.infisical.com go to Organization → Access Control → Identities (guide: ${INFISICAL_TOKEN_AUTH_DOCS}), Create Identity "hobo-${verb}-owner" (organization role No Access), add Token Auth and create a token (TTL 3600), and add the identity to the store's project with a write role. Type the token only into the agent session's credential form for app.infisical.com; the run uses INFISICAL_SIGN_IN=${EGRESS_PROXY_SIGN_IN} and holds a placeholder.`,
+		`Remote agent (no page): at https://app.infisical.com go to Organization → Access Control → Identities (guide: ${INFISICAL_TOKEN_AUTH_DOCS}), Create Identity "hobo-${verb}-owner" (organization role No Access), add Token Auth and create a token (TTL 3600), and add the identity to the store's project with a write role. Select INFISICAL_SIGN_IN=${EGRESS_PROXY_SIGN_IN} in the environment or store locator, and type the token only into the agent session's credential form for app.infisical.com; the run holds a placeholder.`,
 		`Your own machine: run hobo ${verb} up in a terminal; the setup page asks for the token, or sign in with an Infisical OAuth application (INFISICAL_SIGN_IN=oauth, guide: ${INFISICAL_OAUTH_DOCS}) to read the store with a browser approval; its tokens are read-only, so a run that must write still needs a token.`,
 		`CI: give the locator an INFISICAL_IDENTITY_ID with OIDC Auth that trusts the workflow; the run signs in with its own OIDC token.`,
 	];
@@ -152,6 +152,8 @@ export function familySettings(
 export interface OwnerStoreDeps extends SecretStoreDeps {
 	/** Non-secret environment: only non-secret settings are read from it. */
 	readonly env?: Env;
+	/** A fallback only when neither the environment nor locator chose a sign-in. */
+	readonly defaultInfisicalSignIn?: typeof EGRESS_PROXY_SIGN_IN;
 	/** Where the locator is committed; the working directory by default. */
 	readonly cwd?: string;
 	readonly locator?: SettingsStore;
@@ -166,6 +168,8 @@ export interface OwnerStore {
 	readonly id: SecretStoreId;
 	/** Locator fields the page must ask for, and the sign-in when none is in hand. */
 	readonly missing: readonly ConfigField[];
+	/** Whether supplying an egress-proxy credential can open the configured store. */
+	readonly canAwaitEgressCredential: boolean;
 	/** The store, opened without the page when the locator and a sign-in allow it. */
 	readonly opened: OpenedSecretStore | undefined;
 	/**
@@ -203,7 +207,7 @@ export async function ownerStore(
 	vault: TrustedVault,
 	deps: OwnerStoreDeps = {},
 ): Promise<OwnerStore> {
-	const env = deps.env ?? {};
+	const suppliedEnv = deps.env ?? {};
 	const locator =
 		deps.locator ??
 		fileSettingsStore(
@@ -214,6 +218,12 @@ export async function ownerStore(
 		((id: SecretStoreId, coordinates: Env, signIn: SecretHolder) =>
 			openSecretStore(id, coordinates, signIn, deps));
 	const saved = await locator.read();
+	const env =
+		!suppliedEnv.INFISICAL_SIGN_IN &&
+		!saved.INFISICAL_SIGN_IN &&
+		deps.defaultInfisicalSignIn !== undefined
+			? { ...suppliedEnv, INFISICAL_SIGN_IN: deps.defaultInfisicalSignIn }
+			: suppliedEnv;
 	const choice = resolveSettings([STORE_CHOICE], env, saved);
 	const id = storeIdOf(choice.values.HOBO_SECRET_STORE);
 	// CI's credentials are the relay's own (the GitHub App it runs): they
@@ -267,6 +277,8 @@ export async function ownerStore(
 	return {
 		id,
 		missing: [...choice.missing, ...missingSide],
+		canAwaitEgressCredential:
+			proxySignIn && choice.missing.length === 0 && missingSide.length === 0,
 		opened,
 		async stage({ provider, reason, proceed }) {
 			if (opened !== undefined) return proceed(opened);

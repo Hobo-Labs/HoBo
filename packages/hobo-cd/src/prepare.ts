@@ -246,18 +246,13 @@ async function prepareVercelWithVault(
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
-	// Handed off, no page can ask for a sign-in: the store signs in through
-	// the agent's egress proxy unless this run is a workload with its own OIDC.
-	if (
-		input.handOff === true &&
-		plainEnv.INFISICAL_SIGN_IN === undefined &&
-		workloadOidc === undefined
-	)
-		plainEnv.INFISICAL_SIGN_IN = EGRESS_PROXY_SIGN_IN;
 	const openOwner = () =>
 		ownerStore("cd", vault, {
 			...deps,
 			env: plainEnv,
+			...(input.handOff === true && workloadOidc === undefined
+				? { defaultInfisicalSignIn: EGRESS_PROXY_SIGN_IN }
+				: undefined),
 			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
 			// An OAuth sign-in approves in this machine's browser: a terminal
 			// run only, never a handed-off one.
@@ -276,13 +271,17 @@ async function prepareVercelWithVault(
 			input.handOff === true &&
 			!input.whatIf &&
 			!(await storeAnswers(owner, "cd"));
-		if (needsOwner && (input.run.flags.json || input.run.flags.quiet))
+		if (
+			needsOwner &&
+			owner.canAwaitEgressCredential &&
+			(input.run.flags.json || input.run.flags.quiet)
+		)
 			return refused(
 				"HOBO_CD_HANDOFF_SILENT",
 				"The owner hand-off needs progress output. Omit --json and -q, then retry.",
 				["Run hobo cd up --hand-off without --json or -q."],
 			);
-		if (needsOwner)
+		if (needsOwner && owner.canAwaitEgressCredential)
 			owner = await awaitHandOffStore({
 				family: "cd",
 				open: openOwner,
@@ -292,6 +291,7 @@ async function prepareVercelWithVault(
 					? { timeoutMs: deps.handOffTimeoutMs }
 					: undefined),
 			});
+		else if (needsOwner) owner = { ...owner, opened: undefined };
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;
 		return refused("HOBO_CD_SECRET_STORE_INVALID", error.message, [
