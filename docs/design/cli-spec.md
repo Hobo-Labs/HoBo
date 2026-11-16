@@ -375,7 +375,9 @@ environment variables.
   store sign-in HoBo created is kept in the server's memory (the owner
   channel's vault) so the owner signs in once. When a job ends, the link prompt it showed is
   completed (`notifications/elicitation/complete`), so the host and the
-  agent know without polling. Egress is applied to the whole process at
+  agent know without polling. Completion follows the job identity even when
+  two grants use the same URL; racing starts for one store show only the
+  accepted grant. Egress is applied to the whole process at
   start (`applyEgressToProcess`: Node's global dispatcher, built on the
   first request so an unused CA path cannot stop a run): every fetch honours
   the box's proxy, bypass list and CA. The Infisical store offers a verified

@@ -23,7 +23,7 @@ export interface OwnerChannel {
 	 * device code to approve). Through the HoBo MCP server: the host's own
 	 * link prompt, since no progress line reaches them.
 	 */
-	show?(url: string, message: string): Promise<void>;
+	show?(url: string, message: string, jobKey: string): Promise<void>;
 	/**
 	 * Work that waits on the owner, run off the request path (a device grant
 	 * the owner approves): the call that starts it returns at once, and a
@@ -63,12 +63,12 @@ export type OwnerJobOutcome = Exclude<OwnerJobState, { state: "pending" }>;
 
 export interface OwnerJobs {
 	status(key: string): OwnerJobState | undefined;
-	/** Start a job unless one runs under `key`; it ends with its outcome. */
+	/** Start a job only when `key` has no record; return whether it started. */
 	start(
 		key: string,
 		pending: { readonly link: string; readonly code: string },
 		job: (signal: AbortSignal) => Promise<OwnerJobOutcome>,
-	): void;
+	): boolean;
 	/** Drop a finished job's record, so the next call starts afresh. */
 	forget(key: string): void;
 	/** Every job started so far has ended (for status tools and specs). */
@@ -81,6 +81,7 @@ export function createOwnerJobs(
 	options: {
 		/** A job ended: the channel can say so (complete the prompt it showed). */
 		readonly onSettled?: (
+			key: string,
 			pending: { readonly link: string; readonly code: string },
 			outcome: OwnerJobOutcome,
 		) => void;
@@ -92,11 +93,11 @@ export function createOwnerJobs(
 	return {
 		status: (key) => states.get(key),
 		start(key, pending, job) {
-			if (states.get(key)?.state === "pending") return;
+			if (states.has(key)) return false;
 			states.set(key, { state: "pending", ...pending });
 			const settle = (outcome: OwnerJobOutcome) => {
 				states.set(key, outcome);
-				options.onSettled?.(pending, outcome);
+				options.onSettled?.(key, pending, outcome);
 			};
 			const done = job(abort.signal).then(settle, () =>
 				settle({
@@ -107,6 +108,7 @@ export function createOwnerJobs(
 			);
 			running.add(done);
 			void done.finally(() => running.delete(done));
+			return true;
 		},
 		forget(key) {
 			if (states.get(key)?.state !== "pending") states.delete(key);

@@ -645,7 +645,7 @@ async function prepareVercelWithVault(
 					"Run hobo cd up --hand-off again for a new code.",
 				]);
 			}
-			jobs.start(
+			const started = jobs.start(
 				key,
 				{ link: grant.link, code: grant.code },
 				async (signal) => {
@@ -693,10 +693,45 @@ async function prepareVercelWithVault(
 					}
 				},
 			);
+			if (!started) {
+				// Another call started while this one requested its device grant.
+				// Only the accepted grant gets a prompt and can be polled.
+				const active = jobs.status(key);
+				if (active?.state === "pending")
+					return awaiting(active.link, active.code);
+				if (active?.state === "failed")
+					return refused(active.code, active.message, [
+						"Run hobo cd up --hand-off again for a new code.",
+					]);
+				if (active?.state === "done") {
+					let current: StoredVercelConnection | undefined;
+					try {
+						current = await readVercelConnection(store);
+					} catch {
+						// The completed connection must be read before it can be used.
+					}
+					if (current === undefined)
+						return refused(
+							"HOBO_CD_SECRET_STORE_UNAVAILABLE",
+							"The completed Vercel connection is not readable yet.",
+							["Check store access and retry."],
+						);
+					const expected = current;
+					return ready(
+						store,
+						"unchanged",
+						vault,
+						deps.journalProvisioners,
+						(next) => sameVercelConnection(expected, next),
+					);
+				}
+				throw new Error("owner job rejected without a pending grant");
+			}
 			void deps.ownerChannel
 				?.show?.(
 					grant.link,
 					`Approve HoBo CD on Vercel; the code is ${grant.code}.`,
+					key,
 				)
 				.catch(() => undefined);
 			return awaiting(grant.link, grant.code);

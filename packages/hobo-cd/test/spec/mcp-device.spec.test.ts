@@ -140,6 +140,75 @@ function harness(provider: ReturnType<typeof vercel>) {
 const LINK = "https://vercel.com/device?user_code=WXYZ-1234";
 
 describe("SPEC cd up through MCP: Vercel's device grant off the request path", () => {
+	it("shows only the accepted grant when two starts race for one store", async () => {
+		const provider = vercel();
+		let starts = 0;
+		let releaseStarts: () => void = () => undefined;
+		let releasePoll: () => void = () => undefined;
+		const bothStarted = new Promise<void>((resolve) => {
+			releaseStarts = resolve;
+		});
+		const pollReady = new Promise<void>((resolve) => {
+			releasePoll = resolve;
+		});
+		const racing = {
+			...provider,
+			fetch: async (input: string | URL | Request, init?: RequestInit) => {
+				if (String(input) === VERCEL_DEVICE_AUTHORIZATION_URL) {
+					starts += 1;
+					if (starts === 2) releaseStarts();
+					await bothStarted;
+				}
+				if (String(input) === VERCEL_DEVICE_TOKEN_URL) await pollReady;
+				return provider.fetch(input, init);
+			},
+		};
+		const h = harness(racing);
+		const results = await Promise.all([h.run(), h.run()]);
+		expect(
+			results.every((result) => JSON.stringify(result).includes(LINK)),
+		).toBe(true);
+		expect(h.shown).toEqual([LINK]);
+		provider.approve();
+		releasePoll();
+		await h.jobs.settled();
+	});
+
+	it("does not start another grant if the first finishes while a second starts", async () => {
+		const provider = vercel();
+		provider.approve();
+		let starts = 0;
+		let releaseSecond: () => void = () => undefined;
+		let secondStarted: () => void = () => undefined;
+		const secondReady = new Promise<void>((resolve) => {
+			secondStarted = resolve;
+		});
+		const secondMayFinish = new Promise<void>((resolve) => {
+			releaseSecond = resolve;
+		});
+		const racing = {
+			...provider,
+			fetch: async (input: string | URL | Request, init?: RequestInit) => {
+				if (
+					String(input) === VERCEL_DEVICE_AUTHORIZATION_URL &&
+					++starts === 2
+				) {
+					secondStarted();
+					await secondMayFinish;
+				}
+				return provider.fetch(input, init);
+			},
+		};
+		const h = harness(racing);
+		const first = h.run();
+		const second = h.run();
+		await secondReady;
+		await first;
+		await h.jobs.settled();
+		releaseSecond();
+		expect((await second).kind).toBe("ready");
+		expect(h.shown).toEqual([LINK]);
+	});
 	it("returns at once with the link shown, then the next call finds the connection", async () => {
 		const provider = vercel();
 		const h = harness(provider);
