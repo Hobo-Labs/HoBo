@@ -43,10 +43,24 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(mirror).toBe(SKILL);
 	});
 
+	it("does the work itself first: dispatches CI's OIDC run before asking the owner for anything", () => {
+		const dispatch = HAND_OFF.indexOf("actions_run_trigger");
+		const credential = HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX);
+		expect(dispatch).toBeGreaterThan(-1);
+		expect(dispatch).toBeLessThan(credential);
+		const first = HAND_OFF.slice(0, credential);
+		expect(first).toMatch(/you do this, not the\s+owner/u);
+		expect(first).toMatch(/connect: ci/u);
+		expect(first).toMatch(/asked for nothing/u);
+		// When it cannot run yet, the agent says so instead of pushing work
+		// onto the owner silently.
+		expect(first).toMatch(/needs the workflow on `main`/u);
+	});
+
 	it("routes the credential line: steps and guide first, then the credential form, then wait", () => {
 		const at = HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX);
 		expect(at).toBeGreaterThan(-1);
-		const step = HAND_OFF.slice(at, HAND_OFF.indexOf(DEVICE_PREFIX, at));
+		const step = HAND_OFF.slice(at, HAND_OFF.indexOf(`On \`${DEVICE_PREFIX}`, at));
 		const steps = step.indexOf("guide link");
 		const form = step.indexOf("request_credential");
 		expect(steps).toBeGreaterThan(-1);
@@ -56,7 +70,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 	});
 
 	it("routes the device line to the provider's own site from any device", () => {
-		const at = HAND_OFF.indexOf(DEVICE_PREFIX);
+		const at = HAND_OFF.indexOf(`On \`${DEVICE_PREFIX}`);
 		expect(at).toBeGreaterThan(-1);
 		expect(HAND_OFF.slice(at, at + 300)).toMatch(/on any\s+device/u);
 	});

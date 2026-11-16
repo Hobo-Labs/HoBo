@@ -195,6 +195,19 @@ nothing in the box and nothing calls back into it. Instead it names what it
 needs on one line, waits, and **picks up what the owner did outside, in the
 same run** (post-back). Your job is to relay each line, act on it, and wait.
 
+**First, do it yourself with CI's OIDC identity: the owner types nothing.**
+Dispatch `relay-deploy.yml` on `main` with input `connect: ci` or
+`connect: cd` (GitHub MCP `actions_run_trigger`; you do this, not the
+owner). Its `owner-connect` job signs in to the store as `hobo-ci-writer`
+with its own GitHub OIDC token and runs `hobo <ci|cd> up --hand-off`. Watch
+the run (`actions_get` / job logs). For `ci` with the relay's App the owner
+is asked for nothing. For `cd`, relay only the `HOBO_OWNER_DEVICE` line from
+the job summary (step 3 below). This needs the workflow on `main`: if it is
+not there yet, say so plainly and ask the owner to merge (their decision),
+then fall back to the in-box run below only if they want it sooner.
+
+**Fallback: the run in your box.**
+
 1. Run `hobo <ci|cd> up --hand-off` in the background (never `--json` or
    `-q`: they hide the lines). Watch its output.
 2. On `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`: the run is
@@ -213,17 +226,11 @@ same run** (post-back). Your job is to relay each line, act on it, and wait.
 
 What the run already does, so don't do it yourself: a handed-off run signs
 in to Infisical through the session's egress proxy (`INFISICAL_SIGN_IN`
-defaults to `egress-proxy`), holding only a placeholder; `ci` reads the
-relay's own folder (`/hobo-ci-relay`), so the relay's existing GitHub App is
-reused. Creating a new App needs GitHub's page, so a handed-off `ci` refuses
-with `HOBO_CI_APP_NEEDS_OWNER` and names `hobo ci app create --via-workflow`.
-
-**With nobody typing a token (CI's OIDC).** Dispatch `relay-deploy.yml` on
-`main` with input `connect: cd` (GitHub MCP `actions_run_trigger`). Its
-`owner-connect` job signs in as `hobo-ci-writer` with its own GitHub OIDC
-token and runs `hobo cd up --hand-off`; read the `HOBO_OWNER_DEVICE` line
-from the job summary and relay it as in step 3. The workflow must be on
-`main`.
+defaults to `egress-proxy`), holding only a placeholder, unless it runs as a
+workload with its own OIDC; `ci` reads the relay's own folder
+(`/hobo-ci-relay`), so the relay's existing GitHub App is reused. Creating a
+new App needs GitHub's page, so a handed-off `ci` refuses with
+`HOBO_CI_APP_NEEDS_OWNER` and names `hobo ci app create --via-workflow`.
 
 **At the owner's own terminal** (no `--hand-off`), the run serves the local
 setup page (`HOBO_OWNER_PAGE`) and opens their browser; there they may also
