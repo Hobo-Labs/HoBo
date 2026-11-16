@@ -54,8 +54,14 @@ const healthFile = "ci-health.yml";
 const hostingEvidenceFile = "hosting-evidence.yml";
 /** A manually dispatched, scoped Vercel credential observation. */
 const vercelEvidenceFile = "vercel-credential-evidence.yml";
+/**
+ * GitHub-hosted `gh actions-lock --verify` of .github/workflows/actions.lock;
+ * it reads public action repositories only and runs no repository code.
+ */
+const actionsLockFile = "actions-lock.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
+	actionsLockFile,
 	probeFile,
 	healthFile,
 	hostingEvidenceFile,

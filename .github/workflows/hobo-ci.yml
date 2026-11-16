@@ -1084,7 +1084,7 @@ jobs:
       # The secret scan starts here and runs beside the deps and plan steps; the last
       # step waits for it, so the job's 20 minutes hold the longer of the two, not
       # their sum. Only a range scan starts early: a full-history scan refetches every
-      # blob into the clone, so it is left to the last step (gitleaks-main-scan.mts
+      # blob into the clone, so it is left to the last step (betterleaks-main-scan.mts
       # --range-only writes the deferred marker instead of scanning).
       - name: Start secret scan
         env:
@@ -1096,10 +1096,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dir="$RUNNER_TEMP/gitleaks"
+          dir="$RUNNER_TEMP/betterleaks"
           mkdir -p "$dir"
           nohup node --experimental-strip-types --no-warnings \
-            scripts/ci/gitleaks-main-scan.mts --background --range-only --dir "$dir" \
+            scripts/ci/betterleaks-main-scan.mts --background --range-only --dir "$dir" \
             >"$dir/start.log" 2>&1 &
       # The deps layer, as steps. Only the box has the Docker context its job
       # containers start from; on any other runner (an ARC pod pulled several GB
@@ -1200,7 +1200,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dir="$RUNNER_TEMP/gitleaks"
+          dir="$RUNNER_TEMP/betterleaks"
           mkdir -p "$dir"
           # The early start has either begun a range scan (pid) or deferred a full
           # one (deferred). Give it a moment to say which; with neither, start here.
@@ -1211,10 +1211,10 @@ jobs:
           if [ -f "$dir/deferred" ] || { [ ! -f "$dir/pid" ] && [ ! -f "$dir/exit" ]; }; then
             rm -f "$dir/deferred"
             node --experimental-strip-types --no-warnings \
-              scripts/ci/gitleaks-main-scan.mts --background --dir "$dir"
+              scripts/ci/betterleaks-main-scan.mts --background --dir "$dir"
           fi
           node --experimental-strip-types --no-warnings \
-            scripts/ci/gitleaks-main-scan.mts --wait --dir "$dir"
+            scripts/ci/betterleaks-main-scan.mts --wait --dir "$dir"
 
   main-gate:
     name: Main full gate
@@ -1289,7 +1289,7 @@ jobs:
         .env.example
         .gitattributes
         .gitignore
-        .gitleaks.toml
+        .betterleaks.toml
         .gitmodules
         .mcp.json
         AGENTS.md
@@ -1957,7 +1957,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      # No submodules: gitleaks scans this repository's history, not ts-autocode's.
+      # No submodules: betterleaks scans this repository's history, not ts-autocode's.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           clean: false
@@ -1966,5 +1966,5 @@ jobs:
       - name: Scan git history for secrets
         run: |
           set -euo pipefail
-          gitleaks git --config .gitleaks.toml --redact --exit-code 1 \
+          betterleaks git --config .betterleaks.toml --redact --exit-code 1 \
             --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"

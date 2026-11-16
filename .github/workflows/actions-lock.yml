@@ -1,0 +1,85 @@
+name: Actions lock
+
+# Keeps .github/workflows/actions.lock (gh actions-lock) true: every action a
+# workflow or in-repo composite action runs, direct or transitive, is locked to
+# a commit SHA that still verifies upstream, and same-repo actions use the
+# self-repository `$/` form so the lockfile can cover what they call.
+#
+# On a failed verify (or a dispatched relock) the job regenerates the lockfile
+# with the pinned extension and uploads the result as `actions-lock.patch`, so
+# the fix is `git apply` of a patch the real tool wrote; the job still fails
+# until that patch is committed.
+#
+# GitHub-hosted on purpose: it reads only public action repositories through
+# the GitHub API and runs no repository code.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/**
+      - .github/actions/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/**
+      - .github/actions/**
+  workflow_dispatch:
+    inputs:
+      relock:
+        description: Move floating refs to their current upstream commits (gh actions-lock --relock)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actions-lock-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GH_ACTIONS_LOCK_VERSION: v0.4.1
+
+jobs:
+  actions-lock:
+    name: actions lock
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install gh actions-lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh extension install github/gh-actions-lock --pin "$GH_ACTIONS_LOCK_VERSION"
+      - name: Verify the lockfile
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELOCK: ${{ inputs.relock && '1' || '' }}
+        run: |
+          set -uo pipefail
+          status=0
+          if [ -z "$RELOCK" ]; then
+            gh actions-lock --verify || status=$?
+            [ "$status" -eq 0 ] && exit 0
+          fi
+          # Regenerate with the same tool so the patch is what it would write.
+          gh actions-lock --migrate-local-actions --no-interactive ${RELOCK:+--relock} || true
+          git add --intent-to-add .github/workflows/actions.lock 2>/dev/null || true
+          git diff --binary > "$RUNNER_TEMP/actions-lock.patch"
+          if [ -s "$RUNNER_TEMP/actions-lock.patch" ]; then
+            echo "patch=1" >> "$GITHUB_OUTPUT"
+            echo "::error::actions.lock is out of date; apply the actions-lock-patch artifact (git apply actions-lock.patch) and commit it"
+            exit 1
+          fi
+          exit "$status"
+      - name: Upload the regenerated lockfile patch
+        if: failure() && steps.verify.outputs.patch == '1'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: actions-lock-patch
+          path: ${{ runner.temp }}/actions-lock.patch
+          if-no-files-found: error
+          retention-days: 7

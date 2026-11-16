@@ -68,8 +68,8 @@ describe("main full gate workspace sharding", () => {
 			planStart,
 			workflow.indexOf("  main-gate:", planStart),
 		);
-		assert.match(plan, /gitleaks-main-scan\.mts --background/u);
-		assert.match(plan, /gitleaks-main-scan\.mts --wait/u);
+		assert.match(plan, /betterleaks-main-scan\.mts --background/u);
+		assert.match(plan, /betterleaks-main-scan\.mts --wait/u);
 	});
 
 	it("skips the gate and plans no shards when the merge queue passed the tree", () => {

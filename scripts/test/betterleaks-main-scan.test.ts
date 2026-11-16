@@ -7,15 +7,15 @@ import {
 	deferredByRangeOnly,
 	FULL_WAIT_SECONDS,
 	gitFetchBlobArgs,
-	gitleaksArgs,
-	planMainGitleaksScan,
+	betterleaksArgs,
+	planMainBetterleaksScan,
 	pollScanWait,
 	RANGE_WAIT_SECONDS,
 	writeExitFile,
 	ZERO_SHA,
-} from "../ci/gitleaks-main-scan.mts";
+} from "../ci/betterleaks-main-scan.mts";
 
-const banner = "    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    gitleaks\n";
+const banner = "\n + ○\n   ▾\n betterleaks 1.10.1\n\n";
 const workflow = readFileSync(
 	join(import.meta.dirname, "..", "..", ".github/workflows/hobo-ci.yml"),
 	"utf8",
@@ -33,9 +33,9 @@ const mainGatePlan = workflow.slice(
 	workflow.indexOf("\n  main-gate:"),
 );
 
-describe("planMainGitleaksScan", () => {
+describe("planMainBetterleaksScan", () => {
 	it("bounds a main push to the landed range without fetching every blob", () => {
-		const plan = planMainGitleaksScan({
+		const plan = planMainBetterleaksScan({
 			eventName: "push",
 			pushBefore: "aaa",
 			sha: "bbb",
@@ -48,13 +48,13 @@ describe("planMainGitleaksScan", () => {
 			timeoutSeconds: 90,
 			waitSeconds: RANGE_WAIT_SECONDS,
 		});
-		assert.ok(gitleaksArgs(plan).includes("--log-opts"));
-		assert.ok(gitleaksArgs(plan).includes("aaa..bbb"));
+		assert.ok(betterleaksArgs(plan).includes("--log-opts"));
+		assert.ok(betterleaksArgs(plan).includes("aaa..bbb"));
 	});
 
 	it("keeps a regular full-history path that backfills blobs first", () => {
 		for (const eventName of ["schedule", "workflow_dispatch"]) {
-			const plan = planMainGitleaksScan({
+			const plan = planMainBetterleaksScan({
 				eventName,
 				pushBefore: undefined,
 				sha: "bbb",
@@ -62,7 +62,7 @@ describe("planMainGitleaksScan", () => {
 			});
 			assert.equal(plan.mode, "full", eventName);
 			assert.equal(plan.fetchBlobs, true, eventName);
-			assert.ok(!gitleaksArgs(plan).includes("--log-opts"), eventName);
+			assert.ok(!betterleaksArgs(plan).includes("--log-opts"), eventName);
 		}
 		assert.deepEqual(gitFetchBlobArgs(), ["fetch", "--refetch", "--no-filter"]);
 	});
@@ -70,7 +70,7 @@ describe("planMainGitleaksScan", () => {
 	it("bounds workflow_dispatch to baseline..HEAD when baseline is an ancestor", () => {
 		const baseline = "a".repeat(40);
 		const head = "b".repeat(40);
-		const plan = planMainGitleaksScan({
+		const plan = planMainBetterleaksScan({
 			eventName: "workflow_dispatch",
 			pushBefore: undefined,
 			sha: head,
@@ -88,7 +88,7 @@ describe("planMainGitleaksScan", () => {
 	});
 
 	it("starts from the last green main commit when pushes in between were dropped", () => {
-		const plan = planMainGitleaksScan({
+		const plan = planMainBetterleaksScan({
 			eventName: "push",
 			pushBefore: "ccc",
 			sha: "ddd",
@@ -101,7 +101,7 @@ describe("planMainGitleaksScan", () => {
 	});
 
 	it("keeps the push range when the last green commit is not behind it", () => {
-		const plan = planMainGitleaksScan({
+		const plan = planMainBetterleaksScan({
 			eventName: "push",
 			pushBefore: "ccc",
 			sha: "ddd",
@@ -113,7 +113,7 @@ describe("planMainGitleaksScan", () => {
 	});
 
 	it("treats a forced push (zero before) as full history", () => {
-		const plan = planMainGitleaksScan({
+		const plan = planMainBetterleaksScan({
 			eventName: "push",
 			pushBefore: ZERO_SHA,
 			sha: "bbb",
@@ -126,7 +126,7 @@ describe("planMainGitleaksScan", () => {
 
 describe("pollScanWait hang pattern from job 127207503432", () => {
 	it("fails immediately when the scanner dies after writing only a banner", () => {
-		const dir = mkdtempSync(join(tmpdir(), "gitleaks-hang-"));
+		const dir = mkdtempSync(join(tmpdir(), "betterleaks-hang-"));
 		writeFileSync(join(dir, "log"), banner);
 		writeFileSync(join(dir, "pid"), "4242\n");
 		assert.equal(
@@ -143,7 +143,7 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 	});
 
 	it("times out the 300s wait budget when no exit file is written", () => {
-		const dir = mkdtempSync(join(tmpdir(), "gitleaks-budget-"));
+		const dir = mkdtempSync(join(tmpdir(), "betterleaks-budget-"));
 		writeFileSync(join(dir, "log"), banner);
 		writeFileSync(join(dir, "pid"), "4242\n");
 		assert.equal(
@@ -160,7 +160,7 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 	});
 
 	it("returns ok when the exit file exists", () => {
-		const dir = mkdtempSync(join(tmpdir(), "gitleaks-ok-"));
+		const dir = mkdtempSync(join(tmpdir(), "betterleaks-ok-"));
 		writeFileSync(join(dir, "log"), "no leaks found\n");
 		writeFileSync(join(dir, "exit"), "0\n");
 		assert.equal(
@@ -177,7 +177,7 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 	});
 
 	it("always writes the exit file the wait step reads", () => {
-		const dir = mkdtempSync(join(tmpdir(), "gitleaks-exit-"));
+		const dir = mkdtempSync(join(tmpdir(), "betterleaks-exit-"));
 		writeExitFile(dir, 1);
 		assert.equal(readFileSync(join(dir, "exit"), "utf8"), "1\n");
 	});
@@ -186,13 +186,13 @@ describe("pollScanWait hang pattern from job 127207503432", () => {
 describe("range-only early start", () => {
 	it("defers only a scan that would refetch blobs", () => {
 		const exists = () => true;
-		const range = planMainGitleaksScan({
+		const range = planMainBetterleaksScan({
 			eventName: "push",
 			pushBefore: "a".repeat(40),
 			sha: "b".repeat(40),
 			commitExists: exists,
 		});
-		const full = planMainGitleaksScan({
+		const full = planMainBetterleaksScan({
 			eventName: "workflow_dispatch",
 			pushBefore: undefined,
 			sha: "b".repeat(40),
@@ -221,7 +221,7 @@ describe("main-gate wiring", () => {
 		);
 		assert.match(
 			early,
-			/gitleaks-main-scan\.mts --background --range-only --dir "\$dir"/u,
+			/betterleaks-main-scan\.mts --background --range-only --dir "\$dir"/u,
 		);
 		// Detached, so the next steps run while it scans.
 		assert.match(early, /^\s+nohup node /mu);
@@ -229,24 +229,29 @@ describe("main-gate wiring", () => {
 		const last = mainGatePlan.slice(scan);
 		assert.match(last, /if \[ -f "\$dir\/deferred" \]/u);
 	});
-	it("runs gitleaks through gitleaks-main-scan in the plan job, not inside S0 or finish", () => {
+	it("runs betterleaks through betterleaks-main-scan in the plan job, not inside S0 or finish", () => {
 		// The merge queue does not scan, and Main full gate is skipped when the
 		// merge queue passed the tree, so the scan lives in the job every main
 		// run has: Main workspace plan (finding 154).
 		for (const block of [mainGate, mainGateFinish]) {
-			assert.equal(block.includes("scripts/ci/gitleaks-main-scan.mts"), false);
-			assert.equal(block.includes("gitleaks git"), false);
+			assert.equal(
+				block.includes("scripts/ci/betterleaks-main-scan.mts"),
+				false,
+			);
+			assert.equal(block.includes("betterleaks git"), false);
 		}
 		assert.ok(
-			mainGatePlan.includes("scripts/ci/gitleaks-main-scan.mts --background"),
+			mainGatePlan.includes(
+				"scripts/ci/betterleaks-main-scan.mts --background",
+			),
 		);
 		assert.ok(
 			mainGatePlan.includes(
-				'scripts/ci/gitleaks-main-scan.mts --wait --dir "$dir"',
+				'scripts/ci/betterleaks-main-scan.mts --wait --dir "$dir"',
 			),
 		);
 		assert.equal(
-			/nohup bash -c '\s*gitleaks git --config \.gitleaks\.toml --redact --exit-code 1 >/u.test(
+			/nohup bash -c '\s*betterleaks git --config \.betterleaks\.toml --redact --exit-code 1 >/u.test(
 				mainGatePlan,
 			),
 			false,

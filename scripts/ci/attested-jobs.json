@@ -646,7 +646,7 @@
 				},
 				{
 					"name": "Scan git history for secrets",
-					"run": "set -euo pipefail\ngitleaks git --config .gitleaks.toml --redact --exit-code 1 \\\n  --log-opts=\"${{ github.event.pull_request.base.sha }}..${{ github.sha }}\"\n",
+					"run": "set -euo pipefail\nbetterleaks git --config .betterleaks.toml --redact --exit-code 1 \\\n  --log-opts=\"${{ github.event.pull_request.base.sha }}..${{ github.sha }}\"\n",
 					"local": "run"
 				}
 			]

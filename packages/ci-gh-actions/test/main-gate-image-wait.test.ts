@@ -105,8 +105,8 @@ describe("Main full gate image dependency", () => {
 		expect(finishNames).not.toContain(wait);
 		expect(planNames).toContain(wait);
 		const waitStep = mainPlan.steps.find((step) => step.name === wait);
-		expect(waitStep?.run).toContain("gitleaks-main-scan.mts --background");
-		expect(waitStep?.run).toContain("gitleaks-main-scan.mts --wait");
+		expect(waitStep?.run).toContain("betterleaks-main-scan.mts --background");
+		expect(waitStep?.run).toContain("betterleaks-main-scan.mts --wait");
 		expect(waitStep?.if).toBeUndefined();
 		expect(mainPlan.steps.at(-1)).toBe(waitStep);
 		expect(imageNames).not.toContain(wait);
