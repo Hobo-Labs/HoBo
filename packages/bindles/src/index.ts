@@ -21,6 +21,10 @@ export {
 	inferRequirementsFromResources,
 } from "./bindle.js";
 export {
+	type ExternalBoundaryViolation,
+	externalBoundaryViolations,
+} from "./boundaries.js";
+export {
 	api,
 	auth,
 	bucket,

@@ -251,7 +251,7 @@ export function spawnCommand(
 }
 
 function miseToolVersionArgs(tool: string): string[] {
-	return tool === "cue" || tool === "gitleaks" || tool === "syft"
+	return tool === "cue" || tool === "betterleaks" || tool === "syft"
 		? ["version"]
 		: ["--version"];
 }

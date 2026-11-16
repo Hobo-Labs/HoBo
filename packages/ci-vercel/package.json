@@ -25,6 +25,7 @@
     "@hobo/ci": "workspace:*",
     "@hobo/ci-gh-actions": "workspace:*",
     "@hobo/core": "workspace:*",
+    "@hobo/junctions": "workspace:*",
     "@hobo/kv-redis-compatible": "workspace:*",
     "@hobo/provider-turso": "workspace:*",
     "@hobo/provider-upstash": "workspace:*",

@@ -29,6 +29,32 @@ async function json(root: string, path: string, value: z.core.JSONType) {
 function record(name: string) {
 	return `node -e "require('node:fs').appendFileSync('ran.txt', '${name}\\n')"`;
 }
+
+async function taskIsRunning(pid: number): Promise<boolean> {
+	const exists = () => {
+		try {
+			process.kill(pid, 0);
+			return true;
+		} catch (error) {
+			if (error instanceof Error && "code" in error && error.code === "ESRCH")
+				return false;
+			throw error;
+		}
+	};
+	if (!exists()) return false;
+	if (process.platform !== "linux") return true;
+	try {
+		const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+		const nameEnd = stat.lastIndexOf(")");
+		// An unreaped zombie still has a PID but cannot execute the cancelled task.
+		return nameEnd < 0 || stat.slice(nameEnd + 2, nameEnd + 3) !== "Z";
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT")
+			return exists();
+		throw error;
+	}
+}
+
 async function fixture() {
 	const cwd = await mkdtemp(join(tmpdir(), "hobo-turbo-ci-"));
 	roots.push(cwd);
@@ -283,9 +309,10 @@ it("stops a running task's process group on cancellation", async () => {
 		while (!existsSync(pidFile) && Date.now() < deadline)
 			await new Promise((done) => setTimeout(done, 25));
 		const pid = Number(await readFile(pidFile, "utf8"));
+		expect(await taskIsRunning(pid)).toBe(true);
 		controller.abort(new Error("stop fixture"));
 		await stopped;
-		expect(() => process.kill(pid, 0)).toThrow();
+		expect(await taskIsRunning(pid)).toBe(false);
 	} finally {
 		controller.abort(new Error("stop fixture"));
 		await stopped;

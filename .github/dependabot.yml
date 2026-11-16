@@ -1,0 +1,60 @@
+# Dependabot version updates. Every ecosystem waits a week (cooldown) after a
+# release before proposing it, so a hijacked or yanked release has time to be
+# caught upstream before it lands here. Security updates are not delayed:
+# cooldown applies to version updates only.
+#
+# GitHub Actions pins also live in .github/workflows/actions.lock
+# (gh actions-lock); Dependabot rewrites the lockfile alongside each bump, and
+# the actions-lock workflow verifies it on the PR.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    # The pnpm workspace root; Dependabot updates pnpm-lock.yaml for every
+    # workspace package from here.
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(ci)"
+
+  - package-ecosystem: docker
+    directories:
+      - /.devcontainer
+      - /deploy/release-images/*
+      - /packages/ci-gh-actions/deploy
+      - /packages/ci-gh-actions/deploy/ci-runner
+      - /packages/ci-gh-actions/deploy/ci-runner/*
+      - /packages/runtimes/runtime-oci/deploy
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      docker-base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"

@@ -83,7 +83,7 @@ describe("ci-trace action artifact names", () => {
 		);
 		expect(names.size).toBe(shards.length);
 		expect(workspaceBlock).toMatch(
-			/uses: \.\/\.github\/actions\/ci-trace[\s\S]*disambiguator: \$\{\{ matrix\.shard \}\}/,
+			/uses: \$\/\.github\/actions\/ci-trace[\s\S]*disambiguator: \$\{\{ matrix\.shard \}\}/,
 		);
 	});
 });

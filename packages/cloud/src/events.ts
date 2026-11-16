@@ -216,6 +216,8 @@ export interface ResourceProvisioningData {
 	programHash: string;
 	/** `desiredSpecHash` of the resource being applied (upsert detection). */
 	specHash?: string;
+	/** Provider that may have received the apply; absent on legacy facts. */
+	providerId?: string;
 }
 
 export function resourceProvisioning(
