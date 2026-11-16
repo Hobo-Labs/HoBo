@@ -17,7 +17,7 @@ mise replaces ad hoc **Corepack-only** Node/pnpm setup, **cue-lang/setup-cue**, 
 
 | Section | HoBo usage |
 | --- | --- |
-| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `gitleaks@8.22.1`, `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
+| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `betterleaks@1.10.1` (secret scan: pre-commit staged changes and the CI history scan; the gitleaks successor, same flags and config format), `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
 | `[env]` | Optional project env vars (keep secrets out; use `mise env` + `.env` locally). |
 | `[tasks]` | Thin wrappers around existing `pnpm` / Turbo scripts so `mise run build` matches `pnpm run build`. |
 | `[settings]` | `experimental = true` only when needed; prefer stable flags. |
@@ -55,7 +55,7 @@ mise refuses to run untrusted config:
 - **`MISE_TRUSTED_CONFIG_PATHS`** — colon-separated allowlist (CI/devcontainer).
 - **`mise settings set trusted_config_paths`** — persistent trust.
 
-HoBo CI sets trust via mise-action (`install: true` trusts the checkout). Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
+HoBo CI sets trust via mise-action (`install: true` trusts the checkout). The fleet image bakes `/etc/mise/config.toml` from whichever commit last built it, so jobs that check the checkout's pins (`build.sh`, the `dev-env-smoke` mise job) set `MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`; otherwise a PR that swaps a tool fails `mise install --locked` with `<tool> is not in the lockfile`. Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
 
 ## `mise activate` vs shims
 
