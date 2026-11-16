@@ -342,6 +342,12 @@ async function prepareGithubWithVault(
 				},
 			],
 		};
+	if (input.handOff === true && (input.run.flags.json || input.run.flags.quiet))
+		return refused(
+			"HOBO_CI_HANDOFF_SILENT",
+			"The owner hand-off needs progress output. Omit --json and -q, then retry.",
+			["Run hobo ci up --hand-off without --json or -q."],
+		);
 	if (!canReachOwner(deps.interactive, input.handOff))
 		return refused(
 			"HOBO_CI_CONNECTION_NEEDS_OWNER",

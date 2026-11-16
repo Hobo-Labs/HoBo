@@ -266,7 +266,13 @@ describe("resolveFamilyProject", () => {
 	it("prefers --project, then HOBO_<FAMILY>_PROJECT, then the bundled project", async () => {
 		const a = await project();
 		const b = await project();
-		const flags = { whatIf: false, mode: null, project: null, yes: false };
+		const flags = {
+			whatIf: false,
+			mode: null,
+			project: null,
+			yes: false,
+			handOff: false,
+		};
 		expect(
 			resolveFamilyProject({
 				family: "ci",

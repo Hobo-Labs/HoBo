@@ -194,8 +194,13 @@ environment variables.
   the page without a terminal, opens no browser, and names it on one
   `HOBO_OWNER_PAGE <url> port=<n>` progress line whose `<url>` is the page's
   origin: its first visit opens the session (once), so the agent hands over
-  that link, or a cloud agent forwards the port and the preview opens it.
-  The run waits for the person. The agent never answers the page itself.
+  that link and the run waits for the person. If the run needs a page,
+  `--json` and `-q` are refused because they hide the progress line. For a
+  remote run, the person's browser needs an authenticated tunnel that binds
+  the same loopback port on their machine and forwards it to the run: the
+  provider returns to that loopback address after authorization. An HTTPS
+  preview by itself does not forward that callback. The agent never answers
+  the page itself.
 - Without a person at a browser and without `--hand-off`, and for
   `--what-if`, nothing opens. The
   result says what it would sign in to and ask for, points CI at a

@@ -192,14 +192,19 @@ An agent never answers a ceremony itself and never stops at
 `HOBO_*_CONNECTION_NEEDS_OWNER`. Run the verb with `--hand-off` in the
 background: it serves the setup page (store sign-in first, then the
 provider) and prints one `HOBO_OWNER_PAGE <url> port=<n>` line, then waits
-for the owner. Pass the page on and wait for "done":
+for the owner. Omit `--json` and `-q`: they suppress that line. Pass the page
+on and wait for "done":
 
 The line's `<url>` is the page's origin (`http://127.0.0.1:<n>/`): its
 first visit opens the setup session, once, so it is the whole link.
 
 - On the owner's own machine: "Open this link: `<url>`."
-- In a cloud session: call `report_preview_port` with `<n>` and say "Open
-  the preview it shows." Nothing to type: the preview opens the root.
+- In a cloud session: the owner needs an authenticated tunnel that binds
+  `127.0.0.1:<n>` on their machine and forwards to the same port on the
+  agent's machine. They open `<url>` through that tunnel and keep it open
+  until the provider returns to the loopback callback. An HTTPS preview
+  (`report_preview_port`) opens the page from its root too, but alone it
+  does not forward that callback.
 
 Never fetch or submit the page yourself. Secret variables in the agent's
 environment are ignored on purpose; the owner signs in on the page.
