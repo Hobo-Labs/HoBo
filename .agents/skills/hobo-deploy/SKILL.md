@@ -186,6 +186,21 @@ they paste (identifiers, not secrets).
    a value is missing; its runtime log names which (Vercel MCP
    `get_runtime_logs`, read-only).
 
+## Running `hobo ci up` / `hobo cd up` for the owner
+
+An agent never answers a ceremony itself and never stops at
+`HOBO_*_CONNECTION_NEEDS_OWNER`. Run the verb with `--hand-off` in the
+background: it serves the setup page (store sign-in first, then the
+provider) and prints one `HOBO_OWNER_PAGE <url> port=<n>` line, then waits
+for the owner. Pass the page on and wait for "done":
+
+- On the owner's own machine: "Open this page in your browser: `<url>`."
+- In a cloud session: call `report_preview_port` with `<n>`, then give the
+  owner the page's path (`/s/...`) to open in the preview.
+
+Never fetch or submit the page yourself. Secret variables in the agent's
+environment are ignored on purpose; the owner signs in on the page.
+
 ## Reporting
 
 End with: the secrets manager and why; the binding PR; each identity by

@@ -82,6 +82,40 @@ function refused(
 	return { kind: "refused", result };
 }
 
+// public-contract: the prefix of the one progress line naming a page the owner must open, for an agent running with --hand-off to pass on.
+export const OWNER_PAGE_LINE_PREFIX = "HOBO_OWNER_PAGE";
+
+/** Whether this run may show the owner a page: a terminal, or an agent's hand-off. */
+export function canReachOwner(
+	interactive: boolean | undefined,
+	handOff: boolean | undefined,
+): boolean {
+	return interactive ?? (handOff === true || Boolean(process.stdout.isTTY));
+}
+
+/**
+ * Show the owner the page: in a terminal, open the browser; handed off, name
+ * it on one line (the page's loopback address and port) for the agent to pass
+ * on, and open nothing on a machine that may have no display.
+ */
+export function showOwnerPage(options: {
+	readonly url: string;
+	readonly what: string;
+	readonly handOff: boolean | undefined;
+	readonly emit: (line: string) => void;
+	readonly openBrowser: (url: string) => void;
+}): void {
+	if (options.handOff === true) {
+		const port = new URL(options.url).port;
+		options.emit(
+			`${OWNER_PAGE_LINE_PREFIX} ${options.url} port=${port} — ${options.what}; give this page to the owner and wait (this run waits for them).`,
+		);
+		return;
+	}
+	options.emit(`${options.what} in your browser: ${options.url}`);
+	options.openBrowser(options.url);
+}
+
 /** Open a URL with only the desktop environment needed by the platform opener. */
 export function openInBrowser(url: string): void {
 	const command =
@@ -304,12 +338,13 @@ async function prepareGithubWithVault(
 				},
 			],
 		};
-	if (!(deps.interactive ?? Boolean(process.stdout.isTTY)))
+	if (!canReachOwner(deps.interactive, input.handOff))
 		return refused(
 			"HOBO_CI_CONNECTION_NEEDS_OWNER",
 			"Connecting GitHub needs the owner at a browser once; this run cannot show the setup page.",
 			[
 				"Run hobo ci up once in a terminal; it asks for what is missing and keeps it in your secret store.",
+				"An agent runs hobo ci up --hand-off: the run serves the page and names it on a HOBO_OWNER_PAGE line for the agent to give the owner.",
 				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID in ${SECRET_STORE_LOCATOR_FILE}) so the run signs in with its own OIDC token.`,
 			],
 		);
@@ -435,12 +470,14 @@ async function prepareGithubWithVault(
 		"github",
 		deps.timeoutMs ?? 15 * 60_000,
 		"hobo ci up",
-		() => {
-			input.run.emitProgress(
-				`Set up GitHub for HoBo CI in your browser: ${activePage.url}`,
-			);
-			(deps.openBrowser ?? openInBrowser)(activePage.url);
-		},
+		() =>
+			showOwnerPage({
+				url: activePage.url,
+				what: "Set up GitHub for HoBo CI",
+				handOff: input.handOff,
+				emit: (line) => input.run.emitProgress(line),
+				openBrowser: deps.openBrowser ?? openInBrowser,
+			}),
 	);
 	if (step.kind !== "connected")
 		return refused(

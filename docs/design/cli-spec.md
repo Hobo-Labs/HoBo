@@ -190,7 +190,13 @@ environment variables.
   the chosen ones (`hobo add`, approving a held one) and runs `up` again.
 - **Agents** can complete a ceremony too (`createAgent`, WebMCP). Handing off
   to a provider or submitting a secret asks the person.
-- Without a person at a browser, and for `--what-if`, nothing opens. The
+- **An agent hands the page to the person** (`--hand-off`): the run serves
+  the page without a terminal, opens no browser, and names it on one
+  `HOBO_OWNER_PAGE <url> port=<n>` progress line; the agent gives that page
+  to the person (a cloud agent forwards the port) and the run waits for
+  them. The agent never answers the page itself.
+- Without a person at a browser and without `--hand-off`, and for
+  `--what-if`, nothing opens. The
   result says what it would sign in to and ask for, points CI at a
   preconfigured OIDC identity, or names the `hobo add` that would satisfy each
   resource.

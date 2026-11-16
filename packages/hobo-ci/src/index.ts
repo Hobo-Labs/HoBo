@@ -32,10 +32,13 @@ export {
 	storeIdOf,
 } from "./owner-store.js";
 export {
+	canReachOwner,
+	OWNER_PAGE_LINE_PREFIX,
 	openInBrowser,
 	type PrepareGithubDeps,
 	prepareGithubConnection,
 	runPage,
+	showOwnerPage,
 	VERCEL_DEPLOY_ENTRIES,
 	workloadOidcOf,
 } from "./prepare.js";

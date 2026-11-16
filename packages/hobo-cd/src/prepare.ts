@@ -9,6 +9,7 @@ import {
 } from "@hobo/connect-ui";
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
+	canReachOwner,
 	familySettings,
 	InvalidSecretStoreError,
 	ignoredSecretEnvNotice,
@@ -19,6 +20,7 @@ import {
 	runPage,
 	SECRET_STORE_LOCATOR_FILE,
 	scopeRunVault,
+	showOwnerPage,
 	storeIdOf,
 	withoutSecretEnv,
 	workloadOidcOf,
@@ -301,12 +303,13 @@ async function prepareVercelWithVault(
 				},
 			],
 		};
-	if (!(deps.interactive ?? Boolean(process.stdout.isTTY)))
+	if (!canReachOwner(deps.interactive, input.handOff))
 		return refused(
 			"HOBO_CD_CONNECTION_NEEDS_OWNER",
 			"Connecting Vercel needs the owner at a browser once; this run cannot show the setup page.",
 			[
 				"Run hobo cd up once in a terminal; it asks for what is missing and keeps it in your secret store.",
+				"An agent runs hobo cd up --hand-off: the run serves the page and names it on a HOBO_OWNER_PAGE line for the agent to give the owner.",
 				`For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID in ${SECRET_STORE_LOCATOR_FILE}) so the run signs in with its own OIDC token.`,
 			],
 		);
@@ -459,12 +462,14 @@ async function prepareVercelWithVault(
 		"vercel",
 		deps.timeoutMs ?? 15 * 60_000,
 		"hobo cd up",
-		() => {
-			input.run.emitProgress(
-				`Set up Vercel for HoBo CD in your browser: ${page.url}`,
-			);
-			(deps.openBrowser ?? openInBrowser)(page.url);
-		},
+		() =>
+			showOwnerPage({
+				url: page.url,
+				what: "Set up Vercel for HoBo CD",
+				handOff: input.handOff,
+				emit: (line) => input.run.emitProgress(line),
+				openBrowser: deps.openBrowser ?? openInBrowser,
+			}),
 	);
 	if (step.kind !== "connected" || connectedStore === undefined)
 		return refused(
