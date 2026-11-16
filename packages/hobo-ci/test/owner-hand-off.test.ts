@@ -104,8 +104,9 @@ describe("hobo ci up --hand-off", () => {
 			result: { code: "HOBO_CI_INFISICAL_SIGN_IN" },
 		});
 		const text = JSON.stringify(outcome);
+		// No owner channel here (a plain CLI run): it names the MCP route.
 		expect(text).toMatch(/sign in once/u);
-		expect(text).toMatch(/installs Infisical's CLI/u);
+		expect(text).toMatch(/HoBo MCP server/u);
 		// HoBo creates the identity and its access itself.
 		expect(text).not.toMatch(/Create Identity|Token Auth|create a token/u);
 		expect(text).not.toContain(INFISICAL_TOKEN_AUTH_DOCS);

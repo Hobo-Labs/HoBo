@@ -373,6 +373,9 @@ async function prepareGithubWithVault(
 						fetch: deps.fetch ?? fetch,
 						emit: (line) => input.run.emitProgress(line),
 						interactive: input.handOff !== true,
+						...(deps.ownerChannel !== undefined
+							? { owner: deps.ownerChannel }
+							: undefined),
 					},
 				);
 				if (access.kind === "refused")

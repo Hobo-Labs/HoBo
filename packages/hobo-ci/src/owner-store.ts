@@ -26,6 +26,7 @@ import { storeLabel, storeSettings } from "./ceremony-settings.js";
 import type { provisionInfisicalAccess } from "./infisical-access.js";
 import { OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import type { provisionOnePasswordAccess } from "./onepassword-access.js";
+import type { OwnerChannel } from "./owner-channel.js";
 import { type HttpsOrigin, parseHttpsOrigin } from "./parsed-values.js";
 import {
 	type Env,
@@ -237,6 +238,8 @@ export interface OwnerStoreDeps extends SecretStoreDeps {
 	readonly infisicalAccess?: typeof provisionInfisicalAccess;
 	/** Provision 1Password access (tests inject a fake; the CLI otherwise). */
 	readonly onePasswordAccess?: typeof provisionOnePasswordAccess;
+	/** How to reach an owner who is not at this machine (a remote dev box). */
+	readonly ownerChannel?: OwnerChannel;
 	/** How the ceremony runs a store's CLI (tests inject a fake machine). */
 	readonly runCommand?: RunCommand;
 	/** Where an executable is on PATH. */

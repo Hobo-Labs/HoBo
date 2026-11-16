@@ -63,7 +63,8 @@ export interface HandOffFinding {
 // public-contract: the tools that count as a structured ask, by kind.
 export const STRUCTURED_ASK_TOOLS = {
 	choice: /^(AskUserQuestion|mcp__[\w-]+__choose_secret_store)$/u,
-	credential: /^(mcp__[\w-]+__)?request_credential$/u,
+	credential:
+		/^((mcp__[\w-]+__)?request_credential|mcp__[\w-]+__capture_secret)$/u,
 } satisfies Readonly<Record<AskKind, RegExp>>;
 
 /** Owner-facing lines as the CLI prints them (not source code that names them). */
@@ -71,6 +72,7 @@ const OWNER_LINES: readonly { readonly ask: AskKind; readonly re: RegExp }[] = [
 	{ ask: "choice", re: /^HOBO_C[ID]_STORE_CHOICE$/mu },
 	{ ask: "choice", re: /^HOBO_C[ID]_BITWARDEN_ORGANIZATION$/mu },
 	{ ask: "credential", re: /^HOBO_OWNER_CREDENTIAL host=\S+/mu },
+	{ ask: "credential", re: /HOBO_OWNER_SIGN_IN url=\S+ capture=\S+/u },
 ];
 
 /** A result that means the ask never reached the owner or was not answered. */

@@ -9,6 +9,10 @@ import {
 	wantsOpenSesameRelaunch,
 } from "../credentials-opensesame.js";
 import {
+	createMcpOwnerChannel,
+	OWNER_HANDOFF_SPECS,
+} from "../mcp-owner-channel.js";
+import {
 	createInfisicalCaptureConnector,
 	RELAY_SECRET_CAPTURE_SPECS,
 	secretCaptureProjectDir,
@@ -29,14 +33,20 @@ async function serve(): Promise<number> {
 	// The default runtime's throwaway event store is removed on exit; as the
 	// entry point, this process has it removed on a signal too.
 	removeOwnedDirsOnSignals();
-	const server = createHoboMcpServer({ cli: createComposedHoboCli() });
+	// The owner's channel: what they hand over through the capture form waits
+	// here, in memory, for the ceremony run through this server.
+	const owner = createMcpOwnerChannel();
+	const server = createHoboMcpServer({
+		cli: createComposedHoboCli({ ownerChannel: owner }),
+	});
 	// The secret-capture MCP App (ADR-0179 amendment "Deploy secrets captured
 	// by an MCP App into the secret store"): values the owner types go from
 	// the form to this process to the store the relay's binding names, and
 	// never into a tool result. URL elicitation completion is the one
 	// notification this server sends.
 	const capture = createSecretCaptureApp({
-		specs: RELAY_SECRET_CAPTURE_SPECS,
+		specs: [...RELAY_SECRET_CAPTURE_SPECS, ...OWNER_HANDOFF_SPECS],
+		handoff: async (secret) => owner.deposit(secret.name, secret.reveal()),
 		connector: createInfisicalCaptureConnector({
 			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
 		}),

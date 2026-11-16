@@ -220,3 +220,119 @@ describe("SPEC R1 + R4: HoBo creates the identity through the API", () => {
 		}
 	});
 });
+
+// R8  A remote box signs in with no inbound connection and no tunnel:
+//     Infisical's sign-in returns its session to 127.0.0.1 on the owner's
+//     own machine; when nothing listens there, Infisical shows "Unable to
+//     reach CLI" with the session to copy. The owner opens the link, signs in
+//     (SSO and MFA as their organization requires), and hands that value to
+//     HoBo through the owner channel; HoBo uses the session inside it for the
+//     API. The run needs no CLI for this, and installs none.
+describe("SPEC R8: a remote box signs in through the owner channel", () => {
+	const loginBlob = Buffer.from(
+		JSON.stringify({
+			JTWToken: USER_JWT,
+			email: "owner@example.com",
+			privateKey: "",
+		}),
+	).toString("base64");
+
+	function channel(answer: string | undefined) {
+		const opened: { url: string; message: string }[] = [];
+		const asked: string[] = [];
+		return {
+			opened,
+			asked,
+			channel: {
+				openUrl: async (url: string, message: string) => {
+					opened.push({ url, message });
+				},
+				captureSecret: async (request: {
+					name: string;
+					title: string;
+					instructions: string;
+				}) => {
+					asked.push(request.instructions);
+					return answer;
+				},
+			},
+		};
+	}
+
+	it("opens Infisical's sign-in, takes the copied session, and provisions through the API", async () => {
+		lines.length = 0;
+		const owner = channel(loginBlob);
+		const machine = fakeMachine({});
+		const api = fakeInfisical();
+		const result = await provisionInfisicalAccess({
+			...base(machine, api),
+			interactive: false,
+			owner: owner.channel,
+		});
+		expect(owner.opened).toHaveLength(1);
+		expect(owner.opened[0]?.url).toMatch(
+			/^https:\/\/app\.infisical\.com\/login\?callback_port=\d+$/u,
+		);
+		expect(owner.asked).toHaveLength(1);
+		expect(owner.asked[0]).toMatch(/Copy to clipboard/u);
+		// No CLI, no install, no tunnel: the API does the rest.
+		expect(machine.ran).toEqual([]);
+		expect(api.calls.every((c) => c.auth === `Bearer ${USER_JWT}`)).toBe(true);
+		expect(result).toMatchObject({
+			kind: "ready",
+			identityId: "ident-1",
+			token: "identity-token",
+		});
+		// The session never reaches the owner-facing output.
+		expect(lines.join("\n")).not.toContain(USER_JWT);
+	});
+
+	it("uses an existing CLI session on the box first, asking nothing", async () => {
+		const owner = channel(loginBlob);
+		const result = await provisionInfisicalAccess({
+			...base(
+				fakeMachine({ cliOnPath: true, signedIn: true }),
+				fakeInfisical(),
+			),
+			interactive: false,
+			owner: owner.channel,
+		});
+		expect(result.kind).toBe("ready");
+		expect(owner.opened).toEqual([]);
+		expect(owner.asked).toEqual([]);
+	});
+
+	it("refuses a value that is not Infisical's session, and asks again on the next run", async () => {
+		const owner = channel("not-a-session");
+		const result = await provisionInfisicalAccess({
+			...base(fakeMachine({}), fakeInfisical()),
+			interactive: false,
+			owner: owner.channel,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_INFISICAL_SESSION",
+		});
+		if (result.kind === "refused")
+			expect(result.message).not.toContain("not-a-session");
+	});
+
+	it("records nothing when the owner does not answer", async () => {
+		const api = fakeInfisical();
+		const result = await provisionInfisicalAccess({
+			...base(fakeMachine({}), api),
+			interactive: false,
+			owner: channel(undefined).channel,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_INFISICAL_SIGN_IN",
+		});
+		expect(api.calls).toEqual([]);
+		// The refusal carries the link and the capture that hands its result back.
+		if (result.kind === "refused")
+			expect(result.remediation[0]).toMatch(
+				/^HOBO_OWNER_SIGN_IN url=https:\/\/app\.infisical\.com\/login\?callback_port=\d+ capture=INFISICAL_CLI_SESSION$/u,
+			);
+	});
+});

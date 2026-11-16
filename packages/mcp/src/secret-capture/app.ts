@@ -249,6 +249,12 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	onEvent?: (event: SecretCaptureEvent) => void;
 	/** Server-to-client notifications (`notifications/elicitation/complete`). */
 	notify?: (method: string, params: JsonValue) => void;
+	/**
+	 * Receives a `handoff` capture: the value goes to the ceremony running in
+	 * this process, in memory, and to no store. Without it, a handoff spec is
+	 * refused.
+	 */
+	handoff?: (secret: CapturedSecret) => Promise<void>;
 }>;
 
 type Ticket = {
@@ -477,6 +483,14 @@ export function createSecretCaptureApp(
 	async function refuseIfNotWritable(
 		spec: ParsedSecretCaptureSpec,
 	): Promise<SecretCaptureError | undefined> {
+		if (spec.target === "handoff")
+			return options.handoff === undefined
+				? new SecretCaptureError(
+						"SECRET_STORE_NOT_CONNECTED",
+						`Nothing in this process is waiting for ${spec.name}.`,
+						"Run the ceremony that asks for it through this MCP server first.",
+					)
+				: undefined;
 		const status = await options.connector.status();
 		if (status.connected === false)
 			return new SecretCaptureError(
@@ -624,7 +638,7 @@ export function createSecretCaptureApp(
 			};
 		const text =
 			ticket.channel === "mcp-app"
-				? `The owner is entering ${ticket.spec.name} in the HoBo form shown with this result. It goes straight to the secret store; you will not see it and must not ask for it. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`
+				? `The owner is entering ${ticket.spec.name} in the HoBo form shown with this result. It goes straight to ${ticket.spec.target === "handoff" ? "the run waiting for it, in memory" : "the secret store"}; you will not see it and must not ask for it. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`
 				: `Ask the owner to open ${ticket.url ?? ""} in their own browser on this machine and enter ${ticket.spec.name} there. Do not open, fetch or submit that page yourself, and never ask for the value in the chat. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`;
 		return {
 			kind: "result",
@@ -699,7 +713,12 @@ export function createSecretCaptureApp(
 				const refusal = await refuseIfNotWritable(ticket.spec);
 				if (refusal !== undefined)
 					return failed(ticket, refusal, "secret.CaptureRefused", refusal.code);
-				({ ref } = await options.connector.store(ticket.spec.target, secret));
+				if (ticket.spec.target === "handoff") {
+					// To the waiting ceremony, in memory; no store, no file.
+					await options.handoff?.(secret);
+					ref = `handoff://${ticket.spec.name}`;
+				} else
+					({ ref } = await options.connector.store(ticket.spec.target, secret));
 				state = "stored";
 			}
 		} catch (error) {

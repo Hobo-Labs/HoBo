@@ -16,6 +16,7 @@ import { createInProcessExecutor } from "@hobo/cloud";
 import { prepareVercelConnection } from "@hobo/hobo-cd";
 import {
 	machineRunner,
+	type OwnerChannel,
 	prepareGithubConnection,
 	whichOnPath,
 } from "@hobo/hobo-ci";
@@ -105,6 +106,11 @@ import { createYardCommand } from "./yard-command.js";
 export { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 
 export interface ComposedHoboCliOptions {
+	/**
+	 * How a ceremony reaches an owner who is not at this machine (the HoBo MCP
+	 * server's channel); without it, a remote run says where to run instead.
+	 */
+	readonly ownerChannel?: OwnerChannel;
 	/** The production host supplies trusted financial and provider wiring. */
 	readonly hosting?: {
 		readonly budgetId: string;
@@ -266,6 +272,9 @@ export function createComposedHoboCli(
 				prepare: (input) =>
 					prepareGithubConnection(input, {
 						runCommand: machineRunner(),
+						...(options.ownerChannel !== undefined
+							? { ownerChannel: options.ownerChannel }
+							: undefined),
 						which: (bin) => whichOnPath(bin),
 					}),
 				// The relay is placed through its own Yards (the Vercel project
@@ -292,6 +301,9 @@ export function createComposedHoboCli(
 					prepareVercelConnection(input, {
 						journalProvisioners: defaultJournalProvisioners(),
 						runCommand: machineRunner(),
+						...(options.ownerChannel !== undefined
+							? { ownerChannel: options.ownerChannel }
+							: undefined),
 						which: (bin) => whichOnPath(bin),
 					}),
 				upWith: (credentials) =>

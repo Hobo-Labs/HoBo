@@ -152,4 +152,12 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/issue it again as the first thing you\s+do/u);
 		expect(HAND_OFF).toMatch(/eval:hand-off-transcript/u);
 	});
+
+	it("runs through the HoBo MCP server and hands the remote sign-in over in the capture form", () => {
+		expect(HAND_OFF).toMatch(/through the \*\*HoBo MCP server\*\*/u);
+		expect(HAND_OFF).toMatch(/HOBO_OWNER_SIGN_IN url=<url> capture=<name>/u);
+		expect(HAND_OFF).toMatch(/Copy to clipboard/u);
+		expect(HAND_OFF).toMatch(/capture_secret/u);
+		expect(HAND_OFF).toMatch(/Never ask for the value\s+in chat/u);
+	});
 });

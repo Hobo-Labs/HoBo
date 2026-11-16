@@ -203,8 +203,13 @@ do, before any other reply. Ending a turn with a choice or credential still
 unasked is a failure; `pnpm run eval:hand-off-transcript <transcript>`
 checks it.
 
-1. Run `hobo <ci|cd> up --hand-off` in the background (never `--json` or
-   `-q`: they hide the lines). Watch its output.
+1. Run `hobo <ci|cd> up --hand-off` through the **HoBo MCP server** (its
+   `ci` or `cd` tool with `args: ["up", "--hand-off"]`) when it is
+   connected: that is how the run reaches the owner on a remote box (their
+   sign-ins and the values they hand over wait in that server's memory). Run
+   it again the same way after each owner step. Without the HoBo server,
+   run `hobo <ci|cd> up --hand-off` in the background (never `--json` or
+   `-q`: they hide the lines) and watch its output.
 2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): call the
    HoBo MCP server's **`choose_secret_store`** (`mcp__hobo__choose_secret_store`,
    `family` ci or cd). It shows the owner a picker of **Infisical**,
@@ -248,7 +253,15 @@ checks it.
    why they come first. Once they save it, the run continues by itself; do
    not rerun it. If they decline the form, show the other paths the run's
    refusal names.
-4. On `HOBO_OWNER_BITWARDEN_APPROVE server=<host> phrase=<phrase>`: say
+4. On `HOBO_OWNER_SIGN_IN url=<url> capture=<name>` (Infisical from a
+   remote box): in one message, give the owner the link and say: "Sign in
+   to Infisical there as usual. When it says *Unable to reach CLI*, click
+   **Copy to clipboard**." Then call the HoBo MCP server's `capture_secret`
+   with `name: <name>`: the owner pastes it into the form it shows, which
+   seals it for this run only. When they say it is done, run the lifecycle
+   again: it creates its own identity and access. Never ask for the value
+   in chat.
+5. On `HOBO_OWNER_BITWARDEN_APPROVE server=<host> phrase=<phrase>`: say
    "Open a Bitwarden app signed in to `<host>` and approve the login request
    from HoBo whose fingerprint phrase is `<phrase>`." The run then sets up
    its own access (a project, machine account and one-day token, or a
@@ -256,10 +269,10 @@ checks it.
    and continues; do not rerun it. On `HOBO_*_BITWARDEN_ORGANIZATION`, ask
    which organization with a picker (each `BWS_ORGANIZATION_ID=` line is an
    option) and run again with it.
-5. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any
+6. On `HOBO_OWNER_DEVICE <link> code=<code>` (cd): say "Open `<link>` on any
    device, check the code is `<code>`, and approve." The run waits for the
    approval and continues by itself.
-6. When the run ends: report its last lines. If it refused, show its code
+7. When the run ends: report its last lines. If it refused, show its code
    and **every** remediation line it printed, unparaphrased; do not reduce
    them to one option.
 

@@ -314,3 +314,42 @@ describe("EVAL hand-off transcript: once a store is chosen, ask only about it", 
 		expect(auditHandOff(parseClaudeTranscript(transcript))).toEqual([]);
 	});
 });
+
+describe("EVAL hand-off transcript: a remote sign-in goes through the capture form", () => {
+	const SIGN_IN =
+		"HOBO_OWNER_SIGN_IN url=https://app.infisical.com/login?callback_port=41234 capture=INFISICAL_CLI_SESSION";
+	it("flags a sign-in relayed only in prose", () => {
+		const transcript = jsonl([
+			user("go"),
+			assistant([toolUse("run", "mcp__hobo__cd")]),
+			user([toolResult("run", `refused\n${SIGN_IN}`)]),
+			assistant([text("Sign in at the link and paste the token here.")]),
+			user("ok"),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toMatchObject([
+			{ rule: "structured-ask", ask: "credential" },
+		]);
+	});
+
+	it("passes when the agent opens the HoBo capture form", () => {
+		const transcript = jsonl([
+			user("go"),
+			assistant([toolUse("run", "mcp__hobo__cd")]),
+			user([toolResult("run", `refused\n${SIGN_IN}`)]),
+			assistant([toolUse("cap", "mcp__hobo__capture_secret")]),
+			user([
+				toolResult(
+					"cap",
+					"The owner is entering INFISICAL_CLI_SESSION in the HoBo form",
+				),
+			]),
+			assistant([
+				text(
+					"Sign in at the link, then paste Infisical's copied value into the form.",
+				),
+			]),
+			user("done"),
+		]);
+		expect(auditHandOff(parseClaudeTranscript(transcript))).toEqual([]);
+	});
+});

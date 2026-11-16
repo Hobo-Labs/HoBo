@@ -245,10 +245,20 @@ environment variables.
   1Password, a one-day service account scoped to the one vault
   (`op service-account create`; 1Password has no OIDC sign-in for service
   accounts). Infisical's browser sign-in hands the session to
-  `127.0.0.1:<callback_port>` on the machine the browser runs on, and
-  1Password's app approves sign-ins on its own machine, so a remote run
-  without an existing session refuses with `HOBO_*_INFISICAL_SIGN_IN` /
-  `HOBO_*_ONEPASSWORD_SIGN_IN` and names the owner's own machine. A sign-in
+  `127.0.0.1:<callback_port>` on the machine the browser runs on, so a
+  remote run signs in with no inbound connection and no tunnel: run through
+  the HoBo MCP server (its `ci`/`cd` tools, which hold the owner channel), it
+  refuses once with `HOBO_OWNER_SIGN_IN url=<sign-in link>
+  capture=INFISICAL_CLI_SESSION`; the owner signs in in their own browser
+  (SSO, MFA as usual), and Infisical, unable to reach a CLI, offers its
+  session to copy ("Unable to reach CLI", Copy to clipboard: base64 of
+  `{JTWToken, email}`); the owner pastes it into the HoBo MCP App's
+  secret-capture form, which seals it in their browser for a `handoff`
+  capture (to the waiting run, in the server's memory, taken once, never a
+  store or file); the next run decodes it and provisions through the API,
+  over the environment's proxy. 1Password's app approves sign-ins on its
+  own machine, so a remote 1Password run without an `op` session refuses
+  with `HOBO_*_ONEPASSWORD_SIGN_IN`. A sign-in
   the owner chose explicitly (`INFISICAL_SIGN_IN`, `OP_ACCOUNT`,
   `OP_CONNECT_HOST`) stands. Only the composed CLI hands `prepare` the
   machine (`runCommand`), so no test runs real commands.

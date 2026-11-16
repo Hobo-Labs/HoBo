@@ -61,6 +61,7 @@ export {
 export {
 	type InfisicalAccess,
 	type InfisicalAccessOptions,
+	OWNER_SIGN_IN_LINE_PREFIX,
 	provisionInfisicalAccess,
 	type WorkloadOidc,
 } from "./infisical-access.js";
@@ -83,6 +84,7 @@ export {
 	type Platform,
 	provisionOnePasswordAccess,
 } from "./onepassword-access.js";
+export type { OwnerChannel } from "./owner-channel.js";
 export {
 	CI_RELAY_FOLDER,
 	EGRESS_PROXY_SIGN_IN,
