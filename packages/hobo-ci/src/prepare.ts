@@ -278,6 +278,13 @@ async function prepareGithubWithVault(
 			...deps,
 			env: plainEnv,
 			...(workloadOidc !== undefined ? { workloadOidc } : undefined),
+			// An OAuth sign-in approves in this machine's browser: a terminal
+			// run only, never a handed-off one.
+			noBrowser: input.handOff === true || input.whatIf,
+			oauthBrowser: {
+				open: deps.openBrowser ?? openInBrowser,
+				emit: (line) => input.run.emitProgress(line),
+			},
 		});
 	} catch (error) {
 		if (!(error instanceof InvalidSecretStoreError)) throw error;

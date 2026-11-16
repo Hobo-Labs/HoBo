@@ -15,6 +15,7 @@ import type { TrustedVault } from "@hobo/core";
 import { z } from "zod";
 
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
+import { INFISICAL_OAUTH_DOCS, OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import {
 	type Env,
 	type OpenedSecretStore,
@@ -53,9 +54,6 @@ export const EGRESS_PROXY_SIGN_IN = "egress-proxy";
 // public-contract: Infisical's guide to the Token Auth identity a remote agent's run signs in with.
 export const INFISICAL_TOKEN_AUTH_DOCS =
 	"https://infisical.com/docs/documentation/platform/identities/token-auth";
-// public-contract: Infisical's guide to the OAuth application a local read-only sign-in uses.
-export const INFISICAL_OAUTH_DOCS =
-	"https://infisical.com/docs/documentation/platform/oauth-applications/authorization-code";
 
 /**
  * How the owner lets a run that shows no page into the store: every path the
@@ -228,10 +226,31 @@ export async function ownerStore(
 	const proxySignIn =
 		id === "infisical" &&
 		resolved.values.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN;
-	const missingSide = resolved.missing.filter(
-		(field) =>
-			!((workloadSignIn || proxySignIn) && field.name === "INFISICAL_TOKEN"),
-	);
+	// The OAuth application sign-in approves in the browser: no token, but
+	// the application's client id and secret.
+	const oauthSignIn =
+		id === "infisical" && resolved.values.INFISICAL_SIGN_IN === OAUTH_SIGN_IN;
+	const oauthMissing = oauthSignIn
+		? side
+				.map((setting) => setting.field)
+				.filter(
+					(field) =>
+						(field.name === "INFISICAL_OAUTH_CLIENT_ID" &&
+							!resolved.values.INFISICAL_OAUTH_CLIENT_ID) ||
+						(field.name === "INFISICAL_OAUTH_CLIENT_SECRET" &&
+							!vault.reveal("INFISICAL_OAUTH_CLIENT_SECRET")),
+				)
+		: [];
+	const missingSide = [
+		...resolved.missing.filter(
+			(field) =>
+				!(
+					(workloadSignIn || proxySignIn || oauthSignIn) &&
+					field.name === "INFISICAL_TOKEN"
+				),
+		),
+		...oauthMissing,
+	];
 
 	let opened: OpenedSecretStore | undefined;
 	if (choice.missing.length === 0 && missingSide.length === 0) {

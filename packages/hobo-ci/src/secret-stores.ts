@@ -21,6 +21,14 @@ import {
 } from "@hobo/adapter-infisical";
 import type { SecretHolder, SecretStoreOption } from "@hobo/connect-ui";
 import type { SecretsPort } from "@hobo/identity";
+import {
+	INFISICAL_OAUTH_DOCS,
+	INFISICAL_OAUTH_REDIRECT_URI,
+	InfisicalOAuthError,
+	infisicalOAuthToken,
+	OAUTH_SIGN_IN,
+	readOnlySecretsPort,
+} from "./infisical-oauth.js";
 
 // The third-party secret stores a provider connection deposits into.
 // Where a store is (its coordinates: ids, a region) is non-secret and comes
@@ -87,6 +95,18 @@ export interface SecretStoreDeps {
 	 * types a token.
 	 */
 	readonly workloadOidc?: Env;
+	/**
+	 * Where an Infisical OAuth sign-in (`INFISICAL_SIGN_IN=oauth`) shows the
+	 * owner its approval page. Without it, or with `noBrowser` (a handed-off
+	 * run), that sign-in is not attempted.
+	 */
+	readonly oauthBrowser?: {
+		readonly open: (url: string) => void;
+		readonly emit: (line: string) => void;
+	};
+	readonly noBrowser?: boolean;
+	/** Tests replace the OAuth grant; the real one is `infisicalOAuthToken`. */
+	readonly infisicalOAuth?: typeof infisicalOAuthToken;
 }
 
 type Sdk = typeof import("@1password/sdk");
@@ -303,6 +323,56 @@ export async function openSecretStore(
 					auth = undefined;
 				}
 			}
+			// The OAuth application sign-in: a browser approval, read-only.
+			let readOnly = false;
+			if (
+				auth === undefined &&
+				coordinates.INFISICAL_SIGN_IN === OAUTH_SIGN_IN
+			) {
+				const clientId = coordinates.INFISICAL_OAUTH_CLIENT_ID;
+				const clientSecret = signIn.reveal("INFISICAL_OAUTH_CLIENT_SECRET");
+				if (deps.noBrowser === true || deps.oauthBrowser === undefined)
+					return {
+						ok: false,
+						message:
+							"An Infisical OAuth sign-in needs your browser on this machine; this run cannot show it.",
+						remediation: [
+							"Run it yourself in a terminal, or use a Token Auth token or CI's OIDC identity.",
+						],
+					};
+				if (!clientId || !clientSecret)
+					return {
+						ok: false,
+						message:
+							"The Infisical OAuth application's client id and secret are not set.",
+						remediation: [
+							`Create the application (${INFISICAL_OAUTH_DOCS}) with redirect URI ${INFISICAL_OAUTH_REDIRECT_URI} and PKCE required; enter its client id and secret on the setup page.`,
+						],
+					};
+				try {
+					const token = await (deps.infisicalOAuth ?? infisicalOAuthToken)({
+						siteUrl: env.INFISICAL_SITE_URL ?? "https://app.infisical.com",
+						clientId,
+						clientSecret,
+						openBrowser: deps.oauthBrowser.open,
+						emit: deps.oauthBrowser.emit,
+						...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+					});
+					auth = ownerAuthFromEnv({ INFISICAL_TOKEN: token });
+					readOnly = true;
+				} catch (error) {
+					return {
+						ok: false,
+						message:
+							error instanceof InfisicalOAuthError
+								? error.message
+								: "The Infisical OAuth sign-in failed.",
+						remediation: [
+							`Check the application's client id, secret and redirect URI (${INFISICAL_OAUTH_REDIRECT_URI}), then run again.`,
+						],
+					};
+				}
+			}
 			if (auth === undefined)
 				return {
 					ok: false,
@@ -322,7 +392,9 @@ export async function openSecretStore(
 					ok: true,
 					store: {
 						id,
-						port: createInfisicalSecretsPort({ client }),
+						port: readOnly
+							? readOnlySecretsPort(createInfisicalSecretsPort({ client }))
+							: createInfisicalSecretsPort({ client }),
 						reference: (name) => infisicalSecretRef(binding, name),
 					},
 				};

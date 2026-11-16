@@ -178,7 +178,7 @@ export function storeSettings(
 						name: "INFISICAL_SIGN_IN",
 						label: "How this machine signs in to Infisical",
 						description:
-							"typed: you type an access token on this page. egress-proxy: the run holds no token; the agent's egress proxy injects one you gave it out of band (for an agent's remote box you cannot reach).",
+							"typed: you type an access token on this page. egress-proxy: the run holds no token; the agent's egress proxy injects one you gave it out of band (for an agent's remote box you cannot reach). oauth: you approve in your browser; the store opens read-only.",
 						kind: "choice",
 						required: false,
 						value: "typed",
@@ -188,9 +188,33 @@ export function storeSettings(
 								value: "egress-proxy",
 								label: "Injected by the agent's egress proxy",
 							},
+							{
+								value: "oauth",
+								label: "Approve in the browser (OAuth application, read-only)",
+							},
 						],
 					},
 					fallback: "typed",
+				},
+				{
+					field: {
+						name: "INFISICAL_OAUTH_CLIENT_ID",
+						label: "Infisical OAuth application client ID",
+						description:
+							"For the oauth sign-in: an application under Organization Settings → OAuth Applications, with redirect URI http://127.0.0.1:8793/infisical/callback and PKCE required.",
+						kind: "text",
+						required: false,
+					},
+				},
+				{
+					field: {
+						name: "INFISICAL_OAUTH_CLIENT_SECRET",
+						label: "Infisical OAuth application client secret",
+						description:
+							"For the oauth sign-in. Used for this run only; never saved.",
+						kind: "secret",
+						required: false,
+					},
 				},
 				{
 					field: {

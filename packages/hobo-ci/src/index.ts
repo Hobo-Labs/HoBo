@@ -22,9 +22,18 @@ export {
 	loadGithubAppCredentials,
 } from "./github.js";
 export {
+	INFISICAL_OAUTH_DOCS,
+	INFISICAL_OAUTH_REDIRECT_URI,
+	INFISICAL_OAUTH_SCOPE,
+	InfisicalOAuthError,
+	InfisicalReadOnlyError,
+	infisicalOAuthToken,
+	OAUTH_SIGN_IN,
+	readOnlySecretsPort,
+} from "./infisical-oauth.js";
+export {
 	EGRESS_PROXY_SIGN_IN,
 	familySettings,
-	INFISICAL_OAUTH_DOCS,
 	INFISICAL_TOKEN_AUTH_DOCS,
 	InvalidSecretStoreError,
 	type OwnerStore,

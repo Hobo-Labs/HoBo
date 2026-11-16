@@ -230,7 +230,13 @@ For CD:
    non-secret `HOBO_CD_VERCEL_TEAM_ID` when the account has several.
 
 In a terminal (no `--hand-off`), the run still serves the local setup page
-(`HOBO_OWNER_PAGE`) and opens the browser.
+(`HOBO_OWNER_PAGE`) and opens the browser. There the owner may also sign in
+to Infisical by approving an OAuth application (`INFISICAL_SIGN_IN=oauth`):
+under Organization Settings → OAuth Applications → Add, Name `HoBo`, Access
+token lifetime 1 Hours, Flow **Authorization code**, Redirect URI
+`http://127.0.0.1:8793/infisical/callback`, **Require PKCE** on; the client id
+and secret go on the setup page. Its tokens only read secrets: use it when
+the store already holds the connections, a token or CI's OIDC to write.
 
 Never fetch or submit a page or approve a code yourself. Secret variables in
 the agent's environment are ignored on purpose.

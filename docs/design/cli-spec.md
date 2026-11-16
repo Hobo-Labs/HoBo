@@ -170,9 +170,15 @@ environment variables.
 - **The secret store first.** Where it is (Infisical, 1Password or Bitwarden,
   and its project, vault or organization ids, plus an optional OIDC identity
   for CI) is a non-secret locator committed with the repository
-  (`.hobo/secret-store.json`). The sign-in is typed on the page (or unlocked
-  by the 1Password desktop app, or a CI run's own OIDC token) and held in the
-  run's trusted vault: memory only, wiped when the run ends.
+  (`.hobo/secret-store.json`). The sign-in is held in the run's trusted
+  vault (memory only, wiped when the run ends) and is one of
+  (`INFISICAL_SIGN_IN`, a non-secret setting): a token typed on the page
+  (`typed`, the default; or unlocked by the 1Password desktop app); a token
+  the agent's egress proxy injects (`egress-proxy`); a browser approval of an
+  Infisical OAuth application (`oauth`: authorization code + PKCE redirected
+  to `http://127.0.0.1:8793/infisical/callback`; its tokens only read
+  secrets, so the store opens read-only and a write refuses with
+  `HOBO_INFISICAL_READ_ONLY`); or a CI run's own OIDC token.
 - **Everything else lives in the store.** What a ceremony is told (`hobo ci
   up`: the relay URL and the GitHub owner, a user **or** an organization;
   `hobo cd up`: HoBo CD's Vercel Integration) is kept as `HOBO_CI_SETTINGS` /
