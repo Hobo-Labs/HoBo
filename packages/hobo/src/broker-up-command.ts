@@ -24,6 +24,7 @@ import {
 	externalBoundaryRefusal,
 	type CommandModule,
 	createUpCommand,
+	externalBoundaryRefusal,
 	loadBindleDefinition,
 	loadProjectManifest,
 	type YardRuntime,
