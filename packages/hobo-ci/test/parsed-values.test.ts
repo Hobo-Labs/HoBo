@@ -37,10 +37,19 @@ describe("parsed settings", () => {
 		expect(parsePublicOrigin("X", "https://abc.trycloudflare.com")).toBe(
 			"https://abc.trycloudflare.com",
 		);
+		expect(parsePublicOrigin("X", "https://[2606:4700:4700::1111]")).toBe(
+			"https://[2606:4700:4700::1111]",
+		);
 		for (const bad of [
 			"https://127.0.0.1",
 			"https://10.1.2.3",
 			"https://localhost",
+			"https://[::]",
+			"https://[::1]",
+			"https://[::ffff:127.0.0.1]",
+			"https://[fd00::1]",
+			"https://[fe80::1]",
+			"https://[ff02::1]",
 		])
 			expect(() => parsePublicOrigin("X", bad)).toThrow(SettingParseError);
 	});
