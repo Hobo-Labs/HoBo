@@ -25,18 +25,25 @@ describe("in-process feature flags", () => {
 		const flags = createFlagEmulator();
 		flags.port.define({
 			key: "config",
-			defaultValue: { nested: { value: "original" } },
+			percentage: 0,
+			variants: { control: { nested: { value: "original" } } },
 		});
-		const snapshot = flags.inspector?.events()[0];
+		flags.port.evaluate("config", { targetingKey: "test" });
+		const snapshot = flags.inspector
+			?.events()
+			.find((event) => event.type === "flag.Evaluated");
 		if (!snapshot) throw new Error("expected a flag event");
 		// SAFETY: the flag above defines this nested value; mutate the snapshot to
 		// verify it cannot change the store or a later snapshot.
-		const value = snapshot.data.defaultValue as { nested: { value: string } };
+		const value = snapshot.data.value as { nested: { value: string } };
 		value.nested.value = "changed";
-		expect(flags.port.get("config")?.defaultValue).toEqual({
+		expect(flags.port.get("config")?.variants.control).toEqual({
 			nested: { value: "original" },
 		});
-		expect(flags.inspector?.events()[0]?.data.defaultValue).toEqual({
+		expect(
+			flags.inspector?.events().find((event) => event.type === "flag.Evaluated")
+				?.data.value,
+		).toEqual({
 			nested: { value: "original" },
 		});
 	});
