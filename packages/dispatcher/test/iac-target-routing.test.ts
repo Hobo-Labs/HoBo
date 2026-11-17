@@ -449,7 +449,11 @@ describe("budget-aware target execution", () => {
 					targetId: "cheap",
 					run: async (id) => {
 						calls.push(`${id}/cheap`);
-						throw { admission: decision("cheap", "denied") };
+						throw {
+							requiresReconciliation: false,
+							executionOutcome: "not-started",
+							admission: decision("cheap", "denied"),
+						};
 					},
 				},
 				{
@@ -830,6 +834,8 @@ describe("budget-aware target execution", () => {
 					targetId: "cheap",
 					run: async () => {
 						throw {
+							requiresReconciliation: false,
+							executionOutcome: "not-started",
 							admission: {
 								...decision("cheap", "denied"),
 								code: "ROUTING_QUOTE_CHANGED",
@@ -877,7 +883,11 @@ describe("budget-aware target execution", () => {
 								const receipt = { ...decision(targetId, state), ...expected };
 								if (state === "admitted")
 									return { outputs: {}, admission: receipt };
-								throw { admission: receipt };
+								throw {
+									requiresReconciliation: false,
+									executionOutcome: "not-started",
+									admission: receipt,
+								};
 							},
 						})),
 					});
@@ -918,7 +928,11 @@ describe("budget-aware target execution", () => {
 						run: async (_id, expected) => {
 							calls++;
 							if (index < stop)
-								throw { admission: decision(entry.targetId, "denied") };
+								throw {
+									requiresReconciliation: false,
+									executionOutcome: "not-started",
+									admission: decision(entry.targetId, "denied"),
+								};
 							if (index > stop)
 								throw new Error("routing continued after a terminal outcome");
 							const receipt = {
@@ -927,7 +941,11 @@ describe("budget-aware target execution", () => {
 							};
 							if (terminal === "admitted")
 								return { outputs: {}, admission: receipt };
-							throw { admission: receipt };
+							throw {
+								requiresReconciliation: false,
+								executionOutcome: "not-started",
+								admission: receipt,
+							};
 						},
 					})),
 				});
@@ -943,7 +961,11 @@ describe("budget-aware target execution", () => {
 			candidates: ranking.ranking.map((entry) => ({
 				targetId: entry.targetId,
 				run: async () => {
-					throw { admission: decision(entry.targetId, "denied") };
+					throw {
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+						admission: decision(entry.targetId, "denied"),
+					};
 				},
 			})),
 		});

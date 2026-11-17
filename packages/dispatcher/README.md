@@ -69,7 +69,10 @@ and an execution callback for each ranked target. It supplies a one-use permit
 and the target's inventory, model and quote hashes to each callback. The
 adapter consumes that permit before admission and verifies the active attempt
 again before a provider effect. The next target is tried only after an explicit
-no-effect denial without a reservation is durably recorded. A replay, lost
+no-effect denial without a reservation is durably recorded. Denial errors must
+explicitly state `requiresReconciliation: false` and
+`executionOutcome: "not-started"`; an omitted or conflicting marker is
+uncertain. A replay, lost
 response, malformed receipt or uncertain reservation stops the route.
 The result lists each attempted target and its budget disclosure. A held
 reservation remains visible when provider outputs are unusable. All callbacks

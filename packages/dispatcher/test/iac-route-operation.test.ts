@@ -8,6 +8,7 @@ import { createSqliteIacRouteAuthority } from "../src/iac-route-sqlite.js";
 
 const operationId = `sha256:${"a".repeat(64)}`;
 const inventoryHash = `sha256:${"b".repeat(64)}`;
+const anotherOperationId = `sha256:${"c".repeat(64)}`;
 const directories: string[] = [];
 const authorities: ReturnType<typeof createSqliteIacRouteAuthority>[] = [];
 function connect() {
@@ -17,7 +18,8 @@ function connect() {
 		path: join(dir, "routes.sqlite"),
 		verifyOperation: (input) =>
 			input.tenantId === "tenant" &&
-			input.operationId === operationId &&
+			(input.operationId === operationId ||
+				input.operationId === anotherOperationId) &&
 			input.authorization === `signed:${input.requestId}`,
 	});
 	authorities.push(authority);
@@ -126,6 +128,21 @@ describe("authenticated operation lineage", () => {
 		db.exec("COMMIT");
 		db.close();
 		let effects = 0;
+		const stolen = await runIacRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "successor",
+			operation: {
+				operationId: anotherOperationId,
+				authorization: "signed:successor",
+			},
+			run: async () => {
+				effects++;
+				throw new Error("must not run");
+			},
+		});
+		expect(stolen.status).toBe("uncertain");
+		expect(effects).toBe(0);
 		const successor = await runIacRoute({
 			authority,
 			tenantId: "tenant",
@@ -154,6 +171,47 @@ describe("authenticated operation lineage", () => {
 		});
 		expect(replay.status).toBe("replay");
 		expect(effects).toBe(1);
+		const rebound = await runIacRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "first",
+			operation: {
+				operationId: anotherOperationId,
+				authorization: "signed:first",
+			},
+			run: async () => {
+				effects++;
+				throw new Error("must not run");
+			},
+		});
+		expect(rebound.status).toBe("uncertain");
+		expect(effects).toBe(1);
+		const nextGeneration = await runIacRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "unrelated",
+			operation: {
+				operationId: anotherOperationId,
+				authorization: "signed:unrelated",
+			},
+			run: async (route) => {
+				const permit = await route.beginAttempt({
+					targetId: "c",
+					inventoryHash,
+				});
+				expect(await authority.consumeAttempt(permit)).toBe(true);
+				effects++;
+				return {
+					value: "new intent",
+					outcome: { status: "selected", targetId: "c" },
+				};
+			},
+		});
+		expect(nextGeneration).toMatchObject({
+			status: "executed",
+			value: "new intent",
+		});
+		expect(effects).toBe(2);
 	});
 
 	it("blocks new routes until each legacy request is independently bound", async () => {

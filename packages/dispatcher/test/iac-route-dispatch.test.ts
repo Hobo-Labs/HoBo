@@ -217,6 +217,8 @@ describe("ranked routes share durable execution ownership", () => {
 					expect(await authority.consumeAttempt(permit)).toBe(true);
 					if (entry.targetId === "first")
 						throw {
+							requiresReconciliation: false,
+							executionOutcome: "not-started",
 							admission: {
 								requestId,
 								targetId: "first",
@@ -251,5 +253,75 @@ describe("ranked routes share durable execution ownership", () => {
 			})),
 		});
 		expect(result).toMatchObject({ status: "selected", targetId: "second" });
+	});
+
+	it.each([
+		"missing",
+		"inherited",
+		"accessor",
+		"contradictory",
+	] as const)("does not fall back on a %s outcome marker", async (mode) => {
+		const { authority } = connect();
+		const first = ranking("first").ranking[0];
+		const second = { ...first, targetId: "second", rank: 2 };
+		let next = 0;
+		const admission = {
+			requestId: "marker",
+			targetId: "first",
+			status: "denied",
+			code: "budget.exhausted",
+			message: "",
+			budget: { evaluation: "denied", reservation: "not-created" },
+		};
+		const failure = (() => {
+			if (mode === "inherited")
+				return Object.assign(
+					Object.create({
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+					}),
+					{ admission },
+				);
+			if (mode === "accessor") {
+				const value = { admission, executionOutcome: "not-started" };
+				Object.defineProperty(value, "requiresReconciliation", {
+					get() {
+						throw new Error("must not invoke getter");
+					},
+				});
+				return value;
+			}
+			if (mode === "contradictory")
+				return {
+					admission,
+					requiresReconciliation: false,
+					executionOutcome: "unknown",
+				};
+			return { admission };
+		})();
+		const result = await executeRankedIacTargets({
+			authority,
+			tenantId: "tenant",
+			requestId: "marker",
+			ranking: { ...ranking("first"), ranking: [first, second] },
+			candidates: [
+				{
+					targetId: "first",
+					run: async (_id, _expected, permit) => {
+						expect(await authority.consumeAttempt(permit)).toBe(true);
+						throw failure;
+					},
+				},
+				{
+					targetId: "second",
+					run: async () => {
+						next++;
+						throw new Error("must not run");
+					},
+				},
+			],
+		});
+		expect(result.status).toBe("uncertain");
+		expect(next).toBe(0);
 	});
 });

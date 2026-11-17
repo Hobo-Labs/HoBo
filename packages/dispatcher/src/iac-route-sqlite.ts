@@ -136,6 +136,13 @@ export function createSqliteIacRouteAuthority(options: {
 			)
 				throw new Error("logical operation identity not authenticated");
 			return transaction(() => {
+				const lineage = database
+					.prepare(
+						"SELECT operation_id FROM iac_route_successors WHERE tenant=? AND (predecessor=? OR successor=?)",
+					)
+					.all(stable.tenantId, stable.requestId, stable.requestId);
+				if (lineage.some((row) => row.operation_id !== stable.operationId))
+					throw new Error("request is reserved by another operation lineage");
 				const mapping = database
 					.prepare(
 						"SELECT request FROM iac_route_operations WHERE tenant=? AND operation_id=?",
@@ -212,7 +219,7 @@ export function createSqliteIacRouteAuthority(options: {
 					if (legacy === undefined) {
 						const unbound = database
 							.prepare(
-								"SELECT r.request FROM iac_routes r LEFT JOIN iac_route_operations o ON o.tenant=r.tenant AND o.request=r.request WHERE r.tenant=? AND o.request IS NULL LIMIT 1",
+								"SELECT r.request FROM iac_routes r LEFT JOIN iac_route_operations o ON o.tenant=r.tenant AND o.request=r.request LEFT JOIN iac_route_successors s ON s.tenant=r.tenant AND s.predecessor=r.request WHERE r.tenant=? AND o.request IS NULL AND s.predecessor IS NULL LIMIT 1",
 							)
 							.get(stable.tenantId);
 						if (unbound !== undefined)

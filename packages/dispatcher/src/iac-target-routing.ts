@@ -279,7 +279,7 @@ async function executeClaimedIacTargets(
 		let executionOutcome: "completed" | "unknown" | undefined;
 		let failureCode: string | undefined;
 		let runReturned = false;
-		let requiresReconciliation = false;
+		let requiresReconciliation = true;
 		try {
 			const result = await candidate.run(
 				input.requestId,
@@ -295,41 +295,37 @@ async function executeClaimedIacTargets(
 			rawAdmission = result.admission;
 			outputs = readOutputs(result.outputs);
 		} catch (error) {
-			/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: thrown provider values are untrusted inputs and must be inspected before use. */
+			/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns -- SAFETY: thrown provider values are untrusted inputs and must be inspected before use. */
 			try {
+				if (typeof error !== "object" || error === null)
+					throw new Error("uninspectable execution error");
+				const properties = Object.getOwnPropertyDescriptors(error);
+				const read = (key: string): unknown => {
+					const property = properties[key];
+					if (property === undefined) return undefined;
+					if (!("value" in property))
+						throw new Error("execution error contains an accessor");
+					return property.value;
+				};
+				const marker = read("requiresReconciliation");
+				const outcome = read("executionOutcome");
+				requiresReconciliation = !(
+					marker === false && outcome === "not-started"
+				);
+				if (outcome === "completed" || outcome === "unknown")
+					executionOutcome = outcome;
+				const code = read("code");
+				if (typeof code === "string" && name(code)) failureCode = code;
+				rawAdmission = read("admission");
+				const reservation = read("reservationId");
 				if (
-					typeof error === "object" &&
-					error !== null &&
-					"requiresReconciliation" in error &&
-					error.requiresReconciliation === true
-				) {
-					requiresReconciliation = true;
-					if (
-						"executionOutcome" in error &&
-						(error.executionOutcome === "completed" ||
-							error.executionOutcome === "unknown")
-					)
-						executionOutcome = error.executionOutcome;
-					if (
-						"code" in error &&
-						typeof error.code === "string" &&
-						name(error.code)
-					)
-						failureCode = error.code;
-				}
-				if (typeof error === "object" && error !== null && "admission" in error)
-					rawAdmission = error.admission;
-				if (
-					typeof error === "object" &&
-					error !== null &&
-					"reservationId" in error &&
-					typeof error.reservationId === "string" &&
-					error.reservationId.length > 0 &&
-					error.reservationId.length <= 204 &&
-					error.reservationId.trim() === error.reservationId &&
-					!/[\p{Cc}]/u.test(error.reservationId)
+					typeof reservation === "string" &&
+					reservation.length > 0 &&
+					reservation.length <= 204 &&
+					reservation.trim() === reservation &&
+					!/[\p{Cc}]/u.test(reservation)
 				)
-					reservationId = error.reservationId;
+					reservationId = reservation;
 			} catch {
 				// A provider's uninspectable error cannot prove an admission.
 				rawAdmission = undefined;
@@ -338,7 +334,7 @@ async function executeClaimedIacTargets(
 				failureCode = undefined;
 				requiresReconciliation = true;
 			}
-			/* oxlint-enable anti-slop/no-runtime-typeof */
+			/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns */
 		}
 		const admission = readAdmission(rawAdmission);
 		/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: validate the parsed provider receipt before making any routing decision. */
