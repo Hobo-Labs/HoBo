@@ -217,6 +217,7 @@ describe("explicit unpriced routing", () => {
 		"nested-inventory-proxy",
 		"pricing-proxy",
 		"run-accessor",
+		"run-proxy",
 		"revoked-inventory",
 	] as const)("refuses %s before the route claim", async (kind) => {
 		const { authority, inventory, pricing } = fixture();
@@ -258,6 +259,7 @@ describe("explicit unpriced routing", () => {
 		if (kind === "pricing-proxy") input.pricing = new Proxy(pricing, handler);
 		if (kind === "run-accessor")
 			Object.defineProperty(input, "run", { get: fail });
+		if (kind === "run-proxy") input.run = new Proxy(input.run, { apply: fail });
 		if (kind === "revoked-inventory") {
 			const revoked = Proxy.revocable(inventory, handler);
 			revoked.revoke();

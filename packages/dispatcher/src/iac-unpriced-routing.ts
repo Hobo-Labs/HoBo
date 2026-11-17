@@ -409,6 +409,7 @@ function snapshotUnpricedExecutionInput(
 			typeof fields.requestId !== "string" ||
 			!name(fields.requestId) ||
 			typeof fields.run !== "function" ||
+			utilTypes.isProxy(fields.run) ||
 			!areBoundedPricingInputs([
 				fields.operation,
 				fields.inventory,
