@@ -86,11 +86,6 @@ const ANSI_YELLOW = '\u001b[33m';
 const ANSI_MAGENTA = '\u001b[35m';
 const ANSI_RESET = '\u001b[0m';
 
-// External sessions (spawned detached by the e2e harness so Pixel Agents
-// ADOPTS them instead of launching them) narrate into a shared per-test log
-// that a monitor terminal tails. The magenta prefix keeps their lines
-// visually distinct from internal-terminal narration, and the short
-// per-session tag keeps interleaved external sessions tellable apart.
 const IS_EXTERNAL = process.env.PIXEL_AGENTS_MOCK_EXTERNAL === '1';
 let externalTag = '';
 
@@ -105,12 +100,6 @@ function shortId(value) {
   return str.length > 24 ? `${str.slice(0, 8)}…${str.slice(-8)}` : str;
 }
 
-/**
- * Human-readable narration to stdout. Pixel Agents never reads the terminal
- * (its inputs are JSONL transcripts and hook POSTs), so this changes nothing
- * about what tests exercise — it exists purely so run recordings show WHAT
- * the mock is simulating and WHEN, where real claude would render its TUI.
- */
 function echo(atMs, message) {
   const stamp = typeof atMs === 'number' ? `t+${(atMs / 1000).toFixed(1)}s`.padStart(7) : '       ';
   const prefix = IS_EXTERNAL
@@ -320,15 +309,6 @@ function buildContext(homeDir, scenario, sessionId, cwd) {
 }
 
 function runHookCommand(command, payload, env, cwd) {
-  // The hook command in settings.json is `node "<script>"` (bare `node`). On
-  // macOS the VS Code integrated-terminal e2e profile sets a hardcoded PATH
-  // (mockBin:/usr/local/bin:/usr/bin:/bin) with inheritEnv:false, which on CI
-  // runners does NOT include the toolcache node dir — so bare `node` exits 127
-  // and the hook never POSTs. The mock itself survives because its wrapper uses
-  // the absolute PIXEL_AGENTS_NODE_BIN, but the spawned hook uses bare `node`.
-  // Prepend the running node's bin dir to PATH so the hook resolves it, on any
-  // spawn path. (Real Claude Code spawns hooks with the user's real PATH, so
-  // this is purely a test-harness fix.)
   const nodeDir = path.dirname(process.execPath);
   const sep = process.platform === 'win32' ? ';' : ':';
   const hookEnv = {
@@ -336,8 +316,6 @@ function runHookCommand(command, payload, env, cwd) {
     PATH: `${nodeDir}${sep}${env.PATH ?? ''}`,
     Path: `${nodeDir}${sep}${env.Path ?? env.PATH ?? ''}`,
   };
-  // Resolves with diagnostic info so emitHook can log whether the spawned
-  // hook script actually ran and how it exited (CI macOS investigation).
   return new Promise((resolve) => {
     const child = spawn(command, {
       cwd,
@@ -373,16 +351,12 @@ async function emitHook(homeDir, context, payload) {
       }
       matched += 1;
       const result = await runHookCommand(hook.command, payload, process.env, context.cwd);
-      // Diagnostic: did the hook script run and exit cleanly? (CI macOS investigation)
       logAction(
         homeDir,
         `hookRun event=${eventName} spawned=${result.spawned} code=${result.code ?? ''} error=${result.error ?? ''}`,
       );
     }
   }
-  // Diagnostic: if no registered command matched the pixel-agents hook, the
-  // hook script was never spawned — log the computed path + the commands we
-  // saw so a CI failure shows the mismatch instead of failing silently.
   if (matched === 0) {
     const sawCommands = entries
       .flatMap((e) => (Array.isArray(e?.hooks) ? e.hooks : []))

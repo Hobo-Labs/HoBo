@@ -24,11 +24,6 @@ test.describe('Standalone / hooks', () => {
       standalone.hookServerConfig,
       sessionStartStartup(sessionId, standalone.workspaceDir),
     );
-    // Settle wait before the negative assertion: SessionStart only stages a
-    // pending session, so no overlay should appear. Without the wait,
-    // toHaveCount(0) passes instantly just because the overlay has not been
-    // created yet, which would not actually prove SessionStart stays invisible.
-    // See e2e/helpers/office.ts wait-strategy conventions (negative assertion).
     await page.waitForTimeout(500);
     await expectOverlayCount(page, 0);
 
