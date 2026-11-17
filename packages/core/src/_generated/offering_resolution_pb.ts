@@ -6,206 +6,86 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
-/**
- * Describes the file offering_resolution.proto.
- */
 export const file_offering_resolution: GenFile = /*@__PURE__*/
   fileDesc("ChlvZmZlcmluZ19yZXNvbHV0aW9uLnByb3RvEgxob2JvLmNvcmUudjEiWwoWUmVzb3VyY2VPZmZlcmluZ1JlY29yZBIKCgJpZBgBIAEoCRIRCglzdGFiaWxpdHkYAiABKAkSEAoIZmlkZWxpdHkYAyABKAkSEAoIZmVhdHVyZXMYBCADKAkifQodUmVzb3VyY2VPZmZlcmluZ1Byb2ZpbGVSZWNvcmQSEAoIcHJvdmlkZXIYASABKAkSNwoJb2ZmZXJpbmdzGAIgAygLMiQuaG9iby5jb3JlLnYxLlJlc291cmNlT2ZmZXJpbmdSZWNvcmQSEQoJZmFsbGJhY2tzGAMgAygJIkYKHVJlc291cmNlT2ZmZXJpbmdSZXF1ZXN0UmVjb3JkEhAKCGZlYXR1cmVzGAEgAygJEhMKC25lZ290aWF0aW9uGAIgASgJIokBChtSZXNvdXJjZU9mZmVyaW5nTWF0Y2hSZWNvcmQSDAoEa2luZBgBIAEoCRIRCglvZmZlcmluZ3MYAiADKAkSDwoHbWlzc2luZxgDIAMoCRIRCglmYWxsYmFja3MYBCADKAkSEwoLcmVtZWRpYXRpb24YBSABKAkSEAoIZGVncmFkZWQYBiADKAkitwEKI1Jlc291cmNlT2ZmZXJpbmdSZXNvbHZlUmVzdWx0UmVjb3JkEgwKBGtpbmQYASABKAkSEAoIcHJvdmlkZXIYAiABKAkSEAoIc3RyYXRlZ3kYAyADKAkSOAoFbWF0Y2gYBCABKAsyKS5ob2JvLmNvcmUudjEuUmVzb3VyY2VPZmZlcmluZ01hdGNoUmVjb3JkEg8KB21pc3NpbmcYBSADKAkSEwoLcmVtZWRpYXRpb24YBiABKAkipAEKIVN0YXRpb25PZmZlcmluZ1JlZ2lzdHJhdGlvblJlY29yZBISCgpzdGF0aW9uX2lkGAEgASgJEhYKDnJlc291cmNlX2NsYXNzGAIgASgJEjwKB3Byb2ZpbGUYAyABKAsyKy5ob2JvLmNvcmUudjEuUmVzb3VyY2VPZmZlcmluZ1Byb2ZpbGVSZWNvcmQSFQoNcmVnaXN0ZXJlZF9hdBgEIAEoCWIGcHJvdG8z");
 
-/**
- * @generated from message hobo.core.v1.ResourceOfferingRecord
- */
 export type ResourceOfferingRecord = Message<"hobo.core.v1.ResourceOfferingRecord"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
   id: string;
 
-  /**
-   * @generated from field: string stability = 2;
-   */
   stability: string;
 
-  /**
-   * @generated from field: string fidelity = 3;
-   */
   fidelity: string;
 
-  /**
-   * @generated from field: repeated string features = 4;
-   */
   features: string[];
 };
 
-/**
- * Describes the message hobo.core.v1.ResourceOfferingRecord.
- * Use `create(ResourceOfferingRecordSchema)` to create a new message.
- */
 export const ResourceOfferingRecordSchema: GenMessage<ResourceOfferingRecord> = /*@__PURE__*/
   messageDesc(file_offering_resolution, 0);
 
-/**
- * @generated from message hobo.core.v1.ResourceOfferingProfileRecord
- */
 export type ResourceOfferingProfileRecord = Message<"hobo.core.v1.ResourceOfferingProfileRecord"> & {
-  /**
-   * @generated from field: string provider = 1;
-   */
   provider: string;
 
-  /**
-   * @generated from field: repeated hobo.core.v1.ResourceOfferingRecord offerings = 2;
-   */
   offerings: ResourceOfferingRecord[];
 
-  /**
-   * @generated from field: repeated string fallbacks = 3;
-   */
   fallbacks: string[];
 };
 
-/**
- * Describes the message hobo.core.v1.ResourceOfferingProfileRecord.
- * Use `create(ResourceOfferingProfileRecordSchema)` to create a new message.
- */
 export const ResourceOfferingProfileRecordSchema: GenMessage<ResourceOfferingProfileRecord> = /*@__PURE__*/
   messageDesc(file_offering_resolution, 1);
 
-/**
- * @generated from message hobo.core.v1.ResourceOfferingRequestRecord
- */
 export type ResourceOfferingRequestRecord = Message<"hobo.core.v1.ResourceOfferingRequestRecord"> & {
-  /**
-   * @generated from field: repeated string features = 1;
-   */
   features: string[];
 
-  /**
-   * @generated from field: string negotiation = 2;
-   */
   negotiation: string;
 };
 
-/**
- * Describes the message hobo.core.v1.ResourceOfferingRequestRecord.
- * Use `create(ResourceOfferingRequestRecordSchema)` to create a new message.
- */
 export const ResourceOfferingRequestRecordSchema: GenMessage<ResourceOfferingRequestRecord> = /*@__PURE__*/
   messageDesc(file_offering_resolution, 2);
 
-/**
- * @generated from message hobo.core.v1.ResourceOfferingMatchRecord
- */
 export type ResourceOfferingMatchRecord = Message<"hobo.core.v1.ResourceOfferingMatchRecord"> & {
-  /**
-   * @generated from field: string kind = 1;
-   */
   kind: string;
 
-  /**
-   * @generated from field: repeated string offerings = 2;
-   */
   offerings: string[];
 
-  /**
-   * @generated from field: repeated string missing = 3;
-   */
   missing: string[];
 
-  /**
-   * @generated from field: repeated string fallbacks = 4;
-   */
   fallbacks: string[];
 
-  /**
-   * @generated from field: string remediation = 5;
-   */
   remediation: string;
 
-  /**
-   * @generated from field: repeated string degraded = 6;
-   */
   degraded: string[];
 };
 
-/**
- * Describes the message hobo.core.v1.ResourceOfferingMatchRecord.
- * Use `create(ResourceOfferingMatchRecordSchema)` to create a new message.
- */
 export const ResourceOfferingMatchRecordSchema: GenMessage<ResourceOfferingMatchRecord> = /*@__PURE__*/
   messageDesc(file_offering_resolution, 3);
 
-/**
- * @generated from message hobo.core.v1.ResourceOfferingResolveResultRecord
- */
 export type ResourceOfferingResolveResultRecord = Message<"hobo.core.v1.ResourceOfferingResolveResultRecord"> & {
-  /**
-   * @generated from field: string kind = 1;
-   */
   kind: string;
 
-  /**
-   * @generated from field: string provider = 2;
-   */
   provider: string;
 
-  /**
-   * @generated from field: repeated string strategy = 3;
-   */
   strategy: string[];
 
-  /**
-   * @generated from field: hobo.core.v1.ResourceOfferingMatchRecord match = 4;
-   */
   match?: ResourceOfferingMatchRecord | undefined;
 
-  /**
-   * @generated from field: repeated string missing = 5;
-   */
   missing: string[];
 
-  /**
-   * @generated from field: string remediation = 6;
-   */
   remediation: string;
 };
 
-/**
- * Describes the message hobo.core.v1.ResourceOfferingResolveResultRecord.
- * Use `create(ResourceOfferingResolveResultRecordSchema)` to create a new message.
- */
 export const ResourceOfferingResolveResultRecordSchema: GenMessage<ResourceOfferingResolveResultRecord> = /*@__PURE__*/
   messageDesc(file_offering_resolution, 4);
 
-/**
- * @generated from message hobo.core.v1.StationOfferingRegistrationRecord
- */
 export type StationOfferingRegistrationRecord = Message<"hobo.core.v1.StationOfferingRegistrationRecord"> & {
-  /**
-   * @generated from field: string station_id = 1;
-   */
   stationId: string;
 
-  /**
-   * @generated from field: string resource_class = 2;
-   */
   resourceClass: string;
 
-  /**
-   * @generated from field: hobo.core.v1.ResourceOfferingProfileRecord profile = 3;
-   */
   profile?: ResourceOfferingProfileRecord | undefined;
 
-  /**
-   * @generated from field: string registered_at = 4;
-   */
   registeredAt: string;
 };
 
-/**
- * Describes the message hobo.core.v1.StationOfferingRegistrationRecord.
- * Use `create(StationOfferingRegistrationRecordSchema)` to create a new message.
- */
 export const StationOfferingRegistrationRecordSchema: GenMessage<StationOfferingRegistrationRecord> = /*@__PURE__*/
   messageDesc(file_offering_resolution, 5);
 

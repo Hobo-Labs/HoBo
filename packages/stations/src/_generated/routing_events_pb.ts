@@ -7,275 +7,114 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
-/**
- * Describes the file routing_events.proto.
- */
 export const file_routing_events: GenFile = /*@__PURE__*/
   fileDesc("ChRyb3V0aW5nX2V2ZW50cy5wcm90bxIQaG9iby5zdGF0aW9ucy52MSIzChJSb3V0aW5nRXZlbnRSZWFzb24SDAoEY29kZRgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIoQBCh5Sb3V0aW5nUmVwbGFuUHJvcG9zZWRFdmVudERhdGESDwoHc2VydmljZRgBIAEoCRIPCgdwbGFuX2lkGAIgASgJEhcKD2Zyb21fYmFja2VuZF9pZBgDIAEoCRIVCg10b19iYWNrZW5kX2lkGAQgASgJEhAKCHJldmlzaW9uGAUgASgNIloKGlJvdXRpbmdSZXBsYW5IZWxkRXZlbnREYXRhEg8KB3NlcnZpY2UYASABKAkSDgoGcmVhc29uGAIgASgJEhsKE3NlbGVjdGVkX2JhY2tlbmRfaWQYAyABKAkiZgocUm91dGluZ1JlcGxhbkRlbmllZEV2ZW50RGF0YRIPCgdzZXJ2aWNlGAEgASgJEjUKB3JlYXNvbnMYAiADKAsyJC5ob2JvLnN0YXRpb25zLnYxLlJvdXRpbmdFdmVudFJlYXNvbiKKAQoZUm91dGluZ1JlYXBwbGllZEV2ZW50RGF0YRIPCgdzZXJ2aWNlGAEgASgJEg8KB3BsYW5faWQYAiABKAkSFQoNdG9fYmFja2VuZF9pZBgDIAEoCRIQCghyZXZpc2lvbhgEIAEoDRIVCghyZWFsaXplZBgFIAEoCUgAiAEBQgsKCV9yZWFsaXplZCKQAgomUm91dGluZ1JlY29uY2lsaWF0aW9uUmVxdWlyZWRFdmVudERhdGESDwoHc2VydmljZRgBIAEoCRI1CgdyZWFzb25zGAIgAygLMiQuaG9iby5zdGF0aW9ucy52MS5Sb3V0aW5nRXZlbnRSZWFzb24SHAoPcGVuZGluZ19wbGFuX2lkGAMgASgJSACIAQESFAoHcGxhbl9pZBgEIAEoCUgBiAEBEhQKB3BlcmNlbnQYBSABKA1IAogBARIYCgtvYnNlcnZlZF9hdBgGIAEoCUgDiAEBQhIKEF9wZW5kaW5nX3BsYW5faWRCCgoIX3BsYW5faWRCCgoIX3BlcmNlbnRCDgoMX29ic2VydmVkX2F0Io8CCh5Sb3V0aW5nQXBwbHlSZXF1ZXN0ZWRFdmVudERhdGESDwoHc2VydmljZRgBIAEoCRIPCgdwbGFuX2lkGAIgASgJEg0KBXBoYXNlGAMgASgJEiMKFnJlc3RvcmF0aW9uX29mX3BsYW5faWQYBCABKAlIAIgBARIiChVyZXN0b3JhdGlvbl9wbGFuX2hhc2gYBSABKAlIAYgBARIoCgdlZmZlY3RzGAYgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIUCgxyZXF1ZXN0ZWRfYXQYByABKAlCGQoXX3Jlc3RvcmF0aW9uX29mX3BsYW5faWRCGAoWX3Jlc3RvcmF0aW9uX3BsYW5faGFzaCJgChhSb3V0aW5nT2JzZXJ2ZWRFdmVudERhdGESDwoHc2VydmljZRgBIAEoCRIPCgdwbGFuX2lkGAIgASgJEg0KBXBoYXNlGAMgASgJEhMKC29ic2VydmVkX2F0GAQgASgJYgZwcm90bzM", [file_google_protobuf_struct]);
 
-/**
- * @generated from message hobo.stations.v1.RoutingEventReason
- */
 export type RoutingEventReason = Message<"hobo.stations.v1.RoutingEventReason"> & {
-  /**
-   * @generated from field: string code = 1;
-   */
   code: string;
 
-  /**
-   * @generated from field: string message = 2;
-   */
   message: string;
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingEventReason.
- * Use `create(RoutingEventReasonSchema)` to create a new message.
- */
 export const RoutingEventReasonSchema: GenMessage<RoutingEventReason> = /*@__PURE__*/
   messageDesc(file_routing_events, 0);
 
-/**
- * @generated from message hobo.stations.v1.RoutingReplanProposedEventData
- */
 export type RoutingReplanProposedEventData = Message<"hobo.stations.v1.RoutingReplanProposedEventData"> & {
-  /**
-   * @generated from field: string service = 1;
-   */
   service: string;
 
-  /**
-   * @generated from field: string plan_id = 2;
-   */
   planId: string;
 
-  /**
-   * @generated from field: string from_backend_id = 3;
-   */
   fromBackendId: string;
 
-  /**
-   * @generated from field: string to_backend_id = 4;
-   */
   toBackendId: string;
 
-  /**
-   * @generated from field: uint32 revision = 5;
-   */
   revision: number;
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingReplanProposedEventData.
- * Use `create(RoutingReplanProposedEventDataSchema)` to create a new message.
- */
 export const RoutingReplanProposedEventDataSchema: GenMessage<RoutingReplanProposedEventData> = /*@__PURE__*/
   messageDesc(file_routing_events, 1);
 
-/**
- * @generated from message hobo.stations.v1.RoutingReplanHeldEventData
- */
 export type RoutingReplanHeldEventData = Message<"hobo.stations.v1.RoutingReplanHeldEventData"> & {
-  /**
-   * @generated from field: string service = 1;
-   */
   service: string;
 
-  /**
-   * @generated from field: string reason = 2;
-   */
   reason: string;
 
-  /**
-   * @generated from field: string selected_backend_id = 3;
-   */
   selectedBackendId: string;
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingReplanHeldEventData.
- * Use `create(RoutingReplanHeldEventDataSchema)` to create a new message.
- */
 export const RoutingReplanHeldEventDataSchema: GenMessage<RoutingReplanHeldEventData> = /*@__PURE__*/
   messageDesc(file_routing_events, 2);
 
-/**
- * @generated from message hobo.stations.v1.RoutingReplanDeniedEventData
- */
 export type RoutingReplanDeniedEventData = Message<"hobo.stations.v1.RoutingReplanDeniedEventData"> & {
-  /**
-   * @generated from field: string service = 1;
-   */
   service: string;
 
-  /**
-   * @generated from field: repeated hobo.stations.v1.RoutingEventReason reasons = 2;
-   */
   reasons: RoutingEventReason[];
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingReplanDeniedEventData.
- * Use `create(RoutingReplanDeniedEventDataSchema)` to create a new message.
- */
 export const RoutingReplanDeniedEventDataSchema: GenMessage<RoutingReplanDeniedEventData> = /*@__PURE__*/
   messageDesc(file_routing_events, 3);
 
-/**
- * @generated from message hobo.stations.v1.RoutingReappliedEventData
- */
 export type RoutingReappliedEventData = Message<"hobo.stations.v1.RoutingReappliedEventData"> & {
-  /**
-   * @generated from field: string service = 1;
-   */
   service: string;
 
-  /**
-   * @generated from field: string plan_id = 2;
-   */
   planId: string;
 
-  /**
-   * @generated from field: string to_backend_id = 3;
-   */
   toBackendId: string;
 
-  /**
-   * @generated from field: uint32 revision = 4;
-   */
   revision: number;
 
-  /**
-   * @generated from field: optional string realized = 5;
-   */
   realized?: string | undefined;
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingReappliedEventData.
- * Use `create(RoutingReappliedEventDataSchema)` to create a new message.
- */
 export const RoutingReappliedEventDataSchema: GenMessage<RoutingReappliedEventData> = /*@__PURE__*/
   messageDesc(file_routing_events, 4);
 
-/**
- * @generated from message hobo.stations.v1.RoutingReconciliationRequiredEventData
- */
 export type RoutingReconciliationRequiredEventData = Message<"hobo.stations.v1.RoutingReconciliationRequiredEventData"> & {
-  /**
-   * @generated from field: string service = 1;
-   */
   service: string;
 
-  /**
-   * @generated from field: repeated hobo.stations.v1.RoutingEventReason reasons = 2;
-   */
   reasons: RoutingEventReason[];
 
-  /**
-   * @generated from field: optional string pending_plan_id = 3;
-   */
   pendingPlanId?: string | undefined;
 
-  /**
-   * @generated from field: optional string plan_id = 4;
-   */
   planId?: string | undefined;
 
-  /**
-   * @generated from field: optional uint32 percent = 5;
-   */
   percent?: number | undefined;
 
-  /**
-   * @generated from field: optional string observed_at = 6;
-   */
   observedAt?: string | undefined;
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingReconciliationRequiredEventData.
- * Use `create(RoutingReconciliationRequiredEventDataSchema)` to create a new message.
- */
 export const RoutingReconciliationRequiredEventDataSchema: GenMessage<RoutingReconciliationRequiredEventData> = /*@__PURE__*/
   messageDesc(file_routing_events, 5);
 
-/**
- * @generated from message hobo.stations.v1.RoutingApplyRequestedEventData
- */
 export type RoutingApplyRequestedEventData = Message<"hobo.stations.v1.RoutingApplyRequestedEventData"> & {
-  /**
-   * @generated from field: string service = 1;
-   */
   service: string;
 
-  /**
-   * @generated from field: string plan_id = 2;
-   */
   planId: string;
 
-  /**
-   * @generated from field: string phase = 3;
-   */
   phase: string;
 
-  /**
-   * @generated from field: optional string restoration_of_plan_id = 4;
-   */
   restorationOfPlanId?: string | undefined;
 
-  /**
-   * @generated from field: optional string restoration_plan_hash = 5;
-   */
   restorationPlanHash?: string | undefined;
 
-  /**
-   * @generated from field: google.protobuf.Struct effects = 6;
-   */
   effects?: JsonObject | undefined;
 
-  /**
-   * @generated from field: string requested_at = 7;
-   */
   requestedAt: string;
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingApplyRequestedEventData.
- * Use `create(RoutingApplyRequestedEventDataSchema)` to create a new message.
- */
 export const RoutingApplyRequestedEventDataSchema: GenMessage<RoutingApplyRequestedEventData> = /*@__PURE__*/
   messageDesc(file_routing_events, 6);
 
-/**
- * @generated from message hobo.stations.v1.RoutingObservedEventData
- */
 export type RoutingObservedEventData = Message<"hobo.stations.v1.RoutingObservedEventData"> & {
-  /**
-   * @generated from field: string service = 1;
-   */
   service: string;
 
-  /**
-   * @generated from field: string plan_id = 2;
-   */
   planId: string;
 
-  /**
-   * @generated from field: string phase = 3;
-   */
   phase: string;
 
-  /**
-   * @generated from field: string observed_at = 4;
-   */
   observedAt: string;
 };
 
-/**
- * Describes the message hobo.stations.v1.RoutingObservedEventData.
- * Use `create(RoutingObservedEventDataSchema)` to create a new message.
- */
 export const RoutingObservedEventDataSchema: GenMessage<RoutingObservedEventData> = /*@__PURE__*/
   messageDesc(file_routing_events, 7);
 

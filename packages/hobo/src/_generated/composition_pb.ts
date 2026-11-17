@@ -6,291 +6,111 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
-/**
- * Describes the file composition.proto.
- */
 export const file_composition: GenFile = /*@__PURE__*/
   fileDesc("ChFjb21wb3NpdGlvbi5wcm90bxIMaG9iby5ob2JvLnYxIpkBChdDb21wb3NlZFJ1bnRpbWVNYW5pZmVzdBIMCgRsYW5lGAEgASgJEhMKC2V2ZW50X3N0b3JlGAIgASgJEhIKCmFjdG9yX2hvc3QYAyABKAkSEAoIZXhlY3V0b3IYBCABKAkSEwoLaWFjX2JhY2tlbmQYBSABKAkSEQoJcHJvdmlkZXJzGAYgAygJEg0KBXZlcmJzGAcgAygJIvACChZMb2NhbERlcGxveW1lbnRSZWNlaXB0EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhMKC3Byb2plY3RfZGlyGAIgASgJEhEKCWhvYm9faG9tZRgDIAEoCRILCgNwaWQYBCABKAUSEwoLcHJpbWFyeV91cmwYBSABKAkSEwoLY29udHJvbF91cmwYBiABKAkSEAoIbGVhc2VfaWQYByABKAkSEgoKc3RhcnRlZF9hdBgIIAEoCRITCgtiaW5kbGVfbmFtZRgJIAEoCRIWCg5jb21wb25lbnRfaG9zdBgKIAEoCRIRCglicm9rZXJfaWQYCyABKAkSDwoHY2FtcF9pZBgMIAEoCRITCgtwcm92aWRlcl9pZBgNIAEoCRIMCgRwb3J0GA4gASgNEhQKDHByb2JlX3N0YXR1cxgPIAEoBRISCgpleHBpcmVzX2F0GBAgASgJEhsKE2NvbnRlbnRfZmluZ2VycHJpbnQYESABKAki9wEKFUxvY2FsRGVwbG95bWVudExhdW5jaBITCgtwcm9qZWN0X2RpchgBIAEoCRIRCglob2JvX2hvbWUYAiABKAkSFgoOY29tcG9uZW50X2hvc3QYAyABKAkSEAoIbGVhc2VfaWQYBCABKAkSEwoLYmluZGxlX25hbWUYBSABKAkSEQoJYnJva2VyX2lkGAYgASgJEg8KB2NhbXBfaWQYByABKAkSEwoLcHJvdmlkZXJfaWQYCCABKAkSDAoEcG9ydBgJIAEoDRITCgt0dGxfc2Vjb25kcxgKIAEoDRIbChNjb250ZW50X2ZpbmdlcnByaW50GAsgASgJImYKHUxvY2FsRGVwbG95bWVudExpZmVjeWNsZUV2ZW50EjUKB3JlY2VpcHQYASABKAsyJC5ob2JvLmhvYm8udjEuTG9jYWxEZXBsb3ltZW50UmVjZWlwdBIOCgZyZWFzb24YAiABKAkiUAoQQ2lSZXBvc2l0b3J5TGluaxIUCgxyZWxheV9vcmlnaW4YASABKAkSEgoKYWNjb3VudF9pZBgCIAEoCRISCgpyZXBvc2l0b3J5GAMgASgJYgZwcm90bzM");
 
-/**
- * Explicit fixture composition evidence and product local-deployment contracts.
- *
- * Runtime composition evidence and the durable self-hosted deployment receipt.
- * Receipt fields are public metadata only; local control bearer material is
- * held in a separate owner-only file and never enters the event log.
- *
- * @generated from message hobo.hobo.v1.ComposedRuntimeManifest
- */
 export type ComposedRuntimeManifest = Message<"hobo.hobo.v1.ComposedRuntimeManifest"> & {
-  /**
-   * e.g. "local-mocked"
-   *
-   * @generated from field: string lane = 1;
-   */
   lane: string;
 
-  /**
-   * e.g. "runtime-local"
-   *
-   * @generated from field: string event_store = 2;
-   */
   eventStore: string;
 
-  /**
-   * e.g. "data.in-memory"
-   *
-   * @generated from field: string actor_host = 3;
-   */
   actorHost: string;
 
-  /**
-   * e.g. "cloud.in-process"
-   *
-   * @generated from field: string executor = 4;
-   */
   executor: string;
 
-  /**
-   * e.g. "in-memory-mock"
-   *
-   * @generated from field: string iac_backend = 5;
-   */
   iacBackend: string;
 
-  /**
-   * registered provider ids
-   *
-   * @generated from field: repeated string providers = 6;
-   */
   providers: string[];
 
-  /**
-   * composed CLI verbs
-   *
-   * @generated from field: repeated string verbs = 7;
-   */
   verbs: string[];
 };
 
-/**
- * Describes the message hobo.hobo.v1.ComposedRuntimeManifest.
- * Use `create(ComposedRuntimeManifestSchema)` to create a new message.
- */
 export const ComposedRuntimeManifestSchema: GenMessage<ComposedRuntimeManifest> = /*@__PURE__*/
   messageDesc(file_composition, 0);
 
-/**
- * @generated from message hobo.hobo.v1.LocalDeploymentReceipt
- */
 export type LocalDeploymentReceipt = Message<"hobo.hobo.v1.LocalDeploymentReceipt"> & {
-  /**
-   * @generated from field: string schema_version = 1;
-   */
   schemaVersion: string;
 
-  /**
-   * @generated from field: string project_dir = 2;
-   */
   projectDir: string;
 
-  /**
-   * @generated from field: string hobo_home = 3;
-   */
   hoboHome: string;
 
-  /**
-   * @generated from field: int32 pid = 4;
-   */
   pid: number;
 
-  /**
-   * @generated from field: string primary_url = 5;
-   */
   primaryUrl: string;
 
-  /**
-   * @generated from field: string control_url = 6;
-   */
   controlUrl: string;
 
-  /**
-   * @generated from field: string lease_id = 7;
-   */
   leaseId: string;
 
-  /**
-   * @generated from field: string started_at = 8;
-   */
   startedAt: string;
 
-  /**
-   * @generated from field: string bindle_name = 9;
-   */
   bindleName: string;
 
-  /**
-   * @generated from field: string component_host = 10;
-   */
   componentHost: string;
 
-  /**
-   * @generated from field: string broker_id = 11;
-   */
   brokerId: string;
 
-  /**
-   * @generated from field: string camp_id = 12;
-   */
   campId: string;
 
-  /**
-   * @generated from field: string provider_id = 13;
-   */
   providerId: string;
 
-  /**
-   * @generated from field: uint32 port = 14;
-   */
   port: number;
 
-  /**
-   * @generated from field: int32 probe_status = 15;
-   */
   probeStatus: number;
 
-  /**
-   * @generated from field: string expires_at = 16;
-   */
   expiresAt: string;
 
-  /**
-   * @generated from field: string content_fingerprint = 17;
-   */
   contentFingerprint: string;
 };
 
-/**
- * Describes the message hobo.hobo.v1.LocalDeploymentReceipt.
- * Use `create(LocalDeploymentReceiptSchema)` to create a new message.
- */
 export const LocalDeploymentReceiptSchema: GenMessage<LocalDeploymentReceipt> = /*@__PURE__*/
   messageDesc(file_composition, 1);
 
-/**
- * @generated from message hobo.hobo.v1.LocalDeploymentLaunch
- */
 export type LocalDeploymentLaunch = Message<"hobo.hobo.v1.LocalDeploymentLaunch"> & {
-  /**
-   * @generated from field: string project_dir = 1;
-   */
   projectDir: string;
 
-  /**
-   * @generated from field: string hobo_home = 2;
-   */
   hoboHome: string;
 
-  /**
-   * @generated from field: string component_host = 3;
-   */
   componentHost: string;
 
-  /**
-   * @generated from field: string lease_id = 4;
-   */
   leaseId: string;
 
-  /**
-   * @generated from field: string bindle_name = 5;
-   */
   bindleName: string;
 
-  /**
-   * @generated from field: string broker_id = 6;
-   */
   brokerId: string;
 
-  /**
-   * @generated from field: string camp_id = 7;
-   */
   campId: string;
 
-  /**
-   * @generated from field: string provider_id = 8;
-   */
   providerId: string;
 
-  /**
-   * @generated from field: uint32 port = 9;
-   */
   port: number;
 
-  /**
-   * @generated from field: uint32 ttl_seconds = 10;
-   */
   ttlSeconds: number;
 
-  /**
-   * @generated from field: string content_fingerprint = 11;
-   */
   contentFingerprint: string;
 };
 
-/**
- * Describes the message hobo.hobo.v1.LocalDeploymentLaunch.
- * Use `create(LocalDeploymentLaunchSchema)` to create a new message.
- */
 export const LocalDeploymentLaunchSchema: GenMessage<LocalDeploymentLaunch> = /*@__PURE__*/
   messageDesc(file_composition, 2);
 
-/**
- * @generated from message hobo.hobo.v1.LocalDeploymentLifecycleEvent
- */
 export type LocalDeploymentLifecycleEvent = Message<"hobo.hobo.v1.LocalDeploymentLifecycleEvent"> & {
-  /**
-   * @generated from field: hobo.hobo.v1.LocalDeploymentReceipt receipt = 1;
-   */
   receipt?: LocalDeploymentReceipt | undefined;
 
-  /**
-   * @generated from field: string reason = 2;
-   */
   reason: string;
 };
 
-/**
- * Describes the message hobo.hobo.v1.LocalDeploymentLifecycleEvent.
- * Use `create(LocalDeploymentLifecycleEventSchema)` to create a new message.
- */
 export const LocalDeploymentLifecycleEventSchema: GenMessage<LocalDeploymentLifecycleEvent> = /*@__PURE__*/
   messageDesc(file_composition, 3);
 
-/**
- * User-owned CLI link. Credentials never enter this record or the repository.
- *
- * @generated from message hobo.hobo.v1.CiRepositoryLink
- */
 export type CiRepositoryLink = Message<"hobo.hobo.v1.CiRepositoryLink"> & {
-  /**
-   * @generated from field: string relay_origin = 1;
-   */
   relayOrigin: string;
 
-  /**
-   * @generated from field: string account_id = 2;
-   */
   accountId: string;
 
-  /**
-   * @generated from field: string repository = 3;
-   */
   repository: string;
 };
 
-/**
- * Describes the message hobo.hobo.v1.CiRepositoryLink.
- * Use `create(CiRepositoryLinkSchema)` to create a new message.
- */
 export const CiRepositoryLinkSchema: GenMessage<CiRepositoryLink> = /*@__PURE__*/
   messageDesc(file_composition, 4);
 

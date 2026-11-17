@@ -67,6 +67,10 @@ const GENERATED_OR_VENDOR =
 const DIRECTIVE =
 	/^(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma|buf|go|atlas):|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
 const VITE_DIRECTIVE = /^\/\*\s*@vite-ignore\s*\*\/$/u;
+const GENERATED_DIRECTIVE =
+	/^\/\/\s*@generated(?:\s+(?:by|from)\s+[^\r\n]+)?\s*$/u;
+const DEPRECATED_DIRECTIVE = /^\/\*\*\s*@deprecated\s*\*\/$/u;
+const GENERATED_PROTOBUF = /(?:^|\/)_generated\/.*_pb\.ts$/u;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
 const ARCHITECTURE_DIRECTIVE =
 	/^(?:\/\/\/?\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:domain-view|public-contract):/iu;
@@ -488,7 +492,10 @@ export function commentViolations(
 		if (
 			!deferred &&
 			concise &&
-			(DIRECTIVE.test(comment.text) || VITE_DIRECTIVE.test(comment.text))
+			(DIRECTIVE.test(comment.text) ||
+				VITE_DIRECTIVE.test(comment.text) ||
+				GENERATED_DIRECTIVE.test(comment.text) ||
+				DEPRECATED_DIRECTIVE.test(comment.text))
 		)
 			return [];
 		return [
@@ -552,7 +559,11 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 	const violations: Violation[] = [];
 	const gitlinks = submodules(mode);
 	for (const file of files) {
-		if (gitlinks.has(file) || GENERATED_OR_VENDOR.test(file)) continue;
+		if (
+			gitlinks.has(file) ||
+			(GENERATED_OR_VENDOR.test(file) && !GENERATED_PROTOBUF.test(file))
+		)
+			continue;
 		const sourceFile = sourcePath(file);
 		if (
 			isExperiencePlanningArtifact(sourceFile) ||
