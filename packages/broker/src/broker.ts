@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { clone } from "@bufbuild/protobuf";
-import { type QuoteVector, QuoteVectorSchema } from "@hobo/pricing";
+import {
+	compareDecimal,
+	type Decimal,
+	parseDecimal,
+	type QuoteVector,
+	QuoteVectorSchema,
+} from "@hobo/pricing";
 import type { ConnectorRegistry } from "./connector-registry.js";
 import { deliverySubmittedBody } from "./delivery.js";
 import type { BrokerEnvironment } from "./environments.js";
@@ -905,22 +911,49 @@ function placeRequirement(
 	definitions: readonly BrokerCatalogDefinition[],
 	policy: EffectivePlacementPolicy,
 ): { placement: PlacementDecision } | { reason: RejectionReason } {
+	let invalidDefinition = false;
+	const selectedRegions = new Map<BrokerCatalogDefinition, string>();
 	const eligible = definitions.filter((definition) => {
+		if (
+			policy.objective === "pinned" &&
+			definition.providerId !== policy.pinnedProviderId
+		)
+			return false;
 		if (policy.deniedProviders.includes(definition.providerId)) return false;
 		if (
 			policy.allowedProviders.length > 0 &&
 			!policy.allowedProviders.includes(definition.providerId)
 		)
 			return false;
-		const verdict = definition.satisfies({
-			port: requirement.port,
-			features: [...requirement.features],
-		});
-		if (verdict.kind !== "full") return false;
-		const region = pickRegion(requirement, definition, policy);
-		return region !== undefined;
+		try {
+			const verdict = definition.satisfies({
+				port: requirement.port,
+				features: [...requirement.features],
+			});
+			if (verdict.kind !== "full") return false;
+			const region = pickRegion(requirement, definition, policy);
+			if (region === undefined) return false;
+			if (!isJsonString(region) || region.trim().length === 0) {
+				invalidDefinition = true;
+				return false;
+			}
+			selectedRegions.set(definition, region);
+			return true;
+		} catch {
+			invalidDefinition = true;
+			return false;
+		}
 	});
 
+	if (invalidDefinition) {
+		return {
+			reason: {
+				plane: "placement",
+				code: "catalog-definition-invalid",
+				message: "a catalog capability check failed",
+			},
+		};
+	}
 	if (eligible.length === 0) {
 		return {
 			reason: {
@@ -931,55 +964,187 @@ function placeRequirement(
 		};
 	}
 
-	let winner: BrokerCatalogDefinition;
-	if (policy.objective === "pinned") {
-		const pinned = eligible.filter(
-			(definition) => definition.providerId === policy.pinnedProviderId,
-		);
-		if (pinned.length === 0) {
+	const candidates =
+		policy.objective === "pinned"
+			? eligible.filter(
+					(definition) => definition.providerId === policy.pinnedProviderId,
+				)
+			: eligible;
+	if (candidates.length === 0) {
+		return {
+			reason: {
+				plane: "placement",
+				code: "pinned-provider-unavailable",
+				message: `pinned provider ${policy.pinnedProviderId ?? "<unset>"} cannot satisfy port ${requirement.port} for resource ${requirement.resourceId}`,
+			},
+		};
+	}
+
+	const ids = new Set<string>();
+	const priced: Array<{
+		definition: BrokerCatalogDefinition;
+		price: Decimal;
+		id: string;
+		providerId: string;
+		sku: string;
+		unit: string;
+		priceText: string;
+	}> = [];
+	let comparisonUnit: string | undefined;
+	for (const definition of candidates) {
+		let id: string,
+			providerId: string,
+			sku: string,
+			unit: string,
+			priceText: string;
+		try {
+			id = definition.id;
+			providerId = definition.providerId;
+			sku = definition.cost?.sku;
+			unit = definition.cost?.unit;
+			priceText = definition.cost?.marginalPrice;
+		} catch {
 			return {
 				reason: {
 					plane: "placement",
-					code: "pinned-provider-unavailable",
-					message: `pinned provider ${policy.pinnedProviderId ?? "<unset>"} cannot satisfy port ${requirement.port} for resource ${requirement.resourceId}`,
+					code: "catalog-definition-invalid",
+					message: "catalog definition fields could not be read",
 				},
 			};
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
-		winner = rankByCost(pinned)[0] as BrokerCatalogDefinition;
-	} else {
-		// SAFETY: assertion required at this I/O or test boundary.
-		winner = rankByCost(eligible)[0] as BrokerCatalogDefinition;
+		if (
+			!isJsonString(id) ||
+			id.trim().length === 0 ||
+			!isJsonString(providerId) ||
+			providerId.trim().length === 0 ||
+			!isJsonString(sku) ||
+			sku.trim().length === 0
+		) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-invalid",
+					message:
+						"eligible catalog definitions need a provider, identity and SKU",
+				},
+			};
+		}
+		if (ids.has(id)) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-conflict",
+					message: "eligible catalog definitions must have distinct identities",
+				},
+			};
+		}
+		ids.add(id);
+		let price: Decimal | undefined;
+		try {
+			price = isJsonString(priceText) ? parseDecimal(priceText) : undefined;
+		} catch {
+			price = undefined;
+		}
+		if (
+			price === undefined ||
+			price.coefficient < 0n ||
+			!isJsonString(unit) ||
+			unit.trim().length === 0
+		) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-price-invalid",
+					message: `catalog price for ${id} must be a nonnegative decimal with a unit`,
+				},
+			};
+		}
+		if (comparisonUnit !== undefined && unit !== comparisonUnit) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-price-incomparable",
+					message: "eligible catalog prices use different units",
+				},
+			};
+		}
+		comparisonUnit = unit;
+		priced.push({ definition, price, id, providerId, sku, unit, priceText });
 	}
+	priced.sort(
+		(a, b) =>
+			compareDecimal(a.price, b.price) ||
+			compareIdentity(a.providerId, b.providerId) ||
+			compareIdentity(a.id, b.id),
+	);
+	const selected = priced[0];
+	if (selected === undefined) {
+		return {
+			reason: {
+				plane: "placement",
+				code: "no-eligible-provider",
+				message: "no priced catalog definition is eligible",
+			},
+		};
+	}
+	const winner = selected.definition;
 
-	// SAFETY: assertion required at this I/O or test boundary.
-	const region = pickRegion(requirement, winner, policy) as string;
+	let region: string | undefined;
+	try {
+		region = pickRegion(requirement, winner, policy);
+	} catch {
+		region = undefined;
+	}
+	if (!isJsonString(region) || region !== selectedRegions.get(winner)) {
+		return {
+			reason: {
+				plane: "placement",
+				code: "catalog-definition-invalid",
+				message: "selected catalog region changed during placement",
+			},
+		};
+	}
+	try {
+		if (
+			winner.id !== selected.id ||
+			winner.providerId !== selected.providerId ||
+			winner.cost.sku !== selected.sku ||
+			winner.cost.unit !== selected.unit ||
+			winner.cost.marginalPrice !== selected.priceText
+		) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-invalid",
+					message: "selected catalog definition changed during placement",
+				},
+			};
+		}
+	} catch {
+		return {
+			reason: {
+				plane: "placement",
+				code: "catalog-definition-invalid",
+				message: "selected catalog definition could not be rechecked",
+			},
+		};
+	}
 	return {
 		placement: {
 			resourceId: requirement.resourceId,
-			providerId: winner.providerId,
-			definitionId: winner.id,
+			providerId: selected.providerId,
+			definitionId: selected.id,
 			region,
-			sku: winner.cost.sku,
-			unit: winner.cost.unit,
-			marginalPrice: winner.cost.marginalPrice,
+			sku: selected.sku,
+			unit: selected.unit,
+			marginalPrice: selected.priceText,
 		},
 	};
 }
 
-// Min-cost objective (same objective the Yard Planner ranks by): lowest
-// marginal price wins; provider id is the deterministic tie-break.
-function rankByCost(
-	definitions: readonly BrokerCatalogDefinition[],
-): BrokerCatalogDefinition[] {
-	return [...definitions].sort((a, b) => {
-		const priceA = Number.parseFloat(a.cost.marginalPrice);
-		const priceB = Number.parseFloat(b.cost.marginalPrice);
-		const costA = Number.isNaN(priceA) ? Number.POSITIVE_INFINITY : priceA;
-		const costB = Number.isNaN(priceB) ? Number.POSITIVE_INFINITY : priceB;
-		if (costA !== costB) return costA - costB;
-		return a.providerId.localeCompare(b.providerId);
-	});
+// Tie breaks use a stable code-unit order, independent of host locale.
+function compareIdentity(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function pickRegion(
