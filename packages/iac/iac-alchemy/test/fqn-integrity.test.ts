@@ -389,6 +389,9 @@ describe("Alchemy state-key identity", () => {
 			await expect(provider.preview(program)).rejects.toThrow(
 				"STATE_IDENTITY_UNVERIFIED",
 			);
+			await expect(provider.refresh(program)).rejects.toThrow(
+				"STATE_IDENTITY_UNVERIFIED",
+			);
 			expect(f.effects()).toBe(0);
 		} finally {
 			if (oldHome === undefined) delete process.env.ALCHEMY_HOME;

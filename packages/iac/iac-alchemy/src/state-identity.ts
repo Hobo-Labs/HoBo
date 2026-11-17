@@ -97,6 +97,16 @@ export function safeAlchemyState(value: unknown, expected: string): boolean {
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
+/* oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: stack output is external persisted data. */
+function isLegacyOutputState(output: unknown): boolean {
+	return (
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: stack output is external persisted data. */
+		typeof output === "object" &&
+		output !== null &&
+		Object.getOwnPropertyDescriptor(output, "fqn")?.value === "__stack_output__"
+	);
+}
+
 /** Read every live row while the plan still owns its state-store scope. */
 export function verifyAlchemyStateIdentities(
 	plan: StackPlan,
@@ -108,14 +118,7 @@ export function verifyAlchemyStateIdentities(
 		// from list(). A legacy resource stored under that same key must not
 		// disappear from the scan and be mistaken for an empty history.
 		const output = yield* state.getOutput(scope);
-		if (
-			/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: stack output is external persisted data. */
-			typeof output === "object" &&
-			output !== null &&
-			Object.getOwnPropertyDescriptor(output, "fqn")?.value ===
-				"__stack_output__"
-		)
-			return false;
+		if (isLegacyOutputState(output)) return false;
 		const keys = yield* state.list(scope);
 		if (
 			keys.length > 1024 ||
@@ -152,17 +155,20 @@ function guardAlchemyState(state: StateService): StateService {
 		list: (request: Parameters<StateService["list"]>[0]) =>
 			!scopeIsSafe(request)
 				? Effect.fail(failure())
-				: state
-						.list(request)
-						.pipe(
-							Effect.flatMap((keys) =>
-								keys.length > 1024 ||
-								keys.some((key) => !safeAlchemyFqn(key)) ||
-								!uniqueAlchemyFqns(keys)
-									? Effect.fail(failure())
-									: Effect.succeed(keys),
-							),
+				: state.getOutput(request).pipe(
+						Effect.flatMap((output) =>
+							isLegacyOutputState(output)
+								? Effect.fail(failure())
+								: state.list(request),
 						),
+						Effect.flatMap((keys) =>
+							keys.length > 1024 ||
+							keys.some((key) => !safeAlchemyFqn(key)) ||
+							!uniqueAlchemyFqns(keys)
+								? Effect.fail(failure())
+								: Effect.succeed(keys),
+						),
+					),
 		get: (request: Parameters<StateService["get"]>[0]) =>
 			!scopeIsSafe(request) || !safeAlchemyFqn(request.fqn)
 				? Effect.fail(failure())
