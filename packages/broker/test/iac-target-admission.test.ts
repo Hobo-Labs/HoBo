@@ -141,6 +141,50 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 }
 
 describe("provider-neutral IaC target budget admission", () => {
+	it.each([
+		"settlement",
+		"liability",
+	])("discloses budget evaluation as pending when %s trust may refuse admission", async (missing) => {
+		const ledger = authority(3_000_000, missing !== "settlement");
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("fixture model missing");
+			const deps = dependencies(ledger);
+			const financial = createIacFinancialServices({
+				...deps,
+				verifyLiability: () => missing !== "liability",
+				pricing: {
+					modelId: "terms",
+					revision: "1",
+					scenario: pricing.state.value.scenario,
+					bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+				},
+				issueLiability: () => evidence,
+			});
+			expect(financial.assess(inventory)).toMatchObject({
+				quote: { ok: true },
+				admissionPath: {
+					kind: "bounded-budget",
+					budget: "evaluation-required",
+				},
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			expect(
+				await financial.admit(`missing-${missing}`, inventory),
+			).toMatchObject({
+				status: "denied",
+				code:
+					missing === "settlement"
+						? "budget.settlement-unavailable"
+						: "LIABILITY_EVIDENCE_UNVERIFIED",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
 	it("refuses a priced target before execution when settlement trust is absent", async () => {
 		const ledger = authority(3_000_000, false);
 		try {
