@@ -1,25 +1,3 @@
-/**
- * `hobo ci init`: which jobs of a GitHub Actions workflow can move to the HoBo
- * CI fleet, and the edit that moves them.
- *
- * A job opts into the fleet by naming the fleet's label in `runs-on`. The plan
- * reads one workflow file and gives every job a verdict: `ready` (a
- * GitHub-hosted Linux x64 job whose label can be swapped), `routed` (already
- * on a fleet label) or `skipped`, with the reason. A job is skipped whenever
- * swapping the label could change what it does: its machine is chosen while
- * the workflow runs, it wants another operating system, it already runs
- * somewhere deliberate, or it looks like a deploy, which is left on the runner
- * that holds its secrets today unless the owner asks otherwise.
- *
- * Applying a plan changes the bytes of the chosen `runs-on` values and nothing
- * else. The file is never written back out from its parsed form, so comments,
- * blank lines, quoting, indentation and line endings stay as they were, and
- * the label that was there is left in a trailing comment so the change can be
- * undone by hand.
- *
- * Pure functions: no filesystem, clock or network. The caller reads the file
- * and writes the result.
- */
 import { runnerProviderOfLabel } from "@hobo/ci";
 import {
 	type Document,
@@ -69,44 +47,31 @@ export type WorkflowWarning = (typeof WORKFLOW_WARNINGS)[number];
 
 export type WorkflowJobPlan = Readonly<{
 	file: string;
-	/** The job id: its key under `jobs:`. */
 	job: string;
-	/** The job's `name:` when it is a plain string. */
 	name: string | undefined;
 	verdict: "ready" | "routed" | "skipped";
-	/** The current `runs-on` as written: a list's labels joined with `, `, and empty when absent. */
 	runsOn: string;
-	/** Set only when the job is skipped. */
 	reason: WorkflowSkipReason | undefined;
-	/** Set only when the job is ready, in `WORKFLOW_WARNINGS` order. */
 	warnings: readonly WorkflowWarning[];
 }>;
 
 export type WorkflowPlan = Readonly<{
 	file: string;
-	/** Every job, in file order. Empty when `error` is set. */
 	jobs: readonly WorkflowJobPlan[];
-	/** One sentence when the file is not valid YAML or has no `jobs:` mapping. */
 	error: string | undefined;
 }>;
 
 export type WorkflowInitOptions = Readonly<{
-	/** The label written into `runs-on`. A job already on it counts as routed. */
 	fleetLabel: string;
-	/** Deploy-like jobs are ready instead of skipped as `uses_secrets`. */
 	includeSecretJobs: boolean;
 }>;
 
 export type WorkflowApplyResult = Readonly<{
-	/** The new file text. The input text when nothing was rewritten. */
 	source: string;
-	/** Job ids rewritten, in file order. */
 	changed: readonly string[];
-	/** Selected jobs that were not rewritten, each with why. */
 	refused: readonly Readonly<{ job: string; why: string }>[];
 }>;
 
-/** Selects every ready job when given in place of a job id. */
 const EVERY_READY_JOB = "all";
 
 const EXPRESSION_OPEN = "${{";
@@ -118,10 +83,8 @@ const PACKAGE_INSTALL = /\b(apt-get|apt|yum|dnf|apk)\s+(-\S+\s+)*install\b/u;
 
 const SUDO = /\bsudo\b/u;
 
-/** A label that reads back as the same string when written without quotes. */
 const PLAIN_LABEL = /^[A-Za-z][A-Za-z0-9._-]*$/u;
 
-/** Words YAML reads as a boolean or as nothing rather than as a string. */
 const YAML_KEYWORDS: ReadonlySet<string> = new Set([
 	"true",
 	"false",
@@ -145,29 +108,21 @@ const NOT_LOCATED =
 const WOULD_NOT_READ_BACK =
 	"rewriting it would not leave a workflow that reads back with the job routed; change it by hand";
 
-/** A node an alias can stand for: anything but another alias. */
 type Value = Scalar | YAMLMap | YAMLSeq;
 
-/** One parsed workflow file and how it is being read. */
 type Workflow = Readonly<{
 	file: string;
 	source: string;
 	doc: Document;
-	/** The top-level mapping: its `permissions` and `env` reach every job. */
 	root: YAMLMap;
-	/** The `jobs:` mapping is one a YAML anchor shares with another place. */
 	jobsShared: boolean;
 	settings: WorkflowInitOptions;
 }>;
 
-/** What a job's `runs-on` says. */
 type RunsOn = Readonly<{
 	form: "absent" | "mapping" | "labels";
-	/** Every label written, in order. Empty unless `form` is `labels`. */
 	labels: readonly string[];
-	/** The label when `runs-on` is one string, or a list holding one string. */
 	label: string | undefined;
-	/** What the plan reports as the current `runs-on`. */
 	text: string;
 }>;
 
@@ -176,18 +131,13 @@ type Standing = Readonly<{
 	reason: WorkflowSkipReason | undefined;
 }>;
 
-/** The edit that moves a job, or why it cannot be made. */
 type Rewrite =
 	| Readonly<{
 			kind: "splice";
-			/** The bytes `[start, end)` of the file are replaced. */
 			start: number;
 			end: number;
-			/** Written before the label: a space where the label needs one to stay a value. */
 			lead: string;
-			/** The quote character the label was written in, kept for the new one. */
 			quote: string;
-			/** The label being replaced. */
 			was: string;
 	  }>
 	| Readonly<{ kind: "refuse"; why: string }>;
@@ -228,7 +178,6 @@ function settingsOf(
 	};
 }
 
-/** The node an alias stands for. Any other node is itself. */
 function follow(doc: Document, node: Node | undefined): Value | undefined {
 	return isAlias(node) ? node.resolve(doc) : node;
 }
@@ -237,7 +186,6 @@ function pairOf(map: YAMLMap, key: string): Pair | undefined {
 	return map.items.find((pair) => isScalar(pair.key) && pair.key.value === key);
 }
 
-/** The value under `key` as written, before any alias is followed. */
 function writtenUnder(map: YAMLMap, key: string): Node | undefined {
 	const value = pairOf(map, key)?.value;
 	return isNode(value) ? value : undefined;
@@ -251,10 +199,6 @@ function valueUnder(
 	return follow(workflow.doc, writtenUnder(map, key));
 }
 
-/**
- * A scalar's text when YAML read it as a string. A number, a boolean and an
- * empty value are not strings, and neither is a mapping or a list.
- */
 function stringOf(node: Node | undefined): string | undefined {
 	return isScalar(node) && node.value === node.source ? node.source : undefined;
 }
@@ -264,16 +208,10 @@ function sliceOf(source: string, node: Node): string {
 	return range ? source.slice(range[0], range[1]) : "";
 }
 
-/** A node's source on one line, for reporting a `runs-on` that is not a label. */
 function onOneLine(source: string, node: Node): string {
 	return sliceOf(source, node).trim().replace(/\s+/gu, " ");
 }
 
-/**
- * The source text of a node and of everything it reaches through aliases. An
- * `env: *deploy_env` is two characters where it is used, and what it stands
- * for is written somewhere else in the file.
- */
 function reachableText(workflow: Workflow, from: Node): readonly string[] {
 	const seen = new Set<Node>();
 	const pending: Node[] = [from];
@@ -298,7 +236,6 @@ function namesSecret(text: string): boolean {
 	);
 }
 
-/** `permissions` that let a job write anywhere or sign in to a cloud as the repository. */
 function grantsDeployPermissions(workflow: Workflow, holder: YAMLMap): boolean {
 	const permissions = valueUnder(workflow, holder, "permissions");
 	if (stringOf(permissions) === "write-all") return true;
@@ -359,7 +296,6 @@ function readRunsOn(workflow: Workflow, job: YAMLMap): RunsOn {
 	};
 }
 
-/** Where one label already sends a job, before the job's own content is read. */
 function labelStanding(label: string, settings: WorkflowInitOptions): Standing {
 	const lower = label.toLowerCase();
 	if (
@@ -368,8 +304,7 @@ function labelStanding(label: string, settings: WorkflowInitOptions): Standing {
 	) {
 		return ROUTED;
 	}
-	// A label with a space or a line break in it is nobody's known label, even
-	// when trimming it would make it one.
+
 	if (lower === "self-hosted" || /\s/u.test(label)) {
 		return skipped("self_hosted");
 	}
@@ -386,7 +321,6 @@ function labelStanding(label: string, settings: WorkflowInitOptions): Standing {
 	return READY;
 }
 
-/** The verdict rules, first match wins. */
 function standingOf(
 	workflow: Workflow,
 	job: YAMLMap,
@@ -454,7 +388,6 @@ function warningsOf(
 	return WORKFLOW_WARNINGS.filter((warning) => found.has(warning));
 }
 
-/** Other places in the file can stand for this node, so editing it edits them too. */
 function isAnchored(node: Node): boolean {
 	return !isAlias(node) && node.anchor !== undefined;
 }
@@ -463,10 +396,6 @@ function columnOf(source: string, offset: number): number {
 	return offset - (source.lastIndexOf("\n", offset - 1) + 1);
 }
 
-/**
- * A splice over `[start, end)`, cut back so it never takes the line break or
- * the spaces a value's range can end with.
- */
 function spliceOver(
 	source: string,
 	span: readonly [number, number],
@@ -485,11 +414,6 @@ function spliceOver(
 	};
 }
 
-/**
- * A block list of one label becomes the label on the key's own line. When a
- * comment sits between the key and the list, the label takes the place of the
- * `- label` item instead, so the comment stays where it is.
- */
 function blockListRewrite(
 	source: string,
 	keyRange: Range,
@@ -503,27 +427,18 @@ function blockListRewrite(
 	if (source.slice(afterColon, dash).trim().length === 0) {
 		return spliceOver(source, [afterColon, itemRange[1]], " ", "", was);
 	}
-	// A value on its own line has to sit deeper than its key. A list may start
-	// in the key's column; a plain label may not.
+
 	const lead =
 		columnOf(source, dash) > columnOf(source, keyRange[0]) ? "" : " ";
 	return spliceOver(source, [dash, itemRange[1]], lead, "", was);
 }
 
-/** The quote character a label is written in, when it is written in one. */
 function quoteOf(node: Node): string {
 	if (!isScalar(node)) return "";
 	if (node.type === "QUOTE_DOUBLE") return '"';
 	return node.type === "QUOTE_SINGLE" ? "'" : "";
 }
 
-/**
- * Where a ready job's `runs-on` value is in the file. Refused when the value,
- * the job or the whole `jobs:` mapping is one that a YAML anchor shares with
- * other places: the edit would then change more than the job that was
- * selected. A `runs-on` that is itself an alias is safe, because only the
- * alias is replaced.
- */
 function locateRunsOn(
 	workflow: Workflow,
 	entry: Node,
@@ -552,8 +467,7 @@ function locateRunsOn(
 	if (value.flow !== true) {
 		return blockListRewrite(source, keyRange, valueRange, itemRange, was);
 	}
-	// A flow list becomes the bare label. One with a comment inside keeps its
-	// brackets, and so the comment: only the label in it changes.
+
 	if (!source.slice(whole[0], whole[1]).includes("#")) {
 		return spliceOver(source, whole, "", "", was);
 	}
@@ -620,8 +534,6 @@ function readWorkflow(
 	const doc = parseDocument(source);
 	const failure = doc.errors[0];
 	if (failure !== undefined) {
-		// The parser's message is a first line saying what and where, then an
-		// excerpt of the file.
 		const [summary = "it could not be parsed"] = failure.message.split("\n");
 		return {
 			error: `The file is not valid YAML: ${summary.replace(/[:.\s]+$/u, "")}.`,
@@ -659,11 +571,6 @@ function readWorkflow(
 	};
 }
 
-/**
- * Whether another job takes its `runs-on` from this job's outputs. Such a job
- * decides where the others run, so it has to start even when the fleet is
- * down or full: it stays on the runner it has.
- */
 function routesJobs(id: string, jobs: readonly InspectedJob[]): boolean {
 	const escaped = id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 	const reference = new RegExp(
@@ -683,10 +590,6 @@ function asRouter(job: InspectedJob): InspectedJob {
 	};
 }
 
-/**
- * Every job in one workflow file with its verdict. `file` is only reported
- * back; `source` is the file's text.
- */
 export function planWorkflow(
 	file: string,
 	source: string,
@@ -700,19 +603,12 @@ export function planWorkflow(
 	};
 }
 
-/** The label as YAML that reads back as that string, in the quotes it replaces when it can keep them. */
 function labelText(label: string, quote: string): string {
 	const plain =
 		PLAIN_LABEL.test(label) && !YAML_KEYWORDS.has(label.toLowerCase());
 	return plain ? `${quote}${label}${quote}` : JSON.stringify(label);
 }
 
-/**
- * The text that takes a splice's place: the new label, then what was there as
- * a comment when nothing else follows on the line. A line that already ends
- * in a comment keeps it and gets no second one, and a value followed by more
- * of a flow mapping gets none either, since a comment there would swallow it.
- */
 function replacementFor(
 	source: string,
 	rewrite: Extract<Rewrite, { kind: "splice" }>,
@@ -727,13 +623,6 @@ function replacementFor(
 	return `${rewrite.lead}${labelText(fleetLabel, rewrite.quote)}${note}`;
 }
 
-/**
- * Rewrites the chosen jobs' `runs-on` to the fleet label. `jobs` are job ids;
- * the literal `all` selects every ready job. Only a ready job is rewritten.
- * A named job that is routed, skipped or missing is listed in `refused`, and
- * so is a ready job whose `runs-on` cannot be changed alone. Applying the
- * result again changes nothing.
- */
 export function applyWorkflowPlan(
 	file: string,
 	source: string,
@@ -775,8 +664,7 @@ export function applyWorkflowPlan(
 			: [],
 	);
 	if (splices.length === 0) return { source, changed: [], refused };
-	// From the end of the file backwards, so an earlier offset is still right
-	// after a later value has changed length.
+
 	const rewritten = [...splices]
 		.sort((left, right) => right.rewrite.start - left.rewrite.start)
 		.reduce(
@@ -787,8 +675,7 @@ export function applyWorkflowPlan(
 			source,
 		);
 	const changed = splices.map((splice) => splice.job);
-	// Nothing known gets here. A file that no longer reads back with every
-	// rewritten job on the fleet is not handed to the caller to write.
+
 	const routed = new Set(
 		readWorkflow(file, rewritten, settings)
 			.jobs.filter((job) => job.plan.verdict === "routed")
@@ -807,7 +694,6 @@ export function applyWorkflowPlan(
 	return { source: rewritten, changed, refused };
 }
 
-/** Why a job is left as it is, as one sentence for a table. */
 export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 	switch (reason) {
 		case "reusable_workflow":
@@ -831,7 +717,6 @@ export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 	}
 }
 
-/** What to check before moving a ready job, as one sentence for a table. */
 export function describeWorkflowWarning(warning: WorkflowWarning): string {
 	switch (warning) {
 		case "needs_docker":

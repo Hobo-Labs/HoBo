@@ -371,12 +371,6 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 	return options;
 }
 
-/**
- * Where a command that only reads the working tree runs: the repository root
- * when git knows one, else the working directory, and the GitHub repository
- * when `--repo` or the `origin` remote names it. Never fails: a command that
- * contacts nothing must still work outside a repository.
- */
 async function localRepository(
 	deps: { env?: NodeJS.ProcessEnv; git?: CiGit },
 	cwd: string,
@@ -396,9 +390,7 @@ async function localRepository(
 	let root = cwd;
 	try {
 		root = await git(["rev-parse", "--show-toplevel"], cwd);
-	} catch {
-		/* Not a git repository: the working directory stands in. */
-	}
+	} catch {}
 	if (values.repo !== undefined && validRepository(String(values.repo)))
 		return { root, repository: String(values.repo) };
 	try {

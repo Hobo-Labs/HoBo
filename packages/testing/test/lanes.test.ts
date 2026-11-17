@@ -102,7 +102,7 @@ describe("in-process lane", () => {
 		try {
 			expect(deployment.handles.get("db")?.fidelity).toBe("simulated");
 			expect(deployment.handles.get("db")?.endpoint).toBeUndefined();
-			expect(deployment.handles.get("cache")?.fidelity).toBe("mocked");
+			expect(deployment.handles.get("cache")?.fidelity).toBe("simulated");
 		} finally {
 			await destroyInProcess(deployment);
 		}

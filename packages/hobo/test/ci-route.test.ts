@@ -14,7 +14,6 @@ afterEach(async () => {
 	);
 });
 
-/** A repository root holding the given `.hobo/ci.json` text and facts files. */
 async function repository(
 	files: Readonly<{ project?: string; facts?: string }> = {},
 ) {

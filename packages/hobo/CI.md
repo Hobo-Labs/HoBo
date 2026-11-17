@@ -274,14 +274,16 @@ hobo ci init --apply test,ci.yml:build --fleet-label hobo-trunk
 and why. `--apply` rewrites the jobs named (`job`, `file:job`, or `all`) and
 nothing else: only the `runs-on` value changes, every other byte of the file
 is kept, and the old label stays as a trailing `# was ...` comment so the
-change can be undone by hand. Nothing is committed.
+change can be undone by hand. A workflow that changes or becomes unreadable
+after planning is left alone. Nothing is committed.
 
 A job is left alone when it calls another workflow, takes `runs-on` from an
 expression, names a runner group or several labels, asks for Windows, macOS
 or ARM, already runs on a hosted provider's or a self-hosted label, or decides
 where other jobs run (another job's `runs-on` reads its outputs: a routing job
-has to start even when the fleet cannot). A job that uses an environment,
-any write permission, or a secret other than `GITHUB_TOKEN`
+has to start even when the fleet cannot). A YAML value shared by an anchor is
+left alone when changing it would affect another part of the workflow. A job
+that uses an environment, any write permission, or a secret other than `GITHUB_TOKEN`
 is left alone unless `--include-secret-jobs` is passed. A ready job can carry
 warnings: it needs Docker, installs system packages, follows `ubuntu-latest`,
 or has a matrix.
@@ -301,11 +303,13 @@ hobo ci diagnose 123456789
 
 Both read GitHub's run history with the authenticated GitHub CLI and store
 nothing. `signals` reads up to `--runs` completed runs (1-100) with their jobs,
-and the attempt before the latest when a run was re-run, then prints the
-signals that cover at least 30 minutes and 1% of job time, grouped as cost,
+and the attempt before the latest when a run was re-run. It prints signals
+that cover at least 30 minutes and 1% of job time, grouped as cost,
 speed and complexity, with the worst offenders under each, and one line per
 runner: jobs, share started, median wait, median and p90 run time, share
-passed. `diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
+passed. Job lists are paged up to 1,000 jobs per attempt; an unreadable page
+or a larger attempt is reported as an error instead of a partial result.
+`diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
 each log and its annotations, and prints the first failed step, what kind of
 failure it looks like, whether a re-run is likely to help, and the log lines
 leading up to the last error. The rules are fixed pattern tables in

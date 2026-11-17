@@ -1,8 +1,3 @@
-/**
- * Runner order: an ordered, user-written preference of runner types, and the
- * walk that answers one relay job against it. See `./decide.ts` for the
- * rules and `../../RUNNER-ORDER.md` for the model.
- */
 export {
 	decideRunnerRoute,
 	describeDecision,

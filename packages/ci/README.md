@@ -422,6 +422,12 @@ A failed test with a timing hint is `flaky` with the outlook left `unknown`.
 `hobo ci signals` and `hobo ci diagnose` print these reports from GitHub's
 own run history ([CLI](../hobo/CI.md#signals-and-diagnosis)).
 
+Insight timestamps are epoch milliseconds. Wait and run durations are absent
+when their required timestamps are missing and are clamped at zero when clocks
+are out of order. A completed billed job is charged in whole minutes with a
+one-minute minimum. Runner labels are trimmed and sorted without regard to case
+before reports group them.
+
 ## Persistent platform policy
 
 `LeaseStore.configure(configuration, expectedRevision, at)` commits generated

@@ -86,10 +86,10 @@ describe("runner provider catalog", () => {
 		expect(runnerLabelForSize("warpbuild", 16, 1)).toBe(
 			"warp-ubuntu-2404-x64-16x",
 		);
-		// Ubicloud has no 32 vCPU machine and nothing larger.
+
 		expect(runnerLabelForSize("ubicloud", 16, 1)).toBe("ubicloud-standard-16");
 		expect(runnerLabelForSize("ubicloud", 32, 1)).toBeUndefined();
-		// Boat's one read label is its 4 vCPU default: 2 rounds up, 8 has none.
+
 		expect(runnerLabelForSize("boat", 2, 1)).toBe("boat");
 		expect(runnerLabelForSize("boat", 8, 1)).toBeUndefined();
 		expect(runnerLabelForSize("runs-on", 4, 9001)).toBe(
@@ -315,7 +315,7 @@ describe("relay inputs", () => {
 		expect([...resolved]).toEqual([
 			["machine", ["self-hosted"]],
 			["fleet", ["hobo"]],
-			// GitHub's standard runner is 2 vCPU: nothing answers a 4 vCPU request.
+
 			["github", ["auto"]],
 			["depot", ["depot-ubuntu-24.04-4"]],
 			["ubicloud", ["ubicloud-standard-8"]],

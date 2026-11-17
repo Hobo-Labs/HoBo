@@ -152,8 +152,8 @@ describe("fidelity attestation", () => {
 		try {
 			expect(graph.fidelity().byFidelity).toEqual({
 				real: 0,
-				simulated: 2,
-				mocked: 1,
+				simulated: 3,
+				mocked: 0,
 				"camp-only": 0,
 			});
 		} finally {
@@ -176,17 +176,19 @@ describe("fidelity attestation", () => {
 
 	it("refuses a prod-readiness claim once a mocked handle is asserted against", async () => {
 		const harness = createTestHarness();
-		const bindle = fakeBindle();
+		const bindle = fakeBindle({
+			resources: { api: { kind: "api" }, auth: { kind: "auth" } },
+		});
 		const graph = await harness.deploy(bindle)();
 		try {
 			graph.resource("api");
 			expect(graph.fidelity().prodReadinessClaimable).toBe(true);
-			graph.resource("cache");
+			graph.resource("auth");
 			const report = graph.fidelity();
 			expect(report.prodReadinessClaimable).toBe(false);
 			expect(report.assertedAgainst).toEqual([
 				{ alias: "api", fidelity: "simulated" },
-				{ alias: "cache", fidelity: "mocked" },
+				{ alias: "auth", fidelity: "mocked" },
 			]);
 		} finally {
 			await harness.destroy(bindle)();

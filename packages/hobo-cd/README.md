@@ -72,6 +72,12 @@ is (Infisical by default, 1Password or Bitwarden) is chosen when the run
 starts. `hobo cd up` applies both by recording that `prepare` made them in the
 same run; nothing is deployed for them, and `hobo cd down` never drops the
 journal's databases or the owner's store.
+The prepared-resource adapter accepts only the named journal and config on
+their corresponding Yards. It refuses other resources assigned to those Yards
+instead of recording them as provisioned.
+CD up and down also refuse a runtime whose delivery or hosting supervisor owns
+the executor, until that supervisor can guarantee the same retention. This
+refusal occurs before the up ceremony provisions anything.
 
 Configuration is a **ceremony**, not a list of environment variables, and it
 survives the machine: the store is found through a locator of ids in

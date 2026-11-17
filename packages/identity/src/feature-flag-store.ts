@@ -112,11 +112,50 @@ export type DetailEvaluation<T = FlagValue> = Readonly<{
 	contextDigest: string;
 }>;
 
+export interface FlagDefinitionInput {
+	readonly key: string;
+	readonly defaultValue?: boolean;
+	readonly percentage?: number;
+	readonly enabled?: boolean;
+	readonly state?: FlagState;
+	readonly variants?: Readonly<Record<string, FlagValue>>;
+	readonly defaultVariant?: string;
+	readonly targeting?: FlagTargeting;
+	readonly killSwitch?: boolean;
+	readonly migrationId?: string;
+	readonly autoAbortOnDualFailure?: boolean;
+	readonly metadata?: Readonly<Record<string, string>>;
+}
+
+/** The shared flag boundary used by local services and replacement adapters. */
+export interface FeatureFlagPort {
+	readonly rulesetSeq: number;
+	list(): readonly FlagDefinition[];
+	get(key: string): FlagDefinition | undefined;
+	define(input: FlagDefinitionInput): FlagDefinition;
+	loadDefinitions(
+		defs: readonly FlagDefinitionInput[],
+	): readonly FlagDefinition[];
+	evaluateBoolean(
+		key: string,
+		context: FlagEvalContext,
+		defaultValue?: boolean,
+	): FlagEvaluation;
+	evaluate(
+		key: string,
+		context: FlagEvalContext,
+		defaultValue?: FlagValue,
+	): DetailEvaluation;
+	activateKillSwitch(key: string, actor?: string): FlagDefinition | undefined;
+	clearKillSwitch(key: string): FlagDefinition | undefined;
+	archive(key: string): void;
+}
+
 /**
  * In-process deterministic flag store.
  * Continuous identity migration and app flags share this store (ADR-0132 / ADR-0044).
  */
-export class FeatureFlagStore {
+export class FeatureFlagStore implements FeatureFlagPort {
 	private seq = 0;
 	private invalidationSeq = 0;
 	private readonly flags = new Map<string, FlagDefinition>();
@@ -161,20 +200,7 @@ export class FeatureFlagStore {
 	 * Define or replace a flag (emits flag.Defined or flag.Changed).
 	 * Backward compatible with migration-harness fields.
 	 */
-	define(input: {
-		readonly key: string;
-		readonly defaultValue?: boolean;
-		readonly percentage?: number;
-		readonly enabled?: boolean;
-		readonly state?: FlagState;
-		readonly variants?: Readonly<Record<string, FlagValue>>;
-		readonly defaultVariant?: string;
-		readonly targeting?: FlagTargeting;
-		readonly killSwitch?: boolean;
-		readonly migrationId?: string;
-		readonly autoAbortOnDualFailure?: boolean;
-		readonly metadata?: Readonly<Record<string, string>>;
-	}): FlagDefinition {
+	define(input: FlagDefinitionInput): FlagDefinition {
 		const existing = this.flags.get(input.key);
 		const t = this.now();
 		const nextSeq = this.nextSeq();
@@ -552,8 +578,6 @@ export class FeatureFlagStore {
 		return this.seq;
 	}
 }
-
-export type FlagDefinitionInput = Parameters<FeatureFlagStore["define"]>[0];
 
 function freezeTargeting(t: FlagTargeting): FlagTargeting {
 	return Object.freeze({

@@ -20,7 +20,7 @@ const example = z
 			),
 		),
 	);
-/** The example project, with `runnerOrder` set to the given JSON text. */
+
 const project = (runnerOrder: string | undefined): string =>
 	JSON.stringify(
 		runnerOrder === undefined
