@@ -58,12 +58,10 @@ export function createLocalStreamer(
 				bufferLimit,
 				openedAt: new Date(0).toISOString(),
 			});
-			// SAFETY: assertion to `journal as FrameJournal<unknown>` is required at this boundary.
 			runs.set(runId, journal as FrameJournal<unknown>);
 			return toRunHandle(journal);
 		},
 		getRun<TChunk = unknown>(runId: RunId) {
-			// SAFETY: assertion to `getJournal(runs, runId) as FrameJournal<TChunk>` is required at this boundary.
 			const journal = getJournal(runs, runId) as FrameJournal<TChunk>;
 			if (foldLifecycleStatus(journal.lifecycleEvents) !== "open") {
 				throw new Error(`streamer run is not open: ${runId}`);
@@ -89,14 +87,19 @@ export function createLocalStreamer(
 function toRunHandle<TChunk>(
 	journal: FrameJournal<TChunk>,
 ): StreamerRunHandle<TChunk> {
-	const readable = journal.attachReader(defaultFromSeq());
+	function read(options: { fromSeq?: Seq } = {}) {
+		const fromSeq = defaultFromSeq(options.fromSeq);
+		return {
+			[Symbol.asyncIterator]() {
+				return journal.attachReader(fromSeq)[Symbol.asyncIterator]();
+			},
+		};
+	}
 
 	return {
 		runId: journal.runId,
-		readable,
-		read(options: { fromSeq?: Seq } = {}) {
-			return journal.attachReader(defaultFromSeq(options.fromSeq));
-		},
+		readable: read(),
+		read,
 		getWritable<T = TChunk>(
 			stream: StreamName = DEFAULT_STREAM_NAME,
 		): StreamerWritable<T> {
@@ -104,7 +107,6 @@ function toRunHandle<TChunk>(
 			return {
 				stream: streamName,
 				async write(chunk: T) {
-					// SAFETY: writable stream chunks match the journal TChunk at this boundary.
 					journal.write(streamName, chunk as never);
 				},
 			};
