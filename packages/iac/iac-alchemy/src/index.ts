@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { hrtime } from "node:process";
 import { types } from "node:util";
 import { AlchemyContext } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
@@ -235,7 +236,36 @@ type DeadlinePhase =
 interface OperationDeadline {
 	expired: boolean;
 	phase: DeadlinePhase;
+	readonly expiresAt: bigint;
+	lastObserved: bigint;
+	signalTimeout?: () => void;
 	reservationId?: string;
+}
+
+// Capture the native monotonic clock before running any host or stack code.
+const monotonicNow = hrtime.bigint;
+
+function startDeadline(
+	phase: DeadlinePhase,
+	timeoutMs: number,
+): OperationDeadline {
+	const now = monotonicNow();
+	return {
+		expired: false,
+		phase,
+		expiresAt: now + BigInt(timeoutMs) * 1_000_000n,
+		lastObserved: now,
+	};
+}
+
+function deadlineExpired(deadline: OperationDeadline): boolean {
+	if (!deadline.expired) {
+		const now = monotonicNow();
+		if (now < deadline.lastObserved || now >= deadline.expiresAt)
+			deadline.signalTimeout?.();
+		else deadline.lastObserved = now;
+	}
+	return deadline.expired;
 }
 
 /** A response deadline is not a cancellation or an external-effect fence. */
@@ -294,26 +324,43 @@ function deadlineError(deadline: OperationDeadline): AlchemyIacError {
 
 function boundedOperation<T>(
 	deadline: OperationDeadline,
-	timeoutMs: number,
 	start: () => Promise<T>,
 	onTimeout: () => void,
 ): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
-		const timer = setTimeout(() => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const expire = () => {
+			if (deadline.expired) return;
 			deadline.expired = true;
-			onTimeout();
-			reject(deadlineError(deadline));
-		}, timeoutMs);
+			if (timer !== undefined) clearTimeout(timer);
+			try {
+				onTimeout();
+			} finally {
+				reject(deadlineError(deadline));
+			}
+		};
+		deadline.signalTimeout = expire;
+		if (deadlineExpired(deadline)) return;
+		const remaining = deadline.expiresAt - deadline.lastObserved;
+		timer = setTimeout(
+			expire,
+			Math.max(1, Number((remaining + 999_999n) / 1_000_000n)),
+		);
 		void Promise.resolve()
-			.then(start)
+			.then(() => {
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
+				return start();
+			})
 			.then(
 				(value) => {
-					clearTimeout(timer);
-					if (!deadline.expired) resolve(value);
+					if (deadlineExpired(deadline)) return;
+					if (timer !== undefined) clearTimeout(timer);
+					resolve(value);
 				},
 				(error) => {
-					clearTimeout(timer);
-					if (!deadline.expired) reject(error);
+					if (deadlineExpired(deadline)) return;
+					if (timer !== undefined) clearTimeout(timer);
+					reject(error);
 				},
 			);
 	});
@@ -1155,6 +1202,7 @@ export function createAlchemyIacProvider<
 	const claimed = new Map<string, string>();
 	const running = new Set<string>();
 	const unresolved = new Map<string, string | undefined>();
+	const pending = new Map<string, symbol>();
 	const programSnapshots = new WeakMap<IacProgram, CapturedAlchemyProgram>();
 	const reading = new Set<symbol>();
 	const snapshotProgram = (program: IacProgram): IacProgram => {
@@ -1243,26 +1291,26 @@ export function createAlchemyIacProvider<
 	const verifyStateOwnership = async (
 		program: IacProgram,
 		phase: AlchemyStateOwnershipCheck["phase"],
+		deadline: OperationDeadline,
 	): Promise<boolean> => {
+		if (deadlineExpired(deadline)) return false;
 		try {
-			return (
-				(await stateOwnership.verify(
-					Object.freeze({
-						phase,
-						operation: program.action === "destroy" ? "destroy" : "deploy",
-						...(program.operationGeneration === undefined
-							? undefined
-							: { operationGeneration: program.operationGeneration }),
-						tenantId: target.tenantId,
-						targetId: target.targetId,
-						sourceDigest: target.sourceDigest,
-						inventoryEvidenceRef: target.inventoryEvidenceRef,
-						resources: ownershipResources,
-						program: ownershipProgram(program),
-						state,
-					}),
-				)) === true
-			);
+			const input = Object.freeze({
+				phase,
+				operation: program.action === "destroy" ? "destroy" : "deploy",
+				...(program.operationGeneration === undefined
+					? undefined
+					: { operationGeneration: program.operationGeneration }),
+				tenantId: target.tenantId,
+				targetId: target.targetId,
+				sourceDigest: target.sourceDigest,
+				inventoryEvidenceRef: target.inventoryEvidenceRef,
+				resources: ownershipResources,
+				program: ownershipProgram(program),
+				state,
+			});
+			if (deadlineExpired(deadline)) return false;
+			return (await stateOwnership.verify(input)) === true;
 		} catch {
 			return false;
 		}
@@ -1272,9 +1320,9 @@ export function createAlchemyIacProvider<
 		phase: AlchemyStateOwnershipCheck["phase"],
 		deadline: OperationDeadline,
 	): Promise<void> => {
-		if (deadline.expired) throw deadlineError(deadline);
-		const verified = await verifyStateOwnership(program, phase);
-		if (deadline.expired) throw deadlineError(deadline);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
+		const verified = await verifyStateOwnership(program, phase, deadline);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
 		if (!verified)
 			throw new AlchemyIacError(
 				"STATE_SCOPE_UNVERIFIED",
@@ -1301,6 +1349,14 @@ export function createAlchemyIacProvider<
 		const complete = supplied as Effect.Effect<A, unknown, never>;
 		return Effect.runPromise(complete);
 	};
+	const verifyStateWithinDeadline = (
+		plan: Parameters<typeof verifyAlchemyStateIdentities>[0],
+		deadline: OperationDeadline,
+	) =>
+		Effect.gen(function* () {
+			if (deadlineExpired(deadline)) return false;
+			return yield* verifyAlchemyStateIdentities(plan);
+		});
 	const planned = (program: IacProgram) =>
 		program.action === "destroy"
 			? Alchemist.plan({
@@ -1334,25 +1390,27 @@ export function createAlchemyIacProvider<
 	const resolveAuthorizedOperation = async (
 		program: IacProgram,
 		requestId: string | undefined,
+		deadline: OperationDeadline,
 	): Promise<IacRouteResolution | undefined> => {
+		if (deadlineExpired(deadline)) return undefined;
 		if (resolveRoute === undefined || program.operationGeneration === undefined)
 			return undefined;
 		try {
-			return readRouteResolution(
-				await resolveRoute(
-					Object.freeze({
-						tenantId: target.tenantId,
-						deploymentId: program.deploymentId,
-						programId: program.programId,
-						resourceId: program.resourceId,
-						logicalStackName: program.stackName,
-						declarationDigest: capturedProgram(program).declarationDigest,
-						operation: program.action === "destroy" ? "destroy" : "deploy",
-						operationGeneration: program.operationGeneration,
-						requestId,
-					}),
-				),
-			);
+			const input = Object.freeze({
+				tenantId: target.tenantId,
+				deploymentId: program.deploymentId,
+				programId: program.programId,
+				resourceId: program.resourceId,
+				logicalStackName: program.stackName,
+				declarationDigest: capturedProgram(program).declarationDigest,
+				operation: program.action === "destroy" ? "destroy" : "deploy",
+				operationGeneration: program.operationGeneration,
+				requestId,
+			});
+			if (deadlineExpired(deadline)) return undefined;
+			const result = await resolveRoute(input);
+			if (deadlineExpired(deadline)) return undefined;
+			return readRouteResolution(result);
 		} catch {
 			return undefined;
 		}
@@ -1361,8 +1419,10 @@ export function createAlchemyIacProvider<
 		input: IacRoutePermit,
 		requestId: string,
 		operation: IacRouteOperation,
+		deadline: OperationDeadline,
 		expected?: FinancialExpectation,
 	): Promise<IacRoutePermit | undefined> => {
+		if (deadlineExpired(deadline)) return undefined;
 		const permit = readRoutePermit(input);
 		if (
 			route?.persistence !== "durable-cas" ||
@@ -1375,6 +1435,7 @@ export function createAlchemyIacProvider<
 				permit.inventoryHash !== expected.inventoryHash)
 		)
 			return undefined;
+		if (deadlineExpired(deadline)) return undefined;
 		try {
 			return (await route.verifyAttempt(permit)) === true ? permit : undefined;
 		} catch {
@@ -1407,12 +1468,18 @@ export function createAlchemyIacProvider<
 			"plan",
 			stableProgram.action === "destroy" ? "destroy" : "deploy",
 		);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
 		const result = await run(
 			Effect.gen(function* () {
-				const plan = yield* planned(stableProgram);
-				if (deadline.expired)
+				if (deadlineExpired(deadline))
 					return { ok: false as const, error: deadlineError(deadline) };
-				if (!(yield* verifyAlchemyStateIdentities(plan)))
+				const plan = yield* planned(stableProgram);
+				if (deadlineExpired(deadline))
+					return { ok: false as const, error: deadlineError(deadline) };
+				const initialState = yield* verifyStateWithinDeadline(plan, deadline);
+				if (deadlineExpired(deadline))
+					return { ok: false as const, error: deadlineError(deadline) };
+				if (!initialState)
 					return {
 						ok: false as const,
 						error: new AlchemyIacError(
@@ -1420,14 +1487,14 @@ export function createAlchemyIacProvider<
 							"persisted Alchemy state identities are ambiguous or unavailable",
 						),
 					};
-				if (deadline.expired)
+				if (deadlineExpired(deadline))
 					return { ok: false as const, error: deadlineError(deadline) };
 				try {
 					const inspected = inspectAlchemyPlan(plan, target, composite);
 					const ownerVerified = yield* Effect.promise(() =>
-						verifyStateOwnership(stableProgram, "plan"),
+						verifyStateOwnership(stableProgram, "plan", deadline),
 					);
-					if (deadline.expired)
+					if (deadlineExpired(deadline))
 						return { ok: false as const, error: deadlineError(deadline) };
 					if (!ownerVerified)
 						return {
@@ -1437,8 +1504,11 @@ export function createAlchemyIacProvider<
 								"state ownership changed during planning",
 							),
 						};
-					const stateVerified = yield* verifyAlchemyStateIdentities(plan);
-					if (deadline.expired)
+					const stateVerified = yield* verifyStateWithinDeadline(
+						plan,
+						deadline,
+					);
+					if (deadlineExpired(deadline))
 						return { ok: false as const, error: deadlineError(deadline) };
 					if (!stateVerified)
 						return {
@@ -1467,21 +1537,31 @@ export function createAlchemyIacProvider<
 				}
 			}),
 		);
-		if (deadline.expired) throw deadlineError(deadline);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
 		if (!result.ok) throw result.error;
 		const digest = scopedPlanDigest(result.inspected.digest, stableProgram);
-		previews.set(key, digest);
-		return {
-			...financial.assess(financialInputs(digest, stableProgram)),
+		const plan = financialInputs(digest, stableProgram);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
+		const assessment = {
+			...financial.assess(plan),
 			diff: {
 				summary: `${result.inspected.changes} planned resource changes`,
 				changes: result.inspected.changes,
 			},
 		};
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
+		if (!previews.has(key) && previews.size >= 128)
+			throw new AlchemyIacError(
+				"PREVIEW_LIMIT",
+				"provider preview capacity reached",
+			);
+		previews.set(key, digest);
+		return assessment;
 	};
 	const boundedRead = <T>(
 		deadline: OperationDeadline,
 		work: () => Promise<T>,
+		onTimeout: () => void = () => {},
 	): Promise<T> => {
 		if (reading.size >= 128)
 			return Promise.reject(
@@ -1492,30 +1572,52 @@ export function createAlchemyIacProvider<
 			);
 		const token = Symbol("alchemy-read");
 		reading.add(token);
+		let started = false;
 		return boundedOperation(
 			deadline,
-			operationTimeoutMs,
 			async () => {
+				started = true;
 				try {
 					return await work();
 				} finally {
 					reading.delete(token);
 				}
 			},
-			() => {},
+			() => {
+				if (!started) reading.delete(token);
+				onTimeout();
+			},
 		);
 	};
-	const assessPricing: AlchemyIacProvider<Assessment>["assessPricing"] = async (
-		program,
+	const assessPricingOperation = async (
+		program: IacProgram,
+		deadline: OperationDeadline,
 	) => {
 		const stableProgram = snapshotProgram(program);
-		const deadline: OperationDeadline = { expired: false, phase: "preview" };
-		return boundedRead(deadline, () =>
-			assessPricingCore(stableProgram, deadline),
+		const key = checkProgram(stableProgram);
+		const result = await boundedRead(
+			deadline,
+			() => assessPricingCore(stableProgram, deadline),
+			() => {
+				previews.delete(key);
+			},
 		);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
+		return result;
 	};
-	const preview = async (program: IacProgram): Promise<IacDiff> =>
-		(await assessPricing(program)).diff;
+	const assessPricing: AlchemyIacProvider<Assessment>["assessPricing"] = (
+		program,
+	) =>
+		assessPricingOperation(
+			program,
+			startDeadline("preview", operationTimeoutMs),
+		);
+	const preview = async (program: IacProgram): Promise<IacDiff> => {
+		const deadline = startDeadline("preview", operationTimeoutMs);
+		const result = await assessPricingOperation(program, deadline);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
+		return result.diff;
+	};
 	const executeUnlocked = async (
 		program: IacProgram,
 		requestId: string,
@@ -1581,25 +1683,35 @@ export function createAlchemyIacProvider<
 			"plan",
 			program.action === "destroy" ? "destroy" : "deploy",
 		);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
 		try {
 			result = await run(
 				Effect.gen(function* () {
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					const plan = yield* planned(program);
-					if (deadline.expired) return { error: deadlineError(deadline) };
-					if (!(yield* verifyAlchemyStateIdentities(plan)))
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
+					const initialState = yield* verifyStateWithinDeadline(plan, deadline);
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
+					if (!initialState)
 						return {
 							error: new AlchemyIacError(
 								"STATE_IDENTITY_UNVERIFIED",
 								"persisted Alchemy state identities are ambiguous or unavailable",
 							),
 						};
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					let inspected: ReturnType<typeof inspectAlchemyPlan>;
 					try {
 						inspected = inspectAlchemyPlan(plan, target, composite);
 					} catch (error) {
 						return { error };
 					}
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					const admittedPlanDigest = scopedPlanDigest(
 						inspected.digest,
 						program,
@@ -1612,9 +1724,10 @@ export function createAlchemyIacProvider<
 							),
 						};
 					const planOwnership = yield* Effect.promise(() =>
-						verifyStateOwnership(program, "plan"),
+						verifyStateOwnership(program, "plan", deadline),
 					);
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (!planOwnership)
 						return {
 							error: new AlchemyIacError(
@@ -1623,9 +1736,16 @@ export function createAlchemyIacProvider<
 							),
 						};
 					const routeBeforeAdmission = yield* Effect.promise(() =>
-						verifyRoute(permit, requestId, operation, checkedExpectation),
+						verifyRoute(
+							permit,
+							requestId,
+							operation,
+							deadline,
+							checkedExpectation,
+						),
 					);
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (routeBeforeAdmission === undefined)
 						return {
 							error: new AlchemyIacError(
@@ -1634,13 +1754,15 @@ export function createAlchemyIacProvider<
 							),
 						};
 					const consumed = yield* Effect.promise(async () => {
+						if (deadlineExpired(deadline)) return false;
 						try {
 							return (await route?.consumeAttempt(permit)) === true;
 						} catch {
 							return false;
 						}
 					});
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (!consumed)
 						return {
 							error: new AlchemyIacError(
@@ -1650,11 +1772,16 @@ export function createAlchemyIacProvider<
 						};
 					deadline.phase = "admission";
 					const admitted = yield* Effect.promise(async () => {
+						if (deadlineExpired(deadline))
+							return { error: deadlineError(deadline) };
 						try {
+							const plan = financialInputs(admittedPlanDigest, program);
+							if (deadlineExpired(deadline))
+								return { error: deadlineError(deadline) };
 							return {
 								decision: await financial.admit(
 									requestId,
-									financialInputs(admittedPlanDigest, program),
+									plan,
 									checkedExpectation,
 								),
 							};
@@ -1667,9 +1794,15 @@ export function createAlchemyIacProvider<
 							};
 						}
 					});
-					if ("error" in admitted) return { error: admitted.error };
+					const expiredAfterAdmission = deadlineExpired(deadline);
+					if ("error" in admitted)
+						return {
+							error: expiredAfterAdmission
+								? deadlineError(deadline)
+								: admitted.error,
+						};
 					const decision = readFinancialDecision(admitted.decision);
-					if (deadline.expired) {
+					if (expiredAfterAdmission || deadlineExpired(deadline)) {
 						const lateReservation = decision?.reservation?.reservationId;
 						if (
 							lateReservation === `iac:${requestId}` &&
@@ -1836,18 +1969,18 @@ export function createAlchemyIacProvider<
 						};
 					}
 					const confirmed = yield* Effect.promise(async () => {
+						if (deadlineExpired(deadline)) return false;
 						try {
-							return (
-								(await financial.revalidate(
-									structuredClone(admission),
-									financialInputs(admittedPlanDigest, program),
-								)) === true
-							);
+							const held = structuredClone(admission);
+							const plan = financialInputs(admittedPlanDigest, program);
+							if (deadlineExpired(deadline)) return false;
+							return (await financial.revalidate(held, plan)) === true;
 						} catch {
 							return false;
 						}
 					});
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (!confirmed) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -1860,9 +1993,16 @@ export function createAlchemyIacProvider<
 						};
 					}
 					const routeBeforeApply = yield* Effect.promise(() =>
-						verifyRoute(permit, requestId, operation, checkedExpectation),
+						verifyRoute(
+							permit,
+							requestId,
+							operation,
+							deadline,
+							checkedExpectation,
+						),
 					);
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (routeBeforeApply === undefined) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -1875,9 +2015,10 @@ export function createAlchemyIacProvider<
 						};
 					}
 					const currentOperation = yield* Effect.promise(() =>
-						resolveAuthorizedOperation(program, requestId),
+						resolveAuthorizedOperation(program, requestId, deadline),
 					);
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (
 						currentOperation === undefined ||
 						currentOperation.requestId !== requestId ||
@@ -1900,6 +2041,8 @@ export function createAlchemyIacProvider<
 							"apply",
 							program.action === "destroy" ? "destroy" : "deploy",
 						);
+						if (deadlineExpired(deadline))
+							return { error: deadlineError(deadline) };
 						if (
 							inspectAlchemyPlan(plan, target, composite).digest !==
 							inspected.digest
@@ -1926,9 +2069,10 @@ export function createAlchemyIacProvider<
 						};
 					}
 					const applyOwnership = yield* Effect.promise(() =>
-						verifyStateOwnership(program, "apply"),
+						verifyStateOwnership(program, "apply", deadline),
 					);
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (!applyOwnership) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -1940,7 +2084,10 @@ export function createAlchemyIacProvider<
 							),
 						};
 					}
-					if (!(yield* verifyAlchemyStateIdentities(plan))) {
+					const finalState = yield* verifyStateWithinDeadline(plan, deadline);
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
+					if (!finalState) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
 							error: new AlchemyIacError(
@@ -1951,7 +2098,8 @@ export function createAlchemyIacProvider<
 							),
 						};
 					}
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					try {
 						if (
 							reinspectAlchemyPlan(plan, target, composite) !== inspected.digest
@@ -1977,16 +2125,18 @@ export function createAlchemyIacProvider<
 							),
 						};
 					}
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					deadline.phase = "provider";
 					const outcome = yield* Effect.exit(
 						Effect.gen(function* () {
-							if (deadline.expired)
+							if (deadlineExpired(deadline))
 								return yield* Effect.fail(deadlineError(deadline));
 							return yield* Alchemist.apply(plan);
 						}),
 					);
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (Exit.isFailure(outcome)) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -2000,9 +2150,10 @@ export function createAlchemyIacProvider<
 					}
 					deadline.phase = "completed";
 					const completedOwnership = yield* Effect.promise(() =>
-						verifyStateOwnership(program, "complete"),
+						verifyStateOwnership(program, "complete", deadline),
 					);
-					if (deadline.expired) return { error: deadlineError(deadline) };
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (!completedOwnership) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -2022,10 +2173,14 @@ export function createAlchemyIacProvider<
 							"apply",
 							program.action === "destroy" ? "destroy" : "deploy",
 						);
+						if (deadlineExpired(deadline))
+							return { error: deadlineError(deadline) };
 						authorizationVerified = inspected.revalidateSources();
 					} catch {
 						/* retain the hold if the host authorization has been revoked */
 					}
+					if (deadlineExpired(deadline))
+						return { error: deadlineError(deadline) };
 					if (!authorizationVerified) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -2146,8 +2301,9 @@ export function createAlchemyIacProvider<
 			const resolution = await resolveAuthorizedOperation(
 				stableProgram,
 				requestId,
+				deadline,
 			);
-			if (deadline.expired) throw deadlineError(deadline);
+			if (deadlineExpired(deadline)) throw deadlineError(deadline);
 			if (
 				resolution === undefined ||
 				(requestId !== undefined && resolution.requestId !== requestId)
@@ -2168,7 +2324,7 @@ export function createAlchemyIacProvider<
 					checkedExpectation,
 					suppliedPermit,
 				);
-				if (deadline.expired) throw deadlineError(deadline);
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
 				previews.delete(key);
 				claimed.delete(key);
 				return result;
@@ -2177,84 +2333,83 @@ export function createAlchemyIacProvider<
 			const state: RouteExecutionState = { invoked: false };
 			let routeResult: Awaited<ReturnType<IacRoutePort["runDirect"]>>;
 			try {
-				routeResult = await route.runDirect(
-					{
-						tenantId: target.tenantId,
-						requestId: resolvedRequestId,
-						operation: routeOperation,
-						targetId: target.targetId,
-						plan: financialInputs(previewDigest, stableProgram),
-					},
-					async (attempt) => {
-						if (state.invoked)
-							throw new Error("route callback was invoked more than once");
-						state.invoked = true;
-						if (deadline.expired) {
-							state.error = deadlineError(deadline);
-							return {
-								value: true,
-								outcome: {
-									status: "uncertain" as const,
-									targetId: target.targetId,
-								},
-							};
-						}
-						try {
-							state.result = await executeUnlocked(
-								stableProgram,
-								resolvedRequestId,
-								routeOperation,
-								deadline,
-								fenceKey,
-								checkedExpectation,
-								attempt.permit,
-							);
-							if (deadline.expired) throw deadlineError(deadline);
-							return {
-								value: true,
-								outcome: {
-									status: "selected" as const,
-									targetId: target.targetId,
-								},
-							};
-						} catch (error) {
-							const failure = deadline.expired
-								? deadlineError(deadline)
-								: error instanceof AlchemyIacError
-									? error
-									: new AlchemyIacError(
-											"ROUTE_OUTCOME_UNKNOWN",
-											"the route attempt outcome is unknown",
-										);
-							if (
-								!failure.requiresReconciliation &&
-								failure.executionOutcome === "not-started"
-							) {
-								await attempt.deny();
-								if (deadline.expired) {
-									state.error = deadlineError(deadline);
-									return {
-										value: true,
-										outcome: {
-											status: "uncertain" as const,
-											targetId: target.targetId,
-										},
-									};
-								}
-								state.error = failure;
-								return { value: true, outcome: { status: "denied" as const } };
+				const input = {
+					tenantId: target.tenantId,
+					requestId: resolvedRequestId,
+					operation: routeOperation,
+					targetId: target.targetId,
+					plan: financialInputs(previewDigest, stableProgram),
+				};
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
+				routeResult = await route.runDirect(input, async (attempt) => {
+					if (state.invoked)
+						throw new Error("route callback was invoked more than once");
+					state.invoked = true;
+					if (deadlineExpired(deadline)) {
+						state.error = deadlineError(deadline);
+						return {
+							value: true,
+							outcome: {
+								status: "uncertain" as const,
+								targetId: target.targetId,
+							},
+						};
+					}
+					try {
+						state.result = await executeUnlocked(
+							stableProgram,
+							resolvedRequestId,
+							routeOperation,
+							deadline,
+							fenceKey,
+							checkedExpectation,
+							attempt.permit,
+						);
+						if (deadlineExpired(deadline)) throw deadlineError(deadline);
+						return {
+							value: true,
+							outcome: {
+								status: "selected" as const,
+								targetId: target.targetId,
+							},
+						};
+					} catch (error) {
+						const failure = deadlineExpired(deadline)
+							? deadlineError(deadline)
+							: error instanceof AlchemyIacError
+								? error
+								: new AlchemyIacError(
+										"ROUTE_OUTCOME_UNKNOWN",
+										"the route attempt outcome is unknown",
+									);
+						if (
+							!failure.requiresReconciliation &&
+							failure.executionOutcome === "not-started"
+						) {
+							await attempt.deny();
+							if (deadlineExpired(deadline)) {
+								state.error = deadlineError(deadline);
+								return {
+									value: true,
+									outcome: {
+										status: "uncertain" as const,
+										targetId: target.targetId,
+									},
+								};
 							}
 							state.error = failure;
-							return {
-								value: true,
-								outcome: {
-									status: "uncertain" as const,
-									targetId: target.targetId,
-								},
-							};
+							return { value: true, outcome: { status: "denied" as const } };
 						}
-					},
-				);
+						state.error = failure;
+						return {
+							value: true,
+							outcome: {
+								status: "uncertain" as const,
+								targetId: target.targetId,
+							},
+						};
+					}
+				});
 			} catch {
 				const reservation =
 					state.result?.admission.reservation.reservationId ??
@@ -2267,7 +2422,7 @@ export function createAlchemyIacProvider<
 					reservation,
 				);
 			}
-			if (deadline.expired) throw deadlineError(deadline);
+			if (deadlineExpired(deadline)) throw deadlineError(deadline);
 			const completion = readRouteCompletion(routeResult);
 			if (
 				completion !== "executed" ||
@@ -2304,11 +2459,12 @@ export function createAlchemyIacProvider<
 			running.delete(fenceKey);
 		}
 	};
-	const execute: AlchemyIacProvider<Assessment>["applyWithAdmission"] = (
-		program,
-		requestId,
-		expected,
-		suppliedPermit,
+	const execute = (
+		program: IacProgram,
+		requestId: string | undefined,
+		expected: FinancialExpectation | undefined,
+		suppliedPermit: IacRoutePermit | undefined,
+		deadline: OperationDeadline,
 	) => {
 		const stableProgram = snapshotProgram(program);
 		const stableExpectation =
@@ -2333,23 +2489,50 @@ export function createAlchemyIacProvider<
 			deploymentId: stableProgram.deploymentId,
 			resourceId: stableProgram.resourceId,
 		});
-		const deadline: OperationDeadline = {
-			expired: false,
-			phase: stablePermit === undefined ? "before-route" : "route",
-		};
+		if (unresolved.has(fenceKey)) {
+			const reservationId = unresolved.get(fenceKey);
+			throw new AlchemyIacError(
+				reservationId === undefined
+					? "EXECUTION_OUTCOME_UNRESOLVED"
+					: "EXECUTION_ALREADY_CLAIMED",
+				"the previous execution must be reconciled before another attempt",
+				undefined,
+				reservationId,
+			);
+		}
+		if (pending.has(fenceKey))
+			throw new AlchemyIacError(
+				"EXECUTION_IN_PROGRESS",
+				"another execution of this program must finish before retry",
+			);
+		if (pending.size + unresolved.size >= 128)
+			throw new AlchemyIacError(
+				"EXECUTION_LIMIT",
+				"provider execution capacity reached",
+			);
+		const token = Symbol("alchemy-execution");
+		pending.set(fenceKey, token);
+		let started = false;
 		return boundedOperation(
 			deadline,
-			operationTimeoutMs,
-			() =>
-				executeCore(
-					stableProgram,
-					requestId,
-					stableExpectation,
-					stablePermit,
-					deadline,
-					fenceKey,
-				),
+			async () => {
+				started = true;
+				try {
+					return await executeCore(
+						stableProgram,
+						requestId,
+						stableExpectation,
+						stablePermit,
+						deadline,
+						fenceKey,
+					);
+				} finally {
+					if (pending.get(fenceKey) === token) pending.delete(fenceKey);
+				}
+			},
 			() => {
+				if (!started && pending.get(fenceKey) === token)
+					pending.delete(fenceKey);
 				unresolved.set(
 					fenceKey,
 					deadline.reservationId ?? unresolved.get(fenceKey),
@@ -2359,69 +2542,137 @@ export function createAlchemyIacProvider<
 			},
 		);
 	};
+	const applyOperation = async (
+		program: IacProgram,
+		requestId: string | undefined,
+		expected: FinancialExpectation | undefined,
+		permit: IacRoutePermit | undefined,
+		deadline: OperationDeadline,
+	) => {
+		const stableProgram = snapshotProgram(program);
+		if (stableProgram.action === "destroy")
+			throw new AlchemyIacError(
+				"PROGRAM_SCOPE_MISMATCH",
+				"apply cannot execute a destroy program",
+			);
+		const result = await execute(
+			stableProgram,
+			requestId,
+			expected,
+			permit,
+			deadline,
+		);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
+		return result;
+	};
+	const destroyOperation = async (
+		program: IacProgram,
+		requestId: string | undefined,
+		expected: FinancialExpectation | undefined,
+		permit: IacRoutePermit | undefined,
+		deadline: OperationDeadline,
+	) => {
+		const stableProgram = snapshotProgram(program);
+		if (stableProgram.action !== "destroy")
+			throw new AlchemyIacError(
+				"PROGRAM_SCOPE_MISMATCH",
+				"destroy requires a destroy program",
+			);
+		const { admission } = await execute(
+			stableProgram,
+			requestId,
+			expected,
+			permit,
+			deadline,
+		);
+		if (deadlineExpired(deadline)) throw deadlineError(deadline);
+		return { admission };
+	};
 	const applyWithAdmission: AlchemyIacProvider<Assessment>["applyWithAdmission"] =
-		async (program, requestId, expected, permit) => {
-			const stableProgram = snapshotProgram(program);
-			if (stableProgram.action === "destroy")
-				throw new AlchemyIacError(
-					"PROGRAM_SCOPE_MISMATCH",
-					"apply cannot execute a destroy program",
-				);
-			return execute(stableProgram, requestId, expected, permit);
-		};
-	const destroyWithAdmission: AlchemyIacProvider<Assessment>["destroyWithAdmission"] =
-		async (program, requestId, expected, permit) => {
-			const stableProgram = snapshotProgram(program);
-			if (stableProgram.action !== "destroy")
-				throw new AlchemyIacError(
-					"PROGRAM_SCOPE_MISMATCH",
-					"destroy requires a destroy program",
-				);
-			const { admission } = await execute(
-				stableProgram,
+		(program, requestId, expected, permit) =>
+			applyOperation(
+				program,
 				requestId,
 				expected,
 				permit,
+				startDeadline(
+					permit === undefined ? "before-route" : "route",
+					operationTimeoutMs,
+				),
 			);
-			return { admission };
-		};
+	const destroyWithAdmission: AlchemyIacProvider<Assessment>["destroyWithAdmission"] =
+		(program, requestId, expected, permit) =>
+			destroyOperation(
+				program,
+				requestId,
+				expected,
+				permit,
+				startDeadline(
+					permit === undefined ? "before-route" : "route",
+					operationTimeoutMs,
+				),
+			);
 	return {
 		id: "alchemy",
 		preview,
 		assessPricing,
-		apply: async (program) => (await applyWithAdmission(program)).outputs,
+		apply: async (program) => {
+			const deadline = startDeadline("before-route", operationTimeoutMs);
+			const result = await applyOperation(
+				program,
+				undefined,
+				undefined,
+				undefined,
+				deadline,
+			);
+			if (deadlineExpired(deadline)) throw deadlineError(deadline);
+			return result.outputs;
+		},
 		applyWithAdmission,
 		destroy: async (program) => {
-			await destroyWithAdmission(program);
+			const deadline = startDeadline("before-route", operationTimeoutMs);
+			await destroyOperation(
+				program,
+				undefined,
+				undefined,
+				undefined,
+				deadline,
+			);
+			if (deadlineExpired(deadline)) throw deadlineError(deadline);
 		},
 		destroyWithAdmission,
 		refresh: async (program): Promise<IacDriftReport> => {
+			const deadline = startDeadline("refresh", operationTimeoutMs);
 			const stableProgram = snapshotProgram(program);
 			checkProgram(stableProgram);
-			const deadline: OperationDeadline = { expired: false, phase: "refresh" };
-			return boundedRead(deadline, async () => {
+			const result = await boundedRead(deadline, async () => {
 				const operation =
 					stableProgram.action === "destroy" ? "destroy" : "deploy";
 				await requireStateOwnership(stableProgram, "plan", deadline);
 				verifyCompositeEnvironment(composite, target, "plan", operation);
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
 				// Planning and drift each own a scoped state-store lease; close the
 				// classification plan before starting the independent read-only scan.
 				const inspected = await run(
 					Effect.gen(function* () {
+						if (deadlineExpired(deadline)) throw deadlineError(deadline);
 						const plan = yield* planned(stableProgram);
-						if (deadline.expired) throw deadlineError(deadline);
-						if (!(yield* verifyAlchemyStateIdentities(plan)))
+						if (deadlineExpired(deadline)) throw deadlineError(deadline);
+						const validState = yield* verifyStateWithinDeadline(plan, deadline);
+						if (deadlineExpired(deadline)) throw deadlineError(deadline);
+						if (!validState)
 							throw new AlchemyIacError(
 								"STATE_IDENTITY_UNVERIFIED",
 								"persisted Alchemy state identities are ambiguous or unavailable",
 							);
-						if (deadline.expired) throw deadlineError(deadline);
+						if (deadlineExpired(deadline)) throw deadlineError(deadline);
 						return inspectAlchemyPlan(plan, target, composite);
 					}),
 				);
-				if (deadline.expired) throw deadlineError(deadline);
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
 				await requireStateOwnership(stableProgram, "plan", deadline);
 				verifyCompositeEnvironment(composite, target, "plan", operation);
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
 				if (!inspected.revalidateSources())
 					throw new AlchemyIacError(
 						"COMPOSITE_PLAN_UNVERIFIED",
@@ -2429,11 +2680,15 @@ export function createAlchemyIacProvider<
 					);
 				await requireStateOwnership(stableProgram, "drift", deadline);
 				const scan = await run(
-					Alchemist.Drift.scan({ stack, stage: target.stage }),
+					Effect.gen(function* () {
+						if (deadlineExpired(deadline)) throw deadlineError(deadline);
+						return yield* Alchemist.Drift.scan({ stack, stage: target.stage });
+					}),
 				);
-				if (deadline.expired) throw deadlineError(deadline);
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
 				await requireStateOwnership(stableProgram, "drift", deadline);
 				verifyCompositeEnvironment(composite, target, "plan", operation);
+				if (deadlineExpired(deadline)) throw deadlineError(deadline);
 				if (!inspected.revalidateSources())
 					throw new AlchemyIacError(
 						"COMPOSITE_PLAN_UNVERIFIED",
@@ -2464,6 +2719,8 @@ export function createAlchemyIacProvider<
 					),
 				};
 			});
+			if (deadlineExpired(deadline)) throw deadlineError(deadline);
+			return result;
 		},
 	};
 }

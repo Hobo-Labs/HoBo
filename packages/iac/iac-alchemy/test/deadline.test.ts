@@ -66,6 +66,12 @@ function fixture(directory: string, timeout = 50) {
 	let ownershipCalls = 0;
 	let ownershipResult: "accept" | "reject" | "throw" = "accept";
 	let planAllowed = true;
+	let assessmentThrows = false;
+	let synchronousPhase = "none";
+	const synchronousWait = (phase: string) => {
+		if (synchronousPhase === phase)
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 450);
+	};
 	let hangUncertain = false;
 	let admissions = 0;
 	let routeCalls = 0;
@@ -93,6 +99,7 @@ function fixture(directory: string, timeout = 50) {
 				reconcile: () =>
 					Effect.gen(function* () {
 						effects++;
+						synchronousWait("provider");
 						if (block === "provider") {
 							started.resolve();
 							yield* Effect.promise(() => gate.promise);
@@ -121,6 +128,11 @@ function fixture(directory: string, timeout = 50) {
 			verify: async ({ phase }) => {
 				ownershipCalls++;
 				if (phase === "plan") ownershipPlans++;
+				synchronousWait(
+					phase === "plan"
+						? `ownership-plan-${ownershipPlans}`
+						: `ownership-${phase}`,
+				);
 				if (
 					block === `ownership-${phase}` ||
 					(phase === "plan" && block === "ownership-plan-all") ||
@@ -182,6 +194,7 @@ function fixture(directory: string, timeout = 50) {
 			},
 		},
 		resolveRoute: async ({ requestId }) => {
+			synchronousWait("resolve");
 			if (block === "resolve") {
 				started.resolve();
 				await gate.promise;
@@ -214,9 +227,14 @@ function fixture(directory: string, timeout = 50) {
 			verifyPlan: () => planAllowed,
 		},
 		financial: {
-			assess: (plan: FinancialPlan) => ({ plan }),
+			assess: (plan: FinancialPlan) => {
+				synchronousWait("assess");
+				if (assessmentThrows) throw new Error("assessment unavailable");
+				return { plan };
+			},
 			admit: async (requestId) => {
 				admissions++;
+				synchronousWait("admit");
 				if (block === "admit") {
 					started.resolve();
 					await gate.promise;
@@ -236,6 +254,7 @@ function fixture(directory: string, timeout = 50) {
 				};
 			},
 			revalidate: async () => {
+				synchronousWait("revalidate");
 				if (block === "revalidate") {
 					started.resolve();
 					await gate.promise;
@@ -259,8 +278,15 @@ function fixture(directory: string, timeout = 50) {
 		ownershipResult: (result: typeof ownershipResult) => {
 			ownershipResult = result;
 		},
+		synchronousBlock: (phase: string) => {
+			synchronousPhase = phase;
+			ownershipPlans = 0;
+		},
 		denyPlan: () => {
 			planAllowed = false;
+		},
+		failAssessment: () => {
+			assessmentThrows = true;
 		},
 		block: (phase: typeof block) => {
 			block = phase;
@@ -270,6 +296,7 @@ function fixture(directory: string, timeout = 50) {
 			effects,
 			plans,
 			stateReads,
+			ownershipPlans,
 			ownershipCalls,
 			admissions,
 			routeCalls,
@@ -367,6 +394,128 @@ describe("bounded Alchemy execution deadlines", () => {
 		}
 	});
 
+	it.each([
+		["resolve", "EXECUTION_DEADLINE_BEFORE_ROUTE", "not-started", 0, 0],
+		["admit", "ADMISSION_DEADLINE_UNKNOWN", "not-started", 0, 1],
+		["revalidate", "EXECUTION_DEADLINE_AFTER_ADMISSION", "not-started", 0, 1],
+		["provider", "PROVIDER_DEADLINE_UNKNOWN", "unknown", 1, 1],
+		[
+			"ownership-complete",
+			"ROUTE_COMPLETION_DEADLINE_UNKNOWN",
+			"completed",
+			1,
+			1,
+		],
+	] as const)("honors the absolute deadline after synchronous %s blocks the timer", async (phase, code, executionOutcome, effects, routeCalls) => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		try {
+			const f = fixture(dir, 300);
+			await f.provider.preview(program);
+			f.synchronousBlock(phase);
+			await expect(
+				f.provider.applyWithAdmission(program, "request"),
+			).rejects.toMatchObject({
+				code,
+				executionOutcome,
+				requiresReconciliation: true,
+			});
+			if (routeCalls) await f.completed.promise;
+			expect(f.observed()).toMatchObject({ effects, routeCalls });
+			if (routeCalls) expect(f.observed().outcomes).toEqual(["uncertain"]);
+			await expect(
+				f.provider.applyWithAdmission(program, "request"),
+			).rejects.toMatchObject({ requiresReconciliation: true });
+		} finally {
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("does not publish a pricing plan after its synchronous verifier overruns", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		try {
+			const f = fixture(dir, 300);
+			await f.provider.preview(program);
+			f.synchronousBlock("ownership-plan-2");
+			await expect(f.provider.preview(program)).rejects.toMatchObject({
+				code: "PREVIEW_DEADLINE_EXCEEDED",
+				executionOutcome: "not-started",
+			});
+			f.synchronousBlock("none");
+			await expect(
+				f.provider.applyWithAdmission(program, "request"),
+			).rejects.toMatchObject({ code: "PREVIEW_REQUIRED" });
+		} finally {
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("uses the captured monotonic clock even if the process clock property changes", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		const originalClock = process.hrtime.bigint;
+		try {
+			const f = fixture(dir, 300);
+			await f.provider.preview(program);
+			f.synchronousBlock("revalidate");
+			process.hrtime.bigint = () => 0n;
+			await expect(
+				f.provider.applyWithAdmission(program, "request"),
+			).rejects.toMatchObject({
+				code: "EXECUTION_DEADLINE_AFTER_ADMISSION",
+				requiresReconciliation: true,
+			});
+			await f.completed.promise;
+			expect(f.observed()).toMatchObject({
+				effects: 0,
+				outcomes: ["uncertain"],
+			});
+		} finally {
+			process.hrtime.bigint = originalClock;
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it.each([
+		"throw",
+		"overrun",
+	] as const)("does not publish a preview when financial assessment can %s", async (failure) => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		try {
+			const f = fixture(dir, 300);
+			await f.provider.preview(program);
+			if (failure === "throw") f.failAssessment();
+			else f.synchronousBlock("assess");
+			const result = f.provider.preview(program);
+			if (failure === "throw")
+				await expect(result).rejects.toThrow("assessment unavailable");
+			else
+				await expect(result).rejects.toMatchObject({
+					code: "PREVIEW_DEADLINE_EXCEEDED",
+				});
+			f.synchronousBlock("none");
+			await expect(
+				f.provider.applyWithAdmission(program, "request"),
+			).rejects.toMatchObject({ code: "PREVIEW_REQUIRED" });
+			expect(f.observed()).toMatchObject({ admissions: 0, effects: 0 });
+		} finally {
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 	it("captures program, expectation, and route permit before deferred work", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
 		const old = process.env.ALCHEMY_HOME;
@@ -418,7 +567,7 @@ describe("bounded Alchemy execution deadlines", () => {
 		const old = process.env.ALCHEMY_HOME;
 		process.env.ALCHEMY_HOME = join(dir, "home");
 		try {
-			const f = fixture(dir);
+			const f = fixture(dir, 5_000);
 			f.block("ownership-plan-all");
 			// Each request has an independent host callback, all of which remain
 			// pending even after the adapter's response timer has fired.
@@ -432,7 +581,7 @@ describe("bounded Alchemy execution deadlines", () => {
 			await expect(f.provider.preview(program)).rejects.toMatchObject({
 				code: "READ_OPERATION_LIMIT",
 			});
-			await expire();
+			await vi.advanceTimersByTimeAsync(5_001);
 			expect(await Promise.all(reads)).toEqual(
 				Array(128).fill("PREVIEW_DEADLINE_EXCEEDED"),
 			);
@@ -443,6 +592,99 @@ describe("bounded Alchemy execution deadlines", () => {
 			f.gate.resolve();
 			await vi.advanceTimersByTimeAsync(1);
 			await expect(f.provider.preview(program)).resolves.toBeDefined();
+		} finally {
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("reserves execution capacity before scheduling a synchronous burst", async () => {
+		timers();
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		try {
+			const f = fixture(dir, 5_000);
+			await f.provider.preview(program);
+			f.block("ownership-plan-all");
+			const attempts = Array.from({ length: 300 }, (_, index) =>
+				f.provider
+					.applyWithAdmission(
+						index === 0
+							? program
+							: { ...program, deploymentId: `deployment-${index}` },
+						"request",
+					)
+					.then(
+						() => "unexpected success",
+						(error: { code: string }) => error.code,
+					),
+			);
+			expect(vi.getTimerCount()).toBeLessThanOrEqual(128);
+			await f.started.promise;
+			await vi.advanceTimersByTimeAsync(5_001);
+			const outcomes = await Promise.all(attempts);
+			expect(
+				outcomes.filter((code) => code === "EXECUTION_LIMIT"),
+			).toHaveLength(172);
+			expect(
+				outcomes.filter((code) => code === "PREVIEW_REQUIRED"),
+			).toHaveLength(127);
+			expect(
+				outcomes.filter((code) => code === "EXECUTION_DEADLINE_BEFORE_ROUTE"),
+			).toHaveLength(1);
+			f.gate.resolve();
+			await vi.advanceTimersByTimeAsync(1);
+			expect(f.observed()).toMatchObject({
+				routeCalls: 0,
+				admissions: 0,
+				effects: 0,
+			});
+		} finally {
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("enforces preview cache capacity when two plans complete concurrently", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		try {
+			const f = fixture(dir, 5_000);
+			for (let index = 0; index < 127; index++)
+				await f.provider.preview({
+					...program,
+					operationGeneration: `generation-${index}`,
+				});
+			f.block("ownership-plan-all");
+			const candidates = [127, 128].map((index) =>
+				f.provider.preview({
+					...program,
+					operationGeneration: `generation-${index}`,
+				}),
+			);
+			const results = Promise.allSettled(candidates);
+			await f.started.promise;
+			for (
+				let attempts = 0;
+				attempts < 100 && f.observed().ownershipPlans < 2;
+				attempts++
+			)
+				await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(f.observed().ownershipPlans).toBe(2);
+			f.gate.resolve();
+			const outcomes = await results;
+			expect(
+				outcomes.filter((outcome) => outcome.status === "fulfilled"),
+			).toHaveLength(1);
+			const failures = outcomes.filter(
+				(outcome) => outcome.status === "rejected",
+			);
+			expect(failures).toHaveLength(1);
+			expect(failures[0]).toMatchObject({ reason: { code: "PREVIEW_LIMIT" } });
 		} finally {
 			if (old === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = old;

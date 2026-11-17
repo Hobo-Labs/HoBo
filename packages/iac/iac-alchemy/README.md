@@ -453,7 +453,11 @@ reconciliation; the host must resolve the previous attempt before replacing it.
 
 Every preview, assessment, apply, destroy and refresh has an
 `operationTimeoutMs` deadline, defaulting to 300,000 ms and configurable from
-1 through 3,600,000 ms. A preview or refresh timeout reports
+1 through 3,600,000 ms. Each public call captures an absolute monotonic deadline
+before input snapshotting and checks it at continuations, before provider start,
+and before returning success; this remains effective when the timer callback is
+delayed. The trusted runtime must provide the genuine Node monotonic clock when
+the adapter module initializes. A preview or refresh timeout reports
 `PREVIEW_DEADLINE_EXCEEDED` or `REFRESH_DEADLINE_EXCEEDED`; a late preview does
 not become eligible for apply. Apply and destroy snapshot routing expectations
 and route permits before deferred work, rejecting Proxy objects without invoking
@@ -489,9 +493,10 @@ watchdog. Marking a known hold uncertain is best effort; the host must still
 reconcile the authority if that callback fails or hangs. A timed-out adapter
 instance retains its local resource fence until it is replaced after recovery.
 An instance accepts at most 128 concurrent preview/refresh operations and at
-most 128 running or unresolved executions. A timed-out read still counts as
-running until its underlying work settles, so repeated timeouts cannot create
-an unbounded number of pending operations. When the read limit is reached,
+most 128 pending or unresolved executions. It reserves execution capacity
+before allocating a timer or scheduling deferred work. A timed-out operation
+still counts as pending until its underlying work settles, so repeated timeouts
+cannot create an unbounded number of pending operations. When the read limit is reached,
 `READ_OPERATION_LIMIT` is returned before starting another read.
 
 Plan fingerprints are bounded and include inspectable resource inputs,
