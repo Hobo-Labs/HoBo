@@ -16,7 +16,9 @@ oneof, and `quoteAvailablePricing(providerId, availability)` checks scope,
 complete financial state and explicit usage for all declared meters before
 rating it. The result identifies the developer model and revision, or a
 machine-readable rejection. Unknown and invalid inputs do not fall back to a
-different price.
+different price. The single-offering model builder snapshots and validates the
+scope and scenario before protobuf normalization; the quote also rejects
+malformed availability messages and unknown nested fields before rating them.
 
 This checks the scenario as declared; the model itself cannot prove that every
 billable resource or charge dimension was included. A supplied model is an
