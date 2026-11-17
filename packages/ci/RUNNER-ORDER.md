@@ -151,11 +151,21 @@ a run with more than one relay is left alone.
 
 ## What is not here
 
-- The host that gathers facts and records decisions. `decideRunnerRoute` is
-  called by the `hobo ci route` command today; no relay endpoint or route job
-  walks an order yet.
-- Billing reads. `MinutesUsage` and the monthly spend are inputs.
-- Prices. The financial models are in [`src/fleet/models.ts`](src/fleet/models.ts).
+- The hosts. A relay job is answered by `answerRelayJob`
+  ([RELAY-JOB.md](RELAY-JOB.md)): in job mode by the evaluator `hobo ci init
+  --relay` writes into a repository, in relay mode by a HoBo node in
+  `@hobo/ci-gh-actions`. Both gather the facts and journal the decision; the
+  walk here stays pure. Relay mode is off unless `relayJobs.answer` is
+  written, and has not yet answered a job in production.
+- Billing reads. `MinutesUsage` and the monthly spend are inputs. They are
+  filled by `LedgerSpendReader` ([`src/runner-order/spend.ts`](src/runner-order/spend.ts))
+  and by `GithubMinutesReader` in `@hobo/ci-gh-actions`; a reader that cannot
+  answer leaves the step allowed.
+- Prices. The financial models and the dated list prices
+  (`HOSTED_LIST_PRICES`) are in [`src/fleet/models.ts`](src/fleet/models.ts).
+
+What each RelayRunner claim reached is on the generated
+[parity scorecard](../../docs/ci/parity-scorecard.md) (ADR-0183).
 
 ## Gates
 
