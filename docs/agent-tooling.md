@@ -14,7 +14,10 @@ JavaScript, TypeScript, shell, Python, CSS, and HTML comments and added or
 changed planning or design documents. It reads the staged content for commits
 and the PR diff for CI; it does not inspect other languages or unchanged content.
 For renamed files, it compares against the original path so existing comments
-remain allowed while newly added comments are checked.
+remain allowed while newly added comments are checked. During a staged merge it
+compares against every parent, so content inherited unchanged from either side
+is not treated as a new merge edit. The PR check still examines the full diff
+against its base.
 
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, and **Codex** (Superpowers also targets **GitHub Copilot CLI**). This page is the reference; the at-a-glance table + always-on caveman directive live in [`../AGENTS.md`](../AGENTS.md). Install the binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The repo-local `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills are mirrored in `.agents/skills/` and `.claude/skills/` (all configured agents: Claude Code, Cursor, Codex, Grok, etc.); use `repo` for lifecycle work, `draft` for draft taxonomy and gate-enforced proof artifacts, `sdlc` to coordinate the full development loop (brainstorm → implement → review), `gh-stack` for non-interactive `gh stack` CLI rules, and `optimizexp` for persona-driven UX/DX/AX experience optimization (write-ahead agent bus + **review→reduce experiment→verify** each pass by default; derived fixes must ship in-run; no iterations/pass budget; true plateau = flat scores **and** empty implementable backlog; `--report-only` to measure without edits; schema-v2 personas, evidence-checked scorecards (`evidenceChecks`/`justification`), product-CLI feature coverage under `.optimizexp/features/cli-product/`, drift gate `pnpm run optimizexp:check`; config under [`.optimizexp/`](../.optimizexp/README.md); **AX** progressive refs under [AX references](../.agents/skills/optimizexp/references/ax/index.md) — specs, MCP, skills, harness CLIs, model routing, token optimization, hooks, auth). Invoking OptimizeXP grants standing approval for safe, in-scope preflight repairs; destructive, networked, secret-bearing, and unrelated actions still require separate authority.
 

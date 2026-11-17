@@ -64,6 +64,30 @@ function diffArgs(mode: Mode): string[] {
 	return ["diff", mergeBase, "HEAD"];
 }
 
+function mergeParentDiffs(mode: Mode): string[][] {
+	if (mode.kind !== "staged") return [];
+	const path = git(["rev-parse", "--git-path", "MERGE_HEAD"]).trim();
+	let contents: string;
+	try {
+		contents = readFileSync(path, "utf8");
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT")
+			return [];
+		throw error;
+	}
+	const heads = contents.split("\n").filter(Boolean);
+	if (heads.length === 0) throw new Error("MERGE_HEAD is empty");
+	return heads.map((head) => {
+		const commit = git([
+			"rev-parse",
+			"--verify",
+			"--end-of-options",
+			`${head}^{commit}`,
+		]).trim();
+		return ["diff", "--cached", commit];
+	});
+}
+
 function names(args: string[], filter: string): string[] {
 	return git([
 		...args,
@@ -265,11 +289,19 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
 	const renamed = renameSources(args);
+	const parents = mergeParentDiffs(mode).map((parentArgs) => ({
+		args: parentArgs,
+		files: new Set(names(parentArgs, "ACMRT")),
+		renamed: renameSources(parentArgs),
+	}));
 	const files = [...new Set([...names(args, "ACMRT"), ...untracked])];
 	const violations: Violation[] = [];
 	for (const file of files) {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
-		if (/\.mdx?$/iu.test(file)) {
+		if (
+			/\.mdx?$/iu.test(file) &&
+			parents.every((parent) => parent.files.has(file))
+		) {
 			const reason = documentViolation(file, contents(mode, file));
 			if (reason) violations.push({ file, line: 1, message: reason });
 		}
@@ -282,7 +314,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			continue;
 		const text = contents(mode, file);
 		const source = renamed.get(file);
-		const added = untracked.includes(file)
+		let added = untracked.includes(file)
 			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
 			: addedLineNumbers(
 					git([
@@ -295,6 +327,25 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 						...(source === undefined ? [file] : [source, file]),
 					]),
 				);
+		for (const parent of parents) {
+			if (!parent.files.has(file)) {
+				added.clear();
+				break;
+			}
+			const parentSource = parent.renamed.get(file);
+			const parentAdded = addedLineNumbers(
+				git([
+					...parent.args,
+					"--find-renames",
+					"--no-color",
+					"--no-ext-diff",
+					"--unified=0",
+					"--",
+					...(parentSource === undefined ? [file] : [parentSource, file]),
+				]),
+			);
+			added = new Set([...added].filter((line) => parentAdded.has(line)));
+		}
 		violations.push(...commentViolations(file, text, added));
 	}
 	return violations;

@@ -19,11 +19,11 @@ import {
 
 const script = resolve("scripts/check-source-policy.mts");
 const scratch: string[] = [];
-const env = {
-	...process.env,
-	GIT_CONFIG_NOSYSTEM: "1",
-	GIT_CONFIG_GLOBAL: "/dev/null",
-};
+const env: NodeJS.ProcessEnv = { ...process.env };
+for (const name of Object.keys(env))
+	if (name.startsWith("GIT_")) delete env[name];
+env.GIT_CONFIG_NOSYSTEM = "1";
+env.GIT_CONFIG_GLOBAL = "/dev/null";
 
 afterEach(() => {
 	for (const directory of scratch.splice(0))
@@ -208,6 +208,67 @@ describe("source policy", () => {
 		assert.equal(changed.status, 1, changed.stderr);
 		assert.match(changed.stderr, /renamed\.ts:3/u);
 		assert.doesNotMatch(changed.stderr, /renamed\.ts:1/u);
+	});
+
+	it("accepts existing incoming content during a merge but rejects new merge edits", () => {
+		const repo = fixture();
+		const originalBranch = git(repo, "symbolic-ref", "--short", "HEAD");
+		git(repo, "switch", "--quiet", "-c", "incoming");
+		const incoming = "// already on incoming\nexport const incoming = 1;\n";
+		write(repo, "incoming.ts", incoming);
+		write(repo, "docs/design/existing.md", "# Existing design\n");
+		git(repo, "add", "--all");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"incoming",
+		);
+		git(repo, "switch", "--quiet", originalBranch);
+		write(repo, "local.ts", "export const local = 1;\n");
+		git(repo, "add", "local.ts");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"local",
+		);
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"merge",
+			"--no-commit",
+			"--no-ff",
+			"incoming",
+		);
+		const inherited = guard(repo, "--staged");
+		assert.equal(inherited.status, 0, inherited.stderr);
+
+		write(repo, "incoming.ts", `${incoming}// added during merge\n`);
+		git(repo, "add", "incoming.ts");
+		const comment = guard(repo, "--staged");
+		assert.equal(comment.status, 1, comment.stderr);
+		assert.match(comment.stderr, /incoming\.ts:3/u);
+
+		write(repo, "incoming.ts", incoming);
+		write(repo, "docs/design/existing.md", "# Changed during merge\n");
+		git(repo, "add", "--all");
+		const design = guard(repo, "--staged");
+		assert.equal(design.status, 1, design.stderr);
+		assert.match(design.stderr, /docs\/design\/existing\.md/u);
 	});
 
 	it("checks filenames containing Git pathspec metacharacters literally", () => {
