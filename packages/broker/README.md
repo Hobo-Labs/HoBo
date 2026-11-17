@@ -151,6 +151,39 @@ changed contents but does not authenticate provider data or the quote's source.
 The general broker request path still passes `spendEstimateUsd` to its billing
 plane; it does not automatically invoke this quote-based helper.
 
+Broker request documents must supply `spendEstimateUsd` (or
+`spend_estimate_usd`) explicitly, including for free work. Conflicting aliases
+reject. Protobuf clients must set the optional scalar even when it is zero;
+older encoders that omitted a zero scalar must migrate. For `hobo broker up`,
+the built-in local-host catalog can supply its zero estimate; registry-backed
+deployments require `--request` with an explicit estimate. An explicit estimate
+is still a caller assertion and does not establish quote provenance.
+
+The [request-estimate skill](../../.agents/skills/verify-broker-request-estimate/SKILL.md)
+checks those boundaries. Its model explores 14 states and hides seven
+same-state steps in this projection.
+
+```mermaid
+stateDiagram-v2
+  s0: Request has an invalid estimate
+  s1: Request has no estimate
+  s2: Use the zero-cost local catalog
+  s3: Registry request has no estimate
+  s4: Request has an explicit estimate
+  s5: Request refused
+  s6: Continue to the budget check
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  [*] --> s4
+  s0 --> s5: refuse the request
+  s1 --> s5: refuse the request
+  s2 --> s6: accept the estimate
+  s3 --> s5: refuse the request
+  s4 --> s6: accept the estimate
+```
+
 The [broker budget skill](../../.agents/skills/verify-broker-budget-authority/SKILL.md)
 checks this authorization boundary alongside budget holds and settlement. Its
 quote model explores 2,304 states; this constrained projection explores 96
