@@ -629,3 +629,14 @@ An unknown observation time cannot prove that completed local usage was
 included, so that usage remains counted. See the
 [CI budget verification skill](../../.agents/skills/verify-ci-budget-routing/SKILL.md)
 for the model, generated tests, and assumptions.
+
+The following projection of the provider-observation model is not a runtime
+trace. TLC explored 36 states and 36 steps; the chart hides 18 steps that
+remain within a displayed state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> ReadObservations
+  ReadObservations --> Admitted: highest exposure fits
+  ReadObservations --> Refused: highest exposure exceeds budget
+```
