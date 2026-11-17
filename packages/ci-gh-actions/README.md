@@ -1692,3 +1692,35 @@ are hand-authored consumer expectations in
 which `contracts/relay-job-facts.consumer.test.ts` drives `GithubRouteFacts`
 through; no provider verification is claimed. No relay job uses them in a
 workflow yet, so the channel is built, not proven.
+
+## Relay job, job mode
+
+In job mode ([ADR-0183](../../docs/design/adr/runner-order.md)) a relay job
+is answered on a GitHub-hosted runner by a vendored evaluator, with no relay
+anywhere. It walks the same engine relay mode does (`answerRelayJob` in
+`@hobo/ci`) on facts its own token can read.
+
+- [`src/relay-job/main.ts`](src/relay-job/main.ts) is the entry. It takes the
+  twelve relay inputs and the run's context as `--name value` arguments,
+  reads `.hobo/ci.json` from the checkout for the runner order and the queue
+  limits of `runnerRouting`, and answers with `GithubRouteFacts`. The job id
+  is the run, attempt and job; the plan id is the run. When the event does
+  not say whether the repository is private, it reads the repository once,
+  and a failed read counts as public, which keeps the job off machines. A
+  broken order fails the job with the parser's sentence, naming the file.
+  `size` and `first` apply to that job alone.
+- [`src/relay-job/outputs.ts`](src/relay-job/outputs.ts) writes for GitHub:
+  the outputs `runner`, `step`, `outcome` and `reason` in GitHub's
+  multi-line form, the answer's annotations as `hobo-ci-relay-answer`
+  commands, and, through `NoticeRouteJournal`, each decision as one
+  `hobo-ci-relay` notice whose message is the journal entry as protobuf JSON.
+  The run's annotations are the only history job mode keeps. A `none`
+  decision prints its one sentence as an error and exits non-zero, so GitHub
+  skips the jobs that need the relay.
+
+`test/relay-job-main.test.ts` plays gauntlet cases R04, R05, R11, R14, R15
+and C03 against the GitHub simulator: a GitHub-hosted runner takes the relay
+job, the entry answers with the simulator as GitHub, and the job is completed
+with what the entry wrote, so GitHub's own rules decide what runs next.
+`NoticeRouteJournal` and the checkout's order source pass the port
+conformance functions of `@hobo/ci/runner-order/testing`.
