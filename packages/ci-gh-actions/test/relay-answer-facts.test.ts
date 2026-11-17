@@ -103,7 +103,9 @@ describe("StoreRouteFacts", () => {
 
 	it("offers the account's machines, online by advert age, readable by the readers given", async () => {
 		const registry = new InMemoryMachineRegistry();
-		await registry.put(testMachineAdvert({ id: "m-1", lastSeenMs: NOW - 10_000 }));
+		await registry.put(
+			testMachineAdvert({ id: "m-1", lastSeenMs: NOW - 10_000 }),
+		);
 		await registry.put(
 			testMachineAdvert({ id: "m-2", lastSeenMs: NOW - 10 * 60_000 }),
 		);
@@ -213,9 +215,9 @@ describe("relayJobs in .hobo/ci.json", () => {
 			answer: false,
 			label: "hobo-relay",
 		});
-		expect(parseRelayJobs('{"runnerOrder":{"steps":[{"key":"github"}]}}')).toEqual(
-			{ answer: false, label: "hobo-relay" },
-		);
+		expect(
+			parseRelayJobs('{"runnerOrder":{"steps":[{"key":"github"}]}}'),
+		).toEqual({ answer: false, label: "hobo-relay" });
 		expect(parseRelayJobs('{"relayJobs":{"answer":true}}')).toEqual({
 			answer: true,
 			label: "hobo-relay",
@@ -241,11 +243,7 @@ describe("GithubCiOrderSource", () => {
 		await runnerOrderSourceConformance((orders) => {
 			const sim = new GithubSimulator();
 			for (const [repository, json] of orders)
-				sim.putFile(
-					repository,
-					RELAY_CONFIG_PATH,
-					`{"runnerOrder":${json}}`,
-				);
+				sim.putFile(repository, RELAY_CONFIG_PATH, `{"runnerOrder":${json}}`);
 			sim.addRepository("octo/none");
 			return new GithubCiOrderSource(
 				new GithubCiFile(simulatorTransport(sim), 1),

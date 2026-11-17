@@ -57,9 +57,7 @@ export type StoreRouteFactsDeps = Readonly<{
 	 * left out cannot, so a machine shared with anyone is not offered to
 	 * someone else's job in it.
 	 */
-	readers:
-		| ((repository: string) => Promise<ReadonlySet<string>>)
-		| undefined;
+	readers: ((repository: string) => Promise<ReadonlySet<string>>) | undefined;
 	spend: SpendReader | undefined;
 	health: ProviderHealthStore | undefined;
 	minutes: MinutesReader | undefined;
