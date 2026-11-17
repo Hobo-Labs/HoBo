@@ -138,6 +138,7 @@ function setup(
 	options: {
 		withPricing?: boolean;
 		authorizeUnpriced?: boolean;
+		unpricedPolicy?: "allow" | "deny";
 		failApply?: boolean;
 		badAdmission?: boolean;
 		unreadableReceipt?: boolean;
@@ -316,7 +317,7 @@ function setup(
 		...(pricing === undefined ? undefined : { pricing }),
 		authority,
 		now: () => NOW,
-		...(options.authorizeUnpriced
+		...(options.authorizeUnpriced || options.unpricedPolicy !== undefined
 			? {
 					unpriced: {
 						authorize: ({
@@ -324,13 +325,17 @@ function setup(
 							inventoryHash,
 							identity,
 						}: Parameters<IacUnpricedAuthorizer>[0]) => ({
-							gate: { effect: "allow" as const, reasons: [], events: [] },
+							gate: {
+								effect: options.unpricedPolicy === "deny" ? "deny" : "allow",
+								reasons: [],
+								events: [],
+							},
 							proof: create(IacUnpricedPolicyProofSchema, {
 								requestDigest,
 								inventoryHash,
 								identity,
 								policyHash: "policy:1",
-								effect: "allow",
+								effect: options.unpricedPolicy === "deny" ? "deny" : "allow",
 								evidenceRef: "unpriced:1",
 								obligationsSatisfied: true,
 								observedAt: "2026-01-01T00:00:00Z",
@@ -965,6 +970,97 @@ describe("Alchemy IaC provider against the real library", () => {
 		}
 	});
 
+	it("runs Rivet without a pricing model only with explicit unpriced policy and a durable unbounded hold", async () => {
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			unpricedPolicy: "allow",
+			output: "resource",
+		});
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			expect(assessment).toMatchObject({
+				pricing: { state: { case: "unavailable" } },
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			const result = await fixture.provider.applyWithAdmission(
+				program,
+				"unpriced-attempt",
+			);
+			expect(result).toMatchObject({
+				outputs: { poolName: "default" },
+				admission: {
+					status: "admitted",
+					budget: { evaluation: "bypassed", reservation: "held" },
+					reservation: {
+						reservationId: "iac:unpriced-attempt",
+						unboundedExposure: true,
+					},
+				},
+			});
+			expect(fixture.applied()).toBe(1);
+			expect(fixture.authority.read(NOW)).toMatchObject({
+				reservedMicros: 0,
+				unboundedExposureCount: 1,
+			});
+			expect(fixture.authority.lookup("iac:unpriced-attempt")).toMatchObject({
+				status: "held",
+				unboundedExposure: true,
+			});
+			expect(
+				await fixture.routeAuthority.inspect({
+					tenantId: "tenant-a",
+					requestId: "unpriced-attempt",
+				}),
+			).toMatchObject({
+				phase: "finished",
+				outcome: { status: "selected", targetId: "yard-a" },
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("does not run Rivet or create exposure when explicit unpriced policy denies", async () => {
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			unpricedPolicy: "deny",
+		});
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "denied-attempt"),
+			).rejects.toMatchObject({
+				code: "UNPRICED_POLICY_NOT_ALLOWED",
+				requiresReconciliation: false,
+				executionOutcome: "not-started",
+				admission: {
+					status: "denied",
+					budget: { evaluation: "denied", reservation: "not-created" },
+				},
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.lookup("iac:denied-attempt")).toBeUndefined();
+			expect(fixture.authority.read(NOW)).toMatchObject({
+				reservedMicros: 0,
+				unboundedExposureCount: 0,
+			});
+			expect(
+				await fixture.routeAuthority.inspect({
+					tenantId: "tenant-a",
+					requestId: "denied-attempt",
+				}),
+			).toMatchObject({
+				phase: "finished",
+				outcome: { status: "denied" },
+				attempts: [{ targetId: "yard-a", status: "denied" }],
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
 	it("admits a real Rivet Cloud resource when a complete model and trusted bound are supplied", async () => {
 		const fixture = setup({ rivet: true });
 		try {
@@ -1192,12 +1288,24 @@ describe("Alchemy IaC provider against the real library", () => {
 			await expect(
 				fixture.provider.applyWithAdmission(program, "model-changed"),
 			).rejects.toMatchObject({
-				code: "ADMISSION_REVALIDATION_FAILED",
+				code: "ADMISSION_RECEIPT_INVALID",
 				reservationId: "iac:model-changed",
 				requiresReconciliation: true,
 			});
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			expect(fixture.authority.lookup("iac:model-changed")).toMatchObject({
+				status: "uncertain",
+			});
+			expect(
+				await fixture.routeAuthority.inspect({
+					tenantId: "tenant-a",
+					requestId: "model-changed",
+				}),
+			).toMatchObject({
+				phase: "finished",
+				outcome: { status: "uncertain", targetId: "yard-a" },
+			});
 		} finally {
 			fixture.authority.close();
 		}

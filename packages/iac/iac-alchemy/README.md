@@ -130,6 +130,8 @@ it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
 generations reach the Rivet adapter's trusted route resolver unchanged. The
 fixture supplies explicit financial settlement trust and a host classification.
+It also verifies that explicit unpriced policy approval holds unbounded exposure
+for a Rivet target, while policy denial creates no hold or provider effect.
 Its stub RunnerPool provider does not read, build or upload `main`, so the
 fixture's empty source classification applies only to that stub. A production
 RunnerPool that builds source must list its complete source requirements and
@@ -457,10 +459,12 @@ Receipt inspection covers nested quote, reservation and proof data, including
 account and entitlement claims. Unknown fields, conflicting financial evidence,
 accessors, proxies and unknown protobuf wire fields make the outcome uncertain.
 The IaC financial port cannot authenticate fence-settlement guards, their
-placement claims, or settlement evidence; a receipt carrying any of these
-reports `ADMISSION_UNSUPPORTED_EVIDENCE` when its reservation can be scoped
-safely. Malformed or unscoped receipts also require reconciliation before
-execution or fallback.
+placement claims, or settlement evidence. When such a field is directly
+inspectable and its reservation can be scoped safely, the receipt reports
+`ADMISSION_UNSUPPORTED_EVIDENCE`; uninspectable fields report a generic invalid
+receipt. Both cases require reconciliation before execution or fallback. A
+`not-started` outcome describes this adapter invocation; a previous attempt may
+have run, so the hold and route remain uncertain.
 An optional proof explicitly set to `undefined` is treated as absent; a bypassed
 admission still requires its policy and scope proofs. The bounded receipt graph
 allows at most 16,384 values, 32 nesting levels, 1,024 array entries, 256 object
