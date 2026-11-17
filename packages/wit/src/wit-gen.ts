@@ -64,12 +64,14 @@ export const GENERATION_TARGETS = [
 		outSubdir: "durable-messaging-provider",
 	},
 	{
-		witPath: "wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
+		witPath:
+			"wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
 		worldName: "durable-messaging-jspi-guest",
 		outSubdir: "durable-messaging-jspi-guest",
 	},
 	{
-		witPath: "wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
+		witPath:
+			"wit/deps/hobo-durable-messaging-jspi/hobo-durable-messaging-jspi.wit",
 		worldName: "durable-messaging-jspi-provider",
 		outSubdir: "durable-messaging-jspi-provider",
 	},
