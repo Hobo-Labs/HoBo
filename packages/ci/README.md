@@ -672,3 +672,17 @@ stateDiagram-v2
   ReadCapacity --> ReservationRecorded: reserve one slot
   ReservationRecorded --> StaleRefused: refuse stale capacity view
 ```
+
+The [uncertain-capacity verification skill](../../.agents/skills/verify-ci-uncertain-capacity/SKILL.md)
+models recovery and checks the stores. The projection hides five same-label
+steps from 14 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Reserved
+  Reserved --> Uncertain: runner status becomes uncertain
+  Uncertain --> Ready: teardown confirmed
+  Uncertain --> SettlementPending: teardown confirmed
+  SettlementPending --> Ready: execution status recorded
+  Ready --> Released: release reserved capacity
+```
