@@ -148,6 +148,17 @@ describe("explicit Alchemy primitive mapping", () => {
 			{},
 			{ status: "unknown" },
 			{ status: "unsupported", reason: "" },
+			{
+				get status() {
+					return "supported";
+				},
+			},
+			{
+				status: "unsupported",
+				get reason() {
+					return "runtime unavailable";
+				},
+			},
 		]) {
 			expect(() =>
 				mapBindleToAlchemy(declaration, mappers(observed), {

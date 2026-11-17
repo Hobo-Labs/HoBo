@@ -163,13 +163,22 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 	let unsupportedReason: string | undefined;
 	try {
 		const decision = options.assessRequirements(bindle.requirements);
-		if (decision.status === "unsupported") {
+		const status = Object.getOwnPropertyDescriptor(decision, "status");
+		if (status === undefined || !("value" in status))
+			throw new Error("invalid requirement decision");
+		if (status.value === "unsupported") {
+			const reason = Object.getOwnPropertyDescriptor(decision, "reason");
 			/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: the provider callback can return malformed data across the adapter boundary. */
-			if (typeof decision.reason !== "string" || !validName(decision.reason))
+			if (
+				reason === undefined ||
+				!("value" in reason) ||
+				typeof reason.value !== "string" ||
+				!validName(reason.value)
+			)
 				throw new Error("invalid requirement decision");
 			/* oxlint-enable anti-slop/no-runtime-typeof */
-			unsupportedReason = decision.reason;
-		} else if (decision.status !== "supported") {
+			unsupportedReason = reason.value;
+		} else if (status.value !== "supported") {
 			throw new Error("invalid requirement decision");
 		}
 	} catch {
