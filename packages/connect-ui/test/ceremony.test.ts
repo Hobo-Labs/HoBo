@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { type CeremonySetting, configureThen } from "../src/ceremony.js";
 import type { ConnectFlow } from "../src/server.js";
+import { stepView } from "../src/view.js";
 
 const login: CeremonySetting = {
 	field: { name: "login", label: "Owner", kind: "text", required: true },
@@ -23,6 +24,26 @@ const onward: ConnectFlow = {
 };
 
 describe("configureThen", () => {
+	it("retains the approval prompt after a refused submission", async () => {
+		const flow = await configureThen({
+			provider: "hobo",
+			title: "Choose a provider",
+			reason: "A provider is needed.",
+			submitConfirm: "Approve the selected provider?",
+			settings: [login],
+			missing: [login.field],
+			known: {},
+			proceed: async () => ({ ok: true, flow: onward }),
+		});
+		const prompt = (step: typeof flow.initial) =>
+			stepView(step).actions.find(
+				(action) => action.action === "connect.submit",
+			)?.confirm;
+		expect(prompt(flow.initial)).toBe("Approve the selected provider?");
+		const refused = await flow.onAction("connect.submit", {}, flow.initial);
+		expect(prompt(refused.step)).toBe("Approve the selected provider?");
+	});
+
 	it("lets the user correct a failed lookup when all settings were supplied", async () => {
 		const flow = await configureThen({
 			provider: "github",

@@ -108,6 +108,47 @@ describe("an agent can complete each step", () => {
 		approve = false;
 	});
 
+	it("needs a person to approve a consequential configure step", async () => {
+		const calls = mount(
+			stepView({
+				kind: "configure",
+				provider: "hobo",
+				title: "Choose a provider",
+				reason: "A provider is needed.",
+				submitConfirm: "Approve the selected provider?",
+				fields: [
+					{
+						name: "provider:db",
+						label: "Provider for db",
+						kind: "choice",
+						required: true,
+						value: "neon",
+						options: [{ value: "neon", label: "Neon" }],
+					},
+				],
+			}),
+		);
+		approve = false;
+		let refused: Awaited<ReturnType<typeof agent.act>> | undefined;
+		await act(async () => {
+			refused = await agent.act({
+				steps: [{ ref: "Save and continue", action: "press" }],
+			});
+		});
+		expect(refused?.ok).toBe(false);
+		expect(calls).toEqual([]);
+		approve = true;
+		await act(async () => {
+			await agent.act({
+				steps: [{ ref: "Save and continue", action: "press" }],
+			});
+		});
+		expect(calls).toEqual([
+			{ action: "connect.submit", values: { "provider:db": "neon" } },
+		]);
+		approve = false;
+	});
+
 	it("fills a configure step, the secret included, and submits", async () => {
 		const calls = mount(
 			stepView({

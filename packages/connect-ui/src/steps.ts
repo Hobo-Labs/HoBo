@@ -57,6 +57,8 @@ export type ConnectStep =
 			readonly title: string;
 			readonly reason: string;
 			readonly fields: readonly ConfigField[];
+			/** Explain a consequential submit before an agent may trigger it. */
+			readonly submitConfirm?: string;
 	  }
 	| {
 			readonly kind: "choose-secret-store";

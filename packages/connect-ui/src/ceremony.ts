@@ -105,6 +105,8 @@ export interface ConfigureOptions {
 	readonly provider: ConnectProvider;
 	readonly title: string;
 	readonly reason: string;
+	/** Explain a consequential submit before an agent may trigger it. */
+	readonly submitConfirm?: string;
 	readonly settings: readonly CeremonySetting[];
 	readonly missing: readonly ConfigField[];
 	/** Persists the non-secret values the person submitted. */
@@ -257,6 +259,9 @@ function configureStep(
 		provider: options.provider,
 		title: options.title,
 		reason: options.reason,
+		...(options.submitConfirm !== undefined
+			? { submitConfirm: options.submitConfirm }
+			: undefined),
 		fields: fields.map((field) => ({
 			...field,
 			// A secret is never sent back to the page, even after a refusal.
