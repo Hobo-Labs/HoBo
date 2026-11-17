@@ -653,6 +653,23 @@ export {
 	StoreRouteFacts,
 	type StoreRouteFactsDeps,
 } from "./relay-answer/index.js";
+export {
+	CHECK_COMPLETED_EVENT,
+	createDockerLintSandbox,
+	createRelayChecks,
+	DEFAULT_RELAY_CHECKS,
+	GithubRelayCheckSource,
+	LINT_TOOLS,
+	type LintSandbox,
+	type LintTool,
+	parseRelayChecksConfig,
+	RELAY_CHECK_NAMES,
+	type RelayCheckCompleted,
+	type RelayCheckName,
+	type RelayCheckSource,
+	type RelayChecksConfig,
+	type RelayChecksOptions,
+} from "./relay-checks/index.js";
 export { createRelayHost, type RelayAgent } from "./relay-host.js";
 export {
 	GITHUB_FACTS_BUDGET_MS,

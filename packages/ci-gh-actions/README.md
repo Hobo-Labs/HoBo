@@ -2127,3 +2127,20 @@ decision that moves the job to the other runner type. The simulator has no
 "re-run a job" route, so the test adapts it to a whole-run re-run where every
 job needs the relay. No relay runs this in production yet, so the channel is
 built, not proven.
+
+## Runner-less checks: title, then lint
+
+`createRelayChecks` (`src/relay-checks/`) is the `checks` handler relay mode
+passes to `answerRelayJob` (ADR-0183, F9). A relay job whose steps are all
+HoBo check steps (a `uses:` ending in `/checks/pr-title` or `/checks/lint`)
+is completed by the relay itself, passed or failed with annotations, so no
+runner starts and no minute is billed. Every step must be a check step with
+literal inputs; anything else fails the job with the reason. The title check
+needs a pull request event and takes its allowed types from the step or from
+`checks.prTitle.types` in `.hobo/ci.json`. The lint check is off unless
+`checks.lint` is set; it runs `actionlint`, `shellcheck`, `oxlint`, `ruff` and
+`typos` on the commit's archive in a sandbox with no network
+(`createDockerLintSandbox`), five minutes per tool, and reports one result per
+tool and 50 annotations at most. Each answered job is a `check.completed`
+event. It is built, not proven: tested against the GitHub simulator and a fake
+sandbox. See [`src/relay-checks/RELAY-CHECKS.md`](src/relay-checks/RELAY-CHECKS.md).
