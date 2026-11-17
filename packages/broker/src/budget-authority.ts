@@ -146,8 +146,10 @@ function unboundedFingerprint(input: {
 }
 
 /** Host-enrolled authority for exclusive financial scopes. `verify` authenticates
- * historical attestations; `isCurrent` guarantees ownership is enforced by
- * every budget authority through source retirement and settlement. `settlement`
+ * historical attestations and independently establishes globally canonical
+ * account IDs across provider aliases. `isCurrent` guarantees ownership is
+ * enforced across all budget authorities and billing periods, including those
+ * created later, through source retirement and settlement. `settlement`
  * authenticates final usage and permanent source retirement for the exact claim.
  * These pure checks run synchronously inside the ledger transaction. */
 export interface IacUnpricedScopeTrust {

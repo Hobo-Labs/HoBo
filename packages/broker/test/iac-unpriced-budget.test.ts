@@ -473,7 +473,7 @@ describe("durable unbounded liability admission", () => {
 
 	it("rejects competing unpriced scopes when two budget authorities share an account", async () => {
 		const { options, unpriced } = fixture();
-		const owners = new Set(["hosting", "other-budget"]);
+		const owners = new Set(["hosting/2026-01", "other-budget/2026-02"]);
 		const sharedTrust = {
 			...options.unpricedScopeTrust,
 			verify: (proof: { signature: string }) =>
@@ -488,6 +488,7 @@ describe("durable unbounded liability admission", () => {
 		otherSnapshot.identity = create(BudgetIdentitySchema, {
 			...identity,
 			budgetId: "other-budget",
+			periodId: "2026-02",
 		});
 		const other = createSqliteBudgetAdmissionAuthority({
 			...options,
@@ -522,6 +523,28 @@ describe("durable unbounded liability admission", () => {
 		expect(other.read(now).unboundedExposureCount).toBe(0);
 		one.close();
 		other.close();
+	});
+
+	it("requires independently canonical account IDs instead of caller-chosen aliases", () => {
+		const { options, unpriced } = fixture();
+		options.snapshot.providerAccounts[0]!.providerAccountId = "provider-alias";
+		unpriced.providerAccountIds = ["provider-alias"];
+		unpriced.scopeProof.providerAccountIds = ["provider-alias"];
+		const ledger = createSqliteBudgetAdmissionAuthority({
+			...options,
+			unpricedScopeTrust: {
+				...options.unpricedScopeTrust,
+				// The host independently maps this alias to account-a and refuses
+				// a proof that did not use the globally canonical identifier.
+				verify: (proof) =>
+					proof.providerAccountIds.every((id) => id !== "provider-alias"),
+			},
+		});
+		expect(() => ledger.reserveUnbounded(unpriced)).toThrow(
+			"exclusive financial scope",
+		);
+		expect(ledger.read(now).unboundedExposureCount).toBe(0);
+		ledger.close();
 	});
 
 	it("fails closed without independently enrolled scope trust", () => {

@@ -37,9 +37,11 @@ connections sharing that ledger. Unpriced admission also refuses shared
 entitlements.
 
 The host-enrolled scope authority is a necessary trust boundary: it must
-authenticate ownership and enforce exclusive financial ownership across every
-budget authority sharing those accounts, including authorities created later,
-until source retirement and settlement. The ledger cannot independently prove
+independently authenticate globally canonical account IDs across providers and
+aliases, reject alternate names for the same billable account, and enforce
+exclusive financial ownership across every budget authority and billing period,
+including authorities created later, until source retirement and settlement.
+The ledger cannot independently prove
 that other ledgers or provider accounts obey that contract. Its synchronous
 verifier also authenticates settlement for the exact claim, plan, account
 charges, final usage and permanent source retirement; it is called again during
