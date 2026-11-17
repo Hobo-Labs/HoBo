@@ -246,6 +246,13 @@ reconciler over the Station's MANAGED Camps, `/v1/cd/` (read API for
 operators, delivery feed for enrolled agents), `/healthz` and `/readyz`.
 Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
 
+The mount and the passes are `composeCdHost` (`src/cd-host.ts`), which
+`serve cd` runs behind `node:http` with the service's own tick loop. A
+platform function with no loop uses the same host: `handle` answers one
+request, and `pass` reconciles each MANAGED Camp once and runs one tick.
+Built with `readiness: "composed"`, its `/readyz` answers 200 once the
+runtime has opened, because a function never starts the service's loop.
+
 ## Runbook
 
 - **`Unknown option` (`HOBO_CLI_USAGE`)**: the flag is not one the subcommand
