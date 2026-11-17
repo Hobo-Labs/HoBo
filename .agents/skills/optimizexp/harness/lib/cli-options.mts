@@ -5,6 +5,7 @@ export function normalizeCliOptions(
 		values: readonly string[];
 		flags: readonly string[];
 		inlineValues?: readonly string[];
+		allowEmptyValues?: readonly string[];
 	},
 ): { argv: string[]; positionals: string[]; error?: string } {
 	const result: string[] = [];
@@ -24,7 +25,7 @@ export function normalizeCliOptions(
 			result.push(arg);
 		} else if (options.values.includes(name)) {
 			const next = value ?? argv[++i];
-			if (!next?.trim() || (value === undefined && next.startsWith("-"))) {
+			if (next === undefined || (!next.trim() && !options.allowEmptyValues?.includes(name)) || (value === undefined && next.startsWith("-"))) {
 				return { argv: result, positionals, error: `${name} requires a value` };
 			}
 			result.push(name, next);

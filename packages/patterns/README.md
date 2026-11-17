@@ -15,7 +15,7 @@ Zero LLM tokens on every search, render and apply. Receipts record
 |---|---|
 | Reference application | Full `examples/*` app / CI fixture |
 | Pattern | Versioned semantic concept with renderings |
-| Starter | Multi-file project rendering (`starter.cli.*`) |
+| Starter | Pattern backed by project template inputs (`starter.cli.*`) |
 | Rendering | Snippet, file, project, markdown, VS Code, or effects |
 | Catalog | Parsed patterns + content digest; rendering reads share one manifest-path lookup per loaded catalog |
 | Index | Generated retrieval projection |

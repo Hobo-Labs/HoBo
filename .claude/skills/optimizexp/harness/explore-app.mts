@@ -10,6 +10,7 @@ import process from "node:process";
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { listProjects, resolveProjects } from "./lib/projects.mts";
 import { repoRoot } from "./lib/paths.mts";
 import {
@@ -153,6 +154,13 @@ function main() {
 	for (const project of targets) {
 		if (!validTargetDirectory(root, project.path)) {
 			console.error(`Invalid project directory: ${project.id}`);
+			process.exit(2);
+		}
+	}
+	if (args.mode !== "validate") {
+		const problem = optimizexpWriteProblem(root, targets.map((project) => project.path));
+		if (problem) {
+			console.error(problem);
 			process.exit(2);
 		}
 	}

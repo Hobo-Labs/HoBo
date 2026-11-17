@@ -29,6 +29,9 @@ import {
 import { evaluateScorecardEvidence } from "../../harness/lib/evidence-checks.mts";
 import { validateEvidenceReview } from "../../harness/lib/evidence-review.mts";
 import { listProjects } from "../../harness/lib/projects.mts";
+import { normalizeCliOptions } from "../../harness/lib/cli-options.mts";
+import { isPathIdentifier } from "../../harness/lib/slug.mts";
+import { optimizexpWriteProblem } from "../../harness/lib/write-containment.mts";
 import { evaluateDesignRelevance } from "../../harness/lib/design-council.mts";
 import { inspectGitReviewSubject, runConsensusCommand } from "./consensus-loop.mts";
 
@@ -1754,7 +1757,16 @@ function modeAggregateBus(root: string, runId: string) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--root", "--run", "--run-id", "--experiences", "--personas", "--persona", "--feature", "--features", "--projects", "--scores", "--prev-scores", "--passes", "--iteration", "--implementable-findings", "--implementable-findings-remaining", "--implementable-harm", "--implementable-uplift", "--harm-regressed", "--cognitive-breach", "--regime", "--limit", "--delight-passes", "--stop-reason"],
+		flags: ["--help", "-h", "--report-only", "--no-reduce", "--mismatches-only", "--no-delight", "--harm-only", "--no-survey", "--force"],
+		allowEmptyValues: ["--experiences", "--personas", "--features", "--projects"],
+	});
+	if (input.error || input.positionals.length > 1 || (input.positionals.length && input.argv.includes("--mode"))) {
+		console.error(input.error ?? "Unexpected positional argument");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	const root = repoRoot(
 		typeof args.root === "string" ? args.root : undefined,
 	);
@@ -1762,6 +1774,17 @@ function main() {
 	if (mode === "help") {
 		help();
 		return;
+	}
+	if (args.run && !isPathIdentifier(String(args.run))) {
+		console.error("--run must be a valid run id");
+		process.exit(2);
+	}
+	if (["init", "should-stop", "equilibrium", "mark-complete"].includes(mode)) {
+		const problem = optimizexpWriteProblem(root, [""]);
+		if (problem) {
+			console.error(problem);
+			process.exit(2);
+		}
 	}
 	if (mode === "init") {
 		const run = String(args.run || "");

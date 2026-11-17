@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { repoRoot } from "./paths.mts";
 import type { ProjectRef } from "./projects.mts";
+import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 
 export type SurfaceDriver = "cli" | "tui" | "web" | "native";
 
@@ -401,6 +402,7 @@ export function surfaceMapPath(project: ProjectRef, root = repoRoot()): string {
 }
 
 export function writeSurfaceMap(map: SurfaceMap, project: ProjectRef, root = repoRoot()): string {
+	assertSafeOptimizexpWriteScopes(root, [project.path]);
 	const p = surfaceMapPath(project, root);
 	mkdirSync(path.dirname(p), { recursive: true });
 	writeFileSync(p, `${JSON.stringify(map, null, 2)}\n`, "utf8");
