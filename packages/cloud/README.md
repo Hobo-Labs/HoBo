@@ -32,6 +32,8 @@ in-flight operation, or one without that guarantee, enters reconciliation. A
 trusted route issuer must bind the generation to its tenant,
 deployment, resource and action, and fence prior uncertain effects before
 authorizing a successor.
+Destroy records its own generation, distinct from the preceding apply, so a
+replayed apply authorization cannot identify the destroy operation.
 The resume verifier is a trusted host boundary: a point-in-time status check
 alone is insufficient unless credentials or the provider enforce that fence
 through the resumed operation.

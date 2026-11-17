@@ -1869,7 +1869,6 @@ describe("Alchemy IaC provider against the real library", () => {
 			await fixture.provider.apply(program);
 			const destroy = {
 				...program,
-				operationGeneration: "generation-2",
 				action: "destroy" as const,
 				operationGeneration: "generation-destroy",
 			};
