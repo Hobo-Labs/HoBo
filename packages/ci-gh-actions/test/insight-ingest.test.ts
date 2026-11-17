@@ -498,10 +498,10 @@ async function deliverHistory(ingest: InsightIngest): Promise<void> {
 	for (const [event, body] of deliveries) await ingest.deliver(event, body);
 }
 
+// GitHub's Linux 2-core (x64) rate, as the pricing page listed it on readOn.
 const RATE = {
-	usdPerMinute: 0.008,
-	source:
-		"https://docs.github.com/en/billing/reference/actions-minute-multipliers",
+	usdPerMinute: 0.006,
+	source: "https://docs.github.com/en/billing/reference/actions-runner-pricing",
 	readOn: "2026-11-17",
 };
 
@@ -514,7 +514,7 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 	it("the store keeps the insight store's rules", () =>
 		insightStoreConformance(make));
 
-	it("I02: runs and jobs come back with step timings, time-outs and superseded runs", async () => {
+	it("I02: runs and jobs come back with step timings, time-outs and the data to show superseded runs", async () => {
 		const store = make();
 		await deliverHistory(new InsightIngest(store));
 		const runs = await store.runs({
@@ -530,7 +530,9 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 			[9001, 1, "feature", "failure"],
 		]);
 		const [newer, rerun, first] = runs;
-		// The re-run was cancelled after the newer run on its branch had started.
+		// No stored field marks a run superseded. What is kept is the data a
+		// reader needs to show it: the re-run was cancelled after the newer run
+		// on its branch had started.
 		expect(rerun?.completedAtMs).toBeGreaterThan(
 			newer?.createdAtMs ?? Infinity,
 		);
@@ -579,7 +581,7 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 		expect(report.wasteMinutes).toBeCloseTo(40 / 60);
 		// 6 minutes timed out plus 30 seconds cancelled, each rounded up the way GitHub bills.
 		expect(report.keptMinutes).toBe(7);
-		expect(report.keptUsd).toBeCloseTo(7 * 0.008);
+		expect(report.keptUsd).toBeCloseTo(7 * 0.006);
 		expect(report.runners.map((row) => [row.runner, row.hosted])).toEqual([
 			["linux, self-hosted", false],
 			["ubuntu-latest", true],
