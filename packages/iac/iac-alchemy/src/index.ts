@@ -9,6 +9,10 @@ import * as Exit from "effect/Exit";
 import type * as Layer from "effect/Layer";
 import type { ResourceScope, Target } from "./_generated/alchemy_iac_pb.js";
 import {
+	boundedFinancialReceipt,
+	validFinancialMetadata,
+} from "./financial-boundary.js";
+import {
 	captureAlchemyOptions,
 	captureAlchemyTarget,
 	captureAlchemyTargetOption,
@@ -28,6 +32,7 @@ import type {
 	FinancialPort,
 	HeldFinancialDecision,
 	IacDiff,
+	IacDirectRouteAttempt,
 	IacDriftReport,
 	IacProgram,
 	IacProvider,
@@ -544,9 +549,8 @@ function readRoutePermit(input: unknown): IacRoutePermit | undefined {
 			Array.isArray(input)
 		)
 			return undefined;
-		const properties = Object.getOwnPropertyDescriptors(input);
 		const read = (key: string): unknown => {
-			const descriptor = properties[key];
+			const descriptor = Object.getOwnPropertyDescriptor(input, key);
 			if (descriptor === undefined || !("value" in descriptor))
 				return undefined;
 			return descriptor.value;
@@ -585,13 +589,50 @@ function readRoutePermit(input: unknown): IacRoutePermit | undefined {
 	}
 }
 
+function readRouteAttempt(input: unknown): IacDirectRouteAttempt | undefined {
+	try {
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
+			return undefined;
+		const permit = Object.getOwnPropertyDescriptor(input, "permit");
+		const deny = Object.getOwnPropertyDescriptor(input, "deny");
+		if (
+			permit === undefined ||
+			!("value" in permit) ||
+			deny === undefined ||
+			!("value" in deny) ||
+			typeof deny.value !== "function" ||
+			types.isProxy(deny.value)
+		)
+			return undefined;
+		const checkedPermit = readRoutePermit(permit.value);
+		if (checkedPermit === undefined) return undefined;
+		return Object.freeze({
+			permit: checkedPermit,
+			deny: async () => {
+				await deny.value.call(input);
+			},
+		});
+	} catch {
+		return undefined;
+	}
+}
+
 function readRouteOperation(input: unknown): IacRouteOperation | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
-		const properties = Object.getOwnPropertyDescriptors(input);
-		const id = properties.operationId;
-		const proof = properties.authorization;
+		const id = Object.getOwnPropertyDescriptor(input, "operationId");
+		const proof = Object.getOwnPropertyDescriptor(input, "authorization");
 		if (
 			id === undefined ||
 			!("value" in id) ||
@@ -614,11 +655,15 @@ function readRouteOperation(input: unknown): IacRouteOperation | undefined {
 
 function readRouteResolution(input: unknown): IacRouteResolution | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
-		const properties = Object.getOwnPropertyDescriptors(input);
-		const requestId = properties.requestId;
-		const operation = properties.operation;
+		const requestId = Object.getOwnPropertyDescriptor(input, "requestId");
+		const operation = Object.getOwnPropertyDescriptor(input, "operation");
 		if (
 			requestId === undefined ||
 			!("value" in requestId) ||
@@ -641,14 +686,18 @@ function readRouteCompletion(
 	input: unknown,
 ): "executed" | "replay" | "uncertain" | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
-		const properties = Object.getOwnPropertyDescriptors(input);
-		const status = properties.status;
+		const status = Object.getOwnPropertyDescriptor(input, "status");
 		if (status === undefined || !("value" in status)) return undefined;
 		if (status.value === "replay" || status.value === "uncertain")
 			return status.value;
-		const value = properties.value;
+		const value = Object.getOwnPropertyDescriptor(input, "value");
 		return status.value === "executed" &&
 			value !== undefined &&
 			"value" in value &&
@@ -671,9 +720,8 @@ function readFinancialExpectation(
 			Array.isArray(input)
 		)
 			return undefined;
-		const properties = Object.getOwnPropertyDescriptors(input);
 		const read = (key: string): unknown => {
-			const descriptor = properties[key];
+			const descriptor = Object.getOwnPropertyDescriptor(input, key);
 			if (descriptor === undefined) return undefined;
 			if (!("value" in descriptor)) throw new Error("expectation accessor");
 			return descriptor.value;
@@ -708,16 +756,119 @@ function readFinancialExpectation(
 	}
 }
 
+const identityFields = new Set([
+	"tenantId",
+	"budgetId",
+	"periodId",
+	"policyRevision",
+]);
+const unpricedPolicyFields = new Set([
+	"requestDigest",
+	"inventoryHash",
+	"identity",
+	"policyHash",
+	"effect",
+	"evidenceRef",
+	"obligationsSatisfied",
+	"observedAt",
+	"validUntil",
+]);
+const unpricedScopeFields = new Set([
+	"identity",
+	"providerAccountIds",
+	"authorityRef",
+	"evidenceRef",
+	"ownershipEpoch",
+	"observedAt",
+	"exclusiveUntilSettled",
+	"noSharedEntitlements",
+	"signature",
+]);
+const financialDecisionFields = new Set([
+	"requestId",
+	"targetId",
+	"status",
+	"code",
+	"message",
+	"budget",
+	"requestDigest",
+	"inventoryHash",
+	"modelHash",
+	"quoteHash",
+	"quote",
+	"reservation",
+	"policyProof",
+	"unpricedPolicyProof",
+]);
+const budgetDisclosureFields = new Set(["evaluation", "reservation"]);
+const reservationFields = new Set([
+	"reservationId",
+	"identity",
+	"requestDigest",
+	"quoteId",
+	"reservedMicros",
+	"status",
+	"actualMicros",
+	"ledgerSeq",
+	"quoteDigest",
+	"usageEvidenceRef",
+	"sourceStoppedEvidenceRef",
+	"providerAccounts",
+	"entitlementClaims",
+	"settlementEvidence",
+	"executionDigest",
+	"financialPlanHash",
+	"fenceSettlementGuard",
+	"unboundedExposure",
+	"unpricedPolicyProof",
+	"unpricedScopeProof",
+	"iacPricingPin",
+]);
+
+function hasKnownFields(
+	input: unknown,
+	allowed: ReadonlySet<string>,
+	typeName: string,
+): boolean {
+	if (typeof input !== "object" || input === null || types.isProxy(input))
+		return false;
+	for (const key of Reflect.ownKeys(input)) {
+		if (typeof key !== "string") return false;
+		if (key === "$typeName" || key === "$unknown") {
+			const property = Object.getOwnPropertyDescriptor(input, key);
+			if (
+				property === undefined ||
+				!("value" in property) ||
+				(key === "$typeName" && property.value !== typeName) ||
+				(key === "$unknown" && property.value !== undefined)
+			)
+				return false;
+		} else if (!allowed.has(key)) return false;
+	}
+	return true;
+}
+
 function readUnpricedScopeProof(
 	input: unknown,
 ): UnpricedScopeProof | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input) ||
+			!hasKnownFields(
+				input,
+				unpricedScopeFields,
+				"hobo.broker.yard.v1.IacUnpricedScopeProof",
+			)
+		)
 			return undefined;
 		const read = (source: unknown, key: string): unknown => {
 			if (
 				typeof source !== "object" ||
 				source === null ||
+				types.isProxy(source) ||
 				Array.isArray(source)
 			)
 				return undefined;
@@ -730,7 +881,13 @@ function readUnpricedScopeProof(
 		if (
 			typeof identityInput !== "object" ||
 			identityInput === null ||
-			Array.isArray(identityInput)
+			types.isProxy(identityInput) ||
+			Array.isArray(identityInput) ||
+			!hasKnownFields(
+				identityInput,
+				identityFields,
+				"hobo.broker.yard.v1.BudgetIdentity",
+			)
 		)
 			return undefined;
 		const tenantId = read(identityInput, "tenantId");
@@ -754,6 +911,7 @@ function readUnpricedScopeProof(
 			!name(periodId) ||
 			typeof policyRevision !== "string" ||
 			!name(policyRevision) ||
+			types.isProxy(accountInput) ||
 			!Array.isArray(accountInput) ||
 			typeof authorityRef !== "string" ||
 			!name(authorityRef) ||
@@ -772,7 +930,6 @@ function readUnpricedScopeProof(
 			/[\p{Cc}]/u.test(signature)
 		)
 			return undefined;
-		const accountProperties = Object.getOwnPropertyDescriptors(accountInput);
 		const length = Object.getOwnPropertyDescriptor(accountInput, "length");
 		if (
 			length === undefined ||
@@ -785,7 +942,10 @@ function readUnpricedScopeProof(
 			return undefined;
 		const providerAccountIds: string[] = [];
 		for (let index = 0; index < length.value; index++) {
-			const entry = accountProperties[String(index)];
+			const entry = Object.getOwnPropertyDescriptor(
+				accountInput,
+				String(index),
+			);
 			if (
 				entry === undefined ||
 				!("value" in entry) ||
@@ -817,7 +977,17 @@ function readUnpricedPolicyProof(
 	input: unknown,
 ): UnpricedPolicyProof | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input) ||
+			!hasKnownFields(
+				input,
+				unpricedPolicyFields,
+				"hobo.broker.yard.v1.IacUnpricedPolicyProof",
+			)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
 		const read = (key: string): unknown => {
@@ -830,7 +1000,13 @@ function readUnpricedPolicyProof(
 		if (
 			typeof identityInput !== "object" ||
 			identityInput === null ||
-			Array.isArray(identityInput)
+			types.isProxy(identityInput) ||
+			Array.isArray(identityInput) ||
+			!hasKnownFields(
+				identityInput,
+				identityFields,
+				"hobo.broker.yard.v1.BudgetIdentity",
+			)
 		)
 			return undefined;
 		const identityProperties = Object.getOwnPropertyDescriptors(identityInput);
@@ -896,11 +1072,139 @@ function readUnpricedPolicyProof(
 	}
 }
 
+function sameUnpricedPolicyProof(
+	left: UnpricedPolicyProof,
+	right: UnpricedPolicyProof,
+): boolean {
+	return (
+		left.requestDigest === right.requestDigest &&
+		left.inventoryHash === right.inventoryHash &&
+		left.identity.tenantId === right.identity.tenantId &&
+		left.identity.budgetId === right.identity.budgetId &&
+		left.identity.periodId === right.identity.periodId &&
+		left.identity.policyRevision === right.identity.policyRevision &&
+		left.policyHash === right.policyHash &&
+		left.effect === right.effect &&
+		left.evidenceRef === right.evidenceRef &&
+		left.obligationsSatisfied === right.obligationsSatisfied &&
+		left.observedAt === right.observedAt &&
+		left.validUntil === right.validUntil
+	);
+}
+
+// A malformed receipt cannot authorize execution, but an independently
+// inspectable matching reservation ID is still useful for reconciliation.
+function readKnownReservation(
+	input: unknown,
+	requestId: string,
+	targetId: string,
+	tenantId: string,
+): string | undefined {
+	try {
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
+			return undefined;
+		const request = Object.getOwnPropertyDescriptor(input, "requestId");
+		const target = Object.getOwnPropertyDescriptor(input, "targetId");
+		const reservation = Object.getOwnPropertyDescriptor(input, "reservation");
+		if (
+			request === undefined ||
+			!("value" in request) ||
+			request.value !== requestId ||
+			target === undefined ||
+			!("value" in target) ||
+			target.value !== targetId ||
+			reservation === undefined ||
+			!("value" in reservation) ||
+			typeof reservation.value !== "object" ||
+			reservation.value === null ||
+			types.isProxy(reservation.value) ||
+			Array.isArray(reservation.value)
+		)
+			return undefined;
+		const identity = Object.getOwnPropertyDescriptor(
+			reservation.value,
+			"identity",
+		);
+		if (identity !== undefined) {
+			if (!("value" in identity)) return undefined;
+			if (identity.value !== undefined) {
+				if (
+					typeof identity.value !== "object" ||
+					identity.value === null ||
+					types.isProxy(identity.value) ||
+					Array.isArray(identity.value)
+				)
+					return undefined;
+				const tenant = Object.getOwnPropertyDescriptor(
+					identity.value,
+					"tenantId",
+				);
+				if (
+					tenant === undefined ||
+					!("value" in tenant) ||
+					tenant.value !== tenantId
+				)
+					return undefined;
+			}
+		}
+		const nestedDigest = Object.getOwnPropertyDescriptor(
+			reservation.value,
+			"requestDigest",
+		);
+		if (nestedDigest !== undefined) {
+			if (!("value" in nestedDigest)) return undefined;
+			// Protobuf uses an empty string for an omitted reservation digest,
+			// including its valid uncertain-receipt projection.
+			if (nestedDigest.value !== undefined && nestedDigest.value !== "") {
+				const digest = Object.getOwnPropertyDescriptor(input, "requestDigest");
+				if (
+					typeof nestedDigest.value !== "string" ||
+					digest === undefined ||
+					!("value" in digest) ||
+					digest.value !== nestedDigest.value
+				)
+					return undefined;
+			}
+		}
+		const id = Object.getOwnPropertyDescriptor(
+			reservation.value,
+			"reservationId",
+		);
+		return id !== undefined &&
+			"value" in id &&
+			typeof id.value === "string" &&
+			id.value === `iac:${requestId}` &&
+			reservationName(id.value)
+			? id.value
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function readFinancialDecision(
 	input: unknown,
+	tenantId: string,
 ): InspectedFinancialDecision | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input) ||
+			!boundedFinancialReceipt(input) ||
+			!validFinancialMetadata(input, tenantId) ||
+			!hasKnownFields(
+				input,
+				financialDecisionFields,
+				"hobo.broker.yard.v1.IacTargetAdmissionDecision",
+			)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
 		const read = (key: string): unknown => {
@@ -920,9 +1224,10 @@ function readFinancialDecision(
 		const inventoryHash = read("inventoryHash");
 		const modelHash = read("modelHash");
 		const quoteHash = read("quoteHash");
-		const unpricedPolicyProof = readUnpricedPolicyProof(
-			read("unpricedPolicyProof"),
-		);
+		const policyInput = read("unpricedPolicyProof");
+		const unpricedPolicyProof = readUnpricedPolicyProof(policyInput);
+		if (policyInput !== undefined && unpricedPolicyProof === undefined)
+			return undefined;
 		if (
 			typeof requestId !== "string" ||
 			!name(requestId) ||
@@ -939,7 +1244,13 @@ function readFinancialDecision(
 				(typeof requestDigest !== "string" || requestDigest.length > 200)) ||
 			typeof budgetInput !== "object" ||
 			budgetInput === null ||
+			types.isProxy(budgetInput) ||
 			Array.isArray(budgetInput) ||
+			!hasKnownFields(
+				budgetInput,
+				budgetDisclosureFields,
+				"hobo.broker.yard.v1.IacBudgetDisclosure",
+			) ||
 			(inventoryHash !== undefined &&
 				(typeof inventoryHash !== "string" || inventoryHash.length > 200)) ||
 			(modelHash !== undefined &&
@@ -969,7 +1280,13 @@ function readFinancialDecision(
 			if (
 				typeof reservationInput !== "object" ||
 				reservationInput === null ||
-				Array.isArray(reservationInput)
+				types.isProxy(reservationInput) ||
+				Array.isArray(reservationInput) ||
+				!hasKnownFields(
+					reservationInput,
+					reservationFields,
+					"hobo.broker.yard.v1.BudgetReservation",
+				)
 			)
 				return undefined;
 			const id = Object.getOwnPropertyDescriptor(
@@ -997,12 +1314,34 @@ function readFinancialDecision(
 				reservationInput,
 				"unpricedScopeProof",
 			);
-			if (scope !== undefined && "value" in scope)
-				unpricedScopeProof = readUnpricedScopeProof(scope.value);
+			if (scope !== undefined) {
+				if (!("value" in scope)) return undefined;
+				if (scope.value !== undefined) {
+					unpricedScopeProof = readUnpricedScopeProof(scope.value);
+					if (unpricedScopeProof === undefined) return undefined;
+				}
+			}
+			const nestedPolicy = Object.getOwnPropertyDescriptor(
+				reservationInput,
+				"unpricedPolicyProof",
+			);
+			if (nestedPolicy !== undefined) {
+				if (!("value" in nestedPolicy)) return undefined;
+				if (nestedPolicy.value !== undefined) {
+					const checkedPolicy = readUnpricedPolicyProof(nestedPolicy.value);
+					if (
+						checkedPolicy === undefined ||
+						unpricedPolicyProof === undefined ||
+						!sameUnpricedPolicyProof(checkedPolicy, unpricedPolicyProof)
+					)
+						return undefined;
+				}
+			}
 		}
 		if (
 			status === "denied" &&
 			(reservationId !== undefined ||
+				unpricedPolicyProof !== undefined ||
 				reservation.value !== "not-created" ||
 				!["denied", "unavailable"].includes(evaluation.value))
 		)
@@ -1801,9 +2140,18 @@ export function createAlchemyIacProvider<
 								? deadlineError(deadline)
 								: admitted.error,
 						};
-					const decision = readFinancialDecision(admitted.decision);
+					const decision = readFinancialDecision(
+						admitted.decision,
+						target.tenantId,
+					);
+					const knownReservation = readKnownReservation(
+						admitted.decision,
+						requestId,
+						target.targetId,
+						target.tenantId,
+					);
 					if (expiredAfterAdmission || deadlineExpired(deadline)) {
-						const lateReservation = decision?.reservation?.reservationId;
+						const lateReservation = knownReservation;
 						if (
 							lateReservation === `iac:${requestId}` &&
 							reservationName(lateReservation)
@@ -1814,22 +2162,31 @@ export function createAlchemyIacProvider<
 						}
 						return { error: deadlineError(deadline) };
 					}
-					if (decision === undefined)
+					if (decision === undefined) {
+						if (knownReservation !== undefined) {
+							deadline.reservationId = knownReservation;
+							unresolved.set(fenceKey, knownReservation);
+							yield* Effect.promise(() => markUncertain(knownReservation));
+						}
 						return {
 							error: new AlchemyIacError(
 								"ADMISSION_RECEIPT_INVALID",
 								"admission receipt could not be safely inspected",
+								undefined,
+								knownReservation,
 							),
 						};
+					}
 					if (
 						decision.requestId !== requestId ||
-						decision.targetId !== target.targetId
+						decision.targetId !== target.targetId ||
+						(decision.reservation !== undefined &&
+							knownReservation === undefined)
 					)
 						return {
 							error: new AlchemyIacError(
 								"ADMISSION_RECEIPT_INVALID",
-								"admission belongs to another request or target",
-								decision,
+								"admission or reservation belongs to another scope",
 							),
 						};
 					if (decision.status !== "admitted")
@@ -1838,10 +2195,7 @@ export function createAlchemyIacProvider<
 								decision.code || "ADMISSION_FAILED",
 								decision.message || "target was not admitted",
 								decision,
-								decision.reservation !== undefined &&
-									reservationName(decision.reservation.reservationId)
-									? decision.reservation.reservationId
-									: undefined,
+								knownReservation,
 							),
 						};
 					if (
@@ -1880,8 +2234,8 @@ export function createAlchemyIacProvider<
 								))
 						)
 					) {
-						const reservationId = decision.reservation?.reservationId;
-						if (reservationId !== undefined && reservationName(reservationId)) {
+						const reservationId = knownReservation;
+						if (reservationId !== undefined) {
 							yield* Effect.promise(() => markUncertain(reservationId));
 						}
 						return {
@@ -2355,6 +2709,21 @@ export function createAlchemyIacProvider<
 							},
 						};
 					}
+					const checkedAttempt = readRouteAttempt(attempt);
+					if (checkedAttempt === undefined) {
+						state.error = new AlchemyIacError(
+							"ROUTE_OUTCOME_UNKNOWN",
+							"the route authority returned a malformed attempt",
+						);
+						return {
+							value: true,
+							outcome: {
+								status: "uncertain" as const,
+								targetId: target.targetId,
+							},
+						};
+					}
+					if (deadlineExpired(deadline)) throw deadlineError(deadline);
 					try {
 						state.result = await executeUnlocked(
 							stableProgram,
@@ -2363,7 +2732,7 @@ export function createAlchemyIacProvider<
 							deadline,
 							fenceKey,
 							checkedExpectation,
-							attempt.permit,
+							checkedAttempt.permit,
 						);
 						if (deadlineExpired(deadline)) throw deadlineError(deadline);
 						return {
@@ -2386,7 +2755,7 @@ export function createAlchemyIacProvider<
 							!failure.requiresReconciliation &&
 							failure.executionOutcome === "not-started"
 						) {
-							await attempt.deny();
+							await checkedAttempt.deny();
 							if (deadlineExpired(deadline)) {
 								state.error = deadlineError(deadline);
 								return {

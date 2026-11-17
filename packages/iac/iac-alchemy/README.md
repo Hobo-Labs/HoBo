@@ -451,6 +451,19 @@ the authority may already have reserved funds even if the receipt is unusable.
 An instance also blocks subsequent attempts after any outcome requiring
 reconciliation; the host must resolve the previous attempt before replacing it.
 
+Receipt inspection covers nested quote, reservation and proof data, including
+account and entitlement claims. Unknown fields, conflicting financial evidence,
+accessors, proxies and unknown protobuf wire fields make the outcome uncertain.
+An optional proof explicitly set to `undefined` is treated as absent; a bypassed
+admission still requires its policy and scope proofs. The bounded receipt graph
+allows at most 16,384 values, 32 nesting levels, 1,024 array entries, 256 object
+fields, 4,096 characters per string and 1 MiB of text. JavaScript cannot bound
+own-key enumeration of an already oversized object, so the trusted host must
+limit serialized receipt size and property counts before materialization.
+Promise resolution itself may read a returned object's `then` property before
+the adapter can inspect it; host callbacks must return plain non-thenable data,
+and the separate executor watchdog must handle synchronous blocking.
+
 Every preview, assessment, apply, destroy and refresh has an
 `operationTimeoutMs` deadline, defaulting to 300,000 ms and configurable from
 1 through 3,600,000 ms. Each public call captures an absolute monotonic deadline
