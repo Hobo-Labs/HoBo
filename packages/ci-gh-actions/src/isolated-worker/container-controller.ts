@@ -97,7 +97,6 @@ import { effectiveIsolatedTimeoutMs } from "./workflow-job-timeout.js";
 
 const JIT_PATH = "/tmp/hobo-ci-jit";
 const WORK_TARGET = "/opt/actions-runner/_hobo_work";
-/** Written when the one-job JIT runner exits; the container itself keeps running. */
 // public-contract: in-container marker path the start script writes and reconcile probes.
 export const RUNNER_EXITED_PATH = "/tmp/hobo-ci-runner-exited";
 // public-contract: exit code file the JIT runner writes for lease reconciliation.
@@ -105,8 +104,6 @@ export const RUNNER_EXIT_CODE_PATH = "/tmp/hobo-ci-runner-exit-code";
 // public-contract: human-readable exit summary the JIT runner writes for logs.
 export const RUNNER_EXIT_SUMMARY_PATH = "/tmp/hobo-ci-runner-exit-summary";
 
-/** Start the runner with its JIT config delivered over stdin to a 0600 file
- * and handed to the runner via env, so the credential never appears in argv. */
 async function readRunnerExitEvidence(
 	docker: DockerDriver,
 	name: string,
@@ -144,8 +141,6 @@ export async function startRunner(
 	jitConfig: string,
 	beforeRun?: () => void,
 ): Promise<void> {
-	// The JIT config is a runner credential: deliver it over stdin into a
-	// 0600 file and hand it to the runner via env, never via argv (ps).
 	if (!docker.writeSecret)
 		throw new Error("docker driver cannot deliver secrets");
 	await docker.writeSecret(name, containerId, JIT_PATH, jitConfig);
@@ -227,9 +222,7 @@ export type IsolatedContainerController = {
 	reconcileOrphanJobs: () => Promise<void>;
 	reconcileStallRecoveries: () => Promise<void>;
 	ready: () => Promise<boolean>;
-	/** Create one idle container ahead of demand so the next launch skips `docker create`/`start`. */
 	prewarm: (repository?: string) => Promise<void>;
-	/** Remove the idle pre-warmed container (daemon shutdown). */
 	discardWarm: () => Promise<void>;
 };
 
@@ -241,7 +234,6 @@ const LIVE_CONTAINER_STATES = new Set([
 	"uncertain",
 ]);
 
-/** What the box worker needs from a lease store; `SqliteCiStore` qualifies. */
 export interface IsolatedWorkerStore extends HostedRelayStore {
 	settle(
 		id: string,
@@ -364,7 +356,6 @@ export function createIsolatedContainerController(options: {
 	jobPickupMetadata?: Readonly<JobPickupMetadataCache>;
 	/** @internal Test-only shared empty-exit backoff state. */
 	jitEmptyExitLoops?: Map<string, JitEmptyExitState>;
-	/** Host bare mirror mounted read-only at the same path the job-side probe uses. */
 	gitMirror?: {
 		pathFor(repository: string): string | undefined;
 		ensure?(
@@ -402,28 +393,19 @@ export function createIsolatedContainerController(options: {
 		fields: Readonly<Record<string, string | number | boolean>>,
 	) => void;
 	now?: () => string;
-	/** Grace for a reservation between its journal write and `docker create`. */
 	orphanGraceMs?: number;
-	/** Drain cap for leases that never reach a live container (default 60s). */
 	noContainerDrainMaxMs?: number;
-	/** Requeue uncertain leases that never got a container session. */
 	uncertainWithoutContainerRecoveryMs?: number;
-	/** Max job containers alive at once on this host (default 1: the old serial behaviour). */
 	slots?: number;
-	/** Shared volumes mounted into every job container (pnpm store). */
 	volumes?: readonly Readonly<{ source: string; target: string }>[];
-	/** Extra non-secret env for job containers (e.g. npm_config_store_dir). */
 	containerEnv?: Readonly<Record<string, string>>;
 	workRoot?: string;
 	workFs?: WorkerStorageFileSystem;
 	storageAdmission?: WorkerStorageAdmission;
 	scheduleRetiredSweep?: () => void;
-	/** Only this repository may use the HoBo deps layer; empty depsImage disables it. */
 	depsRepository?: string;
 	depsImage?: string;
-	/** Release inode/disk admission grant when an isolated lease finishes. */
 	onStorageGrantRelease?: (jobId: number) => void;
-	/** Cooperative stall recovery while a job container is running. */
 	containerStallGuard?: ContainerStallGuard;
 }): IsolatedContainerController {
 	const now = options.now ?? (() => new Date().toISOString());
@@ -475,9 +457,7 @@ export function createIsolatedContainerController(options: {
 				if (assignment) {
 					observed = { jobId: assignment.jobId, runId: assignment.runId };
 				}
-			} catch {
-				/* orphan telemetry falls back to lease fields */
-			}
+			} catch {}
 		}
 		const candidate = orphanJobCandidateForLease(
 			lease,
@@ -698,9 +678,7 @@ export function createIsolatedContainerController(options: {
 					workRootInodes,
 				});
 			}
-		} catch {
-			// Peak measurement must not block teardown.
-		}
+		} catch {}
 		const startedAt = Date.now();
 		try {
 			const retired = await options.workFs.retireJobDirectory(directory);
@@ -893,7 +871,6 @@ export function createIsolatedContainerController(options: {
 		string,
 		Awaited<ReturnType<typeof readRunnerExitEvidence>>
 	>();
-	/** Backoff recorded at exit-marker so settle/stop cannot release a slot first. */
 	const eagerEmptyExitBackoff = new Set<string>();
 	const launchKey = (repositoryId: number, jobId: number, runAttempt: number) =>
 		`${repositoryId}:${jobId}:${runAttempt}`;
@@ -1000,8 +977,6 @@ export function createIsolatedContainerController(options: {
 		}
 	};
 
-	// A durable stop intent precedes the effect because Docker's --rm may remove
-	// the container before the caller receives the stop acknowledgement.
 	const markStopRequested = async (lease: Lease) => {
 		if (hasIsolatedStopIntent(lease)) return lease;
 		const at = now();
@@ -1043,9 +1018,6 @@ export function createIsolatedContainerController(options: {
 		return matches.length === 1;
 	};
 
-	// A durable stop marker keeps the financial hold if final GitHub observation
-	// fails after the container has been removed. Removal time is recorded only
-	// after removal is confirmed; a later recovery time is conservative.
 	const markStopped = async (lease: Lease, removalConfirmed: boolean) => {
 		if (
 			lease.sandboxStage === "stopped" &&
@@ -1120,9 +1092,6 @@ export function createIsolatedContainerController(options: {
 		lease: Lease,
 		opts?: Readonly<{ force?: boolean }>,
 	): Promise<void> => {
-		// Shared-budget settlement without final provider evidence deliberately
-		// leaves an estimated liability uncertain. Do not repeatedly settle and
-		// requeue it while waiting for the separate evidence reconciliation.
 		if (
 			lease.state === "uncertain" &&
 			lease.usageProvenance === "estimated" &&
@@ -1144,8 +1113,6 @@ export function createIsolatedContainerController(options: {
 			completedMs > observedMs + 5_000
 		)
 			throw new Error("invalid isolated stop time");
-		// `opts.force` (`forceStop`) only sets `failClosed: false` here; confirmed executing
-		// custody still defers settlement.
 		if (
 			await jitRunnerBlocksSettlement(lease, {
 				failClosed: opts?.force !== true,
@@ -1175,8 +1142,6 @@ export function createIsolatedContainerController(options: {
 		);
 		if (original.status !== "queued")
 			clearJitEmptyExit(emptyExitLoops, emptyKey);
-		// Fleet mesh: another `hobo` runner may hold the job; withdraw instead of re-admitting.
-		// Empty JIT exit: job still queued on GitHub — withdraw local demand; poll re-ingest later.
 		const emptyJitExit = original.status === "queued" && custody !== "foreign";
 		const unmet: ReturnType<typeof requeueJob> | undefined = undefined;
 		if (original.status === "queued" && custody === "foreign") {
@@ -1220,9 +1185,7 @@ export function createIsolatedContainerController(options: {
 							runnerId: lease.runnerId,
 						});
 					}
-				} catch {
-					/* correlation is best-effort; empty-exit backoff stays conservative */
-				}
+				} catch {}
 			}
 			const evidence = pendingExitEvidence.get(lease.id) ?? {};
 			pendingExitEvidence.delete(lease.id);
@@ -1342,7 +1305,6 @@ export function createIsolatedContainerController(options: {
 					});
 					return;
 				}
-				// Slot full: leave the lease reserved; the next relay tick retries it.
 				if ((await liveContainers(id)) >= slots) return;
 				let auth: Awaited<ReturnType<typeof authorize>>;
 				try {
@@ -1501,9 +1463,7 @@ export function createIsolatedContainerController(options: {
 							claiming.repository,
 							claiming.actualJobId > 0 ? claiming.actualJobId : claiming.jobId,
 						);
-					} catch {
-						/* registration may still fail closed into uncertain */
-					}
+					} catch {}
 					const custody = runnerCustody(githubJob?.runner_name);
 					if (
 						githubJob &&
@@ -1521,9 +1481,7 @@ export function createIsolatedContainerController(options: {
 						try {
 							await options.docker.stop(name, containerId);
 							await options.docker.remove(name, containerId);
-						} catch {
-							/* recovery tick retries */
-						}
+						} catch {}
 						await options.store.withdrawQueuedJob?.(
 							requeueJob(claiming),
 							now(),
@@ -1564,9 +1522,7 @@ export function createIsolatedContainerController(options: {
 										: claiming.jobId,
 								)
 							).labels;
-						} catch {
-							/* best effort */
-						}
+						} catch {}
 					}
 					const jitLabels = jitRunnerRegistrationLabels(jobLabels, label);
 					const response = await options.github.request(
@@ -1660,7 +1616,6 @@ export function createIsolatedContainerController(options: {
 					launchLoops.delete(
 						launchKey(planned.repositoryId, planned.jobId, planned.runAttempt),
 					);
-					// Get the next container ready while this job runs.
 					if ((await liveContainers("")) < slots)
 						void prewarm().catch(() => undefined);
 				} catch (error) {
@@ -1670,9 +1625,7 @@ export function createIsolatedContainerController(options: {
 							await options.docker.stop(name, containerId);
 							await options.docker.remove(name, containerId);
 							cleanupConfirmed = true;
-						} catch {
-							/* recovery will retry stop */
-						}
+						} catch {}
 					}
 					if (
 						error instanceof QueueDeadlineExpired ||
@@ -1706,7 +1659,6 @@ export function createIsolatedContainerController(options: {
 						);
 						if (cleanupConfirmed && !createInFlight)
 							await cleanupWorkDirectory(planned);
-						// Keep the claimed financial hold until verified settlement.
 						return;
 					}
 					await failLaunch(
@@ -1740,12 +1692,9 @@ export function createIsolatedContainerController(options: {
 				runnerCustodyHoldsActive = custody.holdsActive;
 				if (lease.actualJobId > 0 && lease.actualJobId !== reservedJobId)
 					options.onStorageGrantRelease?.(reservedJobId);
-				// `forceStop` never overrides a confirmed executing assignment (shard-0 kill).
 				if (custody.holdsActive && forceStop) return;
 			}
 			if (forceStop && isUnregisteredDispatchingCreate(lease)) {
-				// The durable state change fences a late create reply: its normal
-				// continuation can no longer register a runner for this lease.
 				if (inFlightLaunchIds.has(id)) return;
 				const interrupted = await options.store.transition(
 					id,
@@ -1792,8 +1741,6 @@ export function createIsolatedContainerController(options: {
 				lease = attached;
 			}
 			if (hasIsolatedStopIntent(lease)) {
-				// `forceStop` only disables fail-closed on unreadable GitHub here; executing
-				// assignments still block via `evaluateRunnerTeardownGuard`.
 				if (await runnerTeardownBlocked(lease, forceStop !== true)) return;
 				if (!(await isolatedSessionPresent(lease))) {
 					lease = await markStopped(lease, false);
@@ -1805,8 +1752,6 @@ export function createIsolatedContainerController(options: {
 			}
 			if (!lease.sandboxSessionId || !lease.sandboxName) {
 				if (lease.state === "uncertain") {
-					// A named create may still complete after a lost reply. Time alone
-					// cannot prove absence or fence a second container with that identity.
 					if (lease.sandboxName) return;
 					const ageMs = Date.parse(now()) - Date.parse(lease.createdAt);
 					if (ageMs >= uncertainWithoutContainerRecoveryMs) {
@@ -1827,8 +1772,6 @@ export function createIsolatedContainerController(options: {
 					lease.sandboxSessionId,
 				);
 			} catch {
-				// An inspect error (timeout under load, daemon hiccup) is not proof the
-				// job died: stopping here kills a live runner. Retry on the next tick.
 				if (!forceStop) return;
 				throw new Error("container status uncertain");
 			}
@@ -1852,15 +1795,10 @@ export function createIsolatedContainerController(options: {
 							exitCode: state.exitCode,
 						});
 					}
-				} catch {
-					// OOM evidence is best-effort; reconcile still settles the dead container.
-				}
+				} catch {}
 			}
 			let stop = forceStop === true || hasIsolatedStopIntent(lease);
 			if (!stop && lease.state === "running") {
-				// The runner takes one job and exits, so its marker frees the slot on this
-				// tick instead of after GitHub reports the job (a poll interval later). A
-				// runner that died without a job lands here too; settle requeues its job.
 				let exited = false;
 				try {
 					exited =
@@ -1948,9 +1886,7 @@ export function createIsolatedContainerController(options: {
 								});
 								stop = true;
 							}
-						} catch {
-							/* ambiguous GitHub read — keep listener until next tick */
-						}
+						} catch {}
 					}
 					if (!stop && options.containerStallGuard) {
 						const signal = options.containerStallGuard.evaluate(lease.id);
@@ -1982,12 +1918,8 @@ export function createIsolatedContainerController(options: {
 				stop = true;
 				if (!stallRecoveryLeaseIds.has(lease.id)) await detectOrphanJob(lease);
 			}
-			// Dispatch may still be registering or starting this session. A normal
-			// reconciliation cannot retire it until there is a reason to stop.
 			if (!stop) return;
 			if (runnerCustodyHoldsActive) return;
-			// Pre-kill: `forceStop` uses `failClosed: false` only — guard still runs
-			// (correlation → getJob) so confirmed executing assignments defer.
 			if (await runnerTeardownBlocked(lease, forceStop !== true)) return;
 			let removed = false;
 			try {

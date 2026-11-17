@@ -88,7 +88,6 @@ import {
 } from "./onboarding.js";
 import type { GithubWorkflowVerifier } from "./workflow-oidc.js";
 
-/** What the account control plane needs from a store beyond the relay's own port. */
 export interface HostedControlStore extends HostedRelayStore {
 	reattestRate(
 		input: {
@@ -168,7 +167,6 @@ function revision(request: Request): number {
 	return parsed;
 }
 
-/** A newer policy revision does not make an older financial snapshot current. */
 function requireFreshObservation(
 	previousAt: string,
 	incomingAt: string,
@@ -209,13 +207,6 @@ function policyState(state: ConfigurationState, accountId: string): string {
 // public-contract: the relay route that lists the mesh's nodes.
 export const MESH_NODES_PATH = "/v1/mesh/nodes";
 
-/**
- * The control routes that write configuration, or keep records a relay with
- * a read-only config source has no place for (ADR-0179 §8): policy and
- * provider writes, budget signals and usage observations, the inbox
- * quarantine, and repository setup with its operation records. On such a
- * relay each answers 410 (`readOnlyConfig`).
- */
 export function isConfigWriteRoute(method: string, path: string): boolean {
 	if (path.startsWith("/v2/accounts/self/inbox/")) return true;
 	if (path.startsWith("/v1/accounts/self/repositories/")) return true;
@@ -234,7 +225,6 @@ export function isConfigWriteRoute(method: string, path: string): boolean {
 	return false;
 }
 
-/** Why the hosted relay refused a fleet verdict report (ADR-0180). */
 export type FleetVerdictRefusal =
 	| "bad-request"
 	| "unknown-reporter"
@@ -244,17 +234,12 @@ export type FleetVerdictRefusal =
 	| "not-found"
 	| "invalid-report";
 
-/** How far a report's issued-at may be from this relay's clock. */
 const FLEET_REPORT_SKEW_MS = 120_000;
 
-/** What a host gives the control plane to keep, agree and serve fleet verdicts. */
 export type FleetVerdictService = Readonly<{
 	store: FleetVerdictStore;
-	/** Who may report, the kill switch and the allowance; read per request. */
 	settings(): FleetVerdictSettings | Promise<FleetVerdictSettings>;
-	/** Verifies a workflow's OIDC token for the status route; absent, it answers 503. */
 	workflowIdentity?: GithubWorkflowVerifier | undefined;
-	/** `hobo_ci_fleet_verdict_refused`, with the reporter id and the reason. */
 	log?:
 		| ((
 				event: "hobo_ci_fleet_verdict_refused",
@@ -270,14 +255,6 @@ function fleetRefusal(status: number, reason: FleetVerdictRefusal): Response {
 	);
 }
 
-/**
- * The fleet verdict routes (ADR-0180), or `undefined` for any other path.
- * A verdict is read without a credential: runner routing asks from a job
- * that has none to give, and the answer names labels and nothing else. A
- * report is signed by an enrolled reporter's key and checked in the order
- * of the ADR's table; the status route answers a workflow of the repository
- * itself.
- */
 async function fleetVerdictRoute(
 	request: Request,
 	url: URL,
@@ -332,9 +309,6 @@ async function fleetVerdictRoute(
 		const settings = service && (await service.settings());
 		if (!service || !settings?.serving)
 			return response(200, fleetVerdictJson(noFleetVerdict(repository)));
-		// Only a connected repository can have a verdict, so only one is
-		// looked up: a made-up name costs the relay no read of its store, and
-		// gets the same answer as one with nothing blocked.
 		const connection = (await deps.connections()).find(
 			(entry) => entry.repository.toLowerCase() === repository,
 		);
@@ -363,9 +337,7 @@ async function fleetVerdictRoute(
 				repository,
 				reason,
 			});
-		} catch {
-			// A failed log line must not change the answer.
-		}
+		} catch {}
 		return fleetRefusal(status, reason);
 	};
 	if (url.search) return refuse(400, "bad-request");
@@ -379,8 +351,6 @@ async function fleetVerdictRoute(
 		!isFleetVerdictIssuedAt(issuedAt) ||
 		!verifyFleetVerdictReport(
 			reporter.publicKey,
-			// This relay's own origin, never the request's Host: a report
-			// signed for another relay is not one for this one.
 			{ origin: deps.publicOrigin, path, body, issuedAt, sequence },
 			request.headers.get(FLEET_VERDICT_HEADERS.signature) ?? "",
 		)
@@ -411,7 +381,6 @@ async function fleetVerdictRoute(
 	return response(200, fleetVerdictJson(accepted.entry));
 }
 
-/** Account-scoped async control plane for a durable hosted relay. */
 export function createHostedControlPlane(options: {
 	relay: HostedRelay;
 	store: HostedControlStore;
@@ -419,38 +388,14 @@ export function createHostedControlPlane(options: {
 	authenticate: ControlAuthenticator;
 	publicOrigin: string;
 	assets: { workflow: string; bootstrap: string };
-	/**
-	 * Let an account replace its whole policy, offers included, through
-	 * `PUT /v1/accounts/self/policy`. For a relay whose operator owns the
-	 * provider inventory. Off, that route answers 410 and an account can only
-	 * change its v2 desired policy.
-	 */
 	fullAccountUpdates?: boolean;
 	runtimeDiagnostic?: () => {
 		sandboxEnabled: boolean;
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
-	/**
-	 * What the relay mesh looks like from this host, for `GET /v1/mesh/nodes`.
-	 * A host with no mesh leaves it out, and the route then answers
-	 * `mesh: "not-configured"`: an answer, not an error.
-	 */
 	meshNodes?: MeshNodesReader | undefined;
-	/**
-	 * The relay reads its configuration from a config service and never
-	 * writes it (the hosted relay, ADR-0179): every `isConfigWriteRoute`
-	 * answers 410 naming where configuration is written instead. Read
-	 * routes are unchanged.
-	 */
 	readOnlyConfig?: Readonly<{ configService: string }> | undefined;
-	/**
-	 * Fleet verdicts (ADR-0180): where this relay keeps them, who may report,
-	 * and who may read reporter status, for `/v1/fleet/verdicts/…` and
-	 * `/v1/fleet/reporters/…`. A host that keeps none leaves it out: a read
-	 * then answers that nothing is blocked, which is all that no verdict
-	 * means, and a report or a status read answers 503.
-	 */
 	fleetVerdicts?: FleetVerdictService | undefined;
 }) {
 	const { store, relay } = options;
@@ -557,14 +502,9 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
-			// The mesh is the relay's own infrastructure, not one account's: any
-			// account credential that may read (`policy:read`) may see it. The
-			// answer names nodes, capacity and public keys, never a secret.
 			if (path === MESH_NODES_PATH) {
 				if (request.method !== "GET")
 					throw new ControlError(405, "method not allowed");
-				// A machine running jobs for one repository is shown in full only
-				// to the account that owns that repository.
 				const connections =
 					(await store.configuration())?.configuration?.connections ?? [];
 				return response(
@@ -663,7 +603,6 @@ export function createHostedControlPlane(options: {
 				try {
 					desired = parseCiPolicy(input);
 				} catch {
-					// A policy the parser refuses is the caller's to fix, not to retry.
 					throw new ControlError(400, "invalid desired CI policy");
 				}
 				if (desired.accountId !== principal.accountId)
@@ -1061,10 +1000,6 @@ export function createHostedControlPlane(options: {
 				const leases = (await store.all())
 					.filter((entry) => entry.accountId === principal.accountId)
 					.slice(-100);
-				// The account's lease and record events, as this route has always
-				// returned them. A job's own events (queued, completed, expired)
-				// now name their account too; they are served by the relay's MCP
-				// server and must not crowd the lease events out of this window.
 				const events = (await store.events())
 					.filter(
 						(entry) =>
@@ -1106,7 +1041,6 @@ export function createHostedControlPlane(options: {
 					input,
 					isolatedHostAvailable: !!relay.options.isolatedHost,
 				});
-				// Remote identity reads may overlap revocation or account policy changes.
 				const currentPrincipal = await options.authenticate(
 					request.headers.get("authorization") ?? undefined,
 				);
@@ -1160,8 +1094,6 @@ export function createHostedControlPlane(options: {
 							409,
 							"existing connection requires operator migration",
 						);
-					// Identity and authority were checked live above. Revalidation must
-					// preserve custom runner settings, active leases and the revision.
 					return response(
 						200,
 						toJsonString(ConnectionSchema, existing),
@@ -1229,9 +1161,6 @@ export function createHostedControlPlane(options: {
 					input.repository,
 					input.installationId,
 				);
-				// A plan produced here always installs the shared-host bridge. Do not
-				// create an unusable plan on a deployment that denies that execution
-				// path; isolated repositories use the separate isolated-connect route.
 				if (relay.options.denyUnisolated)
 					throw new ControlError(
 						409,
@@ -1330,8 +1259,6 @@ export function createHostedControlPlane(options: {
 					plan.repository,
 					plan.installationId,
 				);
-				// Plans may outlive a deployment or be prepared by another one. Do
-				// not install files or store a connection if this relay cannot run it.
 				if (relay.options.denyUnisolated)
 					throw new ControlError(
 						409,

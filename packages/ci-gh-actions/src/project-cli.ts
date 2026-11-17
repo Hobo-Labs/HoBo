@@ -43,7 +43,6 @@ function readConfigFile(path: string, cwd: string): Promise<string> {
 	return readBoundedFile(resolve(cwd, path), maxConfigBytes);
 }
 
-/** Run against an explicitly selected repository-local configuration. */
 export async function runCiProjectCli(
 	args: string[],
 	options: {
@@ -215,7 +214,6 @@ export async function runCiProjectCli(
 	);
 }
 
-// Not inside a bundled controller release, whose entry is another module.
 if (
 	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
 	process.argv[1] &&

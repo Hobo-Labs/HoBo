@@ -1,22 +1,3 @@
-/**
- * The box relay's fleet verdict reporter (ADR-0180 amendment, items 2–3).
- *
- * Every 10 s, on its own unreferenced timer, it asks for an evaluation
- * (`fleet-verdict-evaluator.ts`), holds it (`fleet-verdict-state.ts`), and
- * when a report is due sends one signed `PUT /v1/fleet/verdicts/{owner}/{repo}`
- * per connected repository to the hosted relay, each with a 3 s limit. Nothing
- * in admission, dispatch or the poller awaits it: a sample still running when
- * the next is due is skipped, so a hanging relay holds up only the reporter.
- *
- * Modes: `off` (no reporter), `shadow` (evaluates, logs and reports with
- * `mode: "shadow"`, which the relay keeps but never serves) and `report`.
- * On drain it sends one last report that blocks nothing, best effort.
- *
- * The box daemon no longer wires it (ADR-0181, which supersedes ADR-0180's hosted transport): the box relay issues
- * routing slips instead (`routing-slip-issuer.ts`), and its settings, which
- * came from `HOBO_CI_FLEET_VERDICT_*` environment variables, are gone (R2).
- * The hosted relay's verdict routes and this reporter go with layer 04.
- */
 import {
 	type FleetVerdictMode,
 	fleetVerdictReportJson,
@@ -39,11 +20,8 @@ import {
 	FLEET_VERDICT_TTL_SECONDS,
 } from "./fleet-verdict-state.js";
 
-/** One request's limit. */
 export const FLEET_VERDICT_SEND_TIMEOUT_MS = 3_000;
-/** A steady state is logged again this often. */
 export const FLEET_VERDICT_LOG_EVERY_MS = 5 * 60_000;
-/** An unaccounted runner prefix is logged again this often. */
 export const FLEET_VERDICT_UNACCOUNTED_LOG_EVERY_MS = 60 * 60_000;
 
 export type FleetVerdictReporterEvent =
@@ -55,7 +33,6 @@ export type FleetVerdictReporterLog = (
 	fields: Readonly<Record<string, string | number | boolean>>,
 ) => void;
 
-/** Hands out report sequences; see `createFleetVerdictSequence`. */
 export type FleetVerdictSequenceSource = Readonly<{
 	next(nowMs: number): bigint;
 }>;
@@ -63,14 +40,10 @@ export type FleetVerdictSequenceSource = Readonly<{
 export type FleetVerdictReporterOptions = Readonly<{
 	mode: FleetVerdictMode;
 	reporterId: string;
-	/** The hosted relay's public origin; reports are signed against it. */
 	origin: string;
 	identity: FleetVerdictSigner;
-	/** The fleet labels this box serves. */
 	labels: readonly string[];
-	/** One evaluation of the box as it is now. */
 	evaluate: () => FleetVerdictEvaluation | Promise<FleetVerdictEvaluation>;
-	/** The connected repositories (`owner/name`), one report each. */
 	repositories: () => Promise<readonly string[]>;
 	sequence: FleetVerdictSequenceSource;
 	fetch?: typeof fetch | undefined;
@@ -105,7 +78,6 @@ export function createFleetVerdictReporter(
 	let inFlight: Promise<void> | undefined;
 	let stopped = false;
 
-	/** One signed request, abandoned after the limit whatever `fetch` does. */
 	async function put(
 		repository: string,
 		body: string,
@@ -148,7 +120,6 @@ export function createFleetVerdictReporter(
 		}
 	}
 
-	/** One report per connected repository; true only when every one landed. */
 	async function report(blocked: ReadonlySet<string>): Promise<boolean> {
 		const nowMs = now();
 		const body = fleetVerdictReportJson(
@@ -183,7 +154,6 @@ export function createFleetVerdictReporter(
 		try {
 			evaluation = await options.evaluate();
 		} catch (error) {
-			// No report: the relay's entry lapses on its own (F15).
 			log("hobo_ci_fleet_verdict_state", {
 				mode: options.mode,
 				status: "evaluation-failed",
@@ -222,7 +192,6 @@ export function createFleetVerdictReporter(
 		}
 	}
 
-	/** Takes one sample unless the last one is still running. */
 	function sample(): Promise<void> {
 		if (stopped) return Promise.resolve();
 		if (inFlight) return inFlight;
@@ -237,7 +206,6 @@ export function createFleetVerdictReporter(
 
 	return {
 		sample,
-		/** What the reporter holds blocked now. */
 		blocked: () => holds.blocked(),
 		start(): void {
 			if (timer || stopped) return;
@@ -245,10 +213,6 @@ export function createFleetVerdictReporter(
 			timer.unref?.();
 			void sample();
 		},
-		/**
-		 * Stops sampling and sends one report that blocks nothing, best
-		 * effort: each request still has its limit, and a failure is logged.
-		 */
 		async clear(): Promise<void> {
 			stopped = true;
 			if (timer) clearInterval(timer);

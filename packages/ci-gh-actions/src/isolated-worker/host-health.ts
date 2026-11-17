@@ -1,38 +1,13 @@
-/**
- * Host health for the box worker: is this machine fit to take more work?
- *
- * Memory and storage admission each answer for one job at one moment. Nothing
- * looked at the machine as a whole: a box could be swapping, out of inodes on
- * one filesystem and at four times its CPU count in load, and still be the
- * fleet's first choice for the next job. Jobs then start, stall in setup, and
- * die with their runner, and a dead runner costs a whole workflow run.
- *
- * This samples the three resources a job cannot do without, classifies the
- * host, and holds the verdict steady so one bad second neither condemns the
- * box nor one good second clears it:
- *
- *   ok         take work
- *   pressured  take work, and clean up now instead of at the next interval
- *   critical   the fleet should send new work elsewhere until it recovers
- *
- * Pure classification and a small monitor; the daemon supplies the sampler
- * and decides what each state does.
- */
-
 import type { WorkerFileSystemStats } from "./storage-admission.js";
 
 export type HostStorageSample = Readonly<{
 	path: string;
-	/** Free fraction of bytes on the filesystem holding `path`, 0 to 1. */
 	freeBytesFraction: number;
-	/** Free fraction of inodes, 0 to 1. */
 	freeInodesFraction: number;
 }>;
 
 export type HostHealthSample = Readonly<{
-	/** One-minute load average divided by online CPUs. */
 	loadPerCpu: number;
-	/** MemAvailable over MemTotal, 0 to 1. Absent when it cannot be read. */
 	memoryAvailableFraction?: number;
 	storage: readonly HostStorageSample[];
 }>;
@@ -40,20 +15,11 @@ export type HostHealthSample = Readonly<{
 export type HostHealthState = "ok" | "pressured" | "critical";
 
 export type HostHealthThresholds = Readonly<{
-	/** Load per CPU at or above which the host is pressured / critical. */
 	loadPerCpu: Readonly<{ pressured: number; critical: number }>;
-	/** Available memory fraction at or below which it is pressured / critical. */
 	memoryAvailableFraction: Readonly<{ pressured: number; critical: number }>;
-	/** Free bytes or inodes fraction at or below which it is pressured / critical. */
 	storageFreeFraction: Readonly<{ pressured: number; critical: number }>;
 }>;
 
-/**
- * Job containers are CPU-bound test and build work: 1.5 runnable tasks a core
- * means every job is already slowed by half, and 3 means a 20-minute job
- * budget is being spent waiting for a core. Storage at 15% free is where the
- * worker's own collection starts to matter; 5% is where a checkout fails.
- */
 // public-contract: operators tune the box worker against these defaults.
 export const DEFAULT_HOST_HEALTH_THRESHOLDS = {
 	loadPerCpu: { pressured: 1.5, critical: 3 },
@@ -69,7 +35,6 @@ export type HostHealthReason =
 
 export type HostHealthVerdict = Readonly<{
 	state: HostHealthState;
-	/** Resources at or past the verdict's own level. */
 	reasons: readonly HostHealthReason[];
 }>;
 
@@ -94,7 +59,6 @@ function atMost(
 	return value <= limits.pressured ? "pressured" : "ok";
 }
 
-/** One sample's verdict, with no memory of earlier samples. */
 export function classifyHostHealth(
 	sample: HostHealthSample,
 	thresholds: HostHealthThresholds = DEFAULT_HOST_HEALTH_THRESHOLDS,
@@ -162,34 +126,16 @@ function worstStorage(sample: HostHealthSample) {
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
 
-/**
- * Holds the host's state between samples.
- *
- * Going up needs `escalateAfter` consecutive samples worse than the held
- * level, and coming down needs `recoverAfter` better than it: load and
- * available memory both swing within a single job, and a fleet that reroutes
- * on every swing is worse than one that never does. The run does not have to
- * sit at one level. A host that alternates between pressured and critical is
- * at least pressured the whole time, so it moves to the mildest level the run
- * sustained going up and the worst going down.
- *
- * A sample that fails or takes too long changes nothing and never holds up
- * the caller: a stalled disk is when the dispatch loop must keep turning.
- */
 export function createHostHealthMonitor(options: {
 	sample: () => Promise<HostHealthSample>;
 	thresholds?: HostHealthThresholds;
-	/** Minimum gap between samples. */
 	intervalMs?: number;
 	escalateAfter?: number;
 	recoverAfter?: number;
-	/** A steady state is logged again this often. */
 	reportEveryMs?: number;
-	/** A sample slower than this is treated as failed. */
 	sampleTimeoutMs?: number;
 	now?: () => number;
 	log?: HostHealthLog;
-	/** Called when the host enters `pressured` or `critical`. */
 	onPressure?: (verdict: HostHealthVerdict) => void;
 }) {
 	const intervalMs = options.intervalMs ?? 10_000;
@@ -199,7 +145,6 @@ export function createHostHealthMonitor(options: {
 	const sampleTimeoutMs = options.sampleTimeoutMs ?? 2_000;
 	const now = options.now ?? Date.now;
 	let held: HostHealthVerdict = { state: "ok", reasons: [] };
-	/** Consecutive samples on one side of the held level, and their bound. */
 	let run:
 		| { direction: 1 | -1; length: number; bound: HostHealthVerdict }
 		| undefined;
@@ -233,7 +178,6 @@ export function createHostHealthMonitor(options: {
 		});
 	}
 
-	/** Samples at most once per interval; safe to call on every tick. */
 	async function observe(): Promise<HostHealthVerdict> {
 		const at = now();
 		if (sampledAtMs !== undefined && at - sampledAtMs < intervalMs) return held;
@@ -251,14 +195,11 @@ export function createHostHealthMonitor(options: {
 		const previous = held.state;
 		const side = Math.sign(RANK[verdict.state] - RANK[held.state]);
 		if (side === 0) {
-			// Same level; the resources behind it may have changed.
 			held = verdict;
 			run = undefined;
 		} else {
 			const direction = side > 0 ? 1 : -1;
 			const continuing = run?.direction === direction ? run : undefined;
-			// Going up, the level every sample reached; going down, the level
-			// none of them fell short of.
 			const closer =
 				continuing === undefined ||
 				(RANK[verdict.state] - RANK[continuing.bound.state]) * direction < 0;
@@ -285,20 +226,17 @@ export function createHostHealthMonitor(options: {
 
 	return {
 		observe,
-		/** The held verdict, without sampling. */
 		current: (): HostHealthVerdict => held,
 	};
 }
 
 export type HostHealthMonitor = ReturnType<typeof createHostHealthMonitor>;
 
-/** A filesystem that reports no inodes (some overlay and network mounts) is not short of them. */
 function fraction(free: number, total: number): number {
 	if (!Number.isFinite(free) || !Number.isFinite(total) || total <= 0) return 1;
 	return Math.min(1, Math.max(0, free / total));
 }
 
-/** Builds a sample from the host facts the daemon already has ways to read. */
 export async function readHostHealthSample(host: {
 	loadAverage1m: number;
 	cpus: number;

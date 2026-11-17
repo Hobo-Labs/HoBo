@@ -10,17 +10,8 @@ const RELEASE_CANDIDATE_TAG = /^[^:/]+:candidate$/u;
 const GHCR_HOBO_RELEASE =
 	/^ghcr\.io\/hobo-labs\/hobo\/(hobo(?:-[a-z-]+)?):[^:]+$/u;
 
-/**
- * A release image this young may still be mid-flow: built, tagged for GHCR,
- * pushed and attested by separate steps and jobs (20-minute job rule, finding 121).
- */
 export const RELEASE_IMAGE_GC_GRACE_MS = 60 * 60_000;
 
-/**
- * Superseded GHCR-tagged release images, oldest per image name first to go.
- * Never a `:candidate` tag (the name the release flow reads), never an image a
- * container uses or a candidate still names, and never one inside the grace.
- */
 export function selectReleaseImageTagsForDeletion(
 	images: readonly WorkerImage[],
 	options: Readonly<{ nowMs?: number; graceMs?: number }> = {},
@@ -45,7 +36,6 @@ export function selectReleaseImageTagsForDeletion(
 		const sorted = [...group].sort(newestFirst);
 		for (const image of sorted.slice(1)) {
 			const createdMs = Date.parse(image.created);
-			// An unreadable age is treated as young.
 			if (!Number.isFinite(createdMs) || nowMs - createdMs < graceMs) continue;
 			stale.push(image.tag);
 		}
@@ -84,7 +74,6 @@ export function selectWorkerImageTagsForDeletion(
 		.map((image) => image.tag);
 }
 
-/** Map `hobo-ci-deps:local` keep hint to a keyed tag when the label is present. */
 export function depsGcKeepTag(
 	requested: string | undefined,
 	localDepsKey: string | undefined,

@@ -3,7 +3,6 @@ import { open } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 
-/** Bindings and resolvers are operator supplied, never loaded from a project file. */
 export type CiSecretResolver = (
 	name: string,
 ) => string | undefined | Promise<string | undefined>;
@@ -25,7 +24,6 @@ class ResolvedSecrets implements CiResolvedSecrets {
 	}
 }
 
-/** Resolve only names separately allowed by the operator. Values are never formatted or logged. */
 export async function resolveCiSecrets(
 	names: readonly string[],
 	allowedNames: readonly string[],
@@ -50,7 +48,6 @@ export async function resolveCiSecrets(
 	return new ResolvedSecrets(secrets);
 }
 
-/** File mounts need no environment variable containing the secret value. */
 export function createCiSecretDirectoryResolver(
 	directory: string,
 ): CiSecretResolver {
@@ -88,7 +85,6 @@ export function createCiSecretDirectoryResolver(
 	};
 }
 
-/** Bind project names to separately selected environment variables. */
 export function createCiEnvironmentSecretResolver(
 	bindings: Readonly<Record<string, string>>,
 	env: NodeJS.ProcessEnv = process.env,

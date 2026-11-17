@@ -25,7 +25,6 @@ const Installation = z.object({
 type Actor = z.infer<typeof Principal>;
 type Purpose = "register" | "install";
 
-/** Must atomically bind a state digest to its identity and consume it once. */
 export interface AppRegistrationStatePort {
 	issue(
 		digest: string,
@@ -41,7 +40,6 @@ export interface AppRegistrationStatePort {
 	): Promise<boolean>;
 }
 
-/** Implementations authenticate the HoBo session, then verify GitHub admin authority. */
 export interface AppRegistrationAuthorityPort {
 	authorize(actor: Actor, purpose: Purpose): Promise<boolean>;
 	verifyInstallationAdmin(
@@ -50,7 +48,6 @@ export interface AppRegistrationAuthorityPort {
 	): Promise<boolean>;
 }
 
-/** Both methods must enforce unique ownership transactionally. Never log secret input. */
 export interface AppRegistrationVaultPort {
 	saveApp(
 		appId: number,
@@ -68,21 +65,18 @@ export interface AppRegistrationVaultPort {
 	): Promise<void>;
 }
 
-/** Conversion may have succeeded remotely; a spent code must never be retried blindly. */
 export class AppRegistrationUncertainError extends Error {
 	constructor() {
 		super("GitHub App conversion outcome uncertain; reconcile before retrying");
 	}
 }
 
-/** The one-use code was converted, but GitHub reported an unexpected owner. */
 export class AppRegistrationOwnerMismatchError extends Error {
 	constructor() {
 		super("GitHub App owner does not match the configured owner");
 	}
 }
 
-/** Compose authenticated callbacks using a durable one-time state store and vault. */
 export function createAppRegistration(options: {
 	states: AppRegistrationStatePort;
 	authority: AppRegistrationAuthorityPort;
@@ -90,7 +84,6 @@ export function createAppRegistration(options: {
 	github: OnboardingGithubPort;
 	appId?: number | undefined;
 	expectedGithubOwnerId?: number | undefined;
-	/** Called only after the owner pin succeeds, before an App can be activated. */
 	verifyConvertedApp?:
 		| ((input: {
 				appId: number;

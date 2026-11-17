@@ -99,20 +99,14 @@ const ProjectInput = z
 export interface CiProjectEnvironment {
 	readonly name: string;
 	readonly relayOrigin: string;
-	/** Declared public GitHub ingress; reachability and registration are separate. */
 	readonly githubWebhookOrigin: string | undefined;
 	readonly allowInsecureLoopback: boolean;
-	/** Push accepts signed GitHub webhooks at the relay; pull polls GitHub for queued jobs. */
 	readonly jobAdmission: "push" | "pull" | undefined;
-	/** Box worker lease journal: local SQLite, the only store. */
 	readonly store: CiWorkerStore | undefined;
-	/** Engines served from this environment profile (defaults to repository inventory). */
 	readonly engines: readonly string[] | undefined;
-	/** Per-engine relay origin overrides (falls back to environment relayOrigin). */
 	readonly engineRelays:
 		| Readonly<Record<string, { readonly relayOrigin?: string }>>
 		| undefined;
-	/** Logical names and required phases only; secret values are never configured here. */
 	readonly secrets: Readonly<Record<string, CiSecretRequirement>>;
 	readonly policy: ParsedCiPolicy;
 }
@@ -165,7 +159,6 @@ export type CiProjectEnvironmentInput = CiProjectEnvironmentTemplate &
 		  }
 	);
 
-/** Merge data only; arrays and primitives replace the inherited value. */
 function mergeTemplate(
 	base: JsonData,
 	override: JsonData,
@@ -238,7 +231,6 @@ function relayOrigin(value: string, allowInsecureLoopback: boolean): string {
 	return url.origin;
 }
 
-/** Refuse destinations GitHub cannot reach as literals; DNS is not verified. */
 function githubWebhookOrigin(value: string): string {
 	const normalized = relayOrigin(value, false);
 	const host = new URL(normalized).hostname.toLowerCase().replace(/\.$/, "");
@@ -272,7 +264,6 @@ function githubWebhookOrigin(value: string): string {
 	return normalized;
 }
 
-/** Parse repository-local data. It never reads secrets or changes a relay. */
 export function parseCiProjectConfig(
 	json: string,
 	organization?: CiProjectConfig,
@@ -344,21 +335,15 @@ export function parseCiProjectConfig(
 			...environments,
 		});
 	} catch {
-		// Repository input can contain arbitrary text. Never put it in an error.
 		throw new Error("invalid CI project configuration");
 	}
 }
 
-/** Author the same repository configuration from the SDK. */
 export function defineCiProjectConfig(
 	input: CiProjectConfigInput,
 	organization?: CiProjectConfig,
 ): CiProjectConfig {
 	try {
-		// `defineCiPolicy` returns frozen protobuf messages whose `$typeName`
-		// metadata is not part of the authored JSON schema. Providers are
-		// written as protobuf JSON so an unset `capacity` oneof or an empty
-		// `location` never reach the closed authored provider shapes.
 		return parseCiProjectConfig(
 			JSON.stringify(input, (key, value) => {
 				if (key === "budgetPolicy" && value !== undefined)
@@ -377,7 +362,6 @@ export function defineCiProjectConfig(
 	}
 }
 
-/** Select a named profile; process environment is never consulted implicitly. */
 export function selectCiEnvironment(
 	config: CiProjectConfig,
 	environment?: string,
@@ -392,7 +376,6 @@ export function selectCiEnvironment(
 	return selected;
 }
 
-/** Return the declared logical names for an explicitly selected environment and phase. */
 export function requiredCiSecrets(
 	config: CiProjectConfig,
 	environment: string,
@@ -418,7 +401,6 @@ export interface CiEnvironmentCredentialScope {
 }
 
 export interface ConfiguredCiRelayOptions {
-	/** Trusted environment, canonical origin and account bindings from outside the repo. */
 	trustedTargets: readonly CiEnvironmentCredentialScope[];
 	accountToken: (
 		scope: CiEnvironmentCredentialScope,
@@ -427,11 +409,9 @@ export interface ConfiguredCiRelayOptions {
 }
 
 export interface CiPolicyApplyOptions extends ConfiguredCiRelayOptions {
-	/** Digest from a trusted source independent of repository-controlled files. */
 	expectedPolicySha256: string;
 }
 
-/** Hash normalized protobuf JSON for review and out-of-band policy pinning. */
 export async function ciEnvironmentPolicySha256(
 	config: CiProjectConfig,
 	environment: string,
@@ -453,7 +433,6 @@ export async function ciEnvironmentPolicySha256(
 	).join("");
 }
 
-/** Digest an environment's secret names and lifecycle requirements, not their values. */
 export async function ciEnvironmentSecretsSha256(
 	config: CiProjectConfig,
 	environment: string,
@@ -479,7 +458,6 @@ export async function ciEnvironmentSecretsSha256(
 	).join("");
 }
 
-/** Pin the endpoint before looking up or transmitting an account credential. */
 export function createConfiguredCiRelayClient(
 	config: CiProjectConfig,
 	environment: string,
@@ -510,7 +488,6 @@ export function createConfiguredCiRelayClient(
 	});
 }
 
-/** Apply only on an explicit call, after verifying account identity and revision. */
 export async function applyCiEnvironmentPolicy(
 	config: CiProjectConfig,
 	environment: string,
@@ -527,19 +504,12 @@ export async function applyCiEnvironmentPolicy(
 	const current = await client.getPolicy();
 	if (current.account?.id !== selected.policy.accountId)
 		throw new Error("CI relay account does not match selected policy");
-	// The parsed policy is a frozen protobuf message. The client accepts authored
-	// protobuf JSON, so remove message metadata through the protobuf serializer.
 	const policy = JSON.parse(
 		toJsonString(DesiredCiPolicySchema, selected.policy),
 	);
 	return client.putDesiredPolicy(policy, { revision: current.revision });
 }
 
-/**
- * Read the runner-provider integrations from `.hobo/ci.json` text. Entries are
- * references only; a credential-shaped value anywhere rejects the whole block
- * with an error that never contains repository text.
- */
 export function parseCiRunnerIntegrations(
 	json: string,
 ): readonly RunnerIntegration[] {
@@ -559,12 +529,6 @@ export function parseCiRunnerIntegrations(
 	}
 }
 
-/**
- * The `agent` block of `.hobo/ci.json` as JSON text for `@hobo/ci-agent` to
- * parse, or nothing when the repository does not configure an agent. A
- * credential-shaped value anywhere in the block rejects it with an error that
- * never contains repository text.
- */
 export function parseCiAgentBlock(json: string): string | undefined {
 	try {
 		const { agent } = z

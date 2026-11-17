@@ -1,16 +1,9 @@
-/**
- * Deps rebuild samples Docker data-root free space via `df` on a host-visible path
- * (finding 71, 84). Inside an isolated job container the daemon `DockerRootDir` is
- * often not mounted; candidate bind mounts are tried before host sampling.
- */
-
 export type DepsHeadroomPathEnv = Readonly<{
 	hostJobDirectory?: string;
 	githubWorkspace?: string;
 	pnpmStoreExists?: boolean;
 }>;
 
-/** Host-visible paths to try for `df` (existing directories only). */
 export function depsHeadroomCandidatePaths(
 	env: DepsHeadroomPathEnv,
 ): readonly string[] {
@@ -31,10 +24,6 @@ export type DepsHeadroomPathPick = Readonly<{
 		| "host-docker-root";
 }>;
 
-/**
- * Choose where to run `df`. When `dockerRootDevice` is set, matching candidates
- * win first; any sampleable bind mount follows; host `df` on `DockerRootDir` is last.
- */
 export function pickDepsHeadroomSamplePath(input: {
 	dockerRootDir: string;
 	dockerRootMounted: boolean;

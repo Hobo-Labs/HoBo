@@ -7,19 +7,6 @@ import {
 } from "@hobo/provider-redaction";
 import { z } from "zod";
 
-/**
- * Third-party GitHub Actions runner providers HoBo CI can route jobs to.
- *
- * The config only ever holds references. Each provider is limited to the auth
- * methods it really supports (checked against the provider docs listed below):
- * - `github-app`: the provider's GitHub App is installed on the org; the app
- *   mints short-lived per-job runner tokens. No credential ever exists in the repo.
- * - `oidc`: the workflow exchanges its GitHub OIDC token (`id-token: write`) for a
- *   short-lived provider token through a trust relationship. Nothing is stored.
- * - `device`: an interactive browser/device ceremony run by the provider CLI.
- * - `secret-ref`: last-resort fallback. The config names where a secret lives
- *   (`github-secret:NAME` or `env:NAME`); the value itself is never accepted.
- */
 export const RUNNER_INTEGRATION_PROVIDERS = [
 	"blacksmith",
 	"depot",
@@ -40,16 +27,12 @@ export type RunnerIntegrationAuthMethod =
 export interface RunnerProviderProfile {
 	readonly provider: RunnerIntegrationProvider;
 	readonly displayName: string;
-	/** Supported auth methods, safest first. The first one is the default. */
 	readonly authMethods: readonly RunnerIntegrationAuthMethod[];
 	readonly labelPattern: RegExp;
 	readonly exampleLabel: string;
-	/** Where the owner completes the provider's own sign-in/installation step. */
 	readonly ceremonyUrl: string;
-	/** Provider CLI that runs a device/browser ceremony, when one exists. */
 	readonly ceremonyCommand?: readonly string[];
 	readonly docsUrl: string;
-	/** Fallback secret name used with `secret-ref`. */
 	readonly fallbackSecret?: string;
 	readonly notes: string;
 }
@@ -105,12 +88,7 @@ export const RUNNER_PROVIDER_PROFILES = {
 	},
 } satisfies Readonly<Record<RunnerIntegrationProvider, RunnerProviderProfile>>;
 
-/** Shapes that are credentials, never references. Never echo the match. */
 export const SECRET_PATTERNS: readonly RegExp[] = [
-	// A private key first, the shared form: searched after the JWT shape, which
-	// starts where a run starts, its BEGIN line was read as part of a token. It
-	// runs from BEGIN to its own END line and the rest of that line's run, so
-	// text glued to a key goes with it.
 	PRIVATE_KEY_PATTERN,
 	/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
 	/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
@@ -118,10 +96,6 @@ export const SECRET_PATTERNS: readonly RegExp[] = [
 	/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g,
 	/\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g,
 	/\bAKIA[0-9A-Z]{16}\b/g,
-	// A signed JWT and nothing after it, the shared linear form: `\beyJ…`
-	// started again at every `eyJ` in a run and read to its end, quadratic in a
-	// hostile text. The bounded form keeps an unsigned token from counting and
-	// the rest of a JSON body from being swallowed with the signature.
 	SIGNED_JWT_PATTERN,
 	/\b(?:boat|bsm|jog)_[A-Za-z0-9]{20,}\b/g,
 ];
@@ -153,7 +127,6 @@ function opaqueCredential(run: string): boolean {
 	);
 }
 
-/** True when a string looks like a raw credential rather than a reference. */
 export function looksLikeSecret(value: string): boolean {
 	if (SECRET_PATTERNS.some((pattern) => new RegExp(pattern.source).test(value)))
 		return true;
@@ -162,7 +135,6 @@ export function looksLikeSecret(value: string): boolean {
 	);
 }
 
-/** Remove credential-shaped substrings and any explicitly known secret values. */
 export function redactSecrets(
 	text: string,
 	known: readonly string[] = [],
@@ -170,11 +142,6 @@ export function redactSecrets(
 	let out = text;
 	for (const secret of known)
 		if (secret.length >= 8) out = out.split(secret).join("[REDACTED]");
-	// Every shape over the same text: replaced in turn, a private key's END
-	// line took the BEGIN line glued after it, and the next key was not found.
-	// The opaque-run rule too: run after the shapes, it saw a run they had cut
-	// short, and the part before a JWT had lost its digit. It is run again
-	// after them, for a run that only qualifies once a shape is gone.
 	out = redactMatches(
 		out,
 		[...SECRET_SPANS, OPAQUE_SPAN],
@@ -263,15 +230,10 @@ export const RunnerIntegrationsSchema = z
 	})
 	.meta({ id: "RunnerIntegrations" });
 
-/**
- * Reject raw credentials anywhere in a config document before parsing, without
- * echoing them. Returns JSON-pointer-ish paths of offending values.
- */
 const JsonStringSchema = z.string();
 const JsonArraySchema = z.array(z.json());
 const JsonObjectSchema = z.record(z.string(), z.json());
 
-/** Any JSON-shaped value a config document can carry, including absent fields. */
 export type SecretScanValue =
 	| string
 	| number
@@ -306,7 +268,6 @@ export interface RunnerIntegrationOptions {
 	runsOn?: readonly string[] | undefined;
 }
 
-/** Build a references-only integration entry; throws on any invalid or secret-shaped input. */
 export function buildRunnerIntegration(
 	provider: RunnerIntegrationProvider,
 	options: RunnerIntegrationOptions = {},

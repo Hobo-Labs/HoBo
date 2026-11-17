@@ -29,17 +29,12 @@ const MergeQueueGraphql = z.object({
 });
 
 export type MergeQueuePositions = Readonly<{
-	/** Merge-queue head commit oid → position (1 = front). */
 	byHeadSha: ReadonlyMap<string, number>;
 	fetchedAtMs: number;
 }>;
 
 export type MergeQueuePositionSource = () => MergeQueuePositions | undefined;
 
-/**
- * Reads the repository merge queue through GraphQL. An empty map with a
- * timestamp still means the call succeeded but the queue is empty or disabled.
- */
 export async function fetchMergeQueuePositions(
 	github: GithubTransport,
 	installationId: number,
@@ -49,7 +44,6 @@ export async function fetchMergeQueuePositions(
 ): Promise<MergeQueuePositions | undefined> {
 	const parts = repo.split("/", 2);
 	if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
-	// SAFETY: length and truthiness checks guarantee two string segments.
 	const org = parts[0];
 	const name = parts[1];
 	const query = `query($owner:String!,$name:String!,$branch:String!){

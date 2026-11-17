@@ -1,20 +1,5 @@
-/**
- * Committed routing policy: `runnerRouting` in `.hobo/ci.json` (ADR-0181,
- * "Routing list"). It replaces every repository variable and box environment
- * variable that chose a runner label, a tier, a slot split, a limit or a
- * reporter. Its values are the code's defaults, so committing them changed
- * nothing.
- *
- * Mirrored by `#RunnerRouting` in `data-models/onboarding.cue` and, without
- * dependencies, by `scripts/ci/runner-routing.mts` (what the route job runs
- * from a sparse checkout). The three agree on every fixture.
- */
 import { z } from "zod";
 
-/**
- * GitHub's generic self-hosted labels: any self-hosted runner carries them, so
- * a route naming one would hand the job to whichever runner asks first.
- */
 export const GENERIC_RUNNER_LABELS: ReadonlySet<string> = new Set([
 	"self-hosted",
 	"linux",
@@ -24,7 +9,6 @@ export const GENERIC_RUNNER_LABELS: ReadonlySet<string> = new Set([
 	"macos",
 ]);
 
-/** A runner label routing may name: lower case, never a generic one. */
 export const RunnerRoutingLabelSchema = z
 	.string()
 	.regex(/^[a-z0-9][a-z0-9_.-]{0,79}$/u)
@@ -62,17 +46,14 @@ export const RunnerRoutingSchema = z
 				trunk: RunnerRoutingLabelSchema,
 				local: RunnerRoutingLabelSchema,
 				github: RunnerRoutingLabelSchema,
-				/** The box's own label, for the one job that builds in its Docker context. */
 				box: RunnerRoutingLabelSchema,
 			})
 			.strict(),
 		localRunner: z.boolean(),
-		/** Pull requests' deps-image job asks for `labels.box` (else the fleet label). */
 		boxRunner: z.boolean(),
 		mainWorkspaceParallelCap: whole(1, 8),
 		mainGate: z
 			.object({
-				/** `false`: a push to main runs its full gate even when the merge queue passed its tree. */
 				reuseMergeQueue: z.boolean(),
 			})
 			.strict(),
@@ -109,7 +90,6 @@ export const RunnerRoutingSchema = z
 
 export type RunnerRouting = Readonly<z.infer<typeof RunnerRoutingSchema>>;
 
-/** The policy, or nothing when it is not one. Never throws. */
 export function parseRunnerRouting(
 	value: z.infer<ReturnType<typeof z.json>> | undefined,
 ): RunnerRouting | undefined {
@@ -117,10 +97,6 @@ export function parseRunnerRouting(
 	return parsed.success ? parsed.data : undefined;
 }
 
-/**
- * Every label a routing slip may name: the four committed labels a run is
- * routed to. `labels.box` is one job's, chosen by `boxRunner`, never a route.
- */
 export function runnerRoutingLabels(
 	policy: Pick<RunnerRouting, "labels">,
 ): ReadonlySet<string> {

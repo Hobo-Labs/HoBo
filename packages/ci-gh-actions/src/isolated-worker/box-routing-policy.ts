@@ -1,18 +1,3 @@
-/**
- * The box daemon's routing policy (ADR-0181, decision 4): the committed
- * `runnerRouting` block of `.hobo/ci.json` in the daemon's own checkout.
- *
- * No environment variable chooses a runner label, a tier, a pool, a slot
- * split, a limit or a reporter on the box (R2). The daemon reads the file once
- * at start. A checkout with no `runnerRouting` (an older one) runs on the
- * code's defaults below, which the committed block equals, so that changes
- * nothing (R3). A block that is there but is not a policy refuses to start, as
- * the daemon's other invalid settings do.
- *
- * At start the daemon also logs, once, the **names** (never the values) of
- * any routing environment variable still set on the box, so a box-local
- * override that stopped applying is visible.
- */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_GITHUB_MACHINE_TYPE } from "@hobo/ci";
@@ -34,19 +19,11 @@ import {
 	DEFAULT_WORKER_SLOTS,
 } from "./worker-slots.js";
 
-/** Headroom admission keeps above the heavy class before it admits. */
 export const DEFAULT_CAPACITY_VOLATILITY_MB = 1024;
-/** How long a trunk job waits on headroom before it defers to the fleet. */
 export const DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS = 45_000;
-/** Free runners elsewhere that still count as "something else can take it". */
 export const DEFAULT_FLEET_MIN_FREE_RUNNERS = 1;
-/** Work assigned to a label with nothing started this long is `stalled`. */
 export const DEFAULT_ROUTING_STALL_MS = 10 * 60_000;
 
-/**
- * The code's defaults. The committed `runnerRouting` equals them (ADR-0181,
- * M8), so a checkout without the block routes exactly as one with it.
- */
 export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 	pin: "auto",
 	queue: { maxWaitSeconds: 120, maxQueued: 4 },
@@ -94,18 +71,12 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 
 export type BoxRoutingPolicy = Readonly<{
 	policy: RunnerRouting;
-	/** `committed`: read from the file; `default`: the file has no block. */
 	source: "committed" | "default";
 	path: string;
 }>;
 
-/** The one part of `.hobo/ci.json` the box reads; the rest is not its business. */
 const Document = z.object({ runnerRouting: z.json().optional() });
 
-/**
- * The policy in `<checkoutRoot>/.hobo/ci.json`. Throws when the file is
- * there but is not JSON, or its `runnerRouting` is not a policy.
- */
 export function readBoxRoutingPolicy(checkoutRoot: string): BoxRoutingPolicy {
 	const path = join(checkoutRoot, DEFAULT_CI_PROJECT_PATH);
 	if (!existsSync(path))
@@ -126,11 +97,6 @@ export function readBoxRoutingPolicy(checkoutRoot: string): BoxRoutingPolicy {
 	return { policy, source: "committed", path };
 }
 
-/**
- * Every environment name ADR-0181 (routing list) counts as routing. None of them is
- * read on the box any more; `routingEnvironmentNamesSet` names the ones still
- * set, for the start log.
- */
 export const ROUTING_ENVIRONMENT_NAMES: readonly string[] = Object.freeze([
 	"HOBO_CI_ROUTE",
 	"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
@@ -155,12 +121,10 @@ export const ROUTING_ENVIRONMENT_NAMES: readonly string[] = Object.freeze([
 	"HOBO_CI_BOX_RUNNER",
 	"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 ]);
-/** Every `HOBO_CI_FLEET_VERDICT_*` name is routing too. */
 export const ROUTING_ENVIRONMENT_PREFIXES: readonly string[] = Object.freeze([
 	"HOBO_CI_FLEET_VERDICT_",
 ]);
 
-/** The routing names set (non-empty) in `env`, sorted. Never their values. */
 export function routingEnvironmentNamesSet(
 	env: Readonly<Record<string, string | undefined>>,
 ): string[] {

@@ -1,19 +1,3 @@
-/**
- * The routing slip at its boundaries (`data-models/routing_slip.proto`,
- * ADR-0181): the box relay's current routing answer for one repository. The
- * relay writes it as the message of a parentless commit at
- * `refs/hobo/routing-slip`; the route job reads it with its own token.
- *
- * Parse, don't validate: a slip crosses `judgeRoutingSlip` once and comes out
- * as a `ParsedRoutingSlip` the caller uses without checking again, or as the
- * reason it is no slip. A slip is used only while it has not expired, names
- * the reader's repository, and every runner it names is a committed
- * `runnerRouting.labels` value. Anything else changes nothing: the queue rule
- * decides, as it does with no slip (ADR-0181, R3).
- *
- * `scripts/ci/runner-routing.mts` holds the same rules without dependencies,
- * for the route job's sparse checkout; the two agree on every fixture.
- */
 import { create, fromJson, toJsonString } from "@bufbuild/protobuf";
 import { z } from "zod";
 import {
@@ -25,17 +9,13 @@ import { GENERIC_RUNNER_LABELS } from "./runner-routing.js";
 // public-contract: the git ref the box relay writes the routing slip to.
 export const ROUTING_SLIP_REF = "refs/hobo/routing-slip";
 export const ROUTING_SLIP_VERSION = 1;
-/** A slip stands this long after it is issued, and no longer. */
 export const ROUTING_SLIP_LIFETIME_MS = 10 * 60_000;
-/** The relay rewrites an unchanged slip this often while it is up. */
 export const ROUTING_SLIP_HEARTBEAT_MS = 3 * 60_000;
 
-/** The classes of `#FleetRoutes`; shards use `trunk` or `pr`. */
 export const ROUTING_SLIP_CLASSES = ["pr", "fork", "trunk"] as const;
 export type RoutingSlipClassName = (typeof ROUTING_SLIP_CLASSES)[number];
 export const ROUTING_SLIP_TIERS = ["fleet", "local", "github"] as const;
 export type RoutingSlipTier = (typeof ROUTING_SLIP_TIERS)[number];
-/** Open reasons send a class to the fleet; refused ones elsewhere; `pinned` either. */
 export const ROUTING_SLIP_OPEN_REASONS = ["fleet-open", "fleet-busy"] as const;
 export const ROUTING_SLIP_REFUSED_REASONS = [
 	"no-node",
@@ -47,7 +27,6 @@ export type RoutingSlipReason =
 	| (typeof ROUTING_SLIP_REFUSED_REASONS)[number]
 	| "pinned";
 
-/** Why a slip is no slip, in the words the route job's warning uses. */
 export type RoutingSlipRefusal =
 	| "malformed"
 	| "wrong-repository"
@@ -72,7 +51,6 @@ export type RoutingSlipJudgement =
 	| Readonly<{ ok: true; slip: ParsedRoutingSlip }>
 	| Readonly<{ ok: false; why: RoutingSlipRefusal }>;
 
-/** What the reader brings: its repository, its clock and the committed labels. */
 export type RoutingSlipContext = Readonly<{
 	repository: string;
 	nowMs: number;
@@ -107,12 +85,6 @@ function reasonFor(
 		: ROUTING_SLIP_REFUSED_REASONS.find((reason) => reason === value);
 }
 
-/**
- * The slip's wire shape, exactly: camelCase names, every field present with
- * its JSON type, nothing else. Protobuf's JSON reader alone would also take a
- * string `version`, snake_case names or a `null`; the route job's reader
- * does not, and the two must agree.
- */
 const RoutingSlipWire = z
 	.object({
 		version: z.number(),
@@ -129,11 +101,6 @@ const RoutingSlipWire = z
 	})
 	.strict();
 
-/**
- * The slip, or why it is none. The text must be the slip's canonical JSON:
- * camelCase names, every field present, nothing else (protobuf's lenient
- * spellings, a string `version` or a `null`, are refused).
- */
 export function judgeRoutingSlip(
 	text: string,
 	context: RoutingSlipContext,
@@ -211,7 +178,6 @@ export function judgeRoutingSlip(
 	};
 }
 
-/** The slip, or nothing. */
 export function parseRoutingSlip(
 	text: string,
 	context: RoutingSlipContext,
@@ -220,7 +186,6 @@ export function parseRoutingSlip(
 	return judgement.ok ? judgement.slip : undefined;
 }
 
-/** What the relay decided, to be written as a slip. */
 export type RoutingSlipInput = Readonly<{
 	repository: string;
 	issuedAtMs: number;
@@ -228,11 +193,6 @@ export type RoutingSlipInput = Readonly<{
 	relay: Readonly<{ nodeId: string; commit: string }>;
 }>;
 
-/**
- * The slip's JSON: the message of the commit at `ROUTING_SLIP_REF`. It
- * expires `ROUTING_SLIP_LIFETIME_MS` after it is issued. Throws when the
- * input could not be read back as a slip by a reader holding `labels`.
- */
 export function routingSlipJson(
 	input: RoutingSlipInput,
 	labels: ReadonlySet<string>,

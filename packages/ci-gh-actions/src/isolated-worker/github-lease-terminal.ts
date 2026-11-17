@@ -5,7 +5,6 @@ export type GithubLeaseFate =
 	| { kind: "active" }
 	| { kind: "terminal"; reason: string };
 
-/** Whether GitHub no longer expects this worker to run the bound job/run. */
 export async function resolveGithubLeaseFate(
 	github: GithubTransport,
 	lease: Lease,

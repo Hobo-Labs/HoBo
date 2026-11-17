@@ -47,8 +47,6 @@ type ProtobufMessage<Desc extends DescMessage> = ReturnType<
 	typeof create<Desc>
 >;
 
-/** Status is zero for local validation, credentials or transport failures.
- * Error messages never contain response bodies, tokens or request values. */
 export class CiRelayClientError extends Error {
 	constructor(
 		readonly status: number,
@@ -61,13 +59,11 @@ export class CiRelayClientError extends Error {
 function invalid(message: string): never {
 	throw new CiRelayClientError(0, message);
 }
-/** `verdicts/<owner>/<name>`, as the repository was given, once it is a repository. */
 function verdictPath(repository: string): string {
 	if (!parseFleetVerdictPath(`${FLEET_VERDICTS_PATH}${repository}`))
 		invalid("invalid repository");
 	return `verdicts/${repository}`;
 }
-/** `reporters/<owner>/<name>`, as the repository was given, once it is a repository. */
 function reportersPath(repository: string): string {
 	if (!parseFleetReportersPath(`${FLEET_REPORTERS_PATH}${repository}`))
 		invalid("invalid repository");
@@ -130,7 +126,6 @@ async function responseText(response: Response): Promise<string> {
 			if (chunk.done) break;
 			bytes += chunk.value.byteLength;
 			if (bytes > 2 * 1024 * 1024) {
-				// Disposal is best effort; a stalled source must not stall refusal.
 				void reader.cancel().catch(() => undefined);
 				throw new Error("Relay response is too large");
 			}
@@ -148,7 +143,6 @@ async function responseText(response: Response): Promise<string> {
 	}
 }
 
-/** Account tokens are obtained per operation; tenant routing always uses /self. */
 export function createCiRelayClient(
 	options: {
 		origin: string;
@@ -168,12 +162,8 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
-		// The account's own routes, or the relay's (its mesh, its fleet
-		// verdicts and reporters), which no account owns.
 		root: "accounts/self" | "mesh" | "fleet" = "accounts/self",
-		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
 		lenient = false,
-		/** A credential other than the account's, e.g. a workflow's OIDC token. */
 		bearer?: string,
 	): Promise<ProtobufMessage<Desc>> {
 		const headers = new Headers();
@@ -214,7 +204,6 @@ export function createCiRelayClient(
 			);
 		}
 		function refuseResponse(message: string): never {
-			// Disposal must neither delay nor replace the sanitized refusal.
 			void Promise.resolve()
 				.then(() => response.body?.cancel())
 				.catch(() => undefined);
@@ -288,7 +277,6 @@ export function createCiRelayClient(
 				"v2",
 			);
 		},
-		/** A trusted publisher re-attests a zero-credit rate, not an allocation. */
 		reattestRate(
 			input: {
 				offerId: string;
@@ -381,11 +369,6 @@ export function createCiRelayClient(
 		getLeases() {
 			return request("leases", "GET", SnapshotSchema);
 		},
-		/**
-		 * The relay mesh's nodes as the relay sees them: availability,
-		 * capacity and trust, with a capacity summary. A relay with no mesh
-		 * answers `mesh: "not-configured"`. Needs the `policy:read` scope.
-		 */
 		getMeshNodes() {
 			return request(
 				"nodes",
@@ -395,15 +378,9 @@ export function createCiRelayClient(
 				undefined,
 				"v1",
 				"mesh",
-				// A newer relay may add fields; the nodes are still shown.
 				true,
 			);
 		},
-		/**
-		 * The fleet verdict a relay keeps for one repository (ADR-0180): the
-		 * labels new work should stay off right now. Nothing blocked is the
-		 * answer when it keeps none.
-		 */
 		getFleetVerdict(repository: string) {
 			return request(
 				verdictPath(repository),
@@ -416,12 +393,6 @@ export function createCiRelayClient(
 				true,
 			);
 		},
-		/**
-		 * What the relay knows of the fleet reporters for one repository
-		 * (ADR-0180): each enrolled reporter's state and liveness, and each
-		 * label's allowance. Asked with an OIDC token from a workflow of that
-		 * repository, whose audience is this relay's origin.
-		 */
 		getFleetReporters(repository: string, oidcToken: string) {
 			return request(
 				reportersPath(repository),

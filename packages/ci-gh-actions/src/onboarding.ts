@@ -16,7 +16,6 @@ import {
 
 export * from "./_generated/onboarding_pb.js";
 
-/** App JWT metadata and installation-token repository requests stay in the relay. */
 export interface OnboardingGithubPort {
 	request(
 		installationId: number,
@@ -95,7 +94,6 @@ const REQUIRED_PERMISSIONS = {
 	pull_requests: "write",
 };
 
-/** A setup PR must be merged by the repository's ordinary review policy. */
 export class OnboardingPendingError extends Error {
 	constructor(message = "HoBo installation pull request has not been merged") {
 		super(message);
@@ -119,8 +117,6 @@ function origin(input: string): string {
 	return url.origin;
 }
 
-// Reject literal destinations GitHub.com cannot reach. Hostnames still require
-// an independently reachable public HTTPS endpoint, such as a local tunnel.
 const unreachableWebhookAddresses = new BlockList();
 unreachableWebhookAddresses.addSubnet("0.0.0.0", 8, "ipv4");
 unreachableWebhookAddresses.addSubnet("10.0.0.0", 8, "ipv4");
@@ -223,11 +219,9 @@ export function createGithubAppManifest(options: {
 		callbackUrls: [`${relay}/v1/app-registration/oauth/callback`],
 		public: true,
 		defaultEvents: ["workflow_job", "workflow_run"],
-		// Required for GitHub App user tokens to verify an organization administrator.
 		defaultPermissions: { ...REQUIRED_PERMISSIONS, members: "read" },
 	});
 }
-/** GitHub's manifest uses snake_case; protobuf JSON names are explicitly pinned. */
 export function githubAppManifestJson(manifest: GithubAppManifest): string {
 	return toJsonString(GithubAppManifestSchema, manifest, {
 		alwaysEmitImplicit: true,
@@ -359,7 +353,6 @@ export function parseOnboardingPlan(input: string): ParsedOnboardingPlan {
 		throw new Error("onboarding plan digest mismatch");
 	Object.freeze(plan.trustedRefs);
 	Object.freeze(plan.files);
-	// SAFETY: protobuf parsing, dependent identity/content constraints and deep freezing establish the derived plan.
 	return Object.freeze(plan) as ParsedOnboardingPlan;
 }
 function checkedPlan(plan: OnboardingPlan): ParsedOnboardingPlan {
@@ -417,7 +410,6 @@ export async function prepareOnboarding(
 		throw new Error(
 			"workflow asset must contain exactly one relay origin placeholder",
 		);
-	// .mts keeps the reviewed ESM bootstrap executable even in a CommonJS repository.
 	const workflow = options.assets.workflow
 		.replace(placeholder, JSON.stringify(relay))
 		.replaceAll(".hobo-ci/bootstrap.ts", BOOTSTRAP);
@@ -554,7 +546,6 @@ async function planIdentity(
 		throw new Error("onboarding repository or App identity changed");
 }
 
-/** Creates only a setup branch and PR. Never updates/bypasses the default branch. */
 export async function applyOnboarding(
 	github: OnboardingGithubPort,
 	principal: Pick<OnboardingPrincipal, "accountId" | "installationIds">,
@@ -626,7 +617,6 @@ export async function applyOnboarding(
 				sha: commit.sha,
 			}),
 		);
-		// A ref-create response can be lost or race a retry; re-read the named ref, never create a second branch.
 		if (!created.ok && ![409, 422, 500, 502, 503, 504].includes(created.status))
 			await json(created);
 		branchResponse = await api(
@@ -704,7 +694,6 @@ export async function applyOnboarding(
 		if (response.ok) {
 			pr = PullRequest.parse(await response.json());
 		} else {
-			// A retry discovers the single deterministic PR rather than blindly replaying a create.
 			pr = await findPullRequest(github, plan);
 			if (!pr) await json(response);
 		}
@@ -734,7 +723,6 @@ export async function applyOnboarding(
 	});
 }
 
-/** Only a merged, byte-verified setup and a locked protected pin may become a Connection. */
 export async function connectRepository(
 	github: OnboardingGithubPort,
 	principal: Pick<OnboardingPrincipal, "accountId" | "installationIds">,
