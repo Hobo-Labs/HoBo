@@ -1,5 +1,5 @@
 import type { FoldEvent } from "@hobo/core";
-import { type AnyActorDefinition, actor } from "rivetkit";
+import { actor } from "rivetkit";
 import { db, type RawAccess } from "rivetkit/db";
 import {
 	computeRivetOperationDigest,
@@ -345,9 +345,7 @@ async function read(
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
 /** A RivetKit actor whose SQLite transaction owns leases, fences and facts. */
-export function createRivetSqlJournalActor(
-	verify: RivetJournalVerifier,
-): AnyActorDefinition {
+export function createRivetSqlJournalActor(verify: RivetJournalVerifier) {
 	if (!(verify instanceof Function))
 		throw new TypeError("a Rivet capability verifier is required");
 	const protect = async <T, R>(

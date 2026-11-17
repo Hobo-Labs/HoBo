@@ -485,8 +485,12 @@ export function createRivetDistributedJournal(
 				throw new RivetDistributedJournalError("UNAVAILABLE", "read");
 			}
 			const result = readSnapshot(raw, page);
-			if (result === undefined)
+			if (result === undefined) {
+				const failure = readDecision(raw);
+				if (failure?.status === "denied")
+					throw new RivetDistributedJournalError(failure.code, "read");
 				throw new RivetDistributedJournalError("UNAVAILABLE", "read");
+			}
 			return result;
 		},
 	};

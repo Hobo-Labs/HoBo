@@ -130,6 +130,60 @@ describe("Rivet actor action boundaries", () => {
 		);
 	});
 
+	it("does not use a capability that expires while its transaction waits", async () => {
+		let now = 1_000;
+		vi.spyOn(Date, "now").mockImplementation(() => now);
+		let unblock: (() => void) | undefined;
+		const wait = new Promise<void>((resolve) => {
+			unblock = resolve;
+		});
+		const execute = vi.fn(async (sql: string) =>
+			sql.startsWith("SELECT epoch")
+				? [
+						{
+							epoch: 0,
+							revision: 0,
+							holder: null,
+							request: null,
+							expires: null,
+							lastNow: 1_000,
+						},
+					]
+				: [],
+		);
+		const context = {
+			key: testKey,
+			db: {
+				transaction: async (
+					work: (tx: { execute: typeof execute }) => Promise<object>,
+				) => {
+					await wait;
+					return work({ execute });
+				},
+			},
+		};
+		const actor = createRivetDistributedJournalActor(async () => ({
+			...testCapability(),
+			expiresAtMs: 2_000,
+		}));
+		const pending = actor.config.actions.acquire(
+			context,
+			envelope({ holderId: "a", requestId: "one" }),
+		);
+		now = 2_000;
+		if (unblock === undefined) throw new Error("missing transaction resolver");
+		unblock();
+		expect(await pending).toMatchObject({
+			status: "denied",
+			code: "CAPABILITY_EXPIRED",
+		});
+		expect(
+			execute.mock.calls.some(
+				([sql]) => sql.startsWith("INSERT") || sql.startsWith("UPDATE"),
+			),
+		).toBe(false);
+	});
+
 	it("snapshots lease identity before an RPC and cannot be overridden by append input", async () => {
 		let complete:
 			| ((value: {

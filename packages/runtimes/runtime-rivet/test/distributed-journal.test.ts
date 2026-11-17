@@ -232,6 +232,28 @@ describe("Rivet distributed journal state machine", () => {
 });
 
 describe("Rivet journal client boundary", () => {
+	it("preserves a verified read denial", async () => {
+		const journal = createRivetDistributedJournal(
+			{
+				getOrCreate: () => ({
+					acquire: async () => ({ status: "denied" as const, code: "unused" }),
+					check: async () => ({ status: "valid" as const }),
+					release: async () => ({ status: "released" as const }),
+					append: async () => ({ status: "denied" as const, code: "unused" }),
+					read: async () => ({
+						status: "denied" as const,
+						code: "REVISION_CONFLICT",
+					}),
+				}),
+			},
+			{ tenantId: "tenant", campId: "camp", issueCapability: testCapability },
+		);
+		await expect(journal.read("orders")).rejects.toMatchObject({
+			code: "REVISION_CONFLICT",
+			operation: "read",
+			requiresReconciliation: false,
+		});
+	});
 	it.each([
 		undefined,
 		{

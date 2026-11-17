@@ -30,6 +30,8 @@ a grant or append returns `OUTCOME_UNKNOWN`, reconcile with the same request
 or event ID. The asynchronous lease port fences appends in this journal only:
 it cannot fence a separate event store or external effects. The asynchronous
 journal does not yet implement the local host's durable inbox and outbox.
+The actor rejects a clock earlier than any time it has persisted; lease expiry
+also relies on the host's clock not moving backward between observations.
 
 ## Fidelity
 
