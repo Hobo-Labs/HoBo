@@ -2378,9 +2378,15 @@ importers:
       '@hobo/camps':
         specifier: workspace:*
         version: link:../camps
+      '@hobo/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@hobo/yards':
         specifier: workspace:*
         version: link:../yards
+      hono:
+        specifier: ^4.12.27
+        version: 4.12.27
 
   packages/policy:
     devDependencies:
