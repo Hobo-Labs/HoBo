@@ -35,6 +35,39 @@ pnpm --filter @hobo/provider-aws build
 pnpm --filter @hobo/provider-aws test
 ```
 
+### AWS Emulator lane
+
+Install the official [AWS Emulator Linux package](https://docs.aws.amazon.com/emulator/latest/userguide/getting-started-linux.html),
+then run:
+
+```sh
+pnpm --filter @hobo/provider-aws run test:emulator
+# If the binary is not on PATH:
+HOBO_AWS_EMULATOR_BIN=/path/to/aws-emulator pnpm --filter @hobo/provider-aws run test:emulator
+```
+
+This opt-in test starts a fresh AWS Emulator on an OS-assigned loopback port,
+with authentication on and telemetry off. It reads that instance's generated
+credentials and CA, signs the resolver's requests, and sends them over TLS to
+the emulator. It checks S3 bucket creation, versioning and public-access-block
+settings, and DynamoDB table creation and eventual deletion; both are reconciled
+twice to check adoption without a second create. The emulator's temporary
+credentials and certificate are written under `~/.aws/emulator/<port>` and
+removed by the emulator on clean shutdown. The normal unit lane skips this test;
+the explicit command fails if the binary cannot start. `HOBO_AWS_EMULATOR_BIN`
+is for a native executable, not a Docker image.
+
+For interactive debugging, start `aws-emulator --telemetry off` and configure an
+AWS SDK or CLI with its generated endpoint, credentials and CA as described in
+[AWS's SDK setup](https://docs.aws.amazon.com/emulator/latest/userguide/point-sdk-to-emulator.html).
+These settings do not redirect HoBo's production resolver transport: the test
+uses a loopback-only transport adapter after the normal host guard. No real AWS
+account is involved. AWS Emulator models AWS behavior, so a green run is not
+evidence of a live deployment or IAM policy. The package tested here was AWS
+Emulator 1.0.484 (2026-11-17). In that build SQS requires an `x-amz-target`
+JSON request and rejects this resolver's Query protocol; the existing SQS fake
+tests remain necessary and are not labeled emulator coverage.
+
 ## Default Yard catalog (what AWS *can* allocate)
 
 `awsYardSpec()` and `AWS_DEFAULT_BINDINGS` (`src/default-yard.ts`) declare the
@@ -72,16 +105,11 @@ bindings }` — because a provider package is a layer-2 adapter and may not
 import `@hobo/yards`; that layer-3 package parses these rows into a canonical
 set.
 
-## HONEST SCOPE — catalog only, nothing here deploys
+## Catalog scope
 
-This change ships the **catalog only**. There is no HTTP deployment resolver
-for AWS in this package (Cloudflare and Vercel are the two providers with
-resolvers today), and the `aws.*` product ids the factories emit are **not
-registered** in the definition catalog. A Yard built from this spec declares
-what AWS *can* allocate; attempting to deploy against it **fails closed at
-resolution** — `YARD_BINDING_PRODUCT_UNKNOWN`, or no registered resolver —
-until Resource Definitions and resolvers land. Nothing in this section should
-be read as evidence that an AWS deployment works.
+The catalog declares what AWS *can* allocate. The resolvers below cover a
+subset of those products; catalog presence alone does not establish that a
+product is resolvable or that a live deployment works.
 
 ## Deployment resolvers
 
