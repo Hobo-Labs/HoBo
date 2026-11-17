@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bindle, collectRequiredRuntimes } from "@hobo/bindles";
 import type { HoboRuntimeHost } from "@hobo/core";
+import fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { initBareMetalYard, resolveBindlePlacement } from "../src/index.js";
@@ -82,6 +83,172 @@ describe("required runtimes + broker hard-fail", () => {
 		expect(placement.requiredRuntimes).toEqual(["oci"]);
 		// First placement equips the isolated wasm toolchain into the throwaway
 		// HOBO_HOME, beyond the 10s default when it has to download.
+	}, 300_000);
+
+	it("refuses OCI execution authorized only as local-process hosting", async () => {
+		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-rt-provider-binding-"));
+		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
+		initBareMetalYard({ hoboHome, componentHost: "local" });
+		installRuntime("runtime-oci", hoboHome);
+		const definition = bindle("needs-oci", (b) => {
+			const redis = b.container({ image: "redis:7" });
+			const api = b.api().withReference(redis);
+			return { redis, api };
+		});
+		const placement = await resolveBindlePlacement({
+			definition,
+			hoboHome,
+			providerId: "@hobo/provider-local-host",
+			runtimeHost: (kind): HoboRuntimeHost => {
+				if (kind !== "oci") throw new Error(`unexpected ${kind} host`);
+				return {
+					kind: "oci",
+					ensure: async () => ({ kind: "oci", ready: true, notes: [] }),
+					servePrivate: async () => {
+						throw new Error("placement does not serve");
+					},
+				};
+			},
+		});
+		expect(placement.outcome).toBe("rejected");
+	}, 300_000);
+
+	it("only approves generated local-process workloads under the local service-fee policy", async () => {
+		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-rt-local-property-"));
+		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
+		initBareMetalYard({ hoboHome, componentHost: "local" });
+		installRuntime("runtime-oci", hoboHome);
+		const check = async (needsOci: boolean) => {
+			const definition = needsOci
+				? bindle("needs-oci", (b) => {
+						const redis = b.container({ image: "redis:7" });
+						return { redis, api: b.api().withReference(redis) };
+					})
+				: bindle("local-only", (b) => ({ api: b.api() }));
+			const placement = await resolveBindlePlacement({
+				definition,
+				hoboHome,
+				providerId: "@hobo/provider-local-host",
+				runtimeHost: (kind): HoboRuntimeHost => {
+					if (kind !== "oci") throw new Error(`unexpected ${kind} host`);
+					return {
+						kind: "oci",
+						ensure: async () => ({ kind: "oci", ready: true, notes: [] }),
+						servePrivate: async () => {
+							throw new Error("placement does not serve");
+						},
+					};
+				},
+			});
+			expect(placement.outcome).toBe(needsOci ? "rejected" : "resolved");
+			if (!needsOci) {
+				expect(placement.componentHost).toBe("local");
+				expect(
+					placement.yardPlacement?.localHostingProof?.liabilityBoundMicros,
+				).toBe(0);
+			}
+		};
+		await check(false);
+		await check(true);
+		await fc.assert(fc.asyncProperty(fc.boolean(), check), {
+			seed: 614529,
+			numRuns: 20,
+		});
+	}, 300_000);
+
+	it("refuses requirements changed while runtime readiness is awaited", async () => {
+		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-rt-changing-"));
+		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
+		initBareMetalYard({ hoboHome, componentHost: "local" });
+		installRuntime("runtime-oci", hoboHome);
+		const original = bindle("changing", (b) => ({ api: b.api() }));
+		const definition = {
+			...original,
+			resources: { ...original.resources, api: { ...original.resources.api } },
+		};
+		const placement = await resolveBindlePlacement({
+			definition,
+			hoboHome,
+			providerId: "@hobo/provider-local-host",
+			runtimeHost: (kind): HoboRuntimeHost => {
+				if (kind !== "oci") throw new Error(`unexpected ${kind} host`);
+				return {
+					kind: "oci",
+					ensure: async () => {
+						Object.assign(definition.resources.api, { kind: "container" });
+						return { kind: "oci", ready: true, notes: [] };
+					},
+					servePrivate: async () => {
+						throw new Error("placement does not serve");
+					},
+				};
+			},
+		});
+		expect(placement.outcome).toBe("rejected");
+	}, 300_000);
+
+	it("refuses requirements changed during the local authorization handoff", async () => {
+		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-rt-handoff-"));
+		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
+		initBareMetalYard({ hoboHome, componentHost: "local" });
+		const original = bindle("changing", (b) => ({ api: b.api() }));
+		const definition = {
+			...original,
+			resources: { ...original.resources, api: { ...original.resources.api } },
+		};
+		const placement = await resolveBindlePlacement({
+			definition,
+			hoboHome,
+			providerId: "@hobo/provider-local-host",
+			emitProgress(message) {
+				if (message.includes("yard-first placement"))
+					queueMicrotask(() =>
+						Object.assign(definition.resources.api, { kind: "container" }),
+					);
+			},
+		});
+		expect(placement.outcome).toBe("rejected");
+		expect(placement.resolution.rejection?.reasons[0]?.code).toBe(
+			"runtime-requirements-changed",
+		);
+	}, 300_000);
+
+	it("refuses requirements changed temporarily during local authorization", async () => {
+		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-rt-transient-"));
+		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
+		initBareMetalYard({ hoboHome, componentHost: "local" });
+		installRuntime("runtime-oci", hoboHome);
+		const original = bindle("changing", (b) => ({ api: b.api() }));
+		const definition = {
+			...original,
+			resources: { ...original.resources, api: { ...original.resources.api } },
+		};
+		const placement = await resolveBindlePlacement({
+			definition,
+			hoboHome,
+			providerId: "@hobo/provider-local-host",
+			runtimeHost: (kind): HoboRuntimeHost => {
+				if (kind !== "oci") throw new Error(`unexpected ${kind} host`);
+				return {
+					kind: "oci",
+					ensure: async () => {
+						Object.assign(definition.resources.api, { kind: "container" });
+						return { kind: "oci", ready: true, notes: [] };
+					},
+					servePrivate: async () => {
+						throw new Error("placement does not serve");
+					},
+				};
+			},
+			emitProgress(message) {
+				if (message.includes("yard-first placement"))
+					queueMicrotask(() =>
+						Object.assign(definition.resources.api, { kind: "api" }),
+					);
+			},
+		});
+		expect(definition.resources.api.kind).toBe("api");
+		expect(placement.outcome).toBe("rejected");
 	}, 300_000);
 
 	it("hard-fails wasm-component when runtime-wasm not installed", async () => {

@@ -113,6 +113,13 @@ A network broker is selected only through `--broker`/`--broker-uri`,
 That endpoint can be self-hosted; "remote" describes transport, not a mandatory
 hosted service. There is no automatic fallback to a hosted broker.
 
+The embedded zero-fee policy authorizes local-process work only. A Bindle that
+requires an OCI or Wasm execution host needs separate authorization, even when
+the caller requests a local provider. The broker also rejects when runtime
+requirements change while placement is being resolved. This proof covers the
+HoBo service fee, not machine infrastructure or third-party charges; execution
+after placement still depends on the caller preserving the approved workload.
+
 Explicit `--mode` is honored by Yard desired-state delivery. Remote broker
 placement and the embedded broker fallback reject that flag before placement,
 because those paths do not yet implement incremental or complete pruning.

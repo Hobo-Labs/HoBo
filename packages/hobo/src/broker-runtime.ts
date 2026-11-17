@@ -535,6 +535,17 @@ export async function resolveBindlePlacement(options: {
 
 	// Fail fast on missing runtimes before equipping toolchains / downloading wasmtime.
 	const requiredRuntimes = collectRequiredRuntimes(options.definition);
+	const runtimeRequirementsCurrent = () => {
+		try {
+			const current = collectRequiredRuntimes(options.definition);
+			return (
+				current.length === requiredRuntimes.length &&
+				current.every((runtime, index) => runtime === requiredRuntimes[index])
+			);
+		} catch {
+			return false;
+		}
+	};
 	const missingRuntimes = requiredRuntimes.filter(
 		(runtime) => !isRuntimeInstalled(runtime, hoboHome),
 	);
@@ -647,9 +658,13 @@ export async function resolveBindlePlacement(options: {
 		authorizeLocalHosting(input) {
 			// This embedded policy covers only the HoBo local-process service fee.
 			// The host's infrastructure and third-party costs need separate funding.
+			// OCI or Wasm requirements select another execution host and need their
+			// own authorization rather than this local-process assertion.
 			if (
 				input.ownerTenantId !== "local" ||
 				input.providerId !== LOCAL_PROCESS_PROVIDER_ID ||
+				!runtimeRequirementsCurrent() ||
+				requiredRuntimes.length !== 0 ||
 				input.catalogHash !== catalog.catalogHash ||
 				input.request.spendEstimateUsd !== 0 ||
 				input.placements.some(
@@ -676,9 +691,24 @@ export async function resolveBindlePlacement(options: {
 		},
 	});
 
-	if (yardFirst.outcome === "rejected" || !yardFirst.receipt) {
+	const runtimeRequirementsChanged = !runtimeRequirementsCurrent();
+	if (
+		yardFirst.outcome === "rejected" ||
+		!yardFirst.receipt ||
+		runtimeRequirementsChanged
+	) {
+		const rejectionReasons = runtimeRequirementsChanged
+			? [
+					{
+						plane: "placement",
+						code: "runtime-requirements-changed",
+						message:
+							"runtime requirements changed while placement was being resolved",
+					},
+				]
+			: (yardFirst.reasons ?? []);
 		const reasons =
-			yardFirst.reasons?.map((r) => r.message).join("; ") ??
+			rejectionReasons.map((r) => r.message).join("; ") ||
 			"yard-first placement rejected";
 		return {
 			outcome: "rejected",
@@ -696,7 +726,7 @@ export async function resolveBindlePlacement(options: {
 					policyHash: broker.policyHash,
 					stationId: pins.stationId,
 					railHash: pins.railHash,
-					reasons: (yardFirst.reasons ?? []).map((r) => ({
+					reasons: rejectionReasons.map((r) => ({
 						// SAFETY: assertion required at this I/O or test boundary.
 						plane: r.plane as "placement",
 						code: r.code,
