@@ -122,6 +122,24 @@ proof covers the HoBo service fee, not machine infrastructure or third-party
 charges; execution after placement still depends on the caller preserving the
 approved workload.
 
+The bounded authorization model projects to the following flow. It omits 64
+internal steps and does not cover execution after placement.
+
+```mermaid
+stateDiagram-v2
+  s0: Work awaits local-host authorization
+  s1: Local requirements approved
+  s2: Nonlocal runtime refused
+  s3: Changed requirements refused
+  s4: Local-process placement resolved
+  [*] --> s0
+  s0 --> s2: refuse nonlocal or changed requirements
+  s0 --> s3: refuse nonlocal or changed requirements
+  s0 --> s1: approve current local requirements
+  s1 --> s3: refuse changed requirements
+  s1 --> s4: return the approved placement
+```
+
 Explicit `--mode` is honored by Yard desired-state delivery. Remote broker
 placement and the embedded broker fallback reject that flag before placement,
 because those paths do not yet implement incremental or complete pruning.

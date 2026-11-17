@@ -22,7 +22,8 @@ This is a **partial** verification record, not a claim that the framework is ful
 | Yard resource binding | [verify-yard-resource-binding](../.agents/skills/verify-yard-resource-binding/SKILL.md) | Unique resource identities retain their exact selected definitions and the caller's resource snapshot in the checked cases. |
 | Yard funded admission | [verify-yard-funded-admission](../.agents/skills/verify-yard-funded-admission/SKILL.md) | Policy proof binds quote content, and Yard quotes bind selected work and generation plan; authority and freshness fences retain and reconcile covered exposure. |
 | Yard generation authority | [verify-yard-generation-authority](../.agents/skills/verify-yard-generation-authority/SKILL.md) | Current policy, runtime and connector evidence gate generation; the approved callable is pinned and covered post-effect changes retain exposure. |
-| Yard local hosting | [verify-yard-local-hosting](../.agents/skills/verify-yard-local-hosting/SKILL.md) | Local placement requires bound host policy and zero-liability proof, current context and separate funding for generation in the checked cases. |
+| Yard local hosting | [verify-yard-local-hosting](../.agents/skills/verify-yard-local-hosting/SKILL.md) | Local placement requires bound host policy and zero-liability proof, current context and local runtime requirements; generation needs separate funding in the checked cases. |
+| Bindle runtime inference | [verify-bindles-runtime-inference](../.agents/skills/verify-bindles-runtime-inference/SKILL.md) | Declared and actual dependency runtimes survive inference; ordinary handlers do not invent an OCI or Wasm requirement in the checked cases. |
 | Broker catalog ordering | [verify-broker-catalog-ordering](../.agents/skills/verify-broker-catalog-ordering/SKILL.md) | Legacy estimate mode validates catalog prices, compares matching units exactly, and breaks ties deterministically in the checked cases. |
 | Broker resolution signatures | [verify-broker-resolution-signature](../.agents/skills/verify-broker-resolution-signature/SKILL.md) | Signature verification requires an enrolled matching key and digest; signing emits public key material only and uses stable ordering. |
 | Broker delivery and resolution claims | [verify-broker-delivery-claim](../.agents/skills/verify-broker-delivery-claim/SKILL.md) | A single broker instance admits one receipt per request and dispatches a matching, current receipt at most once; uncertain submissions stay claimed. |
@@ -61,6 +62,26 @@ Budget signal replay assumes complete truthful facts and an uncontended target-s
 Default and metered preflight each use a single in-memory writer and trust their unused-funds confirmation and the amount provided by the host. General broker admission now supplies the attested liability unless legacy estimate trust is explicitly enabled. Restart loses their holds; metered preflight also trusts its meter facts and cannot detect facts missing before its first read. The default plane has no meter feed and keeps successful holds for its lifetime. The replay check requires reconciliation instead of issuing another receipt. Custom billing planes must report whether they created a hold to participate in that check and permit automatic release after failed placement.
 
 CI runner-correlation verification covers priority within a run and across observed runs, unknown statuses, detection of truncated listings, custody transfer, runner identity matching, queued-grace timing, and fail-closed handling of incomplete lookups. The pagination model checks up to three abstract jobs with a limit of one or two, and the implementation tests place a matching job beyond the first page. The unknown-status model checks two abstract observations in both teardown modes, with queued grace expired. The identity model covers missing, equal, and conflicting IDs; the queued-grace model covers invalid, recent, and expired timing. GitHub pagination does not provide an atomic snapshot, so a changing listing can still hide an assignment. Matching by runner name when an ID is unavailable remains ambiguous, and the production start hook remains unwired.
+
+## Bindle runtime requirements
+
+The bounded model projects the authoring flow below. It considers up to two
+resources and hides 136 steps while resources are examined; the skill explains
+the symbolic and implementation checks that complement this bound.
+
+```mermaid
+stateDiagram-v2
+  s0: Bindle resources are being examined
+  s1: Both OCI and Wasm are required
+  s2: OCI is required
+  s3: Wasm is required
+  s4: No specific runtime is required
+  [*] --> s0
+  s0 --> s1: publish runtime requirements
+  s0 --> s2: publish runtime requirements
+  s0 --> s3: publish runtime requirements
+  s0 --> s4: publish runtime requirements
+```
 
 ## Run and maintain
 

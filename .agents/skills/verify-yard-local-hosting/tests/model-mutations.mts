@@ -11,6 +11,7 @@ const cases = [
   ['CheckAuthority','HasAuthority'],['CheckBinding','BoundWork'],['CheckPolicy','PolicyAllows'],['CheckObligations','ObligationsMet'],['CheckEvidence','PolicyEvidence'],['CheckZero','ZeroLiability']]],
  ['LocalHostingContext',['CheckIdentities','CheckAuthorities','CheckEvidence','CheckFinal'],[
   ['CheckIdentities','IdentitiesCurrent'],['CheckAuthorities','AuthoritiesCurrent'],['CheckEvidence','EvidenceCurrent'],['CheckFinal','CurrentAtReceipt']]],
+ ['EmbeddedLocalRuntime',['CheckDerived','CheckDeclared','CheckDerivedDuring','CheckDeclaredDuring','CheckDerivedHandoff','CheckDeclaredHandoff'],[['CheckDerived','LocalHostOnly'],['CheckDeclared','LocalRequirementsOnly'],['CheckDerivedDuring','StableDerivedDuring'],['CheckDeclaredDuring','StableDeclaredDuring'],['CheckDerivedHandoff','StableDerivedAtHandoff'],['CheckDeclaredHandoff','StableDeclaredAtHandoff']]],
  ['LocalYardGeneration',['RequireFunding'],[['RequireFunding','FundedGeneration']]],
 ] as const;
 try {

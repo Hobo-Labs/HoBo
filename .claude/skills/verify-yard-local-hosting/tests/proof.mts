@@ -25,4 +25,14 @@ try {
     if (mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`proof mutation ${mutation} was not detected`);
     process.stdout.write(`Expected proof counterexample: ${mutation}\n`);
   }
+  const runtimeProof=fileURLToPath(new URL('../proof/local_runtime.py',import.meta.url));
+  const runtimeResult=spawnSync('python3',[runtimeProof],{env,stdio:'inherit'});
+  if(runtimeResult.error) throw runtimeResult.error;
+  if(runtimeResult.status !== 0) throw new Error('embedded runtime binding proof failed');
+  for(const mutation of ['derived','declared','derived_during','declared_during','approval','derived_handoff','declared_handoff','mapping']){
+    const mutant=spawnSync('python3',[runtimeProof],{env:{...env,HOBO_LOCAL_RUNTIME_MUTATION:mutation},encoding:'utf8'});
+    if(mutant.error) throw mutant.error;
+    if(mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`runtime proof mutation ${mutation} was not detected`);
+    process.stdout.write(`Expected runtime proof counterexample: ${mutation}\n`);
+  }
 } finally { rmSync(scratch,{recursive:true,force:true}); }
