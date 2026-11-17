@@ -5,29 +5,46 @@ import {
 	onePasswordBinding,
 } from "@hobo/adapter-1password";
 import {
+	type BitwardenSdkClient,
+	bitwardenBinding,
+	bitwardenSecretRef,
+	createBitwardenSecretsPort,
+} from "@hobo/adapter-bitwarden";
+import {
 	createInfisicalClient,
 	createInfisicalSecretsPort,
+	githubActionsJwtSource,
 	infisicalBindingFromEnv,
 	infisicalSecretRef,
+	oidcAuth,
 	ownerAuthFromEnv,
 } from "@hobo/adapter-infisical";
-import type { SecretStoreOption } from "@hobo/connect-ui";
+import type { SecretHolder, SecretStoreOption } from "@hobo/connect-ui";
 import type { SecretsPort } from "@hobo/identity";
 
 // The third-party secret stores a provider connection deposits into.
+// Where a store is (its coordinates: ids, a region) is non-secret and comes
+// from the ceremony's settings; how to sign in comes from the run's trusted
+// vault (`@hobo/core` `createTrustedVault`), filled on the setup page, or from
+// the provider's own desktop session. Never from an environment variable.
 // Passwordless for the owner who runs `hobo ci up` / `hobo cd up`:
 //
-// - **Infisical** (default): the owner's own session, `INFISICAL_TOKEN` from
-//   `infisical login` (browser sign-in, nothing stored by HoBo), with the
-//   folder's coordinates (`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`,
+// - **Infisical** (default): an access token from the owner's own
+//   `infisical login`, entered on the page, with the folder's coordinates
+//   (`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`,
 //   `INFISICAL_SECRET_PATH`). Workloads read the values back with OIDC Auth.
 // - **1Password**: the desktop app's integration (`OP_ACCOUNT`, unlocked with
-//   the owner's biometrics — no token), or a service account token where no
-//   desktop app exists (`OP_SERVICE_ACCOUNT_TOKEN`), into `OP_VAULT_ID`.
+//   the owner's biometrics — no token), or a service account token entered on
+//   the page where no desktop app exists, into `OP_VAULT_ID`.
+// - **Bitwarden Secrets Manager**: a machine account's access token
+//   (asked for on the setup page and held in the vault for this run only),
+//   into the project `BWS_PROJECT_ID` of organization `BWS_ORGANIZATION_ID`,
+//   on the US or EU cloud (`BWS_SERVER`). Bitwarden has no workload OIDC sign-in, so a workload
+//   reads the values back with its own machine account token, which the
+//   platform keeps; prefer Infisical where that matters.
 //
-// HoBo never writes these to a file, never prints them, and never asks for
-// them in a page: they are the owner's own sign-in, read from the
-// environment of the command they ran.
+// HoBo never writes a sign-in to a file or an environment variable and never
+// prints one: it lives in the run's vault and is wiped when the run ends.
 
 export type SecretStoreId = SecretStoreOption["id"];
 
@@ -46,12 +63,30 @@ export type SecretStoreOpening =
 			readonly remediation: readonly string[];
 	  };
 
-export type Env = Readonly<Record<string, string | undefined>>;
+/** An environment-shaped record: names to values, some absent. */
+export interface Env {
+	readonly [name: string]: string | undefined;
+}
 
 export interface SecretStoreDeps {
 	/** Tests inject a client; otherwise `@1password/sdk` is loaded on demand. */
-	readonly onePasswordClient?: (env: Env) => Promise<OnePasswordSdkClient>;
+	readonly onePasswordClient?: (
+		coordinates: Env,
+		signIn: SecretHolder,
+	) => Promise<OnePasswordSdkClient>;
+	/** Tests inject a client; otherwise `@bitwarden/sdk-napi` is loaded on demand. */
+	readonly bitwardenClient?: (
+		coordinates: Env,
+		signIn: SecretHolder,
+	) => Promise<BitwardenSdkClient>;
 	readonly fetch?: typeof fetch;
+	/**
+	 * A CI runner's own OIDC request variables (GitHub Actions'
+	 * `ACTIONS_ID_TOKEN_REQUEST_URL`/`_TOKEN`): with a preconfigured
+	 * `INFISICAL_IDENTITY_ID`, the run signs in as that workload and nobody
+	 * types a token.
+	 */
+	readonly workloadOidc?: Env;
 }
 
 type Sdk = typeof import("@1password/sdk");
@@ -168,11 +203,14 @@ export function sdkPort(sdk: Sdk, client: SdkClient): OnePasswordSdkClient {
 	};
 }
 
-async function onePasswordSdkClient(env: Env): Promise<OnePasswordSdkClient> {
+async function onePasswordSdkClient(
+	coordinates: Env,
+	signIn: SecretHolder,
+): Promise<OnePasswordSdkClient> {
 	const sdk = await import("@1password/sdk");
-	const auth = env.OP_ACCOUNT
-		? new sdk.DesktopAuth(env.OP_ACCOUNT)
-		: env.OP_SERVICE_ACCOUNT_TOKEN;
+	const auth = coordinates.OP_ACCOUNT
+		? new sdk.DesktopAuth(coordinates.OP_ACCOUNT)
+		: signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
 	if (auth === undefined || auth === "")
 		throw new Error("no 1Password sign-in in the environment");
 	const client = await sdk.createClient({
@@ -183,12 +221,53 @@ async function onePasswordSdkClient(env: Env): Promise<OnePasswordSdkClient> {
 	return sdkPort(sdk, client);
 }
 
+/** Bitwarden's clouds; a token is valid on the one its account lives in. */
+export const BITWARDEN_SERVERS = Object.freeze({
+	us: {
+		apiUrl: "https://api.bitwarden.com",
+		identityUrl: "https://identity.bitwarden.com",
+	},
+	eu: {
+		apiUrl: "https://api.bitwarden.eu",
+		identityUrl: "https://identity.bitwarden.eu",
+	},
+});
+
+function bitwardenServer(coordinates: Env) {
+	return coordinates.BWS_SERVER === "eu"
+		? BITWARDEN_SERVERS.eu
+		: BITWARDEN_SERVERS.us;
+}
+
+async function bitwardenSdkClient(
+	coordinates: Env,
+	signIn: SecretHolder,
+): Promise<BitwardenSdkClient> {
+	const token = signIn.reveal("BWS_ACCESS_TOKEN");
+	if (token === undefined || token === "")
+		throw new Error("no Bitwarden access token in this run's vault");
+	const sdk = await import("@bitwarden/sdk-napi");
+	const client = new sdk.BitwardenClient({
+		...bitwardenServer(coordinates),
+		userAgent: "HoBo",
+	});
+	await client.auth().loginAccessToken(token);
+	return client;
+}
+
 /** Open the chosen store with the owner's own sign-in, or say how to sign in. */
 export async function openSecretStore(
 	id: SecretStoreId,
-	env: Env,
+	coordinates: Env,
+	signIn: SecretHolder,
 	deps: SecretStoreDeps = {},
 ): Promise<SecretStoreOpening> {
+	// The adapters read their inputs from an env-shaped record: build it in
+	// memory from the coordinates and the vault, never from process.env.
+	const env: Env = {
+		...coordinates,
+		INFISICAL_TOKEN: signIn.reveal("INFISICAL_TOKEN"),
+	};
 	switch (id) {
 		case "infisical": {
 			let auth: ReturnType<typeof ownerAuthFromEnv>;
@@ -197,12 +276,29 @@ export async function openSecretStore(
 			} catch {
 				auth = undefined;
 			}
+			if (
+				auth === undefined &&
+				coordinates.INFISICAL_IDENTITY_ID &&
+				deps.workloadOidc?.ACTIONS_ID_TOKEN_REQUEST_URL
+			) {
+				try {
+					auth = oidcAuth({
+						identityId: coordinates.INFISICAL_IDENTITY_ID,
+						jwt: githubActionsJwtSource({
+							env: deps.workloadOidc,
+							...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+						}),
+					});
+				} catch {
+					auth = undefined;
+				}
+			}
 			if (auth === undefined)
 				return {
 					ok: false,
 					message: "Not signed in to Infisical.",
 					remediation: [
-						"Run `infisical login`, then export INFISICAL_TOKEN=$(infisical login --silent --plain) in the same shell and run the command again.",
+						"Enter an Infisical access token on the setup page (from `infisical login --silent --plain`); it is held in memory for this run only.",
 					],
 				};
 			try {
@@ -225,22 +321,25 @@ export async function openSecretStore(
 					ok: false,
 					message: "Infisical's folder for these credentials is not set.",
 					remediation: [
-						"Export INFISICAL_PROJECT_ID, INFISICAL_ENVIRONMENT and INFISICAL_SECRET_PATH (and INFISICAL_SITE_URL off Infisical Cloud).",
+						"Choose the Infisical project, environment and folder on the setup page.",
 					],
 				};
 			}
 		}
 		case "1password": {
-			const vaultId = env.OP_VAULT_ID;
+			const vaultId = coordinates.OP_VAULT_ID;
 			if (!vaultId)
 				return {
 					ok: false,
 					message: "No 1Password vault chosen.",
-					remediation: ["Export OP_VAULT_ID, the vault the credentials go to."],
+					remediation: [
+						"Choose the vault the credentials go to on the setup page.",
+					],
 				};
 			try {
 				const client = await (deps.onePasswordClient ?? onePasswordSdkClient)(
-					env,
+					coordinates,
+					signIn,
 				);
 				const binding = onePasswordBinding({
 					vaultId,
@@ -261,16 +360,50 @@ export async function openSecretStore(
 					ok: false,
 					message: "Could not sign in to 1Password.",
 					remediation: [
-						"Turn on the 1Password desktop app's SDK integration and export OP_ACCOUNT (your account name), or export OP_SERVICE_ACCOUNT_TOKEN where no desktop app runs.",
+						"Turn on the 1Password desktop app's SDK integration and give your account name on the setup page, or enter a service account token there where no desktop app runs.",
 					],
 				};
 			}
 		}
-		case "bitwarden":
-			return {
-				ok: false,
-				message: "Bitwarden is not offered for connections yet.",
-				remediation: ["Choose Infisical or 1Password."],
-			};
+		case "bitwarden": {
+			let binding: ReturnType<typeof bitwardenBinding>;
+			try {
+				binding = bitwardenBinding({
+					organizationId: coordinates.BWS_ORGANIZATION_ID ?? "",
+					projectId: coordinates.BWS_PROJECT_ID ?? "",
+					apiUrl: bitwardenServer(coordinates).apiUrl,
+				});
+			} catch {
+				return {
+					ok: false,
+					message: "Bitwarden's project for these credentials is not set.",
+					remediation: [
+						"Give the organization and project IDs (both UUIDs, from the Secrets Manager web app) on the setup page.",
+					],
+				};
+			}
+			try {
+				const client = await (deps.bitwardenClient ?? bitwardenSdkClient)(
+					coordinates,
+					signIn,
+				);
+				return {
+					ok: true,
+					store: {
+						id,
+						port: createBitwardenSecretsPort({ client, binding }),
+						reference: (name) => bitwardenSecretRef(binding, name),
+					},
+				};
+			} catch {
+				return {
+					ok: false,
+					message: "Could not sign in to Bitwarden Secrets Manager.",
+					remediation: [
+						"Check the server (US or EU cloud) and enter an access token for a machine account with write access to the project; it is held in memory for this run only.",
+					],
+				};
+			}
+		}
 	}
 }

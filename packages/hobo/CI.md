@@ -265,7 +265,7 @@ expression, names a runner group or several labels, asks for Windows, macOS
 or ARM, already runs on a hosted provider's or a self-hosted label, or decides
 where other jobs run (another job's `runs-on` reads its outputs: a routing job
 has to start even when the fleet cannot). A job that uses an environment,
-`write-all` or `id-token` permissions, or a secret other than `GITHUB_TOKEN`
+any write permission, or a secret other than `GITHUB_TOKEN`
 is left alone unless `--include-secret-jobs` is passed. A ready job can carry
 warnings: it needs Docker, installs system packages, follows `ubuntu-latest`,
 or has a matrix.

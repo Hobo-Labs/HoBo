@@ -304,17 +304,15 @@ function grantsDeployPermissions(workflow: Workflow, holder: YAMLMap): boolean {
 	if (stringOf(permissions) === "write-all") return true;
 	return (
 		isMap(permissions) &&
-		stringOf(valueUnder(workflow, permissions, "id-token")) === "write"
+		permissions.items.some(
+			(pair) =>
+				stringOf(
+					follow(workflow.doc, isNode(pair.value) ? pair.value : undefined),
+				) === "write",
+		)
 	);
 }
 
-/**
- * A job that deploys or holds a secret: it names an environment, has
- * `write-all` or `id-token: write` permissions, or reads a secret other than
- * `GITHUB_TOKEN`. The workflow's own `permissions` count for a job that sets
- * none, and the workflow's own `env` counts for every job, because that is
- * what GitHub hands the job.
- */
 function isDeployLike(workflow: Workflow, job: YAMLMap): boolean {
 	if (pairOf(job, "environment") !== undefined) return true;
 	if (stringOf(valueUnder(workflow, job, "secrets")) === "inherit") return true;
@@ -825,7 +823,7 @@ export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 		case "self_hosted":
 			return "The job runs on a self-hosted runner or on a label nothing recognises, so what machine it expects is not known.";
 		case "uses_secrets":
-			return "The job looks like a deploy (an environment, write-all or id-token permissions, or a secret other than GITHUB_TOKEN) and stays where its secrets already are unless such jobs are asked for.";
+			return "The job looks like a deploy (an environment, write permissions, or a secret other than GITHUB_TOKEN) and stays where its secrets already are unless such jobs are asked for.";
 		case "routes_jobs":
 			return "Another job takes its `runs-on` from this job's outputs, so it decides where the others run and has to start even when the fleet cannot.";
 		case "no_runs_on":

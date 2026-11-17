@@ -98,11 +98,12 @@ function fits(machine: MachineCandidate, want: MachineWant): boolean {
 
 /** Whether the machine's owner lets it run this job. */
 export function admits(machine: MachineCandidate, want: MachineWant): boolean {
+	if (!machine.ownerCanRead) return false;
 	const ownStart =
 		want.starterId === machine.ownerId &&
 		want.triggeredById === machine.ownerId;
 	if (machine.sharing === "only_me") return ownStart;
-	return ownStart || machine.ownerCanRead;
+	return true;
 }
 
 function rank(machine: MachineCandidate, want: MachineWant): number {

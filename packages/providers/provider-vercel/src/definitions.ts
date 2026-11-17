@@ -115,6 +115,16 @@ function implementation(
 	};
 }
 
+function nativeImplementation(
+	profileId: string,
+	conformance: ProfileImplementation["conformance"],
+): ProfileImplementation {
+	return {
+		...implementation(profileId, conformance),
+		conformanceRef: `hobo.conformance/${profileId}#vercel.native${CONFORMANCE_SUFFIX}`,
+	};
+}
+
 export type VercelDefinitionOverrides = {
 	readonly evidenceExpiresAtMs?: number;
 	readonly evidenceSignatureValid?: boolean;
@@ -292,8 +302,10 @@ export function createVercelClaimDeploymentDefinition(
 				associatedResourceTransfer: true,
 				customDomain: true,
 			},
-			producesBindingProfiles: ["binding.http/v1", "binding.postgresql/v1"],
-			requiresConnectivityProfiles: ["vercel.postgres.environment-ref/v1"],
+			// The associated database remains in its own provider Yard; a Vercel
+			// project is not a Postgres product or a Postgres binding producer.
+			producesBindingProfiles: ["binding.http/v1"],
+			claimAtomicity: "best-effort-saga",
 			claimActionCount: 2,
 			continuity: {
 				endpoint: "preserved",
@@ -374,7 +386,97 @@ export function createVercelStaticDeployDefinition(
 		},
 	};
 }
+
+/** Operator-owned project. Account ownership, Git linkage, permission, custody
+ * and project-level costs require independently verified evidence. */
+export function createVercelProjectDefinition(
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createVercelStaticDeployDefinition(overrides);
+	return {
+		...base,
+		id: "vercel.project/v1",
+		port: "project",
+		semantics: {
+			...base.semantics,
+			productId: "vercel.project/v1",
+			displayName: "Vercel project",
+			implementsProfiles: [
+				nativeImplementation(
+					"web.project/v1",
+					overrides.conformance ?? "unknown",
+				),
+			],
+			structuredCapabilities: {
+				bootstrap: "operator-credential",
+				providerOwned: true,
+			},
+			producesBindingProfiles: [],
+			compilerRef: "compile.vercel.project/v1",
+			executorRef: "execute.vercel.project/v1",
+			trustEvidenceRef: "hobo.evidence/provider-vercel/project",
+			sourceEvidenceRefs: [
+				"https://vercel.com/docs/rest-api/projects/create-a-project",
+				"https://vercel.com/docs/rest-api/projects/find-a-project-by-id-or-name",
+			],
+			evidenceSignatureValid: overrides.evidenceSignatureValid ?? false,
+			secretCustodyAvailable: overrides.secretCustodyAvailable ?? false,
+			continuity: {
+				endpoint: "not-applicable",
+				data: "not-applicable",
+				credentials: "not-applicable",
+			},
+		},
+	};
+}
+
+/** Native Blob store. Actual account access, capacity, custody and pricing
+ * require independently verified evidence before selection or mutation. */
+export function createVercelBlobDefinition(
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createVercelStaticDeployDefinition(overrides);
+	return {
+		...base,
+		id: "vercel.blob/v1",
+		port: "objectStore",
+		semantics: {
+			...base.semantics,
+			productId: "vercel.blob/v1",
+			displayName: "Vercel Blob object store",
+			implementsProfiles: [
+				nativeImplementation(
+					"bucket.object/v1",
+					overrides.conformance ?? "unknown",
+				),
+			],
+			structuredCapabilities: {
+				bootstrap: "operator-credential",
+				httpsOnly: true,
+				providerOwned: true,
+			},
+			producesBindingProfiles: [],
+			compilerRef: "compile.vercel.blob/v1",
+			executorRef: "execute.vercel.blob/v1",
+			trustEvidenceRef: "hobo.evidence/provider-vercel/blob",
+			evidenceSignatureValid: overrides.evidenceSignatureValid ?? false,
+			secretCustodyAvailable: overrides.secretCustodyAvailable ?? false,
+			sourceEvidenceRefs: [
+				"https://vercel.com/docs/vercel-blob",
+				"https://vercel.com/docs/vercel-blob/usage-and-pricing",
+			],
+			continuity: {
+				endpoint: "not-applicable",
+				data: "preserved",
+				credentials: "not-applicable",
+			},
+		},
+	};
+}
+
 export const VERCEL_DEFINITIONS: readonly ProviderResourceDefinitionData[] = [
 	...VERCEL_SPONSORED_DEFINITIONS,
 	createVercelStaticDeployDefinition(),
+	createVercelProjectDefinition(),
+	createVercelBlobDefinition(),
 ];

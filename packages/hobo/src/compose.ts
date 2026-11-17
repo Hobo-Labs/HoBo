@@ -332,17 +332,22 @@ export function selectPulumiEstateAdapter(
 			const useCliEngine =
 				env.HOBO_PULUMI_LIVE_ENGINE === "cli" ||
 				env.HOBO_PULUMI_BIN !== undefined;
+			// A caller-named workspace survives this process and must use a
+			// recoverable passphrase. Only our owned temporary directory may use
+			// an in-memory random key.
+			const ephemeralState = env.HOBO_PULUMI_WORKDIR === undefined;
 			const engine = useCliEngine
 				? createPulumiCliAutomationEngine({
 						workDir,
 						env,
+						ephemeralState,
 						// Test seam mirroring the engine's own binary gate: point at a
 						// non-existent binary to exercise the typed fail-closed path.
 						...(env.HOBO_PULUMI_BIN !== undefined
 							? { pulumiBin: env.HOBO_PULUMI_BIN }
 							: undefined),
 					})
-				: createPulumiAutomationApiEngine({ workDir, env });
+				: createPulumiAutomationApiEngine({ workDir, env, ephemeralState });
 			// SAFETY: assertion required at this I/O or test boundary.
 			return createPulumiAutomationAdapter({
 				engine,
