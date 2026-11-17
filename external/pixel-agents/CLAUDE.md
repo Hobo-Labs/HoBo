@@ -1,5 +1,7 @@
 # Pixel Agents — Compressed Reference
 
+Follow the repository-wide rules in [AGENTS.md](../../AGENTS.md): write self-documenting code, complete deferred work, and do not create planning or design documents.
+
 Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow) become animated characters. Ships as a **VS Code extension** and an **`npx pixel-agents` standalone CLI** from the same source tree.
 
 ## Architecture
