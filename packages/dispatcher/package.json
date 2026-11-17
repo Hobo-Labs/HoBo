@@ -19,6 +19,10 @@
 		"./v2": {
 			"types": "./dist/dispatcher-v2.d.ts",
 			"default": "./dist/dispatcher-v2.js"
+		},
+		"./recovery-sqlite": {
+			"types": "./dist/iac-route-recovery-sqlite.d.ts",
+			"default": "./dist/iac-route-recovery-sqlite.js"
 		}
 	},
 	"publishConfig": {

@@ -186,3 +186,97 @@ remaining financial exposure to the pool.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 [`contracts/`](./contracts) for the v1 and v2 PACT boundaries.
+
+### Recovering a blocked IaC route
+
+`recoverIacRoute` resolves a stuck or uncertain route only after the host has
+permanently fenced the old executors and all in-flight work, then obtained
+provider and financial observations made after that fence. The claim records
+separate non-secret evidence references, the fence establishment time, and each
+later observation's time and causal fence reference. References are stored in
+the audit and must not contain credentials. Equal, future, or out-of-order
+observations are rejected. Timestamps alone are not proof of causal order: the
+host's independent verifiers must authenticate the evidence, verify that each
+observation was made after the exact fence, and bind it to the tenant, request,
+operation, complete attempt history, and proposed outcome in the claim. A
+verifier that merely accepts the operator's fields does not meet this contract.
+The fence must prevent all old executors, credentials, and already-dispatched
+work from producing future provider effects or financial exposure.
+
+The financial verifier must authenticate the immutable historical mapping from
+every attempted target to every authority and account that could have admitted
+it, including prior configurations. It must query and authenticate all of them
+after the fence. A lookup against one authority, the current configuration, or
+only the selected target cannot establish complete coverage: route attempts do
+not themselves identify their financial authorities.
+
+No-effect recovery requires authoritative proof that every possible reservation
+is settled or released and that no new charge or effect can arise; an empty
+list is valid only when all relevant authorities prove there are no holds or
+liabilities to list. Recovery never releases or settles a reservation. A route that already
+finished denied can use this path only when all recorded attempts are denied
+(or there were no attempts) and the same independent proofs are verified. The
+transaction records one successor request for a new attempt. Already-applied recovery
+records the selected target and exact inventory and either its verified held or
+settled reservation, or a verified `not-applicable` disposition. For
+`not-applicable`, independent evidence must establish that the applied target
+had no liability requiring a reservation. A missing hold or unknown price is
+not that proof. Recovery of a selected target never creates a retry. Unavailable or conflicting proof leaves the original route
+blocked; callers must not infer zero cost from an unavailable pricing model.
+
+The host authorizer must bind the authenticated operator and logical
+operation to the claim. Its authorization and each proof must remain valid
+through the SQLite transaction's commit; a revocable remote grant requires a
+transactionally fenced authorization source. The claim's deadline is at most
+five minutes away, and the same trusted clock must be used by the verifier and
+store. All mutations, including `store.commit`, require a trusted host boundary;
+do not expose the SQLite file, generic event writer, recovery store, or
+verifier callbacks directly to untrusted clients. The store rereads the entire
+route and attempt history under a write lock and checks the original version
+before atomically fencing route capabilities and appending the recovery audit.
+Callers receive `uncertain` if the commit or its acknowledgement cannot be
+established and can safely submit the same claim again after authorization.
+
+A host can assemble a recovery claim from authenticated evidence as follows:
+
+```ts
+import { recoverIacRoute } from "@hobo/dispatcher";
+import { createSqliteIacRouteRecoveryStore } from "@hobo/dispatcher/recovery-sqlite";
+
+const store = createSqliteIacRouteRecoveryStore({ path: routeDatabasePath });
+const snapshot = await store.inspect({ tenantId, requestId });
+if (!snapshot) throw new Error("Unknown route");
+// Host authorities establish the fence before taking either observation.
+const fence = await host.fences.establishPermanentFence(snapshot);
+const provider = await host.provider.observeAfterFence(snapshot, fence);
+const financial = await host.financialAuthorities.observeAllAfterFence(snapshot, fence);
+const result = await recoverIacRoute({
+  store,
+  authorize: (claim) => host.authorizeRecovery(authenticatedOperator, claim),
+  verifyFence: (input) => host.fences.verifyEvidence(input),
+  verifyProvider: (input) => host.provider.verifyEvidence(input),
+  verifyFinancial: (input) => host.financialAuthorities.verifyCompleteEvidence(input),
+}, {
+  tenantId, requestId, operationId: snapshot.operationId, operatorId: authenticatedOperator.id,
+  expectedVersion: snapshot.version,
+  expiresAt: host.evidenceDeadline(fence, provider, financial),
+  evidence: {
+    fence: { ref: fence.ref, establishedAt: fence.establishedAt },
+    provider: { ref: provider.ref, afterFence: fence.ref, observedAt: provider.observedAt },
+    financial: { ref: financial.ref, afterFence: fence.ref, observedAt: financial.observedAt },
+  },
+  outcome: { kind: "no-effect", successorRequestId, reservations: financial.terminalReservations },
+});
+// Use the recorded successor only when result.status is recovered or replay.
+```
+
+A selected recovery uses `outcome: { kind: "selected", targetId,
+inventoryHash, financial: { disposition: "held", reservationId } }` and
+requires independent proof of the applied result and financial disposition.
+The recovery audit and route journal must share one durable database and a
+trusted writer. Hosts must use the same journal for every entry point and bind
+retries to the authenticated logical operation and its recorded successor. The
+orchestrator must persist a provider-neutral operation generation before routing:
+all retries for that work reuse its host-authenticated operation ID, while a
+new update, replacement, or recreation receives a new generation. A stable
+resource-and-action ID alone cannot distinguish separate changes.
