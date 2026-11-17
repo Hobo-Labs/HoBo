@@ -620,6 +620,54 @@ export function selectRelevantChecks(
 		});
 	}
 
+	const pixelSource = (file: string, directory: string) =>
+		file.startsWith(`external/pixel-agents/${directory}/`) &&
+		/\.(?:[cm]?[jt]sx?|json)$/u.test(file);
+	const pixelManifestChanged = files.some(
+		(file) => file === "external/pixel-agents/package.json",
+	);
+	if (
+		pixelManifestChanged ||
+		files.some(
+			(file) =>
+				pixelSource(file, "core") ||
+				pixelSource(file, "server") ||
+				pixelSource(file, "adapters/vscode"),
+		)
+	) {
+		checks.push({
+			command: "npm",
+			args: [
+				"--prefix",
+				"external/pixel-agents/server",
+				"test",
+				"--",
+				"--maxWorkers=1",
+			],
+			reason:
+				"Pixel Agents server behavior and provider changes must pass their own tests",
+		});
+	}
+	if (
+		pixelManifestChanged ||
+		files.some(
+			(file) => pixelSource(file, "core") || pixelSource(file, "webview-ui"),
+		)
+	) {
+		checks.push({
+			command: "npm",
+			args: [
+				"--prefix",
+				"external/pixel-agents/webview-ui",
+				"test",
+				"--",
+				"--maxWorkers=1",
+			],
+			reason:
+				"Pixel Agents shared protocol and webview changes must pass their own tests",
+		});
+	}
+
 	if (uiChanged) {
 		checks.push({
 			command: "pnpm",

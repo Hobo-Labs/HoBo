@@ -81,6 +81,29 @@ function isScriptsLane(check: Check) {
 	);
 }
 
+test("Pixel Agents changes select their own server and webview suites", () => {
+	const selected = (file: string) =>
+		plan([file], { staged: true })
+			.checks.filter((check) => check.command === "npm")
+			.map((check) => check.args[1]);
+	assert.deepEqual(
+		selected("external/pixel-agents/server/src/agentRuntime.ts"),
+		["external/pixel-agents/server"],
+	);
+	assert.deepEqual(
+		selected("external/pixel-agents/adapters/vscode/extension.ts"),
+		["external/pixel-agents/server"],
+	);
+	assert.deepEqual(selected("external/pixel-agents/webview-ui/src/App.tsx"), [
+		"external/pixel-agents/webview-ui",
+	]);
+	assert.deepEqual(selected("external/pixel-agents/core/src/provider.ts"), [
+		"external/pixel-agents/server",
+		"external/pixel-agents/webview-ui",
+	]);
+	assert.deepEqual(selected("external/pixel-agents/README.md"), []);
+});
+
 test("external workspace coverage omits only the commands CI runs in their own jobs", () => {
 	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
 	const normal = plan(files);
