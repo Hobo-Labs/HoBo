@@ -29,10 +29,8 @@ import {
 import {
 	evidenceDirInScope,
 	featureDir,
-	featuresRoot,
 	findFeature,
 	listFeatures,
-	relFromRepo,
 	repoRoot,
 	writeScopeFromSelection,
 	type FeatureLocation,
@@ -121,11 +119,6 @@ function resolveFeatureLoc(
 		);
 	}
 	return loc;
-}
-
-function loadFeature(featureId: string, root: string): FeatureMeta {
-	const loc = resolveFeatureLoc(featureId, root);
-	return JSON.parse(readFileSync(loc.featureJsonPath, "utf8")) as FeatureMeta;
 }
 
 function initFeature(args: Record<string, string>) {
@@ -585,7 +578,9 @@ function validate(args: Record<string, string>) {
 			})()
 		: listFeatures(root, selection);
 	if (locations.length === 0) {
-		console.log(JSON.stringify({ ok: true, features: 0, problems: [], missing: [] }));
+		const problems = args.feature ? [`feature not found: ${args.feature}`] : [];
+		console.log(JSON.stringify({ ok: problems.length === 0, features: 0, problems, missing: [] }));
+		if (problems.length) process.exitCode = 1;
 		return;
 	}
 	const problems: string[] = [];
@@ -683,16 +678,28 @@ function main() {
 		console.error(`Invalid feature id: ${args.feature}`);
 		process.exit(2);
 	}
-	if (args.scenario && (/[\\/]/.test(args.scenario) || args.scenario.includes("..") || !scenarioSlug(args.scenario))) {
-		console.error(`Invalid scenario: ${args.scenario}`);
-		process.exit(2);
-	}
 	const root = repoRoot();
 	const selection = resolveProjects(args.projects, root);
 	const problem = projectSelectionProblem(selection);
 	if (problem) {
 		console.error(problem);
 		process.exit(2);
+	}
+	if (args.scenario) {
+		const value = args.scenario;
+		const traversal = path.isAbsolute(value) || path.win32.isAbsolute(value) || /(^|[\\/])\.\.([\\/]|$)/.test(value);
+		const loc = args.feature && ["capture", "review", "stitch"].includes(mode)
+			? findFeature(args.feature, root, {
+				selection: args.projects ? selection : undefined,
+				preferredProjectId: args.projects ? selection.projects[0]?.id : undefined,
+			})
+			: null;
+		const knownTitle = loc ? parseScenarios(args.feature!, root, loc).find((scenario) => scenario.name === value) : undefined;
+		if (traversal || !(knownTitle ? isPathIdentifier(knownTitle.slug) : isPathIdentifier(value))) {
+			console.error(`Invalid scenario: ${value}`);
+			process.exit(2);
+		}
+		if (knownTitle) args.scenario = knownTitle.slug;
 	}
 	if (["init-feature", "capture", "review", "stitch"].includes(mode)) {
 		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);

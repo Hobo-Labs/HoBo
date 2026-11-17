@@ -11,7 +11,6 @@ import {
 	readFileSync,
 	realpathSync,
 	statSync,
-	writeFileSync,
 	mkdirSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -97,7 +96,7 @@ function safeEvidenceEntry(root: string, target: string, kind: "directory" | "fi
 
 /** Manifest paths are relative to their own scenario, never another scenario. */
 function primaryEvidencePath(directory: string, value: unknown): string {
-	if (typeof value !== "string" || !value || path.isAbsolute(value) || path.win32.parse(value).root || /[\\\x00-\x1f\x7f]/.test(value)) {
+	if (typeof value !== "string" || !value || path.isAbsolute(value) || path.win32.parse(value).root || value.includes("\\") || [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
 		throw new Error("Invalid evidence manifest primaryPath");
 	}
 	const parts = value.split("/");
@@ -111,8 +110,9 @@ function loadScenarios(featureId: string, root: string) {
 	const loc = findFeature(featureId, root);
 	const dir = loc?.dir ?? featureDir(featureId, root);
 	const evidenceRoot = path.join(dir, "evidence");
-	if (!safeEvidenceEntry(root, evidenceRoot, "directory", true)) return [];
-	return readdirSync(evidenceRoot, { withFileTypes: true })
+	const evidencePath = `${path.relative(root, evidenceRoot).split(path.sep).join("/")}/`;
+	if (!safeEvidenceEntry(root, evidenceRoot, "directory", true)) return { evidencePath, scenarios: [] };
+	const scenarios = readdirSync(evidenceRoot, { withFileTypes: true })
 		.filter((entry) => {
 			if (entry.isSymbolicLink()) throw new Error(`Evidence scenario contains a symbolic link: ${entry.name}`);
 			return entry.isDirectory();
@@ -140,6 +140,7 @@ function loadScenarios(featureId: string, root: string) {
 				abs: primary,
 			}];
 		});
+	return { evidencePath, scenarios };
 }
 
 function canInline(kind: string, bytes: number): boolean {
@@ -163,7 +164,12 @@ function postComment(pr: string, body: string, dry: boolean) {
 		["pr", "comment", pr, "--body", body],
 		{ encoding: "utf8" },
 	);
-	return { ok: r.status === 0, stderr: r.stderr, stdout: r.stdout };
+	return { ok: r.status === 0, stderr: r.stderr || r.error?.message || (r.signal ? `gh ended by ${r.signal}` : `gh exited with status ${r.status}`), stdout: r.stdout };
+}
+
+/** A PR number is a positive decimal, never a gh option or repository path. */
+function isPrNumber(value: string): boolean {
+	return /^\d+$/.test(value) && /[1-9]/.test(value);
 }
 
 function tryCompress(abs: string, root: string): string | null {
@@ -198,6 +204,10 @@ function main() {
 		console.log(`post-pr-evidence --feature <id> [--pr N] [--dry-run]`);
 		return;
 	}
+	if (args.pr !== undefined && !isPrNumber(args.pr)) {
+		console.error("--pr must be a positive decimal PR number");
+		process.exit(2);
+	}
 	const root = realpathSync(repoRoot());
 	const featureId = args.feature;
 	if (!featureId || !isPathIdentifier(featureId)) {
@@ -213,20 +223,21 @@ function main() {
 			process.exit(2);
 		}
 	}
-	let scenarios;
+	let evidence;
 	try {
-		scenarios = loadScenarios(featureId, root);
+		evidence = loadScenarios(featureId, root);
 	} catch (error) {
 		console.error(`Invalid evidence: ${error instanceof Error ? error.message : String(error)}`);
 		process.exit(2);
 	}
+	const { evidencePath, scenarios } = evidence;
 	if (scenarios.length === 0) {
 		console.error("no evidence scenarios found");
 		process.exit(1);
 	}
 	const pr = args.pr || detectPr();
-	if (!pr) {
-		console.error("No PR detected; pass --pr <number>");
+	if (!pr || !isPrNumber(pr)) {
+		console.error("No valid PR number detected; pass --pr <number>");
 		process.exit(2);
 	}
 
@@ -242,16 +253,20 @@ function main() {
 				`| \`${s.slug}\` | ${s.kind} | ${s.bytes} | \`${s.primaryPath}\` |`,
 		),
 		``,
-		`Canonical evidence lives on the branch under \`.optimizexp/features/${featureId}/evidence/\`. New captures **overwrite** the prior primary per scenario.`,
+		`Canonical evidence lives on the branch under \`${evidencePath}\`. New captures **overwrite** the prior primary per scenario.`,
 		``,
 	];
 	const indexResult = postComment(pr, indexLines.join("\n"), dry);
+	const results: { kind?: string; slug?: string; ok: boolean; bytes?: number; error?: string }[] = [
+		{ kind: "index", ok: indexResult.ok, ...(!indexResult.ok ? { error: indexResult.stderr } : {}) },
+	];
 	if (!indexResult.ok) {
 		console.error("failed to post index comment", indexResult.stderr);
-		process.exit(1);
+		console.log(JSON.stringify({ ok: false, pr, featureId, results }, null, 2));
+		process.exitCode = 1;
+		return;
 	}
 
-	const results: unknown[] = [{ kind: "index", ok: true }];
 	for (const s of scenarios) {
 		let body: string;
 		let abs = s.abs;
@@ -303,14 +318,12 @@ function main() {
 			].join("\n");
 		}
 		const r = postComment(pr, body, dry);
-		results.push({ slug: s.slug, ok: r.ok, bytes });
-		if (!r.ok) {
-			// split failure: still continue other scenarios
-			results.push({ slug: s.slug, error: r.stderr });
-		}
+		results.push({ slug: s.slug, ok: r.ok, bytes, ...(!r.ok ? { error: r.stderr } : {}) });
 	}
 
-	console.log(JSON.stringify({ ok: true, pr, featureId, results }, null, 2));
+	const ok = results.every((result) => result.ok);
+	console.log(JSON.stringify({ ok, pr, featureId, results }, null, 2));
+	if (!ok) process.exitCode = 1;
 }
 
 main();

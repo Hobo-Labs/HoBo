@@ -13,6 +13,8 @@ OptimizeXP native captures persist the replay command's exit code, mark nonzero 
 
 Project exploration and generation, capture, doctor, initialization, surveys, evidence posting, and review workflows check their implicit `.optimizexp` write scopes for links and other unsafe entries. Evidence posting also validates all scenario files before posting any comment, including in dry runs. These checks assume paths stay stable during the operation; explicitly selected output destinations and commands the operator asks the harness to run remain the operator's responsibility.
 
+Feature planning and scaffolding preserve existing drafts unless `--force` is given. Catalog generation plans pending drafts before requiring their rubber-duck review; `--force-low-quality` explicitly permits an unreviewed scaffold. Project catalog commands run in the selected project. Evidence posting reports failure if any requested comment fails, and named missing features fail validation.
+
 > **Note:** this is *tooling* config, not part of the HoBo product design (`docs/design/`). It was added on request to make the agents productive in this repo.
 
 For `sdlc --finish`, run the local staged check before each commit, then follow

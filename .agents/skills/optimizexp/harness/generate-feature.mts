@@ -22,13 +22,11 @@ import process from "node:process";
 import {
 	featureDir,
 	featureDirInScope,
-	featuresRoot,
 	findFeature,
 	listFeatures,
 	relFromRepo,
 	repoRoot,
 	writeScopeFromSelection,
-	type OptimizexpScope,
 } from "./lib/paths.mts";
 import { resolvePersonaIds, listPersonaMetas } from "./lib/persona-resolve.mts";
 import { listProjects, projectSelectionProblem, resolveProjects, type ProjectRef } from "./lib/projects.mts";
@@ -114,6 +112,7 @@ function help() {
                             single non-root project → <project>/.optimizexp/features/
                             all / multi / root → global .optimizexp/features/
   --dry-run                Preview without writing (implement does not support it)
+  --force                  Replace existing generated feature files and drafts
 
 See references/feature-quality.md — feature generation is the quality bottleneck.
 `);
@@ -183,6 +182,9 @@ function writeBindingsAndTests(input: {
 		featureId: input.id,
 		report,
 		primaryOverride,
+		// The generic discovery report currently reads root scripts. A catalog
+		// entry is separately verified against its selected project's manifest.
+		projectDir: input.catalogCommand === undefined ? "" : path.relative(input.root, input.packageDir ?? input.root),
 	});
 	writeFileSync(path.join(stepsDir, "world.ts"), built.world, "utf8");
 	writeFileSync(
@@ -512,9 +514,24 @@ Re-discover / rewire: \`generate-feature.mts --mode implement --id ${id}\`
 				}),
 			);
 		}
-		return;
+		return true;
 	}
 
+	const protectedFiles = [
+		"feature.json", "README.md", "SEED.md",
+		"steps/discovery.json", "steps/world.ts", "steps/implementations.ts", "steps/bindings.steps.ts", "steps/README.md",
+		`test/${id}.bindings.test.ts`,
+		...(existsSync(dir) ? readdirSync(dir).filter((file) => file.endsWith(".feature")) : []),
+	].filter((file) => existsSync(path.join(dir, file)));
+	if (protectedFiles.length && args.force !== "1") {
+		console.log(JSON.stringify({ ok: true, skipped: true, id, reason: "existing feature files preserved; pass --force to replace them", files: protectedFiles }, null, 2));
+		return false;
+	}
+	const quality = checkRubberduckFile(dir);
+	if (!quality.ok && args.forceLowQuality !== "1") {
+		console.error(`Rubber-duck check failed before scaffolding: ${quality.problems.join("; ")}. Complete EXPERIENCE.md or pass --force-low-quality.`);
+		process.exit(2);
+	}
 	mkdirSync(path.join(dir, "evidence"), { recursive: true });
 	mkdirSync(path.join(dir, "steps"), { recursive: true });
 	writeJson(path.join(dir, "feature.json"), featureJson);
@@ -570,7 +587,7 @@ Re-discover / rewire: \`generate-feature.mts --mode implement --id ${id}\`
 		catalogDriver: args.catalogDriver,
 		catalogExperience: args.catalogExperience,
 		catalogMap: projectSelection.projects[0] ? readSurfaceMap(projectSelection.projects[0], root) : null,
-		packageDir: path.join(root, projectSelection.projects[0]?.path || "."),
+		packageDir: path.join(root, writeScope.projectPath || "."),
 	});
 	if (binding.primaryCommand) {
 		surfaces.push(binding.primaryCommand);
@@ -607,6 +624,7 @@ Re-discover / rewire: \`generate-feature.mts --mode implement --id ${id}\`
 			2,
 		),
 	);
+	return true;
 }
 
 function implement(args: Record<string, string>) {
@@ -660,7 +678,7 @@ function implement(args: Record<string, string>) {
 		catalogDriver: meta.catalogOrigin?.driver,
 		catalogExperience: meta.catalogOrigin?.experienceId,
 		catalogMap: meta.catalogOrigin && resolveProjects(meta.catalogOrigin.projectId, root).projects[0] ? readSurfaceMap(resolveProjects(meta.catalogOrigin.projectId, root).projects[0]!, root) : null,
-		packageDir: meta.catalogOrigin ? path.join(root, resolveProjects(meta.catalogOrigin.projectId, root).projects[0]?.path || ".") : root,
+		packageDir: meta.catalogOrigin ? path.join(root, resolveProjects(meta.catalogOrigin.projectId, root).projects[0]?.path || ".") : path.join(root, loc?.scope.projectPath || "."),
 	});
 	meta.surfaces = meta.surfaces ?? [];
 	if (
@@ -905,19 +923,16 @@ function planExperience(args: Record<string, string>) {
 		return;
 	}
 	mkdirSync(dir, { recursive: true });
-	// Don't overwrite filled EXPERIENCE.md unless --force
+	// A partial draft is still user work; replace it only when explicitly forced.
 	if (existsSync(out) && args.force !== "1") {
-		const existing = readFileSync(out, "utf8");
-		if (!/TODO/.test(existing) && checkRubberduckFile(dir).ok) {
 			console.log(
 				JSON.stringify(
-					{ ok: true, skipped: true, reason: "EXPERIENCE.md already complete", path: out },
+					{ ok: true, skipped: true, reason: "existing EXPERIENCE.md preserved; pass --force to replace it", path: out },
 					null,
 					2,
 				),
 			);
 			return;
-		}
 	}
 	writeFileSync(out, md, "utf8");
 	console.log(
@@ -1022,6 +1037,7 @@ function fromCatalog(args: Record<string, string>) {
 		byFeature.set(r.featureId, list);
 	}
 	const created: string[] = [];
+	const pending: { featureId: string; problems: string[] }[] = [];
 	for (const [featureId, featureRows] of byFeature) {
 		const primary = featureRows[0]!;
 		const personas = [...new Set(featureRows.map((r) => r.personaId))];
@@ -1035,24 +1051,16 @@ function fromCatalog(args: Record<string, string>) {
 			seed: primary.entryCommand,
 			driver: primary.driver,
 		});
-		// Auto-accept skeleton for scaffold only if force-low-quality; else leave for agent fill
-		const writeScope = writeScopeFromSelection(
-			resolveProjects(project.id, root),
-			root,
-		);
-		const dir = featureDirInScope(featureId, writeScope);
-		// If EXPERIENCE still TODO, fill a minimal accept for automation smoke when --force-low-quality
-		const expPath = path.join(dir, "EXPERIENCE.md");
-		if (args.dryRun !== "1" && args.forceLowQuality === "1" && existsSync(expPath)) {
-			let md = readFileSync(expPath, "utf8");
-			md = md
-				.replace(/- \[ \]/g, "- [x]")
-				.replace(/- accept \| revise \| reject/, "- accept")
-				.replace(/TODO/g, `(auto) ${primary.intent}`);
-			writeFileSync(expPath, md, "utf8");
+		if (args.dryRun !== "1" && args.forceLowQuality !== "1") {
+			const scope = writeScopeFromSelection(resolveProjects(project.id, root), root);
+			const quality = checkRubberduckFile(featureDirInScope(featureId, scope));
+			if (!quality.ok) {
+				pending.push({ featureId, problems: quality.problems });
+				continue;
+			}
 		}
 		// Scaffold with seed = entry command
-		scaffold({
+		const scaffolded = scaffold({
 			...args,
 			id: featureId,
 			seed: `${primary.intent}: \`${primary.entryCommand}\``,
@@ -1069,15 +1077,16 @@ function fromCatalog(args: Record<string, string>) {
 			catalogEntryCommand: primary.entryCommand,
 			catalogDriver: primary.driver,
 		});
-		created.push(featureId);
+		if (scaffolded) created.push(featureId);
 	}
 	console.log(
 		JSON.stringify(
 			{
-				ok: true,
+				ok: pending.length === 0,
 				mode: "from-catalog",
 				projectId: project.id,
 				features: created,
+				pending,
 				note:
 					args.forceLowQuality === "1"
 						? "force-low-quality used — fill real rubber-duck before assert-complete"
@@ -1087,6 +1096,7 @@ function fromCatalog(args: Record<string, string>) {
 			2,
 		),
 	);
+	if (pending.length) process.exitCode = 1;
 }
 
 function resolveOnly(args: Record<string, string>) {
