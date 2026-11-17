@@ -23,10 +23,16 @@ const pactPath = join(
 );
 const pact = JSON.parse(readFileSync(pactPath, "utf8"));
 
-function createLayer(floor: string) {
+function createLayer(floor: string, nowMs?: number) {
 	const store = new ProviderHandlerStore();
 	const transport = createInProcessTransport({ store });
-	return createWrpcLinkLayer({ transport, compatibilityFloor: floor, store });
+	const options: Parameters<typeof createWrpcLinkLayer>[0] = {
+		transport,
+		compatibilityFloor: floor,
+		store,
+	};
+	if (nowMs !== undefined) options.clock = { nowMs: () => nowMs };
+	return createWrpcLinkLayer(options);
 }
 
 test("provider verifies all wrpc-membrane pact interactions", async () => {
@@ -171,7 +177,9 @@ test("provider verifies all wrpc-membrane pact interactions", async () => {
 		if (interaction.description.includes("linked call")) {
 			const body = interaction.request.body;
 			const iface = parseInterfaceId(body.importInterface);
-			const layer = createLayer("0.2.0");
+			const deadline = Date.parse(body.deadline);
+			assert(Number.isFinite(deadline));
+			const layer = createLayer("0.2.0", deadline - 60_000);
 			layer.registerComponent({
 				id: body.componentId,
 				imports: [
