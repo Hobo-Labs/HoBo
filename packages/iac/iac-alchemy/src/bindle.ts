@@ -172,6 +172,92 @@ function validName(value: string): boolean {
 	);
 }
 
+/** Snapshot only finite, bounded data; executable callbacks are captured separately. */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: bindle declarations are external data and are checked before they are copied. */
+function snapshotData<T>(input: T): T {
+	const ancestors = new Set<object>();
+	let remaining = 16_384;
+	let characters = 0;
+	function copy(value: unknown, depth: number): unknown {
+		if (--remaining < 0 || depth > 32) throw new Error("data exceeds limits");
+		if (value === null || typeof value === "boolean") return value;
+		if (typeof value === "number") {
+			if (!Number.isFinite(value)) throw new Error("invalid number");
+			return value;
+		}
+		if (typeof value === "string") {
+			characters += value.length;
+			if (value.length > 65_536 || characters > 1_048_576)
+				throw new Error("data exceeds string limits");
+			return value;
+		}
+		if (typeof value !== "object" || ancestors.has(value))
+			throw new Error("data is not an acyclic data value");
+		const proto = Object.getPrototypeOf(value);
+		if (
+			(!Array.isArray(value) && proto !== Object.prototype && proto !== null) ||
+			(Array.isArray(value) && proto !== Array.prototype) ||
+			Object.getOwnPropertySymbols(value).length !== 0
+		)
+			throw new Error("data has unsupported properties");
+		ancestors.add(value);
+		try {
+			const properties = Object.getOwnPropertyDescriptors(value);
+			if (Array.isArray(value)) {
+				if (
+					value.length > 1024 ||
+					Object.keys(properties).some(
+						(key) =>
+							key !== "length" &&
+							(!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= value.length),
+					)
+				)
+					throw new Error("array is not bounded data");
+				const result: unknown[] = [];
+				for (let index = 0; index < value.length; index++) {
+					const item = properties[String(index)];
+					if (item === undefined || !("value" in item) || !item.enumerable)
+						throw new Error("array contains a hole or accessor");
+					result.push(copy(item.value, depth + 1));
+				}
+				return Object.freeze(result);
+			}
+			const keys = Object.keys(properties);
+			if (keys.length > 256) throw new Error("object exceeds limits");
+			const result: Record<string, unknown> = Object.create(proto);
+			for (const key of keys) {
+				const item = properties[key];
+				if (
+					!validName(key) ||
+					item === undefined ||
+					!("value" in item) ||
+					!item.enumerable
+				)
+					throw new Error("object contains an accessor or invalid key");
+				Object.defineProperty(result, key, {
+					value: copy(item.value, depth + 1),
+					enumerable: true,
+					configurable: true,
+					writable: true,
+				});
+			}
+			return Object.freeze(result);
+		} finally {
+			ancestors.delete(value);
+		}
+	}
+	try {
+		// SAFETY: the returned data has the same recursively copied data shape as input.
+		return copy(input, 0) as T;
+	} catch {
+		throw new AlchemyIacError(
+			"BINDLE_INVALID",
+			"bindle data must be bounded immutable data",
+		);
+	}
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
+
 /** Compile only fully declared mappings, in dependency order, into actual Alchemy resources. */
 export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 	bindle: BindleForAlchemy<Entrypoint, Requirements>,
@@ -180,9 +266,18 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 	>,
 	options: AlchemyBindleOptions<Requirements>,
 ): Effect.Effect<AlchemyBindleMapping, never, Services> {
+	const bindleName = bindle.name;
+	const entrypointOf = bindle.entrypoint;
+	const requirements = snapshotData(bindle.requirements);
+	const resourceDeclarations = snapshotData(bindle.resources);
+	const edges = snapshotData(bindle.edges);
+	const connectors =
+		bindle.connectors === undefined
+			? undefined
+			: snapshotData(bindle.connectors);
 	let unsupportedReason: string | undefined;
 	try {
-		const decision = options.assessRequirements(bindle.requirements);
+		const decision = options.assessRequirements(requirements);
 		const status = Object.getOwnPropertyDescriptor(decision, "status");
 		if (status === undefined || !("value" in status))
 			throw new Error("invalid requirement decision");
@@ -212,20 +307,17 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			"BINDLE_REQUIREMENTS_UNSUPPORTED",
 			unsupportedReason,
 		);
-	if (
-		bindle.connectors !== undefined &&
-		Object.keys(bindle.connectors).length > 0
-	)
+	if (connectors !== undefined && Object.keys(connectors).length > 0)
 		throw new AlchemyIacError(
 			"BINDLE_CONNECTORS_UNSUPPORTED",
 			"connector authorization and runtime bindings are not mapped",
 		);
-	const entries = Object.entries(bindle.resources);
+	const entries = Object.entries(resourceDeclarations);
 	if (
-		!validName(bindle.name) ||
+		!validName(bindleName) ||
 		entries.length === 0 ||
 		entries.length > 256 ||
-		bindle.edges.length > 1024
+		edges.length > 1024
 	)
 		throw new AlchemyIacError(
 			"BINDLE_INVALID",
@@ -236,7 +328,7 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 		OrderedPrimitive<Entrypoint, Requirements, Services>
 	>();
 	for (const [name, declaration] of entries) {
-		const mapper = Object.hasOwn(mappers, declaration.kind)
+		const candidate = Object.hasOwn(mappers, declaration.kind)
 			? mappers[declaration.kind]
 			: undefined;
 		if (
@@ -257,11 +349,29 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 				"BINDLE_INVALID",
 				`invalid identity for resource ${name}`,
 			);
-		if (mapper === undefined)
+		if (candidate === undefined)
 			throw new AlchemyIacError(
 				"PRIMITIVE_UNSUPPORTED",
 				`no Alchemy mapping for ${declaration.kind}`,
 			);
+		type MutableMapper = {
+			-readonly [Key in keyof AlchemyPrimitiveMapper<
+				Entrypoint,
+				Requirements,
+				Services
+			>]: AlchemyPrimitiveMapper<Entrypoint, Requirements, Services>[Key];
+		};
+		const mapper: MutableMapper = {
+			resourceTypes: Object.freeze([...candidate.resourceTypes]),
+			operations: Object.freeze([...candidate.operations]),
+			annotations: Object.freeze([...candidate.annotations]),
+			bindsEntrypoint: candidate.bindsEntrypoint,
+			build: candidate.build,
+		};
+		if (candidate.limitations !== undefined)
+			mapper.limitations = Object.freeze([...candidate.limitations]);
+		if (candidate.validate !== undefined) mapper.validate = candidate.validate;
+		Object.freeze(mapper);
 		if (
 			mapper.resourceTypes.length === 0 ||
 			mapper.resourceTypes.length > 256 ||
@@ -285,7 +395,7 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 				"PRIMITIVE_UNSUPPORTED",
 				`mapping for ${name} does not cover its declared operations or annotations`,
 			);
-		const entrypoint = bindle.entrypoint(name);
+		const entrypoint = entrypointOf.call(bindle, name);
 		if (entrypoint !== undefined && !mapper.bindsEntrypoint)
 			throw new AlchemyIacError(
 				"ENTRYPOINT_UNSUPPORTED",
@@ -294,7 +404,7 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 		rows.set(name, { declaration, entrypoint, dependencies: [], mapper });
 	}
 	const seen = new Set<string>();
-	for (const edge of bindle.edges) {
+	for (const edge of edges) {
 		const row = rows.get(edge.from);
 		const key = JSON.stringify([edge.from, edge.to]);
 		if (
@@ -361,11 +471,11 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			dependencyDeclarations[name] = dependency.declaration;
 		}
 		row.mapper.validate?.({
-			bindleName: bindle.name,
+			bindleName,
 			declaration: row.declaration,
-			requirements: bindle.requirements,
+			requirements,
 			entrypoint: row.entrypoint,
-			dependencyDeclarations,
+			dependencyDeclarations: Object.freeze(dependencyDeclarations),
 		});
 	}
 	return Effect.gen(function* () {
@@ -446,12 +556,12 @@ export function mapBindleToAlchemy<Entrypoint, Requirements, Services>(
 			}
 			const mapped = yield* row.mapper
 				.build({
-				bindleName: bindle.name,
-				declaration: row.declaration,
-				requirements: bindle.requirements,
-				entrypoint: row.entrypoint,
-				dependencies,
-				dependencyDeclarations,
+					bindleName,
+					declaration: row.declaration,
+					requirements,
+					entrypoint: row.entrypoint,
+					dependencies: Object.freeze(dependencies),
+					dependencyDeclarations: Object.freeze(dependencyDeclarations),
 				})
 				.pipe(Effect.provideService(StackContext, guardedStack));
 			if (
