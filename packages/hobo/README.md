@@ -752,3 +752,50 @@ either signal, and returned URLs; it does not directly assert listener counts
 or inject a close failure. The WASM guest execution test also checks tenant
 environment injection through the separately bundled guest entry, which host
 typechecking cannot cover.
+
+### Budget-required local fallback
+
+If the configured Yard cannot collect a manifest, `hobo up` and its preview
+refuse to fall back to the embedded local lane when a hosting budget is required.
+The fallback cannot reserve or enforce that budget. The command also checks
+runtime and flag requirements again while preparing local placement and before
+startup. Changes to project artifacts during placement still require a separate
+execution handoff fence.
+
+The bounded fallback model projects the following flow. It hides 22 internal
+steps and treats the Yard's own result as an external decision.
+
+```mermaid
+stateDiagram-v2
+  s0: Deployment is requested
+  s1: Local fallback considered
+  s2: Yard evaluates the request
+  s3: Budget requirement refuses the request
+  s4: Remote placement continues
+  s5: Local workload being prepared
+  s6: Yard supplies its own result
+  s7: Budgeted fallback considered
+  s8: Local preview being prepared
+  s9: Local workload starts
+  s10: Budget now required before local start
+  s11: Local preview is returned
+  s12: Budget now required before preview
+  [*] --> s0
+  s0 --> s1: consider local fallback
+  s0 --> s2: ask the Yard
+  s0 --> s3: require budget authority
+  s0 --> s4: use remote placement
+  s1 --> s5: prepare local work
+  s1 --> s7: a budget becomes required
+  s2 --> s1: the Yard has no usable manifest
+  s2 --> s6: use the Yard result
+  s2 --> s7: the Yard has no usable manifest
+  s1 --> s8: prepare the preview
+  s5 --> s9: start local work
+  s5 --> s10: a budget becomes required
+  s7 --> s3: require budget authority
+  s8 --> s11: return the preview
+  s8 --> s12: a budget becomes required
+  s10 --> s3: require budget authority
+  s12 --> s3: require budget authority
+```
