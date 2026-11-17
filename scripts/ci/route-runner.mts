@@ -566,6 +566,8 @@ export async function observeQueue(input: {
 	 * than how long the run's own jobs have waited.
 	 */
 	includeOwnRun?: boolean | undefined;
+	/** Read all bounded candidates even after current labels appear to refuse. */
+	exhaustLookups?: boolean | undefined;
 }): Promise<QueueView> {
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
@@ -592,7 +594,7 @@ export async function observeQueue(input: {
 		const allRefusing = input.labels.every((label) =>
 			refusingJobs(labelLoad(seen, label, input.nowMs), input.limits),
 		);
-		if (allRefusing) break;
+		if (allRefusing && input.exhaustLookups !== true) break;
 		const jobsPage = await jobsOf(runId);
 		seen.push(...seenJobs(jobsPage));
 		if (ahead.includes(runId) && hasChosen(jobsPage)) undecidedAhead -= 1;

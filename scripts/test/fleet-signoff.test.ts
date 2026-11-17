@@ -52,6 +52,8 @@ const plan = (
 		githubUnavailable?: boolean;
 		slip?: SlipReading;
 		overflow?: readonly FleetOverflowMember[];
+		providerUnavailable?: readonly string[];
+		runnerUnavailable?: readonly string[];
 	} = {},
 ) =>
 	planFleetVerification({
@@ -59,6 +61,8 @@ const plan = (
 		localSignoffEnabled: options.localSignoffEnabled ?? true,
 		githubUnavailable: options.githubUnavailable ?? false,
 		overflow: options.overflow ?? [],
+		providerUnavailable: options.providerUnavailable ?? [],
+		runnerUnavailable: options.runnerUnavailable ?? [],
 		readSlip: async () => options.slip ?? noSlip,
 		readQueue: async () => view,
 		nowMs: now,
@@ -149,6 +153,281 @@ describe("local signoff in the fleet decision", () => {
 				overflow: [{ id: "ci:sandbox", runsOn: "sandbox", observable: false }],
 			}),
 			{ kind: "wait", reason: "availability-unknown" },
+		);
+	});
+
+	it("includes opaque labels in the queue lookup", async () => {
+		let observedLabels: readonly string[] = [];
+		const choice = await planFleetVerification({
+			settings,
+			localSignoffEnabled: true,
+			overflow: [{ id: "ci:sandbox", runsOn: "sandbox", observable: false }],
+			providerUnavailable: ["ci:sandbox"],
+			readSlip: async () => noSlip,
+			readQueue: async (_fleet, _busy, labels) => {
+				observedLabels = labels;
+				return queue([
+					waiting("hobo"),
+					waiting("hobo-local-host"),
+					waiting("ubuntu-24.04"),
+					picked("sandbox"),
+				]);
+			},
+			nowMs: now,
+		});
+		assert.deepEqual(observedLabels, ["sandbox"]);
+		assert.deepEqual(choice, { kind: "wait", reason: "availability-unknown" });
+	});
+
+	it("does not declare multi-label pickups down, or infer refusal from multi-label queues", async () => {
+		const multi = (label: string): SeenJob => ({
+			...picked(label),
+			labels: ["self-hosted", label],
+		});
+		const runners = ["fleet", "local"];
+		for (const label of ["hobo", "hobo-local-host", "ubuntu-24.04"]) {
+			assert.deepEqual(
+				await plan(queue([multi(label)]), {
+					githubUnavailable: true,
+					runnerUnavailable: runners,
+				}),
+				{ kind: "wait", reason: "availability-unknown" },
+			);
+		}
+		for (const observable of [true, false]) {
+			const overflow = [{ id: "ci:extra", runsOn: "sandbox", observable }];
+			assert.deepEqual(
+				await plan(queue([multi("sandbox")]), {
+					githubUnavailable: true,
+					runnerUnavailable: runners,
+					overflow,
+					providerUnavailable: ["ci:extra"],
+				}),
+				{ kind: "wait", reason: "availability-unknown" },
+			);
+		}
+		const pending: SeenJob = {
+			runId: 1,
+			labels: ["self-hosted", "hobo"],
+			createdAtMs: now - 500_000,
+		};
+		assert.deepEqual(await plan(queue([pending])), {
+			kind: "wait",
+			reason: "availability-unknown",
+		});
+		assert.deepEqual(
+			await plan(queue([pending]), {
+				githubUnavailable: true,
+				runnerUnavailable: runners,
+			}),
+			{ kind: "local-signoff" },
+		);
+		const stale: SeenJob = {
+			...multi("hobo"),
+			createdAtMs: now - 1_002_000,
+			startedAtMs: now - 1_000_000,
+		};
+		const slow: SeenJob = {
+			...multi("hobo"),
+			createdAtMs: now - 500_000,
+			startedAtMs: now - 8_000,
+		};
+		for (const job of [stale, slow])
+			assert.deepEqual(
+				await plan(queue([job]), {
+					githubUnavailable: true,
+					runnerUnavailable: runners,
+				}),
+				{ kind: "local-signoff" },
+			);
+	});
+
+	it("requires a separate outage assertion for every provider and still prefers healthy runners", async () => {
+		const overflow = [
+			{ id: "ci:sandbox", runsOn: "sandbox", observable: false },
+			{ id: "ci:worker", runsOn: "worker", observable: false },
+		];
+		const down = [
+			waiting("hobo"),
+			waiting("hobo-local-host"),
+			waiting("ubuntu-24.04"),
+		];
+		assert.deepEqual(
+			await plan(queue(down), {
+				overflow,
+				providerUnavailable: ["ci:sandbox"],
+			}),
+			{ kind: "wait", reason: "availability-unknown" },
+		);
+		const assertions = ["ci:sandbox", "ci:worker"];
+		assert.deepEqual(
+			await plan(queue(down), { overflow, providerUnavailable: assertions }),
+			{ kind: "local-signoff" },
+		);
+		assert.deepEqual(
+			await plan(queue([picked("hobo")]), {
+				overflow,
+				providerUnavailable: assertions,
+			}),
+			{ kind: "runner", tier: "fleet", runner: "hobo" },
+		);
+		assert.deepEqual(
+			await plan(queue([waiting("hobo"), picked("hobo-local-host")]), {
+				overflow,
+				providerUnavailable: assertions,
+			}),
+			{ kind: "runner", tier: "local", runner: "hobo-local-host" },
+		);
+		const arc = { id: "ci:arc", runsOn: "hobo-arc", observable: true };
+		assert.deepEqual(
+			await plan(queue([waiting("hobo"), picked("hobo-arc")]), {
+				overflow: [...overflow, arc],
+				providerUnavailable: assertions,
+			}),
+			{ kind: "runner", tier: "overflow", runner: "hobo-arc" },
+		);
+		const pinned: SlipReading = {
+			ok: true,
+			decision: {
+				tier: "github",
+				runner: "ubuntu-24.04",
+				reason: "pinned",
+				slip: { kind: "used", reason: "pinned", from: "node@abc" },
+			},
+		};
+		assert.deepEqual(
+			await plan(queue(down), {
+				overflow,
+				providerUnavailable: assertions,
+				slip: pinned,
+			}),
+			{ kind: "runner", tier: "github", runner: "ubuntu-24.04" },
+		);
+		const observable = [{ id: "ci:arc", runsOn: "hobo-arc", observable: true }];
+		assert.deepEqual(
+			await plan(queue(down), {
+				overflow: observable,
+				providerUnavailable: ["ci:arc"],
+			}),
+			{ kind: "local-signoff" },
+		);
+		assert.deepEqual(
+			await plan(queue([...down, picked("hobo-arc")]), {
+				overflow: observable,
+				providerUnavailable: ["ci:arc"],
+			}),
+			{ kind: "runner", tier: "overflow", runner: "hobo-arc" },
+		);
+		assert.deepEqual(
+			await plan(queue([...down, picked("sandbox")]), {
+				overflow,
+				providerUnavailable: assertions,
+			}),
+			{ kind: "wait", reason: "availability-unknown" },
+		);
+	});
+
+	it("uses independently observed fleet and local outages only without healthy pickups", async () => {
+		const both = ["fleet", "local"];
+		assert.deepEqual(await plan(queue([]), { githubUnavailable: true }), {
+			kind: "wait",
+			reason: "availability-unknown",
+		});
+		assert.deepEqual(
+			await plan(queue([]), {
+				githubUnavailable: true,
+				runnerUnavailable: ["fleet"],
+			}),
+			{
+				kind: "wait",
+				reason: "availability-unknown",
+			},
+		);
+		assert.deepEqual(
+			await plan(queue([]), {
+				githubUnavailable: true,
+				runnerUnavailable: both,
+			}),
+			{
+				kind: "local-signoff",
+			},
+		);
+		assert.deepEqual(
+			await plan(queue([picked("hobo")]), {
+				githubUnavailable: true,
+				runnerUnavailable: both,
+			}),
+			{
+				kind: "runner",
+				tier: "fleet",
+				runner: "hobo",
+			},
+		);
+		assert.deepEqual(
+			await plan(queue([picked("hobo-local-host")]), {
+				githubUnavailable: true,
+				runnerUnavailable: both,
+			}),
+			{
+				kind: "runner",
+				tier: "local",
+				runner: "hobo-local-host",
+			},
+		);
+		assert.deepEqual(
+			await plan(queue([picked("hobo")], 1), {
+				githubUnavailable: true,
+				runnerUnavailable: both,
+			}),
+			{
+				kind: "wait",
+				reason: "availability-unknown",
+			},
+		);
+		const pinned: SlipReading = {
+			ok: true,
+			decision: {
+				tier: "github",
+				runner: "ubuntu-24.04",
+				reason: "pinned",
+				slip: { kind: "used", reason: "pinned", from: "node@abc" },
+			},
+		};
+		assert.deepEqual(
+			await plan(queue([]), {
+				githubUnavailable: true,
+				runnerUnavailable: both,
+				slip: pinned,
+			}),
+			{
+				kind: "runner",
+				tier: "github",
+				runner: "ubuntu-24.04",
+			},
+		);
+	});
+
+	it("prefers fresh healthy fleet evidence over an older fallback slip", async () => {
+		const slip: SlipReading = {
+			ok: true,
+			decision: {
+				tier: "github",
+				runner: "ubuntu-24.04",
+				reason: "no-node",
+				slip: { kind: "used", reason: "no-node", from: "node@abc" },
+			},
+		};
+		assert.deepEqual(
+			await plan(queue([picked("hobo")]), {
+				slip,
+				githubUnavailable: true,
+				runnerUnavailable: ["fleet"],
+			}),
+			{
+				kind: "runner",
+				tier: "fleet",
+				runner: "hobo",
+			},
 		);
 	});
 
@@ -710,6 +989,65 @@ describe("local signoff in the fleet decision", () => {
 			]);
 			git(repo, ["remote", "add", "origin", remote]);
 			git(repo, ["push", "--quiet", "origin", "main"]);
+			const policyFile = join(repo, ".hobo/ci.json");
+			const originalPolicy = readFileSync(policyFile, "utf8");
+			const makePolicyBranch = (name: string, policy: string) => {
+				git(repo, ["switch", "--quiet", "-c", name]);
+				writeFileSync(policyFile, policy);
+				git(repo, ["add", ".hobo/ci.json"]);
+				git(repo, [
+					"-c",
+					"commit.gpgsign=false",
+					"commit",
+					"--quiet",
+					"-m",
+					name,
+				]);
+				git(repo, ["push", "--quiet", "origin", `HEAD:refs/heads/${name}`]);
+				git(repo, ["update-ref", `refs/remotes/origin/${name}`, "HEAD"]);
+				git(repo, ["switch", "--quiet", "main"]);
+			};
+			const opaquePolicy = JSON.parse(originalPolicy);
+			opaquePolicy.environments.ci.policy.providers[0].enabled = true;
+			opaquePolicy.environments.production.policy.providers[0].enabled = true;
+			opaquePolicy.environments.ci.policy.providers[3].enabled = true;
+			makePolicyBranch("opaque-policy", JSON.stringify(opaquePolicy));
+			const inventoryPolicy = JSON.parse(originalPolicy);
+			inventoryPolicy.environments.ci.policy.providers[3].enabled = true;
+			inventoryPolicy.integrations[0].enabled = true;
+			inventoryPolicy.runnerRouting.externalPools = [
+				{ labels: ["pool.ubuntu-1"], runnerNamePrefix: "pool-", maxRunners: 1 },
+			];
+			makePolicyBranch("inventory-policy", JSON.stringify(inventoryPolicy));
+			const localPolicy = JSON.parse(originalPolicy);
+			localPolicy.runnerRouting.localRunner = true;
+			makePolicyBranch("local-policy", JSON.stringify(localPolicy));
+			const localProviderPolicy = JSON.parse(originalPolicy);
+			localProviderPolicy.environments.local.policy.providers[0].enabled = true;
+			makePolicyBranch(
+				"local-provider-policy",
+				JSON.stringify(localProviderPolicy),
+			);
+			const manyPolicy = JSON.parse(originalPolicy);
+			const manyProviders = (count: number) =>
+				Array.from({ length: count }, (_, index) => ({
+					id: `provider-${index}`,
+					kind: "blacksmith",
+					connectionRef: `connection-${index}`,
+					runsOn: `runner-${index}`,
+					enabled: true,
+				}));
+			manyPolicy.environments.ci.policy.providers = manyProviders(100);
+			manyPolicy.environments.production.policy.providers = manyProviders(1);
+			makePolicyBranch("many-policy", JSON.stringify(manyPolicy));
+			const pinnedPolicy = JSON.parse(originalPolicy);
+			pinnedPolicy.runnerRouting.pin = "github";
+			makePolicyBranch("pinned-policy", JSON.stringify(pinnedPolicy));
+			const malformedPolicy = JSON.parse(originalPolicy);
+			malformedPolicy.environments.ci.policy.providers[3] = {
+				$ref: "#/definitions/arc",
+			};
+			makePolicyBranch("malformed-policy", JSON.stringify(malformedPolicy));
 			const at = (seconds: number) =>
 				new Date(Date.now() - seconds * 1000).toISOString();
 			const runs = join(root, "runs.json");
@@ -719,7 +1057,13 @@ describe("local signoff in the fleet decision", () => {
 				runs,
 				JSON.stringify({
 					workflow_runs: [
-						{ id: 123, status: "in_progress", created_at: at(500) },
+						{
+							id: 123,
+							status: "in_progress",
+							path: ".github/workflows/hobo-ci.yml",
+							created_at: at(500),
+							updated_at: at(500),
+						},
 					],
 				}),
 			);
@@ -728,6 +1072,12 @@ describe("local signoff in the fleet decision", () => {
 				`#!/bin/sh
 printf '%s\\n' "$*" >> "$HOBO_FLEET_CALLS"
 if [ "$1" = repo ]; then
+  case "$*" in
+    *" -- "*)
+      if [ "\${HOBO_FLEET_OTHER_REMOTE:-0}" = 1 ]; then
+        echo '{"nameWithOwner":"other/app","url":"https://github.com/other/app"}'; exit 0
+      fi ;;
+  esac
   case "$*" in
     *--jq*) echo acme/app ;;
     *) echo '{"nameWithOwner":"acme/app","url":"https://github.com/acme/app"}' ;;
@@ -751,6 +1101,9 @@ case "$2" in
     [ -n "\${HOBO_FLEET_SLIP:-}" ] || exit 1
     cat "$HOBO_FLEET_SLIP" ;;
   */actions/runs\\?*) cat "$HOBO_FLEET_RUNS" ;;
+  */actions/runs/124/jobs\\?*)
+    [ -n "\${HOBO_FLEET_JOBS_LATER:-}" ] || exit 1
+    cat "$HOBO_FLEET_JOBS_LATER" ;;
   */actions/runs/*/jobs\\?*) cat "$HOBO_FLEET_JOBS" ;;
   *) exit 1 ;;
 esac
@@ -768,6 +1121,10 @@ esac
 				`#!/bin/sh
 tool_dir="\${0%/*}"
 if [ "$1" = hobo-test-advance ]; then
+  if [ -f "$tool_dir/fail-job" ]; then
+    echo failed > "$tool_dir/failed-command"
+    exit 1
+  fi
   if [ -f "$tool_dir/advance-base" ]; then
     /usr/bin/git --git-dir="$(cat "$tool_dir/remote-path")" update-ref refs/heads/main "$(cat "$tool_dir/advance-base")"
     rm "$tool_dir/advance-base"
@@ -830,6 +1187,90 @@ exec /usr/bin/git "$@"
 			assert.equal(available.status, 0, available.stderr);
 			assert.match(available.stdout, /fleet runner hobo/u);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
+			const assertionWithRunner = command({}, [
+				"--base=origin/opaque-policy",
+				"--provider-unavailable=ci:vercel-sandbox",
+				"--provider-unavailable=production:vercel-sandbox",
+			]);
+			assert.equal(assertionWithRunner.status, 0, assertionWithRunner.stderr);
+			assert.match(assertionWithRunner.stdout, /fleet runner hobo/u);
+			for (const flags of [
+				["--provider-unavailable=ci:typo"],
+				["--runner-unavailable=local"],
+			]) {
+				const result = command({}, flags);
+				assert.equal(result.status, 0, result.stderr);
+				assert.match(result.stdout, /fleet runner hobo/u);
+			}
+			for (const mismatch of [
+				{ GH_REPO: "other/app" },
+				{ GH_HOST: "other.example" },
+				{ HOBO_FLEET_OTHER_REMOTE: "1" },
+			]) {
+				const before = readFileSync(calls, "utf8").length;
+				const result = command(mismatch);
+				assert.notEqual(result.status, 0);
+				assert.match(result.stdout, /waiting \(availability-unknown\)/u);
+				const newCalls = readFileSync(calls, "utf8").slice(before);
+				assert.doesNotMatch(newCalls, /actions\/runs|git\/ref|signoff/u);
+			}
+			const badRemote = "token1@token2@github.com:acme/app.git";
+			git(repo, ["remote", "set-url", "origin", badRemote]);
+			const beforeMalformedRemote = readFileSync(calls, "utf8").length;
+			const malformedRemote = command();
+			assert.notEqual(malformedRemote.status, 0);
+			assert.match(malformedRemote.stdout, /waiting \(availability-unknown\)/u);
+			assert.doesNotMatch(
+				`${malformedRemote.stdout}\n${malformedRemote.stderr}\n${readFileSync(calls, "utf8").slice(beforeMalformedRemote)}`,
+				/token1|token2/u,
+			);
+			git(repo, ["remote", "set-url", "origin", remote]);
+			const pinnedSlip = join(root, "pinned-slip.json");
+			const pin = { runner: "ubuntu-24.04", tier: "github", reason: "pinned" };
+			writeFileSync(
+				pinnedSlip,
+				JSON.stringify({
+					sha: "5".repeat(40),
+					message: JSON.stringify({
+						version: 1,
+						repository: "acme/app",
+						issuedAt: at(60),
+						expiresAt: new Date(Date.now() + 60_000).toISOString(),
+						classes: { pr: pin, fork: pin, trunk: pin },
+						relay: { nodeId: "fixture", commit: "a".repeat(40) },
+					}),
+				}),
+			);
+			const beforePin = readFileSync(calls, "utf8").length;
+			const pinnedMalformed = command({ HOBO_FLEET_SLIP: pinnedSlip }, [
+				"--base=origin/malformed-policy",
+			]);
+			assert.equal(pinnedMalformed.status, 0, pinnedMalformed.stderr);
+			assert.match(pinnedMalformed.stdout, /github runner ubuntu-24\.04/u);
+			assert.doesNotMatch(
+				readFileSync(calls, "utf8").slice(beforePin),
+				/actions\/runs|signoff/u,
+			);
+			const pinnedWithTypo = command({ HOBO_FLEET_SLIP: pinnedSlip }, [
+				"--provider-unavailable=ci:typo",
+			]);
+			assert.equal(pinnedWithTypo.status, 0, pinnedWithTypo.stderr);
+			assert.match(pinnedWithTypo.stdout, /github runner ubuntu-24\.04/u);
+			const configuredPin = command({}, [
+				"--base=origin/pinned-policy",
+				"--runner-unavailable=fleet",
+			]);
+			assert.equal(configuredPin.status, 0, configuredPin.stderr);
+			assert.match(configuredPin.stdout, /github runner ubuntu-24\.04/u);
+			const malformedBeforePin = command({}, [
+				"--base=origin/pinned-policy",
+				"--runner-unavailable=typo",
+			]);
+			assert.notEqual(malformedBeforePin.status, 0);
+			assert.match(
+				malformedBeforePin.stderr,
+				/--runner-unavailable requires fleet or local/u,
+			);
 			writeFileSync(
 				jobs,
 				JSON.stringify({
@@ -838,9 +1279,539 @@ exec /usr/bin/git "$@"
 						status: "queued",
 						labels: [label],
 						created_at: at(500),
+						runner_name: null,
+						started_at: null,
 					})),
 				}),
 			);
+			const opaqueFlags = [
+				"--base=origin/opaque-policy",
+				"--provider-unavailable=ci:vercel-sandbox",
+				"--provider-unavailable=production:vercel-sandbox",
+			];
+			const observeOpaque = (
+				providerUnavailable: string[],
+				policyCurrent = true,
+			) =>
+				observeFleetVerification({
+					cwd: repo,
+					env: commandEnv,
+					baseRef: "origin/opaque-policy",
+					localSignoffEnabled: true,
+					policyCurrent,
+					providerUnavailable,
+				});
+			const allOpaque = ["ci:vercel-sandbox", "production:vercel-sandbox"];
+			assert.deepEqual(await observeOpaque([allOpaque[0] ?? ""]), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			// ARC is enabled too; silence is still unknown despite both opaque assertions.
+			assert.deepEqual(await observeOpaque(allOpaque), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			const queued = JSON.parse(readFileSync(jobs, "utf8"));
+			queued.jobs.push({
+				run_id: 123,
+				status: "queued",
+				labels: ["hobo-arc"],
+				created_at: at(500),
+				runner_name: null,
+				started_at: null,
+			});
+			writeFileSync(jobs, JSON.stringify(queued));
+			assert.deepEqual(
+				await observeFleetVerification({
+					cwd: repo,
+					env: commandEnv,
+					baseRef: "origin/malformed-policy",
+					localSignoffEnabled: true,
+					policyCurrent: true,
+				}),
+				{ kind: "wait", reason: "availability-unknown" },
+			);
+			assert.deepEqual(await observeOpaque(allOpaque, false), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			const unverifiedOpaque = command({}, opaqueFlags, false);
+			assert.notEqual(unverifiedOpaque.status, 0);
+			assert.match(
+				unverifiedOpaque.stdout,
+				/waiting \(availability-unknown\)/u,
+			);
+			assert.deepEqual(await observeOpaque(allOpaque), {
+				kind: "local-signoff",
+				baseSha: git(repo, ["rev-parse", "origin/opaque-policy"])
+					.toString()
+					.trim(),
+			});
+			// A live Actions pickup sharing an opaque label blocks its outage claim.
+			const sharedLabel = {
+				jobs: [
+					...queued.jobs,
+					{
+						run_id: 123,
+						status: "completed",
+						labels: ["sandbox"],
+						runner_name: "fixture",
+						created_at: at(10),
+						started_at: at(8),
+					},
+				],
+			};
+			writeFileSync(jobs, JSON.stringify(sharedLabel));
+			assert.deepEqual(await observeOpaque(allOpaque), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			const multiShared = {
+				jobs: [
+					...queued.jobs,
+					{
+						run_id: 123,
+						status: "completed",
+						labels: ["self-hosted", "sandbox"],
+						runner_name: "fixture",
+						created_at: at(10),
+						started_at: at(8),
+					},
+				],
+			};
+			writeFileSync(jobs, JSON.stringify(multiShared));
+			assert.deepEqual(await observeOpaque(allOpaque), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			writeFileSync(jobs, JSON.stringify(queued));
+			const inventoryAssertions = [
+				"ci:hostinger-arc",
+				"integration:blacksmith:blacksmith-2vcpu-ubuntu-2404",
+				"external-pool:0:pool.ubuntu-1",
+			];
+			const observeInventory = () =>
+				observeFleetVerification({
+					cwd: repo,
+					env: commandEnv,
+					baseRef: "origin/inventory-policy",
+					localSignoffEnabled: true,
+					policyCurrent: true,
+					providerUnavailable: inventoryAssertions,
+				});
+			assert.deepEqual(await observeInventory(), {
+				kind: "local-signoff",
+				baseSha: git(repo, ["rev-parse", "origin/inventory-policy"])
+					.toString()
+					.trim(),
+			});
+			const healthyArc = {
+				jobs: [
+					...queued.jobs.filter(
+						(entry: { labels: string[] }) => !entry.labels.includes("hobo-arc"),
+					),
+					{
+						run_id: 123,
+						status: "completed",
+						labels: ["hobo-arc"],
+						runner_name: "fixture",
+						created_at: at(10),
+						started_at: at(8),
+					},
+				],
+			};
+			writeFileSync(jobs, JSON.stringify(healthyArc));
+			assert.deepEqual(await observeInventory(), {
+				kind: "runner",
+				tier: "overflow",
+				runner: "hobo-arc",
+			});
+			const multiArc = {
+				jobs: [
+					...healthyArc.jobs.slice(0, -1),
+					{
+						run_id: 123,
+						status: "completed",
+						labels: ["self-hosted", "hobo-arc"],
+						runner_name: "fixture",
+						created_at: at(10),
+						started_at: at(8),
+					},
+				],
+			};
+			writeFileSync(jobs, JSON.stringify(multiArc));
+			assert.deepEqual(await observeInventory(), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			writeFileSync(jobs, JSON.stringify(queued));
+			writeFileSync(join(repo, "dirty.txt"), "uncommitted\n");
+			const assertedInventory = command({}, [
+				"--base=origin/inventory-policy",
+				...inventoryAssertions.map((id) => `--provider-unavailable=${id}`),
+			]);
+			assert.match(
+				assertedInventory.stdout,
+				/running the local signoff fallback/u,
+			);
+			assert.match(assertedInventory.stderr, /working tree is not clean/u);
+			rmSync(join(repo, "dirty.txt"));
+			// A silent queue needs independently observed outages for both enabled tiers.
+			writeFileSync(jobs, JSON.stringify({ jobs: [] }));
+			const silent = (
+				runnerUnavailable: string[],
+				policyCurrent = true,
+				baseRef = "origin/local-policy",
+			) =>
+				observeFleetVerification({
+					cwd: repo,
+					env: commandEnv,
+					baseRef,
+					localSignoffEnabled: true,
+					githubUnavailable: true,
+					policyCurrent,
+					runnerUnavailable,
+				});
+			assert.deepEqual(await silent([]), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			assert.deepEqual(await silent(["fleet"]), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			assert.deepEqual(await silent(["fleet", "local"], false), {
+				kind: "wait",
+				reason: "availability-unknown",
+			});
+			assert.deepEqual(await silent(["fleet", "local"]), {
+				kind: "local-signoff",
+				baseSha: git(repo, ["rev-parse", "origin/local-policy"])
+					.toString()
+					.trim(),
+			});
+			assert.deepEqual(
+				await silent(["fleet", "local"], true, "origin/local-provider-policy"),
+				{
+					kind: "local-signoff",
+					baseSha: git(repo, ["rev-parse", "origin/local-provider-policy"])
+						.toString()
+						.trim(),
+				},
+			);
+			assert.deepEqual(await silent(["local"], true, "origin/main"), {
+				kind: "invalid-runner-assertion",
+				runner: "local",
+			});
+			const disabledTier = command({}, [
+				"--github-unavailable",
+				"--runner-unavailable=local",
+			]);
+			assert.notEqual(disabledTier.status, 0);
+			assert.match(
+				disabledTier.stderr,
+				/does not name an enabled runner tier/u,
+			);
+			for (const flags of [
+				["--runner-unavailable=typo"],
+				["--runner-unavailable=fleet", "--runner-unavailable=fleet"],
+			]) {
+				const invalid = command({}, flags);
+				assert.notEqual(invalid.status, 0);
+				assert.match(invalid.stderr, /--runner-unavailable/u);
+			}
+			writeFileSync(join(repo, "dirty.txt"), "uncommitted\n");
+			const assertedRunners = command({}, [
+				"--base=origin/local-policy",
+				"--github-unavailable",
+				"--runner-unavailable=fleet",
+				"--runner-unavailable=local",
+			]);
+			assert.match(
+				assertedRunners.stdout,
+				/running the local signoff fallback/u,
+			);
+			assert.match(assertedRunners.stderr, /working tree is not clean/u);
+			const manyFlags = [
+				"--base=origin/many-policy",
+				"--github-unavailable",
+				"--runner-unavailable=fleet",
+				...Array.from(
+					{ length: 100 },
+					(_, index) => `--provider-unavailable=ci:provider-${index}`,
+				),
+				"--provider-unavailable=production:provider-0",
+			];
+			const many = command({}, manyFlags);
+			assert.match(many.stdout, /running the local signoff fallback/u);
+			assert.match(many.stderr, /working tree is not clean/u);
+			const tooMany = command(
+				{},
+				Array.from(
+					{ length: 4097 },
+					(_, index) => `--provider-unavailable=ci:p${index}`,
+				),
+			);
+			assert.notEqual(tooMany.status, 0);
+			assert.match(tooMany.stderr, /at most 4096 IDs/u);
+			const runnerFlags = [
+				"--base=origin/local-policy",
+				"--github-unavailable",
+				"--runner-unavailable=fleet",
+				"--runner-unavailable=local",
+			];
+			const jobBase = {
+				run_id: 123,
+				status: "completed",
+				labels: ["hobo"],
+				created_at: at(10),
+				runner_name: "fixture",
+				started_at: at(8),
+			};
+			for (const invalid of [
+				{ ...jobBase, labels: "hobo" },
+				{ ...jobBase, labels: ["hobo", 42] },
+				{ ...jobBase, labels: [] },
+				{ ...jobBase, status: "queued", labels: [], runner_name: null },
+				{ ...jobBase, status: "queued" },
+				{ ...jobBase, runner_name: null, conclusion: "success" },
+				{ ...jobBase, runner_name: "" },
+				{ ...jobBase, run_id: "123" },
+				{ ...jobBase, runner_name: 42 },
+				{ ...jobBase, started_at: "bad-time" },
+				{ ...jobBase, created_at: "0" },
+				{ ...jobBase, started_at: "2026-02-29T12:00:00Z" },
+			]) {
+				writeFileSync(jobs, JSON.stringify({ jobs: [invalid] }));
+				const result = command({}, runnerFlags);
+				assert.notEqual(result.status, 0);
+				assert.match(result.stdout, /waiting \(availability-unknown\)/u);
+			}
+			writeFileSync(
+				jobs,
+				JSON.stringify({ jobs: [{ ...jobBase, labels: "hobo" }, jobBase] }),
+			);
+			const healthyWithMalformedJob = command({}, runnerFlags);
+			assert.equal(
+				healthyWithMalformedJob.status,
+				0,
+				healthyWithMalformedJob.stderr,
+			);
+			assert.match(healthyWithMalformedJob.stdout, /fleet runner hobo/u);
+			for (const runnerName of [null, ""]) {
+				const uncertain = {
+					...jobBase,
+					status: "in_progress",
+					runner_name: runnerName,
+				};
+				writeFileSync(jobs, JSON.stringify({ jobs: [uncertain] }));
+				const noCapacity = command({}, runnerFlags);
+				assert.notEqual(noCapacity.status, 0);
+				assert.match(noCapacity.stdout, /waiting \(availability-unknown\)/u);
+				writeFileSync(jobs, JSON.stringify({ jobs: [uncertain, jobBase] }));
+				const healthy = command({}, runnerFlags);
+				assert.equal(healthy.status, 0, healthy.stderr);
+				assert.match(healthy.stdout, /fleet runner hobo/u);
+			}
+			writeFileSync(
+				jobs,
+				JSON.stringify({
+					jobs: [{ ...jobBase, labels: ["self-hosted", "hobo"] }],
+				}),
+			);
+			const multiLabelFleet = command({}, runnerFlags);
+			assert.notEqual(multiLabelFleet.status, 0);
+			assert.match(multiLabelFleet.stdout, /waiting \(availability-unknown\)/u);
+			const validRun = {
+				id: 123,
+				status: "in_progress",
+				path: ".github/workflows/hobo-ci.yml",
+				created_at: at(500),
+				updated_at: at(500),
+			};
+			writeFileSync(jobs, JSON.stringify({ jobs: [] }));
+			for (const invalid of [
+				{ ...validRun, id: "123" },
+				{ ...validRun, status: 42 },
+				{ ...validRun, path: null },
+				{ ...validRun, path: "" },
+				{ ...validRun, path: "   " },
+				{ ...validRun, created_at: "bad-time" },
+				{ ...validRun, created_at: "0" },
+				{ ...validRun, updated_at: "2026-02-29T12:00:00Z" },
+				{ ...validRun, updated_at: null },
+			]) {
+				writeFileSync(runs, JSON.stringify({ workflow_runs: [invalid] }));
+				const result = command({}, runnerFlags);
+				assert.notEqual(result.status, 0);
+				assert.match(result.stdout, /waiting \(availability-unknown\)/u);
+			}
+			writeFileSync(
+				runs,
+				JSON.stringify({
+					workflow_runs: [{ ...validRun, id: "broken" }, validRun],
+				}),
+			);
+			writeFileSync(jobs, JSON.stringify({ jobs: [jobBase] }));
+			const healthyWithMalformedRun = command({}, runnerFlags);
+			assert.equal(
+				healthyWithMalformedRun.status,
+				0,
+				healthyWithMalformedRun.stderr,
+			);
+			assert.match(healthyWithMalformedRun.stdout, /fleet runner hobo/u);
+			const laterJobs = join(root, "later-jobs.json");
+			writeFileSync(
+				runs,
+				JSON.stringify({ workflow_runs: [validRun, { ...validRun, id: 124 }] }),
+			);
+			writeFileSync(
+				jobs,
+				JSON.stringify({
+					jobs: ["hobo", "hobo-local-host", "ubuntu-24.04"].map((label) => ({
+						run_id: 123,
+						status: "queued",
+						labels: [label],
+						created_at: at(500),
+						runner_name: null,
+						started_at: null,
+					})),
+				}),
+			);
+			writeFileSync(
+				laterJobs,
+				JSON.stringify({
+					jobs: [{ ...jobBase, run_id: 124, labels: ["self-hosted", "hobo"] }],
+				}),
+			);
+			const beforeLater = readFileSync(calls, "utf8").length;
+			const laterPickup = command(
+				{ HOBO_FLEET_JOBS_LATER: laterJobs },
+				runnerFlags,
+			);
+			assert.notEqual(laterPickup.status, 0);
+			assert.match(laterPickup.stdout, /waiting \(availability-unknown\)/u);
+			assert.match(
+				readFileSync(calls, "utf8").slice(beforeLater),
+				/actions\/runs\/124\/jobs/u,
+			);
+			writeFileSync(
+				runs,
+				JSON.stringify({ workflow_runs: [{ ...validRun, id: "broken" }] }),
+			);
+			const pinWithMalformedQueue = command(
+				{ HOBO_FLEET_SLIP: pinnedSlip },
+				runnerFlags,
+			);
+			assert.equal(
+				pinWithMalformedQueue.status,
+				0,
+				pinWithMalformedQueue.stderr,
+			);
+			assert.match(
+				pinWithMalformedQueue.stdout,
+				/github runner ubuntu-24\.04/u,
+			);
+			writeFileSync(runs, JSON.stringify({ workflow_runs: [validRun] }));
+			writeFileSync(
+				jobs,
+				JSON.stringify({
+					jobs: [
+						{
+							...jobBase,
+							status: "completed",
+							labels: [],
+							runner_name: null,
+							started_at: null,
+							conclusion: "skipped",
+						},
+						{
+							...jobBase,
+							status: "completed",
+							labels: [],
+							runner_name: "",
+							started_at: at(10),
+							conclusion: "cancelled",
+						},
+						{
+							...jobBase,
+							status: "pending",
+							runner_name: null,
+							started_at: at(10).replace(/\.\d{3}Z$/u, "Z"),
+						},
+						{
+							...jobBase,
+							status: "queued",
+							runner_name: null,
+							started_at: at(10),
+						},
+						{
+							...jobBase,
+							status: "queued",
+							runner_name: "",
+							started_at: at(10).replace(/\.\d{3}Z$/u, ".123456789Z"),
+						},
+					],
+				}),
+			);
+			for (const status of ["completed", "in_progress", "pending", "queued"]) {
+				writeFileSync(
+					runs,
+					JSON.stringify({
+						workflow_runs: [
+							{
+								...validRun,
+								status,
+								created_at: validRun.created_at.replace(/\.\d{3}Z$/u, "Z"),
+								updated_at: validRun.updated_at.replace(
+									/\.\d{3}Z$/u,
+									".123456789Z",
+								),
+							},
+						],
+					}),
+				);
+				const validNulls = command({}, runnerFlags);
+				assert.match(validNulls.stdout, /running the local signoff fallback/u);
+				assert.match(validNulls.stderr, /working tree is not clean/u);
+			}
+			writeFileSync(runs, JSON.stringify({ workflow_runs: [validRun] }));
+			rmSync(join(repo, "dirty.txt"));
+			writeFileSync(jobs, JSON.stringify(queued));
+			for (const bad of ["ci:typo", "ci:github-hosted", "local:local-github"]) {
+				assert.deepEqual(await observeOpaque([bad]), {
+					kind: "invalid-provider-assertion",
+					provider: bad,
+				});
+				const result = command({}, [
+					"--base=origin/opaque-policy",
+					`--provider-unavailable=${bad}`,
+				]);
+				assert.notEqual(result.status, 0);
+				assert.match(
+					result.stderr,
+					/does not name one enabled inventory member/u,
+				);
+			}
+			assert.deepEqual(
+				await observeOpaque([allOpaque[0] ?? "", allOpaque[0] ?? ""]),
+				{
+					kind: "invalid-provider-assertion",
+					provider: allOpaque[0],
+				},
+			);
+			const repeated = command({}, [
+				"--base=origin/opaque-policy",
+				"--provider-unavailable=ci:vercel-sandbox",
+				"--provider-unavailable=ci:vercel-sandbox",
+			]);
+			assert.notEqual(repeated.status, 0);
+			assert.match(repeated.stderr, /IDs must not be repeated/u);
+			writeFileSync(join(repo, "dirty.txt"), "uncommitted\n");
+			const asserted = command({}, opaqueFlags);
+			assert.match(asserted.stdout, /running the local signoff fallback/u);
+			assert.match(asserted.stderr, /working tree is not clean/u);
+			rmSync(join(repo, "dirty.txt"));
 			assert.deepEqual(
 				await observeFleetVerification({
 					cwd: repo,
@@ -963,6 +1934,16 @@ exec /usr/bin/git "$@"
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
 			git(remote, ["update-ref", "refs/heads/main", baseA]);
 			git(repo, ["update-ref", "refs/remotes/origin/main", baseA]);
+			// The trusted workflow actually executes and fails, so no status is posted.
+			writeFileSync(join(bin, "fail-job"), "fail\n");
+			const executedFailure = command({}, ["--fresh"]);
+			assert.notEqual(executedFailure.status, 0);
+			assert.equal(
+				readFileSync(join(bin, "failed-command"), "utf8").trim(),
+				"failed",
+			);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
+			rmSync(join(bin, "fail-job"));
 			const success = command({}, ["--fresh"]);
 			assert.equal(success.status, 0, success.stderr);
 			assert.match(

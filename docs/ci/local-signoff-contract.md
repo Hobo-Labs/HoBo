@@ -22,20 +22,28 @@ has setup and operational commands.
 A configured pin or valid pinned slip wins before availability is read. An
 unpinned fleet slip requires a recent timely pickup on its exact label; a
 `fleet-busy` slip permits a young backlog but not an old wait or a slow pickup.
-A slip choosing an enrolled local runner refuses the fleet, but enrollment does
-not establish that the local runner is taking jobs; the queue must establish
-its availability or refusal. A GitHub slip refuses the fleet but does not rule
-out a local runner enrolled since the slip was issued. An unusable, expired,
-unreadable, or tier/label-contradictory slip leaves the queue rule to decide.
+A slip choosing a fallback records a fleet refusal, but a fresh healthy fleet
+pickup takes precedence. A slip choosing an enrolled local runner does not
+establish that it is taking jobs; the queue must establish its availability or
+refusal. A GitHub slip does not rule out a local runner enrolled since the slip
+was issued. An unusable, expired, unreadable, or tier/label-contradictory slip
+leaves the queue rule to decide.
 
 After pins and slips, availability means *observed* availability, not a
 reservation or a guarantee that a runner will still be free. The generic
 selector uses HoBo, ARC, local, then GitHub-hosted order. The checkout
 coordinator also considers enabled provider and external-pool inventory from the
-trusted base. Providers sharing a label remain separate observations; opaque
-compute and unsupported inventory stay unknown. An Actions workflow continues
+trusted base. Providers sharing a label remain separate observations. Capacity
+with no useful queue evidence remains unknown unless the operator independently
+observes its outage and names that enabled member with `--provider-unavailable=ID`.
+Unsupported inventory stays unknown. An Actions workflow continues
 to use its own PR batch capacity proof; the local coordinator does not create
 that proof.
+
+The candidates are general PR routes and enabled provider inventory. The
+special `runnerRouting.boxRunner` label is reserved for the deps-image job and
+is not a general PR route, so the local coordinator does not select it. That
+job keeps its existing dispatch behavior and is not completed by a local status.
 
 | Evidence for enabled tiers | Local signoff opted in | Result |
 | --- | --- | --- |
@@ -63,7 +71,9 @@ The optional `--github-unavailable` is an operator's observation that hosted
 jobs fail before queueing. It supplies a hosted refusal only in the absence of
 an observed healthy hosted pickup; it cannot override a pin, a selected runner,
 or a failed queue read. Use it only with independent evidence of that outage.
-No flag turns an unknown self-hosted tier into a known outage.
+`--runner-unavailable=fleet` and `--runner-unavailable=local` are scoped
+operator observations for those tiers. Use them only with independent outage
+evidence; they cannot override a pin, healthy pickup, or failed queue read.
 
 ## Failure and boundary cases
 
@@ -71,8 +81,14 @@ No flag turns an unknown self-hosted tier into a known outage.
 | --- | --- |
 | Empty queue, no pickup, or a run ahead that has not chosen | Unknown where neither a refusal nor a pickup is established; wait when no other runner is available |
 | Slip read fails | Use queue evidence; if the queue cannot be read, wait |
-| Queue request fails, is not JSON, or lacks its `workflow_runs` or `jobs` array | Wait; do not infer that the fleet is down |
-| Provider inventory is malformed, unsupported, opaque, or not verified current | Do not infer an outage; wait unless a runner or pin is selected |
+| Queue request fails or its response has no usable run or job array | Wait; do not infer that the fleet is down |
+| Individual queue records are malformed or a running job has no runner identity yet | A separately observed healthy runner can still be selected; otherwise wait rather than infer an outage |
+| Inventory is malformed or unsupported, policy is not verified current, or a provider has no availability evidence | Do not infer an outage; wait unless a runner or pin is selected |
+| An enabled provider is independently confirmed unavailable | An assertion for its exact inventory ID counts it unavailable; healthy pickups and pins remain authoritative |
+| A well-formed provider outage assertion names an unknown or disabled member | Do not use it to authorize fallback or suppress runner evidence; report it if no runner is selected |
+| An outage option is malformed or duplicated | Reject it before making a selection |
+| A silent fleet or local runner is independently confirmed unavailable | A scoped `--runner-unavailable` assertion counts that tier unavailable without overriding a pin or healthy pickup |
+| A recent timely pickup names a candidate alongside other runner labels | Keep that candidate unknown for fallback; a multi-label pickup is not proof of a single-label route |
 | More runs or jobs exist outside the sampled pages | The decision is based only on the bounded sample, not a complete inventory; recheck or use independent operational evidence |
 | Local extension is missing or lacks `--commit` | Fail before starting the local run |
 | Dirty checkout, base not contained in HEAD, stale remote base, changed HEAD, bad signature, or workflow/description drift | Refuse the relevant run or publication; do not post new success statuses |

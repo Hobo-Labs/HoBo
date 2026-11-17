@@ -51,6 +51,11 @@ available runner choices are still reported, but local signoff waits. The exact
 base used for this decision must still match the remote before the local run
 and before signoff.
 
+The GitHub repository selected by `gh` must match the base remote. In a fork
+checkout, set `GH_REPO` to the base repository (for example,
+`GH_REPO=github.com/Hobo-Labs/HoBo`) and use `--base=upstream/main` when that
+is the intended remote branch.
+
 The coordinator interprets routing and provider inventory, not the complete
 project policy schema. Malformed inventory, unsupported provider references,
 or environment templates leave availability unknown. Unrelated policy fields
@@ -58,20 +63,33 @@ do not establish capacity; the live comparison remains necessary even when the
 inventory is readable.
 
 Enabled Actions overflow labels need current queue evidence: a recent timely
-pickup chooses that runner; a stalled queue or slow pickup counts as refusal;
-an empty queue is unknown. The committed policies of all declared environments
-are considered conservatively. Enabled isolated or sandbox compute has no
-independently observable Actions label here, so its availability remains unknown
-and prevents local signoff until that provider is excluded by verified policy.
+pickup with no queue refusal chooses that runner; a stalled queue or slow pickup
+counts as refusal; an empty queue is unknown. The committed policies of all
+declared environments are considered conservatively. When a provider's
+availability is unknown, an operator who has separately confirmed that it is
+unavailable can pass `--provider-unavailable=ID` for that specific enabled
+inventory member. IDs are `ENV:PROVIDER` for policy providers,
+`integration:ID:LABEL` for integrations, and `external-pool:INDEX:LABEL` for
+external pools. Repeat the option for each confirmed outage. This is an
+operator assertion, not a probe. Unknown or disabled IDs cannot authorize
+fallback and are reported if no runner is selected. Malformed or duplicate
+options are rejected before selection. A valid assertion cannot override a pin
+or an observed healthy runner. Omit it when the outage cannot be verified.
+If the queue is silent and the routing slip cannot establish whether the fleet
+or an enrolled local runner is available, an operator who has independently
+confirmed that tier is down can pass `--runner-unavailable=fleet` or
+`--runner-unavailable=local`. Repeat the option for each confirmed outage.
+These assertions do not override pins or observed healthy pickups; a failed
+queue read still causes a wait.
 If hosted jobs fail before queueing, an operator who observed that outage can
 pass `--github-unavailable`
 alongside `--local-signoff`; an observed healthy hosted runner still wins.
 An unpinned fleet slip is checked against current queue evidence for its exact
 runner label. A busy-fleet slip permits a young backlog, but still requires a
-recent timely pickup. A slip naming an enrolled local runner rejects the fleet
-but does not prove the local runner is available; the queue decides for it.
-An unpinned GitHub slip refuses the fleet but does not rule out a newly enrolled
-local runner; current queue evidence decides local availability. Slips whose
+recent timely pickup. A fallback slip records a fleet refusal, but a fresh
+healthy fleet pickup takes precedence. A slip naming an enrolled local runner
+does not prove that runner is available; the queue decides for it. An unpinned
+GitHub slip does not rule out a newly enrolled local runner. Slips whose
 tier and runner label disagree are ignored.
 If the slip cannot be read, the queue rule decides; if the queue cannot be read,
 the command waits. GitHub's separate PR batch admission still applies to
