@@ -138,6 +138,16 @@ await workerThatAcceptsAQueuePort(queue);
 graph.queueClock("jobs")?.advance(30_000);
 ```
 
+For a graph with a `flag` resource named `features`, a test can arrange a
+flag and exercise the same port the application receives:
+
+```ts
+const flags = graph.flag("features");
+flags.define({ key: "checkout", percentage: 100 });
+const result = flags.evaluateBoolean("checkout", { targetingKey: "user:alice" });
+expect(result.value).toBe(true);
+```
+
 For a service that needs its dependency during construction, create the
 emulator first, pass `emulator.port` into the service, and return that same
 emulator from the matching factory. Create a fresh emulator and harness per
