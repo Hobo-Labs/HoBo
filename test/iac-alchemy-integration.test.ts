@@ -8,6 +8,7 @@ import { bindle } from "../packages/bindles/dist/index.js";
 import { CATALOG_ROWS } from "../packages/bindles/dist/types.js";
 import type { IacUnpricedAuthorizer } from "../packages/broker/src/iac-unpriced.js";
 import {
+	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
 	createIacFinancialServices,
@@ -28,11 +29,11 @@ import {
 import { createInMemoryActorHost } from "../packages/data/src/actor-host.js";
 import { createDirectRoutePort } from "../packages/dispatcher/src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../packages/dispatcher/src/iac-route-sqlite.js";
-import { executeUnpricedIacTarget } from "../packages/dispatcher/src/iac-unpriced-routing.js";
 import {
 	executeRankedIacTargets,
 	rankIacTargets,
 } from "../packages/dispatcher/src/iac-target-routing.js";
+import { executeUnpricedIacTarget } from "../packages/dispatcher/src/iac-unpriced-routing.js";
 import {
 	type AlchemyCompositeEnvironment,
 	AlchemyIacError,
@@ -61,6 +62,7 @@ import {
 	Stack,
 } from "../packages/iac/iac-alchemy/test/imports.js";
 import {
+	creditState,
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
@@ -152,6 +154,10 @@ function setup(
 		liabilityMicros?: number;
 		size?: () => number;
 		rivet?: boolean;
+		joint?: boolean;
+		jointCredit?: boolean;
+		missingJointBinding?: boolean;
+		missingJointLiability?: boolean;
 		output?: "resource" | "invalid" | "mapped";
 		outputRegion?: () => boolean;
 		onRoute?: (context: IacRouteContext) => void;
@@ -161,35 +167,54 @@ function setup(
 	let deleted = 0;
 	let issued = 0;
 	const operations: string[] = [];
+	if (options.joint && !options.rivet)
+		throw new Error("joint fixture requires the Rivet resource");
+	const liabilityMicros =
+		options.liabilityMicros ?? (options.joint ? 2_500_000 : 1_500_000);
+	const widgetProvider = Provider.succeed(Widget, {
+		reconcile: ({ news }) =>
+			Effect.sync(() => {
+				applied++;
+				if (options.failApply) throw new Error("provider outcome unknown");
+				return { id: `widget-${news.size}` };
+			}),
+		delete: () =>
+			Effect.sync(() => {
+				deleted++;
+			}),
+	});
 	const stack = options.rivet
 		? Stack(
 				options.stackName ?? "Demo",
 				{
-					providers: Layer.effect(
-						Rivet.Providers,
-						Provider.collection([RivetCloud.RunnerPool]),
-					).pipe(
-						Layer.provide(
-							Provider.succeed(RivetCloud.RunnerPool, {
-								reconcile: ({ news }) =>
-									Effect.sync(() => {
-										applied++;
-										if (options.failApply)
-											throw new Error("provider outcome unknown");
-										return {
-											name: "default",
-											cluster: news.cluster,
-											region: "test-region",
-											buildId: "test-build",
-											digest: "test-digest",
-										};
-									}),
-								delete: () =>
-									Effect.sync(() => {
-										deleted++;
-									}),
-							}),
+					providers: Layer.merge(
+						Layer.effect(
+							Rivet.Providers,
+							Provider.collection([RivetCloud.RunnerPool]),
+						).pipe(
+							Layer.provide(
+								Provider.succeed(RivetCloud.RunnerPool, {
+									reconcile: ({ news }) =>
+										Effect.sync(() => {
+											applied++;
+											if (options.failApply)
+												throw new Error("provider outcome unknown");
+											return {
+												name: "default",
+												cluster: news.cluster,
+												region: "test-region",
+												buildId: "test-build",
+												digest: "test-digest",
+											};
+										}),
+									delete: () =>
+										Effect.sync(() => {
+											deleted++;
+										}),
+								}),
+							),
 						),
+						widgetProvider,
 					),
 					state: inMemoryState(),
 				},
@@ -202,6 +227,7 @@ function setup(
 						nodeCount: 1,
 						env: { RIVET_NAMESPACE: "test", RIVET_POOL: "default" },
 					});
+					if (options.joint) yield* Widget("widget", { size: 1 });
 					if (options.output === "resource")
 						return {
 							poolName: options.outputRegion?.() ? pool.region : pool.name,
@@ -217,19 +243,7 @@ function setup(
 		: Stack(
 				options.stackName ?? "Demo",
 				{
-					providers: Provider.succeed(Widget, {
-						reconcile: ({ news }) =>
-							Effect.sync(() => {
-								applied++;
-								if (options.failApply)
-									throw new Error("provider outcome unknown");
-								return { id: `widget-${news.size}` };
-							}),
-						delete: () =>
-							Effect.sync(() => {
-								deleted++;
-							}),
-					}),
+					providers: widgetProvider,
 					state: inMemoryState(),
 				},
 				Effect.gen(function* () {
@@ -262,7 +276,27 @@ function setup(
 					providerAccountId: "account-a",
 					limitMicros: 3_000_000,
 				}),
+				...(options.joint
+					? [
+							create(BudgetProviderAccountSchema, {
+								providerAccountId: "account-b",
+								limitMicros: 3_000_000,
+							}),
+						]
+					: []),
 			],
+			entitlements: options.jointCredit
+				? [
+						create(BudgetEntitlementSchema, {
+							bucketId: "shared-credit",
+							unit: "USD.micros",
+							periodId: "2026-01",
+							remainingUnits: 10_000_000,
+							observedAt: "2026-01-01T00:00:00Z",
+							validUntil: END,
+						}),
+					]
+				: [],
 		}),
 	});
 	const target = alchemyTarget({
@@ -281,11 +315,31 @@ function setup(
 				providerAccountRef: "account-a",
 				productId: options.rivet ? "runner-e2-small" : "sandbox",
 			},
+			...(options.joint
+				? [
+						{
+							resourceId: "widget",
+							resourceType: "Demo.Widget",
+							providerId: "sandbox",
+							providerAccountRef: "account-b",
+							productId: "demo-widget",
+						},
+					]
+				: []),
 		],
 	});
 	const scenario = makeScenario({
-		charges: [perUnitCharge("runtime", "minute", "0.25")],
-		candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+		charges: [
+			perUnitCharge("runtime", "minute", options.jointCredit ? "1" : "0.25"),
+		],
+		candidate: [
+			workload("agreement-a", [
+				usage("minute", options.jointCredit ? "6" : "4", "minute"),
+			]),
+		],
+		credits: options.jointCredit
+			? [creditState("shared-credit", "zero", 0)]
+			: [],
 	});
 	if (options.rivet) {
 		const product = scenario.catalog?.products[0];
@@ -297,6 +351,26 @@ function setup(
 		product.providerId = "rivet-cloud";
 		agreement.productId = product.id;
 		candidate.productRef = product.id;
+		if (options.joint) {
+			if (!scenario.catalog || !scenario.state)
+				throw new Error("joint fixture incomplete");
+			scenario.catalog.products.push({
+				...product,
+				id: "demo-widget",
+				providerId: "sandbox",
+			});
+			scenario.state.agreements.push({
+				...agreement,
+				id: "agreement-b",
+				productId: "demo-widget",
+				providerAccountRef: "account-b",
+			});
+			scenario.candidate.push({
+				...candidate,
+				productRef: "demo-widget",
+				agreementRef: "agreement-b",
+			});
+		}
 		rehashScenario(scenario);
 	}
 	const pricing =
@@ -311,6 +385,9 @@ function setup(
 							resourceId: options.rivet ? "runner" : "widget",
 							candidateIndex: 0,
 						},
+						...(options.joint && !options.missingJointBinding
+							? [{ resourceId: "widget", candidateIndex: 1 }]
+							: []),
 					],
 				};
 	const financial = createIacFinancialServices({
@@ -343,7 +420,9 @@ function setup(
 							}),
 							scopeProof: create(IacUnpricedScopeProofSchema, {
 								identity,
-								providerAccountIds: ["account-a"],
+								providerAccountIds: options.joint
+									? ["account-a", "account-b"]
+									: ["account-a"],
 								authorityRef: "scope-authority",
 								evidenceRef: "exclusive:1",
 								ownershipEpoch: "epoch:1",
@@ -368,15 +447,23 @@ function setup(
 				inventoryHash: priced.inventoryHash,
 				modelHash: priced.modelHash,
 				quoteHash: priced.quote.quoteHash,
-				maximumMicros: options.liabilityMicros ?? 1_500_000,
+				maximumMicros: liabilityMicros,
 				observedAt: "2026-01-01T00:00:00Z",
 				validUntil: END,
-				providerAccounts: [
-					{
-						providerAccountId: "account-a",
-						liabilityMicros: options.liabilityMicros ?? 1_500_000,
-					},
-				],
+				providerAccounts:
+					options.joint && !options.missingJointLiability
+						? [
+								{
+									providerAccountId: "account-a",
+									liabilityMicros: Math.floor(liabilityMicros / 2),
+								},
+								{
+									providerAccountId: "account-b",
+									liabilityMicros:
+										liabilityMicros - Math.floor(liabilityMicros / 2),
+								},
+							]
+						: [{ providerAccountId: "account-a", liabilityMicros }],
 			});
 		},
 		authorize: async ({ requestDigest, quote, identity }) => ({
@@ -410,15 +497,23 @@ function setup(
 		},
 	});
 	const recognizesScope = (scope: AlchemyCompositeEnvironment["scope"]) => {
-		const item = scope[0];
+		const item = scope.find(
+			(entry) => entry.resourceId === (options.rivet ? "runner" : "widget"),
+		);
+		const widget = scope.find((entry) => entry.resourceId === "widget");
 		return (
-			scope.length === 1 &&
+			scope.length === (options.joint ? 2 : 1) &&
 			item?.resourceId === (options.rivet ? "runner" : "widget") &&
 			item.resourceType ===
 				(options.rivet ? "RivetCloud.RunnerPool" : "Demo.Widget") &&
 			item.providerId === (options.rivet ? "rivet-cloud" : "sandbox") &&
 			item.providerAccountRef === "account-a" &&
-			item.productId === (options.rivet ? "runner-e2-small" : "sandbox")
+			item.productId === (options.rivet ? "runner-e2-small" : "sandbox") &&
+			(!options.joint ||
+				(widget?.resourceType === "Demo.Widget" &&
+					widget.providerId === "sandbox" &&
+					widget.providerAccountRef === "account-b" &&
+					widget.productId === "demo-widget"))
 		);
 	};
 	let fixtureOwner: string | undefined;
@@ -1055,6 +1150,350 @@ describe("Alchemy IaC provider against the real library", () => {
 				phase: "finished",
 				outcome: { status: "denied" },
 				attempts: [{ targetId: "yard-a", status: "denied" }],
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("routes a developer-supplied joint Rivet model through the real budget authority", async () => {
+		const fixture = setup({ rivet: true, joint: true });
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			expect(assessment).toMatchObject({
+				quote: {
+					ok: true,
+					quote: { incremental: { billed: { decimal: "2", currency: "USD" } } },
+				},
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				admissionPath: {
+					kind: "bounded-budget",
+					budget: "evaluation-required",
+				},
+				providerCoverage: {
+					basis: "declared-inventory",
+					providers: [
+						{
+							providerId: "rivet-cloud",
+							status: "quoted",
+							model: { source: "developer-supplied", modelId: "terms" },
+							resources: [{ resourceId: "runner", binding: "declared" }],
+						},
+						{
+							providerId: "sandbox",
+							status: "quoted",
+							model: { source: "developer-supplied", modelId: "terms" },
+							resources: [{ resourceId: "widget", binding: "declared" }],
+						},
+					],
+				},
+			});
+			if (
+				assessment.pricing.state.case !== "model" ||
+				!assessment.pricing.state.value.scenario
+			)
+				throw new Error("joint model missing");
+			const { at, horizon, action } = assessment.pricing.state.value.scenario;
+			const ranking = rankIacTargets({
+				tenantId: "tenant-a",
+				workloadRef: "joint-workload",
+				at,
+				horizon,
+				action,
+				candidates: [
+					{
+						workloadRef: "joint-workload",
+						inventory: assessment.inventory,
+						pricing: assessment.pricing,
+					},
+				],
+			});
+			expect(ranking).toMatchObject({
+				coverage: "complete",
+				ranking: [{ targetId: "yard-a" }],
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
+			const routed = await executeRankedIacTargets({
+				authority: fixture.routeAuthority,
+				tenantId: "tenant-a",
+				operation: routeFor(program, "joint-route").operation,
+				requestId: "joint-route",
+				ranking,
+				candidates: [
+					{
+						targetId: "yard-a",
+						run: (id, expected, permit) =>
+							fixture.provider.applyWithAdmission(
+								program,
+								id,
+								expected,
+								permit,
+							),
+					},
+				],
+			});
+			expect(routed).toMatchObject({
+				status: "selected",
+				targetId: "yard-a",
+				budget: { evaluation: "allowed", reservation: "held" },
+			});
+			expect(fixture.applied()).toBe(2);
+			expect(fixture.issued()).toBe(1);
+			const ledger = fixture.authority.read(NOW);
+			expect(ledger.reservedMicros).toBe(2_500_000);
+			expect(ledger.providerAccounts).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						providerAccountId: "account-a",
+						reservedMicros: 1_250_000,
+					}),
+					expect.objectContaining({
+						providerAccountId: "account-b",
+						reservedMicros: 1_250_000,
+					}),
+				]),
+			);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("reserves a joint target's shared credit exactly once", async () => {
+		const fixture = setup({ rivet: true, joint: true, jointCredit: true });
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			expect(assessment.quote).toMatchObject({
+				ok: true,
+				quote: { incremental: { billed: { decimal: "2", currency: "USD" } } },
+			});
+			const result = await fixture.provider.applyWithAdmission(
+				program,
+				"joint-credit",
+			);
+			expect(result.admission).toMatchObject({
+				status: "admitted",
+				budget: { evaluation: "allowed", reservation: "held" },
+			});
+			expect(fixture.applied()).toBe(2);
+			expect(fixture.authority.read(NOW)).toMatchObject({
+				reservedMicros: 2_500_000,
+				entitlements: [
+					{
+						bucketId: "shared-credit",
+						unit: "USD.micros",
+						reservedUnits: 10_000_000,
+					},
+				],
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("enforces the budget after successfully quoting a joint target", async () => {
+		const fixture = setup({
+			rivet: true,
+			joint: true,
+			liabilityMicros: 3_500_000,
+		});
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			expect(assessment).toMatchObject({
+				quote: { ok: true },
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			await expect(
+				fixture.provider.applyWithAdmission(program, "joint-over-budget"),
+			).rejects.toMatchObject({
+				code: "budget.exhausted",
+				requiresReconciliation: false,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW)).toMatchObject({
+				reservedMicros: 0,
+				unboundedExposureCount: 0,
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("routes to a second joint target after the first exceeds the budget", async () => {
+		const first = setup({
+			rivet: true,
+			joint: true,
+			targetId: "yard-a",
+			liabilityMicros: 3_500_000,
+		});
+		const second = setup({
+			rivet: true,
+			joint: true,
+			targetId: "yard-b",
+			liabilityMicros: 2_500_000,
+		});
+		try {
+			const a = await first.provider.assessPricing(program);
+			const b = await second.provider.assessPricing(program);
+			if (a.pricing.state.case !== "model" || !a.pricing.state.value.scenario)
+				throw new Error("joint model missing");
+			const { at, horizon, action } = a.pricing.state.value.scenario;
+			const ranking = rankIacTargets({
+				tenantId: "tenant-a",
+				workloadRef: "joint-workload",
+				at,
+				horizon,
+				action,
+				candidates: [a, b].map(({ inventory, pricing }) => ({
+					workloadRef: "joint-workload",
+					inventory,
+					pricing,
+				})),
+			});
+			expect(ranking).toMatchObject({
+				coverage: "complete",
+				ranking: [{ targetId: "yard-a" }, { targetId: "yard-b" }],
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			const result = await executeRankedIacTargets({
+				authority: first.routeAuthority,
+				tenantId: "tenant-a",
+				operation: routeFor(program, "joint-fallback").operation,
+				requestId: "joint-fallback",
+				ranking,
+				candidates: [first, second].map((fixture, index) => ({
+					targetId: index === 0 ? "yard-a" : "yard-b",
+					run: (id, expected, permit) =>
+						fixture.provider.applyWithAdmission(program, id, expected, permit),
+				})),
+			});
+			expect(result).toMatchObject({
+				status: "selected",
+				targetId: "yard-b",
+				budget: { evaluation: "allowed", reservation: "held" },
+				attempts: [
+					{ targetId: "yard-a", status: "denied", code: "budget.exhausted" },
+					{ targetId: "yard-b", status: "admitted" },
+				],
+			});
+			expect(first.applied()).toBe(0);
+			expect(second.applied()).toBe(2);
+			expect(first.authority.read(NOW).reservedMicros).toBe(2_500_000);
+		} finally {
+			first.authority.close();
+			second.authority.close();
+		}
+	});
+
+	it("discloses every provider when the joint target has no model", async () => {
+		const fixture = setup({ rivet: true, joint: true, withPricing: false });
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			expect(assessment).toMatchObject({
+				quote: { ok: false, code: "PRICING_MODEL_UNAVAILABLE" },
+				admissionPath: {
+					kind: "unavailable",
+					code: "PRICING_MODEL_UNAVAILABLE",
+				},
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				providerCoverage: {
+					providers: [
+						{
+							providerId: "rivet-cloud",
+							status: "unavailable",
+							resources: [{ binding: "unavailable" }],
+						},
+						{
+							providerId: "sandbox",
+							status: "unavailable",
+							resources: [{ binding: "unavailable" }],
+						},
+					],
+				},
+			});
+			await expect(
+				fixture.provider.applyWithAdmission(program, "joint-unknown"),
+			).rejects.toMatchObject({
+				code: "PRICING_MODEL_UNAVAILABLE",
+				requiresReconciliation: false,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW)).toMatchObject({
+				reservedMicros: 0,
+				unboundedExposureCount: 0,
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("does not turn a partially supplied joint model into an unpriced bypass", async () => {
+		const fixture = setup({
+			rivet: true,
+			joint: true,
+			missingJointBinding: true,
+			authorizeUnpriced: true,
+		});
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			expect(assessment).toMatchObject({
+				quote: { ok: false, code: "TARGET_PRICING_INCOMPLETE" },
+				admissionPath: {
+					kind: "unavailable",
+					code: "TARGET_PRICING_INCOMPLETE",
+				},
+				providerCoverage: {
+					providers: [
+						{
+							providerId: "rivet-cloud",
+							status: "unverified",
+							resources: [{ binding: "declared" }],
+						},
+						{
+							providerId: "sandbox",
+							status: "incomplete",
+							resources: [{ binding: "missing" }],
+						},
+					],
+				},
+			});
+			await expect(
+				fixture.provider.applyWithAdmission(program, "joint-incomplete"),
+			).rejects.toMatchObject({
+				code: "TARGET_PRICING_INCOMPLETE",
+				requiresReconciliation: false,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.issued()).toBe(0);
+			expect(fixture.authority.read(NOW)).toMatchObject({
+				reservedMicros: 0,
+				unboundedExposureCount: 0,
+			});
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("refuses joint admission when liability evidence omits a provider account", async () => {
+		const fixture = setup({
+			rivet: true,
+			joint: true,
+			missingJointLiability: true,
+		});
+		try {
+			expect(
+				(await fixture.provider.assessPricing(program)).quote,
+			).toMatchObject({ ok: true });
+			await expect(
+				fixture.provider.applyWithAdmission(program, "joint-uncovered-account"),
+			).rejects.toMatchObject({
+				code: "LIABILITY_EVIDENCE_INVALID",
+				requiresReconciliation: false,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW)).toMatchObject({
+				reservedMicros: 0,
+				unboundedExposureCount: 0,
 			});
 		} finally {
 			fixture.authority.close();
