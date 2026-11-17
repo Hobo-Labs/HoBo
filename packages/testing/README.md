@@ -57,7 +57,7 @@ What it does **not** do:
   nothing behind them. They are labelled `mocked`. Labelling them `simulated`
   because an in-memory map *could* back them would be the overclaim, since
   nothing on `DeployedGraph` exposes such a store;
-- automatically wire `graph.queue()`, `graph.topic()`, or `graph.secret()` into an entrypoint.
+- automatically wire `graph.queue()`, `graph.topic()`, `graph.secret()`, or `graph.data()` into an entrypoint.
   These are in-process ports, not services listening at the `hobo-test://`
   locator. A test must explicitly inject the port into the code under test;
 - exercise `container` or `wasm-component` resources at all — labelled
@@ -110,7 +110,9 @@ built on both is exercised end to end by `@hobo/testing`.
 `graph.queue(alias)` returns the same `@hobo/core` `Queue` interface a
 service can receive in a deployed runtime; `graph.topic(alias)` returns the
 `Messaging` interface; `graph.secret(alias)` returns the existing
-`@hobo/identity` `SecretsPort`. Inject that port into the service under test and use
+`@hobo/identity` `SecretsPort`; `graph.data(alias)` returns the
+`@hobo/data-core` engine SPI backed by an isolated in-memory SQLite engine.
+Inject the appropriate port into the service under test and use
 the same object to arrange inputs and inspect results. The included CI relay
 test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
 passes a signed webhook through the real relay handler to a queue-backed test
@@ -153,9 +155,13 @@ const harness = createTestHarness({
 });
 ```
 
-Queue, topic and secret factories return `ServiceEmulator<T>`: a typed port, a
+Queue, topic, secret and data factories return `ServiceEmulator<T>`: a typed port, a
 `simulated` or `mocked` fidelity label, and an optional `close`. Queue
-emulators may also expose a `VirtualClock`. A factory runs once per alias;
+emulators may also expose a `VirtualClock`; data emulators require `close`.
+The SQLite data port supports the engine's declared dataset, record, and
+other SPI operations, but it is not a remote database connection, a SQL client,
+or a substitute for provider-specific query semantics. In-memory SQLite does
+not expose the schema migration port. A factory runs once per alias;
 it must create isolated state and clean up any resources it creates before
 throwing. On a later startup failure, the harness closes previously returned
 services in reverse dependency order. Teardown attempts every close, reports
@@ -180,6 +186,7 @@ otherwise duplicate code without testing a service contract.
 | HoBo control API | `createControlApiServer` with a temporary `hoboHome`; optional seeded `@hobo/yard-world` demo | Runs the actual local service and simulator, not a deployed Station |
 | Queue / topic | This harness's `Queue` / `Messaging` port implementations | In-memory, process-local, not a provider protocol or a durability proof |
 | Secrets | `graph.secret(alias)` and `createSecretEmulator()` wrap the identity package's in-memory `SecretsPort` | Test material lives in process memory; use fixture values, not real credentials |
+| Data engine | `graph.data(alias)` and `createDataEmulator()` use SQLite through the shared engine SPI; the emulator runs its conformance suite | Process-local SQLite, no raw SQL or remote database protocol; no schema migration port in memory |
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
@@ -202,7 +209,7 @@ verification.
   `deploy(bindle)` and `destroy(bindle)` return **thunks**, so they drop
   straight into `beforeAll`/`afterAll`.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
-  `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `fidelity()`.
+  `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `data(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded
   exponential backoff capped at 5s per wait. Retries propagation-shaped
   failures (404, 408, 425, 429, any 5xx, network throws) and **fails fast on

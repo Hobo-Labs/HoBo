@@ -20,6 +20,8 @@
   "dependencies": {
     "@hobo/contract-harness": "workspace:*",
     "@hobo/core": "workspace:*",
+    "@hobo/data-core": "workspace:*",
+    "@hobo/data-sqlite": "workspace:*",
     "@hobo/identity": "workspace:*",
     "@hobo/runtime-local": "workspace:*"
   },

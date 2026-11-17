@@ -3475,6 +3475,12 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/data-core':
+        specifier: workspace:*
+        version: link:../data-core
+      '@hobo/data-sqlite':
+        specifier: workspace:*
+        version: link:../data-sqlite
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity

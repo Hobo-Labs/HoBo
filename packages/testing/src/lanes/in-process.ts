@@ -12,8 +12,8 @@
  *
  * WHAT THIS DOES NOT EXECUTE. `runtime-local` does not execute real `.wasm`
  * component bytes today, so nothing here is the deployed artifact on the
- * deployed host — hence `simulated`, never `real`. Queue, topic and secret
- * resources expose local port implementations. Data, kv, bucket, auth and the
+ * deployed host — hence `simulated`, never `real`. Queue, topic, secret and data
+ * resources expose local port implementations. Kv, bucket, auth and the
  * rest get only a handle and a binding locator: they are labelled `mocked`.
  * `container` and `wasm-component` are labelled `camp-only`. Built-in
  * emulators contact no provider, broker no credentials and write no `.hobo/`
@@ -28,12 +28,15 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { BindingResolverPort, Messaging } from "@hobo/core";
+import type { EngineBinding } from "@hobo/data-core";
 import type { SecretsPort } from "@hobo/identity";
 import { createLocalBindingResolver } from "@hobo/runtime-local";
 import {
+	createDataEmulator,
 	createQueueEmulator,
 	createSecretEmulator,
 	createTopicEmulator,
+	type DataEmulator,
 	type QueueEmulator,
 	type ServiceEmulator,
 	type ServiceEmulatorFactories,
@@ -58,6 +61,7 @@ export interface InProcessDeployment {
 	readonly queues: ReadonlyMap<string, QueueEmulator>;
 	readonly topics: ReadonlyMap<string, ServiceEmulator<Messaging>>;
 	readonly secrets: ReadonlyMap<string, ServiceEmulator<SecretsPort>>;
+	readonly data: ReadonlyMap<string, DataEmulator>;
 }
 
 type FetchLikeHandler = (request: Request) => Response | Promise<Response>;
@@ -191,7 +195,10 @@ function validateFactories(value: unknown): void {
 			typeof value.topic !== "function") ||
 		("secret" in value &&
 			value.secret !== undefined &&
-			typeof value.secret !== "function")
+			typeof value.secret !== "function") ||
+		("data" in value &&
+			value.data !== undefined &&
+			typeof value.data !== "function")
 	) {
 		throw new TestHarnessError(
 			"HARNESS_EMULATOR_INVALID",
@@ -204,7 +211,7 @@ function validateFactories(value: unknown): void {
 function validateEmulator(
 	value: unknown,
 	alias: string,
-	kind: "queue" | "topic" | "secret",
+	kind: "queue" | "topic" | "secret" | "data",
 ): void {
 	const record =
 		typeof value === "object" && value !== null ? value : undefined;
@@ -236,7 +243,18 @@ function validateEmulator(
 						"nack",
 						"events",
 					]
-				: ["put", "access", "accessVersion", "listVersions"];
+				: kind === "secret"
+					? ["put", "access", "accessVersion", "listVersions"]
+					: ["close"];
+	const datasets = portRecord?.datasets;
+	const records = portRecord?.records;
+	const hasMethods = (candidate: unknown, names: readonly string[]) =>
+		typeof candidate === "object" &&
+		candidate !== null &&
+		names.every(
+			(name) =>
+				typeof (candidate as Record<string, unknown>)[name] === "function",
+		);
 	const clock = service?.clock;
 	const clockRecord =
 		typeof clock === "object" && clock !== null
@@ -254,6 +272,12 @@ function validateEmulator(
 		(kind === "secret" &&
 			(typeof portRecord.id !== "string" ||
 				typeof portRecord.kind !== "string")) ||
+		(kind === "data" &&
+			(typeof service.close !== "function" ||
+				typeof portRecord.declaration !== "object" ||
+				portRecord.declaration === null ||
+				!hasMethods(datasets, ["ensureDataset", "describeDataset"]) ||
+				!hasMethods(records, ["write", "read"]))) ||
 		(kind === "queue" &&
 			clock !== undefined &&
 			(clockRecord === undefined ||
@@ -289,6 +313,7 @@ export async function deployInProcess(
 	const queues = new Map<string, QueueEmulator>();
 	const topics = new Map<string, ServiceEmulator<Messaging>>();
 	const secrets = new Map<string, ServiceEmulator<SecretsPort>>();
+	const data = new Map<string, DataEmulator>();
 	const bindings: Record<string, Record<string, string>> = {};
 
 	try {
@@ -314,6 +339,10 @@ export async function deployInProcess(
 				);
 				secrets.set(alias, emulator);
 				validateEmulator(emulator, alias, "secret");
+			} else if (node.kind === "data") {
+				const emulator = await (factories.data ?? createDataEmulator)(context);
+				data.set(alias, emulator);
+				validateEmulator(emulator, alias, "data");
 			}
 			const handler =
 				isHttpServedKind(node.kind) && node.hasEntrypoint
@@ -331,6 +360,7 @@ export async function deployInProcess(
 				queues.get(alias)?.fidelity ??
 				topics.get(alias)?.fidelity ??
 				secrets.get(alias)?.fidelity ??
+				data.get(alias)?.fidelity ??
 				inProcessFidelity(node.kind, endpoint !== undefined);
 			handles.set(
 				alias,
@@ -354,6 +384,7 @@ export async function deployInProcess(
 			queues,
 			topics,
 			secrets,
+			data,
 		);
 		if (cleanupErrors.length > 0) {
 			throw new AggregateError(
@@ -374,6 +405,7 @@ export async function deployInProcess(
 		queues,
 		topics,
 		secrets,
+		data,
 	});
 }
 /* oxlint-enable anti-slop/no-unknown-parameters */
@@ -395,6 +427,7 @@ export async function destroyInProcess(
 			deployment.queues,
 			deployment.topics,
 			deployment.secrets,
+			deployment.data,
 		);
 		if (errors.length > 0)
 			throw new AggregateError(errors, "emulator teardown failed");
@@ -415,12 +448,16 @@ async function closeResources(
 	queues: ReadonlyMap<string, QueueEmulator>,
 	topics: ReadonlyMap<string, ServiceEmulator<Messaging>>,
 	secrets: ReadonlyMap<string, ServiceEmulator<SecretsPort>>,
+	data: ReadonlyMap<string, DataEmulator>,
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
 	for (const alias of order) {
 		const server = servers.get(alias);
 		const emulator =
-			queues.get(alias) ?? topics.get(alias) ?? secrets.get(alias);
+			queues.get(alias) ??
+			topics.get(alias) ??
+			secrets.get(alias) ??
+			data.get(alias);
 		try {
 			if (server?.listening) {
 				await new Promise<void>((resolve, reject) => {
@@ -434,6 +471,12 @@ async function closeResources(
 		try {
 			// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: cleanup also handles an invalid JavaScript factory result.
 			if (typeof emulator?.close === "function") await emulator.close();
+			else {
+				// Invalid data factories can still hand us an open engine.
+				const binding: EngineBinding | undefined = data.get(alias)?.port;
+				// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the invalid factory result has not passed port validation.
+				if (typeof binding?.close === "function") await binding.close();
+			}
 		} catch (error) {
 			errors.push(error);
 		}
