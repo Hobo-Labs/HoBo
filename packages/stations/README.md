@@ -281,8 +281,19 @@ pnpm --filter @hobo/stations build
 `createRoutingControlLoop` executes routing decisions under an explicitly declared
 `topology.costRouting` (`stateless`, `active-active-eventual`, or
 `pinned-with-replica`). A single-writer or undeclared topology cannot move on a
-price signal. Budget signals are tenant-bound triggers; the fresh ledger and
-financial supervisor authorize the actual transition.
+price signal. A budget signal must match the latest threshold transition from
+the host's independent budget projection. Supply that transition through
+`budgetSignalEvidence`; supply `budgetSignalPolicy` for scoped budget, period,
+and policy-revision checks. The signal's threshold, spend, transition, cycle,
+and identity are validated before dispatch. The ledger must contain a traffic
+account for each healthy candidate.
+`@hobo/broker` exposes `latestBudgetTransition` to rebuild that evidence from
+the current journal and policy, including a scoped zero-budget reset.
+
+Processed budget cycles are stored in the routing snapshot, so a replay cannot
+initiate a second change after a restart. A signal held by cooldown or rejected
+before a provider effect remains retryable. The fresh ledger and financial
+supervisor authorize the actual transition.
 
 A routing change requires `ledgerView`, `persistState`, and `beforeApply`.
 `beforeApply(plan, phase, percent, reason)` must check the supervisor's verified

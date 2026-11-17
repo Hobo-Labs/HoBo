@@ -9,6 +9,7 @@ import {
 	BUDGET_EVENTS,
 	budgetSignalEventInputs,
 	foldBudgetSignals,
+	latestBudgetTransition,
 } from "../src/budget-signals.js";
 import { METER_USAGE_RECORDED_EVENT } from "../src/metering.js";
 
@@ -161,6 +162,30 @@ test("zero is an explicitly exhausted versioned budget and duplicate thresholds 
 	);
 });
 
+test("the latest transition is derived from the journal even after signals are recorded", () => {
+	const facts = [usage(90), credit(40), usage(45)];
+	const recorded = [...facts, ...foldBudgetSignals(facts, POLICY).signals];
+	const latest = latestBudgetTransition(recorded, POLICY, 0.8);
+	assert.equal(latest?.type, BUDGET_EVENTS.ThresholdCrossed);
+	assert.equal(latest?.data.cycle, 3);
+	assert.equal(latestBudgetTransition(recorded, POLICY, 1), undefined);
+	const identity = {
+		tenantId: "tenant-a",
+		budgetId: "hosting",
+		periodId: "2026-10",
+		policyRevision: "r1",
+	};
+	const zeroPolicy = { budgetUsd: 0, identity };
+	const reset = latestBudgetTransition([], zeroPolicy, 1);
+	assert.ok(reset);
+	assert.equal(reset?.type, BUDGET_EVENTS.StateReset);
+	assert.equal(reset?.data.crossed, true);
+	assert.throws(
+		() => latestBudgetTransition([reset], { ...zeroPolicy, budgetUsd: 1 }, 1),
+		/without a policy revision/,
+	);
+});
+
 test("milestone: replaying the journal twice emits each threshold signal exactly once and matches golden state", async () => {
 	const journal = new SqliteJournal(createMemoryNodeSqliteDriver(), {
 		clock: { now: () => "2026-08-03T00:00:00.000Z" },
@@ -197,8 +222,6 @@ test("milestone: replaying the journal twice emits each threshold signal exactly
 		return { fold, appended };
 	}
 
-	// usage 50 -> 95 (cross 0.8) -> credit to 75 (recover 0.8) -> 105
-	// (re-cross 0.8, cross 1.0): four distinct signal identities.
 	const first = await runPipelineOnce();
 	assert.deepEqual(
 		first.fold.signals.map((signal) => [
@@ -215,13 +238,10 @@ test("milestone: replaying the journal twice emits each threshold signal exactly
 	);
 	assert.equal(first.appended, 4);
 
-	// Second replay of the same journal: recorded signals are seen, nothing
-	// new is emitted or appended.
 	const second = await runPipelineOnce();
 	assert.equal(second.fold.signals.length, 0);
 	assert.equal(second.appended, 0);
 
-	// Golden materialized budget state after replay.
 	assert.deepEqual(second.fold.state, {
 		tenantId: "tenant-a",
 		budgetUsd: 100,
@@ -232,8 +252,6 @@ test("milestone: replaying the journal twice emits each threshold signal exactly
 		crossed: { "0.8": true, "1": true },
 	});
 
-	// Even a blind re-append of the first fold's signals is journal-deduped
-	// via meta.idempotencyKey.
 	const revision = journal.getStreamHead(stream)?.revision ?? 0;
 	const blind = await journal.append(
 		stream,
