@@ -64,8 +64,10 @@ node --import tsx .agents/skills/optimizexp/harness/post-pr-evidence.mts \
 Posting accepts consistent evidence while playback review is pending. The
 manifest and metadata must identify the same primary and match its current
 digest; an accepted review must also match that artifact. The index reports
-the review status. A failed scenario comment makes the command fail after it
-reports every attempted comment.
+the review status. File paths and transcript text are formatted as literal
+evidence, including when they contain Markdown delimiters; malformed kind names
+are rejected before posting. A failed scenario comment makes the command fail
+after it reports every attempted comment.
 
 ### Payload strategy
 
