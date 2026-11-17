@@ -639,3 +639,11 @@ node --import tsx scripts/ci/verify-relay-dispatch.mts
 Native Dagger checks use [`.hobo/dagger.json`](../../.hobo/dagger.json); see [`@hobo/ci-dagger`](../ci-dagger/README.md). Manual runner acceptance: [`.github/workflows/hobo-ci-acceptance.yml`](../../.github/workflows/hobo-ci-acceptance.yml) (optional `dagger_acceptance` input).
 
 `#Offer` guards every `backend` comparison behind `backend != _|_`: CUE 0.14 rejects references to an absent optional field, so unguarded `if backend == …` clauses broke `cue vet` for offers without a backend.
+
+## Relay job seams
+
+The records, frozen names and ports a relay job is answered through, and
+`answerRelayJob`, the one function job mode and relay mode both call
+(ADR-0183), are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
+every port and their conformance functions are exported as
+`@hobo/ci/runner-order/testing`.

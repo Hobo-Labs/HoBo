@@ -54,6 +54,17 @@ import { RUNNER_STEP_KEYS, runnerStepKey } from "./providers.js";
 // public-contract: the label a relay job asks for in relay mode.
 export const RELAY_LABEL = "hobo-relay";
 
+/**
+ * `relayJobs` in `.hobo/ci.json`: whether a relay answers relay jobs at all,
+ * and the label it answers. Off unless a repository turns it on.
+ */
+export type RelayJobsConfig = Readonly<{ answer: boolean; label: string }>;
+// public-contract: the `relayJobs` a repository gets when it writes none.
+export const DEFAULT_RELAY_JOBS: RelayJobsConfig = Object.freeze({
+	answer: false,
+	label: RELAY_LABEL,
+});
+
 // public-contract: every input a relay job may take; one per runner type, then `size` and `first`.
 export const RELAY_JOB_INPUTS = [...RUNNER_STEP_KEYS, "size", "first"] as const;
 export type RelayJobInputName = (typeof RELAY_JOB_INPUTS)[number];

@@ -117,6 +117,7 @@ export {
 	runnerStepKey,
 } from "./providers.js";
 export {
+	DEFAULT_RELAY_JOBS,
 	defineMachineAdvert,
 	defineProviderHealthRecord,
 	defineRelayJobAnswer,
@@ -158,6 +159,7 @@ export {
 	type RelayJobConclusion,
 	type RelayJobInputName,
 	type RelayJobOutputName,
+	type RelayJobsConfig,
 	type RelayMode,
 	RelayRecordRejection,
 	RUNNER_ROUTE_EVENT_TYPES,

@@ -40,6 +40,7 @@ repository.
 | Thing | Value | Constant |
 | --- | --- | --- |
 | Relay label | `hobo-relay` | `RELAY_LABEL` |
+| Project config | `relayJobs: { answer, label }` in `.hobo/ci.json`, `answer` false unless written | `DEFAULT_RELAY_JOBS`, `RelayJobsConfig` |
 | Inputs | one per runner type, then `size` and `first` | `RELAY_JOB_INPUTS` |
 | Outputs | `runner`, `step`, `outcome`, `reason` | `RELAY_JOB_OUTPUTS` |
 | Files written into a repository | `.github/workflows/hobo-relay.yml`, `.hobo-ci/relay.mjs` | `RELAY_WORKFLOW_FILE`, `RELAY_EVALUATOR_FILE` |

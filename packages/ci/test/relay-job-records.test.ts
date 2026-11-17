@@ -7,6 +7,7 @@ import {
 } from "../src/_generated/relay_job_pb.js";
 import type { InsightRun } from "../src/insights/types.js";
 import {
+	DEFAULT_RELAY_JOBS,
 	defineRunnerRouteEvent,
 	HOSTED_RUNNER_PROVIDERS,
 	insightRunOf,
@@ -224,6 +225,7 @@ describe("relay job records", () => {
 
 	it("freezes the names every package shares", () => {
 		expect(RELAY_LABEL).toBe("hobo-relay");
+		expect(DEFAULT_RELAY_JOBS).toEqual({ answer: false, label: "hobo-relay" });
 		expect(RELAY_JOB_INPUTS).toEqual([
 			"fleet",
 			"machine",
