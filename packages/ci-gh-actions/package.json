@@ -47,6 +47,14 @@
       "types": "./dist/runner-host.d.ts",
       "default": "./dist/runner-host.js"
     },
+    "./machine-worker": {
+      "types": "./dist/machine-worker/index.d.ts",
+      "default": "./dist/machine-worker/index.js"
+    },
+    "./machine-worker/testing": {
+      "types": "./dist/machine-worker/testing.d.ts",
+      "default": "./dist/machine-worker/testing.js"
+    },
     "./relay-cache": {
       "types": "./dist/relay-cache/index.d.ts",
       "default": "./dist/relay-cache/index.js"

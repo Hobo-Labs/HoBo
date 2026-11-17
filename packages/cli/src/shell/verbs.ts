@@ -374,6 +374,8 @@ Usage:
   hobo ci machine pause <id>       Take no new jobs on a machine; running jobs finish (resume undoes it)
   hobo ci machine share <id> <who> Take jobs for only_me or anyone who may read the repository
   hobo ci machine remove <id>      Forget a machine and its key at once
+  hobo ci machine connect --repo <owner/name>
+                                   Run jobs routed to this computer, each in a fresh container; Ctrl-C drains
   hobo ci status                  Inspect the relay connection
   hobo ci provider-health          Hosted runner types the relay stopped routing to; clear <provider> <label> lets one through
   hobo ci status                  Inspect the relay connection

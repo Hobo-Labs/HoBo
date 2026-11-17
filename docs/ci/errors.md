@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-94 codes.
+97 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -94,7 +94,10 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_LINK_SAVE_FAILED`](#hobo_ci_link_save_failed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_LOGS_UNAVAILABLE`](#hobo_ci_logs_unavailable) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_MACHINE_NOT_FOUND`](#hobo_ci_machine_not_found) | `packages/hobo/src/ci-machine.ts` |
-| [`HOBO_CI_MACHINE_USAGE`](#hobo_ci_machine_usage) | `packages/hobo/src/ci-machine.ts` |
+| [`HOBO_CI_MACHINE_REFUSED`](#hobo_ci_machine_refused) | `packages/hobo/src/ci-machine-connect.ts` |
+| [`HOBO_CI_MACHINE_SIGN_IN`](#hobo_ci_machine_sign_in) | `packages/hobo/src/ci-machine-connect.ts` |
+| [`HOBO_CI_MACHINE_UNSUPPORTED`](#hobo_ci_machine_unsupported) | `packages/hobo/src/ci-machine-connect.ts` |
+| [`HOBO_CI_MACHINE_USAGE`](#hobo_ci_machine_usage) | `packages/hobo/src/ci-machine-connect.ts`, `packages/hobo/src/ci-machine.ts` |
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
@@ -1085,9 +1088,47 @@ What to do:
 
 - Run hobo ci machine status to list the machines.
 
+### HOBO_CI_MACHINE_REFUSED
+
+Returned from `packages/hobo/src/ci-machine-connect.ts`.
+
+Message: composed when the command runs.
+
+What to do:
+
+- Run hobo ci machine remove {machine.id} as its owner, then connect again.
+
+### HOBO_CI_MACHINE_SIGN_IN
+
+Returned from `packages/hobo/src/ci-machine-connect.ts`.
+
+Messages:
+
+```text
+GitHub did not accept the token this machine was given.
+```
+
+```text
+Sign in to GitHub before connecting this machine.
+```
+
+What to do:
+
+- Run gh auth login, or set GH_TOKEN to a token that can manage the named repositories' self-hosted runners.
+
+### HOBO_CI_MACHINE_UNSUPPORTED
+
+Returned from `packages/hobo/src/ci-machine-connect.ts`.
+
+Message: composed when the command runs.
+
+What to do:
+
+- Connect a Linux machine (x64 or arm64).
+
 ### HOBO_CI_MACHINE_USAGE
 
-Returned from `packages/hobo/src/ci-machine.ts`.
+Returned from `packages/hobo/src/ci-machine-connect.ts`, `packages/hobo/src/ci-machine.ts`.
 
 Message:
 

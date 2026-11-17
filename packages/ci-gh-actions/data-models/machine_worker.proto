@@ -1,0 +1,58 @@
+syntax = "proto3";
+package hobo.ci.gh_actions.v1;
+
+// The records of the machine worker behind `hobo ci machine connect`
+// (ADR-0183). `#StoredMachine` and `#WorkerEvent` in `machine_worker.cue`
+// constrain them; `src/machine-worker/records.ts` is the only place they are
+// parsed and written.
+
+// What `machine.json` under HOBO_HOME's `ci/machine/` holds: the machine's id
+// and the name people see. The id never changes once made; the machine's
+// private key is kept beside it in its own owner-only file, never here.
+message StoredMachine {
+  // `m-` and 12 lower-case hex digits when HoBo made it; at most 63
+  // characters of `[a-z0-9-]`, starting with a letter or digit.
+  string id = 1;
+  // 1 to 100 characters.
+  string name = 2;
+}
+
+// One thing the worker did, as `--events` prints it: one JSON object per
+// line, for agents and scripts. The registry's own `machine.*` events are
+// printed beside these and are not this message.
+//
+// `type` is one of:
+//   worker.advertised    the registry kept a renewal (busy, slots, paused);
+//   worker.refused       the registry refused a renewal (reason, detail);
+//   worker.job_started   a one-job runner took a job (job_id, repository,
+//                        runner, detail);
+//   worker.job_finished  its runner exited (the same fields);
+//   worker.job_failed    the job could not run or was stopped (the same,
+//                        runner absent when none was made);
+//   worker.job_refused   a public repository's or a fork's job, refused
+//                        before any runner was made (job_id, repository,
+//                        detail);
+//   worker.draining      the first stop (running, detail);
+//   worker.handing_off   the second stop, or a refusal for good (running,
+//                        detail).
+// No field ever holds a token or a runner configuration.
+message WorkerEvent {
+  string type = 1;
+  string machine_id = 2;
+  // Epoch milliseconds.
+  double at_ms = 3;
+  optional string detail = 4;
+  optional uint32 busy = 5;
+  optional uint32 slots = 6;
+  optional bool paused = 7;
+  // The registry's refusal reason, as `MachineAdvertVerdict` names it.
+  optional string reason = 8;
+  // GitHub's workflow job id.
+  optional double job_id = 9;
+  // `owner/name`.
+  optional string repository = 10;
+  // The one-job runner's name, `hobo-machine-<id>-<job id>`.
+  optional string runner = 11;
+  // Jobs still running when the worker began to stop.
+  optional uint32 running = 12;
+}

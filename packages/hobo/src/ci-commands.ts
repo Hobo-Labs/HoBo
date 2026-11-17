@@ -9,7 +9,7 @@
  * A name already handled in `ci-command.ts` is never looked up in the table.
  */
 import type { CommandResult, CommandRunInput } from "@hobo/cli";
-import { CI_MACHINE_COMMAND } from "./ci-machine.js";
+import { CI_MACHINE_CONNECT_COMMAND } from "./ci-machine-connect.js";
 import { CI_PROVIDER_HEALTH_COMMAND } from "./ci-provider-health.js";
 
 /** The checkout a command runs in, and its GitHub repository when one is known. */
@@ -44,7 +44,8 @@ export type CiCommand = Readonly<{
 /** Every table-dispatched `hobo ci` command, one entry each. */
 export const CI_COMMANDS: readonly CiCommand[] = [
 	// One entry per line, so adding a command only adds a line.
-	CI_MACHINE_COMMAND,
+	// `machine`: `connect` runs in ci-machine-connect.ts, every other word in ci-machine.ts.
+	CI_MACHINE_CONNECT_COMMAND,
 	CI_PROVIDER_HEALTH_COMMAND,
 ];
 
