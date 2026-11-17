@@ -54,7 +54,11 @@ export async function replayRun<S, A>(
 	const stepResults = new Map<string, JsonValue>();
 	const hookResults = new Map<string, JsonValue>();
 	const timerResults = new Map<string, { delayMs: number }>();
+	const scheduledSleeps = events.filter(
+		(event) => event.type === "run.SleepScheduled",
+	);
 	let stepCounter = 0;
+	let sleepCounter = 0;
 
 	const ctx: WorkflowReplayContext = {
 		runId,
@@ -89,20 +93,20 @@ export async function replayRun<S, A>(
 			throw new Error(`missing memoized step ${name} at index ${stepCounter}`);
 		},
 		async sleep(delayMs) {
-			const scheduled = events.find(
-				(event) => event.type === "run.SleepScheduled",
-			);
+			const scheduled = scheduledSleeps[sleepCounter];
 			if (!scheduled) {
-				throw new Error("missing run.SleepScheduled");
+				throw new Error(`missing run.SleepScheduled at index ${sleepCounter}`);
 			}
-			timerResults.set("sleep", {
-				// SAFETY: assertion to `scheduled.data as { delayMs: number }` is required at this boundary.
-				delayMs: (scheduled.data as { delayMs: number }).delayMs,
-			});
-			// SAFETY: assertion to `scheduled.data as { delayMs: number }` is required at this boundary.
-			if ((scheduled.data as { delayMs: number }).delayMs !== delayMs) {
+			if (
+				!isJsonObject(scheduled.data) ||
+				scheduled.data.delayMs !== delayMs ||
+				(scheduled.data.index !== undefined &&
+					scheduled.data.index !== sleepCounter)
+			) {
 				throw new Error("sleep schedule diverged");
 			}
+			timerResults.set(`sleep:${sleepCounter}`, { delayMs });
+			sleepCounter += 1;
 		},
 		resumeHook<T>(_payload: T) {
 			const resumed = events.find((event) => event.type === "run.HookResumed");
@@ -117,6 +121,9 @@ export async function replayRun<S, A>(
 	};
 
 	state = await workflow.execute(ctx, state, args);
+	if (sleepCounter !== scheduledSleeps.length) {
+		throw new Error(`unconsumed run.SleepScheduled at index ${sleepCounter}`);
+	}
 
 	const report: ReplayReport = {
 		runId,
