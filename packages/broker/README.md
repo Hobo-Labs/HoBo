@@ -9,7 +9,8 @@ from the repository root. The tool is available from the
 the runner verifies the pinned jar digest. These abstractions complement the implementation's
 bounded tests; they do not prove the external host or provider implementation.
 The runner also removes representative guards in temporary model copies and
-requires the checker to find counterexamples.
+requires the checker to find counterexamples. The pricing CI workflow runs the
+same checks when either model or its runner changes.
 
 ## Hosting budget admission
 
