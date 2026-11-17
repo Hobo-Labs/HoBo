@@ -14,6 +14,7 @@ import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "../src/index.js";
+import { testStateOwnership } from "./route-fixture.js";
 
 type Store = Resource<"Spec.Store", object, { id: string }>;
 type Queue = Resource<"Spec.Queue", object, { id: string }>;
@@ -201,6 +202,14 @@ describe("explicit Alchemy primitive mapping", () => {
 			);
 			const provider = createAlchemyIacProvider({
 				stack,
+				stateOwnership: testStateOwnership,
+				composite: {
+					proofRef: "test:no-source",
+					environmentDigest: `sha256:${"e".repeat(64)}`,
+					sourceRequirements: [],
+					verifyEnvironment: () => true,
+					verifyPlan: ({ sourceClaims }) => sourceClaims.length === 0,
+				},
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: join(directory, "runtime"),
 				target: alchemyTarget({
@@ -240,6 +249,7 @@ describe("explicit Alchemy primitive mapping", () => {
 					admit: async () => {
 						throw new Error("unexpected admission");
 					},
+					revalidate: () => false,
 					uncertain: () => {},
 				},
 			});
@@ -334,7 +344,11 @@ describe("explicit Alchemy primitive mapping", () => {
 			},
 		};
 		// SAFETY: intentionally malformed mapper results exercise the runtime contract.
-		const program = mapBindleToAlchemy(one, registry as never, supportedRequirements);
+		const program = mapBindleToAlchemy(
+			one,
+			registry as never,
+			supportedRequirements,
+		);
 		await expect(
 			Effect.runPromise(
 				program.pipe(

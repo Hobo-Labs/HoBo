@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -15,20 +16,29 @@ import {
 	IacTargetLiabilityEvidenceSchema,
 } from "../packages/broker/src/index.js";
 import {
+	createInProcessCredentialBroker,
 	createInProcessExecutor,
+	destroyResource,
 	iacProgramFor,
+	reconcileResource,
 } from "../packages/cloud/dist/index.js";
+import { createInMemoryActorHost } from "../packages/data/src/actor-host.js";
+import { createDirectRoutePort } from "../packages/dispatcher/src/iac-route.js";
+import { createSqliteIacRouteAuthority } from "../packages/dispatcher/src/iac-route-sqlite.js";
 import {
 	executeRankedIacTargets,
 	rankIacTargets,
 } from "../packages/dispatcher/src/iac-target-routing.js";
 import {
+	type AlchemyCompositeEnvironment,
 	AlchemyIacError,
 	type AlchemyPrimitiveMapper,
 	alchemyTarget,
+	captureAlchemyProgram,
 	createAlchemyIacProvider,
 	describeAlchemyPrimitiveSupport,
 	type IacProgram,
+	type IacRouteContext,
 	mapBindleToAlchemy,
 } from "../packages/iac/iac-alchemy/src/index.js";
 import {
@@ -51,12 +61,14 @@ import {
 	usage,
 	workload,
 } from "../packages/pricing/test/fixtures.js";
+import { createRuntimeLocalEventStore } from "../packages/runtimes/runtime-local/src/eventstore/eventstore.js";
 
 const NOW = "2026-01-02T00:00:00Z";
 const END = "2026-01-31T23:59:59Z";
 let dir = "";
 let oldAlchemyHome: string | undefined;
 let oldTelemetry: string | undefined;
+const routeAuthorities: { close(): void }[] = [];
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-provider-"));
@@ -66,6 +78,7 @@ beforeEach(() => {
 	process.env.ALCHEMY_TELEMETRY_DISABLED = "1";
 });
 afterEach(() => {
+	for (const authority of routeAuthorities.splice(0)) authority.close();
 	if (oldAlchemyHome === undefined) delete process.env.ALCHEMY_HOME;
 	else process.env.ALCHEMY_HOME = oldAlchemyHome;
 	if (oldTelemetry === undefined) delete process.env.ALCHEMY_TELEMETRY_DISABLED;
@@ -83,7 +96,37 @@ const program = {
 	driver: "external",
 	action: "apply" as const,
 	stackName: "Demo",
+	operationGeneration: "generation-1",
 } satisfies IacProgram;
+
+function resolveRoute(context: IacRouteContext) {
+	const { requestId, ...logicalOperation } = context;
+	const operationId = `sha256:${createHash("sha256").update(JSON.stringify(logicalOperation)).digest("hex")}`;
+	const resolvedRequest = requestId ?? `request:${operationId.slice(7)}`;
+	return {
+		requestId: resolvedRequest,
+		operation: {
+			operationId,
+			authorization: `test-authority:${resolvedRequest}:${operationId}`,
+		},
+	};
+}
+
+function routeFor(input: IacProgram, requestId: string) {
+	if (input.operationGeneration === undefined)
+		throw new Error("generation missing");
+	return resolveRoute({
+		tenantId: "tenant-a",
+		deploymentId: input.deploymentId,
+		programId: input.programId,
+		resourceId: input.resourceId,
+		logicalStackName: input.stackName,
+		declarationDigest: captureAlchemyProgram(input).declarationDigest,
+		operation: input.action === "destroy" ? "destroy" : "deploy",
+		operationGeneration: input.operationGeneration,
+		requestId,
+	});
+}
 
 function setup(
 	options: {
@@ -101,6 +144,7 @@ function setup(
 		rivet?: boolean;
 		output?: "resource" | "invalid" | "mapped";
 		outputRegion?: () => boolean;
+		onRoute?: (context: IacRouteContext) => void;
 	} = {},
 ) {
 	let applied = 0;
@@ -186,6 +230,8 @@ function setup(
 	const authority = createSqliteBudgetAdmissionAuthority({
 		path: join(dir, "budget.sqlite"),
 		now: () => NOW,
+		// This fixture never settles: its verifier refuses all settlement claims.
+		iacPricedSettlementTrust: { verify: () => false },
 		snapshot: create(BudgetLedgerSnapshotSchema, {
 			identity: {
 				tenantId: "tenant-a",
@@ -292,11 +338,108 @@ function setup(
 			}),
 		}),
 	});
-	const provider = createAlchemyIacProvider({
+	const routeAuthority = createSqliteIacRouteAuthority({
+		path: join(dir, "routes.sqlite"),
+		verifyOperation: ({ tenantId, requestId, operationId, authorization }) =>
+			tenantId === "tenant-a" &&
+			authorization === `test-authority:${requestId}:${operationId}`,
+	});
+	routeAuthorities.push(routeAuthority);
+	const route = createDirectRoutePort({
+		authority: routeAuthority,
+		hashInventory: (plan: Parameters<typeof financial.assess>[0]) => {
+			const hash = financial.assess(plan).inventoryHash;
+			if (hash === undefined) throw new Error("inventory hash missing");
+			return hash;
+		},
+	});
+	const recognizesScope = (scope: AlchemyCompositeEnvironment["scope"]) => {
+		const item = scope[0];
+		return (
+			scope.length === 1 &&
+			item?.resourceId === (options.rivet ? "runner" : "widget") &&
+			item.resourceType ===
+				(options.rivet ? "RivetCloud.RunnerPool" : "Demo.Widget") &&
+			item.providerId === (options.rivet ? "rivet-cloud" : "sandbox") &&
+			item.providerAccountRef === "account-a" &&
+			item.productId === (options.rivet ? "runner-e2-small" : "sandbox")
+		);
+	};
+	let fixtureOwner: string | undefined;
+	const provider = createAlchemyIacProvider<
+		{},
+		Rivet.Providers | Provider.Provider<Demo>,
+		ReturnType<typeof financial.assess>
+	>({
 		stack,
 		target,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
+		stateOwnership: {
+			backendRef: `test:state:${options.targetId ?? "yard-a"}`,
+			ownershipEpoch: "test:epoch",
+			verify: ({
+				tenantId,
+				targetId,
+				sourceDigest,
+				program: logical,
+				state,
+			}) => {
+				const expectedLogical =
+					logical.programId === "run-1"
+						? logical.logicalStackName === "Demo" &&
+							logical.driver === "external" &&
+							logical.declarationPresence === "absent"
+						: logical.programId === "deployment-a:application" &&
+							logical.logicalStackName ===
+								"tenant-a/deployment-a/application" &&
+							logical.driver === "pulumi" &&
+							logical.declarationPresence === "present" &&
+							JSON.stringify(logical.resource) ===
+								JSON.stringify({
+									name: "application",
+									port: "compute",
+									provider: "sandbox",
+									deps: [],
+								});
+				if (
+					tenantId !== "tenant-a" ||
+					targetId !== (options.targetId ?? "yard-a") ||
+					sourceDigest !== `sha256:${"a".repeat(64)}` ||
+					logical.deploymentId !== "deployment-a" ||
+					logical.resourceId !== "application" ||
+					logical.provider !== "sandbox" ||
+					!expectedLogical ||
+					state.scopeKey !==
+						`${(options.stackName ?? "Demo").toLowerCase()}/test`
+				)
+					return false;
+				const owner = JSON.stringify({ tenantId, program: logical });
+				if (fixtureOwner === undefined) fixtureOwner = owner;
+				return fixtureOwner === owner;
+			},
+		},
+		route,
+		resolveRoute: (context) => {
+			options.onRoute?.(context);
+			return resolveRoute(context);
+		},
+		composite: {
+			proofRef: "host:fixture-attestation",
+			environmentDigest: `sha256:${"e".repeat(64)}`,
+			// The test RunnerPool provider never reads or builds `main`. A real
+			// source-building host must independently attest and list its sources.
+			sourceRequirements: [],
+			verifyEnvironment: (input) =>
+				input.tenantId === "tenant-a" &&
+				input.targetId === (options.targetId ?? "yard-a") &&
+				input.sourceDigest === `sha256:${"a".repeat(64)}` &&
+				recognizesScope(input.scope),
+			verifyPlan: (input) =>
+				recognizesScope(input.scope) &&
+				input.effects.length === 0 &&
+				input.sourceClaims.length === 0,
+		},
 		financial: options.badAdmission
 			? {
 					...financial,
@@ -332,6 +475,7 @@ function setup(
 	return {
 		provider,
 		authority,
+		routeAuthority,
 		applied: () => applied,
 		deleted: () => deleted,
 		issued: () => issued,
@@ -475,7 +619,7 @@ describe("Alchemy IaC provider against the real library", () => {
 		}
 	});
 
-	it("refuses a generated logical name until its physical stack is authenticated", async () => {
+	it("accepts a generated logical name when its physical stack is authenticated", async () => {
 		const generated = iacProgramFor(
 			"deployment-a",
 			{
@@ -488,6 +632,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			"tenant-a",
 		);
 		expect(generated.stackName).toBe("tenant-a/deployment-a/application");
+		generated.operationGeneration = "generation-1";
 		const fixture = setup({
 			rivet: true,
 			output: "resource",
@@ -502,14 +647,88 @@ describe("Alchemy IaC provider against the real library", () => {
 				ambient: false,
 			});
 			expect(result).toMatchObject({
-				status: "failed",
-				classification: "retryable",
-				reason: expect.stringContaining("PROGRAM_SCOPE_MISMATCH"),
+				status: "succeeded",
+				outputs: { poolName: "default" },
 			});
-			expect(fixture.applied()).toBe(0);
-			expect(fixture.issued()).toBe(0);
-			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
+			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("passes each durable cloud operation generation through the Rivet adapter", async () => {
+		const resource = {
+			name: "application",
+			port: "compute",
+			provider: "sandbox",
+			deps: [],
+		};
+		const context = {
+			deploymentId: "deployment-a",
+			tenant: "tenant-a",
+			actor: { kind: "user" as const, id: "operator" },
+		};
+		const routed: IacRouteContext[] = [];
+		const fixture = setup({
+			rivet: true,
+			output: "resource",
+			onRoute: (operation) => routed.push(operation),
+		});
+		const store = createRuntimeLocalEventStore({
+			dataDir: join(dir, "ledger"),
+		});
+		try {
+			const deps = {
+				store,
+				actorHost: createInMemoryActorHost(),
+				executor: createInProcessExecutor({ iac: fixture.provider }),
+				broker: createInProcessCredentialBroker(),
+			};
+			expect(await reconcileResource(deps, resource, context)).toMatchObject({
+				kind: "provisioned",
+				snapshot: { outputs: { poolName: "default" } },
+			});
+			expect(await destroyResource(deps, resource, context)).toMatchObject({
+				kind: "destroyed",
+			});
+			const history = [];
+			for await (const event of store.read("deployment:deployment-a"))
+				history.push(event);
+			const starts = history.filter((event) =>
+				["resource.Provisioning", "resource.Destroying"].includes(event.type),
+			);
+			const apply = routed.filter((item) => item.operation === "deploy");
+			const destroy = routed.filter((item) => item.operation === "destroy");
+			expect(apply.length).toBeGreaterThan(0);
+			expect(destroy.length).toBeGreaterThan(0);
+			expect(starts).toHaveLength(2);
+			expect(starts[0]).toMatchObject({
+				data: { operationGeneration: apply[0]?.operationGeneration },
+			});
+			expect(starts[1]).toMatchObject({
+				data: { operationGeneration: destroy[0]?.operationGeneration },
+			});
+			expect(apply[0]?.operationGeneration).toMatch(
+				/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+			);
+			expect(destroy[0]?.operationGeneration).not.toBe(
+				apply[0]?.operationGeneration,
+			);
+			expect(
+				apply.every(
+					(item) => item.operationGeneration === apply[0]?.operationGeneration,
+				),
+			).toBe(true);
+			expect(
+				destroy.every(
+					(item) =>
+						item.operationGeneration === destroy[0]?.operationGeneration,
+				),
+			).toBe(true);
+			expect(fixture.applied()).toBe(1);
+			expect(fixture.deleted()).toBe(1);
+		} finally {
+			store.close();
 			fixture.authority.close();
 		}
 	});
@@ -561,7 +780,7 @@ describe("Alchemy IaC provider against the real library", () => {
 		const fixture = setup({ rivet: true, output: "mapped" });
 		try {
 			await expect(fixture.provider.preview(program)).rejects.toMatchObject({
-				code: "PLAN_UNINSPECTABLE",
+				code: "COMPOSITE_PLAN_UNVERIFIED",
 			});
 			expect(fixture.applied()).toBe(0);
 		} finally {
@@ -579,14 +798,14 @@ describe("Alchemy IaC provider against the real library", () => {
 				code: "APPLY_OUTPUT_UNREPRESENTABLE",
 				requiresReconciliation: true,
 				executionOutcome: "completed",
-				reservationId: expect.stringMatching(/^iac:sha256:/u),
+				reservationId: expect.stringMatching(/^iac:request:/u),
 			});
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 			await expect(fixture.provider.apply(program)).rejects.toMatchObject({
 				code: "EXECUTION_ALREADY_CLAIMED",
 				requiresReconciliation: true,
-				reservationId: expect.stringMatching(/^iac:sha256:/u),
+				reservationId: expect.stringMatching(/^iac:request:/u),
 			});
 		} finally {
 			fixture.authority.close();
@@ -618,13 +837,21 @@ describe("Alchemy IaC provider against the real library", () => {
 				],
 			});
 			const result = await executeRankedIacTargets({
+				authority: fixture.routeAuthority,
+				tenantId: "tenant-a",
+				operation: routeFor(program, "rivet-output").operation,
 				requestId: "rivet-output",
 				ranking,
 				candidates: [
 					{
 						targetId: "yard-a",
-						run: (id, expected) =>
-							fixture.provider.applyWithAdmission(program, id, expected),
+						run: (id, expected, permit) =>
+							fixture.provider.applyWithAdmission(
+								program,
+								id,
+								expected,
+								permit,
+							),
 					},
 				],
 			});
@@ -729,13 +956,16 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(priced.authority.read(NOW).reservedMicros).toBe(0);
 			const routed = await executeRankedIacTargets({
+				authority: priced.routeAuthority,
+				tenantId: "tenant-a",
+				operation: routeFor(program, "rivet-route").operation,
 				requestId: "rivet-route",
 				ranking,
 				candidates: [
 					{
 						targetId: "yard-priced",
-						run: (id, expected) =>
-							priced.provider.applyWithAdmission(program, id, expected),
+						run: (id, expected, permit) =>
+							priced.provider.applyWithAdmission(program, id, expected, permit),
 					},
 				],
 			});
@@ -766,14 +996,15 @@ describe("Alchemy IaC provider against the real library", () => {
 					status: "admitted",
 					budget: { evaluation: "allowed", reservation: "held" },
 					reservation: {
-						reservationId: expect.stringMatching(/^iac:sha256:/u),
+						reservationId: expect.stringMatching(/^iac:request:/u),
 					},
 				},
 			});
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			await fixture.provider.preview(program);
 			await expect(fixture.provider.apply(program)).rejects.toMatchObject({
-				code: "EXECUTION_ALREADY_CLAIMED",
+				code: "ROUTE_ALREADY_FINISHED",
 			});
 			expect(fixture.applied()).toBe(1);
 		} finally {
@@ -781,20 +1012,19 @@ describe("Alchemy IaC provider against the real library", () => {
 		}
 	});
 
-	it("retains the reservation reference when another provider instance replays a claimed operation", async () => {
+	it("rejects replay before another provider instance can claim the operation", async () => {
 		const first = setup();
 		const second = setup();
 		try {
 			await first.provider.preview(program);
 			const applied = await first.provider.applyWithAdmission(program);
 			expect(applied.admission.reservation?.reservationId).toMatch(
-				/^iac:sha256:/u,
+				/^iac:request:/u,
 			);
 			await second.provider.preview(program);
 			await expect(second.provider.apply(program)).rejects.toMatchObject({
-				code: "EXECUTION_ALREADY_CLAIMED",
+				code: "ROUTE_ALREADY_FINISHED",
 				requiresReconciliation: true,
-				reservationId: applied.admission.reservation?.reservationId,
 			});
 			expect(first.applied()).toBe(1);
 			expect(second.applied()).toBe(0);
@@ -870,13 +1100,21 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
 			const routed = await executeRankedIacTargets({
+				authority: fixture.routeAuthority,
+				tenantId: "tenant-a",
+				operation: routeFor(program, "route-1").operation,
 				requestId: "route-1",
 				ranking,
 				candidates: [
 					{
 						targetId: "yard-a",
-						run: (requestId, expected) =>
-							fixture.provider.applyWithAdmission(program, requestId, expected),
+						run: (requestId, expected, permit) =>
+							fixture.provider.applyWithAdmission(
+								program,
+								requestId,
+								expected,
+								permit,
+							),
 					},
 				],
 			});
@@ -925,18 +1163,31 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			const route = () =>
 				executeRankedIacTargets({
+					authority: first.routeAuthority,
+					tenantId: "tenant-a",
+					operation: routeFor(program, "shared-route").operation,
 					requestId: "shared-route",
 					ranking,
 					candidates: [
 						{
 							targetId: "yard-a",
-							run: (id, expected) =>
-								first.provider.applyWithAdmission(program, id, expected),
+							run: (id, expected, permit) =>
+								first.provider.applyWithAdmission(
+									program,
+									id,
+									expected,
+									permit,
+								),
 						},
 						{
 							targetId: "yard-b",
-							run: (id, expected) =>
-								second.provider.applyWithAdmission(program, id, expected),
+							run: (id, expected, permit) =>
+								second.provider.applyWithAdmission(
+									program,
+									id,
+									expected,
+									permit,
+								),
 						},
 					],
 				});
@@ -951,8 +1202,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(first.applied()).toBe(0);
 			expect(second.applied()).toBe(1);
 			expect(await route()).toMatchObject({
-				status: "uncertain",
-				attempts: [{ targetId: "yard-a", status: "uncertain" }],
+				status: "replay",
 			});
 			expect(second.applied()).toBe(1);
 			expect(first.authority.read(NOW).reservedMicros).toBe(1_500_000);
@@ -1008,6 +1258,31 @@ describe("Alchemy IaC provider against the real library", () => {
 		}
 	});
 
+	it("does not reuse a priced routing assessment across operation generations", async () => {
+		const fixture = setup();
+		try {
+			const first = await fixture.provider.assessPricing(program);
+			const next = { ...program, operationGeneration: "generation-2" };
+			const second = await fixture.provider.assessPricing(next);
+			if (!first.quote.ok || !second.quote.ok)
+				throw new Error("pricing missing");
+			expect(first.quote.inventoryHash).not.toBe(second.quote.inventoryHash);
+			await expect(
+				fixture.provider.applyWithAdmission(next, "stale-generation", {
+					targetId: "yard-a",
+					inventoryHash: first.quote.inventoryHash,
+					modelHash: first.quote.modelHash,
+					quoteHash: first.quote.quote.quoteHash,
+				}),
+			).rejects.toMatchObject({ code: "ROUTE_PERMIT_UNVERIFIED" });
+			expect(fixture.issued()).toBe(0);
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
 	it("refuses a changed plan before reserving or applying", async () => {
 		let size = 1;
 		const fixture = setup({ size: () => size });
@@ -1033,7 +1308,7 @@ describe("Alchemy IaC provider against the real library", () => {
 				.catch((value) => value);
 			expect(error).toMatchObject({
 				code: "APPLY_OUTCOME_UNKNOWN",
-				reservationId: expect.stringMatching(/^iac:sha256:/u),
+				reservationId: expect.stringMatching(/^iac:request:/u),
 			});
 			if (
 				!(error instanceof AlchemyIacError) ||
@@ -1229,7 +1504,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			await fixture.provider.apply(program);
 			const destroy = {
 				...program,
-				programId: "destroy-1",
+				operationGeneration: "generation-2",
 				action: "destroy" as const,
 			};
 			expect((await fixture.provider.preview(destroy)).changes).toBe(1);

@@ -15,6 +15,7 @@ import {
 	type FinancialPlan,
 	TargetSchema,
 } from "../src/index.js";
+import { testStateOwnership } from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", Record<string, never>, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -59,6 +60,14 @@ function providerOptions(target = alchemyTarget(rawTarget())) {
 	return {
 		stack,
 		target,
+		stateOwnership: testStateOwnership,
+		composite: {
+			proofRef: "test:no-source",
+			environmentDigest: `sha256:${"e".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => true,
+			verifyPlan: () => true,
+		},
 		runtimeLayer: Layer.merge(Alchemist.layer(), providers),
 		runtimeDirectory: "/tmp",
 		financial: {
@@ -66,6 +75,7 @@ function providerOptions(target = alchemyTarget(rawTarget())) {
 			admit: async () => {
 				throw new Error("unexpected admission");
 			},
+			revalidate: () => false,
 			uncertain: () => {},
 		},
 	};
