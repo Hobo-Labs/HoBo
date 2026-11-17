@@ -91,6 +91,16 @@ identity or with complete host-held options; they do not establish host
 authorization, transport provenance or ongoing fencing. A client-side check or
 a Rivet namespace token alone cannot establish these properties.
 
+RivetKit 3's dynamic `getOrCreate(...).fetch` can retry a request after an
+actor lifecycle error, including a dropped reply. The host must independently
+attest that every replay uses the exact same operation envelope, request bytes,
+actor key and semantic digest against the same authenticated durable receipt
+journal, including across owner transitions. The journal must check an existing
+receipt before any new effect and retain it for the operation's full window.
+If those guarantees cannot be established, use a host-verified single-dispatch
+transport. A namespace token or identical request bytes alone are not proof of
+a shared journal or an old-owner fence.
+
 ```ts
 import {
   createRivetDurableTopicClient,

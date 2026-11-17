@@ -102,6 +102,8 @@ it("preserves malformed and lost-commit outcomes through the actor's SQLite jour
 				maxChunks === 4096,
 		});
 		let dropPath = "";
+		let retryPath = "";
+		let replayCount = 0;
 		const fetch = async (path: string, init: RequestInit) => {
 			const response = await actor.handle(
 				{ name: actorName, key, db },
@@ -111,6 +113,19 @@ it("preserves malformed and lost-commit outcomes through the actor's SQLite jour
 				dropPath = "";
 				await response.arrayBuffer();
 				throw new Error("reply lost after commit");
+			}
+			if (retryPath === path) {
+				retryPath = "";
+				const first = await response.text();
+				const retried = new Request(`https://actor.test${path}`, init);
+				expect(await retried.clone().text()).toBe(init.body);
+				const replay = await actor.handle(
+					{ name: actorName, key, db },
+					retried,
+				);
+				expect(await replay.clone().text()).toBe(first);
+				replayCount++;
+				return replay;
 			}
 			return response;
 		};
@@ -262,6 +277,31 @@ it("preserves malformed and lost-commit outcomes through the actor's SQLite jour
 				limit: 4,
 			}),
 		).toEqual({ status: "gap", firstAvailableSequence: 2, latestSequence: 1 });
+		const transportRetry = {
+			...publish,
+			operation: op("transparent-retry"),
+			message: { ...publish.message, id: "m2" },
+		};
+		retryPath = "/publish";
+		expect(await client.publish(transportRetry)).toEqual({
+			status: "committed",
+			value: { messageId: "m2", sequence: 2 },
+		});
+		expect(replayCount).toBe(1);
+		const afterRetry = await client.readRetainedLog({
+			topic: "orders",
+			afterSequence: 1,
+			limit: 4,
+		});
+		if (afterRetry.status !== "ok") throw new Error("missing retried log");
+		expect(afterRetry.messages.map((message) => message.id)).toEqual(["m2"]);
+		const audit = await client.events({ afterSequence: 0, limit: 10 });
+		if (audit.status !== "ok") throw new Error("missing audit page");
+		expect(
+			audit.events.filter(
+				(event) => event.kind === "published" && event.messageId === "m2",
+			),
+		).toHaveLength(1);
 	} finally {
 		sql.close();
 	}
