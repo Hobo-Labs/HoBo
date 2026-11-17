@@ -14,7 +14,8 @@ core/                                Protocol + interface definitions (zero runt
   src/
     messages.ts                      AUTO-GENERATED discriminated unions (do not edit)
     schemas.ts                       AgentMeta, SpriteData, FurnitureCatalogEntry
-    provider.ts                      HookProvider, AgentEvent (the integration boundary)
+    provider.ts                      HookProvider, FileProvider, AgentEvent
+    streamProvider.ts                StreamProvider
     teamProvider.ts                  Optional TeamProvider (semantic queries for Lead + Teammates)
     transport.ts                     MessageTransport interface, TransportState
     adapter.ts                       StateAdapter, AssetCache, PersistedAgent, AgentSeat
@@ -218,11 +219,13 @@ export type TransportState = 'connecting' | 'connected' | 'reconnecting' | 'disc
 
 ## Provider Abstraction
 
-`HookProvider` (`core/src/provider.ts`) is the integration boundary. Today only Claude Code is implemented. The interface:
+The runtime accepts `HookProvider` or `FileProvider`; OpenTelemetry implements `StreamProvider`.
 
 - **Required**: `normalizeHookEvent(raw)` → `{ sessionId, event: AgentEvent } | null`; `installHooks` / `uninstallHooks` / `areHooksInstalled`; `formatToolStatus`; `permissionExemptTools`, `subagentToolNames`, `readingTools` sets.
-- **Optional file fallback**: `getSessionDirs(workspace)`, `getAllSessionRoots()`, `sessionFilePattern`, `parseTranscriptLine(line)`, `buildLaunchCommand(sessionId, cwd, opts)`. Used when hooks aren't installed.
+- **Session discovery**: `getSessionDirs(workspace)` and `getAllSessionRoots()` locate transcripts; `buildLaunchCommand(sessionId, cwd, opts)` launches a supported CLI.
 - **Optional team extension**: `team?: TeamProvider` for Lead + Teammates support.
+- **File provider**: `matchesSessionFile`, `sessionIdFromFile`, and `processTranscriptLine` drive polling without hooks. The standalone CLI selects Claude's file provider with `--file-only`.
+- **Stream provider**: `ingest(payload)` accepts pushed data. `OtelProvider` consumes OTLP traces.
 
 `AgentEvent.kind` values: `toolStart`, `toolEnd`, `turnEnd`, `subagentStart`, `subagentEnd`, `subagentTurnEnd`, `progress`, `permissionRequest`, `sessionStart`, `sessionEnd`. The runtime dispatches on `kind`, never on CLI-specific tool names.
 
@@ -246,23 +249,7 @@ Teammate dismissal is driven by team config polling (`getTeamMembers(teamName)` 
 
 `AgentRuntime` (`server/src/agentRuntime.ts`) is the shared lifecycle core. Both surfaces (`adapters/vscode/PixelAgentsViewProvider.ts` and `server/src/cli.ts`) compose the same runtime; only the `StateAdapter` namespace, `MessageTransport`, and `TerminalAdapter` differ.
 
-```typescript
-export class AgentRuntime {
-  constructor(opts: {
-    store: AgentStateStore;
-    providerRegistry: ProviderRegistry;
-    layoutPersistence: LayoutPersistence;
-    assetCache: AssetCache;
-    config: Pick<AdapterSettings, 'hooksEnabled' | 'watchAllSessions'>;
-    terminalAdapter?: TerminalAdapter;
-    callbacks: RuntimeLifecycleCallbacks;
-  });
-  registerAgent / unregisterAgent / removeAgent / removeTeammate / removeTeammates
-  restoreExternalAgents / handleHookEvent
-  startProjectScan / startExternalScanning / startStaleCheck
-  dispose();
-}
-```
+Create the runtime with `new AgentRuntime(store, provider)`. Register lifecycle callbacks and start the scanners needed by the host; call `dispose()` on shutdown.
 
 Owns timer Maps (waiting, permission, text-idle, stale), scanners (project-dir 1 s, external 3 s, stale 30 s), `HookEventHandler`, `SessionRouter`, `DismissalTracker`. Scanners are skipped entirely while hooks are flowing (`hookDelivered` is set on every agent). `RuntimeLifecycleCallbacks` is the only seam between runtime and host.
 
@@ -589,7 +576,7 @@ Supporting: `wall-tile-editor.html` (wall sprite editing), `jsonl-viewer.html` (
 - **AgentRuntime** shared lifecycle core, composed by both surfaces.
 - **AgentStateStore** as single source of truth with typed mutations and typed events. No transport calls outside the broadcast layer.
 - **Transport abstraction**: `MessageTransport` interface, `PostMessageTransport` + `WebSocketTransport`. One branching point in the entire UI.
-- **HookProvider** as the integration boundary, with optional file fallback. New CLIs are a single subdirectory under `server/src/providers/hook/<id>/`.
+- **HookProvider**, **FileProvider**, and **StreamProvider** define the supported ingestion boundaries.
 - **TeamProvider** as optional extension. Claude Agent Teams is the only implementation.
 - **Per-adapter namespaced persistence** under `~/.pixel-agents/`. VS Code and standalone never clobber each other.
 - **Verify-before-clear migration** for legacy VS Code state.
