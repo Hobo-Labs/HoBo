@@ -199,6 +199,10 @@ describe("provider-neutral IaC target budget admission", () => {
 
 	it.each([
 		"missing-gate",
+		"missing-reasons",
+		"unknown-gate",
+		"unknown-decision",
+		"non-json-event",
 		"truthy-obligation",
 		"unknown-proof-field",
 		"accessor",
@@ -215,6 +219,27 @@ describe("provider-neutral IaC target budget admission", () => {
 						const policy = await deps.authorize(input);
 						if (kind === "missing-gate")
 							Object.defineProperty(policy, "gate", { value: undefined });
+						if (kind === "missing-reasons")
+							Object.defineProperty(policy.gate, "reasons", {
+								value: undefined,
+							});
+						if (kind === "unknown-gate")
+							Object.defineProperty(policy.gate, "condition", {
+								value: "unfulfilled",
+								enumerable: true,
+							});
+						if (kind === "unknown-decision")
+							Object.defineProperty(policy, "condition", {
+								value: undefined,
+								enumerable: true,
+							});
+						if (kind === "non-json-event")
+							policy.gate.events.push(
+								Object.defineProperty({}, "future", {
+									value: undefined,
+									enumerable: true,
+								}),
+							);
 						if (kind === "truthy-obligation")
 							Object.defineProperty(policy.proof, "obligationsSatisfied", {
 								value: "yes",
