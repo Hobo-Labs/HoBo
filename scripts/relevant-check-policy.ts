@@ -665,7 +665,7 @@ export function selectRelevantChecks(
 				"--filter=@hobo/conformance^...",
 				"--filter=@hobo/example-cd-conformance-kit^...",
 				"--output-logs=new-only",
-				"--concurrency=100%",
+				turboConcurrencyArg(),
 			],
 			reason:
 				"behavior steps import the proofs' and root steps' workspace dependencies from dist, which a scoped run has not built",
