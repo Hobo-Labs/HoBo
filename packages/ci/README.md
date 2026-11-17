@@ -647,3 +647,22 @@ The records, frozen names and ports a relay job is answered through, and
 (ADR-0183), are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
 every port and their conformance functions are exported as
 `@hobo/ci/runner-order/testing`.
+
+## Route journal and activity
+
+The route journal keeps every relay job a node was asked and every answer it
+gave (`runner.route.Requested` and `runner.route.Decided`), so "where did this
+job run, and why" can be read after the run (ADR-0183).
+`SqliteRouteJournal`, exported as `@hobo/ci/runner-order/journal-sqlite`, is
+the `RouteJournal` port on SQLite (ADR-0135):
+
+- It takes the store's existing `DatabaseSync` handle as a constructor
+  argument and adds one `route_journal` table, so the journal sits in the
+  store's one partition with its one writer. It never begins a transaction of
+  its own; each write is one statement.
+- It is append-only. A redelivered event (the same relay job's same event
+  type) keeps the first entry.
+- It keeps entries for 90 days (`ROUTE_JOURNAL_RETENTION_MS`), measured
+  against a clock passed in as `nowMs`. Older entries are hidden from reads at
+  once and deleted on the next write or `prune()`.
+- It passes `routeJournalConformance` from `@hobo/ci/runner-order/testing`.
