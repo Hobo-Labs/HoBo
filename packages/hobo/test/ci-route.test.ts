@@ -205,6 +205,7 @@ describe("hobo ci route", () => {
 	it.each([
 		[["--facts", "missing.json"], "cannot read missing.json"],
 		[["--event", "Pull Request"], "--event takes a GitHub event name"],
+		[["--github", " , "], "--github needs at least one runner label"],
 		[["extra"], "takes no positional arguments"],
 	])("reports a usage error for %j", async (args, message) => {
 		const { route } = await repository();

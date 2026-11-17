@@ -164,6 +164,19 @@ describe("hobo ci init", () => {
 		expect(after).toContain("runs-on: hobo # pinned");
 	});
 
+	it("reports a missing scoped job even when another file has the same job id", async () => {
+		const { init } = await repository();
+		const { envelope } = await init("--apply", "ci.yml:test,missing.yml:test");
+		expect(envelope.data.changed).toEqual([
+			{ file: ".github/workflows/ci.yml", job: "test" },
+		]);
+		expect(envelope.data.refused).toContainEqual({
+			file: "",
+			job: "missing.yml:test",
+			why: "no such job",
+		});
+	});
+
 	it("fails when nothing asked for could be rewritten", async () => {
 		const { init, workflow } = await repository();
 		const { exitCode, envelope } = await init("--apply", "deploy");
