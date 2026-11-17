@@ -1,4 +1,3 @@
-/** Normalize known value options and reject misspellings before any writes. */
 export function normalizeCliOptions(
 	argv: readonly string[],
 	options: {

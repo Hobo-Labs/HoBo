@@ -6,12 +6,6 @@ function within(base: string, candidate: string): boolean {
 	return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-/**
- * Check every existing metadata path before a batch may write. Symlinked scopes,
- * nested links, and multiply linked files can otherwise redirect an overwrite
- * or deletion into a different project or outside the checkout. This is a
- * preflight for a trusted local workspace, not protection from concurrent swaps.
- */
 export function assertSafeOptimizexpWriteScopes(root: string, projectPaths: readonly string[]): void {
 	const repo = realpathSync(root);
 	const visited = new Set<string>();
@@ -43,7 +37,6 @@ export function assertSafeOptimizexpWriteScopes(root: string, projectPaths: read
 	}
 }
 
-/** A concise diagnostic for command-line preflight failures. */
 export function optimizexpWriteProblem(root: string, projectPaths: readonly string[]): string | undefined {
 	try {
 		assertSafeOptimizexpWriteScopes(root, projectPaths);

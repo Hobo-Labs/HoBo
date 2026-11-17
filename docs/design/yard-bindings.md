@@ -41,7 +41,7 @@ Relationship to the pre-existing `resolverDefaults.pins`: pins stay the **resolv
 
 ## 3. The two authoring flows
 
-**Ops manager, day one.** `hobo station init` creates the Station; it does not automatically discover host capabilities or seed a Yard. A caller can use the separate localhost Yard seed API with observations it supplies: the seed returns supported local binding rows with provenance and [ADR-0042](./adr/07-portability-extensibility.md#adr-0042) fidelity labels, and lists unavailable profiles. Capability-backed rows reflect the supplied observations. The former `@hobo/code` integration is historical. The seeded Yard is a separate registration step and is dev-grade *by policy*.
+**Ops manager, day one (`hobo station init`).** Creating a Station seeds a **localhost Yard** (`yard:local`) generated from the host substrate that [ADR-0155](./adr/01-architecture-core.md#adr-0155) capability discovery already inspects: provider `local`, runtime-local component host, and default-provenance Yard binding rows mapping the whole Bindle catalog to local implementations — each row carrying its [ADR-0042](./adr/07-portability-extensibility.md#adr-0042) fidelity label. The seeded Yard is real (`yard.Registered`, PortabilityReport-scored) and dev-grade *by policy*, not special-casing.
 
 **Ops manager, deliberately (SDK).** Authoring a Yard manually is the same act the seed performs: declare a provider and map capabilities to that provider's products —
 
@@ -122,4 +122,4 @@ Convergence is the property that makes removing the engine safe. Every `reconcil
 
 ## 8. What this deliberately does not change
 
-Selection algebra (ADR-0151 hard gates + lexicographic, no weighted scores); Bindle provider-agnosticism (`bindle-provider-selection-forbidden`); the ADR-0131 two-axis Station/topology model (a Station does not contain a Yard; a local Yard is registered separately); the no-Effect-TS public surface (ADR-0136); the fidelity-honesty rules (ADR-0042); forward-only migrations (ADR-0032); the federate+verify auth model (ADR-0038).
+Selection algebra (ADR-0151 hard gates + lexicographic, no weighted scores); Bindle provider-agnosticism (`bindle-provider-selection-forbidden`); the ADR-0131 two-axis Station/topology model (the Station *seeds* `yard:local`, it does not contain it); the no-Effect-TS public surface (ADR-0136); the fidelity-honesty rules (ADR-0042); forward-only migrations (ADR-0032); the federate+verify auth model (ADR-0038).

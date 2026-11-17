@@ -34,7 +34,7 @@ Each capability doc is one coherent decision area; some absorb more than one pla
 | [`devx-devenv-nix.md`](./devx-devenv-nix.md) | DevX: devenv-first local shells; Nix optional IaC only — never default multi-cloud path ([ADR-0006](./adr/01-architecture-core.md#adr-0006)) | — |
 | [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0131) | **ADR-0131** — Station occupancy (hard control-plane isolation; Rails; pure Conductor) | — |
 | [`stations.md`](./stations.md) | Station narrative home: occupancy, capabilities (`hobo.station-capability/v1`), localhost capability discovery (ADR-0131/0155) | — |
-| [`yard-bindings.md`](./yard-bindings.md) | Yard bindings narrative home: the Yard as capability→product binding authority, the separately seeded and registered localhost Yard, `plan`/`init`/`handle` phases, the OOB test harness + CI preview lanes, and the drizzle-kit/Better Auth defaults (ADR-0157–0161; Alchemy-informed) | — |
+| [`yard-bindings.md`](./yard-bindings.md) | Yard bindings narrative home: the Yard as capability→product binding authority, the seeded localhost Yard on Station init, `plan`/`init`/`handle` phases, the OOB test harness + CI preview lanes, and the drizzle-kit/Better Auth defaults (ADR-0157–0161; Alchemy-informed) | — |
 | [`adr/01-architecture-core.md`](./adr/01-architecture-core.md#adr-0155) | **ADR-0155** — Station capabilities typed manifest; localhost capability discovery | — |
 | [`adr/02-identity-security.md`](./adr/02-identity-security.md#adr-0132) | **ADR-0132** — Continuous identity migration (dual-path; zero Bindle config) | — |
 | [`adr/02-identity-security.md`](./adr/02-identity-security.md#adr-0134) | **ADR-0134** — HoBo Trails (app-owned continuous migration recipes; composes `identity.continuous`) | — |

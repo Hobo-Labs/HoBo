@@ -107,5 +107,5 @@ export async function captureTui(
 		notes.push("asciinema not installed; transcript + screen size only");
 	}
 	const text = await captureCli(outDir, input);
-	return { ...text, degraded: true, notes };
+	return { ...text, degraded: true, notes: [...notes, ...text.notes] };
 }

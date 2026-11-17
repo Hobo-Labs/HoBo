@@ -213,6 +213,10 @@ Upstream [`Tyler-R-Kendrick/ts-autocode`](https://github.com/Tyler-R-Kendrick/ts
 
 The sparse cone remains limited to the workspace members declared by HoBo's sibling-pin configuration. Publishing upstream packages does not change HoBo's source-consumption boundary by itself.
 
+## Syncing `main` into `feature/hobo-code`
+
+The former sync procedure preserved `packages/code` on `feature/hobo-code`; that preservation is retired. `packages/code` and `packages/pixel-village` were removed from main, and the feature branch has its own removal. References to their commands and integrations in historical architecture records describe earlier implementations.
+
 ## Related references
 
 - [npm publish allowlist](../design/npm-publish-allowlist.md)

@@ -56,7 +56,6 @@ export function tryStitchFrames(
 	const ffmpeg = which("ffmpeg");
 	if (ffmpeg && frames.length >= 2) {
 		const mp4 = `${outBase}.mp4`;
-		// A private list avoids overwriting an operator's files in framesDir.
 		const scratch = mkdtempSync(path.join(tmpdir(), "optimizexp-stitch-"));
 		const listFile = path.join(scratch, "frames.txt");
 		const listBody = frames
@@ -85,7 +84,6 @@ export function tryStitchFrames(
 			if (r.status === 0 && existsSync(mp4)) {
 				return { file: mp4, kind: "video" };
 			}
-			// gif fallback via ffmpeg
 			const gif = `${outBase}.gif`;
 			const g = spawnSync(
 				ffmpeg,

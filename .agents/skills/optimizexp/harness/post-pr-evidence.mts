@@ -66,7 +66,6 @@ function stackHint(): string {
 	return "No gh stack extension detected; using a single linear PR is fine.";
 }
 
-/** Check path components without following links, including for dry runs. */
 function safeEvidenceEntry(root: string, target: string, kind: "directory" | "file", optional = false) {
 	const relative = path.relative(root, path.resolve(target));
 	if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
@@ -95,7 +94,6 @@ function safeEvidenceEntry(root: string, target: string, kind: "directory" | "fi
 	return null;
 }
 
-/** Manifest paths are relative to their own scenario, never another scenario. */
 function primaryEvidencePath(directory: string, value: unknown): string {
 	if (typeof value !== "string" || !value || path.isAbsolute(value) || path.win32.parse(value).root || value.includes("\\") || [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
 		throw new Error("Invalid evidence manifest primaryPath");
@@ -182,7 +180,6 @@ function postComment(pr: string, body: string, dry: boolean) {
 	return { ok: r.status === 0, stderr: r.stderr || r.error?.message || (r.signal ? `gh ended by ${r.signal}` : `gh exited with status ${r.status}`), stdout: r.stdout };
 }
 
-/** A PR number is a positive decimal, never a gh option or repository path. */
 function isPrNumber(value: string): boolean {
 	return /^\d+$/.test(value) && /[1-9]/.test(value);
 }

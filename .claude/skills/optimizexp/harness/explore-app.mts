@@ -67,7 +67,6 @@ Feeds critical-path feature generation (see references/feature-quality.md).
 `);
 }
 
-/** Resolve an unregistered package only when its existing directory and manifest are valid. */
 function packageFallback(token: string, root: string): (ReturnType<typeof listProjects>)[number] | null {
 	const rel = token.startsWith("packages/") ? token : `packages/${token}`;
 	if (!/^packages\/[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/.test(rel)) return null;
@@ -138,7 +137,6 @@ function main() {
 		? all.filter((p) => p.id !== "root" || all.length === 1)
 		: [...selection.projects];
 
-	// Resolve every fallback before writing any project map or catalog.
 	for (const token of selection.unknown) {
 		const fallback = packageFallback(token, root);
 		if (!fallback) {

@@ -698,9 +698,6 @@ Crossplane (CNCF graduated) is the strongest living open standard for the "abstr
 
 **Status:** Superseded by [ADR-0149](#adr-0149) — the buildability finding stands; the identity change it drew from it does not. Its clauses 1 and 3 (rewriting the product identity, retiring Bo) are void; clauses 2, 4 and 5 survive under ADR-0149, scoped to `@hobo/pixel-village`.
 
-> The separate `@hobo/pixel-village` package was later removed from this tree;
-> that package-specific scope is historical, not a currently available game.
-
 ### Context
 [ADR-0150](#adr-0150) made "the Bo art bible is law" and [ADR-0147](#adr-0147) restated it, binding every surface to a hand-traced 1930s rubberhose identity rendered in strict black and white. In practice the game surface could not be *built* from that contract: because no sourced game art existed, props were assembled from stacked rectangles and lines directly in the renderer. The product owner reviewed the running build and rejected it — the result read as a paint-program diagram rather than a game — and rejected the traced Bo/parallax artwork along with it, directing that free open-source video-game art be used instead.
 
@@ -794,11 +791,6 @@ A research provider matrix also existed, ranking providers by a weighted scalar 
 - **(−)** Live conformance is a real operational obligation. Evidence expires, and expiry silently narrows what the resolver will pick until someone re-runs the guarded harness.
 
 ## ADR-0156
-
-> Historical scope: the `hobo-code` harness and its extension point described
-> below were removed from this tree with `packages/code`. The remaining Plugin
-> SPI decisions continue to describe their surviving packages.
-
 **The Plugin SPI: one extension-point model, a core-owned provider port, and manifest-declared external plugins.**
 
 ### Context
@@ -833,16 +825,9 @@ An audit of the implemented extension surface found twenty-one distinct mechanis
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-Decision 6 (the `hobo.code.harness-spec/v1` record in `packages/code/data-models/`) described `feature/hobo-code` at that date. Code is absent from this tree, so the harness-spec extension point is not in this tree's catalog.
+Decision 6 (the `hobo.code.harness-spec/v1` record in `packages/code/data-models/`) describes the `feature/hobo-code` branch; `@hobo/code` is not part of `main`, so the harness-spec extension point is not in the `main` catalog.
 
 ## ADR-0157
-
-> Status amendment: `hobo station init` does not automatically discover host
-> capabilities or seed/register a Yard. `seedLocalhostYard` returns supported
-> rows with provenance and fidelity, and lists unavailable profiles, from
-> observations supplied by the caller. Yard registration is a separate step.
-> References to automatic Station seeding below record the earlier design intent.
-
 **Yard bindings: the Yard is the binding authority — a capability→product mapping surface on the Yard, bindings-are-the-SDK across the membrane, and the seeded localhost Yard.**
 
 **Status:** Accepted — extends the [yard-first-placement ADR](yard-first-placement.md) (Yard owns provider selection), [ADR-0151](#adr-0151) (profiles, bindings, selection), [ADR-0141](02-identity-security.md#adr-0141) (binding membrane), and [ADR-0155](01-architecture-core.md#adr-0155) (station capabilities); informed by the [Alchemy capture](../../competitors/alchemy.md#bindings--beyond-linking).

@@ -4,7 +4,6 @@
 import type { DiscoveryReport, DiscoveredBinding } from "./code-discovery.mts";
 import { pickPrimaryCommand } from "./code-discovery.mts";
 
-/** Keep generated project paths portable and relative to the repository. */
 function projectPath(value: string | undefined): string {
 	const relative = (value ?? "").split("\\").join("/");
 	if (
@@ -59,7 +58,6 @@ export function generateImplementationsTs(input: {
 	featureId: string;
 	primary: DiscoveredBinding | null;
 	report: DiscoveryReport;
-	/** Project directory relative to the repository root; defaults to root. */
 	projectDir?: string;
 }): string {
 	const project = projectPath(input.projectDir);
@@ -444,9 +442,7 @@ node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js \\
 export function buildImplementationsFromDiscovery(input: {
 	featureId: string;
 	report: DiscoveryReport;
-	/** Explicit catalog entry, or null to keep that surface stubbed. */
 	primaryOverride?: DiscoveredBinding | null;
-	/** Project directory relative to the repository root; defaults to root. */
 	projectDir?: string;
 }): {
 	implementations: string;

@@ -46,8 +46,6 @@ export function extractCommandHints(text: string): string[] {
 		const cmd = m[1]!.trim();
 		if (cmd.length > 0 && cmd.length < 200) hints.add(cmd);
 	}
-	// Do not also infer a HoBo command prefix from an unsafe shell expression
-	// inside a backtick pair.
 	const prose = text.replace(/`[^`]+`/g, " ");
 	for (const m of text.matchAll(
 		/\b(?:pnpm|npm|yarn|bun)(?:\s+run)?\s+([a-zA-Z0-9:_:.-]+)/g,
@@ -60,7 +58,6 @@ export function extractCommandHints(text: string): string[] {
 	return [...hints];
 }
 
-/** Accept literal shell words, including quoted values, but not expansion or operators. */
 function literalShellWords(command: string): { value: string; quoted: boolean }[] | null {
 	const words: { value: string; quoted: boolean }[] = [];
 	let word = "";
@@ -202,8 +199,6 @@ export function discoverCode(input: {
 		collectFeatureText(input.featureDir),
 	].join("\n");
 	const hints = extractCommandHints(text);
-	// A default help command can be a plain surface rather than a quoted
-	// command. Only promote a complete seed or surface, never a prose fragment.
 	for (const candidate of [input.seed, ...(input.surfaces ?? [])]) {
 		const command = candidate.trim();
 		if (/^hobo[ \t]+(?:--help|-h)$/i.test(command)) hints.push(command);

@@ -637,11 +637,6 @@ Nine mechanisms independently attach operational behavior to resources/component
 - **(−)** "Trait" now means the HoBo concept; OAM's narrower CRD sense must be qualified when discussing KubeVela/wadm.
 
 ## ADR-0155
-
-> Historical scope: the `hobo-code` initialization and dev-scenario integration
-> described below was removed from this tree with `packages/code`. The typed
-> Station capability and matching contracts remain in `packages/stations`.
-
 **Station capabilities as a typed manifest; localhost capability discovery gates `hobo-code init`; hobo-code dev scenarios dogfood `station()` declarations.**
 
 ### Context
@@ -663,7 +658,7 @@ ADR-0131 made Station the control-plane occupancy primitive, but "Station capabi
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-Decisions 3 and 4 (`hobo-code init`, the dev-scenario `codeDevStation` declarations) and the hobo-code consequences described `feature/hobo-code` at that date; the Code package is absent from this tree. Decisions 1, 2 and 5 — the typed `StationCapability`, fail-closed matching and the declared `isolationClass` — remain in `@hobo/stations`.
+Decisions 3 and 4 (`hobo-code init`, the dev-scenario `codeDevStation` declarations) and the hobo-code consequences describe the `feature/hobo-code` branch, not `main`. Decisions 1, 2 and 5 — the typed `StationCapability`, fail-closed matching and the declared `isolationClass` — are on `main` in `@hobo/stations`.
 
 ## ADR-0158
 **Deployment phases: `plan` / `init` / `handle` — one program, three evaluations, phase-safe by contract.**

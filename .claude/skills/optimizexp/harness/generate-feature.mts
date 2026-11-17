@@ -182,8 +182,6 @@ function writeBindingsAndTests(input: {
 		featureId: input.id,
 		report,
 		primaryOverride,
-		// The generic discovery report currently reads root scripts. A catalog
-		// entry is separately verified against its selected project's manifest.
 		projectDir: input.catalogCommand === undefined ? "" : path.relative(input.root, input.packageDir ?? input.root),
 	});
 	writeFileSync(path.join(stepsDir, "world.ts"), built.world, "utf8");
@@ -923,7 +921,6 @@ function planExperience(args: Record<string, string>) {
 		return;
 	}
 	mkdirSync(dir, { recursive: true });
-	// A partial draft is still user work; replace it only when explicitly forced.
 	if (existsSync(out) && args.force !== "1") {
 			console.log(
 				JSON.stringify(

@@ -53,7 +53,6 @@ function wantsCostGoal(personaId: string, body: string): boolean {
 	return /\b(?:finops|cost[- ]controller|cost information|cost estimate|estimated? costs?|budget information)\b/i.test(`${personaId} ${body}`);
 }
 
-/** Help must identify a cost surface; a generic `plan` verb alone is insufficient. */
 function costCommand(map: SurfaceMap): SurfaceMap["commands"][number] | undefined {
 	return map.commands.find((command) => {
 		if (command.id !== "cost" && command.id !== "plan") return false;
@@ -157,7 +156,6 @@ export function buildExperienceCatalog(input: {
 			}
 		}
 
-		// Only a discovered help entry is an executable journey.
 		if (map.nonInteractiveHelp) add({
 			experienceId: "help-discoverability",
 			personaId,

@@ -22,6 +22,22 @@ assert.equal(result.exitCode, 0);
 const transcript = readFileSync(result.primaryFile, "utf8");
 assert.match(transcript, /replayable evidence/);
 
+const missingRoot = mkdtempSync(path.join(tmpdir(), "optimizexp-capture-missing-shell-"));
+try {
+	const missing = await captureCli(missingRoot, { command: "printf unreachable", cwd: missingRoot, env: { PATH: path.join(missingRoot, "missing") } });
+	assert.equal(missing.exitCode, null);
+	assert.equal(missing.degraded, true);
+	assert.match(missing.stderr, /spawn error:.*ENOENT/);
+	assert.equal(readFileSync(missing.primaryFile, "utf8"), missing.combined);
+	writeFileSync(missing.primaryFile, "sentinel after capture resolved");
+	writeFileSync(path.join(missingRoot, "terminal.txt"), "terminal sentinel after capture resolved");
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	assert.equal(readFileSync(missing.primaryFile, "utf8"), "sentinel after capture resolved");
+	assert.equal(readFileSync(path.join(missingRoot, "terminal.txt"), "utf8"), "terminal sentinel after capture resolved");
+} finally {
+	rmSync(missingRoot, { recursive: true, force: true });
+}
+
 const native = captureNative(mkdtempSync(path.join(tmpdir(), "optimizexp-native-")), {
 	command: "exit 7",
 	cwd: process.cwd(),
@@ -29,7 +45,6 @@ const native = captureNative(mkdtempSync(path.join(tmpdir(), "optimizexp-native-
 assert.equal(native.exitCode, 7);
 assert.equal(native.degraded, true);
 
-// Respect the caller's PATH for CLI, TUI recorder selection, and native commands.
 const pathRoot = mkdtempSync(path.join(tmpdir(), "optimizexp-capture-path-"));
 try {
 	const bin = path.join(pathRoot, "bin");
@@ -73,7 +88,6 @@ printf '{"version":2,"width":80,"height":24}\\n[0.1,"o","%s"]\\n[0.2,"o","done"]
 	rmSync(pathRoot, { recursive: true, force: true });
 }
 
-// An MP4 failure retains the same private concat list for GIF, then removes it.
 const stitchRoot = mkdtempSync(path.join(tmpdir(), "optimizexp-stitch-test-"));
 const previousCwd = process.cwd();
 const previousPath = process.env.PATH;

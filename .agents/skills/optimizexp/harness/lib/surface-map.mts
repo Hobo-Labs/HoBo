@@ -23,7 +23,6 @@ export type SurfaceCommand = {
 	summary?: string;
 };
 
-/** Applicability is limited to the package.json bin field, not other surfaces. */
 export type CliAssessment = {
 	status: "present" | "not-applicable" | "unverified";
 	scope: "package.json bin";
@@ -74,7 +73,6 @@ function digestText(s: string): string {
 	return createHash("sha256").update(s.slice(0, 8000)).digest("hex").slice(0, 16);
 }
 
-/** Bind generated catalogs to the complete saved map, including observations. */
 export function surfaceMapDigest(map: SurfaceMap): string {
 	return createHash("sha256").update(JSON.stringify(map)).digest("hex");
 }
@@ -87,7 +85,6 @@ function executableDigest(file: string): string | null {
 	}
 }
 
-/** Validate saved executable bytes and the operator's scoped freshness assertion. */
 export function validateCurrentSurface(map: SurfaceMap, root: string, options?: {
 	confirmedSurfaces?: string[];
 	freshProbe?: boolean;
@@ -193,7 +190,6 @@ export function assessPackageCli(
 	return inspectPackageBins(packageDir, root).assessment;
 }
 
-/** Prefer the project's declared package binaries over the monorepo root. */
 export function discoverPackageBins(
 	packageDir: string,
 	root: string,
@@ -293,9 +289,7 @@ function detectInteractiveFromSources(packageDir: string, primaryBin: string): {
 export function buildSurfaceMap(input: {
 	project: ProjectRef;
 	root?: string;
-	/** Execute the primary binary with --help; runs trusted project code with inherited environment. */
 	probeBinary?: boolean;
-	/** Explicitly disable probing, including when requested. */
 	skipProbes?: boolean;
 }): SurfaceMap {
 	const root = input.root ?? repoRoot();

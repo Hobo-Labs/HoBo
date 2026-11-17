@@ -10,7 +10,6 @@ export function scenarioSlug(name: string): string {
 		.slice(0, 120);
 }
 
-/** A stored feature or scenario id must be exactly one safe path segment. */
 export function isPathIdentifier(value: string): boolean {
 	return typeof value === "string" && /^[a-z0-9][a-z0-9._-]*$/i.test(value);
 }

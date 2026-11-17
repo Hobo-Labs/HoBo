@@ -32,7 +32,7 @@ Rules:
 | **web** | Browser video recording (Playwright / browser MCP) | Screenshot sequence → stitch to video → GIF |
 | **native** | Computer-use / OS recorder video | Screenshots at key moments → stitch → GIF |
 | **tui** | Terminal recording (asciinema cast / script) + screen size | Full terminal transcript + cols×rows + optional PNG of terminal if available |
-| **cli** (non-TUI) | Replayable asciicast (`primary.cast`) + HTML player + transcript | Transcript only when recording is impossible; mark degraded |
+| **cli** (non-TUI) | One-shot stdout/stderr/exit transcript (`primary.txt`) | Output beyond 8 MiB per stream is truncated and marked degraded |
 | **api** | Replayable Playwright/API script plus sanitized HAR or structured request/response trace | A raw log is supporting evidence only; preserve status, headers, payload, timing, and correlation id |
 | **docs** | Rendered page screenshot or HTML snapshot | Markdown excerpt + path |
 
@@ -107,6 +107,11 @@ node --import tsx .agents/skills/optimizexp/harness/capture-evidence.mts \
 
 The reviewer must confirm identity, relevance, and full-journey coverage. The
 review stores the primary SHA-256; recapture invalidates the prior review.
+Review checks the current artifact and proposed decision before replacing the
+prior review. A deliberate `--relevant no` or `--complete no` records a
+rejection and revokes acceptance; invalid inputs, short notes, or mismatched
+artifact bytes preserve the previous review. Rejections return a nonzero exit
+status because they cannot support scoring.
 Strict validation and `assert-complete` reject pending/partial/degraded,
 hash-mismatched, or claim-incomplete evidence.
 
