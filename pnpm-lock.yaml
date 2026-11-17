@@ -793,6 +793,10 @@ importers:
       sigstore:
         specifier: 5.0.1
         version: 5.0.1
+    devDependencies:
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
 
   packages/cd-gitops:
     dependencies:

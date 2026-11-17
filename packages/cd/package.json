@@ -56,5 +56,8 @@
     "@hobo/stations": "workspace:*",
     "@hobo/trust": "workspace:*",
     "sigstore": "5.0.1"
+  },
+  "devDependencies": {
+    "fast-check": "^4.3.0"
   }
 }
