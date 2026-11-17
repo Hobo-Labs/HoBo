@@ -119,6 +119,23 @@ The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-rout
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. The abstract proof does not establish that the TypeScript implementation refines it.
 
+The estimate-routing model checks 98 bounded states, with two providers and a
+shared estimate. Its projection hides 27 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Dispatch requested
+  s1: Affordable provider selected
+  s2: No provider affordable
+  s3: Full exposure held
+  s4: Same decision replayed
+  [*] --> s0
+  s0 --> s1: compare estimate with budgets
+  s0 --> s2: compare estimate with budgets
+  s1 --> s3: reserve full exposure
+  s3 --> s4: replay original inputs
+```
+
 The category-scope model checks 54 bounded states and hides 27 same-state
 transitions. It assumes a mismatched imported record has already been detected.
 
