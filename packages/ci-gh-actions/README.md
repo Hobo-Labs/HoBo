@@ -2019,3 +2019,29 @@ only: nothing is committed, pushed or sent anywhere.
 `packages/hobo/test/ci-init-relay.test.ts` runs the command on a temporary
 checkout with a git fake that records every call: apply, undo and apply
 again leave the same bytes, and no call adds, commits or pushes.
+
+## Provider usage sync
+
+`@hobo/ci-gh-actions/provider-usage` reads what an account spent this month
+on Depot, Namespace and WarpBuild from each provider's own usage API, once an
+hour, and serves it to a runner order's spend limit ahead of the ledger
+(ADR-0183). [`src/provider-usage/PROVIDER-USAGE.md`](src/provider-usage/PROVIDER-USAGE.md)
+names each call, the field read, how it becomes dollars, and the vendor page
+and day each was read.
+
+- `DepotUsageReader`, `NamespaceUsageReader` and `WarpbuildUsageReader` make
+  read calls only. A refusal, another shape or a network failure is
+  "unmeasured"; a reader never throws.
+- A subscription holds a credential reference (`env:NAME`), never a token.
+  `envCredentialResolver` resolves it per sync, and no reading keeps it.
+- `ProviderUsageSync` syncs every subscription; `scheduleProviderUsageSync`
+  runs it at start and hourly. `SyncedSpendReader` answers the ledger's
+  figures with each fresh vendor reading in its place, from memory, so a
+  routing step never waits on a vendor. A provider whose read fails, or
+  whose reading is over three hours old, falls back to the ledger.
+
+`contracts/depot-usage.pact.json`, `namespace-usage.pact.json` and
+`warpbuild-usage.pact.json` hold one reading and one refused token each;
+`contracts/provider-usage.consumer.test.ts` drives each reader through them.
+No reader has called a vendor and the relay does not construct the spend
+reader yet: built, not proven.
