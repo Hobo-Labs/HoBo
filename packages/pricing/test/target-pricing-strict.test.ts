@@ -41,6 +41,71 @@ function fixture() {
 }
 
 describe("strict developer target pricing data", () => {
+	it("does not normalize unrecognized inventory fields into unpriced permission", () => {
+		for (const location of ["inventory", "resource"] as const) {
+			const { inventory } = fixture();
+			const altered =
+				location === "inventory" ? inventory : inventory.resources[0];
+			if (altered === undefined) throw new Error("fixture resource missing");
+			Object.defineProperty(altered, "unmodeledCharge", {
+				value: "100",
+				enumerable: true,
+			});
+			expect(
+				quoteTargetPricing(inventory, targetPricingUnavailable("no model")),
+				location,
+			).toMatchObject({
+				ok: false,
+				code: "TARGET_INVENTORY_INCOMPLETE",
+			});
+			expect(() => createTargetPricingInventory(inventory), location).toThrow();
+		}
+	});
+
+	it("returns an explicit rejection for malformed inventories", () => {
+		const { inventory } = fixture();
+		const unavailable = targetPricingUnavailable("no model");
+		for (const malformed of [
+			{},
+			{ ...inventory, targetId: 123 },
+			{ ...inventory, resources: [null] },
+			{ ...inventory, $typeName: "foreign.Inventory" },
+		]) {
+			// SAFETY: this test exercises an untrusted JavaScript caller at the typed boundary.
+			const value = malformed as typeof inventory;
+			expect(quoteTargetPricing(value, unavailable)).toMatchObject({
+				ok: false,
+				code: "TARGET_INVENTORY_INCOMPLETE",
+			});
+		}
+	});
+
+	it("rejects nested and revoked proxies before invoking their traps", () => {
+		const { inventory, input } = fixture();
+		let traps = 0;
+		const resource = inventory.resources[0];
+		if (resource === undefined) throw new Error("fixture resource missing");
+		inventory.resources[0] = new Proxy(resource, {
+			getPrototypeOf(target) {
+				traps++;
+				return Reflect.getPrototypeOf(target);
+			},
+			ownKeys(target) {
+				traps++;
+				return Reflect.ownKeys(target);
+			},
+		});
+		expect(
+			quoteTargetPricing(inventory, targetPricingUnavailable("no model")),
+		).toMatchObject({ ok: false });
+		expect(() => createTargetPricingInventory(inventory)).toThrow();
+		const revoked = Proxy.revocable(input.scenario, {});
+		revoked.revoke();
+		expect(() =>
+			targetPricingModel({ ...input, scenario: revoked.proxy }),
+		).toThrow();
+		expect(traps).toBe(0);
+	});
 	it.each([
 		"surcharge",
 		"length",

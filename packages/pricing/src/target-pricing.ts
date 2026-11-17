@@ -52,11 +52,92 @@ export type TargetPricingQuote =
 export function createTargetPricingInventory(
 	input: TargetPricingInventoryInput,
 ): TargetPricingInventory {
+	if (!isBoundedPricingInput(input))
+		throw new TypeError("invalid or unbounded target pricing inventory");
+	let stable: TargetPricingInventoryInput;
+	try {
+		stable = structuredClone(input);
+	} catch {
+		throw new TypeError("invalid target pricing inventory");
+	}
+	if (!validInventoryInput(stable))
+		throw new TypeError(
+			"target pricing inventory contains unsupported or malformed data",
+		);
 	return create(TargetPricingInventorySchema, {
-		...input,
-		resources: [...input.resources],
+		...stable,
+		resources: [...stable.resources],
 	});
 }
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: inventory objects cross a runtime input boundary before protobuf normalization. */
+type InventoryInputPart =
+	| TargetPricingInventoryInput
+	| TargetPricingInventoryInput["resources"][number];
+
+function validInventoryInput(input: TargetPricingInventoryInput): boolean {
+	const fieldsAreKnown = (
+		value: InventoryInputPart,
+		allowed: readonly string[],
+		typeName: string,
+	) => {
+		const fields = Object.getOwnPropertyDescriptors(value);
+		const unknown = fields.$unknown?.value;
+		return (
+			(!Object.hasOwn(fields, "$typeName") ||
+				fields.$typeName?.value === typeName) &&
+			(!Object.hasOwn(fields, "$unknown") ||
+				(Array.isArray(unknown) && unknown.length === 0)) &&
+			Object.keys(fields).every(
+				(key) =>
+					allowed.includes(key) || key === "$typeName" || key === "$unknown",
+			)
+		);
+	};
+	try {
+		return (
+			input !== null &&
+			typeof input === "object" &&
+			fieldsAreKnown(
+				input,
+				[
+					"targetId",
+					"tenantId",
+					"planDigest",
+					"complete",
+					"evidenceRef",
+					"resources",
+					"operation",
+				],
+				"hobo.pricing.v1.TargetPricingInventory",
+			) &&
+			typeof input.targetId === "string" &&
+			typeof input.tenantId === "string" &&
+			typeof input.planDigest === "string" &&
+			typeof input.complete === "boolean" &&
+			typeof input.evidenceRef === "string" &&
+			(input.operation === undefined || typeof input.operation === "string") &&
+			Array.isArray(input.resources) &&
+			input.resources.every(
+				(resource) =>
+					resource !== null &&
+					typeof resource === "object" &&
+					fieldsAreKnown(
+						resource,
+						["resourceId", "providerId", "providerAccountRef", "productId"],
+						"hobo.pricing.v1.TargetPricingResource",
+					) &&
+					typeof resource.resourceId === "string" &&
+					typeof resource.providerId === "string" &&
+					typeof resource.providerAccountRef === "string" &&
+					typeof resource.productId === "string",
+			)
+		);
+	} catch {
+		return false;
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 export function targetPricingUnavailable(
 	reason: string,
@@ -178,7 +259,12 @@ export function quoteTargetPricing(
 	if (!isBoundedPricingInput(inventory) || !isBoundedPricingInput(availability))
 		return refuse(
 			"PRICING_INPUT_TOO_LARGE",
-			"pricing input exceeds the bounded data limits",
+			"pricing input is uninspectable or exceeds the bounded data limits",
+		);
+	if (!isExactProtoMessage(TargetPricingInventorySchema, inventory))
+		return refuse(
+			"TARGET_INVENTORY_INCOMPLETE",
+			"target inventory contains unsupported or malformed data",
 		);
 	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, availability))
 		return refuse(

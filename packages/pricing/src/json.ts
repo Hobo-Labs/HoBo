@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { types as utilTypes } from "node:util";
 /* oxlint-disable anti-slop/no-shape-in-symbol-names -- SAFETY: this is the upstream protobuf type, locally aliased by its domain role. */
 import {
 	clone,
@@ -33,7 +34,12 @@ export function isBoundedPricingInput<T>(input: T): boolean {
 		if (typeof value === "string") return value.length <= 4096;
 		if (typeof value === "number") return Number.isFinite(value);
 		if (typeof value === "bigint") return value.toString().length <= 128;
-		if (typeof value !== "object" || ancestors.has(value)) return false;
+		if (
+			typeof value !== "object" ||
+			utilTypes.isProxy(value) ||
+			ancestors.has(value)
+		)
+			return false;
 		ancestors.add(value);
 		try {
 			const proto = Object.getPrototypeOf(value);
