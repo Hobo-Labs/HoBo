@@ -40,6 +40,10 @@ const OVERFLOW_BACKEND_ORDER: readonly FleetBackend[] = [
 	"local",
 	"github",
 ];
+const VERIFICATION_BACKENDS: ReadonlySet<string> = new Set([
+	"hobo",
+	...OVERFLOW_BACKEND_ORDER,
+]);
 
 export function isGithubLatestLabel(runsOn: string): boolean {
 	return runsOn.trim().toLowerCase() === "ubuntu-latest";
@@ -138,7 +142,10 @@ export function selectFleetVerification(input: {
 		ids.size !== input.members.length ||
 		input.members.some(
 			(member) =>
-				member.id.length === 0 ||
+				member.id.trim().length === 0 ||
+				(member.enabled &&
+					(!VERIFICATION_BACKENDS.has(member.backend) ||
+						member.runsOn.trim().length === 0)) ||
 				(member.enabled &&
 					(!Number.isSafeInteger(member.freeSlots) || member.freeSlots < 0)) ||
 				(member.enabled &&

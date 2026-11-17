@@ -260,7 +260,8 @@ local box, then GitHub-hosted; see "Runner routing" in
 
 `selectFleetVerification` keeps that runner order and can select an opt-in
 local signoff only after all enabled runner tiers are known unavailable. It
-waits for unknown, malformed, or contradictory capacity. This is a separate
+waits on unknown capacity when no runner is available, and always waits on
+malformed or contradictory observations. This is a separate
 verification path, not a `runs-on` label or an Actions job completion.
 
 An account can offer its own development machine with `provider: "local"`,

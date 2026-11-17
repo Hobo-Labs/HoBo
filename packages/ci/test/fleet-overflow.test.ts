@@ -265,10 +265,23 @@ describe("fleet verification selection", () => {
 			{ members: [hobo(0)], unknownMembers: ["missing"] },
 			{ members: [hobo(1)], unknownMembers: ["hobo-1"] },
 			{ members: [hobo(0, { id: "" })], unknownMembers: [] },
+			{ members: [hobo(0, { id: "   " })], unknownMembers: [] },
+			{ members: [hobo(1, { runsOn: "" })], unknownMembers: [] },
+			{ members: [hobo(0, { runsOn: "  " })], unknownMembers: [] },
 		])
 			expect(
 				selectFleetVerification({ ...input, localSignoffEnabled: true }),
 			).toEqual(unknown);
+		// SAFETY: This intentionally models an untyped caller supplying a new
+		// backend before the selector knows how to order or interpret it.
+		const unsupported = { ...hobo(1), backend: "other" } as FleetMember;
+		expect(
+			selectFleetVerification({
+				members: [unsupported],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			}),
+		).toEqual(unknown);
 	});
 
 	it("keeps the normal runner order when local signoff is enabled", () => {
