@@ -1,0 +1,55 @@
+/**
+ * Runner-less checks (ADR-0183): a relay completes a job made only of HoBo
+ * check steps itself. See `./checks.ts` for the handler, `./lint.ts` for the
+ * lint tools, `./source.ts` for what it reads of GitHub and
+ * `./docker-sandbox.ts` for the sandbox the lint tools run in.
+ */
+export {
+	CHECK_COMPLETED_EVENT,
+	checkStepsOf,
+	createRelayChecks,
+	RELAY_CHECK_NAMES,
+	type RelayCheckCompleted,
+	type RelayCheckName,
+	type RelayChecksOptions,
+	relayCheckOf,
+} from "./checks.js";
+export {
+	DEFAULT_RELAY_CHECKS,
+	parseRelayChecksConfig,
+	type RelayChecksConfig,
+	type RelayChecksConfigRead,
+} from "./config.js";
+export {
+	createDockerLintSandbox,
+	type DockerLintSandboxOptions,
+	dockerLintArgs,
+	runHostCommand,
+	type SandboxCommand,
+	type SandboxCommandResult,
+	type SandboxCommandRunner,
+} from "./docker-sandbox.js";
+export {
+	LINT_MAX_ANNOTATIONS,
+	LINT_MAX_OUTPUT_BYTES,
+	LINT_TOOL_COMMANDS,
+	LINT_TOOL_TIMEOUT_MS,
+	LINT_TOOLS,
+	type LintFinding,
+	type LintRun,
+	type LintRunResult,
+	type LintSandbox,
+	type LintTool,
+	type LintToolResult,
+	lintAnnotations,
+	lintFindings,
+	lintSummary,
+	lintToolResult,
+	lintToolsOf,
+} from "./lint.js";
+export {
+	GithubRelayCheckSource,
+	LINT_MAX_ARCHIVE_BYTES,
+	type RelayCheckPullRequest,
+	type RelayCheckSource,
+} from "./source.js";
