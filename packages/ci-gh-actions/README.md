@@ -2103,13 +2103,23 @@ with a failure:
 - The policy's maximum (1 or 2 per run) and `RUNNER_RETRY_DAILY_CAP` per
   account count the ledger's rows that were not refused. A failed
   annotation read is no annotations.
+- A delivery that claimed a row and died before recording GitHub's answer
+  leaves it `pending`. After `RETRY_PENDING_LEASE_MS` (5 minutes) one later
+  delivery takes it back, stamps it with its own time and asks again; inside
+  the lease, a delivery answers `already_retried`.
+
+A relay job is one asking `hobo-relay`, or named `relay` or `route` alone or
+with a matrix suffix (`route (linux)`); `route-lint` or `relay-tests` is not.
+`isRelayJob` in [`src/insight-ingest.ts`](src/insight-ingest.ts) is the one
+rule; `isRelayJobOf` is the same function.
 
 `hobo ci rerun <run> --reroute` (`packages/hobo/src/ci-rerun-reroute.ts`)
-makes the same re-run by hand: it finds the finished run's relay job (one
-asking `hobo-relay`, or named `relay` or `route`; `--job` picks one of
-several) and re-runs it with the token in `GH_TOKEN` or `GITHUB_TOKEN`. A
-plain re-run of failed jobs keeps the relay's old answer and lands the job on
-the label it had.
+makes the same re-run by hand. `hobo ci rerun` with `--reroute` goes to it;
+without, it is the plain re-run it always was. It reads every page of the
+finished run's jobs, finds the relay job (jobs asking `hobo-relay` win over
+jobs matched by name; `--job` picks one of several) and re-runs it with the
+token in `GH_TOKEN` or `GITHUB_TOKEN`. A plain re-run of failed jobs keeps
+the relay's old answer and lands the job on the label it had.
 
 The loop is tested against the GitHub simulator: a job that failed before its
 steps, a `workflow_run` webhook delivered twice, one re-run, and a fresh

@@ -163,11 +163,17 @@ function at(value: string | null | undefined): number | undefined {
 	return Number.isNaN(ms) ? undefined : ms;
 }
 
-/** A routing job hands the real work to another runner: it is left out of waits. */
-function isRelayJob(name: string, labels: readonly string[]): boolean {
+/**
+ * A routing job hands the real work to another runner: it is left out of
+ * waits. It asks `hobo-relay`, or is named `relay` or `route`, alone or with
+ * a matrix suffix (`route (linux)`). `route-lint` or `relay-tests` are jobs
+ * of their own. The one rule for a relay job: `auto-retry.ts` and
+ * `hobo ci rerun --reroute` use it too.
+ */
+export function isRelayJob(name: string, labels: readonly string[]): boolean {
 	return (
 		labels.includes(RELAY_LABEL) ||
-		/^(?:relay|route)(?:$|[\s\-_/(])/iu.test(name)
+		/^(?:relay|route)(?:\s*\(.*\))?$/iu.test(name)
 	);
 }
 

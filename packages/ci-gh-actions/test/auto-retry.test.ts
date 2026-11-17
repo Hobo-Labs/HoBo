@@ -33,6 +33,7 @@ import {
 	jobRetriedJson,
 	machineEventDisconnects,
 	parseJobRetried,
+	RETRY_PENDING_LEASE_MS,
 	type RerunJob,
 	RetryRouteFacts,
 	RetryRowRejection,
@@ -41,7 +42,7 @@ import {
 	SqliteRetryLedger,
 	testJobRetried,
 } from "../src/auto-retry.js";
-import { InsightIngest } from "../src/insight-ingest.js";
+import { InsightIngest, isRelayJob } from "../src/insight-ingest.js";
 import {
 	GithubSimulator,
 	simulatorTransport,
@@ -453,6 +454,41 @@ describe("autoRetryRun", () => {
 		});
 	});
 
+	it("takes back a row left pending by a relay that died before GitHub answered, once its lease ran out", async () => {
+		const { deps, journal, ledger, reruns } = setup();
+		await journal.record(decided());
+		// A delivery claimed the row and died before settling it.
+		await expect(
+			autoRetryRun(run(), {
+				...deps,
+				rerun: async () => {
+					throw new Error("process killed");
+				},
+			}),
+		).rejects.toThrow("process killed");
+		expect(ledger.rows).toEqual([
+			expect.objectContaining({ rerun: "pending", atMs: deps.nowMs }),
+		]);
+		// Inside the lease, the row may still be in flight: nobody asks again.
+		const soon = deps.nowMs + RETRY_PENDING_LEASE_MS - 1;
+		expect(await autoRetryRun(run(), { ...deps, nowMs: soon })).toEqual({
+			retried: false,
+			reason: "already_retried",
+		});
+		expect(reruns).toHaveLength(0);
+		// After it, exactly one of two racing deliveries asks GitHub again.
+		const late = { ...deps, nowMs: deps.nowMs + RETRY_PENDING_LEASE_MS };
+		const outcomes = await Promise.all([
+			autoRetryRun(run(), late),
+			autoRetryRun(run(), late),
+		]);
+		expect(outcomes.filter((outcome) => outcome.retried)).toHaveLength(1);
+		expect(reruns).toHaveLength(1);
+		expect(ledger.rows).toEqual([
+			expect.objectContaining({ rerun: "started", atMs: late.nowMs }),
+		]);
+	});
+
 	it("finds a run's decision below the first page of a busy repository's journal", async () => {
 		const { deps, journal, reruns } = setup();
 		await journal.record(decided({ jobId: "relay-1" }));
@@ -589,6 +625,13 @@ describe("GitHub reads and writes", () => {
 		expect(isRelayJobOf("build", ["hobo-relay"])).toBe(true);
 		expect(isRelayJobOf("route", ["ubuntu-latest"])).toBe(true);
 		expect(isRelayJobOf("router-tests", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJobOf("route (linux)", ["ubuntu-latest"])).toBe(true);
+		expect(isRelayJobOf("Relay", ["ubuntu-latest"])).toBe(true);
+		expect(isRelayJobOf("route-lint", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJobOf("relay-tests", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJobOf("relay_build", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJobOf("route / docs", ["ubuntu-latest"])).toBe(false);
+		expect(isRelayJobOf).toBe(isRelayJob);
 	});
 
 	it("reads no annotations from a failed read, and status 0 from a network failure", async () => {
