@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
 	BudgetLedgerSnapshotSchema,
@@ -195,7 +196,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		).toBe(true);
 	});
 
-	it.each([
+	const generationModes = [
 		"normal",
 		"release-race",
 		"claimed-retry",
@@ -214,7 +215,26 @@ describe("yard event-store folds + provider resolvers", () => {
 		"changed-plan-during-policy",
 		"changed-plan-during-claim",
 		"changed-plan-before-claim",
-	])("funds Azure generation before provider effects: %s", async (mode) => {
+		"generation-policy-revoked",
+		"generation-policy-replaced",
+		"generation-policy-before-receipt",
+		"generation-runtime-catalog-replaced",
+		"generation-lookup-method-replaced",
+		"generation-snapshot-method-replaced",
+		"generation-registry-replaced",
+		"generation-runtime-revoked",
+		"generation-connector-replaced",
+		"generation-connector-id-mismatch",
+		"generation-runtime-read-unavailable",
+		"generation-runtime-read-initial",
+		"generation-method-replaced",
+		"generation-lookup-redirect",
+		"generation-policy-before-claim",
+		"generation-runtime-after-claim",
+		"generation-policy-after-effect",
+		"generation-runtime-after-effect",
+	] as const;
+	async function exerciseGeneration(mode: (typeof generationModes)[number]) {
 		const catalog = createLocalHostCatalog();
 		let generationFinished = false;
 		// Extend catalog with azure wildcard so residual placement can succeed after gen.
@@ -372,6 +392,13 @@ describe("yard event-store folds + provider resolvers", () => {
 				}
 				const result = await nativeConnector.provision(plan);
 				generationFinished = true;
+				if (mode === "generation-policy-after-effect")
+					Object.assign(allowPolicy, { effect: "deny" });
+				if (mode === "generation-runtime-after-effect") {
+					const runtime = runtimes.snapshot().runtimes[0];
+					if (!runtime) throw new Error("runtime fixture missing");
+					runtimes.register({ ...runtime, status: "disabled" });
+				}
 				if (
 					mode === "context-after-generation" ||
 					mode === "uncertain-write-failed"
@@ -384,6 +411,45 @@ describe("yard event-store folds + provider resolvers", () => {
 				return nativeConnector.inspect(attemptId);
 			},
 		};
+		const connectors = new Map([[connector.id, connector]]);
+		if (mode === "generation-connector-id-mismatch")
+			Object.assign(connector, { id: "different-connector" });
+		let runtimeReadsAvailable = mode !== "generation-runtime-read-initial";
+		if (
+			mode === "generation-runtime-read-unavailable" ||
+			mode === "generation-runtime-read-initial"
+		) {
+			const snapshot = runtimes.snapshot.bind(runtimes);
+			Object.assign(runtimes, {
+				snapshot() {
+					if (!runtimeReadsAvailable)
+						throw new Error("runtime catalog unavailable");
+					return snapshot();
+				},
+			});
+		}
+		let redirectedProvisionCalls = 0;
+		let lookupsAfterClaim = 0;
+		if (mode === "generation-lookup-redirect") {
+			const normalLookup = connectors.get.bind(connectors);
+			Object.assign(connectors, {
+				get(id: string) {
+					if (authority.lookup(reservationId)?.executionDigest)
+						lookupsAfterClaim++;
+					if (lookupsAfterClaim === 2)
+						return {
+							...connector,
+							async provision(
+								plan: Parameters<typeof nativeConnector.provision>[0],
+							) {
+								redirectedProvisionCalls++;
+								return nativeConnector.provision(plan);
+							},
+						};
+					return normalLookup(id);
+				},
+			});
+		}
 		const financial = {
 			...authority,
 			uncertain(id: string) {
@@ -398,6 +464,8 @@ describe("yard event-store folds + provider resolvers", () => {
 				)
 					throw new Error("storage unavailable");
 				const reservation = authority.lookup(id);
+				if (mode === "generation-policy-before-claim" && reservation)
+					Object.assign(allowPolicy, { effect: "deny" });
 				if (mode === "changed-plan-before-claim" && reservation)
 					runtimePermissions.push("unquoted-permission");
 				if (mode === "context-before-claim" && reservation) changeContext?.();
@@ -405,6 +473,11 @@ describe("yard event-store folds + provider resolvers", () => {
 			},
 			claimExecution(input: Parameters<typeof authority.claimExecution>[0]) {
 				const claimed = authority.claimExecution(input);
+				if (mode === "generation-runtime-after-claim") {
+					const runtime = runtimes.snapshot().runtimes[0];
+					if (!runtime) throw new Error("runtime fixture missing");
+					runtimes.register({ ...runtime, status: "disabled" });
+				}
 				if (mode === "changed-plan-during-claim")
 					runtimePermissions.push("unquoted-permission");
 				if (mode === "expiry-after-claim") now = "2026-11-02T00:00:00Z";
@@ -417,6 +490,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				return reservation;
 			},
 		};
+		let authorizationCalls = 0;
 		try {
 			const deps: YardFirstPlacementDeps = {
 				brokerId: "broker:azure-gen",
@@ -426,6 +500,48 @@ describe("yard event-store folds + provider resolvers", () => {
 					now: () => now,
 				},
 				authorizeHosting(input) {
+					authorizationCalls++;
+					if (
+						mode === "generation-policy-before-receipt" &&
+						authorizationCalls === 2
+					)
+						Object.assign(allowPolicy, { effect: "deny" });
+					if (mode === "generation-runtime-catalog-replaced")
+						Object.assign(deps, { runtimeCatalog: createYardRuntimeCatalog() });
+					if (mode === "generation-lookup-method-replaced") {
+						const originalLookup = connectors.get.bind(connectors);
+						Object.assign(connectors, {
+							get: (id: string) => originalLookup(id),
+						});
+					}
+					if (mode === "generation-runtime-read-unavailable")
+						runtimeReadsAvailable = false;
+					if (mode === "generation-policy-replaced")
+						Object.assign(deps, { generationPolicy: { ...allowPolicy } });
+					if (mode === "generation-registry-replaced")
+						Object.assign(deps, { connectors: new Map(connectors) });
+					if (mode === "generation-snapshot-method-replaced") {
+						const originalSnapshot = runtimes.snapshot.bind(runtimes);
+						Object.assign(runtimes, { snapshot: () => originalSnapshot() });
+					}
+					if (mode === "generation-connector-replaced")
+						connectors.set(connector.id, { ...connector });
+					if (mode === "generation-method-replaced")
+						Object.assign(connector, {
+							provision: async (
+								plan: Parameters<typeof nativeConnector.provision>[0],
+							) => {
+								provisionCalls++;
+								return nativeConnector.provision(plan);
+							},
+						});
+					if (mode === "generation-policy-revoked")
+						Object.assign(allowPolicy, { effect: "deny" });
+					if (mode === "generation-runtime-revoked") {
+						const runtime = runtimes.snapshot().runtimes[0];
+						if (!runtime) throw new Error("runtime fixture missing");
+						runtimes.register({ ...runtime, status: "disabled" });
+					}
 					if (mode === "changed-plan-during-policy")
 						runtimePermissions.push("unquoted-permission");
 					return {
@@ -445,7 +561,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				catalog: azureCatalog,
 				runtimeCatalog: runtimes,
 				generationPolicy: allowPolicy,
-				connectors: new Map([[connector.id, connector]]),
+				connectors,
 				seedLocalYard: false,
 			};
 			changeContext = () => Object.assign(deps, { hostingBudget: undefined });
@@ -463,6 +579,68 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (mode === "generation-runtime-read-initial") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.code).toBe(
+					"yard-runtime-catalog-unavailable",
+				);
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				return;
+			}
+			if (mode === "generation-connector-id-mismatch") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)).toBeUndefined();
+				return;
+			}
+			if (mode === "generation-lookup-redirect") {
+				expect(redirectedProvisionCalls).toBe(0);
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (mode === "generation-policy-before-receipt") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (
+				mode === "generation-policy-after-effect" ||
+				mode === "generation-runtime-after-effect"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (mode === "generation-runtime-after-claim") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (
+				mode === "generation-policy-revoked" ||
+				mode === "generation-runtime-read-unavailable" ||
+				mode === "generation-policy-replaced" ||
+				mode === "generation-runtime-catalog-replaced" ||
+				mode === "generation-lookup-method-replaced" ||
+				mode === "generation-snapshot-method-replaced" ||
+				mode === "generation-registry-replaced" ||
+				mode === "generation-runtime-revoked" ||
+				mode === "generation-connector-replaced" ||
+				mode === "generation-method-replaced" ||
+				mode === "generation-policy-before-claim"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.lookup(reservationId)?.executionDigest).toBe("");
 				return;
 			}
 			if (mode === "changed-plan-before-claim") {
@@ -575,5 +753,38 @@ describe("yard event-store folds + provider resolvers", () => {
 			authority.close();
 			rmSync(directory, { recursive: true, force: true });
 		}
+	}
+	it.each(generationModes)(
+		"funds Azure generation before provider effects: %s",
+		exerciseGeneration,
+	);
+	it("fences generated policy, runtime and connector changes", async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.constantFrom(
+					"normal",
+					"generation-policy-revoked",
+					"generation-connector-id-mismatch",
+					"generation-runtime-read-unavailable",
+					"generation-runtime-read-initial",
+					"generation-policy-replaced",
+					"generation-policy-before-receipt",
+					"generation-runtime-catalog-replaced",
+					"generation-lookup-method-replaced",
+					"generation-snapshot-method-replaced",
+					"generation-registry-replaced",
+					"generation-lookup-redirect",
+					"generation-runtime-revoked",
+					"generation-connector-replaced",
+					"generation-method-replaced",
+					"generation-policy-before-claim",
+					"generation-runtime-after-claim",
+					"generation-policy-after-effect",
+					"generation-runtime-after-effect",
+				),
+				async (mode) => exerciseGeneration(mode),
+			),
+			{ seed: 614528, numRuns: 80 },
+		);
 	});
 });

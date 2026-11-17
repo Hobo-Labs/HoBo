@@ -73,7 +73,14 @@ and digest before obtaining a quote; generated Yards also supply the planned
 `generationPlanHash`. The policy callback receives the bound placements and
 both digests. Legacy Yard quotes without a work digest are refused. If selected
 work changes after a provider effect, the hold is retained for reconciliation.
-The host remains responsible for its policy and provider assertions.
+The broker snapshots generation policy, runtime registration and connector
+identity and methods before policy approval, then checks them again before claim,
+before the provider call and after the operation. It invokes pinned connector
+methods rather than looking up a new implementation at the call boundary. If
+authority changes after a provider effect, the hold remains for reconciliation.
+The host remains responsible for truthful policy, connector and provider facts;
+these checks cannot detect a change restored between observations or control
+what a remote provider actually does.
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of quote approval, the reservation handoff and
