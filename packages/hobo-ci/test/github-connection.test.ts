@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
-import { type ConnectPage, startConnectPage } from "@hobo/connect-ui";
+import {
+	type ConnectPage,
+	type SavedSettings,
+	startConnectPage,
+} from "@hobo/connect-ui";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +18,7 @@ import {
 	githubAppConnected,
 	type OpenedSecretStore,
 	prepareGithubConnection,
+	resolveGithubAppExpectation,
 	resolveGithubAppHost,
 	type SecretStoreOpening,
 } from "../src/index.js";
@@ -144,6 +149,30 @@ const opened =
 	});
 
 describe("createGithubConnectFlow", () => {
+	it("resolves an existing App's configured owner and relay without looking up incomplete settings", async () => {
+		const calls: string[] = [];
+		const lookup: typeof fetch = async (input) => {
+			calls.push(String(input));
+			return Response.json({
+				id: OWNER_ID,
+				type: "Organization",
+				login: "octo",
+			});
+		};
+		expect(await resolveGithubAppExpectation({}, {}, lookup)).toBeUndefined();
+		expect(calls).toEqual([]);
+		const expected = await resolveGithubAppExpectation(
+			{ HOBO_CI_PUBLIC_URL: RELAY, HOBO_CI_GITHUB_OWNER: "octo" },
+			{},
+			lookup,
+		);
+		expect(expected).toMatchObject({
+			relayUrl: RELAY,
+			ownerId: OWNER_ID,
+			ownerType: "Organization",
+		});
+		expect(calls).toEqual(["https://api.github.com/users/octo"]);
+	});
 	it("does not resolve a GitHub identity when no credentials exist", async () => {
 		const store = memoryStore();
 		await expect(
@@ -451,9 +480,45 @@ function prepareInput(
 
 const ENV = {
 	HOBO_CI_PUBLIC_URL: RELAY,
-	HOBO_CI_GITHUB_OWNER: "octo-org",
+	HOBO_CI_GITHUB_OWNER: "octo",
 	HOBO_CI_GITHUB_OWNER_ID: String(OWNER_ID),
+	HOBO_CI_GITHUB_OWNER_TYPE: "User",
+	HOBO_CI_SECRET_STORE: "infisical",
+	INFISICAL_PROJECT_ID: "proj",
+	INFISICAL_TOKEN: "session-token",
 };
+
+function memorySettings(initial: SavedSettings = {}) {
+	let saved: SavedSettings = { ...initial };
+	return {
+		saved: () => saved,
+		read: async () => saved,
+		write: async (values: Readonly<Record<string, string>>) => {
+			saved = { ...values };
+		},
+	};
+}
+
+// GitHub, answering the public users lookup as well as the pact.
+function githubWithUsers(kind: "User" | "Organization") {
+	const pactGithub = fakeGithub(OWNER_ID, kind);
+	return {
+		calls: pactGithub.calls,
+		// SAFETY: the stand-in implements the one fetch overload the flow calls.
+		fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+			const url = new URL(String(input));
+			if (url.pathname.startsWith("/users/"))
+				return new Response(
+					JSON.stringify({
+						id: OWNER_ID,
+						type: kind,
+						login: url.pathname.slice(7),
+					}),
+				);
+			return pactGithub.fetch(input, init);
+		}) as typeof fetch,
+	};
+}
 
 describe("prepareGithubConnection", () => {
 	it("closes the real setup page if progress or browser launch throws", async () => {
@@ -479,6 +544,7 @@ describe("prepareGithubConnection", () => {
 							env: { ...ENV, HOBO_CONNECT_UI_COMPOSE: "off" },
 							interactive: true,
 							openStore: opened(memoryStore()),
+							settings: memorySettings(),
 							startPage: async (options) => {
 								page = await startConnectPage(options);
 								const started = page;
@@ -508,6 +574,31 @@ describe("prepareGithubConnection", () => {
 		}
 	});
 
+	it("refuses an unknown saved or configured secret store before opening it", async () => {
+		for (const [env, saved] of [
+			[{ ...ENV, HOBO_CI_SECRET_STORE: "unknown" }, {}],
+			[
+				{ ...ENV, HOBO_CI_SECRET_STORE: "" },
+				{ HOBO_CI_SECRET_STORE: "unknown" },
+			],
+		] as const) {
+			let opened = false;
+			const outcome = await prepareGithubConnection(prepareInput(), {
+				env,
+				settings: memorySettings(saved),
+				openStore: async () => {
+					opened = true;
+					throw new Error("unexpected store access");
+				},
+			});
+			expect(outcome).toMatchObject({
+				kind: "refused",
+				result: { code: "HOBO_CI_SECRET_STORE_INVALID" },
+			});
+			expect(opened).toBe(false);
+		}
+	});
+
 	it("refuses an unimplemented pinned host before opening a secret store", async () => {
 		let opened = false;
 		const outcome = await prepareGithubConnection(prepareInput(), {
@@ -530,6 +621,7 @@ describe("prepareGithubConnection", () => {
 		const github = fakeGithub();
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
+			settings: memorySettings(),
 			openStore: opened(store),
 			fetch: github.fetch,
 			startPage: () => {
@@ -593,6 +685,7 @@ describe("prepareGithubConnection", () => {
 		};
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
+			settings: memorySettings(),
 			openStore: opened(unavailable),
 			startPage: () => {
 				throw new Error("must not open setup");
@@ -605,87 +698,157 @@ describe("prepareGithubConnection", () => {
 		expect(store.names()).toEqual([]);
 	});
 
-	it("opens nothing for --what-if", async () => {
+	it("opens nothing for --what-if, and says what it would ask for", async () => {
 		const outcome = await prepareGithubConnection(prepareInput(true), {
-			env: ENV,
+			env: {},
+			settings: memorySettings(),
 			openStore: opened(memoryStore()),
 		});
 		expect(outcome).toMatchObject({
 			kind: "ready",
 			steps: [{ outcome: "would-create" }],
 		});
+		expect(JSON.stringify(outcome)).toMatch(
+			/would ask for Relay URL, GitHub owner, Secret store/,
+		);
 	});
 
-	it("refuses when unconfigured or when nobody can answer a page", async () => {
-		const unconfigured = await prepareGithubConnection(prepareInput(), {
+	it("without a person at a browser, refuses and names every missing setting", async () => {
+		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
-			openStore: opened(memoryStore()),
-		});
-		expect(unconfigured).toMatchObject({
-			kind: "refused",
-			result: { code: "HOBO_CI_CONNECTION_UNCONFIGURED" },
-		});
-		const headless = await prepareGithubConnection(prepareInput(), {
-			env: ENV,
 			interactive: false,
+			settings: memorySettings(),
 			openStore: opened(memoryStore()),
 		});
-		expect(headless).toMatchObject({
+		expect(outcome).toMatchObject({
 			kind: "refused",
 			result: { code: "HOBO_CI_CONNECTION_NEEDS_OWNER" },
 		});
+		expect(JSON.stringify(outcome)).toContain(
+			"HOBO_CI_PUBLIC_URL, HOBO_CI_GITHUB_OWNER, HOBO_CI_SECRET_STORE",
+		);
 	});
 
-	it("connects end to end through the real connect page", async () => {
+	it("asks for what is missing, looks up the owner, creates the org's App, and saves only non-secrets", async () => {
 		const store = memoryStore();
-		const landed: (number | string)[] = [];
+		const settings = memorySettings();
+		const github = githubWithUsers("Organization");
+		const seen: string[] = [];
 		let browsing: Promise<unknown> = Promise.resolve();
-		const github = fakeGithub();
 		const outcome = await prepareGithubConnection(prepareInput(), {
-			env: ENV,
+			env: {},
 			interactive: true,
-			openStore: opened(store),
+			settings,
 			fetch: github.fetch,
-			// The scripted owner: choose Infisical, follow GitHub's POST, come back.
+			openStore: async (_id, storeEnv) => {
+				// The store is opened with the token the ceremony collected.
+				expect(storeEnv.INFISICAL_TOKEN).toBe("session-token");
+				return { ok: true, store };
+			},
 			openBrowser: (url) => {
 				browsing = (async () => {
-					const action = (body: {
-						readonly action: string;
-						readonly params: Readonly<Record<string, string>>;
-					}) =>
+					const post = (action: string, params: Record<string, string> = {}) =>
 						fetch(`${url}action`, {
 							method: "POST",
 							headers: { "content-type": "application/json" },
-							body: JSON.stringify(body),
+							body: JSON.stringify({ action, params }),
 						}).then((res) => res.json());
-					await action({
-						action: "connect.chooseStore",
-						params: { store: "infisical" },
+					const first = await fetch(`${url}view`).then((res) => res.json());
+					seen.push(
+						first.view.fields.map((f: { name: string }) => f.name).join(","),
+					);
+					const storeStage = await post("connect.submit", {
+						HOBO_CI_PUBLIC_URL: RELAY,
+						HOBO_CI_GITHUB_OWNER: "octo-org",
+						HOBO_CI_SECRET_STORE: "infisical",
 					});
-					const started = await action({ action: "connect.start", params: {} });
+					seen.push(
+						storeStage.view.fields
+							.map((f: { name: string }) => f.name)
+							.join(","),
+					);
+					const create = await post("connect.submit", {
+						INFISICAL_PROJECT_ID: "proj",
+						INFISICAL_TOKEN: "session-token",
+					});
+					seen.push(create.step);
+					const started = await post("connect.start");
+					seen.push(started.directive.url.replace(/\?.*/, ""));
 					const manifest = JSON.parse(started.directive.fields.manifest);
 					const state = new URL(started.directive.url).searchParams.get(
 						"state",
 					);
-					// GitHub's redirect back, then the page the browser lands on.
-					const back = await fetch(
+					await fetch(
 						`${manifest.redirect_url}?code=one-time-code&state=${state}`,
 						{ redirect: "manual" },
 					);
-					landed.push(back.status);
-					const view = await fetch(`${url}view`).then((res) => res.json());
-					landed.push(view.step);
-				})().catch((error) => landed.push(`error: ${String(error)}`));
+					seen.push((await fetch(`${url}view`).then((res) => res.json())).step);
+				})();
 			},
 		});
+		await browsing;
+		expect(seen).toEqual([
+			"HOBO_CI_PUBLIC_URL,HOBO_CI_GITHUB_OWNER,HOBO_CI_SECRET_STORE",
+			"INFISICAL_PROJECT_ID,INFISICAL_TOKEN",
+			"create-github-app",
+			"https://github.com/organizations/octo-org/settings/apps/new",
+			"connected",
+		]);
 		expect(outcome).toMatchObject({
 			kind: "ready",
 			steps: [{ id: "github-app", outcome: "created" }],
 		});
-		expect(store.names()).toContain("HOBO_CI_GITHUB_APP_PRIVATE_KEY");
-		// The browser was redirected and then shown the finished step.
-		await browsing;
-		expect(landed).toEqual([303, "connected"]);
+		expect(settings.saved()).toEqual({
+			HOBO_CI_PUBLIC_URL: RELAY,
+			HOBO_CI_GITHUB_OWNER: "octo-org",
+			HOBO_CI_SECRET_STORE: "infisical",
+			INFISICAL_PROJECT_ID: "proj",
+		});
+	});
+
+	it("refuses an owner GitHub does not know, on the page, without creating anything", async () => {
+		const settings = memorySettings();
+		// SAFETY: the stand-in implements the one fetch overload the lookup calls.
+		const notFound = (async () =>
+			new Response("{}", { status: 404 })) as typeof fetch;
+		let errorShown = "";
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: {},
+			interactive: true,
+			settings,
+			fetch: notFound,
+			timeoutMs: 2_000,
+			openStore: opened(memoryStore()),
+			openBrowser: (url) => {
+				void (async () => {
+					const refused = await fetch(`${url}action`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({
+							action: "connect.submit",
+							params: {
+								HOBO_CI_PUBLIC_URL: RELAY,
+								HOBO_CI_GITHUB_OWNER: "nobody-here",
+								HOBO_CI_SECRET_STORE: "infisical",
+							},
+						}),
+					}).then((res) => res.json());
+					errorShown = refused.view.fields.find(
+						(f: { name: string }) => f.name === "HOBO_CI_GITHUB_OWNER",
+					).error;
+					await fetch(`${url}action`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ action: "connect.cancel", params: {} }),
+					});
+					// The page shows the finished step, as a browser does after an action.
+					await fetch(`${url}view`);
+				})();
+			},
+		});
+		expect(errorShown).toMatch(/no user or organization/);
+		expect(outcome).toMatchObject({ kind: "refused" });
+		expect(settings.saved()).toEqual({});
 	});
 });
 

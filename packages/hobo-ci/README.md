@@ -50,11 +50,12 @@ When updating an existing 1Password item, HoBo preserves its other metadata and
 refuses the update if the item changed since it was read. Displayed 1Password
 references point to the item's `password` field.
 
-Configuration (environment, nothing secret): `HOBO_CI_PUBLIC_URL`,
-`HOBO_CI_GITHUB_OWNER`, `HOBO_CI_GITHUB_OWNER_ID`, `HOBO_CI_GITHUB_OWNER_TYPE`
-(`User` by default, or `Organization`), optional `HOBO_CI_SECRET_STORE`
-(`infisical` | `1password`), and the store's coordinates (`INFISICAL_PROJECT_ID` /
-`INFISICAL_ENVIRONMENT` / `INFISICAL_SECRET_PATH`, or `OP_VAULT_ID`).
+Configuration is a **ceremony**: whatever `hobo ci up` is missing is asked for
+on the setup page, checked, and the non-secret answers are saved for the next
+run under `$HOBO_HOME/ceremonies/ci.json`. Environment variables of the same
+names (`HOBO_CI_PUBLIC_URL`, `HOBO_CI_GITHUB_OWNER`, `HOBO_CI_SECRET_STORE`,
+and the store's coordinates) still win, for CI and scripting. Secrets typed on
+the page (a sign-in token for this run, none other) go only to the secret store.
 
 **Users or organizations own the App.** The App is created under the owner's
 settings (an organization's when it is one) and verified as that owner's
