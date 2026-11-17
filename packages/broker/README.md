@@ -246,3 +246,11 @@ label (`in-proc`, `agent`, `publisher:<target>`) for existing readers.
 | `delivery-transport-failed` | The CD control plane was unreachable. | Check CD service health; nothing was applied. Retry. |
 | `delivery-fact-unknown` on replay | A persisted `broker.DeliverySubmitted` body has a shape the upcaster does not know. | Add the shape and a golden corpus entry before replaying. |
 | A legacy policy still says `engine: argo` | Pre-D14 configuration. | It keeps working through the `argo-cd` publisher; migrate to `reconciler_mode: publisher` + `publisher.target: argo-cd`. |
+
+## Budget authority verification
+
+The [budget-authority verification skill](../../.agents/skills/verify-broker-budget-authority/SKILL.md)
+checks admission, held liabilities, replay, and receiver- and finance-signed
+settlement. Generated histories exercise the TypeScript authority; the finite
+TLA+ models and unbounded arithmetic abstraction state their assumptions and do
+not prove the storage adapters, cryptography, or provider effects.
