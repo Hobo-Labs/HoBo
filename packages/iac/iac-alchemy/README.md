@@ -86,9 +86,10 @@ node --experimental-strip-types scripts/check-iac-models.ts
 ```
 
 The Cloudflare worker runtime binds a module-exported HoBo HTTP entrypoint to
-declared Worker service dependencies. HoBo bucket, KV and queue runtime contracts,
-topics, and enabled session replay are not yet supported; the adapter refuses
-those uses.
+declared Worker service dependencies. HoBo bucket, WASI KV and queue runtime
+contracts, topics, and enabled session replay are not yet supported; the adapter
+refuses those uses. An explicitly opted-in [eventual JavaScript KV subset](CLOUDFLARE-KV.md)
+uses a private, permission-enforcing Worker and is not full KV profile support.
 `cloudflareBindleMappers` can provision native R2, KV and queue infrastructure;
 it rejects their HoBo runtime operations until blob metadata and events, WASI KV
 semantics, and queue deduplication and leases are implemented.
