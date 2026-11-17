@@ -9,12 +9,12 @@ description: Verify HoBo CI account-budget routing and same-timestamp usage acco
 
 **Why:** Overlooking a hold or completion can admit a runner using budget already committed elsewhere.
 
-**Result at sync commit `a7f56726b5decc876bd95e3b01b70a79a39a3b64`:** PASS for the stated bounds and generated real-code scenarios.
+**Result at sync commit `719f8cbe6cf9a5cb9635f6d0055dd66ae2393604`:** PASS for the stated bounds and generated real-code scenarios.
 
 ## Covered code
 
 - `packages/ci/src/routing.ts` (`route`, `shouldCountLocalUsage`)
-- `packages/ci/test/budget-routing.property.test.ts`
+- `packages/ci/test/budget-routing.property.test.ts` and `routing.test.ts`
 - `packages/ci/src/accounting.ts` and `packages/pricing/src/legacy/accounting.ts` (allocation inputs)
 
 ## Run
@@ -29,7 +29,7 @@ The command runs fast-check against the actual CI route, TLC 1.7.4, and a Z3 4.1
 
 ## Scope and evidence
 
-The generated tests use seed 614436 and 400 examples per property. They generate account caps, spending, runner prices, and active, completed, or released leases, and compare admission with independent integer-microcurrency arithmetic. They also generate completion times around an observation and require equality to remain counted. The account-budget property exercises one non-sandbox offer. A second generated property uses seed 614451 and 400 examples to vary two observations, prices, provider budget limits, shared-policy limits, and offer order; it requires both budget guards to count the higher exposure. Unknown observation timestamps retain completed local usage. The configuration parser rejects duplicate provider-account offers, so the multi-offer property protects direct router calls with unvalidated data rather than a valid parsed configuration. The tests do not cover sandbox pricing, database concurrency, or external billing.
+The generated tests use seed 614436 and 400 examples per property. They generate account caps, spending, runner prices, and active, completed, or released leases, and compare admission with independent integer-microcurrency arithmetic. They also generate completion times around an observation and require equality to remain counted. The router tests use seed 614513 and 500 fractional runtime-coverage pairs; exact financial time is modeled separately by `verify-ci-financial-time`. The account-budget property exercises one non-sandbox offer. A second generated property uses seed 614451 and 400 examples to vary two observations, prices, provider budget limits, shared-policy limits, and offer order; it requires both budget guards to count the higher exposure. Unknown observation timestamps retain completed local usage. The configuration parser rejects duplicate provider-account offers, so the multi-offer property protects direct router calls with unvalidated data rather than a valid parsed configuration. The tests do not cover sandbox pricing, database concurrency, or external billing.
 
 A Z3 induction proves that taking the maximum of any number of nonnegative exact-real observations covers each observation, and that admission below a cap covers them all. It assumes truthful, comparable observations and exact arithmetic; it is not a TypeScript refinement proof and does not establish provider bills or concurrency. Setting `CI_PROVIDER_PROOF_MUTATION=first-only` produces a counterexample.
 

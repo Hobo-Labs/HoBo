@@ -7,13 +7,13 @@ description: Verify hosting quote, budget and entitlement freshness and observat
 
 **Properties:** Hosting quotes and budget snapshots must have valid explicit-offset timestamps, cannot be observed in the future, and must be unexpired. Within a budget period, spend and entitlement observations cannot move backwards; changed values at the same instant need the applicable reconciliation evidence. Equivalent offsets or fractional spellings denote the same instant, and sub-millisecond ordering is preserved.
 
-**Review baseline:** commit `a916d72797d202eec6f16c0610c44e7734754735`. PASS for the tests, bounded models and exact-real abstraction below.
+**Review baseline:** commit `719f8cbe6cf9a5cb9635f6d0055dd66ae2393604`. PASS for the tests, bounded models and exact-real abstraction below.
 
 ## Covered code
 
-- `packages/broker/src/financial-time.ts` validates calendar components and explicit `Z` or numeric offsets, then compares whole UTC seconds and arbitrary fractional seconds.
+- `packages/broker/src/financial-time.ts` validates calendar components and explicit `Z` or numeric offsets, compares whole UTC seconds and arbitrary fractional seconds, adds integer milliseconds, and rounds elapsed intervals to whole minutes.
 - `packages/broker/src/budget-authority.ts` applies that comparison to quote and snapshot freshness, entitlement admission, retained observation history and policy reconfiguration. `packages/hobo/src/hosting-budget-authority.ts` uses the same comparison at the integer-millisecond trusted-clock boundary.
-- `packages/broker/test/hosting-evidence-time.test.ts` reproduces future observations, normalized impossible dates, equivalent timestamp spellings and earlier or genuinely newer observations within one millisecond. It checks 500 generated freshness pairs (seed 614506) and 1,000 generated offset and fractional comparisons (seed 614507). Existing history and generated authority tests exercise surrounding transitions. The HoBo bridge tests cover future sub-millisecond entitlements, future snapshots and invalid authority timestamps; the broker suite passed 608 tests with 13 skipped.
+- `packages/broker/test/hosting-evidence-time.test.ts` reproduces future observations, normalized impossible dates, equivalent timestamp spellings and earlier or genuinely newer observations within one millisecond. It checks 500 generated freshness pairs (seed 614506) and 1,000 generated offset and fractional comparisons (seed 614507), 500 generated timestamp additions (seed 614511), and 500 generated elapsed-minute intervals (seed 614514). Existing history and generated authority tests exercise surrounding transitions. The HoBo bridge tests cover future sub-millisecond entitlements, future snapshots and invalid authority timestamps; the broker suite passed 608 tests with 13 skipped.
 
 ## Run
 
@@ -31,7 +31,7 @@ The bridge check builds HoBo workspace dependencies before its integration test.
 
 The Z3 obligations hold for arbitrary exact-real time values under the stated guards, including observations compared with a nonnegative integer-millisecond bridge clock; each premise has a witness. Removing the future check or same-time evidence guard produces counterexamples. These are proofs of abstractions, not proofs of the TypeScript parser, offset conversion, persistent storage, concurrency, clock accuracy or authenticity of provider evidence. Generated actual-code tests exercise the correspondence but do not prove it for every string.
 
-Financial timestamps now need an explicit `Z` or numeric offset and a valid calendar date. Persisted ambiguous or normalized-invalid timestamps need reconciliation before replay. The HoBo bridge clock and planning inputs use integer milliseconds; external source authenticity and the broader provider-to-budget path are outside this check. This skill does not prove that an external source supplied truthful times or that all provider effects are fenced.
+Financial timestamps now need an explicit `Z` or numeric offset and a valid calendar date. Persisted ambiguous or normalized-invalid timestamps need reconciliation before replay. The addition and elapsed-time abstraction is checked separately by `verify-ci-financial-time`. The HoBo bridge clock and planning inputs use integer milliseconds; external source authenticity and the broader provider-to-budget path are outside this check. This skill does not prove that an external source supplied truthful times or that all provider effects are fenced.
 
 For a scratch mutation, copy `packages/broker` to a temporary package directory, link its `node_modules`, and set `BROKER_TIME_VERIFY_PACKAGE_ROOT` to that copy. Truncate the fractional part in `financial-time.ts` or restore the earlier `budget-authority.ts`; the real-code tests must fail. For a bridge mutation, set `HOBO_TIME_VERIFY_PACKAGE_ROOT` to a copied HoBo package with linked `node_modules` and restore the earlier bridge comparisons. Restore the code and rerun the skill.
 
