@@ -1,6 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { WorkflowFailure } from "../../src/errors.js";
+import { isJsonObject } from "../../src/json.js";
 import { replayRun } from "../../src/replay/replayer.js";
 import { createWorkflowEngine, defineWorkflow } from "../../src/workflow.js";
 
@@ -76,7 +77,10 @@ describe("durable workflow histories", () => {
 				let changedIndex = 0;
 				const changed = events.map((event) =>
 					event.type === "run.SleepScheduled" && changedIndex++ === 1
-						? { ...event, data: { index: 1, delayMs: delay + 1 } }
+						? {
+								...event,
+								data: { index: 1, delayMs: delay + 1, parentStepIndex: null },
+							}
 						: event,
 				);
 				await expect(
@@ -120,11 +124,16 @@ describe("durable workflow histories", () => {
 		const handle = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${handle.runId}`);
 		let index = 0;
-		const legacy = events.map((event) =>
-			event.type === "run.SleepScheduled"
+		const legacy = events.map((event) => {
+			if (event.type === "run.Started" && isJsonObject(event.data)) {
+				const data = { ...event.data };
+				delete data.commandTreeVersion;
+				return { ...event, data };
+			}
+			return event.type === "run.SleepScheduled"
 				? { ...event, data: { delayMs: index++ === 0 ? 3 : 7 } }
-				: event,
-		);
+				: event;
+		});
 		const definition = engine.toReplayDefinition(wf);
 		await expect(
 			replayRun(
