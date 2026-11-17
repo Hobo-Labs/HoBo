@@ -29,6 +29,8 @@ This is a **partial** verification record, not a claim that the framework is ful
 
 The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. The skill states each model's bounds and the number of hidden steps. Workflow verification includes SQLite close-and-reopen tests and models for sleep deadlines and completion, ambiguous append outcomes, command lifetimes, journal authority, parent provenance, nested-step replay, nested resume, and event recovery.
 
+CI runner-correlation verification covers priority within a run and across observed runs, plus fail-closed handling of lookup failures. It does not establish that the bounded GitHub scan saw every assignment.
+
 ## Run and maintain
 
 With workspace dependencies installed, run every listed verification skill or select individual skills:
