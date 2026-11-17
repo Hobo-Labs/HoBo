@@ -155,6 +155,7 @@
 		"@types/pngjs": "^6.0.5",
 		"@typescript/native-preview": "^7.0.0-dev.20260629.1",
 		"@vitest/coverage-v8": "^4.1.10",
+		"esbuild": "^0.28.1",
 		"konsistent": "1.0.0-beta.1",
 		"nerdbank-gitversioning": "3.10.94",
 		"oxlint": "1.79.0",
@@ -163,10 +164,13 @@
 		"pngjs": "^7.0.0",
 		"postcss": "^8.5.16",
 		"protobufjs": "^7.6.4",
+		"react": "^19.2.8",
+		"react-dom": "^19.2.8",
 		"tsx": "^4.22.4",
 		"turbo": "2.11.10",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9",
+		"vue": "^3.5.45",
 		"zod": "^4.1.13"
 	},
 	"engines": {
