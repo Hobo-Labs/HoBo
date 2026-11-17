@@ -387,4 +387,38 @@ describe("authenticated operation lineage", () => {
 		expect(result.status).toBe("uncertain");
 		expect(effects).toBe(0);
 	});
+
+	it("does not finish a route whose active attempt state is corrupt", async () => {
+		const authority = connect();
+		const claim = await authority.claim({
+			tenantId: "tenant",
+			requestId: "first",
+			operationId,
+			authorization: "signed:first",
+		});
+		if (claim.status !== "claimed") throw new Error("missing claim");
+		await authority.beginAttempt({
+			tenantId: "tenant",
+			requestId: "first",
+			operationId,
+			claimToken: claim.claimToken,
+			targetId: "a",
+			inventoryHash,
+		});
+		const directory = directories.at(-1);
+		if (!directory) throw new Error("missing directory");
+		const db = new DatabaseSync(join(directory, "routes.sqlite"));
+		db.prepare(
+			"UPDATE iac_routes SET active_attempt='corrupt' WHERE tenant=? AND request=?",
+		).run("tenant", "first");
+		db.close();
+		expect(() =>
+			authority.finish({
+				tenantId: "tenant",
+				requestId: "first",
+				claimToken: claim.claimToken,
+				outcome: { status: "uncertain" },
+			}),
+		).toThrow();
+	});
 });

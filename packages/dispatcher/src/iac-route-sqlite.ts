@@ -117,7 +117,20 @@ export function createSqliteIacRouteAuthority(options: {
 			.get(input.tenantId, input.requestId);
 		if (row === undefined || row.claim_token !== input.claimToken)
 			throw new Error("route owner mismatch");
-		return row;
+		const activeAttempt = row.active_attempt;
+		const phase = row.phase;
+		const target = row.target;
+		const outcome = row.outcome;
+		if (
+			(activeAttempt !== null &&
+				(typeof activeAttempt !== "string" || !routeSecret(activeAttempt))) ||
+			(phase !== "running" && phase !== "finished") ||
+			(target !== null && (typeof target !== "string" || !routeName(target))) ||
+			(outcome !== null &&
+				(typeof outcome !== "string" || outcome.length > 1024))
+		)
+			throw new Error("corrupt route record");
+		return { phase, active_attempt: activeAttempt, target, outcome };
 	}
 	return {
 		persistence: "durable-cas",
