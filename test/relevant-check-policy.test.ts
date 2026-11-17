@@ -740,6 +740,19 @@ test("the behavior lane builds the proofs' dependencies first, serially", () => 
 	assert.equal(build?.serial, true);
 });
 
+test("the behavior build honors the configured Turbo concurrency", () => {
+	vi.stubEnv("HOBO_TURBO_CONCURRENCY", "2");
+	try {
+		const { checks } = plan(["packages/core/src/index.ts"]);
+		const build = checks.find((check) =>
+			check.args.includes("--filter=@hobo/conformance^..."),
+		);
+		assert.ok(build?.args.includes("--concurrency=2"));
+	} finally {
+		vi.stubEnv("HOBO_TURBO_CONCURRENCY", "");
+	}
+});
+
 test("the behavior lane also builds what the root step definitions import", () => {
 	// cucumber.yaml loads every features/steps/**/*.ts file on every run, and
 	// those steps import @hobo/conformance and the CD conformance kit from source,

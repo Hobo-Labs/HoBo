@@ -42,6 +42,8 @@ pnpm exec node --import tsx scripts/validate-sdk-contracts.ts
 `agent:check` selects the repository behavior suite for workspace source, test,
 schema, package manifest, and TypeScript configuration changes, as well as root
 build configuration changes. Catalog and OptimizeXP fixtures use their own checks.
+Set `HOBO_TURBO_CONCURRENCY` to bound the workspace and behavior dependency
+builds on constrained machines.
 
 Optional local hook:
 
