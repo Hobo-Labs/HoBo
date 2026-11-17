@@ -50,6 +50,16 @@ whose budget cannot cover that estimate as well as its calculated cost. New
 decision replay inputs retain the estimate; older inputs without it keep their
 original selection behavior.
 
+New dispatcher tie-breaks use ECMAScript string code-unit order rather than the
+host locale, including equal-expiry credit consumption and v2 provider order.
+When a v1 decision compares distinct strings, its replay input records the
+ordering version. Unversioned historical inputs use the former local collation
+for compatibility and need the original locale to reproduce a tied result. A
+legacy reservation that replays to a different provider is quarantined by the
+history check and needs reconciliation. The v2 pricing engine can still contain
+locale-sensitive ordering inside its quote calculation; this change only fixes
+the dispatcher ordering around the returned quotes.
+
 An older helper could reserve a different category when a provider had multiple
 registrations, leaving the intended account without its hold or settlement. The
 helper now checks recorded replay inputs for pending, running, and confirmed
@@ -118,6 +128,26 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-routing/SKILL.md) describes generated reservation histories, the bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. The legacy number contract is interpreted as decimal values; liabilities round upward and available balances downward when conversion back to numbers requires it. This protects the budget conservatively but can leave tiny residual holds or reject an edge-case request that is exactly affordable in decimal arithmetic. Provider overruns are recorded, and callers remain responsible for authoritative quotes and fencing.
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. The abstract proof does not establish that the TypeScript implementation refines it.
+
+The ordering model checks 48 bounded states. It hides 16 same-state
+transitions; a separate expected counterexample shows why unversioned legacy
+ties can differ between hosts.
+
+```mermaid
+stateDiagram-v2
+  s0: New dispatch
+  s1: Legacy input
+  s2: Legacy decision recorded
+  s3: Ordering choice recorded
+  s4: Legacy decision replayed
+  s5: Same ordering replayed
+  [*] --> s0
+  [*] --> s1
+  s0 --> s3: select and record ordering
+  s1 --> s2: select and record ordering
+  s2 --> s4: replay on another host
+  s3 --> s5: replay on another host
+```
 
 The estimate-routing model checks 98 bounded states, with two providers and a
 shared estimate. Its projection hides 27 same-state transitions.
