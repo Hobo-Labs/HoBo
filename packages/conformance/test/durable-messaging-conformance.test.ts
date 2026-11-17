@@ -208,7 +208,14 @@ describe("durable messaging conformance runner", () => {
 		expect(report.cases[0]?.status).toBe("unknown");
 		expect(calls).toBe(1);
 	});
-	it("detects a claimed ack that redelivers after the expiry race and restart", async () => {
+	it.each([
+		{ mode: "redeliver", expected: "fail" },
+		{ mode: "unknown", expected: "unknown" },
+		{ mode: "malformed", expected: "unknown" },
+	] as const)("classifies $mode acknowledgment during the expiry race as $expected", async ({
+		mode,
+		expected,
+	}) => {
 		let consumes = 0;
 		const message = {
 			id: "message-1",
@@ -257,10 +264,21 @@ describe("durable messaging conformance runner", () => {
 								],
 				};
 			},
-			ack: async ({ messageId, sequence }) => ({
-				status: "committed",
-				value: { messageId, sequence },
-			}),
+			ack: async ({ messageId, sequence, operation }) => {
+				if (mode === "unknown") return { status: "unknown", operation };
+				if (mode === "malformed") {
+					/* oxlint-disable anti-slop/no-known-value-widening, anti-slop/no-widen-then-assert -- SAFETY: the fixture deliberately simulates malformed runtime data. */
+					const malformed: unknown = { status: "rejected", code: "not-a-code" };
+					// SAFETY: this deliberately malformed provider result tests the boundary.
+					const result = malformed as DurableMessagingOutcome<{
+						readonly messageId: string;
+						readonly sequence: number;
+					}>;
+					/* oxlint-enable anti-slop/no-known-value-widening, anti-slop/no-widen-then-assert */
+					return result;
+				}
+				return { status: "committed", value: { messageId, sequence } };
+			},
 			nack: fail,
 			compact: fail,
 			events: fail,
@@ -269,8 +287,8 @@ describe("durable messaging conformance runner", () => {
 			async () => inertHarness(async () => client),
 			{ case: "ack-expiry-race" },
 		);
-		expect(report.cases[0]?.status).toBe("fail");
-		expect(consumes).toBe(3);
+		expect(report.cases[0]?.status).toBe(expected);
+		expect(consumes).toBe(mode === "redeliver" ? 3 : 2);
 	});
 	it.each([
 		{

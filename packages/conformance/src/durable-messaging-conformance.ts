@@ -133,9 +133,154 @@ export function validUnknownEnvelope(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this checks untrusted outcome fields without invoking accessors. */
+function ensureExpectedUnknown(
+	outcome: DurableMessagingOutcome<unknown>,
+	expected: DurableMessagingOperation,
+	forbidDisclosure = false,
+): void {
+	if (validUnknownEnvelope(outcome, expected)) return;
+	try {
+		const status = Object.getOwnPropertyDescriptor(outcome, "status");
+		if (status === undefined || !("value" in status))
+			throw new Error("missing status");
+		if (forbidDisclosure) {
+			const value = Object.getOwnPropertyDescriptor(outcome, "value");
+			if (
+				value !== undefined &&
+				"value" in value &&
+				value.value !== undefined &&
+				value.value !== null
+			)
+				throw new DurableMessagingConformanceFailure(
+					"revoked principal received disclosed data",
+				);
+			const operation = Object.getOwnPropertyDescriptor(outcome, "operation");
+			if (
+				operation !== undefined &&
+				"value" in operation &&
+				operation.value !== null &&
+				typeof operation.value === "object"
+			) {
+				const payload = Object.getOwnPropertyDescriptor(
+					operation.value,
+					"payload",
+				);
+				if (
+					payload !== undefined &&
+					"value" in payload &&
+					payload.value !== undefined &&
+					payload.value !== null
+				)
+					throw new DurableMessagingConformanceFailure(
+						"revoked principal received disclosed data",
+					);
+			}
+		}
+		if (status.value === "committed" || status.value === "rejected") {
+			ensureDefiniteOutcome(outcome);
+			return;
+		}
+	} catch (error) {
+		if (error instanceof DurableMessagingConformanceFailure) throw error;
+	}
+	throw new DurableMessagingConformanceUnknown(
+		"provider returned malformed or unresolved uncertainty",
+	);
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
 class DurableMessagingConformanceFailure extends Error {}
 class DurableMessagingConformanceUnverified extends Error {}
 class DurableMessagingConformanceUnknown extends Error {}
+
+const rejectionCodes = [
+	"invalid-argument",
+	"unauthorized",
+	"not-found",
+	"unsupported",
+	"operation-conflict",
+	"message-conflict",
+	"subscription-conflict",
+	"retention-blocked",
+	"lease-lost",
+	"capacity-exceeded",
+	"unavailable",
+] as const;
+
+/** Require a well-formed definite result before asserting a mutation outcome. */
+function ensureDefiniteOutcome(
+	outcome: DurableMessagingOutcome<unknown>,
+): void {
+	try {
+		const status = Object.getOwnPropertyDescriptor(outcome, "status");
+		if (status === undefined || !("value" in status))
+			throw new Error("missing status");
+		if (status.value === "committed") {
+			const value = Object.getOwnPropertyDescriptor(outcome, "value");
+			if (
+				value === undefined ||
+				!("value" in value) ||
+				value.value === undefined ||
+				value.value === null
+			)
+				throw new Error("missing value");
+			return;
+		}
+		if (status.value === "rejected") {
+			const code = Object.getOwnPropertyDescriptor(outcome, "code");
+			if (
+				code === undefined ||
+				!("value" in code) ||
+				!rejectionCodes.some((candidate) => candidate === code.value)
+			)
+				throw new Error("invalid rejection");
+			if (
+				code.value === "unauthorized" ||
+				code.value === "unavailable" ||
+				code.value === "unsupported"
+			)
+				throw new Error("authority or capability unavailable");
+			return;
+		}
+	} catch {
+		/* malformed provider data is uncertain */
+	}
+	throw new DurableMessagingConformanceUnknown(
+		"provider outcome is uncertain or malformed",
+	);
+}
+
+function ensureExpiredOrDefinite(
+	outcome: DurableMessagingOutcome<unknown>,
+	expected: DurableMessagingOperation,
+): void {
+	try {
+		const status = Object.getOwnPropertyDescriptor(outcome, "status");
+		if (
+			status !== undefined &&
+			"value" in status &&
+			status.value === "expired"
+		) {
+			const operation = Object.getOwnPropertyDescriptor(outcome, "operation");
+			if (
+				operation === undefined ||
+				!("value" in operation) ||
+				!sameOperation(operation.value, expected)
+			)
+				throw new DurableMessagingConformanceUnknown(
+					"provider returned malformed expired identity",
+				);
+			return;
+		}
+	} catch (error) {
+		if (error instanceof DurableMessagingConformanceUnknown) throw error;
+		throw new DurableMessagingConformanceUnknown(
+			"provider returned malformed expiry outcome",
+		);
+	}
+	ensureDefiniteOutcome(outcome);
+}
 
 function requireCondition(value: boolean, message: string): void {
 	if (!value) throw new DurableMessagingConformanceFailure(message);
@@ -395,6 +540,54 @@ function movingAuditGap(
 	);
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: audit responses cross an untrusted provider boundary. */
+function ensureAuditOutcome(
+	result: Awaited<ReturnType<DurableMessaging["events"]>>,
+	expectInvalid = false,
+): void {
+	try {
+		const status = Object.getOwnPropertyDescriptor(result, "status");
+		if (status === undefined || !("value" in status))
+			throw new Error("missing status");
+		const field = (key: string) => {
+			const descriptor = Object.getOwnPropertyDescriptor(result, key);
+			if (descriptor === undefined || !("value" in descriptor))
+				throw new Error("missing field");
+			return descriptor.value;
+		};
+		if (status.value === "ok") {
+			if (
+				!Array.isArray(field("events")) ||
+				!Number.isSafeInteger(field("firstAvailableSequence")) ||
+				!Number.isSafeInteger(field("nextAfterSequence")) ||
+				typeof field("hasMore") !== "boolean"
+			)
+				throw new Error("invalid page");
+			return;
+		}
+		if (status.value === "gap") {
+			if (
+				!Number.isSafeInteger(field("firstAvailableSequence")) ||
+				!Number.isSafeInteger(field("latestSequence"))
+			)
+				throw new Error("invalid gap");
+			return;
+		}
+		if (
+			status.value === "rejected" &&
+			expectInvalid &&
+			field("code") === "invalid-argument"
+		)
+			return;
+	} catch {
+		/* malformed or unavailable audit data is uncertain */
+	}
+	throw new DurableMessagingConformanceUnknown(
+		"audit response is unavailable or malformed",
+	);
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
 function operations(
 	harness: DurableMessagingConformanceHarness,
 	windowMs: number,
@@ -533,6 +726,7 @@ async function groupIsolation(harness: DurableMessagingConformanceHarness) {
 		...acknowledgement(f.next(), independent),
 		consumerGroup: "group-a",
 	});
+	ensureDefiniteOutcome(wrongGroup);
 	requireCondition(
 		wrongGroup.status === "rejected" && wrongGroup.code === "lease-lost",
 		"a lease was accepted in another group",
@@ -574,6 +768,7 @@ async function uncertainAck(
 	const request = acknowledgement(f.next(), delivery);
 	await harness.loseNextMutationResponse(point);
 	const lost = await f.client.ack(request);
+	ensureExpectedUnknown(lost, request.operation);
 	requireCondition(
 		lost.status === "unknown" &&
 			sameOperation(lost.operation, request.operation),
@@ -618,6 +813,8 @@ async function leaseExpiry(harness: DurableMessagingConformanceHarness) {
 		...acknowledgement(f.next(), first),
 		reason: "stale",
 	});
+	ensureDefiniteOutcome(staleAck);
+	ensureDefiniteOutcome(staleNack);
 	requireCondition(
 		staleAck.status === "rejected" &&
 			staleAck.code === "lease-lost" &&
@@ -693,6 +890,7 @@ async function deadLetter(harness: DurableMessagingConformanceHarness) {
 	const request = { ...acknowledgement(f.next(), second), reason: "permanent" };
 	await harness.loseNextMutationResponse("after-commit");
 	const lost = await f.client.nack(request);
+	ensureExpectedUnknown(lost, request.operation);
 	requireCondition(
 		lost.status === "unknown" &&
 			sameOperation(lost.operation, request.operation),
@@ -757,6 +955,7 @@ async function compaction(harness: DurableMessagingConformanceHarness) {
 		topic: "orders",
 		throughSequence: published.sequence,
 	});
+	ensureDefiniteOutcome(blocked);
 	requireCondition(
 		blocked.status === "rejected" && blocked.code === "retention-blocked",
 		"compaction discarded a leased or unsettled group delivery",
@@ -817,6 +1016,8 @@ async function compaction(harness: DurableMessagingConformanceHarness) {
 		...acknowledgement(f.next(), first),
 		sequence: renewed.sequence,
 	});
+	ensureDefiniteOutcome(stale);
+	ensureDefiniteOutcome(forged);
 	requireCondition(
 		stale.status === "rejected" &&
 			stale.code === "lease-lost" &&
@@ -846,6 +1047,7 @@ async function unavailableReceipt(
 	};
 	await harness.loseNextMutationResponse("after-commit");
 	const lost = await f.client.publish(request);
+	ensureExpectedUnknown(lost, request.operation);
 	requireCondition(
 		lost.status === "unknown" &&
 			sameOperation(lost.operation, request.operation),
@@ -853,6 +1055,7 @@ async function unavailableReceipt(
 	);
 	await harness.blockNextReceiptLookup(reason);
 	const blocked = await f.client.publish(request);
+	ensureExpectedUnknown(blocked, request.operation);
 	requireCondition(
 		blocked.status === "unknown" &&
 			sameOperation(blocked.operation, request.operation),
@@ -882,6 +1085,7 @@ async function revokedReceipt(harness: DurableMessagingConformanceHarness) {
 	const original = firstDelivery(await committed(f.client.consume(request)));
 	await harness.blockNextReceiptLookup("revocation");
 	const revoked = await f.client.consume(request);
+	ensureExpectedUnknown(revoked, request.operation, true);
 	requireCondition(
 		validUnknownEnvelope(revoked, request.operation),
 		"revoked principal received a cached delivery or a false rejection",
@@ -911,6 +1115,7 @@ async function transportFailure(
 	};
 	await harness.loseNextMutationTransport(mode);
 	const lost = await f.client.publish(request);
+	ensureExpectedUnknown(lost, request.operation);
 	requireCondition(
 		lost.status === "unknown" &&
 			sameOperation(lost.operation, request.operation),
@@ -973,6 +1178,7 @@ async function failover(harness: DurableMessagingConformanceHarness) {
 	};
 	await harness.loseNextMutationResponse("after-commit");
 	const lost = await f.client.publish(request);
+	ensureExpectedUnknown(lost, request.operation);
 	requireCondition(
 		lost.status === "unknown" &&
 			sameOperation(lost.operation, request.operation),
@@ -994,6 +1200,7 @@ async function failover(harness: DurableMessagingConformanceHarness) {
 	await harness.switchAuthority("unverified");
 	const unverified = await harness.connect("tenant-a");
 	const uncertain = await unverified.publish(request);
+	ensureExpectedUnknown(uncertain, request.operation);
 	requireCondition(
 		uncertain.status === "unknown" &&
 			sameOperation(uncertain.operation, request.operation),
@@ -1002,6 +1209,7 @@ async function failover(harness: DurableMessagingConformanceHarness) {
 	await harness.switchAuthority("verified-shared");
 	await barrier.release();
 	const fenced = await delayed;
+	ensureExpectedUnknown(fenced, delayedRequest.operation);
 	requireCondition(
 		fenced.status === "unknown" &&
 			sameOperation(fenced.operation, delayedRequest.operation),
@@ -1070,11 +1278,13 @@ async function expiredLeaseDeadLetter(
 	};
 	await harness.rejectNextDeadLetterWrite();
 	const refused = await reopened.consume(request);
+	ensureDefiniteOutcome(refused);
 	requireCondition(
 		refused.status === "rejected" && refused.code === "capacity-exceeded",
 		"expired lease transfer failure did not reject atomically",
 	);
 	const replay = await reopened.consume(request);
+	ensureDefiniteOutcome(replay);
 	requireCondition(
 		replay.status === "rejected" && replay.code === "capacity-exceeded",
 		"expired lease refusal was not fenced",
@@ -1088,6 +1298,7 @@ async function expiredLeaseDeadLetter(
 		topic: "orders",
 		throughSequence: delivery.sequence,
 	});
+	ensureDefiniteOutcome(blocked);
 	requireCondition(
 		blocked.status === "rejected" && blocked.code === "retention-blocked",
 		"pending expired delivery was compacted before DLQ transfer",
@@ -1130,6 +1341,7 @@ async function deadLetterRollback(harness: DurableMessagingConformanceHarness) {
 	};
 	await harness.rejectNextDeadLetterWrite();
 	const rejected = await f.client.nack(request);
+	ensureDefiniteOutcome(rejected);
 	requireCondition(
 		rejected.status === "rejected" && rejected.code === "capacity-exceeded",
 		"DLQ write failure was not rejected",
@@ -1139,6 +1351,7 @@ async function deadLetterRollback(harness: DurableMessagingConformanceHarness) {
 		"rolled-back DLQ write left a message",
 	);
 	const replay = await f.client.nack(request);
+	ensureDefiniteOutcome(replay);
 	requireCondition(
 		replay.status === "rejected" && replay.code === "capacity-exceeded",
 		"terminal rejection was not replayed",
@@ -1177,12 +1390,14 @@ async function delayedRejection(harness: DurableMessagingConformanceHarness) {
 	await barrier.reached;
 	await harness.rejectNextDeadLetterWrite();
 	const first = await f.client.nack(request);
+	ensureDefiniteOutcome(first);
 	requireCondition(
 		first.status === "rejected" && first.code === "capacity-exceeded",
 		"initial refusal was not definite",
 	);
 	await barrier.release();
 	const later = await delayed;
+	ensureDefiniteOutcome(later);
 	requireCondition(
 		later.status === "rejected" && later.code === "capacity-exceeded",
 		"delayed duplicate escaped the terminal rejection",
@@ -1214,6 +1429,7 @@ async function expiryBoundary(harness: DurableMessagingConformanceHarness) {
 		"pre-expiry transaction returned the wrong receipt",
 	);
 	const retry = await f.client.ack(request);
+	ensureExpiredOrDefinite(retry, request.operation);
 	requireCondition(
 		retry.status === "expired" &&
 			sameOperation(retry.operation, request.operation),
@@ -1244,6 +1460,7 @@ async function operationReplay(harness: DurableMessagingConformanceHarness) {
 		...request,
 		message: { ...message, payload: new Uint8Array([9]) },
 	});
+	ensureDefiniteOutcome(conflict);
 	requireCondition(
 		conflict.status === "rejected" && conflict.code === "operation-conflict",
 		"operation ID accepted a different request",
@@ -1256,6 +1473,7 @@ async function operationReplay(harness: DurableMessagingConformanceHarness) {
 	);
 	await harness.advanceMs(operation.expiresAtMs - harness.nowMs());
 	const expired = await reopened.publish(request);
+	ensureExpiredOrDefinite(expired, operation);
 	requireCondition(
 		expired.status === "expired" && sameOperation(expired.operation, operation),
 		"expired retry did not remain explicitly uncertain",
@@ -1289,6 +1507,8 @@ async function concurrentOperations(
 	await barrier.reached;
 	await barrier.release();
 	const [first, second] = await Promise.all([one, two]);
+	ensureDefiniteOutcome(first);
+	ensureDefiniteOutcome(second);
 	requireCondition(
 		first.status === "committed" &&
 			second.status === "committed" &&
@@ -1311,6 +1531,7 @@ async function concurrentOperations(
 	await conflictBarrier.reached;
 	await conflictBarrier.release();
 	const pair = await Promise.all([a, b]);
+	for (const outcome of pair) ensureDefiniteOutcome(outcome);
 	requireCondition(
 		pair.filter((result) => result.status === "committed").length === 1 &&
 			pair.filter(
@@ -1415,6 +1636,8 @@ async function pendingConflict(harness: DurableMessagingConformanceHarness) {
 	const conflict = other.publish(conflictingRequest);
 	await barrier.release();
 	const [first, second] = await Promise.all([original, conflict]);
+	ensureDefiniteOutcome(first);
+	ensureDefiniteOutcome(second);
 	requireCondition(
 		(first.status === "committed" &&
 			second.status === "rejected" &&
@@ -1447,6 +1670,7 @@ async function pendingConflict(harness: DurableMessagingConformanceHarness) {
 		"conflict overwrote the original operation receipt",
 	);
 	const losingReplay = await other.publish(losingRequest);
+	ensureDefiniteOutcome(losingReplay);
 	requireCondition(
 		losingReplay.status === "rejected" &&
 			losingReplay.code === "operation-conflict",
@@ -1487,6 +1711,7 @@ async function ackExpiryRace(harness: DurableMessagingConformanceHarness) {
 	await harness.advanceMs(101);
 	await barrier.release();
 	const [oldAck, next] = await Promise.all([ack, committed(consume)]);
+	ensureDefiniteOutcome(oldAck);
 	if (oldAck.status === "committed") {
 		requireCondition(
 			oldAck.value.messageId === old.message.id &&
@@ -1594,6 +1819,7 @@ async function detachedRequests(harness: DurableMessagingConformanceHarness) {
 		operation: request.operation,
 		topic: "another",
 	});
+	ensureDefiniteOutcome(conflict);
 	requireCondition(
 		conflict.status === "rejected" && conflict.code === "operation-conflict",
 		"the operation fingerprint omitted the method or scope",
@@ -1615,6 +1841,7 @@ async function fingerprintFields(harness: DurableMessagingConformanceHarness) {
 		promise: Promise<DurableMessagingOutcome<unknown>>,
 	) => {
 		const outcome = await promise;
+		ensureDefiniteOutcome(outcome);
 		requireCondition(
 			outcome.status === "rejected" && outcome.code === "operation-conflict",
 			"semantic request change was not fenced",
@@ -1797,6 +2024,8 @@ async function subscriptionCompactionRace(
 	await barrier.reached;
 	await barrier.release();
 	const [compacted, subscribed] = await Promise.all([compact, subscribe]);
+	ensureDefiniteOutcome(compacted);
+	ensureDefiniteOutcome(subscribed);
 	if (subscribed.status !== "committed")
 		throw new DurableMessagingConformanceFailure(
 			"racing subscription was not created",
@@ -1867,6 +2096,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		f.client.ensureTopic({ operation: f.next(), topic: "audit-extra" }),
 	);
 	const initial = await f.client.events({ afterSequence: 0, limit: 2 });
+	ensureAuditOutcome(initial);
 	let cursor = 0;
 	if (initial.status === "gap") {
 		requireCondition(
@@ -1888,6 +2118,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		cursor === 0
 			? initial
 			: await f.client.events({ afterSequence: cursor, limit: 2 });
+	ensureAuditOutcome(first);
 	movingAuditGap(first, cursor, 4);
 	if (first.status !== "ok")
 		throw new DurableMessagingConformanceFailure(
@@ -1900,6 +2131,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		"first audit page was not ordered or complete",
 	);
 	const repeated = await f.client.events({ afterSequence: cursor, limit: 2 });
+	ensureAuditOutcome(repeated);
 	movingAuditGap(repeated, cursor, 4);
 	requireCondition(
 		repeated.status === "ok" &&
@@ -1910,6 +2142,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 	let after = first.nextAfterSequence;
 	while (after < 4) {
 		const page = await f.client.events({ afterSequence: after, limit: 2 });
+		ensureAuditOutcome(page);
 		movingAuditGap(page, after, 4);
 		if (page.status !== "ok" || !validDurableAuditPage(page, after, 2, 4))
 			throw new DurableMessagingConformanceFailure(
@@ -1927,6 +2160,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		afterSequence: cursor,
 		limit: 2,
 	});
+	ensureAuditOutcome(afterRestart);
 	movingAuditGap(afterRestart, cursor, 4);
 	requireCondition(
 		afterRestart.status === "ok" &&
@@ -1957,6 +2191,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 			client.ensureTopic({ operation: next(), topic: `audit-${index}` }),
 		);
 	const gap = await client.events({ afterSequence: 0, limit: 2 });
+	ensureAuditOutcome(gap);
 	if (gap.status !== "gap")
 		throw new DurableMessagingConformanceFailure(
 			"old audit cursor did not report the retention gap",
@@ -1969,6 +2204,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	);
 	const floor = gap.firstAvailableSequence;
 	const page = await client.events({ afterSequence: floor - 1, limit: 2 });
+	ensureAuditOutcome(page);
 	movingAuditGap(page, floor - 1, total);
 	requireCondition(
 		page.status === "ok" &&
@@ -1993,6 +2229,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 		reopened.ensureTopic({ operation: next(), topic: "audit-next" }),
 	);
 	const nextPage = await reopened.events({ afterSequence: total, limit: 2 });
+	ensureAuditOutcome(nextPage);
 	requireCondition(
 		(nextPage.status === "ok" &&
 			matchesTopicAuditEvents(nextPage.events, [...topics, "audit-next"]) &&
@@ -2007,6 +2244,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 		"audit sequence was reused or reset after retention and restart",
 	);
 	const future = await reopened.events({ afterSequence: total + 2, limit: 1 });
+	ensureAuditOutcome(future, true);
 	requireCondition(
 		future.status === "rejected" && future.code === "invalid-argument",
 		"future audit cursor was accepted",
@@ -2034,6 +2272,7 @@ async function topicCapacity(harness: DurableMessagingConformanceHarness) {
 		);
 	const excess = { operation: next(), topic: "excess" };
 	const denied = await client.ensureTopic(excess);
+	ensureDefiniteOutcome(denied);
 	requireCondition(
 		denied.status === "rejected" && denied.code === "capacity-exceeded",
 		"topic capacity was not enforced",
@@ -2041,6 +2280,7 @@ async function topicCapacity(harness: DurableMessagingConformanceHarness) {
 	await harness.restart();
 	const reopened = await harness.connect("tenant-a");
 	const replay = await reopened.ensureTopic(excess);
+	ensureDefiniteOutcome(replay);
 	requireCondition(
 		replay.status === "rejected" && replay.code === "capacity-exceeded",
 		"topic capacity rejection was not durable",
@@ -2166,6 +2406,8 @@ async function bounds(harness: DurableMessagingConformanceHarness) {
 	for (const [label, run] of invalid) {
 		const first = await run();
 		const retry = await run();
+		ensureDefiniteOutcome(first);
+		ensureDefiniteOutcome(retry);
 		requireCondition(
 			first.status === "rejected" &&
 				first.code === "invalid-argument" &&
@@ -2186,6 +2428,7 @@ async function bounds(harness: DurableMessagingConformanceHarness) {
 			operation,
 			topic: "invalid-envelope",
 		});
+		ensureDefiniteOutcome(result);
 		requireCondition(
 			result.status === "rejected" && result.code === "invalid-argument",
 			"permanently malformed operation envelope was accepted",
@@ -2250,6 +2493,8 @@ async function bounds(harness: DurableMessagingConformanceHarness) {
 	};
 	const rejected = await f.client.nack(nack);
 	const replay = await f.client.nack(nack);
+	ensureDefiniteOutcome(rejected);
+	ensureDefiniteOutcome(replay);
 	requireCondition(
 		rejected.status === "rejected" &&
 			rejected.code === "invalid-argument" &&
