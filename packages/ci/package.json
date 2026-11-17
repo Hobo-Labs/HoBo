@@ -50,6 +50,18 @@
       "types": "./dist/runner-order/machine-registry-sqlite.d.ts",
       "default": "./dist/runner-order/machine-registry-sqlite.js"
     },
+    "./insights/history-sqlite": {
+      "types": "./dist/insights/history-sqlite.d.ts",
+      "default": "./dist/insights/history-sqlite.js"
+    },
+    "./insights/usage": {
+      "types": "./dist/insights/usage.d.ts",
+      "default": "./dist/insights/usage.js"
+    },
+    "./insights/breakdown": {
+      "types": "./dist/insights/breakdown.d.ts",
+      "default": "./dist/insights/breakdown.js"
+    },
     "./runner-order/testing": {
       "types": "./dist/runner-order/testing.d.ts",
       "default": "./dist/runner-order/testing.js"
