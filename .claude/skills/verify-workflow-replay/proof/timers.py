@@ -3,7 +3,7 @@
 import os
 import sys
 
-from z3 import And, Array, ForAll, Implies, Int, IntSort, Not, Select, Solver, unsat
+from z3 import And, Array, ForAll, Implies, Int, IntSort, Not, Select, Solver, Store, unsat
 
 journal = Array("journal", IntSort(), IntSort())
 requested = Array("requested", IntSort(), IntSort())
@@ -80,4 +80,19 @@ prove(
     "a permitted next sequence stays within its bound",
     [0 <= sequence, 0 < maximum, sequence_guard],
     sequence + 1 <= maximum,
+)
+
+contexts = Array("contexts", IntSort(), IntSort())
+left = Int("left")
+right = Int("right")
+updated = Store(contexts, right, right)
+selected = (
+    Select(updated, right)
+    if os.environ.get("WORKFLOW_PROVENANCE_PROOF_MUTATION") == "shared"
+    else Select(updated, left)
+)
+prove(
+    "one context cannot overwrite a different context",
+    [left != right, Select(contexts, left) == left],
+    selected == left,
 )
