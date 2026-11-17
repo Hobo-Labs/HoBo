@@ -12,7 +12,7 @@ import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
@@ -39,9 +39,13 @@ const moduleWithoutWorker = join(
 	"fixtures/cloudflare-app.ts",
 );
 
+const absentDirectory = mkdtempSync(join(tmpdir(), "hobo-cf-missing-"));
+const absentModule = join(absentDirectory, "worker.ts");
+afterAll(() => rmSync(absentDirectory, { recursive: true, force: true }));
+
 describe("real Alchemy Cloudflare mappings", () => {
 	it.each([
-		["/missing/worker.ts", "worker module could not be imported"],
+		[absentModule, "worker module could not be imported"],
 		[moduleWithoutWorker, "worker module has no bindle worker default export"],
 		[main, "worker module does not bind this entrypoint"],
 	])("rejects an HTTP module that is missing or does not bind the declared app", async (path, reason) => {
