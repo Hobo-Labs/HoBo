@@ -13,8 +13,8 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
+import { createMeteredBillingPlane } from "./metering.js";
 import { normalizeDeliveryPolicy } from "./policies.js";
-import { authorizeBillingSpend } from "./pricing-authorization.js";
 
 import type {
 	BillingPolicy,
@@ -147,19 +147,10 @@ export function createGatekeeperGatePlane(
 }
 
 export function createBillingPlane(): BillingPlane {
-	return {
-		authorize({ spendEstimateUsd, billing }) {
-			const result = authorizeBillingSpend({ spendEstimateUsd, billing });
-			return {
-				ok: result.ok,
-				reasons: result.reasons.map((reason) =>
-					reason.code === "spend-estimate-invalid"
-						? { ...reason, code: "invalid-spend-estimate" }
-						: reason,
-				),
-			};
-		},
-	};
+	// No meter is configured here, so successful holds remain reserved until
+	// their caller confirms they were unused. Use a live metering plane to
+	// retire them after final usage is recorded.
+	return createMeteredBillingPlane([]);
 }
 
 // public-contract: typed delivery-plane failures with remediation.
