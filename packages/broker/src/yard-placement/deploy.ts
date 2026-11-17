@@ -223,6 +223,21 @@ export async function resolveBindleDeployment(
 	const hostingBudget = deps.hostingBudget;
 	const localAuthority = deps.authorizeLocalHosting;
 	const catalogHash = deps.catalog.catalogHash;
+	const localContextCurrent = () => {
+		try {
+			return (
+				deps.authorizeLocalHosting === localAuthority &&
+				deps.hostingBudget === hostingBudget &&
+				deps.brokerId === brokerId &&
+				deps.ownerTenantId === ownerTenant &&
+				deps.catalog === catalog &&
+				deps.catalog.catalogHash === catalogHash &&
+				contentHashOf(request) === requestDigest
+			);
+		} catch {
+			return false;
+		}
+	};
 	const reservationId = `hosting:${deps.brokerId}:${request.requestId}`;
 	let budgetReservation: BudgetReservation | undefined;
 	let hostingQuote: HostingQuote | undefined;
@@ -310,13 +325,7 @@ export async function resolveBindleDeployment(
 				throw new Error(
 					"bound local hosting authorization required before placement",
 				);
-			if (
-				deps.authorizeLocalHosting !== authorize ||
-				deps.brokerId !== brokerId ||
-				deps.ownerTenantId !== ownerTenant ||
-				deps.catalog !== catalog ||
-				deps.catalog.catalogHash !== catalogHash
-			)
+			if (!localContextCurrent())
 				throw new Error("local hosting context changed before authorization");
 			const work = Object.freeze(
 				placements.map((placement) => Object.freeze({ ...placement })),
@@ -334,13 +343,7 @@ export async function resolveBindleDeployment(
 			const input = Object.freeze({ ...binding, request, bindingDigest });
 			const proof = await authorize(input);
 			if (
-				deps.authorizeLocalHosting !== authorize ||
-				deps.hostingBudget !== hostingBudget ||
-				deps.brokerId !== brokerId ||
-				deps.ownerTenantId !== ownerTenant ||
-				deps.catalog !== catalog ||
-				deps.catalog.catalogHash !== catalogHash ||
-				contentHashOf(request) !== requestDigest ||
+				!localContextCurrent() ||
 				contentHashOf(placements) !== contentHashOf(work)
 			)
 				throw new Error("local hosting context changed during authorization");
@@ -793,6 +796,21 @@ export async function resolveBindleDeployment(
 	}
 	try {
 		await admitHosting(yard.yardId, yard.providerId, placements.decisions);
+		if (
+			localHostingProof &&
+			(!localContextCurrent() ||
+				localHostingProof.bindingDigest !==
+					contentHashOf({
+						brokerId,
+						requestDigest,
+						catalogHash,
+						yardId: yard.yardId,
+						providerId: yard.providerId,
+						ownerTenantId,
+						placements: placements.decisions,
+					}))
+		)
+			throw new Error("local hosting context changed before receipt");
 	} catch (error) {
 		return rejectResult(
 			foldState,

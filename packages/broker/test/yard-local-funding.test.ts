@@ -151,6 +151,22 @@ describe("explicit local hosting authority", () => {
 		expect(result.outcome).toBe("rejected");
 		expect(result.receipt).toBeUndefined();
 	});
+	it("refuses authority changes between local admission and receipt issuance", async () => {
+		const deps: YardFirstPlacementDeps = {
+			...common(),
+			authorizeLocalHosting: (input) => {
+				queueMicrotask(() =>
+					queueMicrotask(() =>
+						Object.assign(deps, { ownerTenantId: "foreign" }),
+					),
+				);
+				return approved(input);
+			},
+		};
+		const result = await resolveBindleDeployment(request(), deps);
+		expect(result.outcome).toBe("rejected");
+		expect(result.receipt).toBeUndefined();
+	});
 	it("refuses catalog changes while local authorization waits", async () => {
 		const deps: YardFirstPlacementDeps = {
 			...common(),
