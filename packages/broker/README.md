@@ -294,6 +294,35 @@ reissued by that instance without reconciliation. This process-local registry
 is lost on restart; it does not authenticate the caller, provide cross-process
 coordination, or verify that a remote receiver honors the quote at execution.
 
+The [resolution signature skill](../../.agents/skills/verify-broker-resolution-signature/SKILL.md)
+checks 256 abstract evidence states. This view hides 128 same-label steps and
+assumes the host has enrolled the correct broker key.
+
+```mermaid
+stateDiagram-v2
+  s0: Public key is invalid or contains private material
+  s1: Signing keys disagree
+  s2: Signing keys match
+  s3: Signing key is not enrolled
+  s4: Signature or digest is invalid
+  s5: Signature and trusted key are ready
+  s6: Signature evidence refused
+  s7: Resolution signed
+  s8: Trusted signature accepted
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  [*] --> s4
+  [*] --> s5
+  s0 --> s6: refuse invalid evidence
+  s1 --> s6: refuse invalid evidence
+  s2 --> s7: accept valid evidence
+  s3 --> s6: refuse invalid evidence
+  s4 --> s6: refuse invalid evidence
+  s5 --> s8: accept valid evidence
+```
+
 The [delivery claim skill](../../.agents/skills/verify-broker-delivery-claim/SKILL.md)
 checks 23 delivery states and 12 resolution-identity states. This delivery view
 hides 30 same-label steps and covers a single broker instance; it does not model
@@ -445,9 +474,16 @@ be swapped without touching the brokering pipeline:
 
 Beyond M0, this package also ships:
 
-- **Receipt integrity** — Ed25519 detached signatures over canonical JSON for
-  every receipt and rejection (`signResolution`/`verifyResolution`,
-  `broker.ResolutionSigned` facts).
+- **Receipt integrity** — optional Ed25519 detached signatures over canonical
+  JSON (`signResolution`/`verifyResolution`, `broker.ResolutionSigned` facts).
+  Verification requires `verifyResolution(receipt, signature, trustedPublicKeyPem)`
+  with the expected broker's independently enrolled public key and checks the
+  payload digest. Signing rejects private key material in the public key field;
+  only a normalized public key is emitted. The signature's embedded key does not
+  establish trust. Object keys sort by UTF-16 code units, independent of locale.
+  Callers must map the enrolled key to the correct broker and scope.
+  Signatures produced with the earlier locale-dependent key order may need
+  reissuance if their canonical ordering differs.
 - **The closed rejection matrix** (`REJECTION_MATRIX`) — every broker-owned
   rejection code pinned to its plane and an agent-actionable remediation,
   test-enforced against the pipeline.
