@@ -15,6 +15,7 @@ import {
 	executeFleetVerification,
 	planFleetVerification,
 } from "../ci/fleet-signoff.mts";
+import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
 import {
 	type QueueView,
 	routeSettings,
@@ -181,6 +182,92 @@ describe("local signoff in the fleet decision", () => {
 		);
 	});
 
+	it("checks a fleet slip against its exact label before keeping it", async () => {
+		const open: SlipReading = {
+			ok: true,
+			decision: {
+				tier: "fleet",
+				runner: "hobo-trunk",
+				reason: "fleet-open",
+				slip: { kind: "used", reason: "fleet-open", from: "node@abc" },
+			},
+		};
+		const otherTiersDown = [
+			waiting("hobo-local-host"),
+			waiting("ubuntu-24.04"),
+		];
+		assert.deepEqual(
+			await plan(queue([picked("hobo-trunk"), ...otherTiersDown]), {
+				slip: open,
+			}),
+			{ kind: "runner", tier: "fleet", runner: "hobo-trunk" },
+		);
+		assert.deepEqual(
+			await plan(
+				queue([picked("hobo"), waiting("hobo-trunk"), ...otherTiersDown]),
+				{ slip: open },
+			),
+			{ kind: "local-signoff" },
+		);
+		assert.deepEqual(await plan(queue(otherTiersDown), { slip: open }), {
+			kind: "wait",
+			reason: "availability-unknown",
+		});
+	});
+
+	it("keeps a busy fleet with timely pickups despite a young queue", async () => {
+		const busy: SlipReading = {
+			ok: true,
+			decision: {
+				tier: "fleet",
+				runner: "hobo",
+				reason: "fleet-busy",
+				slip: { kind: "used", reason: "fleet-busy", from: "node@abc" },
+			},
+		};
+		const young: SeenJob = {
+			runId: 2,
+			labels: ["hobo"],
+			createdAtMs: now - 10_000,
+		};
+		const view = queue(
+			[picked("hobo"), ...Array.from({ length: 5 }, () => young)],
+			1,
+		);
+		assert.deepEqual(await plan(view, { slip: busy }), {
+			kind: "runner",
+			tier: "fleet",
+			runner: "hobo",
+		});
+	});
+
+	it("falls back to queue evidence after a slip read error, and waits if the queue also fails", async () => {
+		const decide = (readQueue: () => Promise<QueueView>) =>
+			planFleetVerification({
+				settings,
+				localSignoffEnabled: true,
+				readSlip: async () => {
+					throw new Error("connection lost");
+				},
+				readQueue,
+				nowMs: now,
+			});
+		assert.deepEqual(await decide(async () => queue([picked("hobo")])), {
+			kind: "runner",
+			tier: "fleet",
+			runner: "hobo",
+		});
+		assert.deepEqual(
+			await decide(async () => {
+				throw new Error("connection lost");
+			}),
+			{
+				kind: "wait",
+				reason: "availability-unknown",
+			},
+		);
+	});
+
 	it("runs and signs only the selected fallback, and never signs a failed run", async () => {
 		const calls: string[] = [];
 		const execute = (
@@ -220,6 +307,8 @@ describe("local signoff in the fleet decision", () => {
 			const repo = join(root, "repo");
 			const remote = join(root, "remote.git");
 			const bin = join(root, "bin");
+			const isolatedEnv = { ...process.env };
+			for (const name of GIT_LOCATION_VARIABLES) delete isolatedEnv[name];
 			mkdirSync(repo);
 			mkdirSync(bin);
 			const git = (cwd: string, args: string[]) =>
@@ -227,7 +316,7 @@ describe("local signoff in the fleet decision", () => {
 					cwd,
 					stdio: "pipe",
 					env: {
-						...process.env,
+						...isolatedEnv,
 						GIT_CONFIG_GLOBAL: "/dev/null",
 						GIT_CONFIG_NOSYSTEM: "1",
 					},
@@ -270,12 +359,18 @@ if [ "$1" = signoff ] && [ "$2" = --help ]; then
   [ "\${HOBO_FLEET_MISSING_SIGNOFF:-0}" = 1 ] && exit 1
   echo --commit; exit 0
 fi
+if [ "$1" = signoff ] && [ "$2" = create ]; then exit 0; fi
 case "$2" in
   */actions/runs\\?*) cat "$HOBO_FLEET_RUNS" ;;
   */actions/runs/*/jobs\\?*) cat "$HOBO_FLEET_JOBS" ;;
   *) exit 1 ;;
 esac
 `,
+				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "pnpm"),
+				'#!/bin/sh\ncase "$*" in\n  --version) echo 10.0.0 ;;\n  "exec turbo --version") echo 2.0.0 ;;\n  *) exit 1 ;;\nesac\n',
 				{ mode: 0o755 },
 			);
 			const command = (extra: NodeJS.ProcessEnv = {}) =>
@@ -292,8 +387,8 @@ esac
 						cwd: repo,
 						encoding: "utf8",
 						env: {
-							...process.env,
-							PATH: `${bin}:${process.env.PATH ?? ""}`,
+							...isolatedEnv,
+							PATH: `${bin}:${isolatedEnv.PATH ?? ""}`,
 							GIT_CONFIG_GLOBAL: "/dev/null",
 							GIT_CONFIG_NOSYSTEM: "1",
 							HOBO_CI_ATTESTOR_KEY: join(root, "keys", "attestor.pem"),
@@ -343,6 +438,82 @@ esac
 			assert.match(fallback.stdout, /running the local signoff fallback/u);
 			assert.match(fallback.stderr, /working tree is not clean/u);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
+
+			// A committed local workflow runs end to end and reaches gh-signoff.
+			rmSync(join(repo, "dirty.txt"));
+			git(repo, ["switch", "--quiet", "-c", "feature"]);
+			mkdirSync(join(repo, "scripts/ci"), { recursive: true });
+			mkdirSync(join(repo, ".github/workflows"), { recursive: true });
+			writeFileSync(join(repo, ".gitignore"), ".hobo/attestations-out/\n");
+			const writeWorkflow = (run: string) => {
+				const step = { name: "Fixture check", run };
+				writeFileSync(
+					join(repo, ".github/workflows/hobo-ci.yml"),
+					JSON.stringify({ jobs: { "ci-guard": { steps: [step] } } }),
+				);
+				writeFileSync(
+					join(repo, "scripts/ci/attested-jobs.json"),
+					JSON.stringify({
+						jobs: [
+							{
+								id: "ci-guard",
+								workflow: ".github/workflows/hobo-ci.yml",
+								workflowEnv: {},
+								env: {},
+								outputs: {},
+								steps: [{ ...step, local: "run" }],
+							},
+						],
+					}),
+				);
+			};
+			writeWorkflow("echo fleet-fixture-ran");
+			git(repo, ["add", ".gitignore", ".github", "scripts"]);
+			git(repo, [
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"--quiet",
+				"-m",
+				"local check",
+			]);
+			git(repo, ["push", "--quiet", "origin", "HEAD:refs/heads/feature"]);
+			const head = git(repo, ["rev-parse", "HEAD"]).toString().trim();
+			const tree = git(repo, ["rev-parse", "HEAD^{tree}"]).toString().trim();
+			const success = command();
+			assert.equal(success.status, 0, success.stderr);
+			assert.match(
+				readFileSync(
+					join(repo, ".hobo/attestations-out", tree, "ci-guard.log"),
+					"utf8",
+				),
+				/fleet-fixture-ran/u,
+			);
+			assert.ok(
+				readFileSync(calls, "utf8").includes(
+					`signoff create --commit ${head} hobo-ci/local/pull_request/ci-guard`,
+				),
+			);
+
+			// A failed local step must never post a success for its new head.
+			writeWorkflow("exit 1");
+			git(repo, ["add", ".github", "scripts"]);
+			git(repo, [
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"--quiet",
+				"-m",
+				"failing check",
+			]);
+			git(repo, ["push", "--quiet", "origin", "HEAD:refs/heads/feature"]);
+			const failed = command();
+			assert.notEqual(failed.status, 0);
+			assert.match(failed.stderr, /Nothing was signed/u);
+			assert.equal(
+				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
+				1,
+			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

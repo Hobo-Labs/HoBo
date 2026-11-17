@@ -1468,14 +1468,14 @@ export async function main(
 				if (!event) throw new AttestError(`unknown event: ${name}`);
 				return event;
 			});
-		const plan = loadPlan();
+		const target = resolveRunTarget({ cwd: root, baseRef });
+		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
 		const skipJobs = options(rest, "skip-job");
 		for (const id of skipJobs)
 			if (!plan.some((job) => job.id === id))
 				throw new AttestError(`--skip-job=${id} is not a covered job`);
 		const { privateKey } = ensureAttestorKey(keyPathFrom(env));
 		assertKeyApart(keyPathFrom(env), root, env);
-		const target = resolveRunTarget({ cwd: root, baseRef });
 		const began = Date.now();
 		try {
 			const outcome = await runAttestedJobs({
