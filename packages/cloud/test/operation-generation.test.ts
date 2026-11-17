@@ -7,11 +7,13 @@ import { afterEach, expect, it } from "vitest";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
+	type DeploymentPlan,
 	destroyResource,
 	type Executor,
 	type IacProvider,
 	type ResourcePlan,
 	reconcileResource,
+	runCompensation,
 } from "../src/index.js";
 import { isJsonObject } from "../src/json.js";
 
@@ -19,6 +21,193 @@ const paths: string[] = [];
 afterEach(() => {
 	for (const path of paths.splice(0))
 		rmSync(path, { recursive: true, force: true });
+});
+
+it.each([
+	{ provider: "other" },
+	{ region: "different" },
+	{ realizationParameters: { account: "other" } },
+])("refuses to destroy a resource using a different recorded specification: %o", async (change) => {
+	const f = fixture();
+	try {
+		await reconcileResource(f.deps, f.resource, f.ctx);
+		const before = f.calls.length;
+		const result = await destroyResource(
+			f.deps,
+			{ ...f.resource, ...change },
+			f.ctx,
+		);
+		expect(result.kind).toBe("failed");
+		expect(result.reason).toMatch(/provenance/i);
+		expect(f.calls).toHaveLength(before);
+		const history = [];
+		for await (const event of f.store.read("deployment:deployment"))
+			history.push(event);
+		expect(history.some((event) => event.type === "resource.Destroying")).toBe(
+			false,
+		);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("preflights all compensation targets before destroying any of them", async () => {
+	const f = fixture();
+	try {
+		const dependency: ResourcePlan = { ...f.resource, name: "database" };
+		const application: ResourcePlan = {
+			...f.resource,
+			name: "web",
+			deps: ["database"],
+		};
+		await reconcileResource(f.deps, dependency, f.ctx);
+		await reconcileResource(f.deps, application, f.ctx);
+		const before = f.calls.length;
+		const plan: DeploymentPlan = {
+			schema: "hobo.deployment-plan/v1",
+			objective: "min-cost",
+			dependencyOrder: ["database", "web"],
+			resources: [dependency, { ...application, provider: "other" }],
+		};
+		const result = await runCompensation(
+			f.deps,
+			plan,
+			f.ctx.deploymentId,
+			{ resourceId: "failed", reason: "test" },
+			f.ctx,
+		);
+		expect(result.status).toBe("needs-human");
+		expect(f.calls).toHaveLength(before);
+		expect(
+			result.events.some(
+				(event) => event.type === "deployment.TransitionStarted",
+			),
+		).toBe(false);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("records reconciliation for a changed specification while a destroy is in flight", async () => {
+	const f = fixture();
+	try {
+		await reconcileResource(f.deps, f.resource, f.ctx);
+		const crashes: Executor = {
+			run: async () => {
+				throw new Error("crashed");
+			},
+		};
+		await expect(
+			destroyResource({ ...f.deps, executor: crashes }, f.resource, f.ctx),
+		).rejects.toThrow("crashed");
+		const result = await destroyResource(
+			f.deps,
+			{ ...f.resource, region: "changed" },
+			f.ctx,
+		);
+		expect(result).toMatchObject({
+			kind: "failed",
+			snapshot: { state: "ReconciliationRequired" },
+		});
+		expect(f.calls.map((call) => call.action)).toEqual(["apply"]);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("does not invent a destroy target for a resource with no provenance", async () => {
+	const f = fixture();
+	try {
+		const result = await destroyResource(f.deps, f.resource, f.ctx);
+		expect(result.kind).toBe("failed");
+		expect(result.reason).toMatch(/provenance/i);
+		expect(f.calls).toEqual([]);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("does not claim an imported resource was rolled back without destroy provenance", async () => {
+	const f = fixture();
+	try {
+		await f.store.append(
+			"deployment:deployment",
+			[
+				{
+					type: "deployment.Imported",
+					data: {
+						deploymentId: "deployment",
+						bindleHash: "legacy",
+						resources: ["api"],
+					},
+				},
+			],
+			{ expectedSeq: 0, tenant: f.ctx.tenant, actor: f.ctx.actor },
+		);
+		const plan: DeploymentPlan = {
+			schema: "hobo.deployment-plan/v1",
+			objective: "min-cost",
+			dependencyOrder: ["api"],
+			resources: [f.resource],
+		};
+		const result = await runCompensation(
+			f.deps,
+			plan,
+			f.ctx.deploymentId,
+			{ resourceId: "failed", reason: "test" },
+			f.ctx,
+		);
+		expect(result.status).toBe("needs-human");
+		expect(f.calls).toEqual([]);
+		expect(
+			result.events.some(
+				(event) => event.type === "deployment.TransitionStarted",
+			),
+		).toBe(false);
+	} finally {
+		f.store.close();
+	}
+});
+
+it("destroys a known live baseline after an update fails before provider effects", async () => {
+	const f = fixture();
+	try {
+		await reconcileResource(f.deps, f.resource, f.ctx);
+		const failsBeforeUpdate = createInProcessExecutor({
+			iac: {
+				id: "local",
+				preview: async () => {
+					throw new Error("preview unavailable");
+				},
+				apply: async () => ({}),
+				destroy: async () => {},
+				refresh: async () => ({ drift: false, observed: {} }),
+			},
+		});
+		const failed = await reconcileResource(
+			{ ...f.deps, executor: failsBeforeUpdate },
+			{ ...f.resource, region: "changed" },
+			f.ctx,
+		);
+		expect(failed.kind).toBe("failed");
+		const plan: DeploymentPlan = {
+			schema: "hobo.deployment-plan/v1",
+			objective: "min-cost",
+			dependencyOrder: ["api"],
+			resources: [f.resource],
+		};
+		const result = await runCompensation(
+			f.deps,
+			plan,
+			f.ctx.deploymentId,
+			{ resourceId: "api", reason: "test" },
+			f.ctx,
+		);
+		expect(result.status).toBe("rolled-back");
+		expect(f.calls.map((call) => call.action)).toEqual(["apply", "destroy"]);
+	} finally {
+		f.store.close();
+	}
 });
 
 function fixture() {

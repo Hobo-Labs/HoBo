@@ -18,7 +18,7 @@ import {
 	newTransitionId,
 	transitionResourceNames,
 } from "./deployment-transition.js";
-import { recordedResources } from "./desired-state.js";
+import { hasDestroyProvenance, recordedResources } from "./desired-state.js";
 import { readDeploymentHistory } from "./history-scope.js";
 import {
 	type PendingResourceOperation,
@@ -59,6 +59,7 @@ export interface CompensationResult {
 	destroyedOrder: string[];
 	events: EventEnvelope[];
 	pendingOperations?: readonly PendingResourceOperation[];
+	provenanceMismatches?: readonly string[];
 }
 
 function streamId(deploymentId: string): string {
@@ -139,7 +140,31 @@ export async function runCompensation(
 
 	const readHistory = () =>
 		readDeploymentHistory(deps.store, deploymentId, ctx.tenant);
+	const unsafeTargets = (history: EventEnvelope[]): string[] => {
+		const recorded = recordedResources(history);
+		return plan.resources
+			.filter((resource) => {
+				const previous = recorded.get(resource.name);
+				return (
+					previous !== undefined &&
+					(previous.state === "Provisioned" ||
+						previous.state === "Destroying" ||
+						(previous.state === "Failed" && previous.specHash !== undefined)) &&
+					!hasDestroyProvenance(previous, resource)
+				);
+			})
+			.map((resource) => resource.name)
+			.sort();
+	};
 	let events = await readHistory();
+	let provenanceMismatches = unsafeTargets(events);
+	if (provenanceMismatches.length > 0)
+		return {
+			status: "needs-human",
+			destroyedOrder: [],
+			events,
+			provenanceMismatches,
+		};
 	let pendingOperations = pendingCompensationBarriers(events, plan);
 	if (pendingOperations.length > 0)
 		return {
@@ -221,6 +246,14 @@ export async function runCompensation(
 	while (progressed) {
 		progressed = false;
 		events = await readHistory();
+		provenanceMismatches = unsafeTargets(events);
+		if (provenanceMismatches.length > 0)
+			return {
+				status: "needs-human",
+				destroyedOrder,
+				events,
+				provenanceMismatches,
+			};
 		pendingOperations = pendingCompensationBarriers(events, plan);
 		if (pendingOperations.length > 0)
 			return {
@@ -235,6 +268,7 @@ export async function runCompensation(
 				foldResourceActor(events, { ...r, deploymentId }).state,
 			]),
 		);
+		const recorded = recordedResources(events);
 		if (hasUnresolvedReconciliation(events))
 			return { status: "needs-human", destroyedOrder, events };
 
@@ -246,14 +280,22 @@ export async function runCompensation(
 			if (
 				state !== "Provisioned" &&
 				state !== "Updating" &&
-				state !== "Destroying"
+				state !== "Destroying" &&
+				!(
+					state === "Failed" && recorded.get(resourceId)?.specHash !== undefined
+				)
 			)
 				continue;
 
 			// Gate: all dependents must already be Destroyed (reverse order).
 			const liveDependents = dependentsOf(plan, resourceId).filter((depId) => {
 				const s = states.get(depId);
-				return s === "Provisioned" || s === "Updating" || s === "Destroying";
+				return (
+					s === "Provisioned" ||
+					s === "Updating" ||
+					s === "Destroying" ||
+					(s === "Failed" && recorded.get(depId)?.specHash !== undefined)
+				);
 			});
 			if (liveDependents.length > 0) continue;
 
@@ -294,6 +336,14 @@ export async function runCompensation(
 	}
 
 	events = await readHistory();
+	provenanceMismatches = unsafeTargets(events);
+	if (provenanceMismatches.length > 0)
+		return {
+			status: "needs-human",
+			destroyedOrder,
+			events,
+			provenanceMismatches,
+		};
 	pendingOperations = pendingCompensationBarriers(events, plan);
 	if (pendingOperations.length > 0 || hasUnresolvedReconciliation(events))
 		return {
@@ -302,6 +352,7 @@ export async function runCompensation(
 			events,
 			pendingOperations,
 		};
+	const finalRecorded = recordedResources(events);
 	if (
 		plan.resources.some((resource) => {
 			const state = foldResourceActor(events, {
@@ -312,7 +363,9 @@ export async function runCompensation(
 				state === "Provisioning" ||
 				state === "Provisioned" ||
 				state === "Updating" ||
-				state === "Destroying"
+				state === "Destroying" ||
+				(state === "Failed" &&
+					finalRecorded.get(resource.name)?.specHash !== undefined)
 			);
 		})
 	)

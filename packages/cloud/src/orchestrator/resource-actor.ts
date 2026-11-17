@@ -35,6 +35,7 @@ import {
 	type BlockedProviderMove,
 	blockedProviderMove,
 	desiredSpecHash,
+	hasDestroyProvenance,
 	recordedResources,
 } from "./desired-state.js";
 import { readDeploymentHistory } from "./history-scope.js";
@@ -866,6 +867,47 @@ export async function destroyResource(
 				kind: "failed",
 				snapshot,
 				reason: "reconciliation required before destroy",
+			};
+		}
+		if (
+			!hasDestroyProvenance(
+				recordedResources(events).get(resource.name),
+				resource,
+			)
+		) {
+			if (snapshot.state === "Destroying") {
+				await emit(
+					deps.store,
+					stream,
+					[
+						resourceFailed({
+							deploymentId: ctx.deploymentId,
+							resourceId: resource.name,
+							reason:
+								"in-flight destroy provenance does not match the requested target",
+							classification: "fatal",
+							crossedNoGoThreshold: false,
+							requiresReconciliation: true,
+							reconciliationOperation: "destroy",
+						}),
+					],
+					{ expectedSeq: lastSeq, ...appendOpts },
+				);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
+				snapshot = foldResourceActor(events, {
+					...resource,
+					deploymentId: ctx.deploymentId,
+				});
+			}
+			return {
+				kind: "failed",
+				snapshot,
+				reason:
+					"recorded resource provenance does not match the destroy target",
 			};
 		}
 

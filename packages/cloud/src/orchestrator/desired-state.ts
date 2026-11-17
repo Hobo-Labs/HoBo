@@ -175,6 +175,21 @@ export function blockedProviderMove(
 	};
 }
 
+/** Destroy only from the exact specification that can own the recorded resource. */
+export function hasDestroyProvenance(
+	previous: RecordedResource | undefined,
+	resource: ResourcePlan,
+): boolean {
+	return (
+		previous !== undefined &&
+		previous.state !== "Destroyed" &&
+		previous.specHash !== undefined &&
+		previous.specHash === desiredSpecHash(resource) &&
+		(previous.providerId === undefined ||
+			previous.providerId === resource.provider)
+	);
+}
+
 function resourceIdOf(event: EventEnvelope): string | undefined {
 	return isJsonObject(event.data) && isJsonString(event.data.resourceId)
 		? event.data.resourceId
@@ -248,6 +263,30 @@ export function recordedResources(
 		stable.set(resourceId, recorded);
 	}
 	for (const event of events) {
+		if (event.type === CLOUD_EVENTS.DeploymentImported) {
+			if (
+				!isJsonObject(event.data) ||
+				!Array.isArray(event.data.resources) ||
+				event.data.resources.length > 256 ||
+				!event.data.resources.every(
+					(resource) =>
+						isJsonString(resource) &&
+						resource.length > 0 &&
+						resource.length <= 200,
+				)
+			)
+				throw new TypeError("imported resource inventory is malformed");
+			for (const resource of event.data.resources) {
+				if (!isJsonString(resource))
+					throw new TypeError("imported resource inventory is malformed");
+				const imported: Omit<RecordedResource, "resourceId"> = {
+					state: "Provisioned",
+				};
+				states.set(resource, imported);
+				stable.set(resource, imported);
+			}
+			continue;
+		}
 		if (event.type === CLOUD_EVENTS.DeploymentPlanned) {
 			for (const resource of plannedResources(event))
 				plans.set(resource.name, resource);
