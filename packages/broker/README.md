@@ -32,6 +32,14 @@ on settlement and journal replay; retain historical verification material.
 Missing, forged, asynchronous or unavailable evidence leaves the hold in place.
 Unclaimed holds may be released only when confirmed unused.
 
+The budget journal and its append authority are trusted host infrastructure.
+Restrict the database and journal writer to the budget authority, and protect
+against rollback or rewriting. Replay checks reservation transitions and
+settlement accounting, but the first priced reservation records quote and
+liability digests rather than the complete authenticated quote evidence; replay
+cannot authenticate an initial event supplied by an arbitrary journal writer.
+Never expose raw journal writes as an admission or recovery API.
+
 When pricing is unavailable, admission denies by default. A host may explicitly
 configure `unpriced.authorize` and an independently enrolled
 `unpricedScopeTrust` on the budget authority to permit a particular request.
