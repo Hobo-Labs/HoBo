@@ -442,7 +442,7 @@ function deadLetter(
 		const explicit = record(data.cause, ["kind", "reason"]);
 		converted = {
 			tag: "nack",
-			val: text(explicit.reason, bounds.reasonBytes, true),
+			val: text(explicit.reason, bounds.reasonBytes, true, true),
 		};
 	} else return invalid();
 	return {
@@ -1119,7 +1119,7 @@ export function createDurableMessagingWitHost(
 				const messageId = text(data.messageId, bounds.nameBytes);
 				const sequence = fromU64(data.sequence, Number.MAX_SAFE_INTEGER, 1);
 				const leaseId = text(data.leaseId, bounds.nameBytes);
-				const reason = text(data.reason, bounds.reasonBytes, true);
+				const reason = text(data.reason, bounds.reasonBytes, true, true);
 				return outcome(
 					op,
 					() =>

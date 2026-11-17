@@ -1138,6 +1138,69 @@ describe("durable messaging WIT host boundary", () => {
 		}
 	});
 
+	it("preserves bounded Unicode nack reasons and rejects malformed reasons in both directions", async () => {
+		const reason = "first\nsecond\t\u0000";
+		let returnedReason = reason;
+		const base = fixture().port;
+		const nack = vi.fn(base.nack);
+		const consume: DurableMessaging["consume"] = async () => ({
+			status: "committed",
+			value: [
+				{
+					...delivery,
+					topic: "orders-dlq",
+					deadLetter: {
+						sourceTopic: "orders",
+						consumerGroup: "workers",
+						originalMessageId: "original",
+						originalSequence: 1,
+						deliveryAttempt: 1,
+						cause: { kind: "nack", reason: returnedReason },
+					},
+				},
+			],
+		});
+		const { host } = fixture({ nack, consume });
+		const request = {
+			operation,
+			topic: "orders",
+			consumerGroup: "workers",
+			messageId: message.id,
+			sequence: 1n,
+			leaseId: "lease-1",
+		};
+		const read = {
+			operation,
+			topic: "orders-dlq",
+			consumerGroup: "workers",
+			maxMessages: 1,
+			visibilityTimeoutMs: 10n,
+		};
+		expect(await host.nack({ ...request, reason })).toMatchObject({
+			tag: "committed",
+		});
+		expect(nack).toHaveBeenCalledWith(expect.objectContaining({ reason }));
+		expect(await host.consume(read)).toMatchObject({
+			tag: "committed",
+			val: [{ deadLetter: { cause: { tag: "nack", val: reason } } }],
+		});
+		for (const malformed of [
+			"\ud800",
+			"é".repeat(DURABLE_MESSAGING_LIMITS.reasonBytes),
+		]) {
+			expect(await host.nack({ ...request, reason: malformed })).toEqual({
+				tag: "unknown",
+				val: operation,
+			});
+			returnedReason = malformed;
+			expect(await host.consume(read)).toEqual({
+				tag: "unknown",
+				val: operation,
+			});
+		}
+		expect(nack).toHaveBeenCalledTimes(1);
+	});
+
 	it("converts dead-letter provenance and refuses contradictory settlement receipts", async () => {
 		const { host } = fixture({
 			consume: async () => ({
