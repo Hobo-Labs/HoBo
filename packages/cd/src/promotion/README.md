@@ -115,9 +115,11 @@ key are refused. If the current Set has changed since the claim, a retry is
 refused for reconciliation instead of attempting another rollback. A historical
 rollback without a fingerprint cannot safely establish its original target
 Set, so its retry is refused; inspect the previous result before using a new
-key. A claim does not fence concurrent retries of the same rollback or prove
-that a failed result append left no external effects. Rail effects and other
-effects that do not change the current Set need separate reconciliation.
+key. The rollback rechecks its base before preparing the Delta; the desired
+state port must atomically enforce that base through apply. A claim does not
+fence concurrent retries of the same rollback or prove that a failed result
+append left no external effects. Rail effects and other effects that do not
+change the current Set need separate reconciliation.
 
 ## Parse, don't validate
 
