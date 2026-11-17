@@ -270,6 +270,16 @@ describe("@hobo/patterns", () => {
 		);
 	});
 
+	it.each([
+		"todo",
+		"api",
+		"agent",
+		"fullstack",
+	] as const)("renders the %s starter without explanatory seed comments", (template) => {
+		const files = renderCliStarterFiles({ name: "shop", template });
+		expect(files.get("src/_generated/index.ts")).not.toMatch(/^\s*\/\//u);
+	});
+
 	it("explains a match", () => {
 		const text = explainPatternMatch({
 			catalog,
