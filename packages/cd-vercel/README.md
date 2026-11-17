@@ -43,6 +43,9 @@ composition that fails is forgotten, so the next request tries again.
 - `cd-store-unavailable`: the journal could not be opened.
 - Otherwise, the CD runtime's own refusal code.
 
+Unexpected request failures return a generic `cd-serve-error` response without
+exposing internal error details to HTTP clients.
+
 A deployment chooses which Camps CD manages with `HOBO_CD_TOPOLOGY`, a
 comma-separated list of topology files relative to the function. They are
 non-secret declarations.
