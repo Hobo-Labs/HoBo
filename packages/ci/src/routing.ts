@@ -90,7 +90,12 @@ export function shouldCountLocalUsage(
 	observedAt: string,
 ): boolean {
 	const completed = Date.parse(lease.usageCompletedAt || lease.settledAt);
-	return !Number.isFinite(completed) || completed >= Date.parse(observedAt);
+	const observed = Date.parse(observedAt);
+	return (
+		!Number.isFinite(completed) ||
+		!Number.isFinite(observed) ||
+		completed >= observed
+	);
 }
 
 /** Pure ranking input; availability is measured per customer-owned account. */
@@ -183,17 +188,21 @@ export function route(
 			return [offer, { reserved, used, providerSpent }] as const;
 		}),
 	);
-	const providerExposures = new Map<string, number>();
-	const accounted = new Set<string>();
+	// Several offers can report the same provider account. Keep the largest
+	// observed exposure regardless of offer order, then aggregate across
+	// providers that share an account identifier.
+	const providerAccounts = new Map<string, { target: string; spent: number }>();
 	for (const [offer, accounting] of providerAccounting) {
 		const key = JSON.stringify([offer.provider, offer.providerAccountId]);
-		if (accounted.has(key)) continue;
-		accounted.add(key);
-		providerExposures.set(
-			offer.providerAccountId,
-			(providerExposures.get(offer.providerAccountId) ?? 0) +
-				accounting.providerSpent,
-		);
+		const previous = providerAccounts.get(key);
+		providerAccounts.set(key, {
+			target: offer.providerAccountId,
+			spent: Math.max(previous?.spent ?? 0, accounting.providerSpent),
+		});
+	}
+	const providerExposures = new Map<string, number>();
+	for (const { target, spent } of providerAccounts.values()) {
+		providerExposures.set(target, (providerExposures.get(target) ?? 0) + spent);
 	}
 	const candidates = account.offers.flatMap((offer) => {
 		if (
@@ -208,7 +217,12 @@ export function route(
 			return [];
 		const accounting = providerAccounting.get(offer);
 		if (!accounting) throw new Error("missing provider accounting");
-		const { reserved, used, providerSpent } = accounting;
+		const { reserved, used } = accounting;
+		const providerSpent = providerAccounts.get(
+			JSON.stringify([offer.provider, offer.providerAccountId]),
+		)?.spent;
+		if (providerSpent === undefined)
+			throw new Error("missing provider exposure");
 		if (reserved.length >= offer.concurrency) return [];
 		const usedFree = used
 			.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))
