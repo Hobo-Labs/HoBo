@@ -1,98 +1,64 @@
 #!/usr/bin/env python3
-"""
-Quick validation script for skills - minimal version
-"""
-
-import sys
 import re
-import yaml
+import sys
 from pathlib import Path
 
+import yaml
+from init_skill import DEFERRED, NAME
+
+
 def validate_skill(skill_path):
-    """Basic validation of a skill"""
-    skill_path = Path(skill_path)
-
-    # Check SKILL.md exists
-    skill_md = skill_path / 'SKILL.md'
-    if not skill_md.exists():
+    directory = Path(skill_path)
+    skill = directory / "SKILL.md"
+    if not skill.is_file():
         return False, "SKILL.md not found"
-
-    # Read and validate frontmatter
-    content = skill_md.read_text()
-    if not content.startswith('---'):
-        return False, "No YAML frontmatter found"
-
-    # Extract frontmatter
-    match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+    content = skill.read_text(encoding="utf-8")
+    match = re.match(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", content, re.DOTALL)
     if not match:
         return False, "Invalid frontmatter format"
-
     frontmatter_text = match.group(1)
-
-    # Require inline/quoted description syntax for compatibility with strict parsers.
-    if re.search(r'(?m)^description:\s*[>|]-?\s*$', frontmatter_text):
-        return False, "Description must use an inline string value, not YAML folded/literal scalar (`>` or `|`)."
-
-    # Parse YAML frontmatter
+    if re.search(r"(?m)^description:\s*[>|]-?\s*$", frontmatter_text):
+        return False, "Description must use an inline string value"
     try:
         frontmatter = yaml.safe_load(frontmatter_text)
-        if not isinstance(frontmatter, dict):
-            return False, "Frontmatter must be a YAML dictionary"
-    except yaml.YAMLError as e:
-        return False, f"Invalid YAML in frontmatter: {e}"
-
-    # Define allowed properties
-    ALLOWED_PROPERTIES = {'name', 'description', 'license', 'allowed-tools', 'metadata'}
-
-    # Check for unexpected properties (excluding nested keys under metadata)
-    unexpected_keys = set(frontmatter.keys()) - ALLOWED_PROPERTIES
-    if unexpected_keys:
-        return False, (
-            f"Unexpected key(s) in SKILL.md frontmatter: {', '.join(sorted(unexpected_keys))}. "
-            f"Allowed properties are: {', '.join(sorted(ALLOWED_PROPERTIES))}"
-        )
-
-    # Check required fields
-    if 'name' not in frontmatter:
-        return False, "Missing 'name' in frontmatter"
-    if 'description' not in frontmatter:
-        return False, "Missing 'description' in frontmatter"
-
-    # Extract name for validation
-    name = frontmatter.get('name', '')
-    if not isinstance(name, str):
-        return False, f"Name must be a string, got {type(name).__name__}"
-    name = name.strip()
-    if name:
-        # Check naming convention (hyphen-case: lowercase with hyphens)
-        if not re.match(r'^[a-z0-9-]+$', name):
-            return False, f"Name '{name}' should be hyphen-case (lowercase letters, digits, and hyphens only)"
-        if name.startswith('-') or name.endswith('-') or '--' in name:
-            return False, f"Name '{name}' cannot start/end with hyphen or contain consecutive hyphens"
-        # Check name length (max 64 characters per spec)
-        if len(name) > 64:
-            return False, f"Name is too long ({len(name)} characters). Maximum is 64 characters."
-
-    # Extract and validate description
-    description = frontmatter.get('description', '')
-    if not isinstance(description, str):
-        return False, f"Description must be a string, got {type(description).__name__}"
-    description = description.strip()
-    if description:
-        # Check for angle brackets
-        if '<' in description or '>' in description:
-            return False, "Description cannot contain angle brackets (< or >)"
-        # Check description length (max 1024 characters per spec)
-        if len(description) > 1024:
-            return False, f"Description is too long ({len(description)} characters). Maximum is 1024 characters."
-
+    except yaml.YAMLError as error:
+        return False, f"Invalid YAML in frontmatter: {error}"
+    if not isinstance(frontmatter, dict):
+        return False, "Frontmatter must be a YAML dictionary"
+    allowed = {"name", "description", "license", "allowed-tools", "metadata"}
+    unexpected = set(frontmatter) - allowed
+    if unexpected:
+        return False, f"Unexpected frontmatter keys: {', '.join(sorted(unexpected))}"
+    name = frontmatter.get("name")
+    if not isinstance(name, str) or not NAME.fullmatch(name) or len(name) > 64:
+        return False, "Name must be nonempty hyphen-case and at most 64 characters"
+    if name != directory.name:
+        return False, "Name must match the skill directory"
+    description = frontmatter.get("description")
+    if (
+        not isinstance(description, str)
+        or not description.strip()
+        or len(description) > 1024
+        or "\n" in description
+        or "\r" in description
+    ):
+        return False, "Description must be nonempty and at most 1024 characters"
+    if "<" in description or ">" in description:
+        return False, "Description cannot contain angle brackets"
+    instructions = content[match.end():].strip()
+    if not instructions or DEFERRED.search(description) or DEFERRED.search(instructions):
+        return False, "Complete instructions and description are required"
     return True, "Skill is valid!"
 
-if __name__ == "__main__":
+
+def main():
     if len(sys.argv) != 2:
-        print("Usage: python quick_validate.py <skill_directory>")
-        sys.exit(1)
-    
+        print("Usage: python quick_validate.py <skill_directory>", file=sys.stderr)
+        return 1
     valid, message = validate_skill(sys.argv[1])
     print(message)
-    sys.exit(0 if valid else 1)
+    return 0 if valid else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
