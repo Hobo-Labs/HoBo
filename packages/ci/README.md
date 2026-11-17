@@ -633,6 +633,11 @@ released through execution settlement instead. The store records the release,
 but trusts the controller's assertion and does not itself verify provider
 teardown evidence.
 
+Before enabling admission after an upgrade, quarantine and reconcile slots
+already marked uncertain by an older version. That version may have released
+their reservations; this change cannot reconstruct whether those runners still
+exist or restore the missing accounting automatically.
+
 Fleet capacity values use the unsigned 32-bit wire range. PostgreSQL startup
 widens legacy signed capacity columns under its schema lock; the database user
 must have permission to alter those tables. Capacity revisions never wrap: at
