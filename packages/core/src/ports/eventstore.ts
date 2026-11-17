@@ -64,6 +64,7 @@ export interface ReadAllOptions {
 }
 
 export interface Subscription {
+	readonly ready?: Promise<void>;
 	unsubscribe(): void;
 }
 

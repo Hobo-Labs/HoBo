@@ -337,17 +337,19 @@ describeLive(
 				expectedSeq: 0,
 			});
 			const seen: EventEnvelope[] = [];
+			let finish = () => {};
 			const done = new Promise<void>((resolve) => {
-				reader.subscribe({}, (event) => {
-					seen.push(event);
-					if (seen.length === 3) resolve();
-				});
+				finish = resolve;
+			});
+			const all = reader.subscribe({}, (event) => {
+				seen.push(event);
+				if (seen.length === 3) finish();
 			});
 			const filtered: string[] = [];
 			const sub = reader.subscribe({ type: "live.Two" }, (event) => {
 				filtered.push(event.type);
 			});
-			await new Promise((resolve) => setTimeout(resolve, 200));
+			await Promise.all([all.ready, sub.ready]);
 			await writer.append("live", [{ type: "live.One", data: {} }], {
 				...OPTS,
 				expectedSeq: 0,
@@ -367,6 +369,7 @@ describeLive(
 				"live.Three",
 			]);
 			expect(filtered).toEqual(["live.Two"]);
+			all.unsubscribe();
 			sub.unsubscribe();
 		});
 
