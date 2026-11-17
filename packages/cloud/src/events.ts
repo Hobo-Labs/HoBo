@@ -219,6 +219,8 @@ export interface ResourceProvisioningData {
 	specHash?: string;
 	/** Provider that may have received the apply; absent on legacy facts. */
 	providerId?: string;
+	/** Random generation persisted before dispatch; absent on legacy facts. */
+	operationGeneration?: string;
 }
 
 export function resourceProvisioning(
@@ -294,6 +296,9 @@ export interface ResourceDestroyingData {
 	deploymentId: string;
 	resourceId: string;
 	reason: string;
+	operationGeneration?: string;
+	programHash?: string;
+	specHash?: string;
 }
 
 export function resourceDestroying(data: ResourceDestroyingData): EventInput {
