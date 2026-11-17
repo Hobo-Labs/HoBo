@@ -30,6 +30,8 @@ export {
 	type RivetDurableTopicClient,
 	type RivetDurableTopicClientBinding,
 	type RivetDurableTopicClientOptions,
+	type RivetDurableTopicLogMessage,
+	type RivetDurableTopicLogOutcome,
 	type RivetDurableTopicMetadataGrant,
 	type RivetDurableTopicRequest,
 	type RivetDurableTopicTransportClaim,

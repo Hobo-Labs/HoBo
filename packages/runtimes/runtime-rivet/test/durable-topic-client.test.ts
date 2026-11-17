@@ -33,6 +33,13 @@ const actorCapabilities = Object.freeze({
 	deadLetter: false,
 	legacyWit: false,
 });
+const fullCapabilities = Object.freeze({
+	...actorCapabilities,
+	consumerGroups: true,
+	leases: true,
+	acknowledgement: true,
+	deadLetter: true,
+});
 const binding = Object.freeze({
 	actorName: "hoboMessaging",
 	actorKey: Object.freeze(["tenant", "orders"]),
@@ -58,7 +65,7 @@ function fixture(send: (path: string, init: RequestInit) => Promise<Response>) {
 	const revalidate = vi.fn(async () => true);
 	const fetch = vi.fn(send);
 	const client = createRivetDurableTopicClient({
-		binding,
+		binding: { ...binding, actorCapabilities: fullCapabilities },
 		metadataGrant: createRivetDurableTopicMetadataGrant(),
 		verifyTransport: () => true,
 		authorize,
@@ -856,5 +863,218 @@ describe("Rivet durable topic HTTP client", () => {
 				operation,
 			});
 		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+	it("reads the explicit non-leased retained log and checks its topic, cursor and payload", async () => {
+		let value: object = {
+			status: "ok",
+			messages: [
+				{
+					topic: "orders",
+					sequence: 1,
+					id: "m1",
+					subject: "new",
+					payload: "AAH+/w==",
+					attributes: [{ key: "source", value: "checkout" }],
+				},
+			],
+			firstAvailableSequence: 1,
+			nextAfterSequence: 1,
+			hasMore: false,
+		};
+		const { client, authorize, fetch } = fixture(async (path) => {
+			expect(path).toBe("/read-log");
+			return new Response(canonical(value), { status: 200 });
+		});
+		const result = await client.readRetainedLog({
+			topic: "orders",
+			afterSequence: 0,
+			limit: 1,
+		});
+		if (result.status !== "ok") throw new Error("expected retained log page");
+		expect(result.messages[0]).toEqual({
+			topic: "orders",
+			sequence: 1,
+			id: "m1",
+			subject: "new",
+			payload: new Uint8Array([0, 1, 254, 255]),
+			attributes: [{ key: "source", value: "checkout" }],
+		});
+		expect(authorize.mock.calls[0]?.[0]).toMatchObject({
+			method: "read-log",
+			actorKey: binding.actorKey,
+		});
+		value = { status: "gap", firstAvailableSequence: 5, latestSequence: 8 };
+		expect(
+			await client.readRetainedLog({
+				topic: "orders",
+				afterSequence: 0,
+				limit: 1,
+			}),
+		).toEqual(value);
+		value = {
+			status: "ok",
+			messages: [
+				{
+					topic: "other",
+					sequence: 1,
+					id: "m1",
+					subject: "new",
+					payload: "AA==",
+					attributes: [],
+				},
+			],
+			firstAvailableSequence: 1,
+			nextAfterSequence: 1,
+			hasMore: false,
+		};
+		expect(
+			await client.readRetainedLog({
+				topic: "orders",
+				afterSequence: 0,
+				limit: 1,
+			}),
+		).toEqual({ status: "rejected", code: "unavailable" });
+		value = {
+			status: "ok",
+			messages: [
+				{
+					topic: "orders",
+					sequence: 2,
+					id: "m1",
+					subject: "new",
+					payload: "AB==",
+					attributes: [],
+				},
+			],
+			firstAvailableSequence: 1,
+			nextAfterSequence: 2,
+			hasMore: false,
+		};
+		expect(
+			await client.readRetainedLog({
+				topic: "orders",
+				afterSequence: 0,
+				limit: 1,
+			}),
+		).toEqual({ status: "rejected", code: "unavailable" });
+		expect(fetch).toHaveBeenCalledTimes(4);
+	});
+
+	it("does not dispatch or disclose retained-log data after metadata revocation", async () => {
+		const grant = createRivetDurableTopicMetadataGrant();
+		const fetch = vi.fn(
+			async () =>
+				new Response(
+					canonical({
+						status: "ok",
+						messages: [],
+						firstAvailableSequence: 1,
+						nextAfterSequence: 0,
+						hasMore: false,
+					}),
+				),
+		);
+		const client = createRivetDurableTopicClient({
+			binding,
+			metadataGrant: grant,
+			verifyTransport: () => true,
+			authorize: () => ({ "x-hobo-proof": "signed" }),
+			revalidate: () => {
+				queueMicrotask(() => queueMicrotask(() => grant.revoke()));
+				return true;
+			},
+			fetch,
+		});
+		expect(
+			await client.readRetainedLog({
+				topic: "orders",
+				afterSequence: 0,
+				limit: 1,
+			}),
+		).toEqual({ status: "rejected", code: "unavailable" });
+		expect(
+			await client.readRetainedLog({
+				topic: "orders",
+				afterSequence: 0,
+				limit: 1,
+			}),
+		).toEqual({ status: "rejected", code: "unavailable" });
+		expect(fetch).toHaveBeenCalledTimes(1);
+	});
+	it("does not trust committed operations that contradict the attested partial capability descriptor", async () => {
+		let response: object = {
+			status: "committed",
+			value: { messageId: "m1", sequence: 1 },
+		};
+		const fetch = vi.fn(
+			async () => new Response(canonical(response), { status: 200 }),
+		);
+		const client = createRivetDurableTopicClient({
+			binding,
+			metadataGrant: createRivetDurableTopicMetadataGrant(),
+			verifyTransport: () => true,
+			authorize: () => ({ "x-hobo-proof": "signed" }),
+			revalidate: () => true,
+			fetch,
+		});
+		const lease = {
+			operation,
+			topic: "orders",
+			consumerGroup: "workers",
+			messageId: "m1",
+			sequence: 1,
+			leaseId: "lease",
+		};
+		expect(client.actorCapabilities.acknowledgement).toBe(false);
+		expect(await client.ack(lease)).toEqual({ status: "unknown", operation });
+		response = { status: "rejected", code: "unsupported" };
+		expect(await client.ack(lease)).toEqual({
+			status: "rejected",
+			code: "unsupported",
+		});
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+	it("does not treat group operations as committed when the actor cannot dead-letter", async () => {
+		const partial = { ...fullCapabilities, deadLetter: false };
+		const fetch = vi.fn(async (path: string) => {
+			const value =
+				path === "/consume"
+					? []
+					: path === "/nack"
+						? { messageId: "m1", sequence: 1, disposition: "released" }
+						: { messageId: "m1", sequence: 1 };
+			return new Response(canonical({ status: "committed", value }));
+		});
+		const client = createRivetDurableTopicClient({
+			binding: { ...binding, actorCapabilities: partial },
+			metadataGrant: createRivetDurableTopicMetadataGrant(),
+			verifyTransport: () => true,
+			authorize: () => ({ "x-hobo-proof": "signed" }),
+			revalidate: () => true,
+			fetch,
+		});
+		const lease = {
+			operation,
+			topic: "orders",
+			consumerGroup: "workers",
+			messageId: "m1",
+			sequence: 1,
+			leaseId: "lease",
+		};
+		expect(
+			await client.consume({
+				operation,
+				topic: "orders",
+				consumerGroup: "workers",
+				maxMessages: 1,
+				visibilityTimeoutMs: 1,
+			}),
+		).toEqual({ status: "unknown", operation });
+		expect(await client.ack(lease)).toEqual({ status: "unknown", operation });
+		expect(await client.nack({ ...lease, reason: "retry" })).toEqual({
+			status: "unknown",
+			operation,
+		});
+		expect(fetch).toHaveBeenCalledTimes(3);
 	});
 });

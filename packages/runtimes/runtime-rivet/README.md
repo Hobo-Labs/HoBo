@@ -110,6 +110,13 @@ const messaging = createRivetDurableTopicClient({
 // On revocation, revoke the metadata grant and the host's operation authority.
 ```
 
+The initial topic-log actor reports consumer groups, leases, acknowledgement,
+dead-letter handling and legacy WIT as unsupported. `readRetainedLog` exposes
+the actor's retained log with explicit cursor and gap results. It does not grant a delivery lease, advance a consumer checkpoint, or
+acknowledge a message; applications and hosts must manage those responsibilities
+separately. The descriptor may also mark actor capabilities the client does not
+itself implement.
+
 Topic subscription creation, consumption and nack may write to a dead-letter
 topic; the host must independently resolve and authorize that destination,
 including any later expiry transfer. Audit reads disclose metadata for the whole

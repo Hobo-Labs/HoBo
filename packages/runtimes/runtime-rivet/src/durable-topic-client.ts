@@ -5,6 +5,7 @@ import {
 	type DurableMessaging,
 	type DurableMessagingEvent,
 	type DurableMessagingLimits,
+	type DurableMessagingMessage,
 	type DurableMessagingOperation,
 	type DurableMessagingOutcome,
 	type DurableMessagingRejectionCode,
@@ -26,6 +27,7 @@ const METHODS = [
 	"nack",
 	"compact",
 	"events",
+	"read-log",
 ] as const;
 type TopicMethod = (typeof METHODS)[number];
 
@@ -97,9 +99,38 @@ export interface RivetDurableTopicTransportClaim {
 	readonly responseBase64?: string;
 }
 
+/** A retained log row carries no lease or acknowledgement authority. */
+export interface RivetDurableTopicLogMessage extends DurableMessagingMessage {
+	readonly topic: string;
+	readonly sequence: number;
+}
+export type RivetDurableTopicLogOutcome =
+	| {
+			readonly status: "ok";
+			readonly messages: readonly RivetDurableTopicLogMessage[];
+			readonly firstAvailableSequence: number;
+			readonly nextAfterSequence: number;
+			readonly hasMore: boolean;
+	  }
+	| {
+			readonly status: "gap";
+			readonly firstAvailableSequence: number;
+			readonly latestSequence: number;
+	  }
+	| {
+			readonly status: "rejected";
+			readonly code: DurableMessagingRejectionCode;
+	  };
+
 /** Durable operations remain callable so the actor can durably reject unsupported ones. */
 export interface RivetDurableTopicClient extends DurableMessaging {
 	readonly actorCapabilities: RivetDurableTopicCapabilities;
+	/** Read the retained log without acquiring a lease or acknowledging delivery. */
+	readRetainedLog(input: {
+		readonly topic: string;
+		readonly afterSequence: number;
+		readonly limit: number;
+	}): Promise<RivetDurableTopicLogOutcome>;
 }
 
 export interface RivetDurableTopicClientOptions {
@@ -734,6 +765,91 @@ function capabilities(value: unknown): RivetDurableTopicCapabilities {
 		legacyWit: flag("legacyWit"),
 	});
 }
+function retainedLog(
+	value: unknown,
+	topic: string,
+	after: number,
+	maximum: number,
+	cap: DurableMessagingLimits,
+): RivetDurableTopicLogOutcome {
+	const base = record(
+		value,
+		["status"],
+		[
+			"messages",
+			"firstAvailableSequence",
+			"nextAfterSequence",
+			"hasMore",
+			"latestSequence",
+			"code",
+		],
+	);
+	if (base.status === "rejected") {
+		const d = record(value, ["status", "code"]);
+		return { status: "rejected", code: rejection(d.code) };
+	}
+	if (base.status === "gap") {
+		const d = record(value, [
+			"status",
+			"firstAvailableSequence",
+			"latestSequence",
+		]);
+		const first = integer(d.firstAvailableSequence, Number.MAX_SAFE_INTEGER, 1);
+		const latest = integer(d.latestSequence);
+		if (after >= first - 1 || latest < first - 1) return invalid();
+		return {
+			status: "gap",
+			firstAvailableSequence: first,
+			latestSequence: latest,
+		};
+	}
+	if (base.status !== "ok") return invalid();
+	const d = record(value, [
+		"status",
+		"messages",
+		"firstAvailableSequence",
+		"nextAfterSequence",
+		"hasMore",
+	]);
+	const first = integer(d.firstAvailableSequence, Number.MAX_SAFE_INTEGER, 1);
+	const next = integer(d.nextAfterSequence);
+	if (typeof d.hasMore !== "boolean" || after < first - 1) return invalid();
+	const ids = new Set<string>();
+	const messages = array(d.messages, maximum).map((item, index) => {
+		const row = record(item, [
+			"topic",
+			"sequence",
+			"id",
+			"subject",
+			"payload",
+			"attributes",
+		]);
+		const sequence = integer(row.sequence, Number.MAX_SAFE_INTEGER, 1);
+		if (row.topic !== topic || sequence !== after + index + 1) return invalid();
+		const message = decodedMessage(
+			{
+				id: row.id,
+				subject: row.subject,
+				payload: row.payload,
+				attributes: row.attributes,
+			},
+			cap,
+		);
+		if (ids.has(message.id)) return invalid();
+		ids.add(message.id);
+		return { ...message, topic, sequence };
+	});
+	if (next !== after + messages.length || (messages.length === 0 && d.hasMore))
+		return invalid();
+	return {
+		status: "ok",
+		messages,
+		firstAvailableSequence: first,
+		nextAfterSequence: next,
+		hasMore: d.hasMore,
+	};
+}
+
 function binding(value: unknown): RivetDurableTopicClientBinding {
 	const d = record(value, [
 		"actorName",
@@ -1021,7 +1137,10 @@ export function createRivetDurableTopicClient(
 			)
 				throw new Error("rivet_topic.transport_unverified");
 			const credentials = headers(await authorize(observation));
-			if (!alive() || (method === "events" && !metadata.active))
+			if (
+				!alive() ||
+				((method === "events" || method === "read-log") && !metadata.active)
+			)
 				throw new Error("rivet_topic.timeout");
 			const response = await fetch(`/${method}`, {
 				method: "POST",
@@ -1054,7 +1173,7 @@ export function createRivetDurableTopicClient(
 			if (
 				(await revalidate(disclosure)) !== true ||
 				!alive() ||
-				(method === "events" && !metadata.active)
+				((method === "events" || method === "read-log") && !metadata.active)
 			)
 				throw new Error("rivet_topic.unauthorized");
 			const textValue = decoder.decode(content);
@@ -1062,6 +1181,32 @@ export function createRivetDurableTopicClient(
 			if (canonical(parsed) !== textValue) return invalid();
 			return parsed;
 		});
+	};
+	const supportsMutation = (method: TopicMethod): boolean => {
+		const cap = scope.actorCapabilities;
+		switch (method) {
+			case "ensure-topic":
+				return cap.topicCreation;
+			case "ensure-subscription":
+				return cap.consumerGroups && cap.deadLetter;
+			case "publish":
+				return cap.publish;
+			case "consume":
+				return cap.consumerGroups && cap.leases && cap.deadLetter;
+			case "ack":
+				return (
+					cap.consumerGroups &&
+					cap.leases &&
+					cap.acknowledgement &&
+					cap.deadLetter
+				);
+			case "nack":
+				return cap.consumerGroups && cap.leases && cap.deadLetter;
+			case "compact":
+				return cap.compaction;
+			default:
+				return false;
+		}
 	};
 	const mutation = async <T>(
 		input: unknown,
@@ -1074,7 +1219,10 @@ export function createRivetDurableTopicClient(
 		const op = requestOperation(input);
 		try {
 			const captured = capture(op);
-			return outcome(await request(method, captured, op), op, receive);
+			const result = outcome(await request(method, captured, op), op, receive);
+			if (result.status === "committed" && !supportsMutation(method))
+				return invalid();
+			return result;
 		} catch {
 			return { status: "unknown", operation: op };
 		}
@@ -1196,7 +1344,18 @@ export function createRivetDurableTopicClient(
 						),
 					};
 				},
-				(value) => deliveries(value, topic, group, count, scope.limits),
+				(value) => {
+					const result = deliveries(value, topic, group, count, scope.limits);
+					if (
+						!scope.actorCapabilities.deadLetter &&
+						result.some(
+							(delivery) =>
+								"deadLetter" in delivery && delivery.deadLetter !== undefined,
+						)
+					)
+						return invalid();
+					return result;
+				},
 			);
 		},
 		ack: (input) => {
@@ -1273,7 +1432,11 @@ export function createRivetDurableTopicClient(
 						record(value, ["messageId", "sequence", "disposition"]);
 						return { messageId, sequence, disposition: "released" as const };
 					}
-					if (d.disposition !== "dead-lettered") return invalid();
+					if (
+						d.disposition !== "dead-lettered" ||
+						!scope.actorCapabilities.deadLetter
+					)
+						return invalid();
 					const settled = record(value, [
 						"messageId",
 						"sequence",
@@ -1335,6 +1498,45 @@ export function createRivetDurableTopicClient(
 				},
 			);
 		},
+		readRetainedLog: async (input) => {
+			let topic: string;
+			let afterSequence: number;
+			let limit: number;
+			try {
+				const d = record(input, ["topic", "afterSequence", "limit"]);
+				topic = text(d.topic, DURABLE_MESSAGING_LIMITS.nameBytes);
+				afterSequence = integer(d.afterSequence);
+				limit = integer(d.limit, DURABLE_MESSAGING_LIMITS.batchSize, 1);
+			} catch {
+				return { status: "rejected", code: "invalid-argument" };
+			}
+			try {
+				if (!metadata.active) throw new Error("rivet_topic.metadata_revoked");
+				const raw = await request("read-log", { topic, afterSequence, limit });
+				if (!metadata.active) throw new Error("rivet_topic.metadata_revoked");
+				const result = retainedLog(
+					raw,
+					topic,
+					afterSequence,
+					Math.min(limit, scope.limits.batchSize),
+					scope.limits,
+				);
+				if (
+					result.status !== "rejected" &&
+					!scope.actorCapabilities.readRetainedLog
+				)
+					return invalid();
+				if (
+					(limit > scope.limits.batchSize ||
+						Buffer.byteLength(topic, "utf8") > scope.limits.nameBytes) &&
+					(result.status !== "rejected" || result.code !== "invalid-argument")
+				)
+					return invalid();
+				return result;
+			} catch {
+				return { status: "rejected", code: "unavailable" };
+			}
+		},
 		events: async (input) => {
 			let afterSequence: number;
 			let limit: number;
@@ -1355,6 +1557,11 @@ export function createRivetDurableTopicClient(
 					Math.min(limit, scope.limits.eventPageSize),
 					scope.limits,
 				);
+				if (
+					result.status !== "rejected" &&
+					!scope.actorCapabilities.auditEvents
+				)
+					return invalid();
 				if (
 					limit > scope.limits.eventPageSize &&
 					(result.status !== "rejected" || result.code !== "invalid-argument")
