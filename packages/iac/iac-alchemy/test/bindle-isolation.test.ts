@@ -8,6 +8,9 @@ import { mapBindleToAlchemy } from "../src/bindle.js";
 
 type Spec = Resource<"Spec.Resource", { tag: string }, { id: string }>;
 const Spec = Resource<Spec>("Spec.Resource");
+const supportedRequirements = {
+	assessRequirements: () => ({ status: "supported" as const }),
+};
 const stack = () => ({
 	name: "App",
 	stage: "test",
@@ -65,10 +68,12 @@ describe("Alchemy Bindle identity ownership", () => {
 		const first = mapBindleToAlchemy(
 			definition("first", "cache"),
 			mapper("first"),
+			supportedRequirements,
 		);
 		const second = mapBindleToAlchemy(
 			definition("second", "cache"),
 			mapper("second"),
+			supportedRequirements,
 		);
 		const program =
 			mode === "sequential"
@@ -83,16 +88,25 @@ describe("Alchemy Bindle identity ownership", () => {
 	it("rejects a raw resource registered before the Bindle", async () => {
 		const program = Effect.gen(function* () {
 			yield* Spec("cache", { tag: "raw" });
-			yield* mapBindleToAlchemy(definition("app", "cache"), mapper("bindle"));
+			yield* mapBindleToAlchemy(
+				definition("app", "cache"),
+				mapper("bindle"),
+				supportedRequirements,
+			);
 		});
 		await expect(execute(program)).rejects.toThrow("BINDLE_IDENTITY_COLLISION");
 	});
 
 	it("permits distinct Alchemy namespaces without renaming existing declarations", async () => {
-		const one = mapBindleToAlchemy(definition("first", "cache"), mapper("one"));
+		const one = mapBindleToAlchemy(
+			definition("first", "cache"),
+			mapper("one"),
+			supportedRequirements,
+		);
 		const two = mapBindleToAlchemy(
 			definition("second", "cache"),
 			mapper("two"),
+			supportedRequirements,
 		);
 		const result = await execute(
 			Effect.all([Namespace.push("one", one), Namespace.push("two", two)]),
@@ -127,9 +141,9 @@ describe("Alchemy Bindle identity ownership", () => {
 			...first,
 			resources: { ...first.resources, ...second.resources },
 		};
-		await expect(execute(mapBindleToAlchemy(app, mapping))).rejects.toThrow(
-			"BINDLE_IDENTITY_COLLISION",
-		);
+		await expect(
+			execute(mapBindleToAlchemy(app, mapping, supportedRequirements)),
+		).rejects.toThrow("BINDLE_IDENTITY_COLLISION");
 	});
 
 	it("documents why the host must forbid later raw reuse of a mapped identity", async () => {
@@ -137,6 +151,7 @@ describe("Alchemy Bindle identity ownership", () => {
 			const mapped = yield* mapBindleToAlchemy(
 				definition("app", "cache"),
 				mapper("first"),
+				supportedRequirements,
 			);
 			const raw = yield* Spec("cache", { tag: "second" });
 			return { original: mapped.primary.cache, raw };
