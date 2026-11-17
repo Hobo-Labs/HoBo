@@ -730,13 +730,23 @@ test("root script and test changes select the root typecheck lane", () => {
 });
 
 test("nested production category packages resolve to their own workspace", () => {
-	const workspace = "packages/runtimes/runtime-local";
-	const { checks, workspaces } = plan([`${workspace}/src/host.ts`], {
-		workspacePackageExists: (candidate: string) => candidate === workspace,
-	});
-
-	assert.deepEqual(workspaces, [workspace]);
-	assert.equal(turboTestSelects(checks, workspace), true);
+	for (const workspace of [
+		"packages/adapters/adapter-hono",
+		"packages/connectors/connector-acp",
+		"packages/packs/pack-framework",
+		"packages/runtimes/runtime-local",
+		"packages/providers/provider-azure",
+		"packages/iac/iac-pulumi",
+	]) {
+		for (const staged of [false, true]) {
+			const { checks, workspaces } = plan([`${workspace}/src/host.ts`], {
+				staged,
+				workspacePackageExists: (candidate: string) => candidate === workspace,
+			});
+			assert.deepEqual(workspaces, [workspace]);
+			assert.equal(turboTestSelects(checks, workspace), true);
+		}
+	}
 });
 
 function isBehaviorLane(check: Check) {

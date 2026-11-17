@@ -42,7 +42,7 @@ export function workspaceFor(file: string) {
 	);
 	if (exp) return `src/draft/exp-proofs/${exp[1]}/${exp[2]}`;
 	const production = normalized.match(
-		/^(packages|examples)\/(?:(runtimes|providers|iac|build)\/)?([^/]+)\//u,
+		/^(packages|examples)\/(?:(adapters|connectors|packs|runtimes|providers|iac|build)\/)?([^/]+)\//u,
 	);
 	if (!production) return undefined;
 	return production[2]
