@@ -644,7 +644,9 @@ export function selectRelevantChecks(
 			(file) =>
 				pixelSource(file, "core") ||
 				pixelSource(file, "server") ||
-				pixelSource(file, "adapters/vscode"),
+				pixelSource(file, "adapters/vscode") ||
+				file === "external/pixel-agents/esbuild.js" ||
+				file === "external/pixel-agents/scripts/build-hooks.cjs",
 		)
 	) {
 		checks.push({

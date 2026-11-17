@@ -96,6 +96,11 @@ test("Pixel Agents changes select their own server and webview suites", () => {
 		selected("external/pixel-agents/adapters/vscode/extension.ts"),
 		["external/pixel-agents/server"],
 	);
+	for (const file of [
+		"external/pixel-agents/esbuild.js",
+		"external/pixel-agents/scripts/build-hooks.cjs",
+	])
+		assert.deepEqual(selected(file), ["external/pixel-agents/server"]);
 	assert.deepEqual(selected("external/pixel-agents/webview-ui/src/App.tsx"), [
 		"external/pixel-agents/webview-ui",
 	]);
