@@ -1,22 +1,3 @@
-/**
- * JWT-SVIDs are the identity documents this system authenticates with, so the
- * only tests worth writing here are the ones that try to get a forged or expired
- * token accepted. A mint that produces a slightly wrong token fails loudly the
- * first time anyone uses it; a verify that accepts a token it should not fails
- * silently, forever, in the attacker's favour.
- *
- * The most important test in this file is the algorithm-confusion regression:
- * `verifyJwtSvid` used to let the *token's own header* choose the verification
- * algorithm, so an ES256-configured verifier would accept an HS256 token signed
- * with `DEFAULT_SVID_HMAC_SECRET` — an exported constant in this repository.
- * That made every SPIFFE id and audience forgeable by anyone who had read the
- * source. The guard added alongside these tests closes it; the test below is
- * what keeps it closed.
- *
- * The rest covers the boundaries a token has to survive: expiry (with skew),
- * issued-in-the-future, audience binding, a tampered payload, a truncated token,
- * and the production-secret policy that stops the dev default reaching prod.
- */
 import { describe, expect, test } from "vitest";
 
 import {
@@ -33,17 +14,17 @@ const AUD = "database-access";
 const SECRET = "test-hmac-secret-not-the-default";
 const NOW = 1_800_000_000;
 
-function mint(overrides: Parameters<typeof mintJwtSvid>[0] | object = {}) {
+function mint(overrides: Partial<Parameters<typeof mintJwtSvid>[0]> = {}) {
 	return mintJwtSvid({
 		spiffeId: SPIFFE,
 		audience: AUD,
 		hmacSecret: SECRET,
 		now: NOW,
 		...overrides,
-	} as Parameters<typeof mintJwtSvid>[0]);
+	});
 }
 
-function messageOf(fn: () => unknown): string {
+function messageOf<T>(fn: () => T): string {
 	try {
 		fn();
 	} catch (error) {
@@ -54,10 +35,6 @@ function messageOf(fn: () => unknown): string {
 
 describe("algorithm confusion (regression)", () => {
 	test("an ES256-configured verifier refuses an HS256 token", () => {
-		// The forgery this guard exists for. `DEFAULT_SVID_HMAC_SECRET` is an
-		// exported constant, so anyone can produce this token; before the guard,
-		// a verifier holding only a public key accepted it and the attacker
-		// chose their own `sub` and `aud`.
 		const keys = generateSvidIssuerKeys();
 		const forged = mintJwtSvid({
 			spiffeId: "spiffe://hobo.local/agent/attacker",
@@ -103,8 +80,6 @@ describe("algorithm confusion (regression)", () => {
 	});
 
 	test("a caller that configures both a key and a secret may still verify HS256", () => {
-		// The guard keys off the *absence* of an hmacSecret, so a deployment
-		// running both issuers during a migration is not broken by it.
 		const keys = generateSvidIssuerKeys();
 		const token = mint().token;
 		expect(() =>
@@ -119,8 +94,6 @@ describe("algorithm confusion (regression)", () => {
 	});
 
 	test("an HS256-only verifier is unaffected", () => {
-		// The common local path must keep working; the guard only fires when a
-		// public key was configured.
 		const token = mint().token;
 		expect(() =>
 			verifyJwtSvid({ token, audience: AUD, hmacSecret: SECRET, now: NOW }),
@@ -128,8 +101,6 @@ describe("algorithm confusion (regression)", () => {
 	});
 
 	test("an unsupported algorithm is refused rather than defaulted", () => {
-		// `alg: none` is the other classic. Falling through to any verification
-		// path here would accept an unsigned token.
 		const token = mint().token;
 		const [, payload, sig] = token.split(".");
 		const noneHeader = Buffer.from(
@@ -150,16 +121,12 @@ describe("algorithm confusion (regression)", () => {
 
 describe("minting", () => {
 	test("a non-SPIFFE subject is refused", () => {
-		// The subject is the identity. A bare string that is not a SPIFFE id
-		// would produce a document nothing can authorise against.
 		expect(messageOf(() => mint({ spiffeId: "user:alice" }))).toContain(
 			"spiffe://",
 		);
 	});
 
 	test("the default TTL is fifteen minutes", () => {
-		// Short-lived is half the security property; a long default would make
-		// a leaked token useful for hours.
 		const minted = mint();
 		expect(minted.claims.exp - minted.claims.iat).toBe(900);
 	});
@@ -169,7 +136,6 @@ describe("minting", () => {
 	});
 
 	test("a single audience is normalised to a list", () => {
-		// Verification reads `aud` as an array unconditionally.
 		expect(mint().claims.aud).toEqual([AUD]);
 	});
 
@@ -178,8 +144,6 @@ describe("minting", () => {
 	});
 
 	test("every token gets a distinct jti", () => {
-		// The jti is what makes a token individually revocable and replay-
-		// detectable; a constant one would collapse every session into one.
 		const ids = new Set(Array.from({ length: 20 }, () => mint().claims.jti));
 		expect(ids.size).toBe(20);
 	});
@@ -222,8 +186,6 @@ describe("verification boundaries", () => {
 	});
 
 	test("clock skew is allowed but bounded", () => {
-		// A token just past expiry is accepted within the skew window, because
-		// clocks disagree; well past it is not, or the TTL would be advisory.
 		const minted = mint({ ttlSeconds: 60 });
 		expect(() =>
 			verifyJwtSvid({
@@ -257,8 +219,6 @@ describe("verification boundaries", () => {
 	});
 
 	test("a token issued in the future is refused", () => {
-		// Guards against a clock-skewed or deliberately post-dated issuer
-		// minting credentials that become valid later.
 		const minted = mint({ now: NOW + 10_000 });
 		expect(
 			messageOf(() =>
@@ -273,8 +233,6 @@ describe("verification boundaries", () => {
 	});
 
 	test("the wrong audience is refused", () => {
-		// Audience binding is what stops a token minted for one service being
-		// replayed against another.
 		expect(
 			messageOf(() =>
 				verifyJwtSvid({
@@ -313,8 +271,6 @@ describe("verification boundaries", () => {
 	});
 
 	test("a tampered payload is refused", () => {
-		// The signature covers header and payload, so rewriting the subject to
-		// escalate must invalidate it.
 		const minted = mint();
 		const [header, , sig] = minted.token.split(".");
 		const escalated = Buffer.from(
@@ -346,8 +302,6 @@ describe("verification boundaries", () => {
 	});
 
 	test("a non-SPIFFE subject is refused at verification too", () => {
-		// Defence in depth: the mint refuses these, but a token from any other
-		// issuer has to be refused on the way in as well.
 		const minted = mint();
 		const [header, , sig] = minted.token.split(".");
 		const payload = Buffer.from(
@@ -366,8 +320,6 @@ describe("verification boundaries", () => {
 	});
 
 	test("a non-numeric exp is refused rather than treated as absent", () => {
-		// A token whose expiry is missing or a string must not be read as
-		// "never expires".
 		const minted = mint();
 		const [header, , sig] = minted.token.split(".");
 		for (const exp of [undefined, "9999999999", null]) {
@@ -402,8 +354,6 @@ describe("ES256", () => {
 	});
 
 	test("a token from another issuer's key is refused", () => {
-		// The point of asymmetric issuance: only the holder of the private key
-		// can mint, and a second key pair must not be interchangeable.
 		const mine = generateSvidIssuerKeys();
 		const theirs = generateSvidIssuerKeys();
 		const minted = mint({ privateKey: theirs.privateKey });
@@ -420,8 +370,6 @@ describe("ES256", () => {
 	});
 
 	test("verifying ES256 without a public key is refused", () => {
-		// Falling back to the HMAC path here would be the same confusion bug in
-		// the other direction.
 		const keys = generateSvidIssuerKeys();
 		const minted = mint({ privateKey: keys.privateKey });
 		expect(
@@ -432,7 +380,6 @@ describe("ES256", () => {
 	});
 
 	test("JWK-shaped keys work on both sides", () => {
-		// Keys arrive as JWKs from a JWKS endpoint, not as KeyObjects.
 		const keys = generateSvidIssuerKeys();
 		const minted = mint({ privateKey: keys.privateJwk });
 		expect(() =>
@@ -446,8 +393,6 @@ describe("ES256", () => {
 	});
 
 	test("a kid is carried in the header when supplied", () => {
-		// A verifier with several trusted keys selects on the kid; without it,
-		// key rotation means trying every key.
 		const keys = generateSvidIssuerKeys();
 		const minted = mint({ privateKey: keys.privateKey, kid: "issuer-2026-01" });
 		const header = JSON.parse(
@@ -496,7 +441,6 @@ describe("ES256", () => {
 		const keys = generateSvidIssuerKeys();
 		expect(keys.publicJwk.kty).toBe("EC");
 		expect(keys.publicJwk.crv).toBe("P-256");
-		// A public JWK must not carry the private component.
 		expect("d" in keys.publicJwk).toBe(false);
 		expect(keys.privateJwk.d).toBeDefined();
 	});
@@ -519,8 +463,6 @@ describe("resolveSvidHmacSecret", () => {
 	});
 
 	test("an empty secret is treated as absent", () => {
-		// An unset variable often arrives as an empty string; signing with it
-		// would be signing with no key at all.
 		expect(resolveSvidHmacSecret({ hmacSecret: "", env: {} })).toBe(
 			DEFAULT_SVID_HMAC_SECRET,
 		);
@@ -534,8 +476,6 @@ describe("resolveSvidHmacSecret", () => {
 	});
 
 	test("production with no secret configured is refused", () => {
-		// The whole point: production must not silently run on a published
-		// constant. Failing to start is the correct outcome.
 		for (const env of [
 			{ NODE_ENV: "production" },
 			{ HOBO_ENV: "prod" },
@@ -548,9 +488,6 @@ describe("resolveSvidHmacSecret", () => {
 	});
 
 	test("production explicitly configured with the default secret is refused", () => {
-		// Naming the dev constant in production config is the same mistake spelled
-		// differently, and gets the same refusal — with a message that says what
-		// to do instead.
 		const message = messageOf(() =>
 			resolveSvidHmacSecret({
 				hmacSecret: DEFAULT_SVID_HMAC_SECRET,
@@ -562,8 +499,6 @@ describe("resolveSvidHmacSecret", () => {
 	});
 
 	test("an explicit opt-in allows the default secret even in production", () => {
-		// The escape hatch exists for tests; it has to be explicit rather than
-		// inferable from the environment.
 		expect(
 			resolveSvidHmacSecret({
 				hmacSecret: DEFAULT_SVID_HMAC_SECRET,
@@ -611,8 +546,6 @@ describe("spiffeIdForAgent", () => {
 	});
 
 	test("an already-SPIFFE id in the trust domain is preserved", () => {
-		// Re-wrapping would produce `spiffe://hobo.local/agent/hobo.local%2F...`
-		// and break every comparison against the original.
 		expect(spiffeIdForAgent("spiffe://hobo.local/agent/deployer")).toBe(
 			"spiffe://hobo.local/agent/deployer",
 		);
@@ -625,9 +558,6 @@ describe("spiffeIdForAgent", () => {
 	});
 
 	test("an id from another trust domain is re-namespaced, not adopted", () => {
-		// This one matters: an id naming a *different* trust domain must not be
-		// passed through as if it belonged to ours. It is escaped into a path
-		// segment under our domain instead.
 		const result = spiffeIdForAgent(
 			"spiffe://other.example/agent/x",
 			"hobo.local",
@@ -637,8 +567,6 @@ describe("spiffeIdForAgent", () => {
 	});
 
 	test("path-separator characters in an id are percent-encoded", () => {
-		// Otherwise an agent id could inject extra path segments and impersonate
-		// a different workload.
 		const result = spiffeIdForAgent("../../admin", "hobo.local");
 		expect(result.startsWith("spiffe://hobo.local/agent/")).toBe(true);
 		expect(result).not.toContain("/../");
