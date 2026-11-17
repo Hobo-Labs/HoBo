@@ -1,10 +1,20 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { create } from "@bufbuild/protobuf";
+import { create, fromBinary, toBinary, toJson } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
-import { MoneySchema } from "../src/_generated/pricing_pb.js";
-import { isJsonObject, type JsonValue, parseJson } from "../src/json.js";
 import {
+	ActualChargeSchema,
+	MoneySchema,
+	ReconciliationRecordedSchema,
+} from "../src/_generated/pricing_pb.js";
+import {
+	isJsonObject,
+	type JsonValue,
+	parseJson,
+	stableHash,
+} from "../src/json.js";
+import {
+	type BillingSyncInput,
 	fixtureProviderPort,
 	runBillingSync,
 } from "../src/sync/billing-sync.js";
@@ -63,6 +73,7 @@ it("§12 Phase 5 live billing sync produces dated snapshot and variance against 
 	expect("code" in result).toBe(false);
 	if ("code" in result) return;
 	expect(result.snapshot.schema).toBe("hobo.pricing.billing-sync.snapshot/v1");
+	expect(result.snapshot.hashVersion).toBe(2);
 	expect(result.snapshot.syncAt).toBe(AT);
 	expect(result.snapshot.snapshotHash).toMatch(/^sha256:[0-9a-f]{64}$/);
 	expect(result.snapshot.completeness).toBe("complete");
@@ -74,7 +85,19 @@ it("§12 Phase 5 live billing sync produces dated snapshot and variance against 
 	expect(result.reconciliation.reconciliationHash).toMatch(
 		/^sha256:[0-9a-f]{64}$/,
 	);
+	expect(result.reconciliation.hashVersion).toBe(2);
 	expect(result.reconciliation.actualCharges).toHaveLength(2);
+	expect(result.reconciliation.reconciliationHash).toBe(
+		stableHash({
+			hashVersion: 2,
+			eventId: result.reconciliation.eventId,
+			occurredAt: result.reconciliation.occurredAt,
+			reservationId: result.reconciliation.reservationId,
+			actualCharges: result.reconciliation.actualCharges.map((charge) =>
+				toJson(ActualChargeSchema, charge, { alwaysEmitImplicit: true }),
+			),
+		}),
+	);
 });
 
 it("§12 Phase 5 fails closed on incomplete provider billing data", async () => {
@@ -137,4 +160,150 @@ it("§12 Phase 5 records negative adjustment variance without rewriting history"
 			(fact) => fact.kind === "negative-adjustment",
 		),
 	).toBe(true);
+});
+
+function sync(overrides: Partial<BillingSyncInput> = {}) {
+	return runBillingSync({
+		syncAt: AT,
+		periodStart: PERIOD_START,
+		periodEnd: PERIOD_END,
+		reservationId: "reservation-1",
+		eventId: "event-1",
+		quotedIncrementalBilled: quotedIncremental("1.25"),
+		port: fixtureProviderPort(fixture.completeRows),
+		credentials: createSyntheticProviderCredentials(),
+		...overrides,
+	});
+}
+
+it("rejects currency mismatches between the quote and provider charges", async () => {
+	await expect(
+		sync({
+			quotedIncrementalBilled: create(MoneySchema, {
+				decimal: "1",
+				currency: "EUR",
+			}),
+		}),
+	).resolves.toMatchObject({ code: "CROSS_CURRENCY" });
+
+	const [first, second] = fixture.completeRows;
+	if (!first || !second) throw new Error("fixture requires two charges");
+	await expect(
+		sync({
+			port: fixtureProviderPort([first, { ...second, currency: "EUR" }]),
+		}),
+	).resolves.toMatchObject({ code: "CROSS_CURRENCY" });
+});
+
+it("uses the quote currency when no charges are imported", async () => {
+	const result = await sync({
+		quotedIncrementalBilled: create(MoneySchema, {
+			decimal: "1",
+			currency: "EUR",
+		}),
+		port: fixtureProviderPort([]),
+	});
+	if ("code" in result) throw new Error(result.message);
+	expect(result.snapshot.variances).toContainEqual({
+		kind: "billed-vs-quoted",
+		providerChargeId: "aggregate",
+		quotedDecimal: "1",
+		actualDecimal: "0",
+		deltaDecimal: "-1",
+		currency: "EUR",
+	});
+});
+
+it.each([
+	"providerChargeId",
+	"agreementId",
+	"chargeId",
+	"chargePeriodStart",
+	"chargePeriodEnd",
+	"billedCostDecimal",
+	"currency",
+	"category",
+] as const)("rejects a provider row with a missing %s", async (field) => {
+	const [row] = fixture.completeRows;
+	if (!row) throw new Error("fixture requires a charge");
+	await expect(
+		sync({ port: fixtureProviderPort([{ ...row, [field]: "" }]) }),
+	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+});
+
+it("rejects invalid dates, quotes, and incomplete duplicate rows", async () => {
+	const [row] = fixture.completeRows;
+	if (!row) throw new Error("fixture requires a charge");
+	await expect(sync({ periodStart: "invalid" })).resolves.toMatchObject({
+		code: "INVALID_SYNC_INPUT",
+	});
+	await expect(sync({ syncAt: "2026-02-30T12:00:00Z" })).resolves.toMatchObject(
+		{
+			code: "INVALID_SYNC_INPUT",
+		},
+	);
+	await expect(
+		sync({ syncAt: "2026-02-01T12:00:00+00:00" }),
+	).resolves.toMatchObject({
+		code: "INVALID_SYNC_INPUT",
+	});
+	await expect(
+		sync({ periodStart: PERIOD_END, periodEnd: PERIOD_START }),
+	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+	await expect(
+		sync({ quotedIncrementalBilled: quotedIncremental("invalid") }),
+	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+	await expect(
+		sync({
+			quotedIncrementalBilled: create(MoneySchema, {
+				decimal: "1",
+				currency: "usd",
+			}),
+		}),
+	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+	await expect(
+		sync({
+			port: fixtureProviderPort([{ ...row, chargePeriodEnd: "invalid" }]),
+		}),
+	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+	await expect(
+		sync({
+			knownActualIds: new Set([row.providerChargeId]),
+			port: fixtureProviderPort([{ ...row, chargeId: "" }]),
+		}),
+	).resolves.toMatchObject({ code: "INVALID_SYNC_INPUT" });
+});
+
+it("binds snapshot and reconciliation hashes to charge contents", async () => {
+	const [first, second] = fixture.completeRows;
+	if (!first || !second) throw new Error("fixture requires two charges");
+	const original = await sync();
+	const changed = await sync({
+		port: fixtureProviderPort([
+			{ ...first, billedCostDecimal: "1.75" },
+			{ ...second, billedCostDecimal: "-0.50" },
+		]),
+	});
+	if ("code" in original || "code" in changed) throw new Error("sync failed");
+	expect(changed.snapshot.snapshotHash).not.toBe(
+		original.snapshot.snapshotHash,
+	);
+	expect(changed.reconciliation.reconciliationHash).not.toBe(
+		original.reconciliation.reconciliationHash,
+	);
+});
+
+it("reads older reconciliation events with the legacy hash version", () => {
+	const legacy = create(ReconciliationRecordedSchema, {
+		eventId: "old-event",
+		occurredAt: AT,
+		reservationId: "old-reservation",
+		reconciliationHash: `sha256:${"a".repeat(64)}`,
+	});
+	const replayed = fromBinary(
+		ReconciliationRecordedSchema,
+		toBinary(ReconciliationRecordedSchema, legacy),
+	);
+	expect(replayed.hashVersion).toBe(0);
+	expect(replayed.reconciliationHash).toBe(legacy.reconciliationHash);
 });
