@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { FeedResponse } from "@hobo/cd";
 import { describe, expect, it } from "vitest";
 
 import { composeCdHost } from "../src/cd-host.js";
@@ -55,8 +56,10 @@ const get = (path: string) => ({
 	headers: {},
 	body: new Uint8Array(),
 });
-const json = (body: unknown) =>
-	JSON.parse(new TextDecoder().decode(body as Uint8Array));
+const json = (body: FeedResponse["body"]) => {
+	if (!(body instanceof Uint8Array)) throw new Error("expected a whole body");
+	return JSON.parse(new TextDecoder().decode(body));
+};
 
 describe("composeCdHost: the CD mount as a request handler", () => {
 	it("is ready once composed when no loop runs (a platform function)", async () => {

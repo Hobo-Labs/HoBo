@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: the HTTP edge: a response body is any JSON the service reports, only stringified. */
 /**
  * The CD conductor service over an opened CD runtime, without a server: the
  * one HTTP mount (`/healthz`, `/readyz`, `/v1/cd/`) as a request handler, and
