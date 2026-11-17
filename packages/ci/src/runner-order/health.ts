@@ -8,7 +8,8 @@
  * asked for the label and had no runner after `missedAfterMs` is a miss; a
  * job that got a runner is a start, whatever the job's own result was.
  *
- * Three misses in a row inside the window trip the type, and the walk in
+ * Three misses in a row inside the window (earliest to latest, whatever
+ * order they were reported in) trip the type, and the walk in
  * `./decide.ts` passes over it. It is not left tripped for good: after a
  * back-off one job is let through as a trial. A trial that starts clears the
  * record; a trial that is missed doubles the back-off, up to a ceiling. A
@@ -83,19 +84,22 @@ export function providerHealthKey(provider: string, label: string): string {
 	return `${provider}:${label.trim().toLowerCase()}`;
 }
 
+/**
+ * The newest miss when the last `tripAfter` outcomes are all misses inside
+ * the window, else `undefined`. The window runs from the earliest to the
+ * latest of them, not the first to the last reported, so misses reported out
+ * of order cannot squeeze a wide spread into a negative span.
+ */
 function tripped(
 	outcomes: readonly ProviderOutcome[],
 	options: ProviderHealthOptions,
-): boolean {
-	if (outcomes.length < options.tripAfter) return false;
+): number | undefined {
+	if (outcomes.length < options.tripAfter) return undefined;
 	const recent = outcomes.slice(-options.tripAfter);
-	const first = recent[0];
-	const last = recent.at(-1);
-	if (!first || !last) return false;
-	return (
-		recent.every((outcome) => !outcome.started) &&
-		last.atMs - first.atMs <= options.windowMs
-	);
+	if (recent.some((outcome) => outcome.started)) return undefined;
+	const times = recent.map((outcome) => outcome.atMs);
+	const latest = Math.max(...times);
+	return latest - Math.min(...times) <= options.windowMs ? latest : undefined;
 }
 
 /**
@@ -123,7 +127,8 @@ export function recordProviderOutcome(
 			trialStartedAtMs: undefined,
 		};
 	}
-	if (!tripped(outcomes, options))
+	const trippedAtMs = tripped(outcomes, options);
+	if (trippedAtMs === undefined)
 		return {
 			outcomes,
 			trippedAtMs: undefined,
@@ -133,9 +138,9 @@ export function recordProviderOutcome(
 		};
 	return {
 		outcomes,
-		trippedAtMs: outcome.atMs,
+		trippedAtMs,
 		backoffMs: options.firstBackoffMs,
-		nextTrialAtMs: outcome.atMs + options.firstBackoffMs,
+		nextTrialAtMs: trippedAtMs + options.firstBackoffMs,
 		trialStartedAtMs: undefined,
 	};
 }

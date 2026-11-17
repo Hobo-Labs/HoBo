@@ -719,3 +719,85 @@ machines. By default that is the SQLite file a local node keeps under
 `HOBO_HOME` (`ci/machines.sqlite`, or `HOBO_CI_MACHINE_REGISTRY`), account
 `local` unless `--account` or `HOBO_CI_ACCOUNT_ID` names one. Each change is
 safe to repeat, and `--json` gives the result and the machine event as data.
+
+## Limit readers and provider health
+
+A runner order's two limits and its provider-health rule need measurements
+from outside the walk (ADR-0183,
+[`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+These readers supply them. Each answers "unmeasured" rather than throwing when
+it cannot read, so a missing measurement never blocks a step.
+
+- **Minutes.** `GithubMinutesReader` in `@hobo/ci-gh-actions` reads an owner's
+  Actions usage this month from GitHub's billing usage API
+  (`/organizations/{org}/settings/billing/usage`, then the `/users/` form) and
+  sets it against the compute the owner's plan includes. GitHub lists included
+  compute in dollars per plan, so both sides are counted in minutes of the
+  standard Linux runner at $0.006 a minute: Free 2,000, Pro and Team 3,000,
+  Enterprise 50,000 (read from GitHub's Actions billing page on 2026-11-17).
+  The burn over the last two hours comes from the relay's own job facts
+  (`githubBilledMinutes`), because the billing API reports by day. A refused
+  read, an unknown plan or a reply in another shape is unmeasured; only a 404
+  moves on to the `/users/` form. One reading is reused for five minutes.
+  Used minutes come from each item's gross amount, which overcounts an owner
+  with public-repository CI: GitHub does not charge that usage against the
+  plan, but a usage item carries no repository visibility and the included
+  allowance is reported as the same discount, so it cannot be subtracted
+  here. Such an owner reads closer to its limit than it is.
+  `contracts/github-billing-usage.pact.json` in `@hobo/ci-gh-actions` holds
+  the plan and usage reads, the 404 fallback and the 403 refusal, and a
+  consumer test drives the reader through each of them.
+- **Spend.** `LedgerSpendReader` sums this calendar month (UTC) per hosted
+  provider: settled leases first, at what the ledger charged; then each
+  finished job no settled lease covers, at its label's list rate for the
+  minutes it ran (`listPriceOfJob`). A label with no list rate adds nothing.
+- **List prices.** `HOSTED_LIST_PRICES` in `src/fleet/models.ts` gives every
+  routable hosted provider a per-minute rate for each size the runner-order
+  catalog routes to, with the vendor page, the day it was read and how long it
+  holds. RunsOn has none: it charges a yearly licence and AWS bills the
+  machines to the owner, which the entry records as its reason. These rates
+  price spend only; they do not take part in fleet balancing.
+- **Provider health.** `SqliteProviderHealthStore`
+  (`@hobo/ci/runner-order/provider-health-sqlite`) keeps one
+  `ProviderHealthRecord` per runner type in a SQLite file, so a tripped type
+  stays tripped across a restart. `feedProviderHealth` records a start when a
+  runner took a job, or a miss when the job sat queued past ten minutes, for
+  each hosted label the job asked for; each job counts once per label and
+  outcome, so a redelivered webhook or a poller seeing the job again does not
+  count twice. While a type is tripped, only the trial job's miss doubles the
+  back-off: a miss of a job queued before the trial was let through was routed
+  before the trip, so a burst of misses leaves the first back-off. A start or
+  a miss older than the newest outcome or the trip is a late report (a poller
+  backfill, a job list read newest first): it neither clears the record nor
+  counts towards a trip, and the trip window runs from the earliest to the
+  latest miss, whatever order they were reported in. Marking the outcome counted and writing the record are one
+  SQLite transaction.
+- **Command.** `hobo ci provider-health` lists the kept records with their
+  state, misses and next trial; `hobo ci provider-health clear <provider>
+  <label>` forgets one so the next job may use it. Listing reads the file
+  read-only and never creates it. The file is `--db <path>`,
+  else `HOBO_CI_PROVIDER_HEALTH_DB`, else
+  `$HOBO_HOME/ci/serve/provider-health.sqlite`.
+
+Wiring these into a relay's route facts is the relay answerer's work; until
+then they are built and tested against the in-memory fakes and a stand-in
+GitHub, not proven against a live account. Nothing in the relay calls them
+yet, and no relay writes the provider-health file today. The wiring, in
+`cli-serve-entry`'s `StoreRouteFacts`:
+
+- open one `SqliteProviderHealthStore` at
+  `$HOBO_HOME/ci/serve/provider-health.sqlite` (the path the command reads,
+  or `HOBO_CI_PROVIDER_HEALTH_DB`), and let only that process write it.
+  The command's listing opens the file read-only and creates nothing
+  (`readProviderHealthRecords`); `clear` is the one sanctioned write from
+  outside the relay, a single delete made through SQLite's own locking
+  (busy timeout, WAL), so it never runs as a second writer alongside a
+  transaction (ADR-0135);
+- call `feedProviderHealth(store, jobFact, now)` from the `workflow_job`
+  webhook handler and from the job poller, for every queued, started and
+  completed job, and take `unhealthy` from `store.unhealthy(now)`;
+- build `GithubMinutesReader` with the App's installation token, `plan`
+  undefined (it is read), and `recentMinutes` summing `githubBilledMinutes`
+  over the relay's finished job facts for the owner since the window start;
+- build `LedgerSpendReader` from the ledger's settled leases and the same
+  finished job facts.

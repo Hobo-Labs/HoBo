@@ -10,6 +10,7 @@
  */
 import type { CommandResult, CommandRunInput } from "@hobo/cli";
 import { CI_MACHINE_COMMAND } from "./ci-machine.js";
+import { CI_PROVIDER_HEALTH_COMMAND } from "./ci-provider-health.js";
 
 /** The checkout a command runs in, and its GitHub repository when one is known. */
 export type CiLocalRepository = Readonly<{
@@ -41,7 +42,11 @@ export type CiCommand = Readonly<{
 }>;
 
 /** Every table-dispatched `hobo ci` command, one entry each. */
-export const CI_COMMANDS: readonly CiCommand[] = [CI_MACHINE_COMMAND];
+export const CI_COMMANDS: readonly CiCommand[] = [
+	// One entry per line, so adding a command only adds a line.
+	CI_MACHINE_COMMAND,
+	CI_PROVIDER_HEALTH_COMMAND,
+];
 
 /** The command named `name` in `table`, or undefined. */
 export function findCiCommand(

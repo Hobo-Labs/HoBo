@@ -15,6 +15,19 @@ export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
 export {
+	actionsMinutesUsed,
+	GITHUB_BURN_WINDOW_HOURS,
+	GITHUB_INCLUDED_COMPUTE_OBSERVED_AT,
+	GITHUB_INCLUDED_COMPUTE_SOURCE,
+	GITHUB_INCLUDED_COMPUTE_USD,
+	GITHUB_LINUX_USD_PER_MINUTE,
+	GITHUB_MINUTES_CACHE_MS,
+	GithubMinutesReader,
+	type GithubMinutesReaderDeps,
+	githubBilledMinutes,
+	includedMinutesOfPlan,
+} from "./billing-usage.js";
+export {
 	inventoryCiEnginesFromRepository,
 	knownEngineIds,
 } from "./ci-engine-inventory.js";

@@ -375,6 +375,8 @@ Usage:
   hobo ci machine share <id> <who> Take jobs for only_me or anyone who may read the repository
   hobo ci machine remove <id>      Forget a machine and its key at once
   hobo ci status                  Inspect the relay connection
+  hobo ci provider-health          Hosted runner types the relay stopped routing to; clear <provider> <label> lets one through
+  hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
