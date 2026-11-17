@@ -18,6 +18,16 @@ import {
 	type YardRuntime,
 } from "@hobo/cli";
 import type { HttpTransport, TrustedVault } from "@hobo/core";
+import {
+	type AppHandOffMode,
+	egressFetch,
+	egressFrom,
+	parseAppHandOffMode,
+	REDIRECT_RECEIVER_SETTING,
+	type RedirectReceiver,
+	redirectReceiverFrom,
+	withoutSecretEnv,
+} from "@hobo/hobo-ci";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
@@ -300,6 +310,8 @@ function parseCiArgs(args: readonly string[]) {
 			"deploy-identity-id": { type: "string" },
 			"site-url": { type: "string" },
 			"via-workflow": { type: "boolean" },
+			"hand-off": { type: "boolean" },
+			receiver: { type: "string" },
 		},
 	});
 }
@@ -535,6 +547,8 @@ export function createCiCommand(
 					"yes",
 					"non-interactive",
 					"via-workflow",
+					"hand-off",
+					"receiver",
 				]);
 				const unsupported = Object.entries(values).find(
 					([key, value]) => value !== undefined && !allowed.has(key),
@@ -548,6 +562,34 @@ export function createCiCommand(
 						Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
 					!flags.json &&
 					!values["non-interactive"];
+				// The owner's outbound-only tunnel: --receiver, else the
+				// non-secret HOBO_REDIRECT_RECEIVER; none means the hand-off.
+				// Both, and the hand-off mode, are parsed here, at the boundary.
+				let receiver: RedirectReceiver | undefined;
+				let handOffMode: AppHandOffMode;
+				try {
+					handOffMode = parseAppHandOffMode(
+						"HOBO_APP_HANDOFF",
+						(deps.env ?? process.env).HOBO_APP_HANDOFF,
+					);
+					receiver = redirectReceiverFrom({
+						...withoutSecretEnv(deps.env ?? process.env),
+						...(values.receiver !== undefined
+							? { [REDIRECT_RECEIVER_SETTING]: String(values.receiver) }
+							: undefined),
+					});
+				} catch (error) {
+					return usage(
+						error instanceof Error ? error.message : "Unknown receiver.",
+					);
+				}
+				if (
+					(values["hand-off"] === true || receiver !== undefined) &&
+					(flags.json || flags.quiet)
+				)
+					return usage(
+						"The App hand-off needs progress output. Omit --json and -q, then retry.",
+					);
 				return runCiAppCreate({
 					relay: values.relay === undefined ? undefined : String(values.relay),
 					ownerId:
@@ -557,10 +599,17 @@ export function createCiCommand(
 					name: values.name === undefined ? undefined : String(values.name),
 					replace: values.yes === true,
 					viaWorkflow: values["via-workflow"] === true,
+					handOff: values["hand-off"] === true,
+					handOffMode,
+					receiver,
+					// Every request of this run goes through the proxy the
+					// environment requires, read once up front.
+					tunnelProbe:
+						deps.fetch ?? egressFetch(egressFrom(deps.env ?? process.env)),
 					interactive,
 					env: deps.env ?? process.env,
 					emitProgress,
-					fetch: deps.fetch,
+					fetch: deps.fetch ?? egressFetch(egressFrom(deps.env ?? process.env)),
 					openBrowser: deps.openBrowser,
 					prompt: deps.prompt ?? promptOnTerminal,
 					sleep: deps.sleep,

@@ -70,6 +70,15 @@ export interface InfisicalClient {
 	getSecret(name: string, version?: number): Promise<ParsedSecret>;
 	/** Update the secret, or create it when it does not exist. */
 	putSecret(name: string, value: string): Promise<{ version: number }>;
+	/**
+	 * Create the secret only if it does not exist: Infisical refuses a key
+	 * that exists (400 or 409) and keeps the original. `undefined` when
+	 * refused.
+	 */
+	createSecret(
+		name: string,
+		value: string,
+	): Promise<{ version: number } | undefined>;
 	/** Drop the cached access token; the next request logs in again. */
 	signOut(): void;
 	/**
@@ -513,6 +522,32 @@ function createInfisicalClientInternal(
 					version: parseWrittenVersion(
 						"write secret",
 						ok("write secret", created),
+					),
+				};
+			},
+			async createSecret(name, value) {
+				const created = await request(
+					"create secret",
+					"POST",
+					secretPath(name),
+					toJsonString(
+						InfisicalSecretWriteRequestSchema,
+						create(InfisicalSecretWriteRequestSchema, {
+							projectId: bound.projectId,
+							environment: bound.environment,
+							secretPath: bound.secretPath,
+							secretValue: value,
+							type: "shared",
+						}),
+						{ alwaysEmitImplicit: true },
+					),
+				);
+				// Already there: someone else's entry, left as it was.
+				if (created.status === 400 || created.status === 409) return undefined;
+				return {
+					version: parseWrittenVersion(
+						"create secret",
+						ok("create secret", created),
 					),
 				};
 			},

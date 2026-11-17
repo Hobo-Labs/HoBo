@@ -56,8 +56,9 @@ token is held in memory for the run and is never written to a file, an
 environment file, a log or a result.
 
 Configuration is a **ceremony**, not a list of environment variables, and it
-survives the machine: the store is found through the committed locator
-`.hobo/secret-store.json` and signed in to on the page (the sign-in is held in
+survives the machine: the store is found through a locator of ids in
+the owner's HoBo settings (`~/.config/hobo/projects/<project>/secret-store.json`,
+never the repository) and signed in to on the page (the sign-in is held in
 the run's trusted vault, in memory); whatever `hobo cd up` is missing is asked
 for and kept **in the secret store** as `HOBO_CD_SETTINGS` (the Integration's
 slug and client id). The client secret is its own store entry, and the Vercel
@@ -80,11 +81,28 @@ that keeps what the data is for:
 | `cd-journal` | `standard`, 2 standbys | The rollout ledger. A few minutes' loss is re-derived from desired state, so a 5-minute recovery point is enough; three voting members fail over by majority when any one vendor stops; free tiers make the copies cheap; daily backups, 7 kept. |
 | `cd-config`  | `rebuildable` | References into the secret store, which keeps its own replicas; `hobo cd up` rebuilds them idempotently. |
 
-An experimental PostgreSQL fleet can be selected with `HOBO_CD_POSTGRES_FLEET`
-(see `packages/cd/src/compose/README.md`). Member connection strings are read
-from secret-store entries (`HOBO_CD_POSTGRES_URL_<ID>`). The fleet does not yet
-fence an in-flight write at the database commit boundary and must not be relied
-on for safe failover. A reported shortfall does not stop it serving.
+`hobo cd up` plans that fleet (`src/journal-fleet.ts`): a writer, the policy's
+standbys and a witness, each a Neon Claimable Postgres database by default.
+Creating missing Neon members currently refuses until an owner-scoped durable
+atomic idempotency store is wired in; Neon cannot deduplicate a create across
+processes or after a crash. Existing complete fleets can still be opened.
+Each connection string goes straight into the
+owner's secret store at `HOBO_CD_POSTGRES_URL_<ID>`, its claim link beside it at
+`HOBO_CD_POSTGRES_CLAIM_<ID>` (claim each to keep it: an unclaimed database
+expires), and the fleet's shape is kept in `HOBO_CD_SETTINGS`, so `hobo serve
+cd` and `hobo deploy` open the same journal on any machine signed in to the
+store. All default members are one
+vendor in one region, which the fleet reports as a shortfall when it opens.
+
+A PostgreSQL fleet is selected with `HOBO_CD_POSTGRES_FLEET` (see
+`packages/cd/src/compose/README.md`). Member connection strings are read from
+secret-store entries (`HOBO_CD_POSTGRES_URL_<ID>`). Writes are fenced at the
+database commit boundary, so a planned move loses none; the daily backups are
+kept on the first witness; a member entry may name its vendor plan
+(`neon-eu:neon-claimable`), whose cost model (`src/fleet-plans.ts`, cited
+figures only) keeps a move off a member it would push over its allowance. A
+reported shortfall (an unverified vendor spread, no witness for quorum or
+backups) does not stop it serving.
 
 ## Continuity: what CD keeps, and how hard
 

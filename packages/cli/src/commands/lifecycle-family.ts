@@ -52,6 +52,8 @@ export interface LifecycleFlags {
 	readonly mode: string | null;
 	readonly project: string | null;
 	readonly yes: boolean;
+	/** `--hand-off`: an agent runs this and passes the owner's page on. */
+	readonly handOff: boolean;
 }
 
 /** What a family resolves its project to, or why it cannot. */
@@ -68,6 +70,12 @@ export interface PrepareInput {
 	readonly projectDir: string;
 	readonly whatIf: boolean;
 	readonly yes: boolean;
+	/**
+	 * An agent runs this for the owner (`--hand-off`): a page the owner must
+	 * see is served even without a terminal, and named on one progress line
+	 * for the agent to pass on, instead of the run refusing.
+	 */
+	readonly handOff?: boolean;
 	readonly run: CommandRunInput;
 }
 
@@ -130,6 +138,7 @@ const LIFECYCLE_FLAG_NAMES = new Set([
 	"--mode",
 	"--project",
 	"--yes",
+	"--hand-off",
 	"-y",
 ]);
 
@@ -144,6 +153,7 @@ export function parseLifecycleArgs(
 	| { readonly ok: false; readonly message: string } {
 	let whatIf = false;
 	let yes = false;
+	let handOff = false;
 	let mode: string | null = null;
 	let project: string | null = null;
 	for (let index = 0; index < args.length; index += 1) {
@@ -159,12 +169,14 @@ export function parseLifecycleArgs(
 			(token === "--what-if" ||
 				token === "--dry-run" ||
 				token === "--preview" ||
-				token === "--yes")
+				token === "--yes" ||
+				token === "--hand-off")
 		)
 			return { ok: false, message: `${token} does not take a value.` };
 		if (token === "--what-if" || token === "--dry-run" || token === "--preview")
 			whatIf = true;
 		else if (token === "--yes" || token === "-y") yes = true;
+		else if (token === "--hand-off") handOff = true;
 		else {
 			const value = inline ?? args[index + 1];
 			if (value === undefined || value === "" || value.startsWith("-"))
@@ -179,7 +191,7 @@ export function parseLifecycleArgs(
 			ok: false,
 			message: `--mode must be "incremental" or "complete", got "${mode}".`,
 		};
-	return { ok: true, flags: { whatIf, mode, project, yes } };
+	return { ok: true, flags: { whatIf, mode, project, yes, handOff } };
 }
 
 /**
@@ -339,6 +351,7 @@ export function createLifecycleFamilyCommand(
 						projectDir: project.projectDir,
 						whatIf: flags.whatIf,
 						yes: flags.yes,
+						handOff: flags.handOff,
 						run: delegated,
 					});
 					if (outcome.kind === "refused")
