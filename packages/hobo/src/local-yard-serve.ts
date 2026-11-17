@@ -103,9 +103,7 @@ function componentDescriptor(
 	id: string,
 	handler: FetchHandler,
 ): ParsedComponentDescriptor {
-	const handle = async (
-		httpReq: HttpRequest,
-	): Promise<HttpResponse> => {
+	const handle = async (httpReq: HttpRequest): Promise<HttpResponse> => {
 		const req = httpReq;
 		const webReq = new Request(`http://component.local${req.path}`, {
 			method: req.method,
