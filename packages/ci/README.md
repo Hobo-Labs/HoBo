@@ -719,3 +719,50 @@ machines. By default that is the SQLite file a local node keeps under
 `HOBO_HOME` (`ci/machines.sqlite`, or `HOBO_CI_MACHINE_REGISTRY`), account
 `local` unless `--account` or `HOBO_CI_ACCOUNT_ID` names one. Each change is
 safe to repeat, and `--json` gives the result and the machine event as data.
+
+## Limit readers and provider health
+
+A runner order's two limits and its provider-health rule need measurements
+from outside the walk (ADR-0183,
+[`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+These readers supply them. Each answers "unmeasured" rather than throwing when
+it cannot read, so a missing measurement never blocks a step.
+
+- **Minutes.** `GithubMinutesReader` in `@hobo/ci-gh-actions` reads an owner's
+  Actions usage this month from GitHub's billing usage API
+  (`/organizations/{org}/settings/billing/usage`, then the `/users/` form) and
+  sets it against the compute the owner's plan includes. GitHub lists included
+  compute in dollars per plan, so both sides are counted in minutes of the
+  standard Linux runner at $0.006 a minute: Free 2,000, Pro and Team 3,000,
+  Enterprise 50,000 (read from GitHub's Actions billing page on 2026-11-17).
+  The burn over the last two hours comes from the relay's own job facts
+  (`githubBilledMinutes`), because the billing API reports by day. A refused
+  read, an unknown plan or a reply in another shape is unmeasured. One reading
+  is reused for five minutes.
+- **Spend.** `LedgerSpendReader` sums this calendar month (UTC) per hosted
+  provider: settled leases first, at what the ledger charged; then each
+  finished job no settled lease covers, at its label's list rate for the
+  minutes it ran (`listPriceOfJob`). A label with no list rate adds nothing.
+- **List prices.** `HOSTED_LIST_PRICES` in `src/fleet/models.ts` gives every
+  routable hosted provider a per-minute rate for each size the runner-order
+  catalog routes to, with the vendor page, the day it was read and how long it
+  holds. RunsOn has none: it charges a yearly licence and AWS bills the
+  machines to the owner, which the entry records as its reason. These rates
+  price spend only; they do not take part in fleet balancing.
+- **Provider health.** `SqliteProviderHealthStore`
+  (`@hobo/ci/runner-order/provider-health-sqlite`) keeps one
+  `ProviderHealthRecord` per runner type in a SQLite file, so a tripped type
+  stays tripped across a restart. `feedProviderHealth` records a start when a
+  runner took a job, or a miss when the job sat queued past ten minutes, for
+  each hosted label the job asked for; each job counts once per label and
+  outcome, so a redelivered webhook or a poller seeing the job again does not
+  count twice.
+- **Command.** `hobo ci provider-health` lists the kept records with their
+  state, misses and next trial; `hobo ci provider-health clear <provider>
+  <label>` forgets one so the next job may use it. The file is `--db <path>`,
+  else `HOBO_CI_PROVIDER_HEALTH_DB`, else
+  `$HOBO_HOME/ci/serve/provider-health.sqlite`.
+
+Wiring these into a relay's route facts is the relay answerer's work; until
+then they are built and tested against the in-memory fakes and a stand-in
+GitHub, not proven against a live account.
