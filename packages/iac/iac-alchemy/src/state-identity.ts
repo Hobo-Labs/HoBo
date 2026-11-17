@@ -38,11 +38,56 @@ export function safeAlchemyFqn(value: string): boolean {
 	);
 }
 
+/** Snapshot a bounded dense array without invoking accessor-backed elements. */
+/* oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: state-store data crosses an external boundary. */
+function stateArray(value: unknown): unknown[] | undefined {
+	try {
+		if (!Array.isArray(value)) return undefined;
+		const properties = Object.getOwnPropertyDescriptors(value);
+		const lengthDescriptor: PropertyDescriptor | undefined =
+			Object.getOwnPropertyDescriptor(properties, "length")?.value;
+		const length = lengthDescriptor?.value;
+		if (
+			!Number.isSafeInteger(length) ||
+			length < 0 ||
+			length > 1024 ||
+			Reflect.ownKeys(properties).length !== length + 1
+		)
+			return undefined;
+		const snapshot: unknown[] = [];
+		for (let index = 0; index < length; index++) {
+			const element = properties[String(index)];
+			if (element === undefined || !("value" in element)) return undefined;
+			snapshot.push(element.value);
+		}
+		return snapshot;
+	} catch {
+		return undefined;
+	}
+}
+
+/* oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: state-store data crosses an external boundary. */
+function stateFqns(value: unknown): string[] | undefined {
+	const snapshot = stateArray(value);
+	if (
+		snapshot === undefined ||
+		snapshot.some(
+			/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: state-store entries are untrusted. */
+			(item) => typeof item !== "string" || !safeAlchemyFqn(item),
+		)
+	)
+		return undefined;
+	// SAFETY: the predicate above establishes that every element is a bounded FQN.
+	return snapshot as string[];
+}
+
 /** Guard case-insensitive stores as well as Alchemy's FQN encoding. */
 export function uniqueAlchemyFqns(values: readonly string[]): boolean {
+	const snapshot = stateFqns(values);
 	return (
-		new Set(values.map((value) => encodeFqn(value).toLowerCase())).size ===
-		values.length
+		snapshot !== undefined &&
+		new Set(snapshot.map((value) => encodeFqn(value).toLowerCase())).size ===
+			snapshot.length
 	);
 }
 
@@ -78,11 +123,7 @@ export function safeAlchemyState(value: unknown, expected: string): boolean {
 			if (
 				downstream === undefined ||
 				!("value" in downstream) ||
-				!Array.isArray(downstream.value) ||
-				downstream.value.length > 1024 ||
-				downstream.value.some(
-					(name: unknown) => typeof name !== "string" || !safeAlchemyFqn(name),
-				)
+				stateFqns(downstream.value) === undefined
 			)
 				return false;
 			const old = properties.old;
@@ -119,13 +160,8 @@ export function verifyAlchemyStateIdentities(
 		// disappear from the scan and be mistaken for an empty history.
 		const output = yield* state.getOutput(scope);
 		if (isLegacyOutputState(output)) return false;
-		const keys = yield* state.list(scope);
-		if (
-			keys.length > 1024 ||
-			keys.some((key) => !safeAlchemyFqn(key)) ||
-			!uniqueAlchemyFqns(keys)
-		)
-			return false;
+		const keys = stateFqns(yield* state.list(scope));
+		if (keys === undefined || !uniqueAlchemyFqns(keys)) return false;
 		for (const fqn of keys) {
 			const row = yield* state.get({ ...scope, fqn });
 			if (row === undefined || !safeAlchemyState(row, fqn)) return false;
@@ -161,13 +197,12 @@ function guardAlchemyState(state: StateService): StateService {
 								? Effect.fail(failure())
 								: state.list(request),
 						),
-						Effect.flatMap((keys) =>
-							keys.length > 1024 ||
-							keys.some((key) => !safeAlchemyFqn(key)) ||
-							!uniqueAlchemyFqns(keys)
+						Effect.flatMap((rawKeys) => {
+							const keys = stateFqns(rawKeys);
+							return keys === undefined || !uniqueAlchemyFqns(keys)
 								? Effect.fail(failure())
-								: Effect.succeed(keys),
-						),
+								: Effect.succeed(keys);
+						}),
 					),
 		get: (request: Parameters<StateService["get"]>[0]) =>
 			!scopeIsSafe(request) || !safeAlchemyFqn(request.fqn)
@@ -201,16 +236,28 @@ function guardAlchemyState(state: StateService): StateService {
 		) =>
 			!scopeIsSafe(request)
 				? Effect.fail(failure())
-				: state
-						.getReplacedResources(request)
-						.pipe(
-							Effect.flatMap((rows) =>
-								rows.length > 1024 ||
-								rows.some((row) => !safeAlchemyState(row, row.fqn))
-									? Effect.fail(failure())
-									: Effect.succeed(rows),
-							),
-						),
+				: state.getReplacedResources(request).pipe(
+						Effect.flatMap((rows) => {
+							const snapshot = stateArray(rows);
+							if (snapshot === undefined) return Effect.fail(failure());
+							/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: these rows cross the state-store boundary and are inspected before use. */
+							for (const row of snapshot) {
+								if (row === null || typeof row !== "object")
+									return Effect.fail(failure());
+								const fqn = Object.getOwnPropertyDescriptor(row, "fqn");
+								if (
+									fqn === undefined ||
+									!("value" in fqn) ||
+									typeof fqn.value !== "string" ||
+									!safeAlchemyState(row, fqn.value)
+								)
+									return Effect.fail(failure());
+							}
+							/* oxlint-enable anti-slop/no-runtime-typeof */
+							// SAFETY: the snapshot contains the typed store rows and every identity was validated above.
+							return Effect.succeed(snapshot as typeof rows);
+						}),
+					),
 	});
 	return guarded;
 }
