@@ -65,10 +65,15 @@ that write fails, the broker reports the failure and retains the hold. The
 policy callback receives the quote's SHA-256 digest as `quoteDigest` and must
 include it in `HostingPolicyProof`. The digest is the lowercase hexadecimal
 SHA-256 of the protobuf JSON quote, matching the durable reservation digest.
-Approvals lacking a digest, including legacy proofs, are refused. This binds the
-approval to the quote contents but does not establish that the quote covers the
-selected resource definitions; the host remains responsible for its policy and
-provider assertions.
+Approvals lacking a digest, including legacy proofs, are refused. Yard quotes
+also carry a `workDigest` binding the selected definitions, request, catalog,
+Yard, broker and (when generating a Yard) generation plan. Use
+`prepareYardHostingWork` with the request, Yard and catalog to compute the work
+and digest before obtaining a quote; generated Yards also supply the planned
+`generationPlanHash`. The policy callback receives the bound placements and
+both digests. Legacy Yard quotes without a work digest are refused. If selected
+work changes after a provider effect, the hold is retained for reconciliation.
+The host remains responsible for its policy and provider assertions.
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of quote approval, the reservation handoff and
@@ -83,6 +88,30 @@ stateDiagram-v2
   [*] --> s0
   s0 --> s1: refuse mismatched or missing proof
   s0 --> s2: approve this quote
+```
+
+The generated-work view hides 32 same-label steps. It assumes the quoted work
+and generation plan are truthful and the durable hold is atomic.
+
+```mermaid
+stateDiagram-v2
+  s0: Work awaits a bound quote
+  s1: Unquoted work refused
+  s2: Quoted work has a financial hold
+  s3: Generation is claimed
+  s4: Changed plan refused#59; hold retained
+  s5: Provider operation completed
+  s6: Current work admitted
+  s7: Changed work refused#59; reconcile the hold
+  [*] --> s0
+  s0 --> s1: refuse an unbound quote
+  s0 --> s2: reserve quoted work
+  s2 --> s4: refuse a changed plan
+  s2 --> s3: claim current generation
+  s3 --> s4: refuse a changed plan
+  s3 --> s5: run the current provider operation
+  s5 --> s7: retain exposure for reconciliation
+  s5 --> s6: admit current work
 ```
 
 The reservation and recovery views hide 128 and 16 same-label steps,

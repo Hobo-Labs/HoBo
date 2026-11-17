@@ -9,9 +9,11 @@ export {
 	buildDeploymentRequestFromParts,
 	type LocalHostingAuthorizationContext,
 	parseBindleDeploymentRequest,
+	prepareYardHostingWork,
 	resolveBindleDeployment,
 	type YardFirstPlacementDeps,
 	type YardFirstPlacementResult,
+	type YardHostingWorkInput,
 } from "./deploy.js";
 export {
 	createAwsYardEventStoreFoldResolver,

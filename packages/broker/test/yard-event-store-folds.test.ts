@@ -30,6 +30,7 @@ import {
 	type YardFirstPlacementDeps,
 	yardEvent,
 } from "../src/index.js";
+import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 describe("yard event-store folds + provider resolvers", () => {
@@ -207,21 +208,35 @@ describe("yard event-store folds + provider resolvers", () => {
 		"context-before-claim",
 		"missing-residual",
 		"signals-unavailable",
+		"wrong-generation-plan",
+		"missing-generation-work",
+		"changed-work-after-generation",
+		"changed-plan-during-policy",
+		"changed-plan-during-claim",
+		"changed-plan-before-claim",
 	])("funds Azure generation before provider effects: %s", async (mode) => {
 		const catalog = createLocalHostCatalog();
+		let generationFinished = false;
 		// Extend catalog with azure wildcard so residual placement can succeed after gen.
 		const azureCatalog = {
 			catalogHash: catalog.catalogHash,
 			definitions: () => {
 				const definitions = [...catalog.definitions()];
-				if (mode !== "missing-residual")
+				if (mode !== "missing-residual" || !generationFinished)
 					definitions.push({
 						id: "azure:*",
 						providerId: "azure",
 						port: "*",
 						features: [],
 						regions: ["eastus2"],
-						cost: { sku: "azure", unit: "hour", marginalPrice: "0.01" },
+						cost: {
+							sku: "azure",
+							unit: "hour",
+							marginalPrice:
+								mode === "changed-work-after-generation" && generationFinished
+									? "0.02"
+									: "0.01",
+						},
 						satisfies: () => ({ kind: "full" as const }),
 					});
 				return definitions;
@@ -229,6 +244,7 @@ describe("yard event-store folds + provider resolvers", () => {
 		};
 
 		const runtimes = createYardRuntimeCatalog();
+		const runtimePermissions: string[] = [];
 		runtimes.register({
 			schemaVersion: "hobo.yard-runtime/v1",
 			runtimeId: "azure.yard-runtime/v1",
@@ -243,7 +259,7 @@ describe("yard event-store folds + provider resolvers", () => {
 			generatorConnectorId: "connector:azure-yard-generator",
 			default: true,
 			priority: 10,
-			requiredPermissions: [],
+			requiredPermissions: runtimePermissions,
 			conformanceRef: "ref",
 			conformanceHash: contentHashOf("c"),
 			status: "approved",
@@ -313,10 +329,16 @@ describe("yard event-store folds + provider resolvers", () => {
 			observedAt: "2026-10-29T00:00:00Z",
 			validUntil: "2026-11-01T00:00:00Z",
 		});
+		bindTestYardWork(quote, request, "broker:azure-gen", azureCatalog, {
+			generationPlanHash:
+				mode === "wrong-generation-plan"
+					? contentHashOf("another-generation")
+					: generation.plan.planHash,
+		});
+		if (mode === "missing-generation-work") quote.workDigest = "";
 		const reservationId = `hosting:broker:azure-gen:${request.requestId}`;
 		let provisionCalls = 0;
 		let inspectCalls = 0;
-		let generationFinished = false;
 		let changeContext: (() => void) | undefined;
 		const connector = {
 			...nativeConnector,
@@ -376,11 +398,15 @@ describe("yard event-store folds + provider resolvers", () => {
 				)
 					throw new Error("storage unavailable");
 				const reservation = authority.lookup(id);
+				if (mode === "changed-plan-before-claim" && reservation)
+					runtimePermissions.push("unquoted-permission");
 				if (mode === "context-before-claim" && reservation) changeContext?.();
 				return reservation;
 			},
 			claimExecution(input: Parameters<typeof authority.claimExecution>[0]) {
 				const claimed = authority.claimExecution(input);
+				if (mode === "changed-plan-during-claim")
+					runtimePermissions.push("unquoted-permission");
 				if (mode === "expiry-after-claim") now = "2026-11-02T00:00:00Z";
 				return claimed;
 			},
@@ -400,6 +426,8 @@ describe("yard event-store folds + provider resolvers", () => {
 					now: () => now,
 				},
 				authorizeHosting(input) {
+					if (mode === "changed-plan-during-policy")
+						runtimePermissions.push("unquoted-permission");
 					return {
 						gate: { effect: "allow", reasons: [], events: [] },
 						proof: create(HostingPolicyProofSchema, {
@@ -422,6 +450,42 @@ describe("yard event-store folds + provider resolvers", () => {
 			};
 			changeContext = () => Object.assign(deps, { hostingBudget: undefined });
 			const result = await resolveBindleDeployment(request, deps);
+			if (
+				mode === "wrong-generation-plan" ||
+				mode === "missing-generation-work"
+			) {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.read(now).reservedMicros).toBe(0);
+				return;
+			}
+			if (mode === "changed-plan-during-claim") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				return;
+			}
+			if (mode === "changed-plan-before-claim") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.lookup(reservationId)?.executionDigest).toBe("");
+				return;
+			}
+			if (mode === "changed-plan-during-policy") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.lookup(reservationId)?.executionDigest).toBe("");
+				return;
+			}
+			if (mode === "changed-work-after-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
 			if (mode === "lookup-unavailable") {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);

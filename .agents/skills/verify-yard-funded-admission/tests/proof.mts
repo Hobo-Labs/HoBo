@@ -35,4 +35,14 @@ try {
     if (mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`quote proof mutation ${mutation} was not detected`);
     process.stdout.write(`Expected quote proof counterexample: ${mutation}\n`);
   }
+  const workProof=fileURLToPath(new URL('../proof/quoted_work.py',import.meta.url));
+  const workResult=spawnSync('python3',[workProof],{env,stdio:'inherit'});
+  if (workResult.error) throw workResult.error;
+  if (workResult.status !== 0) throw new Error('funded Yard work binding proof failed');
+  for (const mutation of ['pre_work','hold','claim_plan','effect_plan','issued_effect','final_work','pre_collision','post_collision']) {
+    const mutant=spawnSync('python3',[workProof],{env:{...env,YARD_QUOTED_WORK_MUTATION:mutation},encoding:'utf8'});
+    if (mutant.error) throw mutant.error;
+    if (mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`work proof mutation ${mutation} was not detected`);
+    process.stdout.write(`Expected work proof counterexample: ${mutation}\n`);
+  }
 } finally { rmSync(scratch,{recursive:true,force:true}); }

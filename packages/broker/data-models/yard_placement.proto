@@ -203,6 +203,8 @@ message HostingQuote {
   repeated ProviderAccountExposure provider_accounts = 12;
   repeated EntitlementClaim entitlement_claims = 13;
   string financial_plan_hash = 14;
+  // Yard-specific binding of the quoted request, selected work and generation plan.
+  string work_digest = 15;
 }
 
 message BudgetReservation {

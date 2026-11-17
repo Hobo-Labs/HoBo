@@ -14,4 +14,12 @@ try {
     if((result.status === 0) !== valid) throw new Error(`CUE ${name} had unexpected result: ${result.stdout}\n${result.stderr}`);
     process.stdout.write(`CUE ${name}: ${valid ? 'accepted' : 'refused'}\n`);
   }
+  const quoteBody=(field: string) => `package data_models\ninput: #HostingQuote & {quoteId: "q", yardId: "y", providerId: "p", ownerTenantId: "t", currency: "USD", totalMicros: 1, observedAt: "now", validUntil: "later", requestDigest: "r", components: [{name: "execution", costMicros: 1}] ${field}}\n`;
+  for(const [name,field,valid] of [['bound',`, workDigest: "sha256:${'a'.repeat(64)}"`,true],['generic-unbound','',true],['malformed',', workDigest: "bad"',false]] as const){
+    writeFileSync(path.join(scratch,'fixture.cue'),quoteBody(field));
+    const result=spawnSync(process.env.HOBO_CUE_BIN ?? 'cue',['vet','-c','budget.cue','budget_fence_settlement_guard.cue','fixture.cue'],{cwd:scratch,encoding:'utf8'});
+    if(result.error) throw result.error;
+    if((result.status === 0) !== valid) throw new Error(`CUE quote ${name} had unexpected result: ${result.stdout}\n${result.stderr}`);
+    process.stdout.write(`CUE quote ${name}: ${valid ? 'accepted' : 'refused'}\n`);
+  }
 } finally { rmSync(scratch,{recursive:true,force:true}); }
