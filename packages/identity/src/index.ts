@@ -101,6 +101,7 @@ export {
 	createMigrationFlagId,
 	type DetailEvaluation,
 	FEATURE_FLAG_PORT,
+	type FeatureFlagPort,
 	FeatureFlagStore,
 	FLAG_EVENT_SCHEMA_VERSION,
 	FLAG_EVENTS,
