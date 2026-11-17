@@ -47,9 +47,9 @@
 			"types": "./dist/rivet-queue.d.ts",
 			"default": "./dist/rivet-queue.js"
 		},
-		"./rivet/topic": {
-			"types": "./dist/rivet-topic.d.ts",
-			"default": "./dist/rivet-topic.js"
+		"./rivet/standalone": {
+			"types": "./dist/rivet-standalone.d.ts",
+			"default": "./dist/rivet-standalone.js"
 		}
 	},
 	"dependencies": {
@@ -58,7 +58,6 @@
 	"peerDependencies": {
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
-		"@hobo/runtime-rivet": "workspace:*",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "^4.1.4",
 		"@effect/platform-node": "^4.1.4",
@@ -72,9 +71,6 @@
 		"@alchemy.run/rivet": {
 			"optional": true
 		},
-		"@hobo/runtime-rivet": {
-			"optional": true
-		},
 		"rivetkit": {
 			"optional": true
 		}
@@ -82,7 +78,6 @@
 	"devDependencies": {
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
 		"@alchemy.run/rivet": "2.0.0-beta.87",
-		"@hobo/runtime-rivet": "workspace:*",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",
