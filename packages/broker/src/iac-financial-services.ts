@@ -231,40 +231,42 @@ export function createIacFinancialServices(
 						(admission.quoteHash !== undefined && admission.quoteHash !== "")
 					)
 						return false;
-					return await options.authority.revalidateUnbounded({
-						reservationId: admission.reservation.reservationId,
-						requestDigest,
-						inventoryHash,
-						policyProofHash: stableHash(
-							toJson(
-								IacUnpricedPolicyProofSchema,
-								create(
-									IacUnpricedPolicyProofSchema,
-									admission.unpricedPolicyProof,
-								),
-								{ alwaysEmitImplicit: true },
-							),
-						),
-						scopeProofHash: stableHash(
-							toJson(
-								IacUnpricedScopeProofSchema,
-								create(IacUnpricedScopeProofSchema, {
-									...admission.reservation.unpricedScopeProof,
-									providerAccountIds: [
-										...admission.reservation.unpricedScopeProof
-											.providerAccountIds,
-									],
-								}),
-								{ alwaysEmitImplicit: true },
-							),
-						),
-						executionDigest: stableHash({
-							kind: "iac-target-execution",
+					return (
+						(await options.authority.revalidateUnbounded({
+							reservationId: admission.reservation.reservationId,
 							requestDigest,
-							planDigest: plan.planDigest,
-						}),
-						now: options.now(),
-					});
+							inventoryHash,
+							policyProofHash: stableHash(
+								toJson(
+									IacUnpricedPolicyProofSchema,
+									create(
+										IacUnpricedPolicyProofSchema,
+										admission.unpricedPolicyProof,
+									),
+									{ alwaysEmitImplicit: true },
+								),
+							),
+							scopeProofHash: stableHash(
+								toJson(
+									IacUnpricedScopeProofSchema,
+									create(IacUnpricedScopeProofSchema, {
+										...admission.reservation.unpricedScopeProof,
+										providerAccountIds: [
+											...admission.reservation.unpricedScopeProof
+												.providerAccountIds,
+										],
+									}),
+									{ alwaysEmitImplicit: true },
+								),
+							),
+							executionDigest: stableHash({
+								kind: "iac-target-execution",
+								requestDigest,
+								planDigest: plan.planDigest,
+							}),
+							now: options.now(),
+						})) === true
+					);
 				}
 				if (
 					admission.budget.evaluation !== "allowed" ||
@@ -274,18 +276,20 @@ export function createIacFinancialServices(
 					admission.quoteHash !== assessment.quote.quote.quoteHash
 				)
 					return false;
-				return await options.authority.revalidatePriced({
-					reservationId: admission.reservation.reservationId,
-					requestId: admission.requestId,
-					targetId: admission.targetId,
-					tenantId: plan.tenantId,
-					requestDigest,
-					planDigest: plan.planDigest,
-					inventoryHash,
-					modelHash: assessment.quote.modelHash,
-					quoteHash: assessment.quote.quote.quoteHash,
-					now: options.now(),
-				});
+				return (
+					(await options.authority.revalidatePriced({
+						reservationId: admission.reservation.reservationId,
+						requestId: admission.requestId,
+						targetId: admission.targetId,
+						tenantId: plan.tenantId,
+						requestDigest,
+						planDigest: plan.planDigest,
+						inventoryHash,
+						modelHash: assessment.quote.modelHash,
+						quoteHash: assessment.quote.quote.quoteHash,
+						now: options.now(),
+					})) === true
+				);
 			} catch {
 				return false;
 			}

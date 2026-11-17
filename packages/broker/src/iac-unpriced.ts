@@ -225,13 +225,22 @@ export async function admitUnpricedIacTarget(
 			inventory: clone(TargetPricingInventorySchema, inventory),
 			identity: clone(BudgetIdentitySchema, identity),
 		});
+		if (!policy || !isBoundedPricingInput(policy))
+			throw new Error("malformed policy decision");
+		policy = structuredClone(policy);
+		if (
+			!policy.gate ||
+			!isExactProtoMessage(IacUnpricedPolicyProofSchema, policy.proof) ||
+			!isExactProtoMessage(IacUnpricedScopeProofSchema, policy.scopeProof)
+		)
+			throw new Error("malformed policy decision");
 		proof = clone(IacUnpricedPolicyProofSchema, policy.proof);
 		scopeProof = clone(IacUnpricedScopeProofSchema, policy.scopeProof);
 		authorized =
 			(policy.gate?.effect === "allow" ||
 				policy.gate?.effect === "allow-degraded") &&
 			proof.effect === policy.gate.effect &&
-			proof.obligationsSatisfied &&
+			proof.obligationsSatisfied === true &&
 			proof.requestDigest === requestDigest &&
 			proof.inventoryHash === inventoryHash &&
 			proof.identity !== undefined &&

@@ -242,6 +242,27 @@ describe("policy-directed unpriced IaC admission", () => {
 		expect(admission.quote).toBeUndefined();
 		expect(authority.read(now).unboundedExposureCount).toBe(1);
 		expect(await financial.revalidate(admission, plan)).toBe(true);
+		for (const value of [
+			false,
+			undefined,
+			null,
+			"true",
+			1,
+			{},
+			Promise.resolve("true"),
+		]) {
+			const bad = createIacFinancialServices({
+				authority: {
+					...authority,
+					// SAFETY: model a malformed JavaScript authority at the trust boundary.
+					revalidateUnbounded: () => value as never,
+				},
+				now: () => now,
+				unpriced: { authorize },
+			});
+			expect(await bad.revalidate(admission, plan)).toBe(false);
+			expect(authority.read(now).unboundedExposureCount).toBe(1);
+		}
 		expect(
 			await financial.revalidate(admission, {
 				...plan,
@@ -254,6 +275,62 @@ describe("policy-directed unpriced IaC admission", () => {
 			budget: { evaluation: "bypassed", reservation: "held" },
 		});
 		authority.close();
+	});
+
+	it.each([
+		"missing-gate",
+		"truthy-obligation",
+		"unknown-proof",
+		"unknown-scope",
+		"accessor",
+	])("rejects malformed unpriced policy decisions (%s) before claiming exposure", async (kind) => {
+		const { authority, plan, authorize } = fixture();
+		try {
+			let getters = 0;
+			const financial = createIacFinancialServices({
+				authority,
+				now: () => now,
+				unpriced: {
+					authorize: async (input) => {
+						const decision = authorize(input);
+						if (kind === "missing-gate")
+							Object.defineProperty(decision, "gate", { value: undefined });
+						if (kind === "truthy-obligation")
+							Object.defineProperty(decision.proof, "obligationsSatisfied", {
+								value: "yes",
+							});
+						if (kind === "unknown-proof")
+							Object.defineProperty(decision.proof, "unfulfilledObligation", {
+								value: true,
+								enumerable: true,
+							});
+						if (kind === "unknown-scope")
+							Object.defineProperty(decision.scopeProof, "sharedAccount", {
+								value: true,
+								enumerable: true,
+							});
+						if (kind === "accessor")
+							Object.defineProperty(decision, "proof", {
+								enumerable: true,
+								get: () => {
+									getters++;
+									return undefined;
+								},
+							});
+						return decision;
+					},
+				},
+			});
+			expect(await financial.admit("bad-policy", plan)).toMatchObject({
+				status: "denied",
+				code: "UNPRICED_POLICY_UNAVAILABLE",
+				budget: { reservation: "not-created" },
+			});
+			expect(getters).toBe(0);
+			expect(authority.read(now).unboundedExposureCount).toBe(0);
+		} finally {
+			authority.close();
+		}
 	});
 
 	it("fails revalidation after the budget policy revision changes", async () => {

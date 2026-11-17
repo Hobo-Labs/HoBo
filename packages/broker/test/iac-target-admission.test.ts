@@ -549,6 +549,32 @@ describe("provider-neutral IaC target budget admission", () => {
 			const admission = await financial.admit("priced-service", plan);
 			expect(admission.status).toBe("admitted");
 			expect(await financial.revalidate(admission, plan)).toBe(true);
+			for (const value of [
+				false,
+				undefined,
+				null,
+				"true",
+				1,
+				{},
+				Promise.resolve("true"),
+			]) {
+				const bad = createIacFinancialServices({
+					authority: {
+						...ledger,
+						// SAFETY: model a malformed JavaScript authority at the trust boundary.
+						revalidatePriced: () => value as never,
+					},
+					now: () => NOW,
+					pricing: {
+						modelId: source.modelId,
+						revision: source.revision,
+						scenario: source.scenario,
+						bindings,
+					},
+				});
+				expect(await bad.revalidate(admission, plan)).toBe(false);
+				expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+			}
 			expect(
 				await financial.revalidate(
 					{ ...admission, quoteHash: `sha256:${"f".repeat(64)}` },
