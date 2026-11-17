@@ -46,6 +46,9 @@ export const cloudflareApp = withCloudflareEventualKv(app, {
 export default bindleCloudflareWorker(cloudflareApp, "web");
 ```
 
+The imported Worker module and the mapping must use the same namespace and
+grant epochs; a mismatch is refused before deployment.
+
 The trusted deployment host constructs its stack from that same adapter view:
 
 ```ts

@@ -788,9 +788,10 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			const makeProvider = (
 				currentTarget = target,
 				currentSources = sourceRequirements,
+				currentStack = stack,
 			) =>
 				createAlchemyIacProvider({
-					stack,
+					stack: currentStack,
 					target: currentTarget,
 					runtimeLayer: Alchemist.layer(),
 					runtimeDirectory: join(directory, "runtime"),
@@ -857,6 +858,35 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				stackName: "App",
 				operationGeneration: "generation-1",
 			};
+			for (const altered of [
+				{ ...readGrant, grantEpoch: `sha256:${"7".repeat(64)}` },
+				{ ...readGrant, namespaceEpoch: `sha256:${"8".repeat(64)}` },
+			]) {
+				const mismatched = withCloudflareEventualKv(neutralApplication, {
+					cache: altered,
+				});
+				const mapping = mapBindleToAlchemy(
+					mismatched,
+					cloudflareNativeKvBindleMappers({
+						workerModules: { web: main },
+						sourceFence: { ...sourceFence, verify: () => true },
+						verifyNamespace: () => true,
+						verifyGrant: () => true,
+					}),
+					{ assessRequirements },
+				);
+				const mismatchedStack = Stack(
+					"App",
+					{ providers, state: inMemoryState() },
+					mapping.pipe(Effect.map(() => ({}))),
+				);
+				await expect(
+					makeProvider(target, sourceRequirements, mismatchedStack).preview(
+						program,
+					),
+				).rejects.toThrow("ENTRYPOINT_UNSUPPORTED");
+			}
+			expect(created).toEqual([]);
 			expect((await provider.preview(program)).changes).toBe(3);
 			await expect(
 				makeProvider(target, [appSource]).preview(program),

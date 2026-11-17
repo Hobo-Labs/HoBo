@@ -49,12 +49,19 @@ export type CloudflareBindleEntrypoint = (
 	context?: CloudflareBindleContext,
 ) => EntrypointResult;
 
-export interface CloudflareBindingDescriptor {
+export type CloudflareBindingDescriptor = {
 	readonly name: string;
-	readonly kind: "service" | "kv";
 	readonly env: string;
 	readonly allow: readonly string[];
-}
+} & (
+	| { readonly kind: "service" }
+	| {
+			readonly kind: "kv";
+			readonly mode: CloudflareKvMode;
+			readonly grantEpoch: string;
+			readonly namespaceEpoch: string;
+	  }
+);
 
 export interface CloudflareWorkerDescription {
 	readonly bindleName: string;
@@ -376,11 +383,16 @@ function allowFor(declaration: PrimitiveDeclaration) {
 			throw new Error(
 				"bucket runtime is unsupported: blob metadata, events and presigned URLs are not bound",
 			);
-		case "kv":
+		case "kv": {
+			const grant = cloudflareKvConfiguration(declaration);
 			return {
 				kind: "kv",
-				verbs: cloudflareKvConfiguration(declaration).allow,
+				verbs: grant.allow,
+				mode: grant.mode,
+				grantEpoch: grant.grantEpoch,
+				namespaceEpoch: grant.namespaceEpoch,
 			} as const;
+		}
 		case "queue":
 			throw new Error(
 				"queue operation is unsupported: native queue send lacks HoBo idempotency and receipt semantics",
@@ -424,12 +436,21 @@ export function cloudflareDependencyBindings(
 				)
 			)
 				throw new Error(`${dependency.kind} operation is unsupported`);
-			return Object.freeze({
-				name: resourceName,
-				kind: support.kind,
-				env: `HOBO_RESOURCE_${index}`,
-				allow: support.kind === "kv" ? support.verbs : Object.freeze(["fetch"]),
-			});
+			const base = { name: resourceName, env: `HOBO_RESOURCE_${index}` };
+			return support.kind === "kv"
+				? Object.freeze({
+						...base,
+						kind: "kv",
+						allow: support.verbs,
+						mode: support.mode,
+						grantEpoch: support.grantEpoch,
+						namespaceEpoch: support.namespaceEpoch,
+					})
+				: Object.freeze({
+						...base,
+						kind: "service",
+						allow: Object.freeze(["fetch"]),
+					});
 		}),
 	);
 }

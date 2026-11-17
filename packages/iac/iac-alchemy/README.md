@@ -90,7 +90,8 @@ declared Worker service dependencies. HoBo bucket, WASI KV and queue runtime
 contracts, topics, and enabled session replay are not yet supported; the adapter
 refuses those uses. An explicitly opted-in [eventual JavaScript KV subset](CLOUDFLARE-KV.md)
 uses a private, permission-enforcing Worker and is not full KV profile support.
-The optional KV guide describes host grant and namespace fencing requirements.
+The optional KV guide describes host grant and namespace fencing requirements;
+the Worker module and the mapped Bindle must use matching binding epochs.
 `cloudflareBindleMappers` can provision native R2, KV and queue infrastructure;
 it rejects their HoBo runtime operations until blob metadata and events, WASI KV
 semantics, and queue deduplication and leases are implemented.
