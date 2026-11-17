@@ -1,5 +1,6 @@
 import type { CollectionTarget } from "@hobo/bindles";
 import {
+	type CommandModule,
 	createBuildCommand,
 	createCollectCommand,
 	createDevCommand,
@@ -43,7 +44,11 @@ import { createBrokerCommand } from "./broker-command.js";
 import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
 import { defaultJournalProvisioners } from "./cd-journal-provisioners.js";
-import { cdPlacementRuntime, routePreparedPlacements } from "./cd-placement.js";
+import {
+	cdPlacementRuntime,
+	retainPreparedOnDown,
+	routePreparedPlacements,
+} from "./cd-placement.js";
 import { createCiCommand } from "./ci-command.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
 import {
@@ -252,6 +257,31 @@ export function createComposedHoboCli(
 	const down = createLocalDeploymentDownCommand(
 		deployRuntime ? createDownCommand({ runtime: deployRuntime }) : undefined,
 	);
+	// Delivery and hosting supervisors own their own executors, so wrapping the
+	// local executor cannot prove that they retain the prepared journal and store.
+	const cdUnavailableResult = (action: "up" | "down") => ({
+		ok: false,
+		status: "unavailable",
+		code: "HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
+		message: `hobo cd ${action} cannot safely manage prepared resources with this runtime.`,
+		remediation: [
+			"Use a runtime that can retain the CD journal and owner store during teardown.",
+		],
+	});
+	const cdUnavailable = (action: "up" | "down"): CommandModule => ({
+		implemented: true,
+		run: async () => cdUnavailableResult(action),
+	});
+	const cdDownFallback =
+		!deployRuntime || deployRuntime.delivery || deployRuntime.hostingExecution
+			? cdUnavailable("down")
+			: createDownCommand({
+					runtime: {
+						...cdPlacementRuntime(deployRuntime),
+						executor: retainPreparedOnDown(deployRuntime.executor),
+					},
+				});
+	const cdDown = createLocalDeploymentDownCommand(cdDownFallback);
 	// `plan` (and every `--what-if`) never opens a page, but a rejection for a
 	// missing provider says which `hobo add` would satisfy each resource.
 	const plan = createProviderCeremonyUp(createPlanCommand({ runtime }), {
@@ -299,7 +329,7 @@ export function createComposedHoboCli(
 				family: "cd",
 				resolveProject: resolveCdProject,
 				up,
-				down,
+				down: cdDown,
 				// The journal and config are placed on the Yards cd up makes for
 				// them (the journal's fleet, the owner's config service).
 				plan: createProviderCeremonyUp(
@@ -312,37 +342,44 @@ export function createComposedHoboCli(
 				// resolved from the owner's secret store for this run only.
 				// hobo cd up also provisions the CD journal's fleet.
 				prepare: (input) =>
-					prepareVercelConnection(input, {
-						journalProvisioners: defaultJournalProvisioners(),
-						runCommand: machineRunner(),
-						...(options.ownerChannel !== undefined
-							? { ownerChannel: options.ownerChannel }
-							: undefined),
-						...(options.clock !== undefined
-							? { now: options.clock.now, sleep: options.clock.sleep }
-							: undefined),
-						which: (bin) => whichOnPath(bin),
-					}),
-				upWith: (credentials) =>
-					createBrokerAwareUpCommand({
-						runtime: {
-							...cdPlacementRuntime(runtime),
-							executor: createInProcessExecutor({
-								iac: routePreparedPlacements(
-									createVercelDeployProvider({
-										token: credentials.reveal("VERCEL_TOKEN") ?? "",
-										...((team) =>
-											team !== undefined ? { teamId: team } : undefined)(
-											credentials.reveal("VERCEL_TEAM_ID"),
-										),
-										projectName: "hobo-cd",
-									}),
-								),
+					runtime.delivery || runtime.hostingExecution
+						? Promise.resolve({
+								kind: "refused" as const,
+								result: cdUnavailableResult("up"),
+							})
+						: prepareVercelConnection(input, {
+								journalProvisioners: defaultJournalProvisioners(),
+								runCommand: machineRunner(),
+								...(options.ownerChannel !== undefined
+									? { ownerChannel: options.ownerChannel }
+									: undefined),
+								...(options.clock !== undefined
+									? { now: options.clock.now, sleep: options.clock.sleep }
+									: undefined),
+								which: (bin) => whichOnPath(bin),
 							}),
-						},
-						persistentLocal: !explicitFixture,
-						authMdFetch: options.authMdFetch ?? fetch,
-					}),
+				upWith: (credentials) =>
+					runtime.delivery || runtime.hostingExecution
+						? cdUnavailable("up")
+						: createBrokerAwareUpCommand({
+								runtime: {
+									...cdPlacementRuntime(runtime),
+									executor: createInProcessExecutor({
+										iac: routePreparedPlacements(
+											createVercelDeployProvider({
+												token: credentials.reveal("VERCEL_TOKEN") ?? "",
+												...((team) =>
+													team !== undefined ? { teamId: team } : undefined)(
+													credentials.reveal("VERCEL_TEAM_ID"),
+												),
+												projectName: "hobo-cd",
+											}),
+										),
+									}),
+								},
+								persistentLocal: !explicitFixture,
+								authMdFetch: options.authMdFetch ?? fetch,
+							}),
 				fallback: deploy,
 			}),
 			build: createBuildCommand({ requireRealComponentize: true }),
