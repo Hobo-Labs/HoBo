@@ -27,6 +27,23 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 			"use a new request identity for changed work; reconcile the existing reservation",
 	},
 	{
+		code: "reservation-already-finalized",
+		plane: "billing",
+		remediation:
+			"use a new request identity; the prior reservation has already been finalized",
+	},
+	{
+		code: "reservation-replay-requires-reconciliation",
+		plane: "billing",
+		remediation: "reconcile the prior resolution before issuing any new work",
+	},
+	{
+		code: "billing-policy-invalid",
+		plane: "billing",
+		remediation:
+			"provide finite nonnegative bounds or explicitly select unlimited mode",
+	},
+	{
 		code: "metering-evidence-incomplete",
 		plane: "billing",
 		remediation:

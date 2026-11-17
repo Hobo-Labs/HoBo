@@ -319,6 +319,20 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			if (!billing.ok) {
 				return reject(request, billing.reasons, events);
 			}
+			if (billing.reservationCreated === false) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "reservation-replay-requires-reconciliation",
+							message:
+								"this reservation was already authorized; reconcile the prior resolution",
+						},
+					],
+					events,
+				);
+			}
 
 			// Plane 3 — placement: match every requirement against the provider
 			// catalog under the effective policy, ranked by its objective. The
@@ -343,7 +357,8 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				}
 			}
 			if (placementReasons.length > 0) {
-				billingPlane.release?.(request.requestId, true);
+				if (billing.reservationCreated === true)
+					billingPlane.release?.(request.requestId, true);
 				return reject(request, placementReasons, events);
 			}
 

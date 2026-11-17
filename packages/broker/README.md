@@ -109,8 +109,37 @@ preflight behavior requires `budgetUnlimited` or `spendCapUnlimited` explicitly.
 `createMeteredBillingPlane` rereads a live event reader on each authorization and
 holds outstanding request identities atomically within that one plane. Consumable
 snapshot iterators are rejected. A finalized usage fact may retire a hold only by
-naming its reservation ID. This legacy preflight is single-writer and is not the
-durable financial authority for funded cloud hosting.
+naming its reservation ID, and that identity cannot be authorized again. Observed
+meter facts must remain an unchanged prefix on later reads. Costs and holds use
+their serialized decimal values for exact comparisons. A repeated broker
+resolution with an existing metered hold requires reconciliation instead of
+issuing another receipt. Only a hold created by the current resolution is
+released after placement fails. Custom billing planes should return
+`reservationCreated` so the broker can distinguish new holds from replays.
+
+This legacy preflight trusts its reader, estimates, and unused-funds
+confirmation. Its holds and observation checkpoint are in memory, so restart
+loses them; multiple instances do not coordinate. It cannot detect facts that
+were already missing on the first read. It is not the durable financial authority
+for funded cloud hosting.
+
+The [metered billing skill](../../.agents/skills/verify-broker-metered-billing/SKILL.md)
+checks the implementation against generated histories, a bounded TLA+ model,
+and an exact-real proof. The following projection covers 48 model states and
+hides 140 same-state steps, including replay refusals and evidence changes.
+
+```mermaid
+stateDiagram-v2
+  s0: Waiting for authorization
+  s1: Budget held while placing
+  s2: Resolution issued#59; budget held
+  s3: Final usage recorded
+  [*] --> s0
+  s0 --> s1: reserve the estimate [if evidence and budget permit]
+  s1 --> s0: release the new unused hold
+  s1 --> s2: issue the resolution
+  s2 --> s3: record final usage
+```
 
 `authorizeBillingSpend` accepts a complete current `QuoteVector` for
 quote-based authorization. It checks the content hash, explicit eligibility,

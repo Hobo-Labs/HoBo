@@ -1,0 +1,3 @@
+export const title = 'Authorize metered budget for a resolution';
+export const state = v => ({new:'Waiting for authorization',pending:'Budget held while placing',held:'Resolution issued; budget held',finalized:'Final usage recorded'})[v.phase[1]];
+export const step = action => ({Reserve:'reserve the estimate [if evidence and budget permit]',PlacementSuccess:'issue the resolution',PlacementFailure:'release the new unused hold',Finalize:'record final usage',Replay:'reject the repeated resolution',OutsideCharge:'record other spend',BadEvidence:'detect incomplete meter evidence',RestoreEvidence:'restore meter evidence',Wait:'wait'})[action] ?? action;
