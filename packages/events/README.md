@@ -3,11 +3,10 @@
 The reactive-streams + saga kernel for the HoBo data plane (S1-15b): `emit` /
 `subscribe` over the event log, a **Reactor** that folds materializations and
 pushes recomputed snapshots over the `Streamer` port with reads-your-writes via
-`seq`, and `defineSaga` for cross-aggregate choreography with compensation.
+per-stream positions, and `defineSaga` for cross-aggregate choreography with compensation.
 
 Builds on [`@hobo/data`](../data) (aggregates/commands) and
-[`@hobo/core`](../core) (EventEnvelope, EventStore, Streamer ports). See
-[`ARCHITECTURE.md`](./ARCHITECTURE.md).
+[`@hobo/core`](../core) (EventEnvelope, EventStore, Streamer ports).
 
 ```ts
 import { createReactor, defineMaterialization, defineSaga } from "@hobo/events";
@@ -23,8 +22,25 @@ const openOrders = defineMaterialization({
 const reactor = createReactor({ store, streamer });
 const sub = await reactor.subscribe(openOrders, { subscriptionId: "sub:orders" });
 const { seq } = await orders.execute(deps, "order:1", cmd, ctx);
-await sub.awaitSeq(seq); // reads-your-writes: the just-placed order is now visible
+await sub.awaitStreamSeq("order:1", seq);
 ```
+
+`replayStreamId` rebuilds one stream before live events are applied. The Reactor
+buffers events while replay runs and ignores events already folded from that
+stream. Other streams are observed from the live subscription's readiness point;
+they are not reconstructed by this option. `awaitStreamSeq` waits for a specific
+stream, including events outside the read set. The legacy `awaitSeq` reports the
+largest sequence seen in the read set and cannot establish progress for a
+particular stream.
+
+Each pushed frame includes `streamSeqs`. A slow reader leaves at most one latest
+snapshot pending while the Reactor retries backpressure; it receives the latest
+state and stream positions when it resumes.
+
+`maxBufferedEvents` and `maxTrackedStreams` each default to 10,000. Exceeding a
+limit closes the subscription and rejects pending waits. Closing a subscription
+also rejects pending waits; a failed initial listener or replay cleans up the
+subscription and its Streamer run.
 
 ## Pinned event bodies
 
