@@ -10,6 +10,35 @@ RivetKit 3 runtime dependency.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 
+`mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
+mapping for each declared primitive. Mappings declare their Alchemy resource
+types, supported operations and annotations, and whether they bind application
+entrypoints. The adapter processes dependencies first, supplies their Alchemy
+resources and the original entrypoint to the mapper, and rejects missing
+mappings, unbound dependencies, unsupported permissions or annotations, and
+cycles. The dependency kinds recorded on each declaration must agree with the
+graph, including dependencies omitted from the returned bindle.
+Mapping runs inside an Alchemy stack and rejects resource or action FQNs owned
+outside the current Bindle with `BINDLE_IDENTITY_COLLISION`. Existing names stay
+unchanged. Distinct Alchemy namespaces can separate supported mappings, but
+changing one changes durable resource identity and requires a migration.
+The trusted host must prevent later raw Alchemy declarations from reusing a
+mapped FQN: Alchemy can silently return the registered object outside the
+mapping scope. Across stacks the host must independently verify state ownership
+and actual physical provider-resource isolation; distinct stack names alone do
+not establish that resources cannot be shared or adopted.
+Only explicit registry entries count as mappings.
+`describeAlchemyPrimitiveSupport` reports supported, partial and
+unsupported entries for a supplied primitive catalog, including the declared
+entrypoint and annotation support.
+
+These mappings are supplied by the provider or developer: the adapter does not
+claim that every HoBo primitive has an equivalent in every Alchemy provider.
+The mapper is responsible for actually implementing the declared operations,
+application logic and bindings; its declarations are not a conformance proof.
+Alchemy components that generate stack actions or executable plan values remain
+subject to the plan-inspection restrictions below.
+
 Create a target with `alchemyTarget({ targetId, tenantId, stackName, stage,
 programResourceId, sourceDigest, inventoryEvidenceRef, resources })`. Each
 resource scope names its Alchemy FQN and resource type plus its underlying

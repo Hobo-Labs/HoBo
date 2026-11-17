@@ -37,6 +37,18 @@ export {
 	TargetSchema,
 } from "./_generated/alchemy_iac_pb.js";
 export { captureAlchemyOptions } from "./input-boundary.js";
+export type {
+	AlchemyBindleMapping,
+	AlchemyMappedPrimitive,
+	AlchemyPrimitiveMapper,
+	AlchemyPrimitiveSupport,
+	BindleForAlchemy,
+	PrimitiveDeclaration,
+} from "./bindle.js";
+export {
+	describeAlchemyPrimitiveSupport,
+	mapBindleToAlchemy,
+} from "./bindle.js";
 export { AlchemyIacError } from "./plan.js";
 export type {
 	FinancialDecision,
