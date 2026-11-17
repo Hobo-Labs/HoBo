@@ -304,6 +304,12 @@ definition at zero marginal cost, under `defaultLocalPolicySet`), so the
 whole pipeline is exercisable on a bare machine. The MCP tool surface
 derives the matching tool automatically from `CANONICAL_VERBS`.
 
+Registry-backed `broker up` requires `--request` with an explicit
+`spendEstimateUsd`; only the built-in zero-cost local catalog can derive a
+request without one. The estimate is still a caller assertion, not a verified
+provider quote. Protobuf clients must transmit an explicit zero when work is
+free; older encoders that omit zero need to be updated.
+
 ## Delivered beyond M0
 
 The runtime capabilities of the meta-cloud-broker ladder ship in

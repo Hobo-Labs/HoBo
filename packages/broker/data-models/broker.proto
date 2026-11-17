@@ -105,7 +105,8 @@ message BrokerRequest {
   string request_id = 2;
   TopologyScope scope = 3;
   repeated ResourceRequirement requirements = 4;
-  double spend_estimate_usd = 5;
+  // Presence distinguishes an explicit free estimate from an unknown cost.
+  optional double spend_estimate_usd = 5;
   // Anonymous/claimable resolution inputs (ADR-0151). Absent on a request
   // from an authenticated owner deploying into an owned Yard.
   GuestResolutionInput guest = 6;

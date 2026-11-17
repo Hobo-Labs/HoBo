@@ -447,6 +447,25 @@ export function parseBrokerRequest(
 			"invalid-request: scope is required — a request names the bindle it places into",
 		);
 	}
+	const camelEstimate = raw.spendEstimateUsd;
+	const snakeEstimate = raw.spend_estimate_usd;
+	if (
+		camelEstimate !== undefined &&
+		snakeEstimate !== undefined &&
+		camelEstimate !== snakeEstimate
+	) {
+		throw new BrokerParseError(
+			"invalid-request",
+			"invalid-request: conflicting spendEstimateUsd spellings",
+		);
+	}
+	const estimate = camelEstimate !== undefined ? camelEstimate : snakeEstimate;
+	if (estimate === undefined) {
+		throw new BrokerParseError(
+			"invalid-request",
+			"invalid-request: spendEstimateUsd is required, including for free work",
+		);
+	}
 	return {
 		schemaVersion: BROKER_SCHEMA_VERSION,
 		requestId: requireString(
@@ -457,7 +476,7 @@ export function parseBrokerRequest(
 		scope: parseTopologyScope(raw.scope),
 		requirements: requirementsRaw.map(parseResourceRequirement),
 		spendEstimateUsd: nonNegativeNumber(
-			raw.spendEstimateUsd ?? raw.spend_estimate_usd,
+			estimate,
 			0,
 			"invalid-request",
 			"spendEstimateUsd",
