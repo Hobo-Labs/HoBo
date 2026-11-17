@@ -6931,6 +6931,12 @@
           console.log('[impeccable] Live mode connected.');
           syncAgentPollingUi(!!msg.agentPolling);
           startAgentStatusPoll();
+          const currentSummary = Array.isArray(msg.activeSessions)
+            ? msg.activeSessions.find((session) => session?.id === currentSessionId)
+            : null;
+          const previousRevision = sessionState.currentCheckpointRevision();
+          sessionState.seedCheckpointRevision(currentSummary?.browserCheckpointRevision ?? currentSummary?.checkpointRevision);
+          if (sessionState.currentCheckpointRevision() > previousRevision) queueCheckpoint('browser_revision_recovered');
           restoreFromActiveSessions(msg.activeSessions, 'sse_connected');
           recoverMissedGenerationCompletion(msg.activeSessions);
           if (state === 'IDLE' && (pickActive || insertActive)) setLiveState('PICKING');
@@ -8852,6 +8858,7 @@ void main() {
     }
 
     currentSessionId = saved.id;
+    sessionState.seedCheckpointRevision(serverSession?.browserCheckpointRevision ?? serverSession?.checkpointRevision);
     applySavedSessionMeta(serverSession);
     applySavedSessionMeta(saved);
 

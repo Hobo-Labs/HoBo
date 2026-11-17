@@ -61,6 +61,10 @@ network requests only when explicitly invoked. The common source-policy hooks
 apply to every harness. Surface-brief and critique-file writers reject writes;
 visual work uses the implemented styles and components instead.
 
+Live preview sessions recover browser checkpoints after a reload or when local
+browser storage is missing, provided the live server is still running. Browser
+checkpoints and publication progress are tracked independently.
+
 Upstream installs or updates can replace repository-specific skill rules. Check
 those rules and run the agent policy tests after updating the skill.
 
