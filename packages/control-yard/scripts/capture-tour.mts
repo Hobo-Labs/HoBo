@@ -41,6 +41,7 @@ import {
 import { chromium, type LaunchOptions } from "playwright";
 import { z } from "zod";
 import type { YardTestState } from "../src/test-seam.js";
+import { assertSafeCaptureDestinations } from "./capture-preflight.mts";
 import { compareImages, imageDiffRunner } from "./image-diff.mts";
 import { sampleBoInk } from "./sample-bo-ink.mts";
 
@@ -60,6 +61,7 @@ const EXP_EVIDENCE = join(
 	"src/draft/exp-proofs/ux/control-yard/assets/evidence",
 );
 
+assertSafeCaptureDestinations(REPO_ROOT, [SHOTS, EXP_EVIDENCE]);
 for (const d of [SHOTS, RECORDINGS, BASELINES, EXP_EVIDENCE]) {
 	mkdirSync(d, { recursive: true });
 }

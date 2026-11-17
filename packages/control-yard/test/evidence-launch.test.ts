@@ -3,17 +3,20 @@ import { createHash } from "node:crypto";
 import {
 	cpSync,
 	existsSync,
+	linkSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	renameSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { runInNewContext } from "node:vm";
 import {
 	connectionCreate,
@@ -193,6 +196,200 @@ it("requires a real image comparison and a reviewed baseline", () => {
 	}
 });
 
+type CaptureFixture = { shots: string; proof: string; outside: string };
+
+function writerFixture() {
+	const scratch = mkdtempSync(join(tmpdir(), "yard-writer-preflight-"));
+	const packageRoot = resolve(import.meta.dirname, "..");
+	const scripts = join(scratch, "packages/control-yard/scripts");
+	const shots = join(scratch, "packages/control-yard/public/shots");
+	const proof = join(
+		scratch,
+		"src/draft/exp-proofs/ux/control-yard/assets/evidence",
+	);
+	const outside = join(scratch, "outside");
+	mkdirSync(scripts, { recursive: true });
+	mkdirSync(outside);
+	writeFileSync(join(outside, "sentinel"), "outside bytes must survive\n");
+	for (const script of ["play-demo.mts", "capture-preflight.mts"]) {
+		cpSync(join(packageRoot, "scripts", script), join(scripts, script));
+	}
+	for (const dir of [shots, proof]) {
+		mkdirSync(join(dir, "recordings"), { recursive: true });
+		writeFileSync(join(dir, ".capture-incomplete"), "old marker\n");
+		writeFileSync(join(dir, "evidence-manifest.json"), "old manifest\n");
+		writeFileSync(join(dir, "01-boot-live.diff.png"), "old diff 1\n");
+		writeFileSync(
+			join(dir, "02-connection-bay-sheet.diff.png"),
+			"old diff 2\n",
+		);
+		writeFileSync(join(dir, "recordings/tour.mp4"), "old video\n");
+	}
+	writeFileSync(
+		join(scripts, "capture-tour.mts"),
+		`
+import { existsSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+const checkout = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+const shots = join(checkout, "packages/control-yard/public/shots");
+const proof = join(checkout, "src/draft/exp-proofs/ux/control-yard/assets/evidence");
+if (![shots, proof].every((d) => existsSync(join(d, ".capture-incomplete")))) throw new Error("missing markers");
+for (const dir of [shots, proof]) {
+  writeFileSync(join(dir, "evidence-manifest.json"), "new manifest\\n");
+  writeFileSync(join(dir, "01-boot-live.diff.png"), "new diff\\n");
+}
+writeFileSync(join(checkout, "stub-ran"), "captured\\n");
+`,
+	);
+	return { scratch, scripts, shots, proof, outside };
+}
+
+function snapshotTree(root: string): string[] {
+	const entries: string[] = [];
+	const visit = (path: string, name: string) => {
+		const info = lstatSync(path);
+		if (info.isSymbolicLink()) {
+			entries.push(`${name}:link:${readlinkSync(path)}`);
+		} else if (info.isDirectory()) {
+			entries.push(`${name}:dir:${info.mode}`);
+			for (const child of readdirSync(path).sort()) {
+				visit(join(path, child), `${name}/${child}`);
+			}
+		} else {
+			entries.push(
+				`${name}:file:${info.mode}:${createHash("sha256").update(readFileSync(path)).digest("hex")}`,
+			);
+		}
+	};
+	visit(root, ".");
+	return entries;
+}
+
+const replaceWithLink = (path: string, target: string) => {
+	rmSync(path);
+	symlinkSync(target, path);
+};
+const moveAndLink = (path: string, target: string) => {
+	renameSync(path, target);
+	symlinkSync(target, path, "dir");
+};
+
+const unsafeWriters: Array<[string, (fixture: CaptureFixture) => void]> = [
+	[
+		"shots root",
+		({ shots, outside }) => moveAndLink(shots, join(outside, "shots")),
+	],
+	[
+		"shots ancestor",
+		({ shots, outside }) =>
+			moveAndLink(dirname(shots), join(outside, "public")),
+	],
+	[
+		"proof root",
+		({ proof, outside }) => moveAndLink(proof, join(outside, "evidence")),
+	],
+	[
+		"proof ancestor",
+		({ proof, outside }) =>
+			moveAndLink(dirname(proof), join(outside, "assets")),
+	],
+	...(["shots", "proof"] as const).flatMap(
+		(key): Array<[string, (fixture: CaptureFixture) => void]> =>
+			[".capture-incomplete", "evidence-manifest.json"].map((file) => [
+				`${key} ${file}`,
+				(fixture) =>
+					replaceWithLink(
+						join(fixture[key], file),
+						join(fixture.outside, "sentinel"),
+					),
+			]),
+	),
+	...["01-boot-live.diff.png", "02-connection-bay-sheet.diff.png"].map(
+		(file): [string, (fixture: CaptureFixture) => void] => [
+			file,
+			({ shots, outside }) =>
+				replaceWithLink(join(shots, file), join(outside, "sentinel")),
+		],
+	),
+	[
+		"recordings parent",
+		({ shots, outside }) =>
+			moveAndLink(join(shots, "recordings"), join(outside, "recordings")),
+	],
+	[
+		"recording leaf",
+		({ shots, outside }) =>
+			replaceWithLink(
+				join(shots, "recordings/tour.mp4"),
+				join(outside, "sentinel"),
+			),
+	],
+	[
+		"dangling symlink",
+		({ shots, outside }) =>
+			replaceWithLink(
+				join(shots, "01-boot-live.diff.png"),
+				join(outside, "missing"),
+			),
+	],
+	[
+		"hardlinked manifest",
+		({ shots, outside }) => {
+			const path = join(shots, "evidence-manifest.json");
+			rmSync(path);
+			linkSync(join(outside, "sentinel"), path);
+		},
+	],
+];
+
+it.each(
+	unsafeWriters,
+)("refuses unsafe %s before modifying either tree", (_name, arrange) => {
+	const fixture = writerFixture();
+	try {
+		arrange(fixture);
+		const before = snapshotTree(fixture.scratch);
+		const capture = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", join(fixture.scripts, "play-demo.mts")],
+			{ encoding: "utf8", timeout: 20_000 },
+		);
+		expect(capture.error).toBeUndefined();
+		expect(capture.status).not.toBe(0);
+		expect(capture.stderr).toContain("Unsafe capture destination");
+		expect(snapshotTree(fixture.scratch)).toEqual(before);
+	} finally {
+		rmSync(fixture.scratch, { recursive: true, force: true });
+	}
+});
+
+it("captures normally after preflight on two ordinary evidence trees", () => {
+	const fixture = writerFixture();
+	try {
+		const capture = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", join(fixture.scripts, "play-demo.mts")],
+			{ encoding: "utf8", timeout: 20_000 },
+		);
+		expect(capture.error).toBeUndefined();
+		expect(capture.stderr).toBe("");
+		expect(capture.status).toBe(0);
+		expect(readFileSync(join(fixture.scratch, "stub-ran"), "utf8")).toBe(
+			"captured\n",
+		);
+		for (const dir of [fixture.shots, fixture.proof]) {
+			expect(readFileSync(join(dir, "evidence-manifest.json"), "utf8")).toBe(
+				"new manifest\n",
+			);
+			expect(existsSync(join(dir, ".capture-incomplete"))).toBe(false);
+		}
+		expect(existsSync(join(fixture.shots, ".capture-lock"))).toBe(false);
+	} finally {
+		rmSync(fixture.scratch, { recursive: true, force: true });
+	}
+});
+
 it("retains the shared lock if proof marker cleanup fails", () => {
 	const packageRoot = resolve(import.meta.dirname, "..");
 	const tempRoot = join(packageRoot, "tmp");
@@ -209,6 +406,7 @@ it("retains the shared lock if proof marker cleanup fails", () => {
 		mkdirSync(scripts, { recursive: true });
 		for (const script of [
 			"play-demo.mts",
+			"capture-preflight.mts",
 			"evidence-check.mts",
 			"evidence-validator.mts",
 			"capture-failures.mts",
@@ -276,6 +474,7 @@ it("invalidates both old evidence copies when browser launch fails", () => {
 		for (const script of [
 			"play-demo.mts",
 			"capture-tour.mts",
+			"capture-preflight.mts",
 			"image-diff.mts",
 			"sample-bo-ink.mts",
 			"evidence-check.mts",

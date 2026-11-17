@@ -2,6 +2,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertSafeCaptureDestinations } from "./capture-preflight.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const shots = join(root, "public/shots");
@@ -13,6 +14,7 @@ const lock = join(shots, ".capture-lock");
 const markers = [shots, proof].map((dir) => join(dir, ".capture-incomplete"));
 let lockMayBeReleased = false;
 
+assertSafeCaptureDestinations(join(root, "../.."), [shots, proof]);
 mkdirSync(shots, { recursive: true });
 try {
 	mkdirSync(lock);

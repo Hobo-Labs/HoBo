@@ -54,6 +54,12 @@ The evidence checker refuses symlinks at an evidence directory, between the
 checkout and an in-checkout evidence directory, or in a manifested path. This
 keeps checked files within the selected evidence tree.
 
+Before writing, capture checks both complete evidence trees and their paths
+below the checkout. It refuses symlinks, hardlinked files, and special files so
+existing output paths cannot overwrite files elsewhere. Capture and checking
+assume the filesystem stays stable during the operation: another process
+replacing path components concurrently can bypass these checks.
+
 The visual report records Bo's `animationId`, `facing`, `facingSource`, and
 `projectedFacing`. For a walk, `facing` follows the rendered directional sheet.
 For other animations it follows the projection, or a default when no projection
