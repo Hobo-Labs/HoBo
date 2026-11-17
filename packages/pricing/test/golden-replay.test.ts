@@ -9,11 +9,14 @@ import {
 import { quoteScenario } from "../src/quote.js";
 import { isQuoteVector } from "../src/types.js";
 
-const baselines = ["golden-replay-baseline.json", "golden-replay-v2.json"].map(
-	(name) =>
-		JSON.parse(
-			readFileSync(join(import.meta.dirname, "../corpus", name), "utf8"),
-		),
+const baselines = [
+	"golden-replay-baseline.json",
+	"golden-replay-v2.json",
+	"golden-replay-v3.json",
+].map((name) =>
+	JSON.parse(
+		readFileSync(join(import.meta.dirname, "../corpus", name), "utf8"),
+	),
 );
 
 describe("pricing golden replay corpus", () => {

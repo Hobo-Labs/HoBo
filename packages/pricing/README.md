@@ -15,17 +15,24 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
-New quotes use `pricing-rating/v3`. It orders ties by string code units,
-compares UTC instants without truncating fractional seconds, and rejects
-impossible calendar dates. This changes the algorithm version and quote hash,
-and can change credit, rate-card, or latest-observation choices. To rerate an old
-record, pass its stored version, for example
+New quotes use `pricing-rating/v4`. It orders ties by string code units,
+compares UTC instants without truncating fractional seconds, rejects impossible
+calendar dates, and requires each allowance, credit, and commitment to have a
+unique nonempty identity within its kind and the financial state's tenant. This
+also requires a provider account on each agreement and rejects financial sources
+in any state containing agreements for more than one account: grants currently
+have no field identifying their account. This conservative check includes unused
+and inactive agreements. It cannot establish that the supplied identities and
+tenant truly correspond to provider records. The change to the algorithm version
+and quote hash can change credit, rate-card,
+or latest-observation choices. To rerate an old record, pass its stored version, for example
 `quoteScenario(scenario, { ratingAlgorithmVersion: "pricing-rating/v1" })`.
 Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
 requires its original locale. Versions 1 and 2 also retain their previous
-timestamp comparison and millisecond validation behavior. Preserve the original
-quote as evidence rather than treating a new v3 quote as the old one, and
-reconcile affected old expiry, evidence, and observation decisions.
+timestamp comparison and millisecond validation behavior. Versions 1–3 do not
+enforce the new source identity checks. Preserve the original quote as evidence
+rather than treating a new v4 quote as the old one, and reconcile affected old
+expiry, evidence, observation, and financial-source decisions before use.
 
 - Exact decimal strings and scaled-integer arithmetic; no floating-point money.
 - Explicit unit identities/conversions; GB and GiB are never treated as aliases.
@@ -85,7 +92,7 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-The replay corpus pins complete v1 and v2 quote outputs. The replay test parses
+The replay corpus pins complete v1, v2, and v3 quote outputs. The replay test parses
 each scenario through protobuf JSON, rerates it with the recorded version, and
 compares the stable JSON result, including the quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
@@ -93,9 +100,9 @@ claimed.
 
 ## Credit-order verification
 
-The [pricing credit-order skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
-checks the equal-priority credit flow against real code, a bounded TLA+ model,
-and an abstract balance proof. The model explores 24 states and hides six
+The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
+checks source admission and the equal-priority credit flow against real code,
+bounded TLA+ models, and abstract balance proofs. The credit model explores 32 states and hides eight
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -109,6 +116,23 @@ stateDiagram-v2
   s0 --> s1: rate on Swedish host or rate on English host
   s1 --> s2: rate on English host or rate on Swedish host
   s1 --> s3: rate on English host or rate on Swedish host
+```
+
+The source-admission projection covers one abstract financial source. Its
+model explores 243 states and hides 96 same-state transitions; it assumes the
+source identity, tenant, and account classifications reflect the provider's
+actual records.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial state received
+  s1: Sources accepted
+  s2: Quote rejected
+  s3: Source value applied
+  [*] --> s0
+  s0 --> s1: check tenant, identity and account
+  s0 --> s2: check tenant, identity and account
+  s1 --> s3: apply source once
 ```
 
 ## UTC verification
