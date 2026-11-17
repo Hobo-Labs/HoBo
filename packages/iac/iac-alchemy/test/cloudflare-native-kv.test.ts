@@ -889,7 +889,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					makeProvider(target, sourceRequirements, mismatchedStack).preview(
 						program,
 					),
-				).rejects.toThrow("ENTRYPOINT_UNSUPPORTED");
+				).rejects.toThrow("PLAN_UNAVAILABLE");
 			}
 			expect(created).toEqual([]);
 			expect((await provider.preview(program)).changes).toBe(3);
@@ -917,13 +917,13 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			expect(admissions).toBe(0);
 			proxyAuthorized = false;
 			await expect(provider.preview(program)).rejects.toThrow(
-				"SOURCE_FENCE_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(created).toEqual([]);
 			proxyAuthorized = true;
 			presentedProxyDigest = "changed";
 			await expect(provider.preview(program)).rejects.toThrow(
-				"SOURCE_FENCE_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(created).toEqual([]);
 			presentedProxyDigest = approvedProxyDigest;

@@ -1160,7 +1160,7 @@ describe("financial admission modes", () => {
 			route.port,
 			testOperation,
 			undefined,
-			50,
+			5_000,
 		);
 		await f.provider.preview(f.program);
 		const pending = expect(
@@ -1172,7 +1172,7 @@ describe("financial admission modes", () => {
 			admission: undefined,
 		});
 		await start;
-		await vi.advanceTimersByTimeAsync(51);
+		await vi.advanceTimersByTimeAsync(5_001);
 		await pending;
 		release();
 		await vi.advanceTimersByTimeAsync(1);

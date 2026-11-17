@@ -1,20 +1,27 @@
 import { execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createSecretKey } from "node:crypto";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { DurableObjectResource, Providers } from "@alchemy.run/rivet";
+import {
+	Cluster,
+	DurableObjectResource,
+	Pool,
+	Providers,
+} from "@alchemy.run/rivet";
+import { PoolHost } from "@alchemy.run/rivet/Host";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Bundle from "alchemy/Bundle/Bundle";
 import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import { createClient } from "rivetkit/client";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.ts";
 import {
@@ -27,6 +34,15 @@ import { testStateOwnership } from "./route-fixture.ts";
 const require = createRequire(import.meta.url);
 const rivetRequire = createRequire(require.resolve("rivetkit"));
 const { getEnginePath } = rivetRequire("@rivetkit/engine-cli");
+// The actual beta.87 PoolHost implementation is internal to Alchemy.
+const { makePoolLayer } = await import(
+	pathToFileURL(
+		join(
+			dirname(require.resolve("@alchemy.run/rivet/package.json")),
+			"lib/internal/PoolHost.js",
+		),
+	).href
+);
 
 const reservePort = () =>
 	new Promise((resolve, reject) => {
@@ -145,16 +161,7 @@ try {
 		return `sha256:${hash.digest("hex")}`;
 	};
 	const sourceDigest = hashSources();
-	let poolMain;
-	// This test host records the entrypoint selected by Alchemy. It does not
-	// exercise Alchemy's real PoolHost layer or a provider-deployed pool.
-	const poolHost = {
-		deployExternal: ({ main: selected }) =>
-			Effect.sync(() => {
-				poolMain = selected;
-			}),
-		deployCrate: () => Effect.void,
-	};
+	let poolProgram;
 	const source = {
 		main,
 		resourceName: "jobs",
@@ -168,7 +175,6 @@ try {
 		},
 		poolDigest: `sha256:${"b".repeat(64)}`,
 		isolationDigest: `sha256:${"c".repeat(64)}`,
-		poolHost,
 		registry,
 		binding: jobs,
 		verifySource: (claim) =>
@@ -177,28 +183,73 @@ try {
 			claim.binding === jobs &&
 			hashSources() === sourceDigest,
 	};
+	// PoolHost is real; the provider methods are stubs, so this test does not
+	// claim Alchemy itself provisioned the local engine or runner process.
 	const providers = Layer.effect(
 		Providers,
-		Provider.collection([DurableObjectResource]),
+		Provider.collection([DurableObjectResource, Pool]),
 	).pipe(
 		Layer.provide(
-			Provider.succeed(DurableObjectResource, {
-				reconcile: () =>
-					Effect.succeed({
-						name: "jobs",
-						pool: "pool",
-						endpoint: publicUrl,
-						namespace: "test",
-						token: undefined,
-					}),
-				delete: () => Effect.void,
+			Layer.merge(
+				Provider.succeed(DurableObjectResource, {
+					reconcile: () =>
+						Effect.succeed({
+							name: "jobs",
+							pool: "pool",
+							endpoint: publicUrl,
+							namespace: "test",
+							token: undefined,
+						}),
+					delete: () => Effect.void,
+				}),
+				Provider.succeed(Pool, {
+					reconcile: () =>
+						Effect.succeed({
+							name: "default",
+							namespace: "default",
+							endpoint: publicUrl,
+							drainOnVersionUpgrade: false,
+							actorEvictionDelay: 0,
+							actorEvictionPeriod: 0,
+							actorEvictionRate: 1,
+							durableObjects: [],
+							env: {},
+						}),
+					delete: () => Effect.void,
+				}),
+			),
+		),
+	);
+	const realPool = makePoolLayer({
+		label: "test pool",
+		id: "pool",
+		settings: { name: "default" },
+		expected: "local test",
+		network: () => ({}),
+		nodes: ({ program }) =>
+			Effect.sync(() => {
+				poolProgram = program;
+			}),
+	}).pipe(
+		Layer.provide(
+			Layer.succeed(Cluster, {
+				endpoint: publicUrl,
+				token: Redacted.make(token),
+				namespace: "default",
 			}),
 		),
 	);
 	const stack = Stack(
 		"Queue",
-		{ providers, state: inMemoryState() },
-		rivetAsyncQueueResource(source).pipe(Effect.map(() => ({}))),
+		{
+			providers: Layer.provideMerge(realPool, providers),
+			state: inMemoryState(),
+		},
+		Effect.gen(function* () {
+			const poolHost = yield* PoolHost;
+			yield* rivetAsyncQueueResource({ ...source, poolHost });
+			return {};
+		}),
 	);
 	process.env.ALCHEMY_HOME = join(process.cwd(), "auth");
 	const provider = createAlchemyIacProvider({
@@ -207,6 +258,12 @@ try {
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: process.cwd(),
 		composite: {
+			secretFingerprint: {
+				key: createSecretKey(Buffer.alloc(32, 23)),
+				epoch: "test-epoch",
+				proofRef: "test-key",
+				verify: () => true,
+			},
 			proofRef: "host:source",
 			environmentDigest: `sha256:${"d".repeat(64)}`,
 			sourceRequirements: [
@@ -239,6 +296,13 @@ try {
 					providerAccountRef: "account",
 					productId: "actor",
 				},
+				{
+					resourceId: "pool",
+					resourceType: "Rivet.Pool",
+					providerId: "rivet",
+					providerAccountRef: "account",
+					productId: "pool",
+				},
 			],
 		}),
 		financial: {
@@ -259,7 +323,7 @@ try {
 		action: "apply",
 		stackName: "Queue",
 	});
-	if (plan.changes !== 1 || poolMain !== main)
+	if (plan.changes !== 2 || poolProgram?.main !== main)
 		throw new Error("Alchemy selected the wrong pool main");
 
 	// Mirror beta.87's external PoolHost bundle options. The resulting program
@@ -310,7 +374,7 @@ try {
 		negative.stdout.includes("rivet-queue-pool-ready")
 	)
 		throw new Error("a constructed registry unexpectedly started");
-	await bundle(poolMain, "node.mjs");
+	await bundle(poolProgram.main, "node.mjs");
 	runner = spawn(process.execPath, [join(bundleDirectory, "node.mjs")], {
 		env: runnerEnv,
 		stdio: ["ignore", "pipe", "pipe"],

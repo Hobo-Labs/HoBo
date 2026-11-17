@@ -275,7 +275,7 @@ describe("Alchemy state-key identity", () => {
 			const f = fixture(directory, "a/b", store, "a__b");
 			const provider = createAlchemyIacProvider(f.options);
 			await expect(provider.preview(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(f.effects()).toBe(0);
 		} finally {
@@ -395,7 +395,7 @@ describe("Alchemy state-key identity", () => {
 			const f = fixture(directory, "a/b", store, "a__b");
 			const provider = createAlchemyIacProvider(f.options);
 			await expect(provider.refresh(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(f.effects()).toBe(0);
 		} finally {
@@ -451,7 +451,7 @@ describe("Alchemy state-key identity", () => {
 			);
 			const provider = createAlchemyIacProvider(f.options);
 			await expect(provider.preview(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(f.effects()).toBe(0);
 		} finally {
@@ -509,7 +509,7 @@ describe("Alchemy state-key identity", () => {
 				},
 			});
 			await expect(provider.refresh(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"DRIFT_CHECK_UNAVAILABLE",
 			);
 			expect(checks).toBe(2);
 			expect(f.effects()).toBe(0);
@@ -539,10 +539,10 @@ describe("Alchemy state-key identity", () => {
 			);
 			const provider = createAlchemyIacProvider(f.options);
 			await expect(provider.preview(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			await expect(provider.refresh(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(f.effects()).toBe(0);
 		} finally {
