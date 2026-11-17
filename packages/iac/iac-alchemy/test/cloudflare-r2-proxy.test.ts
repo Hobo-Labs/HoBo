@@ -367,7 +367,9 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		).rejects.toMatchObject({ code: "R2_DIGEST_UNAVAILABLE" });
 		await vi.advanceTimersByTimeAsync(10_001);
 		await outcome;
-		digest.mockResolvedValue(new ArrayBuffer(3));
+		const malformedDigest = new ArrayBuffer(3);
+		Object.defineProperty(malformedDigest, "byteLength", { value: 32 });
+		digest.mockResolvedValue(malformedDigest);
 		await expect(
 			cloudflareR2Digest(new Uint8Array([1]).buffer),
 		).rejects.toMatchObject({ code: "R2_DIGEST_UNAVAILABLE" });
@@ -376,7 +378,35 @@ describe("bounded private Cloudflare R2 proxy", () => {
 				new Uint8Array(CLOUDFLARE_R2_MAX_OBJECT_BYTES + 1).buffer,
 			),
 		).rejects.toMatchObject({ code: "R2_OBJECT_INVALID" });
+		const spoofed = new ArrayBuffer(CLOUDFLARE_R2_MAX_OBJECT_BYTES + 1);
+		Object.defineProperty(spoofed, "byteLength", { value: 1 });
+		await expect(cloudflareR2Digest(spoofed)).rejects.toMatchObject({
+			code: "R2_OBJECT_INVALID",
+		});
 		expect(digest).toHaveBeenCalledTimes(2);
+	});
+
+	it("snapshots digest input before waiting for Web Crypto", async () => {
+		const original = new Uint8Array([1, 2, 3]);
+		Object.defineProperty(original.buffer, "slice", {
+			value: () => original.buffer,
+		});
+		let observed: BufferSource | undefined;
+		let finish: (digest: ArrayBuffer) => void = () => {};
+		vi.spyOn(crypto.subtle, "digest").mockImplementation(
+			(_algorithm, bytes) => {
+				observed = bytes;
+				return new Promise((resolve) => {
+					finish = resolve;
+				});
+			},
+		);
+		const pending = cloudflareR2Digest(original.buffer);
+		original.fill(9);
+		expect(observed).not.toBe(original.buffer);
+		expect(observed).toEqual(new Uint8Array([1, 2, 3]).buffer);
+		finish(new ArrayBuffer(32));
+		await expect(pending).resolves.toBe(`sha256:${"0".repeat(64)}`);
 	});
 
 	it("reports an ambiguous write if the native response is lost or mismatched", async () => {

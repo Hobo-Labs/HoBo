@@ -101,23 +101,34 @@ export function validCloudflareR2Digest(value: string): boolean {
 }
 
 export async function cloudflareR2Digest(bytes: ArrayBuffer): Promise<string> {
-	if (
-		!(bytes instanceof ArrayBuffer) ||
-		bytes.byteLength > CLOUDFLARE_R2_MAX_OBJECT_BYTES
-	)
+	let input: DataView;
+	try {
+		if (!(bytes instanceof ArrayBuffer)) throw new Error("not an ArrayBuffer");
+		input = new DataView(bytes);
+	} catch {
+		throw new CloudflareR2Error(
+			"R2_OBJECT_INVALID",
+			"a bounded object body is required",
+		);
+	}
+	if (input.byteLength > CLOUDFLARE_R2_MAX_OBJECT_BYTES)
 		throw new CloudflareR2Error(
 			"R2_OBJECT_INVALID",
 			"a bounded object body is required",
 		);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
+		const snapshot = new Uint8Array(bytes).slice().buffer;
 		const digest = await Promise.race([
-			crypto.subtle.digest("SHA-256", bytes),
+			crypto.subtle.digest("SHA-256", snapshot),
 			new Promise<never>((_, reject) => {
 				timer = setTimeout(() => reject(new Error("digest timed out")), 10_000);
 			}),
 		]);
-		if (!(digest instanceof ArrayBuffer) || digest.byteLength !== 32)
+		if (
+			!(digest instanceof ArrayBuffer) ||
+			new DataView(digest).byteLength !== 32
+		)
 			throw new Error("invalid digest");
 		return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 	} catch {

@@ -129,6 +129,11 @@ describe("bounded R2 application client", () => {
 		await expect(store.write(accessor)).rejects.toMatchObject({
 			code: "R2_OBJECT_INVALID",
 		});
+		const oversized = new Uint8Array(1_048_577);
+		Object.defineProperty(oversized, "byteLength", { value: 0 });
+		await expect(
+			store.write({ ...valid, body: oversized, size: 0 }),
+		).rejects.toMatchObject({ code: "R2_OBJECT_INVALID" });
 		/* oxlint-disable anti-slop/no-reflect-apply -- SAFETY: JavaScript callers can provide undeclared options; the boundary must reject them. */
 		await expect(
 			Reflect.apply(readonly.read, readonly, ["x", { events: true }]),
@@ -138,6 +143,35 @@ describe("bounded R2 application client", () => {
 		).rejects.toMatchObject({ code: "R2_REQUEST_INVALID" });
 		/* oxlint-enable anti-slop/no-reflect-apply */
 		expect(calls).toBe(0);
+	});
+
+	it("snapshots the real typed-array bytes without invoking caller properties", async () => {
+		const n = native();
+		const service = {
+			fetch: (request: Request) =>
+				cloudflareR2Proxy.fetch(request, {
+					HOBO_R2_ALLOW: "write",
+					HOBO_R2_BUCKET: n.binding,
+				}),
+		};
+		const store = createCloudflareR2Store(service, ["write"]);
+		const bytes = new Uint8Array([1, 2, 3]);
+		const digest = await cloudflareR2Digest(new Uint8Array([1, 2, 3]).buffer);
+		Object.defineProperty(bytes, "byteLength", { value: 0 });
+		Object.defineProperty(bytes, Symbol.iterator, {
+			value: () => {
+				throw new Error("iterator must not run");
+			},
+		});
+		await store.write({
+			name: "x",
+			contentType: "text/plain",
+			size: 3,
+			digest,
+			body: bytes,
+		});
+		expect(n.data.get("x")?.bytes).toEqual(new Uint8Array([1, 2, 3]));
+		expect(n.calls).toEqual(["put:x"]);
 	});
 
 	it("rejects mismatched write/delete receipts and never retries", async () => {

@@ -219,12 +219,35 @@ export function createCloudflareR2Store(
 				!Number.isSafeInteger(size) ||
 				size < 0 ||
 				!(body instanceof Uint8Array) ||
-				body.byteLength !== size ||
+				!ArrayBuffer.isView(body) ||
 				size > CLOUDFLARE_R2_MAX_OBJECT_BYTES
 			)
 				throw new CloudflareR2Error(
 					"R2_OBJECT_INVALID",
 					"object size, digest or bytes are invalid",
+				);
+			let actualLength: number | undefined;
+			try {
+				const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+				const lengthGetter = Object.getOwnPropertyDescriptor(
+					typedArrayPrototype,
+					"byteLength",
+				)?.get;
+				actualLength = lengthGetter?.call(body);
+			} catch {
+				throw new CloudflareR2Error(
+					"R2_OBJECT_INVALID",
+					"object bytes cannot be inspected",
+				);
+			}
+			if (
+				actualLength === undefined ||
+				actualLength !== size ||
+				actualLength > CLOUDFLARE_R2_MAX_OBJECT_BYTES
+			)
+				throw new CloudflareR2Error(
+					"R2_OBJECT_INVALID",
+					"object size does not match bytes",
 				);
 			const bytes = new Uint8Array(body).buffer;
 			if ((await cloudflareR2Digest(bytes)) !== digest)
