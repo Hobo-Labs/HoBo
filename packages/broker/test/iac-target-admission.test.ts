@@ -1,0 +1,762 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { create } from "@bufbuild/protobuf";
+import {
+	createTargetPricingInventory,
+	quoteTargetPricing,
+	targetPricingModel,
+	targetPricingUnavailable,
+} from "@hobo/pricing";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+	makeScenario,
+	perUnitCharge,
+	usage,
+	workload,
+} from "../../pricing/test/fixtures.js";
+import {
+	admitIacTarget,
+	BudgetLedgerSnapshotSchema,
+	BudgetProviderAccountSchema,
+	createIacFinancialServices,
+	createSqliteBudgetAdmissionAuthority,
+	HostingPolicyProofSchema,
+	IacTargetLiabilityEvidenceSchema,
+} from "../src/index.js";
+
+const NOW = "2026-01-02T00:00:00Z";
+const END = "2026-01-31T23:59:59Z";
+const PLAN = `sha256:${"a".repeat(64)}`;
+const directories: string[] = [];
+afterEach(() => {
+	for (const path of directories.splice(0))
+		rmSync(path, { recursive: true, force: true });
+});
+
+function fixture() {
+	const scenario = makeScenario({
+		charges: [perUnitCharge("runtime", "minute", "0.25")],
+		candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+	});
+	const inventory = createTargetPricingInventory({
+		targetId: "yard-a",
+		tenantId: "tenant-a",
+		planDigest: PLAN,
+		complete: true,
+		evidenceRef: "inventory:1",
+		resources: [
+			{
+				resourceId: "resource-a",
+				providerId: "sandbox",
+				providerAccountRef: "account-a",
+				productId: "sandbox",
+			},
+		],
+	});
+	const pricing = targetPricingModel({
+		modelId: "terms",
+		revision: "1",
+		planDigest: PLAN,
+		scenario,
+		bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+	});
+	const result = quoteTargetPricing(inventory, pricing);
+	if (!result.ok) throw new Error(result.reason);
+	const evidence = create(IacTargetLiabilityEvidenceSchema, {
+		evidenceRef: "evidence:provider-bound",
+		targetId: "yard-a",
+		tenantId: "tenant-a",
+		planDigest: PLAN,
+		inventoryHash: result.inventoryHash,
+		modelHash: result.modelHash,
+		quoteHash: result.quote.quoteHash,
+		maximumMicros: 1_500_000,
+		observedAt: "2026-01-01T00:00:00Z",
+		validUntil: END,
+		providerAccounts: [
+			{ providerAccountId: "account-a", liabilityMicros: 1_500_000 },
+		],
+	});
+	return { inventory, pricing, evidence };
+}
+
+function authority(limit = 3_000_000) {
+	const dir = mkdtempSync(join(tmpdir(), "hobo-iac-budget-"));
+	directories.push(dir);
+	const ledger = createSqliteBudgetAdmissionAuthority({
+		path: join(dir, "budget.sqlite"),
+		now: () => NOW,
+		snapshot: create(BudgetLedgerSnapshotSchema, {
+			identity: {
+				tenantId: "tenant-a",
+				budgetId: "hosting",
+				periodId: "2026-01",
+				policyRevision: "r1",
+			},
+			limitMicros: limit,
+			observedAt: "2026-01-01T00:00:00Z",
+			validUntil: END,
+			providerAccounts: [
+				create(BudgetProviderAccountSchema, {
+					providerAccountId: "account-a",
+					limitMicros: limit,
+				}),
+			],
+		}),
+	});
+	return ledger;
+}
+
+function dependencies(ledger: ReturnType<typeof authority>) {
+	return {
+		authority: ledger,
+		now: () => NOW,
+		verifyLiability: async () => true,
+		authorize: async (input: {
+			requestDigest: string;
+			quote: { quoteId: string };
+			identity: {
+				tenantId: string;
+				budgetId: string;
+				periodId: string;
+				policyRevision: string;
+			};
+		}) => ({
+			gate: { effect: "allow" as const, reasons: [], events: [] },
+			proof: create(HostingPolicyProofSchema, {
+				requestDigest: input.requestDigest,
+				quoteId: input.quote.quoteId,
+				identity: input.identity,
+				effect: "allow",
+				policyHash: "sha256:policy",
+				evidenceRef: "policy:1",
+				obligationsSatisfied: true,
+			}),
+		}),
+	};
+}
+
+describe("provider-neutral IaC target budget admission", () => {
+	it.each([
+		"null",
+		"missing-accounts",
+		"unknown-field",
+		"accessor",
+	])("rejects malformed liability evidence (%s) without calling trust or policy", async (kind) => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			let calls = 0;
+			if (kind === "null")
+				Object.defineProperty(request, "evidence", { value: null });
+			if (kind === "missing-accounts")
+				Object.defineProperty(request.evidence, "providerAccounts", {
+					value: undefined,
+					enumerable: true,
+				});
+			if (kind === "unknown-field")
+				Object.defineProperty(
+					request.evidence.providerAccounts[0],
+					"otherLiability",
+					{ value: 100, enumerable: true },
+				);
+			if (kind === "accessor")
+				Object.defineProperty(request.evidence, "extra", {
+					enumerable: true,
+					get: () => {
+						calls++;
+						return 100;
+					},
+				});
+			const deps = dependencies(ledger);
+			expect(
+				await admitIacTarget(
+					{ requestId: "invalid-evidence", ...request },
+					{
+						...deps,
+						verifyLiability: () => {
+							calls++;
+							return true;
+						},
+						authorize: (input) => {
+							calls++;
+							return deps.authorize(input);
+						},
+					},
+				),
+			).toMatchObject({
+				status: "denied",
+				code: "LIABILITY_EVIDENCE_INVALID",
+				budget: { reservation: "not-created" },
+			});
+			expect(calls).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
+		"missing-gate",
+		"missing-reasons",
+		"unknown-gate",
+		"unknown-decision",
+		"non-json-event",
+		"truthy-obligation",
+		"unknown-proof-field",
+		"accessor",
+	])("rejects malformed policy decisions (%s) before reserving", async (kind) => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			let getters = 0;
+			const result = await admitIacTarget(
+				{ requestId: "invalid-policy", ...fixture() },
+				{
+					...deps,
+					authorize: async (input) => {
+						const policy = await deps.authorize(input);
+						if (kind === "missing-gate")
+							Object.defineProperty(policy, "gate", { value: undefined });
+						if (kind === "missing-reasons")
+							Object.defineProperty(policy.gate, "reasons", {
+								value: undefined,
+							});
+						if (kind === "unknown-gate")
+							Object.defineProperty(policy.gate, "condition", {
+								value: "unfulfilled",
+								enumerable: true,
+							});
+						if (kind === "unknown-decision")
+							Object.defineProperty(policy, "condition", {
+								value: undefined,
+								enumerable: true,
+							});
+						if (kind === "non-json-event")
+							policy.gate.events.push(
+								Object.defineProperty({}, "future", {
+									value: undefined,
+									enumerable: true,
+								}),
+							);
+						if (kind === "truthy-obligation")
+							Object.defineProperty(policy.proof, "obligationsSatisfied", {
+								value: "yes",
+							});
+						if (kind === "unknown-proof-field")
+							Object.defineProperty(policy.proof, "unfulfilledObligation", {
+								value: true,
+								enumerable: true,
+							});
+						if (kind === "accessor")
+							Object.defineProperty(policy, "proof", {
+								enumerable: true,
+								get: () => {
+									getters++;
+									return undefined;
+								},
+							});
+						return policy;
+					},
+				},
+			);
+			expect(result).toMatchObject({
+				status: "denied",
+				code: "POLICY_UNAVAILABLE",
+				budget: { reservation: "not-created" },
+			});
+			expect(getters).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+	it.each([
+		"surcharge",
+		"length",
+		"undefined",
+		"array-property",
+		"sparse-array",
+		"accessor",
+		"prototype",
+		"cycle",
+		"oversized",
+	])("rejects raw model %s before any normalization or authority call", (kind) => {
+		const ledger = authority();
+		try {
+			const { pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("fixture model missing");
+			const scenario = pricing.state.value.scenario;
+			const charges = scenario.catalog?.rateCards[0]?.charges;
+			const charge = charges?.[0];
+			if (!charges || !charge) throw new Error("fixture charge missing");
+			let calls = 0;
+			if (kind === "surcharge")
+				Object.defineProperty(charge, "surcharge", {
+					value: { amount: "100", currency: "USD" },
+					enumerable: true,
+				});
+			if (kind === "length")
+				Object.defineProperty(charge, "length", {
+					value: 100,
+					enumerable: true,
+				});
+			if (kind === "undefined")
+				Object.defineProperty(charge, "unknown", {
+					value: undefined,
+					enumerable: true,
+				});
+			if (kind === "array-property")
+				Object.defineProperty(charges, "extra", {
+					value: "fee",
+					enumerable: true,
+				});
+			if (kind === "sparse-array") charges.length = 2;
+			if (kind === "accessor")
+				Object.defineProperty(charge, "fee", {
+					enumerable: true,
+					get: () => {
+						calls++;
+						return "100";
+					},
+				});
+			if (kind === "prototype") Object.setPrototypeOf(charge, { fee: 100 });
+			if (kind === "cycle")
+				Object.defineProperty(charge, "cycle", {
+					value: scenario,
+					enumerable: true,
+				});
+			if (kind === "oversized") charges.length = 1025;
+			const deps = dependencies(ledger);
+			expect(() =>
+				createIacFinancialServices({
+					...deps,
+					pricing: {
+						modelId: "terms",
+						revision: "1",
+						scenario,
+						bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+					},
+					issueLiability: () => {
+						calls++;
+						return evidence;
+					},
+				}),
+			).toThrow();
+			expect(calls).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("rejects a malformed pricing property without invoking its getter or treating it as unavailable", () => {
+		const ledger = authority();
+		try {
+			const { evidence } = fixture();
+			let calls = 0;
+			const options = {
+				...dependencies(ledger),
+				issueLiability: () => evidence,
+			};
+			Object.defineProperty(options, "pricing", {
+				enumerable: true,
+				configurable: true,
+				get: () => {
+					calls++;
+					return undefined;
+				},
+			});
+			expect(() => createIacFinancialServices(options)).toThrow();
+			expect(calls).toBe(0);
+			Object.defineProperty(options, "pricing", {
+				value: undefined,
+				enumerable: true,
+			});
+			expect(() => createIacFinancialServices(options)).toThrow();
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("accepts intact generated pricing data at the broker entrypoint", () => {
+		const ledger = authority();
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("fixture model missing");
+			const financial = createIacFinancialServices({
+				...dependencies(ledger),
+				pricing: {
+					modelId: "terms",
+					revision: "1",
+					scenario: pricing.state.value.scenario,
+					bindings: [{ resourceId: "resource-a", candidateIndex: 0 }],
+				},
+				issueLiability: () => evidence,
+			});
+			expect(financial.assess(inventory)).toMatchObject({
+				quote: { ok: true },
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("rejects pricing that was altered after construction before liability or policy evaluation", async () => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			if (request.pricing.state.case !== "model")
+				throw new Error("model missing");
+			const charge =
+				request.pricing.state.value.scenario?.catalog?.rateCards[0]?.charges[0];
+			if (!charge) throw new Error("charge missing");
+			Object.defineProperty(charge, "surcharge", {
+				value: "100",
+				enumerable: true,
+			});
+			let calls = 0;
+			const deps = dependencies(ledger);
+			expect(
+				await admitIacTarget(
+					{ requestId: "bad-model", ...request },
+					{
+						...deps,
+						verifyLiability: () => {
+							calls++;
+							return true;
+						},
+						authorize: (input) => {
+							calls++;
+							return deps.authorize(input);
+						},
+					},
+				),
+			).toMatchObject({
+				status: "denied",
+				code: "PRICING_MODEL_INVALID",
+				budget: { reservation: "not-created" },
+			});
+			expect(calls).toBe(0);
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+	it.each([
+		"verified",
+		1,
+		{},
+		undefined,
+		false,
+	])("requires literal true from liability trust (%s)", async (value) => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			let policyCalls = 0;
+			for (const asynchronous of [false, true]) {
+				const decision = await admitIacTarget(
+					{ requestId: "malformed-verifier", ...fixture() },
+					{
+						...deps,
+						// SAFETY: intentionally malformed host result exercises the trust boundary.
+						verifyLiability: () =>
+							(asynchronous ? Promise.resolve(value) : value) as never,
+						authorize: (input) => {
+							policyCalls++;
+							return deps.authorize(input);
+						},
+					},
+				);
+				expect(decision).toMatchObject({
+					status: "denied",
+					code: "LIABILITY_EVIDENCE_UNVERIFIED",
+					budget: { evaluation: "unavailable", reservation: "not-created" },
+				});
+				expect(policyCalls).toBe(0);
+				expect(ledger.read(NOW).reservedMicros).toBe(0);
+			}
+		} finally {
+			ledger.close();
+		}
+	});
+	it("refuses an unknown price before any financial hold is created", async () => {
+		const ledger = authority();
+		try {
+			const request = fixture();
+			request.pricing = targetPricingUnavailable("no pricing model");
+			const decision = await admitIacTarget(
+				{ requestId: "unknown", ...request },
+				dependencies(ledger),
+			);
+			expect(decision).toMatchObject({
+				status: "denied",
+				code: "PRICING_MODEL_UNAVAILABLE",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("reserves the authenticated bound and claims exactly one execution", async () => {
+		const ledger = authority();
+		try {
+			const request = { requestId: "priced", ...fixture() };
+			const result = await admitIacTarget(request, dependencies(ledger));
+			expect(result).toMatchObject({
+				status: "admitted",
+				budget: { evaluation: "allowed", reservation: "held" },
+				quote: { totalMicros: 1_000_000, liabilityBoundMicros: 1_500_000 },
+				reservation: { reservedMicros: 1_500_000 },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+			expect(await admitIacTarget(request, dependencies(ledger))).toMatchObject(
+				{ status: "replay", code: "EXECUTION_ALREADY_CLAIMED" },
+			);
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
+		"wrong-plan",
+		"expired",
+		"unverified",
+		"too-small",
+	] as const)("refuses %s liability evidence without a hold", async (kind) => {
+		const ledger = authority();
+		try {
+			const request = { requestId: `bad-${kind}`, ...fixture() };
+			if (kind === "wrong-plan")
+				request.evidence.planDigest = `sha256:${"b".repeat(64)}`;
+			if (kind === "expired") request.evidence.validUntil = NOW;
+			if (kind === "too-small") request.evidence.maximumMicros = 1;
+			const deps = dependencies(ledger);
+			if (kind === "unverified") deps.verifyLiability = async () => false;
+			expect(await admitIacTarget(request, deps)).toMatchObject({
+				status: "denied",
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("does not reserve when a budget policy requires approval", async () => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			const allow = deps.authorize;
+			deps.authorize = async (input) => {
+				const result = await allow(input);
+				return {
+					...result,
+					gate: { ...result.gate, effect: "require-approval" },
+				};
+			};
+			expect(
+				await admitIacTarget({ requestId: "approval", ...fixture() }, deps),
+			).toMatchObject({ status: "denied", code: "POLICY_NOT_ALLOWED" });
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("returns a definitive budget refusal before making a hold", async () => {
+		const ledger = authority(1_000_000);
+		try {
+			const decision = await admitIacTarget(
+				{ requestId: "exhausted", ...fixture() },
+				dependencies(ledger),
+			);
+			expect(decision).toMatchObject({
+				status: "denied",
+				code: "provider.exhausted",
+				budget: { evaluation: "denied", reservation: "not-created" },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("fails closed when evidence verification is unavailable", async () => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			deps.verifyLiability = async () => {
+				throw new Error("offline");
+			};
+			expect(
+				await admitIacTarget({ requestId: "offline", ...fixture() }, deps),
+			).toMatchObject({
+				status: "denied",
+				code: "LIABILITY_VERIFIER_UNAVAILABLE",
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
+		"reserve",
+		"claimExecution",
+	] as const)("reports an uncertain outcome when %s commits but loses its acknowledgement", async (operation) => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			const wrapped = { ...ledger };
+			if (operation === "reserve")
+				wrapped.reserve = (input) => {
+					ledger.reserve(input);
+					throw new Error("lost response");
+				};
+			else
+				wrapped.claimExecution = (input) => {
+					ledger.claimExecution(input);
+					throw new Error("lost response");
+				};
+			deps.authority = wrapped;
+			const decision = await admitIacTarget(
+				{ requestId: `lost-${operation}`, ...fixture() },
+				deps,
+			);
+			expect(decision).toMatchObject({
+				status: "uncertain",
+				budget: { evaluation: "unavailable" },
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("claims at most one execution for concurrent identical requests", async () => {
+		const ledger = authority();
+		try {
+			const request = { requestId: "concurrent", ...fixture() };
+			const decisions = await Promise.all([
+				admitIacTarget(request, dependencies(ledger)),
+				admitIacTarget(request, dependencies(ledger)),
+			]);
+			expect(
+				decisions.filter((decision) => decision.status === "admitted"),
+			).toHaveLength(1);
+			expect(
+				decisions.filter((decision) => decision.status !== "admitted")[0]
+					?.status,
+			).toMatch(/^(replay|uncertain)$/u);
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("uses an asynchronous durable authority without authorizing a replay", async () => {
+		const ledger = authority();
+		try {
+			const asyncAuthority = {
+				persistence: "durable-cas" as const,
+				read: async (at: string) => ledger.read(at),
+				lookup: async (id: string) => ledger.lookup(id),
+				reserve: async (input: Parameters<typeof ledger.reserve>[0]) =>
+					ledger.reserve(input),
+				claimExecution: async (
+					input: Parameters<typeof ledger.claimExecution>[0],
+				) => ledger.claimExecution(input),
+				settle: async (...args: Parameters<typeof ledger.settle>) =>
+					ledger.settle(...args),
+				uncertain: async (id: string) => ledger.uncertain(id),
+				release: async (...args: Parameters<typeof ledger.release>) =>
+					ledger.release(...args),
+			};
+			const deps = { ...dependencies(ledger), authority: asyncAuthority };
+			const request = { requestId: "async-authority", ...fixture() };
+			expect(await admitIacTarget(request, deps)).toMatchObject({
+				status: "admitted",
+				budget: { evaluation: "allowed", reservation: "held" },
+			});
+			expect(await admitIacTarget(request, deps)).toMatchObject({
+				status: "replay",
+				code: "EXECUTION_ALREADY_CLAIMED",
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("does not admit when another worker claims between the ledger read and claim", async () => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			const wrapped = { ...ledger };
+			wrapped.claimExecution = (input) => {
+				ledger.claimExecution(input); // A competing worker commits using the same prior sequence.
+				return ledger.claimExecution(input);
+			};
+			deps.authority = wrapped;
+			const decision = await admitIacTarget(
+				{ requestId: "claim-race", ...fixture() },
+				deps,
+			);
+			expect(decision).toMatchObject({
+				status: "uncertain",
+				code: "EXECUTION_CLAIM_UNCERTAIN",
+				budget: { reservation: "held" },
+			});
+			expect(ledger.lookup("iac:claim-race")?.executionDigest).toMatch(
+				/^sha256:/u,
+			);
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("uses one durable request across target fallback and refuses a later duplicate", async () => {
+		const ledger = authority(1_200_000);
+		try {
+			const first = fixture();
+			const second = fixture();
+			second.inventory.targetId = "yard-b";
+			const repriced = quoteTargetPricing(second.inventory, second.pricing);
+			if (!repriced.ok) throw new Error(repriced.reason);
+			second.evidence.targetId = "yard-b";
+			second.evidence.inventoryHash = repriced.inventoryHash;
+			second.evidence.maximumMicros = 1_000_000;
+			const account = second.evidence.providerAccounts[0];
+			if (account === undefined) throw new Error("fixture account missing");
+			account.liabilityMicros = 1_000_000;
+			const deps = dependencies(ledger);
+			expect(
+				await admitIacTarget({ requestId: "shared-route", ...first }, deps),
+			).toMatchObject({ status: "denied", code: "provider.exhausted" });
+			expect(
+				await admitIacTarget({ requestId: "shared-route", ...second }, deps),
+			).toMatchObject({ status: "admitted" });
+			expect(
+				await admitIacTarget({ requestId: "shared-route", ...first }, deps),
+			).toMatchObject({
+				status: "uncertain",
+				code: "RESERVATION_OUTCOME_UNKNOWN",
+			});
+			expect(
+				await admitIacTarget({ requestId: "shared-route", ...second }, deps),
+			).toMatchObject({ status: "replay", code: "EXECUTION_ALREADY_CLAIMED" });
+			expect(ledger.read(NOW).reservedMicros).toBe(1_000_000);
+		} finally {
+			ledger.close();
+		}
+	});
+});

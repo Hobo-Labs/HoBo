@@ -2,6 +2,26 @@
 
 ## Hosting budget admission
 
+`admitIacTarget` applies the same durable authority to a provider-neutral IaC
+inventory and whole-target pricing model. It refuses unknown pricing and
+requires a trusted host to authenticate liability evidence covering the exact
+plan, inventory, model, quote and provider accounts. It reserves the verified
+upper bound and incremental entitlement consumption, checks policy, and claims
+execution once. Each decision discloses budget evaluation and reservation
+state. An uncertain write or execution claim must be reconciled; it is never
+permission to retry the provider call. The host remains responsible for
+verifying inventory completeness and eventual usage and source-stop evidence.
+Price ranking alone does not create a reservation; admission is the budget gate.
+`createIacFinancialServices` combines these checks into an injectable port for
+IaC adapters. Its optional `pricing` model is developer supplied; the trusted
+host still provides liability issuance and verification, policy and authority.
+When no model is available, omit `pricing`. Supplied model data is checked
+before normalization; malformed or unsupported input raises an error instead of
+becoming an unavailable model or a lower quote. Incomplete bindings cannot
+produce a quote.
+It accepts both the synchronous local authority and the asynchronous shared
+authority, including the PostgreSQL implementation.
+
 `resolveBindleDeployment` ranks compatible Yards using trusted, normalized,
 whole-request hosting quotes. Capacity is never a substitute for price. A quote
 contains itemized expected cost and a separate conservative liability bound in
