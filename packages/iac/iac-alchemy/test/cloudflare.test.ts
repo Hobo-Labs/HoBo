@@ -33,7 +33,11 @@ import {
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import { application } from "./fixtures/cloudflare-app.js";
 import worker from "./fixtures/cloudflare-worker.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 const main = join(
 	dirname(fileURLToPath(import.meta.url)),
@@ -422,6 +426,7 @@ describe("real Alchemy Cloudflare mappings", () => {
 				mapped.pipe(Effect.map(() => ({}))),
 			);
 			const provider = createAlchemyIacProvider({
+				stateOwnership: testStateOwnership,
 				route: routeFixture({ inventoryHash: `sha256:${"d".repeat(64)}` }).port,
 				resolveRoute: async ({ requestId }) => ({
 					requestId: requestId ?? "request",
@@ -685,6 +690,7 @@ describe("real Alchemy Cloudflare mappings", () => {
 				],
 			});
 			const provider = createAlchemyIacProvider({
+				stateOwnership: testStateOwnership,
 				route: routeFixture({ inventoryHash: `sha256:${"d".repeat(64)}` }).port,
 				resolveRoute: async ({ requestId }) => ({
 					requestId: requestId ?? "request",
