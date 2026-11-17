@@ -41,6 +41,8 @@ After every restore, mint a new controller incarnation, invalidate previous work
 
 Before admitting work after an upgrade to the uncertain-slot capacity fix, quarantine and reconcile slots already marked `uncertain`. Older versions may have released their capacity reservations even when the runner still existed; the new store cannot reconstruct that missing accounting automatically. Resolve uncertainty only after a trusted controller has confirmed teardown. The store records a capacity-release event but does not itself authenticate or retain the provider evidence.
 
+Older SQLite stores may also contain a capacity revision or delivery fence above the uint32 wire limit if it was exhausted before the guard was installed. Quarantine and reconcile affected fleet state; do not reset a counter, because an old reservation or worker token could become valid again. Continued operation at the limit needs a revision-format migration. PostgreSQL startup widens legacy signed fleet columns under a schema lock and requires permission to alter those tables.
+
 A manual GitHub rerun is a new run attempt and may receive a new claim. User-authored retries, reusable workflows, and runners outside HoBo's runner group are not made idempotent by this design. Do not retry ambiguous provisioning, registration, start, cancellation, completion, or cleanup on another worker or engine.
 
 If assignment verification, the transactional store, or the start-fence endpoint is unavailable, the pre-job hook fails closed. A job can therefore fail without running any workflow steps; this is intentional duplicate-start prevention, not proof that the job already ran.

@@ -9,7 +9,7 @@ description: Verify that uncertain CI runner slots retain capacity until confirm
 
 **Why:** Reusing capacity while a runner may still exist can overcommit the worker or start duplicate external work.
 
-**Result at sync commit `0dd7b7d93c5f3c700fb4bf44d1b01dd07c7ef02c`:** PASS for the stated SQLite and PostgreSQL scenarios, bounded model, and abstract accounting obligations.
+**Result at sync commit `1fcfc3bdcc0701b69c5f22a91db0053b4f9fbded`:** PASS for the stated SQLite and PostgreSQL scenarios, bounded model, and abstract accounting obligations.
 
 ## Covered code
 
