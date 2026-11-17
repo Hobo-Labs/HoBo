@@ -18,13 +18,18 @@ relay keeps none; there the reports still read GitHub on demand.
 - A run webhook sets the attempt's own fields and keeps its jobs. A job webhook
   replaces only that job.
 - A finished run or job is never replaced by an older, unfinished view of it,
-  so a webhook that arrives late or twice changes nothing.
+  and a job a runner has taken is never replaced by a queued view of it, so a
+  webhook that arrives late or twice changes nothing.
 - A job counts as started only when a runner name is on it, because GitHub
   stamps a start time on jobs no runner has taken.
-- A job is billed when the repository is private and every label is one of
-  GitHub's own runners. A job named `relay` or `route`, or one that asks for
+- A job is billed when the repository is private and it ran on GitHub's own
+  runners: every label is a GitHub-hosted label, or its runner group is
+  `GitHub Actions` (larger runners on custom labels). A job named `relay` or `route`, or one that asks for
   the `hobo-relay` label, is a relay job and is left out of waits.
 - Each folded attempt is checked as a `RunFact` before it is stored.
+- The stored run has no place for the repository's visibility. Each parsed
+  fact carries it as `repositoryPrivate`, so a consumer can keep the public
+  repositories the usage report needs.
 
 Webhooks for one attempt are applied one at a time, in the order they were
 delivered. One relay partition owns the store.

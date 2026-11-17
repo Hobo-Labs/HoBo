@@ -13,7 +13,14 @@
  * - A run webhook sets the attempt's own fields and keeps its jobs. A job
  *   webhook replaces that job and touches nothing else.
  * - A finished run or job is never replaced by an older, unfinished view of
- *   it, so a webhook GitHub delivers late or twice changes nothing.
+ *   it, and a started job never by a queued view of it, so a webhook GitHub
+ *   delivers late or twice changes nothing.
+ * - A job ran on GitHub's own runners when every label is a hosted label or
+ *   its runner group is `GitHub Actions` (larger runners on custom labels).
+ *   It is billed when, in addition, the repository is private.
+ * - The stored run has no place for the repository's visibility, so each
+ *   parsed fact carries it as `repositoryPrivate` for a consumer that keeps
+ *   the public repositories a usage report needs.
  *
  * Every folded attempt is checked as a `RunFact` before it is stored, and
  * comes back frozen. `InsightIngest` applies the webhooks for one attempt
@@ -33,6 +40,7 @@ import type {
 	InsightRun,
 	InsightStep,
 } from "@hobo/ci/insights";
+import { GITHUB_HOSTED_RUNNER_GROUP } from "@hobo/ci/insights/usage";
 import { z } from "zod";
 
 // public-contract: the event a run started from a job webhook has until its run webhook arrives.
@@ -114,6 +122,8 @@ const WorkflowRunPayload = z.looseObject({
 export type JobWebhookFact = Readonly<{
 	kind: "job";
 	repository: string;
+	/** GitHub bills this repository's hosted minutes (it is private). */
+	repositoryPrivate: boolean;
 	runId: number;
 	attempt: number;
 	/** The attempt as far as the job shows it, without jobs; used only when nothing is stored yet. */
@@ -122,7 +132,12 @@ export type JobWebhookFact = Readonly<{
 }>;
 
 /** A `workflow_run` webhook: one run attempt's own fields, without jobs. */
-export type RunWebhookFact = Readonly<{ kind: "run"; run: InsightRun }>;
+export type RunWebhookFact = Readonly<{
+	kind: "run";
+	/** GitHub bills this repository's hosted minutes (it is private). */
+	repositoryPrivate: boolean;
+	run: InsightRun;
+}>;
 
 export type InsightWebhookFact = JobWebhookFact | RunWebhookFact;
 
@@ -191,8 +206,9 @@ function jobFact(payload: z.infer<typeof WorkflowJobPayload>): JobWebhookFact {
 		steps: (job.steps ?? []).map(insightStep),
 		billed:
 			payload.repository.private &&
-			labels.length > 0 &&
-			labels.every((label) => isGithubHostedLabel(label)),
+			(job.runner_group_name === GITHUB_HOSTED_RUNNER_GROUP ||
+				(labels.length > 0 &&
+					labels.every((label) => isGithubHostedLabel(label)))),
 		...(relay ? { relay: true } : undefined),
 	};
 	const repository = payload.repository.full_name;
@@ -201,6 +217,7 @@ function jobFact(payload: z.infer<typeof WorkflowJobPayload>): JobWebhookFact {
 	return {
 		kind: "job",
 		repository,
+		repositoryPrivate: payload.repository.private,
 		runId: job.run_id,
 		attempt,
 		seed: {
@@ -228,6 +245,7 @@ function runFact(payload: z.infer<typeof WorkflowRunPayload>): RunWebhookFact {
 	const completedAtMs = finished ? at(run.updated_at) : undefined;
 	return {
 		kind: "run",
+		repositoryPrivate: payload.repository.private,
 		run: {
 			id: run.id,
 			attempt: run.run_attempt ?? 1,
@@ -268,12 +286,16 @@ export function parseInsightWebhook(
 const finished = (entry: Readonly<{ completedAtMs?: number }>): boolean =>
 	entry.completedAtMs !== undefined;
 
+/** How far a job has got: queued, then taken by a runner, then finished. */
+const jobStage = (job: InsightJob): number =>
+	finished(job) ? 2 : job.startedAtMs !== undefined ? 1 : 0;
+
 function foldJob(
 	jobs: readonly InsightJob[],
 	incoming: InsightJob,
 ): readonly InsightJob[] {
 	const kept = jobs.find((job) => job.id === incoming.id);
-	if (kept !== undefined && finished(kept) && !finished(incoming)) return jobs;
+	if (kept !== undefined && jobStage(kept) > jobStage(incoming)) return jobs;
 	return [...jobs.filter((job) => job.id !== incoming.id), incoming].sort(
 		(left, right) => left.queuedAtMs - right.queuedAtMs || left.id - right.id,
 	);

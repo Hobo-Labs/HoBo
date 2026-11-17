@@ -4,6 +4,7 @@ import { SqliteInsightStore } from "@hobo/ci/insights/history-sqlite";
 import { usageReport } from "@hobo/ci/insights/usage";
 import {
 	InMemoryInsightStore,
+	InMemoryMinutesReader,
 	insightStoreConformance,
 } from "@hobo/ci/runner-order/testing";
 import { describe, expect, it } from "vitest";
@@ -49,6 +50,7 @@ type JobOptions = Readonly<{
 	name?: string;
 	labels?: readonly string[];
 	runner?: string | null;
+	runnerGroup?: string;
 	conclusion?: string | null;
 	startMs?: number;
 	endMs?: number;
@@ -78,11 +80,13 @@ function jobBody(options: JobOptions): string {
 			labels: options.labels ?? ["ubuntu-latest"],
 			runner_name: options.runner ?? null,
 			// GitHub's own runners report the "GitHub Actions" group; self-hosted ones their own.
-			runner_group_name: options.runner
-				? (options.labels ?? []).includes("self-hosted")
-					? "Default"
-					: "GitHub Actions"
-				: null,
+			runner_group_name: options.runnerGroup
+				? options.runnerGroup
+				: options.runner
+					? (options.labels ?? []).includes("self-hosted")
+						? "Default"
+						: "GitHub Actions"
+					: null,
 			created_at: iso(0),
 			started_at: options.startMs === undefined ? iso(0) : iso(options.startMs),
 			completed_at: options.endMs === undefined ? null : iso(options.endMs),
@@ -233,6 +237,28 @@ describe("parseInsightWebhook", () => {
 		expect(
 			of({ action: "queued", name: "router-tests" }).relay,
 		).toBeUndefined();
+		// A larger runner asks for a custom label; its runner group shows it is GitHub's.
+		expect(
+			of({
+				action: "in_progress",
+				labels: ["ubuntu-24.04-16core"],
+				runner: "GitHub Actions 3",
+				runnerGroup: "GitHub Actions",
+			}).billed,
+		).toBe(true);
+	});
+
+	it("carries the repository's visibility, which the stored run has no place for", () => {
+		const job = parseInsightWebhook(
+			"workflow_job",
+			jobBody({ action: "queued", isPrivate: false }),
+		);
+		const run = parseInsightWebhook(
+			"workflow_run",
+			runBody({ action: "requested" }),
+		);
+		expect(job?.repositoryPrivate).toBe(false);
+		expect(run?.repositoryPrivate).toBe(true);
 	});
 
 	it("reads a startup failure as a failure and an unknown conclusion as unknown", () => {
@@ -298,6 +324,17 @@ describe("foldInsightWebhook", () => {
 		expect(late.jobs).toEqual(done.jobs);
 	});
 
+	it("keeps a started job when its queued webhook arrives late", () => {
+		const taken = foldInsightWebhook(
+			undefined,
+			job({ action: "in_progress", runner: "r1", startMs: 1_000 }),
+		);
+		const late = foldInsightWebhook(taken, job({ action: "queued" }));
+		expect(late.jobs).toEqual(taken.jobs);
+		expect(late.jobs[0]?.runnerName).toBe("r1");
+		expect(late.jobs[0]?.startedAtMs).toBe(T0 + 1_000);
+	});
+
 	it("keeps a finished run when its requested webhook arrives late", () => {
 		const done = foldInsightWebhook(
 			undefined,
@@ -322,7 +359,11 @@ describe("foldInsightWebhook", () => {
 	});
 });
 
-/** Webhooks of two runs on one day: a failed run with a time-out, then a re-run superseded and cancelled. */
+/**
+ * Webhooks of two runs on one branch and day: run 9001 fails with a time-out,
+ * its re-run is cancelled because run 9002 on the same branch superseded it,
+ * and run 9002 succeeds.
+ */
 async function deliverHistory(ingest: InsightIngest): Promise<void> {
 	const deliveries: ReadonlyArray<readonly [string, string]> = [
 		["workflow_run", runBody({ action: "requested" })],
@@ -370,6 +411,10 @@ async function deliverHistory(ingest: InsightIngest): Promise<void> {
 			runBody({ action: "requested", attempt: 2, createdMs: 400_000 }),
 		],
 		[
+			"workflow_run",
+			runBody({ action: "requested", id: 9002, createdMs: 420_000 }),
+		],
+		[
 			"workflow_job",
 			jobBody({
 				action: "completed",
@@ -392,6 +437,29 @@ async function deliverHistory(ingest: InsightIngest): Promise<void> {
 				conclusion: "cancelled",
 				createdMs: 400_000,
 				endMs: 432_000,
+			}),
+		],
+		[
+			"workflow_job",
+			jobBody({
+				action: "completed",
+				id: 4,
+				runId: 9002,
+				name: "test",
+				runner: "GitHub Actions 2",
+				conclusion: "success",
+				startMs: 425_000,
+				endMs: 515_000,
+			}),
+		],
+		[
+			"workflow_run",
+			runBody({
+				action: "completed",
+				id: 9002,
+				conclusion: "success",
+				createdMs: 420_000,
+				endMs: 516_000,
 			}),
 		],
 		["push", "{}"],
@@ -423,11 +491,21 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 			sinceMs: 0,
 			limit: 10,
 		});
-		expect(runs.map((run) => [run.attempt, run.conclusion])).toEqual([
-			[2, "cancelled"],
-			[1, "failure"],
+		expect(
+			runs.map((run) => [run.id, run.attempt, run.branch, run.conclusion]),
+		).toEqual([
+			[9002, 1, "feature", "success"],
+			[9001, 2, "feature", "cancelled"],
+			[9001, 1, "feature", "failure"],
 		]);
-		const [rerun, first] = runs;
+		const [newer, rerun, first] = runs;
+		// The re-run was cancelled after the newer run on its branch had started.
+		expect(rerun?.completedAtMs).toBeGreaterThan(
+			newer?.createdAtMs ?? Infinity,
+		);
+		expect(newer?.jobs.map((job) => [job.id, job.conclusion])).toEqual([
+			[4, "success"],
+		]);
 		expect(first?.event).toBe("pull_request");
 		expect(first?.completedAtMs).toBe(T0 + 366_000);
 		expect(first?.jobs.map((job) => [job.name, job.conclusion])).toEqual([
@@ -448,11 +526,24 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 	it("I03: usage counts billed minutes per runner, short-job waste and minutes kept off GitHub", async () => {
 		const store = make();
 		await deliverHistory(new InsightIngest(store));
+		const minutes = new InMemoryMinutesReader(
+			new Map([
+				[
+					"octo",
+					{ usedMinutes: 1_900, includedMinutes: 2_000, burnPerHour: 2 },
+				],
+			]),
+		);
 		const report = usageReport(
 			await store.runs({ repository: "octo/app", sinceMs: 0, limit: 10 }),
-			{ githubRate: RATE, included: undefined, publicRepositories: new Set() },
+			{
+				githubRate: RATE,
+				included: await minutes.usage("octo"),
+				publicRepositories: new Set(),
+			},
 		);
-		expect(report.billedMinutes).toBe(1);
+		// 20 s of lint rounds up to 1; 90 s of the newer run's test to 2.
+		expect(report.billedMinutes).toBe(3);
 		expect(report.shortJobs).toBe(1);
 		expect(report.wasteMinutes).toBeCloseTo(40 / 60);
 		// 6 minutes timed out plus 30 seconds cancelled, each rounded up the way GitHub bills.
@@ -463,6 +554,13 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 			["ubuntu-latest", true],
 		]);
 		expect(report.days.map((day) => day.day)).toEqual(["2026-11-10"]);
+		expect(report.included).toEqual({
+			usedMinutes: 1_900,
+			includedMinutes: 2_000,
+			remainingMinutes: 100,
+			burnPerDay: 48,
+			daysLeft: 100 / 48,
+		});
 	});
 
 	it("I05: the nine signals break down by person, repository, workflow, branch and event, per day", async () => {
@@ -478,7 +576,7 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 		expect(breakdown.by.event.map((slice) => slice.key)).toEqual([
 			"pull_request",
 		]);
-		expect(breakdown.by.branch.map((slice) => slice.runs)).toEqual([2]);
+		expect(breakdown.by.branch.map((slice) => slice.runs)).toEqual([3]);
 		expect(breakdown.trend.map((day) => day.day)).toEqual(["2026-11-10"]);
 		for (const signal of breakdown.signals.signals) {
 			const sliced = breakdown.by.workflow
