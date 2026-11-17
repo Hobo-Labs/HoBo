@@ -133,7 +133,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 56 states and hides fourteen
+bounded TLA+ models, and abstract balance proofs. The credit model explores 64 states and hides sixteen
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -237,6 +237,22 @@ stateDiagram-v2
   s0 --> s1: select per workload
   s0 --> s2: select per workload
   s2 --> s3: rate each group
+```
+
+The tier coverage model checks 192 states for two abstract ranges and hides 72
+same-state transitions. It assumes an unbounded final tier; implementation
+tests also cover finite endpoints and inferred intermediate ends.
+
+```mermaid
+stateDiagram-v2
+  s0: Tier schedule received
+  s1: Invalid tiers rejected
+  s2: Contiguous tiers accepted
+  s3: Usage rated once
+  [*] --> s0
+  s0 --> s2: check tier boundaries
+  s0 --> s1: check tier boundaries
+  s2 --> s3: rate covered usage
 ```
 
 ## Architecture boundaries
