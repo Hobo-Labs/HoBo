@@ -7,7 +7,7 @@ description: Verify budget signal reconstruction, replay and conflicting journal
 
 **Properties:** A replay suppresses a reconstructed reset, threshold crossing or recovery only when the recorded signal has the same scope and payload. A conflicting signal or occupied idempotency key and an incomplete relevant financial fact refuse the fold. Distinct foreign signals do not suppress it. Without those checks, a threshold alert or recovery can disappear or be emitted using incomplete spend evidence.
 
-**Review baseline:** commit `6d19ec572f296d6e0375521a0f3ef59692fd0040`. PASS for the generated tests, bounded model and symbolic decision proof below.
+**Review baseline:** commit `235c92be61026383fbb19a2a35b8a7a7953f5502`. PASS for the generated tests, bounded model and symbolic decision proof below.
 
 ## Covered code
 
@@ -31,7 +31,7 @@ The runner checks the checksum-pinned TLC 1.7.4 jar; set `TLA2TOOLS` to that jar
 
 The Z3 obligations cover every combination of abstract evidence-completeness, reconstructed history, key, event-kind, scope, payload and metadata checks. Their premises have witnesses; removing each guard yields a counterexample. This proves the abstract decision, not the TypeScript implementation, key construction, financial arithmetic, source authenticity or concurrent appends. Generated real-code histories and scratch mutations test correspondence but do not prove refinement.
 
-Callers must replay the complete target stream and preserve metadata. A different event can occupy a key between reading and appending: inspect deduplicated append results and reconcile mismatches. The fold assumes its input stream and financial facts are truthful and complete; it cannot authenticate a perfectly forged matching record or detect an absent fact when no recorded signal exposes the omission. Older unscoped or incomplete records now require reconciliation. Legacy tenant/lifetime policy and versioned policy have different scope requirements. The fold still rounds thresholds and net spend to nine decimal places; this skill does not prove arithmetic accuracy or threshold decisions at smaller scales.
+Callers must replay the complete target stream and preserve metadata. A different event can occupy a key between reading and appending: inspect deduplicated append results and reconcile mismatches. The fold assumes its input stream and financial facts are truthful and complete; it cannot authenticate a perfectly forged matching record or detect an absent fact when no recorded signal exposes the omission. Older unscoped or incomplete records now require reconciliation. Legacy tenant/lifetime policy and versioned policy have different scope requirements. Arithmetic accuracy is outside this skill; see `verify-budget-signal-arithmetic` for the separately maintained threshold and wire checks.
 
 For a scratch mutation, copy `packages/broker` to a temporary package directory, link its `node_modules`, set `BUDGET_SIGNAL_VERIFY_PACKAGE_ROOT` to that copy and restore the earlier `budget-signals.ts`. The real-code checks must fail. Restore the code and rerun the skill.
 

@@ -196,6 +196,25 @@ stateDiagram-v2
   s7 --> s8: append signal
 ```
 
+The [budget signal arithmetic skill](../../.agents/skills/verify-budget-signal-arithmetic/SKILL.md)
+checks 75 threshold states and 12 wire-projection states. The threshold chart
+hides 155 transitions between states with the same label.
+
+```mermaid
+stateDiagram-v2
+  s0: Spend remains below threshold
+  s1: Budget threshold crossed
+  s2: Spend remains above threshold
+  s3: Budget headroom restored
+  [*] --> s0
+  s0 --> s1: record usage
+  s1 --> s2: record usage or apply credit
+  s1 --> s3: apply credit
+  s2 --> s3: apply credit
+  s3 --> s1: record usage
+  s3 --> s0: apply credit or record usage
+```
+
 Zero USD budget or per-resolution cap means zero, never unlimited. Unlimited
 preflight behavior requires `budgetUnlimited` or `spendCapUnlimited` explicitly.
 The default billing plane retains successful estimates as in-memory holds, so
