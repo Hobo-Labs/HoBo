@@ -200,23 +200,32 @@ describe("yard event-store folds + provider resolvers", () => {
 		"claimed-retry",
 		"cancel-before-claim",
 		"expiry-after-claim",
+		"lookup-unavailable",
+		"lookup-after-generation",
+		"context-after-generation",
+		"uncertain-write-failed",
+		"context-before-claim",
+		"missing-residual",
+		"signals-unavailable",
 	])("funds Azure generation before provider effects: %s", async (mode) => {
 		const catalog = createLocalHostCatalog();
 		// Extend catalog with azure wildcard so residual placement can succeed after gen.
 		const azureCatalog = {
 			catalogHash: catalog.catalogHash,
-			definitions: () => [
-				...catalog.definitions(),
-				{
-					id: "azure:*",
-					providerId: "azure",
-					port: "*",
-					features: [],
-					regions: ["eastus2"],
-					cost: { sku: "azure", unit: "hour", marginalPrice: "0.01" },
-					satisfies: () => ({ kind: "full" as const }),
-				},
-			],
+			definitions: () => {
+				const definitions = [...catalog.definitions()];
+				if (mode !== "missing-residual")
+					definitions.push({
+						id: "azure:*",
+						providerId: "azure",
+						port: "*",
+						features: [],
+						regions: ["eastus2"],
+						cost: { sku: "azure", unit: "hour", marginalPrice: "0.01" },
+						satisfies: () => ({ kind: "full" as const }),
+					});
+				return definitions;
+			},
 		};
 
 		const runtimes = createYardRuntimeCatalog();
@@ -307,8 +316,15 @@ describe("yard event-store folds + provider resolvers", () => {
 		const reservationId = `hosting:broker:azure-gen:${request.requestId}`;
 		let provisionCalls = 0;
 		let inspectCalls = 0;
+		let generationFinished = false;
+		let changeContext: (() => void) | undefined;
 		const connector = {
 			...nativeConnector,
+			signalsFor(id: string) {
+				if (mode === "signals-unavailable")
+					throw new Error("signals unavailable");
+				return nativeConnector.signalsFor(id);
+			},
 			async provision(plan: Parameters<typeof nativeConnector.provision>[0]) {
 				provisionCalls++;
 				expect(authority.lookup(reservationId)?.executionDigest).toBe(
@@ -332,7 +348,14 @@ describe("yard event-store folds + provider resolvers", () => {
 						competitor.close();
 					}
 				}
-				return nativeConnector.provision(plan);
+				const result = await nativeConnector.provision(plan);
+				generationFinished = true;
+				if (
+					mode === "context-after-generation" ||
+					mode === "uncertain-write-failed"
+				)
+					changeContext?.();
+				return result;
 			},
 			async inspect(attemptId: string) {
 				inspectCalls++;
@@ -341,6 +364,21 @@ describe("yard event-store folds + provider resolvers", () => {
 		};
 		const financial = {
 			...authority,
+			uncertain(id: string) {
+				if (mode === "uncertain-write-failed")
+					throw new Error("storage unavailable");
+				return authority.uncertain(id);
+			},
+			lookup(id: string) {
+				if (
+					mode === "lookup-unavailable" ||
+					(mode === "lookup-after-generation" && generationFinished)
+				)
+					throw new Error("storage unavailable");
+				const reservation = authority.lookup(id);
+				if (mode === "context-before-claim" && reservation) changeContext?.();
+				return reservation;
+			},
 			claimExecution(input: Parameters<typeof authority.claimExecution>[0]) {
 				const claimed = authority.claimExecution(input);
 				if (mode === "expiry-after-claim") now = "2026-11-02T00:00:00Z";
@@ -381,7 +419,59 @@ describe("yard event-store folds + provider resolvers", () => {
 				connectors: new Map([[connector.id, connector]]),
 				seedLocalYard: false,
 			};
+			changeContext = () => Object.assign(deps, { hostingBudget: undefined });
 			const result = await resolveBindleDeployment(request, deps);
+			if (mode === "lookup-unavailable") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.read(now).reservedMicros).toBe(0);
+				return;
+			}
+			if (mode === "lookup-after-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (mode === "context-after-generation") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (mode === "uncertain-write-failed") {
+				expect(result.outcome).toBe("rejected");
+				expect(result.reasons?.[0]?.message).toMatch(
+					/uncertain status could not be recorded/u,
+				);
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (mode === "context-before-claim") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(0);
+				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (mode === "missing-residual") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
+			if (mode === "signals-unavailable") {
+				expect(result.outcome).toBe("rejected");
+				expect(provisionCalls).toBe(1);
+				expect(authority.lookup(reservationId)?.status).toBe("uncertain");
+				expect(authority.read(now).reservedMicros).toBe(20);
+				return;
+			}
 			if (mode === "cancel-before-claim") {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);

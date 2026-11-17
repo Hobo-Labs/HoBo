@@ -56,7 +56,16 @@ Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
 plus a generated `HostingPolicyProof` tied to request digest, quote, budget
 identity/revision and policy hash. Denials, pending approvals and unfulfilled
 obligations refuse admission. A successful receipt pins proof, quote and financial
-reservation. Without a budget authority, local placement also requires an
+reservation. The broker snapshots quote and budget context, checks for changes
+across policy and reservation callbacks, and rechecks quote freshness before
+receipt issuance or generation. If evidence changes after a reservation is
+created, admission is refused and the hold remains for reconciliation. After a
+generation effect, failures attempt to mark the original hold uncertain; if
+that write fails, the broker reports the failure and retains the hold. The
+current policy proof names the quote ID but does not itself bind the complete
+quote contents; the host policy authority must enforce that binding.
+
+Without a budget authority, local placement also requires an
 explicit `authorizeLocalHosting` callback. It approves the exact request,
 catalog, Yard and selected resource placements and returns a bound policy proof
 with fulfilled obligations and zero managed-hosting liability. The broker
