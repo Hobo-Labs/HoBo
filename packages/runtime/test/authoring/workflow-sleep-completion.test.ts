@@ -23,7 +23,7 @@ describe("workflow sleep completion facts", () => {
 		).toHaveLength(1);
 		expect(
 			journal.find((event) => event.type === "run.Started")?.data,
-		).toMatchObject({ commandTreeVersion: 2 });
+		).toMatchObject({ commandTreeVersion: 3 });
 		expect(
 			(
 				await replayRun(

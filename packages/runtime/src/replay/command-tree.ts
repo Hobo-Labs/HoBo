@@ -1,4 +1,5 @@
 import {
+	isJsonBoolean,
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
@@ -30,17 +31,31 @@ export interface ReplaySleepCommand {
 	completed: boolean;
 }
 
-export type ReplayCommand = ReplayStepCommand | ReplaySleepCommand;
+export interface ReplayEmitCommand {
+	kind: "emit";
+	index: number;
+	parent: ParentIndex;
+	type: string;
+	data: JsonValue;
+	seq: number | undefined;
+}
 
-/** Parse v1 command provenance before reusing a parent result. */
+export type ReplayCommand =
+	| ReplayStepCommand
+	| ReplaySleepCommand
+	| ReplayEmitCommand;
+
+/** Parse versioned command provenance before reusing recorded results. */
 export function readReplayCommandTree(
 	events: readonly EventEnvelope[],
 	requireSleepCompletion = false,
+	trackEmits = false,
 ): ReplayCommand[] {
 	const roots: ReplayCommand[] = [];
 	const steps = new Map<number, ReplayStepCommand>();
 	const sleeps = new Map<number, ReplaySleepCommand>();
 	let sleepCount = 0;
+	let emitCount = 0;
 	let afterTerminal = false;
 	let lastSeq = 0;
 
@@ -84,6 +99,40 @@ export function readReplayCommandTree(
 				}
 			}
 			afterTerminal = true;
+			continue;
+		}
+		if (trackEmits && !event.type.startsWith("run.")) {
+			const metadata = isJsonObject(event.meta)
+				? event.meta.workflowEmit
+				: undefined;
+			if (
+				!isJsonObject(metadata) ||
+				!isJsonNumber(metadata.index) ||
+				!Number.isSafeInteger(metadata.index) ||
+				metadata.index !== emitCount ||
+				!isJsonBoolean(metadata.nullPayload)
+			) {
+				throw new Error("invalid workflow event command metadata");
+			}
+			if (
+				metadata.nullPayload &&
+				event.data !== null &&
+				!(isJsonObject(event.data) && Object.keys(event.data).length === 0)
+			) {
+				throw new Error("invalid workflow event payload metadata");
+			}
+			if (!metadata.nullPayload && event.data === null)
+				throw new Error("invalid workflow event payload metadata");
+			const parent = parentFor(metadata.parentStepIndex);
+			append({
+				kind: "emit",
+				index: emitCount,
+				parent,
+				type: event.type,
+				data: metadata.nullPayload ? null : event.data,
+				seq: event.seq,
+			});
+			emitCount += 1;
 			continue;
 		}
 		if (
