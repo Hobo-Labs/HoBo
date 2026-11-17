@@ -51,8 +51,11 @@ with authentication on and telemetry off. It reads that instance's generated
 credentials and CA, signs the resolver's requests, and sends them over TLS to
 the emulator. It checks S3 bucket creation, versioning and public-access-block
 settings; DynamoDB table creation and eventual deletion; SNS topic convergence;
-SSM parameter updates; and the Secrets Manager recovery window and explicit
-restore. Repeated reconciles check adoption without a second create. The
+SSM parameter updates; the Secrets Manager recovery window and explicit
+restore; and Lambda image-function reconciliation. The Lambda fixture seeds a
+synthetic, non-runnable image through the emulator's ECR API; it exercises the
+control plane and does not execute the image. Repeated reconciles check adoption
+without a second create. The
 emulator's temporary credentials and certificate are written under
 `~/.aws/emulator/<port>` and removed by the emulator on clean shutdown. The
 normal unit lane skips this test;

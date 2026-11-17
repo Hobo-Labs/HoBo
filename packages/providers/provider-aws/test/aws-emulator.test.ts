@@ -15,12 +15,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
 	AWS_DYNAMODB_PRODUCT_ID,
+	AWS_LAMBDA_PRODUCT_ID,
 	AWS_S3_PRODUCT_ID,
 	AWS_SECRETS_MANAGER_PRODUCT_ID,
 	AWS_SNS_PRODUCT_ID,
 	AWS_SSM_PARAMETER_PRODUCT_ID,
 	awsResolverRegistry,
 } from "../src/index.js";
+import { seedEmulatorImage } from "./fixtures/emulator-ecr.js";
 
 interface Startup {
 	readonly endpoint_url: string;
@@ -390,6 +392,42 @@ emulatorSuite("AWS resolvers with AWS Emulator", () => {
 						new URLSearchParams(call.body).get("Action") === "CreateTopic",
 				),
 		).toHaveLength(1);
+		await resolver.delete(request, emulator.transport);
+		expect(await resolver.read?.(request, emulator.transport)).toBeUndefined();
+	}, 30_000);
+
+	it("creates and observes a scoped Lambda image function", async () => {
+		const resolver = resolverFor(AWS_LAMBDA_PRODUCT_ID);
+		const account = "000000000000";
+		const image = await seedEmulatorImage(
+			emulator.transport,
+			emulator.credentials,
+		);
+		const imageDigest = image.slice(image.indexOf("@") + 1);
+		const request: ResolveRequest = {
+			ref: {
+				slot: "service",
+				productId: AWS_LAMBDA_PRODUCT_ID,
+				logicalId: "hobo-emulator-worker",
+			},
+			desired: {
+				image,
+				executionRoleArn: `arn:aws:iam::${account}:role/hosting`,
+				memoryMb: 512,
+				timeoutSeconds: 30,
+				reservedConcurrency: 2,
+				architecture: "arm64",
+				ownershipRef: `sha256:${"b".repeat(64)}`,
+				artifactDigest: `sha256:${"c".repeat(64)}`,
+			},
+			credentialRef: "emulator://credentials",
+		};
+		const created = await resolver.reconcile(request, emulator.transport);
+		expect(created.action).toBe("create");
+		expect(created.outputs.artifactDigest).toBe(imageDigest);
+		expect(
+			(await resolver.reconcile(request, emulator.transport)).physicalId,
+		).toBe(created.physicalId);
 		await resolver.delete(request, emulator.transport);
 		expect(await resolver.read?.(request, emulator.transport)).toBeUndefined();
 	}, 30_000);
