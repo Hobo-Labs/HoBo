@@ -23,8 +23,8 @@ runner.test("the api answers", async () => {
 });
 ```
 
-Swapping to `node:test` is a two-line change: `import * as runnerModule from
-"node:test"` and `createNodeTestRunnerAdapter(runnerModule)`. Nothing else in
+Swapping to `node:test` is a two-line change: import its module as
+`runnerModule`, then pass it to `createNodeTestRunnerAdapter`. Nothing else in
 the suite moves.
 
 ## HONEST SCOPE
