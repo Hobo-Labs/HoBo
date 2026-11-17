@@ -34,23 +34,35 @@ describe("parseConnectivityConfig: totality", () => {
 		expect(config.naming.overlayTld).toBe("test");
 	});
 
-	test("a section of the wrong type falls back rather than throwing", () => {
+	test("non-overlay sections of the wrong type keep their defaults", () => {
 		expect(() =>
-			parseConnectivityConfig({ overlay: "tailscale", dns: 42, naming: null }),
+			parseConnectivityConfig({ dns: 42, naming: null }),
 		).not.toThrow();
 	});
 });
 
 describe("parseConnectivityConfig: overlay", () => {
-	test("netbird is recognised and anything else falls back to tailscale", () => {
-		expect(
-			parseConnectivityConfig({ overlay: { provider: "netbird" } }).overlay
-				.provider,
-		).toBe("netbird");
-		for (const provider of ["wireguard", "", 42, null, undefined]) {
+	test("uses the default for an omitted provider and accepts supported providers", () => {
+		expect(parseConnectivityConfig({ overlay: {} }).overlay.provider).toBe(
+			"tailscale",
+		);
+		for (const provider of ["tailscale", "netbird"]) {
 			expect(
 				parseConnectivityConfig({ overlay: { provider } }).overlay.provider,
-			).toBe("tailscale");
+			).toBe(provider);
+		}
+	});
+
+	test("rejects invalid providers and malformed overlay sections", () => {
+		for (const provider of ["wireguard", "", "unknown", 42, null]) {
+			expect(() => parseConnectivityConfig({ overlay: { provider } })).toThrow(
+				"overlay.provider must be tailscale or netbird",
+			);
+		}
+		for (const overlay of [null, "tailscale", 42, []]) {
+			expect(() => parseConnectivityConfig({ overlay })).toThrow(
+				"overlay must be an object",
+			);
 		}
 	});
 
