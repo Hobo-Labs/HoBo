@@ -20,12 +20,40 @@ deterministic-replay library that backs them.
   `deterministic-replay-engine` draft proof (frozen in
   `scripts/promotions.json`).
 
+## Actors and workflows
+
+`defineActor` and `activateActor` use an injected `ActorHost` for state,
+leases, and fencing. A stale or contended lease cannot append actor state.
+Actor commands invoke handlers that append events through the host; `state()`
+reads the host's materialized view. The host supplies the actor event store;
+the actor API does not manage snapshots or a separate read store.
+
+`createWorkflowEngine` journals completed steps and resumes a run with its
+original seed and input. New journals also bind the definition name; older
+journals did not record it. `start` generates a unique run ID; pass `{ runId }`
+when the caller needs to retain the ID after an interruption. For compatibility,
+`resume` also initializes an absent journal with the supplied ID. Only one worker
+should resume a run at a time.
+
+The default journal is in memory. Supply a durable `EventStoreWriter` to resume
+after a process restart. A crash after an external effect and before its step is
+recorded can cause that effect to run again, so external effects need their own
+idempotency.
+
+`agent` registers tool implementations as workflow steps. Actor, token, and
+tool operations require their corresponding capabilities; unavailable or
+undeclared capabilities raise `CapabilityDeniedError`.
+
 Generated trainable modules carry a `// @generated` marker. Existing projects
 should run `hobo codegen` before checking generated-file freshness after upgrading.
 
 A function with a `"use training"` directive can set its `trainingIntent`
 property before registration. An explicit `intent` passed to `training.infer`
 takes precedence over that property.
+
+`parseReplayReport` and `parseReplayDivergence` parse, don't validate: they
+reject malformed input and return parsed domain types with validated sequence
+vectors and digests.
 
 ## Naming: `runtime` vs `runtimes/`
 
