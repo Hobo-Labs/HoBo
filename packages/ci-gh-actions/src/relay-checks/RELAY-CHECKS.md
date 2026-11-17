@@ -57,7 +57,12 @@ one sentence per check.
 ## The title check
 
 It needs a `pull_request` or `pull_request_target` event, and reads the pull
-request named by the run's ref (`refs/pull/<n>/...`) or by the run. It checks
+request named by the run's ref (`refs/pull/<n>/...`). A `pull_request_target`
+run runs at the base branch, so its ref names none, and GitHub lists no pull
+request on a run whose head is in a fork. For that run the open pull request
+is found from the run's head, with
+`GET /repos/{repo}/pulls?state=open&head={owner}:{branch}`, keeping the one
+whose head is the run's commit. It checks
 the title with `checkPullRequestTitle` from `@hobo/ci`. The allowed types are
 the step's `types`, else `checks.prTitle.types` in `.hobo/ci.json`, else the
 Conventional Commits defaults. A title that breaks the rule fails the job with
@@ -89,7 +94,15 @@ killed and its container removed. The image must hold the five tools, `sh` and
 at the commit under test, so a branch cannot loosen its own checks; the run;
 the pull request; and, for the lint check only, the commit's archive. The relay
 job message carries no token of the job's own, so the archive is read with the
-App installation's `contents: read`. It reads no log and no secret. Each of
+App installation's `contents: read`. GitHub answers the archive request with a
+302 to `codeload.github.com`, which `GithubTransport.request` would refuse, so
+the archive is read through `RelayArchiveAccess` instead: the API is asked
+with redirects left to the caller, the `Location` must be https on
+codeload.github.com, and that URL (it carries its own short-lived token) is
+read without the installation token, for three minutes at most, counting bytes
+as they arrive and stopping past 200 MiB. A job runs each check once, and the
+job's annotations stay at 50 with a title step and a lint step together. It
+reads no log and no secret. Each of
 these reads is an interaction of the hand-authored pact
 [`contracts/relay-checks.pact.json`](../../contracts/relay-checks.pact.json),
 which `contracts/relay-checks.consumer.test.ts` runs `GithubRelayCheckSource`
@@ -109,7 +122,10 @@ The relay's host passes the handler as `checks` to `createRelayAnswerer`:
 
 ```ts
 const checks = createRelayChecks({
-	source: new GithubRelayCheckSource(github, installationFor),
+	// github = createGithubAppTransport(...): its installationToken reads the archive.
+	source: new GithubRelayCheckSource(github, installationFor, {
+		installationToken: (id) => github.installationToken(id),
+	}),
 	sandbox: lintImage ? createDockerLintSandbox({ image: lintImage }) : undefined,
 	completed: async (event) => events.emit(event),
 	node,

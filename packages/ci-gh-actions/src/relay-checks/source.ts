@@ -7,14 +7,38 @@
  * the App installation that serves the repository. The relay job message
  * carries no token of the job's own (`RelayJobMessage`, `relay_job.proto`),
  * so the archive is read with the installation's `contents: read`.
+ *
+ * GitHub answers an archive request with a 302 to `codeload.github.com`, and
+ * `GithubTransport.request` refuses redirects and gives up after 15 seconds.
+ * So the archive is read apart from it (`RelayArchiveAccess`): the API is
+ * asked with redirects left to the caller, the `Location` must be https on
+ * codeload.github.com, and that URL (which carries its own short-lived token)
+ * is read without the installation token, with a longer timeout, counting
+ * bytes as they arrive and stopping at `LINT_MAX_ARCHIVE_BYTES`.
  */
 import { type RelayJobMessage, workflowGitRef } from "@hobo/ci";
 import { z } from "zod";
-import type { GithubTransport } from "../github.js";
+import { type GithubTransport, githubApiUrl } from "../github.js";
 import { GithubCiFile, pullRequestOfRef } from "../relay-answer/ci-file.js";
 
 /** The largest commit archive a lint check reads: 200 MiB. */
 export const LINT_MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
+/** How long downloading one commit archive may take: three minutes. */
+export const LINT_ARCHIVE_TIMEOUT_MS = 3 * 60_000;
+// public-contract: the one host GitHub sends archive downloads to; a redirect elsewhere is refused.
+export const ARCHIVE_DOWNLOAD_HOST = "codeload.github.com";
+
+/**
+ * How the archive is read. `installationToken` is the App transport's own
+ * (`createGithubAppTransport(...).installationToken`).
+ */
+export type RelayArchiveAccess = Readonly<{
+	installationToken: (installationId: number) => Promise<string>;
+	/** `fetch` when absent. */
+	fetch?: typeof fetch | undefined;
+	/** `LINT_ARCHIVE_TIMEOUT_MS` when absent. */
+	timeoutMs?: number | undefined;
+}>;
 
 export type RelayCheckPullRequest = Readonly<{ number: number; title: string }>;
 
@@ -33,6 +57,10 @@ export interface RelayCheckSource {
 
 const Run = z.object({
 	head_sha: z.string().regex(/^[0-9a-f]{40}$/u),
+	head_branch: z.string().nullish(),
+	head_repository: z
+		.object({ owner: z.object({ login: z.string().min(1) }) })
+		.nullish(),
 	pull_requests: z
 		.array(z.object({ number: z.number().int().positive() }))
 		.default([]),
@@ -41,6 +69,13 @@ const PullRequest = z.object({
 	number: z.number().int().positive(),
 	title: z.string(),
 });
+const OpenPulls = z.array(
+	z.object({
+		number: z.number().int().positive(),
+		title: z.string(),
+		head: z.object({ sha: z.string() }),
+	}),
+);
 
 /** Reads what a check needs through the installation that serves the repository. */
 export class GithubRelayCheckSource implements RelayCheckSource {
@@ -50,6 +85,7 @@ export class GithubRelayCheckSource implements RelayCheckSource {
 		private readonly installationFor: (
 			repository: string,
 		) => Promise<number | undefined>,
+		private readonly archives: RelayArchiveAccess,
 	) {}
 
 	private async installation(repository: string): Promise<number> {
@@ -105,17 +141,39 @@ export class GithubRelayCheckSource implements RelayCheckSource {
 	async pullRequest(
 		message: RelayJobMessage,
 	): Promise<RelayCheckPullRequest | undefined> {
-		const number =
-			pullRequestOfRef(workflowGitRef(message.workflowRef)) ??
-			(await this.run(message)).pull_requests[0]?.number;
-		if (number === undefined) return undefined;
-		const pull = await this.json(
-			message.repository,
-			`/repos/${message.repository}/pulls/${number}`,
-			PullRequest,
-			`pull request ${number}`,
-		);
-		return { number: pull.number, title: pull.title };
+		const number = pullRequestOfRef(workflowGitRef(message.workflowRef));
+		if (number !== undefined) {
+			const pull = await this.json(
+				message.repository,
+				`/repos/${message.repository}/pulls/${number}`,
+				PullRequest,
+				`pull request ${number}`,
+			);
+			return { number: pull.number, title: pull.title };
+		}
+		// A pull_request_target run runs at the base branch, so its ref names no
+		// pull request, and GitHub leaves the run's `pull_requests` empty when the
+		// head is in a fork; for a branch of the repository it can list another
+		// pull request sharing the commit. So the open pull request is found from
+		// the run's head: its branch, in its owner's repository, at the run's commit.
+		const run = await this.run(message);
+		const owner = run.head_repository?.owner.login;
+		if (!run.head_branch || !owner) return undefined;
+		const head = encodeURIComponent(`${owner}:${run.head_branch}`);
+		const pulls = (
+			await this.json(
+				message.repository,
+				`/repos/${message.repository}/pulls?state=open&head=${head}&per_page=100`,
+				OpenPulls,
+				`the open pull requests from ${owner}:${run.head_branch}`,
+			)
+		).filter((pull) => pull.head.sha === run.head_sha);
+		const named = new Set(run.pull_requests.map((pull) => pull.number));
+		const pull =
+			pulls.find((candidate) => named.has(candidate.number)) ?? pulls[0];
+		return pull === undefined
+			? undefined
+			: { number: pull.number, title: pull.title };
 	}
 
 	async commit(message: RelayJobMessage): Promise<string> {
@@ -123,28 +181,94 @@ export class GithubRelayCheckSource implements RelayCheckSource {
 	}
 
 	async archive(message: RelayJobMessage, commit: string): Promise<Uint8Array> {
-		const response = await this.github.request(
+		const where = `the archive of ${message.repository} at ${commit}`;
+		const send = this.archives.fetch ?? fetch;
+		const token = await this.archives.installationToken(
 			await this.installation(message.repository),
-			`/repos/${message.repository}/tarball/${commit}`,
 		);
-		if (!response.ok) {
-			await response.body?.cancel();
+		const api = await send(
+			githubApiUrl(`/repos/${message.repository}/tarball/${commit}`),
+			{
+				headers: {
+					Accept: "application/vnd.github+json",
+					Authorization: `Bearer ${token}`,
+				},
+				redirect: "manual",
+				signal: AbortSignal.timeout(15_000),
+			},
+		);
+		await api.body?.cancel();
+		if (api.status < 300 || api.status > 399)
+			throw new Error(`GitHub refused ${where} (${api.status})`);
+		const location = archiveLocation(api.headers.get("location"));
+		if (location === undefined)
 			throw new Error(
-				`GitHub refused the archive of ${message.repository} at ${commit} (${response.status})`,
+				`GitHub sent ${where} somewhere other than https://${ARCHIVE_DOWNLOAD_HOST}`,
 			);
+		// The download URL carries its own short-lived token: no Authorization.
+		const download = await send(location, {
+			redirect: "error",
+			signal: AbortSignal.timeout(
+				this.archives.timeoutMs ?? LINT_ARCHIVE_TIMEOUT_MS,
+			),
+		});
+		if (!download.ok) {
+			await download.body?.cancel();
+			throw new Error(`${where} could not be downloaded (${download.status})`);
 		}
-		const declared = Number(response.headers.get("content-length") ?? "0");
-		if (declared > LINT_MAX_ARCHIVE_BYTES) {
-			await response.body?.cancel();
-			throw new Error(
-				`the archive of ${message.repository} at ${commit} is larger than ${LINT_MAX_ARCHIVE_BYTES / 1024 / 1024} MiB`,
-			);
-		}
-		const bytes = new Uint8Array(await response.arrayBuffer());
-		if (bytes.byteLength > LINT_MAX_ARCHIVE_BYTES)
-			throw new Error(
-				`the archive of ${message.repository} at ${commit} is larger than ${LINT_MAX_ARCHIVE_BYTES / 1024 / 1024} MiB`,
-			);
-		return bytes;
+		return readCapped(download, LINT_MAX_ARCHIVE_BYTES, where);
 	}
+}
+
+/** The redirect target when it is https on the archive host, else undefined. */
+export function archiveLocation(location: string | null): string | undefined {
+	if (!location) return undefined;
+	let url: URL;
+	try {
+		url = new URL(location);
+	} catch {
+		return undefined;
+	}
+	return url.protocol === "https:" &&
+		url.hostname === ARCHIVE_DOWNLOAD_HOST &&
+		url.port === "" &&
+		!url.username &&
+		!url.password
+		? url.href
+		: undefined;
+}
+
+/** A response body read chunk by chunk, refused once it passes `max` bytes. */
+export async function readCapped(
+	response: Response,
+	max: number,
+	what: string,
+): Promise<Uint8Array> {
+	const tooLarge = () =>
+		new Error(`${what} is larger than ${max / 1024 / 1024} MiB`);
+	if (Number(response.headers.get("content-length") ?? "0") > max) {
+		await response.body?.cancel();
+		throw tooLarge();
+	}
+	if (!response.body) return new Uint8Array();
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > max) {
+			await reader.cancel();
+			throw tooLarge();
+		}
+		chunks.push(value);
+	}
+	const bytes = new Uint8Array(total);
+	let at = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, at);
+		at += chunk.byteLength;
+	}
+	return bytes;
 }

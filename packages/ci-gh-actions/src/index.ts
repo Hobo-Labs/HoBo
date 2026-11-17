@@ -664,6 +664,7 @@ export {
 	type LintTool,
 	parseRelayChecksConfig,
 	RELAY_CHECK_NAMES,
+	type RelayArchiveAccess,
 	type RelayCheckCompleted,
 	type RelayCheckName,
 	type RelayCheckSource,

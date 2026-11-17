@@ -38,8 +38,10 @@ import {
 	lintToolResult,
 	lintToolsOf,
 	parseRelayChecksConfig,
+	type RelayArchiveAccess,
 	type RelayCheckCompleted,
 	type RelayCheckSource,
+	readCapped,
 	relayCheckOf,
 	runHostCommand,
 	type SandboxCommand,
@@ -109,6 +111,50 @@ function fakeSource(
 	};
 }
 
+const CODELOAD =
+	"https://codeload.github.com/octo/app/legacy.tar.gz/sha?token=short";
+
+type ArchiveCall = Readonly<{
+	url: string;
+	redirect: RequestRedirect | undefined;
+	authorization: string | null;
+}>;
+
+/**
+ * GitHub as it answers an archive read: the API redirects to codeload with a
+ * 302, and codeload sends the bytes, with no content-length, in two chunks.
+ */
+function codeloadArchive(
+	bytes: Uint8Array,
+	calls: ArchiveCall[] = [],
+	location: string = CODELOAD,
+): RelayArchiveAccess {
+	return {
+		installationToken: async (id) => `installation-${id}`,
+		fetch: async (input, init) => {
+			const url = String(input);
+			calls.push({
+				url,
+				redirect: init?.redirect,
+				authorization: new Headers(init?.headers).get("authorization"),
+			});
+			if (url.startsWith("https://api.github.com/repos/"))
+				return new Response(null, { status: 302, headers: { location } });
+			if (url === location)
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						start(controller) {
+							controller.enqueue(bytes.slice(0, 1));
+							controller.enqueue(bytes.slice(1));
+							controller.close();
+						},
+					}),
+				);
+			return new Response(null, { status: 404 });
+		},
+	};
+}
+
 class FakeSandbox implements LintSandbox {
 	readonly runs: LintRun[] = [];
 	constructor(
@@ -143,6 +189,13 @@ describe("check steps", () => {
 		expect(read).toMatchObject({ ok: false });
 		expect(read?.ok === false && read.problem).toContain(
 			"Step 2 (a script) is not a HoBo check step",
+		);
+	});
+
+	it("refuses a job that repeats a check", () => {
+		const read = checkStepsOf([step(LINT_STEP), step(LINT_STEP)]);
+		expect(read?.ok === false && read.problem).toContain(
+			"Step 2 repeats the lint check",
 		);
 	});
 
@@ -416,6 +469,36 @@ describe("createRelayChecks", () => {
 		);
 	});
 
+	it("keeps a job with a title and a lint step to 50 annotations", async () => {
+		const output = Array.from(
+			{ length: 80 },
+			(_, index) => `a.ts:${index + 1}:1: no-unused-vars`,
+		).join("\n");
+		const sandbox = new FakeSandbox(
+			new Map([["oxlint", { exitCode: 1, output, timedOut: false }]]),
+		);
+		const answer = await handler(
+			fakeSource(JSON.stringify({ checks: { lint: true } })),
+			sandbox,
+		)(
+			message([
+				step(TITLE_STEP),
+				step(LINT_STEP, { tools: "actionlint, oxlint" }),
+			]),
+		);
+		expect(answer?.annotations).toHaveLength(LINT_MAX_ANNOTATIONS);
+		expect(answer?.annotations.slice(0, 3).map((note) => note.message)).toEqual(
+			[
+				"The title of pull request #7 follows the title rule.",
+				"actionlint: passed",
+				"oxlint: 80 findings",
+			],
+		);
+		expect(answer?.annotations.at(-1)?.message).toContain(
+			"34 more findings are not shown",
+		);
+	});
+
 	it("fails the lint check on a node with no sandbox", async () => {
 		const answer = await handler(
 			fakeSource(JSON.stringify({ checks: { lint: true } })),
@@ -434,6 +517,155 @@ describe("createRelayChecks", () => {
 			nowMs: () => 1,
 		})(message([step(TITLE_STEP)]));
 		expect(answer?.conclusion).toBe("succeeded");
+	});
+});
+
+describe("GithubRelayCheckSource", () => {
+	const SHA = "b".repeat(40);
+	const target = create(RelayJobMessageSchema, {
+		...message([step(TITLE_STEP)], "pull_request_target"),
+		workflowRef: `${REPO}/.github/workflows/checks.yml@refs/heads/main`,
+	});
+
+	/** GitHub's run, as much of it as the source reads. */
+	type RunBody = Readonly<{
+		head_sha: string;
+		head_branch?: string;
+		head_repository?: Readonly<{ owner: Readonly<{ login: string }> }>;
+		pull_requests?: readonly Readonly<{ number: number }>[];
+	}>;
+	/** One open pull request as GitHub lists it. */
+	type PullBody = Readonly<{
+		number: number;
+		title: string;
+		head: Readonly<{ sha: string }>;
+	}>;
+
+	/** A transport serving one run and the open pull requests listed from its head. */
+	function runTransport(
+		run: RunBody,
+		pulls: readonly PullBody[],
+		requests: string[],
+	): GithubTransport {
+		return {
+			request: async (_installationId, path) => {
+				requests.push(path);
+				if (path === `/repos/${REPO}/actions/runs/42`)
+					return Response.json(run);
+				if (path.startsWith(`/repos/${REPO}/pulls?`))
+					return Response.json(pulls);
+				return Response.json({ message: "Not Found" }, { status: 404 });
+			},
+		};
+	}
+
+	it("finds a fork's pull request for a pull_request_target run from the run's head", async () => {
+		const requests: string[] = [];
+		const source = new GithubRelayCheckSource(
+			runTransport(
+				{
+					head_sha: SHA,
+					head_branch: "patch-1",
+					head_repository: { owner: { login: "forker" } },
+					pull_requests: [],
+				},
+				[
+					{
+						number: 5,
+						title: "old: same branch",
+						head: { sha: "c".repeat(40) },
+					},
+					{ number: 9, title: "feat: from a fork", head: { sha: SHA } },
+				],
+				requests,
+			),
+			async () => 1,
+			codeloadArchive(new Uint8Array()),
+		);
+		expect(await source.pullRequest(target)).toEqual({
+			number: 9,
+			title: "feat: from a fork",
+		});
+		expect(requests).toEqual([
+			`/repos/${REPO}/actions/runs/42`,
+			`/repos/${REPO}/pulls?state=open&head=forker%3Apatch-1&per_page=100`,
+		]);
+	});
+
+	it("names no pull request when none open from the run's head is at its commit", async () => {
+		const source = new GithubRelayCheckSource(
+			runTransport(
+				{
+					head_sha: SHA,
+					head_branch: "patch-1",
+					head_repository: { owner: { login: "forker" } },
+					pull_requests: [{ number: 3 }],
+				},
+				[{ number: 3, title: "feat: x", head: { sha: "c".repeat(40) } }],
+				[],
+			),
+			async () => 1,
+			codeloadArchive(new Uint8Array()),
+		);
+		expect(await source.pullRequest(target)).toBeUndefined();
+	});
+
+	it("follows GitHub's archive redirect to codeload, without the installation token", async () => {
+		const calls: ArchiveCall[] = [];
+		const source = new GithubRelayCheckSource(
+			runTransport({ head_sha: SHA }, [], []),
+			async () => 1,
+			codeloadArchive(new Uint8Array([31, 139, 8]), calls),
+		);
+		expect(await source.archive(target, SHA)).toEqual(
+			new Uint8Array([31, 139, 8]),
+		);
+		expect(calls).toEqual([
+			{
+				url: `https://api.github.com/repos/${REPO}/tarball/${SHA}`,
+				redirect: "manual",
+				authorization: "Bearer installation-1",
+			},
+			{ url: CODELOAD, redirect: "error", authorization: null },
+		]);
+	});
+
+	it("refuses an archive redirect anywhere but https codeload", async () => {
+		for (const location of [
+			"http://codeload.github.com/octo/app/legacy.tar.gz/sha",
+			"https://evil.example/octo/app.tar.gz",
+			"https://codeload.github.com:8443/octo/app.tar.gz",
+		]) {
+			const calls: ArchiveCall[] = [];
+			const source = new GithubRelayCheckSource(
+				runTransport({ head_sha: SHA }, [], []),
+				async () => 1,
+				codeloadArchive(new Uint8Array([1]), calls, location),
+			);
+			await expect(source.archive(target, SHA)).rejects.toThrow(
+				"somewhere other than https://codeload.github.com",
+			);
+			expect(calls).toHaveLength(1);
+		}
+	});
+
+	it("stops reading an archive with no content-length once it passes the cap", async () => {
+		let cancelled = false;
+		const body = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				controller.enqueue(new Uint8Array(3));
+			},
+			cancel() {
+				cancelled = true;
+			},
+		});
+		await expect(
+			readCapped(new Response(body), 8, "the archive"),
+		).rejects.toThrow("the archive is larger than");
+		expect(cancelled).toBe(true);
+		expect(
+			await readCapped(new Response(new Uint8Array([1, 2])), 8, "the archive"),
+		).toEqual(new Uint8Array([1, 2]));
 	});
 });
 
@@ -513,10 +745,6 @@ function checksTransport(
 			requests.push(path);
 			if (path === `/repos/${REPO}/pulls/7`)
 				return Response.json({ number: 7, title });
-			if (path.startsWith(`/repos/${REPO}/tarball/`))
-				return new Response(new Uint8Array([31, 139]), {
-					headers: { "content-length": "2" },
-				});
 			return inner.request(installationId, path, method, body, ifNoneMatch);
 		},
 	};
@@ -549,7 +777,11 @@ function relayWithChecks(
 		journal,
 		node: "node-a",
 		checks: createRelayChecks({
-			source: new GithubRelayCheckSource(transport, async () => 1),
+			source: new GithubRelayCheckSource(
+				transport,
+				async () => 1,
+				codeloadArchive(new Uint8Array([31, 139])),
+			),
 			sandbox,
 			completed: async (event) => {
 				events.push(event);

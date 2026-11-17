@@ -5,8 +5,8 @@
  * `packages/ci-gh-actions/src/relay-checks/RELAY-CHECKS.md`).
  *
  * The simulator serves runs, jobs, runners and file contents. The two reads it
- * leaves out, a pull request and a commit's tarball, are served by the
- * transport below. The lint tools run in a fake sandbox that records each run,
+ * leaves out are served below: a pull request by the transport, and a
+ * commit's tarball by GitHub's 302 to codeload and codeload's bytes. The lint tools run in a fake sandbox that records each run,
  * so C02 shows the network a tool was given without starting a container.
  */
 import assert from "node:assert/strict";
@@ -28,6 +28,7 @@ import {
 	type LintRun,
 	type LintRunResult,
 	type LintSandbox,
+	type RelayArchiveAccess,
 	type RelayCheckCompleted,
 } from "../../../packages/ci-gh-actions/src/relay-checks/index.js";
 import { testJitConfig } from "../../../packages/ci-gh-actions/src/runner-protocol/port.js";
@@ -75,9 +76,29 @@ function transport(scene: Scene): GithubTransport {
 			scene.requests.push(path);
 			if (path === `/repos/${scene.repository}/pulls/${PULL_NUMBER}`)
 				return Response.json({ number: PULL_NUMBER, title: scene.title });
-			if (path.startsWith(`/repos/${scene.repository}/tarball/`))
-				return new Response(new Uint8Array([31, 139]));
 			return inner.request(installationId, path, method, body, ifNoneMatch);
+		},
+	};
+}
+
+/**
+ * The archive read as GitHub answers it: the API's 302 to codeload, then
+ * codeload's bytes, read without the installation token.
+ */
+function archives(scene: Scene): RelayArchiveAccess {
+	return {
+		installationToken: async (id) => `installation-${id}`,
+		fetch: async (input) => {
+			const url = String(input);
+			scene.requests.push(url);
+			if (url.startsWith("https://codeload.github.com/"))
+				return new Response(new Uint8Array([31, 139]));
+			return new Response(null, {
+				status: 302,
+				headers: {
+					location: `https://codeload.github.com/${scene.repository}/legacy.tar.gz/head?token=short`,
+				},
+			});
 		},
 	};
 }
@@ -106,7 +127,11 @@ function relay(scene: Scene): RelayParts {
 		journal,
 		node: "hosted",
 		checks: createRelayChecks({
-			source: new GithubRelayCheckSource(github, async () => 1),
+			source: new GithubRelayCheckSource(
+				github,
+				async () => 1,
+				archives(scene),
+			),
 			sandbox: scene.sandbox,
 			completed: async (event) => {
 				scene.events.push(event);

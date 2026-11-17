@@ -35,38 +35,63 @@ const pact = JSON.parse(
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
 it("reads what a runner-less check needs through every declared GitHub interaction", async () => {
-	expect(pact.interactions).toHaveLength(4);
+	expect(pact.interactions).toHaveLength(5);
 	const matched = new Set<string>();
 	const unmatched: string[] = [];
+	function serve(path: string, method: string): Response {
+		const url = new URL(path, "https://api.github.com");
+		const entry = pact.interactions.find(
+			(candidate) =>
+				candidate.request.path === url.pathname &&
+				candidate.request.method === method,
+		);
+		if (!entry) {
+			unmatched.push(path);
+			return Response.json({ message: "unmatched" }, { status: 500 });
+		}
+		const query: Record<string, string[]> = {};
+		for (const [name, value] of url.searchParams)
+			query[name] = [...(query[name] ?? []), value];
+		expect(query).toEqual(entry.request.query ?? {});
+		matched.add(entry.description);
+		const { body } = entry.response;
+		return body instanceof Object
+			? Response.json(body, { status: entry.response.status })
+			: new Response(body, {
+					status: entry.response.status,
+					headers: entry.response.headers,
+				});
+	}
 	const github: GithubTransport = {
 		request: async (installationId, path, method = "GET") => {
 			expect(installationId).toBe(11);
-			const url = new URL(path, "https://api.github.test");
-			const entry = pact.interactions.find(
-				(candidate) =>
-					candidate.request.path === url.pathname &&
-					candidate.request.method === method,
-			);
-			if (!entry) {
-				unmatched.push(path);
-				return Response.json({ message: "unmatched" }, { status: 500 });
-			}
-			const query: Record<string, string[]> = {};
-			for (const [name, value] of url.searchParams)
-				query[name] = [...(query[name] ?? []), value];
-			expect(query).toEqual(entry.request.query ?? {});
-			matched.add(entry.description);
-			const { body } = entry.response;
-			return body instanceof Object
-				? Response.json(body, { status: entry.response.status })
-				: new Response(body, {
-						status: entry.response.status,
-						headers: entry.response.headers,
-					});
+			return serve(path, method);
 		},
 	};
-	const source = new GithubRelayCheckSource(github, async (repository) =>
-		repository === "octo/app" ? 11 : undefined,
+	// The archive read leaves the transport: the API's 302 is read here, and
+	// codeload (not GitHub's REST API, so not in the pact) sends the bytes.
+	const downloads: string[] = [];
+	const source = new GithubRelayCheckSource(
+		github,
+		async (repository) => (repository === "octo/app" ? 11 : undefined),
+		{
+			installationToken: async (id) => `installation-${id}`,
+			fetch: async (input, init) => {
+				const url = new URL(String(input));
+				const authorization = new Headers(init?.headers).get("authorization");
+				if (url.hostname === "api.github.com") {
+					expect(init?.redirect).toBe("manual");
+					expect(authorization).toBe("Bearer installation-11");
+					return serve(`${url.pathname}${url.search}`, init?.method ?? "GET");
+				}
+				expect(url.hostname).toBe("codeload.github.com");
+				expect(authorization).toBeNull();
+				downloads.push(url.pathname);
+				return new Response("gzipped tarball", {
+					headers: { "content-type": "application/x-gzip" },
+				});
+			},
+		},
 	);
 	const pullRef = create(RelayJobMessageSchema, {
 		jobId: "j",
@@ -78,7 +103,8 @@ it("reads what a runner-less check needs through every declared GitHub interacti
 		event: "pull_request",
 		workflowRef: "octo/app/.github/workflows/checks.yml@refs/pull/7/merge",
 	});
-	// pull_request_target runs at the base branch: the run names the pull request.
+	// pull_request_target runs at the base branch, and a fork's run lists no pull
+	// request: it is found among the open pull requests from the run's head.
 	const baseRef = create(RelayJobMessageSchema, {
 		...pullRef,
 		event: "pull_request_target",
@@ -101,6 +127,7 @@ it("reads what a runner-less check needs through every declared GitHub interacti
 	expect(new TextDecoder().decode(await source.archive(pullRef, SHA))).toBe(
 		"gzipped tarball",
 	);
+	expect(downloads).toEqual([`/octo/app/legacy.tar.gz/${SHA}`]);
 
 	expect(unmatched).toEqual([]);
 	expect([...matched].sort()).toEqual(

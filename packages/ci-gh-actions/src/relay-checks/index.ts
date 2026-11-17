@@ -48,8 +48,13 @@ export {
 	lintToolsOf,
 } from "./lint.js";
 export {
+	ARCHIVE_DOWNLOAD_HOST,
+	archiveLocation,
 	GithubRelayCheckSource,
+	LINT_ARCHIVE_TIMEOUT_MS,
 	LINT_MAX_ARCHIVE_BYTES,
+	type RelayArchiveAccess,
 	type RelayCheckPullRequest,
 	type RelayCheckSource,
+	readCapped,
 } from "./source.js";

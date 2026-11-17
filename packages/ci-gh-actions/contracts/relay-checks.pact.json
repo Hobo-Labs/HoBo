@@ -2,7 +2,7 @@
   "consumer": { "name": "HoBoCiRelayChecks" },
   "provider": { "name": "GitHubRestApi" },
   "metadata": {
-    "note": "Hand-authored. What runner-less checks read of GitHub (ADR-0183): .hobo/ci.json at the pull request's base branch, the run, the pull request and, for the lint check only, the commit's tarball. Shapes from GitHub's REST documentation (pulls, actions/workflow-runs, repos/contents, repos/contents#download-a-repository-archive-tar), read 2026-11-17."
+    "note": "Hand-authored. What runner-less checks read of GitHub (ADR-0183): .hobo/ci.json at the pull request's base branch, the run, the pull request (by the run's ref, or for a pull_request_target run from a fork, among the open pull requests from the run's head) and, for the lint check only, the commit's tarball: GitHub's API answers with a 302 to codeload.github.com, which is read without the installation token. Shapes from GitHub's REST documentation (pulls, actions/workflow-runs, repos/contents, repos/contents#download-a-repository-archive-tar), read 2026-11-17."
   },
   "interactions": [
     {
@@ -29,8 +29,8 @@
       }
     },
     {
-      "description": "read a run's head commit and pull requests",
-      "providerState": "run 42 of octo/app tests pull request 7",
+      "description": "read a pull_request_target run from a fork: its head commit, branch and owner, and no pull requests",
+      "providerState": "run 42 of octo/app is a pull_request_target run for pull request 7 from forker/app's branch patch-1",
       "request": { "method": "GET", "path": "/repos/octo/app/actions/runs/42" },
       "response": {
         "status": 200,
@@ -38,18 +38,42 @@
           "id": 42,
           "event": "pull_request_target",
           "head_sha": "0123456789abcdef0123456789abcdef01234567",
-          "pull_requests": [{ "number": 7 }]
+          "head_branch": "patch-1",
+          "head_repository": { "full_name": "forker/app", "owner": { "login": "forker" } },
+          "pull_requests": []
         }
       }
     },
     {
-      "description": "read the commit's archive",
+      "description": "list the open pull requests from the run's head",
+      "providerState": "pull request 7 into octo/app is open from forker:patch-1",
+      "request": {
+        "method": "GET",
+        "path": "/repos/octo/app/pulls",
+        "query": { "state": ["open"], "head": ["forker:patch-1"], "per_page": ["100"] }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "number": 7,
+            "title": "feat: add retry",
+            "head": { "sha": "0123456789abcdef0123456789abcdef01234567", "ref": "patch-1" },
+            "base": { "ref": "main" }
+          }
+        ]
+      }
+    },
+    {
+      "description": "ask for the commit's archive and be redirected to codeload",
       "providerState": "octo/app has commit 0123456789abcdef0123456789abcdef01234567",
       "request": { "method": "GET", "path": "/repos/octo/app/tarball/0123456789abcdef0123456789abcdef01234567" },
       "response": {
-        "status": 200,
-        "headers": { "content-type": "application/x-gzip" },
-        "body": "gzipped tarball"
+        "status": 302,
+        "headers": {
+          "location": "https://codeload.github.com/octo/app/legacy.tar.gz/0123456789abcdef0123456789abcdef01234567?token=SHORTLIVED"
+        },
+        "body": ""
       }
     }
   ]
