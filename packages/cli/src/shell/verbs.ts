@@ -494,6 +494,9 @@ Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
                                 comma-separated); the old label is kept as a trailing comment
   --fleet-label <label>         The label to write (default: hobo)
   --include-secret-jobs         Also move jobs that use secrets, an environment or an OIDC token
+  --relay job|relay             Put jobs behind a relay-<job> job instead and write .github/workflows/hobo-relay.yml
+                                (job: answered on a GitHub-hosted runner by .hobo-ci/relay.mjs; relay: a HoBo relay
+                                answers it); runner-type flags (--machine, --depot, ...) become every relay's inputs
 
 Route options (hobo ci route; reads runnerOrder in .hobo/ci.json, contacts nothing):
   --fleet, --machine, --github <label>   The label the job would ask that runner type for

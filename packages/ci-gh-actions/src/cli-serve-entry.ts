@@ -52,3 +52,16 @@ export {
 	type WorkflowSkipReason,
 	type WorkflowWarning,
 } from "./workflow-init.js";
+export {
+	applyRelayPlan,
+	checkRelayFiles,
+	findWorkflowRelays,
+	RELAY_INIT_MODES,
+	RELAY_WORKFLOW_USES,
+	type RelayFileCheck,
+	type RelayInitMode,
+	type RelayInputValue,
+	relayFilesFor,
+	undoRelayPlan,
+	type WorkflowRelay,
+} from "./workflow-relay.js";
