@@ -1612,11 +1612,16 @@ function signoffEnvironment(input: {
 			).trim();
 		const liveBase = githubBranch(input.branch);
 		if (liveBase !== input.base) throw new Error("GitHub base changed");
-		if (
-			input.published?.kind === "branch" &&
-			githubBranch(input.published.branch) !== input.published.tip
-		)
-			throw new Error("GitHub head branch changed");
+		if (input.published?.kind === "branch") {
+			try {
+				if (githubBranch(input.published.branch) !== input.published.tip)
+					throw new Error("GitHub head branch changed");
+			} catch {
+				throw new AttestError(
+					"the selected published branch changed or could not be verified; signoff refused",
+				);
+			}
+		}
 		if (input.published?.kind === "pr") {
 			const previous = input.published.proof;
 			try {
@@ -1909,6 +1914,13 @@ function targetSignoffWitness(input: {
 		git(
 			scratch,
 			["init", "--bare", "--quiet", `--object-format=${format}`],
+			scratchGit,
+		);
+		// This view deliberately ignores grafts. Suppress only Git's warning
+		// about that deliberate setting when the extension invokes Git here.
+		git(
+			scratch,
+			["config", "--local", "advice.graftFileDeprecated", "false"],
 			scratchGit,
 		);
 		writeFileSync(

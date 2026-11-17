@@ -1666,7 +1666,9 @@ if [ "$1" = api ]; then
   printf '%s\n' "$@" >> "$HOBO_SIGNOFF_TEST_API_CALLS"
   if [ "\${HOBO_SIGNOFF_TEST_API_FAIL:-0}" = 1 ]; then exit 1; fi
   case "$2" in
-    */branches/topic) printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_HEAD"; exit 0 ;;
+    */branches/topic)
+      if [ "\${HOBO_SIGNOFF_TEST_HEAD_FAIL:-0}" = 1 ]; then exit 1; fi
+      printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_HEAD"; exit 0 ;;
   esac
   if [ -n "\${HOBO_SIGNOFF_TEST_GH_BASE:-}" ]; then printf '%s\\n' "$HOBO_SIGNOFF_TEST_GH_BASE"; else git rev-parse refs/remotes/origin/main; fi
   exit 0
@@ -1806,6 +1808,7 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 		assert.equal(git(run.repo, ["branch", "-r", "--contains", run.head]), "");
 		const result = run.command([], { HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1" });
 		assert.equal(result.status, 0, result.stderr);
+		assert.doesNotMatch(result.stderr, /info\/grafts is deprecated/u);
 		assert.match(
 			readFileSync(run.calls, "utf8"),
 			/hobo-ci\/local\/pull_request\/ci-guard/u,
@@ -2380,7 +2383,17 @@ exec /usr/bin/git "$@"
 			HOBO_SIGNOFF_TEST_GH_HEAD: run.target.base,
 		});
 		assert.notEqual(result.status, 0);
-		assert.match(result.stderr, /GitHub target and live base match/u);
+		assert.match(
+			result.stderr,
+			/selected published branch changed or could not be verified/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+		const inaccessible = run.command([], { HOBO_SIGNOFF_TEST_HEAD_FAIL: "1" });
+		assert.notEqual(inaccessible.status, 0);
+		assert.match(
+			inaccessible.stderr,
+			/selected published branch changed or could not be verified/u,
+		);
 		assert.equal(existsSync(run.calls), false);
 	});
 
