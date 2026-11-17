@@ -614,7 +614,9 @@ function readRouteAttempt(input: unknown): IacDirectRouteAttempt | undefined {
 		return Object.freeze({
 			permit: checkedPermit,
 			deny: async () => {
-				await deny.value.call(input);
+				// Invoke the captured function without reading its mutable `call` property.
+				/* oxlint-disable-next-line anti-slop/no-reflect-apply -- SAFETY: the captured function and receiver passed the host-attempt boundary. */
+				await Reflect.apply(deny.value, input, []);
 			},
 		});
 	} catch {

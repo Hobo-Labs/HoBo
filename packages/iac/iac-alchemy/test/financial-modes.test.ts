@@ -1071,6 +1071,50 @@ describe("financial admission modes", () => {
 		}
 	});
 
+	it("invokes a captured denial without reading its own call accessor", async () => {
+		let calls = 0;
+		const base = routeFixture();
+		const route: IacRoutePort = {
+			...base.port,
+			async runDirect(input, run) {
+				return base.port.runDirect(input, (attempt) => {
+					const deny = async () => attempt.deny();
+					Object.defineProperty(deny, "call", {
+						get() {
+							calls++;
+							throw new Error("call getter");
+						},
+					});
+					return run({ permit: attempt.permit, deny });
+				});
+			},
+		};
+		const f = fixture(
+			(id) => ({
+				requestId: id,
+				targetId: "target",
+				status: "denied",
+				code: "BUDGET_DENIED",
+				message: "",
+				budget: { evaluation: "denied", reservation: "not-created" },
+			}),
+			() => true,
+			"target",
+			"attempt",
+			route,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "BUDGET_DENIED",
+			requiresReconciliation: false,
+		});
+		expect(calls).toBe(0);
+		expect(base.calls.denied).toBe(1);
+		expect(f.applies()).toBe(0);
+	});
+
 	it("treats a proxied route completion as uncertain after provider execution", async () => {
 		const observed = { traps: 0 };
 		const base = routeFixture();
