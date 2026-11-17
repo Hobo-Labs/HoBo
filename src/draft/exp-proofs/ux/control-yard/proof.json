@@ -30,7 +30,7 @@
   },
   "waivers": [],
   "acceptance": {
-    "$comment": "Informational for reviewers; proofManifestSchema ignores unknown keys. A null gate means the criterion has no current executable evidence.",
+    "$comment": "Informational for reviewers; proofManifestSchema ignores unknown keys. A null gate means no complete current executable acceptance gate is recorded; partial evidence may exist.",
     "criteria": [
       {
         "id": "ACC-CORE-LOOP",
@@ -75,6 +75,6 @@
         "evidenceStatus": "unverified"
       }
     ],
-    "retiredCoverage": "The pixel-village core-loop, scenario, browser and experience-review gates and their validation fixtures were removed with that package. These criteria remain unverified until equivalent evidence is restored."
+    "retiredCoverage": "The pixel-village core-loop, scenario, browser and experience-review gates and their validation fixtures were removed with that package. Partial Yard tests and captured evidence remain, but the criteria lack complete current executable acceptance gates."
   }
 }
