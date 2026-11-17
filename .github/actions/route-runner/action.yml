@@ -84,7 +84,15 @@ runs:
           echo "not attested: $1"
           { echo "attested=false"; echo "attested-jobs=[]"; } >> "$GITHUB_OUTPUT"
         }
-        if [ ! -f scripts/ci/verify-attestation.mts ]; then
+        verifier="scripts/ci/verify-attestation.mts"
+        if [ -n "${GITHUB_ACTION_PATH:-}" ]; then
+          action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)" || {
+            not_attested "the route action directory cannot be resolved"
+            exit 0
+          }
+          verifier="${action_root}/scripts/ci/verify-attestation.mts"
+        fi
+        if [ ! -f "${verifier}" ]; then
           not_attested "this workflow does not check for a signed local run"
           exit 0
         fi
@@ -104,7 +112,7 @@ runs:
         fi
         # The script writes both outputs itself; if it dies first, say no here.
         outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
-        if ! "${node_bin}" --no-warnings scripts/ci/verify-attestation.mts \
+        if ! "${node_bin}" --no-warnings "${verifier}" \
           || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
           not_attested "the verification script failed"
         fi
