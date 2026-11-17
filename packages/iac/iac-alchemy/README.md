@@ -542,6 +542,21 @@ response does not prove whether it committed: wait for or reconcile the lease
 before issuing conflicting work. The queue only controls message delivery;
 consumers must make their own external side effects idempotent or fenced.
 
+The client bounds each call, including the complete response body, to ten
+seconds. A timeout is `outcome-unknown`: it does not prove the actor stopped or
+that a mutation failed. The actor also stops reading an incomplete request after
+ten seconds, before opening its transaction. BYOB byte streams are consumed in
+bounded reads; unsupported streams are refused and cancelled unless the host
+independently verifies an enforced upstream bound. Rivet 3 currently constructs
+a non-BYOB request stream, so a production host must provide `verifyIngress`
+and enforce its supplied total and per-chunk limits across every path before
+the actor receives data. For non-BYOB client response streams, the transport
+must likewise supply `verifyResponseBounds` and enforce those bounds on the
+entire response path. The verifiers must authenticate the deployed ingress and
+transport configuration for the exact actor, operation and key; caller-supplied
+headers or a configuration declaration alone are not proof. The host must bound
+provider-side buffering and concurrency even for BYOB streams.
+
 ```ts
 import { setup } from "rivetkit";
 import {
@@ -554,6 +569,7 @@ const jobs = createRivetQueueActor({
   actorName: "jobs",
   now: () => host.trustedClock.nowMs(),
   authorize: (request) => host.queuePolicy.authorize(request),
+  verifyIngress: (claim) => host.verifyBoundedQueueIngress(claim),
 });
 export const registry = setup({ use: { jobs: jobs.actor } });
 
@@ -577,6 +593,7 @@ const jobsResource = rivetAsyncQueueResource({
 const actor = rivetClient.jobs.getOrCreate([tenantId, "jobs"]);
 const queue = createRivetAsyncQueueClient({
   fetch: (path, init) => actor.fetch(path, host.attachQueueCredential(init)),
+  verifyResponseBounds: (claim) => host.verifyBoundedQueueResponse(claim),
 });
 const accepted = await queue.enqueue("order-123", { orderId: "123" });
 const [message] = await queue.dequeue(1, 30_000);

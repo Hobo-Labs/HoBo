@@ -6,6 +6,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { actor, setup } from "rivetkit";
 import { setupTest } from "rivetkit/test";
+import { createRivetAsyncQueueClient } from "../src/rivet-queue.ts";
 import { createRivetQueueActor } from "../src/rivet-queue-runtime.ts";
 import { createRivetHttpActor } from "../src/rivet-runtime.ts";
 
@@ -101,6 +102,10 @@ const app = createRivetHttpActor({
 const jobs = createRivetQueueActor({
 	actorName: "jobs",
 	now: Date.now,
+	// This isolated local fixture has no untrusted ingress; production hosts must
+	// verify their actual ingress enforces the supplied total and chunk limits.
+	verifyIngress: ({ actorName, actorKey }) =>
+		actorName === "jobs" && actorKey[0] === "tenant-a",
 	authorize: ({ actorKey, headers }) =>
 		actorKey[0] === "tenant-a" && headers.get("authorization") === "test",
 });
@@ -196,6 +201,19 @@ try {
 	});
 	if (denied.status !== 403)
 		throw new Error("Rivet queue scope authorization failed");
+	const scopedClient = createRivetAsyncQueueClient({
+		fetch: (path, init) =>
+			queue.fetch(path, {
+				...init,
+				headers: {
+					...Object.fromEntries(new Headers(init.headers)),
+					authorization: "test",
+				},
+			}),
+		verifyResponseBounds: () => true,
+	});
+	const accepted = await scopedClient.enqueue("client-k", { n: 7 });
+	if (!accepted.messageId) throw new Error("Rivet scoped client failed");
 	process.stdout.write("rivet-queue-live-ok");
 } catch (error) {
 	process.stderr.write(`Rivet engine log:\n${engineLog}\n`);

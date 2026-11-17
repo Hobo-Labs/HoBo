@@ -10,6 +10,11 @@ import {
 	type RivetQueueBinding,
 } from "./rivet-queue-runtime.js";
 import {
+	RIVET_QUEUE_CHUNK_BYTES,
+	RIVET_QUEUE_TIMEOUT_MS,
+	readRivetQueueStream,
+} from "./rivet-queue-stream.js";
+import {
 	type AlchemySourceClaim,
 	type AlchemySourceFence,
 	captureAlchemySourceFence,
@@ -257,6 +262,12 @@ export interface RivetAsyncQueueMessage {
 export interface RivetAsyncQueueTransport {
 	/** Must target the authenticated actor key and attach host-issued credentials. */
 	fetch(path: string, init: RequestInit): Promise<Response>;
+	/** Independently attest limits on the full response path before forwarding. */
+	verifyResponseBounds?(input: {
+		readonly operation: string;
+		readonly maxResponseBytes: number;
+		readonly maxChunkBytes: number;
+	}): boolean | Promise<boolean>;
 }
 function object(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -327,31 +338,17 @@ export class RivetAsyncQueueError extends Error {
 		this.name = "RivetAsyncQueueError";
 	}
 }
-async function decode(result: Response): Promise<unknown> {
-	if (!result.body) throw new Error("missing response body");
-	const reader = result.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let length = 0;
-	try {
-		while (true) {
-			const next = await reader.read();
-			if (next.done) break;
-			length += next.value.length;
-			if (length > 8_388_608) {
-				await reader.cancel();
-				throw new Error("queue response too large");
-			}
-			chunks.push(next.value);
-		}
-	} finally {
-		reader.releaseLock();
-	}
-	const bytes = new Uint8Array(length);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.length;
-	}
+async function decode(
+	result: Response,
+	signal: AbortSignal,
+	verifyBounds: (() => boolean | Promise<boolean>) | undefined,
+): Promise<unknown> {
+	const bytes = await readRivetQueueStream(
+		result.body,
+		8_388_608,
+		signal,
+		verifyBounds,
+	);
 	return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
 function readMessage(value: unknown): RivetAsyncQueueMessage {
@@ -386,6 +383,7 @@ export function createRivetAsyncQueueClient(
 	transport: RivetAsyncQueueTransport,
 ) {
 	const fetch = transport.fetch.bind(transport);
+	const verifyResponseBounds = transport.verifyResponseBounds?.bind(transport);
 	async function invoke(
 		path: string,
 		body: object,
@@ -400,16 +398,47 @@ export function createRivetAsyncQueueClient(
 			throw new RivetAsyncQueueError("invalid-argument", path);
 		let result: Response;
 		let data: unknown;
+		const controller = new AbortController();
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
-			result = await fetch(path, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: payload,
+			const work = async () => {
+				const response = await fetch(path, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: payload,
+					signal: controller.signal,
+				});
+				if (!(response instanceof Response) || controller.signal.aborted)
+					throw new Error("invalid or late response");
+				const verifyBounds =
+					verifyResponseBounds === undefined
+						? undefined
+						: () =>
+								verifyResponseBounds(
+									Object.freeze({
+										operation: path,
+										maxResponseBytes: 8_388_608,
+										maxChunkBytes: RIVET_QUEUE_CHUNK_BYTES,
+									}),
+								);
+				return {
+					response,
+					value: await decode(response, controller.signal, verifyBounds),
+				};
+			};
+			const deadline = new Promise<never>((_, reject) => {
+				timer = setTimeout(() => {
+					controller.abort();
+					reject(new Error("queue request timed out"));
+				}, RIVET_QUEUE_TIMEOUT_MS);
 			});
-			if (!(result instanceof Response)) throw new Error("invalid response");
-			data = await decode(result);
+			const completed = await Promise.race([work(), deadline]);
+			result = completed.response;
+			data = completed.value;
 		} catch {
 			throw new RivetAsyncQueueError("outcome-unknown", path);
+		} finally {
+			if (timer !== undefined) clearTimeout(timer);
 		}
 		if (!result.ok) {
 			if (object(data)) {
