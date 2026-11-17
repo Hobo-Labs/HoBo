@@ -42,21 +42,28 @@ Read this section before you believe a green suite.
   HTTP crosses the wire;
 - resolves binding values for the whole graph through `runtime-local`'s
   `createLocalBindingResolver`;
+- exposes a separate in-memory `Queue` for each `queue` alias and an in-memory
+  `Messaging` port for each `topic` alias, with their actual fidelity on the
+  handle;
 - tears everything down in reverse dependency order.
 
 What it does **not** do:
 
 - run the deployed artifact on the deployed host — hence handles are labelled
   `simulated`, never `real`;
-- provide an engine behind `data`, `kv`, `bucket`, `queue`, `topic`, `secret`,
-  `auth`, `crypto`, `flag`, `job`, `schedule`, `websocket` or any other
+- provide an engine behind `data`, `kv`, `bucket`, `secret`, `auth`, `crypto`,
+  `flag`, `job`, `schedule`, `websocket` or any other unsupported
   non-HTTP kind. Those get a handle and a `hobo-test://` binding locator and
   nothing behind them. They are labelled `mocked`. Labelling them `simulated`
   because an in-memory map *could* back them would be the overclaim, since
   nothing on `DeployedGraph` exposes such a store;
+- automatically wire `graph.queue()` or `graph.topic()` into an entrypoint.
+  These are in-process ports, not services listening at the `hobo-test://`
+  locator. A test must explicitly inject the port into the code under test;
 - exercise `container` or `wasm-component` resources at all — labelled
   `camp-only`;
-- contact a provider, broker a credential, or write to `.hobo/`.
+- contact a provider, broker a credential, or write to `.hobo/` using its
+  built-in implementations. Custom factories execute caller-supplied code.
 
 **The `ephemeral-camp` lane's gates are implemented; its provisioning is not.**
 `createTestHarness({ lane: "ephemeral-camp", yard })` really does require an
@@ -72,6 +79,9 @@ today cannot claim prod-readiness from this lane alone — which is the honest
 answer, not a defect of the harness. A bare green tick over mocked handles is
 the overclaim GAP-026 was filed against, and ADR-0159 calls emitting one a
 conformance failure of the harness itself.
+Its existing rule only rules out asserted `mocked` handles. A true value does
+not establish provider compatibility, durable storage, or production readiness
+for code exercised with simulated services.
 
 **Deploy caching is memoization, not the event store.** ADR-0159 §3 wants an
 unchanged plan content-hash to make `deploy()` a no-op apply against the
@@ -95,13 +105,102 @@ They compose rather than compete: a provider passes `@hobo/conformance`, the
 boundary it exposes is pinned by `@hobo/contract-harness`, and an application
 built on both is exercised end to end by `@hobo/testing`.
 
+## Local services and swappable ports
+
+`graph.queue(alias)` returns the same `@hobo/core` `Queue` interface a
+service can receive in a deployed runtime; `graph.topic(alias)` returns the
+`Messaging` interface. Inject that port into the service under test and use
+the same object to arrange inputs and inspect results. The included CI relay
+test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
+passes a signed webhook through the real relay handler to a queue-backed test
+application, including a duplicate delivery. That application is in-memory:
+the test does not prove the relay's durable admission requirement.
+
+```ts
+import { parseIdempotencyKey, parseQueueName } from "@hobo/core";
+
+const graph = await harness.deploy(app)();
+const queue = graph.queue("jobs");
+await queue.enqueue(parseQueueName("jobs"), { id: 1 }, {
+	idempotencyKey: parseIdempotencyKey("job-1"),
+});
+await workerThatAcceptsAQueuePort(queue);
+// If the implementation supplies a virtual clock, advance without sleeping:
+graph.queueClock("jobs")?.advance(30_000);
+```
+
+For a service that needs its dependency during construction, create the
+emulator first, pass `emulator.port` into the service, and return that same
+emulator from the matching factory. Create a fresh emulator and harness per
+test graph so state is not shared between suites.
+
+Queue resources use `createRuntimeLocalQueueClock`; the returned clock drives
+lease expiration and redelivery. Topic resources use `createInMemoryMessaging`
+with tenant `local`; use `createTopicEmulator({ tenantId, now })` to control
+tenant and time. With the defaults, each resource and deployment gets separate state. Unsupported
+aliases and wrong kinds fail with a typed refusal. Factories can replace the
+defaults, for example to inject a faulting implementation of the same port:
+
+```ts
+const harness = createTestHarness({
+	emulators: {
+		queue: ({ alias, stage }) => {
+			const testQueue = makeTestQueue({ alias, stage });
+			return { port: testQueue.port, fidelity: "mocked", close: () => testQueue.close() };
+		},
+	},
+});
+```
+
+Both queue and topic factories return `ServiceEmulator<T>`: a typed port, a
+`simulated` or `mocked` fidelity label, and an optional `close`. Queue
+emulators may also expose a `VirtualClock`. A factory runs once per alias;
+it must create isolated state and clean up any resources it creates before
+throwing. On a later startup failure, the harness closes previously returned
+services in reverse dependency order. Teardown attempts every close, reports
+errors, and is idempotent. The built-in memory ports retain their state while
+the test keeps a reference to them; discard those references after teardown.
+Invalid factories are refused rather than replaced with defaults. The harness
+checks the port's shape and label, not its semantics: an author who labels a
+custom implementation `simulated` is
+responsible for its conformance. These factories are for test implementations;
+the in-process lane does not attest a real provider.
+
+### Choosing and maintaining a double
+
+Use the smallest double that exercises an actual boundary. Pure functions and
+in-process libraries can normally run directly. A fake per package would
+otherwise duplicate code without testing a service contract.
+
+| Boundary | Existing local option | Limit |
+|---|---|---|
+| HoBo HTTP service | Run its Fetch handler in the harness; use a Pact-derived mock when the consumer needs isolation | Only handlers explicitly provided to a Bindle are served |
+| HoBo CI relay | `createRelayHandler` with an injected application, as in the service emulator test | A memory-backed application does not prove durable admission |
+| HoBo control API | `createControlApiServer` with a temporary `hoboHome`; optional seeded `@hobo/yard-world` demo | Runs the actual local service and simulator, not a deployed Station |
+| Queue / topic | This harness's `Queue` / `Messaging` port implementations | In-memory, process-local, not a provider protocol or a durability proof |
+| Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
+| Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
+| Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
+| AWS, Azure and Vercel resolvers | Their package tests inject provider-specific fake `HttpTransport` implementations | These are not full provider emulators; the package READMEs do not claim live verification |
+| External HTTP provider | `@hobo/contract-harness` `createMockProviderFromPact`; `@hobo/testing` `pactBackedTransport` for stateful sequences | Hand-authored or unverified Pact expectations are not evidence about the live provider |
+| Other resource kinds | Provider-specific doubles and external emulators where available | The application harness currently exposes only placeholders for those kinds |
+
+Keep the port or protocol as the authority: derive stateless mocks from the
+consumer Pact instead of copying response shapes, keep fixtures versioned,
+and verify provider interactions and the same behavioral conformance suite
+against both the double and a real implementation when practical. Record
+unsupported calls, capabilities, clocks, failures and fidelity. Add a stateful
+emulator only when sequences matter, and keep its scope narrower than the
+service it imitates. A green fake or local emulator is not live-provider
+verification.
+
 ## Surface
 
 - `createTestHarness(options?)` → `{ deploy, destroy, untilReady }`.
   `deploy(bindle)` and `destroy(bindle)` return **thunks**, so they drop
   straight into `beforeAll`/`afterAll`.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
-  `fidelity()`.
+  `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded
   exponential backoff capped at 5s per wait. Retries propagation-shaped
   failures (404, 408, 425, 429, any 5xx, network throws) and **fails fast on
@@ -169,3 +268,12 @@ outlives the run that earned it.
   including three refusal interactions: `HARNESS_YARD_REQUIRED` (no silent
   downgrade), `HARNESS_READINESS_REJECTED` (a 401 is an answer), and
   `HARNESS_CREDENTIAL_NOT_A_REF` (locators, never values — ADR-0113).
+- `contracts/pacts/service-emulators.pact.json` — queue/topic access,
+  delivery and wrong-kind refusal; verified by
+  `test/service-emulators.pact.test.ts` against the harness. Existing
+  queue/clock protobuf, CUE, and PACT contracts live with `@hobo/core` and
+  `@hobo/runtime-local`; `@hobo/conformance` provides the Messaging suite.
+  No new serialized port records or event families are introduced here. The
+  harness refusal CUE is updated for the two new error codes and checked for
+  vocabulary drift by `test/refusal-contract.test.ts`. TypeScript checks the
+  port substitutions at build time.
