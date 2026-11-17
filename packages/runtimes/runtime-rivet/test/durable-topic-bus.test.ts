@@ -699,6 +699,83 @@ describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 		expect(messageBound + 4096).toBeLessThanOrEqual(131_072);
 	});
 
+	it("round-trips maximum-size escaped payloads, provenance and a full DLQ batch", async () => {
+		const f = await fixture();
+		const source = "\\".repeat(128);
+		const target = '"'.repeat(128);
+		const archive = "a".repeat(128);
+		const group = `g${"\\".repeat(127)}`;
+		const reader = `r${"\\".repeat(127)}`;
+		for (const topic of [source, target, archive])
+			await f.mutate("ensure-topic", { topic });
+		await f.mutate("ensure-subscription", {
+			subscription: subscription(source, group, target, 1),
+		});
+		await f.mutate("ensure-subscription", {
+			subscription: subscription(target, reader, archive, 1),
+		});
+		const attributes = Array.from({ length: 31 }, (_, index) => ({
+			key: `k${index}`,
+			value: "",
+		}));
+		const used = attributes.reduce(
+			(total, item) => total + Buffer.byteLength(item.key),
+			0,
+		);
+		attributes.push({ key: "z", value: "\u0000".repeat(2_047 - used) });
+		expect(
+			attributes.reduce(
+				(total, item) =>
+					total + Buffer.byteLength(item.key) + Buffer.byteLength(item.value),
+				0,
+			),
+		).toBe(2_048);
+		const payload = Buffer.alloc(8_192, 255).toString("base64");
+		const reason = "\u0000".repeat(1_024);
+		for (let index = 0; index < 4; index++) {
+			const item = {
+				id: `m${index}`.padEnd(128, "\\"),
+				subject: "\\".repeat(128),
+				payload,
+				attributes,
+			};
+			expect(
+				(await f.mutate("publish", { topic: source, message: item })).status,
+			).toBe("committed");
+		}
+		const deliveries = (
+			await f.mutate("consume", { ...consume(source, group), maxMessages: 4 })
+		).value;
+		expect(deliveries).toHaveLength(4);
+		for (const delivery of deliveries)
+			expect(
+				(await f.mutate("nack", { ...settle(delivery), reason })).value
+					.disposition,
+			).toBe("dead-lettered");
+		const response = await f.send("consume", {
+			operation: f.next(),
+			...consume(target, reader),
+			maxMessages: 4,
+		});
+		const text = await response.text();
+		expect(Buffer.byteLength(text)).toBeLessThanOrEqual(262_144);
+		const batch = JSON.parse(text);
+		expect(batch.value).toHaveLength(4);
+		for (const [index, delivery] of batch.value.entries()) {
+			expect(delivery.message).toMatchObject({
+				payload,
+				attributes,
+				subject: "\\".repeat(128),
+			});
+			expect(delivery.deadLetter).toMatchObject({
+				sourceTopic: source,
+				consumerGroup: group,
+				originalMessageId: `m${index}`.padEnd(128, "\\"),
+				cause: { kind: "nack", reason },
+			});
+		}
+	});
+
 	it("keeps completed expiry transfers when the lease sequence is exhausted", async () => {
 		const f = await fixture();
 		await setup(f, 1);
