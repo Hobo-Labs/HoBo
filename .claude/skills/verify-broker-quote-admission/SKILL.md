@@ -7,11 +7,11 @@ description: Verify the general broker's quote-backed admission, current evidenc
 
 **Properties:** In the checked quote-backed path, the policy gate and a newly confirmed hold receive the attested conservative liability for the selected work. The broker refuses untrusted or stale quotes, changes to the selected environment or catalog, and missing hold confirmation. It rechecks the quote after policy and after billing. The receipt carries the quote hash, work-binding digest and amount, and a configured signature covers them. Raw estimates require explicit host trust.
 
-**Review baseline:** commit `7e6f4d1bc8be723f45d3425a26ec34eabf158315`. PASS for the generated tests, bounded model and symbolic obligations below.
+**Review baseline:** commit `3557d0c3f1d9937d40f96caa9ec9857d080d00c6`. PASS for the generated tests, bounded model and symbolic obligations below.
 
 ## Covered code
 
-- `packages/broker/src/broker.ts` selects placements, freezes and hashes the work and host context, invokes `pricingAuthority`, checks the quote before and after the gate and hold, and signs the receipt when configured.
+- `packages/broker/src/broker.ts` searches complete plan quotes, freezes and hashes the work and host context, invokes `pricingAuthority`, checks the quote before and after the gate and hold, and signs the receipt when configured. The separate `verify-broker-whole-quote-routing` skill covers bounded search, safe fallback and changes to authority object or method references.
 - `packages/broker/src/pricing-authorization.ts` checks exact quote liability and policy bounds. `packages/broker/src/metering.ts` supplies the default in-memory hold.
 - `packages/broker/src/http.ts`, `types.ts`, and `data-models/broker.{proto,cue}` preserve pricing evidence and placements in the receipt. `packages/broker/src/local-host.ts` attests the built-in local provider's zero service fee only.
 - `packages/broker/test/quote-admission.test.ts` runs 350 generated admissions (seed 614516), signed receipt and tamper checks, zero-value protobuf and HTTP round trips, and adversarial callback, environment, catalog, quote freshness and hold cases. `local-host.test.ts` checks the local quote and an external-provider refusal.

@@ -1,13 +1,13 @@
 ---
 name: verify-broker-catalog-ordering
-description: Verify exact, deterministic and comparable catalog-price selection in the general broker.
+description: Verify exact, deterministic and comparable catalog-price selection in the general broker's legacy estimate mode.
 ---
 
 # Broker catalog price ordering
 
-**Properties:** Among eligible definitions in the selected policy scope, the broker compares nonnegative decimal marginal prices exactly, requires matching units and distinct definition IDs, and breaks ties by stable provider and definition identities. It rejects invalid definitions, failing capability checks, and a selected region or price that changes during placement. A pinned policy ignores unrelated providers.
+**Properties:** In legacy estimate mode, among eligible definitions in the selected policy scope, the broker compares nonnegative decimal marginal prices exactly, requires matching units and distinct definition IDs, and breaks ties by stable provider and definition identities. It rejects invalid definitions, failing capability checks, and a selected region or price that changes during placement. A pinned policy ignores unrelated providers.
 
-**Review baseline:** commit `7e6f4d1bc8be723f45d3425a26ec34eabf158315`. PASS for the generated cases, bounded models and symbolic obligations below.
+**Review baseline:** commit `3557d0c3f1d9937d40f96caa9ec9857d080d00c6`. PASS for the generated cases, bounded models and symbolic obligations below.
 
 ## Covered code
 
@@ -30,7 +30,7 @@ The shared runner checks checksum-pinned TLC 1.7.4. Set `TLA2TOOLS` to its jar a
 
 Z3 checks two arbitrary nonnegative exact-real prices and the stated Boolean guards, including minimum and tie ordering. Every premise has a witness; removing any of five guards produces a counterexample. It does not prove TypeScript refinement, numeric parsing, actual billing or source truth.
 
-This checks only the general broker's per-resource catalog ordering. The bare catalog format lacks a reliable currency or price-completeness marker; zero may mean unpriced. A common unit does not establish equal workload quantities, discounts or whole-request cost. The broker quotes only the selected plan, so it can miss a cheaper or affordable alternative. It does not prove global cost optimality. Yard-first placement and the cloud planner have their own ranking paths. Host callbacks and catalog hashes remain trusted boundaries, and changes after the final check are not modeled.
+This checks the general broker's legacy per-resource catalog ordering. The bare catalog format lacks a reliable currency or price-completeness marker; zero may mean unpriced. A common unit does not establish equal workload quantities, discounts or whole-request cost. Quote-backed routing instead searches complete plans; see `verify-broker-whole-quote-routing` for its distinct bounds and assumptions. Yard-first placement and the cloud planner have their own ranking paths. Host callbacks and catalog hashes remain trusted boundaries, and changes after the final check are not modeled.
 
 For an implementation mutation, copy `packages/broker` to a scratch package with linked `node_modules` and set `BROKER_RANKING_VERIFY_PACKAGE_ROOT`. Restore the old broker, use floating-point prices, omit validation or unit/identity checks, change the tie ordering, or remove snapshot rechecks. The real-code tests must fail. Restore the source and rerun the skill.
 

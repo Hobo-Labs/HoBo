@@ -315,6 +315,41 @@ reissued by that instance without reconciliation. This process-local registry
 is lost on restart; it does not authenticate the caller, provide cross-process
 coordination, or verify that a remote receiver honors the quote at execution.
 
+The [whole-quote routing skill](../../.agents/skills/verify-broker-whole-quote-routing/SKILL.md)
+checks a two-plan abstraction of quote search and billing fallback. The following
+views hide 144 and 16 same-label steps respectively; they assume complete,
+truthful quotes and honest billing results.
+
+```mermaid
+stateDiagram-v2
+  s0: Plans awaiting complete quotes
+  s1: Trusted complete quotes ready
+  s2: Request refused
+  s3: Affordable plan selected
+  [*] --> s0
+  s0 --> s2: refuse incomplete search
+  s0 --> s1: check all quotes and bounds
+  s1 --> s3: select lowest quoted total
+  s1 --> s2: no candidate fits the cap
+```
+
+```mermaid
+stateDiagram-v2
+  s0: Policy decision pending
+  s1: Cheapest candidate at billing
+  s2: Request refused
+  s3: Placement funded
+  s4: Next candidate at billing
+  [*] --> s0
+  s0 --> s2: policy refuses
+  s0 --> s1: policy allows
+  s1 --> s2: ambiguous denial
+  s1 --> s3: authorize cheapest candidate
+  s1 --> s4: safe budget denial
+  s4 --> s2: next candidate unaffordable
+  s4 --> s3: authorize next candidate
+```
+
 The [catalog ordering skill](../../.agents/skills/verify-broker-catalog-ordering/SKILL.md)
 checks 256 abstract two-candidate states for legacy estimate ordering. This
 view hides 128 same-label steps; it does not compare complete plan quotes or
