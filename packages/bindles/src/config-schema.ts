@@ -1,8 +1,3 @@
-/**
- * Secretless-first typed config/secret schema surface (ADR-0027).
- * Schema is the committed layout agents see; values never live in Bindles.
- */
-
 import { createHash } from "node:crypto";
 import type { ConfigSensitivity } from "./config-sensitivity.js";
 import { sensitivityForField } from "./config-sensitivity.js";
@@ -10,7 +5,6 @@ import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
 export type { ConfigSensitivity } from "./config-sensitivity.js";
 
-/** Preferred resolution source ranking (highest first). */
 export const SECRET_SOURCE_RANKS = [
 	"bound-resource",
 	"provider-federation",
@@ -28,16 +22,13 @@ export type ConfigFieldDef = Readonly<{
 	type: ConfigFieldKind;
 	required: boolean;
 	sensitive: boolean;
-	/** ADR-0142 classification; defaults from sensitive boolean. */
 	sensitivity?: ConfigSensitivity;
 	defaultValue?: unknown;
 	enumValues?: readonly string[];
 	min?: number;
 	max?: number;
 	source: SecretSourceRank;
-	/** Static-escape only: max TTL (e.g. "7d"). */
 	ttl?: string;
-	/** Static-escape only: rotation policy. */
 	rotation?: "required" | "optional";
 	docs?: string;
 }>;
@@ -61,16 +52,13 @@ type FieldBuilder = {
 	rotation(policy: "required" | "optional"): FieldBuilder;
 	docs(text: string): FieldBuilder;
 	sensitive(): FieldBuilder;
-	/** Materialize the field definition (internal). */
 	_build(): ConfigFieldDef;
 };
 
 function toConfigFieldDef(raw: FieldBuilder | ConfigFieldDef): ConfigFieldDef {
 	if (isJsonObject(raw) && "kind" in raw && raw.kind === "config-field") {
-		// SAFETY: config() field objects already carry the field-def kind.
 		return raw as ConfigFieldDef;
 	}
-	// SAFETY: remaining entries are FieldBuilder instances with _build().
 	const builder = raw as FieldBuilder;
 	return builder._build();
 }
@@ -116,7 +104,6 @@ function createFieldBuilder(
 			return builder;
 		},
 		source(rank: SecretSourceRank) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			if (!(SECRET_SOURCE_RANKS as readonly string[]).includes(rank)) {
 				throw new TypeError(`unknown secret source rank: ${rank}`);
 			}
@@ -141,7 +128,6 @@ function createFieldBuilder(
 		},
 		_build() {
 			if (sensitive && source === "camp-value") {
-				// Sensitive fields must not default to camp-value (would embed secrets).
 				source = "bound-resource";
 			}
 			if (source === "static-escape") {
@@ -181,7 +167,6 @@ function assertTtlAtMost7Days(ttl: string): void {
 	}
 }
 
-/** Non-secret env field builders. */
 export const envField = Object.freeze({
 	string: () => createFieldBuilder("string", { source: "camp-value" }),
 	boolean: () => createFieldBuilder("boolean", { source: "camp-value" }),
@@ -189,7 +174,6 @@ export const envField = Object.freeze({
 	json: () => createFieldBuilder("json", { source: "camp-value" }),
 });
 
-/** Secret field builders (sensitive; prefer bound-resource). */
 export const secretField = Object.freeze({
 	string: () =>
 		createFieldBuilder("string", {
@@ -198,9 +182,6 @@ export const secretField = Object.freeze({
 		}),
 });
 
-/**
- * Declare a typed config schema for a Bindle. Agents see only this shape.
- */
 export function config(
 	fields: Readonly<Record<string, FieldBuilder | ConfigFieldDef>>,
 ): ConfigSchema {
@@ -210,13 +191,25 @@ export function config(
 			throw new TypeError("config field names must be non-empty");
 		}
 		const def = toConfigFieldDef(raw);
-		// Forbid sensitive defaults (plaintext in schema).
-		if (def.sensitive && def.defaultValue !== undefined) {
+		const sensitivity = sensitivityForField(def);
+		const sensitive = sensitivity === "sensitive";
+		if (sensitive && def.defaultValue !== undefined) {
 			throw new Error(
 				`config field ${name}: sensitive fields cannot have default values (secretless-first)`,
 			);
 		}
-		built[name] = Object.freeze({ ...def, name });
+		const normalized = {
+			...def,
+			name,
+			sensitive,
+			...(def.sensitivity !== undefined ? { sensitivity } : undefined),
+		};
+		Object.defineProperty(built, name, {
+			value: Object.freeze(normalized),
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
 	}
 	const sortedKeys = Object.keys(built).sort();
 	const canonical = JSON.stringify(
@@ -232,7 +225,6 @@ export function config(
 	});
 }
 
-/** Agent-safe view: schema only, no values. */
 export function schemaOnlyView(schema: ConfigSchema): Readonly<{
 	schemaVersion: string;
 	schemaHash: string;
@@ -262,14 +254,19 @@ export function schemaOnlyView(schema: ConfigSchema): Readonly<{
 		}
 	> = {};
 	for (const [name, f] of Object.entries(schema.fields)) {
-		fields[name] = {
-			type: f.type,
-			required: f.required,
-			sensitive: f.sensitive,
-			sensitivity: sensitivityForField(f),
-			source: f.source,
-			...(f.docs !== undefined ? { docs: f.docs } : undefined),
-		};
+		Object.defineProperty(fields, name, {
+			value: {
+				type: f.type,
+				required: f.required,
+				sensitive: sensitivityForField(f) === "sensitive",
+				sensitivity: sensitivityForField(f),
+				source: f.source,
+				...(f.docs !== undefined ? { docs: f.docs } : undefined),
+			},
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
 	}
 	return Object.freeze({
 		schemaVersion: schema.schemaVersion,
@@ -278,7 +275,6 @@ export function schemaOnlyView(schema: ConfigSchema): Readonly<{
 	});
 }
 
-/** Rank comparison: lower index = higher preference. */
 export function sourceRankIndex(source: SecretSourceRank): number {
 	return SECRET_SOURCE_RANKS.indexOf(source);
 }
@@ -297,9 +293,6 @@ export function assertSourceAllowed(
 	}
 }
 
-/**
- * Reference binding: declare config comes from a bound resource (secretless).
- */
 export function fromBinding(resourceName: string): ConfigFieldDef {
 	if (!isJsonString(resourceName) || resourceName.length === 0) {
 		throw new TypeError("fromBinding requires a resource name");
@@ -315,6 +308,3 @@ export function fromBinding(resourceName: string): ConfigFieldDef {
 		name: resourceName,
 	});
 }
-
-// Dual `secret` surface (resource factory + field builders) lives in
-// secret-surface.ts so it does not clash with catalog.secret(name).
