@@ -54,6 +54,9 @@ export async function replayRun<S, A>(
 	const stepResults = new Map<string, JsonValue>();
 	const hookResults = new Map<string, JsonValue>();
 	const timerResults = new Map<string, { delayMs: number }>();
+	const completedSteps = events.filter(
+		(event) => event.type === "run.StepCompleted",
+	);
 	const scheduledSleeps = events.filter(
 		(event) => event.type === "run.SleepScheduled",
 	);
@@ -121,6 +124,9 @@ export async function replayRun<S, A>(
 	};
 
 	state = await workflow.execute(ctx, state, args);
+	if (stepCounter !== completedSteps.length) {
+		throw new Error(`unconsumed run.StepCompleted at index ${stepCounter}`);
+	}
 	if (sleepCounter !== scheduledSleeps.length) {
 		throw new Error(`unconsumed run.SleepScheduled at index ${sleepCounter}`);
 	}
