@@ -5,8 +5,8 @@ import {
 	BudgetAuthorityEventSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
-	createBudgetAdmissionAuthority,
 	captureIacUnpricedScopeTrust,
+	createBudgetAdmissionAuthority,
 	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
@@ -43,6 +43,19 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 		options.unpricedScopeTrust,
 	);
 	const database = new DatabaseSync(options.path);
+	try {
+		const main = database
+			.prepare("PRAGMA database_list")
+			.all()
+			.find((entry) => entry.name === "main");
+		if (!isJsonString(main?.file) || main.file.length === 0)
+			throw new TypeError(
+				"durable budget authority requires a persistent SQLite file",
+			);
+	} catch (error) {
+		database.close();
+		throw error;
+	}
 	const now = options.now ?? (() => new Date().toISOString());
 	database.exec(
 		"PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS budget_base(id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS budget_events(seq INTEGER PRIMARY KEY, body TEXT NOT NULL)",
