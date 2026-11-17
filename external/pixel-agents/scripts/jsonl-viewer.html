@@ -34,7 +34,6 @@
     overflow: hidden;
   }
 
-  /* ── Header ── */
   header {
     background: var(--bg2);
     border-bottom: 1px solid var(--border);
@@ -92,11 +91,9 @@
   }
   .hdr-stats .sv { color: var(--text); font-weight: 600; }
 
-  /* ── Views ── */
   .view { display: none; flex: 1; overflow: hidden; }
   .view.active { display: flex; }
 
-  /* ── Drop zone ── */
   #viewEmpty { align-items: center; justify-content: center; }
   .drop-zone {
     border: 2px dashed var(--border);
@@ -110,7 +107,6 @@
   .drop-zone .btns { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
   .drop-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,0.05); }
 
-  /* ── Session browser ── */
   .sessions-sidebar {
     width: 320px;
     min-width: 240px;
@@ -216,7 +212,6 @@
     font-size: 14px;
   }
 
-  /* ── Conversation messages ── */
   .convo-msg {
     margin-bottom: 16px;
     max-width: 900px;
@@ -328,7 +323,6 @@
     letter-spacing: 1px;
   }
 
-  /* ── Code in conversation ── */
   .convo-msg-body pre {
     background: var(--bg);
     border-radius: 4px;
@@ -349,7 +343,6 @@
   }
   .convo-msg-body pre code { background: none; padding: 0; }
 
-  /* ── JSONL Detail view ── */
   .detail-wrap { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
 
   .filter-bar {
@@ -453,7 +446,6 @@
   .detail-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
   .detail-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-dim); font-size: 14px; }
 
-  /* ── JSON tree ── */
   .json-tree { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; line-height: 1.6; }
   .json-key { color: #79c0ff; }
   .json-string { color: #a5d6ff; }
@@ -466,7 +458,6 @@
   .json-collapsed { display: none; }
   .json-collapsible { margin-left: 20px; }
 
-  /* ── Parsed/state detail ── */
   .parsed-section { margin-bottom: 20px; }
   .parsed-section h3 { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
   .parsed-field { display: flex; gap: 12px; padding: 4px 0; font-size: 13px; }
@@ -493,7 +484,6 @@
   .state-set-empty { color: var(--text-dim); font-style: italic; }
   .state-set-items { color: var(--accent); }
 
-  /* ── Legend ── */
   .detail-legend {
     background: var(--bg2);
     border-top: 1px solid var(--border);
@@ -510,7 +500,6 @@
   .resizer { width: 4px; background: var(--border); cursor: col-resize; flex-shrink: 0; }
   .resizer:hover { background: var(--accent); }
 
-  /* ── Scrollbar ── */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -526,7 +515,6 @@
   <div class="hdr-stats" id="hdrStats"></div>
 </header>
 
-<!-- ─── View: Empty / Drop zone ─── -->
 <div class="view active" id="viewEmpty">
   <div class="drop-zone" id="dropZone">
     <h2>Open a JSONL project folder</h2>
@@ -541,7 +529,6 @@
   </div>
 </div>
 
-<!-- ─── View: Session browser ─── -->
 <div class="view" id="viewSessions">
   <div class="sessions-sidebar">
     <div class="sessions-sidebar-header">
@@ -562,7 +549,6 @@
   </div>
 </div>
 
-<!-- ─── View: JSONL detail ─── -->
 <div class="view" id="viewDetail">
   <div class="detail-wrap">
     <div class="filter-bar">
@@ -610,24 +596,17 @@
 <input type="file" id="folderInput" webkitdirectory style="display:none">
 
 <script>
-// ══════════════════════════════════════════════════════════════
-//  Constants
-// ══════════════════════════════════════════════════════════════
 const TOOL_DONE_DELAY_MS = 300;
 const PERMISSION_TIMER_DELAY_MS = 7000;
 const TEXT_IDLE_DELAY_MS = 5000;
 const PERMISSION_EXEMPT_TOOLS = new Set(['Task', 'AskUserQuestion']);
-const CONVO_TRUNCATE_HEIGHT = 260; // px before truncation
+const CONVO_TRUNCATE_HEIGHT = 260;
 
-// ══════════════════════════════════════════════════════════════
-//  App state
-// ══════════════════════════════════════════════════════════════
-let currentView = 'empty'; // 'empty' | 'sessions' | 'detail'
-let sessions = [];          // { name, file?, text, records, conversation, size, lastModified }
+let currentView = 'empty';
+let sessions = [];
 let selectedSessionIdx = -1;
 let sessionSearchQuery = '';
 
-// Detail view state (for currently-viewed session)
 let records = [];
 let processedRecords = [];
 let selectedRecordIdx = -1;
@@ -635,9 +614,6 @@ let activeTab = 'parsed';
 let filters = { assistant: true, user: true, system: true, progress: true, unknown: true };
 let searchQuery = '';
 
-// ══════════════════════════════════════════════════════════════
-//  Elements
-// ══════════════════════════════════════════════════════════════
 const backBtn = document.getElementById('backBtn');
 const hdrPath = document.getElementById('hdrPath');
 const hdrStats = document.getElementById('hdrStats');
@@ -656,9 +632,6 @@ const detailContent = document.getElementById('detailContent');
 const timelineBar = document.getElementById('timelineBar');
 const searchInput = document.getElementById('searchInput');
 
-// ══════════════════════════════════════════════════════════════
-//  View management
-// ══════════════════════════════════════════════════════════════
 function showView(name) {
   currentView = name;
   viewEmpty.classList.toggle('active', name === 'empty');
@@ -679,9 +652,6 @@ backBtn.addEventListener('click', () => {
   }
 });
 
-// ══════════════════════════════════════════════════════════════
-//  File & folder loading
-// ══════════════════════════════════════════════════════════════
 document.getElementById('openFolderBtn').addEventListener('click', () => openFolder());
 document.getElementById('openFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
 document.getElementById('viewJsonlBtn').addEventListener('click', () => openDetailForCurrentSession());
@@ -695,14 +665,12 @@ document.getElementById('folderInput').addEventListener('change', (e) => {
   e.target.value = '';
 });
 
-// Drag & drop (folder or file)
 document.body.addEventListener('dragover', (e) => { e.preventDefault(); dropZone?.classList.add('drag-over'); });
 document.body.addEventListener('dragleave', (e) => { if (e.target === document.body || e.target === dropZone) dropZone?.classList.remove('drag-over'); });
 document.body.addEventListener('drop', async (e) => {
   e.preventDefault();
   dropZone?.classList.remove('drag-over');
   const items = [...(e.dataTransfer?.items || [])];
-  // Try folder via webkitGetAsEntry
   for (const item of items) {
     const entry = item.webkitGetAsEntry?.();
     if (entry?.isDirectory) {
@@ -714,7 +682,6 @@ document.body.addEventListener('drop', async (e) => {
       }
     }
   }
-  // Fallback: single file
   const file = e.dataTransfer?.files?.[0];
   if (file?.name.endsWith('.jsonl')) loadSingleFile(file);
 });
@@ -796,7 +763,6 @@ async function loadFileObjects(files, folderName) {
     });
   }
 
-  // Sort by last modified (newest first)
   sessions.sort((a, b) => b.lastModified - a.lastModified);
   selectedSessionIdx = -1;
 
@@ -805,7 +771,6 @@ async function loadFileObjects(files, folderName) {
   renderSessionList();
   showView('sessions');
 
-  // Auto-select first if only one
   if (sessions.length === 1) selectSession(0);
 }
 
@@ -837,9 +802,6 @@ function loadSingleFile(file) {
   reader.readAsText(file);
 }
 
-// ══════════════════════════════════════════════════════════════
-//  JSONL parsing
-// ══════════════════════════════════════════════════════════════
 function parseJsonlText(text) {
   const out = [];
   for (const line of text.split('\n')) {
@@ -851,9 +813,6 @@ function parseJsonlText(text) {
   return out;
 }
 
-// ══════════════════════════════════════════════════════════════
-//  Conversation extraction
-// ══════════════════════════════════════════════════════════════
 function extractConversation(recs) {
   const messages = [];
   let assistantTexts = [];
@@ -916,9 +875,6 @@ function extractConversation(recs) {
   return messages;
 }
 
-// ══════════════════════════════════════════════════════════════
-//  Session list
-// ══════════════════════════════════════════════════════════════
 function updateSessionStats() {
   const total = sessions.length;
   sessionCount.textContent = total;
@@ -974,9 +930,6 @@ function selectSession(idx) {
   renderConversation(sessions[idx]);
 }
 
-// ══════════════════════════════════════════════════════════════
-//  Conversation preview
-// ══════════════════════════════════════════════════════════════
 function renderConversation(session) {
   convoHeader.style.display = '';
   convoName.textContent = session.name;
@@ -990,7 +943,6 @@ function renderConversation(session) {
   let lastTurn = 0;
 
   for (const msg of session.conversation) {
-    // Turn separator
     if (msg.role === 'user' && msg.turn > 1) {
       const sep = document.createElement('div');
       sep.className = 'convo-turn-sep';
@@ -1011,7 +963,6 @@ function renderConversation(session) {
     body.innerHTML = renderMd(msg.text || '(no text)');
     div.appendChild(body);
 
-    // Truncation
     convoBody.appendChild(div);
     requestAnimationFrame(() => {
       if (body.scrollHeight > CONVO_TRUNCATE_HEIGHT + 40) {
@@ -1027,7 +978,6 @@ function renderConversation(session) {
       }
     });
 
-    // Tools + jump button
     if (msg.role === 'assistant' && (msg.tools.length > 0 || msg.recordIndices)) {
       const footer = document.createElement('div');
       footer.className = 'convo-tools';
@@ -1037,7 +987,6 @@ function renderConversation(session) {
         pill.textContent = t;
         footer.appendChild(pill);
       }
-      // Jump to first record index in JSONL detail
       if (msg.recordIndices?.length > 0) {
         const jumpBtn = document.createElement('button');
         jumpBtn.className = 'convo-jump-btn';
@@ -1066,22 +1015,14 @@ function renderConversation(session) {
   }
 }
 
-// Minimal markdown: code blocks, inline code, bold
 function renderMd(text) {
-  // Escape HTML first
   let out = esc(text);
-  // Code blocks: ```lang\ncode\n``` → <pre><code>
   out = out.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => `<pre><code>${code}</code></pre>`);
-  // Inline code
   out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-  // Bold
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   return out;
 }
 
-// ══════════════════════════════════════════════════════════════
-//  Open JSONL detail for current session
-// ══════════════════════════════════════════════════════════════
 function openDetailForCurrentSession(jumpToRecord) {
   if (selectedSessionIdx < 0) return;
   const session = sessions[selectedSessionIdx];
@@ -1105,9 +1046,6 @@ function openDetailForCurrentSession(jumpToRecord) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  State Machine Simulation (same as before)
-// ══════════════════════════════════════════════════════════════
 function processRecords() {
   const state = {
     activeToolIds: new Set(),
@@ -1130,7 +1068,6 @@ function processRecords() {
       return { record, index: idx, events, stateBefore: snapshotBefore, stateAfter: cloneState(state) };
     }
 
-    // New data arrival → cancel timers
     if (state.waitingTimerActive) { events.push({ type: 'cancel-waiting', reason: 'New JSONL data arrived → cancel waiting timer' }); state.waitingTimerActive = false; }
     if (state.permissionTimerActive) { events.push({ type: 'cancel-permission', reason: 'New JSONL data arrived → cancel permission timer' }); state.permissionTimerActive = false; }
     if (state.permissionSent) { events.push({ type: 'clear-permission', reason: 'New JSONL data arrived → clear permission bubble' }); state.permissionSent = false; }
@@ -1288,9 +1225,6 @@ function fmtToolStatus(name, input) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  JSONL Detail View — Record list
-// ══════════════════════════════════════════════════════════════
 function getRecordType(r) { return r._parseError ? 'unknown' : (r.type || 'unknown'); }
 function badgeCls(t) { return `badge-${t === 'assistant'||t === 'user'||t === 'system'||t === 'progress' ? t : 'unknown'}`; }
 
@@ -1387,9 +1321,6 @@ function selectRecord(index) {
   renderDetailPanel();
 }
 
-// ══════════════════════════════════════════════════════════════
-//  JSONL Detail View — Detail panel
-// ══════════════════════════════════════════════════════════════
 function renderDetailPanel() {
   if (selectedRecordIdx < 0 || selectedRecordIdx >= records.length) {
     detailContent.innerHTML = '<div class="detail-placeholder">Select a record to view details</div>';
@@ -1463,9 +1394,6 @@ function stateDiff(before, after) {
   return d;
 }
 
-// ══════════════════════════════════════════════════════════════
-//  JSON tree renderer
-// ══════════════════════════════════════════════════════════════
 function jsonTree(obj) {
   if (obj === null) return '<span class="json-null">null</span>';
   if (typeof obj === 'boolean') return `<span class="json-boolean">${obj}</span>`;
@@ -1491,11 +1419,7 @@ function setupToggles() {
   });
 }
 
-// ══════════════════════════════════════════════════════════════
-//  Event listeners
-// ══════════════════════════════════════════════════════════════
 
-// Detail tabs
 document.querySelectorAll('.detail-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
@@ -1505,14 +1429,12 @@ document.querySelectorAll('.detail-tab').forEach(tab => {
   });
 });
 
-// Detail filters
 document.querySelectorAll('.filter-bar input[data-filter]').forEach(cb => {
   cb.addEventListener('change', () => { filters[cb.dataset.filter] = cb.checked; renderRecordList(); });
 });
 document.getElementById('showStateOverlay').addEventListener('change', () => renderRecordList());
 searchInput.addEventListener('input', (e) => { searchQuery = e.target.value; renderRecordList(); });
 
-// Keyboard
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if (currentView === 'detail') {
@@ -1529,7 +1451,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Resizer
 let isResizing = false;
 document.getElementById('resizer').addEventListener('mousedown', (e) => { isResizing = true; e.preventDefault(); });
 document.addEventListener('mousemove', (e) => {
@@ -1540,9 +1461,6 @@ document.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('mouseup', () => { isResizing = false; });
 
-// ══════════════════════════════════════════════════════════════
-//  Helpers
-// ══════════════════════════════════════════════════════════════
 function esc(s) { if (typeof s !== 'string') s = String(s??''); return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function formatSize(bytes) {
