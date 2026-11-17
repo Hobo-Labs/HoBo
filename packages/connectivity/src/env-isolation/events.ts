@@ -1,9 +1,4 @@
-/**
- * Environment isolation / elevated access / break-glass event factories.
- * Never embed secrets; membership and grant refs only.
- */
-
-// public-contract: access event family schema.
+// public-contract:
 import type { JsonObject } from "../json.js";
 
 export const ACCESS_EVENT_SCHEMA_VERSION = "hobo.access-events/v1" as const;

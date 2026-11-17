@@ -1,7 +1,3 @@
-/**
- * Pure cryptographic unit tests (no HTTP / no PACT boundaries).
- * DPoP ES256, JWT-SVID, and AWS SigV4 math.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -122,13 +118,6 @@ describe("DPoP ES256 + JWT-SVID (pure)", () => {
 			}),
 		).toThrow(/replay/);
 
-		// A correctly signed proof that simply carries no htu claim must be
-		// rejected, not treated as the empty string. The verifier used to
-		// compare `normalizeHtu(payload.htu ?? "")`, so an absent htu passed
-		// whenever the expected htu also normalized to "" — and then returned
-		// `payload.htu!`, i.e. undefined typed as string. `extra` is spread
-		// last by mintDpopProof, so this drops the claim and still signs the
-		// payload with the real key: the signature check cannot mask the hole.
 		const noHtu = mintDpopProof({
 			keyPair: kp,
 			htm: "POST",

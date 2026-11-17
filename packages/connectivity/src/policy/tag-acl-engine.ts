@@ -13,30 +13,15 @@ import {
 	evaluateEnvIsolation,
 } from "../env-isolation/evaluate.js";
 
-// public-contract: engine id for the initial tag/ACL PolicyEngine.
+// public-contract:
 export const TAG_ACL_POLICY_ENGINE_ID = "hobo.policy.tag-acl/v1" as const;
 
 export type TagAclPolicyEngineOptions = Readonly<{
 	readonly metering?: MeteringBus;
-	/**
-	 * Environment isolation evaluation context (membership, grants, elevated).
-	 * When omitted, env isolation still runs with tag-derived classes only.
-	 */
 	readonly envIsolation?: EnvIsolationEvalContext;
-	/**
-	 * When false, skip env isolation (tests / migration only). Default true.
-	 */
 	readonly enforceEnvIsolation?: boolean;
 }>;
 
-/**
- * Tenant-aware + environment-isolation tag/ACL evaluator.
- * - Cross-tenant access denied unless resource tags include `shared:true`.
- * - Cross-env access denied unless elevated capability / cross-env grant / break-glass.
- * - Missing env tags → deny (fail closed) when enforceEnvIsolation is true.
- * - Optional required tags on the resource must all be present on the subject.
- * - Fail closed when envIsolation.engineUnavailable is set.
- */
 export function createTagAclPolicyEngine(
 	options?: TagAclPolicyEngineOptions,
 ): PolicyEngine {
@@ -46,7 +31,6 @@ export function createTagAclPolicyEngine(
 	return {
 		engineId: TAG_ACL_POLICY_ENGINE_ID,
 		async evaluate(request: PolicyRequest): Promise<PolicyDecision> {
-			// (0) Fail closed on simulated engine outage.
 			if (options?.envIsolation?.engineUnavailable === true) {
 				const decision = denyDecision(TAG_ACL_POLICY_ENGINE_ID, request, [
 					"policy engine unavailable — fail closed",
@@ -55,7 +39,6 @@ export function createTagAclPolicyEngine(
 				return decision;
 			}
 
-			// (1) Tenant axis
 			const sameTenant = request.subject.tenantId === request.resource.tenantId;
 			const shared =
 				request.resource.tags?.includes("shared:true") === true ||
@@ -69,7 +52,6 @@ export function createTagAclPolicyEngine(
 				return decision;
 			}
 
-			// (2) Environment isolation axis (soft floor always on)
 			if (enforceEnv) {
 				const envVerdict = evaluateEnvIsolation(
 					request,
@@ -91,7 +73,6 @@ export function createTagAclPolicyEngine(
 				}
 			}
 
-			// (3) require:* tags
 			const required = (request.resource.tags ?? []).filter((t) =>
 				t.startsWith("require:"),
 			);

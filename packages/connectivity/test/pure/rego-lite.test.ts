@@ -1,25 +1,3 @@
-/**
- * The in-process policy evaluator.
- *
- * This runs when OPA is unavailable, which means it is the thing actually
- * deciding access on the local and offline paths. Every branch here is a
- * security decision, and two properties matter more than the individual rules:
- *
- * **Deny is the default, everywhere.** An unparseable document, an empty rule
- * list, an unmatched request, a missing `default` — all of them deny. A policy
- * engine that fails open is worse than no policy engine, because it reports
- * that a decision was made.
- *
- * **`false` is not the same as absent.** Every `when` predicate is tri-state:
- * `sameTenant: true` requires it, `sameTenant: false` requires the *opposite*,
- * and omitting it means "don't care". Collapsing `false` into absent would
- * silently widen every rule that uses it — and the negative forms are exactly
- * how cross-tenant and cross-env rules get written.
- *
- * Cross-env access is denied by default (the Environment Network Isolation
- * pack), so `sameEnv` is tested against untagged subjects too: an environment
- * that cannot be determined must not count as matching.
- */
 import type { PolicyRequest } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
@@ -42,11 +20,9 @@ function request(
 		attributes?: Record<string, string>;
 	} = {},
 ): PolicyRequest {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return {
 		subject: {
 			id: "s1",
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: (overrides.subjectTenant ?? "t1") as never,
 			tags: overrides.subjectTags ?? [],
 		},
@@ -54,7 +30,6 @@ function request(
 		resource: {
 			id: "r1",
 			kind: overrides.kind ?? "junction",
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: (overrides.resourceTenant ?? "t1") as never,
 			tags: overrides.resourceTags ?? [],
 			...(overrides.attributes
@@ -65,7 +40,6 @@ function request(
 }
 
 const doc = (rules: RegoLiteDocument["rules"], def?: "allow" | "deny") =>
-	// SAFETY: assertion required at this I/O or test boundary.
 	({ rules, ...(def ? { default: def } : undefined) }) as RegoLiteDocument;
 
 const effectOf = (d: RegoLiteDocument, r: PolicyRequest) =>
@@ -82,7 +56,6 @@ describe("parseRegoLiteDocument", () => {
 	});
 
 	it("rejects null", () => {
-		// isJsonObject(null), so this needs its own guard and its own test.
 		expect(() => parseRegoLiteDocument(null)).toThrow(TypeError);
 	});
 
@@ -97,8 +70,6 @@ describe("parseRegoLiteDocument", () => {
 	});
 
 	it("rejects an unknown effect rather than defaulting it", () => {
-		// Defaulting an unrecognised effect to either value would be a policy
-		// decision made by a typo.
 		expect(() =>
 			parseRegoLiteDocument({ rules: [{ effect: "maybe" }] }),
 		).toThrow(/effect must be allow\|deny/u);
@@ -163,7 +134,6 @@ describe("parseRegoLiteDocument", () => {
 
 describe("defaults", () => {
 	it("denies when no rule matches and no default is set", () => {
-		// The single most important assertion in this file.
 		expect(effectOf(doc([]), request())).toBe("deny");
 	});
 
@@ -293,8 +263,6 @@ describe("sameTenant is tri-state", () => {
 	});
 
 	it("requires the tenants to differ when false", () => {
-		// The negative form is how a cross-tenant rule gets written; collapsing
-		// it into "absent" would silently widen the rule to everything.
 		expect(
 			effectOf(
 				doc([{ effect: "allow", when: { sameTenant: false } }]),
@@ -333,7 +301,6 @@ describe("sameEnv is tri-state", () => {
 	});
 
 	it("does not match across environments", () => {
-		// Cross-env is the thing the isolation pack exists to prevent.
 		expect(
 			effectOf(
 				doc([{ effect: "allow", when: { sameEnv: true } }]),
@@ -343,8 +310,6 @@ describe("sameEnv is tri-state", () => {
 	});
 
 	it("does not treat an untagged subject as matching", () => {
-		// An environment that cannot be determined must not count as the same
-		// one; that would make the check pass exactly where it is least safe.
 		expect(
 			effectOf(
 				doc([{ effect: "allow", when: { sameEnv: true } }]),
@@ -532,7 +497,6 @@ describe("the shipped documents", () => {
 	});
 
 	it("denies an admin reaching across environments", () => {
-		// The pack's whole point: role does not cross an environment boundary.
 		expect(
 			effectOf(
 				HOBO_DEFAULT_POLICY_DOCUMENT,

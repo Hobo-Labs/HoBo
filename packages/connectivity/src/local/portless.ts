@@ -17,10 +17,6 @@ export interface PortlessProbe {
 const PORTLESS_HINT =
 	"named HTTPS URLs require portless (vercel-labs/portless); install it and run `portless trust` once, or set HOBO_PORTLESS=0 to silence this hint";
 
-/**
- * Detect optional portless binary.
- * Never throws; local path remains port-based when unavailable.
- */
 export function resolvePortlessMode(
 	env: NodeJS.ProcessEnv = process.env,
 ): PortlessMode {
@@ -58,7 +54,6 @@ export function probePortless(options?: {
 			!existsSync(candidate) &&
 			!candidate.includes(delimiter)
 		) {
-			// absolute/relative path missing
 			if (candidate.includes("/") || candidate.includes("\\")) continue;
 		}
 		const run =
@@ -92,10 +87,6 @@ export function probePortless(options?: {
 	};
 }
 
-/**
- * Register a hostname → backend URL mapping with portless when available.
- * Best-effort; failures are non-fatal for the local serve path.
- */
 export async function registerPortlessRoute(options: {
 	readonly hostname: string;
 	readonly backendUrl: string;
@@ -118,7 +109,6 @@ export async function registerPortlessRoute(options: {
 			};
 		});
 
-	// Try a few CLI shapes; portless CLI surface varies by version.
 	const attempts = [
 		["proxy", "set", options.hostname, options.backendUrl],
 		["set", options.hostname, options.backendUrl],

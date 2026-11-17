@@ -1,9 +1,3 @@
-/**
- * HTTP transports for remote PAM control planes.
- * Complete clients — not stubs. When endpoint is unset, callers use local mint.
- * Never embeds JumpServer/Teleport/Boundary binaries (GPLv3/proprietary stay out-of-process).
- */
-
 import type { IsolationClass } from "../env-isolation/types.js";
 import {
 	cloneAsJson,
@@ -15,7 +9,6 @@ import type { PamKind, SessionHandle } from "./types.js";
 
 export type RemoteSessionResult = Readonly<{
 	remoteSessionId: string;
-	/** Opaque remote authorization payload (not a long-lived password). */
 	authorization: string;
 	expiresAt: string;
 }>;
@@ -95,7 +88,6 @@ export function createRemoteTransport(input: {
 			const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 			switch (input.kind) {
 				case "teleport": {
-					// Teleport-compatible cert request shape (webapi).
 					const body = await post("/v1/webapi/ssh/certs", {
 						user: req.subject,
 						login: req.subject,
@@ -127,9 +119,7 @@ export function createRemoteTransport(input: {
 							reason: req.reason,
 						},
 					);
-					const item =
-						// SAFETY: assertion required at this I/O or test boundary.
-						(body.item as JsonObject | undefined) ?? body;
+					const item = (body.item as JsonObject | undefined) ?? body;
 					return {
 						remoteSessionId: String(
 							item.authorization_token_id ?? item.id ?? `bd-${Date.now()}`,
@@ -139,7 +129,6 @@ export function createRemoteTransport(input: {
 					};
 				}
 				case "jumpserver": {
-					// JumpServer runs out-of-process; we only speak its REST API.
 					const body = await post("/api/v1/authentication/connection-token/", {
 						user: req.subject,
 						asset: req.target,
@@ -205,7 +194,6 @@ export function mergeRemoteIntoHandle(input: {
 }): SessionHandle {
 	return Object.freeze({
 		...input.local,
-		// Keep local signed sessionToken; bind remote id into credentialRef.
 		credentialRef: `${input.local.credentialRef}?remote=${encodeURIComponent(input.remote.remoteSessionId)}`,
 		expiresAt:
 			Date.parse(input.remote.expiresAt) < Date.parse(input.local.expiresAt)

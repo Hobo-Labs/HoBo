@@ -1,8 +1,3 @@
-/**
- * DPoP (RFC 9449) — real ES256 (P-256) proof generation and verification.
- * Used to sender-constrain access tokens for remote agent credentials.
- */
-
 import {
 	createHash,
 	createPrivateKey,
@@ -40,7 +35,6 @@ export interface MintDpopProofInput {
 	readonly htm: string;
 	readonly htu: string;
 	readonly accessToken: string;
-	/** Optional additional claims. */
 	readonly extra?: JsonObject;
 	readonly now?: number;
 }
@@ -74,15 +68,10 @@ function decodeB64url(input: string): Buffer {
 	return Buffer.from(b64, "base64");
 }
 
-/**
- * Generate an ES256 P-256 key pair for DPoP. Persist `exportDpopPrivateJwk`
- * under HOBO_HOME for stable agent identity across restarts.
- */
 export function generateDpopKeyPair(kid?: string): DpopKeyPair {
 	const { privateKey, publicKey } = generateKeyPairSync("ec", {
 		namedCurve: "P-256",
 	});
-	// SAFETY: assertion required at this I/O or test boundary.
 	const jwk = publicKey.export({ format: "jwk" }) as {
 		x?: string;
 		y?: string;
@@ -116,7 +105,6 @@ export function importDpopKeyPair(input: {
 		format: "jwk",
 	});
 	const publicKey = createPublicKey(privateKey);
-	// SAFETY: assertion required at this I/O or test boundary.
 	const jwk = publicKey.export({ format: "jwk" }) as {
 		x?: string;
 		y?: string;
@@ -141,7 +129,6 @@ export function importDpopKeyPair(input: {
 }
 
 export function exportDpopPrivateJwk(keyPair: DpopKeyPair): JsonObject {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const jwk = keyPair.privateKey.export({ format: "jwk" }) as JsonObject;
 	return { ...jwk, kid: keyPair.kid, alg: "ES256", use: "sig" };
 }
@@ -150,9 +137,6 @@ export function accessTokenHash(accessToken: string): string {
 	return b64url(createHash("sha256").update(accessToken, "utf8").digest());
 }
 
-/**
- * Mint a compact-serialization DPoP proof JWT (ES256).
- */
 export function mintDpopProof(input: MintDpopProofInput): string {
 	const now = input.now ?? Math.floor(Date.now() / 1000);
 	const header = {
@@ -175,7 +159,6 @@ export function mintDpopProof(input: MintDpopProofInput): string {
 		...input.extra,
 	};
 	const signingInput = `${b64urlJson(header)}.${b64urlJson(payload)}`;
-	// IEEE-P1363 (r||s) signature for JWT ES256
 	const sig = cryptoSign("SHA256", Buffer.from(signingInput, "utf8"), {
 		key: input.keyPair.privateKey,
 		dsaEncoding: "ieee-p1363",
@@ -183,20 +166,11 @@ export function mintDpopProof(input: MintDpopProofInput): string {
 	return `${signingInput}.${b64url(sig)}`;
 }
 
-/**
- * Verify a DPoP proof against expected method, URL, and access token.
- * Enforces ath match, htm/htu match, and iat skew window (default ±5 min).
- */
 export interface DpopJtiCache {
-	/** Throws if jti was already seen within TTL. */
 	assertFresh(jti: string, iat: number): void;
 	readonly size: number;
 }
 
-/**
- * In-process jti replay cache for DPoP (and reusable by broker server follow-on).
- * Entries expire after `ttlSeconds` (default 600).
- */
 export function createDpopJtiCache(options?: {
 	readonly ttlSeconds?: number;
 	readonly now?: () => number;
@@ -235,16 +209,13 @@ export function verifyDpopProof(input: {
 	readonly accessToken: string;
 	readonly maxSkewSeconds?: number;
 	readonly now?: number;
-	/** Optional replay defense (required for server-side verification). */
 	readonly jtiCache?: DpopJtiCache;
 }): VerifiedDpopProof {
 	const parts = input.proof.split(".");
 	if (parts.length !== 3) {
 		throw new Error("dpop: malformed proof (expected 3 JWT segments)");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const [hB64, pB64, sB64] = parts as [string, string, string];
-	// SAFETY: assertion required at this I/O or test boundary.
 	const header = JSON.parse(decodeB64url(hB64).toString("utf8")) as {
 		typ?: string;
 		alg?: string;
@@ -266,7 +237,6 @@ export function verifyDpopProof(input: {
 		throw new Error("dpop: header.jwk must be EC P-256 public key");
 	}
 
-	// SAFETY: assertion required at this I/O or test boundary.
 	const payload = JSON.parse(decodeB64url(pB64).toString("utf8")) as {
 		htm?: string;
 		htu?: string;
@@ -277,9 +247,6 @@ export function verifyDpopProof(input: {
 	if (payload.htm?.toUpperCase() !== input.htm.toUpperCase()) {
 		throw new Error("dpop: htm mismatch");
 	}
-	// Bound to locals so the checks below actually narrow. The previous
-	// `payload.htu ?? ""` also let an absent htu pass whenever input.htu
-	// normalized to the empty string; requiring presence closes that.
 	const htu = payload.htu;
 	if (htu === undefined || normalizeHtu(htu) !== normalizeHtu(input.htu)) {
 		throw new Error("dpop: htu mismatch");
@@ -347,7 +314,6 @@ export function verifyDpopProof(input: {
 function normalizeHtu(url: string): string {
 	try {
 		const u = new URL(url);
-		// Strip fragment and default ports; keep path without trailing slash unless root.
 		u.hash = "";
 		if (
 			(u.protocol === "https:" && u.port === "443") ||

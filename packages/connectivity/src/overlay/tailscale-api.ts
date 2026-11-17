@@ -1,10 +1,3 @@
-/**
- * Tailscale control-plane API helpers (MagicDNS split DNS, device status).
- * Auth: TS_API_KEY or options.apiKey (OAuth client credentials also accepted
- * via access token). Never logs the key.
- *
- * Docs: https://tailscale.com/api
- */
 import { cloneAsJson, type JsonValue } from "../json.js";
 
 export interface TailscaleApiOptions {
@@ -15,7 +8,6 @@ export interface TailscaleApiOptions {
 }
 
 export interface TailscaleSplitDnsMap {
-	/** domain suffix → nameserver IPs */
 	readonly [domain: string]: readonly string[];
 }
 
@@ -27,9 +19,6 @@ export interface TailscaleDnsPreferences {
 export interface TailscaleApiClient {
 	readonly tailnet: string;
 	getSplitDns(): Promise<TailscaleSplitDnsMap>;
-	/**
-	 * Merge domains into the tailnet split DNS map (preserves other domains).
-	 */
 	putSplitDns(
 		domains: readonly string[],
 		nameservers: readonly string[],
@@ -87,7 +76,6 @@ export function createTailscaleApiClient(
 	return {
 		tailnet,
 		async getSplitDns() {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const data = (await api(
 				"GET",
 				`/tailnet/${encodeURIComponent(tailnet)}/dns/split-dns`,
@@ -97,23 +85,17 @@ export function createTailscaleApiClient(
 		async putSplitDns(domains, nameservers) {
 			const existing = await this.getSplitDns();
 			const next = { ...asMutable(existing) };
-			// The domain is used as the map key verbatim: Tailscale keys split DNS
-			// by the suffix as written, so rewriting a leading dot here would
-			// create a second entry beside the one the tailnet already has.
 			for (const domain of domains) {
 				next[domain] = [...nameservers];
 			}
-			// SAFETY: assertion required at this I/O or test boundary.
 			const data = (await api(
 				"PATCH",
 				`/tailnet/${encodeURIComponent(tailnet)}/dns/split-dns`,
 				next,
 			)) as Record<string, string[]>;
-			// Some API versions return the map; if empty, re-GET.
 			if (data && Object.keys(data).length > 0) {
 				return normalizeSplit(data);
 			}
-			// Fallback PUT full map
 			await api(
 				"PUT",
 				`/tailnet/${encodeURIComponent(tailnet)}/dns/split-dns`,
@@ -122,7 +104,6 @@ export function createTailscaleApiClient(
 			return this.getSplitDns();
 		},
 		async getDnsPreferences() {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const data = (await api(
 				"GET",
 				`/tailnet/${encodeURIComponent(tailnet)}/dns/preferences`,
@@ -130,21 +111,15 @@ export function createTailscaleApiClient(
 			return data ?? {};
 		},
 		async setDnsPreferences(prefs) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const data = (await api(
 				"POST",
 				`/tailnet/${encodeURIComponent(tailnet)}/dns/preferences`,
 				cloneAsJson(prefs),
 			)) as TailscaleDnsPreferences;
-			// A 204 (and some API versions' empty body) means "accepted, nothing to
-			// report". Returning that empty object would tell the caller no
-			// preferences are in force — the opposite of what the write just did —
-			// so an answer carrying nothing falls back to what was asked for.
 			if (!data || Object.keys(data).length === 0) return prefs;
 			return data;
 		},
 		async listDevices() {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const data = (await api(
 				"GET",
 				`/tailnet/${encodeURIComponent(tailnet)}/devices`,

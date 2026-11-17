@@ -30,10 +30,6 @@ export interface CloudflareBackendHealthObservation {
 export interface CloudflareTrafficRouting extends TrafficRoutingPort {
 	readonly provider: "cloudflare";
 	readonly revoke: NonNullable<TrafficRoutingPort["revoke"]>;
-	/**
-	 * observe.health: fetch pool health for an applied plan (or explicit pool map).
-	 * Returns empty when credentials/account/pools are unavailable.
-	 */
 	observeHealth(
 		planId: RoutingPlanId,
 		poolIdsByBackend?: Readonly<Record<string, string>>,
@@ -41,24 +37,12 @@ export interface CloudflareTrafficRouting extends TrafficRoutingPort {
 }
 
 export interface CloudflareTrafficRoutingOptions {
-	/** API token with Load Balancing edit permission. Never logged or metered. */
 	readonly apiToken?: string;
 	readonly zoneId: string;
-	/**
-	 * Account id for pool create (POST /accounts/{id}/load_balancers/pools).
-	 * Required when backends are not pre-mapped via `poolIdsByBackend`.
-	 */
 	readonly accountId?: string;
-	/** Existing Cloudflare pool IDs keyed by HoBo backend ID (brownfield). */
 	readonly poolIdsByBackend?: Readonly<Record<string, string>>;
-	/** Existing Cloudflare load-balancer IDs keyed by HoBo plan ID (brownfield). */
 	readonly loadBalancerIdsByPlan?: Readonly<Record<string, string>>;
-	/**
-	 * Delete pools created by this adapter on revoke. Default false (retain pools).
-	 * Pre-mapped brownfield pools are never deleted.
-	 */
 	readonly deleteCreatedPoolsOnRevoke?: boolean;
-	/** True only when every mapped/created pool has an independently configured monitor. */
 	readonly healthChecksConfigured?: boolean;
 	readonly apiBase?: string;
 	readonly fetchImpl?: typeof fetch;
@@ -104,7 +88,6 @@ export function createCloudflareTrafficRouting(
 			return {
 				ok: response.ok,
 				status: response.status,
-				// SAFETY: assertion required at this I/O or test boundary.
 				body: cloneAsJson(await response.json().catch(() => null)),
 			};
 		} catch {
@@ -540,7 +523,6 @@ function cloudflareResultId(body: JsonValue): string | undefined {
 	if (!isJsonObject(body) || body.success !== true) return undefined;
 	const result = body.result;
 	if (!result || !isJsonObject(result)) return undefined;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const id = (result as { id?: unknown }).id;
 	return isJsonString(id) && id.trim().length > 0 ? id.trim() : undefined;
 }
@@ -549,15 +531,12 @@ function cloudflarePoolHealthy(body: JsonValue): boolean | undefined {
 	if (!isJsonObject(body) || body.success !== true) return undefined;
 	const result = body.result;
 	if (!result || !isJsonObject(result)) return undefined;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const pool = result as {
 		healthy?: unknown;
 		pop_health?: unknown;
 	};
 	if (isJsonBoolean(pool.healthy)) return pool.healthy;
-	// Some CF responses nest health under pop_health.*.healthy
 	if (pool.pop_health && isJsonObject(pool.pop_health)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const values = Object.values(pool.pop_health as JsonObject);
 		const flags = values
 			.map((entry) =>
@@ -625,9 +604,7 @@ async function meter(
 				outcome,
 			}),
 		);
-	} catch {
-		// Provider realization remains authoritative when observation delivery fails.
-	}
+	} catch {}
 }
 
 function cloudflareEnabled(body: JsonValue): boolean {
@@ -677,7 +654,6 @@ function sameNumberRecord(
 	expected: Readonly<Record<string, number | undefined>>,
 ): boolean {
 	if (!value || !isJsonObject(value)) return false;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const observed = value as JsonObject;
 	const expectedKeys = Object.keys(expected);
 	return (

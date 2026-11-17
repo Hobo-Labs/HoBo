@@ -1,7 +1,3 @@
-/**
- * High-integrity control-plane env membership.
- * Isolation-critical env: tags cannot be self-assigned by clients.
- */
 import {
 	ACCESS_EVENTS,
 	type AccessEvent,
@@ -14,7 +10,7 @@ import {
 	SHORT_LIVED_MEMBERSHIP_TTL_SECONDS,
 } from "./types.js";
 
-// public-contract: env membership record schema.
+// public-contract:
 export const ENV_MEMBERSHIP_SCHEMA = "hobo.env-membership/v1" as const;
 
 export type EnvMembership = Readonly<{
@@ -28,7 +24,6 @@ export type EnvMembership = Readonly<{
 	expiresAt?: string;
 	dualControlRequired: boolean;
 	dualControlApprovers: readonly string[];
-	/** Client-supplied env: tags alone never set this true. */
 	controlPlaneGated: true;
 }>;
 
@@ -39,7 +34,6 @@ export type AssignMembershipInput = Readonly<{
 	nodeId?: string;
 	expiresAt?: string;
 	dualControlApprovers?: readonly string[];
-	/** Second approver for production dual control. */
 	secondApprover?: string;
 	now?: string;
 }>;
@@ -59,11 +53,6 @@ export class EnvMembershipService {
 		this.now = options.now ?? (() => new Date().toISOString());
 	}
 
-	/**
-	 * Control-plane assign. Production requires dual control (assignedBy + secondApprover).
-	 * Client-side tag self-assignment is rejected by never exposing a path that sets
-	 * controlPlaneGated without assignedBy from the control plane.
-	 */
 	assign(input: AssignMembershipInput): EnvMembership {
 		const t = input.now ?? this.now();
 		const dualRequired = input.isolationClass === "production";
@@ -80,7 +69,6 @@ export class EnvMembershipService {
 			);
 		}
 		if (dualRequired && approvers.includes(input.assignedBy)) {
-			// dual means distinct second party
 			const distinct = approvers.filter((a) => a !== input.assignedBy);
 			if (distinct.length < 1) {
 				throw Object.assign(
@@ -111,8 +99,7 @@ export class EnvMembershipService {
 			dualControlRequired: dualRequired,
 			dualControlApprovers: dualRequired
 				? Object.freeze(approvers.filter((a) => a !== input.assignedBy))
-				: // SAFETY: assertion required at this I/O or test boundary.
-					Object.freeze([]),
+				: Object.freeze([]),
 			controlPlaneGated: true as const,
 		});
 		this.members.set(
@@ -160,10 +147,6 @@ export class EnvMembershipService {
 		);
 	}
 
-	/**
-	 * Lookup active membership. Expired → absent (fail-closed).
-	 * Client-supplied env:production without a record does not authorize.
-	 */
 	getActive(
 		principalId: string,
 		isolationClass: IsolationClass,
@@ -178,10 +161,6 @@ export class EnvMembershipService {
 		return rec;
 	}
 
-	/**
-	 * Resolve principal's active isolation class from control-plane records.
-	 * Prefer production > staging > development > … for multi-membership (rare).
-	 */
 	resolveClass(principalId: string, now?: string): IsolationClass | null {
 		const priority: IsolationClass[] = [
 			"production",
@@ -206,10 +185,6 @@ function membershipKey(principalId: string, cls: IsolationClass): string {
 	return `${principalId}::${cls}`;
 }
 
-/**
- * Reject free client self-tagging for isolation-critical labels.
- * Tags may advertise intent; authorization requires control-plane membership.
- */
 export function assertMembershipIntegrity(input: {
 	readonly claimedClass: IsolationClass | null;
 	readonly membership: EnvMembership | null;

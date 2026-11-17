@@ -1,57 +1,38 @@
-/**
- * Versioned Environment Network Isolation policy pack.
- * Loadable by TagAcl / rego-lite and referenced from Station Rails.
- */
-
-// public-contract: Environment Network Isolation policy pack id.
+// public-contract:
 import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
 
 export const ENV_NETWORK_ISOLATION_POLICY_PACK_ID =
 	"hobo.env-network-isolation/v1" as const;
 
-// public-contract: Environment Network Isolation policy pack version.
+// public-contract:
 export const ENV_NETWORK_ISOLATION_POLICY_PACK_VERSION = "1.0.0" as const;
 
 export type EnvNetworkIsolationPolicyPack = Readonly<{
 	id: typeof ENV_NETWORK_ISOLATION_POLICY_PACK_ID;
 	version: typeof ENV_NETWORK_ISOLATION_POLICY_PACK_VERSION;
-	/** Fail closed when engine / overlay control plane unavailable. */
 	failClosed: true;
-	/** Default deny all cross-isolation-class traffic. */
 	defaultDenyCrossEnv: true;
-	/** Require control-plane membership for isolation-critical env labels. */
 	requireControlPlaneMembership: true;
-	/** Production dual control for membership assignment. */
 	productionDualControl: true;
-	/** Elevated access requires short-lived capability (not network alone). */
 	elevatedRequiresCapability: true;
-	/** Preview / ephemeral auto-revoke on expiry. */
 	shortLivedAutoRevoke: true;
-	/** Local-dev never joins remote overlays by default. */
 	localDevAirGap: true;
-	/** Junction federation denied across isolation classes by default. */
 	junctionEnvScoped: true;
-	/** Agents constrained identically or more strictly. */
 	agentSameOrStricter: true;
-	/** Break-glass dual control + auto-expiry + review obligation. */
 	breakGlass: Readonly<{
 		dualControl: true;
 		autoExpiry: true;
 		maxTtlSeconds: number;
 		postIncidentReview: true;
 	}>;
-	/** Elevated capability defaults. */
 	elevated: Readonly<{
 		maxTtlSeconds: number;
 		audiences: readonly string[];
 	}>;
-	/** Classes for which network membership alone never authorizes. */
 	capabilityRequiredClasses: readonly string[];
-	/** Who may assign which isolation class (control-plane roles). */
 	membershipAssigners: Readonly<Record<string, readonly string[]>>;
 }>;
 
-/** Default signed-ready pack document. */
 export const DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK: EnvNetworkIsolationPolicyPack =
 	Object.freeze({
 		id: ENV_NETWORK_ISOLATION_POLICY_PACK_ID,
@@ -115,17 +96,12 @@ export const DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK: EnvNetworkIsolationPolic
 		}),
 	});
 
-/**
- * Parse-don't-validate pack boundary. Widening packs are high-risk and must be
- * policy-evaluated by the caller before activation.
- */
 export function parseEnvNetworkIsolationPolicyPack(
 	raw: JsonValue,
 ): EnvNetworkIsolationPolicyPack {
 	if (!raw || !isJsonObject(raw)) {
 		throw new TypeError("env network isolation policy pack must be an object");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const o = raw as JsonObject;
 	if (o.id !== ENV_NETWORK_ISOLATION_POLICY_PACK_ID) {
 		throw new TypeError(
@@ -137,10 +113,8 @@ export function parseEnvNetworkIsolationPolicyPack(
 			"env isolation pack must keep failClosed and defaultDenyCrossEnv true",
 		);
 	}
-	// Only allow the default hardened pack shape for now (no silent widening).
 	return DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK;
 }
 
-/** Rail policyPacks entry for Station activation. */
 export const ENV_ISOLATION_RAIL_POLICY_PACK_REF =
 	ENV_NETWORK_ISOLATION_POLICY_PACK_ID;

@@ -1,7 +1,3 @@
-/**
- * Executable proof: mediated residual secrets never reach the workload
- * (ADR-0027 mediation + ADR-0130 named endpoints).
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,7 +21,6 @@ describe("secretless mediation proof (ADR-0027)", () => {
 			namedHost: "orders-db.camp.local.hobo.localhost",
 		});
 
-		// Workload surface: dial local named endpoint only.
 		const workloadView = {
 			endpoint: lease.localEndpoint,
 			protocol: lease.protocol,
@@ -45,12 +40,10 @@ describe("secretless mediation proof (ADR-0027)", () => {
 		expect(mediated.credentialExposedToWorkload).toBe(false);
 		expect(JSON.stringify(mediated)).not.toContain(credentialMaterial);
 
-		// Renewal keeps mediation invariant (partition-grace style).
 		const renewed = connector.renewLease(lease.leaseId);
 		expect(renewed?.leaseId).toBe(lease.leaseId);
 		expect(JSON.stringify(renewed)).not.toContain(credentialMaterial);
 
-		// Public list never enumerates credentials.
 		for (const listed of connector.listLeases()) {
 			expect(JSON.stringify(listed)).not.toContain(credentialMaterial);
 		}

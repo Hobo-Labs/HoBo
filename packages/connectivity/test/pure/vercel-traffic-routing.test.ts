@@ -1,35 +1,9 @@
-/**
- * The Vercel traffic-routing adapter's refusals and mode selection.
- *
- * Every dependency is injectable — `token`, `fetchImpl`, `metering` — so the
- * whole surface is reachable without a Vercel account.
- *
- * The interesting behaviour is all refusal. This adapter can realize a routing
- * plan two ways, and it declines rather than guessing when neither fits:
- *
- * **A plan id may not be reused for different content.** Re-applying the same
- * id with a different plan would silently replace live routing with something
- * the operator did not diff. It is refused with a named reason instead — and
- * the *same* content under the same id is fine, because a retry after a timeout
- * has to be safe.
- *
- * **Missing credentials deny before anything is sent.** A request that would
- * certainly 401 is not worth making, and the denial says which input is
- * missing rather than reporting an API error.
- *
- * **An unrealizable plan is declined, not approximated.** Vercel's Rolling
- * Releases need exactly two backends under one static rule; a plan that does
- * not fit either that or a rewrites shape gets `mode` as its reason. Half-
- * applying it would leave traffic split in a way nobody asked for.
- */
-
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../src/json.js";
 
 import { createVercelTrafficRouting } from "../../src/traffic-routing/vercel.js";
 
 function plan(overrides: JsonObject = {}) {
-	// SAFETY: assertion required at this I/O or test boundary.
 	return {
 		planId: "p1",
 		intent: {
@@ -54,19 +28,16 @@ function plan(overrides: JsonObject = {}) {
 	} as never;
 }
 
-/** Rewrites need a backend endpoint; without one the plan is declined. */
 const ENDPOINT_BACKEND = {
 	id: "stable",
 	service: "web",
 	endpoint: "https://stable.example.com",
 };
 
-/** A fetch that records calls and replays one canned reply. */
 function stubFetch(
 	reply: { ok?: boolean; status?: number; body?: unknown } = {},
 ) {
 	const calls: { url: string; init: RequestInit }[] = [];
-	// SAFETY: assertion required at this I/O or test boundary.
 	const impl = (async (url: string, init: RequestInit) => {
 		calls.push({ url, init });
 		return {
@@ -79,7 +50,6 @@ function stubFetch(
 }
 
 const routing = (options: JsonObject = {}) =>
-	// SAFETY: assertion required at this I/O or test boundary.
 	createVercelTrafficRouting({
 		token: "vt-token",
 		projectIdOrName: "proj",
@@ -89,10 +59,7 @@ const routing = (options: JsonObject = {}) =>
 
 describe("credential and project refusals", () => {
 	it("denies with no token, before making a request", () => {
-		// A request that would certainly 401 is not worth making, and the denial
-		// names the missing input rather than reporting an API error.
 		const { calls, impl } = stubFetch();
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			projectIdOrName: "proj",
 			fetchImpl: impl,
@@ -104,7 +71,6 @@ describe("credential and project refusals", () => {
 	});
 
 	it("names credentials as the reason", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			projectIdOrName: "proj",
 		} as never);
@@ -113,7 +79,6 @@ describe("credential and project refusals", () => {
 	});
 
 	it("treats a whitespace-only token as absent", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "   ",
 			projectIdOrName: "proj",
@@ -122,7 +87,6 @@ describe("credential and project refusals", () => {
 	});
 
 	it("denies with no project", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "vt",
 			projectIdOrName: "",
@@ -132,7 +96,6 @@ describe("credential and project refusals", () => {
 	});
 
 	it("treats a whitespace-only project as absent", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "vt",
 			projectIdOrName: "  ",
@@ -141,7 +104,6 @@ describe("credential and project refusals", () => {
 	});
 
 	it("explains what to supply", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			projectIdOrName: "proj",
 		} as never);
@@ -153,8 +115,6 @@ describe("credential and project refusals", () => {
 
 describe("plan-id reuse", () => {
 	it("refuses the same id with different content", async () => {
-		// Silently replacing live routing with something nobody diffed is the
-		// failure this guard exists for.
 		const port = routing({
 			deploymentIdsByBackend: { stable: "dep-a", canary: "dep-b" },
 		});
@@ -180,8 +140,6 @@ describe("plan-id reuse", () => {
 	});
 
 	it("permits re-applying identical content, so a retry is safe", async () => {
-		// A timeout leaves the caller unsure whether the apply landed; retrying
-		// the same plan must not be treated as a conflict.
 		const port = routing({
 			deploymentIdsByBackend: { stable: "dep-a", canary: "dep-b" },
 		});
@@ -202,8 +160,6 @@ describe("plan-id reuse", () => {
 
 describe("mode selection", () => {
 	it("declines a plan that fits neither realization", async () => {
-		// Half-applying an unrealizable plan would leave traffic split in a way
-		// nobody asked for.
 		const result = await routing().apply(
 			plan({
 				intent: { service: "web", tenantId: "t1", rules: [] },
@@ -224,8 +180,6 @@ describe("mode selection", () => {
 	});
 
 	it("honours a forced rolling-release mode", async () => {
-		// The forced mode skips detection entirely, which is what makes it
-		// useful for a plan the detector would decline.
 		const port = routing({
 			mode: "rolling-release",
 			deploymentIdsByBackend: { stable: "dep-a", canary: "dep-b" },
@@ -256,7 +210,6 @@ describe("mode selection", () => {
 	});
 
 	it("declines a rolling release with more than one rule", async () => {
-		// Rolling Releases realize one canary split; two rules is two policies.
 		const rule = {
 			weightStrategy: "static",
 			backends: [
@@ -312,20 +265,13 @@ describe("status", () => {
 		});
 
 	it("reports nothing for a plan it never applied", async () => {
-		// Null rather than a fabricated inactive status: "we have no record" and
-		// "it is inactive" are different facts.
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect(await routing().status("never-applied" as never)).toBeNull();
 	});
 
 	it("does not record a plan the provider never confirmed", async () => {
-		// The important one. An apply that came back without a version id did
-		// not land, so tracking it as applied would make `status` report routing
-		// that does not exist — and a later revoke would claim to undo it.
 		const port = routing({ mode: "rewrites" });
 		const result = await port.apply(rewritePlan());
 		expect(result.realized).toBe("none");
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect(await port.status("p1" as never)).toBeNull();
 	});
 
@@ -335,18 +281,14 @@ describe("status", () => {
 	});
 
 	it("refuses to revoke a plan it never recorded", async () => {
-		// Reporting success would tell an operator routing was removed when
-		// nothing was ever installed.
 		const port = routing({ mode: "rewrites" });
 		await port.apply(rewritePlan());
-		// SAFETY: assertion required at this I/O or test boundary.
 		const revoked = await port.revoke("p1" as never);
 		expect(revoked.ok).toBe(false);
 		expect(revoked.notes.join(" ")).toMatch(/not found/u);
 	});
 
 	it("refuses to revoke an id it has never seen", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect((await routing().revoke("never" as never)).ok).toBe(false);
 	});
 });
@@ -354,7 +296,6 @@ describe("status", () => {
 describe("the request layer", () => {
 	it("presents the token as a bearer credential", async () => {
 		const { calls, impl } = stubFetch();
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "vt-secret",
 			projectIdOrName: "proj",
@@ -377,7 +318,6 @@ describe("the request layer", () => {
 				backends: [ENDPOINT_BACKEND],
 			}),
 		);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const auth = (calls[0]?.init.headers as Record<string, string>)
 			?.authorization;
 		expect(auth).toBe("Bearer vt-secret");
@@ -385,7 +325,6 @@ describe("the request layer", () => {
 
 	it("adds the team id as a query parameter when configured", async () => {
 		const { calls, impl } = stubFetch();
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "vt",
 			projectIdOrName: "proj",
@@ -414,7 +353,6 @@ describe("the request layer", () => {
 
 	it("strips trailing slashes from a custom API base", async () => {
 		const { calls, impl } = stubFetch();
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "vt",
 			projectIdOrName: "proj",
@@ -442,13 +380,9 @@ describe("the request layer", () => {
 	});
 
 	it("survives a transport that throws rather than propagating it", async () => {
-		// A network error must become a denial the caller can read, not an
-		// exception mid-apply that leaves routing in an unknown state.
-		// SAFETY: assertion required at this I/O or test boundary.
 		const impl = (async () => {
 			throw new Error("socket hang up");
 		}) as typeof fetch;
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "vt",
 			projectIdOrName: "proj",
@@ -475,7 +409,6 @@ describe("the request layer", () => {
 	});
 
 	it("survives a non-JSON response body", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const impl = (async () => ({
 			ok: true,
 			status: 200,
@@ -483,7 +416,6 @@ describe("the request layer", () => {
 				throw new Error("not json");
 			},
 		})) as typeof fetch;
-		// SAFETY: assertion required at this I/O or test boundary.
 		const port = createVercelTrafficRouting({
 			token: "vt",
 			projectIdOrName: "proj",

@@ -1,8 +1,3 @@
-/**
- * Secretless session material mint/verify for PAM sessions.
- * Audience-bound, short-lived, HMAC or ES256 — same discipline as JWT-SVID.
- */
-
 import {
 	createHash,
 	createHmac,
@@ -43,14 +38,11 @@ function b64urlJson(value: JsonValue): string {
 function decodeB64urlJson<T>(input: string): T {
 	const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
 	const b64 = input.replace(/-/g, "+").replace(/_/g, "/") + pad;
-	// SAFETY: assertion required at this I/O or test boundary.
 	return JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as T;
 }
 
 export type SessionBrokerKeys = Readonly<{
-	/** HMAC secret for HS256 session tokens. */
 	hmacSecret: string;
-	/** Optional ES256 private key for cert-style protocols. */
 	privateKey?: KeyObject;
 }>;
 
@@ -136,7 +128,6 @@ export function verifySessionToken(input: {
 				reason: "session token malformed",
 			};
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
 		const [hB64, pB64, sB64] = parts as [string, string, string];
 		const header = decodeB64urlJson<{ alg?: string }>(hB64);
 		const claims = decodeB64urlJson<SessionClaims>(pB64);
@@ -186,7 +177,6 @@ export function verifySessionToken(input: {
 	}
 }
 
-/** Protocol-specific framing of the same secretless session material. */
 export function frameSessionProtocol(
 	kind: PamKind,
 ): "ssh-cert" | "boundary-authz" | "jumpserver-token" | "hobo-svid" {
