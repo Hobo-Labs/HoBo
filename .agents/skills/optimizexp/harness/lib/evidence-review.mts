@@ -146,25 +146,31 @@ export function validateEvidenceArtifact(dir: string, root?: string): string[] {
 	return inspectArtifact(dir, root).problems;
 }
 
-export function validateEvidenceReview(dir: string, root?: string): string[] {
+export function validateEvidenceReview(dir: string, root?: string, proposedReview?: EvidenceReview): string[] {
 	const { meta, problems, castEvents } = inspectArtifact(dir, root);
 	if (!meta) return problems;
-	const review = readJson<EvidenceReview>(dir, "review.json", root);
+	const review = proposedReview ?? readJson<EvidenceReview>(dir, "review.json", root);
 	if (!review) return [...problems, "evidence_review_missing_or_invalid"];
 	const primary = meta.primary;
+	const proposedRejection = proposedReview?.status === "rejected";
 	if (!primary?.sha256 || primary.sha256 !== review.artifactSha256) {
 		problems.push("review_artifact_hash_mismatch");
 	}
-	if (review.status !== "accepted") problems.push("evidence_review_not_accepted");
+	if (review.status !== "accepted" && !proposedRejection) problems.push("evidence_review_not_accepted");
 	if (typeof review.reviewer !== "string" || !review.reviewer.trim()) problems.push("evidence_review_reviewer_missing");
-	if (review.relevance !== "relevant") problems.push("evidence_not_marked_relevant");
-	if (review.completeness !== "complete" || review.coverageMode !== "full-journey") {
-		problems.push("evidence_not_marked_complete_full_journey");
+	if (proposedRejection) {
+		if (review.relevance !== "relevant" && review.relevance !== "irrelevant") problems.push("evidence_relevance_invalid");
+		if (review.completeness !== "complete" && review.completeness !== "partial") problems.push("evidence_completeness_invalid");
+		if (review.coverageMode !== (review.completeness === "complete" ? "full-journey" : "single-state")) problems.push("evidence_coverage_mode_invalid");
+		if (review.relevance === "relevant" && review.completeness === "complete") problems.push("evidence_rejection_requires_reason");
+	} else {
+		if (review.relevance !== "relevant") problems.push("evidence_not_marked_relevant");
+		if (review.completeness !== "complete" || review.coverageMode !== "full-journey") problems.push("evidence_not_marked_complete_full_journey");
 	}
 	if (typeof review.notes !== "string" || review.notes.trim().length < 20) {
 		problems.push("evidence_review_notes_missing_or_too_short");
 	}
-	if (meta.degraded) problems.push("degraded_capture_not_acceptable_proof");
+	if (meta.degraded && !proposedRejection) problems.push("degraded_capture_not_acceptable_proof");
 	const claims = Array.isArray(meta.claims) ? meta.claims : [];
 	if (meta.claims !== undefined && !Array.isArray(meta.claims)) problems.push("evidence_claims_invalid");
 	const coveredClaims = Array.isArray(review.coveredClaims) ? review.coveredClaims : [];
@@ -175,23 +181,26 @@ export function validateEvidenceReview(dir: string, root?: string): string[] {
 			problems.push("evidence_claims_invalid");
 			continue;
 		}
-		if (!covered.has(claim.id)) problems.push(`evidence_claim_uncovered:${claim.id}`);
+		if (!proposedRejection && !covered.has(claim.id)) problems.push(`evidence_claim_uncovered:${claim.id}`);
+	}
+	if (proposedReview) for (const claim of coveredClaims) {
+		if (!claims.some((known) => known?.id === claim)) problems.push(`evidence_claim_unknown:${claim}`);
 	}
 	const driver = meta.driver ?? "";
 	const kind = primary?.kind ?? "";
 	// TUI claims need a real timed recording — a buffered transcript wearing a
 	// .cast extension is how a frozen shell once got certified as replayable.
-	if (driver === "tui" && kind !== "recording") {
+	if (!proposedRejection && driver === "tui" && kind !== "recording") {
 		problems.push("tui_requires_replayable_recording");
 	}
 	// A one-event cast is a synthetic buffer, not a recording. Its events were
 	// counted while hashing the same already-checked file descriptor.
-	if (castEvents !== undefined && castEvents < 2) problems.push("tui_recording_is_synthetic_single_event");
+	if (!proposedRejection && castEvents !== undefined && castEvents < 2) problems.push("tui_recording_is_synthetic_single_event");
 	// CLI one-shot evidence is honest as a transcript (exit code + full output).
-	if (driver === "cli" && kind !== "transcript" && kind !== "recording") {
+	if (!proposedRejection && driver === "cli" && kind !== "transcript" && kind !== "recording") {
 		problems.push("cli_requires_transcript_or_recording");
 	}
-	if ((driver === "web" || driver === "native") && claims.length > 1 && !["video", "gif"].includes(kind)) {
+	if (!proposedRejection && (driver === "web" || driver === "native") && claims.length > 1 && !["video", "gif"].includes(kind)) {
 		problems.push(`${driver}_multi_step_scenario_requires_video_or_gif`);
 	}
 	return [...new Set(problems)];

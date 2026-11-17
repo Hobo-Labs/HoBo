@@ -41,7 +41,7 @@ import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
 import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { isPathIdentifier, scenarioSlug } from "./lib/slug.mts";
-import { type EvidenceClaim, validateEvidenceReview } from "./lib/evidence-review.mts";
+import { type EvidenceClaim, validateEvidenceArtifact, validateEvidenceReview } from "./lib/evidence-review.mts";
 
 type FeatureMeta = {
 	id: string;
@@ -277,12 +277,28 @@ function writeReplayHtml(dir: string, featureId: string, scenario: string, prima
 	} catch {
 		frames = [];
 	}
+	const replayData = JSON.stringify(frames).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 	writeFileSync(path.join(dir, "REPLAY.html"), `<!doctype html>
 <meta charset="utf-8"><title>OptimizeXP replay: ${featureId} / ${scenario}</title>
 <style>body{background:#111;color:#eee;font:14px monospace;margin:2rem}pre{background:#000;padding:1rem;min-height:12rem;white-space:pre-wrap}button{padding:.5rem 1rem}</style>
 <h1>${featureId} / ${scenario}</h1><p>Replayable terminal capture: <a href="${relative}">${relative}</a></p>
 <button type="button" id="play">Play</button> <button type="button" id="stop">Stop</button><pre id="screen"></pre>
-<script>const frames=${JSON.stringify(frames)};let timer=0,stopped=false;const screen=document.querySelector('#screen');document.querySelector('#stop').onclick=()=>{stopped=true;clearTimeout(timer)};document.querySelector('#play').onclick=()=>{stopped=false;screen.textContent='';let i=0;const next=()=>{if(stopped||i>=frames.length)return;const [delay,type,text]=frames[i++];if(type==='o')screen.textContent+=text;timer=setTimeout(next,Math.max(10,delay*1000))};next()};</script>
+<script>
+const frames=${replayData};
+let timer=0,stopped=false;
+const screen=document.querySelector('#screen');
+document.querySelector('#stop').onclick=()=>{stopped=true;clearTimeout(timer)};
+document.querySelector('#play').onclick=()=>{
+  clearTimeout(timer);stopped=false;screen.textContent='';let i=0,previous=0;
+  const next=()=>{
+    if(stopped||i>=frames.length)return;
+    const [timestamp,type,text]=frames[i++];
+    const delay=Math.max(0,(timestamp-previous)*1000);previous=timestamp;
+    timer=setTimeout(()=>{if(stopped)return;if(type==='o')screen.textContent+=text;next()},delay);
+  };
+  next();
+};
+</script>
 `, "utf8");
 }
 
@@ -332,7 +348,7 @@ function captureCommandDirectory(input: {
 	if (input.override === "project" && !selected && !projectPath) {
 		throw new Error("--cwd=project requires a single selected or project-scoped feature");
 	}
-	const rootDiscovered = !input.explicitCommand && !catalog && input.meta.generatedFromSeed === true && input.meta.primaryCommand === input.command;
+	const rootDiscovered = !input.explicitCommand && !catalog && input.meta.generatedFromSeed === true && !!input.command?.trim() && input.meta.primaryCommand === input.command;
 	const requested = input.override === "root" || (!input.override && rootDiscovered) ? "" : projectPath;
 	const repo = realpathSync(input.root);
 	const absolute = path.resolve(repo, requested || ".");
@@ -420,6 +436,8 @@ async function capture(args: Record<string, string>) {
 		kind = r.kind;
 		screen = r.screen;
 		exitCode = r.exitCode;
+		degraded = r.degraded;
+		notes = r.notes;
 		timing = r.timing as unknown as Record<string, unknown>;
 		repro = { command, cwd: cwd.relative };
 	} else if (driver === "tui") {
@@ -555,15 +573,28 @@ function review(args: Record<string, string>) {
 		console.error("capture evidence before reviewing it");
 		process.exit(1);
 	}
+	const artifactProblems = validateEvidenceArtifact(dir, root);
+	if (artifactProblems.length > 0) {
+		console.log(JSON.stringify({ ok: false, accepted: false, problems: artifactProblems }, null, 2));
+		process.exitCode = 1;
+		return;
+	}
 	const meta = JSON.parse(readFileSync(metaPath, "utf8")) as { claims?: EvidenceClaim[]; primary?: { sha256?: string } };
-	const relevant = /^(yes|true|relevant)$/i.test(args.relevant || "");
-	const complete = /^(yes|true|complete)$/i.test(args.complete || "");
-	const all = (meta.claims ?? []).map((claim) => claim.id);
+	const relevantInput = args.relevant || "";
+	const completeInput = args.complete || "";
+	if (!/^(yes|true|relevant|no|false|irrelevant)$/i.test(relevantInput) || !/^(yes|true|complete|no|false|partial)$/i.test(completeInput)) {
+		console.log(JSON.stringify({ ok: false, accepted: false, problems: ["review_relevance_or_completeness_invalid"] }, null, 2));
+		process.exitCode = 1;
+		return;
+	}
+	const relevant = /^(yes|true|relevant)$/i.test(relevantInput);
+	const complete = /^(yes|true|complete)$/i.test(completeInput);
+	const all = (Array.isArray(meta.claims) ? meta.claims : []).map((claim) => claim?.id).filter((id): id is string => typeof id === "string");
 	const covered = args.coveredClaims === "all" || !args.coveredClaims
 		? all
 		: args.coveredClaims.split(/[,.\s]+/).filter(Boolean);
-	const accepted = relevant && complete && covered.length === all.length && all.every((id) => covered.includes(id));
-	writeJson(path.join(dir, "review.json"), {
+	const accepted = relevant && complete;
+	const proposedReview = {
 		status: accepted ? "accepted" : "rejected",
 		reviewer: args.reviewer,
 		relevance: relevant ? "relevant" : "irrelevant",
@@ -573,10 +604,17 @@ function review(args: Record<string, string>) {
 		artifactSha256: meta.primary?.sha256 ?? "",
 		reviewedAt: new Date().toISOString(),
 		notes: args.notes || "",
-	});
-	const problems = validateEvidenceReview(dir, root);
-	console.log(JSON.stringify({ ok: problems.length === 0, accepted, problems }, null, 2));
-	if (problems.length > 0) process.exitCode = 1;
+	} as const;
+	const problems = validateEvidenceReview(dir, root, proposedReview);
+	if (problems.length > 0) {
+		console.log(JSON.stringify({ ok: false, accepted: false, problems }, null, 2));
+		process.exitCode = 1;
+		return;
+	}
+	writeJson(path.join(dir, "review.json"), proposedReview);
+	const decisionProblems = accepted ? [] : validateEvidenceReview(dir, root);
+	console.log(JSON.stringify({ ok: accepted, accepted, problems: decisionProblems }, null, 2));
+	if (!accepted) process.exitCode = 1;
 }
 
 function stitch(args: Record<string, string>) {

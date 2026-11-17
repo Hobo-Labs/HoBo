@@ -107,6 +107,8 @@ From `feature.json` `driver` or CLI `--driver`:
 
 Drivers are **best-effort adapters**. Missing optional binaries degrade along the evidence fallback chain (`references/evidence.md`) and record `degraded: true` in meta.
 
+CLI capture retains up to 8 MiB from each output stream. If either stream exceeds that limit, the transcript and metadata identify the truncated stream and mark the capture degraded; it cannot be accepted as complete proof. A shell that fails to start or is interrupted is also degraded. TUI replay follows the absolute event times in its asciicast.
+
 CLI, TUI and native capture commands run in the selected project directory by default. A generated command discovered from root scripts retains the repository root; a project catalog command retains its project. Pass `--cwd=root` or `--cwd=project` to choose explicitly. The recorded `repro.cwd` is relative to the repository, and the command inherits the caller's `PATH` without loading a login profile.
 
 ## Step hooks

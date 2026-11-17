@@ -22,6 +22,22 @@ assert.equal(result.exitCode, 0);
 const transcript = readFileSync(result.primaryFile, "utf8");
 assert.match(transcript, /replayable evidence/);
 
+const missingRoot = mkdtempSync(path.join(tmpdir(), "optimizexp-capture-missing-shell-"));
+try {
+	const missing = await captureCli(missingRoot, { command: "printf unreachable", cwd: missingRoot, env: { PATH: path.join(missingRoot, "missing") } });
+	assert.equal(missing.exitCode, null);
+	assert.equal(missing.degraded, true);
+	assert.match(missing.stderr, /spawn error:.*ENOENT/);
+	assert.equal(readFileSync(missing.primaryFile, "utf8"), missing.combined);
+	writeFileSync(missing.primaryFile, "sentinel after capture resolved");
+	writeFileSync(path.join(missingRoot, "terminal.txt"), "terminal sentinel after capture resolved");
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	assert.equal(readFileSync(missing.primaryFile, "utf8"), "sentinel after capture resolved");
+	assert.equal(readFileSync(path.join(missingRoot, "terminal.txt"), "utf8"), "terminal sentinel after capture resolved");
+} finally {
+	rmSync(missingRoot, { recursive: true, force: true });
+}
+
 const native = captureNative(mkdtempSync(path.join(tmpdir(), "optimizexp-native-")), {
 	command: "exit 7",
 	cwd: process.cwd(),
