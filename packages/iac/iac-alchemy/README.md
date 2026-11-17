@@ -26,7 +26,10 @@ segments whose complete FQN round-trips through that encoding. Stack and stage
 must be single portable path segments. Case-insensitive resource-key collisions
 in one target are rejected. State reads, writes and deletes are checked in each
 plan, destroy and drift scope; a stored row whose own FQN differs from its key,
-an unsafe rename, or an unavailable/inconsistent scan stops execution. A
+an unsafe rename, or an unavailable/inconsistent scan stops execution. FQNs and scope segments
+are limited to 200 ASCII characters; a scan accepts at most 1,024 stored rows,
+each stored row may reference at most 1,024 downstream FQNs, and replacement
+history is limited to 64 rows. Exceeding a bound fails closed. A
 post-admission failure retains the reservation for reconciliation. Existing
 unsafe state requires a host-controlled, independently verified migration;
 state already overwritten by an earlier collision cannot be reconstructed by

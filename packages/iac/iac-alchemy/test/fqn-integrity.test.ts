@@ -18,6 +18,7 @@ import {
 import {
 	alchemyStateScopeKey,
 	safeAlchemyFqn,
+	safeAlchemyState,
 	uniqueAlchemyFqns,
 } from "../src/state-identity.js";
 
@@ -398,5 +399,24 @@ describe("Alchemy state-key identity", () => {
 			else process.env.ALCHEMY_HOME = oldHome;
 			rmSync(directory, { recursive: true, force: true });
 		}
+	});
+	it("bounds replacement ancestry, downstream references and cyclic history", () => {
+		type Row = { fqn: string; downstream: string[]; old?: Row };
+		let row: Row = { fqn: "widget", downstream: Array(1024).fill("other") };
+		for (let depth = 1; depth < 64; depth++)
+			row = { fqn: "widget", downstream: [], old: row };
+		expect(safeAlchemyState(row, "widget")).toBe(true);
+		expect(
+			safeAlchemyState({ fqn: "widget", downstream: [], old: row }, "widget"),
+		).toBe(false);
+		expect(
+			safeAlchemyState(
+				{ fqn: "widget", downstream: Array(1025).fill("other") },
+				"widget",
+			),
+		).toBe(false);
+		const cyclic: Row = { fqn: "widget", downstream: [] };
+		cyclic.old = cyclic;
+		expect(safeAlchemyState(cyclic, "widget")).toBe(false);
 	});
 });
