@@ -45,6 +45,9 @@ prior state is recorded, the host must independently verify an absence claim.
 Recovery itself never releases or settles funds. The event includes the
 verification references, reservation, and a digest of the complete claim;
 matching retries are idempotent and conflicting evidence is rejected.
+`resource.Reconciled` is a host-owned fact: the event store must restrict its
+writers to trusted control-plane code. An unauthenticated generic event writer
+must not be allowed to append recovery facts directly.
 
 ## Budget-aware hosting placement
 

@@ -297,6 +297,18 @@ function recoveryRecord(
 	claim: ResourceReconciliationClaim,
 	digest: string,
 ): EventEnvelope | undefined {
+	for (const event of events) {
+		if (
+			isJsonObject(event.data) &&
+			event.data.resourceId === claim.resourceId &&
+			(event.tenant !== claim.tenant ||
+				event.data.deploymentId !== claim.deploymentId)
+		)
+			fail(
+				"RECONCILIATION_SCOPE_MISMATCH",
+				"resource history belongs to another scope",
+			);
+	}
 	const record = events.find(
 		(event) =>
 			event.type === CLOUD_EVENTS.ResourceReconciled &&

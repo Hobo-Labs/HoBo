@@ -675,6 +675,29 @@ describe("operator resolution of uncertain infrastructure", () => {
 		).rejects.toThrow("RECONCILIATION_OUTCOME_UNKNOWN");
 	});
 
+	it("checks tenant scope of historical resource facts even on replay", async () => {
+		const { store, deps, claim } = await fixture();
+		const input = {
+			...claim,
+			operation: "apply" as const,
+			outcome: { kind: "applied" as const, outputs: {} },
+		};
+		await resolveResourceReconciliation(deps, input);
+		const wrapped: EventStore = {
+			...store,
+			async *read(streamId, fromSeq) {
+				for await (const event of store.read(streamId, fromSeq)) {
+					if (event.type === "resource.Provisioning")
+						yield { ...event, tenant: "other" };
+					else yield event;
+				}
+			},
+		};
+		await expect(
+			resolveResourceReconciliation({ ...deps, store: wrapped }, input),
+		).rejects.toThrow("RECONCILIATION_SCOPE_MISMATCH");
+	});
+
 	it("does not clear uncertainty when a delayed unverified terminal fact arrives", async () => {
 		const { store } = await fixture();
 		await emit(
