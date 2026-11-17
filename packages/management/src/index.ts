@@ -20,6 +20,10 @@ export {
 	resolveDefaultStationId,
 } from "./context.js";
 export {
+	decodeCredentialAuditView,
+	encodeCredentialAuditView,
+} from "./credential-audit-wire.js";
+export {
 	brokerStatus,
 	doctorSnapshot,
 	projectYardSnapshot,
@@ -55,5 +59,5 @@ export type {
 } from "./types.js";
 export { toPublicConnection, toRailPublicView } from "./types.js";
 
-// public-contract: the package id consumers assert against.
+// public-contract:
 export const HOBO_MANAGEMENT_PACKAGE = "@hobo/management";

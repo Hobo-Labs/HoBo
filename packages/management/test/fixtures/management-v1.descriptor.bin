@@ -1,0 +1,78 @@
+
+Ù
+management.protohobo.management.v1"j
+ManagementEnvelope
+ok (Rok
+code (	Rcode
+message (	Rmessage
+status (	Rstatus"è
+StationOccupancyView
+
+station_id (	R	stationId
+status (	Rstatus(
+active_rail_hash (	RactiveRailHash.
+bootstrap_rail_hash (	RbootstrapRailHash)
+bootstrap_active (RbootstrapActive)
+connection_count (RconnectionCount
+seq (Rseq"Ö
+RailView
+id (	Rid
+name (	Rname!
+content_hash (	RcontentHash+
+activation_status (	RactivationStatus!
+is_bootstrap (RisBootstrap
+
+quota_used (R	quotaUsed
+quota_limit (R
+quotaLimit"
+spend_cap_usd (RspendCapUsd"ª
+ConnectionPublicView
+id (	Rid
+alias (	Ralias
+provider (	Rprovider
+flow (	Rflow
+status (	Rstatus
+
+station_id (	R	stationId
+tenant (	Rtenant"Ø
+YardProjectionSnapshotF
+	occupancy (2(.hobo.management.v1.StationOccupancyViewR	occupancy2
+rails (2.hobo.management.v1.RailViewRrailsJ
+connections (2(.hobo.management.v1.ConnectionPublicViewRconnections<
+metering (2 .hobo.management.v1.MeteringViewRmeteringE
+activity (2).hobo.management.v1.ConnectorActivityViewRactivity6
+doctor (2.hobo.management.v1.DoctorViewRdoctor
+seq (Rseq"‰
+MeteringView
+
+quota_used (R	quotaUsed
+quota_limit (R
+quotaLimit"
+spend_cap_usd (RspendCapUsd
+
+budget_usd (R	budgetUsd!
+traffic_rate (RtrafficRate.
+traffic_rate_source (	RtrafficRateSource"†
+ConnectorActivityView%
+connector_kind (	RconnectorKind
+status (	Rstatus#
+connection_id (	RconnectionId#
+status_source (	RstatusSource"Ω
+DeploymentViewProjectionView
+	available (R	available
+source (	Rsource
+yards (	Ryards
+count (Rcount
+seq (Rseq)
+json_deployments (	RjsonDeployments"ú
+CredentialAuditProjectionView
+	available (R	available
+sources (	Rsources
+count (Rcount
+seq (Rseq
+	json_rows (	RjsonRows"e
+
+DoctorView)
+bootstrap_active (RbootstrapActive
+hazards (	Rhazards
+hint (	Rhintbproto3
