@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,10 +7,24 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	createDirectRoutePort,
 	type IacRoutePermit,
-	runIacRoute,
+	runIacRoute as runAuthorizedRoute,
 } from "../src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../src/iac-route-sqlite.js";
 
+function operationFor(requestId: string) {
+	return {
+		operationId: `sha256:${createHash("sha256").update(requestId).digest("hex")}`,
+		authorization: "host-proof",
+	};
+}
+function runIacRoute<T>(
+	input: Omit<Parameters<typeof runAuthorizedRoute<T>>[0], "operation">,
+) {
+	return runAuthorizedRoute({
+		...input,
+		operation: operationFor(input.requestId),
+	});
+}
 const hash = `sha256:${"a".repeat(64)}`;
 const directories: string[] = [];
 const authorities: ReturnType<typeof createSqliteIacRouteAuthority>[] = [];
@@ -21,7 +36,10 @@ function connect(path?: string) {
 		throw new Error("directory missing");
 	// SAFETY: the preceding check established a directory when path is absent.
 	const databasePath = path ?? join(directory as string, "routes.sqlite");
-	const authority = createSqliteIacRouteAuthority({ path: databasePath });
+	const authority = createSqliteIacRouteAuthority({
+		path: databasePath,
+		verifyOperation: () => true,
+	});
 	authorities.push(authority);
 	return { authority, path: databasePath };
 }
@@ -313,6 +331,7 @@ describe("durable shared IaC route claims", () => {
 				tenantId: "tenant",
 				requestId: "same",
 				targetId: "a",
+				operation: operationFor("same"),
 				plan: { version: 1 },
 			},
 			async ({ permit }) => {
@@ -383,6 +402,7 @@ describe("durable shared IaC route claims", () => {
 			tenantId: "tenant",
 			requestId: "old",
 			targetId: "a",
+			operationId: operationFor("old").operationId,
 			inventoryHash: hash,
 			attemptId: "A".repeat(43),
 		};
@@ -398,6 +418,16 @@ describe("durable shared IaC route claims", () => {
 		).run("tenant", "old", permit.attemptId, "a", hash);
 		db.close();
 		const { authority } = connect(path);
+		expect(await authority.verifyAttempt(permit)).toBe(false);
+		expect(
+			(
+				await authority.claim({
+					tenantId: "tenant",
+					requestId: "old",
+					...operationFor("old"),
+				})
+			).status,
+		).toBe("existing");
 		expect(await authority.verifyAttempt(permit)).toBe(true);
 		expect(await authority.consumeAttempt(permit)).toBe(false);
 		const fresh = await runIacRoute({

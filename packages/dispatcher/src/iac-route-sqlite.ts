@@ -3,9 +3,11 @@ import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
 	type IacRouteAuthority,
+	type IacRouteAuthorizedIdentity,
 	type IacRouteIdentity,
 	type IacRouteOutcome,
 	type IacRoutePermit,
+	routeAuthorization,
 	routeDigest,
 	routeName,
 	routeSecret,
@@ -24,6 +26,7 @@ function permitValid(permit: IacRoutePermit): boolean {
 		typeof permit === "object" &&
 		routeName(permit.tenantId) &&
 		routeName(permit.requestId) &&
+		routeDigest(permit.operationId) &&
 		routeName(permit.targetId) &&
 		routeDigest(permit.inventoryHash) &&
 		routeSecret(permit.attemptId)
@@ -33,7 +36,14 @@ function permitValid(permit: IacRoutePermit): boolean {
 /** A shared local-disk SQLite authority. Distributed installations need an equivalent shared transactional CAS. */
 export function createSqliteIacRouteAuthority(options: {
 	path: string;
+	/** Independent host authentication of tenant, request and logical operation. */
+	verifyOperation: (
+		input: IacRouteAuthorizedIdentity,
+	) => boolean | Promise<boolean>;
 }): IacRouteAuthority & { close(): void } {
+	if (typeof options.verifyOperation !== "function")
+		throw new TypeError("an independent operation verifier is required");
+	const verifyOperation = options.verifyOperation;
 	if (!options.path || options.path === ":memory:")
 		throw new TypeError("a persistent route authority path is required");
 	const database = new DatabaseSync(options.path);
@@ -43,6 +53,15 @@ export function createSqliteIacRouteAuthority(options: {
 			phase TEXT NOT NULL CHECK(phase IN ('running','finished')),
 			active_attempt TEXT, target TEXT, outcome TEXT,
 			PRIMARY KEY (tenant, request)
+		);
+		CREATE TABLE IF NOT EXISTS iac_route_operations (
+			tenant TEXT NOT NULL, operation_id TEXT NOT NULL, request TEXT NOT NULL,
+			PRIMARY KEY(tenant,operation_id), UNIQUE(tenant,request)
+		);
+		CREATE TABLE IF NOT EXISTS iac_route_successors (
+			tenant TEXT NOT NULL, operation_id TEXT NOT NULL, predecessor TEXT NOT NULL, successor TEXT NOT NULL,
+			PRIMARY KEY(tenant,operation_id,predecessor), UNIQUE(tenant,successor),
+			FOREIGN KEY(tenant,operation_id) REFERENCES iac_route_operations(tenant,operation_id)
 		);
 		CREATE TABLE IF NOT EXISTS iac_route_attempts (
 			tenant TEXT NOT NULL, request TEXT NOT NULL, attempt TEXT NOT NULL,
@@ -102,14 +121,116 @@ export function createSqliteIacRouteAuthority(options: {
 	}
 	return {
 		persistence: "durable-cas",
-		claim(input) {
+		async claim(input) {
 			identity(input);
+			const stable = Object.freeze({
+				tenantId: input.tenantId,
+				requestId: input.requestId,
+				operationId: input.operationId,
+				authorization: input.authorization,
+			});
+			if (
+				!routeDigest(stable.operationId) ||
+				!routeAuthorization(stable.authorization) ||
+				(await verifyOperation(stable)) !== true
+			)
+				throw new Error("logical operation identity not authenticated");
 			return transaction(() => {
+				const mapping = database
+					.prepare(
+						"SELECT request FROM iac_route_operations WHERE tenant=? AND operation_id=?",
+					)
+					.get(stable.tenantId, stable.operationId);
+				const byRequest = database
+					.prepare(
+						"SELECT operation_id FROM iac_route_operations WHERE tenant=? AND request=?",
+					)
+					.get(stable.tenantId, stable.requestId);
+				if (
+					byRequest !== undefined &&
+					byRequest.operation_id !== stable.operationId
+				)
+					throw new Error("request belongs to another operation");
+				let routeRequest = stable.requestId;
+				if (mapping !== undefined) {
+					if (
+						typeof mapping.request !== "string" ||
+						!routeName(mapping.request)
+					)
+						throw new Error("corrupt operation mapping");
+					routeRequest = mapping.request;
+					if (routeRequest !== stable.requestId) {
+						const grant = database
+							.prepare(
+								"SELECT 1 AS found FROM iac_route_successors WHERE tenant=? AND operation_id=? AND predecessor=? AND successor=?",
+							)
+							.get(
+								stable.tenantId,
+								stable.operationId,
+								routeRequest,
+								stable.requestId,
+							);
+						if (grant?.found === 1) {
+							const predecessor = database
+								.prepare(
+									"SELECT phase,active_attempt,outcome FROM iac_routes WHERE tenant=? AND request=?",
+								)
+								.get(stable.tenantId, routeRequest);
+							if (
+								predecessor?.phase !== "finished" ||
+								predecessor.active_attempt !== null ||
+								predecessor.outcome !== JSON.stringify({ status: "denied" })
+							)
+								throw new Error(
+									"successor predecessor is not resolved without effect",
+								);
+							if (
+								database
+									.prepare(
+										"SELECT 1 FROM iac_routes WHERE tenant=? AND request=?",
+									)
+									.get(stable.tenantId, stable.requestId) !== undefined
+							)
+								throw new Error("successor request already exists");
+							database
+								.prepare(
+									"UPDATE iac_route_operations SET request=? WHERE tenant=? AND operation_id=? AND request=?",
+								)
+								.run(
+									stable.requestId,
+									stable.tenantId,
+									stable.operationId,
+									routeRequest,
+								);
+							routeRequest = stable.requestId;
+						}
+					}
+				} else {
+					const legacy = database
+						.prepare("SELECT 1 FROM iac_routes WHERE tenant=? AND request=?")
+						.get(stable.tenantId, stable.requestId);
+					if (legacy === undefined) {
+						const unbound = database
+							.prepare(
+								"SELECT r.request FROM iac_routes r LEFT JOIN iac_route_operations o ON o.tenant=r.tenant AND o.request=r.request WHERE r.tenant=? AND o.request IS NULL LIMIT 1",
+							)
+							.get(stable.tenantId);
+						if (unbound !== undefined)
+							throw new Error(
+								"legacy route identities require authenticated binding",
+							);
+					}
+					database
+						.prepare(
+							"INSERT INTO iac_route_operations(tenant,operation_id,request) VALUES(?,?,?)",
+						)
+						.run(stable.tenantId, stable.operationId, stable.requestId);
+				}
 				const row = database
 					.prepare(
 						"SELECT phase,target,outcome FROM iac_routes WHERE tenant=? AND request=?",
 					)
-					.get(input.tenantId, input.requestId);
+					.get(stable.tenantId, routeRequest);
 				if (row !== undefined) {
 					if (
 						(row.phase !== "running" && row.phase !== "finished") ||
@@ -119,15 +240,16 @@ export function createSqliteIacRouteAuthority(options: {
 						throw new Error("corrupt route record");
 					const targetId =
 						typeof row.target === "string" ? row.target : undefined;
+					const common = {
+						tenantId: stable.tenantId,
+						requestId: stable.requestId,
+						operationId: stable.operationId,
+						status: "existing" as const,
+						...(targetId === undefined ? {} : { targetId }),
+					};
 					if (row.phase === "running") {
 						if (row.outcome !== null) throw new Error("corrupt route outcome");
-						return {
-							tenantId: input.tenantId,
-							requestId: input.requestId,
-							status: "existing" as const,
-							phase: "running" as const,
-							...(targetId === undefined ? {} : { targetId }),
-						};
+						return { ...common, phase: "running" as const };
 					}
 					if (typeof row.outcome !== "string" || row.outcome.length > 1024)
 						throw new Error("corrupt route outcome");
@@ -142,24 +264,22 @@ export function createSqliteIacRouteAuthority(options: {
 						(outcome.targetId !== undefined && outcome.targetId !== targetId)
 					)
 						throw new Error("corrupt route outcome");
-					return {
-						tenantId: input.tenantId,
-						requestId: input.requestId,
-						status: "existing" as const,
-						phase: "finished" as const,
-						outcome,
-						...(targetId === undefined ? {} : { targetId }),
-					};
+					return { ...common, phase: "finished" as const, outcome };
 				}
+				if (mapping !== undefined && routeRequest !== stable.requestId)
+					throw new Error("operation route is missing");
+				if (mapping !== undefined && mapping.request === stable.requestId)
+					throw new Error("operation route is missing");
 				const claimToken = secret();
 				database
 					.prepare(
 						"INSERT INTO iac_routes(tenant,request,claim_token,phase) VALUES(?,?,?,'running')",
 					)
-					.run(input.tenantId, input.requestId, claimToken);
+					.run(stable.tenantId, stable.requestId, claimToken);
 				return {
-					tenantId: input.tenantId,
-					requestId: input.requestId,
+					tenantId: stable.tenantId,
+					requestId: stable.requestId,
+					operationId: stable.operationId,
 					status: "claimed" as const,
 					claimToken,
 				};
@@ -231,10 +351,23 @@ export function createSqliteIacRouteAuthority(options: {
 			});
 		},
 		beginAttempt(input) {
-			if (!routeName(input.targetId) || !routeDigest(input.inventoryHash))
+			if (
+				!routeName(input.targetId) ||
+				!routeDigest(input.inventoryHash) ||
+				!routeDigest(input.operationId)
+			)
 				throw new TypeError("invalid route target");
 			return transaction(() => {
 				const row = running(input);
+				if (
+					database
+						.prepare(
+							"SELECT 1 FROM iac_route_operations WHERE tenant=? AND operation_id=? AND request=?",
+						)
+						.get(input.tenantId, input.operationId, input.requestId) ===
+					undefined
+				)
+					throw new Error("operation is not the active route");
 				if (row.phase !== "running" || row.active_attempt !== null)
 					throw new Error("route already has an active attempt");
 				const count = database
@@ -251,6 +384,7 @@ export function createSqliteIacRouteAuthority(options: {
 				const permit: IacRoutePermit = {
 					tenantId: input.tenantId,
 					requestId: input.requestId,
+					operationId: input.operationId,
 					targetId: input.targetId,
 					inventoryHash: input.inventoryHash,
 					attemptId: secret(),
@@ -289,6 +423,15 @@ export function createSqliteIacRouteAuthority(options: {
 				throw new Error("invalid route permit");
 			return transaction(() => {
 				const row = running(input);
+				if (
+					database
+						.prepare(
+							"SELECT 1 FROM iac_route_operations WHERE tenant=? AND operation_id=? AND request=?",
+						)
+						.get(input.tenantId, input.permit.operationId, input.requestId) ===
+					undefined
+				)
+					throw new Error("operation is not the active route");
 				if (
 					row.phase !== "running" ||
 					row.active_attempt !== input.permit.attemptId ||
@@ -376,7 +519,7 @@ export function createSqliteIacRouteAuthority(options: {
 			return transaction(() => {
 				const updated = database
 					.prepare(
-						`UPDATE iac_route_attempts SET consumed=1 WHERE tenant=? AND request=? AND attempt=? AND target=? AND inventory_hash=? AND status='running' AND consumed=0 AND EXISTS (SELECT 1 FROM iac_routes r WHERE r.tenant=iac_route_attempts.tenant AND r.request=iac_route_attempts.request AND r.phase='running' AND r.active_attempt=iac_route_attempts.attempt)`,
+						`UPDATE iac_route_attempts SET consumed=1 WHERE tenant=? AND request=? AND attempt=? AND target=? AND inventory_hash=? AND status='running' AND consumed=0 AND EXISTS (SELECT 1 FROM iac_routes r WHERE r.tenant=iac_route_attempts.tenant AND r.request=iac_route_attempts.request AND r.phase='running' AND r.active_attempt=iac_route_attempts.attempt AND EXISTS (SELECT 1 FROM iac_route_operations o WHERE o.tenant=r.tenant AND o.request=r.request AND o.operation_id=?))`,
 					)
 					.run(
 						permit.tenantId,
@@ -384,6 +527,7 @@ export function createSqliteIacRouteAuthority(options: {
 						permit.attemptId,
 						permit.targetId,
 						permit.inventoryHash,
+						permit.operationId,
 					);
 				return updated.changes === 1;
 			});
@@ -392,7 +536,7 @@ export function createSqliteIacRouteAuthority(options: {
 			if (!permitValid(permit)) return false;
 			const row = database
 				.prepare(
-					`SELECT 1 AS found FROM iac_routes r JOIN iac_route_attempts a ON a.tenant=r.tenant AND a.request=r.request AND a.attempt=r.active_attempt WHERE r.tenant=? AND r.request=? AND r.phase='running' AND a.status='running' AND a.attempt=? AND a.target=? AND a.inventory_hash=?`,
+					`SELECT 1 AS found FROM iac_routes r JOIN iac_route_attempts a ON a.tenant=r.tenant AND a.request=r.request AND a.attempt=r.active_attempt WHERE r.tenant=? AND r.request=? AND r.phase='running' AND a.status='running' AND a.attempt=? AND a.target=? AND a.inventory_hash=? AND EXISTS (SELECT 1 FROM iac_route_operations o WHERE o.tenant=r.tenant AND o.request=r.request AND o.operation_id=?)`,
 				)
 				.get(
 					permit.tenantId,
@@ -400,6 +544,7 @@ export function createSqliteIacRouteAuthority(options: {
 					permit.attemptId,
 					permit.targetId,
 					permit.inventoryHash,
+					permit.operationId,
 				);
 			return row?.found === 1;
 		},

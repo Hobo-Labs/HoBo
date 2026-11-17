@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	createTargetPricingInventory,
 	targetPricingModel,
@@ -20,7 +21,7 @@ import {
 function executeRankedIacTargets(
 	input: Omit<
 		Parameters<typeof executeWithAuthority>[0],
-		"authority" | "tenantId"
+		"authority" | "tenantId" | "operation"
 	>,
 ) {
 	const authority = {
@@ -28,12 +29,15 @@ function executeRankedIacTargets(
 		claim: ({
 			tenantId,
 			requestId,
+			operationId,
 		}: {
 			tenantId: string;
 			requestId: string;
+			operationId: string;
 		}) => ({
 			tenantId,
 			requestId,
+			operationId,
 			status: "claimed" as const,
 			claimToken: "A".repeat(43),
 		}),
@@ -43,16 +47,19 @@ function executeRankedIacTargets(
 			requestId,
 			targetId,
 			inventoryHash,
+			operationId,
 		}: {
 			tenantId: string;
 			requestId: string;
 			targetId: string;
 			inventoryHash: string;
+			operationId: string;
 		}) => ({
 			tenantId,
 			requestId,
 			targetId,
 			inventoryHash,
+			operationId,
 			attemptId: "B".repeat(43),
 		}),
 		denyAttempt: () => ({ status: "denied" as const }),
@@ -80,6 +87,10 @@ function executeRankedIacTargets(
 		candidates,
 		authority,
 		tenantId: "tenant-a",
+		operation: {
+			operationId: `sha256:${createHash("sha256").update(input.requestId).digest("hex")}`,
+			authorization: "host-proof",
+		},
 	});
 }
 

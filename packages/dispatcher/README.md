@@ -77,6 +77,16 @@ for one logical request must use the same route authority, even when they use
 different financial authorities. The host must also establish any shared
 provider-account or entitlement ownership required by its budget authorities.
 
+`runIacRoute` requires a host-issued operation identity and authorization. The
+identity is a SHA-256 digest of the tenant, deployment, resource, action, and a
+durable operation generation assigned by the orchestrator. All retries and
+targets for that generation share the same identity; new intent receives a new
+generation. The host independently authenticates the proof and binds it to the
+actual program and generation. A caller cannot authorize itself by selecting a
+new request or operation ID. The SQLite authority requires a trusted
+`verifyOperation` callback; it pins one current request to each authenticated
+operation and accepts a successor only after verified recovery grants it.
+
 `runIacRoute` records a single durable claim for the tenant and logical request
 before any target, admission policy, or provider is called. It records each
 selected target and inventory before execution, and records a definitive
@@ -98,8 +108,10 @@ invariant. `@hobo/dispatcher/sqlite` supplies a persistent, transactionally
 serialized implementation for processes sharing one local SQLite file. SQLite
 files on separate machines are independent ledgers; distributed deployments
 must provide a shared transactional implementation of `IacRouteAuthority`.
-Provider and billing authorities remain responsible for their own effects and
-financial holds. Reconciliation requires independent evidence that the old
+Existing route rows created before operation identities must be individually
+bound by an authenticated claim for their original request; new routes for that
+tenant fail closed until every legacy row is bound. Provider and billing
+authorities remain responsible for their own effects and financial holds. Reconciliation requires independent evidence that the old
 source cannot act again before authorizing a new request.
 
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's

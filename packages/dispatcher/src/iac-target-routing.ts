@@ -12,6 +12,7 @@ import {
 import {
 	type IacRouteAuthority,
 	type IacRouteController,
+	type IacRouteOperation,
 	type IacRoutePermit,
 	runIacRoute,
 } from "./iac-route.js";
@@ -110,6 +111,7 @@ export interface RankedIacExecutionInput {
 	readonly authority: IacRouteAuthority;
 	readonly tenantId: string;
 	readonly requestId: string;
+	readonly operation: IacRouteOperation;
 	readonly ranking: IacPricingRankingResult;
 	readonly candidates: readonly {
 		readonly targetId: string;
@@ -128,7 +130,7 @@ export interface RankedIacExecutionInput {
 export async function executeRankedIacTargets(
 	input: RankedIacExecutionInput,
 ): Promise<IacTargetExecutionResult> {
-	const { authority, tenantId, requestId } = input;
+	const { authority, tenantId, requestId, operation } = input;
 	const unavailable = {
 		evaluation: "unavailable",
 		reservation: "unknown",
@@ -140,7 +142,14 @@ export async function executeRankedIacTargets(
 			targetId,
 			run,
 		}));
-		stable = { authority, tenantId, requestId, ranking, candidates };
+		stable = {
+			authority,
+			tenantId,
+			requestId,
+			operation: structuredClone(operation),
+			ranking,
+			candidates,
+		};
 	} catch {
 		return {
 			status: "uncertain",
@@ -154,6 +163,7 @@ export async function executeRankedIacTargets(
 		authority,
 		tenantId,
 		requestId,
+		operation: stable.operation,
 		run: async (route) => {
 			const value = await executeClaimedIacTargets(stable, route);
 			const outcome =

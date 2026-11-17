@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,8 +26,14 @@ describe("bounded route authority state machine", () => {
 	it("prevents a second live effect across every four-step trace", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-route-model-"));
 		const path = join(dir, "journal.sqlite");
-		const first = createSqliteIacRouteAuthority({ path });
-		const second = createSqliteIacRouteAuthority({ path });
+		const first = createSqliteIacRouteAuthority({
+			path,
+			verifyOperation: () => true,
+		});
+		const second = createSqliteIacRouteAuthority({
+			path,
+			verifyOperation: () => true,
+		});
 		try {
 			let caseId = 0;
 			for (const a of actions)
@@ -38,7 +45,13 @@ describe("bounded route authority state machine", () => {
 								tenantId: "tenant",
 								requestId: `trace-${caseId++}`,
 							};
-							const claim = await first.claim(identity);
+							const operationId = `sha256:${createHash("sha256").update(identity.requestId).digest("hex")}`;
+							const authorized = {
+								...identity,
+								operationId,
+								authorization: "host-proof",
+							};
+							const claim = await first.claim(authorized);
 							if (claim.status !== "claimed")
 								throw new Error("fresh claim missing");
 							const claimToken = claim.claimToken;
@@ -52,6 +65,7 @@ describe("bounded route authority state machine", () => {
 										permit = await first.beginAttempt({
 											...identity,
 											claimToken,
+											operationId,
 											targetId: `target-${trace.indexOf(action)}`,
 											inventoryHash: digest,
 										});
@@ -61,6 +75,7 @@ describe("bounded route authority state machine", () => {
 											first.beginAttempt({
 												...identity,
 												claimToken,
+												operationId,
 												targetId: "blocked",
 												inventoryHash: digest,
 											}),
@@ -108,7 +123,7 @@ describe("bounded route authority state machine", () => {
 									});
 									phase = "finished";
 								} else if (action === "replay") {
-									expect((await second.claim(identity)).status).toBe(
+									expect((await second.claim(authorized)).status).toBe(
 										"existing",
 									);
 								}

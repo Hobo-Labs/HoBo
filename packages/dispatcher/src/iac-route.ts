@@ -3,6 +3,7 @@
 export interface IacRoutePermit {
 	readonly tenantId: string;
 	readonly requestId: string;
+	readonly operationId: string;
 	readonly targetId: string;
 	readonly inventoryHash: string;
 	/** Random capability; never publish it in logs or user-facing receipts. */
@@ -14,6 +15,16 @@ export interface IacRouteIdentity {
 	readonly requestId: string;
 }
 
+/** Host-authenticated identity of one target-independent logical operation. */
+export interface IacRouteOperation {
+	readonly operationId: string;
+	/** Opaque host-issued authorization; never record or expose it. */
+	readonly authorization: string;
+}
+export interface IacRouteAuthorizedIdentity
+	extends IacRouteIdentity,
+		IacRouteOperation {}
+
 export interface IacRouteOutcome {
 	readonly status: "selected" | "denied" | "uncertain" | "replay";
 	readonly targetId?: string;
@@ -22,10 +33,12 @@ export interface IacRouteOutcome {
 type MaybePromise<T> = T | Promise<T>;
 export type IacRouteClaim =
 	| (IacRouteIdentity & {
+			readonly operationId: string;
 			readonly status: "claimed";
 			readonly claimToken: string;
 	  })
 	| (IacRouteIdentity & {
+			readonly operationId: string;
 			readonly status: "existing";
 			readonly phase: "running" | "finished";
 			readonly targetId?: string;
@@ -45,11 +58,12 @@ export interface IacRouteSnapshot extends IacRouteIdentity {
 /** Host boundary: implement all mutations and checks with a shared transactional CAS. */
 export interface IacRouteAuthority {
 	readonly persistence: "durable-cas";
-	claim(input: IacRouteIdentity): MaybePromise<IacRouteClaim>;
+	claim(input: IacRouteAuthorizedIdentity): MaybePromise<IacRouteClaim>;
 	inspect(input: IacRouteIdentity): MaybePromise<IacRouteSnapshot | undefined>;
 	beginAttempt(
 		input: IacRouteIdentity & {
 			readonly claimToken: string;
+			readonly operationId: string;
 			readonly targetId: string;
 			readonly inventoryHash: string;
 		},
@@ -103,6 +117,15 @@ export function routeName(value: string): boolean {
 export function routeDigest(value: string): boolean {
 	return typeof value === "string" && /^sha256:[a-f0-9]{64}$/u.test(value);
 }
+export function routeAuthorization(value: string): boolean {
+	return (
+		typeof value === "string" &&
+		value.length > 0 &&
+		value.length <= 4096 &&
+		value.trim() === value &&
+		!/[\p{Cc}]/u.test(value)
+	);
+}
 export function routeSecret(value: string): boolean {
 	return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/u.test(value);
 }
@@ -118,17 +141,20 @@ function data(input: unknown, key: string): unknown {
 function copyPermit(
 	input: unknown,
 	identity: IacRouteIdentity,
+	operationId: string,
 	targetId: string,
 	inventoryHash: string,
 ): IacRoutePermit | undefined {
 	const tenantId = data(input, "tenantId");
 	const requestId = data(input, "requestId");
+	const operation = data(input, "operationId");
 	const target = data(input, "targetId");
 	const inventory = data(input, "inventoryHash");
 	const attemptId = data(input, "attemptId");
 	if (
 		tenantId !== identity.tenantId ||
 		requestId !== identity.requestId ||
+		operation !== operationId ||
 		target !== targetId ||
 		inventory !== inventoryHash ||
 		typeof attemptId !== "string" ||
@@ -138,6 +164,7 @@ function copyPermit(
 	return Object.freeze({
 		tenantId,
 		requestId,
+		operationId,
 		targetId,
 		inventoryHash,
 		attemptId,
@@ -147,6 +174,7 @@ function samePermit(left: IacRoutePermit, right: IacRoutePermit): boolean {
 	return (
 		left.tenantId === right.tenantId &&
 		left.requestId === right.requestId &&
+		left.operationId === right.operationId &&
 		left.targetId === right.targetId &&
 		left.inventoryHash === right.inventoryHash &&
 		left.attemptId === right.attemptId
@@ -169,17 +197,19 @@ function copyOutcome(input: unknown): IacRouteOutcome | undefined {
 function copyClaim(
 	input: unknown,
 	identity: IacRouteIdentity,
+	operationId: string,
 ): IacRouteClaim | undefined {
 	if (
 		data(input, "tenantId") !== identity.tenantId ||
-		data(input, "requestId") !== identity.requestId
+		data(input, "requestId") !== identity.requestId ||
+		data(input, "operationId") !== operationId
 	)
 		return undefined;
 	const status = data(input, "status");
 	if (status === "claimed") {
 		const claimToken = data(input, "claimToken");
 		return typeof claimToken === "string" && routeSecret(claimToken)
-			? { ...identity, status, claimToken }
+			? { ...identity, operationId, status, claimToken }
 			: undefined;
 	}
 	if (status !== "existing") return undefined;
@@ -199,6 +229,7 @@ function copyClaim(
 		return undefined;
 	return {
 		...identity,
+		operationId,
 		status,
 		phase,
 		...(typeof targetId === "string" ? { targetId } : {}),
@@ -211,6 +242,7 @@ export async function runIacRoute<T>(input: {
 	readonly authority: IacRouteAuthority;
 	readonly tenantId: string;
 	readonly requestId: string;
+	readonly operation: IacRouteOperation;
 	readonly run: (
 		route: IacRouteController,
 	) => Promise<{ readonly value: T; readonly outcome: IacRouteOutcome }>;
@@ -220,6 +252,21 @@ export async function runIacRoute<T>(input: {
 		requestId: input.requestId,
 	});
 	const authority = input.authority;
+	let operation: IacRouteOperation;
+	try {
+		const operationId = data(input.operation, "operationId");
+		const authorization = data(input.operation, "authorization");
+		if (
+			typeof operationId !== "string" ||
+			!routeDigest(operationId) ||
+			typeof authorization !== "string" ||
+			!routeAuthorization(authorization)
+		)
+			return { status: "uncertain", code: "ROUTE_OPERATION_UNVERIFIED" };
+		operation = Object.freeze({ operationId, authorization });
+	} catch {
+		return { status: "uncertain", code: "ROUTE_OPERATION_UNVERIFIED" };
+	}
 	if (
 		!routeName(identity.tenantId) ||
 		!routeName(identity.requestId) ||
@@ -228,7 +275,11 @@ export async function runIacRoute<T>(input: {
 		return { status: "uncertain", code: "ROUTE_AUTHORITY_UNAVAILABLE" };
 	let claimed: IacRouteClaim | undefined;
 	try {
-		claimed = copyClaim(await authority.claim(identity), identity);
+		claimed = copyClaim(
+			await authority.claim({ ...identity, ...operation }),
+			identity,
+			operation.operationId,
+		);
 	} catch {
 		return { status: "uncertain", code: "ROUTE_CLAIM_OUTCOME_UNKNOWN" };
 	}
@@ -262,10 +313,12 @@ export async function runIacRoute<T>(input: {
 				await authority.beginAttempt({
 					...identity,
 					claimToken,
+					operationId: operation.operationId,
 					targetId,
 					inventoryHash,
 				}),
 				identity,
+				operation.operationId,
 				targetId,
 				inventoryHash,
 			);
@@ -345,6 +398,7 @@ export function createDirectRoutePort<Plan>(options: {
 		async runDirect<T>(
 			input: IacRouteIdentity & {
 				readonly targetId: string;
+				readonly operation: IacRouteOperation;
 				readonly plan: Plan;
 			},
 			run: (attempt: {
@@ -352,7 +406,7 @@ export function createDirectRoutePort<Plan>(options: {
 				readonly deny: () => Promise<void>;
 			}) => Promise<{ readonly value: T; readonly outcome: IacRouteOutcome }>,
 		): Promise<IacRouteExecution<T>> {
-			const { tenantId, requestId, targetId } = input;
+			const { tenantId, requestId, targetId, operation } = input;
 			let plan: Plan;
 			try {
 				plan = structuredClone(input.plan);
@@ -363,6 +417,7 @@ export function createDirectRoutePort<Plan>(options: {
 				authority,
 				tenantId,
 				requestId,
+				operation,
 				run: async (route) => {
 					const inventoryHash = await hashInventory(plan);
 					const permit = await route.beginAttempt({ targetId, inventoryHash });

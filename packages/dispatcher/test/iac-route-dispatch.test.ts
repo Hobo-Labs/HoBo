@@ -1,10 +1,22 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSqliteIacRouteAuthority } from "../src/iac-route-sqlite.js";
-import { executeRankedIacTargets } from "../src/iac-target-routing.js";
+import { executeRankedIacTargets as executeWithOperation } from "../src/iac-target-routing.js";
 
+function executeRankedIacTargets(
+	input: Omit<Parameters<typeof executeWithOperation>[0], "operation">,
+) {
+	return executeWithOperation({
+		...input,
+		operation: {
+			operationId: `sha256:${createHash("sha256").update(input.requestId).digest("hex")}`,
+			authorization: "host-proof",
+		},
+	});
+}
 const digest = `sha256:${"a".repeat(64)}`;
 const directories: string[] = [];
 const stores: ReturnType<typeof createSqliteIacRouteAuthority>[] = [];
@@ -18,7 +30,10 @@ function connect(path?: string) {
 		throw new Error("missing directory");
 	// SAFETY: a directory exists when path is absent.
 	const databasePath = path ?? join(directory as string, "route.sqlite");
-	const authority = createSqliteIacRouteAuthority({ path: databasePath });
+	const authority = createSqliteIacRouteAuthority({
+		path: databasePath,
+		verifyOperation: () => true,
+	});
 	stores.push(authority);
 	return { authority, path: databasePath };
 }
