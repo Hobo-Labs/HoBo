@@ -85,7 +85,7 @@ export function authorizedToolNames(
 
 export function decideToolCall(input: {
 	auth: AuthContext;
-	tool: ToolDescriptor;
+	tool: Pick<ToolDescriptor, "name" | "capability">;
 	correlationId: string;
 	seq: number;
 	now?: string;

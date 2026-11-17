@@ -22,8 +22,10 @@ import {
 	type RateLimiter,
 	type RateLimitPolicy,
 } from "./rate-limit.js";
+import { SECRET_CAPTURE_TOOL_NAMES } from "./secret-capture/app.js";
 import {
 	assertToolSurfaceParity,
+	capabilityForTool,
 	findTool,
 	MCP_TOOL_SURFACE,
 	type ParityReport,
@@ -53,6 +55,11 @@ export interface HoboMcpServer {
 	readonly callTool: (
 		name: string,
 		input: ToolCallInput,
+		auth: AuthContext,
+		options?: { correlationId?: string },
+	) => Promise<ToolCallResult>;
+	readonly authorizeCaptureTool: (
+		name: string,
 		auth: AuthContext,
 		options?: { correlationId?: string },
 	) => Promise<ToolCallResult>;
@@ -109,6 +116,91 @@ export function createHoboMcpServer(
 		}
 	}
 
+	async function authorize(
+		name: string,
+		auth: AuthContext,
+		tool: Pick<ToolDescriptor, "name" | "capability"> | undefined,
+		callOptions?: { correlationId?: string },
+	): Promise<ToolCallResult> {
+		const correlationId =
+			callOptions?.correlationId ?? `mcp:${name}:${auth.subject}`;
+		if (limiter) {
+			const rl = limiter.check({
+				tenant: auth.tenant,
+				principal: auth.principal,
+				now: clock(),
+			});
+			if (!rl.allowed) {
+				const event = createThrottleEvent({
+					tool: name,
+					auth,
+					decision: rl,
+					correlationId,
+					seq: nextSeq(),
+					now: now(),
+				});
+				if (!(await recordThrottle(event))) return auditUnavailable(name);
+				return {
+					ok: false,
+					tool: name,
+					status: "throttled",
+					code: MCP_RATE_LIMITED_CODE,
+					output: null,
+					error: {
+						code: MCP_RATE_LIMITED_CODE,
+						message: `rate limit exceeded (${rl.reason}); retry after ${rl.retryAfterMs}ms`,
+					},
+				};
+			}
+		}
+		if (!tool) {
+			const decision = deniedUnknown(
+				name,
+				auth,
+				correlationId,
+				nextSeq(),
+				now(),
+			);
+			if (!(await record(decision.event))) return auditUnavailable(name);
+			return {
+				ok: false,
+				tool: name,
+				status: "denied",
+				code: "MCP_UNKNOWN_TOOL",
+				output: null,
+				decision,
+				error: { code: "MCP_UNKNOWN_TOOL", message: `unknown tool "${name}"` },
+			};
+		}
+		const decision = decideToolCall({
+			auth,
+			tool,
+			correlationId,
+			seq: nextSeq(),
+			now: now(),
+		});
+		if (!(await record(decision.event))) return auditUnavailable(name);
+		if (decision.effect === "deny") {
+			return {
+				ok: false,
+				tool: tool.name,
+				status: "denied",
+				code: "MCP_SCOPE_DENIED",
+				output: null,
+				decision,
+				error: { code: "MCP_SCOPE_DENIED", message: decision.reason },
+			};
+		}
+		return {
+			ok: true,
+			tool: tool.name,
+			status: "authorized",
+			code: "MCP_AUTHORIZED",
+			output: null,
+			decision,
+		};
+	}
+
 	return {
 		listTools() {
 			return surface;
@@ -119,84 +211,16 @@ export function createHoboMcpServer(
 		authorizedTools(auth) {
 			return authorizedToolNames(auth, surface);
 		},
+		authorizeCaptureTool(name, auth, callOptions) {
+			const tool = SECRET_CAPTURE_TOOL_NAMES.includes(name)
+				? { name, capability: capabilityForTool(name) }
+				: undefined;
+			return authorize(name, auth, tool, callOptions);
+		},
 		async callTool(name, input, auth, callOptions) {
-			const correlationId =
-				callOptions?.correlationId ?? `mcp:${name}:${auth.subject}`;
-
-			if (limiter) {
-				const rl = limiter.check({
-					tenant: auth.tenant,
-					principal: auth.principal,
-					now: clock(),
-				});
-				if (!rl.allowed) {
-					const event = createThrottleEvent({
-						tool: name,
-						auth,
-						decision: rl,
-						correlationId,
-						seq: nextSeq(),
-						now: now(),
-					});
-					if (!(await recordThrottle(event))) return auditUnavailable(name);
-					return {
-						ok: false,
-						tool: name,
-						status: "throttled",
-						code: MCP_RATE_LIMITED_CODE,
-						output: null,
-						error: {
-							code: MCP_RATE_LIMITED_CODE,
-							message: `rate limit exceeded (${rl.reason}); retry after ${rl.retryAfterMs}ms`,
-						},
-					};
-				}
-			}
-
 			const tool = findTool(name, surface);
-			if (!tool) {
-				const decision = deniedUnknown(
-					name,
-					auth,
-					correlationId,
-					nextSeq(),
-					now(),
-				);
-				if (!(await record(decision.event))) return auditUnavailable(name);
-				return {
-					ok: false,
-					tool: name,
-					status: "denied",
-					code: "MCP_UNKNOWN_TOOL",
-					output: null,
-					decision,
-					error: {
-						code: "MCP_UNKNOWN_TOOL",
-						message: `unknown tool "${name}"`,
-					},
-				};
-			}
-
-			const decision = decideToolCall({
-				auth,
-				tool,
-				correlationId,
-				seq: nextSeq(),
-				now: now(),
-			});
-			if (!(await record(decision.event))) return auditUnavailable(name);
-
-			if (decision.effect === "deny") {
-				return {
-					ok: false,
-					tool: tool.name,
-					status: "denied",
-					code: "MCP_SCOPE_DENIED",
-					output: null,
-					decision,
-					error: { code: "MCP_SCOPE_DENIED", message: decision.reason },
-				};
-			}
+			const authorization = await authorize(name, auth, tool, callOptions);
+			if (!authorization.ok || !tool) return authorization;
 
 			const argv = buildArgv(tool.verb, input);
 			const runOptions = input.cwd !== undefined ? { cwd: input.cwd } : {};
@@ -209,7 +233,7 @@ export function createHoboMcpServer(
 				status: isJsonString(envelope.status) ? envelope.status : "unknown",
 				code: isJsonString(envelope.code) ? envelope.code : "HOBO_OK",
 				output: envelope,
-				decision,
+				decision: authorization.decision,
 			};
 		},
 		observeToolOutput(input) {
