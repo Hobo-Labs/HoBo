@@ -1,15 +1,12 @@
-/**
- * Binding-delivery integrity gate (ADR-0141).
- * Forbidden: secret-shaped process env as a substitute for WIT links.
- */
-
 import { isJsonString } from "./json.js";
+import type { ManifestV1 } from "./manifest/manifest.js";
 
 export type BindingDeliveryReason = Readonly<{
 	code:
 		| "connection-strings-env"
 		| "secret-env-key"
 		| "secret-env-value"
+		| "secret-connection-string"
 		| "connection-string-token-env";
 	path?: string;
 	message: string;
@@ -22,31 +19,25 @@ export type BindingDeliveryGateResult = Readonly<{
 	summary: string;
 }>;
 
-/** Credential-shaped keys only — avoid false positives on HOBO_* platform env. */
 const SECRET_KEY_RE =
-	/^(ConnectionStrings__|DATABASE_URL|REDIS_URL|MONGO_URL|MYSQL_URL|PGPASSWORD|API_KEY|.*_PASSWORD|.*_SECRET|.*_API_KEY)$/i;
+	/^(ConnectionStrings__.*|DATABASE_URL|REDIS_URL|MONGO_URL|MYSQL_URL|PGPASSWORD|API_KEY|PASSWORD|SECRET|TOKEN|.*_PASSWORD|.*_SECRET|.*_API_KEY)$/i;
 
-const USERINFO_URI_RE = /^[a-z][a-z0-9+.-]*:\/\/[^/\s]*:[^@/\s]+@/i;
+const USERINFO_URI_RE = /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]+@/i;
 
-/** True when an env key is reserved for credential bags (forbidden on default paths). */
 export function isForbiddenSecretEnvKey(key: string): boolean {
-	return key.startsWith("ConnectionStrings__") || SECRET_KEY_RE.test(key);
+	return SECRET_KEY_RE.test(key);
 }
 
-/** True when a value looks like embedded credentials or ambient connection-string grants. */
 export function looksLikeSecretEnvValue(value: string): boolean {
 	if (USERINFO_URI_RE.test(value)) return true;
 	if (/\{[^}]+\.connectionString\}/.test(value)) return true;
-	if (/password=/i.test(value) && /[;:]/.test(value)) return true;
+	if (/password\s*=/i.test(value) && /[;:]/.test(value)) return true;
 	return false;
 }
 
-/**
- * Fail-closed gate: resource access must use links/bindings, not secret env.
- */
 export function evaluateBindingDeliveryGate(input: {
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	/** Manifest-style resource env maps keyed by resource id. */
+	readonly manifest?: ManifestV1;
 	readonly resourceEnvs?: Readonly<
 		Record<string, Readonly<Record<string, string>> | undefined>
 	>;
@@ -59,7 +50,7 @@ export function evaluateBindingDeliveryGate(input: {
 	) => {
 		for (const [key, raw] of Object.entries(env)) {
 			const value = raw ?? "";
-			if (key.startsWith("ConnectionStrings__")) {
+			if (/^ConnectionStrings__/i.test(key)) {
 				reasons.push({
 					code: "connection-strings-env",
 					path: `${pathPrefix}.${key}`,
@@ -92,6 +83,24 @@ export function evaluateBindingDeliveryGate(input: {
 	if (input.resourceEnvs) {
 		for (const [id, env] of Object.entries(input.resourceEnvs)) {
 			if (env) checkMap(env, `resources.${id}.env`);
+		}
+	}
+
+	if (input.manifest) {
+		for (const [id, resource] of Object.entries(
+			input.manifest.value.resources,
+		)) {
+			if (resource.env) checkMap(resource.env, `resources.${id}.env`);
+			if (
+				resource.connectionString &&
+				looksLikeSecretEnvValue(resource.connectionString)
+			) {
+				reasons.push({
+					code: "secret-connection-string",
+					path: `resources.${id}.connectionString`,
+					message: `forbidden credential-bearing connection string for resource ${id}`,
+				});
+			}
 		}
 	}
 

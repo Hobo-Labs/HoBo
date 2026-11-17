@@ -1,4 +1,8 @@
-import { canonicalManifestHash, type ManifestV1 } from "@hobo/bindles";
+import {
+	canonicalManifestHash,
+	evaluateBindingDeliveryGate,
+	type ManifestV1,
+} from "@hobo/bindles";
 import { canonicalJson } from "@hobo/contracts";
 import type {
 	EventEnvelope,
@@ -31,11 +35,6 @@ import type { PlanResult } from "../planner/plan.js";
 import { type PlanConfig, plan } from "../planner/plan.js";
 import type { PlannerRegistry } from "../registry/catalog.js";
 
-// The Gateway (control-plane.md "Services"): command ingress. It authenticates
-// the principal, authorizes against tenant + scope, turns a command into events,
-// and serves read models. Commands are never stored — only past-tense facts are
-// appended (control-plane.md "Command / event API surface"). Stateless.
-
 export interface DeployCommand {
 	deploymentId: string;
 	bindle: ManifestV1;
@@ -43,7 +42,6 @@ export interface DeployCommand {
 		objective?: string;
 		region?: string;
 		budgetId?: string;
-		/** Providers observed unavailable; Matching routes around them. */
 		unavailableProviders?: string[];
 	};
 }
@@ -58,7 +56,6 @@ export interface GatewayDeps {
 	store: EventStore;
 	actorHost: ActorHost;
 	registry: PlannerRegistry;
-	/** Trusted snapshot/quote resolution and durable shared-budget admission. */
 	hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 }
 
@@ -75,8 +72,6 @@ export class UnauthorizedCommandError extends Error {
 	}
 }
 
-// Stubbed authorization (S2-01 scope): only attributable principals may issue
-// deploy commands. Full tenant/scope enforcement is S3 (MCP auth).
 export function authorize(actor: PrincipalRef): AuthzResult {
 	if (
 		!actor ||
@@ -95,13 +90,6 @@ interface DeploymentState {
 	requested: boolean;
 }
 
-// The write-model aggregate behind the deployment stream: a single-writer actor
-// (ActorHost lease + fencing). Admission is generational: a
-// `deployment.Requested` opens a generation and its `deployment.Planned` or
-// `deployment.PlanRejected` closes it. Its one invariant is that a generation
-// is never opened while another is pending; a completed one does not bind the
-// deployment forever, because a changed declaration (or a re-plan around an
-// unavailable provider) is simply the next desired state.
 const deploymentAggregate: Aggregate<
 	DeploymentState,
 	DeployCommand & { bindleHash: string; tenant: string }
@@ -130,7 +118,6 @@ const deploymentAggregate: Aggregate<
 			tenant: command.tenant,
 			config: command.config ?? {},
 		});
-		// SAFETY: DeploymentRequested payload is JSON event data.
 		emitter.emit("deployment.Requested", requested.data as JsonObject);
 	},
 });
@@ -171,13 +158,15 @@ export async function deploy(
 		throw new UnauthorizedCommandError(authz.reason ?? "unauthorized");
 	}
 
+	const bindingDelivery = evaluateBindingDeliveryGate({
+		manifest: command.bindle,
+	});
 	const streamId = deploymentStreamId(command.deploymentId);
 	const bindleHash = canonicalManifestHash(command.bindle);
 	const prior: EventEnvelope[] = [];
 	for await (const event of deps.store.read(streamId)) prior.push(event);
 	const original = prior.find((event) => event.type === "deployment.Requested");
 	if (original && isJsonObject(original.data)) {
-		// Ownership is bound by the first request, for every generation.
 		if (original.data.tenant !== context.tenant)
 			throw new UnauthorizedCommandError(
 				"deployment belongs to a different tenant",
@@ -187,7 +176,6 @@ export async function deploy(
 				"deployment belongs to a different principal",
 			);
 	}
-	// The current generation: the latest request and whether it completed.
 	let latestIndex = -1;
 	for (const [index, event] of prior.entries())
 		if (event.type === "deployment.Requested") latestIndex = index;
@@ -211,9 +199,6 @@ export async function deploy(
 		throw new AggregateInvariantError(
 			"deployment is pending with different input; reconcile its recorded effects before retrying admission",
 		);
-	// A budgeted deployment holds a financial reservation: a new generation
-	// would reserve again while the first is still held. Its input stays bound;
-	// changes go through the hosting transition model instead.
 	if (
 		latest !== undefined &&
 		!sameInput &&
@@ -222,8 +207,6 @@ export async function deploy(
 		throw new AggregateInvariantError(
 			"deployment ID was already bound to different input (a budgeted deployment changes through a hosting transition)",
 		);
-	// The same input as the current generation replays it (idempotent); a
-	// different input after it completed opens the next generation below.
 	if (latest !== undefined && sameInput) {
 		const completed = prior
 			.slice(latestIndex + 1)
@@ -234,8 +217,7 @@ export async function deploy(
 					event.type === "deployment.PlanRejected",
 			);
 		if (completed && isJsonObject(completed.data)) {
-			if (completed.type === "deployment.Planned") {
-				// SAFETY: this writer's durable event carries the previously typed plan.
+			if (completed.type === "deployment.Planned" && bindingDelivery.ok) {
 				const data = (
 					completed as EventEnvelope<{ plan: DeploymentPlan; planHash: string }>
 				).data;
@@ -243,7 +225,6 @@ export async function deploy(
 					.slice(latestIndex + 1)
 					.filter((event) => event.type === "match.Decided")
 					.map((event) => {
-						// SAFETY: match.Decided was emitted by the pure planner on this stream.
 						return event.data as MatchDecided;
 					});
 				const reservation = prior
@@ -266,27 +247,28 @@ export async function deploy(
 					replay.hostingReservationId = reservationId;
 				return replay;
 			}
-			// SAFETY: deployment.PlanRejected was produced by this gateway.
-			const rejected = (
-				completed as EventEnvelope<{
-					reason: string;
-					remediations: PlanRemediation[];
-				}>
-			).data;
-			return {
-				status: "rejected",
-				streamId,
-				deploymentId: command.deploymentId,
-				seq: completed.seq,
-				...rejected,
-			};
+			if (completed.type === "deployment.PlanRejected") {
+				const rejected = (
+					completed as EventEnvelope<{
+						reason: string;
+						remediations: PlanRemediation[];
+					}>
+				).data;
+				return {
+					status: "rejected",
+					streamId,
+					deploymentId: command.deploymentId,
+					seq: completed.seq,
+					...rejected,
+				};
+			}
+		} else {
+			throw new AggregateInvariantError(
+				"deployment is pending; reconcile its recorded effects before retrying admission",
+			);
 		}
-		throw new AggregateInvariantError(
-			"deployment is pending; reconcile its recorded effects before retrying admission",
-		);
 	}
 
-	// 1. Command -> fact: append deployment.Requested under the single-writer lease.
 	const requested = await deploymentAggregate.execute(
 		{ store: deps.store, actorHost: deps.actorHost },
 		streamId,
@@ -300,7 +282,6 @@ export async function deploy(
 		},
 	);
 
-	// 2. Run the pure Planner and append its facts (choreography fan-out path).
 	const planConfig: PlanConfig = { deploymentId: command.deploymentId };
 	if (command.config?.objective !== undefined)
 		planConfig.objective = command.config.objective;
@@ -312,7 +293,9 @@ export async function deploy(
 	let outcome: PlanResult;
 	let hostingReservationId: string | undefined;
 	const budgetId = command.config?.budgetId;
-	if (budgetId !== undefined) {
+	if (!bindingDelivery.ok) {
+		outcome = plan(command.bindle, planConfig, deps.registry);
+	} else if (budgetId !== undefined) {
 		const authority = deps.hostingBudgetAuthority;
 		if (!authority?.resolve || authority.persistence !== "durable-cas") {
 			outcome = admissionRejected(
@@ -391,9 +374,6 @@ export async function deploy(
 		);
 	}
 
-	// The aggregate append fenced the stream (owner_epoch = lease fence); the
-	// choreography fan-out below is the same logical writer, so it continues
-	// under the same fencing token instead of bypassing the fence.
 	const emitted = await emit(deps.store, streamId, facts, {
 		expectedSeq: requested.seq,
 		actor: context.actor,
