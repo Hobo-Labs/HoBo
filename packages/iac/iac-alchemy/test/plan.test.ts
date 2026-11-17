@@ -119,6 +119,15 @@ function compositeFixture() {
 }
 
 describe("native Alchemy plan inspection", () => {
+	it("rejects a native action whose captured state was substituted", () => {
+		const f = compositeFixture();
+		const state = { fqn: "build", downstream: [] };
+		Object.assign(f.action, { state });
+		expect(f.inspect).not.toThrow();
+		state.fqn = "other";
+		expect(f.inspect).toThrow("STATE_IDENTITY_UNVERIFIED");
+	});
+
 	it("binds source claims to the exact resource, target digest and host authority", () => {
 		const f = fixture();
 		let permitted = true;
@@ -227,6 +236,7 @@ describe("native Alchemy plan inspection", () => {
 			resourceType: "Spec.Store",
 			logicalId: "store",
 			instanceId: "instance-1",
+			downstream: [],
 			props: { main: "/source/store" },
 			attr: { endpoint: "first" },
 		};
@@ -278,7 +288,7 @@ describe("native Alchemy plan inspection", () => {
 		expect(inspect).toThrow("SOURCE_FENCE_INCOMPLETE");
 		state.status = "created";
 		state.fqn = "other";
-		expect(inspect).toThrow("SOURCE_FENCE_INCOMPLETE");
+		expect(inspect).toThrow("STATE_IDENTITY_UNVERIFIED");
 	});
 	it.each([
 		"resources",

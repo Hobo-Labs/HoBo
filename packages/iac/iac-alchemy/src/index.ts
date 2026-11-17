@@ -37,6 +37,7 @@ import type {
 	UnpricedScopeProof,
 } from "./port.js";
 import { captureAlchemyProgram } from "./program-boundary.js";
+import { captureAlchemySourceRequirements } from "./source-fence.js";
 import {
 	guardAlchemyStack,
 	safeAlchemyFqn,
@@ -44,7 +45,6 @@ import {
 	uniqueAlchemyFqns,
 	verifyAlchemyStateIdentities,
 } from "./state-identity.js";
-import { captureAlchemySourceRequirements } from "./source-fence.js";
 
 export type { ResourceScope, Target } from "./_generated/alchemy_iac_pb.js";
 export { captureAlchemyOptions } from "./input-boundary.js";
@@ -100,7 +100,6 @@ export type {
 	UnverifiedUnpricedPolicyProof,
 	UnverifiedUnpricedScopeProof,
 } from "./port.js";
-export { alchemyStateScopeKey } from "./state-identity.js";
 export type {
 	AlchemySourceClaim,
 	AlchemySourceFence,
@@ -112,6 +111,7 @@ export {
 	registerAlchemySource,
 	verifyAlchemySourceFence,
 } from "./source-fence.js";
+export { alchemyStateScopeKey } from "./state-identity.js";
 
 export type AlchemyTargetInput = Omit<Target, "$typeName" | "resources"> & {
 	readonly resources: readonly Omit<ResourceScope, "$typeName">[];
@@ -1363,17 +1363,6 @@ export function createAlchemyIacProvider<
 							),
 						};
 					}
-					if (!(yield* verifyAlchemyStateIdentities(plan))) {
-						yield* Effect.promise(() => markUncertain(claimedReservationId));
-						return {
-							error: new AlchemyIacError(
-								"STATE_IDENTITY_UNVERIFIED",
-								"persisted Alchemy state identities changed or became unavailable; the reservation is retained",
-								undefined,
-								claimedReservationId,
-							),
-						};
-					}
 					let admission: HeldFinancialDecision;
 					if (decision.budget.evaluation === "bypassed") {
 						const policy = decision.unpricedPolicyProof;
@@ -1497,6 +1486,17 @@ export function createAlchemyIacProvider<
 								"plan cannot be checked after admission; the reservation is retained",
 								undefined,
 								heldReservation,
+							),
+						};
+					}
+					if (!(yield* verifyAlchemyStateIdentities(plan))) {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								"STATE_IDENTITY_UNVERIFIED",
+								"persisted Alchemy state identities changed or became unavailable; the reservation is retained",
+								admission,
+								claimedReservationId,
 							),
 						};
 					}
@@ -1823,6 +1823,11 @@ export function createAlchemyIacProvider<
 			const inspected = await run(
 				Effect.gen(function* () {
 					const plan = yield* planned(stableProgram);
+					if (!(yield* verifyAlchemyStateIdentities(plan)))
+						throw new AlchemyIacError(
+							"STATE_IDENTITY_UNVERIFIED",
+							"persisted Alchemy state identities are ambiguous or unavailable",
+						);
 					return inspectAlchemyPlan(plan, target, composite);
 				}),
 			);

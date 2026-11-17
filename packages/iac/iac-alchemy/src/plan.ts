@@ -3,7 +3,6 @@ import type { StackPlan } from "alchemy/Alchemist";
 import * as Output from "alchemy/Output";
 import type { Target } from "./_generated/alchemy_iac_pb.js";
 import type { FinancialDecision } from "./port.js";
-import { safeAlchemyFqn, safeAlchemyState } from "./state-identity.js";
 import {
 	type AlchemySourceBinding,
 	type AlchemySourceClaim,
@@ -11,6 +10,7 @@ import {
 	alchemySourceFor,
 	captureAlchemySourceRequirements,
 } from "./source-fence.js";
+import { safeAlchemyFqn, safeAlchemyState } from "./state-identity.js";
 
 type JsonValue =
 	| null
@@ -113,13 +113,15 @@ export class AlchemyIacError extends Error {
 			admission?.budget?.reservation === "held" ||
 			admission?.budget?.reservation === "uncertain";
 		this.executionOutcome =
-			code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
-			code === "SOURCE_FENCE_UNCERTAIN" ||
-			code === "COMPOSITE_AUTHORIZATION_UNCERTAIN"
-				? "completed"
-				: this.requiresReconciliation
-					? "unknown"
-					: "not-started";
+			code === "STATE_IDENTITY_UNVERIFIED"
+				? "not-started"
+				: code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
+						code === "SOURCE_FENCE_UNCERTAIN" ||
+						code === "COMPOSITE_AUTHORIZATION_UNCERTAIN"
+					? "completed"
+					: this.requiresReconciliation
+						? "unknown"
+						: "not-started";
 	}
 }
 
@@ -569,6 +571,14 @@ function inspectUnverified(
 			throw new AlchemyIacError(
 				"PLAN_UNINSPECTABLE",
 				"plan action description differs from its native action",
+			);
+		if (
+			!safeAlchemyFqn(row.fqn) ||
+			(node.state !== undefined && !safeAlchemyState(node.state, row.fqn))
+		)
+			throw new AlchemyIacError(
+				"STATE_IDENTITY_UNVERIFIED",
+				"the action and its persisted state have inconsistent identities",
 			);
 		const fingerprint = fingerprintFunction(node.def.Run);
 		effects.push({ kind: "action", type: node.def.Type, fingerprint });
