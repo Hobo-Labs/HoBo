@@ -8,6 +8,7 @@ on:
       - "packages/broker/test/pricing-authorization.test.ts"
       - "packages/broker/model/**"
       - "packages/cloud/model/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/events/src/pricing-event-contracts.ts"
       - "packages/events/test/pricing-upcaster-gate.test.ts"
       - "packages/events/corpus/golden-replay-baseline.json"
@@ -23,6 +24,7 @@ on:
       - "packages/broker/test/pricing-authorization.test.ts"
       - "packages/broker/model/**"
       - "packages/cloud/model/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/events/src/pricing-event-contracts.ts"
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
@@ -118,7 +120,7 @@ jobs:
           mode: save
 
   iac-models:
-    name: Check bounded IaC budget and routing models
+    name: Check bounded IaC budget, routing and grant models
     needs: route
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
