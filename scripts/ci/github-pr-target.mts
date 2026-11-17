@@ -1,4 +1,3 @@
-/** Verify that a tested commit is the current head of an open PR. */
 import { execFileSync } from "node:child_process";
 import { devNull } from "node:os";
 import {
@@ -11,7 +10,6 @@ import {
 
 type Repository = Readonly<{ name: string; id: number }>;
 
-/** Compare the whole proof with a fresh verification immediately before signoff. */
 export type PrHeadProof = Readonly<{
 	host: string;
 	prNumber: number;
@@ -49,7 +47,6 @@ function positiveInteger(value: number | undefined): value is number {
 	return value !== undefined && Number.isSafeInteger(value) && value > 0;
 }
 
-/** Git's branch-name restrictions, before the name becomes an API path. */
 function branchName(value: string | undefined): value is string {
 	if (
 		!value ||
@@ -106,16 +103,6 @@ function sameRepository(left: Repository, right: Repository): boolean {
 	);
 }
 
-/**
- * Verify an exact open PR in the already-pinned GitHub target and its live head
- * branch. An inferred PR number is only a candidate. Failure to read any part
- * of the proof is a refusal, and subprocess output is never included in errors.
- *
- * Re-run immediately before publication and compare the entire returned proof;
- * this binds the recheck to the same PR, repository IDs, refs and commits.
- * Publication is not atomic with these reads: a GitHub status remains attached
- * to the commit even if the PR, its base or the head branch later changes.
- */
 export function verifyPrHead(input: {
 	cwd: string;
 	env: NodeJS.ProcessEnv;
@@ -271,8 +258,6 @@ export function verifyPrHead(input: {
 	);
 	if (!liveHeadRecheck || !sameRepository(headRepository, liveHeadRecheck))
 		throw new PrHeadVerificationError("the head repository identity changed");
-	// GitHub's PR base.sha can lag the branch after it advances. Read the live
-	// branch instead, then recheck the repository identity around that read.
 	const liveBaseBranch = asObject(
 		read(
 			`repos/{owner}/{repo}/branches/${encodeURIComponent(input.baseBranch)}`,

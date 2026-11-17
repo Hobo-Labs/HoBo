@@ -1,4 +1,3 @@
-/** Keep node:test within the same worker budget as the Vitest lane. */
 export function nodeTestArguments(
 	files: readonly string[],
 	maxWorkers: number,

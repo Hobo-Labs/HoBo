@@ -1,26 +1,4 @@
 #!/usr/bin/env node
-/**
- * Runs a pull request's CI jobs on this machine, signs what it ran, and
- * publishes the signed record so the workflows verify it instead of
- * re-running the work.
- *
- *   pnpm ci:attest init-key [--days=30] [--note=TEXT]
- *   pnpm ci:attest run [--base=origin/main] [--events=pull_request,merge_group]
- *                      [--skip-job=ID]... [--no-fetch] [--fresh]
- *   pnpm ci:attest publish [--remote=origin] [--file=PATH]
- *   pnpm ci:attest verify [--base=origin/main] [--event=pull_request] [--file=PATH]
- *   pnpm ci:attest signoff [--base=origin/main] [--event=pull_request] [--file=PATH] [--pr=NUMBER]
- *   pnpm ci:attest fleet [--local-signoff] [--github-unavailable] [--policy-current] [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]... [--base=origin/main] [--pr=NUMBER] [--fresh]
- *
- * `run` executes what `attested-jobs.json` describes: the same commands, in
- * the same order, under the same conditions as the workflow jobs, once for
- * each event the attestation is to cover. A job is listed in the attestation
- * only if its commands ran here and passed. If any job fails, nothing is
- * signed.
- *
- * The private key stays in one file (mode 0600). It is never printed, logged,
- * or passed to a command this script runs.
- */
 import {
 	execFileSync,
 	type SpawnOptions,
@@ -205,7 +183,6 @@ export function gitEnvironment(
 	return unmodifiedGitEnvironment({ ...environment, ...extra });
 }
 
-/** A published SHA must always name Git's original objects and parent graph. */
 function unmodifiedGitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const safe = { ...env };
 	delete safe.GIT_REPLACE_REF_BASE;
@@ -244,7 +221,6 @@ function gitSucceeds(
 	}
 }
 
-/** Refuse local graph overrides rather than attest an ambiguous checkout. */
 function assertUnmodifiedGitGraph(root: string): void {
 	if (
 		git(root, ["for-each-ref", "--format=%(refname)", "refs/replace/"], {
@@ -275,7 +251,6 @@ function assertUnmodifiedGitGraph(root: string): void {
 	}
 }
 
-/** Read a config value without trimming spaces that gh-signoff must validate. */
 function gitConfigValue(cwd: string, name: string): string | undefined {
 	const result = spawnSync("git", ["config", "--null", "--get", name], {
 		cwd,
@@ -861,9 +836,6 @@ export function stepEnvironment(machine: NodeJS.ProcessEnv, home: string) {
 		GIT_TERMINAL_PROMPT: "0",
 	}))
 		environment.set(name, value);
-	// Do not inject Git graph variables into a workflow step: a workflow may
-	// legitimately branch on their presence. Caller overrides are already
-	// excluded by the allowlist; coordinator Git calls use their own safe env.
 	return Object.fromEntries(environment);
 }
 
@@ -895,7 +867,6 @@ export function assertKeyApart(
 	root: string,
 	machine: NodeJS.ProcessEnv,
 ): void {
-	// Resolve existing symlinks even when the key or a parent does not yet exist.
 	const shared = sharedToolDirectories(machine).map((path) =>
 		resolve(root, path),
 	);
@@ -1263,8 +1234,6 @@ export async function runAttestedJobs(input: {
 								`\n${label}: exit ${code} (the workflow lets this step fail)\n`,
 							);
 						await new Promise((done) => sink.end(done));
-						// Do not let one trusted step leave a replacement graph for a
-						// later step, even if a later step would remove it again.
 						assertUnmodifiedGitGraph(root);
 						const outputs = parseCommandFile(readFileSync(outputFile, "utf8"));
 						const environment = parseCommandFile(readFileSync(envFile, "utf8"));
@@ -1568,8 +1537,6 @@ function signoffEnvironment(input: {
 }): NodeJS.ProcessEnv {
 	const environment = unmodifiedGitEnvironment(input.env);
 	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
-	// Validation runs from the checkout and publication runs from the isolated
-	// Git view. Keep relative executable and config paths bound to the checkout.
 	if (environment.PATH !== undefined)
 		environment.PATH = environment.PATH.split(delimiter)
 			.map((part) => resolve(input.root, part))
@@ -1667,9 +1634,7 @@ function signoffScratch(root: string, machine: NodeJS.ProcessEnv): string {
 			if (excluded.some((directory) => pathIsInside(directory, parent)))
 				continue;
 			return mkdtempSync(join(parent, "hobo-signoff-git-"));
-		} catch {
-			// Try the next temporary parent.
-		}
+		} catch {}
 	}
 	throw new AttestError(
 		"cannot create a temporary Git view outside the checkout and shared tool directories; set TMPDIR to a writable private location",
@@ -1683,12 +1648,6 @@ type SignoffWitness = {
 	dispose: (publicationAttempted: boolean) => void;
 };
 
-/**
- * Prove the tested commit is reachable from a live target branch or is the
- * exact head of a verified open PR, then give gh-signoff an isolated Git view.
- * A narrow fetch configuration need not track the published branch, and a
- * stale tracking ref or another remote cannot stand in for the target.
- */
 function targetSignoffWitness(input: {
 	root: string;
 	remote: string;
@@ -1788,8 +1747,6 @@ function targetSignoffWitness(input: {
 					tip === head && gitSucceeds(root, ["check-ref-format", ref]),
 			);
 			if (!selected && branches.length > 0) {
-				// Older Git silently ignores GIT_NO_LAZY_FETCH. The explicit option
-				// fails closed there instead of accidentally fetching a missing tip.
 				noLazyFetchUnsupported = !gitSucceeds(
 					root,
 					["--no-lazy-fetch", "--version"],
@@ -1797,10 +1754,6 @@ function targetSignoffWitness(input: {
 				);
 			}
 			if (!selected && branches.length > 0 && !noLazyFetchUnsupported) {
-				// A normal `git fetch origin topic` may leave a tip only as an object;
-				// the local run can overwrite FETCH_HEAD before publication. Check
-				// ancestry explicitly: for-each-ref --contains can report a false
-				// positive when an unrelated commit has a missing parent.
 				const tips = [...new Set(branches.map(({ tip }) => tip))];
 				const checked = git(
 					root,
@@ -1845,8 +1798,6 @@ function targetSignoffWitness(input: {
 				}
 			}
 		} catch {
-			// A verified PR is an independent witness. A large or temporarily
-			// unavailable branch listing need not hide that option.
 			selected = undefined;
 			branchEnumerationFailed = true;
 		}
@@ -1916,8 +1867,6 @@ function targetSignoffWitness(input: {
 			["init", "--bare", "--quiet", `--object-format=${format}`],
 			scratchGit,
 		);
-		// This view deliberately ignores grafts. Suppress only Git's warning
-		// about that deliberate setting when the extension invokes Git here.
 		git(
 			scratch,
 			["config", "--local", "advice.graftFileDeprecated", "false"],

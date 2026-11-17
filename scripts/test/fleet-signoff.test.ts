@@ -1365,8 +1365,6 @@ exec /usr/bin/git "$@"
 			assert.equal(available.status, 0, available.stderr);
 			assert.match(available.stdout, /fleet runner hobo/u);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
-			// A local replacement ref must not substitute a different routing
-			// policy for the committed base while selecting an available runner.
 			const observedBase = git(repo, ["rev-parse", "refs/remotes/origin/main"])
 				.toString()
 				.trim();
@@ -2248,7 +2246,6 @@ exec /usr/bin/git "$@"
 			git(repo, ["push", "--quiet", "origin", "HEAD:refs/heads/feature"]);
 			const head = git(repo, ["rev-parse", "HEAD"]).toString().trim();
 			const tree = git(repo, ["rev-parse", "HEAD^{tree}"]).toString().trim();
-			// A head absent from the target must be rejected before local jobs run.
 			git(remote, ["update-ref", "refs/heads/feature", baseA]);
 			const unpublished = command({}, ["--fresh"]);
 			assert.notEqual(unpublished.status, 0);
@@ -2320,8 +2317,6 @@ exec /usr/bin/git "$@"
 				),
 			);
 
-			// A fork-only PR is checked before local work and passed through to
-			// final signoff, even without a target-remote head branch.
 			const prDir = join(root, "pr-fixture");
 			mkdirSync(prDir);
 			const baseRepo = {
@@ -2397,8 +2392,6 @@ exec /usr/bin/git "$@"
 			);
 			rmSync(join(bin, "close-pr-on-job"));
 			rmSync(join(bin, "pr-closed"));
-			// An inferred PR cannot be silently replaced during the local run,
-			// even when its name, branch, base and tested SHA are unchanged.
 			writeFileSync(join(bin, "change-pr-on-job"), "change\n");
 			const replacedDuringJob = command({ HOBO_FLEET_PR_DIR: prDir }, [
 				"--fresh",
@@ -2416,8 +2409,6 @@ exec /usr/bin/git "$@"
 			rmSync(join(bin, "pr-changed"));
 			git(remote, ["update-ref", "refs/heads/feature", head]);
 
-			// The local run fetches main and overwrites FETCH_HEAD. A previously
-			// fetched descendant object still proves the live target branch.
 			const descendant = git(repo, [
 				"-c",
 				"user.name=Test",

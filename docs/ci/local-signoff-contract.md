@@ -119,6 +119,9 @@ statuses. These statuses use the credential's authority, rather than the
 base-branch trust list used for workflow-reuse attestations. Local commands run
 with the invoking user's authority, so only run trusted code. Serialize local
 runs in a checkout and inspect statuses after an interrupted publication.
+The scripts test runner limits each Vitest run with `HOBO_TEST_RUN_TIMEOUT_MS`,
+reports the signal when a worker is killed, and warns when host suspension
+makes the wall clock diverge substantially from the monotonic clock.
 
 Before signoff, HoBo verifies the tested commit against a live branch on the
 verified target remote: it must be that branch's tip, or an ancestor of a live

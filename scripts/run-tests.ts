@@ -253,8 +253,6 @@ writeFileSync(
 
 try {
 	let exitCode = 0;
-	// A shard can contain node:test files without any Vitest files. Running
-	// Vitest with an empty include list would report a false failure.
 	if (testFiles.length > 0) {
 		const vitestEntry = resolve(
 			process.cwd(),
@@ -282,8 +280,6 @@ try {
 					...sanitizeNodeOptions(),
 					HOBO_TEST_MAX_WORKERS: String(maxWorkers),
 				},
-				// Vitest bounds each test and hook, not a file or the run; a leaked handle
-				// or a stuck worker would otherwise hold the CI slot until the job timeout.
 				timeout: runTimeoutMs,
 				killSignal: "SIGKILL",
 			},
@@ -302,13 +298,10 @@ try {
 			);
 		}
 		if (result.signal) {
-			// A killed child has no exit status; name the signal so CI logs show why.
 			console.error(
 				`run-tests: vitest was killed by ${result.signal} (no exit status)`,
 			);
 		}
-		// Vitest's Duration and the watchdog both use the monotonic clock, which stops
-		// while the host is suspended; the wall clock does not.
 		const pausedMs =
 			Date.now() - wallStart - (performance.now() - monotonicStart);
 		if (pausedMs > 30_000) {
