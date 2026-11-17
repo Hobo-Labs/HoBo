@@ -995,10 +995,8 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 					`runner slot expected ${expected}, found ${slot.state}`,
 				);
 			transitionRunnerSlot(expected, next);
-			// Pre-claim release (see the SQLite store): give reserved units
-			// back when a never-claimed slot leaves an open state.
 			if (
-				(next === "released" || next === "uncertain") &&
+				next === "released" &&
 				["reserved", "provisioning", "registered"].includes(expected)
 			) {
 				const claim = await client.query(
@@ -1046,8 +1044,6 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 		});
 	}
 
-	/** Effects belong to the incarnation that planned their slot (see the
-	 * SQLite store). */
 	private async assertEffectIncarnationCurrent(
 		client: PoolClient,
 		effect: Effect,
@@ -1354,18 +1350,47 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				"binding secret does not match slot",
 			);
 		const offer = await this.offerInside(client, slot.offerId);
-		if (offer?.state !== "active")
+		if (offer?.state !== "active" || offer.accountId !== slot.accountId)
 			rejectFleet(FleetRejectionCode.OFFER_REVOKED, "Offer is revoked");
-		const group = await this.capacityInside(client, slot.capacityGroupId);
-		if (!group || ["paused", "revoked"].includes(group.state))
+		const slotRow = await client.query(
+			"SELECT demand_key FROM hobo_ci_fleet_v2_runner_slots WHERE partition_id=$1 AND id=$2",
+			[this.partition, slot.id],
+		);
+		const reservedKey = z
+			.object({ demand_key: z.string() })
+			.safeParse(slotRow.rows[0]);
+		const reservedDemand = reservedKey.success
+			? await this.demandInside(client, reservedKey.data.demand_key)
+			: undefined;
+		if (!reservedDemand)
+			rejectFleet(FleetRejectionCode.NOT_FOUND, "reservation demand not found");
+		if (
+			offer.policyRevision !== reservedDemand.policyRevision ||
+			offer.policyRevision !== demand.policyRevision
+		)
 			rejectFleet(
-				FleetRejectionCode.CAPACITY_INELIGIBLE,
-				"worker or capacity group is not start-eligible",
+				FleetRejectionCode.POLICY_REVISION_CONFLICT,
+				"runner policy revision changed",
 			);
-		if (group.state === "quarantined")
+		if (offer.observationHash !== slot.offerObservationHash)
+			rejectFleet(
+				FleetRejectionCode.OFFER_OBSERVATION_CONFLICT,
+				"runner Offer observation changed",
+			);
+		const group = await this.capacityInside(client, slot.capacityGroupId);
+		if (group?.state === "quarantined")
 			rejectFleet(
 				FleetRejectionCode.QUARANTINED,
 				"capacity group is quarantined",
+			);
+		if (
+			group?.state !== "active" ||
+			group.accountId !== slot.accountId ||
+			group.reservedUnits < slot.capacityCostUnits
+		)
+			rejectFleet(
+				FleetRejectionCode.CAPACITY_INELIGIBLE,
+				"worker or capacity group is not start-eligible",
 			);
 		const profile = await this.profileInside(client, slot.profileId);
 		if (profile?.guarantee !== "start-fenced")

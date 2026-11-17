@@ -59,7 +59,10 @@ The SQLite and PostgreSQL fleet stores commit one start authorization per job
 attempt. A retry for the same claim and runner returns the existing receipt only
 while the assignment, credential, controller incarnation, offer, capacity group,
 and execution profile remain eligible. Revoking an offer or worker prevents a
-later retry from authorizing a start.
+later retry from authorizing a start. The stored reservation and assigned job
+must still match the current offer's policy revision, and the offer observation
+must match the reservation. Uncertain runner slots retain their reserved
+capacity and are not automatically released or retried.
 
 The stores also expose `startDagger` for a pipeline demand. It atomically pins
 the pipeline digest, engine endpoint hash, offer, policy, quote, and execution
