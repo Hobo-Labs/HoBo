@@ -613,12 +613,20 @@ describe("discovery evidence boundaries", () => {
 			assert.equal(readFileSync(catalogPath, "utf8"), originalCatalog);
 			const confirmed = runDoctorRepair({ root, selection, only, confirmedSurfaces: [`sample:${surfaceMapDigest(map)}`] });
 			assert.ok(!confirmed.findings.some((finding) => /confirm-surface-current/.test(finding.message)));
-			writeFileSync(mapPath, "invalid json");
-			writeFileSync(catalogPath, "invalid json");
-			const invalid = runDoctorRepair({ root, selection, only });
-			assert.equal(readFileSync(mapPath, "utf8"), "invalid json");
-			assert.equal(readFileSync(catalogPath, "utf8"), "invalid json");
-			assert.ok(invalid.findings.some((finding) => /invalid or unreadable/.test(finding.message) && !finding.repairable));
+			for (const invalidMap of ["invalid json", JSON.stringify({ schemaVersion: 1 }), JSON.stringify({ ...map, binaries: [null] }), JSON.stringify({ ...map, probes: [null] }), JSON.stringify({ ...map, commands: [null] })]) {
+				writeFileSync(mapPath, invalidMap);
+				writeFileSync(catalogPath, JSON.stringify({ experiences: [null] }));
+				const invalid = runDoctorRepair({ root, selection, only });
+				assert.equal(readFileSync(mapPath, "utf8"), invalidMap);
+				assert.equal(readFileSync(catalogPath, "utf8"), JSON.stringify({ experiences: [null] }));
+				assert.ok(invalid.findings.some((finding) => /invalid or unreadable/.test(finding.message) && !finding.repairable));
+			}
+			writeFileSync(mapPath, originalMap);
+			const invalidCatalog = JSON.stringify({ ...catalog, experiences: [null] });
+			writeFileSync(catalogPath, invalidCatalog);
+			const badCatalog = runDoctorRepair({ root, selection, only });
+			assert.equal(readFileSync(catalogPath, "utf8"), invalidCatalog);
+			assert.ok(badCatalog.findings.some((finding) => finding.id === "catalog-invalid" && !finding.repairable));
 			rmSync(mapPath);
 			rmSync(catalogPath);
 			rmSync(marker);

@@ -407,7 +407,20 @@ export function writeSurfaceMap(map: SurfaceMap, project: ProjectRef, root = rep
 }
 
 export function readSurfaceMap(project: ProjectRef, root = repoRoot()): SurfaceMap | null {
-	return readJsonSafe<SurfaceMap>(surfaceMapPath(project, root));
+	const map = readJsonSafe<unknown>(surfaceMapPath(project, root));
+	const record = (value: unknown): value is Record<string, unknown> =>
+		value !== null && typeof value === "object" && !Array.isArray(value);
+	const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
+	if (!record(map) || typeof map.schemaVersion !== "number" || typeof map.projectId !== "string" ||
+		typeof map.scannedAt !== "string" || typeof map.productName !== "string" || typeof map.packageDir !== "string" ||
+		!Array.isArray(map.binaries) || !map.binaries.every((bin) => record(bin) && typeof bin.name === "string" && typeof bin.binPath === "string") ||
+		!Array.isArray(map.commands) || !map.commands.every((command) => record(command) && typeof command.id === "string" && strings(command.argv) && typeof command.kind === "string" && (command.summary === undefined || typeof command.summary === "string")) ||
+		!Array.isArray(map.interactiveSurfaces) || !map.interactiveSurfaces.every((surface) => record(surface) && typeof surface.id === "string" && typeof surface.entry === "string" && typeof surface.driver === "string") ||
+		!strings(map.requiredJourneys) || !Array.isArray(map.probes) || !map.probes.every(record) ||
+		(map.binAssessments !== undefined && (!Array.isArray(map.binAssessments) || !map.binAssessments.every((item) => record(item) && typeof item.name === "string" && typeof item.status === "string"))) ||
+		(map.defaultEntry !== null && (!record(map.defaultEntry) || typeof map.defaultEntry.command !== "string" || typeof map.defaultEntry.interactive !== "boolean")) ||
+		(map.nonInteractiveHelp !== null && (!record(map.nonInteractiveHelp) || typeof map.nonInteractiveHelp.command !== "string"))) return null;
+	return map as SurfaceMap;
 }
 
 export function validateSurfaceMap(map: SurfaceMap): string[] {
