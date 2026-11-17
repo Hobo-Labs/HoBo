@@ -210,7 +210,9 @@ otherwise duplicate code without testing a service contract.
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
-| AWS, Azure and Vercel resolvers | Their package tests inject provider-specific fake `HttpTransport` implementations | These are not full provider emulators; the package READMEs do not claim live verification |
+| AWS resolvers | `@hobo/provider-aws` has an opt-in [AWS Emulator lane](../providers/provider-aws/README.md#aws-emulator-lane) | Requires the local emulator; supported APIs are limited and a pass does not verify live IAM |
+| Vercel project resolver | `@hobo/provider-vercel` uses [Vercel Labs' in-process emulator](../providers/provider-vercel/README.md#local-vercel-api-emulation) | Covers a project API subset, not deployed execution or all creation paths |
+| Azure ARM resolvers | `@hobo/provider-azure` tests inject a stateful fake `HttpTransport` | Models selected ARM interactions, not a complete Azure emulator or live provider |
 | External HTTP provider | `@hobo/contract-harness` `createMockProviderFromPact`; `@hobo/testing` `pactBackedTransport` for stateful sequences | Hand-authored or unverified Pact expectations are not evidence about the live provider |
 | Other resource kinds | Provider-specific doubles and external emulators where available | The application harness currently exposes only placeholders for those kinds |
 
