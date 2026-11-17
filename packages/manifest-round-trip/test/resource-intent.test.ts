@@ -91,6 +91,7 @@ describe("the wire contracts, read instead of the TypeScript", () => {
 			"region",
 			"objective",
 			"placement",
+			"cadence",
 		]);
 		expect(
 			protoFields(REQUIREMENT_PROTO, "CapabilityRequirement").length,
