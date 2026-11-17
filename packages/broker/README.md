@@ -119,6 +119,24 @@ Callers using `quoteIncrementalUsd` or `quoteIncrementalDecimal` must migrate
 to the full quote; those fields alone now reject. `spendEstimateUsd` remains a
 trusted legacy estimate and carries no quote provenance. A quote hash detects
 changed contents but does not authenticate provider data or the quote's source.
+The general broker request path still passes `spendEstimateUsd` to its billing
+plane; it does not automatically invoke this quote-based helper.
+
+The [broker budget skill](../../.agents/skills/verify-broker-budget-authority/SKILL.md)
+checks this authorization boundary alongside budget holds and settlement. Its
+quote model explores 2,304 states; this constrained projection explores 96
+states and hides 48 same-state transitions. Quote validity is abstracted and
+the model assumes trusted evidence.
+
+```mermaid
+stateDiagram-v2
+  s0: Spend evidence received
+  s1: Spend authorized
+  s2: Spend denied
+  [*] --> s0
+  s0 --> s2: check evidence and bounds
+  s0 --> s1: check evidence and bounds
+```
 
 The **HoBo Broker**: the policy-governed authority that actually brokers
 Bindle/Camp/Yard/Junction placements **across providers**, spins resources up

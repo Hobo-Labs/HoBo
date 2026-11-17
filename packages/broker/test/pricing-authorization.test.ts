@@ -141,6 +141,22 @@ describe("authorizeBillingSpend", () => {
 		).toBe("quote-ineligible");
 	});
 
+	it("accepts an eligible current quote from the pricing engine", () => {
+		const corpus = JSON.parse(
+			readFileSync(
+				new URL("../../pricing/corpus/golden-replay-v8.json", import.meta.url),
+				"utf8",
+			),
+		);
+		const scenario = parseQuoteScenario(corpus.entries[0].scenario);
+		if (!scenario) throw new Error("missing scenario");
+		const result = QuoteEngine.quote(scenario);
+		if (!isQuoteVector(result)) throw new Error("complete quote rejected");
+		expect(
+			authorizeBillingSpend({ quote: result, billing: policy }),
+		).toMatchObject({ ok: true, authorizedUsd: 0.5 });
+	});
+
 	it("enforces zero bounds unless unlimited mode is explicit", () => {
 		const bounded = { ...policy, budgetUsd: 0, spendCapUsd: 0 };
 		const denied = authorizeBillingSpend({
