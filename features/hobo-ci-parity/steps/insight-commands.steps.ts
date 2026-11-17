@@ -146,8 +146,10 @@ Before({ tags: "@I01 or @I03 or @I04 or @I05" }, () => {
 
 Given("route decisions journaled over the last 100 days", async () => {
 	let clock = NOW - 100 * DAY;
+	// A year's retention keeps all 100 days, so only --since can hide the oldest ten.
 	const journal = new SqliteRouteJournal(new DatabaseSync(":memory:"), {
 		nowMs: () => clock,
+		retentionMs: 365 * DAY,
 	});
 	for (let day = 100; day >= 1; day -= 1) {
 		clock = NOW - day * DAY;
@@ -155,32 +157,42 @@ Given("route decisions journaled over the last 100 days", async () => {
 		await journal.record(
 			parseRunnerRouteEvent(
 				JSON.stringify({
-				type: "runner.route.Decided",
-				accountId: ACCOUNT,
-				atMs: clock,
-				request: {
-					repository: HISTORY_REPOSITORY,
-					private: true,
-					event: "push",
-					runId: day,
-					runAttempt: 1,
-					job: "route",
-				},
-				decision: {
-					outcome: "routed",
-					runner: depot ? "depot-ubuntu-24.04" : "ubuntu-latest",
-					step: depot ? "depot" : "github",
-					skipped: [{ key: "fleet", reason: "fleet_full", detail: "" }],
-				},
-				mode: "relay",
-				node: "node-1",
-				jobId: `job-${day}`,
+					type: "runner.route.Decided",
+					accountId: ACCOUNT,
+					atMs: clock,
+					request: {
+						repository: HISTORY_REPOSITORY,
+						private: true,
+						event: "push",
+						runId: day,
+						runAttempt: 1,
+						job: "route",
+					},
+					decision: {
+						outcome: "routed",
+						runner: depot ? "depot-ubuntu-24.04" : "ubuntu-latest",
+						step: depot ? "depot" : "github",
+						skipped: [{ key: "fleet", reason: "fleet_full", detail: "" }],
+					},
+					mode: "relay",
+					node: "node-1",
+					jobId: `job-${day}`,
 				}),
 			),
 		);
 	}
 	clock = NOW;
-	journal.prune();
+	assert.equal(
+		(
+			await journal.decisions({
+				accountId: ACCOUNT,
+				repository: undefined,
+				sinceMs: 0,
+				limit: 1000,
+			})
+		).length,
+		100,
+	);
 	state.api = readApi({ journal });
 });
 
@@ -261,11 +273,15 @@ Then(
 	},
 );
 
-Then("nothing older than 90 days", () => {
+Then("nothing older than 90 days", async () => {
 	const entries = data().entries;
 	// Days 2 to 90 that went to Depot: every even day inside the window.
 	assert.equal(entries.length, 45);
 	for (const entry of entries) assert.ok(entry.atMs >= NOW - 90 * DAY);
+	// The journal keeps all 100 days and 90 days is also the default, so a
+	// shorter --since proves the window is the one asked for.
+	await runHobo("hobo ci activity --since 30d --runner depot");
+	assert.equal(data().entries.length, 15);
 });
 
 Then(
