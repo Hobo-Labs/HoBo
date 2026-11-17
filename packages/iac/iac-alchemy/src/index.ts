@@ -126,7 +126,11 @@ export interface AlchemyIacProviderOptions<
 	Requirements,
 	Assessment extends object,
 > {
-	readonly stack: Stack.ConfiguredStack<Output, Requirements>;
+	readonly stack: [Requirements] extends [never]
+		? Stack.ConfiguredStack<Output, never>
+		: Requirements extends unknown
+			? Stack.ConfiguredStack<Output, Requirements>
+			: never;
 	readonly target: Target;
 	/** A host-supplied runtime layer, including any credentials and execution services. */
 	readonly runtimeLayer: Layer.Layer<Alchemist.Services, unknown, never>;
@@ -861,11 +865,15 @@ export function createAlchemyIacProvider<
 ): AlchemyIacProvider<Assessment> {
 	const options = captureAlchemyOptions(inputOptions);
 	const target = captureAlchemyTargetOption(options);
+	// SAFETY: every distributed branch is already a closed, configured stack; Requirements only describes its internally supplied provider metadata.
+	const suppliedStack = options.stack as Stack.ConfiguredStack<
+		Output,
+		Requirements
+	>;
 	const composite = captureCompositeGuard(options.composite);
 	const route = captureRoutePort(options.route);
 	const financial = captureFinancialPort(options.financial);
 	const resolveRoute = options.resolveRoute;
-	const suppliedStack = options.stack;
 	const runtimeLayer = options.runtimeLayer;
 	const runtimeDirectory = options.runtimeDirectory;
 	if (
