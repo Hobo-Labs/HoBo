@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-92 codes.
+94 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -93,6 +93,8 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_INSTALL_REQUIRED`](#hobo_ci_install_required) | `packages/hobo/src/ci-command.ts`, `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_LINK_SAVE_FAILED`](#hobo_ci_link_save_failed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_LOGS_UNAVAILABLE`](#hobo_ci_logs_unavailable) | `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_MACHINE_NOT_FOUND`](#hobo_ci_machine_not_found) | `packages/hobo/src/ci-machine.ts` |
+| [`HOBO_CI_MACHINE_USAGE`](#hobo_ci_machine_usage) | `packages/hobo/src/ci-machine.ts` |
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
@@ -1065,6 +1067,33 @@ Message:
 
 ```text
 {…}{…}
+```
+
+What to do: follow the message.
+
+### HOBO_CI_MACHINE_NOT_FOUND
+
+Returned from `packages/hobo/src/ci-machine.ts`.
+
+Message:
+
+```text
+No machine {id} is connected for account {account}.
+```
+
+What to do:
+
+- Run hobo ci machine status to list the machines.
+
+### HOBO_CI_MACHINE_USAGE
+
+Returned from `packages/hobo/src/ci-machine.ts`.
+
+Message:
+
+```text
+{message}
+{HELP}
 ```
 
 What to do: follow the message.
