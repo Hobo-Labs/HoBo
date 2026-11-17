@@ -7,10 +7,10 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	type AlchemyStateOwnershipCheck,
 	alchemyTarget,
 	captureAlchemyProgram,
 	createAlchemyIacProvider,
-	type AlchemyStateOwnershipCheck,
 } from "../src/index.js";
 import { routeFixture, testOperation } from "./route-fixture.js";
 
@@ -43,6 +43,7 @@ function fixture(
 		ownershipEpoch?: string;
 		missingOwnership?: boolean;
 		mutateDuringOwnership?: boolean;
+		mutateAfterPlan?: boolean;
 		verify?: (input: AlchemyStateOwnershipCheck) => boolean | Promise<boolean>;
 		onAdmission?: () => void;
 		onApply?: () => void;
@@ -54,6 +55,7 @@ function fixture(
 	let planned = 0;
 	let applied = 0;
 	let current: Widget | undefined;
+	let planVerifications = 0;
 	const uncertain: string[] = [];
 	const stackName = options.stackName ?? "Physical-App";
 	const stack = Stack(
@@ -89,6 +91,16 @@ function fixture(
 					ownershipEpoch: options.ownershipEpoch ?? "epoch-1",
 					verify: (input) => {
 						seen.push(input);
+						if (input.phase === "plan") planVerifications++;
+						if (
+							input.phase === "plan" &&
+							options.mutateAfterPlan &&
+							planVerifications === 2 &&
+							current !== undefined
+						)
+							Object.assign(current.Props, {
+								value: "tampered after inspection",
+							});
 						if (
 							input.phase === "apply" &&
 							options.mutateDuringOwnership &&
@@ -197,6 +209,14 @@ describe("host-authenticated Alchemy state ownership", () => {
 		expect(f.applied()).toBe(0);
 	});
 
+	it("rejects a plan changed by the post-inspection ownership verifier", async () => {
+		const f = fixture({ mutateAfterPlan: true });
+		await expect(f.provider.assessPricing(program)).rejects.toMatchObject({
+			code: "PLAN_CHANGED",
+		});
+		expect(f.applied()).toBe(0);
+	});
+
 	it("binds an opaque logical HoBo stack to the safe physical scope", async () => {
 		const f = fixture();
 		await expect(f.provider.preview(program)).resolves.toMatchObject({
@@ -282,6 +302,58 @@ describe("host-authenticated Alchemy state ownership", () => {
 		expect(f.planned()).toBe(1);
 	});
 
+	it("allows an independently approved declaration update for the same durable owner", async () => {
+		const resource = {
+			name: "app",
+			port: "compute",
+			provider: "sandbox",
+			deps: [],
+			region: "east",
+		};
+		const first = { ...program, resource };
+		const next = {
+			...program,
+			operationGeneration: "generation-2",
+			resource: { ...resource, region: "west" },
+		};
+		const approved = new Set([
+			`generation-1:${captureAlchemyProgram(first).declarationDigest}`,
+		]);
+		let owner: string | undefined;
+		const f = fixture({
+			verify: ({ tenantId, program: logical, operationGeneration, state }) => {
+				const identity = JSON.stringify({
+					tenantId,
+					programId: logical.programId,
+					deploymentId: logical.deploymentId,
+					resourceId: logical.resourceId,
+					logicalStackName: logical.logicalStackName,
+					backendRef: state.backendRef,
+					scopeKey: state.scopeKey,
+					epoch: state.ownershipEpoch,
+				});
+				if (owner !== undefined && owner !== identity) return false;
+				if (
+					!approved.has(`${operationGeneration}:${logical.declarationDigest}`)
+				)
+					return false;
+				owner = identity;
+				return true;
+			},
+		});
+		const before = await f.provider.assessPricing(first);
+		await expect(f.provider.assessPricing(next)).rejects.toMatchObject({
+			code: "STATE_SCOPE_UNVERIFIED",
+		});
+		expect(f.planned()).toBe(1);
+		approved.add(
+			`generation-2:${captureAlchemyProgram(next).declarationDigest}`,
+		);
+		const after = await f.provider.assessPricing(next);
+		expect(before.plan.planDigest).not.toBe(after.plan.planDigest);
+		expect(f.planned()).toBe(2);
+	});
+
 	it("binds different desired declarations into distinct financial plans", async () => {
 		const f = fixture();
 		const resource = {
@@ -297,6 +369,23 @@ describe("host-authenticated Alchemy state ownership", () => {
 			resource: { ...resource, region: "west" },
 		});
 		expect(first.plan.planDigest).not.toBe(second.plan.planDigest);
+	});
+
+	it("binds the operation generation, including its absence, into financial plans", async () => {
+		const f = fixture();
+		const first = await f.provider.assessPricing(program);
+		const next = { ...program, operationGeneration: "generation-2" };
+		await expect(
+			f.provider.applyWithAdmission(next, "next"),
+		).rejects.toMatchObject({ code: "PREVIEW_REQUIRED" });
+		const second = await f.provider.assessPricing(next);
+		const { operationGeneration, ...withoutGeneration } = program;
+		expect(operationGeneration).toBe("generation-1");
+		const ungenerated = await f.provider.assessPricing(withoutGeneration);
+		expect(first.plan.planDigest).not.toBe(second.plan.planDigest);
+		expect(first.plan.planDigest).not.toBe(ungenerated.plan.planDigest);
+		expect(second.plan.planDigest).not.toBe(ungenerated.plan.planDigest);
+		expect(f.applied()).toBe(0);
 	});
 
 	it("keeps a caller's changing declaration outside the verified snapshot", async () => {

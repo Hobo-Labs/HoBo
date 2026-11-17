@@ -110,7 +110,9 @@ declared state backend, physical stack, stage and ownership epoch. It must also
 authenticate the bounded desired resource declaration and its digest against
 the target's actual stack and source, or explicitly authorize its absence for
 a direct stack invocation. The plan digest binds these identities and the
-declaration; changing them cannot reuse an earlier admission.
+declaration and operation generation; changing them cannot reuse an earlier
+assessment or admission. An assessment without a generation is distinct from
+every generated operation.
 The host must verify that `backendRef` identifies the actual configured state
 store; a caller-provided reference or a callback that merely returns `true` is
 not evidence of ownership.
@@ -121,8 +123,14 @@ including a durable registry of stack and stage ownership. Use
 example, `Demo/Production` and `demo/production` are the same key. Two distinct
 logical scopes must never share that key in the same physical store, even if
 the current filesystem happens to be case-sensitive. The host must maintain the
-store's lease or equivalent exclusive fencing throughout each operation; the
-adapter's checks do not repair a compromised or concurrently modified store.
+store's lease or equivalent exclusive fencing before every public provider call,
+including preview, pricing assessment and refresh. Hold it through the actual
+completion of all work, including work that continues after a timeout, and
+release it only then. Checking a registry at each callback alone cannot establish
+continuous exclusivity. The adapter's checks do not repair a compromised or
+concurrently modified store. Stable ownership identifies the logical scope;
+the host must independently authorize each new declaration and operation
+generation without treating an old declaration as permanent ownership.
 The verifier must refuse an unrecognized existing scope or changed owner until
 the host independently verifies and records a migration with a new ownership
 epoch. Choosing a different physical name does not migrate existing state.

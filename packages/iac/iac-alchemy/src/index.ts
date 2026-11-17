@@ -38,8 +38,8 @@ import type {
 	UnpricedScopeProof,
 } from "./port.js";
 import {
-	captureAlchemyProgram,
 	type CapturedAlchemyProgram,
+	captureAlchemyProgram,
 } from "./program-boundary.js";
 import { captureAlchemySourceRequirements } from "./source-fence.js";
 import {
@@ -52,9 +52,6 @@ import {
 } from "./state-identity.js";
 
 export type { ResourceScope, Target } from "./_generated/alchemy_iac_pb.js";
-export { captureAlchemyOptions } from "./input-boundary.js";
-export type { CapturedAlchemyProgram } from "./program-boundary.js";
-export { captureAlchemyProgram } from "./program-boundary.js";
 export {
 	ResourceScopeSchema,
 	TargetSchema,
@@ -73,6 +70,7 @@ export {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "./bindle.js";
+export { captureAlchemyOptions } from "./input-boundary.js";
 export type {
 	AlchemyCompositeEffect,
 	AlchemyCompositeEnvironment,
@@ -106,6 +104,8 @@ export type {
 	UnverifiedUnpricedPolicyProof,
 	UnverifiedUnpricedScopeProof,
 } from "./port.js";
+export type { CapturedAlchemyProgram } from "./program-boundary.js";
+export { captureAlchemyProgram } from "./program-boundary.js";
 export type {
 	AlchemySourceClaim,
 	AlchemySourceFence,
@@ -1108,6 +1108,7 @@ export function createAlchemyIacProvider<
 			tenantId: target.tenantId,
 			targetId: target.targetId,
 			program: programIdentity(program),
+			operationGeneration: program.operationGeneration ?? null,
 			backendRef: state.backendRef,
 			scopeKey: state.scopeKey,
 			ownershipEpoch: state.ownershipEpoch,
@@ -1285,9 +1286,40 @@ export function createAlchemyIacProvider<
 						),
 					};
 				try {
+					const inspected = inspectAlchemyPlan(plan, target, composite);
+					if (
+						!(yield* Effect.promise(() =>
+							verifyStateOwnership(stableProgram, "plan"),
+						))
+					)
+						return {
+							ok: false as const,
+							error: new AlchemyIacError(
+								"STATE_SCOPE_UNVERIFIED",
+								"state ownership changed during planning",
+							),
+						};
+					if (!(yield* verifyAlchemyStateIdentities(plan)))
+						return {
+							ok: false as const,
+							error: new AlchemyIacError(
+								"STATE_IDENTITY_UNVERIFIED",
+								"persisted Alchemy state changed during planning",
+							),
+						};
+					if (
+						reinspectAlchemyPlan(plan, target, composite) !== inspected.digest
+					)
+						return {
+							ok: false as const,
+							error: new AlchemyIacError(
+								"PLAN_CHANGED",
+								"the plan changed during ownership verification",
+							),
+						};
 					return {
 						ok: true as const,
-						inspected: inspectAlchemyPlan(plan, target, composite),
+						inspected,
 					};
 				} catch (error) {
 					return { ok: false as const, error };
@@ -1295,7 +1327,6 @@ export function createAlchemyIacProvider<
 			}),
 		);
 		if (!result.ok) throw result.error;
-		await requireStateOwnership(stableProgram, "plan");
 		const digest = scopedPlanDigest(result.inspected.digest, stableProgram);
 		previews.set(key, digest);
 		return {
