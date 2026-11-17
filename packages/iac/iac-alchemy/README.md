@@ -10,6 +10,58 @@ the Alchemist services. A conditional choice between stacks with different
 provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
 `rivetkit` 3.0.0 peers; install both when using Rivet components.
+The `@hobo/iac-alchemy/rivet` entry point binds HoBo HTTP applications to
+Alchemy Rivet DurableObjects. `@hobo/iac-alchemy/rivet/runtime` provides the
+actor runtime without importing the IaC provider, and `@hobo/iac-alchemy/rivet/multi`
+maps multiple applications to separately attested pool and runner domains.
+The host must verify each source and dependency closure, authenticate requests,
+and attest exclusive canonical pool and runner isolation domains across all
+active stacks, maintaining ownership through deletion and reconciliation. It
+must include every pool and its infrastructure in the financial inventory. The
+Rivet HTTP mapper requires each resource FQN to equal its actor name, so use
+distinct actor names or independently isolated stacks and pools; placing these
+actors inside an Alchemy namespace is rejected. Rivet Bindle storage, queues,
+topics, resource dependencies and enabled replay are rejected explicitly when
+they are not supported by the mapping.
+`describeAlchemyPrimitiveSupport` reports only the HTTP kinds represented by
+the supplied Rivet source or sources. Those mappings are partial because they
+require a matching attested source, exclusive pool, disabled replay and no
+resource dependencies. A source for one HTTP kind does not authorize another.
+`describeRivetPrimitiveSupport(catalog, mappers)` also explains every missing
+primitive, including why a Rivet DurableStream is not a HoBo topic and why the
+standalone JSON queue does not satisfy the byte-and-attribute queue port.
+
+```ts
+import { CATALOG } from "@hobo/bindles";
+import {
+  createRivetPrimitiveMappers,
+  describeRivetPrimitiveSupport,
+} from "@hobo/iac-alchemy/rivet";
+
+const mappers = createRivetPrimitiveMappers(source); // host-attested Rivet source
+const coverage = describeRivetPrimitiveSupport(CATALOG, mappers);
+const topic = coverage.find((entry) => entry.kind === "topic");
+// topic.status is "unsupported"; topic.reason explains the missing semantics.
+```
+
+The Rivet HTTP binding authorizes a snapshot of the actor key, HTTP method,
+URL and headers before starting application code. It transfers the request
+body stream to the application without buffering it; callers must not consume
+the original stream after handoff. The authorization callback does not inspect
+or authenticate the body.
+Each Rivet source also needs an `AlchemySourceFence` and a matching entry in
+the composite guard's `sourceRequirements`. The trusted host must keep the
+reviewed source, complete dependency closure, module cache, build toolchain and
+uploaded artifact immutable through provider completion. Its verifier checks
+the exact source claim and whether that fence remains active. The adapter
+rechecks the claim before pool declaration, during planning and before provider
+apply; a failed check after admission retains the reservation for reconciliation.
+For a reconstructed deletion, the host must independently authenticate the
+prior resource state and compare its `hashAlchemyPriorState` digest with the
+historical source observation before approving the plan.
+Alchemy does not run the multi-pool mapper while reconstructing a deletion;
+the host's plan verifier must also authenticate the affected pool and runner
+ownership and maintain its fencing until deletion completes.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
