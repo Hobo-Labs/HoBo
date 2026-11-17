@@ -59,7 +59,8 @@ export interface DurableMessagingLimits {
  * durably stores the request fingerprint and exact terminal committed or
  * rejected receipt. An identical retry returns that receipt; a different
  * request using the ID is rejected as an operation conflict, with the existing
- * receipt fencing the conflicting request. At and after expiry every request
+ * receipt or pending identity fencing the conflicting request. The conflict
+ * must not overwrite or settle that original identity. At and after expiry every request
  * with that envelope expires
  * before effects, even after receipt garbage collection. Providers must not
  * evict live receipts. If receipt-capacity exhaustion prevents fencing a new
@@ -79,13 +80,21 @@ export interface DurableMessagingLimits {
  * and every semantic request field, including message bytes and attributes,
  * topic, group, sequence, lease, subscription settings and nack reason. The
  * caller's mutable input must be detached before any asynchronous boundary.
- * Receipt lookup precedes lease, quota and dynamic policy checks; a committed
- * consume, ack or nack retry replays its original receipt even after its lease
- * has expired, provided the operation itself has not expired.
+ * Current principal, tenant and instance authorization is checked before
+ * disclosing a receipt. If authorization is revoked, return unknown without
+ * disclosing its contents. Once authorized, receipt lookup precedes lease,
+ * quota and new-work admission checks; a committed consume, ack or nack retry
+ * replays its original receipt even after its lease has expired, provided the
+ * operation itself has not expired.
  * Audit events do not carry authenticated operation fingerprints and cannot
  * establish whether an unknown or expired operation committed. Resolution
  * after receipt expiry needs independent host reconciliation against the
  * authoritative journal; absence of an audit event is not evidence of failure.
+ * Because an admitted pre-expiry transaction may finish after expiry, even an
+ * empty point-in-time journal or absent effect is insufficient to conclude it
+ * failed. Before using absence as proof or starting a replacement, the host
+ * must fence and drain every prior eligible attempt, or establish each one's
+ * durable final outcome. Without that proof, the outcome remains unknown.
  */
 export interface DurableMessagingOperation {
 	readonly id: string;
@@ -114,11 +123,18 @@ export type DurableMessagingRejectionCode =
  * host evidence. A lost consume response may have granted leases.
  * A provider may return `rejected` only after ruling out an earlier commit of
  * this exact operation and durably recording the terminal rejection until
- * expiry. Identical retries replay that rejection; callers may use a fresh ID
- * only after receiving a definite rejection. If authorization is revoked, the
+ * expiry. Identical retries replay that rejection. An operation-conflict only
+ * rejects the conflicting fingerprint: the original same-ID operation may
+ * already be committed or still in flight. A fresh ID for the same logical
+ * work requires resolving or fencing that original operation, not merely
+ * receiving the conflict. If authorization is revoked, the
  * receipt store is unavailable, or capacity
  * cannot be checked without resolving a prior attempt, return `unknown`;
  * never turn an unresolved earlier commit into a definite rejection.
+ * A thrown promise, rejected call, connection loss or malformed response
+ * after dispatch is also unknown for the exact submitted operation unless an
+ * independent authority proves noncommit. A client or bridge must preserve
+ * that outcome and must not infer failure from the transport error.
  * A permanently malformed operation envelope may be rejected without a
  * receipt only when that exact envelope can never satisfy the ID/expiry
  * grammar. For a valid envelope, all definite dynamic and input rejections
@@ -305,8 +321,11 @@ export interface DurableMessagingEvent {
  * ID, message sequence and lease together and commits its state and audit
  * facts. Independent groups see independent deliveries; workers in one group
  * compete for each lease.
- * Names and operation IDs must be nonempty, control-free Unicode scalar strings
- * within `nameBytes` of UTF-8; unpaired surrogates are invalid. Attribute keys
+ * Names must be nonempty, control-free Unicode scalar strings within
+ * `nameBytes` of UTF-8; unpaired surrogates are invalid. Operation IDs follow
+ * the separate fixed grammar above, whose maximum encoded length is 84 bytes;
+ * a provider's lower `nameBytes` limit never truncates a valid operation ID.
+ * Attribute keys
  * must be nonempty and unique, all attribute values must be Unicode scalar
  * strings, and the total UTF-8 bytes of keys and values must fit
  * `attributeBytes`. Payload, reason, batch,

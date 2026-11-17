@@ -50,6 +50,18 @@ describe("durable messaging operation identity", () => {
 		expect(reads).toBe(0);
 	});
 
+	it("bounds operation IDs independently from provider name limits", () => {
+		const longest = durableMessagingOperation(
+			Number.MAX_SAFE_INTEGER,
+			"a".repeat(64),
+		);
+		expect(longest.id.length).toBe(84);
+		expect(parseDurableMessagingOperation(longest)).toEqual(longest);
+		expect(
+			durableMessagingOperation(1, "a".repeat(16)).id.length,
+		).toBeGreaterThan(16);
+	});
+
 	it("declares immutable, finite bounds", () => {
 		expect(Object.isFrozen(DURABLE_MESSAGING_LIMITS)).toBe(true);
 		for (const value of Object.values(DURABLE_MESSAGING_LIMITS)) {
