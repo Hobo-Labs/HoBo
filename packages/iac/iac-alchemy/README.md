@@ -71,7 +71,10 @@ present, is part of preview and execution identity.
 Alchemy beta.87 encodes `/` as `__` in local and bucket state keys, so the
 adapter accepts only portable alphanumeric, dot, hyphen and underscore FQN
 segments whose complete FQN round-trips through that encoding. Stack and stage
-must be single portable path segments. Case-insensitive resource-key collisions
+must be single portable path segments, and the program must name that physical
+stack exactly. Generated logical names containing `/` are refused before
+admission or provider effects until a host-authenticated mapping is available.
+Case-insensitive resource-key collisions
 in one target are rejected. State reads, writes and deletes are checked in each
 plan, destroy and drift scope; a stored row whose own FQN differs from its key,
 an unsafe rename, or an unavailable/inconsistent scan stops execution. FQNs and scope segments
