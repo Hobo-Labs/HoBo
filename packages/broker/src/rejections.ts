@@ -31,6 +31,12 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 		remediation: "repair the catalog definition and its capability check",
 	},
 	{
+		code: "resolver-composition-failed",
+		plane: "placement",
+		remediation:
+			"repair the Yard resolver configuration and reconcile any generated Yard",
+	},
+	{
 		code: "catalog-definition-conflict",
 		plane: "placement",
 		remediation:
@@ -162,6 +168,17 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 		plane: "billing",
 		remediation:
 			"supply fresh scoped bounded quotes, fulfilled policy evidence and an affordable durable shared reservation",
+	},
+	{
+		code: "hosting-budget-evidence-unavailable",
+		plane: "billing",
+		remediation:
+			"restore budget evidence and reconcile any existing generation or reservation before retrying",
+	},
+	{
+		code: "hosting-quote-invalid",
+		plane: "billing",
+		remediation: "restore complete, stable hosting quote evidence",
 	},
 	{
 		code: "yard-generation-uncertain",

@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { clone, toJsonString } from "@bufbuild/protobuf";
 import { first } from "@hobo/core/total-access";
 import { compareDecimal, type Decimal, parseDecimal } from "@hobo/pricing";
 import {
 	type BudgetAdmissionAuthority,
 	type BudgetIdentity,
+	BudgetIdentitySchema,
 	type BudgetReservation,
 	budgetIdentityKey,
 	type HostingPolicyProof,
+	HostingPolicyProofSchema,
 	type HostingQuote,
+	HostingQuoteSchema,
 	validateHostingQuote,
 } from "../budget-authority.js";
 import {
@@ -222,7 +226,65 @@ export async function resolveBindleDeployment(
 	const catalog = deps.catalog;
 	const hostingBudget = deps.hostingBudget;
 	const localAuthority = deps.authorizeLocalHosting;
+	const paidAuthority = deps.authorizeHosting;
+	const budgetAuthority = hostingBudget?.authority;
+	const budgetPersistence = budgetAuthority?.persistence;
+	const budgetRead = budgetAuthority?.read;
+	const budgetLookup = budgetAuthority?.lookup;
+	const budgetReserve = budgetAuthority?.reserve;
+	const budgetClaim = budgetAuthority?.claimExecution;
+	const budgetUncertain = budgetAuthority?.uncertain;
+	const budgetClock = hostingBudget?.now;
 	const catalogHash = deps.catalog.catalogHash;
+	const quoteKey = (quotes: readonly HostingQuote[]) =>
+		contentHashOf(
+			quotes.map((quote) => toJsonString(HostingQuoteSchema, quote)),
+		);
+	let quotes: HostingQuote[] = [];
+	let quotesDigest: ContentHash | undefined;
+	try {
+		if (hostingBudget) {
+			quotes = hostingBudget.quotes.map((quote) =>
+				clone(HostingQuoteSchema, quote),
+			);
+			quotesDigest = quoteKey(quotes);
+			if (quoteKey(hostingBudget.quotes) !== quotesDigest)
+				throw new Error("hosting quote evidence changed during snapshot");
+		}
+	} catch {
+		return rejectResult(
+			foldState,
+			emitted,
+			"billing",
+			"hosting-quote-invalid",
+			"hosting quote evidence could not be snapshotted",
+		);
+	}
+	const paidContextCurrent = () => {
+		try {
+			return (
+				deps.hostingBudget === hostingBudget &&
+				deps.authorizeHosting === paidAuthority &&
+				deps.brokerId === brokerId &&
+				deps.ownerTenantId === ownerTenant &&
+				deps.catalog === catalog &&
+				deps.catalog.catalogHash === catalogHash &&
+				contentHashOf(request) === requestDigest &&
+				(!hostingBudget ||
+					(hostingBudget.authority === budgetAuthority &&
+						budgetAuthority?.persistence === budgetPersistence &&
+						budgetAuthority?.read === budgetRead &&
+						budgetAuthority?.lookup === budgetLookup &&
+						budgetAuthority?.reserve === budgetReserve &&
+						budgetAuthority?.claimExecution === budgetClaim &&
+						budgetAuthority?.uncertain === budgetUncertain &&
+						hostingBudget.now === budgetClock &&
+						quoteKey(hostingBudget.quotes) === quotesDigest))
+			);
+		} catch {
+			return false;
+		}
+	};
 	const localContextCurrent = () => {
 		try {
 			return (
@@ -243,6 +305,16 @@ export async function resolveBindleDeployment(
 	let hostingQuote: HostingQuote | undefined;
 	let hostingPolicyProof: HostingPolicyProof | undefined;
 	let localHostingProof: LocalHostingProof | undefined;
+	const markGenerationUncertain = () => {
+		if (!budgetReservation) return true;
+		try {
+			if (!budgetAuthority || !budgetUncertain) return false;
+			budgetUncertain.call(budgetAuthority, reservationId);
+			return true;
+		} catch {
+			return false;
+		}
+	};
 	const isLocalProvider = (providerId: string) =>
 		providerId === "local" || providerId === "@hobo/provider-local-host";
 	function economicCosts(
@@ -255,12 +327,13 @@ export async function resolveBindleDeployment(
 		const costs = new Map<string, number>();
 		const context = deps.hostingBudget;
 		let ledger: ReturnType<BudgetAdmissionAuthority["read"]> | undefined;
+		let previous: ReturnType<BudgetAdmissionAuthority["lookup"]> | undefined;
 		try {
 			ledger = context?.authority.read(context.now());
+			previous = context?.authority.lookup(reservationId);
 		} catch {
-			return costs;
+			throw new Error("hosting budget evidence is unavailable");
 		}
-		const previous = context?.authority.lookup(reservationId);
 		for (const yard of yards) {
 			if (
 				!context &&
@@ -277,7 +350,7 @@ export async function resolveBindleDeployment(
 				ledger.identity.tenantId !== ownerTenantId
 			)
 				continue;
-			const quote = context.quotes.find(
+			const quote = quotes.find(
 				(row) =>
 					row.yardId === yard.yardId &&
 					row.providerId === yard.providerId &&
@@ -374,7 +447,9 @@ export async function resolveBindleDeployment(
 		}
 		if (context?.authority.persistence !== "durable-cas")
 			throw new Error("durable shared hosting budget authority required");
-		const quote = context.quotes.find(
+		if (!paidContextCurrent())
+			throw new Error("hosting context changed before policy");
+		const quote = quotes.find(
 			(row) =>
 				row.yardId === yardId &&
 				row.providerId === providerId &&
@@ -384,15 +459,26 @@ export async function resolveBindleDeployment(
 		if (!quote) throw new Error("complete hosting quote missing");
 		const ledger = context.authority.read(context.now());
 		if (!ledger.identity) throw new Error("budget identity missing");
-		if (!deps.authorizeHosting)
+		const authorize = paidAuthority;
+		if (!authorize)
 			throw new Error("bound hosting policy authorization required");
-		const { gate, proof } = await deps.authorizeHosting({
+		const expectedQuote = toJsonString(HostingQuoteSchema, quote);
+		const policyQuote = clone(HostingQuoteSchema, quote);
+		const policyIdentity = clone(BudgetIdentitySchema, ledger.identity);
+		const expectedIdentity = toJsonString(BudgetIdentitySchema, policyIdentity);
+		const { gate, proof } = await authorize({
 			request,
 			requestDigest,
-			quote,
-			identity: ledger.identity,
+			quote: policyQuote,
+			identity: policyIdentity,
 			now: context.now(),
 		});
+		if (
+			!paidContextCurrent() ||
+			toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||
+			toJsonString(BudgetIdentitySchema, policyIdentity) !== expectedIdentity
+		)
+			throw new Error("hosting evidence changed while policy was evaluated");
 		if (
 			(gate.effect !== "allow" && gate.effect !== "allow-degraded") ||
 			proof.effect !== gate.effect ||
@@ -407,20 +493,43 @@ export async function resolveBindleDeployment(
 			throw new Error(
 				"hosting policy denies, requires approval, or lacks bound fulfilled obligations",
 			);
+		const policyProof = clone(HostingPolicyProofSchema, proof);
+		const expectedProof = toJsonString(HostingPolicyProofSchema, policyProof);
+		const reservedQuote = clone(HostingQuoteSchema, quote);
+		const reservedIdentity = clone(BudgetIdentitySchema, ledger.identity);
+		const reserveNow = context.now();
+		if (!paidContextCurrent())
+			throw new Error("hosting context changed before reservation");
+		validateHostingQuote(quote, reserveNow);
 		budgetReservation = context.authority.reserve({
 			reservationId,
 			requestDigest,
-			quote,
-			identity: ledger.identity,
+			quote: reservedQuote,
+			identity: reservedIdentity,
 			expectedSeq: ledger.seq,
-			now: context.now(),
+			now: reserveNow,
 		});
 		if (budgetReservation.status !== "held")
 			throw new Error(
 				"existing terminal or uncertain commitment cannot authorize a new execution",
 			);
+		if (
+			!paidContextCurrent() ||
+			toJsonString(HostingQuoteSchema, reservedQuote) !== expectedQuote ||
+			toJsonString(BudgetIdentitySchema, reservedIdentity) !==
+				expectedIdentity ||
+			toJsonString(HostingPolicyProofSchema, proof) !== expectedProof
+		)
+			throw new Error(
+				"hosting evidence changed while the hold was created; reconcile reservation",
+			);
+		validateHostingQuote(quote, context.now());
+		if (!paidContextCurrent())
+			throw new Error(
+				"hosting context changed during final freshness check; reconcile reservation",
+			);
 		hostingQuote = quote;
-		hostingPolicyProof = proof;
+		hostingPolicyProof = policyProof;
 	}
 
 	append(
@@ -456,12 +565,26 @@ export async function resolveBindleDeployment(
 	}
 
 	const snapshot = inventorySnapshotFromFold(foldState);
+	let initialCosts: ReadonlyMap<string, number>;
+	try {
+		initialCosts = economicCosts(snapshot.yards);
+	} catch (error) {
+		return rejectResult(
+			foldState,
+			emitted,
+			"billing",
+			"hosting-budget-evidence-unavailable",
+			error instanceof Error
+				? error.message
+				: "hosting budget evidence unavailable",
+		);
+	}
 	const match = matchYard(request.yard, snapshot, {
 		ownerTenantId,
 		objective: request.objective,
 		bindleRuntimes: request.bindleRequirements.runtimes,
 		contributingPolicyIds: ["yard-match"],
-		economicCosts: economicCosts(snapshot.yards),
+		economicCosts: initialCosts,
 	});
 
 	append(
@@ -473,6 +596,20 @@ export async function resolveBindleDeployment(
 
 	let selectedYardId = match.winnerYardId;
 	let generationAttemptId: string | undefined;
+	const rejectAfterGeneration = (
+		plane: string,
+		code: string,
+		message: string,
+	) => {
+		const marked = generationAttemptId ? markGenerationUncertain() : true;
+		return rejectResult(
+			foldState,
+			emitted,
+			plane,
+			code,
+			`${message}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
+		);
+	};
 	const runtimeSnapshot = runtimeCatalog.snapshot();
 
 	if (match.outcome === "generation-required") {
@@ -509,11 +646,19 @@ export async function resolveBindleDeployment(
 			);
 			const financial = deps.hostingBudget;
 			if (financial && budgetReservation && hostingQuote) {
+				if (!paidContextCurrent())
+					throw new Error(
+						"hosting context changed before generation claim; reconcile reservation",
+					);
 				const now = financial.now();
 				validateHostingQuote(hostingQuote, now);
 				const head = financial.authority.read(now);
 				const previous = financial.authority.lookup(reservationId);
 				inspectGenerationOnly = Boolean(previous?.executionDigest);
+				if (!paidContextCurrent())
+					throw new Error(
+						"hosting context changed before generation claim; reconcile reservation",
+					);
 				budgetReservation = financial.authority.claimExecution({
 					reservationId,
 					requestDigest,
@@ -526,6 +671,10 @@ export async function resolveBindleDeployment(
 				});
 				// A durable claim may wait for a database writer past quote expiry.
 				validateHostingQuote(hostingQuote, financial.now());
+				if (!paidContextCurrent())
+					throw new Error(
+						"hosting context changed after generation claim; reconcile reservation",
+					);
 			}
 		} catch (error) {
 			return rejectResult(
@@ -580,14 +729,31 @@ export async function resolveBindleDeployment(
 				genResult = await connector.inspect(genDecision.plan.attemptId);
 			} else genResult = await saga.run(genDecision.plan);
 		} catch (error) {
-			if (budgetReservation)
-				deps.hostingBudget?.authority.uncertain(reservationId);
+			const marked = markGenerationUncertain();
 			return rejectResult(
 				foldState,
 				emitted,
 				"placement",
 				"yard-generation-uncertain",
-				error instanceof Error ? error.message : "generation outcome uncertain",
+				`${error instanceof Error ? error.message : "generation outcome uncertain"}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
+			);
+		}
+		try {
+			if (budgetReservation && hostingQuote && hostingBudget) {
+				if (!paidContextCurrent())
+					throw new Error("hosting context changed during generation");
+				validateHostingQuote(hostingQuote, hostingBudget.now());
+				if (!paidContextCurrent())
+					throw new Error("hosting context changed after generation");
+			}
+		} catch (error) {
+			const marked = markGenerationUncertain();
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-uncertain",
+				`${error instanceof Error ? error.message : "generation context changed"}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
 			);
 		}
 		generationAttemptId = genDecision.plan.attemptId;
@@ -601,16 +767,24 @@ export async function resolveBindleDeployment(
 					) => readonly { kind: string; payload: JsonObject }[];
 			  })
 			| undefined;
-		if (connector?.signalsFor) {
-			appendProviderSignals(
-				genDecision.plan.providerId,
-				connector.signalsFor(genDecision.plan.attemptId),
+		try {
+			if (connector?.signalsFor) {
+				appendProviderSignals(
+					genDecision.plan.providerId,
+					connector.signalsFor(genDecision.plan.attemptId),
+				);
+			}
+		} catch (error) {
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-uncertain",
+				error instanceof Error
+					? error.message
+					: "generation signals unavailable",
 			);
 		}
 
 		if (genResult.status === "failed" || !genResult.yardId) {
-			if (budgetReservation)
-				deps.hostingBudget?.authority.uncertain(reservationId);
 			append(
 				yardEvent(YARD_EVENTS.GenerationFailed, {
 					attemptId: genDecision.plan.attemptId,
@@ -630,9 +804,7 @@ export async function resolveBindleDeployment(
 					reasonCodes: [genResult.failure?.code ?? "yard-generation-failed"],
 				}),
 			);
-			return rejectResult(
-				foldState,
-				emitted,
+			return rejectAfterGeneration(
 				"placement",
 				genResult.failure?.code ?? "yard-generation-failed",
 				genResult.failure?.message ?? "yard generation failed",
@@ -669,18 +841,26 @@ export async function resolveBindleDeployment(
 			);
 		}
 
-		const rematch = matchYard(
-			request.yard,
-			inventorySnapshotFromFold(foldState),
-			{
-				ownerTenantId,
-				objective: request.objective,
-				bindleRuntimes: request.bindleRequirements.runtimes,
-				economicCosts: economicCosts(
-					inventorySnapshotFromFold(foldState).yards,
-				),
-			},
-		);
+		const rematchSnapshot = inventorySnapshotFromFold(foldState);
+		let rematchCosts: ReadonlyMap<string, number>;
+		try {
+			rematchCosts = economicCosts(rematchSnapshot.yards);
+		} catch (error) {
+			const marked = markGenerationUncertain();
+			return rejectResult(
+				foldState,
+				emitted,
+				"billing",
+				"hosting-budget-evidence-unavailable",
+				`${error instanceof Error ? error.message : "hosting budget evidence unavailable"}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
+			);
+		}
+		const rematch = matchYard(request.yard, rematchSnapshot, {
+			ownerTenantId,
+			objective: request.objective,
+			bindleRuntimes: request.bindleRequirements.runtimes,
+			economicCosts: rematchCosts,
+		});
 		append(
 			yardEvent(YARD_EVENTS.MatchDecided, {
 				requestId: request.requestId,
@@ -696,9 +876,7 @@ export async function resolveBindleDeployment(
 					reasonCodes: ["yard-rematch-failed"],
 				}),
 			);
-			return rejectResult(
-				foldState,
-				emitted,
+			return rejectAfterGeneration(
 				"placement",
 				"yard-rematch-failed",
 				"generated yard did not become selectable",
@@ -716,9 +894,7 @@ export async function resolveBindleDeployment(
 				message: match.rationale,
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			"yard-match-rejected",
 			match.rationale,
@@ -732,9 +908,7 @@ export async function resolveBindleDeployment(
 				reasonCodes: ["no-yard-selected"],
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			"no-yard-selected",
 			"no yard selected",
@@ -751,9 +925,7 @@ export async function resolveBindleDeployment(
 				reasonCodes: ["yard-not-ready"],
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			"yard-not-ready",
 			`yard ${selectedYardId} is not ready`,
@@ -764,12 +936,21 @@ export async function resolveBindleDeployment(
 	const campId = selectOrGenerateCamp(request, yard.yardId);
 
 	// Resolvers constrained to yard provider (includes event-store slot).
-	const { pins } = composeResolverPins({
-		providerId: yard.providerId,
-		yardDefaults: EMPTY_RESOLVER_CONFIG,
-		campConfig: EMPTY_RESOLVER_CONFIG,
-		providerDefaults: defaultProviderResolvers(yard.providerId),
-	});
+	let pins: ReturnType<typeof composeResolverPins>["pins"];
+	try {
+		({ pins } = composeResolverPins({
+			providerId: yard.providerId,
+			yardDefaults: EMPTY_RESOLVER_CONFIG,
+			campConfig: EMPTY_RESOLVER_CONFIG,
+			providerDefaults: defaultProviderResolvers(yard.providerId),
+		}));
+	} catch (error) {
+		return rejectAfterGeneration(
+			"placement",
+			"resolver-composition-failed",
+			error instanceof Error ? error.message : "resolver composition failed",
+		);
+	}
 
 	// Residual resources: all under selected yard provider only (no cross-yard split).
 	const placements = placeResourcesUnderYard(
@@ -786,9 +967,7 @@ export async function resolveBindleDeployment(
 				message: placements.error,
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			placements.code,
 			placements.error,
@@ -796,6 +975,17 @@ export async function resolveBindleDeployment(
 	}
 	try {
 		await admitHosting(yard.yardId, yard.providerId, placements.decisions);
+		if (hostingQuote && hostingBudget) {
+			if (!paidContextCurrent())
+				throw new Error(
+					"hosting context changed before receipt; reconcile reservation",
+				);
+			validateHostingQuote(hostingQuote, hostingBudget.now());
+			if (!paidContextCurrent())
+				throw new Error(
+					"hosting context changed during receipt freshness check; reconcile reservation",
+				);
+		}
 		if (
 			localHostingProof &&
 			(!localContextCurrent() ||
@@ -812,9 +1002,7 @@ export async function resolveBindleDeployment(
 		)
 			throw new Error("local hosting context changed before receipt");
 	} catch (error) {
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"billing",
 			"hosting-budget-admission-denied",
 			error instanceof Error

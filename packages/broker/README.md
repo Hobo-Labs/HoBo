@@ -56,7 +56,54 @@ Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
 plus a generated `HostingPolicyProof` tied to request digest, quote, budget
 identity/revision and policy hash. Denials, pending approvals and unfulfilled
 obligations refuse admission. A successful receipt pins proof, quote and financial
-reservation. Without a budget authority, local placement also requires an
+reservation. The broker snapshots quote and budget context, checks for changes
+across policy and reservation callbacks, and rechecks quote freshness before
+receipt issuance or generation. If evidence changes after a reservation is
+created, admission is refused and the hold remains for reconciliation. After a
+generation effect, failures attempt to mark the original hold uncertain; if
+that write fails, the broker reports the failure and retains the hold. The
+current policy proof names the quote ID but does not itself bind the complete
+quote contents; the host policy authority must enforce that binding.
+
+The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
+checks finite abstractions of the reservation handoff and generation recovery.
+The first view hides 128 same-label steps and the second hides 16; both assume a
+truthful host and an atomic durable authority.
+
+```mermaid
+stateDiagram-v2
+  s0: Quote awaits policy approval
+  s1: Changed evidence refused before hold
+  s2: Reserve the approved liability
+  s3: Recheck before receipt
+  s4: Changed evidence refused#59; hold retained
+  s5: Funded receipt issued
+  [*] --> s0
+  s0 --> s1: refuse changed evidence
+  s0 --> s2: confirm quote and policy context
+  s2 --> s4: retain hold for reconciliation
+  s2 --> s3: hold and check evidence
+  s3 --> s4: retain hold for reconciliation
+  s3 --> s5: issue current receipt
+```
+
+```mermaid
+stateDiagram-v2
+  s0: Generation awaiting funding
+  s1: Generation refused
+  s2: Funding claimed
+  s3: Provider effect completed
+  s4: Evidence unavailable#59; reconcile retained hold
+  s5: Generated Yard selected
+  [*] --> s0
+  s0 --> s1: refuse without funding
+  s0 --> s2: claim funding
+  s2 --> s3: start provider operation
+  s3 --> s4: retain exposure for reconciliation
+  s3 --> s5: match with current evidence
+```
+
+Without a budget authority, local placement also requires an
 explicit `authorizeLocalHosting` callback. It approves the exact request,
 catalog, Yard and selected resource placements and returns a bound policy proof
 with fulfilled obligations and zero managed-hosting liability. The broker
