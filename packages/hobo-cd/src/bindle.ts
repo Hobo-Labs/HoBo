@@ -11,8 +11,9 @@
  *   junction's references), read only.
  *
  * The API has no handler binding and the schedule has no cadence in this
- * declaration yet. PostgreSQL fleet placement does not provision or replicate
- * a journal. These resources must be wired before this project can deploy CD.
+ * declaration yet. The journal and config are placed on the Yards `hobo cd
+ * up` makes for them (`placement.ts`); the API and tick have no deployable
+ * artifact yet, so this project cannot deploy CD until they do.
  * Continuity annotations are the policy the journal's fleet runs by (fenced
  * writes, standbys, scheduled backups); independent failure domains are the
  * placement's to establish, and are reported when unverified.

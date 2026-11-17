@@ -331,6 +331,8 @@ export function relayYardRegistryProvider(
 			offered.push({ port: "queue", features: [] });
 		if (has(capability.service.scheduled))
 			offered.push({ port: "schedule", features: [] });
+		if (has(capability.data.postgres) || has(capability.data.relational))
+			offered.push({ port: "database", features: [] });
 	}
 	// A runtime projection can read secrets; it does not imply write access.
 	if (

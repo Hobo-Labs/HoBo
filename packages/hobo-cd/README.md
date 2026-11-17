@@ -55,6 +55,24 @@ IaC provider is the Vercel deploy provider built from that credential. The
 token is held in memory for the run and is never written to a file, an
 environment file, a log or a result.
 
+### Where the journal and config are placed
+
+Neither the journal nor the config is a provider this machine registers:
+`hobo cd up`'s prepare step makes them. `src/placement.ts` declares the Yards
+that say so, and `hobo cd plan|up` place on them alongside this machine's
+providers:
+
+| Resource | Yard | Provider | Product |
+|---|---|---|---|
+| `cd-journal` | `hobo-cd-journal` | `neon` | `neon.claimable-postgres/v1`, the fleet `prepare` provisions |
+| `cd-config` | `hobo-cd-config` | `secrets` | `secrets.config-service/v1`, the owner's chosen store |
+
+The config Yard names the routed config service, not a vendor: which store it
+is (Infisical by default, 1Password or Bitwarden) is chosen when the run
+starts. `hobo cd up` applies both by recording that `prepare` made them in the
+same run; nothing is deployed for them, and `hobo cd down` never drops the
+journal's databases or the owner's store.
+
 Configuration is a **ceremony**, not a list of environment variables, and it
 survives the machine: the store is found through a locator of ids in
 the owner's HoBo settings (`~/.config/hobo/projects/<project>/secret-store.json`,
@@ -140,6 +158,9 @@ failover. A reported policy shortfall does not prevent the fleet from serving.
 
 Tested end to end through the real connect page with a scripted browser and a
 pact-driven Vercel fake; the in-memory `SecretsPort` stands in for the store.
-Not yet run against live Vercel. `hobo cd plan` is honestly rejected until
-providers for the journal, config and tick are registered: the Vercel deploy
-provider realizes static/web deployments, not schedules or secrets.
+Not yet run against live Vercel. `hobo cd plan` places `cd-journal` and
+`cd-config` on the Yards `hobo cd up` makes for them (see
+[Where the journal and config are placed](#where-the-journal-and-config-are-placed)),
+and `hobo cd up` records both. `cd-api` and `cd-tick` have no deployable
+artifact yet: the Vercel deploy provider has nothing to deploy for HoBo.CD's
+API and tick, so `hobo cd up` stops at `cd-api` (`executor.apply_failed`).
