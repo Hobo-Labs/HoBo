@@ -446,12 +446,10 @@ export function isConverged(
 	);
 }
 
-// The idempotent reconcile core (control-plane.md reconcile loop). Runs under the
-// per-resource single-writer lease (ActorHost fencing). Because it emits
-// resource.Provisioning to the durable log BEFORE dispatching apply, a crash
-// between "provisioning" and "provisioned" is recoverable: on resume the fold
-// sees Provisioning and re-dispatches the (idempotent) apply through to
-// resource.Provisioned.
+// The reconcile core records the generation before dispatch under the resource
+// lease. After a crash, the same generation is dispatched again only when a
+// trusted host verifies that replay cannot overlap or duplicate an old effect;
+// otherwise the actor records a reconciliation-required failure.
 export async function reconcileResource(
 	deps: ResourceActorDeps,
 	resource: ResourcePlan,
