@@ -47,6 +47,11 @@ or proxied input before normalization. JavaScript may allocate while
 enumerating object keys before a traversal limit can be checked, so hosts must
 apply independent process memory and time limits to untrusted inputs.
 
+These checks reject proxies and bound the tree traversal, but JavaScript can
+allocate an object's own-key or descriptor list before the traversal limit is
+checked. Hosts accepting untrusted models must also impose process memory and
+time limits; the in-process validator cannot provide those limits itself.
+
 `assessTargetPricing(inventory, availability)` returns that same joint quote
 and a `providerCoverage` view grouped by the declared provider IDs. Each
 provider is `quoted` only when the complete target was quoted; `unavailable`
