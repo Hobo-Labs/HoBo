@@ -24,6 +24,7 @@ The owner's pause wins: a pause set with `p` on the terminal or with `hobo ci ma
 | `jobs.ts` | Job offers, the GitHub queue source, the relay-assigned source, and one-job runner creation and removal |
 | `executor.ts` | The container and host executors, the job environments and the pinned runner program |
 | `worker.ts` | The loop: advertise, take, refuse, run, drain and hand off |
+| `session.ts` | One connect: the machine's stored id and key, the owner from `GET /user`, Linux only, and the loop that ticks the worker each second until the first stop drains it and a second hands off |
 | `testing.ts` | A container driver and host process whose runner is a test function; nothing in it starts a process |
 
 ## What is proven and what is not

@@ -44,6 +44,17 @@ export {
 	userGithub,
 } from "./jobs.js";
 export {
+	githubOwner,
+	loadMachine,
+	MACHINE_FILE,
+	MACHINE_KEY_FILE,
+	MACHINE_TICK_MS,
+	type MachineSession,
+	machinePlatform,
+	runMachineSession,
+	type StoredMachine,
+} from "./session.js";
+export {
 	createMachineWorker,
 	type MachineWorker,
 	type MachineWorkerEvent,
