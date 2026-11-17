@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -1236,6 +1237,7 @@ fi
 if [ "$1" = signoff ] && [ "$2" = create ]; then exit 0; fi
 case "$2" in
   'repos/{owner}/{repo}/branches/main') git rev-parse refs/remotes/origin/main ;;
+  'repos/{owner}/{repo}/branches/feature') git --git-dir="$HOBO_FLEET_REMOTE" rev-parse refs/heads/feature ;;
   */git/ref/hobo/routing-slip)
     [ -n "\${HOBO_FLEET_SLIP:-}" ] || exit 1
     echo '{"object":{"type":"commit","sha":"5555555555555555555555555555555555555555"}}' ;;
@@ -1594,7 +1596,7 @@ exec /usr/bin/git "$@"
 			]);
 			assert.match(
 				assertedInventory.stdout,
-				/running the local signoff fallback/u,
+				/preparing the local signoff fallback/u,
 			);
 			assert.match(assertedInventory.stderr, /working tree is not clean/u);
 			rmSync(join(repo, "dirty.txt"));
@@ -1671,7 +1673,7 @@ exec /usr/bin/git "$@"
 			]);
 			assert.match(
 				assertedRunners.stdout,
-				/running the local signoff fallback/u,
+				/preparing the local signoff fallback/u,
 			);
 			assert.match(assertedRunners.stderr, /working tree is not clean/u);
 			const manyFlags = [
@@ -1685,7 +1687,7 @@ exec /usr/bin/git "$@"
 				"--provider-unavailable=production:provider-0",
 			];
 			const many = command({}, manyFlags);
-			assert.match(many.stdout, /running the local signoff fallback/u);
+			assert.match(many.stdout, /preparing the local signoff fallback/u);
 			assert.match(many.stderr, /working tree is not clean/u);
 			const tooMany = command(
 				{},
@@ -2044,7 +2046,10 @@ exec /usr/bin/git "$@"
 					}),
 				);
 				const validNulls = command({}, runnerFlags);
-				assert.match(validNulls.stdout, /running the local signoff fallback/u);
+				assert.match(
+					validNulls.stdout,
+					/preparing the local signoff fallback/u,
+				);
 				assert.match(validNulls.stderr, /working tree is not clean/u);
 			}
 			writeFileSync(runs, JSON.stringify({ workflow_runs: [validRun] }));
@@ -2081,7 +2086,7 @@ exec /usr/bin/git "$@"
 			assert.match(repeated.stderr, /IDs must not be repeated/u);
 			writeFileSync(join(repo, "dirty.txt"), "uncommitted\n");
 			const asserted = command({}, opaqueFlags);
-			assert.match(asserted.stdout, /running the local signoff fallback/u);
+			assert.match(asserted.stdout, /preparing the local signoff fallback/u);
 			assert.match(asserted.stderr, /working tree is not clean/u);
 			rmSync(join(repo, "dirty.txt"));
 			assert.deepEqual(
@@ -2103,7 +2108,7 @@ exec /usr/bin/git "$@"
 			assert.match(missing.stderr, /install or upgrade basecamp\/gh-signoff/u);
 			const fallback = command();
 			assert.notEqual(fallback.status, 0);
-			assert.match(fallback.stdout, /running the local signoff fallback/u);
+			assert.match(fallback.stdout, /preparing the local signoff fallback/u);
 			assert.match(fallback.stderr, /working tree is not clean/u);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
 
@@ -2149,7 +2154,10 @@ exec /usr/bin/git "$@"
 			const validRefusal = command({ HOBO_FLEET_SLIP: slip }, [
 				"--github-unavailable",
 			]);
-			assert.match(validRefusal.stdout, /running the local signoff fallback/u);
+			assert.match(
+				validRefusal.stdout,
+				/preparing the local signoff fallback/u,
+			);
 			assert.match(validRefusal.stderr, /working tree is not clean/u);
 
 			// A committed local workflow runs end to end and reaches gh-signoff.
@@ -2181,6 +2189,17 @@ exec /usr/bin/git "$@"
 			git(repo, ["push", "--quiet", "origin", "HEAD:refs/heads/feature"]);
 			const head = git(repo, ["rev-parse", "HEAD"]).toString().trim();
 			const tree = git(repo, ["rev-parse", "HEAD^{tree}"]).toString().trim();
+			// A head absent from the target must be rejected before local jobs run.
+			git(remote, ["update-ref", "refs/heads/feature", baseA]);
+			const unpublished = command({}, ["--fresh"]);
+			assert.notEqual(unpublished.status, 0);
+			assert.match(unpublished.stderr, /not verifiably on a branch of origin/u);
+			assert.equal(
+				existsSync(join(repo, ".hobo/attestations-out", tree, "ci-guard.log")),
+				false,
+			);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
+			git(remote, ["update-ref", "refs/heads/feature", head]);
 			// Advance A→B after observation and before the run fetches its base.
 			const baseChangedBeforeRun = command(
 				{ HOBO_FLEET_ADVANCE_AT_HELP: baseB },
@@ -2189,7 +2208,7 @@ exec /usr/bin/git "$@"
 			assert.notEqual(baseChangedBeforeRun.status, 0);
 			assert.match(
 				baseChangedBeforeRun.stderr,
-				/fleet-observed base changed/u,
+				/base.*changed/u,
 				`${baseChangedBeforeRun.stdout}\n${baseChangedBeforeRun.stderr}`,
 			);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
@@ -2218,6 +2237,7 @@ exec /usr/bin/git "$@"
 			rmSync(join(bin, "fail-job"));
 			const success = command({}, ["--fresh"]);
 			assert.equal(success.status, 0, success.stderr);
+			assert.match(success.stdout, /running the local signoff fallback/u);
 			assert.match(
 				readFileSync(
 					join(repo, ".hobo/attestations-out", tree, "ci-guard.log"),
@@ -2230,6 +2250,44 @@ exec /usr/bin/git "$@"
 					`signoff create --commit ${head} hobo-ci/local/pull_request/ci-guard`,
 				),
 			);
+
+			// The local run fetches main and overwrites FETCH_HEAD. A previously
+			// fetched descendant object still proves the live target branch.
+			const descendant = git(repo, [
+				"-c",
+				"user.name=Test",
+				"-c",
+				"user.email=test@example.invalid",
+				"commit-tree",
+				"HEAD^{tree}",
+				"-p",
+				head,
+				"-m",
+				"advanced remote",
+			])
+				.toString()
+				.trim();
+			git(repo, [
+				"push",
+				"--quiet",
+				"origin",
+				`${descendant}:refs/heads/feature`,
+			]);
+			git(repo, [
+				"config",
+				"--replace-all",
+				"remote.origin.fetch",
+				"+refs/heads/main:refs/remotes/origin/main",
+			]);
+			git(repo, ["update-ref", "-d", "refs/remotes/origin/feature"]);
+			git(repo, ["fetch", "--quiet", "origin", "feature"]);
+			const advancedSuccess = command({}, ["--fresh"]);
+			assert.equal(advancedSuccess.status, 0, advancedSuccess.stderr);
+			assert.equal(
+				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
+				2,
+			);
+			git(remote, ["update-ref", "refs/heads/feature", head]);
 
 			// A changed PR job policy is rejected before posting a new status.
 			writeWorkflow("exit 1");
@@ -2252,7 +2310,7 @@ exec /usr/bin/git "$@"
 			assert.match(failed.stderr, /no local job has a trusted signoff policy/u);
 			assert.equal(
 				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
-				1,
+				2,
 			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

@@ -497,8 +497,11 @@ target repository; `git user.name` must be set. The command verifies that the
 repository selected by `gh` matches the base remote, pins `GH_HOST` and
 `GH_REPO` to that identity, and checks GitHub's live base tip before it calls
 the extension. A mismatch or unavailable identity/base check refuses signoff.
-The extension refuses an unpushed
-commit; this command does not use its force option. A separate
+The tested head must also be reachable from a live branch on that remote. A
+narrow fetch is supported: fetch the branch if its newer tip is not present
+locally. Fleet checks this before running local jobs, and signoff rechecks the
+branch, base and checkout before publishing. The command does not use the
+extension's force option. A separate
 `pnpm ci:attest signoff --event=merge_group` reports only jobs run for that
 simulated event. `--base=upstream/main` selects another remote branch; signoff
 must be able to read its live tip and refuses when it differs from the tested
