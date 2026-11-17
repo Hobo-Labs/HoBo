@@ -11,7 +11,10 @@ The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 
 `mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
-mapping for each declared primitive. Mappings declare their Alchemy resource
+mapping for each declared primitive. The caller must also assess bindle-wide
+requirements, including required and preferred capabilities, runtimes, and
+labels; an unsupported, invalid, or failed assessment prevents mapping.
+Mappings declare their Alchemy resource
 types, supported operations and annotations, and whether they bind application
 entrypoints. The adapter processes dependencies first, supplies their Alchemy
 resources and the original entrypoint to the mapper, and rejects missing
@@ -27,7 +30,8 @@ mapped FQN: Alchemy can silently return the registered object outside the
 mapping scope. Across stacks the host must independently verify state ownership
 and actual physical provider-resource isolation; distinct stack names alone do
 not establish that resources cannot be shared or adopted.
-Only explicit registry entries count as mappings.
+Only explicit registry entries count as mappings. Connector declarations are
+rejected until their authorization and runtime bindings can be mapped.
 `describeAlchemyPrimitiveSupport` reports supported, partial and
 unsupported entries for a supplied primitive catalog, including the declared
 entrypoint and annotation support.
@@ -35,7 +39,8 @@ entrypoint and annotation support.
 These mappings are supplied by the provider or developer: the adapter does not
 claim that every HoBo primitive has an equivalent in every Alchemy provider.
 The mapper is responsible for actually implementing the declared operations,
-application logic and bindings; its declarations are not a conformance proof.
+application logic and bindings. The provider's requirement assessment and
+mapping declarations are not a conformance proof.
 Alchemy components that generate stack actions or executable plan values remain
 subject to the plan-inspection restrictions below.
 
