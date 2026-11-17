@@ -2,29 +2,54 @@ import assert from "node:assert/strict";
 import { globSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { isNodeTestFile } from "../lib/unit-test-selection.ts";
+import {
+	isNodeTestFile,
+	isNodeTestSource,
+} from "../lib/unit-test-selection.ts";
 import { selectRelevantChecks } from "../relevant-check-policy.ts";
 
 const root = join(import.meta.dirname, "..", "..");
 const scriptTests = globSync("scripts/test/*.test.ts", { cwd: root }).sort();
-/** `node --test` loads a file written for node:test; Vitest loads the rest. */
 const runnerFor = (file: string) =>
 	isNodeTestFile(join(root, file)) ? "node --test" : "vitest";
 
 describe("script test runners", () => {
+	it("classifies runtime imports without treating fixture strings or type imports as tests", () => {
+		for (const source of [
+			'import { test } from "node:test";',
+			'import "node:test";',
+			'const test = require("node:test");',
+			"const test = require(`node:test`);",
+			'const test = await import("node:test");',
+			'import test = require("node:test");',
+			'export { test } from "node:test";',
+		])
+			assert.equal(isNodeTestSource(source), true, source);
+		for (const source of [
+			"const fixture = 'import { test } from \"node:test\";';",
+			'// import { test } from "node:test";',
+			'const fixture = `from "node:test"`;',
+			'const pattern = /from "node:test"/;',
+			'import type { TestContext } from "node:test";',
+			'import type TestContext = require("node:test");',
+			'import { type TestContext } from "node:test";',
+			'export type { TestContext } from "node:test";',
+			'export { type TestContext } from "node:test";',
+			'import { test } from "vitest";',
+		])
+			assert.equal(isNodeTestSource(source), false, source);
+	});
+
 	it("gives every scripts test exactly one runner, and test:scripts runs both", () => {
 		assert.ok(scriptTests.length > 0);
 		for (const file of scriptTests) {
 			if (runnerFor(file) === "node --test") continue;
-			// What is not a node:test file has to be one Vitest can run.
 			assert.match(
 				readFileSync(join(root, file), "utf8"),
 				/from "vitest"/u,
 				`${file} imports neither node:test nor vitest`,
 			);
 		}
-		// One command for the directory. A bare `node --test scripts/test/*`
-		// cannot load a Vitest-style file and fails once for each of them.
 		const scripts: { scripts: Record<string, string> } = JSON.parse(
 			readFileSync(join(root, "package.json"), "utf8"),
 		);
@@ -38,10 +63,6 @@ describe("script test runners", () => {
 	});
 
 	it("runs each scripts test a workflow names under the runner test:scripts gives it", () => {
-		// Workflows name single files (`node --import tsx --test <file>`,
-		// `pnpm exec vitest run <files>`). Within a step, a scripts test that
-		// follows one of those two commands is run by it; one that follows
-		// neither is a path filter.
 		const invocations: string[] = [];
 		for (const workflow of globSync(".github/workflows/*.yml", { cwd: root })) {
 			const lines = readFileSync(join(root, workflow), "utf8").split("\n");
@@ -65,7 +86,6 @@ describe("script test runners", () => {
 				}
 			}
 		}
-		// Both forms are in use; finding neither means the scan broke.
 		assert.ok(
 			invocations.some((entry) =>
 				entry.startsWith(".github/workflows/hobo-ci.yml"),
