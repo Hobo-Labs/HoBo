@@ -103,12 +103,23 @@ what-if question (`WhatIfQuestion`), are defined in
 | `test/what-if.test.ts` | The walk in the panel: machine, minutes limit, failing runner type, waiting, none |
 | `test/route.test.ts` | The page, the script, the CSP, `GET` only |
 | `test/design-lint.test.ts` | Palette, outlines, flat lamps, focus rings, WCAG AA contrast by day and night |
-| `test/dashboard.browser.test.ts` | The built page in Chrome against a mock read API built from the provider's pact: the five views, the what-if, the edit link, only `GET` to its own origin, the accessibility checks on every view, a keyboard focus ring, and each view by day and night against its screenshot in `test/visual/` (1% of pixels may differ) |
+| `test/dashboard.browser.test.ts` | The built page in Playwright's Chromium headless shell against a mock read API built from the provider's pact: the five views, the what-if, the edit link, only `GET` to its own origin, the accessibility checks on every view, a keyboard focus ring, and each view by day and night against its screenshot in `test/visual/` (0.2% of pixels may differ) |
 
-The browser test needs a Chrome or Chromium binary (`PLAYWRIGHT_CHROMIUM_PATH`,
-Playwright's own, or a system Chrome); without one it is skipped and says
-so on a workstation, and fails under `CI=true` or `HOBO_REQUIRE_BROWSER=1`
-so a CI host never reports the accessibility and visual checks green unrun. The screenshots were taken with Chrome for Testing on Linux; on another
-font stack, refresh them with
-`UPDATE_VISUAL=1 pnpm exec vitest run test/dashboard.browser.test.ts` and
-review the images before committing.
+The browser test launches the browser CI launches: Playwright's own Chromium
+headless shell, which the CI runner image bakes in and a GitHub-hosted job
+downloads at the same pinned revision (`CI_RUNNER_PLAYWRIGHT_CHROMIUM` in
+`scripts/lib/ci-runner-contract.mts`). `PLAYWRIGHT_CHROMIUM_PATH` may name
+another binary; a system Chrome is never tried. Without a browser the test is
+skipped and says so on a workstation, and fails under `CI=true` or
+`HOBO_REQUIRE_BROWSER=1`, so a CI host never reports the accessibility and
+visual checks green unrun.
+
+The screenshots were taken in that headless shell (Chromium 151.0.7922.34,
+revision 1234). The visual check forces the bundled Liberation Sans
+(`test/visual/fonts/`, SIL OFL 1.1) on every element and shoots a fixed
+1280x2400 viewport, so neither the machine's fonts nor a view's height
+changes the image. In another browser version the comparison is skipped on a
+workstation and fails in CI. After a Playwright upgrade, refresh the images in
+the new headless shell with
+`UPDATE_VISUAL=1 pnpm exec vitest run test/dashboard.browser.test.ts`, update
+`VISUAL_BROWSER_VERSION`, and review the images before committing.

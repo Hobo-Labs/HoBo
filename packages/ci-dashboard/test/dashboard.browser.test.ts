@@ -1,14 +1,24 @@
 /**
- * The built dashboard in Chrome, against a mocked read API built from the
+ * The built dashboard in a browser, against a mocked read API built from the
  * provider's pact: the five views render, the what-if walks in the page, the
  * edit link goes to GitHub's editor, every request is a GET to the page's own
  * origin, the accessibility checks hold on every view, and each view matches
  * its screenshot in `test/visual/` (`UPDATE_VISUAL=1` rewrites them).
  *
- * It needs a Chrome or Chromium binary: `PLAYWRIGHT_CHROMIUM_PATH`,
- * Playwright's own, or a system Chrome. Without one it is skipped on a
- * workstation, and fails under `CI=true` or `HOBO_REQUIRE_BROWSER=1`, so a CI
- * host never reports the accessibility and visual checks green unrun.
+ * The browser is the one CI launches: Playwright's own Chromium headless
+ * shell, which the CI runner image bakes in and a GitHub-hosted job downloads
+ * at the same pinned revision (`CI_RUNNER_PLAYWRIGHT_CHROMIUM` in
+ * `scripts/lib/ci-runner-contract.mts`). `PLAYWRIGHT_CHROMIUM_PATH` may name
+ * another binary; nothing else is tried, so a system Chrome never stands in.
+ * Without a browser the file is skipped on a workstation, and fails under
+ * `CI=true` or `HOBO_REQUIRE_BROWSER=1`, so a CI host never reports the
+ * accessibility and visual checks green unrun.
+ *
+ * The screenshots do not depend on the machine's fonts: the visual check
+ * forces one bundled font (Liberation Sans, `test/visual/fonts/`) on every
+ * element, and shoots a fixed 1280x2400 viewport, so a view's height never
+ * changes the image's size. They are compared only in the browser version
+ * that made them (`VISUAL_BROWSER_VERSION`).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import pixelmatch from "pixelmatch";
@@ -20,41 +30,61 @@ import { PACT_NOW_MS, PACT_TOKEN } from "./support/pact-read-api.js";
 import { type LocalDashboard, serveDashboard } from "./support/serve.js";
 
 const VISUAL = new URL("./visual/", import.meta.url);
-/** The share of pixels a screenshot may differ by before it is a regression. */
-const VISUAL_TOLERANCE = 0.01;
+const VISUAL_FONT = new URL(
+	"./visual/fonts/LiberationSans-Regular.ttf",
+	import.meta.url,
+);
+/**
+ * The browser that made the baselines: Playwright 1.62's pinned headless
+ * shell (revision 1234), the one the CI runner image ships. When Playwright
+ * moves to another revision, regenerate the baselines in it and change this.
+ */
+const VISUAL_BROWSER_VERSION = "151.0.7922.34";
+/** The screenshot size: wide as the page's viewport, tall enough for the longest view. */
+const VISUAL_VIEWPORT = { width: 1280, height: 2400 } as const;
+/**
+ * The share of pixels a screenshot may differ by before it is a regression.
+ * Same browser and same font leave only anti-aliasing noise at glyph edges,
+ * which pixelmatch's 0.1 colour threshold mostly absorbs; 0.2% is about 6,000
+ * pixels of a 1280x2400 shot, less than one shifted line of text or one
+ * changed badge, so a real layout or colour change still fails.
+ */
+const VISUAL_TOLERANCE = 0.002;
+const STRICT =
+	process.env.CI === "true" || process.env.HOBO_REQUIRE_BROWSER === "1";
 
 async function launch(): Promise<Browser | undefined> {
-	const candidates = [
+	for (const executablePath of [
 		process.env.PLAYWRIGHT_CHROMIUM_PATH,
 		undefined,
-		"/usr/bin/google-chrome",
-		"/usr/bin/chromium",
-		"/usr/bin/chromium-browser",
-	];
-	for (const executablePath of candidates) {
+	]) {
 		if (executablePath !== undefined && !existsSync(executablePath)) continue;
 		try {
 			return await chromium.launch(
 				executablePath === undefined ? {} : { executablePath },
 			);
 		} catch {
-			// Try the next binary.
+			// Try Playwright's own browser next.
 		}
 	}
 	return undefined;
 }
 
 const browser = await launch();
-if (
-	browser === undefined &&
-	(process.env.CI === "true" || process.env.HOBO_REQUIRE_BROWSER === "1")
-)
+if (browser === undefined && STRICT)
 	throw new Error(
-		"dashboard.browser.test.ts needs Chrome or Chromium here (CI or HOBO_REQUIRE_BROWSER=1): install Playwright's chromium or set PLAYWRIGHT_CHROMIUM_PATH",
+		"dashboard.browser.test.ts needs Playwright's Chromium here (CI or HOBO_REQUIRE_BROWSER=1): run `pnpm exec playwright install chromium-headless-shell` or set PLAYWRIGHT_CHROMIUM_PATH",
 	);
 if (browser === undefined)
 	console.warn(
-		"dashboard.browser.test.ts skipped: no Chrome or Chromium (set PLAYWRIGHT_CHROMIUM_PATH)",
+		"dashboard.browser.test.ts skipped: no Playwright Chromium (set PLAYWRIGHT_CHROMIUM_PATH)",
+	);
+const visualBrowser =
+	browser?.version() === VISUAL_BROWSER_VERSION ||
+	process.env.UPDATE_VISUAL === "1";
+if (browser !== undefined && !visualBrowser && !STRICT)
+	console.warn(
+		`dashboard.browser.test.ts: screenshots not compared, the browser is ${browser.version()} and the baselines were made in ${VISUAL_BROWSER_VERSION}`,
 	);
 
 describe.skipIf(browser === undefined)("the dashboard in a browser", () => {
@@ -65,13 +95,7 @@ describe.skipIf(browser === undefined)("the dashboard in a browser", () => {
 	beforeAll(async () => {
 		local = await serveDashboard();
 		if (browser === undefined) throw new Error("skipped without a browser");
-		const context = await browser.newContext({
-			viewport: { width: 1280, height: 900 },
-			colorScheme: "light",
-			reducedMotion: "reduce",
-		});
-		page = await context.newPage();
-		await page.clock.setFixedTime(PACT_NOW_MS);
+		page = await signedIn(browser, false);
 		page.on("request", (request) =>
 			requests.push({ method: request.method(), url: request.url() }),
 		);
@@ -79,16 +103,29 @@ describe.skipIf(browser === undefined)("the dashboard in a browser", () => {
 		await page.waitForSelector("#view section");
 	});
 
+	/** A fresh page at the pact's clock; `bypassCSP` lets the visual check load its font. */
+	async function signedIn(on: Browser, bypassCSP: boolean): Promise<Page> {
+		const context = await on.newContext({
+			viewport: { width: 1280, height: 900 },
+			colorScheme: "light",
+			reducedMotion: "reduce",
+			bypassCSP,
+		});
+		const fresh = await context.newPage();
+		await fresh.clock.setFixedTime(PACT_NOW_MS);
+		return fresh;
+	}
+
 	afterAll(async () => {
 		await browser?.close();
 		await local?.close();
 	});
 
-	async function open(view: DashboardView): Promise<void> {
-		await page.evaluate((hash) => {
+	async function open(view: DashboardView, on: Page = page): Promise<void> {
+		await on.evaluate((hash) => {
 			location.hash = hash;
 		}, `#/${view}`);
-		await page.waitForFunction(
+		await on.waitForFunction(
 			(name) =>
 				document
 					.querySelector(`nav a[data-view="${name}"]`)
@@ -98,10 +135,10 @@ describe.skipIf(browser === undefined)("the dashboard in a browser", () => {
 		);
 	}
 
-	async function pick(repository: string): Promise<void> {
-		await page.fill("#repository", repository);
-		await page.click("#picker button[type=submit]");
-		await page.waitForFunction(
+	async function pick(repository: string, on: Page = page): Promise<void> {
+		await on.fill("#repository", repository);
+		await on.click("#picker button[type=submit]");
+		await on.waitForFunction(
 			(name) =>
 				document.getElementById("status")?.textContent?.includes(name) ?? false,
 			repository,
@@ -336,48 +373,76 @@ describe.skipIf(browser === undefined)("the dashboard in a browser", () => {
 		expect(outline).toBe("runners solid 3px");
 	});
 
-	it("matches its screenshots, by day and by night", async () => {
-		mkdirSync(VISUAL, { recursive: true });
-		await page.addStyleTag({ content: "body::after{display:none}" });
-		const failures: string[] = [];
-		for (const theme of ["light", "dark"] as const) {
-			if ((await page.locator("html").getAttribute("data-theme")) !== theme)
-				await page.click("#theme-toggle");
-			await page.mouse.move(0, 0);
-			expect(await page.locator("#theme-toggle").textContent()).toBe(
-				theme === "dark" ? "Day" : "Night",
-			);
-			for (const view of DASHBOARD_VIEWS) {
-				await open(view);
-				const shot = PNG.sync.read(await page.screenshot({ fullPage: true }));
-				const file = new URL(`${view}-${theme}.png`, VISUAL);
-				if (process.env.UPDATE_VISUAL === "1" || !existsSync(file)) {
-					writeFileSync(file, PNG.sync.write(shot));
-					continue;
-				}
-				const baseline = PNG.sync.read(readFileSync(file));
-				if (baseline.width !== shot.width || baseline.height !== shot.height) {
-					failures.push(
-						`${view}-${theme}: ${shot.width}x${shot.height}, baseline ${baseline.width}x${baseline.height}`,
+	it.skipIf(!visualBrowser && !STRICT)(
+		"matches its screenshots, by day and by night",
+		async () => {
+			if (browser === undefined) throw new Error("skipped without a browser");
+			expect(
+				visualBrowser,
+				`the baselines were made in Chromium ${VISUAL_BROWSER_VERSION}, this is ${browser.version()}: regenerate them with UPDATE_VISUAL=1 in Playwright's pinned headless shell and update VISUAL_BROWSER_VERSION`,
+			).toBe(true);
+			mkdirSync(VISUAL, { recursive: true });
+			const shots = await signedIn(browser, true);
+			try {
+				await shots.goto(`${local.origin}/dashboard#token=${PACT_TOKEN}`);
+				await shots.waitForSelector("#view section");
+				await pick("octo/app", shots);
+				const font = readFileSync(VISUAL_FONT).toString("base64");
+				await shots.addStyleTag({
+					content: `@font-face{font-family:"HoBo Visual";src:url(data:font/ttf;base64,${font}) format("truetype")}*,*::before,*::after{font-family:"HoBo Visual"!important}body::after{display:none}`,
+				});
+				await shots.evaluate(() => document.fonts.load('1rem "HoBo Visual"'));
+				await shots.setViewportSize(VISUAL_VIEWPORT);
+				const failures: string[] = [];
+				for (const theme of ["light", "dark"] as const) {
+					if (
+						(await shots.locator("html").getAttribute("data-theme")) !== theme
+					)
+						await shots.click("#theme-toggle");
+					await shots.mouse.move(0, 0);
+					expect(await shots.locator("#theme-toggle").textContent()).toBe(
+						theme === "dark" ? "Day" : "Night",
 					);
-					continue;
+					for (const view of DASHBOARD_VIEWS) {
+						await open(view, shots);
+						await shots.evaluate(() => document.fonts.ready);
+						const shot = PNG.sync.read(
+							await shots.screenshot({ animations: "disabled", caret: "hide" }),
+						);
+						const file = new URL(`${view}-${theme}.png`, VISUAL);
+						if (process.env.UPDATE_VISUAL === "1" || !existsSync(file)) {
+							writeFileSync(file, PNG.sync.write(shot));
+							continue;
+						}
+						const baseline = PNG.sync.read(readFileSync(file));
+						if (
+							baseline.width !== shot.width ||
+							baseline.height !== shot.height
+						) {
+							failures.push(
+								`${view}-${theme}: ${shot.width}x${shot.height}, baseline ${baseline.width}x${baseline.height}`,
+							);
+							continue;
+						}
+						const differing = pixelmatch(
+							baseline.data,
+							shot.data,
+							undefined,
+							shot.width,
+							shot.height,
+							{ threshold: 0.1 },
+						);
+						const share = differing / (shot.width * shot.height);
+						if (share > VISUAL_TOLERANCE)
+							failures.push(
+								`${view}-${theme}: ${(share * 100).toFixed(2)}% of pixels differ`,
+							);
+					}
 				}
-				const differing = pixelmatch(
-					baseline.data,
-					shot.data,
-					undefined,
-					shot.width,
-					shot.height,
-					{ threshold: 0.1 },
-				);
-				const share = differing / (shot.width * shot.height);
-				if (share > VISUAL_TOLERANCE)
-					failures.push(
-						`${view}-${theme}: ${(share * 100).toFixed(2)}% of pixels differ`,
-					);
+				expect(failures).toEqual([]);
+			} finally {
+				await shots.context().close();
 			}
-		}
-		await page.click("#theme-toggle");
-		expect(failures).toEqual([]);
-	});
+		},
+	);
 });
