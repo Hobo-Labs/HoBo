@@ -162,6 +162,16 @@ describe("activityFeed", () => {
 		expect(page.entries[1]?.requestedAtMs).toBe(1_000);
 	});
 
+	it("keeps the first answer of a redelivered job, as the journal does", () => {
+		const page = activityFeed([
+			event({ atMs: NOW, jobId: "j1", runner: "ubuntu-24.04" }),
+			event({ atMs: NOW + MINUTE, jobId: "j1", runner: "other" }),
+		]);
+		expect(page.entries.map((entry) => [entry.runner, entry.atMs])).toEqual([
+			["ubuntu-24.04", NOW],
+		]);
+	});
+
 	it("comes back newest first whatever order the events arrive in", () => {
 		const page = activityFeed([
 			event({ atMs: 1_000, jobId: "a" }),
@@ -391,5 +401,21 @@ describe("journalActivity", () => {
 			entries: [],
 			next: undefined,
 		});
+	});
+
+	it("keeps the request time of a job asked before the start time and answered after it", async () => {
+		const live = new InMemoryRouteJournal();
+		const stored = new SqliteRouteJournal(new DatabaseSync(":memory:"), {
+			nowMs: () => NOW + 10 * MINUTE,
+		});
+		const journal = new TeeJournal([live, stored]);
+		await journal.record(
+			event({ type: "runner.route.Requested", atMs: NOW, jobId: "j1" }),
+		);
+		await journal.record(event({ atMs: NOW + 2 * MINUTE, jobId: "j1" }));
+		const filter = { sinceMs: NOW + MINUTE };
+		const rebuilt = await journalActivity(stored, "acct-1", filter);
+		expect(rebuilt.entries.map((entry) => entry.requestedAtMs)).toEqual([NOW]);
+		expect(rebuilt).toEqual(activityFeed(live.events, filter));
 	});
 });

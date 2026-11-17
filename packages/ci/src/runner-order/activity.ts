@@ -153,7 +153,10 @@ function entryOf(key: string, gathered: Gathered): ActivityEntry | undefined {
 	});
 }
 
-/** The earliest request and the latest answer of each job. */
+/**
+ * The earliest request and the earliest answer of each job: a redelivered
+ * answer keeps the first, as the route journal does.
+ */
 function gather(
 	events: readonly RunnerRouteEvent[],
 ): ReadonlyMap<string, Gathered> {
@@ -165,7 +168,7 @@ function gather(
 			decided: undefined,
 		};
 		if (event.type === "runner.route.Decided" && event.decision) {
-			if (!gathered.decided || event.atMs >= gathered.decided.atMs)
+			if (!gathered.decided || event.atMs < gathered.decided.atMs)
 				gathered.decided = event;
 		} else if (
 			event.type === "runner.route.Requested" &&
@@ -225,9 +228,11 @@ export function activityFeed(
 }
 
 /**
- * One page of an account's activity, read from the route journal. The
- * repository and start time narrow the journal read; the rest of the filter
- * is applied to what comes back.
+ * One page of an account's activity, read from the route journal. Only the
+ * repository narrows the journal read. The start time does not: a job asked
+ * before it and answered after it is one entry dated by its answer, and a
+ * read cut at the start time would lose its request. The whole filter is
+ * applied to the entries built from what comes back.
  */
 export async function journalActivity(
 	journal: RouteJournal,
@@ -237,7 +242,7 @@ export async function journalActivity(
 	const events = await journal.decisions({
 		accountId,
 		repository: filter.repository,
-		sinceMs: filter.sinceMs ?? 0,
+		sinceMs: 0,
 		limit: ACTIVITY_JOURNAL_READ_LIMIT,
 	});
 	return activityFeed(events, filter);
