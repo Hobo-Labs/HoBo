@@ -22,10 +22,7 @@ describe("release contract vitest scope", () => {
 	it("keeps full @hobo/hobo deploy integration out of release workflows", () => {
 		const blocked =
 			"scripts/test/stage-release-oci-app.deploy-integration.test.ts";
-		for (const workflow of [
-			".github/workflows/release-hobo.yml",
-			".github/workflows/release-code.yml",
-		]) {
+		for (const workflow of [".github/workflows/release-hobo.yml"]) {
 			const files = vitestFiles(workflow);
 			expect(files).not.toContain(blocked);
 		}

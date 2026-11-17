@@ -27,7 +27,6 @@ import { SDK_PACKAGES } from "./stage-sdk-artifacts.mts";
 const RELEASE_IMAGE_ORDER = [
 	"hobo-sdk",
 	"hobo-codegen",
-	"hobo-code",
 	"hobo-cli",
 	"hobo-mcp",
 	"hobo-ci-serve",

@@ -131,10 +131,6 @@ describe("release attest workflow jobs", () => {
 		join(root, ".github/workflows/release-hobo.yml"),
 		"utf8",
 	);
-	const codeWorkflow = readFileSync(
-		join(root, ".github/workflows/release-code.yml"),
-		"utf8",
-	);
 
 	for (const jobId of RELEASE_PUBLISH_CHAIN_JOBS) {
 		it(`${jobId} does not gate on always()`, () => {
@@ -154,14 +150,6 @@ describe("release attest workflow jobs", () => {
 
 	it("release-attest grants packages:write for push-to-registry attestations", () => {
 		const block = parseReleaseJobBlock(hoboWorkflow, "release-attest");
-		expect(block).toMatch(/packages:\s*write/u);
-		expect(block).toMatch(
-			/ghcr-token:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/u,
-		);
-	});
-
-	it("release-code-attest grants packages:write and passes GHCR login inputs", () => {
-		const block = parseReleaseJobBlock(codeWorkflow, "release-code-attest");
 		expect(block).toMatch(/packages:\s*write/u);
 		expect(block).toMatch(
 			/ghcr-token:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/u,

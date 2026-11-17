@@ -61,13 +61,6 @@ export const RELEASE_OCI_STAGE_SPECS = {
 			{ name: "hobo-mcp", entrypoint: "dist/bin/hobo-mcp.js" },
 		],
 	},
-	"hobo-code": {
-		kind: "deploy",
-		packageName: "@hobo/code",
-		buildFilter: "@hobo/code...",
-		appPath: "app",
-		wrappers: [{ name: "hobo-code", entrypoint: "dist/bin/hobo-code.js" }],
-	},
 	"hobo-codegen": {
 		kind: "deploy",
 		packageName: "@hobo/schema-tools",
