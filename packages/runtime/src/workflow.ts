@@ -18,6 +18,7 @@ import {
 import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonBag,
@@ -103,6 +104,8 @@ export interface WorkflowEngineOptions {
 	store?: EventStoreWriter;
 	seed?: string;
 	clock?: RuntimeClock;
+	/** Wait for a duration before rechecking the clock; defaults to a Node timer. */
+	wait?: (delayMs: number) => Promise<void>;
 	actorHost?: ActorHost;
 	tokenBroker?: TokenBroker;
 }
@@ -142,6 +145,44 @@ export function createWorkflowEngine(
 	const seed = options.seed ?? "hobo-runtime-authoring-seed";
 	const tokenBroker = options.tokenBroker ?? DEFAULT_TOKEN_BROKER;
 	const actorHost = options.actorHost;
+	const wait =
+		options.wait ??
+		((delayMs: number) =>
+			new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+
+	function nowMs(): number {
+		const value = options.clock?.nowMs() ?? Date.now();
+		if (!Number.isSafeInteger(value) || value < 0) {
+			throw new Error(
+				"workflow sleep clock must return a nonnegative safe integer",
+			);
+		}
+		return value;
+	}
+
+	function makeDeadline(delayMs: number) {
+		const scheduledAtMs = nowMs();
+		const deadlineMs = scheduledAtMs + delayMs;
+		if (!Number.isSafeInteger(deadlineMs)) {
+			throw new Error("workflow sleep deadline exceeds the safe integer range");
+		}
+		return { scheduledAtMs, deadlineMs };
+	}
+
+	function readDeadline(data: JsonBag, delayMs: number): number {
+		const { scheduledAtMs, deadlineMs } = data;
+		if (
+			!isJsonNumber(scheduledAtMs) ||
+			!Number.isSafeInteger(scheduledAtMs) ||
+			scheduledAtMs < 0 ||
+			!isJsonNumber(deadlineMs) ||
+			!Number.isSafeInteger(deadlineMs) ||
+			deadlineMs !== scheduledAtMs + delayMs
+		) {
+			throw new Error("invalid recorded workflow sleep deadline");
+		}
+		return deadlineMs;
+	}
 
 	async function execute<A, R>(
 		def: WorkflowDefinition<A, R>,
@@ -256,27 +297,77 @@ export function createWorkflowEngine(
 				}
 			},
 			async sleep(durationMs, sleepOptions) {
+				if (!Number.isSafeInteger(durationMs) || durationMs < 0) {
+					throw new TypeError(
+						"workflow sleep delay must be a nonnegative safe integer",
+					);
+				}
 				const index = sleepIndex;
 				sleepIndex += 1;
-				const scheduled = journal.find(
-					(event) =>
-						event.type === "run.SleepScheduled" &&
-						isRecord(event.data) &&
-						event.data.index === index,
+				const sleeps = journal.filter(
+					(event) => event.type === "run.SleepScheduled",
 				);
-				if (scheduled && isRecord(scheduled.data)) {
-					if (scheduled.data.delayMs !== durationMs) {
+				const deadlines = journal.filter(
+					(event) => event.type === "run.SleepDeadlineSet",
+				);
+				for (const event of deadlines) {
+					if (
+						!isRecord(event.data) ||
+						!isJsonNumber(event.data.index) ||
+						!Number.isSafeInteger(event.data.index) ||
+						event.data.index < 0 ||
+						event.data.index >= sleeps.length
+					)
+						throw new Error("invalid workflow sleep deadline record");
+				}
+				const scheduled = sleeps[index];
+				const rebased = deadlines.filter(
+					(event) => isRecord(event.data) && event.data.index === index,
+				);
+				if (rebased.length > 1)
+					throw new Error("duplicate workflow sleep deadline");
+				let deadlineMs: number;
+				if (scheduled) {
+					if (
+						!isRecord(scheduled.data) ||
+						scheduled.data.delayMs !== durationMs ||
+						(scheduled.data.index !== undefined &&
+							scheduled.data.index !== index)
+					) {
 						throw new WorkflowFailure("sleep schedule diverged on replay", {
 							step: `sleep:${index}`,
 						});
 					}
-					return;
+					if (
+						scheduled.data.deadlineMs !== undefined ||
+						scheduled.data.scheduledAtMs !== undefined
+					) {
+						if (rebased.length)
+							throw new Error("duplicate workflow sleep deadline");
+						deadlineMs = readDeadline(scheduled.data, durationMs);
+					} else {
+						const previous = rebased[0];
+						if (previous && isRecord(previous.data)) {
+							deadlineMs = readDeadline(previous.data, durationMs);
+						} else {
+							const deadline = makeDeadline(durationMs);
+							await appendEvent("run.SleepDeadlineSet", { index, ...deadline });
+							deadlineMs = deadline.deadlineMs;
+						}
+					}
+				} else {
+					const deadline = makeDeadline(durationMs);
+					const data: JsonBag = { delayMs: durationMs, index, ...deadline };
+					if (sleepOptions?.label !== undefined)
+						data.label = sleepOptions.label;
+					await appendEvent("run.SleepScheduled", data);
+					deadlineMs = deadline.deadlineMs;
 				}
-				const data: JsonBag = { delayMs: durationMs, index };
-				if (sleepOptions?.label !== undefined) {
-					data.label = sleepOptions.label;
+				for (;;) {
+					const remaining = deadlineMs - nowMs();
+					if (remaining <= 0) return;
+					await wait(Math.min(remaining, 2_147_483_647));
 				}
-				await appendEvent("run.SleepScheduled", data);
 			},
 			async emit(type, data) {
 				return appendEvent(type, data ?? null);

@@ -16,7 +16,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | Broker budget authority | [verify-broker-budget-authority](../.agents/skills/verify-broker-budget-authority/SKILL.md) | Holds account for liabilities; claimed work retains funding; signed settlement requires bound receiver and finance evidence. |
 | SQLite queue and outbox | [verify-outbox-lease](../.agents/skills/verify-outbox-lease/SKILL.md) | A stale delivery attempt cannot acknowledge a later attempt, even when lease IDs and fences repeat. |
 | Provider connections | [verify-connection-lifecycle](../.agents/skills/verify-connection-lifecycle/SKILL.md) | Revocation is terminal across commands and replay. |
-| Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Fresh runs claim identities; resume uses recorded context and terminal results; replay checks the ordered sleep history. |
+| Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Fresh runs claim identities; resume uses recorded context, sleep deadlines and terminal results; replay checks the ordered sleep history. |
 | CI fleet capacity admission | [verify-ci-capacity](../.agents/skills/verify-ci-capacity/SKILL.md) | Stale capacity revisions are refused; revision exhaustion cannot wrap the wire counter. |
 | CI uncertain-runner capacity | [verify-ci-uncertain-capacity](../.agents/skills/verify-ci-uncertain-capacity/SKILL.md) | Uncertain slots retain capacity; confirmed recovery releases it once, under trusted teardown evidence. |
 | CI fleet effect delivery | [verify-ci-fleet-delivery](../.agents/skills/verify-ci-fleet-delivery/SKILL.md) | Fresh bounded delivery fences reject stale workers and ambiguous dispatch is not reissued. |
@@ -26,7 +26,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
 | CD promotion and rollback | [verify-promotion-verification](../.agents/skills/verify-promotion-verification/SKILL.md) | Qualification requires passing verification; request identities bind retries and rollback claims. |
 
-The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. The skill states each model's bounds and the number of hidden steps.
+The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. The skill states each model's bounds and the number of hidden steps. Workflow sleep verification includes a SQLite close-and-reopen test as well as bounded crash and deadline models.
 
 ## Run and maintain
 
@@ -48,7 +48,7 @@ When covered behavior changes, review the code and its intended policy, update t
 - Fleet teardown confirmations are trusted controller assertions; provider evidence is not independently checked or recorded by the strict store.
 - Older versions may already have released reservations for uncertain slots. Quarantine and reconcile those slots before enabling admission after upgrade.
 - Strict CI starts remain unavailable in production: the GitHub assignment lookup and hook endpoint are not wired, and the hook does not derive the actual assigned job on its own.
-- Concurrent workflow resumes are not fenced. A crash between an external effect and its completion fact can repeat that effect. Legacy workflow records can lack identifying context. The authoring engine records `ctx.sleep` but does not actually wait or schedule a durable wake-up.
+- Concurrent workflow resumes are not fenced. A crash between an external effect and its completion fact can repeat that effect. Legacy workflow records can lack identifying context. Sleep deadlines survive an explicit resume, but no host automatically discovers or wakes stopped runs; accurate clocks and a functioning waiter remain necessary. Old completed sleeps that returned immediately cannot be corrected retroactively.
 - Promotion and rollback binding assumes atomic journal claims and preserved metadata. Concurrent retries of the same operation and Rail effects that do not change the current Set still require fencing and reconciliation. Older records can be refused when their original request cannot be reconstructed.
 - The delivery checks assume the storage transaction and its persisted attempt counter are durable. Callers must pass the attempt returned by each claim. They do not establish exactly-once external delivery.
 - Budget proofs assume the recorded observations and evidence are accurate, and the relevant atomic storage operations work as specified. An authority's typed admission denial must mean it refused before writing; post-commit callback denials are converted to reconciliation errors. Provider charges can exceed a reservation; the ledger records the overrun. PostgreSQL and other provider integrations require their own exercised environments.
