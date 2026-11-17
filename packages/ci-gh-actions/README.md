@@ -1682,5 +1682,10 @@ the runner-order walk needs:
 
 The rules are tested against job lists recorded from GitHub
 (`test/fixtures/relay-job/recorded-queue.json`) and against the in-memory
-fakes in `@hobo/ci/runner-order/testing`. No relay job uses them in a workflow yet, so the channel is
-built, not proven.
+fakes in `@hobo/ci/runner-order/testing`. The GitHub reads they make (the
+slip ref, present and missing, its commit, the run list and a run's jobs)
+are hand-authored consumer expectations in
+[`contracts/relay-job-facts.pact.json`](contracts/relay-job-facts.pact.json),
+which `contracts/relay-job-facts.consumer.test.ts` drives `GithubRouteFacts`
+through; no provider verification is claimed. No relay job uses them in a
+workflow yet, so the channel is built, not proven.
