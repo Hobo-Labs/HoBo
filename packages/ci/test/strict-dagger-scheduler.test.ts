@@ -10,6 +10,7 @@ import {
 } from "../src/_generated/ci_pb.js";
 import { parsePipeline } from "../src/execution.js";
 import {
+	type BoundDaggerBackend,
 	daggerEndpointHash,
 	normalizeDaggerEndpoint,
 	parseCapacityGroup,
@@ -20,7 +21,6 @@ import {
 	parseOfferAdmission,
 	SqliteStrictFleetStore,
 	StrictDaggerScheduler,
-	type BoundDaggerBackend,
 } from "../src/fleet-v2/index.js";
 import { LeaseStore } from "../src/store.js";
 

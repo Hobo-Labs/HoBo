@@ -1,7 +1,6 @@
 import { normalizeText } from "../codegen/text.js";
 import { CANONICAL_VERBS, GLOBAL_FLAGS, type Verb } from "../shell/verbs.js";
 
-
 export const AGENT_DOCS_SCHEMA_VERSION = "hobo.agent-docs/v1";
 export const AGENT_DOCS_GENERATOR = "@hobo/cli/agent-docs";
 export const AGENT_DOCS_PRODUCT = "hobo";
@@ -24,14 +23,14 @@ export interface AgentDocsToolInput {
 	};
 }
 
-// domain-view: wire form is AgentDocCapability in data-models/agent_docs.proto.
+// domain-view:
 export interface AgentDocCapability {
 	readonly port: string;
 	readonly resource: string;
 	readonly verb: string;
 }
 
-// domain-view: wire form is AgentDocEntry in data-models/agent_docs.proto.
+// domain-view:
 export interface AgentDocEntry {
 	readonly name: string;
 	readonly role: string;
@@ -41,7 +40,7 @@ export interface AgentDocEntry {
 	readonly capability: AgentDocCapability;
 }
 
-// domain-view: wire form is AgentDocsManifest in data-models/agent_docs.proto.
+// domain-view:
 export interface AgentDocsManifest {
 	readonly schemaVersion: string;
 	readonly generator: string;
@@ -51,7 +50,7 @@ export interface AgentDocsManifest {
 	readonly artifacts: readonly string[];
 }
 
-// domain-view: wire form is AgentDocsArtifact in data-models/agent_docs.proto.
+// domain-view:
 export interface AgentDocsArtifact {
 	readonly path: string;
 	readonly content: string;

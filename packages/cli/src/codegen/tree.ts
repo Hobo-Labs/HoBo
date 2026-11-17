@@ -24,7 +24,6 @@ import {
 	DriftEntrySchema,
 } from "./types.js";
 
-
 function safePath(path: string): string {
 	const normalized = normalizePath(path);
 	const first = normalized.split("/")[0]?.toLowerCase();

@@ -32,7 +32,6 @@ import {
 	defaultCodegenLayout,
 } from "./types.js";
 
-
 export interface ProjectCodegenEngineOptions {
 	readonly layout?: CodegenLayout;
 }

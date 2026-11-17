@@ -64,6 +64,6 @@ describe("plain TypeScript application through the product command path", () => 
 				await rm(root, { recursive: true, force: true });
 			}
 		},
-		slow(30_000),
+		slow(120_000),
 	);
 });

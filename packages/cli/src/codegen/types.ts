@@ -1,6 +1,5 @@
 import type { JsonObject } from "../json.js";
 
-
 export type {
 	CodegenArtifact,
 	CodegenReport,

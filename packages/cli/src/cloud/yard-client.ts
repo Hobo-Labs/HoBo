@@ -58,7 +58,6 @@ import {
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
 
-
 export interface YardSession {
 	readonly tenant: string;
 	readonly principal: PrincipalRef;
@@ -148,19 +147,18 @@ export interface DownResult {
 	readonly progress: ProgressEvent[];
 }
 
-
-// public-contract: where `hobo build` writes the hobo.freight-manifest/v1 document.
+// public-contract:
 export const FREIGHT_FILE = ".hobo/freight.json";
-// public-contract: media type of the canonical Bindle bytes stored under declaration_hash.
+// public-contract:
 export const DECLARATION_MEDIA_TYPE = "application/vnd.hobo.bindle+json";
-// public-contract: artifact name of the stored declaration.
+// public-contract:
 export const DECLARATION_ARTIFACT = "declaration";
-// public-contract: Freight label marking an anonymous (claimable) deploy.
+// public-contract:
 export const ANONYMOUS_LABEL = "hobo.dev/anonymous";
-// public-contract: bounded conductor passes before `up` reports "waiting".
+// public-contract:
 export const DELIVERY_MAX_PASSES = 16;
 
-// public-contract: typed delivery refusals; each carries a remediation.
+// public-contract:
 export const DELIVERY_REFUSAL = Object.freeze({
 	freightInvalid: "HOBO_FREIGHT_INVALID",
 	freightStale: "HOBO_FREIGHT_STALE",
@@ -177,7 +175,7 @@ export const DELIVERY_REFUSAL = Object.freeze({
 export type DeliveryRefusalCode =
 	(typeof DELIVERY_REFUSAL)[keyof typeof DELIVERY_REFUSAL];
 
-// public-contract: metric names `hobo up`/`down` emit through the TelemetrySink.
+// public-contract:
 export const DELIVERY_METRIC = Object.freeze({
 	outcome: "hobo.cli.delivery.outcome",
 	passes: "hobo.cli.delivery.passes",
@@ -611,7 +609,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 	return client;
 }
 
-
 type DriverUp = Readonly<{ result: UpResult; receipt: DeliveryReceipt }>;
 type DriverDown = Readonly<{ result: DownResult; receipt: DeliveryReceipt }>;
 
@@ -663,7 +660,7 @@ const STATUS_EVENT = {
 } as const satisfies Readonly<Record<ReconcileStatus, string>>;
 
 const ANONYMOUS_CLAIM_HINT =
-	"Claim this deployment: `hobo login` then `hobo up` (local Yard), or `hobo claim <account> --broker <uri> --token <token>` (remote)."; // public-contract: claim next step printed after `hobo up --anonymous`
+	"Claim this deployment: `hobo login` then `hobo up` (local Yard), or `hobo claim <account> --broker <uri> --token <token>` (remote)."; // public-contract:
 
 function remediationOf(
 	resource: string,

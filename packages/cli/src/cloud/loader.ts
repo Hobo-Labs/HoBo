@@ -17,7 +17,6 @@ import {
 	loadTypeScriptHttpDefinition,
 } from "./typescript-app-loader.js";
 
-
 export const BINDLE_SOURCE_CANDIDATES = [
 	"dist/bindle.js",
 	"dist/src/bindle.js",

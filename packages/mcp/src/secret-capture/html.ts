@@ -1,25 +1,4 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import { SECRET_CAPTURE_SEAL_SOURCE } from "./seal.js";
-
 
 export const SECRET_CAPTURE_TOKEN_VALUES: ReadonlySet<string> = new Set([
 	"#ffffff",
@@ -35,7 +14,6 @@ export const SECRET_CAPTURE_TOKEN_VALUES: ReadonlySet<string> = new Set([
 	"#111111",
 	"#f2f1ec",
 ]);
-
 
 export type SecretCapturePageTicket = Readonly<{
 	ticketId: string;
@@ -56,7 +34,6 @@ export type SecretCapturePageOptions =
 			nonce: string;
 			ticket: SecretCapturePageTicket;
 	  }>;
-
 
 type PageConfig = Readonly<{
 	mode: "mcp-app" | "loopback";
@@ -188,7 +165,6 @@ button:disabled { cursor: progress; opacity: 0.6; }
   button:active { transform: none; }
 }
 `;
-
 
 const SCRIPT = `(function () {
   "use strict";

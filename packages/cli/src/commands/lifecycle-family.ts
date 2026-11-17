@@ -4,7 +4,6 @@ import path from "node:path";
 import type { CommandModule, CommandRunInput } from "../shell/registry.js";
 import type { CommandData, CommandResult } from "../types/envelope.js";
 
-
 export const LIFECYCLE_ACTIONS = Object.freeze([
 	"up",
 	"down",

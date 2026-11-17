@@ -5,8 +5,7 @@ import { type ManifestV1, parseManifest } from "@hobo/bindles";
 import type { JsonValue } from "../json.js";
 import { compileProjectManifest } from "./loader.js";
 
-
-export const BINDLE_MANIFEST_FILE = "hobo.bindle.json"; // public-contract: manifest file name read from user projects
+export const BINDLE_MANIFEST_FILE = "hobo.bindle.json"; // public-contract:
 
 export async function loadProjectManifest(
 	projectDir: string,
