@@ -3,7 +3,7 @@ Feature: Routing parity with RelayRunner
   gauntlet case; the case catalog is cases.json beside this file. A scenario
   tagged @pending waits for the work package that builds it.
 
-  @parity @R01 @t2 @t3 @pending
+  @parity @R01 @t2 @t3
   Scenario: R01 Relay mode answers a relay job within five seconds and bills no minutes
     Given relay mode is on for "octo/app"
     And a relay job labelled "hobo-relay" is queued for "octo/app"
@@ -124,7 +124,7 @@ Feature: Routing parity with RelayRunner
     When "hobo ci rerun --reroute" runs for the run
     Then the relay job is answered again with the facts of now
 
-  @parity @R13 @t2 @pending
+  @parity @R13 @t2
   Scenario: R13 A relay job whose webhook never arrived is answered within two poll intervals
     Given the next webhook is lost
     And a relay job labelled "hobo-relay" is queued for "octo/app"
@@ -143,7 +143,7 @@ Feature: Routing parity with RelayRunner
     When a run starts
     Then the relay job decides on a GitHub-hosted runner and the job runs where it said
 
-  @parity @R16 @t2 @pending
+  @parity @R16 @t2
   Scenario: R16 With the hosted relay down, a second node answers the relay job
     Given two relay nodes and the hosted one is down
     And a relay job labelled "hobo-relay" is queued for "octo/app"

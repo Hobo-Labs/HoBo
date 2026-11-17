@@ -89,6 +89,10 @@ the relay job fails with the reason and the job behind it is skipped), R05
 takes a public repository's job only when it isolates), R13 (a lost webhook
 is rescued), R16 (with the first node down, the second answers exactly once)
 and X01. `test/relay-answer-facts.test.ts` covers the facts and the file.
+The parity scenarios for R01, R13, R16, X01 and X03
+(`features/hobo-ci-parity/steps/relay-mode.steps.ts`) run the same answerer
+against the simulator; the X03 one also replaces Node's process-starting
+functions for the answer and checks none was called.
 
 The run that would prove relay mode: turn `relayJobs.answer` on for one
 repository on a deployed relay, push a workflow whose relay job asks for
