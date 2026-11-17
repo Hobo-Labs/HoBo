@@ -31,11 +31,16 @@ For a queued job whose only label is the relay label:
    (`MeshCoordinator.shouldStart`), so one node answers. A node that is not
    first waits its turn and answers on a later poll if the job is still queued.
 3. It checks GitHub still has the job queued, so a redelivered webhook costs
-   no runner.
+   no runner. Only a readable status or a 404 counts as an answer: a job GitHub
+   says is gone is remembered and never asked about again, while a 5xx, a rate
+   limit or an unreadable body skips the job as `read-failed` and the next poll
+   asks again.
 4. It creates a one-job runner named `hobo-relay-<run>-<job>-<try>` on the
    job's repository, or on the organization when the repository refuses
    (403 or 404). A second node asking for the same name gets a 409 and stops,
-   which fences the job even when the mesh's claim store is unreachable.
+   which fences the job even when the mesh's claim store is unreachable. A
+   runner left behind by a node that died fences the job only until the sweep
+   removes it (see below).
 5. It opens a session, waits up to four minutes for GitHub to offer a job,
    answers it with `answerRelayJob` (mode `relay`), completes it, closes the
    session and deletes the runner.
@@ -43,7 +48,19 @@ For a queued job whose only label is the relay label:
 GitHub hands a runner any waiting job with its label, oldest first, not
 necessarily the one that woke the answerer. A job it was offered instead is
 answered all the same, and the answerer starts again for the original, at most
-four runners in all. A job that asked for the relay label but names no relay
+four runners in all. The job that woke the answerer is recognised by its run
+and attempt, and by its id in the workflow file; when the queue shows a
+display name instead (a job with `name:` or a matrix leg), GitHub is asked
+whether the original is still queued once the offered job is completed.
+
+A runner created on the organization can be offered a relay job of any
+repository there. Such a job is answered only as its own repository asks:
+its `.hobo/ci.json` must turn `relayJobs.answer` on for the label and the node
+must serve its account, whose facts and journal the answer then uses.
+Otherwise the job fails with a sentence saying relay mode is not on for that
+repository; it is never routed with another account's machines or spend.
+
+A job that asked for the relay label but names no relay
 input, and is not made only of check steps, fails with a sentence saying a
 relay never runs a job's steps.
 
@@ -51,9 +68,19 @@ relay never runs a job's steps.
 
 `rescue(connections)` reads each connected repository's queued and in-progress
 runs and their jobs, as the job poller does, and answers every queued relay
-job it finds. A relay job whose `queued` webhook never arrived is answered on
-the next poll. `sweep(connections)` deletes `hobo-relay-*` runners, on the
-repository or its organization, whose run has ended.
+job it finds, four at a time (`RELAY_RESCUE_CONCURRENCY`), since each can
+wait up to four minutes for an offer. A relay job whose `queued` webhook never
+arrived is answered on the next poll. The poller starts the next rescue only
+when the last one has returned; a job already being answered is skipped as
+`in-flight` either way.
+
+`sweep(connections)` deletes `hobo-relay-*` runners, on the repository or its
+organization, that are not busy and either belong to a run that has ended or
+have been seen offline by two sweeps at least `RELAY_STALE_RUNNER_MS` (one
+minute) apart. A live node's runner is online while it waits for an offer, and
+the node's own runners are never swept, so this removes only runners a node
+left when it died or when its delete failed. Their fixed names would
+otherwise fence their jobs for good.
 
 ## Facts
 
@@ -88,7 +115,11 @@ the relay job fails with the reason and the job behind it is skipped), R05
 (a busy machine is waited on and cancelling frees the job), R06b (the fleet
 takes a public repository's job only when it isolates), R13 (a lost webhook
 is rescued), R16 (with the first node down, the second answers exactly once)
-and X01. `test/relay-answer-facts.test.ts` covers the facts and the file.
+and X01. It also covers a failed read of the job (answered on the next
+rescue), a leftover runner from a node that died (swept, then the job is
+answered), an organization runner offered another repository's job (failed
+when that repository left relay mode off, answered with its own account when
+it turned it on) and an original job whose display name is not its id. `test/relay-answer-facts.test.ts` covers the facts and the file.
 The parity scenarios for R01, R13, R16, X01 and X03
 (`features/hobo-ci-parity/steps/relay-mode.steps.ts`) run the same answerer
 against the simulator; the X03 one also replaces Node's process-starting

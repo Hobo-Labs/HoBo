@@ -20,6 +20,7 @@ import type { GithubTransport } from "../src/github.js";
 import {
 	createRelayAnswerer,
 	RELAY_CONFIG_PATH,
+	RELAY_STALE_RUNNER_MS,
 	type RelayAnswerer,
 	type RelayAnswererOptions,
 	type RelayTurn,
@@ -512,6 +513,293 @@ describe("relay mode keeps a relay job from waiting forever", () => {
 		).toEqual(["build-box", current]);
 		expect(relayRunnerRun(current)).toBe(live.runId);
 		expect(relayRunnerRun("build-box")).toBeUndefined();
+	});
+});
+
+/** A transport that answers `fail` instead of the simulator while it says so. */
+function flakyTransport(
+	sim: GithubSimulator,
+	fail: (path: string, method: string | undefined) => Response | undefined,
+): GithubTransport {
+	const transport = simulatorTransport(sim);
+	return {
+		request: (installationId, path, method, body, ifNoneMatch) =>
+			Promise.resolve(fail(path, method)).then(
+				(failed) =>
+					failed ??
+					transport.request(installationId, path, method, body, ifNoneMatch),
+			),
+	};
+}
+
+function queuedOf(relay: SimulatedJob, name = "route") {
+	return {
+		installationId: 1,
+		repository: relay.repository,
+		jobId: relay.id,
+		runId: relay.runId,
+		runAttempt: 1,
+		name,
+		labels: ["hobo-relay"],
+		queuedAtMs: relay.queuedAtMs,
+	};
+}
+
+describe("relay mode recovers from GitHub's errors and a node that died", () => {
+	it("asks again after a read of the job fails, and the next rescue answers it", async () => {
+		const sim = new GithubSimulator();
+		turnOn(sim);
+		let failures = 1;
+		const node = relayNode(sim, {
+			transport: flakyTransport(sim, (path) => {
+				if (failures > 0 && /\/actions\/jobs\/\d+$/u.test(path)) {
+					failures -= 1;
+					return new Response("bad gateway", { status: 502 });
+				}
+				return undefined;
+			}),
+		});
+		sim.dropNextWebhook();
+		const { runId } = queueRelay(sim);
+		const first = await node.answerer.rescue(CONNECTIONS);
+		expect(first.outcomes).toEqual([
+			{ kind: "skipped", reason: "read-failed", answered: [] },
+		]);
+		expect(job(sim, "route", runId).status).toBe("queued");
+		sim.advance(30_000);
+		const second = await node.answerer.rescue(CONNECTIONS);
+		expect(second.outcomes[0]?.kind).toBe("answered");
+		expect(job(sim, "route", runId).conclusion).toBe("success");
+	});
+
+	it("still remembers a job GitHub says is gone, so a redelivery costs one read", async () => {
+		const sim = new GithubSimulator();
+		turnOn(sim);
+		const node = relayNode(sim);
+		const { relay } = queueRelay(sim);
+		sim.cancelRun(relay.runId);
+		expect(await node.answerer.answer(queuedOf(relay))).toMatchObject({
+			kind: "skipped",
+			reason: "not-queued",
+		});
+		const before = sim.requests().length;
+		expect(await node.answerer.answer(queuedOf(relay))).toMatchObject({
+			kind: "skipped",
+			reason: "in-flight",
+		});
+		expect(sim.requests()).toHaveLength(before);
+	});
+
+	it("sweeps a leftover runner of a node that died, so the job it fenced is answered", async () => {
+		const sim = new GithubSimulator();
+		turnOn(sim);
+		const node = relayNode(sim);
+		sim.dropNextWebhook();
+		const { relay, runId } = queueRelay(sim);
+		// A node created the first runner for this job and died before using it.
+		sim.registerRunner({
+			name: `hobo-relay-${relay.runId}-${relay.id}-1`,
+			labels: ["hobo-relay"],
+			repository: REPO,
+			ephemeral: true,
+			online: false,
+		});
+		const rounds: unknown[] = [];
+		for (
+			let poll = 0;
+			poll < 4 && job(sim, "route", runId).status === "queued";
+			poll += 1
+		) {
+			const rescue = await node.answerer.rescue(CONNECTIONS);
+			rounds.push(
+				rescue.outcomes.map((outcome) =>
+					outcome.kind === "skipped" ? outcome.reason : outcome.kind,
+				),
+			);
+			await node.answerer.sweep(CONNECTIONS);
+			sim.advance(RELAY_STALE_RUNNER_MS);
+		}
+		expect(rounds).toEqual([
+			["runner-exists"],
+			["runner-exists"],
+			["answered"],
+		]);
+		expect(job(sim, "route", runId).conclusion).toBe("success");
+		expect(sim.runners()).toEqual([]);
+	});
+
+	it("keeps a relay runner that is online or busy, and deletes one left offline", async () => {
+		const sim = new GithubSimulator();
+		turnOn(sim);
+		const node = relayNode(sim);
+		const names = ["offline", "online", "busy"].map((kind) => {
+			const live = sim.queueJob({ repository: REPO, name: kind, labels: [] });
+			return `hobo-relay-${live.runId}-${live.id}-1`;
+		});
+		const [offline, online, busy] = names;
+		for (const [name, isOnline] of [
+			[offline, false],
+			[online, true],
+			[busy, true],
+		] as const)
+			sim.registerRunner({
+				name: name ?? "",
+				labels: ["hobo-relay"],
+				repository: REPO,
+				ephemeral: true,
+				online: isOnline,
+			});
+		queueRelay(sim, undefined);
+		// The busy runner takes the queued relay job and holds it.
+		const session = await new SimulatedRunnerService(sim).open(
+			testJitConfig(busy ?? ""),
+		);
+		expect(await session.nextJob(1_000)).toBeDefined();
+		expect((await node.answerer.sweep(CONNECTIONS)).deleted).toEqual([]);
+		sim.advance(RELAY_STALE_RUNNER_MS - 1);
+		expect((await node.answerer.sweep(CONNECTIONS)).deleted).toEqual([]);
+		sim.advance(1);
+		expect((await node.answerer.sweep(CONNECTIONS)).deleted).toEqual([offline]);
+		expect(
+			sim
+				.runners()
+				.map((runner) => runner.name)
+				.sort(),
+		).toEqual([busy, online].sort());
+		expect(sim.runners().find((runner) => runner.name === busy)?.busy).toBe(
+			true,
+		);
+		await session.close();
+	});
+});
+
+describe("relay mode answers each repository only as it asks", () => {
+	function orgRunnerNode(
+		sim: GithubSimulator,
+		accounts: ReadonlyMap<string, string>,
+		looked: string[],
+	): RelayNode {
+		const transport = simulatorTransport(sim);
+		const journal = new InMemoryRouteJournal();
+		const registry = new InMemoryMachineRegistry();
+		const answerer = createRelayAnswerer({
+			relayJobs: { answer: true, label: "hobo-relay" },
+			github: {
+				// The repository refuses, so the runner is created on the organization.
+				request: (installationId, path, method, body, ifNoneMatch) =>
+					path === `/repos/${REPO}/actions/runners/generate-jitconfig`
+						? Promise.resolve(new Response("{}", { status: 403 }))
+						: transport.request(
+								installationId,
+								path,
+								method,
+								body,
+								ifNoneMatch,
+							),
+			},
+			runnerService: new SimulatedRunnerService(sim),
+			readJitConfig: (_encoded, runnerName) => testJitConfig(runnerName),
+			account: async (queued) => {
+				looked.push(queued.repository);
+				return accounts.get(queued.repository);
+			},
+			facts: (accountId) =>
+				new StoreRouteFacts({
+					accountId,
+					fleet: undefined,
+					machines: registry,
+					readers: undefined,
+					spend: undefined,
+					health: undefined,
+					minutes: undefined,
+					onWarning: undefined,
+				}),
+			journal,
+			node: "node-a",
+			webhookSecret: sim.webhookSecret,
+			nowMs: () => sim.nowMs(),
+		});
+		return { answerer, journal, registry };
+	}
+
+	it("fails another repository's relay job an organization runner was offered when that repository left relay mode off", async () => {
+		const sim = new GithubSimulator();
+		sim.addRepository("octo/other", true);
+		turnOn(sim);
+		const looked: string[] = [];
+		const node = orgRunnerNode(sim, new Map([[REPO, ACCOUNT]]), looked);
+		sim.dropNextWebhook();
+		const other = queueRelay(sim, undefined, "octo/other");
+		sim.advance(1_000);
+		sim.dropNextWebhook();
+		const mine = queueRelay(sim);
+		const outcome = await node.answerer.answer(queuedOf(mine.relay));
+		expect(outcome.kind).toBe("answered");
+		expect(outcome.answered.map((entry) => entry.repository)).toEqual([
+			"octo/other",
+			REPO,
+		]);
+		expect(looked).toEqual([REPO, "octo/other"]);
+		const refused = job(sim, "route", other.runId);
+		expect(refused.conclusion).toBe("failure");
+		expect(refused.annotations[0]).toMatch(
+			/Relay mode is not on for octo\/other/u,
+		);
+		expect(refused.outputs.get("runner")).toBeUndefined();
+		expect(job(sim, "route", mine.runId).conclusion).toBe("success");
+		expect(await decisions(node)).toHaveLength(1);
+	});
+
+	it("answers another repository's relay job with that repository's own account when it turned relay mode on", async () => {
+		const sim = new GithubSimulator();
+		sim.addRepository("octo/other", true);
+		turnOn(sim);
+		turnOn(sim, ["github"], "octo/other");
+		const looked: string[] = [];
+		const node = orgRunnerNode(
+			sim,
+			new Map([
+				[REPO, ACCOUNT],
+				["octo/other", "acct-other"],
+			]),
+			looked,
+		);
+		sim.dropNextWebhook();
+		const other = queueRelay(sim, undefined, "octo/other");
+		sim.advance(1_000);
+		sim.dropNextWebhook();
+		const mine = queueRelay(sim);
+		expect((await node.answerer.answer(queuedOf(mine.relay))).kind).toBe(
+			"answered",
+		);
+		expect(job(sim, "route", other.runId).conclusion).toBe("success");
+		const theirs = await node.journal.decisions({
+			accountId: "acct-other",
+			repository: undefined,
+			sinceMs: 0,
+			limit: 100,
+		});
+		expect(decided(theirs)).toHaveLength(1);
+		expect(decided(theirs)[0]).toMatchObject({ accountId: "acct-other" });
+		expect(await decisions(node)).toHaveLength(1);
+	});
+
+	it("recognises the original job when its display name is not its id in the workflow", async () => {
+		const sim = new GithubSimulator();
+		turnOn(sim);
+		const node = relayNode(sim);
+		const { relay, runId } = queueRelay(sim);
+		const outcome = await node.answerer.answer(
+			queuedOf(relay, "Pick a runner"),
+		);
+		expect(outcome.kind).toBe("answered");
+		expect(outcome.answered).toHaveLength(1);
+		expect(job(sim, "route", runId).conclusion).toBe("success");
+		expect(
+			sim
+				.requests()
+				.filter((request) => request.path.endsWith("/generate-jitconfig")),
+		).toHaveLength(1);
 	});
 });
 

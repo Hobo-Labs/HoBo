@@ -22,7 +22,14 @@
  * Two more ways in keep a relay job from waiting forever. `rescue` reads the
  * queue of each connected repository, as the job poller does, and answers
  * queued relay jobs whose webhook never arrived. `sweep` deletes leftover
- * `hobo-relay-*` runners whose run has ended.
+ * `hobo-relay-*` runners whose run has ended, and those left offline and idle
+ * by a node that died or a delete that failed, since a leftover runner's name
+ * would otherwise fence its job forever.
+ *
+ * A runner created on the organization may be offered a relay job of another
+ * repository there. That job is answered only when its own repository turns
+ * relay mode on for the label and the node serves its account, with that
+ * account's facts; otherwise it fails with the reason.
  *
  * What it reads of a repository is `.hobo/ci.json` and nothing else. It asks
  * for no log, secret or other content, and it starts no process: the job's
@@ -58,6 +65,7 @@ import {
 	GithubCiFile,
 	GithubCiOrderSource,
 	parseRelayJobs,
+	RELAY_CONFIG_PATH,
 } from "./ci-file.js";
 
 /** How long a session waits for GitHub to offer the job: four minutes. */
@@ -69,6 +77,14 @@ export const RELAY_RUNNER_PREFIX = "hobo-relay-";
 const RELAY_RUNNER_NAME = /^hobo-relay-(\d+)-(\d+)-(\d+)$/u;
 /** Jobs remembered as answered, so a redelivery costs no GitHub call. */
 const REMEMBERED_JOBS = 5_000;
+/**
+ * How long a relay runner must be seen offline and idle before the sweep
+ * deletes it while its run goes on. A live node opens the runner's session
+ * within moments of creating it, and the runner is online while it waits.
+ */
+export const RELAY_STALE_RUNNER_MS = 60_000;
+/** How many queued relay jobs one rescue answers at once. */
+export const RELAY_RESCUE_CONCURRENCY = 4;
 
 /** A queued job as the webhook or the queue read shows it. */
 export type QueuedRelayJob = Readonly<{
@@ -78,7 +94,10 @@ export type QueuedRelayJob = Readonly<{
 	jobId: number;
 	runId: number;
 	runAttempt: number;
-	/** The job's name in GitHub's lists: its id in the workflow file. */
+	/**
+	 * The job's name in GitHub's lists. It is the job's id in the workflow file
+	 * unless the job sets `name:` or is a matrix leg.
+	 */
 	name: string;
 	labels: readonly string[];
 	/** When GitHub queued it, epoch ms: the clock every mesh node shares. */
@@ -131,6 +150,8 @@ export const RELAY_SKIP_REASONS = [
 	"claimed-elsewhere",
 	/** GitHub no longer has it queued. */
 	"not-queued",
+	/** GitHub's answer on whether it is still queued could not be read; a later poll asks again. */
+	"read-failed",
 	/** A runner for this job and attempt exists: another node is answering it. */
 	"runner-exists",
 	/** GitHub offered the runner nothing in the wait. */
@@ -164,7 +185,12 @@ export type RelayAnswererOptions = Readonly<{
 	runnerService: RunnerServiceClient;
 	/** Decode a one-job runner's configuration; `parseJitConfig` when absent. */
 	readJitConfig?: (encoded: string, runnerName: string) => ParsedJitConfig;
-	/** The HoBo account a repository's jobs belong to, or undefined when this node serves none. */
+	/**
+	 * The HoBo account a repository's jobs belong to, or undefined when this
+	 * node serves none. It is keyed by `installationId` and `repository`; for
+	 * a job of another repository an organization runner was offered, the
+	 * other fields are the original job's.
+	 */
 	account: (job: QueuedRelayJob) => Promise<string | undefined>;
 	/** The relay's facts for one account (`StoreRouteFacts`). */
 	facts: (accountId: string) => RouteFactsSource;
@@ -205,9 +231,16 @@ export type RelayAnswerer = Readonly<{
 	answer(job: QueuedRelayJob): Promise<RelayAnswerOutcome>;
 	/** A signed `workflow_job` webhook: a queued relay job is answered. */
 	webhook(request: Request): Promise<Response>;
-	/** Answer queued relay jobs the webhooks missed. */
+	/**
+	 * Answer queued relay jobs the webhooks missed, `RELAY_RESCUE_CONCURRENCY`
+	 * at a time. Each can wait up to `RELAY_OFFER_WAIT_MS` for an offer, so a
+	 * poller starts the next rescue only when this one has returned.
+	 */
 	rescue(connections: readonly RelayConnection[]): Promise<RelayRescueSummary>;
-	/** Delete leftover relay runners whose run has ended. */
+	/**
+	 * Delete leftover relay runners: those whose run has ended, and those seen
+	 * offline and idle for `RELAY_STALE_RUNNER_MS` across two sweeps.
+	 */
 	sweep(connections: readonly RelayConnection[]): Promise<RelaySweepSummary>;
 }>;
 
@@ -248,6 +281,7 @@ const Runners = z.object({
 		z.object({
 			id: z.number().int().positive(),
 			name: z.string(),
+			status: z.string(),
 			busy: z.boolean(),
 		}),
 	),
@@ -264,6 +298,14 @@ type RegisteredRunner = Readonly<{
 	scope: string;
 	encoded: string;
 }>;
+
+/** What GitHub says of a job: still queued, gone (taken, ended or deleted), or no readable answer. */
+type JobState = "queued" | "gone" | "unknown";
+
+/** The account and order a job offered to a relay runner is answered with, or why it is not. */
+type AnswerContext =
+	| Readonly<{ kind: "answer"; accountId: string; order: GithubCiOrderSource }>
+	| Readonly<{ kind: "refuse"; reason: string }>;
 
 type Registration =
 	| Readonly<{ kind: "registered"; runner: RegisteredRunner }>
@@ -298,14 +340,32 @@ function answered(
 	});
 }
 
-/** Whether the message is the job that woke the answerer. */
-function isOriginal(message: RelayJobMessage, job: QueuedRelayJob): boolean {
+function sameRepository(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase();
+}
+
+/**
+ * Whether the message comes from the run attempt of the job that woke the
+ * answerer. The message names the job by its id in the workflow file, the
+ * queue by its display name, so the two are compared only when they agree.
+ */
+function sameRun(message: RelayJobMessage, job: QueuedRelayJob): boolean {
 	return (
-		message.repository.toLowerCase() === job.repository.toLowerCase() &&
+		sameRepository(message.repository, job.repository) &&
 		message.runId === job.runId &&
-		(message.runAttempt === 0 || message.runAttempt === job.runAttempt) &&
-		message.job === job.name
+		(message.runAttempt === 0 || message.runAttempt === job.runAttempt)
 	);
+}
+
+/** A failed answer with one error annotation. */
+function failedAnswer(message: RelayJobMessage, text: string): RelayJobAnswer {
+	return create(RelayJobAnswerSchema, {
+		jobId: message.jobId,
+		planId: message.planId,
+		conclusion: "failed",
+		outputs: [],
+		annotations: [{ level: "error", message: text }],
+	});
 }
 
 /**
@@ -314,18 +374,10 @@ function isOriginal(message: RelayJobMessage, job: QueuedRelayJob): boolean {
  * the job fails with the reason instead of waiting for a runner.
  */
 function notRelayAnswer(message: RelayJobMessage): RelayJobAnswer {
-	return create(RelayJobAnswerSchema, {
-		jobId: message.jobId,
-		planId: message.planId,
-		conclusion: "failed",
-		outputs: [],
-		annotations: [
-			{
-				level: "error",
-				message: `Job ${message.job} asked for the relay label but names no relay input; a relay answers relay jobs and never runs a job's steps. Give it a runs-on label of a runner instead.`,
-			},
-		],
-	});
+	return failedAnswer(
+		message,
+		`Job ${message.job} asked for the relay label but names no relay input; a relay answers relay jobs and never runs a job's steps. Give it a runs-on label of a runner instead.`,
+	);
 }
 
 /** The runner name for one try at one job; the same name on two nodes fences the job. */
@@ -343,6 +395,10 @@ export function relayRunnerRun(name: string): number | undefined {
 class Answerer {
 	private readonly inFlight = new Set<number>();
 	private readonly done = new Set<number>();
+	/** Names of relay runners this node created and still uses; the sweep leaves them. */
+	private readonly holding = new Set<string>();
+	/** When the sweep first saw a relay runner offline and idle, by scope and id. */
+	private readonly offlineSince = new Map<string, number>();
 	private readonly now: () => number;
 	private readonly readJit: (
 		encoded: string,
@@ -425,10 +481,13 @@ class Answerer {
 			return skipped("repository-off");
 		const done: AnsweredRelayJob[] = [];
 		for (let attempt = 1; attempt <= RELAY_MAX_ATTEMPTS; attempt += 1) {
-			if (!(await this.stillQueued(job)))
-				return done.length === 0
-					? skipped("not-queued")
-					: { kind: "skipped", reason: "not-queued", answered: done };
+			const state = await this.jobState(job);
+			if (state !== "queued")
+				return {
+					kind: "skipped",
+					reason: state === "gone" ? "not-queued" : "read-failed",
+					answered: done,
+				};
 			const registration = await this.register(job, attempt, label);
 			if (registration.kind === "exists")
 				return { kind: "skipped", reason: "runner-exists", answered: done };
@@ -438,12 +497,11 @@ class Answerer {
 					message: registration.message,
 					answered: done,
 				};
-			const taken = await this.take(
-				job,
-				registration.runner,
-				new GithubCiOrderSource(file),
+			const taken = await this.take(job, registration.runner, label, {
+				kind: "answer",
 				accountId,
-			);
+				order: new GithubCiOrderSource(file),
+			});
 			if (!taken)
 				return { kind: "skipped", reason: "no-job-offered", answered: done };
 			done.push(taken.answered);
@@ -456,17 +514,31 @@ class Answerer {
 		};
 	}
 
-	private async stillQueued(job: QueuedRelayJob): Promise<boolean> {
-		const response = await this.options.github.request(
-			job.installationId,
-			`/repos/${job.repository}/actions/jobs/${job.jobId}`,
-		);
-		if (!response.ok) {
-			await response.body?.cancel();
-			return false;
+	/**
+	 * Whether GitHub still has the job queued. Only a readable status or a 404
+	 * is an answer; anything else (a 5xx, a rate limit, a body that does not
+	 * parse) is unknown, so the job is asked about again later.
+	 */
+	private async jobState(job: QueuedRelayJob): Promise<JobState> {
+		try {
+			const response = await this.options.github.request(
+				job.installationId,
+				`/repos/${job.repository}/actions/jobs/${job.jobId}`,
+			);
+			if (response.status === 404) {
+				await response.body?.cancel();
+				return "gone";
+			}
+			if (!response.ok) {
+				await response.body?.cancel();
+				return "unknown";
+			}
+			const read = JobStatus.safeParse(await response.json());
+			if (!read.success) return "unknown";
+			return read.data.status === "queued" ? "queued" : "gone";
+		} catch {
+			return "unknown";
 		}
-		const read = JobStatus.safeParse(await response.json());
-		return read.success && read.data.status === "queued";
 	}
 
 	private async register(
@@ -503,6 +575,7 @@ class Answerer {
 						kind: "refused",
 						message: `GitHub's answer to creating runner ${name} could not be read`,
 					};
+				this.holding.add(name);
 				return {
 					kind: "registered",
 					runner: {
@@ -527,8 +600,8 @@ class Answerer {
 	private async take(
 		job: QueuedRelayJob,
 		runner: RegisteredRunner,
-		order: GithubCiOrderSource,
-		accountId: string,
+		label: string,
+		own: AnswerContext,
 	): Promise<
 		Readonly<{ answered: AnsweredRelayJob; original: boolean }> | undefined
 	> {
@@ -541,30 +614,80 @@ class Answerer {
 				this.options.offerWaitMs ?? RELAY_OFFER_WAIT_MS,
 			);
 			if (!message) return undefined;
+			const context = sameRepository(message.repository, job.repository)
+				? own
+				: await this.otherRepository(job, message, label);
 			const answer: ParsedRelayRecord<RelayJobAnswer> | RelayJobAnswer =
-				isRelayJob(message)
-					? await answerRelayJob(message, {
-							order,
-							facts: this.options.facts(accountId),
-							journal: this.options.journal,
-							nowMs: this.now(),
-							mode: "relay",
-							node: this.options.node,
-							accountId,
-							checks: this.options.checks,
-						})
-					: notRelayAnswer(message);
+				context.kind === "refuse"
+					? failedAnswer(message, context.reason)
+					: isRelayJob(message)
+						? await answerRelayJob(message, {
+								order: context.order,
+								facts: this.options.facts(context.accountId),
+								journal: this.options.journal,
+								nowMs: this.now(),
+								mode: "relay",
+								node: this.options.node,
+								accountId: context.accountId,
+								checks: this.options.checks,
+							})
+						: notRelayAnswer(message);
 			await session.complete(answer);
-			return {
-				answered: answered(message, answer),
-				original: isOriginal(message, job),
-			};
+			// Matched on the job's id when it is its display name too; otherwise
+			// GitHub says whether the original is still waiting.
+			const original =
+				sameRun(message, job) &&
+				(message.job === job.name || (await this.jobState(job)) === "gone");
+			return { answered: answered(message, answer), original };
 		} finally {
 			await session?.close().catch(() => undefined);
 			await this.deleteRunner(job.installationId, runner).catch(
 				() => undefined,
 			);
+			this.holding.delete(runner.name);
 		}
+	}
+
+	/**
+	 * The account and order for a job of another repository, which GitHub may
+	 * offer a runner created on the organization. It is answered only as its
+	 * own repository asks: relay mode on for the label in its `.hobo/ci.json`,
+	 * and an account this node serves. Otherwise it fails with the reason.
+	 */
+	private async otherRepository(
+		job: QueuedRelayJob,
+		message: RelayJobMessage,
+		label: string,
+	): Promise<AnswerContext> {
+		const repository = message.repository;
+		const accountId = await this.options.account({
+			...job,
+			repository,
+			runId: message.runId,
+			runAttempt: message.runAttempt === 0 ? 1 : message.runAttempt,
+			name: message.job,
+		});
+		if (accountId === undefined)
+			return {
+				kind: "refuse",
+				reason: `Relay mode is not on for ${repository}: this relay serves no HoBo account for it. Connect the repository to the relay, or give the job a runs-on label of a runner.`,
+			};
+		const file = new GithubCiFile(this.options.github, job.installationId);
+		let jobs: RelayJobsConfig;
+		try {
+			jobs = parseRelayJobs(await file.read(repository, undefined));
+		} catch (error) {
+			return {
+				kind: "refuse",
+				reason: `Relay mode could not be checked for ${repository}: ${error instanceof Error ? error.message : String(error)}. Run the job again.`,
+			};
+		}
+		if (!jobs.answer || jobs.label.toLowerCase() !== label.toLowerCase())
+			return {
+				kind: "refuse",
+				reason: `Relay mode is not on for ${repository}: its ${RELAY_CONFIG_PATH} does not turn relayJobs.answer on for the label ${label}. Turn it on there, or give the job a runs-on label of a runner.`,
+			};
+		return { kind: "answer", accountId, order: new GithubCiOrderSource(file) };
 	}
 
 	private async deleteRunner(
@@ -667,6 +790,7 @@ class Answerer {
 		let queued = 0;
 		let failedReads = 0;
 		if (!this.on) return { queued, outcomes, failedReads };
+		const found: QueuedRelayJob[] = [];
 		for (const connection of connections) {
 			const runIds = new Set<number>();
 			for (const status of ["queued", "in_progress"]) {
@@ -689,21 +813,38 @@ class Answerer {
 					if (job.status !== "queued" || !this.isRelayLabel(job.labels))
 						continue;
 					queued += 1;
-					outcomes.push(
-						await this.answer({
-							installationId: connection.installationId,
-							repository: connection.repository,
-							jobId: job.id,
-							runId: job.run_id,
-							runAttempt: job.run_attempt ?? 1,
-							name: job.name,
-							labels: job.labels,
-							queuedAtMs: timeOf(job.created_at, this.now()),
-						}),
-					);
+					found.push({
+						installationId: connection.installationId,
+						repository: connection.repository,
+						jobId: job.id,
+						runId: job.run_id,
+						runAttempt: job.run_attempt ?? 1,
+						name: job.name,
+						labels: job.labels,
+						queuedAtMs: timeOf(job.created_at, this.now()),
+					});
 				}
 			}
 		}
+		// Each answer can wait minutes for an offer, so a few run at once and
+		// one stuck job does not hold back the rest.
+		const results: Array<RelayAnswerOutcome | undefined> = Array.from({
+			length: found.length,
+		});
+		let next = 0;
+		const worker = async (): Promise<void> => {
+			for (let index = next++; index < found.length; index = next++) {
+				const queuedJob = found[index];
+				if (queuedJob) results[index] = await this.answer(queuedJob);
+			}
+		};
+		await Promise.all(
+			Array.from(
+				{ length: Math.min(RELAY_RESCUE_CONCURRENCY, found.length) },
+				worker,
+			),
+		);
+		for (const result of results) if (result) outcomes.push(result);
 		return { queued, outcomes, failedReads };
 	}
 
@@ -735,8 +876,17 @@ class Answerer {
 			}
 			for (const runner of runners.runners) {
 				const runId = relayRunnerRun(runner.name);
-				if (runId === undefined || runner.busy) continue;
-				if (!(await this.runEnded(served, runId))) continue;
+				if (runId === undefined) continue;
+				const key = `${scope}#${runner.id}`;
+				if (runner.busy || runner.status !== "offline")
+					this.offlineSince.delete(key);
+				if (runner.busy) continue;
+				if (
+					!(await this.runEnded(served, runId)) &&
+					!this.staleOffline(key, runner)
+				)
+					continue;
+				this.offlineSince.delete(key);
 				if (
 					await this.deleteRunner(first.installationId, {
 						id: runner.id,
@@ -746,7 +896,28 @@ class Answerer {
 					deleted.push(runner.name);
 			}
 		}
+		if (this.offlineSince.size > REMEMBERED_JOBS) this.offlineSince.clear();
 		return { deleted, failedReads };
+	}
+
+	/**
+	 * Whether a relay runner of a run still going is a leftover: offline, idle,
+	 * not this node's own, and seen so by an earlier sweep at least
+	 * `RELAY_STALE_RUNNER_MS` ago. Its fixed name would fence its job forever.
+	 */
+	private staleOffline(
+		key: string,
+		runner: Readonly<{ name: string; status: string; busy: boolean }>,
+	): boolean {
+		if (runner.busy || runner.status !== "offline") return false;
+		if (this.holding.has(runner.name)) return false;
+		const now = this.now();
+		const since = this.offlineSince.get(key);
+		if (since === undefined) {
+			this.offlineSince.set(key, now);
+			return false;
+		}
+		return now - since >= RELAY_STALE_RUNNER_MS;
 	}
 
 	/** Whether the run has ended in every repository it could belong to. */
