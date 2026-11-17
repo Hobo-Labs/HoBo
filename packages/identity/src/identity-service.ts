@@ -16,6 +16,7 @@ import {
 	type KmsLike,
 	verifyJwtWithJwks,
 } from "./issuer.js";
+import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
 export const IDENTITY_BOUNDARY_SCHEMA = "hobo.identity-boundary/v1";
 
@@ -319,12 +320,19 @@ export class IdentityService {
 			if (!Array.isArray(scope)) {
 				return { status: "denied", reason: "scope-claim-missing" };
 			}
-			// SAFETY: JWT scope claim is ScopeEntry[] at this auth boundary.
-			const parsedScope: ScopeEntry[] = scope as never;
+			const parsedScope = parseScopeEntries(scope);
+			if (!parsedScope) {
+				return { status: "denied", reason: "scope-claim-invalid" };
+			}
+			const subject = verified.claims.sub;
+			const tenant = verified.claims.tenant;
+			if (!isNonemptyString(subject) || !isNonemptyString(tenant)) {
+				return { status: "denied", reason: "identity-claim-invalid" };
+			}
 			return {
 				status: "authenticated",
-				subject: String(verified.claims.sub),
-				tenant: String(verified.claims.tenant),
+				subject,
+				tenant,
 				scope: parsedScope,
 			};
 		} catch (error) {
@@ -344,6 +352,32 @@ export class IdentityService {
 		this.seq += 1;
 		return this.seq;
 	}
+}
+
+function isNonemptyString(value: JsonValue | undefined): value is string {
+	return isJsonString(value) && Object(value) !== value && value.length > 0;
+}
+
+function parseScopeEntries(
+	values: readonly JsonValue[],
+): ScopeEntry[] | undefined {
+	const entries: ScopeEntry[] = [];
+	for (const value of values) {
+		if (
+			!isJsonObject(value) ||
+			!isNonemptyString(value.port) ||
+			!isNonemptyString(value.resource) ||
+			!Array.isArray(value.verbs)
+		)
+			return undefined;
+		const verbs: string[] = [];
+		for (const verb of value.verbs) {
+			if (!isNonemptyString(verb)) return undefined;
+			verbs.push(verb);
+		}
+		entries.push({ port: value.port, resource: value.resource, verbs });
+	}
+	return entries;
 }
 
 function scopeWidens(
