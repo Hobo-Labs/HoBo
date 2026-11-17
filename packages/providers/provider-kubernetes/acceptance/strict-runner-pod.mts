@@ -21,7 +21,6 @@ const binding: StrictRunnerPodBinding = {
 	connectionId: "acceptance-connection",
 	namespace,
 	slotId: randomUUID(),
-	claimId: "acceptance-claim",
 	accountId: "acceptance-account",
 	profileId: "acceptance-profile",
 	ownerName: "runner-owner",

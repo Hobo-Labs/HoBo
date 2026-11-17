@@ -1540,8 +1540,8 @@ estimate of about 25 assumed one command per ring append and no routing reads.
 
 ## Strict pre-job hook
 
-`templates/fleet-pre-job-hook.sh` sends the slot credential and execution key to
-an HTTPS start-fence endpoint before workflow steps run. It requires a bounded
+`templates/fleet-pre-job-hook.sh` sends the slot credential and GitHub job context
+to an HTTPS start-fence endpoint before workflow steps run. It requires a bounded
 response with a matching JSON authorization receipt and rejects redirects,
 network failures, and mismatched runner context. `createGithubAssignmentLookup`
 verifies the repository, workflow attempt, assigned runner ID and group, job
@@ -1553,3 +1553,9 @@ The same option is available to callers of `startRelayFromEnvironment`.
 The endpoint verifies the slot credential and actual GitHub assignment, commits
 the binding, then returns the receipt. With no strict fleet configuration, the
 route is unavailable. The caller owns the strict store's lifecycle.
+
+The hook provides `githubContext` with the repository name and ID,
+run ID, and attempt. The controller looks up the assigned job and derives a
+stable claim ID from its verified identity. This lets a generic runner accept a
+different eligible job from the one that initiated its reservation. Existing
+execution-key requests remain supported for runners already provisioned.

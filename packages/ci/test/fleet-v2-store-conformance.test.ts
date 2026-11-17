@@ -802,6 +802,45 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			expect(await store.executionClaim(parsedKey("2"))).toBeUndefined();
 		});
 
+		it("binds a different eligible actual job to the reserved slot", async () => {
+			const store = current();
+			const { reserved } = await registeredBinding(store);
+			await store.intake(
+				parseCiDemand(
+					JSON.stringify({
+						key: githubKey("2"),
+						state: "eligible",
+						firstObservedAt: NOW,
+						lastObservedAt: NOW,
+						policyRevision: 1,
+						requiredProfileId: "trusted-linux-x64",
+						source: "webhook",
+						sourceDeliveryIds: ["different-job"],
+					}),
+				),
+			);
+			const binding = parseStartBindingInput({
+				slotId: reserved.input.slot.id,
+				claimId: "claim-actual",
+				key: githubKey("2"),
+				bindingSecret: reserved.bindingSecret,
+				assignment: {
+					verified: true,
+					accountId: "hobo-labs",
+					runnerName: reserved.input.slot.runnerName,
+					profileId: "trusted-linux-x64",
+				},
+			});
+			expect((await store.bindStart(binding)).idempotent).toBe(false);
+			expect((await store.bindStart(binding)).idempotent).toBe(true);
+			expect((await store.demand(parsedKey("1")))?.state).toBe("eligible");
+			expect((await store.demand(parsedKey("2")))?.state).toBe("satisfied");
+			expect((await store.executionClaim(parsedKey("2")))?.runnerSlotId).toBe(
+				reserved.input.slot.id,
+			);
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
+		});
+
 		it("rejects a retry after its worker capacity is revoked", async () => {
 			const store = current();
 			const { binding } = await authorizedBinding(store);

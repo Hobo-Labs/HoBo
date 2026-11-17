@@ -32,7 +32,6 @@ export type StrictRunnerPodBinding = {
 	readonly connectionId: string;
 	readonly namespace: string;
 	readonly slotId: string;
-	readonly claimId: string;
 	readonly accountId: string;
 	readonly profileId: string;
 	readonly ownerName: string;
@@ -78,7 +77,6 @@ function refuse(message: string): never {
 function validate(binding: StrictRunnerPodBinding): void {
 	if (
 		!ID.test(binding.connectionId) ||
-		!ID.test(binding.claimId) ||
 		!ID.test(binding.accountId) ||
 		!ID.test(binding.profileId)
 	)
@@ -167,15 +165,14 @@ function runnerPod(binding: StrictRunnerPodBinding) {
 	validate(binding);
 	const name = strictRunnerPodName(binding.slotId);
 	const env: JsonValue[] = [
+		{ name: "HOME", value: "/tmp" },
 		{ name: "ACTIONS_RUNNER_HOOK_JOB_STARTED", value: HOOK_PATH },
 		{ name: "HOBO_START_FENCE_URL", value: binding.startFenceUrl },
 		{ name: "HOBO_SLOT_ID", value: binding.slotId },
-		{ name: "HOBO_CLAIM_ID", value: binding.claimId },
 		{ name: "HOBO_ACCOUNT_ID", value: binding.accountId },
 		{ name: "HOBO_PROFILE_ID", value: binding.profileId },
 		secretEnv("HOBO_JIT_CONFIG", name, "jit-config"),
 		secretEnv("HOBO_BINDING_SECRET", name, "binding-secret"),
-		secretEnv("HOBO_EXECUTION_KEY_JSON", name, "execution-key.json"),
 	];
 	const resources = {
 		requests: { cpu: binding.cpu, memory: binding.memory },
@@ -187,10 +184,14 @@ function runnerPod(binding: StrictRunnerPodBinding) {
 		restartPolicy: "Never",
 		securityContext: {
 			runAsNonRoot: true,
+			runAsUser: 1000,
+			runAsGroup: 1000,
+			fsGroup: 1000,
 			seccompProfile: { type: "RuntimeDefault" },
 		},
 		volumes: [
 			{ name: "hook", emptyDir: {} },
+			{ name: "runner-home", emptyDir: {} },
 			{ name: "work", emptyDir: {} },
 			{ name: "tmp", emptyDir: {} },
 		],
@@ -207,18 +208,29 @@ function runnerPod(binding: StrictRunnerPodBinding) {
 				securityContext: securityContext(),
 				volumeMounts: [{ name: "hook", mountPath: "/hooks" }],
 			},
+			{
+				name: "prepare-runner",
+				image: binding.runnerImage,
+				imagePullPolicy: "IfNotPresent",
+				command: ["/bin/sh", "-ec", "cp -R /opt/actions-runner/. /runner/"],
+				securityContext: securityContext(),
+				volumeMounts: [{ name: "runner-home", mountPath: "/runner" }],
+			},
 		],
 		containers: [
 			{
 				name: "runner",
 				image: binding.runnerImage,
 				imagePullPolicy: "IfNotPresent",
+				command: ["/opt/actions-runner/run.sh"],
+				workingDir: "/opt/actions-runner",
 				args: ["--jitconfig", "$(HOBO_JIT_CONFIG)"],
 				env,
 				resources,
 				securityContext: securityContext(),
 				volumeMounts: [
 					{ name: "hook", mountPath: "/opt/hobo/hooks", readOnly: true },
+					{ name: "runner-home", mountPath: "/opt/actions-runner" },
 					{ name: "work", mountPath: "/opt/actions-runner/_work" },
 					{ name: "tmp", mountPath: "/tmp" },
 				],
@@ -245,7 +257,6 @@ function runnerPod(binding: StrictRunnerPodBinding) {
 				annotations: {
 					[`${POD_ANNOTATION}connection-id`]: binding.connectionId,
 					[`${POD_ANNOTATION}slot-id`]: binding.slotId,
-					[`${POD_ANNOTATION}claim-id`]: binding.claimId,
 					[`${POD_ANNOTATION}spec-sha256`]: specHash,
 				},
 				ownerReferences: [
@@ -310,6 +321,7 @@ function verifyContainer(
 			"image",
 			"imagePullPolicy",
 			"command",
+			"workingDir",
 			"args",
 			"env",
 			"resources",
@@ -569,7 +581,7 @@ function receipt(
 	) {
 		throw new KubernetesProviderError(
 			"PROVISIONING_CONFLICT",
-			"runner Pod identity or specification does not match the recorded claim",
+			"runner Pod identity or specification does not match the reservation",
 		);
 	}
 	const status = isJsonObject(actual.status) ? actual.status : {};

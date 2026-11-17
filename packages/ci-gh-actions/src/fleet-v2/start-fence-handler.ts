@@ -6,7 +6,12 @@ import {
 } from "@hobo/ci/fleet-v2";
 import type { GithubTransport } from "../github.js";
 import { createGithubAssignmentLookup } from "./github-assignment.js";
-import { authorizeStartFence, parseStartFenceRequest } from "./start-fence.js";
+import {
+	authorizeActualAssignment,
+	authorizeStartFence,
+	parseActualAssignmentRequest,
+	parseStartFenceRequest,
+} from "./start-fence.js";
 
 export type StartFencePolicy = Readonly<{
 	accountId: string;
@@ -95,9 +100,14 @@ export function createStartFenceHandler(options: {
 		} catch {
 			return response(400, { error: "invalid request" });
 		}
-		const parsed = parseStartFenceRequest(input);
-		if (!parsed.success) return response(400, { error: "invalid request" });
-		const body = parsed.data;
+		const legacy = parseStartFenceRequest(input);
+		const actual = parseActualAssignmentRequest(input);
+		const body = actual.success
+			? actual.data
+			: legacy.success
+				? legacy.data
+				: undefined;
+		if (!body) return response(400, { error: "invalid request" });
 
 		try {
 			const slot = await options.store.runnerSlot(body.slotId);
@@ -108,14 +118,18 @@ export function createStartFenceHandler(options: {
 				return response(403, { error: "request rejected" });
 			}
 			const runnerId = Number(slot.externalRunnerId);
-			const job = body.executionKey.githubJob;
+			const job =
+				"executionKey" in body
+					? body.executionKey.githubJob
+					: body.githubContext;
 			if (
 				!/^[1-9]\d*$/u.test(slot.externalRunnerId) ||
 				!Number.isSafeInteger(runnerId) ||
 				slot.accountId !== body.accountId ||
 				slot.runnerName !== body.runnerName ||
 				slot.profileId !== body.profileId ||
-				job.accountId !== slot.accountId ||
+				("executionKey" in body &&
+					body.executionKey.githubJob.accountId !== slot.accountId) ||
 				(slot.state !== "registered" && slot.state !== "bound")
 			)
 				return response(403, { error: "request rejected" });
@@ -124,17 +138,30 @@ export function createStartFenceHandler(options: {
 				(policy) =>
 					policy.accountId === slot.accountId &&
 					policy.profileId === slot.profileId &&
-					policy.engineId === job.engineId &&
-					String(policy.installationId) === job.installationId &&
+					("executionKey" in body
+						? policy.engineId === body.executionKey.githubJob.engineId &&
+							String(policy.installationId) ===
+								body.executionKey.githubJob.installationId
+						: true) &&
 					policy.repositories.some(
-						(repository) => String(repository.id) === job.repositoryId,
+						(repository) =>
+							String(repository.id) === job.repositoryId &&
+							("githubContext" in body
+								? repository.name.toLowerCase() ===
+									body.githubContext.repository.toLowerCase()
+								: true),
 					),
 			);
 			if (policies.length !== 1)
 				return response(403, { error: "request rejected" });
 			const policy = policies[0];
 			const repositories = policy?.repositories.filter(
-				(entry) => String(entry.id) === job.repositoryId,
+				(entry) =>
+					String(entry.id) === job.repositoryId &&
+					("githubContext" in body
+						? entry.name.toLowerCase() ===
+							body.githubContext.repository.toLowerCase()
+						: true),
 			);
 			const repository = repositories?.[0];
 			const runId = Number(job.runId);
@@ -159,7 +186,10 @@ export function createStartFenceHandler(options: {
 				runnerGroupId: policy.runnerGroupId,
 				requiredLabels: policy.requiredLabels,
 			});
-			const authorized = await authorizeStartFence(body, lookup);
+			const authorized =
+				"githubContext" in body
+					? await authorizeActualAssignment(body, lookup)
+					: await authorizeStartFence(body, lookup);
 			if (!authorized.ok) return response(403, { error: "request rejected" });
 			const verified = authorized.bindRequest;
 			const binding = parseStartBindingInput({
