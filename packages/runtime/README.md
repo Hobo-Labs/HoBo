@@ -45,6 +45,14 @@ Fresh workflows claim a new journal atomically before user steps execute. Genera
 
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
+Within one execution, journal appends are serialized even when workflow steps
+run concurrently. If an append fails or its result is uncertain, later appends
+in that execution fail with the same error; use a fresh `resume` to reread the
+durable journal. An effect already authorized before the failure may still be
+running, and separate executions are not fenced by this queue. A journal at
+`Number.MAX_SAFE_INTEGER` cannot accept another event until its sequence format
+is migrated; invalid or exhausted sequences fail before the next step runs.
+
 Resuming a completed or failed run returns its recorded terminal outcome without
 calling the workflow or appending another event. New failure records preserve
 the failed step when present; older failure records without a step cannot
