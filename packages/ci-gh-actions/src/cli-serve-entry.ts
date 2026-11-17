@@ -14,6 +14,28 @@ export type { CiWorkerStore } from "./project-config.js";
 export { loadCiProjectFromDirectory } from "./project-config-loader.js";
 export { type CiJobAdmission, inferJobAdmission } from "./relay-routing.js";
 export {
+	ADOPTED_RUNNER_LABEL_PREFIX,
+	ADOPTED_RUNNER_SIGNER,
+	type AdoptableRunner,
+	type AdoptRunnerInput,
+	adoptedRunnerAdvert,
+	adoptionLabel,
+	adoptRunner,
+	isAdoptionLabel,
+	listAdoptableRunners,
+	type RunnerAdopter,
+	type RunnerAdoption,
+	RunnerAdoptionError,
+	type RunnerAdoptionGithub,
+	type RunnerAdoptionProblem,
+	type RunnerLabelsBody,
+	type RunnerListing,
+	type RunnerRelease,
+	type RunnerScope,
+	releaseRunner,
+	runnerAdopter,
+} from "./runner-adoption.js";
+export {
 	type CommittedRunnerOrder,
 	parseCiRunnerOrder,
 } from "./runner-order-config.js";

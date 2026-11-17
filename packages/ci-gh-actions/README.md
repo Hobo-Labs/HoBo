@@ -1616,3 +1616,31 @@ with every field cited, ships off behind `relayJobs.answer`, and is built, not
 proven: no run against GitHub's runner service is linked yet.
 `FakeGithubRunnerService` serves the protocol in memory for tests and the
 GitHub simulator.
+
+## Adopt existing runners
+
+[`src/runner-adoption.ts`](src/runner-adoption.ts) brings a self-hosted
+runner that was registered before HoBo into the runner order without
+touching its machine ([ADR-0183](../../docs/design/adr/runner-order.md),
+gauntlet case M10).
+
+- `listAdoptableRunners` reads a private repository's own runners and its
+  organization's runners whose runner group admits the repository
+  (`runner-groups?visible_to_repository=`). A runner in a group that leaves
+  the repository out is listed under `leftOut` and never offered. A public
+  repository is offered nothing, because its jobs never run on machines.
+- `adoptRunner` adds one label, `hobo-runner-<8 hex>`, through GitHub's
+  runner labels API and returns a `MachineAdvert`: host isolation, one slot,
+  busy as GitHub reports it, signed by `github:runner-labels`. The label is
+  derived from where the runner is registered and its id, so adopting twice
+  writes nothing the second time.
+- `releaseRunner` takes every `hobo-runner-` label off again; a label that is
+  already gone is not an error.
+
+The only writes are the two labels calls. Nothing is installed on the
+machine and no registration token is asked for. The calls are pinned by
+[`contracts/github-runner-labels.pact.json`](contracts/github-runner-labels.pact.json),
+hand-authored from GitHub's REST reference and executed by its consumer test;
+no provider verification or live run has been recorded, so the channel is
+built, not proven. The `hobo ci runners list|adopt|release` command in
+`@hobo/hobo` drives it.
