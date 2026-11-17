@@ -824,3 +824,38 @@ it("fails closed when a persisted SQLite settlement omits authenticated spend", 
 	expect(() => reopened.read(now)).toThrow();
 	reopened.close();
 });
+
+it("replays an authenticated settlement against the same pre-settlement reservation", () => {
+	const { options, unpriced } = fixture();
+	const trusted = options.unpricedScopeTrust.settlement;
+	const ledger = createSqliteBudgetAdmissionAuthority({
+		...options,
+		unpricedScopeTrust: {
+			...options.unpricedScopeTrust,
+			settlement: (input) =>
+				input.reservation.status === "held" && trusted(input),
+		},
+	});
+	ledger.reserveUnbounded(unpriced);
+	ledger.claimExecution({
+		reservationId: unpriced.reservationId,
+		requestDigest: unpriced.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
+	ledger.settle(unpriced.reservationId, 1_200_000, {
+		usageEvidenceRef: "usage:1",
+		sourceStoppedEvidenceRef: "stop:1",
+		financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
+		providerAccounts: [
+			{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
+		],
+	});
+	const afterSettlement = ledger.read(now);
+	expect(afterSettlement.spentMicros).toBe(1_200_000);
+	if (!afterSettlement.identity) throw new Error("identity missing");
+	afterSettlement.identity.policyRevision = "r2";
+	ledger.configure(afterSettlement, afterSettlement.seq, now);
+	expect(ledger.read(now).spentMicros).toBe(1_200_000);
+	ledger.close();
+});

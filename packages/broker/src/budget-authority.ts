@@ -813,14 +813,17 @@ export function createBudgetAdmissionAuthority(options: {
 						(!row.executionDigest ||
 							!row.settlementEvidence ||
 							!boundedName(row.settlementEvidence.financeSignature, 4096) ||
-							scopeTrust.settlement({
-								reservation: clone(BudgetReservationSchema, row),
-								actualMicros: row.actualMicros,
-								evidence: clone(
-									BudgetSettlementEvidenceSchema,
-									row.settlementEvidence,
-								),
-							}) !== true)) ||
+							!old ||
+							(old.status === "held" || old.status === "uncertain"
+								? scopeTrust.settlement({
+										reservation: clone(BudgetReservationSchema, old),
+										actualMicros: row.actualMicros,
+										evidence: clone(
+											BudgetSettlementEvidenceSchema,
+											row.settlementEvidence,
+										),
+									}) !== true
+								: old.status !== "settled"))) ||
 					(row.status === "released" && row.executionDigest))
 			)
 				throw new Error("invalid unbounded reservation history");
