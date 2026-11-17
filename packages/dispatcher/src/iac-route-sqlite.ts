@@ -47,7 +47,18 @@ export function createSqliteIacRouteAuthority(options: {
 	if (!options.path || options.path === ":memory:")
 		throw new TypeError("a persistent route authority path is required");
 	const database = new DatabaseSync(options.path);
-	database.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
+	try {
+		const main = database
+			.prepare("PRAGMA database_list")
+			.all()
+			.filter((entry) => entry.name === "main");
+		if (
+			main.length !== 1 ||
+			typeof main[0]?.file !== "string" ||
+			main[0].file.length === 0
+		)
+			throw new TypeError("a persistent route authority file is required");
+		database.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
 		CREATE TABLE IF NOT EXISTS iac_routes (
 			tenant TEXT NOT NULL, request TEXT NOT NULL, claim_token TEXT NOT NULL,
 			phase TEXT NOT NULL CHECK(phase IN ('running','finished')),
@@ -71,6 +82,10 @@ export function createSqliteIacRouteAuthority(options: {
 			PRIMARY KEY (tenant, request, attempt), UNIQUE(tenant, request, ordinal),
 			FOREIGN KEY (tenant,request) REFERENCES iac_routes(tenant,request)
 		);`);
+	} catch (error) {
+		database.close();
+		throw error;
+	}
 	// Serialize upgrades; pre-upgrade live permits may already be in use.
 	database.exec("BEGIN IMMEDIATE");
 	try {

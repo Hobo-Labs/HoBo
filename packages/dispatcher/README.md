@@ -108,7 +108,9 @@ The host must authenticate the tenant, restrict access to authority mutation,
 and route *every* entry point for one request through the same durable CAS
 ledger. An independent ledger or an older database restore cannot enforce this
 invariant. `@hobo/dispatcher/sqlite` supplies a persistent, transactionally
-serialized implementation for processes sharing one local SQLite file. SQLite
+serialized implementation for processes sharing one local SQLite file. It
+rejects SQLite's in-memory URI modes because they cannot retain route claims.
+SQLite
 files on separate machines are independent ledgers; distributed deployments
 must provide a shared transactional implementation of `IacRouteAuthority`.
 Existing route rows created before operation identities must be individually

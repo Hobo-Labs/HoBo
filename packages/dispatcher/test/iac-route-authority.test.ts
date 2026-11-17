@@ -445,4 +445,14 @@ describe("durable shared IaC route claims", () => {
 		});
 		expect(fresh.status).toBe("executed");
 	});
+
+	it.each([
+		":memory:",
+		"file::memory:?cache=shared",
+		"file:route-test?mode=memory&cache=shared",
+	])("refuses an ephemeral SQLite database %s", (path) => {
+		expect(() =>
+			createSqliteIacRouteAuthority({ path, verifyOperation: () => true }),
+		).toThrow();
+	});
 });
