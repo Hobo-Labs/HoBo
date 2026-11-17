@@ -67,3 +67,10 @@ are fixture strings the test binds to a test account; they are not credentials
 for anything. Sessions, streams and resource subscriptions are covered by
 `../test/relay-mcp.test.ts` with the SDK's client, not by this artifact, and no
 third-party MCP client is claimed as verified.
+
+Relay job facts boundary: `relay-job-facts.pact.json` holds hand-authored
+consumer expectations of the GitHub REST reads a relay job makes with its own
+token in job mode: the routing slip ref (present and missing), its commit, the
+run list and one run's jobs. `relay-job-facts.consumer.test.ts` drives
+`GithubRouteFacts` through every interaction with an injected Fetch. No
+provider verification or live GitHub call is claimed.

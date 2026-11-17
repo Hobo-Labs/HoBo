@@ -1644,3 +1644,51 @@ hand-authored from GitHub's REST reference and executed by its consumer test;
 no provider verification or live run has been recorded, so the channel is
 built, not proven. The `hobo ci runners list|adopt|release` command in
 `@hobo/hobo` drives it.
+
+## Job-mode facts: queue evidence and the routing slip
+
+In job mode (ADR-0183) the relay job runs on a GitHub-hosted runner with only
+its own token, which can read runs, jobs and the routing slip ref but not
+runners or billing. Two modules turn what that token can read into the facts
+the runner-order walk needs:
+
+- [`src/relay-job/queue-evidence.ts`](src/relay-job/queue-evidence.ts):
+  `queueEvidence(jobs, label, nowMs)` gives the jobs waiting for one label,
+  the oldest wait, the recent pickups and the slowest recent pickup;
+  `takingJobs` and `refusingJobs` judge them. These are the rules this
+  repository's route job runs (`scripts/ci/route-runner.mts`), written again
+  without importing the script. As there, only a `queued` job counts as
+  waiting: a `pending` one is held by a concurrency group, not waiting for a
+  runner, so it never makes a machine full or counts as a hosted-provider
+  miss; a `queued` job counts as waiting even if it still names a runner. `runsToRead` picks whose job lists
+  to read in the route job's order: probe runs, the slowest finished runs, the
+  runs just ahead, then the rest.
+- [`src/relay-job/github-facts.ts`](src/relay-job/github-facts.ts):
+  `GithubRouteFacts` is the `RouteFactsSource` for job mode. The fleet is on
+  when a usable slip routes the run's class to the fleet label the relay
+  names, or that label was seen taking a job; a slip naming another label
+  (the trunk class's own label, or a pin) says nothing about it. It takes the
+  job when that slip says it is open and the queue does not show it refusing
+  jobs, or when the queue shows it taking jobs (with a busy slip, a full
+  young queue alone does not refuse it and a run just ahead does not hold it
+  back), as the route job confirms a slip. It isolates public and fork jobs
+  when the slip sends forks to it. A slip whose commit is gone by the time it
+  is read is no slip. Each machine label the relay names is one machine, and
+  several are alternatives: online after a pickup in the last fifteen minutes
+  and full while a job waits for it. A hosted label with three misses within thirty minutes in
+  the job list, and no start since, is unhealthy by `@hobo/ci`'s
+  provider-health rules. A run that started in the minute before and has not
+  chosen yet holds the free fleet or machine. Minutes and spend are never
+  measured here. One decision makes at most 12 requests within 10 seconds; a
+  failed read gives facts with nothing measured and one `hobo-ci-relay-facts`
+  warning, never an error.
+
+The rules are tested against job lists recorded from GitHub
+(`test/fixtures/relay-job/recorded-queue.json`) and against the in-memory
+fakes in `@hobo/ci/runner-order/testing`. The GitHub reads they make (the
+slip ref, present and missing, its commit, the run list and a run's jobs)
+are hand-authored consumer expectations in
+[`contracts/relay-job-facts.pact.json`](contracts/relay-job-facts.pact.json),
+which `contracts/relay-job-facts.consumer.test.ts` drives `GithubRouteFacts`
+through; no provider verification is claimed. No relay job uses them in a
+workflow yet, so the channel is built, not proven.
