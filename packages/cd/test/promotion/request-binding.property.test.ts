@@ -346,3 +346,32 @@ describe("promotion request binding", () => {
 			);
 	});
 });
+
+it("does not undo a Set installed after the rollback guard", async () => {
+	const h = harness();
+	h.freight.add("f0");
+	h.freight.add("f1");
+	h.freight.add("f2");
+	h.desired.seed("dev-1", "f0", resolvedFor("dev-1", "alpha", "f0"));
+	await h.service.promote(
+		{ freightId: fid("f1"), targets: [camp("dev-1")], idempotencyKey: "setup" },
+		h.ctx(),
+	);
+	const current = h.desired.current.bind(h.desired);
+	let reads = 0;
+	vi.spyOn(h.desired, "current").mockImplementation(async (id) => {
+		if (id === camp("dev-1") && ++reads === 3)
+			h.desired.seed("dev-1", "f2", resolvedFor("dev-1", "alpha", "f2"));
+		return current(id);
+	});
+	const result = await h.service.rollback(
+		{
+			campId: camp("dev-1"),
+			reason: "restore",
+			idempotencyKey: "race-current",
+		},
+		h.ctx(),
+	);
+	expect(result.ok).toBe(false);
+	expect((await h.desired.current(camp("dev-1")))?.freightId).toBe("f2");
+});
