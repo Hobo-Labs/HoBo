@@ -113,6 +113,25 @@ describe("workspace-skeleton-boundary pact", () => {
  * gate had never actually enforced a rule.
  */
 describe("every workspace package is classifiable", () => {
+	it("composes the Alchemy and Rivet adapters outside either adapter", () => {
+		const composition = "packages/alchemy-rivet-topic";
+		const alchemy = "packages/iac/iac-alchemy";
+		const rivet = "packages/runtimes/runtime-rivet";
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: composition, to: alchemy }),
+				parseWorkspaceEdge({ from: composition, to: rivet }),
+			]).errors,
+		).toEqual([]);
+		expect(
+			validateBoundaryImports([
+				parseWorkspaceEdge({ from: alchemy, to: rivet }),
+			]).errors,
+		).toContain(
+			"adapters must not import each other: packages/iac/iac-alchemy -> packages/runtimes/runtime-rivet",
+		);
+	});
+
 	it("classifies each pnpm workspace package under packages/", async () => {
 		const { readFileSync, readdirSync, statSync } = await import("node:fs");
 		const { join } = await import("node:path");

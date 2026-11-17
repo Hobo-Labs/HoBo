@@ -1,0 +1,44 @@
+{
+	"name": "@hobo/alchemy-rivet-topic",
+	"version": "0.0.1",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"files": ["dist"],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/iac-alchemy": "workspace:*",
+		"@hobo/runtime-rivet": "workspace:*"
+	},
+	"peerDependencies": {
+		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"alchemy": "2.0.0-beta.87",
+		"effect": "^4.1.4",
+		"rivetkit": "3.0.0"
+	},
+	"devDependencies": {
+		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"@types/node": "^22.15.29",
+		"alchemy": "2.0.0-beta.87",
+		"effect": "4.1.4",
+		"rivetkit": "3.0.0",
+		"tsx": "^4.20.3",
+		"vitest": "^4.1.9"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	}
+}

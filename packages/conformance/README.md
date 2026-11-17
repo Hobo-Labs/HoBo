@@ -5,6 +5,8 @@ Production package for [HOBO-585](https://linear.app/quickdeploy-ai/issue/HOBO-5
 It promotes the [HOBO-5](https://linear.app/quickdeploy-ai/issue/HOBO-5) proof semantics into a
 typed, event-sourced port-suite harness under `packages/conformance/`.
 
+Run the package lint with `pnpm --filter @hobo/conformance lint`.
+
 ## Requirements Source
 
 - `docs/design/generated-stack.md#plan-09` — `@hobo/conformance` trust boundary
