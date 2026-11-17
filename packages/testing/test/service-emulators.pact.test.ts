@@ -49,6 +49,7 @@ it("verifies the service emulator consumer pact against the running harness", as
 			nightly: { kind: "schedule" },
 			cache: { kind: "kv" },
 			files: { kind: "bucket" },
+			features: { kind: "flag" },
 		},
 		handlers: {},
 	});
@@ -69,6 +70,35 @@ it("verifies the service emulator consumer pact against the running harness", as
 					return { status: 200 };
 				}
 				const body = request.body;
+				if (
+					request.method === "POST" &&
+					request.path === "/flag/features" &&
+					typeof body === "object" &&
+					body !== null &&
+					"key" in body &&
+					typeof body.key === "string"
+				) {
+					const flags = graph.flag("features");
+					flags.define({
+						key: body.key,
+						percentage: 100,
+						metadata: { tenant: "a" },
+					});
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("features").fidelity,
+							enabled: flags.evaluateBoolean(body.key, {
+								targetingKey: "user",
+								tenant: "a",
+							}).value,
+							otherTenantDefault: !flags.evaluateBoolean(body.key, {
+								targetingKey: "user",
+								tenant: "b",
+							}).value,
+						},
+					};
+				}
 				if (
 					request.method === "POST" &&
 					(request.path === "/kv/cache" || request.path === "/bucket/files") &&
