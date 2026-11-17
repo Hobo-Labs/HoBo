@@ -1,4 +1,5 @@
 /* oxlint-disable anti-slop/no-object-parameters, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: these fixtures deliberately encode malformed external JSON in tests. */
+import { performance } from "node:perf_hooks";
 import { DURABLE_MESSAGING_LIMITS } from "@hobo/core";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -523,6 +524,44 @@ describe("Rivet durable topic HTTP client", () => {
 			release();
 			vi.useRealTimers();
 		}
+	});
+
+	it.each([
+		"transport",
+		"authorization",
+	] as const)("prevents dispatch when synchronous %s verification exceeds the monotonic deadline", async (phase) => {
+		let entered = false;
+		const block = () => {
+			entered = true;
+				const until = performance.now() + 600;
+			while (performance.now() < until) {
+				// Intentionally delay the event loop so its timeout cannot fire first.
+			}
+		};
+		const fetch = vi.fn(async () => {
+			throw new Error("must not dispatch");
+		});
+		const client = createRivetDurableTopicClient({
+			binding,
+			metadataGrant: createRivetDurableTopicMetadataGrant(),
+			verifyTransport: () => {
+				if (phase === "transport") block();
+				return true;
+			},
+			authorize: () => {
+				if (phase === "authorization") block();
+				return { "x-hobo-proof": "signed" };
+			},
+			revalidate: () => true,
+			fetch,
+				timeoutMs: 500,
+		});
+		expect(await client.ensureTopic({ operation, topic: "orders" })).toEqual({
+			status: "unknown",
+			operation,
+		});
+		expect(entered).toBe(true);
+		expect(fetch).not.toHaveBeenCalled();
 	});
 
 	it("rejects noncanonical payloads, duplicate leases and contradictory event pages", async () => {
