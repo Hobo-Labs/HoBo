@@ -2,8 +2,19 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
+import {
+	createTargetPricingInventory,
+	targetPricingUnavailable,
+} from "@hobo/pricing";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	makeScenario,
+	perUnitCharge,
+	usage,
+	workload,
+} from "../../pricing/test/fixtures.js";
+import {
+	admitUnpricedIacTarget,
 	type BudgetIdentity,
 	BudgetLedgerSnapshotSchema,
 	createIacFinancialServices,
@@ -94,6 +105,101 @@ function fixture() {
 }
 
 describe("policy-directed unpriced IaC admission", () => {
+	it.each([
+		"surcharge",
+		"undefined",
+		"sparse-array",
+		"array-property",
+	])("does not bypass budget when the declared model contains %s", (kind) => {
+		const { authority, authorize } = fixture();
+		try {
+			const scenario = makeScenario({
+				charges: [perUnitCharge("runtime", "minute", "0.25")],
+				candidate: [workload("agreement", [usage("minute", "4", "minute")])],
+			});
+			const charges = scenario.catalog?.rateCards[0]?.charges;
+			const charge = charges?.[0];
+			if (!charges || !charge) throw new Error("charge missing");
+			if (kind === "surcharge")
+				Object.defineProperty(charge, "surcharge", {
+					value: "100",
+					enumerable: true,
+				});
+			if (kind === "undefined")
+				Object.defineProperty(charge, "unknown", {
+					value: undefined,
+					enumerable: true,
+				});
+			if (kind === "sparse-array") charges.length = 2;
+			if (kind === "array-property")
+				Object.defineProperty(charges, "extra", {
+					value: "fee",
+					enumerable: true,
+				});
+			let calls = 0;
+			expect(() =>
+				createIacFinancialServices({
+					authority,
+					now: () => now,
+					pricing: {
+						modelId: "terms",
+						revision: "1",
+						scenario,
+						bindings: [{ resourceId: "worker", candidateIndex: 0 }],
+					},
+					unpriced: {
+						authorize: (input) => {
+							calls++;
+							return authorize(input);
+						},
+					},
+				}),
+			).toThrow();
+			expect(calls).toBe(0);
+			expect(authority.read(now).unboundedExposureCount).toBe(0);
+		} finally {
+			authority.close();
+		}
+	});
+
+	it("does not authorize a malformed explicit unavailable state", async () => {
+		const { authority, plan, authorize } = fixture();
+		try {
+			const inventory = createTargetPricingInventory({
+				...plan,
+				complete: true,
+			});
+			const pricing = targetPricingUnavailable("no model");
+			if (pricing.state.case !== "unavailable")
+				throw new Error("unavailable missing");
+			Object.defineProperty(pricing.state.value, "fee", {
+				value: "100",
+				enumerable: true,
+			});
+			let calls = 0;
+			expect(
+				await admitUnpricedIacTarget(
+					{ requestId: "bad", inventory, pricing },
+					{
+						authority,
+						now: () => now,
+						authorizeUnpriced: (input) => {
+							calls++;
+							return authorize(input);
+						},
+					},
+				),
+			).toMatchObject({
+				status: "denied",
+				code: "PRICING_INPUT_INVALID",
+				budget: { reservation: "not-created" },
+			});
+			expect(calls).toBe(0);
+			expect(authority.read(now).unboundedExposureCount).toBe(0);
+		} finally {
+			authority.close();
+		}
+	});
 	it("exposes unknown pricing and refuses execution by default", async () => {
 		const { authority, plan } = fixture();
 		const financial = createIacFinancialServices({ authority, now: () => now });

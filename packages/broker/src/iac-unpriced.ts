@@ -1,6 +1,7 @@
 import { clone, create, toJson } from "@bufbuild/protobuf";
 import {
 	isBoundedPricingInput,
+	isExactProtoMessage,
 	quoteTargetPricing,
 	stableHash,
 	type TargetPricingAvailability,
@@ -125,6 +126,13 @@ export async function admitUnpricedIacTarget(
 			targetId,
 			"REQUEST_INVALID",
 			"a bounded request and target are required",
+		);
+	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, input.pricing))
+		return denied(
+			requestId,
+			targetId,
+			"PRICING_INPUT_INVALID",
+			"target pricing input contains unsupported or malformed data",
 		);
 	let inventory: TargetPricingInventory;
 	let pricing: TargetPricingAvailability;
