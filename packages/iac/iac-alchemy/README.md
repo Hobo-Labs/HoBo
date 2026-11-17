@@ -218,7 +218,9 @@ the host's operation journal. It returns a stable request ID and a signed
 operation authorization shared across candidate targets. The route authority
 independently verifies that authorization and pins its target-independent
 SHA-256 operation ID across request IDs. The adapter refuses a permit for
-another operation. The host verifies proof expiry and revocation and must not
+another operation and resolves it again immediately before provider start;
+revocation retains the financial hold for reconciliation. The host verifies
+proof expiry and revocation and must not
 expose the authorization to stack code. An absent generation or failed resolver
 blocks execution before route or financial admission.
 The generation uses the provider-neutral `IacProgram.operationGeneration` field.

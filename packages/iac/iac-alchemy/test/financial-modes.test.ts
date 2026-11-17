@@ -323,17 +323,57 @@ describe("financial admission modes", () => {
 		);
 		await f.provider.preview(f.program);
 		await f.provider.applyWithAdmission(f.program, "attempt");
-		expect(seen).toEqual([
-			{
-				tenantId: "tenant",
-				deploymentId: "d",
-				programId: "p",
-				resourceId: "app",
-				operation: "deploy",
-				operationGeneration: "generation-1",
-				requestId: "attempt",
+		const expected = {
+			tenantId: "tenant",
+			deploymentId: "d",
+			programId: "p",
+			resourceId: "app",
+			operation: "deploy",
+			operationGeneration: "generation-1",
+			requestId: "attempt",
+		};
+		expect(seen).toEqual([expected, expected]);
+	});
+
+	it.each([
+		"revoked",
+		"request changed",
+		"operation changed",
+	] as const)("retains the hold when operation revalidation reports %s", async (mode) => {
+		let calls = 0;
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			({ requestId }) => {
+				if (++calls === 2) {
+					if (mode === "revoked") throw new Error("authorization revoked");
+					if (mode === "request changed")
+						return { requestId: "different", operation: testOperation };
+					return {
+						requestId: requestId ?? "resolved",
+						operation: {
+							...testOperation,
+							operationId: `sha256:${"a".repeat(64)}`,
+						},
+					};
+				}
+				return { requestId: requestId ?? "resolved", operation: testOperation };
 			},
-		]);
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ROUTE_OPERATION_REVALIDATION_FAILED",
+			reservationId: "iac:attempt",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
 
 	it("rejects a resolver that substitutes the caller's request ID", async () => {

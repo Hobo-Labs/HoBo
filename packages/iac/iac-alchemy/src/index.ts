@@ -931,6 +931,30 @@ export function createAlchemyIacProvider<
 			}),
 		),
 	});
+	const resolveAuthorizedOperation = async (
+		program: IacProgram,
+		requestId: string | undefined,
+	): Promise<IacRouteResolution | undefined> => {
+		if (resolveRoute === undefined || program.operationGeneration === undefined)
+			return undefined;
+		try {
+			return readRouteResolution(
+				await resolveRoute(
+					Object.freeze({
+						tenantId: target.tenantId,
+						deploymentId: program.deploymentId,
+						programId: program.programId,
+						resourceId: program.resourceId,
+						operation: program.action === "destroy" ? "destroy" : "deploy",
+						operationGeneration: program.operationGeneration,
+						requestId,
+					}),
+				),
+			);
+		} catch {
+			return undefined;
+		}
+	};
 	const verifyRoute = async (
 		input: IacRoutePermit,
 		requestId: string,
@@ -1339,6 +1363,24 @@ export function createAlchemyIacProvider<
 							),
 						};
 					}
+					const currentOperation = yield* Effect.promise(() =>
+						resolveAuthorizedOperation(program, requestId),
+					);
+					if (
+						currentOperation === undefined ||
+						currentOperation.requestId !== requestId ||
+						currentOperation.operation.operationId !== operation.operationId
+					) {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								"ROUTE_OPERATION_REVALIDATION_FAILED",
+								"the operation is no longer authorized; the reservation is retained",
+								admission,
+								claimedReservationId,
+							),
+						};
+					}
 					try {
 						if (composite !== undefined)
 							verifyCompositeEnvironment(
@@ -1492,25 +1534,10 @@ export function createAlchemyIacProvider<
 			);
 		running.add(fenceKey);
 		try {
-			let resolution: IacRouteResolution | undefined;
-			try {
-				resolution = readRouteResolution(
-					await resolveRoute(
-						Object.freeze({
-							tenantId: target.tenantId,
-							deploymentId: stableProgram.deploymentId,
-							programId: stableProgram.programId,
-							resourceId: stableProgram.resourceId,
-							operation:
-								stableProgram.action === "destroy" ? "destroy" : "deploy",
-							operationGeneration: stableProgram.operationGeneration,
-							requestId,
-						}),
-					),
-				);
-			} catch {
-				/* A resolver failure occurs before route or financial admission. */
-			}
+			const resolution = await resolveAuthorizedOperation(
+				stableProgram,
+				requestId,
+			);
 			if (
 				resolution === undefined ||
 				(requestId !== undefined && resolution.requestId !== requestId)
