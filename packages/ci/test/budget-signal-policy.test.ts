@@ -70,6 +70,33 @@ describe("shared CI scoped budget signals", () => {
 			current,
 		);
 	});
+	it("validates the exact decimal threshold used by the Broker", () => {
+		const fraction = 0.123456789012345;
+		const raw = foldBudgetSignals(
+			[
+				{
+					type: "meter.UsageRecorded",
+					data: {
+						tenantId: "acme",
+						budgetId: "ci",
+						periodId: "manual-1",
+						costUsd: 20,
+					},
+				},
+			],
+			{ budgetUsd: 100, thresholds: [fraction], identity },
+		).signals.find((signal) => signal.type === "budget.ThresholdCrossed");
+		if (!raw) throw new Error("fixture crossing missing");
+		const exact = fromJsonString(BudgetSignalSchema, JSON.stringify(raw));
+		expect(exact.data?.thresholdUsd).toBe(12.3456789012345);
+		expect(ciBudgetSignalUpdate(exact, policy())).toMatchObject({
+			crossed: true,
+		});
+		if (!exact.data) throw new Error("fixture data missing");
+		exact.data.thresholdUsd = 12.345678901;
+		expect(() => ciBudgetSignalUpdate(exact, policy())).toThrow(/invalid/iu);
+	});
+
 	it("does not let delayed prior periods, revisions or budgets control current eligibility", () => {
 		const crossing = signals()[1];
 		if (!crossing) throw new Error("fixture");

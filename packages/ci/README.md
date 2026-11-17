@@ -414,6 +414,8 @@ The Station adapter changes offer eligibility through the account API and stores
 per-threshold cycle/crossed maps on `Account`. The journal rejects discarded or
 regressed watermarks and same-cycle state changes; replay preserves ordering.
 Inclusive monetary snapshots remain independent of routing signal state.
+CI validates the Broker's exact decimal threshold projection. Reconcile older
+rounded signals before replay and upgrade the Broker and CI together.
 
 
 ## Author CI policy

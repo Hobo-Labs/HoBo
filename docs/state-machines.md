@@ -39,7 +39,7 @@ The package READMEs include selected user-flow projections produced from the che
 
 The broker's general request path still passes a caller-supplied numeric estimate to its billing plane; it does not automatically invoke the quote-based authorization helper. Quote provenance and the full path from pricing to broker admission remain open integration work.
 
-Budget signal replay assumes complete truthful facts and an uncontended target-stream read. A concurrent writer can occupy a key before append, so callers must inspect deduplicated results; threshold arithmetic still rounds to nine decimal places.
+Budget signal replay assumes complete truthful facts and an uncontended target-stream read. A concurrent writer can occupy a key before append, so callers must inspect deduplicated results; threshold decisions use exact serialized decimal inputs, and an unrepresentable numeric wire decision is refused.
 
 Default and metered preflight each use a single in-memory writer and trust their unused-funds confirmation and caller estimates. Restart loses their holds; metered preflight also trusts its meter facts and cannot detect facts missing before its first read. The default plane has no meter feed and keeps successful holds for its lifetime. The replay check requires reconciliation instead of issuing another receipt. Custom billing planes must report whether they created a hold to participate in that check and permit automatic release after failed placement.
 

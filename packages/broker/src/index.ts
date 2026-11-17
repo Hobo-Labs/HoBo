@@ -17,6 +17,7 @@ export {
 	type BudgetSignalPolicy,
 	type BudgetSignalState,
 	budgetSignalEventInputs,
+	budgetSignalThresholdUsd,
 	foldBudgetSignals,
 } from "./budget-signals.js";
 export {

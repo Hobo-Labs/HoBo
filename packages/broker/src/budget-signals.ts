@@ -18,6 +18,16 @@ import {
 	budgetThresholdSignalKey,
 } from "@hobo/core";
 import {
+	addDecimal,
+	compareDecimal,
+	DECIMAL_ZERO,
+	type Decimal,
+	formatDecimal,
+	multiplyDecimal,
+	subtractDecimal,
+} from "@hobo/pricing";
+import { decimalFromNumber } from "./billing-decimal.js";
+import {
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
@@ -120,6 +130,37 @@ function matchesSignal(data: JsonObject, expected: BudgetSignalData): boolean {
 	);
 }
 
+function projectSignalAmount(
+	amount: Decimal,
+	description = "budget signal amount",
+): number {
+	const projected = Number(formatDecimal(amount));
+	if (
+		!Number.isFinite(projected) ||
+		(amount.coefficient !== 0n && projected === 0)
+	)
+		throw new RangeError(
+			`${description} cannot be represented on the numeric wire`,
+		);
+	return projected;
+}
+
+function thresholdAmount(budgetUsd: number, fraction: number): Decimal {
+	const budget = decimalFromNumber(budgetUsd);
+	const threshold = decimalFromNumber(fraction);
+	if (!budget || !threshold || fraction <= 0 || fraction > 1)
+		throw new TypeError("budget and threshold must be finite and nonnegative");
+	return multiplyDecimal(budget, threshold);
+}
+
+/** Numeric wire projection of the exact serialized-decimal threshold. */
+export function budgetSignalThresholdUsd(
+	budgetUsd: number,
+	fraction: number,
+): number {
+	return projectSignalAmount(thresholdAmount(budgetUsd, fraction));
+}
+
 // Deterministic fold: same stream + same policy -> same state and the same
 // signal facts (stable signalKey identity), so projections rebuilt from zero
 // converge instead of re-firing.
@@ -139,6 +180,15 @@ export function foldBudgetSignals(
 	) {
 		throw new TypeError("policy.thresholds must be fractions in (0, 1]");
 	}
+	const thresholdAmounts = new Map(
+		thresholds.map((fraction) => {
+			const exact = thresholdAmount(budgetUsd, fraction);
+			return [
+				String(fraction),
+				{ exact, projected: projectSignalAmount(exact) },
+			] as const;
+		}),
+	);
 	const identity = policy.identity
 		? {
 				tenantId: policy.identity.tenantId,
@@ -272,7 +322,7 @@ export function foldBudgetSignals(
 					identity,
 					policyDigest,
 					thresholdFraction: threshold,
-					thresholdUsd: round(threshold * budgetUsd),
+					thresholdUsd: budgetSignalThresholdUsd(budgetUsd, threshold),
 					budgetUsd,
 					netSpentUsd: 0,
 					cycle: 0,
@@ -282,6 +332,8 @@ export function foldBudgetSignals(
 			});
 		}
 
+	let exactSpent = DECIMAL_ZERO;
+	let exactCredit = DECIMAL_ZERO;
 	for (const event of buffered) {
 		if (
 			event.type === BUDGET_EVENTS.ThresholdCrossed ||
@@ -325,24 +377,35 @@ export function foldBudgetSignals(
 			if (!isJsonNumber(cost) || !Number.isFinite(cost) || cost < 0) {
 				throw new TypeError("usage charge must be finite and nonnegative");
 			}
-			const next = state.spentUsd + cost;
-			if (!Number.isFinite(next)) throw new TypeError("usage spend overflow");
-			state.spentUsd = next;
+			const amount = decimalFromNumber(cost);
+			if (!amount)
+				throw new TypeError("usage charge must be finite and nonnegative");
+			exactSpent = addDecimal(exactSpent, amount);
+			state.spentUsd = projectSignalAmount(exactSpent, "usage spend");
 			state.sampleCount += 1;
 		} else if (event.type === BUDGET_EVENTS.CreditApplied) {
 			const amount = data.amountUsd;
 			if (!isJsonNumber(amount) || !Number.isFinite(amount) || amount < 0) {
 				throw new TypeError("credit amount must be finite and nonnegative");
 			}
-			const next = state.creditUsd + amount;
-			if (!Number.isFinite(next)) throw new TypeError("credit total overflow");
-			state.creditUsd = next;
+			const value = decimalFromNumber(amount);
+			if (!value)
+				throw new TypeError("credit amount must be finite and nonnegative");
+			exactCredit = addDecimal(exactCredit, value);
+			state.creditUsd = projectSignalAmount(exactCredit, "credit total");
 		}
 
-		state.netSpentUsd = round(state.spentUsd - state.creditUsd);
+		const exactNet = subtractDecimal(exactSpent, exactCredit);
+		state.netSpentUsd = projectSignalAmount(exactNet);
 		for (const threshold of thresholds) {
 			const key = String(threshold);
-			const crossedNow = state.netSpentUsd >= round(threshold * budgetUsd);
+			const amount = thresholdAmounts.get(key);
+			if (!amount) throw new Error("budget threshold is missing");
+			const crossedNow = compareDecimal(exactNet, amount.exact) >= 0;
+			if (state.netSpentUsd >= amount.projected !== crossedNow)
+				throw new RangeError(
+					"budget threshold decision cannot be represented on the numeric wire",
+				);
 			if (crossedNow === state.crossed[key]) continue;
 			state.crossed[key] = crossedNow;
 			const cycle = (cycles[key] ?? 0) + 1;
@@ -354,7 +417,7 @@ export function foldBudgetSignals(
 				data: {
 					tenantId,
 					thresholdFraction: threshold,
-					thresholdUsd: round(threshold * budgetUsd),
+					thresholdUsd: budgetSignalThresholdUsd(budgetUsd, threshold),
 					budgetUsd,
 					netSpentUsd: state.netSpentUsd,
 					cycle,
@@ -394,8 +457,4 @@ export function budgetSignalEventInputs(signals: readonly BudgetSignal[]): {
 		data: signal.data,
 		meta: { idempotencyKey: signal.data.signalKey },
 	}));
-}
-
-function round(value: number): number {
-	return Number(value.toFixed(9));
 }

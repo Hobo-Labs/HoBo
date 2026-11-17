@@ -153,13 +153,19 @@ Replay the complete target stream, including event metadata, before appending
 signals to it. A recorded signal suppresses emission only if its scope and
 payload match the reconstructed transition. A recorded signal that cannot be
 reconstructed, a conflicting signal, or an occupied idempotency key requires
-journal reconciliation. Explicitly foreign facts are
-ignored, but missing scope or invalid amounts on relevant financial facts now
+journal reconciliation. Explicitly foreign facts are ignored, but missing
+scope or invalid amounts on relevant financial facts now
 stop the fold; reconcile older unscoped or incomplete records before upgrade.
 The journal and its evidence are trusted, and replay alone cannot authenticate
 an otherwise matching signal. A concurrent append can occupy a key after the
-read; callers must inspect deduplicated append results and reconcile mismatches. Signal threshold arithmetic still rounds to nine
-decimal places and needs separate review for sub-nanodollar amounts.
+read; callers must inspect deduplicated append results and reconcile mismatches.
+
+Threshold decisions use exact decimal values serialized from the numeric input.
+Reported amounts are numeric projections; if the wire format cannot preserve a
+threshold decision, the fold refuses it for reconciliation. Older rounded
+signals may disagree with the corrected calculation and must be reconciled before
+replay; coordinate the Broker and CI upgrade because CI now validates the exact
+decimal threshold projection.
 
 The [budget signal replay skill](../../.agents/skills/verify-budget-signal-replay/SKILL.md)
 checks 60 model states. This projection hides 27 transitions between states
