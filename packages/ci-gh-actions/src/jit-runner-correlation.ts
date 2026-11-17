@@ -15,6 +15,14 @@ export const RUNNER_HELD_JOB_STATUSES = new Set([
 	"requested",
 ]);
 
+/** GitHub statuses that mean the runner is executing work, not merely registered. */
+export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
+	"in_progress",
+	"waiting",
+	"pending",
+	"requested",
+]);
+
 export type ResolvedRunnerAssignment = Readonly<{
 	jobId: number;
 	runId: number;
@@ -48,7 +56,14 @@ export function correlateRunnerOnRun(
 		runnerMatchesJob(job, runnerName, runnerId),
 	);
 	if (served.length === 0) return { kind: "unassigned" };
-	const reserved = served.find((job) => job.id === reservedJobId);
+	// A runner may have a completed reservation and another job still running.
+	// Pick executing work first so terminal or queued records cannot hide it.
+	const executing = served.filter((job) =>
+		RUNNER_EXECUTING_JOB_STATUSES.has(job.status),
+	);
+	const held = served.filter((job) => RUNNER_HELD_JOB_STATUSES.has(job.status));
+	const candidates = executing.length ? executing : held.length ? held : served;
+	const reserved = candidates.find((job) => job.id === reservedJobId);
 	if (reserved) {
 		return {
 			kind: "served-reserved",
@@ -56,7 +71,7 @@ export function correlateRunnerOnRun(
 			status: reserved.status,
 		};
 	}
-	const other = served[0];
+	const other = candidates[0];
 	if (!other) return { kind: "unassigned" };
 	return { kind: "served-other", jobId: other.id, status: other.status };
 }
@@ -84,14 +99,6 @@ export function runnerHoldsActiveJob(
 ): boolean {
 	return !!assignment && RUNNER_HELD_JOB_STATUSES.has(assignment.status);
 }
-
-/** GitHub statuses that mean the runner is executing work, not merely registered. */
-export const RUNNER_EXECUTING_JOB_STATUSES = new Set([
-	"in_progress",
-	"waiting",
-	"pending",
-	"requested",
-]);
 
 export function runnerMatchesGitHubJob(
 	lease: Readonly<{ runnerId: number; runnerName: string }>,
