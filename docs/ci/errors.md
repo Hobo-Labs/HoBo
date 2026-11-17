@@ -1150,7 +1150,7 @@ Message: composed when the command runs.
 
 What to do:
 
-- Connect a Linux machine (x64 or arm64).
+- Connect a Linux machine (x64 or arm64), or a Mac with --host, or with --vm on Apple silicon with Apple's container tool running.
 
 ### HOBO_CI_MACHINE_USAGE
 

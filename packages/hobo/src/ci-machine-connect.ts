@@ -3,8 +3,8 @@
  * to (ADR-0183), from an installed CLI with no checkout.
  *
  *     hobo ci machine connect --repo <owner/name> [--repo …] [--name <name>]
- *         [--concurrency <n>] [--share only-me|anyone] [--host] [--image <ref>]
- *         [--events] [--account <id>]
+ *         [--concurrency <n>] [--share only-me|anyone] [--host | --vm]
+ *         [--image <ref>] [--events] [--account <id>]
  *
  * The owner signs in with GitHub's CLI (`gh auth token`) or a token in
  * GH_TOKEN or GITHUB_TOKEN; the token is used for GitHub's REST API only and
@@ -12,7 +12,10 @@
  * (`ci/machine/`), advertises itself every 30 seconds in the local node's
  * machine registry, reads the named repositories' queues for its own label,
  * and runs each job on a one-job runner in a fresh container (`--host`: on
- * this machine, and the advert says so). `p` on a terminal pauses and
+ * this machine, and the advert says so). A Mac has no container default and
+ * must be given `--host`, or `--vm` to run each job in its own Linux VM
+ * through Apple's `container` tool (`machine-worker/macos/MACOS.md`); a
+ * `--vm` that cannot be honoured is refused, never run on the host. `p` on a terminal pauses and
  * resumes. Ctrl-C drains: running jobs finish and the machine goes offline;
  * a second Ctrl-C stops them as well. `--events` prints each event as one
  * JSON object per line. Public repositories and fork pull requests never
@@ -45,7 +48,6 @@ import {
 	type MachineGithub,
 	type MachineSession,
 	type MachineWorkerEvent,
-	machinePlatform,
 	machineRunsOnLabel,
 	machineWorkerEventJson,
 	pinnedRunnerProgram,
@@ -53,6 +55,15 @@ import {
 	runMachineSession,
 	userGithub,
 } from "@hobo/ci-gh-actions/machine-worker";
+import {
+	type AppleContainerStatus,
+	appleContainerExecutor,
+	appleContainerStatus,
+	type MachineMode,
+	machineConnectPlan,
+	nodeToolProcess,
+	pinnedMacosRunnerProgram,
+} from "@hobo/ci-gh-actions/machine-worker/macos";
 import type { CommandResult } from "@hobo/cli";
 import type { CiCommand, CiCommandContext } from "./ci-commands.js";
 import {
@@ -71,6 +82,8 @@ const HELP = [
 	"    --concurrency <n>        Jobs at once, 1 to 32 (default 1).",
 	"    --share only-me|anyone   Who may route jobs here (default only-me).",
 	"    --host                   Run jobs on this machine instead of a fresh container.",
+	"                             A Mac has no container default and needs --host or --vm.",
+	"    --vm                     On an Apple silicon Mac: each job in its own Linux VM (Apple's container tool).",
 	"    --image <ref>            The job container's image.",
 	"    --events                 Print each event as one JSON object per line.",
 	"    --account <id>           The account (or HOBO_CI_ACCOUNT_ID; default local).",
@@ -79,9 +92,24 @@ const HELP = [
 
 const MAX_CONCURRENCY = 32;
 
+const WHERE_JOBS_RUN = new Map<MachineMode, string>([
+	["container", "in a fresh container each"],
+	["host", "ON THIS MACHINE as you, not in a container"],
+	["vm", "in a fresh Linux VM each, through Apple's container tool"],
+]);
+const WHERE_JOBS_RAN = new Map<MachineMode, string>([
+	["container", "in fresh containers"],
+	["host", "on this machine's host"],
+	["vm", "in fresh Linux VMs"],
+]);
+
 /** What the executor is built from. */
 export type MachineExecutorChoice = Readonly<{
 	host: boolean;
+	/** Where jobs run: a container, the host, or a Linux VM per job on a Mac. */
+	mode: MachineMode;
+	/** The OS jobs see: `macos` only for a Mac's host jobs. */
+	os: "linux" | "macos";
 	image: string;
 	arch: "x64" | "arm64";
 	env: NodeJS.ProcessEnv;
@@ -99,6 +127,8 @@ export type CiMachineConnectDeps = Readonly<{
 	openRegistry?: (context: CiCommandContext) => Promise<OpenedMachineRegistry>;
 	executor?: (choice: MachineExecutorChoice) => JobExecutor;
 	platform?: Readonly<{ platform: string; arch: string }>;
+	/** Whether Apple's `container` tool can run a VM; asked only for `--vm` on a Mac. */
+	appleContainer?: () => Promise<AppleContainerStatus>;
 	hostname?: () => string;
 	/** Wires Ctrl-C and the terminal's `p` to the session; returns the undo. */
 	controls?: (session: MachineSession) => () => void;
@@ -144,18 +174,29 @@ export async function defaultGithubToken(
 }
 
 function defaultExecutor(choice: MachineExecutorChoice): JobExecutor {
-	if (choice.host)
+	if (choice.mode === "vm")
+		return appleContainerExecutor({
+			process: nodeToolProcess,
+			image: choice.image,
+			env: choice.env,
+		});
+	if (choice.host) {
+		const options = {
+			fetch: choice.fetch,
+			cacheDir: choice.cacheDir,
+			arch: choice.arch,
+			process: hostProcess,
+			env: choice.env,
+		};
 		return hostExecutor({
-			program: pinnedRunnerProgram({
-				fetch: choice.fetch,
-				cacheDir: choice.cacheDir,
-				arch: choice.arch,
-				process: hostProcess,
-				env: choice.env,
-			}),
+			program:
+				choice.os === "macos"
+					? pinnedMacosRunnerProgram(options)
+					: pinnedRunnerProgram(options),
 			process: hostProcess,
 			env: choice.env,
 		});
+	}
 	return containerExecutor({
 		docker: createCliDockerDriver({ env: choice.env }),
 		image: choice.image,
@@ -215,6 +256,7 @@ function parseConnectArgs(args: readonly string[]) {
 				concurrency: { type: "string" },
 				share: { type: "string" },
 				host: { type: "boolean" },
+				vm: { type: "boolean" },
 				image: { type: "string" },
 				events: { type: "boolean" },
 				account: { type: "string" },
@@ -243,12 +285,15 @@ function parseConnectArgs(args: readonly string[]) {
 			);
 		const sharing = sharingOf(values.share);
 		if (sharing === undefined) return usage("--share is only-me or anyone.");
+		if (values.host === true && values.vm === true)
+			return usage("Give --host or --vm, not both.");
 		return {
 			repositories: [...new Set(repositories)],
 			name: values.name,
 			concurrency,
 			sharing,
 			host: values.host === true,
+			vm: values.vm === true,
 			image: values.image ?? DEFAULT_MACHINE_IMAGE,
 			events: values.events === true,
 			account: values.account,
@@ -279,14 +324,27 @@ async function connect(
 		platform: process.platform,
 		arch: process.arch,
 	};
-	const platform = machinePlatform(where.platform, where.arch);
-	if (!platform.supported)
+	// Apple's tool is asked about only when a Mac wants --vm.
+	const appleContainer =
+		parsed.vm && where.platform === "darwin"
+			? await (
+					deps.appleContainer ?? (() => appleContainerStatus(nodeToolProcess))
+				)()
+			: undefined;
+	const platform = machineConnectPlan(
+		where,
+		{ host: parsed.host, vm: parsed.vm },
+		appleContainer,
+	);
+	if (!platform.ok)
 		return {
 			ok: false,
 			status: "unsupported",
 			code: "HOBO_CI_MACHINE_UNSUPPORTED",
 			message: platform.reason,
-			remediation: ["Connect a Linux machine (x64 or arm64)."],
+			remediation: [
+				"Connect a Linux machine (x64 or arm64), or a Mac with --host, or with --vm on Apple silicon with Apple's container tool running.",
+			],
 		};
 	const token = await (deps.githubToken ?? defaultGithubToken)(context.env);
 	const github = token
@@ -318,7 +376,7 @@ async function connect(
 	const opened = await (deps.openRegistry ?? openLocal)(context);
 	const writeLine =
 		deps.writeLine ?? ((line: string) => process.stdout.write(`${line}\n`));
-	const isolation = parsed.host ? "host" : "container";
+	const { isolation, mode } = platform;
 	const label = machineRunsOnLabel(machine.id);
 	const worker = createMachineWorker({
 		profile: {
@@ -341,6 +399,8 @@ async function connect(
 		github,
 		executor: (deps.executor ?? defaultExecutor)({
 			host: parsed.host,
+			mode,
+			os: platform.os,
 			image: parsed.image,
 			arch: platform.arch,
 			env: context.env,
@@ -361,7 +421,7 @@ async function connect(
 	context.emitProgress(
 		[
 			`Machine ${machine.name} (${machine.id}) connected as ${owner.ownerLogin} for account ${accountId}.`,
-			`Jobs with runs-on ${label} in ${parsed.repositories.join(", ")} run ${isolation === "host" ? "ON THIS MACHINE as you, not in a container" : "in a fresh container each"}, ${parsed.concurrency} at a time.`,
+			`Jobs with runs-on ${label} in ${parsed.repositories.join(", ")} run ${WHERE_JOBS_RUN.get(mode)}, ${parsed.concurrency} at a time.`,
 			"Press p to pause or resume, Ctrl-C to drain and go offline (twice: stop running jobs).",
 		].join("\n"),
 	);
@@ -383,6 +443,7 @@ async function connect(
 			account: accountId,
 			runsOn: label,
 			isolation,
+			mode,
 			registry: opened.where,
 			finished: status.finished,
 			failed: status.failed,
@@ -400,7 +461,7 @@ async function connect(
 				data,
 			};
 		return {
-			message: `Machine ${machine.name} is offline; its jobs ran ${isolation === "host" ? "on this machine's host" : "in fresh containers"}: ${status.finished} finished, ${status.failed} failed or stopped.`,
+			message: `Machine ${machine.name} is offline; its jobs ran ${WHERE_JOBS_RAN.get(mode)}: ${status.finished} finished, ${status.failed} failed or stopped.`,
 			data,
 		};
 	} finally {
