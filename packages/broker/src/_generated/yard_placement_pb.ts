@@ -6,1109 +6,439 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
-/**
- * Describes the file yard_placement.proto.
- */
 export const file_yard_placement: GenFile = /*@__PURE__*/
   fileDesc("ChR5YXJkX3BsYWNlbWVudC5wcm90bxITaG9iby5icm9rZXIueWFyZC52MSLRAQoJWWFyZFNoYXBlEhMKC3Byb3ZpZGVyX2lkGAEgASgJEhIKCnJ1bnRpbWVfaWQYAiABKAkSDwoHcmVnaW9ucxgDIAMoCRIPCgdyZXF1aXJlGAQgAygJEg4KBnByZWZlchgFIAMoCRI6CgZsYWJlbHMYBiADKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRTaGFwZS5MYWJlbHNFbnRyeRotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIvoBChRZYXJkUGxhY2VtZW50UmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhYKDnNlbGVjdGlvbl9tb2RlGAIgASgJEhkKEXJlcXVlc3RlZF95YXJkX2lkGAMgASgJEjcKD3JlcXVlc3RlZF9zaGFwZRgEIAEoCzIeLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZFNoYXBlEhwKFGJpbmRsZV9tYW5pZmVzdF9oYXNoGAUgASgJEiAKGGJpbmRsZV9yZXF1aXJlbWVudHNfaGFzaBgGIAEoCRIiChphbGxvd19nZW5lcmF0aW9uX3JlcXVlc3RlZBgHIAEoCCKvAQoYWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEg8KB3lhcmRfaWQYAiABKAkSFwoPb3duZXJfdGVuYW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhIKCnJ1bnRpbWVfaWQYBSABKAkSDgoGc3RhdHVzGAYgASgJEhgKEHJlZ2lzdHJhdGlvbl9zZXEYByABKAQiowEKFVlhcmRJbnZlbnRvcnlTbmFwc2hvdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIRCglicm9rZXJfaWQYAiABKAkSCwoDc2VxGAMgASgEEhQKDGNvbnRlbnRfaGFzaBgEIAEoCRI8CgV5YXJkcxgFIAMoCzItLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uIsEBChdZYXJkUnVudGltZVJlZ2lzdHJhdGlvbhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpydW50aW1lX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEg8KB3ZlcnNpb24YBCABKAkSHgoWZ2VuZXJhdG9yX2Nvbm5lY3Rvcl9pZBgFIAEoCRIOCgZzdGF0dXMYBiABKAkSEAoIcHJpb3JpdHkYByABKAUSEgoKaXNfZGVmYXVsdBgIIAEoCCLyAQoXQmluZGxlRGVwbG95bWVudFJlcXVlc3QSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRITCgtiaW5kbGVfbmFtZRgDIAEoCRIVCg1tYW5pZmVzdF9oYXNoGAQgASgJEjcKBHlhcmQYBSABKAsyKS5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRQbGFjZW1lbnRSZXF1ZXN0EhEKCW9iamVjdGl2ZRgGIAEoCRIaChJzcGVuZF9lc3RpbWF0ZV91c2QYByABKAESFwoPb3duZXJfdGVuYW50X2lkGAggASgJIpoDChRZYXJkUGxhY2VtZW50UmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCWJyb2tlcl9pZBgDIAEoCRIYChBzZWxlY3RlZF95YXJkX2lkGAQgASgJEhwKFHNlbGVjdGVkX3Byb3ZpZGVyX2lkGAUgASgJEhgKEHNlbGVjdGVkX2NhbXBfaWQYBiABKAkSFgoOaW52ZW50b3J5X2hhc2gYByABKAkSFAoMY29udGVudF9oYXNoGAggASgJEkIKEmJ1ZGdldF9yZXNlcnZhdGlvbhgJIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SOAoNaG9zdGluZ19xdW90ZRgKIAEoCzIhLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlEkUKFGhvc3RpbmdfcG9saWN5X3Byb29mGAsgASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YiYgoOQnVkZ2V0SWRlbnRpdHkSEQoJdGVuYW50X2lkGAEgASgJEhEKCWJ1ZGdldF9pZBgCIAEoCRIRCglwZXJpb2RfaWQYAyABKAkSFwoPcG9saWN5X3JldmlzaW9uGAQgASgJIq0DChRCdWRnZXRMZWRnZXJTbmFwc2hvdBI1CghpZGVudGl0eRgBIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSCwoDc2VxGAIgASgNEhQKDGxpbWl0X21pY3JvcxgDIAEoARIUCgxzcGVudF9taWNyb3MYBCABKAESFwoPcmVzZXJ2ZWRfbWljcm9zGAUgASgBEhMKC29ic2VydmVkX2F0GAYgASgJEhMKC3ZhbGlkX3VudGlsGAcgASgJEkUKEXByb3ZpZGVyX2FjY291bnRzGAggAygLMiouaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRQcm92aWRlckFjY291bnQSPAoMZW50aXRsZW1lbnRzGAkgAygLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRFbnRpdGxlbWVudBIZChF1bnJlc29sdmVkX21pY3JvcxgKIAEoARIfChdyZWNvdmVyeV9yZXNlcnZlX21pY3JvcxgLIAEoARIhChlleHRlcm5hbF9jb21taXR0ZWRfbWljcm9zGAwgASgBIpwBChVCdWRnZXRQcm92aWRlckFjY291bnQSGwoTcHJvdmlkZXJfYWNjb3VudF9pZBgBIAEoCRIUCgxsaW1pdF9taWNyb3MYAiABKAESFAoMc3BlbnRfbWljcm9zGAMgASgBEhcKD3Jlc2VydmVkX21pY3JvcxgEIAEoARIhChlleHRlcm5hbF9jb21taXR0ZWRfbWljcm9zGAUgASgBIqIBChFCdWRnZXRFbnRpdGxlbWVudBIRCglidWNrZXRfaWQYASABKAkSDAoEdW5pdBgCIAEoCRIRCglwZXJpb2RfaWQYAyABKAkSFwoPcmVtYWluaW5nX3VuaXRzGAQgASgBEhYKDnJlc2VydmVkX3VuaXRzGAUgASgBEhMKC29ic2VydmVkX2F0GAYgASgJEhMKC3ZhbGlkX3VudGlsGAcgASgJIlAKF1Byb3ZpZGVyQWNjb3VudEV4cG9zdXJlEhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSGAoQbGlhYmlsaXR5X21pY3JvcxgCIAEoASJCChBFbnRpdGxlbWVudENsYWltEhEKCWJ1Y2tldF9pZBgBIAEoCRIMCgR1bml0GAIgASgJEg0KBXVuaXRzGAMgASgBIqgCChhCdWRnZXRTZXR0bGVtZW50RXZpZGVuY2USGgoSdXNhZ2VfZXZpZGVuY2VfcmVmGAEgASgJEiMKG3NvdXJjZV9zdG9wcGVkX2V2aWRlbmNlX3JlZhgCIAEoCRJHChFwcm92aWRlcl9hY2NvdW50cxgDIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGAQgAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEiQKHGZlbmNlX29wZXJhdGlvbl9yZWNlaXB0X2pzb24YBSABKAkSGQoRZmluYW5jZV9zaWduYXR1cmUYBiABKAki2QEKFUJ1ZGdldEZlbmNlZFBsYWNlbWVudBIPCgd5YXJkX2lkGAEgASgJEg8KB2NhbXBfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSGwoTcHJvdmlkZXJfYWNjb3VudF9pZBgEIAEoCRITCgtyZXNvdXJjZV9pZBgFIAEoCRIVCg1kZXBsb3ltZW50X2lkGAYgASgJEhYKDmluY2FybmF0aW9uX2lkGAcgASgJEhUKDW1hbmlmZXN0X2hhc2gYCCABKAkSEQoJcGxhbl9oYXNoGAkgASgJIskEChpCdWRnZXRGZW5jZVNldHRsZW1lbnRHdWFyZBIQCghjb250cmFjdBgBIAEoCRIPCgdkYXRhc2V0GAIgASgJEhQKDHNjb3BlX3RlbmFudBgDIAEoCRIUCgxvcGVyYXRpb25faWQYBCABKAkSGgoSZmVuY2VfdG9rZW5fZGlnZXN0GAUgASgJEhcKD3JlY2VpdmVyX2tleV9pZBgGIAEoCRIbChNyZWNlaXZlcl9wdWJsaWNfa2V5GAcgASgJEhYKDmZpbmFuY2Vfa2V5X2lkGAggASgJEhoKEmZpbmFuY2VfcHVibGljX2tleRgJIAEoCRIXCg9sb2dpY2FsX2NhbXBfaWQYCiABKAkSOgoGc291cmNlGAsgASgLMiouaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRGZW5jZWRQbGFjZW1lbnQSPwoLZGVzdGluYXRpb24YDCABKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldEZlbmNlZFBsYWNlbWVudBIQCghkZWNpc2lvbhgNIAEoCRIYChBleGVjdXRpb25fZGlnZXN0GA4gASgJEhQKDHJvdXRlX2RpZ2VzdBgPIAEoCRIhChlleHBlY3RlZF9yb3V0ZV9nZW5lcmF0aW9uGBAgASgJEhYKDmN1cnJlbnRfc2V0X2lkGBEgASgJEhYKDmRlc2lyZWRfc2V0X2lkGBIgASgJEhQKDG1pZ3JhdGlvbl9pZBgTIAEoCRIVCg1kZWNpc2lvbl9oZWFkGBQgASgJIjoKFUhvc3RpbmdRdW90ZUNvbXBvbmVudBIMCgRuYW1lGAEgASgJEhMKC2Nvc3RfbWljcm9zGAIgASgBIvIDCgxIb3N0aW5nUXVvdGUSEAoIcXVvdGVfaWQYASABKAkSDwoHeWFyZF9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIXCg9vd25lcl90ZW5hbnRfaWQYBCABKAkSEAoIY3VycmVuY3kYBSABKAkSFAoMdG90YWxfbWljcm9zGAYgASgBEhMKC29ic2VydmVkX2F0GAcgASgJEhMKC3ZhbGlkX3VudGlsGAggASgJEj4KCmNvbXBvbmVudHMYCSADKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLkhvc3RpbmdRdW90ZUNvbXBvbmVudBIWCg5yZXF1ZXN0X2RpZ2VzdBgKIAEoCRIjChZsaWFiaWxpdHlfYm91bmRfbWljcm9zGAsgASgBSACIAQESRwoRcHJvdmlkZXJfYWNjb3VudHMYDCADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlEkEKEmVudGl0bGVtZW50X2NsYWltcxgNIAMoCzIlLmhvYm8uYnJva2VyLnlhcmQudjEuRW50aXRsZW1lbnRDbGFpbRIbChNmaW5hbmNpYWxfcGxhbl9oYXNoGA4gASgJQhkKF19saWFiaWxpdHlfYm91bmRfbWljcm9zIpcFChFCdWRnZXRSZXNlcnZhdGlvbhIWCg5yZXNlcnZhdGlvbl9pZBgBIAEoCRI1CghpZGVudGl0eRgCIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSFgoOcmVxdWVzdF9kaWdlc3QYAyABKAkSEAoIcXVvdGVfaWQYBCABKAkSFwoPcmVzZXJ2ZWRfbWljcm9zGAUgASgBEg4KBnN0YXR1cxgGIAEoCRIVCg1hY3R1YWxfbWljcm9zGAcgASgBEhIKCmxlZGdlcl9zZXEYCCABKA0SFAoMcXVvdGVfZGlnZXN0GAkgASgJEhoKEnVzYWdlX2V2aWRlbmNlX3JlZhgKIAEoCRIjChtzb3VyY2Vfc3RvcHBlZF9ldmlkZW5jZV9yZWYYCyABKAkSRwoRcHJvdmlkZXJfYWNjb3VudHMYDCADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlEkEKEmVudGl0bGVtZW50X2NsYWltcxgNIAMoCzIlLmhvYm8uYnJva2VyLnlhcmQudjEuRW50aXRsZW1lbnRDbGFpbRJKChNzZXR0bGVtZW50X2V2aWRlbmNlGA4gASgLMi0uaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRTZXR0bGVtZW50RXZpZGVuY2USGAoQZXhlY3V0aW9uX2RpZ2VzdBgPIAEoCRIbChNmaW5hbmNpYWxfcGxhbl9oYXNoGBAgASgJEk8KFmZlbmNlX3NldHRsZW1lbnRfZ3VhcmQYEiABKAsyLy5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldEZlbmNlU2V0dGxlbWVudEd1YXJkIsQBChRCdWRnZXRBdXRob3JpdHlFdmVudBIMCgR0eXBlGAEgASgJEjsKCHNuYXBzaG90GAIgASgLMikuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRMZWRnZXJTbmFwc2hvdBI8CgxyZXNlcnZhdGlvbnMYAyADKAsyJi5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldFJlc2VydmF0aW9uEiMKG3JlY29uY2lsaWF0aW9uX2V2aWRlbmNlX3JlZhgEIAEoCSLPAQoSSG9zdGluZ1BvbGljeVByb29mEhYKDnJlcXVlc3RfZGlnZXN0GAEgASgJEhAKCHF1b3RlX2lkGAIgASgJEjUKCGlkZW50aXR5GAMgASgLMiMuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRJZGVudGl0eRITCgtwb2xpY3lfaGFzaBgEIAEoCRIOCgZlZmZlY3QYBSABKAkSFAoMZXZpZGVuY2VfcmVmGAYgASgJEh0KFW9ibGlnYXRpb25zX3NhdGlzZmllZBgHIAEoCGIGcHJvdG8z");
 
-/**
- * @generated from message hobo.broker.yard.v1.YardShape
- */
 export type YardShape = Message<"hobo.broker.yard.v1.YardShape"> & {
-  /**
-   * @generated from field: string provider_id = 1;
-   */
   providerId: string;
 
-  /**
-   * @generated from field: string runtime_id = 2;
-   */
   runtimeId: string;
 
-  /**
-   * @generated from field: repeated string regions = 3;
-   */
   regions: string[];
 
-  /**
-   * @generated from field: repeated string require = 4;
-   */
   require: string[];
 
-  /**
-   * @generated from field: repeated string prefer = 5;
-   */
   prefer: string[];
 
-  /**
-   * @generated from field: map<string, string> labels = 6;
-   */
   labels: { [key: string]: string };
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.YardShape.
- * Use `create(YardShapeSchema)` to create a new message.
- */
 export const YardShapeSchema: GenMessage<YardShape> = /*@__PURE__*/
   messageDesc(file_yard_placement, 0);
 
-/**
- * @generated from message hobo.broker.yard.v1.YardPlacementRequest
- */
 export type YardPlacementRequest = Message<"hobo.broker.yard.v1.YardPlacementRequest"> & {
-  /**
-   * @generated from field: string request_id = 1;
-   */
   requestId: string;
 
-  /**
-   * exact | compatible | compatible-or-generate
-   *
-   * @generated from field: string selection_mode = 2;
-   */
   selectionMode: string;
 
-  /**
-   * @generated from field: string requested_yard_id = 3;
-   */
   requestedYardId: string;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.YardShape requested_shape = 4;
-   */
   requestedShape?: YardShape | undefined;
 
-  /**
-   * @generated from field: string bindle_manifest_hash = 5;
-   */
   bindleManifestHash: string;
 
-  /**
-   * @generated from field: string bindle_requirements_hash = 6;
-   */
   bindleRequirementsHash: string;
 
-  /**
-   * @generated from field: bool allow_generation_requested = 7;
-   */
   allowGenerationRequested: boolean;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.YardPlacementRequest.
- * Use `create(YardPlacementRequestSchema)` to create a new message.
- */
 export const YardPlacementRequestSchema: GenMessage<YardPlacementRequest> = /*@__PURE__*/
   messageDesc(file_yard_placement, 1);
 
-/**
- * @generated from message hobo.broker.yard.v1.YardInstanceRegistration
- */
 export type YardInstanceRegistration = Message<"hobo.broker.yard.v1.YardInstanceRegistration"> & {
-  /**
-   * @generated from field: string schema_version = 1;
-   */
   schemaVersion: string;
 
-  /**
-   * @generated from field: string yard_id = 2;
-   */
   yardId: string;
 
-  /**
-   * @generated from field: string owner_tenant_id = 3;
-   */
   ownerTenantId: string;
 
-  /**
-   * @generated from field: string provider_id = 4;
-   */
   providerId: string;
 
-  /**
-   * @generated from field: string runtime_id = 5;
-   */
   runtimeId: string;
 
-  /**
-   * registering | attesting | ready | degraded | draining | offline
-   *
-   * @generated from field: string status = 6;
-   */
   status: string;
 
-  /**
-   * @generated from field: uint64 registration_seq = 7;
-   */
   registrationSeq: bigint;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.YardInstanceRegistration.
- * Use `create(YardInstanceRegistrationSchema)` to create a new message.
- */
 export const YardInstanceRegistrationSchema: GenMessage<YardInstanceRegistration> = /*@__PURE__*/
   messageDesc(file_yard_placement, 2);
 
-/**
- * @generated from message hobo.broker.yard.v1.YardInventorySnapshot
- */
 export type YardInventorySnapshot = Message<"hobo.broker.yard.v1.YardInventorySnapshot"> & {
-  /**
-   * @generated from field: string schema_version = 1;
-   */
   schemaVersion: string;
 
-  /**
-   * @generated from field: string broker_id = 2;
-   */
   brokerId: string;
 
-  /**
-   * @generated from field: uint64 seq = 3;
-   */
   seq: bigint;
 
-  /**
-   * @generated from field: string content_hash = 4;
-   */
   contentHash: string;
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.YardInstanceRegistration yards = 5;
-   */
   yards: YardInstanceRegistration[];
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.YardInventorySnapshot.
- * Use `create(YardInventorySnapshotSchema)` to create a new message.
- */
 export const YardInventorySnapshotSchema: GenMessage<YardInventorySnapshot> = /*@__PURE__*/
   messageDesc(file_yard_placement, 3);
 
-/**
- * @generated from message hobo.broker.yard.v1.YardRuntimeRegistration
- */
 export type YardRuntimeRegistration = Message<"hobo.broker.yard.v1.YardRuntimeRegistration"> & {
-  /**
-   * @generated from field: string schema_version = 1;
-   */
   schemaVersion: string;
 
-  /**
-   * @generated from field: string runtime_id = 2;
-   */
   runtimeId: string;
 
-  /**
-   * @generated from field: string provider_id = 3;
-   */
   providerId: string;
 
-  /**
-   * @generated from field: string version = 4;
-   */
   version: string;
 
-  /**
-   * @generated from field: string generator_connector_id = 5;
-   */
   generatorConnectorId: string;
 
-  /**
-   * registered | approved | disabled
-   *
-   * @generated from field: string status = 6;
-   */
   status: string;
 
-  /**
-   * @generated from field: int32 priority = 7;
-   */
   priority: number;
 
-  /**
-   * @generated from field: bool is_default = 8;
-   */
   isDefault: boolean;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.YardRuntimeRegistration.
- * Use `create(YardRuntimeRegistrationSchema)` to create a new message.
- */
 export const YardRuntimeRegistrationSchema: GenMessage<YardRuntimeRegistration> = /*@__PURE__*/
   messageDesc(file_yard_placement, 4);
 
-/**
- * @generated from message hobo.broker.yard.v1.BindleDeploymentRequest
- */
 export type BindleDeploymentRequest = Message<"hobo.broker.yard.v1.BindleDeploymentRequest"> & {
-  /**
-   * @generated from field: string schema_version = 1;
-   */
   schemaVersion: string;
 
-  /**
-   * @generated from field: string request_id = 2;
-   */
   requestId: string;
 
-  /**
-   * @generated from field: string bindle_name = 3;
-   */
   bindleName: string;
 
-  /**
-   * @generated from field: string manifest_hash = 4;
-   */
   manifestHash: string;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.YardPlacementRequest yard = 5;
-   */
   yard?: YardPlacementRequest | undefined;
 
-  /**
-   * @generated from field: string objective = 6;
-   */
   objective: string;
 
-  /**
-   * @generated from field: double spend_estimate_usd = 7;
-   */
   spendEstimateUsd: number;
 
-  /**
-   * @generated from field: string owner_tenant_id = 8;
-   */
   ownerTenantId: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BindleDeploymentRequest.
- * Use `create(BindleDeploymentRequestSchema)` to create a new message.
- */
 export const BindleDeploymentRequestSchema: GenMessage<BindleDeploymentRequest> = /*@__PURE__*/
   messageDesc(file_yard_placement, 5);
 
-/**
- * @generated from message hobo.broker.yard.v1.YardPlacementReceipt
- */
 export type YardPlacementReceipt = Message<"hobo.broker.yard.v1.YardPlacementReceipt"> & {
-  /**
-   * @generated from field: string schema_version = 1;
-   */
   schemaVersion: string;
 
-  /**
-   * @generated from field: string request_id = 2;
-   */
   requestId: string;
 
-  /**
-   * @generated from field: string broker_id = 3;
-   */
   brokerId: string;
 
-  /**
-   * @generated from field: string selected_yard_id = 4;
-   */
   selectedYardId: string;
 
-  /**
-   * @generated from field: string selected_provider_id = 5;
-   */
   selectedProviderId: string;
 
-  /**
-   * @generated from field: string selected_camp_id = 6;
-   */
   selectedCampId: string;
 
-  /**
-   * @generated from field: string inventory_hash = 7;
-   */
   inventoryHash: string;
 
-  /**
-   * @generated from field: string content_hash = 8;
-   */
   contentHash: string;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetReservation budget_reservation = 9;
-   */
   budgetReservation?: BudgetReservation | undefined;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.HostingQuote hosting_quote = 10;
-   */
   hostingQuote?: HostingQuote | undefined;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.HostingPolicyProof hosting_policy_proof = 11;
-   */
   hostingPolicyProof?: HostingPolicyProof | undefined;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.YardPlacementReceipt.
- * Use `create(YardPlacementReceiptSchema)` to create a new message.
- */
 export const YardPlacementReceiptSchema: GenMessage<YardPlacementReceipt> = /*@__PURE__*/
   messageDesc(file_yard_placement, 6);
 
-/**
- * @generated from message hobo.broker.yard.v1.BudgetIdentity
- */
 export type BudgetIdentity = Message<"hobo.broker.yard.v1.BudgetIdentity"> & {
-  /**
-   * @generated from field: string tenant_id = 1;
-   */
   tenantId: string;
 
-  /**
-   * @generated from field: string budget_id = 2;
-   */
   budgetId: string;
 
-  /**
-   * @generated from field: string period_id = 3;
-   */
   periodId: string;
 
-  /**
-   * @generated from field: string policy_revision = 4;
-   */
   policyRevision: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetIdentity.
- * Use `create(BudgetIdentitySchema)` to create a new message.
- */
 export const BudgetIdentitySchema: GenMessage<BudgetIdentity> = /*@__PURE__*/
   messageDesc(file_yard_placement, 7);
 
-/**
- * USD integer microdollars. Zero is a hard zero allowance, never unlimited.
- *
- * @generated from message hobo.broker.yard.v1.BudgetLedgerSnapshot
- */
 export type BudgetLedgerSnapshot = Message<"hobo.broker.yard.v1.BudgetLedgerSnapshot"> & {
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetIdentity identity = 1;
-   */
   identity?: BudgetIdentity | undefined;
 
-  /**
-   * @generated from field: uint32 seq = 2;
-   */
   seq: number;
 
-  /**
-   * @generated from field: double limit_micros = 3;
-   */
   limitMicros: number;
 
-  /**
-   * @generated from field: double spent_micros = 4;
-   */
   spentMicros: number;
 
-  /**
-   * @generated from field: double reserved_micros = 5;
-   */
   reservedMicros: number;
 
-  /**
-   * @generated from field: string observed_at = 6;
-   */
   observedAt: string;
 
-  /**
-   * @generated from field: string valid_until = 7;
-   */
   validUntil: string;
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.BudgetProviderAccount provider_accounts = 8;
-   */
   providerAccounts: BudgetProviderAccount[];
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.BudgetEntitlement entitlements = 9;
-   */
   entitlements: BudgetEntitlement[];
 
-  /**
-   * External unresolved liabilities, excluding this authority's held reservations.
-   *
-   * @generated from field: double unresolved_micros = 10;
-   */
   unresolvedMicros: number;
 
-  /**
-   * @generated from field: double recovery_reserve_micros = 11;
-   */
   recoveryReserveMicros: number;
 
-  /**
-   * Commitments owned by another authority; excludes this journal's holds.
-   *
-   * @generated from field: double external_committed_micros = 12;
-   */
   externalCommittedMicros: number;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetLedgerSnapshot.
- * Use `create(BudgetLedgerSnapshotSchema)` to create a new message.
- */
 export const BudgetLedgerSnapshotSchema: GenMessage<BudgetLedgerSnapshot> = /*@__PURE__*/
   messageDesc(file_yard_placement, 8);
 
-/**
- * @generated from message hobo.broker.yard.v1.BudgetProviderAccount
- */
 export type BudgetProviderAccount = Message<"hobo.broker.yard.v1.BudgetProviderAccount"> & {
-  /**
-   * @generated from field: string provider_account_id = 1;
-   */
   providerAccountId: string;
 
-  /**
-   * @generated from field: double limit_micros = 2;
-   */
   limitMicros: number;
 
-  /**
-   * @generated from field: double spent_micros = 3;
-   */
   spentMicros: number;
 
-  /**
-   * @generated from field: double reserved_micros = 4;
-   */
   reservedMicros: number;
 
-  /**
-   * @generated from field: double external_committed_micros = 5;
-   */
   externalCommittedMicros: number;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetProviderAccount.
- * Use `create(BudgetProviderAccountSchema)` to create a new message.
- */
 export const BudgetProviderAccountSchema: GenMessage<BudgetProviderAccount> = /*@__PURE__*/
   messageDesc(file_yard_placement, 9);
 
-/**
- * @generated from message hobo.broker.yard.v1.BudgetEntitlement
- */
 export type BudgetEntitlement = Message<"hobo.broker.yard.v1.BudgetEntitlement"> & {
-  /**
-   * @generated from field: string bucket_id = 1;
-   */
   bucketId: string;
 
-  /**
-   * @generated from field: string unit = 2;
-   */
   unit: string;
 
-  /**
-   * @generated from field: string period_id = 3;
-   */
   periodId: string;
 
-  /**
-   * @generated from field: double remaining_units = 4;
-   */
   remainingUnits: number;
 
-  /**
-   * @generated from field: double reserved_units = 5;
-   */
   reservedUnits: number;
 
-  /**
-   * @generated from field: string observed_at = 6;
-   */
   observedAt: string;
 
-  /**
-   * @generated from field: string valid_until = 7;
-   */
   validUntil: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetEntitlement.
- * Use `create(BudgetEntitlementSchema)` to create a new message.
- */
 export const BudgetEntitlementSchema: GenMessage<BudgetEntitlement> = /*@__PURE__*/
   messageDesc(file_yard_placement, 10);
 
-/**
- * @generated from message hobo.broker.yard.v1.ProviderAccountExposure
- */
 export type ProviderAccountExposure = Message<"hobo.broker.yard.v1.ProviderAccountExposure"> & {
-  /**
-   * @generated from field: string provider_account_id = 1;
-   */
   providerAccountId: string;
 
-  /**
-   * @generated from field: double liability_micros = 2;
-   */
   liabilityMicros: number;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.ProviderAccountExposure.
- * Use `create(ProviderAccountExposureSchema)` to create a new message.
- */
 export const ProviderAccountExposureSchema: GenMessage<ProviderAccountExposure> = /*@__PURE__*/
   messageDesc(file_yard_placement, 11);
 
-/**
- * @generated from message hobo.broker.yard.v1.EntitlementClaim
- */
 export type EntitlementClaim = Message<"hobo.broker.yard.v1.EntitlementClaim"> & {
-  /**
-   * @generated from field: string bucket_id = 1;
-   */
   bucketId: string;
 
-  /**
-   * @generated from field: string unit = 2;
-   */
   unit: string;
 
-  /**
-   * @generated from field: double units = 3;
-   */
   units: number;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.EntitlementClaim.
- * Use `create(EntitlementClaimSchema)` to create a new message.
- */
 export const EntitlementClaimSchema: GenMessage<EntitlementClaim> = /*@__PURE__*/
   messageDesc(file_yard_placement, 12);
 
-/**
- * @generated from message hobo.broker.yard.v1.BudgetSettlementEvidence
- */
 export type BudgetSettlementEvidence = Message<"hobo.broker.yard.v1.BudgetSettlementEvidence"> & {
-  /**
-   * @generated from field: string usage_evidence_ref = 1;
-   */
   usageEvidenceRef: string;
 
-  /**
-   * @generated from field: string source_stopped_evidence_ref = 2;
-   */
   sourceStoppedEvidenceRef: string;
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.ProviderAccountExposure provider_accounts = 3;
-   */
   providerAccounts: ProviderAccountExposure[];
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.EntitlementClaim entitlement_claims = 4;
-   */
   entitlementClaims: EntitlementClaim[];
 
-  /**
-   * A receiver receipt and independent finance signature are required when the
-   * original reservation carries a fenced route guard.
-   *
-   * @generated from field: string fence_operation_receipt_json = 5;
-   */
   fenceOperationReceiptJson: string;
 
-  /**
-   * @generated from field: string finance_signature = 6;
-   */
   financeSignature: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetSettlementEvidence.
- * Use `create(BudgetSettlementEvidenceSchema)` to create a new message.
- */
 export const BudgetSettlementEvidenceSchema: GenMessage<BudgetSettlementEvidence> = /*@__PURE__*/
   messageDesc(file_yard_placement, 13);
 
-/**
- * @generated from message hobo.broker.yard.v1.BudgetFencedPlacement
- */
 export type BudgetFencedPlacement = Message<"hobo.broker.yard.v1.BudgetFencedPlacement"> & {
-  /**
-   * @generated from field: string yard_id = 1;
-   */
   yardId: string;
 
-  /**
-   * @generated from field: string camp_id = 2;
-   */
   campId: string;
 
-  /**
-   * @generated from field: string provider_id = 3;
-   */
   providerId: string;
 
-  /**
-   * @generated from field: string provider_account_id = 4;
-   */
   providerAccountId: string;
 
-  /**
-   * @generated from field: string resource_id = 5;
-   */
   resourceId: string;
 
-  /**
-   * @generated from field: string deployment_id = 6;
-   */
   deploymentId: string;
 
-  /**
-   * @generated from field: string incarnation_id = 7;
-   */
   incarnationId: string;
 
-  /**
-   * @generated from field: string manifest_hash = 8;
-   */
   manifestHash: string;
 
-  /**
-   * @generated from field: string plan_hash = 9;
-   */
   planHash: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetFencedPlacement.
- * Use `create(BudgetFencedPlacementSchema)` to create a new message.
- */
 export const BudgetFencedPlacementSchema: GenMessage<BudgetFencedPlacement> = /*@__PURE__*/
   messageDesc(file_yard_placement, 14);
 
-/**
- * Immutable, non-secret scope pinned at initial reservation, not retrofitted
- * after execution. The route digest binds this scope to the exact budget,
- * request and quote; the keys are independently enrolled public keys.
- *
- * @generated from message hobo.broker.yard.v1.BudgetFenceSettlementGuard
- */
 export type BudgetFenceSettlementGuard = Message<"hobo.broker.yard.v1.BudgetFenceSettlementGuard"> & {
-  /**
-   * @generated from field: string contract = 1;
-   */
   contract: string;
 
-  /**
-   * @generated from field: string dataset = 2;
-   */
   dataset: string;
 
-  /**
-   * @generated from field: string scope_tenant = 3;
-   */
   scopeTenant: string;
 
-  /**
-   * @generated from field: string operation_id = 4;
-   */
   operationId: string;
 
-  /**
-   * @generated from field: string fence_token_digest = 5;
-   */
   fenceTokenDigest: string;
 
-  /**
-   * @generated from field: string receiver_key_id = 6;
-   */
   receiverKeyId: string;
 
-  /**
-   * @generated from field: string receiver_public_key = 7;
-   */
   receiverPublicKey: string;
 
-  /**
-   * @generated from field: string finance_key_id = 8;
-   */
   financeKeyId: string;
 
-  /**
-   * @generated from field: string finance_public_key = 9;
-   */
   financePublicKey: string;
 
-  /**
-   * @generated from field: string logical_camp_id = 10;
-   */
   logicalCampId: string;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetFencedPlacement source = 11;
-   */
   source?: BudgetFencedPlacement | undefined;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetFencedPlacement destination = 12;
-   */
   destination?: BudgetFencedPlacement | undefined;
 
-  /**
-   * @generated from field: string decision = 13;
-   */
   decision: string;
 
-  /**
-   * @generated from field: string execution_digest = 14;
-   */
   executionDigest: string;
 
-  /**
-   * @generated from field: string route_digest = 15;
-   */
   routeDigest: string;
 
-  /**
-   * @generated from field: string expected_route_generation = 16;
-   */
   expectedRouteGeneration: string;
 
-  /**
-   * @generated from field: string current_set_id = 17;
-   */
   currentSetId: string;
 
-  /**
-   * @generated from field: string desired_set_id = 18;
-   */
   desiredSetId: string;
 
-  /**
-   * @generated from field: string migration_id = 19;
-   */
   migrationId: string;
 
-  /**
-   * @generated from field: string decision_head = 20;
-   */
   decisionHead: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetFenceSettlementGuard.
- * Use `create(BudgetFenceSettlementGuardSchema)` to create a new message.
- */
 export const BudgetFenceSettlementGuardSchema: GenMessage<BudgetFenceSettlementGuard> = /*@__PURE__*/
   messageDesc(file_yard_placement, 15);
 
-/**
- * @generated from message hobo.broker.yard.v1.HostingQuoteComponent
- */
 export type HostingQuoteComponent = Message<"hobo.broker.yard.v1.HostingQuoteComponent"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
   name: string;
 
-  /**
-   * @generated from field: double cost_micros = 2;
-   */
   costMicros: number;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.HostingQuoteComponent.
- * Use `create(HostingQuoteComponentSchema)` to create a new message.
- */
 export const HostingQuoteComponentSchema: GenMessage<HostingQuoteComponent> = /*@__PURE__*/
   messageDesc(file_yard_placement, 16);
 
-/**
- * Complete incremental quote for one unsplittable request, including setup,
- * execution, cleanup, network, overlap/migration and applicable credits.
- *
- * @generated from message hobo.broker.yard.v1.HostingQuote
- */
 export type HostingQuote = Message<"hobo.broker.yard.v1.HostingQuote"> & {
-  /**
-   * @generated from field: string quote_id = 1;
-   */
   quoteId: string;
 
-  /**
-   * @generated from field: string yard_id = 2;
-   */
   yardId: string;
 
-  /**
-   * @generated from field: string provider_id = 3;
-   */
   providerId: string;
 
-  /**
-   * @generated from field: string owner_tenant_id = 4;
-   */
   ownerTenantId: string;
 
-  /**
-   * @generated from field: string currency = 5;
-   */
   currency: string;
 
-  /**
-   * @generated from field: double total_micros = 6;
-   */
   totalMicros: number;
 
-  /**
-   * @generated from field: string observed_at = 7;
-   */
   observedAt: string;
 
-  /**
-   * @generated from field: string valid_until = 8;
-   */
   validUntil: string;
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.HostingQuoteComponent components = 9;
-   */
   components: HostingQuoteComponent[];
 
-  /**
-   * @generated from field: string request_digest = 10;
-   */
   requestDigest: string;
 
-  /**
-   * Conservative enforceable exposure bound; absence is an estimate only.
-   *
-   * @generated from field: optional double liability_bound_micros = 11;
-   */
   liabilityBoundMicros?: number | undefined;
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.ProviderAccountExposure provider_accounts = 12;
-   */
   providerAccounts: ProviderAccountExposure[];
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.EntitlementClaim entitlement_claims = 13;
-   */
   entitlementClaims: EntitlementClaim[];
 
-  /**
-   * @generated from field: string financial_plan_hash = 14;
-   */
   financialPlanHash: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.HostingQuote.
- * Use `create(HostingQuoteSchema)` to create a new message.
- */
 export const HostingQuoteSchema: GenMessage<HostingQuote> = /*@__PURE__*/
   messageDesc(file_yard_placement, 17);
 
-/**
- * @generated from message hobo.broker.yard.v1.BudgetReservation
- */
 export type BudgetReservation = Message<"hobo.broker.yard.v1.BudgetReservation"> & {
-  /**
-   * @generated from field: string reservation_id = 1;
-   */
   reservationId: string;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetIdentity identity = 2;
-   */
   identity?: BudgetIdentity | undefined;
 
-  /**
-   * @generated from field: string request_digest = 3;
-   */
   requestDigest: string;
 
-  /**
-   * @generated from field: string quote_id = 4;
-   */
   quoteId: string;
 
-  /**
-   * @generated from field: double reserved_micros = 5;
-   */
   reservedMicros: number;
 
-  /**
-   * held | uncertain | settled | released
-   *
-   * @generated from field: string status = 6;
-   */
   status: string;
 
-  /**
-   * @generated from field: double actual_micros = 7;
-   */
   actualMicros: number;
 
-  /**
-   * @generated from field: uint32 ledger_seq = 8;
-   */
   ledgerSeq: number;
 
-  /**
-   * @generated from field: string quote_digest = 9;
-   */
   quoteDigest: string;
 
-  /**
-   * @generated from field: string usage_evidence_ref = 10;
-   */
   usageEvidenceRef: string;
 
-  /**
-   * @generated from field: string source_stopped_evidence_ref = 11;
-   */
   sourceStoppedEvidenceRef: string;
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.ProviderAccountExposure provider_accounts = 12;
-   */
   providerAccounts: ProviderAccountExposure[];
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.EntitlementClaim entitlement_claims = 13;
-   */
   entitlementClaims: EntitlementClaim[];
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetSettlementEvidence settlement_evidence = 14;
-   */
   settlementEvidence?: BudgetSettlementEvidence | undefined;
 
-  /**
-   * @generated from field: string execution_digest = 15;
-   */
   executionDigest: string;
 
-  /**
-   * @generated from field: string financial_plan_hash = 16;
-   */
   financialPlanHash: string;
 
-  /**
-   * Field 17 is allocated by the shared subscope work.
-   *
-   * @generated from field: hobo.broker.yard.v1.BudgetFenceSettlementGuard fence_settlement_guard = 18;
-   */
   fenceSettlementGuard?: BudgetFenceSettlementGuard | undefined;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetReservation.
- * Use `create(BudgetReservationSchema)` to create a new message.
- */
 export const BudgetReservationSchema: GenMessage<BudgetReservation> = /*@__PURE__*/
   messageDesc(file_yard_placement, 18);
 
-/**
- * @generated from message hobo.broker.yard.v1.BudgetAuthorityEvent
- */
 export type BudgetAuthorityEvent = Message<"hobo.broker.yard.v1.BudgetAuthorityEvent"> & {
-  /**
-   * @generated from field: string type = 1;
-   */
   type: string;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetLedgerSnapshot snapshot = 2;
-   */
   snapshot?: BudgetLedgerSnapshot | undefined;
 
-  /**
-   * @generated from field: repeated hobo.broker.yard.v1.BudgetReservation reservations = 3;
-   */
   reservations: BudgetReservation[];
 
-  /**
-   * @generated from field: string reconciliation_evidence_ref = 4;
-   */
   reconciliationEvidenceRef: string;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.BudgetAuthorityEvent.
- * Use `create(BudgetAuthorityEventSchema)` to create a new message.
- */
 export const BudgetAuthorityEventSchema: GenMessage<BudgetAuthorityEvent> = /*@__PURE__*/
   messageDesc(file_yard_placement, 19);
 
-/**
- * @generated from message hobo.broker.yard.v1.HostingPolicyProof
- */
 export type HostingPolicyProof = Message<"hobo.broker.yard.v1.HostingPolicyProof"> & {
-  /**
-   * @generated from field: string request_digest = 1;
-   */
   requestDigest: string;
 
-  /**
-   * @generated from field: string quote_id = 2;
-   */
   quoteId: string;
 
-  /**
-   * @generated from field: hobo.broker.yard.v1.BudgetIdentity identity = 3;
-   */
   identity?: BudgetIdentity | undefined;
 
-  /**
-   * @generated from field: string policy_hash = 4;
-   */
   policyHash: string;
 
-  /**
-   * @generated from field: string effect = 5;
-   */
   effect: string;
 
-  /**
-   * @generated from field: string evidence_ref = 6;
-   */
   evidenceRef: string;
 
-  /**
-   * @generated from field: bool obligations_satisfied = 7;
-   */
   obligationsSatisfied: boolean;
 };
 
-/**
- * Describes the message hobo.broker.yard.v1.HostingPolicyProof.
- * Use `create(HostingPolicyProofSchema)` to create a new message.
- */
 export const HostingPolicyProofSchema: GenMessage<HostingPolicyProof> = /*@__PURE__*/
   messageDesc(file_yard_placement, 20);
 

@@ -6,404 +6,161 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
-/**
- * Describes the file messaging_port.proto.
- */
 export const file_messaging_port: GenFile = /*@__PURE__*/
   fileDesc("ChRtZXNzYWdpbmdfcG9ydC5wcm90bxIMaG9iby5jb3JlLnYxIoYCCglUb3BpY1NwZWMSDAoEbmFtZRgBIAEoCRIRCgl0ZW5hbnRfaWQYAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCRIxCghkZWxpdmVyeRgEIAEoDjIfLmhvYm8uY29yZS52MS5EZWxpdmVyeUd1YXJhbnRlZRIZChFkZWFkX2xldHRlcl90b3BpYxgFIAEoCRISCgpzY2hlbWFfcmVmGAYgASgJEjMKBmxhYmVscxgHIAMoCzIjLmhvYm8uY29yZS52MS5Ub3BpY1NwZWMuTGFiZWxzRW50cnkaLQoLTGFiZWxzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASLHAQoQU3Vic2NyaXB0aW9uU3BlYxIMCgRuYW1lGAEgASgJEg0KBXRvcGljGAIgASgJEhYKDmNvbnN1bWVyX2dyb3VwGAMgASgJEhEKCXRlbmFudF9pZBgEIAEoCRIxCghkZWxpdmVyeRgFIAEoDjIfLmhvYm8uY29yZS52MS5EZWxpdmVyeUd1YXJhbnRlZRIdChVtYXhfZGVsaXZlcnlfYXR0ZW1wdHMYBiABKA0SGQoRZGVhZF9sZXR0ZXJfdG9waWMYByABKAkinwEKDU1lc3NhZ2luZ1NwZWMSCgoCaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEicKBnRvcGljcxgDIAMoCzIXLmhvYm8uY29yZS52MS5Ub3BpY1NwZWMSNQoNc3Vic2NyaXB0aW9ucxgEIAMoCzIeLmhvYm8uY29yZS52MS5TdWJzY3JpcHRpb25TcGVjEg8KB2JhY2tlbmQYBSABKAki7QEKDlB1Ymxpc2hSZXF1ZXN0Eg0KBXRvcGljGAEgASgJEgsKA2tleRgCIAEoCRIRCglib2R5X2pzb24YAyABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAQgASgJEhQKDGNvbnRlbnRfdHlwZRgFIAEoCRI6CgdoZWFkZXJzGAYgAygLMikuaG9iby5jb3JlLnYxLlB1Ymxpc2hSZXF1ZXN0LkhlYWRlcnNFbnRyeRIRCgl0ZW5hbnRfaWQYByABKAkaLgoMSGVhZGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEigwEKEFB1Ymxpc2hlZE1lc3NhZ2USEgoKbWVzc2FnZV9pZBgBIAEoCRINCgV0b3BpYxgCIAEoCRIVCg1wYXJ0aXRpb25fa2V5GAMgASgJEg4KBm9mZnNldBgEIAEoAxIUCgxwdWJsaXNoZWRfYXQYBSABKAkSDwoHZGVkdXBlZBgGIAEoCCKNAgoPQ29uc3VtZWRNZXNzYWdlEhIKCm1lc3NhZ2VfaWQYASABKAkSDQoFdG9waWMYAiABKAkSFgoOY29uc3VtZXJfZ3JvdXAYAyABKAkSEQoJYm9keV9qc29uGAQgASgJEhgKEGRlbGl2ZXJ5X2F0dGVtcHQYBSABKAUSEAoIbGVhc2VfaWQYBiABKAkSEwoLcmVjZWl2ZWRfYXQYByABKAkSOwoHaGVhZGVycxgIIAMoCzIqLmhvYm8uY29yZS52MS5Db25zdW1lZE1lc3NhZ2UuSGVhZGVyc0VudHJ5Gi4KDEhlYWRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIoIBChRNZXNzYWdpbmdFdmVudFJlY29yZBIMCgR0eXBlGAEgASgJEg0KBXRvcGljGAIgASgJEhIKCm1lc3NhZ2VfaWQYAyABKAkSFgoOY29uc3VtZXJfZ3JvdXAYBCABKAkSEQoJdGVuYW50X2lkGAUgASgJEg4KBnJlYXNvbhgGIAEoCSqnAQoRRGVsaXZlcnlHdWFyYW50ZWUSIgoeREVMSVZFUllfR1VBUkFOVEVFX1VOU1BFQ0lGSUVEEAASJAogREVMSVZFUllfR1VBUkFOVEVFX0FUX0xFQVNUX09OQ0UQARIjCh9ERUxJVkVSWV9HVUFSQU5URUVfRVhBQ1RMWV9PTkNFEAISIwofREVMSVZFUllfR1VBUkFOVEVFX0FUX01PU1RfT05DRRADKroBChJBY3RvclBsYWNlbWVudE1vZGUSJAogQUNUT1JfUExBQ0VNRU5UX01PREVfVU5TUEVDSUZJRUQQABIfChtBQ1RPUl9QTEFDRU1FTlRfTU9ERV9OQVRJVkUQARIdChlBQ1RPUl9QTEFDRU1FTlRfTU9ERV9EQVBSEAISHgoaQUNUT1JfUExBQ0VNRU5UX01PREVfUklWRVQQAxIeChpBQ1RPUl9QTEFDRU1FTlRfTU9ERV9DRUxMRBAEYgZwcm90bzM");
 
-/**
- * @generated from message hobo.core.v1.TopicSpec
- */
 export type TopicSpec = Message<"hobo.core.v1.TopicSpec"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
   name: string;
 
-  /**
-   * @generated from field: string tenant_id = 2;
-   */
   tenantId: string;
 
-  /**
-   * @generated from field: string project_id = 3;
-   */
   projectId: string;
 
-  /**
-   * @generated from field: hobo.core.v1.DeliveryGuarantee delivery = 4;
-   */
   delivery: DeliveryGuarantee;
 
-  /**
-   * @generated from field: string dead_letter_topic = 5;
-   */
   deadLetterTopic: string;
 
-  /**
-   * @generated from field: string schema_ref = 6;
-   */
   schemaRef: string;
 
-  /**
-   * @generated from field: map<string, string> labels = 7;
-   */
   labels: { [key: string]: string };
 };
 
-/**
- * Describes the message hobo.core.v1.TopicSpec.
- * Use `create(TopicSpecSchema)` to create a new message.
- */
 export const TopicSpecSchema: GenMessage<TopicSpec> = /*@__PURE__*/
   messageDesc(file_messaging_port, 0);
 
-/**
- * @generated from message hobo.core.v1.SubscriptionSpec
- */
 export type SubscriptionSpec = Message<"hobo.core.v1.SubscriptionSpec"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
   name: string;
 
-  /**
-   * @generated from field: string topic = 2;
-   */
   topic: string;
 
-  /**
-   * @generated from field: string consumer_group = 3;
-   */
   consumerGroup: string;
 
-  /**
-   * @generated from field: string tenant_id = 4;
-   */
   tenantId: string;
 
-  /**
-   * @generated from field: hobo.core.v1.DeliveryGuarantee delivery = 5;
-   */
   delivery: DeliveryGuarantee;
 
-  /**
-   * @generated from field: uint32 max_delivery_attempts = 6;
-   */
   maxDeliveryAttempts: number;
 
-  /**
-   * @generated from field: string dead_letter_topic = 7;
-   */
   deadLetterTopic: string;
 };
 
-/**
- * Describes the message hobo.core.v1.SubscriptionSpec.
- * Use `create(SubscriptionSpecSchema)` to create a new message.
- */
 export const SubscriptionSpecSchema: GenMessage<SubscriptionSpec> = /*@__PURE__*/
   messageDesc(file_messaging_port, 1);
 
-/**
- * @generated from message hobo.core.v1.MessagingSpec
- */
 export type MessagingSpec = Message<"hobo.core.v1.MessagingSpec"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
   id: string;
 
-  /**
-   * @generated from field: string tenant_id = 2;
-   */
   tenantId: string;
 
-  /**
-   * @generated from field: repeated hobo.core.v1.TopicSpec topics = 3;
-   */
   topics: TopicSpec[];
 
-  /**
-   * @generated from field: repeated hobo.core.v1.SubscriptionSpec subscriptions = 4;
-   */
   subscriptions: SubscriptionSpec[];
 
-  /**
-   * "native-kafka" | "dapr-pubsub" | "local-memory" | ...
-   *
-   * @generated from field: string backend = 5;
-   */
   backend: string;
 };
 
-/**
- * Describes the message hobo.core.v1.MessagingSpec.
- * Use `create(MessagingSpecSchema)` to create a new message.
- */
 export const MessagingSpecSchema: GenMessage<MessagingSpec> = /*@__PURE__*/
   messageDesc(file_messaging_port, 2);
 
-/**
- * @generated from message hobo.core.v1.PublishRequest
- */
 export type PublishRequest = Message<"hobo.core.v1.PublishRequest"> & {
-  /**
-   * @generated from field: string topic = 1;
-   */
   topic: string;
 
-  /**
-   * @generated from field: string key = 2;
-   */
   key: string;
 
-  /**
-   * @generated from field: string body_json = 3;
-   */
   bodyJson: string;
 
-  /**
-   * @generated from field: string idempotency_key = 4;
-   */
   idempotencyKey: string;
 
-  /**
-   * @generated from field: string content_type = 5;
-   */
   contentType: string;
 
-  /**
-   * @generated from field: map<string, string> headers = 6;
-   */
   headers: { [key: string]: string };
 
-  /**
-   * @generated from field: string tenant_id = 7;
-   */
   tenantId: string;
 };
 
-/**
- * Describes the message hobo.core.v1.PublishRequest.
- * Use `create(PublishRequestSchema)` to create a new message.
- */
 export const PublishRequestSchema: GenMessage<PublishRequest> = /*@__PURE__*/
   messageDesc(file_messaging_port, 3);
 
-/**
- * @generated from message hobo.core.v1.PublishedMessage
- */
 export type PublishedMessage = Message<"hobo.core.v1.PublishedMessage"> & {
-  /**
-   * @generated from field: string message_id = 1;
-   */
   messageId: string;
 
-  /**
-   * @generated from field: string topic = 2;
-   */
   topic: string;
 
-  /**
-   * @generated from field: string partition_key = 3;
-   */
   partitionKey: string;
 
-  /**
-   * @generated from field: int64 offset = 4;
-   */
   offset: bigint;
 
-  /**
-   * @generated from field: string published_at = 5;
-   */
   publishedAt: string;
 
-  /**
-   * @generated from field: bool deduped = 6;
-   */
   deduped: boolean;
 };
 
-/**
- * Describes the message hobo.core.v1.PublishedMessage.
- * Use `create(PublishedMessageSchema)` to create a new message.
- */
 export const PublishedMessageSchema: GenMessage<PublishedMessage> = /*@__PURE__*/
   messageDesc(file_messaging_port, 4);
 
-/**
- * @generated from message hobo.core.v1.ConsumedMessage
- */
 export type ConsumedMessage = Message<"hobo.core.v1.ConsumedMessage"> & {
-  /**
-   * @generated from field: string message_id = 1;
-   */
   messageId: string;
 
-  /**
-   * @generated from field: string topic = 2;
-   */
   topic: string;
 
-  /**
-   * @generated from field: string consumer_group = 3;
-   */
   consumerGroup: string;
 
-  /**
-   * @generated from field: string body_json = 4;
-   */
   bodyJson: string;
 
-  /**
-   * @generated from field: int32 delivery_attempt = 5;
-   */
   deliveryAttempt: number;
 
-  /**
-   * @generated from field: string lease_id = 6;
-   */
   leaseId: string;
 
-  /**
-   * @generated from field: string received_at = 7;
-   */
   receivedAt: string;
 
-  /**
-   * @generated from field: map<string, string> headers = 8;
-   */
   headers: { [key: string]: string };
 };
 
-/**
- * Describes the message hobo.core.v1.ConsumedMessage.
- * Use `create(ConsumedMessageSchema)` to create a new message.
- */
 export const ConsumedMessageSchema: GenMessage<ConsumedMessage> = /*@__PURE__*/
   messageDesc(file_messaging_port, 5);
 
-/**
- * @generated from message hobo.core.v1.MessagingEventRecord
- */
 export type MessagingEventRecord = Message<"hobo.core.v1.MessagingEventRecord"> & {
-  /**
-   * @generated from field: string type = 1;
-   */
   type: string;
 
-  /**
-   * @generated from field: string topic = 2;
-   */
   topic: string;
 
-  /**
-   * @generated from field: string message_id = 3;
-   */
   messageId: string;
 
-  /**
-   * @generated from field: string consumer_group = 4;
-   */
   consumerGroup: string;
 
-  /**
-   * @generated from field: string tenant_id = 5;
-   */
   tenantId: string;
 
-  /**
-   * @generated from field: string reason = 6;
-   */
   reason: string;
 };
 
-/**
- * Describes the message hobo.core.v1.MessagingEventRecord.
- * Use `create(MessagingEventRecordSchema)` to create a new message.
- */
 export const MessagingEventRecordSchema: GenMessage<MessagingEventRecord> = /*@__PURE__*/
   messageDesc(file_messaging_port, 6);
 
-/**
- * @generated from enum hobo.core.v1.DeliveryGuarantee
- */
 export enum DeliveryGuarantee {
-  /**
-   * @generated from enum value: DELIVERY_GUARANTEE_UNSPECIFIED = 0;
-   */
   UNSPECIFIED = 0,
 
-  /**
-   * Portable default across all backends.
-   *
-   * @generated from enum value: DELIVERY_GUARANTEE_AT_LEAST_ONCE = 1;
-   */
   AT_LEAST_ONCE = 1,
 
-  /**
-   * Capability-gated: Kafka transactions / idempotent producers, etc.
-   *
-   * @generated from enum value: DELIVERY_GUARANTEE_EXACTLY_ONCE = 2;
-   */
   EXACTLY_ONCE = 2,
 
-  /**
-   * @generated from enum value: DELIVERY_GUARANTEE_AT_MOST_ONCE = 3;
-   */
   AT_MOST_ONCE = 3,
 }
 
-/**
- * Describes the enum hobo.core.v1.DeliveryGuarantee.
- */
 export const DeliveryGuaranteeSchema: GenEnum<DeliveryGuarantee> = /*@__PURE__*/
   enumDesc(file_messaging_port, 0);
 
-/**
- * @generated from enum hobo.core.v1.ActorPlacementMode
- */
 export enum ActorPlacementMode {
-  /**
-   * @generated from enum value: ACTOR_PLACEMENT_MODE_UNSPECIFIED = 0;
-   */
   UNSPECIFIED = 0,
 
-  /**
-   * Native lease + fence (runtime-local / in-process).
-   *
-   * @generated from enum value: ACTOR_PLACEMENT_MODE_NATIVE = 1;
-   */
   NATIVE = 1,
 
-  /**
-   * Dapr virtual actors + placement service.
-   *
-   * @generated from enum value: ACTOR_PLACEMENT_MODE_DAPR = 2;
-   */
   DAPR = 2,
 
-  /**
-   * Rivet actor resolver (local library or self-hosted engine).
-   *
-   * @generated from enum value: ACTOR_PLACEMENT_MODE_RIVET = 3;
-   */
   RIVET = 3,
 
-  /**
-   * Experimental Durable Objects dialect (celld). Not a WASM component host.
-   *
-   * @generated from enum value: ACTOR_PLACEMENT_MODE_CELLD = 4;
-   */
   CELLD = 4,
 }
 
-/**
- * Describes the enum hobo.core.v1.ActorPlacementMode.
- */
 export const ActorPlacementModeSchema: GenEnum<ActorPlacementMode> = /*@__PURE__*/
   enumDesc(file_messaging_port, 1);
 

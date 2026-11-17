@@ -13,8 +13,13 @@ import {
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, relative } from "node:path";
-import { ensureCueBinary, vetCueConstraints } from "./cue.js";
+import {
+	ensureCueBinary,
+	vetCueConstraints,
+	withTempDirectory,
+} from "./cue.js";
 import { discoverDataModelPackages, hydrateCueSchemas } from "./discover.js";
+import { conciseGeneratedTypeScript } from "./generated-typescript.js";
 import { isJsonNumber, type JsonObject } from "./json.js";
 import { resolveFromModule } from "./parse.js";
 import {
@@ -43,8 +48,7 @@ async function runCommand(
 				env,
 			},
 			(error, stdout, stderr) => {
-				// SAFETY: `if (error && (error as NodeJS.ErrnoException).code === "ENOENT") {` is required at this I/O or test boundary.
-				if (error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+				if (error?.code === "ENOENT") {
 					reject(new Error(`command not found: ${command}`));
 					return;
 				}
@@ -60,15 +64,6 @@ async function runCommand(
 }
 
 function resolveBufBin(repoRoot: string): string | undefined {
-	// Own devDependency first, then repo-root hoisting, then the frozen POC.
-	try {
-		const requireLocal = createRequire(import.meta.url);
-		const bufPackageJson = requireLocal.resolve("@bufbuild/buf/package.json");
-		const bufBin = join(dirname(bufPackageJson), "bin", "buf");
-		if (existsSync(bufBin)) return bufBin;
-	} catch {
-		// fall through
-	}
 	const candidates = [
 		join(repoRoot, "node_modules", "@bufbuild", "buf", "bin", "buf"),
 		join(
@@ -76,6 +71,14 @@ function resolveBufBin(repoRoot: string): string | undefined {
 			"src/draft/technical-proofs/s0-04-protobuf-cue-codegen/node_modules/@bufbuild/buf/bin/buf",
 		),
 	];
+	try {
+		const requireLocal = createRequire(import.meta.url);
+		const bufPackageJson = requireLocal.resolve("@bufbuild/buf/package.json");
+		const bufBin = join(dirname(bufPackageJson), "bin", "buf");
+		if (existsSync(bufBin)) return bufBin;
+	} catch {
+		return candidates.find((candidate) => existsSync(candidate));
+	}
 	return candidates.find((candidate) => existsSync(candidate));
 }
 
@@ -136,37 +139,43 @@ async function generatePackageProtos(
 	invocation: CodegenInvocation,
 	outputDir: string,
 ): Promise<void> {
-	await mkdir(outputDir, { recursive: true });
-	const buf = resolveBufCommand(invocation.repoRoot);
-	// Packages with cross-file ESM records may require explicit .js imports.
-	// The same template selection is used for generation and drift checking.
-	const localTemplate = join(pkg.dataModelsDir, "buf.gen.yaml");
-	const template = existsSync(localTemplate)
-		? localTemplate
-		: invocation.bufTemplate;
-	const result = await runCommand(
-		buf.command,
-		[
-			...buf.args,
-			"generate",
-			pkg.dataModelsDir,
-			"--template",
-			template,
-			"-o",
-			outputDir,
-		],
-		invocation.repoRoot,
-		pluginPathEnv(invocation.repoRoot),
-	);
-	if (result.code !== 0) {
-		const message = result.stderr || result.stdout;
-		const protoMatch = message.match(/([^\s:]+\.proto)/);
-		throw new Error(
-			protoMatch
-				? `protobuf parse failed in ${protoMatch[1]}: ${message}`
-				: message,
+	await withTempDirectory("hobo-codegen-output-", async (generated) => {
+		const buf = resolveBufCommand(invocation.repoRoot);
+		const localTemplate = join(pkg.dataModelsDir, "buf.gen.yaml");
+		const template = existsSync(localTemplate)
+			? localTemplate
+			: invocation.bufTemplate;
+		const result = await runCommand(
+			buf.command,
+			[
+				...buf.args,
+				"generate",
+				pkg.dataModelsDir,
+				"--template",
+				template,
+				"-o",
+				generated,
+			],
+			invocation.repoRoot,
+			pluginPathEnv(invocation.repoRoot),
 		);
-	}
+		if (result.code !== 0) {
+			const message = result.stderr || result.stdout;
+			const protoMatch = message.match(/([^\s:]+\.proto)/);
+			throw new Error(
+				protoMatch
+					? `protobuf parse failed in ${protoMatch[1]}: ${message}`
+					: message,
+			);
+		}
+		for (const file of await listFilesRecursive(generated)) {
+			if (!file.endsWith("_pb.ts")) continue;
+			const source = await readFile(file, "utf8");
+			await writeFile(file, conciseGeneratedTypeScript(source));
+		}
+		await mkdir(outputDir, { recursive: true });
+		await cp(generated, outputDir, { recursive: true, force: true });
+	});
 }
 
 async function _copyGeneratedTree(
