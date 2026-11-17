@@ -70,6 +70,76 @@ const plan = (
 	});
 
 describe("local signoff in the fleet decision", () => {
+	it("preserves runner preference and fallback execution across all observed tier states", async () => {
+		const states = ["available", "unavailable", "unknown"] as const;
+		const tiers = [
+			{ tier: "fleet", label: "hobo" },
+			{ tier: "overflow", label: "hobo-arc" },
+			{ tier: "local", label: "hobo-local-host" },
+			{ tier: "github", label: "ubuntu-24.04" },
+		] as const;
+		let cases = 0;
+		for (const fleet of states)
+			for (const arc of states)
+				for (const local of states)
+					for (const github of states)
+						for (const optedIn of [false, true]) {
+							const observations = [fleet, arc, local, github];
+							const jobs = observations.flatMap((state, index) => {
+								const label = tiers[index]?.label;
+								if (!label || state === "unknown") return [];
+								return [state === "available" ? picked(label) : waiting(label)];
+							});
+							const choice = await plan(queue(jobs), {
+								localSignoffEnabled: optedIn,
+								overflow: [
+									{ id: "ci:arc", runsOn: "hobo-arc", observable: true },
+								],
+							});
+							const firstAvailable = tiers.find(
+								(_, index) => observations[index] === "available",
+							);
+							if (firstAvailable) {
+								assert.deepEqual(choice, {
+									kind: "runner",
+									tier: firstAvailable.tier,
+									runner: firstAvailable.label,
+								});
+							} else if (observations.includes("unknown")) {
+								assert.deepEqual(choice, {
+									kind: "wait",
+									reason: "availability-unknown",
+								});
+							} else if (optedIn) {
+								assert.deepEqual(choice, { kind: "local-signoff" });
+							} else {
+								assert.deepEqual(choice, {
+									kind: "wait",
+									reason: "no-capacity",
+								});
+							}
+							const calls: string[] = [];
+							const status = await executeFleetVerification({
+								choice,
+								runLocal: async () => {
+									calls.push("run");
+									return 0;
+								},
+								signoffLocal: async () => {
+									calls.push("signoff");
+									return 0;
+								},
+							});
+							assert.equal(status, choice.kind === "wait" ? 1 : 0);
+							assert.deepEqual(
+								calls,
+								choice.kind === "local-signoff" ? ["run", "signoff"] : [],
+							);
+							cases += 1;
+						}
+		assert.equal(cases, 162);
+	});
+
 	it("keeps the existing order when fleet, local, or GitHub capacity is available", async () => {
 		const fleet = "hobo";
 		const local = "hobo-local-host";

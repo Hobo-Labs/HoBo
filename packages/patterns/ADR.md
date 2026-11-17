@@ -74,6 +74,7 @@ the catalog, and apply receipts carry `promotionRef: "caller-promotes"`.
 
 ## Amendment (2026-11-17: HoBo Code retirement)
 
-The Code commands and starter were retired from the feature branch with
-`@hobo/code`. The catalog, `hobo new`, library API and `caller-promotes`
-receipt remain.
+The Code commands were retired from the feature branch with `@hobo/code`.
+That branch retains the standalone OpenUI starter under `packages/patterns`;
+the starter is absent on `main`. The catalog, `hobo new`, library API and
+`caller-promotes` receipt remain on `main`.

@@ -222,8 +222,8 @@ Later syncs needed merge commits to preserve that ancestry; squashing lost the
 record and caused a later merge to delete the package.
 
 HoBo Code and its release workflow have since been retired from the feature
-branch as well. The preservation-only sync procedure is no longer needed; see
-the retirement amendment to [ADR-0139](../design/adr/03-data-plane.md#adr-0139).
+branch as well in [#2366](https://github.com/Hobo-Labs/HoBo/pull/2366). The
+preservation-only sync procedure is no longer needed.
 
 ## Related references
 

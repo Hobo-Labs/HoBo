@@ -12,9 +12,10 @@
  *
  * WHAT THIS DOES NOT EXECUTE. `runtime-local` does not execute real `.wasm`
  * component bytes today, so nothing here is the deployed artifact on the
- * deployed host — hence `simulated`, never `real`. Queue, topic, secret and data
- * resources expose local port implementations. Kv, bucket, auth and the
- * rest get only a handle and a binding locator: they are labelled `mocked`.
+ * deployed host — hence `simulated`, never `real`. Queue, topic, secret, data,
+ * schedule, kv, bucket and flag resources expose local port implementations.
+ * Auth and the rest get only a handle and a binding locator: they are labelled
+ * `mocked`.
  * `container` and `wasm-component` are labelled `camp-only`. Built-in
  * emulators contact no provider, broker no credentials and write no `.hobo/`
  * state. Caller-supplied factories run their own code.
@@ -32,12 +33,20 @@ import type { EngineBinding } from "@hobo/data-core";
 import type { SecretsPort } from "@hobo/identity";
 import { createLocalBindingResolver } from "@hobo/runtime-local";
 import {
+	type BucketEmulator,
+	createBucketEmulator,
 	createDataEmulator,
+	createFlagEmulator,
+	createKeyValueEmulator,
 	createQueueEmulator,
+	createScheduleEmulator,
 	createSecretEmulator,
 	createTopicEmulator,
 	type DataEmulator,
+	type FlagEmulator,
+	type KeyValuePort,
 	type QueueEmulator,
+	type ScheduleEmulator,
 	type ServiceEmulator,
 	type ServiceEmulatorFactories,
 } from "./../emulators.js";
@@ -62,6 +71,10 @@ export interface InProcessDeployment {
 	readonly topics: ReadonlyMap<string, ServiceEmulator<Messaging>>;
 	readonly secrets: ReadonlyMap<string, ServiceEmulator<SecretsPort>>;
 	readonly data: ReadonlyMap<string, DataEmulator>;
+	readonly schedules: ReadonlyMap<string, ScheduleEmulator>;
+	readonly kv: ReadonlyMap<string, ServiceEmulator<KeyValuePort>>;
+	readonly buckets: ReadonlyMap<string, BucketEmulator>;
+	readonly flags: ReadonlyMap<string, FlagEmulator>;
 }
 
 type FetchLikeHandler = (request: Request) => Response | Promise<Response>;
@@ -198,7 +211,19 @@ function validateFactories(value: unknown): void {
 			typeof value.secret !== "function") ||
 		("data" in value &&
 			value.data !== undefined &&
-			typeof value.data !== "function")
+			typeof value.data !== "function") ||
+		("schedule" in value &&
+			value.schedule !== undefined &&
+			typeof value.schedule !== "function") ||
+		("kv" in value &&
+			value.kv !== undefined &&
+			typeof value.kv !== "function") ||
+		("bucket" in value &&
+			value.bucket !== undefined &&
+			typeof value.bucket !== "function") ||
+		("flag" in value &&
+			value.flag !== undefined &&
+			typeof value.flag !== "function")
 	) {
 		throw new TestHarnessError(
 			"HARNESS_EMULATOR_INVALID",
@@ -211,7 +236,15 @@ function validateFactories(value: unknown): void {
 function validateEmulator(
 	value: unknown,
 	alias: string,
-	kind: "queue" | "topic" | "secret" | "data",
+	kind:
+		| "queue"
+		| "topic"
+		| "secret"
+		| "data"
+		| "schedule"
+		| "kv"
+		| "bucket"
+		| "flag",
 ): void {
 	const record =
 		typeof value === "object" && value !== null ? value : undefined;
@@ -245,7 +278,25 @@ function validateEmulator(
 					]
 				: kind === "secret"
 					? ["put", "access", "accessVersion", "listVersions"]
-					: ["close"];
+					: kind === "data"
+						? ["close"]
+						: kind === "schedule"
+							? ["every"]
+							: kind === "kv"
+								? ["get", "set", "delete", "exists"]
+								: kind === "bucket"
+									? ["get", "put", "delete"]
+									: [
+											"list",
+											"get",
+											"define",
+											"loadDefinitions",
+											"evaluateBoolean",
+											"evaluate",
+											"activateKillSwitch",
+											"clearKillSwitch",
+											"archive",
+										];
 	const datasets = portRecord?.datasets;
 	const records = portRecord?.records;
 	const hasMethods = (candidate: unknown, names: readonly string[]) =>
@@ -278,7 +329,14 @@ function validateEmulator(
 				portRecord.declaration === null ||
 				!hasMethods(datasets, ["ensureDataset", "describeDataset"]) ||
 				!hasMethods(records, ["write", "read"]))) ||
-		(kind === "queue" &&
+		(kind === "bucket" &&
+			service.inspector !== undefined &&
+			!hasMethods(service.inspector, ["readBody"])) ||
+		(kind === "flag" &&
+			(typeof portRecord.rulesetSeq !== "number" ||
+				(service.inspector !== undefined &&
+					!hasMethods(service.inspector, ["events"])))) ||
+		((kind === "queue" || kind === "schedule") &&
 			clock !== undefined &&
 			(clockRecord === undefined ||
 				["now", "nowMs", "sleep", "cron", "advance", "trace"].some(
@@ -314,6 +372,21 @@ export async function deployInProcess(
 	const topics = new Map<string, ServiceEmulator<Messaging>>();
 	const secrets = new Map<string, ServiceEmulator<SecretsPort>>();
 	const data = new Map<string, DataEmulator>();
+	const schedules = new Map<string, ScheduleEmulator>();
+	const kv = new Map<string, ServiceEmulator<KeyValuePort>>();
+	const buckets = new Map<string, BucketEmulator>();
+	const flags = new Map<string, FlagEmulator>();
+	const resources = {
+		servers,
+		queues,
+		topics,
+		secrets,
+		data,
+		schedules,
+		kv,
+		buckets,
+		flags,
+	};
 	const bindings: Record<string, Record<string, string>> = {};
 
 	try {
@@ -343,6 +416,30 @@ export async function deployInProcess(
 				const emulator = await (factories.data ?? createDataEmulator)(context);
 				data.set(alias, emulator);
 				validateEmulator(emulator, alias, "data");
+			} else if (node.kind === "schedule") {
+				const emulator = await (factories.schedule ?? createScheduleEmulator)(
+					context,
+				);
+				schedules.set(alias, emulator);
+				validateEmulator(emulator, alias, "schedule");
+			} else if (node.kind === "kv") {
+				const emulator = await (factories.kv ?? createKeyValueEmulator)(
+					context,
+				);
+				kv.set(alias, emulator);
+				validateEmulator(emulator, alias, "kv");
+			} else if (node.kind === "bucket") {
+				const emulator = await (factories.bucket ?? createBucketEmulator)(
+					context,
+				);
+				buckets.set(alias, emulator);
+				validateEmulator(emulator, alias, "bucket");
+			} else if (node.kind === "flag") {
+				const emulator = await (factories.flag ?? (() => createFlagEmulator()))(
+					context,
+				);
+				flags.set(alias, emulator);
+				validateEmulator(emulator, alias, "flag");
 			}
 			const handler =
 				isHttpServedKind(node.kind) && node.hasEntrypoint
@@ -361,6 +458,10 @@ export async function deployInProcess(
 				topics.get(alias)?.fidelity ??
 				secrets.get(alias)?.fidelity ??
 				data.get(alias)?.fidelity ??
+				schedules.get(alias)?.fidelity ??
+				kv.get(alias)?.fidelity ??
+				buckets.get(alias)?.fidelity ??
+				flags.get(alias)?.fidelity ??
 				inProcessFidelity(node.kind, endpoint !== undefined);
 			handles.set(
 				alias,
@@ -380,11 +481,7 @@ export async function deployInProcess(
 	} catch (cause) {
 		const cleanupErrors = await closeResources(
 			order.slice().reverse(),
-			servers,
-			queues,
-			topics,
-			secrets,
-			data,
+			resources,
 		);
 		if (cleanupErrors.length > 0) {
 			throw new AggregateError(
@@ -401,11 +498,7 @@ export async function deployInProcess(
 		handles,
 		bindings: Object.freeze(bindings),
 		resolver: createLocalBindingResolver(bindings),
-		servers,
-		queues,
-		topics,
-		secrets,
-		data,
+		...resources,
 	});
 }
 /* oxlint-enable anti-slop/no-unknown-parameters */
@@ -421,14 +514,7 @@ export async function destroyInProcess(
 	if (existing !== undefined) return existing;
 	const pending = (async () => {
 		const order = teardownOrder(deployment.topology);
-		const errors = await closeResources(
-			order,
-			deployment.servers,
-			deployment.queues,
-			deployment.topics,
-			deployment.secrets,
-			deployment.data,
-		);
+		const errors = await closeResources(order, deployment);
 		if (errors.length > 0)
 			throw new AggregateError(errors, "emulator teardown failed");
 		return order;
@@ -444,20 +530,42 @@ const teardownRuns = new WeakMap<
 
 async function closeResources(
 	order: readonly string[],
-	servers: ReadonlyMap<string, Server>,
-	queues: ReadonlyMap<string, QueueEmulator>,
-	topics: ReadonlyMap<string, ServiceEmulator<Messaging>>,
-	secrets: ReadonlyMap<string, ServiceEmulator<SecretsPort>>,
-	data: ReadonlyMap<string, DataEmulator>,
+	resources: Pick<
+		InProcessDeployment,
+		| "servers"
+		| "queues"
+		| "topics"
+		| "secrets"
+		| "data"
+		| "schedules"
+		| "kv"
+		| "buckets"
+		| "flags"
+	>,
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
+	const {
+		servers,
+		queues,
+		topics,
+		secrets,
+		data,
+		schedules,
+		kv,
+		buckets,
+		flags,
+	} = resources;
 	for (const alias of order) {
 		const server = servers.get(alias);
 		const emulator =
 			queues.get(alias) ??
 			topics.get(alias) ??
 			secrets.get(alias) ??
-			data.get(alias);
+			data.get(alias) ??
+			schedules.get(alias) ??
+			kv.get(alias) ??
+			buckets.get(alias) ??
+			flags.get(alias);
 		try {
 			if (server?.listening) {
 				await new Promise<void>((resolve, reject) => {

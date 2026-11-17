@@ -825,9 +825,7 @@ An audit of the implemented extension surface found twenty-one distinct mechanis
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-Decision 6 (the `hobo.code.harness-spec/v1` record in `packages/code/data-models/`) described the `feature/hobo-code` branch; `@hobo/code` was not part of `main`, so the harness-spec extension point was not in the `main` catalog.
-
-**Retirement (2026-11-17):** The Code harness-spec extension point was retired from the feature branch with `@hobo/code`.
+Decision 6 (the `hobo.code.harness-spec/v1` record in `packages/code/data-models/`) describes the `feature/hobo-code` branch; `@hobo/code` is not part of `main`, so the harness-spec extension point is not in the `main` catalog.
 
 ## ADR-0157
 **Yard bindings: the Yard is the binding authority — a capability→product mapping surface on the Yard, bindings-are-the-SDK across the membrane, and the seeded localhost Yard.**

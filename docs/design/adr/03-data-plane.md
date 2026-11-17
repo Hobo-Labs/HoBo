@@ -695,11 +695,7 @@ In-repo contract: `createHarnessV1` / `createHarnessAgent` (`packages/code/src/a
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-At the time, hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) was developed on `feature/hobo-code` and was not part of `main`. The sections above and references below described that branch, including its package, release workflow, image, isolation runbook, experience proof, Code events and OpenFeature keys. The first [branch sync](../../release/pipelines.md#syncing-main-into-featurehobo-code) preserved the package when it left `main`.
-
-### Amendment (2026-11-17: HoBo Code retirement)
-
-HoBo Code and its release workflow have also been retired from `feature/hobo-code`. The Code-specific decisions and references in this ADR are historical. The separate `hobo-codegen` and `ts-autocode` tools are not part of this retirement.
+hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed on the long-lived `feature/hobo-code` branch and is not part of `main`. The sections above, and the references below, describe that branch: the package, its release workflow and image, the isolation runbook and the experience proof exist there. So does its event family, the code.* events and the OpenFeature keys under `code.`: it is listed in `docs/design/event-families.md` on that branch only. `main` is merged into `feature/hobo-code` from time to time, as merge commits and never squashed, by the [sync procedure](../../release/pipelines.md#syncing-main-into-featurehobo-code). This ADR is amended again when hobo-code is released to `main` or dropped.
 
 ### References
 - Package: `packages/code` (`@hobo/code`)
@@ -745,9 +741,7 @@ The first ADR-0152 emit path overwrote files in topo order. That made "add a sec
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-The emission path in the `hobo-code` session (decisions 8 and 10: ScaffoldingAgent, `tryWorkspaceAction`, `templates/intents/*.json`) was on the `feature/hobo-code` branch, not `main`. The atom corpus itself stays in `packages/patterns` on `main`.
-
-**Retirement (2026-11-17):** The Code session emission path was retired with `@hobo/code`; the atom corpus remains in `packages/patterns`.
+The emission path in the `hobo-code` session (decisions 8 and 10: ScaffoldingAgent, `tryWorkspaceAction`, `templates/intents/*.json`) is on the `feature/hobo-code` branch, not `main`. The atom corpus itself stays in `packages/patterns` on `main`.
 
 ## ADR-0153
 **Canonical `@hobo/patterns` catalog, ontology-vector retrieval, explicit `template` verb.**
@@ -779,9 +773,7 @@ The emission path in the `hobo-code` session (decisions 8 and 10: ScaffoldingAge
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-The `hobo-code template` / `/template` route and the `hobo-code scaffold` adapter (decisions 3, 4 and the atom CLI in the consequences), and the OpenUI starter `starter.code.openui-astryx-bindle`, were on the `feature/hobo-code` branch, not `main`. On `main` the catalog is reached through `hobo new` and the `@hobo/patterns` library API, and apply receipts carry `promotionRef: "caller-promotes"`: promotion out of the isolation root is the caller's.
-
-**Retirement (2026-11-17):** The Code routes, adapter and starter were retired from the feature branch as well. The catalog and its `main` entry points remain.
+The `hobo-code template` / `/template` route and the `hobo-code scaffold` adapter (decisions 3, 4 and the atom CLI in the consequences), and the OpenUI starter `starter.code.openui-astryx-bindle`, are on the `feature/hobo-code` branch, not `main`. On `main` the catalog is reached through `hobo new` and the `@hobo/patterns` library API, and apply receipts carry `promotionRef: "caller-promotes"`: promotion out of the isolation root is the caller's.
 
 ## ADR-0154
 **Durable HoBo Code review aggregate.**
@@ -805,9 +797,7 @@ Git workbench snapshots are mutation surfaces. "Reviewed index" meant authorizin
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-The review aggregate was part of `@hobo/code` on the `feature/hobo-code` branch, not `main`.
-
-**Retirement (2026-11-17):** The Code review aggregate was retired with `@hobo/code`; this ADR records its historical design.
+The review aggregate is part of `@hobo/code`, which is developed on the `feature/hobo-code` branch and is not part of `main`. This ADR describes that branch.
 
 ## ADR-0160
 **`drizzle-kit` is the default relational schema-diff engine behind the migration port — deploy-owned generation, HoBo-gated apply.**

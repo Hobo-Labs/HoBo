@@ -13,14 +13,25 @@
  *    never silently becomes `in-process`.
  * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
  *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, `secret`, or
- *    `data`, or `untilReady` marks it asserted-against; if any is `mocked`, this run
+ *    `data`, `schedule`, `scheduleClock`, `kv`, `bucket`, `bucketInspector`,
+ *    `flag`, `flagInspector`, or `untilReady` marks it asserted-against;
+ *    if any is `mocked`, this run
  *    cannot claim prod-readiness and the report says so.
  */
 
-import type { Messaging, Queue, VirtualClock } from "@hobo/core";
+import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
-import type { SecretsPort } from "@hobo/identity";
-import type { QueueEmulator } from "./emulators.js";
+import type { FeatureFlagPort, SecretsPort } from "@hobo/identity";
+import type {
+	BlobStorePort,
+	BucketEmulator,
+	BucketInspector,
+	FlagEmulator,
+	FlagInspector,
+	KeyValuePort,
+	QueueEmulator,
+	ScheduleEmulator,
+} from "./emulators.js";
 import { TestHarnessError } from "./errors.js";
 import { emptyFidelityCounts } from "./fidelity.js";
 import {
@@ -150,6 +161,48 @@ function buildGraph(
 		}
 		return emulator;
 	}
+	function scheduleEmulator(alias: string): ScheduleEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.schedules.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no schedule emulator`,
+				"use the alias of a schedule resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
+	function bucketEmulator(alias: string): BucketEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.buckets.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no bucket emulator`,
+				"use the alias of a bucket resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
+	function flagEmulator(alias: string): FlagEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.flags.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no flag emulator`,
+				"use the alias of a flag resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
 	return Object.freeze({
 		stage,
 		lane,
@@ -229,6 +282,38 @@ function buildGraph(
 				);
 			}
 			return emulator.port;
+		},
+		schedule(alias: string): SchedulerPort {
+			return scheduleEmulator(alias).port;
+		},
+		scheduleClock(alias: string): VirtualClock | undefined {
+			return scheduleEmulator(alias).clock;
+		},
+		kv(alias: string): KeyValuePort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.kv.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no key-value emulator`,
+					"use the alias of a kv resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		bucket(alias: string): BlobStorePort {
+			return bucketEmulator(alias).port;
+		},
+		flag(alias: string): FeatureFlagPort {
+			return flagEmulator(alias).port;
+		},
+		flagInspector(alias: string): FlagInspector | undefined {
+			return flagEmulator(alias).inspector;
+		},
+		bucketInspector(alias: string): BucketInspector | undefined {
+			return bucketEmulator(alias).inspector;
 		},
 		fidelity(): FidelityReport {
 			return buildFidelityReport(handles, asserted);
