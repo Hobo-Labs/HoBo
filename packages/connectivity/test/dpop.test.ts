@@ -1,22 +1,3 @@
-/**
- * DPoP (RFC 9449) sender-constrains an access token: the bearer must prove it
- * holds a private key, so a stolen token alone is useless. Every check in
- * `verifyDpopProof` is one of the walls that makes that true, and each has a
- * concrete theft scenario behind it:
- *
- *   - **`ath`** binds the proof to one access token. Without it, a proof
- *     captured from any request replays against every other token.
- *   - **`htm` / `htu`** bind it to one method and URL. Without them, a proof
- *     for a harmless `GET /status` is replayed against `DELETE /accounts/1`.
- *   - **`iat` skew** bounds how long a captured proof stays usable.
- *   - **`jti`** plus the replay cache stops the *same* proof being used twice
- *     inside that window.
- *   - **`typ` / `alg` / `jwk` shape** stop the proof choosing its own
- *     verification rules, which is how the JWT algorithm-confusion family works.
- *
- * A wall that stops firing looks exactly like one that never had to, so each is
- * driven with a proof crafted to get past it.
- */
 import { createHash, sign } from "node:crypto";
 
 import { describe, expect, test } from "vitest";
@@ -30,6 +11,7 @@ import {
 	mintDpopProof,
 	verifyDpopProof,
 } from "../src/crypto/dpop.js";
+import { type JsonValue, parseJsonObject } from "../src/json.js";
 
 const HTM = "POST";
 const HTU = "https://api.example.test/v1/deploy";
@@ -62,7 +44,7 @@ function verify(
 	});
 }
 
-function messageOf(fn: () => unknown): string {
+function messageOf<T>(fn: () => T): string {
 	try {
 		fn();
 	} catch (error) {
@@ -71,17 +53,20 @@ function messageOf(fn: () => unknown): string {
 	return "<did not throw>";
 }
 
-/** Re-encode a proof with a rewritten header or payload, keeping the signature. */
 function tamper(
 	original: string,
 	edit: {
-		header?: (h: Record<string, unknown>) => Record<string, unknown>;
-		payload?: (p: Record<string, unknown>) => Record<string, unknown>;
+		header?: (
+			h: Record<string, JsonValue | undefined>,
+		) => Record<string, JsonValue | undefined>;
+		payload?: (
+			p: Record<string, JsonValue | undefined>,
+		) => Record<string, JsonValue | undefined>;
 	},
 ): string {
 	const [h, p, s] = original.split(".") as [string, string, string];
-	const header = JSON.parse(Buffer.from(h, "base64url").toString("utf8"));
-	const payload = JSON.parse(Buffer.from(p, "base64url").toString("utf8"));
+	const header = parseJsonObject(Buffer.from(h, "base64url").toString("utf8"));
+	const payload = parseJsonObject(Buffer.from(p, "base64url").toString("utf8"));
 	const nextHeader = edit.header ? edit.header(header) : header;
 	const nextPayload = edit.payload ? edit.payload(payload) : payload;
 	return [
@@ -102,8 +87,6 @@ describe("a well-formed proof", () => {
 	});
 
 	test("the returned jwk is the public key the proof carried", () => {
-		// A server binds the access token to this key on first use, so it has to
-		// be the key that actually signed rather than one supplied alongside.
 		const verified = verify();
 		expect(verified.jwk.kty).toBe("EC");
 		expect(verified.jwk.crv).toBe("P-256");
@@ -112,8 +95,6 @@ describe("a well-formed proof", () => {
 	});
 
 	test("every proof carries a fresh jti", () => {
-		// The replay cache keys on this; a repeated jti would make two distinct
-		// requests indistinguishable and the second would be refused.
 		const ids = new Set(
 			Array.from(
 				{ length: 20 },
@@ -131,8 +112,6 @@ describe("a well-formed proof", () => {
 	});
 
 	test("the method is normalised to upper case on both sides", () => {
-		// `post` and `POST` are the same request; a case-sensitive comparison
-		// would reject a proof minted by a client that lower-cases its verbs.
 		expect(() =>
 			verifyDpopProof({
 				proof: proof({ htm: "post" }),
@@ -159,8 +138,6 @@ describe("a well-formed proof", () => {
 
 describe("access-token binding (ath)", () => {
 	test("a proof minted for one token does not verify against another", () => {
-		// The core sender-constraint. Without `ath`, a proof captured from any
-		// request would authorise every other token the attacker holds.
 		expect(
 			messageOf(() =>
 				verifyDpopProof({
@@ -175,8 +152,6 @@ describe("access-token binding (ath)", () => {
 	});
 
 	test("a proof with no ath at all is refused", () => {
-		// Absent must not read as "unbound and therefore fine" — that would let
-		// a stripped-down proof match any token.
 		expect(
 			messageOf(() =>
 				verify({
@@ -192,7 +167,6 @@ describe("access-token binding (ath)", () => {
 	});
 
 	test("the hash is over the token bytes, not a truncation", () => {
-		// Two tokens sharing a prefix must not share an ath.
 		expect(accessTokenHash("token-aaaa")).not.toBe(
 			accessTokenHash("token-aaab"),
 		);
@@ -200,16 +174,12 @@ describe("access-token binding (ath)", () => {
 	});
 
 	test("the hash is base64url with no padding", () => {
-		// It travels in a JWT claim; `+`, `/` or `=` would need re-encoding and
-		// would not compare equal across implementations.
 		expect(accessTokenHash(TOKEN)).toMatch(/^[A-Za-z0-9_-]+$/);
 	});
 });
 
 describe("method and URL binding (htm/htu)", () => {
 	test("a proof for one method does not verify for another", () => {
-		// The replay that matters: a proof for `GET /status` reused on
-		// `DELETE /accounts/1`.
 		expect(
 			messageOf(() =>
 				verifyDpopProof({
@@ -238,9 +208,6 @@ describe("method and URL binding (htm/htu)", () => {
 	});
 
 	test("a proof with no htu is refused", () => {
-		// The comment in the source calls this out: `payload.htu ?? ""` used to
-		// let an absent htu pass whenever the expected URL normalised to the
-		// empty string. Requiring presence is what closes it.
 		expect(
 			messageOf(() =>
 				verify({
@@ -256,8 +223,6 @@ describe("method and URL binding (htm/htu)", () => {
 	});
 
 	test("a fragment does not change the URL identity", () => {
-		// Fragments are never sent to a server, so a proof that included one must
-		// still match the request that arrives without it.
 		expect(() =>
 			verifyDpopProof({
 				proof: proof({ htu: `${HTU}#section` }),
@@ -270,8 +235,6 @@ describe("method and URL binding (htm/htu)", () => {
 	});
 
 	test("a default port does not change the URL identity", () => {
-		// `https://host/x` and `https://host:443/x` are the same origin; treating
-		// them as different would break clients that spell the port explicitly.
 		expect(() =>
 			verifyDpopProof({
 				proof: proof({ htu: "https://api.example.test:443/v1/deploy" }),
@@ -284,7 +247,6 @@ describe("method and URL binding (htm/htu)", () => {
 	});
 
 	test("a non-default port does change the URL identity", () => {
-		// A different port is a different service, and must not be conflated.
 		expect(
 			messageOf(() =>
 				verifyDpopProof({
@@ -311,8 +273,6 @@ describe("method and URL binding (htm/htu)", () => {
 	});
 
 	test("the query string is part of the URL identity", () => {
-		// Query parameters carry real arguments — `?force=true` is a different
-		// request from the same path without it.
 		expect(
 			messageOf(() =>
 				verifyDpopProof({
@@ -327,9 +287,6 @@ describe("method and URL binding (htm/htu)", () => {
 	});
 
 	test("an unparseable URL falls back to a literal comparison", () => {
-		// `normalizeHtu` catches and returns the input unchanged, so a
-		// non-absolute URL still compares — equal to itself, unequal to others,
-		// rather than throwing during verification.
 		expect(() =>
 			verifyDpopProof({
 				proof: proof({ htu: "not a url" }),
@@ -355,13 +312,10 @@ describe("method and URL binding (htm/htu)", () => {
 
 describe("freshness (iat) and replay (jti)", () => {
 	test("a proof from too far in the past is refused", () => {
-		// The skew window bounds how long a captured proof stays usable.
 		expect(messageOf(() => verify({ now: NOW + 400 }))).toContain("skew");
 	});
 
 	test("a proof from too far in the future is refused", () => {
-		// Symmetric on purpose: a post-dated proof would otherwise be usable for
-		// twice the window.
 		expect(messageOf(() => verify({ now: NOW - 400 }))).toContain("skew");
 	});
 
@@ -388,8 +342,6 @@ describe("freshness (iat) and replay (jti)", () => {
 	});
 
 	test("a proof with no jti is refused", () => {
-		// Without one the replay cache has nothing to key on, so the proof would
-		// be reusable for the whole skew window.
 		expect(
 			messageOf(() =>
 				verify({
@@ -415,7 +367,6 @@ describe("freshness (iat) and replay (jti)", () => {
 	});
 
 	test("replaying the same proof is refused when a cache is supplied", () => {
-		// The wall that makes a captured proof single-use.
 		const jtiCache = createDpopJtiCache({ now: () => NOW });
 		const p = proof();
 		expect(() =>
@@ -460,10 +411,6 @@ describe("freshness (iat) and replay (jti)", () => {
 	});
 
 	test("without a cache a replay is not detected", () => {
-		// Worth pinning as a fact about the API: replay defence is opt-in, and a
-		// server that omits the cache has no protection. The doc comment says the
-		// cache is "required for server-side verification" — this is what that
-		// requirement is guarding.
 		const p = proof();
 		expect(() => verify({ proof: p })).not.toThrow();
 		expect(() => verify({ proof: p })).not.toThrow();
@@ -472,9 +419,6 @@ describe("freshness (iat) and replay (jti)", () => {
 
 describe("the jti replay cache", () => {
 	test("an entry expires after its TTL and the jti becomes usable again", () => {
-		// Entries cannot be kept forever; the TTL is what bounds the cache, and
-		// after the skew window has passed the proof would be rejected on `iat`
-		// anyway.
 		let clock = NOW;
 		const cache = createDpopJtiCache({ ttlSeconds: 100, now: () => clock });
 		cache.assertFresh("jti-1", NOW);
@@ -486,7 +430,6 @@ describe("the jti replay cache", () => {
 	});
 
 	test("expired entries are swept rather than accumulating", () => {
-		// An unbounded cache is a memory leak on a busy endpoint.
 		let clock = NOW;
 		const cache = createDpopJtiCache({ ttlSeconds: 10, now: () => clock });
 		for (let i = 0; i < 50; i++) cache.assertFresh(`jti-${i}`, clock);
@@ -497,8 +440,6 @@ describe("the jti replay cache", () => {
 	});
 
 	test("the expiry is measured from the later of iat and now", () => {
-		// A proof post-dated inside the skew window must stay blocked for its
-		// full TTL, not expire early because its iat was in the past.
 		let clock = NOW;
 		const cache = createDpopJtiCache({ ttlSeconds: 100, now: () => clock });
 		cache.assertFresh("jti-1", NOW + 50);
@@ -523,8 +464,6 @@ describe("header integrity", () => {
 	});
 
 	test("a wrong typ is refused", () => {
-		// `typ: dpop+jwt` is what stops an ordinary access token or ID token
-		// being presented as a proof.
 		expect(
 			messageOf(() =>
 				verify({
@@ -535,8 +474,6 @@ describe("header integrity", () => {
 	});
 
 	test("an alg other than ES256 is refused", () => {
-		// The algorithm-confusion wall: the proof does not get to nominate a
-		// symmetric algorithm and be verified against a shared secret.
 		for (const alg of ["HS256", "none", "RS256"]) {
 			expect(
 				messageOf(() =>
@@ -549,8 +486,6 @@ describe("header integrity", () => {
 	});
 
 	test("a header with no embedded jwk is refused", () => {
-		// The key is what the token gets bound to; without one there is nothing
-		// to constrain the sender to.
 		expect(
 			messageOf(() =>
 				verify({
@@ -583,9 +518,6 @@ describe("header integrity", () => {
 	});
 
 	test("substituting an attacker's key invalidates the signature", () => {
-		// The most direct forgery attempt: swap the embedded public key for one
-		// the attacker holds. The signature was made over the original header, so
-		// rewriting it must break verification.
 		const attacker = generateDpopKeyPair("kid-evil");
 		expect(
 			messageOf(() =>
@@ -607,9 +539,6 @@ describe("header integrity", () => {
 	});
 
 	test("a tampered payload invalidates the signature", () => {
-		// Reaching this at all means every claim check passed, so the signature
-		// is the last wall — here the attacker keeps a valid ath and moves the
-		// jti to dodge the replay cache.
 		expect(
 			messageOf(() =>
 				verify({
@@ -630,18 +559,11 @@ describe("header integrity", () => {
 			accessToken: TOKEN,
 			now: NOW,
 		});
-		// It verifies on its own terms — it is a genuine proof for that key...
 		expect(() => verify({ proof: theirs })).not.toThrow();
-		// ...but the bound key differs, which is what a server compares against
-		// the key it pinned to the access token.
 		expect(verify({ proof: theirs }).jwk.x).not.toBe(keys.jwkPublic.x);
 	});
 
 	test("removing the kid from a signed header breaks the signature", () => {
-		// The header is part of the signed input, so *any* rewrite of it — even
-		// dropping a field the verifier would happily default — invalidates the
-		// proof. Worth stating, because it is why the derivation branch below
-		// cannot be reached by editing an existing proof.
 		expect(
 			messageOf(() =>
 				verify({
@@ -657,12 +579,6 @@ describe("header integrity", () => {
 	});
 
 	test("a kid absent from a validly-signed header is derived from the key", () => {
-		// A client that omits `kid` still produces a usable proof: the verifier
-		// derives one from the key material so the server has something stable to
-		// compare against the key it pinned to the access token.
-		//
-		// This has to be signed from scratch rather than edited, since the header
-		// is covered by the signature (see the test above).
 		const header = {
 			typ: "dpop+jwt",
 			alg: "ES256",
@@ -691,8 +607,6 @@ describe("header integrity", () => {
 
 		const verified = verify({ proof: `${signingInput}.${signature}` });
 		expect(verified.jwk.kid).toBe(verified.kid);
-		// The identifier is a fingerprint of the key's coordinates, so two
-		// verifiers seeing the same key agree on it without coordination.
 		expect(verified.kid).toBe(
 			createHash("sha256")
 				.update(`${keys.jwkPublic.x}.${keys.jwkPublic.y}`)
@@ -728,8 +642,6 @@ describe("key handling", () => {
 	});
 
 	test("an exported private jwk round-trips and can sign", () => {
-		// Clients persist the key between requests; a round trip that lost the
-		// private component would silently produce unverifiable proofs.
 		const pair = generateDpopKeyPair("kid-rt");
 		const reimported = importDpopKeyPair({
 			privateJwk: exportDpopPrivateJwk(pair),
@@ -777,8 +689,6 @@ describe("key handling", () => {
 	});
 
 	test("importing a non-EC key is refused", () => {
-		// An RSA key would produce a proof no verifier accepts; failing at import
-		// puts the error where the mistake is.
 		expect(() =>
 			importDpopKeyPair({
 				privateJwk: { kty: "oct", k: "c2VjcmV0" },

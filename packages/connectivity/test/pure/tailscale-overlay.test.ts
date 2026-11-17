@@ -1,36 +1,22 @@
-/**
- * The Tailscale overlay adapter, driven through an injected CLI runner.
- *
- * This adapter's defining property is that **it degrades rather than fails**.
- * A developer without `tailscale` installed, or not logged in, still gets a
- * working local environment — the join reports `ready: false` with a note
- * saying what to install, instead of throwing. That is the difference between
- * "HoBo needs a mesh VPN to run" and "HoBo uses one when you have one", so the
- * degraded paths are tested as carefully as the happy ones.
- *
- * Three refusals are worth stating, because each guards something a wrong
- * answer would expose publicly:
- *
- * **A Funnel target must be a local HTTP(S) endpoint.** Funnel publishes to the
- * public internet. Pointing it at an arbitrary host would proxy something the
- * operator did not intend to expose, so anything that is not loopback on the
- * expected port is refused before the CLI is invoked at all.
- *
- * **A `hostnameHint` must end in `.ts.net`.** The hint exists for when the CLI
- * cannot report the gateway, but accepting a raw IP or an arbitrary domain
- * would have HoBo announce a public URL it does not control and cannot serve.
- *
- * **`enabled` and `confirmed` come from the CLI, never from the hint.** A
- * gateway hostname derived from a hint is a *guess* at the address; it is not
- * evidence that Funnel is running. Reporting `enabled: true` on a hint alone
- * would tell an operator their endpoint is public when nothing is listening.
- */
+import type {
+	FunnelPublishOptions,
+	MagicDnsSplitConfig,
+	MeteringBus,
+	OverlayJoinOptions,
+	UsageEvent,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
 	createTailscaleOverlay,
 	parseTenantTag,
 } from "../../src/overlay/tailscale.js";
+
+type FixtureOptions = {
+	metering?: Pick<MeteringBus, "emit">;
+	policy?: { evaluate: () => Promise<{ effect: string; reasons: string[] }> };
+	defaultMagicDnsDomains?: readonly string[];
+};
 
 type RunResult = { ok: boolean; stdout: string; stderr: string };
 
@@ -53,7 +39,6 @@ const STATUS_JSON = JSON.stringify({
 	},
 });
 
-/** A runner answering from a table keyed by the first argument. */
 function runner(table: Record<string, RunResult | undefined> = {}) {
 	const calls: string[][] = [];
 	const run = (args: readonly string[]): RunResult => {
@@ -74,7 +59,7 @@ function runner(table: Record<string, RunResult | undefined> = {}) {
 
 const overlay = (
 	table: Record<string, RunResult | undefined> = {},
-	options: Record<string, unknown> = {},
+	options: FixtureOptions = {},
 ) => {
 	const r = runner({ "status --json": ok(STATUS_JSON), ...table });
 	return {
@@ -83,7 +68,7 @@ const overlay = (
 	};
 };
 
-const join = (overrides: Record<string, unknown> = {}) =>
+const join = (overrides: Partial<OverlayJoinOptions> = {}) =>
 	({
 		tenantId: "t1",
 		hostname: "laptop-1",
@@ -102,8 +87,6 @@ describe("tenant tags", () => {
 	});
 
 	it("maps the laptop role to Tailscale's dev-laptop ACL tag", () => {
-		// The ACL is written against `tag:dev-laptop`; emitting `tag:laptop`
-		// would silently match no policy at all.
 		const tags = overlay().net.tenantTags({
 			tenantId: "t1" as never,
 			role: "laptop",
@@ -121,7 +104,6 @@ describe("tenant tags", () => {
 	});
 
 	it("adds the optional dimensions only when given", () => {
-		// An empty `env:` tag would match an ACL rule for the empty environment.
 		const bare = overlay().net.tenantTags({
 			tenantId: "t1" as never,
 			role: "server",
@@ -162,7 +144,6 @@ describe("joining", () => {
 	});
 
 	it("tags the node with its tenant even when the caller forgot", async () => {
-		// Every ACL rule is tenant-scoped; an untagged node matches none of them.
 		const result = await overlay().net.join(join());
 		expect(result.identity.tags).toContain("tenant:t1");
 	});
@@ -175,15 +156,12 @@ describe("joining", () => {
 	});
 
 	it("degrades rather than throwing when the CLI is absent", async () => {
-		// The difference between "HoBo needs a mesh VPN" and "HoBo uses one when
-		// you have one".
 		const result = await overlay({ "status --json": fail() }).net.join(join());
 		expect(result.ready).toBe(false);
 		expect(result.identity.nodeId).toMatch(/^stub:/u);
 	});
 
 	it("says what to install when it degrades", async () => {
-		// A degraded mode nobody can escape is just a broken mode.
 		const result = await overlay({ "status --json": fail() }).net.join(join());
 		expect(result.notes.join(" ")).toMatch(/install tailscale/u);
 	});
@@ -201,8 +179,6 @@ describe("joining", () => {
 	});
 
 	it("advertises the node's tags on enrolment", async () => {
-		// Tags applied after the fact require a re-auth; passing them at `up` is
-		// what makes the ACL apply from the first packet.
 		const o = overlay();
 		await o.net.join(join({ authKey: "tskey-x" }));
 		const up = o.calls.find((c) => c[0] === "up");
@@ -210,8 +186,6 @@ describe("joining", () => {
 	});
 
 	it("assumes an existing session when no auth key is given", async () => {
-		// Re-running `up` without a key would prompt interactively and hang a
-		// non-interactive deploy.
 		const o = overlay();
 		const result = await o.net.join(join());
 		expect(o.ran("up")).toBe(false);
@@ -219,8 +193,6 @@ describe("joining", () => {
 	});
 
 	it("still reports ready when enrolment fails", async () => {
-		// The node may already be up; the note carries the failure rather than
-		// the whole join collapsing on it.
 		const o = overlay({ up: fail("authkey expired") });
 		const result = await o.net.join(join({ authKey: "tskey-x" }));
 		expect(result.ready).toBe(true);
@@ -234,7 +206,6 @@ describe("joining", () => {
 	});
 
 	it("notes a failure to accept MagicDNS rather than hiding it", async () => {
-		// Without it, every `*.hobo.internal` lookup silently misses.
 		const result = await overlay({ set: fail() }).net.join(join());
 		expect(result.notes.join(" ")).toMatch(/accept-dns failed/u);
 	});
@@ -271,25 +242,33 @@ describe("joining", () => {
 	});
 
 	it("meters the join", async () => {
-		const events: unknown[] = [];
+		const events: UsageEvent[] = [];
 		await overlay(
 			{},
-			{ metering: { emit: async (e: unknown) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		).net.join(join());
 		expect(events).toHaveLength(1);
 	});
 
 	it("meters a degraded join as not ready", async () => {
-		// Billing and fleet views both read this; recording a degraded join as
-		// ready would overstate the mesh.
-		const events: Record<string, unknown>[] = [];
+		const events: UsageEvent[] = [];
 		await overlay(
 			{ "status --json": fail() },
-			{ metering: { emit: async (e: never) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		).net.join(join());
-		expect(
-			(events[0]?.metadata as Record<string, unknown> | undefined)?.ready,
-		).toBe(false);
+		expect(events[0]?.metadata?.ready).toBe(false);
 	});
 });
 
@@ -300,8 +279,6 @@ describe("policy", () => {
 	const allowing = { evaluate: async () => ({ effect: "allow", reasons: [] }) };
 
 	it("refuses a denied join before touching the CLI", async () => {
-		// The CLI call is the side effect; asking policy first is what makes the
-		// denial mean anything.
 		const o = overlay({}, { policy: denying });
 		const result = await o.net.join(join());
 		expect(result.ready).toBe(false);
@@ -345,10 +322,16 @@ describe("status and leave", () => {
 	});
 
 	it("meters a leave", async () => {
-		const events: Record<string, unknown>[] = [];
+		const events: UsageEvent[] = [];
 		const o = overlay(
 			{},
-			{ metering: { emit: async (e: never) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		);
 		await o.net.join(join());
 		await o.net.leave();
@@ -356,19 +339,23 @@ describe("status and leave", () => {
 	});
 
 	it("does not meter a leave that never joined", async () => {
-		// An unmatched leave event would show a node departing a mesh it never
-		// entered.
-		const events: unknown[] = [];
+		const events: UsageEvent[] = [];
 		await overlay(
 			{},
-			{ metering: { emit: async (e: unknown) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		).net.leave();
 		expect(events).toEqual([]);
 	});
 });
 
 describe("MagicDNS split DNS", () => {
-	const config = (overrides: Record<string, unknown> = {}) =>
+	const config = (overrides: Partial<MagicDnsSplitConfig> = {}) =>
 		({
 			tenantId: "t1",
 			domains: [],
@@ -382,8 +369,6 @@ describe("MagicDNS split DNS", () => {
 	});
 
 	it("falls back to the default hobo zones", async () => {
-		// A caller that names no domain still wants hierarchical hobo names to
-		// resolve; an empty split-DNS map would route nothing.
 		const result = await overlay().net.configureMagicDns?.(config());
 		expect(result?.domains.length).toBeGreaterThan(0);
 	});
@@ -404,8 +389,6 @@ describe("MagicDNS split DNS", () => {
 	});
 
 	it("reports not-applied when nothing succeeded", async () => {
-		// Both the local accept and the control plane failed: claiming applied
-		// would have an operator debugging DNS that was never configured.
 		const result = await overlay({
 			set: fail(),
 			"dns --help": fail(),
@@ -414,8 +397,6 @@ describe("MagicDNS split DNS", () => {
 	});
 
 	it("says the control plane was skipped when no API key is set", async () => {
-		// Local acceptance only configures this node; the note is what tells an
-		// operator the tailnet itself was not updated.
 		const previous = process.env.TS_API_KEY;
 		delete process.env.TS_API_KEY;
 		try {
@@ -429,8 +410,6 @@ describe("MagicDNS split DNS", () => {
 	});
 
 	it("skips the CLI dns helpers when the subcommand is unavailable", async () => {
-		// Older Tailscale builds have no `dns` subcommand; probing first is what
-		// keeps the notes free of spurious failures.
 		const o = overlay({ "dns --help": fail() });
 		await o.net.configureMagicDns?.(config({ domains: ["a.internal"] }));
 		expect(o.ran("dns set")).toBe(false);
@@ -448,17 +427,23 @@ describe("MagicDNS split DNS", () => {
 	});
 
 	it("meters the configuration", async () => {
-		const events: unknown[] = [];
+		const events: UsageEvent[] = [];
 		await overlay(
 			{},
-			{ metering: { emit: async (e: unknown) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		).net.configureMagicDns?.(config());
 		expect(events).toHaveLength(1);
 	});
 });
 
 describe("Funnel", () => {
-	const funnel = (overrides: Record<string, unknown> = {}) =>
+	const funnel = (overrides: Partial<FunnelPublishOptions> = {}) =>
 		({
 			tenantId: "t1",
 			backendUrl: "http://127.0.0.1:8080/",
@@ -473,15 +458,12 @@ describe("Funnel", () => {
 	});
 
 	it("runs Funnel in the background rather than blocking", async () => {
-		// A foreground funnel would hold the deploy open forever.
 		const o = overlay({ funnel: ok("https://x.ts.net") });
 		await o.net.publishFunnel?.(funnel());
 		expect(o.ran("funnel --bg")).toBe(true);
 	});
 
 	it("refuses a non-local backend without invoking the CLI", async () => {
-		// Funnel publishes to the public internet; pointing it at an arbitrary
-		// host would proxy something the operator never meant to expose.
 		const o = overlay();
 		const result = await o.net.publishFunnel?.(
 			funnel({ backendUrl: "http://example.com/" }),
@@ -506,8 +488,6 @@ describe("Funnel", () => {
 	});
 
 	it("refuses when the named local port does not match the backend", async () => {
-		// Publishing 8080 while the service listens on 3000 exposes whatever
-		// else happens to be on 8080.
 		const result = await overlay().net.publishFunnel?.(
 			funnel({ backendUrl: "http://127.0.0.1:8080/", localPort: 3000 }),
 		);
@@ -540,8 +520,6 @@ describe("Funnel", () => {
 	});
 
 	it("rejects a hostnameHint that is not a funnel host", async () => {
-		// Accepting a raw IP or arbitrary domain would have HoBo announce a
-		// public URL it does not control and cannot serve.
 		const result = await overlay({ funnel: fail() }).net.publishFunnel?.(
 			funnel({ hostnameHint: "203.0.113.7" }),
 		);
@@ -550,9 +528,6 @@ describe("Funnel", () => {
 	});
 
 	it("does not claim Funnel is enabled on a hint alone", async () => {
-		// The hint is a guess at the address, not evidence anything is
-		// listening. Reporting enabled would tell an operator their endpoint is
-		// public when it is not.
 		const result = await overlay({ funnel: fail() }).net.publishFunnel?.(
 			funnel({ hostnameHint: "laptop.tailnet.ts.net" }),
 		);
@@ -584,7 +559,6 @@ describe("Funnel", () => {
 	});
 
 	it("finds the gateway in stderr as well as stdout", async () => {
-		// Tailscale prints the URL to either depending on version.
 		const result = await overlay({
 			funnel: { ok: true, stdout: "", stderr: "https://from-stderr.ts.net" },
 		}).net.publishFunnel?.(funnel());
@@ -592,8 +566,6 @@ describe("Funnel", () => {
 	});
 
 	it("lowercases the gateway hostname", async () => {
-		// Hostnames are case-insensitive on the wire but compared as strings
-		// downstream.
 		const result = await overlay({
 			funnel: ok("https://LAPTOP.Tailnet.TS.NET"),
 		}).net.publishFunnel?.(funnel());
@@ -609,8 +581,6 @@ describe("Funnel", () => {
 	});
 
 	it("still returns a result when metering throws", async () => {
-		// A confirmed provider side effect remains authoritative: losing the
-		// result because the meter failed would hide a live public endpoint.
 		const result = await overlay(
 			{ funnel: ok("https://x.ts.net") },
 			{

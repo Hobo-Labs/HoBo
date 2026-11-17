@@ -1,39 +1,31 @@
-/**
- * The Netbird overlay adapter, driven through an injected management client.
- *
- * The property this adapter is built around is that **an accepted setup key is
- * not a joined peer**. Netbird's enrolment endpoint can validate a key and
- * return success before the peer actually appears in the network, so the
- * adapter refuses to report `ready` until it has a concrete peer identity — an
- * id or an overlay IP. If it reported ready on key acceptance alone, a deploy
- * would proceed to address a node that has no address yet, and the failure
- * would surface much later as an unreachable service.
- *
- * That is also why the fallback exists: when enrolment succeeds without
- * identity, the adapter *lists peers* to find the node by name before giving
- * up. Listing is the cheap way to convert "probably joined" into "joined, and
- * here is its address".
- *
- * The other rule worth stating is the one about Funnel. Netbird has no
- * configured public reverse-proxy seam in this build, so `publishFunnel`
- * **always reports `enabled: false`**, even when it can name a gateway. Naming
- * a hostname is not the same as publishing to it, and an adapter that conflated
- * the two would tell an operator their service is public when nothing is
- * routing to it. The honest answer is a gateway hostname plus an explicit "not
- * enabled".
- */
+import type {
+	FunnelPublishOptions,
+	MagicDnsSplitConfig,
+	MeteringBus,
+	OverlayJoinOptions,
+	UsageEvent,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import { createNetbirdOverlay } from "../../src/overlay/netbird.js";
 
+type FixtureOptions = {
+	metering?: Pick<MeteringBus, "emit">;
+	policy?: { evaluate: () => Promise<{ effect: string; reasons: string[] }> };
+	defaultMagicDnsDomains?: readonly string[];
+};
+
 type Peer = { id: string; name?: string; ip?: string; dnsLabel?: string };
 
-/** A management client with scriptable enrolment and peer listing. */
 function api(
 	overrides: {
-		enroll?: () => unknown;
-		peers?: () => unknown;
-		dns?: () => unknown;
+		enroll?: () => {
+			enrolled: boolean;
+			notes: string[];
+			peer?: Peer | undefined;
+		};
+		peers?: () => Peer[];
+		dns?: () => { name: string; domains: string[] };
 	} = {},
 ) {
 	const calls: string[] = [];
@@ -69,7 +61,7 @@ function api(
 
 const overlay = (
 	apiOverrides: Parameters<typeof api>[0] = {},
-	options: Record<string, unknown> = {},
+	options: FixtureOptions = {},
 ) => {
 	const a = api(apiOverrides);
 	return {
@@ -78,8 +70,7 @@ const overlay = (
 	};
 };
 
-/** An overlay with no management client configured at all. */
-const unconfigured = (options: Record<string, unknown> = {}) => {
+const unconfigured = (options: FixtureOptions = {}) => {
 	const previousUrl = process.env.NETBIRD_MANAGEMENT_URL;
 	const previousHobo = process.env.HOBO_NETBIRD_URL;
 	delete process.env.NETBIRD_MANAGEMENT_URL;
@@ -91,7 +82,7 @@ const unconfigured = (options: Record<string, unknown> = {}) => {
 	return net;
 };
 
-const join = (overrides: Record<string, unknown> = {}) =>
+const join = (overrides: Partial<OverlayJoinOptions> = {}) =>
 	({
 		tenantId: "t1",
 		hostname: "yard-1",
@@ -127,8 +118,6 @@ describe("tenant tags", () => {
 	});
 
 	it("does not borrow Tailscale's dev-laptop ACL spelling", () => {
-		// Netbird has its own tag vocabulary; emitting `tag:dev-laptop` here
-		// would be a tag no Netbird policy matches.
 		expect(
 			overlay().net.tenantTags({
 				tenantId: "t1" as never,
@@ -166,9 +155,6 @@ describe("joining", () => {
 	});
 
 	it("refuses to call an accepted key a joined peer", async () => {
-		// The rule the adapter is built around: enrolment can validate a key
-		// before the peer exists. Reporting ready here would have a deploy
-		// address a node that has no address.
 		const result = await overlay({
 			enroll: () => ({ enrolled: true, notes: [], peer: undefined }),
 		}).net.join(join());
@@ -183,8 +169,6 @@ describe("joining", () => {
 	});
 
 	it("lists peers to resolve an identity enrolment did not return", async () => {
-		// The cheap way to turn "probably joined" into "joined, and here is its
-		// address".
 		const o = overlay({
 			enroll: () => ({ enrolled: true, notes: [], peer: undefined }),
 			peers: () => [{ id: "peer-9", name: "yard-1", ip: "100.92.0.9" }],
@@ -204,7 +188,6 @@ describe("joining", () => {
 	});
 
 	it("does not list peers when enrolment already answered", async () => {
-		// A redundant round trip against the management API on every join.
 		const o = overlay();
 		await o.net.join(join());
 		expect(o.calls).not.toContain("listPeers");
@@ -219,8 +202,6 @@ describe("joining", () => {
 	});
 
 	it("survives a peer listing that throws", async () => {
-		// A management API that is up enough to enrol but not to list must not
-		// turn a partial success into an exception.
 		const result = await overlay({
 			enroll: () => ({ enrolled: true, notes: [], peer: undefined }),
 			peers: () => {
@@ -232,8 +213,6 @@ describe("joining", () => {
 	});
 
 	it("carries the client's own notes through", async () => {
-		// The client knows why enrolment went the way it did; paraphrasing would
-		// lose it.
 		const result = await overlay({
 			enroll: () => ({
 				enrolled: false,
@@ -245,8 +224,6 @@ describe("joining", () => {
 	});
 
 	it("synthesizes a node id when there is no peer at all", async () => {
-		// Something has to identify the node locally even when the mesh does
-		// not know it yet.
 		const result = await overlay({
 			enroll: () => ({ enrolled: false, notes: [], peer: undefined }),
 		}).net.join(join());
@@ -276,25 +253,33 @@ describe("joining", () => {
 	});
 
 	it("meters the join with its readiness", async () => {
-		const events: Record<string, unknown>[] = [];
+		const events: UsageEvent[] = [];
 		await overlay(
 			{},
-			{ metering: { emit: async (e: never) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		).net.join(join());
-		expect(
-			(events[0]?.metadata as Record<string, unknown> | undefined)?.ready,
-		).toBe(true);
+		expect(events[0]?.metadata?.ready).toBe(true);
 	});
 
 	it("meters an incomplete join as not ready", async () => {
-		const events: Record<string, unknown>[] = [];
+		const events: UsageEvent[] = [];
 		await overlay(
 			{ enroll: () => ({ enrolled: true, notes: [], peer: undefined }) },
-			{ metering: { emit: async (e: never) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		).net.join(join());
-		expect(
-			(events[0]?.metadata as Record<string, unknown> | undefined)?.ready,
-		).toBe(false);
+		expect(events[0]?.metadata?.ready).toBe(false);
 	});
 });
 
@@ -310,8 +295,6 @@ describe("status and leave", () => {
 	});
 
 	it("remembers an identity even from an incomplete join", async () => {
-		// The local node still exists; status returning null would make a
-		// partial join indistinguishable from no join.
 		const o = overlay({
 			enroll: () => ({ enrolled: false, notes: [], peer: undefined }),
 		});
@@ -327,17 +310,23 @@ describe("status and leave", () => {
 	});
 
 	it("does not meter a leave that never joined", async () => {
-		const events: unknown[] = [];
+		const events: UsageEvent[] = [];
 		await overlay(
 			{},
-			{ metering: { emit: async (e: unknown) => events.push(e) } },
+			{
+				metering: {
+					emit: async (event: UsageEvent) => {
+						events.push(event);
+					},
+				},
+			},
 		).net.leave();
 		expect(events).toEqual([]);
 	});
 });
 
 describe("DNS nameserver groups", () => {
-	const config = (overrides: Record<string, unknown> = {}) =>
+	const config = (overrides: Partial<MagicDnsSplitConfig> = {}) =>
 		({
 			tenantId: "t1",
 			domains: ["hobo.internal"],
@@ -365,8 +354,6 @@ describe("DNS nameserver groups", () => {
 	});
 
 	it("reports not-applied when the upsert fails", async () => {
-		// Claiming applied would have an operator debugging resolution that was
-		// never configured.
 		const result = await overlay({
 			dns: () => {
 				throw new Error("403 forbidden");
@@ -383,16 +370,20 @@ describe("DNS nameserver groups", () => {
 	});
 
 	it("meters the attempt either way", async () => {
-		const events: unknown[] = [];
+		const events: UsageEvent[] = [];
 		await unconfigured({
-			metering: { emit: async (e: unknown) => events.push(e) },
+			metering: {
+				emit: async (event: UsageEvent) => {
+					events.push(event);
+				},
+			},
 		}).configureMagicDns?.(config());
 		expect(events).toHaveLength(1);
 	});
 });
 
 describe("Funnel", () => {
-	const funnel = (overrides: Record<string, unknown> = {}) =>
+	const funnel = (overrides: Partial<FunnelPublishOptions> = {}) =>
 		({
 			tenantId: "t1",
 			backendUrl: "http://127.0.0.1:8080/",
@@ -400,8 +391,6 @@ describe("Funnel", () => {
 		}) as never;
 
 	it("never reports enabled, because there is no public seam here", async () => {
-		// Naming a hostname is not publishing to it. Conflating the two would
-		// tell an operator their service is public when nothing routes to it.
 		const result = await overlay().net.publishFunnel?.(
 			funnel({ hostnameHint: "gw.netbird.selfhosted" }),
 		);
@@ -428,8 +417,6 @@ describe("Funnel", () => {
 	});
 
 	it("ignores a hint that is not netbird-shaped", async () => {
-		// An arbitrary domain would have HoBo print a gateway it has no relation
-		// to.
 		const result = await overlay().net.publishFunnel?.(
 			funnel({ hostnameHint: "example.com" }),
 		);
@@ -446,8 +433,6 @@ describe("Funnel", () => {
 	});
 
 	it("does not look up a peer before a join", async () => {
-		// There is no peer to look up, and the call would be a round trip for
-		// nothing.
 		const o = overlay();
 		await o.net.publishFunnel?.(funnel());
 		expect(o.calls).not.toContain("listPeers");
