@@ -86,8 +86,10 @@ canonical, sorted JSON, with message bytes encoded as canonical padded base64.
 Its authorization callback receives the exact request bytes and scope; the
 actor must independently verify a locally held capability covering those facts
 before and throughout its transaction. The response callback must authenticate
-the exact response bytes and current disclosure authority. A client-side check
-or a Rivet namespace token alone cannot establish these properties.
+the exact response bytes and current disclosure authority. The construction matchers can compare a genuine client with its captured actor
+identity or with complete host-held options; they do not establish host
+authorization, transport provenance or ongoing fencing. A client-side check or
+a Rivet namespace token alone cannot establish these properties.
 
 ```ts
 import {
