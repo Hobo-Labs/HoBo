@@ -258,12 +258,9 @@ export function selectRelevantChecks(
 			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
 		]) || uiChanged;
 	const behaviorChanged =
+		rootConfigChanged ||
+		files.some(workspaceTestRelevant) ||
 		touched(["tests/behavior"]) ||
-		// Feature files and step definitions live inside proof packages
-		// (src/draft/<kind>/<slug>/features/...), so match the path segment,
-		// not a repo-root prefix. The cucumber config is cucumber.yaml.
-		// Catalog starter trees may ship Gherkin fixtures; they are not the
-		// repository behavior lane.
 		files.some(
 			(file) =>
 				!/(^|\/)\.optimizexp\/features\//u.test(file) &&
@@ -665,8 +662,6 @@ export function selectRelevantChecks(
 				"build",
 				"--filter={./src/draft/epic-proofs/*}^...",
 				"--filter={./src/draft/projects/*}^...",
-				// features/steps/**/*.ts loads on every run and imports these
-				// packages from source; their dependencies resolve through dist/.
 				"--filter=@hobo/conformance^...",
 				"--filter=@hobo/example-cd-conformance-kit^...",
 				"--output-logs=new-only",
