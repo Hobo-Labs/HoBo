@@ -1,4 +1,5 @@
 export * from "./_generated/ci_pb.js";
+export * from "./_generated/job_retried_pb.js";
 export * from "./_generated/policy_pb.js";
 export * from "./_generated/relay_job_pb.js";
 export * from "./_generated/runner_route_pb.js";
