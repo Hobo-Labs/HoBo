@@ -251,6 +251,7 @@ export interface DurableMessagingDelivery {
 	readonly sequence: number;
 	readonly topic: string;
 	readonly consumerGroup: string;
+	/** A nonempty, control-free Unicode scalar string within the provider's nameBytes limit. */
 	readonly leaseId: string;
 	readonly leaseExpiresAtMs: number;
 	readonly deliveryAttempt: number;
@@ -330,8 +331,9 @@ export interface DurableMessagingEvent {
  * ID, message sequence and lease together and commits its state and audit
  * facts. Independent groups see independent deliveries; workers in one group
  * compete for each lease.
- * Names must be nonempty, control-free Unicode scalar strings within
- * `nameBytes` of UTF-8; unpaired surrogates are invalid. Operation IDs follow
+ * Names and lease IDs must be nonempty, control-free Unicode scalar strings
+ * within the provider's `nameBytes` of UTF-8; unpaired surrogates are invalid.
+ * Operation IDs follow
  * the separate fixed grammar above, whose maximum encoded length is 84 bytes;
  * a provider's lower `nameBytes` limit never truncates a valid operation ID.
  * Attribute keys
@@ -470,3 +472,25 @@ export interface DurableMessaging {
 		  }
 	>;
 }
+
+/** Validate a lease token against the selected provider's advertised name limit. */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- SAFETY: lease tokens cross an untrusted runtime boundary. */
+export function parseDurableMessagingLeaseId(
+	value: unknown,
+	nameBytes: number,
+): string {
+	if (
+		typeof value !== "string" ||
+		!Number.isSafeInteger(nameBytes) ||
+		nameBytes <= 0 ||
+		nameBytes > DURABLE_MESSAGING_LIMITS.nameBytes ||
+		value.length === 0 ||
+		value.length > nameBytes ||
+		/\p{Cc}/u.test(value) ||
+		/[\uD800-\uDFFF]/u.test(value) ||
+		new TextEncoder().encode(value).length > nameBytes
+	)
+		throw new TypeError("invalid durable messaging lease ID");
+	return value;
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */

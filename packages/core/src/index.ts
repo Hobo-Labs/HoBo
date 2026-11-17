@@ -400,6 +400,7 @@ export {
 	DURABLE_MESSAGING_LIMITS,
 	DURABLE_MESSAGING_WIT_INTERFACE,
 	durableMessagingOperation,
+	parseDurableMessagingLeaseId,
 	parseDurableMessagingOperation,
 } from "./ports/durable-messaging.js";
 export type {

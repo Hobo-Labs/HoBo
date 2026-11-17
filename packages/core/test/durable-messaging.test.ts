@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	DURABLE_MESSAGING_LIMITS,
 	durableMessagingOperation,
+	parseDurableMessagingLeaseId,
 	parseDurableMessagingOperation,
 } from "../src/ports/durable-messaging.js";
 
@@ -69,4 +70,28 @@ describe("durable messaging operation identity", () => {
 			expect(value).toBeGreaterThan(0);
 		}
 	});
+});
+
+describe("durable messaging lease identity", () => {
+	it("uses the actual provider name limit in UTF-8 bytes", () => {
+		expect(parseDurableMessagingLeaseId("lease-1", 7)).toBe("lease-1");
+		expect(parseDurableMessagingLeaseId("éé", 4)).toBe("éé");
+		expect(parseDurableMessagingLeaseId("😀", 4)).toBe("😀");
+		expect(() => parseDurableMessagingLeaseId("éé", 3)).toThrow();
+		expect(() => parseDurableMessagingLeaseId("lease-1", 6)).toThrow();
+	});
+
+	it.each(["", "lease\u0000id", "lease\u007fid", "lease\u0080id", "\ud800", "\udc00"])(
+		"rejects empty, control or non-scalar lease IDs",
+		(value) => {
+			expect(() => parseDurableMessagingLeaseId(value, 128)).toThrow();
+		},
+	);
+
+	it.each([0, -1, 129, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+		"rejects invalid advertised limits",
+		(limit) => {
+			expect(() => parseDurableMessagingLeaseId("lease", limit)).toThrow();
+		},
+	);
 });
