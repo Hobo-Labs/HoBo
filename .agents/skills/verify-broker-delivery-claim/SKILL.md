@@ -7,7 +7,7 @@ description: Verify process-local receipt provenance, quote rechecks and at-most
 
 **Properties:** Within one broker instance, a request identity has at most one issued receipt even with concurrent resolutions. Delivery accepts only an unchanged receipt issued by that instance, claims it before invoking host callbacks, rechecks the quote and context, and submits at most once. A submission error leaves the attempt claimed because the remote outcome may be unknown. Failures before submission can be retried; the budget hold is not released.
 
-**Review baseline:** commit `3f0140e6b8fc1b1aeb4fe4b0b73368b16a1869e8`. PASS for the generated histories, bounded models and symbolic obligations below.
+**Review baseline:** commit `14ffdf1f83fb011093eb8113b0627920b41e7d44`. PASS for the generated histories, bounded models and symbolic obligations below.
 
 ## Covered code
 
@@ -29,7 +29,7 @@ The shared runner checks checksum-pinned TLC 1.7.4. Set `TLA2TOOLS` to that jar 
 
 Z3 induction proves the single-process modeled delivery count and claim invariant over arbitrary integers satisfying its premises; the separate Boolean guard implications require authenticated, current evidence. Every premise has a witness. Removing retry, origin, freshness or context guards yields counterexamples. The abstract proof is not a proof of TypeScript refinement, trusted host callbacks, clock synchronization, receiver behavior or persistent storage.
 
-The issued receipt registry and claim are in memory. A restart forgets them and refuses old receipts; there is no durable reconciliation API for ambiguous submissions. Independent broker processes can still issue and deliver independently. A matching receipt proves only that this process issued that content: it does not authenticate the caller. Quote freshness is checked immediately before handing the request to the delivery plane; a delayed remote receiver can execute later, after expiry or revocation. Signatures remain optional and the host attestor, billing plane, provider costs and remote effects remain trust boundaries. These limitations require separate durable and receiver-side enforcement.
+The issued receipt registry and claim are in memory. A restart forgets them and refuses old receipts; there is no durable reconciliation API for ambiguous submissions. Independent broker processes can still issue and deliver independently. A matching receipt proves only that this process issued that content: it does not authenticate the caller. Quote freshness is checked immediately before handing the request to the delivery plane; a delayed remote receiver can execute later, after expiry or revocation. Signatures remain optional. `canonicalResolutionJson` now uses stable UTF-16 ordering; `verify-broker-resolution-signature` covers signature verification. The host attestor, billing plane, provider costs and remote effects remain trust boundaries. These limitations require separate durable and receiver-side enforcement.
 
 For implementation mutation, copy `packages/broker` into a scratch package with linked `node_modules` and set `BROKER_DELIVERY_VERIFY_PACKAGE_ROOT`. Restore the previous broker implementation, remove the delivery claim, omit the final quote check, or remove the in-flight or already-issued resolution guard. The real-code tests must fail. Restore the implementation and rerun the skill.
 

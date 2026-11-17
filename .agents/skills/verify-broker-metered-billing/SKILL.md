@@ -7,7 +7,7 @@ description: Verify metered broker preflight, exact budget arithmetic, finalized
 
 **Properties:** A fresh metered reservation is admitted only when the complete observed charge and all outstanding holds plus its estimate fit the bounded budget and its own amount fits the per-resolution cap. Unknown or changed observations cannot release a hold; finalized identities cannot be reused. A repeated broker resolution does not issue another receipt or release an earlier hold.
 
-**Review baseline:** commit `3f0140e6b8fc1b1aeb4fe4b0b73368b16a1869e8`. PASS for the stated tests, bounded model and exact-real abstraction under the assumptions below.
+**Review baseline:** commit `14ffdf1f83fb011093eb8113b0627920b41e7d44`. PASS for the stated tests, bounded model and exact-real abstraction under the assumptions below.
 
 ## Covered code
 
@@ -28,7 +28,7 @@ The shared runner uses checksum-pinned TLC 1.7.4. Set `TLA2TOOLS` to that jar or
 
 ## Scope and evidence
 
-The real-code tests reproduce the prior `0.1 + 0.7` undercount, an affordable integer-cent history that floating point rejected, malformed bounded policies, a reused finalized identity, replaced meter facts, and the released-hold replay. Numeric inputs mean their JavaScript serialized decimal values, including exponent notation; the public folded number rounds upward or is infinity if no finite upper representation exists. The broker suite passed 671 tests with 13 skipped. Restoring the old stateless default fails the actual-code tests.
+The real-code tests reproduce the prior `0.1 + 0.7` undercount, an affordable integer-cent history that floating point rejected, malformed bounded policies, a reused finalized identity, replaced meter facts, and the released-hold replay. Numeric inputs mean their JavaScript serialized decimal values, including exponent notation; the public folded number rounds upward or is infinity if no finite upper representation exists. The broker suite passed 680 tests with 13 skipped. Restoring the old stateless default fails the actual-code tests.
 
 TLC explores 1,412 distinct states for two requests, a two-unit budget, zero-to-two-unit estimates and final charges, and three starting spend levels. It checks admission, retained holds after receipt, at most one receipt, and budget preservation until outside charges or an overrun. Placement success and failure are modeled as separate steps after reservation, allowing more interleavings than the synchronous broker path. Evidence is a Boolean abstraction: it does not model event contents, authentic producers, timestamps, policy changes, currency, or arbitrary storage and network effects. The 48-state `/statechart` projection hides 140 same-label steps, including failed replays, evidence changes and outside charges. Deliberately removing the budget or evidence guard violates `SafeAdmission`; releasing a prior hold on replay violates `IssuedRetainsHold`. In the constrained replay mutation, `/statechart` found the shortest path: reserve, issue a resolution, then release its hold on a failed replay. The broker composition regression test reproduces that path against the earlier implementation. A longer mutated path can issue a second receipt after that release.
 
