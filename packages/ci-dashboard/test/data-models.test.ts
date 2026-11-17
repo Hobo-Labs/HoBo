@@ -1,11 +1,18 @@
 /**
  * `parseDashboardLocation` and `data-models/ci_dashboard.cue` agree: what the
- * parser returns vets against `#DashboardLocation`, and a what-if question
- * the panel can build vets against `#WhatIfQuestion`, with the CUE rules
- * refusing what the parser refuses.
+ * parser returns vets against `#DashboardLocation`, and the fixture corpora in
+ * `data-models/fixtures/<schema>/{valid,invalid}` vet as their folder says,
+ * against the definition the folder names (`dashboard_location` is
+ * `#DashboardLocation`), the way `@hobo/schema-tools` vets scoped corpora.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +20,11 @@ import { describe, expect, it } from "vitest";
 import { parseDashboardLocation, parseRepository } from "../src/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const schema = join(here, "..", "data-models", "ci_dashboard.cue");
+const dataModels = join(here, "..", "data-models");
+const schemas = readdirSync(dataModels)
+	.filter((name) => name.endsWith(".cue"))
+	.map((name) => join(dataModels, name));
+const fixtures = join(dataModels, "fixtures");
 
 function findCue(): string | undefined {
 	try {
@@ -46,7 +57,7 @@ function vets(definition: string, json: string): boolean {
 	const file = join(scratch, `value-${written}.json`);
 	writeFileSync(file, json);
 	try {
-		execFileSync(cue, ["vet", "-c", "-d", definition, schema, file], {
+		execFileSync(cue, ["vet", "-c", "-d", definition, ...schemas, file], {
 			stdio: "pipe",
 		});
 		return true;
@@ -101,57 +112,24 @@ describe.skipIf(cue === undefined)("data-models/ci_dashboard.cue", () => {
 		}
 	});
 
-	it("refuses what the parser refuses", () => {
-		expect(vets("#DashboardLocation", '{"view":"settings"}')).toBe(false);
-		expect(
-			vets(
-				"#DashboardLocation",
-				'{"view":"runners","repository":"octo/app/extra"}',
-			),
-		).toBe(false);
-		expect(
-			vets(
-				"#DashboardLocation",
-				'{"view":"runners","run":{"repository":"octo/app","id":1,"attempt":1}}',
-			),
-		).toBe(false);
-		expect(
-			vets(
-				"#DashboardLocation",
-				'{"view":"history","run":{"repository":"octo/app","id":0,"attempt":1}}',
-			),
-		).toBe(false);
-	});
-
-	it("bounds the what-if question as the walk's inputs are bounded", () => {
-		const question = {
-			repository: "octo/app",
-			labels: [{ key: "github", labels: "ubuntu-24.04" }],
-			public: false,
-			fork: false,
-			startedBy: "42",
-			fleetTaking: true,
-			unhealthy: ["depot"],
-			minutesUsedPercent: 90,
-		};
-		expect(vets("#WhatIfQuestion", JSON.stringify(question))).toBe(true);
-		expect(
-			vets(
-				"#WhatIfQuestion",
-				JSON.stringify({ ...question, unhealthy: ["gpu"] }),
-			),
-		).toBe(false);
-		expect(
-			vets(
-				"#WhatIfQuestion",
-				JSON.stringify({ ...question, minutesUsedPercent: 101 }),
-			),
-		).toBe(false);
-		expect(
-			vets(
-				"#WhatIfQuestion",
-				JSON.stringify({ ...question, startedBy: "octocat" }),
-			),
-		).toBe(false);
-	});
+	for (const corpus of readdirSync(fixtures).sort()) {
+		const definition = `#${corpus
+			.split("_")
+			.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+			.join("")}`;
+		it(`vets the ${corpus} fixtures against ${definition}`, () => {
+			for (const kind of ["valid", "invalid"] as const) {
+				const folder = join(fixtures, corpus, kind);
+				const files = readdirSync(folder).filter((name) =>
+					name.endsWith(".json"),
+				);
+				expect(files.length, `${corpus}/${kind}`).toBeGreaterThan(0);
+				for (const name of files)
+					expect(
+						vets(definition, readFileSync(join(folder, name), "utf8")),
+						`${corpus}/${kind}/${name}`,
+					).toBe(kind === "valid");
+			}
+		});
+	}
 });

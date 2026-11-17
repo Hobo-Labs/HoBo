@@ -91,14 +91,19 @@ cross the read API's report shapes. The two records the dashboard owns, the
 address (`DashboardLocation`, parsed by `parseDashboardLocation`) and the
 what-if question (`WhatIfQuestion`), are defined in
 `data-models/ci_dashboard.proto` with CUE constraints beside it, and
-`test/data-models.test.ts` checks the parser and the CUE agree.
+`test/data-models.test.ts` checks the parser and the CUE agree. Valid and
+invalid fixtures for each record sit in
+`data-models/fixtures/{dashboard_location,what_if_question}/`, in the scoped
+layout `@hobo/schema-tools` vets; the package has no `buf.yaml` yet (opting
+into codegen would add a `@bufbuild/protobuf` dependency for records that are
+neither stored nor sent), so the package test vets them the same way.
 
 ## Tests
 
 | File | Proves |
 | --- | --- |
 | `test/read-api.pact.test.ts` | Every request the views make is covered by the read API's provider pact, all `GET`, and is the committed consumer pact `contracts/read-api.pact.json`; every body parses; refusals keep their code and command |
-| `test/data-models.test.ts` | `parseDashboardLocation` and `data-models/ci_dashboard.cue` agree |
+| `test/data-models.test.ts` | `parseDashboardLocation` and `data-models/ci_dashboard.cue` agree, and every fixture vets as its folder says |
 | `test/views.test.ts` | What each view shows, in what order, escaped |
 | `test/what-if.test.ts` | The walk in the panel: machine, minutes limit, failing runner type, waiting, none |
 | `test/route.test.ts` | The page, the script, the CSP, `GET` only |
