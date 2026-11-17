@@ -34,15 +34,18 @@ typed, event-sourced port-suite harness under `packages/conformance/`.
   The report marks restart, store identity, clock, fault placement, tenant
   identity, barrier, authority transition and old-owner fence provenance as
   `unverified`: caller-supplied callbacks cannot authenticate their own
-  execution. The pagination case requires a provider-advertised minimum audit
-  retention of four events; other cases do not assume a retention minimum.
+  execution. Pagination uses the observed retention floor; when too few events
+  remain to exercise pagination, that case is unverified rather than a failure.
   A separately controlled runner must
   establish these facts before treating passing cases as provider evidence.
   In particular, a no-op restart over an in-memory map can pass the behavioral
   restart case and does not establish durability. The suite does not validate
   transport parsing or prove the host's transaction and fencing assumptions.
   Each case has an in-process deadline covering creation, calls, barriers and
-  close. A timeout reports unknown and leaves all later cases unrun. The timer
+  close. A timeout, failed creation or failed teardown reports unknown; a
+  behavioral failure also stops the run because a sibling call may be in
+  flight. All later cases remain unrun. A selected single-case diagnostic is
+  identified in the report and is not a full suite. The timer
   cannot stop provider effects or a blocked event loop: an independent host
   must impose a process deadline, terminate and fence the old execution, and
   establish durable outcomes before starting any replacement run.
