@@ -697,3 +697,19 @@ stateDiagram-v2
   SettlementPending --> Ready: execution status recorded
   Ready --> Released: release reserved capacity
 ```
+
+The [fleet-delivery verification skill](../../.agents/skills/verify-ci-fleet-delivery/SKILL.md)
+checks delivery fences and ambiguous dispatch. The projection hides 60
+same-label steps from 90 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Ready
+  Ready --> Held: claim delivery with a new fence
+  Held --> Retry: delivery expires
+  Retry --> Held: claim delivery with a new fence
+  Held --> Exhausted: delivery expires at the fence limit
+  Held --> Dispatching: worker starts external dispatch
+  Dispatching --> Reconcile: delivery expires during dispatch
+  Dispatching --> Confirmed: active worker confirms effect
+```
