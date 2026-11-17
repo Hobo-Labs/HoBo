@@ -672,6 +672,7 @@ export {
 	type ResourceMutationJournal,
 	type ResourceMutationJournalEntry,
 	ResourceMutationJournalEntrySchema,
+	ResourceMutationNotSentError,
 } from "./ports/resource-lifecycle.js";
 export type {
 	ResolvedResourceRef,

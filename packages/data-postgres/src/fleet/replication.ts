@@ -184,9 +184,9 @@ type CatalogTable = {
  * such order; its tables are copied in a fixed order and the insert that breaks a key
  * fails the copy, which leaves the target as it was.
  */
-export function insertionOrder<T extends Pick<CatalogTable, "name" | "references">>(
-	tables: readonly T[],
-): readonly T[] {
+export function insertionOrder<
+	T extends Pick<CatalogTable, "name" | "references">,
+>(tables: readonly T[]): readonly T[] {
 	const byName = new Map(tables.map((table) => [table.name, table]));
 	const placed = new Set<string>();
 	const visiting = new Set<string>();
@@ -263,7 +263,10 @@ async function readCatalog(
 	const parents = new Map<string, string[]>();
 	for (const row of keys.rows) {
 		const table = column(row, "table_name");
-		parents.set(table, [...(parents.get(table) ?? []), column(row, "parent_name")]);
+		parents.set(table, [
+			...(parents.get(table) ?? []),
+			column(row, "parent_name"),
+		]);
 	}
 	const tables = new Map<
 		string,

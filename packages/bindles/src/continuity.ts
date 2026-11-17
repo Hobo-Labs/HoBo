@@ -35,7 +35,11 @@ import type { BindleDefinition, ProviderAnnotation } from "./types.js";
 // public-contract: platform annotation option for the continuity trait.
 export const CONTINUITY_OPTION = "continuity" as const;
 
-export const CONTINUITY_TIERS = ["rebuildable", "standard", "critical"] as const;
+export const CONTINUITY_TIERS = [
+	"rebuildable",
+	"standard",
+	"critical",
+] as const;
 export type ContinuityTier = (typeof CONTINUITY_TIERS)[number];
 
 /** `rebuild`: the workload rebuilds lost state. `restore`: HoBo restores it. */
@@ -147,7 +151,9 @@ function oneOf<T extends string>(
 }
 
 /** Parse a continuity request into a whole, consistent policy. */
-export function parseContinuityPolicy(input: ContinuityInput): ContinuityPolicy {
+export function parseContinuityPolicy(
+	input: ContinuityInput,
+): ContinuityPolicy {
 	const tier = oneOf("tier", input.tier ?? "standard", CONTINUITY_TIERS);
 	const base = CONTINUITY_TIER_DEFAULTS[tier];
 	const onLoss = oneOf(
@@ -169,7 +175,10 @@ export function parseContinuityPolicy(input: ContinuityInput): ContinuityPolicy 
 		"backupEveryMs",
 		input.backupEveryMs ?? base.backupEveryMs,
 	);
-	const backupsKept = count("backupsKept", input.backupsKept ?? base.backupsKept);
+	const backupsKept = count(
+		"backupsKept",
+		input.backupsKept ?? base.backupsKept,
+	);
 	if (onLoss === "restore" && standbys === 0 && backupEveryMs === 0)
 		throw new ContinuityError(
 			"standbys",
@@ -212,7 +221,9 @@ export function continuity(input: ContinuityInput = {}): ProviderAnnotation {
 	});
 }
 
-export function isContinuityAnnotation(annotation: ProviderAnnotation): boolean {
+export function isContinuityAnnotation(
+	annotation: ProviderAnnotation,
+): boolean {
 	return annotation.option === CONTINUITY_OPTION;
 }
 
