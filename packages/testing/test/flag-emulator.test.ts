@@ -21,6 +21,26 @@ describe("in-process feature flags", () => {
 		expect(flags.inspector?.events()[0]?.time).toBe("2026-01-01T00:00:00.000Z");
 	});
 
+	it("isolates event snapshots from nested flag values", () => {
+		const flags = createFlagEmulator();
+		flags.port.define({
+			key: "config",
+			defaultValue: { nested: { value: "original" } },
+		});
+		const snapshot = flags.inspector?.events()[0];
+		if (!snapshot) throw new Error("expected a flag event");
+		// SAFETY: the flag above defines this nested value; mutate the snapshot to
+		// verify it cannot change the store or a later snapshot.
+		const value = snapshot.data.defaultValue as { nested: { value: string } };
+		value.nested.value = "changed";
+		expect(flags.port.get("config")?.defaultValue).toEqual({
+			nested: { value: "original" },
+		});
+		expect(flags.inspector?.events()[0]?.data.defaultValue).toEqual({
+			nested: { value: "original" },
+		});
+	});
+
 	it("uses the shared flag port for changes, evaluation, tenant isolation, and kill switches", async () => {
 		const harness = createTestHarness();
 		const bindle = app();
