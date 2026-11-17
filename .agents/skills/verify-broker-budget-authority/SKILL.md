@@ -29,7 +29,7 @@ From the repository root after installing workspace dependencies:
 bash scripts/verify-state-machine.sh .agents/skills/verify-broker-budget-authority
 ```
 
-This runs quote and budget fast-check cases, signed-settlement cases, the HoBo hosting bridge's existing integration tests, TLC 1.7.4, and a Z3 4.15.4 induction proof. Set `TLA2TOOLS` to the checksum-pinned jar or let the shared runner download it. Set `BUDGET_Z3_PYTHONPATH` to an existing `z3-solver==4.15.4.0` installation or let the test install that pinned version into a temporary directory. Java 11+, Python with pip, Node with the repo's `tsx`, Vitest, fast-check, and built workspace dependencies for the composition tests are required. Use `/statechart` to read the TLA+ result and its view.
+This runs quote and budget fast-check cases, signed-settlement cases, a cached HoBo workspace build before the hosting bridge integration tests, TLC 1.7.4, and a Z3 4.15.4 induction proof. Set `TLA2TOOLS` to the checksum-pinned jar or let the shared runner download it. Set `BUDGET_Z3_PYTHONPATH` to an existing `z3-solver==4.15.4.0` installation or let the test install that pinned version into a temporary directory. Java 11+, Python with pip, Node with the repo's `tsx`, Vitest, fast-check, workspace dependencies and initialized pinned submodules are required. Use `/statechart` to read the TLA+ result and its view.
 
 ## Scope and evidence
 
