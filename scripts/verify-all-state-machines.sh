@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -u -o pipefail
+
+repo_dir="$(git rev-parse --show-toplevel)"
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/hobo-all-state-checks.XXXXXX")"
+trap 'rm -rf -- "$scratch_dir"' EXIT
+cd "$repo_dir" || exit 2
+
+# Package managers differ on whether they forward their argument separator.
+if [[ "${1:-}" == "--" ]]; then
+	shift
+fi
+
+shopt -s nullglob
+if (( $# == 0 )); then
+	skills=("$repo_dir"/.agents/skills/verify-*)
+else
+	skills=()
+	for name in "$@"; do
+		if [[ ! "$name" =~ ^verify-[a-z0-9-]+$ || ! -d "$repo_dir/.agents/skills/$name" ]]; then
+			echo "Unknown verification skill: $name" >&2
+			exit 2
+		fi
+		skills+=("$repo_dir/.agents/skills/$name")
+	done
+fi
+if (( ${#skills[@]} == 0 )); then
+	echo 'No state-machine verification skills found.' >&2
+	exit 2
+fi
+
+if [[ -z "${TLA2TOOLS:-}" ]]; then
+	TLA2TOOLS="$scratch_dir/tla2tools.jar"
+	if ! curl -fsSL --retry 2 --max-time 60 \
+		'https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar' \
+		-o "$TLA2TOOLS"; then
+		echo 'Unable to download TLC 1.7.4; set TLA2TOOLS to its jar.' >&2
+		exit 2
+	fi
+fi
+if [[ ! -f "$TLA2TOOLS" ]] || ! printf '%s  %s\n' \
+	'936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88' \
+	"$TLA2TOOLS" | sha256sum -c --status; then
+	echo 'TLA2TOOLS must be the checksum-pinned TLC 1.7.4 jar.' >&2
+	exit 2
+fi
+export TLA2TOOLS
+
+needs_z3=false
+for skill in "${skills[@]}"; do
+	[[ -f "$skill/tests/proof.mts" ]] && needs_z3=true
+done
+if [[ "$needs_z3" == true ]]; then
+	if [[ -n "${BUDGET_Z3_PYTHONPATH:-}" ]]; then
+		if ! PYTHONPATH="$BUDGET_Z3_PYTHONPATH" python3 -c 'import z3; assert z3.get_version_string() == "4.15.4"'; then
+			echo 'BUDGET_Z3_PYTHONPATH must contain z3-solver 4.15.4.0.' >&2
+			exit 2
+		fi
+	elif ! python3 -c 'import z3; assert z3.get_version_string() == "4.15.4"' 2>/dev/null; then
+		if ! python3 -m pip install --disable-pip-version-check --no-cache-dir --no-deps \
+			--target "$scratch_dir/python" 'z3-solver==4.15.4.0'; then
+			echo 'Unable to install pinned Z3; set BUDGET_Z3_PYTHONPATH.' >&2
+			exit 2
+		fi
+		BUDGET_Z3_PYTHONPATH="$scratch_dir/python"
+		export BUDGET_Z3_PYTHONPATH
+	fi
+fi
+
+failed=0
+for skill in "${skills[@]}"; do
+	name="${skill##*/}"
+	log="$scratch_dir/$name.log"
+	if bash scripts/verify-state-machine.sh "$skill" >"$log" 2>&1; then
+		printf 'PASS %s\n' "$name"
+	else
+		printf 'FAIL %s\n' "$name" >&2
+		cat "$log" >&2
+		failed=$((failed + 1))
+	fi
+done
+printf 'Checked %s skills; %s failed.\n' "${#skills[@]}" "$failed"
+(( failed == 0 ))

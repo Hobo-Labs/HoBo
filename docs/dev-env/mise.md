@@ -106,6 +106,9 @@ pnpm run install:check
 
 Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin` by default. Set `MISE_INSTALL_PATH` to an absolute executable path to install or find mise elsewhere; bootstrap adds its parent directory to `PATH` before checking for an existing installation.
 
+The SDK packaging integration test uses a temporary npm cache, so it does not
+need write access to the invoking user's npm cache.
+
 ## Hermetic CI runner (`mise oci`)
 
 Self-hosted **`runs-on: hobo`** jobs use a container built from this repo’s **`mise.toml` / `mise.lock`**, not workflow tool installers:
