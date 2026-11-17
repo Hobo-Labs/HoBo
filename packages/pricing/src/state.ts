@@ -450,6 +450,7 @@ export function validateScenarioState(
 	time: TemporalPolicy = EXACT_TIME,
 	strictSourceIdentity = true,
 	strictSourceValues = true,
+	strictCompleteness = true,
 ): void {
 	const catalog = scenario.catalog;
 	const state = scenario.state;
@@ -497,6 +498,15 @@ export function validateScenarioState(
 	}
 	if (strictSourceIdentity) validateFinancialSourceIds(state);
 	if (strictSourceValues) validateFinancialSourceValues(state);
+	if (
+		strictCompleteness &&
+		state.completeness !== "complete" &&
+		state.completeness !== "partial"
+	)
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"unknown financial state completeness",
+		);
 	const allowPartial = scenario.options?.allowPartialFinancialState === true;
 	if (state.completeness !== "complete" && !allowPartial) {
 		throw new PricingFault(

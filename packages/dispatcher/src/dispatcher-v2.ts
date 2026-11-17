@@ -8,6 +8,7 @@ import {
 	type QuoteVector,
 } from "@hobo/pricing";
 import { compareCodeUnits } from "./order.js";
+import { hasDispatchEligibility } from "./quote-admission.js";
 
 // public-contract: consumers pin the dispatcher v2 wire schema by this id.
 export const DISPATCHER_V2_SCHEMA_VERSION = "hobo.dispatcher/v2";
@@ -152,8 +153,7 @@ export function decideDispatchV2(
 		if (
 			billed === undefined ||
 			parsed === undefined ||
-			result.eligibility?.eligible === false ||
-			result.unpriced.length > 0
+			!hasDispatchEligibility(result)
 		) {
 			rejectedCandidates.push(
 				reject(
