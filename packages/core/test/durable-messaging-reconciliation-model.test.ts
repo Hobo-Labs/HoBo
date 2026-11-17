@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 // One pre-expiry transaction may finish after the operation expires. The host
-// can fence/drain it before using absence as evidence. This model assumes a
-// trusted fence really prevents later commits; it does not implement one.
+// can fence/drain it and use independent complete evidence of noncommit. A
+// collected receipt is not that evidence. The trusted fence and complete
+// evidence are modeled assumptions, not implementations.
 type State = {
 	time: 0 | 1;
 	transaction: "idle" | "checked" | "aborted" | "committed";
 	receiptPresent: boolean;
+	collectedReceipt: boolean;
 	absenceObserved: boolean;
 	conflictObserved: boolean;
+	fenced: boolean;
+	noncommitProven: boolean;
 	replacement: boolean;
 };
 type Action =
@@ -17,6 +21,7 @@ type Action =
 	| "observe"
 	| "conflict"
 	| "drain"
+	| "verify"
 	| "replace"
 	| "commit"
 	| "collect";
@@ -26,6 +31,7 @@ const actions: readonly Action[] = [
 	"observe",
 	"conflict",
 	"drain",
+	"verify",
 	"replace",
 	"commit",
 	"collect",
@@ -34,54 +40,61 @@ const actions: readonly Action[] = [
 function step(
 	input: State,
 	action: Action,
-	mutation: "none" | "absence" | "conflict",
+	mutation: "none" | "absence" | "conflict" | "collected",
 ): State {
 	const state = { ...input };
 	if (action === "begin" && state.time === 0 && state.transaction === "idle")
 		state.transaction = "checked";
 	else if (action === "expire") state.time = 1;
-	else if (
-		action === "observe" &&
-		state.time === 1 &&
-		!state.receiptPresent &&
-		state.transaction !== "committed"
-	)
+	else if (action === "observe" && state.time === 1 && !state.receiptPresent)
 		state.absenceObserved = true;
 	else if (action === "conflict" && state.transaction === "checked")
 		state.conflictObserved = true;
-	else if (
-		action === "drain" &&
-		state.time === 1 &&
-		state.transaction === "checked"
+	else if (action === "drain" && state.time === 1) {
+		state.fenced = true;
+		if (state.transaction === "checked") state.transaction = "aborted";
+	} else if (
+		action === "verify" &&
+		state.fenced &&
+		state.transaction !== "committed"
 	)
-		state.transaction = "aborted";
+		state.noncommitProven = true;
 	else if (
 		action === "replace" &&
 		state.time === 1 &&
 		((state.absenceObserved &&
-			(state.transaction === "idle" ||
-				state.transaction === "aborted" ||
-				mutation === "absence")) ||
+			((state.fenced && state.noncommitProven) ||
+				mutation === "absence" ||
+				(state.fenced &&
+					state.collectedReceipt &&
+					mutation === "collected"))) ||
 			(mutation === "conflict" && state.conflictObserved))
 	)
 		state.replacement = true;
 	else if (action === "commit" && state.transaction === "checked") {
 		state.transaction = "committed";
 		state.receiptPresent = true;
-	} else if (action === "collect" && state.time === 1)
+		state.absenceObserved = false;
+	} else if (action === "collect" && state.time === 1) {
+		if (state.transaction === "committed" && state.receiptPresent)
+			state.collectedReceipt = true;
 		state.receiptPresent = false;
+	}
 	return state;
 }
 
 function explore(
-	mutation: "none" | "absence" | "conflict",
+	mutation: "none" | "absence" | "conflict" | "collected",
 ): Action[] | undefined {
 	const initial: State = {
 		time: 0,
 		transaction: "idle",
 		receiptPresent: false,
+		collectedReceipt: false,
 		absenceObserved: false,
 		conflictObserved: false,
+		fenced: false,
+		noncommitProven: false,
 		replacement: false,
 	};
 	const queue: Array<{ state: State; trace: Action[] }> = [
@@ -123,6 +136,13 @@ describe("bounded reconciliation after operation expiry", () => {
 		const trace = explore("conflict");
 		expect(trace).toContain("conflict");
 		expect(trace).toContain("commit");
+		expect(trace).toContain("replace");
+	});
+	it("finds a duplicate when a collected receipt is mistaken for noncommit after fencing", () => {
+		const trace = explore("collected");
+		expect(trace).toContain("commit");
+		expect(trace).toContain("collect");
+		expect(trace).toContain("drain");
 		expect(trace).toContain("replace");
 	});
 });

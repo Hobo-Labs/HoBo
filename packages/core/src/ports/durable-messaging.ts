@@ -93,8 +93,12 @@ export interface DurableMessagingLimits {
  * Because an admitted pre-expiry transaction may finish after expiry, even an
  * empty point-in-time journal or absent effect is insufficient to conclude it
  * failed. Before using absence as proof or starting a replacement, the host
- * must fence and drain every prior eligible attempt, or establish each one's
- * durable final outcome. Without that proof, the outcome remains unknown.
+ * must fence and drain every prior eligible attempt and establish noncommit
+ * from independently authenticated evidence complete for the relevant
+ * interval, or establish each attempt's durable final outcome. A receipt may
+ * already have been garbage-collected after a successful commit, so an empty
+ * compacted receipt or audit store is not proof of noncommit even after
+ * fencing. Without complete evidence, the outcome remains unknown.
  */
 export interface DurableMessagingOperation {
 	readonly id: string;
