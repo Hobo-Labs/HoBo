@@ -43,6 +43,12 @@ function failure(code: string, status: number): Response {
 	return new Response(null, { status, headers: { "x-hobo-r2-error": code } });
 }
 
+function refuse(request: Request, code: string, status: number): Response {
+	if (request.body !== null && !request.bodyUsed)
+		void request.body.cancel().catch(() => {});
+	return failure(code, status);
+}
+
 function size(input: string | null): number {
 	if (input === null || !/^(0|[1-9][0-9]{0,6})$/u.test(input))
 		throw new CloudflareR2Error("R2_OBJECT_INVALID", "invalid object size");
@@ -59,6 +65,31 @@ function cancel(body: ReadableStream<Uint8Array>): void {
 	void body.cancel().catch(() => {});
 }
 
+/** A timeout does not cancel the provider operation; callers retain an unknown outcome. */
+async function waitForNative<T>(
+	operation: Promise<T>,
+	onLateValue?: (value: T) => void,
+): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let timedOut = false;
+	try {
+		return await Promise.race([
+			operation.then((value) => {
+				if (timedOut) onLateValue?.(value);
+				return value;
+			}),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(() => {
+					timedOut = true;
+					reject(new Error("native R2 timed out"));
+				}, 10_000);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
+
 export const cloudflareR2Proxy = {
 	async fetch(
 		request: Request,
@@ -66,7 +97,7 @@ export const cloudflareR2Proxy = {
 	): Promise<Response> {
 		const url = new URL(request.url);
 		if (request.method !== "POST" || url.origin !== "https://hobo-r2.internal")
-			return failure("R2_REQUEST_INVALID", 400);
+			return refuse(request, "R2_REQUEST_INVALID", 400);
 		const operation = url.pathname.slice(1);
 		const allow = environment.HOBO_R2_ALLOW;
 		if (
@@ -84,17 +115,25 @@ export const cloudflareR2Proxy = {
 			!["read", "write", "delete"].includes(operation) ||
 			!allow.split(",").includes(operation)
 		)
-			return failure("R2_OPERATION_DENIED", 403);
+			return refuse(request, "R2_OPERATION_DENIED", 403);
 		let key: string;
 		try {
 			key = decodeCloudflareR2Key(request.headers.get("x-hobo-r2-key"));
 		} catch {
-			return failure("R2_KEY_INVALID", 400);
+			return refuse(request, "R2_KEY_INVALID", 400);
 		}
 		const keyHeader = encodeCloudflareR2Key(key);
+		if (operation !== "write" && request.body !== null)
+			return refuse(request, "R2_REQUEST_INVALID", 400);
 		try {
 			if (operation === "read") {
-				const object = await environment.HOBO_R2_BUCKET.get(key);
+				const object = await waitForNative(
+					environment.HOBO_R2_BUCKET.get(key),
+					(late) => {
+						if (late !== null && late.body instanceof ReadableStream)
+							cancel(late.body);
+					},
+				);
 				if (object === null)
 					return new Response(null, {
 						status: 404,
@@ -143,7 +182,7 @@ export const cloudflareR2Proxy = {
 				});
 			}
 			if (operation === "delete") {
-				await environment.HOBO_R2_BUCKET.delete(key);
+				await waitForNative(environment.HOBO_R2_BUCKET.delete(key));
 				return new Response(null, {
 					status: 204,
 					headers: { "x-hobo-r2-key": keyHeader },
@@ -155,18 +194,20 @@ export const cloudflareR2Proxy = {
 			const expectedSize = size(request.headers.get("x-hobo-r2-size"));
 			const digest = request.headers.get("x-hobo-r2-digest");
 			if (digest === null || !validCloudflareR2Digest(digest))
-				return failure("R2_OBJECT_INVALID", 400);
+				return refuse(request, "R2_OBJECT_INVALID", 400);
 			const bytes = await readCloudflareR2Bytes(request.body);
 			if (
 				bytes.byteLength !== expectedSize ||
 				(await cloudflareR2Digest(bytes)) !== digest
 			)
 				return failure("R2_INTEGRITY_UNVERIFIED", 422);
-			const object = await environment.HOBO_R2_BUCKET.put(key, bytes, {
-				httpMetadata: { contentType },
-				customMetadata: { "hobo-sha256": digest },
-				sha256: digest.slice(7),
-			});
+			const object = await waitForNative(
+				environment.HOBO_R2_BUCKET.put(key, bytes, {
+					httpMetadata: { contentType },
+					customMetadata: { "hobo-sha256": digest },
+					sha256: digest.slice(7),
+				}),
+			);
 			if (
 				object === null ||
 				object.key !== key ||
@@ -185,8 +226,10 @@ export const cloudflareR2Proxy = {
 				},
 			});
 		} catch (error) {
-			if (error instanceof CloudflareR2Error) return failure(error.code, 422);
-			return failure(
+			if (error instanceof CloudflareR2Error)
+				return refuse(request, error.code, 422);
+			return refuse(
+				request,
 				operation === "read"
 					? "R2_READ_UNAVAILABLE"
 					: "R2_MUTATION_OUTCOME_UNKNOWN",

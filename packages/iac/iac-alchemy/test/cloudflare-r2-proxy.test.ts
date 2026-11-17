@@ -199,6 +199,99 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		expect(calls).toEqual([]);
 	});
 
+	it("enforces the complete finite grant matrix and rejects malformed grants", async () => {
+		const grants = [
+			"read",
+			"write",
+			"delete",
+			"read,write",
+			"delete,read",
+			"delete,write",
+			"delete,read,write",
+		];
+		const malformed = [
+			"",
+			"read,delete",
+			"read,read",
+			"read,",
+			"READ",
+			"read,write,other",
+		];
+		const bytes = new Uint8Array([42]);
+		const headers = {
+			"x-hobo-r2-content-type": "text%2Fplain",
+			"x-hobo-r2-size": "1",
+			"x-hobo-r2-digest": await cloudflareR2Digest(bytes.buffer),
+		};
+		for (const allow of [...grants, ...malformed]) {
+			for (const operation of ["read", "write", "delete"] as const) {
+				const n = native();
+				const input =
+					operation === "write"
+						? request(operation, "key", headers, bytes)
+						: request(operation);
+				const result = await cloudflareR2Proxy.fetch(
+					input,
+					env(n.binding, allow),
+				);
+				const permitted =
+					grants.includes(allow) && allow.split(",").includes(operation);
+				expect(result.status, `${allow}:${operation}`).toBe(
+					permitted ? (operation === "read" ? 404 : 204) : 403,
+				);
+				expect(n.calls).toEqual(
+					permitted
+						? [
+								`${operation === "read" ? "get" : operation === "write" ? "put" : "delete"}:key`,
+							]
+						: [],
+				);
+			}
+		}
+	});
+
+	it("cancels unexpected or unauthorized request bodies before native operations", async () => {
+		for (const operation of ["read", "delete"] as const) {
+			const n = native();
+			let cancelled = false;
+			const stream = new ReadableStream<Uint8Array>({
+				cancel() {
+					cancelled = true;
+				},
+			});
+			// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+			const input = new Request(`https://hobo-r2.internal/${operation}`, {
+				method: "POST",
+				headers: { "x-hobo-r2-key": "key" },
+				body: stream,
+				duplex: "half",
+			} as RequestInit);
+			const result = await cloudflareR2Proxy.fetch(input, env(n.binding));
+			expect(result.status).toBe(400);
+			expect(cancelled).toBe(true);
+			expect(n.calls).toEqual([]);
+		}
+		const n = native();
+		let cancelled = false;
+		const stream = new ReadableStream<Uint8Array>({
+			cancel() {
+				cancelled = true;
+			},
+		});
+		// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+		const input = new Request("https://hobo-r2.internal/write", {
+			method: "POST",
+			headers: { "x-hobo-r2-key": "key" },
+			body: stream,
+			duplex: "half",
+		} as RequestInit);
+		expect(
+			(await cloudflareR2Proxy.fetch(input, env(n.binding, "read"))).status,
+		).toBe(403);
+		expect(cancelled).toBe(true);
+		expect(n.calls).toEqual([]);
+	});
+
 	it("cancels an oversized or excessively chunked native stream without buffering it fully", async () => {
 		let cancelled = false;
 		const stream = new ReadableStream<Uint8Array>({
@@ -299,5 +392,106 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		expect(wrong.headers.get("x-hobo-r2-error")).toBe(
 			"R2_MUTATION_OUTCOME_UNKNOWN",
 		);
+	});
+
+	it("bounds a stalled native read and cancels its late object body", async () => {
+		vi.useFakeTimers();
+		const n = native();
+		let finish: (value: Awaited<ReturnType<typeof n.binding.get>>) => void =
+			() => {};
+		let cancelled = false;
+		const binding: typeof n.binding = {
+			...n.binding,
+			get: () =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		};
+		const outcome = cloudflareR2Proxy.fetch(request("read"), env(binding));
+		await vi.advanceTimersByTimeAsync(10_001);
+		const response = await outcome;
+		expect(response.status).toBe(502);
+		expect(response.headers.get("x-hobo-r2-error")).toBe("R2_READ_UNAVAILABLE");
+		finish({
+			key: "key",
+			size: 1,
+			httpMetadata: { contentType: "text/plain" },
+			body: new ReadableStream<Uint8Array>({
+				type: "bytes",
+				cancel() {
+					cancelled = true;
+				},
+			}),
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(cancelled).toBe(true);
+	});
+
+	it("reports unknown on native write and delete timeouts even if they complete late", async () => {
+		vi.useFakeTimers();
+		const n = native();
+		let completeWrite: () => void = () => {};
+		let completeDelete: () => void = () => {};
+		let startedWrite: () => void = () => {};
+		let startedDelete: () => void = () => {};
+		const writeStarted = new Promise<void>((resolve) => {
+			startedWrite = resolve;
+		});
+		const deleteStarted = new Promise<void>((resolve) => {
+			startedDelete = resolve;
+		});
+		const binding: typeof n.binding = {
+			...n.binding,
+			put: (...args) =>
+				new Promise((resolve) => {
+					startedWrite();
+					completeWrite = () => {
+						void n.binding.put(...args).then(resolve);
+					};
+				}),
+			delete: (...args) =>
+				new Promise((resolve) => {
+					startedDelete();
+					completeDelete = () => {
+						void n.binding.delete(...args).then(resolve);
+					};
+				}),
+		};
+		const body = new Uint8Array([7]);
+		const digest = await cloudflareR2Digest(body.buffer);
+		const write = cloudflareR2Proxy.fetch(
+			request(
+				"write",
+				"key",
+				{
+					"x-hobo-r2-content-type": "text%2Fplain",
+					"x-hobo-r2-size": "1",
+					"x-hobo-r2-digest": digest,
+				},
+				body,
+			),
+			env(binding),
+		);
+		await writeStarted;
+		await vi.advanceTimersByTimeAsync(10_001);
+		const writeResponse = await write;
+		expect(writeResponse.headers.get("x-hobo-r2-error")).toBe(
+			"R2_MUTATION_OUTCOME_UNKNOWN",
+		);
+		completeWrite();
+		await Promise.resolve();
+		expect(n.items.get("key")?.bytes).toEqual(body);
+		expect(n.calls).toEqual(["put:key"]);
+		const deleted = cloudflareR2Proxy.fetch(request("delete"), env(binding));
+		await deleteStarted;
+		await vi.advanceTimersByTimeAsync(10_001);
+		expect((await deleted).headers.get("x-hobo-r2-error")).toBe(
+			"R2_MUTATION_OUTCOME_UNKNOWN",
+		);
+		completeDelete();
+		await Promise.resolve();
+		expect(n.items.has("key")).toBe(false);
+		expect(n.calls).toEqual(["put:key", "delete:key"]);
 	});
 });
