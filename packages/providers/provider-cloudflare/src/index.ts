@@ -120,6 +120,7 @@ export {
 	redactCloudflareText,
 } from "./resolvers.js";
 export {
+	type CronTriggersOptions,
 	cronTriggers,
 	type D1Options,
 	d1,

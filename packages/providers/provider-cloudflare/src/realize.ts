@@ -6,7 +6,6 @@ import {
 	CLOUDFLARE_PROVIDER_TARGET,
 	type HelloBindlePlan,
 } from "./hello-bindle.js";
-import { CLOUDFLARE_PROVIDER_ID } from "./manifest.js";
 import {
 	CLOUDFLARE_IAC_PROVIDER,
 	IAC_PROGRAM_API_VERSION,
@@ -16,6 +15,7 @@ import {
 	type IacResource,
 } from "./iac-program.js";
 import { isJsonString, type JsonObject } from "./json.js";
+import { CLOUDFLARE_PROVIDER_ID } from "./manifest.js";
 import type { ResourcePlan } from "./types.js";
 
 // A container/CI image the build machine produces for a realized resource

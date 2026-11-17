@@ -118,7 +118,9 @@ export function createProviderCeremonyUp(
 			const flow = await configureThen({
 				provider: "hobo",
 				title: "Connect the providers this deployment needs",
-				reason: `hobo up found ${gaps.length === 1 ? "a resource" : `${gaps.length} resources`} no connected provider can serve. Choose a provider for each; HoBo connects it and runs up again.`,
+				reason: `hobo up found ${gaps.length === 1 ? "a resource" : `${gaps.length} resources`} no connected provider can serve. Choose a provider for each; HoBo approves the selected providers, including any on hold, and runs up again.`,
+				submitConfirm:
+					"Approve the selected providers, including any on hold, and run hobo up again?",
 				settings,
 				missing: settings.map((setting) => setting.field),
 				known: {},

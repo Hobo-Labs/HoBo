@@ -838,9 +838,8 @@ describe("selectIacProvider: exact artifacts for live providers", () => {
 });
 
 describe("selectIacProvider: the Vercel resolver lane's team", () => {
-	// A Vercel account that already holds the project, in the scope each request
-	// names: a create would need a durable mutation journal, which
-	// selectIacProvider does not hold, so the lane's team is read off its lookup.
+	// The lookup is scoped to the selected team even when an existing project
+	// is refused: this host has no independent proof of control to adopt it.
 	function fakeVercel() {
 		const urls: string[] = [];
 		const transport: HttpTransport = async (request) => {
@@ -877,7 +876,12 @@ describe("selectIacProvider: the Vercel resolver lane's team", () => {
 			env: { HOBO_DEPLOY_RESOLVERS: "1", VERCEL_TOKEN: FAKE_TOKEN, ...env },
 			resolverTransport: vercel.transport,
 		});
-		await provider.apply({ ...program("web"), provider: "vercel" });
+		await expect(
+			provider.apply({ ...program("web"), provider: "vercel" }),
+		).rejects.toMatchObject({
+			code: "RESOLVER_PRODUCT_UNSUPPORTED",
+			message: expect.stringContaining("project control authorization"),
+		});
 		return vercel.urls.map(
 			(url) => `${new URL(url).pathname}${new URL(url).search}`,
 		);

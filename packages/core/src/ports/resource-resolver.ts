@@ -145,6 +145,13 @@ export interface ResourceResolver {
 		request: ResolveRequest,
 		transport: HttpTransport,
 	): Promise<ResolveOutcome | undefined>;
+	/** Confirm that the exact recorded physical resource is absent. A missing
+	 * read alone is not proof: providers must distinguish a scoped 404 from an
+	 * incomplete lookup or unavailable observation. */
+	observeAbsence?(
+		request: ResolveRequest,
+		transport: HttpTransport,
+	): Promise<boolean>;
 }
 
 // public-contract: every refusal the resolver contract can report.
@@ -411,6 +418,7 @@ function registered(resolver: ResourceResolver): ResourceResolver {
 	const declared = resolver.directives;
 	if (declared === undefined) return resolver;
 	const directives = directiveList(declared, resolver.productId);
+	const observeAbsence = resolver.observeAbsence;
 	const view: ResourceResolver = {
 		providerId: resolver.providerId,
 		productId: resolver.productId,
@@ -422,6 +430,16 @@ function registered(resolver: ResourceResolver): ResourceResolver {
 			: {
 					read: async (request: ResolveRequest, transport: HttpTransport) =>
 						resolver.read?.(request, transport),
+				}),
+		...(observeAbsence === undefined
+			? undefined
+			: {
+					observeAbsence: (
+						request: ResolveRequest,
+						transport: HttpTransport,
+					) => {
+						return observeAbsence.call(resolver, request, transport);
+					},
 				}),
 	};
 	return Object.freeze(view);

@@ -22,10 +22,12 @@ describe("the secretRef and schedule ports", () => {
 	it("a secret store realizes references only, for access and put", () => {
 		const store = createSecretStoreProvider("bitwarden");
 		const port = store.capabilities[0];
-		expect(port?.satisfies({ port: "secretRef", features: ["access", "put"] })).toEqual(
-			{ kind: "full" },
-		);
-		expect(port?.satisfies({ port: "secretRef", features: ["rotate"] })).toEqual({
+		expect(
+			port?.satisfies({ port: "secretRef", features: ["access", "put"] }),
+		).toEqual({ kind: "full" });
+		expect(
+			port?.satisfies({ port: "secretRef", features: ["rotate"] }),
+		).toEqual({
 			kind: "partial",
 			missing: ["rotate"],
 		});
