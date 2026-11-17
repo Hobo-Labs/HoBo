@@ -180,3 +180,10 @@ injected a fault at the claimed point, isolated tenants or fenced older owners:
 all such evidence remains unverified until an independent runner attests it.
 The host must also fence and drain late opens and fault operations after a test
 timeout or teardown.
+
+The SQLite bus fixture runs the generic group isolation, lease receipt replay,
+detached request, fingerprint, tenant isolation and bounds cases through the
+real bus actor and client. It reports each remaining case as unknown before
+dispatch because it lacks the required process/fault controls or configurable
+profile. Its in-memory stores and test credentials do not prove deployment
+isolation, process recovery or a host fence.
