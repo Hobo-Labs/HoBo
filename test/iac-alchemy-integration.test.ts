@@ -379,6 +379,8 @@ function setup(
 		composite: {
 			proofRef: "host:fixture-attestation",
 			environmentDigest: `sha256:${"e".repeat(64)}`,
+			// The test RunnerPool provider never reads or builds `main`. A real
+			// source-building host must independently attest and list its sources.
 			sourceRequirements: [],
 			verifyEnvironment: (input) =>
 				input.tenantId === "tenant-a" &&

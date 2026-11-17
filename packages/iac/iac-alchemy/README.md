@@ -12,8 +12,12 @@ The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
 generations reach the Rivet adapter's trusted route resolver unchanged. The
-fixture supplies explicit financial settlement trust and a host classification
-for its source-free test resources.
+fixture supplies explicit financial settlement trust and a host classification.
+Its stub RunnerPool provider does not read, build or upload `main`, so the
+fixture's empty source classification applies only to that stub. A production
+RunnerPool that builds source must list its complete source requirements and
+use an independently attested source claim; it cannot use the empty
+classification.
 
 `mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
 mapping for each declared primitive. The caller must also assess bindle-wide
