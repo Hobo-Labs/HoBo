@@ -2179,6 +2179,9 @@ importers:
 
   packages/management:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
       '@hobo/cloud':
         specifier: workspace:*
         version: link:../cloud

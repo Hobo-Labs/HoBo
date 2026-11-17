@@ -8,64 +8,43 @@ import {
 	deploymentViewProjection,
 	isCredentialAuditEvent,
 } from "@hobo/cloud";
-import type { EventEnvelope, PrincipalKind } from "@hobo/core";
-import type { ConnectionEvent } from "@hobo/identity";
+import {
+	type EventEnvelope,
+	type JsonObject,
+	type JsonValue,
+	parseEventEnvelope,
+} from "@hobo/core";
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 
 import type { ManagementContext } from "./context.js";
 import { type ManagementResult, okResult } from "./result.js";
 
-// Wrappers exposing the @hobo/cloud read-model folds through the management
-// surface (HIGHBALL M2). Both are pure folds over local event sources — the log
-// is authoritative, the view is derived, and NOTHING is fabricated:
-//
-//  * deployment.* / resource.* / match.* facts land in the composed `hobo`
-//    binary's durable runtime-local event store. That store is durable under
-//    HOBO_HOME only on the bare-metal yard flow
-//    (`<HOBO_HOME>/yards/<name>/eventstore.sqlite`); plain `hobo up` writes to
-//    an ephemeral OS temp dir that never reaches HOBO_HOME. When no yard store
-//    exists we report an honest empty view with `available: false` instead of
-//    inventing saga state.
-//  * connection.* credential-audit facts land in the station-local connection
-//    store (`<HOBO_HOME>/connections/events.jsonl`) — a real local source the
-//    credential audit folds today. Yard stores may additionally hold
-//    token.Granted/Used/Revoked facts from the orchestrator's broker.
-
-/** Where deployment facts were folded from. */
 export type DeploymentViewSource = "yard-eventstore" | "none";
 
-// domain-view: parse-don't-validate derived read-model envelope; row wire form
-// is owned by hobo.cloud.v1 (packages/cloud/data-models/cloud.proto).
+// domain-view:
 export type DeploymentViewProjectionView = Readonly<{
-	/** False when no local cloud event store exists under HOBO_HOME. */
 	available: boolean;
 	source: DeploymentViewSource;
-	/** Yard store names folded (subdirs of `<HOBO_HOME>/yards`). */
 	yards: readonly string[];
-	/**
-	 * Yard stores that exist but could not be read (locked or corrupt). A
-	 * non-empty list means this view is PARTIAL: consumers must say so rather
-	 * than render it as the whole estate.
-	 */
 	skippedYards: readonly string[];
 	deployments: readonly DeploymentViewRow[];
 	count: number;
-	/** Max folded event seq (0 for the empty view). */
 	seq: number;
 }>;
 
-/** Where credential-audit facts were folded from. */
-export type CredentialAuditSource = "connections-store" | "yard-eventstore";
+export type CredentialAuditSource =
+	| "connections-store"
+	| "yard-eventstore"
+	| "mcp-audit";
 
-// domain-view: parse-don't-validate derived read-model envelope; row wire form
-// is owned by hobo.cloud.v1 (packages/cloud/data-models/cloud.proto).
+// domain-view:
 export type CredentialAuditProjectionView = Readonly<{
-	/** False when no local credential event source exists under HOBO_HOME. */
 	available: boolean;
 	sources: readonly CredentialAuditSource[];
+	partial: boolean;
+	skippedSources: readonly string[];
 	rows: readonly CredentialAuditRow[];
 	count: number;
-	/** Max folded event seq (0 for the empty view). */
 	seq: number;
 }>;
 
@@ -73,6 +52,11 @@ function listYardStores(
 	hoboHome: string,
 	yard?: string,
 ): { name: string; dataDir: string }[] {
+	if (
+		yard !== undefined &&
+		(!yard || yard === "." || yard === ".." || /[/\\\0]/u.test(yard))
+	)
+		throw new TypeError("yard must be a directory name");
 	const root = join(hoboHome, "yards");
 	if (!existsSync(root)) return [];
 	const names = yard
@@ -99,27 +83,16 @@ async function collectYardEvents(dataDir: string): Promise<EventEnvelope[]> {
 	}
 }
 
-/**
- * Fold the local yard event store(s) into the DeploymentView saga graph
- * (per-deployment status + per-resource ResourceLifecycle). Pure read-model
- * fold, rebuildable from zero. When no local store exists the view is honestly
- * empty (`available: false`) — see the module comment for why.
- */
 export async function projectDeploymentView(
 	ctx: ManagementContext,
 	input: { yard?: string } = {},
 ): Promise<ManagementResult<DeploymentViewProjectionView>> {
 	const stores = listYardStores(ctx.hoboHome, input.yard);
 	const yards: string[] = [];
-	// A yard we could not read is NOT the same as a yard with no deployments.
-	// Report it so the caller can badge the view as partial instead of drawing
-	// a confident picture that is missing half the estate.
 	const skipped: string[] = [];
 	const events: EventEnvelope[] = [];
 	for (const store of stores) {
 		try {
-			// push(...arr) throws RangeError past the argument limit, which a
-			// long-lived yard will cross; append instead.
 			for (const event of await collectYardEvents(store.dataDir)) {
 				events.push(event);
 			}
@@ -162,81 +135,110 @@ export async function projectDeploymentView(
 	);
 }
 
-function connectionEventToEnvelope(event: ConnectionEvent): EventEnvelope {
-	const connectionId =
-		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
-		(event.data as { connectionId?: string }).connectionId ?? "unknown";
-	return {
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+	return (
+		value !== null &&
+		value !== undefined &&
+		!Array.isArray(value) &&
+		Object.prototype.toString.call(value) === "[object Object]"
+	);
+}
+
+function isJsonString(value: JsonValue | undefined): value is string {
+	return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function connectionEventToEnvelope(line: string): EventEnvelope {
+	const event: JsonValue = JSON.parse(line);
+	if (!isJsonObject(event) || !isJsonObject(event.data))
+		throw new TypeError("invalid connection audit event");
+	const connectionId = isJsonString(event.data.connectionId)
+		? event.data.connectionId
+		: "unknown";
+	return parseEventEnvelope({
 		id: event.id,
 		type: event.type,
 		v: 1,
 		streamId: `connection:${connectionId}`,
 		seq: event.seq,
 		ts: event.time,
-		actor: {
-			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
-			kind: (event.actor.kind as PrincipalKind) ?? "service",
-			id: event.actor.id,
-		},
+		actor: event.actor,
 		tenant: event.tenant,
 		correlationId: event.correlationId,
 		causationId: event.causationId,
 		data: event.data,
-	};
+	});
 }
 
-/**
- * Fold local credential-audit facts (grant -> use -> revoke, keyed by
- * correlation) into the CredentialAudit read model. Sources: the station-local
- * connection store plus any durable yard event stores. Pure fold; empty view
- * with `available: false` when neither source exists.
- */
 export async function projectCredentialAudit(
 	ctx: ManagementContext,
 	input: { tenant?: string; yard?: string } = {},
 ): Promise<ManagementResult<CredentialAuditProjectionView>> {
 	const sources: CredentialAuditSource[] = [];
+	const skippedSources: string[] = [];
 	const events: EventEnvelope[] = [];
 
 	const connectionsPath = join(ctx.hoboHome, "connections", "events.jsonl");
 	if (existsSync(connectionsPath)) {
-		const lines = readFileSync(connectionsPath, "utf8")
-			.split("\n")
-			.filter(Boolean);
-		events.push(
-			...lines
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: existing boundary or test contract.
-				.map((line) => JSON.parse(line) as ConnectionEvent)
-				.filter(
-					(event) =>
-						input.tenant === undefined || event.tenant === input.tenant,
-				)
-				.map(connectionEventToEnvelope),
-		);
-		sources.push("connections-store");
+		try {
+			const lines = readFileSync(connectionsPath, "utf8").split("\n");
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				try {
+					const event = connectionEventToEnvelope(line);
+					if (input.tenant === undefined || event.tenant === input.tenant)
+						events.push(event);
+				} catch {
+					if (!skippedSources.includes("connections-store"))
+						skippedSources.push("connections-store");
+				}
+			}
+			sources.push("connections-store");
+		} catch {
+			skippedSources.push("connections-store");
+		}
 	}
 
 	for (const store of listYardStores(ctx.hoboHome, input.yard)) {
 		try {
-			events.push(
-				...(await collectYardEvents(store.dataDir)).filter(
-					(event) =>
-						isCredentialAuditEvent(event) &&
-						(input.tenant === undefined || event.tenant === input.tenant),
-				),
-			);
+			for (const event of await collectYardEvents(store.dataDir)) {
+				if (
+					isCredentialAuditEvent(event) &&
+					(input.tenant === undefined || event.tenant === input.tenant)
+				)
+					events.push(event);
+			}
 			if (!sources.includes("yard-eventstore")) sources.push("yard-eventstore");
 		} catch {
-			// Locked/corrupt yard store: skip; connection-store facts still fold.
+			skippedSources.push(`yard:${store.name}`);
+		}
+	}
+	const mcpDir = join(ctx.hoboHome, "mcp-audit");
+	if (existsSync(join(mcpDir, "eventstore.sqlite"))) {
+		try {
+			for (const event of await collectYardEvents(mcpDir)) {
+				if (
+					isCredentialAuditEvent(event) &&
+					(input.tenant === undefined || event.tenant === input.tenant)
+				)
+					events.push(event);
+			}
+			sources.push("mcp-audit");
+		} catch {
+			skippedSources.push("mcp-audit");
 		}
 	}
 
 	if (sources.length === 0) {
 		return okResult(
-			"credential audit: no local credential event source (connection facts flow once a station connection exists)",
+			skippedSources.length > 0
+				? "credential audit: local sources could not be read"
+				: "credential audit: no local credential event source",
 			Object.freeze({
 				available: false,
 				sources: Object.freeze([]),
+				partial: skippedSources.length > 0,
+				skippedSources: Object.freeze([...skippedSources]),
 				rows: Object.freeze([]),
 				count: 0,
 				seq: 0,
@@ -247,16 +249,21 @@ export async function projectCredentialAudit(
 	const snapshot = credentialAuditProjection.fold(events);
 	const rows = credentialAuditProjection
 		.query(snapshot)
-		.sort((a, b) => a.correlationId.localeCompare(b.correlationId));
+		.sort(
+			(a, b) =>
+				(a.tenant ?? "").localeCompare(b.tenant ?? "") ||
+				a.correlationId.localeCompare(b.correlationId),
+		);
 	return okResult(
-		`credential audit: ${rows.length} correlation(s) from ${sources.join("+")}`,
+		`credential audit: ${rows.length} correlation(s) from ${sources.join("+")}${skippedSources.length > 0 ? " (partial)" : ""}`,
 		Object.freeze({
 			available: true,
 			sources: Object.freeze([...sources]),
+			partial: skippedSources.length > 0,
+			skippedSources: Object.freeze([...skippedSources]),
 			rows: Object.freeze(rows),
 			count: rows.length,
 			seq: snapshot.seq,
 		}),
 	);
 }
-/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- SAFETY: event and actor payloads are narrowed at this projection boundary. */
