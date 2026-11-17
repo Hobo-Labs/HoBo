@@ -416,6 +416,9 @@ export interface DurableMessaging {
 	 * `hasMore` refers to the tail observed by this read. A cursor older than
 	 * `firstAvailableSequence - 1` returns `gap`, never a silently partial page.
 	 * A cursor beyond the observed tail is invalid. A read never mutates state.
+	 * Creating a previously absent topic appends exactly one `topic-created`
+	 * event; ensuring an existing topic appends none. Each committed audit event
+	 * receives the immediately following sequence, without gaps or reuse.
 	 */
 	events(input: {
 		readonly afterSequence: number;
