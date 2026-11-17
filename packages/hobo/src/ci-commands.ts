@@ -42,10 +42,9 @@ export type CiCommand = Readonly<{
 }>;
 
 /** Every table-dispatched `hobo ci` command, one entry each. */
-export const CI_COMMANDS: readonly CiCommand[] = [CI_MACHINE_COMMAND];
-export const CI_COMMANDS: readonly CiCommand[] = [CI_PROVIDER_HEALTH_COMMAND];
 export const CI_COMMANDS: readonly CiCommand[] = [
 	// One entry per line, so adding a command only adds a line.
+	CI_MACHINE_COMMAND,
 	CI_PROVIDER_HEALTH_COMMAND,
 ];
 

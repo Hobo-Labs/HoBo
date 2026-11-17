@@ -147,6 +147,7 @@ export {
 	signMachineAdvert,
 	verifyMachineAdvert,
 } from "./runner-order/machine-registry.js";
+export {
 	billedMinutes,
 	type FinishedJobSource,
 	LedgerSpendReader,
