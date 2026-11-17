@@ -160,6 +160,112 @@ describe("source policy", () => {
 		git(repo, "add", file);
 		assert.equal(guard(repo, "--staged").status, 1);
 	});
+	it("checks notebook code cells in TypeScript and Python without inspecting outputs", () => {
+		const repo = fixture();
+		const notebook = (language: string, source: string, output = "") =>
+			JSON.stringify({
+				metadata: { language_info: { name: language } },
+				cells: [
+					{ cell_type: "code", source: [source], outputs: [{ text: output }] },
+				],
+			});
+		write(
+			repo,
+			"good.ipynb",
+			notebook(
+				"typescript",
+				'const url = "https://example.test";\n// @ts-ignore\nconst n = 1;\n',
+				"// output is data",
+			),
+		);
+		git(repo, "add", "good.ipynb");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"bad.ipynb",
+			notebook("typescript", "// explanation\nconst n = 1;\n"),
+		);
+		write(
+			repo,
+			"python.ipynb",
+			notebook("python3", "# TODO implement\nx = 1\n"),
+		);
+		git(repo, "add", "bad.ipynb", "python.ipynb");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /bad\.ipynb:1:.*code cell 1, line 1/u);
+		assert.match(result.stderr, /python\.ipynb:1:.*finish deferred work/u);
+		assert.equal(guard(repo, "--worktree").status, 1);
+	});
+
+	it("grandfathers unchanged notebook comments but rejects new ones", () => {
+		const repo = fixture();
+		const notebook = (source: string, output: string) =>
+			JSON.stringify({
+				metadata: { kernelspec: { language: "typescript" } },
+				cells: [{ cell_type: "code", source, outputs: [{ text: output }] }],
+			});
+		write(repo, "legacy.ipynb", notebook("// existing\nconst n = 1;", "old"));
+		git(repo, "add", "legacy.ipynb");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"legacy",
+		);
+		write(repo, "legacy.ipynb", notebook("// existing\nconst n = 2;", "new"));
+		git(repo, "add", "legacy.ipynb");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"legacy.ipynb",
+			notebook("// existing\n// new explanation\nconst n = 2;", "new"),
+		);
+		git(repo, "add", "legacy.ipynb");
+		assert.equal(guard(repo, "--staged").status, 1);
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"new",
+		);
+		assert.equal(guard(repo, "--base=HEAD~1").status, 1);
+	});
+
+	it("rejects malformed notebooks and unsupported code-cell languages", () => {
+		const repo = fixture();
+		write(repo, "invalid.ipynb", "{");
+		write(
+			repo,
+			"unknown.ipynb",
+			JSON.stringify({
+				metadata: { language_info: { name: "unknown" } },
+				cells: [{ cell_type: "code", source: ["x"] }],
+			}),
+		);
+		git(repo, "add", "invalid.ipynb", "unknown.ipynb");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(
+			result.stderr,
+			/invalid\.ipynb:1:.*supported code-cell language/u,
+		);
+		assert.match(
+			result.stderr,
+			/unknown\.ipynb:1:.*supported code-cell language/u,
+		);
+	});
+
 	it("checks generated Protobuf comments while accepting compiler directives", () => {
 		const repo = fixture();
 		const file = "packages/sample/src/_generated/sample_pb.ts";

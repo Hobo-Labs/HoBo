@@ -31,7 +31,7 @@ and Copilot. Standalone documentation comments follow the same rule. Run
 agent artifacts in nested projects;
 the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
 CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
-Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.
+Kotlin, Ruby, Lua, and Swift, including source templates and notebook code cells; the same rule applies to every other language.
 
 # Agent tooling for this repo
 
