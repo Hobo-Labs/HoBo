@@ -131,14 +131,10 @@ export function cloneStore<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
-	// SAFETY: JSON round-trip preserves the caller-owned store snapshot type.
 	return cloned as T;
 }
 
 function deepFreeze<T>(value: T): T {
-	// Arrays as well as plain objects: `store.trace` and every queue's
-	// `messages` are arrays, so a guard that admitted only plain objects would
-	// hand back a "frozen" snapshot whose queues could still be pushed to.
 	if (Array.isArray(value) || isJsonObject(value)) {
 		Object.freeze(value);
 		for (const nested of Object.values(value)) {
@@ -152,7 +148,6 @@ export function appendTrace(
 	store: QueueClockStore,
 	event: ClockTraceEntry,
 ): void {
-	// SAFETY: assertion to `deepFreeze({ ...event }) as ClockTraceEntry` is required at this boundary.
 	store.trace.push(deepFreeze({ ...event }) as ClockTraceEntry);
 }
 
@@ -229,8 +224,19 @@ export function snapshotStore(store: QueueClockStore): QueueClockSnapshot {
 
 export function getQueue(store: QueueClockStore, queueName: string) {
 	const name = requireNonEmptyString(queueName, "queueName");
-	store.queues[name] ??= { name, messages: [] };
-	return store.queues[name];
+	const existing = Object.hasOwn(store.queues, name)
+		? store.queues[name]
+		: undefined;
+	if (existing) return existing;
+	const messages: QueueMessageRecord[] = [];
+	const queue = { name, messages };
+	Object.defineProperty(store.queues, name, {
+		value: queue,
+		writable: true,
+		enumerable: true,
+		configurable: true,
+	});
+	return queue;
 }
 
 export function findMessageById(

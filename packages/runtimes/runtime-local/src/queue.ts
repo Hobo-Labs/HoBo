@@ -37,32 +37,38 @@ export function createLocalQueue(store: QueueClockStore): Queue {
 			body: TBody,
 			options: EnqueueOptions,
 		): Promise<EnqueueResult> {
-			const queue = getQueue(store, queueName);
-			const idempotencyKey = options.idempotencyKey;
-			const previous = queue.messages.find(
+			const name = parseQueueName(queueName);
+			const idempotencyKey = parseIdempotencyKey(options.idempotencyKey);
+			const existingQueue = Object.hasOwn(store.queues, name)
+				? store.queues[name]
+				: undefined;
+			const previous = existingQueue?.messages.find(
 				(message) => message.idempotencyKey === idempotencyKey,
 			);
 
 			if (previous) {
 				appendTrace(store, {
 					type: "queue.enqueue.deduped",
-					queueName: queue.name,
+					queueName: name,
 					messageId: previous.messageId,
 					idempotencyKey,
 				});
 				return queueEnqueueResult(previous, true);
 			}
 
+			const payload = cloneAsJson(body);
+			const availableAtMs = normalizeNonNegativeInteger(
+				options.availableAtMs ?? store.nowMs,
+				"options.availableAtMs",
+			);
+			const queue = existingQueue ?? getQueue(store, name);
 			const message: QueueMessageRecord = {
 				messageId: `msg-${store.nextMessageSeq++}`,
 				queueName: queue.name,
 				idempotencyKey,
-				body: cloneAsJson(body),
+				body: payload,
 				state: "pending",
-				availableAtMs: normalizeNonNegativeInteger(
-					options.availableAtMs ?? store.nowMs,
-					"options.availableAtMs",
-				),
+				availableAtMs,
 				deliveryAttempt: 0,
 				leaseId: null,
 				leaseExpiresAtMs: null,
@@ -246,7 +252,6 @@ function validateLease(message: QueueMessageRecord, leaseId: LeaseId): void {
 function releaseForRetry(
 	message: QueueMessageRecord,
 	store: QueueClockStore,
-	// SAFETY: assertion to `message.leaseId as LeaseId | null` is required at this boundary.
 	leaseId: LeaseId | null = message.leaseId as LeaseId | null,
 ): boolean {
 	if (message.leaseId !== leaseId) {
