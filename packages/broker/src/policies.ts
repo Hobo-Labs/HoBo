@@ -419,6 +419,12 @@ export function parseBrokerRequest(
 	input: JsonValue | undefined,
 ): BrokerRequest {
 	const raw = asRecord(input, "invalid-request");
+	if (raw.guest !== undefined) {
+		throw new BrokerParseError(
+			"guest-resolution-unavailable",
+			"guest-resolution-unavailable: broker admission does not yet bind guest consent and claim evidence",
+		);
+	}
 	const schemaVersion = requireString(
 		raw.schemaVersion ?? raw.schema_version,
 		"invalid-request",

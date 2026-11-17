@@ -84,7 +84,15 @@ describe("hobo broker — the Conductor on the CLI", () => {
 				spendEstimateUsd: 5,
 			}),
 		);
-		const command = createBrokerCommand({ catalog });
+		const unconfigured = await createBrokerCommand({ catalog }).run(
+			runContext({ policies: policiesPath, request: requestPath }),
+		);
+		expect(unconfigured.ok).toBe(false);
+		expect(unconfigured.message).toContain("quote-authority-required");
+		const command = createBrokerCommand({
+			catalog,
+			trustLegacyEstimates: true,
+		});
 		const result = await command.run(
 			runContext({ policies: policiesPath, request: requestPath }),
 		);
@@ -108,7 +116,10 @@ describe("hobo broker — the Conductor on the CLI", () => {
 				spendEstimateUsd: 500,
 			}),
 		);
-		const command = createBrokerCommand({ catalog });
+		const command = createBrokerCommand({
+			catalog,
+			trustLegacyEstimates: true,
+		});
 		const result = await command.run(
 			runContext({ policies: policiesPath, request: requestPath }),
 		);
@@ -120,7 +131,10 @@ describe("hobo broker — the Conductor on the CLI", () => {
 
 	it("broker up with no cloud config registers this machine as a local provider host", async () => {
 		const bare = await mkdtemp(join(tmpdir(), "hobo-broker-bare-"));
-		const command = createBrokerCommand({ catalog });
+		const command = createBrokerCommand({
+			catalog,
+			trustLegacyEstimates: true,
+		});
 		// SAFETY: assertion required at this I/O or test boundary.
 		const result = await command.run({
 			args: ["up"],
@@ -135,6 +149,8 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			catalog: string;
 			receipt: {
 				placements: Array<{ providerId: string; marginalPrice: string }>;
+				authorizedUsd: number;
+				quoteHash: string;
 			};
 			ticket: { engine: string };
 			events: Array<{ type: string }>;
@@ -145,6 +161,8 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			"@hobo/provider-local-host",
 		);
 		expect(data.receipt.placements[0]?.marginalPrice).toBe("0.00");
+		expect(data.receipt.authorizedUsd).toBe(0);
+		expect(data.receipt.quoteHash).toMatch(/^sha256:/u);
 		expect(data.ticket.engine).toBe("in-proc");
 		const types = data.events.map((event) => event.type);
 		expect(types).toContain("broker.Resolved");
@@ -171,7 +189,10 @@ describe("hobo broker — the Conductor on the CLI", () => {
 				},
 			}),
 		);
-		const command = createBrokerCommand({ catalog });
+		const command = createBrokerCommand({
+			catalog,
+			trustLegacyEstimates: true,
+		});
 		// SAFETY: assertion required at this I/O or test boundary.
 		const result = await command.run({
 			args: ["up"],
@@ -199,7 +220,10 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			join(project, "hobo.broker.json"),
 			JSON.stringify({ ...policies, catalog: "registry" }),
 		);
-		const command = createBrokerCommand({ catalog });
+		const command = createBrokerCommand({
+			catalog,
+			trustLegacyEstimates: true,
+		});
 		// SAFETY: assertion required at this I/O or test boundary.
 		const result = await command.run({
 			args: ["up"],
@@ -233,7 +257,10 @@ describe("hobo broker — the Conductor on the CLI", () => {
 
 	it("broker config --init scaffolds, then config validates and summarizes", async () => {
 		const project = await mkdtemp(join(tmpdir(), "hobo-broker-cfg-"));
-		const command = createBrokerCommand({ catalog });
+		const command = createBrokerCommand({
+			catalog,
+			trustLegacyEstimates: true,
+		});
 		// SAFETY: assertion required at this I/O or test boundary.
 		const init = await command.run({
 			args: ["config"],
@@ -293,6 +320,7 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		// is actually on the resolve path.
 		const command = createBrokerCommand({
 			catalog,
+			trustLegacyEstimates: true,
 			fetchFn: async () => ({
 				status: 200,
 				json: async () => ({
@@ -346,7 +374,10 @@ describe("hobo broker — the Conductor on the CLI", () => {
 	});
 
 	it("prints the rejection matrix and rejects unknown subcommands", async () => {
-		const command = createBrokerCommand({ catalog });
+		const command = createBrokerCommand({
+			catalog,
+			trustLegacyEstimates: true,
+		});
 		const matrix = await command.run(runContext({}, ["matrix"]));
 		expect(matrix.ok).toBe(true);
 		expect(

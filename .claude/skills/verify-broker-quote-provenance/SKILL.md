@@ -7,7 +7,7 @@ description: Verify the trusted quote-attestation and conservative liability bou
 
 **Properties:** Quote authorization requires an intact eligible quote and a host attestation. The attested liability must cover the quoted bill and fit the original cap and budget. The host must explicitly trust a legacy raw estimate. Changing the quote during attestation or changing the caller's policy object during the callback cannot alter the approved work or bounds. A self-hashed quote previously needed no independent authority, and the expected bill was treated as the liability bound.
 
-**Review baseline:** commit `2a9e002c77572350ae9504ede5d9c905277f3a81`. PASS for the generated tests, bounded models and symbolic obligations below.
+**Review baseline:** commit `52fc736200906e09c7e1493d747e41edf83d1496`. PASS for the generated tests, bounded models and symbolic obligations below.
 
 ## Covered code
 
@@ -31,7 +31,7 @@ The runner checks checksum-pinned TLC 1.7.4; set `TLA2TOOLS` to that jar or let 
 
 `QuoteLiability` explores 162 states for bounded quote amounts, attested liabilities and original and later caps. It checks that accepted liability covers the quote and the authorized amount fits the original cap. The projection draws five states and three arrows and hides 81 same-label steps. The old quote-amount comparison and a variant that reads a changed cap both produce counterexamples. Real-code tests cover insufficient and over-budget bounds and a callback that changes the caller's policy object.
 
-The Z3 obligations hold over arbitrary modeled nonnegative exact-real values and the stated authentication and budget guards. Every premise has a witness; removing attestation, mutation, bound, original-policy, budget or legacy-trust guards gives counterexamples. They do not prove that the host callback authenticates a source, verifies signatures, binds the quote to actual work, proves the bound conservative, checks freshness, or implements TypeScript refinement. The signed test is an example host verifier, not a production trust enrollment. The helper calculates an authorization amount; it does not create a durable hold. The general broker request path still uses a caller-supplied estimate and does not invoke this helper.
+The Z3 obligations hold over arbitrary modeled nonnegative exact-real values and the stated authentication and budget guards. Every premise has a witness; removing attestation, mutation, bound, original-policy, budget or legacy-trust guards gives counterexamples. They do not prove that the host callback authenticates a source, verifies signatures, binds the quote to actual work, proves the bound conservative, checks freshness, or implements TypeScript refinement. The signed test is an example host verifier, not a production trust enrollment. The helper calculates an authorization amount; it does not create a durable hold. The general broker invokes this helper with a host pricing authority unless the host explicitly opts into legacy estimates; see `verify-broker-quote-admission` for that integration.
 
 Callers must migrate to `attestQuote` backed by trusted, correctly scoped evidence and return a conservative USD bound. `trustEstimate: true` is an explicit compatibility mode that trusts the caller's estimate; use a durable authority for holds and final settlement.
 

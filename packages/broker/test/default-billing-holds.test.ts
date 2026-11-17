@@ -39,6 +39,7 @@ describe("default billing holds", () => {
 	});
 	it("enforces the aggregate budget in the default broker resolution path", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: { ...defaultLocalPolicySet("broker:test"), billing },
 			catalog: createLocalHostCatalog("test"),
 			stationId: "station:test",

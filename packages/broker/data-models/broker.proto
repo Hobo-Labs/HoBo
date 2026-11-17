@@ -154,6 +154,11 @@ message ResolutionReceipt {
   string rail_hash = 9;
   // Anonymous/claimable evidence (ADR-0151). Absent for an owned deployment.
   GuestResolutionEvidence guest = 10;
+  // Host-attested quote and the work and upper liability it authorized.
+  // All three are absent on explicitly trusted legacy-estimate resolutions.
+  optional string quote_hash = 11;
+  optional string pricing_binding_digest = 12;
+  optional double authorized_usd = 13;
 }
 
 // The claim-relevant facts a receipt must pin so a deployment's ownership

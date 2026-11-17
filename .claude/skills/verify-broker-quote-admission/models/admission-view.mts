@@ -1,0 +1,3 @@
+export const title = 'Authorize selected work with a quoted liability';
+export const state = v => ({pending:'Selected work awaits pricing',gated:'Policy reviews the quoted liability',checked:'Quote and policy checked',held:'Budget held; final check pending',finalChecked:'Evidence checked; receipt pending',resolved:'Resolution issued with pricing evidence',rejected:'Resolution refused'})[v.phase];
+export const step = action => ({Quote:'send liability to policy',Recheck:'recheck current evidence',Hold:'create a hold',FinalCheck:'recheck the quote',Issue:'issue the receipt',Refuse:'refuse stale or unfunded work',Expire:'quote expires',Revoke:'environment approval changes',ChangeCatalog:'catalog changes',Done:'finish'})[action] ?? action;

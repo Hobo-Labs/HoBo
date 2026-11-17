@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { clone } from "@bufbuild/protobuf";
+import { type QuoteVector, QuoteVectorSchema } from "@hobo/pricing";
 import type { ConnectorRegistry } from "./connector-registry.js";
 import { deliverySubmittedBody } from "./delivery.js";
 import type { BrokerEnvironment } from "./environments.js";
@@ -30,6 +33,10 @@ import {
 	policyHashOf,
 } from "./policies.js";
 import {
+	authorizeBillingSpend,
+	type TrustedQuoteAttestation,
+} from "./pricing-authorization.js";
+import {
 	type ResolutionSignature,
 	type ResolutionSigningKey,
 	signResolution,
@@ -51,9 +58,9 @@ import {
 } from "./types.js";
 
 // The HoBo Broker actor. It consumes brokering commands (resolve, scale,
-// deliver), runs the wrapped enforcement planes in order — connectors,
-// gatekeeper (policy + contracts + quota), billing, placement — and emits
-// decision facts. It coordinates durable state through those events; it never
+// deliver), selects work and obtains trusted pricing before the gate and
+// billing planes, and emits decision facts. Explicit legacy estimate mode
+// retains the prior gate, billing, placement order. It coordinates durable state through those events; it never
 // mutates a query read model directly. Read models are folds over the emitted
 // facts (see foldBrokerDecisions), with snapshot/restore for the read store.
 
@@ -67,6 +74,30 @@ export interface BrokerResolution {
 	events: BrokerEvent[];
 }
 
+/** Immutable work selected before host pricing and policy evaluation. */
+export interface BrokerQuoteContext {
+	readonly request: Readonly<BrokerRequest>;
+	readonly placements: readonly Readonly<PlacementDecision>[];
+	readonly catalogHash: string;
+	readonly environmentDigest: string;
+	readonly policyHash: PolicyHash;
+	readonly stationId: string;
+	readonly railHash: string;
+	readonly bindingDigest: string;
+}
+
+/** The host authenticates the quote and guarantees that its bound covers this
+ * exact work and its provider-side liability. Calls must not perform effects. */
+export interface BrokerPricingAuthority {
+	quote(
+		context: BrokerQuoteContext,
+	): QuoteVector | undefined | Promise<QuoteVector | undefined>;
+	attest(
+		context: BrokerQuoteContext,
+		quote: QuoteVector,
+	): TrustedQuoteAttestation | undefined;
+}
+
 export interface HoboBrokerDeps {
 	policies: unknown;
 	catalog: BrokerCatalog;
@@ -74,6 +105,9 @@ export interface HoboBrokerDeps {
 	gatePlane?: GatePlane;
 	gateOptions?: GatePlaneOptions;
 	billingPlane?: BillingPlane;
+	pricingAuthority?: BrokerPricingAuthority;
+	/** Explicit compatibility mode: the host accepts caller-supplied estimates. */
+	trustLegacyEstimates?: boolean;
 	deliveryPlane?: DeliveryPlane;
 	signingKey?: ResolutionSigningKey;
 	/**
@@ -124,6 +158,61 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 	const deliveryPlane = deps.deliveryPlane ?? createDeliveryPlane();
 	const stationId = deps.stationId;
 	const railHash = deps.railHash;
+
+	function selectPlacements(
+		request: BrokerRequest,
+		effective: EffectivePlacementPolicy,
+	) {
+		const approved = deps.environment?.approvedProviders;
+		const definitions =
+			approved !== undefined && approved.length > 0
+				? deps.catalog
+						.definitions()
+						.filter((definition) => approved.includes(definition.providerId))
+				: deps.catalog.definitions();
+		const placements: PlacementDecision[] = [];
+		const reasons: RejectionReason[] = [];
+		for (const requirement of request.requirements) {
+			const placed = placeRequirement(requirement, definitions, effective);
+			if ("reason" in placed) reasons.push(placed.reason);
+			else placements.push(placed.placement);
+		}
+		return { placements, reasons };
+	}
+
+	function quoteContext(
+		request: BrokerRequest,
+		placements: readonly PlacementDecision[],
+		catalogHash: string,
+		environmentDigest: string,
+	): BrokerQuoteContext {
+		const frozenRequest = Object.freeze({
+			...request,
+			scope: Object.freeze({ ...request.scope }),
+			requirements: Object.freeze(
+				request.requirements.map((requirement) =>
+					Object.freeze({
+						...requirement,
+						features: Object.freeze([...requirement.features]),
+					}),
+				),
+			),
+		});
+		const frozenPlacements = Object.freeze(
+			placements.map((placement) => Object.freeze({ ...placement })),
+		);
+		const fields = {
+			request: frozenRequest,
+			placements: frozenPlacements,
+			catalogHash,
+			environmentDigest,
+			policyHash,
+			stationId,
+			railHash,
+		};
+		const bindingDigest = `sha256:${createHash("sha256").update(JSON.stringify(fields)).digest("hex")}`;
+		return Object.freeze({ ...fields, bindingDigest });
+	}
 
 	function sign(
 		resolution: ResolutionReceipt | ResolutionRejection,
@@ -277,12 +366,123 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				);
 			}
 
+			let placements: PlacementDecision[] | undefined;
+			let authorizedEstimate = request.spendEstimateUsd;
+			let requestDigest = JSON.stringify(request);
+			let quoteHash: string | undefined;
+			let bindingDigest: string | undefined;
+			let selectedQuote: QuoteVector | undefined;
+			let selectedContext: BrokerQuoteContext | undefined;
+			const catalogHash = deps.catalog.catalogHash;
+			const environmentSnapshot = JSON.stringify(deps.environment ?? null);
+			const environmentDigest = `sha256:${createHash("sha256").update(environmentSnapshot).digest("hex")}`;
+			const environmentChanged = () =>
+				JSON.stringify(deps.environment ?? null) !== environmentSnapshot;
+			const rejectEnvironment = () =>
+				reject(
+					request,
+					[
+						{
+							plane: "policy",
+							code: "environment-stale",
+							message: "broker environment changed during resolution",
+						},
+					],
+					events,
+				);
+			const pricing = deps.pricingAuthority;
+			if (pricing) {
+				const plan = selectPlacements(request, effective);
+				if (plan.reasons.length) return reject(request, plan.reasons, events);
+				placements = plan.placements;
+				const context = quoteContext(
+					request,
+					placements,
+					catalogHash,
+					environmentDigest,
+				);
+				try {
+					const suppliedQuote = await pricing.quote(context);
+					if (!suppliedQuote)
+						return reject(
+							request,
+							[
+								{
+									plane: "billing",
+									code: "quote-authority-unavailable",
+									message: "pricing authority returned no quote",
+								},
+							],
+							events,
+						);
+					const quote = clone(QuoteVectorSchema, suppliedQuote);
+					const authorization = authorizeBillingSpend({
+						quote,
+						billing: policies.billing,
+						attestQuote: (candidate) => pricing.attest(context, candidate),
+					});
+					if (!authorization.ok)
+						return reject(request, authorization.reasons, events);
+					if (deps.catalog.catalogHash !== catalogHash)
+						return reject(
+							request,
+							[
+								{
+									plane: "policy",
+									code: "catalog-snapshot-stale",
+									message: "catalog changed during quote authorization",
+								},
+							],
+							events,
+						);
+					authorizedEstimate = authorization.authorizedUsd;
+					quoteHash = quote.quoteHash;
+					selectedQuote = quote;
+					selectedContext = context;
+					bindingDigest = context.bindingDigest;
+					requestDigest = JSON.stringify({
+						bindingDigest,
+						quoteHash,
+						authorizedEstimate,
+					});
+				} catch {
+					return reject(
+						request,
+						[
+							{
+								plane: "billing",
+								code: "quote-authority-unavailable",
+								message: "pricing authority could not verify the selected work",
+							},
+						],
+						events,
+					);
+				}
+			} else if (deps.trustLegacyEstimates !== true) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "quote-authority-required",
+							message: "configure a trusted pricing authority for this request",
+						},
+					],
+					events,
+				);
+			}
+
+			if (environmentChanged()) return rejectEnvironment();
+
 			// Plane 1 — the Gatekeeper composition (policy pack + contract
 			// compatibility + obligations + quota), imported and RUN from
 			// @hobo/contracts. Its policy.Decided / gatekeeper.Decided facts are
 			// appended to this resolution's event list.
 			const gate = await gatePlane.evaluate({
-				request: toPolicyDecisionRequest(policies.brokerId, request),
+				request: toPolicyDecisionRequest(policies.brokerId, {
+					...request,
+					spendEstimateUsd: authorizedEstimate,
+				}),
 				costQuota: {
 					quota: policies.billing.quota,
 					used: policies.billing.quotaUsed,
@@ -309,15 +509,82 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				return reject(request, reasons, events);
 			}
 
+			if (environmentChanged()) return rejectEnvironment();
+
+			// The gate can await external policy. Recheck evidence and the catalog
+			// before creating a hold; the authority must refuse expired evidence.
+			if (pricing && selectedQuote && selectedContext) {
+				if (deps.catalog.catalogHash !== catalogHash)
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed before billing admission",
+							},
+						],
+						events,
+					);
+				const checked = authorizeBillingSpend({
+					quote: selectedQuote,
+					billing: policies.billing,
+					attestQuote: (candidate) =>
+						pricing.attest(selectedContext, candidate),
+				});
+				if (!checked.ok) return reject(request, checked.reasons, events);
+				if (checked.authorizedUsd !== authorizedEstimate)
+					return reject(
+						request,
+						[
+							{
+								plane: "billing",
+								code: "quote-authority-stale",
+								message: "quote liability changed while policy was evaluated",
+							},
+						],
+						events,
+					);
+			}
+
+			// Attestation itself is host code, so check its side effects before
+			// asking billing to create a hold.
+			if (environmentChanged()) return rejectEnvironment();
+			if (pricing && deps.catalog.catalogHash !== catalogHash)
+				return reject(
+					request,
+					[
+						{
+							plane: "policy",
+							code: "catalog-snapshot-stale",
+							message: "catalog changed during final quote attestation",
+						},
+					],
+					events,
+				);
+
 			// Plane 2 — billing enforcement beyond quota: budget + spend cap.
 			const billing = billingPlane.authorize({
-				spendEstimateUsd: request.spendEstimateUsd,
-				billing: policies.billing,
+				spendEstimateUsd: authorizedEstimate,
+				billing: { ...policies.billing },
 				requestId: request.requestId,
-				requestDigest: JSON.stringify(request),
+				requestDigest,
 			});
 			if (!billing.ok) {
 				return reject(request, billing.reasons, events);
+			}
+			if (pricing && billing.reservationCreated === undefined) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "reservation-evidence-required",
+							message: "billing did not confirm creation of a new reservation",
+						},
+					],
+					events,
+				);
 			}
 			if (billing.reservationCreated === false) {
 				return reject(
@@ -334,53 +601,113 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				);
 			}
 
-			// Plane 3 — placement: match every requirement against the provider
-			// catalog under the effective policy, ranked by its objective. The
-			// approved environment's provider list bounds eligibility first.
-			const environmentProviders = deps.environment?.approvedProviders;
-			const definitions =
-				environmentProviders !== undefined && environmentProviders.length > 0
-					? deps.catalog
-							.definitions()
-							.filter((definition) =>
-								environmentProviders.includes(definition.providerId),
-							)
-					: deps.catalog.definitions();
-			const placements: PlacementDecision[] = [];
-			const placementReasons: RejectionReason[] = [];
-			for (const requirement of request.requirements) {
-				const placed = placeRequirement(requirement, definitions, effective);
-				if ("reason" in placed) {
-					placementReasons.push(placed.reason);
-				} else {
-					placements.push(placed.placement);
-				}
-			}
-			if (placementReasons.length > 0) {
+			if (environmentChanged()) {
 				if (billing.reservationCreated === true)
 					billingPlane.release?.(request.requestId, true);
-				return reject(request, placementReasons, events);
+				return rejectEnvironment();
+			}
+			if (pricing && deps.catalog.catalogHash !== catalogHash) {
+				if (billing.reservationCreated === true)
+					billingPlane.release?.(request.requestId, true);
+				return reject(
+					request,
+					[
+						{
+							plane: "policy",
+							code: "catalog-snapshot-stale",
+							message: "catalog changed while the hold was created",
+						},
+					],
+					events,
+				);
+			}
+
+			// Billing is synchronous but host code can take time or change its
+			// evidence. Revalidate before a receipt can authorize effects.
+			if (pricing && selectedQuote && selectedContext) {
+				const checked = authorizeBillingSpend({
+					quote: selectedQuote,
+					billing: policies.billing,
+					attestQuote: (candidate) =>
+						pricing.attest(selectedContext, candidate),
+				});
+				if (!checked.ok || checked.authorizedUsd !== authorizedEstimate) {
+					if (billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					return reject(
+						request,
+						checked.ok
+							? [
+									{
+										plane: "billing",
+										code: "quote-authority-stale",
+										message:
+											"quote liability changed while the hold was created",
+									},
+								]
+							: checked.reasons,
+						events,
+					);
+				}
+				if (environmentChanged() || deps.catalog.catalogHash !== catalogHash) {
+					if (billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					if (environmentChanged()) return rejectEnvironment();
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed during final quote check",
+							},
+						],
+						events,
+					);
+				}
+			}
+
+			// Legacy estimate mode retains its prior placement order. The quoted
+			// path already pinned these placements before authorizing the liability.
+			if (!placements) {
+				const plan = selectPlacements(request, effective);
+				if (plan.reasons.length) {
+					if (billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					return reject(request, plan.reasons, events);
+				}
+				placements = plan.placements;
 			}
 
 			const receipt: ResolutionReceipt = {
 				schemaVersion: BROKER_SCHEMA_VERSION,
 				requestId: request.requestId,
 				brokerId: policies.brokerId,
-				catalogHash: deps.catalog.catalogHash,
+				catalogHash,
 				policyHash,
 				placementPolicyId: effective.id,
 				placements,
 				stationId,
 				railHash,
+				...(quoteHash && bindingDigest
+					? {
+							quoteHash,
+							pricingBindingDigest: bindingDigest,
+							authorizedUsd: authorizedEstimate,
+						}
+					: undefined),
 			};
 			events.push(
 				brokerEvent(BROKER_EVENTS.Resolved, {
 					requestId: request.requestId,
 					brokerId: policies.brokerId,
-					catalogHash: deps.catalog.catalogHash,
+					catalogHash,
 					policyHash,
 					placementPolicyId: effective.id,
 					placements: placements.map((placement) => ({ ...placement })),
+					...(quoteHash && bindingDigest
+						? { quoteHash, bindingDigest, authorizedUsd: authorizedEstimate }
+						: undefined),
 				}),
 			);
 			const signature = sign(receipt, events);

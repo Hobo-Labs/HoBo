@@ -195,6 +195,10 @@ export interface ResolutionReceipt {
 	railHash: string;
 	/** Claim-relevant evidence for a guest deployment (ADR-0151); never bearer material. */
 	guest?: GuestResolutionEvidence;
+	/** Quote and work bound by the host pricing authority, absent in legacy mode. */
+	quoteHash?: string;
+	pricingBindingDigest?: string;
+	authorizedUsd?: number;
 }
 
 // domain-view: machine-readable per-plane refusal; wire form is RejectionReason in data-models/broker.proto.

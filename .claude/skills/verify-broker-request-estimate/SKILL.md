@@ -7,7 +7,7 @@ description: Verify explicit broker spend estimates across JSON, protobuf and th
 
 **Properties:** A request document must provide a finite nonnegative estimate, even when it is zero. Both JSON field spellings must agree. Protobuf round trips preserve the difference between an absent estimate and explicit zero. The CLI derives zero only for the built-in local-host catalog; registry-backed requests need an explicit request document.
 
-**Review baseline:** commit `bd71ef73715bedf6cfc5f22874a5e0cd42fe6d19`. PASS for the checks and abstraction below.
+**Review baseline:** commit `52fc736200906e09c7e1493d747e41edf83d1496`. PASS for the checks and abstraction below.
 
 ## Covered code
 
@@ -27,11 +27,11 @@ The check builds the HoBo workspace dependencies before running the actual parse
 
 ## Scope and evidence
 
-TLC explores 14 states for document inputs classified as missing, zero, positive, invalid or conflicting, plus the two CLI paths. It checks that unknown and conflicting estimates do not reach billing, invalid inputs reject, and explicit zero is accepted. The 14-state `/statechart` view hides seven same-label steps. With historical behavior selected, the shortest counterexamples accept an omitted estimate and conflicting aliases; the real-code tests reproduce both. This classification assumes the implementation and protobuf codec map every concrete input to the modeled class; it is not a proof of that mapping.
+TLC explores 14 states for document inputs classified as missing, zero, positive, invalid or conflicting, plus the two CLI paths. It checks that unknown and conflicting estimates do not reach billing, invalid inputs reject, and explicit zero is accepted by the parser. The 14-state `/statechart` view hides seven same-label steps. With historical behavior selected, the shortest counterexamples accept an omitted estimate and conflicting aliases; the real-code tests reproduce both. This classification assumes the implementation and protobuf codec map every concrete input to the modeled class; it is not a proof of that mapping.
 
 Z3 proves for arbitrary exact-real numeric values that the abstract alias guards imply at least one value is present, present aliases agree, and the chosen amount is nonnegative. A witness establishes that the premises are satisfiable; removing presence or alias agreement yields counterexamples. This does not prove TypeScript refinement, numeric finiteness, serialization, or caller honesty.
 
-The local CLI assumption depends on `createLocalHostCatalog` advertising only zero-priced definitions. All other estimates remain caller assertions: an explicit zero can still understate a paid deployment. This check does not authenticate prices, bind a quote to a provider or request, or wire the pricing quote helper into the general broker path. Protobuf clients must explicitly serialize zero; old scalar encoders that omitted zero produce an absent field and are rejected until migrated.
+The local CLI assumption depends on `createLocalHostCatalog` advertising only zero-priced definitions. All other estimates remain caller assertions: an explicit zero can still understate a paid deployment. This check does not authenticate prices or bind a quote to a provider or request. The general broker now invokes the pricing helper under a trusted host authority unless legacy estimates are explicitly trusted; see `verify-broker-quote-admission`. Protobuf clients must explicitly serialize zero; old scalar encoders that omitted zero produce an absent field and are rejected until migrated.
 
 For a scratch implementation mutation, copy `packages/broker` or `packages/hobo` to a temporary package directory, link its `node_modules`, and set `BROKER_REQUEST_VERIFY_PACKAGE_ROOT` or `HOBO_REQUEST_VERIFY_PACKAGE_ROOT` respectively. Remove the required-estimate check or restore the registry CLI's fabricated zero; the real-code check must fail. Restore the code and rerun the skill.
 

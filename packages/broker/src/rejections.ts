@@ -15,6 +15,34 @@ export interface RejectionMatrixRow {
 // public-contract: the closed rejection-code catalog agents self-correct against.
 export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 	{
+		code: "reservation-evidence-required",
+		plane: "billing",
+		remediation:
+			"configure a billing plane that confirms creation of a new hold",
+	},
+	{
+		code: "environment-stale",
+		plane: "policy",
+		remediation: "reload the approved environment and retry the resolution",
+	},
+	{
+		code: "quote-authority-required",
+		plane: "billing",
+		remediation:
+			"configure a trusted pricing authority bound to the selected work",
+	},
+	{
+		code: "quote-authority-stale",
+		plane: "billing",
+		remediation: "obtain a fresh quote and rerun policy evaluation",
+	},
+	{
+		code: "quote-authority-unavailable",
+		plane: "billing",
+		remediation:
+			"restore the pricing authority and reconcile its quote evidence",
+	},
+	{
 		code: "quote-invalid",
 		plane: "billing",
 		remediation:

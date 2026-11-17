@@ -269,8 +269,51 @@ contents but does not authenticate its source. Callers using `quoteIncrementalUs
 or `quoteIncrementalDecimal` must supply the complete quote and attestation.
 Raw `spendEstimateUsd` requires explicit `trustEstimate: true` and remains a
 trusted caller assertion. The helper does not create a hold; its caller must use
-a billing authority for admission. The general broker request path still passes
-`spendEstimateUsd` to its billing plane and does not invoke this helper.
+a billing authority for admission.
+
+`createBroker` requires a `pricingAuthority` by default. It selects placements,
+binds the immutable work, catalog, environment, policy and station pins to a
+quote, asks the host to attest a conservative liability, and passes that amount
+to both the gate and the billing plane. It rechecks evidence after asynchronous
+policy evaluation and requires billing to confirm a new hold. Quote-backed
+receipts carry the quote hash, work-binding digest and authorized amount; the
+optional receipt signature covers these fields. The host attestor remains
+responsible for source authentication, binding, freshness and the liability
+bound. `trustLegacyEstimates: true` explicitly restores trust in the caller's
+estimate and its prior placement ordering. Guest requests reject until consent
+and claim evidence are integrated into admission.
+
+The CLI's built-in local-host authority attests the local provider's zero service
+fee only. It does not cover charges for the underlying machine or other services.
+Registry-backed CLI composition needs a host-supplied pricing authority. The
+default billing plane's holds are in memory; they are not shared or durable.
+HTTP delivery preserves receipt fields, but does not yet require an authenticated
+receipt or verify a signature before invoking the delivery plane.
+
+The [quote-backed admission skill](../../.agents/skills/verify-broker-quote-admission/SKILL.md)
+checks 108 states. This view hides 140 same-label steps, including evidence
+changes; it does not model delivery or guarantee freshness after the final check.
+
+```mermaid
+stateDiagram-v2
+  s0: Selected work awaits pricing
+  s1: Policy reviews the quoted liability
+  s2: Quote and policy checked
+  s3: Resolution refused
+  s4: Budget held#59; final check pending
+  s5: Evidence checked#59; receipt pending
+  s6: Resolution issued with pricing evidence
+  [*] --> s0
+  s0 --> s1: send liability to policy
+  s1 --> s2: recheck current evidence
+  s0 --> s3: refuse stale or unfunded work
+  s2 --> s3: refuse stale or unfunded work
+  s2 --> s4: create a hold
+  s1 --> s3: refuse stale or unfunded work
+  s4 --> s5: recheck the quote
+  s5 --> s6: issue the receipt
+  s4 --> s3: refuse stale or unfunded work
+```
 
 The [quote provenance skill](../../.agents/skills/verify-broker-quote-provenance/SKILL.md)
 checks 64 evidence states and 162 liability states. This projection hides 32
@@ -305,8 +348,9 @@ Broker request documents must supply `spendEstimateUsd` (or
 reject. Protobuf clients must set the optional scalar even when it is zero;
 older encoders that omitted a zero scalar must migrate. For `hobo broker up`,
 the built-in local-host catalog can supply its zero estimate; registry-backed
-deployments require `--request` with an explicit estimate. An explicit estimate
-is still a caller assertion and does not establish quote provenance.
+deployments require `--request` with an explicit estimate and a host pricing
+authority. An explicit estimate is still a caller assertion and does not
+establish quote provenance.
 
 The [request-estimate skill](../../.agents/skills/verify-broker-request-estimate/SKILL.md)
 checks those boundaries. Its model explores 14 states and hides seven
