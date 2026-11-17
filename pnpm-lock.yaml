@@ -3286,6 +3286,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@pact-foundation/pact':
+        specifier: 17.1.4
+        version: 17.1.4
       '@types/node':
         specifier: ^22.15.3
         version: 22.20.0

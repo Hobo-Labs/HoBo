@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { checkCodegen, runCodegen } from "../src/codegen.js";
 import { parseCodegenArgv } from "../src/parse.js";
 import { runCli } from "../src/cli.js";
-import { createCodegenReport, reportToJson } from "../src/types.js";
+import { type CodegenReport, createCodegenReport, reportToJson } from "../src/types.js";
 import { vetReportEnvelope, withTempDirectory } from "../src/cue.js";
 
 const REPO_ROOT = join(fileURLToPath(new URL("../../../../../../..", import.meta.url)));
@@ -111,15 +111,54 @@ describe("json envelope", () => {
   }, CODEGEN_INTEGRATION_TIMEOUT_MS);
 });
 
-describe("pact consumer", () => {
-  it("pins CI envelope fields status and drift[].path", async () => {
-    const pactPath = join(import.meta.dirname, "../contracts/pacts/schema_tools_codegen_report.pact.json");
-    const pact = JSON.parse(await readFile(pactPath, "utf8"));
+const withContractWorkspace = withProofCopy;
+
+type CodegenContract = {
+  consumer: { name: string };
+  provider: { name: string };
+  metadata: { pactSpecification: { version: string }; transport: string };
+  interactions: Array<{
+    type: string;
+    description: string;
+    providerStates: Array<{ name: string }>;
+    request: { contents: { contentType: string; encoded: false; content: { argv: string[] } } };
+    response: Array<{ contents: { contentType: string; encoded: false; content: { exitCode: number; report: Pick<CodegenReport, "status" | "drift" | "cueViolations"> } } }>;
+  }>;
+};
+
+describe("codegen CLI contract", () => {
+  it("executes every recorded invocation against current and modified generated output", async () => {
+    const pact: CodegenContract = JSON.parse(await readFile(
+      join(import.meta.dirname, "../contracts/pacts/schema_tools_codegen_report.pact.json"),
+      "utf8",
+    ));
     expect(pact.consumer.name).toBe("HoboCiSchemaGate");
     expect(pact.provider.name).toBe("SchemaToolsCodegen");
-    const clean = pact.interactions.find((item: { description: string }) => item.description.includes("CLEAN"));
-    expect(clean.response.body.status).toBe("CLEAN");
-    const drift = pact.interactions.find((item: { description: string }) => item.description.includes("drift"));
-    expect(drift.response.body.drift[0].path).toContain("_generated");
-  });
+    expect(pact.metadata).toEqual({ pactSpecification: { version: "4.0.0" }, transport: "cli-json" });
+    expect(pact.interactions).toHaveLength(2);
+    for (const interaction of pact.interactions) {
+      expect(interaction.type).toBe("Synchronous/Messages");
+      expect(interaction.request.contents.contentType).toBe("application/json");
+      expect(interaction.request.contents.encoded).toBe(false);
+      expect(interaction.response).toHaveLength(1);
+      const response = interaction.response[0];
+      if (!response) throw new Error("missing contract response");
+      expect(response.contents.contentType).toBe("application/json");
+      expect(response.contents.encoded).toBe(false);
+      await withContractWorkspace(async (root) => {
+        const generated = join(root, "packages/core/src/_generated/hobo/core/v1/event_envelope_pb.ts");
+        const state = interaction.providerStates[0]?.name;
+        if (state === "the event envelope output is modified") {
+          await writeFile(generated, `${await readFile(generated, "utf8")}\nexport const modified = true;\n`);
+        } else if (state !== "generated output is current") {
+          throw new Error(`unknown provider state: ${state}`);
+        }
+        const before = await readFile(generated, "utf8");
+        const result = await runCli(interaction.request.contents.content.argv, root);
+        expect(result.stderr).toBe("");
+        expect({ exitCode: result.exitCode, report: JSON.parse(result.stdout) }).toMatchObject(response.contents.content);
+        expect(await readFile(generated, "utf8")).toBe(before);
+      });
+    }
+  }, CODEGEN_INTEGRATION_TIMEOUT_MS);
 });

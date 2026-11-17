@@ -73,7 +73,7 @@
 			"status": "frozen",
 			"note": "Production is canonical. This executable proof was refrozen to share generated TypeScript normalization and isolate its tests; its original Buf template and proof-scoped drift check remain independent.",
 			"digests": {
-				"contracts/pacts/schema_tools_codegen_report.pact.json": "sha256:bc246cf883752dc4ca4bd8e70d24df2177deed49d578c013f9789c388275bbba",
+				"contracts/pacts/schema_tools_codegen_report.pact.json": "sha256:cd782130c9f864333caf74c8b60696d5ef74ab2f71268ade397b434a81373c1a",
 				"data-models/buf.yaml": "sha256:b91555931d75c55b4ab15530a6be430649a9a1de07577a3963612b90b186434c",
 				"data-models/codegen_report.cue": "sha256:b7f492bc670ef15d9c43ac9e1b449ce18a6eeb133211249031f38ec4de6d42af",
 				"data-models/fixtures/invalid/negative-duration.json": "sha256:dd87d538183e3cc8a699c463f6eb85678d81765f9c67dd7d27ca2a61d2c21818",
@@ -87,7 +87,7 @@
 				"src/discover.ts": "sha256:db42aa430689d276e2a24b826278ddbb7f98d7d7e98beccef7c251f964f24ac1",
 				"src/parse.ts": "sha256:a27a09348c0c52749881c7888953380a45285aed5f8174bfdd01f13912f880be",
 				"src/types.ts": "sha256:2fd23e4a87f8feb36d65841ad16b9fa90bcab6d6cfb4a18df206d244807fdbac",
-				"test/codegen-pipeline.test.ts": "sha256:3725175e1026a32fed1fc10f9748900690fb52a530dcd15bc27c643ee1457967",
+				"test/codegen-pipeline.test.ts": "sha256:9cadc96225bb581c769e5011f5013fb22860520d5cc4f2e8da2b3973378f9a56",
 				"tsconfig.json": "sha256:72909bdc6a21c90a32d98bf1a5bc1b40109b130f1d71e3b22b8b90f0ef36fb0b"
 			}
 		},
