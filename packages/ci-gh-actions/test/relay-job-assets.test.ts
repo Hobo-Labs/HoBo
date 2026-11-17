@@ -24,7 +24,10 @@ import {
 	RELAY_JOB_WORKFLOW,
 	RELAY_JOB_WORKFLOW_SHA256,
 } from "../src/_generated-assets/relay-job-assets.js";
-import { RELAY_JOB_CONTEXT_ARGUMENTS } from "../src/relay-job/main.js";
+import {
+	parseRelayJobArguments,
+	RELAY_JOB_CONTEXT_ARGUMENTS,
+} from "../src/relay-job/main.js";
 
 const TEMPLATE = readFileSync(
 	new URL("../templates/hobo-relay.yml", import.meta.url),
@@ -217,5 +220,40 @@ describe("the vendored evaluator", () => {
 		expect(run.stdout).toContain("::notice title=hobo-ci-relay::{");
 		expect(run.stdout).toContain("::warning title=hobo-ci-relay-facts::");
 		expect(run.outputs).toMatch(/^runner<<(\S+)\nubuntu-24\.04\n\1$/mu);
+	});
+});
+
+describe("the parity probe", () => {
+	const probe = readFileSync(
+		new URL("../../../.github/workflows/parity-probe.yml", import.meta.url),
+		"utf8",
+	);
+	const Probe = z.object({
+		jobs: z.record(
+			z.string(),
+			z.object({
+				steps: z.array(z.object({ run: z.string().optional() })),
+			}),
+		),
+	});
+
+	it("passes the evaluator only arguments it reads", () => {
+		const runs = Object.values(Probe.parse(parse(probe)).jobs)
+			.flatMap((job) => job.steps)
+			.flatMap((step) =>
+				step.run?.startsWith("node --no-warnings .hobo-ci/relay.mjs")
+					? [step.run]
+					: [],
+			);
+		expect(runs).toHaveLength(2);
+		for (const run of runs) {
+			const argv = run
+				.replace("node --no-warnings .hobo-ci/relay.mjs", "")
+				.trim()
+				.split(/\s+/u)
+				.map((word) => (word.startsWith('"$') ? "1" : word));
+			const parsed = parseRelayJobArguments(argv);
+			expect(parsed.ok ? "" : parsed.problem).toBe("");
+		}
 	});
 });

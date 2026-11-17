@@ -59,9 +59,15 @@ const vercelEvidenceFile = "vercel-credential-evidence.yml";
  * it reads public action repositories only and runs no repository code.
  */
 const actionsLockFile = "actions-lock.yml";
+/**
+ * GitHub-hosted only: routes probe jobs with the relay job's job mode and
+ * records each result as a `hobo-ci-parity` notice (ADR-0183).
+ */
+const parityProbeFile = "parity-probe.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
 	actionsLockFile,
+	parityProbeFile,
 	probeFile,
 	healthFile,
 	hostingEvidenceFile,

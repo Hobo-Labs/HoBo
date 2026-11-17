@@ -1747,3 +1747,13 @@ Run `node --import tsx scripts/generate-relay-job.mts` after changing the
 entry, the engine or the template; `--check` fails when the committed asset
 is not what the sources make, and `test/relay-job-assets.test.ts` runs it,
 checks the workflow's shape, and runs the evaluator as its own Node process.
+
+This repository's own
+[`.github/workflows/parity-probe.yml`](../../.github/workflows/parity-probe.yml)
+runs the generated evaluator, after checking its digest, on GitHub-hosted
+runners only, daily and on demand: one relay feeds one job (R15) and a
+three-leg matrix (R14); dispatched with `expect-failure`, a second relay names
+only a machine label nothing holds and must fail with its reason while the
+job behind it is skipped (R04), which makes that run red by design. Each
+result is one `hobo-ci-parity` notice holding JSON. No probe run is linked
+yet, so job mode is built, not proven, in production.
