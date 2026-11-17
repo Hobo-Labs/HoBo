@@ -600,6 +600,17 @@ export {
 	type RelayMcpSessions,
 } from "./relay-mcp.js";
 export {
+	type FailureLogReader,
+	RELAY_MCP_DIAGNOSED_JOBS,
+	RELAY_MCP_INSIGHT_DEFAULT_DAYS,
+	RELAY_MCP_INSIGHT_MAX_DAYS,
+	RELAY_MCP_INSIGHT_RUNS,
+	RELAY_MCP_INSIGHT_SCOPE,
+	type RelayMcpInsightServices,
+	type RepositoryVisibility,
+	registerRelayMcpInsightTools,
+} from "./relay-mcp-insights.js";
+export {
 	assertRelayOriginAllowed,
 	CI_PROJECT_LOCAL_OVERRIDE_PATH,
 	type CiJobAdmission,

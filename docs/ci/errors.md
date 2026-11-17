@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-97 codes.
+105 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -98,6 +98,14 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_MACHINE_SIGN_IN`](#hobo_ci_machine_sign_in) | `packages/hobo/src/ci-machine-connect.ts` |
 | [`HOBO_CI_MACHINE_UNSUPPORTED`](#hobo_ci_machine_unsupported) | `packages/hobo/src/ci-machine-connect.ts` |
 | [`HOBO_CI_MACHINE_USAGE`](#hobo_ci_machine_usage) | `packages/hobo/src/ci-machine-connect.ts`, `packages/hobo/src/ci-machine.ts` |
+| [`HOBO_CI_MCP_AUTH_REQUIRED`](#hobo_ci_mcp_auth_required) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_MCP_BUSY`](#hobo_ci_mcp_busy) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_MCP_FAILED`](#hobo_ci_mcp_failed) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_MCP_INVALID_CURSOR`](#hobo_ci_mcp_invalid_cursor) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_MCP_NOT_STORED`](#hobo_ci_mcp_not_stored) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_MCP_REPOSITORY_NOT_CONNECTED`](#hobo_ci_mcp_repository_not_connected) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_MCP_RUN_NOT_FOUND`](#hobo_ci_mcp_run_not_found) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
+| [`HOBO_CI_MCP_SCOPE_REQUIRED`](#hobo_ci_mcp_scope_required) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
@@ -1138,6 +1146,118 @@ Message:
 ```
 
 What to do: follow the message.
+
+### HOBO_CI_MCP_AUTH_REQUIRED
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+account authentication required
+```
+
+What to do:
+
+- Send the account's bearer token with the request.
+
+### HOBO_CI_MCP_BUSY
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+too many calls in progress for this account
+```
+
+What to do:
+
+- Retry when one has finished.
+
+### HOBO_CI_MCP_FAILED
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+the insight could not be read
+```
+
+What to do:
+
+- Retry; the relay's log names the cause.
+
+### HOBO_CI_MCP_INVALID_CURSOR
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+invalid cursor
+```
+
+What to do:
+
+- Pass the `next` of an earlier list_route_decisions result, or none to start from the newest.
+
+### HOBO_CI_MCP_NOT_STORED
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+This relay keeps no {what}
+```
+
+What to do:
+
+- Instead, {instead}.
+
+### HOBO_CI_MCP_REPOSITORY_NOT_CONNECTED
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+{repository} is not connected to this account
+```
+
+What to do:
+
+- Name a repository the account connected to the relay.
+
+### HOBO_CI_MCP_RUN_NOT_FOUND
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+Run {input.runId} of {name} is not stored here
+```
+
+What to do:
+
+- Instead, {instead}.
+
+### HOBO_CI_MCP_SCOPE_REQUIRED
+
+Returned from `packages/ci-gh-actions/src/relay-mcp-insights.ts`.
+
+Message:
+
+```text
+account scope required: policy:read
+```
+
+What to do:
+
+- Use a token that holds the read scope.
 
 ### HOBO_CI_NO_RUNNER
 

@@ -1900,3 +1900,50 @@ route table.
 `createReadApi` returns a handler that answers a read API path and returns
 `undefined` for any other, so a relay can try it before its control routes.
 No deployed relay serves it yet, so the channel is built, not proven.
+
+## MCP insight tools
+
+[`src/relay-mcp-insights.ts`](src/relay-mcp-insights.ts) adds the eight
+read-only insight tools of [ADR-0183](../../docs/design/adr/runner-order.md)
+to a relay MCP server: `get_runner_order`, `explain_route`,
+`list_route_decisions`, `list_machines`, `get_signals`, `get_job_times`,
+`get_run_failures` and `get_usage`. `registerRelayMcpInsightTools(server,
+services)` registers them on an `McpServer`; `services` names the ports they
+read (the runner order source, the route facts source, the route journal,
+the machine registry, the stored runs, a minutes reader and a log reader),
+the repositories each account connected, and GitHub's per-minute rate with
+its page and the day it was read.
+
+- Every tool needs only the read scope (`policy:read`) and is annotated
+  read-only. A caller without it is refused.
+- A tool that names a repository refuses one the caller's account did not
+  connect, so one account never reads another's order, runs or failures.
+  The journal and the machine registry are read by account.
+- `explain_route` walks the committed order for the inputs given, with the
+  facts true now, through the same `answerRelayJob` both relay modes call.
+  The journal entries it would write are kept aside and dropped: it records
+  nothing.
+- `list_route_decisions` is the activity feed (`journalActivity`), newest
+  first, paged with an opaque cursor. `get_signals`, `get_job_times` and
+  `get_usage` run the `@hobo/ci` insight reports over at most 1,000 stored
+  run attempts of the last 30 days (90 at most). `get_run_failures`
+  diagnoses at most five failed jobs of one run with fixed patterns and
+  prints the evidence; no model is asked.
+- Results are compact JSON. A refusal is a tool error whose first line reads
+  `message (CODE)` and whose second says what to do; the codes are in
+  [`docs/ci/errors.md`](../../docs/ci/errors.md). On a host that keeps no
+  journal, machines or run history, the tool that needs one answers
+  `HOBO_CI_MCP_NOT_STORED` and names the `hobo ci` command that reads GitHub
+  instead. A port that throws answers `HOBO_CI_MCP_FAILED` and is logged as
+  `hobo_ci_mcp_insight_failed`; the error's text is never returned.
+
+The tools are tested against the in-memory fakes of
+`@hobo/ci/runner-order/testing` (`test/relay-mcp-insights.test.ts`, cases S04
+and X04). [`contracts/mcp-insights.pact.json`](contracts/mcp-insights.pact.json)
+holds what an MCP agent relies on, one interaction per tool plus the three
+refusals; `contracts/mcp-insights.provider.test.ts` sends each request to the
+tools over the Streamable HTTP transport, as the authenticated caller it
+names, and matches the answer. The relay's HTTP framing in front of them
+(bearer credentials, origins, sessions) is the one `mcp-boundary.pact.json`
+covers. `createRelayMcpServer` does not register the insight tools yet, so no
+deployed relay serves them: they are built, not proven.
