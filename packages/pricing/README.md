@@ -42,6 +42,10 @@ fields, accessors, exotic prototypes and data that would be discarded are
 rejected. Use generated messages or strict JSON parsing, and omit optional
 fields rather than setting them to `undefined`. A malformed declared model is
 an error, never an unavailable-pricing opt-in.
+The inventory builder likewise rejects unrecognized fields and inaccessible
+or proxied input before normalization. JavaScript may allocate while
+enumerating object keys before a traversal limit can be checked, so hosts must
+apply independent process memory and time limits to untrusted inputs.
 
 ## Batch 2 surface
 

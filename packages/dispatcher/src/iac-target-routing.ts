@@ -1,5 +1,8 @@
+import { types as utilTypes } from "node:util";
 import {
+	areBoundedPricingInputs,
 	compareDecimal,
+	isBoundedPricingInput,
 	type Money,
 	parseDecimal,
 	quoteTargetPricing,
@@ -535,8 +538,206 @@ function name(value: string): boolean {
 	);
 }
 
+/** Detach caller-owned data before reading any ranking fields. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- SAFETY: this boundary inspects untrusted values without invoking their accessors or proxy traps. */
+function rankingFields(
+	value: unknown,
+	keys: readonly string[],
+): Record<string, unknown> | undefined {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		utilTypes.isProxy(value) ||
+		Array.isArray(value)
+	)
+		return undefined;
+	const prototype = Object.getPrototypeOf(value);
+	if (prototype !== Object.prototype && prototype !== null) return undefined;
+	const ownKeys = Reflect.ownKeys(value);
+	if (ownKeys.length !== keys.length) return undefined;
+	const result: Record<string, unknown> = {};
+	for (const key of keys) {
+		const descriptor = Object.getOwnPropertyDescriptor(value, key);
+		if (!descriptor?.enumerable || !("value" in descriptor)) return undefined;
+		result[key] = descriptor.value;
+	}
+	return result;
+}
+
+function snapshotRankingRequest(
+	input: IacPricingRankingRequest,
+): IacPricingRankingRequest | undefined {
+	try {
+		const fields = rankingFields(input, [
+			"tenantId",
+			"workloadRef",
+			"action",
+			"at",
+			"horizon",
+			"candidates",
+		]);
+		if (
+			fields === undefined ||
+			typeof fields.tenantId !== "string" ||
+			typeof fields.workloadRef !== "string" ||
+			typeof fields.action !== "string" ||
+			typeof fields.at !== "string" ||
+			typeof fields.horizon !== "string" ||
+			utilTypes.isProxy(fields.candidates) ||
+			!Array.isArray(fields.candidates) ||
+			Object.getPrototypeOf(fields.candidates) !== Array.prototype
+		)
+			return undefined;
+		if (
+			![fields.tenantId, fields.workloadRef, fields.action].every(name) ||
+			fields.at.length > 200 ||
+			fields.horizon.length > 200 ||
+			!Number.isFinite(Date.parse(fields.at)) ||
+			!Number.isFinite(Date.parse(fields.horizon)) ||
+			Date.parse(fields.horizon) <= Date.parse(fields.at)
+		)
+			return undefined;
+		const length = Object.getOwnPropertyDescriptor(
+			fields.candidates,
+			"length",
+		)?.value;
+		if (
+			typeof length !== "number" ||
+			length === 0 ||
+			length > 256 ||
+			Reflect.ownKeys(fields.candidates).length !== length + 1
+		)
+			return undefined;
+		const pending: {
+			workloadRef: string;
+			inventory: unknown;
+			pricing: unknown;
+		}[] = [];
+		const allInputs: unknown[] = [];
+		const targetIds = new Set<string>();
+		for (let index = 0; index < length; index++) {
+			const descriptor = Object.getOwnPropertyDescriptor(
+				fields.candidates,
+				String(index),
+			);
+			if (!descriptor?.enumerable || !("value" in descriptor)) return undefined;
+			const candidate = rankingFields(descriptor.value, [
+				"workloadRef",
+				"inventory",
+				"pricing",
+			]);
+			if (
+				candidate === undefined ||
+				typeof candidate.workloadRef !== "string" ||
+				candidate.workloadRef.length > 200 ||
+				typeof candidate.inventory !== "object" ||
+				candidate.inventory === null ||
+				utilTypes.isProxy(candidate.inventory) ||
+				Array.isArray(candidate.inventory)
+			)
+				return undefined;
+			const target = Object.getOwnPropertyDescriptor(
+				candidate.inventory,
+				"targetId",
+			);
+			if (
+				!target?.enumerable ||
+				!("value" in target) ||
+				typeof target.value !== "string" ||
+				target.value.length > 200 ||
+				targetIds.has(target.value)
+			)
+				return undefined;
+			targetIds.add(target.value);
+			pending.push({
+				workloadRef: candidate.workloadRef,
+				inventory: candidate.inventory,
+				pricing: candidate.pricing,
+			});
+			allInputs.push(candidate.inventory, candidate.pricing);
+		}
+		// The budget counts repeated aliases too; no tree is cloned until the entire
+		// request fits, in addition to each model's existing per-input bounds.
+		if (!areBoundedPricingInputs(allInputs)) return undefined;
+		for (const candidate of pending) {
+			if (
+				!isBoundedPricingInput(candidate.inventory) ||
+				!isBoundedPricingInput(candidate.pricing)
+			)
+				return undefined;
+		}
+		const candidates: IacPricingCandidate[] = [];
+		for (const candidate of pending) {
+			// SAFETY: Only the checked fields below are read before the full inventory schema is validated by pricing.
+			const inventory = structuredClone(
+				candidate.inventory,
+			) as TargetPricingInventory;
+			// SAFETY: The checked discriminant gates access; pricing validates the complete detached model before rating.
+			const pricing = structuredClone(
+				candidate.pricing,
+			) as TargetPricingAvailability;
+			if (
+				inventory === null ||
+				typeof inventory !== "object" ||
+				Array.isArray(inventory) ||
+				typeof inventory.targetId !== "string" ||
+				typeof inventory.tenantId !== "string" ||
+				pricing === null ||
+				typeof pricing !== "object" ||
+				Array.isArray(pricing) ||
+				pricing.state === null ||
+				typeof pricing.state !== "object" ||
+				(pricing.state.case !== "model" &&
+					pricing.state.case !== "unavailable") ||
+				pricing.state.value === null ||
+				typeof pricing.state.value !== "object"
+			)
+				return undefined;
+			candidates.push({
+				workloadRef: candidate.workloadRef,
+				inventory,
+				pricing,
+			});
+		}
+		return {
+			tenantId: fields.tenantId,
+			workloadRef: fields.workloadRef,
+			action: fields.action,
+			at: fields.at,
+			horizon: fields.horizon,
+			candidates,
+		};
+	} catch {
+		return undefined;
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type */
+
+function invalidRanking(): IacPricingRankingResult {
+	return {
+		coverage: "partial",
+		budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		code: "ROUTING_INPUT_INVALID",
+		ranking: [],
+		rejected: [],
+	};
+}
+
 /** Rank comparable, fully priced whole targets. This stage does not authorize spending. */
 export function rankIacTargets(
+	input: IacPricingRankingRequest,
+): IacPricingRankingResult {
+	const request = snapshotRankingRequest(input);
+	if (request === undefined) return invalidRanking();
+	try {
+		return rankSnapshot(request);
+	} catch {
+		// Malformed but inert data can still fail a downstream semantic validator.
+		return invalidRanking();
+	}
+}
+
+function rankSnapshot(
 	request: IacPricingRankingRequest,
 ): IacPricingRankingResult {
 	const budget = {
@@ -545,21 +746,18 @@ export function rankIacTargets(
 	} as const;
 	if (
 		![request.tenantId, request.workloadRef, request.action].every(name) ||
+		request.at.length > 200 ||
+		request.horizon.length > 200 ||
 		!Number.isFinite(Date.parse(request.at)) ||
 		!Number.isFinite(Date.parse(request.horizon)) ||
 		Date.parse(request.horizon) <= Date.parse(request.at) ||
 		request.candidates.length === 0 ||
 		request.candidates.length > 256 ||
+		request.candidates.some((entry) => entry.inventory.targetId.length > 200) ||
 		new Set(request.candidates.map((entry) => entry.inventory.targetId))
 			.size !== request.candidates.length
 	)
-		return {
-			coverage: "partial",
-			budget,
-			code: "ROUTING_INPUT_INVALID",
-			ranking: [],
-			rejected: [],
-		};
+		return invalidRanking();
 	const ranking: IacPricingRanking[] = [];
 	const rejected: IacPricingRankingResult["rejected"] = [];
 	for (const candidate of request.candidates) {
@@ -579,6 +777,7 @@ export function rankIacTargets(
 			const scenario = candidate.pricing.state.value.scenario;
 			if (
 				scenario === undefined ||
+				scenario === null ||
 				scenario.at !== request.at ||
 				scenario.horizon !== request.horizon ||
 				scenario.action !== request.action

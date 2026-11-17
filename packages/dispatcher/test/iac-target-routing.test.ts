@@ -3,7 +3,7 @@ import {
 	targetPricingModel,
 	targetPricingUnavailable,
 } from "@hobo/pricing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	makeScenario,
 	perUnitCharge,
@@ -67,6 +67,82 @@ function request(candidates: ReturnType<typeof candidate>[]) {
 }
 
 describe("whole-target price ranking", () => {
+	it.each([
+		"root-accessor",
+		"root-proxy",
+		"root-revoked-proxy",
+		"candidates-proxy",
+		"candidate-proxy",
+		"candidate-accessor",
+		"inventory-accessor",
+		"nested-proxy",
+		"revoked-proxy",
+		"missing-state",
+		"sparse-candidates",
+		"extra-array-property",
+	] as const)("refuses %s before reading untrusted fields", (kind) => {
+		const input = request([candidate("safe", "1")]);
+		const first = input.candidates[0];
+		if (!first) throw new Error("missing fixture");
+		let traps = 0;
+		const fail = () => {
+			traps++;
+			throw new Error("untrusted accessor");
+		};
+		const handler = {
+			get: fail,
+			getPrototypeOf: fail,
+			ownKeys: fail,
+			getOwnPropertyDescriptor: fail,
+		};
+		let received = input;
+		if (kind === "root-accessor")
+			Object.defineProperty(input, "tenantId", { enumerable: true, get: fail });
+		if (kind === "root-proxy") received = new Proxy(input, handler);
+		if (kind === "root-revoked-proxy") {
+			const revoked = Proxy.revocable(input, handler);
+			revoked.revoke();
+			received = revoked.proxy;
+		}
+		if (kind === "candidates-proxy")
+			input.candidates = new Proxy(input.candidates, handler);
+		if (kind === "candidate-proxy")
+			input.candidates[0] = new Proxy(first, handler);
+		if (kind === "candidate-accessor")
+			Object.defineProperty(first, "pricing", { enumerable: true, get: fail });
+		if (kind === "inventory-accessor")
+			Object.defineProperty(first.inventory, "targetId", {
+				enumerable: true,
+				get: fail,
+			});
+		if (kind === "nested-proxy") {
+			const pricing = first.pricing;
+			if (pricing.state.case !== "model") throw new Error("missing fixture");
+			pricing.state.value = new Proxy(pricing.state.value, handler);
+		}
+		if (kind === "revoked-proxy") {
+			const revoked = Proxy.revocable(first.inventory, handler);
+			revoked.revoke();
+			first.inventory = revoked.proxy;
+		}
+		if (kind === "missing-state")
+			Reflect.deleteProperty(first.pricing, "state");
+		if (kind === "sparse-candidates") input.candidates.length = 2;
+		if (kind === "extra-array-property")
+			Object.defineProperty(input.candidates, "extra", {
+				value: "ignored",
+				enumerable: true,
+			});
+		expect(rankIacTargets(received)).toMatchObject({
+			code: "ROUTING_INPUT_INVALID",
+			coverage: "partial",
+			ranking: [],
+			rejected: [],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+		expect(traps).toBe(0);
+	});
+
 	it("ranks complete targets and reports unknown prices and the absence of budget admission", () => {
 		const expensive = candidate("expensive", "1");
 		const cheap = candidate("cheap", "0.25");
@@ -82,6 +158,137 @@ describe("whole-target price ranking", () => {
 			],
 			rejected: [{ targetId: "unknown", code: "PRICING_MODEL_UNAVAILABLE" }],
 		});
+	});
+
+	it.each([
+		"inventory",
+		"model",
+	] as const)("retains a valid ranking beside an inspectable malformed %s", (kind) => {
+		const good = candidate("good", "1");
+		const malformed = candidate("bad", "1");
+		if (kind === "inventory") {
+			const resource = malformed.inventory.resources[0];
+			if (!resource) throw new Error("missing fixture resource");
+			Reflect.set(resource, "providerId", 123);
+		} else Reflect.set(malformed.pricing, "unexpected", true);
+		const result = rankIacTargets(request([good, malformed]));
+		expect(result).toMatchObject({
+			coverage: "partial",
+			ranking: [{ targetId: "good" }],
+			rejected: [{ targetId: "bad" }],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+		expect(result.rejected[0]?.code).not.toBe("PRICING_MODEL_UNAVAILABLE");
+	});
+
+	it.each([
+		"text",
+		"nodes",
+	] as const)("bounds repeated aliased model %s across the whole request before cloning", (kind) => {
+		const candidates = Array.from(
+			{ length: kind === "text" ? 2 : 16 },
+			(_, index) => candidate(`target-${index}`, "1"),
+		);
+		const first = candidates[0];
+		if (!first) throw new Error("missing fixture");
+		const input = request(candidates);
+		const padding =
+			kind === "text"
+				? Array(600).fill("x".repeat(4096))
+				: Array(1000).fill(Array(8).fill(0));
+		Reflect.set(first.pricing, "padding", padding);
+		for (const item of candidates) item.pricing = first.pricing;
+		const clone = vi.spyOn(globalThis, "structuredClone");
+		try {
+			expect(rankIacTargets(input)).toMatchObject({
+				code: "ROUTING_INPUT_INVALID",
+				ranking: [],
+				budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			});
+			expect(clone).not.toHaveBeenCalled();
+		} finally {
+			clone.mockRestore();
+		}
+	});
+
+	it("checks cheap root fields and duplicate target IDs before cloning", () => {
+		const first = candidate("first", "1");
+		const invalidRootCandidate = candidate("invalid-root", "1");
+		const invalidRoot = request([invalidRootCandidate]);
+		invalidRoot.tenantId = "";
+		let traps = 0;
+		Object.defineProperty(invalidRootCandidate, "pricing", {
+			enumerable: true,
+			get: () => {
+				traps++;
+				throw new Error("candidate must not be read");
+			},
+		});
+		const duplicate = request([first, first]);
+		const clone = vi.spyOn(globalThis, "structuredClone");
+		try {
+			for (const input of [invalidRoot, duplicate]) {
+				expect(rankIacTargets(input)).toMatchObject({
+					code: "ROUTING_INPUT_INVALID",
+					ranking: [],
+					budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				});
+			}
+			expect(clone).not.toHaveBeenCalled();
+			expect(traps).toBe(0);
+		} finally {
+			clone.mockRestore();
+		}
+	});
+
+	it("accepts a bounded full-size batch with a shared unavailable model", () => {
+		const candidates = Array.from({ length: 256 }, (_, index) =>
+			candidate(`target-${index}`, "1"),
+		);
+		const input = request(candidates);
+		const unavailable = targetPricingUnavailable("no model");
+		for (const item of candidates) item.pricing = unavailable;
+		const result = rankIacTargets(input);
+		expect(result).toMatchObject({
+			coverage: "partial",
+			ranking: [],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+		expect(result.code).toBeUndefined();
+		expect(result.rejected).toHaveLength(256);
+		expect(
+			result.rejected.every(
+				(item) => item.code === "PRICING_MODEL_UNAVAILABLE",
+			),
+		).toBe(true);
+	}, 15_000);
+
+	it.each([
+		"oversized-time",
+		"oversized-target",
+		"malformed-inventory",
+	] as const)("does not rank %s data or imply budget admission", (kind) => {
+		const input = request([candidate("safe", "1")]);
+		const first = input.candidates[0];
+		if (!first) throw new Error("missing fixture");
+		if (kind === "oversized-time") input.at = "2".repeat(500);
+		if (kind === "oversized-target") first.inventory.targetId = "x".repeat(500);
+		if (kind === "malformed-inventory") {
+			const resource = first.inventory.resources[0];
+			if (!resource) throw new Error("missing fixture resource");
+			Reflect.set(resource, "providerId", 123);
+		}
+		const result = rankIacTargets(input);
+		expect(result).toMatchObject({
+			coverage: "partial",
+			ranking: [],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+		expect(
+			result.rejected.every(
+				(entry) => entry.code !== "PRICING_MODEL_UNAVAILABLE",
+			),
+		).toBe(true);
 	});
 
 	it("excludes different workloads, tenants or quote horizons", () => {

@@ -54,6 +54,16 @@ was evaluated and no reservation created; use the broker admission authority
 before executing the chosen target. The caller must establish that its common
 workload reference identifies equivalent work across candidates.
 
+Ranking accepts at most 256 candidates. Before copying their inventories and
+models it bounds the whole batch to 100,000 data nodes and 4,000,000 UTF-16
+code units of string values and property names; repeated references count each
+time. Each inventory and model also has its own pricing input limit.
+Uninspectable or excessive inputs return `ROUTING_INPUT_INVALID` with no budget
+evaluation or reservation; inspectable invalid models are reported alongside
+the remaining comparable candidates. JavaScript must enumerate object keys
+before counting them, which can allocate before these limits apply. The host
+must impose independent process memory and time limits for untrusted input.
+
 `executeRankedIacTargets` accepts that ranking and an execution callback for
 each ranked target. It passes the same request ID and that target's inventory,
 model and quote hashes to every callback, and tries
