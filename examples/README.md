@@ -55,7 +55,7 @@ catalogs, terminal output, or browser storage.
   `typecheck`, `lint` (see [`hello-bindle/package.json`](./hello-bindle/package.json)).
 - All `.proto`/`.cue` live under the package-local `data-models/` only; every
   proto message carries a matching CUE `#Type:` constraint; generated output
-  is checked in under `src/_generated/` (`buf generate data-models --template
-  ../../buf.gen.yaml -o src/_generated`).
+  is checked in under `src/_generated/`. From the repository root, regenerate
+  with `pnpm exec node --import tsx packages/schema-tools/src/cli.ts --packages-root examples`.
 - Service boundaries ship executable PACT contracts under `contracts/pacts/`.
 - `npm run architecture:guard` must pass for any example change.

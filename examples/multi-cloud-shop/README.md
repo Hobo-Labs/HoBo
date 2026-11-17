@@ -62,7 +62,7 @@ The API is protobuf-first: its shapes live in `data-models/shop.proto` with
 matching CUE constraints in `data-models/shop.cue`, and `src/api.ts` imports the
 **generated** `Product`/`ProductList`/`OrderRequest`/`OrderAccepted` types from
 `src/_generated/shop_pb.ts` (run
-`buf generate data-models --template ../../buf.gen.yaml -o src/_generated` to
+`pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --packages-root examples --filter examples/multi-cloud-shop` to
 regenerate). Following **parse, don't validate**, `src/api.ts` runs untrusted
 order JSON through a single parse boundary (`parseOrderRequest`) that returns
 that **derived domain type** (`OrderRequest`) instead of re-checking raw fields

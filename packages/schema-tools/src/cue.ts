@@ -10,7 +10,7 @@ import {
 	stat,
 	writeFile,
 } from "node:fs/promises";
-import { arch, homedir, platform } from "node:os";
+import { arch, platform, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isJsonNumber } from "./json.js";
@@ -53,7 +53,6 @@ async function runCommand(
 			[...args],
 			{ cwd, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 },
 			(error, stdout, stderr) => {
-				// SAFETY: `if (error && (error as NodeJS.ErrnoException).code === "ENOENT") {` is required at this I/O or test boundary.
 				if (error && (error as NodeJS.ErrnoException).code === "ENOENT") {
 					reject(new Error(`command not found: ${command}`));
 					return;
@@ -148,11 +147,6 @@ function cueDefinitionName(schemaPath: string): string {
 
 const CUE_PACKAGE_CLAUSE = /^package\s+(\w+)\s*$/m;
 
-/**
- * The files CUE unifies with each schema: those in the folder that declare the
- * same package, so a definition in a sibling file is a legitimate reference. A
- * file with no package clause, or the only file of its package, is vetted alone.
- */
 async function unifiedSchemas(
 	schemas: readonly string[],
 ): Promise<ReadonlyMap<string, readonly string[]>> {
@@ -216,8 +210,6 @@ export async function vetCueConstraints(
 	for (const absolute of pkg.cueSchemas) {
 		const schemaPath = absolute.slice(pkg.dataModelsDir.length + 1);
 		const schemaArgs = unified.get(absolute) ?? [absolute];
-		// Flat corpora retain their package-wide meaning. Scoped corpora add
-		// checks only for their owning schema; they cannot mask flat fixtures.
 		for (const fixtureRoot of [
 			"fixtures",
 			join("fixtures", basename(schemaPath, ".cue")),
@@ -293,7 +285,7 @@ export async function withTempDirectory<T>(
 	prefix: string,
 	run: (dir: string) => Promise<T>,
 ): Promise<T> {
-	const dir = await mkdtemp(join(homedir(), prefix));
+	const dir = await mkdtemp(join(tmpdir(), prefix));
 	try {
 		return await run(dir);
 	} finally {

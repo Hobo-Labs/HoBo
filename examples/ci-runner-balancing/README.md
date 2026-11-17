@@ -70,7 +70,7 @@ apply mode: patch Actions variables → exec.Succeeded events
 | Path | What it is |
 |---|---|
 | `data-models/runner_balancing.{proto,cue}` | Protobuf records + CUE constraints for every shape below. |
-| `src/_generated/runner_balancing_pb.ts` | Generated runtime types (`buf generate data-models --template ../../buf.gen.yaml -o src/_generated`). |
+| `src/_generated/runner_balancing_pb.ts` | Generated runtime types (`pnpm --dir ../.. exec node --import tsx packages/schema-tools/src/cli.ts --packages-root examples --filter examples/ci-runner-balancing`). |
 | `src/parse.ts` | The parse boundary: untrusted registry/usage JSON → derived domain types. |
 | `src/ledger.ts` | `CreditLedgerView` projection (effective marginal cost per provider). |
 | `src/decide.ts` | Pure dispatcher — no I/O, no clock, no provider names. |

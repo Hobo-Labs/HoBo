@@ -7,293 +7,118 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
-/**
- * Describes the file policy.proto.
- */
 export const file_policy: GenFile = /*@__PURE__*/
   fileDesc("Cgxwb2xpY3kucHJvdG8SCmhvYm8uY2kudjEiZwoaQ2lQb2xpY3lLdWJlcm5ldGVzU2NhbGVTZXQSDAoEbmFtZRgBIAEoCRITCgttaW5fcnVubmVycxgCIAEoDRITCgttYXhfcnVubmVycxgDIAEoDRIRCgluYW1lc3BhY2UYBCABKAkiJAoUQ2lQb2xpY3lEYWdnZXJFbmdpbmUSDAoEbmFtZRgBIAEoCSL1AQoQQ2lQb2xpY3lQcm92aWRlchIKCgJpZBgBIAEoCRIMCgRraW5kGAIgASgJEhYKDmNvbm5lY3Rpb25fcmVmGAMgASgJEg8KB3J1bnNfb24YBCABKAkSDwoHZW5hYmxlZBgFIAEoCBI7CglzY2FsZV9zZXQYBiABKAsyJi5ob2JvLmNpLnYxLkNpUG9saWN5S3ViZXJuZXRlc1NjYWxlU2V0SAASMgoGZW5naW5lGAcgASgLMiAuaG9iby5jaS52MS5DaVBvbGljeURhZ2dlckVuZ2luZUgAEhAKCGxvY2F0aW9uGAggASgJQgoKCGNhcGFjaXR5Ij8KDENpUG9saWN5UG9vbBINCgVsYWJlbBgBIAEoCRIKCgJvcxgCIAEoCRIUCgxhcmNoaXRlY3R1cmUYAyABKAkiagoOQ2lQb2xpY3lCdWRnZXQSDQoFc2NvcGUYASABKAkSEAoIY3VycmVuY3kYAiABKAkSFAoMbGltaXRfbWljcm9zGAMgASgBEg4KBnBlcmlvZBgEIAEoCRIRCgl0aW1lX3pvbmUYBSABKAkiNAoRQ2lQb2xpY3lUaHJlc2hvbGQSEAoIZnJhY3Rpb24YASABKAESDQoFYWxsb3cYAiADKAkiXQoPQ2lQb2xpY3lSb3V0aW5nEhAKCHN0cmF0ZWd5GAEgASgJEhwKFG5vX2VsaWdpYmxlX3Byb3ZpZGVyGAIgASgJEhoKEnVua25vd25fYWxsb2NhdGlvbhgDIAEoCSLOAgoPRGVzaXJlZENpUG9saWN5EhIKCmFjY291bnRfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEiYKBHBvb2wYAyABKAsyGC5ob2JvLmNpLnYxLkNpUG9saWN5UG9vbBIvCglwcm92aWRlcnMYBCADKAsyHC5ob2JvLmNpLnYxLkNpUG9saWN5UHJvdmlkZXISKgoGYnVkZ2V0GAUgASgLMhouaG9iby5jaS52MS5DaVBvbGljeUJ1ZGdldBIsCgdyb3V0aW5nGAYgASgLMhsuaG9iby5jaS52MS5DaVBvbGljeVJvdXRpbmcSMQoKdGhyZXNob2xkcxgHIAMoCzIdLmhvYm8uY2kudjEuQ2lQb2xpY3lUaHJlc2hvbGQSLgoNYnVkZ2V0X3BvbGljeRgIIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RiBnByb3RvMw", [file_google_protobuf_struct]);
 
-/**
- * Kubernetes only: an ARC AutoscalingRunnerSet that HoBo thinly reconciles.
- * `name` is the AutoscalingRunnerSet `runnerScaleSetName`. HoBo never installs ARC.
- *
- * @generated from message hobo.ci.v1.CiPolicyKubernetesScaleSet
- */
 export type CiPolicyKubernetesScaleSet = Message<"hobo.ci.v1.CiPolicyKubernetesScaleSet"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
   name: string;
 
-  /**
-   * @generated from field: uint32 min_runners = 2;
-   */
   minRunners: number;
 
-  /**
-   * @generated from field: uint32 max_runners = 3;
-   */
   maxRunners: number;
 
-  /**
-   * @generated from field: string namespace = 4;
-   */
   namespace: string;
 };
 
-/**
- * Describes the message hobo.ci.v1.CiPolicyKubernetesScaleSet.
- * Use `create(CiPolicyKubernetesScaleSetSchema)` to create a new message.
- */
 export const CiPolicyKubernetesScaleSetSchema: GenMessage<CiPolicyKubernetesScaleSet> = /*@__PURE__*/
   messageDesc(file_policy, 0);
 
-/**
- * Kubernetes only: a Dagger Engine HoBo checks for readiness. HoBo never installs it.
- *
- * @generated from message hobo.ci.v1.CiPolicyDaggerEngine
- */
 export type CiPolicyDaggerEngine = Message<"hobo.ci.v1.CiPolicyDaggerEngine"> & {
-  /**
-   * @generated from field: string name = 1;
-   */
   name: string;
 };
 
-/**
- * Describes the message hobo.ci.v1.CiPolicyDaggerEngine.
- * Use `create(CiPolicyDaggerEngineSchema)` to create a new message.
- */
 export const CiPolicyDaggerEngineSchema: GenMessage<CiPolicyDaggerEngine> = /*@__PURE__*/
   messageDesc(file_policy, 1);
 
-/**
- * Authored intent only. Financial observations and leases live in separate records.
- *
- * @generated from message hobo.ci.v1.CiPolicyProvider
- */
 export type CiPolicyProvider = Message<"hobo.ci.v1.CiPolicyProvider"> & {
-  /**
-   * @generated from field: string id = 1;
-   */
   id: string;
 
-  /**
-   * @generated from field: string kind = 2;
-   */
   kind: string;
 
-  /**
-   * @generated from field: string connection_ref = 3;
-   */
   connectionRef: string;
 
-  /**
-   * @generated from field: string runs_on = 4;
-   */
   runsOn: string;
 
-  /**
-   * @generated from field: bool enabled = 5;
-   */
   enabled: boolean;
 
-  /**
-   * @generated from oneof hobo.ci.v1.CiPolicyProvider.capacity
-   */
   capacity: {
-    /**
-     * @generated from field: hobo.ci.v1.CiPolicyKubernetesScaleSet scale_set = 6;
-     */
     value: CiPolicyKubernetesScaleSet;
     case: "scaleSet";
   } | {
-    /**
-     * @generated from field: hobo.ci.v1.CiPolicyDaggerEngine engine = 7;
-     */
     value: CiPolicyDaggerEngine;
     case: "engine";
   } | { case: undefined; value?: undefined };
 
-  /**
-   * Vercel only: "vercel", "local" or "remote".
-   *
-   * @generated from field: string location = 8;
-   */
   location: string;
 };
 
-/**
- * Describes the message hobo.ci.v1.CiPolicyProvider.
- * Use `create(CiPolicyProviderSchema)` to create a new message.
- */
 export const CiPolicyProviderSchema: GenMessage<CiPolicyProvider> = /*@__PURE__*/
   messageDesc(file_policy, 2);
 
-/**
- * @generated from message hobo.ci.v1.CiPolicyPool
- */
 export type CiPolicyPool = Message<"hobo.ci.v1.CiPolicyPool"> & {
-  /**
-   * @generated from field: string label = 1;
-   */
   label: string;
 
-  /**
-   * @generated from field: string os = 2;
-   */
   os: string;
 
-  /**
-   * @generated from field: string architecture = 3;
-   */
   architecture: string;
 };
 
-/**
- * Describes the message hobo.ci.v1.CiPolicyPool.
- * Use `create(CiPolicyPoolSchema)` to create a new message.
- */
 export const CiPolicyPoolSchema: GenMessage<CiPolicyPool> = /*@__PURE__*/
   messageDesc(file_policy, 3);
 
-/**
- * @generated from message hobo.ci.v1.CiPolicyBudget
- */
 export type CiPolicyBudget = Message<"hobo.ci.v1.CiPolicyBudget"> & {
-  /**
-   * @generated from field: string scope = 1;
-   */
   scope: string;
 
-  /**
-   * @generated from field: string currency = 2;
-   */
   currency: string;
 
-  /**
-   * @generated from field: double limit_micros = 3;
-   */
   limitMicros: number;
 
-  /**
-   * @generated from field: string period = 4;
-   */
   period: string;
 
-  /**
-   * @generated from field: string time_zone = 5;
-   */
   timeZone: string;
 };
 
-/**
- * Describes the message hobo.ci.v1.CiPolicyBudget.
- * Use `create(CiPolicyBudgetSchema)` to create a new message.
- */
 export const CiPolicyBudgetSchema: GenMessage<CiPolicyBudget> = /*@__PURE__*/
   messageDesc(file_policy, 4);
 
-/**
- * @generated from message hobo.ci.v1.CiPolicyThreshold
- */
 export type CiPolicyThreshold = Message<"hobo.ci.v1.CiPolicyThreshold"> & {
-  /**
-   * @generated from field: double fraction = 1;
-   */
   fraction: number;
 
-  /**
-   * @generated from field: repeated string allow = 2;
-   */
   allow: string[];
 };
 
-/**
- * Describes the message hobo.ci.v1.CiPolicyThreshold.
- * Use `create(CiPolicyThresholdSchema)` to create a new message.
- */
 export const CiPolicyThresholdSchema: GenMessage<CiPolicyThreshold> = /*@__PURE__*/
   messageDesc(file_policy, 5);
 
-/**
- * @generated from message hobo.ci.v1.CiPolicyRouting
- */
 export type CiPolicyRouting = Message<"hobo.ci.v1.CiPolicyRouting"> & {
-  /**
-   * @generated from field: string strategy = 1;
-   */
   strategy: string;
 
-  /**
-   * @generated from field: string no_eligible_provider = 2;
-   */
   noEligibleProvider: string;
 
-  /**
-   * @generated from field: string unknown_allocation = 3;
-   */
   unknownAllocation: string;
 };
 
-/**
- * Describes the message hobo.ci.v1.CiPolicyRouting.
- * Use `create(CiPolicyRoutingSchema)` to create a new message.
- */
 export const CiPolicyRoutingSchema: GenMessage<CiPolicyRouting> = /*@__PURE__*/
   messageDesc(file_policy, 6);
 
-/**
- * @generated from message hobo.ci.v1.DesiredCiPolicy
- */
 export type DesiredCiPolicy = Message<"hobo.ci.v1.DesiredCiPolicy"> & {
-  /**
-   * @generated from field: string account_id = 1;
-   */
   accountId: string;
 
-  /**
-   * @generated from field: string tenant_id = 2;
-   */
   tenantId: string;
 
-  /**
-   * @generated from field: hobo.ci.v1.CiPolicyPool pool = 3;
-   */
   pool?: CiPolicyPool | undefined;
 
-  /**
-   * @generated from field: repeated hobo.ci.v1.CiPolicyProvider providers = 4;
-   */
   providers: CiPolicyProvider[];
 
-  /**
-   * @generated from field: hobo.ci.v1.CiPolicyBudget budget = 5;
-   */
   budget?: CiPolicyBudget | undefined;
 
-  /**
-   * @generated from field: hobo.ci.v1.CiPolicyRouting routing = 6;
-   */
   routing?: CiPolicyRouting | undefined;
 
-  /**
-   * @generated from field: repeated hobo.ci.v1.CiPolicyThreshold thresholds = 7;
-   */
   thresholds: CiPolicyThreshold[];
 
-  /**
-   * Shared hobo.budget-policy/v1 authoring JSON, parsed by @hobo/core.
-   *
-   * @generated from field: google.protobuf.Struct budget_policy = 8;
-   */
   budgetPolicy?: JsonObject | undefined;
 };
 
-/**
- * Describes the message hobo.ci.v1.DesiredCiPolicy.
- * Use `create(DesiredCiPolicySchema)` to create a new message.
- */
 export const DesiredCiPolicySchema: GenMessage<DesiredCiPolicy> = /*@__PURE__*/
   messageDesc(file_policy, 7);
 
