@@ -36,19 +36,20 @@ Feature: Routing parity with RelayRunner
     Then the relay job succeeds on "ubuntu-24.04" from the "github" step
     And the journaled decision lists "namespace" as not in the runner order
 
-  @parity @R04 @t2 @t3 @pending
+  @parity @R04 @t2 @t3
   Scenario: R04 When nothing fits, the relay job fails with the reason and the job behind it is skipped
-    Given the runner order of "octo/app" is "machine"
+    Given relay mode is on for "octo/app" with the runner order "machine"
     And a relay job for "octo/app" names only "machine" and no machine is connected
     And a job "build" needs the relay job
-    When the relay job is answered
+    When the relay job is answered in relay mode
     Then the relay job fails with the one-sentence reason as an annotation
     And GitHub skips the job "build"
 
-  @parity @R05 @t2 @pending
+  @parity @R05 @t2
   Scenario: R05 When machines are only busy the job waits on the busy step's label, and a cancel frees it
-    Given every machine that fits the relay job is busy
-    When the relay job is answered
+    Given relay mode is on for "octo/app" with the runner order "machine"
+    And every machine that fits the relay job is busy
+    When the relay job is answered in relay mode
     Then the relay job succeeds with outcome "waiting" and the busy step's label as its runner
     And the job behind it queues on that label
     When the run is cancelled
