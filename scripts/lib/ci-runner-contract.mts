@@ -481,7 +481,8 @@ export const REQUIRED_COMMANDS = ["xz", "git", "curl", "ps", "docker"] as const;
 
 /**
  * Commands added after the first hermetic image: skopeo (build.sh loads the mise oci
- * layout with it) and tmux (the @hobo/code resident session runtime). Checked when the contract runs inside a freshly built candidate
+ * layout with it) and tmux (retained for terminal tooling; the former @hobo/code
+ * resident-session use is historical). Checked when the contract runs inside a freshly built candidate
  * (`HOBO_CI_RUNNER_CONTRACT=live`), so jobs on an older image are not refused for them.
  */
 export const IMAGE_CONTRACT_COMMANDS = ["skopeo", "tmux"] as const;

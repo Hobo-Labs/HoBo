@@ -189,20 +189,23 @@ export function resolveProjects(
 			unknown: [],
 		};
 	}
+	// An all-project alias mixed with any explicit target is ambiguous. Do not
+	// let it erase an unknown selector or broaden a write to every project.
+	if (tokens.some((token) => ALL_ALIASES.has(token))) {
+		return { allProjects: false, projects: [], requested: tokens, unknown: tokens };
+	}
 
 	const projects: ProjectRef[] = [];
 	const unknown: string[] = [];
 	const seen = new Set<string>();
 	for (const t of tokens) {
-		if (ALL_ALIASES.has(t)) {
-			return {
-				allProjects: true,
-				projects: all,
-				requested: [ALL],
-				unknown: [],
-			};
-		}
-		const hit = byId.get(t) || byId.get(slugify(t));
+		// Do not normalize paths or traversal into a different valid project id.
+		const parts = t.split("/");
+		const valid = parts.every((part, index) =>
+			/^[a-z0-9][a-z0-9._-]*$/.test(part) ||
+				(index === 0 && /^@[a-z0-9][a-z0-9._-]*$/.test(part)),
+		);
+		const hit = valid ? byId.get(t) || (parts.length === 1 ? byId.get(slugify(t)) : undefined) : undefined;
 		if (!hit) {
 			unknown.push(t);
 			continue;
@@ -219,6 +222,13 @@ export function resolveProjects(
 		requested: tokens,
 		unknown,
 	};
+}
+
+/** Refuse unresolved selectors instead of silently broadening a write scope. */
+export function projectSelectionProblem(selection: ProjectSelection): string | undefined {
+	return selection.unknown.length
+		? `Unknown or invalid project selection: ${selection.unknown.join(", ")}`
+		: undefined;
 }
 
 function normalizeProjectTokens(

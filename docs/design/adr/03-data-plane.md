@@ -621,6 +621,10 @@ Operators and coding agents need OpenReplay-class session reconstruction for web
 ## ADR-0139
 **HoBo Code: coding harness and harness multiplexer (`hobo-code` / `@hobo/code`).**
 
+> Historical scope: `packages/code`, `@hobo/code`, and the `hobo-code` binary
+> were removed from this tree. This decision records their former design; the
+> `@hobo/patterns` catalog and its library APIs remain.
+
 ### Context
 Agents and humans need an opinionated path to write complete HoBo apps/Bindles end-to-end with extreme templates + ts-autocode, while protecting the canonical project tree. Existing surfaces already cover pieces — `hobo codegen` (HOBO-152), hobo-code-dsl (HOBO-394), `hobo sandbox`, stations (ADR-0131), trails (ADR-0134), OpenFeature/Harness (ADR-0044/0083), FinOps, SWE connectors, connectivity named endpoints (ADR-0130) — but there was no elevated **coding harness + multiplexer** that composes them under one product CLI with isolation purity, evidence triples, and durable learning outside ephemeral sandboxes.
 
@@ -695,7 +699,7 @@ In-repo contract: `createHarnessV1` / `createHarnessAgent` (`packages/code/src/a
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed on the long-lived `feature/hobo-code` branch and is not part of `main`. The sections above, and the references below, describe that branch: the package, its release workflow and image, the isolation runbook and the experience proof exist there. So does its event family, the code.* events and the OpenFeature keys under `code.`: it is listed in `docs/design/event-families.md` on that branch only. `main` is merged into `feature/hobo-code` from time to time, as merge commits and never squashed, by the [sync procedure](../../release/pipelines.md#syncing-main-into-featurehobo-code). This ADR is amended again when hobo-code is released to `main` or dropped.
+At that date hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary), its release workflow, image, isolation runbook, experience proof, code.* events and OpenFeature keys were on `feature/hobo-code`, not `main`. The Code package is absent from this tree; these references describe that former implementation.
 
 ### References
 - Package: `packages/code` (`@hobo/code`)
@@ -708,6 +712,11 @@ hobo-code (`packages/code`, `@hobo/code`, the `hobo-code` binary) is developed o
 - Related: ADR-0130, ADR-0131, ADR-0134, ADR-0044, ADR-0083, ADR-0123, ADR-0128, HOBO-152, HOBO-394
 
 ## ADR-0152
+
+> Historical scope: the Code template and session emission paths described
+> below were removed from this tree with `packages/code`. The earlier branch
+> amendment records where those paths lived; it is not a current CLI promise.
+
 **Atomic templates + local SQLite hybrid retrieval for zero-inference emission.**
 
 **Status:** Accepted — extends [ADR-0139](#adr-0139) (hobo-code ScaffoldingAgent) and [ADR-0135](03-data-plane-sqlite-default.md) (one-writer SQLite).
@@ -741,9 +750,14 @@ The first ADR-0152 emit path overwrote files in topo order. That made "add a sec
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-The emission path in the `hobo-code` session (decisions 8 and 10: ScaffoldingAgent, `tryWorkspaceAction`, `templates/intents/*.json`) is on the `feature/hobo-code` branch, not `main`. The atom corpus itself stays in `packages/patterns` on `main`.
+At that date the `hobo-code` session emission path (decisions 8 and 10: ScaffoldingAgent, `tryWorkspaceAction`, `templates/intents/*.json`) was on `feature/hobo-code`, not `main`. The Code package is now absent from this tree; the atom corpus remains in `packages/patterns`.
 
 ## ADR-0153
+
+> Historical scope: the `hobo-code` template, scaffold, and chat routes below
+> were removed from this tree with `packages/code`. The `@hobo/patterns` catalog
+> remains; the earlier branch amendment describes the former Code integration.
+
 **Canonical `@hobo/patterns` catalog, ontology-vector retrieval, explicit `template` verb.**
 
 **Status:** Accepted — supersedes ADR-0152 as the source of truth for pattern *bodies*. ADR-0152 chat emit remains for known session phrases.
@@ -773,9 +787,13 @@ The emission path in the `hobo-code` session (decisions 8 and 10: ScaffoldingAge
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-The `hobo-code template` / `/template` route and the `hobo-code scaffold` adapter (decisions 3, 4 and the atom CLI in the consequences), and the OpenUI starter `starter.code.openui-astryx-bindle`, are on the `feature/hobo-code` branch, not `main`. On `main` the catalog is reached through `hobo new` and the `@hobo/patterns` library API, and apply receipts carry `promotionRef: "caller-promotes"`: promotion out of the isolation root is the caller's.
+At that date the `hobo-code template` / `/template` route, `hobo-code scaffold` adapter (decisions 3, 4 and the atom CLI in the consequences), and OpenUI starter `starter.code.openui-astryx-bindle` were on `feature/hobo-code`, not `main`. Code and those routes are absent from this tree. The catalog remains available through `hobo new` and the `@hobo/patterns` library API, and apply receipts carry `promotionRef: "caller-promotes"`: promotion out of the isolation root is the caller's.
 
 ## ADR-0154
+
+> Historical scope: the Code review aggregate described below was removed from
+> this tree with `packages/code`; the earlier branch amendment is historical.
+
 **Durable HoBo Code review aggregate.**
 
 **Status:** Accepted
@@ -797,7 +815,7 @@ Git workbench snapshots are mutation surfaces. "Reviewed index" meant authorizin
 
 ### Amendment (2026-11-08: hobo-code leaves main)
 
-The review aggregate is part of `@hobo/code`, which is developed on the `feature/hobo-code` branch and is not part of `main`. This ADR describes that branch.
+At that date the review aggregate was part of `@hobo/code` on `feature/hobo-code`, not `main`. The Code package is absent from this tree; the aggregate described here is historical.
 
 ## ADR-0160
 **`drizzle-kit` is the default relational schema-diff engine behind the migration port — deploy-owned generation, HoBo-gated apply.**

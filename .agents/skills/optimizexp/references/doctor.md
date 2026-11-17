@@ -58,7 +58,13 @@ Aliases: `fix` → `repair`, `snap` → `snapshot`.
 ### Surface map + catalog
 - Missing/invalid `surface-map.json`  
 - Interactive default without interactive surfaces  
-- Missing `experience-catalog.json` / no cold-start P0 rows  
+- Missing `experience-catalog.json` / no cold-start P0 rows
+- Saved binary bytes and scoped operator confirmation of current imports, configuration, and environment
+
+After checking the observation, pass `--confirm-surface-current=<project-id>:<surfaceMapDigest>`
+(the digest is in that project's catalog). Doctor cannot infer current runtime
+behavior from a saved help probe; changed or unreadable executable bytes still
+fail with the flag. See [app exploration](app-exploration.md#saved-observations-and-scoped-confirmation).
 
 ## Safe repairs (`repair`)
 
