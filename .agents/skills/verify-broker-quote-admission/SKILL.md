@@ -7,7 +7,7 @@ description: Verify the general broker's quote-backed admission, current evidenc
 
 **Properties:** In the checked quote-backed path, the policy gate and a newly confirmed hold receive the attested conservative liability for the selected work. The broker refuses untrusted or stale quotes, changes to the selected environment or catalog, and missing hold confirmation. It rechecks the quote after policy and after billing. The receipt carries the quote hash, work-binding digest and amount, and a configured signature covers them. Raw estimates require explicit host trust.
 
-**Review baseline:** commit `14ffdf1f83fb011093eb8113b0627920b41e7d44`. PASS for the generated tests, bounded model and symbolic obligations below.
+**Review baseline:** commit `7e6f4d1bc8be723f45d3425a26ec34eabf158315`. PASS for the generated tests, bounded model and symbolic obligations below.
 
 ## Covered code
 
@@ -27,7 +27,7 @@ The runner checks checksum-pinned TLC 1.7.4. Set `TLA2TOOLS` to the jar and `BUD
 
 ## Scope and evidence
 
-The model treats quote authentication, the bound's conservatism, policy decisions, and the billing plane's hold confirmation as trustworthy predicates. It checks transitions from selection through gate, confirmation, post-hold evidence checks and issuance; stale evidence, a changed approved environment or catalog, and absent hold confirmation refuse the modeled resolution. The `checkedFresh` property refers to the last check, not a guarantee that time cannot pass or evidence cannot change afterward. Delivery and execution are not modeled. The model does not prove cryptography, actual provider charges, concurrent processes, external policy changes, persistent holds or refinement of the TypeScript implementation.
+The model treats catalog selection, quote authentication, the bound's conservatism, policy decisions, and the billing plane's hold confirmation as trustworthy predicates. `verify-broker-catalog-ordering` checks the preliminary catalog ordering; neither model proves cheapest whole-plan selection. It checks transitions from selection through gate, confirmation, post-hold evidence checks and issuance; stale evidence, a changed approved environment or catalog, and absent hold confirmation refuse the modeled resolution. The `checkedFresh` property refers to the last check, not a guarantee that time cannot pass or evidence cannot change afterward. Delivery and execution are not modeled. The model does not prove cryptography, actual provider charges, concurrent processes, external policy changes, persistent holds or refinement of the TypeScript implementation.
 
 TLC explores 108 states. The chart has seven states and nine arrows and hides 140 same-label steps. Five deliberately weakened model guards produce counterexamples for stale quotes, absent holds, an omitted bound, environment changes and catalog changes. Real-code examples replay these paths: a quote expires during billing, a billing response omits hold confirmation, gate/billing receive the host bound, and environment or catalog changes during a callback. The post-check freshness window remains a separate delivery and execution concern.
 

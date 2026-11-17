@@ -279,7 +279,14 @@ policy evaluation and requires billing to confirm a new hold. Quote-backed
 receipts carry the quote hash, work-binding digest and authorized amount; the
 optional receipt signature covers these fields. The host attestor remains
 responsible for source authentication, binding, freshness and the liability
-bound. `trustLegacyEstimates: true` explicitly restores trust in the caller's
+bound. Before the quote, catalog selection compares
+nonnegative decimal marginal prices exactly, refuses mixed units or invalid
+identities, and breaks ties by stable provider and definition IDs. Prices must
+use the pricing package's decimal syntax; exponent notation and leading-zero
+spellings accepted by the former floating-point parser need migration. This is not
+a whole-request cost comparison: the catalog does not distinguish unpriced
+zeroes or carry currency, and only the selected plan is quoted. The cheapest
+complete plan or another affordable plan may therefore be missed. `trustLegacyEstimates: true` explicitly restores trust in the caller's
 estimate and its prior placement ordering. Guest requests reject until consent
 and claim evidence are integrated into admission.
 
@@ -293,6 +300,28 @@ receipt before submitting it. A failed or uncertain submission cannot be
 reissued by that instance without reconciliation. This process-local registry
 is lost on restart; it does not authenticate the caller, provide cross-process
 coordination, or verify that a remote receiver honors the quote at execution.
+
+The [catalog ordering skill](../../.agents/skills/verify-broker-catalog-ordering/SKILL.md)
+checks 256 abstract two-candidate states. This view hides 128 same-label steps;
+it does not compare complete plan quotes or establish currency completeness.
+
+```mermaid
+stateDiagram-v2
+  s0: A catalog price is invalid
+  s1: Catalog price units differ
+  s2: Catalog identities conflict
+  s3: Comparable catalog prices are ready
+  s4: Catalog evidence refused
+  s5: Lowest comparable catalog price selected
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  s0 --> s4: refuse incomplete evidence
+  s1 --> s4: refuse incomplete evidence
+  s2 --> s4: refuse incomplete evidence
+  s3 --> s5: compare exact prices
+```
 
 The [resolution signature skill](../../.agents/skills/verify-broker-resolution-signature/SKILL.md)
 checks 256 abstract evidence states. This view hides 128 same-label steps and
