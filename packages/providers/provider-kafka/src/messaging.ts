@@ -1,13 +1,3 @@
-/**
- * Native Kafka-shaped Messaging adapter.
- *
- * Fidelity is honest:
- * - `live` only when a {@link KafkaBrokerTransport} is supplied (fake harness
- *   or real broker client implementing the same methods).
- * - `simulated` uses the pure in-process Messaging emulator (no transport).
- * - `live: true` without a transport throws (never labels live falsely).
- */
-
 import {
 	type ConsumedMessage,
 	type ConsumerGroupId,
@@ -46,11 +36,7 @@ import {
 export interface KafkaMessagingOptions {
 	readonly cluster: KafkaClusterSpec;
 	readonly metering?: MeteringBus;
-	/**
-	 * When true, requires {@link transport}. Never enables live fidelity alone.
-	 */
 	readonly live?: boolean;
-	/** Production/live path: all produce/fetch/commit go through this seam. */
 	readonly transport?: KafkaBrokerTransport;
 	readonly now?: () => string;
 }
@@ -60,25 +46,20 @@ export interface KafkaMessaging extends Messaging {
 	readonly fidelity: "simulated" | "live";
 	readonly transport: KafkaBrokerTransport | null;
 	readonly partitionsFor: (topic: TopicName) => number;
-	/** Await outstanding live transport ack/nack ops (tests + sync API bridge). */
 	flush?(): Promise<void>;
 }
 
-/**
- * Create a Kafka-backed Messaging surface.
- * Inject `transport` for the live client code path (unit harness or real broker).
- */
 export function createKafkaMessaging(
 	options: KafkaMessagingOptions,
 ): KafkaMessaging {
 	const { cluster } = options;
-	if (options.live === true && !options.transport) {
+	const transport = options.transport ?? null;
+	const fidelity = transport?.fidelity === "live" ? "live" : "simulated";
+	if (options.live === true && fidelity !== "live") {
 		throw new MessagingCapabilityError(
-			"createKafkaMessaging: live fidelity requires a KafkaBrokerTransport (fake harness or real broker client)",
+			"createKafkaMessaging: live fidelity requires a KafkaBrokerTransport that declares live fidelity",
 		);
 	}
-
-	const transport = options.transport ?? null;
 	const capabilities: MessagingCapabilities = {
 		...KAFKA_MESSAGING_CAPABILITIES,
 		transactionalProduce: cluster.transactional,
@@ -156,7 +137,6 @@ export function createKafkaMessaging(
 		return Object.freeze(simulated);
 	}
 
-	// Live path: every I/O goes through the broker transport.
 	const eventLog: MessagingEvent[] = [];
 	const pendingCommits = new Map<string, { topic: string; group: string }>();
 	const pendingOps: Promise<void>[] = [];
@@ -178,11 +158,11 @@ export function createKafkaMessaging(
 		);
 	};
 
-	const live: KafkaMessaging = {
+	const clientBacked: KafkaMessaging = {
 		backend: "native-kafka",
 		capabilities,
 		cluster,
-		fidelity: "live",
+		fidelity,
 		transport,
 		partitionsFor(topic) {
 			return partitionMap.get(topic) ?? 3;
@@ -266,7 +246,7 @@ export function createKafkaMessaging(
 						metadata: {
 							backend: "native-kafka",
 							cluster: cluster.name,
-							fidelity: "live",
+							fidelity,
 						},
 					}),
 				);
@@ -314,13 +294,13 @@ export function createKafkaMessaging(
 				topic,
 				group,
 				mapped.length,
-				"live",
+				fidelity,
 			);
 			return mapped;
 		},
 
 		async subscribe(topic, consumerGroup, handler, consumeOptions = {}) {
-			const batch = await live.consume(topic, consumerGroup, {
+			const batch = await clientBacked.consume(topic, consumerGroup, {
 				maxMessages: consumeOptions.maxMessages ?? 32,
 				...consumeOptions,
 			});
@@ -347,8 +327,6 @@ export function createKafkaMessaging(
 				} catch (err) {
 					const reason = err instanceof Error ? err.message : String(err);
 					if (message.deliveryAttempt >= maxAttempts) {
-						// Permanent: commit under the still-held lease (do not nack first —
-						// release drops inflight and makes commit fail with lease mismatch).
 						await ackAsync(
 							transport,
 							pendingCommits,
@@ -372,7 +350,6 @@ export function createKafkaMessaging(
 							reason: reason || "max_delivery_attempts",
 						});
 					} else {
-						// Transient: release for redelivery.
 						await nackAsync(
 							transport,
 							pendingCommits,
@@ -394,8 +371,6 @@ export function createKafkaMessaging(
 			if (!pending) {
 				throw new MessagingDeliveryError(`no inflight kafka message ${id}`);
 			}
-			// Sync Messaging.ack contract: schedule transport commit; callers
-			// await messaging.flush() for deterministic completion.
 			pendingOps.push(
 				ackAsync(transport, pendingCommits, id, lease, emitLocal),
 			);
@@ -422,7 +397,7 @@ export function createKafkaMessaging(
 		},
 	};
 
-	return Object.freeze(live);
+	return Object.freeze(clientBacked);
 }
 
 async function ackAsync(

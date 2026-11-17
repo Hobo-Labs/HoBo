@@ -8,13 +8,19 @@ Optional **Camp runtime / component-host adapter** realizing HoBo ports onto **D
 | `wasi:messaging` / `topic()` | Pub/sub (incl. `pubsub.kafka`) |
 | Workflows / steps | **Activity-name mapping only** (permanent non-goal: full engine parity) |
 
-**ADR-0031 stands:** in-process wasm remains the default preferred path. Dapr is **opt-in** via Camp `runtimeRequirements: ["dapr"]` or explicit wiring.
+In-process wasm remains the default path. Dapr is opt-in via Camp `runtimeRequirements: ["dapr"]` or explicit wiring.
 
 ## Fidelity
 
-- No `DaprSidecarClient` → `fidelity: "simulated"`.
-- Client injected (`createInMemoryDaprClient` harness or real daprd HTTP client) → `fidelity: "live"`.
-- `live: true` without client → throws.
+The in-memory client and clients without a fidelity declaration report
+`simulated`. A caller-supplied client may declare `fidelity: "live"`;
+`live: true` requires that declaration. This is the client's assertion, not
+proof of connectivity. The runtime host's `ensure` checks the declared live
+client's health and reports it unready if the check is missing, fails, or
+returns false. In-memory clients do not establish sidecar readiness.
+
+`servePrivate` currently returns the supplied handlers in process. It does not
+create a sidecar boundary or a private sandbox.
 
 ```ts
 import {
@@ -27,13 +33,6 @@ const bundle = createDaprRuntimeHost({
   campId: "prod",
   client: createInMemoryDaprClient(),
 });
-// bundle.messaging.fidelity === "live"
-// bundle.actors.fidelity === "live"
-```
-
-Generate Dapr component YAML (no hand-written secrets):
-
-```ts
 const yaml = bundle.generateKafkaPubsubYaml("fromBinding:kafka-bootstrap");
 ```
 
@@ -44,7 +43,7 @@ const yaml = bundle.generateKafkaPubsubYaml("fromBinding:kafka-bootstrap");
 
 ## Doctor
 
-`diagnoseDaprReadiness()` feeds `hobo doctor`. Absent Dapr → fidelity=`simulated` unless a client is injected.
+`diagnoseDaprReadiness()` feeds `hobo doctor`. The host probes an explicitly live client's health before reporting a reachable runtime.
 
 ## Permanent non-goals
 
