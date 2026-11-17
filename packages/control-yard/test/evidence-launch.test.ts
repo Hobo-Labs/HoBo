@@ -19,6 +19,7 @@ import {
 	captureErrorsSchema,
 	captureFailureMessages,
 } from "../scripts/capture-failures.mts";
+import { validateEvidence } from "../scripts/evidence-validator.mts";
 import { compareImages } from "../scripts/image-diff.mts";
 import { sampleBoInk } from "../scripts/sample-bo-ink.mts";
 
@@ -152,6 +153,7 @@ it("invalidates both old evidence copies when browser launch fails", () => {
 			"image-diff.mts",
 			"sample-bo-ink.mts",
 			"evidence-check.mts",
+			"evidence-validator.mts",
 			"capture-failures.mts",
 		]) {
 			cpSync(
@@ -246,6 +248,10 @@ it("refuses failures in the manifest or its report even when files match", () =>
 		mkdirSync(join(scratch, "scripts"), { recursive: true });
 		cpSync(join(packageRoot, "scripts/evidence-check.mts"), script);
 		cpSync(
+			join(packageRoot, "scripts/evidence-validator.mts"),
+			join(scratch, "scripts/evidence-validator.mts"),
+		);
+		cpSync(
 			join(packageRoot, "scripts/capture-failures.mts"),
 			join(scratch, "scripts/capture-failures.mts"),
 		);
@@ -275,6 +281,13 @@ it("refuses failures in the manifest or its report even when files match", () =>
 			};
 			writeFileSync(manifestPath, JSON.stringify(manifest));
 		};
+		const probeCalls: string[] = [];
+		const testProbe = (path: string) => {
+			probeCalls.push(path);
+			return { status: 0, stdout: "2.5\n", stderr: "" };
+		};
+		const validateWithTestProbe = () =>
+			validateEvidence(shots, join(shots, ".capture-lock"), testProbe);
 
 		manifest.errors = ["imgdiff boot failed"];
 		writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -299,8 +312,22 @@ it("refuses failures in the manifest or its report even when files match", () =>
 		delete manifest.checks;
 		delete report.checks;
 		saveReport();
-		const historical = runCheck();
-		expect(historical.status).toBe(0);
+		expect(validateWithTestProbe()).toBe(0);
+		expect(probeCalls).toHaveLength(4);
+		const emptyPath = join(scratch, "no-ffprobe");
+		mkdirSync(emptyPath);
+		const noFfprobe = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", script],
+			{
+				cwd: packageRoot,
+				encoding: "utf8",
+				timeout: 20_000,
+				env: { ...process.env, PATH: emptyPath },
+			},
+		);
+		expect(noFfprobe.status).not.toBe(0);
+		expect(noFfprobe.stderr).toContain("ffprobe failed for recordings/");
 
 		manifest.checks = ["FAIL canvas ink — transparent"];
 		saveReport();
@@ -338,7 +365,7 @@ it("refuses failures in the manifest or its report even when files match", () =>
 			sha256: createHash("sha256").update(extra).digest("hex"),
 		};
 		saveReport();
-		expect(runCheck().status).toBe(0);
+		expect(validateWithTestProbe()).toBe(0);
 		rmSync(join(shots, "extra.txt"));
 		const missingExtra = runCheck();
 		expect(missingExtra.status).not.toBe(0);

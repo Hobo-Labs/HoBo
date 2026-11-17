@@ -43,9 +43,9 @@ pnpm --filter @hobo/control-yard run evidence:check
 Capture requires the checked-in, reviewed baselines and a working Pillow image
 comparison; a missing baseline or comparison dependency fails the capture. The
 comparison accepts RMS up to 25 for rendering variation and never replaces a
-baseline automatically; review baseline updates separately. A
-failed capture leaves the previous images in place but marks both evidence
-directories incomplete until a successful rerun. Captures take an exclusive
+baseline automatically; review baseline updates separately. A failed capture
+may leave a mix of old and new images, and marks both evidence directories
+incomplete until a successful rerun. Captures take an exclusive
 lock at `public/shots/.capture-lock`; after an interrupted process, confirm no
 capture is still running before removing that directory and retrying.
 
