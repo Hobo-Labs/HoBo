@@ -34,7 +34,7 @@ export interface AlchemySourceFence {
 	readonly verify: (claim: AlchemySourceClaim) => boolean;
 }
 
-interface SourceBinding {
+export interface AlchemySourceBinding {
 	readonly claim: AlchemySourceClaim;
 	readonly verify: (claim: AlchemySourceClaim) => boolean;
 }
@@ -44,7 +44,7 @@ export interface AlchemySourceResource {
 	readonly Type: string;
 }
 
-const sources = new WeakMap<object, SourceBinding>();
+const sources = new WeakMap<object, AlchemySourceBinding>();
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
 
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: these functions parse host-owned authority data without invoking accessors. */
@@ -245,7 +245,7 @@ export function verifyAlchemySourceFence(
 /** Register the exact resource returned by the Alchemy component. */
 export function registerAlchemySource(
 	resource: AlchemySourceResource,
-	binding: SourceBinding,
+	binding: AlchemySourceBinding,
 ): void {
 	const claim = captureClaim(binding.claim);
 	if (
@@ -262,7 +262,7 @@ export function registerAlchemySource(
 /** Resource identity is preserved by Alchemy between declaration and planning. */
 export function alchemySourceFor(
 	resource: AlchemySourceResource,
-): SourceBinding | undefined {
+): AlchemySourceBinding | undefined {
 	return sources.get(resource);
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */

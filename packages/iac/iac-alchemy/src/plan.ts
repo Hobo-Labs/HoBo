@@ -5,6 +5,7 @@ import type { Target } from "./_generated/alchemy_iac_pb.js";
 import type { FinancialDecision } from "./port.js";
 import { safeAlchemyFqn, safeAlchemyState } from "./state-identity.js";
 import {
+	type AlchemySourceBinding,
 	type AlchemySourceClaim,
 	type AlchemySourceRequirement,
 	alchemySourceFor,
@@ -61,6 +62,13 @@ export interface AlchemyCompositeObservation
 	readonly structuralDigest: string;
 	readonly effects: readonly AlchemyCompositeEffect[];
 	readonly sourceClaims: readonly AlchemySourceClaim[];
+	readonly historicalSources: readonly AlchemyHistoricalSource[];
+}
+
+export interface AlchemyHistoricalSource {
+	readonly resourceId: string;
+	readonly resourceType: string;
+	readonly priorStateDigest: string;
 }
 
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
@@ -104,7 +112,8 @@ export class AlchemyIacError extends Error {
 			admission?.budget?.reservation === "held" ||
 			admission?.budget?.reservation === "uncertain";
 		this.executionOutcome =
-			code === "APPLY_OUTPUT_UNREPRESENTABLE"
+			code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
+			code === "SOURCE_FENCE_UNCERTAIN"
 				? "completed"
 				: this.requiresReconciliation
 					? "unknown"
@@ -408,6 +417,11 @@ export function digestData(value: unknown): string {
 	return digest(value);
 }
 
+/** Hash independently authenticated, inspectable prior resource state. */
+export function hashAlchemyPriorState(value: unknown): string {
+	return digestData(value);
+}
+
 function digest(
 	value: unknown,
 	references?: ReadonlyMap<
@@ -429,6 +443,8 @@ function digest(
 interface InspectedAlchemyPlan {
 	digest: string;
 	changes: number;
+	hasSourceClaims: boolean;
+	revalidateSources(): boolean;
 }
 
 function inspectUnverified(
@@ -438,6 +454,7 @@ function inspectUnverified(
 ): InspectedAlchemyPlan & {
 	effects: AlchemyCompositeEffect[];
 	sourceClaims: AlchemySourceClaim[];
+	historicalSources: AlchemyHistoricalSource[];
 } {
 	const allowEffects = guard !== undefined;
 	if (plan.stack.name !== target.stackName || plan.stack.stage !== target.stage)
@@ -522,6 +539,12 @@ function inspectUnverified(
 	const scopeByName = new Map(scopes.map((scope) => [scope.resourceId, scope]));
 	const effects: AlchemyCompositeEffect[] = [];
 	const sourceClaims: AlchemySourceClaim[] = [];
+	const sourceBindings: AlchemySourceBinding[] = [];
+	const historicalStates: {
+		resourceId: string;
+		resourceType: string;
+		state: object;
+	}[] = [];
 	const actions = actionRows.map((row) => {
 		const node =
 			plan.native.actions[row.fqn] ?? plan.native.actionDeletions[row.fqn];
@@ -606,6 +629,9 @@ function inspectUnverified(
 				"the resource and its persisted or former state have unsafe identities",
 			);
 		const source = alchemySourceFor(node.resource);
+		const required = guard?.sourceRequirements?.find(
+			(entry) => entry.resourceId === row.fqn,
+		);
 		if (source !== undefined) {
 			if (guard === undefined)
 				throw new AlchemyIacError(
@@ -636,6 +662,64 @@ function inspectUnverified(
 					"the host source fence is unavailable or revoked",
 				);
 			sourceClaims.push(claim);
+			sourceBindings.push(source);
+		}
+		if (source === undefined && required !== undefined) {
+			if (
+				guard === undefined ||
+				node.action !== "delete" ||
+				required.resourceType !== row.resourceType
+			)
+				throw new AlchemyIacError(
+					"SOURCE_FENCE_INCOMPLETE",
+					"an executable resource is missing its registered source claim",
+				);
+			sourceClaims.push(
+				Object.freeze({
+					...required,
+					sourceDigest: target.sourceDigest,
+					environmentDigest: guard.environmentDigest,
+					proofRef: guard.proofRef,
+				}),
+			);
+		}
+		if (
+			node.action === "delete" &&
+			(source !== undefined || required !== undefined)
+		) {
+			const state = node.state;
+			if (
+				state === undefined ||
+				state === null ||
+				(state.status !== "created" && state.status !== "updated") ||
+				state.fqn !== row.fqn ||
+				state.resourceType !== row.resourceType ||
+				state.logicalId !== node.resource.LogicalId ||
+				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: persisted provider state is an external boundary and may be malformed. */
+				typeof state.instanceId !== "string" ||
+				state.instanceId.length === 0 ||
+				state.instanceId.length > 200 ||
+				state.instanceId.trim() !== state.instanceId ||
+				/[\p{Cc}]/u.test(state.instanceId) ||
+				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: persisted provider state is an external boundary and may be malformed. */
+				typeof state.props !== "object" ||
+				state.props === null ||
+				Array.isArray(state.props) ||
+				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: persisted provider state is an external boundary and may be malformed. */
+				typeof state.attr !== "object" ||
+				state.attr === null ||
+				Array.isArray(state.attr) ||
+				state.propsIncomplete === true
+			)
+				throw new AlchemyIacError(
+					"SOURCE_FENCE_INCOMPLETE",
+					"source deletion requires complete stable prior resource state",
+				);
+			historicalStates.push({
+				resourceId: row.fqn,
+				resourceType: row.resourceType,
+				state,
+			});
 		}
 		references.set(node.resource, {
 			resourceId: scope.resourceId,
@@ -711,6 +795,13 @@ function inspectUnverified(
 			"SOURCE_FENCE_INCOMPLETE",
 			"source claims do not match the complete host inventory",
 		);
+	const historicalSources = historicalStates.map(
+		({ resourceId, resourceType, state }) => ({
+			resourceId,
+			resourceType,
+			priorStateDigest: hashAlchemyPriorState(state),
+		}),
+	);
 	const material = {
 		stack: plan.stack,
 		sourceDigest: target.sourceDigest,
@@ -721,6 +812,7 @@ function inspectUnverified(
 		resources,
 		actions,
 		sourceClaims,
+		historicalSources,
 		cycles: [...plan.native.cycleMembers].sort(),
 		defaultMode: plan.native.defaultMode,
 		output: plan.native.output,
@@ -734,7 +826,22 @@ function inspectUnverified(
 	const changes =
 		rows.filter((row) => row.action !== "noop").length +
 		actionRows.filter((row) => row.action !== "noop").length;
-	return { digest: planDigest, changes, effects, sourceClaims };
+	return {
+		digest: planDigest,
+		changes,
+		effects,
+		sourceClaims,
+		historicalSources,
+		hasSourceClaims: sourceClaims.length > 0,
+		revalidateSources: () =>
+			sourceBindings.every((binding) => {
+				try {
+					return binding.verify(binding.claim) === true;
+				} catch {
+					return false;
+				}
+			}),
+	};
 }
 
 function validateGuard(guard: AlchemyCompositeGuard): void {
@@ -843,6 +950,11 @@ export function inspectAlchemyPlan(
 		sourceClaims: Object.freeze(
 			inspection.sourceClaims.map((claim) => Object.freeze({ ...claim })),
 		),
+		historicalSources: Object.freeze(
+			inspection.historicalSources.map((source) =>
+				Object.freeze({ ...source }),
+			),
+		),
 	});
 	let accepted = false;
 	try {
@@ -868,5 +980,16 @@ export function inspectAlchemyPlan(
 			environmentDigest: guard.environmentDigest,
 		}),
 		changes: inspection.changes,
+		hasSourceClaims: inspection.hasSourceClaims,
+		revalidateSources: () => {
+			try {
+				return (
+					inspection.revalidateSources() &&
+					guard.verifyPlan(observation) === true
+				);
+			} catch {
+				return false;
+			}
+		},
 	};
 }

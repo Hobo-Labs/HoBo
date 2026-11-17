@@ -73,8 +73,9 @@ export type {
 	AlchemyCompositeEnvironment,
 	AlchemyCompositeGuard,
 	AlchemyCompositeObservation,
+	AlchemyHistoricalSource,
 } from "./plan.js";
-export { AlchemyIacError } from "./plan.js";
+export { AlchemyIacError, hashAlchemyPriorState } from "./plan.js";
 export type {
 	FinancialDecision,
 	FinancialExpectation,
@@ -128,11 +129,7 @@ export interface AlchemyIacProviderOptions<
 	readonly stack: Stack.ConfiguredStack<Output, Requirements>;
 	readonly target: Target;
 	/** A host-supplied runtime layer, including any credentials and execution services. */
-	readonly runtimeLayer: Layer.Layer<
-		Alchemist.Services | Requirements,
-		unknown,
-		never
-	>;
+	readonly runtimeLayer: Layer.Layer<Alchemist.Services, unknown, never>;
 	readonly runtimeDirectory: string;
 	readonly financial: FinancialPort<Assessment>;
 	/** The host supplies one durable route authority shared by all candidate targets. */
@@ -966,7 +963,7 @@ export function createAlchemyIacProvider<
 		effect: Effect.Effect<
 			A,
 			unknown,
-			Alchemist.Services | Requirements | import("effect/Scope").Scope
+			Alchemist.Services | import("effect/Scope").Scope
 		>,
 	): Promise<A> => {
 		const supplied = Effect.scoped(
@@ -1512,6 +1509,33 @@ export function createAlchemyIacProvider<
 								heldReservation,
 							),
 						};
+					}
+					if (inspected.hasSourceClaims) {
+						let sourceVerified = false;
+						try {
+							if (composite !== undefined) {
+								verifyCompositeEnvironment(
+									composite,
+									target,
+									"apply",
+									program.action === "destroy" ? "destroy" : "deploy",
+								);
+								sourceVerified = inspected.revalidateSources();
+							}
+						} catch {
+							/* retain the hold if the fence has been revoked */
+						}
+						if (!sourceVerified) {
+							yield* Effect.promise(() => markUncertain(claimedReservationId));
+							return {
+								error: new AlchemyIacError(
+									"SOURCE_FENCE_UNCERTAIN",
+									"the provider completed but the source fence could not be verified; the reservation is retained",
+									admission,
+									claimedReservationId,
+								),
+							};
+						}
 					}
 					const outputs =
 						program.action === "destroy" ? {} : readOutputs(outcome.value);

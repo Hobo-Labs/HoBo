@@ -1,7 +1,11 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { alchemyTarget, ResourceScopeSchema } from "../src/index.js";
-import { type AlchemyCompositeGuard, inspectAlchemyPlan } from "../src/plan.js";
+import {
+	type AlchemyCompositeGuard,
+	digestData,
+	inspectAlchemyPlan,
+} from "../src/plan.js";
 import { registerAlchemySource } from "../src/source-fence.js";
 
 function fixture() {
@@ -200,6 +204,62 @@ describe("native Alchemy plan inspection", () => {
 		expect(() => inspectAlchemyPlan(f.plan as never, f.target, guard)).toThrow(
 			"SOURCE_FENCE_INCOMPLETE",
 		);
+	});
+
+	it("requires an independently authorized exact prior state for reconstructed source deletion", () => {
+		const f = fixture();
+		const state = {
+			status: "created",
+			fqn: "store",
+			resourceType: "Spec.Store",
+			logicalId: "store",
+			instanceId: "instance-1",
+			props: { main: "/source/store" },
+			attr: { endpoint: "first" },
+		};
+		Object.assign(f.node, { action: "delete", state });
+		Object.assign(f.native, {
+			resources: {},
+			deletions: { store: f.node },
+			destroy: true,
+		});
+		Object.assign(f.plan.resources[0], { action: "delete" });
+		let observed = "";
+		let approvedState = digestData(state);
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [
+				{
+					resourceId: "store",
+					resourceType: "Spec.Store",
+					bindleName: "app",
+					applicationName: "store",
+					sourceKind: "test",
+					sourcePath: "/source/store",
+				},
+			],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ historicalSources, sourceClaims }) => {
+				expect(sourceClaims).toHaveLength(1);
+				observed = historicalSources[0]?.priorStateDigest ?? "";
+				return historicalSources.length === 1 && observed === approvedState;
+			},
+		};
+		// SAFETY: this deliberately minimal plan exercises the reconstructed deletion boundary.
+		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
+		const first = inspect().digest;
+		const firstState = observed;
+		state.attr.endpoint = "second";
+		expect(inspect).toThrow("COMPOSITE_PLAN_UNVERIFIED");
+		approvedState = digestData(state);
+		expect(inspect().digest).not.toBe(first);
+		expect(observed).not.toBe(firstState);
+		state.status = "updating";
+		expect(inspect).toThrow("SOURCE_FENCE_INCOMPLETE");
+		state.status = "created";
+		state.fqn = "other";
+		expect(inspect).toThrow("SOURCE_FENCE_INCOMPLETE");
 	});
 	it.each([
 		"resources",

@@ -9,6 +9,7 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
+import { registerAlchemySource } from "../src/source-fence.js";
 import { routeFixture, testOperation } from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", { artifact: string }, { id: string }>;
@@ -28,6 +29,7 @@ function fixture(
 		denyAtPlan?: number;
 		denyEnvironment?: boolean;
 		includeActionScope?: boolean;
+		sourceRevokesAtApply?: boolean;
 	} = {},
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-composite-"));
@@ -36,6 +38,15 @@ function fixture(
 	let plans = 0;
 	let ran = 0;
 	let applied = 0;
+	let sourceAllowed = true;
+	const sourceRequirement = {
+		resourceId: "widget",
+		resourceType: "Spec.Widget",
+		bindleName: "app",
+		applicationName: "widget",
+		sourceKind: "test",
+		sourcePath: "/source/widget",
+	};
 	const uncertain: string[] = [];
 	const observed: string[] = [];
 	const Build = Action("Spec.Build", (input: { name: string }) =>
@@ -51,6 +62,7 @@ function fixture(
 				reconcile: ({ news }) =>
 					Effect.sync(() => {
 						applied++;
+						if (options.sourceRevokesAtApply) sourceAllowed = false;
 						expect(news.artifact).toBe("HELLO");
 						return { id: "widget" };
 					}),
@@ -61,7 +73,17 @@ function fixture(
 		Effect.gen(function* () {
 			const artifact = yield* Build("build", { name: "hello" });
 			const upper = Output.map(artifact.name, (name) => name.toUpperCase());
-			yield* Widget("widget", { artifact: upper });
+			const widget = yield* Widget("widget", { artifact: upper });
+			if (options.sourceRevokesAtApply)
+				registerAlchemySource(widget, {
+					claim: {
+						...sourceRequirement,
+						sourceDigest: `sha256:${"a".repeat(64)}`,
+						environmentDigest: `sha256:${"e".repeat(64)}`,
+						proofRef: "host:attestation-1",
+					},
+					verify: () => sourceAllowed,
+				});
 			return { output: "ok" };
 		}),
 	);
@@ -124,6 +146,9 @@ function fixture(
 		composite: {
 			proofRef: "host:attestation-1",
 			environmentDigest: `sha256:${"e".repeat(64)}`,
+			sourceRequirements: options.sourceRevokesAtApply
+				? [sourceRequirement]
+				: [],
 			verifyEnvironment: ({ phase }) => {
 				observed.push(`environment:${phase}`);
 				return options.denyEnvironment !== true;
@@ -169,6 +194,19 @@ function fixture(
 }
 
 describe("host-authorized Alchemy composite effects", () => {
+	it("retains an uncertain hold if the source fence is revoked during provider apply", async () => {
+		const f = fixture({ sourceRevokesAtApply: true });
+		await f.provider.assessPricing(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "SOURCE_FENCE_UNCERTAIN",
+			requiresReconciliation: true,
+			executionOutcome: "completed",
+		});
+		expect(f.applied()).toBe(1);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
 	it("plans and applies a real Action and mapped Output with complete financial scope", async () => {
 		const f = fixture();
 		const assessment = await f.provider.assessPricing(f.program);
