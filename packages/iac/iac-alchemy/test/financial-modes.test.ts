@@ -10,6 +10,7 @@ import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import type {
 	FinancialDecision,
 	FinancialPlan,
+	IacProgram,
 	IacRouteOperation,
 	IacRoutePort,
 	IacRouteResolver,
@@ -292,7 +293,8 @@ describe("financial admission modes", () => {
 			undefined,
 			route.port,
 		);
-		const legacy = { ...f.program, operationGeneration: undefined };
+		const legacy: IacProgram = { ...f.program };
+		delete legacy.operationGeneration;
 		await f.provider.preview(legacy);
 		await expect(f.provider.apply(legacy)).rejects.toMatchObject({
 			code: "OPERATION_GENERATION_REQUIRED",

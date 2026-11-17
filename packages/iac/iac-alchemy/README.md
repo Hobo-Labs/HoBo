@@ -221,6 +221,7 @@ SHA-256 operation ID across request IDs. The adapter refuses a permit for
 another operation. The host verifies proof expiry and revocation and must not
 expose the authorization to stack code. An absent generation or failed resolver
 blocks execution before route or financial admission.
+The generation uses the provider-neutral `IacProgram.operationGeneration` field.
 
 One adapter instance refuses concurrent execution of the same operation and
 keeps the resource fenced across later generations while its outcome is
