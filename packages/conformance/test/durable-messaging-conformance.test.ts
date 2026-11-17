@@ -46,6 +46,168 @@ function inertHarness(
 }
 
 describe("durable messaging conformance runner", () => {
+	it.each([
+		Number.NaN,
+		1.5,
+		undefined,
+	])("treats malformed moving-gap floor %s as unknown", async (floor) => {
+		const events: DurableMessagingEvent[] = [];
+		let reads = 0;
+		const fail = async () => {
+			throw new Error("unexpected operation");
+		};
+		const client: DurableMessaging = {
+			limits: DURABLE_MESSAGING_LIMITS,
+			ensureTopic: async ({ topic }) => {
+				events.push({
+					sequence: events.length + 1,
+					kind: "topic-created",
+					topic,
+				});
+				return { status: "committed", value: { topic } };
+			},
+			ensureSubscription: fail,
+			publish: fail,
+			consume: fail,
+			ack: fail,
+			nack: fail,
+			compact: fail,
+			events: async () => {
+				reads++;
+				if (reads === 1)
+					return {
+						status: "ok",
+						events: events.slice(0, 2),
+						firstAvailableSequence: 1,
+						nextAfterSequence: 2,
+						hasMore: true,
+					};
+				// SAFETY: the missing floor is a deliberate malformed provider response.
+				return {
+					status: "gap",
+					firstAvailableSequence: floor as number,
+					latestSequence: 4,
+				};
+			},
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "audit-pagination" },
+		);
+		expect(report.cases[0]?.status).toBe("unknown");
+	});
+	it.each([
+		"missing-value",
+		"missing-topic",
+		"unknown",
+	] as const)("does not pass or misclassify a %s topic outcome", async (mode) => {
+		const fail = async () => {
+			throw new Error("unexpected operation");
+		};
+		let calls = 0;
+		const client: DurableMessaging = {
+			limits: DURABLE_MESSAGING_LIMITS,
+			ensureTopic: async ({ operation }) => {
+				calls++;
+				if (mode === "unknown") return { status: "unknown", operation };
+				// SAFETY: this deliberately malformed provider result exercises the runtime boundary.
+				const malformed: unknown =
+					mode === "missing-value"
+						? { status: "committed" }
+						: {
+								status: "committed",
+								value: {},
+							};
+				// SAFETY: the fixture deliberately returns malformed runtime data.
+				return malformed as DurableMessagingOutcome<{
+					readonly topic: string;
+				}>;
+			},
+			ensureSubscription: fail,
+			publish: fail,
+			consume: fail,
+			ack: fail,
+			nack: fail,
+			compact: fail,
+			events: fail,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "audit-pagination" },
+		);
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(calls).toBe(1);
+	});
+	it("reports unknown when synchronous teardown outlasts the monotonic deadline", async () => {
+		const harness = inertHarness(async () => {
+			throw new Error("provider failure");
+		});
+		const slowClose: DurableMessagingConformanceHarness = {
+			...harness,
+			close: async () => {
+				const start = Date.now();
+				while (Date.now() - start < 20) {
+					/* intentional event-loop starvation */
+				}
+			},
+		};
+		const report = await runDurableMessagingConformance(async () => slowClose, {
+			caseTimeoutMs: 5,
+		});
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(
+			report.cases.slice(1).every(({ status }) => status === "unknown"),
+		).toBe(true);
+	});
+	it("enforces the monotonic deadline even when synchronous factory code starves timers", async () => {
+		let connects = 0;
+		const report = await runDurableMessagingConformance(
+			async () => {
+				const start = Date.now();
+				while (Date.now() - start < 20) {
+					/* intentional event-loop starvation */
+				}
+				return inertHarness(async () => {
+					connects++;
+					throw new Error("late connect");
+				});
+			},
+			{ caseTimeoutMs: 5 },
+		);
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(connects).toBe(0);
+	});
+
+	it("stops dispatch when a synchronous provider call starves the timer", async () => {
+		let calls = 0;
+		const fail = async () => {
+			throw new Error("unexpected operation");
+		};
+		const client: DurableMessaging = {
+			limits: DURABLE_MESSAGING_LIMITS,
+			ensureTopic: async ({ topic }) => {
+				calls++;
+				const start = Date.now();
+				while (Date.now() - start < 20) {
+					/* intentional event-loop starvation */
+				}
+				return { status: "committed", value: { topic } };
+			},
+			ensureSubscription: fail,
+			publish: fail,
+			consume: fail,
+			ack: fail,
+			nack: fail,
+			compact: fail,
+			events: fail,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ caseTimeoutMs: 5 },
+		);
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(calls).toBe(1);
+	});
 	it("detects a claimed ack that redelivers after the expiry race and restart", async () => {
 		let consumes = 0;
 		const message = {
@@ -111,17 +273,44 @@ describe("durable messaging conformance runner", () => {
 		expect(consumes).toBe(3);
 	});
 	it.each([
-		{ retention: 1, pageSize: 1, oversized: false, expected: "unverified" },
-		{ retention: 4, pageSize: 1, oversized: false, expected: "pass" },
-		{ retention: 4, pageSize: 4, oversized: true, expected: "fail" },
+		{
+			retention: 1,
+			pageSize: 1,
+			oversized: false,
+			advance: false,
+			expected: "unverified",
+		},
+		{
+			retention: 4,
+			pageSize: 1,
+			oversized: false,
+			advance: false,
+			expected: "pass",
+		},
+		{
+			retention: 4,
+			pageSize: 4,
+			oversized: true,
+			advance: false,
+			expected: "fail",
+		},
+		{
+			retention: 4,
+			pageSize: 1,
+			oversized: false,
+			advance: true,
+			expected: "unverified",
+		},
 	] as const)("handles retention and page bounds without assuming full pages: $expected", async ({
 		retention,
 		pageSize,
 		oversized,
+		advance,
 		expected,
 	}) => {
 		let tail = 0;
 		let events: DurableMessagingEvent[] = [];
+		let reads = 0;
 		const unavailable = async () => {
 			throw new Error("unexpected operation");
 		};
@@ -139,6 +328,7 @@ describe("durable messaging conformance runner", () => {
 			nack: unavailable,
 			compact: unavailable,
 			events: async ({ afterSequence, limit }) => {
+				if (advance && ++reads > 1) events = events.slice(1);
 				const floor = events[0]?.sequence ?? tail + 1;
 				if (afterSequence < floor - 1)
 					return {
@@ -272,16 +462,46 @@ describe("durable messaging conformance runner", () => {
 			};
 			expect(
 				matchesDurablePublication(
-					winner,
+					delivered.message,
 					{ messageId: winner, sequence: 7 },
 					delivered,
 				),
 			).toBe(true);
 			expect(
 				matchesDurablePublication(
-					winner,
+					delivered.message,
 					{ messageId: loser, sequence: 7 },
 					{ ...delivered, message: { ...delivered.message, id: loser } },
+				),
+			).toBe(false);
+			expect(
+				matchesDurablePublication(
+					delivered.message,
+					{ messageId: winner, sequence: 7 },
+					{
+						...delivered,
+						message: { ...delivered.message, payload: new Uint8Array([9]) },
+					},
+				),
+			).toBe(false);
+			expect(
+				matchesDurablePublication(
+					delivered.message,
+					{ messageId: winner, sequence: 7 },
+					{ ...delivered, message: { ...delivered.message, subject: "wrong" } },
+				),
+			).toBe(false);
+			expect(
+				matchesDurablePublication(
+					delivered.message,
+					{ messageId: winner, sequence: 7 },
+					{
+						...delivered,
+						message: {
+							...delivered.message,
+							attributes: [{ key: "a", value: "wrong" }],
+						},
+					},
 				),
 			).toBe(false);
 		}
@@ -546,8 +766,9 @@ describe("durable messaging conformance runner", () => {
 		);
 		expect(new Set(cases.map(({ name }) => name)).size).toBe(cases.length);
 		expect(cases[0]).toMatchObject({
-			status: "fail",
-			detail: "provider threw or returned malformed data",
+			status: "unknown",
+			detail:
+				"provider threw or returned malformed data; independent reconciliation is required",
 		});
 		expect(cases.slice(1).every((entry) => entry.status === "unknown")).toBe(
 			true,

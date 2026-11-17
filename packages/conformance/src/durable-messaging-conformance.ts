@@ -1,8 +1,10 @@
+import { performance } from "node:perf_hooks";
 import {
 	DURABLE_MESSAGING_LIMITS,
 	type DurableMessaging,
 	type DurableMessagingDelivery,
 	type DurableMessagingLimits,
+	type DurableMessagingMessage,
 	type DurableMessagingOperation,
 	type DurableMessagingOutcome,
 	durableMessagingOperation,
@@ -12,6 +14,7 @@ import {
 // public-contract: version of the bounded durable-messaging conformance suite.
 export const DURABLE_MESSAGING_CONFORMANCE =
 	"hobo.durable-messaging-conformance/v1";
+const monotonicNow = performance.now.bind(performance);
 
 export type DurableMessagingConformanceCase = (typeof DURABLE_CASES)[number][0];
 
@@ -132,6 +135,7 @@ export function validUnknownEnvelope(
 
 class DurableMessagingConformanceFailure extends Error {}
 class DurableMessagingConformanceUnverified extends Error {}
+class DurableMessagingConformanceUnknown extends Error {}
 
 function requireCondition(value: boolean, message: string): void {
 	if (!value) throw new DurableMessagingConformanceFailure(message);
@@ -141,12 +145,63 @@ async function committed<T>(
 	input: Promise<DurableMessagingOutcome<T>>,
 ): Promise<T> {
 	const outcome = await input;
-	if (outcome.status !== "committed")
-		throw new DurableMessagingConformanceFailure(
-			"operation did not return committed",
+	let status: PropertyDescriptor | undefined;
+	let value: PropertyDescriptor | undefined;
+	try {
+		status = Object.getOwnPropertyDescriptor(outcome, "status");
+		value = Object.getOwnPropertyDescriptor(outcome, "value");
+	} catch {
+		throw new DurableMessagingConformanceUnknown(
+			"provider returned a malformed outcome",
 		);
-	return outcome.value;
+	}
+	if (
+		status === undefined ||
+		!("value" in status) ||
+		status.value !== "committed"
+	)
+		throw new DurableMessagingConformanceUnknown(
+			"operation did not establish a committed outcome",
+		);
+	if (
+		value === undefined ||
+		!("value" in value) ||
+		value.value === undefined ||
+		value.value === null
+	)
+		throw new DurableMessagingConformanceUnknown(
+			"provider returned a malformed committed receipt",
+		);
+	return value.value;
 }
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: provider receipts must be validated before they can establish evidence. */
+function requireTopicReceipt(
+	receipt: { readonly topic: string },
+	expected: string,
+): void {
+	let topic: PropertyDescriptor | undefined;
+	try {
+		topic = Object.getOwnPropertyDescriptor(receipt, "topic");
+	} catch {
+		throw new DurableMessagingConformanceUnknown(
+			"provider returned a malformed topic receipt",
+		);
+	}
+	if (
+		topic === undefined ||
+		!("value" in topic) ||
+		typeof topic.value !== "string"
+	)
+		throw new DurableMessagingConformanceUnknown(
+			"provider returned a malformed topic receipt",
+		);
+	requireCondition(
+		topic.value === expected,
+		"topic receipt did not identify its request",
+	);
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
 	return (
@@ -226,13 +281,21 @@ export function matchesDurableSettlement(
 
 /** Bind a publish receipt and delivery to the submitted message identity. */
 export function matchesDurablePublication(
-	messageId: string,
+	message: DurableMessagingMessage,
 	receipt: { readonly messageId: string; readonly sequence: number },
 	delivery: DurableMessagingDelivery,
 ): boolean {
 	return (
-		receipt.messageId === messageId &&
-		matchesDurableSettlement(receipt, delivery)
+		receipt.messageId === message.id &&
+		matchesDurableSettlement(receipt, delivery) &&
+		delivery.message.subject === message.subject &&
+		sameBytes(delivery.message.payload, message.payload) &&
+		delivery.message.attributes.length === message.attributes.length &&
+		delivery.message.attributes.every(
+			(attribute, index) =>
+				attribute.key === message.attributes[index]?.key &&
+				attribute.value === message.attributes[index]?.value,
+		)
 	);
 }
 
@@ -304,6 +367,34 @@ export function matchesTopicAuditEvents(
 	);
 }
 
+function movingAuditGap(
+	result: Awaited<ReturnType<DurableMessaging["events"]>>,
+	after: number,
+	tail: number,
+): void {
+	if (result.status !== "gap") return;
+	if (
+		!Number.isSafeInteger(result.firstAvailableSequence) ||
+		result.firstAvailableSequence < 1 ||
+		!Number.isSafeInteger(result.latestSequence) ||
+		result.latestSequence < 0
+	)
+		throw new DurableMessagingConformanceUnknown(
+			"provider returned malformed audit gap metadata",
+		);
+	if (
+		result.latestSequence !== tail ||
+		result.firstAvailableSequence <= after + 1 ||
+		result.firstAvailableSequence > tail + 1
+	)
+		throw new DurableMessagingConformanceFailure(
+			"audit retention gap was invalid",
+		);
+	throw new DurableMessagingConformanceUnverified(
+		"audit history was reclaimed during pagination",
+	);
+}
+
 function operations(
 	harness: DurableMessagingConformanceHarness,
 	windowMs: number,
@@ -340,7 +431,10 @@ async function createFixture(harness: DurableMessagingConformanceHarness) {
 		Math.min(client.limits.operationWindowMs, 10_000),
 	);
 	for (const topic of ["orders", "orders-dlq", "archive"]) {
-		await committed(client.ensureTopic({ operation: next(), topic }));
+		const receipt = await committed(
+			client.ensureTopic({ operation: next(), topic }),
+		);
+		requireTopicReceipt(receipt, topic);
 	}
 	const subscribe = async (
 		topic: string,
@@ -1232,6 +1326,7 @@ async function concurrentOperations(
 		);
 	const winningMessageId =
 		pair[0]?.status === "committed" ? "other-a" : "other-b";
+	const winningMessage = { ...request.message, id: winningMessageId };
 	const deliveries: DurableMessagingDelivery[] = [];
 	for (let index = 0; index < 2; index++) {
 		const delivery = firstDelivery(
@@ -1250,16 +1345,12 @@ async function concurrentOperations(
 		originalDelivery !== undefined &&
 			winningDelivery !== undefined &&
 			matchesDurablePublication(
-				request.message.id,
+				request.message,
 				first.value,
 				originalDelivery,
 			) &&
 			sameMessage(originalDelivery) &&
-			matchesDurablePublication(
-				winningMessageId,
-				winner.value,
-				winningDelivery,
-			),
+			matchesDurablePublication(winningMessage, winner.value, winningDelivery),
 		"concurrent publications did not deliver exactly their corresponding receipts",
 	);
 	await harness.restart();
@@ -1363,7 +1454,7 @@ async function pendingConflict(harness: DurableMessagingConformanceHarness) {
 	);
 	const delivered = firstDelivery(await f.consume(other, "orders", "group-a"));
 	requireCondition(
-		matchesDurablePublication(winningRequest.message.id, replay, delivered) &&
+		matchesDurablePublication(winningRequest.message, replay, delivered) &&
 			delivered.message.subject === "orders.created" &&
 			sameBytes(delivered.message.payload, new Uint8Array([0, 1, 255])) &&
 			sameExpectedAttributes(delivered.message.attributes),
@@ -1797,6 +1888,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		cursor === 0
 			? initial
 			: await f.client.events({ afterSequence: cursor, limit: 2 });
+	movingAuditGap(first, cursor, 4);
 	if (first.status !== "ok")
 		throw new DurableMessagingConformanceFailure(
 			"first retained audit page unavailable",
@@ -1808,6 +1900,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		"first audit page was not ordered or complete",
 	);
 	const repeated = await f.client.events({ afterSequence: cursor, limit: 2 });
+	movingAuditGap(repeated, cursor, 4);
 	requireCondition(
 		repeated.status === "ok" &&
 			validDurableAuditPage(repeated, cursor, 2, 4) &&
@@ -1817,6 +1910,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 	let after = first.nextAfterSequence;
 	while (after < 4) {
 		const page = await f.client.events({ afterSequence: after, limit: 2 });
+		movingAuditGap(page, after, 4);
 		if (page.status !== "ok" || !validDurableAuditPage(page, after, 2, 4))
 			throw new DurableMessagingConformanceFailure(
 				"next audit page skipped or reordered events",
@@ -1833,6 +1927,7 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 		afterSequence: cursor,
 		limit: 2,
 	});
+	movingAuditGap(afterRestart, cursor, 4);
 	requireCondition(
 		afterRestart.status === "ok" &&
 			validDurableAuditPage(afterRestart, cursor, 2, 4) &&
@@ -1874,6 +1969,7 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	);
 	const floor = gap.firstAvailableSequence;
 	const page = await client.events({ afterSequence: floor - 1, limit: 2 });
+	movingAuditGap(page, floor - 1, total);
 	requireCondition(
 		page.status === "ok" &&
 			matchesTopicAuditEvents(page.events, topics) &&
@@ -2300,7 +2396,9 @@ function guardConformanceHarness(
 			return {
 				get limits() {
 					check();
-					return client.limits;
+					const limits = client.limits;
+					check();
+					return limits;
 				},
 				ensureTopic: (input) => call(() => client.ensureTopic(input)),
 				ensureSubscription: (input) =>
@@ -2317,7 +2415,9 @@ function guardConformanceHarness(
 		close: () => call(() => source.close()),
 		nowMs: () => {
 			check();
-			return source.nowMs();
+			const value = source.nowMs();
+			check();
+			return value;
 		},
 		advanceMs: (delta) => call(() => source.advanceMs(delta)),
 		loseNextMutationResponse: (point) =>
@@ -2368,6 +2468,25 @@ export async function runDurableMessagingConformance(
 		}
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		let cancelled = false;
+		let expired = false;
+		const deadline = monotonicNow() + timeoutMs;
+		const deadlinePassed = () => {
+			if (monotonicNow() >= deadline) expired = true;
+			return expired;
+		};
+		const timeout = new Promise<
+			DurableMessagingConformanceReport["cases"][number]
+		>((resolve) => {
+			timer = setTimeout(() => {
+				expired = true;
+				cancelled = true;
+				resolve({
+					name,
+					status: "unknown",
+					detail: "case timed out; independent host fencing is required",
+				});
+			}, timeoutMs);
+		});
 		const task = (async (): Promise<
 			DurableMessagingConformanceReport["cases"][number]
 		> => {
@@ -2383,13 +2502,16 @@ export async function runDurableMessagingConformance(
 						"harness creation failed; independent host fencing is required",
 				};
 			}
-			if (cancelled)
+			if (cancelled || deadlinePassed())
 				return {
 					name,
 					status: "unknown",
 					detail: "late harness requires independent host fencing",
 				};
-			const guarded = guardConformanceHarness(harness, () => cancelled);
+			const guarded = guardConformanceHarness(
+				harness,
+				() => cancelled || deadlinePassed(),
+			);
 			let failure: unknown;
 			let failed = false;
 			try {
@@ -2398,13 +2520,19 @@ export async function runDurableMessagingConformance(
 				failed = true;
 				failure = error;
 			}
-			if (cancelled)
+			if (cancelled || deadlinePassed())
 				return {
 					name,
 					status: "unknown",
 					detail: "timed-out harness requires independent host fencing",
 				};
 			cancelled = true;
+			if (deadlinePassed())
+				return {
+					name,
+					status: "unknown",
+					detail: "case timed out; independent host fencing is required",
+				};
 			try {
 				await harness.close();
 			} catch {
@@ -2415,32 +2543,32 @@ export async function runDurableMessagingConformance(
 						"harness teardown failed; independent host fencing is required",
 				};
 			}
+			if (deadlinePassed())
+				return {
+					name,
+					status: "unknown",
+					detail: "case timed out; independent host fencing is required",
+				};
 			if (failed) {
 				if (failure instanceof DurableMessagingConformanceUnverified)
 					return { name, status: "unverified", detail: failure.message };
+				if (!(failure instanceof DurableMessagingConformanceFailure))
+					return {
+						name,
+						status: "unknown",
+						detail:
+							failure instanceof DurableMessagingConformanceUnknown
+								? failure.message
+								: "provider threw or returned malformed data; independent reconciliation is required",
+					};
 				return {
 					name,
 					status: "fail",
-					detail:
-						failure instanceof DurableMessagingConformanceFailure
-							? failure.message
-							: "provider threw or returned malformed data",
+					detail: failure.message,
 				};
 			}
 			return { name, status: "pass" };
 		})();
-		const timeout = new Promise<
-			DurableMessagingConformanceReport["cases"][number]
-		>((resolve) => {
-			timer = setTimeout(() => {
-				cancelled = true;
-				resolve({
-					name,
-					status: "unknown",
-					detail: "case timed out; independent host fencing is required",
-				});
-			}, timeoutMs);
-		});
 		const result = await Promise.race([task, timeout]);
 		if (timer !== undefined) clearTimeout(timer);
 		results.push(result);
