@@ -87,3 +87,19 @@ and the removal of a runner still registered (204) or already removed (404).
 every interaction with an injected Fetch, matching method, path, query,
 headers and body exactly. No provider verification or live GitHub call is
 claimed.
+
+Relay mode boundary: `relay-answer.pact.json` holds hand-authored consumer
+expectations of the GitHub REST calls the relay-mode answerer makes (ADR-0183):
+`.hobo/ci.json` at the default branch and at a pull request's base branch, the
+pull request read, the job read (queued, 404 gone, and a 502 that is no
+answer), one-job runner creation on the repository, the 403 that falls back to
+the organization and the 409 that fences a job, runner deletion on either
+scope, the queued and in-progress run lists and a run's jobs, and the runner
+lists and run read of the sweep. `relay-answer-webhook.pact.json` holds the
+`workflow_job` deliveries it receives: a signed queued relay job (answered),
+an unsigned one (401), another event and a job asking for more than the relay
+label (both 202). Its signatures are HMAC-SHA256 with a fixture secret named in
+the artifact, not a credential. `relay-answer.consumer.test.ts` drives
+`createRelayAnswerer` through every interaction of both with a strict
+transport and the in-memory runner service. No provider verification, runner
+service traffic or live GitHub call is claimed.

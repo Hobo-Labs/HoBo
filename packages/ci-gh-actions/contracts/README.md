@@ -32,6 +32,7 @@ GitHub or vendor verification, a published Pact broker, or a live runner pass.
 | `scoped-budget-signals.pact.json` | Current-period reset, crossing, recovery, ordered replay, and refusal of foreign-period or legacy recovery facts over local HTTP |
 | `service-boundary.pact.json` | Service readiness, and refusal of an authentic delivery while the Node host is not ready, over HTTP |
 | `actions-backend.pact.json` | Portable pipeline execution through the Actions backend |
+| `relay-answer.pact.json`, `relay-answer-webhook.pact.json` | Relay mode: the GitHub REST calls the answerer makes (job reads, one-job runners with the organization fallback and 409 fence, run and job lists, the leftover-runner sweep, `.hobo/ci.json`) and the signed `workflow_job` deliveries it receives, driven by `relay-answer.consumer.test.ts` |
 
 `control-plane-client.consumer.test.ts` checks the typed SDK against applicable
 control-plane interactions and separately tests its remaining methods, strict
