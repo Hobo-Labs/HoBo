@@ -27,6 +27,10 @@
 			"types": "./dist/cloudflare-native-kv.d.ts",
 			"default": "./dist/cloudflare-native-kv.js"
 		},
+		"./cloudflare/r2": {
+			"types": "./dist/cloudflare-native-r2.d.ts",
+			"default": "./dist/cloudflare-native-r2.js"
+		},
 		"./rivet": {
 			"types": "./dist/rivet.d.ts",
 			"default": "./dist/rivet.js"

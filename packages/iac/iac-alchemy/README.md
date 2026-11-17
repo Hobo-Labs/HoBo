@@ -92,6 +92,9 @@ refuses those uses. An explicitly opted-in [eventual JavaScript KV subset](CLOUD
 uses a private, permission-enforcing Worker and is not full KV profile support.
 The optional KV guide describes host grant and namespace fencing requirements;
 the Worker module and the mapped Bindle must use matching binding epochs.
+The opt-in [bounded R2 object subset](CLOUDFLARE-R2.md) similarly binds
+JavaScript Worker applications through a private proxy. It does not claim the
+complete HoBo blobstore or blob-events interfaces.
 `cloudflareBindleMappers` can provision native R2, KV and queue infrastructure;
 it rejects their HoBo runtime operations until blob metadata and events, WASI KV
 semantics, and queue deduplication and leases are implemented.
