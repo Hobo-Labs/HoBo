@@ -65,7 +65,7 @@ independently observable Actions label here, so its availability remains unknown
 and prevents local signoff until that provider is excluded by verified policy.
 If hosted jobs fail before queueing, an operator who observed that outage can
 pass `--github-unavailable`
-alongside `--local-signoff`; a recent timely hosted pickup still wins.
+alongside `--local-signoff`; an observed healthy hosted runner still wins.
 An unpinned fleet slip is checked against current queue evidence for its exact
 runner label. A busy-fleet slip permits a young backlog, but still requires a
 recent timely pickup. A slip naming an enrolled local runner rejects the fleet

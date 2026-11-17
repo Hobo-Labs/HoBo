@@ -471,8 +471,8 @@ available runner. The base SHA used to read the policy must still be the tested
 base when checks run and when statuses are published; if it moves, the command
 stops and the operator must update and retry. For hosted jobs that fail before entering the queue,
 an operator who has observed the outage may add `--github-unavailable`; this
-only supplies missing hosted availability and does not displace a recent,
-timely hosted pickup or another available runner. A selected runner is reported;
+only supplies missing hosted availability and does not displace an observed
+healthy hosted runner or another available runner. A selected runner is reported;
 the existing workflow still owns its own routing. The command never relabels,
 dispatches, cancels, or completes an already queued Actions job.
 
