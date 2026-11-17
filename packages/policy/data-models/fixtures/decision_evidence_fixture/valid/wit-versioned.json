@@ -1,0 +1,9 @@
+{
+  "policy_ids": [
+    "prod-deny"
+  ],
+  "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "engine": "policy-engine",
+  "pack_id": "mandatory/prod",
+  "pack_version": "2.3.1"
+}

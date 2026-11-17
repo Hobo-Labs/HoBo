@@ -1,0 +1,7 @@
+{
+  "policyIds": [
+    "prod-deny"
+  ],
+  "inputHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "engine": "policy-engine"
+}

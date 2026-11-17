@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for operators-sre-crew.feature.
- *
- * Drives the epic's real reference simulation
- * (services/crew-reference-architecture.ts) over its committed scenario
- * fixtures and asserts the incident event streams it produces. All service
- * boundaries stay mocked via the Pact-backed boundary recorder.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -42,7 +34,6 @@ function eventTypes(scenario: CrewScenario): string[] {
 	return scenario.events.map((event: { type: string }) => event.type);
 }
 
-// --- Scenario: Provider degradation is remediated through a gated canary ---
 
 let degraded: CrewScenario | undefined;
 
@@ -80,7 +71,6 @@ Then("the Crew live-fix completes and replay evidence publishes", () => {
 	assert.ok(types.includes("knowledge.PostmortemPublished"));
 });
 
-// --- Scenario: Production contract skew waits for approval -----------------
 
 let skewPending: CrewScenario | undefined;
 let skewApproved: CrewScenario | undefined;
@@ -135,7 +125,6 @@ Then(
 	},
 );
 
-// --- Scenario: Ambiguous self-caused drift escalates -----------------------
 
 let runaway: CrewScenario | undefined;
 
@@ -184,7 +173,6 @@ Then(
 	},
 );
 
-// --- Scenario: DR failover proves fencing and replay before traffic shift --
 
 let drFailover: CrewScenario | undefined;
 

@@ -2413,10 +2413,20 @@ importers:
         version: 4.12.27
 
   packages/policy:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
     devDependencies:
+      '@bytecodealliance/jco':
+        specifier: 1.24.3
+        version: 1.24.3
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -3733,7 +3743,14 @@ importers:
 
   src/draft/epic-proofs/networking-connectivity-dns-relay: {}
 
-  src/draft/epic-proofs/operators-sre-crew: {}
+  src/draft/epic-proofs/operators-sre-crew:
+    dependencies:
+      '@hobo/contracts':
+        specifier: workspace:*
+        version: link:../../../../packages/contracts
+      '@hobo/policy':
+        specifier: workspace:*
+        version: link:../../../../packages/policy
 
   src/draft/epic-proofs/portability-registry-distribution: {}
 

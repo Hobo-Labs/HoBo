@@ -58,7 +58,10 @@ export {
 	createDecision,
 	createDecisionRequest,
 	createPolicyDecidedEvent,
+	decodePolicyEvidence,
+	encodePolicyEvidence,
 	fromWitDecisionRecord,
+	fromWitDecisionRecordV2,
 	hashDecisionRequest,
 	migratePolicyIrDocument,
 	POLICY_DECIDED_EVENT_TYPE,
@@ -69,6 +72,7 @@ export {
 	parsePolicyIrDocument,
 	serializePolicyIrDocument,
 	toWitDecisionRecord,
+	toWitDecisionRecordV2,
 } from "./policy-ir.js";
 export {
 	DEFAULT_RESIDENCY_POLICY_PACK,
@@ -80,4 +84,5 @@ export {
 } from "./residency-policy-pack.js";
 export { GDPR_SEED_PACK, SOC2_SEED_PACK } from "./seed-packs.js";
 
+// public-contract:
 export const HOBO_POLICY_PACKAGE = "@hobo/policy";

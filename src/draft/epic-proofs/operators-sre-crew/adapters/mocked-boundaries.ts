@@ -2,11 +2,11 @@ export function createMockBoundaryRecorder() {
   const calls = [];
 
   return {
-    call(boundaryId, interaction, payload) {
+    call(boundaryId, interaction, payload, options = {}) {
       const entry = {
         boundaryId,
         interaction,
-        mocked: true,
+        mocked: options.mocked ?? true,
         payload,
       };
       calls.push(entry);
