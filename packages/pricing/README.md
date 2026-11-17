@@ -41,8 +41,9 @@ V9 marks quotes from explicitly allowed partial financial states as
 informational and ineligible for automatic selection. Unknown completeness
 values reject. Dispatcher v2 also requires explicit positive eligibility.
 Versions 1–8 retain their prior eligibility on replay; reconcile old quotes
-before using them for decisions. The broker's separate raw-estimate helper
-does not receive a quote or its eligibility and requires trusted caller checks.
+before using them for decisions. The broker's quote-based authorization requires
+the complete current quote and checks eligibility. Its legacy raw spend estimate
+remains a trusted caller assertion without quote provenance.
 
 V8 requires graduated and volume tier schedules to begin at zero, increase,
 and have neither gaps nor overlaps. A missing intermediate end is inferred
