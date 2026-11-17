@@ -140,7 +140,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 64 states and hides sixteen
+bounded TLA+ models, and abstract balance proofs. The credit model explores 72 states and hides eighteen
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -260,6 +260,26 @@ stateDiagram-v2
   s0 --> s2: check tier boundaries
   s0 --> s1: check tier boundaries
   s2 --> s3: rate covered usage
+```
+
+## Financial completeness verification
+
+The [pricing eligibility skill](../../.agents/skills/verify-pricing-eligibility/SKILL.md)
+checks the quote and dispatcher gates. Its model explores 62 states and hides
+24 same-state transitions; it assumes the reported completeness is truthful.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial state received
+  s1: Quote produced
+  s2: Quote rejected
+  s3: Candidate not selected
+  s4: Candidate selected
+  [*] --> s0
+  s0 --> s1: check completeness and quote
+  s0 --> s2: check completeness and quote
+  s1 --> s4: check eligibility
+  s1 --> s3: check eligibility
 ```
 
 ## Architecture boundaries
