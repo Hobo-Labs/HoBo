@@ -121,7 +121,7 @@
         "test/competitor-docs.boundaries.test.ts",
         "test/competitor-docs.characterization.test.ts",
         "test/competitor-docs.cli.test.ts",
-        "test/design-docs.test.ts",
+        "test/documentation-links.test.ts",
         "test/designer-council-adversarial.test.ts",
         "test/fixture-paths-at-root.test.ts",
         "test/optimizexp-preflight-approval.test.ts",

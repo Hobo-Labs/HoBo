@@ -18,7 +18,7 @@
 - [ ] `npm run architecture:guard`
 - [ ] `npm test`
 - [ ] `npm run docs:cli-lint`
-- [ ] `npm run docs:design-lint`
+- [ ] `npm run docs:links`
 - [ ] `npm run docs:coverage`
 - [ ] `node --import tsx scripts/validate-traceability.ts`
 - [ ] `node --import tsx scripts/validate-sdk-contracts.ts`

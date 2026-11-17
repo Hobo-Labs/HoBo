@@ -30,7 +30,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 
 When docs change, verify:
 
-- Relative links and anchors pass `npm run docs:design-lint`.
+- Relative links and anchors pass `npm run docs:links`.
 - CLI examples use canonical verbs and pass `npm run docs:cli-lint`.
 - OKF structure passes `npm run docs:okf`.
 - Required community and maintenance docs pass `npm run docs:coverage`.
