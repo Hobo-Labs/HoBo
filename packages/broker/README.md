@@ -22,6 +22,16 @@ produce a quote.
 It accepts both the synchronous local authority and the asynchronous shared
 authority, including the PostgreSQL implementation.
 
+To settle a claimed priced IaC hold without a separately verified fence guard,
+install `iacPricedSettlementTrust` on the budget authority. Its synchronous,
+independently enrolled verifier must authenticate the exact tenant, budget,
+reservation, plan, execution, provider accounts, final usage and permanent
+source-retirement evidence. Nonempty references or a caller assertion alone do
+not establish those facts. The verifier receives the original live reservation
+on settlement and journal replay; retain historical verification material.
+Missing, forged, asynchronous or unavailable evidence leaves the hold in place.
+Unclaimed holds may be released only when confirmed unused.
+
 When pricing is unavailable, admission denies by default. A host may explicitly
 configure `unpriced.authorize` and an independently enrolled
 `unpricedScopeTrust` on the budget authority to permit a particular request.

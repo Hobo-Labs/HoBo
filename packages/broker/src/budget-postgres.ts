@@ -7,8 +7,10 @@ import {
 	BudgetAuthorityEventSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
-	createBudgetAdmissionAuthority,
+	captureIacPricedSettlementTrust,
 	captureIacUnpricedScopeTrust,
+	createBudgetAdmissionAuthority,
+	type IacPricedSettlementTrust,
 	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
@@ -35,6 +37,7 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 	snapshot: BudgetLedgerSnapshot;
 	fenceTrust?: BudgetFenceTrust;
 	unpricedScopeTrust?: IacUnpricedScopeTrust;
+	iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	now?: () => string;
 	/** Bound pool starvation, including a CI transaction holding the same pool. */
 	connectionTimeoutMs?: number;
@@ -48,6 +51,9 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
 	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
 		options.unpricedScopeTrust,
+	);
+	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
+		options.iacPricedSettlementTrust,
 	);
 	if (!owner?.tenantId || !owner.budgetId)
 		throw new Error("complete shared budget ownership required");
@@ -161,6 +167,9 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 				priorEvents,
 				...(fenceTrust ? { fenceTrust } : undefined),
 				...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
+				...(iacPricedSettlementTrust
+					? { iacPricedSettlementTrust }
+					: undefined),
 				commit(event, expectedSeq) {
 					if (seq !== expectedSeq || event.snapshot?.seq !== expectedSeq + 1)
 						throw new Error("budget sequence conflict");

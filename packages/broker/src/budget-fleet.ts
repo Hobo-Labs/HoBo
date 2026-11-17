@@ -9,8 +9,10 @@ import {
 	BudgetAuthorityEventSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
-	createBudgetAdmissionAuthority,
+	captureIacPricedSettlementTrust,
 	captureIacUnpricedScopeTrust,
+	createBudgetAdmissionAuthority,
+	type IacPricedSettlementTrust,
 	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
@@ -40,6 +42,7 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	readonly now?: () => string;
 	readonly fenceTrust?: BudgetFenceTrust;
 	readonly unpricedScopeTrust?: IacUnpricedScopeTrust;
+	readonly iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	/** Operational hosts may install a separately funded, actor-authorized
 	 * recovery. Read-only inspection leaves this absent. */
 	readonly recover?: () => Promise<void>;
@@ -54,6 +57,9 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
 	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
 		options.unpricedScopeTrust,
+	);
+	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
+		options.iacPricedSettlementTrust,
 	);
 	if (!initialSnapshot.identity?.tenantId || !initialSnapshot.identity.budgetId)
 		throw new Error("complete shared budget ownership required");
@@ -135,6 +141,9 @@ export function createFleetBudgetAdmissionAuthority(options: {
 				priorEvents,
 				...(fenceTrust ? { fenceTrust } : undefined),
 				...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
+				...(iacPricedSettlementTrust
+					? { iacPricedSettlementTrust }
+					: undefined),
 				commit(event, expectedSeq) {
 					if (seq !== expectedSeq || event.snapshot?.seq !== expectedSeq + 1)
 						throw new Error("budget sequence conflict");

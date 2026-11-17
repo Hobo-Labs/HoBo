@@ -5,8 +5,10 @@ import {
 	BudgetAuthorityEventSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
+	captureIacPricedSettlementTrust,
 	captureIacUnpricedScopeTrust,
 	createBudgetAdmissionAuthority,
+	type IacPricedSettlementTrust,
 	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
@@ -23,6 +25,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 	snapshot: BudgetLedgerSnapshot;
 	fenceTrust?: BudgetFenceTrust;
 	unpricedScopeTrust?: IacUnpricedScopeTrust;
+	iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	/** Trusted server clock; caller-supplied command timestamps cannot revive evidence. */
 	now?: () => string;
 }): BudgetAdmissionAuthority & {
@@ -41,6 +44,9 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
 	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
 		options.unpricedScopeTrust,
+	);
+	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
+		options.iacPricedSettlementTrust,
 	);
 	const database = new DatabaseSync(options.path);
 	try {
@@ -90,6 +96,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 			priorEvents,
 			...(fenceTrust ? { fenceTrust } : undefined),
 			...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
+			...(iacPricedSettlementTrust ? { iacPricedSettlementTrust } : undefined),
 			commit(event, expectedSeq) {
 				const head = database
 					.prepare("SELECT MAX(seq) AS seq FROM budget_events")

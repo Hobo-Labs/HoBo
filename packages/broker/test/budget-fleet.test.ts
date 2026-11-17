@@ -10,7 +10,9 @@ import {
 	type ImmutableJournalReplica,
 } from "@hobo/backend-fleet";
 import { canonicalFenceOperationReceipt } from "@hobo/data-core";
+import { stableHash } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
+import { IacPricingPinSchema } from "../src/_generated/yard_placement_pb.js";
 import {
 	BudgetLedgerSnapshotSchema,
 	HostingQuoteSchema,
@@ -689,4 +691,54 @@ it("keeps a receiver-bound hold through funded quorum recovery and restart", asy
 		authorizeRecovery: async () => async () => {},
 	});
 	await expect(noTrust.read(NOW)).rejects.toThrow("independently enrolled");
+});
+
+it("requires and replays independent priced IaC settlement verification in the fleet authority", async () => {
+	const f = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	const priced = request(f.snapshot, "priced");
+	priced.quote.financialPlanHash = stableHash(fields);
+	const pin = create(IacPricingPinSchema, { ...fields, validUntil: UNTIL });
+	const trust = {
+		verify: ({ reservation, actualMicros, evidence }) =>
+			reservation.status === "held" &&
+			reservation.reservationId === "priced" &&
+			reservation.executionDigest === "exec:1" &&
+			reservation.identity?.tenantId === "tenant" &&
+			actualMicros === 50 &&
+			evidence.financeSignature === "signed" &&
+			evidence.sourceStoppedEvidenceRef === "retired",
+	};
+	const authority = createFleetBudgetAdmissionAuthority({
+		journal: f.open(),
+		snapshot: f.snapshot,
+		now: () => NOW,
+		iacPricedSettlementTrust: trust,
+	});
+	await authority.initializeFresh(async () => {});
+	await authority.reserve({ ...priced, iacPricingPin: pin });
+	await authority.claimExecution({
+		reservationId: "priced",
+		requestDigest: priced.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
+	const proof = {
+		usageEvidenceRef: "usage",
+		sourceStoppedEvidenceRef: "retired",
+		financeSignature: "signed",
+	};
+	await expect(
+		authority.settle("priced", 50, { ...proof, financeSignature: "forged" }),
+	).rejects.toThrow();
+	expect((await authority.lookup("priced"))?.status).toBe("held");
+	await authority.settle("priced", 50, proof);
+	expect((await authority.read(NOW)).spentMicros).toBe(50);
+	expect((await authority.settle("priced", 50, proof)).status).toBe("settled");
 });

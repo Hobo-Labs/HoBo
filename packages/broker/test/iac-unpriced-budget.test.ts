@@ -755,8 +755,16 @@ it("rejects a priced IaC settlement journal that omits recorded charges", () => 
 	});
 	const events: ReturnType<typeof create<typeof BudgetAuthorityEventSchema>>[] =
 		[];
+	const trust = {
+		verify: ({ reservation, actualMicros, evidence }) =>
+			reservation.reservationId === "priced" &&
+			reservation.executionDigest === "exec:1" &&
+			actualMicros === 500_000 &&
+			evidence.financeSignature === "trusted",
+	};
 	const ledger = createBudgetAdmissionAuthority({
 		snapshot: options.snapshot,
+		iacPricedSettlementTrust: trust,
 		commit: (event) => events.push(clone(BudgetAuthorityEventSchema, event)),
 	});
 	ledger.reserve({
@@ -768,13 +776,27 @@ it("rejects a priced IaC settlement journal that omits recorded charges", () => 
 		expectedSeq: 0,
 		now,
 	});
+	ledger.claimExecution({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
 	ledger.settle("priced", 500_000, {
+		financeSignature: "trusted",
 		usageEvidenceRef: "usage:1",
 		sourceStoppedEvidenceRef: "stop:1",
 		providerAccounts: [
 			{ providerAccountId: "account-a", liabilityMicros: 500_000 },
 		],
 	});
+	expect(() =>
+		createBudgetAdmissionAuthority({
+			snapshot: options.snapshot,
+			priorEvents: events,
+			iacPricedSettlementTrust: trust,
+		}),
+	).not.toThrow();
 	const settlement = events.at(-1);
 	if (!settlement?.snapshot) throw new Error("missing settlement");
 	settlement.snapshot.spentMicros = 0;
@@ -783,6 +805,7 @@ it("rejects a priced IaC settlement journal that omits recorded charges", () => 
 		createBudgetAdmissionAuthority({
 			snapshot: options.snapshot,
 			priorEvents: events,
+			iacPricedSettlementTrust: trust,
 		}),
 	).toThrow();
 });
@@ -843,19 +866,206 @@ it("replays an authenticated settlement against the same pre-settlement reservat
 		executionDigest: "exec:1",
 		expectedSeq: 1,
 	});
-	ledger.settle(unpriced.reservationId, 1_200_000, {
+	const evidence = {
 		usageEvidenceRef: "usage:1",
 		sourceStoppedEvidenceRef: "stop:1",
 		financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
 		providerAccounts: [
 			{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
 		],
-	});
+	};
+	ledger.settle(unpriced.reservationId, 1_200_000, evidence);
+	expect(
+		ledger.settle(unpriced.reservationId, 1_200_000, evidence).status,
+	).toBe("settled");
+	expect(() => ledger.settle(unpriced.reservationId, 0, evidence)).toThrow();
 	const afterSettlement = ledger.read(now);
 	expect(afterSettlement.spentMicros).toBe(1_200_000);
 	if (!afterSettlement.identity) throw new Error("identity missing");
 	afterSettlement.identity.policyRevision = "r2";
 	ledger.configure(afterSettlement, afterSettlement.seq, now);
 	expect(ledger.read(now).spentMicros).toBe(1_200_000);
+	ledger.close();
+});
+
+it("retains claimed priced IaC exposure until final usage and permanent source stop are independently authenticated", () => {
+	const { options, quote } = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	quote.financialPlanHash = stableHash(fields);
+	const pin = create(IacPricingPinSchema, {
+		...fields,
+		validUntil: quote.validUntil,
+	});
+	const ledger = createSqliteBudgetAdmissionAuthority(options);
+	ledger.reserve({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		quote,
+		iacPricingPin: pin,
+		identity,
+		expectedSeq: 0,
+		now,
+	});
+	ledger.claimExecution({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
+	expect(() =>
+		ledger.settle("priced", 0, {
+			usageEvidenceRef: "fabricated",
+			sourceStoppedEvidenceRef: "fabricated",
+			providerAccounts: [
+				{ providerAccountId: "account-a", liabilityMicros: 0 },
+			],
+		}),
+	).toThrow();
+	expect(ledger.lookup("priced")?.status).toBe("held");
+	expect(ledger.read(now).reservedMicros).toBe(1_000_000);
+	ledger.close();
+});
+
+it("replays exact authenticated priced settlement and rejects forged settlement evidence", () => {
+	const { options, quote } = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	quote.financialPlanHash = stableHash(fields);
+	const pin = create(IacPricingPinSchema, {
+		...fields,
+		validUntil: quote.validUntil,
+	});
+	const trust = {
+		verify: ({ reservation, actualMicros, evidence }) =>
+			reservation.status === "held" &&
+			reservation.identity?.tenantId === "tenant-a" &&
+			reservation.reservationId === "priced" &&
+			reservation.requestDigest === quote.requestDigest &&
+			reservation.executionDigest === "exec:1" &&
+			reservation.financialPlanHash === quote.financialPlanHash &&
+			actualMicros === 500_000 &&
+			evidence.usageEvidenceRef === "usage:1" &&
+			evidence.sourceStoppedEvidenceRef === "stop:1" &&
+			evidence.financeSignature === "signed-exact-claim" &&
+			evidence.providerAccounts.length === 1 &&
+			evidence.providerAccounts[0]?.providerAccountId === "account-a" &&
+			evidence.providerAccounts[0]?.liabilityMicros === 500_000,
+	};
+	const ledger = createSqliteBudgetAdmissionAuthority({
+		...options,
+		iacPricedSettlementTrust: trust,
+	});
+	ledger.reserve({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		quote,
+		iacPricingPin: pin,
+		identity,
+		expectedSeq: 0,
+		now,
+	});
+	ledger.claimExecution({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
+	const evidence = {
+		usageEvidenceRef: "usage:1",
+		sourceStoppedEvidenceRef: "stop:1",
+		financeSignature: "signed-exact-claim",
+		providerAccounts: [
+			{ providerAccountId: "account-a", liabilityMicros: 500_000 },
+		],
+	};
+	expect(() =>
+		ledger.settle("priced", 500_000, {
+			...evidence,
+			financeSignature: "forged",
+		}),
+	).toThrow();
+	expect(() => ledger.settle("priced", 500_001, evidence)).toThrow();
+	expect(ledger.lookup("priced")?.status).toBe("held");
+	ledger.settle("priced", 500_000, evidence);
+	expect(ledger.read(now).spentMicros).toBe(500_000);
+	expect(ledger.settle("priced", 500_000, evidence).status).toBe("settled");
+	expect(() => ledger.settle("priced", 0, evidence)).toThrow();
+	ledger.close();
+	const reopened = createSqliteBudgetAdmissionAuthority({
+		...options,
+		iacPricedSettlementTrust: trust,
+	});
+	expect(reopened.lookup("priced")?.status).toBe("settled");
+	reopened.close();
+	const missingTrust = createSqliteBudgetAdmissionAuthority(options);
+	expect(() => missingTrust.read(now)).toThrow();
+	missingTrust.close();
+});
+
+it("books the same settlement evidence that the priced verifier authenticated", () => {
+	const { options, quote } = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	quote.financialPlanHash = stableHash(fields);
+	const trust = {
+		verify: ({ reservation, actualMicros, evidence }) =>
+			reservation.reservationId === "priced" &&
+			actualMicros === 100 &&
+			evidence.financeSignature === "signed" &&
+			evidence.sourceStoppedEvidenceRef === "trusted-stop",
+	};
+	const ledger = createSqliteBudgetAdmissionAuthority({
+		...options,
+		iacPricedSettlementTrust: trust,
+	});
+	ledger.reserve({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		quote,
+		iacPricingPin: create(IacPricingPinSchema, {
+			...fields,
+			validUntil: quote.validUntil,
+		}),
+		identity,
+		expectedSeq: 0,
+		now,
+	});
+	ledger.claimExecution({
+		reservationId: "priced",
+		requestDigest: quote.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
+	let reads = 0;
+	const evidence = {
+		usageEvidenceRef: "usage",
+		get sourceStoppedEvidenceRef() {
+			return ++reads <= 2 ? "trusted-stop" : "forged-stop";
+		},
+		financeSignature: "signed",
+		providerAccounts: [
+			{ providerAccountId: "account-a", liabilityMicros: 100 },
+		],
+	};
+	ledger.settle("priced", 100, evidence);
+	expect(
+		ledger.lookup("priced")?.settlementEvidence?.sourceStoppedEvidenceRef,
+	).toBe("trusted-stop");
 	ledger.close();
 });

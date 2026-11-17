@@ -162,6 +162,27 @@ export interface IacUnpricedScopeTrust {
 	}): boolean;
 }
 
+/** Independently enrolled verifier for exact priced IaC claims, final usage and
+ * permanent retirement of every source that can still incur charges. It must
+ * authenticate the evidence and its complete tenant, budget, account, plan,
+ * execution and amount scope. This synchronous verification runs inside the
+ * budget transaction and must also support historical replay. */
+export interface IacPricedSettlementTrust {
+	verify(input: {
+		reservation: BudgetReservation;
+		actualMicros: number;
+		evidence: GeneratedSettlementEvidence;
+	}): boolean;
+}
+
+/** Capture the verifier once; replacing a host object's method cannot weaken trust. */
+export function captureIacPricedSettlementTrust(
+	trust: IacPricedSettlementTrust | undefined,
+): IacPricedSettlementTrust | undefined {
+	if (!trust) return undefined;
+	return Object.freeze({ verify: trust.verify.bind(trust) });
+}
+
 /** Enroll verifier functions once. Mutable policy data may still be consulted by
  * the host so revocation is observed; replacing a method cannot weaken trust. */
 export function captureIacUnpricedScopeTrust(
@@ -446,6 +467,7 @@ export function createBudgetAdmissionAuthority(options: {
 	/** Independently enrolled receiver and financial signing authorities. */
 	fenceTrust?: BudgetFenceTrust;
 	unpricedScopeTrust?: IacUnpricedScopeTrust;
+	iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	commit?: (event: BudgetAuthorityEvent, expectedSeq: number) => void;
 }): BudgetAdmissionAuthority & {
 	configure(
@@ -459,6 +481,9 @@ export function createBudgetAdmissionAuthority(options: {
 	let reservations = new Map<string, BudgetReservation>();
 	const fenced = createBudgetFenceVerifier(options.fenceTrust);
 	const scopeTrust = captureIacUnpricedScopeTrust(options.unpricedScopeTrust);
+	const pricedSettlementTrust = captureIacPricedSettlementTrust(
+		options.iacPricedSettlementTrust,
+	);
 	validateBudgetSnapshot(current, current.observedAt);
 	const replayed = new Map<number, string>();
 	const policyFingerprint = (snapshot: BudgetLedgerSnapshot) =>
@@ -827,6 +852,28 @@ export function createBudgetAdmissionAuthority(options: {
 					(row.status === "released" && row.executionDigest))
 			)
 				throw new Error("invalid unbounded reservation history");
+			if (
+				row.iacPricingPin &&
+				!row.fenceSettlementGuard &&
+				row.status === "settled"
+			) {
+				if (
+					!old?.executionDigest ||
+					!row.settlementEvidence ||
+					!boundedName(row.settlementEvidence.financeSignature, 4096) ||
+					(old.status === "held" || old.status === "uncertain"
+						? pricedSettlementTrust?.verify({
+								reservation: clone(BudgetReservationSchema, old),
+								actualMicros: row.actualMicros,
+								evidence: clone(
+									BudgetSettlementEvidenceSchema,
+									row.settlementEvidence,
+								),
+							}) !== true
+						: old.status !== "settled")
+				)
+					throw new Error("authenticated priced IaC settlement required");
+			}
 			if (row.fenceSettlementGuard) {
 				if (
 					(!old &&
@@ -1662,33 +1709,64 @@ export function createBudgetAdmissionAuthority(options: {
 			return true;
 		},
 		settle(id, actualMicros, evidence) {
-			if (!evidence?.usageEvidenceRef || !evidence.sourceStoppedEvidenceRef)
+			if (!evidence)
 				throw new Error(
 					"authoritative usage and confirmed source retirement evidence required",
 				);
-			const existing = reservations.get(id);
-			if (!existing) throw new Error("unknown budget reservation");
-			if (existing.unboundedExposure) {
-				const proof = create(BudgetSettlementEvidenceSchema, {
+			// Normalize once before verification: the exact evidence authenticated by
+			// the host must be the evidence used for booking and durable replay.
+			const proof = clone(
+				BudgetSettlementEvidenceSchema,
+				create(BudgetSettlementEvidenceSchema, {
 					...evidence,
 					providerAccounts: [...(evidence.providerAccounts ?? [])],
 					entitlementClaims: [...(evidence.entitlementClaims ?? [])],
-				});
+				}),
+			);
+			if (!proof.usageEvidenceRef || !proof.sourceStoppedEvidenceRef)
+				throw new Error(
+					"authoritative usage and confirmed source retirement evidence required",
+				);
+			budgetMicros(actualMicros);
+			const existing = reservations.get(id);
+			if (!existing) throw new Error("unknown budget reservation");
+			// An exact replay is checked against the already authenticated immutable
+			// terminal record; verifiers saw the original live claim when it settled.
+			if (
+				existing.status === "settled" &&
+				(existing.iacPricingPin || existing.unboundedExposure)
+			)
+				return change(id, "settled", actualMicros, proof);
+			if (existing.iacPricingPin && !existing.fenceSettlementGuard) {
+				if (
+					!existing.executionDigest ||
+					!boundedName(proof.financeSignature, 4096) ||
+					pricedSettlementTrust?.verify({
+						reservation: clone(BudgetReservationSchema, existing),
+						actualMicros,
+						evidence: clone(BudgetSettlementEvidenceSchema, proof),
+					}) !== true
+				)
+					throw new Error(
+						"authenticated priced IaC final usage and permanent source retirement are required",
+					);
+			}
+			if (existing.unboundedExposure) {
 				if (
 					!existing.executionDigest ||
 					!boundedName(proof.financeSignature, 4096) ||
 					scopeTrust?.settlement({
 						reservation: clone(BudgetReservationSchema, existing),
 						actualMicros,
-						evidence: proof,
+						evidence: clone(BudgetSettlementEvidenceSchema, proof),
 					}) !== true
 				)
 					throw new Error(
 						"authenticated final usage and permanent source retirement are required",
 					);
 			}
-			fenced.settle(existing, actualMicros, evidence);
-			return change(id, "settled", actualMicros, evidence);
+			fenced.settle(existing, actualMicros, proof);
+			return change(id, "settled", actualMicros, proof);
 		},
 		uncertain(id) {
 			return change(id, "uncertain");
