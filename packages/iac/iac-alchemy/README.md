@@ -545,7 +545,11 @@ consumers must make their own external side effects idempotent or fenced.
 The client bounds each call, including the complete response body, to ten
 seconds. A timeout is `outcome-unknown`: it does not prove the actor stopped or
 that a mutation failed. The actor also stops reading an incomplete request after
-ten seconds, before opening its transaction. BYOB byte streams are consumed in
+ten seconds and bounds asynchronous authorization to ten seconds before opening
+its transaction. A definite policy denial is a 403; unavailable policy,
+unverified ingress and request timeouts are explicit 503s. These deadlines do
+not cancel a database transaction once opened; the host must operate and bound
+the backing database independently. BYOB byte streams are consumed in
 bounded reads; unsupported streams are refused and cancelled unless the host
 independently verifies an enforced upstream bound. Rivet 3 currently constructs
 a non-BYOB request stream, so a production host must provide `verifyIngress`
@@ -555,7 +559,8 @@ must likewise supply `verifyResponseBounds` and enforce those bounds on the
 entire response path. The verifiers must authenticate the deployed ingress and
 transport configuration for the exact actor, operation and key; caller-supplied
 headers or a configuration declaration alone are not proof. The host must bound
-provider-side buffering and concurrency even for BYOB streams.
+provider-side buffering and concurrency even for BYOB streams, and keep those
+limits in force through each request and any in-flight response.
 
 ```ts
 import { setup } from "rivetkit";

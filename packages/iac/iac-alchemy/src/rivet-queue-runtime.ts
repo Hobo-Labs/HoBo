@@ -7,7 +7,9 @@ import {
 } from "rivetkit";
 import { db, type RawAccess } from "rivetkit/db";
 import {
+	boundedRivetQueueDecision,
 	RIVET_QUEUE_CHUNK_BYTES,
+	RivetQueueStreamError,
 	readRivetQueueStream,
 } from "./rivet-queue-stream.js";
 
@@ -219,17 +221,24 @@ export function createRivetQueueActor(options: {
 			return response(403, { error: "forbidden" });
 		const actorKey = Object.freeze([...context.key]);
 		try {
-			if (
-				(await authorize({
-					actorName,
-					actorKey,
-					operation: action,
-					headers: new Headers(request.headers),
-				})) !== true
-			)
+			const decision = await boundedRivetQueueDecision(
+				() =>
+					authorize({
+						actorName,
+						actorKey,
+						operation: action,
+						headers: new Headers(request.headers),
+					}),
+				request.signal,
+			);
+			if (decision === false) {
+				if (request.body !== null) void request.body.cancel().catch(() => {});
 				return response(403, { error: "forbidden" });
+			}
+			if (decision !== true) throw new Error("invalid policy decision");
 		} catch {
-			return response(403, { error: "forbidden" });
+			if (request.body !== null) void request.body.cancel().catch(() => {});
+			return response(503, { error: "policy-unavailable" });
 		}
 		let body: unknown;
 		try {
@@ -248,7 +257,16 @@ export function createRivetQueueActor(options: {
 								}),
 							),
 			);
-		} catch {
+		} catch (error) {
+			if (error instanceof RivetQueueStreamError && error.code !== "invalid") {
+				const reason =
+					error.code === "unverified"
+						? "ingress-unverified"
+						: error.code === "timeout"
+							? "request-timeout"
+							: "request-unavailable";
+				return response(503, { error: reason });
+			}
 			return response(400, { error: "invalid-argument" });
 		}
 		if (!record(body)) return response(400, { error: "invalid-argument" });

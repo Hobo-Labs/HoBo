@@ -466,7 +466,8 @@ it("refuses an unverified native request stream before any database transaction"
 		{ name: "jobs", key: ["tenant-a"], db: f.database },
 		request,
 	);
-	expect(result.status).toBe(400);
+	expect(result.status).toBe(503);
+	expect(await result.json()).toEqual({ error: "ingress-unverified" });
 	expect(cancelled).toBe(true);
 	expect(
 		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
@@ -573,7 +574,9 @@ it("times out and cancels a stalled actor request before mutation", async () => 
 		request,
 	);
 	await vi.advanceTimersByTimeAsync(10_001);
-	expect((await outcome).status).toBe(400);
+	const result = await outcome;
+	expect(result.status).toBe(503);
+	expect(await result.json()).toEqual({ error: "request-timeout" });
 	expect(cancelled).toBe(true);
 	expect(
 		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
@@ -660,4 +663,80 @@ it("cancels an oversized BYOB response without accepting the receipt", async () 
 		code: "outcome-unknown",
 	});
 	expect(cancelled).toBe(true);
+});
+
+it("distinguishes denied and unavailable authorization and bounds a stalled policy", async () => {
+	vi.useFakeTimers();
+	const f = fixture();
+	const create = (authorize: () => boolean | Promise<boolean>) =>
+		createRivetQueueActor({ actorName: "jobs", now: () => 1000, authorize });
+	const request = () =>
+		new Request("https://queue.test/enqueue", {
+			method: "POST",
+			body: JSON.stringify({ idempotencyKey: "k", body: 1 }),
+		});
+	const context = { name: "jobs", key: ["tenant-a"], db: f.database };
+	const denied = await create(() => false).handle(context, request());
+	expect(denied.status).toBe(403);
+	expect(await denied.json()).toEqual({ error: "forbidden" });
+	const broken = await create(() => {
+		throw new Error("policy offline");
+	}).handle(context, request());
+	expect(broken.status).toBe(503);
+	expect(await broken.json()).toEqual({ error: "policy-unavailable" });
+	let resolvePolicy: (value: boolean) => void = () => {};
+	const stalled = create(
+		() =>
+			new Promise<boolean>((resolve) => {
+				resolvePolicy = resolve;
+			}),
+	).handle(context, request());
+	await vi.advanceTimersByTimeAsync(10_001);
+	const timedOut = await stalled;
+	expect(timedOut.status).toBe(503);
+	expect(await timedOut.json()).toEqual({ error: "policy-unavailable" });
+	resolvePolicy(true);
+	await Promise.resolve();
+	expect(
+		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
+	).toBe(0);
+});
+
+it("reports failed ingress verification as unavailable and never opens a transaction", async () => {
+	const f = fixture();
+	for (const verifyIngress of [
+		() => false,
+		() => {
+			throw new Error("offline");
+		},
+	]) {
+		let cancelled = false;
+		const stream = new ReadableStream<Uint8Array>({
+			cancel() {
+				cancelled = true;
+			},
+		});
+		// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+		const request = new Request("https://queue.test/enqueue", {
+			method: "POST",
+			body: stream,
+			duplex: "half",
+		} as RequestInit);
+		const binding = createRivetQueueActor({
+			actorName: "jobs",
+			now: () => 1000,
+			authorize: () => true,
+			verifyIngress,
+		});
+		const result = await binding.handle(
+			{ name: "jobs", key: ["tenant-a"], db: f.database },
+			request,
+		);
+		expect(result.status).toBe(503);
+		expect(await result.json()).toEqual({ error: "ingress-unverified" });
+		expect(cancelled).toBe(true);
+	}
+	expect(
+		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
+	).toBe(0);
 });
