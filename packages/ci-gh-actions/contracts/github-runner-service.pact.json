@@ -1,0 +1,229 @@
+{
+  "consumer": { "name": "HoBoRelayRunnerProtocolClient" },
+  "provider": { "name": "GitHubActionsRunnerService" },
+  "interactions": [
+    {
+      "description": "exchange a signed client assertion for an access token",
+      "providerStates": [{ "name": "a one-job runner registered with client id 00000000-0000-4000-8000-0000000000c1" }],
+      "request": {
+        "method": "POST",
+        "path": "/_apis/oauth2/token/00000000-0000-4000-8000-0000000000c1",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" },
+        "body": "grant_type=client_credentials&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_assertion=<RS256 JWT: iss and sub the client id, aud the token URL>"
+      },
+      "response": {
+        "status": 200,
+        "body": { "access_token": "pact-access-token", "token_type": "bearer", "expires_in": 3600 }
+      },
+      "source": "Runner.Listener/Configuration/OAuthCredential.cs, Sdk/WebApi/WebApi/OAuth/VssOAuthJwtBearerClientCredential.cs, VssOAuthJwtBearerAssertion.cs, VssOAuthConstants.cs, VssOAuthTokenResponse.cs"
+    },
+    {
+      "description": "open a broker session for the runner",
+      "request": {
+        "method": "POST",
+        "path": "/session",
+        "headers": { "Authorization": "Bearer pact-access-token", "Content-Type": "application/json" },
+        "body": {
+          "sessionId": "00000000-0000-0000-0000-000000000000",
+          "ownerName": "hobo-relay",
+          "agent": { "id": 1, "name": "hobo-relay-pact", "version": "2.338.0", "osDescription": "HoBo relay" },
+          "useFipsEncryption": false,
+          "brokerSession": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": { "sessionId": "11111111-1111-4111-8111-111111111111", "ownerName": "hobo-relay", "brokerSession": true }
+      },
+      "source": "Sdk/WebApi/WebApi/BrokerHttpClient.cs CreateSessionAsync, Sdk/DTWebApi/WebApi/TaskAgentSession.cs, Runner.Listener/BrokerMessageListener.cs"
+    },
+    {
+      "description": "long-poll the broker and receive a job offer",
+      "request": {
+        "method": "GET",
+        "path": "/message",
+        "query": {
+          "sessionId": ["11111111-1111-4111-8111-111111111111"],
+          "status": ["Online"],
+          "runnerVersion": ["2.338.0"],
+          "os": ["Linux"],
+          "architecture": ["X64"],
+          "disableUpdate": ["true"]
+        },
+        "headers": { "Authorization": "Bearer pact-access-token" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "messageId": 1,
+          "messageType": "RunnerJobRequest",
+          "body": "{\"id\":\"r-1\",\"runner_request_id\":\"r-1\",\"should_acknowledge\":true,\"run_service_url\":\"https://run-actions-3-azure-eastus.actions.githubusercontent.com/42/\",\"billing_owner_id\":\"owner-1\"}"
+        }
+      },
+      "source": "Sdk/WebApi/WebApi/BrokerHttpClient.cs GetRunnerMessageAsync, Sdk/DTWebApi/WebApi/TaskAgentMessage.cs, Runner.Listener/RunnerJobRequestRef.cs, Sdk/DTWebApi/WebApi/JobRequestMessageTypes.cs"
+    },
+    {
+      "description": "acknowledge the job offer",
+      "request": {
+        "method": "POST",
+        "path": "/acknowledge",
+        "query": {
+          "sessionId": ["11111111-1111-4111-8111-111111111111"],
+          "status": ["Online"],
+          "runnerVersion": ["2.338.0"],
+          "os": ["Linux"],
+          "architecture": ["X64"]
+        },
+        "headers": { "Authorization": "Bearer pact-access-token", "Content-Type": "application/json" },
+        "body": { "runnerRequestId": "r-1" }
+      },
+      "response": { "status": 200 },
+      "source": "Sdk/WebApi/WebApi/BrokerHttpClient.cs AcknowledgeRunnerRequestAsync, Runner.Listener/Runner.cs"
+    },
+    {
+      "description": "acquire the offered job from the run service",
+      "request": {
+        "method": "POST",
+        "path": "/42/acquirejob",
+        "headers": { "Authorization": "Bearer pact-access-token", "Content-Type": "application/json" },
+        "body": { "jobMessageId": "r-1", "runnerOS": "Linux", "billingOwnerId": "owner-1" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "messageType": "PipelineAgentJobRequest",
+          "plan": { "planId": "22222222-2222-4222-8222-222222222222", "planType": "actions", "version": 1 },
+          "timeline": { "id": "33333333-3333-4333-8333-333333333333" },
+          "jobId": "44444444-4444-4444-8444-444444444444",
+          "jobDisplayName": "relay",
+          "jobName": "relay",
+          "requestId": 9,
+          "billingOwnerId": "owner-1",
+          "contextData": {
+            "github": {
+              "t": 2,
+              "d": [
+                { "k": "repository", "v": "octo/app" },
+                { "k": "run_id", "v": "9001" },
+                { "k": "run_attempt", "v": "1" },
+                { "k": "job", "v": "relay" },
+                { "k": "event_name", "v": "pull_request" },
+                { "k": "actor_id", "v": "42" },
+                { "k": "workflow_ref", "v": "octo/app/.github/workflows/ci.yml@refs/pull/7/merge" },
+                {
+                  "k": "event",
+                  "v": {
+                    "t": 2,
+                    "d": [
+                      { "k": "repository", "v": { "t": 2, "d": [{ "k": "private", "v": true }] } },
+                      { "k": "sender", "v": { "t": 2, "d": [{ "k": "id", "v": 43 }] } },
+                      {
+                        "k": "pull_request",
+                        "v": {
+                          "t": 2,
+                          "d": [
+                            {
+                              "k": "head",
+                              "v": {
+                                "t": 2,
+                                "d": [{ "k": "repo", "v": { "t": 2, "d": [{ "k": "full_name", "v": "octo/app" }, { "k": "fork", "v": false }] } }]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "inputs": {
+              "t": 2,
+              "d": [
+                { "k": "github", "v": "ubuntu-24.04" },
+                { "k": "fleet", "v": "hobo" },
+                { "k": "size", "v": 4 },
+                { "k": "not-a-relay-input", "v": "ignored" }
+              ]
+            }
+          },
+          "steps": [
+            {
+              "type": "action",
+              "reference": { "type": "repository", "name": "actions/checkout", "ref": "v4" },
+              "inputs": { "type": 2, "map": [{ "Key": "sparse-checkout", "Value": ".hobo" }] }
+            },
+            {
+              "type": "action",
+              "reference": { "type": "script" },
+              "inputs": { "type": 2, "map": [{ "Key": "script", "Value": { "type": 3, "expr": "inputs.github" } }] }
+            }
+          ]
+        }
+      },
+      "source": "Sdk/RSWebApi/RunServiceHttpClient.cs GetJobMessageAsync, Sdk/RSWebApi/Contracts/AcquireJobRequest.cs, Sdk/DTPipelines/Pipelines/AgentJobRequestMessage.cs, ContextData/PipelineContextDataJsonConverter.cs, ObjectTemplating/Tokens/TemplateTokenJsonConverter.cs, ActionStep.cs, ActionStepDefinitionReference.cs"
+    },
+    {
+      "description": "complete the job with a conclusion, outputs and annotations",
+      "request": {
+        "method": "POST",
+        "path": "/42/completejob",
+        "headers": { "Authorization": "Bearer pact-access-token", "Content-Type": "application/json" },
+        "body": {
+          "planId": "22222222-2222-4222-8222-222222222222",
+          "jobId": "44444444-4444-4444-8444-444444444444",
+          "conclusion": "succeeded",
+          "outputs": {
+            "runner": { "value": "hobo", "isSecret": false },
+            "step": { "value": "fleet", "isSecret": false },
+            "outcome": { "value": "routed", "isSecret": false },
+            "reason": { "value": "fleet has room", "isSecret": false }
+          },
+          "stepResults": [],
+          "annotations": [{ "level": "notice", "message": "routed to the fleet" }],
+          "billingOwnerId": "owner-1"
+        }
+      },
+      "response": { "status": 200 },
+      "source": "Sdk/RSWebApi/RunServiceHttpClient.cs CompleteJobAsync, Sdk/RSWebApi/Contracts/CompleteJobRequest.cs, Annotation.cs, AnnotationLevel.cs, Sdk/DTWebApi/WebApi/TaskResult.cs, VariableValue.cs, Sdk/WebApi/WebApi/VssJsonMediaTypeFormatter.cs"
+    },
+    {
+      "description": "long-poll the broker and receive nothing",
+      "request": {
+        "method": "GET",
+        "path": "/message",
+        "query": {
+          "sessionId": ["11111111-1111-4111-8111-111111111111"],
+          "status": ["Online"],
+          "runnerVersion": ["2.338.0"],
+          "os": ["Linux"],
+          "architecture": ["X64"],
+          "disableUpdate": ["true"]
+        },
+        "headers": { "Authorization": "Bearer pact-access-token" }
+      },
+      "response": { "status": 202 },
+      "source": "Sdk/WebApi/WebApi/BrokerHttpClient.cs GetRunnerMessageAsync; Runner.Listener/BrokerMessageListener.cs treats a null message as none"
+    },
+    {
+      "description": "delete the broker session",
+      "request": {
+        "method": "DELETE",
+        "path": "/session",
+        "query": { "sessionId": ["11111111-1111-4111-8111-111111111111"] },
+        "headers": { "Authorization": "Bearer pact-access-token" }
+      },
+      "response": { "status": 200 },
+      "source": "Sdk/WebApi/WebApi/BrokerHttpClient.cs DeleteSessionAsync"
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" },
+    "hobo": {
+      "kind": "hand-authored consumer expectations, not captured traffic",
+      "source": "actions/runner (MIT) at af09a511a0869abf002daef236c66c5b146d683a, read 2026-11-17; each interaction's source names the files, relative to src/",
+      "hosts": "token https://vstoken.actions.githubusercontent.com, broker https://broker.actions.githubusercontent.com, run service https://run-actions-3-azure-eastus.actions.githubusercontent.com",
+      "proven": "built, not proven: no run against GitHub's runner service is linked"
+    }
+  }
+}

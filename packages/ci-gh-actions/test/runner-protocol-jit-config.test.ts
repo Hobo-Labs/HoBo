@@ -142,7 +142,10 @@ describe("parseJitConfig", () => {
 		expect(
 			refusal(
 				edit(".runner", (text) =>
-					text.replace('"GitHubUrl":""', '"GitHubUrl":"https://example.com/octo/app"'),
+					text.replace(
+						'"GitHubUrl":""',
+						'"GitHubUrl":"https://example.com/octo/app"',
+					),
 				),
 			),
 		).toContain("GitHubUrl");
@@ -159,14 +162,20 @@ describe("parseJitConfig", () => {
 
 	it("refuses credentials that are not a usable OAuth key", () => {
 		expect(
-			refusal(edit(".credentials", (text) => text.replace('"OAuth"', '"Basic"'))),
+			refusal(
+				edit(".credentials", (text) => text.replace('"OAuth"', '"Basic"')),
+			),
 		).toContain(".credentials has the wrong shape");
 		expect(
 			refusal(
 				edit(".credentials_rsaparams", (text) =>
 					text.replace(
 						/"modulus":"[^"]*"/u,
-						`"modulus":"${decode(new FakeGithubRunnerService().jitConfig("x")).get(".credentials_rsaparams")?.match(/"modulus":"([^"]*)"/u)?.[1]}"`,
+						`"modulus":"${
+							decode(new FakeGithubRunnerService().jitConfig("x"))
+								.get(".credentials_rsaparams")
+								?.match(/"modulus":"([^"]*)"/u)?.[1]
+						}"`,
 					),
 				),
 			),
@@ -186,7 +195,10 @@ describe("isGithubServiceUrl", () => {
 		["https://github.com/octo/app", true],
 		["https://api.github.com/repos", true],
 		["https://broker.actions.githubusercontent.com/", true],
-		["https://run-actions-3-azure-eastus.actions.githubusercontent.com/42/", true],
+		[
+			"https://run-actions-3-azure-eastus.actions.githubusercontent.com/42/",
+			true,
+		],
 		["https://tenant.ghe.com/", true],
 		["http://github.com/", false],
 		["https://github.com.example/", false],

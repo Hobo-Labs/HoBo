@@ -244,8 +244,7 @@ export class FakeGithubRunnerService {
 	 * Register a one-job runner and return its `encoded_jit_config`, as
 	 * `generate-jitconfig` would.
 	 */
-	jitConfig(runnerName: string): string {
-		const clientId = randomUUID();
+	jitConfig(runnerName: string, clientId: string = randomUUID()): string {
 		const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 		const jwk = privateKey.export({ format: "jwk" });
 		const b64 = (value: string | undefined) =>
