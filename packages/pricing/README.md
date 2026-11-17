@@ -91,6 +91,26 @@ stable JSON result, including the deterministic quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
 claimed.
 
+## Credit-order verification
+
+The [pricing credit-order skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
+checks the equal-priority credit flow against real code, a bounded TLA+ model,
+and an abstract balance proof. The model explores 16 states and hides four
+same-state transitions; a separate counterexample shows that legacy v1 quotes
+can differ by locale.
+
+```mermaid
+stateDiagram-v2
+  s0: Same credit state
+  s1: One host rated
+  s2: Legacy quotes may differ
+  s3: New quotes agree
+  [*] --> s0
+  s0 --> s1: rate on Swedish host or rate on English host
+  s1 --> s2: rate on English host or rate on Swedish host
+  s1 --> s3: rate on English host or rate on Swedish host
+```
+
 ## Architecture boundaries
 
 Parse, don't validate starts at `parseJson` and `parseQuoteScenario`: untrusted
