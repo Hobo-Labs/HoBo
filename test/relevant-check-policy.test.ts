@@ -1043,6 +1043,7 @@ test("a change to anything that guards signed local runs runs those guards", () 
 		"scripts/lint-actions.ts",
 		".hobo/ci-attestors.json",
 		"scripts/ci/local-attest.mts",
+		"scripts/ci/github-target.mts",
 		"scripts/test/merge-group-gate.test.ts",
 	]) {
 		for (const overrides of [

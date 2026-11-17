@@ -180,6 +180,10 @@ export type AttestedJobResult = Readonly<{
 	events: readonly string[];
 	/** Commands that ran for this job, across every event it covers. */
 	commands: number;
+	/** Executed commands for each event, when recorded by a new local run. */
+	eventChecks?: Readonly<Partial<Record<AttestationEvent, number>>>;
+	/** Present when every selected step ran individually, without shell-command reuse. */
+	executionMode?: "each-step-v1";
 	durationMs: number;
 	/** Digest of the job's combined output, kept on the machine that ran it. */
 	logDigest: string;
@@ -391,7 +395,32 @@ function parseResult(value: JsonValue): AttestedJobResult {
 	const status = required(asText(object.status), "a result needs a status");
 	if (status !== "passed")
 		throw new AttestationFormatError("a result must have passed");
-	return {
+	let eventChecks: Partial<Record<AttestationEvent, number>> | undefined;
+	if (object.eventChecks !== undefined) {
+		const checks = required(
+			asObject(object.eventChecks),
+			"eventChecks must be an object",
+		);
+		eventChecks = {};
+		for (const [name, value] of Object.entries(checks)) {
+			const event = ATTESTATION_EVENTS.find((known) => known === name);
+			const count = asNumber(value);
+			if (
+				!event ||
+				count === undefined ||
+				!Number.isSafeInteger(count) ||
+				count < 1
+			)
+				throw new AttestationFormatError(
+					"eventChecks needs a positive count for a known event",
+				);
+			eventChecks[event] = count;
+		}
+	}
+	const executionMode = object.executionMode;
+	if (executionMode !== undefined && executionMode !== "each-step-v1")
+		throw new AttestationFormatError("unknown result executionMode");
+	const result = {
 		id: required(asText(object.id), "a result needs an id"),
 		status,
 		events: textList(object.events, "a result's events"),
@@ -401,7 +430,10 @@ function parseResult(value: JsonValue): AttestedJobResult {
 			"a result needs durationMs",
 		),
 		logDigest: required(asText(object.logDigest), "a result needs logDigest"),
-	};
+	} satisfies AttestedJobResult;
+	if (eventChecks !== undefined) Object.assign(result, { eventChecks });
+	if (executionMode !== undefined) Object.assign(result, { executionMode });
+	return result;
 }
 
 /** A git object id, and nothing a log line could be broken with. */

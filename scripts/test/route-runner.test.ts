@@ -737,6 +737,44 @@ describe("reading GitHub's queue", () => {
 		assert.equal(labelLoad(jobs, "hobo", NOW).oldestWaitSeconds, 4000);
 	});
 
+	it("can exhaust the bounded lookups after refusal without changing the default", async () => {
+		const read = async (path: string): Promise<JsonValue> => {
+			if (!path.includes("/jobs")) return runsPage;
+			if (path.includes("/runs/40/"))
+				return {
+					jobs: [
+						{
+							run_id: 40,
+							status: "completed",
+							labels: ["self-hosted", "hobo"],
+							runner_name: "runner",
+							created_at: at(10),
+							started_at: at(8),
+						},
+					],
+				};
+			return jobsPage(10, 4000);
+		};
+		const observe = (exhaustLookups: boolean) =>
+			observeQueue({
+				read,
+				repository: "acme/app",
+				ownRunId: 7,
+				labels: ["hobo"],
+				limits,
+				nowMs: NOW,
+				exhaustLookups,
+			});
+		assert.equal(
+			(await observe(false)).jobs.some((job) => job.labels.length > 1),
+			false,
+		);
+		assert.equal(
+			(await observe(true)).jobs.some((job) => job.labels.length > 1),
+			true,
+		);
+	});
+
 	it("stops once enough jobs are waiting, though none has waited long", async () => {
 		const many = {
 			workflow_runs: Array.from({ length: 40 }, (_, index) => ({
@@ -1086,7 +1124,7 @@ const withGithub = async <T>(
 
 /** No routing slip: the relay has written none. */
 const NO_SLIP = { routingConfig: COMMITTED, fetch: slipApi(undefined) };
-/** A slip must not be read here: a pinned or attested run decides without it. */
+/** A slip must not be read here: a pinned run decides without it. */
 const NO_SLIP_CALL = {
 	routingConfig: COMMITTED,
 	fetch: async (): Promise<never> => {
@@ -1249,19 +1287,7 @@ describe("the script as a whole", () => {
 		);
 	});
 
-	it("sends what is left of an attested run to GitHub-hosted without reading the slip or the queue", async () => {
-		const attested = await main(
-			["--attested", "true"],
-			{
-				GITHUB_EVENT_NAME: "merge_group",
-				GITHUB_API_URL: "http://127.0.0.1:9",
-			},
-			NO_SLIP_CALL,
-		);
-		assert.equal(attested.runner, "ubuntu-24.04");
-		assert.equal(attested.tier, "github");
-		assert.match(attested.reason, /signed local run/);
-		// A pin is an operator's override: it still wins.
+	it("honours a pin even when a local run was attested", async () => {
 		const pinned = await main(
 			["--attested", "true", "--route", "fleet"],
 			{
@@ -1271,18 +1297,6 @@ describe("the script as a whole", () => {
 			NO_SLIP_CALL,
 		);
 		assert.equal(pinned.runner, "hobo-trunk");
-		// Anything but the literal `true` is not an attestation.
-		const unattested = await main(
-			["--attested", "false"],
-			{
-				GITHUB_EVENT_NAME: "pull_request",
-				GITHUB_REPOSITORY: "acme/app",
-				GITHUB_RUN_ID: "1",
-				GITHUB_API_URL: "http://127.0.0.1:9",
-			},
-			NO_SLIP,
-		);
-		assert.match(unattested.reason, /could not be read/);
 	});
 
 	it("writes runner, tier and shard_runner as step outputs", async () => {
@@ -1420,6 +1434,27 @@ describe("the script reading the slip", () => {
 				refusedBy: "slip",
 			}),
 		]);
+	});
+
+	it("routes the remaining jobs by the slip or queue even when local evidence exists", async () => {
+		const fromSlip = await route("http://127.0.0.1:9", REFUSED_SLIP, {}, [
+			"--attested",
+			"true",
+		]);
+		assert.deepEqual(
+			[fromSlip.decision.tier, fromSlip.decision.runner],
+			["local", "hobo-local-host"],
+		);
+		await withGithub(fleetUpPages, async (apiUrl) => {
+			const fromQueue = await route(apiUrl, undefined, {}, [
+				"--attested",
+				"true",
+			]);
+			assert.deepEqual(
+				[fromQueue.decision.tier, fromQueue.decision.runner],
+				["fleet", "hobo"],
+			);
+		});
 	});
 
 	/** A finished probe and the actual jobs observed for the requested labels. */
@@ -1766,7 +1801,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("annotates why no slip was read for a pinned or attested run", async () => {
+	it("annotates why no slip was read for a pinned run", async () => {
 		const env = {
 			GITHUB_EVENT_NAME: "push",
 			GITHUB_API_URL: "http://127.0.0.1:9",
@@ -1789,13 +1824,6 @@ describe("the script reading the slip", () => {
 					.lines,
 			),
 			unasked("pinned"),
-		);
-		assert.deepEqual(
-			noticesIn(
-				(await printedBy(() => main(["--attested", "true"], env, NO_SLIP_CALL)))
-					.lines,
-			),
-			unasked("attested"),
 		);
 		assert.deepEqual(
 			noticesIn(
