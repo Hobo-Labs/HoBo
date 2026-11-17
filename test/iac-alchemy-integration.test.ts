@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bindle } from "../packages/bindles/dist/index.js";
 import { CATALOG_ROWS } from "../packages/bindles/dist/types.js";
+import type { IacUnpricedAuthorizer } from "../packages/broker/src/iac-unpriced.js";
 import {
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
@@ -14,6 +15,8 @@ import {
 	HostingPolicyProofSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetLiabilityEvidenceSchema,
+	IacUnpricedPolicyProofSchema,
+	IacUnpricedScopeProofSchema,
 } from "../packages/broker/src/index.js";
 import {
 	createInProcessCredentialBroker,
@@ -25,6 +28,7 @@ import {
 import { createInMemoryActorHost } from "../packages/data/src/actor-host.js";
 import { createDirectRoutePort } from "../packages/dispatcher/src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../packages/dispatcher/src/iac-route-sqlite.js";
+import { executeUnpricedIacTarget } from "../packages/dispatcher/src/iac-unpriced-routing.js";
 import {
 	executeRankedIacTargets,
 	rankIacTargets,
@@ -37,8 +41,10 @@ import {
 	captureAlchemyProgram,
 	createAlchemyIacProvider,
 	describeAlchemyPrimitiveSupport,
+	type FinancialPort,
 	type IacProgram,
 	type IacRouteContext,
+	type IacRouteResolver,
 	mapBindleToAlchemy,
 } from "../packages/iac/iac-alchemy/src/index.js";
 import {
@@ -131,11 +137,14 @@ function routeFor(input: IacProgram, requestId: string) {
 function setup(
 	options: {
 		withPricing?: boolean;
+		authorizeUnpriced?: boolean;
 		failApply?: boolean;
 		badAdmission?: boolean;
 		unreadableReceipt?: boolean;
 		loseAdmissionResponse?: boolean;
 		beforeAdmission?: () => Promise<void>;
+		beforeRevalidate?: () => void | Promise<void>;
+		resolveRoute?: IacRouteResolver;
 		onReceipt?: (receipt: IacTargetAdmissionDecision) => void;
 		targetId?: string;
 		stackName?: string;
@@ -232,6 +241,11 @@ function setup(
 		now: () => NOW,
 		// This fixture never settles: its verifier refuses all settlement claims.
 		iacPricedSettlementTrust: { verify: () => false },
+		unpricedScopeTrust: {
+			verify: (proof) => proof.signature === "scope-signature",
+			isCurrent: (proof) => proof.signature === "scope-signature",
+			settlement: () => false,
+		},
 		snapshot: create(BudgetLedgerSnapshotSchema, {
 			identity: {
 				tenantId: "tenant-a",
@@ -302,6 +316,41 @@ function setup(
 		...(pricing === undefined ? undefined : { pricing }),
 		authority,
 		now: () => NOW,
+		...(options.authorizeUnpriced
+			? {
+					unpriced: {
+						authorize: ({
+							requestDigest,
+							inventoryHash,
+							identity,
+						}: Parameters<IacUnpricedAuthorizer>[0]) => ({
+							gate: { effect: "allow" as const, reasons: [], events: [] },
+							proof: create(IacUnpricedPolicyProofSchema, {
+								requestDigest,
+								inventoryHash,
+								identity,
+								policyHash: "policy:1",
+								effect: "allow",
+								evidenceRef: "unpriced:1",
+								obligationsSatisfied: true,
+								observedAt: "2026-01-01T00:00:00Z",
+								validUntil: END,
+							}),
+							scopeProof: create(IacUnpricedScopeProofSchema, {
+								identity,
+								providerAccountIds: ["account-a"],
+								authorityRef: "scope-authority",
+								evidenceRef: "exclusive:1",
+								ownershipEpoch: "epoch:1",
+								observedAt: "2026-01-01T00:00:00Z",
+								exclusiveUntilSettled: true,
+								noSharedEntitlements: true,
+								signature: "scope-signature",
+							}),
+						}),
+					},
+				}
+			: undefined),
 		verifyLiability: async () => true,
 		issueLiability: async ({ inventory, priced }) => {
 			issued++;
@@ -338,6 +387,8 @@ function setup(
 			}),
 		}),
 	});
+	const brokerPort: FinancialPort<ReturnType<typeof financial.assess>> =
+		financial;
 	const routeAuthority = createSqliteIacRouteAuthority({
 		path: join(dir, "routes.sqlite"),
 		verifyOperation: ({ tenantId, requestId, operationId, authorization }) =>
@@ -422,7 +473,7 @@ function setup(
 		route,
 		resolveRoute: (context) => {
 			options.onRoute?.(context);
-			return resolveRoute(context);
+			return (options.resolveRoute ?? resolveRoute)(context);
 		},
 		composite: {
 			proofRef: "host:fixture-attestation",
@@ -442,7 +493,7 @@ function setup(
 		},
 		financial: options.badAdmission
 			? {
-					...financial,
+					...brokerPort,
 					admit: async (requestId) => ({
 						requestId,
 						targetId: "yard-a",
@@ -454,7 +505,11 @@ function setup(
 					}),
 				}
 			: {
-					...financial,
+					...brokerPort,
+					revalidate: async (receipt, plan) => {
+						await options.beforeRevalidate?.();
+						return financial.revalidate(receipt, plan);
+					},
 					admit: async (requestId, plan, expected) => {
 						if (options.beforeAdmission !== undefined)
 							await options.beforeAdmission();
@@ -620,19 +675,21 @@ describe("Alchemy IaC provider against the real library", () => {
 	});
 
 	it("accepts a generated logical name when its physical stack is authenticated", async () => {
-		const generated = iacProgramFor(
-			"deployment-a",
-			{
-				name: "application",
-				port: "compute",
-				provider: "sandbox",
-				deps: [],
-			},
-			"apply",
-			"tenant-a",
-		);
+		const generated = {
+			...iacProgramFor(
+				"deployment-a",
+				{
+					name: "application",
+					port: "compute",
+					provider: "sandbox",
+					deps: [],
+				},
+				"apply",
+				"tenant-a",
+			),
+			operationGeneration: "generation-1",
+		};
 		expect(generated.stackName).toBe("tenant-a/deployment-a/application");
-		generated.operationGeneration = "generation-1";
 		const fixture = setup({
 			rivet: true,
 			output: "resource",
@@ -911,6 +968,205 @@ describe("Alchemy IaC provider against the real library", () => {
 		}
 	});
 
+	it("applies a real Rivet resource with a broker-authorized unbounded hold", async () => {
+		let wireReceipt: IacTargetAdmissionDecision | undefined;
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+			onReceipt: (receipt) => {
+				wireReceipt = receipt;
+			},
+		});
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			if (assessment.inventoryHash === undefined)
+				throw new Error("inventory hash missing");
+			const result = await fixture.provider.applyWithAdmission(
+				program,
+				"unpriced-rivet",
+				{
+					kind: "unpriced",
+					targetId: "yard-a",
+					inventoryHash: assessment.inventoryHash,
+				},
+			);
+			expect(wireReceipt?.unpricedPolicyProof?.$typeName).toBe(
+				"hobo.broker.yard.v1.IacUnpricedPolicyProof",
+			);
+			expect(result.admission).toMatchObject({
+				budget: { evaluation: "bypassed", reservation: "held" },
+				reservation: {
+					reservationId: "iac:unpriced-rivet",
+					unboundedExposure: true,
+					unpricedScopeProof: { providerAccountIds: ["account-a"] },
+				},
+				unpricedPolicyProof: { effect: "allow", obligationsSatisfied: true },
+			});
+			expect(result.admission.modelHash).toBe("");
+			expect(result.admission.quoteHash).toBe("");
+			expect(fixture.applied()).toBe(1);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("routes an explicitly selected unpriced Rivet resource without a cost rank", async () => {
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+		});
+		try {
+			const assessed = await fixture.provider.assessPricing(program);
+			const requestId = "unpriced-route";
+			const result = await executeUnpricedIacTarget({
+				authority: fixture.routeAuthority,
+				tenantId: "tenant-a",
+				requestId,
+				operation: routeFor(program, requestId).operation,
+				inventory: assessed.inventory,
+				pricing: assessed.pricing,
+				run: (id, expected, permit) =>
+					fixture.provider.applyWithAdmission(program, id, expected, permit),
+			});
+			expect(result).toMatchObject({
+				status: "selected",
+				targetId: "yard-a",
+				pricing: { status: "unavailable" },
+				budget: { evaluation: "bypassed", reservation: "held" },
+				reservationId: "iac:unpriced-route",
+			});
+			expect(fixture.applied()).toBe(1);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("retains unbounded exposure when policy changes before Rivet starts", async () => {
+		let updatePolicy = () => {};
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+			beforeRevalidate: () => updatePolicy(),
+		});
+		updatePolicy = () => {
+			const ledger = fixture.authority.read(NOW);
+			if (ledger.identity === undefined) throw new Error("identity missing");
+			ledger.identity.policyRevision = "r2";
+			fixture.authority.configure(ledger, ledger.seq, NOW);
+		};
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			if (assessment.inventoryHash === undefined)
+				throw new Error("inventory hash missing");
+			await expect(
+				fixture.provider.applyWithAdmission(program, "policy-revoked", {
+					kind: "unpriced",
+					targetId: "yard-a",
+					inventoryHash: assessment.inventoryHash,
+				}),
+			).rejects.toMatchObject({
+				code: "ADMISSION_REVALIDATION_FAILED",
+				reservationId: "iac:policy-revoked",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("retains the real unbounded hold when operation authorization is revoked before Rivet starts", async () => {
+		let revoked = false;
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+			resolveRoute: (context) => {
+				if (revoked) throw new Error("operation authorization revoked");
+				return resolveRoute(context);
+			},
+			beforeRevalidate: () => {
+				revoked = true;
+			},
+		});
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			if (assessment.inventoryHash === undefined)
+				throw new Error("inventory hash missing");
+			await expect(
+				fixture.provider.applyWithAdmission(program, "revoked-operation", {
+					kind: "unpriced",
+					targetId: "yard-a",
+					inventoryHash: assessment.inventoryHash,
+				}),
+			).rejects.toMatchObject({
+				code: "ROUTE_OPERATION_REVALIDATION_FAILED",
+				reservationId: "iac:revoked-operation",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("retains the unbounded hold when a broker receipt's policy identity is changed", async () => {
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+			onReceipt: (receipt) => {
+				const identity = receipt.unpricedPolicyProof?.identity;
+				if (identity === undefined) throw new Error("policy identity missing");
+				identity.policyRevision = "other";
+			},
+		});
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "identity-changed"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_RECEIPT_INVALID",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("retains the priced hold when the broker receipt's model hash is changed", async () => {
+		const fixture = setup({
+			rivet: true,
+			onReceipt: (receipt) => {
+				receipt.modelHash = `sha256:${"f".repeat(64)}`;
+			},
+		});
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "model-changed"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_REVALIDATION_FAILED",
+				reservationId: "iac:model-changed",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
 	it("routes around an unpriced Rivet target and reserves only the priced target", async () => {
 		const unknown = setup({
 			rivet: true,
@@ -1007,6 +1263,23 @@ describe("Alchemy IaC provider against the real library", () => {
 				code: "ROUTE_ALREADY_FINISHED",
 			});
 			expect(fixture.applied()).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("reuses one provider for a later, independently authorized update", async () => {
+		let size = 1;
+		const fixture = setup({ size: () => size });
+		try {
+			await fixture.provider.preview(program);
+			await fixture.provider.apply(program);
+			size = 2;
+			const next = { ...program, operationGeneration: "generation-2" };
+			await fixture.provider.preview(next);
+			await fixture.provider.apply(next);
+			expect(fixture.applied()).toBe(2);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(3_000_000);
 		} finally {
 			fixture.authority.close();
 		}
@@ -1203,12 +1476,104 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(second.applied()).toBe(1);
 			expect(await route()).toMatchObject({
 				status: "replay",
+				attempts: [],
 			});
 			expect(second.applied()).toBe(1);
 			expect(first.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
 			first.authority.close();
 			second.authority.close();
+		}
+	});
+
+	it("serializes direct and ranked attempts across real route and budget authorities", async () => {
+		let begin = () => {};
+		let release = () => {};
+		const started = new Promise<void>((resolve) => {
+			begin = resolve;
+		});
+		const paused = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const direct = setup({
+			targetId: "direct",
+			beforeAdmission: async () => {
+				begin();
+				await paused;
+			},
+		});
+		const ranked = setup({ targetId: "ranked" });
+		try {
+			await direct.provider.preview(program);
+			const assessed = await ranked.provider.assessPricing(program);
+			if (
+				assessed.pricing.state.case !== "model" ||
+				assessed.pricing.state.value.scenario === undefined
+			)
+				throw new Error("pricing missing");
+			const { at, horizon, action } = assessed.pricing.state.value.scenario;
+			const ranking = rankIacTargets({
+				tenantId: "tenant-a",
+				workloadRef: "workload:1",
+				at,
+				horizon,
+				action,
+				candidates: [
+					{
+						workloadRef: "workload:1",
+						inventory: assessed.inventory,
+						pricing: assessed.pricing,
+					},
+				],
+			});
+			const execution = direct.provider.applyWithAdmission(
+				program,
+				"shared-attempt",
+			);
+			await started;
+			const compete = () =>
+				executeRankedIacTargets({
+					authority: ranked.routeAuthority,
+					tenantId: "tenant-a",
+					requestId: "shared-attempt",
+					operation: routeFor(program, "shared-attempt").operation,
+					ranking,
+					candidates: [
+						{
+							targetId: "ranked",
+							run: (id, expected, permit) =>
+								ranked.provider.applyWithAdmission(
+									program,
+									id,
+									expected,
+									permit,
+								),
+						},
+					],
+				});
+			expect(await compete()).toMatchObject({
+				status: "uncertain",
+				code: "ROUTE_IN_PROGRESS",
+			});
+			release();
+			await execution;
+			expect(await compete()).toMatchObject({
+				status: "replay",
+				code: "ROUTE_ALREADY_FINISHED",
+			});
+			await expect(
+				ranked.provider.applyWithAdmission(program, "different-request"),
+			).rejects.toMatchObject({
+				code: "ROUTE_ALREADY_FINISHED",
+				requiresReconciliation: true,
+			});
+			expect(direct.applied()).toBe(1);
+			expect(ranked.applied()).toBe(0);
+			expect(direct.authority.read(NOW).reservedMicros).toBe(1_500_000);
+		} finally {
+			release();
+			direct.authority.close();
+			ranked.authority.close();
 		}
 	});
 
@@ -1504,8 +1869,8 @@ describe("Alchemy IaC provider against the real library", () => {
 			await fixture.provider.apply(program);
 			const destroy = {
 				...program,
-				operationGeneration: "generation-2",
 				action: "destroy" as const,
+				operationGeneration: "generation-destroy",
 			};
 			expect((await fixture.provider.preview(destroy)).changes).toBe(1);
 			await fixture.provider.destroy(destroy);

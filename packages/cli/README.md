@@ -55,6 +55,11 @@ require the current CD Set to have a converged observation. Revision selectors
 and rollback cannot be combined with `--what-if`; rollback restores the prior
 Set exactly and cannot be combined with `--mode`.
 
+If a provider call may have changed infrastructure, `up` reports
+`needs-human` and stops retries or routing to another provider until the
+uncertain effect is reconciled. Any existing budget hold remains reserved.
+`waiting` means the bounded convergence passes have not completed.
+
 Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
 own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,
 `INCIDENT_SUBCOMMANDS`, `SERVE_SUBCOMMANDS`). Each is a typed value or switch;

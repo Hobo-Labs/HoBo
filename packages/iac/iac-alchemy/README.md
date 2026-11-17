@@ -5,6 +5,9 @@ host supplies an Alchemy stack, runtime layer, runtime directory, target scope
 and an injected financial port to `createAlchemyIacProvider`. It implements the
 `IacProvider` preview, apply, destroy and refresh port; no core package imports
 this adapter or the Alchemy library.
+Each configured stack supplies its own provider layers; `runtimeLayer` supplies
+the Alchemist services. A conditional choice between stacks with different
+provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
 `rivetkit` 3.0.0 peers; install both when using Rivet components.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
@@ -175,6 +178,9 @@ a budget. `executeRankedIacTargets` can invoke each adapter's
 sharing one durable admission request across the route. It advances only after a
 definitive denial without a reservation. Alternatively, call `apply` on a
 chosen target directly.
+For a policy-authorized unpriced target, `executeUnpricedIacTarget` takes the
+explicitly selected inventory and unavailable pricing, then forwards its
+reviewed expectation and permit to `applyWithAdmission` without a cost rank.
 The adapter replans, refuses changes, obtains host-issued liability evidence,
 and requests admission before applying the exact plan under Alchemy's state
 lease. Financial services include a durable budget authority, a trusted clock,
@@ -198,7 +204,11 @@ const financial = createIacFinancialServices({
 });
 const route = createDirectRoutePort({
   authority: routeAuthority,
-  hashInventory: (plan: IacFinancialPlan) => financial.assess(plan).inventoryHash,
+  hashInventory: (plan: IacFinancialPlan) => {
+    const hash = financial.assess(plan).inventoryHash;
+    if (!hash) throw new Error("invalid target inventory");
+    return hash;
+  },
 });
 // The trusted host authenticates these facts against its durable operation journal.
 const resolveRoute = async (context: IacRouteContext) =>
@@ -264,7 +274,8 @@ exclusively owned until settlement and has no shared entitlements. The trusted
 host must fence policy, scope and credential revocation through provider start:
 the authority's check and an external provider call cannot be one transaction.
 Priced admissions cannot carry unpriced policy or scope evidence; contradictory
-receipts retain their hold and require reconciliation.
+receipts retain their hold and require reconciliation. Changed model hashes or
+unpriced policy identities are likewise rejected before provider execution.
 
 All attempts use a shared durable route authority, including direct `apply` and
 `destroy` calls. Configure `route` using `createDirectRoutePort` from

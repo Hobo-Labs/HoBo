@@ -26,13 +26,19 @@ import {
 } from "../executor/executor.js";
 import { isJsonObject, isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
-import { collectStream, currentFenceToken } from "../store/index.js";
+import { currentFenceToken } from "../store/index.js";
+import {
+	requireApplyOpen,
+	requireDestroyAllowed,
+} from "./deployment-transition.js";
 import {
 	type BlockedProviderMove,
 	blockedProviderMove,
 	desiredSpecHash,
+	hasDestroyProvenance,
 	recordedResources,
 } from "./desired-state.js";
+import { readDeploymentHistory } from "./history-scope.js";
 
 // The ResourceActor reconciliation FSM (control-plane.md "The ResourceActor
 // reconciliation FSM"). Each resource in a plan gets a durable virtual actor
@@ -431,26 +437,20 @@ function finalStateHash(resourceId: string): string {
 /**
  * True when a resource's recorded state already matches its declaration, so
  * reconciling it must call no provider: it is Provisioned from the same
- * desired spec, or Provisioned by a legacy fact whose original plan is not
- * available (treated as converged rather than guessing what was applied).
+ * desired spec, with the hash recorded by the provisioned fact.
  */
 export function isConverged(
 	snapshot: ResourceActorSnapshot,
 	resource: ResourcePlan,
 ): boolean {
 	if (snapshot.state !== "Provisioned") return false;
-	return (
-		snapshot.specHash === undefined ||
-		snapshot.specHash === desiredSpecHash(resource)
-	);
+	return snapshot.specHash === desiredSpecHash(resource);
 }
 
-// The idempotent reconcile core (control-plane.md reconcile loop). Runs under the
-// per-resource single-writer lease (ActorHost fencing). Because it emits
-// resource.Provisioning to the durable log BEFORE dispatching apply, a crash
-// between "provisioning" and "provisioned" is recoverable: on resume the fold
-// sees Provisioning and re-dispatches the (idempotent) apply through to
-// resource.Provisioned.
+// The reconcile core records the generation before dispatch under the resource
+// lease. After a crash, the same generation is dispatched again only when a
+// trusted host verifies that replay cannot overlap or duplicate an old effect;
+// otherwise the actor records a reconciliation-required failure.
 export async function reconcileResource(
 	deps: ResourceActorDeps,
 	resource: ResourcePlan,
@@ -462,7 +462,12 @@ export async function reconcileResource(
 
 	try {
 		const stream = streamId(ctx.deploymentId);
-		let events = await collectStream(deps.store, stream);
+		let events = await readDeploymentHistory(
+			deps.store,
+			ctx.deploymentId,
+			ctx.tenant,
+		);
+		requireApplyOpen(events, resource);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,
@@ -520,7 +525,11 @@ export async function reconcileResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -577,7 +586,11 @@ export async function reconcileResource(
 			)
 				throw new Error("operation start acknowledgement is invalid");
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			pending = events.find(
 				(event) => event.id === recorded.id && event.seq === recorded.seq,
 			);
@@ -620,7 +633,11 @@ export async function reconcileResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -698,7 +715,11 @@ export async function reconcileResource(
 					{ expectedSeq: lastSeq, ...appendOpts },
 				);
 				lastSeq = emitted.seq;
-				events = await collectStream(deps.store, stream);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
 				snapshot = foldResourceActor(events, {
 					...resource,
 					deploymentId: ctx.deploymentId,
@@ -742,7 +763,11 @@ export async function reconcileResource(
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -776,7 +801,12 @@ export async function destroyResource(
 	});
 	try {
 		const stream = streamId(ctx.deploymentId);
-		let events = await collectStream(deps.store, stream);
+		let events = await readDeploymentHistory(
+			deps.store,
+			ctx.deploymentId,
+			ctx.tenant,
+		);
+		requireDestroyAllowed(events, resource.name);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,
@@ -820,7 +850,11 @@ export async function destroyResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -829,6 +863,47 @@ export async function destroyResource(
 				kind: "failed",
 				snapshot,
 				reason: "reconciliation required before destroy",
+			};
+		}
+		if (
+			!hasDestroyProvenance(
+				recordedResources(events).get(resource.name),
+				resource,
+			)
+		) {
+			if (snapshot.state === "Destroying") {
+				await emit(
+					deps.store,
+					stream,
+					[
+						resourceFailed({
+							deploymentId: ctx.deploymentId,
+							resourceId: resource.name,
+							reason:
+								"in-flight destroy provenance does not match the requested target",
+							classification: "fatal",
+							crossedNoGoThreshold: false,
+							requiresReconciliation: true,
+							reconciliationOperation: "destroy",
+						}),
+					],
+					{ expectedSeq: lastSeq, ...appendOpts },
+				);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
+				snapshot = foldResourceActor(events, {
+					...resource,
+					deploymentId: ctx.deploymentId,
+				});
+			}
+			return {
+				kind: "failed",
+				snapshot,
+				reason:
+					"recorded resource provenance does not match the destroy target",
 			};
 		}
 
@@ -875,7 +950,11 @@ export async function destroyResource(
 			)
 				throw new Error("operation start acknowledgement is invalid");
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			pending = events.find(
 				(event) => event.id === recorded.id && event.seq === recorded.seq,
 			);
@@ -918,7 +997,11 @@ export async function destroyResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -961,7 +1044,11 @@ export async function destroyResource(
 					);
 					lastSeq = emitted.seq;
 				}
-				events = await collectStream(deps.store, stream);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
 				snapshot = foldResourceActor(events, {
 					...resource,
 					deploymentId: ctx.deploymentId,
@@ -981,7 +1068,11 @@ export async function destroyResource(
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,

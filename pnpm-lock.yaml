@@ -1173,6 +1173,9 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
     devDependencies:
+      '@hobo/broker':
+        specifier: workspace:*
+        version: link:../broker
       '@hobo/data':
         specifier: workspace:*
         version: link:../data
