@@ -23,7 +23,7 @@ After installing and building workspace dependencies, run from the repository ro
 bash scripts/verify-state-machine.sh .agents/skills/verify-broker-request-estimate
 ```
 
-The check runs the actual parser and CLI tests, checks broker code generation with the repository's Buf and CUE tools, explores the TLA+ model and runs the exact-real Z3 proof. The shared runner uses checksum-pinned TLC 1.7.4; set `TLA2TOOLS` to that jar or let it download the jar. Set `BUDGET_Z3_PYTHONPATH` to `z3-solver==4.15.4.0`, or let the proof install it temporarily. Set `HOBO_CUE_BIN` to CUE 0.14.0 if it is not on PATH. Java 11+, Python with pip, Node, Vitest, fast-check and built workspace dependencies are required. Use `/statechart` to read the model and its view.
+The check builds the HoBo workspace dependencies before running the actual parser and CLI tests, checks broker code generation with the repository's Buf and CUE tools, explores the TLA+ model and runs the exact-real Z3 proof. The shared runner uses checksum-pinned TLC 1.7.4; set `TLA2TOOLS` to that jar or let it download the jar. Set `BUDGET_Z3_PYTHONPATH` to `z3-solver==4.15.4.0`, or let the proof install it temporarily. Set `HOBO_CUE_BIN` to CUE 0.14.0 if it is not on PATH. Java 11+, Python with pip, Node, Vitest, fast-check workspace dependencies and initialized pinned submodules are required. Use `/statechart` to read the model and its view.
 
 ## Scope and evidence
 
