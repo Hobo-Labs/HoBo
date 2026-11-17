@@ -172,6 +172,14 @@ against the runner context before sending the request. Redirects, empty or
 malformed responses, mismatched identities, oversized receipts, and transport
 failures block the job. The binding secret is sent in the request body.
 
+The strict GitHub assignment lookup accepts a trusted single-repository scope,
+scans in-progress runs, and requires an unambiguous match for the registered
+runner ID, name, runner group, and required labels. It re-reads the job and run
+before deriving the execution key. Incomplete scans or conflicting evidence
+fail the lookup. GitHub can change assignments or paginated listings during or
+after those reads; required-label matching alone does not establish the complete
+execution profile.
+
 The endpoint and GitHub assignment lookup are not yet wired into the production
 controller. A future trusted endpoint must issue the receipt only after the
 matching authorization commits and while it remains nonterminal. The hook
@@ -192,6 +200,19 @@ stateDiagram-v2
   s0 --> s2: check runner context
   s2 --> s1: validate status and receipt
   s2 --> s3: validate status and receipt
+```
+
+The assignment-evidence model checks 128 bounded states. Its projection hides
+64 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: GitHub evidence observed
+  s1: Assignment unavailable
+  s2: Assignment verified
+  [*] --> s0
+  s0 --> s1: check scope, runner, group, labels and current job
+  s0 --> s2: check scope, runner, group, labels and current job
 ```
 
 ## Test this branch
