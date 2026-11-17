@@ -109,7 +109,51 @@ function moneyDecimal(money: Money | undefined, path: string): Decimal {
 	return requiredDecimal(money.decimal, path);
 }
 
-function validateRateCardAmounts(rateCard: RateCard): void {
+function validateTierRanges(tiered: TieredPrice): void {
+	const tiers = [...tiered.tiers].sort((a, b) =>
+		compareDecimal(
+			requiredDecimal(a.from, "tier.from"),
+			requiredDecimal(b.from, "tier.from"),
+		),
+	);
+	if (tiers.length === 0)
+		throw new PricingFault("INVALID_PRICING_INPUT", "tier list is empty");
+	for (const [index, tier] of tiers.entries()) {
+		const from = requiredDecimal(tier.from, "tier.from");
+		const next = tiers[index + 1];
+		if (
+			compareDecimal(from, DECIMAL_ZERO) < 0 ||
+			(index === 0 && compareDecimal(from, DECIMAL_ZERO) !== 0)
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"tiers must begin at zero",
+			);
+		const to =
+			tier.to === undefined ? undefined : requiredDecimal(tier.to, "tier.to");
+		if (to !== undefined && compareDecimal(to, from) <= 0)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"tier endpoints must increase",
+			);
+		if (next !== undefined) {
+			const nextFrom = requiredDecimal(next.from, "tier.from");
+			if (
+				compareDecimal(nextFrom, from) <= 0 ||
+				(to !== undefined && compareDecimal(to, nextFrom) !== 0)
+			)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"tier ranges must be contiguous and nonoverlapping",
+				);
+		}
+	}
+}
+
+function validateRateCardAmounts(
+	rateCard: RateCard,
+	strictTiers: boolean,
+): void {
 	const check = (amount: Money | undefined, path: string) => {
 		requireCurrency(amount, rateCard.currency, path);
 		if (compareDecimal(moneyDecimal(amount, path), DECIMAL_ZERO) < 0)
@@ -127,6 +171,7 @@ function validateRateCardAmounts(rateCard: RateCard): void {
 			else if (price.case === "package")
 				check(price.value.packageAmount, "package amount");
 			else if (price.case === "graduated" || price.case === "volume") {
+				if (strictTiers) validateTierRanges(price.value);
 				for (const tier of price.value.tiers) {
 					check(tier.flatAmount, "tier flat amount");
 					check(tier.unitAmount, "tier unit amount");
@@ -460,6 +505,7 @@ function priceUsage(
 	charge: RateCard["charges"][number],
 	quantity: Quantity,
 	currency: string,
+	strictTiers: boolean,
 ): Decimal {
 	if (charge.variant.case !== "usage") {
 		throw new PricingFault(
@@ -497,7 +543,7 @@ function priceUsage(
 		);
 	}
 	if (price.case === "graduated" || price.case === "volume") {
-		return priceTiers(price.value, value, currency, price.case);
+		return priceTiers(price.value, value, currency, price.case, strictTiers);
 	}
 	throw new PricingFault(
 		"PRICING_MODEL_UNSUPPORTED",
@@ -510,6 +556,7 @@ function priceTiers(
 	quantity: Decimal,
 	currency: string,
 	mode: "graduated" | "volume",
+	strictTiers: boolean,
 ): Decimal {
 	const tiers = [...tiered.tiers].sort((left, right) =>
 		compareDecimal(
@@ -519,6 +566,17 @@ function priceTiers(
 	);
 	if (tiers.length === 0)
 		throw new PricingFault("INVALID_PRICING_INPUT", "tier list is empty");
+	const last = tiers[tiers.length - 1];
+	if (
+		strictTiers &&
+		mode === "graduated" &&
+		last?.to !== undefined &&
+		compareDecimal(quantity, requiredDecimal(last.to, "tier.to")) > 0
+	)
+		throw new PricingFault(
+			"RATE_CARD_NOT_FOUND",
+			"quantity exceeds the final graduated tier",
+		);
 	let total = DECIMAL_ZERO;
 	for (const [index, tier] of tiers.entries()) {
 		const from = requiredDecimal(tier.from, "tier.from");
@@ -854,6 +912,7 @@ export function rateSnapshot(
 	strictSourceValues = true,
 	selectorPerWorkload = true,
 	rejectAmbiguousLatest = true,
+	strictTiers = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -889,7 +948,7 @@ export function rateSnapshot(
 			compareTimes,
 			time,
 		);
-		if (strictSourceValues) validateRateCardAmounts(rateCard);
+		if (strictSourceValues) validateRateCardAmounts(rateCard, strictTiers);
 		if (selectorPerWorkload) validateChargeIdentities(rateCard);
 		if (currency === "") currency = rateCard.currency;
 		if (currency !== rateCard.currency)
@@ -1074,8 +1133,16 @@ export function rateSnapshot(
 					measured,
 					consumption,
 				);
-				const billed = priceUsage(charge, allowance.quantity, currency);
-				nominal = addDecimal(nominal, priceUsage(charge, measured, currency));
+				const billed = priceUsage(
+					charge,
+					allowance.quantity,
+					currency,
+					strictTiers,
+				);
+				nominal = addDecimal(
+					nominal,
+					priceUsage(charge, measured, currency, strictTiers),
+				);
 				lines.push({
 					chargeId: charge.base.id,
 					agreementRef,
