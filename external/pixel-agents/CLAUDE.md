@@ -8,7 +8,7 @@ Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow
 
 Strict layering: `core/` depends on nothing; `server/` depends only on `core/`; `webview-ui/` depends only on `core/`; `adapters/vscode/` depends on `core/` and `server/`. The standalone CLI never imports `adapters/vscode/` and vice versa.
 
-```
+```text
 core/                                Protocol + interface definitions (zero runtime side effects)
   asyncapi.yaml                      AsyncAPI 3.0 contract — single source of truth
   src/

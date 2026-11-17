@@ -160,6 +160,90 @@ describe("source policy", () => {
 		git(repo, "add", file);
 		assert.equal(guard(repo, "--staged").status, 1);
 	});
+	it("checks executable Markdown examples in nested blocks without inspecting prose or text output", () => {
+		const repo = fixture();
+		const text =
+			[
+				"# Examples",
+				"Prose can discuss // markers.",
+				"```text",
+				"// terminal output",
+				"```",
+				"- Nested example:",
+				"  ```ts",
+				'  const url = "https://example.test";',
+				"  // @ts-ignore",
+				"  const n = 1;",
+				"  ```",
+				"> ~~~python",
+				"> value = 1 # explain",
+				"> ~~~",
+				"```csharp",
+				"class Example { // explain",
+				"}",
+				"```",
+			].join("\n") + "\n";
+		write(repo, "README.md", text);
+		git(repo, "add", "README.md");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /README\.md:13:.*self-documenting/u);
+		assert.match(result.stderr, /README\.md:16:.*self-documenting/u);
+		assert.equal((result.stderr.match(/self-documenting/gu) ?? []).length, 2);
+	});
+
+	it("checks only added example comments and rejects unsupported or unlabelled code blocks", () => {
+		const repo = fixture();
+		write(repo, "README.md", "```ts\n// existing\nconst n = 1;\n```\n");
+		git(repo, "add", "README.md");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"legacy",
+		);
+		write(repo, "README.md", "```ts\n// existing\nconst n = 2;\n```\n");
+		git(repo, "add", "README.md");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"README.md",
+			"```ts\n// existing\n// TODO implement\nconst n = 2;\n```\n",
+		);
+		git(repo, "add", "README.md");
+		assert.match(guard(repo, "--staged").stderr, /finish deferred work/u);
+		write(repo, "README.md", "```powershell\nWrite-Output hi\n```\n");
+		git(repo, "add", "README.md");
+		assert.match(guard(repo, "--staged").stderr, /supported language/u);
+		write(repo, "README.md", "```\nhello\n```\n");
+		git(repo, "add", "README.md");
+		assert.match(guard(repo, "--staged").stderr, /supported language/u);
+		write(repo, "README.md", "```text\nhello\n```\n");
+		git(repo, "add", "README.md");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(repo, "README.md", "```text\n// explanation\n```\n");
+		git(repo, "add", "README.md");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"output",
+		);
+		write(repo, "README.md", "```ts\n// explanation\n```\n");
+		git(repo, "add", "README.md");
+		assert.match(guard(repo, "--staged").stderr, /self-documenting/u);
+	});
+
 	it("checks notebook code cells in TypeScript and Python without inspecting outputs", () => {
 		const repo = fixture();
 		const notebook = (language: string, source: string, output = "") =>
@@ -263,6 +347,74 @@ describe("source policy", () => {
 		assert.match(
 			result.stderr,
 			/unknown\.ipynb:1:.*supported code-cell language/u,
+		);
+	});
+
+	it("checks Gherkin comments outside doc strings", () => {
+		const text = [
+			"Feature: Example",
+			"  Scenario: Literal text",
+			"    Given text:",
+			'      """',
+			"      # data",
+			'      """',
+			"    # explanation",
+			"    Then it succeeds",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("example.feature", text, new Set([5, 7])).map(
+				({ line }) => line,
+			),
+			[7],
+		);
+		assert.throws(
+			() =>
+				commentViolations(
+					"example.feature",
+					'Feature: Example\n  Scenario: X\n    Given text:\n      """\n      # hidden',
+					new Set([5]),
+				),
+			/unexpected end of file/u,
+		);
+		assert.deepEqual(
+			commentViolations(
+				"example.feature",
+				"# language: fr\nFonctionnalité: Exemple\n",
+				new Set([1]),
+			),
+			[],
+		);
+	});
+
+	it("checks staged Gherkin files", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"example.feature",
+			"Feature: Example\n  # TODO implement\n  Scenario: works\n    Then it succeeds\n",
+		);
+		git(repo, "add", "example.feature");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /example\.feature:2:.*finish deferred work/u);
+	});
+
+	it("checks C# comments without mistaking string contents for comments", () => {
+		const text =
+			'class Example { string url = "https://example.test"; /* explanation */ }';
+		assert.deepEqual(
+			commentViolations("example.cs", text, new Set([1])).map(
+				({ line }) => line,
+			),
+			[1],
+		);
+		assert.deepEqual(
+			commentViolations(
+				"example.cs",
+				'class Example { string url = "https://example.test"; }',
+				new Set([1]),
+			),
+			[],
 		);
 	});
 

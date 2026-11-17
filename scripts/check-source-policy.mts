@@ -6,6 +6,12 @@ import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse as parseAstro } from "@astrojs/compiler/sync";
 import type { Node as AstroNode } from "@astrojs/compiler/types";
+import {
+	AstBuilder,
+	GherkinClassicTokenMatcher,
+	Parser,
+} from "@cucumber/gherkin";
+import { fromMarkdown } from "mdast-util-from-markdown";
 import ts from "typescript";
 import { z } from "zod";
 import { frontmatterType } from "./check-no-committed-plans.mts";
@@ -45,6 +51,7 @@ const OTHER_LANGUAGES = new Map([
 	[".c", "c"],
 	[".h", "c"],
 	[".cpp", "cpp"],
+	[".cs", "csharp"],
 	[".cc", "cpp"],
 	[".hpp", "cpp"],
 	[".java", "java"],
@@ -230,6 +237,7 @@ export function commentsIn(file: string, text: string): Comment[] {
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(sourcePath(file)).toLowerCase();
 	if (extension === ".astro") return astroComments(file, text);
+	if (extension === ".feature") return gherkinComments(file, text);
 	if (extension === ".html") return htmlComments(file, text);
 	const lexicalLanguage = LEXER_LANGUAGES.get(extension);
 	if (lexicalLanguage) {
@@ -268,6 +276,25 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 	return kinds.flatMap((kind) =>
 		astGrepMatches(file, text, language, kind).map(matchLocation),
 	);
+}
+
+function gherkinComments(file: string, text: string): CommentLocation[] {
+	let id = 0;
+	const parser = new Parser(
+		new AstBuilder(() => String(id++)),
+		new GherkinClassicTokenMatcher(),
+	);
+	try {
+		return parser.parse(text).comments.map((comment) => ({
+			text: comment.text,
+			first: comment.location.line,
+			last: comment.location.line,
+		}));
+	} catch (error) {
+		throw new Error(
+			`cannot parse ${file}: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
 }
 
 type AstGrepMatch = {
@@ -541,7 +568,7 @@ const notebookSchema = z
 	})
 	.passthrough();
 
-const notebookExtensions = new Map([
+const sourceLanguageExtensions = new Map([
 	["typescript", ".ts"],
 	["ts", ".ts"],
 	["javascript", ".js"],
@@ -561,6 +588,29 @@ const notebookExtensions = new Map([
 	["sql", ".sql"],
 	["yaml", ".yaml"],
 	["yml", ".yaml"],
+	["gherkin", ".feature"],
+	["feature", ".feature"],
+	["json", ".js"],
+	["jsonc", ".js"],
+	["css", ".css"],
+	["html", ".html"],
+	["astro", ".astro"],
+	["cue", ".cue"],
+	["proto", ".proto"],
+	["protobuf", ".proto"],
+	["wit", ".wit"],
+	["prisma", ".prisma"],
+	["toml", ".toml"],
+	["c", ".c"],
+	["cpp", ".cpp"],
+	["c++", ".cpp"],
+	["csharp", ".cs"],
+	["cs", ".cs"],
+	["java", ".java"],
+	["kotlin", ".kt"],
+	["ruby", ".rb"],
+	["lua", ".lua"],
+	["swift", ".swift"],
 ]);
 
 type NotebookComment = {
@@ -588,7 +638,7 @@ function notebookComments(text: string): NotebookComment[] | undefined {
 	const extension =
 		language === undefined
 			? undefined
-			: notebookExtensions.get(language.toLowerCase());
+			: sourceLanguageExtensions.get(language.toLowerCase());
 	if (!extension) return undefined;
 	const found: NotebookComment[] = [];
 	for (const [index, cell] of notebook.cells.entries()) {
@@ -609,6 +659,77 @@ function notebookComments(text: string): NotebookComment[] | undefined {
 		}
 	}
 	return found;
+}
+
+const textualMarkdownLanguages = new Set([
+	"text",
+	"txt",
+	"plaintext",
+	"console",
+	"shell-session",
+	"http",
+	"diff",
+	"mermaid",
+	"markdown",
+	"md",
+]);
+
+type MarkdownNode = {
+	type: string;
+	children?: readonly MarkdownNode[] | undefined;
+	value?: string | undefined;
+	lang?: string | null | undefined;
+	position?: { start: { line: number }; end: { line: number } } | undefined;
+};
+
+function markdownCodeViolations(
+	file: string,
+	text: string,
+	added: Set<number>,
+): Violation[] {
+	const lines = text.split(/\r?\n/u);
+	const problems: Violation[] = [];
+	function visit(node: MarkdownNode): void {
+		if (node.type === "code" && node.position && node.value !== undefined) {
+			const start = node.position.start.line;
+			const end = node.position.end.line;
+			const language = (node.lang ?? "").toLowerCase();
+			const extension = sourceLanguageExtensions.get(language);
+			const changed = [...added].some((line) => line >= start && line <= end);
+			if (changed && !extension && !textualMarkdownLanguages.has(language)) {
+				problems.push({
+					file,
+					line: start,
+					message:
+						"label code examples with a supported language, or text for non-code",
+				});
+			} else if (extension && changed) {
+				const fenced =
+					/^\s*(?:(?:>\s*)|(?:(?:[-+*]|\d+[.)])\s+))*(?:`{3,}|~{3,})/u.test(
+						lines[start - 1] ?? "",
+					);
+				const first = start + (fenced ? 1 : 0);
+				const localLines =
+					added.has(start) && fenced
+						? new Set(node.value.split(/\r?\n/u).map((_, index) => index + 1))
+						: new Set(
+								[...added]
+									.map((line) => line - first + 1)
+									.filter((line) => line > 0),
+							);
+				for (const problem of commentViolations(
+					`${file}#example${extension}`,
+					node.value,
+					localLines,
+				)) {
+					problems.push({ ...problem, file, line: first + problem.line - 1 });
+				}
+			}
+		}
+		for (const child of node.children ?? []) visit(child);
+	}
+	visit(fromMarkdown(text));
+	return problems;
 }
 
 function priorContents(mode: Mode, file: string): string | undefined {
@@ -767,6 +888,11 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			const added = changedLines(args, file, text, untracked.includes(file));
 			violations.push(...proofArtifactViolations(file, text, added));
 		}
+		if (/\.mdx?$/iu.test(sourceFile)) {
+			const text = contents(mode, file);
+			const added = changedLines(args, file, text, untracked.includes(file));
+			violations.push(...markdownCodeViolations(file, text, added));
+		}
 		const extension = extname(sourceFile).toLowerCase();
 		if (extension === ".ipynb") {
 			violations.push(
@@ -782,6 +908,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			extension &&
 			!file.startsWith(".githooks/") &&
 			extension !== ".astro" &&
+			extension !== ".feature" &&
 			!CODE_EXTENSIONS.has(extension) &&
 			!LEXER_LANGUAGES.has(extension) &&
 			!OTHER_LANGUAGES.has(extension)
