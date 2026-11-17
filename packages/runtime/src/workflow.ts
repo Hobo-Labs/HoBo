@@ -16,7 +16,7 @@ import {
 	type StepOptions,
 	type TokenBroker,
 } from "./ctx.js";
-import { WorkflowFailure } from "./errors.js";
+import { WorkflowExecutionAborted, WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
 	isJsonNumber,
@@ -305,7 +305,9 @@ export function createWorkflowEngine(
 
 		let appendTail: Promise<void> = Promise.resolve();
 		let appendFailed = false;
-		let appendFailure: unknown;
+		// Stores may reject with any thrown value; preserve it for the caller.
+		type JournalAppendFailure = unknown;
+		let appendFailure: JournalAppendFailure;
 		function appendEvent<T>(type: string, data: T): Promise<number> {
 			let snapshot:
 				| { ok: true; value: JsonValue }
@@ -346,7 +348,74 @@ export function createWorkflowEngine(
 
 		let stepIndex = 0;
 		let sleepIndex = 0;
-		const stepScope = new AsyncLocalStorage<number>();
+		type CommandScope = {
+			index: number | null;
+			parent: CommandScope | null;
+			active: boolean;
+			pending: number;
+		};
+		const rootScope: CommandScope = {
+			index: null,
+			parent: null,
+			active: true,
+			pending: 0,
+		};
+		const stepScope = new AsyncLocalStorage<CommandScope>();
+		function requireOpen(scope: CommandScope): void {
+			for (
+				let current: CommandScope | null = scope;
+				current;
+				current = current.parent
+			) {
+				if (!current.active)
+					throw new WorkflowExecutionAborted(
+						"workflow command parent is closed",
+					);
+			}
+			if (appendFailed) throw appendFailure;
+		}
+		async function command<T>(
+			fn: (scope: CommandScope) => Promise<T>,
+		): Promise<T> {
+			const scope = stepScope.getStore() ?? rootScope;
+			requireOpen(scope);
+			scope.pending += 1;
+			try {
+				return await fn(scope);
+			} finally {
+				scope.pending -= 1;
+			}
+		}
+		async function runInScope<T>(
+			scope: CommandScope,
+			fn: () => Promise<T> | T,
+		): Promise<T> {
+			let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+			try {
+				outcome = { ok: true, value: await stepScope.run(scope, fn) };
+			} catch (error) {
+				outcome = { ok: false, error };
+			}
+			scope.active = false;
+			if (scope.pending > 0) {
+				if (!appendFailed) {
+					appendFailed = true;
+					appendFailure = new WorkflowExecutionAborted(
+						"workflow parent finished with outstanding durable commands",
+					);
+				}
+				throw new WorkflowExecutionAborted(
+					"workflow parent finished with outstanding durable commands",
+				);
+			}
+			if (!outcome.ok) {
+				// A failed append is an infrastructure failure, even inside a step.
+				if (appendFailed)
+					throw new WorkflowExecutionAborted("workflow journal append failed");
+				throw outcome.error;
+			}
+			return outcome.value;
+		}
 		const deterministic = createDeterministicContext({
 			seed: runSeed,
 			mode: "live",
@@ -368,158 +437,173 @@ export function createWorkflowEngine(
 				fn: () => Promise<T> | T,
 				opts?: StepOptions,
 			): Promise<T> {
-				const parentStepIndex = stepScope.getStore() ?? null;
-				const index = stepIndex;
-				stepIndex += 1;
-				consumeCommand({ kind: "step", index, name });
-				const completed = findCompletedStep(name, index);
-				if (completed && isRecord(completed.data)) {
-					// Journaled on a prior attempt — short-circuit, do NOT re-run.
-					// SAFETY: assertion to `ed.data.result as T; }` is required at this boundary.
-					return completed.data.result as T;
-				}
-				await appendEvent("run.StepScheduled", {
-					name,
-					index,
-					parentStepIndex,
-				});
-				try {
-					const result = await runWithRetries(
+				return command(async (scope) => {
+					const parentStepIndex = scope.index;
+					const index = stepIndex;
+					stepIndex += 1;
+					consumeCommand({ kind: "step", index, name });
+					const completed = findCompletedStep(name, index);
+					if (completed && isRecord(completed.data)) {
+						// Journaled on a prior attempt — short-circuit, do NOT re-run.
+						// SAFETY: assertion to `ed.data.result as T; }` is required at this boundary.
+						return completed.data.result as T;
+					}
+					await appendEvent("run.StepScheduled", {
 						name,
-						() => stepScope.run(index, fn),
-						opts ?? {},
-					);
-					await appendEvent("run.StepCompleted", { name, index, result });
-					return result;
-				} catch (error) {
-					if (error instanceof WorkflowFailure) {
-						await appendEvent("run.StepFailed", {
-							name,
-							index,
-							message: error.message,
-						});
-					}
-					throw error;
-				}
-			},
-			async sleep(durationMs, sleepOptions) {
-				if (!Number.isSafeInteger(durationMs) || durationMs < 0) {
-					throw new TypeError(
-						"workflow sleep delay must be a nonnegative safe integer",
-					);
-				}
-				const parentStepIndex = stepScope.getStore() ?? null;
-				const index = sleepIndex;
-				sleepIndex += 1;
-				consumeCommand({ kind: "sleep", index, delayMs: durationMs });
-				const sleeps = journal.filter(
-					(event) => event.type === "run.SleepScheduled",
-				);
-				const deadlines = journal.filter(
-					(event) => event.type === "run.SleepDeadlineSet",
-				);
-				const completions = journal.filter(
-					(event) => event.type === "run.SleepCompleted",
-				);
-				for (const event of deadlines) {
-					if (
-						!isRecord(event.data) ||
-						!isJsonNumber(event.data.index) ||
-						!Number.isSafeInteger(event.data.index) ||
-						event.data.index < 0 ||
-						event.data.index >= sleeps.length
-					)
-						throw new Error("invalid workflow sleep deadline record");
-				}
-				for (const event of completions) {
-					if (
-						!isRecord(event.data) ||
-						!isJsonNumber(event.data.index) ||
-						!Number.isSafeInteger(event.data.index) ||
-						event.data.index < 0 ||
-						event.data.index >= sleeps.length
-					)
-						throw new Error("invalid workflow sleep completion record");
-				}
-				const scheduled = sleeps[index];
-				const rebased = deadlines.filter(
-					(event) => isRecord(event.data) && event.data.index === index,
-				);
-				if (rebased.length > 1)
-					throw new Error("duplicate workflow sleep deadline");
-				const completed = completions.filter(
-					(event) => isRecord(event.data) && event.data.index === index,
-				);
-				if (completed.length > 1)
-					throw new Error("duplicate workflow sleep completion");
-				let deadlineMs: number;
-				if (scheduled) {
-					if (
-						!isRecord(scheduled.data) ||
-						scheduled.data.delayMs !== durationMs ||
-						(scheduled.data.index !== undefined &&
-							scheduled.data.index !== index)
-					) {
-						throw new WorkflowFailure("sleep schedule diverged on replay", {
-							step: `sleep:${index}`,
-						});
-					}
-					if (
-						scheduled.data.deadlineMs !== undefined ||
-						scheduled.data.scheduledAtMs !== undefined
-					) {
-						if (rebased.length)
-							throw new Error("duplicate workflow sleep deadline");
-						deadlineMs = readDeadline(scheduled.data, durationMs);
-					} else {
-						const previous = rebased[0];
-						if (previous && isRecord(previous.data)) {
-							deadlineMs = readDeadline(previous.data, durationMs);
-						} else {
-							const deadline = makeDeadline(durationMs);
-							await appendEvent("run.SleepDeadlineSet", { index, ...deadline });
-							deadlineMs = deadline.deadlineMs;
-						}
-					}
-				} else {
-					const deadline = makeDeadline(durationMs);
-					const data: JsonBag = {
-						delayMs: durationMs,
 						index,
 						parentStepIndex,
-						...deadline,
-					};
-					if (sleepOptions?.label !== undefined)
-						data.label = sleepOptions.label;
-					await appendEvent("run.SleepScheduled", data);
-					deadlineMs = deadline.deadlineMs;
-				}
-				const completion = completed[0];
-				if (completion) {
-					if (
-						!isRecord(completion.data) ||
-						!isJsonNumber(completion.data.completedAtMs) ||
-						!Number.isSafeInteger(completion.data.completedAtMs) ||
-						completion.data.completedAtMs < deadlineMs
-					) {
-						throw new Error("invalid workflow sleep completion time");
+					});
+					requireOpen(scope);
+					try {
+						const result = await runWithRetries(
+							name,
+							() =>
+								runInScope(
+									{ index, parent: scope, active: true, pending: 0 },
+									fn,
+								),
+							opts ?? {},
+						);
+						requireOpen(scope);
+						await appendEvent("run.StepCompleted", { name, index, result });
+						return result;
+					} catch (error) {
+						if (error instanceof WorkflowFailure) {
+							await appendEvent("run.StepFailed", {
+								name,
+								index,
+								message: error.message,
+							});
+						}
+						throw error;
 					}
-					return;
-				}
-				let completedAtMs: number;
-				for (;;) {
-					const current = nowMs();
-					const remaining = deadlineMs - current;
-					if (remaining <= 0) {
-						completedAtMs = current;
-						break;
+				});
+			},
+			async sleep(durationMs, sleepOptions) {
+				return command(async (scope) => {
+					if (!Number.isSafeInteger(durationMs) || durationMs < 0) {
+						throw new TypeError(
+							"workflow sleep delay must be a nonnegative safe integer",
+						);
 					}
-					await wait(Math.min(remaining, 2_147_483_647));
-				}
-				await appendEvent("run.SleepCompleted", { index, completedAtMs });
+					const parentStepIndex = scope.index;
+					const index = sleepIndex;
+					sleepIndex += 1;
+					consumeCommand({ kind: "sleep", index, delayMs: durationMs });
+					const sleeps = journal.filter(
+						(event) => event.type === "run.SleepScheduled",
+					);
+					const deadlines = journal.filter(
+						(event) => event.type === "run.SleepDeadlineSet",
+					);
+					const completions = journal.filter(
+						(event) => event.type === "run.SleepCompleted",
+					);
+					for (const event of deadlines) {
+						if (
+							!isRecord(event.data) ||
+							!isJsonNumber(event.data.index) ||
+							!Number.isSafeInteger(event.data.index) ||
+							event.data.index < 0 ||
+							event.data.index >= sleeps.length
+						)
+							throw new Error("invalid workflow sleep deadline record");
+					}
+					for (const event of completions) {
+						if (
+							!isRecord(event.data) ||
+							!isJsonNumber(event.data.index) ||
+							!Number.isSafeInteger(event.data.index) ||
+							event.data.index < 0 ||
+							event.data.index >= sleeps.length
+						)
+							throw new Error("invalid workflow sleep completion record");
+					}
+					const scheduled = sleeps[index];
+					const rebased = deadlines.filter(
+						(event) => isRecord(event.data) && event.data.index === index,
+					);
+					if (rebased.length > 1)
+						throw new Error("duplicate workflow sleep deadline");
+					const completed = completions.filter(
+						(event) => isRecord(event.data) && event.data.index === index,
+					);
+					if (completed.length > 1)
+						throw new Error("duplicate workflow sleep completion");
+					let deadlineMs: number;
+					if (scheduled) {
+						if (
+							!isRecord(scheduled.data) ||
+							scheduled.data.delayMs !== durationMs ||
+							(scheduled.data.index !== undefined &&
+								scheduled.data.index !== index)
+						) {
+							throw new WorkflowFailure("sleep schedule diverged on replay", {
+								step: `sleep:${index}`,
+							});
+						}
+						if (
+							scheduled.data.deadlineMs !== undefined ||
+							scheduled.data.scheduledAtMs !== undefined
+						) {
+							if (rebased.length)
+								throw new Error("duplicate workflow sleep deadline");
+							deadlineMs = readDeadline(scheduled.data, durationMs);
+						} else {
+							const previous = rebased[0];
+							if (previous && isRecord(previous.data)) {
+								deadlineMs = readDeadline(previous.data, durationMs);
+							} else {
+								const deadline = makeDeadline(durationMs);
+								await appendEvent("run.SleepDeadlineSet", {
+									index,
+									...deadline,
+								});
+								deadlineMs = deadline.deadlineMs;
+							}
+						}
+					} else {
+						const deadline = makeDeadline(durationMs);
+						const data: JsonBag = {
+							delayMs: durationMs,
+							index,
+							parentStepIndex,
+							...deadline,
+						};
+						if (sleepOptions?.label !== undefined)
+							data.label = sleepOptions.label;
+						await appendEvent("run.SleepScheduled", data);
+						deadlineMs = deadline.deadlineMs;
+					}
+					const completion = completed[0];
+					if (completion) {
+						if (
+							!isRecord(completion.data) ||
+							!isJsonNumber(completion.data.completedAtMs) ||
+							!Number.isSafeInteger(completion.data.completedAtMs) ||
+							completion.data.completedAtMs < deadlineMs
+						) {
+							throw new Error("invalid workflow sleep completion time");
+						}
+						return;
+					}
+					let completedAtMs: number;
+					requireOpen(scope);
+					for (;;) {
+						const current = nowMs();
+						const remaining = deadlineMs - current;
+						if (remaining <= 0) {
+							completedAtMs = current;
+							break;
+						}
+						await wait(Math.min(remaining, 2_147_483_647));
+						requireOpen(scope);
+					}
+					await appendEvent("run.SleepCompleted", { index, completedAtMs });
+				});
 			},
 			async emit(type, data) {
-				return appendEvent(type, data ?? null);
+				return command(async () => appendEvent(type, data ?? null));
 			},
 			now: () => deterministic.now(),
 			random: (label) => deterministic.random(label),
@@ -583,11 +667,13 @@ export function createWorkflowEngine(
 		});
 
 		try {
-			const result = await def.run(ctx, args);
+			const result = await runInScope(rootScope, () => def.run(ctx, args));
 			assertConsumedCommands();
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
+			if (error instanceof WorkflowExecutionAborted && appendFailed)
+				throw appendFailure;
 			if (error instanceof WorkflowFailure) {
 				assertConsumedCommands();
 				const failureData: JsonBag = {

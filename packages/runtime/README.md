@@ -72,10 +72,32 @@ completed parent when its nested steps have recorded outcomes and its nested
 sleeps have recorded completion facts. It refuses children that were unfinished
 when the parent ended. Older journals may lack parent information or sleep
 completion facts. Resume still treats the history as flat and can reject nested
-commands. Await durable commands before returning from their parent; replay
-rejects a new-format journal with unfinished commands at a terminal outcome.
-These checks cover the recorded commands, not arbitrary effects performed
-directly by workflow code.
+commands. Await `ctx.step`, `ctx.sleep`, and `ctx.emit` before returning from
+their parent. If a parent finishes with one of these commands still pending,
+the execution aborts without writing a terminal result and refuses further
+queued journal writes. A callback that retains a closed asynchronous parent
+scope cannot start another command. A storage write or external effect already
+in progress may still finish, so the host must account for it before resuming.
+These checks do not control arbitrary effects performed directly by workflow
+code or callbacks invoked from an unrelated asynchronous context.
+
+The command-lifetime model explores 14 distinct states. This projection hides
+11 internal transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Scope open
+  s1: Scope completed
+  s2: Command outstanding
+  s3: Scope aborted
+  s4: Command finished
+  [*] --> s0
+  s0 --> s1: finish scope
+  s0 --> s2: schedule command
+  s2 --> s3: finish scope
+  s2 --> s4: finish command
+  s4 --> s1: finish scope
+```
 
 `ctx.sleep` records its deadline before waiting, rechecks the clock after
 each wake-up, and records completion after the deadline. If a host stops, an
