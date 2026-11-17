@@ -21,21 +21,12 @@ export type TailscaleRunner = (
 	env?: NodeJS.ProcessEnv,
 ) => { ok: boolean; stdout: string; stderr: string };
 
-/**
- * Tailscale overlay adapter with MagicDNS split DNS and Funnel gateway automation.
- * Uses the official `tailscale` CLI when present; otherwise degrades offline-friendly.
- */
 export function createTailscaleOverlay(options?: {
 	readonly metering?: MeteringBus;
 	readonly policy?: PolicyEngine;
 	readonly bin?: string;
 	readonly run?: TailscaleRunner;
-	/** Default MagicDNS domains for hierarchical overlay names. */
 	readonly defaultMagicDnsDomains?: readonly string[];
-	/**
-	 * Tailscale API key for control-plane MagicDNS split DNS.
-	 * Also read from env TS_API_KEY / HOBO_TS_API_KEY when unset.
-	 */
 	readonly apiKey?: string;
 	readonly tailnet?: string;
 	readonly apiBase?: string;
@@ -162,7 +153,6 @@ export function createTailscaleOverlay(options?: {
 				);
 			}
 
-			// Ensure MagicDNS acceptance for hierarchical resolution.
 			const setDns = run(["set", "--accept-dns=true"]);
 			if (!setDns.ok) {
 				notes.push(
@@ -174,7 +164,6 @@ export function createTailscaleOverlay(options?: {
 			let overlayIps: string[] = [];
 			let dnsName: string | undefined;
 			try {
-				// SAFETY: assertion required at this I/O or test boundary.
 				const parsed = JSON.parse(statusProbe.stdout) as {
 					Self?: {
 						ID?: string;
@@ -251,7 +240,6 @@ export function createTailscaleOverlay(options?: {
 			let localAccepted = false;
 			let controlPlaneApplied = false;
 
-			// 1) Local CLI: accept MagicDNS on this node.
 			const accept = run(["set", "--accept-dns=true"]);
 			if (!accept.ok) {
 				notes.push(
@@ -262,7 +250,6 @@ export function createTailscaleOverlay(options?: {
 				notes.push("localAccepted=true (tailscale set --accept-dns=true)");
 			}
 
-			// 2) Control-plane API: push split DNS for hierarchical hobo zones.
 			const apiKey =
 				options?.apiKey ??
 				process.env.TS_API_KEY ??
@@ -301,7 +288,6 @@ export function createTailscaleOverlay(options?: {
 				);
 			}
 
-			// 3) Optional local CLI dns helpers (does not imply control-plane).
 			const dnsHelp = run(["dns", "--help"]);
 			if (dnsHelp.ok) {
 				for (const domain of domains) {
@@ -324,7 +310,6 @@ export function createTailscaleOverlay(options?: {
 				`split-dns domains=[${domains.join(",")}] nameservers=[${nameservers.join(",")}] tenant=${config.tenantId}`,
 			);
 
-			// applied means something useful succeeded; control-plane is explicit in notes/metadata.
 			const applied = localAccepted || controlPlaneApplied;
 
 			await options?.metering?.emit(
@@ -367,7 +352,6 @@ export function createTailscaleOverlay(options?: {
 				notes.push("Funnel target must be an absolute local HTTP(S) URL");
 			}
 
-			// Funnel is public; `tailscale serve` is tailnet-private and cannot confirm it.
 			const attempts: readonly (readonly string[])[] = target
 				? [["funnel", "--bg", target]]
 				: [];
@@ -395,7 +379,6 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			if (!gatewayHostname && funnel.hostnameHint) {
-				// Only accept *.ts.net style hints — never raw IPs.
 				const hint = funnel.hostnameHint.replace(/\.$/, "").toLowerCase();
 				if (hint.endsWith(".ts.net") || hint.endsWith(".tailscale.com")) {
 					gatewayHostname = hint;
@@ -408,11 +391,9 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			if (!gatewayHostname && current) {
-				// Derive from MagicDNS name if available via status.
 				const status = run(["status", "--json"]);
 				if (status.ok) {
 					try {
-						// SAFETY: assertion required at this I/O or test boundary.
 						const parsed = JSON.parse(status.stdout) as {
 							Self?: { DNSName?: string };
 						};
@@ -421,9 +402,7 @@ export function createTailscaleOverlay(options?: {
 							gatewayHostname = dns;
 							notes.push(`derived funnel host from MagicDNS ${dns}`);
 						}
-					} catch {
-						// ignore
-					}
+					} catch {}
 				}
 			}
 
@@ -458,9 +437,7 @@ export function createTailscaleOverlay(options?: {
 						},
 					}),
 				);
-			} catch {
-				// A confirmed provider side effect remains authoritative.
-			}
+			} catch {}
 
 			return result;
 		},

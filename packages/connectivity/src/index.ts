@@ -1,4 +1,3 @@
-// Re-export pure naming / tenancy from core so consumers can depend on one package.
 export {
 	createMeteringBus,
 	createUsageEvent,
@@ -82,7 +81,6 @@ export {
 	parseListResourceRecordSets,
 	type Route53DnsProviderOptions,
 } from "./dns/route53-provider.js";
-// Environment network isolation + elevated access + break-glass (ADR-0133).
 export * from "./env-isolation/index.js";
 export {
 	createJunctionAgent,
@@ -149,7 +147,6 @@ export {
 	type TailscaleApiOptions,
 	type TailscaleSplitDnsMap,
 } from "./overlay/tailscale-api.js";
-// Privileged Access Gateway (optional Station capability) — full secretless brokers.
 export * from "./pam/index.js";
 export {
 	createOpaPolicyEngine,

@@ -1,26 +1,3 @@
-/**
- * In-process policy document evaluator (Rego-inspired JSON rules).
- * Used when OPA HTTP/CLI is unavailable — still tenant-aware and auditable.
- *
- * Rule document shape (JSON):
- * {
- *   "default": "deny" | "allow",
- *   "rules": [
- *     {
- *       "effect": "allow" | "deny",
- *       "actions": ["junction.join", "*"],
- *       "when": {
- *         "sameTenant": true,
- *         "subjectTagsAny": ["role:admin"],
- *         "subjectTagsAll": ["role:junction"],
- *         "resourceKinds": ["junction", "dns-endpoint"],
- *         "resourceShared": true
- *       }
- *     }
- *   ]
- * }
- */
-
 import {
 	allowDecision,
 	denyDecision,
@@ -35,12 +12,10 @@ import {
 	type JsonValue,
 } from "../json.js";
 
-// Keep engine id local to avoid circular import with opa-engine.ts.
 const REGO_LITE_ENGINE_ID = "hobo.policy.opa-rego/v1" as const;
 
 export interface RegoLiteWhen {
 	readonly sameTenant?: boolean;
-	/** Require subject and resource share the same env: isolation class. */
 	readonly sameEnv?: boolean;
 	readonly subjectTagsAny?: readonly string[];
 	readonly subjectTagsAll?: readonly string[];
@@ -102,7 +77,6 @@ export function parseRegoLiteDocument(raw: JsonValue): RegoLiteDocument {
 	if (raw === null || !isJsonObject(raw)) {
 		throw new TypeError("rego-lite document must be an object");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
 	if (!Array.isArray(obj.rules)) {
 		throw new TypeError("rego-lite.rules must be an array");
@@ -111,7 +85,6 @@ export function parseRegoLiteDocument(raw: JsonValue): RegoLiteDocument {
 		if (!r || !isJsonObject(r)) {
 			throw new TypeError(`rego-lite.rules[${i}] must be an object`);
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
 		const rule = r as JsonObject;
 		if (rule.effect !== "allow" && rule.effect !== "deny") {
 			throw new TypeError(`rego-lite.rules[${i}].effect must be allow|deny`);
@@ -206,10 +179,6 @@ function whenMatches(
 	return true;
 }
 
-/**
- * Built-in default document: admin+same-env, same-tenant+same-env, or shared+same-env.
- * Cross-env never allowed by default (Environment Network Isolation pack).
- */
 export const HOBO_DEFAULT_POLICY_DOCUMENT: RegoLiteDocument = {
 	default: "deny",
 	rules: [
@@ -232,9 +201,6 @@ export const HOBO_DEFAULT_POLICY_DOCUMENT: RegoLiteDocument = {
 	],
 };
 
-/**
- * Environment Network Isolation pack as rego-lite document (explicit deny default).
- */
 export const ENV_NETWORK_ISOLATION_REGO_DOCUMENT: RegoLiteDocument = {
 	default: "deny",
 	rules: [

@@ -1,18 +1,3 @@
-/**
- * Tests for the Netbird management API client.
- *
- * The module was 0% covered. It is a credentialed HTTP client that decides
- * which token goes on which request, tolerates two different API shapes per
- * endpoint, and normalizes responses whose field names differ by casing between
- * Netbird versions — every one of those is a place a silent wrong answer hides,
- * and none of it was pinned.
- *
- * `fetchImpl` is injected, so nothing here touches a network. Requests are
- * recorded and asserted: the URL, the method, the headers and the body are the
- * contract this client has with a real deployment, and they are what a version
- * bump would break.
- */
-
 import { describe, expect, it } from "vitest";
 import { isJsonObject, isJsonString, type JsonValue } from "../../src/json.js";
 
@@ -25,15 +10,10 @@ type Recorded = {
 	body: JsonValue;
 };
 
-/**
- * A fetch stand-in driven by a routing table. Each entry matches on
- * `METHOD /path` and supplies a status plus a JSON (or raw) body.
- */
 function fakeFetch(
 	routes: Record<string, { status?: number; body?: unknown; text?: string }>,
 ) {
 	const calls: Recorded[] = [];
-	// SAFETY: assertion required at this I/O or test boundary.
 	const impl = (async (url: string | URL, init?: RequestInit) => {
 		const href = isJsonString(url) ? url : url.toString();
 		const method = init?.method ?? "GET";
@@ -41,7 +21,6 @@ function fakeFetch(
 		calls.push({
 			url: href,
 			method,
-			// SAFETY: assertion required at this I/O or test boundary.
 			headers: (init?.headers ?? {}) as Record<string, string>,
 			body: isJsonString(init?.body) ? JSON.parse(init.body) : init?.body,
 		});
@@ -50,7 +29,6 @@ function fakeFetch(
 		const text =
 			route?.text ??
 			(route?.body === undefined ? "" : JSON.stringify(route.body));
-		// SAFETY: assertion required at this I/O or test boundary.
 		return {
 			ok: status >= 200 && status < 300,
 			status,
@@ -84,7 +62,6 @@ describe("enrollPeer", () => {
 		const result = await client.enrollPeer({ name: "node-a" });
 		expect(result.enrolled).toBe(false);
 		expect(result.notes[0]).toContain("setupKey required");
-		// It must not have attempted a request it knows cannot succeed.
 		expect(calls).toHaveLength(0);
 	});
 
@@ -122,7 +99,6 @@ describe("enrollPeer", () => {
 			fetchImpl: impl,
 		});
 		await client.enrollPeer({ name: "n", setupKey: "PERCALL" });
-		// SAFETY: assertion required at this I/O or test boundary.
 		const call = calls[0];
 		if (call === undefined || !isJsonObject(call.body)) {
 			throw new Error("expected enroll body");
@@ -145,7 +121,6 @@ describe("enrollPeer", () => {
 		expect(result.enrolled).toBe(true);
 		expect(result.notes).toEqual(["enrolled via /api/peers"]);
 		expect(calls).toHaveLength(2);
-		// The fallback carries the setup key as a Token header, not a Bearer.
 		expect(calls[1]?.headers.authorization).toBe("Token SK");
 	});
 
@@ -342,7 +317,6 @@ describe("upsertDnsNameserverGroup", () => {
 		const saved = await client.upsertDnsNameserverGroup(group);
 		expect(calls[0]?.method).toBe("POST");
 		expect(saved.id).toBe("new");
-		// Defaults the wire format fills in on the caller's behalf.
 		expect(calls[0]?.body).toMatchObject({
 			description: "hobo hierarchical DNS",
 			nameservers: [{ ip: "10.0.0.1", ns_type: "udp", port: 53 }],
@@ -373,8 +347,6 @@ describe("upsertDnsNameserverGroup", () => {
 			accessToken: "T",
 			fetchImpl: impl,
 		});
-		// A `{raw: "..."}` shape still normalizes, so the name falls back rather
-		// than throwing — the caller gets something coherent either way.
 		expect(await client.upsertDnsNameserverGroup(group)).toBeDefined();
 	});
 

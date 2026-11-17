@@ -1,9 +1,3 @@
-/**
- * In-process HTTP-shaped façade for the ConnectivityHost integration boundary.
- * Used by PACT consumer/provider tests (structurally compatible with
- * `@hobo/contract-harness` ProviderStub — no production harness dependency).
- */
-
 import {
 	createMeteringBus,
 	getNamedEndpoint,
@@ -18,7 +12,7 @@ import { createOpaPolicyEngine } from "./policy/opa-engine.js";
 import { HOBO_DEFAULT_POLICY_DOCUMENT } from "./policy/rego-lite.js";
 import { createTagAclPolicyEngine } from "./policy/tag-acl-engine.js";
 
-// public-contract: provider name for ConnectivityHost PACT documents.
+// public-contract:
 export const CONNECTIVITY_HOST_PROVIDER_NAME = "ConnectivityHost" as const;
 
 export interface ConnectivityHostRequest {
@@ -39,9 +33,6 @@ export interface ConnectivityHostHandler {
 	): ConnectivityHostResponse | Promise<ConnectivityHostResponse>;
 }
 
-/**
- * Real package surface behind an HTTP-shaped boundary for contract capture.
- */
 export function createConnectivityHostHandler(): ConnectivityHostHandler {
 	const sink = createInMemoryMeteringSink("connectivity-host");
 	const bus = createMeteringBus([sink]);
@@ -142,7 +133,6 @@ async function handlePolicy(
 	tagEngine: ReturnType<typeof createTagAclPolicyEngine>,
 	opaEngine: ReturnType<typeof createOpaPolicyEngine>,
 ): Promise<ConnectivityHostResponse> {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const body = (request.body ?? {}) as JsonObject;
 	const engineKind = body.engine === "opa" ? "opa" : "tag-acl";
 	const subjectTenant = String(body.subjectTenant ?? "local");
@@ -154,8 +144,6 @@ async function handlePolicy(
 	const resourceTags = Array.isArray(body.resourceTags)
 		? body.resourceTags.filter((t): t is string => isJsonString(t))
 		: [];
-	// Env isolation: ensure both sides carry env: tags (default development for
-	// same-tenant contract paths when omitted).
 	const subjectEnv =
 		tags.find((t) => t.startsWith("env:")) ?? "env:development";
 	const resourceEnv =
@@ -201,7 +189,6 @@ async function handleDnsReconcile(
 	request: ConnectivityHostRequest,
 	dns: ReturnType<typeof createPublicDnsManager>,
 ): Promise<ConnectivityHostResponse> {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const body = (request.body ?? {}) as JsonObject;
 	try {
 		const result = await dns.reconcileEntrypoint({
@@ -230,7 +217,6 @@ async function handleDnsSuggest(
 	request: ConnectivityHostRequest,
 	dns: ReturnType<typeof createPublicDnsManager>,
 ): Promise<ConnectivityHostResponse> {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const body = (request.body ?? {}) as JsonObject;
 	try {
 		const suggested = await dns.suggestEntrypoint({

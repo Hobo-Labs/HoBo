@@ -16,7 +16,6 @@ describe("secretless connector mediation", () => {
 		expect(lease.protocol).toBe("postgres");
 		expect(lease.localEndpoint).toContain("db.app.local.hobo.localhost");
 		expect(lease.hasCredential).toBe(true);
-		// Credential never enumerable on public lease.
 		expect(JSON.stringify(lease)).not.toContain("super-secret-db-password");
 		expect(Object.keys(lease).every((k) => k !== "credentialMaterial")).toBe(
 			true,

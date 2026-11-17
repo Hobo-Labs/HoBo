@@ -25,18 +25,11 @@ export interface JunctionAgentConfig {
 	readonly tenantId: TenantId | string;
 	readonly name: string;
 	readonly role?: JunctionAgentRole;
-	/** Isolation class / env — fixed at start; change only via control-plane. */
 	readonly env?: string;
 	readonly cloud?: string;
 	readonly authKey?: string;
-	/** Hard isolation: stamp onto overlay tags. */
 	readonly overlayNetworkId?: string;
-	/** Targets to advertise via dynamic DNS on each heartbeat. */
 	readonly dnsTargets?: readonly DynamicDnsTarget[];
-	/**
-	 * Peer junction isolation class for federation checks.
-	 * Cross-env federation denied unless explicit grant presented to PolicyEngine.
-	 */
 	readonly federationPeerEnv?: string;
 }
 
@@ -61,11 +54,6 @@ export interface JunctionAgent {
 	}>;
 }
 
-/**
- * Lightweight junction agent: joins overlay outbound-only, emits metering,
- * routes authorization through PolicyEngine, and optionally registers
- * hierarchical public DNS on heartbeats (Funnel gateway → CNAME).
- */
 export function createJunctionAgent(options: {
 	readonly config: JunctionAgentConfig;
 	readonly overlay: OverlayNetwork;
@@ -110,7 +98,6 @@ export function createJunctionAgent(options: {
 			const isolationClass: IsolationClass | null = parseIsolationClass(
 				options.config.env,
 			);
-			// Fail closed: Junction agents require an env / isolation class.
 			if (!isolationClass) {
 				return {
 					ready: false,
@@ -136,7 +123,6 @@ export function createJunctionAgent(options: {
 				envTag,
 			];
 
-			// Cross-env federation denied by default (peer env must match).
 			if (options.config.federationPeerEnv !== undefined) {
 				const peer = parseIsolationClass(options.config.federationPeerEnv);
 				if (peer !== isolationClass) {
@@ -188,7 +174,6 @@ export function createJunctionAgent(options: {
 			running = join.ready || join.identity.nodeId.startsWith("stub:");
 			overlayIps = [...join.identity.overlayIps];
 
-			// Configure MagicDNS split for hierarchical .hobo.test names when ready.
 			if (join.ready && options.overlay.configureMagicDns) {
 				const magic = await options.overlay.configureMagicDns({
 					tenantId,

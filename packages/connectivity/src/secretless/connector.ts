@@ -1,8 +1,3 @@
-/**
- * Secretless connector (CyberArk-style mediation) for residual classical credentials.
- * Workload connects only to a local named endpoint; mediator holds short-lived material.
- * ADR-0027 + ADR-0130 named endpoints. Isolation tiers: shared | per-tenant | per-workload.
- */
 import { randomUUID } from "node:crypto";
 
 import {
@@ -18,12 +13,9 @@ export type IsolationTier = "shared" | "per-tenant" | "per-workload";
 export type SecretlessLease = Readonly<{
 	leaseId: string;
 	protocol: SecretlessProtocol;
-	/** Local named endpoint the workload may dial (never the real credential). */
 	localEndpoint: string;
-	/** Opaque target descriptor (host:port or connection ref). */
 	targetRef: string;
 	expiresAt: string;
-	/** Credential material is closed over — never enumerable. */
 	hasCredential: true;
 	isolation: IsolationTier;
 	tenantId?: string;
@@ -31,22 +23,16 @@ export type SecretlessLease = Readonly<{
 }>;
 
 export type SecretlessConnectorOptions = Readonly<{
-	/** Base host for local named endpoints (default 127.0.0.1). */
 	localHost?: string;
-	/** Starting local port for leases. */
 	basePort?: number;
-	/** Default lease TTL seconds (≤ 15m for short-lived). */
 	leaseTtlSeconds?: number;
-	/** Isolation tier (default per-tenant when tenantId provided, else shared). */
 	isolation?: IsolationTier;
-	/** Extra protocol plugins. */
 	plugins?: readonly ProtocolPlugin[];
 	now?: () => string;
 }>;
 
 type InternalLease = {
 	lease: SecretlessLease;
-	/** Closed over — never exposed via public APIs. */
 	credentialMaterial: string;
 	renewals: number;
 };
@@ -55,9 +41,7 @@ export type SecretlessConnector = {
 	readonly openLease: (input: {
 		protocol: SecretlessProtocol;
 		targetRef: string;
-		/** Short-lived material from resolution ladder — stays in mediator. */
 		credentialMaterial: string;
-		/** Optional named endpoint hostname (ADR-0130). */
 		namedHost?: string;
 		tenantId?: string;
 		workloadId?: string;
@@ -66,12 +50,10 @@ export type SecretlessConnector = {
 	readonly renewLease: (leaseId: string) => SecretlessLease | null;
 	readonly closeLease: (leaseId: string) => boolean;
 	readonly getLease: (leaseId: string) => SecretlessLease | undefined;
-	/** Proxy handshake — returns status without exposing secret. */
 	readonly mediate: (leaseId: string) => {
 		ok: boolean;
 		protocol: SecretlessProtocol;
 		bytesProxied: number;
-		/** Always false by construction. */
 		credentialExposedToWorkload: false;
 	};
 	readonly listLeases: (filter?: {
@@ -82,9 +64,6 @@ export type SecretlessConnector = {
 	readonly listPlugins: () => readonly ProtocolPlugin[];
 };
 
-/**
- * Mediator: workload never receives credentialMaterial.
- */
 export function createSecretlessConnector(
 	options: SecretlessConnectorOptions = {},
 ): SecretlessConnector {
@@ -231,7 +210,6 @@ export function createSecretlessConnector(
 	};
 }
 
-/** Postgres-oriented helper: open lease to named endpoint for app DB. */
 export function openPostgresSecretlessLease(
 	connector: SecretlessConnector,
 	input: {

@@ -1,9 +1,3 @@
-/**
- * Full Privileged Access Gateway implementation.
- * Secretless session brokering + optional remote control-plane transport.
- * Production requires elevated capability verification (not network membership).
- */
-
 import { randomBytes } from "node:crypto";
 import { verifyElevatedAccessCapability } from "../env-isolation/elevated-capability.js";
 import { DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK } from "../env-isolation/policy-pack.js";
@@ -39,16 +33,9 @@ export type CreatePrivilegedAccessGatewayOptions = Readonly<{
 	isolationClass: IsolationClass;
 	auditSink?: AuditSink;
 	now?: () => string;
-	/** Session signing keys (generated if omitted). */
 	keys?: SessionBrokerKeys;
-	/** Optional remote PAM control plane. */
 	transport?: PamTransportConfig;
-	/**
-	 * HMAC secret for verifying elevated access JWTs (same as identity migration).
-	 * Required when verifying production elevated tokens outside tests.
-	 */
 	elevatedHmacSecret?: string;
-	/** Classes that always require elevated capability (default from pack). */
 	capabilityRequiredClasses?: readonly IsolationClass[];
 }>;
 
@@ -56,7 +43,6 @@ export type PrivilegedAccessGatewayHandle = PrivilegedAccessGateway & {
 	readonly auditEvents: readonly import("./types.js").PamAuditEvent[];
 	readonly yardDrainCount: number;
 	verifyLocalSession(token: string): ReturnType<typeof verifySessionToken>;
-	/** Transfer a live local authorization to a resident protocol adapter. */
 	handoffSession(sessionId: string): SessionHandle;
 };
 
@@ -83,18 +69,12 @@ function parseTarget(
 	});
 }
 
-/**
- * Create a production-capable Privileged Access Gateway.
- * Local secretless path is complete; remote transports are full HTTP clients.
- */
 export function createPrivilegedAccessGateway(
 	options: CreatePrivilegedAccessGatewayOptions,
 ): PrivilegedAccessGatewayHandle {
 	const pack = DEFAULT_ENV_NETWORK_ISOLATION_POLICY_PACK;
 	const capabilityRequired = new Set<IsolationClass>(
-		// SAFETY: assertion required at this I/O or test boundary.
 		(options.capabilityRequiredClasses ??
-			// SAFETY: assertion required at this I/O or test boundary.
 			(pack.capabilityRequiredClasses as readonly IsolationClass[])) as IsolationClass[],
 	);
 	const sinkBase = options.auditSink;
@@ -109,10 +89,8 @@ export function createPrivilegedAccessGateway(
 	const auditList = (): readonly import("./types.js").PamAuditEvent[] => {
 		if (
 			"events" in sink &&
-			// SAFETY: assertion required at this I/O or test boundary.
 			Array.isArray((sink as { events: unknown }).events)
 		) {
-			// SAFETY: assertion required at this I/O or test boundary.
 			return (sink as { events: import("./types.js").PamAuditEvent[] }).events;
 		}
 		return yardEvents;
@@ -240,7 +218,6 @@ export function createPrivilegedAccessGateway(
 			});
 		},
 		async stop() {
-			// End all live sessions.
 			for (const [id, session] of sessions) {
 				if (remote && session.remoteId) {
 					await remote.revokeSession(session.remoteId).catch(() => {});
@@ -308,7 +285,6 @@ export function createPrivilegedAccessGateway(
 					{ code: "cross-env-pam-denied" },
 				);
 			}
-			// Known catalog targets optional but if registered must match.
 			const catalog = targets.get(target.id);
 			if (catalog && catalog.isolationClass !== options.isolationClass) {
 				throw Object.assign(new Error("catalog target env mismatch"), {
@@ -361,7 +337,6 @@ export function createPrivilegedAccessGateway(
 				protocol: frameSessionProtocol(options.kind),
 			});
 
-			// Optional remote control-plane authorization (full HTTP client).
 			if (remote) {
 				const remoteResult = await remote.authorizeSession({
 					subject: req.subject,
@@ -379,7 +354,6 @@ export function createPrivilegedAccessGateway(
 						remote: remoteResult,
 					}),
 					remoteId: remoteResult.remoteSessionId,
-					// Bind remote authorization into session token envelope without storing password.
 					sessionToken: `${minted.token}~remote:${remoteResult.authorization.slice(0, 64)}`,
 				});
 			}

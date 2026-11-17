@@ -1,30 +1,3 @@
-/**
- * HTTP transports for remote PAM control planes.
- *
- * These clients mint credentials for privileged access, so the properties that
- * matter are about what leaves the process and what happens when the control
- * plane answers something unexpected.
- *
- * **Each vendor gets its own request shape, not a common one.** Teleport,
- * Boundary and JumpServer each name the same three things differently, and a
- * client that sent one shape everywhere would be rejected by two of them — or
- * worse, accepted with a field silently ignored, minting a session with the
- * wrong TTL or against the wrong target.
- *
- * **Every response field has a fallback, and the id fallback is synthesized.**
- * A control plane that returns no session id still has to yield *something*
- * addressable, or the caller holds a live remote session it cannot revoke.
- *
- * **A revoke treats 404 as success.** Revocation is what runs on the cleanup
- * path, and "already gone" is the outcome it wanted; failing there would leave
- * a caller retrying a session that no longer exists.
- *
- * **`mergeRemoteIntoHandle` takes the earlier of the two expiries.** The local
- * handle and the remote session expire independently, and a handle claiming to
- * outlive its remote session is a caller who thinks they still have access
- * after the control plane has revoked it.
- */
-
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../src/json.js";
 
@@ -42,13 +15,11 @@ function transport(
 ) {
 	const calls: Call[] = [];
 	let n = 0;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const fetchImpl = (async (url: string | URL, init: RequestInit = {}) => {
 		calls.push({ url: String(url), init });
 		const entry = script[n++] ?? { body: {} };
 		const status = entry.status ?? 200;
 		const text = entry.text ?? JSON.stringify(entry.body ?? {});
-		// SAFETY: assertion required at this I/O or test boundary.
 		return {
 			ok: status >= 200 && status < 300,
 			status,
@@ -57,11 +28,8 @@ function transport(
 	}) as typeof fetch;
 	return {
 		calls,
-		sent: (i = 0) =>
-			// SAFETY: assertion required at this I/O or test boundary.
-			JSON.parse(String(calls[i]?.init.body)) as JsonObject,
+		sent: (i = 0) => JSON.parse(String(calls[i]?.init.body)) as JsonObject,
 		api: createRemoteTransport({
-			// SAFETY: assertion required at this I/O or test boundary.
 			kind: kind as never,
 			endpoint: "https://pam.example.com",
 			authToken: "pam-secret",
@@ -74,7 +42,6 @@ function transport(
 const request = {
 	subject: "alice",
 	target: "db-prod",
-	// SAFETY: assertion required at this I/O or test boundary.
 	isolationClass: "production" as never,
 	ttlSeconds: 600,
 };
@@ -85,8 +52,6 @@ describe("transport construction", () => {
 	});
 
 	it("normalizes a trailing slash off the endpoint", () => {
-		// A doubled slash 404s against some gateways and works against every
-		// mock.
 		expect(
 			transport("teleport", [], { endpoint: "https://pam.example.com/" }).api
 				.endpoint,
@@ -116,7 +81,6 @@ describe("the request envelope", () => {
 	it("declares and accepts JSON", async () => {
 		const t = transport("teleport");
 		await t.api.authorizeSession(request);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const first = t.calls[0];
 		if (first === undefined) throw new Error("expected a request");
 		const headers = first.init.headers;
@@ -128,7 +92,6 @@ describe("the request envelope", () => {
 	});
 
 	it("keeps the token out of the failure message", async () => {
-		// A PAM failure is logged; the control-plane token must not be.
 		const t = transport("teleport", [{ status: 403, text: "denied" }]);
 		await expect(t.api.authorizeSession(request)).rejects.toThrow(
 			expect.objectContaining({
@@ -145,11 +108,9 @@ describe("the request envelope", () => {
 	});
 
 	it("tags the failure with a stable code and the status", async () => {
-		// Callers branch on this rather than on the message text.
 		const t = transport("teleport", [{ status: 503, text: "down" }]);
 		const error = await t.api
 			.authorizeSession(request)
-			// SAFETY: assertion required at this I/O or test boundary.
 			.catch((error: Error) => error);
 		expect(error.code).toBe("pam-remote-error");
 		expect(error.status).toBe(503);
@@ -159,14 +120,11 @@ describe("the request envelope", () => {
 		const t = transport("teleport", [{ status: 500, text: "x".repeat(4000) }]);
 		const error = await t.api
 			.authorizeSession(request)
-			// SAFETY: assertion required at this I/O or test boundary.
 			.catch((error: Error) => error);
 		expect(error.message.length).toBeLessThan(400);
 	});
 
 	it("keeps an unparseable body rather than discarding it", async () => {
-		// A control plane answering HTML on success is broken, but throwing away
-		// what it said would leave nothing to diagnose with.
 		const t = transport("nova", [{ text: "<html>maintenance</html>" }]);
 		const result = await t.api.authorizeSession(request);
 		expect(result.remoteSessionId).toMatch(/^nv-/u);
@@ -186,8 +144,6 @@ describe("Teleport", () => {
 	});
 
 	it("sends the TTL as a seconds object, which is what Teleport reads", async () => {
-		// A bare number here is accepted and ignored, minting a session with the
-		// control plane's default lifetime instead of the requested one.
 		const t = transport("teleport");
 		await t.api.authorizeSession(request);
 		expect(t.sent().ttl).toEqual({ seconds: 600 });
@@ -200,7 +156,6 @@ describe("Teleport", () => {
 	});
 
 	it("carries the isolation class and reason for the audit record", async () => {
-		// A PAM grant with no recorded reason is a grant nobody can review.
 		const t = transport("teleport");
 		await t.api.authorizeSession({ ...request, reason: "incident-42" });
 		expect(t.sent()).toMatchObject({
@@ -222,8 +177,6 @@ describe("Teleport", () => {
 	});
 
 	it("uses the expiry the control plane stated", async () => {
-		// The remote clock decides; a locally computed expiry that outlives it
-		// would let a caller believe a dead session is live.
 		const t = transport("teleport", [
 			{ body: { expires_at: "2030-01-01T00:00:00.000Z" } },
 		]);
@@ -241,7 +194,6 @@ describe("Teleport", () => {
 	});
 
 	it("synthesizes a session id when none came back", async () => {
-		// Without an id the caller holds a live remote session it cannot revoke.
 		const t = transport("teleport", [{ body: { cert: "CERT" } }]);
 		expect((await t.api.authorizeSession(request)).remoteSessionId).toMatch(
 			/^tp-/u,
@@ -268,8 +220,6 @@ describe("Boundary", () => {
 	});
 
 	it("percent-encodes the target in the path", async () => {
-		// Boundary target ids are opaque and can contain a slash, which would
-		// otherwise change the path segment.
 		const t = transport("boundary");
 		await t.api.authorizeSession({ ...request, target: "org/db prod" });
 		expect(t.calls[0]?.url).toContain("org%2Fdb%20prod");
@@ -299,7 +249,6 @@ describe("Boundary", () => {
 	});
 
 	it("prefers the token id over the generic id", async () => {
-		// They address different things; the token id is what revokes the grant.
 		const t = transport("boundary", [
 			{ body: { item: { id: "b1", authorization_token_id: "at-1" } } },
 		]);
@@ -333,8 +282,6 @@ describe("Boundary", () => {
 
 describe("JumpServer", () => {
 	it("posts to the connection-token endpoint, trailing slash and all", async () => {
-		// JumpServer's REST API redirects without the trailing slash, which drops
-		// the POST body.
 		const t = transport("jumpserver");
 		await t.api.authorizeSession(request);
 		expect(t.calls[0]?.url).toBe(
@@ -361,7 +308,6 @@ describe("JumpServer", () => {
 	});
 
 	it("prefers the token value over the token id as the authorization", async () => {
-		// The value is the credential; the id merely names it.
 		const t = transport("jumpserver", [
 			{ body: { id: "j1", value: "VALUE", token: "TOKEN" } },
 		]);
@@ -422,8 +368,6 @@ describe("the generic control plane", () => {
 	});
 
 	it("reports an empty authorization rather than the string undefined", async () => {
-		// Every field is stringified; an absent one must not become the literal
-		// text "undefined" in a credential field.
 		const t = transport("nova", [{ body: {} }]);
 		expect((await t.api.authorizeSession(request)).authorization).toBe("");
 	});
@@ -464,8 +408,6 @@ describe("revocation", () => {
 	});
 
 	it("treats a 404 as success, because already-gone is the goal", async () => {
-		// Revocation runs on the cleanup path; failing on "not there" would have
-		// a caller retrying a session that no longer exists.
 		const t = transport("nova", [{ status: 404, text: "not found" }]);
 		await expect(t.api.revokeSession("n1")).resolves.toBeUndefined();
 	});
@@ -481,15 +423,12 @@ describe("revocation", () => {
 		const t = transport("nova", [{ status: 500 }]);
 		const error = await t.api
 			.revokeSession("n1")
-			// SAFETY: assertion required at this I/O or test boundary.
 			.catch((error: Error) => error);
 		expect(error.code).toBe("pam-remote-error");
 	});
 
 	it("still fails usefully when the failure body cannot be read", async () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const fetchImpl = (async () =>
-			// SAFETY: assertion required at this I/O or test boundary.
 			({
 				ok: false,
 				status: 502,
@@ -498,7 +437,6 @@ describe("revocation", () => {
 				},
 			}) as Response) as typeof fetch;
 		const api = createRemoteTransport({
-			// SAFETY: assertion required at this I/O or test boundary.
 			kind: "nova" as never,
 			endpoint: "https://pam.example.com",
 			authToken: "t",
@@ -509,7 +447,6 @@ describe("revocation", () => {
 });
 
 describe("mergeRemoteIntoHandle", () => {
-	// SAFETY: assertion required at this I/O or test boundary.
 	const local = {
 		credentialRef: "hobo-pam://session/local-1",
 		expiresAt: "2030-01-01T00:00:00.000Z",
@@ -532,8 +469,6 @@ describe("mergeRemoteIntoHandle", () => {
 	});
 
 	it("percent-encodes the remote id it binds in", () => {
-		// The reference is parsed as a URL downstream; an unencoded `&` would
-		// split it into two parameters.
 		expect(
 			mergeRemoteIntoHandle({
 				local,
@@ -543,10 +478,7 @@ describe("mergeRemoteIntoHandle", () => {
 	});
 
 	it("keeps the locally signed session token", () => {
-		// The local signature is what HoBo verifies; replacing it with a remote
-		// credential would make the handle unverifiable.
 		expect(
-			// SAFETY: assertion required at this I/O or test boundary.
 			(
 				mergeRemoteIntoHandle({
 					local,
@@ -557,8 +489,6 @@ describe("mergeRemoteIntoHandle", () => {
 	});
 
 	it("takes the remote expiry when it is the earlier one", () => {
-		// A handle outliving its remote session is a caller who believes they
-		// still have access after the control plane revoked it.
 		expect(
 			mergeRemoteIntoHandle({
 				local,
@@ -586,8 +516,6 @@ describe("mergeRemoteIntoHandle", () => {
 	});
 
 	it("freezes the merged handle", () => {
-		// It is passed across the connectivity boundary; a mutable expiry is an
-		// access window somebody downstream can extend.
 		expect(
 			Object.isFrozen(
 				mergeRemoteIntoHandle({
@@ -603,7 +531,6 @@ describe("mergeRemoteIntoHandle", () => {
 			local,
 			remote: remote("2029-01-01T00:00:00.000Z"),
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		expect(local.expiresAt).toBe("2030-01-01T00:00:00.000Z");
 	});
 });

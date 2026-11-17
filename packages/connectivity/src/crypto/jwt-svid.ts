@@ -1,9 +1,3 @@
-/**
- * SPIFFE JWT-SVID mint and verify (audience-bound, short-lived).
- * Production: replace HMAC with SPIRE Workload API fetch; verification uses
- * the same claim shape (sub=spiffe id, aud, exp, iat).
- */
-
 import {
 	createHmac,
 	createPrivateKey,
@@ -22,13 +16,11 @@ import {
 	type JsonObject,
 } from "../json.js";
 
-/** Default HMAC only allowed in development / explicit opt-in. */
 export const DEFAULT_SVID_HMAC_SECRET = "hobo-local-svid-dev-only" as const;
 
 export function resolveSvidHmacSecret(input: {
 	readonly hmacSecret?: string;
 	readonly env?: NodeJS.ProcessEnv;
-	/** Force allow default secret (tests). */
 	readonly allowDefaultSecret?: boolean;
 }): string {
 	const env = input.env ?? process.env;
@@ -91,7 +83,6 @@ function isCryptoKey(value: KeyObject | JsonObject): value is KeyObject {
 
 function jwkFrom(value: KeyObject | JsonObject): JsonWebKey {
 	if (isJsonObject(value)) {
-		// SAFETY: JWK parse boundary for SPIFFE JWT-SVID issuer keys.
 		return value as JsonWebKey;
 	}
 	return {};
@@ -104,25 +95,18 @@ function b64urlJson<T>(value: T): string {
 function decodeB64urlJson<T>(input: string): T {
 	const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
 	const b64 = input.replace(/-/g, "+").replace(/_/g, "/") + pad;
-	// SAFETY: assertion required at this I/O or test boundary.
 	return JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as T;
 }
 
-/**
- * Mint a JWT-SVID with ES256 when a key is provided; otherwise HS256 with a
- * local trust domain secret (still audience-bound and short-lived).
- */
 export function mintJwtSvid(input: {
 	readonly spiffeId: string;
 	readonly audience: string | readonly string[];
 	readonly ttlSeconds?: number;
 	readonly issuer?: string;
 	readonly now?: number;
-	/** HMAC secret for HS256 local trust domain. */
 	readonly hmacSecret?: string;
 	readonly env?: NodeJS.ProcessEnv;
 	readonly allowDefaultSecret?: boolean;
-	/** ES256 private key (JWK or KeyObject). */
 	readonly privateKey?: KeyObject | JsonObject;
 	readonly kid?: string;
 }): MintedJwtSvid {
@@ -147,7 +131,6 @@ export function mintJwtSvid(input: {
 		if (isCryptoKey(privateKey)) {
 			key = privateKey;
 		} else {
-			// SAFETY: JWK object already parsed at the mint boundary.
 			const keyInput = {
 				format: "jwk",
 				key: jwkFrom(privateKey),
@@ -204,7 +187,6 @@ export function verifyJwtSvid(input: {
 	if (parts.length !== 3) {
 		throw new Error("jwt-svid: malformed token");
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const [hB64, pB64, sB64] = parts as [string, string, string];
 	const header = decodeB64urlJson<{ alg?: string }>(hB64);
 	const claims = decodeB64urlJson<JwtSvidClaims>(pB64);
@@ -239,7 +221,6 @@ export function verifyJwtSvid(input: {
 		if (isCryptoKey(publicKey)) {
 			key = publicKey;
 		} else {
-			// SAFETY: JWK object already parsed at the verify boundary.
 			const keyInput = {
 				format: "jwk",
 				key: jwkFrom(publicKey),
@@ -262,17 +243,6 @@ export function verifyJwtSvid(input: {
 	}
 
 	if (header.alg === "HS256") {
-		// Algorithm confusion guard. The token's own header must not be able to
-		// choose the verification algorithm: a caller that configured an ES256
-		// public key is verifying against an asymmetric issuer, and an HS256
-		// token can only have been signed with a *shared* secret.
-		//
-		// Without this, an attacker takes any ES256-issued token, rewrites the
-		// header to HS256, and re-signs with DEFAULT_SVID_HMAC_SECRET — which is
-		// an exported constant in this repository. The HS256 branch below falls
-		// back to exactly that secret when no `hmacSecret` is supplied, and an
-		// ES256-configured caller has no reason to supply one. The forged token
-		// then verifies, for any `sub` and any `aud` the attacker chooses.
 		if (input.publicKey !== undefined && input.hmacSecret === undefined) {
 			throw new Error(
 				"jwt-svid: algorithm mismatch — token is HS256 but verification was configured for ES256",
@@ -296,7 +266,6 @@ export function verifyJwtSvid(input: {
 	throw new Error(`jwt-svid: unsupported alg ${header.alg ?? "?"}`);
 }
 
-/** Generate an ES256 key pair suitable for a local trust domain issuer. */
 export function generateSvidIssuerKeys() {
 	const { privateKey, publicKey } = generateKeyPairSync("ec", {
 		namedCurve: "P-256",
@@ -304,9 +273,7 @@ export function generateSvidIssuerKeys() {
 	return {
 		privateKey,
 		publicKey,
-		// SAFETY: assertion required at this I/O or test boundary.
 		publicJwk: publicKey.export({ format: "jwk" }) as JsonObject,
-		// SAFETY: assertion required at this I/O or test boundary.
 		privateJwk: privateKey.export({ format: "jwk" }) as JsonObject,
 	};
 }

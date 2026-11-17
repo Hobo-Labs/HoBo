@@ -364,14 +364,12 @@ describe("Cloudflare traffic routing", () => {
 				methods.push(method);
 				paths.push(url);
 				if (url.includes("/pools") && method === "POST") {
-					// SAFETY: assertion required at this I/O or test boundary.
 					const body = JSON.parse(String(init?.body ?? "{}")) as {
 						name?: string;
 					};
 					const id = body.name?.includes("canary")
 						? "pool-created-canary"
 						: "pool-created-primary";
-					// names are hobo-backend-primary / hobo-backend-canary
 					return Response.json({ success: true, result: { id } });
 				}
 				if (url.endsWith("/load_balancers") && method === "POST") {

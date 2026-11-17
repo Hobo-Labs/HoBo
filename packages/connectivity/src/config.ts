@@ -76,21 +76,13 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 	if (raw === null || raw === undefined || !isJsonObject(raw)) {
 		return DEFAULT_CONNECTIVITY_CONFIG;
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	const obj = raw as JsonObject;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const overlay = (obj.overlay ?? {}) as JsonObject;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const dns = (obj.dns ?? {}) as JsonObject;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const dnsPublic = (dns.public ?? {}) as JsonObject;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const naming = (obj.naming ?? {}) as JsonObject;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const metering = (obj.metering ?? {}) as JsonObject;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const tenancy = (obj.tenancy ?? {}) as JsonObject;
-	// SAFETY: assertion required at this I/O or test boundary.
 	const policy = (obj.policy ?? {}) as JsonObject;
 
 	const managedBy = parseManagedBy(dnsPublic.managedBy);
@@ -101,8 +93,7 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 		overlay: {
 			provider: overlayProvider,
 			magicDnsDomains: Array.isArray(overlay.magicDnsDomains)
-				? // SAFETY: assertion required at this I/O or test boundary.
-					overlay.magicDnsDomains.filter((s): s is string => isJsonString(s))
+				? overlay.magicDnsDomains.filter((s): s is string => isJsonString(s))
 				: DEFAULT_CONNECTIVITY_CONFIG.overlay.magicDnsDomains,
 			enableFunnel: overlay.enableFunnel !== false,
 		},
@@ -118,11 +109,8 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 				dnsPublic.credentials !== null
 					? {
 							credentials: Object.fromEntries(
-								Object.entries(
-									// SAFETY: assertion required at this I/O or test boundary.
-									dnsPublic.credentials as JsonObject,
-								).filter((entry): entry is [string, string] =>
-									isJsonString(entry[1]),
+								Object.entries(dnsPublic.credentials as JsonObject).filter(
+									(entry): entry is [string, string] => isJsonString(entry[1]),
 								),
 							),
 						}
@@ -145,8 +133,7 @@ export function parseConnectivityConfig(raw: JsonValue): ConnectivityConfig {
 		metering: {
 			enabled: metering.enabled !== false,
 			sinks: Array.isArray(metering.sinks)
-				? // SAFETY: assertion required at this I/O or test boundary.
-					metering.sinks.filter(
+				? metering.sinks.filter(
 						(s): s is "memory" | "log" | "billing" =>
 							s === "memory" || s === "log" || s === "billing",
 					)
@@ -182,9 +169,7 @@ function parseProvider(raw: JsonValue | undefined): DnsProviderKind {
 		"memory",
 		"none",
 	];
-	// SAFETY: assertion required at this I/O or test boundary.
 	if (isJsonString(raw) && (allowed as string[]).includes(raw)) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		return raw as DnsProviderKind;
 	}
 	return "none";
