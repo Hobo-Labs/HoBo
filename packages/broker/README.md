@@ -287,8 +287,12 @@ The CLI's built-in local-host authority attests the local provider's zero servic
 fee only. It does not cover charges for the underlying machine or other services.
 Registry-backed CLI composition needs a host-supplied pricing authority. The
 default billing plane's holds are in memory; they are not shared or durable.
-HTTP delivery preserves receipt fields, but does not yet require an authenticated
-receipt or verify a signature before invoking the delivery plane.
+Delivery requires an unchanged receipt issued by the same broker instance. It
+rechecks quoted evidence and the catalog and environment, then claims the
+receipt before submitting it. A failed or uncertain submission cannot be
+reissued by that instance without reconciliation. This process-local registry
+is lost on restart; it does not authenticate the caller, provide cross-process
+coordination, or verify that a remote receiver honors the quote at execution.
 
 The [quote-backed admission skill](../../.agents/skills/verify-broker-quote-admission/SKILL.md)
 checks 108 states. This view hides 140 same-label steps, including evidence
@@ -523,8 +527,8 @@ label (`in-proc`, `agent`, `publisher:<target>`) for existing readers.
 | Symptom | Cause | Action |
 |---|---|---|
 | `delivery-plane-unwired` | The policy routes through an agent or publisher but the broker was built without the CD plane. | Compose `createReconcilerDeliveryPlane({ requestPromotion })` (the CD host does this), or set `reconciler_mode: conductor` for local runs. |
-| `delivery-refused` | CD refused the promotion (window, lineage, gate, policy). | Read the reasons and remediation on the error; fix the cause and deliver again (idempotent per receipt). |
-| `delivery-transport-failed` | The CD control plane was unreachable. | Check CD service health; nothing was applied. Retry. |
+| `delivery-refused` | CD refused the promotion (window, lineage, gate, policy). | Inspect the reasons and reconcile the claimed attempt before authorizing another one. |
+| `delivery-transport-failed` | The request or response failed in transit. | Reconcile with CD; the promotion may have been accepted before the response was lost. |
 | `delivery-fact-unknown` on replay | A persisted `broker.DeliverySubmitted` body has a shape the upcaster does not know. | Add the shape and a golden corpus entry before replaying. |
 | A legacy policy still says `engine: argo` | Pre-D14 configuration. | It keeps working through the `argo-cd` publisher; migrate to `reconciler_mode: publisher` + `publisher.target: argo-cd`. |
 

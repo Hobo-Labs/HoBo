@@ -37,6 +37,7 @@ import {
 	type TrustedQuoteAttestation,
 } from "./pricing-authorization.js";
 import {
+	canonicalResolutionJson,
 	type ResolutionSignature,
 	type ResolutionSigningKey,
 	signResolution,
@@ -158,6 +159,25 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 	const deliveryPlane = deps.deliveryPlane ?? createDeliveryPlane();
 	const stationId = deps.stationId;
 	const railHash = deps.railHash;
+	// A receipt can only be handed to delivery by the broker instance that
+	// issued it. A durable, shared claim store is needed across restarts.
+	const resolvingRequests = new Set<string>();
+	const issuedResolutions = new Map<
+		string,
+		{
+			canonical: string;
+			receipt: ResolutionReceipt;
+			catalogHash: string;
+			environmentSnapshot: string;
+			pricing?: {
+				authority: BrokerPricingAuthority;
+				quote: QuoteVector;
+				context: BrokerQuoteContext;
+				amount: number;
+			};
+			state: "ready" | "claimed";
+		}
+	>();
 
 	function selectPlacements(
 		request: BrokerRequest,
@@ -263,7 +283,7 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 		};
 	}
 
-	return {
+	const broker: HoboBroker = {
 		brokerId: policies.brokerId,
 		policyHash,
 		async resolve(input) {
@@ -276,6 +296,21 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					requirementCount: request.requirements.length,
 				}),
 			];
+
+			if (issuedResolutions.has(request.requestId)) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "reservation-replay-requires-reconciliation",
+							message:
+								"this broker has already issued a receipt for this request",
+						},
+					],
+					events,
+				);
+			}
 
 			// Plane 0 — connector registry: required connector kinds must be
 			// registered and enabled before the broker will act on their behalf.
@@ -711,6 +746,23 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				}),
 			);
 			const signature = sign(receipt, events);
+			issuedResolutions.set(request.requestId, {
+				canonical: canonicalResolutionJson(receipt),
+				receipt: structuredClone(receipt),
+				catalogHash,
+				environmentSnapshot,
+				...(pricing && selectedQuote && selectedContext
+					? {
+							pricing: {
+								authority: pricing,
+								quote: selectedQuote,
+								context: selectedContext,
+								amount: authorizedEstimate,
+							},
+						}
+					: undefined),
+				state: "ready",
+			});
 			return {
 				outcome: "resolved",
 				receipt,
@@ -733,20 +785,117 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			};
 		},
 		async deliver(receipt) {
-			const ticket = await deliveryPlane.submit(receipt, policies.delivery);
+			const issued = issuedResolutions.get(receipt.requestId);
+			if (!issued || canonicalResolutionJson(receipt) !== issued.canonical) {
+				throw new BrokerParseError(
+					"delivery-receipt-untrusted",
+					"delivery-receipt-untrusted: receipt was not issued by this broker instance",
+				);
+			}
+			if (issued.state !== "ready") {
+				throw new BrokerParseError(
+					"delivery-already-claimed",
+					"delivery-already-claimed: reconcile the previous delivery attempt",
+				);
+			}
+			// Claim before host callbacks, which can reenter delivery. A failure
+			// before dispatch is retryable; after dispatch it is uncertain.
+			issued.state = "claimed";
+			let snapshot: ResolutionReceipt;
+			try {
+				const currentEnvironment = () =>
+					JSON.stringify(deps.environment ?? null) ===
+					issued.environmentSnapshot;
+				if (
+					!currentEnvironment() ||
+					deps.catalog.catalogHash !== issued.catalogHash
+				) {
+					throw new BrokerParseError(
+						"delivery-context-stale",
+						"delivery-context-stale: environment or catalog changed",
+					);
+				}
+				if (issued.pricing) {
+					const { authority, quote, context, amount } = issued.pricing;
+					if (deps.pricingAuthority !== authority)
+						throw new BrokerParseError(
+							"delivery-quote-stale",
+							"delivery-quote-stale: pricing authority changed",
+						);
+					const check = authorizeBillingSpend({
+						quote,
+						billing: policies.billing,
+						attestQuote: (candidate) => authority.attest(context, candidate),
+					});
+					if (!check.ok || check.authorizedUsd !== amount)
+						throw new BrokerParseError(
+							"delivery-quote-stale",
+							"delivery-quote-stale: quote or liability is no longer current",
+						);
+					if (
+						!currentEnvironment() ||
+						deps.catalog.catalogHash !== issued.catalogHash
+					)
+						throw new BrokerParseError(
+							"delivery-context-stale",
+							"delivery-context-stale: context changed during quote check",
+						);
+				}
+				snapshot = structuredClone(issued.receipt);
+			} catch (error) {
+				issued.state = "ready";
+				throw error;
+			}
+			const ticket = await deliveryPlane.submit(
+				snapshot,
+				structuredClone(policies.delivery),
+			);
 			return {
 				ticket,
 				events: [
 					brokerEvent(
 						BROKER_EVENTS.DeliverySubmitted,
 						deliverySubmittedBody({
-							requestId: receipt.requestId,
+							requestId: issued.receipt.requestId,
 							brokerId: policies.brokerId,
 							ticket,
 						}),
 					),
 				],
 			};
+		},
+	};
+	return {
+		...broker,
+		async resolve(input) {
+			const snapshot = cloneAsJson(input);
+			const request = parseBrokerRequest(snapshot);
+			if (resolvingRequests.has(request.requestId)) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "reservation-replay-requires-reconciliation",
+							message: "resolution for this request is already in progress",
+						},
+					],
+					[
+						brokerEvent(BROKER_EVENTS.Requested, {
+							requestId: request.requestId,
+							brokerId: policies.brokerId,
+							bindleId: request.scope.bindleId,
+							requirementCount: request.requirements.length,
+						}),
+					],
+				);
+			}
+			resolvingRequests.add(request.requestId);
+			try {
+				return await broker.resolve(snapshot);
+			} finally {
+				resolvingRequests.delete(request.requestId);
+			}
 		},
 	};
 }
