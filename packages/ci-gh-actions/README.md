@@ -1546,6 +1546,10 @@ response with a matching JSON authorization receipt and rejects redirects,
 network failures, and mismatched runner context. `createGithubAssignmentLookup`
 verifies the repository, workflow attempt, assigned runner ID and group, job
 state, and required labels using the central GitHub App transport. Its scope
-must come from trusted controller configuration. The relay does not yet install
-or serve the endpoint; strict runners require a controller that commits the
-start binding before returning the receipt.
+must come from trusted controller configuration. An embedded relay can serve
+`POST /v1/fleet/start-fence` by passing an initialized `StrictFleetStore` and
+trusted `StartFencePolicy` entries as `strictFleet` to `createRelayHost`.
+The same option is available to callers of `startRelayFromEnvironment`.
+The endpoint verifies the slot credential and actual GitHub assignment, commits
+the binding, then returns the receipt. With no strict fleet configuration, the
+route is unavailable. The caller owns the strict store's lifecycle.
