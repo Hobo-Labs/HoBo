@@ -44,7 +44,7 @@ Feature: Insight parity with RelayRunner
     Then it prints the failed step, the matched evidence and a re-run outlook
     And no model was called
 
-  @parity @I07 @t2 @pending
+  @parity @I07 @t2
   Scenario: I07 One OpenTelemetry trace per run attempt
     Given job and run webhooks for one run attempt delivered at different times
     When their spans are exported
