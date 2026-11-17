@@ -44,7 +44,7 @@ the only source for `hobo new -t todo|api|agent|fullstack`. CLI starter ignore f
 SQLite sidecars and interrupted staging trees so recovery state stays local.
 
 Atomic snippets live in [`atoms/`](./atoms/README.md) and load with the rest of
-the catalog. Chat emit uses the same trees.
+the catalog.
 
 ## What the loaders refuse
 
