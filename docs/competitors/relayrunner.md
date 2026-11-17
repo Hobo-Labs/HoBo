@@ -207,22 +207,16 @@ The run that proves each is its scenario, written over the test named here and t
 
 ## Where HoBo is stronger or intentionally different
 
-Each point is a **B** case on the [scorecard](../ci/parity-scorecard.md); its state there is
-what may be claimed.
+Each point with a case id is a **B** case at `pass` on the
+[scorecard](../ci/parity-scorecard.md); its state there is what may be claimed. The last two
+points are not scorecard cases.
 
-- **Routing with no service at all** (R15, built, T3 owed). Job mode decides on a
-  GitHub-hosted runner with the job's own token; a relay outage changes nothing.
-  RelayRunner's relay job stays queued when the gateway does not answer.
 - **More than one answerer, and a rescue for a lost webhook** (R16 and R13, `pass` at T2).
   Any mesh node may answer a relay job, and the job poller answers one whose webhook never
   arrived.
-- **Matrix jobs behind one relay** (R14, built, T3 owed). RelayRunner routes one job per
-  relay and cannot route a matrix.
 - **A fleet step** (R06b, `pass`). The top of an order can be isolated capacity that takes
   public repositories and fork pull requests. RelayRunner's machines refuse public
   repositories outright.
-- **A fresh container per machine job** (M07, built, scenario owed). RelayRunner runs a job
-  on the host as the signed-in user outside one Mac VM mode.
 - **Routing is committed configuration** (S10, `pass`,
   [ADR-0181](../design/adr/routing-slips.md#adr-0181)). The order is reviewed like code; the
   dashboard's edit opens a pull request.
@@ -231,6 +225,17 @@ what may be claimed.
 - **Budget is reserved, not estimated.** Every admission reserves the job's maximum cost in a
   ledger and settles the measured cost; the spend limit reads that ledger first.
 - **Self-hosted** (*intentional*). The relay is a package and a container an operator runs.
+
+### Aimed at, not yet claimed
+
+These **B** cases are aimed at points where HoBo would be stronger, but their scorecard
+state does not allow the claim yet. Each is claimed only once it reaches `pass`.
+
+| Case | Scorecard state | Intended difference | What would prove it |
+|---|---|---|---|
+| R15 | `not-built` | Job mode routes on a GitHub-hosted runner with the job's own token, so a relay outage changes nothing; RelayRunner's relay job stays queued when the gateway does not answer. | The R15 gauntlet scenario over `packages/ci-gh-actions/test/relay-job-main.test.ts`, then a `parity-probe.yml` run on GitHub with no relay reachable (T3). |
+| R14 | `not-built` | One relay output routes a three-leg matrix; RelayRunner routes one job per relay and cannot route a matrix. | The R14 gauntlet scenario over `packages/ci-gh-actions/test/relay-job-main.test.ts` (T2), then a `parity-probe.yml` matrix run (T3). |
+| M07 | `partial` | A fresh container per machine job by default on Linux; RelayRunner runs a job on the host as the signed-in user outside one Mac VM mode. | The M07 gauntlet scenario over `packages/ci-gh-actions/test/machine-worker-session.test.ts`, showing two jobs on one machine each in its own container (T2). |
 
 ## Adversarial critique
 
