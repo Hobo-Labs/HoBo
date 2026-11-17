@@ -103,9 +103,19 @@ the command waits. GitHub's separate PR batch admission still applies to
 Actions jobs.
 The command reports a runner choice but does not dispatch, relabel, cancel, or
 complete an Actions job. A missing container engine leaves container-dependent
-jobs out of the local signoff. The PR impact group is currently omitted even
-when Docker is available because its shadow classifier depends on a GitHub
-variable unavailable to the local runner.
+jobs out of the local signoff, including the coupled PR impact group. When a
+container engine is available, that group can be signed only when its trusted
+base policy, workflow and skipped classifier dependencies match the tested
+head. Classifier inputs must be regular tracked files, and tracked pnpm hooks,
+module trees, patches, or other unreviewed resolution paths cause the group to
+be omitted. The local run leaves out only the report-only shadow-classification steps;
+it still runs the covered checks. Local tools and installed dependencies must
+be trusted, and a new skip policy takes effect only after it reaches the base.
+The reviewed workflow and local plan are pinned in the verifier; changes to
+either require reviewing and updating those pins. Standalone runs, publication,
+and workflow reuse apply this protection too. If an older base or incomplete
+GitHub tree response cannot prove the policy, the PR impact group runs in
+Actions; independently covered jobs can still be reused.
 
 These are `signoff/hobo-ci/local/<event>/<job>` commit statuses, not GitHub
 Actions job results. They need GitHub API access and a pushed commit, but no

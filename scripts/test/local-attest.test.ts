@@ -22,6 +22,7 @@ import {
 	ATTESTATION_PREDICATE_TYPE,
 	ATTESTORS_PATH,
 	type AttestationEvent,
+	type AttestedJobResult,
 	keyIdOf,
 	parseAttestors,
 	parseEnvelope,
@@ -587,6 +588,7 @@ async function runIn(
 	},
 	initialFiles: Readonly<Record<string, string>> = {},
 	headFiles: Readonly<Record<string, string>> = {},
+	setupBase?: (repo: string) => void,
 ) {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const entry = trustEntryFor(privateKey, {
@@ -600,6 +602,7 @@ async function runIn(
 		[ATTESTORS_PATH]: JSON.stringify([entry]),
 		...initialFiles,
 	});
+	setupBase?.(repo);
 	git(repo, ["branch", "base"]);
 	const head = commit(repo, { "change.txt": "changed\n", ...headFiles });
 	const record = join(directory("record"), "record");
@@ -628,6 +631,351 @@ async function runIn(
 }
 
 describe("a local run", () => {
+	it("refuses caller-supplied target commits or merge parents that differ from the signed tree", async () => {
+		const run = await runIn(
+			[{ id: "ci-guard", steps: [{ run: "true", local: "run" }] }],
+			["pull_request"],
+		);
+		const outcome = await run.outcome;
+		const original = readFileSync(outcome.file, "utf8");
+		const reversed = git(run.repo, [
+			...IDENTITY,
+			"commit-tree",
+			run.target.tree,
+			"-p",
+			run.target.head,
+			"-p",
+			run.target.base,
+			"-m",
+			"reversed test parents",
+		]);
+		for (const changes of [
+			{ head: run.target.base },
+			{ base: run.target.head },
+			{ tree: run.target.baseTree },
+			{ baseTree: run.target.tree },
+			{ mergeCommit: reversed },
+		]) {
+			await assert.rejects(
+				runAttestedJobs({
+					target: { ...run.target, ...changes },
+					plan: buildPlan(
+						[{ id: "ci-guard", steps: [{ run: "true", local: "run" }] }],
+						"unused",
+					),
+					events: ["pull_request"],
+					skipJobs: [],
+					privateKey: run.privateKey,
+					engineVersion: () => "29.0.0-test",
+					toolVersions: () => ({ ...TEST_TOOLS }),
+				}),
+				/run target is inconsistent/u,
+			);
+		}
+		assert.equal(readFileSync(outcome.file, "utf8"), original);
+	});
+
+	it("direct callers cannot sign skipped classifiers against an older base", async () => {
+		const plan = parsePlan(
+			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
+		);
+		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		assert.ok(gate);
+		const reports = gate.steps.filter(
+			(step) => step.name === "Impact classification (shadow)",
+		);
+		assert.equal(reports.length, 2);
+		const oldPlan = JSON.parse(
+			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
+		);
+		const oldGate = oldPlan.jobs.find(
+			(job: { id: string }) => job.id === "pr_gate_validation",
+		);
+		for (const step of oldGate.steps.filter(
+			(entry: { name?: string }) =>
+				entry.name === "Impact classification (shadow)",
+		)) {
+			step.local = "run";
+			delete step.reason;
+		}
+		const run = await runIn(
+			[
+				{
+					id: "pr_gate_validation",
+					steps: [
+						reports[0],
+						{
+							name: "Required validation",
+							run: 'echo "validation:$GITHUB_EVENT_NAME" >> "$RECORD"',
+							local: "run",
+						},
+						reports[1],
+					],
+				},
+				{
+					id: "workspace_tests",
+					steps: [
+						{
+							name: "Workspace",
+							run: 'echo "workspace:$GITHUB_EVENT_NAME" >> "$RECORD"',
+							local: "run",
+						},
+					],
+				},
+				{
+					id: "pr_affected",
+					if: "github.event_name == 'pull_request'",
+					steps: [
+						{
+							name: "Affected",
+							run: 'echo "affected:$GITHUB_EVENT_NAME" >> "$RECORD"',
+							local: "run",
+						},
+					],
+				},
+				{
+					id: "ci-guard",
+					if: "github.event_name == 'pull_request'",
+					steps: [
+						{
+							name: "Guard",
+							run: 'echo "guard:$GITHUB_EVENT_NAME" >> "$RECORD"',
+							local: "run",
+						},
+					],
+				},
+			],
+			["pull_request", "merge_group"],
+			[],
+			false,
+			{ engine: "29.0.0-test" },
+			{ "scripts/ci/attested-jobs.json": JSON.stringify(oldPlan) },
+			{
+				"scripts/ci/attested-jobs.json": readFileSync(
+					"scripts/ci/attested-jobs.json",
+					"utf8",
+				),
+			},
+		);
+		const { envelope, notAttested } = await run.outcome;
+		assert.match(
+			notAttested.pr_gate_validation ?? "",
+			/policy.*differs from the base/u,
+		);
+		assert.ok(notAttested.workspace_tests);
+		assert.ok(notAttested.pr_affected);
+		assert.deepEqual(envelope.statement.jobs, ["ci-guard"]);
+		assert.deepEqual(run.lines(), ["guard:pull_request"]);
+	});
+
+	it("the standalone command records only independent jobs against an older base", () => {
+		const source = JSON.parse(
+			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
+		);
+		const gate = source.jobs.find(
+			(job: { id: string }) => job.id === "pr_gate_validation",
+		);
+		const headPlan = {
+			jobs: [
+				gate,
+				{
+					id: "ci-guard",
+					workflow: ".github/workflows/hobo-ci.yml",
+					workflowEnv: {},
+					env: {},
+					outputs: {},
+					steps: [{ name: "Independent", run: "true", local: "run" }],
+				},
+			],
+		};
+		const oldPlan = structuredClone(headPlan);
+		for (const step of oldPlan.jobs[0].steps.filter(
+			(entry: { name?: string }) =>
+				entry.name === "Impact classification (shadow)",
+		)) {
+			step.local = "run";
+			delete step.reason;
+		}
+		const path = "scripts/ci/attested-jobs.json";
+		const repo = repository({ [path]: JSON.stringify(oldPlan) });
+		git(repo, ["branch", "base"]);
+		commit(repo, { [path]: JSON.stringify(headPlan) });
+		const bin = directory("standalone-bin");
+		for (const name of ["pnpm", "docker"])
+			writeFileSync(join(bin, name), "#!/bin/sh\necho 29.0.0-test\n", {
+				mode: 0o755,
+			});
+		const key = join(directory("standalone-key"), "key.pem");
+		const run = spawnSync(
+			process.execPath,
+			[
+				"--experimental-strip-types",
+				"--no-warnings",
+				script,
+				"run",
+				"--base=base",
+				"--no-fetch",
+				"--events=pull_request",
+			],
+			{
+				cwd: repo,
+				encoding: "utf8",
+				env: {
+					...process.env,
+					PATH: `${bin}:${process.env.PATH ?? ""}`,
+					HOBO_CI_ATTESTOR_KEY: key,
+				},
+			},
+		);
+		assert.equal(run.status, 0, run.stderr);
+		assert.match(
+			run.stdout,
+			/local job policy for pr_gate_validation differs from the base/u,
+		);
+		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+		const record = parseEnvelope(
+			readFileSync(join(repo, OUTPUT_DIRECTORY, `${tree}.json`), "utf8"),
+		);
+		assert.deepEqual(record.statement.jobs, ["ci-guard"]);
+	});
+
+	it("direct callers cannot remove or rename a skip or substitute another group job", async () => {
+		const planPath = "scripts/ci/attested-jobs.json";
+		const workflowPath = ".github/workflows/hobo-ci.yml";
+		const sourceText = readFileSync(planPath, "utf8");
+		const source = JSON.parse(sourceText);
+		const actionPaths = [
+			"ci-runner-preflight",
+			"turbo-cache",
+			"pnpm-store",
+			"ci-trace",
+			"hobo-repo-checkout",
+			"hobo-checkout",
+		].map((name) => `.github/actions/${name}/action.yml`);
+		const files = {
+			[planPath]: sourceText,
+			[workflowPath]: readFileSync(workflowPath, "utf8"),
+			"scripts/ci/impact-classifier.mts": "export {};\n",
+			"scripts/ci/classifier-source.mts": "export {};\n",
+			"scripts/ci/affected-lanes.mts": "export {};\n",
+			"scripts/lib/read-stdin.mts": "export {};\n",
+			".gitattributes": "# checkout attributes\n",
+			"package.json": "{}\n",
+			"pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+			"pnpm-workspace.yaml": "packages: []\n",
+			...Object.fromEntries(
+				actionPaths.map((path) => [path, readFileSync(path, "utf8")]),
+			),
+		};
+		for (const variant of [
+			"removed",
+			"renamed",
+			"other-group-job",
+			"symlink",
+		]) {
+			const gate = structuredClone(
+				source.jobs.find(
+					(job: { id: string }) => job.id === "pr_gate_validation",
+				),
+			);
+			if (variant === "removed")
+				gate.steps = gate.steps.filter(
+					(step: { name?: string }) =>
+						step.name !== "Impact classification (shadow)",
+				);
+			if (variant === "renamed")
+				for (const step of gate.steps) {
+					if (step.name === "Impact classification (shadow)")
+						step.name = "Different report name";
+				}
+			const run = await runIn(
+				[
+					gate,
+					{ id: "workspace_tests", steps: [{ run: "true", local: "run" }] },
+					{ id: "pr_affected", steps: [{ run: "true", local: "run" }] },
+					{
+						id: "ci-guard",
+						steps: [{ run: 'echo "guard" >> "$RECORD"', local: "run" }],
+					},
+				],
+				["pull_request"],
+				[],
+				false,
+				{ engine: "29.0.0-test" },
+				files,
+				variant === "symlink"
+					? {
+							"scripts/ci/classifier-source.mts":
+								"// changed behind the same symlink\n",
+						}
+					: {},
+				variant === "symlink"
+					? (repo) => {
+							const path = join(repo, "scripts/ci/impact-classifier.mts");
+							rmSync(path);
+							symlinkSync("classifier-source.mts", path);
+							git(repo, ["add", "scripts/ci/impact-classifier.mts"]);
+							git(repo, [
+								...IDENTITY,
+								"commit",
+								"--quiet",
+								"-m",
+								"symlink fixture",
+							]);
+						}
+					: undefined,
+			);
+			const outcome = await run.outcome;
+			const rejected =
+				variant === "other-group-job"
+					? "workspace_tests"
+					: "pr_gate_validation";
+			assert.match(
+				outcome.notAttested.pr_gate_validation ?? "",
+				variant === "symlink"
+					? /classifier dependency.*unreviewed/u
+					: new RegExp(
+							`local job policy for ${rejected} differs from the base`,
+						),
+				variant,
+			);
+			assert.deepEqual(outcome.envelope.statement.jobs, ["ci-guard"], variant);
+			assert.deepEqual(run.lines(), ["guard"], variant);
+		}
+	});
+
+	it("omits the coupled PR jobs without a container engine after skipping reports", async () => {
+		const run = await runIn(
+			[
+				{
+					id: "pr_gate_validation",
+					steps: [{ name: "Validation", run: "true", local: "run" }],
+				},
+				{
+					id: "workspace_tests",
+					steps: [{ name: "Workspace", run: "true", local: "run" }],
+				},
+				{
+					id: "pr_affected",
+					steps: [{ name: "Affected", run: "true", local: "run" }],
+				},
+				{
+					id: "ci-guard",
+					steps: [{ name: "Independent guard", run: "true", local: "run" }],
+				},
+			],
+			["pull_request"],
+			[],
+			false,
+			{},
+		);
+		const { envelope, notAttested } = await run.outcome;
+		assert.deepEqual(envelope.statement.jobs, ["ci-guard"]);
+		for (const id of ["pr_gate_validation", "workspace_tests", "pr_affected"]) {
+			assert.ok(notAttested[id], `${id} must be omitted`);
+		}
+	});
+
 	it("keeps undeclared Git graph variables out of workflow steps", async () => {
 		const run = await runIn(
 			[
@@ -828,7 +1176,10 @@ describe("a local run", () => {
 		// keys trusted at the base commit.
 		assert.equal(file, join(run.repo, OUTPUT_DIRECTORY, `${target.tree}.json`));
 		assert.deepEqual(parseEnvelope(readFileSync(file, "utf8")), envelope);
-		for (const event of ["pull_request", "merge_group"])
+		for (const [event, expected] of [
+			["pull_request", true],
+			["merge_group", false],
+		] as const)
 			assert.equal(
 				verifyLocally({
 					cwd: run.repo,
@@ -837,7 +1188,7 @@ describe("a local run", () => {
 					envelopeText: readFileSync(file, "utf8"),
 					nowMs: Date.now(),
 				}).attested,
-				true,
+				expected,
 			);
 		// Each job's log is kept and is what the digest is of.
 		const log = readFileSync(
@@ -877,11 +1228,7 @@ describe("a local run", () => {
 				envelopeText: readFileSync(file, "utf8"),
 				nowMs: Date.now(),
 			});
-		assert.deepEqual(verify("merge_group"), {
-			attested: true,
-			jobs: ["pr_gate_validation", "workspace_tests"],
-			attestor: run.keyId,
-		});
+		assert.equal(verify("merge_group").attested, false);
 		assert.equal(verify("pull_request").attested, false);
 	});
 
@@ -1553,6 +1900,15 @@ describe("local gh-signoff", () => {
 				readFileSync(join(sourceRoot, path), "utf8"),
 			]),
 		);
+		Object.assign(files, {
+			"scripts/ci/impact-classifier.mts": "export {};\n",
+			"scripts/ci/affected-lanes.mts": "export {};\n",
+			"scripts/lib/read-stdin.mts": "export {};\n",
+			".gitattributes": "# checkout attributes\n",
+			"package.json": '{"name":"signoff-fixture","private":true}\n',
+			"pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+			"pnpm-workspace.yaml": "packages: []\n",
+		});
 		if (drift) {
 			const path = ".github/workflows/hobo-ci.yml";
 			files[path] = (files[path] ?? "").replace(
@@ -1560,18 +1916,6 @@ describe("local gh-signoff", () => {
 				"  ci-guard:\n    env:\n      HOBO_SIGNOFF_DRIFT: test\n",
 			);
 		}
-		// Most signoff tests exercise an otherwise identical trusted workflow
-		// with a known shadow value. A separate regression keeps the real,
-		// unavailable variable to test the current gate's conservative refusal.
-		if (!useRealGate)
-			for (const path of [
-				"scripts/ci/attested-jobs.json",
-				".github/workflows/hobo-ci.yml",
-			])
-				files[path] = (files[path] ?? "").replaceAll(
-					"vars.HOBO_IMPACT_GATE",
-					"'shadow'",
-				);
 		mutateFiles?.(files);
 		const run = await runIn(
 			jobs,
@@ -1582,7 +1926,44 @@ describe("local gh-signoff", () => {
 			files,
 			headFiles,
 		);
-		const outcome = await run.outcome;
+		const executed = await run.outcome;
+		const gateResults: AttestedJobResult[] = hasEngine
+			? ["pr_gate_validation", "workspace_tests", "pr_affected"].map((id) => {
+					const events: AttestationEvent[] =
+						id === "pr_affected"
+							? ["pull_request"]
+							: ["pull_request", "merge_group"];
+					return {
+						id,
+						status: "passed",
+						events,
+						commands: events.length,
+						eventChecks:
+							id === "pr_affected"
+								? { pull_request: 1 }
+								: { pull_request: 1, merge_group: 1 },
+						executionMode: "each-step-v1",
+						durationMs: 1,
+						logDigest: `sha256:${"f".repeat(64)}`,
+					};
+				})
+			: [];
+		const results = [
+			...gateResults,
+			...executed.envelope.statement.results.filter(
+				(result) => !gateResults.some((gate) => gate.id === result.id),
+			),
+		];
+		const envelope = signStatement(
+			{
+				...executed.envelope.statement,
+				jobs: results.map((result) => result.id),
+				results,
+			},
+			run.privateKey,
+		);
+		writeFileSync(executed.file, JSON.stringify(envelope));
+		const outcome = { ...executed, envelope };
 		const remote = directory("signoff-remote");
 		git(remote, ["init", "--bare", "--quiet"]);
 		git(run.repo, ["remote", "add", "origin", remote]);
@@ -1772,6 +2153,76 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			HOBO_SIGNOFF_TEST_GH_HEAD: head,
 		});
 	}
+
+	it("publishes and locally verifies the group when the reviewed base policy matches", async () => {
+		const run = await fixture();
+		const envelopeText = readFileSync(run.file, "utf8");
+		const verdict = verifyLocally({
+			cwd: run.repo,
+			baseRef: "origin/main",
+			event: "pull_request",
+			envelopeText,
+			nowMs: Date.now(),
+		});
+		assert.equal(verdict.attested, true);
+		if (verdict.attested)
+			assert.ok(verdict.jobs.includes("pr_gate_validation"));
+		const result = publishAttestation({
+			cwd: run.repo,
+			remote: "origin",
+			envelopeText,
+		});
+		assert.equal(result.path, `attestations/${run.target.tree}.json`);
+	});
+
+	it("refuses to publish a group record against an older base while keeping independent verification", async () => {
+		const path = "scripts/ci/attested-jobs.json";
+		const headPlan = readFileSync(path, "utf8");
+		const run = await fixture(
+			true,
+			false,
+			[],
+			(files) => {
+				const oldPlan = JSON.parse(files[path] ?? "");
+				const gate = oldPlan.jobs.find(
+					(job: { id: string }) => job.id === "pr_gate_validation",
+				);
+				for (const step of gate.steps.filter(
+					(entry: { name?: string }) =>
+						entry.name === "Impact classification (shadow)",
+				)) {
+					step.local = "run";
+					delete step.reason;
+				}
+				files[path] = JSON.stringify(oldPlan);
+			},
+			"",
+			false,
+			{ [path]: headPlan },
+		);
+		const envelopeText = readFileSync(run.file, "utf8");
+		const verdict = verifyLocally({
+			cwd: run.repo,
+			baseRef: "origin/main",
+			event: "pull_request",
+			envelopeText,
+			nowMs: Date.now(),
+		});
+		assert.equal(verdict.attested, true);
+		if (verdict.attested) {
+			assert.ok(verdict.jobs.includes("ci-guard"));
+			assert.ok(!verdict.jobs.includes("pr_gate_validation"));
+		}
+		assert.throws(
+			() =>
+				publishAttestation({ cwd: run.repo, remote: "origin", envelopeText }),
+			/not publishing: the trusted shadow classifier workflow or policy changed/u,
+		);
+		assert.equal(
+			git(run.repo, ["ls-remote", "origin", "refs/heads/ci-attestations"]),
+			"",
+		);
+	});
 
 	it("posts only the passed pull-request jobs for the exact pushed head", async () => {
 		const run = await fixture();
@@ -2646,7 +3097,7 @@ exec /usr/bin/git "$@"
 	});
 
 	it("refuses a covered job whose workflow has drifted from its local description", async () => {
-		const run = await fixture(true, true);
+		const run = await fixture(false, true);
 		const result = run.command();
 		assert.notEqual(result.status, 0);
 		assert.match(result.stderr, /workflow job ci-guard differs/u);
@@ -2721,7 +3172,7 @@ exec /usr/bin/git "$@"
 	});
 
 	it("refuses changed skip metadata and a removed release-image guard", async () => {
-		const guardRun = await fixture();
+		const guardRun = await fixture(false);
 		const planPath = "scripts/ci/attested-jobs.json";
 		const plan = JSON.parse(
 			readFileSync(join(guardRun.repo, planPath), "utf8"),
@@ -2741,7 +3192,7 @@ exec /usr/bin/git "$@"
 		assert.match(skipped.stderr, /local job policy for ci-guard differs/u);
 		assert.equal(existsSync(guardRun.calls), false);
 
-		const releaseRun = await fixture(true, false, ["release-contract"]);
+		const releaseRun = await fixture(false, false, ["release-contract"]);
 		const releasePlan = JSON.parse(
 			readFileSync(join(releaseRun.repo, planPath), "utf8"),
 		);
@@ -2862,7 +3313,7 @@ exec /usr/bin/git "$@"
 		assert.equal(existsSync(run.calls), false);
 	});
 
-	it("refuses the unknown shadow variable even when a changed classifier injects later step environment", async () => {
+	it("refuses a changed skipped classifier that can affect later step environment", async () => {
 		const path = "scripts/ci/impact-classifier.mts";
 		const baseline = (files: Record<string, string>) => {
 			files[path] = "export {};\n";
@@ -2873,12 +3324,32 @@ appendFileSync(process.env.GITHUB_ENV, "SHADOW_MARKER=1\\n");
 console.log("changed classifier set GITHUB_ENV");
 `,
 		};
+		const simulation = await runIn(
+			[
+				{
+					id: "pr_gate_validation",
+					steps: [
+						{ run: "node scripts/ci/impact-classifier.mts", local: "run" },
+						{ run: 'test "$SHADOW_MARKER" = 1', local: "run" },
+					],
+				},
+				{ id: "workspace_tests", steps: [{ run: "true", local: "run" }] },
+				{ id: "pr_affected", steps: [{ run: "true", local: "run" }] },
+			],
+			["pull_request"],
+			[],
+			false,
+			{ engine: "29.0.0-test" },
+			{ [path]: "export {};\n" },
+			injected,
+		);
+		await simulation.outcome;
 		const full = await fixture(true, false, [], baseline, "", true, injected);
 		const log = readFileSync(
 			join(
-				full.repo,
+				simulation.repo,
 				OUTPUT_DIRECTORY,
-				full.target.tree,
+				simulation.target.tree,
 				"pr_gate_validation.log",
 			),
 			"utf8",
@@ -2886,7 +3357,10 @@ console.log("changed classifier set GITHUB_ENV");
 		assert.match(log, /changed classifier set GITHUB_ENV/u);
 		const denied = full.command();
 		assert.notEqual(denied.status, 0);
-		assert.match(denied.stderr, /GitHub values unavailable locally/u);
+		assert.match(
+			denied.stderr,
+			/skipped shadow classifier dependency or its resolution changed/u,
+		);
 		assert.equal(existsSync(full.calls), false);
 
 		// With the PR impact group omitted, independent jobs can still sign off.
@@ -2907,6 +3381,147 @@ console.log("changed classifier set GITHUB_ENV");
 			calls,
 			/pr_gate_validation|workspace_tests|pr_affected/u,
 		);
+	});
+
+	it("refuses changes to a skipped classifier dependency or resolution input", async () => {
+		for (const path of [
+			"scripts/ci/affected-lanes.mts",
+			"scripts/lib/read-stdin.mts",
+			".gitattributes",
+			"package.json",
+			"pnpm-lock.yaml",
+			"pnpm-workspace.yaml",
+			".npmrc",
+			".pnpmfile.cjs",
+			"scripts/ci/.gitattributes",
+			"patches/typescript.patch",
+		]) {
+			const run = await fixture();
+			const file = join(run.repo, path);
+			const original = existsSync(file) ? readFileSync(file, "utf8") : "";
+			const result = rebindToChangedHead(run, {
+				[path]: `${original}\n# changed\n`,
+			});
+			assert.notEqual(result.status, 0, path);
+			assert.match(
+				result.stderr,
+				/skipped shadow classifier dependency or its resolution changed/u,
+				path,
+			);
+			assert.equal(existsSync(run.calls), false, path);
+		}
+	});
+
+	it("refuses unreviewed resolution inputs even when they are unchanged", async () => {
+		for (const path of [
+			".npmrc",
+			".pnpmfile.cjs",
+			"patches/typescript.patch",
+		]) {
+			const run = await fixture(true, false, [], (files) => {
+				files[path] = "# unreviewed input at base and head\n";
+			});
+			const result = run.command();
+			assert.notEqual(result.status, 0, path);
+			assert.match(result.stderr, /classifier dependency.*unreviewed/u, path);
+			assert.equal(existsSync(run.calls), false, path);
+		}
+	});
+
+	it("refuses a tracked module added on the classifier resolution path", async () => {
+		const run = await fixture();
+		const path = "scripts/ci/node_modules/typescript/index.js";
+		mkdirSync(join(run.repo, path, ".."), { recursive: true });
+		writeFileSync(join(run.repo, path), "module.exports = {};\n");
+		git(run.repo, ["add", "--force", path]);
+		const result = rebindToChangedHead(run, {
+			"another-change.txt": "change\n",
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/skipped shadow classifier dependency or its resolution changed/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a required classifier input missing from the trusted base", async () => {
+		const missing = "scripts/lib/read-stdin.mts";
+		const run = await fixture(true, false, [], (files) => {
+			delete files[missing];
+		});
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/skipped shadow classifier dependency or its resolution changed or is missing at the base/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("does not let a head-only policy authorize its own classifier skips", async () => {
+		const path = "scripts/ci/attested-jobs.json";
+		const headPlan = readFileSync(path, "utf8");
+		const run = await fixture(
+			true,
+			false,
+			[],
+			(files) => {
+				const base = JSON.parse(files[path] ?? "");
+				const gate = base.jobs.find(
+					(job: { id: string }) => job.id === "pr_gate_validation",
+				);
+				for (const step of gate.steps.filter(
+					(entry: { name?: string }) =>
+						entry.name === "Impact classification (shadow)",
+				)) {
+					step.local = "run";
+					delete step.reason;
+				}
+				files[path] = JSON.stringify(base);
+			},
+			"",
+			false,
+			{ [path]: headPlan },
+		);
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/local job policy for pr_gate_validation differs from the base/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a skipped classifier input deleted from the tested head", async () => {
+		const run = await fixture();
+		rmSync(join(run.repo, "scripts/lib/read-stdin.mts"));
+		const result = rebindToChangedHead(run, {
+			"another-change.txt": "change\n",
+		});
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/skipped shadow classifier dependency or its resolution changed/u,
+		);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses trusted workflow changes that could consume a shadow report", async () => {
+		const run = await fixture(true, false, [], (files) => {
+			const path = ".github/workflows/hobo-ci.yml";
+			files[path] = (files[path] ?? "").replace(
+				"run: pnpm run lint:code",
+				'run: cat "$RUNNER_TEMP/impact-plan.json" && pnpm run lint:code',
+			);
+		});
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/trusted shadow classifier workflow or policy changed/u,
+		);
+		assert.equal(existsSync(run.calls), false);
 	});
 
 	it("encodes branch slashes when checking the GitHub base", async () => {

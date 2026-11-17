@@ -72,6 +72,37 @@ export const NEEDS_CONTAINER_ENGINE: readonly CoveredJob[] = [
 	"workspace_tests",
 ];
 
+export const SHADOW_WORKFLOW_BLOB = "42ebe2331dbb1e8181a91b6419caeb499472e42c";
+export const SHADOW_PLAN_BLOB = "52d2e041eceb031445f0872433d4d10ed4fa3469";
+export const SHADOW_WORKFLOW_PATH = ".github/workflows/hobo-ci.yml";
+export const SHADOW_PLAN_PATH = "scripts/ci/attested-jobs.json";
+export const SHADOW_REQUIRED_PATHS = [
+	"scripts/ci/impact-classifier.mts",
+	"scripts/ci/affected-lanes.mts",
+	"scripts/lib/read-stdin.mts",
+	".gitattributes",
+	"package.json",
+	"pnpm-lock.yaml",
+	"pnpm-workspace.yaml",
+] as const;
+export const SHADOW_RESOLUTION_PATHS = [
+	".npmrc",
+	".pnpmfile.cjs",
+	"pnpmfile.cjs",
+	".pnp.cjs",
+	".pnp.loader.mjs",
+	".yarnrc.yml",
+	"package-lock.json",
+	"yarn.lock",
+	"patches",
+	"node_modules",
+	"scripts/node_modules",
+	"scripts/ci/node_modules",
+	"scripts/.gitattributes",
+	"scripts/ci/.gitattributes",
+	"scripts/lib/.gitattributes",
+] as const;
+
 /**
  * Jobs that examine commits, not a tree: the secret scan reads every commit
  * between the base and the head. Two histories can end in the same tree, so
@@ -542,6 +573,21 @@ export function signStatement(
 export type AttestationVerdict =
 	| Readonly<{ attested: true; jobs: readonly CoveredJob[]; attestor: string }>
 	| Readonly<{ attested: false; reason: string }>;
+
+export function omitImpactGroup(
+	verdict: AttestationVerdict,
+): AttestationVerdict {
+	if (!verdict.attested || !verdict.jobs.includes("pr_gate_validation"))
+		return verdict;
+	const jobs = verdict.jobs.filter((job) => !GATE_JOBS.includes(job));
+	return jobs.length > 0
+		? { ...verdict, jobs }
+		: {
+				attested: false,
+				reason:
+					"the PR impact group's shadow policy or dependencies could not be verified",
+			};
+}
 
 const refused = (reason: string): AttestationVerdict => ({
 	attested: false,

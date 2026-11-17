@@ -18,9 +18,16 @@ import {
 	asObject,
 	asText,
 	COVERED_JOBS,
+	GATE_JOBS,
 	type JsonValue,
 	keyIdOf,
 	publicKeyText,
+	SHADOW_PLAN_BLOB,
+	SHADOW_PLAN_PATH,
+	SHADOW_REQUIRED_PATHS,
+	SHADOW_RESOLUTION_PATHS,
+	SHADOW_WORKFLOW_BLOB,
+	SHADOW_WORKFLOW_PATH,
 	signStatement,
 } from "../ci/attestation.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
@@ -109,10 +116,39 @@ function api(files: Readonly<Record<string, JsonValue>>) {
 const attestationAt = `/repos/acme/app/contents/attestations/${TREE}.json?ref=ci-attestations`;
 const attestorsAtBase = `/repos/acme/app/contents/.hobo/ci-attestors.json?ref=${BASE_SHA}`;
 const baseCommit = `/repos/acme/app/git/commits/${BASE_SHA}`;
+const baseTreePath = `/repos/acme/app/git/trees/${BASE_TREE}?recursive=1`;
+const testedTreePath = `/repos/acme/app/git/trees/${TREE}?recursive=1`;
+const shadowEntries = [
+	{
+		path: SHADOW_PLAN_PATH,
+		sha: SHADOW_PLAN_BLOB,
+		type: "blob",
+		mode: "100644",
+	},
+	{
+		path: SHADOW_WORKFLOW_PATH,
+		sha: SHADOW_WORKFLOW_BLOB,
+		type: "blob",
+		mode: "100644",
+	},
+	...SHADOW_REQUIRED_PATHS.map((path) => ({
+		path,
+		sha: "1".repeat(40),
+		type: "blob",
+		mode: "100644",
+	})),
+];
+const treeAnswer = (sha: string, entries = shadowEntries): JsonValue => ({
+	sha,
+	truncated: false,
+	tree: entries,
+});
 const published = {
 	[attestationAt]: file(JSON.stringify(envelope)),
 	[attestorsAtBase]: file(JSON.stringify(trusted)),
 	[baseCommit]: { sha: BASE_SHA, tree: { sha: BASE_TREE } },
+	[baseTreePath]: treeAnswer(BASE_TREE),
+	[testedTreePath]: treeAnswer(TREE),
 };
 
 /** `head` is the event's head commit; "none" for an event that names none. */
@@ -197,6 +233,187 @@ describe("verifying through the API", () => {
 			jobs: COVERED_JOBS.filter((job) => job !== "secret-scan"),
 			attestor: trusted[0]?.id,
 		});
+	});
+
+	it("keeps independent jobs but reruns the group for an older base policy", async () => {
+		const oldBase = shadowEntries.map((entry) =>
+			entry.path === SHADOW_PLAN_PATH
+				? { ...entry, sha: "2".repeat(40) }
+				: entry,
+		);
+		for (const event of ["pull_request", "merge_group"]) {
+			const verdict = await check(
+				api({
+					...published,
+					[baseTreePath]: treeAnswer(BASE_TREE, oldBase),
+				}).read,
+				event,
+				event === "merge_group" ? "none" : HEAD_SHA,
+			);
+			assert.equal(verdict.attested, true);
+			if (verdict.attested)
+				assert.deepEqual(
+					verdict.jobs,
+					COVERED_JOBS.filter(
+						(job) =>
+							!GATE_JOBS.includes(job) &&
+							!(event === "merge_group" && job === "secret-scan"),
+					),
+				);
+		}
+	});
+
+	it("reruns the group if either tree has an unreviewed workflow or plan", async () => {
+		for (const path of [SHADOW_PLAN_PATH, SHADOW_WORKFLOW_PATH]) {
+			for (const changedTree of [baseTreePath, testedTreePath, "both"]) {
+				const changed = shadowEntries.map((entry) =>
+					entry.path === path ? { ...entry, sha: "2".repeat(40) } : entry,
+				);
+				const overrides = new Map<string, JsonValue>();
+				if (changedTree !== testedTreePath)
+					overrides.set(baseTreePath, treeAnswer(BASE_TREE, changed));
+				if (changedTree !== baseTreePath)
+					overrides.set(testedTreePath, treeAnswer(TREE, changed));
+				const verdict = await check(
+					api({
+						...published,
+						...Object.fromEntries(overrides),
+					}).read,
+				);
+				assert.equal(verdict.attested, true, `${path} ${changedTree}`);
+				if (verdict.attested)
+					assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)));
+			}
+		}
+	});
+
+	it("reruns the group when a required input is missing or changed", async () => {
+		for (const path of SHADOW_REQUIRED_PATHS) {
+			for (const entries of [
+				shadowEntries.filter((entry) => entry.path !== path),
+				shadowEntries.map((entry) =>
+					entry.path === path ? { ...entry, sha: "2".repeat(40) } : entry,
+				),
+			]) {
+				for (const treePath of [baseTreePath, testedTreePath]) {
+					const verdict = await check(
+						api({
+							...published,
+							[treePath]: treeAnswer(
+								treePath === baseTreePath ? BASE_TREE : TREE,
+								entries,
+							),
+						}).read,
+					);
+					assert.equal(verdict.attested, true, `${path} ${treePath}`);
+					if (verdict.attested)
+						assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)));
+				}
+			}
+		}
+	});
+
+	it("reruns the group when a classifier resolution input appears or changes", async () => {
+		for (const path of SHADOW_RESOLUTION_PATHS) {
+			const added = [
+				...shadowEntries,
+				{ path, sha: "2".repeat(40), type: "blob", mode: "100644" },
+			];
+			const verdict = await check(
+				api({ ...published, [testedTreePath]: treeAnswer(TREE, added) }).read,
+			);
+			assert.equal(verdict.attested, true, path);
+			if (verdict.attested)
+				assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)), path);
+			const unchanged = await check(
+				api({
+					...published,
+					[baseTreePath]: treeAnswer(BASE_TREE, added),
+					[testedTreePath]: treeAnswer(TREE, added),
+				}).read,
+			);
+			assert.equal(unchanged.attested, true, path);
+			if (unchanged.attested)
+				assert.ok(!unchanged.jobs.some((job) => GATE_JOBS.includes(job)), path);
+		}
+	});
+
+	it("reruns the group when an unchanged required input is a symlink", async () => {
+		for (const path of SHADOW_REQUIRED_PATHS) {
+			const linked = shadowEntries.map((entry) =>
+				entry.path === path ? { ...entry, mode: "120000" } : entry,
+			);
+			const verdict = await check(
+				api({
+					...published,
+					[baseTreePath]: treeAnswer(BASE_TREE, linked),
+					[testedTreePath]: treeAnswer(TREE, linked),
+				}).read,
+			);
+			assert.equal(verdict.attested, true, path);
+			if (verdict.attested)
+				assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)), path);
+		}
+	});
+
+	it("reruns the group when a tree is unavailable, truncated, malformed, or duplicated", async () => {
+		const badAnswers: (JsonValue | undefined)[] = [
+			undefined,
+			{ sha: TREE, truncated: true, tree: shadowEntries },
+			{ sha: TREE, tree: shadowEntries },
+			{ sha: "f".repeat(40), truncated: false, tree: shadowEntries },
+			{
+				sha: TREE,
+				truncated: false,
+				tree: [...shadowEntries, shadowEntries[0] ?? null],
+			},
+			{
+				sha: TREE,
+				truncated: false,
+				tree: shadowEntries.map((entry) => ({ ...entry, mode: null })),
+			},
+		];
+		for (const answer of badAnswers) {
+			const verdict = await check(
+				api({ ...published, [testedTreePath]: answer ?? null }).read,
+			);
+			assert.equal(verdict.attested, true);
+			if (verdict.attested)
+				assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)));
+		}
+		const { [testedTreePath]: _missing, ...withoutTree } = published;
+		const verdict = await check(api(withoutTree).read);
+		assert.equal(verdict.attested, true);
+		if (verdict.attested)
+			assert.ok(!verdict.jobs.some((job) => GATE_JOBS.includes(job)));
+		const { [baseTreePath]: _missingBase, ...withoutBaseTree } = published;
+		const withoutBase = await check(api(withoutBaseTree).read);
+		assert.equal(withoutBase.attested, true);
+		if (withoutBase.attested)
+			assert.ok(!withoutBase.jobs.some((job) => GATE_JOBS.includes(job)));
+	});
+
+	it("reports no attestation when the group is the only claimed coverage and its policy is unverified", async () => {
+		const groupOnly = signStatement(
+			{
+				...envelope.statement,
+				jobs: GATE_JOBS,
+				results: envelope.statement.results.filter((result) =>
+					GATE_JOBS.some((job) => job === result.id),
+				),
+			},
+			privateKey,
+		);
+		const verdict = await check(
+			api({
+				...published,
+				[attestationAt]: file(JSON.stringify(groupOnly)),
+				[testedTreePath]: { sha: TREE, truncated: true, tree: [] },
+			}).read,
+		);
+		assert.equal(verdict.attested, false);
+		if (!verdict.attested)
+			assert.match(verdict.reason, /shadow policy or dependencies/u);
 	});
 
 	it("still runs the secret scan for another history that ends in the same tree", async () => {

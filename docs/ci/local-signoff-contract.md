@@ -96,7 +96,8 @@ evidence; they cannot override a pin, healthy pickup, or failed queue read.
 | A local check fails, is interrupted, or changes tracked files | Fail the run; no new signoff is posted. Once a run starts it removes its earlier local record for that tree |
 | Missing container engine or intentionally omitted jobs | Omit affected jobs, including the coupled PR impact group where applicable; do not report those jobs successful |
 | Unknown GitHub values, a changed skipped action or helper, or no command executed for a job/event/shard | Omit or refuse the affected job; never claim coverage from a skipped check |
-| A record predates per-event, individually executed command evidence | Rerun it before direct signoff; existing workflow-reuse verification remains compatible |
+| A record predates per-event, individually executed command evidence | Rerun it before direct signoff; workflow reuse can still accept independent jobs and accepts the PR impact group only with the reviewed shadow policy and dependencies |
+| Older base, changed workflow or local plan, classifier dependency or resolution input, or incomplete GitHub tree response | Omit the coupled PR impact group; independently covered jobs remain eligible. A record that claims the unverified group cannot be published |
 | GitHub status write fails partway through | Report failure; some individual statuses may already exist. Inspect GitHub before retrying |
 | Base moves or a retry fails on the same SHA | Existing GitHub statuses do not automatically expire or disappear. Update the branch, rerun, and inspect old statuses |
 
@@ -111,9 +112,28 @@ the current live remote base and requested event, and equality between each
 reported job, its workflow, and the trusted base policy. It verifies that the
 GitHub target matches the base remote and that GitHub's live base matches the
 tested base. Commands are executed individually, including repeated commands;
-Turbo may still reuse its own cache unless `--fresh` is specified. The current
-PR impact group is omitted because its shadow classifier depends on a GitHub
-variable unavailable locally, even when a container engine is available.
+Turbo may still reuse its own cache unless `--fresh` is specified. The two
+shadow-classification steps are report-only and are omitted locally. Before
+signing the PR impact group, HoBo checks the trusted workflow wiring and refuses
+if the classifier or its imports are missing, symlinked, or changed. It also
+refuses tracked pnpm hooks, module trees, patches, and other unreviewed
+dependency-resolution paths, even when unchanged; these can refer to code
+outside their own path.
+The exact reviewed workflow and local-plan blobs must already be present at
+both the tested base and head; with an unchanged verifier, a PR cannot
+authorize its own skipped steps.
+Changes to either file require reviewing and updating these pins. The current
+Actions workflow loads the route action and verifier from the tested checkout,
+so the pin checks alone do not defend against a change to that verification
+chain. Review changes to the workflow and verifier, or enforce them through a
+separately protected workflow. Workflow reuse verifies the base and tested
+trees through the GitHub API. Missing,
+truncated, or invalid tree responses cause the group to run in Actions; they
+do not invalidate independently covered jobs. Old records with an earlier
+base likewise lose only that group, even if their local run executed the
+classifiers. The checks assume the local and CI toolchains and their
+installed dependencies are trusted. A missing container engine still omits
+the coupled PR impact group.
 The extension requires a pushed commit and a credential allowed to write commit
 statuses. These statuses use the credential's authority, rather than the
 base-branch trust list used for workflow-reuse attestations. Local commands run
