@@ -1,4 +1,22 @@
 import type { BindleForAlchemy, PrimitiveDeclaration } from "./bindle.js";
+import {
+	CLOUDFLARE_KV_MAX_VALUE_BYTES,
+	CloudflareKvError,
+	type CloudflareKvGrant,
+	type CloudflareKvMode,
+	cloudflareEventualKv,
+	cloudflareKvGrant,
+	encodeCloudflareKvKey,
+	readCloudflareKvBytes,
+} from "./cloudflare-kv-protocol.js";
+
+export {
+	CLOUDFLARE_KV_MAX_KEY_BYTES,
+	CLOUDFLARE_KV_MAX_VALUE_BYTES,
+	CloudflareKvError,
+	type CloudflareKvGrant,
+	type CloudflareKvMode,
+} from "./cloudflare-kv-protocol.js";
 
 type Json =
 	| string
@@ -31,12 +49,19 @@ export type CloudflareBindleEntrypoint = (
 	context?: CloudflareBindleContext,
 ) => EntrypointResult;
 
-export interface CloudflareBindingDescriptor {
+export type CloudflareBindingDescriptor = {
 	readonly name: string;
-	readonly kind: "service";
 	readonly env: string;
 	readonly allow: readonly string[];
-}
+} & (
+	| { readonly kind: "service" }
+	| {
+			readonly kind: "kv";
+			readonly mode: CloudflareKvMode;
+			readonly grantEpoch: string;
+			readonly namespaceEpoch: string;
+	  }
+);
 
 export interface CloudflareWorkerDescription {
 	readonly bindleName: string;
@@ -58,10 +83,73 @@ export interface CloudflareService {
 
 export interface CloudflareResources {
 	service(name: string): CloudflareService;
+	/** Native JavaScript subset; reads are eventually consistent and WASI guests are not wired. */
+	kv(name: string): CloudflareKvStore;
+}
+
+export interface CloudflareKvStore {
+	get(key: string): Promise<Uint8Array | undefined>;
+	exists(key: string): Promise<boolean>;
+	set(entry: {
+		readonly key: string;
+		readonly value: Uint8Array;
+	}): Promise<void>;
+	delete(key: string): Promise<void>;
 }
 
 const contexts = new WeakMap<object, CloudflareResources>();
 const workers = new WeakMap<object, CloudflareWorkerDescription>();
+
+/**
+ * Attach target-specific KV choices to an adapter view of a provider-neutral
+ * Bindle. The original Bindle remains unchanged and can be routed elsewhere.
+ */
+export function withCloudflareEventualKv<Requirements>(
+	bindle: BindleForAlchemy<CloudflareBindleEntrypoint, Requirements>,
+	modes: Readonly<Record<string, CloudflareKvGrant>>,
+): BindleForAlchemy<CloudflareBindleEntrypoint, Requirements> {
+	const choices = Object.getOwnPropertyDescriptors(modes);
+	if (
+		Object.getOwnPropertySymbols(modes).length !== 0 ||
+		Object.keys(choices).length === 0 ||
+		Object.keys(choices).length > 256
+	)
+		throw new Error("explicit KV target choices must be bounded and nonempty");
+	const declarations: Record<string, PrimitiveDeclaration> =
+		Object.create(null);
+	for (const [resourceName, declaration] of Object.entries(bindle.resources)) {
+		const choice = choices[resourceName];
+		if (choice === undefined) {
+			declarations[resourceName] = declaration;
+			continue;
+		}
+		if (
+			!("value" in choice) ||
+			!choice.enumerable ||
+			declaration.kind !== "kv" ||
+			declaration.annotations.length !== 0
+		)
+			throw new Error(
+				"KV target choice does not match an unannotated KV resource",
+			);
+		declarations[resourceName] = Object.freeze({
+			...declaration,
+			annotations: Object.freeze([cloudflareEventualKv(choice.value)]),
+		});
+	}
+	if (Object.keys(choices).some((key) => !Object.hasOwn(declarations, key)))
+		throw new Error("KV target choice names an unknown resource");
+	const view = {
+		name: bindle.name,
+		resources: Object.freeze(declarations),
+		edges: bindle.edges,
+		requirements: bindle.requirements,
+		entrypoint: (resourceName: string) => bindle.entrypoint(resourceName),
+	};
+	return bindle.connectors === undefined
+		? Object.freeze(view)
+		: Object.freeze({ ...view, connectors: bindle.connectors });
+}
 
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get, anti-slop/no-reflect-apply -- SAFETY: Workers supplies an external env record; each selected binding and method is checked before invocation. */
 export type CloudflareEnvironment = Readonly<Record<string, unknown>>;
@@ -118,6 +206,114 @@ function resources(
 				},
 			};
 		},
+		kv(name) {
+			const binding = find(name, "kv");
+			const perform = async (
+				operation: "get" | "set" | "delete",
+				key: string,
+				value?: Uint8Array,
+			): Promise<Response> => {
+				if (!binding.allow.includes(operation))
+					throw new CloudflareKvError(
+						"KV_OPERATION_DENIED",
+						`operation is not allowed: ${operation}`,
+					);
+				const encoded = encodeCloudflareKvKey(key);
+				if (
+					operation === "set" &&
+					(!(value instanceof Uint8Array) ||
+						value.byteLength > CLOUDFLARE_KV_MAX_VALUE_BYTES)
+				)
+					throw new CloudflareKvError(
+						"KV_VALUE_INVALID",
+						"value must be bounded bytes",
+					);
+				const body =
+					value === undefined ? undefined : new Uint8Array(value).buffer;
+				const controller = new AbortController();
+				const init: RequestInit = {
+					method: "POST",
+					headers: { "x-hobo-kv-key": encoded },
+					signal: controller.signal,
+				};
+				if (body !== undefined) init.body = body;
+				const request = new Request(
+					`https://hobo-kv.internal/${operation}`,
+					init,
+				);
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				try {
+					const proxy = environment[binding.env];
+					if (typeof proxy !== "object" || proxy === null)
+						throw new Error("service unavailable");
+					const fetch = Reflect.get(proxy, "fetch");
+					if (typeof fetch !== "function")
+						throw new Error("service unavailable");
+					const response = await Promise.race([
+						Reflect.apply(fetch, proxy, [request]),
+						new Promise<never>((_, reject) => {
+							timer = setTimeout(() => {
+								controller.abort();
+								reject(new Error("service timed out"));
+							}, 10_000);
+						}),
+					]);
+					if (!(response instanceof Response))
+						throw new Error("invalid service response");
+					if (
+						response.status !== 204 &&
+						!(
+							operation === "get" &&
+							(response.status === 200 || response.status === 404)
+						)
+					)
+						throw new Error("service request failed");
+					if (operation === "get" && response.status === 204)
+						throw new Error("invalid read response");
+					return response;
+				} catch {
+					throw new CloudflareKvError(
+						operation === "get"
+							? "KV_READ_UNAVAILABLE"
+							: "KV_MUTATION_OUTCOME_UNKNOWN",
+						operation === "get"
+							? "KV read failed"
+							: "KV mutation may have taken effect; reconcile before retry",
+					);
+				} finally {
+					if (timer !== undefined) clearTimeout(timer);
+				}
+			};
+			const get = async (key: string): Promise<Uint8Array | undefined> => {
+				const response = await perform("get", key);
+				if (response.status === 404) return undefined;
+				try {
+					return new Uint8Array(await readCloudflareKvBytes(response.body));
+				} catch {
+					throw new CloudflareKvError(
+						"KV_READ_UNAVAILABLE",
+						"KV read was incomplete or too large",
+					);
+				}
+			};
+			return Object.freeze({
+				get,
+				async exists(key: string) {
+					return (await get(key)) !== undefined;
+				},
+				async set(entry: { readonly key: string; readonly value: Uint8Array }) {
+					if (typeof entry !== "object" || entry === null)
+						throw new CloudflareKvError(
+							"KV_VALUE_INVALID",
+							"entry must contain a key and bytes",
+						);
+					await perform("set", entry.key, entry.value);
+				},
+				async delete(key: string) {
+					await perform("delete", key);
+				},
+			});
+		},
 	};
 }
 
@@ -131,16 +327,72 @@ export function cloudflareBindings(
 	return result;
 }
 
+/** Validate an explicit native subset and the exact HoBo capability grant. */
+export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
+	readonly mode: CloudflareKvMode;
+	readonly grantEpoch: string;
+	readonly namespaceEpoch: string;
+	readonly allow: readonly string[];
+} {
+	const annotation = declaration.annotations[0];
+	if (
+		declaration.annotations.length !== 1 ||
+		annotation === undefined ||
+		annotation.provider !== "cloudflare" ||
+		annotation.option !== "eventual-kv"
+	)
+		throw new Error(
+			"KV runtime is unsupported: WASI store semantics and consistency are not bound; explicit eventual worker-js mode is required",
+		);
+	const config = Object.getOwnPropertyDescriptors(annotation.config);
+	const mode = config.mode;
+	const epoch = config.grantEpoch;
+	const namespace = config.namespaceEpoch;
+	const consistency = config.consistency;
+	const runtime = config.runtime;
+	if (
+		Object.keys(config).length !== 5 ||
+		mode === undefined ||
+		!("value" in mode) ||
+		(mode.value !== "read-only" && mode.value !== "write-only") ||
+		epoch === undefined ||
+		!("value" in epoch) ||
+		namespace === undefined ||
+		!("value" in namespace) ||
+		consistency === undefined ||
+		!("value" in consistency) ||
+		consistency.value !== "eventual" ||
+		runtime === undefined ||
+		!("value" in runtime) ||
+		runtime.value !== "worker-js"
+	)
+		throw new Error(
+			"KV runtime is unsupported: invalid eventual worker-js mode",
+		);
+	return cloudflareKvGrant(
+		mode.value,
+		epoch.value,
+		namespace.value,
+		declaration.declaredAllow,
+	);
+}
+
 function allowFor(declaration: PrimitiveDeclaration) {
 	switch (declaration.kind) {
 		case "bucket":
 			throw new Error(
 				"bucket runtime is unsupported: blob metadata, events and presigned URLs are not bound",
 			);
-		case "kv":
-			throw new Error(
-				"KV runtime is unsupported: WASI store semantics and consistency are not bound",
-			);
+		case "kv": {
+			const grant = cloudflareKvConfiguration(declaration);
+			return {
+				kind: "kv",
+				verbs: grant.allow,
+				mode: grant.mode,
+				grantEpoch: grant.grantEpoch,
+				namespaceEpoch: grant.namespaceEpoch,
+			} as const;
+		}
 		case "queue":
 			throw new Error(
 				"queue operation is unsupported: native queue send lacks HoBo idempotency and receipt semantics",
@@ -184,12 +436,21 @@ export function cloudflareDependencyBindings(
 				)
 			)
 				throw new Error(`${dependency.kind} operation is unsupported`);
-			return Object.freeze({
-				name: resourceName,
-				kind: support.kind,
-				env: `HOBO_RESOURCE_${index}`,
-				allow: Object.freeze(["fetch"]),
-			});
+			const base = { name: resourceName, env: `HOBO_RESOURCE_${index}` };
+			return support.kind === "kv"
+				? Object.freeze({
+						...base,
+						kind: "kv",
+						allow: support.verbs,
+						mode: support.mode,
+						grantEpoch: support.grantEpoch,
+						namespaceEpoch: support.namespaceEpoch,
+					})
+				: Object.freeze({
+						...base,
+						kind: "service",
+						allow: Object.freeze(["fetch"]),
+					});
 		}),
 	);
 }
