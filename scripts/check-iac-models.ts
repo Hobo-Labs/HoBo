@@ -55,6 +55,18 @@ try {
 		[
 			"broker",
 			"IacBudget",
+			"/\\ guard \\in BOOLEAN /\\ (settlementTrust \\/ guard)",
+			"/\\ guard \\in BOOLEAN",
+		],
+		[
+			"broker",
+			"IacBudget",
+			'/\\ mode[o] # "priced" \\/ settlementTrust \\/ guarded[o]',
+			"/\\ TRUE",
+		],
+		[
+			"broker",
+			"IacBudget",
 			'/\\ status[o] = "idle" /\\ ActiveUnpriced = {}',
 			'/\\ status[o] = "idle"',
 		],
