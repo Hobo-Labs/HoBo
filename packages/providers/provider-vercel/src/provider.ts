@@ -54,6 +54,10 @@ function classForPort(port: string): InitialCapabilityPort | undefined {
 			return "objectStore";
 		case "kv":
 			return "kv";
+		case "queue":
+			return "queue";
+		case "schedule":
+			return "schedule";
 		default:
 			return undefined;
 	}

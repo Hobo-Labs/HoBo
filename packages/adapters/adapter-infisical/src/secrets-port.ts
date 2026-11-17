@@ -67,6 +67,21 @@ export function createInfisicalSecretsPort(options: {
 				};
 			return read(name, Number(versionId));
 		},
+		/**
+		 * A provisioning claim. Infisical refuses to create a key that exists
+		 * (400, the original kept); the entry is then read back, and the claim
+		 * is this caller's only if the stored value is its own. Of concurrent
+		 * claims for one name at most one is told `created`, provided Infisical
+		 * keeps one entry per key and folder (its create checks for one).
+		 */
+		async createOnly(name, value) {
+			const made = await client.createSecret(name, value);
+			if (made === undefined) return { created: false };
+			const stored = await read(name);
+			return stored.status === "ok" && stored.material === value
+				? { created: true, versionId: String(made.version) }
+				: { created: false };
+		},
 		/** The current version only; history stays in Infisical's own versioning. */
 		async listVersions(name) {
 			const names = await client.listSecretNames();

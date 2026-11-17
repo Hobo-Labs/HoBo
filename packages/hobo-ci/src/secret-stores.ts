@@ -21,6 +21,30 @@ import {
 } from "@hobo/adapter-infisical";
 import type { SecretHolder, SecretStoreOption } from "@hobo/connect-ui";
 import type { SecretsPort } from "@hobo/identity";
+import {
+	bitwardenEndpoints,
+	parseBitwardenApiKey,
+	parseBitwardenDeviceId,
+	parseBitwardenId,
+	parseBitwardenServer,
+} from "./bitwarden-provision.js";
+import { createBitwardenVaultSecretsPort } from "./bitwarden-vault-port.js";
+import {
+	INFISICAL_OAUTH_DOCS,
+	INFISICAL_OAUTH_REDIRECT_URI,
+	InfisicalOAuthError,
+	infisicalOAuthToken,
+	OAUTH_SIGN_IN,
+	readOnlySecretsPort,
+} from "./infisical-oauth.js";
+import { createOnePasswordConnectClient } from "./onepassword-connect.js";
+import {
+	type HttpsOrigin,
+	type OnePasswordVaultId,
+	parseHttpsOrigin,
+	parseOnePasswordVaultId,
+	SettingParseError,
+} from "./parsed-values.js";
 
 // The third-party secret stores a provider connection deposits into.
 // Where a store is (its coordinates: ids, a region) is non-secret and comes
@@ -87,6 +111,18 @@ export interface SecretStoreDeps {
 	 * types a token.
 	 */
 	readonly workloadOidc?: Env;
+	/**
+	 * Where an Infisical OAuth sign-in (`INFISICAL_SIGN_IN=oauth`) shows the
+	 * owner its approval page. Without it, or with `noBrowser` (a handed-off
+	 * run), that sign-in is not attempted.
+	 */
+	readonly oauthBrowser?: {
+		readonly open: (url: string) => void;
+		readonly emit: (line: string) => void;
+	};
+	readonly noBrowser?: boolean;
+	/** Tests replace the OAuth grant; the real one is `infisicalOAuthToken`. */
+	readonly infisicalOAuth?: typeof infisicalOAuthToken;
 }
 
 type Sdk = typeof import("@1password/sdk");
@@ -233,10 +269,19 @@ export const BITWARDEN_SERVERS = Object.freeze({
 	},
 });
 
+/** The server: BITWARDEN_SERVER_URL (self-hosted), else the cloud. */
 function bitwardenServer(coordinates: Env) {
-	return coordinates.BWS_SERVER === "eu"
-		? BITWARDEN_SERVERS.eu
-		: BITWARDEN_SERVERS.us;
+	// Parsed where it enters: a malformed origin is refused, not followed.
+	const endpoints = bitwardenEndpoints(
+		parseBitwardenServer(coordinates.BWS_SERVER),
+		coordinates.BITWARDEN_SERVER_URL
+			? parseHttpsOrigin(
+					"BITWARDEN_SERVER_URL",
+					coordinates.BITWARDEN_SERVER_URL,
+				)
+			: undefined,
+	);
+	return { apiUrl: endpoints.api, identityUrl: endpoints.identity };
 }
 
 async function bitwardenSdkClient(
@@ -255,6 +300,10 @@ async function bitwardenSdkClient(
 	return client;
 }
 
+// public-contract: the bearer an egress-proxy sign-in sends; the proxy swaps in the owner's Infisical token.
+export const EGRESS_PROXY_PLACEHOLDER =
+	"hobo-egress-proxy-injects-the-infisical-token";
+
 /** Open the chosen store with the owner's own sign-in, or say how to sign in. */
 export async function openSecretStore(
 	id: SecretStoreId,
@@ -264,20 +313,30 @@ export async function openSecretStore(
 ): Promise<SecretStoreOpening> {
 	// The adapters read their inputs from an env-shaped record: build it in
 	// memory from the coordinates and the vault, never from process.env.
+	const oauthSelected = coordinates.INFISICAL_SIGN_IN === OAUTH_SIGN_IN;
 	const env: Env = {
 		...coordinates,
-		INFISICAL_TOKEN: signIn.reveal("INFISICAL_TOKEN"),
+		// An explicit sign-in choice must not silently reuse a token from an
+		// earlier choice. OAuth is read-only; the proxy receives only its marker.
+		INFISICAL_TOKEN: oauthSelected
+			? undefined
+			: coordinates.INFISICAL_SIGN_IN === "egress-proxy"
+				? EGRESS_PROXY_PLACEHOLDER
+				: signIn.reveal("INFISICAL_TOKEN"),
 	};
 	switch (id) {
 		case "infisical": {
 			let auth: ReturnType<typeof ownerAuthFromEnv>;
-			try {
-				auth = ownerAuthFromEnv(env);
-			} catch {
-				auth = undefined;
+			if (!oauthSelected) {
+				try {
+					auth = ownerAuthFromEnv(env);
+				} catch {
+					auth = undefined;
+				}
 			}
 			if (
 				auth === undefined &&
+				!oauthSelected &&
 				coordinates.INFISICAL_IDENTITY_ID &&
 				deps.workloadOidc?.ACTIONS_ID_TOKEN_REQUEST_URL
 			) {
@@ -291,6 +350,53 @@ export async function openSecretStore(
 					});
 				} catch {
 					auth = undefined;
+				}
+			}
+			// The OAuth application sign-in: a browser approval, read-only.
+			let readOnly = false;
+			if (auth === undefined && oauthSelected) {
+				const clientId = coordinates.INFISICAL_OAUTH_CLIENT_ID;
+				const clientSecret = signIn.reveal("INFISICAL_OAUTH_CLIENT_SECRET");
+				if (deps.noBrowser === true || deps.oauthBrowser === undefined)
+					return {
+						ok: false,
+						message:
+							"An Infisical OAuth sign-in needs your browser on this machine; this run cannot show it.",
+						remediation: [
+							"Run it yourself in a terminal, or use a Token Auth token or CI's OIDC identity.",
+						],
+					};
+				if (!clientId || !clientSecret)
+					return {
+						ok: false,
+						message:
+							"The Infisical OAuth application's client id and secret are not set.",
+						remediation: [
+							`Create the application (${INFISICAL_OAUTH_DOCS}) with redirect URI ${INFISICAL_OAUTH_REDIRECT_URI} and PKCE required; enter its client id and secret on the setup page.`,
+						],
+					};
+				try {
+					const token = await (deps.infisicalOAuth ?? infisicalOAuthToken)({
+						siteUrl: env.INFISICAL_SITE_URL ?? "https://app.infisical.com",
+						clientId,
+						clientSecret,
+						openBrowser: deps.oauthBrowser.open,
+						emit: deps.oauthBrowser.emit,
+						...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+					});
+					auth = ownerAuthFromEnv({ INFISICAL_TOKEN: token });
+					readOnly = true;
+				} catch (error) {
+					return {
+						ok: false,
+						message:
+							error instanceof InfisicalOAuthError
+								? error.message
+								: "The Infisical OAuth sign-in failed.",
+						remediation: [
+							`Check the application's client id, secret and redirect URI (${INFISICAL_OAUTH_REDIRECT_URI}), then run again.`,
+						],
+					};
 				}
 			}
 			if (auth === undefined)
@@ -312,7 +418,9 @@ export async function openSecretStore(
 					ok: true,
 					store: {
 						id,
-						port: createInfisicalSecretsPort({ client }),
+						port: readOnly
+							? readOnlySecretsPort(createInfisicalSecretsPort({ client }))
+							: createInfisicalSecretsPort({ client }),
 						reference: (name) => infisicalSecretRef(binding, name),
 					},
 				};
@@ -327,7 +435,21 @@ export async function openSecretStore(
 			}
 		}
 		case "1password": {
-			const vaultId = coordinates.OP_VAULT_ID;
+			// Parsed here, where the coordinates enter: a malformed id or host
+			// is refused by name, never passed on.
+			let vaultId: OnePasswordVaultId | undefined;
+			let connectHost: HttpsOrigin | undefined;
+			try {
+				vaultId = coordinates.OP_VAULT_ID
+					? parseOnePasswordVaultId("OP_VAULT_ID", coordinates.OP_VAULT_ID)
+					: undefined;
+				connectHost = coordinates.OP_CONNECT_HOST
+					? parseHttpsOrigin("OP_CONNECT_HOST", coordinates.OP_CONNECT_HOST)
+					: undefined;
+			} catch (error) {
+				if (!(error instanceof SettingParseError)) throw error;
+				return { ok: false, message: error.message, remediation: [] };
+			}
 			if (!vaultId)
 				return {
 					ok: false,
@@ -337,14 +459,26 @@ export async function openSecretStore(
 					],
 				};
 			try {
-				const client = await (deps.onePasswordClient ?? onePasswordSdkClient)(
-					coordinates,
-					signIn,
-				);
+				// The owner's Connect server, when named: a bearer token only,
+				// which the egress proxy injects when the run holds none.
+				const client = connectHost
+					? createOnePasswordConnectClient({
+							host: connectHost,
+							token:
+								signIn.reveal("OP_CONNECT_TOKEN") ?? EGRESS_PROXY_PLACEHOLDER,
+							...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+						})
+					: await (deps.onePasswordClient ?? onePasswordSdkClient)(
+							coordinates,
+							signIn,
+						);
 				const binding = onePasswordBinding({
 					vaultId,
-					authMode: env.OP_ACCOUNT ? "desktop-app" : "service-account",
-					...(env.OP_ACCOUNT ? { accountName: env.OP_ACCOUNT } : undefined),
+					authMode:
+						env.OP_ACCOUNT && !connectHost ? "desktop-app" : "service-account",
+					...(env.OP_ACCOUNT && !connectHost
+						? { accountName: env.OP_ACCOUNT }
+						: undefined),
 				});
 				return {
 					ok: true,
@@ -366,6 +500,10 @@ export async function openSecretStore(
 			}
 		}
 		case "bitwarden": {
+			// No Secrets Manager (Vaultwarden): the organization's vault holds
+			// the secrets, opened with the organization key this run holds.
+			if (coordinates.BITWARDEN_STORAGE === "vault")
+				return openBitwardenVault(coordinates, signIn, deps);
 			let binding: ReturnType<typeof bitwardenBinding>;
 			try {
 				binding = bitwardenBinding({
@@ -405,5 +543,72 @@ export async function openSecretStore(
 				};
 			}
 		}
+	}
+}
+
+/** The Bitwarden-compatible vault store, when this run holds its sign-in. */
+function openBitwardenVault(
+	coordinates: Env,
+	signIn: SecretHolder,
+	deps: SecretStoreDeps,
+): SecretStoreOpening {
+	const clientId = signIn.reveal("BW_CLIENTID");
+	const clientSecret = signIn.reveal("BW_CLIENTSECRET");
+	const organizationKey = signIn.reveal("BITWARDEN_ORG_KEY");
+	if (!organizationKey)
+		return {
+			ok: false,
+			message: "This run holds no sign-in for the Bitwarden vault yet.",
+			remediation: [
+				"Run again: the run asks for your personal API key and one approved login request.",
+			],
+		};
+	try {
+		const endpoints = bitwardenEndpoints(
+			parseBitwardenServer(coordinates.BWS_SERVER),
+			coordinates.BITWARDEN_SERVER_URL
+				? parseHttpsOrigin(
+						"BITWARDEN_SERVER_URL",
+						coordinates.BITWARDEN_SERVER_URL,
+					)
+				: undefined,
+		);
+		const organizationId = parseBitwardenId(
+			"BWS_ORGANIZATION_ID",
+			coordinates.BWS_ORGANIZATION_ID ?? "",
+		);
+		const collectionId = parseBitwardenId(
+			"BITWARDEN_COLLECTION_ID",
+			coordinates.BITWARDEN_COLLECTION_ID ?? "",
+		);
+		const port = createBitwardenVaultSecretsPort({
+			endpoints,
+			// The key the ceremony collected, or the one the egress proxy injects.
+			apiKey:
+				clientId && clientSecret
+					? parseBitwardenApiKey(clientId, clientSecret)
+					: { kind: "egress-proxy" },
+			deviceId: parseBitwardenDeviceId(coordinates.BITWARDEN_DEVICE_ID ?? ""),
+			organizationId,
+			collectionId,
+			organizationKey: Buffer.from(organizationKey, "base64"),
+			fetch: deps.fetch ?? fetch,
+		});
+		return {
+			ok: true,
+			store: {
+				id: "bitwarden",
+				port,
+				reference: (name) =>
+					`bitwarden-vault://${organizationId}/${collectionId}/${encodeURIComponent(name)}`,
+			},
+		};
+	} catch (error) {
+		if (!(error instanceof SettingParseError)) throw error;
+		return {
+			ok: false,
+			message: error.message,
+			remediation: [`Fix ${error.setting}: ${error.rule}.`],
+		};
 	}
 }

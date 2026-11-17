@@ -91,20 +91,39 @@ goes through `parseEventEnvelope`).
 
 ## On a fleet of vendors
 
-`createPostgresFleetEventStore({ members, witnesses, plan, decidedBy })` is an
-experimental store on several PostgreSQL backends. It does not fence an
-in-flight write at the database commit boundary. A delayed write can reach the
-old writer after the final copy and be lost, so this fleet must not be relied
-on for safe failover. Member names also do not verify independent vendors.
+`createPostgresFleetEventStore({ members, witnesses, plan, decidedBy })` is a
+store on several PostgreSQL backends: one writer, standbys on other vendors.
+Member names do not verify independent vendors.
 
 - Calls use a time-limited cached writer resolved from the assignment register
   (`@hobo/data-postgres`, decided by majority across members and witnesses).
-  A fresh resolution refuses a sealed fleet, undecided epoch or no majority;
-  cached or in-flight operations can still reach the previous writer.
+  A fresh resolution refuses a sealed fleet, undecided epoch or no majority.
+- **Writes are fenced at the commit boundary.** Every write transaction first
+  takes `SHARE` on its member's own copy of the register and reads the newest
+  entry; unless that names the member as the unsealed writer, it aborts with a
+  retryable `unavailable`. A register entry is an `INSERT`, which `SHARE`
+  excludes, so a move's seal and a write on the old writer are ordered: a write
+  that committed first is in the final copy, and none commits after. A call
+  under a stale cached writer is refused, not lost (`test/fleet.test.ts`
+  writes a new entry behind a long lease and sees the write refused). The one
+  case it cannot fence is a writer the move never reached (a failover away
+  from a partitioned writer), whose writes fall inside the plan's recovery
+  point.
 - `tick()` runs `reconcileFleet` with the declared policy (`plan`, from
   `continuityFleetPlan` in `@hobo/backend-fleet`) to copy standbys and decide
-  whether to switch writers. Its recovery point and failover safety are not
-  established while in-flight writes remain unfenced.
+  whether to switch writers, then takes a scheduled backup when one is due.
+- **Scheduled backups** (`plan.backups`: `backupEveryMs`, `backupsKept`) are
+  kept on `backupTo`, else the first witness (`src/fleet-backups.ts`). Each is
+  the fleet's verified snapshot copy of the writer into a schema of its own
+  (`<schema>_b<taken-at-ms>`), catalogued in the same transaction, so a backup
+  is whole or absent; the oldest beyond `backupsKept` are dropped after a new
+  one commits. The schedule is the catalog, so whichever process ticks takes
+  the next one. `restore({ into, name? })` copies one back into a standby;
+  the target is fenced against writes and promotion throughout the copy. With
+  nowhere to keep backups, the fleet takes none and `backupsPlaced()` is false,
+  which `continuityShortfalls` reports.
+- Per-member cost models (`models`, `FleetFinancialModel`) keep a move off a
+  member its plan would push over an allowance or the policy's budget.
 - **Interrupted work resumes.** A copy is one transaction on the standby, so an
   interrupted one leaves it as it was and the next tick copies it whole; a
   move is a sealed register entry the next tick completes or undoes.

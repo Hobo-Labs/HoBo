@@ -16,7 +16,7 @@ description: >-
   GitHub-hosted. With no usable slip the queue rule decides, as before slips.
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
-  skipped, and what is left goes to GitHub-hosted without reading the queue.
+  skipped, and the remaining jobs follow the normal fleet routing decision.
   Each decision is one `hobo-ci-route` notice; a fallback (the script did not
   run, or no slip could be used) is a `hobo-ci-route-fallback` warning, so a
   monitor can count both. What this run chooses reaches the script as

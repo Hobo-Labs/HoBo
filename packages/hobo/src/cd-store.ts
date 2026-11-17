@@ -93,7 +93,7 @@ async function openFleet(
 	const [
 		{ createPostgresFleetEventStore },
 		{ continuityFleetPlan, continuityShortfalls },
-		{ cdJournalContinuity },
+		{ cdJournalContinuity, journalMemberModels },
 	] = await Promise.all([
 		import("@hobo/storage-postgres"),
 		import("@hobo/backend-fleet"),
@@ -104,6 +104,8 @@ async function openFleet(
 		members,
 		witnesses,
 		plan,
+		// Each member's vendor plan, where its fleet entry names one.
+		models: journalMemberModels(selection.members),
 		poolSize: selection.poolSize,
 		statementTimeoutMs: selection.statementTimeoutMs,
 		minServerMajorVersion: selection.minMajorVersion,
@@ -116,6 +118,7 @@ async function openFleet(
 		tickEveryMs: plan.copyEveryMs,
 		// Member names and URLs do not establish independent failure domains.
 		witnesses: selection.witnesses.length,
+		backupsPlaced: store.backupsPlaced(),
 	}).map((shortfall) => shortfall.message);
 	if (shortfalls.length > 0)
 		warn("hobo_cd_journal_continuity_short", { tier: plan.tier, shortfalls });

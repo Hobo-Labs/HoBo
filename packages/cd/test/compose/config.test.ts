@@ -30,7 +30,7 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 	it("selects a Postgres fleet whose connection strings stay in the secret store", () => {
 		const out = parseCdComposeConfig({
 			env: {
-				[CD_COMPOSE_ENV.postgresFleet]: "neon-eu, supabase",
+				[CD_COMPOSE_ENV.postgresFleet]: "neon-eu:neon-claimable, supabase",
 				[CD_COMPOSE_ENV.postgresWitnesses]: "prisma",
 				[CD_COMPOSE_ENV.replicas]: "2",
 			},
@@ -40,7 +40,11 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 		expect(out.ok && out.value.store).toEqual({
 			backend: "postgres-fleet",
 			members: [
-				{ id: "neon-eu", urlEntry: "HOBO_CD_POSTGRES_URL_NEON_EU" },
+				{
+					id: "neon-eu",
+					urlEntry: "HOBO_CD_POSTGRES_URL_NEON_EU",
+					plan: "neon-claimable",
+				},
 				{ id: "supabase", urlEntry: "HOBO_CD_POSTGRES_URL_SUPABASE" },
 			],
 			witnesses: [{ id: "prisma", urlEntry: "HOBO_CD_POSTGRES_URL_PRISMA" }],
@@ -78,6 +82,12 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 			simulate: false,
 		});
 		expect(twice.ok).toBe(false);
+		const badPlan = parseCdComposeConfig({
+			env: { [CD_COMPOSE_ENV.postgresFleet]: "neon:Neon Free:x" },
+			home,
+			simulate: false,
+		});
+		expect(badPlan.ok).toBe(false);
 	});
 
 	it("selects Postgres when configured, with frozen pool and timeout defaults", () => {
