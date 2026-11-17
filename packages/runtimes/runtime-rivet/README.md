@@ -171,3 +171,19 @@ This is an abstraction, not a refinement proof of the actor. It does not model
 cyclic dead-letter chains, multiple groups, audit or sequence exhaustion,
 receipt and state-size exhaustion, batch rollback, clocks, authorization,
 storage isolation, host fencing or progress under persistent saturation.
+
+The test-only `durable-topic-conformance` harness adapts host-supplied process,
+clock, fault and ownership controls to the generic durable-messaging suite. It
+refuses a partial capability descriptor before running the full bus suite.
+Passing cases do not establish that those controls really restarted the process,
+injected a fault at the claimed point, isolated tenants or fenced older owners:
+all such evidence remains unverified until an independent runner attests it.
+The host must also fence and drain late opens and fault operations after a test
+timeout or teardown.
+
+The SQLite bus fixture runs the generic group isolation, lease receipt replay,
+detached request, fingerprint, tenant isolation and bounds cases through the
+real bus actor and client. It reports each remaining case as unknown before
+dispatch because it lacks the required process/fault controls or configurable
+profile. Its in-memory stores and test credentials do not prove deployment
+isolation, process recovery or a host fence.
