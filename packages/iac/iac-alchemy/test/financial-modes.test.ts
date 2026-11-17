@@ -11,11 +11,17 @@ import type {
 	FinancialDecision,
 	FinancialPlan,
 	IacRoutePort,
+	UnpricedScopeProof,
 } from "../src/port.js";
 import { routeFixture } from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", object, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
+interface FixtureReservation {
+	reservationId: string;
+	unboundedExposure?: boolean;
+	unpricedScopeProof?: UnpricedScopeProof;
+}
 const dirs: string[] = [];
 const priorHome = process.env.ALCHEMY_HOME;
 
@@ -119,7 +125,7 @@ function admitted(
 	evaluation: string,
 	unboundedExposure?: boolean,
 ) {
-	const reservation: NonNullable<FinancialDecision["reservation"]> = {
+	const reservation: FixtureReservation = {
 		reservationId: `iac:${requestId}`,
 	};
 	if (unboundedExposure !== undefined)
@@ -180,6 +186,51 @@ describe("financial admission modes", () => {
 		Object.assign(program, { action: "destroy" });
 		const assessment = await pending;
 		expect(assessment.plan.operation).toBe("deploy");
+	});
+
+	it("checks and executes the same snapshotted operation", async () => {
+		const f = fixture((id) => admitted(id, "allowed", false));
+		await f.provider.preview(f.program);
+		let actionReads = 0;
+		const program = {
+			...f.program,
+			get action(): "apply" | "destroy" {
+				actionReads++;
+				return actionReads === 1 ? "apply" : "destroy";
+			},
+		};
+		await f.provider.applyWithAdmission(program, "attempt");
+		expect(actionReads).toBe(1);
+		expect(f.applies()).toBe(1);
+	});
+
+	it("rejects malformed wire proofs even though their fields accept protobuf values", async () => {
+		const f = fixture((id) => {
+			const valid = admitted(id, "bypassed", true);
+			const wire: FinancialDecision = {
+				...valid,
+				unpricedPolicyProof: {
+					requestDigest: valid.requestDigest,
+					inventoryHash: valid.inventoryHash,
+					policyHash: "policy",
+					effect: "deny",
+					evidenceRef: "policy:evidence",
+					obligationsSatisfied: false,
+					observedAt: "2026-01-01T00:00:00Z",
+					validUntil: "2027-01-01T00:00:00Z",
+				},
+			};
+			return wire;
+		});
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_RECEIPT_INVALID",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
 
 	it("requires a stable request ID before claiming a route", async () => {

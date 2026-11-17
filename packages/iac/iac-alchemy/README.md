@@ -142,7 +142,10 @@ const financial = createIacFinancialServices({
     bindings: [{ resourceId: "service", candidateIndex: 0 }],
   },
 });
-const route = createDirectRoutePort({ authority: routeAuthority, hashInventory });
+const route = createDirectRoutePort({
+  authority: routeAuthority,
+  hashInventory: (plan: IacFinancialPlan) => financial.assess(plan).inventoryHash,
+});
 const provider = createAlchemyIacProvider({
   stack, target, runtimeLayer, runtimeDirectory, financial, route,
 });
@@ -203,7 +206,9 @@ One adapter instance refuses concurrent execution of the same program. Use
 the same explicit request ID for the same logical attempt across all targets,
 instances and restarts; use a new ID for each new attempt. Standard `apply` and
 `destroy` take their ID from the host-configured `defaultRequestId`, which must
-also be unique to that attempt. Missing IDs are rejected. A malformed or
+also be unique to that attempt. The trusted host binds each ID to its logical
+operation and issues a successor only after verified recovery of any prior
+unresolved attempt. Missing IDs are rejected. A malformed or
 unreadable admission receipt requires reconciliation:
 the authority may already have reserved funds even if the receipt is unusable.
 An instance also blocks subsequent attempts after any outcome requiring

@@ -54,14 +54,14 @@ export interface FinancialDecision {
 		| {
 				reservationId: string;
 				unboundedExposure?: boolean;
-				unpricedScopeProof?: UnpricedScopeProof;
+				unpricedScopeProof?: UnverifiedUnpricedScopeProof | undefined;
 		  }
 		| undefined;
 	requestDigest?: string;
 	inventoryHash?: string;
 	modelHash?: string;
 	quoteHash?: string;
-	unpricedPolicyProof?: UnpricedPolicyProof;
+	unpricedPolicyProof?: UnverifiedUnpricedPolicyProof | undefined;
 }
 
 export interface UnpricedPolicyProof {
@@ -92,6 +92,25 @@ export interface UnpricedScopeProof {
 	readonly noSharedEntitlements: true;
 	readonly signature: string;
 }
+
+/** Wire values are checked before they can become a held admission. */
+export type UnverifiedUnpricedPolicyProof = Omit<
+	UnpricedPolicyProof,
+	"identity" | "effect" | "obligationsSatisfied"
+> & {
+	readonly identity?: UnpricedPolicyProof["identity"] | undefined;
+	readonly effect: string;
+	readonly obligationsSatisfied: boolean;
+};
+
+export type UnverifiedUnpricedScopeProof = Omit<
+	UnpricedScopeProof,
+	"identity" | "exclusiveUntilSettled" | "noSharedEntitlements"
+> & {
+	readonly identity?: UnpricedPolicyProof["identity"] | undefined;
+	readonly exclusiveUntilSettled: boolean;
+	readonly noSharedEntitlements: boolean;
+};
 
 /** An admitted apply explicitly distinguishes a bounded hold from a policy-authorized unbounded exposure. */
 export type HeldFinancialDecision = FinancialDecision &

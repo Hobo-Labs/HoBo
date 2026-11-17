@@ -88,6 +88,8 @@ export type {
 	IacRoutePort,
 	UnpricedPolicyProof,
 	UnpricedScopeProof,
+	UnverifiedUnpricedPolicyProof,
+	UnverifiedUnpricedScopeProof,
 } from "./port.js";
 export { alchemyStateScopeKey } from "./state-identity.js";
 
@@ -151,6 +153,18 @@ interface RouteExecutionState {
 		admission: HeldFinancialDecision;
 	};
 	error?: AlchemyIacError;
+}
+
+interface InspectedFinancialDecision
+	extends Omit<FinancialDecision, "reservation" | "unpricedPolicyProof"> {
+	reservation?:
+		| {
+				reservationId: string;
+				unboundedExposure?: boolean;
+				unpricedScopeProof?: UnpricedScopeProof;
+		  }
+		| undefined;
+	unpricedPolicyProof?: UnpricedPolicyProof | undefined;
 }
 
 function name(value: string): boolean {
@@ -499,7 +513,9 @@ function readUnpricedPolicyProof(
 	}
 }
 
-function readFinancialDecision(input: unknown): FinancialDecision | undefined {
+function readFinancialDecision(
+	input: unknown,
+): InspectedFinancialDecision | undefined {
 	try {
 		if (typeof input !== "object" || input === null || Array.isArray(input))
 			return undefined;
@@ -608,7 +624,7 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 				!["denied", "unavailable"].includes(evaluation.value))
 		)
 			return undefined;
-		const result: FinancialDecision = {
+		const result: InspectedFinancialDecision = {
 			requestId,
 			targetId,
 			status,
@@ -1508,24 +1524,29 @@ export function createAlchemyIacProvider<
 		}
 	};
 	const applyWithAdmission: AlchemyIacProvider<Assessment>["applyWithAdmission"] =
-		async (input, requestId, expected, permit) => {
-			const program = snapshotProgram(input);
-			if (program.action === "destroy")
+		async (program, requestId, expected, permit) => {
+			const stableProgram = snapshotProgram(program);
+			if (stableProgram.action === "destroy")
 				throw new AlchemyIacError(
 					"PROGRAM_SCOPE_MISMATCH",
 					"apply cannot execute a destroy program",
 				);
-			return execute(program, requestId, expected, permit);
+			return execute(stableProgram, requestId, expected, permit);
 		};
 	const destroyWithAdmission: AlchemyIacProvider<Assessment>["destroyWithAdmission"] =
-		async (input, requestId, expected, permit) => {
-			const program = snapshotProgram(input);
-			if (program.action !== "destroy")
+		async (program, requestId, expected, permit) => {
+			const stableProgram = snapshotProgram(program);
+			if (stableProgram.action !== "destroy")
 				throw new AlchemyIacError(
 					"PROGRAM_SCOPE_MISMATCH",
 					"destroy requires a destroy program",
 				);
-			const { admission } = await execute(program, requestId, expected, permit);
+			const { admission } = await execute(
+				stableProgram,
+				requestId,
+				expected,
+				permit,
+			);
 			return { admission };
 		};
 	return {
