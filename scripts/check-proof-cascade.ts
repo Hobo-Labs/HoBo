@@ -2,7 +2,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import ts from "typescript";
+import { z } from "zod";
 
+import { commentsIn, commentViolations } from "./check-source-policy.mts";
 import { workspaceForDraftFile } from "./lib/proof-manifest.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -21,6 +24,145 @@ function changedFiles(argv: string[]): string[] {
 	})
 		.split("\n")
 		.filter(Boolean);
+}
+
+const notebookSchema = z
+	.object({
+		cells: z.array(
+			z
+				.object({
+					cell_type: z.string(),
+					source: z.union([z.string(), z.array(z.string())]).optional(),
+				})
+				.passthrough(),
+		),
+		metadata: z
+			.object({
+				language_info: z
+					.object({ name: z.string().optional() })
+					.passthrough()
+					.optional(),
+				kernelspec: z
+					.object({ language: z.string().optional() })
+					.passthrough()
+					.optional(),
+			})
+			.passthrough()
+			.optional(),
+	})
+	.passthrough();
+
+function normalizedNotebook(text: string): string | undefined {
+	let json: ReturnType<typeof JSON.parse>;
+	try {
+		json = JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+	const parsed = notebookSchema.safeParse(json);
+	if (!parsed.success) return undefined;
+	const notebook = parsed.data;
+	const language =
+		notebook.metadata?.language_info?.name ??
+		notebook.metadata?.kernelspec?.language;
+	if (language !== "typescript" && language !== "javascript") return undefined;
+	for (const cell of notebook.cells) {
+		if (cell.cell_type !== "code") continue;
+		if (cell.source === undefined) return undefined;
+		const source = Array.isArray(cell.source)
+			? cell.source.join("")
+			: cell.source;
+		const diagnostics =
+			ts.transpileModule(source, {
+				reportDiagnostics: true,
+				compilerOptions: { module: ts.ModuleKind.ESNext },
+			}).diagnostics ?? [];
+		if (
+			diagnostics.some(
+				(diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+			)
+		)
+			return undefined;
+		let normalized = source;
+		for (const comment of [...commentsIn("cell.ts", source)].reverse()) {
+			if (/\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu.test(comment.text)) continue;
+			if (
+				/^\/\*\*[\s\S]*?@(?:type|typedef|param|returns?|property|template|satisfies|implements|extends|import|deprecated|internal|public|override|readonly|enum|constant|this|generated)\b/iu.test(
+					comment.text,
+				)
+			)
+				continue;
+			const lines = new Set(
+				comment.text.split("\n").map((_, index) => index + 1),
+			);
+			if (
+				commentViolations(
+					"cell.ts",
+					`${comment.text}\nconst marker = 0;`,
+					lines,
+				).length === 0
+			)
+				continue;
+			const lineBreaks = source
+				.slice(comment.start, comment.end)
+				.replace(/[^\r\n]/gu, "");
+			normalized =
+				normalized.slice(0, comment.start) +
+				(lineBreaks || " ") +
+				normalized.slice(comment.end);
+		}
+		const file = ts.createSourceFile(
+			"cell.ts",
+			normalized,
+			ts.ScriptTarget.Latest,
+			true,
+			ts.ScriptKind.TS,
+		);
+		cell.source = ts.createPrinter().printFile(file);
+	}
+	return JSON.stringify(notebook);
+}
+
+export function sameNotebookExecution(before: string, after: string): boolean {
+	const left = normalizedNotebook(before);
+	return left !== undefined && left === normalizedNotebook(after);
+}
+
+function fileAt(revision: string, file: string): string | undefined {
+	try {
+		return execFileSync("git", ["show", `${revision}:${file}`], {
+			cwd: repoRoot,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			maxBuffer: 64 * 1024 * 1024,
+		});
+	} catch {
+		return undefined;
+	}
+}
+
+function cascadeFiles(files: string[], argv: string[]): string[] {
+	const staged = argv.includes("--staged");
+	const base =
+		argv.find((arg) => arg.startsWith("--base="))?.slice("--base=".length) ??
+		"HEAD~1";
+	const before = staged
+		? "HEAD"
+		: execFileSync("git", ["merge-base", base, "HEAD"], {
+				cwd: repoRoot,
+				encoding: "utf8",
+			}).trim();
+	const after = staged ? "" : "HEAD";
+	return files.filter((file) => {
+		if (!file.endsWith(".ipynb")) return true;
+		const left = fileAt(before, file);
+		const right = fileAt(after, file);
+		return (
+			left === undefined ||
+			right === undefined ||
+			!sameNotebookExecution(left, right)
+		);
+	});
 }
 
 type Aggregator = { workspace: string; references: Set<string> };
@@ -104,7 +246,7 @@ function cascadeWaived(workspace: string): boolean {
 
 function main() {
 	const argv = process.argv.slice(2);
-	const files = changedFiles(argv);
+	const files = cascadeFiles(changedFiles(argv), argv);
 	const changedWorkspaces = new Set(
 		files.map(workspaceForDraftFile).filter((w): w is string => Boolean(w)),
 	);
