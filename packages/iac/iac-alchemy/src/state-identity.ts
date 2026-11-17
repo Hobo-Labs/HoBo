@@ -218,7 +218,9 @@ function isLegacyOutputState(output: unknown): boolean {
 		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: stack output is external persisted data. */
 		typeof output === "object" &&
 		output !== null &&
-		Object.getOwnPropertyDescriptor(output, "fqn")?.value === "__stack_output__"
+		(types.isProxy(output) ||
+			Object.getOwnPropertyDescriptor(output, "fqn")?.value ===
+				"__stack_output__")
 	);
 }
 
@@ -322,15 +324,15 @@ export function guardAlchemyState(
 				!safeAlchemyFqn(fqn)
 			)
 				return Effect.fail(failure());
-			return state
-				.get({ ...scope, fqn })
-				.pipe(
-					Effect.flatMap((row) =>
-						row !== undefined && !safeAlchemyState(row, fqn)
-							? Effect.fail(failure())
-							: Effect.succeed(row),
-					),
-				);
+			return state.get({ ...scope, fqn }).pipe(
+				Effect.flatMap((row) => {
+					if (row === undefined) return Effect.succeed(undefined);
+					const captured = snapshotStateIdentity(row, fqn);
+					if (captured === undefined) return Effect.fail(failure());
+					// SAFETY: the snapshot preserves the stored typed row's data fields and copies its identity.
+					return Effect.succeed(captured as typeof row);
+				}),
+			);
 		},
 		set: <V extends Parameters<StateService["set"]>[0]["value"]>(request: {
 			stack: string;
@@ -369,22 +371,19 @@ export function guardAlchemyState(
 						Effect.flatMap((rows) => {
 							const snapshot = stateArray(rows);
 							if (snapshot === undefined) return Effect.fail(failure());
+							const capturedRows: Array<(typeof rows)[number]> = [];
 							/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: these rows cross the state-store boundary and are inspected before use. */
 							for (const row of snapshot) {
-								if (row === null || typeof row !== "object")
+								const fqn = stateProperty(row, "fqn");
+								if (fqn === undefined || typeof fqn.value !== "string")
 									return Effect.fail(failure());
-								const fqn = Object.getOwnPropertyDescriptor(row, "fqn");
-								if (
-									fqn === undefined ||
-									!("value" in fqn) ||
-									typeof fqn.value !== "string" ||
-									!safeAlchemyState(row, fqn.value)
-								)
-									return Effect.fail(failure());
+								const captured = snapshotStateIdentity(row, fqn.value);
+								if (captured === undefined) return Effect.fail(failure());
+								// SAFETY: the snapshot preserves the backend's typed replacement row's fields and verified identity.
+								capturedRows.push(captured as (typeof rows)[number]);
 							}
 							/* oxlint-enable anti-slop/no-runtime-typeof */
-							// SAFETY: the snapshot contains the typed store rows and every identity was validated above.
-							return Effect.succeed(snapshot as typeof rows);
+							return Effect.succeed(capturedRows);
 						}),
 					),
 		deleteStack: (request) =>
@@ -393,7 +392,15 @@ export function guardAlchemyState(
 				: Effect.fail(failure()),
 		getOutput: (request) =>
 			scopedRequest(request, scope)
-				? state.getOutput(scope)
+				? state
+						.getOutput(scope)
+						.pipe(
+							Effect.flatMap((output) =>
+								isLegacyOutputState(output)
+									? Effect.fail(failure())
+									: Effect.succeed(output),
+							),
+						)
 				: Effect.fail(failure()),
 		setOutput: (request) => {
 			const value = stateProperty(request, "value");

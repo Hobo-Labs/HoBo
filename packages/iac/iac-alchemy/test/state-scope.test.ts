@@ -266,6 +266,93 @@ describe("compiled Alchemy state scope", () => {
 		expect(calls).toBe(0);
 	});
 
+	it("rejects proxy-backed replacement rows without executing their traps", async () => {
+		const { raw } = await fixture();
+		let calls = 0;
+		const row = new Proxy(
+			{ fqn: "widget", downstream: [] },
+			{
+				getOwnPropertyDescriptor() {
+					calls++;
+					throw new Error("proxy trap");
+				},
+			},
+		);
+		const backend: StateService = {
+			...raw,
+			// SAFETY: this deliberately malformed storage row tests the input boundary.
+			getReplacedResources: () => Effect.succeed([row as never]),
+		};
+		const state = guardAlchemyState(backend, scope);
+		await expect(
+			Effect.runPromise(state.getReplacedResources(scope)),
+		).rejects.toThrow();
+		expect(calls).toBe(0);
+	});
+
+	it("rejects proxy-backed stack output without executing its traps", async () => {
+		const { raw } = await fixture();
+		let calls = 0;
+		const output = new Proxy(
+			{},
+			{
+				getOwnPropertyDescriptor() {
+					calls++;
+					throw new Error("proxy trap");
+				},
+			},
+		);
+		const state = guardAlchemyState(
+			{ ...raw, getOutput: () => Effect.succeed(output) },
+			scope,
+		);
+		await expect(Effect.runPromise(state.getOutput(scope))).rejects.toThrow();
+		await expect(Effect.runPromise(state.list(scope))).rejects.toThrow();
+		expect(calls).toBe(0);
+	});
+
+	it("returns independent row identities when a backend changes its stored rows later", async () => {
+		const { raw, state } = await fixture();
+		const old = {
+			status: "created" as const,
+			resourceType: "Spec.Widget",
+			fqn: "widget",
+			logicalId: "widget",
+			instanceId: "old",
+			providerVersion: 0,
+			namespace: undefined,
+			downstream: ["upstream"],
+			bindings: [],
+			props: {},
+			attr: {},
+		};
+		const row = {
+			...old,
+			status: "replaced" as const,
+			downstream: ["dependent"],
+			old,
+			deleteFirst: false,
+		};
+		await Effect.runPromise(raw.set({ ...scope, fqn: "widget", value: row }));
+		const one = await Effect.runPromise(state.get({ ...scope, fqn: "widget" }));
+		const replacements = await Effect.runPromise(
+			state.getReplacedResources(scope),
+		);
+		row.fqn = "other";
+		row.downstream.push("../escape");
+		old.fqn = "other";
+		old.downstream[0] = "../escape";
+		const expected = {
+			fqn: "widget",
+			downstream: ["dependent"],
+			old: { fqn: "widget", downstream: ["upstream"] },
+		};
+		expect(one).toMatchObject(expected);
+		expect(replacements).toMatchObject([expected]);
+		expect(Object.isFrozen(one)).toBe(true);
+		expect(Object.isFrozen(replacements[0])).toBe(true);
+	});
+
 	it("supports a real deploy and update while preventing a provider from deleting another stack", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-state-scope-"));
 		const previous = process.env.ALCHEMY_HOME;
