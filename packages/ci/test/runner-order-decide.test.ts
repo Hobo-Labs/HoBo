@@ -85,6 +85,30 @@ const reasons = (decision: {
 }): string[] => decision.skipped.map((skip) => `${skip.key}:${skip.reason}`);
 
 describe("decideRunnerRoute", () => {
+	it.each([
+		["unknown runner type", { unknown: "auto" }],
+		["empty runner labels", { github: " , " }],
+	])("does not widen an explicit relay input with %s", (_name, inputs) => {
+		const decision = decideRunnerRoute(
+			DEFAULT_RUNNER_ORDER,
+			request(inputs),
+			facts({ fleet: fleet() }),
+		);
+		expect(decision.outcome).toBe("none");
+	});
+	it("still uses a valid explicit input alongside an unknown input", () => {
+		const decision = decideRunnerRoute(
+			DEFAULT_RUNNER_ORDER,
+			request({ unknown: "auto", github: "ubuntu-24.04" }),
+			facts({ fleet: fleet() }),
+		);
+		expect(decision).toMatchObject({
+			outcome: "routed",
+			step: "github",
+			runner: "ubuntu-24.04",
+		});
+	});
+
 	it("takes the first step the relay named that can run the job", () => {
 		const decision = decideRunnerRoute(
 			DEFAULT_RUNNER_ORDER,

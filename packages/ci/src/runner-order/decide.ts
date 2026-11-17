@@ -293,11 +293,9 @@ export function effectiveRelayInputs(
 	order: ParsedRunnerOrder,
 	request: RunnerRouteRequest,
 ): RelayInputs {
-	return resolveAutoInputs(
-		relayInputs(request.inputs),
-		orderAutoSize(order),
-		request.runId,
-	);
+	const inputs = relayInputs(request.inputs);
+	if (request.inputs.length > 0 && inputs.size === 0) return inputs;
+	return resolveAutoInputs(inputs, orderAutoSize(order), request.runId);
 }
 
 /** Steps the relay named that the order leaves out. They are never tried. */

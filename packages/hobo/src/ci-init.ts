@@ -202,7 +202,13 @@ export async function runCiInit(input: {
 					)
 					.map((job) => job.job);
 		if (wanted.length === 0) continue;
-		for (const job of wanted) matched.add(job);
+		for (const job of plan.jobs)
+			for (const key of [
+				job.job,
+				`${plan.file}:${job.job}`,
+				`${plan.file.slice(WORKFLOWS.length + 1)}:${job.job}`,
+			])
+				if (selected.includes(key)) matched.add(key);
 		const result = applyWorkflowPlan(plan.file, source, wanted, init);
 		for (const job of result.changed) changed.push({ file: plan.file, job });
 		for (const entry of result.refused)
@@ -212,8 +218,7 @@ export async function runCiInit(input: {
 	}
 	if (!all)
 		for (const selection of selected) {
-			const job = selection.slice(selection.lastIndexOf(":") + 1);
-			if (!matched.has(job))
+			if (!matched.has(selection))
 				refused.push({ file: "", job: selection, why: "no such job" });
 		}
 	const lines = [

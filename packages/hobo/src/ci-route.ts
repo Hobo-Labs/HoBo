@@ -196,6 +196,12 @@ export async function runCiRoute(input: {
 	for (const name of ["public", "fork"] as const)
 		if (options[name] !== undefined && options[name] !== true)
 			return usage(`--${name} does not take a value.`);
+	for (const key of RUNNER_STEP_KEYS)
+		if (
+			options[key] !== undefined &&
+			relayInputLabels(text(options, key) ?? "").length === 0
+		)
+			return usage(`--${key} needs at least one runner label.`);
 
 	const project = await readText(join(input.cwd, PROJECT_FILE));
 	const committed = parseCiRunnerOrder(project ?? "{}");
