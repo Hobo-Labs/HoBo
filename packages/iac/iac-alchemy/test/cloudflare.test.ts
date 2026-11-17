@@ -243,7 +243,10 @@ describe("real Alchemy Cloudflare mappings", () => {
 			);
 			const provider = createAlchemyIacProvider({
 				route: routeFixture({ inventoryHash: `sha256:${"d".repeat(64)}` }).port,
-				routeOperation: testOperation,
+				resolveRoute: async ({ requestId }) => ({
+					requestId: requestId ?? "request",
+					operation: testOperation,
+				}),
 				stack,
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: join(directory, "runtime"),
@@ -298,6 +301,7 @@ describe("real Alchemy Cloudflare mappings", () => {
 				driver: "external",
 				action: "apply" as const,
 				stackName: "App",
+				operationGeneration: "generation-1",
 			};
 			expect((await provider.preview(program)).changes).toBe(1);
 			await provider.applyWithAdmission(program, "request");
@@ -442,7 +446,10 @@ describe("real Alchemy Cloudflare mappings", () => {
 			});
 			const provider = createAlchemyIacProvider({
 				route: routeFixture({ inventoryHash: `sha256:${"d".repeat(64)}` }).port,
-				routeOperation: testOperation,
+				resolveRoute: async ({ requestId }) => ({
+					requestId: requestId ?? "request",
+					operation: testOperation,
+				}),
 				stack,
 				target,
 				runtimeLayer: Alchemist.layer(),
@@ -480,6 +487,7 @@ describe("real Alchemy Cloudflare mappings", () => {
 				driver: "external",
 				action: "apply" as const,
 				stackName: "App",
+				operationGeneration: "generation-1",
 			};
 			expect((await provider.preview(program)).changes).toBe(5);
 			await provider.applyWithAdmission(program, "request");
