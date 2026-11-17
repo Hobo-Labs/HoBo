@@ -455,6 +455,7 @@ describe("yard event-store folds + provider resolvers", () => {
 				expect(result.outcome).toBe("rejected");
 				expect(provisionCalls).toBe(0);
 				expect(authority.lookup(reservationId)?.status).toBe("held");
+				expect(authority.lookup(reservationId)?.executionDigest).toBe("");
 				expect(authority.read(now).reservedMicros).toBe(20);
 				return;
 			}

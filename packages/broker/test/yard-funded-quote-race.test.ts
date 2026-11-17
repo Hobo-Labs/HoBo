@@ -572,3 +572,82 @@ it("rejects instead of throwing when budget lookup is unavailable", async () => 
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+it("refuses a quote for a different Yard or provider before reservation", async () => {
+	const now = "2026-10-29T12:00:00Z";
+	const dir = mkdtempSync(join(tmpdir(), "yard-foreign-quote-"));
+	const authority = createSqliteBudgetAdmissionAuthority({
+		path: join(dir, "budget.sqlite"),
+		now: () => now,
+		snapshot: create(BudgetLedgerSnapshotSchema, {
+			identity: {
+				tenantId: "tenant",
+				budgetId: "hosting",
+				periodId: "2026-10",
+				policyRevision: "r1",
+			},
+			limitMicros: 100,
+			observedAt: "2026-10-29T00:00:00Z",
+			validUntil: "2026-11-01T00:00:00Z",
+		}),
+	});
+	try {
+		const request = buildDeploymentRequestFromParts({
+			bindleName: "shop",
+			ownerTenantId: "tenant",
+			providerId: LOCAL_HOST_PROVIDER_ID,
+			resources: [
+				{ resourceId: "api", port: "hobo:http-service", features: [] },
+			],
+		});
+		const yard = localYardInstance({
+			yardId: "yard:a",
+			ownerTenantId: "tenant",
+			providerId: LOCAL_HOST_PROVIDER_ID,
+		});
+		const quote = create(HostingQuoteSchema, {
+			quoteId: "q",
+			yardId: "yard:foreign",
+			providerId: "foreign",
+			ownerTenantId: "tenant",
+			currency: "USD",
+			totalMicros: 10,
+			liabilityBoundMicros: 20,
+			components: [{ name: "execution", costMicros: 10 }],
+			requestDigest: contentHashOf(request),
+			observedAt: "2026-10-29T00:00:00Z",
+			validUntil: "2026-11-01T00:00:00Z",
+		});
+		const result = await resolveBindleDeployment(request, {
+			brokerId: "broker:test",
+			ownerTenantId: "tenant",
+			catalog: createLocalHostCatalog(),
+			seedLocalYard: false,
+			priorEvents: [
+				yardEvent(YARD_EVENTS.Registered, { yard }),
+				yardEvent(YARD_EVENTS.Ready, { yardId: yard.yardId }),
+			],
+			hostingBudget: { authority, quotes: [quote], now: () => now },
+			authorizeHosting(input) {
+				return {
+					gate: { effect: "allow", reasons: [], events: [] },
+					proof: create(HostingPolicyProofSchema, {
+						requestDigest: input.requestDigest,
+						quoteId: input.quote.quoteId,
+						identity: input.identity,
+						effect: "allow",
+						policyHash: "approved",
+						evidenceRef: "policy",
+						obligationsSatisfied: true,
+					}),
+				};
+			},
+		});
+		expect(result.outcome).toBe("rejected");
+		expect(result.receipt).toBeUndefined();
+		expect(authority.read(now).reservedMicros).toBe(0);
+	} finally {
+		authority.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
