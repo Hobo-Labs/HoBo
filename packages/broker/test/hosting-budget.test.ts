@@ -36,6 +36,7 @@ const allowHosting: NonNullable<YardFirstPlacementDeps["authorizeHosting"]> = (
 	proof: create(HostingPolicyProofSchema, {
 		requestDigest: input.requestDigest,
 		quoteId: input.quote.quoteId,
+		quoteDigest: input.quoteDigest,
 		identity: input.identity,
 		effect: "allow",
 		policyHash: "sha256:approved-policy",

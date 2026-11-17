@@ -62,8 +62,13 @@ receipt issuance or generation. If evidence changes after a reservation is
 created, admission is refused and the hold remains for reconciliation. After a
 generation effect, failures attempt to mark the original hold uncertain; if
 that write fails, the broker reports the failure and retains the hold. The
-current policy proof names the quote ID but does not itself bind the complete
-quote contents; the host policy authority must enforce that binding.
+policy callback receives the quote's SHA-256 digest as `quoteDigest` and must
+include it in `HostingPolicyProof`. The digest is the lowercase hexadecimal
+SHA-256 of the protobuf JSON quote, matching the durable reservation digest.
+Approvals lacking a digest, including legacy proofs, are refused. This binds the
+approval to the quote contents but does not establish that the quote covers the
+selected resource definitions; the host remains responsible for its policy and
+provider assertions.
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of the reservation handoff and generation recovery.
