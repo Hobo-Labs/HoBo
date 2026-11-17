@@ -1,19 +1,12 @@
-/**
- * hobo:secrets residual port (ADR-0113) + resolution ladder (ADR-0027).
- * Preferred paths: bound-resource / provider-federation. Static hatch is last.
- */
-
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { must } from "@hobo/core/total-access";
-import type { SecretSourceRank } from "./config-types.js";
+import { configSensitivity, type SecretSourceRank } from "./config-types.js";
 import { isJsonString, type JsonValue } from "./json.js";
 
 export type SecretsAccessResult =
 	| Readonly<{
 			status: "ok";
-			/** Opaque reference or redacted placeholder — never log this as a secret in production paths that leave the broker. */
 			valueRef: string;
-			/** Short-lived material for mediated use only. */
 			material?: string;
 			versionId?: string;
 			source: SecretSourceRank;
@@ -21,20 +14,6 @@ export type SecretsAccessResult =
 	  }>
 	| Readonly<{ status: "denied"; reason: string; code: string }>;
 
-/**
- * Residual managed-secrets store (ADR-0113). Prefer identity federation.
- * `openbao` kind is reserved for the optional `@hobo/adapter-openbao` package
- * (not shipped with default identity installs); `opensesame` for the optional
- * `@hobo/adapter-opensesame` package, whose `access` returns the run's `osr_`
- * surrogate (never the credential it stands for) and whose `put` is read-only
- * (ADR-0170); `infisical` for the optional `@hobo/adapter-infisical` package,
- * which signs in with a workload OIDC token (no secret zero) and reads the
- * hosted CI relay's config and secrets (ADR-0179); `1password` and
- * `bitwarden` for `@hobo/adapter-1password` and `@hobo/adapter-bitwarden`,
- * the other two secrets managers an owner may choose (both sign in with a
- * stored token, so HoBo does not use them for workload reads; ADR-0179
- * amendment "Secrets manager, not Infisical").
- */
 export interface SecretsPort {
 	readonly id: string;
 	readonly kind:
@@ -53,11 +32,9 @@ export interface SecretsPort {
 	listVersions(name: string): Promise<readonly string[]>;
 }
 
-/** In-memory fixture store for tests / hobo dev (contract-asserted). */
 export function createMemorySecretsPort(options?: {
 	readonly id?: string;
 }): SecretsPort & {
-	/** Test-only: inspect without returning raw values in events. */
 	readonly names: () => readonly string[];
 } {
 	const store = new Map<string, { versions: string[]; values: string[] }>();
@@ -122,14 +99,9 @@ export function createMemorySecretsPort(options?: {
 	};
 }
 
-/**
- * Vault adapter that authenticates via JWT/OIDC (SVID) — no static Vault token.
- * Offline/stub mode mints deterministic material from the JWT subject.
- */
 export function createVaultJwtSecretsPort(options: {
 	readonly vaultAddr: string;
 	readonly role: string;
-	/** Minted SVID JWT for Vault login (never a static vault token). */
 	readonly svidJwt: string;
 	readonly id?: string;
 }): SecretsPort {
@@ -209,17 +181,10 @@ export type FetchLike = (
 	text: () => Promise<string>;
 }>;
 
-/**
- * AWS Secrets Manager adapter (Camp-scoped).
- * Uses brokered short-lived credentials via injected signer headers — never static long-lived keys in the adapter.
- * Offline mode (no fetch) falls back to deterministic HMAC material for local/dev parity.
- */
 export function createAwsSecretsManagerPort(options?: {
 	readonly region?: string;
 	readonly endpoint?: string;
-	/** Injected authenticated fetch (caller attaches SigV4 / brokered session). */
 	readonly fetch?: FetchLike;
-	/** Brokered bearer for local HTTP mock / gateway. */
 	readonly accessToken?: string;
 	readonly id?: string;
 }): SecretsPort {
@@ -262,7 +227,6 @@ export function createAwsSecretsManagerPort(options?: {
 				code: "aws-sm-http-error",
 			};
 		}
-		// SAFETY: assertion to ` res.json()) as { ARN?: string; VersionId?: string; SecretString?: string; }; co` is required at this boundary.
 		const data = (await res.json()) as {
 			ARN?: string;
 			VersionId?: string;
@@ -309,7 +273,6 @@ export function createAwsSecretsManagerPort(options?: {
 					source: "provider-federation",
 				};
 			}
-			// Offline dynamic: deterministic material so mediation still works.
 			const material = createHmac("sha256", root)
 				.update(name)
 				.digest("base64url");
@@ -336,10 +299,6 @@ export function createAwsSecretsManagerPort(options?: {
 /** @deprecated Prefer createAwsSecretsManagerPort — alias for Camp adapter registry. */
 export const createAwsSecretsManagerStub = createAwsSecretsManagerPort;
 
-/**
- * Azure Key Vault adapter (Camp-scoped).
- * Authenticates via brokered OAuth token (SVID→federation), not a static vault key.
- */
 export function createAzureKeyVaultPort(options?: {
 	readonly vaultName?: string;
 	readonly vaultUrl?: string;
@@ -380,7 +339,6 @@ export function createAzureKeyVaultPort(options?: {
 				code: "azure-kv-http-error",
 			};
 		}
-		// SAFETY: assertion to `.json()) as { id?: string; value?: string; attributes?: { exp?: number }; }; const ` is required at this boundary.
 		const data = (await res.json()) as {
 			id?: string;
 			value?: string;
@@ -457,21 +415,11 @@ export function createAzureKeyVaultPort(options?: {
 /** @deprecated Prefer createAzureKeyVaultPort. */
 export const createAzureKeyVaultStub = createAzureKeyVaultPort;
 
-/**
- * Local Station residual secrets (wasm / local Camp host).
- *
- * **Default backend is memory** — no optional OpenBao dependency in default
- * installs. For residual OpenBao, install `@hobo/adapter-openbao` and use
- * `createOpenBaoSecretsPort` / `createLocalStationOpenBaoSecretsPort`.
- *
- * `HOBO_LOCAL_SECRETS_BACKEND=memory` (default) | `vault-jwt`
- */
 export function createLocalStationSecretsPort(options?: {
 	readonly stationId?: string;
 	readonly env?: NodeJS.ProcessEnv;
 	readonly fetch?: FetchLike;
 	readonly id?: string;
-	/** Unused; retained for API stability. OpenBao lives in @hobo/adapter-openbao. */
 	readonly offline?: boolean;
 }): SecretsPort {
 	const env = options?.env ?? process.env;
@@ -501,16 +449,11 @@ export function createLocalStationSecretsPort(options?: {
 				"or set HOBO_LOCAL_SECRETS_BACKEND=memory|vault-jwt",
 		);
 	}
-	// default memory
 	return createMemorySecretsPort({
 		id: options?.id ?? `secrets:station-memory:${stationId}`,
 	});
 }
 
-/**
- * Camp-scoped secrets port factory — Bindle declares need; Camp selects backend.
- * OpenBao is not a built-in case — use `@hobo/adapter-openbao` explicitly.
- */
 export function createCampSecretsPort(input: {
 	readonly backend: "memory" | "vault-jwt" | "aws-sm" | "azure-kv";
 	readonly vaultAddr?: string;
@@ -560,10 +503,6 @@ export interface HoboSecretsStore {
 	listVersions: (name: string) => Promise<readonly string[]>;
 }
 
-/**
- * WIT-shaped hobo:secrets@0.1.0 store view over a SecretsPort (ADR-0113).
- * Residual managed-store surface only — not the preferred credential path.
- */
 export function asHoboSecretsStore(port: SecretsPort): HoboSecretsStore {
 	return {
 		async put(name, value) {
@@ -601,55 +540,42 @@ export type ConfigSensitivity = "public" | "internal" | "sensitive";
 export type ResolvedConfigEntry = Readonly<{
 	name: string;
 	source: SecretSourceRank;
-	/** Non-secret values only; secrets use placeholder. */
 	value?: unknown;
 	valueRef?: string;
 	versionId?: string;
 	sensitive: boolean;
-	/** ADR-0142 classification. */
 	sensitivity: ConfigSensitivity;
-	/** Agent-safe placeholder when sensitive. */
 	placeholder: string;
 }>;
-
-function sensitivityOf(sensitive: boolean): ConfigSensitivity {
-	return sensitive ? "sensitive" : "public";
-}
 
 export type ResolutionLadderInput = Readonly<{
 	name: string;
 	sensitive: boolean;
+	sensitivity?: ConfigSensitivity;
 	preferredSource: SecretSourceRank;
-	/** Allowed ranks from policy (deny-ceiling). */
 	allowedSources: readonly SecretSourceRank[];
-	/** Bound resource token path (no secret). */
 	boundToken?: () => Promise<string | undefined>;
-	/** Camp non-secret value. */
 	campValue?: unknown;
-	/** Secrets port for federation / static hatch. */
 	secretsPort?: SecretsPort;
-	/** Static hatch material (only when preferredSource is static-escape). */
 	staticMaterial?: string;
 	now?: string;
 }>;
 
-/**
- * Ranked resolution ladder (ADR-0027). Never returns plaintext for sensitive
- * fields into agent-facing structures (placeholder + valueRef only).
- */
 export async function resolveConfigEntry(
 	input: ResolutionLadderInput,
 ): Promise<
 	| Readonly<{ status: "resolved"; entry: ResolvedConfigEntry }>
 	| Readonly<{ status: "denied"; reason: string; code: string }>
 > {
+	const sensitivity = configSensitivity(input);
+	const sensitive = sensitivity === "sensitive";
+	const agentVisible = sensitivity === "public";
 	const ranks: SecretSourceRank[] = [
 		"bound-resource",
 		"provider-federation",
 		"camp-value",
 		"static-escape",
 	];
-	// Try from preferred down the ladder, but only allowed ranks.
 	const start = ranks.indexOf(input.preferredSource);
 	const order = [
 		...ranks.slice(Math.max(0, start)),
@@ -665,13 +591,13 @@ export async function resolveConfigEntry(
 					entry: {
 						name: input.name,
 						source,
-						sensitive: input.sensitive,
-						sensitivity: sensitivityOf(input.sensitive),
+						sensitive,
+						sensitivity,
 						valueRef: `tokenref://bound/${input.name}`,
-						placeholder: input.sensitive
+						placeholder: !agentVisible
 							? `[REDACTED:bound-resource:${input.name}]`
 							: String(token),
-						...(input.sensitive ? undefined : { value: token }),
+						...(sensitive ? undefined : { value: token }),
 					},
 				};
 			}
@@ -689,14 +615,12 @@ export async function resolveConfigEntry(
 						valueRef: accessed.valueRef,
 						versionId: accessed.versionId,
 						placeholder: `[REDACTED:provider-federation:${input.name}]`,
-						// material stays broker-internal — not on agent-facing entry
 					},
 				};
 			}
 		}
 		if (source === "camp-value" && input.campValue !== undefined) {
-			if (input.sensitive) {
-				// Sensitive must not come from camp-value.
+			if (sensitive) {
 				continue;
 			}
 			return {
@@ -705,10 +629,12 @@ export async function resolveConfigEntry(
 					name: input.name,
 					source,
 					sensitive: false,
-					sensitivity: "public",
+					sensitivity,
 					value: input.campValue,
 					valueRef: `camp://${input.name}`,
-					placeholder: String(input.campValue),
+					placeholder: agentVisible
+						? String(input.campValue)
+						: `[REDACTED:camp-value:${input.name}]`,
 				},
 			};
 		}
