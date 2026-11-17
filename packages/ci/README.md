@@ -61,6 +61,13 @@ while the assignment, credential, controller incarnation, offer, capacity group,
 and execution profile remain eligible. Revoking an offer or worker prevents a
 later retry from authorizing a start.
 
+The stores also expose `startDagger` for a pipeline demand. It atomically pins
+the pipeline digest, engine endpoint hash, offer, policy, quote, and execution
+profile while reserving the shared capacity group. Only a result with
+`created: true` may start work; a replay returns the existing claim with
+`created: false`. Capacity remains reserved until shutdown is confirmed. The
+existing `PipelineScheduler` does not yet call this strict fleet API.
+
 ## Event cursor
 
 Every lease and job change is appended to the partition's event journal inside

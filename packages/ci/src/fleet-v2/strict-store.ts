@@ -16,6 +16,7 @@ import type {
 	ParsedCapacityGroup,
 	ParsedCiDemand,
 	ParsedControllerIncarnation,
+	ParsedDaggerStartInput,
 	ParsedEffect,
 	ParsedExecutionKey,
 	ParsedExecutionProfile,
@@ -87,6 +88,9 @@ export interface StrictFleetStore {
 	bindStart(
 		input: ParsedStartBindingInput,
 	): Promise<{ claim: ExecutionClaim; idempotent: boolean }>;
+	startDagger(
+		input: ParsedDaggerStartInput,
+	): Promise<{ claim: ExecutionClaim; created: boolean }>;
 	completeExecution(input: CompleteExecutionInput): Promise<{
 		claim: ExecutionClaim;
 		settled: boolean;
