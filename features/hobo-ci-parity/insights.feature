@@ -37,7 +37,7 @@ Feature: Insight parity with RelayRunner
     When the signals are read
     Then each of the nine signals has its threshold, a breakdown and a trend
 
-  @parity @I06 @t1 @t3 @pending
+  @parity @I06 @t1 @t3
   Scenario: I06 A failed job shows its step, a log excerpt and whether a re-run will help, with no model
     Given a failed job and the tail of its log
     When "hobo ci diagnose" runs for it
