@@ -717,3 +717,16 @@ stateDiagram-v2
   Dispatching --> Reconcile: delivery expires during dispatch
   Dispatching --> Confirmed: active worker confirms effect
 ```
+
+The [CI claim-window verification skill](../../.agents/skills/verify-ci-budget-claim-window/SKILL.md)
+models the post-claim time check. This projection hides 13 same-label steps
+from 24 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Fits
+  Fits --> Claiming: claim the financial hold
+  Claiming --> Committed: claim commits
+  Committed --> Allowed: work still fits the window
+  Committed --> Refused: work no longer fits the window; hold retained
+```

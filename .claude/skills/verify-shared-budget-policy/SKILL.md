@@ -9,14 +9,14 @@ description: Verify the shared policy feasibility boundary used by HoBo CI and h
 
 **Why:** A policy that accepts foreign scope, stale windows, excess exposure, or unauthenticated strict bounds can authorize work outside its budget.
 
-**Result at sync commit `6a57e94867f1ea2866867c1826a1d2ea44416657`:** PASS for the stated model and generated real-code scenarios.
+**Result at sync commit `d3a69f3dfd53dec75b663c20803863a945eaa112`:** PASS for the stated model and generated real-code scenarios.
 
 ## Covered code
 
 - `packages/core/src/ports/budget-policy.ts` (`parseBudgetPolicy`, `evaluateBudgetPolicy`)
 - `packages/core/test/budget-policy.property.test.ts` and `budget-policy-schema.test.ts`
 - `packages/core/data-models/budget_policy.proto` and related CUE contracts
-- Consumers include `packages/ci/src/routing.ts`, `packages/ci/src/shared-budget.ts`, and `packages/cloud/src/planner/hosting-budget.ts`.
+- Consumers include `packages/ci/src/routing.ts`, `packages/ci/src/shared-budget.ts`, and `packages/cloud/src/planner/hosting-budget.ts`. The CI bridge claim-window check is covered separately by `verify-ci-budget-claim-window`.
 
 ## Run
 
