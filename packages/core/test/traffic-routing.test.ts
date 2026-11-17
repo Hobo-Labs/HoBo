@@ -125,7 +125,6 @@ test("round-trips generated protobuf records and protobuf JSON", () => {
 	const json = toJson(TrafficRoutingPlanRecordSchema, record);
 
 	assert.equal(
-		// SAFETY: assertion required at this I/O or test boundary.
 		(json.intent as { rules: { weightStrategy: string }[] }).rules[0]
 			?.weightStrategy,
 		"WEIGHT_STRATEGY_PREFER_HEALTHY",

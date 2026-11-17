@@ -219,7 +219,6 @@ export function parseInterfaceId(raw: string): InterfaceId {
 	if (!INTERFACE_ID_RE.test(raw)) {
 		throw new Error(`wrpc.invalid_interface_id: ${raw}`);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return raw as InterfaceId;
 }
 

@@ -1,20 +1,3 @@
-// Property tests for `guardTransport`.
-//
-// The guard is the last thing standing between a bad config value and a
-// credentialed request to an attacker's origin, so the properties that matter
-// are the negative ones: for hostile input the inner transport is never
-// invoked — asserted with a spy, because "it threw" is not the same claim as
-// "it did not send" — and for every input the guard accepts, the accepted
-// request satisfies the whole policy. That last one is the strongest statement
-// this guard can make: it never widens.
-//
-// Two behaviours below are documented, not defects, and the generators respect
-// them: WHATWG parsing lowercases an ASCII authority, so `API.Example.com`
-// legitimately matches an `api.example.com` allowlist entry; and a literal
-// `..` is resolved before the prefix check sees it, so traversal shows up as a
-// path outside the prefixes rather than as a separate refusal.
-//
-// Determinism: every run is seeded so a failure reproduces exactly.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
@@ -27,7 +10,6 @@ import {
 	type TransportRequest,
 } from "../src/index.js";
 
-/** Fixed seed: a counterexample found here is reproducible verbatim. */
 const SEED = 20260817;
 const RUNS = 300;
 
@@ -51,7 +33,6 @@ function makeSpy() {
 
 const segmentArb = fc.stringMatching(/^[a-z]{1,6}$/u);
 
-/** Hosts that must never be reached, including near-misses on the allowlist. */
 const hostileHostArb = fc
 	.tuple(
 		segmentArb,
@@ -99,7 +80,6 @@ const hostileHostArb = fc
 		}
 	});
 
-/** Hosts the policy admits, including the casing WHATWG normalizes for us. */
 const allowedHostArb = fc.constantFrom(
 	"api.example.com",
 	"API.Example.COM",
@@ -107,7 +87,6 @@ const allowedHostArb = fc.constantFrom(
 	"api.example.com:443",
 );
 
-/** Paths that must never be reached, including every encoded-traversal trick. */
 const hostilePathArb = fc
 	.tuple(
 		segmentArb,
@@ -185,7 +164,6 @@ async function refusalOf(
 		await call();
 		return { code: "NO_THROW", message: "", instance: false };
 	} catch (error) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const failure = error as { code?: string; message?: string };
 		return {
 			code: failure.code ?? "NO_CODE",
@@ -195,11 +173,6 @@ async function refusalOf(
 	}
 }
 
-/**
- * Every refusal in this package owes the caller two things: a code to branch on
- * and a message that names the fix. Asserting only "it threw" would let both
- * be emptied out without a test noticing.
- */
 function expectRefusal(
 	refusal: { code: string; message: string; instance: boolean },
 	code: string,
@@ -336,8 +309,6 @@ describe("guardTransport never reaches an origin the policy forbids", () => {
 				fc.oneof(allowedPathArb, hostilePathArb),
 			)
 			.map(([scheme, host, path]) => `${scheme}://${host}${path}`);
-		// A post-condition over accepted inputs is only worth something if the
-		// generator actually produces accepted inputs, so the count is asserted.
 		let acceptedCount = 0;
 
 		await fc.assert(
@@ -366,7 +337,6 @@ describe("guardTransport never reaches an origin the policy forbids", () => {
 					} catch (error) {
 						accepted = false;
 						expect(error).toBeInstanceOf(TransportGuardError);
-						// SAFETY: assertion required at this I/O or test boundary.
 						const failure = error as TransportGuardError;
 						expect(TRANSPORT_GUARD_ERROR_CODES).toContain(failure.code);
 						expect(failure.message.length).toBeGreaterThan(0);
@@ -377,8 +347,6 @@ describe("guardTransport never reaches an origin the policy forbids", () => {
 					}
 					acceptedCount += 1;
 					expect(spy.calls).toHaveLength(1);
-					// The post-condition, stated over both the request the caller
-					// wrote and the one the inner transport actually saw.
 					for (const candidate of [request.url, spy.calls[0]?.url ?? ""]) {
 						const parsed = new URL(candidate);
 						expect(parsed.protocol).toBe("https:");
@@ -401,12 +369,6 @@ describe("guardTransport never reaches an origin the policy forbids", () => {
 	});
 });
 
-/**
- * A guard whose own configuration is unchecked is a guard a typo can switch
- * off: `maxTimeoutMs: NaN` makes every `timeoutMs > maxTimeoutMs` comparison
- * false, so an unbounded request sails through a cap that is still nominally
- * there. The policy is input too, and it is screened like input.
- */
 const brokenCapArb = fc.oneof(
 	fc.constantFrom(
 		0,
@@ -416,7 +378,6 @@ const brokenCapArb = fc.oneof(
 		Number.NEGATIVE_INFINITY,
 	),
 	fc.integer({ min: -(2 ** 31), max: 0 }),
-	// SAFETY: assertion required at this I/O or test boundary.
 	fc.constantFrom("5000", null, undefined, {}).map((value) => value as never),
 );
 
@@ -427,7 +388,6 @@ describe("guardTransport screens its own policy", () => {
 				const spy = makeSpy();
 				const guarded = guardTransport(spy.transport, {
 					...POLICY,
-					// SAFETY: assertion required at this I/O or test boundary.
 					maxTimeoutMs: cap as number,
 				});
 				const refusal = await refusalOf(() =>
@@ -446,7 +406,6 @@ describe("guardTransport screens its own policy", () => {
 				const spy = makeSpy();
 				const guarded = guardTransport(spy.transport, {
 					...POLICY,
-					// SAFETY: assertion required at this I/O or test boundary.
 					maxResponseBytes: cap as number,
 				});
 				const refusal = await refusalOf(() =>
@@ -490,21 +449,11 @@ describe("guardTransport screens its own policy", () => {
 	});
 });
 
-/**
- * The response cap is only as honest as the byte counter behind it. The module
- * counts UTF-8 bytes by hand — no `TextEncoder`, no `Buffer`, because core has
- * to stay portable to `runtime-browser` — so the counter is checked here
- * against `Buffer.byteLength`, an exact oracle available in the test but not in
- * the source. If the arithmetic is wrong for any non-ASCII body, the cap is
- * wrong by the same amount.
- */
 describe("the response cap counts UTF-8 bytes exactly", () => {
 	const bodyArb = fc.oneof(
 		fc.string(),
 		fc.string({ unit: "binary" }),
 		fc.string({ unit: "grapheme" }),
-		// Explicit adversaries: a lone high surrogate, a lone low surrogate, an
-		// astral pair, two-byte Latin-1, three-byte CJK.
 		fc.constantFrom(
 			"\ud800",
 			"\udc00",
@@ -552,8 +501,6 @@ describe("the response cap counts UTF-8 bytes exactly", () => {
 				};
 				const exact = transportReturning(body);
 				const atLimit = guardTransport(exact.transport, policy);
-				// At the exact byte count the body fits: a counter that
-				// over-counts by even one byte turns this into a refusal.
 				await expect(
 					atLimit(
 						requestOf("https://api.example.com/v1/x", {
@@ -563,8 +510,6 @@ describe("the response cap counts UTF-8 bytes exactly", () => {
 				).resolves.toMatchObject({ status: 200 });
 
 				if (bytes < 2) return;
-				// One byte under, it does not: a counter that under-counts lets
-				// an over-cap body through with the credential already spent.
 				const under = transportReturning(body);
 				const belowLimit = guardTransport(under.transport, policy);
 				const refusal = await refusalOf(() =>

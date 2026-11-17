@@ -2,15 +2,6 @@ import { CoreParseError } from "./errors.js";
 import type { JsonValue } from "./json.js";
 import { deepFreeze, nonEmptyString } from "./parse-utils.js";
 
-// The one registry primitive (ADR-0156 §3, extension-points.md). HoBo's
-// registries diverged into mutable `register()` maps, constructor-frozen
-// sets, and const arrays — each with its own (often unstated) duplicate-id
-// policy. This module is the single registration algebra those surfaces are
-// instances of: id-keyed entries, an EXPLICIT duplicate policy, optional
-// sealed construction, and always-deterministic (id-sorted) listing.
-// Event-fact emission (`provider.Registered` etc.) stays host-side — a
-// registry is the in-memory half of a lifecycle, never the audit trail.
-
 // public-contract: extension-point id pattern `hobo.<name>/v<major>` (dots/dashes allowed in name).
 const EXTENSION_POINT_PATTERN = /^hobo\.[a-z0-9][a-z0-9.-]*\/v[0-9]+$/;
 
@@ -27,12 +18,10 @@ export class ExtensionRegistryError extends CoreParseError {
 }
 
 // domain-view: parse-dont-validate branded extension-point id; wire form
-// data-models/extension_plugin.proto ExtensionPointId.
 export type ExtensionPointId = string & {
 	readonly __brand: "ExtensionPointId";
 };
 
-/** Parse `hobo.<name>/v<major>` or throw. */
 export function parseExtensionPointId(
 	value: JsonValue | undefined,
 ): ExtensionPointId {
@@ -44,17 +33,11 @@ export function parseExtensionPointId(
 			raw,
 		);
 	}
-	// SAFETY: assertion required at this I/O or test boundary.
 	return raw as ExtensionPointId;
 }
 
 export interface ExtensionRegistryOptions {
-	/**
-	 * Required, explicit duplicate-id policy: `"throw"` rejects a second
-	 * registration under an id; `"replace"` is documented last-wins.
-	 */
 	duplicates: "throw" | "replace";
-	/** A sealed registry rejects `register()` after construction. */
 	sealed?: boolean;
 }
 
@@ -65,19 +48,11 @@ export interface ExtensionRegistry<T> {
 	register(id: string, extension: T): void;
 	has(id: string): boolean;
 	get(id: string): T | undefined;
-	/** `get` or throw — fail-closed lookup. */
 	require(id: string): T;
-	/** Deterministic, id-sorted listing. */
 	list(): ReadonlyArray<{ id: string; extension: T }>;
 	size(): number;
 }
 
-/**
- * Create the registry for one extension point. `entries` seeds it (seed ids
- * obey the duplicate policy too); `sealed: true` freezes membership at
- * construction — the constructor-frozen registries (capability profiles,
- * connectivity implementations) are this configuration.
- */
 export function createExtensionRegistry<T>(
 	point: JsonValue,
 	entries: ReadonlyArray<readonly [string, T]> = [],

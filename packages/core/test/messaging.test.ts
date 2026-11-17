@@ -55,14 +55,11 @@ describe("@hobo/core messaging port", () => {
 	it("publish/subscribe round-trip with consumer groups", async () => {
 		const bus = createInMemoryMessaging({ tenantId: "t1" });
 		await bus.ensureTopic({
-			// SAFETY: assertion required at this I/O or test boundary.
 			name: "events" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: "t1" as never,
 			delivery: "at-least-once",
 		});
 		const pub = await bus.publish(
-			// SAFETY: assertion required at this I/O or test boundary.
 			"events" as never,
 			{ hello: "world" },
 			{
@@ -71,7 +68,6 @@ describe("@hobo/core messaging port", () => {
 		);
 		expect(pub.deduped).toBe(false);
 		const dedup = await bus.publish(
-			// SAFETY: assertion required at this I/O or test boundary.
 			"events" as never,
 			{ hello: "world" },
 			{
@@ -80,7 +76,6 @@ describe("@hobo/core messaging port", () => {
 		);
 		expect(dedup.deduped).toBe(true);
 
-		// SAFETY: assertion required at this I/O or test boundary.
 		const consumed = await bus.consume("events" as never, "workers" as never, {
 			maxMessages: 10,
 		});
@@ -88,7 +83,6 @@ describe("@hobo/core messaging port", () => {
 		expect(consumed[0]?.body).toEqual({ hello: "world" });
 		bus.ack(first(consumed).messageId, first(consumed).leaseId);
 
-		// SAFETY: assertion required at this I/O or test boundary.
 		const again = await bus.consume("events" as never, "workers" as never);
 		expect(again).toHaveLength(0);
 
@@ -101,25 +95,18 @@ describe("@hobo/core messaging port", () => {
 	it("dead-letters after max attempts", async () => {
 		const bus = createInMemoryMessaging({ tenantId: "t1" });
 		await bus.ensureSubscription({
-			// SAFETY: assertion required at this I/O or test boundary.
 			name: "s1" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			topic: "fail" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			consumerGroup: "g1" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
 			tenantId: "t1" as never,
 			delivery: "at-least-once",
 			maxDeliveryAttempts: 2,
 		});
-		// SAFETY: assertion required at this I/O or test boundary.
 		await bus.publish("fail" as never, { x: 1 });
-		// SAFETY: assertion required at this I/O or test boundary.
 		const r1 = await bus.subscribe("fail" as never, "g1" as never, async () => {
 			throw new Error("boom");
 		});
 		expect(r1.handled).toBe(0);
-		// SAFETY: assertion required at this I/O or test boundary.
 		const r2 = await bus.subscribe("fail" as never, "g1" as never, async () => {
 			throw new Error("boom");
 		});

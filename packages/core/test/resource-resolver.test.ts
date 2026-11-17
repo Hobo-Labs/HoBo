@@ -1,10 +1,3 @@
-// The resolver contract for the direct-provider-API deploy path. The cases
-// below pin the credential law first — a request may name where material
-// lives and may never carry it, at any depth — then the parse boundaries on
-// both directions of the contract, then the registry's two determinism
-// promises: id-sorted listing and a refused duplicate rather than a silently
-// shadowed resolver.
-
 import { describe, expect, it } from "vitest";
 import {
 	createResolverRegistry,
@@ -212,7 +205,6 @@ describe("parseResolveRequest", () => {
 			throw new Error("expected a refusal");
 		} catch (error) {
 			expect(error).toBeInstanceOf(ResolverError);
-			// SAFETY: assertion required at this I/O or test boundary.
 			expect((error as ResolverError).message).not.toMatch(/sk_live/u);
 		}
 	});
@@ -545,7 +537,6 @@ describe("createResolverRegistry", () => {
 	});
 
 	it("refuses a registration missing a required method", () => {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const incomplete = {
 			providerId: "vercel",
 			productId: "vercel.postgres",

@@ -1,8 +1,3 @@
-/**
- * Cross-cloud overlay network port.
- * Primary implementation: Tailscale. Strong alternative: Netbird.
- */
-
 import type { TenantId } from "./tenant.js";
 
 export type OverlayProviderKind = "tailscale" | "netbird";
@@ -19,7 +14,6 @@ export interface OverlayJoinOptions {
 	readonly tenantId: TenantId;
 	readonly hostname: string;
 	readonly tags: readonly string[];
-	/** Auth key / enrollment token — never logged. */
 	readonly authKey?: string;
 	readonly emitProgress?: (message: string) => void;
 }
@@ -32,9 +26,7 @@ export interface OverlayJoinResult {
 }
 
 export interface MagicDnsSplitConfig {
-	/** Domain suffixes to resolve via overlay DNS (e.g. hobo.test). */
 	readonly domains: readonly string[];
-	/** Nameserver IPs or MagicDNS names that own those domains. */
 	readonly nameservers: readonly string[];
 	readonly tenantId: TenantId;
 }
@@ -47,20 +39,15 @@ export interface MagicDnsSplitResult {
 
 export interface FunnelPublishOptions {
 	readonly tenantId: TenantId;
-	/** Local backend to expose through Funnel (e.g. http://127.0.0.1:7071). */
 	readonly backendUrl: string;
-	/** Optional path/port for funnel CLI. */
 	readonly localPort?: number;
-	/** Desired public hostname hint (provider may assign *.ts.net). */
 	readonly hostnameHint?: string;
 	readonly emitProgress?: (message: string) => void;
 }
 
 export interface FunnelPublishResult {
 	readonly enabled: boolean;
-	/** True only when the provider confirmed that a public route was configured. */
 	readonly confirmed?: boolean;
-	/** Authenticated gateway hostname (never a raw overlay IP). */
 	readonly gatewayHostname: string | null;
 	readonly notes: readonly string[];
 }
@@ -70,17 +57,13 @@ export interface OverlayNetwork {
 	join(options: OverlayJoinOptions): Promise<OverlayJoinResult>;
 	status(): Promise<OverlayIdentity | null>;
 	leave(): Promise<void>;
-	/** Preferred tags for a role under a tenant. */
 	tenantTags(input: {
 		readonly tenantId: TenantId;
 		readonly role: "broker" | "junction" | "laptop" | "gateway";
 		readonly env?: string;
 		readonly cloud?: string;
-		/** Hard isolation: stamp overlayNetworkId into tags. */
 		readonly overlayNetworkId?: string;
 	}): readonly string[];
-	/** Optional: configure MagicDNS / split DNS for hierarchical names. */
 	configureMagicDns?(config: MagicDnsSplitConfig): Promise<MagicDnsSplitResult>;
-	/** Optional: publish an authenticated public gateway (Funnel / reverse proxy). */
 	publishFunnel?(options: FunnelPublishOptions): Promise<FunnelPublishResult>;
 }

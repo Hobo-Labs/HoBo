@@ -1,5 +1,3 @@
-// ADR-0146: legal-jurisdiction vocabulary + the pure residency evaluator that
-// turns "constraint + target region" into an explicit, fail-closed verdict.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -17,7 +15,6 @@ const EU_PII = parseResidencyConstraint({
 });
 
 test("every shipped provider default region token is mapped", () => {
-	// Tokens published by providers today (aws/gcp/kafka/convex/lakebed docs).
 	const shipped = [
 		"us-east-1",
 		"us-west-2",
@@ -79,7 +76,6 @@ test("denied jurisdictions override allowed membership", () => {
 	assert.equal(verdict.ok, false);
 	if (verdict.ok) return;
 	assert.equal(verdict.code, "jurisdiction-denied");
-	// global allows everything else
 	assert.equal(evaluateResidency({ constraint, region: "us-east-1" }).ok, true);
 });
 

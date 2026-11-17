@@ -1,14 +1,3 @@
-// Property tests for the resolver parse boundaries.
-//
-// `parseResolveRequest` enforces the credential law: `credentialRef` is a
-// locator, never material, and no property bag may carry a credential-shaped
-// key at any depth. The properties below state that as a total claim over
-// generated hostile input, plus the one that makes a refusal safe to log — the
-// refused value is never echoed back in the message. A refusal that reprints
-// the secret has defeated its own purpose.
-//
-// Determinism: every run is seeded so a failure reproduces exactly.
-
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
@@ -20,7 +9,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject, JsonValue } from "../src/json.js";
 
-/** Fixed seed: a counterexample found here is reproducible verbatim. */
 const SEED = 20260817;
 const RUNS = 300;
 
@@ -95,7 +83,6 @@ const hiddenCredentialBagArb = fc
 		for (const [key, insideArray] of wrappers) {
 			node = insideArray ? { [key]: [null, node] } : { [key]: node };
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
 		return { credentialKey, bag: node as JsonObject };
 	});
 
@@ -105,10 +92,8 @@ const refArb = fc.record({
 	logicalId: fc.stringMatching(/^[A-Za-z0-9][A-Za-z0-9._-]{0,16}$/u),
 });
 
-/** A high-entropy marker so "was it echoed?" is not a coincidence question. */
 const markerArb = fc.stringMatching(/^[A-Za-z0-9]{16,24}$/u);
 
-/** Locators the grammar must accept: `scheme://path`, no `@`, under the cap. */
 const acceptedLocatorArb = fc
 	.tuple(
 		fc.stringMatching(/^[a-z][a-z0-9+.-]{0,8}$/u),
@@ -117,13 +102,6 @@ const acceptedLocatorArb = fc
 	.map(([scheme, path]) => `${scheme}://${path}`)
 	.filter((value) => value.length <= MAX_CREDENTIAL_REF_LENGTH);
 
-/**
- * Locators the grammar must refuse, each carrying `marker` as the material a
- * leaky refusal would echo. Every shape here is one the module names:
- * whitespace, a control character, embedded userinfo, a PEM block, an
- * Authorization scheme prefix, a JWT, an inline credential query parameter, and
- * a value past the length bound.
- */
 const refusedLocatorArb = fc
 	.tuple(
 		markerArb,
@@ -189,7 +167,6 @@ function refusalOf(fn: () => JsonValue) {
 		fn();
 		return { code: "NO_THROW", message: "" };
 	} catch (error) {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const failure = error as { code?: string; message?: string };
 		return { code: failure.code ?? "NO_CODE", message: failure.message ?? "" };
 	}
@@ -213,7 +190,6 @@ describe("the resolver credential law holds over generated input", () => {
 					parseResolveRequest(request({ credentialRef: value })),
 				);
 				expect(code).toBe("RESOLVER_CREDENTIAL_NOT_A_REF");
-				// The refusal names the fix without naming the material.
 				expect(message).toContain("credentialRef");
 				expect(message).toContain("locator");
 			}),

@@ -1,14 +1,3 @@
-/**
- * Capability grant parsing and the capability denial error.
- *
- * A `CapabilityGrant` is the record that says a component may call one
- * interface for one resource with one set of operations. Everything downstream
- * — `evaluateCapabilityGrants`, the link table, the denial events — trusts that
- * this parser refused anything it should not have accepted. A grant that got
- * through with an unrecognised key, a duplicated operation, or an empty
- * resource is an authorization decision made on a record nobody wrote, so the
- * refusals below are the security-relevant half of this file.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -31,10 +20,8 @@ function parseError(thunk: () => void): CapabilityParseError {
 		thunk();
 	} catch (error) {
 		expect(error).toBeInstanceOf(CapabilityParseError);
-		// SAFETY: toBeInstanceOf above establishes the caught error's class.
 		return error as CapabilityParseError;
 	}
-	// SAFETY: every reachable path above returns a CapabilityParseError.
 	return expect.unreachable("expected a CapabilityParseError") as never;
 }
 
@@ -48,9 +35,6 @@ describe("parseCapabilityGrant", () => {
 	});
 
 	it("sorts the operations", () => {
-		// Sorted so two grants that authorize the same thing compare equal and
-		// hash the same. Authoring order is not meaning, and letting it leak into
-		// the parsed record would make grant deduplication order-dependent.
 		const grant = parseCapabilityGrant({
 			...GRANT,
 			operations: ["set", "delete", "get"],
@@ -59,9 +43,6 @@ describe("parseCapabilityGrant", () => {
 	});
 
 	it("freezes the grant and its operations", () => {
-		// A grant handed to the evaluator must not be mutable by whoever holds a
-		// reference afterwards: widening `operations` in place would be a silent
-		// privilege escalation with no parse step to catch it.
 		const grant = parseCapabilityGrant(GRANT);
 		expect(Object.isFrozen(grant)).toBe(true);
 		expect(Object.isFrozen(grant.operations)).toBe(true);
@@ -76,16 +57,10 @@ describe("parseCapabilityGrant", () => {
 	});
 
 	it("refuses an array", () => {
-		// Arrays are objects to `typeof`, so this is the case a naive object check
-		// lets through — and `source.componentId` on an array is `undefined`,
-		// which would then be reported as the wrong field.
 		expect(parseError(() => parseCapabilityGrant([])).expected).toBe("object");
 	});
 
 	it("refuses an unrecognised key, naming it", () => {
-		// Not ignored. An unknown key means the author believed they were saying
-		// something the parser does not implement — `tenant: "acme"` on a grant
-		// reads like a scope restriction and would silently be none.
 		const error = parseError(() =>
 			parseCapabilityGrant({ ...GRANT, tenant: "acme" }),
 		);
@@ -102,8 +77,6 @@ describe("parseCapabilityGrant", () => {
 	});
 
 	it("refuses an empty string in a required field", () => {
-		// Empty is not a name. An empty `resource` would match nothing and read in
-		// a denial event as though the field were absent.
 		expect(
 			parseError(() => parseCapabilityGrant({ ...GRANT, resource: "" })).path,
 		).toBe("resource");
@@ -117,9 +90,6 @@ describe("parseCapabilityGrant", () => {
 	});
 
 	it("refuses an empty operations list", () => {
-		// `minLength: 1` is passed, so an empty array is a refusal rather than a
-		// grant of nothing. A grant that authorizes no operation is almost
-		// certainly a truncated record, not an intentional null grant.
 		expect(
 			parseError(() => parseCapabilityGrant({ ...GRANT, operations: [] })).path,
 		).toBe("operations");
@@ -137,9 +107,6 @@ describe("parseCapabilityGrant", () => {
 	});
 
 	it("refuses a duplicated operation", () => {
-		// Duplicates are refused rather than deduplicated, because a repeated
-		// operation is a sign the record was merged from two sources and the
-		// merge may have dropped something else.
 		const error = parseError(() =>
 			parseCapabilityGrant({ ...GRANT, operations: ["get", "get"] }),
 		);
@@ -160,7 +127,6 @@ describe("parseCapabilityGrant", () => {
 	});
 
 	it("carries the parse code on every refusal", () => {
-		// The code is what callers switch on; `name` and `message` are for humans.
 		expect(parseError(() => parseCapabilityGrant(null)).code).toBe(
 			"HOBO_CORE_CAPABILITY_PARSE",
 		);
@@ -181,9 +147,6 @@ describe("parseCapabilityGrantList", () => {
 	});
 
 	it("accepts an empty list", () => {
-		// Distinct from an empty `operations`: a component with no grants at all
-		// is a legitimate state (it imports nothing), and refusing it would force
-		// callers to special-case the empty manifest.
 		expect(parseCapabilityGrantList([])).toEqual([]);
 	});
 
@@ -194,9 +157,6 @@ describe("parseCapabilityGrantList", () => {
 	});
 
 	it("re-paths an element failure to its index", () => {
-		// Without the re-path the message would say `resource`, and an author
-		// staring at a hundred-grant manifest would have no idea which one. The
-		// original `expected` and `received` survive the rewrite.
 		const error = parseError(() =>
 			parseCapabilityGrantList([GRANT, { ...GRANT, resource: "" }]),
 		);
@@ -206,15 +166,10 @@ describe("parseCapabilityGrantList", () => {
 	});
 
 	it("lets a non-parse error through untouched", () => {
-		// The catch narrows on `instanceof CapabilityParseError` before
-		// rewriting. A `RangeError` from somewhere unexpected must not be
-		// laundered into a parse error that blames the author's input.
 		const hostile = {
 			operations: ["get"],
 			importInterface: "hobo:kv/store",
 			resource: "orders",
-			// `Object.keys` does not invoke getters, so the allowed-key sweep
-			// passes and the throw happens where the parser reads the field.
 			get componentId(): string {
 				throw new RangeError("boom");
 			},
@@ -243,9 +198,6 @@ describe("assertCapabilityDenialCode", () => {
 	});
 
 	it("refuses an undeclared code and lists the alternatives", () => {
-		// The listing matters: a denial code is what an operator greps for, and a
-		// typo'd one that parsed would produce an audit record naming a reason
-		// that does not exist.
 		const error = parseError(() =>
 			assertCapabilityDenialCode("capability.nope", "code"),
 		);
@@ -284,9 +236,6 @@ describe("CapabilityDeniedError", () => {
 	});
 
 	it("says unknown rather than undefined for absent identifiers", () => {
-		// The default `{}` argument plus the `?? "unknown"` pair. A message
-		// reading `undefined:undefined` looks like a bug in the error path and
-		// sends the reader chasing the wrong thing.
 		const error = new CapabilityDeniedError("capability.export-not-found");
 		expect(error.message).toBe("capability.export-not-found: unknown:unknown");
 	});
@@ -302,26 +251,11 @@ describe("CapabilityDeniedError", () => {
 	});
 
 	it("still declares the optional fields as own properties", () => {
-		// Pinning a truth I got wrong first: the constructor assigns each field
-		// behind a `!== undefined` guard, which reads as "an absent detail is an
-		// absent property". It is not. The `readonly resource?: string` class
-		// field declarations are emitted as definite class fields, so every one
-		// of them exists as an own property set to `undefined` before the
-		// constructor body runs, and the guards cannot remove them.
-		//
-		// That matters for anything that serializes the error: `JSON.stringify`
-		// skips `undefined` values, but `Object.keys`, structured-clone-style
-		// walkers, and log shippers that enumerate own properties will emit six
-		// empty keys on every denial. Recorded rather than changed — dropping the
-		// declarations or switching to `declare` is a call for whoever owns the
-		// capability error shape.
 		const error = new CapabilityDeniedError("capability.no-linked-route", {
 			operation: "get",
 		});
 		expect(Object.hasOwn(error, "resource")).toBe(true);
 		expect(Object.hasOwn(error, "componentId")).toBe(true);
-		// The guards do still buy this much: the value is undefined rather than
-		// a stringified "undefined", so a reader is not told a wrong resource.
 		expect(JSON.stringify({ ...error })).not.toContain("undefined");
 	});
 
