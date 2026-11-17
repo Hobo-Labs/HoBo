@@ -4940,6 +4940,9 @@ importers:
       '@bufbuild/protoc-gen-es':
         specifier: 2.12.1
         version: 2.12.1(@bufbuild/protobuf@2.12.1)
+      '@hobo/schema-tools':
+        specifier: workspace:*
+        version: link:../../../../packages/schema-tools
 
   src/draft/technical-proofs/s1-15-bind-wiring-topology-contract: {}
 
