@@ -652,3 +652,15 @@ stateDiagram-v2
   Authorized --> Waiting: execution finishes
   Rejected --> Waiting: execution finishes
 ```
+
+The [capacity verification skill](../../.agents/skills/verify-ci-capacity/SKILL.md)
+checks stale reservations and revision exhaustion. The following projection
+shows two jobs using one capacity snapshot; it hides one same-label step from
+five modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> ReadCapacity
+  ReadCapacity --> ReservationRecorded: reserve one slot
+  ReservationRecorded --> StaleRefused: refuse stale capacity view
+```
