@@ -141,6 +141,17 @@ function sleep(ms: number) {
 	return new Promise((r) => setTimeout(r, ms));
 }
 
+function facingMatchesSource(bo: YardTestState["bo"]): boolean {
+	if (bo.animationId === "bo.walk.east")
+		return bo.facing === "east" && bo.facingSource === "rendered-walk";
+	if (bo.animationId === "bo.walk.west")
+		return bo.facing === "west" && bo.facingSource === "rendered-walk";
+	if (bo.animationId.startsWith("bo.walk.")) return false;
+	return bo.projectedFacing === null
+		? bo.facing === "east" && bo.facingSource === "default"
+		: bo.facing === bo.projectedFacing && bo.facingSource === "projected";
+}
+
 async function advance(page: import("playwright").Page, n: number) {
 	for (let i = 0; i < n; i++) {
 		await page.evaluate(() => {
@@ -332,6 +343,11 @@ try {
 			report.initialState = st;
 			check("test seam ready", st.ready);
 			check(
+				"initial Bo facing matches its source",
+				facingMatchesSource(st.bo),
+				`${st.bo.animationId}, facing=${st.bo.facing} (${st.bo.facingSource})`,
+			);
+			check(
 				"connection authorized present",
 				st.connCount >= 1,
 				`conn=${st.connCount}`,
@@ -384,6 +400,11 @@ try {
 
 			const pixelSample = await page.evaluate(sampleBoInk);
 			report.pixelSample = pixelSample;
+			check(
+				"sampled Bo facing matches its source",
+				facingMatchesSource(pixelSample.bo),
+				`${pixelSample.bo.animationId}, facing=${pixelSample.bo.facing} (${pixelSample.bo.facingSource})`,
+			);
 			check(
 				"canvas dark ink near Bo",
 				pixelSample.dark > 20,

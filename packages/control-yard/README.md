@@ -50,6 +50,12 @@ incomplete until a successful rerun. Captures take an exclusive lock at
 interrupted, confirm no capture is still running before removing that directory
 and retrying.
 
+The visual report records Bo's `animationId`, `facing`, `facingSource`, and
+`projectedFacing`. For a walk, `facing` follows the rendered directional sheet.
+For other animations it follows the projection, or a default when no projection
+is available; `facingSource` makes that distinction explicit. Capture checks
+that both sampled states agree with their reported source.
+
 The engine, test seam, and asset index unit tests use management snapshots and
 typed sheet fixtures. They do not replace the retired pixel-village browser or
 experience-review acceptance gates.

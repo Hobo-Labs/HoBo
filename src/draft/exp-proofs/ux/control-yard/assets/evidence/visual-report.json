@@ -1,17 +1,19 @@
 {
-  "gameUrl": "http://127.0.0.1:45419/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A35553",
-  "apiUrl": "http://127.0.0.1:35553",
+  "gameUrl": "http://127.0.0.1:37757/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36805",
+  "apiUrl": "http://127.0.0.1:36805",
   "checks": [
     "PASS test seam ready",
+    "PASS initial Bo facing matches its source — bo.walk.east, facing=east (rendered-walk)",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
     "PASS imgdiff boot — match",
-    "PASS canvas dark ink near Bo — dark=5012",
+    "PASS sampled Bo facing matches its source — bo.walk.east, facing=east (rendered-walk)",
+    "PASS canvas dark ink near Bo — dark=5009",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
-    "PASS imgdiff connection bay — match",
+    "PASS imgdiff connection bay — accepted image drift (RMS=13.91 ≤ 25)",
     "PASS connection created and sheet closed — default optional alias omitted",
     "PASS anim harness bo.idle — bo.idle",
     "PASS anim harness bo.walk.east — bo.walk.east",
@@ -36,13 +38,15 @@
     "scene": "Yard",
     "ready": true,
     "seed": 42,
-    "frameCount": 11,
+    "frameCount": 8,
     "zone": "activeRailTrack",
     "bo": {
-      "x": 219,
-      "y": 584,
+      "x": 211,
+      "y": 589,
       "animationId": "bo.walk.east",
-      "facing": "west"
+      "facing": "east",
+      "facingSource": "rendered-walk",
+      "projectedFacing": "west"
     },
     "occupyMode": "occupying",
     "connCount": 1,
@@ -54,12 +58,14 @@
     "hazards": []
   },
   "pixelSample": {
-    "dark": 5012,
+    "dark": 5009,
     "bo": {
-      "x": 603,
-      "y": 366,
+      "x": 579,
+      "y": 375,
       "animationId": "bo.walk.east",
-      "facing": "west"
+      "facing": "east",
+      "facingSource": "rendered-walk",
+      "projectedFacing": "west"
     }
   },
   "consoleErrors": []

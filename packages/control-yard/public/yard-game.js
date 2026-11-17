@@ -1135,6 +1135,27 @@ function selectZoneById(zone) {
 	document.body.dataset.lastClickZone = zone;
 }
 
+// Walking uses a directional sheet; idle retains the projected/default facing
+// for compatibility, with its source made explicit in the test evidence.
+function boDirection() {
+	const projectedFacing = visual?.facing ?? null;
+	const renderedFacing =
+		state.animId === "bo.walk.east"
+			? "east"
+			: state.animId === "bo.walk.west"
+				? "west"
+				: null;
+	return {
+		facing: renderedFacing ?? projectedFacing ?? "east",
+		facingSource: renderedFacing
+			? "rendered-walk"
+			: projectedFacing
+				? "projected"
+				: "default",
+		projectedFacing,
+	};
+}
+
 // playwright-testing seam (stable, serializable — no engine objects)
 window.__TEST__ = {
 	ready: false,
@@ -1151,7 +1172,7 @@ window.__TEST__ = {
 			x: Math.round(state.bo.x),
 			y: Math.round(state.bo.y),
 			animationId: state.animId,
-			facing: visual?.facing ?? "east",
+			...boDirection(),
 		},
 		occupyMode: snap?.occupyMode ?? null,
 		connCount: snap?.connections?.length ?? 0,
