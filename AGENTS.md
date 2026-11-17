@@ -726,8 +726,8 @@ The root config excludes three things it cannot execute, each of which runs
 elsewhere: `external/` (vendored third-party source — `external/ts-autocode` is a
 git submodule with its own CI), `dist/` (build output, where every compiled
 `*.test.js` is a staler duplicate of a source test that already runs), and
-Playwright specs (`@playwright/test`, driven from `packages/pixel-village`'s own
-`playwright.config.ts`). Before that exclude existed a bare root run reported
+Playwright specs (`@playwright/test`, driven by their own Playwright
+configuration). Before that exclude existed a bare root run reported
 ~40 failures on a clean tree, which is enough noise to hide a real one.
 
 Tests that require a binary or hardware **fail rather than skip** when it is
