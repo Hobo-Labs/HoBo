@@ -421,4 +421,89 @@ describe("authenticated operation lineage", () => {
 			}),
 		).toThrow();
 	});
+
+	it("cannot redirect an owner-token mutation to another route with getters", async () => {
+		const authority = connect();
+		const owner = await authority.claim({
+			tenantId: "tenant",
+			requestId: "first",
+			operationId,
+			authorization: "signed:first",
+		});
+		const victim = await authority.claim({
+			tenantId: "tenant",
+			requestId: "other",
+			operationId: anotherOperationId,
+			authorization: "signed:other",
+		});
+		if (owner.status !== "claimed" || victim.status !== "claimed")
+			throw new Error("missing claims");
+		let reads = 0;
+		const attack = {
+			tenantId: "tenant",
+			get requestId() {
+				return ++reads <= 2 ? "first" : "other";
+			},
+			claimToken: owner.claimToken,
+			outcome: { status: "denied" as const },
+		};
+		expect(() => authority.finish(attack)).toThrow();
+		expect(
+			await authority.inspect({ tenantId: "tenant", requestId: "first" }),
+		).toMatchObject({ phase: "running" });
+		expect(
+			await authority.inspect({ tenantId: "tenant", requestId: "other" }),
+		).toMatchObject({ phase: "running" });
+	});
+
+	it("refuses accessor-bearing begin, denial and permit inputs without invoking getters", async () => {
+		const authority = connect();
+		const claim = await authority.claim({
+			tenantId: "tenant",
+			requestId: "first",
+			operationId,
+			authorization: "signed:first",
+		});
+		if (claim.status !== "claimed") throw new Error("missing claim");
+		let invoked = 0;
+		const badBegin = {
+			get tenantId() {
+				invoked++;
+				return "tenant";
+			},
+			requestId: "first",
+			operationId,
+			claimToken: claim.claimToken,
+			targetId: "a",
+			inventoryHash,
+		};
+		expect(() => authority.beginAttempt(badBegin)).toThrow();
+		const permit = await authority.beginAttempt({
+			tenantId: "tenant",
+			requestId: "first",
+			operationId,
+			claimToken: claim.claimToken,
+			targetId: "a",
+			inventoryHash,
+		});
+		const badPermit = {
+			...permit,
+			get operationId() {
+				invoked++;
+				return operationId;
+			},
+		};
+		expect(await authority.verifyAttempt(badPermit)).toBe(false);
+		expect(await authority.consumeAttempt(badPermit)).toBe(false);
+		expect(() =>
+			authority.denyAttempt({
+				tenantId: "tenant",
+				requestId: "first",
+				claimToken: claim.claimToken,
+				permit: badPermit,
+			}),
+		).toThrow();
+		expect(invoked).toBe(0);
+		expect(await authority.verifyAttempt(permit)).toBe(true);
+	});
 });

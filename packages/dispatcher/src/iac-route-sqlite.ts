@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread -- SAFETY: SQLite rows and capability data are checked at the persistence boundary; optional fields remain absent. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- SAFETY: SQLite rows and capability data are checked at the persistence boundary; optional fields remain absent. */
 import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -20,17 +20,87 @@ function identity(input: IacRouteIdentity): void {
 	if (!routeName(input.tenantId) || !routeName(input.requestId))
 		throw new TypeError("invalid route identity");
 }
-function permitValid(permit: IacRoutePermit): boolean {
-	return (
-		permit !== null &&
-		typeof permit === "object" &&
-		routeName(permit.tenantId) &&
-		routeName(permit.requestId) &&
-		routeDigest(permit.operationId) &&
-		routeName(permit.targetId) &&
-		routeDigest(permit.inventoryHash) &&
-		routeSecret(permit.attemptId)
-	);
+function own(input: unknown, key: string): unknown {
+	if (typeof input !== "object" || input === null || Array.isArray(input))
+		throw new TypeError("invalid authority input");
+	const descriptor = Object.getOwnPropertyDescriptor(input, key);
+	if (!descriptor || !("value" in descriptor))
+		throw new TypeError("invalid authority input");
+	return descriptor.value;
+}
+function text(input: unknown, key: string): string {
+	const value = own(input, key);
+	if (typeof value !== "string") throw new TypeError("invalid authority input");
+	return value;
+}
+function captureIdentity(input: unknown): IacRouteIdentity {
+	const result = {
+		tenantId: text(input, "tenantId"),
+		requestId: text(input, "requestId"),
+	};
+	identity(result);
+	return result;
+}
+function captureOwner(
+	input: unknown,
+): IacRouteIdentity & { claimToken: string } {
+	const result = {
+		...captureIdentity(input),
+		claimToken: text(input, "claimToken"),
+	};
+	if (!routeSecret(result.claimToken))
+		throw new TypeError("invalid route owner");
+	return result;
+}
+function capturePermit(input: unknown): IacRoutePermit {
+	const result = {
+		...captureIdentity(input),
+		operationId: text(input, "operationId"),
+		targetId: text(input, "targetId"),
+		inventoryHash: text(input, "inventoryHash"),
+		attemptId: text(input, "attemptId"),
+	};
+	if (
+		!routeDigest(result.operationId) ||
+		!routeName(result.targetId) ||
+		!routeDigest(result.inventoryHash) ||
+		!routeSecret(result.attemptId)
+	)
+		throw new TypeError("invalid route permit");
+	return result;
+}
+function maybePermit(input: unknown): IacRoutePermit | undefined {
+	try {
+		return capturePermit(input);
+	} catch {
+		return undefined;
+	}
+}
+function captureOutcome(input: unknown): IacRouteOutcome {
+	const status = text(input, "status");
+	if (
+		status !== "selected" &&
+		status !== "denied" &&
+		status !== "uncertain" &&
+		status !== "replay"
+	)
+		throw new TypeError("invalid route outcome");
+	const descriptor =
+		typeof input === "object" && input !== null
+			? Object.getOwnPropertyDescriptor(input, "targetId")
+			: undefined;
+	if (
+		descriptor === undefined ||
+		("value" in descriptor && descriptor.value === undefined)
+	)
+		return { status };
+	if (
+		!("value" in descriptor) ||
+		typeof descriptor.value !== "string" ||
+		!routeName(descriptor.value)
+	)
+		throw new TypeError("invalid route outcome");
+	return { status, targetId: descriptor.value };
 }
 
 /** A shared local-disk SQLite authority. Distributed installations need an equivalent shared transactional CAS. */
@@ -345,13 +415,13 @@ export function createSqliteIacRouteAuthority(options: {
 			});
 		},
 		inspect(input) {
-			identity(input);
+			const stable = captureIdentity(input);
 			return transaction(() => {
 				const row = database
 					.prepare(
 						"SELECT phase,outcome FROM iac_routes WHERE tenant=? AND request=?",
 					)
-					.get(input.tenantId, input.requestId);
+					.get(stable.tenantId, stable.requestId);
 				if (row === undefined) return undefined;
 				if (row.phase !== "running" && row.phase !== "finished")
 					throw new Error("corrupt route phase");
@@ -359,7 +429,7 @@ export function createSqliteIacRouteAuthority(options: {
 					.prepare(
 						"SELECT target,inventory_hash,status,ordinal FROM iac_route_attempts WHERE tenant=? AND request=? ORDER BY ordinal LIMIT 257",
 					)
-					.all(input.tenantId, input.requestId);
+					.all(stable.tenantId, stable.requestId);
 				if (attempts.length > 256)
 					throw new Error("route attempt limit exceeded");
 				const safeAttempts = attempts.map((attempt, index) => {
@@ -384,7 +454,7 @@ export function createSqliteIacRouteAuthority(options: {
 				if (row.phase === "running") {
 					if (row.outcome !== null) throw new Error("corrupt route outcome");
 					return {
-						...input,
+						...stable,
 						phase: "running" as const,
 						attempts: safeAttempts,
 					};
@@ -402,7 +472,7 @@ export function createSqliteIacRouteAuthority(options: {
 				)
 					throw new Error("corrupt route outcome");
 				return {
-					...input,
+					...stable,
 					phase: "finished" as const,
 					outcome,
 					attempts: safeAttempts,
@@ -410,20 +480,26 @@ export function createSqliteIacRouteAuthority(options: {
 			});
 		},
 		beginAttempt(input) {
+			const stable = {
+				...captureOwner(input),
+				operationId: text(input, "operationId"),
+				targetId: text(input, "targetId"),
+				inventoryHash: text(input, "inventoryHash"),
+			};
 			if (
-				!routeName(input.targetId) ||
-				!routeDigest(input.inventoryHash) ||
-				!routeDigest(input.operationId)
+				!routeName(stable.targetId) ||
+				!routeDigest(stable.inventoryHash) ||
+				!routeDigest(stable.operationId)
 			)
 				throw new TypeError("invalid route target");
 			return transaction(() => {
-				const row = running(input);
+				const row = running(stable);
 				if (
 					database
 						.prepare(
 							"SELECT 1 FROM iac_route_operations WHERE tenant=? AND operation_id=? AND request=?",
 						)
-						.get(input.tenantId, input.operationId, input.requestId) ===
+						.get(stable.tenantId, stable.operationId, stable.requestId) ===
 					undefined
 				)
 					throw new Error("operation is not the active route");
@@ -433,7 +509,7 @@ export function createSqliteIacRouteAuthority(options: {
 					.prepare(
 						"SELECT COUNT(*) AS n FROM iac_route_attempts WHERE tenant=? AND request=?",
 					)
-					.get(input.tenantId, input.requestId)?.n;
+					.get(stable.tenantId, stable.requestId)?.n;
 				if (
 					typeof count !== "number" ||
 					!Number.isSafeInteger(count) ||
@@ -441,11 +517,11 @@ export function createSqliteIacRouteAuthority(options: {
 				)
 					throw new Error("route attempt limit exceeded");
 				const permit: IacRoutePermit = {
-					tenantId: input.tenantId,
-					requestId: input.requestId,
-					operationId: input.operationId,
-					targetId: input.targetId,
-					inventoryHash: input.inventoryHash,
+					tenantId: stable.tenantId,
+					requestId: stable.requestId,
+					operationId: stable.operationId,
+					targetId: stable.targetId,
+					inventoryHash: stable.inventoryHash,
 					attemptId: secret(),
 				};
 				database
@@ -453,8 +529,8 @@ export function createSqliteIacRouteAuthority(options: {
 						"INSERT INTO iac_route_attempts(tenant,request,attempt,target,inventory_hash,ordinal,status,consumed) VALUES(?,?,?,?,?,?,'running',0)",
 					)
 					.run(
-						input.tenantId,
-						input.requestId,
+						stable.tenantId,
+						stable.requestId,
 						permit.attemptId,
 						permit.targetId,
 						permit.inventoryHash,
@@ -467,34 +543,40 @@ export function createSqliteIacRouteAuthority(options: {
 					.run(
 						permit.attemptId,
 						permit.targetId,
-						input.tenantId,
-						input.requestId,
+						stable.tenantId,
+						stable.requestId,
 					);
 				return permit;
 			});
 		},
 		denyAttempt(input) {
+			const stable = {
+				...captureOwner(input),
+				permit: capturePermit(own(input, "permit")),
+			};
 			if (
-				!permitValid(input.permit) ||
-				input.permit.tenantId !== input.tenantId ||
-				input.permit.requestId !== input.requestId
+				stable.permit.tenantId !== stable.tenantId ||
+				stable.permit.requestId !== stable.requestId
 			)
 				throw new Error("invalid route permit");
 			return transaction(() => {
-				const row = running(input);
+				const row = running(stable);
 				if (
 					database
 						.prepare(
 							"SELECT 1 FROM iac_route_operations WHERE tenant=? AND operation_id=? AND request=?",
 						)
-						.get(input.tenantId, input.permit.operationId, input.requestId) ===
-					undefined
+						.get(
+							stable.tenantId,
+							stable.permit.operationId,
+							stable.requestId,
+						) === undefined
 				)
 					throw new Error("operation is not the active route");
 				if (
 					row.phase !== "running" ||
-					row.active_attempt !== input.permit.attemptId ||
-					row.target !== input.permit.targetId
+					row.active_attempt !== stable.permit.attemptId ||
+					row.target !== stable.permit.targetId
 				)
 					throw new Error("route attempt is not active");
 				const updated = database
@@ -502,31 +584,24 @@ export function createSqliteIacRouteAuthority(options: {
 						"UPDATE iac_route_attempts SET status='denied' WHERE tenant=? AND request=? AND attempt=? AND target=? AND inventory_hash=? AND status='running'",
 					)
 					.run(
-						input.tenantId,
-						input.requestId,
-						input.permit.attemptId,
-						input.permit.targetId,
-						input.permit.inventoryHash,
+						stable.tenantId,
+						stable.requestId,
+						stable.permit.attemptId,
+						stable.permit.targetId,
+						stable.permit.inventoryHash,
 					);
 				if (updated.changes !== 1) throw new Error("route attempt mismatch");
 				database
 					.prepare(
 						"UPDATE iac_routes SET active_attempt=NULL WHERE tenant=? AND request=?",
 					)
-					.run(input.tenantId, input.requestId);
+					.run(stable.tenantId, stable.requestId);
 				return { status: "denied" as const };
 			});
 		},
 		finish(input) {
-			const outcome = input.outcome;
-			if (
-				!outcome ||
-				!["selected", "denied", "uncertain", "replay"].includes(
-					outcome.status,
-				) ||
-				(outcome.targetId !== undefined && !routeName(outcome.targetId))
-			)
-				throw new TypeError("invalid route outcome");
+			const stable = captureOwner(input);
+			const outcome = captureOutcome(own(input, "outcome"));
 			const encoded = JSON.stringify({
 				status: outcome.status,
 				...(outcome.targetId === undefined
@@ -534,7 +609,7 @@ export function createSqliteIacRouteAuthority(options: {
 					: { targetId: outcome.targetId }),
 			});
 			return transaction(() => {
-				const row = running(input);
+				const row = running(stable);
 				if (row.phase === "finished") {
 					if (row.outcome !== encoded)
 						throw new Error("route outcome conflict");
@@ -555,7 +630,7 @@ export function createSqliteIacRouteAuthority(options: {
 						.prepare(
 							"SELECT consumed FROM iac_route_attempts WHERE tenant=? AND request=? AND attempt=? AND status='running'",
 						)
-						.get(input.tenantId, input.requestId, row.active_attempt);
+						.get(stable.tenantId, stable.requestId, row.active_attempt);
 					if (attempt?.consumed !== 1)
 						throw new Error("route attempt was not consumed");
 				}
@@ -564,46 +639,48 @@ export function createSqliteIacRouteAuthority(options: {
 						.prepare(
 							"UPDATE iac_route_attempts SET status='finished' WHERE tenant=? AND request=? AND attempt=? AND status='running'",
 						)
-						.run(input.tenantId, input.requestId, row.active_attempt);
+						.run(stable.tenantId, stable.requestId, row.active_attempt);
 				database
 					.prepare(
 						"UPDATE iac_routes SET phase='finished',active_attempt=NULL,outcome=? WHERE tenant=? AND request=?",
 					)
-					.run(encoded, input.tenantId, input.requestId);
+					.run(encoded, stable.tenantId, stable.requestId);
 				return { status: "finished" as const, outcome };
 			});
 		},
 		consumeAttempt(permit) {
-			if (!permitValid(permit)) return false;
+			const stable = maybePermit(permit);
+			if (stable === undefined) return false;
 			return transaction(() => {
 				const updated = database
 					.prepare(
 						`UPDATE iac_route_attempts SET consumed=1 WHERE tenant=? AND request=? AND attempt=? AND target=? AND inventory_hash=? AND status='running' AND consumed=0 AND EXISTS (SELECT 1 FROM iac_routes r WHERE r.tenant=iac_route_attempts.tenant AND r.request=iac_route_attempts.request AND r.phase='running' AND r.active_attempt=iac_route_attempts.attempt AND EXISTS (SELECT 1 FROM iac_route_operations o WHERE o.tenant=r.tenant AND o.request=r.request AND o.operation_id=?))`,
 					)
 					.run(
-						permit.tenantId,
-						permit.requestId,
-						permit.attemptId,
-						permit.targetId,
-						permit.inventoryHash,
-						permit.operationId,
+						stable.tenantId,
+						stable.requestId,
+						stable.attemptId,
+						stable.targetId,
+						stable.inventoryHash,
+						stable.operationId,
 					);
 				return updated.changes === 1;
 			});
 		},
 		verifyAttempt(permit) {
-			if (!permitValid(permit)) return false;
+			const stable = maybePermit(permit);
+			if (stable === undefined) return false;
 			const row = database
 				.prepare(
 					`SELECT 1 AS found FROM iac_routes r JOIN iac_route_attempts a ON a.tenant=r.tenant AND a.request=r.request AND a.attempt=r.active_attempt WHERE r.tenant=? AND r.request=? AND r.phase='running' AND a.status='running' AND a.attempt=? AND a.target=? AND a.inventory_hash=? AND EXISTS (SELECT 1 FROM iac_route_operations o WHERE o.tenant=r.tenant AND o.request=r.request AND o.operation_id=?)`,
 				)
 				.get(
-					permit.tenantId,
-					permit.requestId,
-					permit.attemptId,
-					permit.targetId,
-					permit.inventoryHash,
-					permit.operationId,
+					stable.tenantId,
+					stable.requestId,
+					stable.attemptId,
+					stable.targetId,
+					stable.inventoryHash,
+					stable.operationId,
 				);
 			return row?.found === 1;
 		},
@@ -613,4 +690,4 @@ export function createSqliteIacRouteAuthority(options: {
 	};
 }
 
-/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread */
+/* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns */
