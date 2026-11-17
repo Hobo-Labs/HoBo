@@ -15,6 +15,15 @@ export {
 	runChaosConformance,
 } from "./chaos-conformance.js";
 export {
+	createQueueEmulator,
+	createTopicEmulator,
+	type EmulatorContext,
+	type EmulatorFactory,
+	type QueueEmulator,
+	type ServiceEmulator,
+	type ServiceEmulatorFactories,
+} from "./emulators.js";
+export {
 	isTestHarnessError,
 	TEST_HARNESS_ERROR_CODES,
 	TestHarnessError,

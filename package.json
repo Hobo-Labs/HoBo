@@ -51,6 +51,7 @@
 		"gate:s1": "pnpm --prefix src/draft/technical-proofs/s1-stage-gate run gate:s1",
 		"generated:guard": "node --import tsx scripts/no-hand-edited-generated-files.mts",
 		"hobo": "node --import tsx scripts/hobo-cli.ts",
+		"eval:hand-off-transcript": "node --import tsx scripts/evals/audit-hand-off-transcript.mts",
 		"install:check": "pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
 		"konsistent": "konsistent",
 		"licenses:check": "node --import tsx scripts/check-licenses.ts",

@@ -2,7 +2,11 @@
 
 Vercel CloudProvider for HoBo Examples OOB yards.
 
-- Equivalence → default Resource Definitions (`EQUIVALENCE_CLASSES` / `createVercelProvider`)
+- Equivalence → default Resource Definitions (`EQUIVALENCE_CLASSES` / `createVercelProvider`):
+  compute, objectStore, database, kv, **queue** (Vercel Queues, `vercel:queue`: at-least-once
+  delivery to a consumer function of the deployment, with delays) and **schedule** (Vercel Cron Jobs, `vercel:cron-job`:
+  a cron expression in the project's `vercel.json` that calls one of the deployment's
+  own paths with the project's `CRON_SECRET`; realized with that deployment)
 - Matching `satisfies` full|partial|none + typed impedance (`vercelImpedanceFindings`)
 - **Temporary / agent stations via [Vercel Drop](https://vercel.com/docs/drop)** —
   `provisionTemporaryEnvironmentStation()` creates a **new** project from uploaded
@@ -247,6 +251,16 @@ and deletion are refused.
 Vercel renamed the Edge Config REST surface to `/v1/global-config` (the path
 parameter is still `edgeConfigId`); the product id keeps the `edge-config` name
 the catalog fixes, and the resolver calls the current documented path.
+
+**Schedules and queues are deployment configuration.** Vercel has no API that
+creates a schedule or a queue consumer on its own, and static deployments
+refuse `vercel.json` by design, so `vercel:cron-job` and `vercel:queue`
+placements are executed by a git deployment whose `vercel.json` declares them.
+`vercelPlatformDrift(config, planned)` (`src/platform-config.ts`) holds that
+file to the plan: every queue has a `queue/v2beta` consumer on its topic, every
+scheduled queue has `schedules.<name> = { schedule: <cadence>, topic: <queue> }`,
+and nothing else is scheduled. `hobo ci up` refuses to deliver the relay while
+there is drift (`HOBO_CI_UP_PLATFORM_DRIFT`).
 
 Blob discovery and project connection use the same storage API as Vercel's
 CLI. The resolver requires an explicit team, project ID, region, access mode,

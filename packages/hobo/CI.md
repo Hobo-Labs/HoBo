@@ -5,6 +5,12 @@ workflows. Run `hobo ci` or `hobo ci --help` for help. No Bindle, Station setup,
 SDK script, or workspace package invocation is needed.
 CI commands work before local Yard provisioning and do not initialize its journal.
 
+For a relay Git deployment, `hobo ci up` plans and checks the declaration,
+Yard and `vercel.json` from the selected commit, then delivers that same tree.
+It refuses if that tree cannot be inspected, contains symlinks or submodules,
+exceeds 5,000 files or 32 MiB, or cannot load its installed dependencies. These
+limits apply to the relay project's committed files, not the working tree.
+
 ## Connect once
 
 Your relay operator supplies an HTTPS origin and a CI account credential. Export
@@ -77,16 +83,18 @@ binds **127.0.0.1** by default; non-loopback binds require an explicit public
 **`--origin`** (HTTPS, matching `relayOrigin`) or **`--allow-insecure`**. Use
 **`--host 0.0.0.0`** and **`--port`** for containers; keep **`--origin`** on the
 public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
-`X-Forwarded-Proto`). GitHub App credentials load from `HOBO_CI_GITHUB_APP_*` /
-`*_FILE` env vars (never printed). Optional **`HOBO_CI_INGRESS_FORWARD_SECRET`**
-verifies ingress-forwarded webhooks. **`--print-config`** shows the resolved
-plan with secrets redacted. **`--with-worker`** starts the isolated-container
-sidecar with its own lease journal: local SQLite at
-`<HOBO_HOME>/ci/serve/worker.sqlite` (override `HOBO_CI_WORKER_DB`) that polls
-GitHub for `runs-on: hobo` jobs. `"store": { "kind": "sqlite" }` is the only
-store kind; the shared Postgres store was removed with the hosted relay's
-database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)).
-Graceful shutdown on SIGINT/SIGTERM.
+`X-Forwarded-Proto`). GitHub App credentials load from mounted files or the
+owner's secret store. An optional **`HOBO_CI_INGRESS_FORWARD_SECRET_FILE`**
+names the file used to verify ingress-forwarded webhooks. **`--print-config`**
+shows the resolved plan with secrets redacted. **`--with-worker`** starts the
+isolated-container sidecar with its own lease journal (local SQLite at
+`<HOBO_HOME>/ci/serve/worker.sqlite`, override `HOBO_CI_WORKER_DB`) and hands it
+the App key and webhook secret on an inherited pipe (`HOBO_CI_WORKER_SECRETS_FD`,
+written once and closed), never its environment or a file. `ci serve` reports
+serving only after the worker logs `hobo_ci_isolated_worker_started`; a worker
+that exits first, or does not start within `HOBO_CI_WORKER_START_TIMEOUT_MS`
+(10 minutes, as it may build first), stops the relay and fails the command.
+The relay shuts down gracefully on SIGINT/SIGTERM.
 
 When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
 [CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue
@@ -113,13 +121,21 @@ active version. It stores files with owner-only permissions under
 `HOBO_HOME/ci/github-credentials/`, refuses a HoBo home inside a Git
 checkout, and never prints the key or secret. File import currently requires
 POSIX permissions; on Windows use the relay's mounted secret files instead.
-`hobo ci serve` and its
-`--with-worker` process use this version when no explicit App credential
-environment is set; explicit environment credentials take precedence as a unit.
+`hobo ci serve` takes the App's credentials, in this order: mounted files the
+environment names (`HOBO_CI_GITHUB_APP_KEY_FILE` and the related `_FILE`
+variables, as a unit); else the connection `hobo ci up` deposited in your secret
+store (found through the locator in the owner's HoBo settings), read into the run's trusted
+vault and handed to the relay in memory, so no key or webhook secret is written
+to disk or put in the relay's environment;
+else this imported version. It never reads a secret value from its
+environment: `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`,
+`HOBO_CI_ACCOUNT_TOKEN` or `HOBO_CI_INGRESS_FORWARD_SECRET` set there stops
+startup, naming the variable and not its value.
 Incomplete or unreadable App credentials fail startup rather than falling back
-to the local fixture App.
-With real App credentials, `ci serve` also requires `HOBO_CI_ACCOUNT_TOKEN`,
-`HOBO_CI_ACCOUNT_TOKEN_FILE`, or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
+to the local fixture App (whose throwaway key is held in memory only).
+With real App credentials, `ci serve` also requires a CI account token
+(`HOBO_CI_ACCOUNT_TOKEN` in your secret store, or a file named by
+`HOBO_CI_ACCOUNT_TOKEN_FILE`) or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
 the local control-token configuration, it grants the explicitly selected
 `--installation-id` to the local account and stores only the token's hash. A
 supplied control-token file remains authoritative.

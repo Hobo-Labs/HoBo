@@ -261,6 +261,14 @@ describe("realize", () => {
 		expect(new Set(classes).size).toBe(classes.length);
 	});
 
+	it("refuses a port it cannot realize, naming the port", () => {
+		// Named because a placement that reached here picked the wrong provider,
+		// and the reader needs to know which port did it.
+		expect(() => provider.realize({ name: "q", port: "topic" })).toThrow(
+			/cannot realize port topic/u,
+		);
+	});
+
 	it("requires supervised reconciliation for projects", () => {
 		expect(() =>
 			provider.realize({ name: "project", port: "project" }),
@@ -286,6 +294,9 @@ describe("client", () => {
 	});
 
 	it("refuses a client for a port it has none for", () => {
+		expect(() => provider.client("topic", {})).toThrow(
+			/no client for port topic/u,
+		);
 		expect(() => provider.client("database", {})).toThrow(
 			/no client for port database/u,
 		);

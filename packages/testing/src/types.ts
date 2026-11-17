@@ -8,6 +8,8 @@
  * partially-populated record.
  */
 
+import type { Messaging, Queue, VirtualClock } from "@hobo/core";
+import type { ServiceEmulatorFactories } from "./emulators.js";
 import type { RunnerAdapter } from "./runner.js";
 
 export const LANES: readonly string[] = Object.freeze([
@@ -26,6 +28,8 @@ export interface TestHarnessOptions {
 	readonly stage?: string;
 	readonly yard?: unknown;
 	readonly runner?: RunnerAdapter;
+	/** In-process overrides; each factory must return an isolated service. */
+	readonly emulators?: ServiceEmulatorFactories;
 }
 
 export interface ResourceHandle {
@@ -48,14 +52,21 @@ export interface FidelityReport {
 export interface DeployedGraph {
 	readonly stage: string;
 	readonly lane: Lane;
+	// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: the legacy outputs contract is an open, caller-typed binding map.
 	outputs<T = Record<string, unknown>>(): T;
 	resource(alias: string): ResourceHandle;
 	http(alias: string): { readonly baseUrl: string };
+	queue(alias: string): Queue;
+	/** The local queue's controllable clock, if the implementation provides one. */
+	queueClock(alias: string): VirtualClock | undefined;
+	topic(alias: string): Messaging;
 	fidelity(): FidelityReport;
 }
 
 export interface TestHarness {
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: deploy parses collected Bindles at the package boundary.
 	deploy(bindle: unknown): () => Promise<DeployedGraph>;
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: destroy accepts the same Bindle identity as deploy.
 	destroy(bindle: unknown): () => Promise<void>;
 	untilReady(
 		target: string | ResourceHandle,

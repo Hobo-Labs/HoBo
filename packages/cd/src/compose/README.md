@@ -73,8 +73,18 @@ qualifies and soaks, defers a tainted host and catches it up once it recovers.
   the resource graph), enroll an agent for agent-mode Camps, or define a
   publisher. `--simulate` reaches the labelled fixture realizer only.
 - **`compose-store-multinode`** — more than one replica (`HOBO_CD_REPLICAS`) on
-  SQLite. Set `HOBO_CD_POSTGRES_URL` (PostgreSQL 16 or later); SQLite is for a
-  single conductor process (R6).
+  SQLite. Set `HOBO_CD_POSTGRES_URL` (PostgreSQL 16 or later) or a fleet
+  (below); SQLite is for a single conductor process (R6).
+- **Journal fleet** — `HOBO_CD_POSTGRES_FLEET=neon-eu:neon-claimable,supabase`
+  names a writer and standbys, each optionally with its vendor plan (the
+  member's cost model, `@hobo/hobo-cd` `CD_JOURNAL_MEMBER_PLANS`); each
+  member's URL is a secret-store entry (`HOBO_CD_POSTGRES_URL_NEON_EU`), not an
+  environment variable. `HOBO_CD_POSTGRES_WITNESSES` names register-only
+  members the same way; the first also keeps the scheduled backups. The fleet
+  runs by the journal's declared continuity policy (`@hobo/hobo-cd`
+  `CD_CONTINUITY`), with writes fenced at the commit boundary. Member names do
+  not prove independent failure domains. Opening runs one tick. `hobo_cd_journal_continuity_short` on stderr reports known
+  shortfalls and unverified vendor diversity; the journal still serves.
 - **`compose-store-invalid` / `compose-artifacts-invalid`** — fix the named
   environment variable; the message names it.
 - **`rail-delivery-invalid` metric rising** — a Station's Rail `delivery`

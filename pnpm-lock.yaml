@@ -1778,6 +1778,9 @@ importers:
       '@hobo/auth-md':
         specifier: workspace:*
         version: link:../auth-md
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../bindings
@@ -1847,6 +1850,9 @@ importers:
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
+      '@hobo/junctions':
+        specifier: workspace:*
+        version: link:../junctions
       '@hobo/management':
         specifier: workspace:*
         version: link:../management
@@ -1989,6 +1995,9 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
+      '@antithesishq/bombadil':
+        specifier: 0.7.10
+        version: 0.7.10
       '@hobo/ci-agent':
         specifier: workspace:*
         version: link:../ci-agent
@@ -2010,9 +2019,15 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       pg:
         specifier: 8.22.0
         version: 8.22.0
+      undici:
+        specifier: 7.29.0
+        version: 7.29.0
 
   packages/hobo-cd:
     dependencies:
@@ -2025,6 +2040,9 @@ importers:
       '@hobo/connect-ui':
         specifier: workspace:*
         version: link:../connect-ui
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@hobo/data-postgres':
         specifier: workspace:*
         version: link:../data-postgres
@@ -2041,6 +2059,9 @@ importers:
         specifier: 4.3.6
         version: 4.3.6
     devDependencies:
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
@@ -2059,6 +2080,9 @@ importers:
       '@hobo/adapter-1password':
         specifier: workspace:*
         version: link:../adapters/adapter-1password
+      '@hobo/adapter-bitwarden':
+        specifier: workspace:*
+        version: link:../adapters/adapter-bitwarden
       '@hobo/adapter-infisical':
         specifier: workspace:*
         version: link:../adapters/adapter-infisical
@@ -2074,12 +2098,18 @@ importers:
       '@hobo/connect-ui':
         specifier: workspace:*
         version: link:../connect-ui
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible
+      undici:
+        specifier: 7.29.0
+        version: 7.29.0
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -2087,9 +2117,16 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+    optionalDependencies:
+      '@bitwarden/sdk-napi':
+        specifier: 1.0.0
+        version: 1.0.0
 
   packages/iac/iac-crossplane:
     dependencies:
@@ -3406,9 +3443,15 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../backend-fleet
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/data-postgres':
+        specifier: workspace:*
+        version: link:../data-postgres
       pg:
         specifier: 8.22.0
         version: 8.22.0
@@ -5264,6 +5307,10 @@ packages:
       zod:
         optional: true
 
+  '@antithesishq/bombadil@0.7.10':
+    resolution: {integrity: sha512-71aLKQBB3GNDBQZXU6MCKbt99dl9I+/pjg0EfGD9eCKXDIqpKPXD2rFH6yCJude37RGtnKq6hZFfZhuTp+Tykg==}
+    hasBin: true
+
   '@arizeai/openinference-semantic-conventions@2.5.0':
     resolution: {integrity: sha512-4ZeSwiFX3YxB0WSE6x568wM4PVHiYmz3yiOxic6WGKVrE/KIGggMFP/eqUNQhikBKP68IDV0qiILlZAIYnheAQ==}
 
@@ -5863,6 +5910,35 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@bitwarden/sdk-napi-darwin-arm64@1.0.0':
+    resolution: {integrity: sha512-0W6P2VByGFqYIf6bkI7qKWlXPGhG9KFibrN14pvllFIkbNRaz3hktMOLJ/JdWZVmdHrz0R5xmAVldbIWNMjFOA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@bitwarden/sdk-napi-darwin-x64@1.0.0':
+    resolution: {integrity: sha512-Esyg8sktE50U+g12lL/xe68hgc5y78jPPV9maNcKTO9EWdde4RIx9u3xEpbYk5fyHaeMFXdo3TK8A8qLD34X5w==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@bitwarden/sdk-napi-linux-x64-gnu@1.0.0':
+    resolution: {integrity: sha512-PBGEOq9saYuBBthCq5jAr7eQSyEmQylB+kwsuT0j666VXT124a3YjDGgobPYaR9KN/IRDQ5h2Tysuy1pojx10A==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@bitwarden/sdk-napi-win32-x64-msvc@1.0.0':
+    resolution: {integrity: sha512-cu92XYjsOWEVECyohGtLxiXcMJMVui+nDJtyNg52iGDeAzWQ7QZh0/bcjkymTCuGoqRD3sT0cCs+5PbW66K2XQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+
+  '@bitwarden/sdk-napi@1.0.0':
+    resolution: {integrity: sha512-KrOXiuuQdVBvIM4l7XGrKl8otA9tSEKHjRQr0nF71eyCmIDzOV2kt/gchgLK42exGGuD/JcmmgnXx/j+U6W/+g==}
+    engines: {node: '>= 10'}
 
   '@borewit/text-codec@0.2.3':
     resolution: {integrity: sha512-49CycTz1aAZmvFcwkeFyhud1HUmRIB5Tabf7ALV+VA4Iu85MTfz2cUwzPagMFAdVBvrWdkCxG67I30tUwwpKsw==}
@@ -16218,6 +16294,8 @@ snapshots:
     optionalDependencies:
       zod: 3.25.76
 
+  '@antithesishq/bombadil@0.7.10': {}
+
   '@arizeai/openinference-semantic-conventions@2.5.0': {}
 
   '@asamuzakjp/css-color@3.2.0':
@@ -17100,6 +17178,26 @@ snapshots:
     optional: true
 
   '@biomejs/cli-win32-x64@2.5.2':
+    optional: true
+
+  '@bitwarden/sdk-napi-darwin-arm64@1.0.0':
+    optional: true
+
+  '@bitwarden/sdk-napi-darwin-x64@1.0.0':
+    optional: true
+
+  '@bitwarden/sdk-napi-linux-x64-gnu@1.0.0':
+    optional: true
+
+  '@bitwarden/sdk-napi-win32-x64-msvc@1.0.0':
+    optional: true
+
+  '@bitwarden/sdk-napi@1.0.0':
+    optionalDependencies:
+      '@bitwarden/sdk-napi-darwin-arm64': 1.0.0
+      '@bitwarden/sdk-napi-darwin-x64': 1.0.0
+      '@bitwarden/sdk-napi-linux-x64-gnu': 1.0.0
+      '@bitwarden/sdk-napi-win32-x64-msvc': 1.0.0
     optional: true
 
   '@borewit/text-codec@0.2.3': {}

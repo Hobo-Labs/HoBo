@@ -35,6 +35,7 @@
 		"@hobo/adapter-opensesame": "workspace:*",
 		"@hobo/auth-md": "workspace:*",
 		"@hobo/bindings": "workspace:*",
+		"@hobo/backend-fleet": "workspace:*",
 		"@hobo/bindles": "workspace:*",
 		"@hobo/broker": "workspace:*",
 		"@hobo/camps": "workspace:*",
@@ -56,6 +57,7 @@
 		"@hobo/hobo-cd": "workspace:*",
 		"@hobo/hobo-ci": "workspace:*",
 		"@hobo/iac-pulumi": "workspace:*",
+		"@hobo/junctions": "workspace:*",
 		"@hobo/identity": "workspace:*",
 		"@hobo/management": "workspace:*",
 		"@hobo/mcp": "workspace:*",
@@ -106,6 +108,7 @@
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
+		"@antithesishq/bombadil": "0.7.10",
 		"@hobo/ci-agent": "workspace:*",
 		"@hobo/ci-vercel": "workspace:*",
 		"@hobo/contract-harness": "workspace:*",
@@ -113,7 +116,9 @@
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
-		"pg": "8.22.0"
+		"fast-check": "^4.3.0",
+		"pg": "8.22.0",
+		"undici": "7.29.0"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
