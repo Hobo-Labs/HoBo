@@ -5,6 +5,7 @@ import {
 	type InitialCapabilityPort,
 } from "./equivalence.js";
 import { PROVIDER_TARGET } from "./options.js";
+import { VERCEL_BLOB_PRODUCT_ID, VERCEL_PROJECT_PRODUCT_ID } from "./slots.js";
 import type {
 	Capability,
 	CapabilityManifest,
@@ -47,10 +48,10 @@ function classForPort(port: string): InitialCapabilityPort | undefined {
 	switch (port) {
 		case "compute":
 			return "web/service";
+		case "project":
+			return "project";
 		case "objectStore":
 			return "objectStore";
-		case "database":
-			return "database/postgres";
 		case "kv":
 			return "kv";
 		default:
@@ -67,6 +68,11 @@ export function createVercelProvider(): CloudProvider {
 		regions: ["global"],
 		capabilities,
 		realize(plan: ResourcePlan) {
+			if (plan.port === "project") {
+				throw new Error(
+					"Vercel projects must be reconciled through the hosting supervisor and project resolver",
+				);
+			}
 			const classKey = classForPort(plan.port);
 			if (!classKey) {
 				throw new Error(`${PROVIDER_TARGET} cannot realize port ${plan.port}`);
@@ -100,7 +106,21 @@ export function createVercelProvider(): CloudProvider {
 									features: ["http", "static", "managed"],
 									resourceKind: "immutable-deployment",
 								}
-							: undefined),
+							: c.port === "project"
+								? {
+										productId: VERCEL_PROJECT_PRODUCT_ID,
+										profiles: ["web.project/v1"],
+										features: [...EQUIVALENCE_CLASSES.project.features],
+										resourceKind: "project",
+									}
+								: c.port === "objectStore"
+									? {
+											productId: VERCEL_BLOB_PRODUCT_ID,
+											profiles: ["bucket.object/v1"],
+											features: [...EQUIVALENCE_CLASSES.objectStore.features],
+											resourceKind: "object-store",
+										}
+									: undefined),
 					})),
 				},
 				auth: { exchange: "hobo:brokered-deploy-token", staticSecrets: false },

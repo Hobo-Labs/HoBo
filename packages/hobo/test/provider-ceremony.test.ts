@@ -195,6 +195,8 @@ describe("hobo up's provider ceremony", () => {
 			openBrowser: (url) => {
 				browsing = (async () => {
 					const view = await fetch(`${url}view`).then((res) => res.json());
+					expect(view.view.actions[0].confirm).toMatch(/approve.*on hold/i);
+					expect(view.view.explanation.join(" ")).toMatch(/approves.*on hold/i);
 					const field = view.view.fields[0];
 					asked.push(
 						`${field.label}: ${field.options.map((o: { value: string }) => o.value).join(",")}`,

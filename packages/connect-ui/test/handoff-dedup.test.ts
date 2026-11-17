@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { type ConnectStep, startConnectPage } from "../src/index.js";
 
 describe("provider handoff", () => {
-	it("reuses a pending authorization when start is submitted twice", async () => {
+	it.each([
+		false,
+		true,
+	])("reuses a pending authorization when start is submitted twice (new step object: %s)", async (copyStep) => {
 		const initial: ConnectStep = {
 			kind: "create-github-app",
 			provider: "github",
@@ -18,7 +21,7 @@ describe("provider handoff", () => {
 					starts += 1;
 					await new Promise((resolve) => setTimeout(resolve, 20));
 					return {
-						step: current,
+						step: copyStep ? { ...current } : current,
 						directive: {
 							kind: "post",
 							url: `https://github.com/settings/apps/new?state=${starts}`,
