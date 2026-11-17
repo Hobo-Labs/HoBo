@@ -135,7 +135,7 @@ export function createRivetMultiPoolPrimitiveMappers<
 			deployCrate,
 			mapper: createRivetPrimitiveMappers<Entrypoint, Requirements>(
 				fencedSource,
-			).web,
+			)[source.kind],
 		};
 	});
 
@@ -232,22 +232,42 @@ export function createRivetMultiPoolPrimitiveMappers<
 			"RIVET_POOL_UNVERIFIED",
 			"at least one source is required",
 		);
-	const mapper = {
-		resourceTypes: prototype.resourceTypes,
-		operations: prototype.operations,
-		annotations: prototype.annotations,
-		bindsEntrypoint: true,
-		validate: (input: ValidationInput<Entrypoint, Requirements>): void => {
-			select(input);
-		},
-		build: (input: BuildInput<Entrypoint, Requirements>) =>
-			Effect.gen(function* () {
-				const entry = select(input);
-				return yield* entry.mapper
-					.build(input)
-					.pipe(Effect.provideService(PoolHost, entry.stableHost));
-			}),
+	const mapperFor = (kind: RivetHttpSource<Entrypoint>["kind"]) => {
+		const available = entries.some(
+			(entry) => entry.attestation.source.kind === kind,
+		);
+		const checkKind = (input: ValidationInput<Entrypoint, Requirements>) => {
+			if (!available || input.declaration.kind !== kind)
+				throw new AlchemyIacError(
+					"PRIMITIVE_UNSUPPORTED",
+					"no attested Rivet source for this HTTP kind",
+				);
+			return select(input);
+		};
+		return Object.freeze({
+			resourceTypes: available
+				? prototype.resourceTypes
+				: Object.freeze<string[]>([]),
+			operations: prototype.operations,
+			annotations: prototype.annotations,
+			bindsEntrypoint: true,
+			limitations: prototype.limitations,
+			validate: (input: ValidationInput<Entrypoint, Requirements>): void => {
+				checkKind(input);
+			},
+			build: (input: BuildInput<Entrypoint, Requirements>) =>
+				Effect.gen(function* () {
+					const entry = checkKind(input);
+					return yield* entry.mapper
+						.build(input)
+						.pipe(Effect.provideService(PoolHost, entry.stableHost));
+				}),
+		});
 	};
-	return { api: mapper, web: mapper, service: mapper };
+	return Object.freeze({
+		api: mapperFor("api"),
+		web: mapperFor("web"),
+		service: mapperFor("service"),
+	});
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */

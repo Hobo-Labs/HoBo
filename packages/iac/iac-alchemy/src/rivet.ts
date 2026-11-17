@@ -207,11 +207,15 @@ export function createRivetPrimitiveMappers<
 				);
 		}
 	};
-	const mapper = {
-		resourceTypes: ["Rivet.DurableObject"],
-		operations: [],
-		annotations: ["hobo:session-replay"],
+	const mapper = Object.freeze({
+		resourceTypes: Object.freeze(["Rivet.DurableObject"]),
+		operations: Object.freeze<string[]>([]),
+		annotations: Object.freeze(["hobo:session-replay"]),
 		bindsEntrypoint: true,
+		limitations: Object.freeze([
+			"Only the attested source kind, actor name and entrypoint are mapped.",
+			"Resource dependencies and enabled session replay are unsupported; the host must fence the source and exclusive pool.",
+		]),
 		validate,
 		build: (
 			input: ValidationInput<Entrypoint, Requirements> & {
@@ -289,6 +293,26 @@ export function createRivetPrimitiveMappers<
 					boundEntrypoint: source.binding.entrypoint,
 				};
 			}),
-	};
-	return { api: mapper, web: mapper, service: mapper };
+	});
+	const unavailable: typeof mapper = Object.freeze({
+		...mapper,
+		resourceTypes: Object.freeze<string[]>([]),
+		validate: () => {
+			throw new AlchemyIacError(
+				"PRIMITIVE_UNSUPPORTED",
+				"no attested Rivet source for this HTTP kind",
+			);
+		},
+		build: () => {
+			throw new AlchemyIacError(
+				"PRIMITIVE_UNSUPPORTED",
+				"no attested Rivet source for this HTTP kind",
+			);
+		},
+	});
+	return Object.freeze({
+		api: source.kind === "api" ? mapper : unavailable,
+		web: source.kind === "web" ? mapper : unavailable,
+		service: source.kind === "service" ? mapper : unavailable,
+	});
 }

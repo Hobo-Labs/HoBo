@@ -22,6 +22,10 @@ Rivet HTTP mapper requires each resource FQN to equal its actor name, so use
 distinct actor names or independently isolated stacks and pools; placing these
 actors inside an Alchemy namespace is rejected. Unsupported Rivet storage,
 messaging, dependencies and replay are rejected explicitly.
+`describeAlchemyPrimitiveSupport` reports only the HTTP kinds represented by
+the supplied Rivet source or sources. Those mappings are partial because they
+require a matching attested source, exclusive pool, disabled replay and no
+resource dependencies. A source for one HTTP kind does not authorize another.
 The Rivet HTTP binding authorizes a snapshot of the actor key, HTTP method,
 URL and headers before starting application code. It transfers the request
 body stream to the application without buffering it; callers must not consume
