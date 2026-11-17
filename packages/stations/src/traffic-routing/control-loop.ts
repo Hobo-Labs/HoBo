@@ -1,6 +1,5 @@
-// One service actor owns routing. Persist the in-flight intent before external
-// effects; replay consumes snapshots/facts and does not repeat provider writes.
-import { create } from "@bufbuild/protobuf";
+import { create, fromJsonString } from "@bufbuild/protobuf";
+import { BudgetSignalSchema, ciBudgetSignalUpdate } from "@hobo/ci";
 import type {
 	ApplyResult,
 	MinAvailabilitySpec,
@@ -9,18 +8,23 @@ import type {
 	RoutingPlan,
 	TrafficRoutingPort,
 } from "@hobo/core";
-import { parseRoutingPlan, parseRoutingPlanId } from "@hobo/core";
+import {
+	canonicalJson,
+	parseRoutingPlan,
+	parseRoutingPlanId,
+} from "@hobo/core";
 import {
 	type CreditLedgerView,
 	createDispatcherRegistry,
 	type DispatchFact,
 	decideDispatch,
+	parseCreditLedgerView,
 } from "@hobo/dispatcher";
 import {
 	type RoutingControlStateRecord,
 	RoutingControlStateRecordSchema,
 } from "../_generated/routing_control_pb.js";
-import { isJsonObject, parseJsonValue } from "../json.js";
+import { parseJsonValue } from "../json.js";
 import {
 	type CutoverHealthGate,
 	type CutoverPrecondition,
@@ -75,7 +79,7 @@ export type RoutingControlOutcome =
 	  }>
 	| Readonly<{
 			action: "noop";
-			reason: "incumbent-optimal";
+			reason: "incumbent-optimal" | "budget-signal-replayed";
 			facts: readonly DispatchFact[];
 	  }>
 	| Readonly<{
@@ -104,6 +108,13 @@ export interface RoutingControlLoopOptions {
 	healthGate?: CutoverHealthGate;
 	ledgerView?: () => CreditLedgerView;
 	recoveryLedgerView?: () => CreditLedgerView;
+	budgetSignalPolicy?: Parameters<typeof ciBudgetSignalUpdate>[1];
+	budgetSignalEvidence?: (
+		thresholdFraction: number,
+	) =>
+		| { type: string; data?: unknown }
+		| undefined
+		| Promise<{ type: string; data?: unknown } | undefined>;
 	beforeApply?: (
 		plan: RoutingPlan,
 		phase: "ramp" | "restore",
@@ -125,8 +136,6 @@ export interface RoutingControlLoopOptions {
 	units?: number;
 	clock?: () => string;
 	onFact?: (fact: DispatchFact) => void;
-	/** A durable host restores this generated record and CAS-persists each change
-	 * under its service actor fence. Absent means a process-local adapter only. */
 	initialState?: RoutingControlStateRecord;
 	persistState?: (
 		state: RoutingControlStateRecord,
@@ -138,8 +147,6 @@ export interface RoutingControlLoop {
 	incumbent(): string;
 	revision(): number;
 	snapshot(): RoutingControlStateRecord;
-	/** Observe an interrupted final apply/restore; intermediate ramps remain
-	 * pending for the supervising transition saga to resume or restore. */
 	reconcilePending(): Promise<RoutingControlOutcome>;
 }
 export function createRoutingControlLoop(
@@ -154,7 +161,10 @@ export function createRoutingControlLoop(
 	if (options.availability) constraints.availability = options.availability;
 	if (options.resiliency) constraints.resiliency = options.resiliency;
 	let state = options.initialState
-		? structuredClone(options.initialState)
+		? create(
+				RoutingControlStateRecordSchema,
+				structuredClone(options.initialState),
+			)
 		: create(RoutingControlStateRecordSchema, {
 				service: options.topology.service,
 				tenantId: options.topology.tenantId,
@@ -181,6 +191,15 @@ export function createRoutingControlLoop(
 		!Number.isSafeInteger(state.stateVersion) ||
 		state.stateVersion < 0 ||
 		state.stateVersion > 4294967295 ||
+		Object.entries(state.budgetSignalCycles).some(
+			([key, value]) =>
+				!key ||
+				key.length > 2048 ||
+				!Number.isSafeInteger(value) ||
+				value < 1 ||
+				value > 4294967295,
+		) ||
+		Object.keys(state.budgetSignalCycles).length > 1024 ||
 		state.swapTimesMs.some((time) => !Number.isFinite(time) || time < 0) ||
 		(state.lastSwapAtMs !== undefined &&
 			(!Number.isFinite(state.lastSwapAtMs) || state.lastSwapAtMs < 0))
@@ -219,8 +238,6 @@ export function createRoutingControlLoop(
 	)
 		throw new Error("invalid routing stability policy");
 	let observations: RoutingObservations | undefined;
-	// A restored intent timestamp does not prove when an uncertain write took
-	// effect. Establish one fresh, persisted baseline per observed pending plan.
 	let observedPendingPlanId = "";
 	let queue: Promise<void> = Promise.resolve();
 	const serialized = <T>(op: () => Promise<T>): Promise<T> => {
@@ -279,28 +296,67 @@ export function createRoutingControlLoop(
 		signal: RoutingControlSignal,
 	): Promise<RoutingControlOutcome> {
 		const facts: DispatchFact[] = [];
+		let budgetUpdate: ReturnType<typeof ciBudgetSignalUpdate> | undefined;
 		if (state.pendingPlanId)
 			return reconciliation(
 				facts,
 				"an earlier provider effect must be reconciled before new routing",
 			);
-		if (
-			signal.kind === "budget" &&
-			((signal.fact.type !== "budget.ThresholdCrossed" &&
-				signal.fact.type !== "budget.Recovered") ||
-				!isJsonObject(signal.fact.data) ||
-				signal.fact.data.tenantId !== state.tenantId)
-		)
-			return {
-				action: "denied",
-				reasons: [
-					{
-						code: "budget-signal-scope-mismatch",
-						message: "budget signal does not belong to this routing tenant",
-					},
-				],
-				facts,
-			};
+		if (signal.kind === "budget") {
+			try {
+				const policy = options.budgetSignalPolicy ?? {
+					tenantId: state.tenantId,
+				};
+				if (
+					policy.tenantId !== state.tenantId ||
+					(signal.fact.type !== "budget.ThresholdCrossed" &&
+						signal.fact.type !== "budget.Recovered" &&
+						signal.fact.type !== "budget.StateReset") ||
+					!options.budgetSignalEvidence
+				)
+					throw new Error("budget signal policy or evidence unavailable");
+				const serialized = JSON.stringify(signal.fact);
+				const parsed = fromJsonString(BudgetSignalSchema, serialized);
+				budgetUpdate = ciBudgetSignalUpdate(parsed, policy);
+				if (!parsed.data) throw new Error("budget signal data unavailable");
+				if (signal.fact.type === "budget.StateReset" && !budgetUpdate.crossed)
+					throw new Error("budget reset does not cross the threshold");
+				const observed = await options.budgetSignalEvidence(
+					parsed.data.thresholdFraction,
+				);
+				if (
+					!observed ||
+					canonicalJson(parseJsonValue(serialized)) !==
+						canonicalJson(parseJsonValue(JSON.stringify(observed)))
+				)
+					throw new Error(
+						"budget signal is not the latest observed transition",
+					);
+				if (
+					budgetUpdate.watermark <=
+					(state.budgetSignalCycles[budgetUpdate.key] ?? 0)
+				)
+					return { action: "noop", reason: "budget-signal-replayed", facts };
+				if (
+					budgetUpdate.key.length > 2048 ||
+					(!(budgetUpdate.key in state.budgetSignalCycles) &&
+						Object.keys(state.budgetSignalCycles).length >= 1024)
+				)
+					throw new Error("budget signal history is full");
+			} catch {
+				return {
+					action: "denied",
+					reasons: [
+						{
+							code: "budget-signal-unverified",
+							message:
+								"budget signal has no matching current threshold evidence",
+						},
+					],
+					facts,
+				};
+			}
+		}
 		const now = clock();
 		const nowMs = Date.parse(now);
 		if (!Number.isFinite(nowMs))
@@ -323,16 +379,31 @@ export function createRoutingControlLoop(
 		const mandatoryRecovery = !healthy.some(
 			(b) => b.id === state.incumbentBackendId,
 		);
-		const ledgerView = (mandatoryRecovery
-			? options.recoveryLedgerView?.()
-			: undefined) ??
-			options.ledgerView?.() ?? {
-				view: "CreditLedgerView" as const,
-				seq: 0,
-				accounts: [],
-			};
 		let decision: ReturnType<typeof decideDispatch>;
 		try {
+			const ledgerView = parseCreditLedgerView(
+				(mandatoryRecovery ? options.recoveryLedgerView?.() : undefined) ??
+					options.ledgerView?.() ?? {
+						view: "CreditLedgerView" as const,
+						seq: 0,
+						accounts: [],
+					},
+			);
+			if (
+				signal.kind === "budget" &&
+				(!options.ledgerView ||
+					candidates.some(
+						(candidate) =>
+							!ledgerView.accounts.some(
+								(account) =>
+									account.providerId === candidate.providerId &&
+									account.dimension === "traffic.requests",
+							),
+					))
+			)
+				throw new Error(
+					"budget routing requires a ledger account for each candidate",
+				);
 			const request: Parameters<typeof decideDispatch>[0] = {
 				registry: createDispatcherRegistry(candidates),
 				category: "traffic-backend",
@@ -402,9 +473,19 @@ export function createRoutingControlLoop(
 					}
 				: { challengerBackendId: "", savingsSince: "" },
 		);
+		const budgetCheckpoint = budgetUpdate
+			? {
+					budgetSignalCycles: {
+						...state.budgetSignalCycles,
+						[budgetUpdate.key]: budgetUpdate.watermark,
+					},
+				}
+			: {};
 		const selectedBackendId = decision.selectedProvider;
-		if (selectedBackendId === state.incumbentBackendId)
+		if (selectedBackendId === state.incumbentBackendId) {
+			if (budgetUpdate) await checkpoint(budgetCheckpoint);
 			return { action: "noop", reason: "incumbent-optimal", facts };
+		}
 		if (!options.persistState || !options.ledgerView || !options.beforeApply)
 			return {
 				action: "denied",
@@ -448,8 +529,6 @@ export function createRoutingControlLoop(
 			});
 			return { action: "denied", reasons, facts };
 		}
-		// Dispatcher v1 omits `eligible` for eligible entries; only an explicit
-		// false represents a budget or capacity refusal.
 		const incumbentEligible = decision.ranking.some(
 			(c: { providerId: string; eligible?: boolean }) =>
 				c.providerId === state.incumbentBackendId && c.eligible !== false,
@@ -510,6 +589,7 @@ export function createRoutingControlLoop(
 			return { action: "held", reason: "flip-limit", selectedBackendId, facts };
 		}
 		await checkpoint({
+			...budgetCheckpoint,
 			revision: state.revision + 1,
 			pendingPlanId: synthesis.plan.planId,
 			pendingBackendId: selectedBackendId,

@@ -1,8 +1,3 @@
-// Phase-4 milestone E2E: a budget signal drives a progressive backend swap
-// behind a live HTTP proxy while a continuous request stream observes ZERO
-// failed requests — the end user never notices the cutover. Second test:
-// a health-gate failure mid-ramp rolls back automatically, still zero failed
-// requests.
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -25,6 +20,7 @@ import {
 	type RoutingTopology,
 	synthesizeRoutingPlan,
 } from "../src/traffic-routing/synthesize.js";
+import { budgetSignals } from "./fixtures/budget-signals.js";
 
 const tenantId = parseTenantId("tenant-a");
 
@@ -39,7 +35,6 @@ function policyDecision(): PolicyDecision {
 function listen(server: Server): Promise<string> {
 	return new Promise((resolve) => {
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: assertion required at this I/O or test boundary.
 			const { port } = server.address() as AddressInfo;
 			resolve(`http://127.0.0.1:${port}`);
 		});
@@ -57,7 +52,6 @@ let backendAUrl: string;
 let backendBUrl: string;
 let proxyUrl: string;
 
-// Live routing state the proxy reads: the simple adapter's latest applied plan.
 const port = createSimpleTrafficRouting();
 let activePlanId: RoutingPlanId | undefined;
 const routedPort = {
@@ -78,8 +72,6 @@ beforeAll(async () => {
 	backendAUrl = await listen(backendA);
 	backendBUrl = await listen(backendB);
 
-	// A real reverse proxy: pick a backend from the ACTIVE routing plan per
-	// request, forward, and relay the body. Any routing gap surfaces as a 502.
 	proxy = createServer(async (req, res) => {
 		try {
 			if (!activePlanId) throw new Error("no active routing plan");
@@ -125,7 +117,6 @@ function topology(): RoutingTopology {
 	};
 }
 
-/** Route 100% of traffic to one backend (the pre-swap steady state). */
 async function seedIncumbentPlan(backendId: string, planId: string) {
 	const seedTopology = topology();
 	const synthesis = synthesizeRoutingPlan({
@@ -145,19 +136,25 @@ async function seedIncumbentPlan(backendId: string, planId: string) {
 	return synthesis.plan;
 }
 
-// Costs make backend:b the budget-optimal target.
 const COST_MODEL = [
 	{ backendId: "backend:a", listUnitCost: 0.05 },
 	{ backendId: "backend:b", listUnitCost: 0.01 },
 ];
 
-const BUDGET_SIGNAL = {
-	kind: "budget" as const,
-	fact: {
-		type: "budget.ThresholdCrossed",
-		data: { tenantId: "tenant-a", thresholdFraction: 0.8, cycle: 1 },
-	},
-};
+const budget = budgetSignals(tenantId);
+const BUDGET_SIGNAL = budget.signal();
+
+function ledgerView() {
+	return {
+		view: "CreditLedgerView" as const,
+		seq: 0,
+		accounts: COST_MODEL.map((model) => ({
+			providerId: model.backendId,
+			dimension: "traffic.requests",
+			listUnitCost: model.listUnitCost,
+		})),
+	};
+}
 
 interface TrafficLog {
 	total: number;
@@ -190,15 +187,6 @@ function startTrafficGenerator(): TrafficGenerator {
 		}
 	})();
 	return {
-		// `minRequests` drains to a count instead of trusting the clock. The
-		// downstream `log.total > 10` reads like a vacuity guard — a generator
-		// that never ran must not make `failed === 0` trivially true — but what
-		// it actually asserted was throughput: under a 10-way `turbo run test`
-		// on a four-core box this generator got through 4 requests inside the
-		// ramp window, and the test failed for being starved rather than for
-		// routing anything wrongly. Waiting for the count keeps the guard and
-		// drops the dependency on how loaded the machine is; a generator that
-		// is genuinely dead still fails, it just fails at the deadline.
 		stop: async (minRequests = 0) => {
 			const deadline = Date.now() + 5_000;
 			while (log.total < minRequests && Date.now() < deadline) {
@@ -219,7 +207,8 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 
 	const facts: string[] = [];
 	const loop = createRoutingControlLoop({
-		ledgerView: () => ({ view: "CreditLedgerView", seq: 0, accounts: [] }),
+		budgetSignalEvidence: budget.evidence,
+		ledgerView,
 		persistState: async () => {},
 		beforeApply: async () => {},
 		topology: topology(),
@@ -239,8 +228,6 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 				incumbentPlan,
 			},
 			rampSteps: [10, 50, 100],
-			// Health gate: probe the target backend between ramp steps; the
-			// pause lets live traffic interleave with every ramp stage.
 			healthGate: async () => {
 				await sleep(40);
 				const probe = await fetch(backendBUrl);
@@ -261,7 +248,6 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 	assert.equal(outcome.action, "reapplied");
 	assert.equal(loop.incumbent(), "backend:b");
 
-	// Zero user-visible failures across the whole swap.
 	assert.equal(
 		log.failed,
 		0,
@@ -271,11 +257,9 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 		log.total > 10,
 		`traffic generator only sent ${log.total} requests`,
 	);
-	// Traffic reached both backends across the ramp window.
 	assert.ok(log.bodies.includes("A"), "no request reached the incumbent");
 	assert.ok(log.bodies.includes("B"), "no request reached the target");
 
-	// Golden fact trace for the swap.
 	assert.deepEqual(facts, [
 		"dispatch.Decided",
 		ROUTING_LOOP_EVENTS.ReplanProposed,
@@ -296,7 +280,6 @@ test("milestone: budget-pressured swap from A to B with zero failed requests acr
 		ROUTING_LOOP_EVENTS.Reapplied,
 	]);
 
-	// After cutover 100% of traffic reaches the new backend.
 	for (let i = 0; i < 10; i += 1) {
 		const response = await fetch(`${proxyUrl}/post-cutover-${i}`);
 		assert.equal(await response.text(), "B");
@@ -311,7 +294,8 @@ test("milestone: health-gate failure at 50% rolls back automatically with zero f
 
 	const facts: string[] = [];
 	const loop = createRoutingControlLoop({
-		ledgerView: () => ({ view: "CreditLedgerView", seq: 0, accounts: [] }),
+		budgetSignalEvidence: budget.evidence,
+		ledgerView,
 		persistState: async () => {},
 		beforeApply: async () => {},
 		topology: topology(),
@@ -333,7 +317,7 @@ test("milestone: health-gate failure at 50% rolls back automatically with zero f
 			rampSteps: [10, 50, 100],
 			healthGate: async ({ percent }) => {
 				await sleep(40);
-				return percent < 50; // target turns unhealthy mid-ramp
+				return percent < 50;
 			},
 		},
 		onFact: (fact) => facts.push(fact.type),
@@ -376,7 +360,6 @@ test("milestone: health-gate failure at 50% rolls back automatically with zero f
 		CUTOVER_EVENTS.RolledBack,
 	]);
 
-	// Rolled back: traffic is fully on the incumbent again.
 	for (let i = 0; i < 10; i += 1) {
 		const response = await fetch(`${proxyUrl}/post-rollback-${i}`);
 		assert.equal(await response.text(), "A");

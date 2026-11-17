@@ -10,11 +10,9 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file routing_control.proto.
  */
 export const file_routing_control: GenFile = /*@__PURE__*/
-  fileDesc("ChVyb3V0aW5nX2NvbnRyb2wucHJvdG8SEGhvYm8uc3RhdGlvbnMudjEiuAMKGVJvdXRpbmdDb250cm9sU3RhdGVSZWNvcmQSDwoHc2VydmljZRgBIAEoCRIRCgl0ZW5hbnRfaWQYAiABKAkSEgoKc3RhdGlvbl9pZBgDIAEoCRIcChRpbmN1bWJlbnRfYmFja2VuZF9pZBgEIAEoCRIQCghyZXZpc2lvbhgFIAEoDRIcCg9sYXN0X3N3YXBfYXRfbXMYBiABKAFIAIgBARIVCg1zd2FwX3RpbWVzX21zGAcgAygBEhcKD3BlbmRpbmdfcGxhbl9pZBgIIAEoCRIaChJwZW5kaW5nX2JhY2tlbmRfaWQYCSABKAkSHQoVY2hhbGxlbmdlcl9iYWNrZW5kX2lkGAogASgJEhUKDXNhdmluZ3Nfc2luY2UYCyABKAkSFwoPcGVuZGluZ19wZXJjZW50GAwgASgNEhUKDXBlbmRpbmdfcGhhc2UYDSABKAkSHQoVcGVuZGluZ19zdGFydGVkX2F0X21zGA4gASgBEhkKEXBlbmRpbmdfcGxhbl9qc29uGA8gASgJEhUKDXN0YXRlX3ZlcnNpb24YECABKA1CEgoQX2xhc3Rfc3dhcF9hdF9tcyKDAQoeQ3V0b3ZlckhlYWx0aE9ic2VydmF0aW9uUmVjb3JkEg8KB2hlYWx0aHkYASABKAgSEwoLb2JzZXJ2ZWRfYXQYAiABKAkSFgoOb2JzZXJ2YXRpb25faWQYAyABKAkSEgoKYmFja2VuZF9pZBgEIAEoCRIPCgdwbGFuX2lkGAUgASgJYgZwcm90bzM");
+  fileDesc("ChVyb3V0aW5nX2NvbnRyb2wucHJvdG8SEGhvYm8uc3RhdGlvbnMudjEi1gQKGVJvdXRpbmdDb250cm9sU3RhdGVSZWNvcmQSDwoHc2VydmljZRgBIAEoCRIRCgl0ZW5hbnRfaWQYAiABKAkSEgoKc3RhdGlvbl9pZBgDIAEoCRIcChRpbmN1bWJlbnRfYmFja2VuZF9pZBgEIAEoCRIQCghyZXZpc2lvbhgFIAEoDRIcCg9sYXN0X3N3YXBfYXRfbXMYBiABKAFIAIgBARIVCg1zd2FwX3RpbWVzX21zGAcgAygBEhcKD3BlbmRpbmdfcGxhbl9pZBgIIAEoCRIaChJwZW5kaW5nX2JhY2tlbmRfaWQYCSABKAkSHQoVY2hhbGxlbmdlcl9iYWNrZW5kX2lkGAogASgJEhUKDXNhdmluZ3Nfc2luY2UYCyABKAkSFwoPcGVuZGluZ19wZXJjZW50GAwgASgNEhUKDXBlbmRpbmdfcGhhc2UYDSABKAkSHQoVcGVuZGluZ19zdGFydGVkX2F0X21zGA4gASgBEhkKEXBlbmRpbmdfcGxhbl9qc29uGA8gASgJEhUKDXN0YXRlX3ZlcnNpb24YECABKA0SYQoUYnVkZ2V0X3NpZ25hbF9jeWNsZXMYESADKAsyQy5ob2JvLnN0YXRpb25zLnYxLlJvdXRpbmdDb250cm9sU3RhdGVSZWNvcmQuQnVkZ2V0U2lnbmFsQ3ljbGVzRW50cnkaOQoXQnVkZ2V0U2lnbmFsQ3ljbGVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4AUISChBfbGFzdF9zd2FwX2F0X21zIoMBCh5DdXRvdmVySGVhbHRoT2JzZXJ2YXRpb25SZWNvcmQSDwoHaGVhbHRoeRgBIAEoCBITCgtvYnNlcnZlZF9hdBgCIAEoCRIWCg5vYnNlcnZhdGlvbl9pZBgDIAEoCRISCgpiYWNrZW5kX2lkGAQgASgJEg8KB3BsYW5faWQYBSABKAliBnByb3RvMw");
 
 /**
- * Persisted under one fenced service actor before external effects.
- *
  * @generated from message hobo.stations.v1.RoutingControlStateRecord
  */
 export type RoutingControlStateRecord = Message<"hobo.stations.v1.RoutingControlStateRecord"> & {
@@ -89,18 +87,19 @@ export type RoutingControlStateRecord = Message<"hobo.stations.v1.RoutingControl
   pendingStartedAtMs: number;
 
   /**
-   * exact approved artifact for reconciliation
-   *
    * @generated from field: string pending_plan_json = 15;
    */
   pendingPlanJson: string;
 
   /**
-   * advances on every CAS checkpoint, independently of plan revision
-   *
    * @generated from field: uint32 state_version = 16;
    */
   stateVersion: number;
+
+  /**
+   * @generated from field: map<string, uint32> budget_signal_cycles = 17;
+   */
+  budgetSignalCycles: { [key: string]: number };
 };
 
 /**
