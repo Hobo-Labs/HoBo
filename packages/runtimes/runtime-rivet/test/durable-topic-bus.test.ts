@@ -769,6 +769,79 @@ describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 		expect(current.leaseId).not.toBe(first.leaseId);
 	});
 
+	it("skips user-occupied DLQ IDs and never reuses a generated ID after compaction", async () => {
+		const f = await fixture();
+		await setup(f, 1);
+		await f.mutate("publish", { topic: "dlq", message: message("dlq-1") });
+		await f.mutate("publish", { topic: "orders", message: message() });
+		const original = (await f.mutate("consume", consume())).value[0];
+		const first = await f.mutate("nack", {
+			...settle(original),
+			reason: "fatal",
+		});
+		expect(first.value.deadLetterMessageId).toBe("dlq-2");
+		const batch = (
+			await f.mutate("consume", { ...consume("dlq", "reader"), maxMessages: 2 })
+		).value;
+		expect(
+			batch.map((item: { message: { id: string } }) => item.message.id),
+		).toEqual(["dlq-1", "dlq-2"]);
+		for (const delivery of batch)
+			expect((await f.mutate("ack", settle(delivery))).status).toBe(
+				"committed",
+			);
+		await f.mutate("compact", { topic: "dlq", throughSequence: 2 });
+		await f.mutate("compact", { topic: "orders", throughSequence: 1 });
+		await f.mutate("publish", { topic: "orders", message: message() });
+		const next = (await f.mutate("consume", consume())).value[0];
+		const second = await f.mutate("nack", { ...settle(next), reason: "fatal" });
+		expect(second.value).toMatchObject({
+			messageId: "m",
+			sequence: 2,
+			deadLetterMessageId: "dlq-3",
+			deadLetterSequence: 3,
+		});
+	});
+
+	it("fences leases at their exact deadline and rejects deadline overflow", async () => {
+		const f = await fixture();
+		await setup(f);
+		await f.mutate("publish", { topic: "orders", message: message() });
+		const first = (
+			await f.mutate("consume", { ...consume(), visibilityTimeoutMs: 1 })
+		).value[0];
+		expect(first.leaseExpiresAtMs).toBe(1_001);
+		f.advance(1);
+		expect((await f.mutate("ack", settle(first))).code).toBe("lease-lost");
+		const second = (
+			await f.mutate("consume", { ...consume(), visibilityTimeoutMs: 1 })
+		).value[0];
+		expect(second.deliveryAttempt).toBe(2);
+		expect(second.leaseExpiresAtMs).toBe(1_002);
+		expect(
+			(await f.mutate("nack", { ...settle(first), reason: "stale" })).code,
+		).toBe("lease-lost");
+		expect((await f.mutate("ack", settle(second))).status).toBe("committed");
+		await f.mutate("publish", { topic: "orders", message: message("next") });
+		f.setClock(Number.MAX_SAFE_INTEGER - 1);
+		const request = {
+			operation: durableMessagingOperation(
+				Number.MAX_SAFE_INTEGER,
+				"overflow_deadline",
+			),
+			...consume(),
+			visibilityTimeoutMs: 2,
+		};
+		expect(await (await f.send("consume", request)).json()).toEqual({
+			status: "rejected",
+			code: "capacity-exceeded",
+		});
+		expect(await (await f.send("consume", request)).json()).toEqual({
+			status: "rejected",
+			code: "capacity-exceeded",
+		});
+	});
+
 	it("bounds the combined worst-case retained state and wire pages", async () => {
 		const f = await fixture();
 		const limits = f.actor.limits;
