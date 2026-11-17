@@ -183,46 +183,47 @@ describe("durable messaging conformance runner", () => {
 			consume: async ({ operation }) => {
 				consumes++;
 				if (consumes > 1) {
-					let outcome;
-					if (variant === "rejected-value")
-						outcome = {
-							status: "rejected",
-							code: "unauthorized",
-							value: { payload: "secret" },
-						};
-					else if (variant === "rejected-operation")
-						outcome = {
-							status: "rejected",
-							code: "unauthorized",
-							operation: { payload: "secret" },
-						};
-					else if (variant === "unknown-extra")
-						outcome = { status: "unknown", operation, secret: "secret" };
-					else if (variant === "unknown-symbol")
-						outcome = {
-							status: "unknown",
-							operation,
-							[Symbol("secret")]: "secret",
-						};
-					else if (variant === "unknown-nested")
-						outcome = {
-							status: "unknown",
-							operation: { ...operation, secret: "secret" },
-						};
-					else if (variant === "expired-extra")
-						outcome = { status: "expired", operation, secret: "secret" };
-					else if (variant === "malformed-committed")
-						outcome = { status: "committed", value: { payload: "secret" } };
-					else if (variant === "accessor") {
-						outcome = { status: "unknown", operation };
-						Object.defineProperty(outcome, "secret", {
-							get() {
-								traps++;
-								return "secret";
-							},
-						});
-					} else {
-						outcome = new Proxy(
+					const outcome = (() => {
+						if (variant === "rejected-value")
+							return {
+								status: "rejected",
+								code: "unauthorized",
+								value: { payload: "secret" },
+							};
+						if (variant === "rejected-operation")
+							return {
+								status: "rejected",
+								code: "unauthorized",
+								operation: { payload: "secret" },
+							};
+						if (variant === "unknown-extra")
+							return { status: "unknown", operation, secret: "secret" };
+						if (variant === "unknown-symbol")
+							return {
+								status: "unknown",
+								operation,
+								[Symbol("secret")]: "secret",
+							};
+						if (variant === "unknown-nested")
+							return {
+								status: "unknown",
+								operation: { ...operation, secret: "secret" },
+							};
+						if (variant === "expired-extra")
+							return { status: "expired", operation, secret: "secret" };
+						if (variant === "malformed-committed")
+							return { status: "committed", value: { payload: "secret" } };
+						if (variant === "accessor") {
+							const value = { status: "unknown", operation };
+							Object.defineProperty(value, "secret", {
+								get() {
+									traps++;
+									return "secret";
+								},
+							});
+							return value;
+						}
+						return new Proxy(
 							{ status: "unknown", operation },
 							{
 								get(_target, key) {
@@ -236,7 +237,7 @@ describe("durable messaging conformance runner", () => {
 								},
 							},
 						);
-					}
+					})();
 					// SAFETY: these fixtures deliberately model untrusted provider outcomes.
 					return outcome as never;
 				}
