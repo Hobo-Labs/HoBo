@@ -14,11 +14,6 @@ import {
 } from "./json.js";
 import type { UpcasterRegistry } from "./upcaster.js";
 
-// A projection is the read-model fold: a deterministic, read-only `(row, event)
-// -> row` per subscribed event type, keyed into rows. It is derived and
-// rebuildable-from-zero; a snapshot is only a cache, never a source of truth
-// (data-plane.md §Projections). The apply surface has NO write capability by
-// construction — the read fold can never mutate the write model.
 export type ApplyHandler<Row> = (
 	row: Row | undefined,
 	event: EventEnvelope,
@@ -26,9 +21,7 @@ export type ApplyHandler<Row> = (
 
 export interface ProjectionDefinition<Row> {
 	name: string;
-	// Row identity: which read-model row an event lands in.
 	key: (event: EventEnvelope) => string;
-	// Per-event-type fold handlers. Object.keys(on) is the read-set.
 	on: Record<string, ApplyHandler<Row>>;
 	reactivityClass?: "reactive" | "non-reactive";
 	upcasters?: UpcasterRegistry;
@@ -43,17 +36,13 @@ export interface ProjectionSnapshot<Row> {
 export interface Projection<Row> {
 	readonly name: string;
 	readonly readSet: readonly string[];
-	// Pure read-model fold over an event iterable (rebuildable from zero).
 	fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row>;
-	// Drop the sink and replay the stream — the test that the LOG is authoritative.
 	rebuildFromZero(
 		store: EventStore,
 		streamId: string,
 	): Promise<ProjectionSnapshot<Row>>;
-	// Queryable read surface over the current materialization.
 	query(snapshot: ProjectionSnapshot<Row>): Row[];
 	get(snapshot: ProjectionSnapshot<Row>, key: string): Row | undefined;
-	// A snapshot is a cache: seed a fold with it, but rebuildFromZero ignores it.
 	snapshot(state: ProjectionSnapshot<Row>): ProjectionSnapshot<Row>;
 	declared(): DataFact;
 	lagged(lagSeq: number, bound: number): DataFact;
@@ -67,7 +56,6 @@ function clone<T>(value: T): T {
 
 function deepFreeze<T>(value: T): T {
 	if (value === undefined || value === null) return value;
-	// SAFETY: freeze walks own properties of object-like values; primitives return above.
 	const inspectable = value as Inspectable;
 	if (!isObjectLike(inspectable) || Object.isFrozen(inspectable)) return value;
 	Object.freeze(inspectable);
@@ -100,27 +88,35 @@ export function defineProjection<Row>(
 
 	function fold(events: Iterable<EventEnvelope>): ProjectionSnapshot<Row> {
 		const rows: Record<string, Row> = {};
-		const quarantinedSeqs = new Set<number>();
+		const quarantinedEvents = new Set<string>();
 		const materialized = [...events];
 		for (const event of materialized) {
 			if (isQuarantineFact(event)) {
 				const offending = parseOffendingSeq(event.data);
-				if (offending !== undefined) quarantinedSeqs.add(offending);
+				if (offending !== undefined) {
+					quarantinedEvents.add(
+						JSON.stringify([event.tenant, event.streamId, offending]),
+					);
+				}
 			}
 		}
 
 		let seq = 0;
 		for (const event of materialized) {
 			seq = Math.max(seq, event.seq);
-			if (isQuarantineFact(event) || quarantinedSeqs.has(event.seq)) continue;
+			if (
+				isQuarantineFact(event) ||
+				quarantinedEvents.has(
+					JSON.stringify([event.tenant, event.streamId, event.seq]),
+				)
+			)
+				continue;
 			const handler = handlers.get(event.type);
 			if (!handler) continue;
 			const upcast = definition.upcasters
 				? definition.upcasters.upcast(event)
 				: event;
 			const key = definition.key(upcast);
-			// Read-only boundary: the handler sees frozen state + a frozen event and
-			// returns the next row. It is handed no store/emit capability.
 			const nextRow = handler(
 				rows[key] === undefined ? undefined : deepFreeze(clone(rows[key])),
 				deepFreeze(clone(upcast)),
@@ -138,7 +134,6 @@ export function defineProjection<Row>(
 
 		async rebuildFromZero(store, streamId) {
 			const events: EventEnvelope[] = [];
-			// fromSeq omitted -> replays the whole stream from the first event.
 			for await (const event of store.read(streamId)) events.push(event);
 			return fold(events);
 		},
