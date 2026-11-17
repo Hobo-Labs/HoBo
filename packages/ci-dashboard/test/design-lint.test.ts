@@ -134,7 +134,7 @@ describe("dashboard design lint (HoBo Rubberhose)", () => {
 
 	it("shows a visible focus ring on everything focusable", () => {
 		expect(css).toMatch(
-			/button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,main:focus-visible\{outline:3px solid var\(--spark\)/u,
+			/button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible\{outline:3px solid var\(--spark\)/u,
 		);
 	});
 

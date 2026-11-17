@@ -47,6 +47,7 @@ h3{margin:0 0 .35rem;font-size:1.25rem;line-height:1.2}
 p{margin:.35rem 0 .85rem}
 a{color:var(--ink);text-underline-offset:3px}a:hover{color:var(--spark)}
 code{font:.875rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code-bg);padding:.05rem .3rem;border:2px solid var(--border-strong);border-radius:4px;overflow-wrap:anywhere}
+.note{color:var(--mute);font-size:.9rem;max-width:62ch}
 .eyebrow,.meta,caption{color:var(--mute);letter-spacing:.06em;text-transform:uppercase;font-size:.75rem;font-weight:700}
 header.chrome,section,.signin{background:var(--paper);border:3px solid var(--ink);border-radius:18px;box-shadow:4px 4px 0 var(--ink);padding:1.25rem 1.4rem;margin:0 0 1.25rem}
 .chrome-bar{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
@@ -55,7 +56,8 @@ button,.action{display:inline-grid;place-items:center;min-height:2.75rem;padding
 button:hover,.action:hover{background:var(--spark);color:var(--paper)}
 button:active,.action:active{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink)}
 .action[aria-current="page"]{background:var(--ink);color:var(--paper)}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,main:focus-visible{outline:3px solid var(--spark);outline-offset:3px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--spark);outline-offset:3px}
+main:focus{outline:none}
 fieldset:disabled{opacity:.6}
 label{font-weight:700}
 input,select{font:inherit;color:var(--ink);background:var(--paper);border:3px solid var(--ink);border-radius:4px;padding:.45rem .6rem;min-height:2.75rem;width:100%}
@@ -85,6 +87,7 @@ tbody tr:last-child td{border-bottom:0}
 .skipped li{margin:.15rem 0;padding-left:.85rem;border-left:6px solid var(--border-strong)}
 .decisions>li,.signals>li{border-top:3px solid var(--border);padding:.75rem 0}
 .decisions>li:first-child,.signals>li:first-child{border-top:0;padding-top:0}
+.signal[data-shown="false"]{padding:.4rem 0}.signal[data-shown="false"] p{margin:0}
 .facts{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1rem;margin:0 0 1rem}
 .facts dt{font-weight:700}.facts dd{margin:0}
 .job{border-top:3px solid var(--ink);padding-top:.85rem;margin-top:.85rem}
@@ -94,7 +97,7 @@ tbody tr:last-child td{border-bottom:0}
 .problem{margin:0 0 1rem}
 .badge{display:inline-block;border:2px solid var(--ink);border-radius:999px;padding:0 .5rem;font-size:.75rem;font-weight:700;background:var(--inset)}
 .trend{list-style:none;margin:0;padding:.5rem 0 0;display:flex;gap:4px;align-items:flex-end;height:10rem;overflow-x:auto}
-.trend li{flex:1 0 1.6rem;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+.trend li{flex:0 0 2.25rem;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
 .trend .bar{display:block;width:100%;background:var(--ink);border:2px solid var(--ink);border-radius:2px 2px 0 0}
 .trend .day{font-size:.65rem;color:var(--mute)}
 .empty{color:var(--mute);border:3px dashed var(--ink);border-radius:18px;padding:1rem;background:var(--paper);margin:0 0 1rem}

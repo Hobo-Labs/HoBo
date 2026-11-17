@@ -98,3 +98,11 @@ what-if question (`WhatIfQuestion`), are defined in
 | `test/what-if.test.ts` | The walk in the panel: machine, minutes limit, failing runner type, waiting, none |
 | `test/route.test.ts` | The page, the script, the CSP, `GET` only |
 | `test/design-lint.test.ts` | Palette, outlines, flat lamps, focus rings, WCAG AA contrast by day and night |
+| `test/dashboard.browser.test.ts` | The built page in Chrome against a mock read API built from the provider's pact: the five views, the what-if, the edit link, only `GET` to its own origin, the accessibility checks on every view, a keyboard focus ring, and each view by day and night against its screenshot in `test/visual/` (1% of pixels may differ) |
+
+The browser test needs a Chrome or Chromium binary (`PLAYWRIGHT_CHROMIUM_PATH`,
+Playwright's own, or a system Chrome); without one it is skipped and says
+so. The screenshots were taken with Chrome for Testing on Linux; on another
+font stack, refresh them with
+`UPDATE_VISUAL=1 pnpm exec vitest run test/dashboard.browser.test.ts` and
+review the images before committing.

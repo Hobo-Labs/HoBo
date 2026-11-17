@@ -76,8 +76,12 @@ function section(id: string, title: string, body: string): string {
 	return `<section aria-labelledby="${id}"><h2 id="${id}">${escapeHtml(title)}</h2>${body}</section>`;
 }
 
+/** An empty state; a trailing `hobo ...` command is shown as code. */
 function empty(text: string): string {
-	return `<p class="empty">${escapeHtml(text)}</p>`;
+	const command = /^(.*with )(hobo [a-z -]+)\.$/u.exec(text);
+	return command?.[1] && command[2]
+		? `<p class="empty">${escapeHtml(command[1])}<code>${escapeHtml(command[2])}</code>.</p>`
+		: `<p class="empty">${escapeHtml(text)}</p>`;
 }
 
 function table(
@@ -257,7 +261,7 @@ export function renderRunners(model: RunnersModel): string {
 			`Machines (${connected.length})`,
 			connected.length === 0
 				? empty(
-						"No machine is connected. Connect one with `hobo ci machine connect`.",
+						"No machine is connected. Connect one with hobo ci machine connect.",
 					)
 				: table(
 						"Connected machines",
@@ -270,7 +274,7 @@ export function renderRunners(model: RunnersModel): string {
 			`Adopted runners (${adopted.length})`,
 			adopted.length === 0
 				? empty(
-						"No self-hosted runner is adopted. Adopt one with `hobo ci runners adopt`.",
+						"No self-hosted runner is adopted. Adopt one with hobo ci runners adopt.",
 					)
 				: table(
 						"Adopted self-hosted runners",
@@ -376,7 +380,7 @@ function whatIfForm(model: RouterModel): string {
 		.join("");
 	const answer =
 		model.answer === undefined
-			? `<p class="meta" id="what-if-answer" role="status" tabindex="-1">Set the inputs and run the walk. Nothing is sent to the relay.</p>`
+			? `<p class="note" id="what-if-answer" role="status" tabindex="-1">Set the inputs and run the walk. Nothing is sent to the relay.</p>`
 			: `<div id="what-if-answer" class="answer" role="status" tabindex="-1">${decisionLine(model.answer)}</div>`;
 	return `<form id="what-if" class="what-if" novalidate>
 <fieldset${disabled}><legend>What if a relay job asked now</legend>
@@ -412,7 +416,7 @@ export function renderRouter(model: RouterModel): string {
 		}),
 	);
 	const rules = `<dl class="facts"><dt>auto size</dt><dd>${orderAutoSize(order.order)} vCPUs</dd><dt>Skips a runner type that stopped starting jobs</dt><dd>${skipsUnhealthy(order.order) ? "yes" : "no"}</dd><dt>Retry</dt><dd>${retry.enabled ? `on, ${escapeHtml(retry.runner)} runner, at most ${retry.max}` : "off"}</dd></dl>`;
-	const edit = `<p class="edit"><a class="action" href="${escapeHtml(editOrderUrl(order.repository, order.ref))}" target="_blank" rel="noopener noreferrer" data-edit="runner-order">Edit in a pull request</a></p><p class="meta">The order lives in <code>${PROJECT_CONFIG_PATH}</code> under <code>runnerOrder</code>. Editing opens GitHub's editor for that file: save the change on a new branch and open a pull request. The relay reads the committed order, so nothing changes until the pull request merges.</p>`;
+	const edit = `<p class="edit"><a class="action" href="${escapeHtml(editOrderUrl(order.repository, order.ref))}" target="_blank" rel="noopener noreferrer" data-edit="runner-order">Edit in a pull request</a></p><p class="note">The order lives in <code>${PROJECT_CONFIG_PATH}</code> under <code>runnerOrder</code>. Editing opens GitHub's editor for that file: save the change on a new branch and open a pull request. The relay reads the committed order, so nothing changes until the pull request merges.</p>`;
 	const decisions =
 		model.routes.length === 0
 			? empty("No route decision is journaled for this repository yet.")
@@ -511,7 +515,7 @@ function jobBlock(
 			? ""
 			: `<div class="diagnosis" data-kind="${escapeHtml(diagnosis.kind)}"><p><strong>${escapeHtml(summarizeDiagnosis(diagnosis))}</strong></p>${
 					diagnosis.evidence.length === 0
-						? `<p class="meta">No evidence in the steps; the log is not read here. Read it with <code>gh run view --log-failed</code>.</p>`
+						? `<p class="note">No evidence in the steps; the log is not read here. Read it with <code>gh run view --log-failed</code>.</p>`
 						: `<p class="meta">Evidence:</p><ul>${diagnosis.evidence.map((line) => `<li><code>${escapeHtml(line)}</code></li>`).join("")}</ul>`
 				}</div>`;
 	return `<article class="job" data-conclusion="${escapeHtml(job.conclusion)}"><h3>${escapeHtml(job.name)}</h3><p class="meta">${conclusionLamp(job.conclusion)} · on <code>${escapeHtml(job.runnerName ?? job.labels.join(", "))}</code> · waited ${escapeHtml(duration(waited))} · ran ${escapeHtml(duration(ran))}</p>${diagnosed}${steps}</article>`;
@@ -683,7 +687,11 @@ function trendBars(report: SignalReport): string {
 }
 
 export function renderSignals(report: SignalReport): string {
-	const signals = report.signals.signals;
+	// Signals over their threshold first, then the rest in report order.
+	const signals = [
+		...report.signals.signals.filter((signal) => signal.shown),
+		...report.signals.signals.filter((signal) => !signal.shown),
+	];
 	const list =
 		signals.length === 0
 			? empty("No run is stored for this window yet.")
