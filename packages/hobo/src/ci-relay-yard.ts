@@ -134,13 +134,15 @@ function isYard<T>(value: T): value is T & Yard {
 export async function loadRelayJoinedYards(
 	projectDir: string,
 	relay: Yard,
+	/** The module's junction export (CD's is `cdJunction`). */
+	junctionExport = "relayJunction",
 ): Promise<readonly Yard[]> {
 	for (const candidate of RELAY_YARD_SOURCE_CANDIDATES) {
 		const absolute = path.join(projectDir, candidate);
 		if (!existsSync(absolute)) continue;
 		const module: object = await import(pathToFileURL(absolute).href);
 		const declared = Object.entries(module).find(
-			([name]) => name === "relayJunction",
+			([name]) => name === junctionExport,
 		)?.[1];
 		if (
 			!isJsonObject(declared) ||

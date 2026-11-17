@@ -49,15 +49,17 @@ non-secret declarations.
 
 ## Status
 
-The deployable and its tests (`test/`) exist. Two pieces are not done yet:
+The deployable and its tests (`test/`) exist. One piece is done and one is not:
 
-- `hobo cd up` does not deliver it yet; it will, by a git deployment of this
-  directory, the way `hobo ci up` delivers the relay.
+- `hobo cd up` delivers it as a git deployment of this directory at the
+  current commit to the `hobo-cd` project's preview, the way `hobo ci up`
+  delivers the relay (`createCdVercelUpCommand`). It does not yet verify the
+  delivery by its probes: a preview URL is protected.
 - No store binding is committed, because the CD workload identity (an
   Infisical identity that trusts this Vercel project's OIDC tokens) is not
   created yet.
 
-Until both land, a deployment answers `/readyz` with
+Until the binding is committed, a deployment answers `/readyz` with
 `cd-store-binding-missing`. The journal fleet's copy timer runs only while an
 instance is alive. Driving it from the scheduled pass is not done yet.
 

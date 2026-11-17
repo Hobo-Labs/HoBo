@@ -158,9 +158,15 @@ failover. A reported policy shortfall does not prevent the fleet from serving.
 
 Tested end to end through the real connect page with a scripted browser and a
 pact-driven Vercel fake; the in-memory `SecretsPort` stands in for the store.
-Not yet run against live Vercel. `hobo cd plan` places `cd-journal` and
-`cd-config` on the Yards `hobo cd up` makes for them (see
-[Where the journal and config are placed](#where-the-journal-and-config-are-placed)),
-and `hobo cd up` records both. `cd-api` and `cd-tick` have no deployable
-artifact yet: the Vercel deploy provider has nothing to deploy for HoBo.CD's
-API and tick, so `hobo cd up` stops at `cd-api` (`executor.apply_failed`).
+Not yet run against live Vercel. `hobo cd plan` places CD on its own Yards,
+whatever this machine has registered:
+
+- `cd-api` and `cd-tick` go on CD's Vercel Yard (`packages/cd-vercel`).
+- `cd-journal` and `cd-config` go on the Yards `hobo cd up` makes for them (see
+  [Where the journal and config are placed](#where-the-journal-and-config-are-placed)).
+
+`hobo cd up` then delivers `packages/cd-vercel` as one git deployment of the
+current commit to CD's preview on Vercel, and records the journal and config as
+made by prepare. Production stays an explicit promotion. Until the CD workload
+identity exists and its store binding is committed, the deployment answers
+`/readyz` with `cd-store-binding-missing`.

@@ -225,8 +225,18 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
 			// Nothing more is asked of the owner: no sign-in, approval, store or
-			// hand-off refusal remains. What follows is the CD project's own
-			// convergence (see the todo below).
+			// hand-off refusal remains, and the CD project converges: the
+			// journal and config as prepare made them, the API and the tick as
+			// one git deployment of packages/cd-vercel to CD's preview.
+			expect(fourth).toContain("HOBO_OK");
+			expect(fourth).toContain(
+				"hobo cd up deployed 4 resources (cd-api, cd-config, cd-journal, cd-tick)",
+			);
+			expect(
+				world.requests.filter((request) =>
+					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
+				),
+			).toHaveLength(1);
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
@@ -322,12 +332,4 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			await api.close();
 		}
 	}, 120_000);
-
-	// The CD project's own declaration (packages/hobo-cd/src/bindle.ts) says
-	// its resources must be wired before it can deploy: the API has no handler
-	// binding, the schedule no cadence, and cd-config / cd-journal no
-	// providers in the composed runtime. The plan is rejected there today.
-	it.todo(
-		"cd up converges the CD project after the ceremony (the hobo-cd Bindle is not deployable yet)",
-	);
 });
