@@ -350,6 +350,10 @@ can be admitted against current policy; interrupted running leases remain uncert
 The persisted queue deadline is exclusive: allocation is refused at or after that
 instant, including after asynchronous provider preflight. A claimed financial hold
 is retained until native final usage or valid unused-release evidence resolves it.
+For a shared fixed-window budget, the full approved work duration is checked
+again after the parent financial claim returns, including time spent waiting for
+the store. If the window can no longer fund the work, execution is refused and
+the already-claimed hold remains for evidence-based reconciliation.
 
 The root entrypoint and scheduler target Node. Cloudflare Workers import the
 portable `@hobo/ci/execution` entrypoint, which has no Node ledger or Dispatcher

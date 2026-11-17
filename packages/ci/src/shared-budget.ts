@@ -515,12 +515,24 @@ export function createCiSharedBudgetHooks(
 				executionDigest: ciExecutionDigest(lease),
 				expectedSeq: current.seq,
 			});
-			// Financial storage may have waited for a lock. Permission is current at return.
-			checkedClaimQuote(
+			// Financial storage may have waited for a lock. Recheck the full
+			// policy at return, including the remaining funded work duration.
+			const returnedAt = now();
+			const returnedQuote = checkedClaimQuote(
 				lease,
 				checkedReservation(lease, claimed),
 				options,
-				now(),
+				returnedAt,
+			);
+			checkedAllocation(lease, returnedQuote, current, options);
+			checkedFinancialPolicy(
+				lease,
+				returnedQuote,
+				current,
+				claimed,
+				options,
+				returnedAt,
+				measurements,
 			);
 			return claimed;
 		},
@@ -615,11 +627,22 @@ export function createCiAsyncSharedBudgetHooks(
 				executionDigest: ciExecutionDigest(lease),
 				expectedSeq: current.seq,
 			});
-			checkedClaimQuote(
+			const returnedAt = now();
+			const returnedQuote = checkedClaimQuote(
 				lease,
 				checkedReservation(lease, claimed),
 				options,
-				now(),
+				returnedAt,
+			);
+			checkedAllocation(lease, returnedQuote, current, options);
+			checkedFinancialPolicy(
+				lease,
+				returnedQuote,
+				current,
+				claimed,
+				options,
+				returnedAt,
+				measurements,
 			);
 			return claimed;
 		},
