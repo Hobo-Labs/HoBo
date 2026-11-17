@@ -797,6 +797,11 @@ The actor's captured `semanticDigest` must equal the source fence's
 is only an identity check: the trusted host must independently attest that the
 digest covers the complete executable and dependency closure, actor identity,
 fixed profile, behavior-affecting configuration and build/upload environment.
+The actor brand is local to one `@hobo/runtime-rivet` module instance. In the
+IaC process, construct the actor using the same installed runtime instance that
+the mapper resolves as its peer; duplicate runtime copies fail closed as an
+unrecognized binding. The separately bundled pool process constructs its own
+actor, whose exact source and configuration the host must attest independently.
 It must also verify that the main starts this exact registry and authorized
 policies on the attested exclusive pool. The plan's complete
 `composite.sourceRequirements` must include
