@@ -11,15 +11,25 @@
  * stopped), and either way the advert is withdrawn before any job is waited
  * on. A refusal for good (a takeover) hands off too.
  */
+
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { create } from "@bufbuild/protobuf";
 import type { MeshIdentity } from "@hobo/ci/mesh";
 import { generateMeshIdentity, meshIdentityFromPem } from "@hobo/ci/mesh";
 import { z } from "zod";
 import type { MachineProfile } from "./advert.js";
 import { pause } from "./executor.js";
 import type { MachineGithub } from "./jobs.js";
+import {
+	defineStoredMachine,
+	type ParsedMachineWorkerRecord,
+	parseStoredMachine,
+	type StoredMachine,
+	StoredMachineSchema,
+	storedMachineJson,
+} from "./records.js";
 import type { MachineWorker, MachineWorkerStatus } from "./worker.js";
 
 // public-contract: the file under the machine directory that holds its id and name.
@@ -29,15 +39,8 @@ export const MACHINE_KEY_FILE = "machine-key.pem";
 // public-contract: how often a connected machine's worker ticks.
 export const MACHINE_TICK_MS = 1_000;
 
-const MachineFile = z.object({
-	id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/u),
-	name: z.string().min(1).max(100),
-});
-
-const Json = z.json();
-
 /** The machine as it is stored between connects. */
-export type StoredMachine = Readonly<{
+export type LoadedMachine = Readonly<{
 	id: string;
 	name: string;
 	identity: MeshIdentity;
@@ -49,50 +52,58 @@ export type StoredMachine = Readonly<{
  * The machine kept in `directory`, made there when none is: a new id
  * (`m-` and 12 hex digits) and a new Ed25519 key, written owner-only. A name
  * given now replaces the stored one; the id and key never change.
+ * `machine.json` is a `StoredMachine` record (`machine_worker.proto`).
  */
 export async function loadMachine(
 	directory: string,
 	options: Readonly<{ name: string | undefined; defaultName: string }>,
-): Promise<StoredMachine> {
+): Promise<LoadedMachine> {
 	const file = join(directory, MACHINE_FILE);
 	const keyFile = join(directory, MACHINE_KEY_FILE);
 	const stored = await readFile(file, "utf8").catch(() => undefined);
 	const pem = await readFile(keyFile, "utf8").catch(() => undefined);
 	if (stored !== undefined && pem !== undefined) {
-		const parsed = MachineFile.safeParse(parseJson(stored));
-		if (!parsed.success)
-			throw new Error(`${file} is not a machine HoBo CI wrote`);
-		const name = options.name ?? parsed.data.name;
-		if (name !== parsed.data.name)
-			await writeFile(
-				file,
-				`${JSON.stringify({ id: parsed.data.id, name })}\n`,
-				{ mode: 0o600 },
+		let kept: ParsedMachineWorkerRecord<StoredMachine>;
+		try {
+			kept = parseStoredMachine(stored);
+		} catch (error) {
+			throw new Error(
+				`${file} is not a machine HoBo CI wrote: ${error instanceof Error ? error.message : "unreadable"}`,
 			);
+		}
+		const name = options.name ?? kept.name;
+		if (name !== kept.name)
+			await writeFile(file, storedMachineJson(storedMachine(kept.id, name)), {
+				mode: 0o600,
+			});
 		return {
-			id: parsed.data.id,
+			id: kept.id,
 			name,
 			identity: meshIdentityFromPem(pem),
 			created: false,
 		};
 	}
-	const machine = MachineFile.parse({
-		id: `m-${randomBytes(6).toString("hex")}`,
-		name: options.name ?? options.defaultName,
-	});
+	const machine = storedMachine(
+		`m-${randomBytes(6).toString("hex")}`,
+		options.name ?? options.defaultName,
+	);
 	const generated = generateMeshIdentity();
 	await mkdir(directory, { recursive: true, mode: 0o700 });
 	await writeFile(keyFile, generated.privateKeyPem, { mode: 0o600 });
-	await writeFile(file, `${JSON.stringify(machine)}\n`, { mode: 0o600 });
-	return { ...machine, identity: generated.identity, created: true };
+	await writeFile(file, storedMachineJson(machine), { mode: 0o600 });
+	return {
+		id: machine.id,
+		name: machine.name,
+		identity: generated.identity,
+		created: true,
+	};
 }
 
-function parseJson(text: string): z.infer<typeof Json> {
-	try {
-		return Json.parse(JSON.parse(text));
-	} catch {
-		return null;
-	}
+function storedMachine(
+	id: string,
+	name: string,
+): ParsedMachineWorkerRecord<StoredMachine> {
+	return defineStoredMachine(create(StoredMachineSchema, { id, name }));
 }
 
 /** A machine that can connect, or why this one cannot yet. */

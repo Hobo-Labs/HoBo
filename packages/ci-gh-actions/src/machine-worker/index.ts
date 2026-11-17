@@ -44,7 +44,27 @@ export {
 	userGithub,
 } from "./jobs.js";
 export {
+	defineStoredMachine,
+	defineWorkerEvent,
+	MachineWorkerRecordRejection,
+	machineWorkerEventJson,
+	type ParsedMachineWorkerRecord,
+	parseStoredMachine,
+	parseWorkerEvent,
+	type StoredMachine,
+	StoredMachineSchema,
+	storedMachineJson,
+	WORKER_EVENT_TYPES,
+	type WorkerEvent,
+	type WorkerEventFields,
+	WorkerEventSchema,
+	type WorkerEventType,
+	workerEvent,
+	workerEventJson,
+} from "./records.js";
+export {
 	githubOwner,
+	type LoadedMachine,
 	loadMachine,
 	MACHINE_FILE,
 	MACHINE_KEY_FILE,
@@ -53,7 +73,6 @@ export {
 	type MachineSession,
 	machinePlatform,
 	runMachineSession,
-	type StoredMachine,
 } from "./session.js";
 export {
 	createMachineWorker,

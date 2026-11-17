@@ -23,7 +23,6 @@
  */
 import type {
 	MachineAdvert,
-	MachineEvent,
 	MachineSharing,
 	SignedMachineAdvert,
 } from "@hobo/ci";
@@ -49,46 +48,14 @@ import {
 	OneJobRunnerError,
 	removeOneJobRunner,
 } from "./jobs.js";
+import {
+	type MachineWorkerEvent,
+	type WorkerEventType,
+	workerEvent,
+} from "./records.js";
 
 /** What the worker did, one event at a time; `--events` prints each as a JSON line. */
-export type MachineWorkerEvent =
-	| MachineEvent
-	| Readonly<{
-			type: "worker.advertised";
-			machineId: string;
-			atMs: number;
-			busy: number;
-			slots: number;
-			paused: boolean;
-	  }>
-	| Readonly<{
-			type: "worker.refused";
-			machineId: string;
-			atMs: number;
-			reason: string;
-			detail: string;
-	  }>
-	| Readonly<{
-			type:
-				| "worker.job_started"
-				| "worker.job_finished"
-				| "worker.job_failed"
-				| "worker.job_refused";
-			machineId: string;
-			atMs: number;
-			jobId: number;
-			repository: string;
-			/** The one-job runner's name, once one was made. */
-			runner: string | undefined;
-			detail: string;
-	  }>
-	| Readonly<{
-			type: "worker.draining" | "worker.handing_off";
-			machineId: string;
-			atMs: number;
-			running: number;
-			detail: string;
-	  }>;
+export type { MachineWorkerEvent };
 
 export type MachineWorkerOptions = Readonly<{
 	profile: MachineProfile;
@@ -182,13 +149,15 @@ export function createMachineWorker(
 		changed = false;
 		for (const event of verdict.events) options.emit(event);
 		if (verdict.kind === "refused") {
-			options.emit({
-				type: "worker.refused",
-				machineId: profile.id,
-				atMs: nowMs,
-				reason: verdict.reason,
-				detail: verdict.message,
-			});
+			options.emit(
+				workerEvent({
+					type: "worker.refused",
+					machineId: profile.id,
+					atMs: nowMs,
+					reason: verdict.reason,
+					detail: verdict.message,
+				}),
+			);
 			// A takeover or another owner stays refused until the owner removes
 			// the machine; a stale or malformed advert is retried next time.
 			if (verdict.reason === "taken_over" || verdict.reason === "wrong_owner")
@@ -198,35 +167,39 @@ export function createMachineWorker(
 		kept = verdict.advert;
 		// The owner's pause, from this terminal or `hobo ci machine pause`, wins.
 		paused = verdict.advert.paused;
-		options.emit({
-			type: "worker.advertised",
-			machineId: profile.id,
-			atMs: nowMs,
-			busy: verdict.advert.busy,
-			slots: verdict.advert.slots,
-			paused,
-		});
+		options.emit(
+			workerEvent({
+				type: "worker.advertised",
+				machineId: profile.id,
+				atMs: nowMs,
+				busy: verdict.advert.busy,
+				slots: verdict.advert.slots,
+				paused,
+			}),
+		);
 	}
 
 	function jobEvent(
-		type:
+		type: Extract<
+			WorkerEventType,
 			| "worker.job_started"
 			| "worker.job_finished"
 			| "worker.job_failed"
-			| "worker.job_refused",
+			| "worker.job_refused"
+		>,
 		offer: MachineJobOffer,
 		runner: string | undefined,
 		detail: string,
 	): MachineWorkerEvent {
-		return {
+		const base = {
 			type,
 			machineId: profile.id,
 			atMs: options.now(),
 			jobId: offer.jobId,
 			repository: offer.repository,
-			runner,
 			detail,
 		};
+		return workerEvent(runner === undefined ? base : { ...base, runner });
 	}
 
 	async function runJob(
@@ -331,8 +304,7 @@ export function createMachineWorker(
 			const room = options.concurrency - running.size;
 			if (room <= 0) return;
 			for (const offer of await options.jobs.take(room, nowMs)) {
-				if (running.has(offer.jobId) || refusedJobs.has(offer.jobId))
-					continue;
+				if (running.has(offer.jobId) || refusedJobs.has(offer.jobId)) continue;
 				const refusal = admissible(offer);
 				if (refusal !== undefined) {
 					refusedJobs.add(offer.jobId);
@@ -371,16 +343,18 @@ export function createMachineWorker(
 		async drain() {
 			if (!stopping) {
 				stopping = true;
-				options.emit({
-					type: "worker.draining",
-					machineId: profile.id,
-					atMs: options.now(),
-					running: running.size,
-					detail:
-						running.size === 0
-							? "Taking no new jobs; going offline."
-							: `Taking no new jobs; waiting for ${running.size} running job(s) to finish. Press Ctrl-C again to stop them.`,
-				});
+				options.emit(
+					workerEvent({
+						type: "worker.draining",
+						machineId: profile.id,
+						atMs: options.now(),
+						running: running.size,
+						detail:
+							running.size === 0
+								? "Taking no new jobs; going offline."
+								: `Offline; taking no new jobs and waiting for ${running.size} running job(s) to finish. Press Ctrl-C again to stop them.`,
+					}),
+				);
 			}
 			// The advert goes first, so no decision routes here while jobs end.
 			try {
@@ -391,13 +365,15 @@ export function createMachineWorker(
 		},
 		async handOff() {
 			stopping = true;
-			options.emit({
-				type: "worker.handing_off",
-				machineId: profile.id,
-				atMs: options.now(),
-				running: running.size,
-				detail: `Stopping ${running.size} running job(s) and going offline.`,
-			});
+			options.emit(
+				workerEvent({
+					type: "worker.handing_off",
+					machineId: profile.id,
+					atMs: options.now(),
+					running: running.size,
+					detail: `Going offline and stopping ${running.size} running job(s).`,
+				}),
+			);
 			try {
 				await goOffline();
 			} finally {
