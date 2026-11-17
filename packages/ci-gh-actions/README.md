@@ -1604,3 +1604,15 @@ on its GitHub side:
   one `fetch` for REST, billing and the runner service, `queueJob`, `deliver`
   (webhooks to a handler), `advance` (its clock), `dropNextWebhook`, and reads
   of its runners and jobs.
+
+## Runner protocol client
+
+[`src/runner-protocol/RUNNER-PROTOCOL.md`](src/runner-protocol/RUNNER-PROTOCOL.md)
+describes `GithubRunnerServiceClient`, the client a relay-mode node uses to
+take a relay job as a one-job runner and complete it with an answer
+(ADR-0183), and `parseJitConfig`, which checks a one-job runner configuration
+before anything signs in with it. It is written from the open-source runner,
+with every field cited, ships off behind `relayJobs.answer`, and is built, not
+proven: no run against GitHub's runner service is linked yet.
+`FakeGithubRunnerService` serves the protocol in memory for tests and the
+GitHub simulator.
