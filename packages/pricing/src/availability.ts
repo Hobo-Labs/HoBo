@@ -4,10 +4,15 @@ import {
 	PricingAvailabilitySchema,
 	type PricingModelScope,
 	type QuoteScenario,
+	QuoteScenarioSchema,
 	type QuoteVector,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
-import { isBoundedPricingInput, type JsonValue } from "./json.js";
+import {
+	isBoundedPricingInput,
+	isExactProtoMessage,
+	type JsonValue,
+} from "./json.js";
 import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
@@ -48,10 +53,55 @@ export function developerPricing(
 	scope: DeveloperPricingScope,
 	scenario: QuoteScenario,
 ): PricingAvailability {
+	if (!isBoundedPricingInput({ scope, scenario }))
+		throw new TypeError("invalid or unbounded developer pricing model");
+	let stable: { scope: DeveloperPricingScope; scenario: QuoteScenario };
+	try {
+		stable = structuredClone({ scope, scenario });
+	} catch {
+		throw new TypeError("invalid developer pricing model");
+	}
+	if (
+		!validDeveloperScope(stable.scope) ||
+		!isExactProtoMessage(QuoteScenarioSchema, stable.scenario)
+	)
+		throw new TypeError(
+			"developer pricing model contains unsupported or malformed data",
+		);
 	return create(PricingAvailabilitySchema, {
-		state: { case: "developerModel", value: { scope, scenario } },
+		state: { case: "developerModel", value: stable },
 	});
 }
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: developer scope crosses a runtime boundary before protobuf normalization. */
+function validDeveloperScope(scope: DeveloperPricingScope): boolean {
+	if (scope === null || typeof scope !== "object" || Array.isArray(scope))
+		return false;
+	const fields = Object.getOwnPropertyDescriptors(scope);
+	const names = [
+		"modelId",
+		"revision",
+		"tenantId",
+		"providerId",
+		"providerAccountRef",
+		"productId",
+	] as const;
+	return (
+		(!Object.hasOwn(fields, "$typeName") ||
+			fields.$typeName?.value === "hobo.pricing.v1.PricingModelScope") &&
+		(!Object.hasOwn(fields, "$unknown") ||
+			(Array.isArray(fields.$unknown?.value) &&
+				fields.$unknown.value.length === 0)) &&
+		Object.keys(fields).every(
+			(key) =>
+				key === "$typeName" ||
+				key === "$unknown" ||
+				names.some((name) => name === key),
+		) &&
+		names.every((name) => typeof fields[name]?.value === "string")
+	);
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 function failed(code: string, reason: string): AvailabilityQuote {
 	return { ok: false, code, reason };
@@ -79,6 +129,11 @@ export function quoteAvailablePricing(
 		return failed(
 			"PRICING_INPUT_TOO_LARGE",
 			"pricing input exceeds the bounded data limits",
+		);
+	if (!isExactProtoMessage(PricingAvailabilitySchema, availability))
+		return failed(
+			"PRICING_MODEL_INVALID",
+			"pricing availability contains unsupported or malformed data",
 		);
 	if (availability.state.case === "unavailable") {
 		const reason = availability.state.value.reason;
