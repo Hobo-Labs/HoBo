@@ -1,5 +1,8 @@
 package data_models
 
+// Ledger sequences travel through JavaScript numbers and must remain exact.
+#SafeSequence: int & >=0 & <=9007199254740991
+
 #CreditGrantRecord: {
 	credit_id:     string & !=""
 	free_headroom: number & >=0
@@ -24,58 +27,58 @@ package data_models
 
 #ReservedCreditConsumptionRecord: {
 	credit_id: string & !=""
-	units: number & >0
+	units:     number & >0
 }
 
 #ReservedConsumptionRecord: {
 	free_headroom: number & >=0
 	credits: [...#ReservedCreditConsumptionRecord]
-	rate_units?: number & >=0
+	rate_units?:        number & >=0
 	concurrency_slots?: int & >=0
 }
 
 #ReservationRecord: {
-	reservation_id:  string & !=""
-	provider_id:     string & !=""
-	dimension:       string & !=""
-	units:           number & >0
-	expected_seq:    int & >=0
-	committed_seq:   int & >=0
-	status:          "pending" | "running" | "confirmed" | "released" | "expired"
-	expires_at?:     string
-	release_reason?: string
-	reserved_cost?: number & >=0
-	actual_cost?: number & >=0
-	command_hash?: string & =~"^sha256:[a-f0-9]{64}$"
-	unit_cost?: number & >=0
-	switching_cost?: number & >=0
+	reservation_id:         string & !=""
+	provider_id:            string & !=""
+	dimension:              string & !=""
+	units:                  number & >0
+	expected_seq:           #SafeSequence
+	committed_seq:          #SafeSequence
+	status:                 "pending" | "running" | "confirmed" | "released" | "expired"
+	expires_at?:            string
+	release_reason?:        string
+	reserved_cost?:         number & >=0
+	actual_cost?:           number & >=0
+	command_hash?:          string & =~"^sha256:[a-f0-9]{64}$"
+	unit_cost?:             number & >=0
+	switching_cost?:        number & >=0
 	dispatch_request_hash?: string & =~"^sha256:[a-f0-9]{64}$"
-	decision_input_json?: string & !=""
-	estimated_cost?: number & >=0
-	consumption?: #ReservedConsumptionRecord
-	confirmed_seq?: int & >=0
-	released_seq?: int & >=0
-	provider_usage_seq?: int & >=0
-	started_seq?: int & >=0
-	usage_evidence_ref?: string & !=""
+	decision_input_json?:   string & !=""
+	estimated_cost?:        number & >=0
+	consumption?:           #ReservedConsumptionRecord
+	confirmed_seq?:         #SafeSequence
+	released_seq?:          #SafeSequence
+	provider_usage_seq?:    #SafeSequence
+	started_seq?:           #SafeSequence
+	usage_evidence_ref?:    string & !=""
 }
 
 #SettlementCommandRecord: {
-	reservation_id: string & !=""
-	actual_cost?: number & >=0
-	provider_usage_seq?: int & >=0
-	usage_finalized?: bool
+	reservation_id:      string & !=""
+	actual_cost?:        number & >=0
+	provider_usage_seq?: #SafeSequence
+	usage_finalized?:    bool
 	usage_evidence_ref?: string & !=""
 }
 
 #LedgerTimeAdvancedRecord: {
-	as_of: string & !=""
-	ledger_seq: int & >=0
+	as_of:      string & !=""
+	ledger_seq: #SafeSequence
 }
 
 #CreditLedgerViewRecord: {
 	view:    "CreditLedgerView"
-	seq:     int & >=0
+	seq:     #SafeSequence
 	digest?: string & =~"^sha256:[a-f0-9]{64}$"
 	as_of?:  string
 	accounts: [...#CreditAccountRecord]
@@ -106,11 +109,11 @@ package data_models
 }
 
 #HysteresisInputRecord: {
-	incumbent_provider_id: string & !=""
-	minimum_savings:       number & >=0
-	dwell_window:          string & !=""
-	observed_at:           string & !=""
-	savings_since?:       string & !=""
+	incumbent_provider_id:   string & !=""
+	minimum_savings:         number & >=0
+	dwell_window:            string & !=""
+	observed_at:             string & !=""
+	savings_since?:          string & !=""
 	challenger_provider_id?: string & !=""
 }
 
@@ -134,7 +137,7 @@ package data_models
 
 #LedgerInputRecord: {
 	view:           "CreditLedgerView"
-	seq:            int & >=0
+	seq:            #SafeSequence
 	reservation_id: string & !=""
 	balance_hash:   string & =~"^sha256:[a-f0-9]{64}$"
 }
