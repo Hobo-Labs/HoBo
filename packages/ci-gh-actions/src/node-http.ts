@@ -32,15 +32,6 @@ function waitForDrain(response: ServerResponse): Promise<void> {
 const DEFAULT_RETRY_AFTER_SECONDS = 5;
 const MAX_RETRY_AFTER_SECONDS = 300;
 
-/**
- * Seconds for the `Retry-After` of a 503 answered for `error`.
- *
- * An error that knows when its cause will be tried again says so in a
- * `retryAfterMs` number (the store back-off does): that is what the caller is
- * told, in whole seconds from 1 to 300. Any other error gets the 5 s default,
- * so a caller that honours the header never comes back sooner than the relay
- * will look again.
- */
 export function unavailableRetryAfterSeconds(error: Error | undefined): number {
 	if (!error || !("retryAfterMs" in error)) return DEFAULT_RETRY_AFTER_SECONDS;
 	const milliseconds = Number(error.retryAfterMs);
@@ -49,16 +40,10 @@ export function unavailableRetryAfterSeconds(error: Error | undefined): number {
 	return Math.min(MAX_RETRY_AFTER_SECONDS, Math.ceil(milliseconds / 1000));
 }
 
-/** Adapt a Node HTTP server or function entrypoint to the portable request handler. */
 export function createNodeRelayHandler(options: {
 	origin: string;
 	handle: (request: Request) => Promise<Response>;
-	/** A host that explicitly serves plain HTTP on loopback names that origin here. */
 	allowLoopbackHttp?: boolean;
-	/**
-	 * Paths whose bodies are streamed in both directions and not held to the
-	 * 1 MiB limit; the handler behind them owns its own quota.
-	 */
 	streams?: (pathname: string) => boolean;
 }): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
 	const origin = new URL(options.origin);
@@ -102,7 +87,6 @@ export function createNodeRelayHandler(options: {
 					signal: abort.signal,
 				};
 				if (method !== "GET" && method !== "HEAD") {
-					// SAFETY: IncomingMessage yields Buffer chunks, a Uint8Array subtype.
 					init.body = Readable.toWeb(request) as ReadableStream<Uint8Array>;
 					init.duplex = "half";
 				}
@@ -179,7 +163,6 @@ export function createNodeRelayHandler(options: {
 				response.destroy();
 				return;
 			}
-			// Tell the caller when to come back; GitHub and the worker both honour it.
 			response.writeHead(503, {
 				"Cache-Control": "no-store",
 				"Retry-After": String(

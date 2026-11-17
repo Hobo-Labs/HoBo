@@ -1,5 +1,3 @@
-/** The export surface `hobo ci serve` needs: the relay's Node host and its pull-admission poller. */
-
 export { inventoryCiEnginesFromRepository } from "./ci-engine-inventory.js";
 export { resolveEnvironmentEngines } from "./engine-relay-routing.js";
 export { createGithubAppTransport, type GithubTransport } from "./github.js";

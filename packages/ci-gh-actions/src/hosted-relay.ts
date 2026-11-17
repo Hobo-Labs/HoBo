@@ -99,15 +99,12 @@ import {
 } from "./unlaunched-reservation-release.js";
 import { verifyWebhookSignature } from "./webhook-signature.js";
 
-/** Isolated executions are supplied by the hosting runtime and must fail closed. */
 export interface IsolatedRunnerHost {
-	/** `label` is the one runner label the lease's job asked for; the runner registers with it. */
 	launch(id: string, label?: RunnerLabel, rank?: number): Promise<void>;
 	isLaunchParked?(job: Job): Promise<boolean>;
 	reconcile(id: string, forceStop?: boolean): Promise<void>;
 }
 
-/** Transactional asynchronous operations needed by the hosted relay. */
 export interface HostedRelayStore {
 	configuration(): Promise<ConfigurationState | undefined>;
 	policySnapshot(): Promise<{
@@ -130,11 +127,6 @@ export interface HostedRelayStore {
 		expectedRevision: number,
 	): Promise<boolean>;
 	observe(job: Job, at: string, expectedRevision?: number): Promise<void>;
-	/**
-	 * `githubCreatedAt` is GitHub's `created_at` for the job, when the caller
-	 * has it: a store that pins the queue deadline pins it from when GitHub
-	 * queued the job, not from when the relay first saw it.
-	 */
 	queue(
 		job: Job,
 		at: string,
@@ -213,7 +205,6 @@ const RunWebhook = z.object({
 export type ServedRunnerLabelCache = Map<string, RunnerLabel | undefined>;
 export type { TrunkWaitCache } from "./trunk-wait.js";
 
-/** Active leases whose runners GitHub can assign to shared-label jobs. */
 export async function generalLeaseIdsFor(
 	activeLeases: readonly Lease[],
 	github: GithubTransport,
@@ -239,7 +230,6 @@ export async function generalLeaseIdsFor(
 				label = servedRunnerLabel(currentJob.labels);
 				servedRunnerLabels.set(key, label);
 			} catch {
-				// Unknown labels consume shared capacity; retry the lookup next tick.
 				ids.add(lease.id);
 				continue;
 			}
@@ -279,49 +269,29 @@ export class HostedRelay {
 			webhookSecret: string;
 			ingressForwardSecret?: string;
 			isolatedHost?: IsolatedRunnerHost;
-			/** Deny workflow bridge use when repository-wide runner trust is not fenced. */
 			denyUnisolated?: boolean;
-			/** Recent job durations; the longest expected job of a run is admitted first. */
 			jobDurations?: Pick<JobDurations, "expectedMs">;
-			/** Shared across relays so each run is looked up once, not once per relay. */
 			admissionOrder?: AdmissionOrder;
-			/** Shared across relays so each mislabelled job is logged once. */
 			sharedLabelTrunkJobs?: Set<string>;
-			/** Shared across relays so each capped merge-group job is logged once. */
 			mergeGroupCapWaitJobs?: Set<string>;
-			/** Immutable job labels, keyed by repository and job ID, shared across relays. */
 			servedRunnerLabels?: ServedRunnerLabelCache;
-			/** Shared across relays so a wait survives the next dispatch tick. */
 			trunkWaits?: TrunkWaitCache;
-			/**
-			 * Queue an admitted job without reserving it. For callers that run
-			 * `dispatchPending` after a batch, so the batch is reserved in admission
-			 * order rather than in the order its deliveries arrived.
-			 */
 			deferReservation?: boolean;
-			/** Maximum active leases for shared-label runners. Unset: no cap. */
 			generalLeaseLimit?: number;
-			/** Maximum distinct merge groups with active leases. Unset: no cap. */
 			mergeGroupLeaseLimit?: number;
 			jobPickupMetadata?: JobPickupMetadataCache;
-			/** Let shared-label runs exceed the limit until a trunk-label job waits. */
 			lendTrunkSlots?: boolean;
-			/** Local trunk reservations this box may hold; defers extra shards when mesh has room. */
 			trunkSlots?: number;
 			memoryAdmission?: WorkerMemoryAdmission;
 			storageAdmission?: WorkerStorageAdmission;
-			/** Per-job byte/inode reservation for storage admission (learned + class budget). */
 			storageJobReserve?: (jobName: string) => WorkerStorageReserve;
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
-			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
-			/** Free slots on this box and the rest of the fleet; dispatch reads it. */
 			fleetCapacity?: Readonly<{
 				snapshot: () => Promise<
 					FleetCapacityWitness & { hoboFreeSlots: number }
 				>;
 			}>;
-			/** Shared witness reruns for jobs bound to offline peer box JIT runners. */
 			offlineJitRecovery?: OfflineJitJobRecovery;
 			unlaunchedReservationRelease?: Readonly<{
 				boundMs?: number;
@@ -330,7 +300,6 @@ export class HostedRelay {
 				launchSlots: number;
 				backlogImmediate?: boolean;
 			}>;
-			/** OS headroom parallel cap for launch/backlog (defaults to launchSlots). */
 			parallelLaunchCapacity?: () => number;
 			now?: () => string;
 		},
@@ -396,8 +365,6 @@ export class HostedRelay {
 			!connection.isolatedOnly &&
 			!this.options.denyUnisolated &&
 			run.repository.id === connection.repositoryId &&
-			// A shared label can be claimed by any queued job, including a fork PR.
-			// The workflow bridge does not isolate the nested runner from host credentials.
 			run.repository.private &&
 			run.head_repository?.id === connection.repositoryId &&
 			connection.allowedEvents.includes(run.event) &&
@@ -460,10 +427,6 @@ export class HostedRelay {
 			throw new Error("invalid webhook signature");
 		return this.processWebhook(raw, event);
 	}
-	/**
-	 * Another fleet runner on the shared `hobo` label holds this job; release this
-	 * worker's leases and pending demand without requeueing (mesh cooperation).
-	 */
 	private githubJobCacheKey(
 		installationId: number,
 		repository: string,
@@ -609,7 +572,6 @@ export class HostedRelay {
 		return fleetPeerAbsorbSlots(fleetWitness);
 	}
 
-	/** Drop reservations that never reached dispatch so fleet runners can absorb custody. */
 	private async releaseBlockedUnlaunchedReservations(
 		pendingDemand: number,
 		fleetWitness: FleetCapacityWitness | undefined,
@@ -730,7 +692,6 @@ export class HostedRelay {
 		}
 	}
 
-	/** Peer or local ghost box JIT: deregister offline runners so GitHub can re-offer work. */
 	private async releaseFleetGhostBinding(
 		job: Job,
 		active: readonly Lease[],
@@ -943,8 +904,6 @@ export class HostedRelay {
 			),
 			getJob(this.options.github, job.installationId, job.repository, job.id),
 		]);
-		// The platform may rotate/revoke a connection while the REST checks await.
-		// Resolve authority again before committing demand under that connection.
 		const admittedRevision = await this.refreshConfig();
 		const admitted = this.connection(
 			job.repositoryId,
@@ -963,8 +922,6 @@ export class HostedRelay {
 			currentJob.run_id !== job.runId
 		)
 			return "ignored";
-		// GitHub's REST job, rather than an optional webhook field, owns the runner
-		// identity; attempt is always read from the authoritative workflow run.
 		job.runAttempt = currentJob.run_attempt;
 		job.runnerName = currentJob.runner_name ?? "";
 		job.name = currentJob.name ?? job.name;
@@ -1027,8 +984,6 @@ export class HostedRelay {
 			job.memoryClass = memory.memoryClass;
 			job.memoryMb = memory.memoryMb;
 		}
-		// Webhook delivery can be delayed or reordered. Assignment and terminal
-		// fences must reflect the fresh GitHub job state, not an older event action.
 		if (
 			currentJob.status === "queued" ||
 			currentJob.status === "in_progress" ||
@@ -1058,8 +1013,6 @@ export class HostedRelay {
 			!servedRunnerLabel(currentJob.labels)
 		)
 			return "ignored";
-		// Clear a stale assignment only after GitHub verifies the job is queued,
-		// with an exact owner/version fence and a terminal prior host.
 		const assignment = await this.options.store.assignedJob?.(job);
 		if (assignment) {
 			const latest = await getJob(
@@ -1152,7 +1105,6 @@ export class HostedRelay {
 					Date.parse(lease.freeValidUntil) < bound))
 		)
 			return false;
-		// Reprice this exact host against fresh evidence, excluding its own reservation.
 		const repriced = route(
 			{
 				...account,
@@ -1180,8 +1132,6 @@ export class HostedRelay {
 				Date.parse(deadline) <= Date.parse(this.now()))
 		);
 	}
-	/** A reserved host has no external side effect yet, so a preferred host can
-	 * replace it. Already dispatched and uncertain hosts must never be moved. */
 	private async hasCheaperHost(lease: Lease): Promise<boolean> {
 		const account = this.account(lease);
 		const offer = providerOffer(account, lease);
@@ -1219,8 +1169,6 @@ export class HostedRelay {
 			options,
 		);
 		if (!current || !cheapest) return false;
-		// A refreshed allocation for the same offer is not reflected in the
-		// existing reservation. Requeue it so the new free balance is reserved.
 		if (current.freeMinutes > lease.reservedFreeMinutes) return true;
 		return (
 			compareCiRoutingCandidates(cheapest, current, account.routingStrategy) < 0
@@ -1246,9 +1194,7 @@ export class HostedRelay {
 					jobId: job.id,
 				}),
 			);
-		} catch {
-			/* Logging must not change admission; retry the lookup next tick. */
-		}
+		} catch {}
 	}
 	private async generalLeaseIds(): Promise<Set<string>> {
 		return generalLeaseIdsFor(
@@ -1276,7 +1222,6 @@ export class HostedRelay {
 		}
 		return ids;
 	}
-	/** A runner reassigned by GitHub no longer satisfies its original queued job. */
 	private async requeueSwappedJobs(
 		expectedRevision: number,
 		active: readonly Lease[],
@@ -1330,7 +1275,6 @@ export class HostedRelay {
 			if (lease.actualJobId === 0 || lease.actualJobId === lease.jobId)
 				continue;
 			const key = keyOf(lease.repositoryId, lease.jobId, lease.runAttempt);
-			// Requeued or replaced demand must not cost a GitHub read on every tick.
 			if (pendingKeys.has(key) || replacedKeys.has(key)) continue;
 			try {
 				const current = await getJob(
@@ -1352,12 +1296,9 @@ export class HostedRelay {
 				await this.options.store.queue(demand, this.now(), expectedRevision);
 				pending.push(demand);
 				pendingKeys.add(key);
-			} catch {
-				/* An ambiguous original-job read must not block other demand. */
-			}
+			} catch {}
 		}
 	}
-	/** Reclaim one newest reservation that has no container, runner or host run. */
 	private async reclaimUnlaunchedGeneralLease(): Promise<boolean> {
 		const active = await this.options.store.activeLeases();
 		const general = await this.generalLeaseIds();
@@ -1421,7 +1362,6 @@ export class HostedRelay {
 		releaseWorkerStorageGrants(this.options.storageAdmission, lease);
 	}
 
-	/** Durable outbox drain. A launch intent is committed before network I/O. */
 	async dispatchPending(): Promise<number> {
 		this.dispatchGithubJobCache = new Map();
 		this.shardAdmissionHoldLogged.clear();
@@ -1434,8 +1374,6 @@ export class HostedRelay {
 			fleetWitness = undefined;
 		}
 		const fleetPeerSlots = this.fleetPeerSlots(fleetWitness);
-		// Both the reservation (offer concurrency) and the launch (host slots) hand
-		// out capacity in this order, so a freed slot goes to the queue's head.
 		const refOf = (job: Job) => ({
 			installationId: job.installationId,
 			repository: job.repository,
@@ -1467,8 +1405,6 @@ export class HostedRelay {
 				if (groupKey !== undefined) activeMergeGroups.add(groupKey);
 			}
 		let general: Set<string> | undefined;
-		// Strict reservation always caps shared-label leases; lending applies the cap
-		// only after trunk-label demand misses a lease. Both free capacity in this pass.
 		let trunkWaiting = false;
 		let rankZeroWaiting = false;
 		let storageRefused = false;
@@ -1596,8 +1532,6 @@ export class HostedRelay {
 				);
 				continue;
 			}
-			// A policy can become stricter while demand is queued. Never reserve a
-			// bridge from a pending job admitted under the previous connection.
 			if (connection.isolatedOnly) job.isolatedRequired = true;
 			const storageAdmission = this.options.storageAdmission;
 			const storageJobId = String(job.id);
@@ -1606,8 +1540,6 @@ export class HostedRelay {
 					if (trunk) waitingTrunk.add(this.reportTrunkWait(job, "storage"));
 					continue;
 				}
-				// A grant is headroom held for a job that will run; never take one for
-				// a job GitHub no longer has queued.
 				try {
 					const currentJob = await this.cachedGithubJob(
 						job.installationId,
@@ -1738,7 +1670,6 @@ export class HostedRelay {
 					)
 				)
 					continue;
-				// GitHub's `created_at`, as the job's webhook recorded it.
 				const githubCreatedAt = this.options.jobPickupMetadata?.get(
 					jobPickupMetadataKey(job),
 				)?.jobCreatedAt;
@@ -1868,7 +1799,6 @@ export class HostedRelay {
 						candidate.originalRunId,
 					),
 				]);
-				// Authority may narrow while the GitHub reads are in flight.
 				const preflightRevision = await this.refreshConfig();
 				if (this.queueExpired(candidate.queueDeadlineAt)) {
 					await this.options.store.expireQueued?.(
@@ -2013,9 +1943,7 @@ export class HostedRelay {
 						this.now(),
 					);
 				}
-			} catch {
-				/* Isolate this account: retain reservation and process other candidates. */
-			}
+			} catch {}
 		}
 		for (const key of this.trunkWaits.keys())
 			if (!waitingTrunk.has(key)) this.trunkWaits.delete(key);
@@ -2061,7 +1989,6 @@ export class HostedRelay {
 			lease.repository,
 			runId,
 		);
-		// Recheck current branch/event authority after every external read and before JIT.
 		const claimRevision = await this.refreshConfig();
 		const connection = this.binding(lease);
 		if (connection.isolatedOnly)
@@ -2158,7 +2085,6 @@ export class HostedRelay {
 			throw error;
 		}
 	}
-	/** Only a verified completed host can release an ambiguous or active reservation. */
 	async discover(id: string): Promise<void> {
 		await this.refreshConfig();
 		const lease = await this.options.store.get(id);
@@ -2209,8 +2135,6 @@ export class HostedRelay {
 		const lease = await this.options.store.get(id);
 		if (!lease || lease.state === "completed" || lease.state === "cancelled")
 			return;
-		// A JIT request may still create a runner even after its response is lost.
-		// Do not free the reservation until that ambiguity is resolved.
 		if (
 			lease.state === "claiming" ||
 			(lease.state === "uncertain" &&
@@ -2258,7 +2182,6 @@ export class HostedRelay {
 			if (deleted.status !== 204 && deleted.status !== 404)
 				throw new Error("runner cleanup not established");
 		}
-		// Wall-clock host duration conservatively includes boot/idle/cleanup, rounded up.
 		const minutes = Math.ceil(
 			(Date.parse(host.completed_at) - Date.parse(host.started_at)) / 60000,
 		);

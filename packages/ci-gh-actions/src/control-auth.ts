@@ -2,16 +2,13 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { fromJsonString } from "@bufbuild/protobuf";
 import { type ControlCredential, ControlCredentialsSchema } from "@hobo/ci";
 
-/** Who an account API request acts as: one account, its installations and its scopes. */
 export type ControlPrincipal = Pick<
 	ControlCredential,
 	"accountId" | "installationIds" | "scopes"
 >;
-/** Resolves a request's `Authorization` header to a principal, or refuses it. */
 export type ControlAuthenticator = (
 	authorization: string | undefined,
 ) => ControlPrincipal | undefined | Promise<ControlPrincipal | undefined>;
-/** The file-backed authenticator: bearer tokens are matched by their SHA-256 digests. */
 export function createControlAuthenticator(json: string): ControlAuthenticator {
 	const credentials = fromJsonString(ControlCredentialsSchema, json);
 	if (credentials.tokens.length < 1 || credentials.tokens.length > 1000)

@@ -3,7 +3,6 @@ import { failureRoute, reportRelayFailure } from "./failure-log.js";
 import { verifyIngressForward } from "./ingress-forward.js";
 import { verifyWebhookSignature } from "./webhook-signature.js";
 
-/** An authenticated transport envelope; the application owns durable admission. */
 export type VerifiedWebhook = Readonly<{
 	deliveryId: string;
 	event: "workflow_job" | "workflow_run";
@@ -11,7 +10,6 @@ export type VerifiedWebhook = Readonly<{
 	receivedAt: string;
 }>;
 
-/** The application must durably commit a delivery before resolving ingestWebhook. */
 export type HostedRelayApplication = Readonly<{
 	ingestWebhook(
 		input: VerifiedWebhook,
@@ -21,11 +19,9 @@ export type HostedRelayApplication = Readonly<{
 	claim(leaseId: string, oidc: string): Promise<Response>;
 	control(request: Request): Promise<Response | undefined>;
 	ready(): Promise<boolean>;
-	/** The relay's MCP server (`createRelayMcp`); a host without one answers 404. */
 	mcp?(request: Request): Promise<Response>;
 }>;
 
-/** An engine a host reports in health but this relay does not serve. */
 export type StubEngine = Readonly<{ ready: () => boolean }>;
 
 const MAX_BODY = 1024 * 1024;
@@ -34,7 +30,6 @@ const LEASE =
 
 type HttpBody = { readonly [key: string]: string | boolean | HttpBody };
 
-/** The same request addressed to `path`, for a handler that routes on the URL. */
 function remount(request: Request, url: URL, path: string): Request {
 	const target = new URL(url);
 	target.pathname = path;
@@ -43,7 +38,6 @@ function remount(request: Request, url: URL, path: string): Request {
 			method: request.method,
 			headers: request.headers,
 		});
-	// A streamed body needs `duplex`, which the DOM `RequestInit` does not declare.
 	const init = {
 		method: request.method,
 		headers: request.headers,
@@ -53,7 +47,6 @@ function remount(request: Request, url: URL, path: string): Request {
 	return new Request(target, init);
 }
 
-/** The path under `/engines/{id}`, when the request is addressed to that engine. */
 function engineSubPath(path: string, id: string): string | undefined {
 	const prefix = `/engines/${id}`;
 	if (path === prefix) return "/";
@@ -111,21 +104,12 @@ async function bytes(request: Request): Promise<Uint8Array | undefined> {
 	return result;
 }
 
-/**
- * The relay's HTTP surface as one Fetch handler, shared by every host: the
- * Node server behind `hobo ci serve` and the container image, and the Vercel
- * function. No local state or background work survives the request.
- */
 export function createRelayHandler(options: {
 	application: HostedRelayApplication;
 	webhookSecret: string;
-	/** Accept `X-Hobo-Ingress-Forward` from a webhook ingress in place of GitHub's signature. */
 	ingressForwardSecret?: string | undefined;
-	/** This relay's engine: `/engines/{id}/…` serves the same routes as the root. */
 	engineId?: string;
-	/** Other engines the host reports at `/engines/{id}/healthz` and `/readyz`. */
 	stubEngines?: Readonly<Record<string, StubEngine>>;
-	/** Refuse a request a TLS-terminating proxy says it received over plain HTTP. */
 	trustProxy?: boolean;
 	now?: () => string;
 }): (request: Request) => Promise<Response> {
@@ -191,8 +175,6 @@ export function createRelayHandler(options: {
 		if (request.method === "POST" && path === "/github/webhooks") {
 			const raw = await bytes(request).catch(() => undefined);
 			if (!raw) return json(413, { error: "webhook body too large" });
-			// A webhook ingress has already checked GitHub's signature over these
-			// bytes; its own HMAC over the same bytes stands in for it.
 			const forwarded =
 				forwardSecret !== undefined &&
 				verifyIngressForward(
@@ -242,8 +224,6 @@ export function createRelayHandler(options: {
 				});
 				return json(202, { status });
 			} catch (error) {
-				// GitHub redelivers on a 503, so the delivery is not lost; the
-				// reason it was refused was.
 				reportRelayFailure(
 					"hobo_ci_webhook_ingest_failed",
 					{ event },
@@ -269,12 +249,7 @@ export function createRelayHandler(options: {
 			(path.startsWith("/v1/app-registration/") ||
 				path.startsWith("/v1/accounts/self/") ||
 				path.startsWith("/v2/accounts/self/") ||
-				// The mesh's node list; the control plane authenticates it like
-				// the account API's other reads.
 				path === "/v1/mesh/nodes" ||
-				// Fleet verdicts (ADR-0180): read by anyone, reported by an
-				// enrolled reporter's signature; reporter status, read by a
-				// workflow of the repository with its OIDC token.
 				path.startsWith("/v1/fleet/verdicts/") ||
 				path.startsWith("/v1/fleet/reporters/") ||
 				path === "/v1/fleet/start-fence") &&

@@ -1,4 +1,3 @@
-/** Mesh witness for cooperative trunk release (box daemon + NATS). */
 export type FleetCapacityWitness = Readonly<{
 	hoboFreeSlots?: number;
 	arcFreeSlots?: number;
@@ -28,7 +27,6 @@ export function fleetWitnessFields(
 	return { arcFreeSlots, meshFreeSlots, peerAbsorbSlots };
 }
 
-/** Peer boxes, ARC, or other mesh-reported overflow can take released custody. */
 export function fleetPeerAbsorbSlots(
 	witness: FleetCapacityWitness | undefined,
 ): number {

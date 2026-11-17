@@ -1,13 +1,3 @@
-/**
- * A GitHub Actions OIDC token from any workflow of a repository, for routes
- * that answer that repository's own workflows (the fleet reporter status
- * route, ADR-0180). Unlike the runner-claim verifier in `oidc.ts`, which
- * accepts only `workflow_dispatch` and serves the bridge, this one accepts
- * any event: a scheduled monitor asks too. It proves which repository is
- * asking and nothing more; the route decides what that repository may see.
- *
- * Key discovery stays pinned to GitHub; no key URL a token names is fetched.
- */
 import { createPublicKey, verify } from "node:crypto";
 import { z } from "zod";
 
@@ -40,9 +30,7 @@ const Keys = z.object({
 	),
 });
 
-/** What a verified workflow token says about who is asking. */
 export type GithubWorkflowClaims = Readonly<{
-	/** `owner/name` as GitHub spells it. */
 	repository: string;
 	repositoryId: string;
 	eventName: string;
@@ -50,12 +38,10 @@ export type GithubWorkflowClaims = Readonly<{
 }>;
 
 export type GithubWorkflowVerifier = Readonly<{
-	/** The token's claims, or a throw when it is not a live token for this audience. */
 	verify(token: string): Promise<GithubWorkflowClaims>;
 }>;
 
 export function createGithubWorkflowVerifier(options: {
-	/** This relay's public origin: the audience a workflow asks GitHub for. */
 	audience: string;
 	fetch?: typeof fetch | undefined;
 	now?: (() => number) | undefined;

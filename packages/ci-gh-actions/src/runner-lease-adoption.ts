@@ -31,7 +31,6 @@ function reservedJobWithdraw(lease: Lease) {
 	});
 }
 
-/** Pin `actualJobId` / `originalRunId` to the job GitHub assigned this runner. */
 export async function adoptRunnerAssignment(
 	store: Pick<HostedRelayStore, "get" | "transition" | "withdrawQueuedJob">,
 	github: GithubTransport,

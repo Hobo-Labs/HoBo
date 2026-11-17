@@ -31,31 +31,15 @@ import {
 } from "./service.js";
 import type { GithubWorkflowVerifier } from "./workflow-oidc.js";
 
-/**
- * An optional CI agent beside the relay (see `@hobo/ci-agent`). The relay
- * only schedules it; what a pass does is the agent's own business.
- */
 export type RelayAgent = Readonly<{
 	tick(): Promise<void>;
-	/** How often a pass starts; one minute when omitted. */
 	intervalMs?: number;
 }>;
 
-/**
- * The relay as a long-running Node service over one store partition: the host
- * behind `hobo ci serve` and the container image. It composes the same relay
- * core, control plane and HTTP handler as every other host, and adds the
- * listener, the tick timer, the readiness probe and the drain.
- */
 export function createRelayHost(options: {
 	store: HostedInboxStore &
 		HostedControlStore &
 		RelayMcpStore & { close(): void };
-	/**
-	 * What the MCP server reads through, when the store's own reads take a
-	 * lock that admission also takes: that store's observer. Defaults to the
-	 * store itself, which is right for a single-writer SQLite file.
-	 */
 	mcpStore?: RelayMcpStore;
 	github: GithubAppTransport;
 	strictFleet?:
@@ -68,7 +52,6 @@ export function createRelayHost(options: {
 	webhookSecret: string;
 	ingressForwardSecret?: string | undefined;
 	authenticate: ControlAuthenticator;
-	/** The public origin; an `http:` one must be explicitly allowed loopback. */
 	publicOrigin: string;
 	allowLoopbackHttp?: boolean;
 	assets: { workflow: string; bootstrap: string };
@@ -80,22 +63,9 @@ export function createRelayHost(options: {
 	probeIntervalMs?: number;
 	probeTimeoutMs?: number;
 	drainTimeoutMs?: number;
-	/** Off unless supplied. It never delays the worker tick or fails the relay. */
 	agent?: RelayAgent | undefined;
-	/**
-	 * What the relay mesh looks like from this host, when it is a node of one
-	 * (`createMeshNode`). The account API's `GET /v1/mesh/nodes` and the MCP
-	 * server's `list_mesh_nodes` both answer from it; without it both answer
-	 * `mesh: "not-configured"`.
-	 */
 	meshNodes?: MeshNodesReader | undefined;
-	/**
-	 * The fleet reporters whose signed reports this host accepts (ADR-0180).
-	 * None unless supplied: every report is then refused and every label is
-	 * served open.
-	 */
 	fleetReporters?: readonly FleetReporter[] | undefined;
-	/** Verifies a workflow's OIDC token for the fleet reporter status route. */
 	workflowIdentity?: GithubWorkflowVerifier | undefined;
 	logger?: (entry: RelayServiceLog) => void;
 	now?: () => string;
@@ -108,12 +78,8 @@ export function createRelayHost(options: {
 	const log = (entry: RelayServiceLog) => {
 		try {
 			options.logger?.(entry);
-		} catch {
-			// A failed logger must not fail a tick or a request.
-		}
+		} catch {}
 	};
-	// Kept in this process: a verdict lapses in minutes and its reporter
-	// repeats it, so a restart costs one report (ADR-0180).
 	const fleetVerdicts = {
 		store: createMemoryFleetVerdicts(() => Date.parse(now())),
 		settings: () => ({
@@ -151,7 +117,6 @@ export function createRelayHost(options: {
 				authenticate: options.authenticate,
 				publicOrigin: options.publicOrigin,
 				assets: options.assets,
-				// This host's operator owns its provider inventory.
 				fullAccountUpdates: true,
 				meshNodes: options.meshNodes,
 				fleetVerdicts,
@@ -168,8 +133,6 @@ export function createRelayHost(options: {
 				agentIntervalMs: agent.intervalMs ?? 60_000,
 			}
 		: {};
-	// This process outlives a request, so it holds MCP sessions and pushes
-	// resource updates to their subscribers.
 	const mcp = createRelayMcp({
 		store: options.mcpStore ?? store,
 		relay,
@@ -204,8 +167,6 @@ export function createRelayHost(options: {
 		close: () => store.close(),
 		streams: isRelayMcpPath,
 		quiesce: () => mcp.close(),
-		// Deployment readiness is local partition integrity. A real runner acceptance
-		// workflow separately verifies external installation permissions and execution.
 		readinessProbe: async (signal) => {
 			signal.throwIfAborted();
 			return runtime.ready();

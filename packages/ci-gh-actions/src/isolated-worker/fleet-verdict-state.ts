@@ -1,17 +1,3 @@
-/**
- * What the fleet verdict reporter keeps between samples (ADR-0180; plan
- * 0025, 6.2): the hysteresis that turns samples into a held verdict, when a
- * report is due, the report sequence a restart cannot reuse, and the jobs
- * runners took lately.
- *
- * | Rule           | Value                                                    |
- * | -------------- | -------------------------------------------------------- |
- * | Sample         | every 10 s                                               |
- * | Enter blocked  | every sample in the last 60 s blocked                     |
- * | Leave blocked  | every sample in the last 30 s clear                       |
- * | Send           | at once on a change; otherwise every 60 s                 |
- * | Failed send    | next sample while a change is unsent, else next 60 s mark |
- */
 import {
 	chmodSync,
 	existsSync,
@@ -34,21 +20,14 @@ export const FLEET_VERDICT_EXIT_MS = 30_000;
 export const FLEET_VERDICT_RESEND_MS = 60_000;
 export const FLEET_VERDICT_TTL_SECONDS = 180;
 
-/**
- * Per label, whether the reporter holds it blocked. A label flips only once
- * every sample over the hold disagrees with what is held: one dip or one
- * spike never reaches a report.
- */
 export function createFleetVerdictHolds(options: {
 	labels: readonly string[];
 	enterMs: number;
 	exitMs: number;
 }) {
 	const held = new Set<string>();
-	/** Per label, since when every sample has disagreed with what is held. */
 	const disagreeingSince = new Map<string, number>();
 	return {
-		/** Takes one sample; true when a label flipped. */
 		observe(nowMs: number, sampled: ReadonlySet<string>): boolean {
 			let changed = false;
 			for (const label of options.labels) {
@@ -74,7 +53,6 @@ export function createFleetVerdictHolds(options: {
 	};
 }
 
-/** When a report is due: a change at once, otherwise every `resendMs`. */
 export function createFleetVerdictSchedule(options: { resendMs: number }) {
 	let unsentChange = false;
 	let lastAttemptMs: number | undefined;
@@ -98,13 +76,6 @@ const SequenceState = z
 	.object({ lastSequence: z.string().regex(/^[1-9][0-9]{0,19}$/u) })
 	.strict();
 
-/**
- * The report sequence, kept in `fleet-verdict-state.json` beside the
- * journal. The next value is `max(last + 1, now in ms)`, written before it
- * is returned, so neither a restart nor a clock that steps back reuses one.
- * A file that is there but is not a state refuses to start, as other daemon
- * settings do; a missing file is a first start.
- */
 export function createFleetVerdictSequence(path: string) {
 	let last = 0n;
 	if (existsSync(path)) {
@@ -141,7 +112,6 @@ export function createFleetVerdictSequence(path: string) {
 	};
 }
 
-/** Jobs runners took on fleet labels, remembered for the unaccounted-runner window. */
 export function createFleetPickupMemory(
 	windowMs = FLEET_VERDICT_UNACCOUNTED_WINDOW_MS,
 ) {

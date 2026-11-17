@@ -21,7 +21,6 @@ export interface IdentityVerifier {
 	verify(token: string): Promise<GithubClaims>;
 }
 
-/** Key discovery stays pinned to GitHub; no JWT-supplied key URL is fetched. */
 export function createGithubOidcVerifier(
 	audience: string,
 	send: typeof fetch = fetch,

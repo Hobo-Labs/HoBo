@@ -1,26 +1,3 @@
-/**
- * OpenTelemetry traces for the relay and the box worker, with no SDK and no
- * collector of its own: spans are OTLP/JSON, posted to an OTLP/HTTP endpoint
- * or appended to a file, or both. Off unless one of those is configured.
- *
- * Two things become spans.
- *
- * Every GitHub API call that changes something (a JIT runner created, a
- * runner deleted, a run force-cancelled or re-run, a variable written) and
- * every read GitHub refused. A cancelled run with no `force-cancel` span in
- * its trace was not cancelled by this process.
- *
- * Every structured log event the worker already writes. An event that names
- * a run joins that run's trace; `hobo_ci_job_pickup` becomes the three
- * waits it measures (queue, container start, runner registration).
- *
- * A run's trace id is derived from the run id alone, so the worker, a second
- * worker and the job's own Turbo trace (`scripts/ci/ci-trace.mts`) all write
- * into one trace without passing context to each other.
- *
- * Nothing here records a request body, a response body, a header or a query
- * string: JIT runner configs and tokens travel in those.
- */
 import { createHash, randomBytes } from "node:crypto";
 import { appendFile, rename, stat } from "node:fs/promises";
 import type { GithubTransport } from "./github.js";
@@ -30,7 +7,6 @@ export type TraceFields = Readonly<Record<string, string | number | boolean>>;
 export type RelaySpan = Readonly<{
 	traceId: string;
 	spanId: string;
-	/** Empty for a root span. */
 	parentSpanId: string;
 	name: string;
 	kind: "internal" | "client";
@@ -40,12 +16,10 @@ export type RelaySpan = Readonly<{
 	error: boolean;
 }>;
 
-/** Receives one serialized OTLP/JSON `ExportTraceServiceRequest`. */
 export type RelayTraceSink = (payload: string) => Promise<void>;
 
 export type RelayTrace = Readonly<{
 	enabled: boolean;
-	/** Records a span; `runId` joins it to that workflow run's trace. */
 	span(input: {
 		name: string;
 		kind?: RelaySpan["kind"];
@@ -55,10 +29,8 @@ export type RelayTrace = Readonly<{
 		error?: boolean;
 		runId?: number;
 	}): void;
-	/** Records a structured log event as a span at `atMs` (now by default). */
 	event(name: string, fields?: TraceFields, atMs?: number): void;
 	flush(): Promise<void>;
-	/** Flushes what is queued and stops the timer. */
 	close(): Promise<void>;
 }>;
 
@@ -68,17 +40,11 @@ const hex = (text: string, bytes: number) =>
 		.digest("hex")
 		.slice(0, bytes * 2);
 
-/**
- * The trace every span about one workflow run belongs to. Run ids are unique
- * across GitHub, so the id needs no repository. `scripts/ci/ci-trace.mts`
- * derives the same value from `GITHUB_RUN_ID`; a test holds the two together.
- */
 export function runTraceId(runId: number): string {
 	return hex(`github-actions-run:${runId}`, 16);
 }
 
 export type GithubRoute = Readonly<{
-	/** The path with every identifier replaced by a placeholder. */
 	route: string;
 	repository: string;
 	runId: number;
@@ -96,10 +62,6 @@ const ID_AFTER = new Map([
 	["secrets", "{name}"],
 ]);
 
-/**
- * A GitHub API path as a low-cardinality route plus the ids it carried. The
- * query string is dropped: it can hold a registration or download token.
- */
 export function githubRoute(path: string): GithubRoute {
 	const segments = (path.split("?")[0] ?? "").split("/").filter(Boolean);
 	let repository = "";
@@ -118,7 +80,6 @@ export function githubRoute(path: string): GithubRoute {
 		if (placeholder === undefined)
 			return /^\d+$/.test(segment) ? "{id}" : segment;
 		const id = /^\d+$/.test(segment) ? Number(segment) : 0;
-		// `runners/generate-jitconfig` and `runs/123/jobs` keep their verbs.
 		if (id === 0 && !["variables", "secrets"].includes(previous))
 			return segment;
 		if (previous === "runs") runId = id;
@@ -137,7 +98,6 @@ type OtlpValue =
 
 function otlpValue(value: string | number | boolean): OtlpValue {
 	if (value === true || value === false) return { boolValue: value };
-	// Neither test coerces: a numeric string stays a string.
 	if (Number.isSafeInteger(value)) return { intValue: `${value}` };
 	if (Number.isFinite(value)) return { doubleValue: Number(value) };
 	return { stringValue: `${value}`.slice(0, 1000) };
@@ -145,7 +105,6 @@ function otlpValue(value: string | number | boolean): OtlpValue {
 
 const nanos = (ms: number) => `${Math.max(0, Math.round(ms))}000000`;
 
-/** The OTLP/JSON export request for `spans`, as the OTel file exporter writes it. */
 export function toOtlpTraces(
 	resource: TraceFields,
 	spans: readonly RelaySpan[],
@@ -186,7 +145,6 @@ export function toOtlpTraces(
 
 const FAILED_EVENT = /_(?:failed|failure|error|oom|timeout)$/;
 
-/** `hobo_ci_job_pickup` measures these waits end to end; each becomes a span. */
 const PICKUP_STAGES = [
 	["ci.job.queue", "jobCreatedAt", "admittedAt"],
 	["ci.job.container_start", "admittedAt", "containerStartedAt"],
@@ -202,17 +160,13 @@ const DISABLED: RelayTrace = {
 };
 
 export function createRelayTrace(options: {
-	/** No sink disables tracing: every call is a no-op. */
 	sink: RelayTraceSink | undefined;
 	resource: TraceFields;
 	now?: () => number;
-	/** Eight random bytes as hex; injectable for tests. */
 	spanId?: () => string;
 	flushIntervalMs?: number;
-	/** Spans held while the sink is slow; the oldest are dropped past it. */
 	maxQueue?: number;
 	batchSize?: number;
-	/** Told about a failed export or dropped spans, at most once a minute. */
 	onProblem?: (problem: { failedExports: number; dropped: number }) => void;
 }): RelayTrace {
 	if (!options.sink) return DISABLED;
@@ -221,7 +175,6 @@ export function createRelayTrace(options: {
 	const spanId = options.spanId ?? (() => randomBytes(8).toString("hex"));
 	const maxQueue = options.maxQueue ?? 4096;
 	const batchSize = options.batchSize ?? 512;
-	// Events that name no run group under the process: one trace per start.
 	const processTraceId = randomBytes(16).toString("hex");
 	const queue: RelaySpan[] = [];
 	let dropped = 0;
@@ -254,8 +207,6 @@ export function createRelayTrace(options: {
 			try {
 				await sink(JSON.stringify(toOtlpTraces(options.resource, batch)));
 			} catch {
-				// A batch is not retried: a dead endpoint must not grow the queue
-				// or delay the worker. The count is reported instead.
 				failedExports += 1;
 			}
 		}
@@ -341,11 +292,6 @@ export function createRelayTrace(options: {
 	};
 }
 
-/**
- * `github` with a span for every call that changes something and every call
- * that failed. Successful reads are not recorded: the worker polls, and those
- * would bury the handful of writes a reader is looking for.
- */
 export function traceGithubTransport<T extends GithubTransport>(
 	github: T,
 	trace: RelayTrace,
@@ -394,7 +340,6 @@ export function traceGithubTransport<T extends GithubTransport>(
 			record(response.status);
 			return response;
 		} catch (error) {
-			// Status 0: the request never got an answer.
 			record(0);
 			throw error;
 		}
@@ -402,7 +347,6 @@ export function traceGithubTransport<T extends GithubTransport>(
 	return { ...github, request };
 }
 
-/** Posts each export to an OTLP/HTTP traces endpoint as JSON. */
 export function otlpHttpSink(options: {
 	url: string;
 	headers?: Readonly<Record<string, string>>;
@@ -424,11 +368,6 @@ export function otlpHttpSink(options: {
 	};
 }
 
-/**
- * Appends each export as one line of OTLP/JSON. Past `maxBytes` the file is
- * renamed to `<path>.1`, replacing the previous one, so it holds at most two
- * generations.
- */
 export function otlpFileSink(options: {
 	path: string;
 	maxBytes?: number;
@@ -444,7 +383,6 @@ export function otlpFileSink(options: {
 	};
 }
 
-/** `key=value,key=value`, values percent-encoded, as OTel's header variables are. */
 function otlpHeaders(text: string | undefined) {
 	const headers = new Map<string, string>();
 	for (const pair of (text ?? "").split(",")) {
@@ -461,20 +399,10 @@ function otlpHeaders(text: string | undefined) {
 }
 
 export type RelayTraceTargets = Readonly<{
-	/** The OTLP traces URL, without credentials or query. Empty when unset. */
 	endpoint: string;
-	/** The trace file. Empty when unset. */
 	file: string;
 }>;
 
-/**
- * Where the environment says traces go, by OTel's own variables:
- * `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` as given, else
- * `OTEL_EXPORTER_OTLP_ENDPOINT` with `/v1/traces` appended, with
- * `OTEL_EXPORTER_OTLP_TRACES_HEADERS` or `OTEL_EXPORTER_OTLP_HEADERS`.
- * `HOBO_CI_TRACE_FILE` adds a file. `OTEL_SDK_DISABLED=true` turns both off.
- * Only http and https endpoints are used.
- */
 export function relayTraceSinkFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 	send?: typeof fetch,
@@ -507,7 +435,6 @@ export function relayTraceSinkFromEnv(
 		);
 	if (file) sinks.push(otlpFileSink({ path: file }));
 	if (sinks.length === 0) return none;
-	// One sink failing does not stop the other; the export still counts as failed.
 	const sink: RelayTraceSink = async (payload) => {
 		const results = await Promise.allSettled(
 			sinks.map((each) => each(payload)),

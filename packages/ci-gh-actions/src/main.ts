@@ -26,24 +26,14 @@ function secret(env: NodeJS.ProcessEnv, name: string): string {
 	return file ? readFileSync(file, "utf8").trimEnd() : required(env, name);
 }
 
-/**
- * Start the relay's Node host from `HOBO_CI_*` configuration: one SQLite
- * partition, fenced by its lock file. No process-global signal handler is
- * registered here.
- */
 export async function startRelayFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
-	/** A host embedding the relay may supply its own GitHub App transport. */
 	ports: {
 		github?: GithubAppTransport;
 		strictFleet?: {
 			store: StrictFleetStore;
 			policies: readonly StartFencePolicy[];
 		};
-		/**
-		 * Builds the optional CI agent once the store is open. It is handed the
-		 * repositories this relay is connected to, read fresh on every call.
-		 */
 		agent?: (relay: {
 			connections(): Promise<
 				readonly { installationId: number; repository: string }[]
@@ -53,9 +43,6 @@ export async function startRelayFromEnvironment(
 ) {
 	const publicUrl = new URL(required(env, "HOBO_CI_PUBLIC_URL"));
 	const requestedHost = env.HOBO_CI_HOST ?? "127.0.0.1";
-	// HTTP is only useful for a local, explicitly opted-in relay. In particular,
-	// an HTTP public URL must not be paired with a wildcard listener, where
-	// account bearer tokens and webhook payloads could escape the host.
 	const localHttp =
 		env.HOBO_CI_ALLOW_INSECURE_LOOPBACK === "1" &&
 		publicUrl.protocol === "http:" &&
@@ -72,7 +59,6 @@ export async function startRelayFromEnvironment(
 		throw new Error(
 			"relay public URL must be an HTTPS origin or explicitly enabled loopback HTTP origin with a loopback listener",
 		);
-	// Do not rely on DNS/hosts resolution of `localhost` for an insecure bind.
 	const host = localHttp ? "127.0.0.1" : requestedHost;
 	const port = Number(env.HOBO_CI_PORT ?? "8787");
 	if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -118,18 +104,12 @@ export async function startRelayFromEnvironment(
 					}),
 				),
 		});
-		// One JSON line per mesh event, in the shape of the relay's own log.
 		const meshLog = (
 			level: "info" | "error",
 			event: string,
 			fields: Readonly<Record<string, string | number | boolean>>,
 		) =>
 			process.stdout.write(`${JSON.stringify({ level, event, ...fields })}\n`);
-		// The relay is a node of the mesh HOBO_CI_NATS_URL names: it takes no
-		// jobs (no slots, no labels), so what it advertises is that it is up
-		// and who it is, and the same list shows its health beside the
-		// workers'. With no mesh it is not a node, and says so when asked.
-		// Nothing about the mesh may keep the relay from starting.
 		let ready: () => boolean = () => false;
 		let mesh: JoinedMesh | undefined;
 		if (env.HOBO_CI_NATS_URL)
@@ -137,7 +117,6 @@ export async function startRelayFromEnvironment(
 				mesh = await joinMeshFromEnv({
 					env,
 					defaultNodeId: `relay-${hostname()}`,
-					// Beside the relay's journal, readable by its owner only.
 					keyFile:
 						env.HOBO_CI_MESH_KEY_FILE ??
 						join(dirname(database), "mesh-node.key"),
@@ -187,7 +166,6 @@ export async function startRelayFromEnvironment(
 			logger: (entry) => process.stdout.write(`${JSON.stringify(entry)}\n`),
 		});
 		await service.start();
-		// What the relay advertises as its health is its own readiness probe.
 		ready = () => service.ready();
 		mesh?.start();
 		let stopping: Promise<{ drained: boolean }> | undefined;
@@ -197,7 +175,6 @@ export async function startRelayFromEnvironment(
 			store,
 			stop() {
 				stopping ??= (async () => {
-					// Say so before going: the list shows the relay draining, then lost.
 					ready = () => false;
 					await mesh?.stop().catch(() => undefined);
 					const result = await service.stop();
@@ -214,7 +191,6 @@ export async function startRelayFromEnvironment(
 	}
 }
 const entry = process.argv[1];
-// Not inside a bundled controller release, whose entry is another module.
 if (
 	process.env.HOBO_CI_RELEASE_BUILD !== "1" &&
 	entry &&

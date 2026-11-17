@@ -6,8 +6,6 @@ const Id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const App = z.object({
 	id: Id,
 	slug: z.string().regex(/^[A-Za-z0-9-]{1,100}$/),
-	// A user or an organization may own the App; the owner id check below is
-	// what ties it to the account that asked for it.
 	owner: z.object({ id: Id, type: z.enum(["User", "Organization"]) }),
 	external_url: z.string().url(),
 	permissions: z.record(z.string(), z.string()),
@@ -24,20 +22,17 @@ type GithubAppVerificationOptions = {
 	pem: string;
 	expectedOrigin: string;
 	expectedOwnerId: number;
-	/** Account kind to verify; defaults to User for existing callers. */
 	expectedOwnerType?: "User" | "Organization";
 	fetch?: typeof fetch;
 	now?: () => number;
 };
 
-/** Validate the converted App before credentials enter the account vault. */
 export async function verifyConvertedGithubApp(
 	options: GithubAppVerificationOptions & { metadata: unknown },
 ): Promise<void> {
 	await verifyGithubApp(options, App.parse(options.metadata));
 }
 
-/** Recheck a stored App's key, owner, permissions and webhook against GitHub. */
 export async function verifyStoredGithubApp(
 	options: GithubAppVerificationOptions,
 ): Promise<void> {

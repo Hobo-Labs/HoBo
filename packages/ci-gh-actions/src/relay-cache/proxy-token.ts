@@ -1,12 +1,3 @@
-/**
- * The sandbox proxy's session token, derived instead of stored (ADR-0179):
- * nothing in the cache maps a token to a lease, so there is no proxy table to
- * lose or leak. The token is 32 bytes, base64url (43 characters, the shape
- * the proxy quota endpoint accepts): the lease id's 16 bytes, then the first
- * 16 bytes of HMAC-SHA256 over a domain-separated lease id under a key from
- * the config service. Holding the key is what lets the relay re-derive and
- * check any token; holding a token proves nothing about any other lease.
- */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
@@ -15,7 +6,6 @@ const CONTEXT = "hobo-ci:sandbox-proxy-token:v1:";
 
 export type ProxyTokenKey = Readonly<{ bytes: Buffer }>;
 
-/** Parse the configured key bytes; at least 32. The key is never logged. */
 export function parseProxyTokenKey(raw: Uint8Array): ProxyTokenKey {
 	const bytes = Buffer.from(raw);
 	if (bytes.length < 32) throw new Error("sandbox proxy token key too short");
@@ -38,12 +28,10 @@ export function deriveSandboxProxyToken(
 	return Buffer.concat([id, mac(key, leaseId)]).toString("base64url");
 }
 
-/** The digest the proxy quota endpoint and the controller exchange. */
 export function sandboxProxyTokenDigest(token: string): string {
 	return createHash("sha256").update(token).digest("hex");
 }
 
-/** The lease a well-formed, authentic token names; `undefined` for anything else. */
 export function verifySandboxProxyToken(
 	key: ProxyTokenKey,
 	token: string,
@@ -59,7 +47,6 @@ export function verifySandboxProxyToken(
 		: undefined;
 }
 
-/** Whether a token digest is the digest of this lease's derived token. */
 export function sandboxProxyDigestMatches(
 	key: ProxyTokenKey,
 	leaseId: string,

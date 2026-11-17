@@ -2,11 +2,6 @@ import { createSign } from "node:crypto";
 import { z } from "zod";
 
 export interface GithubTransport {
-	/**
-	 * `ifNoneMatch` makes a GET conditional: GitHub answers 304 when the ETag
-	 * still matches, and a 304 does not count against the installation's rate
-	 * limit. A transport may ignore it; the caller then just sees a 200.
-	 */
 	request(
 		installationId: number,
 		path: string,
@@ -96,7 +91,6 @@ const RunWorkflowJob = z.object({
 	status: z.string(),
 	labels: z.array(z.string()).optional(),
 	runner_name: z.string().nullable().optional(),
-	// Queued jobs are unassigned: GitHub may send 0 or null.
 	runner_id: z.number().int().nonnegative().nullable().optional(),
 });
 
@@ -110,7 +104,6 @@ const WorkflowRunPage = z.object({
 	),
 });
 
-/** Recent in-progress workflow runs for cross-run runner assignment lookup. */
 export async function listInProgressWorkflowRunIds(
 	api: GithubTransport,
 	installationId: number,
@@ -167,7 +160,6 @@ export async function rerunWorkflowRun(
 	);
 }
 
-/** Re-run one workflow job without cancelling the rest of the run. */
 export async function rerunWorkflowJob(
 	api: GithubTransport,
 	installationId: number,
@@ -212,7 +204,6 @@ export interface GithubAppTransport extends GithubTransport {
 	appRequest(path: string): Promise<Response>;
 }
 
-/** Only relative GitHub API paths; encoded separators cannot change the resource scope. */
 export function githubApiUrl(path: string): string {
 	const [pathname] = path.split("?");
 	if (
@@ -295,18 +286,12 @@ export function githubApiUrl(path: string): string {
 	return url.href;
 }
 
-/** App keys never leave the relay; concurrent lookups share short-lived installation tokens. */
 export function createGithubAppTransport(options: {
 	appId: string;
 	privateKey: string;
 	fetch?: typeof fetch;
 	now?: () => number;
 }): GithubAppTransport & {
-	/**
-	 * A short-lived installation token for an in-process caller that speaks a
-	 * protocol this transport does not (GraphQL, git over HTTPS). The App key
-	 * still never leaves the relay.
-	 */
 	installationToken(installationId: number): Promise<string>;
 } {
 	const send = options.fetch ?? fetch;

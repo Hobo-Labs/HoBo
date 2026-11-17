@@ -41,9 +41,6 @@ function ceilWithMargin(
 	return Math.ceil(Math.max(floor, peak * margin));
 }
 
-/**
- * Blend class budgets with measured workdir peaks (Docker layer stays on class caps).
- */
 export function learnedStorageReserve(
 	history: StoragePeakHistory | undefined,
 	classReserve: WorkerStorageReserve,

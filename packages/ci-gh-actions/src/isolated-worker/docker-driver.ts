@@ -13,7 +13,6 @@ export type IsolatedContainerSpec = Readonly<{
 	memoryMb?: number;
 	cpuShares?: number;
 	blkioWeight?: number;
-	/** Extra `-v src:dst` mounts (e.g. a shared pnpm store volume). */
 	volumes?: readonly Readonly<{
 		source: string;
 		target: string;
@@ -49,9 +48,7 @@ export type DockerContainer = Readonly<{
 	name: string;
 	containerId: string;
 	state: DockerContainerState;
-	/** When the container record was created on the host (best-effort). */
 	createdAtMs?: number;
-	/** From `hobo.ci/timeout-ms` when present. */
 	timeoutMs?: number;
 	labels?: Readonly<Record<string, string>>;
 }>;
@@ -62,7 +59,6 @@ export type DockerImageInspection = Readonly<{
 	labels: Readonly<Record<string, string>>;
 }>;
 
-/** Ephemeral container boundary for one JIT runner session. */
 export interface DockerDriver {
 	inspectImage?(image: string): Promise<DockerImageInspection>;
 	probeImage?(
@@ -71,7 +67,6 @@ export interface DockerDriver {
 		runAsUser: string,
 	): Promise<{ exitCode: number }>;
 	list?(label: string): Promise<readonly DockerContainer[]>;
-	/** Labeled worker containers plus legacy `hobo-*` names missing the label. */
 	listWorkerContainers?(): Promise<readonly DockerContainer[]>;
 	containerExists?(name: string): Promise<boolean>;
 	create(spec: IsolatedContainerSpec): Promise<IsolatedContainerHandle>;
@@ -81,22 +76,18 @@ export interface DockerDriver {
 		containerId: string,
 		argv: readonly string[],
 	): Promise<{ exitCode: number }>;
-	/** Start argv in the container and return without waiting for it (`docker exec -d`). */
 	execDetached?(
 		name: string,
 		containerId: string,
 		argv: readonly string[],
 	): Promise<{ exitCode: number }>;
-	/** Write `content` to `path` inside the container via stdin (mode 0600), never argv. */
 	writeSecret?(
 		name: string,
 		containerId: string,
 		path: string,
 		content: string,
 	): Promise<void>;
-	/** Rename a pre-warmed container to the lease's identity. */
 	rename?(containerId: string, name: string): Promise<void>;
-	/** Re-weight a warm container for the lease that consumes it. */
 	updateResources?(
 		containerId: string,
 		weights: ContainerResourceWeights,
@@ -109,9 +100,7 @@ export interface DockerDriver {
 		name: string,
 		containerId: string,
 	): Promise<Readonly<{ exitCode: number; oomKilled: boolean }>>;
-	/** Whether `path` exists inside the running container; rejects when docker cannot say. */
 	exists?(name: string, containerId: string, path: string): Promise<boolean>;
-	/** Read a small UTF-8 text file from a running container (diagnostics). */
 	readContainerFile?(
 		name: string,
 		containerId: string,

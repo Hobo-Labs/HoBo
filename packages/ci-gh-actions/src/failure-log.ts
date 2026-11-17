@@ -1,16 +1,3 @@
-/**
- * One JSON line on stderr for each way the relay refuses a request.
- *
- * Every failure path here answers 503 with a fixed body, and used to do so
- * silently: a relay that could not start looked, in the platform's logs, like
- * a relay nobody was calling. The line names the stage and the error; it
- * never carries a request body, a header or a credential.
- */
-
-/**
- * What a failure is also handed to. Declared here, not imported: this file
- * is bundled into the sandbox proxy, which must not pull in the relay.
- */
 export type FailureEvents = Readonly<{
 	emit(
 		name: string,
@@ -19,7 +6,6 @@ export type FailureEvents = Readonly<{
 	flush(): Promise<void>;
 }>;
 
-/** A run of 24 or more token characters: a key, a JWT segment, a digest. */
 const SECRET_LIKE = /[A-Za-z0-9+/_=-]{24,}/g;
 const URL_USERINFO = /\/\/[^/@\s]+@/g;
 
@@ -29,9 +15,6 @@ const scrub = (text: string) =>
 		.replace(SECRET_LIKE, "[redacted]")
 		.slice(0, 300);
 
-/** A PostgreSQL SQLSTATE: five characters, a class and a condition. It says
- * why a database refused (`28P01` a bad password, `53300` too many
- * connections) and is never a secret. */
 const SQLSTATE = /^[0-9A-Z]{5}$/;
 
 function sqlstateOf(error: Error | undefined): string {
@@ -40,7 +23,6 @@ function sqlstateOf(error: Error | undefined): string {
 	return SQLSTATE.test(code) ? code : "";
 }
 
-/** The error's class and message, and its cause's: `fetch failed` alone says nothing. */
 export function describeFailure(error: Error | undefined) {
 	if (!error) return { error: "unknown", message: "", cause: "" };
 	const cause = error.cause instanceof Error ? error.cause : undefined;
@@ -49,12 +31,10 @@ export function describeFailure(error: Error | undefined) {
 		message: scrub(error.message),
 		cause: cause ? scrub(`${cause.name}: ${cause.message}`) : "",
 	};
-	// Present only for a database refusal, so every other line is unchanged.
 	const sqlstate = sqlstateOf(cause) || sqlstateOf(error);
 	return sqlstate ? { ...described, sqlstate } : described;
 }
 
-/** Ids and long segments out of a path, so one route is one log key. */
 export function failureRoute(path: string | undefined): string {
 	return (path ?? "")
 		.split("?", 1)
@@ -72,12 +52,7 @@ export function failureRoute(path: string | undefined): string {
 export function createFailureLog(options?: {
 	write?: (line: string) => void;
 	now?: () => number;
-	/**
-	 * Also emitted as a CloudEvent, for something that reacts and not only
-	 * reads. Flushed at once: a function instance may not live to a timer.
-	 */
 	events?: () => FailureEvents | undefined;
-	/** One line per event name in this window; a relay that is down fails every request. */
 	minIntervalMs?: number;
 }) {
 	const write = options?.write ?? ((line: string) => console.error(line));
@@ -88,10 +63,8 @@ export function createFailureLog(options?: {
 	return function report(
 		event: string,
 		fields: Readonly<Record<string, string | number | boolean>>,
-		/** What was thrown, when it was an Error; anything else is logged as unknown. */
 		error: Error | undefined,
 	): void {
-		// Logging must never change what the caller answers.
 		try {
 			const previous = last.get(event);
 			if (previous !== undefined && now() - previous < minIntervalMs) {
@@ -109,23 +82,16 @@ export function createFailureLog(options?: {
 			const events = options?.events?.();
 			events?.emit(event, body);
 			void events?.flush().catch(() => undefined);
-		} catch {
-			// A failed logger is not a failed request.
-		}
+		} catch {}
 	};
 }
 
 let relayEvents: FailureEvents | undefined;
 
-/**
- * Where the relay's failures are also delivered as CloudEvents. Set once by
- * the entrypoint, which owns the configuration.
- */
 export function setRelayFailureEvents(events: FailureEvents | undefined): void {
 	relayEvents = events;
 }
 
-/** The process-wide log the relay's entrypoints share. */
 export const reportRelayFailure = createFailureLog({
 	events: () => relayEvents,
 });

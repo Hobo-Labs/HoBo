@@ -1,26 +1,3 @@
-/**
- * HoBo's own runner fleet, delivered by HoBo CD (ADR-0182).
- *
- * The hosts that run HoBo's self-hosted GitHub Actions runners (the box
- * worker, mesh nodes and local runners serving `hobo`, `hobo-trunk` and
- * `hobo-local-host`) are Camps of one Yard. This module turns a declared host
- * list into what `@hobo/cd` reads, as plain records in protobuf JSON form
- * (`packages/cd/data-models/cd.proto`), so `hobo deploy pipeline apply --file
- * packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.json` applies them:
- *
- * - a Camp set for the `hobo-ci-runner-fleet` Bindle, selected by label;
- * - an OCI Freight source that polls GHCR for the worker image's release tags
- *   (`scripts/ci/push-ci-runner-image-ghcr.mts` publishes them);
- * - a Placement with a pilot group, and a pipeline node that fans out
- *   PROGRESSIVE_PER_GROUP: the pilot first and mandatory, a failure budget of
- *   one host, a quorum, and departing hosts left running (ORPHAN).
- *
- * It also maps what the mesh already reports about each host (its signed
- * advertisement: health, expiry, served labels) to Camp inventory conditions
- * and claims, from the health source. Nothing here changes job routing.
- *
- * It holds data and pure functions only: no I/O, no clock but the one given.
- */
 import type { MeshNode } from "@hobo/ci/mesh";
 import { z } from "zod";
 import { RUNNER_LABEL, TRUNK_RUNNER_LABEL } from "./runner-labels.js";
@@ -48,12 +25,6 @@ export const RUNNER_FLEET_RAIL = "hobo-ci-runner-fleet";
 export const RUNNER_IMAGE_CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
 // public-contract: the Freight artifact a container-mode controller runs (the worker image).
 export const RUNNER_IMAGE_ARTIFACT = "hobo-ci-worker";
-/**
- * The single-file releases a process-mode controller runs, one per program:
- * the box worker daemon (box workers and mesh nodes) and the local runner.
- * `scripts/build-controller-release.mts` builds them under these names and
- * writes `index.<artifact>.json` for each.
- */
 // public-contract: Freight artifact names and runner-host realization parameter keys of the controller releases.
 export const RUNNER_RELEASE_ARTIFACTS = Object.freeze({
 	workerRelease: "hobo-ci-worker-release",
@@ -78,12 +49,6 @@ const RING_LABEL = "hobo.ci/runner-ring";
 const HOST_KIND_LABEL = "hobo.ci/runner-host";
 const servesLabel = (label: string) => `hobo.ci/serves-${label}`;
 
-/**
- * The served-label claims for the labels a host advertises: one per label the
- * fleet knows, `label:hobo.ci/serves-<label>` = whether it is advertised.
- * Claims narrow, never grant: a host that stopped serving a declared label
- * contradicts its Camp's topology and is not placed.
- */
 export function servedLabelClaims(
 	advertised: readonly string[],
 ): readonly Readonly<{ name: string; value: string }>[] {
@@ -99,11 +64,8 @@ const HOST_ID = /^[a-z0-9][a-z0-9-]{0,62}$/u;
 const HOST_KINDS = ["box-worker", "mesh-node", "local-runner"] as const;
 const RINGS = ["pilot", "fleet"] as const;
 
-/** A pilot host must keep taking jobs this long on new Freight before the rest move. */
 const PILOT_SOAK_MS = 10 * 60_000;
-/** Above the box worker's two-hour drain (`restart-worker.sh`), so a draining host is not failed. */
 const HOST_PROGRESS_DEADLINE_MS = 3 * 60 * 60_000;
-/** How long after the Set is applied the host is first asked whether it serves it. */
 const VERIFY_WINDOW_MS = 60_000;
 
 export type RunnerHostKind = (typeof HOST_KINDS)[number];
@@ -112,7 +74,6 @@ export type ServedRunnerLabel = (typeof SERVED_LABELS)[number];
 
 // domain-view: one parsed runner host (the derived type every builder takes).
 export type RunnerHost = Readonly<{
-	/** The host's mesh node id; the Camp is `hobo-ci-runners/<id>`. */
 	id: string;
 	kind: RunnerHostKind;
 	runnerLabels: readonly ServedRunnerLabel[];
@@ -145,10 +106,6 @@ function invalid(problems: readonly string[]): RunnerHostsOutcome {
 	};
 }
 
-/**
- * Parse a declared host list (the text of `deploy/runner-fleet/hosts.json`).
- * Every problem is listed; nothing partial is returned.
- */
 export function parseRunnerHosts(text: string): RunnerHostsOutcome {
 	let json: ReturnType<typeof JSON.parse>;
 	try {
@@ -227,7 +184,6 @@ export type RunnerCampTopology = Readonly<{
 	management: "CAMP_MANAGEMENT_MANAGED";
 }>;
 
-/** The declared Camp per runner host (`@hobo/cd` CampTopology form). */
 export function runnerFleetTopology(
 	hosts: readonly RunnerHost[],
 	options: Readonly<{ stationId: string; provider?: string }>,
@@ -251,20 +207,12 @@ export type RunnerFleetRail = Readonly<{
 	id: string;
 	name: string;
 	version: string;
-	/** Empty: the Station the CD runtime composes (HOBO_STATION). */
 	stationId: string;
 	approvedProviders: readonly string[];
 	delivery: Readonly<{ campSets: readonly string[] }>;
 	metadata: Readonly<Record<string, string>>;
 }>;
 
-/**
- * The Station Rail the runner fleet is delivered under: it binds the fleet's
- * Camp set (so Placement sees its Camps) and approves the one provider its
- * Camps declare (so Placement can evaluate provider approval instead of
- * refusing `rail-providers-unknown`). A delivery module exports it as `rails`;
- * the CD runtime reads it as declared topology for the Station it composes.
- */
 export function runnerFleetRail(): RunnerFleetRail {
 	return Object.freeze({
 		id: RUNNER_FLEET_RAIL,
@@ -308,7 +256,6 @@ export type RunnerFleetDelivery = Readonly<{
 					artifactKind: "ARTIFACT_KIND_FUNCTION_BUNDLE";
 			  }
 		>[];
-		/** INDEPENDENT for the image alone; SAME_VERSION when releases ride with it. */
 		assembly: "ASSEMBLY_RULE_INDEPENDENT" | "ASSEMBLY_RULE_SAME_VERSION";
 		automatic: boolean;
 		definedBy: string;
@@ -364,15 +311,10 @@ export type RunnerFleetDelivery = Readonly<{
 	}>[];
 }>;
 
-/** The GHCR repository the push script publishes the worker image to. */
 export function runnerImageRepository(repository: string): string {
 	return `ghcr.io/${repository.toLowerCase()}/hobo-ci-worker`;
 }
 
-/**
- * The release index an HTTP_INDEX subscription reads for one release, under
- * `base` (an `https://` directory the release build's output is published to).
- */
 export function runnerReleaseIndexUrl(base: string, artifact: string): string {
 	const url = new URL(
 		`index.${artifact}.json`,
@@ -385,19 +327,6 @@ export function runnerReleaseIndexUrl(base: string, artifact: string): string {
 	return url.href;
 }
 
-/**
- * The delivery module (`hobo deploy pipeline apply --file`) for the runner
- * fleet. `hosts` only shapes the pilot group's presence; membership is by
- * label, so adding a host is a topology change, not a pipeline change.
- *
- * With `releaseIndexBase`, each Freight also carries the controller releases
- * of the same version (HTTP_INDEX subscriptions on the indexes
- * `scripts/build-controller-release.mts` writes, assembled SAME_VERSION with
- * the image): a release's digest is the sha256 of its own bytes, which is
- * what a process-mode host stages and verifies, never the image's manifest
- * digest. `runnerHostRealizationParameters` maps such a Freight to the
- * runner-host row's parameters.
- */
 export function runnerFleetDelivery(
 	hosts: readonly RunnerHost[],
 	options: Readonly<{ repository: string; releaseIndexBase?: string }>,
@@ -410,7 +339,6 @@ export function runnerFleetDelivery(
 				kind: "SUBSCRIPTION_KIND_HTTP_INDEX" as const,
 				locator: runnerReleaseIndexUrl(base, artifact),
 				selection: "SELECTION_STRATEGY_LEXICAL" as const,
-				// The release build is given the image's release tag as its version.
 				allowPattern: RUNNER_IMAGE_RELEASE_TAG_PATTERN,
 				artifactName: artifact,
 				artifactKind: "ARTIFACT_KIND_FUNCTION_BUNDLE" as const,
@@ -427,7 +355,6 @@ export function runnerFleetDelivery(
 						name: RUNNER_IMAGE_SOURCE,
 						kind: "SUBSCRIPTION_KIND_OCI_REPOSITORY",
 						locator: runnerImageRepository(options.repository),
-						// Release tags carry their publish time, so lexical order is publish order.
 						selection: "SELECTION_STRATEGY_LEXICAL",
 						allowPattern: RUNNER_IMAGE_RELEASE_TAG_PATTERN,
 						artifactName: RUNNER_IMAGE_ARTIFACT,
@@ -456,7 +383,6 @@ export function runnerFleetDelivery(
 				schemaVersion: "hobo.cd.placement/v1",
 				name: RUNNER_FLEET_PLACEMENT,
 				campSets: [RUNNER_FLEET_CAMP_SET],
-				// Every eligible runner host.
 				count: 0,
 				groups: [
 					{
@@ -483,15 +409,7 @@ export function runnerFleetDelivery(
 						placement: RUNNER_FLEET_PLACEMENT,
 						fromSources: [RUNNER_IMAGE_SOURCE],
 						autoPromotion: "AUTO_PROMOTION_NEWEST",
-						// A runner host takes no routed traffic: each host swaps its
-						// controller whole, and the fan-out (one host at a time, the
-						// pilot first) is the progressive part. A canary would need a
-						// traffic capability and is refused progressive-unsupported.
 						strategy: "ROLLOUT_STRATEGY_ALL_AT_ONCE",
-						// A host qualifies only on its agent's own observation: the
-						// Set converged at its digest and the host ready (serving,
-						// advert fresh and healthy). Until the agent reports on the
-						// Set the suite is retried, up to the drain-sized deadline.
 						verification: {
 							windowMs: String(VERIFY_WINDOW_MS),
 							requiredObservations: 1,
@@ -501,7 +419,6 @@ export function runnerFleetDelivery(
 						},
 						fanout: {
 							strategy: "FANOUT_STRATEGY_PROGRESSIVE_PER_GROUP",
-							// One runner host at a time: the fleet keeps taking jobs while it moves.
 							maxConcurrency: 1,
 							minSuccessMs: String(PILOT_SOAK_MS),
 							progressDeadlineMs: String(HOST_PROGRESS_DEADLINE_MS),
@@ -510,7 +427,6 @@ export function runnerFleetDelivery(
 							rollbackOnHalt: true,
 						},
 						quorum: { minQualifiedPercent: 50 },
-						// A host that leaves the placement keeps its runner controller running.
 						departure: "DEPARTURE_ACTION_ORPHAN",
 					},
 				],
@@ -535,25 +451,9 @@ export type RunnerFleetDeclaration = Readonly<{
 	>;
 }>;
 
-/**
- * The planning declaration of the `hobo-ci-runner-fleet` Bindle: one
- * resource, the runner controller, asking for the runner-host product as its
- * port (`{ type: "data.v1", port: "hobo:hobo-ci.runner-host/v1" }`), so
- * Matching places it only on an offering of exactly that product (a runner
- * host Camp's). Which controller a Set runs is not declared here: it is the
- * Freight's own artifacts (`runnerHostRealizationParameters`), so one
- * declaration plans every version.
- *
- * The fleet's Freight comes from its source with no declaration member, so
- * its `declaration_hash` is the source definition's digest; the Station
- * pairs this declaration with a Freight only while the source, as applied,
- * still has that digest (`hobo`'s `cd-runtime.ts`).
- */
 export function runnerFleetDeclaration(): RunnerFleetDeclaration {
 	return Object.freeze({
 		schema: "hobo.manifest/v1",
-		// The controller ships as an OCI image (and, for a process host, a
-		// release paired with it in the same Freight).
 		componentHost: Object.freeze({ kind: "oci", version: "1" }),
 		resources: Object.freeze({
 			[RUNNER_HOST_RESOURCE]: Object.freeze({
@@ -567,21 +467,12 @@ export function runnerFleetDeclaration(): RunnerFleetDeclaration {
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 const OCI_BY_DIGEST = /^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$/u;
 
-/** One artifact of a Freight manifest, as `@hobo/cd` records it. */
 export type RunnerFreightArtifact = Readonly<{
 	name: string;
 	digest: string;
 	coordinate: string;
 }>;
 
-/**
- * The runner-host row's realization parameters for one Freight: `image`, the
- * worker image pinned by its manifest digest (what a container-mode host
- * pulls), and, when the Freight carries them, each controller release as
- * `<artifact>@sha256:<sha256 of its bytes>` (what a process-mode host
- * stages: `workerRelease` on a box worker or mesh node, `localRunnerRelease`
- * on a local runner). Undefined when the Freight has no digest-pinned image.
- */
 export function runnerHostRealizationParameters(
 	artifacts: readonly RunnerFreightArtifact[],
 ):
@@ -599,17 +490,12 @@ export function runnerHostRealizationParameters(
 	for (const [parameter, name] of Object.entries(RUNNER_RELEASE_ARTIFACTS)) {
 		const release = artifacts.find((artifact) => artifact.name === name);
 		if (release && DIGEST.test(release.digest))
-			// SAFETY: Object.entries of RUNNER_RELEASE_ARTIFACTS yields its own keys.
 			parameters[parameter as RunnerReleaseParameter] =
 				`${name}@${release.digest}`;
 	}
 	return Object.freeze(parameters);
 }
 
-/**
- * Which realization parameter a host runs: the image for a controller that
- * runs as a container, else the release of the program its kind runs.
- */
 export function runnerHostReferenceParameter(
 	kind: RunnerHostKind,
 	mode: "container" | "process",
@@ -645,15 +531,6 @@ export type RunnerCampObservation = Readonly<{
 	}>[];
 }>;
 
-/**
- * What the mesh reports about each declared host, as Camp inventory
- * observations from the health source. A fresh advertisement is contact
- * (REACHABLE) and a live mesh lease (LEASED, until it expires); `healthy`
- * (not draining, host not critical) is READY. A host with no advertisement is
- * UNKNOWN, never assumed healthy. The served labels are claims: they narrow
- * (a host that stopped serving a declared label reads as inconsistent) and
- * never grant.
- */
 export function runnerFleetCampObservations(
 	hosts: readonly RunnerHost[],
 	nodes: readonly MeshNode[],

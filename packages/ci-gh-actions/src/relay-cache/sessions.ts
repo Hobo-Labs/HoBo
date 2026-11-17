@@ -1,24 +1,3 @@
-/**
- * Operator sessions, OAuth `state`, App-installation `state`, verified
- * installations and the owner's onboarding invitation on the cache
- * (ADR-0179 phase 5), in place of `hobo_ci_oauth_states`,
- * `hobo_ci_oauth_sessions`, `hobo_ci_app_states`,
- * `hobo_ci_app_installations` and `hobo_ci_platform_app_invitations`.
- *
- * Every record is short-lived and keyed by an HMAC, under the session key
- * from the config service, of the digest the flow already computes, so a
- * key never names a token and a cache dump cannot be replayed against the
- * relay. Records that hold a credential (the control token an OAuth flow is
- * bound to, the GitHub user token) are sealed with AES-256-GCM under a key
- * derived from the same session key. `state` values are single-use: read,
- * then a delete conditional on the version read; only the caller whose
- * delete removed the key may use it. Losing the cache costs a new sign-in.
- *
- * The relay writes no configuration here. App registration (the manifest
- * flow) is refused: the App is created with `hobo ci`. A verified
- * installation is kept for a day for its account and logged, for `hobo ci`
- * to write into the config service.
- */
 import {
 	createCipheriv,
 	createDecipheriv,
@@ -57,20 +36,17 @@ const DIGEST = /^[a-f0-9]{64}$/u;
 const ACCOUNT = /^[A-Za-z0-9_-]{1,80}$/u;
 const MAX_VERIFIED_INSTALLATIONS = 100;
 
-/** A 32-byte session key from the config service, parsed. */
 export type RelaySessionKey = Uint8Array & {
 	readonly __brand: "RelaySessionKey";
 };
 
 export function parseRelaySessionKey(value: Uint8Array): RelaySessionKey {
 	if (value.byteLength !== 32) throw new Error("session key must be 32 bytes");
-	// SAFETY: the length is checked above; a copy, so the caller's buffer can change.
 	return Uint8Array.from(value) as RelaySessionKey;
 }
 
 type SealedKind = Parameters<RelayCacheKeys["sealed"]>[0];
 
-/** MACs for record names and the seal for credentials, both derived from the session key. */
 class SessionCrypto {
 	private readonly macKey: Buffer;
 	private readonly sealKey: Buffer;
@@ -114,7 +90,6 @@ class SessionCrypto {
 			}),
 		);
 	}
-	/** The sealed value, or undefined for another key's record or a tampered one. */
 	open<Sealed extends Message>(
 		schema: GenMessage<Sealed>,
 		stored: string,
@@ -144,7 +119,6 @@ class SessionCrypto {
 
 export type RelaySessionStoreOptions = Readonly<{
 	state: EphemeralStatePort;
-	/** Key namespace: `hobo-ci:<environment>:`. */
 	environment: string;
 	sessionKey: RelaySessionKey;
 	now?: () => number;
@@ -161,7 +135,6 @@ function sameText(a: string, b: string): boolean {
 	return left.length === right.length && timingSafeEqual(left, right);
 }
 
-/** Read a single-use record and delete it; only the caller whose delete removed it gets it. */
 async function take(
 	state: EphemeralStatePort,
 	key: EphemeralKey,
@@ -171,7 +144,6 @@ async function take(
 	return (await state.delete(key, entry.version)) ? entry.value : undefined;
 }
 
-/** Shared plumbing: the key layout and the session crypto. */
 abstract class SessionRecords {
 	protected readonly keys: RelayCacheKeys;
 	protected readonly crypto: SessionCrypto;
@@ -200,7 +172,6 @@ abstract class SessionRecords {
 	}
 }
 
-/** `GithubOAuthSessionStore` on the cache: OAuth state for ten minutes, sessions for fifteen. */
 export class CacheGithubOAuthSessionStore
 	extends SessionRecords
 	implements GithubOAuthSessionStore
@@ -303,7 +274,6 @@ export class CacheGithubOAuthSessionStore
 	}
 }
 
-/** `AppRegistrationStatePort` on the cache: each `state` for ten minutes, consumed once. */
 export class CacheAppRegistrationStates
 	extends SessionRecords
 	implements AppRegistrationStatePort
@@ -351,14 +321,6 @@ export class CacheAppRegistrationStates
 	}
 }
 
-/**
- * The registration vault on the stateless relay. Saving an App is refused
- * (`hobo ci` creates it, straight into the config service). Binding an
- * installation records, for a day, that an operator of the account proved
- * they administer it: one owner per installation (`putIfAbsent`), then the
- * account's short list (compare-and-set). `onVerified` hears the ids, for a
- * log line telling the operator to write them into the config service.
- */
 export class CacheVerifiedInstallations implements AppRegistrationVaultPort {
 	private readonly keys: RelayCacheKeys;
 	constructor(
@@ -429,7 +391,6 @@ export class CacheVerifiedInstallations implements AppRegistrationVaultPort {
 		throw new Error("verified installations contended");
 	}
 
-	/** Installations of this App the account verified in the last day. */
 	async ownedInstallations(
 		appId: number,
 		accountId: string,
@@ -449,15 +410,7 @@ export class CacheVerifiedInstallations implements AppRegistrationVaultPort {
 	}
 }
 
-/**
- * The owner's onboarding invitation and the session it opens. The
- * invitation (its SHA-256 and expiry) is in the config service; redeeming it
- * writes a consumed marker with `putIfAbsent` that lives until the
- * invitation expires, so it is redeemed once; `hobo ci` rotates it after
- * use. The session it opens lasts ten minutes.
- */
 export class CacheOwnerBootstrap extends SessionRecords {
-	/** True only for the first redemption of this invitation. */
 	async redeem(invitationDigest: string, expiresAt: number): Promise<boolean> {
 		if (!Number.isSafeInteger(expiresAt) || expiresAt <= this.now())
 			return false;

@@ -1,27 +1,3 @@
-/**
- * The box relay's routing slip issuer (ADR-0181, decisions 1-5).
- *
- * The relay decides routing (R1). Per connected repository it writes its
- * current answer, the routing slip (`../routing-slip.ts`), as the message of
- * a parentless commit at `refs/hobo/routing-slip`; the route job reads it
- * with its own token. This module holds the three parts of that:
- *
- * - `decideRoutingSlipClasses`: what the slip says for `pr`, `fork` and
- *   `trunk`, from what only the relay holds (3.3). Pure.
- * - `writeRoutingSlipCommit`: the Git Data API calls. A one-file tree made
- *   once and reused, `POST /git/commits` with no parent, then
- *   `PATCH /git/refs/hobo/routing-slip` with `force: true`, or
- *   `POST /git/refs` the first time.
- * - `createRoutingSlipIssuer`: when to write. On a change and as a
- *   heartbeat every 3 minutes, never more than 20 writes a minute or 300 an
- *   hour, 10 minutes of quiet after a 403 or 429, and only on the mesh
- *   leader (a box without a mesh is its own leader).
- *
- * A slip names no slot count and no memory figure; `reason` is a code.
- * Anything the issuer cannot do it logs and leaves: with no fresh slip the
- * route job falls back to the queue rule, as it did before slips (R3).
- */
-
 import { z } from "zod";
 import type { GithubTransport } from "../github.js";
 import {
@@ -35,21 +11,16 @@ import {
 import type { RunnerRouting } from "../runner-routing.js";
 import type { FleetRunnersView } from "./fleet-verdict-evaluator.js";
 
-/** Hard caps on slip writes, whatever the decision does (ADR-0181, decisions 1-2). */
 export const ROUTING_SLIP_WRITES_PER_MINUTE = 20;
 export const ROUTING_SLIP_WRITES_PER_HOUR = 300;
-/** A 403 or 429 is not a blip: no write for this long. */
 export const ROUTING_SLIP_REFUSED_BACKOFF_MS = 10 * 60_000;
-/** The issuer samples the box this often. */
 export const ROUTING_SLIP_SAMPLE_MS = 10_000;
-/** The slip's one file; the slip itself is the commit message. */
 // public-contract: the one file of the tree under refs/hobo/routing-slip (ADR-0181).
 export const ROUTING_SLIP_TREE_PATH = "README.md";
 // public-contract: that file's text, the same on every box so the tree is reused.
 export const ROUTING_SLIP_TREE_CONTENT =
 	"This ref holds HoBo's routing slip (ADR-0181). The slip is the commit message.\n";
 
-/** One route per class of `ROUTING_SLIP_CLASSES`. */
 export type RoutingSlipClasses = Readonly<{
 	pr: RoutingSlipRoute;
 	fork: RoutingSlipRoute;
@@ -58,30 +29,12 @@ export type RoutingSlipClasses = Readonly<{
 
 export type RoutingSlipDecisionInput = Readonly<{
 	policy: Pick<RunnerRouting, "pin" | "labels" | "localRunner">;
-	/** Labels at least one live node (this box or a mesh peer) serves. */
 	served: ReadonlySet<string>;
-	/** Labels the held evaluation refuses: nothing can take a job (no-capacity). */
 	refused: ReadonlySet<string>;
-	/** Labels with work assigned and nothing started for the stall limit. */
 	stalled: ReadonlySet<string>;
-	/** Labels whose every live healthy slot is taken: busy, never refused (R4). */
 	full: ReadonlySet<string>;
 }>;
 
-/**
- * What the slip says per class (ADR-0181, decision 5):
- *
- * 1. A committed pin goes into every class (`pinned`).
- * 2. The fleet is refused when no live node serves the class's label
- *    (`no-node`), when work assigned to it has started nothing for the stall
- *    limit (`stalled`), or when the held evaluation refuses it
- *    (`no-capacity`).
- * 3. Refused, a class goes to the committed local box when one is enrolled,
- *    else GitHub-hosted. A fork never goes to the local box and never asks
- *    for the trunk label.
- * 4. Otherwise the fleet label: `fleet-open`, or `fleet-busy` when every slot
- *    is taken. Busy is never refusal (R4).
- */
 export function decideRoutingSlipClasses(
 	input: RoutingSlipDecisionInput,
 ): RoutingSlipClasses {
@@ -127,22 +80,14 @@ export function decideRoutingSlipClasses(
 	};
 }
 
-/** A lease as the stall watch needs it. */
 export type StallWatchLease = Readonly<{
 	id: string;
 	label: string;
-	/** Assigned to this box and nothing started yet. */
 	waiting: boolean;
-	/** Its runner has started the job. */
 	started: boolean;
 	assignedAtMs: number;
 }>;
 
-/**
- * `stalled` (ADR-0181, decision 5): work has been assigned to a label and nothing
- * on it has started for `stallMs`. The clock for "nothing started" starts
- * when the watch does, so a restart never reads as a stall.
- */
 export function createRoutingStallWatch(options: {
 	stallMs: number;
 	startedAtMs: number;
@@ -173,7 +118,6 @@ export function createRoutingStallWatch(options: {
 	};
 }
 
-/** Sliding-window caps: at most `perMinute` and `perHour` writes. */
 export function createRoutingSlipBudget(
 	options: {
 		perMinute?: number | undefined;
@@ -203,7 +147,6 @@ export type RoutingSlipWriteResult =
 	| Readonly<{ ok: true; commitSha: string; treeSha: string }>
 	| Readonly<{ ok: false; status: number; step: string }>;
 
-/** What the Git Data API answers a create with: the new object's id. */
 const CreatedObject = z.object({ sha: z.string().regex(/^[0-9a-f]{40}$/u) });
 
 async function shaOf(response: Response): Promise<string | undefined> {
@@ -215,7 +158,6 @@ async function shaOf(response: Response): Promise<string | undefined> {
 	}
 }
 
-/** The four request bodies the slip writer sends. */
 type GitDataBody =
 	| Readonly<{
 			tree: readonly Readonly<{
@@ -229,7 +171,6 @@ type GitDataBody =
 	| Readonly<{ sha: string; force: true }>
 	| Readonly<{ ref: string; sha: string }>;
 
-/** A runner as GitHub's repository runner list reports it. */
 const RunnerList = z.object({
 	runners: z.array(
 		z.object({
@@ -241,11 +182,6 @@ const RunnerList = z.object({
 	),
 });
 
-/**
- * GitHub's runner list for a repository (`GET /actions/runners`, which the
- * App's `administration` permission allows), for counting external pools
- * (ADR-0181, decision 5). Undefined when it cannot be read: unknown (R3).
- */
 export async function readRepositoryRunners(
 	github: GithubTransport,
 	target: Readonly<{ installationId: number; repository: string }>,
@@ -273,11 +209,6 @@ export async function readRepositoryRunners(
 	}
 }
 
-/**
- * Writes `message` as the slip: the commit at `ROUTING_SLIP_REF`. Reuses
- * `treeSha` when given; otherwise makes the one-file tree. A transport that
- * throws is status 0.
- */
 export async function writeRoutingSlipCommit(
 	github: GithubTransport,
 	target: Readonly<{
@@ -332,7 +263,6 @@ export async function writeRoutingSlipCommit(
 		force: true,
 	});
 	if (moved.status === 200) return { ok: true, commitSha, treeSha };
-	// GitHub answers 422 ("Reference does not exist") for a missing ref.
 	if (moved.status !== 422 && moved.status !== 404)
 		return { ok: false, status: moved.status, step: "ref" };
 	const created = await send(`${git}/refs`, "POST", {
@@ -363,15 +293,10 @@ export type RoutingSlipTarget = Readonly<{
 
 export type RoutingSlipIssuerOptions = Readonly<{
 	github: GithubTransport;
-	/** The committed labels; every runner a slip names is one of them. */
 	labels: ReadonlySet<string>;
-	/** This relay: the mesh node id (or the box's own) and its commit. */
 	relay: Readonly<{ nodeId: string; commit: string }>;
-	/** Whether this box is the mesh leader right now. */
 	leader: () => Promise<boolean>;
-	/** The connected repositories, one slip each. */
 	targets: () => Promise<readonly RoutingSlipTarget[]>;
-	/** The decision for one repository now. */
 	decide: (repository: string) => Promise<RoutingSlipClasses>;
 	now?: (() => number) | undefined;
 	log?: RoutingSlipIssuerLog | undefined;
@@ -379,9 +304,7 @@ export type RoutingSlipIssuerOptions = Readonly<{
 	perMinute?: number | undefined;
 	perHour?: number | undefined;
 	refusedBackoffMs?: number | undefined;
-	/** Whether to write at all; a draining box stops writing. */
 	enabled?: (() => boolean) | undefined;
-	/** Called once, the first time this process finds it is the leader. */
 	onFirstLead?: (() => Promise<void> | void) | undefined;
 }>;
 
@@ -391,10 +314,6 @@ const classesKey = (classes: RoutingSlipClasses) =>
 		return `${name}=${route.runner}/${route.tier}/${route.reason}`;
 	}).join(";");
 
-/**
- * Writes each connected repository's slip when its decision changes and as a
- * heartbeat, within the budget, and only while this box leads the mesh.
- */
 export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 	const now = options.now ?? Date.now;
 	const log = options.log ?? (() => undefined);
@@ -492,7 +411,6 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 		try {
 			leads = await options.leader();
 		} catch {
-			// A mesh that cannot be read names no leader: no slip (R3).
 			leads = false;
 		}
 		if (leads !== leading) {
@@ -507,9 +425,7 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 			firstLead = false;
 			try {
 				await options.onFirstLead?.();
-			} catch {
-				/* Its own logging says what failed; slips go on. */
-			}
+			} catch {}
 		}
 		const targets = await options.targets();
 		for (const target of targets) {
@@ -518,7 +434,6 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 		}
 	}
 
-	/** One pass, unless the last one is still running. */
 	function tick(): Promise<void> {
 		if (inFlight) return inFlight;
 		const current = tickOnce()
@@ -532,7 +447,6 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 
 	return {
 		tick,
-		/** Slip writes attempted by this process. */
 		writes: () => writes,
 	};
 }

@@ -117,7 +117,6 @@ form.addEventListener('submit', async (event) => {
   } catch (error) { status.textContent = error.message || 'Registration could not start.'; }
 });`;
 
-/** Public start is safe only when the server validates the converted App owner. */
 export function appOwnerBootstrapPage(): Response {
 	return page(
 		"Set up HoBo CI",
@@ -155,7 +154,6 @@ export function appInstallationPage(): Response {
 	);
 }
 
-/** The host selects this page only for a verified owner bootstrap session. */
 export function appOwnerInstallationPage(): Response {
 	return page(
 		"Connect GitHub to HoBo CI",
