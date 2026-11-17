@@ -8,7 +8,7 @@
  * partially-populated record.
  */
 
-import type { Messaging, Queue, VirtualClock } from "@hobo/core";
+import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
 import type { SecretsPort } from "@hobo/identity";
 import type { ServiceEmulatorFactories } from "./emulators.js";
@@ -65,6 +65,9 @@ export interface DeployedGraph {
 	secret(alias: string): SecretsPort;
 	/** The data engine SPI, not a remote database connection or SQL client. */
 	data(alias: string): EngineBinding;
+	schedule(alias: string): SchedulerPort;
+	/** The schedule's controllable clock, if the implementation provides one. */
+	scheduleClock(alias: string): VirtualClock | undefined;
 	fidelity(): FidelityReport;
 }
 
