@@ -113,7 +113,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 32 states and hides eight
+bounded TLA+ models, and abstract balance proofs. The credit model explores 40 states and hides ten
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -130,7 +130,7 @@ stateDiagram-v2
 ```
 
 The source-admission projection covers one abstract financial source. Its
-model explores 243 states and hides 96 same-state transitions; it assumes the
+model explores 342 states and hides 144 same-state transitions; it assumes the
 source identity, tenant, and account classifications reflect the provider's
 actual records.
 
@@ -144,6 +144,24 @@ stateDiagram-v2
   s0 --> s1: check tenant, identity and account
   s0 --> s2: check tenant, identity and account
   s1 --> s3: apply source once
+```
+
+The source-value model checks debit bounds, credit basis and commitment units
+over 2,004 states. This projection constrains inputs to 254 states and hides 96
+same-state transitions. The model treats remaining capacity after prior use as
+an input and assumes the source amounts and unit conversions are correct.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial source received
+  s1: Source and charge accepted
+  s2: Quote rejected
+  s3: Source debited
+  [*] --> s0
+  s0 --> s1: check amount and basis
+  s0 --> s2: check amount and basis
+  s1 --> s3: debit or reject
+  s1 --> s2: debit or reject
 ```
 
 ## UTC verification
