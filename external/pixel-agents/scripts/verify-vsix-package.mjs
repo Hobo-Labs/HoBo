@@ -25,8 +25,6 @@ const FORBIDDEN_PREFIXES = [
   'extension/server/',
   'extension/test-results/',
   'extension/webview-ui/',
-  // The extension bundle is self-contained. Any dependency tree here is a
-  // packaging regression, not a runtime requirement.
   'extension/node_modules/',
 ];
 

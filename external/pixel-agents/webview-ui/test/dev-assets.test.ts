@@ -1,12 +1,3 @@
-/**
- * Integration tests for the Vite dev server asset endpoints.
- *
- * Verifies that `browserMock.ts` can reach all asset JSON endpoints both at
- * the root path (base: '/') and under a subpath (base: '/sub/'), matching
- * how `import.meta.env.BASE_URL` constructs fetch URLs at runtime.
- *
- * Run with: npm test
- */
 
 import assert from 'node:assert/strict';
 import path from 'node:path';

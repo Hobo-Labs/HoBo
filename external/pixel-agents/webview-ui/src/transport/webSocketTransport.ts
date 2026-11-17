@@ -7,11 +7,6 @@ import {
 import type { ClientMessage, ServerMessage } from '../../../core/src/messages.js';
 import type { MessageTransport, TransportState } from './types.js';
 
-/**
- * WebSocket transport for standalone browser mode.
- * Connects to the Pixel Agents server via WebSocket for bidirectional messaging.
- * Includes automatic reconnection with exponential backoff and message queuing.
- */
 export class WebSocketTransport implements MessageTransport {
   private ws: WebSocket | null = null;
   private handlers: Array<(msg: ServerMessage) => void> = [];
@@ -49,7 +44,6 @@ export class WebSocketTransport implements MessageTransport {
   connect(): void {
     if (this.disposed) return;
 
-    // First attempt is "connecting"; any retry after a drop is "reconnecting".
     this.setState(
       this.reconnectAttempts > 0 ? TRANSPORT_STATE_RECONNECTING : TRANSPORT_STATE_CONNECTING,
     );
@@ -61,7 +55,6 @@ export class WebSocketTransport implements MessageTransport {
       console.log('[Transport] WebSocket connected');
       this.setState(TRANSPORT_STATE_CONNECTED);
       this.resolveReady();
-      // Flush any messages queued while connecting
       for (const msg of this.pendingMessages) {
         this.ws!.send(JSON.stringify(msg));
       }
@@ -73,7 +66,6 @@ export class WebSocketTransport implements MessageTransport {
         const msg = JSON.parse(e.data as string) as ServerMessage;
         for (const handler of this.handlers) handler(msg);
       } catch {
-        // Malformed JSON, ignore
       }
     };
 
@@ -85,7 +77,6 @@ export class WebSocketTransport implements MessageTransport {
     };
 
     this.ws.onerror = () => {
-      // onclose will fire after onerror, triggering reconnect
     };
   }
 
@@ -93,7 +84,6 @@ export class WebSocketTransport implements MessageTransport {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      // Queue messages while connecting (flushed in onopen)
       this.pendingMessages.push(message);
     }
   }
@@ -105,11 +95,6 @@ export class WebSocketTransport implements MessageTransport {
     };
   }
 
-  /**
-   * Deliver an externally-sourced message to all handlers, as if it had arrived
-   * over the socket. Used in Vite dev mode to bridge `browserMock`'s injected
-   * `window` messages (there is no real server to connect to in dev).
-   */
   deliver(message: ServerMessage): void {
     for (const handler of this.handlers) handler(message);
   }
@@ -136,7 +121,6 @@ export class WebSocketTransport implements MessageTransport {
   }
 
   private scheduleReconnect(): void {
-    // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
     this.reconnectAttempts++;
     console.log(

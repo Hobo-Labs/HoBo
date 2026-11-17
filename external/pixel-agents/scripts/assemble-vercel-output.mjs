@@ -2,11 +2,6 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Assembles the Vercel Build Output (.vercel/output/) for the hosted preview.
-//
-// This deploys only the combined Allure test report. A standalone webview
-// preview at /webview/ is deferred: it needs a mock data layer to be useful on
-// a static host. See tasks/WEBVIEW-PREVIEW-MOCK-MODE.md for the plan to add it.
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const reportDir = path.join(repoRoot, 'allure-report', 'allure');
@@ -46,7 +41,6 @@ mkdirSync(staticDir, { recursive: true });
 
 cpSync(reportDir, path.join(staticDir, 'reports', 'allure'), { recursive: true });
 
-// Root lands directly on the Allure dashboard (no webview to choose between).
 writeRedirectPage(path.join(staticDir, 'index.html'), 'Pixel Agents Reports', '/reports/allure/');
 writeRedirectPage(
   path.join(staticDir, 'reports', 'index.html'),

@@ -1,12 +1,3 @@
-/**
- * Validate core/asyncapi.yaml.
- *
- * Replaces `asyncapi validate` from @asyncapi/cli. The CLI pulled in ~25 advisories
- * (next, npm/tar, @oclif/*, @stoplight/*) for this one check, while @asyncapi/parser
- * -- the thing the CLI itself validates with -- is already present via @asyncapi/modelina.
- *
- * Exits 1 on any spec error so CI fails the same way the CLI did.
- */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,7 +9,6 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
 const SPEC_PATH = path.join(REPO_ROOT, 'core', 'asyncapi.yaml');
 
-// Spectral severities: 0 = error, 1 = warn, 2 = info, 3 = hint.
 const SEVERITY_ERROR = 0;
 const SEVERITY_LABELS = ['error', 'warning', 'info', 'hint'];
 
@@ -42,8 +32,6 @@ async function main() {
     console.log(format(diagnostic));
   }
 
-  // A parser that returns no document produced no usable spec, even without an
-  // error-severity diagnostic. Treat that as a failure rather than a silent pass.
   if (errors.length > 0 || !document) {
     console.error(`[validate-asyncapi] core/asyncapi.yaml is invalid (${errors.length} error(s)).`);
     process.exit(1);

@@ -38,11 +38,8 @@ function ColorSlider({
 interface ColorPickerProps {
   value: ColorValue;
   onChange: (color: ColorValue) => void;
-  /** Force colorize-style H/S ranges (H: 0–360, S: 0–100) */
   colorize?: boolean;
-  /** Show a colorize checkbox that lets the user toggle the mode */
   showColorizeToggle?: boolean;
-  /** When provided, renders a Reset button below the sliders that calls this handler. */
   onReset?: () => void;
 }
 
@@ -90,8 +87,8 @@ export function ColorPicker({
         onChange={(v) => handleChange('c', v)}
       />
 
-      {/* Colorize row: a toggle, then (when on) the carpet-style swatch + hex
-          control that opens a visual picker on click. */}
+      {
+}
       {(showColorizeToggle || onReset) && (
         <div className="flex items-center gap-8 -mt-4">
           {showColorizeToggle && (

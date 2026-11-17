@@ -11,7 +11,6 @@ import type {
 } from '../types.js';
 import { MAX_COLS, MAX_ROWS, TileType } from '../types.js';
 
-/** Paint a single tile with pattern and color. Returns new layout (immutable). */
 export function paintTile(
   layout: OfficeLayout,
   col: number,
@@ -29,7 +28,6 @@ export function paintTile(
       ? null
       : { ...DEFAULT_NEUTRAL_COLOR });
 
-  // Check if anything actually changed
   if (layout.tiles[idx] === tileType) {
     const existingColor = existingColors[idx];
     if (newColor === null && existingColor === null) return layout;
@@ -52,20 +50,17 @@ export function paintTile(
   return { ...layout, tiles, tileColors };
 }
 
-/** Place furniture. Returns new layout (immutable). */
 export function placeFurniture(layout: OfficeLayout, item: PlacedFurniture): OfficeLayout {
   if (!canPlaceFurniture(layout, item.type, item.col, item.row)) return layout;
   return { ...layout, furniture: [...layout.furniture, item] };
 }
 
-/** Remove furniture by uid. Returns new layout (immutable). */
 export function removeFurniture(layout: OfficeLayout, uid: string): OfficeLayout {
   const filtered = layout.furniture.filter((f) => f.uid !== uid);
   if (filtered.length === layout.furniture.length) return layout;
   return { ...layout, furniture: filtered };
 }
 
-/** Move furniture to new position. Returns new layout (immutable). */
 export function moveFurniture(
   layout: OfficeLayout,
   uid: string,
@@ -83,7 +78,6 @@ export function moveFurniture(
   };
 }
 
-/** Rotate furniture to the next orientation. Returns new layout (immutable). */
 export function rotateFurniture(
   layout: OfficeLayout,
   uid: string,
@@ -99,7 +93,6 @@ export function rotateFurniture(
   };
 }
 
-/** Toggle furniture state (on/off). Returns new layout (immutable). */
 export function toggleFurnitureState(layout: OfficeLayout, uid: string): OfficeLayout {
   const item = layout.furniture.find((f) => f.uid === uid);
   if (!item) return layout;
@@ -111,17 +104,15 @@ export function toggleFurnitureState(layout: OfficeLayout, uid: string): OfficeL
   };
 }
 
-/** For wall items, offset the row so the bottom row aligns with the hovered tile. */
 export function getWallPlacementRow(type: string, row: number): number {
   const entry = getCatalogEntry(type);
   if (!entry?.canPlaceOnWalls) return row;
   return row - (entry.footprintH - 1);
 }
 
-/** Check if furniture can be placed at (col, row) without overlapping. */
 export function canPlaceFurniture(
   layout: OfficeLayout,
-  type: string, // FurnitureType enum or asset ID
+  type: string,
   col: number,
   row: number,
   excludeUid?: string,
@@ -129,7 +120,6 @@ export function canPlaceFurniture(
   const entry = getCatalogEntry(type);
   if (!entry) return false;
 
-  // Check bounds — wall items may extend above the map (top rows hang above the wall)
   if (entry.canPlaceOnWalls) {
     const bottomRow = row + entry.footprintH - 1;
     if (
@@ -151,12 +141,10 @@ export function canPlaceFurniture(
     }
   }
 
-  // Wall/VOID placement check (background rows skip this check)
   const bgRows = entry.backgroundTiles || 0;
   for (let dr = 0; dr < entry.footprintH; dr++) {
     if (dr < bgRows) continue;
-    if (row + dr < 0) continue; // row above map (wall items extending upward)
-    // Wall items: only the bottom row must be on wall tiles; upper rows can overlap VOID/anything
+    if (row + dr < 0) continue;
     if (entry.canPlaceOnWalls && dr < entry.footprintH - 1) continue;
     for (let dc = 0; dc < entry.footprintW; dc++) {
       const idx = (row + dr) * layout.cols + (col + dc);
@@ -164,16 +152,14 @@ export function canPlaceFurniture(
       if (entry.canPlaceOnWalls) {
         if (tileVal !== TileType.WALL) return false;
       } else {
-        if (tileVal === TileType.VOID) return false; // Cannot place on VOID
-        if (tileVal === TileType.WALL) return false; // Normal items cannot overlap walls
+        if (tileVal === TileType.VOID) return false;
+        if (tileVal === TileType.WALL) return false;
       }
     }
   }
 
-  // Build occupied set excluding the item being moved, skipping background tile rows
   const occupied = getPlacementBlockedTiles(layout.furniture, excludeUid);
 
-  // If this item can be placed on surfaces, build set of desk tiles to exclude from collision
   let deskTiles: Set<string> | null = null;
   if (entry.canPlaceOnSurfaces) {
     deskTiles = new Set<string>();
@@ -189,11 +175,10 @@ export function canPlaceFurniture(
     }
   }
 
-  // Check overlap — also skip the NEW item's own background rows
   const newBgRows = entry.backgroundTiles || 0;
   for (let dr = 0; dr < entry.footprintH; dr++) {
-    if (dr < newBgRows) continue; // new item's background rows can overlap existing items
-    if (row + dr < 0) continue; // row above map (wall items extending upward)
+    if (dr < newBgRows) continue;
+    if (row + dr < 0) continue;
     for (let dc = 0; dc < entry.footprintW; dc++) {
       const key = `${col + dc},${row + dr}`;
       if (occupied.has(key) && !deskTiles?.has(key)) return false;
@@ -203,13 +188,6 @@ export function canPlaceFurniture(
   return true;
 }
 
-/**
- * Paint a carpet tile. Walls / VOID are not paintable. Order auto-increments
- * past every existing carpet so the new stroke wins at junctions (matches the
- * "last-painted carpet has priority" semantic from feat/zoning).
- * Returns new layout (immutable). No-op if (col, row) is out of bounds or the
- * underlying tile is non-paintable.
- */
 export function paintCarpet(
   layout: OfficeLayout,
   col: number,
@@ -242,7 +220,6 @@ export function paintCarpet(
   return { ...layout, carpetTiles };
 }
 
-/** Remove the carpet on (col, row). Returns new layout (immutable). No-op if no carpet. */
 export function eraseCarpet(layout: OfficeLayout, col: number, row: number): OfficeLayout {
   if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return layout;
   const idx = row * layout.cols + col;
@@ -253,10 +230,6 @@ export function eraseCarpet(layout: OfficeLayout, col: number, row: number): Off
   return { ...layout, carpetTiles };
 }
 
-/**
- * Paint an area label onto (col, row). Walls / VOID are not paintable. The
- * area must already exist in `layout.areas`. Returns new layout (immutable).
- */
 export function paintArea(
   layout: OfficeLayout,
   col: number,
@@ -278,7 +251,6 @@ export function paintArea(
   return { ...layout, areaTiles };
 }
 
-/** Clear the area label on (col, row). Returns new layout (immutable). No-op if untagged. */
 export function eraseArea(layout: OfficeLayout, col: number, row: number): OfficeLayout {
   if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return layout;
   const idx = row * layout.cols + col;
@@ -289,7 +261,6 @@ export function eraseArea(layout: OfficeLayout, col: number, row: number): Offic
   return { ...layout, areaTiles };
 }
 
-/** Add a new Area definition. No-op on empty label or duplicate. */
 export function addArea(layout: OfficeLayout, label: string, color: string): OfficeLayout {
   const trimmed = label.trim();
   if (!trimmed) return layout;
@@ -299,10 +270,6 @@ export function addArea(layout: OfficeLayout, label: string, color: string): Off
   return { ...layout, areas };
 }
 
-/**
- * Remove an Area + clear every tile labeled with it. Returns new layout
- * (immutable). No-op if the area doesn't exist.
- */
 export function removeArea(layout: OfficeLayout, label: string): OfficeLayout {
   const existing = layout.areas ?? [];
   if (!existing.some((a) => a.label === label)) return layout;
@@ -314,10 +281,6 @@ export function removeArea(layout: OfficeLayout, label: string): OfficeLayout {
   return { ...layout, areas, areaTiles };
 }
 
-/**
- * Rename an Area + rewrite every tile labeled with the old name. No-op when
- * the new name is empty, equals the old name, or collides with another area.
- */
 export function renameArea(layout: OfficeLayout, oldLabel: string, newLabel: string): OfficeLayout {
   const trimmed = newLabel.trim();
   if (!trimmed || trimmed === oldLabel) return layout;
@@ -332,7 +295,6 @@ export function renameArea(layout: OfficeLayout, oldLabel: string, newLabel: str
   return { ...layout, areas, areaTiles };
 }
 
-/** Update an Area's display color. No-op if the area doesn't exist or color is unchanged. */
 export function updateAreaColor(layout: OfficeLayout, label: string, color: string): OfficeLayout {
   const existing = layout.areas ?? [];
   const idx = existing.findIndex((a) => a.label === label);
@@ -344,11 +306,6 @@ export function updateAreaColor(layout: OfficeLayout, label: string, color: stri
 
 export type ExpandDirection = 'left' | 'right' | 'up' | 'down';
 
-/**
- * Expand layout by 1 tile in the given direction. New tiles are VOID.
- * Furniture and tile indices are shifted when expanding left or up.
- * Returns { layout, shift } or null if exceeding MAX_COLS/MAX_ROWS.
- */
 export function expandLayout(
   layout: OfficeLayout,
   direction: ExpandDirection,
@@ -375,7 +332,6 @@ export function expandLayout(
 
   if (newCols > MAX_COLS || newRows > MAX_ROWS) return null;
 
-  // Build new tile array
   const newSize = newCols * newRows;
   const newTiles: TileTypeVal[] = new Array(newSize).fill(TileType.VOID as TileTypeVal);
   const newColors: Array<ColorValue | null> = new Array(newSize).fill(null);
@@ -401,7 +357,6 @@ export function expandLayout(
     }
   }
 
-  // Shift furniture positions
   const newFurniture: PlacedFurniture[] = furniture.map((f) => ({
     ...f,
     col: f.col + shiftCol,

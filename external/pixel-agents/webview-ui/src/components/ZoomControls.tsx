@@ -24,24 +24,20 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
   const minDisabled = zoom <= ZOOM_MIN;
   const maxDisabled = zoom >= ZOOM_MAX;
 
-  // Show zoom level briefly when zoom changes
   useEffect(() => {
     if (zoom === prevZoomRef.current) return;
     prevZoomRef.current = zoom;
 
-    // Clear existing timers
     if (timerRef.current) clearTimeout(timerRef.current);
     if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
 
     setShowLevel(true);
     setFadeOut(false);
 
-    // Start fade after delay
     fadeTimerRef.current = setTimeout(() => {
       setFadeOut(true);
     }, ZOOM_LEVEL_FADE_DELAY_MS);
 
-    // Hide completely after delay
     timerRef.current = setTimeout(() => {
       setShowLevel(false);
       setFadeOut(false);
@@ -55,7 +51,7 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
 
   return (
     <>
-      {/* Zoom level indicator at top-center */}
+      { }
       {showLevel && (
         <div
           className="absolute top-10 left-1/2 -translate-x-1/2 z-10 pixel-panel pb-4 px-16 text-lg select-none pointer-events-none"
@@ -68,7 +64,7 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
         </div>
       )}
 
-      {/* Vertically stacked round buttons — top-left */}
+      { }
       <div className="absolute top-8 left-8 z-10 flex flex-col gap-4">
         <Button
           size="icon_lg"

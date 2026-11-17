@@ -41,9 +41,7 @@ interface OfficeCanvasProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
   panRef: React.MutableRefObject<{ x: number; y: number }>;
-  /** Whether the area overlay + labels should render (settings toggle OR active edit). */
   showAreas: boolean;
-  /** Currently-selected area label in the editor (alpha-bumped overlay). null otherwise. */
   activeAreaLabel: string | null;
 }
 
@@ -68,18 +66,13 @@ export function OfficeCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef({ x: 0, y: 0 });
-  // Middle-mouse pan state (imperative, no re-renders)
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
-  // Delete/rotate button bounds (updated each frame by renderer)
   const deleteButtonBoundsRef = useRef<DeleteButtonBounds | null>(null);
   const rotateButtonBoundsRef = useRef<RotateButtonBounds | null>(null);
-  // Right-click erase dragging
   const isEraseDraggingRef = useRef(false);
-  // Zoom scroll accumulator for trackpad pinch sensitivity
   const zoomAccumulatorRef = useRef(0);
 
-  // Clamp pan so the map edge can't go past a margin inside the viewport
   const clampPan = useCallback(
     (px: number, py: number): { x: number; y: number } => {
       const canvas = canvasRef.current;
@@ -99,7 +92,6 @@ export function OfficeCanvas({
     [officeState, zoom],
   );
 
-  // Resize canvas backing store to device pixels (no DPR transform on ctx)
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -110,7 +102,6 @@ export function OfficeCanvas({
     canvas.height = Math.round(rect.height * dpr);
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
-    // No ctx.scale(dpr) — we render directly in device pixels
   }, []);
 
   useEffect(() => {
@@ -129,11 +120,9 @@ export function OfficeCanvas({
         officeState.update(dt);
       },
       render: (ctx) => {
-        // Canvas dimensions are in device pixels
         const w = canvas.width;
         const h = canvas.height;
 
-        // Build editor render state
         let editorRender: EditorRenderState | undefined;
         if (isEditMode) {
           const showGhostBorder =
@@ -160,7 +149,6 @@ export function OfficeCanvas({
             ghostBorderHoverRow: showGhostBorder ? editorState.ghostRow : -999,
           };
 
-          // Ghost preview for furniture placement
           if (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.ghostCol >= 0) {
             const entry = getCatalogEntry(editorState.selectedFurnitureType);
             if (entry) {
@@ -188,7 +176,6 @@ export function OfficeCanvas({
             }
           }
 
-          // Ghost preview for drag-to-move
           if (editorState.isDragMoving && editorState.dragUid && editorState.ghostCol >= 0) {
             const draggedItem = officeState
               .getLayout()
@@ -214,7 +201,6 @@ export function OfficeCanvas({
             }
           }
 
-          // Selection highlight
           if (editorState.selectedFurnitureUid && !editorState.isDragMoving) {
             const item = officeState
               .getLayout()
@@ -233,7 +219,6 @@ export function OfficeCanvas({
           }
         }
 
-        // Camera follow: smoothly center on followed agent
         if (officeState.cameraFollowId !== null) {
           const followCh = officeState.characters.get(officeState.cameraFollowId);
           if (followCh) {
@@ -258,7 +243,6 @@ export function OfficeCanvas({
           }
         }
 
-        // Build selection render state
         const selectionRender: SelectionRenderState = {
           selectedAgentId: officeState.selectedAgentId,
           hoveredAgentId: officeState.hoveredAgentId,
@@ -292,7 +276,6 @@ export function OfficeCanvas({
         );
         offsetRef.current = { x: offsetX, y: offsetY };
 
-        // Store delete/rotate button bounds for hit-testing
         deleteButtonBoundsRef.current = editorRender?.deleteButtonBounds ?? null;
         rotateButtonBoundsRef.current = editorRender?.rotateButtonBounds ?? null;
       },
@@ -314,20 +297,16 @@ export function OfficeCanvas({
     activeAreaLabel,
   ]);
 
-  // Convert CSS mouse coords to world (sprite pixel) coords
   const screenToWorld = useCallback(
     (clientX: number, clientY: number) => {
       const canvas = canvasRef.current;
       if (!canvas) return null;
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      // CSS coords relative to canvas
       const cssX = clientX - rect.left;
       const cssY = clientY - rect.top;
-      // Convert to device pixels
       const deviceX = cssX * dpr;
       const deviceY = cssY * dpr;
-      // Convert to world (sprite pixel) coords
       const worldX = (deviceX - offsetRef.current.x) / zoom;
       const worldY = (deviceY - offsetRef.current.y) / zoom;
       return { worldX, worldY, screenX: cssX, screenY: cssY, deviceX, deviceY };
@@ -342,7 +321,6 @@ export function OfficeCanvas({
       const col = Math.floor(pos.worldX / TILE_SIZE);
       const row = Math.floor(pos.worldY / TILE_SIZE);
       const layout = officeState.getLayout();
-      // In edit mode with floor/wall/erase tool, extend valid range by 1 for ghost border
       if (
         isEditMode &&
         (editorState.activeTool === EditTool.TILE_PAINT ||
@@ -358,16 +336,14 @@ export function OfficeCanvas({
     [screenToWorld, officeState, isEditMode, editorState],
   );
 
-  // Check if device-pixel coords hit the delete button
   const hitTestDeleteButton = useCallback((deviceX: number, deviceY: number): boolean => {
     const bounds = deleteButtonBoundsRef.current;
     if (!bounds) return false;
     const dx = deviceX - bounds.cx;
     const dy = deviceY - bounds.cy;
-    return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2); // small padding
+    return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2);
   }, []);
 
-  // Check if device-pixel coords hit the rotate button
   const hitTestRotateButton = useCallback((deviceX: number, deviceY: number): boolean => {
     const bounds = rotateButtonBoundsRef.current;
     if (!bounds) return false;
@@ -378,7 +354,6 @@ export function OfficeCanvas({
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      // Handle middle-mouse panning
       if (isPanningRef.current) {
         const dpr = window.devicePixelRatio || 1;
         const dx = (e.clientX - panStartRef.current.mouseX) * dpr;
@@ -393,17 +368,12 @@ export function OfficeCanvas({
           editorState.ghostCol = tile.col;
           editorState.ghostRow = tile.row;
 
-          // Drag-to-move: check if cursor moved to different tile
           if (editorState.dragUid && !editorState.isDragMoving) {
             if (tile.col !== editorState.dragStartCol || tile.row !== editorState.dragStartRow) {
               editorState.isDragMoving = true;
             }
           }
 
-          // Paint on drag (paint-style tools only, not during furniture drag).
-          // Carpet + Area paint join the drag set so a single click-drag stamps
-          // every tile under the cursor — stroke-based undo lives in
-          // useEditorActions for carpet, per-tile undo for area.
           if (
             editorState.isDragging &&
             (editorState.activeTool === EditTool.TILE_PAINT ||
@@ -415,8 +385,6 @@ export function OfficeCanvas({
           ) {
             onEditorTileAction(tile.col, tile.row);
           }
-          // Right-click erase drag — also extends over carpets/areas so right-
-          // drag wipes them just like floor/wall.
           if (
             isEraseDraggingRef.current &&
             (editorState.activeTool === EditTool.TILE_PAINT ||
@@ -440,7 +408,6 @@ export function OfficeCanvas({
           editorState.ghostRow = -1;
         }
 
-        // Cursor: show grab during drag, pointer over delete button, crosshair otherwise
         const canvas = canvasRef.current;
         if (canvas) {
           if (editorState.isDragMoving) {
@@ -454,7 +421,6 @@ export function OfficeCanvas({
             ) {
               canvas.style.cursor = 'pointer';
             } else if (editorState.activeTool === EditTool.FURNITURE_PICK && tile) {
-              // Pick mode: show pointer over furniture, crosshair elsewhere
               const layout = officeState.getLayout();
               const hitFurniture = layout.furniture.find((f) => {
                 const entry = getCatalogEntry(f.type);
@@ -473,7 +439,6 @@ export function OfficeCanvas({
                   editorState.selectedFurnitureType === '')) &&
               tile
             ) {
-              // Check if hovering over furniture
               const layout = officeState.getLayout();
               const hitFurniture = layout.furniture.find((f) => {
                 const entry = getCatalogEntry(f.type);
@@ -497,7 +462,6 @@ export function OfficeCanvas({
       const pos = screenToWorld(e.clientX, e.clientY);
       if (!pos) return;
       const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY);
-      // Only run pet hit-test if no character was hit (avoids redundant work).
       const petId = hitId === null ? officeState.getPetAt(pos.worldX, pos.worldY) : null;
       const tile = screenToTile(e.clientX, e.clientY);
       officeState.hoveredTile = tile;
@@ -533,10 +497,8 @@ export function OfficeCanvas({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       unlockAudio();
-      // Middle mouse button (button 1) starts panning
       if (e.button === 1) {
         e.preventDefault();
-        // Break camera follow on manual pan
         officeState.cameraFollowId = null;
         isPanningRef.current = true;
         panStartRef.current = {
@@ -550,7 +512,6 @@ export function OfficeCanvas({
         return;
       }
 
-      // Right-click in edit mode for erasing
       if (e.button === 2 && isEditMode) {
         const tile = screenToTile(e.clientX, e.clientY);
         if (
@@ -572,7 +533,6 @@ export function OfficeCanvas({
 
       if (!isEditMode) return;
 
-      // Check rotate/delete button hit first
       const pos = screenToWorld(e.clientX, e.clientY);
       if (pos && hitTestRotateButton(pos.deviceX, pos.deviceY)) {
         onRotateSelected();
@@ -585,14 +545,12 @@ export function OfficeCanvas({
 
       const tile = screenToTile(e.clientX, e.clientY);
 
-      // SELECT tool (or furniture tool with nothing selected): check for furniture hit to start drag
       const actAsSelect =
         editorState.activeTool === EditTool.SELECT ||
         (editorState.activeTool === EditTool.FURNITURE_PLACE &&
           editorState.selectedFurnitureType === '');
       if (actAsSelect && tile) {
         const layout = officeState.getLayout();
-        // Find all furniture at clicked tile, prefer surface items (on top of desks)
         let hitFurniture = null as (typeof layout.furniture)[0] | null;
         for (const f of layout.furniture) {
           const entry = getCatalogEntry(f.type);
@@ -607,7 +565,6 @@ export function OfficeCanvas({
           }
         }
         if (hitFurniture) {
-          // Start drag — record offset from furniture's top-left
           editorState.startDrag(
             hitFurniture.uid,
             tile.col,
@@ -617,13 +574,11 @@ export function OfficeCanvas({
           );
           return;
         } else {
-          // Clicked empty space — deselect
           editorState.clearSelection();
           onEditorSelectionChange();
         }
       }
 
-      // Non-select tools: start paint drag
       editorState.isDragging = true;
       if (tile) {
         onEditorTileAction(tile.col, tile.row);
@@ -656,18 +611,14 @@ export function OfficeCanvas({
       }
       if (e.button === 2) {
         isEraseDraggingRef.current = false;
-        // Close any in-progress carpet / area stroke so the next stroke
-        // starts a fresh undo entry instead of bundling into this one.
         editorState.carpetStrokeInitialLayout = null;
         editorState.carpetDragErasing = null;
         editorState.areaDragErasing = null;
         return;
       }
 
-      // Handle drag-to-move completion
       if (editorState.dragUid) {
         if (editorState.isDragMoving) {
-          // Compute target position
           const ghostCol = editorState.ghostCol - editorState.dragOffsetCol;
           const ghostRow = editorState.ghostRow - editorState.dragOffsetRow;
           const draggedItem = officeState
@@ -687,7 +638,6 @@ export function OfficeCanvas({
           }
           editorState.clearSelection();
         } else {
-          // Click (no movement) — toggle selection
           if (editorState.selectedFurnitureUid === editorState.dragUid) {
             editorState.clearSelection();
           } else {
@@ -703,7 +653,6 @@ export function OfficeCanvas({
 
       editorState.isDragging = false;
       editorState.wallDragAdding = null;
-      // Close the current carpet stroke so the next click starts a fresh undo entry.
       editorState.carpetStrokeInitialLayout = null;
       editorState.carpetDragErasing = null;
       editorState.areaDragErasing = null;
@@ -713,15 +662,13 @@ export function OfficeCanvas({
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
-      if (isEditMode) return; // handled by mouseDown/mouseUp
+      if (isEditMode) return;
       const pos = screenToWorld(e.clientX, e.clientY);
       if (!pos) return;
 
       const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY);
       if (hitId !== null) {
-        // Dismiss any active bubble on click
         officeState.dismissBubble(hitId);
-        // Toggle selection: click same agent deselects, different agent selects
         if (officeState.selectedAgentId === hitId) {
           officeState.selectedAgentId = null;
           officeState.cameraFollowId = null;
@@ -729,11 +676,10 @@ export function OfficeCanvas({
           officeState.selectedAgentId = hitId;
           officeState.cameraFollowId = hitId;
         }
-        onClick(hitId); // still focus terminal
+        onClick(hitId);
         return;
       }
 
-      // Pet hit: toggle the heart bubble.
       const petId = officeState.getPetAt(pos.worldX, pos.worldY);
       if (petId !== null) {
         const pet = officeState.pets.find((p) => p.id === petId);
@@ -745,10 +691,8 @@ export function OfficeCanvas({
         return;
       }
 
-      // No agent hit — check seat click while agent is selected
       if (officeState.selectedAgentId !== null) {
         const selectedCh = officeState.characters.get(officeState.selectedAgentId);
-        // Skip seat reassignment for sub-agents
         if (selectedCh && !selectedCh.isSubagent) {
           const tile = screenToTile(e.clientX, e.clientY);
           if (tile) {
@@ -757,17 +701,14 @@ export function OfficeCanvas({
               const seat = officeState.seats.get(seatId);
               if (seat && selectedCh) {
                 if (selectedCh.seatId === seatId) {
-                  // Clicked own seat — send agent back to it
                   officeState.sendToSeat(officeState.selectedAgentId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
                   return;
                 } else if (!seat.assigned) {
-                  // Clicked available seat — reassign
                   officeState.reassignSeat(officeState.selectedAgentId, seatId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
-                  // Persist seat assignments (exclude sub-agents)
                   const seats: Record<
                     number,
                     { palette: number; hueShift: number; seatId: string | null }
@@ -787,7 +728,6 @@ export function OfficeCanvas({
             }
           }
         }
-        // Clicked empty space — deselect
         officeState.selectedAgentId = null;
         officeState.cameraFollowId = null;
       }
@@ -809,7 +749,6 @@ export function OfficeCanvas({
     officeState.hoveredAgentId = null;
     officeState.hoveredTile = null;
 
-    // Reset cursor in non-edit mode so pointer doesn't get stuck after hovering a pet.
     if (!isEditMode) {
       const canvas = canvasRef.current;
       if (canvas) {
@@ -822,7 +761,6 @@ export function OfficeCanvas({
     (e: React.MouseEvent) => {
       e.preventDefault();
       if (isEditMode) return;
-      // Right-click to walk selected agent to tile
       if (officeState.selectedAgentId !== null) {
         const tile = screenToTile(e.clientX, e.clientY);
         if (tile) {
@@ -833,12 +771,10 @@ export function OfficeCanvas({
     [isEditMode, officeState, screenToTile],
   );
 
-  // Wheel: Ctrl+wheel to zoom, plain wheel/trackpad to pan
   const handleWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
-        // Accumulate scroll delta, step zoom when threshold crossed
         zoomAccumulatorRef.current += e.deltaY;
         if (Math.abs(zoomAccumulatorRef.current) >= ZOOM_SCROLL_THRESHOLD) {
           const delta = zoomAccumulatorRef.current < 0 ? 1 : -1;
@@ -849,7 +785,6 @@ export function OfficeCanvas({
           }
         }
       } else {
-        // Pan via trackpad two-finger scroll or mouse wheel
         const dpr = window.devicePixelRatio || 1;
         officeState.cameraFollowId = null;
         panRef.current = clampPan(
@@ -861,8 +796,6 @@ export function OfficeCanvas({
     [zoom, onZoomChange, officeState, panRef, clampPan],
   );
 
-  // Attach wheel listener with { passive: false } so preventDefault() works.
-  // React's onWheel is passive by default in modern browsers.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -870,7 +803,6 @@ export function OfficeCanvas({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
-  // Prevent default middle-click browser behavior (auto-scroll)
   const handleAuxClick = useCallback((e: React.MouseEvent) => {
     if (e.button === 1) e.preventDefault();
   }, []);
