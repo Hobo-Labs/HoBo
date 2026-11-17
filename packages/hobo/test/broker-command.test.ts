@@ -193,6 +193,44 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		]);
 	});
 
+	it("does not assume a registry-backed deployment has a zero estimate", async () => {
+		const project = await mkdtemp(join(tmpdir(), "hobo-broker-registry-"));
+		await writeFile(
+			join(project, "hobo.broker.json"),
+			JSON.stringify({ ...policies, catalog: "registry" }),
+		);
+		const command = createBrokerCommand({ catalog });
+		// SAFETY: assertion required at this I/O or test boundary.
+		const result = await command.run({
+			args: ["up"],
+			flags: { cwd: project, ...stationFlags(project) },
+			context: { cwd: project, projectDir: project },
+			emitProgress: () => {},
+		} as never);
+		expect(result.ok).toBe(false);
+		expect(result.message).toMatch(/request|estimate/iu);
+		const requestPath = join(project, "request.json");
+		await writeFile(
+			requestPath,
+			JSON.stringify({
+				schemaVersion: "hobo.broker/v1",
+				requestId: "registry-request",
+				scope: { bindleId: "app" },
+				requirements: [{ resourceId: "api", port: "hobo:http-service" }],
+				spendEstimateUsd: 500,
+			}),
+		);
+		// SAFETY: assertion required at this I/O or test boundary.
+		const estimated = await command.run({
+			args: ["up"],
+			flags: { cwd: project, request: requestPath, ...stationFlags(project) },
+			context: { cwd: project, projectDir: project },
+			emitProgress: () => {},
+		} as never);
+		expect(estimated.ok).toBe(false);
+		expect(estimated.message).toContain("billing:spend-cap-exceeded");
+	});
+
 	it("broker config --init scaffolds, then config validates and summarizes", async () => {
 		const project = await mkdtemp(join(tmpdir(), "hobo-broker-cfg-"));
 		const command = createBrokerCommand({ catalog });
@@ -285,10 +323,21 @@ describe("hobo broker — the Conductor on the CLI", () => {
 				.policyEngine,
 		).toBe("opa");
 
+		const requestPath = join(project, "request.json");
+		await writeFile(
+			requestPath,
+			JSON.stringify({
+				schemaVersion: "hobo.broker/v1",
+				requestId: "opa-test",
+				scope: { bindleId: "app" },
+				requirements: [{ resourceId: "api", port: "hobo:http-service" }],
+				spendEstimateUsd: 1,
+			}),
+		);
 		// SAFETY: assertion required at this I/O or test boundary.
 		const up = await command.run({
 			args: ["up"],
-			flags: { cwd: project, ...stationFlags(project) },
+			flags: { cwd: project, request: requestPath, ...stationFlags(project) },
 			context: { cwd: project, projectDir: project },
 			emitProgress: () => {},
 		} as never);

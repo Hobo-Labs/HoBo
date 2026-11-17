@@ -227,10 +227,17 @@ async function assembleBroker(
 async function deriveRequest(
 	flags: JsonObject,
 	projectDir: string,
+	catalogKind: AssembledBroker["catalogKind"],
 ): Promise<JsonValue> {
 	const explicit = flags.request;
 	if (isJsonString(explicit)) {
 		return readJson(explicit, "broker request");
+	}
+	if (catalogKind !== "local-host") {
+		throw new BrokerParseError(
+			"estimate-required",
+			"estimate-required: registry-backed broker up requires --request with an explicit spend estimate",
+		);
 	}
 	const manifest = await loadProjectManifest(projectDir);
 	const requirements =
@@ -377,7 +384,7 @@ export function createBrokerCommand(deps: BrokerCommandDeps): CommandModule {
 							: undefined),
 					});
 					const resolution = await broker.resolve(
-						await deriveRequest(flags, projectDir),
+						await deriveRequest(flags, projectDir, assembled.catalogKind),
 					);
 					for (const event of resolution.events) emitProgress(event.type);
 
