@@ -271,24 +271,38 @@ Raw `spendEstimateUsd` requires explicit `trustEstimate: true` and remains a
 trusted caller assertion. The helper does not create a hold; its caller must use
 a billing authority for admission.
 
-`createBroker` requires a `pricingAuthority` by default. It selects placements,
-binds the immutable work, catalog, environment, policy and station pins to a
-quote, asks the host to attest a conservative liability, and passes that amount
-to both the gate and the billing plane. It rechecks evidence after asynchronous
-policy evaluation and requires billing to confirm a new hold. Quote-backed
-receipts carry the quote hash, work-binding digest and authorized amount; the
-optional receipt signature covers these fields. The host attestor remains
-responsible for source authentication, binding, freshness and the liability
-bound. Before the quote, catalog selection compares
-nonnegative decimal marginal prices exactly, refuses mixed units or invalid
-identities, and breaks ties by stable provider and definition IDs. Prices must
-use the pricing package's decimal syntax; exponent notation and leading-zero
-spellings accepted by the former floating-point parser need migration. This is not
-a whole-request cost comparison: the catalog does not distinguish unpriced
-zeroes or carry currency, and only the selected plan is quoted. The cheapest
-complete plan or another affordable plan may therefore be missed. `trustLegacyEstimates: true` explicitly restores trust in the caller's
-estimate and its prior placement ordering. Guest requests reject until consent
-and claim evidence are integrated into admission.
+`createBroker` requires a `pricingAuthority` by default. For each request it
+enumerates eligible combinations of definitions and regions, up to
+`MAX_BROKER_QUOTE_PLANS` (128), and asks the host for a complete attested USD
+quote for every plan. The immutable work, catalog, environment, policy and
+station pins are bound to each quote. The broker rejects the search if it is
+too large or any candidate's quote is missing, ineligible or untrusted. It
+orders the statically affordable plans by their exact quoted total, then sends
+the selected plan's conservative liability to both the policy gate and the
+billing plane. Quote and attestation callbacks must be side-effect free and may
+run many times per request; hosts should account for their latency.
+
+The default billing plane accounts for existing holds. If it denies a candidate
+for budget or cap reasons without creating a reservation, the broker can try
+the next cheapest plan. A custom billing plane enables this fallback only by
+returning `noReservationCreated: true` on a denial that created no reservation
+or external effect. An ambiguous denial stops the search. Gate denials and
+approval requirements also stop the search. The `broker.CandidateUnaffordable`
+event records an attempted plan that was safely declined. The broker rechecks
+the authority and evidence across policy and billing callbacks and requires
+billing to confirm a new hold. Quote-backed receipts carry the quote hash,
+work-binding digest and authorized amount; the optional receipt signature covers
+these fields. The host must authenticate quote sources and bind each quote to
+the work, current pricing evidence and a conservative provider liability.
+
+Catalog entries still require a provider, distinct definition ID, SKU, unit and
+nonnegative price in the pricing package's decimal syntax. Exponent notation
+and leading-zero spellings accepted by the former floating-point parser need
+migration. Different marginal units are allowed when comparing complete USD
+quotes. `trustLegacyEstimates: true` explicitly restores trust in the caller's
+estimate and marginal-price ordering, which requires matching units and cannot
+establish the cheapest complete plan. Guest requests reject until consent and
+claim evidence are integrated into admission.
 
 The CLI's built-in local-host authority attests the local provider's zero service
 fee only. It does not cover charges for the underlying machine or other services.
@@ -302,8 +316,9 @@ is lost on restart; it does not authenticate the caller, provide cross-process
 coordination, or verify that a remote receiver honors the quote at execution.
 
 The [catalog ordering skill](../../.agents/skills/verify-broker-catalog-ordering/SKILL.md)
-checks 256 abstract two-candidate states. This view hides 128 same-label steps;
-it does not compare complete plan quotes or establish currency completeness.
+checks 256 abstract two-candidate states for legacy estimate ordering. This
+view hides 128 same-label steps; it does not compare complete plan quotes or
+establish currency completeness.
 
 ```mermaid
 stateDiagram-v2

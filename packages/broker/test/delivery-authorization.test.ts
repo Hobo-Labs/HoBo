@@ -6,7 +6,7 @@ import {
 } from "@hobo/pricing";
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
-import { createBroker } from "../src/broker.js";
+import { createBroker, type HoboBrokerDeps } from "../src/broker.js";
 import { createBrokerHttpHandler } from "../src/http.js";
 import { createReconcilerDeliveryPlane } from "../src/planes.js";
 import type { BrokerCatalog, BrokerCatalogDefinition } from "../src/types.js";
@@ -70,6 +70,38 @@ function quote(amount: string) {
 }
 
 describe("broker delivery authorization", () => {
+	it("refuses dispatch when the authority changes inside its final attestation", async () => {
+		let dispatching = false;
+		const submit = vi.fn(async () => ({
+			engine: "in-proc",
+			reconcilerMode: "conductor" as const,
+			target: "local",
+			document: {},
+		}));
+		const replacement = {
+			quote: () => quote("1"),
+			attest: () => ({ liabilityBoundUsd: "5" }),
+		};
+		const deps: HoboBrokerDeps = {
+			...common,
+			pricingAuthority: {
+				quote: () => quote("1"),
+				attest: () => {
+					if (dispatching) deps.pricingAuthority = replacement;
+					return { liabilityBoundUsd: "5" };
+				},
+			},
+			deliveryPlane: { submit },
+		};
+		const broker = createBroker(deps);
+		const receipt = (await broker.resolve(request)).receipt;
+		if (!receipt) throw new Error("expected a receipt");
+		dispatching = true;
+		await expect(broker.deliver(receipt)).rejects.toThrow(
+			/delivery-quote-stale/u,
+		);
+		expect(submit).not.toHaveBeenCalled();
+	});
 	it("refuses forged or foreign receipts before calling delivery", async () => {
 		const submit = vi.fn(async () => ({
 			engine: "in-proc",

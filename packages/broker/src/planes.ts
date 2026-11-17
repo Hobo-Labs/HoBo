@@ -67,6 +67,8 @@ export interface BillingPlane {
 		reasons: RejectionReason[];
 		/** True only when this call created a new hold; false means a replay. */
 		reservationCreated?: boolean;
+		/** True only when this denial created no reservation or external effect. */
+		noReservationCreated?: true;
 	};
 	/** Only before a side effect has begun; uncertain effects retain funds. */
 	release?(requestId: string, confirmedUnused: true): void;

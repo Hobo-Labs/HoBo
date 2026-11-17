@@ -7,6 +7,7 @@ import type { JsonObject } from "./json.js";
 export const BROKER_EVENTS = {
 	Requested: "broker.Requested",
 	Resolved: "broker.Resolved",
+	CandidateUnaffordable: "broker.CandidateUnaffordable",
 	Rejected: "broker.Rejected",
 	ScaleRequested: "broker.ScaleRequested",
 	DeliverySubmitted: "broker.DeliverySubmitted",

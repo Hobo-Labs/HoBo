@@ -1,9 +1,3 @@
-import { create } from "@bufbuild/protobuf";
-import {
-	QuoteVectorSchema,
-	quoteHashOf,
-	RATING_ALGORITHM_VERSION,
-} from "@hobo/pricing";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createBroker } from "../src/broker.js";
@@ -56,17 +50,6 @@ const common = {
 	stationId: "station:test",
 	railHash: `sha256:${"a".repeat(64)}`,
 };
-function quote(amount: string) {
-	const value = create(QuoteVectorSchema, {
-		schema: "hobo.pricing.quote/v1",
-		ratingAlgorithmVersion: RATING_ALGORITHM_VERSION,
-		incremental: { billed: { decimal: amount, currency: "USD" } },
-		eligibility: { eligible: true },
-	});
-	value.quoteHash = quoteHashOf(value);
-	return value;
-}
-
 function candidate(
 	providerId: string,
 	id: string,
@@ -84,10 +67,7 @@ function brokerFor(definitions: BrokerCatalogDefinition[]) {
 	return createBroker({
 		...common,
 		catalog: { catalogHash: "sha256:catalog", definitions: () => definitions },
-		pricingAuthority: {
-			quote: () => quote("0"),
-			attest: () => ({ liabilityBoundUsd: "0" }),
-		},
+		trustLegacyEstimates: true,
 	});
 }
 
@@ -285,10 +265,7 @@ describe("broker catalog price ordering", () => {
 					},
 				],
 			},
-			pricingAuthority: {
-				quote: () => quote("0"),
-				attest: () => ({ liabilityBoundUsd: "0" }),
-			},
+			trustLegacyEstimates: true,
 		});
 		expect(
 			(await broker.resolve(request)).receipt?.placements[0]?.providerId,

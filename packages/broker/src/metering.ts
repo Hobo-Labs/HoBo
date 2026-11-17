@@ -216,7 +216,7 @@ export function createMeteredBillingPlane(
 				});
 			return reasons.length === 0
 				? { ok: true, reasons, reservationCreated: true }
-				: { ok: false, reasons };
+				: { ok: false, reasons, noReservationCreated: true };
 		},
 		release(requestId, confirmedUnused) {
 			if (confirmedUnused !== true)

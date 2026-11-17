@@ -472,6 +472,17 @@ export function parseBrokerRequest(
 			"invalid-request: spendEstimateUsd is required, including for free work",
 		);
 	}
+	const requirements = requirementsRaw.map(parseResourceRequirement);
+	const resourceIds = new Set<string>();
+	for (const requirement of requirements) {
+		if (resourceIds.has(requirement.resourceId)) {
+			throw new BrokerParseError(
+				"duplicate-resource-id",
+				`duplicate-resource-id: ${requirement.resourceId} occurs more than once`,
+			);
+		}
+		resourceIds.add(requirement.resourceId);
+	}
 	return {
 		schemaVersion: BROKER_SCHEMA_VERSION,
 		requestId: requireString(
@@ -480,7 +491,7 @@ export function parseBrokerRequest(
 			"requestId",
 		),
 		scope: parseTopologyScope(raw.scope),
-		requirements: requirementsRaw.map(parseResourceRequirement),
+		requirements,
 		spendEstimateUsd: nonNegativeNumber(
 			estimate,
 			0,
