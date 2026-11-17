@@ -1939,5 +1939,11 @@ its page and the day it was read.
 
 The tools are tested against the in-memory fakes of
 `@hobo/ci/runner-order/testing` (`test/relay-mcp-insights.test.ts`, cases S04
-and X04). `createRelayMcpServer` does not register them yet, so no deployed
-relay serves them: they are built, not proven.
+and X04). [`contracts/mcp-insights.pact.json`](contracts/mcp-insights.pact.json)
+holds what an MCP agent relies on, one interaction per tool plus the three
+refusals; `contracts/mcp-insights.provider.test.ts` sends each request to the
+tools over the Streamable HTTP transport, as the authenticated caller it
+names, and matches the answer. The relay's HTTP framing in front of them
+(bearer credentials, origins, sessions) is the one `mcp-boundary.pact.json`
+covers. `createRelayMcpServer` does not register the insight tools yet, so no
+deployed relay serves them: they are built, not proven.

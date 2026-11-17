@@ -248,6 +248,7 @@ const ToolResult = z.object({
 });
 const RpcAnswer = z.object({
 	jsonrpc: z.literal("2.0"),
+	id: z.union([z.number(), z.string()]).optional(),
 	result: Json.optional(),
 	error: z.object({ code: z.number(), message: z.string() }).optional(),
 });
