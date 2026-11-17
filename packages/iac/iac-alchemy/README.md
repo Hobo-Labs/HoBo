@@ -10,6 +10,14 @@ the Alchemist services. A conditional choice between stacks with different
 provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
 `rivetkit` 3.0.0 peers; install both when using Rivet components.
+The `@hobo/iac-alchemy/rivet` entry point binds HoBo HTTP applications to
+Alchemy Rivet DurableObjects. `@hobo/iac-alchemy/rivet/runtime` provides the
+actor runtime without importing the IaC provider, and `@hobo/iac-alchemy/rivet/multi`
+maps multiple applications to separately attested pool and runner domains.
+The host must verify each source and dependency closure, authenticate requests,
+and attest exclusive physical pool ownership; it must include every pool and
+its infrastructure in the financial inventory. Unsupported Rivet storage,
+messaging, dependencies and replay are rejected explicitly.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.

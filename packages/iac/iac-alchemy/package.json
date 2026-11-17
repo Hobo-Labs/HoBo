@@ -11,7 +11,10 @@
 	"exports": {
 		".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
 		"./cloudflare": { "types": "./dist/cloudflare.d.ts", "default": "./dist/cloudflare.js" },
-		"./cloudflare/runtime": { "types": "./dist/cloudflare-runtime.d.ts", "default": "./dist/cloudflare-runtime.js" }
+		"./cloudflare/runtime": { "types": "./dist/cloudflare-runtime.d.ts", "default": "./dist/cloudflare-runtime.js" },
+		"./rivet": { "types": "./dist/rivet.d.ts", "default": "./dist/rivet.js" },
+		"./rivet/runtime": { "types": "./dist/rivet-runtime.d.ts", "default": "./dist/rivet-runtime.js" },
+		"./rivet/multi": { "types": "./dist/rivet-multi.d.ts", "default": "./dist/rivet-multi.js" }
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1"
