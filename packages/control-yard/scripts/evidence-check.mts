@@ -4,16 +4,20 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
+	captureChecksSchema,
 	captureErrorsSchema,
 	captureFailureMessages,
 } from "./capture-failures.mts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SHOTS = join(ROOT, "public", "shots");
+const SHOTS = process.argv[2]
+	? resolve(process.argv[2])
+	: join(ROOT, "public", "shots");
+const LOCK = join(ROOT, "public", "shots", ".capture-lock");
 const MANIFEST = join(SHOTS, "evidence-manifest.json");
 
 const REQUIRED: {
@@ -28,6 +32,7 @@ const REQUIRED: {
 	{ path: "03-cost-booth.png", minBytes: 2048, kind: "png" },
 	{ path: "04-policy-board.png", minBytes: 2048, kind: "png" },
 	{ path: "05-error-bunker.png", minBytes: 2048, kind: "png" },
+	{ path: "06-after-actions.png", minBytes: 2048, kind: "png" },
 	{ path: "07-walk.png", minBytes: 2048, kind: "png" },
 	{ path: "canvas-only.png", minBytes: 2048, kind: "png" },
 	{ path: "anim-bo-idle.png", minBytes: 2048, kind: "png" },
@@ -53,6 +58,15 @@ function fail(msg: string) {
 	errors += 1;
 }
 
+if (existsSync(LOCK)) {
+	fail(`capture in progress or interrupted; check the lock at ${LOCK}`);
+}
+if (existsSync(join(SHOTS, ".capture-incomplete"))) {
+	fail(
+		"capture incomplete; run pnpm --filter @hobo/control-yard run evidence again",
+	);
+}
+
 if (!existsSync(MANIFEST)) {
 	fail(
 		`missing ${MANIFEST} — run: pnpm --filter @hobo/control-yard run evidence`,
@@ -62,6 +76,7 @@ if (!existsSync(MANIFEST)) {
 
 const manifestSchema = z.object({
 	errors: z.unknown().optional(),
+	checks: z.unknown().optional(),
 	files: z
 		.record(z.string(), z.object({ bytes: z.number(), sha256: z.string() }))
 		.optional(),
@@ -78,16 +93,21 @@ const manifest = parsedManifest.data;
 // Historical evidence may not have an errors field. When either the manifest
 // or its hashed visual report does record failures, neither may be ignored.
 let reportErrors = captureErrorsSchema.safeParse(undefined);
+let reportChecks = captureChecksSchema.safeParse(undefined);
 const reportPath = join(SHOTS, "visual-report.json");
 if (existsSync(reportPath)) {
 	try {
 		const report = z
-			.object({ errors: z.unknown().optional() })
+			.object({
+				errors: z.unknown().optional(),
+				checks: z.unknown().optional(),
+			})
 			.safeParse(JSON.parse(readFileSync(reportPath, "utf8")));
 		if (!report.success) {
 			fail("visual-report.json is not an object");
 		} else {
 			reportErrors = captureErrorsSchema.safeParse(report.data.errors);
+			reportChecks = captureChecksSchema.safeParse(report.data.checks);
 		}
 	} catch {
 		fail("visual-report.json is not valid JSON");
@@ -96,6 +116,8 @@ if (existsSync(reportPath)) {
 for (const error of captureFailureMessages(
 	captureErrorsSchema.safeParse(manifest.errors),
 	reportErrors,
+	captureChecksSchema.safeParse(manifest.checks),
+	reportChecks,
 )) {
 	fail(error);
 }
@@ -118,18 +140,48 @@ for (const req of REQUIRED) {
 	} else {
 		console.log(`OK  ${req.path} (${st.size} bytes)`);
 	}
-	const dig = sha256(abs);
-	// Strict digest for all files except the manifest itself (self-hash chicken/egg).
+	// The manifest deliberately has no self-digest.
 	if (req.path === "evidence-manifest.json") continue;
 	const entry = manifest.files?.[req.path];
 	if (!entry) {
 		fail(`manifest missing entry for ${req.path}`);
-	} else if (entry.sha256 !== dig) {
+	}
+}
+
+// Validate every manifested file, including optional extras. Historical
+// manifests included a pre-write self-hash, which cannot describe the final
+// manifest and is deliberately ignored for compatibility.
+for (const [path, entry] of Object.entries(manifest.files ?? {})) {
+	if (path === "evidence-manifest.json") continue;
+	const abs = resolve(SHOTS, path);
+	const rel = relative(SHOTS, abs);
+	if (
+		isAbsolute(path) ||
+		path.includes("\\") ||
+		/^[A-Za-z]:/u.test(path) ||
+		rel === "" ||
+		rel === ".." ||
+		rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
+	) {
+		fail(`invalid manifested path: ${path}`);
+		continue;
+	}
+	if (!existsSync(abs)) {
+		fail(`missing manifested evidence: ${path}`);
+		continue;
+	}
+	const st = statSync(abs);
+	if (!st.isFile()) {
+		fail(`manifested evidence is not a file: ${path}`);
+		continue;
+	}
+	const dig = sha256(abs);
+	if (entry.sha256 !== dig) {
 		fail(
-			`digest mismatch ${req.path}: manifest=${entry.sha256.slice(0, 12)}… disk=${dig.slice(0, 12)}…`,
+			`digest mismatch ${path}: manifest=${entry.sha256.slice(0, 12)}… disk=${dig.slice(0, 12)}…`,
 		);
 	} else if (entry.bytes !== st.size) {
-		fail(`size mismatch ${req.path}: manifest=${entry.bytes} disk=${st.size}`);
+		fail(`size mismatch ${path}: manifest=${entry.bytes} disk=${st.size}`);
 	}
 }
 

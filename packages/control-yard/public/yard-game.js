@@ -117,7 +117,7 @@ const LAYOUT = {
 			anchorY: 230,
 		},
 	},
-	costMeter: { x: 1020, y: 150, width: 160, height: 18 },
+	costMeter: { x: 1020, y: 170, width: 160, height: 18 },
 	trafficEmitter: { x: 140, y: 330, width: 1000 },
 };
 
@@ -527,7 +527,7 @@ function closeSheet() {
 async function api(path, init) {
 	const res = await fetch(`${API}${path}`, {
 		...init,
-		headers: { "content-type": "application/json", ...(init?.headers || {}) },
+		headers: { "content-type": "application/json", ...init?.headers },
 	});
 	const body = await res.json();
 	if (!body.ok && res.status >= 400) {

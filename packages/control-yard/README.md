@@ -37,8 +37,17 @@ pnpm --filter @hobo/control-yard test
 pnpm --filter @hobo/control-yard run evidence
 pnpm --filter @hobo/control-yard run evidence:check
 # → public/shots/*.png + recordings/*.mp4 + evidence-manifest.json
-# Syncs key files into src/draft/exp-proofs/ux/control-yard/assets/evidence/
+# Syncs and checks all manifested files in src/draft/exp-proofs/ux/control-yard/assets/evidence/
 ```
+
+Capture requires the checked-in, reviewed baselines and a working Pillow image
+comparison; a missing baseline or comparison dependency fails the capture. The
+comparison accepts RMS up to 25 for rendering variation and never replaces a
+baseline automatically; review baseline updates separately. A
+failed capture leaves the previous images in place but marks both evidence
+directories incomplete until a successful rerun. Captures take an exclusive
+lock at `public/shots/.capture-lock`; after an interrupted process, confirm no
+capture is still running before removing that directory and retrying.
 
 The engine, test seam, and asset index unit tests use management snapshots and
 typed sheet fixtures. They do not replace the retired pixel-village browser or

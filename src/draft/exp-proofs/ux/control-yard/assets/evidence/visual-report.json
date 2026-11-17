@@ -1,17 +1,18 @@
 {
-  "gameUrl": "http://127.0.0.1:45379/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36969",
-  "apiUrl": "http://127.0.0.1:36969",
+  "gameUrl": "http://127.0.0.1:41803/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A34051",
+  "apiUrl": "http://127.0.0.1:34051",
   "checks": [
     "PASS test seam ready",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
     "PASS imgdiff boot — match",
-    "PASS canvas dark ink near Bo — dark=4976",
+    "PASS canvas dark ink near Bo — dark=5795",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
-    "PASS imgdiff connection bay — baseline refreshed (RMS=13.39 ≤ 25)",
+    "PASS imgdiff connection bay — accepted image drift (RMS=12.92 ≤ 25)",
+    "PASS connection created and sheet closed — alias=evidence-work",
     "PASS anim harness bo.idle — bo.idle",
     "PASS anim harness bo.walk.east — bo.walk.east",
     "PASS anim harness bo.walk.west — bo.walk.west",
@@ -26,20 +27,20 @@
     "playwright-testing"
   ],
   "recordings": [
-    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/01-yard-loop.mp4",
-    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/02-connection-sheet.mp4",
-    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/03-bo-walk-east-west.mp4",
-    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/04-rail-cost-doctor.mp4"
+    "recordings/01-yard-loop.mp4",
+    "recordings/02-connection-sheet.mp4",
+    "recordings/03-bo-walk-east-west.mp4",
+    "recordings/04-rail-cost-doctor.mp4"
   ],
   "initialState": {
     "scene": "Yard",
     "ready": true,
     "seed": 42,
-    "frameCount": 13,
+    "frameCount": 12,
     "zone": "activeRailTrack",
     "bo": {
-      "x": 224,
-      "y": 582,
+      "x": 222,
+      "y": 583,
       "animationId": "bo.walk.east",
       "facing": "west"
     },
@@ -53,11 +54,11 @@
     "hazards": []
   },
   "pixelSample": {
-    "dark": 4976,
+    "dark": 5795,
     "bo": {
-      "x": 621,
-      "y": 364,
-      "animationId": "bo.walk.east",
+      "x": 640,
+      "y": 360,
+      "animationId": "bo.walk.west",
       "facing": "west"
     }
   },

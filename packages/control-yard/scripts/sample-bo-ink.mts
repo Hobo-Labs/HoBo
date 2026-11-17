@@ -35,10 +35,17 @@ export function sampleBoInk() {
 		const red = data[i];
 		const green = data[i + 1];
 		const blue = data[i + 2];
-		if (red === undefined || green === undefined || blue === undefined) {
+		const alpha = data[i + 3];
+		if (
+			red === undefined ||
+			green === undefined ||
+			blue === undefined ||
+			alpha === undefined
+		) {
 			throw new Error("incomplete canvas pixel");
 		}
-		if (red + green + blue < 90) dark++;
+		// Near-transparent pixels do not constitute visible dark ink.
+		if (alpha >= 128 && red + green + blue < 90) dark++;
 	}
 	return { dark, bo };
 }
