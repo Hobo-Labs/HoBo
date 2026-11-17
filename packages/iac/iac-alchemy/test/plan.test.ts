@@ -61,9 +61,9 @@ describe("native Alchemy plan inspection", () => {
 		"deletions",
 	] as const)("rejects an unsummarized native %s node", (kind) => {
 		const { native, node, inspect } = fixture();
-			Object.assign(native[kind], {
-				extra: { ...node, resource: { ...node.resource, FQN: "extra" } },
-			});
+		Object.assign(native[kind], {
+			extra: { ...node, resource: { ...node.resource, FQN: "extra" } },
+		});
 		expect(inspect).toThrow("PLAN_UNINSPECTABLE");
 	});
 
@@ -72,7 +72,7 @@ describe("native Alchemy plan inspection", () => {
 		"actionDeletions",
 	] as const)("rejects an unsummarized native %s node", (kind) => {
 		const { native, inspect } = fixture();
-			Object.assign(native[kind], { extra: { kind: "action" } });
+		Object.assign(native[kind], { extra: { kind: "action" } });
 		expect(inspect).toThrow("PLAN_UNSUPPORTED_EFFECTS");
 	});
 
