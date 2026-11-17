@@ -58,6 +58,7 @@ import {
 } from "./credential-presenter.js";
 import { isJsonString, type JsonObject } from "./json.js";
 import { startLocalDeployment } from "./local-deployment.js";
+import { fingerprintLocalDeployment } from "./local-deployment-fingerprint.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 
 async function freePort(): Promise<number> {
@@ -97,6 +98,8 @@ export interface BrokerAwareUpCommandDeps {
 	readonly persistentLocal?: boolean;
 	/** Starts the persistent local deployment (default: the real worker process). */
 	readonly startLocalDeployment?: typeof startLocalDeployment;
+	/** Supplies a local port for placement and startup. */
+	readonly allocateLocalPort?: () => Promise<number>;
 }
 
 export function createBrokerAwareUpCommand(
@@ -124,9 +127,6 @@ export function createBrokerAwareUpCommand(
 					? flags.home
 					: defaultHoboHome(env);
 
-			// Every lane places into a Yard, and a Yard holds nothing external.
-			const boundary = await externalBoundaryRefusal(projectDir, "up");
-			if (boundary !== undefined) return boundary;
 			try {
 				const target = resolveBrokerTarget({
 					flags: {
@@ -138,6 +138,20 @@ export function createBrokerAwareUpCommand(
 					env,
 					hoboHome,
 				});
+				let localInputsHash: `sha256:${string}` | undefined;
+				if (target.kind === "local") {
+					try {
+						localInputsHash = await fingerprintLocalDeployment(
+							projectDir,
+							hoboHome,
+						);
+					} catch {
+						/* A local fallback refuses if inputs cannot be read. */
+					}
+				}
+				// Snapshot local inputs before a boundary check imports the Bindle.
+				const boundary = await externalBoundaryRefusal(projectDir, "up");
+				if (boundary !== undefined) return boundary;
 				const financialManifest = await loadProjectManifest(projectDir);
 				const financialRequired = Boolean(
 					deps.runtime?.hostingBudgetRequired ||
@@ -155,6 +169,28 @@ export function createBrokerAwareUpCommand(
 					);
 				if (budgetRequiredNow() && (target.kind !== "local" || !yardUp))
 					return refuseBudgetFallback();
+				const localInputsCurrent = async () => {
+					if (!localInputsHash) return false;
+					try {
+						return (
+							(await fingerprintLocalDeployment(projectDir, hoboHome)) ===
+							localInputsHash
+						);
+					} catch {
+						return false;
+					}
+				};
+				const checkFallbackInputs = async () => {
+					if (!(await localInputsCurrent())) return refuseChangedInputs();
+					const currentBoundary = await externalBoundaryRefusal(
+						projectDir,
+						"up",
+					);
+					if (currentBoundary !== undefined) return currentBoundary;
+					if (!(await localInputsCurrent())) return refuseChangedInputs();
+					if (budgetRequiredNow()) return refuseBudgetFallback();
+					return undefined;
+				};
 				const unsupportedMode = () => ({
 					ok: false,
 					status: "rejected",
@@ -189,8 +225,11 @@ export function createBrokerAwareUpCommand(
 						if (planned.code !== "HOBO_CLI_STUB") return planned;
 					}
 					if (budgetRequiredNow()) return refuseBudgetFallback();
+					const inputFailure = await checkFallbackInputs();
+					if (inputFailure) return inputFailure;
 					if (flags.mode) return unsupportedMode();
 					const definition = await loadBindleDefinition(projectDir);
+					if (!(await localInputsCurrent())) return refuseChangedInputs();
 					if (budgetRequiredNow()) return refuseBudgetFallback();
 					return definition === null
 						? {
@@ -235,9 +274,12 @@ export function createBrokerAwareUpCommand(
 						}
 					}
 					if (budgetRequiredNow()) return refuseBudgetFallback();
+					const inputFailure = await checkFallbackInputs();
+					if (inputFailure) return inputFailure;
 					if (flags.mode) return unsupportedMode();
 
 					const definition = await loadBindleDefinition(projectDir);
+					if (!(await localInputsCurrent())) return refuseChangedInputs();
 					if (budgetRequiredNow()) return refuseBudgetFallback();
 					if (definition === null) {
 						return {
@@ -253,8 +295,11 @@ export function createBrokerAwareUpCommand(
 							data: { command: "up", projectDir, mode: "local" },
 						};
 					}
+					if (!localInputsHash) return refuseChangedInputs();
 					return await runLocalUp({
 						projectDir,
+						workloadDigest: localInputsHash,
+						inputsCurrent: localInputsCurrent,
 						hoboHome,
 						definitionName: definition.name,
 						definition,
@@ -262,6 +307,7 @@ export function createBrokerAwareUpCommand(
 						budgetRequired: budgetRequiredNow,
 						persistent: deps.persistentLocal === true,
 						start: deps.startLocalDeployment ?? startLocalDeployment,
+						allocatePort: deps.allocateLocalPort ?? freePort,
 						ttlSeconds: wantsAnonymousMode(flags)
 							? localTtlSeconds(env.HOBO_LOCAL_DEPLOYMENT_TTL_SECONDS)
 							: 0,
@@ -548,6 +594,17 @@ export function createBrokerAwareUpCommand(
 	};
 }
 
+function refuseChangedInputs() {
+	return {
+		ok: false,
+		status: "rejected",
+		code: "HOBO_UP_INPUTS_CHANGED",
+		message:
+			"Local project inputs changed or became unavailable during placement; retry the deployment.",
+		data: { command: "up" },
+	};
+}
+
 function refuseBudgetFallback() {
 	return {
 		ok: false,
@@ -574,12 +631,15 @@ async function runLocalUp(input: {
 	readonly definitionName: string;
 	readonly persistent?: boolean;
 	readonly start: typeof startLocalDeployment;
+	readonly allocatePort: () => Promise<number>;
 	readonly ttlSeconds?: number;
 	readonly definition: NonNullable<
 		Awaited<ReturnType<typeof loadBindleDefinition>>
 	>;
 	readonly emitProgress: (message: string) => void;
 	readonly budgetRequired: () => boolean;
+	readonly workloadDigest: `sha256:${string}`;
+	readonly inputsCurrent: () => Promise<boolean>;
 }) {
 	const { projectDir, hoboHome, definition, emitProgress } = input;
 	if (input.budgetRequired()) return refuseBudgetFallback();
@@ -590,11 +650,13 @@ async function runLocalUp(input: {
 		initBareMetalYard({ hoboHome });
 	}
 	await ensureEmbeddedBroker({ hoboHome, emitProgress });
+	if (!(await input.inputsCurrent())) return refuseChangedInputs();
 	if (input.budgetRequired()) return refuseBudgetFallback();
 
 	const placement = await resolveBindlePlacement({
 		definition,
 		hoboHome,
+		workloadDigest: input.workloadDigest,
 		emitProgress,
 	});
 	if (placement.outcome === "rejected") {
@@ -617,15 +679,20 @@ async function runLocalUp(input: {
 		};
 	}
 
+	if (placement.workloadDigest !== input.workloadDigest)
+		return refuseChangedInputs();
 	emitProgress(`hobo up: ${placement.message}`);
+	if (!(await input.inputsCurrent())) return refuseChangedInputs();
 	if (input.budgetRequired()) return refuseBudgetFallback();
 
-	const port = await freePort();
+	const port = await input.allocatePort();
+	if (!(await input.inputsCurrent())) return refuseChangedInputs();
 	if (input.budgetRequired()) return refuseBudgetFallback();
 	if (input.persistent) {
 		const { receipt, reused } = await input.start({
 			projectDir,
 			hoboHome,
+			expectedContentFingerprint: input.workloadDigest,
 			componentHost: placement.componentHost,
 			port,
 			ttlSeconds: input.ttlSeconds ?? 0,

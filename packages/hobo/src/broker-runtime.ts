@@ -103,6 +103,8 @@ export interface PlacementResult {
 	readonly yardPlacement?: YardPlacementReceipt;
 	readonly message: string;
 	readonly remediation?: readonly string[];
+	/** Project input digest included in the request, when supplied by the caller. */
+	readonly workloadDigest?: `sha256:${string}`;
 }
 
 function brokerStatePath(hoboHome: string): string {
@@ -481,6 +483,7 @@ export async function resolveBindlePlacement(options: {
 	readonly campId?: string;
 	readonly yardId?: string;
 	readonly providerId?: string;
+	readonly workloadDigest?: `sha256:${string}`;
 	readonly selectionMode?: "exact" | "compatible" | "compatible-or-generate";
 	readonly emitProgress?: (message: string) => void;
 	/** Where a runtime host comes from; defaults to the composition's registry. */
@@ -489,6 +492,11 @@ export async function resolveBindlePlacement(options: {
 	const hoboHome = options.hoboHome ?? defaultHoboHome();
 	const emit = options.emitProgress ?? (() => {});
 	const yardConfig = options.yard ?? loadBareMetalYardConfig(hoboHome) ?? null;
+	if (
+		options.workloadDigest !== undefined &&
+		!/^sha256:[a-f0-9]{64}$/u.test(options.workloadDigest)
+	)
+		throw new Error("Invalid project input digest");
 
 	// Fail fast: Bindle must not select providers.
 	try {
@@ -643,14 +651,16 @@ export async function resolveBindlePlacement(options: {
 
 	const deploymentRequest = buildDeploymentRequestFromParts({
 		bindleName: options.definition.name,
-		manifestHash: `sha256:${createHash("sha256")
-			.update(
-				JSON.stringify({
-					name: options.definition.name,
-					resources: Object.keys(options.definition.resources).sort(),
-				}),
-			)
-			.digest("hex")}`,
+		manifestHash:
+			options.workloadDigest ??
+			`sha256:${createHash("sha256")
+				.update(
+					JSON.stringify({
+						name: options.definition.name,
+						resources: Object.keys(options.definition.resources).sort(),
+					}),
+				)
+				.digest("hex")}`,
 		requirements: {
 			require: [...requirements.require],
 			prefer: [...requirements.prefer],
@@ -806,6 +816,9 @@ export async function resolveBindlePlacement(options: {
 		explicitProviders: [],
 		requiredRuntimes,
 		yardPlacement: receipt,
+		...(options.workloadDigest !== undefined
+			? { workloadDigest: deploymentRequest.manifestHash }
+			: undefined),
 		message: `broker placed ${options.definition.name} on yard ${receipt.selectedYardId} provider ${providerId} (componentHost=${componentHost}, camp=${campId})`,
 	};
 }

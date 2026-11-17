@@ -156,8 +156,8 @@ it("refuses a budget introduced while the local preview loads", async () => {
 		Object.defineProperty(input.flags, "budgetId", {
 			get() {
 				reads++;
-				// The third observation is the guard just before the awaited load.
-				if (reads === 3)
+				// The fourth observation is the guard just before the awaited load.
+				if (reads === 4)
 					queueMicrotask(() => {
 						appeared = true;
 					});

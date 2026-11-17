@@ -12,6 +12,7 @@ import {
 	clearLocalDeployment,
 	LOCAL_DEPLOYMENT_SCHEMA,
 } from "./local-deployment.js";
+import { fingerprintLocalDeployment } from "./local-deployment-fingerprint.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 
 const token = process.env.HOBO_LOCAL_CONTROL_TOKEN;
@@ -73,6 +74,12 @@ process.on("message", (message) => {
 	void (async () => {
 		if (!token) throw new Error("Local control authority is missing");
 		const launch = fromJson(LocalDeploymentLaunchSchema, rawLaunch);
+		if (
+			!launch.contentFingerprint ||
+			(await fingerprintLocalDeployment(launch.projectDir, launch.hoboHome)) !==
+				launch.contentFingerprint
+		)
+			throw new Error("Local project inputs changed before worker startup");
 		const served = await serveProjectOnLocalYard({
 			projectDir: launch.projectDir,
 			hoboHome: launch.hoboHome,

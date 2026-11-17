@@ -16,7 +16,7 @@ function temporary(name: string): boolean {
 export async function fingerprintLocalDeployment(
 	projectDir: string,
 	hoboHome: string,
-): Promise<string> {
+): Promise<`sha256:${string}`> {
 	const project = resolve(projectDir);
 	const home = resolve(hoboHome);
 	if (project === home)

@@ -759,8 +759,17 @@ If the configured Yard cannot collect a manifest, `hobo up` and its preview
 refuse to fall back to the embedded local lane when a hosting budget is required.
 The fallback cannot reserve or enforce that budget. The command also checks
 runtime and flag requirements again while preparing local placement and before
-startup. Changes to project artifacts during placement still require a separate
-execution handoff fence.
+startup. The local fallback snapshots project inputs before loading the Bindle,
+binds their digest into placement, and refuses observed changes before startup.
+The persistent worker checks the same fingerprint before serving.
+
+The fingerprint covers the project files selected by
+`fingerprintLocalDeployment`; it excludes `node_modules`, local control state,
+temporary files and the configured HoBo home. It is not an immutable filesystem
+snapshot, so changes after the last check or changes that are reverted between
+checks can still affect execution. A Bindle definition cached by the process
+may also differ from the files being fingerprinted. Direct callers that supply
+a digest are responsible for its provenance.
 
 The bounded fallback model projects the following flow. It hides 22 internal
 steps and treats the Yard's own result as an external decision.
