@@ -47,8 +47,8 @@ currently provides no automatic migration between the profiles.
 
 The frozen `orders.limits` contains the actual profile, including 64 retained
 messages, 16 subscriptions, 32 topics, 8,192-byte payloads, 2,048 attribute
-bytes, batches of four and 128 retained audit events. Each newly admitted
-subscription obligation reserves a message slot for its possible dead letter;
+bytes, batches of four and 128 retained audit events. Each externally admitted
+publication or subscription obligation reserves a message slot for its possible dead letter;
 a publication or subscription can therefore receive a durable
 `capacity-exceeded` result before there are 64 physical messages. The reservation
 is held across a lease and its retries, released by acknowledgement, and
@@ -68,6 +68,12 @@ this package does not yet implement that transfer or a larger-profile migration.
 A terminal rejection is replayed for its operation ID even after capacity
 changes. An unknown or expired outcome requires independent reconciliation
 before a replacement is considered.
+
+Topic sequences, audit sequences and lease identities never wrap or reset.
+Exhausting their safe integer space returns `capacity-exceeded` instead of
+reusing an identity. Any externally managed transfer must preserve those
+counters and all live leases and receipts; resetting them could let an old
+consumer settle a new delivery.
 
 The repository's bounded transition explorer and SQLite actor fixtures check
 specific state and receipt scenarios. They do not prove the Rivet engine's

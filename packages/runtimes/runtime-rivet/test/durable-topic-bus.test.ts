@@ -486,6 +486,28 @@ describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 					item.deadLetter.consumerGroup,
 			),
 		).toEqual(["group", "group", "group", "group"]);
+		const gap = await (
+			await f.send("events", { afterSequence: 0, limit: 4 })
+		).json();
+		expect(gap.status).toBe("gap");
+		expect(gap.firstAvailableSequence).toBeGreaterThan(1);
+		const page = await (
+			await f.send("events", {
+				afterSequence: gap.firstAvailableSequence - 1,
+				limit: 4,
+			})
+		).json();
+		expect(page.status).toBe("ok");
+		expect(
+			page.events.map((item: { sequence: number }) => item.sequence),
+		).toEqual([
+			gap.firstAvailableSequence,
+			gap.firstAvailableSequence + 1,
+			gap.firstAvailableSequence + 2,
+			gap.firstAvailableSequence + 3,
+		]);
+		expect(page.nextAfterSequence).toBe(gap.firstAvailableSequence + 3);
+		expect(page.hasMore).toBe(true);
 	});
 
 	it("requires the independently held entire-instance grant before work and receipt disclosure", async () => {
