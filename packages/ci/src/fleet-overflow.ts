@@ -116,6 +116,53 @@ export function selectFleetBackend(input: {
 	return undefined;
 }
 
+/** A verification alternative, not a runner label or a GitHub Actions job. */
+export type FleetVerificationSelection =
+	| Readonly<{ kind: "runner"; runner: FleetSelection }>
+	| Readonly<{ kind: "local-signoff" }>
+	| Readonly<{ kind: "wait"; reason: "availability-unknown" | "no-capacity" }>;
+
+/**
+ * Use the ordinary fleet order first. Offer local signoff only when all
+ * enabled runner tiers were observed unavailable and the operator enabled it.
+ * Unknown capacity is not evidence of an outage. This selects an independent
+ * verification path; it never moves or completes an already queued job.
+ */
+export function selectFleetVerification(input: {
+	members: readonly FleetMember[];
+	unknownMembers: readonly string[];
+	localSignoffEnabled: boolean;
+}): FleetVerificationSelection {
+	const ids = new Set(input.members.map((member) => member.id));
+	const malformed =
+		ids.size !== input.members.length ||
+		input.members.some(
+			(member) =>
+				member.id.length === 0 ||
+				(member.enabled &&
+					(!Number.isSafeInteger(member.freeSlots) || member.freeSlots < 0)) ||
+				(member.enabled &&
+					member.freeSlots > 0 &&
+					input.unknownMembers.includes(member.id)),
+		) ||
+		input.unknownMembers.some((id) => !ids.has(id));
+	if (malformed) return { kind: "wait", reason: "availability-unknown" };
+	const runner = selectFleetBackend({
+		members: input.members,
+		currentLabels: [],
+	});
+	if (runner) return { kind: "runner", runner };
+	if (
+		input.members.some(
+			(member) => member.enabled && input.unknownMembers.includes(member.id),
+		)
+	)
+		return { kind: "wait", reason: "availability-unknown" };
+	return input.localSignoffEnabled
+		? { kind: "local-signoff" }
+		: { kind: "wait", reason: "no-capacity" };
+}
+
 /**
  * Labels stamped onto queued demand for a relayed job.
  * GitHub-hosted and ARC (kubernetes + gh-actions, not the isolated worker label)
