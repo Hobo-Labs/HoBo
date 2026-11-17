@@ -4,12 +4,16 @@ import {
 	type InMemoryMessagingOptions,
 	type Messaging,
 	type Queue,
+	type SchedulerPort,
 	type VirtualClock,
 } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
 import { createSqliteEngine } from "@hobo/data-sqlite";
 import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
-import { createRuntimeLocalQueueClock } from "@hobo/runtime-local";
+import {
+	createLocalScheduler,
+	createRuntimeLocalQueueClock,
+} from "@hobo/runtime-local";
 
 /** A factory owns an isolated resource and may release it when the graph closes. */
 export interface ServiceEmulator<T> {
@@ -29,6 +33,11 @@ export interface DataEmulator extends ServiceEmulator<EngineBinding> {
 	close(): void | Promise<void>;
 }
 
+export interface ScheduleEmulator extends ServiceEmulator<SchedulerPort> {
+	/** Present when the implementation supports controlled time. */
+	readonly clock?: VirtualClock;
+}
+
 export interface EmulatorContext {
 	readonly alias: string;
 	readonly stage: string;
@@ -42,6 +51,7 @@ export interface ServiceEmulatorFactories {
 	readonly topic?: EmulatorFactory<ServiceEmulator<Messaging>>;
 	readonly secret?: EmulatorFactory<ServiceEmulator<SecretsPort>>;
 	readonly data?: EmulatorFactory<DataEmulator>;
+	readonly schedule?: EmulatorFactory<ScheduleEmulator>;
 }
 
 export function createQueueEmulator(): QueueEmulator {
@@ -69,4 +79,9 @@ export function createDataEmulator(): DataEmulator {
 		closed = true;
 	};
 	return { port: { ...engine, close }, fidelity: "simulated", close };
+}
+
+export function createScheduleEmulator(): ScheduleEmulator {
+	const { clock } = createRuntimeLocalQueueClock();
+	return { port: createLocalScheduler(clock), clock, fidelity: "simulated" };
 }
