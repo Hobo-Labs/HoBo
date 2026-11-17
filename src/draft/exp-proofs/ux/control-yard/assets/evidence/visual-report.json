@@ -1,13 +1,13 @@
 {
-  "gameUrl": "http://127.0.0.1:38809/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A40875",
-  "apiUrl": "http://127.0.0.1:40875",
+  "gameUrl": "http://127.0.0.1:45419/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A35553",
+  "apiUrl": "http://127.0.0.1:35553",
   "checks": [
     "PASS test seam ready",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
     "PASS imgdiff boot — match",
-    "PASS canvas dark ink near Bo — dark=5166",
+    "PASS canvas dark ink near Bo — dark=5012",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
@@ -54,10 +54,10 @@
     "hazards": []
   },
   "pixelSample": {
-    "dark": 5166,
+    "dark": 5012,
     "bo": {
-      "x": 604,
-      "y": 371,
+      "x": 603,
+      "y": 366,
       "animationId": "bo.walk.east",
       "facing": "west"
     }

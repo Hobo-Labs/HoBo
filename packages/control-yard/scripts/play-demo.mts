@@ -11,7 +11,7 @@ const proof = join(
 );
 const lock = join(shots, ".capture-lock");
 const markers = [shots, proof].map((dir) => join(dir, ".capture-incomplete"));
-let markersReady = false;
+let lockMayBeReleased = false;
 
 mkdirSync(shots, { recursive: true });
 try {
@@ -30,11 +30,13 @@ try {
 			"Capture incomplete. Run the evidence command again.\n",
 		);
 	}
-	markersReady = true;
+	lockMayBeReleased = true;
 	await import("./capture-tour.mts");
+	// Until every marker is removed, the lock protects both evidence copies.
+	lockMayBeReleased = false;
 	for (const marker of markers) rmSync(marker);
+	lockMayBeReleased = true;
 } finally {
-	// If either marker could not be written, the lock is the remaining signal
-	// that prevents either previous evidence copy from appearing current.
-	if (markersReady) rmSync(lock, { recursive: true, force: true });
+	// An incomplete marker setup or removal leaves the lock as the shared signal.
+	if (lockMayBeReleased) rmSync(lock, { recursive: true, force: true });
 }

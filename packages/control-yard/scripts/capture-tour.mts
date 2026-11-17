@@ -489,7 +489,7 @@ try {
 	// ========== Recording 03: AnimTest east/west ==========
 	await withRecording(
 		"03-bo-walk-east-west",
-		{ width: 720, height: 560 },
+		{ width: 720, height: 640 },
 		async (page) => {
 			await page.goto(animUrl, { waitUntil: "networkidle", timeout: 30000 });
 			await page.waitForFunction(() => window.__TEST__?.ready === true, null, {

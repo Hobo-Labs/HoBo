@@ -191,6 +191,71 @@ it("requires a real image comparison and a reviewed baseline", () => {
 	}
 });
 
+it("retains the shared lock if proof marker cleanup fails", () => {
+	const packageRoot = resolve(import.meta.dirname, "..");
+	const tempRoot = join(packageRoot, "tmp");
+	mkdirSync(tempRoot, { recursive: true });
+	const scratch = mkdtempSync(join(tempRoot, "yard-marker-cleanup-test-"));
+	const fixturePackage = join(scratch, "packages/control-yard");
+	const scripts = join(fixturePackage, "scripts");
+	const shots = join(fixturePackage, "public/shots");
+	const proof = join(
+		scratch,
+		"src/draft/exp-proofs/ux/control-yard/assets/evidence",
+	);
+	try {
+		mkdirSync(scripts, { recursive: true });
+		for (const script of [
+			"play-demo.mts",
+			"evidence-check.mts",
+			"evidence-validator.mts",
+			"capture-failures.mts",
+		]) {
+			cpSync(join(packageRoot, "scripts", script), join(scripts, script));
+		}
+		cpSync(join(packageRoot, "public/shots"), shots, { recursive: true });
+		cpSync(shots, proof, { recursive: true });
+		// Simulate a tour that succeeds but replaces the proof marker with a
+		// non-empty directory, so removal of the second marker fails.
+		writeFileSync(
+			join(scripts, "capture-tour.mts"),
+			`
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const marker = join(root, "../../src/draft/exp-proofs/ux/control-yard/assets/evidence/.capture-incomplete");
+rmSync(marker);
+mkdirSync(marker);
+writeFileSync(join(marker, "blocked"), "cannot remove this marker");
+`,
+		);
+		const capture = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", join(scripts, "play-demo.mts")],
+			{ encoding: "utf8", timeout: 20_000 },
+		);
+		expect(capture.status).not.toBe(0);
+		expect(existsSync(join(shots, ".capture-incomplete"))).toBe(false);
+		expect(existsSync(join(shots, ".capture-lock"))).toBe(true);
+		for (const dir of [shots, proof]) {
+			const check = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					join(scripts, "evidence-check.mts"),
+					dir,
+				],
+				{ encoding: "utf8", timeout: 20_000 },
+			);
+			expect(check.status).not.toBe(0);
+			expect(check.stderr).toContain("capture in progress or interrupted");
+		}
+	} finally {
+		rmSync(scratch, { recursive: true, force: true });
+	}
+}, 25_000);
+
 it("invalidates both old evidence copies when browser launch fails", () => {
 	const packageRoot = resolve(import.meta.dirname, "..");
 	const tempRoot = join(packageRoot, "tmp");
