@@ -272,6 +272,34 @@ trusted caller assertion. The helper does not create a hold; its caller must use
 a billing authority for admission. The general broker request path still passes
 `spendEstimateUsd` to its billing plane and does not invoke this helper.
 
+The [quote provenance skill](../../.agents/skills/verify-broker-quote-provenance/SKILL.md)
+checks 64 evidence states and 162 liability states. This projection hides 32
+same-label steps and treats the host attestation as a trusted predicate.
+
+```mermaid
+stateDiagram-v2
+  s0: Pricing evidence is invalid
+  s1: Legacy estimate has no trust
+  s2: Legacy estimate is explicitly trusted
+  s3: Quote has no host attestation
+  s4: Quote is attested by the host
+  s5: Quote changed during attestation
+  s6: Pricing evidence refused
+  s7: Pricing evidence accepted
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  [*] --> s4
+  [*] --> s5
+  s0 --> s6: refuse evidence
+  s1 --> s6: refuse evidence
+  s2 --> s7: accept evidence
+  s3 --> s6: refuse evidence
+  s4 --> s7: accept evidence
+  s5 --> s6: refuse evidence
+```
+
 Broker request documents must supply `spendEstimateUsd` (or
 `spend_estimate_usd`) explicitly, including for free work. Conflicting aliases
 reject. Protobuf clients must set the optional scalar even when it is zero;
