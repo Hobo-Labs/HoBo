@@ -14,6 +14,11 @@ Eligible definitions need distinct IDs and nonnegative decimal marginal prices
 with matching units; comparison is exact and ties use the definition ID. Failed
 or changing catalog evidence refuses placement. Marginal ordering remains a
 per-resource comparison and does not establish whole-request cost optimality.
+Resource IDs and ports must be nonempty, and resource IDs must be unique. Each
+resource execution unit records the exact definition selected for that resource.
+`buildExecutionUnits` callers must pass `resourcePlacements` containing explicit
+resource and definition ID pairs; the former parallel ID arrays could not express
+that association reliably.
 
 The [Yard residual placement skill](../../.agents/skills/verify-yard-residual-placement/SKILL.md)
 checks a one-resource abstraction of capability and evidence. This view hides 24

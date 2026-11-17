@@ -174,6 +174,20 @@ export async function resolveBindleDeployment(
 		);
 	}
 
+	// Callers may retain and mutate their input while host callbacks run. Work
+	// from a validated private snapshot, including unique resource identities.
+	try {
+		request = parseBindleDeploymentRequest(cloneAsJson(request));
+	} catch (error) {
+		return rejectResult(
+			foldState,
+			emitted,
+			"contracts",
+			"invalid-deployment-request",
+			error instanceof Error ? error.message : "invalid deployment request",
+		);
+	}
+
 	const ownerTenantId = request.ownerTenantId || deps.ownerTenantId || "local";
 	if (deps.ownerTenantId && deps.ownerTenantId !== ownerTenantId)
 		return rejectResult(
@@ -699,14 +713,12 @@ export async function resolveBindleDeployment(
 		);
 	}
 
-	const residualDefinitionIds = placements.decisions.map((p) => p.definitionId);
 	const executionUnits = buildExecutionUnits({
 		yardId: yard.yardId,
 		providerId: yard.providerId,
 		campId,
 		bindleName: request.bindleName,
-		resourceIds: request.resources.map((r) => r.resourceId),
-		residualDefinitionIds,
+		resourcePlacements: placements.decisions,
 	});
 
 	const receiptBody = {
@@ -832,20 +844,42 @@ export function parseBindleDeploymentRequest(
 
 	// SAFETY: assertion required at this I/O or test boundary.
 	const reqs = (raw.bindleRequirements ?? {}) as JsonObject;
-	const resources = Array.isArray(raw.resources)
-		? raw.resources.map((r) => {
-				// SAFETY: assertion required at this I/O or test boundary.
-				const row = r as JsonObject;
-				return Object.freeze({
-					resourceId: String(row.resourceId),
-					port: String(row.port),
-					features: Object.freeze(
-						Array.isArray(row.features) ? row.features.map(String) : [],
-					),
-					...(isJsonString(row.region) ? { region: row.region } : undefined),
-				});
-			})
-		: [];
+	if (raw.resources !== undefined && !Array.isArray(raw.resources))
+		throw new TypeError("resources must be an array");
+	const resourceIds = new Set<string>();
+	const resources = (Array.isArray(raw.resources) ? raw.resources : []).map(
+		(row) => {
+			if (!isJsonObject(row) || Array.isArray(row))
+				throw new TypeError("resource must be an object");
+			if (!isJsonString(row.resourceId) || !row.resourceId.trim())
+				throw new TypeError("resource identity must be a nonempty string");
+			if (resourceIds.has(row.resourceId))
+				throw new TypeError(`duplicate resource identity ${row.resourceId}`);
+			resourceIds.add(row.resourceId);
+			if (!isJsonString(row.port) || !row.port.trim())
+				throw new TypeError("resource port must be a nonempty string");
+			if (row.features !== undefined && !Array.isArray(row.features))
+				throw new TypeError("resource features must be an array");
+			const features = (Array.isArray(row.features) ? row.features : []).map(
+				(feature) => {
+					if (!isJsonString(feature) || !feature.trim())
+						throw new TypeError("resource feature must be a nonempty string");
+					return feature;
+				},
+			);
+			if (
+				row.region !== undefined &&
+				(!isJsonString(row.region) || !row.region.trim())
+			)
+				throw new TypeError("resource region must be a nonempty string");
+			return Object.freeze({
+				resourceId: row.resourceId,
+				port: row.port,
+				features: Object.freeze(features),
+				...(isJsonString(row.region) ? { region: row.region } : undefined),
+			});
+		},
+	);
 
 	return Object.freeze({
 		schemaVersion: BINDLE_DEPLOYMENT_REQUEST_SCHEMA,
