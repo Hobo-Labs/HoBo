@@ -21,7 +21,7 @@
  * Every other `hobo ci machine` word goes to `ci-machine.ts`.
  */
 import { mkdirSync } from "node:fs";
-import { hostname } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
@@ -60,7 +60,7 @@ import {
 	localMachineRegistryPath,
 	type OpenedMachineRegistry,
 } from "./ci-machine.js";
-import { runCiProcess } from "./ci-runs.js";
+import { type CiRunExec, runCiProcess } from "./ci-runs.js";
 import { defaultHoboHome } from "./hobo-home.js";
 
 const HELP = [
@@ -118,15 +118,20 @@ function usage(message: string): CommandResult {
 	};
 }
 
-/** GH_TOKEN, GITHUB_TOKEN, else what `gh auth token` prints. */
-async function defaultGithubToken(
+/**
+ * GH_TOKEN, GITHUB_TOKEN, else what `gh auth token` prints. `gh` runs in the
+ * system's temporary directory, which always exists: on a clean machine
+ * HOBO_HOME does not yet, and a missing working directory fails the call.
+ */
+export async function defaultGithubToken(
 	env: NodeJS.ProcessEnv,
+	exec: CiRunExec = runCiProcess,
 ): Promise<string | undefined> {
 	const named = env.GH_TOKEN || env.GITHUB_TOKEN;
 	if (named) return named;
 	try {
-		const { stdout } = await runCiProcess("gh", ["auth", "token"], {
-			cwd: defaultHoboHome(env),
+		const { stdout } = await exec("gh", ["auth", "token"], {
+			cwd: tmpdir(),
 			timeout: 15_000,
 			maxBuffer: 64 * 1024,
 			env,
@@ -212,6 +217,8 @@ function parseConnectArgs(args: readonly string[]) {
 				image: { type: "string" },
 				events: { type: "boolean" },
 				account: { type: "string" },
+				// The CLI's global --json, which renders the final result as data;
+				// accepted here as in ci-machine.ts. --events is the event stream.
 				json: { type: "boolean" },
 			},
 		});

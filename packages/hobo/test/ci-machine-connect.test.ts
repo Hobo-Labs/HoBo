@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,7 @@ import {
 	CI_MACHINE_CONNECT_COMMAND,
 	type CiMachineConnectDeps,
 	createCiMachineConnectCommand,
+	defaultGithubToken,
 	type MachineExecutorChoice,
 } from "../src/ci-machine-connect.js";
 
@@ -250,6 +252,29 @@ describe("hobo ci machine connect", () => {
 		]);
 		expect(JSON.parse(result.stdout).message).toMatch(/did not accept/u);
 		expect(await refused.registry.list("local")).toEqual([]);
+	});
+
+	it("reads the gh sign-in on a clean machine, before HOBO_HOME exists", async () => {
+		const missing = join(tmpdir(), `hobo-home-missing-${process.pid}`);
+		expect(existsSync(missing)).toBe(false);
+		const calls: string[] = [];
+		const token = await defaultGithubToken(
+			{ HOBO_HOME: missing, HOME: missing },
+			async (file, args, options) => {
+				calls.push([file, ...args].join(" "));
+				// As execFile does: a working directory that does not exist fails.
+				if (!existsSync(options.cwd))
+					throw new Error(`spawn ${file} ENOENT (cwd ${options.cwd})`);
+				return { stdout: "gho_signed_in\n", stderr: "" };
+			},
+		);
+		expect(token).toBe("gho_signed_in");
+		expect(calls).toEqual(["gh auth token"]);
+		expect(
+			await defaultGithubToken({ GH_TOKEN: "gho_named" }, async () => {
+				throw new Error("gh is not asked when a token is named");
+			}),
+		).toBe("gho_named");
 	});
 
 	it("connects Linux machines only, for now", async () => {
