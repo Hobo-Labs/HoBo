@@ -6,8 +6,11 @@
  * `--apply`, rewrites only the `runs-on` of the jobs asked for. It edits the
  * working tree and stops there: nothing is committed, pushed or sent
  * anywhere, so the change is reviewed as a diff like any other.
+ *
+ * `--relay`, `--undo` and `--check` put jobs behind the relay job instead,
+ * take them out again, and check the relay's generated files; they run in
+ * `ci-init-relay.ts`. The relay's own workflow is never planned here.
  */
-import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	applyWorkflowPlan,
@@ -19,33 +22,21 @@ import {
 	type WorkflowPlan,
 } from "@hobo/ci-gh-actions/cli-serve";
 import type { CommandResult } from "@hobo/cli";
+import {
+	applySelections,
+	type CiInitFiles,
+	type CiInitOptions,
+	diskInitFiles,
+	readWorkflowFiles,
+	runCiInitRelay,
+	selectionKeys,
+	WORKFLOWS,
+	wantsRelayInit,
+} from "./ci-init-relay.js";
 
-export type CiInitOptions = Readonly<
-	Record<string, string | boolean | readonly string[] | undefined>
->;
+export type { CiInitFiles, CiInitOptions } from "./ci-init-relay.js";
 
-const WORKFLOWS = join(".github", "workflows");
-const MAX_WORKFLOW_BYTES = 1024 * 1024;
 const LABEL = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/u;
-
-/** The files a run of the command reads and writes; a test supplies its own. */
-export type CiInitFiles = Readonly<{
-	list: (directory: string) => Promise<readonly string[]>;
-	read: (path: string) => Promise<string>;
-	write: (path: string, text: string) => Promise<void>;
-}>;
-
-const disk: CiInitFiles = {
-	list: async (directory) => {
-		try {
-			return await readdir(directory);
-		} catch {
-			return [];
-		}
-	},
-	read: (path) => readFile(path, "utf8"),
-	write: (path, text) => writeFile(path, text),
-};
 
 function usage(message: string): CommandResult {
 	return {
@@ -55,18 +46,6 @@ function usage(message: string): CommandResult {
 		message,
 		remediation: ["Run hobo ci --help for supported commands and options."],
 	};
-}
-
-/** `--apply` values: repeated or comma-separated job ids, `file:job`, or `all`. */
-function selections(options: CiInitOptions): readonly string[] | undefined {
-	const value = options.apply;
-	if (value === undefined) return undefined;
-	if (value === true || value === false) return [];
-	const values = Array.isArray(value) ? value : [String(value)];
-	return values
-		.flatMap((entry) => String(entry).split(","))
-		.map((entry) => entry.trim())
-		.filter((entry) => entry.length > 0);
 }
 
 /** A `runs-on` short enough for one line; a long expression is cut. */
@@ -104,12 +83,14 @@ export async function runCiInit(input: {
 	files?: CiInitFiles;
 }): Promise<CommandResult> {
 	const { options } = input;
-	const files = input.files ?? disk;
+	const files = input.files ?? diskInitFiles;
 	if (input.args.length > 0)
 		return usage("hobo ci init takes no positional arguments.");
+	if (wantsRelayInit(options))
+		return runCiInitRelay({ cwd: input.cwd, options, files });
 	if (options.plan !== undefined && options.plan !== true)
 		return usage("--plan does not take a value.");
-	const selected = selections(options);
+	const selected = applySelections(options);
 	if (selected !== undefined && options.plan === true)
 		return usage("Pass --plan or --apply, not both.");
 	if (selected !== undefined && selected.length === 0)
@@ -127,11 +108,8 @@ export async function runCiInit(input: {
 		includeSecretJobs: options["include-secret-jobs"] === true,
 	};
 
-	const directory = join(input.cwd, WORKFLOWS);
-	const names = (await files.list(directory))
-		.filter((name) => /\.ya?ml$/u.test(name))
-		.sort();
-	if (names.length === 0)
+	const workflows = await readWorkflowFiles(input.cwd, files);
+	if (workflows.paths.length === 0)
 		return {
 			ok: false,
 			status: "not-found",
@@ -139,24 +117,12 @@ export async function runCiInit(input: {
 			message: `No workflow files in ${WORKFLOWS}.`,
 		};
 
-	const sources = new Map<string, string>();
-	const plans: WorkflowPlan[] = [];
-	for (const name of names) {
-		const file = join(WORKFLOWS, name);
-		let source: string;
-		try {
-			source = await files.read(join(input.cwd, file));
-		} catch {
-			plans.push({ file, jobs: [], error: "the file cannot be read" });
-			continue;
-		}
-		if (source.length > MAX_WORKFLOW_BYTES) {
-			plans.push({ file, jobs: [], error: "the file is larger than 1 MiB" });
-			continue;
-		}
-		sources.set(file, source);
-		plans.push(planWorkflow(file, source, init));
-	}
+	const sources = workflows.sources;
+	const plans: WorkflowPlan[] = workflows.paths.map(
+		(file) =>
+			workflows.unreadable.find((plan) => plan.file === file) ??
+			planWorkflow(file, sources.get(file) ?? "", init),
+	);
 	const jobs = plans.flatMap((plan) => plan.jobs);
 	const ready = jobs.filter((job) => job.verdict === "ready");
 	const counts = `${ready.length} ready, ${jobs.filter((job) => job.verdict === "routed").length} already on the fleet, ${jobs.filter((job) => job.verdict === "skipped").length} skipped`;
@@ -192,22 +158,15 @@ export async function runCiInit(input: {
 		const wanted = all
 			? ["all"]
 			: plan.jobs
-					.filter(
-						(job) =>
-							selected.includes(job.job) ||
-							selected.includes(`${plan.file}:${job.job}`) ||
-							selected.includes(
-								`${plan.file.slice(WORKFLOWS.length + 1)}:${job.job}`,
-							),
+					.filter((job) =>
+						selectionKeys(plan.file, job.job).some((key) =>
+							selected.includes(key),
+						),
 					)
 					.map((job) => job.job);
 		if (wanted.length === 0) continue;
 		for (const job of plan.jobs)
-			for (const key of [
-				job.job,
-				`${plan.file}:${job.job}`,
-				`${plan.file.slice(WORKFLOWS.length + 1)}:${job.job}`,
-			])
+			for (const key of selectionKeys(plan.file, job.job))
 				if (selected.includes(key)) matched.add(key);
 		const result = applyWorkflowPlan(plan.file, source, wanted, init);
 		for (const job of result.changed) changed.push({ file: plan.file, job });
