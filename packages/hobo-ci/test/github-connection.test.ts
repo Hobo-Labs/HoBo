@@ -5,14 +5,17 @@ import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
 import {
 	type ConnectPage,
+	type FlowTransition,
 	type SavedSettings,
 	startConnectPage,
 } from "@hobo/connect-ui";
+import { createTrustedVault } from "@hobo/core";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
 import {
 	createGithubConnectFlow,
+	familySettings,
 	GITHUB_APP_CREDENTIAL_KEYS,
 	type GithubAppHost,
 	githubAppConnected,
@@ -140,6 +143,16 @@ async function seedConnection(store: OpenedSecretStore): Promise<void> {
 	};
 	for (const key of GITHUB_APP_CREDENTIAL_KEYS)
 		await store.port.put(key, values[key]);
+}
+
+async function seedSettings(store: OpenedSecretStore): Promise<void> {
+	await store.port.put(
+		"HOBO_CI_SETTINGS",
+		JSON.stringify({
+			HOBO_CI_PUBLIC_URL: RELAY,
+			HOBO_CI_GITHUB_OWNER: "octo",
+		}),
+	);
 }
 
 const opened =
@@ -478,14 +491,16 @@ function prepareInput(
 	};
 }
 
+// Non-secret pins only: the owner's id and kind skip the users lookup.
 const ENV = {
-	HOBO_CI_PUBLIC_URL: RELAY,
-	HOBO_CI_GITHUB_OWNER: "octo",
 	HOBO_CI_GITHUB_OWNER_ID: String(OWNER_ID),
 	HOBO_CI_GITHUB_OWNER_TYPE: "User",
-	HOBO_CI_SECRET_STORE: "infisical",
+};
+
+/** The committed locator of a store that is already set up. */
+const LOCATOR = {
+	HOBO_SECRET_STORE: "infisical",
 	INFISICAL_PROJECT_ID: "proj",
-	INFISICAL_TOKEN: "session-token",
 };
 
 function memorySettings(initial: SavedSettings = {}) {
@@ -497,6 +512,22 @@ function memorySettings(initial: SavedSettings = {}) {
 			saved = { ...values };
 		},
 	};
+}
+
+/** An opener that holds the store only for the right sign-in. */
+function signedIn(store: OpenedSecretStore, token = "session-token") {
+	return async (
+		_id: string,
+		_coordinates: Readonly<Record<string, string | undefined>>,
+		signIn: { reveal(name: string): string | undefined },
+	) =>
+		signIn.reveal("INFISICAL_TOKEN") === token
+			? ({ ok: true, store } as const)
+			: ({
+					ok: false,
+					message: "Not signed in to Infisical.",
+					remediation: ["Enter a token."],
+				} as const);
 }
 
 // GitHub, answering the public users lookup as well as the pact.
@@ -544,7 +575,7 @@ describe("prepareGithubConnection", () => {
 							env: { ...ENV, HOBO_CONNECT_UI_COMPOSE: "off" },
 							interactive: true,
 							openStore: opened(memoryStore()),
-							settings: memorySettings(),
+							locator: memorySettings(LOCATOR),
 							startPage: async (options) => {
 								page = await startConnectPage(options);
 								const started = page;
@@ -574,20 +605,51 @@ describe("prepareGithubConnection", () => {
 		}
 	});
 
-	it("refuses an unknown saved or configured secret store before opening it", async () => {
+	it("uses a configured Bitwarden store to find an existing connection", async () => {
+		const store = { ...memoryStore(), id: "bitwarden" as const };
+		await seedConnection(store);
+		await seedSettings(store);
+		const github = fakeGithub();
+		const vault = createTrustedVault();
+		vault.put("BWS_ACCESS_TOKEN", "token");
+		let selected = "";
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: ENV,
+			vault,
+			locator: memorySettings({
+				HOBO_SECRET_STORE: "bitwarden",
+				BWS_ORGANIZATION_ID: "org",
+				BWS_PROJECT_ID: "project",
+			}),
+			fetch: github.fetch,
+			openStore: async (id, _coordinates, signIn) => {
+				selected = id;
+				expect(signIn.reveal("BWS_ACCESS_TOKEN")).toBe("token");
+				return { ok: true, store };
+			},
+			startPage: () => {
+				throw new Error("no page should open");
+			},
+		});
+		expect(selected).toBe("bitwarden");
+		expect(github.calls).toEqual(PACT_CALLS.slice(1));
+		expect(outcome).toMatchObject({
+			kind: "ready",
+			steps: [{ outcome: "unchanged" }],
+		});
+	});
+
+	it("refuses an unknown configured or saved store before opening it", async () => {
 		for (const [env, saved] of [
-			[{ ...ENV, HOBO_CI_SECRET_STORE: "unknown" }, {}],
-			[
-				{ ...ENV, HOBO_CI_SECRET_STORE: "" },
-				{ HOBO_CI_SECRET_STORE: "unknown" },
-			],
+			[{ ...ENV, HOBO_SECRET_STORE: "unknown" }, {}],
+			[ENV, { HOBO_SECRET_STORE: "unknown" }],
 		] as const) {
-			let opened = false;
+			let openedStore = false;
 			const outcome = await prepareGithubConnection(prepareInput(), {
 				env,
-				settings: memorySettings(saved),
+				locator: memorySettings(saved),
 				openStore: async () => {
-					opened = true;
+					openedStore = true;
 					throw new Error("unexpected store access");
 				},
 			});
@@ -595,16 +657,16 @@ describe("prepareGithubConnection", () => {
 				kind: "refused",
 				result: { code: "HOBO_CI_SECRET_STORE_INVALID" },
 			});
-			expect(opened).toBe(false);
+			expect(openedStore).toBe(false);
 		}
 	});
 
-	it("refuses an unimplemented pinned host before opening a secret store", async () => {
-		let opened = false;
+	it("refuses an unimplemented pinned host before opening a store", async () => {
+		let openedStore = false;
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: { ...ENV, HOBO_CI_APP_HOST: "hosted-relay" },
 			openStore: async () => {
-				opened = true;
+				openedStore = true;
 				throw new Error("unexpected store access");
 			},
 		});
@@ -612,20 +674,45 @@ describe("prepareGithubConnection", () => {
 			kind: "refused",
 			result: { code: "HOBO_CI_APP_HOST_UNSUPPORTED_OWNER" },
 		});
-		expect(opened).toBe(false);
+		expect(openedStore).toBe(false);
 	});
 
-	it("reports unchanged without opening a page when the store holds the App", async () => {
+	it("refuses partial credentials without opening setup", async () => {
 		const store = memoryStore();
-		await seedConnection(store);
-		const github = fakeGithub();
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
+		await store.port.put("HOBO_CI_GITHUB_APP_ID", "777");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
-			settings: memorySettings(),
-			openStore: opened(store),
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
+			startPage: () => {
+				throw new Error("must not open setup");
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_SECRET_STORE_UNAVAILABLE" },
+		});
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("verifies a stored connection before reporting it unchanged", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		await seedSettings(store);
+		const github = fakeGithub();
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: ENV,
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
 			fetch: github.fetch,
 			startPage: () => {
-				throw new Error("no page should open");
+				throw new Error("must not open setup");
 			},
 		});
 		expect(outcome).toMatchObject({
@@ -638,10 +725,15 @@ describe("prepareGithubConnection", () => {
 	it("refuses to reuse stored credentials when the configured owner differs", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
+		await seedSettings(store);
 		const github = fakeGithub(9999);
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
-			openStore: opened(store),
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
 			fetch: github.fetch,
 			startPage: () => {
 				throw new Error("must not create a replacement");
@@ -649,16 +741,20 @@ describe("prepareGithubConnection", () => {
 		});
 		expect(outcome).toMatchObject({ kind: "refused" });
 		expect(github.calls).toEqual(["GET /app"]);
-		expect(store.names()).toHaveLength(GITHUB_APP_CREDENTIAL_KEYS.length);
+		expect(store.names()).toHaveLength(GITHUB_APP_CREDENTIAL_KEYS.length + 1);
 	});
 
 	it("does not reuse stored credentials without a configured owner and relay", async () => {
 		const store = memoryStore();
 		await seedConnection(store);
 		const github = fakeGithub();
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
-			openStore: opened(store),
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
 			fetch: github.fetch,
 			startPage: () => {
 				throw new Error("must not create a replacement");
@@ -668,7 +764,7 @@ describe("prepareGithubConnection", () => {
 		expect(github.calls).toEqual([]);
 	});
 
-	it("refuses when store access fails instead of opening setup", async () => {
+	it("does not treat an unreadable settings entry as missing", async () => {
 		const store = memoryStore();
 		const unavailable: OpenedSecretStore = {
 			...store,
@@ -683,68 +779,166 @@ describe("prepareGithubConnection", () => {
 				},
 			},
 		};
+		await expect(familySettings(unavailable, "ci").read()).rejects.toThrow(
+			/Cannot read/,
+		);
+	});
+
+	it("does not treat corrupt saved settings as missing", async () => {
+		const store = memoryStore();
+		await store.port.put("HOBO_CI_SETTINGS", "{not-json");
+		await expect(familySettings(store, "ci").read()).rejects.toThrow(/invalid/);
+	});
+
+	it("reports unchanged without a page when this run's vault already signs in", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		await seedSettings(store);
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: ENV,
-			settings: memorySettings(),
-			openStore: opened(unavailable),
+			fetch: fakeGithub().fetch,
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
 			startPage: () => {
-				throw new Error("must not open setup");
+				throw new Error("no page should open");
 			},
 		});
 		expect(outcome).toMatchObject({
-			kind: "refused",
-			result: { code: "HOBO_CI_SECRET_STORE_UNAVAILABLE" },
+			kind: "ready",
+			steps: [{ outcome: "unchanged" }],
 		});
-		expect(store.names()).toEqual([]);
+		expect(vault.names()).toEqual([]);
 	});
 
-	it("opens nothing for --what-if, and says what it would ask for", async () => {
-		const outcome = await prepareGithubConnection(prepareInput(true), {
+	it("wipes the setup vault if reading the locator throws", async () => {
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
+		await expect(
+			prepareGithubConnection(prepareInput(), {
+				env: {},
+				vault,
+				locator: {
+					read: async () => {
+						throw new Error("locator unavailable");
+					},
+					write: async () => {},
+				},
+			}),
+		).rejects.toThrow("locator unavailable");
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("rejects a late sign-in after setup has already ended", async () => {
+		const vault = createTrustedVault();
+		let submitLate: (() => Promise<FlowTransition>) | undefined;
+		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
-			settings: memorySettings(),
-			openStore: opened(memoryStore()),
+			interactive: true,
+			vault,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(memoryStore()),
+			openBrowser: () => undefined,
+			startPage: async ({ flow }) => {
+				submitLate = () =>
+					flow.onAction(
+						"connect.submit",
+						{ INFISICAL_TOKEN: "session-token" },
+						flow.initial,
+					);
+				return {
+					url: "http://127.0.0.1:1/",
+					callbackUrl: "http://127.0.0.1:1/callback",
+					done: Promise.resolve({
+						kind: "failed" as const,
+						provider: "github" as const,
+						message: "cancelled",
+						remediation: [],
+					}),
+					close: async () => {},
+				};
+			},
+		});
+		expect(outcome.kind).toBe("refused");
+		if (submitLate === undefined) throw new Error("setup page did not start");
+		await expect(submitLate()).rejects.toThrow("credential run has ended");
+		expect(vault.names()).toEqual([]);
+	});
+
+	it("ignores secrets in the environment, and says so", async () => {
+		const store = memoryStore();
+		await seedConnection(store);
+		const input = prepareInput(true);
+		const outcome = await prepareGithubConnection(input, {
+			// A token in the environment is not a sign-in.
+			env: { ...ENV, INFISICAL_TOKEN: "session-token", BWS_ACCESS_TOKEN: "x" },
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
 		});
 		expect(outcome).toMatchObject({
 			kind: "ready",
 			steps: [{ outcome: "would-create" }],
 		});
-		expect(JSON.stringify(outcome)).toMatch(
-			/would ask for Relay URL, GitHub owner, Secret store/,
+		expect(JSON.stringify(outcome)).toMatch(/would sign in to infisical/);
+		expect(input.progress.join("\n")).toMatch(
+			/Setup ignored these known secret environment variables: BWS_ACCESS_TOKEN, INFISICAL_TOKEN/,
 		);
 	});
 
-	it("without a person at a browser, refuses and names every missing setting", async () => {
+	it("without a person at a browser, refuses and points at workload OIDC", async () => {
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
 			interactive: false,
-			settings: memorySettings(),
-			openStore: opened(memoryStore()),
+			locator: memorySettings(),
+			openStore: signedIn(memoryStore()),
 		});
 		expect(outcome).toMatchObject({
 			kind: "refused",
 			result: { code: "HOBO_CI_CONNECTION_NEEDS_OWNER" },
 		});
-		expect(JSON.stringify(outcome)).toContain(
-			"HOBO_CI_PUBLIC_URL, HOBO_CI_GITHUB_OWNER, HOBO_CI_SECRET_STORE",
-		);
+		expect(JSON.stringify(outcome)).toContain("INFISICAL_IDENTITY_ID");
 	});
 
-	it("asks for what is missing, looks up the owner, creates the org's App, and saves only non-secrets", async () => {
+	it("a CI run signs in with its own OIDC token through the preconfigured identity", async () => {
 		const store = memoryStore();
-		const settings = memorySettings();
+		await seedConnection(store);
+		await seedSettings(store);
+		let signedInWith: Readonly<Record<string, string | undefined>> = {};
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			fetch: fakeGithub().fetch,
+			env: {
+				...ENV,
+				ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example/",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-request",
+			},
+			interactive: false,
+			locator: memorySettings({ ...LOCATOR, INFISICAL_IDENTITY_ID: "id-1" }),
+			openStore: async (_id, coordinates) => {
+				signedInWith = coordinates;
+				return { ok: true, store };
+			},
+		});
+		expect(signedInWith.INFISICAL_IDENTITY_ID).toBe("id-1");
+		expect(outcome).toMatchObject({
+			kind: "ready",
+			steps: [{ outcome: "unchanged" }],
+		});
+	});
+
+	it("a fresh devbox: signs in, asks once, keeps answers in the store and only the locator on disk", async () => {
+		const store = memoryStore();
+		const locator = memorySettings();
 		const github = githubWithUsers("Organization");
 		const seen: string[] = [];
 		let browsing: Promise<unknown> = Promise.resolve();
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
 			interactive: true,
-			settings,
+			locator,
 			fetch: github.fetch,
-			openStore: async (_id, storeEnv) => {
-				// The store is opened with the token the ceremony collected.
-				expect(storeEnv.INFISICAL_TOKEN).toBe("session-token");
-				return { ok: true, store };
-			},
+			openStore: signedIn(store),
 			openBrowser: (url) => {
 				browsing = (async () => {
 					const post = (action: string, params: Record<string, string> = {}) =>
@@ -753,23 +947,27 @@ describe("prepareGithubConnection", () => {
 							headers: { "content-type": "application/json" },
 							body: JSON.stringify({ action, params }),
 						}).then((res) => res.json());
-					const first = await fetch(`${url}view`).then((res) => res.json());
+					const fields = (view: { view: { fields: { name: string }[] } }) =>
+						view.view.fields.map((f) => f.name).join(",");
 					seen.push(
-						first.view.fields.map((f: { name: string }) => f.name).join(","),
+						fields(await fetch(`${url}view`).then((res) => res.json())),
 					);
-					const storeStage = await post("connect.submit", {
-						HOBO_CI_PUBLIC_URL: RELAY,
-						HOBO_CI_GITHUB_OWNER: "octo-org",
-						HOBO_CI_SECRET_STORE: "infisical",
-					});
 					seen.push(
-						storeStage.view.fields
-							.map((f: { name: string }) => f.name)
-							.join(","),
+						fields(
+							await post("connect.submit", { HOBO_SECRET_STORE: "infisical" }),
+						),
+					);
+					seen.push(
+						fields(
+							await post("connect.submit", {
+								INFISICAL_PROJECT_ID: "proj",
+								INFISICAL_TOKEN: "session-token",
+							}),
+						),
 					);
 					const create = await post("connect.submit", {
-						INFISICAL_PROJECT_ID: "proj",
-						INFISICAL_TOKEN: "session-token",
+						HOBO_CI_PUBLIC_URL: RELAY,
+						HOBO_CI_GITHUB_OWNER: "octo-org",
 					});
 					seen.push(create.step);
 					const started = await post("connect.start");
@@ -780,7 +978,9 @@ describe("prepareGithubConnection", () => {
 					);
 					await fetch(
 						`${manifest.redirect_url}?code=one-time-code&state=${state}`,
-						{ redirect: "manual" },
+						{
+							redirect: "manual",
+						},
 					);
 					seen.push((await fetch(`${url}view`).then((res) => res.json())).step);
 				})();
@@ -788,8 +988,9 @@ describe("prepareGithubConnection", () => {
 		});
 		await browsing;
 		expect(seen).toEqual([
-			"HOBO_CI_PUBLIC_URL,HOBO_CI_GITHUB_OWNER,HOBO_CI_SECRET_STORE",
+			"HOBO_SECRET_STORE",
 			"INFISICAL_PROJECT_ID,INFISICAL_TOKEN",
+			"HOBO_CI_PUBLIC_URL,HOBO_CI_GITHUB_OWNER",
 			"create-github-app",
 			"https://github.com/organizations/octo-org/settings/apps/new",
 			"connected",
@@ -798,16 +999,66 @@ describe("prepareGithubConnection", () => {
 			kind: "ready",
 			steps: [{ id: "github-app", outcome: "created" }],
 		});
-		expect(settings.saved()).toEqual({
+		// On disk (committed): where the store is. Never the token.
+		expect(locator.saved()).toEqual(LOCATOR);
+		// In the store: what the ceremony was told, beside the App.
+		const kept = await store.port.access("HOBO_CI_SETTINGS");
+		expect(kept.status === "ok" && JSON.parse(kept.material ?? "{}")).toEqual({
 			HOBO_CI_PUBLIC_URL: RELAY,
 			HOBO_CI_GITHUB_OWNER: "octo-org",
-			HOBO_CI_SECRET_STORE: "infisical",
-			INFISICAL_PROJECT_ID: "proj",
 		});
 	});
 
+	it("a destroyed devbox: a new clone signs in and is asked nothing else", async () => {
+		const store = memoryStore();
+		await store.port.put(
+			"HOBO_CI_SETTINGS",
+			JSON.stringify({
+				HOBO_CI_PUBLIC_URL: RELAY,
+				HOBO_CI_GITHUB_OWNER: "octo",
+			}),
+		);
+		const seen: string[] = [];
+		const outcome = await prepareGithubConnection(prepareInput(), {
+			env: ENV,
+			interactive: true,
+			timeoutMs: 2_000,
+			locator: memorySettings(LOCATOR),
+			openStore: signedIn(store),
+			openBrowser: (url) => {
+				void (async () => {
+					const first = await fetch(`${url}view`).then((res) => res.json());
+					seen.push(
+						first.view.fields.map((f: { name: string }) => f.name).join(","),
+					);
+					const next = await fetch(`${url}action`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({
+							action: "connect.submit",
+							params: { INFISICAL_TOKEN: "session-token" },
+						}),
+					}).then((res) => res.json());
+					seen.push(next.step);
+					await fetch(`${url}action`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ action: "connect.cancel", params: {} }),
+					});
+					await fetch(`${url}view`);
+				})();
+			},
+		});
+		// Only the sign-in is asked; the relay URL and owner came from the store.
+		expect(seen[0]).toBe("INFISICAL_TOKEN");
+		expect(seen[1]).toBe("create-github-app");
+		expect(outcome).toMatchObject({ kind: "refused" });
+	});
+
 	it("refuses an owner GitHub does not know, on the page, without creating anything", async () => {
-		const settings = memorySettings();
+		const store = memoryStore();
+		const vault = createTrustedVault();
+		vault.put("INFISICAL_TOKEN", "session-token");
 		// SAFETY: the stand-in implements the one fetch overload the lookup calls.
 		const notFound = (async () =>
 			new Response("{}", { status: 404 })) as typeof fetch;
@@ -815,10 +1066,11 @@ describe("prepareGithubConnection", () => {
 		const outcome = await prepareGithubConnection(prepareInput(), {
 			env: {},
 			interactive: true,
-			settings,
+			vault,
+			locator: memorySettings(LOCATOR),
 			fetch: notFound,
 			timeoutMs: 2_000,
-			openStore: opened(memoryStore()),
+			openStore: signedIn(store),
 			openBrowser: (url) => {
 				void (async () => {
 					const refused = await fetch(`${url}action`, {
@@ -829,7 +1081,6 @@ describe("prepareGithubConnection", () => {
 							params: {
 								HOBO_CI_PUBLIC_URL: RELAY,
 								HOBO_CI_GITHUB_OWNER: "nobody-here",
-								HOBO_CI_SECRET_STORE: "infisical",
 							},
 						}),
 					}).then((res) => res.json());
@@ -841,14 +1092,13 @@ describe("prepareGithubConnection", () => {
 						headers: { "content-type": "application/json" },
 						body: JSON.stringify({ action: "connect.cancel", params: {} }),
 					});
-					// The page shows the finished step, as a browser does after an action.
 					await fetch(`${url}view`);
 				})();
 			},
 		});
 		expect(errorShown).toMatch(/no user or organization/);
 		expect(outcome).toMatchObject({ kind: "refused" });
-		expect(settings.saved()).toEqual({});
+		expect((await store.port.access("HOBO_CI_SETTINGS")).status).not.toBe("ok");
 	});
 });
 
@@ -933,14 +1183,6 @@ describe("resolveGithubAppHost", () => {
 		expect(
 			resolveGithubAppHost(org, { hosts: [userOnly, both] }),
 		).toMatchObject({ ok: true, host: both });
-	});
-
-	it("refuses an unknown or unimplemented pinned host instead of silently using the local manifest flow", () => {
-		for (const configured of ["unknown-host", "hosted-relay"])
-			expect(resolveGithubAppHost(org, { configured })).toMatchObject({
-				ok: false,
-				suggestions: [expect.objectContaining({ id: "manifest" })],
-			});
 	});
 
 	it("HoBo's own hosts serve users and organizations", () => {

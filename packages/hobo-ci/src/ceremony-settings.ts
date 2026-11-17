@@ -23,6 +23,11 @@ const githubLogin = (value: string) =>
 		? undefined
 		: "A GitHub user or organization login.";
 
+const uuid = (value: string) =>
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value)
+		? undefined
+		: "A UUID, as the Secrets Manager web app shows it.";
+
 /** What `hobo ci up` needs to know before it can create the App. */
 export const CI_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 	{
@@ -46,35 +51,70 @@ export const CI_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 		},
 		validate: githubLogin,
 	},
-	{
-		field: {
-			name: "HOBO_CI_SECRET_STORE",
-			label: "Secret store",
-			kind: "choice",
-			required: true,
-			value: "infisical",
-			options: [
-				{
-					value: "infisical",
-					label: "Infisical Cloud (recommended)",
-					description: "Workloads sign in with OIDC: no secret to keep.",
-				},
-				{
-					value: "1password",
-					label: "1Password",
-					description:
-						"Unlocked with your desktop app; workloads use a service account.",
-				},
-			],
-		},
-	},
 ]);
+
+/** A store's name as the person sees it. */
+export function storeLabel(store: string): string {
+	return store === "1password"
+		? "1Password"
+		: store === "bitwarden"
+			? "Bitwarden"
+			: "Infisical";
+}
 
 /** The chosen store's coordinates and sign-in. */
 export function storeSettings(
 	store: string,
 	defaultPath: string,
 ): readonly CeremonySetting[] {
+	if (store === "bitwarden")
+		return [
+			{
+				field: {
+					name: "BWS_SERVER",
+					label: "Bitwarden cloud",
+					description:
+						"Where your Bitwarden account lives; a token works only there.",
+					kind: "choice",
+					required: true,
+					value: "us",
+					options: [
+						{ value: "us", label: "United States (bitwarden.com)" },
+						{ value: "eu", label: "European Union (bitwarden.eu)" },
+					],
+				},
+				fallback: "us",
+			},
+			{
+				field: {
+					name: "BWS_ORGANIZATION_ID",
+					label: "Bitwarden organization ID",
+					kind: "text",
+					required: true,
+				},
+				validate: uuid,
+			},
+			{
+				field: {
+					name: "BWS_PROJECT_ID",
+					label: "Bitwarden project ID",
+					description: "The Secrets Manager project the credentials go to.",
+					kind: "text",
+					required: true,
+				},
+				validate: uuid,
+			},
+			{
+				field: {
+					name: "BWS_ACCESS_TOKEN",
+					label: "Bitwarden machine account access token",
+					description:
+						"A token for a machine account with write access to the project. Used for this run only; never saved.",
+					kind: "secret",
+					required: true,
+				},
+			},
+		];
 	return store === "1password"
 		? [
 				{
@@ -122,6 +162,16 @@ export function storeSettings(
 						required: false,
 					},
 					fallback: defaultPath,
+				},
+				{
+					field: {
+						name: "INFISICAL_IDENTITY_ID",
+						label: "Infisical machine identity for workloads (optional)",
+						description:
+							"An identity with OIDC Auth that trusts your CI; with it, a CI run signs in with its own OIDC token and nobody types a token.",
+						kind: "text",
+						required: false,
+					},
 				},
 				{
 					field: {

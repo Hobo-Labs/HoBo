@@ -105,6 +105,27 @@ export {
 	requireConnection,
 } from "./connection.js";
 export {
+	CONTINUITY_KINDS,
+	CONTINUITY_MIGRATION,
+	CONTINUITY_ON_LOSS,
+	CONTINUITY_OPTION,
+	CONTINUITY_TIER_DEFAULTS,
+	CONTINUITY_TIERS,
+	ContinuityError,
+	type ContinuityInput,
+	type ContinuityMigration,
+	type ContinuityOnLoss,
+	type ContinuityPolicy,
+	type ContinuityTier,
+	type ContinuityViolation,
+	continuity,
+	continuityPolicies,
+	continuityViolations,
+	isContinuityAnnotation,
+	parseContinuityPolicy,
+	readContinuity,
+} from "./continuity.js";
+export {
 	collectRequiredRuntimes,
 	containerDependencyAnnotation,
 	DEPENDENCY_OPTION,
