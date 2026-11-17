@@ -18,6 +18,13 @@ import {
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: provider fields remain unknown until each boundary parser validates them. */
 class ProxyProviderValue extends TypeError {}
 
+/** A primitive numeric limit was safely read and violates its public bound. */
+export class InvalidProviderLimit extends TypeError {
+	constructor(readonly key: keyof DurableMessagingLimits) {
+		super("invalid provider limit");
+	}
+}
+
 function object(value: unknown): object {
 	if (utilTypes.isProxy(value)) throw new ProxyProviderValue("provider proxy");
 	if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -498,31 +505,34 @@ export function snapshotAudit(
 export function snapshotLimits(
 	value: DurableMessagingLimits,
 ): DurableMessagingLimits {
-	const result = {
-		nameBytes: natural(field(value, "nameBytes")),
-		reasonBytes: natural(field(value, "reasonBytes")),
-		payloadBytes: natural(field(value, "payloadBytes")),
-		attributeCount: natural(field(value, "attributeCount")),
-		attributeBytes: natural(field(value, "attributeBytes")),
-		batchSize: natural(field(value, "batchSize")),
-		leaseMs: natural(field(value, "leaseMs")),
-		operationWindowMs: natural(field(value, "operationWindowMs")),
-		deliveryAttempts: natural(field(value, "deliveryAttempts")),
-		retainedMessages: natural(field(value, "retainedMessages")),
-		retainedReceipts: natural(field(value, "retainedReceipts")),
-		retainedEvents: natural(field(value, "retainedEvents")),
-		topics: natural(field(value, "topics")),
-		subscriptions: natural(field(value, "subscriptions")),
-		eventPageSize: natural(field(value, "eventPageSize")),
+	const limit = (key: keyof DurableMessagingLimits) => {
+		const current = field(value, key);
+		if (
+			typeof current === "number" &&
+			(!Number.isSafeInteger(current) ||
+				current <= 0 ||
+				current > DURABLE_MESSAGING_LIMITS[key])
+		)
+			throw new InvalidProviderLimit(key);
+		return natural(current);
 	};
-	// SAFETY: these keys come from the frozen limits record owned by core.
-	for (const key of Object.keys(
-		DURABLE_MESSAGING_LIMITS,
-	) as (keyof DurableMessagingLimits)[]) {
-		const limit = result[key];
-		if (limit === 0 || limit > DURABLE_MESSAGING_LIMITS[key])
-			throw new TypeError("invalid provider limit");
-	}
+	const result = {
+		nameBytes: limit("nameBytes"),
+		reasonBytes: limit("reasonBytes"),
+		payloadBytes: limit("payloadBytes"),
+		attributeCount: limit("attributeCount"),
+		attributeBytes: limit("attributeBytes"),
+		batchSize: limit("batchSize"),
+		leaseMs: limit("leaseMs"),
+		operationWindowMs: limit("operationWindowMs"),
+		deliveryAttempts: limit("deliveryAttempts"),
+		retainedMessages: limit("retainedMessages"),
+		retainedReceipts: limit("retainedReceipts"),
+		retainedEvents: limit("retainedEvents"),
+		topics: limit("topics"),
+		subscriptions: limit("subscriptions"),
+		eventPageSize: limit("eventPageSize"),
+	};
 	return Object.freeze(result);
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof */

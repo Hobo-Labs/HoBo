@@ -12,6 +12,7 @@ import {
 	parseDurableMessagingOperation,
 } from "@hobo/core";
 import {
+	InvalidProviderLimit,
 	snapshotAudit,
 	snapshotLimits,
 	snapshotMutation,
@@ -296,6 +297,27 @@ function ensureExpiredOrDefinite(
 
 function requireCondition(value: boolean, message: string): void {
 	if (!value) throw new DurableMessagingConformanceFailure(message);
+}
+
+/** Distinguish an invalid provider limit from a valid, smaller test profile. */
+function validateLimits(limits: DurableMessagingLimits): void {
+	// SAFETY: these keys come from the exact frozen limits record.
+	const keys = Object.keys(
+		DURABLE_MESSAGING_LIMITS,
+	) as (keyof DurableMessagingLimits)[];
+	for (const key of keys) {
+		const declared = limits[key];
+		requireCondition(
+			Number.isSafeInteger(declared) &&
+				declared > 0 &&
+				declared <= DURABLE_MESSAGING_LIMITS[key],
+			`invalid provider limit ${key}`,
+		);
+	}
+}
+
+function requireProfile(value: boolean, message: string): void {
+	if (!value) throw new DurableMessagingConformanceUnverified(message);
 }
 
 async function committed<T>(
@@ -614,7 +636,8 @@ function operations(
 
 async function createFixture(harness: DurableMessagingConformanceHarness) {
 	const client = await harness.connect("tenant-a");
-	requireCondition(
+	validateLimits(client.limits);
+	requireProfile(
 		client.limits.operationWindowMs >= 1_000 &&
 			client.limits.nameBytes >= 16 &&
 			client.limits.reasonBytes >= 10 &&
@@ -1151,7 +1174,8 @@ async function independentOperationIdLimit(
 	harness: DurableMessagingConformanceHarness,
 ) {
 	const client = await harness.connect("tenant-a");
-	requireCondition(
+	validateLimits(client.limits);
+	requireProfile(
 		client.limits.nameBytes > 0 &&
 			client.limits.nameBytes <= 16 &&
 			client.limits.operationWindowMs >= 1_000 &&
@@ -2184,7 +2208,8 @@ async function auditPagination(harness: DurableMessagingConformanceHarness) {
 
 async function auditRetention(harness: DurableMessagingConformanceHarness) {
 	const client = await harness.connect("tenant-a");
-	requireCondition(
+	validateLimits(client.limits);
+	requireProfile(
 		client.limits.retainedEvents >= 2 &&
 			client.limits.retainedEvents <= 32 &&
 			client.limits.topics >= client.limits.retainedEvents + 3 &&
@@ -2265,7 +2290,8 @@ async function auditRetention(harness: DurableMessagingConformanceHarness) {
 
 async function topicCapacity(harness: DurableMessagingConformanceHarness) {
 	const client = await harness.connect("tenant-a");
-	requireCondition(
+	validateLimits(client.limits);
+	requireProfile(
 		client.limits.topics >= 2 &&
 			client.limits.topics <= 32 &&
 			client.limits.retainedReceipts >= client.limits.topics + 4 &&
@@ -2309,19 +2335,7 @@ async function topicCapacity(harness: DurableMessagingConformanceHarness) {
 
 async function bounds(harness: DurableMessagingConformanceHarness) {
 	const f = await createFixture(harness);
-	// SAFETY: these keys come from the exact frozen limits record.
-	const keys = Object.keys(
-		DURABLE_MESSAGING_LIMITS,
-	) as (keyof DurableMessagingLimits)[];
-	for (const key of keys) {
-		const declared = f.client.limits[key];
-		requireCondition(
-			Number.isSafeInteger(declared) &&
-				declared > 0 &&
-				declared <= DURABLE_MESSAGING_LIMITS[key],
-			`invalid provider limit ${key}`,
-		);
-	}
+	validateLimits(f.client.limits);
 	await f.subscribe("orders", "group-a", "orders-dlq");
 	const invalid: Array<
 		readonly [string, () => Promise<DurableMessagingOutcome<unknown>>]
@@ -2654,7 +2668,16 @@ function guardConformanceHarness(
 			check();
 			const advertised = client.limits;
 			check();
-			const limits = snapshotLimits(advertised);
+			let limits: DurableMessagingLimits;
+			try {
+				limits = snapshotLimits(advertised);
+			} catch (error) {
+				if (error instanceof InvalidProviderLimit)
+					throw new DurableMessagingConformanceFailure(
+						`invalid provider limit ${error.key}`,
+					);
+				throw error;
+			}
 			check();
 			const mutate = async <T>(
 				kind: Parameters<typeof snapshotMutation>[0],

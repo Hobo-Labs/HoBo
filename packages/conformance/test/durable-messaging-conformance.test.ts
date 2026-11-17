@@ -7,7 +7,7 @@ import {
 	type DurableMessagingOutcome,
 	durableMessagingOperation,
 } from "@hobo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	DURABLE_MESSAGING_CONFORMANCE_CASES,
 	type DurableMessagingConformanceHarness,
@@ -292,6 +292,162 @@ describe("durable messaging conformance runner", () => {
 		).toBe(true);
 		expect(traps).toBe(0);
 	});
+	it.each([
+		[
+			"group-isolation",
+			{ batchSize: 1 },
+			"provider limits are below the conformance profile",
+		],
+		[
+			"operation-id-limit",
+			{ nameBytes: 128 },
+			"operation ID case needs a small independent name limit",
+		],
+		[
+			"audit-retention",
+			{ retainedEvents: 128, topics: 32 },
+			"audit retention harness limits are not configured for this case",
+		],
+		[
+			"topic-capacity",
+			{ topics: 33 },
+			"topic-capacity harness limits are not configured for this case",
+		],
+	] as const)("reports an unsupported %s profile as unverified before dispatch", async (name, changed, detail) => {
+		const dispatch = vi.fn(async () => {
+			throw new Error("unexpected dispatch");
+		});
+		const client: DurableMessaging = {
+			limits: { ...DURABLE_MESSAGING_LIMITS, ...changed },
+			ensureTopic: dispatch,
+			ensureSubscription: dispatch,
+			publish: dispatch,
+			consume: dispatch,
+			ack: dispatch,
+			nack: dispatch,
+			compact: dispatch,
+			events: dispatch,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: name },
+		);
+		expect(report.cases).toEqual([{ name, status: "unverified", detail }]);
+		expect(dispatch).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		0,
+		129,
+		1.5,
+		Number.NaN,
+	])("fails invalid provider limit %s rather than calling it a smaller profile", async (invalidNameBytes) => {
+		const dispatch = vi.fn(async () => {
+			throw new Error("unexpected dispatch");
+		});
+		const client: DurableMessaging = {
+			limits: { ...DURABLE_MESSAGING_LIMITS, nameBytes: invalidNameBytes },
+			ensureTopic: dispatch,
+			ensureSubscription: dispatch,
+			publish: dispatch,
+			consume: dispatch,
+			ack: dispatch,
+			nack: dispatch,
+			compact: dispatch,
+			events: dispatch,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "operation-id-limit" },
+		);
+		expect(report.cases).toEqual([
+			{
+				name: "operation-id-limit",
+				status: "fail",
+				detail: "invalid provider limit nameBytes",
+			},
+		]);
+		expect(dispatch).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"accessor",
+		"proxy",
+	] as const)("keeps %s limits unknown without invoking traps", async (mode) => {
+		let traps = 0;
+		const limits = { ...DURABLE_MESSAGING_LIMITS };
+		const unsafe =
+			mode === "proxy"
+				? new Proxy(limits, {
+						getOwnPropertyDescriptor() {
+							traps++;
+							throw new Error("trap");
+						},
+						getPrototypeOf() {
+							traps++;
+							throw new Error("trap");
+						},
+					})
+				: Object.defineProperty(limits, "nameBytes", {
+						enumerable: true,
+						get() {
+							traps++;
+							throw new Error("trap");
+						},
+					});
+		const unexpected = async () => {
+			throw new Error("unexpected dispatch");
+		};
+		const client: DurableMessaging = {
+			limits: unsafe,
+			ensureTopic: unexpected,
+			ensureSubscription: unexpected,
+			publish: unexpected,
+			consume: unexpected,
+			ack: unexpected,
+			nack: unexpected,
+			compact: unexpected,
+			events: unexpected,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "operation-id-limit" },
+		);
+		expect(report.cases[0]?.status).toBe("unknown");
+		expect(traps).toBe(0);
+	});
+
+	it("still fails incorrect provider behavior when the profile supports a case", async () => {
+		const unexpected = async () => {
+			throw new Error("unexpected dispatch");
+		};
+		const client: DurableMessaging = {
+			limits: { ...DURABLE_MESSAGING_LIMITS, nameBytes: 16 },
+			ensureTopic: async () => ({
+				status: "committed",
+				value: { topic: "wrong" },
+			}),
+			ensureSubscription: unexpected,
+			publish: unexpected,
+			consume: unexpected,
+			ack: unexpected,
+			nack: unexpected,
+			compact: unexpected,
+			events: unexpected,
+		};
+		const report = await runDurableMessagingConformance(
+			async () => inertHarness(async () => client),
+			{ case: "operation-id-limit" },
+		);
+		expect(report.cases).toEqual([
+			{
+				name: "operation-id-limit",
+				status: "fail",
+				detail: "valid operation ID was constrained by the provider name limit",
+			},
+		]);
+	});
+
 	it.each([
 		Number.NaN,
 		1.5,
