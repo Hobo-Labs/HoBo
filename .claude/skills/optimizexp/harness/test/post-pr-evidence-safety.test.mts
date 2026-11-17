@@ -258,4 +258,35 @@ describe("PR evidence manifest read boundary", () => {
 			assert.match(readFileSync(log, "utf8"), /nested\/picture%20%29%60%7C\.png\)/);
 		});
 	});
+
+	it("links oversized evidence without implying that a local compression was uploaded", () => {
+		fixture(({ root, scenario, invoke, log }) => {
+			const primaryPath = "primary.png";
+			const sha256 = artifact(scenario, primaryPath, "x".repeat(1_000_001));
+			writeFileSync(path.join(scenario, "manifest.json"), JSON.stringify({ kind: "image", primaryPath }));
+			writeFileSync(path.join(scenario, "meta.json"), JSON.stringify({ driver: "web", primary: { file: primaryPath, kind: "image", sha256 }, claims: [] }));
+			const marker = path.join(root, "ffmpeg-called");
+			writeFileSync(path.join(path.dirname(root), "bin/ffmpeg"), '#!/bin/sh\nprintf called > "$HOBO_FFMPEG_MARKER"\nfor last do :; done\nprintf gif > "$last"\n', { mode: 0o755 });
+			const result = invoke([], { HOBO_FFMPEG_MARKER: marker });
+			assert.equal(result.status, 0, String(result.stderr));
+			assert.equal(existsSync(marker), false);
+			const comments = readFileSync(log, "utf8");
+			assert.match(comments, /See committed path: `[^`]*primary\.png`/);
+			assert.doesNotMatch(comments, /!\[zzz-test\]/);
+		});
+	});
+
+	it("does not call a small video too large when it links the committed file", () => {
+		fixture(({ scenario, invoke, log }) => {
+			const primaryPath = "primary.mp4";
+			const sha256 = artifact(scenario, primaryPath, "video bytes");
+			writeFileSync(path.join(scenario, "manifest.json"), JSON.stringify({ kind: "video", primaryPath }));
+			writeFileSync(path.join(scenario, "meta.json"), JSON.stringify({ driver: "web", primary: { file: primaryPath, kind: "video", sha256 }, claims: [] }));
+			const result = invoke();
+			assert.equal(result.status, 0, String(result.stderr));
+			const comments = readFileSync(log, "utf8");
+			assert.match(comments, /See committed path: `[^`]*primary\.mp4`/);
+			assert.doesNotMatch(comments, /too large for inline API upload/);
+		});
+	});
 });

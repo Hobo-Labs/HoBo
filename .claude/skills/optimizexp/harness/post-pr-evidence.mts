@@ -10,8 +10,6 @@ import {
 	readdirSync,
 	readFileSync,
 	realpathSync,
-	statSync,
-	mkdirSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -24,7 +22,7 @@ import {
 	scopesForSelection,
 	type FeatureLocation,
 } from "./lib/paths.mts";
-import { which, fileBytes } from "./lib/media.mts";
+import { which } from "./lib/media.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
 import { isPathIdentifier } from "./lib/slug.mts";
 import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
@@ -224,24 +222,6 @@ function isPrNumber(value: string): boolean {
 	return /^\d+$/.test(value) && /[1-9]/.test(value);
 }
 
-function tryCompress(abs: string, root: string): string | null {
-	const ffmpeg = which("ffmpeg");
-	if (!ffmpeg) return null;
-	const outDir = path.join(root, ".optimizexp", "runs", "_pr-compress");
-	mkdirSync(outDir, { recursive: true });
-	const base = path.basename(abs, path.extname(abs));
-	const out = path.join(outDir, `${base}-small.gif`);
-	const r = spawnSync(
-		ffmpeg,
-		["-y", "-i", abs, "-vf", "fps=4,scale=640:-1:flags=lanczos", out],
-		{ encoding: "utf8" },
-	);
-	if (r.status === 0 && existsSync(out) && statSync(out).size < statSync(abs).size) {
-		return out;
-	}
-	return null;
-}
-
 function main() {
 	const input = normalizeCliOptions(process.argv.slice(2), {
 		values: ["--feature", "--pr", "--project"],
@@ -331,15 +311,8 @@ function main() {
 
 	for (const s of scenarios) {
 		let body: string;
-		let abs = s.abs;
-		let bytes = s.bytes;
-		if (!dry && !canInline(s.kind, bytes) && /\.(mp4|webm|mov|png|gif)$/i.test(abs)) {
-			const compressed = tryCompress(abs, root);
-			if (compressed) {
-				abs = compressed;
-				bytes = fileBytes(compressed);
-			}
-		}
+		const abs = s.abs;
+		const bytes = s.bytes;
 		if (canInline(s.kind, bytes) && /\.(png|gif|jpe?g|webp)$/i.test(abs)) {
 			// gh cannot always embed local files; link path + optional upload via gh api is limited
 			body = [
@@ -371,13 +344,13 @@ function main() {
 			].join("\n");
 		} else {
 			body = [
-				`### Scenario \`${s.slug}\` (too large for inline API upload)`,
+				`### Scenario \`${s.slug}\` (open committed evidence)`,
 				``,
 				`Kind: **${s.kind}** (${s.bytes} bytes)`,
 				``,
 				`See committed path: ${markdownCode(s.primaryPath)}`,
 				``,
-				`Size exceeded inline thresholds; open the file on the PR branch or download from the commit.`,
+				`Open the file on the PR branch or download it from the commit.`,
 			].join("\n");
 		}
 		const r = postComment(pr, body, dry);
