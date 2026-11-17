@@ -127,7 +127,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 48 states and hides twelve
+bounded TLA+ models, and abstract balance proofs. The credit model explores 56 states and hides fourteen
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -199,6 +199,19 @@ stateDiagram-v2
   s1 --> s4: check evidence interval
   s2 --> s3: order credit expiry
   s2 --> s4: order credit expiry
+```
+
+The latest-measurement model checks both input orders for two abstract
+observations across 64 states and hides 32 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Measurements received
+  s1: Latest value selected
+  s2: Ambiguous latest rejected
+  [*] --> s0
+  s0 --> s1: compare latest instants and values
+  s0 --> s2: compare latest instants and values
 ```
 
 ## Workload selector verification
