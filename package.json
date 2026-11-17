@@ -44,6 +44,7 @@
 		"draft:artifacts:staged": "node --import tsx scripts/check-draft-artifacts.ts --staged",
 		"draft:cascade": "node --import tsx scripts/check-proof-cascade.ts",
 		"draft:cascade:staged": "node --import tsx scripts/check-proof-cascade.ts --staged",
+		"draft:experiences": "node --import tsx scripts/list-experience-proofs.mts",
 		"eval:agent": "pnpm run eval:agent:mock",
 		"eval:agent:live": "node --import tsx scripts/run-tests.ts --category=agent-live",
 		"eval:agent:mock": "node --import tsx scripts/run-tests.ts --category=agent-mock",

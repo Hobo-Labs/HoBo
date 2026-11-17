@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { checkGherkinQuality } from "../lib/feature-quality.mts";
-import { pickPrimaryCommand, type DiscoveryReport } from "../lib/code-discovery.mts";
+import { discoverCode, pickPrimaryCommand, type DiscoveryReport } from "../lib/code-discovery.mts";
 import { buildExperienceCatalog } from "../lib/experience-catalog.mts";
 import type { SurfaceMap } from "../lib/surface-map.mts";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -47,6 +47,19 @@ Feature: x
 });
 
 describe("pickPrimaryCommand preference", () => {
+	it("discovers the real experience inventory", () => {
+		const root = mkdtempSync(path.join(tmpdir(), "oxp-inventory-"));
+		try {
+			mkdirSync(path.join(root, "scripts"));
+			writeFileSync(path.join(root, "package.json"), JSON.stringify({ scripts: { "draft:experiences": "node scripts/list-experience-proofs.mts" } }));
+			writeFileSync(path.join(root, "scripts/list-experience-proofs.mts"), "export {};\n");
+			const report = discoverCode({ root, featureId: "inventory", featureDir: root, seed: "Find experience proofs by audience" });
+			assert.equal(pickPrimaryCommand(report)?.command, "pnpm run draft:experiences");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("prefers the hobo shell over agent:check script", () => {
 		const report: DiscoveryReport = {
 			featureId: "hobo-yard",

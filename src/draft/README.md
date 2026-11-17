@@ -9,6 +9,8 @@
 - `epic-proofs/<slug>` integrates technical and experience behavior through executable features.
 - `projects/<slug>` integrates project-level behavior and its dependencies.
 
+Run `pnpm run draft:experiences` to list the current experience proofs, or add `--type ux` to select one audience. Use `pnpm --silent run draft:experiences --json` for machine-readable output.
+
 ## Validation
 
 Each proof manifest identifies its layer and actual references. The artifact gate runs examples against committed output and checks the required evidence; the cascade gate identifies affected dependent packages. Run the narrow package tests first, then `pnpm run agent:check -- --staged` for the changed scope. Record a reason only when a requirement does not apply; do not waive unfinished behavior.
