@@ -12,10 +12,10 @@ import { deepFreeze } from "../parse-utils.js";
 import { CAPABILITY_SLOTS, type CapabilitySlot } from "./capability-slot.js";
 import type { HttpTransport } from "./http-transport.js";
 
-// public-contract: versioned identity stamped on every resolver outcome.
+// public-contract:
 export const RESOLVER_CONTRACT = "hobo.resource-resolver/v1";
 
-// public-contract: the closed set of outcomes a reconcile may report.
+// public-contract:
 export const RESOLVER_ACTIONS = Object.freeze([
 	"create",
 	"update",
@@ -38,7 +38,7 @@ const PEM_PATTERN = /-{3,}\s*BEGIN\b/u;
 const AUTH_SCHEME_PATTERN = /^(?:bearer|basic|digest)\s/iu;
 const JWT_PATTERN = /^eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\./u;
 
-// domain-view: parse-time derived type; wire form is ResolvedResourceRefRecord in data-models/resource_resolver.proto.
+// domain-view:
 export interface ResolvedResourceRef {
 	readonly slot: CapabilitySlot;
 	readonly productId: string;
@@ -46,7 +46,7 @@ export interface ResolvedResourceRef {
 	readonly physicalId?: string;
 }
 
-// domain-view: parse-time derived type; wire form is ResolveRequestRecord in data-models/resource_resolver.proto.
+// domain-view:
 export interface ResolveRequest {
 	readonly ref: ResolvedResourceRef;
 	readonly desired: JsonObject;
@@ -54,7 +54,7 @@ export interface ResolveRequest {
 	readonly credentialRef: string;
 }
 
-// domain-view: parse-time derived type; wire form is ResolveOutcomeRecord in data-models/resource_resolver.proto.
+// domain-view:
 export interface ResolveOutcome {
 	readonly contract: typeof RESOLVER_CONTRACT;
 	readonly action: ResolverAction;
@@ -78,7 +78,7 @@ export interface ResourceResolver {
 	): Promise<ResolveOutcome | undefined>;
 }
 
-// public-contract: every refusal the resolver contract can report.
+// public-contract:
 export const RESOLVER_ERROR_CODES = Object.freeze([
 	"RESOLVER_CREDENTIAL_MISSING",
 	"RESOLVER_CREDENTIAL_NOT_A_REF",
@@ -150,14 +150,12 @@ export function parseResolveOutcome(
 			`contract: expected ${JSON.stringify(RESOLVER_CONTRACT)}, received ${JSON.stringify(source.contract)}`,
 		);
 	}
-	const action = source.action;
-	if (
-		!isJsonString(action) ||
-		!(RESOLVER_ACTIONS as readonly string[]).includes(action)
-	) {
+	const rawAction = source.action;
+	const action = RESOLVER_ACTIONS.find((candidate) => candidate === rawAction);
+	if (action === undefined) {
 		throw new ResolverError(
 			"RESOLVER_OUTPUT_UNPARSEABLE",
-			`action: expected ${RESOLVER_ACTIONS.join(" | ")}, received ${JSON.stringify(action)}; an outcome that cannot name its action cannot tell a create from a duplicate`,
+			`action: expected ${RESOLVER_ACTIONS.join(" | ")}, received ${JSON.stringify(rawAction)}; an outcome that cannot name its action cannot tell a create from a duplicate`,
 		);
 	}
 	const physicalId = source.physicalId;
@@ -177,7 +175,7 @@ export function parseResolveOutcome(
 
 	return deepFreeze({
 		contract: RESOLVER_CONTRACT,
-		action: action as ResolverAction,
+		action,
 		physicalId,
 		outputs,
 		diagnostics,
@@ -316,14 +314,12 @@ function parseResolvedResourceRef(
 		"resolve request ref",
 		"RESOLVER_PRODUCT_UNSUPPORTED",
 	);
-	const slot = source.slot;
-	if (
-		!isJsonString(slot) ||
-		!(CAPABILITY_SLOTS as readonly string[]).includes(slot)
-	) {
+	const rawSlot = source.slot;
+	const slot = CAPABILITY_SLOTS.find((candidate) => candidate === rawSlot);
+	if (slot === undefined) {
 		throw new ResolverError(
 			"RESOLVER_PRODUCT_UNSUPPORTED",
-			`ref.slot: expected ${CAPABILITY_SLOTS.join(" | ")}, received ${JSON.stringify(slot)}`,
+			`ref.slot: expected ${CAPABILITY_SLOTS.join(" | ")}, received ${JSON.stringify(rawSlot)}`,
 		);
 	}
 	const productId = source.productId;
@@ -354,7 +350,7 @@ function parseResolvedResourceRef(
 	}
 
 	return {
-		slot: slot as CapabilitySlot,
+		slot,
 		productId,
 		logicalId,
 		...(physicalId !== undefined ? { physicalId } : undefined),
@@ -456,7 +452,7 @@ function canonicalizeBag(
 		);
 	}
 	return canonicalizeRecord(
-		value as JsonObject,
+		value,
 		field,
 		productId,
 		catalogCode,
@@ -481,13 +477,18 @@ function canonicalizeRecord(
 				productId,
 			);
 		}
-		out[key] = canonicalizeValue(
-			record[key],
-			`${path}.${key}`,
-			productId,
-			catalogCode,
-			seen,
-		);
+		Object.defineProperty(out, key, {
+			value: canonicalizeValue(
+				record[key],
+				`${path}.${key}`,
+				productId,
+				catalogCode,
+				seen,
+			),
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
 	}
 	seen.delete(record);
 	return out;
@@ -565,7 +566,7 @@ function expectRecord(
 			`${label}: expected an object, received ${describe(value)}`,
 		);
 	}
-	return value as JsonObject;
+	return value;
 }
 
 function isPlainObject(value: JsonValue | undefined): value is JsonObject {
