@@ -50,6 +50,9 @@ node --import tsx scripts/ci/parity-scorecard.mts           # run the suite and 
 node --import tsx scripts/ci/parity-scorecard.mts --check   # fail when the scorecard is stale or a case has no scenario
 ```
 
+The repository's behaviour lane, `pnpm run test:behavior`, runs these
+scenarios too, with the same tag filter, alongside the other root suites.
+
 No scenario touches a real provider, a paid service or GitHub.
 
 ## Moving a case to the simulator
