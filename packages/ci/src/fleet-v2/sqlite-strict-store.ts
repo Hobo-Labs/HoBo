@@ -40,6 +40,7 @@ import {
 	executionKeyId,
 	type ParsedCiDemand,
 	type ParsedControllerIncarnation,
+	type ParsedDaggerStartInput,
 	type ParsedExecutionProfile,
 	type ParsedObservation,
 	type ParsedStartBindingInput,
@@ -66,6 +67,16 @@ const Now = z.object({ now: z.string() });
 const FenceRow = z.object({
 	id: z.string(),
 	expires_at: z.string(),
+});
+const DaggerAllocation = z.object({
+	claim_id: z.string(),
+	account_id: z.string(),
+	pipeline_id: z.string(),
+	capacity_group_id: z.string(),
+	capacity_cost_units: z.number().int().positive(),
+	engine_endpoint_hash: z.string(),
+	offer_observation_hash: z.string(),
+	policy_revision: z.number().int().positive(),
 });
 const TIME = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
@@ -131,6 +142,11 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				BEFORE UPDATE OF start_authorized_at ON fleet_v2_execution_claims
 				WHEN OLD.start_authorized_at <> NEW.start_authorized_at
 				BEGIN SELECT RAISE(ABORT, 'start authorization time is immutable'); END;
+			CREATE TABLE IF NOT EXISTS fleet_v2_dagger_allocations (
+				claim_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, pipeline_id TEXT NOT NULL,
+				capacity_group_id TEXT NOT NULL, capacity_cost_units INTEGER NOT NULL,
+				engine_endpoint_hash TEXT NOT NULL, offer_observation_hash TEXT NOT NULL,
+				policy_revision INTEGER NOT NULL, UNIQUE(account_id, pipeline_id));
 			CREATE TABLE IF NOT EXISTS fleet_v2_effects (
 				id TEXT PRIMARY KEY, subject_type TEXT NOT NULL, subject_id TEXT NOT NULL,
 				kind TEXT NOT NULL, sequence INTEGER NOT NULL, state TEXT NOT NULL,
@@ -575,6 +591,11 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 
 	reserveCapacity(input: ReserveCapacityInput): Promise<RunnerSlot> {
 		return this.tx(() => {
+			if (input.demandKey.key.case !== "githubJob")
+				rejectFleet(
+					FleetRejectionCode.INVALID_RECORD,
+					"runner slots require a GitHub job",
+				);
 			positiveInteger(input.expectedPolicyRevision, "policy revision");
 			if (
 				!Number.isSafeInteger(input.expectedCapacitySeq) ||
@@ -1174,6 +1195,189 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			);
 	}
 
+	startDagger(
+		input: ParsedDaggerStartInput,
+	): Promise<{ claim: ExecutionClaim; created: boolean }> {
+		return this.tx(() => {
+			const key = executionKeyId(input.key);
+			if (input.key.key.case !== "daggerPipeline")
+				rejectFleet(
+					FleetRejectionCode.INVALID_RECORD,
+					"Dagger pipeline key required",
+				);
+			const pipeline = input.key.key.value;
+			const row = this.db
+				.prepare(
+					"SELECT * FROM fleet_v2_dagger_allocations WHERE account_id=? AND pipeline_id=?",
+				)
+				.get(pipeline.accountId, pipeline.pipelineId);
+			if (row) {
+				const allocation = DaggerAllocation.parse(row);
+				const existing = this.claimByIdInside(allocation.claim_id);
+				if (
+					!existing ||
+					existing.id !== input.claimId ||
+					executionKeyId(existing.key) !== key ||
+					existing.profileId !== input.profileId ||
+					existing.offerId !== input.offerId ||
+					existing.policyHash !== input.policyHash ||
+					existing.quoteHash !== input.quoteHash ||
+					existing.incarnationId !== input.incarnationId ||
+					allocation.capacity_group_id !== input.capacityGroupId ||
+					allocation.capacity_cost_units !== input.capacityCostUnits ||
+					allocation.engine_endpoint_hash !== input.engineEndpointHash ||
+					allocation.offer_observation_hash !== input.offerObservationHash ||
+					allocation.policy_revision !== input.expectedPolicyRevision
+				)
+					rejectFleet(
+						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+						"pipeline identity is already claimed",
+					);
+				return { claim: existing, created: false };
+			}
+			if (this.claimInside(key) || this.claimByIdInside(input.claimId))
+				rejectFleet(
+					FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+					"execution claim already exists",
+				);
+			const demand = this.demandInside(key);
+			if (!demand)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "pipeline demand not found");
+			if (!["observed", "eligible"].includes(demand.state))
+				rejectFleet(
+					FleetRejectionCode.DEMAND_CONFLICT,
+					"pipeline demand is not available",
+				);
+			const incarnation = this.currentIncarnationSync();
+			if (!incarnation || incarnation.id !== input.incarnationId)
+				rejectFleet(
+					FleetRejectionCode.INCARNATION_STALE,
+					"controller incarnation changed",
+				);
+			if (
+				demand.requiredProfileId !== input.profileId ||
+				demand.policyRevision !== input.expectedPolicyRevision
+			)
+				rejectFleet(
+					FleetRejectionCode.POLICY_REVISION_CONFLICT,
+					"pipeline policy or profile changed",
+				);
+			const offer = this.offerInside(input.offerId);
+			if (!offer || offer.accountId !== pipeline.accountId)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "Offer admission not found");
+			if (offer.state !== "active")
+				rejectFleet(FleetRejectionCode.OFFER_REVOKED, "Offer is revoked");
+			if (
+				offer.policyRevision !== input.expectedPolicyRevision ||
+				offer.observationHash !== input.offerObservationHash
+			)
+				rejectFleet(
+					FleetRejectionCode.OFFER_OBSERVATION_CONFLICT,
+					"Offer observation or policy changed",
+				);
+			const profile = this.profileInside(input.profileId);
+			if (!profile)
+				rejectFleet(
+					FleetRejectionCode.NOT_FOUND,
+					"execution profile not found",
+				);
+			if (profile.guarantee !== "start-fenced")
+				rejectFleet(
+					FleetRejectionCode.GUARANTEE_REQUIRED,
+					"strict admission requires a start-fenced profile",
+				);
+			const group = this.capacityInside(input.capacityGroupId);
+			if (!group)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+			if (group.accountId !== pipeline.accountId)
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_INELIGIBLE,
+					"capacity account differs from pipeline account",
+				);
+			if (group.seq !== input.expectedCapacitySeq)
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_CONFLICT,
+					"capacity sequence changed before admission",
+				);
+			if (group.state !== "active")
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_INELIGIBLE,
+					"capacity group is not active",
+				);
+			if (group.reservedUnits + input.capacityCostUnits > group.approvedUnits)
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_EXHAUSTED,
+					"capacity group has insufficient units",
+				);
+			const at = this.now();
+			const claim = create(ExecutionClaimSchema, {
+				id: input.claimId,
+				key: input.key,
+				state: "start-authorized",
+				profileId: input.profileId,
+				policyHash: input.policyHash,
+				offerId: input.offerId,
+				quoteHash: input.quoteHash,
+				startAuthorizedAt: at,
+				incarnationId: input.incarnationId,
+			});
+			const updatedGroup = clone(CapacityGroupSchema, group);
+			updatedGroup.reservedUnits += input.capacityCostUnits;
+			updatedGroup.seq += 1;
+			this.saveCapacity(updatedGroup);
+			this.db
+				.prepare(
+					"INSERT INTO fleet_v2_execution_claims(id,key,runner_slot_id,state,start_authorized_at,body) VALUES(?,?,?,?,?,?)",
+				)
+				.run(
+					claim.id,
+					key,
+					`!dagger:${claim.id}`,
+					claim.state,
+					at,
+					toJsonString(ExecutionClaimSchema, claim),
+				);
+			this.db
+				.prepare(
+					"INSERT INTO fleet_v2_dagger_allocations(claim_id,account_id,pipeline_id,capacity_group_id,capacity_cost_units,engine_endpoint_hash,offer_observation_hash,policy_revision) VALUES(?,?,?,?,?,?,?,?)",
+				)
+				.run(
+					claim.id,
+					pipeline.accountId,
+					pipeline.pipelineId,
+					group.id,
+					input.capacityCostUnits,
+					input.engineEndpointHash,
+					input.offerObservationHash,
+					input.expectedPolicyRevision,
+				);
+			if (demand.state === "observed")
+				transitionCiDemand("observed", "eligible");
+			transitionCiDemand("eligible", "satisfied");
+			demand.state = "satisfied";
+			this.saveDemand(demand);
+			this.event(
+				FleetEventType.CAPACITY_RESERVED,
+				at,
+				pipeline.accountId,
+				"execution-claim",
+				claim.id,
+				input.key,
+				incarnation.id,
+			);
+			this.event(
+				FleetEventType.EXECUTION_START_AUTHORIZED,
+				at,
+				pipeline.accountId,
+				"execution-claim",
+				claim.id,
+				input.key,
+				incarnation.id,
+			);
+			return { claim, created: true };
+		});
+	}
+
 	bindStart(
 		input: ParsedStartBindingInput,
 	): Promise<{ claim: ExecutionClaim; idempotent: boolean }> {
@@ -1285,6 +1489,8 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			const initial = this.claimByIdInside(input.claimId);
 			if (!initial)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "execution claim not found");
+			if (initial.key?.key.case === "daggerPipeline")
+				return this.completeDaggerInside(initial, input);
 			const slot = this.slotInside(initial.runnerSlotId);
 			if (!slot)
 				rejectFleet(
@@ -1402,6 +1608,104 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			}
 			return { claim, settled, capacityReleased };
 		});
+	}
+
+	private completeDaggerInside(
+		claim: ExecutionClaim,
+		input: CompleteExecutionInput,
+	) {
+		const row = this.db
+			.prepare("SELECT * FROM fleet_v2_dagger_allocations WHERE claim_id=?")
+			.get(claim.id);
+		if (!row)
+			rejectFleet(
+				FleetRejectionCode.NOT_FOUND,
+				"pipeline allocation not found",
+			);
+		const allocation = DaggerAllocation.parse(row);
+		const terminal = ["completed", "failed", "cancelled"].includes(claim.state);
+		if (terminal && claim.state !== input.state)
+			rejectFleet(
+				FleetRejectionCode.SETTLEMENT_CONFLICT,
+				"execution claim already has a different terminal outcome",
+			);
+		if (
+			input.actualStartedAt &&
+			claim.actualStartedAt &&
+			input.actualStartedAt !== claim.actualStartedAt
+		)
+			rejectFleet(
+				FleetRejectionCode.SETTLEMENT_CONFLICT,
+				"actual start time is already pinned",
+			);
+		let settled = false;
+		if (!terminal && claim.state !== input.state) {
+			transitionExecutionClaim(
+				claim.state as import("./state-machine.js").ExecutionClaimState,
+				input.state,
+			);
+			claim.state = input.state;
+			if (input.actualStartedAt) claim.actualStartedAt = input.actualStartedAt;
+			if (["completed", "failed", "cancelled"].includes(input.state))
+				claim.terminalAt = this.now();
+			this.saveClaim(claim);
+			settled = true;
+			const eventType = {
+				completed: FleetEventType.EXECUTION_COMPLETED,
+				failed: FleetEventType.EXECUTION_FAILED,
+				cancelled: FleetEventType.EXECUTION_CANCELLED,
+				uncertain: FleetEventType.EXECUTION_UNCERTAIN,
+			}[input.state];
+			this.event(
+				eventType,
+				this.now(),
+				allocation.account_id,
+				"execution-claim",
+				claim.id,
+				claim.key,
+				claim.incarnationId,
+			);
+		} else if (input.actualStartedAt && !claim.actualStartedAt) {
+			claim.actualStartedAt = input.actualStartedAt;
+			this.saveClaim(claim);
+		}
+		let capacityReleased = false;
+		if (input.teardownConfirmed) {
+			const inserted = this.db
+				.prepare(
+					"INSERT INTO fleet_v2_capacity_releases(claim_id,capacity_group_id,units,released_at) VALUES(?,?,?,?) ON CONFLICT(claim_id) DO NOTHING",
+				)
+				.run(
+					claim.id,
+					allocation.capacity_group_id,
+					allocation.capacity_cost_units,
+					this.now(),
+				).changes;
+			if (inserted === 1) {
+				const group = this.capacityInside(allocation.capacity_group_id);
+				if (!group)
+					rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+				if (group.reservedUnits < allocation.capacity_cost_units)
+					rejectFleet(
+						FleetRejectionCode.CAPACITY_CONFLICT,
+						"capacity release would make reserved units negative",
+					);
+				group.reservedUnits -= allocation.capacity_cost_units;
+				group.seq += 1;
+				this.saveCapacity(group);
+				capacityReleased = true;
+				this.event(
+					FleetEventType.CAPACITY_RELEASED,
+					this.now(),
+					allocation.account_id,
+					"capacity-group",
+					group.id,
+					claim.key,
+					claim.incarnationId,
+				);
+			}
+		}
+		return { claim, settled, capacityReleased };
 	}
 
 	observe(observation: ParsedObservation): Promise<void> {

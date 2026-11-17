@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import {
 	GenericContainer,
@@ -20,6 +21,7 @@ import {
 	parseCapacityGroup,
 	parseCiDemand,
 	parseControllerIncarnation,
+	parseDaggerStartInput,
 	parseEffect,
 	parseExecutionKey,
 	parseExecutionProfile,
@@ -70,6 +72,59 @@ function githubKey(jobId = "1") {
 
 function parsedKey(jobId = "1"): ParsedExecutionKey {
 	return parseExecutionKey(JSON.stringify(githubKey(jobId)));
+}
+
+function daggerKey(pipelineId = "pipeline-1", digest = "e".repeat(64)) {
+	return {
+		daggerPipeline: {
+			kind: "dagger-pipeline",
+			accountId: "hobo-labs",
+			engineId: "dagger",
+			pipelineId,
+			pipelineDigest: `sha256:${digest}`,
+		},
+	};
+}
+
+function daggerDemand(pipelineId = "pipeline-1", digest = "e".repeat(64)) {
+	return parseCiDemand(
+		JSON.stringify({
+			key: daggerKey(pipelineId, digest),
+			state: "observed",
+			firstObservedAt: NOW,
+			lastObservedAt: NOW,
+			policyRevision: 1,
+			requiredProfileId: "trusted-linux-x64",
+			source: "repair",
+			sourceDeliveryIds: [`dagger-${pipelineId}-${digest}`],
+		}),
+	);
+}
+
+function daggerStart(
+	options: {
+		pipelineId?: string;
+		digest?: string;
+		claimId?: string;
+		endpointHash?: string;
+		expectedCapacitySeq?: number;
+	} = {},
+) {
+	return parseDaggerStartInput({
+		claimId: options.claimId ?? "dagger-claim-1",
+		key: daggerKey(options.pipelineId, options.digest),
+		profileId: "trusted-linux-x64",
+		offerId: "local-offer",
+		capacityGroupId: "device-1",
+		capacityCostUnits: 1,
+		policyHash: POLICY_HASH,
+		quoteHash: QUOTE_HASH,
+		offerObservationHash: OFFER_HASH,
+		engineEndpointHash: options.endpointHash ?? "f".repeat(64),
+		incarnationId: "incarnation-1",
+		expectedCapacitySeq: options.expectedCapacitySeq ?? 0,
+		expectedPolicyRevision: 1,
+	});
 }
 
 function demand(
@@ -262,6 +317,146 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			await store.bindStart(binding);
 			return { binding, reserved };
 		}
+
+		it("reserves a Dagger claim once and keeps the endpoint and input pinned", async () => {
+			const store = current();
+			await store.intake(daggerDemand());
+			const input = daggerStart();
+			const results = await Promise.all([
+				store.startDagger(input),
+				store.startDagger(input),
+			]);
+			expect(results.map((result) => result.created).sort()).toEqual([
+				false,
+				true,
+			]);
+			expect(results[0]?.claim.runnerSlotId).toBe("");
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
+			expect((await store.demand(input.key))?.state).toBe("satisfied");
+			await expect(
+				store.startDagger(daggerStart({ claimId: "different" })),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+			});
+			await expect(
+				store.startDagger(daggerStart({ endpointHash: "a".repeat(64) })),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+			});
+			await expect(
+				store.startDagger(daggerStart({ digest: "d".repeat(64) })),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+			});
+			expect(
+				(await store.events()).filter(
+					(event) => event.type === FleetEventType.EXECUTION_START_AUTHORIZED,
+				),
+			).toHaveLength(1);
+		});
+
+		it("holds Dagger capacity during uncertainty until shutdown is confirmed", async () => {
+			const store = current();
+			await store.intake(daggerDemand());
+			const input = daggerStart();
+			await store.startDagger(input);
+			const uncertain = await store.completeExecution({
+				claimId: input.claimId,
+				state: "uncertain",
+				teardownConfirmed: false,
+			});
+			expect(uncertain.claim.state).toBe("uncertain");
+			expect(uncertain.capacityReleased).toBe(false);
+			expect((await store.startDagger(input)).created).toBe(false);
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
+			const failed = await store.completeExecution({
+				claimId: input.claimId,
+				state: "failed",
+				teardownConfirmed: false,
+			});
+			expect(failed.capacityReleased).toBe(false);
+			const released = await store.completeExecution({
+				claimId: input.claimId,
+				state: "failed",
+				teardownConfirmed: true,
+			});
+			expect(released.capacityReleased).toBe(true);
+			expect(
+				(
+					await store.completeExecution({
+						claimId: input.claimId,
+						state: "failed",
+						teardownConfirmed: true,
+					})
+				).capacityReleased,
+			).toBe(false);
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(0);
+			expect(
+				(await store.events()).filter(
+					(event) => event.type === FleetEventType.CAPACITY_RELEASED,
+				),
+			).toHaveLength(1);
+			await store.intake(daggerDemand("pipeline-2"));
+			expect(
+				(
+					await store.startDagger(
+						daggerStart({
+							pipelineId: "pipeline-2",
+							claimId: "dagger-claim-2",
+							expectedCapacitySeq: 2,
+						}),
+					)
+				).created,
+			).toBe(true);
+			await expect(
+				store.completeExecution({
+					claimId: input.claimId,
+					state: "completed",
+					teardownConfirmed: true,
+				}),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.SETTLEMENT_CONFLICT,
+			});
+		});
+
+		it("shares a capacity group between Dagger and GitHub admissions", async () => {
+			const store = current();
+			await store.intake(daggerDemand());
+			await store.intake(demand("1", "webhook", "webhook-1"));
+			const results = await Promise.allSettled([
+				store.startDagger(daggerStart()),
+				store.reserveCapacity(
+					reservation(parsedKey("1"), "competing", 0).input,
+				),
+			]);
+			expect(
+				results.filter((result) => result.status === "fulfilled"),
+			).toHaveLength(1);
+			expect(
+				results.filter((result) => result.status === "rejected"),
+			).toHaveLength(1);
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
+		});
+
+		it("refuses Dagger admission after its Offer is revoked", async () => {
+			const store = current();
+			await store.intake(daggerDemand());
+			await store.putOfferAdmission(
+				parseOfferAdmission(
+					JSON.stringify({
+						offerId: "local-offer",
+						accountId: "hobo-labs",
+						observationHash: OFFER_HASH,
+						policyRevision: 1,
+						state: "revoked",
+					}),
+				),
+			);
+			await expect(store.startDagger(daggerStart())).rejects.toMatchObject({
+				code: FleetRejectionCode.OFFER_REVOKED,
+			});
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(0);
+		});
 
 		it("rechecks the verified runner and revoked offer before returning a retry", async () => {
 			const store = current();
@@ -559,7 +754,33 @@ storeContract("SQLite", async () => {
 	return { store, close: async () => store.close() };
 });
 
+it("adds Dagger allocations to an existing SQLite fleet without losing demand", async () => {
+	const path = join(sqliteRoot, `${randomUUID()}.sqlite`);
+	const original = new SqliteStrictFleetStore(path);
+	await seed(original);
+	await original.intake(demand("existing", "webhook", "existing-delivery"));
+	original.close();
+	const previousSchema = new DatabaseSync(path);
+	previousSchema.exec("DROP TABLE fleet_v2_dagger_allocations");
+	previousSchema.close();
+	const migrated = new SqliteStrictFleetStore(path);
+	try {
+		expect((await migrated.demand(parsedKey("existing")))?.state).toBe(
+			"observed",
+		);
+		await migrated.intake(daggerDemand());
+		expect((await migrated.startDagger(daggerStart())).created).toBe(true);
+	} finally {
+		migrated.close();
+	}
+});
+
 describe("strict fleet v2 state machine", () => {
+	it("requires a pinned Dagger digest before admission", () => {
+		expect(() => daggerStart({ digest: "invalid" })).toThrow();
+		expect(() => daggerStart({ endpointHash: "not-a-hash" })).toThrow();
+	});
+
 	it("never returns post-start or uncertain states to runnable states", () => {
 		expect(() => transitionCiDemand("satisfied", "eligible")).toThrow(
 			FleetRejection,

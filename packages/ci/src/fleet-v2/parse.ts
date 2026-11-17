@@ -80,6 +80,24 @@ export interface StartBindingInput {
 }
 export type ParsedStartBindingInput = ParsedFleetRecord<StartBindingInput>;
 
+export interface DaggerStartInput {
+	claimId: string;
+	key: ParsedExecutionKey;
+	profileId: string;
+	offerId: string;
+	capacityGroupId: string;
+	capacityCostUnits: number;
+	policyHash: string;
+	quoteHash: string;
+	offerObservationHash: string;
+	engineEndpointHash: string;
+	incarnationId: string;
+	expectedCapacitySeq: number;
+	expectedPolicyRevision: number;
+}
+
+export type ParsedDaggerStartInput = ParsedFleetRecord<DaggerStartInput>;
+
 const idPattern = /^[A-Za-z0-9_.:-]{1,200}$/;
 const hashPattern = /^[a-f0-9]{64}$/;
 const timePattern =
@@ -477,4 +495,37 @@ export function parseStartBindingInput(
 		bindingSecret: parsed.bindingSecret,
 		assignment: parsed.assignment,
 	});
+}
+
+const daggerStartSchema = z
+	.object({
+		claimId: z.string().regex(idPattern),
+		key: z.unknown(),
+		profileId: z.string().regex(idPattern),
+		offerId: z.string().regex(idPattern),
+		capacityGroupId: z.string().regex(idPattern),
+		capacityCostUnits: z.number().int().min(1).max(0x7fffffff),
+		policyHash: z.string().regex(hashPattern),
+		quoteHash: z.string().regex(hashPattern),
+		offerObservationHash: z.string().regex(hashPattern),
+		engineEndpointHash: z.string().regex(hashPattern),
+		incarnationId: z.string().regex(idPattern),
+		expectedCapacitySeq: z.number().int().min(0).max(0x7fffffff),
+		expectedPolicyRevision: z.number().int().min(1).max(0x7fffffff),
+	})
+	.strict();
+
+export function parseDaggerStartInput(input: unknown): ParsedDaggerStartInput {
+	const parsed = daggerStartSchema.parse(input);
+	const key = parseExecutionKey(JSON.stringify(parsed.key));
+	requireRecord(
+		key.key.case === "daggerPipeline",
+		"Dagger pipeline key required",
+	);
+	requireRecord(
+		/^sha256:[a-f0-9]{64}$/u.test(key.key.value.pipelineDigest),
+		"invalid Dagger pipeline digest",
+	);
+	id(key.key.value.pipelineId, "pipeline ID");
+	return branded({ ...parsed, key });
 }

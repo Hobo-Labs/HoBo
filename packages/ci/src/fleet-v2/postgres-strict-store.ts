@@ -41,6 +41,7 @@ import {
 	type ParsedCapacityGroup,
 	type ParsedCiDemand,
 	type ParsedControllerIncarnation,
+	type ParsedDaggerStartInput,
 	type ParsedExecutionKey,
 	type ParsedExecutionProfile,
 	type ParsedObservation,
@@ -70,6 +71,16 @@ import type {
 
 const Body = z.object({ body: z.string() });
 const Now = z.object({ now: z.string() });
+const DaggerAllocation = z.object({
+	claim_id: z.string(),
+	account_id: z.string(),
+	pipeline_id: z.string(),
+	capacity_group_id: z.string(),
+	capacity_cost_units: z.number().int().positive(),
+	engine_endpoint_hash: z.string(),
+	offer_observation_hash: z.string(),
+	policy_revision: z.number().int().positive(),
+});
 const NOW_SQL = `to_char(now() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
 function body(row: unknown): string {
@@ -167,6 +178,13 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				 partition_id text NOT NULL,id text NOT NULL,key text NOT NULL,runner_slot_id text NOT NULL,
 				 state text NOT NULL,start_authorized_at text NOT NULL,body text NOT NULL,PRIMARY KEY(partition_id,id),
 				 UNIQUE(partition_id,key),UNIQUE(partition_id,runner_slot_id))`,
+			);
+			await client.query(
+				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_dagger_allocations(
+				 partition_id text NOT NULL,claim_id text NOT NULL,account_id text NOT NULL,pipeline_id text NOT NULL,
+				 capacity_group_id text NOT NULL,capacity_cost_units integer NOT NULL,engine_endpoint_hash text NOT NULL,
+				 offer_observation_hash text NOT NULL,policy_revision integer NOT NULL,PRIMARY KEY(partition_id,claim_id),
+				 UNIQUE(partition_id,account_id,pipeline_id))`,
 			);
 			await client.query(
 				`CREATE OR REPLACE FUNCTION hobo_ci_fleet_v2_immutable_start_time() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -749,6 +767,11 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 
 	reserveCapacity(input: ReserveCapacityInput): Promise<RunnerSlot> {
 		return this.tx(async (client) => {
+			if (input.demandKey.key.case !== "githubJob")
+				rejectFleet(
+					FleetRejectionCode.INVALID_RECORD,
+					"runner slots require a GitHub job",
+				);
 			positiveInteger(input.expectedPolicyRevision, "policy revision");
 			if (
 				!Number.isSafeInteger(input.expectedCapacitySeq) ||
@@ -1352,6 +1375,196 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			);
 	}
 
+	startDagger(
+		input: ParsedDaggerStartInput,
+	): Promise<{ claim: ExecutionClaim; created: boolean }> {
+		return this.tx(async (client) => {
+			const key = executionKeyId(input.key);
+			if (input.key.key.case !== "daggerPipeline")
+				rejectFleet(
+					FleetRejectionCode.INVALID_RECORD,
+					"Dagger pipeline key required",
+				);
+			const pipeline = input.key.key.value;
+			const result = await client.query(
+				"SELECT * FROM hobo_ci_fleet_v2_dagger_allocations WHERE partition_id=$1 AND account_id=$2 AND pipeline_id=$3",
+				[this.partition, pipeline.accountId, pipeline.pipelineId],
+			);
+			if (result.rows[0]) {
+				const allocation = DaggerAllocation.parse(result.rows[0]);
+				const existing = await this.claimByIdInside(
+					client,
+					allocation.claim_id,
+				);
+				if (
+					!existing ||
+					existing.id !== input.claimId ||
+					executionKeyId(existing.key) !== key ||
+					existing.profileId !== input.profileId ||
+					existing.offerId !== input.offerId ||
+					existing.policyHash !== input.policyHash ||
+					existing.quoteHash !== input.quoteHash ||
+					existing.incarnationId !== input.incarnationId ||
+					allocation.capacity_group_id !== input.capacityGroupId ||
+					allocation.capacity_cost_units !== input.capacityCostUnits ||
+					allocation.engine_endpoint_hash !== input.engineEndpointHash ||
+					allocation.offer_observation_hash !== input.offerObservationHash ||
+					allocation.policy_revision !== input.expectedPolicyRevision
+				)
+					rejectFleet(
+						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+						"pipeline identity is already claimed",
+					);
+				return { claim: existing, created: false };
+			}
+			if (
+				(await this.claimInside(client, key)) ||
+				(await this.claimByIdInside(client, input.claimId))
+			)
+				rejectFleet(
+					FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+					"execution claim already exists",
+				);
+			const demand = await this.demandInside(client, key, true);
+			if (!demand)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "pipeline demand not found");
+			if (!["observed", "eligible"].includes(demand.state))
+				rejectFleet(
+					FleetRejectionCode.DEMAND_CONFLICT,
+					"pipeline demand is not available",
+				);
+			const incarnation = await this.currentIncarnationInside(client);
+			if (!incarnation || incarnation.id !== input.incarnationId)
+				rejectFleet(
+					FleetRejectionCode.INCARNATION_STALE,
+					"controller incarnation changed",
+				);
+			if (
+				demand.requiredProfileId !== input.profileId ||
+				demand.policyRevision !== input.expectedPolicyRevision
+			)
+				rejectFleet(
+					FleetRejectionCode.POLICY_REVISION_CONFLICT,
+					"pipeline policy or profile changed",
+				);
+			const offer = await this.offerInside(client, input.offerId);
+			if (!offer || offer.accountId !== pipeline.accountId)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "Offer admission not found");
+			if (offer.state !== "active")
+				rejectFleet(FleetRejectionCode.OFFER_REVOKED, "Offer is revoked");
+			if (
+				offer.policyRevision !== input.expectedPolicyRevision ||
+				offer.observationHash !== input.offerObservationHash
+			)
+				rejectFleet(
+					FleetRejectionCode.OFFER_OBSERVATION_CONFLICT,
+					"Offer observation or policy changed",
+				);
+			const profile = await this.profileInside(client, input.profileId);
+			if (!profile)
+				rejectFleet(
+					FleetRejectionCode.NOT_FOUND,
+					"execution profile not found",
+				);
+			if (profile.guarantee !== "start-fenced")
+				rejectFleet(
+					FleetRejectionCode.GUARANTEE_REQUIRED,
+					"strict admission requires a start-fenced profile",
+				);
+			const group = await this.capacityInside(client, input.capacityGroupId);
+			if (!group)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+			if (group.accountId !== pipeline.accountId)
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_INELIGIBLE,
+					"capacity account differs from pipeline account",
+				);
+			if (group.seq !== input.expectedCapacitySeq)
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_CONFLICT,
+					"capacity sequence changed before admission",
+				);
+			if (group.state !== "active")
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_INELIGIBLE,
+					"capacity group is not active",
+				);
+			if (group.reservedUnits + input.capacityCostUnits > group.approvedUnits)
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_EXHAUSTED,
+					"capacity group has insufficient units",
+				);
+			const at = await this.now(client);
+			const claim = create(ExecutionClaimSchema, {
+				id: input.claimId,
+				key: input.key,
+				state: "start-authorized",
+				profileId: input.profileId,
+				policyHash: input.policyHash,
+				offerId: input.offerId,
+				quoteHash: input.quoteHash,
+				startAuthorizedAt: at,
+				incarnationId: input.incarnationId,
+			});
+			const updatedGroup = clone(CapacityGroupSchema, group);
+			updatedGroup.reservedUnits += input.capacityCostUnits;
+			updatedGroup.seq += 1;
+			await this.saveCapacity(client, updatedGroup);
+			await client.query(
+				"INSERT INTO hobo_ci_fleet_v2_execution_claims(partition_id,id,key,runner_slot_id,state,start_authorized_at,body) VALUES($1,$2,$3,$4,$5,$6,$7)",
+				[
+					this.partition,
+					claim.id,
+					key,
+					`!dagger:${claim.id}`,
+					claim.state,
+					at,
+					toJsonString(ExecutionClaimSchema, claim),
+				],
+			);
+			await client.query(
+				"INSERT INTO hobo_ci_fleet_v2_dagger_allocations(partition_id,claim_id,account_id,pipeline_id,capacity_group_id,capacity_cost_units,engine_endpoint_hash,offer_observation_hash,policy_revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+				[
+					this.partition,
+					claim.id,
+					pipeline.accountId,
+					pipeline.pipelineId,
+					group.id,
+					input.capacityCostUnits,
+					input.engineEndpointHash,
+					input.offerObservationHash,
+					input.expectedPolicyRevision,
+				],
+			);
+			if (demand.state === "observed")
+				transitionCiDemand("observed", "eligible");
+			transitionCiDemand("eligible", "satisfied");
+			demand.state = "satisfied";
+			await this.saveDemand(client, demand);
+			await this.event(
+				client,
+				FleetEventType.CAPACITY_RESERVED,
+				at,
+				pipeline.accountId,
+				"execution-claim",
+				claim.id,
+				input.key,
+				incarnation.id,
+			);
+			await this.event(
+				client,
+				FleetEventType.EXECUTION_START_AUTHORIZED,
+				at,
+				pipeline.accountId,
+				"execution-claim",
+				claim.id,
+				input.key,
+				incarnation.id,
+			);
+			return { claim, created: true };
+		});
+	}
+
 	bindStart(
 		input: ParsedStartBindingInput,
 	): Promise<{ claim: ExecutionClaim; idempotent: boolean }> {
@@ -1461,6 +1674,8 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			const initial = await this.claimByIdInside(client, input.claimId);
 			if (!initial)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "execution claim not found");
+			if (initial.key?.key.case === "daggerPipeline")
+				return this.completeDaggerInside(client, initial, input);
 			const slot = await this.slotInside(client, initial.runnerSlotId, true);
 			if (!slot)
 				rejectFleet(
@@ -1580,6 +1795,112 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			}
 			return { claim, settled, capacityReleased };
 		});
+	}
+
+	private async completeDaggerInside(
+		client: PoolClient,
+		claim: ExecutionClaim,
+		input: CompleteExecutionInput,
+	): Promise<{
+		claim: ExecutionClaim;
+		settled: boolean;
+		capacityReleased: boolean;
+	}> {
+		const result = await client.query(
+			"SELECT * FROM hobo_ci_fleet_v2_dagger_allocations WHERE partition_id=$1 AND claim_id=$2",
+			[this.partition, claim.id],
+		);
+		if (!result.rows[0])
+			rejectFleet(
+				FleetRejectionCode.NOT_FOUND,
+				"pipeline allocation not found",
+			);
+		const allocation = DaggerAllocation.parse(result.rows[0]);
+		const terminal = ["completed", "failed", "cancelled"].includes(claim.state);
+		if (terminal && claim.state !== input.state)
+			rejectFleet(
+				FleetRejectionCode.SETTLEMENT_CONFLICT,
+				"execution claim already has a different terminal outcome",
+			);
+		if (
+			input.actualStartedAt &&
+			claim.actualStartedAt &&
+			input.actualStartedAt !== claim.actualStartedAt
+		)
+			rejectFleet(
+				FleetRejectionCode.SETTLEMENT_CONFLICT,
+				"actual start time is already pinned",
+			);
+		let settled = false;
+		if (!terminal && claim.state !== input.state) {
+			transitionExecutionClaim(claim.state as ExecutionClaimState, input.state);
+			claim.state = input.state;
+			if (input.actualStartedAt) claim.actualStartedAt = input.actualStartedAt;
+			if (["completed", "failed", "cancelled"].includes(input.state))
+				claim.terminalAt = await this.now(client);
+			await this.saveClaim(client, claim);
+			settled = true;
+			const eventType = {
+				completed: FleetEventType.EXECUTION_COMPLETED,
+				failed: FleetEventType.EXECUTION_FAILED,
+				cancelled: FleetEventType.EXECUTION_CANCELLED,
+				uncertain: FleetEventType.EXECUTION_UNCERTAIN,
+			}[input.state];
+			await this.event(
+				client,
+				eventType,
+				await this.now(client),
+				allocation.account_id,
+				"execution-claim",
+				claim.id,
+				claim.key,
+				claim.incarnationId,
+			);
+		} else if (input.actualStartedAt && !claim.actualStartedAt) {
+			claim.actualStartedAt = input.actualStartedAt;
+			await this.saveClaim(client, claim);
+		}
+		let capacityReleased = false;
+		if (input.teardownConfirmed) {
+			const inserted = await client.query(
+				"INSERT INTO hobo_ci_fleet_v2_capacity_releases(partition_id,claim_id,capacity_group_id,units,released_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+				[
+					this.partition,
+					claim.id,
+					allocation.capacity_group_id,
+					allocation.capacity_cost_units,
+					await this.now(client),
+				],
+			);
+			if (inserted.rowCount === 1) {
+				const group = await this.capacityInside(
+					client,
+					allocation.capacity_group_id,
+				);
+				if (!group)
+					rejectFleet(FleetRejectionCode.NOT_FOUND, "capacity group not found");
+				if (group.reservedUnits < allocation.capacity_cost_units)
+					rejectFleet(
+						FleetRejectionCode.CAPACITY_CONFLICT,
+						"capacity release would make reserved units negative",
+					);
+				group.reservedUnits -= allocation.capacity_cost_units;
+				group.seq += 1;
+				await this.saveCapacity(client, group);
+				capacityReleased = true;
+				await this.event(
+					client,
+					FleetEventType.CAPACITY_RELEASED,
+					await this.now(client),
+					allocation.account_id,
+					"capacity-group",
+					group.id,
+					claim.key,
+					claim.incarnationId,
+				);
+			}
+		}
+		return { claim, settled, capacityReleased };
 	}
 
 	observe(observation: ParsedObservation): Promise<void> {
