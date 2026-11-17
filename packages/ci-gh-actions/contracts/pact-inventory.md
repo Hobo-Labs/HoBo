@@ -74,3 +74,16 @@ token in job mode: the routing slip ref (present and missing), its commit, the
 run list and one run's jobs. `relay-job-facts.consumer.test.ts` drives
 `GithubRouteFacts` through every interaction with an injected Fetch. No
 provider verification or live GitHub call is claimed.
+
+Machine worker GitHub boundary: `github-machine-worker.pact.json` holds
+hand-authored consumer expectations of the REST requests `hobo ci machine
+connect` sends with its owner's own token: the signed-in user (and a revoked
+token's 401), whether a repository is private, its queued and in-progress
+runs, a run's latest jobs (one run from the repository, one from a fork),
+a one-job runner made with the machine's label (and the 403 a non-admin gets),
+and the removal of a runner still registered (204) or already removed (404).
+`github-machine-worker.consumer.test.ts` drives `userGithub`, `githubOwner`,
+`githubQueueJobSource`, `createOneJobRunner` and `removeOneJobRunner` through
+every interaction with an injected Fetch, matching method, path, query,
+headers and body exactly. No provider verification or live GitHub call is
+claimed.
