@@ -51,7 +51,11 @@ export interface FinancialDecision {
 	message: string;
 	budget?: { evaluation: string; reservation: string } | undefined;
 	reservation?:
-		| { reservationId: string; unboundedExposure?: boolean }
+		| {
+				reservationId: string;
+				unboundedExposure?: boolean;
+				unpricedScopeProof?: UnpricedScopeProof;
+		  }
 		| undefined;
 	requestDigest?: string;
 	inventoryHash?: string;
@@ -77,6 +81,18 @@ export interface UnpricedPolicyProof {
 	readonly validUntil: string;
 }
 
+export interface UnpricedScopeProof {
+	readonly identity: UnpricedPolicyProof["identity"];
+	readonly providerAccountIds: readonly string[];
+	readonly authorityRef: string;
+	readonly evidenceRef: string;
+	readonly ownershipEpoch: string;
+	readonly observedAt: string;
+	readonly exclusiveUntilSettled: true;
+	readonly noSharedEntitlements: true;
+	readonly signature: string;
+}
+
 /** An admitted apply explicitly distinguishes a bounded hold from a policy-authorized unbounded exposure. */
 export type HeldFinancialDecision = FinancialDecision &
 	(
@@ -86,7 +102,11 @@ export type HeldFinancialDecision = FinancialDecision &
 		  }
 		| {
 				budget: { evaluation: "bypassed"; reservation: "held" };
-				reservation: { reservationId: string; unboundedExposure: true };
+				reservation: {
+					reservationId: string;
+					unboundedExposure: true;
+					unpricedScopeProof: UnpricedScopeProof;
+				};
 				unpricedPolicyProof: UnpricedPolicyProof;
 		  }
 	);
@@ -113,5 +133,10 @@ export interface FinancialPort<Assessment extends object> {
 		plan: FinancialPlan,
 		expected?: FinancialExpectation,
 	): Promise<FinancialDecision>;
+	/** Recheck a claimed unpriced exposure against durable authority and trusted current policy. */
+	revalidate(
+		admission: FinancialDecision,
+		plan: FinancialPlan,
+	): boolean | Promise<boolean>;
 	uncertain(reservationId: string): void | Promise<void>;
 }

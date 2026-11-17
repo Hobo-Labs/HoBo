@@ -177,6 +177,15 @@ outcome. Replay cannot authorize another provider call. Destroy follows the
 same preview and admission sequence. Refresh reports an error if Alchemy skips a
 resource instead of calling the target in sync.
 
+Before either a priced or an unpriced apply, the financial port must
+revalidate the claimed reservation against the exact current plan, trusted
+clock and policy identity. A missing, failed or unavailable revalidation
+retains the hold and requires reconciliation. An unpriced receipt includes the
+policy decision and a signed proof that every scoped provider account is
+exclusively owned until settlement and has no shared entitlements. The trusted
+host must fence policy, scope and credential revocation through provider start:
+the authority's check and an external provider call cannot be one transaction.
+
 One adapter instance refuses concurrent execution of the same program. Across
 instances or process restarts, the host must use the same stable request ID for
 the same logical attempt so the durable admission authority can recognize a

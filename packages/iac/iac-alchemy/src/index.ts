@@ -29,6 +29,7 @@ import type {
 	IacProgram,
 	IacProvider,
 	UnpricedPolicyProof,
+	UnpricedScopeProof,
 } from "./port.js";
 import { captureAlchemyProgram } from "./program-boundary.js";
 import {
@@ -77,6 +78,7 @@ export type {
 	IacProgram,
 	IacProvider,
 	UnpricedPolicyProof,
+	UnpricedScopeProof,
 } from "./port.js";
 export type { CapturedAlchemyProgram } from "./program-boundary.js";
 export { captureAlchemyProgram } from "./program-boundary.js";
@@ -180,6 +182,154 @@ function captureCompositeGuard(
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: admission receipts cross a provider boundary; inspect own data properties before returning an independent domain value. */
+function readFinancialExpectation(
+	input: unknown,
+): FinancialExpectation | undefined {
+	try {
+		if (typeof input !== "object" || input === null || Array.isArray(input))
+			return undefined;
+		const properties = Object.getOwnPropertyDescriptors(input);
+		const read = (key: string): unknown => {
+			const descriptor = properties[key];
+			if (descriptor === undefined) return undefined;
+			if (!("value" in descriptor)) throw new Error("expectation accessor");
+			return descriptor.value;
+		};
+		const kind = read("kind");
+		const targetId = read("targetId");
+		const inventoryHash = read("inventoryHash");
+		const modelHash = read("modelHash");
+		const quoteHash = read("quoteHash");
+		if (
+			typeof targetId !== "string" ||
+			!name(targetId) ||
+			typeof inventoryHash !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(inventoryHash)
+		)
+			return undefined;
+		if (kind === "unpriced") {
+			if (modelHash !== undefined || quoteHash !== undefined) return undefined;
+			return Object.freeze({ kind, targetId, inventoryHash });
+		}
+		if (
+			(kind !== undefined && kind !== "priced") ||
+			typeof modelHash !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(modelHash) ||
+			typeof quoteHash !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(quoteHash)
+		)
+			return undefined;
+		return Object.freeze({ targetId, inventoryHash, modelHash, quoteHash });
+	} catch {
+		return undefined;
+	}
+}
+
+function readUnpricedScopeProof(
+	input: unknown,
+): UnpricedScopeProof | undefined {
+	try {
+		if (typeof input !== "object" || input === null || Array.isArray(input))
+			return undefined;
+		const read = (source: unknown, key: string): unknown => {
+			if (
+				typeof source !== "object" ||
+				source === null ||
+				Array.isArray(source)
+			)
+				return undefined;
+			const descriptor = Object.getOwnPropertyDescriptor(source, key);
+			if (descriptor === undefined || !("value" in descriptor))
+				return undefined;
+			return descriptor.value;
+		};
+		const identityInput = read(input, "identity");
+		if (
+			typeof identityInput !== "object" ||
+			identityInput === null ||
+			Array.isArray(identityInput)
+		)
+			return undefined;
+		const tenantId = read(identityInput, "tenantId");
+		const budgetId = read(identityInput, "budgetId");
+		const periodId = read(identityInput, "periodId");
+		const policyRevision = read(identityInput, "policyRevision");
+		const accountInput = read(input, "providerAccountIds");
+		const authorityRef = read(input, "authorityRef");
+		const evidenceRef = read(input, "evidenceRef");
+		const ownershipEpoch = read(input, "ownershipEpoch");
+		const observedAt = read(input, "observedAt");
+		const exclusiveUntilSettled = read(input, "exclusiveUntilSettled");
+		const noSharedEntitlements = read(input, "noSharedEntitlements");
+		const signature = read(input, "signature");
+		if (
+			typeof tenantId !== "string" ||
+			!name(tenantId) ||
+			typeof budgetId !== "string" ||
+			!name(budgetId) ||
+			typeof periodId !== "string" ||
+			!name(periodId) ||
+			typeof policyRevision !== "string" ||
+			!name(policyRevision) ||
+			!Array.isArray(accountInput) ||
+			typeof authorityRef !== "string" ||
+			!name(authorityRef) ||
+			typeof evidenceRef !== "string" ||
+			!name(evidenceRef) ||
+			typeof ownershipEpoch !== "string" ||
+			!name(ownershipEpoch) ||
+			typeof observedAt !== "string" ||
+			!name(observedAt) ||
+			!Number.isFinite(Date.parse(observedAt)) ||
+			exclusiveUntilSettled !== true ||
+			noSharedEntitlements !== true ||
+			typeof signature !== "string" ||
+			signature.length === 0 ||
+			signature.length > 4096 ||
+			/[\p{Cc}]/u.test(signature)
+		)
+			return undefined;
+		const accountProperties = Object.getOwnPropertyDescriptors(accountInput);
+		const length = Object.getOwnPropertyDescriptor(accountInput, "length");
+		if (
+			length === undefined ||
+			!("value" in length) ||
+			typeof length.value !== "number" ||
+			!Number.isSafeInteger(length.value) ||
+			length.value < 1 ||
+			length.value > 256
+		)
+			return undefined;
+		const providerAccountIds: string[] = [];
+		for (let index = 0; index < length.value; index++) {
+			const entry = accountProperties[String(index)];
+			if (
+				entry === undefined ||
+				!("value" in entry) ||
+				typeof entry.value !== "string" ||
+				!name(entry.value)
+			)
+				return undefined;
+			providerAccountIds.push(entry.value);
+		}
+		if (new Set(providerAccountIds).size !== providerAccountIds.length)
+			return undefined;
+		return {
+			identity: { tenantId, budgetId, periodId, policyRevision },
+			providerAccountIds,
+			authorityRef,
+			evidenceRef,
+			ownershipEpoch,
+			observedAt,
+			exclusiveUntilSettled,
+			noSharedEntitlements,
+			signature,
+		};
+	} catch {
+		return undefined;
+	}
+}
+
 function readUnpricedPolicyProof(
 	input: unknown,
 ): UnpricedPolicyProof | undefined {
@@ -329,6 +479,7 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 			return undefined;
 		let reservationId: string | undefined;
 		let unboundedExposure: boolean | undefined;
+		let unpricedScopeProof: UnpricedScopeProof | undefined;
 		if (reservationInput !== undefined) {
 			if (
 				typeof reservationInput !== "object" ||
@@ -357,6 +508,12 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 					return undefined;
 				unboundedExposure = unbounded.value;
 			}
+			const scope = Object.getOwnPropertyDescriptor(
+				reservationInput,
+				"unpricedScopeProof",
+			);
+			if (scope !== undefined && "value" in scope)
+				unpricedScopeProof = readUnpricedScopeProof(scope.value);
 		}
 		if (
 			status === "denied" &&
@@ -377,6 +534,8 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 			result.reservation = { reservationId };
 			if (unboundedExposure !== undefined)
 				result.reservation.unboundedExposure = unboundedExposure;
+			if (unpricedScopeProof !== undefined)
+				result.reservation.unpricedScopeProof = unpricedScopeProof;
 		}
 		if (typeof inventoryHash === "string") result.inventoryHash = inventoryHash;
 		if (typeof requestDigest === "string") result.requestDigest = requestDigest;
@@ -390,6 +549,31 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 	}
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof */
+
+function scopeMatches(
+	scope: UnpricedScopeProof | undefined,
+	policy: UnpricedPolicyProof | undefined,
+	target: Target,
+): boolean {
+	if (scope === undefined || policy === undefined) return false;
+	const a = scope.identity;
+	const b = policy.identity;
+	if (
+		a.tenantId !== b.tenantId ||
+		a.budgetId !== b.budgetId ||
+		a.periodId !== b.periodId ||
+		a.policyRevision !== b.policyRevision
+	)
+		return false;
+	const accounts = [
+		...new Set(target.resources.map((row) => row.providerAccountRef)),
+	].sort();
+	const claimed = [...scope.providerAccountIds].sort();
+	return (
+		accounts.length === claimed.length &&
+		accounts.every((account, index) => account === claimed[index])
+	);
+}
 
 // HoBo's IaC port exposes bounded string-valued outputs. Never silently drop
 // outputs after a provider has run: an unrepresentable result needs recovery.
@@ -656,6 +840,17 @@ export function createAlchemyIacProvider<
 				"REQUEST_INVALID",
 				"a bounded admission request id is required",
 			);
+		const checkedExpectation =
+			expected === undefined ? undefined : readFinancialExpectation(expected);
+		if (
+			expected !== undefined &&
+			(checkedExpectation === undefined ||
+				checkedExpectation.targetId !== target.targetId)
+		)
+			throw new AlchemyIacError(
+				"EXPECTATION_INVALID",
+				"the routing expectation is malformed or belongs to another target",
+			);
 		if (program.action === "preview")
 			throw new AlchemyIacError(
 				"PREVIEW_ONLY",
@@ -716,7 +911,7 @@ export function createAlchemyIacProvider<
 								decision: await options.financial.admit(
 									requestId,
 									financialInputs(inspected.digest, program),
-									expected,
+									checkedExpectation,
 								),
 							};
 						} catch {
@@ -767,7 +962,11 @@ export function createAlchemyIacProvider<
 						decision.budget?.reservation !== "held" ||
 						!(
 							(decision.budget.evaluation === "allowed" &&
-								decision.reservation.unboundedExposure !== true) ||
+								decision.reservation.unboundedExposure !== true &&
+								/^sha256:[a-f0-9]{64}$/u.test(decision.requestDigest ?? "") &&
+								/^sha256:[a-f0-9]{64}$/u.test(decision.inventoryHash ?? "") &&
+								/^sha256:[a-f0-9]{64}$/u.test(decision.modelHash ?? "") &&
+								/^sha256:[a-f0-9]{64}$/u.test(decision.quoteHash ?? "")) ||
 							(decision.budget.evaluation === "bypassed" &&
 								decision.reservation.unboundedExposure === true &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.requestDigest ?? "") &&
@@ -782,7 +981,12 @@ export function createAlchemyIacProvider<
 								decision.unpricedPolicyProof.inventoryHash ===
 									decision.inventoryHash &&
 								decision.unpricedPolicyProof.identity.tenantId ===
-									target.tenantId)
+									target.tenantId &&
+								scopeMatches(
+									decision.reservation.unpricedScopeProof,
+									decision.unpricedPolicyProof,
+									target,
+								))
 						)
 					) {
 						const reservationId = decision.reservation?.reservationId;
@@ -802,14 +1006,14 @@ export function createAlchemyIacProvider<
 					heldReservation = claimedReservationId;
 					claimed.set(key, claimedReservationId);
 					if (
-						expected !== undefined &&
-						(expected.targetId !== target.targetId ||
-							expected.inventoryHash !== decision.inventoryHash ||
-							(expected.kind === "unpriced"
+						checkedExpectation !== undefined &&
+						(checkedExpectation.targetId !== target.targetId ||
+							checkedExpectation.inventoryHash !== decision.inventoryHash ||
+							(checkedExpectation.kind === "unpriced"
 								? decision.budget.evaluation !== "bypassed"
 								: decision.budget.evaluation !== "allowed" ||
-									expected.modelHash !== decision.modelHash ||
-									expected.quoteHash !== decision.quoteHash))
+									checkedExpectation.modelHash !== decision.modelHash ||
+									checkedExpectation.quoteHash !== decision.quoteHash))
 					) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -828,6 +1032,61 @@ export function createAlchemyIacProvider<
 								"STATE_IDENTITY_UNVERIFIED",
 								"persisted Alchemy state identities changed or became unavailable; the reservation is retained",
 								undefined,
+								claimedReservationId,
+							),
+						};
+					}
+					let admission: HeldFinancialDecision;
+					if (decision.budget.evaluation === "bypassed") {
+						const policy = decision.unpricedPolicyProof;
+						const scope = decision.reservation.unpricedScopeProof;
+						if (policy === undefined || scope === undefined) {
+							yield* Effect.promise(() => markUncertain(claimedReservationId));
+							return {
+								error: new AlchemyIacError(
+									"ADMISSION_RECEIPT_INVALID",
+									"unbounded policy or scope proof is missing",
+									decision,
+									claimedReservationId,
+								),
+							};
+						}
+						admission = {
+							...decision,
+							budget: { evaluation: "bypassed", reservation: "held" },
+							reservation: {
+								reservationId: claimedReservationId,
+								unboundedExposure: true,
+								unpricedScopeProof: scope,
+							},
+							unpricedPolicyProof: policy,
+						};
+					} else {
+						admission = {
+							...decision,
+							budget: { evaluation: "allowed", reservation: "held" },
+							reservation: { reservationId: claimedReservationId },
+						};
+					}
+					const confirmed = yield* Effect.promise(async () => {
+						try {
+							return (
+								(await options.financial.revalidate(
+									structuredClone(admission),
+									financialInputs(inspected.digest, program),
+								)) === true
+							);
+						} catch {
+							return false;
+						}
+					});
+					if (!confirmed) {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								"ADMISSION_REVALIDATION_FAILED",
+								"the claimed financial authorization could not be revalidated; the reservation is retained",
+								admission,
 								claimedReservationId,
 							),
 						};
@@ -888,33 +1147,6 @@ export function createAlchemyIacProvider<
 								heldReservation,
 							),
 						};
-					let admission: HeldFinancialDecision;
-					if (decision.budget.evaluation === "bypassed") {
-						if (decision.unpricedPolicyProof === undefined)
-							return {
-								error: new AlchemyIacError(
-									"ADMISSION_RECEIPT_INVALID",
-									"unbounded policy proof is missing",
-									decision,
-									claimedReservationId,
-								),
-							};
-						admission = {
-							...decision,
-							budget: { evaluation: "bypassed", reservation: "held" },
-							reservation: {
-								reservationId: claimedReservationId,
-								unboundedExposure: true,
-							},
-							unpricedPolicyProof: decision.unpricedPolicyProof,
-						};
-					} else {
-						admission = {
-							...decision,
-							budget: { evaluation: "allowed", reservation: "held" },
-							reservation: { reservationId: claimedReservationId },
-						};
-					}
 					return { outputs, admission };
 				}),
 			);

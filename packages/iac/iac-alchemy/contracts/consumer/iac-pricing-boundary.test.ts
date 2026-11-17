@@ -71,6 +71,7 @@ describe("external IaC pricing consumer boundary", () => {
 					admit: async () => {
 						throw new Error("unexpected authorization");
 					},
+					revalidate: () => false,
 					uncertain: () => {
 						throw new Error("unexpected uncertainty");
 					},

@@ -240,6 +240,7 @@ describe("explicit Alchemy primitive mapping", () => {
 					admit: async () => {
 						throw new Error("unexpected admission");
 					},
+					revalidate: () => false,
 					uncertain: () => {},
 				},
 			});

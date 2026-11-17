@@ -7,7 +7,7 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
-import type { FinancialDecision } from "../src/port.js";
+import type { FinancialDecision, FinancialPlan } from "../src/port.js";
 
 type Widget = Resource<"Spec.Widget", object, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -21,11 +21,18 @@ afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
 });
 
-function fixture(decision: (requestId: string) => object) {
+function fixture(
+	decision: (requestId: string) => object,
+	revalidate: (
+		admission: FinancialDecision,
+		plan: FinancialPlan,
+	) => boolean | Promise<boolean> = () => true,
+) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-financial-"));
 	dirs.push(dir);
 	process.env.ALCHEMY_HOME = join(dir, "auth");
 	let applies = 0;
+	let admissions = 0;
 	const uncertain: string[] = [];
 	const stack = Stack(
 		"App",
@@ -69,8 +76,12 @@ function fixture(decision: (requestId: string) => object) {
 		}),
 		financial: {
 			assess: () => ({}),
-			// SAFETY: this boundary intentionally tests malformed provider receipts.
-			admit: async (requestId) => decision(requestId) as never,
+			admit: async (requestId) => {
+				admissions++;
+				// SAFETY: this boundary intentionally tests malformed provider receipts.
+				return decision(requestId) as never;
+			},
+			revalidate,
 			uncertain: (id) => {
 				uncertain.push(id);
 			},
@@ -79,6 +90,7 @@ function fixture(decision: (requestId: string) => object) {
 	return {
 		provider,
 		applies: () => applies,
+		admissions: () => admissions,
 		uncertain,
 		program: {
 			programId: "p",
@@ -102,6 +114,23 @@ function admitted(
 	};
 	if (unboundedExposure !== undefined)
 		reservation.unboundedExposure = unboundedExposure;
+	if (unboundedExposure === true)
+		reservation.unpricedScopeProof = {
+			identity: {
+				tenantId: "tenant",
+				budgetId: "hosting",
+				periodId: "period",
+				policyRevision: "r1",
+			},
+			providerAccountIds: ["account"],
+			authorityRef: "host:finance",
+			evidenceRef: "scope:proof",
+			ownershipEpoch: "1",
+			observedAt: "2026-01-01T00:00:00Z",
+			exclusiveUntilSettled: true,
+			noSharedEntitlements: true,
+			signature: "signature",
+		};
 	return {
 		requestId,
 		targetId: "target",
@@ -110,6 +139,8 @@ function admitted(
 		message: "",
 		requestDigest: `sha256:${"b".repeat(64)}`,
 		inventoryHash: `sha256:${"c".repeat(64)}`,
+		modelHash: evaluation === "allowed" ? `sha256:${"d".repeat(64)}` : "",
+		quoteHash: evaluation === "allowed" ? `sha256:${"e".repeat(64)}` : "",
 		unpricedPolicyProof: {
 			requestDigest: `sha256:${"b".repeat(64)}`,
 			inventoryHash: `sha256:${"c".repeat(64)}`,
@@ -174,9 +205,9 @@ describe("financial admission modes", () => {
 		await expect(
 			f.provider.applyWithAdmission(f.program, "attempt", {
 				targetId: "target",
-				inventoryHash: "i",
-				modelHash: "m",
-				quoteHash: "q",
+				inventoryHash: `sha256:${"a".repeat(64)}`,
+				modelHash: `sha256:${"b".repeat(64)}`,
+				quoteHash: `sha256:${"c".repeat(64)}`,
 			}),
 		).rejects.toMatchObject({
 			code: "ADMISSION_QUOTE_MISMATCH",
@@ -184,6 +215,53 @@ describe("financial admission modes", () => {
 		});
 		expect(f.applies()).toBe(0);
 		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it("pins the reviewed expectation before invoking the financial authority", async () => {
+		const expected = {
+			kind: "unpriced" as const,
+			targetId: "target",
+			inventoryHash: `sha256:${"c".repeat(64)}`,
+		};
+		const f = fixture((id) => {
+			expected.inventoryHash = `sha256:${"d".repeat(64)}`;
+			return admitted(id, "bypassed", true);
+		});
+		await f.provider.preview(f.program);
+		const result = await f.provider.applyWithAdmission(
+			f.program,
+			"attempt",
+			expected,
+		);
+		expect(result.admission.budget.evaluation).toBe("bypassed");
+		expect(f.applies()).toBe(1);
+	});
+
+	it.each([
+		{
+			kind: "unknown",
+			targetId: "target",
+			inventoryHash: `sha256:${"c".repeat(64)}`,
+		},
+		{ kind: "unpriced", targetId: "target", inventoryHash: "not-a-digest" },
+		{
+			kind: "unpriced",
+			targetId: "target",
+			inventoryHash: `sha256:${"c".repeat(64)}`,
+			quoteHash: `sha256:${"a".repeat(64)}`,
+		},
+	])("rejects a malformed routing expectation before admission", async (expected) => {
+		const f = fixture((id) => admitted(id, "bypassed", true));
+		await f.provider.preview(f.program);
+		// SAFETY: malformed expectations exercise the public runtime boundary.
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt", expected as never),
+		).rejects.toMatchObject({
+			code: "EXPECTATION_INVALID",
+			requiresReconciliation: false,
+		});
+		expect(f.admissions()).toBe(0);
+		expect(f.applies()).toBe(0);
 	});
 
 	it("accepts an explicitly selected unpriced target only with its reviewed inventory", async () => {
@@ -254,6 +332,115 @@ describe("financial admission modes", () => {
 			decision.unpricedPolicyProof.identity.tenantId = "other";
 			return decision;
 		});
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_RECEIPT_INVALID",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it.each([
+		"foreign-account",
+		"foreign-policy",
+		"duplicate-account",
+	] as const)("refuses unbounded scope proof with %s", async (reason) => {
+		const f = fixture((id) => {
+			const decision = admitted(id, "bypassed", true);
+			const scope = decision.reservation.unpricedScopeProof;
+			if (scope === undefined) throw new Error("scope fixture missing");
+			if (reason === "foreign-account")
+				Object.assign(scope, { providerAccountIds: ["other"] });
+			if (reason === "duplicate-account")
+				Object.assign(scope, { providerAccountIds: ["account", "account"] });
+			if (reason === "foreign-policy")
+				Object.assign(scope.identity, { policyRevision: "foreign" });
+			return decision;
+		});
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_RECEIPT_INVALID",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it.each([
+		"allowed",
+		"bypassed",
+	] as const)("retains the %s hold when authority revalidation fails", async (mode) => {
+		const f = fixture(
+			(id) => admitted(id, mode, mode === "bypassed"),
+			() => false,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_REVALIDATION_FAILED",
+			requiresReconciliation: true,
+			reservationId: "iac:attempt",
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it("does not expose mutable admission data to the authority verifier", async () => {
+		const f = fixture(
+			(id) => admitted(id, "bypassed", true),
+			(copy) => {
+				if (copy.reservation !== undefined)
+					copy.reservation.reservationId = "tampered";
+				return true;
+			},
+		);
+		await f.provider.preview(f.program);
+		const result = await f.provider.applyWithAdmission(f.program, "attempt");
+		expect(result.admission.reservation.reservationId).toBe("iac:attempt");
+		expect(f.applies()).toBe(1);
+	});
+
+	it("treats a lost revalidation response as unresolved and blocks retry", async () => {
+		const f = fixture(
+			(id) => admitted(id, "bypassed", true),
+			() => {
+				throw new Error("response lost");
+			},
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_REVALIDATION_FAILED",
+			requiresReconciliation: true,
+			reservationId: "iac:attempt",
+		});
+		await expect(
+			f.provider.applyWithAdmission(f.program, "retry"),
+		).rejects.toMatchObject({
+			code: "EXECUTION_ALREADY_CLAIMED",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it.each([
+		"requestDigest",
+		"inventoryHash",
+		"modelHash",
+		"quoteHash",
+	] as const)("refuses a priced direct apply without valid %s", async (field) => {
+		const f = fixture((id) => ({
+			...admitted(id, "allowed", false),
+			[field]: "",
+		}));
 		await f.provider.preview(f.program);
 		await expect(
 			f.provider.applyWithAdmission(f.program, "attempt"),

@@ -105,7 +105,12 @@ function fixture(
 				message: "",
 				budget: { evaluation: "allowed", reservation: "held" },
 				reservation: { reservationId: `iac:${id}` },
+				requestDigest: `sha256:${"b".repeat(64)}`,
+				inventoryHash: `sha256:${"c".repeat(64)}`,
+				modelHash: `sha256:${"d".repeat(64)}`,
+				quoteHash: `sha256:${"e".repeat(64)}`,
 			}),
+			revalidate: () => true,
 			uncertain: (id) => {
 				uncertain.push(id);
 			},
