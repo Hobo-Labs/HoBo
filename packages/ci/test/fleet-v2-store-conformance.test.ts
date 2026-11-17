@@ -330,6 +330,16 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 				false,
 				true,
 			]);
+			await expect(
+				store.assertDaggerStartAllowed(input),
+			).resolves.toBeUndefined();
+			await expect(
+				store.assertDaggerStartAllowed(
+					daggerStart({ endpointHash: "a".repeat(64) }),
+				),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+			});
 			expect(results[0]?.claim.runnerSlotId).toBe("");
 			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
 			expect((await store.demand(input.key))?.state).toBe("satisfied");
@@ -366,6 +376,11 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 				teardownConfirmed: false,
 			});
 			expect(uncertain.claim.state).toBe("uncertain");
+			await expect(store.assertDaggerStartAllowed(input)).rejects.toMatchObject(
+				{
+					code: FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+				},
+			);
 			expect(uncertain.capacityReleased).toBe(false);
 			expect((await store.startDagger(input)).created).toBe(false);
 			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
@@ -456,6 +471,27 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 				code: FleetRejectionCode.OFFER_REVOKED,
 			});
 			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(0);
+		});
+
+		it("rechecks the Dagger Offer immediately before start", async () => {
+			const store = current();
+			await store.intake(daggerDemand());
+			const input = daggerStart();
+			await store.startDagger(input);
+			await store.putOfferAdmission(
+				parseOfferAdmission(
+					JSON.stringify({
+						offerId: "local-offer",
+						accountId: "hobo-labs",
+						observationHash: OFFER_HASH,
+						policyRevision: 1,
+						state: "revoked",
+					}),
+				),
+			);
+			await expect(store.assertDaggerStartAllowed(input)).rejects.toMatchObject(
+				{ code: FleetRejectionCode.OFFER_REVOKED },
+			);
 		});
 
 		it("rechecks the verified runner and revoked offer before returning a retry", async () => {

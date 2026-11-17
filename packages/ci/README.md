@@ -65,8 +65,12 @@ The stores also expose `startDagger` for a pipeline demand. It atomically pins
 the pipeline digest, engine endpoint hash, offer, policy, quote, and execution
 profile while reserving the shared capacity group. Only a result with
 `created: true` may start work; a replay returns the existing claim with
-`created: false`. Capacity remains reserved until shutdown is confirmed. The
-existing `PipelineScheduler` does not yet call this strict fleet API.
+`created: false`. Capacity remains reserved until shutdown is confirmed.
+`StrictDaggerScheduler` combines this claim with the existing budget scheduler
+and a bound Dagger backend. It verifies the pipeline and engine identity,
+rechecks fleet eligibility before connecting and before the first command, and
+does not reopen a replayed claim. The controller supplies the policy and quote
+hashes; the budget scheduler independently evaluates the current account policy.
 
 ## Event cursor
 

@@ -25,6 +25,7 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:acceptance": "node --import tsx acceptance/run.ts",
+    "test:strict-live": "node --import tsx acceptance/strict-live.mts",
     "pretest:acceptance": "node --experimental-strip-types ../../scripts/ensure-built.mts"
   },
   "dependencies": {

@@ -1565,6 +1565,103 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 		});
 	}
 
+	assertDaggerStartAllowed(input: ParsedDaggerStartInput): Promise<void> {
+		return this.tx(async (client) => {
+			const key = executionKeyId(input.key);
+			if (input.key.key.case !== "daggerPipeline")
+				rejectFleet(
+					FleetRejectionCode.INVALID_RECORD,
+					"Dagger pipeline key required",
+				);
+			const result = await client.query(
+				"SELECT * FROM hobo_ci_fleet_v2_dagger_allocations WHERE partition_id=$1 AND claim_id=$2",
+				[this.partition, input.claimId],
+			);
+			const claim = await this.claimByIdInside(client, input.claimId);
+			if (!result.rows[0] || !claim)
+				rejectFleet(FleetRejectionCode.NOT_FOUND, "pipeline claim not found");
+			const allocation = DaggerAllocation.parse(result.rows[0]);
+			if (
+				claim.state !== "start-authorized" ||
+				executionKeyId(claim.key) !== key ||
+				claim.profileId !== input.profileId ||
+				claim.offerId !== input.offerId ||
+				claim.policyHash !== input.policyHash ||
+				claim.quoteHash !== input.quoteHash ||
+				claim.incarnationId !== input.incarnationId ||
+				allocation.account_id !== input.key.key.value.accountId ||
+				allocation.capacity_group_id !== input.capacityGroupId ||
+				allocation.capacity_cost_units !== input.capacityCostUnits ||
+				allocation.engine_endpoint_hash !== input.engineEndpointHash ||
+				allocation.offer_observation_hash !== input.offerObservationHash ||
+				allocation.policy_revision !== input.expectedPolicyRevision
+			)
+				rejectFleet(
+					FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+					"pipeline claim no longer permits a start",
+				);
+			const demand = await this.demandInside(client, key);
+			if (
+				!demand ||
+				demand.state !== "satisfied" ||
+				demand.requiredProfileId !== input.profileId ||
+				demand.policyRevision !== input.expectedPolicyRevision
+			)
+				rejectFleet(
+					FleetRejectionCode.DEMAND_CONFLICT,
+					"pipeline demand changed",
+				);
+			if (
+				(await this.currentIncarnationInside(client))?.id !==
+				input.incarnationId
+			)
+				rejectFleet(
+					FleetRejectionCode.INCARNATION_STALE,
+					"controller incarnation changed",
+				);
+			const offer = await this.offerInside(client, input.offerId);
+			if (
+				!offer ||
+				offer.accountId !== allocation.account_id ||
+				offer.state !== "active"
+			)
+				rejectFleet(
+					FleetRejectionCode.OFFER_REVOKED,
+					"Offer is unavailable or revoked",
+				);
+			if (
+				offer.policyRevision !== input.expectedPolicyRevision ||
+				offer.observationHash !== input.offerObservationHash
+			)
+				rejectFleet(
+					FleetRejectionCode.OFFER_OBSERVATION_CONFLICT,
+					"Offer observation or policy changed",
+				);
+			if (
+				(await this.profileInside(client, input.profileId))?.guarantee !==
+				"start-fenced"
+			)
+				rejectFleet(
+					FleetRejectionCode.GUARANTEE_REQUIRED,
+					"strict execution profile unavailable",
+				);
+			const group = await this.capacityInside(
+				client,
+				allocation.capacity_group_id,
+			);
+			if (
+				!group ||
+				group.accountId !== allocation.account_id ||
+				group.state !== "active" ||
+				group.reservedUnits < allocation.capacity_cost_units
+			)
+				rejectFleet(
+					FleetRejectionCode.CAPACITY_INELIGIBLE,
+					"reserved capacity is unavailable",
+				);
+		});
+	}
+
 	bindStart(
 		input: ParsedStartBindingInput,
 	): Promise<{ claim: ExecutionClaim; idempotent: boolean }> {
