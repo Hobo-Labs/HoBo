@@ -1,1 +1,1 @@
-export default { test: { include: ['test/authoring/workflow-replay.property.test.ts', 'test/authoring/workflow-sleep.test.ts', 'test/authoring/workflow-step-history.test.ts', 'test/authoring/workflow-concurrent-append.test.ts'] } };
+export default { test: { include: ['test/authoring/workflow-replay.property.test.ts', 'test/authoring/workflow-sleep.test.ts', 'test/authoring/workflow-step-history.test.ts', 'test/authoring/workflow-concurrent-append.test.ts', 'test/authoring/workflow-command-provenance.test.ts'] } };

@@ -5,6 +5,7 @@
 // tip. The journal it writes is the same `run.*` shape the existing replay
 // engine (`./replay`) verifies, so a completed run is replay-equivalent.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -345,6 +346,7 @@ export function createWorkflowEngine(
 
 		let stepIndex = 0;
 		let sleepIndex = 0;
+		const stepScope = new AsyncLocalStorage<number>();
 		const deterministic = createDeterministicContext({
 			seed: runSeed,
 			mode: "live",
@@ -366,6 +368,7 @@ export function createWorkflowEngine(
 				fn: () => Promise<T> | T,
 				opts?: StepOptions,
 			): Promise<T> {
+				const parentStepIndex = stepScope.getStore() ?? null;
 				const index = stepIndex;
 				stepIndex += 1;
 				consumeCommand({ kind: "step", index, name });
@@ -375,9 +378,17 @@ export function createWorkflowEngine(
 					// SAFETY: assertion to `ed.data.result as T; }` is required at this boundary.
 					return completed.data.result as T;
 				}
-				await appendEvent("run.StepScheduled", { name, index });
+				await appendEvent("run.StepScheduled", {
+					name,
+					index,
+					parentStepIndex,
+				});
 				try {
-					const result = await runWithRetries(name, fn, opts ?? {});
+					const result = await runWithRetries(
+						name,
+						() => stepScope.run(index, fn),
+						opts ?? {},
+					);
 					await appendEvent("run.StepCompleted", { name, index, result });
 					return result;
 				} catch (error) {
@@ -397,6 +408,7 @@ export function createWorkflowEngine(
 						"workflow sleep delay must be a nonnegative safe integer",
 					);
 				}
+				const parentStepIndex = stepScope.getStore() ?? null;
 				const index = sleepIndex;
 				sleepIndex += 1;
 				consumeCommand({ kind: "sleep", index, delayMs: durationMs });
@@ -453,7 +465,12 @@ export function createWorkflowEngine(
 					}
 				} else {
 					const deadline = makeDeadline(durationMs);
-					const data: JsonBag = { delayMs: durationMs, index, ...deadline };
+					const data: JsonBag = {
+						delayMs: durationMs,
+						index,
+						parentStepIndex,
+						...deadline,
+					};
 					if (sleepOptions?.label !== undefined)
 						data.label = sleepOptions.label;
 					await appendEvent("run.SleepScheduled", data);
@@ -580,7 +597,12 @@ export function createWorkflowEngine(
 				streamId,
 				1,
 				"run.Started",
-				cloneAsJson({ seed, args, workflowName: def.name }),
+				cloneAsJson({
+					seed,
+					args,
+					workflowName: def.name,
+					commandTreeVersion: 1,
+				}),
 			);
 			await recordEffect(store, started, 0);
 			return execute(def, runId, args);
