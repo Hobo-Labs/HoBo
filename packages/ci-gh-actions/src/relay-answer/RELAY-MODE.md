@@ -113,6 +113,11 @@ deletes its own one-job runners. It asks for no log, secret, variable or
 other content (gauntlet case X01), and nothing it loads can start a process
 (case X03, `test/relay-answer-safety.test.ts`).
 
+The project schema (`schema/ci-project.schema.json`, `src/project-schema.ts`)
+accepts the `relayJobs` block, and the `checks` block runner-less checks read,
+with the same strict shapes, so a project that sets them still loads in
+`hobo ci serve`.
+
 ## Tests
 
 `test/relay-answer.test.ts` runs the T2 cases against the simulator: R01 (an

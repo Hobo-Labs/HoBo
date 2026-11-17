@@ -32,7 +32,8 @@ const TitleType = z
 	.string()
 	.regex(/^[A-Za-z]{1,30}$/u, "a title type is letters only");
 
-const ChecksBlock = z
+/** The `checks` block of `.hobo/ci.json`; the project schema accepts the same shape. */
+export const ChecksBlock = z
 	.object({
 		prTitle: z
 			.object({ types: z.array(TitleType).max(50).optional() })
