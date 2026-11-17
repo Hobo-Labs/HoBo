@@ -47,6 +47,65 @@ function snapshot(root: string): string[] {
 }
 
 describe("project selection and write safety", () => {
+	it("captures selected-project and root-provenance commands in their actual directories", () => {
+		fixture((root) => {
+			for (const [dir, output] of [[root, "ROOT"], [path.join(root, "packages/hobo"), "PROJECT"]]) {
+				writeFileSync(path.join(dir!, "package.json"), JSON.stringify({ name: output, scripts: { inspect: `node -e "console.log('${output}')"` } }));
+			}
+			const feature = path.join(root, "packages/hobo/.optimizexp/features/example");
+			mkdirSync(feature, { recursive: true });
+			writeFileSync(path.join(feature, "example.feature"), "Feature: Example\n  Scenario: observed\n    Then output is visible\n");
+			const metadata = path.join(feature, "feature.json");
+			const evidence = path.join(feature, "evidence/observed");
+			const base = { id: "example", driver: "cli", surfaces: ["npm run stale", "npm run inspect"], generatedFromSeed: true, primaryCommand: "npm run inspect" };
+			const run = (extra: string[], expected: string, cwd: string) => {
+				const result = invoke(root, "capture-evidence", ["--mode=capture", "--project=hobo", "--feature=example", "--scenario=observed", ...extra]);
+				assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+				const report = JSON.parse(readFileSync(path.join(evidence, "meta.json"), "utf8")) as { repro: { cwd: string }; exitCode: number; degraded: boolean };
+				assert.equal(report.repro.cwd, cwd);
+				assert.equal(report.exitCode, 0);
+				assert.equal(report.degraded, false);
+				assert.match(readFileSync(path.join(evidence, "primary.txt"), "utf8"), new RegExp(expected));
+			};
+			writeFileSync(metadata, JSON.stringify({ id: "example", driver: "cli" }));
+			run(["--command=npm run inspect"], "PROJECT", "packages/hobo");
+			run(["--command=npm run inspect", "--cwd=root"], "ROOT", ".");
+			writeFileSync(metadata, JSON.stringify(base));
+			run([], "ROOT", ".");
+			run(["--cwd=project"], "PROJECT", "packages/hobo");
+			writeFileSync(metadata, JSON.stringify({ ...base, catalogOrigin: { projectId: "hobo", entryCommand: "npm run inspect" } }));
+			run([], "PROJECT", "packages/hobo");
+			const before = snapshot(root);
+			const invalid = invoke(root, "capture-evidence", ["--mode=capture", "--project=hobo", "--feature=example", "--scenario=observed", "--command=npm run inspect", "--cwd=elsewhere"]);
+			assert.equal(invalid.status, 2, String(invalid.stderr));
+			assert.deepEqual(snapshot(root), before);
+			const wrongMode = invoke(root, "capture-evidence", ["--mode=validate", "--project=hobo", "--feature=example", "--cwd=root"]);
+			assert.equal(wrongMode.status, 2, String(wrongMode.stderr));
+			assert.deepEqual(snapshot(root), before);
+		});
+	});
+
+	it("rejects orphan evidence during strict validation while retaining non-strict inspection", () => {
+		fixture((root) => {
+			const feature = path.join(root, ".optimizexp/features/example");
+			const orphan = path.join(feature, "evidence/orphan");
+			mkdirSync(orphan, { recursive: true });
+			writeFileSync(path.join(feature, "feature.json"), JSON.stringify({ id: "example" }));
+			writeFileSync(path.join(feature, "example.feature"), "Feature: Example\n");
+			writeFileSync(path.join(orphan, "manifest.json"), JSON.stringify({ primaryPath: "missing.txt" }));
+			const args = ["--mode=validate", "--project=root", "--feature=example"];
+			const nonStrict = invoke(root, "capture-evidence", args);
+			assert.equal(nonStrict.status, 0, nonStrict.stderr);
+			const strict = invoke(root, "capture-evidence", [...args, "--strict"]);
+			assert.equal(strict.status, 1, strict.stderr);
+			assert.match(String(strict.stdout), /evidence does not match a declared scenario/);
+			writeFileSync(path.join(orphan, "missing.txt"), "unreviewed\n");
+			writeFileSync(path.join(orphan, "review.json"), JSON.stringify({ status: "pending" }));
+			const pending = invoke(root, "capture-evidence", [...args, "--strict"]);
+			assert.equal(pending.status, 1, pending.stderr);
+			assert.match(String(pending.stdout), /evidence does not match a declared scenario/);
+		});
+	});
 	it("runs validated catalog scripts in their project and root-discovered scripts at the root", () => {
 		fixture((root) => {
 			const project = { id: "hobo", path: "packages/hobo", kind: "package" as const, label: "hobo" };

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -254,7 +255,9 @@ describe("OptimizeXP write containment", () => {
 			const evidence = path.join(root, ".optimizexp/features/example/evidence/observed");
 			mkdirSync(evidence, { recursive: true });
 			writeFileSync(path.join(evidence, "manifest.json"), JSON.stringify({ primaryPath: "primary.png", kind: "png" }));
-			writeFileSync(path.join(evidence, "primary.png"), Buffer.alloc(1_000_001));
+			const bytes = Buffer.alloc(1_000_001);
+			writeFileSync(path.join(evidence, "primary.png"), bytes);
+			writeFileSync(path.join(evidence, "meta.json"), JSON.stringify({ primary: { file: "primary.png", kind: "png", sha256: createHash("sha256").update(bytes).digest("hex") } }));
 			const result = invoke(root, "post-pr-evidence", ["--feature", "example", "--pr", "1", "--dry-run"]);
 			assert.equal(result.status, 0, result.stderr);
 			assert.equal(existsSync(path.join(root, ".optimizexp/runs")), false);

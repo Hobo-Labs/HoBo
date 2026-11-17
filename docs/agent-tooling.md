@@ -15,6 +15,8 @@ Project exploration and generation, capture, doctor, initialization, surveys, ev
 
 Feature planning and scaffolding preserve existing drafts unless `--force` is given. Catalog generation plans pending drafts before requiring their rubber-duck review; `--force-low-quality` explicitly permits an unreviewed scaffold. Project catalog commands run in the selected project. Evidence posting reports failure if any requested comment fails, and named missing features fail validation.
 
+Capture records the command's selected working directory and respects the caller's tool path. Artifact validation compares the manifest, metadata and current file digest; pending evidence may be posted for review, but only an accepted, matching review can support scoring.
+
 > **Note:** this is *tooling* config, not part of the HoBo product design (`docs/design/`). It was added on request to make the agents productive in this repo.
 
 The [default dev container](../.devcontainer/devcontainer.json) installs **mise** (pinned Node, pnpm, cue, gitleaks, turbo from [`../mise.toml`](../mise.toml)) on a **digest-pinned** Node 24 Bookworm base (see

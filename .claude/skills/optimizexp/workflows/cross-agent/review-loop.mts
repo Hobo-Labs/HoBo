@@ -1566,24 +1566,21 @@ function modeAssertComplete(
 				const abs = path.isAbsolute(evPath)
 					? evPath
 					: path.join(root, evPath);
-				const primary = body.evidence?.primary
-					? path.join(abs, body.evidence.primary)
-					: path.join(abs, "primary.txt");
-				if (!existsSync(primary) && !existsSync(path.join(abs, "primary.cast"))) {
-					missing.push(`evidence_missing:${path.relative(root, abs)}`);
-					continue;
-				}
+				const evidenceProblems = validateEvidenceReview(abs, root);
 				missing.push(
-					...validateEvidenceReview(abs).map(
+					...evidenceProblems.map(
 						(p) => `evidence_review:${path.relative(root, abs)}:${p}`,
 					),
 				);
 				const metaP = path.join(abs, "meta.json");
-				if (existsSync(metaP)) {
+				if (evidenceProblems.length === 0 && existsSync(metaP)) {
 					const meta = JSON.parse(readFileSync(metaP, "utf8")) as {
 						repro?: { via?: string };
+						primary?: { file?: string };
 					};
-					if (meta.repro?.via === "capture-evidence") stamped += 1;
+					if (body.evidence?.primary && body.evidence.primary !== meta.primary?.file) {
+						missing.push(`evidence_primary_mismatch:${path.relative(root, abs)}`);
+					} else if (meta.repro?.via === "capture-evidence") stamped += 1;
 				}
 			} catch {
 				/* ignore single bad entry */

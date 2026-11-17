@@ -50,7 +50,7 @@ export function captureCli(
 	// pipefail so `cmd | head` reports the failing command's status, not head's 0
 	const wrapped = `set -o pipefail; ${input.command}`;
 	return new Promise((resolve) => {
-		const child = spawn("bash", ["-lc", wrapped], {
+		const child = spawn("bash", ["-c", wrapped], {
 			cwd: input.cwd,
 			env: { ...process.env, ...input.env },
 		});

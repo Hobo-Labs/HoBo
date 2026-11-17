@@ -27,6 +27,7 @@ import { which, fileBytes } from "./lib/media.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
 import { isPathIdentifier } from "./lib/slug.mts";
 import { optimizexpWriteProblem } from "./lib/write-containment.mts";
+import { validateEvidenceArtifact, validateEvidenceReview } from "./lib/evidence-review.mts";
 
 const IMAGE_MAX = 1_000_000;
 const GIF_MAX = 2_000_000;
@@ -131,6 +132,19 @@ function loadScenarios(featureId: string, root: string) {
 			const primary = primaryEvidencePath(eDir, man.primaryPath);
 			const stat = safeEvidenceEntry(root, primary, "file");
 			if (!stat) throw new Error("Evidence primary file is missing");
+			const artifactProblems = validateEvidenceArtifact(eDir, root);
+			if (artifactProblems.length) throw new Error(`Evidence artifact is inconsistent: ${artifactProblems.join(", ")}`);
+			const reviewPath = path.join(eDir, "review.json");
+			let reviewStatus = "unreviewed";
+			if (safeEvidenceEntry(root, reviewPath, "file", true)) {
+				const review = JSON.parse(readFileSync(reviewPath, "utf8")) as { status?: unknown } | null;
+				if (!review || !["pending", "rejected", "accepted"].includes(String(review.status))) throw new Error("Invalid evidence review status");
+				reviewStatus = String(review.status);
+				if (reviewStatus === "accepted") {
+					const reviewProblems = validateEvidenceReview(eDir, root);
+					if (reviewProblems.length) throw new Error(`Accepted evidence review is inconsistent: ${reviewProblems.join(", ")}`);
+				}
+			}
 			return [{
 				slug,
 				kind: man.kind,
@@ -138,6 +152,7 @@ function loadScenarios(featureId: string, root: string) {
 				bytes: stat.size,
 				updatedAt: man.updatedAt,
 				abs: primary,
+				reviewStatus,
 			}];
 		});
 	return { evidencePath, scenarios };
@@ -246,11 +261,11 @@ function main() {
 		``,
 		stackHint(),
 		``,
-		`| Scenario | Kind | Size | Path |`,
-		`|---|---|---:|---|`,
+		`| Scenario | Kind | Size | Path | Review |`,
+		`|---|---|---:|---|---|`,
 		...scenarios.map(
 			(s) =>
-				`| \`${s.slug}\` | ${s.kind} | ${s.bytes} | \`${s.primaryPath}\` |`,
+				`| \`${s.slug}\` | ${s.kind} | ${s.bytes} | \`${s.primaryPath}\` | ${s.reviewStatus} |`,
 		),
 		``,
 		`Canonical evidence lives on the branch under \`${evidencePath}\`. New captures **overwrite** the prior primary per scenario.`,

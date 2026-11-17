@@ -35,7 +35,7 @@ export async function captureTui(
 		cols: process.stdout.columns ?? null,
 		rows: process.stdout.rows ?? null,
 	};
-	const asciinema = which("asciinema");
+	const asciinema = which("asciinema", { ...process.env, ...input.env });
 	if (asciinema) {
 		const castPath = path.join(outDir, "session.cast");
 		const started = Date.now();

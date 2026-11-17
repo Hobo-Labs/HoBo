@@ -167,7 +167,7 @@ export function exerciseSurface(world: OptimizexpWorld): void {
     return;
   }
   world.lastCommand = command;
-  const r = spawnSync("bash", ["-lc", command], {
+  const r = spawnSync("bash", ["-c", command], {
     cwd: commandDirectory(),
     encoding: "utf8",
     timeout: 120_000,
@@ -414,6 +414,9 @@ ${
 		? `- **${primary.kind}** \`${primary.command ?? primary.path}\` (${primary.confidence})\n- ${primary.reason}`
 		: "- None — implementations are stubs until a command/path is discovered or filled by the agent."
 }
+
+Commands run in a non-login Bash shell with the invoking process's environment.
+Login profiles are not loaded, so set \`PATH\` and other needed variables before running.
 
 ## Run
 
