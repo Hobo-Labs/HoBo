@@ -43,7 +43,7 @@ Read this section before you believe a green suite.
 - resolves binding values for the whole graph through `runtime-local`'s
   `createLocalBindingResolver`;
 - exposes isolated local ports for queue, topic, secret, data, schedule,
-  key-value, and bucket aliases, with their actual fidelity on the handle;
+  key-value, bucket, and flag aliases, with their actual fidelity on the handle;
 - tears everything down in reverse dependency order.
 
 What it does **not** do:
@@ -51,7 +51,7 @@ What it does **not** do:
 - run the deployed artifact on the deployed host; handles in this lane are
   never labelled `real`;
 - provide an engine behind unsupported kinds such as `auth`, `crypto`,
-  `flag`, `job`, and `websocket`. Those get a handle and a `hobo-test://`
+  `job`, and `websocket`. Those get a handle and a `hobo-test://`
   binding locator and nothing behind them; they are labelled `mocked`. The
   resource catalog below lists every kind and its actual graph support;
 - automatically wire local ports from the graph into an entrypoint.
@@ -112,6 +112,12 @@ service can receive in a deployed runtime; `graph.topic(alias)` returns the
 `graph.schedule(alias)` returns the existing `@hobo/core` `SchedulerPort`.
 `graph.kv(alias)` and `graph.bucket(alias)` expose the generated interfaces for
 HoBo's pinned WASI key-value and blobstore subsets.
+`graph.flag(alias)` exposes the identity package's `FeatureFlagPort`, backed by
+a fresh local flag engine. The HoBo feature command accepts the same port.
+Use `createFlagEmulator({ now })` to control event timestamps; every evaluation
+is recorded by default, and `sampleRate` can be overridden. The optional
+`flagInspector(alias)` exposes a copy of the test event history separately from
+the service port.
 Inject the appropriate port into the service under test and use
 the same object to arrange inputs and inspect results. The included CI relay
 test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
@@ -130,6 +136,16 @@ await queue.enqueue(parseQueueName("jobs"), { id: 1 }, {
 await workerThatAcceptsAQueuePort(queue);
 // If the implementation supplies a virtual clock, advance without sleeping:
 graph.queueClock("jobs")?.advance(30_000);
+```
+
+For a graph with a `flag` resource named `features`, a test can arrange a
+flag and exercise the same port the application receives:
+
+```ts
+const flags = graph.flag("features");
+flags.define({ key: "checkout", percentage: 100 });
+const result = flags.evaluateBoolean("checkout", { targetingKey: "user:alice" });
+expect(result.value).toBe(true);
 ```
 
 For a service that needs its dependency during construction, create the
@@ -155,7 +171,7 @@ const harness = createTestHarness({
 });
 ```
 
-Queue, topic, secret, data, schedule, key-value and bucket factories return `ServiceEmulator<T>`: a typed port, a
+Queue, topic, secret, data, schedule, key-value, bucket and flag factories return `ServiceEmulator<T>`: a typed port, a
 `simulated` or `mocked` fidelity label, and an optional `close`. Queue
 and schedule emulators may also expose a `VirtualClock`; data emulators require `close`.
 The scheduler supports interval schedules only: `graph.scheduleClock(alias)`
@@ -198,7 +214,8 @@ otherwise duplicate code without testing a service contract.
 | Data engine | `graph.data(alias)` and `createDataEmulator()` use SQLite through the shared engine SPI; the emulator runs its conformance suite | Process-local SQLite, no raw SQL or remote database protocol; no schema migration port in memory |
 | Schedule | `graph.schedule(alias)` and `graph.scheduleClock(alias)` use the local scheduler and virtual clock | Interval schedules only; fired timers do not automatically invoke a handler |
 | Key-value / blob metadata | `graph.kv(alias)` and `graph.bucket(alias)` implement generated types from the pinned WASI subsets | Process-local; the pinned blob interface has no body-read operation and does not claim a complete WASI or cloud storage implementation |
-| Flags / experiments / rollout | `@hobo/identity` provides `createContractAssertedHarnessFixtures` and its built-in engines | Direct in-process fixtures, not automatically wired into this graph or a remote flag provider |
+| Flags | `graph.flag(alias)` or `createFlagEmulator()` supplies an isolated `FeatureFlagPort` | In-process flag engine; not a remote provider or a complete WIT implementation |
+| Experiments / rollout | `@hobo/identity` provides `createContractAssertedHarnessFixtures` and its built-in engines | Direct in-process fixtures, not automatically wired into this graph or a remote flag provider |
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
@@ -233,7 +250,7 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `external` | `placeholder` | Use a verified Pact-derived mock or a provider emulator |
 | `container` | `camp-only` | Requires a container-capable environment |
 | `wasm-component` | `camp-only` | Requires a host that executes component bytes |
-| `flag` | `fixture` | Identity's local flag fixtures are separate from the graph |
+| `flag` | `port` | Identity's local FeatureFlagPort; not a remote provider |
 | `auth` | `placeholder` | IdentityService can test workload identity; it is not a full auth/session emulator |
 | `crypto` | `placeholder` | The in-memory KMS supports identity signing, not the whole crypto catalog |
 | `notify` | `placeholder` | CD has its own NotificationPort; it is not the catalog's general notify port |
@@ -260,7 +277,7 @@ verification.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
   `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `data(alias)`,
   `schedule(alias)`, `scheduleClock(alias)`, `kv(alias)`, `bucket(alias)`,
-  `bucketInspector(alias)`, `fidelity()`.
+  `bucketInspector(alias)`, `flag(alias)`, `flagInspector(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded
   exponential backoff capped at 5s per wait. Retries propagation-shaped
   failures (404, 408, 425, 429, any 5xx, network throws) and **fails fast on

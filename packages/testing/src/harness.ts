@@ -13,19 +13,21 @@
  *    never silently becomes `in-process`.
  * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
  *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, `secret`, or
- *    `data`, `schedule`, `scheduleClock`, `kv`, `bucket`, `bucketInspector`, or
- *    `untilReady` marks it asserted-against;
+ *    `data`, `schedule`, `scheduleClock`, `kv`, `bucket`, `bucketInspector`,
+ *    `flag`, `flagInspector`, or `untilReady` marks it asserted-against;
  *    if any is `mocked`, this run
  *    cannot claim prod-readiness and the report says so.
  */
 
 import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
-import type { SecretsPort } from "@hobo/identity";
+import type { FeatureFlagPort, SecretsPort } from "@hobo/identity";
 import type {
 	BlobStorePort,
 	BucketEmulator,
 	BucketInspector,
+	FlagEmulator,
+	FlagInspector,
 	KeyValuePort,
 	QueueEmulator,
 	ScheduleEmulator,
@@ -187,6 +189,20 @@ function buildGraph(
 		}
 		return emulator;
 	}
+	function flagEmulator(alias: string): FlagEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.flags.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no flag emulator`,
+				"use the alias of a flag resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
 	return Object.freeze({
 		stage,
 		lane,
@@ -289,6 +305,12 @@ function buildGraph(
 		},
 		bucket(alias: string): BlobStorePort {
 			return bucketEmulator(alias).port;
+		},
+		flag(alias: string): FeatureFlagPort {
+			return flagEmulator(alias).port;
+		},
+		flagInspector(alias: string): FlagInspector | undefined {
+			return flagEmulator(alias).inspector;
 		},
 		bucketInspector(alias: string): BucketInspector | undefined {
 			return bucketEmulator(alias).inspector;
