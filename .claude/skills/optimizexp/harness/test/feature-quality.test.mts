@@ -1,64 +1,12 @@
-/**
- * Unit tests: feature quality, discovery preference, rubberduck-check.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-	checkGherkinQuality,
-	checkRubberduckDoc,
-	gherkinTemplate,
-} from "../lib/feature-quality.mts";
+import { checkGherkinQuality } from "../lib/feature-quality.mts";
 import { pickPrimaryCommand, type DiscoveryReport } from "../lib/code-discovery.mts";
 import { buildExperienceCatalog } from "../lib/experience-catalog.mts";
 import type { SurfaceMap } from "../lib/surface-map.mts";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-
-describe("feature-quality rubberduck", () => {
-	it("rejects empty EXPERIENCE.md", () => {
-		const r = checkRubberduckDoc("# hi\n");
-		assert.equal(r.ok, false);
-		assert.ok(r.problems.some((p) => /Rubber-duck/i.test(p)));
-	});
-
-	it("accepts filled EXPERIENCE with checked boxes and accept", () => {
-		const md = `# EXPERIENCE: x
-
-entryCommand: \`hobo --help\`
-
-## Rubber-duck (explain to a new teammate)
-
-1. Who — developer finishing help discoverability in two minutes.
-2. Path — \`hobo --help\` from clean shell.
-3. First see — verb list and First run section.
-4. Wrong product — a generic monorepo script help page.
-5. Happy — run help, see verbs.
-6. Failure — unknown verb gives remediation.
-7. Evidence — cli capture of help stdout.
-8. Out of scope — full Pi multi-turn chat.
-
-## Adversarial critique (must check all)
-
-- [x] Did not skip default entry because a secondary verb is easier to automate
-- [x] Not testing a monorepo script instead of the product binary
-- [x] No When-step is only “exercise the surface” without a real command
-- [x] Scores cannot be invented without reading stdout/TUI
-- [x] Persona vocabulary/asserts considered for shared paths
-- [x] Security: secrets, destructive promote, network—fail-closed
-- [x] Cognitive load: journey stays within persona thresholds
-- [x] Confusion twin: stock UI / wrong binary / wrong verb—covered
-- [x] If this feature were the only one we ship, the persona would not still be lost
-
-## Verdict
-
-- accept
-- primaryCommand: \`hobo --help\`
-`;
-		const r = checkRubberduckDoc(md);
-		assert.equal(r.ok, true, r.problems.join("; "));
-	});
-});
 
 describe("gherkin quality", () => {
 	it("flags template-only When", () => {
@@ -80,41 +28,21 @@ Feature: x
 		assert.equal(r.templateOnly, true);
 	});
 
-	it("accepts concrete When run backticks", () => {
+	it("accepts concrete commands and observable outcomes", () => {
 		const dir = mkdtempSync(path.join(tmpdir(), "oxp-gq2-"));
-		const body = gherkinTemplate({
-			kind: "help-discoverability",
-			featureId: "hobo-help",
-			title: "help",
-			personaId: "developer",
-			personaName: "developer",
-			iface: "cli",
-			experiences: ["dx"],
-			bin: "hobo",
-			entryCommand: "hobo --help",
-		});
+		const body = [
+			"@optimizexp @dx @persona:developer @interface:cli",
+			"Feature: Help",
+			"  Scenario: Show help",
+			"    When I run `hobo --help`",
+			'    Then stdout contains "Usage"',
+			"  Scenario: Reject an unknown command",
+			"    When I run `hobo missing`",
+			"    Then exit code is 2",
+		].join("\n");
 		writeFileSync(path.join(dir, "hobo-help-developer.feature"), body);
-		const r = checkGherkinQuality(dir);
-		assert.equal(r.ok, true, r.problems.join("; "));
-	});
-
-	it("keeps persona-specific role context in generated scenarios", () => {
-		const base = {
-			kind: "help-discoverability" as const,
-			featureId: "help",
-			title: "help",
-			personaId: "p",
-			personaName: "p",
-			iface: "cli",
-			experiences: ["dx"],
-			bin: "hobo",
-			entryCommand: "hobo --help",
-		};
-		const developer = gherkinTemplate({ ...base, personaRole: "application-developer" });
-		const operator = gherkinTemplate({ ...base, personaRole: "agent-operator" });
-		assert.notEqual(developer, operator);
-		assert.match(developer, /persona-role:application-developer/);
-		assert.match(operator, /persona-role:agent-operator/);
+		const result = checkGherkinQuality(dir);
+		assert.equal(result.ok, true, result.problems.join("; "));
 	});
 });
 
