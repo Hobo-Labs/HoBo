@@ -620,3 +620,12 @@ node --import tsx scripts/ci/verify-relay-dispatch.mts
 Native Dagger checks use [`.hobo/dagger.json`](../../.hobo/dagger.json); see [`@hobo/ci-dagger`](../ci-dagger/README.md). Manual runner acceptance: [`.github/workflows/hobo-ci-acceptance.yml`](../../.github/workflows/hobo-ci-acceptance.yml) (optional `dagger_acceptance` input).
 
 `#Offer` guards every `backend` comparison behind `backend != _|_`: CUE 0.14 rejects references to an absent optional field, so unguarded `if backend == …` clauses broke `cue vet` for offers without a backend.
+
+CI routing counts the largest reported exposure among offers for the same
+provider account when applying both offer budgets and shared-policy limits.
+The configuration parser rejects duplicate provider-account offers; this
+check also protects direct calls to the public router with unvalidated data.
+An unknown observation time cannot prove that completed local usage was
+included, so that usage remains counted. See the
+[CI budget verification skill](../../.agents/skills/verify-ci-budget-routing/SKILL.md)
+for the model, generated tests, and assumptions.
