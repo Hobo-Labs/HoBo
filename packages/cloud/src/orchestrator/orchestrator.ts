@@ -254,7 +254,10 @@ export async function runOrchestrator(
 					resource.state === "Provisioned" ||
 					resource.state === "Provisioning" ||
 					resource.state === "Destroying" ||
-					(legacyRollback && resource.state === "Failed"),
+					(resource.state === "Failed" &&
+						(legacyRollback ||
+							resource.hasProvisionedBaseline === true ||
+							resource.specHash !== undefined)),
 			)
 		)
 			return blockedTransition(initialEvents, "rollback-unverified");

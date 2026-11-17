@@ -240,7 +240,7 @@ describe("upsert", () => {
 		expect(iac.calls.filter((call) => call.startsWith("destroy:"))).toEqual([]);
 	});
 
-	it("detects later changes to legacy resources when their applied plan is recorded", async () => {
+	it("refuses legacy no-op and update decisions without recorded applied provenance", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
 		const fixture = loadPlan();
@@ -269,10 +269,24 @@ describe("upsert", () => {
 			],
 			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
 		);
-		await runOrchestrator(deps(store, iac), plan, "legacy-plan", {
-			tenant,
-			actor,
+		const unchanged = await runOrchestrator(
+			deps(store, iac),
+			plan,
+			"legacy-plan",
+			{
+				tenant,
+				actor,
+			},
+		);
+		expect(unchanged.status).toBe("needs-human");
+		expect(unchanged.changes.changes[0]).toMatchObject({
+			action: "retain",
+			reason: expect.stringMatching(/unverified/i),
 		});
+		expect(unchanged.blockedProviderMoves).toMatchObject([
+			{ resource: "network", reason: "specification-unverified" },
+		]);
+		expect(unchanged.blockedProviderMoves?.[0]).not.toHaveProperty("from");
 		expect(iac.calls).toEqual([]);
 
 		const changed = {
@@ -281,15 +295,31 @@ describe("upsert", () => {
 		};
 		await recordPlan(store, "legacy-plan", changed);
 		const whatIf = planDeploymentChanges(changed, await drain(store, stream));
-		expect(whatIf.changes[0]?.action).toBe("update");
+		expect(whatIf.changes[0]).toMatchObject({
+			action: "retain",
+			reason: expect.stringMatching(/unverified/i),
+		});
 		const result = await runOrchestrator(
 			deps(store, iac),
 			changed,
 			"legacy-plan",
 			{ tenant, actor },
 		);
-		expect(iac.calls).toEqual(["apply:network"]);
-		expect(result.status).toBe("deployed");
+		expect(iac.calls).toEqual([]);
+		expect(result.status).toBe("needs-human");
+		const resource = changed.resources[0];
+		if (!resource) throw new Error("fixture has no resource");
+		expect(
+			await reconcileResource(deps(store, iac), resource, {
+				deploymentId: "legacy-plan",
+				tenant,
+				actor,
+			}),
+		).toMatchObject({
+			kind: "blocked",
+			move: { reason: "specification-unverified" },
+		});
+		expect(iac.calls).toEqual([]);
 	});
 
 	it("sends the changed resource declaration to the provider", async () => {

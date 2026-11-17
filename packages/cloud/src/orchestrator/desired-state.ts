@@ -146,11 +146,11 @@ export interface RecordedResource {
 	readonly specHash?: string;
 	/** True only when a provisioned fact recorded this hash itself. */
 	readonly specHashRecorded?: boolean;
-	/** A failed resource has an earlier provisioned baseline, even if hashless. */
+	/** An in-flight or failed resource has an earlier provisioned baseline. */
 	readonly hasProvisionedBaseline?: boolean;
 	/** The last plan that declared it, from `deployment.Planned`. */
 	readonly plan?: ResourcePlan;
-	/** Provider that may own it, when established by a provisioning fact or plan. */
+	/** Provider established by a provisioning fact or a hash-bound plan. */
 	readonly providerId?: string;
 }
 
@@ -158,6 +158,7 @@ export interface BlockedProviderMove {
 	readonly resource: string;
 	readonly from?: string;
 	readonly to: string;
+	readonly reason?: "specification-unverified";
 }
 
 /** Refuse a provider move unless no previous effects exist or ownership agrees. */
@@ -168,9 +169,24 @@ export function blockedProviderMove(
 	if (previous === undefined || previous.state === "Destroyed")
 		return undefined;
 	const provider = previous.providerId;
+	if (
+		(previous.state === "Provisioned" ||
+			previous.hasProvisionedBaseline === true) &&
+		previous.specHashRecorded !== true
+	)
+		return {
+			resource: resource.name,
+			...(provider !== undefined ? { from: provider } : undefined),
+			to: resource.provider,
+			reason: "specification-unverified",
+		};
 	if (provider === resource.provider) return undefined;
-	// A legacy hash covers the provider as well as the rest of the declaration.
-	if (provider === undefined && previous.specHash === desiredSpecHash(resource))
+	// A recorded hash covers the provider as well as the rest of the declaration.
+	if (
+		provider === undefined &&
+		previous.specHashRecorded === true &&
+		previous.specHash === desiredSpecHash(resource)
+	)
 		return undefined;
 	return {
 		resource: resource.name,
@@ -253,15 +269,18 @@ export function recordedResources(
 		const candidate = plans.get(resourceId);
 		const plan =
 			candidate &&
-			(eventHash === undefined || desiredSpecHash(candidate) === eventHash)
+			eventHash !== undefined &&
+			desiredSpecHash(candidate) === eventHash
 				? candidate
 				: undefined;
-		const specHash = eventHash ?? (plan ? desiredSpecHash(plan) : undefined);
-		const providerId = previous ? previous.providerId : candidate?.provider;
+		const specHash = eventHash;
+		const providerId = previous?.providerId ?? plan?.provider;
 		const recorded: Omit<RecordedResource, "resourceId"> = {
 			state: "Provisioned",
 			...(specHash !== undefined ? { specHash } : undefined),
-			...(eventHash !== undefined ? { specHashRecorded: true } : undefined),
+			...(eventHash !== undefined && /^sha256:[a-f0-9]{64}$/u.test(eventHash)
+				? { specHashRecorded: true }
+				: undefined),
 			...(plan !== undefined ? { plan } : undefined),
 			...(providerId !== undefined ? { providerId } : undefined),
 		};
@@ -306,7 +325,13 @@ export function recordedResources(
 				if ((unresolved.get(resourceId)?.size ?? 0) > 0) break;
 				const targetHash = specHashOf(event);
 				const candidate = plans.get(resourceId);
-				const targetProvider = providerIdOf(event) ?? candidate?.provider;
+				const targetProvider =
+					providerIdOf(event) ??
+					(candidate &&
+					targetHash !== undefined &&
+					desiredSpecHash(candidate) === targetHash
+						? candidate.provider
+						: undefined);
 				const providerId =
 					previous && previous.state !== "Destroyed"
 						? previous.providerId === targetProvider
@@ -409,7 +434,7 @@ export function recordedResources(
 		out.set(resourceId, {
 			resourceId,
 			...recorded,
-			...(recorded.state === "Failed" &&
+			...((recorded.state === "Failed" || recorded.state === "Provisioning") &&
 			stable.get(resourceId)?.state === "Provisioned"
 				? { hasProvisionedBaseline: true }
 				: undefined),
@@ -456,6 +481,16 @@ export function classifyResource(
 	const base = { resourceId: resource.name, desiredSpecHash: desired };
 	if (recorded === undefined)
 		return { ...base, action: "create", reason: "not yet provisioned" };
+	if (
+		(recorded.state === "Provisioned" ||
+			recorded.hasProvisionedBaseline === true) &&
+		recorded.specHashRecorded !== true
+	)
+		return {
+			...base,
+			action: "retain",
+			reason: "applied specification is unverified; reconciliation is required",
+		};
 	const recordedHash =
 		recorded.specHash !== undefined
 			? { recordedSpecHash: recorded.specHash }

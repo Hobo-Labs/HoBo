@@ -437,18 +437,14 @@ function finalStateHash(resourceId: string): string {
 /**
  * True when a resource's recorded state already matches its declaration, so
  * reconciling it must call no provider: it is Provisioned from the same
- * desired spec, or Provisioned by a legacy fact whose original plan is not
- * available (treated as converged rather than guessing what was applied).
+ * desired spec, with the hash recorded by the provisioned fact.
  */
 export function isConverged(
 	snapshot: ResourceActorSnapshot,
 	resource: ResourcePlan,
 ): boolean {
 	if (snapshot.state !== "Provisioned") return false;
-	return (
-		snapshot.specHash === undefined ||
-		snapshot.specHash === desiredSpecHash(resource)
-	);
+	return snapshot.specHash === desiredSpecHash(resource);
 }
 
 // The reconcile core records the generation before dispatch under the resource
