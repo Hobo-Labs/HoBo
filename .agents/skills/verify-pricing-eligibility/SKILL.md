@@ -9,7 +9,7 @@ description: Check financial-state completeness, informational quotes, and the d
 
 **Why:** A partial state can omit costs. Previously a cheaper partial quote was marked eligible and selected over a complete quote, and a quote with missing eligibility metadata passed the dispatcher gate.
 
-**Review basis:** commit `e380daf9e49f305c4513d40e2f6135cff19e49a5`. Rerun these checks against current source. The model and proof do not establish that TypeScript refines them.
+**Review basis:** commit `9c44fed39b6580026e7d130691a675480af827af`. Rerun these checks against current source. The model and proof do not establish that TypeScript refines them.
 
 ## Covered code
 
@@ -35,7 +35,7 @@ PricingEligibility checks 62 reachable states for complete, partial, and unknown
 
 Z3 checks that the abstract boolean quote and selection gates imply complete state and present eligibility, with a witness for a successful complete case. `PRICING_ELIGIBILITY_PROOF_MUTATION=partial-eligible` and `ignore-missing` give counterexamples. This obligation does not authenticate provider data or establish real-code refinement.
 
-V1–v8 replay preserves earlier partial eligibility; reconcile affected quotes and do not authorize new work solely from historical results. The broker's separate raw-estimate helper receives no quote or eligibility metadata, so its callers must enforce quote eligibility independently. This skill does not verify that helper, other consumers or the rest of HoBo.
+V1–v8 replay preserves earlier partial eligibility; reconcile affected quotes and do not authorize new work solely from historical results. The broker's quote-based helper now requires a complete eligible current quote, while its legacy raw spend estimate remains a trusted caller assertion without quote provenance. The broker budget skill checks that helper separately; this skill does not verify other consumers or the rest of HoBo.
 
 ## Keep in sync
 

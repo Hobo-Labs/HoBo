@@ -9,7 +9,7 @@ description: Check per-workload charge selection, product and meter binding, tie
 
 **Why:** Selecting charges from only the first workload can rate a mixed $1 and $100 workload as $2 or $200 solely according to input order. An unknown measurement dimension could instead be silently priced at $0; tier gaps and overlaps could price eight units as five or eleven.
 
-**Review basis:** commit `e380daf9e49f305c4513d40e2f6135cff19e49a5`. Rerun these checks against current source. The models and proof do not establish that TypeScript refines them.
+**Review basis:** commit `9c44fed39b6580026e7d130691a675480af827af`. Rerun these checks against current source. The models and proof do not establish that TypeScript refines them.
 
 ## Covered code
 

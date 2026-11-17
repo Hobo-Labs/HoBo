@@ -9,7 +9,7 @@ description: Check UTC validity, interval coverage, time ordering, and historica
 
 **Why:** Text comparison and millisecond truncation can select a later-expiring credit or accept evidence that is not yet valid. Before this fix, an expiry at `.5Z` sorted before the same second at `Z`, and evidence beginning at `.0002Z` covered a request at `.0001Z`.
 
-**Review basis:** commit `e380daf9e49f305c4513d40e2f6135cff19e49a5`. Run the checks on current source before relying on the result. The models and proof do not establish TypeScript refinement.
+**Review basis:** commit `9c44fed39b6580026e7d130691a675480af827af`. Run the checks on current source before relying on the result. The models and proof do not establish TypeScript refinement.
 
 ## Covered code
 

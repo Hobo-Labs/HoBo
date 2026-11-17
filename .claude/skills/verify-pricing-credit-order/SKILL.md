@@ -9,7 +9,7 @@ description: Check financial-source admission, credit selection, economic basis,
 
 **Why:** A duplicate $10 credit could be applied twice, foreign-tenant sources could be consumed, and a source with no account binding could be used across multiple accounts. Locale-dependent credit choice also produced $0 versus $9 effective cost for the same quote.
 
-**Review basis:** commit `e380daf9e49f305c4513d40e2f6135cff19e49a5`. Rerun checks against current source. The models and proofs do not establish that TypeScript refines them.
+**Review basis:** commit `9c44fed39b6580026e7d130691a675480af827af`. Rerun checks against current source. The models and proofs do not establish that TypeScript refines them.
 
 ## Covered code
 

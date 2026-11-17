@@ -112,6 +112,32 @@ snapshot iterators are rejected. A finalized usage fact may retire a hold only b
 naming its reservation ID. This legacy preflight is single-writer and is not the
 durable financial authority for funded cloud hosting.
 
+`authorizeBillingSpend` accepts a complete current `QuoteVector` for
+quote-based authorization. It checks the content hash, explicit eligibility,
+unpriced items, USD currency and exact amount before applying budget bounds.
+Callers using `quoteIncrementalUsd` or `quoteIncrementalDecimal` must migrate
+to the full quote; those fields alone now reject. `spendEstimateUsd` remains a
+trusted legacy estimate and carries no quote provenance. A quote hash detects
+changed contents but does not authenticate provider data or the quote's source.
+The general broker request path still passes `spendEstimateUsd` to its billing
+plane; it does not automatically invoke this quote-based helper.
+
+The [broker budget skill](../../.agents/skills/verify-broker-budget-authority/SKILL.md)
+checks this authorization boundary alongside budget holds and settlement. Its
+quote model explores 2,304 states; this constrained projection explores 96
+states and hides 48 same-state transitions. Quote validity is abstracted and
+the model assumes trusted evidence.
+
+```mermaid
+stateDiagram-v2
+  s0: Spend evidence received
+  s1: Spend authorized
+  s2: Spend denied
+  [*] --> s0
+  s0 --> s2: check evidence and bounds
+  s0 --> s1: check evidence and bounds
+```
+
 The **HoBo Broker**: the policy-governed authority that actually brokers
 Bindle/Camp/Yard/Junction placements **across providers**, spins resources up
 and down, and hands accepted work to delivery — based on the configured
@@ -134,7 +160,7 @@ be swapped without touching the brokering pipeline:
 |---|---|---|---|
 | Policy | `GatePlane` (OPA-shaped request/decision documents) | `@hobo/contracts` policy pack (imported and **run**, not reinvented) | **Rego** via `createOpaGatePlane` — OPA Data API decision at `hobo/broker/decision`, fail-closed (`policy-engine-unavailable`), pinned by `broker_policy_opa.pact.json` |
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
-| Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` prefers `@hobo/pricing` incremental USD when supplied |
+| Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` checks a complete eligible pricing quote when supplied |
 | Delivery | `DeliveryPlane` | `createDeliveryPlane` — in-process conductor only; agent/publisher policies fail closed with `delivery-plane-unwired` | `createReconcilerDeliveryPlane({ requestPromotion })` — every receipt is delivered through `@hobo/cd` (ADR-0182: D14), fail-closed, pinned by `broker_delivery_cd.pact.json`. GitOps rendering (Argo CD `Application`, Flux `Kustomization`) moved to `@hobo/cd-gitops` |
 | Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `custom` configs | an external connector catalog |
 

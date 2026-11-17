@@ -1,4 +1,4 @@
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import {
 	type Money,
 	MoneySchema,
@@ -7,6 +7,7 @@ import {
 	type QuoteAmounts,
 	QuoteAmountsSchema,
 	type QuoteScenario,
+	type QuoteVector,
 	QuoteVectorSchema,
 } from "./_generated/pricing_pb.js";
 import { catalogHashOf } from "./catalog.js";
@@ -47,8 +48,14 @@ export type RatingAlgorithmVersion =
 	| "pricing-rating/v8"
 	| "pricing-rating/v9";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v9";
+export const RATING_ALGORITHM_VERSION = "pricing-rating/v9";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
+
+export function quoteHashOf(quote: QuoteVector): string {
+	const unhashed = clone(QuoteVectorSchema, quote);
+	unhashed.quoteHash = "";
+	return stableHash(quoteVectorToJson(unhashed));
+}
 
 function rejection(
 	code: PricingRejectionCode,
@@ -353,7 +360,7 @@ export function quoteScenario(
 		});
 		return create(QuoteVectorSchema, {
 			...initial,
-			quoteHash: stableHash(quoteVectorToJson(initial)),
+			quoteHash: quoteHashOf(initial),
 		});
 	} catch (error) {
 		if (error instanceof PricingFault) {

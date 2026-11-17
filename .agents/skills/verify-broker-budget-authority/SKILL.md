@@ -1,18 +1,19 @@
 ---
 name: verify-broker-budget-authority
-description: Verify hosting budget admission, execution claims, uncertain holds, journal commits, and settlement when changing the broker budget authority.
+description: Verify quote authorization, hosting budget admission, execution claims, uncertain holds, journal commits, and settlement when changing the broker budget authority.
 ---
 
 # Broker hosting budget authority
 
-**Properties:** Admission counts the complete liability bound and existing outside exposure; claimed or uncertain execution retains its hold; a journal callback that fails before appending leaves no acknowledged state change; evidence-backed settlement is idempotent.
+**Properties:** Quote authorization requires a current, intact and eligible quote or a trusted legacy estimate, compares exact liabilities against explicit bounds, and rounds accepted numeric output upward. Admission counts the complete liability bound and existing outside exposure; claimed or uncertain execution retains its hold; a journal callback that fails before appending leaves no acknowledged state change; evidence-backed settlement is idempotent.
 
 **Why:** A missing hold or lost journal entry can fund multiple provider operations with the same money, while a premature release can leave running work unaccounted for.
 
-**Review baseline:** commit `7ba436fa2df564a96caa7ea405443270b729a978`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
+**Review baseline:** commit `9c44fed39b6580026e7d130691a675480af827af`. PASS for the stated generated cases, bounded model, and exact-arithmetic abstraction under the assumptions below.
 
 ## Covered code
 
+- `packages/broker/src/pricing-authorization.ts`, `packages/pricing/src/quote.ts`, and `packages/broker/test/pricing-authorization.test.ts`: quote validation, exact decimal bounds, zero/unlimited policy, conservative numeric output, and 300 generated cap cases (seed 614493).
 - `packages/broker/src/budget-authority.ts`: `createBudgetAdmissionAuthority`, especially `reserve`, `claimExecution`, `uncertain`, `release`, `settle`, `save`, and journal replay.
 - `packages/broker/test/budget-authority.property.test.ts`: generated actual-code cases.
 - `packages/broker/src/budget-fence-settlement.ts` and `packages/broker/test/fenced-budget-settlement.test.ts`: receiver- and finance-signed settlement verification, with generated adversarial histories.
@@ -28,9 +29,15 @@ From the repository root after installing workspace dependencies:
 bash scripts/verify-state-machine.sh .agents/skills/verify-broker-budget-authority
 ```
 
-This runs fast-check, signed-settlement cases, the HoBo hosting bridge's existing integration tests, TLC 1.7.4, and a Z3 4.15.4 induction proof. Set `TLA2TOOLS` to the checksum-pinned jar or let the shared runner download it. Set `BUDGET_Z3_PYTHONPATH` to an existing `z3-solver==4.15.4.0` installation or let the test install that pinned version into a temporary directory. Java 11+, Python with pip, Node with the repo's `tsx`, Vitest, fast-check, and built workspace dependencies for the composition tests are required. Use `/statechart` to read the TLA+ result and its view.
+This runs quote and budget fast-check cases, signed-settlement cases, the HoBo hosting bridge's existing integration tests, TLC 1.7.4, and a Z3 4.15.4 induction proof. Set `TLA2TOOLS` to the checksum-pinned jar or let the shared runner download it. Set `BUDGET_Z3_PYTHONPATH` to an existing `z3-solver==4.15.4.0` installation or let the test install that pinned version into a temporary directory. Java 11+, Python with pip, Node with the repo's `tsx`, Vitest, fast-check, and built workspace dependencies for the composition tests are required. Use `/statechart` to read the TLA+ result and its view.
 
 ## Scope and evidence
+
+Quote authorization rejects raw quote amounts without the full quote, old or changed quote contents, ineligible or unpriced quotes, non-USD amounts, invalid bounded policy and exact liabilities above budget or cap. Zero means zero unless the corresponding unlimited flag is explicit. Accepted exact liabilities round upward when returned as a number; denials return zero authorized amount. A content hash detects changes but is not authentication. A trusted legacy `spendEstimateUsd` remains accepted without quote provenance, and the general broker request path does not automatically invoke this quote helper. The broker suite passed 571 tests with 13 skipped; pricing passed 196 and dispatcher passed 266. Sixteen deliberate implementation mutations covering quote checks, zero and unlimited handling, exact comparison, policy validation and rounding fail the real-code tests.
+
+BrokerQuoteAuthorization checks 2,304 reachable states for historical or current behavior, full quotes, raw quote amounts and trusted estimates, abstract quote validity, rounded or exact amount, and two independent bounds and unlimited flags. It checks that current authorization respects both bounds and requires valid full quote evidence for quote-based use. Its 96-state constrained projection hides 48 same-state steps. Three model mutations and two executable historical counterexamples violate those properties. The model abstracts hash verification, version, eligibility, currency and provenance into a validity flag; it does not prove cryptography, IEEE conversion, TypeScript refinement, persistent holds or caller honesty.
+
+Z3 proves that abstract authorization under the stated guards implies valid quote evidence and unbounded exact-real budget and cap inequalities. The premises have a witness; `BROKER_QUOTE_PROOF_MUTATION=raw`, `quote`, `cap`, and `budget` give counterexamples. This mathematical obligation does not prove real-code refinement or provider evidence. For isolated quote mutations set `BROKER_QUOTE_VERIFY_PACKAGE_ROOT` to a package copy and place the pricing corpus at the same relative path used by its tests.
 
 The generated tests use seed 614440 and 350 examples per property. They vary spend, unresolved liability, recovery reserves, outside commitments, request bounds and repeated holds; independently check provider-account and entitlement limits and reserved projections; check uncertain and claimed execution, journal replay and evidence-backed idempotent settlement; and inject a journal callback failure before append into reserve, claim, uncertain, release and settle. They exercise the synchronous authority with an in-memory journal. A callback that appends and then throws is not covered. The separate existing HoBo composition tests exercise concrete examples of SQLite authority connections, shared credits, reservation adoption, crash recovery and final settlement; they are not generated tests. Neither check proves the SQLite or PostgreSQL adapters, and the generated tests do not cover revision/period changes, competing processes, provider effects, or overrun settlement.
 
