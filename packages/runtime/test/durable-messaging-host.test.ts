@@ -6,6 +6,7 @@ import {
 	createDurableMessagingLimitsGrant,
 	createDurableMessagingWitHost,
 	DURABLE_MESSAGING_JSPI_INTERFACE,
+	type DurableMessagingJspiComponent,
 	type DurableMessagingJspiImports,
 	instantiateDurableMessagingJspi,
 	supportsDurableMessagingJspi,
@@ -42,36 +43,41 @@ const delivery = {
 function fixture(overrides: Partial<DurableMessaging> = {}) {
 	const port: DurableMessaging = {
 		limits: DURABLE_MESSAGING_LIMITS,
-		ensureTopic: vi.fn(async ({ topic }) => ({
+		ensureTopic: vi.fn<DurableMessaging["ensureTopic"]>(async ({ topic }) => ({
 			status: "committed",
 			value: { topic },
 		})),
-		ensureSubscription: vi.fn(async ({ subscription: value }) => ({
-			status: "committed",
-			value: {
-				subscription: value,
-				firstAvailableSequence: 1,
-				historyTruncated: false,
-			},
-		})),
-		publish: vi.fn(async ({ message: value }) => ({
+		ensureSubscription: vi.fn<DurableMessaging["ensureSubscription"]>(
+			async ({ subscription: value }) => ({
+				status: "committed",
+				value: {
+					subscription: value,
+					firstAvailableSequence: 1,
+					historyTruncated: false,
+				},
+			}),
+		),
+		publish: vi.fn<DurableMessaging["publish"]>(async ({ message: value }) => ({
 			status: "committed",
 			value: { messageId: value.id, sequence: 1 },
 		})),
-		consume: vi.fn(async () => ({ status: "committed", value: [delivery] })),
-		ack: vi.fn(async ({ messageId, sequence }) => ({
+		consume: vi.fn<DurableMessaging["consume"]>(async () => ({
+			status: "committed",
+			value: [delivery],
+		})),
+		ack: vi.fn<DurableMessaging["ack"]>(async ({ messageId, sequence }) => ({
 			status: "committed",
 			value: { messageId, sequence },
 		})),
-		nack: vi.fn(async ({ messageId, sequence }) => ({
+		nack: vi.fn<DurableMessaging["nack"]>(async ({ messageId, sequence }) => ({
 			status: "committed",
 			value: { messageId, sequence, disposition: "released" },
 		})),
-		compact: vi.fn(async ({ topic }) => ({
+		compact: vi.fn<DurableMessaging["compact"]>(async ({ topic }) => ({
 			status: "committed",
 			value: { topic, firstAvailableSequence: 2, removedMessages: 1 },
 		})),
-		events: vi.fn(async ({ afterSequence }) => ({
+		events: vi.fn<DurableMessaging["events"]>(async ({ afterSequence }) => ({
 			status: "ok",
 			events: [],
 			firstAvailableSequence: 1,
@@ -105,8 +111,10 @@ describe("durable messaging WIT host boundary", () => {
 				instantiate,
 			};
 			const verify = vi.fn(
-				(_component: typeof component, candidate: typeof host) =>
-					candidate === host,
+				(
+					_component: DurableMessagingJspiComponent<string>,
+					candidate: typeof host,
+				) => candidate === host,
 			);
 			await expect(
 				instantiateDurableMessagingJspi(host, {
@@ -691,13 +699,23 @@ describe("durable messaging WIT host boundary", () => {
 	it("requires whole-instance authorization for event dispatch and disclosure", async () => {
 		let allowed = false;
 		let getters = 0;
-		const secret = Object.defineProperty({}, "status", {
-			enumerable: true,
-			get() {
-				getters++;
-				return "ok";
+		const secret = Object.defineProperty(
+			{
+				status: "ok" as const,
+				events: [],
+				firstAvailableSequence: 1,
+				nextAfterSequence: 0,
+				hasMore: false,
 			},
-		});
+			"status",
+			{
+				enumerable: true,
+				get() {
+					getters++;
+					return "ok";
+				},
+			},
+		);
 		const events = vi.fn(async () => {
 			allowed = false;
 			return secret;
@@ -708,7 +726,7 @@ describe("durable messaging WIT host boundary", () => {
 		const base = fixture().port;
 		// SAFETY: the getter-backed audit page deliberately tests denial before disclosure.
 		const host = createDurableMessagingWitHost(
-			{ ...base, events: events as DurableMessaging["events"] },
+			{ ...base, events },
 			{
 				authorize,
 				limitsGrant: createDurableMessagingLimitsGrant(),
@@ -869,13 +887,17 @@ describe("durable messaging WIT host boundary", () => {
 		const entered = new Promise<void>((resolve) => {
 			started = resolve;
 		});
-		const cached = Object.defineProperty({}, "status", {
-			enumerable: true,
-			get() {
-				getters++;
-				return "committed";
+		const cached = Object.defineProperty(
+			{ status: "committed" as const, value: [delivery] },
+			"status",
+			{
+				enumerable: true,
+				get() {
+					getters++;
+					return "committed";
+				},
 			},
-		});
+		);
 		const consume = vi.fn(async () => {
 			started();
 			await gate;
@@ -885,7 +907,7 @@ describe("durable messaging WIT host boundary", () => {
 		const authorize = vi.fn(() => authorized);
 		// SAFETY: the getter-backed cached response is deliberately malformed and must never be observed after revocation.
 		const host = createDurableMessagingWitHost(
-			{ ...base, consume: consume as DurableMessaging["consume"] },
+			{ ...base, consume },
 			{
 				authorize,
 				limitsGrant: createDurableMessagingLimitsGrant(),

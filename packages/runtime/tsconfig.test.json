@@ -4,5 +4,10 @@
 		"noEmit": true,
 		"types": ["node"]
 	},
-	"include": ["test/fixtures/todo-api.ts"]
+	"include": [
+		"test/fixtures/todo-api.ts",
+		"test/durable-messaging-host.test.ts",
+		"test/durable-messaging-jspi-component.test.ts",
+		"test/durable-messaging-packaging.test.ts"
+	]
 }
