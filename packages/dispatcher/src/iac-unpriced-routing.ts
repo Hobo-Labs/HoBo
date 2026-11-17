@@ -36,6 +36,7 @@ export interface UnpricedIacRoutingResult {
 	readonly targetId?: string;
 	readonly code?: string;
 	readonly reservationId?: string;
+	readonly executionOutcome?: "completed" | "unknown";
 	readonly outputs?: Readonly<Record<string, string>>;
 	readonly policy?: {
 		readonly policyHash: string;
@@ -149,24 +150,35 @@ function snapshotAdmission(value: unknown): Admission | undefined {
 
 function snapshotOutputs(value: unknown): Record<string, string> | undefined {
 	try {
+		if (typeof value !== "object" || value === null || Array.isArray(value))
+			return undefined;
+		const prototype = Object.getPrototypeOf(value);
 		if (
-			!isBoundedPricingInput(value) ||
-			typeof value !== "object" ||
-			value === null ||
-			Array.isArray(value)
+			(prototype !== Object.prototype && prototype !== null) ||
+			Object.getOwnPropertySymbols(value).length !== 0
 		)
 			return undefined;
-		const entries = Object.entries(value);
-		if (
-			entries.length > 256 ||
-			entries.some(
-				([key, item]) =>
-					!name(key) || typeof item !== "string" || item.length > 4096,
+		const descriptors = Object.getOwnPropertyDescriptors(value);
+		const keys = Object.keys(descriptors);
+		if (keys.length > 256) return undefined;
+		const entries: [string, string][] = [];
+		let size = 0;
+		for (const key of keys) {
+			const descriptor = descriptors[key];
+			if (
+				!name(key) ||
+				descriptor === undefined ||
+				!descriptor.enumerable ||
+				!("value" in descriptor) ||
+				typeof descriptor.value !== "string" ||
+				descriptor.value.length > 65_536
 			)
-		)
-			return undefined;
-		// SAFETY: the preceding check establishes string-valued entries.
-		return Object.fromEntries(entries) as Record<string, string>;
+				return undefined;
+			size += key.length + descriptor.value.length;
+			if (size > 1_048_576) return undefined;
+			entries.push([key, descriptor.value]);
+		}
+		return Object.fromEntries(entries);
 	} catch {
 		return undefined;
 	}
@@ -176,6 +188,7 @@ interface ProviderFailure {
 	admission: Admission | undefined;
 	requiresReconciliation: boolean;
 	reservationId?: string;
+	executionOutcome?: "not-started" | "completed" | "unknown";
 }
 
 /* oxlint-disable anti-slop/no-unknown-returns -- SAFETY: the local descriptor reader passes opaque values directly to boundary validation. */
@@ -193,6 +206,14 @@ function readFailure(error: unknown): ProviderFailure {
 		const admission = snapshotAdmission(read("admission"));
 		const reconciliation = read("requiresReconciliation");
 		const id = read("reservationId");
+		const executionOutcome = read("executionOutcome");
+		if (
+			executionOutcome !== undefined &&
+			executionOutcome !== "not-started" &&
+			executionOutcome !== "completed" &&
+			executionOutcome !== "unknown"
+		)
+			return { admission: undefined, requiresReconciliation: true };
 		if (
 			id !== undefined &&
 			(typeof id !== "string" ||
@@ -204,9 +225,16 @@ function readFailure(error: unknown): ProviderFailure {
 			return { admission: undefined, requiresReconciliation: true };
 		const result: ProviderFailure = {
 			admission,
-			requiresReconciliation: reconciliation !== false,
+			requiresReconciliation:
+				reconciliation !== false || executionOutcome !== "not-started",
 		};
 		if (typeof id === "string") result.reservationId = id;
+		if (
+			executionOutcome === "not-started" ||
+			executionOutcome === "completed" ||
+			executionOutcome === "unknown"
+		)
+			result.executionOutcome = executionOutcome;
 		return result;
 	} catch {
 		return { admission: undefined, requiresReconciliation: true };
@@ -389,12 +417,37 @@ export async function executeUnpricedIacTarget(input: {
 			if (
 				admission &&
 				validHeld(admission, input.requestId, inventory, inventoryHash) &&
-				outputs !== undefined &&
 				admission.unpricedPolicyProof &&
-				admission.reservation?.unpricedScopeProof
+				admission.reservation?.unpricedScopeProof &&
+				(failure?.reservationId === undefined ||
+					failure.reservationId === admission.reservation.reservationId)
 			) {
 				const policy = admission.unpricedPolicyProof;
 				const scope = admission.reservation.unpricedScopeProof;
+				if (outputs === undefined) {
+					const value: UnpricedIacRoutingResult = {
+						status: "uncertain",
+						code: "UNPRICED_EXECUTION_OUTCOME_UNKNOWN",
+						targetId,
+						pricing: selectedPricing,
+						budget: { evaluation: "bypassed", reservation: "held" },
+						reservationId: admission.reservation.reservationId,
+						executionOutcome:
+							returned || failure?.executionOutcome === "completed"
+								? "completed"
+								: "unknown",
+						policy: {
+							policyHash: policy.policyHash,
+							evidenceRef: policy.evidenceRef,
+						},
+						scope: {
+							authorityRef: scope.authorityRef,
+							evidenceRef: scope.evidenceRef,
+							ownershipEpoch: scope.ownershipEpoch,
+						},
+					};
+					return { value, outcome: { status: "uncertain" as const, targetId } };
+				}
 				const value: UnpricedIacRoutingResult = {
 					status: "selected",
 					targetId,
@@ -421,7 +474,7 @@ export async function executeUnpricedIacTarget(input: {
 				pricing: selectedPricing,
 				budget: unknown,
 			};
-			if (failure?.reservationId !== undefined)
+			if (failure?.reservationId === `iac:${input.requestId}`)
 				value.reservationId = failure.reservationId;
 			return { value, outcome: { status: "uncertain" as const, targetId } };
 		},
