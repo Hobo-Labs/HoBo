@@ -227,7 +227,6 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		expect(result.structuredContent).toMatchObject({
 			status: "stored",
 			hostSupport: { apps: false, formElicitation: true },
-			ref: `handoff://${INFISICAL_CLI_SESSION}`,
 		});
 		// The run has it; nothing the server sent the host carries it.
 		expect(

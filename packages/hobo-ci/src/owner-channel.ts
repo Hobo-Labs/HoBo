@@ -1,4 +1,14 @@
+import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
+
+export interface OwnerSettingsStore extends SettingsStore {
+	readonly hasSessionChoice?: () => boolean;
+	readonly onOwnerChoice?: () => void;
+	readonly assertCurrent?: () => void;
+	readonly selectionSignal?: AbortSignal;
+	readonly hasPendingWrites?: () => boolean;
+	readonly runStoreWrite?: <T>(write: () => Promise<T>) => Promise<T>;
+}
 
 /**
  * How a ceremony reaches the owner when they are not at the machine (a
@@ -18,6 +28,8 @@ export interface OwnerChannel {
 	}): Promise<string | undefined>;
 	/** Whether a value the owner handed over is waiting, without taking it. */
 	holds(name: string): boolean;
+	reserveCaptures?(names: readonly string[]): void;
+	forScope?(family: "ci" | "cd", cwd: string): OwnerChannel;
 	/**
 	 * Show the owner a link now, while the run waits on what they do there (a
 	 * device code to approve). Through the HoBo MCP server: the host's own
@@ -47,6 +59,12 @@ export interface OwnerChannel {
 	 * file): the store sign-in HoBo created, so the owner signs in once.
 	 */
 	readonly vault?: TrustedVault;
+	readonly storeSettings?: OwnerSettingsStore;
+	readonly vaultFor?: (family: "ci" | "cd", cwd: string) => TrustedVault;
+	readonly storeSettingsFor?: (
+		family: "ci" | "cd",
+		cwd: string,
+	) => OwnerSettingsStore;
 }
 
 /** The store sign-ins a run may keep in the owner channel's vault. */
@@ -169,6 +187,7 @@ export async function captureAll(
 		readonly instructions: string;
 	}[],
 ): Promise<readonly string[] | undefined> {
+	owner.reserveCaptures?.(requests.map((request) => request.name));
 	if (!requests.every((request) => owner.holds(request.name))) return undefined;
 	const values: string[] = [];
 	for (const request of requests) {

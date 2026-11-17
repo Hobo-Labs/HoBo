@@ -70,6 +70,13 @@ describe("Vercel HTTP entrypoint", () => {
 			);
 			expect(buildCommit({ VERCEL_GIT_COMMIT_SHA: "abc123" })).toBeNull();
 			expect(buildCommit({})).toBeNull();
+			expect(buildCommit({ HOBO_CI_SOURCE_SHA: COMMIT })).toBe(COMMIT);
+			expect(
+				buildCommit({
+					HOBO_CI_SOURCE_SHA: "invalid",
+					VERCEL_GIT_COMMIT_SHA: COMMIT,
+				}),
+			).toBeNull();
 			await serve(
 				createHttpEntry(
 					async () => {

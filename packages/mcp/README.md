@@ -52,7 +52,7 @@ the protocol over `postMessage` itself, and the composing server
 Apps host) opens a ticket; `submit_secret_value {ticketId, sealed}` is the
 form's own tool, listed only to an MCP Apps host and with
 `_meta.ui.visibility: ["app"]`; `secret_capture_status {ticketId}` reads a
-ticket's state and reference; `end_secret_capture {}` closes open tickets and
+ticket's state; `end_secret_capture {}` closes open tickets and
 ends the writer session. The resource is `text/html;profile=mcp-app` with
 empty CSP domain lists.
 
@@ -66,7 +66,8 @@ Form-mode elicitation is never used (the MCP spec forbids it for secrets).
 **What never leaves.** The value exists sealed in transit and as a
 `CapturedSecret` (prints `[redacted secret]`) in this process until the
 connector's single `reveal()`. Results are tickets, then `{ticketId, name,
-stored, ref, status}`; refusals carry a code and a reason, never the value.
+stored, status}`; refusals carry a code and a reason. Store coordinates and
+values do not appear in results or audit events.
 Nothing in `src/secret-capture/` writes a log line. The tests feed random
 synthetic values through every path and assert that no tool result, refusal,
 event, page, HTTP answer, console line or stdout/stderr write contains the

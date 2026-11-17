@@ -57,7 +57,8 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(step).toMatch(/AskUserQuestion/u);
 		for (const store of ["Infisical", "1Password", "Bitwarden"])
 			expect(step).toContain(`**${store}**`);
-		expect(step).toMatch(/OP_CONNECT_HOST/u);
+		expect(step).toMatch(/never to the agent/u);
+		expect(step).toMatch(/instead of collecting identifiers in\s+chat/u);
 		// Never env, never the owner's terminal, never hand-made identities.
 		expect(step).toMatch(
 			/Never ask the owner to set\s+environment\s+variables,\s+never\s+send\s+them\s+to\s+a\s+terminal/u,
@@ -79,7 +80,6 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		// Bitwarden: the API key through the credential form, then one approval.
 		expect(HAND_OFF).toMatch(/HOBO_OWNER_BITWARDEN_APPROVE/u);
 		expect(HAND_OFF).toMatch(/suggested_type: "basic"/u);
-		expect(HAND_OFF).toMatch(/BITWARDEN_SERVER_URL/u);
 		expect(HAND_OFF).not.toMatch(/BW_CLIENTID|Vaultwarden/u);
 		// The choice is the owner's: a present token never picks the store.
 		expect(step).toMatch(
@@ -118,8 +118,10 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/Never give the owner a `127\.0\.0\.1`/u);
 	});
 
-	it("shows every remediation line of a refusal, unparaphrased", () => {
-		expect(HAND_OFF).toMatch(/every\*\* remediation line/u);
+	it("does not repeat private coordinates from a refusal", () => {
+		expect(HAND_OFF).toMatch(
+			/excluding any private coordinates or\s+references/u,
+		);
 	});
 
 	it("describes the credential line the run really prints", async () => {
