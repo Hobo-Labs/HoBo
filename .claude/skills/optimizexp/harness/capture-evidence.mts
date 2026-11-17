@@ -39,6 +39,7 @@ import {
 } from "./lib/paths.mts";
 import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { isPathIdentifier, scenarioSlug } from "./lib/slug.mts";
 import { type EvidenceClaim, validateEvidenceReview } from "./lib/evidence-review.mts";
 
@@ -686,10 +687,19 @@ function main() {
 		console.error(`Invalid scenario: ${args.scenario}`);
 		process.exit(2);
 	}
-	const problem = projectSelectionProblem(resolveProjects(args.projects, repoRoot()));
+	const root = repoRoot();
+	const selection = resolveProjects(args.projects, root);
+	const problem = projectSelectionProblem(selection);
 	if (problem) {
 		console.error(problem);
 		process.exit(2);
+	}
+	if (["init-feature", "capture", "review", "stitch"].includes(mode)) {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
 	}
 	if (mode === "init-feature") return initFeature(args);
 	if (mode === "list-scenarios") {

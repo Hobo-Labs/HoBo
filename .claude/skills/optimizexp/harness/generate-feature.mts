@@ -33,6 +33,7 @@ import {
 import { resolvePersonaIds, listPersonaMetas } from "./lib/persona-resolve.mts";
 import { listProjects, projectSelectionProblem, resolveProjects, type ProjectRef } from "./lib/projects.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { isPathIdentifier, scenarioSlug } from "./lib/slug.mts";
 import { writeJson } from "./lib/media.mts";
 import { discoverCode, isLiveEgressScript, type DiscoveredBinding } from "./lib/code-discovery.mts";
@@ -1157,10 +1158,19 @@ function main() {
 		console.error(`Invalid feature id: ${args.id}`);
 		process.exit(2);
 	}
-	const problem = projectSelectionProblem(resolveProjects(args.projects, repoRoot()));
+	const root = repoRoot();
+	const selection = resolveProjects(args.projects, root);
+	const problem = projectSelectionProblem(selection);
 	if (problem) {
 		console.error(problem);
 		process.exit(2);
+	}
+	if (args.dryRun !== "1" && ["plan", "from-catalog", "scaffold", "implement"].includes(args.mode ?? "")) {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
 	}
 	if (args.mode === "plan") return planExperience(args);
 	if (args.mode === "rubberduck-check") return rubberduckCheck(args);

@@ -11,6 +11,8 @@ Thirteen third-party AI-coding tools are wired into this repo for **Claude Code*
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
+Project exploration and generation, capture, doctor, initialization, surveys, evidence posting, and review workflows check their implicit `.optimizexp` write scopes for links and other unsafe entries. Evidence posting also validates all scenario files before posting any comment, including in dry runs. These checks assume paths stay stable during the operation; explicitly selected output destinations and commands the operator asks the harness to run remain the operator's responsibility.
+
 > **Note:** this is *tooling* config, not part of the HoBo product design (`docs/design/`). It was added on request to make the agents productive in this repo.
 
 The [default dev container](../.devcontainer/devcontainer.json) installs **mise** (pinned Node, pnpm, cue, gitleaks, turbo from [`../mise.toml`](../mise.toml)) on a **digest-pinned** Node 24 Bookworm base (see

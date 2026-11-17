@@ -40,6 +40,7 @@ import {
 	type ProjectRef,
 } from "./lib/projects.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import {
 	defaultProjectConfigDocument,
 	ensureGlobalConfig,
@@ -183,10 +184,18 @@ function main() {
 		return;
 	}
 	const root = repoRoot();
-	const problem = projectSelectionProblem(resolveProjects(args.projects, root));
+	const selection = resolveProjects(args.projects, root);
+	const problem = projectSelectionProblem(selection);
 	if (problem || !["init", "needs-init", "list-projects", "validate-config", "ensure-config"].includes(args.mode ?? "")) {
 		console.error(problem ?? `Unknown mode: ${args.mode}`);
 		process.exit(2);
+	}
+	if (args.dryRun !== "1" && ["init", "ensure-config"].includes(args.mode ?? "")) {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
 	}
 	if (args.dryRun === "1" && args.mode === "ensure-config") {
 		console.error("--dry-run is not supported for ensure-config; no files were changed");

@@ -6,8 +6,10 @@
  */
 import {
 	existsSync,
+	lstatSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	statSync,
 	writeFileSync,
 	mkdirSync,
@@ -23,6 +25,9 @@ import {
 	repoRoot,
 } from "./lib/paths.mts";
 import { which, fileBytes } from "./lib/media.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { isPathIdentifier } from "./lib/slug.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 
 const IMAGE_MAX = 1_000_000;
 const GIF_MAX = 2_000_000;
@@ -61,30 +66,79 @@ function stackHint(): string {
 	return "No gh stack extension detected; using a single linear PR is fine.";
 }
 
+/** Check path components without following links, including for dry runs. */
+function safeEvidenceEntry(root: string, target: string, kind: "directory" | "file", optional = false) {
+	const relative = path.relative(root, path.resolve(target));
+	if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+		throw new Error("Evidence path is outside the repository");
+	}
+	const parts = relative.split(path.sep);
+	let current = root;
+	for (let i = 0; i < parts.length; i++) {
+		current = path.join(current, parts[i]!);
+		let stat;
+		try {
+			stat = lstatSync(current);
+		} catch (error) {
+			if (optional && error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+			throw new Error(`Evidence path is missing or unreadable: ${current}`);
+		}
+		if (stat.isSymbolicLink()) throw new Error(`Evidence path contains a symbolic link: ${current}`);
+		const last = i === parts.length - 1;
+		if (!last || kind === "directory") {
+			if (!stat.isDirectory()) throw new Error(`Evidence path is not a directory: ${current}`);
+		} else if (!stat.isFile() || stat.nlink > 1) {
+			throw new Error(`Evidence path is not a single-linked regular file: ${current}`);
+		}
+		if (last) return stat;
+	}
+	return null;
+}
+
+/** Manifest paths are relative to their own scenario, never another scenario. */
+function primaryEvidencePath(directory: string, value: unknown): string {
+	if (typeof value !== "string" || !value || path.isAbsolute(value) || path.win32.parse(value).root || /[\\\x00-\x1f\x7f]/.test(value)) {
+		throw new Error("Invalid evidence manifest primaryPath");
+	}
+	const parts = value.split("/");
+	if (parts.some((part) => !part || part === "." || part === "..")) {
+		throw new Error("Invalid evidence manifest primaryPath");
+	}
+	return path.join(directory, ...parts);
+}
+
 function loadScenarios(featureId: string, root: string) {
 	const loc = findFeature(featureId, root);
 	const dir = loc?.dir ?? featureDir(featureId, root);
 	const evidenceRoot = path.join(dir, "evidence");
-	if (!existsSync(evidenceRoot)) return [];
-	return readdirSync(evidenceRoot)
-		.filter((d) => existsSync(path.join(evidenceRoot, d, "manifest.json")))
-		.map((slug) => {
+	if (!safeEvidenceEntry(root, evidenceRoot, "directory", true)) return [];
+	return readdirSync(evidenceRoot, { withFileTypes: true })
+		.filter((entry) => {
+			if (entry.isSymbolicLink()) throw new Error(`Evidence scenario contains a symbolic link: ${entry.name}`);
+			return entry.isDirectory();
+		})
+		.flatMap((entry) => {
+			const slug = entry.name;
 			const eDir = loc
 				? evidenceDirInScope(featureId, slug, loc.scope)
 				: evidenceDir(featureId, slug, root);
+			const manifest = path.join(eDir, "manifest.json");
+			if (!safeEvidenceEntry(root, manifest, "file", true)) return [];
 			const man = JSON.parse(
-				readFileSync(path.join(eDir, "manifest.json"), "utf8"),
-			) as { primaryPath: string; kind: string; updatedAt?: string };
-			const primary = path.join(eDir, man.primaryPath);
-			const bytes = existsSync(primary) ? fileBytes(primary) : 0;
-			return {
+				readFileSync(manifest, "utf8"),
+			) as { primaryPath?: unknown; kind?: unknown; updatedAt?: string } | null;
+			if (!man || typeof man.kind !== "string" || !man.kind) throw new Error("Invalid evidence manifest kind");
+			const primary = primaryEvidencePath(eDir, man.primaryPath);
+			const stat = safeEvidenceEntry(root, primary, "file");
+			if (!stat) throw new Error("Evidence primary file is missing");
+			return [{
 				slug,
 				kind: man.kind,
 				primaryPath: path.relative(root, primary),
-				bytes,
+				bytes: stat.size,
 				updatedAt: man.updatedAt,
 				abs: primary,
-			};
+			}];
 		});
 }
 
@@ -131,27 +185,49 @@ function tryCompress(abs: string, root: string): string | null {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--feature", "--pr"],
+		flags: ["--dry-run", "--help", "-h"],
+	});
+	if (input.error || input.positionals.length) {
+		console.error(input.error ?? `Unexpected positional argument: ${input.positionals[0]}`);
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	if (args.help) {
 		console.log(`post-pr-evidence --feature <id> [--pr N] [--dry-run]`);
 		return;
 	}
-	const root = repoRoot();
+	const root = realpathSync(repoRoot());
 	const featureId = args.feature;
-	if (!featureId) {
-		console.error("--feature required");
+	if (!featureId || !isPathIdentifier(featureId)) {
+		console.error("--feature must be a valid feature id");
 		process.exit(2);
+	}
+	const dry = args.dryRun === "1";
+	if (!dry) {
+		const location = findFeature(featureId, root);
+		const problem = optimizexpWriteProblem(root, ["", location?.scope.projectPath ?? ""]);
+		if (problem) {
+			console.error(problem);
+			process.exit(2);
+		}
+	}
+	let scenarios;
+	try {
+		scenarios = loadScenarios(featureId, root);
+	} catch (error) {
+		console.error(`Invalid evidence: ${error instanceof Error ? error.message : String(error)}`);
+		process.exit(2);
+	}
+	if (scenarios.length === 0) {
+		console.error("no evidence scenarios found");
+		process.exit(1);
 	}
 	const pr = args.pr || detectPr();
 	if (!pr) {
 		console.error("No PR detected; pass --pr <number>");
 		process.exit(2);
-	}
-	const dry = args.dryRun === "1";
-	const scenarios = loadScenarios(featureId, root);
-	if (scenarios.length === 0) {
-		console.error("no evidence scenarios found");
-		process.exit(1);
 	}
 
 	const indexLines = [
@@ -180,7 +256,7 @@ function main() {
 		let body: string;
 		let abs = s.abs;
 		let bytes = s.bytes;
-		if (!canInline(s.kind, bytes) && /\.(mp4|webm|mov|png|gif)$/i.test(abs)) {
+		if (!dry && !canInline(s.kind, bytes) && /\.(mp4|webm|mov|png|gif)$/i.test(abs)) {
 			const compressed = tryCompress(abs, root);
 			if (compressed) {
 				abs = compressed;

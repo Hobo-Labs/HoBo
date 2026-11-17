@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 import {
 	featuresRoot,
 	globalOptimizexpRoot,
@@ -855,6 +856,8 @@ export function runDoctorRepair(input: {
 	only?: string[];
 }): DoctorReport {
 	const root = input.root ?? repoRoot();
+	const writeSelection = input.selection ?? resolveProjects("all", root);
+	assertSafeOptimizexpWriteScopes(root, ["", ...writeSelection.projects.map((project) => project.path)]);
 	const check = runDoctorCheck({
 		root,
 		selection: input.selection,
@@ -1048,6 +1051,7 @@ export function runDoctorSnapshot(input: {
 }): DoctorReport {
 	const root = input.root ?? repoRoot();
 	const selection = input.selection ?? resolveProjects("all", root);
+	assertSafeOptimizexpWriteScopes(root, ["", ...selection.projects.map((project) => project.path)]);
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const outDir =
 		input.outDir ??

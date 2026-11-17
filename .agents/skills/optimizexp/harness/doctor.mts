@@ -10,6 +10,7 @@
 import process from "node:process";
 import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { repoRoot } from "./lib/paths.mts";
 import {
 	runDoctorCheck,
@@ -150,6 +151,13 @@ function main() {
 	if (problem || !["check", "repair", "snapshot"].includes(mode)) {
 		console.error(problem ?? `Unknown mode: ${mode}`);
 		process.exit(2);
+	}
+	if (mode === "repair" || mode === "snapshot") {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
 	}
 
 	let report;

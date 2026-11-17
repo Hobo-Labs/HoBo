@@ -21,6 +21,18 @@ Scoring `tsx src` while the user runs stale `dist` is a false green. Evidence co
 
 Exploration produces a machine-readable **surface map** that **feeds** the experience catalog and feature generation. It is not a substitute for high-quality features.
 
+Mutating exploration, generation, capture, initialization, survey, doctor, and
+cross-agent workflow commands preflight their `.optimizexp` trees before writing.
+They refuse symlinks,
+multiply linked files, and non-regular files in those trees, and refuse project
+paths that resolve outside the repository or through a symbolic link to another
+location. Use ordinary in-repository metadata
+directories and resolve links before retrying. This protects against links
+already present when the command starts; it is not atomic against another
+process swapping paths during the run. Explicit destinations such as doctor
+`--out` and init `--report`, and code intentionally run by a probe or capture,
+are outside this preflight guarantee.
+
 ## When
 
 Before generating features for a project (init, bare optimizexp, or explicit):

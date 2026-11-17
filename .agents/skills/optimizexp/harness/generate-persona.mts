@@ -24,6 +24,7 @@ import {
 import { listPersonaMetas, parsePersonaModels } from "./lib/persona-resolve.mts";
 import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import {
 	EXPERIENCE_TYPES,
 	formatExperiencesFrontmatter,
@@ -571,10 +572,19 @@ function main() {
 		process.exit(2);
 	}
 	if (args.mode === "help") return help();
-	const problem = projectSelectionProblem(resolveProjects(args.projects, repoRoot()));
+	const root = repoRoot();
+	const selection = resolveProjects(args.projects, root);
+	const problem = projectSelectionProblem(selection);
 	if (problem) {
 		console.error(problem);
 		process.exit(2);
+	}
+	if (args.mode === "scaffold" && args.dryRun !== "1") {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
 	}
 	if (args.mode === "scaffold") return scaffold(args);
 	if (args.mode === "validate") return validate(args);

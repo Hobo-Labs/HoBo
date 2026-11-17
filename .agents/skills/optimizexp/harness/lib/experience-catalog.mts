@@ -8,6 +8,7 @@ import { repoRoot } from "./paths.mts";
 import type { ProjectRef } from "./projects.mts";
 import { readSurfaceMap, surfaceMapDigest, validateSurfaceMap, validateCurrentSurface, type CliAssessment, type SurfaceMap } from "./surface-map.mts";
 import { listPersonaMetas } from "./persona-resolve.mts";
+import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 
 export type CatalogPriority = "P0" | "P1" | "P2";
 
@@ -364,6 +365,7 @@ export function writeExperienceCatalog(
 	project: ProjectRef,
 	root = repoRoot(),
 ): string {
+	assertSafeOptimizexpWriteScopes(root, [project.path]);
 	const p = catalogPath(project, root);
 	mkdirSync(path.dirname(p), { recursive: true });
 	writeFileSync(p, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
