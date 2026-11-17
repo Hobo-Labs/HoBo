@@ -51,7 +51,7 @@ export async function planFleetVerification(input: {
 	/** Operator observation for hosted jobs that fail without ever queueing. */
 	githubUnavailable?: boolean | undefined;
 	readSlip: () => Promise<SlipReading>;
-	readQueue: () => Promise<QueueView>;
+	readQueue: (fleetLabel: string, busy: boolean) => Promise<QueueView>;
 	nowMs: number;
 }): Promise<FleetVerificationPlan> {
 	const { settings } = input;
@@ -62,10 +62,15 @@ export async function planFleetVerification(input: {
 			tier: settings.pin,
 			runner: labels[settings.pin],
 		};
-	const slip = await input.readSlip();
+	let slip: SlipReading;
+	try {
+		slip = await input.readSlip();
+	} catch {
+		slip = { ok: false, why: "routing slip unavailable" };
+	}
 	if (
 		slip.ok &&
-		(slip.decision.tier !== "github" ||
+		(slip.decision.tier === "local" ||
 			(slip.decision.slip?.kind === "used" &&
 				slip.decision.slip.reason === "pinned"))
 	)
@@ -74,9 +79,18 @@ export async function planFleetVerification(input: {
 			tier: slip.decision.tier,
 			runner: slip.decision.runner,
 		};
+	const fleetLabel =
+		slip.ok && slip.decision.tier === "fleet"
+			? slip.decision.runner
+			: labels.fleet;
+	const busy =
+		slip.ok &&
+		slip.decision.tier === "fleet" &&
+		slip.decision.slip?.kind === "used" &&
+		slip.decision.slip.reason === "fleet-busy";
 	let queue: QueueView;
 	try {
-		queue = await input.readQueue();
+		queue = await input.readQueue(fleetLabel, busy);
 	} catch {
 		return { kind: "wait", reason: "availability-unknown" };
 	}
@@ -85,23 +99,29 @@ export async function planFleetVerification(input: {
 		id: "fleet" | "local" | "github",
 		enabled: boolean,
 	): FleetMember => {
-		const load = labelLoad(queue.jobs, labels[id], input.nowMs);
+		const runnerLabel = id === "fleet" ? fleetLabel : labels[id];
+		const load = labelLoad(queue.jobs, runnerLabel, input.nowMs);
+		const limits =
+			id === "fleet" && busy
+				? { ...settings.limits, maxQueued: Number.MAX_SAFE_INTEGER }
+				: settings.limits;
 		// A slip choosing GitHub already rejected both self-hosted tiers.
 		const rejectedBySlip =
 			slip.ok && slip.decision.tier === "github" && id !== "github";
-		const reservedAhead = id !== "github" && queue.undecidedAhead > 0;
+		const reservedAhead =
+			id !== "github" && !(id === "fleet" && busy) && queue.undecidedAhead > 0;
 		const available =
-			!rejectedBySlip && !reservedAhead && takingJobs(load, settings.limits);
+			!rejectedBySlip && !reservedAhead && takingJobs(load, limits);
 		const unavailable =
 			rejectedBySlip ||
-			refusingJobs(load, settings.limits) ||
+			refusingJobs(load, limits) ||
 			(id === "github" && !available && input.githubUnavailable === true);
 		if (enabled && !available && !unavailable) unknown.push(id);
 		return {
 			id,
 			backend: id === "fleet" ? "hobo" : id,
 			enabled,
-			runsOn: labels[id],
+			runsOn: runnerLabel,
 			freeSlots: available ? 1 : 0,
 		};
 	};
@@ -231,18 +251,20 @@ export async function observeFleetVerification(input: {
 				nowMs: () => nowMs,
 				fetch: apiFetch,
 			}),
-		readQueue: () =>
+		readQueue: (fleetLabel, busy) =>
 			observeQueue({
 				read,
 				repository,
 				// A local decision follows every recently started GitHub run.
 				ownRunId: Number.MAX_SAFE_INTEGER,
 				labels: [
-					settings.labels.fleet,
+					fleetLabel,
 					...(settings.localRunner ? [settings.labels.local] : []),
 					settings.labels.github,
 				],
-				limits: settings.limits,
+				limits: busy
+					? { ...settings.limits, maxQueued: Number.MAX_SAFE_INTEGER }
+					: settings.limits,
 				nowMs,
 			}),
 	});

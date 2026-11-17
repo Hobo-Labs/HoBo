@@ -265,6 +265,8 @@ malformed or contradictory observations. This is a separate
 verification path, not a `runs-on` label or an Actions job completion.
 In the HoBo checkout, `pnpm ci:attest fleet --local-signoff` applies that
 choice to a local run and publishes its covered statuses with `gh-signoff`.
+The coordinator confirms an unpinned fleet slip against recent pickup evidence
+for its exact label; a failed queue read leaves availability unknown.
 
 An account can offer its own development machine with `provider: "local"`,
 `backend: "gh-actions"`, `runsOn: "hobo-local-host"`, and `concurrency: 1`.
