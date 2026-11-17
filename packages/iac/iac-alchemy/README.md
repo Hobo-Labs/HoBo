@@ -15,6 +15,15 @@ The Cloudflare worker runtime binds a module-exported HoBo HTTP entrypoint to
 declared Worker service dependencies. HoBo bucket, KV and queue runtime contracts,
 topics, and enabled session replay are not yet supported; the adapter refuses
 those uses.
+`cloudflareBindleMappers` can provision native R2, KV and queue infrastructure;
+it rejects their HoBo runtime operations until blob metadata and events, WASI KV
+semantics, and queue deduplication and leases are implemented.
+`describeCloudflarePrimitiveSupport` reports partial or unsupported coverage
+for each supplied HoBo catalog entry with the reason.
+For a Vite web application, `b.web(cloudflareViteApp("apps/site"))` uses
+Alchemy's Cloudflare Website.Vite component with that project-relative root.
+Disable session replay explicitly; Vite resource dependencies and other web
+frameworks are not currently supported. The host must attest the source tree.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
