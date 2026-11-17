@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in compliance.proto, so the
-// architecture guard can confirm the compliance shapes are bounded at parse
-// time.
 
 package policy
 

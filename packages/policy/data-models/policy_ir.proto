@@ -28,6 +28,8 @@ message DecisionEvidence {
   repeated string policy_ids = 1;
   string input_hash = 2;
   string engine = 3;
+  optional string pack_id = 4;
+  optional string pack_version = 5;
 }
 
 message PolicyDecision {

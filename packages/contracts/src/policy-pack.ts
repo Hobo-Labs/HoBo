@@ -6,15 +6,7 @@ import {
 	POLICY_DECIDED_EVENT_TYPE,
 	POLICY_IR_SCHEMA_VERSION,
 } from "@hobo/policy";
-import type { JsonObject } from "./json.js";
-
-// This module COMPOSES @hobo/policy — it does not reimplement the policy engine.
-// @hobo/policy owns the decision model (the Policy IR: request/decision/effect/
-// obligations/evidence + the `policy.Decided` event). Here a small policy-pack
-// evaluator runs a set of typed TypeScript rules over a decision request and
-// LOWERS the outcome onto @hobo/policy's `createDecision` / `createPolicyDecided
-// Event`, so every deploy — even one a permissive default pack allows — records a
-// `policy.Decided` fact (governed-by-default without blocking, FR-051/NFR-017).
+import { isJsonString, type JsonObject } from "./json.js";
 
 export const POLICY_PACK_ENGINE_ID = "hobo.contracts/policy-pack@0.1.0";
 
@@ -26,7 +18,6 @@ export type PolicyEffect =
 	| "mutate"
 	| "require-approval";
 
-// Most-restrictive-wins ordering shared with the Gatekeeper composition.
 export const EFFECT_RANK: ReadonlyMap<string, number> = new Map([
 	["deny", 0],
 	["require-approval", 1],
@@ -69,9 +60,6 @@ export interface PolicyEvaluation {
 	matchedRuleIds: string[];
 }
 
-// The permissive default pack: no rules, so every request lands on `allow`, yet
-// still produces a recorded `policy.Decided` — the "governed by default without
-// blocking" default the design requires of every deploy.
 export function createPermissiveDefaultPack(): PolicyPack {
 	return { id: "hobo.default/permissive", version: "1.0.0", rules: [] };
 }
@@ -94,14 +82,51 @@ export function evaluatePolicyPack(input: {
 		context: input.request.context ?? {},
 	});
 
-	const matched = pack.rules.filter((rule) => safeMatch(rule, input.request));
-	const outcomes = matched.map((rule) => ({
-		rule,
-		outcome: rule.decide(input.request),
-	}));
+	const outcomes: { rule: PolicyRule; outcome: PolicyRuleOutcome }[] = [];
+	for (const rule of pack.rules) {
+		try {
+			const applies = rule.when(input.request);
+			if (applies === false) continue;
+			if (applies !== true) throw new Error("invalid policy predicate");
+			const outcome = rule.decide(input.request);
+			if (
+				!outcome ||
+				!EFFECT_RANK.has(outcome.effect) ||
+				!isJsonString(outcome.reason) ||
+				outcome.reason.trim() === ""
+			)
+				throw new Error("invalid policy outcome");
+			const validated = createDecision(request, {
+				effect: outcome.effect,
+				reason: outcome.reason,
+				obligations: outcome.obligations ?? [],
+				violations: outcome.violations ?? [],
+				evidence: { policyIds: [rule.id], engine: POLICY_PACK_ENGINE_ID },
+			});
+			if (!validated.violations.every(isJsonString))
+				throw new Error("invalid policy violations");
+			outcomes.push({
+				rule,
+				outcome: {
+					effect: validated.effect,
+					reason: validated.reason,
+					obligations: validated.obligations,
+					violations: validated.violations,
+				},
+			});
+		} catch {
+			outcomes.push({
+				rule,
+				outcome: {
+					effect: "deny",
+					reason: `policy rule ${rule.id} could not be evaluated`,
+					violations: [`policy-rule-evaluation-failed:${rule.id}`],
+				},
+			});
+		}
+	}
+	const matched = outcomes.map(({ rule }) => rule);
 
-	// Most-restrictive-wins: the lowest-ranked effect across matching rules is the
-	// pack's effect; an empty pack yields `allow`.
 	const winning = outcomes.reduce<{
 		rule: PolicyRule;
 		outcome: PolicyRuleOutcome;
@@ -148,13 +173,5 @@ export function evaluatePolicyPack(input: {
 export { POLICY_DECIDED_EVENT_TYPE };
 
 function rank(effect: string): number {
-	return EFFECT_RANK.get(effect) ?? mustGet(EFFECT_RANK, "allow");
-}
-
-function safeMatch(rule: PolicyRule, request: PolicyDecisionRequest): boolean {
-	try {
-		return rule.when(request) === true;
-	} catch {
-		return false;
-	}
+	return EFFECT_RANK.get(effect) ?? mustGet(EFFECT_RANK, "deny");
 }

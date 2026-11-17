@@ -46,8 +46,8 @@ test("SRE operator resolves a degraded endpoint through gated canary remediation
     "canary gateway is used instead of direct production writes",
   );
   assert.ok(
-    scenario.boundaries.every((boundary) => boundary.mocked === true),
-    "simulation must use mocked boundaries only",
+    scenario.boundaries.every((boundary) => boundary.mocked === (boundary.id !== "sre-operator-to-policy-engine")),
+    "policy runs in process while other boundaries are mocked",
   );
 });
 
@@ -134,7 +134,7 @@ test("every selected epic boundary has a consumer-driven Pact decision", async (
 
   assert.deepEqual(contractIds, expectedBoundaryIds.toSorted());
   for (const contract of contracts) {
-    assert.equal(contract.mockedInSimulation, true);
+    assert.equal(contract.mockedInSimulation, contract.id !== "sre-operator-to-policy-engine");
     assert.match(contract.pactFile, /contracts\/pacts\/.+\.pact\.json$/);
     assert.ok(contract.interactions.length > 0);
     assert.ok(

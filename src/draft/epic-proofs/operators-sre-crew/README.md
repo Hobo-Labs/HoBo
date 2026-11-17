@@ -57,7 +57,7 @@ npm.cmd --prefix src/draft/epic-proofs/operators-sre-crew test
 npm.cmd --prefix src/draft/epic-proofs/operators-sre-crew run simulate
 ```
 
-The simulation uses mocked boundaries only. It records zero live network calls and loads deterministic fixtures from [simulation/fixtures](simulation/fixtures).
+The simulation evaluates policy in process and mocks its other boundaries. It records zero live network calls and loads deterministic fixtures from [simulation/fixtures](simulation/fixtures).
 
 ## What is real
 
@@ -72,7 +72,6 @@ The simulation uses mocked boundaries only. It records zero live network calls a
 
 - SLO signal source.
 - Projection read API.
-- Policy engine.
 - Live-fix/remediation gateway.
 - A2H notify receiver.
 - Issue tracker and knowledge ports.
@@ -81,7 +80,7 @@ The simulation uses mocked boundaries only. It records zero live network calls a
 
 ## Follow-up boundaries
 
-Provider verification is documented as unavailable because no real providers exist in this design repo. The Pact files are consumer fixtures for the reference implementation and should be promoted into provider verification once the corresponding runtime, policy, live-fix, notify, issue-tracker, knowledge, event-log, and chaos providers exist.
+The policy engine runs in process. The remaining external boundaries use consumer fixtures.
 
 
 Policy-gated flag changes are absorbed without changing operator safety, rollback, or fail-closed behavior.

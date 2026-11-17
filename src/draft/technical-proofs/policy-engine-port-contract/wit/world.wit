@@ -47,7 +47,7 @@ interface types {
     schema: string,
     subject: subject-ref,
     action: string,
-    resource: resource-ref,
+    %resource: resource-ref,
     phase: phase,
     context-json: string,
   }

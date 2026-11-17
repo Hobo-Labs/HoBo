@@ -8,5 +8,5 @@ for (const scenario of result.scenarios) {
   console.log(`${scenario.id}: ${scenario.status}`);
 }
 
-console.log(`mocked boundary calls: ${result.boundaryCalls.length}`);
+console.log(`mocked boundary calls: ${result.boundaryCalls.filter((call) => call.mocked).length}`);
 console.log(`live network calls: ${result.liveNetworkCalls.length}`);
