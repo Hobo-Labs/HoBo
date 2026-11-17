@@ -718,6 +718,50 @@ describe("deployment modes", () => {
 		expect(retried.unprunable).toEqual([]);
 	});
 
+	it("stops pruning and replay when an undeclared resource's deletion is uncertain", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await recordPlan(store, "uncertain-prune", plan);
+		await runOrchestrator(deps(store, iac), plan, "uncertain-prune", {
+			tenant,
+			actor,
+		});
+		const smaller = {
+			...plan,
+			resources: plan.resources.filter(
+				(r) => r.name !== "web" && r.name !== "api",
+			),
+		};
+		iac.calls.length = 0;
+		const uncertain: IacProvider = {
+			...iac,
+			async destroy(program) {
+				iac.calls.push(`destroy:${program.resourceId}`);
+				throw Object.assign(new Error("outcome unknown"), {
+					requiresReconciliation: true,
+					reservationId: "iac:prune",
+				});
+			},
+		};
+		const first = await runOrchestrator(
+			deps(store, uncertain),
+			smaller,
+			"uncertain-prune",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(first.status).toBe("needs-human");
+		expect(iac.calls).toEqual(["destroy:web"]);
+		const replay = await runOrchestrator(
+			deps(store, uncertain),
+			smaller,
+			"uncertain-prune",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(replay.status).toBe("needs-human");
+		expect(iac.calls).toEqual(["destroy:web"]);
+	});
+
 	it("does not prune known resources when an orphan has no recorded dependencies", async () => {
 		const store = freshStore();
 		const iac = recordingIac();

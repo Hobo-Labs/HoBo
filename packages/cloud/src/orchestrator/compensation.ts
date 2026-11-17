@@ -13,6 +13,7 @@ import { collectStream, currentFenceToken } from "../store/index.js";
 import {
 	destroyResource,
 	foldResourceActor,
+	hasUnresolvedReconciliation,
 	type ResourceActorDeps,
 	type ResourceActorState,
 } from "./resource-actor.js";
@@ -111,6 +112,9 @@ export async function runCompensation(
 	};
 
 	let events = await collectStream(deps.store, stream);
+	if (hasUnresolvedReconciliation(events)) {
+		return { status: "needs-human", destroyedOrder: [], events };
+	}
 
 	// Emit deployment.RolledBack once (idempotent — resume-safe). The stream is
 	// fenced by the leased writes that came before; continue under the current
@@ -160,6 +164,8 @@ export async function runCompensation(
 				foldResourceActor(events, { ...r, deploymentId }).state,
 			]),
 		);
+		if (hasUnresolvedReconciliation(events))
+			return { status: "needs-human", destroyedOrder, events };
 
 		for (const resourceId of reverseDependencyOrder(plan, states)) {
 			const state = states.get(resourceId);

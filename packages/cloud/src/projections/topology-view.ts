@@ -130,6 +130,16 @@ function setLifecycle(
 	resourceId: string,
 	lifecycle: ResourceLifecycle,
 ): void {
+	const previous = row.nodes.find(
+		(node) => node.id === resourceNodeId(resourceId),
+	);
+	if (
+		previous?.lifecycle === "reconciliation-required" &&
+		(lifecycle === "provisioning" ||
+			lifecycle === "destroying" ||
+			lifecycle === "failed")
+	)
+		return;
 	upsertNode(row, {
 		id: resourceNodeId(resourceId),
 		kind: "resource",
@@ -171,7 +181,11 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 					label: data.bindleHash,
 				});
 				for (const resourceId of data.resources) {
-					setLifecycle(next, resourceId, "provisioned");
+					const node = next.nodes.find(
+						(entry) => entry.id === resourceNodeId(resourceId),
+					);
+					if (node?.lifecycle !== "reconciliation-required")
+						setLifecycle(next, resourceId, "provisioned");
 				}
 				return next;
 			},
@@ -236,9 +250,19 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 			},
 			[CLOUD_EVENTS.ResourceFailed]: (row, event) => {
 				// SAFETY: `const data = event.data as { deploymentId: string; resourceId: string };` is required at this I/O or test boundary.
-				const data = event.data as { deploymentId: string; resourceId: string };
+				const data = event.data as {
+					deploymentId: string;
+					resourceId: string;
+					requiresReconciliation?: boolean;
+				};
 				const next = base(row, data.deploymentId);
-				setLifecycle(next, data.resourceId, "failed");
+				setLifecycle(
+					next,
+					data.resourceId,
+					data.requiresReconciliation === true
+						? "reconciliation-required"
+						: "failed",
+				);
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroying]: (row, event) => {

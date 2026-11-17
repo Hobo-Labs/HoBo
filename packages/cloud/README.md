@@ -23,6 +23,17 @@ read-only provider cannot satisfy a write request. The SDK/CLI planner tests
 cover collection and selection; provider authorization and realization still
 require the provider's own conformance and contract evidence.
 
+An IaC provider can mark an error `requiresReconciliation` when a financial
+claim or provider operation may have taken effect. The executor records the
+operation and any reservation ID. The resource actor persists
+`ReconciliationRequired`; the orchestrator returns `needs-human` without
+retrying or compensating, including after replay. The deployment view exposes
+the affected resources and reservations, and drift remains unknown until the
+outcome is reconciled.
+That guard also follows resources removed from a later deployment plan.
+Nonterminal resource and deployment events cannot clear an unresolved outcome
+from the actor, deployment view, or topology view during replay.
+
 ## Budget-aware hosting placement
 
 `plan(bindle, { deploymentId, objective: "maximize-credits", hostingBudget }, registry)`
