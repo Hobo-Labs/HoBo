@@ -1,17 +1,20 @@
 {
-  "gameUrl": "http://127.0.0.1:33897/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36095",
-  "apiUrl": "http://127.0.0.1:36095",
+  "gameUrl": "http://127.0.0.1:45379/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36969",
+  "apiUrl": "http://127.0.0.1:36969",
   "checks": [
     "PASS test seam ready",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
-    "PASS imgdiff boot — baseline created",
-    "PASS canvas renders a populated scene — colours=2925 dominant=20.4%",
+    "PASS imgdiff boot — match",
+    "PASS canvas dark ink near Bo — dark=4976",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
-    "PASS imgdiff connection bay — baseline created",
+    "PASS imgdiff connection bay — baseline refreshed (RMS=13.39 ≤ 25)",
+    "PASS anim harness bo.idle — bo.idle",
+    "PASS anim harness bo.walk.east — bo.walk.east",
+    "PASS anim harness bo.walk.west — bo.walk.west",
     "PASS policyBoard zone — zone=policyBoard",
     "PASS costBooth zone — zone=costBooth",
     "PASS errorBunker zone — zone=errorBunker"
@@ -23,21 +26,21 @@
     "playwright-testing"
   ],
   "recordings": [
-    "/home/codex/.herdr/worktrees/hobo/worktree-rapid-meadow-3f6e/packages/control-yard/public/shots/recordings/01-yard-loop.mp4",
-    "/home/codex/.herdr/worktrees/hobo/worktree-rapid-meadow-3f6e/packages/control-yard/public/shots/recordings/02-connection-sheet.mp4",
-    "/home/codex/.herdr/worktrees/hobo/worktree-rapid-meadow-3f6e/packages/control-yard/public/shots/recordings/04-rail-cost-doctor.mp4"
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/01-yard-loop.mp4",
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/02-connection-sheet.mp4",
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/03-bo-walk-east-west.mp4",
+    "/workspace/hobo-control-yard-evidence/packages/control-yard/public/shots/recordings/04-rail-cost-doctor.mp4"
   ],
   "initialState": {
     "scene": "Yard",
     "ready": true,
     "seed": 42,
-    "frameCount": 8,
+    "frameCount": 13,
     "zone": "activeRailTrack",
-    "hoveredZone": null,
     "bo": {
-      "x": 264,
-      "y": 576,
-      "state": "walking",
+      "x": 224,
+      "y": 582,
+      "animationId": "bo.walk.east",
       "facing": "west"
     },
     "occupyMode": "occupying",
@@ -47,40 +50,14 @@
     "sheetOpen": false,
     "sheetKind": null,
     "seq": 4,
-    "hazards": [],
-    "waybillCount": 0,
-    "highball": true,
-    "theme": "day",
-    "reducedMotion": false,
-    "scenario": null,
-    "tick": 0,
-    "entities": [
-      {
-        "id": "operator",
-        "sprite": "operator.walking",
-        "x": 528,
-        "y": 528
-      }
-    ],
-    "recentFx": [
-      {
-        "fx": "highball",
-        "atFrame": 0
-      }
-    ],
-    "world": {
-      "campCount": 0,
-      "characterCount": 0,
-      "demo": false
-    }
+    "hazards": []
   },
   "pixelSample": {
-    "colours": 2925,
-    "dominant": 0.2041,
+    "dark": 4976,
     "bo": {
-      "x": 533,
-      "y": 524,
-      "state": "walking",
+      "x": 621,
+      "y": 364,
+      "animationId": "bo.walk.east",
       "facing": "west"
     }
   },
