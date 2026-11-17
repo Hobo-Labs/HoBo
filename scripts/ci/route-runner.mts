@@ -55,7 +55,7 @@ import {
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetMember,
 	LOCAL_HOST_RUNNER_LABEL,
-	selectFleetBackend,
+	selectFleetVerification,
 } from "../../packages/ci/src/fleet-overflow.ts";
 import {
 	judgeRoutingSlip,
@@ -153,7 +153,7 @@ export type RefusedBy = "slip" | "queue" | "none";
  * What became of the routing slip for this decision. `used`: it was consulted,
  * for the relay's `reason`; the queue may still refuse a fleet it named.
  * `fallback`: none could be used, for `why`, and the
- * queue decided. `unasked`: a pin, signed local run or batch admission decides
+ * queue decided. `unasked`: a pin or batch admission decides
  * the tier without reading a slip.
  */
 export type SlipAnswer =
@@ -320,7 +320,14 @@ export function routeRunner(input: {
 			freeSlots: 1,
 		},
 	] satisfies FleetMember[];
-	const selected = selectFleetBackend({ members, currentLabels: [] });
+	// The workflow needs an actual runner. The same fleet selector offers
+	// local signoff to the opted-in local coordinator, never as runs-on here.
+	const choice = selectFleetVerification({
+		members,
+		unknownMembers: [],
+		localSignoffEnabled: false,
+	});
+	const selected = choice.kind === "runner" ? choice.runner : undefined;
 	const loads = [
 		describeLoad("the fleet", input.fleet),
 		input.localEnrolled
@@ -559,6 +566,8 @@ export async function observeQueue(input: {
 	 * than how long the run's own jobs have waited.
 	 */
 	includeOwnRun?: boolean | undefined;
+	/** Read all bounded candidates even after current labels appear to refuse. */
+	exhaustLookups?: boolean | undefined;
 }): Promise<QueueView> {
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
@@ -585,7 +594,7 @@ export async function observeQueue(input: {
 		const allRefusing = input.labels.every((label) =>
 			refusingJobs(labelLoad(seen, label, input.nowMs), input.limits),
 		);
-		if (allRefusing) break;
+		if (allRefusing && input.exhaustLookups !== true) break;
 		const jobsPage = await jobsOf(runId);
 		seen.push(...seenJobs(jobsPage));
 		if (ahead.includes(runId) && hasChosen(jobsPage)) undecidedAhead -= 1;
@@ -1159,21 +1168,8 @@ export async function main(
 			env,
 		);
 	}
-	// A signed local run was verified for this tree, so the jobs it covers are
-	// skipped and only a few short ones are left. They go where a job is known
-	// to start, without reading the slip or the queue. A pinned tier is an
-	// operator's own override and still wins.
-	if (mode === "auto" && args.attested)
-		return report(
-			{
-				tier: "github",
-				runner: labels.github,
-				reason: `a signed local run covers this tree, so the jobs left do not wait for a fleet${defaults}`,
-				refusedBy: "none",
-				slip: { kind: "unasked", why: "attested" },
-			},
-			env,
-		);
+	// Local evidence covers only its named jobs. Remaining jobs follow the
+	// same fleet decision as any other run, including its pins and slip.
 	if (mode !== "auto") {
 		const pinned = routeRunner({
 			mode,
@@ -1292,7 +1288,7 @@ export async function main(
 export const SLIP_FALLBACK_PREFIX = "routing slip not used";
 
 /** Why no slip was read. */
-export type UnaskedWhy = "pinned" | "attested" | "batch";
+export type UnaskedWhy = "pinned" | "batch";
 
 /** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
 export function workflowFile(env: NodeJS.ProcessEnv): string {
