@@ -245,6 +245,56 @@ describe("hobo ci init --undo (S09)", () => {
 		expect(await exists(join(root, RELAY_WORKFLOW))).toBe(true);
 	});
 
+	it("keeps the generated files while a hand-written job still calls the relay", async () => {
+		const { init, direct, file, root } = await checkout();
+		await init("--relay", "job", "--apply", "all");
+		const other = `name: other
+on: [push]
+jobs:
+  route:
+    uses: ./.github/workflows/hobo-relay.yml
+    with:
+      github: ubuntu-latest
+  build:
+    needs: route
+    runs-on: \${{ needs.route.outputs.runner }}
+    steps:
+      - run: make
+`;
+		await writeFile(join(root, WORKFLOW, "other.yml"), other);
+		const undone = await direct({ undo: true });
+		expect(undone.ok).not.toBe(false);
+		expect(undone.data?.restored).toEqual([
+			{ file: ".github/workflows/ci.yml", job: "test" },
+			{ file: ".github/workflows/ci.yml", job: "build" },
+		]);
+		expect(undone.data?.removed).toEqual([]);
+		expect(undone.data?.stillUsedBy).toEqual([".github/workflows/other.yml"]);
+		expect(undone.message).toContain(
+			"  .github/workflows/other.yml: names ./.github/workflows/hobo-relay.yml",
+		);
+		expect(await file(join(WORKFLOW, "ci.yml"))).toBe(CI);
+		expect(await file(join(WORKFLOW, "other.yml"))).toBe(other);
+		expect(await file(RELAY_WORKFLOW)).toBe(RELAY_JOB_WORKFLOW);
+		expect(await file(EVALUATOR)).toBe(RELAY_JOB_EVALUATOR);
+	});
+
+	it("keeps the generated files while a workflow cannot be read", async () => {
+		const { init, direct, root } = await checkout();
+		await init("--relay", "job", "--apply", "all");
+		// A directory named like a workflow cannot be read as one.
+		await mkdir(join(root, WORKFLOW, "broken.yml"));
+		const undone = await direct({ undo: true });
+		expect(undone.ok).not.toBe(false);
+		expect(undone.data?.removed).toEqual([]);
+		expect(undone.data?.stillUsedBy).toEqual([".github/workflows/broken.yml"]);
+		expect(undone.message).toContain(
+			"  .github/workflows/broken.yml: could not be read",
+		);
+		expect(await exists(join(root, RELAY_WORKFLOW))).toBe(true);
+		expect(await exists(join(root, EVALUATOR))).toBe(true);
+	});
+
 	it("says so when there is nothing to take out", async () => {
 		const { direct } = await checkout();
 		const undone = await direct({ undo: true });

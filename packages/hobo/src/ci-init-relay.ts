@@ -20,6 +20,7 @@ import {
 	findWorkflowRelays,
 	planWorkflow,
 	RELAY_INIT_MODES,
+	RELAY_WORKFLOW_USES,
 	type RelayInitMode,
 	type RelayInputValue,
 	relayFilesFor,
@@ -176,7 +177,6 @@ async function readOptional(
 
 function modeOf(options: CiInitOptions): RelayInitMode | undefined {
 	const value = options.relay;
-	if (value === true) return "job";
 	const text = Array.isArray(value) ? value.join(",") : String(value);
 	return RELAY_INIT_MODES.find((mode) => mode === text);
 }
@@ -290,18 +290,22 @@ async function runUndo(
 		why: string;
 		lines: readonly [number, number];
 	}[] = [];
-	let relaysLeft = 0;
+	// A workflow still uses the relay while its text names the relay
+	// workflow, whatever the calling job is called; one that could not be
+	// read might, so it counts too.
+	const stillUsedBy: string[] = workflows.unreadable.map((plan) => plan.file);
 	for (const [file, source] of workflows.sources) {
 		const result = undoRelayPlan(source);
 		for (const job of result.restored) restored.push({ file, job });
 		for (const entry of result.refused) refused.push({ file, ...entry });
-		relaysLeft += findWorkflowRelays(result.source).length;
+		if (result.source.includes(RELAY_WORKFLOW_USES)) stillUsedBy.push(file);
 		if (result.restored.length > 0)
 			await files.write(join(cwd, file), result.source);
 	}
+	stillUsedBy.sort();
 	const removed: string[] = [];
 	const kept: string[] = [];
-	if (relaysLeft === 0) {
+	if (stillUsedBy.length === 0) {
 		const found = checkRelayFiles({
 			workflow: await readOptional(files, join(cwd, RELAY_WORKFLOW)),
 			evaluator: await readOptional(files, join(cwd, RELAY_EVALUATOR)),
@@ -324,6 +328,16 @@ async function runUndo(
 			? ["Left in place, since this hobo did not write them as they are:"]
 			: []),
 		...kept.map((entry) => `  ${entry}`),
+		...(stillUsedBy.length > 0
+			? [
+					`Left in place ${RELAY_WORKFLOW} and ${RELAY_EVALUATOR}, since these workflows may still use the relay:`,
+					...stillUsedBy.map((file) =>
+						workflows.sources.has(file)
+							? `  ${file}: names ${RELAY_WORKFLOW_USES}`
+							: `  ${file}: could not be read`,
+					),
+				]
+			: []),
 		...(refused.length > 0
 			? [
 					"Not taken out:",
@@ -334,7 +348,7 @@ async function runUndo(
 				]
 			: []),
 	];
-	const data = { restored, refused, removed };
+	const data = { restored, refused, removed, stillUsedBy };
 	if (restored.length === 0 && refused.length > 0)
 		return {
 			ok: false,

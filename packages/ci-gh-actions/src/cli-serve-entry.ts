@@ -57,6 +57,7 @@ export {
 	checkRelayFiles,
 	findWorkflowRelays,
 	RELAY_INIT_MODES,
+	RELAY_WORKFLOW_USES,
 	type RelayFileCheck,
 	type RelayInitMode,
 	type RelayInputValue,

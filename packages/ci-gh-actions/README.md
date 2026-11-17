@@ -1992,7 +1992,7 @@ The command reads `.github/workflows/*.yml`, leaving out `hobo-relay.yml`
 itself (plain `hobo ci init` leaves it out too), and edits the working tree
 only: nothing is committed, pushed or sent anywhere.
 
-- `hobo ci init --relay job` (or `relay`) lists each job as ready, behind a
+- `hobo ci init --relay job` (or `relay`; the flag always takes a value) lists each job as ready, behind a
   relay, already on the fleet, or skipped and why. `--apply all` (or job ids,
   `file:job`) makes the edits and writes the generated files that differ.
   Runner-type flags (`--fleet`, `--machine`, `--blacksmith`, `--depot`,
@@ -2006,7 +2006,11 @@ only: nothing is committed, pushed or sent anywhere.
 - `hobo ci init --undo` is the way to remove it: it takes every relay out,
   gives each job its label back, and, once no workflow names the relay,
   deletes `hobo-relay.yml` and `.hobo-ci/relay.mjs` when they are the ones
-  this hobo wrote. A relay changed by hand is left in place with the lines
+  this hobo wrote. A workflow still names the relay when its text contains
+  `./.github/workflows/hobo-relay.yml`, whatever the calling job is called
+  (a hand-written `route:` job counts); a workflow it cannot read, or one
+  over 1 MiB, counts too. Either way both files stay, and the output lists
+  the workflows that kept them. A relay changed by hand is left in place with the lines
   that stopped it (`HOBO_CI_INIT_NOTHING_APPLIED` when none could be taken
   out); edit those lines back or remove that relay by hand, then run it
   again. `.hobo/ci.json`'s `runnerOrder` and `relayJobs` are left as they
