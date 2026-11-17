@@ -390,7 +390,7 @@ export class GithubRouteFacts implements RouteFactsSource {
 		if (!refBody.success || refBody.data.object.type !== "commit")
 			return undefined;
 		const commit = CommitBody.safeParse(
-			await ask(`/git/commits/${refBody.data.object.sha}`),
+			await ask(`/git/commits/${refBody.data.object.sha}`, true),
 		);
 		if (!commit.success) return undefined;
 		const judged = judgeRoutingSlip(commit.data.message, {

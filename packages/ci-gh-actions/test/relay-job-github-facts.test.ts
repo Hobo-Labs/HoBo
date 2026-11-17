@@ -85,6 +85,8 @@ function fakeGithub(
 	runs: readonly FakeRun[],
 	options: Readonly<{
 		slip?: string;
+		/** The slip ref names a commit that is gone by the time it is read. */
+		slipGone?: boolean;
 		fail?: string;
 		hang?: boolean;
 	}> = {},
@@ -93,7 +95,7 @@ function fakeGithub(
 	const routes = new Map<string, Answer>();
 	routes.set(
 		`/repos/${REPO}/git/ref/hobo/routing-slip`,
-		options.slip === undefined
+		options.slip === undefined && !options.slipGone
 			? json({ message: "Not Found" }, 404)
 			: json({ object: { sha: SLIP_SHA, type: "commit" } }),
 	);
@@ -595,6 +597,26 @@ describe("reads stay inside their budget", () => {
 		const read = await source.facts(testRouteRequest(REPO, OWN_RUN), NOW);
 		expect(read.fleet).toBeUndefined();
 		expect(source.warnings[0]?.message).toContain("in time");
+	});
+
+	it("reads no slip when its commit is gone between the two reads", async () => {
+		const { source } = facts(
+			[
+				{
+					id: 10,
+					created: 6,
+					jobs: [{ label: "hobo", queued: 6, started: 5 }],
+				},
+			],
+			{ slipGone: true },
+		);
+		const read = await source.facts(testRouteRequest(REPO, OWN_RUN), NOW);
+		expect(source.warnings).toEqual([]);
+		expect(read.fleet).toEqual({
+			enabled: true,
+			taking: true,
+			isolated: false,
+		});
 	});
 
 	it("ignores a slip it cannot use without warning", async () => {
