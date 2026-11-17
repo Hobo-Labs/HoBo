@@ -21,6 +21,7 @@ export interface MessagingLimits {
   retainedMessages: number,
   retainedReceipts: number,
   retainedEvents: number,
+  topics: number,
   subscriptions: number,
   eventPageSize: number,
 }
@@ -64,13 +65,21 @@ export interface Message {
   payload: Uint8Array,
   attributes: Array<Attribute>,
 }
+export type DeadLetterCause = DeadLetterCauseNack | DeadLetterCauseLeaseExpired;
+export interface DeadLetterCauseNack {
+  tag: 'nack',
+  val: string,
+}
+export interface DeadLetterCauseLeaseExpired {
+  tag: 'lease-expired',
+}
 export interface DeadLetter {
   sourceTopic: string,
   consumerGroup: string,
   originalMessageId: string,
   originalSequence: bigint,
   deliveryAttempt: number,
-  reason: string,
+  cause: DeadLetterCause,
 }
 export interface Delivery {
   message: Message,
@@ -328,11 +337,21 @@ export interface EventRequest {
 export interface EventPage {
   events: Array<Event>,
   firstAvailableSequence: bigint,
+  nextAfterSequence: bigint,
+  hasMore: boolean,
 }
-export type EventOutcome = EventOutcomeOk | EventOutcomeRejected;
+export interface EventGap {
+  firstAvailableSequence: bigint,
+  latestSequence: bigint,
+}
+export type EventOutcome = EventOutcomeOk | EventOutcomeGap | EventOutcomeRejected;
 export interface EventOutcomeOk {
   tag: 'ok',
   val: EventPage,
+}
+export interface EventOutcomeGap {
+  tag: 'gap',
+  val: EventGap,
 }
 export interface EventOutcomeRejected {
   tag: 'rejected',

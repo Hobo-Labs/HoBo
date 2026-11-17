@@ -151,6 +151,11 @@ describe("forward/reverse surface parity", () => {
 		}
 		expect(types).toContain("MessageOutcomeUnknown");
 		expect(types).toContain("MessageOutcomeExpired");
+		expect(types).toContain("topics: number");
+		expect(types).toContain("tag: 'lease-expired'");
+		expect(types).toContain("originalSequence: bigint");
+		expect(types).toContain("nextAfterSequence: bigint");
+		expect(types).toContain("tag: 'gap'");
 	});
 
 	it("matches golden component imports against hobo:sdk world", async () => {
