@@ -43,6 +43,7 @@ import { createBrokerCommand } from "./broker-command.js";
 import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
 import { defaultJournalProvisioners } from "./cd-journal-provisioners.js";
+import { cdPlacementRuntime, routePreparedPlacements } from "./cd-placement.js";
 import { createCiCommand } from "./ci-command.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
 import {
@@ -299,7 +300,12 @@ export function createComposedHoboCli(
 				resolveProject: resolveCdProject,
 				up,
 				down,
-				plan,
+				// The journal and config are placed on the Yards cd up makes for
+				// them (the journal's fleet, the owner's config service).
+				plan: createProviderCeremonyUp(
+					createPlanCommand({ runtime: cdPlacementRuntime(runtime) }),
+					{ add, candidates: installableProvidersFor, interactive: false },
+				),
 				// Vercel first, then converge through the Vercel provider junction:
 				// the same journal, registry and actor host (one writer), with an
 				// executor whose IaC provider deploys with the junction's token,
@@ -320,16 +326,18 @@ export function createComposedHoboCli(
 				upWith: (credentials) =>
 					createBrokerAwareUpCommand({
 						runtime: {
-							...runtime,
+							...cdPlacementRuntime(runtime),
 							executor: createInProcessExecutor({
-								iac: createVercelDeployProvider({
-									token: credentials.reveal("VERCEL_TOKEN") ?? "",
-									...((team) =>
-										team !== undefined ? { teamId: team } : undefined)(
-										credentials.reveal("VERCEL_TEAM_ID"),
-									),
-									projectName: "hobo-cd",
-								}),
+								iac: routePreparedPlacements(
+									createVercelDeployProvider({
+										token: credentials.reveal("VERCEL_TOKEN") ?? "",
+										...((team) =>
+											team !== undefined ? { teamId: team } : undefined)(
+											credentials.reveal("VERCEL_TEAM_ID"),
+										),
+										projectName: "hobo-cd",
+									}),
+								),
 							}),
 						},
 						persistentLocal: !explicitFixture,

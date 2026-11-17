@@ -24,6 +24,13 @@ export {
 	vercelYard,
 } from "./junction.js";
 export {
+	CD_CONFIG_PRODUCT,
+	CD_JOURNAL_PRODUCT,
+	CD_PLACEMENT_YARDS,
+	cdConfigYard,
+	cdJournalYard,
+} from "./placement.js";
+export {
 	CD_SETTINGS,
 	DEFAULT_VERCEL_REDIRECT_URI,
 	type PrepareVercelDeps,
