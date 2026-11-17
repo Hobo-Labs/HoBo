@@ -1,0 +1,3 @@
+export const title = 'Deliver an issued broker receipt';
+export const state = v => ({ready:'Receipt ready for delivery',validating:'Receipt and quote being checked',submitting:'Delivery submitted; result pending',done:'Delivery accepted',uncertain:'Delivery outcome requires reconciliation'})[v.phase];
+export const step = action => ({Start:'check the issued receipt',Dispatch:'submit delivery',Decline:'refuse stale evidence',Succeed:'record acceptance',Uncertain:'submission outcome is uncertain',RetryUnsafe:'retry without reconciliation',Expire:'quote expires',Revoke:'approved context changes',Done:'finish'})[action] ?? action;

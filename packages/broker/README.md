@@ -294,6 +294,26 @@ reissued by that instance without reconciliation. This process-local registry
 is lost on restart; it does not authenticate the caller, provide cross-process
 coordination, or verify that a remote receiver honors the quote at execution.
 
+The [delivery claim skill](../../.agents/skills/verify-broker-delivery-claim/SKILL.md)
+checks 23 delivery states and 12 resolution-identity states. This delivery view
+hides 30 same-label steps and covers a single broker instance; it does not model
+a restart or the remote receiver's execution.
+
+```mermaid
+stateDiagram-v2
+  s0: Receipt ready for delivery
+  s1: Receipt and quote being checked
+  s2: Delivery submitted#59; result pending
+  s3: Delivery accepted
+  s4: Delivery outcome requires reconciliation
+  [*] --> s0
+  s0 --> s1: check the issued receipt
+  s1 --> s2: submit delivery
+  s2 --> s3: record acceptance
+  s2 --> s4: submission outcome is uncertain
+  s1 --> s0: refuse stale evidence
+```
+
 The [quote-backed admission skill](../../.agents/skills/verify-broker-quote-admission/SKILL.md)
 checks 108 states. This view hides 140 same-label steps, including evidence
 changes; it does not model delivery or guarantee freshness after the final check.
