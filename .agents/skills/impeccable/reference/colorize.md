@@ -11,7 +11,7 @@ Introduce color as hierarchy, meaning, and atmosphere. Preserve confirmed brand 
 
 ## Audit before choosing
 
-Read DESIGN.md, tokens, assets, current themes, and representative states. Identify:
+Read source tokens, assets, current themes, and representative states. Identify:
 
 - which colors are confirmed brand commitments;
 - current surface, text, action, and semantic roles;

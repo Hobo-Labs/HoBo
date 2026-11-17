@@ -6,7 +6,7 @@ A detector result is defect evidence, not proof of quality. Inspect the rendered
 
 ## 1. Establish the system
 
-Read DESIGN.md and representative tokens, shared components, patterns, and neighboring flows. If no formal system exists, use coherent project conventions.
+Read representative tokens, shared components, patterns, and neighboring flows. Use coherent project conventions.
 
 Classify each drift before fixing it:
 
@@ -90,7 +90,7 @@ Walk the complete path again with mouse, keyboard, and touch where applicable. C
 - loading, empty, error, success, disabled, long-content, and missing-content states;
 - zoom, contrast, focus, semantics, and screen-reader names;
 - console errors, layout shift, interaction latency, image loading, and supported browsers;
-- agreement with DESIGN.md, neighboring features, and the user's scope.
+- agreement with source tokens, neighboring features, and the user's scope.
 
 Follow the quality guidance supplied by `context.mjs` and hooks, then run any other relevant QA commands. Context requests a manual scan only when no automatic detector is active; never add another detector pass. Fix real defects and document only narrow intentional exceptions. A clean scan does not replace visual judgment.
 

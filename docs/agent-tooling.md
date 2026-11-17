@@ -65,6 +65,10 @@ does not contact the network. The image generator and concept-seed helper make
 network requests only when explicitly invoked. The common source-policy hooks
 apply to every harness. Surface-brief and critique-file writers reject writes;
 visual work uses the implemented styles and components instead.
+The visual doctor reports existing design documents and sidecars so their
+outstanding behavior can be completed before removal; its automatic fixes do
+not move or regenerate those artifacts. The checked-in visual agents report
+findings inline and use the same policy.
 
 Live preview sessions recover browser checkpoints after a reload or when local
 browser storage is missing, provided the live server is still running. Browser
