@@ -26,13 +26,14 @@ import {
 } from "../executor/executor.js";
 import { isJsonObject, isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
-import { collectStream, currentFenceToken } from "../store/index.js";
+import { currentFenceToken } from "../store/index.js";
 import {
 	type BlockedProviderMove,
 	blockedProviderMove,
 	desiredSpecHash,
 	recordedResources,
 } from "./desired-state.js";
+import { readDeploymentHistory } from "./history-scope.js";
 
 // The ResourceActor reconciliation FSM (control-plane.md "The ResourceActor
 // reconciliation FSM"). Each resource in a plan gets a durable virtual actor
@@ -462,7 +463,11 @@ export async function reconcileResource(
 
 	try {
 		const stream = streamId(ctx.deploymentId);
-		let events = await collectStream(deps.store, stream);
+		let events = await readDeploymentHistory(
+			deps.store,
+			ctx.deploymentId,
+			ctx.tenant,
+		);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,
@@ -520,7 +525,11 @@ export async function reconcileResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -577,7 +586,11 @@ export async function reconcileResource(
 			)
 				throw new Error("operation start acknowledgement is invalid");
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			pending = events.find(
 				(event) => event.id === recorded.id && event.seq === recorded.seq,
 			);
@@ -620,7 +633,11 @@ export async function reconcileResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -698,7 +715,11 @@ export async function reconcileResource(
 					{ expectedSeq: lastSeq, ...appendOpts },
 				);
 				lastSeq = emitted.seq;
-				events = await collectStream(deps.store, stream);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
 				snapshot = foldResourceActor(events, {
 					...resource,
 					deploymentId: ctx.deploymentId,
@@ -742,7 +763,11 @@ export async function reconcileResource(
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -776,7 +801,11 @@ export async function destroyResource(
 	});
 	try {
 		const stream = streamId(ctx.deploymentId);
-		let events = await collectStream(deps.store, stream);
+		let events = await readDeploymentHistory(
+			deps.store,
+			ctx.deploymentId,
+			ctx.tenant,
+		);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,
@@ -820,7 +849,11 @@ export async function destroyResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -875,7 +908,11 @@ export async function destroyResource(
 			)
 				throw new Error("operation start acknowledgement is invalid");
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			pending = events.find(
 				(event) => event.id === recorded.id && event.seq === recorded.seq,
 			);
@@ -918,7 +955,11 @@ export async function destroyResource(
 				],
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -961,7 +1002,11 @@ export async function destroyResource(
 					);
 					lastSeq = emitted.seq;
 				}
-				events = await collectStream(deps.store, stream);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
 				snapshot = foldResourceActor(events, {
 					...resource,
 					deploymentId: ctx.deploymentId,
@@ -981,7 +1026,11 @@ export async function destroyResource(
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,

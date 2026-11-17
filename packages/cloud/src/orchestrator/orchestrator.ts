@@ -5,7 +5,7 @@ import { emit } from "@hobo/events";
 import { CLOUD_EVENTS, deploymentDeployed } from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
 import type { DeploymentPlan, ResourcePlan } from "../plan-types.js";
-import { collectStream, currentFenceToken } from "../store/index.js";
+import { currentFenceToken } from "../store/index.js";
 import { type CompensationResult, runCompensation } from "./compensation.js";
 import {
 	type BlockedProviderMove,
@@ -18,6 +18,11 @@ import {
 	planDeploymentChanges,
 	recordedResources,
 } from "./desired-state.js";
+import { readDeploymentHistory } from "./history-scope.js";
+import {
+	type PendingResourceOperation,
+	pendingOrchestrationBarriers,
+} from "./pending-operations.js";
 import {
 	destroyResource,
 	foldResourceActor,
@@ -81,6 +86,8 @@ export interface OrchestratorResult {
 	unprunable: string[];
 	/** Provider changes refused until the prior resource's effects are reconciled. */
 	blockedProviderMoves?: readonly BlockedProviderMove[];
+	/** In-flight effects that must be reconciled before changing this plan. */
+	pendingOperations?: readonly PendingResourceOperation[];
 }
 
 function streamId(deploymentId: string): string {
@@ -161,11 +168,97 @@ export async function runOrchestrator(
 	let progressed = true;
 	let triggeringFailure: { resourceId: string; reason: string } | null = null;
 	const mode = ctx.mode ?? "incremental";
-	const initialEvents = await collectStream(deps.store, stream);
+	const readHistory = () =>
+		readDeploymentHistory(deps.store, deploymentId, ctx.tenant);
+	let initialEvents = await readHistory();
 	// This run's epoch: facts after the last Deployed/RolledBack. Earlier
 	// failures belong to an `up` that already ended.
 	const epochStart = currentEpochStart(initialEvents);
 	const changes = planDeploymentChanges(plan, initialEvents, mode);
+	const pendingResult = async (
+		history: EventEnvelope[],
+		pruned: string[] = [],
+		unprunable: string[] = [],
+	): Promise<OrchestratorResult | undefined> => {
+		const pendingOperations = await pendingOrchestrationBarriers(
+			history,
+			plan,
+			{
+				deploymentId,
+				tenant: ctx.tenant,
+				verifyResume: deps.verifyResume,
+			},
+		);
+		if (pendingOperations.length === 0) return undefined;
+		const states = resourceStates(history, plan, deploymentId);
+		return {
+			status: "needs-human",
+			deploymentId,
+			provisioned: provisionedList(states),
+			destroyed: destroyedList(states),
+			events: history,
+			changes,
+			pruned,
+			unprunable,
+			pendingOperations,
+		};
+	};
+	let initialPending = await pendingResult(initialEvents);
+	const recoveredPruned: string[] = [];
+	if (initialPending !== undefined) {
+		const [only] = initialPending.pendingOperations ?? [];
+		const previous =
+			only === undefined
+				? undefined
+				: recordedResources(initialEvents).get(only.resourceId);
+		const known = [...recordedResources(initialEvents).values()];
+		const liveDependentsAbsent =
+			only !== undefined &&
+			known.every(
+				(item) =>
+					item.resourceId === only.resourceId ||
+					item.state === "Destroyed" ||
+					(item.plan !== undefined &&
+						!item.plan.deps.includes(only.resourceId)),
+			);
+		if (
+			mode === "complete" &&
+			!hasUnresolvedReconciliation(initialEvents) &&
+			initialPending.pendingOperations?.length === 1 &&
+			only?.operation === "destroy" &&
+			only.reason === "removed-from-plan" &&
+			previous?.plan !== undefined &&
+			deps.verifyResume !== undefined &&
+			liveDependentsAbsent &&
+			!plan.resources.some((resource) =>
+				resource.deps.includes(only.resourceId),
+			)
+		) {
+			const resumed = await destroyResource(
+				actorDeps,
+				{ ...previous.plan, deploymentId },
+				reconcileCtx,
+			);
+			initialEvents = await readHistory();
+			if (resumed.kind === "failed") {
+				const state = resourceStates(initialEvents, plan, deploymentId);
+				return {
+					status: "needs-human",
+					deploymentId,
+					provisioned: provisionedList(state),
+					destroyed: destroyedList(state),
+					events: initialEvents,
+					changes,
+					pruned: [],
+					unprunable: [only.resourceId],
+					pendingOperations: initialPending.pendingOperations,
+				};
+			}
+			if (resumed.kind === "destroyed") recoveredPruned.push(only.resourceId);
+			initialPending = await pendingResult(initialEvents, recoveredPruned);
+		}
+		if (initialPending !== undefined) return initialPending;
+	}
 	// Provisioning is recorded before dispatch, so even a failed or interrupted
 	// call may have created state. A new provider cannot take over that resource
 	// without a fenced handover. Unknown ownership must fail closed too.
@@ -198,7 +291,9 @@ export async function runOrchestrator(
 
 	while (progressed) {
 		progressed = false;
-		const events = await collectStream(deps.store, stream);
+		const events = await readHistory();
+		const pending = await pendingResult(events);
+		if (pending !== undefined) return pending;
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
 		const states = resourceStates(events, plan, deploymentId);
 		// A possibly-applied resource must be reconciled before any retry or rollback.
@@ -262,7 +357,9 @@ export async function runOrchestrator(
 		if (triggeringFailure || lateBlocked) break;
 	}
 
-	let events = await collectStream(deps.store, stream);
+	let events = await readHistory();
+	const pending = await pendingResult(events);
+	if (pending !== undefined) return pending;
 	let states = resourceStates(events, plan, deploymentId);
 	if (lateBlocked)
 		return {
@@ -321,7 +418,7 @@ export async function runOrchestrator(
 					: undefined),
 			},
 		);
-		events = await collectStream(deps.store, stream);
+		events = await readHistory();
 		states = resourceStates(events, plan, deploymentId);
 		return {
 			status:
@@ -339,7 +436,7 @@ export async function runOrchestrator(
 
 	// Complete mode: once every declared resource converged, destroy what the
 	// log provisioned but the plan no longer declares, dependents first.
-	const pruned: string[] = [];
+	const pruned: string[] = [...recoveredPruned];
 	let unprunable: string[] = [];
 	const declaredConverged = () => {
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
@@ -361,6 +458,26 @@ export async function runOrchestrator(
 		if (orphans.unknown.length > 0)
 			for (const orphan of orphans.ordered) blocked.add(orphan.name);
 		for (const orphan of orphans.ordered) {
+			events = await readHistory();
+			const blockedByPending = await pendingResult(
+				events,
+				pruned,
+				[...new Set([...unprunable, ...remaining])].sort(),
+			);
+			if (blockedByPending !== undefined) return blockedByPending;
+			if (!declaredConverged()) {
+				states = resourceStates(events, plan, deploymentId);
+				return {
+					status: "waiting",
+					deploymentId,
+					provisioned: provisionedList(states),
+					destroyed: destroyedList(states),
+					events,
+					changes,
+					pruned,
+					unprunable,
+				};
+			}
 			const hasLiveDependent = orphans.ordered.some(
 				(other) =>
 					remaining.has(other.name) && other.deps.includes(orphan.name),
@@ -378,7 +495,7 @@ export async function runOrchestrator(
 			if (outcome.kind === "failed") {
 				unprunable.push(orphan.name);
 				if (outcome.snapshot.state === "ReconciliationRequired") {
-					events = await collectStream(deps.store, stream);
+					events = await readHistory();
 					states = resourceStates(events, plan, deploymentId);
 					return {
 						status: "needs-human",
@@ -398,11 +515,15 @@ export async function runOrchestrator(
 			remaining.delete(orphan.name);
 		}
 		if (pruned.length > 0) {
-			events = await collectStream(deps.store, stream);
+			events = await readHistory();
 			states = resourceStates(events, plan, deploymentId);
 		}
 	}
 
+	events = await readHistory();
+	states = resourceStates(events, plan, deploymentId);
+	const finalPending = await pendingResult(events, pruned, unprunable);
+	if (finalPending !== undefined) return finalPending;
 	// All actors Provisioned → drive deployment.Deployed (choreography terminal).
 	const allProvisioned = declaredConverged() && unprunable.length === 0;
 	// Deployed is recorded once per change: an idempotent re-run that changed
@@ -434,7 +555,7 @@ export async function runOrchestrator(
 					: undefined),
 			},
 		);
-		events = await collectStream(deps.store, stream);
+		events = await readHistory();
 	}
 
 	return {

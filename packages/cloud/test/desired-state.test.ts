@@ -702,7 +702,12 @@ describe("deployment modes", () => {
 			},
 		);
 		expect(iac.calls).toEqual(["destroy:web"]);
-		expect(failed.status).toBe("waiting");
+		expect(failed.status).toBe("needs-human");
+		expect(failed.pendingOperations).toContainEqual({
+			resourceId: "web",
+			operation: "destroy",
+			reason: "removed-from-plan",
+		});
 		expect(failed.unprunable).toEqual(["api", "web"]);
 		expect(
 			failed.events.filter((e) => e.type === "deployment.Deployed"),

@@ -13,7 +13,11 @@ import {
 	resourceReconciled,
 } from "../events.js";
 import { isJsonObject, isJsonString } from "../json.js";
-import { collectStream, currentFenceToken } from "../store/index.js";
+import { currentFenceToken } from "../store/index.js";
+import {
+	DeploymentHistoryScopeError,
+	readDeploymentHistory,
+} from "./history-scope.js";
 import { resourceActorKey } from "./resource-actor.js";
 
 export interface ReconciliationFinancialEvidence {
@@ -455,8 +459,24 @@ export async function resolveResourceReconciliation(
 		holderId: `resource-recovery:${key}`,
 	});
 	const stream = `deployment:${claim.deploymentId}`;
+	const readHistory = async () => {
+		try {
+			return await readDeploymentHistory(
+				deps.store,
+				claim.deploymentId,
+				claim.tenant,
+			);
+		} catch (error) {
+			if (error instanceof DeploymentHistoryScopeError)
+				fail(
+					"RECONCILIATION_SCOPE_MISMATCH",
+					"resource history belongs to another scope",
+				);
+			throw error;
+		}
+	};
 	try {
-		const events = await collectStream(deps.store, stream);
+		const events = await readHistory();
 		const replay = recoveryRecord(events, claim, digest);
 		if (replay !== undefined) return { status: "replay", eventId: replay.id };
 		const failures = new Map<
@@ -646,7 +666,7 @@ export async function resolveResourceReconciliation(
 					"RECONCILIATION_OUTCOME_UNKNOWN",
 					"append did not return the expected recovery fact",
 				);
-			const after = await collectStream(deps.store, stream);
+			const after = await readHistory();
 			const committed = recoveryRecord(after, claim, digest);
 			if (
 				committed === undefined ||
@@ -658,11 +678,21 @@ export async function resolveResourceReconciliation(
 					"the recovery fact could not be confirmed",
 				);
 			return { status: "resolved", eventId: committed.id };
-		} catch {
+		} catch (error) {
+			if (
+				error instanceof ResourceReconciliationError &&
+				error.code === "RECONCILIATION_SCOPE_MISMATCH"
+			)
+				throw error;
 			let after: EventEnvelope[];
 			try {
-				after = await collectStream(deps.store, stream);
-			} catch {
+				after = await readHistory();
+			} catch (error) {
+				if (
+					error instanceof ResourceReconciliationError &&
+					error.code === "RECONCILIATION_SCOPE_MISMATCH"
+				)
+					throw error;
 				fail(
 					"RECONCILIATION_OUTCOME_UNKNOWN",
 					"the recovery append must be checked before retry",

@@ -5,7 +5,12 @@ import { emit } from "@hobo/events";
 import { CLOUD_EVENTS, deploymentRolledBack } from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
 import type { DeploymentPlan } from "../plan-types.js";
-import { collectStream, currentFenceToken } from "../store/index.js";
+import { currentFenceToken } from "../store/index.js";
+import { readDeploymentHistory } from "./history-scope.js";
+import {
+	type PendingResourceOperation,
+	pendingCompensationBarriers,
+} from "./pending-operations.js";
 import {
 	destroyResource,
 	foldResourceActor,
@@ -40,6 +45,7 @@ export interface CompensationResult {
 	status: "rolled-back" | "needs-human";
 	destroyedOrder: string[];
 	events: EventEnvelope[];
+	pendingOperations?: readonly PendingResourceOperation[];
 }
 
 function streamId(deploymentId: string): string {
@@ -108,7 +114,17 @@ export async function runCompensation(
 			: undefined),
 	};
 
-	let events = await collectStream(deps.store, stream);
+	const readHistory = () =>
+		readDeploymentHistory(deps.store, deploymentId, ctx.tenant);
+	let events = await readHistory();
+	let pendingOperations = pendingCompensationBarriers(events, plan);
+	if (pendingOperations.length > 0)
+		return {
+			status: "needs-human",
+			destroyedOrder: [],
+			events,
+			pendingOperations,
+		};
 	if (hasUnresolvedReconciliation(events)) {
 		return { status: "needs-human", destroyedOrder: [], events };
 	}
@@ -137,7 +153,7 @@ export async function runCompensation(
 				...appendOpts,
 			},
 		);
-		events = await collectStream(deps.store, stream);
+		events = await readHistory();
 	}
 
 	const actorDeps: ResourceActorDeps = {
@@ -156,7 +172,15 @@ export async function runCompensation(
 	let progressed = true;
 	while (progressed) {
 		progressed = false;
-		events = await collectStream(deps.store, stream);
+		events = await readHistory();
+		pendingOperations = pendingCompensationBarriers(events, plan);
+		if (pendingOperations.length > 0)
+			return {
+				status: "needs-human",
+				destroyedOrder,
+				events,
+				pendingOperations,
+			};
 		const states = new Map<string, ResourceActorState>(
 			plan.resources.map((r) => [
 				r.name,
@@ -187,6 +211,15 @@ export async function runCompensation(
 
 			const resource = byName.get(resourceId);
 			if (!resource) continue;
+			events = await readHistory();
+			pendingOperations = pendingCompensationBarriers(events, plan);
+			if (pendingOperations.length > 0 || hasUnresolvedReconciliation(events))
+				return {
+					status: "needs-human",
+					destroyedOrder,
+					events,
+					pendingOperations,
+				};
 
 			// The resource actor writes the durable destroy identity under its lease.
 			const outcome = await destroyResource(
@@ -203,7 +236,7 @@ export async function runCompensation(
 				},
 			);
 			if (outcome.kind === "failed") {
-				events = await collectStream(deps.store, stream);
+				events = await readHistory();
 				return { status: "needs-human", destroyedOrder, events };
 			}
 			destroyedOrder.push(resourceId);
@@ -212,6 +245,14 @@ export async function runCompensation(
 		}
 	}
 
-	events = await collectStream(deps.store, stream);
+	events = await readHistory();
+	pendingOperations = pendingCompensationBarriers(events, plan);
+	if (pendingOperations.length > 0 || hasUnresolvedReconciliation(events))
+		return {
+			status: "needs-human",
+			destroyedOrder,
+			events,
+			pendingOperations,
+		};
 	return { status: "rolled-back", destroyedOrder, events };
 }
