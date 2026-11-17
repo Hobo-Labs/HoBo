@@ -8,7 +8,9 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	BudgetFenceSettlementGuardSchema,
 	BudgetReservationSchema,
+	BudgetSettlementEvidenceSchema,
 	EntitlementClaimSchema,
 	IacTargetAdmissionDecisionSchema,
 } from "../../../broker/src/_generated/yard_placement_pb.js";
@@ -353,6 +355,199 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 }
 
 describe("financial admission modes", () => {
+	it("does not inspect or report a foreign reservation with unsupported evidence", async () => {
+		const route = routeFixture();
+		const f = fixture(
+			(id) => {
+				const decision = generatedAdmission(id, "priced");
+				if (decision.reservation === undefined)
+					throw new Error("fixture reservation missing");
+				decision.reservation.reservationId = "iac:foreign";
+				Object.defineProperty(decision.reservation, "fenceSettlementGuard", {
+					value: {},
+					enumerable: true,
+				});
+				return decision;
+			},
+			() => true,
+			"target",
+			"attempt",
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_RECEIPT_INVALID",
+			requiresReconciliation: true,
+			reservationId: undefined,
+			admission: undefined,
+		});
+		expect(f.uncertain).toEqual([]);
+		expect(route.calls.denied).toBe(0);
+		expect(f.applies()).toBe(0);
+	});
+
+	it("rejects proxied or accessor-backed fence evidence without invoking it", async () => {
+		for (const mode of ["proxy", "revoked", "accessor"] as const) {
+			const observed = { traps: 0 };
+			const route = routeFixture();
+			const f = fixture(
+				(id) => {
+					const decision = generatedAdmission(id, "priced");
+					if (decision.reservation === undefined)
+						throw new Error("fixture reservation missing");
+					if (mode === "accessor")
+						Object.defineProperty(
+							decision.reservation,
+							"fenceSettlementGuard",
+							{
+								enumerable: true,
+								get() {
+									observed.traps++;
+									throw new Error("fence getter");
+								},
+							},
+						);
+					else
+						Object.defineProperty(
+							decision.reservation,
+							"fenceSettlementGuard",
+							{
+								enumerable: true,
+								value: hostileProxy({}, observed, mode === "revoked"),
+							},
+						);
+					return decision;
+				},
+				() => true,
+				"target",
+				"attempt",
+				route.port,
+			);
+			await f.provider.preview(f.program);
+			await expect(
+				f.provider.applyWithAdmission(f.program, "attempt"),
+			).rejects.toMatchObject({
+				code:
+					mode === "accessor"
+						? "ADMISSION_RECEIPT_INVALID"
+						: "ADMISSION_UNSUPPORTED_EVIDENCE",
+				requiresReconciliation: true,
+				reservationId: "iac:attempt",
+			});
+			expect(observed.traps).toBe(0);
+			expect(route.calls.denied).toBe(0);
+			expect(f.applies()).toBe(0);
+		}
+	});
+	it.each([
+		["fenceSettlementGuard", "empty", "admitted"],
+		["fenceSettlementGuard", "complete", "admitted"],
+		["fenceSettlementGuard", "partial-placement", "replay"],
+		["settlementEvidence", "empty", "replay"],
+		["settlementEvidence", "complete", "uncertain"],
+	] as const)("treats %s %s on %s as unsupported and uncertain", async (field, content, status) => {
+		const route = routeFixture();
+		const f = fixture(
+			(id) => {
+				const decision = generatedAdmission(id, "priced");
+				const reservation = decision.reservation;
+				if (reservation === undefined)
+					throw new Error("fixture reservation missing");
+				decision.status = status;
+				decision.code = status === "admitted" ? "" : "ALREADY_CLAIMED";
+				const placement = {
+					yardId: "yard",
+					campId: "camp",
+					providerId: "provider",
+					providerAccountId: "account",
+					resourceId: "resource",
+					deploymentId: "deployment",
+					incarnationId: "incarnation",
+					manifestHash: `sha256:${"1".repeat(64)}`,
+					planHash: `sha256:${"2".repeat(64)}`,
+				};
+				const fullFence = create(BudgetFenceSettlementGuardSchema, {
+					contract: "hobo.budget-fence-guard/v1",
+					dataset: "dataset",
+					scopeTenant: "",
+					operationId: "operation",
+					fenceTokenDigest: `sha256:${"3".repeat(64)}`,
+					receiverKeyId: "receiver",
+					receiverPublicKey: "receiver-key",
+					financeKeyId: "finance",
+					financePublicKey: "finance-key",
+					logicalCampId: "camp",
+					source: placement,
+					destination: placement,
+					decision: "to-target",
+					executionDigest: `sha256:${"4".repeat(64)}`,
+					routeDigest: `sha256:${"5".repeat(64)}`,
+					expectedRouteGeneration: "1",
+					currentSetId: "current",
+					desiredSetId: "desired",
+					migrationId: "migration",
+					decisionHead: "1",
+				});
+				const fullSettlement = create(BudgetSettlementEvidenceSchema, {
+					usageEvidenceRef: "usage",
+					sourceStoppedEvidenceRef: "stopped",
+					providerAccounts: [
+						{ providerAccountId: "account", liabilityMicros: 10 },
+					],
+					entitlementClaims: [],
+					fenceOperationReceiptJson: "receipt",
+					financeSignature: "signature",
+				});
+				const value =
+					content === "empty"
+						? {}
+						: content === "partial-placement"
+							? { ...fullFence, source: {} }
+							: field === "fenceSettlementGuard"
+								? fullFence
+								: fullSettlement;
+				Object.defineProperty(reservation, field, { value, enumerable: true });
+				return decision;
+			},
+			() => true,
+			"target",
+			"attempt",
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_UNSUPPORTED_EVIDENCE",
+			executionOutcome: "not-started",
+			requiresReconciliation: true,
+			reservationId: "iac:attempt",
+		});
+		expect(f.uncertain).toContain("iac:attempt");
+		expect(route.calls.denied).toBe(0);
+		expect(f.applies()).toBe(0);
+	});
+
+	it.each([
+		"priced",
+		"unpriced",
+	] as const)("accepts generated %s receipts with explicitly absent fence and settlement metadata", async (mode) => {
+		const f = fixture((id) => {
+			const decision = generatedAdmission(id, mode);
+			if (decision.reservation === undefined)
+				throw new Error("fixture reservation missing");
+			decision.reservation.fenceSettlementGuard = undefined;
+			decision.reservation.settlementEvidence = undefined;
+			return decision;
+		});
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).resolves.toBeDefined();
+		expect(f.applies()).toBe(1);
+	});
 	it("retains a generated unpriced uncertain hold whose nested digest is omitted", async () => {
 		const route = routeFixture();
 		const f = fixture(

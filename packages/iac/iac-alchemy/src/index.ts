@@ -1189,6 +1189,52 @@ function readKnownReservation(
 	}
 }
 
+function hasUnsupportedSettlementEvidence(
+	input: unknown,
+	requestId: string,
+	targetId: string,
+): boolean {
+	try {
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
+			return false;
+		const request = Object.getOwnPropertyDescriptor(input, "requestId");
+		const target = Object.getOwnPropertyDescriptor(input, "targetId");
+		const reservation = Object.getOwnPropertyDescriptor(input, "reservation");
+		if (
+			request === undefined ||
+			!("value" in request) ||
+			request.value !== requestId ||
+			target === undefined ||
+			!("value" in target) ||
+			target.value !== targetId ||
+			reservation === undefined ||
+			!("value" in reservation) ||
+			typeof reservation.value !== "object" ||
+			reservation.value === null ||
+			types.isProxy(reservation.value) ||
+			Array.isArray(reservation.value)
+		)
+			return false;
+		for (const key of ["fenceSettlementGuard", "settlementEvidence"]) {
+			const property = Object.getOwnPropertyDescriptor(reservation.value, key);
+			if (
+				property !== undefined &&
+				"value" in property &&
+				property.value !== undefined
+			)
+				return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+}
+
 function readFinancialDecision(
 	input: unknown,
 	tenantId: string,
@@ -2165,6 +2211,13 @@ export function createAlchemyIacProvider<
 						return { error: deadlineError(deadline) };
 					}
 					if (decision === undefined) {
+						const unsupportedEvidence =
+							knownReservation !== undefined &&
+							hasUnsupportedSettlementEvidence(
+								admitted.decision,
+								requestId,
+								target.targetId,
+							);
 						if (knownReservation !== undefined) {
 							deadline.reservationId = knownReservation;
 							unresolved.set(fenceKey, knownReservation);
@@ -2172,8 +2225,12 @@ export function createAlchemyIacProvider<
 						}
 						return {
 							error: new AlchemyIacError(
-								"ADMISSION_RECEIPT_INVALID",
-								"admission receipt could not be safely inspected",
+								unsupportedEvidence
+									? "ADMISSION_UNSUPPORTED_EVIDENCE"
+									: "ADMISSION_RECEIPT_INVALID",
+								unsupportedEvidence
+									? "the IaC financial port cannot authenticate fence or settlement evidence"
+									: "admission receipt could not be safely inspected",
 								undefined,
 								knownReservation,
 							),

@@ -150,6 +150,7 @@ export class AlchemyIacError extends Error {
 		this.name = "AlchemyIacError";
 		this.requiresReconciliation =
 			reservationId !== undefined ||
+			code === "ADMISSION_UNSUPPORTED_EVIDENCE" ||
 			code === "EXECUTION_DEADLINE_BEFORE_ROUTE" ||
 			code === "ROUTE_DEADLINE_UNKNOWN" ||
 			code === "ADMISSION_DEADLINE_UNKNOWN" ||
@@ -172,6 +173,7 @@ export class AlchemyIacError extends Error {
 		this.executionOutcome =
 			code === "PREVIEW_DEADLINE_EXCEEDED" ||
 			code === "REFRESH_DEADLINE_EXCEEDED" ||
+			code === "ADMISSION_UNSUPPORTED_EVIDENCE" ||
 			code === "EXECUTION_DEADLINE_BEFORE_ROUTE" ||
 			code === "ROUTE_DEADLINE_UNKNOWN" ||
 			code === "ADMISSION_DEADLINE_UNKNOWN" ||

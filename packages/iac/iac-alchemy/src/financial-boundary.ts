@@ -197,50 +197,6 @@ const entitlement: Check = (value) =>
 	);
 const accounts: Check = (value) => list(value, account);
 const entitlements: Check = (value) => list(value, entitlement);
-const settlement: Check = (value) =>
-	validFinancialRecord(value, "BudgetSettlementEvidence", {
-		usageEvidenceRef: text,
-		sourceStoppedEvidenceRef: text,
-		providerAccounts: accounts,
-		entitlementClaims: entitlements,
-		fenceOperationReceiptJson: text,
-		financeSignature: text,
-	});
-const placement: Check = (value) =>
-	validFinancialRecord(value, "BudgetFencedPlacement", {
-		yardId: text,
-		campId: text,
-		providerId: text,
-		providerAccountId: text,
-		resourceId: text,
-		deploymentId: text,
-		incarnationId: text,
-		manifestHash: text,
-		planHash: text,
-	});
-const fence: Check = (value) =>
-	validFinancialRecord(value, "BudgetFenceSettlementGuard", {
-		contract: text,
-		dataset: text,
-		scopeTenant: text,
-		operationId: text,
-		fenceTokenDigest: text,
-		receiverKeyId: text,
-		receiverPublicKey: text,
-		financeKeyId: text,
-		financePublicKey: text,
-		logicalCampId: text,
-		source: (item) => present(item, placement),
-		destination: (item) => present(item, placement),
-		decision: text,
-		executionDigest: text,
-		routeDigest: text,
-		expectedRouteGeneration: text,
-		currentSetId: text,
-		desiredSetId: text,
-		migrationId: text,
-		decisionHead: text,
-	});
 const pricingPin: Check = (value) =>
 	validFinancialRecord(
 		value,
@@ -489,10 +445,12 @@ export function validFinancialMetadata(
 				sourceStoppedEvidenceRef: text,
 				providerAccounts: accounts,
 				entitlementClaims: entitlements,
-				settlementEvidence: (item) => present(item, settlement),
+				// These claims are not issued by the IaC financial service and the
+				// adapter cannot authenticate them through its revalidation port.
+				settlementEvidence: (item) => item === undefined,
 				executionDigest: text,
 				financialPlanHash: text,
-				fenceSettlementGuard: (item) => present(item, fence),
+				fenceSettlementGuard: (item) => item === undefined,
 				unboundedExposure: flag,
 				// Both optional proof values are fully validated by the receipt parser.
 				unpricedPolicyProof: () => true,
