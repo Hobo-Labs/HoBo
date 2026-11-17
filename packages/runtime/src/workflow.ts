@@ -1,3 +1,4 @@
+import { canonicalJson } from "@hobo/core";
 import {
 	type Capability,
 	type CtxEffects,
@@ -10,6 +11,7 @@ import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
 	isJsonObject,
+	isJsonString,
 	type JsonBag,
 	type JsonValue,
 } from "./json.js";
@@ -98,6 +100,7 @@ export interface WorkflowEngine {
 	start<A, R>(
 		def: WorkflowDefinition<A, R>,
 		args: A,
+		options?: { runId?: string },
 	): Promise<WorkflowRunHandle<R>>;
 	resume<A, R>(
 		def: WorkflowDefinition<A, R>,
@@ -123,8 +126,6 @@ export function createWorkflowEngine(
 	const tokenBroker = options.tokenBroker ?? DEFAULT_TOKEN_BROKER;
 	const actorHost = options.actorHost;
 
-	let runCounter = 0;
-
 	async function execute<A, R>(
 		def: WorkflowDefinition<A, R>,
 		runId: string,
@@ -137,22 +138,64 @@ export function createWorkflowEngine(
 		async function appendEvent<T>(type: string, data: T): Promise<number> {
 			const payload = cloneAsJson(data);
 			seq += 1;
-			const envelope = nextEnvelope(streamId, seq, type, payload, {
-				meta: { idempotencyKey: `${runId}:${type}:${seq}` },
-			});
+			const envelope = nextEnvelope(
+				streamId,
+				seq,
+				type,
+				payload,
+				type === "run.Started"
+					? {}
+					: { meta: { idempotencyKey: `${runId}:${type}:${seq}` } },
+			);
 			await recordEffect(store, envelope, seq - 1);
 			journal.push(envelope);
 			return seq;
 		}
 
-		if (!journal.some((event) => event.type === "run.Started")) {
-			await appendEvent("run.Started", { seed, args });
+		let started = journal.find((event) => event.type === "run.Started");
+		if (!started) {
+			if (journal.length > 0)
+				throw new Error(`missing run.Started for ${runId}`);
+			await appendEvent("run.Started", {
+				seed,
+				args: cloneAsJson(args),
+				workflowName: def.name,
+			});
+			started = journal[0];
+		}
+		if (!started || !isJsonObject(started.data))
+			throw new Error(`invalid run.Started for ${runId}`);
+		const initial = started.data;
+		if (!isJsonString(initial.seed))
+			throw new Error(`invalid workflow seed for ${runId}`);
+		if (initial.workflowName !== undefined && initial.workflowName !== def.name)
+			throw new Error(`workflow run ${runId} is bound to another definition`);
+		if (
+			canonicalJson(initial.args ?? null) !== canonicalJson(cloneAsJson(args))
+		)
+			throw new Error(`workflow run ${runId} is bound to different input`);
+		const runSeed = initial.seed;
+		const completed = [...journal]
+			.reverse()
+			.find(
+				(event) =>
+					event.type === "run.Completed" || event.type === "run.Failed",
+			);
+		if (completed?.type === "run.Completed") {
+			if (!isJsonObject(completed.data))
+				throw new Error(`invalid run.Completed for ${runId}`);
+			return {
+				runId,
+				status: "completed",
+				result: completed.data.result as R | undefined,
+				error: undefined,
+			};
 		}
 
 		let stepIndex = 0;
 		let sleepIndex = 0;
 		const deterministic = createDeterministicContext({
-			seed,
+			seed: runSeed,
 			mode: "live",
 			eventKey: `${streamId}:orchestration`,
 		});
@@ -274,7 +317,11 @@ export function createWorkflowEngine(
 			capabilities: def.capabilities,
 			effects,
 		});
-		const ctx: WorkflowContext = Object.freeze({ ...base, runId, seed });
+		const ctx: WorkflowContext = Object.freeze({
+			...base,
+			runId,
+			seed: runSeed,
+		});
 
 		try {
 			const result = await def.run(ctx, args);
@@ -300,13 +347,29 @@ export function createWorkflowEngine(
 
 	return {
 		store,
-		async start(def, args) {
-			runCounter += 1;
-			const runId = `run-${runCounter}`;
+		async start(def, args, startOptions) {
+			const runId = validateRunId(
+				startOptions?.runId ?? `run-${globalThis.crypto.randomUUID()}`,
+			);
+			const streamId = `run/${runId}`;
+			await recordEffect(
+				store,
+				nextEnvelope(
+					streamId,
+					1,
+					"run.Started",
+					cloneAsJson({
+						seed,
+						args: cloneAsJson(args),
+						workflowName: def.name,
+					}),
+				),
+				0,
+			);
 			return execute(def, runId, args);
 		},
 		async resume(def, runId, args) {
-			return execute(def, runId, args);
+			return execute(def, validateRunId(runId), args);
 		},
 		async journal(runId) {
 			const events = await store.readStream(`run/${runId}`);
@@ -357,4 +420,10 @@ export function createWorkflowEngine(
 
 function isRecord<T>(value: T): value is T & JsonBag {
 	return isJsonObject(value);
+}
+
+function validateRunId(runId: string): string {
+	if (!isJsonString(runId) || !runId || runId.trim() !== runId)
+		throw new TypeError("runId must be a non-empty trimmed string");
+	return runId;
 }
