@@ -8,6 +8,29 @@ contains itemized expected cost and a separate conservative liability bound in
 integer USD microdollars. Unknown, stale, foreign, unbounded or unaffordable
 quotes are ineligible. The provider and tenant on every quote must match the
 selected Yard; residual resources stay within that Yard's provider.
+Each residual resource requires a full catalog capability verdict and a region
+supported by its selected definition. Wildcards must also report a full match.
+Eligible definitions need distinct IDs and nonnegative decimal marginal prices
+with matching units; comparison is exact and ties use the definition ID. Failed
+or changing catalog evidence refuses placement. Marginal ordering remains a
+per-resource comparison and does not establish whole-request cost optimality.
+
+The [Yard residual placement skill](../../.agents/skills/verify-yard-residual-placement/SKILL.md)
+checks a one-resource abstraction of capability and evidence. This view hides 24
+same-label steps; it assumes the host's catalog evidence is truthful.
+
+```mermaid
+stateDiagram-v2
+  s0: Check resource capability and region
+  s1: Resource placement refused
+  s2: Recheck catalog evidence
+  s3: Resource placed in Yard
+  [*] --> s0
+  s0 --> s1: no full match
+  s0 --> s2: full match in Yard
+  s2 --> s1: catalog evidence changed
+  s2 --> s3: evidence remains current
+```
 
 Funded hosting requires `hostingBudget: {authority, quotes, now}` and a bound
 `authorizeHosting` callback. The callback returns the existing `GateDecision`

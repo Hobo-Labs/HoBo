@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { first } from "@hobo/core/total-access";
+import { compareDecimal, type Decimal, parseDecimal } from "@hobo/pricing";
 import {
 	type BudgetAdmissionAuthority,
 	type BudgetIdentity,
@@ -981,54 +982,205 @@ function placeResourcesUnderYard(
 ):
 	| { readonly decisions: readonly PlacementDecision[] }
 	| { readonly error: string; readonly code: string } {
-	const defs = catalog
-		.definitions()
-		.filter((d) => d.providerId === providerId || d.providerId === "*");
+	const invalid = (code: string, error: string) => ({ code, error });
+	let defs: ReturnType<BrokerCatalog["definitions"]>;
+	let providers: Array<{ source: (typeof defs)[number]; provider: string }>;
+	try {
+		providers = catalog.definitions().map((source) => ({
+			source,
+			provider: source.providerId,
+		}));
+		defs = providers
+			.filter((item) => item.provider === providerId || item.provider === "*")
+			.map((item) => item.source);
+	} catch {
+		return invalid(
+			"catalog-definition-invalid",
+			"yard catalog could not be read",
+		);
+	}
+	type Candidate = {
+		source: (typeof defs)[number];
+		id: string;
+		provider: string;
+		sku: string;
+		unit: string;
+		priceText: string;
+		price: Decimal;
+		regions: string[];
+		region: string;
+	};
+	const evidence: Candidate[] = [];
 	const decisions: PlacementDecision[] = [];
-
 	for (const req of request.resources) {
-		const candidates = defs.filter((d) => {
-			const sat = d.satisfies({
-				port: req.port,
-				features: [...req.features],
-			});
-			return sat.kind === "full" || sat.kind === "partial";
-		});
-		if (candidates.length === 0) {
-			// Wildcard fallback on same provider
-			const any = defs.find((d) => d.port === "*");
-			if (!any) {
-				return {
-					error: `no catalog definition for ${req.resourceId} under yard provider ${providerId}`,
-					code: "no-definition-in-yard-provider",
+		const candidates: Candidate[] = [];
+		const ids = new Set<string>();
+		let unit: string | undefined;
+		for (const d of defs) {
+			try {
+				if (!Array.isArray(d.regions))
+					return invalid(
+						"catalog-definition-invalid",
+						"yard regions must be an array",
+					);
+				const before = {
+					id: d.id,
+					provider: d.providerId,
+					sku: d.cost.sku,
+					unit: d.cost.unit,
+					priceText: d.cost.marginalPrice,
+					regions: [...d.regions],
 				};
+				if (before.provider !== providerId && before.provider !== "*")
+					return invalid(
+						"catalog-definition-invalid",
+						"catalog provider changed during placement",
+					);
+				const verdict = d.satisfies({
+					port: req.port,
+					features: [...req.features],
+				});
+				if (!Array.isArray(d.regions))
+					return invalid(
+						"catalog-definition-invalid",
+						"yard regions changed during capability check",
+					);
+				const after = {
+					id: d.id,
+					provider: d.providerId,
+					sku: d.cost.sku,
+					unit: d.cost.unit,
+					priceText: d.cost.marginalPrice,
+					regions: [...d.regions],
+				};
+				if (JSON.stringify(before) !== JSON.stringify(after))
+					return invalid(
+						"catalog-definition-invalid",
+						"catalog definition changed during capability check",
+					);
+				if (verdict.kind !== "full") continue;
+				if (req.region && !before.regions.includes(req.region)) continue;
+				if (
+					!isJsonString(before.id) ||
+					!before.id.trim() ||
+					!isJsonString(before.provider) ||
+					!before.provider.trim() ||
+					!isJsonString(before.sku) ||
+					!before.sku.trim() ||
+					!isJsonString(before.unit) ||
+					!before.unit.trim() ||
+					before.regions.length === 0 ||
+					before.regions.some(
+						(region) => !isJsonString(region) || !region.trim(),
+					)
+				)
+					return invalid(
+						"catalog-definition-invalid",
+						"eligible yard definition lacks identity, SKU, unit or region",
+					);
+				if (ids.has(before.id))
+					return invalid(
+						"catalog-definition-conflict",
+						"eligible yard definition identities must be distinct",
+					);
+				ids.add(before.id);
+				const price = isJsonString(before.priceText)
+					? parseDecimal(before.priceText)
+					: undefined;
+				if (!price || price.coefficient < 0n)
+					return invalid(
+						"catalog-price-invalid",
+						"eligible yard price must be a nonnegative decimal",
+					);
+				if (unit !== undefined && unit !== before.unit)
+					return invalid(
+						"catalog-price-incomparable",
+						"eligible yard prices use different units",
+					);
+				unit = before.unit;
+				const region = req.region ?? before.regions[0];
+				if (!region)
+					return invalid(
+						"catalog-definition-invalid",
+						"eligible yard definition lacks a region",
+					);
+				candidates.push({ source: d, ...before, price, region });
+			} catch {
+				return invalid(
+					"catalog-definition-invalid",
+					"yard catalog capability or evidence check failed",
+				);
 			}
-			candidates.push(any);
 		}
-		// Deterministic pick: lowest marginal price then id.
-		candidates.sort((a, b) => {
-			const pa = Number(a.cost.marginalPrice);
-			const pb = Number(b.cost.marginalPrice);
-			if (pa !== pb) return pa - pb;
-			return a.id < b.id ? -1 : 1;
-		});
+		if (candidates.length === 0)
+			return invalid(
+				"no-definition-in-yard-provider",
+				`no complete catalog definition for ${req.resourceId} under yard provider ${providerId}`,
+			);
+		candidates.sort(
+			(a, b) =>
+				compareDecimal(a.price, b.price) ||
+				(a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+		);
+		evidence.push(...candidates);
 		const winner = first(candidates);
-		// Enforce no silent cross-provider placement.
-		if (winner.providerId !== providerId && winner.providerId !== "*") {
-			return {
-				error: `candidate ${winner.id} provider ${winner.providerId} != yard ${providerId}`,
-				code: "cross-yard-split-forbidden",
-			};
-		}
 		decisions.push({
 			resourceId: req.resourceId,
 			providerId,
 			definitionId: winner.id,
-			region: req.region ?? winner.regions[0] ?? "local",
-			sku: winner.cost.sku,
-			unit: winner.cost.unit,
-			marginalPrice: winner.cost.marginalPrice,
+			region: winner.region,
+			sku: winner.sku,
+			unit: winner.unit,
+			marginalPrice: winner.priceText,
 		});
+	}
+	try {
+		if (providers.some((item) => item.source.providerId !== item.provider))
+			return invalid(
+				"catalog-definition-invalid",
+				"catalog provider changed during placement",
+			);
+	} catch {
+		return invalid(
+			"catalog-definition-invalid",
+			"yard catalog could not be rechecked",
+		);
+	}
+	for (const item of evidence) {
+		try {
+			if (!Array.isArray(item.source.regions))
+				return invalid(
+					"catalog-definition-invalid",
+					"yard regions changed during placement",
+				);
+			if (
+				JSON.stringify({
+					id: item.source.id,
+					provider: item.source.providerId,
+					sku: item.source.cost.sku,
+					unit: item.source.cost.unit,
+					priceText: item.source.cost.marginalPrice,
+					regions: [...item.source.regions],
+				}) !==
+				JSON.stringify({
+					id: item.id,
+					provider: item.provider,
+					sku: item.sku,
+					unit: item.unit,
+					priceText: item.priceText,
+					regions: item.regions,
+				})
+			)
+				return invalid(
+					"catalog-definition-invalid",
+					"yard catalog changed during placement",
+				);
+		} catch {
+			return invalid(
+				"catalog-definition-invalid",
+				"yard catalog could not be rechecked",
+			);
+		}
 	}
 	return { decisions: Object.freeze(decisions) };
 }
