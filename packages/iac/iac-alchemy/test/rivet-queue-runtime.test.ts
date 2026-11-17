@@ -432,3 +432,16 @@ it("rejects accessor-bearing client payloads before sending", async () => {
 	expect(reads).toBe(0);
 	expect(calls).toBe(0);
 });
+
+it("treats an uncommitted success status as an unknown queue outcome", async () => {
+	const queue = createRivetAsyncQueueClient({
+		fetch: async () =>
+			Response.json(
+				{ messageId: "message", idempotencyKey: "key", deduped: false },
+				{ status: 202 },
+			),
+	});
+	await expect(queue.enqueue("key", 1)).rejects.toMatchObject({
+		code: "outcome-unknown",
+	});
+});

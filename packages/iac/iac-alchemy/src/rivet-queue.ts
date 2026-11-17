@@ -428,7 +428,8 @@ export function createRivetAsyncQueueClient(
 			}
 			throw new RivetAsyncQueueError("outcome-unknown", path);
 		}
-		if (!object(data)) throw new RivetAsyncQueueError("outcome-unknown", path);
+		if (result.status !== 200 || !object(data))
+			throw new RivetAsyncQueueError("outcome-unknown", path);
 		return data;
 	}
 	return Object.freeze({
