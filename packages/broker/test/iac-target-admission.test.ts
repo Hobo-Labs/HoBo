@@ -137,6 +137,43 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 }
 
 describe("provider-neutral IaC target budget admission", () => {
+	it.each([
+		"verified",
+		1,
+		{},
+		undefined,
+		false,
+	])("requires literal true from liability trust (%s)", async (value) => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			let policyCalls = 0;
+			for (const asynchronous of [false, true]) {
+				const decision = await admitIacTarget(
+					{ requestId: "malformed-verifier", ...fixture() },
+					{
+						...deps,
+						// SAFETY: intentionally malformed host result exercises the trust boundary.
+						verifyLiability: () =>
+							(asynchronous ? Promise.resolve(value) : value) as never,
+						authorize: (input) => {
+							policyCalls++;
+							return deps.authorize(input);
+						},
+					},
+				);
+				expect(decision).toMatchObject({
+					status: "denied",
+					code: "LIABILITY_EVIDENCE_UNVERIFIED",
+					budget: { evaluation: "unavailable", reservation: "not-created" },
+				});
+				expect(policyCalls).toBe(0);
+				expect(ledger.read(NOW).reservedMicros).toBe(0);
+			}
+		} finally {
+			ledger.close();
+		}
+	});
 	it("refuses an unknown price before any financial hold is created", async () => {
 		const ledger = authority();
 		try {
