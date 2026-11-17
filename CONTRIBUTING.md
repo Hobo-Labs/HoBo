@@ -35,7 +35,6 @@ pnpm test
 pnpm run standards:check
 pnpm run docs:cli-lint
 pnpm run docs:coverage
-pnpm run docs:freshness
 pnpm exec node --import tsx scripts/validate-sdk-contracts.ts
 ```
 
@@ -57,7 +56,7 @@ The test exercises framework-mounted previews and capture fallback in a browser.
 
 ## Documentation rule
 
-Docs must move with code. If you touch code, draft packages, tests, scripts, workflows, package metadata, hooks, or agent tooling, update the closest relevant documentation in the same pull request.
+Update existing user and operator documentation when the behavior it describes changes. Do not add maintenance-only notes or planning documents.
 
 Use this checklist:
 

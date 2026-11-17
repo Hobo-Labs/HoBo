@@ -1,10 +1,10 @@
 # HoBo
 
-**HoBo is a design-first meta-cloud project for deploying one application shape onto many real infrastructure shapes.**
+**HoBo is a meta-cloud platform for deploying one application shape onto many real infrastructure shapes.**
 
-A developer or agent should be able to describe an app once, then let HoBo place it on a provider, mix of providers, or self-hosted yard without rewriting app code. The design uses **WIT/WASM Component Model interfaces** as the portable membrane, provider adapters as the integration boundary, and an event-sourced control plane as the operating model.
+A developer or agent should be able to describe an app once, then let HoBo place it on a provider, mix of providers, or self-hosted yard without rewriting app code. HoBo uses **WIT/WASM Component Model interfaces** as the portable membrane, provider adapters as the integration boundary, and an event-sourced control plane as the operating model.
 
-> **Current state:** `@hobo/*` is **not on npm** — do not run `npx hobo` (that name is a different package). Clone this repo, `pnpm install`, and use the composed `@hobo/hobo` binary after a workspace build (`pnpm exec turbo run build --filter @hobo/adapter-hono --filter @hobo/hobo`). Active design + executable contract/proof repository with a production `packages/` workspace (**144** package manifests under `packages/` with HoBo.CD; ~400k non-test TypeScript lines under `packages/*/src` excluding generated clients: core, wit, bindles, runtime, runtimes/*, dispatcher, trails, stations, storage-sqlite, storage-postgres, cd, cd-gitops, cd-kube-fleet, resolver-components, broker, connectivity, componentize, conformance, cli, hobo, code, cloud, replay, identity, mcp, contracts, policy, data, events, camps, yards, junctions, control-api, control-yard, management, iac/*, providers/* (incl. provider-convex), connectors/*, adapters/*, schema-tools, stage-gate, ci-guard, contract-harness, training-pipeline). All **42** canonical `hobo` CLI verbs (`packages/cli/src/shell/verbs.ts`) dispatch against the local lane; the product binary is **`@hobo/hobo`** (composition root), while **`@hobo/cli`** provides the shell and command factories. Default deploy uses an **in-memory Pulumi stand-in** (`HONEST SCOPE` in `packages/hobo/src/compose.ts`); live Vercel/Cloudflare and `HOBO_PULUMI_LIVE=1` are credential- or engine-gated. `@hobo/componentize` ships a **real jco/`componentize-js` lane** (`createRealComponentize`, opt-in via `HOBO_COMPONENTIZE_REAL=1`, fail-closed when the toolchain is absent) with the **synthetic contract bytes** (`buildWasmContractBytes`) as the offline default floor. Hierarchical DNS-valid naming, optional local named endpoints, overlay/DNS/policy/metering foundations live in `@hobo/connectivity` ([ADR-0130](./docs/design/adr/07-portability-extensibility.md#adr-0130)). **Pre-release:** packages are **not published to npm**. Ship targets A/B/C: [`docs/design/launch-ship-targets.md`](./docs/design/launch-ship-targets.md), [ADR-0140](./docs/design/adr/07-portability-extensibility.md#adr-0140).
+> **Current state:** `@hobo/*` is **not on npm** — do not run `npx hobo` (that name is a different package). Clone this repo, `pnpm install`, and use the composed `@hobo/hobo` binary after a workspace build (`pnpm exec turbo run build --filter @hobo/adapter-hono --filter @hobo/hobo`). The production `packages/` workspace contains executable contracts and proof packages (**144** package manifests under `packages/` with HoBo.CD; ~400k non-test TypeScript lines under `packages/*/src` excluding generated clients: core, wit, bindles, runtime, runtimes/*, dispatcher, trails, stations, storage-sqlite, storage-postgres, cd, cd-gitops, cd-kube-fleet, resolver-components, broker, connectivity, componentize, conformance, cli, hobo, code, cloud, replay, identity, mcp, contracts, policy, data, events, camps, yards, junctions, control-api, control-yard, management, iac/*, providers/* (incl. provider-convex), connectors/*, adapters/*, schema-tools, stage-gate, ci-guard, contract-harness, training-pipeline). All **42** canonical `hobo` CLI verbs (`packages/cli/src/shell/verbs.ts`) dispatch against the local lane; the product binary is **`@hobo/hobo`** (composition root), while **`@hobo/cli`** provides the shell and command factories. Default deploy uses an **in-memory Pulumi stand-in** (`HONEST SCOPE` in `packages/hobo/src/compose.ts`); live Vercel/Cloudflare and `HOBO_PULUMI_LIVE=1` are credential- or engine-gated. `@hobo/componentize` ships a **real jco/`componentize-js` lane** (`createRealComponentize`, opt-in via `HOBO_COMPONENTIZE_REAL=1`, fail-closed when the toolchain is absent) with the **synthetic contract bytes** (`buildWasmContractBytes`) as the offline default floor. Hierarchical DNS-valid naming, optional local named endpoints, overlay/DNS/policy/metering foundations live in `@hobo/connectivity`. **Pre-release:** packages are **not published to npm**.
 
 **Website:** the landing page, developer docs, and agent docs live at **<https://tyler-r-kendrick.github.io/HoBo/>** — source in [`site/`](./site/README.md), published by pushing the built `site/dist/` to the `gh-pages` branch (no Actions dependency; see the site README for the publish commands).
 
@@ -24,8 +24,7 @@ Vercel CI compute charges.
 
 ## HoBo.CD
 
-[HoBo.CD](./packages/cd/README.md) is the delivery sibling of HoBo.CI
-([design](./docs/design/continuous-delivery.md), [ADR-0182](./docs/design/adr/01-architecture-core.md#adr-0182)).
+[HoBo.CD](./packages/cd/README.md) is the delivery sibling of HoBo.CI.
 CI builds artifacts and can be any CI; CD moves immutable **Freight** through a
 pipeline graph of Camps under policy and makes each Camp converge by **pull**.
 
@@ -69,16 +68,11 @@ HoBo's goal is a third path: **cloud portability without hiding the cloud**.
 
 ## Core ideas
 
-Core cloud hosting budget decisions and movement follow the
-[budgeted hosting transition contract](./docs/design/hosting-budget-transitions.md):
-effects and resilience are explicit, bounded commitments are reserved before activation,
-unknown provider outcomes retain their holds, and recovery/retirement require observations.
-The [provider production walkthrough](./docs/design/hosting-provider-production.md)
-records native execution support, enforceable operating bounds, credential custody,
-and actual anonymous acceptance separately from modeled provider tests.
-The [shared budget policy](./docs/design/shared-budget-policy.md) applies the same
-authored controls and financial authority to CI, with explicit routing objectives,
-required workload metrics and durable attempt/usage handling.
+Core cloud hosting budget decisions use explicit effects and resilience, reserve
+bounded commitments before activation, retain holds for unknown provider outcomes,
+and require observations for recovery and retirement. The shared budget policy
+applies the same financial authority to CI with explicit routing objectives,
+workload metrics, and durable attempt and usage handling.
 
 | Idea | Meaning |
 |---|---|
@@ -88,8 +82,8 @@ required workload metrics and durable attempt/usage handling.
 | **Junction** | Cross-Yard federation layer for hybrid or multi-cloud operation. |
 | **Trail** | App-owned continuous migration recipe; owns how Camps re-home across Yards/clouds (not Camp-local provider pins). |
 | **Station** | Hard control-plane isolation boundary (tenant/residency/air-gap/trust domain) a Conductor occupies; Rails pin its active policy; hosts the routing control loop + progressive cutover + offering registry. |
-| **Trait** | Declaratively attached operational behavior (`.allow()`, annotations, policy packs, Workload Profiles, …) anchored on the manifest `annotations` block ([ADR-0145](./docs/design/adr/01-architecture-core.md#adr-0145)). |
-| **Jurisdiction & residency** | Typed legal geography: region→jurisdiction catalog, per-tenant residency constraints, and a fail-closed `evaluateResidency` gate ([ADR-0146](./docs/design/adr/02-identity-security.md#adr-0146)). |
+| **Trait** | Declaratively attached operational behavior (`.allow()`, annotations, policy packs, Workload Profiles, …) anchored on the manifest `annotations` block. |
+| **Jurisdiction & residency** | Typed legal geography: region→jurisdiction catalog, per-tenant residency constraints, and a fail-closed `evaluateResidency` gate. |
 | **WIT/WASM membrane** | Portable contract between app code, runtime ports, and provider adapters. Latest stable TypeScript is the first implementation language; Protobuf, CUE, and PACT pin data contracts and boundary compatibility. |
 | **Ports and adapters** | Cloud providers, IaC engines, build tools, identity systems, and AI optimizers sit behind replaceable ports. |
 | **Replayable event log** | Control-plane state, projections, SRE workflows, and audit trails derive from events. |
@@ -97,53 +91,30 @@ required workload metrics and durable attempt/usage handling.
 | **Named endpoints** | HoBo-owned DNS-valid hierarchy (`.hobo.localhost` / `.hobo.test`); optional local portless HTTPS; overlay + pluggable public DNS. |
 | **Multi-tenant foundations** | Tenant-scoped models, `PolicyEngine`, and metering `UsageEvent` hooks — SaaS/billing/policy language as natural extensions. |
 
-Canonical terminology lives in [`docs/design/glossary.md`](./docs/design/glossary.md). The high-level design starts in [`docs/design/vision.md`](./docs/design/vision.md). Connectivity deep-dive: [`packages/connectivity/README.md`](./packages/connectivity/README.md).
+Connectivity details: [`packages/connectivity/README.md`](./packages/connectivity/README.md).
 
 ## Repository map
 
 | Path | What it is |
 |---|---|
-| [`packages/`](./packages/) | The production TypeScript workspace — 144 package manifests (core/runtime/control-plane/providers/iac/runtimes/connectors/adapters); authoritative package ownership in [`docs/design/package-namespaces.md`](./docs/design/package-namespaces.md). |
+| [`packages/`](./packages/) | The production TypeScript workspace — 144 package manifests (core/runtime/control-plane/providers/iac/runtimes/connectors/adapters). |
 | [`examples/`](./examples/README.md) | Runnable examples (hello-bindle, multi-cloud-shop, ci-runner-balancing, durable-agent, self-host-yard, try-site). |
 | [`scripts/`](./scripts/) | Repo gates and tooling (architecture guard, standards/docs checks, staging cutover demo, codegen). |
 | [`docs/`](./docs/index.md) | OKF bundle root for HoBo docs; `index.md` files provide directory listings and concept docs carry OKF frontmatter. |
-| [`docs/design/`](./docs/design/index.md) | Current design suite: capability docs, ADRs, CLI spec, traceability, glossary, event-family catalog. |
 | [`src/draft/`](./src/draft/) | Executable draft taxonomy: `technical-proofs/`, `exp-proofs/`, `epic-proofs/`, and `projects/`. These are draft fixtures, not a production product. |
-| [`docs/design/proofs/`](./docs/design/proofs/) | Human-readable proof records linked to `src/draft/<kind>/<slug>` packages. |
 | [`GAPS.md`](./GAPS.md) | Long-running intent-alignment gap review register (Nomad × Aspire × Nitric × FinOps × agent-native); findings append per iteration. |
 | [`docs/competitors/`](./docs/competitors/index.md) | Competitive analysis and positioning notes. |
-| [`docs/standards/`](./docs/standards/index.md), [`docs/technologies/`](./docs/technologies/index.md), [`docs/patterns/`](./docs/patterns/index.md) | Reference material used by design decisions. |
-| [`docs/archive/`](./docs/archive/) | Deferred or superseded planning artifacts. |
+| [`docs/standards/`](./docs/standards/index.md), [`docs/technologies/`](./docs/technologies/index.md), [`docs/patterns/`](./docs/patterns/index.md) | Reference material for the implemented platform. |
 | [`AGENTS.md`](./AGENTS.md), [`docs/agent-tooling.md`](./docs/agent-tooling.md) | Repo-level agent instructions and local agent-tooling reference. |
 | [`site/`](./site/README.md) | The GitHub Pages website (landing + developer docs + agent docs): a self-contained Astro project, built locally and pushed to the `gh-pages` branch (no Actions dependency; see the site README). |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md), [`SECURITY.md`](./SECURITY.md), [`SUPPORT.md`](./SUPPORT.md), [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) | GitHub community-health docs for contributions, vulnerability reporting, support, and conduct. |
 
 ## Suggested reading paths
 
-### If you are new
-
-1. [`docs/design/vision.md`](./docs/design/vision.md) — product intent, boundaries, and positioning.
-2. [`docs/design/architecture.md`](./docs/design/architecture.md) — reference architecture and package layout.
-3. [`docs/design/worked-example.md`](./docs/design/worked-example.md) — one app moving through the system.
-4. [`docs/design/walkthrough.md`](./docs/design/walkthrough.md) — role-based flows for app dev, platform, GitOps, SecOps, DevOps, and SRE.
-
-### If you are implementing a slice
-
-1. Start from the relevant Linear issue.
-2. Read the matching design doc in [`docs/design/`](./docs/design/index.md).
-3. Check the corresponding proof note under [`docs/design/proofs/`](./docs/design/proofs/).
-4. Apply the implementation architecture rules in [`AGENTS.md`](./AGENTS.md): PACT service boundaries, protobuf definitions with CUE constraints, parse-don't-validate derived types, and event-driven CQRS/actors/materialized views.
-5. Update or add the `src/draft/<kind>/<slug>` proof package that proves the slice.
-6. Update docs in the same change so the repo continues to describe reality.
-
-### If you are reviewing architecture
-
-- ADR index: [`docs/design/adr/index.md`](./docs/design/adr/index.md)
-- Traceability gate: [`docs/design/traceability.md`](./docs/design/traceability.md)
-- CLI surface: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md)
-- SDK contracts: [`docs/design/sdk-contracts.md`](./docs/design/sdk-contracts.md)
-- Package namespaces: [`docs/design/package-namespaces.md`](./docs/design/package-namespaces.md)
-- Influence lineage & credits: [`docs/design/lineage.md`](./docs/design/lineage.md)
+Start with the runnable examples in [`examples/`](./examples/README.md), the
+owning package README under [`packages/`](./packages/), and the repository rules
+in [`AGENTS.md`](./AGENTS.md). Existing planning and design artifacts are being
+completed and removed; user and operator documentation describes shipped behavior.
 
 ## How to work in this repo
 
@@ -154,7 +125,7 @@ Canonical terminology lives in [`docs/design/glossary.md`](./docs/design/glossar
 - Clone the git tree with submodules (`git clone --recurse-submodules …`; three packages of `external/ts-autocode`, `grounding`, `training` and `rewrite`, are workspace members). A GitHub zip without that submodule is incomplete, and `pnpm install` silently skips the missing packages until a build fails. A clone made without them is completed by `pnpm run pins:fetch` (a shallow fetch of exactly the pinned commit; add `-- --reference <local clone>` to download nothing that clone has), and `pnpm run setup` does the same before it installs. `pnpm run pins:status` says offline whether the checkout still matches its pin.
 - Run the CLI as `pnpm hobo <verb> …` — the root script builds `@hobo/hobo` + `@hobo/adapter-hono` on first use. Fastest first success: `pnpm hobo dev --cwd examples/hello-bindle` serves a live local URL.
 
-Everything HoBo takes from a sibling repository (the `ts-autocode` submodule today; the `mirror` and `opensesame-kit` executables once they publish releases) is pinned in [`tools/pins/siblings.json`](./tools/pins/siblings.json) and handled by one script with three verbs: `pnpm run pins:status` (offline drift check), `pnpm run pins:fetch [name…]` (obtain a pin) and `pnpm run pins:bump <name> <ref>` (move one). Every network wait they make is bounded by `HOBO_PINS_NET_TIMEOUT_MS` (default 120000 ms, at most 600000). See [ADR-0169](./docs/design/adr/01-architecture-core.md#adr-0169).
+Everything HoBo takes from a sibling repository (the `ts-autocode` submodule today; the `mirror` and `opensesame-kit` executables once they publish releases) is pinned in [`tools/pins/siblings.json`](./tools/pins/siblings.json) and handled by one script with three verbs: `pnpm run pins:status` (offline drift check), `pnpm run pins:fetch [name…]` (obtain a pin) and `pnpm run pins:bump <name> <ref>` (move one). Every network wait they make is bounded by `HOBO_PINS_NET_TIMEOUT_MS` (default 120000 ms, at most 600000).
 
 Install dependencies **first** (cold clones need this before most gates):
 
@@ -167,8 +138,8 @@ pnpm run ci:preflight
 Then confirm the workspace:
 
 ```sh
-pnpm run doctor          # works offline; fails with next/hint until install; includes agent-tooling (AUTH/MCP/setup)
-pnpm run agent:check -- --staged   # narrow staged gates after install
+pnpm run doctor
+pnpm run agent:check -- --staged
 ```
 
 Without `node_modules`, `doctor` still runs health checks and prints install next steps; `agent:check` fails fast with the same install guidance (no `tsx` stack dump).
@@ -195,7 +166,6 @@ pnpm run docs:cli-lint
 pnpm run docs:design-lint
 pnpm run docs:coverage
 pnpm run docs:okf
-pnpm run docs:freshness
 node --import tsx scripts/validate-sdk-contracts.ts
 node --import tsx scripts/validate-deployment-set-delta.ts
 ```
@@ -218,17 +188,15 @@ The repo pre-commit hook is installed for you: the root `prepare` script points 
 npm run prepare-hooks
 ```
 
-`.githooks/pre-commit` then runs, through `scripts/run-script.mts`, the generated-files guard (`generated:guard`) and the staged impact-routed gate (`check:relevant:staged`), which selects the relevant subset of the architecture guard, tests, technical standards, docs linters, and docs freshness for the staged diff before each commit. The root-script gates need Node and installed dependencies but no package manager. A change under a workspace package selects the turbo package-test lane, which runs package scripts through pnpm, and a few root scripts (such as `install:check`) call pnpm themselves; without pnpm those gates fail and the commit is refused. `npm run architecture:guard:staged` runs before the heavier test suite so missing PACT/protobuf/CUE/parse/event evidence is caught locally instead of burning CI.
+`.githooks/pre-commit` then runs, through `scripts/run-script.mts`, the generated-files guard (`generated:guard`) and the staged impact-routed gate (`check:relevant:staged`), which selects the relevant subset of the architecture guard, tests, technical standards, and documentation linters for the staged diff before each commit. The root-script gates need Node and installed dependencies but no package manager. A change under a workspace package selects the turbo package-test lane, which runs package scripts through pnpm, and a few root scripts (such as `install:check`) call pnpm themselves; without pnpm those gates fail and the commit is refused. `npm run architecture:guard:staged` runs before the heavier test suite so missing PACT/protobuf/CUE/parse/event evidence is caught locally instead of burning CI.
 
 ## Technical standards
 
-HoBo technical work is TypeScript-first and contract-first. New JavaScript-family code should use the latest stable TypeScript rather than vanilla JavaScript; integration and persistence boundaries use Protobuf contracts; invariants and dependent constraints live in CUE; parsed/refined derivative object definitions implement "Parse, don't validate"; and all integration boundaries need PACT-style consumer-driven contract coverage. Prefer compile-time, codegen, CUE, conformance, and contract-test feedback before runtime error discovery. The `standards:check` gate enforces the baseline across local hooks and CI by requiring the TypeScript toolchain metadata, preserving canonical Protobuf/CUE/PACT guidance, and blocking new JavaScript implementation files in favor of `.ts` sources. See [`docs/design/technical-standards.md`](./docs/design/technical-standards.md).
+HoBo technical work is TypeScript-first and contract-first. New JavaScript-family code should use the latest stable TypeScript rather than vanilla JavaScript; integration and persistence boundaries use Protobuf contracts; invariants and dependent constraints live in CUE; parsed/refined derivative object definitions implement "Parse, don't validate"; and all integration boundaries need PACT-style consumer-driven contract coverage. Prefer compile-time, codegen, CUE, conformance, and contract-test feedback before runtime error discovery. The `standards:check` gate enforces the baseline across local hooks and CI by requiring the TypeScript toolchain metadata, preserving canonical Protobuf/CUE/PACT guidance, and blocking new JavaScript implementation files in favor of `.ts` sources.
 
 ## Documentation maintenance policy
 
-Docs are part of the product surface for this repository. Whenever code, automation, CI, package metadata, draft contracts, or agent tooling changes, the matching documentation must change too.
-
-The `docs:freshness` gate enforces the minimum rule: changes under `src/`, `scripts/`, `test/`, package metadata, workflows, or agent config must include a docs update such as `README.md`, `AGENTS.md`, `docs/`, or a relevant proof/contract README. This follows GitHub maintenance best practice: keep the README accurate, make contribution expectations explicit, and use CI to protect project documentation from drifting behind code.
+Keep existing user and operator documentation accurate when the behavior it describes changes. Do not create maintenance-only notes, planning documents, or design documents.
 
 ## CI and gates
 
@@ -254,8 +222,8 @@ Important rules for agents and humans:
 - Do not treat `src/draft/<kind>/<slug>` as production HoBo code; it is executable design proof material.
 - Implement HoBo code through the architecture guardrails in [`AGENTS.md`](./AGENTS.md): PACT, protobuf, CUE, parse-don't-validate types, CQRS, event stores, materialized views, actors, rx-style projections, cached snapshots, and persisted historical read-store snapshots.
 - Run `pnpm run architecture:guard` when implementation packages change; CI runs the same changed-package guard before the expensive build and test lanes.
-- Keep docs, ADRs, proof notes, and README claims aligned with code changes.
-- Prefer small, reviewable changes tied to a design claim or backlog slice.
+- Keep user and operator documentation aligned with shipped behavior.
+- Prefer small, reviewable changes that implement the requested behavior.
 - Run the local gates before opening a PR.
 
 ## Status summary
@@ -263,12 +231,10 @@ Important rules for agents and humans:
 - **Product implementation:** **144** package manifests under `packages/` (~400k non-test TypeScript LOC under `packages/*/src`, excluding generated clients). All **42** canonical `hobo` CLI verbs are registered in `@hobo/cli` and composed by `@hobo/hobo` against the local lane. Default IaC is an **in-memory Pulumi stand-in** (not live cloud apply); see `HONEST SCOPE` in `packages/hobo/src/compose.ts`. Live-cloud lanes are credential- or engine-gated (`VERCEL_TOKEN`, Cloudflare tokens, `HOBO_PULUMI_LIVE=1`).
 - **Pre-release / distribution:** `@hobo/*` packages are **not published to npm** (workspace `0.0.1`). Prefer installing from this monorepo until a publish allowlist and CI-proven release path land.
 - **Componentize honesty:** `@hobo/componentize` has two lanes — the offline default builds **synthetic wasm contract bytes** (`buildWasmContractBytes`), and `HOBO_COMPONENTIZE_REAL=1` drives the **real jco/`componentize-js` pipeline** (toolchain-gated, fail-closed, real component-model binaries validated for wasm magic + component layer).
-- **Migration & upgrade engine:** live executors ship in `@hobo/trails` (upgrade preflight evidence, expand→backfill→contract over a real SQLite store, pooled→siloed zero-loss tenant move, CDC data-dual ports) with the `migration.*` event family pinned in `@hobo/events`' append-only golden-replay corpus + upcaster-totality gate. See [`docs/design/upgrade-migration-engine.md`](./docs/design/upgrade-migration-engine.md).
-- **Budget-driven routing:** `@hobo/dispatcher` (ADR-0071 deterministic credit/budget selection) + `@hobo/broker` budget signals + the `@hobo/stations` closed routing control loop and progressive cutover saga; rehearse the zero-downtime swap with `pnpm run staging:cutover` (loopback lane green with archived evidence; Vercel/Cloudflare lanes credential-gated fail-closed — [`docs/design/live-provider-matrix.md`](./docs/design/live-provider-matrix.md)).
-- **Design suite:** active and canonical under [`docs/design/`](./docs/design/index.md); influence credits in [`docs/design/lineage.md`](./docs/design/lineage.md).
-- **Ship targets:** OSS public vs local-first npm vs hosted beta/GA are distinguished in [`docs/design/launch-ship-targets.md`](./docs/design/launch-ship-targets.md) and [ADR-0140](./docs/design/adr/07-portability-extensibility.md#adr-0140). Known limitations: [`docs/design/known-limitations-register.md`](./docs/design/known-limitations-register.md).
+- **Migration & upgrade engine:** live executors ship in `@hobo/trails` (upgrade preflight evidence, expand→backfill→contract over a real SQLite store, pooled→siloed zero-loss tenant move, CDC data-dual ports) with the `migration.*` event family pinned in `@hobo/events`' append-only golden-replay corpus + upcaster-totality gate.
+- **Budget-driven routing:** `@hobo/dispatcher` (ADR-0071 deterministic credit/budget selection) + `@hobo/broker` budget signals + the `@hobo/stations` closed routing control loop and progressive cutover saga; rehearse the zero-downtime swap with `pnpm run staging:cutover` (loopback lane available; Vercel/Cloudflare lanes require credentials).
 - **Executable proof material:** `src/draft/<kind>/<slug>` packages and repo validation scripts.
-- **Primary command surface:** product `hobo` binary from [`packages/hobo/`](./packages/hobo/) (`@hobo/hobo`); shell/factories in [`packages/cli/`](./packages/cli/) (`@hobo/cli`). Spec: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md). The same verb surface is served over MCP stdio by the `hobo-mcp` binary (`@hobo/hobo`), with verb/tool parity enforced by contract test.
+- **Primary command surface:** product `hobo` binary from [`packages/hobo/`](./packages/hobo/) (`@hobo/hobo`); shell/factories in [`packages/cli/`](./packages/cli/) (`@hobo/cli`). The same verb surface is served over MCP stdio by the `hobo-mcp` binary (`@hobo/hobo`), with verb/tool parity enforced by contract test.
 - **Behavior suite:** epic proofs carry executable Gherkin — `pnpm run test:behavior` runs the offline cucumber lane (feature files under `src/draft/`, plus shipped core acceptance). Live Cloudflare provisioning is explicit: `pnpm run test:behavior -- --profile live-cloudflare`; it requires the local site, Playwright Chromium, network access and authorization to provision a public temporary worker.
 
 ## License

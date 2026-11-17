@@ -991,7 +991,6 @@
         "src/draft/technical-proofs/host-version-upgrade-contract/**",
         "src/draft/technical-proofs/iac-state-model-contract/**",
         "src/draft/technical-proofs/identity-ocsf-export-contract/**",
-        "src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/**",
         "src/draft/technical-proofs/jwt-svid-issuance-contract/**",
         "src/draft/technical-proofs/lifecycle-phase-policy-contract/**",
         "src/draft/technical-proofs/local-dev-test-authoring-contract/**",

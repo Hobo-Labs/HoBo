@@ -40,8 +40,3 @@ pnpm exec turbo run test --filter ./src/draft/technical-proofs/s2-04-planner-dep
 - `architecture/` — protobuf + CUE guard evidence
 - `architecture/pacts/` — boundary PACT stub
 - `ADR.md` — parse-don't-validate + event vocabulary
-
-## Maintenance
-
-Docs considered: this README is the maintenance note for the HOBO-619 draft POC.
-Gates: package `test`, `architecture:guard`, `docs:freshness` (via this file).

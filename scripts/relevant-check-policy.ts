@@ -18,14 +18,9 @@ export type RelevantCheckPolicyOptions = {
 	all?: boolean;
 	includeBuild?: boolean;
 	includeBroadSweeps?: boolean;
-	/**
-	 * The caller requires separate jobs to run all selected workspace tests
-	 * and the scripts lane (`workspace_tests` and `scripts-tests` in CI).
-	 */
 	workspaceTestsCoveredExternally?: boolean;
 	rootPackageJsonScriptsOnlyChanged?: boolean;
 	workspacePackageExists?: (workspace: string) => boolean;
-	/** Whether a changed TypeScript file under packages/ names a ts-autocode module (default: reads it). */
 	importsTsAutocode?: (file: string) => boolean;
 };
 
@@ -87,15 +82,9 @@ function defaultWorkspacePackageName(workspace: string): string | undefined {
 }
 
 const PACKAGE_TYPESCRIPT = /^packages\/.+\.(?:[cm]?ts|tsx)$/u;
-/** In any quote, a template literal's included: the surface test scans those too. */
 const TS_AUTOCODE_SPECIFIER =
 	/["'`]ts-autocode(?:-[a-z]+)?(?:\/[^"'`]*)?["'`]/u;
 
-/**
- * What the grounding drift test compiles granular.ts with, beyond ts-autocode
- * itself: the types its conversion assigns to and the compiler options. None
- * of them imports ts-autocode, so the import check alone would not select it.
- */
 const GROUNDING_DRIFT_INPUTS = new Set([
 	"packages/runtime/src/json.ts",
 	"packages/runtime/src/training/types.ts",
@@ -103,12 +92,10 @@ const GROUNDING_DRIFT_INPUTS = new Set([
 	"tsconfig.base.json",
 ]);
 
-/** Whether source text names a ts-autocode module specifier. */
 export function namesTsAutocode(text: string) {
 	return TS_AUTOCODE_SPECIFIER.test(text);
 }
 
-/** A file that is gone (deleted, renamed away) imports nothing. */
 function defaultImportsTsAutocode(file: string) {
 	try {
 		return namesTsAutocode(readFileSync(file, "utf8"));
@@ -117,7 +104,6 @@ function defaultImportsTsAutocode(file: string) {
 	}
 }
 
-/** The tests that hold signed local runs (pnpm ci:attest) to their rules. */
 export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/attestation.test.ts",
 	"scripts/test/verify-attestation.test.ts",
@@ -137,14 +123,12 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/verify-attestation.mts",
 	"scripts/ci/local-attest.mts",
 	"scripts/ci/route-runner.mts",
-	// The route script loads it, so it is on the attested path too.
 	"scripts/ci/runner-routing.mts",
 	"scripts/lib/workflow-job-steps.mts",
 	"scripts/lint-actions.ts",
 	...SIGNED_LOCAL_RUN_TESTS,
 ]);
 
-/** Whether a changed file is one the signed-local-run guards protect. */
 function guardsSignedLocalRuns(file: string): boolean {
 	return (
 		SIGNED_LOCAL_RUN_GUARDED.has(file) ||
@@ -570,9 +554,6 @@ export function selectRelevantChecks(
 		});
 	}
 
-	// The guards on signed local runs must run on the changes they guard: the
-	// workflows that skip jobs for one, the verifier, the trusted keys, the
-	// description a local run executes, and the lint that pins all of it.
 	if (files.some(guardsSignedLocalRuns)) {
 		checks.push({
 			command: "node",
@@ -723,8 +704,6 @@ export function selectRelevantChecks(
 		});
 	}
 
-	// Every test under scripts/test (finding 0144). A staged commit leaves it
-	// to the pull request, and CI runs it in the required job scripts-tests.
 	if (
 		touched(["scripts", "test", ".github"]) &&
 		!staged &&
@@ -748,8 +727,6 @@ export function selectRelevantChecks(
 		});
 	}
 
-	// Any manifest or lockfile edit can change outbound licence metadata or
-	// pull in a dependency whose licence is not on the allowlist.
 	if (
 		rootConfigChanged ||
 		touchedAny([
@@ -803,15 +780,6 @@ export function selectRelevantChecks(
 		});
 	}
 
-	if (sourceChanged || automationChanged) {
-		checks.push({
-			command: "pnpm",
-			args: staged
-				? ["run", "docs:freshness:staged"]
-				: ["run", "docs:freshness", "--", `--base=${options.base}`],
-			reason: "docs freshness gate for code/config changes",
-		});
-	}
 	if (traceabilityChanged)
 		checks.push({
 			command: "node",

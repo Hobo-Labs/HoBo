@@ -82,8 +82,6 @@ function isScriptsLane(check: Check) {
 }
 
 test("external workspace coverage omits only the commands CI runs in their own jobs", () => {
-	// pr_gate_validation passes --external-workspace-tests: workspace_tests
-	// runs the workspace suites and scripts-tests runs the scripts lane.
 	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
 	const normal = plan(files);
 	const external = plan(files, { workspaceTestsCoveredExternally: true });
@@ -239,6 +237,18 @@ test("staged relevant checks pass staged mode to standards", () => {
 	assert.ok(check);
 	assert.equal(check.args.includes("--staged"), true);
 	assert.equal(check.args.includes("--base=origin/main"), true);
+});
+
+test("source checks do not require unrelated documentation changes", () => {
+	for (const staged of [false, true]) {
+		const { checks } = plan(["scripts/example.ts"], { staged });
+		assert.ok(checks.some((check) => check.args.includes("source:guard")));
+		assert.ok(
+			!checks.some((check) =>
+				check.args.some((arg) => arg.startsWith("docs:freshness")),
+			),
+		);
+	}
 });
 
 test("all changed scopes select the shared source policy with the correct snapshot", () => {
@@ -754,9 +764,6 @@ test("the behavior build honors the configured Turbo concurrency", () => {
 });
 
 test("the behavior lane also builds what the root step definitions import", () => {
-	// cucumber.yaml loads every features/steps/**/*.ts file on every run, and
-	// those steps import @hobo/conformance and the CD conformance kit from source,
-	// whose own dependencies resolve through dist/.
 	const { checks } = plan(["cucumber.yaml"]);
 	const build = checks.find(
 		(check) =>
@@ -999,7 +1006,6 @@ test("a package source or test file that imports ts-autocode selects the consume
 			importsTsAutocode,
 		}).checks.some(isTsAutocodeSurfaceTest),
 	);
-	// Only TypeScript under packages/ is read: the surface test scans nothing else.
 	for (const file of ["site/src/lib/x.ts", "packages/cli/README.md"]) {
 		assert.ok(
 			!plan([file], { importsTsAutocode: () => true }).checks.some(
@@ -1076,8 +1082,6 @@ test("a change to anything that guards signed local runs runs those guards", () 
 			),
 		};
 	};
-	// Each of these alone, with nothing else changed: a key-only change, a
-	// workflow-only change, the verifier, the description, the lint.
 	for (const file of [
 		".github/workflows/hobo-ci.yml",
 		".github/workflows/release-hobo.yml",
@@ -1102,7 +1106,6 @@ test("a change to anything that guards signed local runs runs those guards", () 
 				`${file} ${JSON.stringify(overrides)}`,
 			);
 	}
-	// And not for a change that touches none of it.
 	for (const file of [
 		"docs/design/index.md",
 		"packages/core/src/index.ts",
