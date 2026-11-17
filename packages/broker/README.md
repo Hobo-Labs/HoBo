@@ -73,6 +73,20 @@ Its local catalog now records a zero service fee instead of a synthetic positive
 price used for preference. Generic hosts must supply their own local authority
 or a durable hosting budget; caller-supplied zero estimates alone are refused.
 
+The [local-hosting skill](../../.agents/skills/verify-yard-local-hosting/SKILL.md)
+checks a finite abstraction of the policy and liability evidence. This view
+hides 64 same-label steps and assumes the host's assertion is truthful.
+
+```mermaid
+stateDiagram-v2
+  s0: Local work awaits host approval
+  s1: Local placement refused
+  s2: Bound zero-liability proof accepted
+  [*] --> s0
+  s0 --> s1: refuse incomplete or denied proof
+  s0 --> s2: approve bound zero-liability work
+```
+
 `createSqliteBudgetAdmissionAuthority({path, snapshot, now})` is the concrete
 local durable adapter. Every operation reloads the authoritative journal under
 `BEGIN IMMEDIATE`; journal commit and acknowledgement are atomic. Separate local
