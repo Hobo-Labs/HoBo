@@ -1,5 +1,6 @@
 /** Verify that a tested commit is the current head of an open PR. */
 import { execFileSync } from "node:child_process";
+import { devNull } from "node:os";
 import {
 	asNumber,
 	asObject,
@@ -170,6 +171,9 @@ export function verifyPrHead(input: {
 		"GIT_QUARANTINE_PATH",
 	])
 		delete environment[key];
+	delete environment.GIT_REPLACE_REF_BASE;
+	environment.GIT_NO_REPLACE_OBJECTS = "1";
+	environment.GIT_GRAFT_FILE = devNull;
 	const gh = (args: readonly string[], failure: string): string => {
 		try {
 			return execFileSync("gh", args, {
@@ -194,16 +198,7 @@ export function verifyPrHead(input: {
 	let prNumber = input.prNumber;
 	if (prNumber === undefined) {
 		const discovered = gh(
-			[
-				"pr",
-				"view",
-				"--repo",
-				`${host}/${owner}/${name}`,
-				"--json",
-				"number",
-				"--jq",
-				".number",
-			],
+			["pr", "view", "--json", "number", "--jq", ".number"],
 			"could not discover a pull request; specify --pr=<number>",
 		);
 		prNumber = /^[1-9][0-9]*$/u.test(discovered)
@@ -230,7 +225,6 @@ export function verifyPrHead(input: {
 		asNumber(pull?.number) !== prNumber ||
 		asText(pull?.state) !== "open" ||
 		asText(base?.ref) !== input.baseBranch ||
-		asText(base?.sha) !== input.baseSha ||
 		asText(head?.sha) !== input.headSha ||
 		!baseRepository ||
 		baseRepository.name.toLowerCase() !== `${owner}/${name}`.toLowerCase() ||
@@ -277,6 +271,24 @@ export function verifyPrHead(input: {
 	);
 	if (!liveHeadRecheck || !sameRepository(headRepository, liveHeadRecheck))
 		throw new PrHeadVerificationError("the head repository identity changed");
+	// GitHub's PR base.sha can lag the branch after it advances. Read the live
+	// branch instead, then recheck the repository identity around that read.
+	const liveBaseBranch = asObject(
+		read(
+			`repos/{owner}/{repo}/branches/${encodeURIComponent(input.baseBranch)}`,
+			"could not read the live base branch",
+		),
+	);
+	if (
+		asText(liveBaseBranch?.name) !== input.baseBranch ||
+		asText(asObject(liveBaseBranch?.commit)?.sha) !== input.baseSha
+	)
+		throw new PrHeadVerificationError("the live base branch changed");
+	const confirmedTarget = repository(
+		read("repos/{owner}/{repo}", "could not recheck the target repository"),
+	);
+	if (!confirmedTarget || !sameRepository(baseRepository, confirmedTarget))
+		throw new PrHeadVerificationError("the target repository identity changed");
 	const confirmedPull = asObject(
 		read(
 			`repos/{owner}/{repo}/pulls/${prNumber}`,
@@ -291,7 +303,6 @@ export function verifyPrHead(input: {
 		asNumber(confirmedPull?.number) !== prNumber ||
 		asText(confirmedPull?.state) !== "open" ||
 		asText(confirmedBase?.ref) !== input.baseBranch ||
-		asText(confirmedBase?.sha) !== input.baseSha ||
 		asText(confirmedHead?.ref) !== headBranch ||
 		asText(confirmedHead?.sha) !== input.headSha ||
 		!confirmedBaseRepository ||

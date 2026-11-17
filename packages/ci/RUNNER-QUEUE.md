@@ -497,11 +497,18 @@ target repository; `git user.name` must be set. The command verifies that the
 repository selected by `gh` matches the base remote, pins `GH_HOST` and
 `GH_REPO` to that identity, and checks GitHub's live base tip before it calls
 the extension. A mismatch or unavailable identity/base check refuses signoff.
-The tested head must also be reachable from a live branch on that remote. A
-narrow fetch is supported: fetch the branch if its newer tip is not present
-locally. Fleet checks this before running local jobs, and signoff rechecks the
-branch, base and checkout before publishing. The command does not use the
-extension's force option. A separate
+The tested head must also be reachable from a live branch on that remote, or be
+the exact current head of an open PR against the tested base. Same-repository
+and readable fork heads are supported; pass `--pr=123` when the PR cannot be
+discovered from the current branch, including a detached checkout. A narrow
+fetch is supported: fetch a target branch if its newer tip is not present
+locally. Proving ancestry from a newer tip requires Git 2.45 or newer; older Git
+can still use an exact target-branch tip or a verified PR head. Fleet checks
+publication before running local jobs, and signoff
+rechecks the branch or PR, base and checkout before publishing. These reads are
+not atomic with the status write. The command does not use the extension's
+force option. Replacement refs or nonempty Git graft metadata cause attestation
+to refuse; remove those local graph overrides or use a clean clone. A separate
 `pnpm ci:attest signoff --event=merge_group` reports only jobs run for that
 simulated event. `--base=upstream/main` selects another remote branch; signoff
 must be able to read its live tip and refuses when it differs from the tested

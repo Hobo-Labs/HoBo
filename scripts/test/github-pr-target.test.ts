@@ -15,6 +15,7 @@ import {
 	PrHeadVerificationError,
 	verifyPrHead,
 } from "../ci/github-pr-target.mts";
+import { GIT_LOCATION_VARIABLES, gitEnvironment } from "../ci/local-attest.mts";
 
 const baseSha = "a".repeat(40);
 const headSha = "b".repeat(40);
@@ -56,12 +57,15 @@ function fixture() {
 	store("target", target);
 	store("fork", fork);
 	store("branch", { name: "feature/fix-ci", commit: { sha: headSha } });
+	store("basebranch", { name: "main", commit: { sha: baseSha } });
 	writeFileSync(
 		join(bin, "gh"),
 		`#!/bin/sh
 if [ -n "$GIT_DIR$GIT_WORK_TREE$GIT_INDEX_FILE$GIT_COMMON_DIR$GIT_OBJECT_DIRECTORY$GIT_ALTERNATE_OBJECT_DIRECTORIES$GIT_NAMESPACE$GIT_PREFIX$GIT_QUARANTINE_PATH" ]; then exit 1; fi
+if [ "$GIT_NO_REPLACE_OBJECTS" != 1 ] || [ "$GIT_GRAFT_FILE" != /dev/null ] || [ -n "$GIT_REPLACE_REF_BASE" ]; then exit 1; fi
 printf '%s|%s|%s\\n' "$GH_HOST" "$GH_REPO" "$*" >> "$HOBO_PR_LOG"
 if [ "$1" = pr ] && [ "$2" = view ]; then
+  case " $* " in *" --repo "*) echo 'argument required when using the --repo flag' >&2; exit 1 ;; esac
   if [ "$HOBO_PR_FAIL" = discovery ]; then echo "$HOBO_PR_SECRET" >&2; exit 1; fi
   printf '%s\\n' "$HOBO_PR_DISCOVERED"
   exit 0
@@ -69,6 +73,7 @@ fi
 if [ "$1" != api ] || [ "$2" != --hostname ] || [ "$3" != "$GH_HOST" ]; then exit 1; fi
 case "$4" in
   'repos/{owner}/{repo}/pulls/'*) file=pull ;;
+  'repos/{owner}/{repo}/branches/'*) file=basebranch ;;
   'repos/{owner}/{repo}') file=target ;;
   'repos/Hobo-Labs/HoBo/branches/'*) file=branch ;;
   'repos/Hobo-Labs/HoBo') file=target ;;
@@ -84,6 +89,9 @@ if [ "$file" = branch ]; then
       cp "$HOBO_PR_FIXTURE/after-branch-$later.json" "$HOBO_PR_FIXTURE/$later.json"
     fi
   done
+fi
+if [ "$file" = basebranch ] && [ -f "$HOBO_PR_FIXTURE/after-basebranch-target.json" ]; then
+  cp "$HOBO_PR_FIXTURE/after-basebranch-target.json" "$HOBO_PR_FIXTURE/target.json"
 fi
 `,
 		{ mode: 0o755 },
@@ -144,7 +152,7 @@ describe("pull request head verification", () => {
 			headSha,
 		});
 		const calls = f.log().trim().split("\n");
-		assert.equal(calls.length, 6);
+		assert.equal(calls.length, 8);
 		for (const call of calls)
 			assert.match(
 				call,
@@ -156,7 +164,11 @@ describe("pull request head verification", () => {
 			/repos\/Contributor\/HoBo\/branches\/feature%2Ffix-ci$/u,
 		);
 		assert.match(calls[4] ?? "", /repos\/Contributor\/HoBo$/u);
-		assert.match(calls[5] ?? "", /repos\/\{owner\}\/\{repo\}\/pulls\/42$/u);
+		assert.match(
+			calls[5] ?? "",
+			/repos\/\{owner\}\/\{repo\}\/branches\/main$/u,
+		);
+		assert.match(calls[7] ?? "", /repos\/\{owner\}\/\{repo\}\/pulls\/42$/u);
 		assert.doesNotMatch(f.log(), /signoff|POST|sensitive-child-output/u);
 	});
 
@@ -188,6 +200,9 @@ describe("pull request head verification", () => {
 				GIT_DIR: "/unrelated/repository",
 				GIT_WORK_TREE: "/unrelated/checkout",
 				GIT_INDEX_FILE: "/unrelated/index",
+				GIT_NO_REPLACE_OBJECTS: "0",
+				GIT_GRAFT_FILE: "/unrelated/grafts",
+				GIT_REPLACE_REF_BASE: "refs/other/",
 			},
 		});
 		assert.equal(proof.prNumber, 42);
@@ -212,11 +227,8 @@ describe("pull request head verification", () => {
 		const f = fixture();
 		assert.equal(f.verify({ prNumber: undefined }).prNumber, 42);
 		const calls = f.log().trim().split("\n");
-		assert.match(
-			calls[0] ?? "",
-			/pr view --repo github\.com\/Hobo-Labs\/HoBo --json number --jq \.number$/u,
-		);
-		assert.equal(calls.length, 7);
+		assert.match(calls[0] ?? "", /pr view --json number --jq \.number$/u);
+		assert.equal(calls.length, 9);
 		f.reset();
 		f.store("pull", { ...pull(), state: "closed" });
 		refused(() => f.verify({ prNumber: undefined }), /open pull request/u);
@@ -224,10 +236,19 @@ describe("pull request head verification", () => {
 
 	it("accepts an explicit PR for a detached checkout without branch discovery", () => {
 		const f = fixture();
-		const git = (...args: string[]) =>
-			execFileSync("git", args, { cwd: f.cwd, encoding: "utf8" }).trim();
-		git("init", "--quiet", "--initial-branch=main");
-		git(
+		const other = join(f.cwd, "other");
+		mkdirSync(other);
+		const gitAt = (cwd: string, ...args: string[]) =>
+			execFileSync("git", args, {
+				cwd,
+				encoding: "utf8",
+				env: gitEnvironment(),
+			}).trim();
+		gitAt(other, "init", "--quiet", "--initial-branch=main");
+		writeFileSync(join(other, "tracked.txt"), "other checkout\n");
+		gitAt(other, "add", "tracked.txt");
+		gitAt(
+			other,
 			"-c",
 			"user.name=Fixture",
 			"-c",
@@ -236,26 +257,59 @@ describe("pull request head verification", () => {
 			"commit.gpgsign=false",
 			"commit",
 			"--quiet",
-			"--allow-empty",
 			"-m",
-			"head",
+			"other",
 		);
-		const detached = git("rev-parse", "HEAD");
-		git("checkout", "--quiet", "--detach");
-		const entry = pull();
-		f.store("pull", { ...entry, head: { ...entry.head, sha: detached } });
-		f.store("branch", { name: "feature/fix-ci", commit: { sha: detached } });
-		assert.equal(f.verify({ headSha: detached }).headSha, detached);
-		assert.doesNotMatch(f.log(), /pr view/u);
-		refused(
-			() =>
-				f.verify({
-					headSha: detached,
-					prNumber: undefined,
-					env: { ...f.env, HOBO_PR_FAIL: "discovery" },
-				}),
-			/specify --pr/u,
+		const otherHead = gitAt(other, "rev-parse", "HEAD");
+		const otherConfig = readFileSync(join(other, ".git", "config"));
+		const otherIndex = readFileSync(join(other, ".git", "index"));
+		const saved = new Map(
+			GIT_LOCATION_VARIABLES.map((name) => [name, process.env[name]]),
 		);
+		process.env.GIT_DIR = join(other, ".git");
+		process.env.GIT_COMMON_DIR = join(other, ".git");
+		process.env.GIT_WORK_TREE = other;
+		process.env.GIT_INDEX_FILE = join(other, ".git", "index");
+		const git = (...args: string[]) => gitAt(f.cwd, ...args);
+		try {
+			git("init", "--quiet", "--initial-branch=main");
+			git(
+				"-c",
+				"user.name=Fixture",
+				"-c",
+				"user.email=fixture@example.invalid",
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"--quiet",
+				"--allow-empty",
+				"-m",
+				"head",
+			);
+			const detached = git("rev-parse", "HEAD");
+			git("checkout", "--quiet", "--detach");
+			const entry = pull();
+			f.store("pull", { ...entry, head: { ...entry.head, sha: detached } });
+			f.store("branch", { name: "feature/fix-ci", commit: { sha: detached } });
+			assert.equal(f.verify({ headSha: detached }).headSha, detached);
+			assert.doesNotMatch(f.log(), /pr view/u);
+			refused(
+				() =>
+					f.verify({
+						headSha: detached,
+						prNumber: undefined,
+						env: { ...f.env, HOBO_PR_FAIL: "discovery" },
+					}),
+				/specify --pr/u,
+			);
+		} finally {
+			for (const [name, value] of saved)
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+		}
+		assert.equal(gitAt(other, "rev-parse", "HEAD"), otherHead);
+		assert.deepEqual(readFileSync(join(other, ".git", "config")), otherConfig);
+		assert.deepEqual(readFileSync(join(other, ".git", "index")), otherIndex);
 	});
 
 	it("rejects missing, ambiguous or failed discovery without echoing child output", () => {
@@ -328,7 +382,6 @@ describe("pull request head verification", () => {
 			{ ...sample, number: 41 },
 			{ ...sample, state: "closed" },
 			{ ...sample, base: { ...sample.base, ref: "other" } },
-			{ ...sample, base: { ...sample.base, sha: "c".repeat(40) } },
 			{
 				...sample,
 				base: { ...sample.base, repo: { ...target, full_name: "Other/HoBo" } },
@@ -347,7 +400,13 @@ describe("pull request head verification", () => {
 	});
 
 	it("rejects missing, inaccessible, replaced or moved fork and target data", () => {
-		for (const unavailable of ["pull", "target", "fork", "branch"]) {
+		for (const unavailable of [
+			"pull",
+			"target",
+			"fork",
+			"branch",
+			"basebranch",
+		]) {
 			const f = fixture();
 			refused(() => f.verify({ env: { ...f.env, HOBO_PR_FAIL: unavailable } }));
 			f.raw(unavailable, "sensitive-child-output {");
@@ -369,6 +428,45 @@ describe("pull request head verification", () => {
 		refused(() => f.verify(), /head branch no longer/u);
 	});
 
+	it("uses the live base branch instead of the PR's cached base SHA", () => {
+		const f = fixture();
+		const sample = pull();
+		f.store("pull", {
+			...sample,
+			base: { ...sample.base, sha: "c".repeat(40) },
+		});
+		assert.equal(f.verify().baseSha, baseSha);
+		f.store("pull", { ...sample, base: { ...sample.base, sha: null } });
+		assert.equal(f.verify().baseSha, baseSha);
+		f.store("basebranch", { name: "main", commit: { sha: "c".repeat(40) } });
+		refused(() => f.verify(), /live base branch changed/u);
+		f.store("basebranch", { name: "wrong", commit: { sha: baseSha } });
+		refused(() => f.verify(), /live base branch changed/u);
+	});
+
+	it("encodes a slash in the live base branch and rechecks its repository identity", () => {
+		const f = fixture();
+		const sample = pull();
+		f.store("pull", {
+			...sample,
+			base: { ...sample.base, ref: "release/main" },
+		});
+		f.store("basebranch", { name: "release/main", commit: { sha: baseSha } });
+		assert.equal(
+			f.verify({ baseBranch: "release/main" }).baseBranch,
+			"release/main",
+		);
+		assert.match(
+			f.log(),
+			/repos\/\{owner\}\/\{repo\}\/branches\/release%2Fmain/u,
+		);
+		f.store("after-basebranch-target", { ...target, id: 333 });
+		refused(
+			() => f.verify({ baseBranch: "release/main" }),
+			/target repository identity changed/u,
+		);
+	});
+
 	it("returns changed repository identities so a caller can compare rechecks", () => {
 		const f = fixture();
 		const original = f.verify();
@@ -388,9 +486,9 @@ describe("pull request head verification", () => {
 			const sample = pull();
 			if (changed === "closed") f.store("pull", { ...sample, state: "closed" });
 			if (changed === "base")
-				f.store("pull", {
-					...sample,
-					base: { ...sample.base, sha: "c".repeat(40) },
+				f.store("basebranch", {
+					name: "main",
+					commit: { sha: "c".repeat(40) },
 				});
 			if (changed === "head")
 				f.store("pull", {
@@ -411,7 +509,6 @@ describe("pull request head verification", () => {
 		for (const changed of [
 			{ ...sample, state: "closed" },
 			{ ...sample, base: { ...sample.base, ref: "another-base" } },
-			{ ...sample, base: { ...sample.base, sha: "c".repeat(40) } },
 			{ ...sample, base: { ...sample.base, repo: { ...target, id: 333 } } },
 			{ ...sample, head: { ...sample.head, ref: "feature/other" } },
 			{ ...sample, head: { ...sample.head, sha: "c".repeat(40) } },

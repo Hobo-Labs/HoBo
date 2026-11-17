@@ -15,9 +15,12 @@ target repository and supplies the tested base branch, base SHA and head SHA.
 An explicit positive PR number works with detached checkouts. Without one, the
 helper asks `gh pr view` for a candidate number; failure or an ambiguous answer
 requires the operator to supply a number. Discovery alone is not proof. The
-target repository's PR response must be open and match the tested base branch,
-base SHA and exact head SHA. Its base and head repository identities must match
-separately read repository IDs and names, for both same-repository and fork PRs.
+target repository's PR response must be open and match the tested base branch
+and exact head SHA. Its base and head repository identities must match separately
+read repository IDs and names, for both same-repository and fork PRs. GitHub's
+PR `base.sha` can lag the branch, so the helper reads the live base branch and
+requires its name and SHA to match the tested base, then rechecks the target
+repository identity.
 The live head branch must have the same name and point at the tested head;
 branch names are encoded in the API path, including `/`.
 

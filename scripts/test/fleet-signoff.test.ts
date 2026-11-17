@@ -1235,6 +1235,26 @@ if [ "$1" = signoff ] && [ "$2" = --help ]; then
   echo --commit; exit 0
 fi
 if [ "$1" = signoff ] && [ "$2" = create ]; then exit 0; fi
+if [ "$1" = pr ]; then
+  [ -n "\${HOBO_FLEET_PR_DIR:-}" ] || exit 1
+  echo 17; exit 0
+fi
+if [ "$1" = api ] && [ "$2" = --hostname ]; then
+  [ -n "\${HOBO_FLEET_PR_DIR:-}" ] || exit 1
+  case "$4" in
+    'repos/{owner}/{repo}/pulls/17')
+      if [ "\${HOBO_FLEET_PR_CLOSED:-0}" = 1 ] || [ -f "\${0%/*}/pr-closed" ]; then cat "$HOBO_FLEET_PR_DIR/closed.json"
+      elif [ -f "\${0%/*}/pr-changed" ]; then cat "$HOBO_FLEET_PR_DIR/changed-pull.json"
+      else cat "$HOBO_FLEET_PR_DIR/pull.json"; fi ;;
+    'repos/{owner}/{repo}/branches/main') cat "$HOBO_FLEET_PR_DIR/base-branch.json" ;;
+    'repos/{owner}/{repo}') cat "$HOBO_FLEET_PR_DIR/base.json" ;;
+    'repos/contributor/app')
+      if [ -f "\${0%/*}/pr-changed" ]; then cat "$HOBO_FLEET_PR_DIR/changed-fork.json"; else cat "$HOBO_FLEET_PR_DIR/fork.json"; fi ;;
+    'repos/contributor/app/branches/topic') cat "$HOBO_FLEET_PR_DIR/branch.json" ;;
+    *) exit 1 ;;
+  esac
+  exit 0
+fi
 case "$2" in
   'repos/{owner}/{repo}/branches/main') git rev-parse refs/remotes/origin/main ;;
   'repos/{owner}/{repo}/branches/feature') git --git-dir="$HOBO_FLEET_REMOTE" rev-parse refs/heads/feature ;;
@@ -1265,6 +1285,12 @@ esac
 				`#!/bin/sh
 tool_dir="\${0%/*}"
 if [ "$1" = hobo-test-advance ]; then
+  if [ -f "$tool_dir/close-pr-on-job" ]; then
+    touch "$tool_dir/pr-closed"
+  fi
+  if [ -f "$tool_dir/change-pr-on-job" ]; then
+    touch "$tool_dir/pr-changed"
+  fi
   if [ -f "$tool_dir/fail-job" ]; then
     echo failed > "$tool_dir/failed-command"
     exit 1
@@ -1331,6 +1357,27 @@ exec /usr/bin/git "$@"
 			assert.equal(available.status, 0, available.stderr);
 			assert.match(available.stdout, /fleet runner hobo/u);
 			assert.doesNotMatch(readFileSync(calls, "utf8"), /signoff create/u);
+			// A local replacement ref must not substitute a different routing
+			// policy for the committed base while selecting an available runner.
+			const observedBase = git(repo, ["rev-parse", "refs/remotes/origin/main"])
+				.toString()
+				.trim();
+			const replacementBase = git(repo, [
+				"rev-parse",
+				"refs/remotes/origin/pinned-policy",
+			])
+				.toString()
+				.trim();
+			git(repo, ["replace", observedBase, replacementBase]);
+			const replacedPolicy = command();
+			assert.equal(replacedPolicy.status, 0, replacedPolicy.stderr);
+			assert.match(replacedPolicy.stdout, /fleet runner hobo/u);
+			git(repo, ["replace", "-d", observedBase]);
+			for (const flags of [["--pr=0"], ["--pr=17", "--pr=18"], ["--pr"]]) {
+				const invalidPr = command({}, flags);
+				assert.notEqual(invalidPr.status, 0);
+				assert.match(invalidPr.stderr, /--pr must be specified once/u);
+			}
 			const assertionWithRunner = command({}, [
 				"--base=origin/opaque-policy",
 				"--provider-unavailable=ci:vercel-sandbox",
@@ -1371,20 +1418,22 @@ exec /usr/bin/git "$@"
 			git(repo, ["remote", "set-url", "origin", remote]);
 			const pinnedSlip = join(root, "pinned-slip.json");
 			const pin = { runner: "ubuntu-24.04", tier: "github", reason: "pinned" };
-			writeFileSync(
-				pinnedSlip,
-				JSON.stringify({
-					sha: "5".repeat(40),
-					message: JSON.stringify({
-						version: 1,
-						repository: "acme/app",
-						issuedAt: at(60),
-						expiresAt: new Date(Date.now() + 60_000).toISOString(),
-						classes: { pr: pin, fork: pin, trunk: pin },
-						relay: { nodeId: "fixture", commit: "a".repeat(40) },
+			const refreshPinnedSlip = () =>
+				writeFileSync(
+					pinnedSlip,
+					JSON.stringify({
+						sha: "5".repeat(40),
+						message: JSON.stringify({
+							version: 1,
+							repository: "acme/app",
+							issuedAt: at(60),
+							expiresAt: new Date(Date.now() + 4 * 60_000).toISOString(),
+							classes: { pr: pin, fork: pin, trunk: pin },
+							relay: { nodeId: "fixture", commit: "a".repeat(40) },
+						}),
 					}),
-				}),
-			);
+				);
+			refreshPinnedSlip();
 			const beforePin = readFileSync(calls, "utf8").length;
 			const pinnedMalformed = command({ HOBO_FLEET_SLIP: pinnedSlip }, [
 				"--base=origin/malformed-policy",
@@ -1767,6 +1816,7 @@ exec /usr/bin/git "$@"
 			const futureRefusal = command({}, runnerFlags);
 			assert.notEqual(futureRefusal.status, 0);
 			assert.match(futureRefusal.stdout, /waiting \(availability-unknown\)/u);
+			refreshPinnedSlip();
 			const pinnedWithFuture = command(
 				{ HOBO_FLEET_SLIP: pinnedSlip },
 				runnerFlags,
@@ -1882,7 +1932,7 @@ exec /usr/bin/git "$@"
 			assert.equal(
 				healthyWithMalformedRun.status,
 				0,
-				healthyWithMalformedRun.stderr,
+				`${healthyWithMalformedRun.stderr}\n${healthyWithMalformedRun.stdout}`,
 			);
 			assert.match(healthyWithMalformedRun.stdout, /fleet runner hobo/u);
 			writeFileSync(
@@ -1898,7 +1948,7 @@ exec /usr/bin/git "$@"
 			assert.equal(
 				healthyWithBackwardsRun.status,
 				0,
-				healthyWithBackwardsRun.stderr,
+				`${healthyWithBackwardsRun.stderr}\n${healthyWithBackwardsRun.stdout}`,
 			);
 			assert.match(healthyWithBackwardsRun.stdout, /fleet runner hobo/u);
 			// Freeze the observer clock so one nanosecond either side of the
@@ -1973,6 +2023,7 @@ exec /usr/bin/git "$@"
 				runs,
 				JSON.stringify({ workflow_runs: [{ ...validRun, id: "broken" }] }),
 			);
+			refreshPinnedSlip();
 			const pinWithMalformedQueue = command(
 				{ HOBO_FLEET_SLIP: pinnedSlip },
 				runnerFlags,
@@ -1980,7 +2031,7 @@ exec /usr/bin/git "$@"
 			assert.equal(
 				pinWithMalformedQueue.status,
 				0,
-				pinWithMalformedQueue.stderr,
+				`${pinWithMalformedQueue.stderr}\n${pinWithMalformedQueue.stdout}`,
 			);
 			assert.match(
 				pinWithMalformedQueue.stdout,
@@ -2251,6 +2302,102 @@ exec /usr/bin/git "$@"
 				),
 			);
 
+			// A fork-only PR is checked before local work and passed through to
+			// final signoff, even without a target-remote head branch.
+			const prDir = join(root, "pr-fixture");
+			mkdirSync(prDir);
+			const baseRepo = {
+				id: 1,
+				name: "app",
+				full_name: "acme/app",
+				owner: { login: "acme" },
+			};
+			const forkRepo = {
+				id: 2,
+				name: "app",
+				full_name: "contributor/app",
+				owner: { login: "contributor" },
+			};
+			const pull = {
+				number: 17,
+				state: "open",
+				base: { ref: "main", sha: baseA, repo: baseRepo },
+				head: { ref: "topic", sha: head, repo: forkRepo },
+			};
+			const replacementFork = { ...forkRepo, id: 3 };
+			for (const [name, value] of Object.entries({
+				"pull.json": pull,
+				"closed.json": { ...pull, state: "closed" },
+				"changed-pull.json": {
+					...pull,
+					head: { ...pull.head, repo: replacementFork },
+				},
+				"base.json": baseRepo,
+				"base-branch.json": { name: "main", commit: { sha: baseA } },
+				"fork.json": forkRepo,
+				"changed-fork.json": replacementFork,
+				"branch.json": { name: "topic", commit: { sha: head } },
+			}))
+				writeFileSync(join(prDir, name), JSON.stringify(value));
+			git(remote, ["update-ref", "refs/heads/feature", baseA]);
+			const forkSuccess = command({ HOBO_FLEET_PR_DIR: prDir }, [
+				"--fresh",
+				"--pr=17",
+			]);
+			assert.equal(forkSuccess.status, 0, forkSuccess.stderr);
+			assert.equal(
+				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
+				2,
+			);
+			const closedPr = command(
+				{ HOBO_FLEET_PR_DIR: prDir, HOBO_FLEET_PR_CLOSED: "1" },
+				["--fresh", "--pr=17"],
+			);
+			assert.notEqual(closedPr.status, 0);
+			assert.doesNotMatch(
+				closedPr.stdout,
+				/running the local signoff fallback/u,
+			);
+			assert.equal(
+				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
+				2,
+			);
+			writeFileSync(join(bin, "close-pr-on-job"), "close\n");
+			const closedDuringJob = command({ HOBO_FLEET_PR_DIR: prDir }, [
+				"--fresh",
+				"--pr=17",
+			]);
+			assert.notEqual(closedDuringJob.status, 0);
+			assert.match(
+				closedDuringJob.stdout,
+				/running the local signoff fallback/u,
+			);
+			assert.match(closedDuringJob.stderr, /pull request/u);
+			assert.equal(
+				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
+				2,
+			);
+			rmSync(join(bin, "close-pr-on-job"));
+			rmSync(join(bin, "pr-closed"));
+			// An inferred PR cannot be silently replaced during the local run,
+			// even when its name, branch, base and tested SHA are unchanged.
+			writeFileSync(join(bin, "change-pr-on-job"), "change\n");
+			const replacedDuringJob = command({ HOBO_FLEET_PR_DIR: prDir }, [
+				"--fresh",
+			]);
+			assert.notEqual(replacedDuringJob.status, 0);
+			assert.match(
+				replacedDuringJob.stderr,
+				/head proof changed since fleet preflight/u,
+			);
+			assert.equal(
+				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
+				2,
+			);
+			rmSync(join(bin, "change-pr-on-job"));
+			rmSync(join(bin, "pr-changed"));
+			git(remote, ["update-ref", "refs/heads/feature", head]);
+
 			// The local run fetches main and overwrites FETCH_HEAD. A previously
 			// fetched descendant object still proves the live target branch.
 			const descendant = git(repo, [
@@ -2285,7 +2432,7 @@ exec /usr/bin/git "$@"
 			assert.equal(advancedSuccess.status, 0, advancedSuccess.stderr);
 			assert.equal(
 				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
-				2,
+				3,
 			);
 			git(remote, ["update-ref", "refs/heads/feature", head]);
 
@@ -2310,7 +2457,7 @@ exec /usr/bin/git "$@"
 			assert.match(failed.stderr, /no local job has a trusted signoff policy/u);
 			assert.equal(
 				readFileSync(calls, "utf8").match(/signoff create/g)?.length,
-				2,
+				3,
 			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

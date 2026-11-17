@@ -9,8 +9,8 @@
  *                      [--skip-job=ID]... [--no-fetch] [--fresh]
  *   pnpm ci:attest publish [--remote=origin] [--file=PATH]
  *   pnpm ci:attest verify [--base=origin/main] [--event=pull_request] [--file=PATH]
- *   pnpm ci:attest signoff [--base=origin/main] [--event=pull_request] [--file=PATH]
- *   pnpm ci:attest fleet [--local-signoff] [--github-unavailable] [--policy-current] [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]... [--base=origin/main] [--fresh]
+ *   pnpm ci:attest signoff [--base=origin/main] [--event=pull_request] [--file=PATH] [--pr=NUMBER]
+ *   pnpm ci:attest fleet [--local-signoff] [--github-unavailable] [--policy-current] [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]... [--base=origin/main] [--pr=NUMBER] [--fresh]
  *
  * `run` executes what `attested-jobs.json` describes: the same commands, in
  * the same order, under the same conditions as the workflow jobs, once for
@@ -44,7 +44,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { devNull, homedir, tmpdir } from "node:os";
 import {
 	delimiter,
 	dirname,
@@ -68,6 +68,7 @@ import {
 	type AttestationVerdict,
 	type AttestedJobResult,
 	asObject,
+	asText,
 	attestationPath,
 	type CoveredJob,
 	GATE_JOBS,
@@ -94,7 +95,11 @@ import {
 	parsePlan,
 	substituteExpressions,
 } from "./attested-jobs.mts";
-
+import {
+	type PrHeadProof,
+	PrHeadVerificationError,
+	verifyPrHead,
+} from "./github-pr-target.mts";
 import { trustedGithubTarget } from "./github-target.mts";
 
 export const DEFAULT_KEY_PATH = join(
@@ -197,7 +202,16 @@ export function gitEnvironment(
 ): NodeJS.ProcessEnv {
 	const environment = { ...process.env };
 	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
-	return { ...environment, ...extra };
+	return unmodifiedGitEnvironment({ ...environment, ...extra });
+}
+
+/** A published SHA must always name Git's original objects and parent graph. */
+function unmodifiedGitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const safe = { ...env };
+	delete safe.GIT_REPLACE_REF_BASE;
+	safe.GIT_NO_REPLACE_OBJECTS = "1";
+	safe.GIT_GRAFT_FILE = devNull;
+	return safe;
 }
 
 /** One git command about the repository at `cwd`; its trimmed output, or an error carrying git's own words. */
@@ -227,6 +241,37 @@ function gitSucceeds(
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+/** Refuse local graph overrides rather than attest an ambiguous checkout. */
+function assertUnmodifiedGitGraph(root: string): void {
+	if (
+		git(root, ["for-each-ref", "--format=%(refname)", "refs/replace/"], {
+			timeoutMs: 10_000,
+		})
+	)
+		throw new AttestError(
+			"Git replacement refs are present; remove them or use a clean clone before attesting",
+		);
+	const common = git(root, [
+		"rev-parse",
+		"--path-format=absolute",
+		"--git-common-dir",
+	]);
+	const grafts = join(common, "info", "grafts");
+	try {
+		const stat = statSync(grafts);
+		if (!stat.isFile() || stat.size > 0)
+			throw new AttestError(
+				"Git graft metadata is present; remove it or use a clean clone before attesting",
+			);
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
+		if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
+			throw new AttestError(
+				"could not inspect Git graft metadata; attestation refused",
+			);
 	}
 }
 
@@ -494,6 +539,7 @@ export function resolveRunTarget(input: {
 	baseRef: string;
 }): RunTarget {
 	const root = git(input.cwd, ["rev-parse", "--show-toplevel"]);
+	assertUnmodifiedGitGraph(root);
 	const dirty = git(root, ["status", "--porcelain"]);
 	if (dirty)
 		throw new AttestError(
@@ -815,6 +861,9 @@ export function stepEnvironment(machine: NodeJS.ProcessEnv, home: string) {
 		GIT_TERMINAL_PROMPT: "0",
 	}))
 		environment.set(name, value);
+	// Do not inject Git graph variables into a workflow step: a workflow may
+	// legitimately branch on their presence. Caller overrides are already
+	// excluded by the allowlist; coordinator Git calls use their own safe env.
 	return Object.fromEntries(environment);
 }
 
@@ -999,6 +1048,7 @@ export async function runAttestedJobs(input: {
 }): Promise<RunOutcome> {
 	const { target, plan, events } = input;
 	const { root } = target;
+	assertUnmodifiedGitGraph(root);
 	const startedAt = new Date();
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-attest-run-"));
 	const outputDirectory = join(root, OUTPUT_DIRECTORY, target.tree);
@@ -1151,6 +1201,17 @@ export async function runAttestedJobs(input: {
 						};
 						const lookup = jobContext(steps, declared, shard);
 						if (!conditionHolds(step.if, lookup)) continue;
+						if (
+							(declared.GIT_NO_REPLACE_OBJECTS !== undefined &&
+								declared.GIT_NO_REPLACE_OBJECTS !== "1") ||
+							(declared.GIT_GRAFT_FILE !== undefined &&
+								declared.GIT_GRAFT_FILE !== devNull) ||
+							(declared.GIT_REPLACE_REF_BASE !== undefined &&
+								declared.GIT_REPLACE_REF_BASE !== "")
+						)
+							throw new AttestError(
+								`the workflow changes Git object or graph semantics in ${job.id}; local attestation refused`,
+							);
 						const script = substituteExpressions(step.run, lookup);
 						const key = invocation++;
 						const heading = `\n=== ${job.id} [${event}${shard ? ` shard ${shard.index + 1}/${shard.total}` : ""}] ${label} ===\n`;
@@ -1202,6 +1263,9 @@ export async function runAttestedJobs(input: {
 								`\n${label}: exit ${code} (the workflow lets this step fail)\n`,
 							);
 						await new Promise((done) => sink.end(done));
+						// Do not let one trusted step leave a replacement graph for a
+						// later step, even if a later step would remove it again.
+						assertUnmodifiedGitGraph(root);
 						const outputs = parseCommandFile(readFileSync(outputFile, "utf8"));
 						const environment = parseCommandFile(readFileSync(envFile, "utf8"));
 						Object.assign(exported, environment);
@@ -1247,6 +1311,7 @@ export async function runAttestedJobs(input: {
 
 	// A command that rewrote a tracked file passed on something other than the
 	// committed tree, and the tree is what the attestation names.
+	assertUnmodifiedGitGraph(root);
 	const rewritten = git(root, [
 		"status",
 		"--porcelain",
@@ -1488,6 +1553,10 @@ async function assertSignoffPolicy(input: {
 	}
 }
 
+type PublishedSignoffHead =
+	| { kind: "branch"; branch: string; tip: string }
+	| { kind: "pr"; proof: PrHeadProof };
+
 /** Pin every status write to the same repository whose live base was tested. */
 function signoffEnvironment(input: {
 	root: string;
@@ -1495,10 +1564,27 @@ function signoffEnvironment(input: {
 	branch: string;
 	base: string;
 	env: NodeJS.ProcessEnv;
-	published?: { branch: string; tip: string };
+	published?: PublishedSignoffHead;
 }): NodeJS.ProcessEnv {
-	const environment = { ...input.env };
+	const environment = unmodifiedGitEnvironment(input.env);
 	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
+	// Validation runs from the checkout and publication runs from the isolated
+	// Git view. Keep relative executable and config paths bound to the checkout.
+	if (environment.PATH !== undefined)
+		environment.PATH = environment.PATH.split(delimiter)
+			.map((part) => resolve(input.root, part))
+			.join(delimiter);
+	for (const name of [
+		"GH_CONFIG_DIR",
+		"XDG_CONFIG_HOME",
+		"HOME",
+		"GIT_CONFIG_GLOBAL",
+		"GIT_CONFIG_SYSTEM",
+	]) {
+		const value = environment[name];
+		if (value && !isAbsolute(value))
+			environment[name] = resolve(input.root, value);
+	}
 	try {
 		const target = trustedGithubTarget({
 			cwd: input.root,
@@ -1527,12 +1613,32 @@ function signoffEnvironment(input: {
 		const liveBase = githubBranch(input.branch);
 		if (liveBase !== input.base) throw new Error("GitHub base changed");
 		if (
-			input.published &&
+			input.published?.kind === "branch" &&
 			githubBranch(input.published.branch) !== input.published.tip
 		)
 			throw new Error("GitHub head branch changed");
+		if (input.published?.kind === "pr") {
+			const previous = input.published.proof;
+			try {
+				const current = verifyPrHead({
+					cwd: input.root,
+					env: target.environment,
+					baseBranch: input.branch,
+					baseSha: input.base,
+					headSha: previous.headSha,
+					prNumber: previous.prNumber,
+				});
+				if (!isDeepStrictEqual(current, previous))
+					throw new Error("pull request proof changed");
+			} catch {
+				throw new AttestError(
+					"the pull request or its live head changed or could not be verified; signoff refused",
+				);
+			}
+		}
 		return target.environment;
-	} catch {
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
 		throw new AttestError(
 			"could not verify that the GitHub target and live base match the tested remote; signoff refused",
 		);
@@ -1567,15 +1673,15 @@ function signoffScratch(root: string, machine: NodeJS.ProcessEnv): string {
 
 type SignoffWitness = {
 	cwd: string;
-	published: { branch: string; tip: string };
+	published: PublishedSignoffHead;
 	verify: () => void;
 	dispose: (publicationAttempted: boolean) => void;
 };
 
 /**
- * Prove the tested commit is reachable from a live branch on the already
- * validated target remote, then give gh-signoff an isolated Git view of that
- * proof. A narrow fetch configuration need not track the pushed branch, and a
+ * Prove the tested commit is reachable from a live target branch or is the
+ * exact head of a verified open PR, then give gh-signoff an isolated Git view.
+ * A narrow fetch configuration need not track the published branch, and a
  * stale tracking ref or another remote cannot stand in for the target.
  */
 function targetSignoffWitness(input: {
@@ -1584,7 +1690,11 @@ function targetSignoffWitness(input: {
 	head: string;
 	base: string;
 	baseRef: string;
+	baseBranch: string;
 	env: NodeJS.ProcessEnv;
+	githubEnv: NodeJS.ProcessEnv;
+	prNumber?: number | undefined;
+	expectedPublished?: PublishedSignoffHead | undefined;
 }): SignoffWitness {
 	const { root, remote, head, base, baseRef } = input;
 	const noninteractive = {
@@ -1598,88 +1708,185 @@ function targetSignoffWitness(input: {
 		timeoutMs: 10_000,
 	};
 	let selected: { ref: string; tip: string } | undefined;
-	try {
-		const advertised = git(root, ["ls-remote", "--heads", remote], {
-			env: noninteractive,
-			timeoutMs: 10_000,
-		});
-		const branches = advertised.split(/\r?\n/u).flatMap((line) => {
-			const [tip, ref, extra] = line.split("\t");
-			return tip &&
-				isObjectId(tip) &&
-				ref?.startsWith("refs/heads/") &&
-				extra === undefined
-				? [{ ref, tip }]
-				: [];
-		});
-		const knownTips = new Set(
-			git(
-				root,
-				[
-					"for-each-ref",
-					"--contains",
-					head,
-					"--format=%(objectname)",
-					"refs/heads",
-					"refs/remotes",
-				],
-				localOnly,
-			).split("\n"),
-		);
-		selected = branches.find(
-			({ ref, tip }) =>
-				tip === head && gitSucceeds(root, ["check-ref-format", ref]),
-		);
-		selected ??= branches.find(
-			({ ref, tip }) =>
-				knownTips.has(tip) && gitSucceeds(root, ["check-ref-format", ref]),
-		);
-		if (!selected && branches.length > 0) {
-			// A normal `git fetch origin topic` may leave a tip only as an object;
-			// the local run can overwrite FETCH_HEAD before publication.
-			const tips = [...new Set(branches.map(({ tip }) => tip))];
-			const checked = git(
-				root,
-				["cat-file", "--batch-check=%(objectname) %(objecttype)"],
-				{ ...localOnly, input: `${tips.join("\n")}\n` },
-			);
-			const commits = new Set(
-				checked
-					.split("\n")
-					.filter((line) => line.endsWith(" commit"))
-					.map((line) => line.slice(0, -" commit".length)),
-			);
-			const deadline = Date.now() + 10_000;
-			for (const candidate of branches) {
-				if (Date.now() > deadline)
-					throw new Error("local ancestry check timed out");
-				if (
-					!commits.has(candidate.tip) ||
-					!gitSucceeds(root, ["check-ref-format", candidate.ref])
+	let noLazyFetchUnsupported = false;
+	let branchEnumerationFailed = false;
+	const expected = input.expectedPublished;
+	if (
+		expected !== undefined &&
+		(Object.prototype.toString.call(expected) !== "[object Object]" ||
+			(expected.kind !== "branch" && expected.kind !== "pr"))
+	)
+		throw new AttestError("invalid fleet preflight proof; signoff refused");
+	let requestedPr = input.prNumber;
+	if (expected?.kind === "pr") {
+		const proof = expected.proof;
+		if (
+			Object.prototype.toString.call(proof) !== "[object Object]" ||
+			!Number.isSafeInteger(proof.prNumber) ||
+			proof.prNumber < 1 ||
+			(requestedPr !== undefined && requestedPr !== proof.prNumber)
+		)
+			throw new AttestError("invalid fleet preflight proof; signoff refused");
+		requestedPr = proof.prNumber;
+	} else if (expected?.kind === "branch") {
+		if (
+			requestedPr !== undefined ||
+			!asText(expected.branch) ||
+			!asText(expected.tip) ||
+			!isObjectId(expected.tip)
+		)
+			throw new AttestError("invalid fleet preflight proof; signoff refused");
+		const ref = `refs/heads/${expected.branch}`;
+		if (!gitSucceeds(root, ["check-ref-format", ref]))
+			throw new AttestError("invalid fleet preflight proof; signoff refused");
+		if (expected.tip !== head) {
+			if (!gitSucceeds(root, ["--no-lazy-fetch", "--version"], localOnly))
+				throw new AttestError(
+					"cannot verify an ancestor without Git 2.45 or newer; upgrade Git or publish HEAD as the exact branch tip",
+				);
+			if (
+				!gitSucceeds(
+					root,
+					[
+						"--no-lazy-fetch",
+						"merge-base",
+						"--is-ancestor",
+						head,
+						expected.tip,
+					],
+					localOnly,
 				)
-					continue;
-				if (
-					gitSucceeds(
-						root,
-						["merge-base", "--is-ancestor", head, candidate.tip],
-						localOnly,
+			)
+				throw new AttestError(
+					"the fleet preflight branch no longer proves the tested head; signoff refused",
+				);
+		}
+		selected = { ref, tip: expected.tip };
+	}
+	if (expected === undefined && requestedPr === undefined) {
+		try {
+			const advertised = git(root, ["ls-remote", "--heads", remote], {
+				env: noninteractive,
+				timeoutMs: 10_000,
+			});
+			const branches = advertised.split(/\r?\n/u).flatMap((line) => {
+				const [tip, ref, extra] = line.split("\t");
+				return tip &&
+					isObjectId(tip) &&
+					ref?.startsWith("refs/heads/") &&
+					extra === undefined
+					? [{ ref, tip }]
+					: [];
+			});
+			selected = branches.find(
+				({ ref, tip }) =>
+					tip === head && gitSucceeds(root, ["check-ref-format", ref]),
+			);
+			if (!selected && branches.length > 0) {
+				// Older Git silently ignores GIT_NO_LAZY_FETCH. The explicit option
+				// fails closed there instead of accidentally fetching a missing tip.
+				noLazyFetchUnsupported = !gitSucceeds(
+					root,
+					["--no-lazy-fetch", "--version"],
+					localOnly,
+				);
+			}
+			if (!selected && branches.length > 0 && !noLazyFetchUnsupported) {
+				// A normal `git fetch origin topic` may leave a tip only as an object;
+				// the local run can overwrite FETCH_HEAD before publication. Check
+				// ancestry explicitly: for-each-ref --contains can report a false
+				// positive when an unrelated commit has a missing parent.
+				const tips = [...new Set(branches.map(({ tip }) => tip))];
+				const checked = git(
+					root,
+					[
+						"--no-lazy-fetch",
+						"cat-file",
+						"--batch-check=%(objectname) %(objecttype)",
+					],
+					{ ...localOnly, input: `${tips.join("\n")}\n` },
+				);
+				const commits = new Set(
+					checked
+						.split("\n")
+						.filter((line) => line.endsWith(" commit"))
+						.map((line) => line.slice(0, -" commit".length)),
+				);
+				const deadline = Date.now() + 10_000;
+				for (const candidate of branches) {
+					if (Date.now() > deadline)
+						throw new Error("local ancestry check timed out");
+					if (
+						!commits.has(candidate.tip) ||
+						!gitSucceeds(root, ["check-ref-format", candidate.ref])
 					)
-				) {
-					selected = candidate;
-					break;
+						continue;
+					if (
+						gitSucceeds(
+							root,
+							[
+								"--no-lazy-fetch",
+								"merge-base",
+								"--is-ancestor",
+								head,
+								candidate.tip,
+							],
+							localOnly,
+						)
+					) {
+						selected = candidate;
+						break;
+					}
 				}
 			}
+		} catch {
+			// A verified PR is an independent witness. A large or temporarily
+			// unavailable branch listing need not hide that option.
+			selected = undefined;
+			branchEnumerationFailed = true;
 		}
-	} catch {
-		throw new AttestError(
-			"could not verify the tested head on the target remote; signoff refused",
-		);
 	}
-	if (!selected)
-		throw new AttestError(
-			`the tested head is not verifiably on a branch of ${remote}; push it to ${remote} or fetch its advanced branch before signoff`,
-		);
-	const { ref: selectedBranch, tip } = selected;
+	let prProof: PrHeadProof | undefined;
+	if (!selected || requestedPr !== undefined) {
+		selected = undefined;
+		try {
+			prProof = verifyPrHead({
+				cwd: root,
+				env: input.githubEnv,
+				baseBranch: input.baseBranch,
+				baseSha: base,
+				headSha: head,
+				prNumber: requestedPr,
+			});
+		} catch (cause) {
+			const detail =
+				cause instanceof PrHeadVerificationError
+					? cause.message
+					: "could not verify a pull request";
+			if (noLazyFetchUnsupported)
+				throw new AttestError(
+					"cannot verify an ancestor without Git 2.45 or newer; upgrade Git, publish HEAD as an exact target-branch tip, or specify an open PR with --pr=<number>",
+				);
+			if (branchEnumerationFailed)
+				throw new AttestError(
+					`could not list the target branches and could not verify a pull request: ${detail}; retry or specify --pr=<number>`,
+				);
+			throw new AttestError(
+				`the tested head is not verifiably on a branch of ${remote} or an open pull request: ${detail}; push to ${remote}, fetch its advanced branch, or specify --pr=<number>`,
+			);
+		}
+	}
+	const selectedBranch = selected?.ref;
+	const tip = selected?.tip ?? head;
+	let published: PublishedSignoffHead;
+	if (prProof) published = { kind: "pr", proof: prProof };
+	else if (selectedBranch)
+		published = {
+			kind: "branch",
+			branch: selectedBranch.slice("refs/heads/".length),
+			tip,
+		};
+	else throw new AttestError("could not verify a published head");
 
 	const scratch = signoffScratch(root, input.env);
 	try {
@@ -1698,31 +1905,40 @@ function targetSignoffWitness(input: {
 			objects.startsWith('"')
 		)
 			throw new Error("unsupported Git object directory");
-		git(scratch, ["init", "--bare", "--quiet", `--object-format=${format}`]);
+		const scratchGit = { env: input.githubEnv };
+		git(
+			scratch,
+			["init", "--bare", "--quiet", `--object-format=${format}`],
+			scratchGit,
+		);
 		writeFileSync(
 			join(scratch, "objects", "info", "alternates"),
 			`${objects}\n`,
 		);
 		for (const name of ["user.name", "signoff.url"]) {
 			const value = gitConfigValue(root, name);
-			if (value !== undefined) git(scratch, ["config", "--local", name, value]);
+			if (value !== undefined)
+				git(scratch, ["config", "--local", name, value], scratchGit);
 		}
-		git(scratch, ["update-ref", "refs/remotes/hobo-signoff/verified", tip]);
+		git(
+			scratch,
+			["update-ref", "refs/remotes/hobo-signoff/verified", tip],
+			scratchGit,
+		);
 		return {
 			cwd: scratch,
-			published: { branch: selectedBranch.slice("refs/heads/".length), tip },
+			published,
 			verify: () => {
 				try {
-					const answer = git(
-						root,
-						["ls-remote", "--exit-code", "--heads", remote, selectedBranch],
-						{
-							env: noninteractive,
-							timeoutMs: 10_000,
-						},
-					);
-					if (answer !== `${tip}\t${selectedBranch}`)
-						throw new Error("branch changed");
+					if (selectedBranch) {
+						const answer = git(
+							root,
+							["ls-remote", "--exit-code", "--heads", remote, selectedBranch],
+							{ env: noninteractive, timeoutMs: 10_000 },
+						);
+						if (answer !== `${tip}\t${selectedBranch}`)
+							throw new Error("branch changed");
+					}
 					const currentBase = git(
 						root,
 						["ls-remote", "--exit-code", "--heads", remote, baseRef],
@@ -1780,11 +1996,29 @@ function finishSignoffWitness(
 	if (failure) throw failure;
 }
 
+function assertSignoffCheckout(root: string, head: string): void {
+	try {
+		assertUnmodifiedGitGraph(root);
+		if (
+			git(root, ["rev-parse", "HEAD^{commit}"]) !== head ||
+			git(root, ["status", "--porcelain"])
+		)
+			throw new Error("checkout changed");
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
+		throw new AttestError(
+			"the checkout changed before signoff; run the checks again",
+		);
+	}
+}
+
 /** Publish only the jobs this machine's signed record covers for one event. */
 export async function signoffLocalRun(input: {
 	cwd: string;
 	baseRef: string;
 	expectedBase?: string | undefined;
+	prNumber?: number | undefined;
+	expectedPublished?: PublishedSignoffHead | undefined;
 	event: AttestationEvent;
 	envelopeText: string;
 	privateKey: KeyObject;
@@ -1792,6 +2026,7 @@ export async function signoffLocalRun(input: {
 	env?: NodeJS.ProcessEnv;
 }): Promise<readonly string[]> {
 	const root = git(input.cwd, ["rev-parse", "--show-toplevel"]);
+	assertUnmodifiedGitGraph(root);
 	if (git(root, ["status", "--porcelain"]))
 		throw new AttestError("the working tree is not clean; signoff refused");
 
@@ -1924,7 +2159,7 @@ export async function signoffLocalRun(input: {
 	const contexts = verdict.jobs.map(
 		(job) => `hobo-ci/local/${input.event}/${job}`,
 	);
-	signoffEnvironment({
+	const githubEnv = signoffEnvironment({
 		root,
 		remote,
 		branch,
@@ -1937,11 +2172,22 @@ export async function signoffLocalRun(input: {
 		head,
 		base,
 		baseRef: ref,
+		baseBranch: branch,
 		env: input.env ?? process.env,
+		githubEnv,
+		prNumber: input.prNumber,
+		expectedPublished: input.expectedPublished,
 	});
 	let failure: AttestError | undefined;
 	let publicationAttempted = false;
 	try {
+		if (
+			input.expectedPublished &&
+			!isDeepStrictEqual(witness.published, input.expectedPublished)
+		)
+			throw new AttestError(
+				"the published head proof changed since fleet preflight; run the checks again",
+			);
 		witness.verify();
 		const environment = signoffEnvironment({
 			root,
@@ -1951,6 +2197,7 @@ export async function signoffLocalRun(input: {
 			env: input.env ?? process.env,
 			published: witness.published,
 		});
+		assertSignoffCheckout(root, head);
 		publicationAttempted = true;
 		execFileSync("gh", ["signoff", "create", "--commit", head, ...contexts], {
 			cwd: witness.cwd,
@@ -1981,6 +2228,21 @@ function options(args: readonly string[], name: string): string[] {
 		.map((arg) => arg.slice(prefix.length));
 }
 
+function pullRequestOption(args: readonly string[]): number | undefined {
+	const values = args.filter(
+		(arg) => arg === "--pr" || arg.startsWith("--pr="),
+	);
+	if (values.length === 0) return undefined;
+	const match =
+		values.length === 1 ? /^--pr=([1-9][0-9]*)$/u.exec(values[0] ?? "") : null;
+	const number = Number(match?.[1]);
+	if (!match || !Number.isSafeInteger(number))
+		throw new AttestError(
+			"--pr must be specified once as a positive pull request number, for example --pr=123",
+		);
+	return number;
+}
+
 const USAGE = `usage: pnpm ci:attest <command>
 
   init-key [--days=${DEFAULT_TRUST_DAYS}] [--note=TEXT]
@@ -1993,11 +2255,11 @@ const USAGE = `usage: pnpm ci:attest <command>
       Push the signed attestation to the ${ATTESTATION_BRANCH} branch.
   verify [--base=origin/main] [--event=pull_request] [--file=PATH]
       Check an attestation the way the workflows do.
-  signoff [--base=origin/main] [--event=pull_request] [--file=PATH]
+  signoff [--base=origin/main] [--event=pull_request] [--file=PATH] [--pr=NUMBER]
       Post gh-signoff statuses for this machine's covered local jobs on HEAD.
   fleet [--local-signoff] [--github-unavailable] [--policy-current]
         [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]...
-        [--base=origin/main] [--fresh]
+        [--base=origin/main] [--pr=NUMBER] [--fresh]
       Select from fleet availability; opt in to local signoff as a fallback.
       --policy-current asserts, after comparison, that live offers, desired policy and
       daemon routing match the base.
@@ -2024,6 +2286,7 @@ function attestationFile(root: string, args: readonly string[]): string {
 export async function main(
 	args: readonly string[],
 	env: NodeJS.ProcessEnv = process.env,
+	expectedPublished?: PublishedSignoffHead,
 ): Promise<number> {
 	// `pnpm ci:attest -- run` hands the separator through.
 	const [command, ...rest] = args[0] === "--" ? args.slice(1) : args;
@@ -2168,6 +2431,7 @@ export async function main(
 		return verdict.attested ? 0 : 1;
 	}
 	if (command === "signoff") {
+		const prNumber = pullRequestOption(rest);
 		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
 		const file = attestationFile(root, rest);
 		if (!existsSync(file))
@@ -2188,6 +2452,8 @@ export async function main(
 			cwd: root,
 			baseRef: option(rest, "base") ?? "origin/main",
 			expectedBase: option(rest, "expected-base"),
+			prNumber,
+			expectedPublished,
 			event,
 			envelopeText: readFileSync(file, "utf8"),
 			privateKey,
@@ -2200,9 +2466,11 @@ export async function main(
 		return 0;
 	}
 	if (command === "fleet") {
+		const prNumber = pullRequestOption(rest);
 		for (const arg of rest)
 			if (
 				!arg.startsWith("--base=") &&
+				!arg.startsWith("--pr=") &&
 				!arg.startsWith("--provider-unavailable=") &&
 				!arg.startsWith("--runner-unavailable=") &&
 				arg !== "--local-signoff" &&
@@ -2331,14 +2599,23 @@ export async function main(
 		const remote = parsedBase[1];
 		const branch = parsedBase[2];
 		const baseRef = `refs/heads/${branch}`;
-		signoffEnvironment({ root, remote, branch, base: target.base, env });
+		const githubEnv = signoffEnvironment({
+			root,
+			remote,
+			branch,
+			base: target.base,
+			env,
+		});
 		const witness = targetSignoffWitness({
 			root,
 			remote,
 			head: target.head,
 			base: target.base,
 			baseRef,
+			baseBranch: branch,
 			env,
+			githubEnv,
+			prNumber,
 		});
 		let preflightFailure: AttestError | undefined;
 		try {
@@ -2351,6 +2628,7 @@ export async function main(
 				env,
 				published: witness.published,
 			});
+			assertSignoffCheckout(root, target.head);
 		} catch (cause) {
 			preflightFailure =
 				cause instanceof AttestError
@@ -2360,6 +2638,11 @@ export async function main(
 						);
 		}
 		finishSignoffWitness(witness, preflightFailure, false);
+		const selectedPr =
+			prNumber ??
+			(witness.published.kind === "pr"
+				? witness.published.proof.prNumber
+				: undefined);
 		console.log("ci:attest fleet: running the local signoff fallback");
 		return executeFleetVerification({
 			choice,
@@ -2377,8 +2660,14 @@ export async function main(
 				),
 			signoffLocal: () =>
 				main(
-					["signoff", `--base=${base}`, `--expected-base=${expectedBase}`],
+					[
+						"signoff",
+						`--base=${base}`,
+						`--expected-base=${expectedBase}`,
+						...(selectedPr === undefined ? [] : [`--pr=${selectedPr}`]),
+					],
 					env,
+					witness.published,
 				),
 		});
 	}
