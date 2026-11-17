@@ -136,12 +136,12 @@ on GitHub's generated merge-group commit. No branch-protection rule is changed.
   exhausts all 512 combinations of four tiers in up, down, unknown, or disabled
   states and both opt-in settings, and checks malformed observations.
 - [`fleet-signoff.test.ts`](../../scripts/test/fleet-signoff.test.ts) covers
-  preference, pins, provider identity and ordering, shared labels, outage and
-  policy assertions, stale or contradictory slips, malformed inventory, queue
-  errors, base changes, and an end-to-end temporary checkout. That fixture runs
-  a local command and records the signoff invocation through a fake `gh`; it
-  also rejects a changed job policy. A separate executor test proves a failed
-  run cannot invoke signoff.
+  all 162 combinations of available, unavailable, and unknown fleet, ARC,
+  local, and hosted observations with both opt-in settings, including which
+  decisions run and sign. It also covers pins, provider identity, outage
+  assertions, malformed inventory and queue evidence, and base changes. Its
+  temporary-checkout fixture executes a failing command and confirms no signoff,
+  then records a successful signoff invocation through a fake `gh`.
 - [`local-attest.test.ts`](../../scripts/test/local-attest.test.ts) covers
   signatures, target and base identity, trusted job policy, omitted jobs,
   per-event execution, repeated commands, failed retries, and `gh` publication
