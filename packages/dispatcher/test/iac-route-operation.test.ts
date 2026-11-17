@@ -323,4 +323,68 @@ describe("authenticated operation lineage", () => {
 		expect(calls).toBe(0);
 		expect(await authority.verifyAttempt(permit)).toBe(true);
 	});
+
+	it("validates the exact immutable identity passed to the host verifier", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-operation-mutation-"));
+		directories.push(dir);
+		let checks = 0;
+		const authority = createSqliteIacRouteAuthority({
+			path: join(dir, "routes.sqlite"),
+			verifyOperation: () => {
+				checks++;
+				return true;
+			},
+		});
+		authorities.push(authority);
+		let reads = 0;
+		const input = {
+			get tenantId() {
+				return ++reads === 1 ? "tenant" : " invalid";
+			},
+			requestId: "request",
+			operationId,
+			authorization: "proof",
+		};
+		await expect(authority.claim(input)).rejects.toThrow();
+		expect(checks).toBe(0);
+	});
+
+	it("fails closed when recovery lineage exists but its operation mapping is missing", async () => {
+		const authority = connect();
+		const claim = await authority.claim({
+			tenantId: "tenant",
+			requestId: "first",
+			operationId,
+			authorization: "signed:first",
+		});
+		if (claim.status !== "claimed") throw new Error("missing claim");
+		const directory = directories.at(-1);
+		if (!directory) throw new Error("missing directory");
+		const db = new DatabaseSync(join(directory, "routes.sqlite"));
+		db.prepare("INSERT INTO iac_route_successors VALUES(?,?,?,?)").run(
+			"tenant",
+			operationId,
+			"first",
+			"successor",
+		);
+		// Simulate an inconsistent restore or corruption of the operation index.
+		db.exec("PRAGMA foreign_keys=OFF");
+		db.prepare(
+			"DELETE FROM iac_route_operations WHERE tenant=? AND operation_id=?",
+		).run("tenant", operationId);
+		db.close();
+		let effects = 0;
+		const result = await runIacRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "successor",
+			operation: { operationId, authorization: "signed:successor" },
+			run: async () => {
+				effects++;
+				throw new Error("must not execute");
+			},
+		});
+		expect(result.status).toBe("uncertain");
+		expect(effects).toBe(0);
+	});
 });

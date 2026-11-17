@@ -113,7 +113,8 @@ files on separate machines are independent ledgers; distributed deployments
 must provide a shared transactional implementation of `IacRouteAuthority`.
 Existing route rows created before operation identities must be individually
 bound by an authenticated claim for their original request; new routes for that
-tenant fail closed until every legacy row is bound. Provider and billing
+tenant fail closed until every legacy row is bound. Malformed identity inputs
+and inconsistent lineage mappings fail closed. Provider and billing
 authorities remain responsible for their own effects and financial holds. Reconciliation requires independent evidence that the old
 source cannot act again before authorizing a new request.
 

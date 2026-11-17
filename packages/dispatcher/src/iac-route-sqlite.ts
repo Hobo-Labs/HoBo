@@ -122,13 +122,35 @@ export function createSqliteIacRouteAuthority(options: {
 	return {
 		persistence: "durable-cas",
 		async claim(input) {
-			identity(input);
+			const tenant = Object.getOwnPropertyDescriptor(input, "tenantId");
+			const request = Object.getOwnPropertyDescriptor(input, "requestId");
+			const operation = Object.getOwnPropertyDescriptor(input, "operationId");
+			const authorization = Object.getOwnPropertyDescriptor(
+				input,
+				"authorization",
+			);
+			if (
+				!tenant ||
+				!("value" in tenant) ||
+				typeof tenant.value !== "string" ||
+				!request ||
+				!("value" in request) ||
+				typeof request.value !== "string" ||
+				!operation ||
+				!("value" in operation) ||
+				typeof operation.value !== "string" ||
+				!authorization ||
+				!("value" in authorization) ||
+				typeof authorization.value !== "string"
+			)
+				throw new TypeError("invalid route identity");
 			const stable = Object.freeze({
-				tenantId: input.tenantId,
-				requestId: input.requestId,
-				operationId: input.operationId,
-				authorization: input.authorization,
+				tenantId: tenant.value,
+				requestId: request.value,
+				operationId: operation.value,
+				authorization: authorization.value,
 			});
+			identity(stable);
 			if (
 				!routeDigest(stable.operationId) ||
 				!routeAuthorization(stable.authorization) ||
@@ -213,6 +235,8 @@ export function createSqliteIacRouteAuthority(options: {
 						}
 					}
 				} else {
+					if (lineage.length > 0)
+						throw new Error("operation lineage mapping is missing");
 					const legacy = database
 						.prepare("SELECT 1 FROM iac_routes WHERE tenant=? AND request=?")
 						.get(stable.tenantId, stable.requestId);
