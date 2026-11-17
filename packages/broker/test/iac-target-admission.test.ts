@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import {
 	createTargetPricingInventory,
 	quoteTargetPricing,
@@ -81,12 +81,15 @@ function fixture() {
 	return { inventory, pricing, evidence };
 }
 
-function authority(limit = 3_000_000) {
+function authority(limit = 3_000_000, settlementTrust = true) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-iac-budget-"));
 	directories.push(dir);
 	const ledger = createSqliteBudgetAdmissionAuthority({
 		path: join(dir, "budget.sqlite"),
 		now: () => NOW,
+		...(settlementTrust
+			? { iacPricedSettlementTrust: { verify: () => false } }
+			: undefined),
 		snapshot: create(BudgetLedgerSnapshotSchema, {
 			identity: {
 				tenantId: "tenant-a",
@@ -138,6 +141,24 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 }
 
 describe("provider-neutral IaC target budget admission", () => {
+	it("refuses a priced target before execution when settlement trust is absent", async () => {
+		const ledger = authority(3_000_000, false);
+		try {
+			const result = await admitIacTarget(
+				{ requestId: "no-settlement-trust", ...fixture() },
+				dependencies(ledger),
+			);
+			expect(result).toMatchObject({
+				status: "denied",
+				code: "budget.settlement-unavailable",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(ledger.lookup("iac:no-settlement-trust")).toBeUndefined();
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
 	it.each([
 		"null",
 		"missing-accounts",
@@ -485,6 +506,91 @@ describe("provider-neutral IaC target budget admission", () => {
 			ledger.close();
 		}
 	});
+
+	it("revalidates a priced service receipt against the exact durable claim", async () => {
+		const ledger = authority();
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("model missing");
+			const source = pricing.state.value;
+			const bindings = source.bindings.map((binding) => {
+				if (binding.candidateIndex === undefined)
+					throw new Error("binding missing");
+				return {
+					resourceId: binding.resourceId,
+					candidateIndex: binding.candidateIndex,
+				};
+			});
+			const deps = dependencies(ledger);
+			const financial = createIacFinancialServices({
+				...deps,
+				pricing: {
+					modelId: source.modelId,
+					revision: source.revision,
+					scenario: source.scenario,
+					bindings,
+				},
+				issueLiability: ({ priced }) => {
+					const copy = clone(IacTargetLiabilityEvidenceSchema, evidence);
+					copy.inventoryHash = priced.inventoryHash;
+					copy.modelHash = priced.modelHash;
+					copy.quoteHash = priced.quote.quoteHash;
+					return copy;
+				},
+			});
+			const plan = {
+				targetId: inventory.targetId,
+				tenantId: inventory.tenantId,
+				planDigest: inventory.planDigest,
+				evidenceRef: inventory.evidenceRef,
+				resources: inventory.resources,
+			};
+			const admission = await financial.admit("priced-service", plan);
+			expect(admission.status).toBe("admitted");
+			expect(await financial.revalidate(admission, plan)).toBe(true);
+			for (const value of [
+				false,
+				undefined,
+				null,
+				"true",
+				1,
+				{},
+				Promise.resolve("true"),
+			]) {
+				const bad = createIacFinancialServices({
+					authority: {
+						...ledger,
+						// SAFETY: model a malformed JavaScript authority at the trust boundary.
+						revalidatePriced: () => value as never,
+					},
+					now: () => NOW,
+					pricing: {
+						modelId: source.modelId,
+						revision: source.revision,
+						scenario: source.scenario,
+						bindings,
+					},
+				});
+				expect(await bad.revalidate(admission, plan)).toBe(false);
+				expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+			}
+			expect(
+				await financial.revalidate(
+					{ ...admission, quoteHash: `sha256:${"f".repeat(64)}` },
+					plan,
+				),
+			).toBe(false);
+			const state = ledger.read(NOW);
+			if (!state.identity) throw new Error("identity missing");
+			state.identity.policyRevision = "r2";
+			ledger.configure(state, state.seq, NOW);
+			expect(await financial.revalidate(admission, plan)).toBe(false);
+		} finally {
+			ledger.close();
+		}
+	});
+
 	it("refuses an unknown price before any financial hold is created", async () => {
 		const ledger = authority();
 		try {
@@ -517,6 +623,28 @@ describe("provider-neutral IaC target budget admission", () => {
 				reservation: { reservedMicros: 1_500_000 },
 			});
 			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+			const checked = {
+				reservationId: "iac:priced",
+				requestId: "priced",
+				targetId: "yard-a",
+				tenantId: "tenant-a",
+				requestDigest: result.requestDigest,
+				planDigest: request.inventory.planDigest,
+				inventoryHash: result.inventoryHash,
+				modelHash: result.modelHash,
+				quoteHash: result.quoteHash,
+				now: NOW,
+			};
+			expect(ledger.revalidatePriced(checked)).toBe(true);
+			expect(
+				ledger.revalidatePriced({
+					...checked,
+					modelHash: `sha256:${"f".repeat(64)}`,
+				}),
+			).toBe(false);
+			expect(ledger.revalidatePriced({ ...checked, targetId: "other" })).toBe(
+				false,
+			);
 			expect(await admitIacTarget(request, dependencies(ledger))).toMatchObject(
 				{ status: "replay", code: "EXECUTION_ALREADY_CLAIMED" },
 			);

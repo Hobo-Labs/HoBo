@@ -1,4 +1,4 @@
-import { create, fromJson, toJson } from "@bufbuild/protobuf";
+import { clone, create, fromJson, toJson } from "@bufbuild/protobuf";
 import {
 	type QuoteScenario,
 	QuoteScenarioSchema,
@@ -145,6 +145,33 @@ export function targetPricingUnavailable(
 	return create(TargetPricingAvailabilitySchema, {
 		state: { case: "unavailable", value: { reason } },
 	});
+}
+
+/** Hash a complete target independently of whether it has a pricing model. */
+export function hashTargetPricingInventory(
+	input: TargetPricingInventory,
+): string | undefined {
+	if (
+		!isBoundedPricingInput(input) ||
+		!isExactProtoMessage(TargetPricingInventorySchema, input)
+	)
+		return undefined;
+	try {
+		const inventory = clone(TargetPricingInventorySchema, input);
+		const validation = quoteTargetPricing(
+			inventory,
+			targetPricingUnavailable("not priced"),
+		);
+		if (validation.ok || validation.code !== "PRICING_MODEL_UNAVAILABLE")
+			return undefined;
+		return stableHash(
+			toJson(TargetPricingInventorySchema, inventory, {
+				alwaysEmitImplicit: true,
+			}),
+		);
+	} catch {
+		return undefined;
+	}
 }
 
 export function targetPricingModel(

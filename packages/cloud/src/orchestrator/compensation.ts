@@ -2,11 +2,7 @@ import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
 import type { ActorHost } from "@hobo/data";
 import { emit } from "@hobo/events";
 
-import {
-	CLOUD_EVENTS,
-	deploymentRolledBack,
-	resourceDestroying,
-} from "../events.js";
+import { CLOUD_EVENTS, deploymentRolledBack } from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
 import type { DeploymentPlan } from "../plan-types.js";
 import { collectStream, currentFenceToken } from "../store/index.js";
@@ -31,6 +27,7 @@ export interface CompensationDeps {
 	actorHost: ActorHost;
 	executor: Executor;
 	broker: CredentialBroker;
+	verifyResume?: ResourceActorDeps["verifyResume"];
 }
 
 export interface CompensationContext {
@@ -149,6 +146,8 @@ export async function runCompensation(
 		executor: deps.executor,
 		broker: deps.broker,
 	};
+	if (deps.verifyResume !== undefined)
+		actorDeps.verifyResume = deps.verifyResume;
 	const byName = new Map(plan.resources.map((r) => [r.name, r]));
 	const destroyedOrder: string[] = [];
 
@@ -172,7 +171,12 @@ export async function runCompensation(
 			if (state === "Destroyed") continue;
 			// Only compensate resources that actually got provisioned (an
 			// interrupted in-place update still exists at the provider).
-			if (state !== "Provisioned" && state !== "Updating") continue;
+			if (
+				state !== "Provisioned" &&
+				state !== "Updating" &&
+				state !== "Destroying"
+			)
+				continue;
 
 			// Gate: all dependents must already be Destroyed (reverse order).
 			const liveDependents = dependentsOf(plan, resourceId).filter((depId) => {
@@ -184,28 +188,7 @@ export async function runCompensation(
 			const resource = byName.get(resourceId);
 			if (!resource) continue;
 
-			// resource.Destroying (durable boundary), then Executor destroy → Destroyed.
-			const beforeEvents = await collectStream(deps.store, stream);
-			const last = beforeEvents[beforeEvents.length - 1];
-			const lastSeq = last === undefined ? 0 : last.seq;
-			const fenceToken = currentFenceToken(deps.store, stream);
-			await emit(
-				deps.store,
-				stream,
-				[
-					resourceDestroying({
-						deploymentId,
-						resourceId,
-						reason: "rollback-compensation",
-					}),
-				],
-				{
-					expectedSeq: lastSeq,
-					...(fenceToken !== undefined ? { fenceToken } : undefined),
-					...appendOpts,
-				},
-			);
-
+			// The resource actor writes the durable destroy identity under its lease.
 			const outcome = await destroyResource(
 				actorDeps,
 				{ ...resource, deploymentId },
@@ -213,6 +196,7 @@ export async function runCompensation(
 					deploymentId,
 					tenant: ctx.tenant,
 					actor: ctx.actor,
+					destroyReason: "rollback-compensation",
 					...(ctx.correlationId !== undefined
 						? { correlationId: ctx.correlationId }
 						: undefined),

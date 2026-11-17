@@ -23,6 +23,7 @@ import {
 	TargetPricingInventorySchema,
 } from "@hobo/pricing";
 import {
+	IacPricingPinSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetAdmissionDecisionSchema,
 	type IacTargetLiabilityEvidence,
@@ -548,13 +549,27 @@ export async function admitIacTarget(
 			reservationId,
 			requestDigest,
 			quote,
+			iacPricingPin: create(IacPricingPinSchema, {
+				planDigest: inventory.planDigest,
+				inventoryHash: priced.inventoryHash,
+				modelHash: priced.modelHash,
+				quoteHash: priced.quote.quoteHash,
+				evidenceHash,
+				validUntil: quote.validUntil,
+			}),
 			identity: ledger.identity,
 			expectedSeq: ledger.seq,
 			now: deps.now(),
 		});
 	} catch (error) {
 		if (error instanceof BudgetAdmissionDeniedError)
-			return denial(requestId, targetId, error.code, error.message, false);
+			return denial(
+				requestId,
+				targetId,
+				error.code,
+				error.message,
+				error.code === "budget.settlement-unavailable",
+			);
 		// A persistence failure may have committed despite a lost acknowledgement.
 		return uncertain(
 			requestId,

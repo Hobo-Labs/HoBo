@@ -218,6 +218,7 @@ message IacProgram {
   string action = 6;               // "preview" | "apply" | "destroy"
   string stack_name = 7;           // per-resource stack key: tenant/deployment/resource
   ResourcePlan resource = 8;       // desired declaration to realize, when supplied
+  optional string operation_generation = 9; // persisted before provider work, reused on retry
 }
 
 // A short-lived, capability-scoped token injected per-exec (control-plane.md:
@@ -280,6 +281,7 @@ message ResourceProvisioningRecord {
   optional string spec_hash = 5;
   // Provider that may have received the apply; absent on legacy facts.
   optional string provider_id = 6;
+  optional string operation_generation = 7; // absent on legacy in-flight operations
 }
 
 // resource.Provisioned: apply ok, outputs recorded (unblocks dependents).
@@ -328,6 +330,9 @@ message ResourceDestroyingRecord {
   string deployment_id = 1;
   string resource_id = 2;
   string reason = 3;
+  optional string operation_generation = 4;
+  optional string program_hash = 5;
+  optional string spec_hash = 6;
 }
 
 // resource.Destroyed: compensation applied; slice removed.

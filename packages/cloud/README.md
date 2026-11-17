@@ -23,6 +23,19 @@ read-only provider cannot satisfy a write request. The SDK/CLI planner tests
 cover collection and selection; provider authorization and realization still
 require the provider's own conformance and contract evidence.
 
+Before apply or destroy, the resource actor records a fresh operation generation
+and the exact program and desired-spec hashes in the deployment stream. It
+passes that generation through the generic IaC program to the executor and
+only reuses it on crash recovery when the trusted host verifies that the exact
+generation cannot overlap or duplicate a prior effect. A changed or legacy
+in-flight operation, or one without that guarantee, enters reconciliation. A
+trusted route issuer must bind the generation to its tenant,
+deployment, resource and action, and fence prior uncertain effects before
+authorizing a successor.
+The resume verifier is a trusted host boundary: a point-in-time status check
+alone is insufficient unless credentials or the provider enforce that fence
+through the resumed operation.
+
 An IaC provider can mark an error `requiresReconciliation` when a financial
 claim or provider operation may have taken effect. The executor records the
 operation and any reservation ID. The resource actor persists
@@ -33,6 +46,10 @@ outcome is reconciled.
 That guard also follows resources removed from a later deployment plan.
 Nonterminal resource and deployment events cannot clear an unresolved outcome
 from the actor, deployment view, or topology view during replay.
+An unclassified error after the executor invokes apply or destroy is also
+uncertain. A retryable pre-effect denial must carry both
+`requiresReconciliation: false` and `executionOutcome: "not-started"`;
+the host must only inject providers that can substantiate that assertion.
 
 `resolveResourceReconciliation` records an operator's verified outcome against
 the exact uncertain event. The host authorizes the operator and supplies separate trusted verifiers for
