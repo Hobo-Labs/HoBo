@@ -59,6 +59,9 @@ its `.hobo/ci.json` must turn `relayJobs.answer` on for the label and the node
 must serve its account, whose facts and journal the answer then uses.
 Otherwise the job fails with a sentence saying relay mode is not on for that
 repository; it is never routed with another account's machines or spend.
+A known limit of this fallback: in a mesh where another node serves that
+repository's account, this node still fails the job, since it cannot hand an
+offer over. The failure says to run the job again, so that node can answer it.
 
 A job that asked for the relay label but names no relay
 input, and is not made only of check steps, fails with a sentence saying a

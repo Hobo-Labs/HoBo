@@ -771,6 +771,7 @@ describe("relay mode answers each repository only as it asks", () => {
 		expect(refused.annotations[0]).toMatch(
 			/Relay mode is not on for octo\/other/u,
 		);
+		expect(refused.annotations[0]).toMatch(/Run the job again/u);
 		expect(refused.outputs.get("runner")).toBeUndefined();
 		expect(job(sim, "route", mine.runId).conclusion).toBe("success");
 		expect(await decisions(node)).toHaveLength(1);

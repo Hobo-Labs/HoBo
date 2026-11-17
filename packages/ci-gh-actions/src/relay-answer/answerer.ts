@@ -672,7 +672,7 @@ class Answerer {
 		if (accountId === undefined)
 			return {
 				kind: "refuse",
-				reason: `Relay mode is not on for ${repository}: this relay serves no HoBo account for it. Connect the repository to the relay, or give the job a runs-on label of a runner.`,
+				reason: `Relay mode is not on for ${repository}: this relay node serves no HoBo account for it. Run the job again so a node that serves it can answer, connect the repository to the relay, or give the job a runs-on label of a runner.`,
 			};
 		const file = new GithubCiFile(this.options.github, job.installationId);
 		let jobs: RelayJobsConfig;
