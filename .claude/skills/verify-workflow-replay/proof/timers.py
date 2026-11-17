@@ -52,3 +52,19 @@ prove(
     [0 <= cursor, cursor < n, n == m, prefix(n)],
     Select(journal, cursor) == Select(requested, cursor),
 )
+
+start = Int("start")
+delay = Int("delay")
+now = Int("now")
+deadline = start + delay
+reached = now >= start if os.environ.get("TIMER_PROOF_MUTATION") == "omit-deadline-check" else now >= deadline
+prove(
+    "a reached deadline implies the full delay elapsed",
+    [0 <= start, 0 <= delay, reached],
+    now - start >= delay,
+)
+prove(
+    "an unreached deadline has positive remaining time",
+    [now < deadline],
+    deadline - now > 0,
+)
