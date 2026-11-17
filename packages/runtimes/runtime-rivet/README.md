@@ -187,3 +187,11 @@ real bus actor and client. It reports each remaining case as unknown before
 dispatch because it lacks the required process/fault controls or configurable
 profile. Its in-memory stores and test credentials do not prove deployment
 isolation, process recovery or a host fence.
+
+A separate fixture hosts the same actor and client in a child process, checks
+that the process exits on termination, and reopens the same SQLite files. It
+also drops selected replies only after a committed response. The generic test
+reports its supported cases individually and leaves unavailable fault, race and
+profile cases unknown. This exercises a local process boundary, not a Rivet
+engine crash, production ingress, distributed ownership or independently
+verified fault placement.
