@@ -3468,6 +3468,9 @@ importers:
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local
+      '@hobo/wit':
+        specifier: workspace:*
+        version: link:../wit
     devDependencies:
       '@types/node':
         specifier: ^22.15.29

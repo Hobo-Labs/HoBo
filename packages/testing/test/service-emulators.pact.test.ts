@@ -47,6 +47,8 @@ it("verifies the service emulator consumer pact against the running harness", as
 			credentials: { kind: "secret" },
 			orders: { kind: "data" },
 			nightly: { kind: "schedule" },
+			cache: { kind: "kv" },
+			files: { kind: "bucket" },
 		},
 		handlers: {},
 	});
@@ -67,6 +69,47 @@ it("verifies the service emulator consumer pact against the running harness", as
 					return { status: 200 };
 				}
 				const body = request.body;
+				if (
+					request.method === "POST" &&
+					(request.path === "/kv/cache" || request.path === "/bucket/files") &&
+					typeof body === "object" &&
+					body !== null &&
+					"value" in body &&
+					typeof body.value === "string"
+				) {
+					const bytes = new TextEncoder().encode(body.value);
+					if (request.path === "/kv/cache") {
+						const kv = graph.kv("cache");
+						kv.set({ key: "item", value: bytes });
+						return {
+							status: 200,
+							body: {
+								fidelity: graph.resource("cache").fidelity,
+								value: new TextDecoder().decode(kv.get("item")),
+							},
+						};
+					}
+					const bucket = graph.bucket("files");
+					bucket.put(
+						{
+							name: "item",
+							contentType: "text/plain",
+							digest: "fixture",
+							size: BigInt(bytes.length),
+						},
+						bytes,
+					);
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("files").fidelity,
+							size: Number(bucket.get("item")?.size),
+							value: new TextDecoder().decode(
+								graph.bucketInspector("files")?.readBody("item"),
+							),
+						},
+					};
+				}
 				if (
 					request.method === "POST" &&
 					request.path === "/schedule/nightly" &&
