@@ -88,6 +88,10 @@ new request ID only after an operator has reconciled any uncertain prior work.
 `inspect` exposes the bounded target/inventory history without claim secrets.
 The attempt permit is a capability: protect it as a credential and verify it
 with the same authority before admitting and starting a provider effect.
+The adapter must atomically consume each permit once before admission; an
+unknown consume acknowledgement cannot be retried. Before upgrading a host from
+an older route authority, stop and fence older executors: legacy permits are
+marked consumed on migration, but an older executable cannot enforce that rule.
 
 The host must authenticate the tenant, restrict access to authority mutation,
 and route *every* entry point for one request through the same durable CAS

@@ -48,9 +48,31 @@ export function createSqliteIacRouteAuthority(options: {
 			tenant TEXT NOT NULL, request TEXT NOT NULL, attempt TEXT NOT NULL,
 			target TEXT NOT NULL, inventory_hash TEXT NOT NULL, ordinal INTEGER NOT NULL,
 			status TEXT NOT NULL CHECK(status IN ('running','denied','finished')),
+			consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)),
 			PRIMARY KEY (tenant, request, attempt), UNIQUE(tenant, request, ordinal),
 			FOREIGN KEY (tenant,request) REFERENCES iac_routes(tenant,request)
 		);`);
+	// Serialize upgrades; pre-upgrade live permits may already be in use.
+	database.exec("BEGIN IMMEDIATE");
+	try {
+		const columns = database
+			.prepare("PRAGMA table_info(iac_route_attempts)")
+			.all();
+		if (!columns.some((column) => column.name === "consumed")) {
+			database.exec(
+				"ALTER TABLE iac_route_attempts ADD COLUMN consumed INTEGER NOT NULL DEFAULT 1 CHECK(consumed IN (0,1))",
+			);
+		}
+		database.exec("COMMIT");
+	} catch (error) {
+		try {
+			database.exec("ROLLBACK");
+		} catch {
+			/* Preserve the migration error. */
+		}
+		database.close();
+		throw error;
+	}
 	function transaction<T>(run: () => T): T {
 		database.exec("BEGIN IMMEDIATE");
 		try {
@@ -235,7 +257,7 @@ export function createSqliteIacRouteAuthority(options: {
 				};
 				database
 					.prepare(
-						"INSERT INTO iac_route_attempts(tenant,request,attempt,target,inventory_hash,ordinal,status) VALUES(?,?,?,?,?,?,'running')",
+						"INSERT INTO iac_route_attempts(tenant,request,attempt,target,inventory_hash,ordinal,status,consumed) VALUES(?,?,?,?,?,?,'running',0)",
 					)
 					.run(
 						input.tenantId,
@@ -326,6 +348,15 @@ export function createSqliteIacRouteAuthority(options: {
 						row.target !== outcome.targetId)
 				)
 					throw new Error("route outcome does not match active attempt");
+				if (outcome.status === "selected") {
+					const attempt = database
+						.prepare(
+							"SELECT consumed FROM iac_route_attempts WHERE tenant=? AND request=? AND attempt=? AND status='running'",
+						)
+						.get(input.tenantId, input.requestId, row.active_attempt);
+					if (attempt?.consumed !== 1)
+						throw new Error("route attempt was not consumed");
+				}
 				if (row.active_attempt !== null)
 					database
 						.prepare(
@@ -338,6 +369,23 @@ export function createSqliteIacRouteAuthority(options: {
 					)
 					.run(encoded, input.tenantId, input.requestId);
 				return { status: "finished" as const, outcome };
+			});
+		},
+		consumeAttempt(permit) {
+			if (!permitValid(permit)) return false;
+			return transaction(() => {
+				const updated = database
+					.prepare(
+						`UPDATE iac_route_attempts SET consumed=1 WHERE tenant=? AND request=? AND attempt=? AND target=? AND inventory_hash=? AND status='running' AND consumed=0 AND EXISTS (SELECT 1 FROM iac_routes r WHERE r.tenant=iac_route_attempts.tenant AND r.request=iac_route_attempts.request AND r.phase='running' AND r.active_attempt=iac_route_attempts.attempt)`,
+					)
+					.run(
+						permit.tenantId,
+						permit.requestId,
+						permit.attemptId,
+						permit.targetId,
+						permit.inventoryHash,
+					);
+				return updated.changes === 1;
 			});
 		},
 		verifyAttempt(permit) {

@@ -1,8 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDirectRoutePort, runIacRoute } from "../src/iac-route.js";
+import {
+	createDirectRoutePort,
+	type IacRoutePermit,
+	runIacRoute,
+} from "../src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../src/iac-route-sqlite.js";
 
 const hash = `sha256:${"a".repeat(64)}`;
@@ -49,6 +54,7 @@ describe("durable shared IaC route claims", () => {
 					inventoryHash: hash,
 				});
 				expect(await second.authority.verifyAttempt(permit)).toBe(true);
+				expect(await first.authority.consumeAttempt(permit)).toBe(true);
 				calls++;
 				started?.();
 				await waiting;
@@ -106,6 +112,7 @@ describe("durable shared IaC route claims", () => {
 					inventoryHash: hash,
 				});
 				expect(await authority.verifyAttempt(b)).toBe(true);
+				expect(await authority.consumeAttempt(b)).toBe(true);
 				return { value: "b", outcome: { status: "selected", targetId: "b" } };
 			},
 		});
@@ -161,7 +168,11 @@ describe("durable shared IaC route claims", () => {
 			tenantId: "tenant",
 			requestId: "lost",
 			run: async (route) => {
-				await route.beginAttempt({ targetId: "a", inventoryHash: hash });
+				const permit = await route.beginAttempt({
+					targetId: "a",
+					inventoryHash: hash,
+				});
+				expect(await authority.consumeAttempt(permit)).toBe(true);
 				calls++;
 				return { value: "ok", outcome: { status: "selected", targetId: "a" } };
 			},
@@ -192,6 +203,7 @@ describe("durable shared IaC route claims", () => {
 					targetId: "a",
 					inventoryHash: hash,
 				});
+				expect(await authority.consumeAttempt(permit)).toBe(true);
 				for (const changed of [
 					{ ...permit, tenantId: "other" },
 					{ ...permit, requestId: "other" },
@@ -305,6 +317,7 @@ describe("durable shared IaC route claims", () => {
 			},
 			async ({ permit }) => {
 				expect(await direct.verifyAttempt(permit)).toBe(true);
+				expect(await direct.consumeAttempt(permit)).toBe(true);
 				return {
 					value: "done",
 					outcome: { status: "selected", targetId: "a" },
@@ -324,5 +337,82 @@ describe("durable shared IaC route claims", () => {
 		});
 		expect(retry.status).toBe("replay");
 		expect(calls).toBe(0);
+	});
+
+	it("allows exactly one handoff of a permit across independent connections", async () => {
+		const first = connect();
+		const second = connect(first.path);
+		const direct = createDirectRoutePort({
+			authority: second.authority,
+			hashInventory: () => hash,
+		});
+		let oldPermit: IacRoutePermit | undefined;
+		const result = await runIacRoute({
+			authority: first.authority,
+			tenantId: "tenant",
+			requestId: "once",
+			run: async (route) => {
+				const permit = await route.beginAttempt({
+					targetId: "a",
+					inventoryHash: hash,
+				});
+				oldPermit = permit;
+				const handoffs = await Promise.all([
+					first.authority.consumeAttempt(permit),
+					direct.consumeAttempt(permit),
+				]);
+				expect(handoffs.filter(Boolean)).toHaveLength(1);
+				expect(await second.authority.verifyAttempt(permit)).toBe(true);
+				return { value: "ok", outcome: { status: "selected", targetId: "a" } };
+			},
+		});
+		expect(result.status).toBe("executed");
+		if (oldPermit === undefined) throw new Error("permit missing");
+		expect(await first.authority.verifyAttempt(oldPermit)).toBe(false);
+		expect(await second.authority.consumeAttempt(oldPermit)).toBe(false);
+	});
+
+	it("upgrades old running attempts without reauthorizing their capabilities", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-route-upgrade-"));
+		directories.push(directory);
+		const path = join(directory, "routes.sqlite");
+		const db = new DatabaseSync(path);
+		db.exec(`CREATE TABLE iac_routes(tenant TEXT NOT NULL,request TEXT NOT NULL,claim_token TEXT NOT NULL,phase TEXT NOT NULL,active_attempt TEXT,target TEXT,outcome TEXT,PRIMARY KEY(tenant,request));
+		CREATE TABLE iac_route_attempts(tenant TEXT NOT NULL,request TEXT NOT NULL,attempt TEXT NOT NULL,target TEXT NOT NULL,inventory_hash TEXT NOT NULL,ordinal INTEGER NOT NULL,status TEXT NOT NULL,PRIMARY KEY(tenant,request,attempt),UNIQUE(tenant,request,ordinal));`);
+		const permit = {
+			tenantId: "tenant",
+			requestId: "old",
+			targetId: "a",
+			inventoryHash: hash,
+			attemptId: "A".repeat(43),
+		};
+		db.prepare("INSERT INTO iac_routes VALUES(?,?,?,'running',?,?,NULL)").run(
+			"tenant",
+			"old",
+			"B".repeat(43),
+			permit.attemptId,
+			"a",
+		);
+		db.prepare(
+			"INSERT INTO iac_route_attempts VALUES(?,?,?,?,?,1,'running')",
+		).run("tenant", "old", permit.attemptId, "a", hash);
+		db.close();
+		const { authority } = connect(path);
+		expect(await authority.verifyAttempt(permit)).toBe(true);
+		expect(await authority.consumeAttempt(permit)).toBe(false);
+		const fresh = await runIacRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "new",
+			run: async (route) => {
+				const created = await route.beginAttempt({
+					targetId: "b",
+					inventoryHash: hash,
+				});
+				expect(await authority.consumeAttempt(created)).toBe(true);
+				return { value: "ok", outcome: { status: "selected", targetId: "b" } };
+			},
+		});
+		expect(fresh.status).toBe("executed");
 	});
 });

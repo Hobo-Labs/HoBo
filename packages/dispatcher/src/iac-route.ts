@@ -69,6 +69,8 @@ export interface IacRouteAuthority {
 		readonly status: "finished";
 		readonly outcome: IacRouteOutcome;
 	}>;
+	/** Atomically consume an attempt capability exactly once before admission. */
+	consumeAttempt(permit: IacRoutePermit): MaybePromise<boolean>;
 	verifyAttempt(permit: IacRoutePermit): MaybePromise<boolean>;
 }
 
@@ -338,6 +340,8 @@ export function createDirectRoutePort<Plan>(options: {
 	return Object.freeze({
 		persistence: "durable-cas" as const,
 		verifyAttempt: (permit: IacRoutePermit) => authority.verifyAttempt(permit),
+		consumeAttempt: (permit: IacRoutePermit) =>
+			authority.consumeAttempt(permit),
 		async runDirect<T>(
 			input: IacRouteIdentity & {
 				readonly targetId: string;
