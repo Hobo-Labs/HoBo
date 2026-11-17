@@ -34,6 +34,14 @@ function application() {
 		kind: "web",
 		actorName: "web",
 		sourceDigest: `sha256:${"a".repeat(64)}`,
+		sourceFence: {
+			sourceDigest: `sha256:${"a".repeat(64)}`,
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			proofRef: "host:immutable-source",
+			verify(claim) {
+				return this.sourceDigest === claim.sourceDigest;
+			},
+		},
 		registry,
 		binding,
 		verifySource: () => true,
@@ -80,17 +88,20 @@ describe("Rivet native application binding", () => {
 				}),
 			),
 		);
-		const pool = Layer.succeed(PoolHost, {
+		const pool: PoolHost["Service"] = {
 			deployExternal: (input) =>
 				Effect.sync(() => {
 					deploys.push(input.main);
 				}),
 			deployCrate: () => Effect.void,
-		});
+		};
 		const stack = Stack(
 			"App",
-			{ providers: Layer.merge(registry, pool), state: inMemoryState() },
-			program.pipe(Effect.map(() => ({}))),
+			{ providers: registry, state: inMemoryState() },
+			program.pipe(
+				Effect.provideService(PoolHost, pool),
+				Effect.map(() => ({})),
+			),
 		);
 		const directory = mkdtempSync(join(tmpdir(), "hobo-rivet-alchemy-"));
 		const previousHome = process.env.ALCHEMY_HOME;
@@ -100,6 +111,24 @@ describe("Rivet native application binding", () => {
 				stack,
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: directory,
+				composite: {
+					proofRef: "host:immutable-source",
+					environmentDigest: `sha256:${"b".repeat(64)}`,
+					sourceRequirements: [
+						{
+							resourceId: "web",
+							resourceType: "Rivet.DurableObject",
+							bindleName: "app",
+							applicationName: "web",
+							sourceKind: "rivet-http",
+							sourcePath: source.main,
+						},
+					],
+					verifyEnvironment: () => true,
+					verifyPlan: ({ sourceClaims }) =>
+						sourceClaims.length === 1 &&
+						sourceClaims[0]?.sourcePath === source.main,
+				},
 				target: alchemyTarget({
 					targetId: "yard",
 					tenantId: "tenant",
@@ -123,6 +152,7 @@ describe("Rivet native application binding", () => {
 					admit: async () => {
 						throw new Error("unexpected admission");
 					},
+					revalidate: () => true,
 					uncertain: () => {},
 				},
 			});
@@ -179,6 +209,28 @@ describe("Rivet native application binding", () => {
 			);
 			expect(result.status).toBe(403);
 		}
+	});
+
+	it("captures actor options once before validating and authorizing", async () => {
+		let nameReads = 0;
+		let authorizationReads = 0;
+		const binding = createRivetHttpActor({
+			get actorName() {
+				return ++nameReads === 1 ? "web" : "other";
+			},
+			entrypoint: handler,
+			get authorize() {
+				return ++authorizationReads === 1 ? () => false : () => true;
+			},
+		});
+		expect(binding.actorName).toBe("web");
+		const response = await binding.handle(
+			{ name: "web", key: ["tenant"], vars: {} },
+			new Request("https://example.test/"),
+		);
+		expect(response.status).toBe(403);
+		expect(nameReads).toBe(1);
+		expect(authorizationReads).toBe(1);
 	});
 
 	it("authorizes from copied request metadata without duplicating the application body", async () => {
@@ -420,7 +472,7 @@ describe("Rivet native application binding", () => {
 	});
 
 	it("refuses a source registry that does not actually contain the bound actor", () => {
-		const { binding } = application();
+		const { binding, source } = application();
 		const registry = setup({
 			use: { web: actor({ actions: {} }) },
 			noWelcome: true,
@@ -432,6 +484,7 @@ describe("Rivet native application binding", () => {
 				kind: "web",
 				actorName: "web",
 				sourceDigest: `sha256:${"a".repeat(64)}`,
+				sourceFence: source.sourceFence,
 				registry,
 				binding,
 				verifySource: () => true,
@@ -506,7 +559,10 @@ describe("Rivet native application binding", () => {
 		};
 		expect(() => mappers.web.validate(input)).not.toThrow();
 		expect(() =>
-			mappers.web.validate({ ...input, entrypoint: () => handler }),
+			mappers.web.validate({
+				...input,
+				entrypoint: () => (request: Request) => new Response(request.url),
+			}),
 		).toThrow("RIVET_SOURCE_MISMATCH");
 		expect(() =>
 			mappers.web.validate({

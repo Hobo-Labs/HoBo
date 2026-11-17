@@ -92,8 +92,12 @@ const app = createRivetHttpActor({
 	actorName: "web",
 	entrypoint: () => {
 		let requests = 0;
-		return (request) =>
-			new Response(`app:${new URL(request.url).pathname}:${++requests}`);
+		return async (request) => {
+			const body = request.method === "POST" ? `:${await request.text()}` : "";
+			return new Response(
+				`app:${new URL(request.url).pathname}:${++requests}${body}`,
+			);
+		};
 	},
 	authorize: ({ actorKey }) => actorKey[0] !== "tenant-b",
 });
@@ -145,6 +149,15 @@ try {
 		throw new Error(
 			"Rivet did not preserve the application for the same actor",
 		);
+	const posted = await client.web.getOrCreate(["tenant-a"]).fetch("/post", {
+		method: "POST",
+		body: "streamed request body",
+	});
+	if (
+		posted.status !== 200 ||
+		(await posted.text()) !== "app:/post:3:streamed request body"
+	)
+		throw new Error("Rivet did not deliver the transferred request body");
 	const other = await client.web.getOrCreate(["tenant-c"]).fetch("/hello");
 	if (other.status !== 200 || (await other.text()) !== "app:/hello:1")
 		throw new Error("Rivet shared the application between actors");

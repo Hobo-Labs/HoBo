@@ -23,6 +23,16 @@ URL and headers before starting application code. It transfers the request
 body stream to the application without buffering it; callers must not consume
 the original stream after handoff. The authorization callback does not inspect
 or authenticate the body.
+Each Rivet source also needs an `AlchemySourceFence` and a matching entry in
+the composite guard's `sourceRequirements`. The trusted host must keep the
+reviewed source, complete dependency closure, module cache, build toolchain and
+uploaded artifact immutable through provider completion. Its verifier checks
+the exact source claim and whether that fence remains active. The adapter
+rechecks the claim before pool declaration, during planning and before provider
+apply; a failed check after admission retains the reservation for reconciliation.
+For a reconstructed deletion, the host must independently authenticate the
+prior resource state and compare its `hashAlchemyPriorState` digest with the
+historical source observation before approving the plan.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.

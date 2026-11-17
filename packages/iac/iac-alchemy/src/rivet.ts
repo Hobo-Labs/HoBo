@@ -1,6 +1,6 @@
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { DurableObject, type Providers } from "@alchemy.run/rivet";
-import type { PoolHost } from "@alchemy.run/rivet/Host";
+import { PoolHost } from "@alchemy.run/rivet/Host";
 import type { ResourceLike } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import type { AnyActorDefinition } from "rivetkit";
@@ -11,6 +11,13 @@ import {
 	type RivetHttpBinding,
 	type RivetHttpEntrypoint,
 } from "./rivet-runtime.js";
+import {
+	type AlchemySourceClaim,
+	type AlchemySourceFence,
+	captureAlchemySourceFence,
+	registerAlchemySource,
+	verifyAlchemySourceFence,
+} from "./source-fence.js";
 
 export interface RivetRegistry {
 	readonly config: {
@@ -25,6 +32,8 @@ export interface RivetHttpSource<Entrypoint extends RivetHttpEntrypoint> {
 	readonly actorName: string;
 	/** Independently verified by the host and bound to the reviewed target. */
 	readonly sourceDigest: string;
+	/** Host-enforced immutable source, dependency, toolchain and artifact fence. */
+	readonly sourceFence: AlchemySourceFence;
 	readonly registry: RivetRegistry;
 	readonly binding: RivetHttpBinding<Entrypoint>;
 	/** Independently verify that the reviewed module exports and starts this exact registry. */
@@ -51,7 +60,14 @@ function name(value: string): boolean {
 export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 	input: RivetHttpSource<Entrypoint>,
 ): RivetHttpSource<Entrypoint> {
-	const source = Object.freeze({ ...input });
+	const snapshot = Object.freeze({ ...input });
+	const fence = captureAlchemySourceFence(snapshot.sourceFence);
+	if (fence === undefined || fence.sourceDigest !== snapshot.sourceDigest)
+		throw new AlchemyIacError(
+			"RIVET_SOURCE_UNVERIFIED",
+			"an immutable source fence bound to the reviewed digest is required",
+		);
+	const source = Object.freeze({ ...snapshot, sourceFence: fence });
 	if (
 		!isAbsolute(source.main) ||
 		source.main.length > 4096 ||
@@ -120,8 +136,36 @@ export function createRivetPrimitiveMappers<
 	Requirements,
 >(sourceInput: RivetHttpSource<Entrypoint>) {
 	const source = bindRivetHttpSource(sourceInput);
-	const validate = (input: ValidationInput<Entrypoint, Requirements>): void => {
+	const sourceClaim = (
+		input: ValidationInput<Entrypoint, Requirements>,
+	): AlchemySourceClaim =>
+		Object.freeze({
+			resourceId: input.declaration.name,
+			resourceType: "Rivet.DurableObject",
+			bindleName: input.bindleName,
+			applicationName: source.resourceName,
+			sourceKind: "rivet-http",
+			sourcePath: resolve(source.main),
+			sourceDigest: source.sourceDigest,
+			environmentDigest: source.sourceFence.environmentDigest,
+			proofRef: source.sourceFence.proofRef,
+		});
+	const checkSource = (claim: AlchemySourceClaim): void => {
 		bindRivetHttpSource(source);
+		let verified = false;
+		try {
+			verified = verifyAlchemySourceFence(source.sourceFence, claim);
+		} catch {
+			// The verifier is a trusted host boundary; its failure denies deployment.
+		}
+		if (verified !== true)
+			throw new AlchemyIacError(
+				"RIVET_SOURCE_UNVERIFIED",
+				"the immutable source and artifact fence could not be verified",
+			);
+	};
+	const validate = (input: ValidationInput<Entrypoint, Requirements>): void => {
+		checkSource(sourceClaim(input));
 		if (
 			input.declaration.name !== source.resourceName ||
 			input.declaration.kind !== source.kind ||
@@ -190,9 +234,54 @@ export function createRivetPrimitiveMappers<
 						"RIVET_DEPENDENCY_UNSUPPORTED",
 						"external RivetKit programs do not have Alchemy resource bindings",
 					);
+				const claim = sourceClaim(input);
+				const host = yield* PoolHost;
+				let registered: object | undefined;
+				const protectedHost: PoolHost["Service"] = {
+					deployExternal: ({ id, main, resource }) =>
+						Effect.gen(function* () {
+							if (
+								registered !== undefined ||
+								id !== claim.resourceId ||
+								main !== claim.sourcePath ||
+								resource.FQN !== claim.resourceId ||
+								resource.Type !== claim.resourceType
+							)
+								throw new AlchemyIacError(
+									"RIVET_SOURCE_MISMATCH",
+									"pool deployment does not match its source claim",
+								);
+							checkSource(claim);
+							registerAlchemySource(resource, {
+								claim,
+								verify: (value) =>
+									verifyAlchemySourceFence(source.sourceFence, value),
+							});
+							registered = resource;
+							yield* host.deployExternal(Object.freeze({ id, main, resource }));
+							checkSource(claim);
+						}),
+					deployCrate: (object) => host.deployCrate(object),
+				};
 				const primary = yield* DurableObject(input.declaration.name, {
 					main: source.main,
-				});
+				}).pipe(Effect.provideService(PoolHost, protectedHost));
+				if (
+					primary.FQN !== claim.resourceId ||
+					primary.Type !== claim.resourceType ||
+					(registered !== undefined && registered !== primary)
+				)
+					throw new AlchemyIacError(
+						"RIVET_SOURCE_MISMATCH",
+						"the primary resource does not match its source claim",
+					);
+				if (registered === undefined)
+					registerAlchemySource(primary, {
+						claim,
+						verify: (value) =>
+							verifyAlchemySourceFence(source.sourceFence, value),
+					});
+				checkSource(claim);
 				return {
 					primary,
 					resources: [primary],

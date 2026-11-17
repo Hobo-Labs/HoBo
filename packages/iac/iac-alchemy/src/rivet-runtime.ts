@@ -63,15 +63,15 @@ export function createRivetHttpActor<
 		readonly request: RivetAuthorizationRequest;
 	}) => boolean | Promise<boolean>;
 }): RivetHttpBinding<Entrypoint> {
+	const { actorName, entrypoint, authorize } = options;
 	if (
-		!name(options.actorName) ||
-		typeof options.entrypoint !== "function" ||
-		typeof options.authorize !== "function"
+		!name(actorName) ||
+		typeof entrypoint !== "function" ||
+		typeof authorize !== "function"
 	)
 		throw new TypeError(
 			"a named Rivet actor, application entrypoint and host authorization are required",
 		);
-	const { actorName, entrypoint, authorize } = options;
 	const createVars = () => ({});
 	const applications = new WeakMap<object, { readonly value: unknown }>();
 	const handle = async (

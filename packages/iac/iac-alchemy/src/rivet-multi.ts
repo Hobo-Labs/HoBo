@@ -7,6 +7,7 @@ import {
 	type RivetHttpSource,
 } from "./rivet.js";
 import type { RivetHttpEntrypoint } from "./rivet-runtime.js";
+import { verifyAlchemySourceFence } from "./source-fence.js";
 
 export interface RivetPoolSource<Entrypoint extends RivetHttpEntrypoint> {
 	readonly source: RivetHttpSource<Entrypoint>;
@@ -67,9 +68,11 @@ export function createRivetMultiPoolPrimitiveMappers<
 	const entries = inputs.map((input: RivetPoolSource<Entrypoint>) => {
 		const source = bindRivetHttpSource(input.source);
 		const host = input.poolHost;
+		const poolDigest = input.poolDigest;
+		const isolationDigest = input.isolationDigest;
 		if (
-			!/^sha256:[a-f0-9]{64}$/u.test(input.poolDigest) ||
-			!/^sha256:[a-f0-9]{64}$/u.test(input.isolationDigest) ||
+			!/^sha256:[a-f0-9]{64}$/u.test(poolDigest) ||
+			!/^sha256:[a-f0-9]{64}$/u.test(isolationDigest) ||
 			host === null ||
 			typeof host !== "object"
 		)
@@ -91,24 +94,46 @@ export function createRivetMultiPoolPrimitiveMappers<
 				"RIVET_POOL_UNVERIFIED",
 				"the pool host must provide stable deployment functions",
 			);
-		const deployExternal = host.deployExternal;
-		const deployCrate = host.deployCrate;
+		const deployExternal = external.value;
+		const deployCrate = crate.value;
 		const stableHost: PoolHost["Service"] = Object.freeze({
 			deployExternal: (object) => deployExternal.call(host, object),
 			deployCrate: (object) => deployCrate.call(host, object),
 		});
 		const attestation = Object.freeze({
 			source,
-			poolDigest: input.poolDigest,
-			isolationDigest: input.isolationDigest,
+			poolDigest,
+			isolationDigest,
 			poolHost: host,
+		});
+		// The source claim is also the plan/apply revalidation hook. Carry
+		// exclusive pool and runner ownership through every such check, not only
+		// through the initial pool selection.
+		const fencedSource = Object.freeze({
+			...source,
+			sourceFence: Object.freeze({
+				...source.sourceFence,
+				verify: (claim: Parameters<typeof source.sourceFence.verify>[0]) => {
+					try {
+						verifyAll();
+						if (!verifyAlchemySourceFence(source.sourceFence, claim))
+							return false;
+						verifyAll();
+						return true;
+					} catch {
+						return false;
+					}
+				},
+			}),
 		});
 		return {
 			attestation,
 			stableHost,
 			deployExternal,
 			deployCrate,
-			mapper: createRivetPrimitiveMappers<Entrypoint, Requirements>(source).web,
+			mapper: createRivetPrimitiveMappers<Entrypoint, Requirements>(
+				fencedSource,
+			).web,
 		};
 	});
 

@@ -29,6 +29,12 @@ function app(name: string, kind: "web" | "api", digest: string) {
 		kind,
 		actorName: name,
 		sourceDigest: `sha256:${"a".repeat(64)}`,
+		sourceFence: {
+			sourceDigest: `sha256:${"a".repeat(64)}`,
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			proofRef: "host:immutable-source",
+			verify: () => true,
+		},
 		registry,
 		binding,
 		verifySource: () => true,
@@ -110,6 +116,20 @@ describe("Rivet multiple pool mapping", () => {
 				stack,
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: directory,
+				composite: {
+					proofRef: "host:immutable-source",
+					environmentDigest: `sha256:${"b".repeat(64)}`,
+					sourceRequirements: [web, api].map(({ source }) => ({
+						resourceId: source.resourceName,
+						resourceType: "Rivet.DurableObject",
+						bindleName: "app",
+						applicationName: source.resourceName,
+						sourceKind: "rivet-http",
+						sourcePath: source.main,
+					})),
+					verifyEnvironment: () => true,
+					verifyPlan: ({ sourceClaims }) => sourceClaims.length === 2,
+				},
 				target: alchemyTarget({
 					targetId: "yard",
 					tenantId: "tenant",
@@ -131,6 +151,7 @@ describe("Rivet multiple pool mapping", () => {
 					admit: async () => {
 						throw new Error("unexpected admission");
 					},
+					revalidate: () => true,
 					uncertain: () => {},
 				},
 			});
@@ -202,6 +223,24 @@ describe("Rivet multiple pool mapping", () => {
 		expect(api.deploys).toEqual([]);
 	});
 
+	it("pins each pool identity once before validation and host attestation", () => {
+		const web = app("web", "web", "1");
+		let reads = 0;
+		const source = {
+			...web,
+			get poolDigest() {
+				return ++reads === 1 ? web.poolDigest : "changed-after-validation";
+			},
+		};
+		let observed = "";
+		createRivetMultiPoolPrimitiveMappers([source], (claim) => {
+			observed = claim.poolDigest;
+			return true;
+		});
+		expect(reads).toBe(1);
+		expect(observed).toBe(web.poolDigest);
+	});
+
 	it("rejects different pools that share one runner isolation domain", () => {
 		const web = app("web", "web", "1");
 		const api = app("api", "api", "2");
@@ -242,7 +281,14 @@ describe("Rivet multiple pool mapping", () => {
 					web,
 					{
 						...api,
-						source: { ...api.source, sourceDigest: `sha256:${"b".repeat(64)}` },
+						source: {
+							...api.source,
+							sourceDigest: `sha256:${"c".repeat(64)}`,
+							sourceFence: {
+								...api.source.sourceFence,
+								sourceDigest: `sha256:${"c".repeat(64)}`,
+							},
+						},
 					},
 				],
 				() => true,
