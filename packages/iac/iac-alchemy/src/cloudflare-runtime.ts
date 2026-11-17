@@ -1,5 +1,28 @@
 import type { BindleForAlchemy, PrimitiveDeclaration } from "./bindle.js";
 import {
+	type CloudflareR2Store,
+	createCloudflareR2Store,
+} from "./cloudflare-r2-client.js";
+import {
+	type CloudflareR2Grant,
+	cloudflareR2Grant,
+	cloudflareR2Option,
+} from "./cloudflare-r2-protocol.js";
+
+export type {
+	CloudflareR2Object,
+	CloudflareR2Store,
+} from "./cloudflare-r2-client.js";
+export {
+	CLOUDFLARE_R2_MAX_CONTENT_TYPE_BYTES,
+	CLOUDFLARE_R2_MAX_KEY_BYTES,
+	CLOUDFLARE_R2_MAX_OBJECT_BYTES,
+	CloudflareR2Error,
+	type CloudflareR2Grant,
+	cloudflareR2Digest,
+} from "./cloudflare-r2-protocol.js";
+
+import {
 	CLOUDFLARE_KV_MAX_VALUE_BYTES,
 	CloudflareKvError,
 	type CloudflareKvGrant,
@@ -61,6 +84,11 @@ export type CloudflareBindingDescriptor = {
 			readonly grantEpoch: string;
 			readonly namespaceEpoch: string;
 	  }
+	| {
+			readonly kind: "r2";
+			readonly grantEpoch: string;
+			readonly bucketEpoch: string;
+	  }
 );
 
 export interface CloudflareWorkerDescription {
@@ -85,6 +113,8 @@ export interface CloudflareResources {
 	service(name: string): CloudflareService;
 	/** Native JavaScript subset; reads are eventually consistent and WASI guests are not wired. */
 	kv(name: string): CloudflareKvStore;
+	/** Opt-in bounded objects; not the WASI blobstore or blob-events interface. */
+	bucket(name: string): CloudflareR2Store;
 }
 
 export interface CloudflareKvStore {
@@ -99,6 +129,57 @@ export interface CloudflareKvStore {
 
 const contexts = new WeakMap<object, CloudflareResources>();
 const workers = new WeakMap<object, CloudflareWorkerDescription>();
+
+/** Attach an explicit provider-specific object subset without modifying the Bindle. */
+export function withCloudflareR2<Requirements>(
+	bindle: BindleForAlchemy<CloudflareBindleEntrypoint, Requirements>,
+	grants: Readonly<Record<string, CloudflareR2Grant>>,
+): BindleForAlchemy<CloudflareBindleEntrypoint, Requirements> {
+	/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: target options cross the application boundary. */
+	if (typeof grants !== "object" || grants === null || Array.isArray(grants))
+		throw new Error("explicit R2 target choices must be bounded and nonempty");
+	const choices = Object.getOwnPropertyDescriptors(grants);
+	if (
+		Object.getOwnPropertySymbols(grants).length !== 0 ||
+		Object.keys(choices).length === 0 ||
+		Object.keys(choices).length > 256
+	)
+		throw new Error("explicit R2 target choices must be bounded and nonempty");
+	const declarations: Record<string, PrimitiveDeclaration> =
+		Object.create(null);
+	for (const [resourceName, declaration] of Object.entries(bindle.resources)) {
+		const choice = choices[resourceName];
+		if (choice === undefined) {
+			declarations[resourceName] = declaration;
+			continue;
+		}
+		if (
+			!("value" in choice) ||
+			!choice.enumerable ||
+			declaration.kind !== "bucket" ||
+			declaration.annotations.length !== 0
+		)
+			throw new Error(
+				"R2 target choice does not match an unannotated bucket resource",
+			);
+		declarations[resourceName] = Object.freeze({
+			...declaration,
+			annotations: Object.freeze([cloudflareR2Option(choice.value)]),
+		});
+	}
+	if (Object.keys(choices).some((key) => !Object.hasOwn(declarations, key)))
+		throw new Error("R2 target choice names an unknown resource");
+	const view = {
+		name: bindle.name,
+		resources: Object.freeze(declarations),
+		edges: bindle.edges,
+		requirements: bindle.requirements,
+		entrypoint: (resourceName: string) => bindle.entrypoint(resourceName),
+	};
+	return bindle.connectors === undefined
+		? Object.freeze(view)
+		: Object.freeze({ ...view, connectors: bindle.connectors });
+}
 
 /**
  * Attach target-specific KV choices to an adapter view of a provider-neutral
@@ -195,6 +276,10 @@ function resources(
 		return binding;
 	};
 	return {
+		bucket(name) {
+			const binding = find(name, "r2");
+			return createCloudflareR2Store(environment[binding.env], binding.allow);
+		},
 		service(name) {
 			const binding = find(name, "service");
 			return {
@@ -377,12 +462,57 @@ export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
 	);
 }
 
+/** Validate the exact JavaScript object subset and current host-issued grant. */
+export function cloudflareR2Configuration(declaration: PrimitiveDeclaration) {
+	const annotation = declaration.annotations[0];
+	if (
+		declaration.annotations.length !== 1 ||
+		annotation === undefined ||
+		annotation.provider !== "cloudflare" ||
+		annotation.option !== "bounded-r2"
+	)
+		throw new Error(
+			"bucket runtime is unsupported: blob metadata, events and presigned URLs are not fully bound; explicit bounded worker-js R2 mode is required",
+		);
+	const fields = Object.getOwnPropertyDescriptors(annotation.config);
+	const grant = fields.grantEpoch;
+	const bucket = fields.bucketEpoch;
+	const runtime = fields.runtime;
+	if (
+		Object.getOwnPropertySymbols(annotation.config).length !== 0 ||
+		Object.keys(fields).length !== 3 ||
+		grant === undefined ||
+		!("value" in grant) ||
+		!grant.enumerable ||
+		bucket === undefined ||
+		!("value" in bucket) ||
+		!bucket.enumerable ||
+		runtime === undefined ||
+		!("value" in runtime) ||
+		!runtime.enumerable ||
+		runtime.value !== "worker-js"
+	)
+		throw new Error(
+			"bucket runtime is unsupported: invalid bounded R2 configuration",
+		);
+	return cloudflareR2Grant(
+		declaration.declaredAllow,
+		grant.value,
+		bucket.value,
+	);
+}
+
 function allowFor(declaration: PrimitiveDeclaration) {
 	switch (declaration.kind) {
-		case "bucket":
-			throw new Error(
-				"bucket runtime is unsupported: blob metadata, events and presigned URLs are not bound",
-			);
+		case "bucket": {
+			const grant = cloudflareR2Configuration(declaration);
+			return {
+				kind: "r2",
+				verbs: grant.allow,
+				grantEpoch: grant.grantEpoch,
+				bucketEpoch: grant.bucketEpoch,
+			} as const;
+		}
 		case "kv": {
 			const grant = cloudflareKvConfiguration(declaration);
 			return {
@@ -437,20 +567,28 @@ export function cloudflareDependencyBindings(
 			)
 				throw new Error(`${dependency.kind} operation is unsupported`);
 			const base = { name: resourceName, env: `HOBO_RESOURCE_${index}` };
-			return support.kind === "kv"
+			return support.kind === "r2"
 				? Object.freeze({
 						...base,
-						kind: "kv",
+						kind: "r2",
 						allow: support.verbs,
-						mode: support.mode,
 						grantEpoch: support.grantEpoch,
-						namespaceEpoch: support.namespaceEpoch,
+						bucketEpoch: support.bucketEpoch,
 					})
-				: Object.freeze({
-						...base,
-						kind: "service",
-						allow: Object.freeze(["fetch"]),
-					});
+				: support.kind === "kv"
+					? Object.freeze({
+							...base,
+							kind: "kv",
+							allow: support.verbs,
+							mode: support.mode,
+							grantEpoch: support.grantEpoch,
+							namespaceEpoch: support.namespaceEpoch,
+						})
+					: Object.freeze({
+							...base,
+							kind: "service",
+							allow: Object.freeze(["fetch"]),
+						});
 		}),
 	);
 }
