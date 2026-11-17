@@ -138,7 +138,7 @@ describe("availability-aware up", () => {
 			deploymentId: "uncertain",
 			session: createFixtureSession(),
 		};
-		expect((await client.up(bindle, options)).status).toBe("waiting");
+		expect((await client.up(bindle, options)).status).toBe("needs-human");
 		expect(applied).toEqual(["db@neon"]);
 		const rerun = await client.up(bindle, {
 			...options,
