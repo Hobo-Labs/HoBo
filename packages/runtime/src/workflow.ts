@@ -237,6 +237,67 @@ export function createWorkflowEngine(
 			};
 		}
 		const runSeed = isJsonString(started.data.seed) ? started.data.seed : seed;
+		type RecordedCommand =
+			| { kind: "step"; index: number; name: string }
+			| { kind: "sleep"; index: number; delayMs: number };
+		const commands: RecordedCommand[] = [];
+		const stepNames = new Map<number, string>();
+		let recordedSleeps = 0;
+		for (const event of journal) {
+			if (event.type === "run.StepScheduled") {
+				if (
+					!isRecord(event.data) ||
+					!isJsonNumber(event.data.index) ||
+					!Number.isSafeInteger(event.data.index) ||
+					event.data.index < 0 ||
+					!isJsonString(event.data.name)
+				)
+					throw new Error("invalid recorded workflow command");
+				const { index, name } = event.data;
+				const previous = stepNames.get(index);
+				if (previous !== undefined) {
+					if (previous !== name)
+						throw new Error("recorded workflow command diverged");
+					continue;
+				}
+				if (index !== stepNames.size)
+					throw new Error("invalid recorded workflow command order");
+				stepNames.set(index, name);
+				commands.push({ kind: "step", index, name });
+			} else if (event.type === "run.SleepScheduled") {
+				if (
+					!isRecord(event.data) ||
+					!isJsonNumber(event.data.delayMs) ||
+					!Number.isSafeInteger(event.data.delayMs) ||
+					event.data.delayMs < 0 ||
+					(event.data.index !== undefined &&
+						event.data.index !== recordedSleeps)
+				) {
+					throw new Error("invalid recorded workflow command");
+				}
+				commands.push({
+					kind: "sleep",
+					index: recordedSleeps,
+					delayMs: event.data.delayMs,
+				});
+				recordedSleeps += 1;
+			}
+		}
+		let commandIndex = 0;
+		function consumeCommand(command: RecordedCommand): void {
+			const expected = commands[commandIndex];
+			if (expected && !isDeepStrictEqual(expected, command)) {
+				throw new Error(
+					`workflow command history diverged at index ${commandIndex}`,
+				);
+			}
+			commandIndex += 1;
+		}
+		function assertConsumedCommands(): void {
+			if (commandIndex < commands.length) {
+				throw new Error(`unconsumed workflow command at index ${commandIndex}`);
+			}
+		}
 
 		async function appendEvent<T>(type: string, data: T): Promise<number> {
 			const payload = cloneAsJson(data);
@@ -274,6 +335,7 @@ export function createWorkflowEngine(
 			): Promise<T> {
 				const index = stepIndex;
 				stepIndex += 1;
+				consumeCommand({ kind: "step", index, name });
 				const completed = findCompletedStep(name, index);
 				if (completed && isRecord(completed.data)) {
 					// Journaled on a prior attempt — short-circuit, do NOT re-run.
@@ -304,6 +366,7 @@ export function createWorkflowEngine(
 				}
 				const index = sleepIndex;
 				sleepIndex += 1;
+				consumeCommand({ kind: "sleep", index, delayMs: durationMs });
 				const sleeps = journal.filter(
 					(event) => event.type === "run.SleepScheduled",
 				);
@@ -435,10 +498,12 @@ export function createWorkflowEngine(
 
 		try {
 			const result = await def.run(ctx, args);
+			assertConsumedCommands();
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
 			if (error instanceof WorkflowFailure) {
+				assertConsumedCommands();
 				const failureData: JsonBag = {
 					message: error.message,
 				};
