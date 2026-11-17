@@ -12,7 +12,10 @@ import {
 } from "../src/cloudflare-r2-proxy.js";
 
 type Item = { bytes: Uint8Array; contentType?: string; digest?: string };
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+	vi.restoreAllMocks();
+	vi.useRealTimers();
+});
 function native() {
 	const items = new Map<string, Item>();
 	const calls: string[] = [];
@@ -352,6 +355,28 @@ describe("bounded private Cloudflare R2 proxy", () => {
 		await vi.advanceTimersByTimeAsync(10_001);
 		await result;
 		expect(cancelled).toBe(true);
+	});
+
+	it("bounds and validates the native digest operation", async () => {
+		vi.useFakeTimers();
+		const digest = vi
+			.spyOn(crypto.subtle, "digest")
+			.mockImplementation(() => new Promise(() => {}));
+		const outcome = expect(
+			cloudflareR2Digest(new Uint8Array([1]).buffer),
+		).rejects.toMatchObject({ code: "R2_DIGEST_UNAVAILABLE" });
+		await vi.advanceTimersByTimeAsync(10_001);
+		await outcome;
+		digest.mockResolvedValue(new ArrayBuffer(3));
+		await expect(
+			cloudflareR2Digest(new Uint8Array([1]).buffer),
+		).rejects.toMatchObject({ code: "R2_DIGEST_UNAVAILABLE" });
+		await expect(
+			cloudflareR2Digest(
+				new Uint8Array(CLOUDFLARE_R2_MAX_OBJECT_BYTES + 1).buffer,
+			),
+		).rejects.toMatchObject({ code: "R2_OBJECT_INVALID" });
+		expect(digest).toHaveBeenCalledTimes(2);
 	});
 
 	it("reports an ambiguous write if the native response is lost or mismatched", async () => {

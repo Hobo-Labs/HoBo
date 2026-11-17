@@ -101,8 +101,33 @@ export function validCloudflareR2Digest(value: string): boolean {
 }
 
 export async function cloudflareR2Digest(bytes: ArrayBuffer): Promise<string> {
-	const digest = await crypto.subtle.digest("SHA-256", bytes);
-	return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+	if (
+		!(bytes instanceof ArrayBuffer) ||
+		bytes.byteLength > CLOUDFLARE_R2_MAX_OBJECT_BYTES
+	)
+		throw new CloudflareR2Error(
+			"R2_OBJECT_INVALID",
+			"a bounded object body is required",
+		);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		const digest = await Promise.race([
+			crypto.subtle.digest("SHA-256", bytes),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(() => reject(new Error("digest timed out")), 10_000);
+			}),
+		]);
+		if (!(digest instanceof ArrayBuffer) || digest.byteLength !== 32)
+			throw new Error("invalid digest");
+		return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+	} catch {
+		throw new CloudflareR2Error(
+			"R2_DIGEST_UNAVAILABLE",
+			"the object digest could not be verified",
+		);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
 }
 
 /** Stop and cancel oversized, stalled, or excessive-chunk streams before buffering more. */
