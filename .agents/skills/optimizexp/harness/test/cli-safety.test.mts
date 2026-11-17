@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildExperienceCatalog, writeExperienceCatalog } from "../lib/experience-catalog.mts";
 import { buildSurfaceMap, writeSurfaceMap } from "../lib/surface-map.mts";
 import { resolveProjects } from "../lib/projects.mts";
@@ -47,6 +47,135 @@ function snapshot(root: string): string[] {
 }
 
 describe("project selection and write safety", () => {
+	it("runs validated catalog scripts in their project and root-discovered scripts at the root", () => {
+		fixture((root) => {
+			const project = { id: "hobo", path: "packages/hobo", kind: "package" as const, label: "hobo" };
+			for (const [dir, name, output] of [[root, "root", "ROOT"], [path.join(root, project.path), "@hobo/hobo", "PROJECT"]]) {
+				writeFileSync(path.join(dir!, "package.json"), JSON.stringify({ name, scripts: { inspect: `node -e "console.log('${output}')"` } }));
+			}
+			const personaDir = path.join(root, ".optimizexp/personas");
+			mkdirSync(personaDir, { recursive: true });
+			writeFileSync(path.join(personaDir, "developer.md"), "---\nid: developer\nexperiences: [dx]\ninterfaces: [cli]\n---\nUses the app.\n");
+			const map = buildSurfaceMap({ project, root });
+			const catalog = buildExperienceCatalog({ project, root, personaIds: ["developer"], surfaceMap: map });
+			catalog.experiences.push({ experienceId: "inspect", featureId: "catalog-inspect", personaId: "developer", intent: "Inspect", entryCommand: "npm run inspect", driver: "cli", observableSuccess: "Output", observableFailure: "Failure", confusionRisks: [], priority: "P0", source: ["README"] });
+			writeSurfaceMap(map, project, root);
+			writeExperienceCatalog(catalog, project, root);
+			const catalogResult = invoke(root, "generate-feature", ["--mode=from-catalog", "--project=hobo", "--personas=developer", "--force-low-quality"]);
+			assert.equal(catalogResult.status, 0, `${catalogResult.stderr}\n${catalogResult.stdout}`);
+			const genericResult = invoke(root, "generate-feature", ["--mode=scaffold", "--id=root-inspect", "--seed=pnpm run inspect", "--project=hobo", "--personas=developer", "--force-low-quality"]);
+			assert.equal(genericResult.status, 0, `${genericResult.stderr}\n${genericResult.stdout}`);
+			for (const [id, expected] of [["catalog-inspect", "PROJECT"], ["root-inspect", "ROOT"]]) {
+				const module = path.join(root, project.path, ".optimizexp/features", id!, "steps/implementations.ts");
+				const script = `const impl = await import(${JSON.stringify(pathToFileURL(module).href)}); const world = { featureId: ${JSON.stringify(id)}, personaId: null, lastExitCode: null, lastStdout: "", lastStderr: "", lastCommand: null, notes: [], statusClear: false, nextActionObvious: false, errorActionable: false, evidencePath: null }; impl.exerciseSurface(world); console.log(JSON.stringify(world));`;
+				const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", script], { cwd: root, encoding: "utf8", timeout: 30_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
+				assert.equal(result.status, 0, result.stderr);
+				const world = JSON.parse(result.stdout) as { lastExitCode: number; lastStdout: string; lastStderr: string };
+				assert.equal(world.lastExitCode, 0, world.lastStderr);
+				assert.match(world.lastStdout, new RegExp(expected!));
+			}
+		});
+	});
+	it("preserves partial experience drafts unless plan is explicitly forced", () => {
+		fixture((root) => {
+			const dir = path.join(root, ".optimizexp/features/example");
+			mkdirSync(dir, { recursive: true });
+			const draft = path.join(dir, "EXPERIENCE.md");
+			const partial = "Hand-edited answers\nTODO: finish these later\n";
+			writeFileSync(draft, partial);
+			const args = ["--mode=plan", "--project=root", "--id=example", "--seed=sample"];
+			const preserve = invoke(root, "generate-feature", args);
+			assert.equal(preserve.status, 0, preserve.stderr);
+			assert.equal(readFileSync(draft, "utf8"), partial);
+			assert.match(String(preserve.stdout), /existing EXPERIENCE.md preserved/);
+			const forced = invoke(root, "generate-feature", [...args, "--force"]);
+			assert.equal(forced.status, 0, forced.stderr);
+			assert.notEqual(readFileSync(draft, "utf8"), partial);
+			assert.match(readFileSync(draft, "utf8"), /Rubber-duck/);
+		});
+	});
+
+	it("preserves hand-edited scaffold artifacts and gates forced regeneration on rubber-duck quality", () => {
+		fixture((root) => {
+			const dir = path.join(root, ".optimizexp/features/example");
+			mkdirSync(path.join(root, ".optimizexp/personas"), { recursive: true });
+			writeFileSync(path.join(root, ".optimizexp/personas/developer.md"), "---\nid: developer\nexperiences: [dx]\ninterfaces: [cli]\n---\nUses the app.\n");
+			mkdirSync(path.join(dir, "steps"), { recursive: true });
+			mkdirSync(path.join(dir, "test"), { recursive: true });
+			const files = ["EXPERIENCE.md", "README.md", "SEED.md", "feature.json", "example-developer.feature", "steps/world.ts", "steps/implementations.ts", "steps/bindings.steps.ts", "steps/discovery.json", "steps/README.md", "test/example.bindings.test.ts"];
+			for (const file of files) writeFileSync(path.join(dir, file), file === "feature.json" ? "{}\n" : `hand-edited ${file}\nTODO\n`);
+			const before = snapshot(root);
+			const args = ["--mode=scaffold", "--id=example", "--seed=Inspect help", "--project=root", "--personas=developer"];
+			const preserve = invoke(root, "generate-feature", [...args, "--force-low-quality"]);
+			assert.equal(preserve.status, 0, preserve.stderr);
+			assert.match(String(preserve.stdout), /existing feature files preserved/);
+			assert.deepEqual(snapshot(root), before);
+			const forceWithoutQuality = invoke(root, "generate-feature", [...args, "--force"]);
+			assert.equal(forceWithoutQuality.status, 2, forceWithoutQuality.stderr);
+			assert.match(String(forceWithoutQuality.stderr), /Rubber-duck check failed/);
+			assert.deepEqual(snapshot(root), before);
+			const force = invoke(root, "generate-feature", [...args, "--force", "--force-low-quality"]);
+			assert.equal(force.status, 0, force.stderr);
+			assert.notEqual(readFileSync(path.join(dir, "README.md"), "utf8"), "hand-edited README.md\nTODO\n");
+			assert.equal(readFileSync(path.join(dir, "EXPERIENCE.md"), "utf8"), "hand-edited EXPERIENCE.md\nTODO\n");
+		});
+	});
+
+	it("requires an accepted rubber-duck draft before new Gherkin unless low quality is explicitly allowed", () => {
+		fixture((root) => {
+			mkdirSync(path.join(root, ".optimizexp/personas"), { recursive: true });
+			writeFileSync(path.join(root, ".optimizexp/personas/developer.md"), "---\nid: developer\nexperiences: [dx]\ninterfaces: [cli]\n---\nUses the app.\n");
+			const args = ["--mode=scaffold", "--id=example", "--seed=Inspect help", "--project=root", "--personas=developer"];
+			const before = snapshot(root);
+			const rejected = invoke(root, "generate-feature", args);
+			assert.equal(rejected.status, 2, rejected.stderr);
+			assert.deepEqual(snapshot(root), before);
+			const dir = path.join(root, ".optimizexp/features/example");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(path.join(dir, "EXPERIENCE.md"), `Entry: \`hobo --help\`\n## Rubber-duck\n${"A detailed product path explains what the persona sees and why it matters. ".repeat(6)}\n## Adversarial\n${"- [x] checked\n".repeat(6)}\n## Verdict\naccept\n`);
+			const accepted = invoke(root, "generate-feature", args);
+			assert.equal(accepted.status, 0, accepted.stderr);
+			assert.ok(existsSync(path.join(dir, "example-developer.feature")));
+		});
+	});
+	it("accepts exact known scenario titles containing punctuation without accepting paths", () => {
+		fixture((root) => {
+			const feature = path.join(root, ".optimizexp/features/example");
+			mkdirSync(feature, { recursive: true });
+			writeFileSync(path.join(feature, "feature.json"), JSON.stringify({ id: "example", driver: "cli" }));
+			writeFileSync(path.join(feature, "example.feature"), "Feature: Example\n  Scenario: CLI / web parity...\n    Then output is visible\n  Scenario: Ready... go\n    Then output is visible\n");
+			for (const [title, slug] of [["CLI / web parity...", "cli-web-parity"], ["Ready... go", "ready-go"]]) {
+				const common = ["--project=root", "--feature=example", `--scenario=${title}`];
+				const capture = invoke(root, "capture-evidence", ["--mode=capture", ...common, "--command=printf done"]);
+				assert.equal(capture.status, 0, capture.stderr);
+				assert.ok(existsSync(path.join(feature, "evidence", slug!, "manifest.json")));
+				const review = invoke(root, "capture-evidence", ["--mode=review", ...common, "--reviewer=test", "--relevant=yes", "--complete=yes", "--notes=Captured output demonstrates the complete scenario"]);
+				assert.equal(review.status, 0, review.stderr);
+				const stitch = invoke(root, "capture-evidence", ["--mode=stitch", ...common]);
+				assert.equal(stitch.status, 1, stitch.stderr);
+				assert.match(String(stitch.stderr), /no frames/);
+			}
+			const before = snapshot(root);
+			for (const invalid of ["../../outside", "/outside", "..\\outside", "other / unlisted"]) {
+				const result = invoke(root, "capture-evidence", ["--mode=capture", "--project=root", "--feature=example", `--scenario=${invalid}`, "--command=printf done"]);
+				assert.equal(result.status, 2, result.stderr);
+				assert.deepEqual(snapshot(root), before);
+			}
+		});
+	});
+
+	it("fails an explicitly requested missing feature while allowing an empty all-feature validation", () => {
+		fixture((root) => {
+			const before = snapshot(root);
+			const missing = invoke(root, "capture-evidence", ["--mode=validate", "--strict", "--project=root", "--feature=absent"]);
+			assert.equal(missing.status, 1, missing.stderr);
+			assert.match(String(missing.stdout), /feature not found: absent/);
+			const all = invoke(root, "capture-evidence", ["--mode=validate", "--strict", "--project=root"]);
+			assert.equal(all.status, 0, all.stderr);
+			assert.equal(JSON.parse(String(all.stdout)).features, 0);
+			assert.deepEqual(snapshot(root), before);
+		});
+	});
 	it("refuses unknown, mixed, malformed, missing, and misspelled selectors before every mutating entrypoint", () => {
 		fixture((root) => {
 			const cases: [string, string[]][] = [
@@ -239,7 +368,8 @@ describe("project selection and write safety", () => {
 			writeExperienceCatalog(catalog, project, root);
 			const featureDir = path.join(root, project.path, ".optimizexp/features/script-start");
 			mkdirSync(featureDir, { recursive: true });
-			writeFileSync(path.join(featureDir, "EXPERIENCE.md"), "TODO\n- [ ] Check\n- accept | revise | reject\n");
+			const partialDraft = "TODO\n- [ ] Check\n- accept | revise | reject\n";
+			writeFileSync(path.join(featureDir, "EXPERIENCE.md"), partialDraft);
 			const before = snapshot(root);
 			const result = invoke(root, "generate-feature", ["--mode=from-catalog", "--project=hobo", "--personas=developer", "--force-low-quality", "--dry-run"]);
 			assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
@@ -253,8 +383,32 @@ describe("project selection and write safety", () => {
 			assert.deepEqual(snapshot(root), before);
 			const write = invoke(root, "generate-feature", ["--from-catalog", "--project=hobo", "--personas=developer", "--force-low-quality"]);
 			assert.equal(write.status, 0, `${write.stderr}\n${write.stdout}`);
+			assert.equal(readFileSync(path.join(featureDir, "EXPERIENCE.md"), "utf8"), partialDraft);
 			const generated = JSON.parse(readFileSync(path.join(featureDir, "feature.json"), "utf8")) as { catalogOrigin?: { entryCommand?: string } };
 			assert.equal(generated.catalogOrigin?.entryCommand, "npm run start");
+		});
+	});
+
+	it("plans all catalog drafts and reports pending rubber-duck reviews without writing Gherkin", () => {
+		fixture((root) => {
+			const project = { id: "hobo", path: "packages/hobo", kind: "package" as const, label: "hobo" };
+			const personaDir = path.join(root, ".optimizexp/personas");
+			mkdirSync(personaDir, { recursive: true });
+			writeFileSync(path.join(personaDir, "developer.md"), "---\nid: developer\nexperiences: [dx]\ninterfaces: [cli]\n---\nUses the app.\n");
+			const map = buildSurfaceMap({ project, root });
+			const catalog = buildExperienceCatalog({ project, root, personaIds: ["developer"], surfaceMap: map });
+			const common = { personaId: "developer", intent: "Start", entryCommand: "npm run start", driver: "cli" as const, observableSuccess: "Starts", observableFailure: "Fails", confusionRisks: [], priority: "P0" as const, source: ["README"] };
+			for (const id of ["one", "two"]) catalog.experiences.push({ ...common, featureId: id, experienceId: id });
+			writeSurfaceMap(map, project, root);
+			writeExperienceCatalog(catalog, project, root);
+			const result = invoke(root, "generate-feature", ["--mode=from-catalog", "--project=hobo", "--personas=developer"]);
+			assert.equal(result.status, 1, String(result.stderr));
+			for (const id of ["one", "two"]) {
+				const dir = path.join(root, project.path, ".optimizexp/features", id);
+				assert.ok(existsSync(path.join(dir, "EXPERIENCE.md")));
+				assert.ok(!existsSync(path.join(dir, `${id}-developer.feature`)));
+				assert.match(String(result.stdout), new RegExp(`"featureId": "${id}"`));
+			}
 		});
 	});
 

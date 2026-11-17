@@ -61,7 +61,7 @@ function help() {
   --skip-probes           No live CLI probes (tests)
   --probe-bin             Run the primary binary with --help (trusted code; inherits environment and may change state)
   --confirm-surface-current=<project>:<map-sha256>  Assert saved observation still matches current imports, config, and environment (repeatable)
-  --with-catalog          Also write experience-catalog after explore
+  --with-catalog          Compatibility flag; explore always writes the experience catalog
 
 Feeds critical-path feature generation (see references/feature-quality.md).
 `);
