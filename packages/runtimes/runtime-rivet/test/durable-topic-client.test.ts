@@ -218,11 +218,30 @@ describe("Rivet durable topic HTTP client", () => {
 			status: "unknown",
 			operation,
 		});
+		for (const malformed of [
+			{ ...operation, id: "bad" },
+			{ id: "v1.01.abcdefghijklmnop", expiresAtMs: 1 },
+			{
+				id: "v1.9007199254740992.abcdefghijklmnop",
+				expiresAtMs: Number.MAX_SAFE_INTEGER + 1,
+			},
+		]) {
+			expect(
+				await client.ensureTopic({ operation: malformed, topic: "orders" }),
+			).toEqual({
+				status: "rejected",
+				code: "invalid-argument",
+			});
+		}
+		const accessorEnvelope = {
+			get id() {
+				getterCalls++;
+				return "bad";
+			},
+			expiresAtMs: 1,
+		};
 		await expect(
-			client.ensureTopic({
-				operation: { ...operation, id: "bad" },
-				topic: "orders",
-			}),
+			client.ensureTopic({ operation: accessorEnvelope, topic: "orders" }),
 		).rejects.toThrow();
 		await expect(
 			client.ensureTopic(
@@ -266,6 +285,79 @@ describe("Rivet durable topic HTTP client", () => {
 		expect(await client.events({ afterSequence: 0, limit: 1 })).toEqual(
 			response,
 		);
+	});
+
+	it("accepts full audit pages and delivery batches with maximally escaped valid names", async () => {
+		const topic = '"'.repeat(profile.nameBytes);
+		const group = "\\".repeat(profile.nameBytes);
+		const events = Array.from(
+			{ length: profile.eventPageSize },
+			(_, index) => ({
+				sequence: index + 1,
+				kind: "acknowledged",
+				topic,
+				consumerGroup: group,
+				messageId: topic,
+			}),
+		);
+		const page = {
+			status: "ok",
+			events,
+			firstAvailableSequence: 1,
+			nextAfterSequence: events.length,
+			hasMore: false,
+		};
+		const deliveries = Array.from(
+			{ length: profile.batchSize },
+			(_, index) => ({
+				topic,
+				consumerGroup: group,
+				sequence: index + 1,
+				leaseId: `${group.slice(1)}${index}`,
+				leaseExpiresAtMs: operation.expiresAtMs,
+				deliveryAttempt: 1,
+				message: {
+					id: `${topic.slice(1)}${index}`,
+					subject: topic,
+					payload: Buffer.alloc(profile.payloadBytes, 255).toString("base64"),
+					attributes: [
+						{ key: "a", value: "\0".repeat(profile.attributeBytes - 1) },
+					],
+				},
+				deadLetter: {
+					sourceTopic: group,
+					consumerGroup: group,
+					originalMessageId: topic,
+					originalSequence: index + 1,
+					deliveryAttempt: 1,
+					cause: { kind: "nack", reason: "\0".repeat(profile.reasonBytes) },
+				},
+			}),
+		);
+		const batch = { status: "committed", value: deliveries };
+		expect(Buffer.byteLength(canonical(page))).toBeLessThanOrEqual(262_144);
+		expect(Buffer.byteLength(canonical(batch))).toBeLessThanOrEqual(262_144);
+		const { client } = fixture(
+			async (path) =>
+				new Response(canonical(path === "/events" ? page : batch)),
+		);
+		expect(
+			await client.events({ afterSequence: 0, limit: events.length }),
+		).toEqual(page);
+		const result = await client.consume({
+			operation,
+			topic,
+			consumerGroup: group,
+			maxMessages: profile.batchSize,
+			visibilityTimeoutMs: 100,
+		});
+		expect(result.status).toBe("committed");
+		if (result.status !== "committed") throw new Error("missing deliveries");
+		expect(result.value).toHaveLength(profile.batchSize);
+		expect(result.value[0]?.deadLetter?.cause).toEqual(
+			deliveries[0]?.deadLetter.cause,
+		);
+		expect(result.value[0]?.message.payload).toHaveLength(profile.payloadBytes);
 	});
 	it("does not reread a mutable topic after an authorization await", async () => {
 		let release = () => {};

@@ -309,6 +309,39 @@ function requestOperation(value: unknown): DurableMessagingOperation {
 		return invalid();
 	return operation(field.value);
 }
+
+/** A plain, data-only envelope with primitive fields can be disproved locally. */
+function permanentlyMalformedOperation(value: unknown): boolean {
+	try {
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			types.isProxy(value) ||
+			Array.isArray(value)
+		)
+			return false;
+		const field = Object.getOwnPropertyDescriptor(value, "operation");
+		if (field === undefined || !("value" in field) || !field.enumerable)
+			return false;
+		const envelope = record(field.value, ["id", "expiresAtMs"]);
+		if (
+			typeof envelope.id !== "string" ||
+			typeof envelope.expiresAtMs !== "number"
+		)
+			return false;
+		try {
+			parseDurableMessagingOperation({
+				id: envelope.id,
+				expiresAtMs: envelope.expiresAtMs,
+			});
+			return false;
+		} catch {
+			return true;
+		}
+	} catch {
+		return false;
+	}
+}
 type InvalidSnapshot =
 	| readonly ["null"]
 	| readonly ["boolean", boolean]
@@ -453,7 +486,12 @@ function limits(value: unknown): DurableMessagingLimits {
 			1,
 		),
 	});
-	// JSON can escape each UTF-8 byte to six ASCII bytes; include envelope and array overhead.
+	// Attribute values and reasons may contain controls, whose JSON encoding can
+	// expand each UTF-8 byte to six ASCII bytes. Names reject controls and lone
+	// surrogates: only quotes and backslashes expand, to at most two bytes each.
+	// The delivery includes eight names (including the lease and DLQ provenance),
+	// and an audit event includes three. The fixed terms cover JSON syntax,
+	// numbers, attribute entries, and the containing envelope.
 	const payload = 4 * Math.ceil(cap.payloadBytes / 3);
 	const request =
 		payload +
@@ -466,10 +504,10 @@ function limits(value: unknown): DurableMessagingLimits {
 			(payload +
 				6 * cap.attributeBytes +
 				6 * cap.reasonBytes +
-				16 * cap.nameBytes +
+				2 * 8 * cap.nameBytes +
 				4096) +
 		8192;
-	const events = cap.eventPageSize * (6 * cap.nameBytes + 512) + 8192;
+	const events = cap.eventPageSize * (2 * 3 * cap.nameBytes + 512) + 8192;
 	if (
 		request > MAX_REQUEST_BYTES ||
 		delivery > MAX_RESPONSE_BYTES ||
@@ -1375,7 +1413,14 @@ export function createRivetDurableTopicClient(
 		) => Readonly<Record<string, unknown>>,
 		receive: (value: unknown) => T,
 	): Promise<DurableMessagingOutcome<T>> => {
-		const op = requestOperation(input);
+		let op: DurableMessagingOperation;
+		try {
+			op = requestOperation(input);
+		} catch (error) {
+			if (permanentlyMalformedOperation(input))
+				return { status: "rejected", code: "invalid-argument" };
+			throw error;
+		}
 		try {
 			let captured: Readonly<Record<string, unknown>>;
 			let valid = true;
