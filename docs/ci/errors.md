@@ -82,7 +82,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_YARD_UNREADABLE`](#hobo_ci_deploy_yard_unreadable) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_GITHUB_AUTH`](#hobo_ci_github_auth) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_DEVICE`](#hobo_ci_github_device) | `packages/hobo/src/ci-github-connect.ts` |
-| [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_GITHUB_FAILED`](#hobo_ci_github_failed) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_GITHUB_KEY_ERROR`](#hobo_ci_github_key_error) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_GITHUB_NOT_CONNECTED`](#hobo_ci_github_not_connected) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_GITHUB_NOT_READY`](#hobo_ci_github_not_ready) | `packages/hobo/src/ci-github-connect.ts` |
@@ -106,10 +106,10 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_MCP_REPOSITORY_NOT_CONNECTED`](#hobo_ci_mcp_repository_not_connected) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_MCP_RUN_NOT_FOUND`](#hobo_ci_mcp_run_not_found) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
 | [`HOBO_CI_MCP_SCOPE_REQUIRED`](#hobo_ci_mcp_scope_required) | `packages/ci-gh-actions/src/relay-mcp-insights.ts` |
-| [`HOBO_CI_NOT_STORED_HERE`](#hobo_ci_not_stored_here) | `packages/hobo/src/ci-activity.ts` |
+| [`HOBO_CI_NOT_STORED_HERE`](#hobo_ci_not_stored_here) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
-| [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RUNNER_ORDER_INVALID`](#hobo_ci_runner_order_invalid) | `packages/hobo/src/ci-route.ts` |
@@ -131,7 +131,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SECRET_STORE_VERIFIED`](#hobo_ci_secret_store_verified) | `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SECRET_STORE_VERIFY_FAILED`](#hobo_ci_secret_store_verify_failed) | `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SETUP_ERROR`](#hobo_ci_setup_error) | `packages/hobo/src/ci-command.ts` |
-| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
 | [`HOBO_CI_WAIT_TIMEOUT`](#hobo_ci_wait_timeout) | `packages/hobo/src/ci-runs.ts` |
 
 ## Codes
@@ -941,7 +941,7 @@ What to do: follow the message.
 
 ### HOBO_CI_GITHUB_FAILED
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`.
+Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
 
 Messages:
 
@@ -963,6 +963,10 @@ GitHub could not be read, or answered with something that is not a run. Check gh
 
 ```text
 GitHub CLI could not complete the CI run operation. Check gh auth status and repository Actions permissions; inspect the run before repeating a rerun because its outcome may be unconfirmed.
+```
+
+```text
+GitHub found no such repository. Check --repo.
 ```
 
 What to do:
@@ -1270,17 +1274,22 @@ What to do:
 
 ### HOBO_CI_NOT_STORED_HERE
 
-Returned from `packages/hobo/src/ci-activity.ts`.
+Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-usage.ts`.
 
-Message:
+Messages:
 
 ```text
 This relay keeps no route journal, so there is no activity to show. Activity needs a relay with a journal: hobo ci serve, a box, or a relay deployed with storage.
 ```
 
+```text
+This relay keeps no run history (the hosted relay stores none). Read GitHub instead with --source github.
+```
+
 What to do:
 
 - See one decision without a journal with {…}.
+- Run {command} --source github.
 
 ### HOBO_CI_NO_RUNNER
 
@@ -1306,7 +1315,7 @@ What to do: follow the message.
 
 ### HOBO_CI_OPERATION_TIMEOUT
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`.
+Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
 
 Messages:
 
@@ -1594,7 +1603,7 @@ What to do: follow the message.
 
 ### HOBO_CI_TOOL_REQUIRED
 
-Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`.
+Returned from `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts`.
 
 Messages:
 
