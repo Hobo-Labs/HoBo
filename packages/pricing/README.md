@@ -47,6 +47,18 @@ or proxied input before normalization. JavaScript may allocate while
 enumerating object keys before a traversal limit can be checked, so hosts must
 apply independent process memory and time limits to untrusted inputs.
 
+`assessTargetPricing(inventory, availability)` returns that same joint quote
+and a `providerCoverage` view grouped by the declared provider IDs. Each
+provider is `quoted` only when the complete target was quoted; `unavailable`
+means no target model was supplied, `incomplete` identifies missing or invalid
+resource bindings, and `unverified` means the joint quote failed for another
+reason. A `declared` binding establishes only the presence of a candidate, not
+that its rate or account evidence is valid. If the inventory itself is invalid,
+the coverage basis is `unavailable` and no provider list is inferred. Shared
+credits are not split into invented per-provider prices. These are assessments
+of the declared target and developer model; they neither authenticate the
+inventory nor evaluate or reserve a budget.
+
 ## Batch 2 surface
 
 `QuoteEngine.quote(scenario)` (also available as `quoteScenario(scenario)`)
