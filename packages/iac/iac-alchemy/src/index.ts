@@ -1,16 +1,15 @@
 import { isAbsolute } from "node:path";
-import { clone, create } from "@bufbuild/protobuf";
 import { AlchemyContext } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import type * as Stack from "alchemy/Stack";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as Layer from "effect/Layer";
+import type { ResourceScope, Target } from "./_generated/alchemy_iac_pb.js";
 import {
-	type ResourceScope,
-	type Target,
-	TargetSchema,
-} from "./_generated/alchemy_iac_pb.js";
+	captureAlchemyTarget,
+	captureAlchemyTargetOption,
+} from "./input-boundary.js";
 import { AlchemyIacError, digestData, inspectAlchemyPlan } from "./plan.js";
 import type {
 	FinancialExpectation,
@@ -54,7 +53,7 @@ export type AlchemyTargetInput = Omit<Target, "$typeName" | "resources"> & {
 };
 
 export function alchemyTarget(input: AlchemyTargetInput): Target {
-	return create(TargetSchema, { ...input, resources: [...input.resources] });
+	return captureAlchemyTarget(input);
 }
 
 export interface AlchemyIacProviderOptions<
@@ -157,7 +156,7 @@ export function createAlchemyIacProvider<
 >(
 	options: AlchemyIacProviderOptions<Output, Requirements, Assessment>,
 ): AlchemyIacProvider<Assessment> {
-	const target = clone(TargetSchema, options.target);
+	const target = captureAlchemyTargetOption(options);
 	if (
 		!safeAlchemyStateSegment(target.stackName) ||
 		!safeAlchemyStateSegment(target.stage) ||

@@ -14,7 +14,12 @@ Create a target with `alchemyTarget({ targetId, tenantId, stackName, stage,
 programResourceId, sourceDigest, inventoryEvidenceRef, resources })`. Each
 resource scope names its Alchemy FQN and resource type plus its underlying
 provider, account and product. Every planned resource must be present exactly
-once. The source digest and inventory evidence are host claims: the trusted
+once. Target construction rejects sparse or decorated resource arrays,
+accessors, proxies, unknown fields and unknown protobuf wire fields before
+protobuf conversion; at most 256 resource scopes are accepted. JavaScript
+cannot bound the engine's own-key enumeration for an already oversized object,
+so the host must bound serialized input before materializing it in-process.
+The source digest and inventory evidence are host claims: the trusted
 host must verify them and execute stack code with appropriately scoped
 credentials in its sandbox. Planning runs the supplied stack program, so the
 adapter cannot make untrusted program code safe by inspecting the resulting
