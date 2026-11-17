@@ -4,7 +4,7 @@ import { isJsonObject, isJsonString } from "./json.js";
 const LEASE_MS = 30_000;
 const MAX_GRANTS = 4_096;
 const MAX_EVENTS = 1_024;
-const MAX_EVENT_BYTES = 65_536;
+const MAX_EVENT_BYTES = 32_768;
 const MAX_JOURNAL_BYTES = 4_194_304;
 
 interface Grant {
@@ -16,10 +16,12 @@ interface Grant {
 interface Entry {
 	readonly eventId: string;
 	readonly eventJson: string;
+	readonly expectedRevision: number;
 }
 export interface DistributedJournalState {
 	readonly version: 1;
 	readonly epoch: number;
+	readonly lastNowMs: number;
 	readonly current: Grant | null;
 	readonly grants: readonly Grant[];
 	readonly entries: readonly Entry[];
@@ -73,6 +75,7 @@ export function initialDistributedJournal(): DistributedJournalState {
 	return {
 		version: 1,
 		epoch: 0,
+		lastNowMs: 0,
 		current: null,
 		grants: [],
 		entries: [],
@@ -98,12 +101,13 @@ function plainJson(
 	value: unknown,
 	depth: number,
 	seen: Set<object>,
-	remaining: { n: number },
+	remaining: { n: number; bytes: number },
 ): unknown {
 	if (--remaining.n < 0 || depth > 32) throw new Error("event exceeds limits");
 	if (value === null || typeof value === "boolean") return value;
 	if (typeof value === "string") {
-		if (value.length > MAX_EVENT_BYTES)
+		remaining.bytes -= Buffer.byteLength(value);
+		if (value.length > MAX_EVENT_BYTES || remaining.bytes < 0)
 			throw new Error("event string too large");
 		return value;
 	}
@@ -139,8 +143,10 @@ function plainJson(
 		const result: Record<string, unknown> = Object.create(null);
 		for (const key of Object.keys(descriptors).sort()) {
 			const property = descriptors[key];
+			remaining.bytes -= Buffer.byteLength(key);
 			if (
 				key.length > 200 ||
+				remaining.bytes < 0 ||
 				property === undefined ||
 				!("value" in property) ||
 				!property.enumerable
@@ -155,9 +161,27 @@ function plainJson(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
+/** Snapshot bounded plain action data before awaiting an external verifier. */
+export function snapshotDistributedData<T>(value: T): T | undefined {
+	try {
+		const encoded = JSON.stringify(
+			plainJson(value, 0, new Set(), { n: 4_096, bytes: 65_536 }),
+		);
+		if (encoded === undefined || Buffer.byteLength(encoded) > 65_536)
+			return undefined;
+		// SAFETY: plainJson has checked the complete value and preserved its JSON shape.
+		return JSON.parse(encoded) as T;
+	} catch {
+		return undefined;
+	}
+}
+
 export function encodeDistributedEvent(event: FoldEvent): string | undefined {
 	try {
-		const data = plainJson(event, 0, new Set(), { n: 4_096 });
+		const data = plainJson(event, 0, new Set(), {
+			n: 4_096,
+			bytes: MAX_EVENT_BYTES,
+		});
 		if (!isJsonObject(data) || !isJsonString(data.type) || !name(data.type))
 			return undefined;
 		const json = JSON.stringify(data);
@@ -173,6 +197,8 @@ function validState(state: DistributedJournalState): boolean {
 			state.version !== 1 ||
 			!Number.isSafeInteger(state.epoch) ||
 			state.epoch < 0 ||
+			!Number.isSafeInteger(state.lastNowMs) ||
+			state.lastNowMs < 0 ||
 			!Array.isArray(state.grants) ||
 			!Array.isArray(state.entries) ||
 			state.grants.length > MAX_GRANTS ||
@@ -209,10 +235,11 @@ function validState(state: DistributedJournalState): boolean {
 		}
 		const eventIds = new Set<string>();
 		let bytes = 0;
-		for (const entry of state.entries) {
+		for (const [index, entry] of state.entries.entries()) {
 			if (
 				!name(entry.eventId) ||
 				eventIds.has(entry.eventId) ||
+				entry.expectedRevision !== index ||
 				!isJsonString(entry.eventJson) ||
 				entry.eventJson.length > MAX_EVENT_BYTES
 			)
@@ -268,6 +295,9 @@ export function transitionDistributedJournal(
 		!name(command.holderId)
 	)
 		return deny("INVALID_INPUT");
+	if (command.nowMs < state.lastNowMs) return deny("CLOCK_REGRESSION");
+	if (command.nowMs > state.lastNowMs)
+		state = { ...state, lastNowMs: command.nowMs };
 	if (command.kind === "acquire") {
 		if (!name(command.requestId)) return deny("INVALID_INPUT");
 		const prior = state.grants.find(
@@ -348,7 +378,8 @@ export function transitionDistributedJournal(
 		(entry) => entry.eventId === command.eventId,
 	);
 	if (index >= 0)
-		return state.entries[index]?.eventJson === json
+		return state.entries[index]?.eventJson === json &&
+			state.entries[index]?.expectedRevision === command.expectedRevision
 			? {
 					state,
 					result: { status: "appended", revision: index + 1, duplicate: true },
@@ -367,7 +398,11 @@ export function transitionDistributedJournal(
 			...state,
 			entries: [
 				...state.entries,
-				{ eventId: command.eventId, eventJson: json },
+				{
+					eventId: command.eventId,
+					eventJson: json,
+					expectedRevision: command.expectedRevision,
+				},
 			],
 			bytes: state.bytes + bytes,
 		},

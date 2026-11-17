@@ -9,10 +9,20 @@ export {
 } from "./actor-host.js";
 export {
 	createRivetDistributedJournal,
+	createRivetDistributedJournalActor,
 	RivetDistributedJournalError,
 	type RivetJournalNamespace,
-	rivetDistributedJournalActor,
 } from "./distributed-actor.js";
+export {
+	computeRivetOperationDigest,
+	createRivetCapabilityVerifier,
+	issueRivetCapability,
+	type RivetCapabilityClaims,
+	RivetCapabilityError,
+	type RivetCapabilityVerifierOptions,
+	type RivetOperation,
+	type RivetSignedCapability,
+} from "./distributed-auth.js";
 export {
 	createRivetRuntimeHost,
 	diagnoseRivetReadiness,

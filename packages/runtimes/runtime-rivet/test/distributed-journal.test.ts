@@ -4,6 +4,7 @@ import {
 	initialDistributedJournal,
 	transitionDistributedJournal,
 } from "../src/distributed-journal.js";
+import { testCapability } from "./test-capability.js";
 
 describe("Rivet distributed journal state machine", () => {
 	it("grants a monotonically fenced lease and rejects another live holder", () => {
@@ -25,7 +26,7 @@ describe("Rivet distributed journal state machine", () => {
 			status: "denied",
 			code: "LEASE_HELD",
 		});
-		expect(conflict.state).toBe(first.state);
+		expect(conflict.state.grants).toEqual(first.state.grants);
 		const next = transitionDistributedJournal(first.state, {
 			kind: "acquire",
 			holderId: "b",
@@ -44,7 +45,7 @@ describe("Rivet distributed journal state machine", () => {
 			status: "denied",
 			code: "STALE_LEASE",
 		});
-		expect(stale.state).toBe(next.state);
+		expect(stale.state.grants).toEqual(next.state.grants);
 	});
 
 	it("replays the same lease request without renewing its expiry", () => {
@@ -120,6 +121,12 @@ describe("Rivet distributed journal state machine", () => {
 		expect(
 			transitionDistributedJournal(first.state, {
 				...append,
+				expectedRevision: 1,
+			}).result,
+		).toMatchObject({ status: "denied", code: "EVENT_ID_CONFLICT" });
+		expect(
+			transitionDistributedJournal(first.state, {
+				...append,
 				eventId: "event-2",
 			}).result,
 		).toMatchObject({
@@ -173,7 +180,7 @@ describe("Rivet distributed journal state machine", () => {
 				status: "denied",
 				code: "INVALID_EVENT",
 			});
-			expect(rejected.state).toBe(granted.state);
+			expect(rejected.state.entries).toEqual(granted.state.entries);
 		}
 	});
 
@@ -190,6 +197,37 @@ describe("Rivet distributed journal state machine", () => {
 			code: "CORRUPT_STATE",
 		});
 		expect(result.state).toBe(state);
+	});
+
+	it("never makes an observed-expired lease valid after a clock rollback", () => {
+		const granted = transitionDistributedJournal(initialDistributedJournal(), {
+			kind: "acquire",
+			holderId: "a",
+			requestId: "one",
+			nowMs: 1_000,
+		});
+		const expired = transitionDistributedJournal(granted.state, {
+			kind: "check",
+			holderId: "a",
+			requestId: "one",
+			fenceToken: 1,
+			nowMs: 31_000,
+		});
+		expect(expired.result).toMatchObject({
+			status: "denied",
+			code: "STALE_LEASE",
+		});
+		const rolledBack = transitionDistributedJournal(expired.state, {
+			kind: "check",
+			holderId: "a",
+			requestId: "one",
+			fenceToken: 1,
+			nowMs: 2_000,
+		});
+		expect(rolledBack.result).toMatchObject({
+			status: "denied",
+			code: "CLOCK_REGRESSION",
+		});
 	});
 });
 
@@ -225,6 +263,7 @@ describe("Rivet journal client boundary", () => {
 		const journal = createRivetDistributedJournal(namespace, {
 			tenantId: "tenant",
 			campId: "camp",
+			issueCapability: testCapability,
 		});
 		await expect(
 			journal.acquireWithRequest("orders", {
@@ -242,6 +281,8 @@ describe("Rivet journal client boundary", () => {
 		const source = {
 			status: "ok" as const,
 			revision: 1,
+			nextRevision: 1,
+			hasMore: false,
 			events: [{ eventId: "one", event: { type: "Saved", value: "original" } }],
 		};
 		const namespace = {
@@ -260,6 +301,7 @@ describe("Rivet journal client boundary", () => {
 		const journal = createRivetDistributedJournal(namespace, {
 			tenantId: "tenant",
 			campId: "camp",
+			issueCapability: testCapability,
 		});
 		const snapshot = await journal.read("orders");
 		const first = source.events[0];

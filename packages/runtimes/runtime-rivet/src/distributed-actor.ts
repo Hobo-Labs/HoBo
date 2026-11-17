@@ -4,26 +4,20 @@ import type {
 	AsyncActorLeaseHost,
 	FoldEvent,
 } from "@hobo/core";
-import { type AnyActorDefinition, actor } from "rivetkit";
 import {
-	type DistributedJournalCommand,
+	computeRivetOperationDigest,
+	type RivetJournalAction,
+	type RivetOperation,
+	type RivetSignedCapability,
+} from "./distributed-auth.js";
+import {
 	type DistributedJournalResult,
-	type DistributedJournalState,
 	encodeDistributedEvent,
-	initialDistributedJournal,
-	readDistributedJournal,
-	transitionDistributedJournal,
+	snapshotDistributedData,
 } from "./distributed-journal.js";
 
-interface ActorVars {
-	tail: Promise<void>;
-	poisoned: boolean;
-}
-interface JournalActorContext {
-	state: DistributedJournalState;
-	vars: ActorVars;
-	saveState(options: { immediate: true }): Promise<void>;
-}
+export { createRivetSqlJournalActor as createRivetDistributedJournalActor } from "./distributed-sql.js";
+
 type RemoteDecision =
 	| DistributedJournalResult
 	| { readonly status: "uncertain"; readonly code: string };
@@ -37,88 +31,38 @@ type AppendInput = LeaseInput & {
 	readonly expectedRevision: number;
 	readonly event: FoldEvent;
 };
-
-function exclusive<T>(
-	context: JournalActorContext,
-	work: () => Promise<T>,
-): Promise<T> {
-	const result = context.vars.tail.then(work);
-	context.vars.tail = result.then(
-		() => {},
-		() => {},
-	);
-	return result;
-}
-
-async function perform(
-	context: JournalActorContext,
-	command: DistributedJournalCommand,
-): Promise<RemoteDecision> {
-	return exclusive(context, async () => {
-		if (context.vars.poisoned)
-			return { status: "uncertain", code: "PERSISTENCE_OUTCOME_UNKNOWN" };
-		let transition: ReturnType<typeof transitionDistributedJournal>;
-		const current = context.state;
-		try {
-			transition = transitionDistributedJournal(current, command);
-		} catch {
-			return { status: "denied", code: "INVALID_INPUT" };
-		}
-		if (transition.state === current) return transition.result;
-		context.state = transition.state;
-		try {
-			await context.saveState({ immediate: true });
-			return transition.result;
-		} catch {
-			context.vars.poisoned = true;
-			return { status: "uncertain", code: "PERSISTENCE_OUTCOME_UNKNOWN" };
-		}
-	});
-}
-
-/** A real RivetKit actor; each compound key owns one durable fenced journal. */
-export const rivetDistributedJournalActor: AnyActorDefinition = actor({
-	createState: () => initialDistributedJournal(),
-	createVars: (): ActorVars => ({ tail: Promise.resolve(), poisoned: false }),
-	actions: {
-		acquire: (context, input: { holderId: string; requestId: string }) =>
-			perform(context, { kind: "acquire", ...input, nowMs: Date.now() }),
-		check: (context, input: LeaseInput) =>
-			perform(context, { kind: "check", ...input, nowMs: Date.now() }),
-		release: (context, input: LeaseInput) =>
-			perform(context, { kind: "release", ...input, nowMs: Date.now() }),
-		append: (context, input: AppendInput) =>
-			perform(context, { kind: "append", ...input, nowMs: Date.now() }),
-		read: (context) =>
-			exclusive(context, async () => {
-				if (context.vars.poisoned)
-					return {
-						status: "uncertain" as const,
-						code: "PERSISTENCE_OUTCOME_UNKNOWN",
-					};
-				return readDistributedJournal(context.state);
-			}),
-	},
-});
+type ReadInput = {
+	readonly afterRevision: number;
+	readonly limit: number;
+	readonly throughRevision?: number;
+};
+type AuthorizedInput<T> = {
+	readonly args: T;
+	readonly capability: RivetSignedCapability;
+};
 
 interface RemoteRead {
 	readonly status: "ok" | "denied" | "uncertain";
 	readonly code?: string;
 	readonly revision?: number;
+	readonly nextRevision?: number;
+	readonly hasMore?: boolean;
 	readonly events?: readonly {
 		readonly eventId: string;
 		readonly event: FoldEvent;
 	}[];
 }
 interface RivetJournalHandle {
-	acquire(input: {
-		holderId: string;
-		requestId: string;
-	}): Promise<RemoteDecision>;
-	check(input: LeaseInput): Promise<RemoteDecision>;
-	release(input: LeaseInput): Promise<RemoteDecision>;
-	append(input: AppendInput): Promise<RemoteDecision>;
-	read(): Promise<RemoteRead>;
+	acquire(
+		input: AuthorizedInput<{
+			holderId: string;
+			requestId: string;
+		}>,
+	): Promise<RemoteDecision>;
+	check(input: AuthorizedInput<LeaseInput>): Promise<RemoteDecision>;
+	release(input: AuthorizedInput<LeaseInput>): Promise<RemoteDecision>;
+	append(input: AuthorizedInput<AppendInput>): Promise<RemoteDecision>;
+	read(input: AuthorizedInput<ReadInput>): Promise<RemoteRead>;
 }
 export interface RivetJournalNamespace {
 	getOrCreate(key: string[]): RivetJournalHandle;
@@ -195,7 +139,6 @@ function readDecision(input: unknown): RemoteDecision | undefined {
 				typeof revision !== "number" ||
 				!Number.isSafeInteger(revision) ||
 				revision < 1 ||
-				revision > 1_024 ||
 				typeof duplicate !== "boolean"
 			)
 				return undefined;
@@ -209,8 +152,14 @@ function readDecision(input: unknown): RemoteDecision | undefined {
 
 function readSnapshot(
 	input: unknown,
+	request: ReadInput,
 ):
-	| { revision: number; events: { eventId: string; event: FoldEvent }[] }
+	| {
+			revision: number;
+			nextRevision: number;
+			hasMore: boolean;
+			events: { eventId: string; event: FoldEvent }[];
+	  }
 	| undefined {
 	try {
 		if (typeof input !== "object" || input === null || Array.isArray(input))
@@ -218,6 +167,8 @@ function readSnapshot(
 		const properties = Object.getOwnPropertyDescriptors(input);
 		const status = properties.status;
 		const revision = properties.revision;
+		const nextRevision = properties.nextRevision;
+		const hasMore = properties.hasMore;
 		const events = properties.events;
 		if (
 			status === undefined ||
@@ -228,11 +179,24 @@ function readSnapshot(
 			typeof revision.value !== "number" ||
 			!Number.isSafeInteger(revision.value) ||
 			revision.value < 0 ||
-			revision.value > 1_024 ||
+			(request.throughRevision !== undefined &&
+				revision.value !== request.throughRevision) ||
+			revision.value < request.afterRevision ||
+			nextRevision === undefined ||
+			!("value" in nextRevision) ||
+			typeof nextRevision.value !== "number" ||
+			!Number.isSafeInteger(nextRevision.value) ||
+			hasMore === undefined ||
+			!("value" in hasMore) ||
+			typeof hasMore.value !== "boolean" ||
 			events === undefined ||
 			!("value" in events) ||
 			!Array.isArray(events.value) ||
-			events.value.length !== revision.value
+			events.value.length > request.limit ||
+			nextRevision.value !== request.afterRevision + events.value.length ||
+			nextRevision.value > revision.value ||
+			hasMore.value !== nextRevision.value < revision.value ||
+			(hasMore.value && events.value.length === 0)
 		)
 			return undefined;
 		const descriptors = Object.getOwnPropertyDescriptors(events.value);
@@ -265,7 +229,7 @@ function readSnapshot(
 			const encoded = encodeDistributedEvent(event.value);
 			if (encoded === undefined) return undefined;
 			bytes += Buffer.byteLength(encoded);
-			if (bytes > 4_194_304) return undefined;
+			if (bytes > 524_288) return undefined;
 			// SAFETY: the canonical encoder accepts only a bounded valid FoldEvent.
 			result.push({
 				eventId: eventId.value,
@@ -273,7 +237,12 @@ function readSnapshot(
 			});
 			ids.add(eventId.value);
 		}
-		return { revision: revision.value, events: result };
+		return {
+			revision: revision.value,
+			nextRevision: nextRevision.value,
+			hasMore: hasMore.value,
+			events: result,
+		};
 	} catch {
 		return undefined;
 	}
@@ -283,16 +252,53 @@ function readSnapshot(
 /** Shared lease and journal client. Credentials must be scoped by the host. */
 export function createRivetDistributedJournal(
 	namespace: RivetJournalNamespace,
-	scope: { tenantId: string; campId: string },
+	scope: {
+		tenantId: string;
+		campId: string;
+		issueCapability: (
+			input: RivetOperation,
+		) => RivetSignedCapability | Promise<RivetSignedCapability>;
+	},
 ) {
-	if (!validName(scope.tenantId) || !validName(scope.campId))
+	if (
+		!validName(scope.tenantId) ||
+		!validName(scope.campId) ||
+		!(scope.issueCapability instanceof Function)
+	)
 		throw new TypeError("invalid Rivet journal scope");
 	const tenantId = scope.tenantId;
 	const campId = scope.campId;
+	const issueCapability = scope.issueCapability;
 	const capabilities = new WeakMap<AsyncActorLease, LeaseInput>();
 	const handle = (key: string) => {
 		if (!validName(key)) throw new TypeError("invalid Rivet actor key");
 		return namespace.getOrCreate(["hobo", tenantId, campId, key]);
+	};
+	const authorize = async <T>(
+		key: string,
+		action: RivetJournalAction,
+		input: T,
+	): Promise<AuthorizedInput<T>> => {
+		const args = snapshotDistributedData(input);
+		if (args === undefined)
+			throw new TypeError("invalid Rivet journal operation");
+		const operation = {
+			actorKey: ["hobo", tenantId, campId, key],
+			action,
+			args,
+		};
+		try {
+			const digest = computeRivetOperationDigest(operation);
+			const capability = await issueCapability(operation);
+			if (digest !== computeRivetOperationDigest(operation))
+				throw new Error("operation changed during authorization");
+			return { args, capability };
+		} catch {
+			throw new RivetDistributedJournalError(
+				"AUTHORIZATION_UNAVAILABLE",
+				action,
+			);
+		}
 	};
 	const request = async (
 		operation: RivetDistributedJournalError["operation"],
@@ -334,11 +340,14 @@ export function createRivetDistributedJournal(
 		key: string,
 		input: { holderId: string; requestId: string },
 	): Promise<AsyncActorLease> => {
-		if (!validName(input.holderId) || !validName(input.requestId))
+		const { holderId, requestId } = input;
+		if (!validName(holderId) || !validName(requestId))
 			throw new TypeError("invalid Rivet lease request");
 		const remote = handle(key);
-		const granted = await request("acquire", input.requestId, () =>
-			remote.acquire(input),
+		const stableInput = Object.freeze({ holderId, requestId });
+		const proof = await authorize(key, "acquire", stableInput);
+		const granted = await request("acquire", requestId, () =>
+			remote.acquire(proof),
 		);
 		if (
 			granted.status !== "acquired" ||
@@ -349,38 +358,40 @@ export function createRivetDistributedJournal(
 			throw new RivetDistributedJournalError(
 				"OUTCOME_UNKNOWN",
 				"acquire",
-				input.requestId,
+				requestId,
 			);
-		const capability = {
-			holderId: input.holderId,
-			requestId: input.requestId,
+		const capability = Object.freeze({
+			holderId,
+			requestId,
 			fenceToken: granted.fenceToken,
-		};
+		});
 		const lease: AsyncActorLease = Object.freeze({
 			key,
-			holderId: input.holderId,
+			holderId,
 			fenceToken: BigInt(granted.fenceToken),
 			expiresAt: new Date(granted.expiresAtMs).toISOString(),
 			async revalidate() {
-				const response = await request("check", input.requestId, () =>
-					remote.check(capability),
+				const proof = await authorize(key, "check", capability);
+				const response = await request("check", requestId, () =>
+					remote.check(proof),
 				);
 				if (response.status !== "valid")
 					throw new RivetDistributedJournalError(
 						"INVALID_RECEIPT",
 						"check",
-						input.requestId,
+						requestId,
 					);
 			},
 			async release() {
-				const response = await request("release", input.requestId, () =>
-					remote.release(capability),
+				const proof = await authorize(key, "release", capability);
+				const response = await request("release", requestId, () =>
+					remote.release(proof),
 				);
 				if (response.status !== "released")
 					throw new RivetDistributedJournalError(
 						"OUTCOME_UNKNOWN",
 						"release",
-						input.requestId,
+						requestId,
 					);
 			},
 		});
@@ -405,14 +416,33 @@ export function createRivetDistributedJournal(
 			const capability = capabilities.get(lease);
 			if (capability === undefined || lease.key !== key)
 				throw new RivetDistributedJournalError("STALE_LEASE", "append");
+			const { eventId, expectedRevision, event } = input;
+			if (
+				!validName(eventId) ||
+				!Number.isSafeInteger(expectedRevision) ||
+				expectedRevision < 0
+			)
+				throw new TypeError("invalid Rivet journal event identity or revision");
+			const encoded = encodeDistributedEvent(event);
+			if (encoded === undefined)
+				throw new TypeError("invalid Rivet journal event");
+			// SAFETY: the canonical encoder validates the bounded event before copying it.
+			const snapshot = JSON.parse(encoded) as FoldEvent;
 			const remote = handle(key);
+			const proof = await authorize(key, "append", {
+				...capability,
+				eventId,
+				expectedRevision,
+				event: snapshot,
+			});
 			const response = await request("append", capability.requestId, () =>
-				remote.append({ ...capability, ...input }),
+				remote.append(proof),
 			);
 			if (
 				response.status !== "appended" ||
 				!Number.isSafeInteger(response.revision) ||
-				response.revision < 1
+				expectedRevision >= Number.MAX_SAFE_INTEGER ||
+				response.revision !== expectedRevision + 1
 			)
 				throw new RivetDistributedJournalError(
 					"OUTCOME_UNKNOWN",
@@ -421,14 +451,40 @@ export function createRivetDistributedJournal(
 				);
 			return response;
 		},
-		async read(key: string) {
+		async read(
+			key: string,
+			options: {
+				afterRevision?: number;
+				throughRevision?: number;
+				limit?: number;
+			} = {},
+		) {
+			const afterRevision = options.afterRevision ?? 0;
+			const limit = options.limit ?? 16;
+			const throughRevision = options.throughRevision;
+			if (
+				!Number.isSafeInteger(afterRevision) ||
+				afterRevision < 0 ||
+				!Number.isSafeInteger(limit) ||
+				limit < 1 ||
+				limit > 16 ||
+				(throughRevision !== undefined &&
+					(!Number.isSafeInteger(throughRevision) ||
+						throughRevision < afterRevision))
+			)
+				throw new TypeError("invalid Rivet journal page");
+			const page: ReadInput =
+				throughRevision === undefined
+					? { afterRevision, limit }
+					: { afterRevision, limit, throughRevision };
+			const proof = await authorize(key, "read", page);
 			let raw: unknown;
 			try {
-				raw = await handle(key).read();
+				raw = await handle(key).read(proof);
 			} catch {
 				throw new RivetDistributedJournalError("UNAVAILABLE", "read");
 			}
-			const result = readSnapshot(raw);
+			const result = readSnapshot(raw, page);
 			if (result === undefined)
 				throw new RivetDistributedJournalError("UNAVAILABLE", "read");
 			return result;

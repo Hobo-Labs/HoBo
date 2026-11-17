@@ -16,20 +16,20 @@ RivetKit, its WASM package, and the Rivet Engine image are pinned to 3.0.0.
 exercise the distributed journal against the pinned upstream engine, including
 lease contention, durable appends, replay, actor sleep and wake.
 
-Register `rivetDistributedJournalActor` in a RivetKit registry and pass its
-client namespace to `createRivetDistributedJournal` with a tenant and Camp.
-The returned `actorHost` implements HoBo's asynchronous lease port; `append`
-and `read` use the same actor as the lease authority. A request ID is a lease
-capability: generate it with a cryptographically secure random generator and
-protect it like a credential. If a grant or append returns `OUTCOME_UNKNOWN`,
-reconcile using the same request or event ID. A lease only fences operations
-inside this journal; external effects need their own independent fence.
+Register `createRivetDistributedJournalActor(verifier)` in a RivetKit registry,
+and pass its client namespace, tenant, Camp and capability issuer to
+`createRivetDistributedJournal`. Each operation needs a short-lived signed
+capability bound to the actor key, action and exact arguments; the actor checks
+it against a host-owned authorization policy before accessing its journal.
+Keep the signing key and authority outside the deployed actor.
 
-The current actor stores at most 1,024 facts, 4 MiB of fact data and 4,096
-lease grants per key. It returns `CAPACITY_EXCEEDED` before exceeding a limit;
-the host must provision a new independently identified actor and migrate its
-state with verified application-specific evidence. Its asynchronous journal
-does not yet implement the local host's durable inbox and transactional outbox.
+Lease grants, fences, deduplication identities and facts share one actor-local
+SQLite transaction. Pages contain at most 16 events of at most 32 KiB each;
+use the first page's `revision` as `throughRevision` for subsequent pages. If
+a grant or append returns `OUTCOME_UNKNOWN`, reconcile with the same request
+or event ID. The asynchronous lease port fences appends in this journal only:
+it cannot fence a separate event store or external effects. The asynchronous
+journal does not yet implement the local host's durable inbox and outbox.
 
 ## Fidelity
 
