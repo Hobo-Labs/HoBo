@@ -13,6 +13,13 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
+import {
+	connectionCreate,
+	createManagementContext,
+	projectYardSnapshot,
+	stationInit,
+	stationUp,
+} from "@hobo/management";
 import { expect, it } from "vitest";
 import {
 	captureChecksSchema,
@@ -22,6 +29,58 @@ import {
 import { validateEvidence } from "../scripts/evidence-validator.mts";
 import { compareImages } from "../scripts/image-diff.mts";
 import { sampleBoInk } from "../scripts/sample-bo-ink.mts";
+import {
+	confirmSheet,
+	sheetForConnectionCreate,
+} from "../src/openui/sheets.js";
+
+it("creates a connection from the blank default beside an existing work alias", () => {
+	const home = mkdtempSync(join(tmpdir(), "yard-connection-default-"));
+	try {
+		const ctx = createManagementContext({ hoboHome: home });
+		stationInit(ctx, { name: "local", tenant: "local" });
+		stationUp(ctx, "station:local");
+		expect(
+			connectionCreate(ctx, {
+				provider: "asana",
+				alias: "work",
+				stationId: "station:local",
+			}).ok,
+		).toBe(true);
+		const snapshot = projectYardSnapshot(ctx, { stationId: "station:local" });
+		if (!snapshot.ok || !snapshot.data) throw new Error(snapshot.message);
+		const sheet = sheetForConnectionCreate(snapshot.data);
+		expect(sheet.fields.find((field) => field.name === "alias")?.value).toBe(
+			"",
+		);
+		const unexpected = () => {
+			throw new Error("unexpected sheet handler");
+		};
+		const created = confirmSheet(
+			sheet,
+			{ provider: "asana", alias: "", stationId: "station:local" },
+			{
+				connectionCreate: (input) => connectionCreate(ctx, input),
+				connectionAuthorize: unexpected,
+				stationRailsActivate: unexpected,
+				stationRailsApprove: unexpected,
+				stationRailsPublish: unexpected,
+				doctorSnapshot: unexpected,
+			},
+		);
+		expect(created.ok).toBe(true);
+		const after = projectYardSnapshot(ctx, { stationId: "station:local" });
+		if (!after.ok || !after.data) throw new Error(after.message);
+		expect(after.data.connections).toHaveLength(2);
+		expect(
+			after.data.connections.some(
+				(connection) => connection.alias === undefined,
+			),
+		).toBe(true);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
 
 it("accepts historical omissions but refuses recorded or malformed failures", () => {
 	expect(
@@ -205,6 +264,44 @@ it("invalidates both old evidence copies when browser launch fails", () => {
 		}
 		expect(existsSync(join(shots, ".capture-lock"))).toBe(false);
 		for (const dir of [shots, proof]) rmSync(join(dir, ".capture-incomplete"));
+		// A directory at the proof marker path makes only the second marker write
+		// fail, without relying on platform-specific file permissions.
+		mkdirSync(join(proof, ".capture-incomplete"));
+		const partialSetup = spawnSync(
+			process.execPath,
+			["--experimental-strip-types", join(fixtureScripts, "play-demo.mts")],
+			{ encoding: "utf8", timeout: 20_000 },
+		);
+		expect(partialSetup.status).not.toBe(0);
+		expect(existsSync(join(shots, ".capture-incomplete"))).toBe(true);
+		expect(existsSync(join(shots, ".capture-lock"))).toBe(true);
+		rmSync(join(proof, ".capture-incomplete"), { recursive: true });
+		const proofAfterFailure = spawnSync(
+			process.execPath,
+			[
+				"--experimental-strip-types",
+				join(fixtureScripts, "evidence-check.mts"),
+				proof,
+			],
+			{ encoding: "utf8", timeout: 20_000 },
+		);
+		expect(proofAfterFailure.status).not.toBe(0);
+		expect(proofAfterFailure.stderr).toContain(
+			"capture in progress or interrupted",
+		);
+		rmSync(join(shots, ".capture-lock"), { recursive: true });
+		const proofWithoutLock = spawnSync(
+			process.execPath,
+			[
+				"--experimental-strip-types",
+				join(fixtureScripts, "evidence-check.mts"),
+				proof,
+			],
+			{ encoding: "utf8", timeout: 20_000 },
+		);
+		expect(proofWithoutLock.status).not.toBe(0);
+		expect(proofWithoutLock.stderr).toContain("capture incomplete");
+		rmSync(join(shots, ".capture-incomplete"));
 		mkdirSync(join(shots, ".capture-lock"));
 		for (const dir of [shots, proof]) {
 			const checking = spawnSync(
@@ -284,10 +381,31 @@ it("refuses failures in the manifest or its report even when files match", () =>
 		const probeCalls: string[] = [];
 		const testProbe = (path: string) => {
 			probeCalls.push(path);
-			return { status: 0, stdout: "2.5\n", stderr: "" };
+			return {
+				status: 0,
+				stdout: JSON.stringify({
+					streams: [
+						{ codec_type: "video", width: 100, height: 100, duration: "2.5" },
+					],
+					format: { duration: "2.5" },
+				}),
+				stderr: "",
+			};
 		};
 		const validateWithTestProbe = () =>
 			validateEvidence(shots, join(shots, ".capture-lock"), testProbe);
+
+		writeFileSync(manifestPath, "{ malformed json");
+		const malformed = runCheck();
+		expect(malformed.status).not.toBe(0);
+		expect(malformed.stderr).toContain(
+			"evidence-manifest.json is not valid JSON",
+		);
+		expect(malformed.stderr).toContain(
+			"pnpm --filter @hobo/control-yard run evidence",
+		);
+		expect(malformed.stderr).not.toContain("SyntaxError");
+		saveReport();
 
 		manifest.errors = ["imgdiff boot failed"];
 		writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -314,6 +432,27 @@ it("refuses failures in the manifest or its report even when files match", () =>
 		saveReport();
 		expect(validateWithTestProbe()).toBe(0);
 		expect(probeCalls).toHaveLength(4);
+		const audioOnlyProbe = () => ({
+			status: 0,
+			stderr: "",
+			stdout: JSON.stringify({ streams: [], format: { duration: "2.5" } }),
+		});
+		expect(
+			validateEvidence(shots, join(shots, ".capture-lock"), audioOnlyProbe),
+		).toBe(4);
+		const shortVideoProbe = () => ({
+			status: 0,
+			stderr: "",
+			stdout: JSON.stringify({
+				streams: [
+					{ codec_type: "video", width: 100, height: 100, duration: "0.5" },
+				],
+				format: { duration: "2.5" },
+			}),
+		});
+		expect(
+			validateEvidence(shots, join(shots, ".capture-lock"), shortVideoProbe),
+		).toBe(4);
 		const emptyPath = join(scratch, "no-ffprobe");
 		mkdirSync(emptyPath);
 		const noFfprobe = spawnSync(

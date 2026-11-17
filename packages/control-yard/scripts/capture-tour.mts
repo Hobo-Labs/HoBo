@@ -439,9 +439,11 @@ try {
 				runImageDiff,
 			);
 			check("imgdiff connection bay", d2.ok, d2.detail);
-			// The seeded alias is already in use. Confirm a distinct connection and
-			// require both the API result and the updated visible yard state.
-			await page.locator("#f-alias").fill("evidence-work");
+			// Confirm the untouched optional alias with the seeded connection present.
+			// The request must omit the alias, then create a real connection.
+			if ((await page.locator("#f-alias").inputValue()) !== "") {
+				throw new Error("connection alias should be blank by default");
+			}
 			await sleep(400);
 			const created = page.waitForResponse(
 				(response) =>
@@ -450,15 +452,21 @@ try {
 			);
 			await page.locator("#sheet-confirm").click();
 			const response = await created;
+			const request = z
+				.object({ alias: z.never().optional() })
+				.safeParse(response.request().postDataJSON());
 			const result = z
 				.object({
 					ok: z.literal(true),
 					data: z.object({
-						connection: z.object({ alias: z.literal("evidence-work") }),
+						connection: z.object({
+							id: z.string().min(1),
+							alias: z.never().optional(),
+						}),
 					}),
 				})
 				.safeParse(await response.json());
-			if (!response.ok() || !result.success) {
+			if (!response.ok() || !request.success || !result.success) {
 				throw new Error(
 					`connection creation failed: HTTP ${response.status()}`,
 				);
@@ -469,7 +477,11 @@ try {
 				const current = seam.state();
 				return !current.sheetOpen && current.connCount === previousCount + 1;
 			}, stBay.connCount);
-			check("connection created and sheet closed", true, "alias=evidence-work");
+			check(
+				"connection created and sheet closed",
+				true,
+				"default optional alias omitted",
+			);
 			await sleep(1000);
 		},
 	);

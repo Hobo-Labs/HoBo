@@ -5,7 +5,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import {
 	captureChecksSchema,
@@ -55,7 +55,17 @@ type VideoProbe = (path: string) => VideoProbeResult;
 function probeVideo(path: string): VideoProbeResult {
 	const result = spawnSync(
 		"ffprobe",
-		["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+		[
+			"-v",
+			"error",
+			"-select_streams",
+			"v:0",
+			"-show_entries",
+			"stream=codec_type,width,height,duration:format=duration",
+			"-of",
+			"json",
+			path,
+		],
 		{ encoding: "utf8" },
 	);
 	return {
@@ -81,7 +91,10 @@ export function validateEvidence(
 	if (existsSync(lock)) {
 		fail(`capture in progress or interrupted; check the lock at ${lock}`);
 	}
-	if (existsSync(join(shots, ".capture-incomplete"))) {
+	if (
+		existsSync(join(shots, ".capture-incomplete")) ||
+		existsSync(join(dirname(lock), ".capture-incomplete"))
+	) {
 		fail(
 			"capture incomplete; run pnpm --filter @hobo/control-yard run evidence again",
 		);
@@ -101,9 +114,20 @@ export function validateEvidence(
 			.record(z.string(), z.object({ bytes: z.number(), sha256: z.string() }))
 			.optional(),
 	});
-	const parsedManifest = manifestSchema.safeParse(
-		JSON.parse(readFileSync(manifestPath, "utf8")),
-	);
+	const manifestSource = readFileSync(manifestPath, "utf8");
+	const parsedManifest = (() => {
+		try {
+			return manifestSchema.safeParse(JSON.parse(manifestSource));
+		} catch {
+			return undefined;
+		}
+	})();
+	if (!parsedManifest) {
+		fail(
+			"evidence-manifest.json is not valid JSON — rerun: pnpm --filter @hobo/control-yard run evidence",
+		);
+		return errors;
+	}
 	if (!parsedManifest.success) {
 		fail("evidence-manifest.json has invalid fields");
 		return errors;
@@ -205,7 +229,19 @@ export function validateEvidence(
 		}
 	}
 
-	// MP4 structural check via ffprobe when available
+	// Check the selected video stream as well as the container duration.
+	const duration = z.union([z.string(), z.number()]);
+	const videoSchema = z.object({
+		streams: z.array(
+			z.object({
+				codec_type: z.string(),
+				width: z.number().optional(),
+				height: z.number().optional(),
+				duration: duration.optional(),
+			}),
+		),
+		format: z.object({ duration: duration.optional() }),
+	});
 	for (const req of REQUIRED.filter((r) => r.kind === "mp4")) {
 		const abs = join(shots, req.path);
 		if (!existsSync(abs)) continue;
@@ -214,13 +250,43 @@ export function validateEvidence(
 			fail(`ffprobe failed for ${req.path}: ${r.stderr || r.stdout}`);
 			continue;
 		}
-		const dur = Number(String(r.stdout).trim());
-		if (!Number.isFinite(dur) || dur < 1.5) {
+		const parsed = (() => {
+			try {
+				return videoSchema.safeParse(JSON.parse(r.stdout));
+			} catch {
+				return undefined;
+			}
+		})();
+		if (!parsed?.success) {
+			fail(`ffprobe returned invalid video metadata for ${req.path}`);
+			continue;
+		}
+		const video = parsed.data.streams[0];
+		if (
+			video?.codec_type !== "video" ||
+			!video.width ||
+			video.width <= 0 ||
+			!video.height ||
+			video.height <= 0
+		) {
+			fail(`${req.path} has no usable video stream`);
+			continue;
+		}
+		const streamDuration = Number(video.duration);
+		const containerDuration = Number(parsed.data.format.duration);
+		if (
+			!Number.isFinite(streamDuration) ||
+			streamDuration < 1.5 ||
+			!Number.isFinite(containerDuration) ||
+			containerDuration < 1.5
+		) {
 			fail(
-				`${req.path} duration ${dur}s < 1.5s — recording too short / static`,
+				`${req.path} has insufficient video or container duration (video=${streamDuration}s, container=${containerDuration}s; minimum 1.5s)`,
 			);
 		} else {
-			console.log(`OK  ${req.path} duration=${dur.toFixed(2)}s`);
+			console.log(
+				`OK  ${req.path} video=${streamDuration.toFixed(2)}s container=${containerDuration.toFixed(2)}s`,
+			);
 		}
 	}
 

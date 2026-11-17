@@ -349,7 +349,7 @@ function sheetForZone(zone, s) {
 			confirmOp: "connectionCreate",
 			fields: [
 				{ name: "provider", label: "Provider", type: "string", value: "asana" },
-				{ name: "alias", label: "Alias", type: "string", value: "work" },
+				{ name: "alias", label: "Alias (optional)", type: "string", value: "" },
 				{
 					name: "stationId",
 					label: "Station",
@@ -658,7 +658,7 @@ async function confirmSheet() {
 				method: "POST",
 				body: JSON.stringify({
 					provider: values.provider,
-					alias: values.alias,
+					alias: values.alias || undefined,
 					stationId: values.stationId || "station:local",
 				}),
 			});

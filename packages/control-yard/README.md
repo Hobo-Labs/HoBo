@@ -45,9 +45,9 @@ comparison; a missing baseline or comparison dependency fails the capture. The
 comparison accepts RMS up to 25 for rendering variation and never replaces a
 baseline automatically; review baseline updates separately. A failed capture
 may leave a mix of old and new images, and marks both evidence directories
-incomplete until a successful rerun. Captures take an exclusive
-lock at `public/shots/.capture-lock`; after an interrupted process, confirm no
-capture is still running before removing that directory and retrying.
+incomplete until a successful rerun. Captures take an exclusive lock at
+`public/shots/.capture-lock`. If marker setup fails or a capture is interrupted,
+confirm no capture is still running before removing that directory and retrying.
 
 The engine, test seam, and asset index unit tests use management snapshots and
 typed sheet fixtures. They do not replace the retired pixel-village browser or
