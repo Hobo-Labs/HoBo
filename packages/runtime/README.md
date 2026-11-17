@@ -49,3 +49,16 @@ Resuming a completed or failed run returns its recorded terminal outcome without
 calling the workflow or appending another event. New failure records preserve
 the failed step when present; older failure records without a step cannot
 reconstruct that detail.
+
+The terminal-outcome model explores 15 distinct states and 18 transitions.
+This projection hides ten transitions that do not change the displayed state;
+it shows the modeled flow, rather than a trace of one execution.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Running
+  Running --> Completed: record terminal outcome
+  Running --> Failed: record terminal outcome
+  Completed --> ResultReturned: return recorded outcome
+  Failed --> FailureReturned: return recorded outcome
+```
