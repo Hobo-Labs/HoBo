@@ -381,7 +381,13 @@ environment variables.
   its refusal and the link (`SECRET_CAPTURE_NOT_ANSWERED` for a capture),
   so the agent can fall back to showing the link once in chat. Every form
   is one line (no line breaks; the owner's app showed one-line forms and not
-  multi-line ones), the link in it as itself. Through the MCP server, `cd`'s Vercel
+  multi-line ones). **Rule: a link reaches the owner as a target they can
+  open or copy, never as text.** In a form it is a field of its own,
+  prefilled and marked as a link (`format: "uri"`, `linkField`); an address
+  in a form's text, bare or as markdown, showed in the owner's app as text
+  they could neither click nor copy. The spec model's invariant "a form's
+  links are fields the owner can open or copy" fails any form that carries
+  a link only in its text, on every smoke and explorer run. Through the MCP server, `cd`'s Vercel
   device grant runs off the request path (the owner channel's jobs) and
   writes the connection to the store when approved (RFC 8628 polling on an
   injectable clock); the call waits on the owner's form and then on the

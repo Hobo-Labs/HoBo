@@ -62,11 +62,22 @@ const refused = (
 			isError: true,
 		},
 	});
-const form = (requestId: string, message: string) =>
+const form = (requestId: string, message: string, links: string[] = []) =>
 	toHost({
 		id: requestId,
 		method: "elicitation/create",
-		params: { message, requestedSchema: { type: "object", properties: {} } },
+		params: {
+			message,
+			requestedSchema: {
+				type: "object",
+				properties: Object.fromEntries(
+					links.map((url, at) => [
+						`link${at}`,
+						{ type: "string", format: "uri", default: url },
+					]),
+				),
+			},
+		},
 	});
 const answer = (requestId: string, action: string) =>
 	toServer({ id: requestId, result: { action } });
@@ -85,26 +96,40 @@ function verdicts(wire: readonly WireMessage[], secrets: string[] = []) {
 }
 
 describe("SPEC ceremony model: the derived properties catch the real failures", () => {
-	it("holds on the ceremony done right: one cd call, every step a form carrying its link", () => {
+	it("holds on the ceremony done right: one cd call, every step a form with its link as a field", () => {
 		const cd = call("cd");
 		const result = verdicts([
 			cd.wire,
-			// The run asks for the sign-in itself: the link in the form.
+			// The run asks for the sign-in itself: the link a field of the form.
 			form(
 				"hobo-1",
-				`Sign in to Infisical. When it says Unable to reach CLI, click Copy to clipboard.\n\n${SIGN_IN}\n\nPaste what Infisical copied after you signed in.`,
+				"Sign in to Infisical. When it says Unable to reach CLI, click Copy to clipboard. — Paste what Infisical copied after you signed in.",
+				[SIGN_IN],
 			),
 			answer("hobo-1", "accept"),
-			// Vercel's approval: its link and code in a form, submitted when done.
-			form(
-				"hobo-2",
-				"Approve HoBo CD on Vercel (code AB-12), then submit.\n\nhttps://vercel.com/oauth/device?user_code=AB-12",
-			),
+			// Vercel's approval: its link a field, submitted when done.
+			form("hobo-2", "Approve HoBo CD on Vercel (code AB-12), then submit.", [
+				"https://vercel.com/oauth/device?user_code=AB-12",
+			]),
 			answer("hobo-2", "accept"),
 			refused(cd.id, "HOBO_PLAN_REJECTED", ["cd-config: no provider"]),
 		]);
 		for (const verdict of Object.values(result))
 			expect(verdict).toMatchObject({ holds: true });
+	});
+
+	it("catches a link only in a form's text (the owner could neither click nor copy it)", () => {
+		const cd = call("cd");
+		const result = verdicts([
+			cd.wire,
+			form(
+				"hobo-1",
+				`Sign in to Infisical. ${SIGN_IN} — Paste what Infisical copied after you signed in.`,
+			),
+		]);
+		expect(
+			result["a form's links are fields the owner can open or copy"],
+		).toMatchObject({ holds: false, at: 1 });
 	});
 
 	it("catches the live run's failure: a link the agent had to relay in chat", () => {

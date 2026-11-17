@@ -54,6 +54,8 @@ export type CeremonyEvent =
 			readonly requestId: string;
 			readonly capture: string | undefined;
 			readonly message: string;
+			/** Its link fields: prefilled, marked as links (`format: "uri"`). */
+			readonly links: readonly string[];
 	  }
 	| {
 			readonly kind: "answer";
@@ -91,7 +93,15 @@ const UrlPrompt = z.object({
 	elicitationId: z.string(),
 	url: z.string(),
 });
-const FormPrompt = z.object({ message: z.string() });
+const FormPrompt = z.object({
+	message: z.string(),
+	requestedSchema: z
+		.object({
+			properties: z.record(z.string(), z.record(z.string(), z.json())),
+		})
+		.optional(),
+});
+const LinkField = z.object({ format: z.literal("uri"), default: z.string() });
 
 /** The events in a recorded host ↔ server exchange. */
 export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
@@ -157,6 +167,12 @@ export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
 						requestId: id,
 						capture: inFlightCapture,
 						message: form.data.message,
+						links: Object.values(
+							form.data.requestedSchema?.properties ?? {},
+						).flatMap((field) => {
+							const link = LinkField.safeParse(field);
+							return link.success ? [link.data.default] : [];
+						}),
 					});
 			}
 			continue;
@@ -266,10 +282,10 @@ export const CEREMONY = {
 			/PLAN_REJECTED/u.test(event.code)),
 } as const;
 
-/** The URLs a form's message carries, each on its own line. */
+/** The URLs a text carries, bare or as markdown links. */
 function urlsIn(text: string): URL[] {
-	return text.split(/\s+/u).flatMap((word) => {
-		if (!/^https?:\/\//u.test(word)) return [];
+	// Bare, or inside a markdown link: `[name](https://…)`.
+	return [...text.matchAll(/https?:\/\/[^\s)\]]+/gu)].flatMap(([word]) => {
 		try {
 			return [new URL(word)];
 		} catch {
@@ -280,7 +296,9 @@ function urlsIn(text: string): URL[] {
 
 /** The links the host showed the owner: a link prompt, or a form carrying it. */
 function shownLinks(event: CeremonyEvent): URL[] {
-	if (event.kind === "form") return urlsIn(event.message);
+	// A form shows a link only as its own field: an address in its text
+	// could be neither clicked nor copied in the owner's app.
+	if (event.kind === "form") return event.links.flatMap((link) => urlsIn(link));
 	if (event.kind !== "link") return [];
 	try {
 		return [new URL(event.url)];
@@ -378,6 +396,19 @@ export function ceremonyProperties(
 				)(trace, at),
 			);
 		},
+	});
+	// A link in a form is a field of its own (prefilled, marked as a link),
+	// never only text: the owner could neither click nor copy it there.
+	properties.push({
+		name: "a form's links are fields the owner can open or copy",
+		kind: "invariant",
+		invariant: atom(
+			(event) =>
+				event.kind !== "form" ||
+				urlsIn(event.message).every((url) =>
+					event.links.some((link) => urlsIn(link)[0]?.href === url.href),
+				),
+		),
 	});
 	// A completion names a link the host was shown.
 	properties.push({

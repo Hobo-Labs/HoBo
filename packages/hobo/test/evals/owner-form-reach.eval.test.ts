@@ -51,6 +51,8 @@ const elicitParams = z.object({
 				type: z.literal("string"),
 				title: z.string().optional(),
 				description: z.string().optional(),
+				format: z.string().optional(),
+				default: z.string().optional(),
 			}),
 		),
 		required: z.array(z.string()),
@@ -239,7 +241,7 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		await client.close();
 	});
 
-	it("the form is minimal: one short line with the link, a short title, nothing said twice", async () => {
+	it("the form is minimal: one short line, the link its own field, a short title, nothing said twice", async () => {
 		// Derived from the owner's screenshot: the link was not clickable and
 		// was buried in a paragraph that repeated itself; label and description
 		// said the same thing twice. One short line, the link in it as itself.
@@ -260,10 +262,16 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		const form = await client.fill({ value: COPIED });
 		const field = form.requestedSchema.properties.value;
 		// One line: the owner's app showed one-line forms and not the
-		// multi-line ones. The link is in it, as itself.
+		// multi-line ones.
 		expect(form.message).not.toContain("\n");
-		expect(form.message.split(/\s+/u)).toContain(link);
-		const prose = form.message.replace(link, "").trim();
+		// The link is a field of its own, prefilled and marked as a link: in
+		// the text it could be neither clicked nor copied.
+		expect(form.requestedSchema.properties.link).toMatchObject({
+			type: "string",
+			format: "uri",
+			default: link,
+		});
+		const prose = form.message;
 		expect(prose).not.toMatch(/https?:\/\//u);
 		expect(prose.length).toBeLessThanOrEqual(140);
 		const sentences = prose.split(/(?<=\.)\s+/u);
@@ -459,13 +467,17 @@ describe("EVAL owner form reach: the link reaches the owner in the form itself",
 		});
 	}
 
-	it("one form: one line with the sign-in link, and the paste field", async () => {
+	it("one form: the sign-in link as its own field, and the paste field", async () => {
 		const client = host(BOTH, { remote: true });
 		await client.init();
 		await pendingSignIn(client);
 		const mine = client.capture();
 		const form = await client.fill({ value: COPIED });
-		expect(form.message.split(/\s+/u)).toContain(SIGN_IN_URL);
+		expect(form.requestedSchema.properties.link).toMatchObject({
+			format: "uri",
+			default: SIGN_IN_URL,
+		});
+		expect(form.message).not.toMatch(/https?:\/\//u);
 		expect(form.message).not.toContain("\n");
 		const result = toolResult.parse((await client.answer(mine)).result);
 		expect(result.structuredContent).toMatchObject({
@@ -494,7 +506,11 @@ describe("EVAL owner form reach: the link reaches the owner in the form itself",
 		await pendingSignIn(client);
 		const mine = client.capture();
 		const form = await client.fill({ value: COPIED });
-		expect(form.message).toContain(SIGN_IN_URL);
+		expect(form.requestedSchema.properties.link).toMatchObject({
+			format: "uri",
+			default: SIGN_IN_URL,
+		});
+		expect(form.message).not.toMatch(/https?:\/\//u);
 		const done = toolResult.parse((await client.answer(mine)).result);
 		expect(done.structuredContent).toMatchObject({ status: "stored" });
 		expect(JSON.stringify(done)).not.toContain("SECRET_CAPTURE_LINK_FIRST");

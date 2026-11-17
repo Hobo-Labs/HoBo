@@ -12,6 +12,7 @@ import {
 } from "@hobo/hobo-ci";
 import {
 	createSecretCaptureApp,
+	linkField,
 	type ParsedSecretCaptureSpec,
 	type SecretCaptureApp,
 	type SecretStoreConnector,
@@ -104,11 +105,14 @@ export function createMcpOwnerChannel(
 		},
 		async confirm({ url, message }) {
 			const answer = options.form?.({
-				// One line: a host showed one-line forms and not multi-line ones.
-				message: `${message} ${url}`,
+				// One line, and the link as its own field (prefilled, marked as a
+				// link): an address in the text could be neither clicked nor
+				// copied.
+				message,
 				requestedSchema: {
 					type: "object",
 					properties: {
+						link: linkField(url, "Approval link"),
 						done: { type: "boolean", title: "Done", default: true },
 					},
 				},

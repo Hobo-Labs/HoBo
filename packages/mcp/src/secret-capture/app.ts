@@ -317,6 +317,21 @@ type FormAnswer =
 	| Readonly<{ action: "decline" | "cancel" | "unanswered" }>;
 
 /** The host's answer to `elicitation/create`, parsed where it enters. */
+/**
+ * A link as a form field of its own: prefilled with the address and marked
+ * as a link (`format: "uri"`), so the owner can open or copy it from the
+ * field, and a host can make it clickable. Never only in a form's text.
+ */
+export function linkField(url: string, title: string) {
+	return {
+		type: "string",
+		format: "uri",
+		title,
+		default: url,
+		description: "Open this link, or copy it.",
+	} as const;
+}
+
 function parseFormAnswer(answer: JsonValue | undefined): FormAnswer {
 	const action = objectAt(answer, "action");
 	const value = objectAt(objectAt(answer, "content"), "value");
@@ -576,21 +591,24 @@ export function createSecretCaptureApp(
 		const elicit = options.elicit;
 		let problem: string | undefined;
 		while (ticket.state === "awaiting-owner") {
-			// One field and one line (no line breaks: a host showed forms
-			// with one line and not the ones with several); the link, when the
-			// value comes from one, in that line.
+			// One line (no line breaks: a host showed forms with one line and
+			// not the ones with several); the link, when the value comes from
+			// one, as its own field, prefilled and marked as a link.
 			const said =
 				problem === undefined ? ticket.spec.purpose : `${problem} Try again.`;
 			const answer = parseFormAnswer(
 				await (
 					elicit?.({
-						message:
-							link === undefined
-								? said
-								: `${link.message} ${link.url} — ${said}`,
+						message: link === undefined ? said : `${link.message} — ${said}`,
 						requestedSchema: {
 							type: "object",
 							properties: {
+								// The link as its own field, never only in the text: an
+								// address in the message showed as text the owner could
+								// neither click nor copy.
+								...(link === undefined
+									? undefined
+									: { link: linkField(link.url, "Link to open") }),
 								value: {
 									type: "string",
 									title: ticket.spec.label,

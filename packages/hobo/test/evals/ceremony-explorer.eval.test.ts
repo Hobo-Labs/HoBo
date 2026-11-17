@@ -195,10 +195,20 @@ async function runSchedule(schedule: Schedule) {
 	/** The owner, at the forms their host shows. */
 	async function answerPrompt(prompt: Message) {
 		const id = prompt.id ?? null;
-		const { message: said } = z
-			.object({ message: z.string() })
+		const { requestedSchema } = z
+			.object({
+				requestedSchema: z.object({
+					properties: z.record(z.string(), z.record(z.string(), z.json())),
+				}),
+			})
 			.parse(prompt.params);
-		const vercelLink = /https:\/\/vercel\.com\/\S+/u.exec(said)?.[0];
+		const link = z
+			.object({ default: z.string() })
+			.safeParse(requestedSchema.properties.link);
+		const vercelLink =
+			link.success && new URL(link.data.default).hostname === "vercel.com"
+				? link.data.default
+				: undefined;
 		if (vercelLink !== undefined) {
 			// Vercel's approval form: approve or deny there, then submit.
 			story.push("form: vercel");

@@ -167,11 +167,16 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			);
 			const signIn = formParams.parse(signInForm.params);
 			trail.push(`form 1: ${JSON.stringify(signIn.message)}`);
-			const signInUrl = /https:\/\/app\.infisical\.com\/login\S*/u.exec(
-				signIn.message,
-			)?.[0];
+			// The link is the form's own field: never only in its text.
+			const signInUrl = z
+				.object({ format: z.literal("uri"), default: z.string() })
+				.parse(signIn.requestedSchema.properties.link).default;
+			expect(signIn.message).not.toMatch(/https?:\/\//u);
 			expect(signInUrl).toBeDefined();
-			expect(Object.keys(signIn.requestedSchema.properties)).toEqual(["value"]);
+			expect(Object.keys(signIn.requestedSchema.properties)).toEqual([
+				"link",
+				"value",
+			]);
 			// The owner signs in; Infisical gives them the session to copy.
 			const jwt = api.signIn();
 			const copied = Buffer.from(
@@ -194,9 +199,10 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			const approve = formParams.parse(vercelForm.params);
 			trail.push(`form 2: ${JSON.stringify(approve.message)}`);
 			expect(api.calls).toContain("POST /api/v1/identities");
-			const vercelUrl = /https:\/\/vercel\.com\/oauth\/device\S*/u.exec(
-				approve.message,
-			)?.[0];
+			const vercelUrl = z
+				.object({ format: z.literal("uri"), default: z.string() })
+				.parse(approve.requestedSchema.properties.link).default;
+			expect(new URL(vercelUrl).hostname).toBe("vercel.com");
 			expect(vercelUrl).toBeDefined();
 			// The owner submits before Vercel has registered the approval: the
 			// run waits for the grant's own outcome, not the click.
