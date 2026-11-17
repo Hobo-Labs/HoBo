@@ -42,18 +42,18 @@ Read this section before you believe a green suite.
   HTTP crosses the wire;
 - resolves binding values for the whole graph through `runtime-local`'s
   `createLocalBindingResolver`;
-- exposes isolated local ports for queue, topic, secret, data, and schedule
-  aliases, with their actual fidelity on the handle;
+- exposes isolated local ports for queue, topic, secret, data, schedule,
+  key-value, and bucket aliases, with their actual fidelity on the handle;
 - tears everything down in reverse dependency order.
 
 What it does **not** do:
 
 - run the deployed artifact on the deployed host; handles in this lane are
   never labelled `real`;
-- provide an engine behind unsupported kinds such as `kv`, `bucket`, `auth`,
-  `crypto`, `flag`, `job`, and `websocket`. Those get a handle and a
-  `hobo-test://` binding locator and nothing behind them; they are labelled
-  `mocked`;
+- provide an engine behind unsupported kinds such as `auth`, `crypto`,
+  `flag`, `job`, and `websocket`. Those get a handle and a `hobo-test://`
+  binding locator and nothing behind them; they are labelled `mocked`. The
+  resource catalog below lists every kind and its actual graph support;
 - automatically wire local ports from the graph into an entrypoint.
   These are in-process ports, not services listening at the `hobo-test://`
   locator. A test must explicitly inject the port into the code under test;
@@ -110,6 +110,8 @@ service can receive in a deployed runtime; `graph.topic(alias)` returns the
 `@hobo/identity` `SecretsPort`; `graph.data(alias)` returns the
 `@hobo/data-core` engine SPI backed by an isolated in-memory SQLite engine.
 `graph.schedule(alias)` returns the existing `@hobo/core` `SchedulerPort`.
+`graph.kv(alias)` and `graph.bucket(alias)` expose the generated interfaces for
+HoBo's pinned WASI key-value and blobstore subsets.
 Inject the appropriate port into the service under test and use
 the same object to arrange inputs and inspect results. The included CI relay
 test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
@@ -153,7 +155,7 @@ const harness = createTestHarness({
 });
 ```
 
-Queue, topic, secret, data and schedule factories return `ServiceEmulator<T>`: a typed port, a
+Queue, topic, secret, data, schedule, key-value and bucket factories return `ServiceEmulator<T>`: a typed port, a
 `simulated` or `mocked` fidelity label, and an optional `close`. Queue
 and schedule emulators may also expose a `VirtualClock`; data emulators require `close`.
 The scheduler supports interval schedules only: `graph.scheduleClock(alias)`
@@ -174,6 +176,12 @@ custom implementation `simulated` is
 responsible for its conformance. These factories are for test implementations;
 the in-process lane does not attest a real provider.
 
+The pinned blobstore interface returns object metadata but defines no body-read
+operation. The optional `bucketInspector` exposes `readBody(name)` as a
+test-only inspection capability, separate from the generated port. Storage
+values and inspected bodies are copied at the boundary. A replacement bucket
+factory may omit the inspector.
+
 ### Choosing and maintaining a double
 
 Use the smallest double that exercises an actual boundary. Pure functions and
@@ -189,6 +197,7 @@ otherwise duplicate code without testing a service contract.
 | Secrets | `graph.secret(alias)` and `createSecretEmulator()` wrap the identity package's in-memory `SecretsPort` | Test material lives in process memory; use fixture values, not real credentials |
 | Data engine | `graph.data(alias)` and `createDataEmulator()` use SQLite through the shared engine SPI; the emulator runs its conformance suite | Process-local SQLite, no raw SQL or remote database protocol; no schema migration port in memory |
 | Schedule | `graph.schedule(alias)` and `graph.scheduleClock(alias)` use the local scheduler and virtual clock | Interval schedules only; fired timers do not automatically invoke a handler |
+| Key-value / blob metadata | `graph.kv(alias)` and `graph.bucket(alias)` implement generated types from the pinned WASI subsets | Process-local; the pinned blob interface has no body-read operation and does not claim a complete WASI or cloud storage implementation |
 | Flags / experiments / rollout | `@hobo/identity` provides `createContractAssertedHarnessFixtures` and its built-in engines | Direct in-process fixtures, not automatically wired into this graph or a remote flag provider |
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
@@ -196,6 +205,43 @@ otherwise duplicate code without testing a service contract.
 | AWS, Azure and Vercel resolvers | Their package tests inject provider-specific fake `HttpTransport` implementations | These are not full provider emulators; the package READMEs do not claim live verification |
 | External HTTP provider | `@hobo/contract-harness` `createMockProviderFromPact`; `@hobo/testing` `pactBackedTransport` for stateful sequences | Hand-authored or unverified Pact expectations are not evidence about the live provider |
 | Other resource kinds | Provider-specific doubles and external emulators where available | The application harness currently exposes only placeholders for those kinds |
+
+### Resource catalog coverage
+
+This inventory follows the Bindle resource catalog. `port` exposes a local port;
+`http` serves a supplied Fetch handler; `fixture` names a separate local fixture;
+`placeholder` has no graph emulator; `camp-only` needs a different lane. A
+fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
+`mocked` until it has a served handler.
+
+<!-- resource-emulation-inventory -->
+| Kind | Graph support | Scope and next choice |
+|---|---|---|
+| `api` | `http` | Serve an explicitly supplied Fetch handler |
+| `kv` | `port` | Pinned WASI key-value subset; process-local bytes |
+| `bucket` | `port` | Pinned blob metadata subset; body inspection is test-only; no blob events |
+| `queue` | `port` | HoBo Queue and virtual clock; no provider protocol or durability |
+| `topic` | `port` | HoBo Messaging; no external broker |
+| `secret` | `port` | Identity SecretsPort with fixture material only |
+| `data` | `port` | SQLite data-engine SPI, not raw SQL or provider query semantics |
+| `schedule` | `port` | Intervals and virtual fires; no cron expressions or automatic handler execution |
+| `project` | `placeholder` | Placement metadata; no service port in the graph |
+| `websocket` | `placeholder` | Use a protocol-specific test server until a shared port exists |
+| `job` | `placeholder` | Use a real local worker or a contract double for its boundary |
+| `web` | `http` | Serve an explicitly supplied Fetch handler |
+| `service` | `http` | Serve an explicitly supplied Fetch handler |
+| `external` | `placeholder` | Use a verified Pact-derived mock or a provider emulator |
+| `container` | `camp-only` | Requires a container-capable environment |
+| `wasm-component` | `camp-only` | Requires a host that executes component bytes |
+| `flag` | `fixture` | Identity's local flag fixtures are separate from the graph |
+| `auth` | `placeholder` | IdentityService can test workload identity; it is not a full auth/session emulator |
+| `crypto` | `placeholder` | The in-memory KMS supports identity signing, not the whole crypto catalog |
+| `notify` | `placeholder` | CD has its own NotificationPort; it is not the catalog's general notify port |
+| `guardrail` | `placeholder` | Use the relevant policy implementation or a contract double |
+| `ui` | `http` | Fetch handlers only; no general UI render/drive port |
+| `experiment` | `fixture` | Identity's local experiment fixture is separate from the graph |
+| `rollout` | `fixture` | Identity's local delivery fixture is separate from the graph |
+<!-- /resource-emulation-inventory -->
 
 Keep the port or protocol as the authority: derive stateless mocks from the
 consumer Pact instead of copying response shapes, keep fixtures versioned,
@@ -213,7 +259,8 @@ verification.
   straight into `beforeAll`/`afterAll`.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
   `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `data(alias)`,
-  `schedule(alias)`, `scheduleClock(alias)`, `fidelity()`.
+  `schedule(alias)`, `scheduleClock(alias)`, `kv(alias)`, `bucket(alias)`,
+  `bucketInspector(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded
   exponential backoff capped at 5s per wait. Retries propagation-shaped
   failures (404, 408, 425, 429, any 5xx, network throws) and **fails fast on

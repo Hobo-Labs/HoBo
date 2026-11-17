@@ -14,6 +14,11 @@ import {
 	createLocalScheduler,
 	createRuntimeLocalQueueClock,
 } from "@hobo/runtime-local";
+import type { Object as BlobMetadata } from "@hobo/wit/wasi-blobstore";
+
+/** Ports generated from HoBo's pinned WASI subsets. */
+export type KeyValuePort = typeof import("@hobo/wit/wasi-keyvalue-store");
+export type BlobStorePort = typeof import("@hobo/wit/wasi-blobstore");
 
 /** A factory owns an isolated resource and may release it when the graph closes. */
 export interface ServiceEmulator<T> {
@@ -38,6 +43,15 @@ export interface ScheduleEmulator extends ServiceEmulator<SchedulerPort> {
 	readonly clock?: VirtualClock;
 }
 
+export interface BucketInspector {
+	/** Test-only access to bodies; the pinned WASI subset exposes metadata only. */
+	readBody(name: string): Uint8Array | undefined;
+}
+
+export interface BucketEmulator extends ServiceEmulator<BlobStorePort> {
+	readonly inspector?: BucketInspector;
+}
+
 export interface EmulatorContext {
 	readonly alias: string;
 	readonly stage: string;
@@ -52,6 +66,8 @@ export interface ServiceEmulatorFactories {
 	readonly secret?: EmulatorFactory<ServiceEmulator<SecretsPort>>;
 	readonly data?: EmulatorFactory<DataEmulator>;
 	readonly schedule?: EmulatorFactory<ScheduleEmulator>;
+	readonly kv?: EmulatorFactory<ServiceEmulator<KeyValuePort>>;
+	readonly bucket?: EmulatorFactory<BucketEmulator>;
 }
 
 export function createQueueEmulator(): QueueEmulator {
@@ -84,4 +100,59 @@ export function createDataEmulator(): DataEmulator {
 export function createScheduleEmulator(): ScheduleEmulator {
 	const { clock } = createRuntimeLocalQueueClock();
 	return { port: createLocalScheduler(clock), clock, fidelity: "simulated" };
+}
+
+/** In-memory implementation of the vendored wasi:keyvalue/store interface. */
+export function createKeyValueEmulator(): ServiceEmulator<KeyValuePort> {
+	const values = new Map<string, Uint8Array>();
+	return {
+		fidelity: "simulated",
+		port: {
+			get(key) {
+				const value = values.get(key);
+				return value === undefined ? undefined : Uint8Array.from(value);
+			},
+			set(entry) {
+				values.set(entry.key, Uint8Array.from(entry.value));
+			},
+			delete(key) {
+				values.delete(key);
+			},
+			exists(key) {
+				return values.has(key);
+			},
+		},
+	};
+}
+
+/** In-memory implementation of the vendored wasi:blobstore/blobstore subset. */
+export function createBucketEmulator(): BucketEmulator {
+	const objects = new Map<
+		string,
+		{ metadata: BlobMetadata; body: Uint8Array }
+	>();
+	return {
+		fidelity: "simulated",
+		port: {
+			get(name) {
+				const object = objects.get(name);
+				return object === undefined ? undefined : { ...object.metadata };
+			},
+			put(metadata, body) {
+				objects.set(metadata.name, {
+					metadata: { ...metadata },
+					body: Uint8Array.from(body),
+				});
+			},
+			delete(name) {
+				objects.delete(name);
+			},
+		},
+		inspector: {
+			readBody(name) {
+				const body = objects.get(name)?.body;
+				return body === undefined ? undefined : Uint8Array.from(body);
+			},
+		},
+	};
 }
