@@ -60,6 +60,7 @@ export type {
 	AlchemyBindleMapping,
 	AlchemyBindleOptions,
 	AlchemyMappedPrimitive,
+	AlchemyPrimitiveInput,
 	AlchemyPrimitiveMapper,
 	AlchemyPrimitiveSupport,
 	AlchemyRequirementsDecision,

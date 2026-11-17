@@ -11,6 +11,8 @@ provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
 `rivetkit` 3.0.0 peers; install both when using Rivet components.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
+Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
+runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
 The Cloudflare worker runtime binds a module-exported HoBo HTTP entrypoint to
 declared Worker service dependencies. HoBo bucket, KV and queue runtime contracts,
 topics, and enabled session replay are not yet supported; the adapter refuses
@@ -55,6 +57,11 @@ mapped FQN: Alchemy can silently return the registered object outside the
 mapping scope. Across stacks the host must independently verify state ownership
 and actual physical provider-resource isolation; distinct stack names alone do
 not establish that resources cannot be shared or adopted.
+
+Requirements, declarations, annotations and edges must be bounded, acyclic data;
+the mapper copies and freezes them before invoking provider callbacks. Invalid,
+accessor-backed or oversized data is rejected. The host remains responsible for
+attesting callback code and captured state.
 Only explicit registry entries count as mappings. Connector declarations are
 rejected until their authorization and runtime bindings can be mapped.
 `describeAlchemyPrimitiveSupport` reports supported, partial and

@@ -10,6 +10,7 @@
 	"files": ["dist"],
 	"exports": {
 		".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+		"./cloudflare": { "types": "./dist/cloudflare.d.ts", "default": "./dist/cloudflare.js" },
 		"./cloudflare/runtime": { "types": "./dist/cloudflare-runtime.d.ts", "default": "./dist/cloudflare-runtime.js" }
 	},
 	"dependencies": {
