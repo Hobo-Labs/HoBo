@@ -1,13 +1,28 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { mkdir, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { join } from "node:path";
-import { actor, setup } from "rivetkit";
-import { setupTest } from "rivetkit/test";
-import { createRivetQueueActor } from "../src/rivet-queue-runtime.ts";
-import { createRivetHttpActor } from "../src/rivet-runtime.ts";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { DurableObjectResource, Providers } from "@alchemy.run/rivet";
+import { inMemoryState, Stack } from "alchemy";
+import * as Alchemist from "alchemy/Alchemist";
+import * as Bundle from "alchemy/Bundle/Bundle";
+import * as Provider from "alchemy/Provider";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import { createClient } from "rivetkit/client";
+import { alchemyTarget, createAlchemyIacProvider } from "../src/index.ts";
+import {
+	createRivetAsyncQueueClient,
+	rivetAsyncQueueResource,
+} from "../src/rivet-queue.ts";
+import { jobs, registry } from "./fixtures/rivet-queue-definition.mjs";
+import { testStateOwnership } from "./route-fixture.ts";
 
 const require = createRequire(import.meta.url);
 const rivetRequire = createRequire(require.resolve("rivetkit"));
@@ -21,10 +36,8 @@ const reservePort = () =>
 			resolve([server.address().port, server]),
 		);
 	});
-const ports = await Promise.all(Array.from({ length: 4 }, reservePort));
-const [enginePort, peerPort, metricsPort, httpPort] = ports.map(
-	([port]) => port,
-);
+const ports = await Promise.all(Array.from({ length: 3 }, reservePort));
+const [enginePort, peerPort, metricsPort] = ports.map(([port]) => port);
 for (const [, server] of ports)
 	await new Promise((resolve) => server.close(resolve));
 
@@ -84,36 +97,10 @@ for (const stream of [engine.stdout, engine.stderr]) {
 	});
 }
 const engineDone = once(engine, "exit");
-const callbacks = [];
-const counter = actor({
-	state: { n: 0 },
-	actions: { increment: (context) => ++context.state.n },
-});
-const app = createRivetHttpActor({
-	actorName: "web",
-	entrypoint: () => {
-		let requests = 0;
-		return (request) =>
-			new Response(`app:${new URL(request.url).pathname}:${++requests}`);
-	},
-	authorize: ({ actorKey }) => actorKey[0] !== "tenant-b",
-});
-const jobs = createRivetQueueActor({
-	actorName: "jobs",
-	now: Date.now,
-	authorize: ({ actorKey, headers }) =>
-		actorKey[0] === "tenant-a" && headers.get("authorization") === "test",
-});
-const registry = setup({
-	use: { counter, web: app.actor, jobs: jobs.actor },
-	noWelcome: true,
-	endpoint: publicUrl,
-	token,
-	startEngine: false,
-	httpHost: "127.0.0.1",
-	httpPort,
-	shutdown: { gracePeriodMs: 2000, disableSignalHandlers: true },
-});
+let runner;
+let runnerDone;
+let runnerLog = "";
+let client;
 try {
 	const startupDeadline = Date.now() + 30_000;
 	let ready = false;
@@ -133,31 +120,233 @@ try {
 	}
 	if (!ready)
 		throw new Error("Rivet engine did not become ready within 30 seconds");
-	const { client } = await setupTest(
-		{
-			onTestFinished(callback) {
-				callbacks.push(callback);
-			},
-		},
-		registry,
+	// The host plans the same standalone main that it will bundle and execute.
+	// The test verifier pins the fixture's local source graph; a production host
+	// must independently fence the complete dependency and artifact closure.
+	const main = fileURLToPath(
+		new URL("./fixtures/rivet-queue-main.mjs", import.meta.url),
 	);
-	const handle = client.counter.getOrCreate(["test"]);
-	if ((await handle.increment()) !== 1 || (await handle.increment()) !== 2)
-		throw new Error("Rivet actor state did not advance");
-	const ok = await client.web.getOrCreate(["tenant-a"]).fetch("/hello");
-	if (ok.status !== 200 || (await ok.text()) !== "app:/hello:1")
-		throw new Error("Rivet did not invoke the bound application");
-	const again = await client.web.getOrCreate(["tenant-a"]).fetch("/hello");
-	if (again.status !== 200 || (await again.text()) !== "app:/hello:2")
-		throw new Error(
-			"Rivet did not preserve the application for the same actor",
+	const definition = fileURLToPath(
+		new URL("./fixtures/rivet-queue-definition.mjs", import.meta.url),
+	);
+	const runtime = fileURLToPath(
+		new URL("../src/rivet-queue-runtime.ts", import.meta.url),
+	);
+	const stream = fileURLToPath(
+		new URL("../src/rivet-queue-stream.ts", import.meta.url),
+	);
+	const hashSources = () => {
+		const hash = createHash("sha256");
+		for (const path of [main, definition, runtime, stream]) {
+			const bytes = readFileSync(path);
+			hash.update(`${bytes.length}:`);
+			hash.update(bytes);
+		}
+		return `sha256:${hash.digest("hex")}`;
+	};
+	const sourceDigest = hashSources();
+	let poolMain;
+	// This test host records the entrypoint selected by Alchemy. It does not
+	// exercise Alchemy's real PoolHost layer or a provider-deployed pool.
+	const poolHost = {
+		deployExternal: ({ main: selected }) =>
+			Effect.sync(() => {
+				poolMain = selected;
+			}),
+		deployCrate: () => Effect.void,
+	};
+	const source = {
+		main,
+		resourceName: "jobs",
+		bindleName: "queue-app",
+		sourceDigest,
+		sourceFence: {
+			sourceDigest,
+			environmentDigest: `sha256:${"d".repeat(64)}`,
+			proofRef: "host:source",
+			verify: () => hashSources() === sourceDigest,
+		},
+		poolDigest: `sha256:${"b".repeat(64)}`,
+		isolationDigest: `sha256:${"c".repeat(64)}`,
+		poolHost,
+		registry,
+		binding: jobs,
+		verifySource: (claim) =>
+			claim.main === main &&
+			claim.registry === registry &&
+			claim.binding === jobs &&
+			hashSources() === sourceDigest,
+	};
+	const providers = Layer.effect(
+		Providers,
+		Provider.collection([DurableObjectResource]),
+	).pipe(
+		Layer.provide(
+			Provider.succeed(DurableObjectResource, {
+				reconcile: () =>
+					Effect.succeed({
+						name: "jobs",
+						pool: "pool",
+						endpoint: publicUrl,
+						namespace: "test",
+						token: undefined,
+					}),
+				delete: () => Effect.void,
+			}),
+		),
+	);
+	const stack = Stack(
+		"Queue",
+		{ providers, state: inMemoryState() },
+		rivetAsyncQueueResource(source).pipe(Effect.map(() => ({}))),
+	);
+	process.env.ALCHEMY_HOME = join(process.cwd(), "auth");
+	const provider = createAlchemyIacProvider({
+		stateOwnership: testStateOwnership,
+		stack,
+		runtimeLayer: Alchemist.layer(),
+		runtimeDirectory: process.cwd(),
+		composite: {
+			proofRef: "host:source",
+			environmentDigest: `sha256:${"d".repeat(64)}`,
+			sourceRequirements: [
+				{
+					resourceId: "jobs",
+					resourceType: "Rivet.DurableObject",
+					bindleName: "queue-app",
+					applicationName: "jobs",
+					sourceKind: "rivet-async-queue",
+					sourcePath: main,
+				},
+			],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ sourceClaims }) =>
+				sourceClaims.length === 1 && sourceClaims[0]?.sourcePath === main,
+		},
+		target: alchemyTarget({
+			targetId: "yard",
+			tenantId: "tenant",
+			stackName: "Queue",
+			stage: "test",
+			programResourceId: "queue",
+			sourceDigest,
+			inventoryEvidenceRef: "inventory:1",
+			resources: [
+				{
+					resourceId: "jobs",
+					resourceType: "Rivet.DurableObject",
+					providerId: "rivet",
+					providerAccountRef: "account",
+					productId: "actor",
+				},
+			],
+		}),
+		financial: {
+			assess: (inventory) => ({ inventory }),
+			admit: async () => {
+				throw new Error("unexpected admission");
+			},
+			revalidate: () => true,
+			uncertain: () => {},
+		},
+	});
+	const plan = await provider.preview({
+		programId: "queue",
+		deploymentId: "d",
+		resourceId: "queue",
+		provider: "rivet",
+		driver: "external",
+		action: "apply",
+		stackName: "Queue",
+	});
+	if (plan.changes !== 1 || poolMain !== main)
+		throw new Error("Alchemy selected the wrong pool main");
+
+	// Mirror beta.87's external PoolHost bundle options. The resulting program
+	// runs in a separate process against this isolated Rivet engine.
+	const bundleDirectory = join(process.cwd(), "pool");
+	await mkdir(bundleDirectory);
+	await symlink(
+		fileURLToPath(new URL("../node_modules", import.meta.url)),
+		join(bundleDirectory, "node_modules"),
+		process.platform === "win32" ? "junction" : "dir",
+	);
+	const bundle = (input, entryFileNames) =>
+		Effect.runPromise(
+			Bundle.build(
+				{
+					input,
+					platform: "node",
+					external: ["rivetkit", /^rivetkit\//, /^@rivetkit\/(?!effect(\/|$))/],
+					resolve: { conditionNames: [...Bundle.NODE_CONDITION_NAMES] },
+					plugins: [],
+				},
+				{
+					dir: bundleDirectory,
+					format: "esm",
+					entryFileNames,
+					codeSplitting: false,
+				},
+			),
 		);
-	const other = await client.web.getOrCreate(["tenant-c"]).fetch("/hello");
-	if (other.status !== 200 || (await other.text()) !== "app:/hello:1")
-		throw new Error("Rivet shared the application between actors");
-	const forbidden = await client.web.getOrCreate(["tenant-b"]).fetch("/hello");
-	if (forbidden.status !== 403)
-		throw new Error("Rivet actor authorization was bypassed");
+	const runnerEnv = {
+		PATH: process.env.PATH,
+		NODE_ENV: "test",
+		RIVET_ENDPOINT: publicUrl,
+		RIVET_TOKEN: token,
+		RIVET_POOL: "default",
+	};
+	const noStart = fileURLToPath(
+		new URL("./fixtures/rivet-queue-no-start.mjs", import.meta.url),
+	);
+	await bundle(noStart, "no-start.mjs");
+	const negative = await promisify(execFile)(
+		process.execPath,
+		[join(bundleDirectory, "no-start.mjs")],
+		{ env: runnerEnv, timeout: 5000, maxBuffer: 128 * 1024 },
+	);
+	if (
+		!negative.stdout.includes("rivet-queue-created-only") ||
+		negative.stdout.includes("rivet-queue-pool-ready")
+	)
+		throw new Error("a constructed registry unexpectedly started");
+	await bundle(poolMain, "node.mjs");
+	runner = spawn(process.execPath, [join(bundleDirectory, "node.mjs")], {
+		env: runnerEnv,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	runnerDone = once(runner, "exit");
+	let announceReady;
+	const readySignal = new Promise((resolve) => {
+		announceReady = resolve;
+	});
+	for (const output of [runner.stdout, runner.stderr])
+		output.on("data", (chunk) => {
+			runnerLog = (runnerLog + chunk).slice(-12000);
+			if (runnerLog.includes("rivet-queue-pool-ready")) announceReady();
+		});
+	let readyTimer;
+	try {
+		await Promise.race([
+			readySignal,
+			runnerDone.then(() => {
+				throw new Error("Rivet queue pool exited before readiness");
+			}),
+			new Promise((_, reject) => {
+				readyTimer = setTimeout(
+					() => reject(new Error("Rivet queue pool startup timed out")),
+					30_000,
+				);
+			}),
+		]);
+	} finally {
+		clearTimeout(readyTimer);
+	}
+	client = createClient({
+		endpoint: publicUrl,
+		token,
+		disableMetadataLookup: true,
+	});
 	const queue = client.jobs.getOrCreate(["tenant-a"]);
 	const call = (path, data) =>
 		queue.fetch(`/${path}`, {
@@ -165,12 +354,24 @@ try {
 			headers: { authorization: "test" },
 			body: JSON.stringify(data),
 		});
-	const first = await (
-		await call("enqueue", { idempotencyKey: "k", body: { n: 1 } })
-	).json();
-	const retry = await (
-		await call("enqueue", { idempotencyKey: "k", body: { n: 1 } })
-	).json();
+	const firstResponse = await call("enqueue", {
+		idempotencyKey: "k",
+		body: { n: 1 },
+	});
+	const first = await firstResponse.json();
+	if (firstResponse.status !== 200)
+		throw new Error(
+			`Rivet queue enqueue returned ${firstResponse.status}: ${JSON.stringify(first)}`,
+		);
+	const retryResponse = await call("enqueue", {
+		idempotencyKey: "k",
+		body: { n: 1 },
+	});
+	const retry = await retryResponse.json();
+	if (retryResponse.status !== 200)
+		throw new Error(
+			`Rivet queue retry returned ${retryResponse.status}: ${JSON.stringify(retry)}`,
+		);
 	if (first.messageId !== retry.messageId || retry.deduped !== true)
 		throw new Error("Rivet queue dedup failed");
 	const leased = (
@@ -196,13 +397,34 @@ try {
 	});
 	if (denied.status !== 403)
 		throw new Error("Rivet queue scope authorization failed");
+	const scopedClient = createRivetAsyncQueueClient({
+		fetch: (path, init) =>
+			queue.fetch(path, {
+				...init,
+				headers: {
+					...Object.fromEntries(new Headers(init.headers)),
+					authorization: "test",
+				},
+			}),
+		verifyResponseBounds: () => true,
+	});
+	const accepted = await scopedClient.enqueue("client-k", { n: 7 });
+	if (!accepted.messageId) throw new Error("Rivet scoped client failed");
 	process.stdout.write("rivet-queue-live-ok");
 } catch (error) {
-	process.stderr.write(`Rivet engine log:\n${engineLog}\n`);
+	process.stderr.write(
+		`Rivet engine log:\n${engineLog}\nRivet pool log:\n${runnerLog}\n`,
+	);
 	throw error;
 } finally {
-	for (const callback of callbacks) await callback();
-	await registry.shutdown();
+	if (client) await client.dispose();
+	if (runner && runner.exitCode === null && runner.signalCode === null)
+		runner.kill("SIGTERM");
+	if (runnerDone) {
+		const timer = setTimeout(() => runner.kill("SIGKILL"), 5000);
+		await runnerDone;
+		clearTimeout(timer);
+	}
 	if (engine.exitCode === null && engine.signalCode === null)
 		engine.kill("SIGTERM");
 	const timer = setTimeout(() => engine.kill("SIGKILL"), 5000);

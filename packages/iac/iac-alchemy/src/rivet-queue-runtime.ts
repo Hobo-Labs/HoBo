@@ -6,6 +6,12 @@ import {
 	isStaticActorDefinition,
 } from "rivetkit";
 import { db, type RawAccess } from "rivetkit/db";
+import {
+	boundedRivetQueueDecision,
+	RIVET_QUEUE_CHUNK_BYTES,
+	RivetQueueStreamError,
+	readRivetQueueStream,
+} from "./rivet-queue-stream.js";
 
 /** Async queue operations provided by a Rivet actor. The synchronous HoBo core
  * Queue port cannot make remote calls; this is the asynchronous WIT-shaped port. */
@@ -105,31 +111,16 @@ function response(status: number, data: object): Response {
 		headers: { "cache-control": "no-store" },
 	});
 }
-async function readBody(request: Request): Promise<unknown> {
-	if (!request.body) throw new Error("body missing");
-	const reader = request.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let length = 0;
-	try {
-		while (true) {
-			const next = await reader.read();
-			if (next.done) break;
-			length += next.value.byteLength;
-			if (length > MAX_BODY_BYTES) {
-				await reader.cancel();
-				throw new Error("body too large");
-			}
-			chunks.push(next.value);
-		}
-	} finally {
-		reader.releaseLock();
-	}
-	const bytes = new Uint8Array(length);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.length;
-	}
+async function readBody(
+	request: Request,
+	verifyIngress: (() => boolean | Promise<boolean>) | undefined,
+): Promise<unknown> {
+	const bytes = await readRivetQueueStream(
+		request.body,
+		MAX_BODY_BYTES,
+		request.signal,
+		verifyIngress,
+	);
 	return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
 function operation(request: Request): RivetQueueOperation | undefined {
@@ -185,12 +176,21 @@ export function createRivetQueueActor(options: {
 	}) => boolean | Promise<boolean>;
 	/** Trusted clock shared by actor generations; it must not jump ahead of real time. */
 	readonly now: () => number;
+	/** Independently attest the entire native ingress enforces these limits before forwarding. */
+	readonly verifyIngress?: (input: {
+		readonly actorName: string;
+		readonly actorKey: readonly string[];
+		readonly operation: RivetQueueOperation;
+		readonly maxRequestBytes: number;
+		readonly maxChunkBytes: number;
+	}) => boolean | Promise<boolean>;
 }): RivetQueueBinding {
-	const { actorName, authorize, now } = options;
+	const { actorName, authorize, now, verifyIngress } = options;
 	if (
 		!name(actorName) ||
 		typeof authorize !== "function" ||
-		typeof now !== "function"
+		typeof now !== "function" ||
+		(verifyIngress !== undefined && typeof verifyIngress !== "function")
 	)
 		throw new TypeError(
 			"queue actor name, host authorization and trusted clock are required",
@@ -219,23 +219,54 @@ export function createRivetQueueActor(options: {
 			!context.key.every(name)
 		)
 			return response(403, { error: "forbidden" });
+		const actorKey = Object.freeze([...context.key]);
 		try {
-			if (
-				(await authorize({
-					actorName,
-					actorKey: Object.freeze([...context.key]),
-					operation: action,
-					headers: new Headers(request.headers),
-				})) !== true
-			)
+			const decision = await boundedRivetQueueDecision(
+				() =>
+					authorize({
+						actorName,
+						actorKey,
+						operation: action,
+						headers: new Headers(request.headers),
+					}),
+				request.signal,
+			);
+			if (decision === false) {
+				if (request.body !== null) void request.body.cancel().catch(() => {});
 				return response(403, { error: "forbidden" });
+			}
+			if (decision !== true) throw new Error("invalid policy decision");
 		} catch {
-			return response(403, { error: "forbidden" });
+			if (request.body !== null) void request.body.cancel().catch(() => {});
+			return response(503, { error: "policy-unavailable" });
 		}
 		let body: unknown;
 		try {
-			body = await readBody(request);
-		} catch {
+			body = await readBody(
+				request,
+				verifyIngress === undefined
+					? undefined
+					: () =>
+							verifyIngress(
+								Object.freeze({
+									actorName,
+									actorKey,
+									operation: action,
+									maxRequestBytes: MAX_BODY_BYTES,
+									maxChunkBytes: RIVET_QUEUE_CHUNK_BYTES,
+								}),
+							),
+			);
+		} catch (error) {
+			if (error instanceof RivetQueueStreamError && error.code !== "invalid") {
+				const reason =
+					error.code === "unverified"
+						? "ingress-unverified"
+						: error.code === "timeout"
+							? "request-timeout"
+							: "request-unavailable";
+				return response(503, { error: reason });
+			}
 			return response(400, { error: "invalid-argument" });
 		}
 		if (!record(body)) return response(400, { error: "invalid-argument" });

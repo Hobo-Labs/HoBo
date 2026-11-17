@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-it("runs the durable async queue through a real Rivet 3 actor", {
+it("runs the Alchemy-selected queue entrypoint in a standalone Rivet process", {
 	timeout: 100_000,
 }, async () => {
 	const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-http-"));

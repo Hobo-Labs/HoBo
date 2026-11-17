@@ -511,3 +511,139 @@ and plans exceeding 256 nodes remain refused. Action state is not included in
 Alchemy's resource drift scan, so refresh of an action-bearing target reports
 incomplete drift rather than claiming it is in sync. The caller owns final
 usage reconciliation and can use the budget authority's settlement APIs.
+
+### Standalone Rivet asynchronous queue
+
+`@hobo/iac-alchemy/rivet/queue` provides a separate, asynchronous JSON queue
+capability built on a real RivetKit actor and Alchemy `Rivet.DurableObject`.
+It is not an implementation of HoBo's synchronous core `Queue` interface or
+the byte-and-attribute WIT queue port, and does not change Bindle queue support
+reporting. Applications must explicitly use the async client. It is also not a
+publish/subscribe topic.
+
+The host supplies an independently authenticated authorizer for each actor
+key and operation, and a trusted clock that remains monotonic across actor
+migrations and does not jump ahead of real time. The actor stores messages,
+idempotency keys, delivery attempts and lease state in one transactional Rivet
+SQLite database per actor key. Identical enqueue retries return the original
+message ID; a changed canonical JSON body or availability schedule under the
+same key returns `idempotency-conflict`. HoBo's local queue currently deduplicates
+by key even when a payload differs, so this opt-in capability is stricter.
+Leases expire and receive a new fenced lease ID; complete, release and extend
+check that ID. Completed deduplication records are retained. Each actor is
+bounded to 10,000 retained messages, 100 messages per dequeue, a 24-hour lease,
+and a 64-KiB JSON request. Once capacity is reached, enqueue fails explicitly;
+records are never silently discarded to make space.
+
+A lost or malformed response is `RivetAsyncQueueError` with
+`code: "outcome-unknown"`. Retrying enqueue with the same key and completion
+with the same message/lease are idempotent. A lost dequeue, release, or extend
+response does not prove whether it committed: wait for or reconcile the lease
+before issuing conflicting work. The queue only controls message delivery;
+consumers must make their own external side effects idempotent or fenced.
+
+The client bounds each call, including the complete response body, to ten
+seconds. A timeout is `outcome-unknown`: it does not prove the actor stopped or
+that a mutation failed. The actor also stops reading an incomplete request after
+ten seconds and bounds asynchronous authorization to ten seconds before opening
+its transaction. A definite policy denial is a 403; unavailable policy,
+unverified ingress and request timeouts are explicit 503s. These deadlines do
+not cancel a database transaction once opened; the host must operate and bound
+the backing database independently. BYOB byte streams are consumed in
+bounded reads; unsupported streams are refused and cancelled unless the host
+independently verifies an enforced upstream bound. Rivet 3 currently constructs
+a non-BYOB request stream, so a production host must provide `verifyIngress`
+and enforce its supplied total and per-chunk limits across every path before
+the actor receives data. For non-BYOB client response streams, the transport
+must likewise supply `verifyResponseBounds` and enforce those bounds on the
+entire response path. The verifiers must authenticate the deployed ingress and
+transport configuration for the exact actor, operation and key; caller-supplied
+headers or a configuration declaration alone are not proof. The host must bound
+provider-side buffering and concurrency even for BYOB streams, and keep those
+limits in force through each request and any in-flight response.
+
+`setup()` constructs a registry; it does not start one. Keep the actor
+definition, the standalone pool program, and the IaC declaration separate so
+planning does not start an envoy. For example, define the actor and registry
+in `jobs.ts`:
+
+```ts
+import { setup } from "rivetkit";
+import { createRivetQueueActor } from "@hobo/iac-alchemy/rivet/queue";
+import { host } from "./host.js";
+
+export const jobs = createRivetQueueActor({
+  actorName: "jobs",
+  now: () => host.trustedClock.nowMs(),
+  authorize: (request) => host.queuePolicy.authorize(request),
+  verifyIngress: (claim) => host.verifyBoundedQueueIngress(claim),
+});
+export const registry = setup({ use: { jobs: jobs.actor } });
+```
+
+The pool's `jobs-main.ts` imports the definition and starts the envoy:
+
+```ts
+import { registry } from "./jobs.js";
+
+registry.start();
+```
+
+The IaC declaration imports only the inert definition and gives Alchemy the
+absolute path to that exact standalone main:
+
+```ts
+import { rivetAsyncQueueResource } from "@hobo/iac-alchemy/rivet/queue";
+import { jobs, registry } from "./jobs.js";
+
+// The host verifies the reviewed main starts this actor and authorizer, and
+// verifies the entire source graph, physical pool and runner isolation.
+const jobsResource = rivetAsyncQueueResource({
+  main: absoluteJobsMainPath,
+  resourceName: "jobs",
+  bindleName: "queue-app",
+  sourceDigest,
+  sourceFence: host.immutableSourceFence,
+  poolDigest,
+  isolationDigest,
+  poolHost,
+  registry,
+  binding: jobs,
+  verifySource: (source) => host.verifyQueueSourceAndExclusivePool(source),
+});
+```
+
+An authorized application uses a transport bound to its exact actor key:
+
+```ts
+import { createRivetAsyncQueueClient } from "@hobo/iac-alchemy/rivet/queue";
+
+const actor = rivetClient.jobs.getOrCreate([tenantId, "jobs"]);
+const queue = createRivetAsyncQueueClient({
+  fetch: (path, init) => actor.fetch(path, host.attachQueueCredential(init)),
+  verifyResponseBounds: (claim) => host.verifyBoundedQueueResponse(claim),
+});
+const accepted = await queue.enqueue("order-123", { orderId: "123" });
+const [message] = await queue.dequeue(1, 30_000);
+if (message) {
+  await processIdempotently(message.body, message.idempotencyKey);
+  await queue.complete(message.messageId, message.leaseId);
+}
+```
+
+The adapter's composite plan guard must include the exact source requirement
+`{ resourceId: "jobs", resourceType: "Rivet.DurableObject", bindleName:
+"queue-app", applicationName: "jobs", sourceKind: "rivet-async-queue",
+sourcePath: absoluteJobsMainPath }` and independently verify that inventory.
+The source fence must cover the complete program, transitive dependencies,
+build environment and upload through provider completion. The host's
+`verifySource` must independently authenticate that the main actually starts
+the same registered actor and its intended host policies in the target pool;
+the registry object supplied to the IaC declaration alone cannot prove this.
+The external program is restricted to one queue actor and requires a
+host-verified exclusive pool. This capability does not yet wire queue
+dependencies into a Bindle application. A host must fence old writers and consumers, drain
+or otherwise reconcile messages, and authorize destruction before deleting or
+recreating the actor: destroying its database destroys messages and deduplication
+history. Provider credentials, pool isolation, source identity, durable storage,
+and clock correctness remain independently verified host responsibilities.

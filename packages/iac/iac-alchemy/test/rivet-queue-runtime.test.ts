@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { RawAccess } from "rivetkit/db";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRivetAsyncQueueClient } from "../src/rivet-queue.js";
 import {
 	createRivetQueueActor,
 	isRivetQueueBinding,
@@ -12,6 +13,7 @@ import {
 
 const open: DatabaseSync[] = [];
 afterEach(() => {
+	vi.useRealTimers();
 	for (const database of open.splice(0)) database.close();
 });
 function fixture(path = ":memory:") {
@@ -320,6 +322,43 @@ it("retains deduplication and leases after a SQLite actor restart", async () => 
 	}
 });
 
+it("exposes the separate async client with explicit lost-ack handling", async () => {
+	const f = fixture();
+	let loseAcknowledgement = true;
+	const client = createRivetAsyncQueueClient({
+		fetch: async (path, init) => {
+			const headers = new Headers(init.headers);
+			headers.set("authorization", "test");
+			const result = await f.binding.handle(
+				{ name: "jobs", key: ["tenant-a"], db: f.database },
+				new Request(`https://queue.test${path}`, { ...init, headers }),
+			);
+			if (path === "/enqueue" && loseAcknowledgement) {
+				loseAcknowledgement = false;
+				throw new Error("response lost");
+			}
+			return result;
+		},
+	});
+	await expect(client.enqueue("key", { hello: "world" })).rejects.toMatchObject(
+		{ code: "outcome-unknown" },
+	);
+	const retry = await client.enqueue("key", { hello: "world" });
+	expect(retry.deduped).toBe(true);
+	const [leased] = await client.dequeue(1, 100);
+	if (!leased) throw new Error("lease missing");
+	expect(leased.messageId).toBe(retry.messageId);
+	await expect(
+		client.complete(leased.messageId, "wrong"),
+	).rejects.toMatchObject({ code: "lease-lost" });
+	expect(
+		(await client.complete(leased.messageId, leased.leaseId)).deduped,
+	).toBe(false);
+	expect(
+		(await client.complete(leased.messageId, leased.leaseId)).deduped,
+	).toBe(true);
+});
+
 /* oxlint-enable anti-slop/no-object-parameters */
 
 it("rejects changed payloads and schedules under an existing idempotency key", async () => {
@@ -371,4 +410,333 @@ it("returns an explicit unavailable result when the trusted clock throws", async
 	);
 	expect(result.status).toBe(503);
 	expect(await result.json()).toEqual({ error: "clock-unavailable" });
+});
+
+it("rejects accessor-bearing client payloads before sending", async () => {
+	let calls = 0;
+	let reads = 0;
+	const queue = createRivetAsyncQueueClient({
+		fetch: async () => {
+			calls++;
+			return Response.json({});
+		},
+	});
+	const body = {
+		get value() {
+			reads++;
+			return 1;
+		},
+	};
+	await expect(queue.enqueue("key", body)).rejects.toMatchObject({
+		code: "invalid-argument",
+	});
+	expect(reads).toBe(0);
+	expect(calls).toBe(0);
+});
+
+it("treats an uncommitted success status as an unknown queue outcome", async () => {
+	const queue = createRivetAsyncQueueClient({
+		fetch: async () =>
+			Response.json(
+				{ messageId: "message", idempotencyKey: "key", deduped: false },
+				{ status: 202 },
+			),
+	});
+	await expect(queue.enqueue("key", 1)).rejects.toMatchObject({
+		code: "outcome-unknown",
+	});
+});
+
+it("refuses an unverified native request stream before any database transaction", async () => {
+	const f = fixture();
+	let cancelled = false;
+	const stream = new ReadableStream<Uint8Array>({
+		cancel() {
+			cancelled = true;
+		},
+	});
+	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	const request = new Request("https://queue.test/enqueue", {
+		method: "POST",
+		headers: { authorization: "test" },
+		body: stream,
+		duplex: "half",
+	} as RequestInit);
+	const result = await f.binding.handle(
+		{ name: "jobs", key: ["tenant-a"], db: f.database },
+		request,
+	);
+	expect(result.status).toBe(503);
+	expect(await result.json()).toEqual({ error: "ingress-unverified" });
+	expect(cancelled).toBe(true);
+	expect(
+		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
+	).toBe(0);
+});
+
+it("accepts a native request only after host verifies the exact ingress bounds", async () => {
+	const f = fixture();
+	const claims: object[] = [];
+	const binding = createRivetQueueActor({
+		actorName: "jobs",
+		now: () => 1000,
+		authorize: () => true,
+		verifyIngress: (claim) => {
+			claims.push(claim);
+			return true;
+		},
+	});
+	const body = new TextEncoder().encode(
+		JSON.stringify({ idempotencyKey: "k", body: 1 }),
+	);
+	const stream = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(body);
+			controller.close();
+		},
+	});
+	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	const request = new Request("https://queue.test/enqueue", {
+		method: "POST",
+		body: stream,
+		duplex: "half",
+	} as RequestInit);
+	const result = await binding.handle(
+		{ name: "jobs", key: ["tenant-a"], db: f.database },
+		request,
+	);
+	expect(result.status).toBe(200);
+	expect(claims).toEqual([
+		{
+			actorName: "jobs",
+			actorKey: ["tenant-a"],
+			operation: "enqueue",
+			maxRequestBytes: 65_536,
+			maxChunkBytes: 65_536,
+		},
+	]);
+});
+
+it("rejects a trusted-ingress violation with an oversized chunk before mutation", async () => {
+	const f = fixture();
+	let cancelled = false;
+	const binding = createRivetQueueActor({
+		actorName: "jobs",
+		now: () => 1000,
+		authorize: () => true,
+		verifyIngress: () => true,
+	});
+	const stream = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(new Uint8Array(65_537));
+		},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	const request = new Request("https://queue.test/enqueue", {
+		method: "POST",
+		body: stream,
+		duplex: "half",
+	} as RequestInit);
+	const result = await binding.handle(
+		{ name: "jobs", key: ["tenant-a"], db: f.database },
+		request,
+	);
+	expect(result.status).toBe(400);
+	expect(cancelled).toBe(true);
+	expect(
+		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
+	).toBe(0);
+});
+
+it("times out and cancels a stalled actor request before mutation", async () => {
+	vi.useFakeTimers();
+	const f = fixture();
+	let cancelled = false;
+	const stream = new ReadableStream<Uint8Array>({
+		type: "bytes",
+		pull() {},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	const request = new Request("https://queue.test/enqueue", {
+		method: "POST",
+		headers: { authorization: "test" },
+		body: stream,
+		duplex: "half",
+	} as RequestInit);
+	const outcome = f.binding.handle(
+		{ name: "jobs", key: ["tenant-a"], db: f.database },
+		request,
+	);
+	await vi.advanceTimersByTimeAsync(10_001);
+	const result = await outcome;
+	expect(result.status).toBe(503);
+	expect(await result.json()).toEqual({ error: "request-timeout" });
+	expect(cancelled).toBe(true);
+	expect(
+		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
+	).toBe(0);
+});
+
+it("times out a stalled transport once and reports unknown mutation outcome", async () => {
+	vi.useFakeTimers();
+	let calls = 0;
+	let aborted = false;
+	const client = createRivetAsyncQueueClient({
+		fetch: async (_path, init) => {
+			calls++;
+			init.signal?.addEventListener("abort", () => {
+				aborted = true;
+			});
+			return await new Promise<Response>(() => {});
+		},
+	});
+	const outcome = expect(client.enqueue("k", 1)).rejects.toMatchObject({
+		code: "outcome-unknown",
+	});
+	await vi.advanceTimersByTimeAsync(10_001);
+	await outcome;
+	expect(calls).toBe(1);
+	expect(aborted).toBe(true);
+});
+
+it("times out and cancels stalled or unsupported response streams", async () => {
+	vi.useFakeTimers();
+	let cancelled = false;
+	const client = createRivetAsyncQueueClient({
+		fetch: async () =>
+			new Response(
+				new ReadableStream<Uint8Array>({
+					type: "bytes",
+					pull() {},
+					cancel() {
+						cancelled = true;
+					},
+				}),
+			),
+	});
+	const outcome = expect(client.enqueue("k", 1)).rejects.toMatchObject({
+		code: "outcome-unknown",
+	});
+	await vi.advanceTimersByTimeAsync(10_001);
+	await outcome;
+	expect(cancelled).toBe(true);
+	let unsupportedCancelled = false;
+	const unsupported = createRivetAsyncQueueClient({
+		fetch: async () =>
+			new Response(
+				new ReadableStream<Uint8Array>({
+					cancel() {
+						unsupportedCancelled = true;
+					},
+				}),
+			),
+	});
+	await expect(unsupported.enqueue("k", 1)).rejects.toMatchObject({
+		code: "outcome-unknown",
+	});
+	expect(unsupportedCancelled).toBe(true);
+});
+
+it("cancels an oversized BYOB response without accepting the receipt", async () => {
+	let cancelled = false;
+	const client = createRivetAsyncQueueClient({
+		fetch: async () =>
+			new Response(
+				new ReadableStream<Uint8Array>({
+					type: "bytes",
+					start(controller) {
+						controller.enqueue(new Uint8Array(8_388_609));
+					},
+					cancel() {
+						cancelled = true;
+					},
+				}),
+			),
+	});
+	await expect(client.enqueue("k", 1)).rejects.toMatchObject({
+		code: "outcome-unknown",
+	});
+	expect(cancelled).toBe(true);
+});
+
+it("distinguishes denied and unavailable authorization and bounds a stalled policy", async () => {
+	vi.useFakeTimers();
+	const f = fixture();
+	const create = (authorize: () => boolean | Promise<boolean>) =>
+		createRivetQueueActor({ actorName: "jobs", now: () => 1000, authorize });
+	const request = () =>
+		new Request("https://queue.test/enqueue", {
+			method: "POST",
+			body: JSON.stringify({ idempotencyKey: "k", body: 1 }),
+		});
+	const context = { name: "jobs", key: ["tenant-a"], db: f.database };
+	const denied = await create(() => false).handle(context, request());
+	expect(denied.status).toBe(403);
+	expect(await denied.json()).toEqual({ error: "forbidden" });
+	const broken = await create(() => {
+		throw new Error("policy offline");
+	}).handle(context, request());
+	expect(broken.status).toBe(503);
+	expect(await broken.json()).toEqual({ error: "policy-unavailable" });
+	let resolvePolicy: (value: boolean) => void = () => {};
+	const stalled = create(
+		() =>
+			new Promise<boolean>((resolve) => {
+				resolvePolicy = resolve;
+			}),
+	).handle(context, request());
+	await vi.advanceTimersByTimeAsync(10_001);
+	const timedOut = await stalled;
+	expect(timedOut.status).toBe(503);
+	expect(await timedOut.json()).toEqual({ error: "policy-unavailable" });
+	resolvePolicy(true);
+	await Promise.resolve();
+	expect(
+		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
+	).toBe(0);
+});
+
+it("reports failed ingress verification as unavailable and never opens a transaction", async () => {
+	const f = fixture();
+	for (const verifyIngress of [
+		() => false,
+		() => {
+			throw new Error("offline");
+		},
+	]) {
+		let cancelled = false;
+		const stream = new ReadableStream<Uint8Array>({
+			cancel() {
+				cancelled = true;
+			},
+		});
+		// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+		const request = new Request("https://queue.test/enqueue", {
+			method: "POST",
+			body: stream,
+			duplex: "half",
+		} as RequestInit);
+		const binding = createRivetQueueActor({
+			actorName: "jobs",
+			now: () => 1000,
+			authorize: () => true,
+			verifyIngress,
+		});
+		const result = await binding.handle(
+			{ name: "jobs", key: ["tenant-a"], db: f.database },
+			request,
+		);
+		expect(result.status).toBe(503);
+		expect(await result.json()).toEqual({ error: "ingress-unverified" });
+		expect(cancelled).toBe(true);
+	}
+	expect(
+		f.sql.prepare("SELECT count(*) AS n FROM hobo_queue_messages").get()?.n,
+	).toBe(0);
 });
