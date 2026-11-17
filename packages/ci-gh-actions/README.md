@@ -180,11 +180,13 @@ fail the lookup. GitHub can change assignments or paginated listings during or
 after those reads; required-label matching alone does not establish the complete
 execution profile.
 
-The endpoint and GitHub assignment lookup are not yet wired into the production
-controller. A future trusted endpoint must issue the receipt only after the
-matching authorization commits and while it remains nonterminal. The hook
-cannot independently prove that state or authenticate the assigned job from
-this receipt alone; it also relies on an authenticated, fresh response.
+The optional endpoint checks a slot credential before querying GitHub, commits
+the matching binding, then rechecks assignment and stored claim before issuing a
+receipt. The production controller does not configure this endpoint or install
+the hook. Assignment or claim state can change after those observations, so
+they do not guarantee the same state at receipt issuance. The hook cannot
+independently prove the assigned job or claim state; it also relies on an
+authenticated, fresh response.
 
 The receipt model explores 285 states with trusted receipt issuance. Its
 projection hides 114 same-state transitions.
@@ -200,6 +202,34 @@ stateDiagram-v2
   s0 --> s2: check runner context
   s2 --> s1: validate status and receipt
   s2 --> s3: validate status and receipt
+```
+
+The endpoint model checks 142 bounded states; its projection hides 52 same-state
+transitions. Separate executable counterexamples show assignment or claim state
+can change between its final reads and receipt issuance.
+
+```mermaid
+stateDiagram-v2
+  s0: Start request received
+  s1: Request rejected
+  s2: Checking GitHub assignment
+  s3: Binding job to slot
+  s4: Rechecking assignment
+  s5: No receipt#59; reconcile
+  s6: Rechecking stored claim
+  s7: Receipt issued
+  [*] --> s0
+  s0 --> s1: verify slot credential
+  s0 --> s2: verify slot credential
+  s2 --> s1: check assignment
+  s2 --> s3: check assignment
+  s3 --> s4: commit binding
+  s3 --> s5: commit binding
+  s3 --> s1: commit binding
+  s4 --> s5: recheck assignment
+  s4 --> s6: recheck assignment
+  s6 --> s5: recheck stored claim
+  s6 --> s7: recheck stored claim
 ```
 
 The assignment-evidence model checks 128 bounded states. Its projection hides
