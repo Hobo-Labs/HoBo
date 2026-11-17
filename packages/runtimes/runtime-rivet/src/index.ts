@@ -25,11 +25,19 @@ export {
 } from "./distributed-auth.js";
 export {
 	createRivetDurableTopicActor,
+	createRivetDurableTopicBusActor,
 	isRivetDurableTopicBinding,
+	isRivetDurableTopicBusBinding,
 	type RivetDurableTopicBinding,
+	type RivetDurableTopicBusBinding,
+	type RivetDurableTopicBusOptions,
 	type RivetDurableTopicContext,
 	type RivetDurableTopicOptions,
 } from "./durable-topic-actor.js";
+export {
+	RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
+	RIVET_DURABLE_TOPIC_BUS_LIMITS,
+} from "./durable-topic-bus.js";
 export {
 	createRivetDurableTopicClient,
 	createRivetDurableTopicMetadataGrant,
