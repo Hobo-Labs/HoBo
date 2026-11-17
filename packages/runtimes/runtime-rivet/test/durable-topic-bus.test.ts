@@ -850,6 +850,88 @@ describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 		).toBe("committed");
 	});
 
+	it("reports a cyclic fanout hard limit without dropping unsettled messages", async () => {
+		const f = await fixture();
+		for (const topic of ["first", "second"])
+			await f.mutate("ensure-topic", { topic });
+		for (let index = 0; index < 8; index++) {
+			expect(
+				(
+					await f.mutate("ensure-subscription", {
+						subscription: subscription("first", `a${index}`, "second", 1),
+					})
+				).status,
+			).toBe("committed");
+			expect(
+				(
+					await f.mutate("ensure-subscription", {
+						subscription: subscription("second", `b${index}`, "first", 1),
+					})
+				).status,
+			).toBe("committed");
+		}
+		await f.mutate("publish", { topic: "first", message: message() });
+		for (let index = 0; index < 8; index++) {
+			const delivery = (
+				await f.mutate("consume", consume("first", `a${index}`))
+			).value[0];
+			expect(
+				(await f.mutate("nack", { ...settle(delivery), reason: "failed" }))
+					.status,
+			).toBe("committed");
+		}
+		expect(
+			(await f.mutate("compact", { topic: "first", throughSequence: 1 }))
+				.status,
+		).toBe("committed");
+		for (let sequence = 1; sequence <= 8; sequence++) {
+			for (let index = 0; index < 8; index++) {
+				const result = await f.mutate(
+					"consume",
+					consume("second", `b${index}`),
+				);
+				if (sequence === 8 && index === 7) {
+					expect(result).toEqual({
+						status: "rejected",
+						code: "capacity-exceeded",
+					});
+					continue;
+				}
+				const delivery = result.value[0];
+				expect(delivery.sequence).toBe(sequence);
+				expect(
+					(await f.mutate("nack", { ...settle(delivery), reason: "failed" }))
+						.status,
+				).toBe("committed");
+			}
+			if (sequence < 8)
+				expect(
+					(
+						await f.mutate("compact", {
+							topic: "second",
+							throughSequence: sequence,
+						})
+					).status,
+				).toBe("committed");
+		}
+		const before = f.sql.prepare("SELECT value FROM hobo_dm_topic_state").get();
+		if (before === undefined || typeof before.value !== "string")
+			throw new Error("missing fixture state");
+		expect(JSON.parse(before.value).messages).toHaveLength(64);
+		expect(
+			(await f.mutate("compact", { topic: "second", throughSequence: 8 })).code,
+		).toBe("retention-blocked");
+		expect(
+			(await f.mutate("compact", { topic: "first", throughSequence: 2 })).code,
+		).toBe("retention-blocked");
+		expect((await f.mutate("consume", consume("first", "a0"))).code).toBe(
+			"capacity-exceeded",
+		);
+		expect(
+			f.sql.prepare("SELECT value FROM hobo_dm_topic_state").get(),
+		).toEqual(before);
+	}, 30_000);
+
 	it("fences leases at their exact deadline and rejects deadline overflow", async () => {
 		const f = await fixture();
 		await setup(f);
