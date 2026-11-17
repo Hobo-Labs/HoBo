@@ -102,6 +102,23 @@ describe("SqliteRouteJournal", () => {
 		expect((await journal.decisions(all)).length).toBe(1);
 	});
 
+	it("keys a redelivery by account, so one job id in two accounts is two entries", async () => {
+		const journal = new SqliteRouteJournal(new DatabaseSync(":memory:"), {
+			nowMs: () => 50_000,
+		});
+		await journal.record(decided({ atMs: 10_000, jobId: "a|b" }));
+		await journal.record(
+			decided({ atMs: 11_000, jobId: "a|b", accountId: "acct-2" }),
+		);
+		await journal.record(decided({ atMs: 12_000, jobId: "a|b" }));
+		expect((await journal.decisions(all)).map((e) => e.atMs)).toEqual([10_000]);
+		expect(
+			(await journal.decisions({ ...all, accountId: "acct-2" })).map(
+				(e) => e.atMs,
+			),
+		).toEqual([11_000]);
+	});
+
 	it("keeps entries without a job id each time", async () => {
 		const journal = new SqliteRouteJournal(new DatabaseSync(":memory:"), {
 			nowMs: () => 50_000,
@@ -178,10 +195,8 @@ describe("SqliteRouteJournal", () => {
 			await journal.record(decided({ atMs: 9 * DAY_MS, jobId: "a" }));
 			now = 200 * DAY_MS;
 			await journal.record(decided({ atMs: 199 * DAY_MS, jobId: "b" }));
-			const rows = db.prepare("SELECT job_key FROM route_journal").all();
-			expect(rows.map((row) => row.job_key)).toEqual([
-				"b|runner.route.Decided",
-			]);
+			const rows = db.prepare("SELECT job_id, type FROM route_journal").all();
+			expect(rows).toEqual([{ job_id: "b", type: "runner.route.Decided" }]);
 		});
 
 		it("does not keep an entry already past retention", async () => {

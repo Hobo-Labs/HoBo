@@ -660,12 +660,16 @@ the `RouteJournal` port on SQLite (ADR-0135):
   argument and adds one `route_journal` table, so the journal sits in the
   store's one partition with its one writer. It never begins a transaction of
   its own; each write is one statement.
-- It is append-only. A redelivered event (the same relay job's same event
-  type) keeps the first entry.
+- It is append-only. A redelivered event (the same account's same relay
+  job's same event type, held in separate columns under one unique key) keeps
+  the first entry.
 - It keeps entries for 90 days (`ROUTE_JOURNAL_RETENTION_MS`), measured
   against a clock passed in as `nowMs`. Older entries are hidden from reads at
   once and deleted on the next write or `prune()`.
-- It passes `routeJournalConformance` from `@hobo/ci/runner-order/testing`.
+- It passes `routeJournalConformance` from `@hobo/ci/runner-order/testing`
+  when given a clock near the conformance events, such as
+  `{ nowMs: () => 10_000 }`; under the system clock those events are past
+  retention and are dropped on record.
 
 `activityFeed(events, filter)`, exported from `@hobo/ci`, reads journal
 entries back as one entry per relay job: where it went (`runner`, `step`,

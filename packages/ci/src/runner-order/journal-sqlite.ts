@@ -13,7 +13,10 @@
  * never begins a transaction of its own: each write is one statement, and a
  * caller already inside a transaction keeps or discards the entry with it.
  *
- * The clock is passed in; retention is measured against it.
+ * The clock is passed in; retention is measured against it. Run
+ * `routeJournalConformance` with a clock near its events, such as
+ * `new SqliteRouteJournal(db, { nowMs: () => 10_000 })`: under the system
+ * clock its events are past retention and are dropped on record.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { clone, toJsonString } from "@bufbuild/protobuf";
@@ -47,15 +50,21 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS route_journal (
   account_id TEXT NOT NULL,
   repository TEXT NOT NULL,
   at_ms INTEGER NOT NULL,
-  job_key TEXT UNIQUE,
-  body TEXT NOT NULL
+  job_id TEXT,
+  type TEXT NOT NULL,
+  body TEXT NOT NULL,
+  UNIQUE (account_id, job_id, type)
 );
 CREATE INDEX IF NOT EXISTS route_journal_account_at ON route_journal(account_id, at_ms);
 CREATE INDEX IF NOT EXISTS route_journal_at ON route_journal(at_ms);`;
 
-/** One entry per relay job and event type; an entry with no job id is never a redelivery. */
-function jobKey(event: RunnerRouteEvent): string | null {
-	return event.jobId === "" ? null : `${event.jobId}|${event.type}`;
+/**
+ * One entry per account, relay job and event type. An entry with no job id
+ * stores NULL, which SQLite never counts as a duplicate, so it is never a
+ * redelivery.
+ */
+function jobId(event: RunnerRouteEvent): string | null {
+	return event.jobId === "" ? null : event.jobId;
 }
 
 export class SqliteRouteJournal implements RouteJournal {
@@ -95,14 +104,15 @@ export class SqliteRouteJournal implements RouteJournal {
 		if (parsed.atMs < this.cutoffMs()) return;
 		this.db
 			.prepare(
-				`INSERT INTO route_journal (account_id, repository, at_ms, job_key, body)
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT(job_key) DO NOTHING`,
+				`INSERT INTO route_journal (account_id, repository, at_ms, job_id, type, body)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, job_id, type) DO NOTHING`,
 			)
 			.run(
 				parsed.accountId,
 				(parsed.request?.repository ?? "").toLowerCase(),
 				parsed.atMs,
-				jobKey(parsed),
+				jobId(parsed),
+				parsed.type,
 				toJsonString(RunnerRouteEventSchema, parsed),
 			);
 	}
