@@ -25,6 +25,8 @@ export {
 	createReactor,
 	defineMaterialization,
 	type Materialization,
+	type MaterializedFrame,
+	type MaterializedSnapshot,
 	type Reactor,
 	type SubscriptionHandle,
 } from "./reactor.js";
