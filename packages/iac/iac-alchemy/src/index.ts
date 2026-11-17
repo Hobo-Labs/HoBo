@@ -13,6 +13,7 @@ import {
 } from "./input-boundary.js";
 import { AlchemyIacError, digestData, inspectAlchemyPlan } from "./plan.js";
 import type {
+	FinancialDecision,
 	FinancialExpectation,
 	FinancialPlan,
 	FinancialPort,
@@ -128,6 +129,112 @@ function reservationName(value: string): boolean {
 	);
 }
 
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: admission receipts cross a provider boundary; inspect own data properties before returning an independent domain value. */
+function readFinancialDecision(input: unknown): FinancialDecision | undefined {
+	try {
+		if (typeof input !== "object" || input === null || Array.isArray(input))
+			return undefined;
+		const properties = Object.getOwnPropertyDescriptors(input);
+		const read = (key: string): unknown => {
+			const descriptor = properties[key];
+			if (descriptor === undefined) return undefined;
+			if (!("value" in descriptor)) throw new Error("receipt accessor");
+			return descriptor.value;
+		};
+		const requestId = read("requestId");
+		const targetId = read("targetId");
+		const status = read("status");
+		const code = read("code");
+		const message = read("message");
+		const budgetInput = read("budget");
+		const reservationInput = read("reservation");
+		const inventoryHash = read("inventoryHash");
+		const modelHash = read("modelHash");
+		const quoteHash = read("quoteHash");
+		if (
+			typeof requestId !== "string" ||
+			!name(requestId) ||
+			typeof targetId !== "string" ||
+			!name(targetId) ||
+			typeof status !== "string" ||
+			!["admitted", "denied", "uncertain", "replay"].includes(status) ||
+			typeof code !== "string" ||
+			(status !== "admitted" && !name(code)) ||
+			(code !== "" && !name(code)) ||
+			typeof message !== "string" ||
+			message.length > 4096 ||
+			typeof budgetInput !== "object" ||
+			budgetInput === null ||
+			Array.isArray(budgetInput) ||
+			(inventoryHash !== undefined &&
+				(typeof inventoryHash !== "string" || inventoryHash.length > 200)) ||
+			(modelHash !== undefined &&
+				(typeof modelHash !== "string" || modelHash.length > 200)) ||
+			(quoteHash !== undefined &&
+				(typeof quoteHash !== "string" || quoteHash.length > 200))
+		)
+			return undefined;
+		const budgetProperties = Object.getOwnPropertyDescriptors(budgetInput);
+		const evaluation = budgetProperties.evaluation;
+		const reservation = budgetProperties.reservation;
+		if (
+			evaluation === undefined ||
+			!("value" in evaluation) ||
+			typeof evaluation.value !== "string" ||
+			!name(evaluation.value) ||
+			reservation === undefined ||
+			!("value" in reservation) ||
+			typeof reservation.value !== "string" ||
+			!name(reservation.value)
+		)
+			return undefined;
+		let reservationId: string | undefined;
+		if (reservationInput !== undefined) {
+			if (
+				typeof reservationInput !== "object" ||
+				reservationInput === null ||
+				Array.isArray(reservationInput)
+			)
+				return undefined;
+			const id = Object.getOwnPropertyDescriptor(
+				reservationInput,
+				"reservationId",
+			);
+			if (
+				id === undefined ||
+				!("value" in id) ||
+				typeof id.value !== "string" ||
+				!reservationName(id.value)
+			)
+				return undefined;
+			reservationId = id.value;
+		}
+		if (
+			status === "denied" &&
+			(reservationId !== undefined ||
+				reservation.value !== "not-created" ||
+				!["denied", "unavailable"].includes(evaluation.value))
+		)
+			return undefined;
+		const result: FinancialDecision = {
+			requestId,
+			targetId,
+			status,
+			code,
+			message,
+			budget: { evaluation: evaluation.value, reservation: reservation.value },
+		};
+		if (reservationId !== undefined) result.reservation = { reservationId };
+		if (typeof inventoryHash === "string") result.inventoryHash = inventoryHash;
+		if (typeof modelHash === "string") result.modelHash = modelHash;
+		if (typeof quoteHash === "string") result.quoteHash = quoteHash;
+		return result;
+	} catch {
+		return undefined;
+	}
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof */
+
 // HoBo's IaC port exposes bounded string-valued outputs. Never silently drop
 // outputs after a provider has run: an unrepresentable result needs recovery.
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- SAFETY: this parser checks the untrusted provider output before returning bounded string-valued data. */
@@ -220,6 +327,8 @@ export function createAlchemyIacProvider<
 	}
 	const previews = new Map<string, string>();
 	const claimed = new Map<string, string>();
+	const running = new Set<string>();
+	const unresolved = new Set<string>();
 	const checkProgram = (input: IacProgram) => {
 		const captured = captureAlchemyProgram(input);
 		const program = captured.program;
@@ -362,7 +471,7 @@ export function createAlchemyIacProvider<
 	};
 	const preview = async (program: IacProgram): Promise<IacDiff> =>
 		(await assessPricing(program)).diff;
-	const execute = async (
+	const executeUnlocked = async (
 		input: IacProgram,
 		requestedId?: string,
 		expected?: FinancialExpectation,
@@ -449,7 +558,14 @@ export function createAlchemyIacProvider<
 						}
 					});
 					if ("error" in admitted) return { error: admitted.error };
-					const decision = admitted.decision;
+					const decision = readFinancialDecision(admitted.decision);
+					if (decision === undefined)
+						return {
+							error: new AlchemyIacError(
+								"ADMISSION_RECEIPT_INVALID",
+								"admission receipt could not be safely inspected",
+							),
+						};
 					if (
 						decision.requestId !== requestId ||
 						decision.targetId !== target.targetId
@@ -598,6 +714,55 @@ export function createAlchemyIacProvider<
 		if ("error" in result) throw result.error;
 		return result;
 	};
+	const execute = async (
+		input: IacProgram,
+		requestId?: string,
+		expected?: FinancialExpectation,
+		requireDestroy = false,
+	) => {
+		const { program, key } = checkProgram(input);
+		if (unresolved.has(key)) {
+			const reservationId = claimed.get(key);
+			throw new AlchemyIacError(
+				reservationId === undefined
+					? "EXECUTION_OUTCOME_UNRESOLVED"
+					: "EXECUTION_ALREADY_CLAIMED",
+				"the previous execution must be reconciled before another attempt",
+				undefined,
+				reservationId,
+			);
+		}
+		if (running.has(key))
+			throw new AlchemyIacError(
+				"EXECUTION_IN_PROGRESS",
+				"another execution of this program must finish before retry",
+			);
+		if (running.size >= 128)
+			throw new AlchemyIacError(
+				"EXECUTION_LIMIT",
+				"provider execution capacity reached",
+			);
+		running.add(key);
+		try {
+			return await executeUnlocked(program, requestId, expected, requireDestroy);
+		} catch (error) {
+			if (error instanceof AlchemyIacError && error.requiresReconciliation)
+				unresolved.add(key);
+			throw error;
+		} finally {
+			running.delete(key);
+		}
+	};
+	const applyWithAdmission: AlchemyIacProvider<Assessment>["applyWithAdmission"] =
+		async (input, requestId, expected) => {
+			const { program } = checkProgram(input);
+			if (program.action === "destroy")
+				throw new AlchemyIacError(
+					"PROGRAM_SCOPE_MISMATCH",
+					"apply cannot execute a destroy program",
+				);
+			return execute(program, requestId, expected);
+		};
 	const destroyWithAdmission: AlchemyIacProvider<Assessment>["destroyWithAdmission"] =
 		async (program, requestId, expected) => {
 			const { admission } = await execute(program, requestId, expected, true);
@@ -607,8 +772,8 @@ export function createAlchemyIacProvider<
 		id: "alchemy",
 		preview,
 		assessPricing,
-		apply: async (program) => (await execute(program)).outputs,
-		applyWithAdmission: execute,
+		apply: async (program) => (await applyWithAdmission(program)).outputs,
+		applyWithAdmission,
 		destroy: async (program) => {
 			await destroyWithAdmission(program);
 		},
