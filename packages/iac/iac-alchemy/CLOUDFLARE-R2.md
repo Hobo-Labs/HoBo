@@ -128,6 +128,9 @@ Earlier infrastructure-only mappings used the bare resource name: moving to a
 scoped bucket creates a different Alchemy identity, and must not be mistaken for
 an automatic data migration. Fence old access and complete and verify any needed
 migration before authorizing the new identity or retiring the old resource.
+Multiple Bindles with the same resource name may have shared that old bare
+identity. The host must resolve historical ownership and any shared data before
+treating either new scoped Bucket as an exclusive successor.
 
 Alchemy can reconstruct updates and deletions from historical state without
 running the current mapper, so the current `verifyBucket` and `verifyGrant`
