@@ -157,6 +157,27 @@ stateDiagram-v2
   s3 --> s5: match with current evidence
 ```
 
+The [Yard generation authority skill](../../.agents/skills/verify-yard-generation-authority/SKILL.md)
+checks a finite abstraction of authority changes around a provider effect. This
+projection hides 64 same-label steps and assumes truthful host evidence.
+
+```mermaid
+stateDiagram-v2
+  s0: Generation awaits current authority
+  s1: Generation authority claimed
+  s2: Changed authority refused#59; hold retained
+  s3: Provider operation completed
+  s4: Generated Yard admitted
+  s5: Changed authority refused#59; reconcile the hold
+  [*] --> s0
+  s0 --> s2: refuse changed policy, runtime or connector
+  s0 --> s1: claim current authority
+  s1 --> s2: refuse changed authority
+  s1 --> s3: run the provider operation
+  s3 --> s5: retain exposure for reconciliation
+  s3 --> s4: admit current generation
+```
+
 Without a budget authority, local placement also requires an
 explicit `authorizeLocalHosting` callback. It approves the exact request,
 catalog, Yard and selected resource placements and returns a bound policy proof
