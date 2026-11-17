@@ -74,7 +74,10 @@ const COPIED = Buffer.from(
 ).toString("base64");
 
 /** A host on the other end of the stdio transport, with a capability profile. */
-function host(capabilities: JsonObject, options: { remote: boolean }) {
+function host(
+	capabilities: JsonObject,
+	options: { remote: boolean; formDeadlineMs?: number },
+) {
 	const toServer = new PassThrough();
 	const fromServer = new PassThrough();
 	const owner = createMcpOwnerChannel();
@@ -98,6 +101,9 @@ function host(capabilities: JsonObject, options: { remote: boolean }) {
 		input: toServer,
 		output: fromServer,
 		session,
+		...(options.formDeadlineMs !== undefined
+			? { formDeadlineMs: options.formDeadlineMs }
+			: undefined),
 	});
 	const seen: string[] = [];
 	const inbox: Message[] = [];
@@ -233,10 +239,10 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		await client.close();
 	});
 
-	it("the form is minimal: the link alone on its own line, a short title, nothing said twice", async () => {
+	it("the form is minimal: one short line with the link, a short title, nothing said twice", async () => {
 		// Derived from the owner's screenshot: the link was not clickable and
 		// was buried in a paragraph that repeated itself; label and description
-		// said the same thing twice. The link stands alone on its own line.
+		// said the same thing twice. One short line, the link in it as itself.
 		const link = "https://app.infisical.com/login?callback_port=31222";
 		const client = host({ elicitation: {} }, { remote: true });
 		await client.init();
@@ -253,14 +259,14 @@ describe("EVAL owner form reach: the owner sees a form the host renders", () => 
 		const mine = client.capture();
 		const form = await client.fill({ value: COPIED });
 		const field = form.requestedSchema.properties.value;
-		const lines = form.message.split("\n").filter((line) => line !== "");
-		expect(lines).toContain(link);
-		const prose = lines.filter((line) => line !== link);
-		for (const line of prose) {
-			expect(line).not.toMatch(/https?:\/\//u);
-			expect(line.length).toBeLessThanOrEqual(100);
-		}
-		const sentences = prose.join(" ").split(/(?<=\.)\s+/u);
+		// One line: the owner's app showed one-line forms and not the
+		// multi-line ones. The link is in it, as itself.
+		expect(form.message).not.toContain("\n");
+		expect(form.message.split(/\s+/u)).toContain(link);
+		const prose = form.message.replace(link, "").trim();
+		expect(prose).not.toMatch(/https?:\/\//u);
+		expect(prose.length).toBeLessThanOrEqual(140);
+		const sentences = prose.split(/(?<=\.)\s+/u);
 		expect(new Set(sentences).size).toBe(sentences.length);
 		expect((field?.title ?? "").length).toBeLessThanOrEqual(30);
 		expect(field?.title ?? "").not.toMatch(/\(|“/u);
@@ -453,13 +459,14 @@ describe("EVAL owner form reach: the link reaches the owner in the form itself",
 		});
 	}
 
-	it("one form: the sign-in link on its own line, then the paste field", async () => {
+	it("one form: one line with the sign-in link, and the paste field", async () => {
 		const client = host(BOTH, { remote: true });
 		await client.init();
 		await pendingSignIn(client);
 		const mine = client.capture();
 		const form = await client.fill({ value: COPIED });
-		expect(form.message.split("\n")).toContain(SIGN_IN_URL);
+		expect(form.message.split(/\s+/u)).toContain(SIGN_IN_URL);
+		expect(form.message).not.toContain("\n");
 		const result = toolResult.parse((await client.answer(mine)).result);
 		expect(result.structuredContent).toMatchObject({
 			status: "stored",
@@ -503,6 +510,29 @@ describe("EVAL owner form reach: the link reaches the owner in the form itself",
 		const result = toolResult.parse((await client.answer(mine)).result);
 		expect(result.structuredContent).toMatchObject({
 			code: "SECRET_CAPTURE_DECLINED",
+		});
+		await client.close();
+	});
+
+	it("a form nobody answers is withdrawn at the deadline: the call ends, it does not hang", async () => {
+		// Derived from the live run: the host took the form and never showed
+		// it, and the call sat open for its full 30 minutes. Past the
+		// deadline the server withdraws the form and the call ends with
+		// what happened, so the agent can fall back.
+		const client = host(BOTH, { remote: true, formDeadlineMs: 1 });
+		await client.init();
+		await pendingSignIn(client);
+		const mine = client.capture();
+		const form = await client.peek();
+		const withdrawn = await client.next(
+			(m) =>
+				m.method === "notifications/cancelled" &&
+				JSON.stringify(m.params).includes(String(form.id)),
+		);
+		expect(JSON.stringify(withdrawn.params)).toMatch(/No answer within/u);
+		const result = toolResult.parse((await client.answer(mine)).result);
+		expect(result.structuredContent).toMatchObject({
+			code: "SECRET_CAPTURE_NOT_ANSWERED",
 		});
 		await client.close();
 	});

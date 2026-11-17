@@ -104,7 +104,8 @@ export function createMcpOwnerChannel(
 		},
 		async confirm({ url, message }) {
 			const answer = options.form?.({
-				message: `${message}\n\n${url}`,
+				// One line: a host showed one-line forms and not multi-line ones.
+				message: `${message} ${url}`,
 				requestedSchema: {
 					type: "object",
 					properties: {

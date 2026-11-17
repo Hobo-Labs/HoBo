@@ -350,13 +350,32 @@ const REQUEST_ID = z.union([z.string(), z.number()]).transform(String);
 // Two-way: a tool call may send the client a request (an elicitation) and
 // wait for its answer, so each incoming request is handled without blocking
 // the reader, and a response to one of the server's requests is routed back.
+/** The owner's time to answer one form (HOBO_OWNER_FORM_WAIT_MS), 10 minutes by default. */
+export function ownerFormWaitMs(env: NodeJS.ProcessEnv): number {
+	const parsed = z.coerce
+		.number()
+		.int()
+		.positive()
+		.safeParse(env.HOBO_OWNER_FORM_WAIT_MS);
+	return parsed.success ? parsed.data : 600_000;
+}
+
 export async function serveMcpStdio(options: {
 	readonly server: HoboMcpServer;
 	readonly auth: AuthContext;
 	readonly input: NodeJS.ReadableStream;
 	readonly output: NodeJS.WritableStream;
 	readonly session?: McpStdioSession;
+	/**
+	 * How long a form this server asks the host for may stay unanswered.
+	 * A host can accept a form and never show it (the live run's form sat
+	 * open for 30 minutes); past this, the server withdraws it and the run
+	 * goes on with its refusal and the link. Default: HOBO_OWNER_FORM_WAIT_MS,
+	 * else 10 minutes (under the 30 minutes `.mcp.json` gives a call).
+	 */
+	readonly formDeadlineMs?: number;
 }): Promise<void> {
+	const formDeadlineMs = options.formDeadlineMs ?? ownerFormWaitMs(process.env);
 	const write = (message: JsonObject | JsonRpcResponse) =>
 		options.output.write(`${JSON.stringify(message)}\n`);
 	const waiting = new Map<string, (answer: JsonValue | undefined) => void>();
@@ -372,7 +391,25 @@ export async function serveMcpStdio(options: {
 			const id = `hobo-${next}`;
 			asking.getStore()?.add(id);
 			const answer = new Promise<JsonValue | undefined>((resolve) => {
-				waiting.set(id, resolve);
+				// Unanswered past the deadline: withdrawn, as a cancel would.
+				const deadline = setTimeout(() => {
+					if (!waiting.has(id)) return;
+					waiting.delete(id);
+					write({
+						jsonrpc: "2.0",
+						method: "notifications/cancelled",
+						params: {
+							requestId: id,
+							reason: `No answer within ${Math.round(formDeadlineMs / 60_000)} minutes.`,
+						},
+					});
+					resolve(undefined);
+				}, formDeadlineMs);
+				deadline.unref();
+				waiting.set(id, (value) => {
+					clearTimeout(deadline);
+					resolve(value);
+				});
 			});
 			write({ jsonrpc: "2.0", id, method, params });
 			return answer;

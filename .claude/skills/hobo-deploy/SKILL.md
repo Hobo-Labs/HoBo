@@ -262,6 +262,11 @@ checks it.
    a value the run is waiting on. If the call ends with
    `HOBO_OWNER_SIGN_IN` or `HOBO_CD_VERCEL_AWAITING_APPROVAL` (the owner
    closed a form), run the lifecycle again: the same form comes back.
+   A form unanswered for 10 minutes (`HOBO_OWNER_FORM_WAIT_MS`) is
+   withdrawn and the call ends the same way, so it never hangs. If a form
+   went unanswered, the owner may not see forms where they are: as the
+   fallback, show the link from that line once in chat, on its own line,
+   then run again when they say they are ready.
    Only a host that shows no form gets a refusal to act on in chat (below).
    Never ask for the value in chat, and never use `request_credential` for
    it (that form feeds the network proxy, not the run).

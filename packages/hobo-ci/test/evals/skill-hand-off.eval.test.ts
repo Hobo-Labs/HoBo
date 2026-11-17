@@ -194,7 +194,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/elicitation form/u);
 	});
 
-	it("through MCP, never relays a link in chat: every step is a form carrying its link", () => {
+	it("through MCP, every step is a form carrying its link; chat only as the fallback for an unanswered form", () => {
 		// Derived from the live runs: the paste form opened with no link; then
 		// the links went as prompts the owner's app never showed, and the
 		// agent relayed them in chat, which the owner rejected.
@@ -209,8 +209,14 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 		expect(step).toMatch(/run the lifecycle again: the same form comes back/u);
 		expect(step).not.toMatch(/linkShown|LINK_FIRST|link prompt/u);
-		// Nothing is timed: the form waits for the owner or the host's cancel.
-		expect(step).not.toMatch(/minutes/u);
+		// A form nobody answers ends the call (never a hang), and only then
+		// does the link go to chat, once, as the fallback.
+		expect(step).toMatch(
+			/withdrawn and the call ends the same way, so it never hangs/u,
+		);
+		expect(step).toMatch(
+			/as the\s+fallback, show the link from that line once in chat/u,
+		);
 	});
 
 	it("a host with no form: the device step ends the turn and runs again once the owner approved", () => {

@@ -576,8 +576,9 @@ export function createSecretCaptureApp(
 		const elicit = options.elicit;
 		let problem: string | undefined;
 		while (ticket.state === "awaiting-owner") {
-			// One field; the link, when the value comes from one, on its own
-			// line above it.
+			// One field and one line (no line breaks: a host showed forms
+			// with one line and not the ones with several); the link, when the
+			// value comes from one, in that line.
 			const said =
 				problem === undefined ? ticket.spec.purpose : `${problem} Try again.`;
 			const answer = parseFormAnswer(
@@ -586,7 +587,7 @@ export function createSecretCaptureApp(
 						message:
 							link === undefined
 								? said
-								: `${link.message}\n\n${link.url}\n\n${said}`,
+								: `${link.message} ${link.url} — ${said}`,
 						requestedSchema: {
 							type: "object",
 							properties: {

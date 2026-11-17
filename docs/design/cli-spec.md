@@ -371,10 +371,17 @@ environment variables.
   for the agent to relay in chat: the spec model's "owner links reach the
   owner in the host" fails any result that asks the owner to open a link
   the host did not show them. The repository's `.mcp.json` gives the
-  server's calls 30 minutes, so a form stays open while the owner signs in. Nothing is timed: a form
-  stays open until the owner answers or the host cancels the call
-  (`notifications/cancelled`), which withdraws exactly that call's prompts
-  (`SECRET_CAPTURE_NOT_ANSWERED`). Through the MCP server, `cd`'s Vercel
+  server's calls 30 minutes, so a form stays open while the owner signs in. A form stays open until the
+  owner answers, the host cancels the call (`notifications/cancelled`,
+  which withdraws exactly that call's prompts), or its deadline passes
+  (`HOBO_OWNER_FORM_WAIT_MS`, 10 minutes by default, under the 30 minutes a
+  call gets): a host can accept a form and never show it, and the live
+  run's form sat open for the whole call. The server then withdraws it
+  (`notifications/cancelled`, "No answer within …") and the run ends with
+  its refusal and the link (`SECRET_CAPTURE_NOT_ANSWERED` for a capture),
+  so the agent can fall back to showing the link once in chat. Every form
+  is one line (no line breaks; the owner's app showed one-line forms and not
+  multi-line ones), the link in it as itself. Through the MCP server, `cd`'s Vercel
   device grant runs off the request path (the owner channel's jobs) and
   writes the connection to the store when approved (RFC 8628 polling on an
   injectable clock); the call waits on the owner's form and then on the

@@ -246,6 +246,69 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 		}
 	}, 120_000);
 
+	it("a form nobody answers: the one cd call ends with the link instead of hanging", async () => {
+		// Derived from the live run: the host took the sign-in form and never
+		// showed it, and cd sat open for the host's whole 30 minutes. With
+		// a deadline (1 ms here; 10 minutes by default) the server withdraws
+		// the form and the call ends with the link, so the agent falls back.
+		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
+		const api = await startFakeInfisical("org-1");
+		const world = await startTlsWorld({ "app.infisical.com": api.handle });
+		const locator = secretStoreLocatorPath(REPO, { XDG_CONFIG_HOME: config });
+		mkdirSync(path.dirname(locator), { recursive: true });
+		writeFileSync(
+			locator,
+			JSON.stringify({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "proj-1",
+			}),
+		);
+		const server = startServer({
+			...process.env,
+			XDG_CONFIG_HOME: config,
+			CLAUDE_CODE_REMOTE: "true",
+			HOBO_OWNER_FORM_WAIT_MS: "1",
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
+		});
+		try {
+			await server.answer(
+				server.call("initialize", {
+					protocolVersion: "2025-11-25",
+					capabilities: LIVE_HOST,
+				}),
+			);
+			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
+			const form = await server.next((m) => m.method === "elicitation/create");
+			// Never answered: withdrawn, and the call ends.
+			await server.next(
+				(m) =>
+					m.method === "notifications/cancelled" &&
+					JSON.stringify(m.params).includes(String(form.id)),
+			);
+			const ended = JSON.stringify(await server.answer(run));
+			expect(ended).toContain("HOBO_CD_INFISICAL_SIGN_IN");
+			expect(ended).toMatch(
+				/HOBO_OWNER_SIGN_IN url=https:\/\/app\.infisical\.com\/login/u,
+			);
+			// The link it ends with is the one the form carried.
+			const events = eventsFromWire(server.wire);
+			const verdicts = ceremonyProperties({}).map((property) =>
+				check(property, events),
+			);
+			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
+		} finally {
+			server.stop();
+			await world.close();
+			await api.close();
+		}
+	}, 120_000);
+
 	// The CD project's own declaration (packages/hobo-cd/src/bindle.ts) says
 	// its resources must be wired before it can deploy: the API has no handler
 	// binding, the schedule no cadence, and cd-config / cd-journal no
