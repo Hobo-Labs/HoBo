@@ -93,9 +93,11 @@ export interface DurableMessagingLimits {
  * Because an admitted pre-expiry transaction may finish after expiry, even an
  * empty point-in-time journal or absent effect is insufficient to conclude it
  * failed. Before using absence as proof or starting a replacement, the host
- * must fence and drain every prior eligible attempt and establish noncommit
- * from independently authenticated evidence complete for the relevant
- * interval, or establish each attempt's durable final outcome. A receipt may
+ * must ensure every prior eligible attempt is fenced and drained or has an
+ * independently authenticated durable final outcome, and establish that
+ * none committed using independently authenticated evidence complete for the
+ * relevant interval. A known prior commit never authorizes a replacement of
+ * the same logical effect. A receipt may
  * already have been garbage-collected after a successful commit, so an empty
  * compacted receipt or audit store is not proof of noncommit even after
  * fencing. Without complete evidence, the outcome remains unknown.
@@ -130,8 +132,11 @@ export type DurableMessagingRejectionCode =
  * expiry. Identical retries replay that rejection. An operation-conflict only
  * rejects the conflicting fingerprint: the original same-ID operation may
  * already be committed or still in flight. A fresh ID for the same logical
- * work requires resolving or fencing that original operation, not merely
- * receiving the conflict. If authorization is revoked, the
+ * work is safe only after every prior eligible attempt is fenced and drained
+ * or has an independently authenticated durable final outcome, and independent
+ * complete evidence establishes that none committed. A known original commit
+ * never permits replacing the same logical effect. A conflict or a fence
+ * alone does not establish noncommit. If authorization is revoked, the
  * receipt store is unavailable, or capacity
  * cannot be checked without resolving a prior attempt, return `unknown`;
  * never turn an unresolved earlier commit into a definite rejection.
