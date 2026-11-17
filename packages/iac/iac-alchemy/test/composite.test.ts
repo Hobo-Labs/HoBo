@@ -30,6 +30,10 @@ function fixture(
 		denyEnvironment?: boolean;
 		includeActionScope?: boolean;
 		sourceRevokesAtApply?: boolean;
+		guardRevokesAtApply?: boolean;
+		sourceRevokesDuringDrift?: boolean;
+		guardRevokesDuringDrift?: boolean;
+		guardThrowsDuringDrift?: boolean;
 	} = {},
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-composite-"));
@@ -39,6 +43,11 @@ function fixture(
 	let ran = 0;
 	let applied = 0;
 	let sourceAllowed = true;
+	let guardAllowed = true;
+	let guardUnavailable = false;
+	let refreshing = false;
+	let refreshEnvironmentChecks = 0;
+	let driftReads = 0;
 	const sourceRequirement = {
 		resourceId: "widget",
 		resourceType: "Spec.Widget",
@@ -63,10 +72,21 @@ function fixture(
 					Effect.sync(() => {
 						applied++;
 						if (options.sourceRevokesAtApply) sourceAllowed = false;
+						if (options.guardRevokesAtApply) guardAllowed = false;
 						expect(news.artifact).toBe("HELLO");
 						return { id: "widget" };
 					}),
 				delete: () => Effect.void,
+				read: () =>
+					Effect.sync(() => {
+						if (refreshing && refreshEnvironmentChecks >= 2) {
+							driftReads++;
+							if (options.sourceRevokesDuringDrift) sourceAllowed = false;
+							if (options.guardRevokesDuringDrift) guardAllowed = false;
+							if (options.guardThrowsDuringDrift) guardUnavailable = true;
+						}
+						return { id: "widget" };
+					}),
 			}),
 			state: inMemoryState(),
 		},
@@ -74,7 +94,7 @@ function fixture(
 			const artifact = yield* Build("build", { name: "hello" });
 			const upper = Output.map(artifact.name, (name) => name.toUpperCase());
 			const widget = yield* Widget("widget", { artifact: upper });
-			if (options.sourceRevokesAtApply)
+			if (options.sourceRevokesAtApply || options.sourceRevokesDuringDrift)
 				registerAlchemySource(widget, {
 					claim: {
 						...sourceRequirement,
@@ -146,12 +166,15 @@ function fixture(
 		composite: {
 			proofRef: "host:attestation-1",
 			environmentDigest: `sha256:${"e".repeat(64)}`,
-			sourceRequirements: options.sourceRevokesAtApply
-				? [sourceRequirement]
-				: [],
+			sourceRequirements:
+				options.sourceRevokesAtApply || options.sourceRevokesDuringDrift
+					? [sourceRequirement]
+					: [],
 			verifyEnvironment: ({ phase }) => {
 				observed.push(`environment:${phase}`);
-				return options.denyEnvironment !== true;
+				if (refreshing) refreshEnvironmentChecks++;
+				if (guardUnavailable) throw new Error("host verification unavailable");
+				return options.denyEnvironment !== true && guardAllowed;
 			},
 			verifyPlan: ({ effects, scope, structuralDigest }) => {
 				plans++;
@@ -180,6 +203,11 @@ function fixture(
 		observed,
 		ran: () => ran,
 		applied: () => applied,
+		beginRefresh: () => {
+			refreshing = true;
+			refreshEnvironmentChecks = 0;
+		},
+		driftReads: () => driftReads,
 		program: {
 			programId: "p",
 			operationGeneration: "generation-1",
@@ -194,6 +222,39 @@ function fixture(
 }
 
 describe("host-authorized Alchemy composite effects", () => {
+	it.each([
+		["source", { sourceRevokesDuringDrift: true }, "COMPOSITE_PLAN_UNVERIFIED"],
+		[
+			"environment",
+			{ guardRevokesDuringDrift: true },
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+		],
+		[
+			"unavailable environment",
+			{ guardThrowsDuringDrift: true },
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+		],
+	] as const)("fails closed when %s verification changes during the drift scan", async (_kind, options, code) => {
+		const f = fixture(options);
+		await f.provider.assessPricing(f.program);
+		await f.provider.applyWithAdmission(f.program, "attempt");
+		f.beginRefresh();
+		await expect(f.provider.refresh(f.program)).rejects.toMatchObject({ code });
+		expect(f.driftReads()).toBeGreaterThan(0);
+	});
+	it("retains a completed-but-uncertain hold if a no-source host authorization is revoked during apply", async () => {
+		const f = fixture({ guardRevokesAtApply: true });
+		await f.provider.assessPricing(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "COMPOSITE_AUTHORIZATION_UNCERTAIN",
+			requiresReconciliation: true,
+			executionOutcome: "completed",
+		});
+		expect(f.applied()).toBe(1);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
 	it("retains an uncertain hold if the source fence is revoked during provider apply", async () => {
 		const f = fixture({ sourceRevokesAtApply: true });
 		await f.provider.assessPricing(f.program);
@@ -224,6 +285,8 @@ describe("host-authorized Alchemy composite effects", () => {
 			"plan:2",
 			"environment:apply",
 			"plan:3",
+			"environment:apply",
+			"plan:4",
 		]);
 	});
 

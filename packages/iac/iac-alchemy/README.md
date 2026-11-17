@@ -150,7 +150,7 @@ const route = createDirectRoutePort({
 const resolveRoute = async (context: IacRouteContext) =>
   host.resolveIacOperation(context);
 const provider = createAlchemyIacProvider({
-  stack, target, runtimeLayer, runtimeDirectory, financial, route, resolveRoute,
+  stack, target, runtimeLayer, runtimeDirectory, financial, route, resolveRoute, composite,
 });
 const assessment = await provider.assessPricing(program);
 const ranking = rankIacTargets({
@@ -245,8 +245,10 @@ reconciliation; the host must resolve the previous attempt before replacing it.
 
 Plan fingerprints are bounded and include inspectable resource inputs,
 bindings, state and source identity. Pure Alchemy literal, property, named and
-aggregate outputs are inspected recursively. An action, executable output or
-`Command.*` resource requires the optional `composite` host guard. Every
+aggregate outputs are inspected recursively. Every target requires a trusted
+`composite` host guard with an explicit, complete `sourceRequirements` array.
+Use an empty array only when the host independently verifies that the whole
+target has no source-bearing resources. Every
 action must have its own target scope, using its Alchemy FQN as `resourceId`
 and `alchemy:action:<action type>` as `resourceType`; its provider account and
 product must cover the action's financial liability. The broker sees those
@@ -259,9 +261,20 @@ scope. During planning it must enforce that stack code and expression
 evaluation cannot mutate infrastructure or incur unaccounted charges. During
 apply it must enforce that only admitted, scoped effects can execute. Its
 `verifyPlan` callback must authorize the exact structural digest, operation,
-scope and effect fingerprints against independently issued evidence. Both are
-checked again before apply, after admission. A failed or unavailable check
-stops execution and retains any existing reservation for reconciliation.
+scope, source classification and effect fingerprints against independently issued evidence.
+The host must independently classify every provider resource and verify that
+the source requirements are complete, including for raw Alchemy resources;
+absence of a registered source claim is not evidence that a resource has no
+source. Both callbacks must remain valid through provider completion; the
+adapter rechecks them after admission and after provider apply, and before and
+after refresh scans. A failed or unavailable check stops execution. If a
+provider already completed, its reservation remains held and the result
+explicitly requires reconciliation.
+For a raw source-backed Alchemy component, register its exact resource with
+`registerAlchemySource(resource, { claim, verify })`; the claim must match the
+host's source requirement, target source digest and guard proof. The host's
+verifier must authenticate the entire source and dependency closure, build
+environment and uploaded artifact and keep them fenced through completion.
 
 The host must ensure the sandbox and captured closure state remain immutable
 for the attested environment digest: a JavaScript function's source text alone

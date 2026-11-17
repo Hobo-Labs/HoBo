@@ -41,6 +41,13 @@ describe("external IaC pricing consumer boundary", () => {
 			);
 			const provider = createAlchemyIacProvider({
 				stack,
+				composite: {
+					proofRef: "test:no-source",
+					environmentDigest: `sha256:${"e".repeat(64)}`,
+					sourceRequirements: [],
+					verifyEnvironment: () => true,
+					verifyPlan: ({ sourceClaims }) => sourceClaims.length === 0,
+				},
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: join(directory, "runtime"),
 				target: alchemyTarget({

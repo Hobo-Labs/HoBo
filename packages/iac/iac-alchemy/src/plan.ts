@@ -26,7 +26,8 @@ export interface AlchemyCompositeGuard {
 	readonly environmentDigest: string;
 	readonly verifyEnvironment: (input: AlchemyCompositeEnvironment) => boolean;
 	readonly verifyPlan: (input: AlchemyCompositeObservation) => boolean;
-	readonly sourceRequirements?: readonly AlchemySourceRequirement[];
+	/** Complete host-authenticated executable-source inventory; empty must be explicit. */
+	readonly sourceRequirements: readonly AlchemySourceRequirement[];
 }
 
 export interface AlchemyCompositeEnvironment {
@@ -41,7 +42,7 @@ export interface AlchemyCompositeEnvironment {
 	readonly environmentDigest: string;
 	readonly proofRef: string;
 	readonly inventoryEvidenceRef: string;
-	readonly sourceRequirements: readonly AlchemySourceRequirement[] | undefined;
+	readonly sourceRequirements: readonly AlchemySourceRequirement[];
 	readonly scope: readonly {
 		readonly resourceId: string;
 		readonly resourceType: string;
@@ -113,7 +114,8 @@ export class AlchemyIacError extends Error {
 			admission?.budget?.reservation === "uncertain";
 		this.executionOutcome =
 			code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
-			code === "SOURCE_FENCE_UNCERTAIN"
+			code === "SOURCE_FENCE_UNCERTAIN" ||
+			code === "COMPOSITE_AUTHORIZATION_UNCERTAIN"
 				? "completed"
 				: this.requiresReconciliation
 					? "unknown"
@@ -859,8 +861,7 @@ function validateGuard(guard: AlchemyCompositeGuard): void {
 		guard.proofRef.length > 200 ||
 		guard.proofRef.trim() !== guard.proofRef ||
 		/[\p{Cc}]/u.test(guard.proofRef) ||
-		(guard.sourceRequirements !== undefined &&
-			captureAlchemySourceRequirements(guard.sourceRequirements) === undefined)
+		captureAlchemySourceRequirements(guard.sourceRequirements) === undefined
 	)
 		throw new AlchemyIacError(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
@@ -924,20 +925,13 @@ export function inspectAlchemyPlan(
 	target: Target,
 	guard?: AlchemyCompositeGuard,
 ): InspectedAlchemyPlan {
-	if (guard !== undefined) validateGuard(guard);
-	const inspection = inspectUnverified(plan, target, guard);
-	if (
-		inspection.effects.length === 0 &&
-		inspection.sourceClaims.length === 0 &&
-		guard === undefined
-	)
-		return inspection;
 	if (guard === undefined)
 		throw new AlchemyIacError(
-			"PLAN_UNSUPPORTED_EFFECTS",
-			"host authorization is required for executable effects",
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+			"host authorization and a complete source inventory are required",
 		);
 	validateGuard(guard);
+	const inspection = inspectUnverified(plan, target, guard);
 	const observation: AlchemyCompositeObservation = Object.freeze({
 		operation: plan.native.destroy === true ? "destroy" : "deploy",
 		targetId: target.targetId,

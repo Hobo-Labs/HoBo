@@ -56,8 +56,15 @@ function fixture() {
 			},
 		],
 	});
+	const guard: AlchemyCompositeGuard = {
+		proofRef: "host:proof",
+		environmentDigest: `sha256:${"b".repeat(64)}`,
+		sourceRequirements: [],
+		verifyEnvironment: () => true,
+		verifyPlan: () => true,
+	};
 	// SAFETY: this fixture deliberately constructs incomplete native plans to test the inspection boundary.
-	const inspect = () => inspectAlchemyPlan(plan as never, target);
+	const inspect = () => inspectAlchemyPlan(plan as never, target, guard);
 	return { native, node, plan, target, inspect };
 }
 
@@ -102,6 +109,7 @@ function compositeFixture() {
 	const guard: AlchemyCompositeGuard = {
 		proofRef: "host:proof",
 		environmentDigest: `sha256:${"b".repeat(64)}`,
+		sourceRequirements: [],
 		verifyEnvironment: () => true,
 		verifyPlan: () => true,
 	};
@@ -149,7 +157,12 @@ describe("native Alchemy plan inspection", () => {
 		// SAFETY: this deliberately minimal plan exercises the source attestation boundary.
 		const inspect = (authority?: AlchemyCompositeGuard) =>
 			inspectAlchemyPlan(f.plan as never, f.target, authority);
-		expect(() => inspect()).toThrow("SOURCE_FENCE_REQUIRED");
+		expect(() => inspect()).toThrow("COMPOSITE_ENVIRONMENT_UNVERIFIED");
+		const unclassified = { ...guard };
+		Reflect.deleteProperty(unclassified, "sourceRequirements");
+		expect(() => inspect(unclassified)).toThrow(
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+		);
 		const before = inspect(guard).digest;
 		const other = fixture();
 		registerAlchemySource(other.node.resource, {
@@ -224,7 +237,9 @@ describe("native Alchemy plan inspection", () => {
 			deletions: { store: f.node },
 			destroy: true,
 		});
-		Object.assign(f.plan.resources[0], { action: "delete" });
+		const summary = f.plan.resources[0];
+		if (summary === undefined) throw new Error("fixture resource missing");
+		Object.assign(summary, { action: "delete" });
 		let observed = "";
 		let approvedState = digestData(state);
 		const guard: AlchemyCompositeGuard = {
@@ -282,7 +297,7 @@ describe("native Alchemy plan inspection", () => {
 	] as const)("rejects an unsummarized native %s node", (kind) => {
 		const { native, inspect } = fixture();
 		Object.assign(native[kind], { extra: { kind: "action" } });
-		expect(inspect).toThrow("PLAN_UNSUPPORTED_EFFECTS");
+		expect(inspect).toThrow("PLAN_UNINSPECTABLE");
 	});
 
 	it.each([
@@ -316,7 +331,7 @@ describe("native Alchemy plan inspection", () => {
 		const { plan, target } = compositeFixture();
 		// SAFETY: constructed plan exercises the untrusted-action boundary.
 		expect(() => inspectAlchemyPlan(plan as never, target)).toThrow(
-			"PLAN_UNSUPPORTED_EFFECTS",
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 		);
 	});
 
@@ -359,8 +374,15 @@ describe("native Alchemy plan inspection", () => {
 	it("requires independent authorization for a Command.Build resource", () => {
 		const f = fixture();
 		Object.assign(f.node.resource, { Type: "Command.Build" });
-		Object.assign(f.plan.resources[0], { resourceType: "Command.Build" });
-		Object.assign(f.target.resources[0], { resourceType: "Command.Build" });
-		expect(() => f.inspect()).toThrow("PLAN_UNSUPPORTED_EFFECTS");
+		const summary = f.plan.resources[0];
+		const scope = f.target.resources[0];
+		if (summary === undefined || scope === undefined)
+			throw new Error("fixture resource missing");
+		Object.assign(summary, { resourceType: "Command.Build" });
+		Object.assign(scope, { resourceType: "Command.Build" });
+		// SAFETY: this constructed plan exercises the missing host guard boundary.
+		expect(() => inspectAlchemyPlan(f.plan as never, f.target)).toThrow(
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+		);
 	});
 });

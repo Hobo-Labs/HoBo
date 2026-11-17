@@ -52,7 +52,10 @@ function fixture(
 	dirs.push(dir);
 	process.env.ALCHEMY_HOME = join(dir, "auth");
 	let applies = 0;
+	let deletions = 0;
+	let declarations = 0;
 	let admissions = 0;
+	let environmentAllowed = true;
 	const uncertain: string[] = [];
 	const stack = Stack(
 		"App",
@@ -63,11 +66,15 @@ function fixture(
 						applies++;
 						return { id: "widget" };
 					}),
-				delete: () => Effect.void,
+				delete: () =>
+					Effect.sync(() => {
+						deletions++;
+					}),
 			}),
 			state: inMemoryState(),
 		},
 		Effect.gen(function* () {
+			declarations++;
 			yield* Widget("widget", {});
 			return { output: "ok" };
 		}),
@@ -86,6 +93,15 @@ function fixture(
 	};
 	const provider = createAlchemyIacProvider({
 		stack,
+		composite: {
+			proofRef: "test:no-source",
+			environmentDigest: `sha256:${"e".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => environmentAllowed,
+			verifyPlan: ({ scope, sourceClaims }) =>
+				sourceClaims.length === 0 &&
+				scope.every((entry) => entry.resourceType === "Spec.Widget"),
+		},
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(dir, "runtime"),
 		route,
@@ -121,6 +137,11 @@ function fixture(
 		provider,
 		financial,
 		applies: () => applies,
+		deletions: () => deletions,
+		declarations: () => declarations,
+		revokeEnvironment: () => {
+			environmentAllowed = false;
+		},
 		admissions: () => admissions,
 		uncertain,
 		program: {
@@ -198,6 +219,33 @@ function admitted(
 }
 
 describe("financial admission modes", () => {
+	it.each([
+		"apply",
+		"destroy",
+	] as const)("checks host authorization before %s replanning or admission", async (action) => {
+		const f = fixture((id) => admitted(id, "allowed", false));
+		await f.provider.preview(f.program);
+		if (action === "destroy")
+			await f.provider.applyWithAdmission(f.program, "initial");
+		const program = {
+			...f.program,
+			action,
+			operationGeneration:
+				action === "destroy" ? "generation-2" : "generation-1",
+		};
+		if (action === "destroy") await f.provider.preview(program);
+		const previousDeclarations = f.declarations();
+		const previousAdmissions = f.admissions();
+		f.revokeEnvironment();
+		await expect(
+			action === "destroy"
+				? f.provider.destroyWithAdmission(program, "second")
+				: f.provider.applyWithAdmission(program, "second"),
+		).rejects.toMatchObject({ code: "COMPOSITE_ENVIRONMENT_UNVERIFIED" });
+		expect(f.declarations()).toBe(previousDeclarations);
+		expect(f.admissions()).toBe(previousAdmissions);
+		expect(f.deletions()).toBe(0);
+	});
 	it("snapshots the requested operation before asynchronous planning", async () => {
 		const f = fixture((id) => admitted(id, "allowed", false));
 		const program = { ...f.program };

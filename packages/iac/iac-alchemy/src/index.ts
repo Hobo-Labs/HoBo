@@ -140,8 +140,8 @@ export interface AlchemyIacProviderOptions<
 	readonly route?: IacRoutePort | undefined;
 	/** Authenticate the durable operation generation and return its shared route identity. */
 	readonly resolveRoute?: IacRouteResolver | undefined;
-	/** Host-owned authorization for executable plan effects in an immutable sandbox. */
-	readonly composite?: AlchemyCompositeGuard;
+	/** Host-owned authorization and complete source classification for this target. */
+	readonly composite: AlchemyCompositeGuard;
 }
 
 export interface AlchemyIacProvider<Assessment extends object>
@@ -208,9 +208,9 @@ function reservationName(value: string): boolean {
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: host configuration crosses the adapter boundary and malformed callbacks must fail before any stack code executes. */
 function captureCompositeGuard(
 	input: AlchemyCompositeGuard | undefined,
-): AlchemyCompositeGuard | undefined {
-	if (input === undefined) return undefined;
+): AlchemyCompositeGuard {
 	try {
+		if (input === undefined) throw new Error("missing host guard");
 		const {
 			proofRef,
 			environmentDigest,
@@ -219,9 +219,7 @@ function captureCompositeGuard(
 			sourceRequirements,
 		} = input;
 		const capturedRequirements =
-			sourceRequirements === undefined
-				? undefined
-				: captureAlchemySourceRequirements(sourceRequirements);
+			captureAlchemySourceRequirements(sourceRequirements);
 		if (
 			typeof proofRef !== "string" ||
 			!name(proofRef) ||
@@ -229,7 +227,7 @@ function captureCompositeGuard(
 			!/^sha256:[a-f0-9]{64}$/u.test(environmentDigest) ||
 			typeof verifyEnvironment !== "function" ||
 			typeof verifyPlan !== "function" ||
-			(sourceRequirements !== undefined && capturedRequirements === undefined)
+			capturedRequirements === undefined
 		)
 			throw new Error("invalid host guard");
 		const base = {
@@ -238,7 +236,6 @@ function captureCompositeGuard(
 			verifyEnvironment: verifyEnvironment.bind(input),
 			verifyPlan: verifyPlan.bind(input),
 		};
-		if (capturedRequirements === undefined) return Object.freeze(base);
 		return Object.freeze({ ...base, sourceRequirements: capturedRequirements });
 	} catch {
 		throw new AlchemyIacError(
@@ -1082,13 +1079,12 @@ export function createAlchemyIacProvider<
 				"PREVIEW_LIMIT",
 				"provider preview capacity reached",
 			);
-		if (composite !== undefined)
-			verifyCompositeEnvironment(
-				composite,
-				target,
-				"plan",
-				stableProgram.action === "destroy" ? "destroy" : "deploy",
-			);
+		verifyCompositeEnvironment(
+			composite,
+			target,
+			"plan",
+			stableProgram.action === "destroy" ? "destroy" : "deploy",
+		);
 		const result = await run(
 			Effect.gen(function* () {
 				const plan = yield* planned(stableProgram);
@@ -1180,13 +1176,12 @@ export function createAlchemyIacProvider<
 		let result:
 			| { error: unknown }
 			| { outputs: Record<string, string>; admission: HeldFinancialDecision };
-		if (composite !== undefined)
-			verifyCompositeEnvironment(
-				composite,
-				target,
-				"plan",
-				program.action === "destroy" ? "destroy" : "deploy",
-			);
+		verifyCompositeEnvironment(
+			composite,
+			target,
+			"plan",
+			program.action === "destroy" ? "destroy" : "deploy",
+		);
 		try {
 			result = await run(
 				Effect.gen(function* () {
@@ -1474,13 +1469,12 @@ export function createAlchemyIacProvider<
 						};
 					}
 					try {
-						if (composite !== undefined)
-							verifyCompositeEnvironment(
-								composite,
-								target,
-								"apply",
-								program.action === "destroy" ? "destroy" : "deploy",
-							);
+						verifyCompositeEnvironment(
+							composite,
+							target,
+							"apply",
+							program.action === "destroy" ? "destroy" : "deploy",
+						);
 						if (
 							inspectAlchemyPlan(plan, target, composite).digest !==
 							inspected.digest
@@ -1518,32 +1512,30 @@ export function createAlchemyIacProvider<
 							),
 						};
 					}
-					if (inspected.hasSourceClaims) {
-						let sourceVerified = false;
-						try {
-							if (composite !== undefined) {
-								verifyCompositeEnvironment(
-									composite,
-									target,
-									"apply",
-									program.action === "destroy" ? "destroy" : "deploy",
-								);
-								sourceVerified = inspected.revalidateSources();
-							}
-						} catch {
-							/* retain the hold if the fence has been revoked */
-						}
-						if (!sourceVerified) {
-							yield* Effect.promise(() => markUncertain(claimedReservationId));
-							return {
-								error: new AlchemyIacError(
-									"SOURCE_FENCE_UNCERTAIN",
-									"the provider completed but the source fence could not be verified; the reservation is retained",
-									admission,
-									claimedReservationId,
-								),
-							};
-						}
+					let authorizationVerified = false;
+					try {
+						verifyCompositeEnvironment(
+							composite,
+							target,
+							"apply",
+							program.action === "destroy" ? "destroy" : "deploy",
+						);
+						authorizationVerified = inspected.revalidateSources();
+					} catch {
+						/* retain the hold if the host authorization has been revoked */
+					}
+					if (!authorizationVerified) {
+						yield* Effect.promise(() => markUncertain(claimedReservationId));
+						return {
+							error: new AlchemyIacError(
+								inspected.hasSourceClaims
+									? "SOURCE_FENCE_UNCERTAIN"
+									: "COMPOSITE_AUTHORIZATION_UNCERTAIN",
+								"the provider completed but host authorization could not be verified; the reservation is retained",
+								admission,
+								claimedReservationId,
+							),
+						};
 					}
 					const outputs =
 						program.action === "destroy" ? {} : readOutputs(outcome.value);
@@ -1820,12 +1812,35 @@ export function createAlchemyIacProvider<
 			await destroyWithAdmission(program);
 		},
 		destroyWithAdmission,
-		refresh: async (input): Promise<IacDriftReport> => {
-			const program = snapshotProgram(input);
-			checkProgram(program);
+		refresh: async (program): Promise<IacDriftReport> => {
+			const stableProgram = snapshotProgram(program);
+			checkProgram(stableProgram);
+			const operation =
+				stableProgram.action === "destroy" ? "destroy" : "deploy";
+			verifyCompositeEnvironment(composite, target, "plan", operation);
+			// Planning and drift each own a scoped state-store lease; close the
+			// classification plan before starting the independent read-only scan.
+			const inspected = await run(
+				Effect.gen(function* () {
+					const plan = yield* planned(stableProgram);
+					return inspectAlchemyPlan(plan, target, composite);
+				}),
+			);
+			verifyCompositeEnvironment(composite, target, "plan", operation);
+			if (!inspected.revalidateSources())
+				throw new AlchemyIacError(
+					"COMPOSITE_PLAN_UNVERIFIED",
+					"the source classification is no longer authorized",
+				);
 			const scan = await run(
 				Alchemist.Drift.scan({ stack, stage: target.stage }),
 			);
+			verifyCompositeEnvironment(composite, target, "plan", operation);
+			if (!inspected.revalidateSources())
+				throw new AlchemyIacError(
+					"COMPOSITE_PLAN_UNVERIFIED",
+					"the source classification is no longer authorized",
+				);
 			const resources = new Map(
 				scan.resources.map((entry) => [entry.fqn, entry]),
 			);
