@@ -1724,3 +1724,26 @@ job, the entry answers with the simulator as GitHub, and the job is completed
 with what the entry wrote, so GitHub's own rules decide what runs next.
 `NoticeRouteJournal` and the checkout's order source pass the port
 conformance functions of `@hobo/ci/runner-order/testing`.
+
+`hobo ci init --relay` writes two files into a repository, both generated
+into [`src/_generated-assets/relay-job-assets.ts`](src/_generated-assets/relay-job-assets.ts)
+(exported as `@hobo/ci-gh-actions/relay-job-assets`) by
+[`scripts/generate-relay-job.mts`](scripts/generate-relay-job.mts):
+
+- `.github/workflows/hobo-relay.yml`, from
+  [`templates/hobo-relay.yml`](templates/hobo-relay.yml): a `workflow_call`
+  with the twelve inputs and four outputs, `actions: read` and
+  `contents: read` only, one job on `ubuntu-24.04` with actions pinned by
+  commit, and a sparse checkout of `.hobo-ci/relay.mjs` and `.hobo/ci.json`,
+  taken at the base branch for a fork's pull request. Every input reaches the
+  evaluator as a quoted argument through the step's environment, never as
+  shell text.
+- `.hobo-ci/relay.mjs`: the entry bundled into one readable ES module, with
+  the licenses of the third-party code in it, under a header naming the
+  source commit and the SHA-256 of everything after the header
+  (`RELAY_JOB_EVALUATOR_SHA256`), so a check can tell an edited copy.
+
+Run `node --import tsx scripts/generate-relay-job.mts` after changing the
+entry, the engine or the template; `--check` fails when the committed asset
+is not what the sources make, and `test/relay-job-assets.test.ts` runs it,
+checks the workflow's shape, and runs the evaluator as its own Node process.
