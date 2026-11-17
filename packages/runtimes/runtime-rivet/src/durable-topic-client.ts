@@ -296,6 +296,87 @@ function requestOperation(value: unknown): DurableMessagingOperation {
 		return invalid();
 	return operation(field.value);
 }
+type InvalidSnapshot =
+	| readonly ["null"]
+	| readonly ["boolean", boolean]
+	| readonly ["number" | "string" | "bytes", string]
+	| readonly ["array", readonly InvalidSnapshot[]]
+	| readonly ["object", readonly (readonly [string, InvalidSnapshot])[]];
+type InvalidEnvelope = {
+	readonly operation: DurableMessagingOperation;
+	readonly __hobo_invalid_request: InvalidSnapshot;
+};
+
+/** Preserve a bounded, type-tagged invalid request behind a guaranteed-invalid wire field. */
+function wireFallback(
+	input: unknown,
+	op: DurableMessagingOperation,
+): InvalidEnvelope {
+	const budget = { nodes: 2_048, bytes: MAX_REQUEST_BYTES };
+	const ancestors = new Set<object>();
+	const capture = (value: unknown, depth: number): InvalidSnapshot => {
+		if (--budget.nodes < 0 || depth > 32) return invalid();
+		if (value === null) return ["null"];
+		if (typeof value === "boolean") return ["boolean", value];
+		if (typeof value === "number") {
+			if (!Number.isFinite(value)) return invalid();
+			return ["number", Object.is(value, -0) ? "-0" : String(value)];
+		}
+		if (typeof value === "string") {
+			if (value.length > MAX_REQUEST_BYTES) return invalid();
+			budget.bytes -= Buffer.byteLength(value, "utf8");
+			if (budget.bytes < 0) return invalid();
+			return ["string", value];
+		}
+		if (
+			typeof value !== "object" ||
+			types.isProxy(value) ||
+			ancestors.has(value)
+		)
+			return invalid();
+		if (types.isUint8Array(value)) {
+			const data = bytes(value, MAX_REQUEST_BYTES);
+			budget.bytes -= data.length;
+			if (budget.bytes < 0) return invalid();
+			return ["bytes", Buffer.from(data).toString("base64")];
+		}
+		ancestors.add(value);
+		try {
+			if (Array.isArray(value))
+				return [
+					"array",
+					array(value, 1024).map((entry) => capture(entry, depth + 1)),
+				];
+			const prototype = Object.getPrototypeOf(value);
+			if (prototype !== Object.prototype && prototype !== null)
+				return invalid();
+			const keys = Reflect.ownKeys(value);
+			if (keys.length > 256 || keys.some((key) => typeof key !== "string"))
+				return invalid();
+			// SAFETY: the preceding check establishes that every key is a string.
+			const names = (keys as string[]).sort();
+			const entries: Array<readonly [string, InvalidSnapshot]> = [];
+			for (const key of names) {
+				if (key.length > 1024) return invalid();
+				budget.bytes -= Buffer.byteLength(key, "utf8");
+				if (budget.bytes < 0) return invalid();
+				const descriptor = Object.getOwnPropertyDescriptor(value, key);
+				if (
+					descriptor === undefined ||
+					!("value" in descriptor) ||
+					!descriptor.enumerable
+				)
+					return invalid();
+				entries.push([key, capture(descriptor.value, depth + 1)]);
+			}
+			return ["object", entries];
+		} finally {
+			ancestors.delete(value);
+		}
+	};
+	return { operation: op, __hobo_invalid_request: capture(input, 0) };
+}
+
 function limits(value: unknown): DurableMessagingLimits {
 	const fields = record(value, Object.keys(DURABLE_MESSAGING_LIMITS));
 	const cap: DurableMessagingLimits = Object.freeze({
@@ -1218,8 +1299,22 @@ export function createRivetDurableTopicClient(
 	): Promise<DurableMessagingOutcome<T>> => {
 		const op = requestOperation(input);
 		try {
-			const captured = capture(op);
-			const result = outcome(await request(method, captured, op), op, receive);
+			let captured: Readonly<Record<string, unknown>>;
+			let valid = true;
+			try {
+				captured = capture(op);
+			} catch {
+				captured = wireFallback(input, op);
+				valid = false;
+			}
+			const result = outcome(
+				await request(method, captured, op),
+				op,
+				(value) => {
+					if (!valid) return invalid();
+					return receive(value);
+				},
+			);
 			if (result.status === "committed" && !supportsMutation(method))
 				return invalid();
 			return result;

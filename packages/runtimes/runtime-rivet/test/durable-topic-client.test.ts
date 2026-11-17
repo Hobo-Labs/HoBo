@@ -200,19 +200,42 @@ describe("Rivet durable topic HTTP client", () => {
 		});
 	});
 
-	it("retains exact operation on invalid post-envelope input and rejects invalid envelopes", async () => {
+	it("does not inspect accessors or proxies and rejects invalid operation envelopes", async () => {
+		let getterCalls = 0;
 		const { client, fetch } = fixture(async () => {
 			throw new Error("must not dispatch");
 		});
-		expect(await client.ensureTopic({ operation, topic: "bad\nname" })).toEqual(
-			{ status: "unknown", operation },
-		);
+		const input = {
+			operation,
+			get topic() {
+				getterCalls++;
+				return "orders";
+			},
+		};
+		expect(await client.ensureTopic(input)).toEqual({
+			status: "unknown",
+			operation,
+		});
 		await expect(
 			client.ensureTopic({
 				operation: { ...operation, id: "bad" },
 				topic: "orders",
 			}),
 		).rejects.toThrow();
+		await expect(
+			client.ensureTopic(
+				new Proxy(
+					{ operation, topic: "orders" },
+					{
+						get() {
+							getterCalls++;
+							throw new Error("trap");
+						},
+					},
+				),
+			),
+		).rejects.toThrow();
+		expect(getterCalls).toBe(0);
 		expect(fetch).not.toHaveBeenCalled();
 	});
 
@@ -765,7 +788,7 @@ describe("Rivet durable topic HTTP client", () => {
 				operation,
 			});
 		}
-		expect(fetch).toHaveBeenCalledTimes(4);
+		expect(fetch).toHaveBeenCalledTimes(8);
 	});
 	it("accepts exactly the documented maximum number of response chunks", async () => {
 		let index = 0;
@@ -862,7 +885,7 @@ describe("Rivet durable topic HTTP client", () => {
 				status: "unknown",
 				operation,
 			});
-		expect(fetch).toHaveBeenCalledTimes(2);
+		expect(fetch).toHaveBeenCalledTimes(4);
 	});
 	it("reads the explicit non-leased retained log and checks its topic, cursor and payload", async () => {
 		let value: object = {
@@ -1076,5 +1099,219 @@ describe("Rivet durable topic HTTP client", () => {
 			operation,
 		});
 		expect(fetch).toHaveBeenCalledTimes(3);
+	});
+	it("forwards bounded malformed requests for a durable terminal rejection, but never trusts a contradictory commit", async () => {
+		let response: object = { status: "rejected", code: "invalid-argument" };
+		const bodies: string[] = [];
+		const { client } = fixture(async (_path, init) => {
+			bodies.push(String(init.body));
+			return new Response(canonical(response));
+		});
+		const invalid = { operation, topic: "bad\nname" };
+		expect(await client.ensureTopic(invalid)).toEqual({
+			status: "rejected",
+			code: "invalid-argument",
+		});
+		expect(await client.ensureTopic(invalid)).toEqual({
+			status: "rejected",
+			code: "invalid-argument",
+		});
+		expect(bodies[0]).toBe(bodies[1]);
+		response = { status: "committed", value: { topic: "bad\nname" } };
+		expect(await client.ensureTopic(invalid)).toEqual({
+			status: "unknown",
+			operation,
+		});
+	});
+
+	it("preserves a prior lost commit when a malformed same-ID replay conflicts", async () => {
+		let original = "";
+		const { client } = fixture(async (_path, init) => {
+			const body = String(init.body);
+			if (original === "") {
+				original = body;
+				throw new Error("lost after commit");
+			}
+			if (body !== original)
+				return new Response(
+					canonical({ status: "rejected", code: "operation-conflict" }),
+				);
+			return new Response(
+				canonical({ status: "committed", value: { topic: "orders" } }),
+			);
+		});
+		expect(await client.ensureTopic({ operation, topic: "orders" })).toEqual({
+			status: "unknown",
+			operation,
+		});
+		expect(await client.ensureTopic({ operation, topic: "bad\nname" })).toEqual(
+			{ status: "rejected", code: "operation-conflict" },
+		);
+		expect(await client.ensureTopic({ operation, topic: "orders" })).toEqual({
+			status: "committed",
+			value: { topic: "orders" },
+		});
+	});
+	it("snapshots bounded invalid payloads before authorization and sends the exact same retry bytes", async () => {
+		let release = () => {};
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const bodies: string[] = [];
+		const { client, authorize } = fixture(async (_path, init) => {
+			bodies.push(String(init.body));
+			return new Response(
+				canonical({ status: "rejected", code: "invalid-argument" }),
+			);
+		});
+		authorize.mockImplementationOnce(async () => {
+			await gate;
+			return { "x-hobo-proof": "signed" };
+		});
+		const message = {
+			id: "m1",
+			subject: "created",
+			payload: new Uint8Array([1, 2]),
+			attributes: [
+				{ key: "same", value: "a" },
+				{ key: "same", value: "b" },
+			],
+		};
+		const pending = client.publish({ operation, topic: "orders", message });
+		message.payload[0] = 9;
+		const first = message.attributes[0];
+		if (first === undefined) throw new Error("missing test attribute");
+		first.value = "changed";
+		release();
+		expect(await pending).toEqual({
+			status: "rejected",
+			code: "invalid-argument",
+		});
+		const retry = {
+			id: "m1",
+			subject: "created",
+			payload: new Uint8Array([1, 2]),
+			attributes: [
+				{ key: "same", value: "a" },
+				{ key: "same", value: "b" },
+			],
+		};
+		expect(
+			await client.publish({ operation, topic: "orders", message: retry }),
+		).toEqual({ status: "rejected", code: "invalid-argument" });
+		expect(bodies[0]).toBe(bodies[1]);
+		expect(bodies[0]).toContain('["bytes","AQI="]');
+		expect(bodies[0]).toContain('"__hobo_invalid_request"');
+	});
+
+	it("does not dispatch unbounded, cyclic, hidden, accessor-backed or proxy input", async () => {
+		let traps = 0;
+		const { client, fetch } = fixture(async () => {
+			throw new Error("must not dispatch");
+		});
+		const cyclic: {
+			id: string;
+			subject: string;
+			payload: Uint8Array;
+			attributes: [];
+			self?: unknown;
+		} = {
+			id: "m1",
+			subject: "created",
+			payload: new Uint8Array(),
+			attributes: [],
+		};
+		cyclic.self = cyclic;
+		const getter = Object.defineProperty(
+			{
+				id: "m1",
+				subject: "created",
+				payload: new Uint8Array(),
+				attributes: [],
+			},
+			"subject",
+			{
+				enumerable: true,
+				get() {
+					traps++;
+					return "created";
+				},
+			},
+		);
+		const hidden = Object.defineProperty(
+			{
+				id: "m1",
+				subject: "created",
+				payload: new Uint8Array(),
+				attributes: [],
+			},
+			"hidden",
+			{ value: "private" },
+		);
+		const proxy = new Proxy(
+			{
+				id: "m1",
+				subject: "created",
+				payload: new Uint8Array(),
+				attributes: [],
+			},
+			{
+				ownKeys() {
+					traps++;
+					throw new Error("trap");
+				},
+			},
+		);
+		for (const message of [cyclic, getter, hidden, proxy]) {
+			expect(
+				await client.publish({ operation, topic: "orders", message }),
+			).toEqual({ status: "unknown", operation });
+		}
+		expect(
+			await client.ensureTopic({ operation, topic: "x".repeat(131_073) }),
+		).toEqual({ status: "unknown", operation });
+		expect(traps).toBe(0);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+	it("marks every invalid wire request and fingerprints string and byte payloads distinctly", async () => {
+		const bodies: string[] = [];
+		const { client } = fixture(async (_path, init) => {
+			const body = String(init.body);
+			bodies.push(body);
+			const decoded = JSON.parse(body);
+			if (!("__hobo_invalid_request" in decoded))
+				return new Response(
+					canonical({
+						status: "committed",
+						value: { messageId: "m1", sequence: 1 },
+					}),
+				);
+			return new Response(
+				canonical({
+					status: "rejected",
+					code:
+						bodies.length === 1 || body === bodies[0]
+							? "invalid-argument"
+							: "operation-conflict",
+				}),
+			);
+		});
+		const base = { id: "m1", subject: "created", attributes: [], extra: true };
+		const first = await client.publish({
+			operation,
+			topic: "orders",
+			// @ts-expect-error The string payload intentionally crosses the untrusted JS boundary.
+			message: { ...base, payload: "AA==" },
+		});
+		expect(first).toEqual({ status: "rejected", code: "invalid-argument" });
+		const second = await client.publish({
+			operation,
+			topic: "orders",
+			message: { ...base, payload: new Uint8Array([0]) },
+		});
+		expect(second).toEqual({ status: "rejected", code: "operation-conflict" });
+		expect(bodies[0]).not.toBe(bodies[1]);
+		expect(bodies[0]).toContain('["string","AA=="]');
+		expect(bodies[1]).toContain('["bytes","AA=="]');
 	});
 });
