@@ -23,6 +23,7 @@ import {
 	TargetPricingInventorySchema,
 } from "@hobo/pricing";
 import {
+	IacPricingPinSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetAdmissionDecisionSchema,
 	type IacTargetLiabilityEvidence,
@@ -548,6 +549,14 @@ export async function admitIacTarget(
 			reservationId,
 			requestDigest,
 			quote,
+			iacPricingPin: create(IacPricingPinSchema, {
+				planDigest: inventory.planDigest,
+				inventoryHash: priced.inventoryHash,
+				modelHash: priced.modelHash,
+				quoteHash: priced.quote.quoteHash,
+				evidenceHash,
+				validUntil: quote.validUntil,
+			}),
 			identity: ledger.identity,
 			expectedSeq: ledger.seq,
 			now: deps.now(),

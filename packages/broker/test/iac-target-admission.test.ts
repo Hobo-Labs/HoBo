@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import {
 	createTargetPricingInventory,
 	quoteTargetPricing,
@@ -485,6 +485,65 @@ describe("provider-neutral IaC target budget admission", () => {
 			ledger.close();
 		}
 	});
+
+	it("revalidates a priced service receipt against the exact durable claim", async () => {
+		const ledger = authority();
+		try {
+			const { inventory, pricing, evidence } = fixture();
+			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
+				throw new Error("model missing");
+			const source = pricing.state.value;
+			const bindings = source.bindings.map((binding) => {
+				if (binding.candidateIndex === undefined)
+					throw new Error("binding missing");
+				return {
+					resourceId: binding.resourceId,
+					candidateIndex: binding.candidateIndex,
+				};
+			});
+			const deps = dependencies(ledger);
+			const financial = createIacFinancialServices({
+				...deps,
+				pricing: {
+					modelId: source.modelId,
+					revision: source.revision,
+					scenario: source.scenario,
+					bindings,
+				},
+				issueLiability: ({ priced }) => {
+					const copy = clone(IacTargetLiabilityEvidenceSchema, evidence);
+					copy.inventoryHash = priced.inventoryHash;
+					copy.modelHash = priced.modelHash;
+					copy.quoteHash = priced.quote.quoteHash;
+					return copy;
+				},
+			});
+			const plan = {
+				targetId: inventory.targetId,
+				tenantId: inventory.tenantId,
+				planDigest: inventory.planDigest,
+				evidenceRef: inventory.evidenceRef,
+				resources: inventory.resources,
+			};
+			const admission = await financial.admit("priced-service", plan);
+			expect(admission.status).toBe("admitted");
+			expect(await financial.revalidate(admission, plan)).toBe(true);
+			expect(
+				await financial.revalidate(
+					{ ...admission, quoteHash: `sha256:${"f".repeat(64)}` },
+					plan,
+				),
+			).toBe(false);
+			const state = ledger.read(NOW);
+			if (!state.identity) throw new Error("identity missing");
+			state.identity.policyRevision = "r2";
+			ledger.configure(state, state.seq, NOW);
+			expect(await financial.revalidate(admission, plan)).toBe(false);
+		} finally {
+			ledger.close();
+		}
+	});
+
 	it("refuses an unknown price before any financial hold is created", async () => {
 		const ledger = authority();
 		try {
@@ -517,6 +576,28 @@ describe("provider-neutral IaC target budget admission", () => {
 				reservation: { reservedMicros: 1_500_000 },
 			});
 			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+			const checked = {
+				reservationId: "iac:priced",
+				requestId: "priced",
+				targetId: "yard-a",
+				tenantId: "tenant-a",
+				requestDigest: result.requestDigest,
+				planDigest: request.inventory.planDigest,
+				inventoryHash: result.inventoryHash,
+				modelHash: result.modelHash,
+				quoteHash: result.quoteHash,
+				now: NOW,
+			};
+			expect(ledger.revalidatePriced(checked)).toBe(true);
+			expect(
+				ledger.revalidatePriced({
+					...checked,
+					modelHash: `sha256:${"f".repeat(64)}`,
+				}),
+			).toBe(false);
+			expect(ledger.revalidatePriced({ ...checked, targetId: "other" })).toBe(
+				false,
+			);
 			expect(await admitIacTarget(request, dependencies(ledger))).toMatchObject(
 				{ status: "replay", code: "EXECUTION_ALREADY_CLAIMED" },
 			);

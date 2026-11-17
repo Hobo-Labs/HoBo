@@ -10,6 +10,8 @@ import {
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
 	createBudgetAdmissionAuthority,
+	captureIacUnpricedScopeTrust,
+	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
 	type BudgetFenceTrust,
@@ -37,6 +39,7 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	readonly snapshot: BudgetLedgerSnapshot;
 	readonly now?: () => string;
 	readonly fenceTrust?: BudgetFenceTrust;
+	readonly unpricedScopeTrust?: IacUnpricedScopeTrust;
 	/** Operational hosts may install a separately funded, actor-authorized
 	 * recovery. Read-only inspection leaves this absent. */
 	readonly recover?: () => Promise<void>;
@@ -49,6 +52,9 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	const initial = toJsonString(BudgetLedgerSnapshotSchema, options.snapshot);
 	const initialSnapshot = fromJsonString(BudgetLedgerSnapshotSchema, initial);
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
+	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
+		options.unpricedScopeTrust,
+	);
 	if (!initialSnapshot.identity?.tenantId || !initialSnapshot.identity.budgetId)
 		throw new Error("complete shared budget ownership required");
 	createBudgetAdmissionAuthority({ snapshot: initialSnapshot });
@@ -128,6 +134,7 @@ export function createFleetBudgetAdmissionAuthority(options: {
 				snapshot: base,
 				priorEvents,
 				...(fenceTrust ? { fenceTrust } : undefined),
+				...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
 				commit(event, expectedSeq) {
 					if (seq !== expectedSeq || event.snapshot?.seq !== expectedSeq + 1)
 						throw new Error("budget sequence conflict");
@@ -215,6 +222,18 @@ export function createFleetBudgetAdmissionAuthority(options: {
 			return run(
 				(authority) => authority.reserveUnbounded({ ...input, now: now() }),
 				true,
+			);
+		},
+		revalidateUnbounded(input) {
+			return run(
+				(authority) => authority.revalidateUnbounded({ ...input, now: now() }),
+				false,
+			);
+		},
+		revalidatePriced(input) {
+			return run(
+				(authority) => authority.revalidatePriced({ ...input, now: now() }),
+				false,
 			);
 		},
 		settle(id, actualMicros, evidence) {

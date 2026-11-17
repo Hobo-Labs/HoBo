@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	createTargetPricingInventory,
+	hashTargetPricingInventory,
 	parseTargetPricingAvailability,
 	quoteTargetPricing,
 	targetPricingModel,
@@ -52,6 +53,16 @@ function modeled() {
 }
 
 describe("whole-target pricing contract", () => {
+	it("hashes complete inventories without requiring a price and refuses incomplete scopes", () => {
+		const target = inventory();
+		const quoted = quoteTargetPricing(target, modeled());
+		const hash = hashTargetPricingInventory(target);
+		expect(hash).toMatch(/^sha256:[a-f0-9]{64}$/u);
+		if (!quoted.ok) throw new Error(quoted.reason);
+		expect(hash).toBe(quoted.inventoryHash);
+		target.complete = false;
+		expect(hashTargetPricingInventory(target)).toBeUndefined();
+	});
 	it("preserves unknown pricing instead of producing a zero quote", () => {
 		expect(
 			quoteTargetPricing(inventory(), targetPricingUnavailable("no model")),

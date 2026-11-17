@@ -6,6 +6,8 @@ import {
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
 	createBudgetAdmissionAuthority,
+	captureIacUnpricedScopeTrust,
+	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
 	type BudgetFenceTrust,
@@ -20,6 +22,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 	path: string;
 	snapshot: BudgetLedgerSnapshot;
 	fenceTrust?: BudgetFenceTrust;
+	unpricedScopeTrust?: IacUnpricedScopeTrust;
 	/** Trusted server clock; caller-supplied command timestamps cannot revive evidence. */
 	now?: () => string;
 }): BudgetAdmissionAuthority & {
@@ -36,6 +39,9 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 			"durable budget authority requires a persistent SQLite path",
 		);
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
+	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
+		options.unpricedScopeTrust,
+	);
 	const database = new DatabaseSync(options.path);
 	const now = options.now ?? (() => new Date().toISOString());
 	database.exec(
@@ -70,6 +76,7 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 			snapshot: base,
 			priorEvents,
 			...(fenceTrust ? { fenceTrust } : undefined),
+			...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
 			commit(event, expectedSeq) {
 				const head = database
 					.prepare("SELECT MAX(seq) AS seq FROM budget_events")
@@ -123,6 +130,16 @@ export function createSqliteBudgetAdmissionAuthority(options: {
 		reserveUnbounded(input) {
 			return transaction((port) =>
 				port.reserveUnbounded({ ...input, now: now() }),
+			);
+		},
+		revalidateUnbounded(input) {
+			return transaction((port) =>
+				port.revalidateUnbounded({ ...input, now: now() }),
+			);
+		},
+		revalidatePriced(input) {
+			return transaction((port) =>
+				port.revalidatePriced({ ...input, now: now() }),
 			);
 		},
 		settle(id, actualMicros, evidence) {

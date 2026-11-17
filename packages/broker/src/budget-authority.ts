@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { clone, create, toJsonString } from "@bufbuild/protobuf";
+import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import { budgetScopeIdentityKey } from "@hobo/core";
+import { stableHash } from "@hobo/pricing";
 import {
 	type BudgetAuthorityEvent,
 	BudgetAuthorityEventSchema,
@@ -14,8 +15,11 @@ import {
 	type BudgetSettlementEvidence as GeneratedSettlementEvidence,
 	type HostingQuote,
 	HostingQuoteSchema,
+	type IacPricingPin,
 	type IacUnpricedPolicyProof,
 	IacUnpricedPolicyProofSchema,
+	type IacUnpricedScopeProof,
+	IacUnpricedScopeProofSchema,
 } from "./_generated/yard_placement_pb.js";
 import {
 	type BudgetFenceGuardRequest,
@@ -43,6 +47,7 @@ export {
 	HostingQuoteComponentSchema,
 	HostingQuoteSchema,
 	IacUnpricedPolicyProofSchema,
+	IacUnpricedScopeProofSchema,
 	ProviderAccountExposureSchema,
 } from "./_generated/yard_placement_pb.js";
 export type {
@@ -52,6 +57,7 @@ export type {
 	BudgetReservation,
 	HostingQuote,
 	IacUnpricedPolicyProof,
+	IacUnpricedScopeProof,
 };
 export type BudgetSettlementEvidence = Pick<
 	GeneratedSettlementEvidence,
@@ -72,6 +78,7 @@ export type BudgetAdmissionDeniedCode =
 	| "budget.unbounded-exposure"
 	| "budget.bounded-exposure"
 	| "budget.exposure-limit"
+	| "budget.scope-unverified"
 	| "provider.exhausted"
 	| "entitlement.exhausted"
 	| "policy.denied";
@@ -117,6 +124,7 @@ function unboundedFingerprint(input: {
 	requestDigest: string;
 	inventoryHash: string;
 	policyProof: IacUnpricedPolicyProof;
+	scopeProof: IacUnpricedScopeProof;
 	identity: BudgetIdentity;
 	providerAccountIds: readonly string[];
 }): string {
@@ -129,11 +137,85 @@ function unboundedFingerprint(input: {
 					IacUnpricedPolicyProofSchema,
 					input.policyProof,
 				),
+				scopeProof: toJsonString(IacUnpricedScopeProofSchema, input.scopeProof),
 				identity: input.identity,
 				providerAccountIds: [...input.providerAccountIds].sort(),
 			}),
 		)
 		.digest("hex");
+}
+
+/** Host-enrolled authority for exclusive financial scopes. `verify` authenticates
+ * historical attestations; `isCurrent` guarantees ownership is enforced by
+ * every budget authority through source retirement and settlement. `settlement`
+ * authenticates final usage and permanent source retirement for the exact claim.
+ * These pure checks run synchronously inside the ledger transaction. */
+export interface IacUnpricedScopeTrust {
+	verify(proof: IacUnpricedScopeProof): boolean;
+	isCurrent(proof: IacUnpricedScopeProof): boolean;
+	settlement(input: {
+		reservation: BudgetReservation;
+		actualMicros: number;
+		evidence: GeneratedSettlementEvidence;
+	}): boolean;
+}
+
+/** Enroll verifier functions once. Mutable policy data may still be consulted by
+ * the host so revocation is observed; replacing a method cannot weaken trust. */
+export function captureIacUnpricedScopeTrust(
+	trust: IacUnpricedScopeTrust | undefined,
+): IacUnpricedScopeTrust | undefined {
+	if (!trust) return undefined;
+	return Object.freeze({
+		verify: trust.verify.bind(trust),
+		isCurrent: trust.isCurrent.bind(trust),
+		settlement: trust.settlement.bind(trust),
+	});
+}
+
+function validScopeProof(
+	proof: IacUnpricedScopeProof,
+	identity: BudgetIdentity,
+	ids: readonly string[],
+): boolean {
+	return (
+		proof.identity !== undefined &&
+		budgetIdentityKey(proof.identity) === budgetIdentityKey(identity) &&
+		proof.exclusiveUntilSettled &&
+		proof.noSharedEntitlements &&
+		boundedName(proof.authorityRef) &&
+		boundedName(proof.evidenceRef) &&
+		boundedName(proof.ownershipEpoch) &&
+		boundedName(proof.signature, 4096) &&
+		Number.isFinite(Date.parse(proof.observedAt)) &&
+		proof.providerAccountIds.length > 0 &&
+		proof.providerAccountIds.length <= 256 &&
+		new Set(proof.providerAccountIds).size ===
+			proof.providerAccountIds.length &&
+		JSON.stringify([...proof.providerAccountIds].sort()) ===
+			JSON.stringify([...ids].sort())
+	);
+}
+
+function validIacPin(pin: IacPricingPin, financialPlanHash: string): boolean {
+	const pattern = /^sha256:[a-f0-9]{64}$/u;
+	return (
+		[
+			pin.planDigest,
+			pin.inventoryHash,
+			pin.modelHash,
+			pin.quoteHash,
+			pin.evidenceHash,
+		].every((value) => pattern.test(value)) &&
+		Number.isFinite(Date.parse(pin.validUntil)) &&
+		stableHash({
+			planDigest: pin.planDigest,
+			inventoryHash: pin.inventoryHash,
+			modelHash: pin.modelHash,
+			quoteHash: pin.quoteHash,
+			evidenceHash: pin.evidenceHash,
+		}) === financialPlanHash
+	);
 }
 
 function validUnpricedProof(
@@ -299,6 +381,7 @@ export interface BudgetAdmissionAuthority {
 		identity: BudgetIdentity;
 		/** Installed and authenticated at initial admission; never added later. */
 		fenceSettlementGuard?: BudgetFenceGuardRequest;
+		iacPricingPin?: IacPricingPin;
 		expectedSeq: number;
 		now: string;
 	}): BudgetReservation;
@@ -309,11 +392,33 @@ export interface BudgetAdmissionAuthority {
 		requestDigest: string;
 		inventoryHash: string;
 		policyProof: IacUnpricedPolicyProof;
+		scopeProof: IacUnpricedScopeProof;
 		identity: BudgetIdentity;
 		providerAccountIds: readonly string[];
 		expectedSeq: number;
 		now: string;
 	}): BudgetReservation;
+	revalidateUnbounded(input: {
+		reservationId: string;
+		requestDigest: string;
+		inventoryHash: string;
+		executionDigest: string;
+		policyProofHash: string;
+		scopeProofHash: string;
+		now: string;
+	}): boolean;
+	revalidatePriced(input: {
+		reservationId: string;
+		requestId: string;
+		targetId: string;
+		tenantId: string;
+		requestDigest: string;
+		planDigest: string;
+		inventoryHash: string;
+		modelHash: string;
+		quoteHash: string;
+		now: string;
+	}): boolean;
 	settle(
 		reservationId: string,
 		actualMicros: number,
@@ -338,6 +443,7 @@ export function createBudgetAdmissionAuthority(options: {
 	priorEvents?: readonly BudgetAuthorityEvent[];
 	/** Independently enrolled receiver and financial signing authorities. */
 	fenceTrust?: BudgetFenceTrust;
+	unpricedScopeTrust?: IacUnpricedScopeTrust;
 	commit?: (event: BudgetAuthorityEvent, expectedSeq: number) => void;
 }): BudgetAdmissionAuthority & {
 	configure(
@@ -350,6 +456,7 @@ export function createBudgetAdmissionAuthority(options: {
 	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
 	const fenced = createBudgetFenceVerifier(options.fenceTrust);
+	const scopeTrust = captureIacUnpricedScopeTrust(options.unpricedScopeTrust);
 	validateBudgetSnapshot(current, current.observedAt);
 	const replayed = new Map<number, string>();
 	const policyFingerprint = (snapshot: BudgetLedgerSnapshot) =>
@@ -492,6 +599,31 @@ export function createBudgetAdmissionAuthority(options: {
 				"journal changed financial scopes with unbounded exposure",
 			);
 		for (const old of reservations.values()) {
+			if (old.iacPricingPin) {
+				const next = event.reservations.find(
+					(row) => row.reservationId === old.reservationId,
+				);
+				if (!next) {
+					if (
+						event.snapshot.identity.periodId === current.identity.periodId ||
+						old.status === "held" ||
+						old.status === "uncertain"
+					)
+						throw new Error("journal removed a priced IaC reservation");
+					continue;
+				}
+				if (
+					JSON.stringify(next.iacPricingPin) !==
+						JSON.stringify(old.iacPricingPin) ||
+					next.requestDigest !== old.requestDigest ||
+					next.quoteDigest !== old.quoteDigest ||
+					next.financialPlanHash !== old.financialPlanHash ||
+					(old.executionDigest && old.executionDigest !== next.executionDigest)
+				)
+					throw new Error(
+						"journal changed an immutable priced IaC reservation",
+					);
+			}
 			if (old.unboundedExposure) {
 				const next = event.reservations.find(
 					(row) => row.reservationId === old.reservationId,
@@ -513,6 +645,8 @@ export function createBudgetAdmissionAuthority(options: {
 					next.financialPlanHash !== old.financialPlanHash ||
 					JSON.stringify(next.unpricedPolicyProof) !==
 						JSON.stringify(old.unpricedPolicyProof) ||
+					JSON.stringify(next.unpricedScopeProof) !==
+						JSON.stringify(old.unpricedScopeProof) ||
 					JSON.stringify(next.identity) !== JSON.stringify(old.identity) ||
 					JSON.stringify(next.providerAccounts) !==
 						JSON.stringify(old.providerAccounts) ||
@@ -524,7 +658,9 @@ export function createBudgetAdmissionAuthority(options: {
 						(old.status !== next.status ||
 							old.actualMicros !== next.actualMicros ||
 							old.usageEvidenceRef !== next.usageEvidenceRef ||
-							old.sourceStoppedEvidenceRef !== next.sourceStoppedEvidenceRef))
+							old.sourceStoppedEvidenceRef !== next.sourceStoppedEvidenceRef ||
+							JSON.stringify(old.settlementEvidence) !==
+								JSON.stringify(next.settlementEvidence)))
 				)
 					throw new Error("journal changed an immutable unbounded reservation");
 			}
@@ -604,11 +740,31 @@ export function createBudgetAdmissionAuthority(options: {
 			budgetMicros(row.actualMicros);
 			const old = reservations.get(row.reservationId);
 			if (
+				row.iacPricingPin &&
+				(row.unboundedExposure ||
+					!validIacPin(row.iacPricingPin, row.financialPlanHash) ||
+					(!old &&
+						(event.type !== "budget.ReservationHeld" ||
+							row.status !== "held" ||
+							row.executionDigest)) ||
+					(old !== undefined && !old.iacPricingPin))
+			)
+				throw new Error("invalid priced IaC reservation history");
+			if (
 				row.unboundedExposure &&
 				(row.reservedMicros !== 0 ||
 					row.fenceSettlementGuard !== undefined ||
 					row.quoteId !== "" ||
 					row.unpricedPolicyProof === undefined ||
+					row.unpricedScopeProof === undefined ||
+					!validScopeProof(
+						row.unpricedScopeProof,
+						row.identity,
+						row.providerAccounts.map((account) => account.providerAccountId),
+					) ||
+					scopeTrust?.verify(
+						clone(IacUnpricedScopeProofSchema, row.unpricedScopeProof),
+					) !== true ||
 					!validUnpricedProof(
 						row.unpricedPolicyProof,
 						row.identity,
@@ -620,6 +776,7 @@ export function createBudgetAdmissionAuthority(options: {
 							requestDigest: row.requestDigest,
 							inventoryHash: row.financialPlanHash,
 							policyProof: row.unpricedPolicyProof,
+							scopeProof: row.unpricedScopeProof,
 							identity: row.identity,
 							providerAccountIds: row.providerAccounts.map(
 								(account) => account.providerAccountId,
@@ -634,6 +791,18 @@ export function createBudgetAdmissionAuthority(options: {
 							row.status !== "held" ||
 							row.executionDigest)) ||
 					(old !== undefined && !old.unboundedExposure) ||
+					(row.status === "settled" &&
+						(!row.executionDigest ||
+							!row.settlementEvidence ||
+							!boundedName(row.settlementEvidence.financeSignature, 4096) ||
+							scopeTrust.settlement({
+								reservation: clone(BudgetReservationSchema, row),
+								actualMicros: row.actualMicros,
+								evidence: clone(
+									BudgetSettlementEvidenceSchema,
+									row.settlementEvidence,
+								),
+							}) !== true)) ||
 					(row.status === "released" && row.executionDigest))
 			)
 				throw new Error("invalid unbounded reservation history");
@@ -955,6 +1124,10 @@ export function createBudgetAdmissionAuthority(options: {
 			if (
 				previous.unboundedExposure &&
 				(previous.unpricedPolicyProof === undefined ||
+					previous.unpricedScopeProof === undefined ||
+					scopeTrust?.isCurrent(
+						clone(IacUnpricedScopeProofSchema, previous.unpricedScopeProof),
+					) !== true ||
 					input.now === undefined ||
 					!Number.isFinite(Date.parse(input.now)) ||
 					Date.parse(previous.unpricedPolicyProof.observedAt) >
@@ -1000,6 +1173,12 @@ export function createBudgetAdmissionAuthority(options: {
 			validateBudgetSnapshot(current, input.now);
 			validateHostingQuote(input.quote, input.now);
 			if (
+				input.iacPricingPin &&
+				(!validIacPin(input.iacPricingPin, input.quote.financialPlanHash) ||
+					input.iacPricingPin.validUntil !== input.quote.validUntil)
+			)
+				throw new Error("priced IaC pin does not match its financial quote");
+			if (
 				!current.identity ||
 				budgetIdentityKey(input.identity) !==
 					budgetIdentityKey(current.identity)
@@ -1025,6 +1204,8 @@ export function createBudgetAdmissionAuthority(options: {
 				if (
 					previous.requestDigest !== input.requestDigest ||
 					previous.quoteDigest !== quoteDigest ||
+					JSON.stringify(previous.iacPricingPin) !==
+						JSON.stringify(input.iacPricingPin) ||
 					!!previous.fenceSettlementGuard !== !!input.fenceSettlementGuard ||
 					(input.fenceSettlementGuard &&
 						previous.fenceSettlementGuard &&
@@ -1124,6 +1305,7 @@ export function createBudgetAdmissionAuthority(options: {
 				providerAccounts: input.quote.providerAccounts,
 				entitlementClaims: input.quote.entitlementClaims,
 				financialPlanHash: input.quote.financialPlanHash,
+				iacPricingPin: input.iacPricingPin,
 				status: "held",
 				ledgerSeq: current.seq + 1,
 			});
@@ -1153,6 +1335,7 @@ export function createBudgetAdmissionAuthority(options: {
 			const digestPattern = /^sha256:[a-f0-9]{64}$/u;
 			const ids = [...input.providerAccountIds].sort();
 			const proof = clone(IacUnpricedPolicyProofSchema, input.policyProof);
+			const scope = clone(IacUnpricedScopeProofSchema, input.scopeProof);
 			if (
 				!boundedName(input.reservationId, 204) ||
 				!digestPattern.test(input.requestDigest) ||
@@ -1167,7 +1350,7 @@ export function createBudgetAdmissionAuthority(options: {
 				Date.parse(proof.validUntil) <= Date.parse(input.now) ||
 				ids.length === 0 ||
 				ids.length > 256 ||
-				current.entitlements.length > 256 ||
+				current.entitlements.length !== 0 ||
 				new Set(ids).size !== ids.length ||
 				ids.some(
 					(id) =>
@@ -1180,10 +1363,22 @@ export function createBudgetAdmissionAuthority(options: {
 				throw new Error(
 					"unbounded exposure requires a bounded, registered target scope",
 				);
+			if (
+				!validScopeProof(scope, input.identity, ids) ||
+				Date.parse(scope.observedAt) > Date.parse(input.now) ||
+				scopeTrust?.verify(clone(IacUnpricedScopeProofSchema, scope)) !==
+					true ||
+				scopeTrust.isCurrent(clone(IacUnpricedScopeProofSchema, scope)) !== true
+			)
+				throw new BudgetAdmissionDeniedError(
+					"budget.scope-unverified",
+					"exclusive financial scope could not be authenticated",
+				);
 			const fingerprint = unboundedFingerprint({
 				requestDigest: input.requestDigest,
 				inventoryHash: input.inventoryHash,
 				policyProof: proof,
+				scopeProof: scope,
 				identity: input.identity,
 				providerAccountIds: ids,
 			});
@@ -1219,6 +1414,7 @@ export function createBudgetAdmissionAuthority(options: {
 				financialPlanHash: input.inventoryHash,
 				unboundedExposure: true,
 				unpricedPolicyProof: proof,
+				unpricedScopeProof: scope,
 				status: "held",
 				ledgerSeq: current.seq + 1,
 				providerAccounts: ids.map((providerAccountId) => ({
@@ -1240,6 +1436,92 @@ export function createBudgetAdmissionAuthority(options: {
 			);
 			return clone(BudgetReservationSchema, reservation);
 		},
+		revalidateUnbounded(input) {
+			validateBudgetSnapshot(current, input.now);
+			const row = reservations.get(input.reservationId);
+			if (
+				row?.status !== "held" ||
+				!row.unboundedExposure ||
+				row.requestDigest !== input.requestDigest ||
+				row.financialPlanHash !== input.inventoryHash ||
+				row.executionDigest !== input.executionDigest ||
+				!row.identity ||
+				!current.identity ||
+				budgetIdentityKey(row.identity) !==
+					budgetIdentityKey(current.identity) ||
+				!row.unpricedPolicyProof ||
+				!row.unpricedScopeProof ||
+				stableHash(
+					toJson(IacUnpricedPolicyProofSchema, row.unpricedPolicyProof, {
+						alwaysEmitImplicit: true,
+					}),
+				) !== input.policyProofHash ||
+				stableHash(
+					toJson(IacUnpricedScopeProofSchema, row.unpricedScopeProof, {
+						alwaysEmitImplicit: true,
+					}),
+				) !== input.scopeProofHash ||
+				!validUnpricedProof(
+					row.unpricedPolicyProof,
+					row.identity,
+					input.requestDigest,
+					input.inventoryHash,
+				) ||
+				Date.parse(row.unpricedPolicyProof.observedAt) >
+					Date.parse(input.now) ||
+				Date.parse(row.unpricedPolicyProof.validUntil) <=
+					Date.parse(input.now) ||
+				!validScopeProof(
+					row.unpricedScopeProof,
+					row.identity,
+					row.providerAccounts.map((account) => account.providerAccountId),
+				) ||
+				scopeTrust?.verify(
+					clone(IacUnpricedScopeProofSchema, row.unpricedScopeProof),
+				) !== true ||
+				scopeTrust.isCurrent(
+					clone(IacUnpricedScopeProofSchema, row.unpricedScopeProof),
+				) !== true
+			)
+				return false;
+			return true;
+		},
+		revalidatePriced(input) {
+			validateBudgetSnapshot(current, input.now);
+			const row = reservations.get(input.reservationId);
+			if (
+				row?.status !== "held" ||
+				row.unboundedExposure ||
+				!row.identity ||
+				!current.identity ||
+				budgetIdentityKey(row.identity) !==
+					budgetIdentityKey(current.identity) ||
+				row.identity.tenantId !== input.tenantId ||
+				row.requestDigest !== input.requestDigest ||
+				!row.iacPricingPin ||
+				!validIacPin(row.iacPricingPin, row.financialPlanHash) ||
+				row.iacPricingPin.planDigest !== input.planDigest ||
+				row.iacPricingPin.inventoryHash !== input.inventoryHash ||
+				row.iacPricingPin.modelHash !== input.modelHash ||
+				row.iacPricingPin.quoteHash !== input.quoteHash ||
+				Date.parse(row.iacPricingPin.validUntil) <= Date.parse(input.now) ||
+				input.requestDigest !==
+					stableHash({
+						requestId: input.requestId,
+						targetId: input.targetId,
+						tenantId: input.tenantId,
+						financialPlanHash: row.financialPlanHash,
+					}) ||
+				row.executionDigest !==
+					stableHash({
+						kind: "iac-target-execution",
+						requestDigest: input.requestDigest,
+						planDigest: input.planDigest,
+					})
+			)
+				return false;
+			return true;
+		},
 		settle(id, actualMicros, evidence) {
 			if (!evidence?.usageEvidenceRef || !evidence.sourceStoppedEvidenceRef)
 				throw new Error(
@@ -1247,6 +1529,25 @@ export function createBudgetAdmissionAuthority(options: {
 				);
 			const existing = reservations.get(id);
 			if (!existing) throw new Error("unknown budget reservation");
+			if (existing.unboundedExposure) {
+				const proof = create(BudgetSettlementEvidenceSchema, {
+					...evidence,
+					providerAccounts: [...(evidence.providerAccounts ?? [])],
+					entitlementClaims: [...(evidence.entitlementClaims ?? [])],
+				});
+				if (
+					!existing.executionDigest ||
+					!boundedName(proof.financeSignature, 4096) ||
+					scopeTrust?.settlement({
+						reservation: clone(BudgetReservationSchema, existing),
+						actualMicros,
+						evidence: proof,
+					}) !== true
+				)
+					throw new Error(
+						"authenticated final usage and permanent source retirement are required",
+					);
+			}
 			fenced.settle(existing, actualMicros, evidence);
 			return change(id, "settled", actualMicros, evidence);
 		},
