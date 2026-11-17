@@ -1,3 +1,9 @@
+import { AlchemyIacError, captureAlchemySourceFence } from "@hobo/iac-alchemy";
+import {
+	bindRivetStandaloneSource,
+	type RivetStandaloneSource,
+	rivetStandaloneResource,
+} from "@hobo/iac-alchemy/rivet/standalone";
 import {
 	createRivetDurableTopicActor,
 	isRivetDurableTopicBinding,
@@ -5,13 +11,6 @@ import {
 	RIVET_DURABLE_TOPIC_LOG_LIMITS,
 	type RivetDurableTopicBinding,
 } from "@hobo/runtime-rivet";
-import { AlchemyIacError } from "./plan.js";
-import {
-	bindRivetStandaloneSource,
-	type RivetStandaloneSource,
-	rivetStandaloneResource,
-} from "./rivet-standalone.js";
-import { captureAlchemySourceFence } from "./source-fence.js";
 
 export type {
 	RivetDurableTopicBinding,

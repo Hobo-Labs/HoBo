@@ -1,0 +1,106 @@
+# @hobo/alchemy-rivet-topic
+
+This package composes the Alchemy IaC adapter with the Rivet runtime. It
+contains no independent actor implementation or persistent service.
+
+The mapper follows parse, don't validate: `bindRivetDurableTopicSource`
+captures a source fence and returns the checked `RivetStandaloneSource` as a
+parsed domain type after authenticating the runtime's locally branded actor,
+the registry, pool authority and host verifier. The TypeScript type is not a
+nominal security proof; the resource constructor rechecks the source before
+the provider effect and during deployment. The source-claim protobuf and CUE
+model document the portable values passed to the host verifier; the live
+function and actor identities are verified separately and are not serialized.
+
+The declaration is a command to construct a single Alchemy resource. Topic
+commands and events belong to the Rivet actor's retained log; this composition
+owns no event store, materialized view, projection, snapshot, or read store.
+The actor's durable storage and its recovery guarantees remain the host's
+responsibility, as described in the runtime guide below.
+
+
+`@hobo/alchemy-rivet-topic` maps the opt-in
+`@hobo/runtime-rivet` retained topic-log actor to an Alchemy
+`Rivet.DurableObject`. Its explicit
+`RIVET_DURABLE_TOPIC_LOG_CAPABILITIES` profile supports topic creation,
+publication, retained-log reads, audit and compaction. Consumer groups, leases,
+acknowledgements and dead letters are unsupported. This partial asynchronous
+profile does not implement the HoBo Bindle topic, message bus, or legacy
+`wasi:messaging` contract; their capability reporting remains unsupported.
+
+Define the actor and its registry in a module that is safe for the IaC planner
+to import:
+
+```ts
+// events.ts
+import { setup } from "rivetkit";
+import { createRivetDurableTopicActor } from "@hobo/runtime-rivet";
+import { host } from "./host.js";
+
+export const events = createRivetDurableTopicActor({
+  actorName: "events",
+  semanticDigest: host.topicSourceFence.environmentDigest,
+  now: () => host.trustedClock.nowMs(),
+  resolveScope: (input) => host.resolveTopicScope(input),
+  authorize: (claim) => host.authorizeTopicOperation(claim),
+  verifyIngress: (claim) => host.verifyBoundedTopicIngress(claim),
+});
+export const registry = setup({ use: { events: events.actor } });
+```
+
+Alchemy runs the separate, source-fenced pool entrypoint:
+
+```ts
+// events-main.ts
+import { registry } from "./events.js";
+registry.start();
+```
+
+The IaC declaration imports the inert definition and specifies the absolute
+path to that exact entrypoint:
+
+```ts
+import { rivetDurableTopicResource } from "@hobo/alchemy-rivet-topic";
+import { events, registry } from "./events.js";
+
+const topicLog = rivetDurableTopicResource({
+  main: absoluteEventsMainPath,
+  resourceName: "events",
+  bindleName: "events-app",
+  sourceDigest,
+  sourceFence: host.topicSourceFence,
+  poolDigest,
+  isolationDigest,
+  poolHost,
+  registry,
+  binding: events,
+  verifySource: (claim) => host.verifyTopicSourceAndExclusivePool(claim),
+});
+```
+
+The actor's captured `semanticDigest` must equal the source fence's
+`environmentDigest`, which appears in the authorized Alchemy plan. Equality
+is only an identity check: the trusted host must independently attest that the
+digest covers the complete executable and dependency closure, actor identity,
+fixed profile, behavior-affecting configuration and build/upload environment.
+The actor brand is local to one `@hobo/runtime-rivet` module instance. In the
+IaC process, construct the actor using the same installed runtime instance that
+the mapper resolves as its dependency; duplicate runtime copies fail closed as an
+unrecognized binding. The separately bundled pool process constructs its own
+actor, whose exact source and configuration the host must attest independently.
+It must also verify that the main starts this exact registry and authorized
+policies on the attested exclusive pool. The plan's complete
+`composite.sourceRequirements` must include
+`{ resourceId: "events", resourceType: "Rivet.DurableObject", bindleName:
+"events-app", applicationName: "events", sourceKind: "rivet-async-topic",
+sourcePath: absoluteEventsMainPath }`.
+
+The host must authenticate tenant and instance scope, enforce ingress and
+response limits, fence previous owners, and independently provide durable
+storage and a monotonic clock. Deleting or recreating the actor can destroy
+its retained log and idempotency records; state transfer, draining and verified
+destruction authorization are host obligations. See the
+[runtime actor guide](../runtimes/runtime-rivet/DURABLE-TOPIC-ACTOR.md)
+for exact bounds and failure outcomes. The target is unpriced unless the host
+supplies an authorized pricing model; unpriced execution requires its own
+explicit policy decision.

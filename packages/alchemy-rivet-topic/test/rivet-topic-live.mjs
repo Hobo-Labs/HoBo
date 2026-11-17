@@ -8,6 +8,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DurableObjectResource, Providers } from "@alchemy.run/rivet";
+import { alchemyTarget, createAlchemyIacProvider } from "@hobo/iac-alchemy";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Bundle from "alchemy/Bundle/Bundle";
@@ -15,8 +16,7 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { createClient } from "rivetkit/client";
-import { alchemyTarget, createAlchemyIacProvider } from "../src/index.ts";
-import { rivetDurableTopicResource } from "../src/rivet-topic.ts";
+import { rivetDurableTopicResource } from "../src/index.ts";
 import { events, registry } from "./fixtures/rivet-topic-definition.mjs";
 import { testStateOwnership } from "./route-fixture.ts";
 
@@ -127,13 +127,13 @@ try {
 	);
 	const runtime = fileURLToPath(
 		new URL(
-			"../../../runtimes/runtime-rivet/dist/durable-topic-actor.js",
+			"../../runtimes/runtime-rivet/dist/durable-topic-actor.js",
 			import.meta.url,
 		),
 	);
 	const journal = fileURLToPath(
 		new URL(
-			"../../../runtimes/runtime-rivet/dist/durable-receipt-journal.js",
+			"../../runtimes/runtime-rivet/dist/durable-receipt-journal.js",
 			import.meta.url,
 		),
 	);
