@@ -18,6 +18,7 @@ import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
+import { StackContext } from "alchemy/StackContext";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
@@ -144,7 +145,17 @@ describe("real Alchemy Cloudflare mappings", () => {
 				Provider.collection([Worker]),
 			).pipe(Layer.provide(stub));
 			await expect(
-				Effect.runPromise(Effect.provide(mapped, providers)),
+				Effect.runPromise(
+					Effect.provide(mapped, providers).pipe(
+						Effect.provideService(StackContext, {
+							name: "Test",
+							stage: "test",
+							resources: {},
+							bindings: {},
+							actions: {},
+						}),
+					),
+				),
 			).rejects.toThrow("SOURCE_FENCE_UNVERIFIED");
 			expect(checks).toBeGreaterThanOrEqual(2);
 			expect(providerCalls).toBe(0);
@@ -201,7 +212,17 @@ describe("real Alchemy Cloudflare mappings", () => {
 				Provider.collection([Worker]),
 			).pipe(Layer.provide(stub));
 			await expect(
-				Effect.runPromise(Effect.provide(mapped, providers)),
+				Effect.runPromise(
+					Effect.provide(mapped, providers).pipe(
+						Effect.provideService(StackContext, {
+							name: "Test",
+							stage: "test",
+							resources: {},
+							bindings: {},
+							actions: {},
+						}),
+					),
+				),
 			).rejects.toThrow(reason);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

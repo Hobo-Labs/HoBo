@@ -22,6 +22,12 @@ it rejects their HoBo runtime operations until blob metadata and events, WASI KV
 semantics, and queue deduplication and leases are implemented.
 `describeCloudflarePrimitiveSupport` reports partial or unsupported coverage
 for each supplied HoBo catalog entry with the reason.
+Alchemy namespaces can separate multiple mapped Cloudflare Bindles in one
+stack. Include their resulting FQNs in the admitted target and source
+requirements, and migrate existing durable state before changing a namespace.
+The host must also verify the actual Cloudflare account and physical namespace,
+bucket and queue identities: generated names or different stack names alone do
+not establish that a resource cannot be shared or adopted.
 For a Vite web application, `b.web(cloudflareViteApp("apps/site"))` uses
 Alchemy's Cloudflare Website.Vite component with that project-relative root.
 Disable session replay explicitly; Vite resource dependencies and other web

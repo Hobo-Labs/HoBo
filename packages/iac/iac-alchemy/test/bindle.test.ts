@@ -153,15 +153,11 @@ describe("explicit Alchemy primitive mapping", () => {
 				operations: ["read"],
 				annotations: [],
 				bindsEntrypoint: false,
-				build: () => {
-					// SAFETY: a structural resource suffices to exercise snapshot isolation here.
-					const primary = { Type: "Spec.Store", FQN: "data" } as Store;
-					return Effect.succeed({
-						primary,
-						resources: [primary],
-						boundDependencies: [],
-					});
-				},
+				build: () =>
+					Effect.gen(function* () {
+						const primary = yield* Store("data", {});
+						return { primary, resources: [primary], boundDependencies: [] };
+					}),
 			},
 			web: {
 				resourceTypes: ["Spec.Web"],
@@ -203,9 +199,19 @@ describe("explicit Alchemy primitive mapping", () => {
 			Effect.sync(() => {
 				throw new Error("replaced callback");
 			});
-		await expect(Effect.runPromise(program)).rejects.toThrow(
-			"observed snapshot",
-		);
+		await expect(
+			Effect.runPromise(
+				program.pipe(
+					Effect.provideService(StackContext, {
+						name: "Snapshot",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+				),
+			),
+		).rejects.toThrow("observed snapshot");
 		expect(seen).toMatchObject({
 			name: "snapshot",
 			requirements: { labels: { team: "before" } },
