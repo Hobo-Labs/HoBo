@@ -6,6 +6,45 @@ scope. The normative design is
 [`docs/design/provider-pricing-commercial-terms.md`](../../docs/design/provider-pricing-commercial-terms.md)
 and ADR-0176 records the package boundary.
 
+## Pricing availability and developer-supplied models
+
+`pricingUnavailable(reason)` represents an offering with no known model;
+it never represents a zero price. `developerPricing(scope, scenario)` attaches
+a developer-authored declarative `QuoteScenario` to one tenant, provider,
+account and product. `parsePricingAvailability` decodes its protobuf JSON
+oneof, and `quoteAvailablePricing(providerId, availability)` checks scope,
+complete financial state and explicit usage for all declared meters before
+rating it. The result identifies the developer model and revision, or a
+machine-readable rejection. Unknown and invalid inputs do not fall back to a
+different price. The single-offering model builder snapshots and validates the
+scope and scenario before protobuf normalization; the quote also rejects
+malformed availability messages and unknown nested fields before rating them.
+
+This checks the scenario as declared; the model itself cannot prove that every
+billable resource or charge dimension was included. A supplied model is an
+estimate, not a provider-backed spending limit. The current helper handles one
+product/account and rejects a product without declared meters. Hosting admission
+requires independently verified scope, exposure bounds and a durable reservation.
+The protobuf and CUE definitions live in `data-models/pricing.proto` and
+`data-models/pricing.cue`; positive/negative CUE fixtures and
+`test/availability.test.ts` exercise the new boundary.
+
+For a target containing several resources, `createTargetPricingInventory`
+describes each resource's provider, account and product, and
+`targetPricingModel` binds every resource to one candidate workload in a joint
+scenario. `quoteTargetPricing` rejects incomplete inventories, missing meters,
+scope mismatches and oversized inputs. It rates the resources together so
+shared credits and commitments are counted once. An unavailable model remains
+explicit through `targetPricingUnavailable`. Inventory completeness and
+developer-supplied usage still need independent verification at admission.
+
+The target model builder validates the bounded generated scenario and binding
+data before protobuf normalization: unknown fields, nonempty unknown wire
+fields, accessors, exotic prototypes and data that would be discarded are
+rejected. Use generated messages or strict JSON parsing, and omit optional
+fields rather than setting them to `undefined`. A malformed declared model is
+an error, never an unavailable-pricing opt-in.
+
 ## Batch 2 surface
 
 `QuoteEngine.quote(scenario)` (also available as `quoteScenario(scenario)`)
