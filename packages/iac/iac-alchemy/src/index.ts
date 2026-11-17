@@ -971,7 +971,10 @@ export function createAlchemyIacProvider<
 			"STATE_IDENTITY_INVALID",
 			"stack, stage, and resource identities must be safe and round-trip through Alchemy state storage",
 		);
-	const stack = guardAlchemyStack(suppliedStack);
+	const stack = guardAlchemyStack(suppliedStack, {
+		stack: target.stackName,
+		stage: target.stage,
+	});
 	if (
 		!isAbsolute(runtimeDirectory) ||
 		stack.stackName !== target.stackName ||
