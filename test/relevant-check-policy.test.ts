@@ -680,6 +680,41 @@ test("production package schema changes select workspace tests instead of root s
 	assert.equal(turboTestSelects(checks, "packages/core"), true);
 });
 
+test("WIT interfaces and dependency metadata select the owning workspace tests", () => {
+	for (const [file, workspace] of [
+		["packages/hobo/wit/wasi-http/proxy.wit", "packages/hobo"],
+		["packages/hobo/wit/wasi-http/deps.lock", "packages/hobo"],
+		[
+			"packages/runtimes/runtime-wasm/wit/wasi-http/deps.toml",
+			"packages/runtimes/runtime-wasm",
+		],
+		["packages/core/interfaces/transport.wit", "packages/core"],
+	] as const) {
+		for (const staged of [false, true]) {
+			const { checks, workspaces } = plan([file], {
+				staged,
+				workspacePackageExists: () => true,
+			});
+			assert.deepEqual(workspaces, [workspace], file);
+			assert.ok(turboTestSelects(checks, workspace), file);
+			assert.ok(checks.some(isBehaviorLane), file);
+		}
+	}
+});
+
+test("WIT changes prevent test-only narrowing", () => {
+	const workspace = "packages/runtimes/runtime-wasm";
+	const { checks } = plan(
+		[
+			`${workspace}/test/proxy-world.test.ts`,
+			`${workspace}/wit/wasi-http/proxy.wit`,
+		],
+		{ staged: true, workspacePackageExists: () => true },
+	);
+	assert.ok(turboTestSelects(checks, workspace));
+	assert.ok(!checks.some(narrowVitestCheck));
+});
+
 test("root script and test changes select the root typecheck lane", () => {
 	const { checks } = plan(["scripts/run-relevant-checks.ts"]);
 
