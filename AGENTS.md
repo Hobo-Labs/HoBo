@@ -10,7 +10,9 @@ over conflicting repository workflow guidance.
   dynamic imports. Include only arguments consumed by the tool, without
   explanations. Use `// domain-view:` and `// public-contract:` without explanatory
   text when the architecture checks require them; complete parallel wire types
-  instead of adding temporary exemptions, regardless of comment syntax.
+  instead of adding temporary exemptions, regardless of comment syntax. Tracked
+  generated and vendored code follows the same rule; update its generator or
+  maintained source while preserving required notices.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
 - Evidence must exercise real behavior. Do not create identity-only examples,

@@ -180,6 +180,22 @@ describe("source policy", () => {
 		assert.equal(rejected.status, 1);
 		assert.match(rejected.stderr + rejected.stdout, /self-documenting/u);
 	});
+	it("checks tracked generated, build-output, dependency, and vendored code", () => {
+		const repo = fixture();
+		const files = [
+			"packages/sample/src/_generated/client.ts",
+			"packages/sample/dist/index.js",
+			"node_modules/sample/index.js",
+			"tools/oxlint/anti-slop/rules/new-rule.ts",
+		];
+		for (const file of files)
+			write(repo, file, "// explanation\nexport const value = 1;\n");
+		git(repo, "add", "--force", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		for (const file of files) assert.ok(result.stderr.includes(file), file);
+	});
+
 	it("finds actual comments without mistaking strings, regexes, templates, or JSX text for comments", () => {
 		const text = [
 			'const url = "https://example.test/path";',
