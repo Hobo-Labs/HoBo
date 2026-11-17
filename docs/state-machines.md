@@ -26,7 +26,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 | CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
 | CD promotion and rollback | [verify-promotion-verification](../.agents/skills/verify-promotion-verification/SKILL.md) | Qualification requires passing verification; request identities bind retries and rollback claims. |
 
-The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. The skill states each model's bounds and the number of hidden steps. Workflow verification includes SQLite close-and-reopen tests and models for sleep deadlines and completion, ambiguous append outcomes, parent provenance, and nested-step replay.
+The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. The skill states each model's bounds and the number of hidden steps. Workflow verification includes SQLite close-and-reopen tests and models for sleep deadlines and completion, ambiguous append outcomes, command lifetimes, parent provenance, and nested-step replay.
 
 ## Run and maintain
 
