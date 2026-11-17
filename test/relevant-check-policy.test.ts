@@ -714,6 +714,21 @@ test("editing a step definition trips the behavior lane", () => {
 	assert.ok(checks.some(isBehaviorLane));
 });
 
+test("workspace dependencies and root configuration select the behavior lane", () => {
+	for (const file of [
+		"packages/conformance/src/index.ts",
+		"packages/core/src/index.ts",
+		"packages/core/data-models/event.proto",
+		"packages/core/package.json",
+		"examples/cd-conformance-kit/src/index.ts",
+		"src/draft/technical-proofs/example/src/index.ts",
+		"tsconfig.base.json",
+		"pnpm-lock.yaml",
+	]) {
+		assert.ok(plan([file]).checks.some(isBehaviorLane), file);
+	}
+});
+
 test("the behavior lane builds the proofs' dependencies first, serially", () => {
 	const { checks } = plan(["cucumber.yaml"]);
 	assert.ok(checks.some(isBehaviorLane));
