@@ -16,6 +16,8 @@ worktree check also finds ignored agent planning artifacts.
 
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
 
+Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup path. The optional gbrain MCP launcher refuses to start without a configured embedding provider and reports how to configure local Ollama.
+
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
 > **Note:** this is *tooling* config, not part of the HoBo product design (`docs/design/`). It was added on request to make the agents productive in this repo.
