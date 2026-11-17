@@ -111,7 +111,8 @@ const EVERY_READY_JOB = "all";
 
 const EXPRESSION_OPEN = "${{";
 
-const SECRET_REFERENCE = /\bsecrets\.([A-Za-z_][A-Za-z0-9_]*)/g;
+const SECRET_REFERENCE =
+	/\bsecrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\2\s*\]|\[)/giu;
 
 const PACKAGE_INSTALL = /\b(apt-get|apt|yum|dnf|apk)\s+(-\S+\s+)*install\b/u;
 
@@ -293,7 +294,7 @@ function reachableText(workflow: Workflow, from: Node): readonly string[] {
 
 function namesSecret(text: string): boolean {
 	return [...text.matchAll(SECRET_REFERENCE)].some(
-		(match) => match[1]?.toUpperCase() !== "GITHUB_TOKEN",
+		(match) => (match[1] ?? match[3])?.toUpperCase() !== "GITHUB_TOKEN",
 	);
 }
 
@@ -666,9 +667,13 @@ function readWorkflow(
  * down or full: it stays on the runner it has.
  */
 function routesJobs(id: string, jobs: readonly InspectedJob[]): boolean {
-	const reference = `needs.${id}.outputs.`;
+	const escaped = id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+	const reference = new RegExp(
+		`\\bneeds\\s*(?:\\.\\s*${escaped}(?![\\w-])|\\[\\s*(['"])${escaped}\\1\\s*\\])`,
+		"iu",
+	);
 	return jobs.some(
-		(other) => other.plan.job !== id && other.plan.runsOn.includes(reference),
+		(other) => other.plan.job !== id && reference.test(other.plan.runsOn),
 	);
 }
 

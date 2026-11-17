@@ -251,6 +251,14 @@ describe("planWorkflow deploy-like jobs", () => {
 			"a secret in a condition",
 			"    if: ${{ secrets.DEPLOY_TOKEN != '' }}\n    steps: []\n",
 		],
+		[
+			"a bracketed secret",
+			"    env:\n      TOKEN: ${{ secrets['DEPLOY_TOKEN'] }}\n",
+		],
+		[
+			"a computed secret",
+			"    env:\n      TOKEN: ${{ secrets[format('{0}_TOKEN', 'DEPLOY')] }}\n",
+		],
 		["inherited secrets", "    secrets: inherit\n"],
 	])("skips a job with %s", (_what, body) => {
 		expect(ready(body)).toEqual(["job skipped uses_secrets"]);
@@ -266,6 +274,10 @@ describe("planWorkflow deploy-like jobs", () => {
 		[
 			"GITHUB_TOKEN in another case",
 			"    env:\n      GH_TOKEN: ${{ secrets.github_token }}\n",
+		],
+		[
+			"GITHUB_TOKEN in brackets",
+			"    env:\n      GH_TOKEN: ${{ secrets['GITHUB_TOKEN'] }}\n",
 		],
 		["read permissions", "    permissions:\n      contents: read\n"],
 		["no id-token", "    permissions:\n      id-token: none\n"],
@@ -1005,6 +1017,22 @@ describe("a job that routes other jobs", () => {
 			["lint", "ready", undefined],
 		]);
 		expect(plan.jobs[0]?.warnings).toEqual([]);
+	});
+
+	it.each([
+		"needs['route'].outputs.runner",
+		"needs.route['outputs']['runner']",
+		"needs [ 'route' ] . outputs . runner",
+	])("recognizes a router referenced as %s", (reference) => {
+		const plan = planWorkflow(
+			"ci.yml",
+			source.replace("needs.route.outputs.runner", reference),
+		);
+		expect(plan.jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
 	});
 
 	it("is refused by name and passed over by all", () => {
