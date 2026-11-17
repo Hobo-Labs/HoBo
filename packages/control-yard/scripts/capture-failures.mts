@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-/** Check recorded capture failures; older evidence may omit the field. */
 export const captureErrorsSchema = z.array(z.string()).optional();
 export const captureChecksSchema = z.array(z.string()).optional();
 type ParsedCaptureErrors = ReturnType<typeof captureErrorsSchema.safeParse>;

@@ -1,7 +1,6 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-/** Check both destinations before capture creates a lock, marker, or output. */
 export function assertSafeCaptureDestinations(
 	checkout: string,
 	roots: readonly string[],

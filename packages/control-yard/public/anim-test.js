@@ -70,7 +70,6 @@ function draw(now) {
 	const dw = sheet.frameWidth * scale;
 	const dh = sheet.frameHeight * scale;
 	const cx = canvas.width / 2;
-	// Keep the entire measured frame visible, including taller idle sheets.
 	const cy = Math.max(canvas.height / 2 + 40, dh + padding);
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(

@@ -1,4 +1,3 @@
-/** Invalidate previous evidence before loading the capture or its dependencies. */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,11 +33,9 @@ try {
 	}
 	lockMayBeReleased = true;
 	await import("./capture-tour.mts");
-	// Until every marker is removed, the lock protects both evidence copies.
 	lockMayBeReleased = false;
 	for (const marker of markers) rmSync(marker);
 	lockMayBeReleased = true;
 } finally {
-	// An incomplete marker setup or removal leaves the lock as the shared signal.
 	if (lockMayBeReleased) rmSync(lock, { recursive: true, force: true });
 }

@@ -12,7 +12,6 @@ export type YardTestState = Readonly<{
 	seed: number | null;
 	frameCount: number;
 	zone: ZoneId | null;
-	/** Facing follows the walk sheet, or the projection/default for non-walk animations. */
 	bo: {
 		x: number;
 		y: number;

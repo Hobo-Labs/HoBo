@@ -1135,8 +1135,6 @@ function selectZoneById(zone) {
 	document.body.dataset.lastClickZone = zone;
 }
 
-// Walking uses a directional sheet; idle retains the projected/default facing
-// for compatibility, with its source made explicit in the test evidence.
 function boDirection() {
 	const projectedFacing = visual?.facing ?? null;
 	const renderedFacing =

@@ -415,8 +415,6 @@ it("retains the shared lock if proof marker cleanup fails", () => {
 		}
 		cpSync(join(packageRoot, "public/shots"), shots, { recursive: true });
 		cpSync(shots, proof, { recursive: true });
-		// Simulate a tour that succeeds but replaces the proof marker with a
-		// non-empty directory, so removal of the second marker fails.
 		writeFileSync(
 			join(scripts, "capture-tour.mts"),
 			`
@@ -530,8 +528,6 @@ it("invalidates both old evidence copies when browser launch fails", () => {
 		}
 		expect(existsSync(join(shots, ".capture-lock"))).toBe(false);
 		for (const dir of [shots, proof]) rmSync(join(dir, ".capture-incomplete"));
-		// A directory at the proof marker path makes only the second marker write
-		// fail, without relying on platform-specific file permissions.
 		mkdirSync(join(proof, ".capture-incomplete"));
 		const partialSetup = spawnSync(
 			process.execPath,
@@ -621,7 +617,6 @@ it("refuses symlinks in evidence paths before reading or probing", () => {
 	};
 	try {
 		cpSync(join(packageRoot, "public/shots"), shots, { recursive: true });
-		// A symlink cannot redirect the selected evidence root.
 		const rootAlias = join(scratch, "evidence-root");
 		symlinkSync("shots", rootAlias, "dir");
 		probes.length = 0;
@@ -682,7 +677,6 @@ it("refuses symlinks in evidence paths before reading or probing", () => {
 		rmSync(recordings);
 		renameSync(externalRecordings, recordings);
 
-		// Even in-root links are refused, so no component is followed implicitly.
 		const shot = join(shots, "01-boot-live.png");
 		const internalShot = join(shots, "internal-boot.png");
 		renameSync(shot, internalShot);
@@ -700,8 +694,6 @@ it("refuses symlinks in evidence paths before reading or probing", () => {
 		rmSync(recordings);
 		renameSync(internalRecordings, recordings);
 
-		// Resolve the chosen root once, so a symlink followed by `..` cannot
-		// make the root check inspect a different directory from later reads.
 		const outside = join(scratch, "outside-normalization");
 		mkdirSync(join(outside, "nested"), { recursive: true });
 		cpSync(shots, join(outside, "shots"), { recursive: true });

@@ -8,7 +8,6 @@ type DiffRunner = (
 	output: string,
 ) => DiffProcess;
 
-/** A missing baseline or unavailable comparison dependency is never a match. */
 export function compareImages(
 	baseline: string,
 	current: string,
@@ -30,7 +29,6 @@ export function compareImages(
 	) {
 		return { ok: false, detail: `imgdiff dependency unavailable: ${detail}` };
 	}
-	// Preserve the existing soft drift ceiling for full-page font anti-aliasing.
 	const rmsMatch = detail.match(/RMS=([0-9.]+)/i);
 	const rms = rmsMatch ? Number(rmsMatch[1]) : NaN;
 	if (result.status === 1 && Number.isFinite(rms) && rms <= 25) {

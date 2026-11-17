@@ -1,9 +1,3 @@
-/**
- * Evidence capture tour (AGENTS.md mandatory).
- *
- * Produces Playwright screenshots + MP4 recordings under public/shots/.
- * Self-report without these files is rejected.
- */
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -86,7 +80,6 @@ function staticHandler(base: string) {
 			let rel = decodeURIComponent(url.pathname);
 			if (rel === "/") rel = "/index.html";
 			const file = join(base, rel);
-			// Some browsers request an icon even when the page has none.
 			if (base === PUBLIC && rel === "/favicon.ico" && !existsSync(file)) {
 				res.writeHead(204);
 				res.end();
@@ -172,7 +165,6 @@ async function advance(page: import("playwright").Page, n: number) {
 	await page.waitForTimeout(50);
 }
 
-// --- seed fixtures ---
 const hoboHome = mkdtempSync(join(tmpdir(), "hobo-yard-play-"));
 const ctx = createManagementContext({ hoboHome });
 stationInit(ctx, { name: "local", tenant: "local" });
@@ -225,14 +217,10 @@ console.log("HOBO_HOME", hoboHome);
 console.log("API", api.url);
 console.log("GAME", gameUrl);
 
-// By default Playwright selects its installed browser for this platform.
-// CHROME_PATH allows an explicit system browser when the caller needs one.
 const chromePath = process.env.CHROME_PATH?.trim();
 const launchOptions: LaunchOptions = { headless: true };
 if (chromePath) launchOptions.executablePath = chromePath;
 const browser = await chromium.launch(launchOptions).catch(async (error) => {
-	// The servers are already listening. A failed launch must not leave the
-	// capture command hanging or its temporary Station data behind.
 	try {
 		await api.close();
 	} finally {
@@ -288,10 +276,6 @@ async function withRecording(
 		},
 	});
 	const page = await context.newPage();
-	// Captured before teardown: `finally` below is teardown only, so that a throw
-	// from `fn` propagates. It used to hold the whole finalization including a
-	// `return` and a `throw`, either of which discards whatever the demo body
-	// threw — a broken demo reported success.
 	const vid = page.video();
 	try {
 		await fn(page);
@@ -299,14 +283,11 @@ async function withRecording(
 		await page.close();
 		await context.close();
 	}
-	// Playwright finalizes video after context close. Only reached when `fn` returned.
 	if (vid) {
 		const webmPath = await vid.path();
 		const mp4 = join(RECORDINGS, `${name}.mp4`);
-		// wait briefly if file not yet flushed
 		for (let i = 0; i < 20 && !existsSync(webmPath); i++) await sleep(100);
 		if (!existsSync(webmPath)) {
-			// fallback: pick any webm in dir
 			const found = readdirSync(videoDir).find((f) => f.endsWith(".webm"));
 			if (!found) throw new Error(`no webm for ${name} in ${videoDir}`);
 			webmToMp4(join(videoDir, found), mp4);
@@ -321,7 +302,6 @@ async function withRecording(
 }
 
 try {
-	// ========== Recording 01: full yard loop ==========
 	await withRecording(
 		"01-yard-loop",
 		{ width: 1400, height: 920 },
@@ -379,7 +359,6 @@ try {
 			);
 			check("imgdiff boot", d1.ok, d1.detail);
 
-			// Walk zones with real wall-clock so video has motion
 			for (const zone of [
 				"connectionBay",
 				"costBooth",
@@ -428,7 +407,6 @@ try {
 		},
 	);
 
-	// ========== Recording 02: connection sheet ==========
 	await withRecording(
 		"02-connection-sheet",
 		{ width: 1400, height: 920 },
@@ -468,8 +446,6 @@ try {
 				runImageDiff,
 			);
 			check("imgdiff connection bay", d2.ok, d2.detail);
-			// Confirm the untouched optional alias with the seeded connection present.
-			// The request must omit the alias, then create a real connection.
 			if ((await page.locator("#f-alias").inputValue()) !== "") {
 				throw new Error("connection alias should be blank by default");
 			}
@@ -515,7 +491,6 @@ try {
 		},
 	);
 
-	// ========== Recording 03: AnimTest east/west ==========
 	await withRecording(
 		"03-bo-walk-east-west",
 		{ width: 720, height: 640 },
@@ -531,7 +506,6 @@ try {
 						throw new Error("animation test seam is missing");
 					seam.commands.showAnim(id);
 				}, anim);
-				// let many frames play for visible motion in video
 				await sleep(anim === "bo.idle" ? 900 : 1600);
 				const path = join(SHOTS, `anim-${anim.replace(/\./g, "-")}.png`);
 				await page.screenshot({ path });
@@ -543,7 +517,6 @@ try {
 				});
 				check(`anim harness ${anim}`, stA.animId === anim, stA.animId);
 			}
-			// east then west back-to-back for flip proof
 			await page.evaluate(() => {
 				const seam = window.__TEST__;
 				if (!seam || !("animId" in seam))
@@ -561,7 +534,6 @@ try {
 		},
 	);
 
-	// ========== Recording 04: rail / cost / doctor ==========
 	await withRecording(
 		"04-rail-cost-doctor",
 		{ width: 1400, height: 920 },
@@ -614,7 +586,6 @@ try {
 	}
 }
 
-// --- evidence manifest + sync to exp-proof ---
 const evidenceFiles = [
 	"evidence-manifest.json",
 	"visual-report.json",
@@ -659,7 +630,6 @@ const manifest = {
 		"The manifest omits its own digest; evidence:check validates every other manifested file.",
 };
 
-// placeholder entry filled after write
 writeFileSync(
 	join(SHOTS, "visual-report.json"),
 	`${JSON.stringify(report, null, 2)}\n`,
@@ -672,7 +642,6 @@ files["visual-report.json"] = {
 const manifestPath = join(SHOTS, "evidence-manifest.json");
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-// The proof copy carries the same manifest, so it must contain every entry.
 mkdirSync(join(EXP_EVIDENCE, "recordings"), { recursive: true });
 for (const rel of evidenceFiles) {
 	const src = join(SHOTS, rel);

@@ -1,7 +1,3 @@
-/**
- * Fail if required Playwright screenshots + MP4s are missing/too small,
- * or digests in evidence-manifest.json do not match disk.
- */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -81,7 +77,6 @@ function probeVideo(path: string): VideoProbeResult {
 	};
 }
 
-/** The CLI uses the real probe; tests can supply a deterministic one. */
 export function validateEvidence(
 	shots: string,
 	lock: string,
@@ -216,8 +211,6 @@ export function validateEvidence(
 	}
 	const manifest = parsedManifest.data;
 
-	// Historical evidence may not have an errors field. When either the manifest
-	// or its hashed visual report does record failures, neither may be ignored.
 	let reportErrors = captureErrorsSchema.safeParse(undefined);
 	let reportChecks = captureChecksSchema.safeParse(undefined);
 	const reportPath = join(evidenceDir, "visual-report.json");
@@ -271,7 +264,6 @@ export function validateEvidence(
 		} else {
 			console.log(`OK  ${req.path} (${st.size} bytes)`);
 		}
-		// The manifest deliberately has no self-digest.
 		if (req.path === "evidence-manifest.json") continue;
 		const entry = manifest.files?.[req.path];
 		if (!entry) {
@@ -279,9 +271,6 @@ export function validateEvidence(
 		}
 	}
 
-	// Validate every manifested file, including optional extras. Historical
-	// manifests included a pre-write self-hash, which cannot describe the final
-	// manifest and is deliberately ignored for compatibility.
 	for (const [path, entry] of Object.entries(manifest.files ?? {})) {
 		if (path === "evidence-manifest.json") continue;
 		const abs = resolve(evidenceDir, path);
@@ -318,7 +307,6 @@ export function validateEvidence(
 		}
 	}
 
-	// Check the selected video stream as well as the container duration.
 	const duration = z.union([z.string(), z.number()]);
 	const videoSchema = z.object({
 		streams: z.array(

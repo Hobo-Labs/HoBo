@@ -1,4 +1,3 @@
-/** Validate the package evidence, or the directory given on the command line. */
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateEvidence } from "./evidence-validator.mts";

@@ -32,7 +32,6 @@ it("reports the direction of the rendered walk, not the target zone", () => {
 			getElementById: (id: string) => (id === "yard" ? canvas : element),
 			querySelectorAll: () => [],
 		},
-		// Stop at asset loading so the test reads the actual seam without I/O.
 		fetch: () => new Promise(() => {}),
 	});
 	runInContext(

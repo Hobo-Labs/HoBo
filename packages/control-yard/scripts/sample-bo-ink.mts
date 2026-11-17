@@ -14,10 +14,6 @@ declare global {
 	}
 }
 
-/**
- * Runs inside the page via Playwright's `evaluate`, so it must be self-contained:
- * the browser cannot see imported helpers or other Node-side bindings.
- */
 export function sampleBoInk() {
 	const canvas = document.querySelector<HTMLCanvasElement>("canvas#yard");
 	if (!canvas) throw new Error("yard canvas is missing");
@@ -44,7 +40,6 @@ export function sampleBoInk() {
 		) {
 			throw new Error("incomplete canvas pixel");
 		}
-		// Near-transparent pixels do not constitute visible dark ink.
 		if (alpha >= 128 && red + green + blue < 90) dark++;
 	}
 	return { dark, bo };
