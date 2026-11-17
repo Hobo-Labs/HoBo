@@ -63,6 +63,19 @@ describe("whole-target pricing contract", () => {
 		target.complete = false;
 		expect(hashTargetPricingInventory(target)).toBeUndefined();
 	});
+
+	it("does not hash an inventory after dropping unknown resource or scope data", () => {
+		for (const location of ["inventory", "resource"] as const) {
+			const target = inventory();
+			const altered = location === "inventory" ? target : target.resources[0];
+			if (altered === undefined) throw new Error("fixture resource missing");
+			Object.defineProperty(altered, "unmodeledCharge", {
+				value: "100",
+				enumerable: true,
+			});
+			expect(hashTargetPricingInventory(target), location).toBeUndefined();
+		}
+	});
 	it("preserves unknown pricing instead of producing a zero quote", () => {
 		expect(
 			quoteTargetPricing(inventory(), targetPricingUnavailable("no model")),

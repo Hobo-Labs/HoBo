@@ -151,7 +151,11 @@ export function targetPricingUnavailable(
 export function hashTargetPricingInventory(
 	input: TargetPricingInventory,
 ): string | undefined {
-	if (!isBoundedPricingInput(input)) return undefined;
+	if (
+		!isBoundedPricingInput(input) ||
+		!isExactProtoMessage(TargetPricingInventorySchema, input)
+	)
+		return undefined;
 	try {
 		const inventory = clone(TargetPricingInventorySchema, input);
 		const validation = quoteTargetPricing(
