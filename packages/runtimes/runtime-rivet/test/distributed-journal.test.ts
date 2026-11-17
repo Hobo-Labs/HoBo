@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createRivetDistributedJournal } from "../src/distributed-actor.js";
 import {
 	initialDistributedJournal,
 	transitionDistributedJournal,
@@ -35,6 +36,7 @@ describe("Rivet distributed journal state machine", () => {
 		const stale = transitionDistributedJournal(next.state, {
 			kind: "release",
 			holderId: "a",
+			requestId: "request-1",
 			fenceToken: 1,
 			nowMs: 31_002,
 		});
@@ -86,6 +88,7 @@ describe("Rivet distributed journal state machine", () => {
 		const append = {
 			kind: "append",
 			holderId: "a",
+			requestId: "request-1",
 			fenceToken: 1,
 			expectedRevision: 0,
 			eventId: "event-1",
@@ -126,6 +129,14 @@ describe("Rivet distributed journal state machine", () => {
 		expect(
 			transitionDistributedJournal(first.state, {
 				...append,
+				requestId: "forged",
+				eventId: "event-2",
+				expectedRevision: 1,
+			}).result,
+		).toMatchObject({ status: "denied", code: "STALE_LEASE" });
+		expect(
+			transitionDistributedJournal(first.state, {
+				...append,
 				eventId: "event-2",
 				expectedRevision: 1,
 				nowMs: 31_000,
@@ -151,6 +162,7 @@ describe("Rivet distributed journal state machine", () => {
 			const rejected = transitionDistributedJournal(granted.state, {
 				kind: "append",
 				holderId: "a",
+				requestId: "request-1",
 				fenceToken: 1,
 				expectedRevision: 0,
 				eventId: "event",
@@ -163,5 +175,96 @@ describe("Rivet distributed journal state machine", () => {
 			});
 			expect(rejected.state).toBe(granted.state);
 		}
+	});
+
+	it("refuses a corrupt persisted epoch instead of issuing a reused fence", () => {
+		const state = { ...initialDistributedJournal(), epoch: -1 };
+		const result = transitionDistributedJournal(state, {
+			kind: "acquire",
+			holderId: "a",
+			requestId: "request",
+			nowMs: 1_000,
+		});
+		expect(result.result).toMatchObject({
+			status: "denied",
+			code: "CORRUPT_STATE",
+		});
+		expect(result.state).toBe(state);
+	});
+});
+
+describe("Rivet journal client boundary", () => {
+	it.each([
+		undefined,
+		{
+			status: "acquired",
+			fenceToken: Number.NaN,
+			expiresAtMs: 10,
+			duplicate: false,
+		},
+		{
+			get status() {
+				throw new Error("unreadable");
+			},
+		},
+	])("reports an ambiguous grant when a receipt is malformed", async (receipt) => {
+		const namespace = {
+			getOrCreate: () => ({
+				// SAFETY: malformed receipts exercise the external Rivet boundary.
+				acquire: async () => receipt as never,
+				check: async () => ({ status: "valid" as const }),
+				release: async () => ({ status: "released" as const }),
+				append: async () => ({
+					status: "appended" as const,
+					revision: 1,
+					duplicate: false,
+				}),
+				read: async () => ({ status: "ok" as const, revision: 0, events: [] }),
+			}),
+		};
+		const journal = createRivetDistributedJournal(namespace, {
+			tenantId: "tenant",
+			campId: "camp",
+		});
+		await expect(
+			journal.acquireWithRequest("orders", {
+				holderId: "writer",
+				requestId: "request",
+			}),
+		).rejects.toMatchObject({
+			code: "OUTCOME_UNKNOWN",
+			requiresReconciliation: true,
+			requestId: "request",
+		});
+	});
+
+	it("returns an independent copy of a verified journal read", async () => {
+		const source = {
+			status: "ok" as const,
+			revision: 1,
+			events: [{ eventId: "one", event: { type: "Saved", value: "original" } }],
+		};
+		const namespace = {
+			getOrCreate: () => ({
+				acquire: async () => ({ status: "denied" as const, code: "unused" }),
+				check: async () => ({ status: "valid" as const }),
+				release: async () => ({ status: "released" as const }),
+				append: async () => ({
+					status: "appended" as const,
+					revision: 1,
+					duplicate: false,
+				}),
+				read: async () => source,
+			}),
+		};
+		const journal = createRivetDistributedJournal(namespace, {
+			tenantId: "tenant",
+			campId: "camp",
+		});
+		const snapshot = await journal.read("orders");
+		const first = source.events[0];
+		if (first === undefined) throw new Error("missing test event");
+		first.event.value = "changed";
+		expect(snapshot.events[0]?.event.value).toBe("original");
 	});
 });

@@ -1,4 +1,5 @@
 import type { FoldEvent } from "@hobo/core";
+import { isJsonObject, isJsonString } from "./json.js";
 
 const LEASE_MS = 30_000;
 const MAX_GRANTS = 4_096;
@@ -32,14 +33,16 @@ export type DistributedJournalCommand =
 			readonly nowMs: number;
 	  }
 	| {
-			readonly kind: "release";
+			readonly kind: "release" | "check";
 			readonly holderId: string;
+			readonly requestId: string;
 			readonly fenceToken: number;
 			readonly nowMs: number;
 	  }
 	| {
 			readonly kind: "append";
 			readonly holderId: string;
+			readonly requestId: string;
 			readonly fenceToken: number;
 			readonly expectedRevision: number;
 			readonly eventId: string;
@@ -55,6 +58,7 @@ export type DistributedJournalResult =
 			readonly duplicate: boolean;
 	  }
 	| { readonly status: "released" }
+	| { readonly status: "valid" }
 	| {
 			readonly status: "appended";
 			readonly revision: number;
@@ -76,14 +80,17 @@ export function initialDistributedJournal(): DistributedJournalState {
 	};
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: identities arrive through Rivet action inputs and persisted state. */
 function name(value: string): boolean {
 	return (
+		typeof value === "string" &&
 		value.length > 0 &&
 		value.length <= 200 &&
 		value.trim() === value &&
 		!/[\p{Cc}]/u.test(value)
 	);
 }
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 // SAFETY: actor action inputs cross a network boundary and must be bounded plain JSON data.
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
@@ -148,14 +155,101 @@ function plainJson(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
-function encodeEvent(event: FoldEvent): string | undefined {
+export function encodeDistributedEvent(event: FoldEvent): string | undefined {
 	try {
-		if (!name(event.type)) return undefined;
-		const json = JSON.stringify(plainJson(event, 0, new Set(), { n: 4_096 }));
+		const data = plainJson(event, 0, new Set(), { n: 4_096 });
+		if (!isJsonObject(data) || !isJsonString(data.type) || !name(data.type))
+			return undefined;
+		const json = JSON.stringify(data);
 		return Buffer.byteLength(json) <= MAX_EVENT_BYTES ? json : undefined;
 	} catch {
 		return undefined;
 	}
+}
+
+function validState(state: DistributedJournalState): boolean {
+	try {
+		if (
+			state.version !== 1 ||
+			!Number.isSafeInteger(state.epoch) ||
+			state.epoch < 0 ||
+			!Array.isArray(state.grants) ||
+			!Array.isArray(state.entries) ||
+			state.grants.length > MAX_GRANTS ||
+			state.entries.length > MAX_EVENTS ||
+			state.epoch !== state.grants.length ||
+			!Number.isSafeInteger(state.bytes) ||
+			state.bytes < 0 ||
+			state.bytes > MAX_JOURNAL_BYTES
+		)
+			return false;
+		const grantIds = new Set<string>();
+		for (const [index, grant] of state.grants.entries()) {
+			if (
+				!name(grant.requestId) ||
+				!name(grant.holderId) ||
+				grant.fenceToken !== index + 1 ||
+				!Number.isSafeInteger(grant.expiresAtMs) ||
+				grant.expiresAtMs < LEASE_MS ||
+				grantIds.has(grant.requestId)
+			)
+				return false;
+			grantIds.add(grant.requestId);
+		}
+		if (state.current !== null) {
+			const latest = state.grants[state.grants.length - 1];
+			if (
+				latest === undefined ||
+				latest.requestId !== state.current.requestId ||
+				latest.holderId !== state.current.holderId ||
+				latest.fenceToken !== state.current.fenceToken ||
+				latest.expiresAtMs !== state.current.expiresAtMs
+			)
+				return false;
+		}
+		const eventIds = new Set<string>();
+		let bytes = 0;
+		for (const entry of state.entries) {
+			if (
+				!name(entry.eventId) ||
+				eventIds.has(entry.eventId) ||
+				!isJsonString(entry.eventJson) ||
+				entry.eventJson.length > MAX_EVENT_BYTES
+			)
+				return false;
+			// SAFETY: persisted JSON is parsed and checked against the canonical event encoder.
+			const parsed = JSON.parse(entry.eventJson) as FoldEvent;
+			if (encodeDistributedEvent(parsed) !== entry.eventJson) return false;
+			bytes += Buffer.byteLength(entry.eventJson);
+			eventIds.add(entry.eventId);
+		}
+		return bytes === state.bytes;
+	} catch {
+		return false;
+	}
+}
+
+/** Return only committed facts, never the lease capability. */
+export function readDistributedJournal(state: DistributedJournalState):
+	| { readonly status: "denied"; readonly code: string }
+	| {
+			readonly status: "ok";
+			readonly revision: number;
+			readonly events: readonly {
+				readonly eventId: string;
+				readonly event: FoldEvent;
+			}[];
+	  } {
+	if (!validState(state)) return { status: "denied", code: "CORRUPT_STATE" };
+	return {
+		status: "ok",
+		revision: state.entries.length,
+		events: state.entries.map((entry) => ({
+			eventId: entry.eventId,
+			// SAFETY: validState has parsed and checked every canonical event.
+			event: JSON.parse(entry.eventJson) as FoldEvent,
+		})),
+	};
 }
 
 /** Pure, bounded transition used by the Rivet actor before persisting a result. */
@@ -167,6 +261,7 @@ export function transitionDistributedJournal(
 		state,
 		result: { status: "denied", code },
 	});
+	if (!validState(state)) return deny("CORRUPT_STATE");
 	if (
 		!Number.isSafeInteger(command.nowMs) ||
 		command.nowMs < 0 ||
@@ -229,6 +324,7 @@ export function transitionDistributedJournal(
 		!Number.isSafeInteger(command.fenceToken) ||
 		command.fenceToken < 1 ||
 		state.current?.holderId !== command.holderId ||
+		state.current.requestId !== command.requestId ||
 		state.current.fenceToken !== command.fenceToken ||
 		command.nowMs >= state.current.expiresAtMs
 	)
@@ -238,13 +334,15 @@ export function transitionDistributedJournal(
 			state: { ...state, current: null },
 			result: { status: "released" },
 		};
+	if (command.kind === "check") return { state, result: { status: "valid" } };
+	if (command.kind !== "append") return deny("INVALID_INPUT");
 	if (
 		!name(command.eventId) ||
 		!Number.isSafeInteger(command.expectedRevision) ||
 		command.expectedRevision < 0
 	)
 		return deny("INVALID_INPUT");
-	const json = encodeEvent(command.event);
+	const json = encodeDistributedEvent(command.event);
 	if (json === undefined) return deny("INVALID_EVENT");
 	const index = state.entries.findIndex(
 		(entry) => entry.eventId === command.eventId,

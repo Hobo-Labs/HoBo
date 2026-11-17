@@ -6,6 +6,10 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { actor, setup } from "rivetkit";
 import { setupTest } from "rivetkit/test";
+import {
+	createRivetDistributedJournal,
+	rivetDistributedJournalActor,
+} from "../../src/distributed-actor.ts";
 
 const require = createRequire(import.meta.url);
 const rivetRequire = createRequire(require.resolve("rivetkit"));
@@ -87,8 +91,15 @@ const counter = actor({
 	state: { n: 0 },
 	actions: { increment: (context) => ++context.state.n },
 });
+const journalUnderTest = actor({
+	...rivetDistributedJournalActor.config,
+	actions: {
+		...rivetDistributedJournalActor.config.actions,
+		sleepForTest: (context) => context.sleep(),
+	},
+});
 const registry = setup({
-	use: { counter },
+	use: { counter, hoboJournal: journalUnderTest },
 	noWelcome: true,
 	endpoint: publicUrl,
 	token,
@@ -109,6 +120,68 @@ try {
 	const handle = client.counter.getOrCreate(["test"]);
 	if ((await handle.increment()) !== 1 || (await handle.increment()) !== 2)
 		throw new Error("Rivet actor state did not advance");
+	const journal = createRivetDistributedJournal(client.hoboJournal, {
+		tenantId: "tenant",
+		campId: "camp",
+	});
+	const lease = await journal.acquireWithRequest("orders", {
+		holderId: "writer-a",
+		requestId: "live-request-a",
+	});
+	const competing = await Promise.allSettled([
+		journal.acquireWithRequest("orders", {
+			holderId: "writer-b",
+			requestId: "live-request-b",
+		}),
+		journal.acquireWithRequest("orders", {
+			holderId: "writer-c",
+			requestId: "live-request-c",
+		}),
+	]);
+	if (competing.some((item) => item.status !== "rejected"))
+		throw new Error("Rivet granted overlapping leases");
+	const fact = {
+		eventId: "order-1",
+		expectedRevision: 0,
+		event: { type: "OrderCreated", id: "1" },
+	};
+	const appended = await journal.append("orders", lease, fact);
+	const replay = await journal.append("orders", lease, fact);
+	if (
+		appended.revision !== 1 ||
+		appended.duplicate ||
+		!replay.duplicate ||
+		replay.revision !== 1
+	)
+		throw new Error("Rivet journal did not deduplicate a replay");
+	const observed = await journal.read("orders");
+	if (
+		observed.revision !== 1 ||
+		observed.events[0]?.event.type !== "OrderCreated"
+	)
+		throw new Error("Rivet did not persist the journal event");
+	try {
+		await client.hoboJournal
+			.getOrCreate(["hobo", "tenant", "camp", "orders"])
+			.sleepForTest();
+	} catch {
+		// Sleeping can close the request before its acknowledgement arrives.
+	}
+	const afterWake = await journal.read("orders");
+	if (
+		afterWake.revision !== 1 ||
+		afterWake.events[0]?.event.type !== "OrderCreated"
+	)
+		throw new Error("Rivet did not recover the journal after sleep");
+	await lease.revalidate();
+	await lease.release();
+	const next = await journal.acquireWithRequest("orders", {
+		holderId: "writer-b",
+		requestId: "live-request-b",
+	});
+	if (next.fenceToken !== lease.fenceToken + 1n)
+		throw new Error("Rivet fence did not advance");
+	await next.release();
 	process.stdout.write("rivet3-live-ok");
 } catch (error) {
 	process.stderr.write(`Rivet engine log:\n${engineLog}\n`);

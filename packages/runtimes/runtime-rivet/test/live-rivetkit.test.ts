@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +12,7 @@ const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const LIVE_FIXTURE = fileURLToPath(
 	new URL("./fixtures/rivet3-live.mjs", import.meta.url),
 );
+const TSX_LOADER = createRequire(import.meta.url).resolve("tsx");
 
 describe("rivetkit live baremetal", () => {
 	it("loads RivetKit and its client from ESM and CommonJS", {
@@ -79,11 +81,15 @@ describe("rivetkit live baremetal", () => {
 				stderr: string;
 				timedOut: boolean;
 			}>((resolve, reject) => {
-				const child = spawn(process.execPath, [LIVE_FIXTURE], {
-					cwd: directory,
-					detached: process.platform !== "win32",
-					env: { PATH: process.env.PATH, NODE_ENV: "test" },
-				});
+				const child = spawn(
+					process.execPath,
+					["--import", TSX_LOADER, LIVE_FIXTURE],
+					{
+						cwd: directory,
+						detached: process.platform !== "win32",
+						env: { PATH: process.env.PATH, NODE_ENV: "test" },
+					},
+				);
 				let stdout = "";
 				let stderr = "";
 				let timedOut = false;

@@ -8,6 +8,12 @@ export {
 	rivetStreamId,
 } from "./actor-host.js";
 export {
+	createRivetDistributedJournal,
+	RivetDistributedJournalError,
+	type RivetJournalNamespace,
+	rivetDistributedJournalActor,
+} from "./distributed-actor.js";
+export {
 	createRivetRuntimeHost,
 	diagnoseRivetReadiness,
 	type RivetRuntimeBundle,
