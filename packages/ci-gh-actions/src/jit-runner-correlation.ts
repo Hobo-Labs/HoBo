@@ -48,9 +48,7 @@ function runnerMatchesJob(
 	runnerName: string,
 	runnerId: number,
 ): boolean {
-	if (runnerId > 0 && job.runner_id === runnerId) return true;
-	const name = job.runner_name?.trim();
-	return name !== undefined && name !== "" && name === runnerName.trim();
+	return runnerMatchesGitHubJob({ runnerId, runnerName }, job);
 }
 
 /** Which workflow job on this run GitHub bound to an ephemeral box JIT runner. */
@@ -122,11 +120,13 @@ export function runnerHoldsActiveJob(
 export function runnerMatchesGitHubJob(
 	lease: Readonly<{ runnerId: number; runnerName: string }>,
 	job: Readonly<{
-		runner_id?: number | null;
-		runner_name?: string | null;
+		runner_id?: number | null | undefined;
+		runner_name?: string | null | undefined;
 	}>,
 ): boolean {
-	if (lease.runnerId > 0 && job.runner_id === lease.runnerId) return true;
+	// A name is only a fallback when one side has no usable GitHub runner ID.
+	if (lease.runnerId > 0 && (job.runner_id ?? 0) > 0)
+		return job.runner_id === lease.runnerId;
 	const name = job.runner_name?.trim();
 	return name !== undefined && name !== "" && name === lease.runnerName.trim();
 }
