@@ -44,14 +44,14 @@ function fixture(run: (input: { root: string; project: string; outer: string }) 
 	}
 }
 
-function generated(projectRoot: string, projectDir?: string): string {
+function generated(projectRoot: string, projectDir?: string, primary: DiscoveredBinding = binding): string {
 	const feature = path.join(projectRoot, ".optimizexp/features/demo");
 	const steps = path.join(feature, "steps");
 	mkdirSync(steps, { recursive: true });
 	const generated = buildImplementationsFromDiscovery({
 		featureId: "demo",
 		report,
-		primaryOverride: binding,
+		primaryOverride: primary,
 		projectDir,
 	});
 	const module = path.join(steps, "implementations.ts");
@@ -59,7 +59,7 @@ function generated(projectRoot: string, projectDir?: string): string {
 	return module;
 }
 
-function exercise(module: string, cwd: string): ReturnType<typeof spawnSync> {
+function exercise(module: string, cwd: string, env: NodeJS.ProcessEnv = {}): ReturnType<typeof spawnSync> {
 	const script = `
 const impl = await import(${JSON.stringify(pathToFileURL(module).href)});
 const world = {featureId: "demo", personaId: null, lastExitCode: null, lastStdout: "", lastStderr: "", lastCommand: null, notes: [], statusClear: false, nextActionObvious: false, errorActionable: false, evidencePath: null};
@@ -71,11 +71,36 @@ console.log(JSON.stringify(world));
 		cwd,
 		encoding: "utf8",
 		timeout: 30_000,
-		env: { ...process.env, GH_TOKEN: undefined, NODE_TEST_CONTEXT: undefined },
+		env: { ...process.env, ...env, GH_TOKEN: undefined, NODE_TEST_CONTEXT: undefined },
 	});
 }
 
 describe("generated binding project directory", () => {
+	it("uses the caller's PATH and environment without reading a login profile", () => {
+		fixture(({ root, outer }) => {
+			const callerBin = path.join(outer, "caller-bin");
+			const profileBin = path.join(outer, "profile-bin");
+			const home = path.join(outer, "home");
+			for (const dir of [callerBin, profileBin, home]) mkdirSync(dir);
+			writeFileSync(path.join(callerBin, "pnpm"), '#!/bin/sh\nprintf "caller:%s\\n" "$HOBO_BINDING_MARKER"\n', { mode: 0o755 });
+			writeFileSync(path.join(profileBin, "pnpm"), '#!/bin/sh\nprintf "profile\\n"\n', { mode: 0o755 });
+			writeFileSync(path.join(home, ".bash_profile"), `export PATH=${JSON.stringify(`${profileBin}${path.delimiter}${process.env.PATH ?? ""}`)}\n`);
+			const primary = { ...binding, command: "pnpm --version" };
+			const module = generated(root, undefined, primary);
+			const result = exercise(module, root, {
+				HOME: home,
+				PATH: `${callerBin}${path.delimiter}${process.env.PATH ?? ""}`,
+				BASH_ENV: undefined,
+				HOBO_BINDING_MARKER: "preserved",
+			});
+			assert.equal(result.status, 0, String(result.stderr));
+			const world = JSON.parse(String(result.stdout)) as { lastExitCode: number; lastStdout: string };
+			assert.equal(world.lastExitCode, 0);
+			assert.match(world.lastStdout, /caller:preserved/);
+			assert.doesNotMatch(world.lastStdout, /profile/);
+		});
+	});
+
 	it("runs the selected project's script and finds its feature from the repository root", () => {
 		fixture(({ root, project }) => {
 			const module = generated(project, "packages/widget app");

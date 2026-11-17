@@ -63,8 +63,8 @@ from a sanitized script/HAR/trace.
   "runId": "20260730-dx-baseline",
   "screen": { "cols": 120, "rows": 40, "widthPx": null, "heightPx": null },
   "primary": {
-    "file": "primary.cast",
-    "kind": "recording",
+    "file": "primary.txt",
+    "kind": "transcript",
     "bytes": 4096,
     "sha256": "…"
   },
@@ -82,8 +82,8 @@ from a sanitized script/HAR/trace.
 ```json
 {
   "scenarioSlug": "staged-skill-edit-selects-skill-gates",
-  "primaryPath": "primary.cast",
-  "kind": "recording",
+  "primaryPath": "primary.txt",
+  "kind": "transcript",
   "updatedAt": "2026-07-30T21:00:00.000Z",
   "overridesPrevious": true
 }
@@ -91,8 +91,12 @@ from a sanitized script/HAR/trace.
 
 ## Independent review (required before scoring)
 
-Capture writes `review.json` with `status: "pending"`. Playback must be
-reviewed by a human or independent agent:
+Capture writes `review.json` with `status: "pending"`. Strict validation
+checks the current primary bytes against `meta.json`, requires
+the manifest to name the same file and kind, and verifies the accepted review
+against that digest. Pending evidence may be posted for review, but cannot
+support scoring until review succeeds. Unmatched evidence directories fail
+strict validation. A human or independent agent reviews playback with:
 
 ```bash
 node --import tsx .agents/skills/optimizexp/harness/capture-evidence.mts \

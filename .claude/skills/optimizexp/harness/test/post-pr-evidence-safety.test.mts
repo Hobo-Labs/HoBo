@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,6 +9,20 @@ import { fileURLToPath } from "node:url";
 
 const cli = fileURLToPath(new URL("../post-pr-evidence.mts", import.meta.url));
 const secret = "EXTERNAL-CONTENT-MUST-NEVER-BE-POSTED\n";
+
+function artifact(dir: string, primaryPath: string, content: string): string {
+	const file = path.join(dir, primaryPath);
+	mkdirSync(path.dirname(file), { recursive: true });
+	writeFileSync(file, content);
+	const sha256 = createHash("sha256").update(content).digest("hex");
+	writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ kind: "transcript", primaryPath }));
+	writeFileSync(path.join(dir, "meta.json"), JSON.stringify({ driver: "cli", primary: { file: primaryPath, kind: "transcript", sha256 }, claims: [] }));
+	return sha256;
+}
+
+function acceptReview(dir: string, sha256: string): void {
+	writeFileSync(path.join(dir, "review.json"), JSON.stringify({ status: "accepted", reviewer: "reviewer", relevance: "relevant", completeness: "complete", coverageMode: "full-journey", coveredClaims: [], artifactSha256: sha256, notes: "The full captured journey was independently reviewed." }));
+}
 
 function fixture(run: (input: { root: string; outside: string; scenario: string; invoke: (extra?: string[], env?: NodeJS.ProcessEnv, omitPr?: boolean) => ReturnType<typeof spawnSync>; log: string; calls: string }) => void): void {
 	const base = mkdtempSync(path.join(tmpdir(), "hobo-post-evidence-"));
@@ -23,8 +38,7 @@ function fixture(run: (input: { root: string; outside: string; scenario: string;
 	mkdirSync(scenario);
 	mkdirSync(outside);
 	mkdirSync(bin);
-	writeFileSync(path.join(evidence, "aaa-valid/manifest.json"), JSON.stringify({ kind: "transcript", primaryPath: "primary.txt" }));
-	writeFileSync(path.join(evidence, "aaa-valid/primary.txt"), "first valid scenario\n");
+	artifact(path.join(evidence, "aaa-valid"), "primary.txt", "first valid scenario\n");
 	writeFileSync(path.join(outside, "secret.txt"), secret);
 	writeFileSync(path.join(bin, "gh"), '#!/bin/sh\nprintf "%s %s\\n" "$1" "$2" >> "$HOBO_FAKE_GH_CALLS"\nif [ "$1" = pr ] && [ "$2" = view ]; then printf "%s\\n" "${HOBO_FAKE_GH_DETECTED_PR:-}"; exit 0; fi\nif [ "$1" = pr ] && [ "$2" = comment ]; then\n  printf "%s\\n" "$5" >> "$HOBO_FAKE_GH_LOG"\n  case "$5" in "### Scenario "*"${HOBO_FAKE_GH_FAIL_SCENARIO:-__none__}"*) echo "simulated failure" >&2; exit 1;; esac\nfi\nexit 0\n', { mode: 0o755 });
 	const invoke = (extra: string[] = [], env: NodeJS.ProcessEnv = {}, omitPr = false) => spawnSync(process.execPath, ["--experimental-strip-types", cli, "--feature", "example", ...(omitPr ? [] : ["--pr", "1"]), ...extra], {
@@ -66,8 +80,7 @@ describe("PR evidence manifest read boundary", () => {
 
 	it("reports every attempted comment and fails overall when one scenario fails", () => {
 		fixture(({ scenario, invoke, log }) => {
-			writeFileSync(path.join(scenario, "primary.txt"), "second scenario\n");
-			writeFileSync(path.join(scenario, "manifest.json"), JSON.stringify({ kind: "transcript", primaryPath: "primary.txt" }));
+			artifact(scenario, "primary.txt", "second scenario\n");
 			const result = invoke([], { HOBO_FAKE_GH_FAIL_SCENARIO: "aaa-valid" });
 			assert.equal(result.status, 1, String(result.stderr));
 			const report = JSON.parse(String(result.stdout)) as { ok: boolean; results: { kind?: string; slug?: string; ok: boolean; error?: string }[] };
@@ -86,14 +99,48 @@ describe("PR evidence manifest read boundary", () => {
 		fixture(({ root, invoke, log }) => {
 			const project = path.join(root, "site/.optimizexp/features/example/evidence/one");
 			mkdirSync(project, { recursive: true });
-			writeFileSync(path.join(project, "manifest.json"), JSON.stringify({ kind: "transcript", primaryPath: "primary.txt" }));
-			writeFileSync(path.join(project, "primary.txt"), "project evidence\n");
+			artifact(project, "primary.txt", "project evidence\n");
 			const result = invoke();
 			assert.equal(result.status, 0, String(result.stderr));
 			const comments = readFileSync(log, "utf8");
 			assert.match(comments, /Canonical evidence lives on the branch under `site\/\.optimizexp\/features\/example\/evidence\//);
 			assert.match(comments, /project evidence/);
 			assert.doesNotMatch(comments, /first valid scenario/);
+		});
+	});
+
+	it("permits consistent pending evidence but refuses alternate primaries and stale accepted reviews", () => {
+		fixture(({ root, invoke, log }) => {
+			const feature = path.join(root, ".optimizexp/features/example");
+			const dir = path.join(feature, "evidence/aaa-valid");
+			const sha = createHash("sha256").update("first valid scenario\n").digest("hex");
+			writeFileSync(path.join(feature, "feature.json"), JSON.stringify({ id: "example" }));
+			writeFileSync(path.join(feature, "example.feature"), "Feature: Example\n  Scenario: aaa valid\n    Then evidence is visible\n");
+			writeFileSync(path.join(dir, "review.json"), JSON.stringify({ status: "pending" }));
+			const pending = invoke();
+			assert.equal(pending.status, 0, String(pending.stderr));
+			assert.match(readFileSync(log, "utf8"), /\| pending \|/);
+			rmSync(log);
+			acceptReview(dir, sha);
+			const accepted = invoke();
+			assert.equal(accepted.status, 0, String(accepted.stderr));
+			assert.match(readFileSync(log, "utf8"), /\| accepted \|/);
+			rmSync(log);
+			writeFileSync(path.join(dir, "alternate.txt"), "UNREVIEWED ALTERNATE CONTENT\n");
+			writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ kind: "transcript", primaryPath: "alternate.txt" }));
+			assertNoComment(invoke(), log);
+			const capture = fileURLToPath(new URL("../capture-evidence.mts", import.meta.url));
+			const strict = spawnSync(process.execPath, ["--experimental-strip-types", capture, "--mode=validate", "--project=root", "--feature=example", "--strict"], { cwd: root, encoding: "utf8" });
+			assert.equal(strict.status, 1, strict.stderr);
+			assert.match(String(strict.stdout), /manifest_primary_mismatch/);
+			writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ kind: "transcript", primaryPath: "primary.txt" }));
+			writeFileSync(path.join(dir, "primary.txt"), "changed since review\n");
+			assertNoComment(invoke(), log);
+			const stale = spawnSync(process.execPath, ["--experimental-strip-types", capture, "--mode=validate", "--project=root", "--feature=example", "--strict"], { cwd: root, encoding: "utf8" });
+			assert.equal(stale.status, 1, stale.stderr);
+			assert.match(String(stale.stdout), /primary_artifact_hash_mismatch/);
+			artifact(dir, "primary.txt", "changed since review\n");
+			assertNoComment(invoke(), log);
 		});
 	});
 	it("rejects absolute, traversal, malformed, and missing primary paths before posting any scenario", () => {
@@ -145,9 +192,7 @@ describe("PR evidence manifest read boundary", () => {
 
 	it("posts valid contained transcript files, including nested relative paths", () => {
 		fixture(({ scenario, invoke, log }) => {
-			mkdirSync(path.join(scenario, "nested"));
-			writeFileSync(path.join(scenario, "nested/primary.txt"), "second valid scenario\n");
-			writeFileSync(path.join(scenario, "manifest.json"), JSON.stringify({ kind: "transcript", primaryPath: "nested/primary.txt" }));
+			artifact(scenario, "nested/primary.txt", "second valid scenario\n");
 			const result = invoke();
 			assert.equal(result.status, 0, String(result.stderr));
 			const comments = readFileSync(log, "utf8");

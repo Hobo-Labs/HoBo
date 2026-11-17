@@ -10,6 +10,8 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
+	statSync,
 	writeFileSync,
 	rmSync,
 } from "node:fs";
@@ -50,6 +52,9 @@ type FeatureMeta = {
 	driver?: string;
 	surfaces?: string[];
 	tags?: string[];
+	generatedFromSeed?: boolean;
+	primaryCommand?: string;
+	catalogOrigin?: { projectId: string; entryCommand: string };
 };
 
 function parseArgs(argv: string[]) {
@@ -62,6 +67,7 @@ function parseArgs(argv: string[]) {
 		else if (a === "--scenario") out.scenario = argv[++i] ?? "";
 		else if (a === "--driver") out.driver = argv[++i] ?? "";
 		else if (a === "--command") out.command = argv[++i] ?? "";
+		else if (a === "--cwd") out.cwd = argv[++i] ?? "";
 		else if (a === "--url") out.url = argv[++i] ?? "";
 		else if (a === "--native-cmd") out.nativeCmd = argv[++i] ?? "";
 		else if (a === "--run-id") out.runId = argv[++i] ?? "";
@@ -91,6 +97,7 @@ Modes:
   list-scenarios --feature <id>
   capture        --feature <id> --scenario <slug|title> [--driver cli|tui|web|native]
                  [--command '…'] [--url https://…] [--native-cmd '…'] [--run-id …]
+                 [--cwd root|project]  Override the command working directory
   review         --feature <id> --scenario <slug> --reviewer <id>
                  [--relevant yes|no] [--complete yes|no] [--covered-claims all|id,…]
   stitch         --feature <id> --scenario <slug>
@@ -291,6 +298,51 @@ function resolveScenarioSlug(
 	return hit?.slug ?? slug;
 }
 
+/** Resolve a command's working directory before any existing evidence is removed. */
+function captureCommandDirectory(input: {
+	root: string;
+	location: FeatureLocation;
+	meta: FeatureMeta;
+	projects?: string;
+	command?: string;
+	explicitCommand: boolean;
+	override?: string;
+}): { absolute: string; relative: string } {
+	if (input.override !== undefined && input.override !== "root" && input.override !== "project") {
+		throw new Error("--cwd must be root or project");
+	}
+	const selection = input.projects ? resolveProjects(input.projects, input.root) : undefined;
+	const selected = selection && !selection.allProjects && selection.projects.length === 1
+		? selection.projects[0]
+		: undefined;
+	let projectPath = selected?.path ?? input.location.scope.projectPath;
+	const catalog = !input.explicitCommand && input.meta.catalogOrigin?.entryCommand === input.command
+		? input.meta.catalogOrigin
+		: undefined;
+	if (catalog) {
+		const origin = resolveProjects(catalog.projectId, input.root);
+		const project = !origin.allProjects && origin.projects.length === 1 && !origin.unknown.length
+			? origin.projects[0]
+			: undefined;
+		if (!project || (selected && selected.id !== project.id) || (input.location.scope.projectPath && input.location.scope.projectPath !== project.path)) {
+			throw new Error("catalog command does not match the selected project");
+		}
+		projectPath = project.path;
+	}
+	if (input.override === "project" && !selected && !projectPath) {
+		throw new Error("--cwd=project requires a single selected or project-scoped feature");
+	}
+	const rootDiscovered = !input.explicitCommand && !catalog && input.meta.generatedFromSeed === true && input.meta.primaryCommand === input.command;
+	const requested = input.override === "root" || (!input.override && rootDiscovered) ? "" : projectPath;
+	const repo = realpathSync(input.root);
+	const absolute = path.resolve(repo, requested || ".");
+	const relative = path.relative(repo, absolute);
+	if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || realpathSync(absolute) !== absolute || !statSync(absolute).isDirectory()) {
+		throw new Error("capture command directory must be a real directory inside the repository");
+	}
+	return { absolute, relative: relative ? relative.split(path.sep).join("/") : "." };
+}
+
 async function capture(args: Record<string, string>) {
 	const root = repoRoot();
 	const featureId = args.feature;
@@ -309,7 +361,7 @@ async function capture(args: Record<string, string>) {
 		loc,
 	);
 	const driver = (args.driver || meta.driver || "cli").toLowerCase();
-	const command = args.command || meta.surfaces?.[0];
+	const command = args.command || meta.primaryCommand || meta.surfaces?.[0];
 	const url = args.url || meta.surfaces?.[0];
 	if ((driver === "cli" || driver === "tui") && !command?.trim()) {
 		console.error(`--command required for ${driver} driver`);
@@ -328,6 +380,18 @@ async function capture(args: Record<string, string>) {
 		console.error(`unknown driver: ${driver}`);
 		process.exit(2);
 	}
+	if (driver === "web" && args.cwd) {
+		console.error("--cwd applies to CLI, TUI, and native commands");
+		process.exit(2);
+	}
+	const cwd = driver === "web"
+		? { absolute: root, relative: "." }
+		: captureCommandDirectory({
+			root, location: loc, meta, projects: args.projects,
+			command: driver === "native" ? args.nativeCmd : command,
+			explicitCommand: driver === "native" ? !!args.nativeCmd : !!args.command,
+			override: args.cwd,
+		});
 	const outDir = evidenceDirInScope(featureId, scenario, loc.scope);
 	mkdirSync(outDir, { recursive: true });
 	const hadPrevious = clearPrimaryArtifacts(outDir);
@@ -351,15 +415,15 @@ async function capture(args: Record<string, string>) {
 	let frameStats: Record<string, unknown> | undefined;
 
 	if (driver === "cli") {
-		const r = await captureCli(outDir, { command: command ?? "", cwd: root });
+		const r = await captureCli(outDir, { command: command ?? "", cwd: cwd.absolute });
 		primaryFile = r.primaryFile;
 		kind = r.kind;
 		screen = r.screen;
 		exitCode = r.exitCode;
 		timing = r.timing as unknown as Record<string, unknown>;
-		repro = { command, cwd: "." };
+		repro = { command, cwd: cwd.relative };
 	} else if (driver === "tui") {
-		const r = await captureTui(outDir, { command: command ?? "", cwd: root });
+		const r = await captureTui(outDir, { command: command ?? "", cwd: cwd.absolute });
 		primaryFile = r.castFile || r.primaryFile;
 		kind = r.castFile ? "recording" : r.kind;
 		screen = r.screen;
@@ -370,7 +434,7 @@ async function capture(args: Record<string, string>) {
 		if (r.frameStats) {
 			frameStats = r.frameStats as unknown as Record<string, unknown>;
 		}
-		repro = { command, cwd: "." };
+		repro = { command, cwd: cwd.relative };
 	} else if (driver === "web") {
 		const r = captureWeb(outDir, { url: url ?? "", cwd: root, video: true });
 		primaryFile = r.primaryFile;
@@ -382,7 +446,7 @@ async function capture(args: Record<string, string>) {
 	} else if (driver === "native") {
 		const r = captureNative(outDir, {
 			command: args.nativeCmd,
-			cwd: root,
+			cwd: cwd.absolute,
 		});
 		primaryFile = r.primaryFile;
 		kind = r.kind;
@@ -390,7 +454,7 @@ async function capture(args: Record<string, string>) {
 		exitCode = r.exitCode;
 		degraded = r.degraded;
 		notes = r.notes;
-		repro = { nativeCmd: args.nativeCmd || process.env.OPTIMIZEXP_NATIVE_CAPTURE };
+		repro = { nativeCmd: args.nativeCmd || process.env.OPTIMIZEXP_NATIVE_CAPTURE || process.env.OPTIMIZEXP_COMPUTER_USE_CAPTURE, cwd: cwd.relative };
 	}
 
 	const primaryName = path.basename(primaryFile);
@@ -510,7 +574,7 @@ function review(args: Record<string, string>) {
 		reviewedAt: new Date().toISOString(),
 		notes: args.notes || "",
 	});
-	const problems = validateEvidenceReview(dir);
+	const problems = validateEvidenceReview(dir, root);
 	console.log(JSON.stringify({ ok: problems.length === 0, accepted, problems }, null, 2));
 	if (problems.length > 0) process.exitCode = 1;
 }
@@ -588,6 +652,7 @@ function validate(args: Record<string, string>) {
 	for (const loc of locations) {
 		const id = loc.id;
 		const scenarios = parseScenarios(id, root, loc);
+		const scenarioSlugs = new Set(scenarios.map((scenario) => scenario.slug));
 		for (const s of scenarios) {
 			const dir = evidenceDirInScope(id, s.slug, loc.scope);
 			const man = path.join(dir, "manifest.json");
@@ -608,7 +673,7 @@ function validate(args: Record<string, string>) {
 			}
 			if (strict) {
 				problems.push(
-					...validateEvidenceReview(dir).map(
+					...validateEvidenceReview(dir, root).map(
 						(p) => `${loc.scope.id}:${id}/${s.slug}: ${p}`,
 					),
 				);
@@ -632,6 +697,8 @@ function validate(args: Record<string, string>) {
 					problems.push(
 						`${loc.scope.id}:${id}/${slug}: evidence dir without manifest.json`,
 					);
+				} else if (strict && !scenarioSlugs.has(slug)) {
+					problems.push(`${loc.scope.id}:${id}/${slug}: evidence does not match a declared scenario`);
 				}
 			}
 		}
@@ -656,7 +723,7 @@ function validate(args: Record<string, string>) {
 
 function main() {
 	const input = normalizeCliOptions(process.argv.slice(2), {
-		values: ["--mode", "--id", "--feature", "--scenario", "--driver", "--command", "--url", "--native-cmd", "--run-id", "--personas", "--experiences", "--title", "--reviewer", "--relevant", "--complete", "--covered-claims", "--notes", "--project", "--projects"],
+		values: ["--mode", "--id", "--feature", "--scenario", "--driver", "--command", "--cwd", "--url", "--native-cmd", "--run-id", "--personas", "--experiences", "--title", "--reviewer", "--relevant", "--complete", "--covered-claims", "--notes", "--project", "--projects"],
 		flags: ["--help", "-h", "--all-projects", "--strict"],
 	});
 	if (input.error) {
@@ -676,6 +743,14 @@ function main() {
 	if (mode === "help") return help();
 	if (args.feature && !isPathIdentifier(args.feature)) {
 		console.error(`Invalid feature id: ${args.feature}`);
+		process.exit(2);
+	}
+	if (args.cwd !== undefined && args.cwd !== "root" && args.cwd !== "project") {
+		console.error("--cwd must be root or project");
+		process.exit(2);
+	}
+	if (args.cwd !== undefined && mode !== "capture") {
+		console.error("--cwd is only valid for capture mode");
 		process.exit(2);
 	}
 	const root = repoRoot();

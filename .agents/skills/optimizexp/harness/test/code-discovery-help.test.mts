@@ -69,11 +69,8 @@ it("generates and runs the default help binding end to end", () => {
 		const bin = path.join(binDir, "hobo");
 		writeFileSync(bin, '#!/bin/sh\nprintf "observed help: %s\\n" "$*"\n');
 		chmodSync(bin, 0o755);
-		// The generated binding uses a login shell; make its test PATH explicit.
-		const quotedBin = `'${binDir.replaceAll("'", "'\\''")}'`;
-		writeFileSync(path.join(root, ".bash_profile"), `export PATH=${quotedBin}:$PATH\n`);
 		const harness = fileURLToPath(new URL("../generate-feature.mts", import.meta.url));
-		const env = { ...process.env, HOME: root };
+		const env = { ...process.env, HOME: root, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` };
 		const scaffold = spawnSync(process.execPath, ["--experimental-strip-types", harness, "--mode=scaffold", "--project=root", "--id=example", "--seed=Run `hobo --help`", "--personas=developer", "--force-low-quality"], { cwd: root, env, encoding: "utf8" });
 		assert.equal(scaffold.status, 0, scaffold.stderr);
 		const feature = JSON.parse(readFileSync(path.join(dir, "feature.json"), "utf8")) as { primaryCommand?: string; implementationStatus?: string };

@@ -57,9 +57,15 @@ After `gh pr view` shows a PR for the branch:
 ```bash
 node --import tsx .agents/skills/optimizexp/harness/post-pr-evidence.mts \
   --feature <feature-id> \
-  --pr <number|url> \
-  # or auto-detect PR for current branch
+  --pr <number>
+# Omit --pr to auto-detect the current branch's PR.
 ```
+
+Posting accepts consistent evidence while playback review is pending. The
+manifest and metadata must identify the same primary and match its current
+digest; an accepted review must also match that artifact. The index reports
+the review status. A failed scenario comment makes the command fail after it
+reports every attempted comment.
 
 ### Payload strategy
 
