@@ -1,9 +1,9 @@
-import { generateMeshIdentity } from "@hobo/ci/mesh";
 import {
 	chooseMachine,
 	machineOnline,
 	registryMachineCandidates,
 } from "@hobo/ci";
+import { generateMeshIdentity } from "@hobo/ci/mesh";
 import { InMemoryMachineRegistry } from "@hobo/ci/runner-order/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -17,12 +17,12 @@ import {
 } from "../src/machine-worker/executor.js";
 import { githubQueueJobSource } from "../src/machine-worker/jobs.js";
 import { FakeContainerDriver } from "../src/machine-worker/testing.js";
-import { FakeGithubRunnerService } from "../src/runner-protocol/fake-service.js";
 import {
 	createMachineWorker,
 	type MachineWorker,
 	type MachineWorkerEvent,
 } from "../src/machine-worker/worker.js";
+import { FakeGithubRunnerService } from "../src/runner-protocol/fake-service.js";
 import { GithubSimulator } from "./support/github-simulator/index.js";
 import {
 	simulatedRunnerProgram,
@@ -135,6 +135,23 @@ function queue(github: GithubSimulator, repository = "octo/app") {
 	return github.queueJob({ repository, name: "build", labels: [LABEL] });
 }
 
+function choose(registry: InMemoryMachineRegistry, nowMs: number) {
+	return registryMachineCandidates(registry, {
+		accountId: "local",
+		nowMs,
+		readers: new Set(["42"]),
+	}).then((candidates) =>
+		chooseMachine(candidates, {
+			labels: ["self-hosted"],
+			repository: "octo/app",
+			starterId: "42",
+			triggeredById: "42",
+			preferMachineId: undefined,
+			avoidMachineId: undefined,
+		}),
+	);
+}
+
 function types(events: readonly MachineWorkerEvent[]): string[] {
 	return events.map((event) => event.type);
 }
@@ -216,6 +233,12 @@ describe("the machine worker", () => {
 		expect(
 			types(events).filter((type) => type === "worker.job_refused"),
 		).toHaveLength(2);
+		// Offered again after the queue's ten minutes, and not refused again.
+		github.advance(11 * 60_000);
+		await worker.tick();
+		expect(
+			types(events).filter((type) => type === "worker.job_refused"),
+		).toHaveLength(2);
 		expect(docker.containers).toEqual([]);
 		expect(
 			github
@@ -291,49 +314,53 @@ describe("the machine worker", () => {
 		release();
 	});
 
-	it("drains on stop: running jobs finish, then the next decision passes the machine over", async () => {
+	it("drains on stop: offline at once, while running jobs finish", async () => {
 		const { github, registry, worker, events, release, runs } = setup({
+			concurrency: 2,
 			hold: true,
 		});
 		queue(github);
 		await worker.tick();
 		for (let turn = 0; turn < 20; turn++) await tick();
 		const draining = worker.drain();
+		for (let turn = 0; turn < 20; turn++) await tick();
+		// The job is still held, and the machine is already passed over.
+		expect(worker.status().running).toBe(1);
+		expect(types(events)).toContain("machine.disconnected");
+		const [kept] = await registry.list("local");
+		expect(kept && machineOnline(kept, github.nowMs())).toBe(false);
+		expect(await choose(registry, github.nowMs())).toMatchObject({
+			kind: "none",
+			reason: "no_machine",
+		});
 		queue(github);
 		await worker.tick();
-		expect(worker.status().running).toBe(1);
+		await worker.setPaused(true);
+		const [still] = await registry.list("local");
+		expect(still && machineOnline(still, github.nowMs())).toBe(false);
 		release();
 		await draining;
 		expect(runs[0]?.finished).toBe(true);
-		expect(types(events)).toContain("machine.disconnected");
-		const nowMs = github.nowMs();
-		const [kept] = await registry.list("local");
-		expect(kept && machineOnline(kept, nowMs)).toBe(false);
-		const choice = chooseMachine(
-			await registryMachineCandidates(registry, {
-				accountId: "local",
-				nowMs,
-				readers: new Set(["42"]),
-			}),
-			{
-				labels: ["self-hosted"],
-				repository: "octo/app",
-				starterId: "42",
-				triggeredById: "42",
-				preferMachineId: undefined,
-				avoidMachineId: undefined,
-			},
-		);
-		expect(choice).toMatchObject({ kind: "none", reason: "no_machine" });
 		expect(runs).toHaveLength(1);
+		const [after] = await registry.list("local");
+		expect(after && machineOnline(after, github.nowMs())).toBe(false);
 	});
 
 	it("hands off on a second stop: the running job is stopped and its runner removed", async () => {
-		const { github, worker, docker, events } = setup({ hold: true });
+		const { github, registry, worker, docker, events } = setup({
+			hold: true,
+		});
 		queue(github);
 		await worker.tick();
 		for (let turn = 0; turn < 20; turn++) await tick();
 		await worker.handOff();
+		// The advert is withdrawn before the running job is stopped.
+		const order = types(events);
+		expect(order.indexOf("machine.disconnected")).toBeLessThan(
+			order.indexOf("worker.job_failed"),
+		);
+		const [kept] = await registry.list("local");
+		expect(kept && machineOnline(kept, github.nowMs())).toBe(false);
 		expect(docker.containers[0]?.stopped).toBe(true);
 		expect(docker.containers[0]?.removed).toBe(true);
 		// GitHub keeps a runner that held a job until it marks the job lost;

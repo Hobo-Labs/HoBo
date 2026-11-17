@@ -8,7 +8,8 @@
  * registry pins. The owner is the GitHub user whose token the CLI was given
  * (`GET /user`). The loop ticks the worker every second; the first stop
  * drains it (running jobs finish), a second hands off (running jobs are
- * stopped), and either way the machine goes offline at once.
+ * stopped), and either way the advert is withdrawn before any job is waited
+ * on. A refusal for good (a takeover) hands off too.
  */
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -173,7 +174,11 @@ export function runMachineSession(
 			if (stopping.signal.aborted) break;
 			await wait(everyMs, stopping.signal);
 		}
-		if (requested !== undefined) await worker.drain();
+		if (worker.status().refused !== undefined && requested === undefined)
+			// Refused for good: the running jobs are stopped and their runners
+			// removed, so the command leaves no container or runner behind.
+			await worker.handOff();
+		else if (requested !== undefined) await worker.drain();
 		if (handingOff) await handingOff;
 		return worker.status();
 	}

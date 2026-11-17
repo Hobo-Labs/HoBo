@@ -13,10 +13,11 @@
  * A public repository's job, and a fork's pull request, never run on a
  * machine (ADR-0183 D7): the worker refuses them before it makes a runner.
  *
- * `drain` stops taking jobs, lets the running ones finish and takes the
- * machine offline; `handOff` stops the running ones too, so GitHub gives their
+ * `drain` takes the machine offline, stops taking jobs and lets the running
+ * ones finish; `handOff` stops the running ones too, so GitHub gives their
  * labels' next jobs to whoever routes them next. Either way the advert is
- * withdrawn at once, so the next decision passes the machine over.
+ * withdrawn before anything waits on a job, and never renewed afterwards, so
+ * the next decision passes the machine over.
  *
  * The clock, GitHub, the registry and the executor are all passed in.
  */
@@ -122,9 +123,9 @@ export type MachineWorker = Readonly<{
 	tick(): Promise<void>;
 	/** Pause (true) or resume (false), as the owner would with `hobo ci machine pause`. */
 	setPaused(paused: boolean): Promise<void>;
-	/** Take no new jobs, let running ones finish, then go offline. */
+	/** Go offline at once, take no new jobs, and let running ones finish. */
 	drain(): Promise<void>;
-	/** Stop running jobs as well, then go offline. */
+	/** Go offline at once and stop the running jobs. */
 	handOff(): Promise<void>;
 	status(): MachineWorkerStatus;
 }>;
@@ -146,6 +147,8 @@ export function createMachineWorker(
 	const { profile } = options;
 	const everyMs = options.advertiseEveryMs ?? MACHINE_ADVERT_EVERY_MS;
 	const running = new Map<number, Running>();
+	// A refused job is refused once per session, however often it is offered.
+	const refusedJobs = new Set<number>();
 	let paused = false;
 	let stopping = false;
 	let offline = false;
@@ -328,9 +331,11 @@ export function createMachineWorker(
 			const room = options.concurrency - running.size;
 			if (room <= 0) return;
 			for (const offer of await options.jobs.take(room, nowMs)) {
-				if (running.has(offer.jobId)) continue;
+				if (running.has(offer.jobId) || refusedJobs.has(offer.jobId))
+					continue;
 				const refusal = admissible(offer);
 				if (refusal !== undefined) {
+					refusedJobs.add(offer.jobId);
 					options.emit(
 						jobEvent("worker.job_refused", offer, undefined, refusal),
 					);
@@ -350,6 +355,8 @@ export function createMachineWorker(
 			if (changed) await advertise();
 		},
 		async setPaused(next) {
+			// Offline stays offline: a pause after a stop would renew the advert.
+			if (stopping || refused !== undefined) return;
 			if (!kept) {
 				paused = next;
 				changed = true;
@@ -375,8 +382,12 @@ export function createMachineWorker(
 							: `Taking no new jobs; waiting for ${running.size} running job(s) to finish. Press Ctrl-C again to stop them.`,
 				});
 			}
-			await settle();
-			await goOffline();
+			// The advert goes first, so no decision routes here while jobs end.
+			try {
+				await goOffline();
+			} finally {
+				await settle();
+			}
 		},
 		async handOff() {
 			stopping = true;
@@ -387,9 +398,12 @@ export function createMachineWorker(
 				running: running.size,
 				detail: `Stopping ${running.size} running job(s) and going offline.`,
 			});
-			for (const job of running.values()) job.controller.abort();
-			await settle();
-			await goOffline();
+			try {
+				await goOffline();
+			} finally {
+				for (const job of running.values()) job.controller.abort();
+				await settle();
+			}
 		},
 		status() {
 			return {

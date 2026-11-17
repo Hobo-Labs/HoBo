@@ -1,14 +1,17 @@
 import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { create } from "@bufbuild/protobuf";
 import {
 	chooseMachine,
+	MachineAdvertSchema,
 	machineOnline,
 	registryMachineCandidates,
 } from "@hobo/ci";
 import { InMemoryMachineRegistry } from "@hobo/ci/runner-order/testing";
 import { describe, expect, it } from "vitest";
 import {
+	MACHINE_ADVERT_EVERY_MS,
 	type MachineProfile,
 	machineRunsOnLabel,
 	registryAdvertSink,
@@ -181,6 +184,29 @@ describe("a machine connect session", () => {
 				"machine.disconnected",
 			]),
 		);
+	});
+
+	it("stops its running jobs and removes their runners when the registry refuses it for good", async () => {
+		const { github, registry, docker, session, label, events } =
+			await connected({ hold: true });
+		github.queueJob({ repository: "octo/app", name: "build", labels: [label] });
+		await until(() => docker.containers.some((found) => found.started));
+		// Another key takes the machine's id; the next renewal is refused.
+		const [kept] = await registry.list("local");
+		if (!kept) throw new Error("the machine was not advertised");
+		await registry.put(
+			create(MachineAdvertSchema, { ...kept, signerKeyId: "another-key" }),
+		);
+		github.advance(MACHINE_ADVERT_EVERY_MS);
+		const status = await session.done;
+		expect(status.refused).toMatch(/another key/u);
+		expect(status.running).toBe(0);
+		expect(docker.containers[0]?.stopped).toBe(true);
+		expect(docker.containers[0]?.removed).toBe(true);
+		expect(events.map((event) => event.type)).toContain("worker.handing_off");
+		expect(
+			github.runners().filter((runner) => runner.status === "online"),
+		).toEqual([]);
 	});
 
 	it("pauses and resumes from the terminal", async () => {
