@@ -553,6 +553,66 @@ describe("CI bridge to the shared hosting financial authority", () => {
 		expect(first.read(NOW).reservedMicros).toBe(60);
 	});
 	it.each([
+		["sync", "reserve"],
+		["sync", "claim"],
+		["async", "reserve"],
+		["async", "claim"],
+	] as const)("never treats a %s post-%s callback denial as fallback-safe", async (kind, operation) => {
+		const { first } = durable();
+		const row = lease();
+		row.budgetPolicyDigest = policy("strict");
+		let committed = false;
+		const reserve = (command: Parameters<typeof first.reserve>[0]) => {
+			const result = first.reserve(command);
+			if (operation === "reserve") committed = true;
+			return result;
+		};
+		const claim = (command: Parameters<typeof first.claimExecution>[0]) => {
+			const result = first.claimExecution(command);
+			if (operation === "claim") committed = true;
+			return result;
+		};
+		const options = {
+			quoteLease,
+			now: () => NOW,
+			verifyProviderLiabilityBound: () => {
+				if (committed)
+					throw new BudgetAdmissionDeniedError(
+						"policy.denied",
+						"callback denied",
+					);
+				return true;
+			},
+		};
+		const hooks =
+			kind === "sync"
+				? createCiSharedBudgetHooks({
+						...options,
+						authority: { ...first, reserve, claimExecution: claim },
+					})
+				: createCiAsyncSharedBudgetHooks({
+						...options,
+						authority: {
+							...asyncBudgetAuthority(first, claim),
+							reserve: async (input) => reserve(input),
+						},
+					});
+		if (operation === "claim") await hooks.reserve(row);
+		let failure: Error | undefined;
+		try {
+			await (operation === "reserve" ? hooks.reserve(row) : hooks.claim(row));
+		} catch (error) {
+			if (error instanceof Error) failure = error;
+			else throw error;
+		}
+		expect(failure?.message).toMatch(/committed; reconcile/);
+		expect(failure).not.toBeInstanceOf(BudgetAdmissionDeniedError);
+		expect(first.lookup(ciReservationId(row))?.executionDigest).toBe(
+			operation === "claim" ? ciExecutionDigest(row) : "",
+		);
+		expect(first.read(NOW).reservedMicros).toBe(60);
+	});
+	it.each([
 		["sync", "quote"],
 		["sync", "native-bound"],
 		["sync", "coverage"],

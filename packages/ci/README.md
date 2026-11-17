@@ -356,6 +356,10 @@ time spent waiting for the store. The trusted allocation coverage check is
 also repeated at return. If the window can no longer fund the work, the result
 is refused and the committed hold remains for evidence-based reconciliation.
 That post-commit failure is not a pre-commit denial eligible for offer fallback.
+Callback errors that use the admission-denial type are converted to a
+reconciliation error once the hold has committed. A financial authority must
+itself use that denial type only for definitive refusals before an admission
+write; an uncertain commit or transport failure must use a different error.
 
 The root entrypoint and scheduler target Node. Cloudflare Workers import the
 portable `@hobo/ci/execution` entrypoint, which has no Node ledger or Dispatcher
