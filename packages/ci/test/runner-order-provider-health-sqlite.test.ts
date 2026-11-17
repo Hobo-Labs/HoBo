@@ -165,6 +165,75 @@ describe("feedProviderHealth (R09)", () => {
 		expect(cleared.outcomes).toEqual([]);
 	});
 
+	it("does not count a burst routed before the trip as failed trials", async () => {
+		const store = new SqliteProviderHealthStore(":memory:");
+		// Six jobs fanned out in the same second, and all of them missed.
+		for (let id = 1; id <= 6; id += 1)
+			await feedProviderHealth(store, queued(id, T0), T0 + 11 * MINUTE);
+		const health = await store.get(KEY);
+		expect(health.trippedAtMs).toBe(
+			T0 + PROVIDER_HEALTH_DEFAULTS.missedAfterMs,
+		);
+		expect(health.backoffMs).toBe(PROVIDER_HEALTH_DEFAULTS.firstBackoffMs);
+		expect(health.nextTrialAtMs).toBe(
+			T0 +
+				PROVIDER_HEALTH_DEFAULTS.missedAfterMs +
+				PROVIDER_HEALTH_DEFAULTS.firstBackoffMs,
+		);
+	});
+
+	it("counts only the miss of a job queued once the trial was let through", async () => {
+		const store = new SqliteProviderHealthStore(":memory:");
+		await missThree(store);
+		const due = (await store.get(KEY)).nextTrialAtMs ?? 0;
+		await store.put(KEY, {
+			...(await store.get(KEY)),
+			trialStartedAtMs: due + MINUTE,
+		});
+		// Queued after the trip but before the trial: not the trial.
+		await feedProviderHealth(store, queued(4, due), due + 20 * MINUTE);
+		expect((await store.get(KEY)).backoffMs).toBe(
+			PROVIDER_HEALTH_DEFAULTS.firstBackoffMs,
+		);
+		// The trial itself misses: the back-off doubles.
+		await feedProviderHealth(store, queued(5, due + MINUTE), due + 20 * MINUTE);
+		expect((await store.get(KEY)).backoffMs).toBe(
+			2 * PROVIDER_HEALTH_DEFAULTS.firstBackoffMs,
+		);
+	});
+
+	it("does not let a late start from before the outage clear a tripped type", async () => {
+		const store = new SqliteProviderHealthStore(":memory:");
+		const now = await missThree(store);
+		const old = create(JobFactSchema, {
+			...queued(9, T0 - 30 * MINUTE),
+			startedAtMs: T0 - 29 * MINUTE,
+		});
+		expect(await feedProviderHealth(store, old, now)).toEqual([]);
+		expect((await store.unhealthy(now)).has(KEY)).toBe(true);
+	});
+
+	it("keeps neither the mark nor the record when writing fails", async () => {
+		const store = new SqliteProviderHealthStore(":memory:");
+		const outcome = { atMs: T0, started: false };
+		await expect(
+			store.recordJobOutcome(KEY, 1, outcome, () => {
+				throw new Error("boom");
+			}),
+		).rejects.toThrow("boom");
+		const written = await store.recordJobOutcome(
+			KEY,
+			1,
+			outcome,
+			(current) => ({
+				...current,
+				outcomes: [outcome],
+			}),
+		);
+		expect(written?.outcomes).toEqual([outcome]);
+		expect((await store.get(KEY)).outcomes).toEqual([outcome]);
+	});
+
 	it("ignores GitHub's, machine and fleet labels and a job cancelled early", async () => {
 		const store = new SqliteProviderHealthStore(":memory:");
 		await feedProviderHealth(

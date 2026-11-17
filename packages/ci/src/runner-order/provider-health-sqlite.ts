@@ -11,6 +11,17 @@
  * queued past `missedAfterMs`. Each job counts once per label and outcome, so
  * a redelivered webhook or a poller seeing the same queued job again does not
  * trip a provider on its own.
+ *
+ * While a type is tripped, only the trial job's miss doubles the back-off:
+ * a job queued before the trial was let through was routed before the trip
+ * (a fan-out still draining), so its miss is not a failed trial. A start
+ * older than the record's newest outcome or its trip is a late report of a
+ * job from before the outage, and does not clear it.
+ *
+ * The `provider_health_outcomes` table is a de-duplication index (key, job
+ * id, outcome), not a record of its own: nothing reads it back but the claim,
+ * so it has no protobuf/CUE definition. The record itself is
+ * `ProviderHealthRecord`.
  */
 import { DatabaseSync } from "node:sqlite";
 import { toJsonString } from "@bufbuild/protobuf";
@@ -41,15 +52,18 @@ import {
 /** A store that also remembers which job outcomes it has already counted. */
 export interface ProviderHealthFeedStore extends ProviderHealthStore {
 	/**
-	 * Mark one job's outcome for one runner type as counted. True the first
-	 * time, false for the same key, job and outcome again.
+	 * In one step: mark one job's outcome for one runner type as counted and,
+	 * the first time only, read the record, pass it to `next` and keep what
+	 * `next` returns (`undefined` leaves the record as it is). Answers the
+	 * record written, or `undefined` when nothing was written. A failure
+	 * leaves neither the mark nor the record.
 	 */
-	claimOutcome(
+	recordJobOutcome(
 		key: string,
 		jobId: number,
-		started: boolean,
-		atMs: number,
-	): Promise<boolean>;
+		outcome: ProviderOutcome,
+		next: (current: ProviderHealth) => ProviderHealth | undefined,
+	): Promise<ProviderHealth | undefined>;
 }
 
 /** How long a counted job outcome is remembered: well past any redelivery. */
@@ -85,12 +99,20 @@ export class SqliteProviderHealthStore implements ProviderHealthFeedStore {
 			: parseProviderHealthRecord(String(body));
 	}
 
-	async get(key: string): Promise<ProviderHealth> {
+	private health(key: string): ProviderHealth {
 		const found = this.record(key);
 		return found ? providerHealthOf(found) : newProviderHealth();
 	}
 
+	async get(key: string): Promise<ProviderHealth> {
+		return this.health(key);
+	}
+
 	async put(key: string, health: ProviderHealth): Promise<void> {
+		this.write(key, health);
+	}
+
+	private write(key: string, health: ProviderHealth): void {
 		const body = toJsonString(
 			ProviderHealthRecordSchema,
 			providerHealthRecord(key, health),
@@ -129,21 +151,33 @@ export class SqliteProviderHealthStore implements ProviderHealthFeedStore {
 		return Number(result.changes) > 0;
 	}
 
-	async claimOutcome(
+	async recordJobOutcome(
 		key: string,
 		jobId: number,
-		started: boolean,
-		atMs: number,
-	): Promise<boolean> {
-		this.db
-			.prepare("DELETE FROM provider_health_outcomes WHERE at_ms < ?")
-			.run(atMs - PROVIDER_OUTCOME_MEMORY_MS);
-		const result = this.db
-			.prepare(
-				"INSERT OR IGNORE INTO provider_health_outcomes (key, job_id, started, at_ms) VALUES (?, ?, ?, ?)",
-			)
-			.run(key, jobId, started ? 1 : 0, Math.round(atMs));
-		return Number(result.changes) > 0;
+		outcome: ProviderOutcome,
+		next: (current: ProviderHealth) => ProviderHealth | undefined,
+	): Promise<ProviderHealth | undefined> {
+		this.db.exec("BEGIN IMMEDIATE");
+		try {
+			this.db
+				.prepare("DELETE FROM provider_health_outcomes WHERE at_ms < ?")
+				.run(outcome.atMs - PROVIDER_OUTCOME_MEMORY_MS);
+			const claimed = this.db
+				.prepare(
+					"INSERT OR IGNORE INTO provider_health_outcomes (key, job_id, started, at_ms) VALUES (?, ?, ?, ?)",
+				)
+				.run(key, jobId, outcome.started ? 1 : 0, Math.round(outcome.atMs));
+			let written: ProviderHealth | undefined;
+			if (Number(claimed.changes) > 0) {
+				written = next(this.health(key));
+				if (written) this.write(key, written);
+			}
+			this.db.exec("COMMIT");
+			return written;
+		} catch (error) {
+			this.db.exec("ROLLBACK");
+			throw error;
+		}
 	}
 
 	close(): void {
@@ -172,9 +206,34 @@ export function providerOutcomeOfJob(
 }
 
 /**
+ * Whether `outcome` of `job` changes a runner type's record. While the type
+ * is tripped, a miss counts only for a job queued no earlier than the trial
+ * let through (`trialStartedAtMs`, else `nextTrialAtMs`); the rest were routed
+ * before the trip. A start older than the newest outcome kept or the trip is
+ * a late report from before the outage and does not clear the record.
+ */
+export function countsForProviderHealth(
+	health: ProviderHealth,
+	job: JobFact,
+	outcome: ProviderOutcome,
+): boolean {
+	if (outcome.started) {
+		const newest = Math.max(
+			health.trippedAtMs ?? Number.NEGATIVE_INFINITY,
+			...health.outcomes.map((kept) => kept.atMs),
+		);
+		return outcome.atMs >= newest;
+	}
+	if (health.trippedAtMs === undefined) return true;
+	const trialFrom = health.trialStartedAtMs ?? health.nextTrialAtMs;
+	return trialFrom === undefined || job.queuedAtMs >= trialFrom;
+}
+
+/**
  * Record a start or a miss for each hosted label `job` asked for. Labels of
  * GitHub's own runners, machines and the fleet are not provider health. A job
- * still queued inside `missedAfterMs` records nothing yet.
+ * still queued inside `missedAfterMs` records nothing yet, and an outcome
+ * `countsForProviderHealth` passes over is marked seen but changes nothing.
  */
 export async function feedProviderHealth(
 	store: ProviderHealthFeedStore,
@@ -192,15 +251,16 @@ export async function feedProviderHealth(
 	}
 	const fed: ProviderHealthFeed[] = [];
 	for (const key of keys) {
-		if (!(await store.claimOutcome(key, job.id, outcome.started, outcome.atMs)))
-			continue;
-		const health = recordProviderOutcome(
-			await store.get(key),
+		const health = await store.recordJobOutcome(
+			key,
+			job.id,
 			outcome,
-			options,
+			(current) =>
+				countsForProviderHealth(current, job, outcome)
+					? recordProviderOutcome(current, outcome, options)
+					: undefined,
 		);
-		await store.put(key, health);
-		fed.push({ key, outcome, health });
+		if (health) fed.push({ key, outcome, health });
 	}
 	return fed;
 }
