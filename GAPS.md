@@ -144,7 +144,7 @@ in the history of commit `d7bbc39c`.
 | GAP-021 | P4×P5 | MED | ✔ | Per-token LLM inference budgets are promised in the AI governance plane (`per-token cost/safety budgets (riding the spend breaker)`) and MeteringView folds `gen.*`/`token.*`, but no design text defines a **`TokenBudget`** object, the pre-inference gate seam, which counters fold LLM input/output/total tokens (distinct from auth `token.*` credential events), or how hard denies and spend-velocity circuit-breakers apply to inference. | `docs/design/governance-planes.md:118-119`<br>`docs/design/reliability-observability-cost.md:210-216` | [REM-029](#rem-029-for-gap-021) |
 | GAP-022 | P5×L-DRIFT | MED | ✔ remediated | Agent-native Crew promises lacked a known-limitations register row while launch-messaging scoped built-in operator agents to `future-roadmap`; `known-limitations-register.md` now carries a Crew/MCP write-autonomy limitation with owner, workaround, and launch-messaging guard. | `docs/design/known-limitations-register.md` · `docs/design/launch-messaging-claims.md:63` · `docs/design/operators-sre.md:46-54` | [REM-030](#rem-030-for-gap-022) ([HOBO-697](https://linear.app/quickdeploy-ai/issue/HOBO-697)) |
 | GAP-023 | L-CONS | MED | ✔ remediated | `docs/patterns/` and `docs/standards/` cross-links remapped from removed `forge-generated-stack.md`/`event-model.md` paths to consolidated design targets (`generated-stack.md`, `data-plane.md#plan-11`, current ADR theme files); link-guard proof at `patterns-standards-cross-links` (3/3). | `docs/patterns/gitops-runbook-promotion.md:44`<br>`docs/patterns/runtime-code-mutation-persistence.md:37-46`<br>`docs/standards/index.md`<br>`docs/index.md:18-27` … | [REM-031](#rem-031-for-gap-023) ([HOBO-698](https://linear.app/quickdeploy-ai/issue/HOBO-698)) |
-| GAP-024 | P5 | MED | ✔ | Issue-worker automation (`docs/automations/hobo-issue-worker.md`) defines claim protocol and repo guardrails but never maps them to the agent-native safety model — BR-011 / Plan 06 guardrails (`require-approval`, `spendCapUsd`, destroy protection, SafetyEnvelope) are absent, so the automation sits outside the platform's autonomous-operation contract. | `docs/automations/hobo-issue-worker.md:147-155`<br>`docs/archive/requirements/requirements.md:162`<br>`docs/design/ai-native-agent-auth.md:114-116` … | [REM-032](#rem-032-for-gap-024) |
+| GAP-024 | P5 | MED | 🧯 | The issue-worker prompt requires policy decisions, approvals, spend caps, and quotas, and the documentation check protects those instructions. Runtime enforcement depends on the external automation host and is not established by a prompt check. | `docs/automations/hobo-issue-worker.md`<br>`scripts/issue-worker-guardrails.ts` | [REM-032](#rem-032-for-gap-024) |
 | GAP-025 | P3 | MED | ✔ | `dapr.md` HoBo-mapping overclaims parity on **Bindings** (general input/output connectors) and **Distributed lock** at ✅ while design has no bindings category, no `hobo:lock` port, and ActorHost lease/fencing ≠ app-level distributed lock API. | `docs/competitors/dapr.md:50,54,121`<br>`docs/design/wasm-runtime-wit.md:117-179`<br>`docs/design/reliability-observability-cost.md:56-60` … | [REM-033](#rem-033-for-gap-025) |
 | GAP-026 | P2 | MED | ✔ | `aspire.md` marks `Aspire.Hosting.Testing` (in-process full AppHost + DCP + real containers) as ✅ parity with "Conformance suites + E2E replay tests" — HoBo `@hobo/conformance` gates adapters/hosts/WIT, not an equivalent whole-graph local integration harness. | `docs/competitors/aspire.md:385-399,471`<br>`docs/design/generated-stack.md#plan-09`<br>`docs/design/wasm-runtime-wit.md:108` … | [REM-034](#rem-034-for-gap-026) — row now ◐ at `aspire.md:471` ("whole-graph in-process harness not yet specified") with a [whole-graph hook](docs/design/generated-stack.md#whole-graph-in-process-test-harness-iteration-hook); no ✅ without harness spec. |
 | GAP-027 | P2 | MED | ✔ | `aspire.md` marks health-gated `WaitFor`/`WaitForCompletion` as ✅ vs "Saga ordering + readiness gates" but orchestrator choreography gates on `resource.Provisioned` only — health probes and run-to-completion job semantics are unspecified at the control-plane seam (corroborates GAP-018 at the tracker layer). | `docs/competitors/aspire.md:452`<br>`docs/design/control-plane.md:57-67`<br>`docs/design/authoring-resources-wiring.md:150-151` … | [REM-035](#rem-035-for-gap-027) |
@@ -1645,27 +1645,12 @@ Bulk-fix relative links in `docs/patterns/*.md` and audit `docs/standards/*.md`:
 
 ### REM-032 (for GAP-024)
 
-- **Finding** (cand-31, P5, MED, votes uphold/uphold/uphold): Issue-worker automation (`docs/automations/hobo-issue-worker.md`) defines claim protocol and repo guardrails but never maps them to the agent-native safety model — BR-011 / Plan 06 guardrails (`require-approval`, `spendCapUsd`, destroy protection, SafetyEnvelope) are absent, so the automation sits outside the platform's autonomous-operation contract.
-- **Evidence:** `docs/automations/hobo-issue-worker.md:147-155` · `docs/archive/requirements/requirements.md:162` · `docs/design/ai-native-agent-auth.md:114-116` · `docs/design/adr/02-identity-security.md#adr-0094`
-- **Effort:** S · **Delivery:** ✔ [HOBO-702](https://linear.app/quickdeploy-ai/issue/HOBO-702) — agent-native guardrails mapping table + executable proof at `src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/`
-
-**Action**
-
-Documentation-only for design suite: amend `docs/automations/hobo-issue-worker.md` and add an executable mapping proof under `src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/`.
-
-1. `docs/automations/hobo-issue-worker.md` — insert `## Agent-native guardrails (BR-011, Plan 06)` after **Codex automation settings** with a mapping table citing BR-011, FR-022, Plan 06, Plan 29, and ADR-0094; retag the embedded prompt `GUARDRAILS` header to reference the mapping.
-2. `src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/` — independent POC pinning the mapping as executable contract evidence.
-3. `GAPS.md` — add GAP-024 register row and this REM-032 section.
-
-**Acceptance**
-
-1. `docs/automations/hobo-issue-worker.md` cites BR-011 and Plan 06 guardrails with the mapping table.
-2. Draft proof tests pass and assert the automation doc cites BR-011/Plan 06 guardrails.
-3. `pnpm run docs:okf` and `pnpm agent:check -- --staged` pass.
-
-**Guardrails**
-
-Do not touch `docs/design/` files. No new ADR. Preserve OKF frontmatter on `hobo-issue-worker.md`. Relative `.md` links only.
+The repository checks the issue-worker prompt's ownership, branch protection,
+approval, quota, verification, and secret-handling instructions through
+`scripts/issue-worker-guardrails.ts`. This replaces the draft citation proof,
+which did not enforce those instructions. Runtime policy and quota enforcement
+must be verified in the external automation host; the repository check cannot
+establish that the host applies them.
 
 ### REM-033 (for GAP-025)
 

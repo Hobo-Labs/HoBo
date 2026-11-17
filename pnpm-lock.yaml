@@ -4631,8 +4631,6 @@ importers:
 
   src/draft/technical-proofs/internal-service-discovery-contract: {}
 
-  src/draft/technical-proofs/issue-worker-guardrail-mapping-contract: {}
-
   src/draft/technical-proofs/junction-connectivity-inference-spike: {}
 
   src/draft/technical-proofs/junction-connectivity-plan-contract: {}

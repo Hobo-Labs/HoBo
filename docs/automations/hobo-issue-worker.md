@@ -20,22 +20,15 @@ tags: [hobo, automations]
 - **Pull requests:** open as draft, mark ready for review only after verification gates pass
 - **Reporting:** Linear, pull request comments/body, and related repo docs
 
-## Agent-native guardrails ([BR-011](../archive/requirements/requirements.md), [Plan 06](../design/ai-native-agent-auth.md#plan-06))
+## Agent-native guardrails
 
-Issue-worker automation is an **autonomous agent principal** operating on the HoBo repo. It must stay inside HoBo's agent-native safety model — not a side-channel script with ad-hoc rules.
-
-| Platform guardrail ([BR-011](../archive/requirements/requirements.md) / [Plan 06](../design/ai-native-agent-auth.md#plan-06)) | Issue-worker enforcement |
-|---|---|
-| High-risk actions gated (`require-approval` / `deny`) ([FR-022](../archive/requirements/requirements.md)) | `AUTO_MERGE=false`; never push to `main`; never force-push a shared branch; never merge own PR |
-| `spendCapUsd` / quota gates ([Plan 06 §6.2](../design/ai-native-agent-auth.md#62-agent-identity--the-token-broker)) | One issue per run (`MAX_ISSUES_PER_RUN=1`); narrow `agent:check` scope; no broad install/codegen/test sweeps as diagnostics |
-| Destroy protection | No deleting unrelated work; preserve user work; `Scope (out)` is a hard wall |
-| Agent tool contracts bound side effects ([Plan 29](../design/contracts-policy-flags.md#plan-29)) | Touch only the owned issue/PR; claim protocol prevents parallel collision |
-| Unified policy decisions + obligations ([Plan 29](../design/contracts-policy-flags.md#plan-29)) | Every **Adversarial** bullet becomes a required guard/test; RCR protocol for requirement drift |
-| `SafetyEnvelope` decision classes ([ADR-0094](../design/adr/02-identity-security.md#adr-0094)) | Claim + isolated worktree; feedback only on owned PR; fail-closed when verification gates are red |
-
-**Authoritative refs:** [BR-011](../archive/requirements/requirements.md) (safe autonomous operation), [FR-022](../archive/requirements/requirements.md) (`require-approval` / `auto-allow` / `deny`, `spendCapUsd`, destroy protection), [Plan 06](../design/ai-native-agent-auth.md#plan-06) (agents as principals + least-privilege guardrails), [Plan 29](../design/contracts-policy-flags.md#plan-29) (policy plane), [ADR-0094](../design/adr/02-identity-security.md#adr-0094) (autonomous-write safety envelope).
-
-Executable mapping proof: [`src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/`](../../src/draft/technical-proofs/issue-worker-guardrail-mapping-contract/).
+The worker operates as an agent principal and follows `AGENTS.md`. It handles one
+owned issue per run, uses an isolated worktree, preserves unrelated work, and
+never pushes to `main` or merges its own pull request. High-risk effects remain
+subject to the applicable policy decision and approval requirements. Verify
+adversarial cases and fail closed when required checks fail.
+These instructions do not enforce policy or spending limits; the automation
+host must enforce them independently.
 
 ## Automation prompt
 
@@ -63,8 +56,6 @@ SETUP
 3. Read repo instructions and context before acting:
    - AGENTS.md
    - CLAUDE.md
-   - docs/design/index.md
-   - docs/design/adr/index.md
 4. Follow repo tooling guidance, including Codex MCP setup and repo skills.
 
 STEP 0 — PARALLELISM POLICY
@@ -96,7 +87,7 @@ STEP 1 — SELECT AND CLAIM EXACTLY ONE ISSUE
 STEP 2 — GROUND THE WORK
 1. Read the full issue body: Why, Refs, Phase, Scope (in), Scope (out), Acceptance, Adversarial, and Depends on.
 2. Open every artifact named in Refs.
-3. Treat cited docs/design files and ADRs as authoritative.
+3. Use the user request, implemented behavior, and tests as authority. Complete and remove any planning or design artifacts in scope.
 4. Treat Scope (out) as a hard boundary.
 5. Convert every Adversarial bullet into a required negative/abuse test or guard.
 
@@ -107,27 +98,15 @@ STEP 3 — CREATE ISOLATED BRANCH/WORKTREE
 4. Comment on Linear: "🤖 branch <branchName> (run=<RUN_ID>)".
 
 STEP 4 — IMPLEMENT
-If issue label is spike:
-1. Do no red/green product-code loop unless needed for investigation.
-2. Time-box research.
-3. Record the decision as an ADR or design-doc update.
-4. Reference unblocked issues.
+1. Investigate the owned issue and its existing implementation.
+2. Implement the requested behavior, including relevant acceptance and adversarial cases.
+3. Verify the result with the applicable tests and checks.
+4. Do not create plans, ADRs, design documents, explanatory code comments, or deferred-work markers.
 
-If label is slice, hardening, security, or user-story:
-1. Outer BDD loop: translate Acceptance bullets into executable acceptance/behavior tests, and add failing tests for Adversarial bullets.
-2. Inner TDD loop: write one failing unit test, implement minimal code, refactor, and repeat until acceptance tests pass.
-3. If stuck on defects, use systematic debugging.
-4. Prefer minimal/YAGNI implementations and existing dependencies.
-
-STEP 5 — REQUIREMENT CHANGE PROTOCOL
-If requirements are wrong, missing, contradictory, or under-specified:
-1. Create a Linear sub-issue titled "RCR: <concise change>".
-2. Use the standard issue template: Why, Refs, Phase, Scope (in), Scope (out), Acceptance, Adversarial, Depends on.
-3. Apply a minimal requirement update to repo docs/design files or ADRs on this branch.
-4. Update the parent issue Acceptance/Scope if appropriate.
-5. Comment on Linear with the RCR summary and link.
-6. If small and within issue intent, continue.
-7. If large or architectural, block the parent on the RCR, move the parent back to Todo, post a handoff, and end this issue run.
+STEP 5 — RESOLVE REQUIREMENT GAPS
+Resolve routine ambiguities from the issue, source, and tests. Continue independent
+work when an external answer is needed. Report a concrete blocker if a required
+answer or authority is unavailable; do not replace implementation with a backlog.
 
 STEP 6 — REVIEW AND VERIFICATION
 Before opening or updating the PR:
@@ -139,9 +118,9 @@ Before opening or updating the PR:
 
 STEP 7 — OPEN DRAFT PR AND SYNC LINEAR
 1. Push the branch.
-2. Open a DRAFT PR to main.
+2. Open a DRAFT PR to main; stack dependent PRs on their preceding branches.
 3. Use PR title format: "feat(<scope>): <issue title> (HOBO-<N>)".
-4. PR body must include the Linear issue link, Acceptance bullets proven, Adversarial cases covered, tests/checks run, RCR sub-issues filed if any, and Scope (out) notes if relevant.
+4. PR body must include the Linear issue link, Acceptance bullets proven, Adversarial cases covered, tests/checks run, and Scope (out) notes if relevant.
 5. Add the PR link to Linear and post a concise summary comment with test evidence.
 
 STEP 8 — READY FOR REVIEW
@@ -158,15 +137,19 @@ STEP 9 — ADDRESS FEEDBACK ONLY WHEN OWNED OR TARGETED
 STEP 10 — STOP
 Because LOOP=false and MAX_ISSUES_PER_RUN=1, stop after one newly claimed issue implementation or one targeted owned-PR feedback pass.
 
-Final report must include RUN_ID, HOBO issue id, branch, PR URL, Linear status, tests/checks run, and RCR sub-issues created if any.
+Final report must include RUN_ID, HOBO issue id, branch, PR URL, Linear status, and tests/checks run.
 
-GUARDRAILS (agent-native — see BR-011 / Plan 06 mapping above)
+GUARDRAILS
 - Touch only the issue/PR this run owns.
 - Never edit, reassign, or claim another worker's in-progress issue.
+- Process only one issue per run in an isolated worktree, and preserve unrelated work and scope boundaries.
 - Never push to main directly.
 - Never force-push a shared branch.
-- One PR per issue.
+- Keep each PR scoped to the owned issue; stack dependent changes when needed.
 - AUTO_MERGE is false: never merge your own PR.
-- Keep Linear comments concise: claim, branch, RCR, PR/ready, feedback summary.
+- Follow applicable policy decisions, approval conditions, spend caps, and quotas; stop if a required decision or limit is unavailable or denies the action.
+- Fail closed when required checks fail; mark a PR ready only after verification gates pass.
+- Do not create plans, ADRs, design documents, explanatory code comments, or deferred-work markers.
+- Keep Linear comments concise: claim, branch, PR/ready, feedback summary.
 - No secrets in code, commits, PRs, Linear comments, or docs.
 ```

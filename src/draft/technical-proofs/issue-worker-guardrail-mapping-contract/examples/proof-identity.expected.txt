@@ -1,3 +1,0 @@
-slug: issue-worker-guardrail-mapping-contract
-layer: technical
-proof-identity: ok

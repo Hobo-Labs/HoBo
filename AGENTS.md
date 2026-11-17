@@ -426,9 +426,9 @@ Use broader build-impacting checks only when intentionally validating a branch/r
 
 ## Documentation maintenance rule
 
-Whenever a change touches code, automation, package metadata, CI, hooks, or agent tooling, update the matching documentation in the same change. Check whether `README.md`, `docs/agent-tooling.md`, and the relevant proof/contract README still describe the current state. If no user-facing docs change is needed, add or update the closest maintenance note so reviewers can see that docs were considered.
+When behavior changes, update the existing user or operator documentation that describes it. Do not create maintenance-only notes, plans, or design documents.
 
-Local and CI gates enforce this with `pnpm run docs:freshness`: code changes under `src/`, `scripts/`, `test/`, package metadata, workflows, or agent config must be accompanied by a docs change. The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `scripts/run-script.mts` (its root-script gates need no package manager; the turbo package-test lane a workspace-package change selects, and scripts that call pnpm themselves, still need pnpm and refuse the commit without it), which routes to the smallest relevant architecture, test, docs, traceability, and contract lanes; enable it with `pnpm run prepare-hooks` (the root `prepare` script does it on install, and the session-start hooks of Claude Code, Codex, Cursor and Copilot do it through `scripts/ensure-hooks-path.sh` whenever `core.hooksPath` is unset; see `docs/agent-tooling.md`).
+The repo hook in `.githooks/pre-commit` runs `check:relevant:staged` through `scripts/run-script.mts` (its root-script gates need no package manager; the turbo package-test lane a workspace-package change selects, and scripts that call pnpm themselves, still need pnpm and refuse the commit without it), which routes to the smallest relevant architecture, test, docs, traceability, and contract lanes; enable it with `pnpm run prepare-hooks` (the root `prepare` script does it on install, and the session-start hooks of Claude Code, Codex, Cursor and Copilot do it through `scripts/ensure-hooks-path.sh` whenever `core.hooksPath` is unset; see `docs/agent-tooling.md`).
 
 ## Plans are not committed
 

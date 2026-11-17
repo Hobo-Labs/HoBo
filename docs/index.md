@@ -1,6 +1,6 @@
 # HoBo documentation hub
 
-This directory is the OKF bundle root for HoBo documentation. It contains the current documentation set for HoBo. The root [`README.md`](../README.md) explains the project at a high level; this hub helps contributors find the right maintenance target.
+This directory is the OKF bundle root for HoBo documentation. The root [`README.md`](../README.md) explains the project at a high level. Existing planning and design artifacts are being completed and removed under the repository rules.
 
 ## OKF bundle layout
 
@@ -10,12 +10,9 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 
 | Area | Start here | Purpose |
 |---|---|---|
-| Design suite | [`design/index.md`](./design/index.md) | Canonical product/platform design, ADRs through **ADR-0148** (index: [`design/adr/index.md`](./design/adr/index.md); recent: **ADR-0144** external-spec posture, **ADR-0145** Traits, **ADR-0146** jurisdiction/residency), glossary, event families, traceability, CLI and SDK contracts. |
-| Lineage & credits | [`design/lineage.md`](./design/lineage.md) | The aggregate portrait: every influence with posture, what's borrowed, divergence, and capture link. |
 | Agent tooling | [`agent-tooling.md`](./agent-tooling.md) | Local agent-tooling setup, trust boundaries, data-egress notes, and maintenance expectations. |
 | CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
-| Fleet enrollment | [`design/fleet-enrollment-design.md`](./design/fleet-enrollment-design.md) | Enrolled execution fleet, strict v2 at-most-once claims, scorecard, and [`fleet-enrollment.yml`](../.github/workflows/fleet-enrollment.yml) CI lane on `hobo` runners (package-relative vitest paths under `@hobo/ci`). |
-| Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How issue-worker automation should interpret design docs and report changes. |
+| Automations | [`automations/hobo-issue-worker.md`](./automations/hobo-issue-worker.md) | How the issue worker implements and verifies owned work. |
 
 ## Reference directories outside `docs/`
 
@@ -24,10 +21,9 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | [`../src/draft/`](../src/draft/README.md) | Executable proof/contract packages that make selected design claims testable. |
 | [`competitors/`](./competitors/index.md) | Product and platform positioning references. |
 | [`patterns/`](./patterns/index.md) | Architecture/operations patterns used by HoBo decisions. |
-| [`runbooks/cd/`](./runbooks/cd/index.md) | HoBo.CD operator runbooks, assembled from each `@hobo/cd` module's Runbook section ([design](./design/continuous-delivery.md)). |
+| [`runbooks/cd/`](./runbooks/cd/index.md) | HoBo.CD operator runbooks, assembled from each `@hobo/cd` module's Runbook section. |
 | [`standards/`](./standards/index.md) | External standards referenced by design decisions. |
 | [`technologies/`](./technologies/index.md) | Technology notes for adapters, engines, and possible implementation choices. |
-| [`archive/`](./archive/) | Deferred or superseded planning artifacts. |
 | [`../workflows/`](../workflows/) | Loop-me workflow specs for recurring agent/human maintenance loops (`NOTES.md` holds shared vocabulary). |
 
 ## Maintenance checklist
@@ -38,4 +34,3 @@ When docs change, verify:
 - CLI examples use canonical verbs and pass `npm run docs:cli-lint`.
 - OKF structure passes `npm run docs:okf`.
 - Required community and maintenance docs pass `npm run docs:coverage`.
-- Code/tooling changes include a nearby docs change and pass `npm run docs:freshness`.
