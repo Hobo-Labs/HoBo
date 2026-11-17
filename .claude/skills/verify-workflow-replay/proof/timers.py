@@ -3,7 +3,7 @@
 import os
 import sys
 
-from z3 import And, Array, ForAll, Implies, Int, IntSort, Not, Select, Solver, Store, unsat
+from z3 import And, Array, ArraySort, ForAll, Implies, Int, IntSort, Not, Select, Solver, Store, unsat
 
 journal = Array("journal", IntSort(), IntSort())
 requested = Array("requested", IntSort(), IntSort())
@@ -95,4 +95,37 @@ prove(
     "one context cannot overwrite a different context",
     [left != right, Select(contexts, left) == left],
     selected == left,
+)
+
+# Each parent has its own ordered command history and its own cursor.
+tree_history = Array("tree_history", IntSort(), ArraySort(IntSort(), IntSort()))
+tree_requests = Array("tree_requests", IntSort(), ArraySort(IntSort(), IntSort()))
+tree_cursors = Array("tree_cursors", IntSort(), IntSort())
+parent = Int("tree_parent")
+sibling = Int("tree_sibling")
+position = Select(tree_cursors, parent)
+
+
+def tree_prefix(owner, length):
+    return ForAll(
+        [k],
+        Implies(
+            And(0 <= k, k < length),
+            Select(Select(tree_history, owner), k) == Select(Select(tree_requests, owner), k),
+        ),
+    )
+
+
+compared_parent = sibling if os.environ.get("WORKFLOW_TREE_PROOF_MUTATION") == "wrong-parent" else parent
+prove(
+    "matching a child extends its parent's prefix",
+    [parent != sibling, 0 <= position, tree_prefix(parent, position),
+     Select(Select(tree_history, compared_parent), position) == Select(Select(tree_requests, parent), position)],
+    tree_prefix(parent, position + 1),
+)
+advanced = Store(tree_cursors, parent, position + 1)
+prove(
+    "advancing one parent's cursor leaves its sibling unchanged",
+    [parent != sibling],
+    Select(advanced, sibling) == Select(tree_cursors, sibling),
 )
