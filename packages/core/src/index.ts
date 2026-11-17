@@ -382,6 +382,7 @@ export type {
 	DurableMessagingAttribute,
 	DurableMessagingCompactionReceipt,
 	DurableMessagingDeadLetter,
+	DurableMessagingDeadLetterCause,
 	DurableMessagingDelivery,
 	DurableMessagingEvent,
 	DurableMessagingLimits,

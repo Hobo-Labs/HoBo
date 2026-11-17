@@ -9,7 +9,11 @@ export const DURABLE_MESSAGING_CONTRACT = "hobo.durable-messaging/v1";
 export const DURABLE_MESSAGING_WIT_INTERFACE =
 	"hobo:durable-messaging/messaging@0.1.0";
 
-/** Upper bounds shared by implementations. A provider may reject lower limits. */
+/**
+ * Upper bounds shared by implementations. A provider may publish lower limits.
+ * Topic, subscription, retained message, receipt and event counts are totals
+ * per authenticated tenant and durable instance, across all its topics.
+ */
 export const DURABLE_MESSAGING_LIMITS = Object.freeze({
 	nameBytes: 128,
 	reasonBytes: 1_024,
@@ -23,6 +27,7 @@ export const DURABLE_MESSAGING_LIMITS = Object.freeze({
 	retainedMessages: 10_000,
 	retainedReceipts: 10_000,
 	retainedEvents: 100_000,
+	topics: 256,
 	subscriptions: 256,
 	eventPageSize: 100,
 });
@@ -40,6 +45,7 @@ export interface DurableMessagingLimits {
 	readonly retainedMessages: number;
 	readonly retainedReceipts: number;
 	readonly retainedEvents: number;
+	readonly topics: number;
 	readonly subscriptions: number;
 	readonly eventPageSize: number;
 }
@@ -50,16 +56,36 @@ export interface DurableMessagingLimits {
  *
  * Each mutation carries a unique ID and absolute expiry, scoped to its
  * authenticated tenant and messaging instance. Before expiry the provider
- * durably stores the request fingerprint and exact committed receipt. An
- * identical retry returns that receipt; a different request using the ID is
- * rejected. At and after expiry every request with that envelope expires
- * before effects, even after receipt garbage collection. Providers must reject
- * new work on receipt-capacity exhaustion instead of evicting live receipts.
- * The provider must verify expiry at its commit point. The host supplies a
- * trusted, nondecreasing clock and fences prior owners.
+ * durably stores the request fingerprint and exact terminal committed or
+ * rejected receipt. An identical retry returns that receipt; a different
+ * request using the ID is rejected as an operation conflict, with the existing
+ * receipt fencing the conflicting request. At and after expiry every request
+ * with that envelope expires
+ * before effects, even after receipt garbage collection. Providers must not
+ * evict live receipts. If receipt-capacity exhaustion prevents fencing a new
+ * operation, its outcome is unknown rather than a definite rejection.
+ * The provider verifies expiry inside the serializable transaction before
+ * mutation and receipt installation. A transaction started before expiry can
+ * commit after it; a later retry still expires and cannot start a new mutation.
+ * The host supplies a trusted, nondecreasing clock and fences prior owners.
  * IDs encode their expiry as `v1.<expires-at-ms>.<nonce>`; an expired ID cannot
  * be reused with a later expiry after its receipt has been collected. A caller
  * must never replace an uncertain operation with a fresh ID.
+ * Retries must reach the same authenticated tenant and durable instance. A
+ * new process generation may resolve them only through an independently
+ * verified shared or atomically transferred journal with old owners fenced.
+ * If that authority cannot be established, the outcome remains unknown.
+ * A fingerprint binds the method, authenticated tenant and durable instance,
+ * and every semantic request field, including message bytes and attributes,
+ * topic, group, sequence, lease, subscription settings and nack reason. The
+ * caller's mutable input must be detached before any asynchronous boundary.
+ * Receipt lookup precedes lease, quota and dynamic policy checks; a committed
+ * consume, ack or nack retry replays its original receipt even after its lease
+ * has expired, provided the operation itself has not expired.
+ * Audit events do not carry authenticated operation fingerprints and cannot
+ * establish whether an unknown or expired operation committed. Resolution
+ * after receipt expiry needs independent host reconciliation against the
+ * authoritative journal; absence of an audit event is not evidence of failure.
  */
 export interface DurableMessagingOperation {
 	readonly id: string;
@@ -87,10 +113,16 @@ export type DurableMessagingRejectionCode =
  * only the exact operation before expiry, or reconcile through independent
  * host evidence. A lost consume response may have granted leases.
  * A provider may return `rejected` only after ruling out an earlier commit of
- * this exact operation, including under retries and concurrent attempts. If
- * authorization is revoked, the receipt store is unavailable, or capacity
+ * this exact operation and durably recording the terminal rejection until
+ * expiry. Identical retries replay that rejection; callers may use a fresh ID
+ * only after receiving a definite rejection. If authorization is revoked, the
+ * receipt store is unavailable, or capacity
  * cannot be checked without resolving a prior attempt, return `unknown`;
  * never turn an unresolved earlier commit into a definite rejection.
+ * A permanently malformed operation envelope may be rejected without a
+ * receipt only when that exact envelope can never satisfy the ID/expiry
+ * grammar. For a valid envelope, all definite dynamic and input rejections
+ * require a terminal receipt, or else the outcome is unknown.
  */
 export type DurableMessagingOutcome<T> =
 	| { readonly status: "committed"; readonly value: T }
@@ -176,13 +208,17 @@ export interface DurableMessagingMessage {
 	readonly attributes: readonly DurableMessagingAttribute[];
 }
 
+export type DurableMessagingDeadLetterCause =
+	| { readonly kind: "nack"; readonly reason: string }
+	| { readonly kind: "lease-expired" };
+
 export interface DurableMessagingDeadLetter {
 	readonly sourceTopic: string;
 	readonly consumerGroup: string;
 	readonly originalMessageId: string;
 	readonly originalSequence: number;
 	readonly deliveryAttempt: number;
-	readonly reason: string;
+	readonly cause: DurableMessagingDeadLetterCause;
 }
 
 export interface DurableMessagingDelivery {
@@ -262,24 +298,46 @@ export interface DurableMessagingEvent {
 /**
  * All methods are asynchronous and run against one authenticated tenant and
  * messaging instance. Names, payloads, attributes, operation windows, leases,
- * batch sizes and retained receipts are bounded. Each operation atomically
- * validates the topic, group, message ID, message sequence and lease together
- * and commits its state and audit facts. Independent groups
- * see independent deliveries; workers in one group compete for each lease.
- * Names and operation IDs must be nonempty, control-free UTF-8 strings within
- * `nameBytes`. Attribute keys must be nonempty and unique, and the total UTF-8
- * bytes of keys and values must fit `attributeBytes`. Payload, reason, batch,
+ * batch sizes and retained receipts are bounded. All mutations are linearizable
+ * in one authenticated instance, including subscription creation, compaction,
+ * publish, consume, settlement and receipt state; snapshot isolation alone is
+ * insufficient. Each operation atomically validates the topic, group, message
+ * ID, message sequence and lease together and commits its state and audit
+ * facts. Independent groups see independent deliveries; workers in one group
+ * compete for each lease.
+ * Names and operation IDs must be nonempty, control-free Unicode scalar strings
+ * within `nameBytes` of UTF-8; unpaired surrogates are invalid. Attribute keys
+ * must be nonempty and unique, all attribute values must be Unicode scalar
+ * strings, and the total UTF-8 bytes of keys and values must fit
+ * `attributeBytes`. Payload, reason, batch,
  * attempt, lease and operation-window bounds use `DURABLE_MESSAGING_LIMITS`.
  * Millisecond and sequence values must be nonnegative safe integers.
+ * These TypeScript interfaces do not parse a transport boundary. Every SDK,
+ * component host and provider must bound, detach and validate requests and
+ * responses, including receipt scope, operation identity and delivery/lease
+ * consistency, before treating any provider response as evidence.
  * A subscription requires an existing source and distinct dead-letter topic.
+ * A lease deadline is the trusted timestamp read inside its serializable
+ * consume transaction plus the requested visibility timeout; overflow is
+ * rejected. Each new lease increments its delivery attempt without wrapping.
+ * Commit or receipt delivery can occur after the lease deadline. An identical
+ * consume retry replays its original receipt, even if that lease is now expired;
+ * it never extends or replaces it. The host must check current authorization
+ * and lease ownership before any fenced handler effect. Ack and nack reject an
+ * expired or superseded lease, and external side effects remain at-least-once.
  *
  * A nack below the subscription's attempt limit releases the message. At the
- * limit, nack or expiry atomically completes the source-group delivery and
- * publishes the original bytes and attributes, with provenance, to the
- * configured distinct dead-letter topic. Failure to persist the dead letter
- * must retain the source delivery; it must not silently drop the message. A
- * consume that cannot atomically move an exhausted delivery rejects without
- * granting any of that operation's leases.
+ * limit, nack atomically completes the source-group delivery and publishes the
+ * original bytes and attributes, with provenance, to the configured distinct
+ * dead-letter topic. A lease that expires at the limit is transferred by the
+ * next authorized consume or provider scheduler transaction for that group
+ * before it can be leased again; expiry alone does not promise a background
+ * worker. Until transfer commits, the source remains an unsettled obligation,
+ * audit reads do not report it settled and compaction must remain blocked.
+ * Failure to persist the dead letter must retain the source delivery; it must
+ * not silently drop the message. A consume that cannot atomically move an
+ * exhausted delivery rejects without granting any of that operation's leases,
+ * or returns unknown if a terminal rejection cannot be durably fenced.
  * Expired or superseded lease IDs are rejected without changing either lease.
  * External handler side effects still need application-level idempotency.
  * A topic rejects a duplicate retained message ID rather than replacing its
@@ -349,7 +407,16 @@ export interface DurableMessaging {
 		readonly topic: string;
 		readonly throughSequence: number;
 	}): Promise<DurableMessagingOutcome<DurableMessagingCompactionReceipt>>;
-	/** A retention gap is explicit; a read never mutates durable state. */
+	/**
+	 * Audit sequences are positive, monotonic and never reused, even after
+	 * retention or restart. If the next sequence exceeds the safe integer range,
+	 * a mutation requiring an audit event must fail without an effect. Pages are
+	 * ordered and contiguous. `nextAfterSequence`
+	 * is the last returned sequence, or the input cursor for an empty page;
+	 * `hasMore` refers to the tail observed by this read. A cursor older than
+	 * `firstAvailableSequence - 1` returns `gap`, never a silently partial page.
+	 * A cursor beyond the observed tail is invalid. A read never mutates state.
+	 */
 	events(input: {
 		readonly afterSequence: number;
 		readonly limit: number;
@@ -358,6 +425,13 @@ export interface DurableMessaging {
 				readonly status: "ok";
 				readonly events: readonly DurableMessagingEvent[];
 				readonly firstAvailableSequence: number;
+				readonly nextAfterSequence: number;
+				readonly hasMore: boolean;
+		  }
+		| {
+				readonly status: "gap";
+				readonly firstAvailableSequence: number;
+				readonly latestSequence: number;
 		  }
 		| {
 				readonly status: "rejected";
