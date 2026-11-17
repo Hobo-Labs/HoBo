@@ -1,0 +1,2255 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "HoBo CI relay read API",
+    "version": "1",
+    "description": "What a HoBo CI relay keeps about one account: its runner order, route decisions, machines, runs and jobs, and the signal, job-time and usage reports computed from stored runs (ADR-0183). Generated from `READ_API_ROUTES` in `src/read-api.ts`; do not edit."
+  },
+  "security": [
+    {
+      "accountToken": []
+    }
+  ],
+  "paths": {
+    "/v1/accounts/self/runner-order": {
+      "get": {
+        "operationId": "getRunnerOrder",
+        "summary": "The runner order a connected repository has committed, and the parser's sentence when it does not parse.",
+        "description": "Needs the `policy:read` scope and answers only the token's account.",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "required": true,
+            "description": "The connected repository, `owner/name`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": false,
+            "description": "A git ref or commit; the default branch when absent.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "repository",
+                    "order"
+                  ],
+                  "properties": {
+                    "repository": {
+                      "type": "string"
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "order": {
+                      "$ref": "#/components/schemas/RunnerOrder"
+                    },
+                    "problem": {
+                      "type": "string",
+                      "description": "The parser's sentence when the committed order does not parse; `order` is then the default, which nothing walks."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/self/routes": {
+      "get": {
+        "operationId": "listRouteDecisions",
+        "summary": "Route journal entries, newest first.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no route journal answers 404 `not-stored-here` naming `hobo ci route`.",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "required": false,
+            "description": "One connected repository, `owner/name`; every connected repository when absent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "Epoch milliseconds; rows at or after it. Default: 90 days ago.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, 1 to 200. Default 50.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The `next` value of the previous page.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "routes"
+                  ],
+                  "properties": {
+                    "routes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RunnerRouteEvent"
+                      }
+                    },
+                    "next": {
+                      "type": "string",
+                      "description": "Pass as `cursor` for the next page; absent on the last."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/self/machines": {
+      "get": {
+        "operationId": "listMachines",
+        "summary": "The account's connected machines, in id order.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no machine registry answers 404 `not-stored-here` naming `hobo ci runners list`.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, 1 to 200. Default 50.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The `next` value of the previous page.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "machines"
+                  ],
+                  "properties": {
+                    "machines": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MachineAdvert"
+                      }
+                    },
+                    "next": {
+                      "type": "string",
+                      "description": "Pass as `cursor` for the next page; absent on the last."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/self/runs": {
+      "get": {
+        "operationId": "listRuns",
+        "summary": "Stored run attempts, newest first, without their jobs (read them from `/runs/{id}/{attempt}/jobs`).",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `gh run list`.",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "required": false,
+            "description": "One connected repository, `owner/name`; every connected repository when absent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "Epoch milliseconds; rows at or after it. Default: 90 days ago.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, 1 to 200. Default 50.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The `next` value of the previous page.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "runs"
+                  ],
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RunFact"
+                      }
+                    },
+                    "next": {
+                      "type": "string",
+                      "description": "Pass as `cursor` for the next page; absent on the last."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/self/runs/{id}/{attempt}/jobs": {
+      "get": {
+        "operationId": "listRunJobs",
+        "summary": "The jobs of one stored run attempt, with their steps.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `gh run view <id> --attempt <attempt>`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "attempt",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "repository",
+            "in": "query",
+            "required": false,
+            "description": "One connected repository, `owner/name`; every connected repository when absent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Rows per page, 1 to 200. Default 50.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "The `next` value of the previous page.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobs"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/JobFact"
+                      }
+                    },
+                    "next": {
+                      "type": "string",
+                      "description": "Pass as `cursor` for the next page; absent on the last."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/self/signals": {
+      "get": {
+        "operationId": "getSignals",
+        "summary": "The nine signals over stored runs, with a breakdown by person, repository, workflow, branch and event, and a per-day trend.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `hobo ci signals`.",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "required": false,
+            "description": "One connected repository, `owner/name`; every connected repository when absent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "Epoch milliseconds; rows at or after it. Default: 30 days ago.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/self/job-times": {
+      "get": {
+        "operationId": "getJobTimes",
+        "summary": "Times by workflow, job and runner over stored runs, each runner against ubuntu-latest.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `hobo ci performance --source github`.",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "required": false,
+            "description": "One connected repository, `owner/name`; every connected repository when absent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "Epoch milliseconds; rows at or after it. Default: 30 days ago.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobTimesReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/accounts/self/usage": {
+      "get": {
+        "operationId": "getUsage",
+        "summary": "Billed minutes per runner and day, short jobs, minutes kept off GitHub-hosted runners, and the included minutes left.",
+        "description": "Needs the `policy:read` scope and answers only the token's account. A host that keeps no run history answers 404 `not-stored-here` naming `hobo ci usage --source github`.",
+        "parameters": [
+          {
+            "name": "repository",
+            "in": "query",
+            "required": false,
+            "description": "One connected repository, `owner/name`; every connected repository when absent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "Epoch milliseconds; rows at or after it. Default: 30 days ago.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A parameter is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No account token, or one the relay does not know.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the policy:read scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not this account's, or `not-stored-here` with the command that reads GitHub instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The read API answers GET only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "accountToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An account token holding the `policy:read` scope."
+      }
+    },
+    "schemas": {
+      "RunnerOrder": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerOrder` as protobuf JSON.",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunnerOrderStep"
+            }
+          },
+          "skipUnhealthy": {
+            "type": "boolean"
+          },
+          "retry": {
+            "$ref": "#/components/schemas/RunnerRetryPolicy"
+          },
+          "autoSizeVcpus": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunnerOrderStep": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerOrderStep` as protobuf JSON.",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "minutesLimitPercent": {
+            "type": "integer"
+          },
+          "spendLimitUsd": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunnerRetryPolicy": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerRetryPolicy` as protobuf JSON.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "runner": {
+            "type": "string"
+          },
+          "max": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunnerRouteEvent": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerRouteEvent` as protobuf JSON.",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "atMs": {
+            "type": "number"
+          },
+          "request": {
+            "$ref": "#/components/schemas/RunnerRouteRequest"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/RunnerRouteDecision"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunnerRouteRequest": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerRouteRequest` as protobuf JSON.",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "private": {
+            "type": "boolean"
+          },
+          "fork": {
+            "type": "boolean"
+          },
+          "event": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "number"
+          },
+          "runAttempt": {
+            "type": "integer"
+          },
+          "job": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunnerRelayInput"
+            }
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "triggeringActorId": {
+            "type": "string"
+          },
+          "workflowRef": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunnerRelayInput": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerRelayInput` as protobuf JSON.",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunnerRouteDecision": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerRouteDecision` as protobuf JSON.",
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "runner": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          },
+          "machineId": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunnerRouteSkip"
+            }
+          },
+          "notInOrder": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "unhealthyFallback": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunnerRouteSkip": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunnerRouteSkip` as protobuf JSON.",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MachineAdvert": {
+        "type": "object",
+        "description": "`hobo.ci.v1.MachineAdvert` as protobuf JSON.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "runsOn": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "os": {
+            "type": "string"
+          },
+          "arch": {
+            "type": "string"
+          },
+          "slots": {
+            "type": "integer"
+          },
+          "busy": {
+            "type": "integer"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "sharing": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerLogin": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "lastSeenMs": {
+            "type": "number"
+          },
+          "signerKeyId": {
+            "type": "string"
+          },
+          "isolation": {
+            "type": "string"
+          },
+          "lastPickedAtMs": {
+            "type": "number"
+          },
+          "accountId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RunFact": {
+        "type": "object",
+        "description": "`hobo.ci.v1.RunFact` as protobuf JSON.",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "workflow": {
+            "type": "string"
+          },
+          "workflowPath": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "defaultBranch": {
+            "type": "string"
+          },
+          "headSha": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "createdAtMs": {
+            "type": "number"
+          },
+          "completedAtMs": {
+            "type": "number"
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobFact"
+            }
+          },
+          "changedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "JobFact": {
+        "type": "object",
+        "description": "`hobo.ci.v1.JobFact` as protobuf JSON.",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "runnerName": {
+            "type": "string"
+          },
+          "runnerGroup": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "queuedAtMs": {
+            "type": "number"
+          },
+          "startedAtMs": {
+            "type": "number"
+          },
+          "completedAtMs": {
+            "type": "number"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StepFact"
+            }
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "billed": {
+            "type": "boolean"
+          },
+          "relay": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StepFact": {
+        "type": "object",
+        "description": "`hobo.ci.v1.StepFact` as protobuf JSON.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer"
+          },
+          "conclusion": {
+            "type": "string"
+          },
+          "startedAtMs": {
+            "type": "number"
+          },
+          "completedAtMs": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SignalReport": {
+        "type": "object",
+        "properties": {
+          "sinceMs": {
+            "type": "number"
+          },
+          "runs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "signals": {
+            "type": "object",
+            "properties": {
+              "totalJobMinutes": {
+                "type": "number"
+              },
+              "signals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "no-concurrency",
+                        "same-commit",
+                        "short-jobs",
+                        "queue-waits",
+                        "slowest-job",
+                        "flaky-jobs",
+                        "runner-failures",
+                        "docs-changes",
+                        "wide-fanout"
+                      ]
+                    },
+                    "area": {
+                      "type": "string",
+                      "enum": [
+                        "cost",
+                        "speed",
+                        "complexity"
+                      ]
+                    },
+                    "minutes": {
+                      "type": "number"
+                    },
+                    "occurrences": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "shown": {
+                      "type": "boolean"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "minutes": {
+                            "type": "number"
+                          },
+                          "occurrences": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "minutes",
+                          "occurrences"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "area",
+                    "minutes",
+                    "occurrences",
+                    "shown",
+                    "rows"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "totalJobMinutes",
+              "signals"
+            ],
+            "additionalProperties": false
+          },
+          "by": {
+            "type": "object",
+            "properties": {
+              "person": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "runs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "jobMinutes": {
+                      "type": "number"
+                    },
+                    "minutes": {
+                      "type": "number"
+                    },
+                    "signals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "no-concurrency",
+                              "same-commit",
+                              "short-jobs",
+                              "queue-waits",
+                              "slowest-job",
+                              "flaky-jobs",
+                              "runner-failures",
+                              "docs-changes",
+                              "wide-fanout"
+                            ]
+                          },
+                          "minutes": {
+                            "type": "number"
+                          },
+                          "occurrences": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "minutes",
+                          "occurrences"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "runs",
+                    "jobMinutes",
+                    "minutes",
+                    "signals"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "repository": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "runs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "jobMinutes": {
+                      "type": "number"
+                    },
+                    "minutes": {
+                      "type": "number"
+                    },
+                    "signals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "no-concurrency",
+                              "same-commit",
+                              "short-jobs",
+                              "queue-waits",
+                              "slowest-job",
+                              "flaky-jobs",
+                              "runner-failures",
+                              "docs-changes",
+                              "wide-fanout"
+                            ]
+                          },
+                          "minutes": {
+                            "type": "number"
+                          },
+                          "occurrences": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "minutes",
+                          "occurrences"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "runs",
+                    "jobMinutes",
+                    "minutes",
+                    "signals"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "workflow": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "runs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "jobMinutes": {
+                      "type": "number"
+                    },
+                    "minutes": {
+                      "type": "number"
+                    },
+                    "signals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "no-concurrency",
+                              "same-commit",
+                              "short-jobs",
+                              "queue-waits",
+                              "slowest-job",
+                              "flaky-jobs",
+                              "runner-failures",
+                              "docs-changes",
+                              "wide-fanout"
+                            ]
+                          },
+                          "minutes": {
+                            "type": "number"
+                          },
+                          "occurrences": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "minutes",
+                          "occurrences"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "runs",
+                    "jobMinutes",
+                    "minutes",
+                    "signals"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "branch": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "runs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "jobMinutes": {
+                      "type": "number"
+                    },
+                    "minutes": {
+                      "type": "number"
+                    },
+                    "signals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "no-concurrency",
+                              "same-commit",
+                              "short-jobs",
+                              "queue-waits",
+                              "slowest-job",
+                              "flaky-jobs",
+                              "runner-failures",
+                              "docs-changes",
+                              "wide-fanout"
+                            ]
+                          },
+                          "minutes": {
+                            "type": "number"
+                          },
+                          "occurrences": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "minutes",
+                          "occurrences"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "runs",
+                    "jobMinutes",
+                    "minutes",
+                    "signals"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "event": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "runs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "jobMinutes": {
+                      "type": "number"
+                    },
+                    "minutes": {
+                      "type": "number"
+                    },
+                    "signals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "no-concurrency",
+                              "same-commit",
+                              "short-jobs",
+                              "queue-waits",
+                              "slowest-job",
+                              "flaky-jobs",
+                              "runner-failures",
+                              "docs-changes",
+                              "wide-fanout"
+                            ]
+                          },
+                          "minutes": {
+                            "type": "number"
+                          },
+                          "occurrences": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "minutes",
+                          "occurrences"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "runs",
+                    "jobMinutes",
+                    "minutes",
+                    "signals"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "person",
+              "repository",
+              "workflow",
+              "branch",
+              "event"
+            ],
+            "additionalProperties": false
+          },
+          "trend": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "runs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "jobMinutes": {
+                  "type": "number"
+                },
+                "minutes": {
+                  "type": "number"
+                },
+                "signals": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "enum": [
+                          "no-concurrency",
+                          "same-commit",
+                          "short-jobs",
+                          "queue-waits",
+                          "slowest-job",
+                          "flaky-jobs",
+                          "runner-failures",
+                          "docs-changes",
+                          "wide-fanout"
+                        ]
+                      },
+                      "minutes": {
+                        "type": "number"
+                      },
+                      "occurrences": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "minutes",
+                      "occurrences"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "day": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "runs",
+                "jobMinutes",
+                "minutes",
+                "signals",
+                "day"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "sinceMs",
+          "runs",
+          "signals",
+          "by",
+          "trend"
+        ],
+        "additionalProperties": false
+      },
+      "JobTimesReport": {
+        "type": "object",
+        "properties": {
+          "sinceMs": {
+            "type": "number"
+          },
+          "runs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "workflow": {
+                  "type": "string"
+                },
+                "runs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "successRate": {
+                  "type": "number"
+                },
+                "medianMs": {
+                  "type": "number"
+                },
+                "p90Ms": {
+                  "type": "number"
+                },
+                "medianWaitMs": {
+                  "type": "number"
+                },
+                "slowestJob": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "workflow",
+                "runs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "job": {
+                  "type": "string"
+                },
+                "workflow": {
+                  "type": "string"
+                },
+                "runners": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "runs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "medianRunMs": {
+                        "type": "number"
+                      },
+                      "p90RunMs": {
+                        "type": "number"
+                      },
+                      "confidence": {
+                        "type": "string",
+                        "enum": [
+                          "enough",
+                          "few",
+                          "sparse"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "runs",
+                      "medianRunMs",
+                      "p90RunMs",
+                      "confidence"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "fastest": {
+                  "type": "string"
+                },
+                "speedup": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "ratio": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "ratio"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "job",
+                "workflow",
+                "runners",
+                "speedup"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "runners": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "jobs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "started": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "startedShare": {
+                  "type": "number"
+                },
+                "medianWaitMs": {
+                  "type": "number"
+                },
+                "medianRunMs": {
+                  "type": "number"
+                },
+                "p90RunMs": {
+                  "type": "number"
+                },
+                "successRate": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "jobs",
+                "started",
+                "startedShare"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "sinceMs",
+          "runs",
+          "workflows",
+          "jobs",
+          "runners"
+        ],
+        "additionalProperties": false
+      },
+      "UsageReport": {
+        "type": "object",
+        "properties": {
+          "sinceMs": {
+            "type": "number"
+          },
+          "runs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "jobs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "billedMinutes": {
+            "type": "number"
+          },
+          "shortJobs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "wasteMinutes": {
+            "type": "number"
+          },
+          "keptMinutes": {
+            "type": "number"
+          },
+          "keptUsd": {
+            "type": "number"
+          },
+          "relayJobsAnswered": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "relaySavedMinutes": {
+            "type": "number"
+          },
+          "relaySavedUsd": {
+            "type": "number"
+          },
+          "rate": {
+            "type": "object",
+            "properties": {
+              "usdPerMinute": {
+                "type": "number"
+              },
+              "source": {
+                "type": "string"
+              },
+              "readOn": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "usdPerMinute",
+              "source",
+              "readOn"
+            ],
+            "additionalProperties": false
+          },
+          "runners": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "runner": {
+                  "type": "string"
+                },
+                "hosted": {
+                  "type": "boolean"
+                },
+                "jobs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "billedMinutes": {
+                  "type": "number"
+                },
+                "shortJobs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "wasteMinutes": {
+                  "type": "number"
+                },
+                "keptMinutes": {
+                  "type": "number"
+                },
+                "keptUsd": {
+                  "type": "number"
+                },
+                "relayJobsAnswered": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "relaySavedMinutes": {
+                  "type": "number"
+                },
+                "relaySavedUsd": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "runner",
+                "hosted",
+                "jobs",
+                "billedMinutes",
+                "shortJobs",
+                "wasteMinutes",
+                "keptMinutes",
+                "keptUsd",
+                "relayJobsAnswered",
+                "relaySavedMinutes",
+                "relaySavedUsd"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "jobs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "billedMinutes": {
+                  "type": "number"
+                },
+                "shortJobs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "wasteMinutes": {
+                  "type": "number"
+                },
+                "keptMinutes": {
+                  "type": "number"
+                },
+                "keptUsd": {
+                  "type": "number"
+                },
+                "relayJobsAnswered": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "relaySavedMinutes": {
+                  "type": "number"
+                },
+                "relaySavedUsd": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "day",
+                "jobs",
+                "billedMinutes",
+                "shortJobs",
+                "wasteMinutes",
+                "keptMinutes",
+                "keptUsd",
+                "relayJobsAnswered",
+                "relaySavedMinutes",
+                "relaySavedUsd"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "included": {
+            "type": "object",
+            "properties": {
+              "usedMinutes": {
+                "type": "number"
+              },
+              "includedMinutes": {
+                "type": "number"
+              },
+              "remainingMinutes": {
+                "type": "number"
+              },
+              "burnPerDay": {
+                "type": "number"
+              },
+              "daysLeft": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "usedMinutes",
+              "includedMinutes",
+              "remainingMinutes",
+              "burnPerDay"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "sinceMs",
+          "runs",
+          "jobs",
+          "billedMinutes",
+          "shortJobs",
+          "wasteMinutes",
+          "keptMinutes",
+          "keptUsd",
+          "relayJobsAnswered",
+          "relaySavedMinutes",
+          "relaySavedUsd",
+          "rate",
+          "runners",
+          "days"
+        ],
+        "additionalProperties": false
+      },
+      "ReadApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "unauthenticated",
+              "forbidden",
+              "method-not-allowed",
+              "bad-request",
+              "not-found",
+              "not-stored-here"
+            ]
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

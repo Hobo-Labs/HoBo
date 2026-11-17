@@ -1848,3 +1848,55 @@ with its own webhook and the run's span sent a minute and a half later share
 the trace id of the run and attempt, and the job's parent is the root. The
 relay host does not call `RunTraceIngest` yet, so traces from production
 runs are built, not proven.
+
+## Read API and OpenAPI
+
+[`src/read-api.ts`](src/read-api.ts) is the relay's read API
+([ADR-0183](../../docs/design/adr/runner-order.md), gauntlet case S06): the
+records the dashboard, the `hobo ci` commands and agents read, from one
+route table.
+
+| Path (below `/v1/accounts/self`) | Answers |
+| --- | --- |
+| `GET /runner-order?repository=` | The committed `RunnerOrder`, and the parser's sentence when it does not parse |
+| `GET /routes` | Route journal entries (`RunnerRouteEvent`), newest first |
+| `GET /machines` | The account's machines (`MachineAdvert`), in id order |
+| `GET /runs` | Stored run attempts (`RunFact`), newest first, without their jobs |
+| `GET /runs/{id}/{attempt}/jobs` | One attempt's jobs (`JobFact`) with their steps |
+| `GET /signals` | The nine signals with a breakdown and a per-day trend |
+| `GET /job-times` | Times by workflow, job and runner, each runner against `ubuntu-latest` |
+| `GET /usage` | Billed and kept minutes per runner and day, against the included amount |
+
+- Every path needs an account token with the `policy:read` scope, the one the
+  account API's other reads use, and answers only that token's account:
+  routes and machines are read by account id, runs only from the
+  repositories the account has connected. A repository, run or attempt of
+  another account answers 404, as one that does not exist would, and a row a
+  store hands back for another account is dropped.
+- Stored records are protobuf JSON; reports are plain JSON. Lists take
+  `limit` (1 to 200, default 50) and the previous page's `next` as `cursor`,
+  and reach at most 1,000 rows deep; `since` is epoch milliseconds, 90 days
+  back by default for lists and 30 for reports.
+- A host that keeps no journal, machine registry or run history (the
+  stateless Vercel host, ADR-0179) passes `undefined` for it. Its paths then
+  answer 404 `not-stored-here` with the command that reads GitHub instead,
+  such as `hobo ci signals` or `gh run list`. The runner order is read from
+  the repository on every host.
+- `ReadApiClient` reads it with an account token and parses each answer back
+  into the generated records and the report types.
+- [`schema/read-api.openapi.json`](schema/read-api.openapi.json) is the
+  OpenAPI 3.1 description, generated from the route table: protobuf records
+  from their descriptors, reports from the zod schemas the client parses
+  with. `node --import tsx scripts/read-api-openapi.ts` writes it and
+  `--check` fails when it is stale; `test/read-api.test.ts` calls every path
+  and checks each answer against the file.
+- [`contracts/read-api.pact.json`](contracts/read-api.pact.json) holds one
+  interaction per path and three refusals (no read scope, another account's
+  repository, a host that keeps no run history).
+  `contracts/read-api.consumer.test.ts` reads each through `ReadApiClient`,
+  and `contracts/read-api.provider.test.ts` has the handler answer each with
+  the declared body.
+
+`createReadApi` returns a handler that answers a read API path and returns
+`undefined` for any other, so a relay can try it before its control routes.
+No deployed relay serves it yet, so the channel is built, not proven.
