@@ -76,6 +76,13 @@ describe("Rivet multiple pool mapping", () => {
 	it("plans distinct Alchemy DurableObjects through their independently attested pool hosts", async () => {
 		const web = app("web", "web", "1");
 		const api = app("api", "api", "2");
+		let callAccesses = 0;
+		Object.defineProperty(web.poolHost.deployExternal, "call", {
+			get() {
+				callAccesses++;
+				throw new Error("untrusted function property");
+			},
+		});
 		const verifyPool = vi.fn(() => true);
 		const mappers = createRivetMultiPoolPrimitiveMappers(
 			[web, api],
@@ -168,6 +175,7 @@ describe("Rivet multiple pool mapping", () => {
 			});
 			expect(result.changes).toBe(2);
 			expect(web.deploys).toEqual(["web:/src/web.ts"]);
+			expect(callAccesses).toBe(0);
 			expect(api.deploys).toEqual(["api:/src/api.ts"]);
 			expect(verifyPool).toHaveBeenCalled();
 		} finally {

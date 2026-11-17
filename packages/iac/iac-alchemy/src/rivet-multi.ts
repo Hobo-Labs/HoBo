@@ -47,7 +47,7 @@ type BuildInput<
  * One external Rivet program owns a whole Alchemy pool. Map multiple apps only
  * when a host independently attests a different exclusive pool for each one.
  */
-/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: pool services and verifiers enter through a runtime provider boundary. */
+/* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply -- SAFETY: pool services cross a provider boundary, and Reflect.apply avoids mutable function.call properties. */
 export function createRivetMultiPoolPrimitiveMappers<
 	Entrypoint extends RivetHttpEntrypoint,
 	Requirements,
@@ -99,8 +99,8 @@ export function createRivetMultiPoolPrimitiveMappers<
 		const deployExternal = external.value;
 		const deployCrate = crate.value;
 		const stableHost: PoolHost["Service"] = Object.freeze({
-			deployExternal: (object) => deployExternal.call(host, object),
-			deployCrate: (object) => deployCrate.call(host, object),
+			deployExternal: (object) => Reflect.apply(deployExternal, host, [object]),
+			deployCrate: (object) => Reflect.apply(deployCrate, host, [object]),
 		});
 		const attestation = Object.freeze({
 			source,
