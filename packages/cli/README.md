@@ -48,6 +48,10 @@ Canonical verbs: **43**, defined in `src/shell/verbs.ts` — including lifecycle
 
 Global flags: `--json`, `--camp <camp>`, `--cwd <path>`, `--verbose`, `-q`, `--help`.
 
+The composed `hobo doctor --offline --json` command reports the selected local
+backend and actionable setup guidance without contacting cloud providers. Use
+`hobo --help` to discover the doctor command and other canonical verbs.
+
 Yard desired-state delivery retains resources omitted from a declaration by
 default; use `--mode complete` to remove them through the deployment gate.
 Broker placement and budgeted hosting refuse an explicit `--mode` until their
