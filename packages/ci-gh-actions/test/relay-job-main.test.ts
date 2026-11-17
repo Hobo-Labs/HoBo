@@ -6,6 +6,9 @@
  * simulator as GitHub, and the job is completed with the outputs and
  * annotations the entry wrote, so GitHub's own rules decide what runs next.
  */
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fromJsonString } from "@bufbuild/protobuf";
 import { DEFAULT_RUNNER_ORDER, RunnerRouteEventSchema } from "@hobo/ci";
 import {
@@ -563,7 +566,8 @@ describe("the evaluator's command line", () => {
 			print: (line: string) => lines.push(line),
 			fetch: globalThis.fetch,
 			nowMs: 1,
-			cwd: "/nonexistent",
+			// Neither run gets as far as reading the checkout.
+			cwd: mkdtempSync(join(tmpdir(), "hobo-relay-cli-")),
 		};
 		expect(await runRelayJobCli({ ...base, argv: ["--colour", "red"] })).toBe(
 			1,
