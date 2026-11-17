@@ -6,6 +6,7 @@ import {
 	buildDeploymentRequestFromParts,
 	resolveBindleDeployment,
 } from "../src/yard-placement/deploy.js";
+import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 const definition = (id: string, price = "0"): BrokerCatalogDefinition => ({
 	id,
@@ -33,6 +34,7 @@ async function resolve(
 	});
 	return resolveBindleDeployment(request, {
 		brokerId: "broker:test",
+		authorizeLocalHosting: approveLocalHosting,
 		catalog: { catalogHash: "sha256:catalog", definitions: () => definitions },
 	});
 }
@@ -153,6 +155,7 @@ describe("Yard residual placement evidence", () => {
 		});
 		const result = await resolveBindleDeployment(request, {
 			brokerId: "broker:test",
+			authorizeLocalHosting: approveLocalHosting,
 			catalog: {
 				catalogHash: "sha256:catalog",
 				definitions: () => [first, second],

@@ -325,8 +325,20 @@ export interface ExecutionUnit {
 	readonly residualDefinitions: readonly string[];
 }
 
+/** Trusted host policy and zero-liability assertion for this exact local work. */
+export interface LocalHostingProof {
+	readonly schemaVersion: "hobo.local-hosting-proof/v1";
+	readonly bindingDigest: ContentHash;
+	readonly effect: "allow" | "allow-degraded";
+	readonly obligationsSatisfied: true;
+	readonly policyHash: string;
+	readonly evidenceRef: string;
+	readonly liabilityBoundMicros: 0;
+}
+
 // domain-view: planning/placement domain type (wire form in broker.proto when present).
 export interface YardPlacementReceipt {
+	readonly localHostingProof?: LocalHostingProof;
 	readonly budgetReservation?: BudgetReservation;
 	readonly hostingQuote?: HostingQuote;
 	readonly hostingPolicyProof?: HostingPolicyProof;

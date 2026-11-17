@@ -8,6 +8,7 @@ import {
 	resolveBindleDeployment,
 } from "../src/yard-placement/deploy.js";
 import { buildExecutionUnits } from "../src/yard-placement/resolvers.js";
+import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 const base = {
 	yardId: "yard:local",
@@ -44,6 +45,7 @@ describe("Yard resource-to-definition binding", () => {
 		];
 		const result = await resolveBindleDeployment(request, {
 			brokerId: "broker:test",
+			authorizeLocalHosting: approveLocalHosting,
 			catalog: { catalogHash: "sha256:catalog", definitions: () => defs },
 		});
 		expect(result.outcome).toBe("resolved");
@@ -117,6 +119,7 @@ describe("Yard resource-to-definition binding", () => {
 			{ ...valid, resources: [...valid.resources, ...valid.resources] },
 			{
 				brokerId: "broker:test",
+				authorizeLocalHosting: approveLocalHosting,
 				catalog: {
 					catalogHash: "sha256:catalog",
 					definitions: () => [catalogDefinition("service", "service")],
@@ -140,6 +143,7 @@ describe("Yard resource-to-definition binding", () => {
 		};
 		const result = await resolveBindleDeployment(mutable, {
 			brokerId: "broker:test",
+			authorizeLocalHosting: approveLocalHosting,
 			catalog: {
 				catalogHash: "sha256:catalog",
 				definitions: () => [definition],

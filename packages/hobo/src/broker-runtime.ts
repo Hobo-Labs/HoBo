@@ -24,6 +24,7 @@ import {
 	type BrokerPolicySet,
 	type BrokerResolution,
 	buildDeploymentRequestFromParts,
+	contentHashOf,
 	createBroker,
 	type HoboBroker,
 	LOCAL_HOST_PROVIDER_ID,
@@ -69,6 +70,16 @@ export const EMBEDDED_BROKER_SCHEMA = "hobo.broker-runtime/v1" as const;
 export const WASM_SANDBOX_PROVIDER_ID = RUNTIME_WASM_SANDBOX_ID;
 export const LOCAL_PROCESS_PROVIDER_ID = LOCAL_HOST_PROVIDER_ID;
 export { OCI_PROVIDER_ID };
+
+const EMBEDDED_LOCAL_FEE_POLICY_HASH = contentHashOf({
+	schema: "hobo.embedded-local-service-fee/v1",
+	ownerTenantId: "local",
+	providerId: LOCAL_PROCESS_PROVIDER_ID,
+	region: LOCAL_HOST_REGION,
+	unit: "hour",
+	marginalPrice: "0.00",
+	liabilityBoundMicros: 0,
+});
 
 export interface EmbeddedBrokerState {
 	readonly schemaVersion: typeof EMBEDDED_BROKER_SCHEMA;
@@ -165,19 +176,19 @@ export function createYardBrokerCatalog(options: {
 			id: `${LOCAL_PROCESS_PROVIDER_ID}:http`,
 			providerId: LOCAL_PROCESS_PROVIDER_ID,
 			port: "hobo:http-service",
-			marginalPrice: "0.02",
+			marginalPrice: "0.00",
 		}),
 		definitionEntry({
 			id: `${LOCAL_PROCESS_PROVIDER_ID}:web`,
 			providerId: LOCAL_PROCESS_PROVIDER_ID,
 			port: "hobo:web-app",
-			marginalPrice: "0.02",
+			marginalPrice: "0.00",
 		}),
 		definitionEntry({
 			id: `${LOCAL_PROCESS_PROVIDER_ID}:*`,
 			providerId: LOCAL_PROCESS_PROVIDER_ID,
 			port: "*",
-			marginalPrice: "0.02",
+			marginalPrice: "0.00",
 		}),
 	];
 	if (options.includeWasmSandbox) {
@@ -633,6 +644,36 @@ export async function resolveBindlePlacement(options: {
 		catalog,
 		ownerTenantId: "local",
 		seedLocalYard: true,
+		authorizeLocalHosting(input) {
+			// This embedded policy covers only the HoBo local-process service fee.
+			// The host's infrastructure and third-party costs need separate funding.
+			if (
+				input.ownerTenantId !== "local" ||
+				input.providerId !== LOCAL_PROCESS_PROVIDER_ID ||
+				input.catalogHash !== catalog.catalogHash ||
+				input.request.spendEstimateUsd !== 0 ||
+				input.placements.some(
+					(placement) =>
+						placement.providerId !== LOCAL_PROCESS_PROVIDER_ID ||
+						!placement.definitionId.startsWith(
+							`${LOCAL_PROCESS_PROVIDER_ID}:`,
+						) ||
+						placement.region !== LOCAL_HOST_REGION ||
+						placement.unit !== "hour" ||
+						placement.marginalPrice !== "0.00",
+				)
+			)
+				return undefined;
+			return {
+				schemaVersion: "hobo.local-hosting-proof/v1",
+				bindingDigest: input.bindingDigest,
+				effect: "allow",
+				obligationsSatisfied: true,
+				policyHash: EMBEDDED_LOCAL_FEE_POLICY_HASH,
+				evidenceRef: "embedded-local-host:service-fee-only",
+				liabilityBoundMicros: 0,
+			};
+		},
 	});
 
 	if (yardFirst.outcome === "rejected" || !yardFirst.receipt) {

@@ -230,6 +230,8 @@ export {
 	foldYardEventStore,
 	foldYardEventStoreAll,
 	inventorySnapshotFromFold,
+	type LocalHostingAuthorizationContext,
+	type LocalHostingProof,
 	localYardInstance,
 	matchYard,
 	type ProviderNativeSignal,
