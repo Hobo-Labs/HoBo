@@ -181,6 +181,12 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 		remediation: "restore complete, stable hosting quote evidence",
 	},
 	{
+		code: "yard-runtime-catalog-unavailable",
+		plane: "placement",
+		remediation:
+			"restore current Yard runtime catalog evidence before retrying",
+	},
+	{
 		code: "yard-generation-uncertain",
 		plane: "placement",
 		remediation:

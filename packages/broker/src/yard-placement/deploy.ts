@@ -293,7 +293,10 @@ export async function resolveBindleDeployment(
 			"owner-tenant-mismatch",
 			"deployment owner differs from the authenticated tenant",
 		);
-	const runtimeCatalog = deps.runtimeCatalog ?? createYardRuntimeCatalog();
+	const runtimeCatalogInput = deps.runtimeCatalog;
+	const generationPolicyInput = deps.generationPolicy;
+	const connectorsInput = deps.connectors;
+	const runtimeCatalog = runtimeCatalogInput ?? createYardRuntimeCatalog();
 	const requestDigest = contentHashOf(request);
 	const brokerId = deps.brokerId;
 	const ownerTenant = deps.ownerTenantId;
@@ -701,6 +704,7 @@ export async function resolveBindleDeployment(
 	let selectedYardId = match.winnerYardId;
 	let generationAttemptId: string | undefined;
 	let generationPlanHash: ContentHash | undefined;
+	let generationAuthorityCurrent: (() => boolean) | undefined;
 	const rejectAfterGeneration = (
 		plane: string,
 		code: string,
@@ -715,14 +719,33 @@ export async function resolveBindleDeployment(
 			`${message}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
 		);
 	};
-	const runtimeSnapshot = runtimeCatalog.snapshot();
+	let runtimeSnapshotMethod: typeof runtimeCatalog.snapshot;
+	let runtimeSnapshot: ReturnType<typeof runtimeCatalog.snapshot>;
+	try {
+		runtimeSnapshotMethod = runtimeCatalog.snapshot;
+		runtimeSnapshot = runtimeSnapshotMethod.call(runtimeCatalog);
+	} catch (error) {
+		return rejectResult(
+			foldState,
+			emitted,
+			"placement",
+			"yard-runtime-catalog-unavailable",
+			error instanceof Error
+				? error.message
+				: "Yard runtime catalog unavailable",
+		);
+	}
 
 	if (match.outcome === "generation-required") {
+		const runtimeSnapshotDigest = contentHashOf(runtimeSnapshot);
+		const generationPolicy =
+			generationPolicyInput ?? DEFAULT_YARD_GENERATION_POLICY;
+		const generationPolicyDigest = contentHashOf(generationPolicy);
 		const genDecision = planYardGeneration({
 			ownerTenantId,
 			requestedLayout: request.yard.requestedLayout,
 			runtimeCatalog: runtimeSnapshot,
-			policy: deps.generationPolicy ?? DEFAULT_YARD_GENERATION_POLICY,
+			policy: generationPolicy,
 			allowGenerationRequested: request.yard.allowGenerationRequested,
 			attemptId: `gen-${request.requestId}`,
 		});
@@ -751,6 +774,94 @@ export async function resolveBindleDeployment(
 				return false;
 			}
 		};
+		const connectors = connectorsInput ?? defaultYardGenerationConnectors();
+		const connectorLookup = connectors.get;
+		let selectedConnector: YardGenerationConnector | undefined;
+		try {
+			selectedConnector = connectors.get(genDecision.plan.generatorConnectorId);
+		} catch {
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-denied",
+				"generation connector unavailable",
+			);
+		}
+		if (
+			!selectedConnector ||
+			selectedConnector.id !== genDecision.plan.generatorConnectorId
+		)
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-denied",
+				"generation connector missing or mismatched",
+			);
+		const selectedId = selectedConnector.id;
+		const selectedKind = selectedConnector.kind;
+		const selectedPlan = selectedConnector.plan;
+		const selectedProvision = selectedConnector.provision;
+		const selectedInspect = selectedConnector.inspect;
+		const selectedCompensate = selectedConnector.compensate;
+		// SAFETY: connectors may expose this optional provider-signal extension.
+		const selectedSignals = (
+			selectedConnector as YardGenerationConnector & {
+				signalsFor?: (
+					id: string,
+				) => readonly { kind: string; payload: JsonObject }[];
+			}
+		).signalsFor;
+		generationAuthorityCurrent = () => {
+			try {
+				if (
+					deps.generationPolicy !== generationPolicyInput ||
+					deps.runtimeCatalog !== runtimeCatalogInput ||
+					deps.connectors !== connectorsInput ||
+					runtimeCatalog.snapshot !== runtimeSnapshotMethod ||
+					connectors.get !== connectorLookup ||
+					contentHashOf(generationPolicy) !== generationPolicyDigest ||
+					contentHashOf(runtimeCatalog.snapshot()) !== runtimeSnapshotDigest ||
+					!generationPlanCurrent()
+				)
+					return false;
+				const nowConnector = connectors.get(
+					genDecision.plan.generatorConnectorId,
+				);
+				// Registry and snapshot callbacks can themselves change authority.
+				// Recheck their inputs after invoking them before allowing an effect.
+				return (
+					nowConnector === selectedConnector &&
+					nowConnector.id === selectedId &&
+					nowConnector.kind === selectedKind &&
+					nowConnector.plan === selectedPlan &&
+					nowConnector.provision === selectedProvision &&
+					nowConnector.inspect === selectedInspect &&
+					nowConnector.compensate === selectedCompensate &&
+					// SAFETY: compare the same optional extension captured above.
+					(nowConnector as YardGenerationConnector & { signalsFor?: unknown })
+						.signalsFor === selectedSignals &&
+					deps.generationPolicy === generationPolicyInput &&
+					deps.runtimeCatalog === runtimeCatalogInput &&
+					deps.connectors === connectorsInput &&
+					contentHashOf(generationPolicy) === generationPolicyDigest &&
+					contentHashOf(runtimeCatalog.snapshot()) === runtimeSnapshotDigest &&
+					generationPlanCurrent() &&
+					paidContextCurrent() &&
+					deps.generationPolicy === generationPolicyInput &&
+					deps.runtimeCatalog === runtimeCatalogInput &&
+					deps.connectors === connectorsInput &&
+					runtimeCatalog.snapshot === runtimeSnapshotMethod &&
+					connectors.get === connectorLookup &&
+					contentHashOf(generationPolicy) === generationPolicyDigest &&
+					selectedConnector.provision === selectedProvision &&
+					selectedConnector.inspect === selectedInspect
+				);
+			} catch {
+				return false;
+			}
+		};
 		let inspectGenerationOnly = false;
 		generationPlanHash = genDecision.plan.planHash;
 		const planned = placeResourcesUnderYard(
@@ -773,13 +884,13 @@ export async function resolveBindleDeployment(
 				planned.decisions,
 				generationPlanHash,
 			);
-			if (!generationPlanCurrent())
+			if (!generationAuthorityCurrent())
 				throw new Error(
-					"generation plan changed after quote approval; reconcile reservation",
+					"generation authority changed after quote approval; reconcile reservation",
 				);
 			const financial = deps.hostingBudget;
 			if (financial && budgetReservation && hostingQuote) {
-				if (!paidContextCurrent() || !generationPlanCurrent())
+				if (!paidContextCurrent() || !generationAuthorityCurrent())
 					throw new Error(
 						"hosting context changed before generation claim; reconcile reservation",
 					);
@@ -788,7 +899,7 @@ export async function resolveBindleDeployment(
 				const head = financial.authority.read(now);
 				const previous = financial.authority.lookup(reservationId);
 				inspectGenerationOnly = Boolean(previous?.executionDigest);
-				if (!paidContextCurrent() || !generationPlanCurrent())
+				if (!paidContextCurrent() || !generationAuthorityCurrent())
 					throw new Error(
 						"hosting context changed before generation claim; reconcile reservation",
 					);
@@ -840,8 +951,20 @@ export async function resolveBindleDeployment(
 			}),
 		);
 
-		const connectors = deps.connectors ?? defaultYardGenerationConnectors();
-		const saga = createYardGenerationSaga({ connectors });
+		// Pin the actual callable methods so a registry lookup cannot redirect an
+		// already authorized provider operation between the final check and call.
+		const pinnedConnector: YardGenerationConnector = {
+			id: selectedId,
+			kind: selectedKind,
+			plan: (input) => selectedPlan.call(selectedConnector, input),
+			provision: (plan) => selectedProvision.call(selectedConnector, plan),
+			inspect: (id) => selectedInspect.call(selectedConnector, id),
+		};
+		const saga = createYardGenerationSaga({
+			connectors: new Map([
+				[genDecision.plan.generatorConnectorId, pinnedConnector],
+			]),
+		});
 		append(
 			yardEvent(YARD_EVENTS.GenerationStarted, {
 				attemptId: genDecision.plan.attemptId,
@@ -854,14 +977,17 @@ export async function resolveBindleDeployment(
 
 		let genResult: Awaited<ReturnType<typeof saga.run>>;
 		try {
-			if (!generationPlanCurrent())
-				throw new Error("generation plan changed before provider operation");
+			if (!generationAuthorityCurrent())
+				throw new Error(
+					"generation authority changed before provider operation",
+				);
 			if (inspectGenerationOnly) {
-				const connector = connectors.get(genDecision.plan.generatorConnectorId);
-				if (!connector) throw new Error("claimed generation connector missing");
 				// The claim may have committed before a lost provider acknowledgement.
 				// Reopening a saga must inspect that operation rather than provision again.
-				genResult = await connector.inspect(genDecision.plan.attemptId);
+				genResult = await selectedInspect.call(
+					selectedConnector,
+					genDecision.plan.attemptId,
+				);
 			} else genResult = await saga.run(genDecision.plan);
 		} catch (error) {
 			const marked = markGenerationUncertain();
@@ -875,8 +1001,10 @@ export async function resolveBindleDeployment(
 		}
 		try {
 			if (budgetReservation && hostingQuote && hostingBudget) {
-				if (!paidContextCurrent())
-					throw new Error("hosting context changed during generation");
+				if (!paidContextCurrent() || !generationAuthorityCurrent())
+					throw new Error(
+						"hosting or generation authority changed during generation",
+					);
 				validateHostingQuote(hostingQuote, hostingBudget.now());
 				if (!paidContextCurrent())
 					throw new Error("hosting context changed after generation");
@@ -893,20 +1021,12 @@ export async function resolveBindleDeployment(
 		}
 		generationAttemptId = genDecision.plan.attemptId;
 
-		// Feed connector progress signals through the provider fold resolver.
-		// SAFETY: assertion required at this I/O or test boundary.
-		const connector = connectors.get(genDecision.plan.generatorConnectorId) as
-			| (YardGenerationConnector & {
-					signalsFor?: (
-						id: string,
-					) => readonly { kind: string; payload: JsonObject }[];
-			  })
-			| undefined;
+		// Feed the pinned connector's progress signals through the provider fold.
 		try {
-			if (connector?.signalsFor) {
+			if (selectedSignals) {
 				appendProviderSignals(
 					genDecision.plan.providerId,
-					connector.signalsFor(genDecision.plan.attemptId),
+					selectedSignals.call(selectedConnector, genDecision.plan.attemptId),
 				);
 			}
 		} catch (error) {
@@ -1115,6 +1235,8 @@ export async function resolveBindleDeployment(
 			placements.decisions,
 			generationPlanHash,
 		);
+		if (generationAuthorityCurrent && !generationAuthorityCurrent())
+			throw new Error("generation authority changed before receipt");
 		if (hostingQuote && hostingBudget) {
 			if (!paidContextCurrent())
 				throw new Error(

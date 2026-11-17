@@ -7,7 +7,7 @@ description: Verify explicit local-hosting policy, zero-liability proof, current
 
 **Properties:** Local Yard placement without a durable hosting budget requires a host policy decision with fulfilled obligations, an evidence reference, a SHA-256 policy digest, an exact work-binding digest and zero managed-hosting liability. The authority, budget, broker, tenant, catalog, request and selected work must remain current around the callback. A local placement proof cannot authorize Yard generation. A failure can run a paid or policy-denied workload without a financial hold.
 
-**Review baseline:** commit `bfc4b86a2601e8acf97100f313b365d191369136`. PASS for the bounded models, symbolic abstraction and generated tests below.
+**Review baseline:** commit `2a3a383c304d96e1a0306a89c43838f1bfd80059`. PASS for the bounded models, symbolic abstraction and generated tests below.
 
 ## Covered code
 

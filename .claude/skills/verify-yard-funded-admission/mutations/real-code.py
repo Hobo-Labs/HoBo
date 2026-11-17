@@ -37,7 +37,7 @@ def hold(s):
  if n!=1:raise Exception('hold guard not found')
  return s
 def claim(s):
- pattern=r'if \(!paidContextCurrent\(\) \|\| !generationPlanCurrent\(\)\)\s*throw new Error\(\s*"hosting context changed before generation claim; reconcile reservation",\s*\);'
+ pattern=r'if \(!paidContextCurrent\(\) \|\| !generationAuthorityCurrent\(\)\)\s*throw new Error\(\s*"hosting context changed before generation claim; reconcile reservation",\s*\);'
  found=list(re.finditer(pattern,s))
  if len(found)!=2:raise Exception(f'claim guards found {len(found)}')
  m=found[-1];return s[:m.start()]+s[m.end():]
@@ -47,12 +47,12 @@ def work_binding(s):
  if n!=1:raise Exception('work binding guard not found')
  return s
 def plan_claim(s):
- pattern=r'if \(!generationPlanCurrent\(\)\)\s*throw new Error\(\s*"generation plan changed after quote approval; reconcile reservation",\s*\);'
+ pattern=r'if \(!generationAuthorityCurrent\(\)\)\s*throw new Error\(\s*"generation authority changed after quote approval; reconcile reservation",\s*\);'
  s,n=re.subn(pattern,'',s,count=1)
- if n!=1 or s.count(' || !generationPlanCurrent()')!=2:raise Exception('generation claim guards not found')
- return s.replace(' || !generationPlanCurrent()','')
+ if n!=1 or s.count(' || !generationAuthorityCurrent()')<2:raise Exception('generation claim guards not found')
+ return s.replace(' || !generationAuthorityCurrent()','',2)
 def plan_effect(s):
- pattern=r'if \(!generationPlanCurrent\(\)\)\s*throw new Error\(\s*"generation plan changed before provider operation",?\s*\);'
+ pattern=r'if \(!generationAuthorityCurrent\(\)\)\s*throw new Error\(\s*"generation authority changed before provider operation",?\s*\);'
  s,n=re.subn(pattern,'',s,count=1)
  if n!=1:raise Exception('generation effect guard not found')
  return s

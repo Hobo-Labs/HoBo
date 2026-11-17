@@ -73,7 +73,14 @@ and digest before obtaining a quote; generated Yards also supply the planned
 `generationPlanHash`. The policy callback receives the bound placements and
 both digests. Legacy Yard quotes without a work digest are refused. If selected
 work changes after a provider effect, the hold is retained for reconciliation.
-The host remains responsible for its policy and provider assertions.
+The broker snapshots generation policy, runtime registration and connector
+identity and methods before policy approval, then checks them again before claim,
+before the provider call and after the operation. It invokes pinned connector
+methods rather than looking up a new implementation at the call boundary. If
+authority changes after a provider effect, the hold remains for reconciliation.
+The host remains responsible for truthful policy, connector and provider facts;
+these checks cannot detect a change restored between observations or control
+what a remote provider actually does.
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of quote approval, the reservation handoff and
@@ -148,6 +155,27 @@ stateDiagram-v2
   s2 --> s3: start provider operation
   s3 --> s4: retain exposure for reconciliation
   s3 --> s5: match with current evidence
+```
+
+The [Yard generation authority skill](../../.agents/skills/verify-yard-generation-authority/SKILL.md)
+checks a finite abstraction of authority changes around a provider effect. This
+projection hides 64 same-label steps and assumes truthful host evidence.
+
+```mermaid
+stateDiagram-v2
+  s0: Generation awaits current authority
+  s1: Generation authority claimed
+  s2: Changed authority refused#59; hold retained
+  s3: Provider operation completed
+  s4: Generated Yard admitted
+  s5: Changed authority refused#59; reconcile the hold
+  [*] --> s0
+  s0 --> s2: refuse changed policy, runtime or connector
+  s0 --> s1: claim current authority
+  s1 --> s2: refuse changed authority
+  s1 --> s3: run the provider operation
+  s3 --> s5: retain exposure for reconciliation
+  s3 --> s4: admit current generation
 ```
 
 Without a budget authority, local placement also requires an

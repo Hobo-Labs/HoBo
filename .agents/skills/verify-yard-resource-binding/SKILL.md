@@ -7,7 +7,7 @@ description: Verify exact associations between Yard resource requests, selected 
 
 **Properties:** Every resource execution unit records exactly the definition selected for that resource, duplicate or malformed resource identities are refused, and later mutation of the caller's resource list cannot change the accepted request. A failure can attach another resource's provider definition, omit the selected definition, or produce ambiguous duplicate execution units.
 
-**Review baseline:** commit `bfc4b86a2601e8acf97100f313b365d191369136`. PASS for the bounded models, symbolic abstraction and generated tests below.
+**Review baseline:** commit `2a3a383c304d96e1a0306a89c43838f1bfd80059`. PASS for the bounded models, symbolic abstraction and generated tests below.
 
 ## Covered code
 
