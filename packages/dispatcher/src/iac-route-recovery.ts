@@ -309,10 +309,13 @@ export function recoveryMatchesSnapshot(
 		snapshot.version !== claim.expectedVersion
 	)
 		return false;
+	if (snapshot.phase === "finished" && snapshot.outcome?.status === "selected")
+		return false;
 	if (
 		snapshot.phase === "finished" &&
-		(snapshot.outcome?.status === "denied" ||
-			snapshot.outcome?.status === "selected")
+		snapshot.outcome?.status === "denied" &&
+		(claim.outcome.kind !== "no-effect" ||
+			snapshot.attempts.some((attempt) => attempt.status !== "denied"))
 	)
 		return false;
 	if (claim.outcome.kind === "no-effect") return true;

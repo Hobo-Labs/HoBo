@@ -206,8 +206,10 @@ work from producing future provider effects or financial exposure.
 No-effect recovery requires authoritative proof that every possible reservation
 is settled or released and that no new charge or effect can arise; an empty
 list is valid only when the financial authority proves there are no holds or
-liabilities to list. Recovery never releases or settles a reservation. It
-records one successor request for a new attempt. Already-applied recovery
+liabilities to list. Recovery never releases or settles a reservation. A route that already
+finished denied can use this path only when all recorded attempts are denied
+(or there were no attempts) and the same independent proofs are verified. The
+transaction records one successor request for a new attempt. Already-applied recovery
 records the selected target and exact inventory and either its verified held or
 settled reservation, or a verified `not-applicable` disposition. It never
 creates a retry. Unavailable or conflicting proof leaves the original route

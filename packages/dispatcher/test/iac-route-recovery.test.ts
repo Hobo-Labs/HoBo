@@ -461,7 +461,7 @@ describe("recovery authority boundaries", () => {
 		expect((await recoverIacRoute(f.deps, f.claim)).status).toBe("replay");
 	});
 
-	it("rejects selected without an attempt and leaves a prior definitive outcome alone", async () => {
+	it("rejects selected without an attempt but can recover an independently verified empty denial", async () => {
 		const f = fixture();
 		const owner = await f.authority.claim(f.identity);
 		if (owner.status !== "claimed") throw new Error("claim missing");
@@ -500,7 +500,7 @@ describe("recovery authority boundaries", () => {
 					},
 				})
 			).status,
-		).toBe("denied");
+		).toBe("recovered");
 	});
 
 	it("requires complete terminal financial proof and never releases a hold itself", async () => {
@@ -887,4 +887,115 @@ it.each(
 	expect(await f.authority.verifyAttempt(f.permit)).toBe(!verified);
 	const record = await f.store.get(f.identity);
 	expect(record !== undefined).toBe(verified);
+});
+
+it("recovers an exhausted denied route and executes exactly its authorized successor", async () => {
+	const f = await started();
+	await f.authority.denyAttempt({
+		...f.identity,
+		claimToken: f.owner.claimToken,
+		permit: f.permit,
+	});
+	await f.authority.finish({
+		...f.identity,
+		claimToken: f.owner.claimToken,
+		outcome: { status: "denied" },
+	});
+	const snapshot = await f.store.inspect(f.identity);
+	if (!snapshot) throw new Error("snapshot missing");
+	const claim = { ...f.claim, expectedVersion: snapshot.version };
+	expect((await recoverIacRoute(f.deps, claim)).status).toBe("recovered");
+	let effects = 0;
+	const result = await runIacRoute({
+		authority: f.authority,
+		tenantId: "tenant",
+		requestId: "retry-1",
+		operation: { operationId, authorization: "signed:retry-1" },
+		run: async (route) => {
+			const permit = await route.beginAttempt({
+				targetId: "yard-b",
+				inventoryHash,
+			});
+			expect(await f.authority.consumeAttempt(permit)).toBe(true);
+			effects++;
+			return {
+				value: "done",
+				outcome: { status: "selected", targetId: "yard-b" },
+			};
+		},
+	});
+	expect(result.status).toBe("executed");
+	expect(effects).toBe(1);
+	expect((await recoverIacRoute(f.deps, claim)).status).toBe("replay");
+});
+
+it("refuses a denied record with an unexplained finished attempt", async () => {
+	const f = await started();
+	await f.authority.finish({
+		...f.identity,
+		claimToken: f.owner.claimToken,
+		outcome: { status: "uncertain", targetId: "yard-a" },
+	});
+	const db = new DatabaseSync(f.path);
+	db.prepare(
+		"UPDATE iac_routes SET outcome=? WHERE tenant=? AND request=?",
+	).run(JSON.stringify({ status: "denied" }), "tenant", "request");
+	db.close();
+	const snapshot = await f.store.inspect(f.identity);
+	if (!snapshot) throw new Error("snapshot missing");
+	expect(
+		(
+			await recoverIacRoute(f.deps, {
+				...f.claim,
+				expectedVersion: snapshot.version,
+			})
+		).status,
+	).toBe("denied");
+	expect(await f.store.get(f.identity)).toBeUndefined();
+});
+
+it("requires all independent proofs again for an exhausted denial", async () => {
+	const f = await started();
+	await f.authority.denyAttempt({
+		...f.identity,
+		claimToken: f.owner.claimToken,
+		permit: f.permit,
+	});
+	await f.authority.finish({
+		...f.identity,
+		claimToken: f.owner.claimToken,
+		outcome: { status: "denied" },
+	});
+	const snapshot = await f.store.inspect(f.identity);
+	if (!snapshot) throw new Error("snapshot missing");
+	expect(
+		(
+			await recoverIacRoute(
+				{ ...f.deps, verifyFinancial: async () => false },
+				{ ...f.claim, expectedVersion: snapshot.version },
+			)
+		).status,
+	).toBe("denied");
+	expect(await f.store.get(f.identity)).toBeUndefined();
+});
+
+it("never reopens an already-selected route", async () => {
+	const f = await started();
+	expect(await f.authority.consumeAttempt(f.permit)).toBe(true);
+	await f.authority.finish({
+		...f.identity,
+		claimToken: f.owner.claimToken,
+		outcome: { status: "selected", targetId: "yard-a" },
+	});
+	const snapshot = await f.store.inspect(f.identity);
+	if (!snapshot) throw new Error("snapshot missing");
+	expect(
+		(
+			await recoverIacRoute(f.deps, {
+				...f.claim,
+				expectedVersion: snapshot.version,
+			})
+		).status,
+	).toBe("denied");
+	expect(await f.store.get(f.identity)).toBeUndefined();
 });
