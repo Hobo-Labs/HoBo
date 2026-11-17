@@ -12,8 +12,8 @@
  *
  * WHAT THIS DOES NOT EXECUTE. `runtime-local` does not execute real `.wasm`
  * component bytes today, so nothing here is the deployed artifact on the
- * deployed host — hence `simulated`, never `real`. Queue and topic resources
- * expose local port implementations. Data, kv, bucket, secret, auth and the
+ * deployed host — hence `simulated`, never `real`. Queue, topic and secret
+ * resources expose local port implementations. Data, kv, bucket, auth and the
  * rest get only a handle and a binding locator: they are labelled `mocked`.
  * `container` and `wasm-component` are labelled `camp-only`. Built-in
  * emulators contact no provider, broker no credentials and write no `.hobo/`
@@ -28,9 +28,11 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { BindingResolverPort, Messaging } from "@hobo/core";
+import type { SecretsPort } from "@hobo/identity";
 import { createLocalBindingResolver } from "@hobo/runtime-local";
 import {
 	createQueueEmulator,
+	createSecretEmulator,
 	createTopicEmulator,
 	type QueueEmulator,
 	type ServiceEmulator,
@@ -55,6 +57,7 @@ export interface InProcessDeployment {
 	readonly servers: ReadonlyMap<string, Server>;
 	readonly queues: ReadonlyMap<string, QueueEmulator>;
 	readonly topics: ReadonlyMap<string, ServiceEmulator<Messaging>>;
+	readonly secrets: ReadonlyMap<string, ServiceEmulator<SecretsPort>>;
 }
 
 type FetchLikeHandler = (request: Request) => Response | Promise<Response>;
@@ -185,12 +188,15 @@ function validateFactories(value: unknown): void {
 			typeof value.queue !== "function") ||
 		("topic" in value &&
 			value.topic !== undefined &&
-			typeof value.topic !== "function")
+			typeof value.topic !== "function") ||
+		("secret" in value &&
+			value.secret !== undefined &&
+			typeof value.secret !== "function")
 	) {
 		throw new TestHarnessError(
 			"HARNESS_EMULATOR_INVALID",
 			"the emulator overrides are not service factories",
-			"provide queue and topic factories as functions, or omit the overrides",
+			"provide emulator factories as functions, or omit the overrides",
 		);
 	}
 }
@@ -198,7 +204,7 @@ function validateFactories(value: unknown): void {
 function validateEmulator(
 	value: unknown,
 	alias: string,
-	kind: "queue" | "topic",
+	kind: "queue" | "topic" | "secret",
 ): void {
 	const record =
 		typeof value === "object" && value !== null ? value : undefined;
@@ -219,16 +225,18 @@ function validateEmulator(
 					"simulateRedelivery",
 					"signal",
 				]
-			: [
-					"ensureTopic",
-					"ensureSubscription",
-					"publish",
-					"consume",
-					"subscribe",
-					"ack",
-					"nack",
-					"events",
-				];
+			: kind === "topic"
+				? [
+						"ensureTopic",
+						"ensureSubscription",
+						"publish",
+						"consume",
+						"subscribe",
+						"ack",
+						"nack",
+						"events",
+					]
+				: ["put", "access", "accessVersion", "listVersions"];
 	const clock = service?.clock;
 	const clockRecord =
 		typeof clock === "object" && clock !== null
@@ -243,6 +251,9 @@ function validateEmulator(
 			(typeof portRecord.backend !== "string" ||
 				typeof portRecord.capabilities !== "object" ||
 				portRecord.capabilities === null)) ||
+		(kind === "secret" &&
+			(typeof portRecord.id !== "string" ||
+				typeof portRecord.kind !== "string")) ||
 		(kind === "queue" &&
 			clock !== undefined &&
 			(clockRecord === undefined ||
@@ -253,7 +264,7 @@ function validateEmulator(
 		throw new TestHarnessError(
 			"HARNESS_EMULATOR_INVALID",
 			`the ${kind} emulator for "${alias}" does not implement its port or declare its fidelity`,
-			`return a ${kind} emulator with the complete @hobo/core port and fidelity "simulated" or "mocked"`,
+			`return a ${kind} emulator with its complete HoBo port and fidelity "simulated" or "mocked"`,
 		);
 	}
 }
@@ -277,6 +288,7 @@ export async function deployInProcess(
 	const servers = new Map<string, Server>();
 	const queues = new Map<string, QueueEmulator>();
 	const topics = new Map<string, ServiceEmulator<Messaging>>();
+	const secrets = new Map<string, ServiceEmulator<SecretsPort>>();
 	const bindings: Record<string, Record<string, string>> = {};
 
 	try {
@@ -296,6 +308,12 @@ export async function deployInProcess(
 				)(context);
 				topics.set(alias, emulator);
 				validateEmulator(emulator, alias, "topic");
+			} else if (node.kind === "secret") {
+				const emulator = await (factories.secret ?? createSecretEmulator)(
+					context,
+				);
+				secrets.set(alias, emulator);
+				validateEmulator(emulator, alias, "secret");
 			}
 			const handler =
 				isHttpServedKind(node.kind) && node.hasEntrypoint
@@ -312,6 +330,7 @@ export async function deployInProcess(
 			const fidelity =
 				queues.get(alias)?.fidelity ??
 				topics.get(alias)?.fidelity ??
+				secrets.get(alias)?.fidelity ??
 				inProcessFidelity(node.kind, endpoint !== undefined);
 			handles.set(
 				alias,
@@ -334,6 +353,7 @@ export async function deployInProcess(
 			servers,
 			queues,
 			topics,
+			secrets,
 		);
 		if (cleanupErrors.length > 0) {
 			throw new AggregateError(
@@ -353,6 +373,7 @@ export async function deployInProcess(
 		servers,
 		queues,
 		topics,
+		secrets,
 	});
 }
 /* oxlint-enable anti-slop/no-unknown-parameters */
@@ -373,6 +394,7 @@ export async function destroyInProcess(
 			deployment.servers,
 			deployment.queues,
 			deployment.topics,
+			deployment.secrets,
 		);
 		if (errors.length > 0)
 			throw new AggregateError(errors, "emulator teardown failed");
@@ -392,11 +414,13 @@ async function closeResources(
 	servers: ReadonlyMap<string, Server>,
 	queues: ReadonlyMap<string, QueueEmulator>,
 	topics: ReadonlyMap<string, ServiceEmulator<Messaging>>,
+	secrets: ReadonlyMap<string, ServiceEmulator<SecretsPort>>,
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
 	for (const alias of order) {
 		const server = servers.get(alias);
-		const emulator = queues.get(alias) ?? topics.get(alias);
+		const emulator =
+			queues.get(alias) ?? topics.get(alias) ?? secrets.get(alias);
 		try {
 			if (server?.listening) {
 				await new Promise<void>((resolve, reject) => {

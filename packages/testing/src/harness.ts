@@ -12,12 +12,13 @@
  *    a missing Yard or credential before writing assertions, and the lane
  *    never silently becomes `in-process`.
  * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
- *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, or
+ *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, `secret`, or
  *    `untilReady` marks it asserted-against; if any is `mocked`, this run
  *    cannot claim prod-readiness and the report says so.
  */
 
 import type { Messaging, Queue, VirtualClock } from "@hobo/core";
+import type { SecretsPort } from "@hobo/identity";
 import type { QueueEmulator } from "./emulators.js";
 import { TestHarnessError } from "./errors.js";
 import { emptyFidelityCounts } from "./fidelity.js";
@@ -196,6 +197,20 @@ function buildGraph(
 					"HARNESS_EMULATOR_UNAVAILABLE",
 					`"${alias}" (kind ${handle.kind}) has no topic emulator`,
 					"use the alias of a topic resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		secret(alias: string): SecretsPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.secrets.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no secret emulator`,
+					"use the alias of a secret resource in the in-process graph",
 				);
 			}
 			return emulator.port;

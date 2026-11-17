@@ -34,7 +34,11 @@ it("verifies the service emulator consumer pact against the running harness", as
 	);
 	const harness = createTestHarness();
 	const bindle = fakeBindle({
-		resources: { jobs: { kind: "queue" }, events: { kind: "topic" } },
+		resources: {
+			jobs: { kind: "queue" },
+			events: { kind: "topic" },
+			credentials: { kind: "secret" },
+		},
 		handlers: {},
 	});
 	const graph = await harness.deploy(bindle)();
@@ -54,6 +58,36 @@ it("verifies the service emulator consumer pact against the running harness", as
 					return { status: 200 };
 				}
 				const body = request.body;
+				if (
+					request.method === "POST" &&
+					request.path === "/secret/credentials" &&
+					typeof body === "object" &&
+					body !== null &&
+					"name" in body &&
+					typeof body.name === "string" &&
+					"value" in body &&
+					typeof body.value === "string"
+				) {
+					const secrets = graph.secret("credentials");
+					const written = await secrets.put(body.name, body.value);
+					const accessed = await secrets.accessVersion(
+						body.name,
+						written.versionId,
+					);
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("credentials").fidelity,
+							access: accessed.status,
+							versioned:
+								accessed.status === "ok" &&
+								accessed.versionId === written.versionId,
+							materialInOutputs: JSON.stringify(graph.outputs()).includes(
+								body.value,
+							),
+						},
+					};
+				}
 				if (
 					request.method !== "POST" ||
 					typeof body !== "object" ||

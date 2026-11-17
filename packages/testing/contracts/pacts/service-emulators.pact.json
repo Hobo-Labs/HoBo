@@ -27,6 +27,18 @@
 			}
 		},
 		{
+			"description": "a secret resource supports versioned access without publishing material in outputs",
+			"request": {
+				"method": "POST",
+				"path": "/secret/credentials",
+				"body": { "name": "API_KEY", "value": "fixture-only" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "fidelity": "simulated", "access": "ok", "versioned": true, "materialInOutputs": false }
+			}
+		},
+		{
 			"description": "a resource of the wrong kind cannot be used as a queue",
 			"request": { "method": "GET", "path": "/queue/events" },
 			"response": {

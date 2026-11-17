@@ -16,6 +16,7 @@ export {
 } from "./chaos-conformance.js";
 export {
 	createQueueEmulator,
+	createSecretEmulator,
 	createTopicEmulator,
 	type EmulatorContext,
 	type EmulatorFactory,
