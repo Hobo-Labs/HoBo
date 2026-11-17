@@ -515,6 +515,31 @@ export {
 export { createQueuedJobRepair } from "./queued-job-repair.js";
 export { createRelayHost, type RelayAgent } from "./relay-host.js";
 export {
+	GITHUB_FACTS_BUDGET_MS,
+	GITHUB_FACTS_MAX_CALLS,
+	GITHUB_FACTS_WARNING_TITLE,
+	type GithubQueueRead,
+	GithubRouteFacts,
+	type GithubRouteFactsOptions,
+	type GithubRouteFactsWarning,
+	routeFactsFromQueue,
+} from "./relay-job/github-facts.js";
+export {
+	DEFAULT_QUEUE_LIMITS,
+	type QueueEvidence,
+	type QueueJob,
+	type QueueJobsPage,
+	type QueueLimits,
+	type QueueRun,
+	queueEvidence,
+	queueJobsOf,
+	queueRunsOf,
+	refusingJobs,
+	runsJustAhead,
+	runsToRead,
+	takingJobs,
+} from "./relay-job/queue-evidence.js";
+export {
 	createRelayMcp,
 	isRelayMcpPath,
 	type RelayMcp,
