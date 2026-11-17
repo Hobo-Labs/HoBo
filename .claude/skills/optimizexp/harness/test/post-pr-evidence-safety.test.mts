@@ -100,12 +100,36 @@ describe("PR evidence manifest read boundary", () => {
 			const project = path.join(root, "site/.optimizexp/features/example/evidence/one");
 			mkdirSync(project, { recursive: true });
 			artifact(project, "primary.txt", "project evidence\n");
-			const result = invoke();
+			const result = invoke(["--project=site"]);
 			assert.equal(result.status, 0, String(result.stderr));
 			const comments = readFileSync(log, "utf8");
 			assert.match(comments, /Canonical evidence lives on the branch under `site\/\.optimizexp\/features\/example\/evidence\//);
 			assert.match(comments, /project evidence/);
 			assert.doesNotMatch(comments, /first valid scenario/);
+		});
+	});
+
+	it("requires an explicit project when a feature exists in multiple scopes", () => {
+		fixture(({ root, invoke, log, calls }) => {
+			const project = path.join(root, "site/.optimizexp/features/example/evidence/one");
+			mkdirSync(project, { recursive: true });
+			artifact(project, "primary.txt", "project evidence\n");
+			assertNoComment(invoke(), log);
+			for (const value of ["missing", "all", "site,root"]) assertNoComment(invoke([`--project=${value}`]), log);
+			assertNoComment(invoke(["--project=site", "--project=root"]), log);
+			assert.equal(existsSync(calls), false);
+			const selected = invoke(["--project=root"]);
+			assert.equal(selected.status, 0, String(selected.stderr));
+			const comments = readFileSync(log, "utf8");
+			assert.match(comments, /first valid scenario/);
+			assert.doesNotMatch(comments, /project evidence/);
+		});
+	});
+
+	it("does not fall back to global evidence for an explicitly selected project", () => {
+		fixture(({ invoke, log, calls }) => {
+			assertNoComment(invoke(["--project=site"]), log);
+			assert.equal(existsSync(calls), false);
 		});
 	});
 

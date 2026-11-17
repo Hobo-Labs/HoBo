@@ -17,15 +17,17 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import {
-	evidenceDir,
 	evidenceDirInScope,
-	featureDir,
-	findFeature,
+	featureDirInScope,
 	repoRoot,
+	scopeForProject,
+	scopesForSelection,
+	type FeatureLocation,
 } from "./lib/paths.mts";
 import { which, fileBytes } from "./lib/media.mts";
 import { normalizeCliOptions } from "./lib/cli-options.mts";
 import { isPathIdentifier } from "./lib/slug.mts";
+import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
 import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { validateEvidenceArtifact, validateEvidenceReview } from "./lib/evidence-review.mts";
 
@@ -39,6 +41,10 @@ function parseArgs(argv: string[]) {
 		const a = argv[i]!;
 		if (a === "--feature") out.feature = argv[++i] ?? "";
 		else if (a === "--pr") out.pr = argv[++i] ?? "";
+		else if (a === "--project") {
+			const value = argv[++i] ?? "";
+			out.project = out.project ? `${out.project},${value}` : value;
+		}
 		else if (a === "--dry-run") out.dryRun = "1";
 		else if (a === "--help" || a === "-h") out.help = "1";
 	}
@@ -124,9 +130,28 @@ function markdownPath(value: string): string {
 	return value.split("/").map((part) => encodeURIComponent(part).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)).join("/");
 }
 
-function loadScenarios(featureId: string, root: string) {
-	const loc = findFeature(featureId, root);
-	const dir = loc?.dir ?? featureDir(featureId, root);
+function evidenceFeature(featureId: string, root: string, project?: string): FeatureLocation | null {
+	let scopes = scopesForSelection(undefined, root);
+	if (project !== undefined) {
+		const selection = resolveProjects(project, root);
+		const problem = projectSelectionProblem(selection);
+		if (problem || selection.allProjects || selection.projects.length !== 1) {
+			throw new Error(problem ?? "--project must name exactly one project");
+		}
+		scopes = [scopeForProject(selection.projects[0]!, root)];
+	}
+	const matches = new Map<string, FeatureLocation>();
+	for (const scope of scopes) {
+		const dir = featureDirInScope(featureId, scope);
+		if (existsSync(dir)) matches.set(dir, { id: featureId, dir, scope, featureJsonPath: path.join(dir, "feature.json") });
+	}
+	if (matches.size > 1) throw new Error(`Feature ${featureId} exists in multiple projects; specify --project`);
+	if (project !== undefined && matches.size === 0) throw new Error(`Feature ${featureId} is missing from project ${project}`);
+	return matches.values().next().value ?? null;
+}
+
+function loadScenarios(featureId: string, root: string, loc: FeatureLocation) {
+	const dir = loc.dir;
 	const evidenceRoot = path.join(dir, "evidence");
 	const evidencePath = `${path.relative(root, evidenceRoot).split(path.sep).join("/")}/`;
 	if (!safeEvidenceEntry(root, evidenceRoot, "directory", true)) return { evidencePath, scenarios: [] };
@@ -137,9 +162,7 @@ function loadScenarios(featureId: string, root: string) {
 		})
 		.flatMap((entry) => {
 			const slug = entry.name;
-			const eDir = loc
-				? evidenceDirInScope(featureId, slug, loc.scope)
-				: evidenceDir(featureId, slug, root);
+			const eDir = evidenceDirInScope(featureId, slug, loc.scope);
 			const manifest = path.join(eDir, "manifest.json");
 			if (!safeEvidenceEntry(root, manifest, "file", true)) return [];
 			const man = JSON.parse(
@@ -224,7 +247,7 @@ function tryCompress(abs: string, root: string): string | null {
 
 function main() {
 	const input = normalizeCliOptions(process.argv.slice(2), {
-		values: ["--feature", "--pr"],
+		values: ["--feature", "--pr", "--project"],
 		flags: ["--dry-run", "--help", "-h"],
 	});
 	if (input.error || input.positionals.length) {
@@ -233,7 +256,7 @@ function main() {
 	}
 	const args = parseArgs(input.argv);
 	if (args.help) {
-		console.log(`post-pr-evidence --feature <id> [--pr N] [--dry-run]`);
+		console.log(`post-pr-evidence --feature <id> [--project <id>] [--pr N] [--dry-run]`);
 		return;
 	}
 	if (args.pr !== undefined && !isPrNumber(args.pr)) {
@@ -247,17 +270,27 @@ function main() {
 		process.exit(2);
 	}
 	const dry = args.dryRun === "1";
+	let location: FeatureLocation | null;
+	try {
+		location = evidenceFeature(featureId, root, args.project);
+	} catch (error) {
+		console.error(`Invalid evidence: ${error instanceof Error ? error.message : String(error)}`);
+		process.exit(2);
+	}
 	if (!dry) {
-		const location = findFeature(featureId, root);
 		const problem = optimizexpWriteProblem(root, ["", location?.scope.projectPath ?? ""]);
 		if (problem) {
 			console.error(problem);
 			process.exit(2);
 		}
 	}
+	if (!location) {
+		console.error("no evidence scenarios found");
+		process.exit(1);
+	}
 	let evidence;
 	try {
-		evidence = loadScenarios(featureId, root);
+		evidence = loadScenarios(featureId, root, location);
 	} catch (error) {
 		console.error(`Invalid evidence: ${error instanceof Error ? error.message : String(error)}`);
 		process.exit(2);

@@ -66,8 +66,10 @@ manifest and metadata must identify the same primary and match its current
 digest; an accepted review must also match that artifact. The index reports
 the review status. File paths and transcript text are formatted as literal
 evidence, including when they contain Markdown delimiters; malformed kind names
-are rejected before posting. A failed scenario comment makes the command fail
-after it reports every attempted comment.
+are rejected before posting. If a feature ID exists in multiple scopes, pass
+`--project <id>` (or `--project root`) to select one; posting refuses an
+ambiguous or missing selection. A failed scenario comment makes the command
+fail after it reports every attempted comment.
 
 ### Payload strategy
 
