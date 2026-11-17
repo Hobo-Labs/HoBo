@@ -663,6 +663,53 @@ describe("bounded Alchemy execution deadlines", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+	it("blocks another generation while an admission is running or unresolved", async () => {
+		timers();
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		try {
+			const f = fixture(dir);
+			const next = { ...program, operationGeneration: "another-generation" };
+			await f.provider.preview(program);
+			await f.provider.preview(next);
+			f.block("admit");
+			const first = expect(
+				f.provider.applyWithAdmission(program, "request"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_DEADLINE_UNKNOWN",
+				requiresReconciliation: true,
+			});
+			await f.started.promise;
+			await expect(
+				f.provider.applyWithAdmission(next, "another-request"),
+			).rejects.toMatchObject({
+				code: "EXECUTION_IN_PROGRESS",
+				requiresReconciliation: true,
+			});
+			await expire();
+			await first;
+			await expect(
+				f.provider.applyWithAdmission(next, "another-request"),
+			).rejects.toMatchObject({
+				code: "EXECUTION_OUTCOME_UNRESOLVED",
+				requiresReconciliation: true,
+			});
+			f.gate.resolve();
+			await f.completed.promise;
+			expect(f.observed()).toMatchObject({
+				routeCalls: 1,
+				admissions: 1,
+				effects: 0,
+				outcomes: ["uncertain"],
+				uncertain: ["iac:request"],
+			});
+		} finally {
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 	it("keeps a delayed no-effect denial uncertain after the response deadline", async () => {
 		timers();
 		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
