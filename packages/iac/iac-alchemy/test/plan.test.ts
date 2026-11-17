@@ -1,6 +1,7 @@
+import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { alchemyTarget } from "../src/index.js";
-import { inspectAlchemyPlan } from "../src/plan.js";
+import { alchemyTarget, ResourceScopeSchema } from "../src/index.js";
+import { type AlchemyCompositeGuard, inspectAlchemyPlan } from "../src/plan.js";
 
 function fixture() {
 	const node = {
@@ -52,7 +53,56 @@ function fixture() {
 	});
 	// SAFETY: this fixture deliberately constructs incomplete native plans to test the inspection boundary.
 	const inspect = () => inspectAlchemyPlan(plan as never, target);
-	return { native, node, inspect };
+	return { native, node, plan, target, inspect };
+}
+
+function compositeFixture() {
+	const f = fixture();
+	const action = {
+		kind: "action",
+		action: "run",
+		def: {
+			Kind: "action",
+			FQN: "build",
+			LogicalId: "build",
+			Type: "Spec.Build",
+			Input: {},
+			Captures: {},
+			Run: () => "build",
+		},
+		input: {},
+		downstream: [],
+		state: undefined,
+	};
+	Object.assign(f.native.actions, { build: action });
+	Object.assign(f.plan, {
+		actions: [
+			{
+				fqn: "build",
+				logicalId: "build",
+				actionType: "Spec.Build",
+				action: "run",
+			},
+		],
+	});
+	f.target.resources.push(
+		create(ResourceScopeSchema, {
+			resourceId: "build",
+			resourceType: "alchemy:action:Spec.Build",
+			providerId: "sandbox",
+			providerAccountRef: "build-account",
+			productId: "build",
+		}),
+	);
+	const guard: AlchemyCompositeGuard = {
+		proofRef: "host:proof",
+		environmentDigest: `sha256:${"b".repeat(64)}`,
+		verifyEnvironment: () => true,
+		verifyPlan: () => true,
+	};
+	// SAFETY: constructed plan isolates action-graph invariants at the boundary.
+	const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
+	return { ...f, action, guard, inspect };
 }
 
 describe("native Alchemy plan inspection", () => {
@@ -95,5 +145,63 @@ describe("native Alchemy plan inspection", () => {
 		const before = inspect().digest;
 		Object.assign(native, { defaultMode: "live" });
 		expect(inspect().digest).not.toBe(before);
+	});
+
+	it("recognizes a direct reference to a financially scoped native resource", () => {
+		const { node, inspect } = fixture();
+		Object.assign(node.props, { dependency: node.resource });
+		expect(() => inspect()).not.toThrow();
+	});
+
+	it("does not accept executable action plans without a host guard", () => {
+		const { plan, target } = compositeFixture();
+		// SAFETY: constructed plan exercises the untrusted-action boundary.
+		expect(() => inspectAlchemyPlan(plan as never, target)).toThrow(
+			"PLAN_UNSUPPORTED_EFFECTS",
+		);
+	});
+
+	it("requires actions to match their exact financial scope and summary", () => {
+		const f = compositeFixture();
+		expect(() => f.inspect()).not.toThrow();
+		const scope = f.target.resources.find((row) => row.resourceId === "build");
+		if (scope === undefined) throw new Error("fixture action scope missing");
+		scope.resourceType = "Spec.Build";
+		expect(() => f.inspect()).toThrow("TARGET_INVENTORY_INCOMPLETE");
+	});
+
+	it("rejects native action nodes absent from their approved description", () => {
+		const f = compositeFixture();
+		Object.assign(f.native.actions, { hidden: f.action });
+		expect(() => f.inspect()).toThrow("PLAN_UNINSPECTABLE");
+	});
+
+	it("fingerprints action input and runner code", () => {
+		const f = compositeFixture();
+		const before = f.inspect().digest;
+		Object.assign(f.action.input, { path: "one" });
+		const changedInput = f.inspect().digest;
+		expect(changedInput).not.toBe(before);
+		Object.assign(f.action.def, { Run: () => "other" });
+		expect(f.inspect().digest).not.toBe(changedInput);
+	});
+
+	it("detects native mutation by a verifier before approving the plan", () => {
+		const f = compositeFixture();
+		Object.assign(f.guard, {
+			verifyPlan: () => {
+				Object.assign(f.action.input, { changed: true });
+				return true;
+			},
+		});
+		expect(() => f.inspect()).toThrow("PLAN_UNINSPECTABLE");
+	});
+
+	it("requires independent authorization for a Command.Build resource", () => {
+		const f = fixture();
+		Object.assign(f.node.resource, { Type: "Command.Build" });
+		Object.assign(f.plan.resources[0], { resourceType: "Command.Build" });
+		Object.assign(f.target.resources[0], { resourceType: "Command.Build" });
+		expect(() => f.inspect()).toThrow("PLAN_UNSUPPORTED_EFFECTS");
 	});
 });

@@ -103,8 +103,10 @@ adapter's checks do not repair a compromised or concurrently modified store.
 
 The host can construct that port with `@hobo/broker`'s
 `createIacFinancialServices`. Pricing is optional in its options. Without it,
-`assessPricing(program)` returns explicit
-unavailable pricing and apply is refused. To enable financial routing, pass
+`assessPricing(program)` returns explicit unavailable pricing. The broker
+refuses apply by default; a trusted policy may instead explicitly authorize an
+unbounded exposure, reported as a budget bypass with a durable hold. An
+unpriced target has no cost rank. To enable financial routing, pass
 `pricing: { modelId, revision, scenario, bindings }` when constructing the
 financial services. Pass the resulting port to the adapter as `financial`.
 `scenario` is an `@hobo/pricing` `QuoteScenario` with complete,
@@ -184,8 +186,31 @@ An instance also blocks subsequent attempts after any outcome requiring
 reconciliation; the host must resolve the previous attempt before replacing it.
 
 Plan fingerprints are bounded and include inspectable resource inputs,
-bindings, state and source identity. Plans with stack actions, partial
-selection, unscoped or executable output expressions, exotic values, missing
-scopes, or more than 256 resources are refused. These restrictions can exclude valid Alchemy programs;
-there is no automatic fallback to an unbudgeted apply. The caller owns final
+bindings, state and source identity. Pure Alchemy literal, property, named and
+aggregate outputs are inspected recursively. An action, executable output or
+`Command.*` resource requires the optional `composite` host guard. Every
+action must have its own target scope, using its Alchemy FQN as `resourceId`
+and `alchemy:action:<action type>` as `resourceType`; its provider account and
+product must cover the action's financial liability. The broker sees those
+scopes alongside resources when assessing and admitting the target.
+
+The guard is a trusted host boundary, separate from developer pricing models.
+Its `verifyEnvironment` callback must independently authenticate the named
+sandbox, source and environment digest, tenant and complete provider-account
+scope. During planning it must enforce that stack code and expression
+evaluation cannot mutate infrastructure or incur unaccounted charges. During
+apply it must enforce that only admitted, scoped effects can execute. Its
+`verifyPlan` callback must authorize the exact structural digest, operation,
+scope and effect fingerprints against independently issued evidence. Both are
+checked again before apply, after admission. A failed or unavailable check
+stops execution and retains any existing reservation for reconciliation.
+
+The host must ensure the sandbox and captured closure state remain immutable
+for the attested environment digest: a JavaScript function's source text alone
+does not reveal its captures. These callbacks verify a host-provided guarantee;
+they do not themselves create an operating-system sandbox. Partial selection,
+unscoped references, unknown output expressions, exotic values, missing scopes
+and plans exceeding 256 nodes remain refused. Action state is not included in
+Alchemy's resource drift scan, so refresh of an action-bearing target reports
+incomplete drift rather than claiming it is in sync. The caller owns final
 usage reconciliation and can use the budget authority's settlement APIs.

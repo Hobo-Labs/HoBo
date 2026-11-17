@@ -13,6 +13,60 @@ type JsonValue =
 	| JsonValue[]
 	| { [key: string]: JsonValue };
 
+/** A host-owned verifier must authenticate the sandbox, credentials, and complete effect scope. */
+export interface AlchemyCompositeGuard {
+	readonly proofRef: string;
+	readonly environmentDigest: string;
+	readonly verifyEnvironment: (input: AlchemyCompositeEnvironment) => boolean;
+	readonly verifyPlan: (input: AlchemyCompositeObservation) => boolean;
+}
+
+export interface AlchemyCompositeEnvironment {
+	readonly phase: "plan" | "apply";
+	readonly operation: "deploy" | "destroy";
+	readonly targetId: string;
+	readonly tenantId: string;
+	readonly stackName: string;
+	readonly stage: string;
+	readonly programResourceId: string;
+	readonly sourceDigest: string;
+	readonly environmentDigest: string;
+	readonly proofRef: string;
+	readonly inventoryEvidenceRef: string;
+	readonly scope: readonly {
+		readonly resourceId: string;
+		readonly resourceType: string;
+		readonly providerId: string;
+		readonly providerAccountRef: string;
+		readonly productId: string;
+	}[];
+}
+
+export interface AlchemyCompositeEffect {
+	readonly kind: "action" | "expression" | "command";
+	readonly type: string;
+	readonly fingerprint: string;
+}
+
+export interface AlchemyCompositeObservation
+	extends Omit<AlchemyCompositeEnvironment, "phase"> {
+	readonly structuralDigest: string;
+	readonly effects: readonly AlchemyCompositeEffect[];
+}
+
+const DIGEST = /^sha256:[a-f0-9]{64}$/u;
+const MAX_EFFECTS = 1024;
+
+function fingerprintFunction(value: (...args: never[]) => void): string {
+	const source = Function.prototype.toString.call(value);
+	if (source.length > 65_536 || source.includes("[native code]"))
+		throw new AlchemyIacError(
+			"PLAN_UNINSPECTABLE",
+			"effect code is not inspectable",
+		);
+	return `sha256:${createHash("sha256").update(source).digest("hex")}`;
+}
+
 export class AlchemyIacError extends Error {
 	readonly requiresReconciliation: boolean;
 	readonly executionOutcome: "not-started" | "unknown" | "completed";
@@ -57,6 +111,7 @@ function encode(
 		object,
 		{ resourceId: string; resourceType: string }
 	>,
+	effects?: AlchemyCompositeEffect[],
 ): JsonValue {
 	if (--budget.remaining < 0 || depth > 32)
 		throw new AlchemyIacError(
@@ -81,6 +136,14 @@ function encode(
 				"plan contains a non-finite number",
 			);
 		return ["number", Object.is(value, -0) ? "-0" : String(value)];
+	}
+	if (
+		references !== undefined &&
+		(typeof value === "object" || typeof value === "function")
+	) {
+		const reference = references.get(value);
+		if (reference !== undefined)
+			return ["alchemy-resource", reference.resourceId, reference.resourceType];
 	}
 	if (
 		references !== undefined &&
@@ -126,7 +189,98 @@ function encode(
 				return [
 					"alchemy-property",
 					identifier,
-					encode(source, ancestors, budget, depth + 1, references),
+					encode(source, ancestors, budget, depth + 1, references, effects),
+				];
+			}
+			if (
+				prototype === Output.LiteralExpr.prototype &&
+				data("kind") === "LiteralExpr"
+			)
+				return [
+					"alchemy-literal",
+					encode(
+						data("value"),
+						ancestors,
+						budget,
+						depth + 1,
+						references,
+						effects,
+					),
+				];
+			if (prototype === Output.AllExpr.prototype && data("kind") === "AllExpr")
+				return [
+					"alchemy-all",
+					encode(
+						data("outs"),
+						ancestors,
+						budget,
+						depth + 1,
+						references,
+						effects,
+					),
+				];
+			if (
+				prototype === Output.NamedExpr.prototype &&
+				data("kind") === "NamedExpr"
+			) {
+				const bindingName = data("bindingName");
+				if (typeof bindingName !== "string" || bindingName.length > 200)
+					throw new AlchemyIacError(
+						"PLAN_UNINSPECTABLE",
+						"invalid output name",
+					);
+				return [
+					"alchemy-named",
+					bindingName,
+					encode(
+						data("expr"),
+						ancestors,
+						budget,
+						depth + 1,
+						references,
+						effects,
+					),
+				];
+			}
+			const executableKind =
+				prototype === Output.ApplyExpr.prototype && data("kind") === "ApplyExpr"
+					? "ApplyExpr"
+					: prototype === Output.FlatMapExpr.prototype &&
+							data("kind") === "FlatMapExpr"
+						? "FlatMapExpr"
+						: prototype === Output.EffectExpr.prototype &&
+								data("kind") === "EffectExpr"
+							? "EffectExpr"
+							: undefined;
+			if (executableKind !== undefined) {
+				if (effects === undefined || effects.length >= MAX_EFFECTS)
+					throw new AlchemyIacError(
+						"PLAN_UNSUPPORTED_EFFECTS",
+						"executable outputs require host authorization",
+					);
+				const callback = data("f");
+				if (typeof callback !== "function")
+					throw new AlchemyIacError(
+						"PLAN_UNINSPECTABLE",
+						"invalid output callback",
+					);
+				// SAFETY: the runtime guard established that this value is callable; fingerprinting never invokes it.
+				const fingerprint = fingerprintFunction(
+					callback as (...args: never[]) => void,
+				);
+				effects.push({ kind: "expression", type: executableKind, fingerprint });
+				return [
+					"alchemy-executable",
+					executableKind,
+					fingerprint,
+					encode(
+						data("expr"),
+						ancestors,
+						budget,
+						depth + 1,
+						references,
+						effects,
+					),
 				];
 			}
 			if (
@@ -188,7 +342,14 @@ function encode(
 						"plan array contains a hole or accessor",
 					);
 				items.push(
-					encode(descriptor.value, ancestors, budget, depth + 1, references),
+					encode(
+						descriptor.value,
+						ancestors,
+						budget,
+						depth + 1,
+						references,
+						effects,
+					),
 				);
 			}
 			return ["array", items];
@@ -214,7 +375,14 @@ function encode(
 				);
 			pairs.push([
 				key,
-				encode(descriptor.value, ancestors, budget, depth + 1, references),
+				encode(
+					descriptor.value,
+					ancestors,
+					budget,
+					depth + 1,
+					references,
+					effects,
+				),
 			]);
 		}
 		return ["object", pairs];
@@ -233,11 +401,12 @@ function digest(
 		object,
 		{ resourceId: string; resourceType: string }
 	>,
+	effects?: AlchemyCompositeEffect[],
 ): string {
 	return `sha256:${createHash("sha256")
 		.update(
 			JSON.stringify(
-				encode(value, new Set(), { remaining: 20_000 }, 0, references),
+				encode(value, new Set(), { remaining: 20_000 }, 0, references, effects),
 			),
 		)
 		.digest("hex")}`;
@@ -249,31 +418,45 @@ interface InspectedAlchemyPlan {
 	changes: number;
 }
 
-export function inspectAlchemyPlan(
+function inspectUnverified(
 	plan: StackPlan,
 	target: Target,
-): InspectedAlchemyPlan {
+	allowEffects: boolean,
+): InspectedAlchemyPlan & { effects: AlchemyCompositeEffect[] } {
 	if (plan.stack.name !== target.stackName || plan.stack.stage !== target.stage)
 		throw new AlchemyIacError(
 			"TARGET_SCOPE_MISMATCH",
 			"plan stack or stage differs from the configured target",
 		);
-	if (
-		plan.native.selectedFqns !== undefined ||
-		plan.actions.length > 0 ||
-		Object.keys(plan.native.actions).length > 0 ||
-		Object.values(plan.native.actionDeletions).some(
-			(node) => node !== undefined,
-		)
-	)
+	if (plan.native.selectedFqns !== undefined)
 		throw new AlchemyIacError(
 			"PLAN_UNSUPPORTED_EFFECTS",
-			"partial plans and stack actions cannot be financially covered",
+			"partial plans cannot be financially covered",
+		);
+	const actionKeys = [
+		...Object.keys(plan.native.actions),
+		...Object.entries(plan.native.actionDeletions)
+			.filter(([, node]) => node !== undefined)
+			.map(([key]) => key),
+	];
+	if (!allowEffects && (plan.actions.length > 0 || actionKeys.length > 0))
+		throw new AlchemyIacError(
+			"PLAN_UNSUPPORTED_EFFECTS",
+			"stack actions require host authorization",
 		);
 	if (
-		plan.resources.length === 0 ||
-		plan.resources.length > 256 ||
-		plan.resources.length !== target.resources.length
+		actionKeys.length !== plan.actions.length ||
+		new Set(actionKeys).size !== actionKeys.length ||
+		actionKeys.some((key) => !plan.actions.some((row) => row.fqn === key))
+	)
+		throw new AlchemyIacError(
+			"PLAN_UNINSPECTABLE",
+			"native plan and action descriptions differ",
+		);
+	if (
+		plan.resources.length + plan.actions.length === 0 ||
+		plan.resources.length + plan.actions.length > 256 ||
+		plan.resources.length + plan.actions.length !== target.resources.length
 	)
 		throw new AlchemyIacError(
 			"TARGET_INVENTORY_INCOMPLETE",
@@ -295,7 +478,14 @@ export function inspectAlchemyPlan(
 			"PLAN_UNINSPECTABLE",
 			"native plan contains resources absent from its description",
 		);
-	if (new Set(rows.map((row) => row.fqn)).size !== rows.length)
+	const actionRows = [...plan.actions].sort((a, b) =>
+		a.fqn.localeCompare(b.fqn),
+	);
+	const allNames = [
+		...rows.map((row) => row.fqn),
+		...actionRows.map((row) => row.fqn),
+	];
+	if (new Set(allNames).size !== allNames.length)
 		throw new AlchemyIacError(
 			"TARGET_INVENTORY_INCOMPLETE",
 			"plan contains duplicate resource identifiers",
@@ -312,8 +502,57 @@ export function inspectAlchemyPlan(
 		object,
 		{ resourceId: string; resourceType: string }
 	>();
-	const resources = rows.map((row, index) => {
-		const scope = scopes[index];
+	const scopeByName = new Map(scopes.map((scope) => [scope.resourceId, scope]));
+	const effects: AlchemyCompositeEffect[] = [];
+	const actions = actionRows.map((row) => {
+		const node =
+			plan.native.actions[row.fqn] ?? plan.native.actionDeletions[row.fqn];
+		const scope = scopeByName.get(row.fqn);
+		if (
+			scope === undefined ||
+			scope.resourceType !== `alchemy:action:${row.actionType}`
+		)
+			throw new AlchemyIacError(
+				"TARGET_INVENTORY_INCOMPLETE",
+				"every action needs an exact financial scope",
+			);
+		if (
+			node === undefined ||
+			node.def.FQN !== row.fqn ||
+			node.def.Type !== row.actionType ||
+			node.def.LogicalId !== row.logicalId ||
+			node.action !== row.action
+		)
+			throw new AlchemyIacError(
+				"PLAN_UNINSPECTABLE",
+				"plan action description differs from its native action",
+			);
+		const fingerprint = fingerprintFunction(node.def.Run);
+		effects.push({ kind: "action", type: node.def.Type, fingerprint });
+		references.set(node.def, {
+			resourceId: scope.resourceId,
+			resourceType: scope.resourceType,
+		});
+		return {
+			row,
+			scope: {
+				resourceId: scope.resourceId,
+				resourceType: scope.resourceType,
+				providerId: scope.providerId,
+				providerAccountRef: scope.providerAccountRef,
+				productId: scope.productId,
+			},
+			input: "input" in node ? node.input : undefined,
+			declaredInput: node.def.Input,
+			captures: node.def.Captures,
+			state: node.state,
+			downstream: node.downstream,
+			forced: "forced" in node ? node.forced : undefined,
+			runner: fingerprint,
+		};
+	});
+	const resources = rows.map((row) => {
+		const scope = scopeByName.get(row.fqn);
 		if (
 			scope === undefined ||
 			scope.resourceId !== row.fqn ||
@@ -352,6 +591,21 @@ export function inspectAlchemyPlan(
 			resourceId: scope.resourceId,
 			resourceType: scope.resourceType,
 		});
+		if (node.resource.Type.startsWith("Command.")) {
+			if (!allowEffects)
+				throw new AlchemyIacError(
+					"PLAN_UNSUPPORTED_EFFECTS",
+					"command resources require host authorization",
+				);
+			effects.push({
+				kind: "command",
+				type: node.resource.Type,
+				fingerprint: digestData({
+					resourceId: row.fqn,
+					resourceType: row.resourceType,
+				}),
+			});
+		}
 		return {
 			row,
 			scope: {
@@ -390,13 +644,143 @@ export function inspectAlchemyPlan(
 		sourceDigest: target.sourceDigest,
 		targetId: target.targetId,
 		tenantId: target.tenantId,
+		programResourceId: target.programResourceId,
+		inventoryEvidenceRef: target.inventoryEvidenceRef,
 		resources,
+		actions,
 		cycles: [...plan.native.cycleMembers].sort(),
 		defaultMode: plan.native.defaultMode,
 		output: plan.native.output,
 		destroy: plan.native.destroy,
 	};
-	const planDigest = digest(material, references);
-	const changes = rows.filter((row) => row.action !== "noop").length;
-	return { digest: planDigest, changes };
+	const planDigest = digest(
+		material,
+		references,
+		allowEffects ? effects : undefined,
+	);
+	const changes =
+		rows.filter((row) => row.action !== "noop").length +
+		actionRows.filter((row) => row.action !== "noop").length;
+	return { digest: planDigest, changes, effects };
+}
+
+function validateGuard(guard: AlchemyCompositeGuard): void {
+	if (
+		!DIGEST.test(guard.environmentDigest) ||
+		guard.proofRef.length === 0 ||
+		guard.proofRef.length > 200 ||
+		guard.proofRef.trim() !== guard.proofRef ||
+		/[\p{Cc}]/u.test(guard.proofRef)
+	)
+		throw new AlchemyIacError(
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+			"a bounded host proof and immutable environment digest are required",
+		);
+}
+
+function compositeScope(target: Target): AlchemyCompositeEnvironment["scope"] {
+	return Object.freeze(
+		target.resources.map((entry) =>
+			Object.freeze({
+				resourceId: entry.resourceId,
+				resourceType: entry.resourceType,
+				providerId: entry.providerId,
+				providerAccountRef: entry.providerAccountRef,
+				productId: entry.productId,
+			}),
+		),
+	);
+}
+
+export function verifyCompositeEnvironment(
+	guard: AlchemyCompositeGuard,
+	target: Target,
+	phase: AlchemyCompositeEnvironment["phase"],
+	operation: AlchemyCompositeEnvironment["operation"],
+): void {
+	validateGuard(guard);
+	let accepted = false;
+	try {
+		accepted =
+			guard.verifyEnvironment(
+				Object.freeze({
+					phase,
+					operation,
+					targetId: target.targetId,
+					tenantId: target.tenantId,
+					stackName: target.stackName,
+					stage: target.stage,
+					programResourceId: target.programResourceId,
+					sourceDigest: target.sourceDigest,
+					environmentDigest: guard.environmentDigest,
+					proofRef: guard.proofRef,
+					inventoryEvidenceRef: target.inventoryEvidenceRef,
+					scope: compositeScope(target),
+				}),
+			) === true;
+	} catch {
+		/* verifier failure is a refusal */
+	}
+	if (!accepted)
+		throw new AlchemyIacError(
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+			"the host did not verify the sandbox and scoped credentials",
+		);
+}
+
+export function inspectAlchemyPlan(
+	plan: StackPlan,
+	target: Target,
+	guard?: AlchemyCompositeGuard,
+): InspectedAlchemyPlan {
+	const inspection = inspectUnverified(plan, target, guard !== undefined);
+	if (inspection.effects.length === 0) return inspection;
+	if (guard === undefined)
+		throw new AlchemyIacError(
+			"PLAN_UNSUPPORTED_EFFECTS",
+			"host authorization is required for executable effects",
+		);
+	validateGuard(guard);
+	const observation: AlchemyCompositeObservation = Object.freeze({
+		operation: plan.native.destroy === true ? "destroy" : "deploy",
+		targetId: target.targetId,
+		tenantId: target.tenantId,
+		stackName: target.stackName,
+		stage: target.stage,
+		programResourceId: target.programResourceId,
+		sourceDigest: target.sourceDigest,
+		environmentDigest: guard.environmentDigest,
+		proofRef: guard.proofRef,
+		structuralDigest: inspection.digest,
+		inventoryEvidenceRef: target.inventoryEvidenceRef,
+		scope: compositeScope(target),
+		effects: Object.freeze(
+			inspection.effects.map((effect) => Object.freeze({ ...effect })),
+		),
+	});
+	let accepted = false;
+	try {
+		accepted = guard.verifyPlan(observation) === true;
+	} catch {
+		/* verifier failure is a refusal */
+	}
+	if (!accepted)
+		throw new AlchemyIacError(
+			"COMPOSITE_PLAN_UNVERIFIED",
+			"the host did not authorize the complete effect graph",
+		);
+	const checked = inspectUnverified(plan, target, true);
+	if (inspection.digest !== checked.digest)
+		throw new AlchemyIacError(
+			"PLAN_UNINSPECTABLE",
+			"the native plan changed during verification",
+		);
+	return {
+		digest: digestData({
+			structuralDigest: inspection.digest,
+			proofRef: guard.proofRef,
+			environmentDigest: guard.environmentDigest,
+		}),
+		changes: inspection.changes,
+	};
 }

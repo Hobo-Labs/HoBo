@@ -110,6 +110,22 @@ function admitted(
 		message: "",
 		requestDigest: `sha256:${"b".repeat(64)}`,
 		inventoryHash: `sha256:${"c".repeat(64)}`,
+		unpricedPolicyProof: {
+			requestDigest: `sha256:${"b".repeat(64)}`,
+			inventoryHash: `sha256:${"c".repeat(64)}`,
+			identity: {
+				tenantId: "tenant",
+				budgetId: "hosting",
+				periodId: "period",
+				policyRevision: "r1",
+			},
+			policyHash: "sha256:policy",
+			effect: "allow",
+			evidenceRef: "host:policy",
+			obligationsSatisfied: true,
+			observedAt: "2026-01-01T00:00:00Z",
+			validUntil: "2027-01-01T00:00:00Z",
+		},
 		budget: { evaluation, reservation: "held" },
 		reservation,
 	};
@@ -125,6 +141,11 @@ describe("financial admission modes", () => {
 			admission: {
 				budget: { evaluation: "bypassed", reservation: "held" },
 				reservation: { reservationId: "iac:attempt", unboundedExposure: true },
+				unpricedPolicyProof: {
+					identity: { tenantId: "tenant" },
+					effect: "allow",
+					evidenceRef: "host:policy",
+				},
 			},
 		});
 		expect(f.applies()).toBe(1);
@@ -165,6 +186,44 @@ describe("financial admission modes", () => {
 		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
 
+	it("accepts an explicitly selected unpriced target only with its reviewed inventory", async () => {
+		const f = fixture((id) => admitted(id, "bypassed", true));
+		await f.provider.preview(f.program);
+		const result = await f.provider.applyWithAdmission(f.program, "attempt", {
+			kind: "unpriced",
+			targetId: "target",
+			inventoryHash: `sha256:${"c".repeat(64)}`,
+		});
+		expect(result.admission.budget.evaluation).toBe("bypassed");
+		expect(f.applies()).toBe(1);
+	});
+
+	it.each([
+		"changed-inventory",
+		"changed-mode",
+	] as const)("refuses an unpriced expectation with %s", async (reason) => {
+		const f = fixture((id) =>
+			admitted(
+				id,
+				reason === "changed-mode" ? "allowed" : "bypassed",
+				reason !== "changed-mode",
+			),
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt", {
+				kind: "unpriced",
+				targetId: "target",
+				inventoryHash: `sha256:${(reason === "changed-inventory" ? "d" : "c").repeat(64)}`,
+			}),
+		).rejects.toMatchObject({
+			code: "ADMISSION_QUOTE_MISMATCH",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
 	it.each([
 		"requestDigest",
 		"inventoryHash",
@@ -178,6 +237,23 @@ describe("financial admission modes", () => {
 					? "invalid"
 					: `sha256:${"d".repeat(64)}`,
 		}));
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt"),
+		).rejects.toMatchObject({
+			code: "ADMISSION_RECEIPT_INVALID",
+			requiresReconciliation: true,
+		});
+		expect(f.applies()).toBe(0);
+		expect(f.uncertain).toEqual(["iac:attempt"]);
+	});
+
+	it("refuses an unbounded admission whose policy proof is for another tenant", async () => {
+		const f = fixture((id) => {
+			const decision = admitted(id, "bypassed", true);
+			decision.unpricedPolicyProof.identity.tenantId = "other";
+			return decision;
+		});
 		await f.provider.preview(f.program);
 		await expect(
 			f.provider.applyWithAdmission(f.program, "attempt"),

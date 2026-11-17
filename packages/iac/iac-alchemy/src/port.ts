@@ -57,6 +57,24 @@ export interface FinancialDecision {
 	inventoryHash?: string;
 	modelHash?: string;
 	quoteHash?: string;
+	unpricedPolicyProof?: UnpricedPolicyProof;
+}
+
+export interface UnpricedPolicyProof {
+	readonly requestDigest: string;
+	readonly inventoryHash: string;
+	readonly identity: {
+		readonly tenantId: string;
+		readonly budgetId: string;
+		readonly periodId: string;
+		readonly policyRevision: string;
+	};
+	readonly policyHash: string;
+	readonly effect: "allow" | "allow-degraded";
+	readonly evidenceRef: string;
+	readonly obligationsSatisfied: true;
+	readonly observedAt: string;
+	readonly validUntil: string;
 }
 
 /** An admitted apply explicitly distinguishes a bounded hold from a policy-authorized unbounded exposure. */
@@ -69,15 +87,23 @@ export type HeldFinancialDecision = FinancialDecision &
 		| {
 				budget: { evaluation: "bypassed"; reservation: "held" };
 				reservation: { reservationId: string; unboundedExposure: true };
+				unpricedPolicyProof: UnpricedPolicyProof;
 		  }
 	);
 
-export interface FinancialExpectation {
-	readonly targetId: string;
-	readonly inventoryHash: string;
-	readonly modelHash: string;
-	readonly quoteHash: string;
-}
+export type FinancialExpectation =
+	| {
+			readonly kind?: "priced";
+			readonly targetId: string;
+			readonly inventoryHash: string;
+			readonly modelHash: string;
+			readonly quoteHash: string;
+	  }
+	| {
+			readonly kind: "unpriced";
+			readonly targetId: string;
+			readonly inventoryHash: string;
+	  };
 
 /** The host supplies this port. The adapter never imports a policy implementation. */
 export interface FinancialPort<Assessment extends object> {

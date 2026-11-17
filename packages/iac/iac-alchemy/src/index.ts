@@ -11,7 +11,13 @@ import {
 	captureAlchemyTarget,
 	captureAlchemyTargetOption,
 } from "./input-boundary.js";
-import { AlchemyIacError, digestData, inspectAlchemyPlan } from "./plan.js";
+import {
+	type AlchemyCompositeGuard,
+	AlchemyIacError,
+	digestData,
+	inspectAlchemyPlan,
+	verifyCompositeEnvironment,
+} from "./plan.js";
 import type {
 	FinancialDecision,
 	FinancialExpectation,
@@ -22,6 +28,7 @@ import type {
 	IacDriftReport,
 	IacProgram,
 	IacProvider,
+	UnpricedPolicyProof,
 } from "./port.js";
 import { captureAlchemyProgram } from "./program-boundary.js";
 import {
@@ -52,6 +59,12 @@ export {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "./bindle.js";
+export type {
+	AlchemyCompositeEffect,
+	AlchemyCompositeEnvironment,
+	AlchemyCompositeGuard,
+	AlchemyCompositeObservation,
+} from "./plan.js";
 export { AlchemyIacError } from "./plan.js";
 export type {
 	FinancialDecision,
@@ -63,6 +76,7 @@ export type {
 	IacDriftReport,
 	IacProgram,
 	IacProvider,
+	UnpricedPolicyProof,
 } from "./port.js";
 export type { CapturedAlchemyProgram } from "./program-boundary.js";
 export { captureAlchemyProgram } from "./program-boundary.js";
@@ -91,6 +105,8 @@ export interface AlchemyIacProviderOptions<
 	>;
 	readonly runtimeDirectory: string;
 	readonly financial: FinancialPort<Assessment>;
+	/** Host-owned authorization for executable plan effects in an immutable sandbox. */
+	readonly composite?: AlchemyCompositeGuard;
 }
 
 export interface AlchemyIacProvider<Assessment extends object>
@@ -131,7 +147,122 @@ function reservationName(value: string): boolean {
 	);
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: host configuration crosses the adapter boundary and malformed callbacks must fail before any stack code executes. */
+function captureCompositeGuard(
+	input: AlchemyCompositeGuard | undefined,
+): AlchemyCompositeGuard | undefined {
+	if (input === undefined) return undefined;
+	try {
+		const { proofRef, environmentDigest, verifyEnvironment, verifyPlan } =
+			input;
+		if (
+			typeof proofRef !== "string" ||
+			!name(proofRef) ||
+			typeof environmentDigest !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(environmentDigest) ||
+			typeof verifyEnvironment !== "function" ||
+			typeof verifyPlan !== "function"
+		)
+			throw new Error("invalid host guard");
+		return Object.freeze({
+			proofRef,
+			environmentDigest,
+			verifyEnvironment: verifyEnvironment.bind(input),
+			verifyPlan: verifyPlan.bind(input),
+		});
+	} catch {
+		throw new AlchemyIacError(
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+			"host sandbox verification is malformed or unavailable",
+		);
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: admission receipts cross a provider boundary; inspect own data properties before returning an independent domain value. */
+function readUnpricedPolicyProof(
+	input: unknown,
+): UnpricedPolicyProof | undefined {
+	try {
+		if (typeof input !== "object" || input === null || Array.isArray(input))
+			return undefined;
+		const properties = Object.getOwnPropertyDescriptors(input);
+		const read = (key: string): unknown => {
+			const descriptor = properties[key];
+			if (descriptor === undefined || !("value" in descriptor))
+				return undefined;
+			return descriptor.value;
+		};
+		const identityInput = read("identity");
+		if (
+			typeof identityInput !== "object" ||
+			identityInput === null ||
+			Array.isArray(identityInput)
+		)
+			return undefined;
+		const identityProperties = Object.getOwnPropertyDescriptors(identityInput);
+		const identityRead = (key: string): unknown => {
+			const descriptor = identityProperties[key];
+			if (descriptor === undefined || !("value" in descriptor))
+				return undefined;
+			return descriptor.value;
+		};
+		const tenantId = identityRead("tenantId");
+		const budgetId = identityRead("budgetId");
+		const periodId = identityRead("periodId");
+		const policyRevision = identityRead("policyRevision");
+		const requestDigest = read("requestDigest");
+		const inventoryHash = read("inventoryHash");
+		const policyHash = read("policyHash");
+		const effect = read("effect");
+		const evidenceRef = read("evidenceRef");
+		const obligationsSatisfied = read("obligationsSatisfied");
+		const observedAt = read("observedAt");
+		const validUntil = read("validUntil");
+		if (
+			typeof tenantId !== "string" ||
+			!name(tenantId) ||
+			typeof budgetId !== "string" ||
+			!name(budgetId) ||
+			typeof periodId !== "string" ||
+			!name(periodId) ||
+			typeof policyRevision !== "string" ||
+			!name(policyRevision) ||
+			typeof requestDigest !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(requestDigest) ||
+			typeof inventoryHash !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(inventoryHash) ||
+			typeof policyHash !== "string" ||
+			!name(policyHash) ||
+			(effect !== "allow" && effect !== "allow-degraded") ||
+			typeof evidenceRef !== "string" ||
+			!name(evidenceRef) ||
+			obligationsSatisfied !== true ||
+			typeof observedAt !== "string" ||
+			!name(observedAt) ||
+			typeof validUntil !== "string" ||
+			!name(validUntil) ||
+			!Number.isFinite(Date.parse(observedAt)) ||
+			!Number.isFinite(Date.parse(validUntil)) ||
+			Date.parse(observedAt) >= Date.parse(validUntil)
+		)
+			return undefined;
+		return {
+			requestDigest,
+			inventoryHash,
+			identity: { tenantId, budgetId, periodId, policyRevision },
+			policyHash,
+			effect,
+			evidenceRef,
+			obligationsSatisfied,
+			observedAt,
+			validUntil,
+		};
+	} catch {
+		return undefined;
+	}
+}
+
 function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 	try {
 		if (typeof input !== "object" || input === null || Array.isArray(input))
@@ -154,6 +285,9 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 		const inventoryHash = read("inventoryHash");
 		const modelHash = read("modelHash");
 		const quoteHash = read("quoteHash");
+		const unpricedPolicyProof = readUnpricedPolicyProof(
+			read("unpricedPolicyProof"),
+		);
 		if (
 			typeof requestId !== "string" ||
 			!name(requestId) ||
@@ -248,6 +382,8 @@ function readFinancialDecision(input: unknown): FinancialDecision | undefined {
 		if (typeof requestDigest === "string") result.requestDigest = requestDigest;
 		if (typeof modelHash === "string") result.modelHash = modelHash;
 		if (typeof quoteHash === "string") result.quoteHash = quoteHash;
+		if (unpricedPolicyProof !== undefined)
+			result.unpricedPolicyProof = unpricedPolicyProof;
 		return result;
 	} catch {
 		return undefined;
@@ -302,6 +438,7 @@ export function createAlchemyIacProvider<
 ): AlchemyIacProvider<Assessment> {
 	const options = captureAlchemyOptions(inputOptions);
 	const target = captureAlchemyTargetOption(options);
+	const composite = captureCompositeGuard(options.composite);
 	if (
 		!safeAlchemyStateSegment(target.stackName) ||
 		!safeAlchemyStateSegment(target.stage) ||
@@ -456,6 +593,13 @@ export function createAlchemyIacProvider<
 				"PREVIEW_LIMIT",
 				"provider preview capacity reached",
 			);
+		if (composite !== undefined)
+			verifyCompositeEnvironment(
+				composite,
+				target,
+				"plan",
+				program.action === "destroy" ? "destroy" : "deploy",
+			);
 		const result = await run(
 			Effect.gen(function* () {
 				const plan = yield* planned(program);
@@ -470,7 +614,7 @@ export function createAlchemyIacProvider<
 				try {
 					return {
 						ok: true as const,
-						inspected: inspectAlchemyPlan(plan, target),
+						inspected: inspectAlchemyPlan(plan, target, composite),
 					};
 				} catch (error) {
 					return { ok: false as const, error };
@@ -535,6 +679,13 @@ export function createAlchemyIacProvider<
 		let result:
 			| { error: unknown }
 			| { outputs: Record<string, string>; admission: HeldFinancialDecision };
+		if (composite !== undefined)
+			verifyCompositeEnvironment(
+				composite,
+				target,
+				"plan",
+				program.action === "destroy" ? "destroy" : "deploy",
+			);
 		try {
 			result = await run(
 				Effect.gen(function* () {
@@ -548,7 +699,7 @@ export function createAlchemyIacProvider<
 						};
 					let inspected: ReturnType<typeof inspectAlchemyPlan>;
 					try {
-						inspected = inspectAlchemyPlan(plan, target);
+						inspected = inspectAlchemyPlan(plan, target, composite);
 					} catch (error) {
 						return { error };
 					}
@@ -623,7 +774,15 @@ export function createAlchemyIacProvider<
 								/^sha256:[a-f0-9]{64}$/u.test(decision.inventoryHash ?? "") &&
 								(decision.modelHash === undefined ||
 									decision.modelHash === "") &&
-								(decision.quoteHash === undefined || decision.quoteHash === ""))
+								(decision.quoteHash === undefined ||
+									decision.quoteHash === "") &&
+								decision.unpricedPolicyProof !== undefined &&
+								decision.unpricedPolicyProof.requestDigest ===
+									decision.requestDigest &&
+								decision.unpricedPolicyProof.inventoryHash ===
+									decision.inventoryHash &&
+								decision.unpricedPolicyProof.identity.tenantId ===
+									target.tenantId)
 						)
 					) {
 						const reservationId = decision.reservation?.reservationId;
@@ -646,8 +805,11 @@ export function createAlchemyIacProvider<
 						expected !== undefined &&
 						(expected.targetId !== target.targetId ||
 							expected.inventoryHash !== decision.inventoryHash ||
-							expected.modelHash !== decision.modelHash ||
-							expected.quoteHash !== decision.quoteHash)
+							(expected.kind === "unpriced"
+								? decision.budget.evaluation !== "bypassed"
+								: decision.budget.evaluation !== "allowed" ||
+									expected.modelHash !== decision.modelHash ||
+									expected.quoteHash !== decision.quoteHash))
 					) {
 						yield* Effect.promise(() => markUncertain(claimedReservationId));
 						return {
@@ -671,7 +833,17 @@ export function createAlchemyIacProvider<
 						};
 					}
 					try {
-						if (inspectAlchemyPlan(plan, target).digest !== inspected.digest) {
+						if (composite !== undefined)
+							verifyCompositeEnvironment(
+								composite,
+								target,
+								"apply",
+								program.action === "destroy" ? "destroy" : "deploy",
+							);
+						if (
+							inspectAlchemyPlan(plan, target, composite).digest !==
+							inspected.digest
+						) {
 							yield* Effect.promise(() => markUncertain(claimedReservationId));
 							return {
 								error: new AlchemyIacError(
@@ -716,21 +888,33 @@ export function createAlchemyIacProvider<
 								heldReservation,
 							),
 						};
-					const admission: HeldFinancialDecision =
-						decision.budget.evaluation === "bypassed"
-							? {
-									...decision,
-									budget: { evaluation: "bypassed", reservation: "held" },
-									reservation: {
-										reservationId: claimedReservationId,
-										unboundedExposure: true,
-									},
-								}
-							: {
-									...decision,
-									budget: { evaluation: "allowed", reservation: "held" },
-									reservation: { reservationId: claimedReservationId },
-								};
+					let admission: HeldFinancialDecision;
+					if (decision.budget.evaluation === "bypassed") {
+						if (decision.unpricedPolicyProof === undefined)
+							return {
+								error: new AlchemyIacError(
+									"ADMISSION_RECEIPT_INVALID",
+									"unbounded policy proof is missing",
+									decision,
+									claimedReservationId,
+								),
+							};
+						admission = {
+							...decision,
+							budget: { evaluation: "bypassed", reservation: "held" },
+							reservation: {
+								reservationId: claimedReservationId,
+								unboundedExposure: true,
+							},
+							unpricedPolicyProof: decision.unpricedPolicyProof,
+						};
+					} else {
+						admission = {
+							...decision,
+							budget: { evaluation: "allowed", reservation: "held" },
+							reservation: { reservationId: claimedReservationId },
+						};
+					}
 					return { outputs, admission };
 				}),
 			);
