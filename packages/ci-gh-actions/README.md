@@ -31,8 +31,11 @@ original workflow, checkout, job token, logs and artifacts stay in GitHub Action
 
 When GitHub returns several jobs associated with a runner, correlation selects
 an executing job before a queued or finished reservation, including when the
-jobs belong to different observed runs. If a later lookup fails after a queued
-match, the result is marked incomplete. Fail-closed teardown retains the runner
+jobs belong to different observed runs. A matching job with an unknown status
+also retains the runner, but does not by itself transfer custody or withdraw the
+reserved job. Confirmed execution still takes priority over an unknown status.
+If a later lookup fails after a queued or unknown match, the result is marked
+incomplete and cannot transfer custody. Fail-closed teardown retains the runner
 on an incomplete or failed lookup; the force-stop path can continue after the
 queued grace period. Job listings are paginated up to 100 pages. Run listings
 are bounded, and reaching a limit while more work exists is treated as an
@@ -100,6 +103,31 @@ stateDiagram-v2
   s2 --> s5: apply teardown policy
   s4 --> s3: apply teardown policy
   s4 --> s5: apply teardown policy
+```
+
+The unknown-status model checks two abstract observations, with queued grace
+already expired, in 300 distinct states. Its projection hides 150 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking assignments
+  s1: No active job observed
+  s2: Executing job observed
+  s3: Status unknown
+  s4: Lookup incomplete
+  s5: Teardown allowed
+  s6: Runner retained
+  [*] --> s0
+  s0 --> s1: check later runs
+  s0 --> s4: later lookup fails
+  s0 --> s2: check later runs or later lookup fails
+  s0 --> s3: check later runs or later lookup fails
+  s1 --> s5: apply custody and teardown policy
+  s2 --> s6: apply custody and teardown policy
+  s3 --> s6: apply custody and teardown policy
+  s4 --> s5: apply custody and teardown policy
+  s4 --> s6: apply custody and teardown policy
 ```
 
 ## Test this branch
