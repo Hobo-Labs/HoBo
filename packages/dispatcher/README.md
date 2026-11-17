@@ -280,3 +280,26 @@ orchestrator must persist a provider-neutral operation generation before routing
 all retries for that work reuse its host-authenticated operation ID, while a
 new update, replacement, or recreation receives a new generation. A stable
 resource-and-action ID alone cannot distinguish separate changes.
+
+An unknown price is excluded from cost ranking. To choose a specific unpriced
+target, the host may explicitly invoke `executeUnpricedIacTarget`:
+
+```ts
+const result = await executeUnpricedIacTarget({
+  authority: routeAuthority,
+  tenantId,
+  requestId,
+  operation: { operationId, authorization: operationAuthorization },
+  inventory,
+  pricing, // declared unavailable
+  run: (id, expected, permit) => provider.applyWithAdmission(program, id, expected, permit),
+});
+```
+
+The route authority verifies the host-issued operation authorization and keeps
+one owner across request IDs. The callback must consume its attempt permit and
+check the inventory and financial admission before provider work. The broker
+requires an explicit unpriced policy and authenticated exclusive scope; the
+result discloses `bypassed` budget evaluation and an unbounded held exposure,
+never a numeric rank or cap. An ambiguous result retains that exposure and
+stops execution until reconciliation.
