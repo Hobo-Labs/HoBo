@@ -31,6 +31,7 @@ export const CLOUD_EVENTS = Object.freeze({
 	ResourceProvisioning: "resource.Provisioning",
 	ResourceProvisioned: "resource.Provisioned",
 	ResourceFailed: "resource.Failed",
+	ResourceReconciled: "resource.Reconciled",
 	ResourceDestroying: "resource.Destroying",
 	ResourceDestroyed: "resource.Destroyed",
 	ExecDiff: "exec.Diff",
@@ -265,6 +266,28 @@ export type ResourceFailedData = ResourceFailedBase &
 
 export function resourceFailed(data: ResourceFailedData): EventInput {
 	return { type: CLOUD_EVENTS.ResourceFailed, data };
+}
+
+export interface ResourceReconciledData {
+	deploymentId: string;
+	resourceId: string;
+	failureEventId: string;
+	operation: "apply" | "destroy";
+	outcome: "applied" | "destroyed" | "no-effect";
+	evidenceRef: string;
+	financialEvidenceRef: string;
+	financialDisposition: "none" | "held" | "settled" | "released";
+	reservationId?: string;
+	claimDigest: string;
+	outputs?: Record<string, string>;
+	execId?: string;
+	specHash?: string;
+	finalStateHash?: string;
+	restoredState?: "provisioned" | "destroyed" | "failed";
+}
+
+export function resourceReconciled(data: ResourceReconciledData): EventInput {
+	return { type: CLOUD_EVENTS.ResourceReconciled, data };
 }
 
 export interface ResourceDestroyingData {

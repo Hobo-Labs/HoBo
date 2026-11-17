@@ -304,6 +304,25 @@ message ResourceFailedRecord {
   optional string reconciliation_operation = 8; // "apply" | "destroy"
 }
 
+// A host has verified the exact provider outcome and financial disposition.
+message ResourceReconciledRecord {
+  string deployment_id = 1;
+  string resource_id = 2;
+  string failure_event_id = 3;
+  string operation = 4;             // "apply" | "destroy"
+  string outcome = 5;               // "applied" | "destroyed" | "no-effect"
+  string evidence_ref = 6;
+  string financial_evidence_ref = 7;
+  string financial_disposition = 8; // "none" | "held" | "settled" | "released"
+  optional string reservation_id = 9;
+  string claim_digest = 10;
+  map<string, string> outputs = 11;
+  optional string exec_id = 12;
+  optional string spec_hash = 13;
+  optional string final_state_hash = 14;
+  optional string restored_state = 15; // "provisioned" | "destroyed" | "failed" after no-effect
+}
+
 // resource.Destroying: choreographed compensation started for this actor.
 message ResourceDestroyingRecord {
   string deployment_id = 1;
@@ -443,6 +462,8 @@ message TopologyNode {
   string provider_id = 5;          // resource/yard nodes: backing provider
   string region = 6;
   string lifecycle = 7;            // resource nodes: provisioning|provisioned|failed|reconciliation-required|destroying|destroyed
+  optional string reconciliation_event_id = 8;
+  repeated string other_reconciliation_event_ids = 9;
 }
 
 message TopologyEdge {
