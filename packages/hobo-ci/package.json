@@ -29,6 +29,7 @@
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/cli": "workspace:*",
 		"@hobo/connect-ui": "workspace:*",
+		"@hobo/core": "workspace:*",
 		"@hobo/identity": "workspace:*",
 		"@hobo/kv-redis-compatible": "workspace:*",
 		"zod": "4.3.6"

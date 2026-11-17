@@ -8,6 +8,7 @@ import {
 } from "@hobo/cli";
 import { deploymentImported, deploymentViewProjection } from "@hobo/cloud";
 import type { EventInput, PrincipalRef } from "@hobo/core";
+import { PULUMI_STATE_PASSPHRASE_MISSING } from "@hobo/iac-pulumi";
 import {
 	type EstateResourceState,
 	readPulumiEstate,
@@ -146,9 +147,14 @@ export function createImportCommand(
 							status: "backend_unavailable",
 							code: "HOBO_PULUMI_UNAVAILABLE",
 							message: `hobo import: the live Pulumi backend is unavailable — ${error.message}`,
-							remediation: [
-								"Install the pinned pulumi CLI (or unset HOBO_PULUMI_LIVE to use the in-memory lane).",
-							],
+							remediation:
+								error.code === PULUMI_STATE_PASSPHRASE_MISSING
+									? [
+											"Supply the original PULUMI_CONFIG_PASSPHRASE for this retained workspace.",
+										]
+									: [
+											"Install the pinned pulumi CLI (or unset HOBO_PULUMI_LIVE to use the in-memory lane).",
+										],
 							data: {
 								command: "import",
 								deploymentId,

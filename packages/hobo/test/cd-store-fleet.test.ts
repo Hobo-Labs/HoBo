@@ -21,17 +21,23 @@ async function admin(sql: string): Promise<void> {
 	}
 }
 
-async function database(id: string): Promise<{ id: string; url: string }> {
+/** Stand-in for the owner's secret store: entry name to connection string. */
+const store = new Map<string, string>();
+const readSecret = async (entry: string) => store.get(entry);
+
+async function database(id: string): Promise<{ id: string; urlEntry: string }> {
 	const name = `hobo_cd_fleet_${RUN}_${id.replaceAll("-", "_")}`;
 	await admin(`CREATE DATABASE ${name}`);
 	created.push(name);
-	return {
-		id,
-		url: (ADMIN ?? "").replace(
+	const urlEntry = `HOBO_CD_POSTGRES_URL_${id.toUpperCase().replaceAll("-", "_")}`;
+	store.set(
+		urlEntry,
+		(ADMIN ?? "").replace(
 			/^(postgres(?:ql)?:\/\/[^/?]*)\/[^?]*/u,
 			`$1/${name}`,
 		),
-	};
+	);
+	return { id, urlEntry };
 }
 
 afterAll(async () => {
@@ -58,6 +64,7 @@ describe.skipIf(ADMIN === undefined)("CD journal on a PostgreSQL fleet", () => {
 				minMajorVersion: 16,
 			},
 			{ now: () => Date.now() },
+			readSecret,
 		);
 		try {
 			await opened.store.append(
@@ -80,6 +87,22 @@ describe.skipIf(ADMIN === undefined)("CD journal on a PostgreSQL fleet", () => {
 		}
 	});
 
+	it("will not open a fleet without the secret store", async () => {
+		await expect(
+			openCdStore(
+				{
+					backend: "postgres-fleet",
+					members: [{ id: "a", urlEntry: "HOBO_CD_POSTGRES_URL_A" }],
+					witnesses: [],
+					poolSize: 2,
+					statementTimeoutMs: 5_000,
+					minMajorVersion: 16,
+				},
+				{ now: () => Date.now() },
+			),
+		).rejects.toThrow(/secret store/);
+	});
+
 	it("names the shortfall of a fleet that cannot fail over on its own", async () => {
 		const members = [await database("solo-a"), await database("solo-b")];
 		const opened = await openCdStore(
@@ -92,6 +115,7 @@ describe.skipIf(ADMIN === undefined)("CD journal on a PostgreSQL fleet", () => {
 				minMajorVersion: 16,
 			},
 			{ now: () => Date.now() },
+			readSecret,
 		);
 		try {
 			expect(opened.fleet?.().shortfalls.join(" ")).toMatch(/witness/);

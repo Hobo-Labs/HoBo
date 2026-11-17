@@ -2,10 +2,18 @@ import type {
 	BitwardenSdkClient,
 	BitwardenSecret,
 } from "@hobo/adapter-bitwarden";
+import { createTrustedVault } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
-import { CI_SETTINGS, storeSettings } from "../src/ceremony-settings.js";
+import { storeSettings } from "../src/ceremony-settings.js";
+import { STORE_CHOICE } from "../src/owner-store.js";
 import { openSecretStore } from "../src/secret-stores.js";
+
+function signedIn(token = "machine-token") {
+	const vault = createTrustedVault();
+	vault.put("BWS_ACCESS_TOKEN", token);
+	return vault;
+}
 
 const ORG = "11111111-2222-4333-8444-555555555555";
 const PROJECT = "66666666-7777-4888-9999-aaaaaaaaaaaa";
@@ -61,12 +69,12 @@ function fakeBitwarden(): BitwardenSdkClient {
 
 describe("Bitwarden Secrets Manager", () => {
 	it("is offered on the setup page, with its token never saved", () => {
-		expect(
-			CI_SETTINGS.find((s) => s.field.name === "HOBO_CI_SECRET_STORE")?.field
-				.options,
-		).toContainEqual(expect.objectContaining({ value: "bitwarden" }));
+		expect(STORE_CHOICE.field.options).toContainEqual(
+			expect.objectContaining({ value: "bitwarden" }),
+		);
 		const fields = storeSettings("bitwarden", "/unused").map((s) => s.field);
 		expect(fields.map((field) => field.name)).toEqual([
+			"BWS_SERVER",
 			"BWS_ORGANIZATION_ID",
 			"BWS_PROJECT_ID",
 			"BWS_ACCESS_TOKEN",
@@ -77,11 +85,23 @@ describe("Bitwarden Secrets Manager", () => {
 	});
 
 	it("writes into the bound project and names entries by reference", async () => {
+		let server = "";
+		let token: string | undefined;
 		const opened = await openSecretStore(
 			"bitwarden",
-			{ BWS_ORGANIZATION_ID: ORG, BWS_PROJECT_ID: PROJECT },
-			{ bitwardenClient: async () => fakeBitwarden() },
+			{ BWS_SERVER: "eu", BWS_ORGANIZATION_ID: ORG, BWS_PROJECT_ID: PROJECT },
+			signedIn(),
+			{
+				bitwardenClient: async (coordinates, signIn) => {
+					server = coordinates.BWS_SERVER ?? "";
+					token = signIn.reveal("BWS_ACCESS_TOKEN");
+					return fakeBitwarden();
+				},
+			},
 		);
+		// The token came from the run's vault; the cloud from the locator.
+		expect(token).toBe("machine-token");
+		expect(server).toBe("eu");
 		expect(opened.ok).toBe(true);
 		if (!opened.ok) return;
 		await opened.store.port.put("HOBO_CI_GITHUB_APP_ID", "42");
@@ -95,13 +115,20 @@ describe("Bitwarden Secrets Manager", () => {
 	});
 
 	it("says what is missing instead of failing late", async () => {
-		const unbound = await openSecretStore("bitwarden", {});
+		const unbound = await openSecretStore(
+			"bitwarden",
+			{},
+			createTrustedVault(),
+		);
 		expect(unbound.ok).toBe(false);
 		if (!unbound.ok)
-			expect(unbound.remediation.join(" ")).toMatch(/BWS_PROJECT_ID/);
+			expect(unbound.remediation.join(" ")).toMatch(
+				/organization and project IDs/,
+			);
 		const signedOut = await openSecretStore(
 			"bitwarden",
 			{ BWS_ORGANIZATION_ID: ORG, BWS_PROJECT_ID: PROJECT },
+			createTrustedVault(),
 			{
 				bitwardenClient: async () => {
 					throw new Error("bad token");
@@ -110,6 +137,6 @@ describe("Bitwarden Secrets Manager", () => {
 		);
 		expect(signedOut.ok).toBe(false);
 		if (!signedOut.ok)
-			expect(signedOut.remediation.join(" ")).toMatch(/BWS_ACCESS_TOKEN/);
+			expect(signedOut.remediation.join(" ")).toMatch(/access token/);
 	});
 });

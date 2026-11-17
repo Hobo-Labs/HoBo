@@ -27,14 +27,11 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 		expect(isSimulated(out.value)).toBe(false);
 	});
 
-	it("selects a Postgres fleet, each member's URL from its own variable", () => {
+	it("selects a Postgres fleet whose connection strings stay in the secret store", () => {
 		const out = parseCdComposeConfig({
 			env: {
 				[CD_COMPOSE_ENV.postgresFleet]: "neon-eu, supabase",
 				[CD_COMPOSE_ENV.postgresWitnesses]: "prisma",
-				HOBO_CD_POSTGRES_URL_NEON_EU: "postgres://cd@neon/cd",
-				HOBO_CD_POSTGRES_URL_SUPABASE: "postgresql://cd@supabase/cd",
-				HOBO_CD_POSTGRES_URL_PRISMA: "postgres://cd@prisma/cd",
 				[CD_COMPOSE_ENV.replicas]: "2",
 			},
 			home,
@@ -43,10 +40,10 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 		expect(out.ok && out.value.store).toEqual({
 			backend: "postgres-fleet",
 			members: [
-				{ id: "neon-eu", url: "postgres://cd@neon/cd" },
-				{ id: "supabase", url: "postgresql://cd@supabase/cd" },
+				{ id: "neon-eu", urlEntry: "HOBO_CD_POSTGRES_URL_NEON_EU" },
+				{ id: "supabase", urlEntry: "HOBO_CD_POSTGRES_URL_SUPABASE" },
 			],
-			witnesses: [{ id: "prisma", url: "postgres://cd@prisma/cd" }],
+			witnesses: [{ id: "prisma", urlEntry: "HOBO_CD_POSTGRES_URL_PRISMA" }],
 			poolSize: CD_DEFAULTS.postgresPoolSize,
 			statementTimeoutMs: CD_DEFAULTS.postgresStatementTimeoutMs,
 			minMajorVersion: CD_DEFAULTS.postgresMinMajorVersion,
@@ -56,18 +53,26 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 		);
 	});
 
-	it("refuses a fleet member with no URL or named twice", () => {
-		const missing = parseCdComposeConfig({
-			env: { [CD_COMPOSE_ENV.postgresFleet]: "neon" },
+	it("refuses a connection string in the environment, and a member named twice", () => {
+		const inEnv = parseCdComposeConfig({
+			env: {
+				[CD_COMPOSE_ENV.postgresFleet]: "neon",
+				HOBO_CD_POSTGRES_URL_NEON: "postgres://cd:pw@neon/cd",
+			},
 			home,
 			simulate: false,
 		});
-		expect(missing.ok).toBe(false);
+		expect(inEnv.ok).toBe(false);
+		const withPassword = parseCdComposeConfig({
+			env: { [CD_COMPOSE_ENV.postgresUrl]: "postgres://cd:pw@db/cd" },
+			home,
+			simulate: false,
+		});
+		expect(withPassword.ok).toBe(false);
 		const twice = parseCdComposeConfig({
 			env: {
 				[CD_COMPOSE_ENV.postgresFleet]: "neon",
 				[CD_COMPOSE_ENV.postgresWitnesses]: "neon",
-				HOBO_CD_POSTGRES_URL_NEON: "postgres://cd@neon/cd",
 			},
 			home,
 			simulate: false,

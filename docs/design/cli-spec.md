@@ -157,21 +157,32 @@ interactive ceremony for what it is missing, on a local setup page rendered
 with vercel-labs/ui (`@hobo/connect-ui`). It never tells a person to go set
 environment variables.
 
-- **Settings** resolve from the environment, then from what an earlier
-  ceremony saved (`$HOBO_HOME/ceremonies/<family>.json`, non-secrets only),
-  and are asked for only when neither has them. `hobo ci up` asks for the relay
-  URL, the GitHub owner (a user **or** an organization, looked up by login) and
-  the secret store with its coordinates. `hobo cd up` asks for HoBo CD's Vercel
-  Integration and the secret store.
-- **Secrets** (a sign-in token for this run, an Integration's client secret)
-  go only to the owner's secret store and are never saved or shown back.
+- **The secret store first.** Where it is (Infisical, 1Password or Bitwarden,
+  and its project, vault or organization ids, plus an optional OIDC identity
+  for CI) is a non-secret locator committed with the repository
+  (`.hobo/secret-store.json`). The sign-in is typed on the page (or unlocked
+  by the 1Password desktop app, or a CI run's own OIDC token) and held in the
+  run's trusted vault: memory only, wiped when the run ends.
+- **Everything else lives in the store.** What a ceremony is told (`hobo ci
+  up`: the relay URL and the GitHub owner, a user **or** an organization;
+  `hobo cd up`: HoBo CD's Vercel Integration) is kept as `HOBO_CI_SETTINGS` /
+  `HOBO_CD_SETTINGS` beside the credentials, so a destroyed devbox is set up
+  again by signing in and nothing is asked twice.
+- **No secret in the environment, on disk or in a temporary file.** Secret
+  environment variables are ignored and named (`ignoredSecretEnvNotice`);
+  child processes get an environment without them; a credential a run needs
+  (the junction's Vercel token, the deploy token) reaches the deploy through
+  the trusted vault, never `process.env` or `$GITHUB_ENV`. A test scans the
+  lifecycle sources so none reads a secret variable again
+  (`packages/hobo-ci/test/secret-custody.test.ts`).
 - **Providers**: when planning finds a resource no connected provider serves,
   `hobo up` offers the installable providers that advertise its port, connects
   the chosen ones (`hobo add`, approving a held one) and runs `up` again.
 - **Agents** can complete a ceremony too (`createAgent`, WebMCP). Handing off
   to a provider or submitting a secret asks the person.
 - Without a person at a browser, and for `--what-if`, nothing opens. The
-  result names each missing setting, or the `hobo add` that would satisfy each
+  result says what it would sign in to and ask for, points CI at a
+  preconfigured OIDC identity, or names the `hobo add` that would satisfy each
   resource.
 
 ### Broker targeting and anonymous deploy

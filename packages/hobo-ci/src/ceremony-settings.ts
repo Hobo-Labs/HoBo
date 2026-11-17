@@ -51,33 +51,6 @@ export const CI_SETTINGS: readonly CeremonySetting[] = Object.freeze([
 		},
 		validate: githubLogin,
 	},
-	{
-		field: {
-			name: "HOBO_CI_SECRET_STORE",
-			label: "Secret store",
-			kind: "choice",
-			required: true,
-			value: "infisical",
-			options: [
-				{
-					value: "infisical",
-					label: "Infisical Cloud (recommended)",
-					description: "Workloads sign in with OIDC: no secret to keep.",
-				},
-				{
-					value: "1password",
-					label: "1Password",
-					description:
-						"Unlocked with your desktop app; workloads use a service account.",
-				},
-				{
-					value: "bitwarden",
-					label: "Bitwarden Secrets Manager",
-					description: "Use a machine account to access the selected project.",
-				},
-			],
-		},
-	},
 ]);
 
 /** A store's name as the person sees it. */
@@ -96,6 +69,22 @@ export function storeSettings(
 ): readonly CeremonySetting[] {
 	if (store === "bitwarden")
 		return [
+			{
+				field: {
+					name: "BWS_SERVER",
+					label: "Bitwarden cloud",
+					description:
+						"Where your Bitwarden account lives; a token works only there.",
+					kind: "choice",
+					required: true,
+					value: "us",
+					options: [
+						{ value: "us", label: "United States (bitwarden.com)" },
+						{ value: "eu", label: "European Union (bitwarden.eu)" },
+					],
+				},
+				fallback: "us",
+			},
 			{
 				field: {
 					name: "BWS_ORGANIZATION_ID",
@@ -173,6 +162,16 @@ export function storeSettings(
 						required: false,
 					},
 					fallback: defaultPath,
+				},
+				{
+					field: {
+						name: "INFISICAL_IDENTITY_ID",
+						label: "Infisical machine identity for workloads (optional)",
+						description:
+							"An identity with OIDC Auth that trusts your CI; with it, a CI run signs in with its own OIDC token and nobody types a token.",
+						kind: "text",
+						required: false,
+					},
 				},
 				{
 					field: {

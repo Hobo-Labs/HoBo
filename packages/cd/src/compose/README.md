@@ -76,10 +76,10 @@ qualifies and soaks, defers a tainted host and catches it up once it recovers.
   SQLite. Set `HOBO_CD_POSTGRES_URL` (PostgreSQL 16 or later) or a fleet
   (below); SQLite is for a single conductor process (R6).
 - **Experimental journal fleet** — `HOBO_CD_POSTGRES_FLEET=neon-eu,supabase`
-  names a writer and standbys; each member's URL is its own variable
-  (`HOBO_CD_POSTGRES_URL_NEON_EU`, as a marketplace integration injects it), so
-  no list of connection strings exists. `HOBO_CD_POSTGRES_WITNESSES` names
-  register-only members the same way. The fleet runs by the journal's declared
+  names a writer and standbys; each member's URL is a secret-store entry
+  (`HOBO_CD_POSTGRES_URL_NEON_EU`), not an environment variable.
+  `HOBO_CD_POSTGRES_WITNESSES` names register-only members the same way.
+  The fleet runs by the journal's declared
   continuity policy (`@hobo/hobo-cd` `CD_CONTINUITY`). The implementation does
   not yet fence in-flight writes at commit, and member names do not prove
   independent failure domains; do not rely on it for safe failover. Opening
