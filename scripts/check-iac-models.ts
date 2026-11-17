@@ -25,6 +25,7 @@ try {
 	for (const [directory, name] of [
 		["dispatcher", "IacRouting"],
 		["broker", "IacBudget"],
+		["cloud", "IacTransitions"],
 	] as const) {
 		const result = spawnSync(
 			"java",
@@ -68,6 +69,18 @@ try {
 			"IacRouting",
 			'/\\ phase = "uncertain" /\\ candidate \\in fenced /\\ candidate \\notin live\n  /\\ verified\' = TRUE',
 			'/\\ phase = "uncertain"\n  /\\ verified\' = TRUE',
+		],
+		[
+			"cloud",
+			"IacTransitions",
+			"StartApply(c) ==\n  /\\ snapshot[c] = version /\\ version < MaxVersion",
+			"StartApply(c) ==\n  /\\ version < MaxVersion",
+		],
+		[
+			"cloud",
+			"IacTransitions",
+			'/\\ apply = "uncertain" /\\ fenced /\\ verified /\\ live = "none"\n  /\\ result',
+			'/\\ apply = "uncertain"\n  /\\ result',
 		],
 	] as const;
 	for (const [index, [directory, name, before, after]] of mutations.entries()) {

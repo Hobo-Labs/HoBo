@@ -1,8 +1,9 @@
 # @hobo/broker
 
-The finite TLA+ models in `model/IacBudget.tla` and
-`../dispatcher/model/IacRouting.tla` check admission, fencing, recovery and
-disclosure invariants under their stated host-trust assumptions. Run both with
+The finite TLA+ models in `model/IacBudget.tla`,
+`../dispatcher/model/IacRouting.tla`, and `../cloud/model/IacTransitions.tla`
+check admission, fencing, recovery, transition ordering and disclosure
+invariants under their stated host-trust assumptions. Run them with
 `HOBO_TLA_TOOLS=/path/to/tla2tools-1.8.0.jar node --experimental-strip-types scripts/check-iac-models.ts`
 from the repository root. The tool is available from the
 [TLA+ 1.8.0 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.8.0);
