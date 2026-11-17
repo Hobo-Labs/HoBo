@@ -15,6 +15,53 @@ export interface RejectionMatrixRow {
 // public-contract: the closed rejection-code catalog agents self-correct against.
 export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 	{
+		code: "quote-invalid",
+		plane: "billing",
+		remediation:
+			"provide an intact quote in the current pricing format and currency",
+	},
+	{
+		code: "quote-ineligible",
+		plane: "billing",
+		remediation:
+			"resolve incomplete pricing evidence before requesting authorization",
+	},
+	{
+		code: "quote-evidence-required",
+		plane: "billing",
+		remediation: "provide a complete quote and trusted attestation",
+	},
+	{
+		code: "quote-provenance-required",
+		plane: "billing",
+		remediation:
+			"configure a trusted authority that authenticates and binds the quote",
+	},
+	{
+		code: "quote-provenance-invalid",
+		plane: "billing",
+		remediation:
+			"reconcile the quote attestation, scope, freshness and content",
+	},
+	{
+		code: "quote-bound-invalid",
+		plane: "billing",
+		remediation:
+			"provide a conservative liability bound covering the quoted amount",
+	},
+	{
+		code: "estimate-untrusted",
+		plane: "billing",
+		remediation:
+			"provide a trusted quote or explicitly configure a trusted legacy estimate",
+	},
+	{
+		code: "spend-estimate-invalid",
+		plane: "billing",
+		remediation:
+			"provide a finite nonnegative amount that can be represented safely",
+	},
+	{
 		code: "invalid-spend-estimate",
 		plane: "billing",
 		remediation:

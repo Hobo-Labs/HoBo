@@ -12,7 +12,21 @@ import {
 } from "@hobo/pricing";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { authorizeBillingSpend } from "../src/pricing-authorization.js";
+import {
+	authorizeBillingSpend as authorizeWithAuthority,
+	type BillingAuthorizationInput,
+} from "../src/pricing-authorization.js";
+
+// These fixtures model a trusted host that attests the quote amount as a bound.
+function authorizeBillingSpend(input: BillingAuthorizationInput) {
+	return authorizeWithAuthority({
+		...input,
+		trustEstimate: true,
+		attestQuote: (quote) => ({
+			liabilityBoundUsd: quote.incremental?.billed?.decimal ?? "",
+		}),
+	});
+}
 
 const policy = {
 	quota: "default",
