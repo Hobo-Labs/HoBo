@@ -94,6 +94,7 @@ const baseRequest = {
 describe("createBroker.resolve — brokering across providers", () => {
 	it("places each resource on the cheapest provider that satisfies it", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -116,6 +117,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 	it("honours denied providers accumulated from broader scope policies", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			stationId: "station:test",
 			railHash:
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -146,6 +148,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 	it("pins placement to the pinned provider when the objective is pinned", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			stationId: "station:test",
 			railHash:
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -172,6 +175,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 	it("rejects with explicit-camp-required when a junction policy locks placement down", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			stationId: "station:test",
 			railHash:
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -210,6 +214,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 	it("rejects through the billing plane when the estimate exceeds the spend cap", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -228,6 +233,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 	it("rejects through the gate plane when a policy rule denies the resolve action", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -262,6 +268,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 	it("rejects with no-eligible-provider when no provider satisfies a port", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -280,6 +287,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 
 	it("respects allowed regions and per-requirement region pins", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			stationId: "station:test",
 			railHash:
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -316,6 +324,7 @@ describe("createBroker.resolve — brokering across providers", () => {
 describe("createBroker.scale — spin resources up and down", () => {
 	it("emits broker.ScaleRequested for a valid directive", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -332,6 +341,7 @@ describe("createBroker.scale — spin resources up and down", () => {
 
 	it("refuses a zero directive with non-zero replicas", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -348,6 +358,7 @@ describe("createBroker.deliver — delivers through CD (D14)", () => {
 	it("legacy Argo policy still delivers via the publisher", async () => {
 		const requests: DeliveryPromotionRequest[] = [];
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -391,6 +402,7 @@ describe("createBroker.deliver — delivers through CD (D14)", () => {
 
 	it("the default plane only runs the in-process conductor and refuses publisher mode", async () => {
 		const legacy = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -405,6 +417,7 @@ describe("createBroker.deliver — delivers through CD (D14)", () => {
 		});
 
 		const local = createBroker({
+			trustLegacyEstimates: true,
 			policies: { ...basePolicies, delivery: { reconcilerMode: "conductor" } },
 			catalog,
 			stationId: "station:test",
@@ -453,6 +466,7 @@ describe("effectivePlacementPolicy — scope merge semantics", () => {
 describe("broker decision read model", () => {
 	it("folds decision facts into a materialized view and round-trips snapshots", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -481,6 +495,7 @@ describe("broker decision read model", () => {
 describe("connector requirements gate", () => {
 	it("rejects when a required connector kind is not registered", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			stationId: "station:test",
 			railHash:
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -500,6 +515,7 @@ describe("connector requirements gate", () => {
 describe("residency plane mapping (ADR-0146)", () => {
 	it("maps gate:'residency' reasons to the residency plane, not policy", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",

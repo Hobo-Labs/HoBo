@@ -204,7 +204,10 @@ package data_models
 	placements: [...#PlacementDecision] & [_, ...]
 	station_id?: string
 	rail_hash?:  string
-	guest?:      #GuestResolutionEvidence
+	guest?:                  #GuestResolutionEvidence
+	quote_hash?:             string & =~"^sha256:"
+	pricing_binding_digest?: string & =~"^sha256:"
+	authorized_usd?:         number & >=0
 }
 
 #RejectionPlane: "policy" | "contracts" | "billing" | "placement" | "connectors" | "residency"

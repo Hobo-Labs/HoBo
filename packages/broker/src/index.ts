@@ -1,5 +1,7 @@
 export {
 	type BrokerDecisionRow,
+	type BrokerPricingAuthority,
+	type BrokerQuoteContext,
 	type BrokerResolution,
 	createBroker,
 	foldBrokerDecisions,
@@ -83,6 +85,7 @@ export {
 } from "./http.js";
 export {
 	createLocalHostCatalog,
+	createLocalHostPricingAuthority,
 	defaultLocalPolicySet,
 	LOCAL_HOST_PROVIDER_ID,
 	LOCAL_HOST_REGION,

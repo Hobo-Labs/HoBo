@@ -43,6 +43,7 @@ const catalog: BrokerCatalog = {
 
 function brokerWith(policies: JsonObject) {
 	return createBroker({
+		trustLegacyEstimates: true,
 		stationId: "station:test",
 		railHash:
 			"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

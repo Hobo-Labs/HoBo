@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
+import { create } from "@bufbuild/protobuf";
+import {
+	QuoteVectorSchema,
+	quoteHashOf,
+	RATING_ALGORITHM_VERSION,
+} from "@hobo/pricing";
+import type { BrokerPricingAuthority, BrokerQuoteContext } from "./broker.js";
 
 import type {
 	BrokerCatalog,
@@ -73,6 +80,41 @@ export function createLocalHostCatalog(
 	return {
 		catalogHash: `sha256:${digest}`,
 		definitions: () => definitions.map((d) => ({ ...d })),
+	};
+}
+
+// This attests only the built-in local test host's service fee. It does not
+// cover infrastructure or third-party costs incurred by running that host.
+export function createLocalHostPricingAuthority(): BrokerPricingAuthority {
+	const isLocalWork = (context: BrokerQuoteContext) =>
+		context.placements.length > 0 &&
+		context.placements.every(
+			(placement) =>
+				placement.providerId === LOCAL_HOST_PROVIDER_ID &&
+				placement.definitionId.startsWith(`${LOCAL_HOST_PROVIDER_ID}:`) &&
+				placement.region === LOCAL_HOST_REGION &&
+				placement.unit === "hour" &&
+				placement.marginalPrice === "0.00" &&
+				placement.sku.startsWith("local-host-"),
+		);
+	const localQuote = () => {
+		const quote = create(QuoteVectorSchema, {
+			schema: "hobo.pricing.quote/v1",
+			ratingAlgorithmVersion: RATING_ALGORITHM_VERSION,
+			incremental: { billed: { decimal: "0", currency: "USD" } },
+			eligibility: { eligible: true },
+		});
+		quote.quoteHash = quoteHashOf(quote);
+		return quote;
+	};
+	return {
+		quote: (context) => (isLocalWork(context) ? localQuote() : undefined),
+		attest: (context, quote) =>
+			isLocalWork(context) &&
+			quote.quoteHash === localQuote().quoteHash &&
+			quote.quoteHash === quoteHashOf(quote)
+				? { liabilityBoundUsd: "0" }
+				: undefined,
 	};
 }
 

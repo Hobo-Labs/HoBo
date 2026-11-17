@@ -63,6 +63,7 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 	it("signs resolutions when a key is configured and verification round-trips", async () => {
 		const key = generateResolutionSigningKey();
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -100,6 +101,7 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 	it("signs rejections too, and a foreign key does not verify", async () => {
 		const key = generateResolutionSigningKey();
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -144,6 +146,7 @@ describe("metered billing plane", () => {
 
 	it("authorizes against the metered remaining budget", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -168,6 +171,7 @@ describe("metered billing plane", () => {
 		let available = true;
 		const plane = createMeteredBillingPlane([]);
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: {
 				...basePolicies,
 				billing: { ...basePolicies.billing, budgetUsd: 10, spendCapUsd: 10 },
@@ -201,6 +205,7 @@ describe("metered billing plane", () => {
 	it("releases a newly created hold if placement fails before any receipt", async () => {
 		let available = false;
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: {
 				...basePolicies,
 				billing: { ...basePolicies.billing, budgetUsd: 10, spendCapUsd: 10 },
@@ -233,6 +238,7 @@ describe("rejection matrix", () => {
 
 	it("covers every reason the broker's own reject paths emit", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
