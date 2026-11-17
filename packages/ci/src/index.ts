@@ -127,6 +127,8 @@ export {
 	type MachineChange,
 	type MachineEvent,
 	type MachineEventType,
+	MachineRegistryError,
+	type MachineRegistryRefusal,
 	machineAdvertSigningPayload,
 	machineCandidates,
 	machineOnline,

@@ -5,10 +5,15 @@
  * shares the relay's file and writer rather than opening a second one. Each
  * advert is stored as protobuf JSON and read back through
  * `parseMachineAdvert`, checked and frozen. A machine id belongs to one
- * account: an advert that would move a known id to another account is
- * refused, because removing it is the owner's call, not another account's.
+ * account and one key: an advert that would move a known id to another
+ * account or key is refused, because removing it is the owner's call.
  *
- * The rules about signatures, keys and the online window are in
+ * `put` replacing a kept machine keeps the owner's pause and sharing, read
+ * and written in the same transaction, so a renewal that raced an owner's
+ * `hobo ci machine pause` cannot undo it, and two first connects under
+ * different keys cannot both win.
+ *
+ * The rules about signatures, owners and the online window are in
  * `./machine-registry.ts`; this file only keeps what it is given.
  */
 import type { DatabaseSync } from "node:sqlite";
@@ -18,14 +23,12 @@ import {
 	type MachineAdvert,
 	MachineAdvertSchema,
 } from "../_generated/relay_job_pb.js";
+import { MachineRegistryError } from "./machine-registry.js";
 import type { MachineSharing } from "./machines.js";
 import type { MachineRegistry } from "./ports.js";
 import { defineMachineAdvert, parseMachineAdvert } from "./relay-job.js";
 
-/** A machine id the registry was asked to change does not exist, or belongs to another account. */
-export class MachineRegistryError extends Error {
-	override readonly name = "MachineRegistryError";
-}
+export { MachineRegistryError };
 
 /** A row of `ci_machines` as SQLite returns it. */
 const MachineRow = z.object({ body: z.string() });
@@ -78,7 +81,8 @@ export class SqliteMachineRegistry implements MachineRegistry {
 
 	private known(id: string): MachineAdvert {
 		const machine = this.read(id);
-		if (!machine) throw new MachineRegistryError(`no machine ${id}`);
+		if (!machine)
+			throw new MachineRegistryError("unknown_machine", `no machine ${id}`);
 		return machine;
 	}
 
@@ -101,11 +105,29 @@ export class SqliteMachineRegistry implements MachineRegistry {
 		return this.atomic(() => {
 			const checked = defineMachineAdvert(create(MachineAdvertSchema, advert));
 			const kept = this.read(checked.id);
-			if (kept && kept.accountId !== checked.accountId)
+			if (!kept) {
+				this.write(checked);
+				return;
+			}
+			if (kept.accountId !== checked.accountId)
 				throw new MachineRegistryError(
+					"other_account",
 					`machine ${checked.id} belongs to another account`,
 				);
-			this.write(checked);
+			if (kept.signerKeyId !== checked.signerKeyId)
+				throw new MachineRegistryError(
+					"other_key",
+					`machine ${checked.id} is pinned to another key`,
+				);
+			this.write(
+				defineMachineAdvert(
+					create(MachineAdvertSchema, {
+						...checked,
+						paused: kept.paused,
+						sharing: kept.sharing,
+					}),
+				),
+			);
 		});
 	}
 

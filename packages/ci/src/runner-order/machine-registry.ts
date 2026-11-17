@@ -6,10 +6,16 @@
  * An advert is signed with the machine's mesh identity key (`./mesh/trust.ts`
  * holds the key pair; the same Ed25519 keys sign mesh adverts). The advert's
  * `signerKeyId` is that key's public half, so a reader needs nothing else to
- * check it. The first key a machine id arrives with is pinned: an advert for
- * a known machine id under any other key is refused and recorded as
- * `machine.taken_over`, and stays refused until the owner removes the machine.
- * Removing it is the only way to move a machine id to a new key.
+ * check it. The key is pinned on first use (trust on first use): it is not
+ * looked up in the mesh's trusted-key set. The first key a machine id arrives
+ * with is pinned: an advert for a known machine id under any other key, or
+ * from another account, is refused and recorded as `machine.taken_over`, and
+ * stays refused until the owner removes the machine. Removing it is the only
+ * way to move a machine id to a new key.
+ *
+ * The advert's owner is not taken on the machine's word: it must be the
+ * GitHub user the sender authenticated as, and a renewal keeps the owner the
+ * machine connected with.
  *
  * Pause and sharing are the owner's settings and the registry keeps them. A
  * machine's own advert sets them only when the machine is new, so a renewal
@@ -25,7 +31,11 @@ import {
 	type MachineAdvert,
 	MachineAdvertSchema,
 } from "../_generated/relay_job_pb.js";
-import type { MeshIdentity } from "../mesh/trust.js";
+import {
+	MESH_PUBLIC_KEY,
+	MESH_SIGNATURE,
+	type MeshIdentity,
+} from "../mesh/trust.js";
 import type { MachineCandidate, MachineSharing } from "./machines.js";
 import type { MachineRegistry } from "./ports.js";
 import {
@@ -41,8 +51,29 @@ export const MACHINE_ADVERT_TTL_MS = 90_000;
 // public-contract: the domain separator of a signed machine advert; a change to what is signed needs a new one.
 export const MACHINE_ADVERT_SIGNING_CONTEXT = "hobo-ci-machine-advert/v1";
 
-const PUBLIC_KEY = /^[A-Za-z0-9_-]{43}$/u;
-const SIGNATURE = /^[A-Za-z0-9_-]{86}$/u;
+/** Why a machine registry store refused a change. */
+export type MachineRegistryRefusal =
+	/** No machine has that id. */
+	| "unknown_machine"
+	/** The id is held by another account; only that account's owner may remove it. */
+	| "other_account"
+	/** The id is pinned to another key; only its owner may remove it. */
+	| "other_key";
+
+/**
+ * A store refused a change. A store that can tell (the SQLite one does)
+ * refuses inside its write to move a machine id to another account or key,
+ * and `receiveMachineAdvert` turns that into a `taken_over` verdict.
+ */
+export class MachineRegistryError extends Error {
+	override readonly name = "MachineRegistryError";
+	constructor(
+		readonly reason: MachineRegistryRefusal,
+		message: string,
+	) {
+		super(message);
+	}
+}
 
 /** An advert as a machine sends it: the record and its Ed25519 signature, base64url. */
 export type SignedMachineAdvert = Readonly<{
@@ -77,7 +108,9 @@ export type MachineAdvertRefusal =
 	| "stale"
 	/** It names another account than the one that sent it. */
 	| "wrong_account"
-	/** The machine id is known under another key. */
+	/** It names another owner than the user who sent it, or than the machine connected with. */
+	| "wrong_owner"
+	/** The machine id is known under another key, or held by another account. */
 	| "taken_over";
 
 export type MachineAdvertVerdict =
@@ -140,7 +173,10 @@ export function signMachineAdvert(
 /** Whether the signature holds for what the advert now says, under the advert's own key. */
 export function verifyMachineAdvert(signed: SignedMachineAdvert): boolean {
 	const publicKey = signed.advert.signerKeyId;
-	if (!PUBLIC_KEY.test(publicKey) || !SIGNATURE.test(signed.signature))
+	if (
+		!MESH_PUBLIC_KEY.test(publicKey) ||
+		!MESH_SIGNATURE.test(signed.signature)
+	)
 		return false;
 	try {
 		return verify(
@@ -170,6 +206,24 @@ function refused(
 	return { kind: "refused", reason, message, events };
 }
 
+function takenOver(advert: MachineAdvert, nowMs: number): MachineAdvertVerdict {
+	return refused(
+		"taken_over",
+		`Machine ${advert.name} (${advert.id}) is already connected under another key or account. Its owner must remove it (hobo ci machine remove ${advert.id}) before it can connect with a new one.`,
+		[
+			{
+				type: "machine.taken_over",
+				accountId: advert.accountId,
+				machineId: advert.id,
+				atMs: nowMs,
+				by: advert.ownerLogin,
+				signerKeyId: advert.signerKeyId,
+				detail: `A new key tried to take over machine ${advert.name}; it was refused and the old key stays.`,
+			},
+		],
+	);
+}
+
 /** The machine with this id in the account, if the registry holds one. */
 export async function findMachine(
 	registry: MachineRegistry,
@@ -182,17 +236,28 @@ export async function findMachine(
 /**
  * Check an advert that arrived from a machine and keep it, or refuse it.
  *
- * `accountId` is the account the sender authenticated as. The advert must
- * name it, verify under its own key, sit within `MACHINE_ADVERT_TTL_MS` of
- * `nowMs` (either side, for clock skew) and be no older than the advert kept.
- * A known machine id under another key is refused and gives
- * `machine.taken_over`. A new machine, or one that was offline, gives
- * `machine.connected`.
+ * `accountId`, `ownerId` and `ownerLogin` are who the sender authenticated as
+ * (the account, and the GitHub user id and login); the advert is not trusted
+ * to say them. The advert must name all three, verify under its own key, be
+ * dated within `MACHINE_ADVERT_TTL_MS` of `nowMs` (either side, for clock
+ * skew) and be no older than the advert kept. A date ahead of `nowMs` is kept
+ * as `nowMs`, so a machine cannot stay online longer by dating its advert
+ * ahead.
+ *
+ * A known machine id under another key, or held by another account, is
+ * refused and gives `machine.taken_over`. A renewal from another owner than
+ * the machine connected with is refused as `wrong_owner`. A new machine, or
+ * one that was offline, gives `machine.connected`.
  */
 export async function receiveMachineAdvert(
 	registry: MachineRegistry,
 	signed: SignedMachineAdvert,
-	context: Readonly<{ accountId: string; nowMs: number }>,
+	context: Readonly<{
+		accountId: string;
+		ownerId: string;
+		ownerLogin: string;
+		nowMs: number;
+	}>,
 ): Promise<MachineAdvertVerdict> {
 	let advert: MachineAdvert;
 	try {
@@ -215,6 +280,14 @@ export async function receiveMachineAdvert(
 			"wrong_account",
 			`The advert for machine ${advert.id} names another account than the one that sent it.`,
 		);
+	if (
+		advert.ownerId !== context.ownerId ||
+		advert.ownerLogin !== context.ownerLogin
+	)
+		return refused(
+			"wrong_owner",
+			`The advert for machine ${advert.id} names another owner than ${context.ownerLogin}, who sent it.`,
+		);
 	if (Math.abs(context.nowMs - advert.lastSeenMs) > MACHINE_ADVERT_TTL_MS)
 		return refused(
 			"stale",
@@ -222,36 +295,37 @@ export async function receiveMachineAdvert(
 		);
 	const kept = await findMachine(registry, advert.accountId, advert.id);
 	if (kept && kept.signerKeyId !== advert.signerKeyId)
+		return takenOver(advert, context.nowMs);
+	if (kept && kept.ownerId !== advert.ownerId)
 		return refused(
-			"taken_over",
-			`Machine ${advert.name} (${advert.id}) is already connected under another key. Its owner must remove it (hobo ci machine remove ${advert.id}) before it can connect with a new one.`,
-			[
-				{
-					type: "machine.taken_over",
-					accountId: advert.accountId,
-					machineId: advert.id,
-					atMs: context.nowMs,
-					by: advert.ownerLogin,
-					signerKeyId: advert.signerKeyId,
-					detail: `A new key tried to take over machine ${advert.name}; it was refused and the old key stays.`,
-				},
-			],
+			"wrong_owner",
+			`Machine ${advert.name} (${advert.id}) belongs to another owner. Its owner must remove it (hobo ci machine remove ${advert.id}) before another can connect it.`,
 		);
 	if (kept && advert.lastSeenMs < kept.lastSeenMs)
 		return refused(
 			"stale",
 			`The advert for machine ${advert.id} is older than the one already kept.`,
 		);
-	const stored = kept
-		? defineMachineAdvert(
-				create(MachineAdvertSchema, {
-					...advert,
-					paused: kept.paused,
-					sharing: kept.sharing,
-				}),
-			)
-		: advert;
-	await registry.put(stored);
+	const stored = defineMachineAdvert(
+		create(MachineAdvertSchema, {
+			...advert,
+			lastSeenMs: Math.min(advert.lastSeenMs, context.nowMs),
+			paused: kept?.paused ?? advert.paused,
+			sharing: kept?.sharing ?? advert.sharing,
+		}),
+	);
+	try {
+		await registry.put(stored);
+	} catch (error) {
+		// A store that pins ids refuses a move inside its own write, which also
+		// covers an id held by another account and a racing first connect.
+		if (
+			error instanceof MachineRegistryError &&
+			(error.reason === "other_account" || error.reason === "other_key")
+		)
+			return takenOver(advert, context.nowMs);
+		throw error;
+	}
 	const connected = !kept || !machineOnline(kept, context.nowMs);
 	return {
 		kind: "accepted",

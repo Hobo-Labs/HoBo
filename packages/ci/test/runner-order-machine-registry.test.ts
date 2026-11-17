@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,6 +10,7 @@ import { answerRelayJob } from "../src/runner-order/answer.js";
 import { NO_ROUTE_FACTS } from "../src/runner-order/decide.js";
 import {
 	MACHINE_ADVERT_TTL_MS,
+	MachineRegistryError,
 	machineAdvertSigningPayload,
 	machineCandidates,
 	machineOnline,
@@ -21,6 +23,7 @@ import {
 	signMachineAdvert,
 	verifyMachineAdvert,
 } from "../src/runner-order/machine-registry.js";
+import { SqliteMachineRegistry } from "../src/runner-order/machine-registry-sqlite.js";
 import type {
 	MachineRegistry,
 	RouteFactsSource,
@@ -34,7 +37,12 @@ import {
 } from "../src/runner-order/testing.js";
 
 const NOW = 1_763_337_600_000;
-const ACCOUNT = { accountId: "acct-1", nowMs: NOW };
+const ACCOUNT = {
+	accountId: "acct-1",
+	ownerId: "42",
+	ownerLogin: "octocat",
+	nowMs: NOW,
+};
 const studioKey = generateMeshIdentity().identity;
 const thiefKey = generateMeshIdentity().identity;
 
@@ -181,6 +189,57 @@ describe("receiveMachineAdvert", () => {
 		expect(await registry.list("acct-1")).toEqual([]);
 	});
 
+	it("refuses an advert that claims another owner than the user who sent it", async () => {
+		const registry = new InMemoryMachineRegistry();
+		const reasons = [];
+		for (const [sent, context] of [
+			[signed({ ownerId: "7" }), ACCOUNT],
+			[signed({ ownerLogin: "hubot" }), ACCOUNT],
+			[signed(), { ...ACCOUNT, ownerId: "7", ownerLogin: "hubot" }],
+		] as const) {
+			const verdict = await receiveMachineAdvert(registry, sent, context);
+			reasons.push(verdict.kind === "refused" ? verdict.reason : "accepted");
+		}
+		expect(reasons).toEqual(["wrong_owner", "wrong_owner", "wrong_owner"]);
+		expect(await registry.list("acct-1")).toEqual([]);
+	});
+
+	it("keeps the owner a machine connected with: another member's renewal is refused", async () => {
+		const registry = new InMemoryMachineRegistry();
+		await receiveMachineAdvert(registry, signed(), ACCOUNT);
+		const hubot = { ...ACCOUNT, ownerId: "7", ownerLogin: "hubot" };
+		const claimed = await receiveMachineAdvert(
+			registry,
+			signed({ ownerId: "7", ownerLogin: "hubot", lastSeenMs: NOW + 1_000 }),
+			{ ...hubot, nowMs: NOW + 1_000 },
+		);
+		expect(claimed.kind === "refused" && claimed.reason).toBe("wrong_owner");
+		expect((await registry.list("acct-1"))[0]?.ownerId).toBe("42");
+		expect(
+			await registryMachineCandidates(registry, {
+				...ACCOUNT,
+				readers: new Set(["7"]),
+			}),
+		).toMatchObject([{ ownerCanRead: false }]);
+	});
+
+	it("keeps an advert dated ahead of the clock at the clock, so it lapses on time", async () => {
+		const registry = new InMemoryMachineRegistry();
+		const ahead = await receiveMachineAdvert(
+			registry,
+			signed({ lastSeenMs: NOW + 60_000 }),
+			ACCOUNT,
+		);
+		expect(ahead.kind === "accepted" && ahead.advert.lastSeenMs).toBe(NOW);
+		expect((await registry.list("acct-1"))[0]?.lastSeenMs).toBe(NOW);
+		const honest = await receiveMachineAdvert(
+			registry,
+			signed({ lastSeenMs: NOW + 10_000 }),
+			{ ...ACCOUNT, nowMs: NOW + 10_000 },
+		);
+		expect(honest.kind).toBe("accepted");
+	});
+
 	it("refuses an advert older than the one kept (a replay)", async () => {
 		const registry = new InMemoryMachineRegistry();
 		const old = signed({ lastSeenMs: NOW - 10_000 });
@@ -227,6 +286,73 @@ describe("machine.taken_over (M08)", () => {
 			thiefKey.publicKey,
 		);
 	});
+});
+
+/**
+ * The in-memory fake as the port should behave: a machine id stays with the
+ * account it connected under. (The wave-0 fake moves it; package 00 is asked
+ * to make it refuse, and to assert this in `machineRegistryConformance`.)
+ */
+class AccountPinnedMemoryRegistry extends InMemoryMachineRegistry {
+	private readonly owners = new Map<string, string>();
+
+	override async put(machine: MachineAdvert): Promise<void> {
+		const account = this.owners.get(machine.id);
+		if (account !== undefined && account !== machine.accountId)
+			throw new MachineRegistryError(
+				"other_account",
+				`machine ${machine.id} belongs to another account`,
+			);
+		this.owners.set(machine.id, machine.accountId);
+		await super.put(machine);
+	}
+
+	override async remove(id: string): Promise<void> {
+		this.owners.delete(id);
+		await super.remove(id);
+	}
+}
+
+describe("machine.taken_over across accounts (M08)", () => {
+	const stores: ReadonlyArray<readonly [string, () => MachineRegistry]> = [
+		[
+			"in memory, ids pinned to an account",
+			() => new AccountPinnedMemoryRegistry(),
+		],
+		["SQLite", () => new SqliteMachineRegistry(new DatabaseSync(":memory:"))],
+	];
+	for (const [name, make] of stores)
+		it(`refuses another account's advert for a known id (${name})`, async () => {
+			const registry = make();
+			await receiveMachineAdvert(registry, signed(), ACCOUNT);
+			const evil = {
+				accountId: "acct-evil",
+				ownerId: "666",
+				ownerLogin: "mallory",
+				nowMs: NOW,
+			};
+			const takeover = await receiveMachineAdvert(
+				registry,
+				signed(
+					{ accountId: "acct-evil", ownerId: "666", ownerLogin: "mallory" },
+					thiefKey,
+				),
+				evil,
+			);
+			expect(takeover.kind === "refused" && takeover.reason).toBe("taken_over");
+			expect(takeover.events).toMatchObject([
+				{
+					type: "machine.taken_over",
+					accountId: "acct-evil",
+					machineId: "m-1",
+					signerKeyId: thiefKey.publicKey,
+				},
+			]);
+			expect((await registry.list("acct-1")).map((m) => m.signerKeyId)).toEqual(
+				[studioKey.publicKey],
+			);
+			expect(await registry.list("acct-evil")).toEqual([]);
+		});
 });
 
 describe("owner changes", () => {

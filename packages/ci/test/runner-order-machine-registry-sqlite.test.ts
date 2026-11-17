@@ -46,11 +46,34 @@ describe("SqliteMachineRegistry", () => {
 	it("refuses to move a machine id to another account", async () => {
 		const registry = new SqliteMachineRegistry(memory());
 		await registry.put(testMachineAdvert());
-		await expect(
-			registry.put(testMachineAdvert({ accountId: "acct-2" })),
-		).rejects.toBeInstanceOf(MachineRegistryError);
+		const moved = registry.put(testMachineAdvert({ accountId: "acct-2" }));
+		await expect(moved).rejects.toBeInstanceOf(MachineRegistryError);
+		await expect(moved).rejects.toMatchObject({ reason: "other_account" });
 		expect((await registry.list("acct-1")).length).toBe(1);
 		expect(await registry.list("acct-2")).toEqual([]);
+	});
+
+	it("refuses to move a machine id to another key", async () => {
+		const registry = new SqliteMachineRegistry(memory());
+		await registry.put(testMachineAdvert());
+		const moved = registry.put(testMachineAdvert({ signerKeyId: "key-2" }));
+		await expect(moved).rejects.toBeInstanceOf(MachineRegistryError);
+		await expect(moved).rejects.toMatchObject({ reason: "other_key" });
+		expect((await registry.list("acct-1"))[0]?.signerKeyId).toBe("key-1");
+	});
+
+	it("keeps the owner's pause and sharing when a renewal read before them lands after", async () => {
+		const registry = new SqliteMachineRegistry(memory());
+		await registry.put(testMachineAdvert());
+		const renewalReadBeforePause = testMachineAdvert({
+			busy: 1,
+			lastSeenMs: 2,
+		});
+		await registry.setPaused("m-1", true, "octocat");
+		await registry.setSharing("m-1", "anyone");
+		await registry.put(renewalReadBeforePause);
+		const [kept] = await registry.list("acct-1");
+		expect(kept).toMatchObject({ paused: true, sharing: "anyone", busy: 1 });
 	});
 
 	it("refuses an advert that does not parse, and keeps nothing", async () => {
@@ -73,7 +96,7 @@ describe("SqliteMachineRegistry", () => {
 		await receiveMachineAdvert(
 			before,
 			signMachineAdvert(testMachineAdvert({ lastSeenMs: now }), key),
-			{ accountId: "acct-1", nowMs: now },
+			{ accountId: "acct-1", ownerId: "42", ownerLogin: "octocat", nowMs: now },
 		);
 		await before.setPaused("m-1", true, "octocat");
 		first.close();
@@ -86,7 +109,12 @@ describe("SqliteMachineRegistry", () => {
 		const takeover = await receiveMachineAdvert(
 			after,
 			signMachineAdvert(testMachineAdvert({ lastSeenMs: now + 1 }), thief),
-			{ accountId: "acct-1", nowMs: now + 1 },
+			{
+				accountId: "acct-1",
+				ownerId: "42",
+				ownerLogin: "octocat",
+				nowMs: now + 1,
+			},
 		);
 		expect(takeover.kind === "refused" && takeover.reason).toBe("taken_over");
 	});

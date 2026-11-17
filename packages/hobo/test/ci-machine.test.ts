@@ -189,7 +189,12 @@ describe("hobo ci machine share (M06)", () => {
 describe("hobo ci machine remove (M08, M09)", () => {
 	it("removes a machine for the next decision and frees its id for a new key", async () => {
 		const registry = new InMemoryMachineRegistry();
-		const context = { accountId: "acct-1", nowMs: NOW };
+		const context = {
+			accountId: "acct-1",
+			ownerId: "42",
+			ownerLogin: "octocat",
+			nowMs: NOW,
+		};
 		await receiveMachineAdvert(
 			registry,
 			signMachineAdvert(advert(), studioKey),
