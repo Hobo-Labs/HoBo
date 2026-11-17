@@ -1,0 +1,12 @@
+{
+	"schemaVersion": "hobo.secret-capture/v1",
+	"type": "secret.CaptureWriteUncertain",
+	"id": "sec_0123456789abcdef0123456789abcdee",
+	"seq": 3,
+	"time": "2026-11-12T10:02:00.000Z",
+	"ticketId": "cap_AAAAAAAAAAAAAAAAAAAAAA",
+	"name": "HOBO_CI_WEBHOOK_SECRET",
+	"target": "runtime",
+	"channel": "mcp-app",
+	"code": "unavailable"
+}

@@ -1,33 +1,3 @@
-/**
- * The secret-capture MCP App (MCP Apps extension `io.modelcontextprotocol/ui`,
- * specification 2026-01-26; reference SDK `@modelcontextprotocol/ext-apps`
- * 2.0.4, read 2026-11-12). When a HoBo deployment needs a secret the store
- * does not hold yet, the agent calls `capture_secret`; the owner types the
- * value into a form; the value is sealed in that form, opened in this
- * process, written to the secret store through the injected connector, and
- * dropped. The agent gets a ticket, then a name, `stored: true` and a store
- * reference. Nothing the agent can read ever holds the value.
- *
- * Channels, chosen from what the host negotiated at `initialize`:
- * 1. `mcp-app`: the host supports MCP Apps (`capabilities.extensions
- *    ["io.modelcontextprotocol/ui"].mimeTypes` has `text/html;profile=mcp-app`).
- *    `capture_secret` carries `_meta.ui.resourceUri`; the host renders
- *    `ui://hobo/secret-capture`; the form calls `submit_secret_value`, whose
- *    `_meta.ui.visibility` is `["app"]`, so the host keeps it out of the
- *    model's tool list (spec: "Host MUST NOT include tools in the agent's tool
- *    list when their visibility does not include \"model\""). A host without
- *    MCP Apps is never offered that tool at all.
- * 2. `url-elicitation`: no MCP Apps, but the client declared
- *    `capabilities.elicitation.url` (MCP 2025-11-25). `capture_secret`
- *    answers with `URLElicitationRequiredError` (-32042) naming the loopback
- *    page; the client shows the address and opens it once the owner consents;
- *    `notifications/elicitation/complete` follows the write. Form-mode
- *    elicitation is never used: the spec forbids it for secrets.
- * 3. `loopback-page`: neither. The result names the loopback page and tells
- *    the agent to ask the owner to open it in their own browser. Never a
- *    request to paste the value into the chat.
- */
-
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import {
@@ -57,25 +27,25 @@ import {
 } from "./spec.js";
 import { CapturedSecret } from "./value.js";
 
-// public-contract: the MCP Apps extension id this server negotiates.
+// public-contract:
 export const MCP_APPS_EXTENSION_ID = "io.modelcontextprotocol/ui";
-// public-contract: the MIME type of an MCP App HTML resource.
+// public-contract:
 export const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
-// public-contract: the MCP Apps spec revision the form speaks.
+// public-contract:
 export const MCP_APPS_SPEC_VERSION = "2026-01-26";
-// public-contract: the capture form's resource.
+// public-contract:
 export const SECRET_CAPTURE_RESOURCE_URI = "ui://hobo/secret-capture";
-// public-contract: the model-visible tool that opens a capture.
+// public-contract:
 export const CAPTURE_SECRET_TOOL = "capture_secret";
-// public-contract: the app-only tool the form submits through.
+// public-contract:
 export const SUBMIT_SECRET_VALUE_TOOL = "submit_secret_value";
-// public-contract: the model-visible tool that reads a capture's state.
+// public-contract:
 export const SECRET_CAPTURE_STATUS_TOOL = "secret_capture_status";
-// public-contract: the model-visible tool that ends captures and the writer session.
+// public-contract:
 export const END_SECRET_CAPTURE_TOOL = "end_secret_capture";
-// public-contract: the JSON-RPC error code of URLElicitationRequiredError (MCP 2025-11-25).
+// public-contract:
 export const URL_ELICITATION_REQUIRED = -32042;
-// public-contract: the schema version of secret-capture events.
+// public-contract:
 export const SECRET_CAPTURE_EVENTS_SCHEMA_VERSION = "hobo.secret-capture/v1";
 
 export const SECRET_CAPTURE_TOOL_NAMES: readonly string[] = Object.freeze([
@@ -94,9 +64,9 @@ type TicketState =
 	| "stored"
 	| "authorized"
 	| "expired"
+	| "uncertain"
 	| "closed";
 
-/** What the host can do, read from its `initialize` capabilities. */
 export type SecretCaptureHostSupport = Readonly<{
 	apps: boolean;
 	urlElicitation: boolean;
@@ -114,7 +84,6 @@ function objectAt(
 	return isJsonObject(value) ? value[key] : undefined;
 }
 
-/** Read the client's `initialize` capabilities. Anything malformed means "no". */
 export function negotiateSecretCaptureSupport(
 	capabilities: JsonValue | undefined,
 ): SecretCaptureHostSupport {
@@ -131,46 +100,34 @@ export function negotiateSecretCaptureSupport(
 	return Object.freeze({ apps, urlElicitation });
 }
 
-/** Whether a store is bound and whether this process may write to it now. */
 export type SecretStoreStatus =
 	| Readonly<{ connected: false; reason: string; nextStep: string }>
 	| Readonly<{
 			connected: true;
-			/** e.g. `infisical://proj/prod/hobo-ci-relay` */
 			storeRef: string;
 			writable: boolean;
-			/** The spec that authorizes writes, when they are not authorized yet. */
 			writerSpec: string;
 	  }>;
 
-/**
- * Where captured values go. The composition supplies it (`@hobo/hobo` binds
- * the committed secret-store binding and Infisical); tests use a memory store.
- * Implementations throw `SecretStoreConnectorError` with a short code; any
- * other error is reported as `unavailable`, and its message is never read.
- */
 export interface SecretStoreConnector {
 	status(): Promise<SecretStoreStatus>;
-	/**
-	 * Use a writer credential once to authorize writes for this session (for
-	 * Infisical: a Universal Auth login with a one-use client secret). The
-	 * credential is not stored.
-	 */
 	authorizeWriter(input: {
 		readonly clientId: string;
 		readonly secret: CapturedSecret;
 	}): Promise<Readonly<{ ref: string; expiresAt: string }>>;
-	/** Write one value; resolve to the entry's reference. */
 	store(
 		target: Exclude<SecretCaptureTarget, "writer">,
 		secret: CapturedSecret,
 	): Promise<Readonly<{ ref: string }>>;
-	/** End the writer session (revoke what it obtained). Idempotent. */
 	endWriterSession(): Promise<"ended" | "none">;
 }
 
 export type SecretCaptureEventType =
 	| "secret.CaptureOpened"
+	| "secret.CaptureWriteStarted"
+	| "secret.CaptureWriteUncertain"
+	| "secret.CaptureWriterSessionEnded"
+	| "secret.CaptureWriterSessionUncertain"
 	| "secret.CaptureStored"
 	| "secret.CaptureAuthorized"
 	| "secret.CaptureRejected"
@@ -178,8 +135,8 @@ export type SecretCaptureEventType =
 	| "secret.CaptureExpired"
 	| "secret.CaptureClosed";
 
-/** The audited fact of one step (`#SecretCaptureEvent`): references only. */
 export type SecretCaptureEvent = Readonly<{
+	id: string;
 	schemaVersion: typeof SECRET_CAPTURE_EVENTS_SCHEMA_VERSION;
 	type: SecretCaptureEventType;
 	seq: number;
@@ -192,7 +149,6 @@ export type SecretCaptureEvent = Readonly<{
 	code?: string;
 }>;
 
-/** An MCP tool as `tools/list` lists it. */
 export type SecretCaptureToolDefinition = Readonly<{
 	name: string;
 	title: string;
@@ -201,14 +157,12 @@ export type SecretCaptureToolDefinition = Readonly<{
 	_meta?: JsonValue;
 }>;
 
-/** An MCP `CallToolResult`. */
 export type SecretCaptureToolResult = Readonly<{
 	content: readonly Readonly<{ type: "text"; text: string }>[];
 	structuredContent: JsonValue;
 	isError: boolean;
 }>;
 
-/** A tool call either answers, or is a JSON-RPC error (URL elicitation). */
 export type SecretCaptureOutcome =
 	| Readonly<{ kind: "result"; result: SecretCaptureToolResult }>
 	| Readonly<{
@@ -217,11 +171,9 @@ export type SecretCaptureOutcome =
 	  }>;
 
 export interface SecretCaptureApp {
-	/** The tools for this host: the app-only submit tool only when it negotiated MCP Apps. */
 	tools(
 		support: SecretCaptureHostSupport,
 	): readonly SecretCaptureToolDefinition[];
-	/** The UI resource, listed only for an MCP Apps host. */
 	resources(support: SecretCaptureHostSupport): readonly JsonValue[];
 	readResource(uri: string): JsonValue | undefined;
 	handles(tool: string): boolean;
@@ -230,9 +182,7 @@ export interface SecretCaptureApp {
 		args: JsonValue | undefined,
 		support: SecretCaptureHostSupport,
 	): Promise<SecretCaptureOutcome>;
-	/** The facts so far (bounded), for audit and tests. */
 	events(): readonly SecretCaptureEvent[];
-	/** Close every open capture, end the writer session, stop the page. */
 	close(): Promise<void>;
 }
 
@@ -240,14 +190,10 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	specs: readonly ParsedSecretCaptureSpec[];
 	connector: SecretStoreConnector;
 	now?: () => number;
-	/** How long a capture stays open. Default 10 minutes. */
 	ttlMs?: number;
-	/** Open captures at once. Default 8. */
 	maxOpen?: number;
-	/** Failed submissions before a capture closes. Default 5. */
 	maxAttempts?: number;
-	onEvent?: (event: SecretCaptureEvent) => void;
-	/** Server-to-client notifications (`notifications/elicitation/complete`). */
+	onEvent?: (event: SecretCaptureEvent) => void | Promise<void>;
 	notify?: (method: string, params: JsonValue) => void;
 }>;
 
@@ -265,17 +211,19 @@ type Ticket = {
 	url: string | undefined;
 	ref: string | undefined;
 	attempts: number;
+	writeStarted: boolean;
 };
 
 const TICKET_ID = /^cap_[A-Za-z0-9_-]{22}$/u;
 const CLIENT_ID = /^[A-Za-z0-9-]{1,64}$/u;
+const STORE_REF =
+	/^(?:infisical|secref|hobo-writer-session):\/\/[A-Za-z0-9._~/:@-]{1,512}$/u;
 const MAX_EVENTS = 1000;
 
 function digest(token: string): Buffer {
 	return createHash("sha256").update(token, "utf8").digest();
 }
 
-/** A refusal as the agent sees it (`#SecretCaptureRefusal`). */
 type RefusalView = {
 	code: string;
 	message: string;
@@ -283,7 +231,6 @@ type RefusalView = {
 	name?: string;
 };
 
-/** A ticket as the agent sees it (`#SecretCaptureTicket`). */
 type TicketView = {
 	ticketId: string;
 	name: string;
@@ -341,28 +288,75 @@ export function createSecretCaptureApp(
 	const writerSpecs = options.specs.filter((spec) => spec.target === "writer");
 	const tickets = new Map<string, Ticket>();
 	const log: SecretCaptureEvent[] = [];
+	const pendingEvents: SecretCaptureEvent[] = [];
+	const closingPages: Promise<void>[] = [];
 	let seq = 0;
 	let page: Promise<LoopbackCapturePage> | undefined;
+	let queue: Promise<void> = Promise.resolve();
+	let terminated = false;
 
-	function emit(
+	function exclusive<T>(work: () => Promise<T>): Promise<T> {
+		const result = queue.then(work);
+		queue = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		return result;
+	}
+
+	function auditUnavailable(): SecretCaptureError {
+		return new SecretCaptureError(
+			"SECRET_CAPTURE_AUDIT_UNAVAILABLE",
+			"The capture audit record could not be saved.",
+			"Restore the audit journal before continuing.",
+		);
+	}
+
+	async function flushEvents(): Promise<void> {
+		while (pendingEvents.length > 0) {
+			const event = pendingEvents[0];
+			if (event === undefined) break;
+			try {
+				await options.onEvent?.(event);
+			} catch {
+				throw auditUnavailable();
+			}
+			pendingEvents.shift();
+			log.push(event);
+			if (log.length > MAX_EVENTS) log.shift();
+		}
+	}
+
+	function queueEvent(
 		type: SecretCaptureEventType,
-		fields: Omit<SecretCaptureEvent, "schemaVersion" | "type" | "seq" | "time">,
+		fields: Omit<
+			SecretCaptureEvent,
+			"id" | "schemaVersion" | "type" | "seq" | "time"
+		>,
+		id = `sec_${randomBytes(16).toString("hex")}`,
 	): void {
 		seq += 1;
 		const event: SecretCaptureEvent = Object.freeze({
+			id,
 			schemaVersion: SECRET_CAPTURE_EVENTS_SCHEMA_VERSION,
 			type,
 			seq,
-			time: new Date(now()).toISOString(),
+			time: new Date().toISOString(),
 			...fields,
 		});
-		log.push(event);
-		if (log.length > MAX_EVENTS) log.shift();
-		try {
-			options.onEvent?.(event);
-		} catch {
-			// An audit sink's failure does not change the capture.
-		}
+		pendingEvents.push(event);
+	}
+
+	async function emit(
+		type: SecretCaptureEventType,
+		fields: Omit<
+			SecretCaptureEvent,
+			"id" | "schemaVersion" | "type" | "seq" | "time"
+		>,
+		id?: string,
+	): Promise<void> {
+		queueEvent(type, fields, id);
+		await flushEvents();
 	}
 
 	function ticketFields(ticket: Ticket) {
@@ -381,20 +375,15 @@ export function createSecretCaptureApp(
 		ticket.tokenDigest = undefined;
 	}
 
-	function sweep(): void {
+	async function sweep(): Promise<void> {
 		const at = now();
 		for (const ticket of tickets.values())
 			if (ticket.state === "awaiting-owner" && at >= ticket.expiresAtMs) {
 				shut(ticket, "expired");
-				emit("secret.CaptureExpired", ticketFields(ticket));
+				await emit("secret.CaptureExpired", ticketFields(ticket));
 			}
 	}
 
-	/**
-	 * The ticket as the agent sees it (`#SecretCaptureTicket`). `offer` adds
-	 * the sealing key and the page while the capture is open; the status tool
-	 * never re-offers them.
-	 */
 	function view(ticket: Ticket, offer = true): TicketView {
 		const open = offer && ticket.state === "awaiting-owner";
 		const shown: TicketView = {
@@ -429,46 +418,61 @@ export function createSecretCaptureApp(
 		};
 	}
 
-	function openTicket(id: string): Ticket | undefined {
-		sweep();
+	async function openTicket(id: string): Promise<Ticket | undefined> {
+		await sweep();
 		const ticket = tickets.get(id);
 		return ticket?.state === "awaiting-owner" ? ticket : undefined;
 	}
 
 	function loopback(): Promise<LoopbackCapturePage> {
 		page ??= startLoopbackCapturePage({
-			page(id, nonce) {
-				const ticket = openTicket(id);
-				if (ticket === undefined || ticket.channel === "mcp-app")
-					return undefined;
-				return renderSecretCaptureHtml({
-					mode: "loopback",
-					nonce,
-					ticket: pageTicket(ticket),
+			async page(id, nonce) {
+				return exclusive(async () => {
+					if (terminated) return undefined;
+					await flushEvents();
+					const ticket = await openTicket(id);
+					if (ticket === undefined || ticket.channel === "mcp-app")
+						return undefined;
+					return renderSecretCaptureHtml({
+						mode: "loopback",
+						nonce,
+						ticket: pageTicket(ticket),
+					});
 				});
 			},
 			async submit(id, token, sealed): Promise<LoopbackAnswer> {
-				const ticket = openTicket(id);
-				const presented = digest(token);
-				if (
-					ticket === undefined ||
-					ticket.channel === "mcp-app" ||
-					ticket.tokenDigest === undefined ||
-					!timingSafeEqual(presented, ticket.tokenDigest)
-				)
+				return exclusive(async () => {
+					if (terminated)
+						return {
+							status: 410,
+							body: {
+								code: "SECRET_CAPTURE_CLOSED",
+								message: "The capture session is closed.",
+							},
+						};
+					await flushEvents();
+					const ticket = await openTicket(id);
+					const presented = digest(token);
+					if (
+						ticket === undefined ||
+						ticket.channel === "mcp-app" ||
+						ticket.tokenDigest === undefined ||
+						!timingSafeEqual(presented, ticket.tokenDigest)
+					)
+						return {
+							status: 404,
+							body: {
+								code: "SECRET_CAPTURE_UNKNOWN_TICKET",
+								message:
+									"This capture is closed or this page is not the one it opened.",
+							},
+						};
+					const outcome = await submit(ticket, sealed);
 					return {
-						status: 404,
-						body: {
-							code: "SECRET_CAPTURE_UNKNOWN_TICKET",
-							message:
-								"This capture is closed or this page is not the one it opened.",
-						},
+						status: outcome.isError ? 422 : 200,
+						body: outcome.structuredContent,
 					};
-				const outcome = await submit(ticket, sealed);
-				return {
-					status: outcome.isError ? 422 : 200,
-					body: outcome.structuredContent,
-				};
+				});
 			},
 		});
 		return page;
@@ -497,7 +501,7 @@ export function createSecretCaptureApp(
 		args: JsonValue | undefined,
 		support: SecretCaptureHostSupport,
 	): Promise<SecretCaptureOutcome> {
-		sweep();
+		await sweep();
 		const name = stringArg(args, "name") ?? "";
 		const spec = specs.get(name);
 		if (spec === undefined)
@@ -520,15 +524,16 @@ export function createSecretCaptureApp(
 			);
 		const refusal = await refuseIfNotWritable(spec);
 		if (refusal !== undefined) {
-			emit("secret.CaptureRefused", { name: spec.name, code: refusal.code });
+			await emit("secret.CaptureRefused", {
+				name: spec.name,
+				code: refusal.code,
+			});
 			throw refusal;
 		}
 		const replace = objectAt(args, "replace") === true;
 		const previous = [...tickets.values()]
 			.filter((ticket) => ticket.spec.name === spec.name)
 			.at(-1);
-		// A retry after URL elicitation, or a repeated call while the owner is
-		// still typing, gets the same capture back.
 		if (
 			previous !== undefined &&
 			!replace &&
@@ -539,7 +544,7 @@ export function createSecretCaptureApp(
 			return answerFor(previous, support);
 		if (previous?.state === "awaiting-owner") {
 			shut(previous, "closed");
-			emit("secret.CaptureClosed", ticketFields(previous));
+			await emit("secret.CaptureClosed", ticketFields(previous));
 		}
 		const open = [...tickets.values()].filter(
 			(ticket) => ticket.state === "awaiting-owner",
@@ -574,6 +579,7 @@ export function createSecretCaptureApp(
 			url: undefined,
 			ref: undefined,
 			attempts: 0,
+			writeStarted: false,
 		};
 		if (channel !== "mcp-app") {
 			const token = randomBytes(32).toString("base64url");
@@ -581,7 +587,7 @@ export function createSecretCaptureApp(
 			ticket.url = `${(await loopback()).origin}/capture/${ticket.id}#${token}`;
 		}
 		tickets.set(ticket.id, ticket);
-		emit("secret.CaptureOpened", ticketFields(ticket));
+		await emit("secret.CaptureOpened", ticketFields(ticket));
 		return answerFor(ticket, support);
 	}
 
@@ -636,17 +642,30 @@ export function createSecretCaptureApp(
 		};
 	}
 
-	function failed(
+	async function failed(
 		ticket: Ticket,
 		error: SecretCaptureError,
 		event: SecretCaptureEventType,
 		code: string,
-	): SecretCaptureToolResult {
+	): Promise<SecretCaptureToolResult> {
 		ticket.attempts += 1;
-		emit(event, { ...ticketFields(ticket), code });
-		if (ticket.attempts >= maxAttempts) {
-			shut(ticket, "closed");
-			emit("secret.CaptureClosed", ticketFields(ticket));
+		const exhausted = ticket.attempts >= maxAttempts;
+		if (exhausted) shut(ticket, "closed");
+		let auditFailed = false;
+		try {
+			await emit(event, { ...ticketFields(ticket), code });
+		} catch {
+			auditFailed = true;
+		}
+		if (exhausted) {
+			try {
+				await emit("secret.CaptureClosed", ticketFields(ticket));
+			} catch {
+				auditFailed = true;
+			}
+		}
+		if (auditFailed) throw auditUnavailable();
+		if (exhausted) {
 			return refusalResult(
 				new SecretCaptureError(
 					"SECRET_CAPTURE_ATTEMPTS_EXHAUSTED",
@@ -688,6 +707,17 @@ export function createSecretCaptureApp(
 		}
 		let ref: string;
 		let state: "stored" | "authorized";
+		if (ticket.spec.target !== "writer") {
+			const refusal = await refuseIfNotWritable(ticket.spec);
+			if (refusal !== undefined)
+				return failed(ticket, refusal, "secret.CaptureRefused", refusal.code);
+		}
+		const outcomeEventId = `sec_${randomBytes(16).toString("hex")}`;
+		if (!ticket.writeStarted) {
+			queueEvent("secret.CaptureWriteStarted", ticketFields(ticket));
+			ticket.writeStarted = true;
+			await flushEvents();
+		}
 		try {
 			if (ticket.spec.target === "writer") {
 				({ ref } = await options.connector.authorizeWriter({
@@ -696,46 +726,56 @@ export function createSecretCaptureApp(
 				}));
 				state = "authorized";
 			} else {
-				const refusal = await refuseIfNotWritable(ticket.spec);
-				if (refusal !== undefined)
-					return failed(ticket, refusal, "secret.CaptureRefused", refusal.code);
 				({ ref } = await options.connector.store(ticket.spec.target, secret));
 				state = "stored";
 			}
+			if (!STORE_REF.test(ref) || secret.isContainedIn(ref))
+				throw new SecretStoreConnectorError("invalid-reference");
 		} catch (error) {
-			const code =
+			const connectorCode =
 				error instanceof SecretStoreConnectorError ? error.code : "unavailable";
+			const code = secret.isContainedIn(connectorCode)
+				? "unavailable"
+				: connectorCode;
+			shut(ticket, "uncertain");
+			await emit(
+				"secret.CaptureWriteUncertain",
+				{
+					...ticketFields(ticket),
+					code,
+				},
+				outcomeEventId,
+			);
 			const refusal =
 				ticket.spec.target === "writer"
 					? new SecretCaptureError(
 							"SECRET_STORE_WRITER_DENIED",
-							`The secret store did not accept the writer credential (${code}).`,
-							"Check the Client ID and create a new one-use client secret, then submit again.",
+							`The writer authorization outcome is uncertain (${code}).`,
+							"Check the writer session before opening a new capture.",
 						)
 					: new SecretCaptureError(
 							"SECRET_STORE_WRITE_FAILED",
-							`The secret store did not store ${ticket.spec.name} (${code}).`,
-							"Check the writer identity's role on this folder, then submit again.",
+							`The store outcome for ${ticket.spec.name} is uncertain (${code}).`,
+							"Check the secret store before opening a new capture.",
 						);
-			return failed(ticket, refusal, "secret.CaptureRefused", code);
+			return refusalResult(refusal, ticket.spec.name);
 		}
 		ticket.ref = ref;
 		shut(ticket, state);
-		emit(
+		await emit(
 			state === "stored" ? "secret.CaptureStored" : "secret.CaptureAuthorized",
 			{
 				...ticketFields(ticket),
 				ref,
 			},
+			outcomeEventId,
 		);
 		if (ticket.channel === "url-elicitation")
 			try {
 				options.notify?.("notifications/elicitation/complete", {
 					elicitationId: ticket.id,
 				});
-			} catch {
-				// The notification is a courtesy; the status tool still answers.
-			}
+			} catch {}
 		const receipt = {
 			ticketId: ticket.id,
 			name: ticket.spec.name,
@@ -769,7 +809,7 @@ export function createSecretCaptureApp(
 					`Use ${CAPTURE_SECRET_TOOL}; it opens the local page instead.`,
 				);
 			const id = stringArg(args, "ticketId") ?? "";
-			const ticket = TICKET_ID.test(id) ? openTicket(id) : undefined;
+			const ticket = TICKET_ID.test(id) ? await openTicket(id) : undefined;
 			if (ticket === undefined || ticket.channel !== "mcp-app")
 				throw new SecretCaptureError(
 					"SECRET_CAPTURE_UNKNOWN_TICKET",
@@ -783,7 +823,7 @@ export function createSecretCaptureApp(
 			};
 		}
 		if (tool === SECRET_CAPTURE_STATUS_TOOL) {
-			sweep();
+			await sweep();
 			const id = stringArg(args, "ticketId") ?? "";
 			const ticket = TICKET_ID.test(id) ? tickets.get(id) : undefined;
 			if (ticket === undefined)
@@ -791,7 +831,6 @@ export function createSecretCaptureApp(
 					"SECRET_CAPTURE_UNKNOWN_TICKET",
 					"No capture has that ticket id.",
 				);
-			// The status answer never re-offers the page or the key.
 			const shown = view(ticket, false);
 			return {
 				kind: "result",
@@ -839,22 +878,53 @@ export function createSecretCaptureApp(
 		writerSession: "ended" | "none" | "unavailable";
 	}> {
 		let captures = 0;
+		let auditFailed = false;
 		for (const ticket of tickets.values())
 			if (ticket.state === "awaiting-owner") {
 				shut(ticket, "closed");
-				emit("secret.CaptureClosed", ticketFields(ticket));
 				captures += 1;
+				try {
+					await emit("secret.CaptureClosed", ticketFields(ticket));
+				} catch {
+					auditFailed = true;
+				}
 			}
+		try {
+			await flushEvents();
+		} catch {
+			auditFailed = true;
+		}
 		let writerSession: "ended" | "none" | "unavailable";
 		try {
 			writerSession = await options.connector.endWriterSession();
 		} catch {
 			writerSession = "unavailable";
 		}
+		if (writerSession !== "none") {
+			try {
+				await emit(
+					writerSession === "ended"
+						? "secret.CaptureWriterSessionEnded"
+						: "secret.CaptureWriterSessionUncertain",
+					{},
+				);
+			} catch {
+				auditFailed = true;
+			}
+		}
 		const running = page;
 		page = undefined;
-		if (running !== undefined) await (await running).close();
+		if (running !== undefined) {
+			const closing = running.then((current) => current.close());
+			void closing.catch(() => undefined);
+			closingPages.push(closing);
+		}
+		if (auditFailed) throw auditUnavailable();
 		return { captures, writerSession };
+	}
+
+	async function drainPages(): Promise<void> {
+		await Promise.all(closingPages.splice(0));
 	}
 
 	const nameEnum: JsonValue = [...specs.keys()];
@@ -972,7 +1042,6 @@ export function createSecretCaptureApp(
 						text: renderSecretCaptureHtml({ mode: "mcp-app" }),
 						_meta: {
 							ui: {
-								// No network: the form talks only to its host.
 								csp: { connectDomains: [], resourceDomains: [] },
 								prefersBorder: true,
 							},
@@ -985,8 +1054,17 @@ export function createSecretCaptureApp(
 			return SECRET_CAPTURE_TOOL_NAMES.includes(tool);
 		},
 		async callTool(tool, args, support) {
+			let outcome: SecretCaptureOutcome;
 			try {
-				return await call(tool, args, support);
+				outcome = await exclusive(async () => {
+					if (terminated)
+						throw new SecretCaptureError(
+							"SECRET_CAPTURE_CLOSED",
+							"The capture session is closed.",
+						);
+					if (tool !== END_SECRET_CAPTURE_TOOL) await flushEvents();
+					return call(tool, args, support);
+				});
 			} catch (error) {
 				const refusal =
 					error instanceof SecretCaptureError
@@ -1000,7 +1078,7 @@ export function createSecretCaptureApp(
 								}).`,
 							);
 				const name = stringArg(args, "name");
-				return {
+				outcome = {
 					kind: "result",
 					result: refusalResult(
 						refusal,
@@ -1008,15 +1086,38 @@ export function createSecretCaptureApp(
 					),
 				};
 			}
+			if (tool === END_SECRET_CAPTURE_TOOL) {
+				try {
+					await drainPages();
+				} catch {
+					return {
+						kind: "result",
+						result: refusalResult(
+							new SecretCaptureError(
+								"SECRET_CAPTURE_CLOSED",
+								"The capture page could not be stopped.",
+							),
+						),
+					};
+				}
+			}
+			return outcome;
 		},
 		events() {
 			return [...log];
 		},
 		async close() {
-			await closeAll();
+			try {
+				await exclusive(async () => {
+					if (terminated) return flushEvents();
+					terminated = true;
+					await closeAll();
+				});
+			} finally {
+				await drainPages();
+			}
 		},
 	};
 }
 
-/** For tests and compositions: the codes a refusal can carry. */
 export type { SecretCaptureCode };
