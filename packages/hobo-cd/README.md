@@ -104,6 +104,22 @@ figures only) keeps a move off a member it would push over its allowance. A
 reported shortfall (an unverified vendor spread, no witness for quorum or
 backups) does not stop it serving.
 
+## Continuity: what CD keeps, and how hard
+
+Each stateful resource declares its policy with the `continuity` trait
+(`src/continuity.ts`, attached in `src/bindle.ts`), choosing the cheapest tier
+that keeps what the data is for:
+
+| resource     | tier          | why                                                                 |
+| ------------ | ------------- | ------------------------------------------------------------------- |
+| `cd-journal` | `standard`, 2 standbys | Desired policy for the rollout ledger. Replication, independent failure domains, fenced failover, and scheduled backups are not yet proven. |
+| `cd-config`  | `rebuildable` | References into the secret store, which keeps its own replicas; `hobo cd up` rebuilds them idempotently. |
+
+An experimental PostgreSQL fleet can be selected with `HOBO_CD_POSTGRES_FLEET`
+(see `packages/cd/src/compose/README.md`). It does not yet fence an in-flight
+write at the database commit boundary and must not be relied on for safe
+failover. A reported policy shortfall does not prevent the fleet from serving.
+
 ## Architecture rules (AGENTS.md)
 
 - **PACT**: `contracts/pacts/vercel-integration.pact.json` (exchange,
