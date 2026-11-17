@@ -81,12 +81,15 @@ function fixture() {
 	return { inventory, pricing, evidence };
 }
 
-function authority(limit = 3_000_000) {
+function authority(limit = 3_000_000, settlementTrust = true) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-iac-budget-"));
 	directories.push(dir);
 	const ledger = createSqliteBudgetAdmissionAuthority({
 		path: join(dir, "budget.sqlite"),
 		now: () => NOW,
+		...(settlementTrust
+			? { iacPricedSettlementTrust: { verify: () => false } }
+			: undefined),
 		snapshot: create(BudgetLedgerSnapshotSchema, {
 			identity: {
 				tenantId: "tenant-a",
@@ -138,6 +141,24 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 }
 
 describe("provider-neutral IaC target budget admission", () => {
+	it("refuses a priced target before execution when settlement trust is absent", async () => {
+		const ledger = authority(3_000_000, false);
+		try {
+			const result = await admitIacTarget(
+				{ requestId: "no-settlement-trust", ...fixture() },
+				dependencies(ledger),
+			);
+			expect(result).toMatchObject({
+				status: "denied",
+				code: "budget.settlement-unavailable",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(ledger.lookup("iac:no-settlement-trust")).toBeUndefined();
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
 	it.each([
 		"null",
 		"missing-accounts",

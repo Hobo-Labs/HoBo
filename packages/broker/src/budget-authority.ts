@@ -79,6 +79,7 @@ export type BudgetAdmissionDeniedCode =
 	| "budget.bounded-exposure"
 	| "budget.exposure-limit"
 	| "budget.scope-unverified"
+	| "budget.settlement-unavailable"
 	| "provider.exhausted"
 	| "entitlement.exhausted"
 	| "policy.denied";
@@ -1337,6 +1338,15 @@ export function createBudgetAdmissionAuthority(options: {
 				return clone(BudgetReservationSchema, previous);
 			}
 			if (
+				previous.iacPricingPin &&
+				!previous.fenceSettlementGuard &&
+				!pricedSettlementTrust
+			)
+				throw new BudgetAdmissionDeniedError(
+					"budget.settlement-unavailable",
+					"an independent priced IaC settlement authority is required",
+				);
+			if (
 				!previous.identity ||
 				!current.identity ||
 				budgetIdentityKey(previous.identity) !==
@@ -1409,6 +1419,15 @@ export function createBudgetAdmissionAuthority(options: {
 					throw new Error("released reservation cannot authorize execution");
 				return clone(BudgetReservationSchema, previous);
 			}
+			if (
+				input.iacPricingPin &&
+				!input.fenceSettlementGuard &&
+				!pricedSettlementTrust
+			)
+				throw new BudgetAdmissionDeniedError(
+					"budget.settlement-unavailable",
+					"an independent priced IaC settlement authority is required",
+				);
 			if (unboundedCount() > 0)
 				throw new BudgetAdmissionDeniedError(
 					"budget.unbounded-exposure",
@@ -1678,6 +1697,7 @@ export function createBudgetAdmissionAuthority(options: {
 			if (
 				row?.status !== "held" ||
 				row.unboundedExposure ||
+				(!row.fenceSettlementGuard && !pricedSettlementTrust) ||
 				!row.identity ||
 				!current.identity ||
 				budgetIdentityKey(row.identity) !==

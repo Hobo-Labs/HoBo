@@ -563,7 +563,13 @@ export async function admitIacTarget(
 		});
 	} catch (error) {
 		if (error instanceof BudgetAdmissionDeniedError)
-			return denial(requestId, targetId, error.code, error.message, false);
+			return denial(
+				requestId,
+				targetId,
+				error.code,
+				error.message,
+				error.code === "budget.settlement-unavailable",
+			);
 		// A persistence failure may have committed despite a lost acknowledgement.
 		return uncertain(
 			requestId,

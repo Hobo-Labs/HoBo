@@ -709,6 +709,7 @@ it("rejects replay that changes a priced IaC hold while retaining its pin", () =
 		[];
 	const ledger = createBudgetAdmissionAuthority({
 		snapshot: options.snapshot,
+		iacPricedSettlementTrust: { verify: () => false },
 		commit: (event) => events.push(clone(BudgetAuthorityEventSchema, event)),
 	});
 	ledger.reserve({
@@ -737,6 +738,103 @@ it("rejects replay that changes a priced IaC hold while retaining its pin", () =
 			priorEvents: events,
 		}),
 	).toThrow();
+});
+
+it("keeps legacy priced holds readable but cannot start or revalidate without settlement trust", () => {
+	const { options, quote } = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	quote.financialPlanHash = stableHash(fields);
+	const requestId = "priced";
+	const requestDigest = stableHash({
+		requestId,
+		targetId: "yard-a",
+		tenantId: "tenant-a",
+		financialPlanHash: quote.financialPlanHash,
+	});
+	quote.requestDigest = requestDigest;
+	const executionDigest = stableHash({
+		kind: "iac-target-execution",
+		requestDigest,
+		planDigest: fields.planDigest,
+	});
+	const pin = create(IacPricingPinSchema, {
+		...fields,
+		validUntil: quote.validUntil,
+	});
+	const events: ReturnType<typeof create<typeof BudgetAuthorityEventSchema>>[] =
+		[];
+	const trust = { verify: () => false };
+	const writer = createBudgetAdmissionAuthority({
+		snapshot: options.snapshot,
+		iacPricedSettlementTrust: trust,
+		commit: (event) => events.push(clone(BudgetAuthorityEventSchema, event)),
+	});
+	const input = {
+		reservationId: requestId,
+		requestDigest,
+		quote,
+		iacPricingPin: pin,
+		identity,
+		expectedSeq: 0,
+		now,
+	};
+	writer.reserve(input);
+	const untrusted = createBudgetAdmissionAuthority({
+		snapshot: options.snapshot,
+		priorEvents: events,
+	});
+	expect(untrusted.lookup(requestId)).toMatchObject({
+		status: "held",
+		reservedMicros: 1_000_000,
+	});
+	expect(untrusted.reserve(input)).toMatchObject({ status: "held" });
+	expect(() =>
+		untrusted.claimExecution({
+			reservationId: requestId,
+			requestDigest,
+			executionDigest,
+			expectedSeq: 1,
+		}),
+	).toThrow("settlement authority");
+	expect(untrusted.read(now).reservedMicros).toBe(1_000_000);
+	writer.claimExecution({
+		reservationId: requestId,
+		requestDigest,
+		executionDigest,
+		expectedSeq: 1,
+	});
+	const claimed = createBudgetAdmissionAuthority({
+		snapshot: options.snapshot,
+		priorEvents: events,
+	});
+	expect(
+		claimed.claimExecution({
+			reservationId: requestId,
+			requestDigest,
+			executionDigest,
+			expectedSeq: 2,
+		}),
+	).toMatchObject({ status: "held", executionDigest });
+	const revalidation = {
+		reservationId: requestId,
+		requestId,
+		targetId: "yard-a",
+		tenantId: "tenant-a",
+		requestDigest,
+		planDigest: fields.planDigest,
+		inventoryHash: fields.inventoryHash,
+		modelHash: fields.modelHash,
+		quoteHash: fields.quoteHash,
+		now,
+	};
+	expect(claimed.revalidatePriced(revalidation)).toBe(false);
+	expect(writer.revalidatePriced(revalidation)).toBe(true);
 });
 
 it("rejects a priced IaC settlement journal that omits recorded charges", () => {
@@ -902,7 +1000,10 @@ it("retains claimed priced IaC exposure until final usage and permanent source s
 		...fields,
 		validUntil: quote.validUntil,
 	});
-	const ledger = createSqliteBudgetAdmissionAuthority(options);
+	const ledger = createSqliteBudgetAdmissionAuthority({
+		...options,
+		iacPricedSettlementTrust: { verify: () => false },
+	});
 	ledger.reserve({
 		reservationId: "priced",
 		requestDigest: quote.requestDigest,

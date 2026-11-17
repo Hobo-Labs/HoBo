@@ -22,8 +22,12 @@ produce a quote.
 It accepts both the synchronous local authority and the asynchronous shared
 authority, including the PostgreSQL implementation.
 
-To settle a claimed priced IaC hold without a separately verified fence guard,
-install `iacPricedSettlementTrust` on the budget authority. Its synchronous,
+Before creating or starting a priced IaC hold without a separately verified
+fence guard, install `iacPricedSettlementTrust` on the budget authority.
+Absent trust denies admission with `budget.settlement-unavailable`; it also
+prevents a previously unclaimed hold from starting. Existing holds remain
+readable for reconciliation, but cannot revalidate for execution until the
+required trust is present. Its synchronous,
 independently enrolled verifier must authenticate the exact tenant, budget,
 reservation, plan, execution, provider accounts, final usage and permanent
 source-retirement evidence. Nonempty references or a caller assertion alone do

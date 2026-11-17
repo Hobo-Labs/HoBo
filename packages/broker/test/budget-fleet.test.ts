@@ -693,6 +693,35 @@ it("keeps a receiver-bound hold through funded quorum recovery and restart", asy
 	await expect(noTrust.read(NOW)).rejects.toThrow("independently enrolled");
 });
 
+it("refuses a new priced IaC hold without settlement trust in the fleet authority", async () => {
+	const f = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	const priced = request(f.snapshot, "priced");
+	priced.quote.financialPlanHash = stableHash(fields);
+	const authority = createFleetBudgetAdmissionAuthority({
+		journal: f.open(),
+		snapshot: f.snapshot,
+		now: () => NOW,
+	});
+	await authority.initializeFresh(async () => {});
+	await expect(
+		authority.reserve({
+			...priced,
+			iacPricingPin: create(IacPricingPinSchema, {
+				...fields,
+				validUntil: UNTIL,
+			}),
+		}),
+	).rejects.toMatchObject({ code: "budget.settlement-unavailable" });
+	expect((await authority.read(NOW)).reservedMicros).toBe(0);
+});
+
 it("requires and replays independent priced IaC settlement verification in the fleet authority", async () => {
 	const f = fixture();
 	const fields = {
