@@ -1,6 +1,6 @@
 # `@hobo/replay`
 
-Privacy-first **Session Replay** for HoBo web apps and Stations (ADR-0137).
+Privacy-first **Session Replay** for HoBo web apps and Stations.
 
 Captures user sessions with an **rrweb-compatible** engine, stores heavy blobs
 out-of-band (dual fixtures locally, object-storage port in production), and
@@ -30,10 +30,10 @@ HTTP App Kit so that:
 
 ```ts
 bindle("shop", (b) => ({
-  api: b.api(apiHandler),       // API Kit — replay on by default
-  web: b.web(storefront),       // Web Kit — replay on by default
-  worker: b.service(worker),    // Service Kit — replay on by default
-  cache: b.kv(),                // Infra Kit — no default replay
+  api: b.api(apiHandler),
+  web: b.web(storefront),
+  worker: b.service(worker),
+  cache: b.kv(),
 }));
 ```
 
@@ -64,7 +64,6 @@ const tracker = replay.startRecording({
 await tracker.flush();
 const session = await tracker.stop();
 console.log(await replay.summarize(session!.id));
-// open: await replay.open(session!.id, [/* blob refs */])
 ```
 
 CLI:
@@ -138,6 +137,5 @@ real modules + dual fixtures).
 
 ## Related
 
-- ADR-0137 (Session Replay)
 - Experience proof: `src/draft/exp-proofs/dx/session-replay-local-path`
 - Technical proof: `src/draft/technical-proofs/session-replay-contracts`

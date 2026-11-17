@@ -345,6 +345,12 @@ e: ##"raw \##(2 + // raw interpolation
 		for (const [file, text] of [
 			["docs/design/new.md", "# New"],
 			["packages/example/DESIGN.md", "# New"],
+			["packages/example/ARCHITECTURE.md", "# New"],
+			["docs/architecture/service.md", "# New"],
+			["docs/adrs/0001.md", "# New"],
+			["notes/ADR-0001.md", "# New"],
+			["notes/protocol-rfc.md", "# New"],
+			["notes/new-record.md", "---\ntype: Architecture Decision Record\n---\n"],
 			["notes/implementation-plan.md", "# New"],
 			["notes/new.md", "---\ntype: Design\n---\n"],
 			[".impeccable/design.json", "{}"],
@@ -355,6 +361,10 @@ e: ##"raw \##(2 + // raw interpolation
 		] as const)
 			assert.ok(documentViolation(file, text), file);
 		assert.equal(documentViolation("docs/usage.md", "# Usage"), undefined);
+		assert.equal(
+			documentViolation("packages/architecture/src/index.ts", ""),
+			undefined,
+		);
 	});
 
 	it("rejects ignored agent planning and design documents in the worktree", () => {
@@ -433,6 +443,8 @@ e: ##"raw \##(2 + // raw interpolation
 		write(repo, "view.tsx.tpl", "const view = <p>{/* explanation */}</p>;\n");
 		write(repo, "schema.cue.tpl", 'name: "example" // explanation\n');
 		write(repo, "docs/design/example.md.tpl", "# Design\n");
+		write(repo, "docs/ADR-0001.md.tpl", "# Decision\n");
+		write(repo, "packages/example/ARCHITECTURE.md", "# Architecture\n");
 		git(repo, "add", "--all");
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
@@ -441,6 +453,8 @@ e: ##"raw \##(2 + // raw interpolation
 			"view.tsx.tpl",
 			"schema.cue.tpl",
 			"docs/design/example.md.tpl",
+			"docs/ADR-0001.md.tpl",
+			"packages/example/ARCHITECTURE.md",
 		]) {
 			assert.ok(result.stderr.includes(file), file);
 		}

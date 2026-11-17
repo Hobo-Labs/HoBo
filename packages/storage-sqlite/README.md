@@ -13,6 +13,11 @@ migration logic.
 One SQLite database file (partition) is owned by one active storage owner at a
 time. Scale by partitions, not multi-writer WAL over shared network filesystems.
 
+Append commits enforce the expected stream sequence and optional fencing token.
+Queue, timer, and outbox effects are staged in the same transaction. Durable
+subscriptions and outbox dispatch are at least once; idempotency keys prevent
+duplicate recorded effects, but do not guarantee exactly-once external effects.
+
 ## Schema version
 
 `PRAGMA user_version` tracks schema revisions. Current: **2**.

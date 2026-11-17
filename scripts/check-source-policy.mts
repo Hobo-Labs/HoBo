@@ -412,19 +412,26 @@ export function documentViolation(
 		) ||
 		/(?:^|\/)\.sdlc\/.*\.mdx?$/iu.test(sourceFile)
 	)
-		return "planning and design documents are not allowed";
+		return "planning, architecture, and design documents are not allowed";
 	if (!/\.mdx?$/iu.test(sourceFile)) return undefined;
-	if (/(?:^|\/)(?:design|designs|plans|roadmaps)\//iu.test(sourceFile))
-		return "planning and design documents are not allowed";
 	if (
-		/(?:^|\/)(?:design|roadmap|(?:implementation[-_])?plan)\.mdx?$/iu.test(
+		/(?:^|\/)(?:design|designs|plans|roadmaps|architecture|architectures|adr|adrs|rfc|rfcs|proposals|architecture-decision-records)\//iu.test(
+			sourceFile,
+		)
+	)
+		return "planning, architecture, and design documents are not allowed";
+	if (
+		/(?:^|\/)(?:design|architecture|roadmap|proposal|(?:implementation[-_])?plan|(?:architecture[-_])?decision[-_]records?|(?:adr|rfc)(?:[-_][^/]+)?)\.mdx?$/iu.test(
 			sourceFile,
 		) ||
-		/(?:^|\/)[^/]+[-_](?:design|roadmap|plan)\.mdx?$/iu.test(sourceFile)
+		/(?:^|\/)[^/]+[-_](?:design|architecture|roadmap|plan|proposal|adr|rfc)\.mdx?$/iu.test(
+			sourceFile,
+		)
 	)
-		return "planning and design documents are not allowed";
+		return "planning, architecture, and design documents are not allowed";
 	const type = frontmatterType(text);
-	return type && /\b(?:plan|design|roadmap)\b/iu.test(type)
+	return type &&
+		/\b(?:plan|design|roadmap|architecture|adr|rfc|proposal)\b/iu.test(type)
 		? `document type "${type}" is not allowed`
 		: undefined;
 }
