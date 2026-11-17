@@ -87,6 +87,25 @@ describe("the CD function's HTTP entry", () => {
 		expect(seen).toEqual(["/v1/cd/freight?x=1"]);
 	});
 
+	it("does not expose internal errors to HTTP clients", async () => {
+		const secret = "fixture-sensitive-value";
+		// SAFETY: the entry reads only handle() from the host.
+		const host: CdHost = {
+			handle: async () => {
+				throw new Error(`provider failed with ${secret}`);
+			},
+		} as never;
+		const origin = await serve(createCdHttpEntry(async () => host));
+		const response = await fetch(`${origin}/v1/cd/freight`);
+		expect(response.status).toBe(500);
+		const body = await response.text();
+		expect(body).not.toContain(secret);
+		expect(JSON.parse(body)).toMatchObject({
+			ok: false,
+			code: "cd-serve-error",
+		});
+	});
+
 	it("composes once, and tries again after a failure", async () => {
 		let calls = 0;
 		// SAFETY: identity only; nothing reads the host.

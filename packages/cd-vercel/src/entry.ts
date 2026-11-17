@@ -118,7 +118,7 @@ export function createCdHttpEntry(
 			const perRequest = new AbortController();
 			response.on("close", () => perRequest.abort());
 			await send(response, await host.handle(feed, perRequest.signal));
-		} catch (error) {
+		} catch {
 			if (response.headersSent) {
 				response.destroy();
 				return;
@@ -126,7 +126,7 @@ export function createCdHttpEntry(
 			sendJson(response, 500, {
 				ok: false,
 				code: "cd-serve-error",
-				message: error instanceof Error ? error.message : String(error),
+				message: "The CD request could not be processed.",
 			});
 		}
 	};
