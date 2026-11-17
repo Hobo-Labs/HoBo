@@ -10,7 +10,7 @@ import {
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import pact from "../contracts/checks-cli.pact.json" with { type: "json" };
 import { runDaggerCheckCli } from "../src/check-cli.js";
 import {
@@ -40,13 +40,10 @@ async function prepareCli(root: string): Promise<string> {
 	return executable;
 }
 
-// A hang guard, not a budget: every wait in the process tests is on an event,
-// so a slow or stalled host makes them slower and never makes them fail.
 const HANG_GUARD_MS = 120_000;
 
 interface Announced {
 	readonly pid: number;
-	/** Settles once the process has exited and the kernel closed its socket. */
 	readonly gone: Promise<void>;
 }
 
@@ -56,7 +53,6 @@ interface Probe {
 	close(): Promise<void>;
 }
 
-/** The fixture connects to `path` (`FIXTURE_PROBE`) when it is ready. */
 async function listenForProcess(root: string): Promise<Probe> {
 	const path =
 		process.platform === "win32"
@@ -98,7 +94,6 @@ async function listenForProcess(root: string): Promise<Probe> {
 	};
 }
 
-/** The announcement, or why the run ended without one. */
 function announcedDuring(
 	probe: Probe,
 	running: Promise<number>,
@@ -115,9 +110,7 @@ function killIfLeft(pid: number | undefined): void {
 	if (!pid) return;
 	try {
 		process.kill(pid, "SIGKILL");
-	} catch {
-		/* already gone */
-	}
+	} catch {}
 }
 
 describe("native Dagger checks configuration", () => {
@@ -380,29 +373,46 @@ it("rejects a missing workspace configuration before launching any CLI", async (
 	}
 });
 
-it("bounds a hung check without a caller-provided abort signal", async () => {
-	const root = await mkdtemp(join(tmpdir(), "hobo-dagger-timeout-"));
-	try {
-		const executable = await prepareCli(root);
-		const selected = parseDaggerCheckConfig(
-			JSON.stringify({ ...configJson, timeoutSeconds: 1 }),
-		);
-		await expect(
-			runDaggerChecks(selected, {
+it(
+	"bounds a hung check without a caller-provided abort signal",
+	async () => {
+		const root = await mkdtemp(join(tmpdir(), "hobo-dagger-timeout-"));
+		const probe = await listenForProcess(root);
+		let running: Promise<number> | undefined;
+		let cli: Announced | undefined;
+		try {
+			const executable = await prepareCli(root);
+			const selected = parseDaggerCheckConfig(
+				JSON.stringify({ ...configJson, timeoutSeconds: 1 }),
+			);
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			running = runDaggerChecks(selected, {
 				cwd: root,
 				executable,
-				env: { ...process.env, FIXTURE_WAIT: "1" },
-			}),
-		).rejects.toBeInstanceOf(DaggerCheckTimeoutError);
-		const observation = JSON.parse(
-			(await readFile(join(root, "observed.jsonl"), "utf8")).split("\n")[0] ??
-				"{}",
-		);
-		await expect(access(observation.settings)).rejects.toThrow();
-	} finally {
-		await rm(root, { recursive: true, force: true });
-	}
-});
+				env: { ...process.env, FIXTURE_WAIT: "1", FIXTURE_PROBE: probe.path },
+			});
+			const timedOut = expect(running).rejects.toBeInstanceOf(
+				DaggerCheckTimeoutError,
+			);
+			cli = await announcedDuring(probe, running);
+			await vi.advanceTimersByTimeAsync(1000);
+			await timedOut;
+			await cli.gone;
+			const observation = JSON.parse(
+				(await readFile(join(root, "observed.jsonl"), "utf8")).split("\n")[0] ??
+					"{}",
+			);
+			await expect(access(observation.settings)).rejects.toThrow();
+		} finally {
+			if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(6000);
+			vi.useRealTimers();
+			await running?.catch(() => {});
+			await probe.close();
+			await rm(root, { recursive: true, force: true });
+		}
+	},
+	HANG_GUARD_MS,
+);
 
 it.skipIf(process.platform !== "linux")(
 	"stops a transport child even when the CLI exits first on SIGTERM",
@@ -420,8 +430,6 @@ it.skipIf(process.platform !== "linux")(
 				signal: controller.signal,
 				env: { ...process.env, FIXTURE_CHILD: "1", FIXTURE_PROBE: probe.path },
 			});
-			// Announced only after it ignores SIGTERM, so only the group SIGKILL
-			// sent when the CLI closes can end it.
 			transport = await announcedDuring(probe, running);
 			controller.abort();
 			await expect(running).rejects.toThrow(/abort/i);
@@ -461,7 +469,6 @@ it.skipIf(process.platform !== "linux")(
 		let transport: Announced | undefined;
 		try {
 			const executable = await prepareCli(root);
-			// The fixture CLI exits 0 only after its transport child announced.
 			expect(
 				await runDaggerChecks(config, {
 					cwd: root,

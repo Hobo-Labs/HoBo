@@ -28,6 +28,16 @@
 			"from": "packages/hobo/test/persistent-local-deployment.test.ts",
 			"needs": ["@hobo/bindles#build"],
 			"why": "loads ../../bindles/dist/index.js by URL"
+		},
+		{
+			"from": "packages/patterns/test/trainable-greeting.test.ts",
+			"needs": ["@hobo/runtime#build"],
+			"why": "links @hobo/runtime into the generated application and executes its trainable greeting"
+		},
+		{
+			"from": "packages/patterns/test/yard-merge.test.ts",
+			"needs": ["@hobo/camps#build", "@hobo/yards#build"],
+			"why": "links the camps and yards packages into the generated workspace and executes the rendered fragment"
 		}
 	]
 }

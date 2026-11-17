@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { connect } from "@dagger.io/dagger";
 import { create } from "@bufbuild/protobuf";
+import { connect } from "@dagger.io/dagger";
 import { AccountSchema, OfferSchema, parsePipeline } from "@hobo/ci";
 import {
 	daggerEndpointHash,

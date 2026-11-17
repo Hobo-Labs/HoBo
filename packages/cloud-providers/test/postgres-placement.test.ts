@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { type PostgresOffer, placePostgresFleet } from "../src/index.js";
 
-// Cheapest-available PostgreSQL placement: no vendor is a dependency. An
-// unreachable backend is skipped, standbys go to other vendors, and placement
-// is unavailable only when nothing configured answers.
-
 const usd = (dollars: number) => dollars * 1_000_000;
 
 const NEON: PostgresOffer = {
@@ -34,6 +30,40 @@ const SELF_HOSTED: PostgresOffer = {
 };
 
 describe("placePostgresFleet", () => {
+	it("requires stable SQL capabilities without rejecting unrelated preview features", () => {
+		for (const options of [
+			{ standbys: 0 },
+			{ standbys: 0, request: {} },
+			{ standbys: 0, request: { features: [] } },
+		] as const) {
+			const placement = placePostgresFleet([SUPABASE], options);
+			expect(placement.status).toBe("placed");
+			expect(placement.writer?.provider).toBe("supabase-postgres");
+		}
+		const requiredPreview = placePostgresFleet([SUPABASE], {
+			standbys: 0,
+			request: { features: ["ha.failover"], negotiation: "require" },
+		});
+		expect(requiredPreview.status).toBe("unavailable");
+		expect(requiredPreview.skipped).toContainEqual(
+			expect.objectContaining({
+				reason: "unsatisfied",
+				detail: expect.stringContaining("ha.failover"),
+			}),
+		);
+	});
+
+	it("does not place a backend that only partially satisfies a preferred capability", () => {
+		const placement = placePostgresFleet([SELF_HOSTED], {
+			standbys: 0,
+			request: { features: ["backup.pitr"], negotiation: "prefer" },
+		});
+		expect(placement.status).toBe("unavailable");
+		expect(placement.skipped).toContainEqual(
+			expect.objectContaining({ reason: "unsatisfied" }),
+		);
+	});
+
 	it("never selects an unprobed backend even if it is cheaper", () => {
 		const placement = placePostgresFleet([
 			{ ...NEON, health: "unknown" },
@@ -96,8 +126,6 @@ describe("placePostgresFleet", () => {
 	it("places the cheapest reachable backend as writer and a standby on another vendor", () => {
 		const placement = placePostgresFleet([PRISMA, SUPABASE, NEON]);
 		expect(placement.status).toBe("placed");
-		// Equal fee and both probed: the recorded lower latency (Supabase 40ms vs
-		// none recorded for Neon) breaks the tie.
 		expect(placement.writer?.provider).toBe("supabase-postgres");
 		expect(placement.standbys.map((b) => b.provider)).toEqual([
 			"neon-postgres",
