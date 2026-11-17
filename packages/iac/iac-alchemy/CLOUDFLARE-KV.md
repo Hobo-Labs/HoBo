@@ -8,7 +8,8 @@ mapping. In particular, HoBo's inferred HTTP requirement includes `wasm`; use
 explicit requirements that a trusted host can assess truthfully.
 
 An application can declare a provider-neutral Bindle and construct a
-Cloudflare-specific adapter view:
+Cloudflare-specific adapter view. Apply the choice with
+`withCloudflareEventualKv`; Bindles do not accept provider annotations:
 
 ```ts
 import { bindle, sessionReplay, type BindleRuntimeContext } from "@hobo/bindles";

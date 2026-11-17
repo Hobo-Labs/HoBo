@@ -13,7 +13,6 @@ export {
 	CLOUDFLARE_KV_MAX_VALUE_BYTES,
 	CloudflareKvError,
 	type CloudflareKvMode,
-	cloudflareEventualKv,
 } from "./cloudflare-kv-protocol.js";
 
 type Json =

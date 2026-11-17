@@ -30,7 +30,6 @@ import {
 	CLOUDFLARE_KV_MAX_VALUE_BYTES,
 	type CloudflareBindleContext,
 	cloudflareBindings,
-	cloudflareEventualKv,
 	withCloudflareEventualKv,
 } from "../src/cloudflare-runtime.js";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
@@ -55,30 +54,33 @@ function appFor(
 	allow: string[],
 	entrypoint: (context?: CloudflareBindleContext) => () => Promise<Response>,
 ) {
-	return {
-		name: "app",
-		resources: {
-			cache: {
-				kind: "kv",
-				name: "cache",
-				stableId: "kv:cache",
-				declaredAllow: allow,
-				dependsOn: [],
-				annotations: [cloudflareEventualKv(mode)],
+	return withCloudflareEventualKv(
+		{
+			name: "app",
+			resources: {
+				cache: {
+					kind: "kv",
+					name: "cache",
+					stableId: "kv:cache",
+					declaredAllow: allow,
+					dependsOn: [],
+					annotations: [],
+				},
+				web: {
+					kind: "web",
+					name: "web",
+					stableId: "web:web",
+					declaredAllow: [],
+					dependsOn: ["kv"],
+					annotations: [httpAnnotation],
+				},
 			},
-			web: {
-				kind: "web",
-				name: "web",
-				stableId: "web:web",
-				declaredAllow: [],
-				dependsOn: ["kv"],
-				annotations: [httpAnnotation],
-			},
+			edges: [{ from: "web", to: "cache" }],
+			requirements: {},
+			entrypoint: (name: string) => (name === "web" ? entrypoint : undefined),
 		},
-		edges: [{ from: "web", to: "cache" }],
-		requirements: {},
-		entrypoint: (name: string) => (name === "web" ? entrypoint : undefined),
-	};
+		{ cache: mode },
+	);
 }
 
 function nativeNamespace() {
