@@ -11,6 +11,16 @@ export type RivetHttpEntrypoint = () => unknown;
 export interface RivetRequestContext {
 	readonly name: string;
 	readonly key: readonly string[];
+	/** RivetKit creates a fresh vars object for each actor activation. */
+	readonly vars: object;
+}
+
+/** Metadata available before the application consumes the request body. */
+export interface RivetAuthorizationRequest {
+	readonly method: string;
+	readonly url: string;
+	/** A separate copy; changing it cannot change the application's request. */
+	readonly headers: Headers;
 }
 
 export interface RivetHttpBinding<Entrypoint extends RivetHttpEntrypoint> {
@@ -23,7 +33,7 @@ export interface RivetHttpBinding<Entrypoint extends RivetHttpEntrypoint> {
 	) => Promise<Response>;
 }
 
-const bindings = new WeakSet<object>();
+const bindings = new WeakMap<object, () => object>();
 
 function name(value: string): boolean {
 	return (
@@ -45,7 +55,7 @@ export function createRivetHttpActor<
 	readonly authorize: (input: {
 		readonly actorName: string;
 		readonly actorKey: readonly string[];
-		readonly request: Request;
+		readonly request: RivetAuthorizationRequest;
 	}) => boolean | Promise<boolean>;
 }): RivetHttpBinding<Entrypoint> {
 	if (
@@ -57,6 +67,8 @@ export function createRivetHttpActor<
 			"a named Rivet actor, application entrypoint and host authorization are required",
 		);
 	const { actorName, entrypoint, authorize } = options;
+	const createVars = () => ({});
+	const applications = new WeakMap<object, { readonly value: unknown }>();
 	const handle = async (
 		context: RivetRequestContext,
 		request: Request,
@@ -66,7 +78,9 @@ export function createRivetHttpActor<
 			!Array.isArray(context.key) ||
 			context.key.length === 0 ||
 			context.key.length > 16 ||
-			!context.key.every(name)
+			!context.key.every(name) ||
+			typeof context.vars !== "object" ||
+			context.vars === null
 		)
 			return new Response("Forbidden", { status: 403 });
 		let allowed: boolean;
@@ -74,13 +88,22 @@ export function createRivetHttpActor<
 			allowed = await authorize({
 				actorName,
 				actorKey: Object.freeze([...context.key]),
-				request: request.clone(),
+				request: Object.freeze({
+					method: request.method,
+					url: request.url,
+					headers: new Headers(request.headers),
+				}),
 			});
 		} catch {
 			return new Response("Forbidden", { status: 403 });
 		}
 		if (allowed !== true) return new Response("Forbidden", { status: 403 });
-		const application = entrypoint();
+		let instance = applications.get(context.vars);
+		if (instance === undefined) {
+			instance = { value: entrypoint() };
+			applications.set(context.vars, instance);
+		}
+		const application = instance.value;
 		let response: unknown;
 		if (typeof application === "function")
 			response = await application(request);
@@ -99,13 +122,18 @@ export function createRivetHttpActor<
 			throw new TypeError("Rivet application handler must return a Response");
 		return response;
 	};
+	const definition = actor({ createVars, onRequest: handle });
+	Object.freeze(definition.config.actions);
+	Object.freeze(definition.config.options);
+	Object.freeze(definition.config);
+	Object.freeze(definition);
 	const binding: RivetHttpBinding<Entrypoint> = Object.freeze({
-		actor: actor({ onRequest: handle }),
+		actor: definition,
 		actorName,
 		entrypoint,
 		handle,
 	});
-	bindings.add(binding);
+	bindings.set(binding, createVars);
 	return binding;
 }
 
@@ -116,6 +144,8 @@ export function isRivetHttpBinding(
 	return (
 		bindings.has(value) &&
 		isStaticActorDefinition(value.actor) &&
+		"createVars" in value.actor.config &&
+		value.actor.config.createVars === bindings.get(value) &&
 		value.actor.config.onRequest === value.handle &&
 		Object.keys(value.actor.config.actions ?? {}).length === 0
 	);

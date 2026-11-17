@@ -90,9 +90,12 @@ const counter = actor({
 });
 const app = createRivetHttpActor({
 	actorName: "web",
-	entrypoint: () => (request) =>
-		new Response(`app:${new URL(request.url).pathname}`),
-	authorize: ({ actorKey }) => actorKey[0] === "tenant-a",
+	entrypoint: () => {
+		let requests = 0;
+		return (request) =>
+			new Response(`app:${new URL(request.url).pathname}:${++requests}`);
+	},
+	authorize: ({ actorKey }) => actorKey[0] !== "tenant-b",
 });
 const registry = setup({
 	use: { counter, web: app.actor },
@@ -105,6 +108,24 @@ const registry = setup({
 	shutdown: { gracePeriodMs: 2000, disableSignalHandlers: true },
 });
 try {
+	const startupDeadline = Date.now() + 30_000;
+	let ready = false;
+	while (Date.now() < startupDeadline) {
+		if (engine.exitCode !== null || engine.signalCode !== null)
+			throw new Error("Rivet engine exited before becoming ready");
+		try {
+			const response = await fetch(publicUrl, {
+				signal: AbortSignal.timeout(500),
+			});
+			await response.arrayBuffer();
+			ready = true;
+			break;
+		} catch {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+	}
+	if (!ready)
+		throw new Error("Rivet engine did not become ready within 30 seconds");
 	const { client } = await setupTest(
 		{
 			onTestFinished(callback) {
@@ -117,8 +138,16 @@ try {
 	if ((await handle.increment()) !== 1 || (await handle.increment()) !== 2)
 		throw new Error("Rivet actor state did not advance");
 	const ok = await client.web.getOrCreate(["tenant-a"]).fetch("/hello");
-	if (ok.status !== 200 || !(await ok.text()).endsWith("/hello"))
+	if (ok.status !== 200 || (await ok.text()) !== "app:/hello:1")
 		throw new Error("Rivet did not invoke the bound application");
+	const again = await client.web.getOrCreate(["tenant-a"]).fetch("/hello");
+	if (again.status !== 200 || (await again.text()) !== "app:/hello:2")
+		throw new Error(
+			"Rivet did not preserve the application for the same actor",
+		);
+	const other = await client.web.getOrCreate(["tenant-c"]).fetch("/hello");
+	if (other.status !== 200 || (await other.text()) !== "app:/hello:1")
+		throw new Error("Rivet shared the application between actors");
 	const forbidden = await client.web.getOrCreate(["tenant-b"]).fetch("/hello");
 	if (forbidden.status !== 403)
 		throw new Error("Rivet actor authorization was bypassed");

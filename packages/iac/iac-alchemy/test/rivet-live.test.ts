@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 it("runs the bound application through a real Rivet 3 HTTP actor", {
-	timeout: 65_000,
+	timeout: 100_000,
 }, async () => {
 	const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-http-"));
 	const loader = createRequire(import.meta.url).resolve("tsx");
@@ -38,7 +38,7 @@ it("runs the bound application through a real Rivet 3 HTTP actor", {
 			const timer = setTimeout(() => {
 				timedOut = true;
 				stop();
-			}, 55_000);
+			}, 90_000);
 			for (const stream of [child.stdout, child.stderr])
 				stream.on("data", (chunk) => {
 					output = (output + String(chunk)).slice(-20_000);

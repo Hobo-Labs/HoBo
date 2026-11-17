@@ -148,7 +148,7 @@ describe("Rivet native application binding", () => {
 		const { binding, authorize } = application();
 		const request = new Request("https://example.test/hello");
 		const response = await binding.handle(
-			{ name: "web", key: ["tenant", "app"] },
+			{ name: "web", key: ["tenant", "app"], vars: {} },
 			request,
 		);
 		expect(await response.text()).toBe("served:/hello");
@@ -174,11 +174,57 @@ describe("Rivet native application binding", () => {
 				authorize,
 			});
 			const result = await binding.handle(
-				{ name: "web", key: ["tenant"] },
+				{ name: "web", key: ["tenant"], vars: {} },
 				new Request("https://example.test/"),
 			);
 			expect(result.status).toBe(403);
 		}
+	});
+
+	it("authorizes from copied request metadata without duplicating the application body", async () => {
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint: () => async (request: Request) =>
+				new Response(
+					`${request.headers.get("x-test")}:${await request.text()}`,
+				),
+			authorize: ({ request }) => {
+				expect("body" in request).toBe(false);
+				request.headers.set("x-test", "changed");
+				return true;
+			},
+		});
+		const result = await binding.handle(
+			{ name: "web", key: ["tenant"], vars: {} },
+			new Request("https://example.test/", {
+				method: "POST",
+				headers: { "x-test": "original" },
+				body: "application body",
+			}),
+		);
+		expect(await result.text()).toBe("original:application body");
+	});
+
+	it("initializes an application only after authorization and once per activation", async () => {
+		const entrypoint = vi.fn(() => () => new Response("ok"));
+		const authorize = vi
+			.fn()
+			.mockResolvedValueOnce(false)
+			.mockResolvedValue(true);
+		const binding = createRivetHttpActor({
+			actorName: "web",
+			entrypoint,
+			authorize,
+		});
+		const context = { name: "web", key: ["tenant"], vars: {} };
+		const request = () => new Request("https://example.test/");
+		expect((await binding.handle(context, request())).status).toBe(403);
+		expect(entrypoint).not.toHaveBeenCalled();
+		await binding.handle(context, request());
+		await binding.handle(context, request());
+		expect(entrypoint).toHaveBeenCalledTimes(1);
+		await binding.handle({ ...context, vars: {} }, request());
+		expect(entrypoint).toHaveBeenCalledTimes(2);
 	});
 
 	it("refuses a source registry that does not actually contain the bound actor", () => {
@@ -223,12 +269,36 @@ describe("Rivet native application binding", () => {
 		).toThrow("RIVET_SOURCE_MISMATCH");
 	});
 
-	it("refuses a registry actor whose request handler is replaced after binding", () => {
+	it("prevents replacing the request handler after binding", () => {
 		const { binding, source } = application();
-		Object.assign(binding.actor.config, {
-			onRequest: () => new Response("substituted"),
-		});
-		expect(() => bindRivetHttpSource(source)).toThrow("RIVET_SOURCE_MISMATCH");
+		expect(() =>
+			Object.assign(binding.actor.config, {
+				onRequest: () => new Response("substituted"),
+			}),
+		).toThrow(TypeError);
+		expect(() => bindRivetHttpSource(source)).not.toThrow();
+	});
+
+	it("prevents replacing the activation initializer", () => {
+		const { binding, source } = application();
+		expect(() =>
+			Object.assign(binding.actor.config, { createVars: () => ({}) }),
+		).toThrow(TypeError);
+		expect(() => bindRivetHttpSource(source)).not.toThrow();
+	});
+
+	it("prevents adding unauthenticated actor hooks or changing runtime options", () => {
+		const { binding, source } = application();
+		expect(() =>
+			Object.assign(binding.actor.config, { onWebSocket: () => {} }),
+		).toThrow(TypeError);
+		expect(() =>
+			Object.assign(binding.actor.config.options, {
+				enableActorRuntimeSocket: true,
+			}),
+		).toThrow(TypeError);
+		expect(() => Object.setPrototypeOf(binding.actor, {})).toThrow(TypeError);
+		expect(() => bindRivetHttpSource(source)).not.toThrow();
 	});
 
 	it("exposes real DurableObject mapping and refuses unsupported entrypoints, dependencies and enabled replay", () => {
