@@ -64,20 +64,18 @@ the remaining comparable candidates. JavaScript must enumerate object keys
 before counting them, which can allocate before these limits apply. The host
 must impose independent process memory and time limits for untrusted input.
 
-`executeRankedIacTargets` accepts that ranking and an execution callback for
-each ranked target. It passes the same request ID and that target's inventory,
-model and quote hashes to every callback, and tries
-the next target only after an explicit denial with no reservation. A replay,
-lost response, malformed receipt or uncertain reservation stops the route.
-The result lists every attempt and its budget disclosure. A contradictory
-denial stops routing. If a matching admission proves a reservation is held but
-the provider cannot return usable outputs, the result remains uncertain and
-reports that hold; it also reports a completed execution when the provider can
-establish one. Callbacks must use
-the request ID with the same durable budget authority so a retry cannot claim
-another target under a different reservation. They must pass the expected
-hashes into admission and check the resulting receipt before any provider
-effect; checking only after the callback returns is too late.
+`executeRankedIacTargets` accepts a tenant, shared route authority, ranking,
+and an execution callback for each ranked target. It supplies a one-use permit
+and the target's inventory, model and quote hashes to each callback. The
+adapter consumes that permit before admission and verifies the active attempt
+again before a provider effect. The next target is tried only after an explicit
+no-effect denial without a reservation is durably recorded. A replay, lost
+response, malformed receipt or uncertain reservation stops the route.
+The result lists each attempted target and its budget disclosure. A held
+reservation remains visible when provider outputs are unusable. All callbacks
+for one logical request must use the same route authority, even when they use
+different financial authorities. The host must also establish any shared
+provider-account or entitlement ownership required by its budget authorities.
 
 `runIacRoute` records a single durable claim for the tenant and logical request
 before any target, admission policy, or provider is called. It records each

@@ -9,6 +9,12 @@ import {
 	type TargetPricingAvailability,
 	type TargetPricingInventory,
 } from "@hobo/pricing";
+import {
+	type IacRouteAuthority,
+	type IacRouteController,
+	type IacRoutePermit,
+	runIacRoute,
+} from "./iac-route.js";
 
 export interface IacPricingCandidate {
 	readonly workloadRef: string;
@@ -39,6 +45,7 @@ export interface IacPricingRanking {
 }
 
 export interface IacPricingRankingResult {
+	readonly tenantId: string;
 	readonly coverage: "complete" | "partial";
 	readonly budget: {
 		readonly evaluation: "not-evaluated";
@@ -99,8 +106,9 @@ export interface IacTargetExecutionResult {
 	readonly executionOutcome?: "completed" | "unknown";
 }
 
-/** Run targets in ranked order, stopping whenever prior execution may exist. */
-export async function executeRankedIacTargets(input: {
+export interface RankedIacExecutionInput {
+	readonly authority: IacRouteAuthority;
+	readonly tenantId: string;
 	readonly requestId: string;
 	readonly ranking: IacPricingRankingResult;
 	readonly candidates: readonly {
@@ -108,12 +116,70 @@ export async function executeRankedIacTargets(input: {
 		readonly run: (
 			requestId: string,
 			expected: IacRoutingExpectation,
+			permit: IacRoutePermit,
 		) => Promise<{
 			outputs: Record<string, string>;
 			admission: IacRoutingAdmission;
 		}>;
 	}[];
-}): Promise<IacTargetExecutionResult> {
+}
+
+/** Claim the route before examining any target, then stop on every unknown outcome. */
+export async function executeRankedIacTargets(
+	input: RankedIacExecutionInput,
+): Promise<IacTargetExecutionResult> {
+	const { authority, tenantId, requestId } = input;
+	const unavailable = {
+		evaluation: "unavailable",
+		reservation: "unknown",
+	} as const;
+	let stable: RankedIacExecutionInput;
+	try {
+		const ranking = structuredClone(input.ranking);
+		const candidates = input.candidates.map(({ targetId, run }) => ({
+			targetId,
+			run,
+		}));
+		stable = { authority, tenantId, requestId, ranking, candidates };
+	} catch {
+		return {
+			status: "uncertain",
+			code: "ROUTING_INPUT_UNINSPECTABLE",
+			coverage: "partial",
+			budget: unavailable,
+			attempts: [],
+		};
+	}
+	const result = await runIacRoute({
+		authority,
+		tenantId,
+		requestId,
+		run: async (route) => {
+			const value = await executeClaimedIacTargets(stable, route);
+			const outcome =
+				value.targetId === undefined
+					? { status: value.status }
+					: { status: value.status, targetId: value.targetId };
+			return { value, outcome };
+		},
+	});
+	if (result.status === "executed") return result.value;
+	const blocked: IacTargetExecutionResult = {
+		status: result.status,
+		code: result.code,
+		coverage: stable.ranking.coverage,
+		budget: unavailable,
+		attempts: [],
+	};
+	return result.targetId === undefined
+		? blocked
+		: { ...blocked, targetId: result.targetId };
+}
+
+async function executeClaimedIacTargets(
+	input: RankedIacExecutionInput,
+	route: IacRouteController,
+): Promise<IacTargetExecutionResult> {
 	const attempts: IacRoutingAttempt[] = [];
 	const notEvaluated = {
 		evaluation: "not-evaluated",
@@ -127,6 +193,7 @@ export async function executeRankedIacTargets(input: {
 	let coverage = ranking.coverage;
 	if (
 		!name(input.requestId) ||
+		input.tenantId !== ranking.tenantId ||
 		input.candidates.length > 256 ||
 		ranking.ranking.length > 256
 	)
@@ -190,6 +257,12 @@ export async function executeRankedIacTargets(input: {
 				budget: unknown,
 				attempts,
 			};
+		const permit = await route.beginAttempt({
+			targetId: entry.targetId,
+			inventoryHash: entry.inventoryHash,
+		});
+		if ((await input.authority.verifyAttempt(permit)) !== true)
+			throw new Error("route permit not active");
 		let outputs: Record<string, string> | undefined;
 		let rawAdmission: unknown;
 		let reservationId: string | undefined;
@@ -198,12 +271,16 @@ export async function executeRankedIacTargets(input: {
 		let runReturned = false;
 		let requiresReconciliation = false;
 		try {
-			const result = await candidate.run(input.requestId, {
-				targetId: entry.targetId,
-				inventoryHash: entry.inventoryHash,
-				modelHash: entry.modelHash,
-				quoteHash: entry.quoteHash,
-			});
+			const result = await candidate.run(
+				input.requestId,
+				{
+					targetId: entry.targetId,
+					inventoryHash: entry.inventoryHash,
+					modelHash: entry.modelHash,
+					quoteHash: entry.quoteHash,
+				},
+				permit,
+			);
 			runReturned = true;
 			rawAdmission = result.admission;
 			outputs = readOutputs(result.outputs);
@@ -328,6 +405,7 @@ export async function executeRankedIacTargets(input: {
 			(budget.evaluation === "denied" || budget.evaluation === "unavailable") &&
 			budget.reservation === "not-created"
 		) {
+			await route.denyAttempt(permit);
 			if (admission.code === "ROUTING_QUOTE_CHANGED") coverage = "partial";
 			continue;
 		}
@@ -713,8 +791,9 @@ function snapshotRankingRequest(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type */
 
-function invalidRanking(): IacPricingRankingResult {
+function invalidRanking(tenantId: string): IacPricingRankingResult {
 	return {
+		tenantId,
 		coverage: "partial",
 		budget: { evaluation: "not-evaluated", reservation: "not-created" },
 		code: "ROUTING_INPUT_INVALID",
@@ -728,12 +807,12 @@ export function rankIacTargets(
 	input: IacPricingRankingRequest,
 ): IacPricingRankingResult {
 	const request = snapshotRankingRequest(input);
-	if (request === undefined) return invalidRanking();
+	if (request === undefined) return invalidRanking("");
 	try {
 		return rankSnapshot(request);
 	} catch {
 		// Malformed but inert data can still fail a downstream semantic validator.
-		return invalidRanking();
+		return invalidRanking(request.tenantId);
 	}
 }
 
@@ -757,7 +836,7 @@ function rankSnapshot(
 		new Set(request.candidates.map((entry) => entry.inventory.targetId))
 			.size !== request.candidates.length
 	)
-		return invalidRanking();
+		return invalidRanking(request.tenantId);
 	const ranking: IacPricingRanking[] = [];
 	const rejected: IacPricingRankingResult["rejected"] = [];
 	for (const candidate of request.candidates) {
@@ -833,6 +912,7 @@ function rankSnapshot(
 	const ranked = ranking.map((entry, index) => ({ ...entry, rank: index + 1 }));
 	rejected.sort((left, right) => left.targetId.localeCompare(right.targetId));
 	return {
+		tenantId: request.tenantId,
 		coverage: rejected.length === 0 ? "complete" : "partial",
 		budget,
 		ranking: ranked,

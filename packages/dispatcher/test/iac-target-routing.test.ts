@@ -11,9 +11,77 @@ import {
 	workload,
 } from "../../pricing/test/fixtures.js";
 import {
-	executeRankedIacTargets,
+	executeRankedIacTargets as executeWithAuthority,
 	rankIacTargets,
 } from "../src/iac-target-routing.js";
+
+// These combinatorial dispatcher tests isolate routing decisions; separate tests
+// exercise the actual SQLite authority and cross-process claim semantics.
+function executeRankedIacTargets(
+	input: Omit<
+		Parameters<typeof executeWithAuthority>[0],
+		"authority" | "tenantId"
+	>,
+) {
+	const authority = {
+		persistence: "durable-cas" as const,
+		claim: ({
+			tenantId,
+			requestId,
+		}: {
+			tenantId: string;
+			requestId: string;
+		}) => ({
+			tenantId,
+			requestId,
+			status: "claimed" as const,
+			claimToken: "A".repeat(43),
+		}),
+		inspect: () => undefined,
+		beginAttempt: ({
+			tenantId,
+			requestId,
+			targetId,
+			inventoryHash,
+		}: {
+			tenantId: string;
+			requestId: string;
+			targetId: string;
+			inventoryHash: string;
+		}) => ({
+			tenantId,
+			requestId,
+			targetId,
+			inventoryHash,
+			attemptId: "B".repeat(43),
+		}),
+		denyAttempt: () => ({ status: "denied" as const }),
+		finish: ({
+			outcome,
+		}: {
+			outcome: import("../src/iac-route.js").IacRouteOutcome;
+		}) => ({ status: "finished" as const, outcome }),
+		verifyAttempt: () => true,
+		consumeAttempt: () => true,
+	};
+	const candidates = input.candidates.map((candidate) => ({
+		...candidate,
+		run: async (
+			requestId: string,
+			expected: import("../src/iac-target-routing.js").IacRoutingExpectation,
+			permit: import("../src/iac-route.js").IacRoutePermit,
+		) => {
+			if (!authority.consumeAttempt()) throw new Error("permit consumed");
+			return candidate.run(requestId, expected, permit);
+		},
+	}));
+	return executeWithAuthority({
+		...input,
+		candidates,
+		authority,
+		tenantId: "tenant-a",
+	});
+}
 
 const digest = `sha256:${"a".repeat(64)}`;
 function candidate(targetId: string, price: string) {
