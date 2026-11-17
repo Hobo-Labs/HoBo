@@ -15,6 +15,8 @@
  *
  * The report holds no price of its own: the caller passes GitHub's rate with
  * the page it came from and the day it was read, and the report carries it.
+ * It prices only what GitHub kept from billing: billed minutes stay minutes,
+ * because GitHub bills each runner type at its own rate.
  * Pure: no clock, network or store.
  */
 import type { MinutesUsage } from "../runner-order/limits.js";
@@ -45,8 +47,12 @@ export type UsageOptions = Readonly<{
 	included: MinutesUsage | undefined;
 	/** A billed job shorter than this is short. Default one minute. */
 	shortJobMs?: number;
-	/** Repositories GitHub does not bill (public): their kept minutes save no money. */
-	publicRepositories?: ReadonlySet<string>;
+	/**
+	 * Repositories GitHub does not bill (public): their kept minutes save no
+	 * money. Required, so a caller cannot price a public repository by
+	 * forgetting it; pass an empty set when every repository is private.
+	 */
+	publicRepositories: ReadonlySet<string>;
 }>;
 
 // public-contract: a billed job shorter than this wastes part of its first minute.
@@ -57,7 +63,6 @@ export type UsageTotals = Readonly<{
 	/** Jobs that started and finished. */
 	jobs: number;
 	billedMinutes: number;
-	billedUsd: number;
 	shortJobs: number;
 	/** Billed minutes short jobs did not run. */
 	wasteMinutes: number;
@@ -73,7 +78,7 @@ export type UsageRunnerRow = UsageTotals &
 	Readonly<{
 		/** `runnerKey` of the job's labels. */
 		runner: string;
-		/** Every label is one GitHub's own runners answer to. */
+		/** GitHub's own runners ran it: hosted labels, the hosted runner group, or billed. */
 		hosted: boolean;
 	}>;
 
@@ -142,8 +147,16 @@ function zero(): Counts {
 	};
 }
 
+// public-contract: the runner group GitHub's own runners, larger runners included, report.
+export const GITHUB_HOSTED_RUNNER_GROUP = "GitHub Actions";
+
+/** Ran on one of GitHub's own runners, a larger runner on custom labels included. */
 function hostedJob(job: InsightJob): boolean {
-	return job.labels.length > 0 && job.labels.every(isGithubHostedLabel);
+	return (
+		job.billed ||
+		job.runnerGroup === GITHUB_HOSTED_RUNNER_GROUP ||
+		(job.labels.length > 0 && job.labels.every(isGithubHostedLabel))
+	);
 }
 
 /** Adds one finished job to every slice it belongs to. */
@@ -181,7 +194,6 @@ function totals(counts: Counts, rate: MinuteRate): UsageTotals {
 	return {
 		jobs: counts.jobs,
 		billedMinutes: counts.billedMinutes,
-		billedUsd: counts.billedMinutes * rate.usdPerMinute,
 		shortJobs: counts.shortJobs,
 		wasteMinutes: counts.wasteMinutes,
 		keptMinutes: counts.keptMinutes,
@@ -239,7 +251,7 @@ export function usageReport(
 	checkRate(rate);
 	const shortJobMs = options.shortJobMs ?? DEFAULT_SHORT_JOB_MS;
 	const publicRepositories = new Set(
-		[...(options.publicRepositories ?? [])].map((name) => name.toLowerCase()),
+		[...options.publicRepositories].map((name) => name.toLowerCase()),
 	);
 	const all = zero();
 	const byRunner = new Map<string, Counts>();
@@ -256,7 +268,10 @@ export function usageReport(
 			const dayCounts = byDay.get(day) ?? zero();
 			byRunner.set(runner, runnerCounts);
 			byDay.set(day, dayCounts);
-			hostedRunners.set(runner, hostedJob(job));
+			hostedRunners.set(
+				runner,
+				(hostedRunners.get(runner) ?? false) || hostedJob(job),
+			);
 			count([all, runnerCounts, dayCounts], job, runMs, priced, shortJobMs);
 		}
 	}

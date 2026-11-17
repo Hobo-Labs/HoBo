@@ -77,7 +77,12 @@ function jobBody(options: JobOptions): string {
 			conclusion: options.conclusion ?? null,
 			labels: options.labels ?? ["ubuntu-latest"],
 			runner_name: options.runner ?? null,
-			runner_group_name: options.runner ? "GitHub Actions" : null,
+			// GitHub's own runners report the "GitHub Actions" group; self-hosted ones their own.
+			runner_group_name: options.runner
+				? (options.labels ?? []).includes("self-hosted")
+					? "Default"
+					: "GitHub Actions"
+				: null,
 			created_at: iso(0),
 			started_at: options.startMs === undefined ? iso(0) : iso(options.startMs),
 			completed_at: options.endMs === undefined ? null : iso(options.endMs),
@@ -445,7 +450,7 @@ describe.each(stores)("history from webhooks, kept in %s", (_name, make) => {
 		await deliverHistory(new InsightIngest(store));
 		const report = usageReport(
 			await store.runs({ repository: "octo/app", sinceMs: 0, limit: 10 }),
-			{ githubRate: RATE, included: undefined },
+			{ githubRate: RATE, included: undefined, publicRepositories: new Set() },
 		);
 		expect(report.billedMinutes).toBe(1);
 		expect(report.shortJobs).toBe(1);

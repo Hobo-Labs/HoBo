@@ -50,7 +50,19 @@ runner type and per UTC day:
   a minutes reader could read them.
 
 The report holds no price of its own. The caller passes GitHub's per-minute
-rate with the page it was read from and the day it was read.
+rate with the page it was read from and the day it was read. That rate prices
+only what GitHub did not bill: kept minutes and relay savings. Billed minutes
+stay minutes, because GitHub bills macOS, Windows and larger runners at their
+own rates.
+
+A job ran on GitHub's own runners when it was billed, when its runner group is
+`GitHub Actions` (larger runners on custom labels report it), or when every
+label is a GitHub-hosted label. Every other finished job is kept off GitHub.
+
+The caller must name the public repositories (`publicRepositories`, an empty
+set when there are none). GitHub does not bill a public repository, so its
+kept minutes are counted but priced at nothing. The option is required so a
+caller cannot overstate the savings by leaving it out.
 
 ## Signal breakdown
 

@@ -8,6 +8,8 @@ const MIN = 60_000;
 const DAY_ONE = Date.UTC(2026, 10, 2);
 
 // A test rate, not GitHub's: the report never carries a price of its own.
+const NONE: ReadonlySet<string> = new Set();
+
 const RATE: MinuteRate = {
 	usdPerMinute: 0.01,
 	source: "test fixture",
@@ -88,12 +90,17 @@ describe("usageReport", () => {
 		]),
 	];
 
-	const report = usageReport(runs, { githubRate: RATE, included: undefined });
+	const report = usageReport(runs, {
+		githubRate: RATE,
+		included: undefined,
+		publicRepositories: NONE,
+	});
 
 	it("adds billed minutes the way GitHub bills them", () => {
 		// 2 + 1 + 5 + 1 (the job-mode relay job is billed too).
 		expect(report.billedMinutes).toBe(9);
-		expect(report.billedUsd).toBeCloseTo(0.09);
+		// Billed minutes stay minutes: each runner type has its own price.
+		expect(report).not.toHaveProperty("billedUsd");
 	});
 
 	it("names the waste in billed jobs under a minute", () => {
@@ -151,6 +158,7 @@ describe("usageReport", () => {
 	it("shows minutes against the included amount and the burn", () => {
 		const withIncluded = usageReport(runs, {
 			githubRate: RATE,
+			publicRepositories: NONE,
 			included: { usedMinutes: 1_900, includedMinutes: 2_000 },
 		});
 		expect(withIncluded.included).toEqual({
@@ -163,6 +171,7 @@ describe("usageReport", () => {
 		});
 		const measuredBurn = usageReport(runs, {
 			githubRate: RATE,
+			publicRepositories: NONE,
 			included: { usedMinutes: 2_100, includedMinutes: 2_000, burnPerHour: 1 },
 		});
 		expect(measuredBurn.included?.remainingMinutes).toBe(0);
@@ -184,6 +193,7 @@ describe("usageReport", () => {
 	it("is empty for no runs and has no burn to project", () => {
 		const empty = usageReport([], {
 			githubRate: RATE,
+			publicRepositories: NONE,
 			included: { usedMinutes: 0, includedMinutes: 2_000 },
 		});
 		expect(empty.billedMinutes).toBe(0);
@@ -195,26 +205,53 @@ describe("usageReport", () => {
 		expect(() =>
 			usageReport(runs, {
 				githubRate: { ...RATE, source: " " },
+				publicRepositories: NONE,
 				included: undefined,
 			}),
 		).toThrow(/source/);
 		expect(() =>
 			usageReport(runs, {
 				githubRate: { ...RATE, readOn: "yesterday" },
+				publicRepositories: NONE,
 				included: undefined,
 			}),
 		).toThrow(/readOn/);
 		expect(() =>
 			usageReport(runs, {
 				githubRate: { ...RATE, usdPerMinute: -1 },
+				publicRepositories: NONE,
 				included: undefined,
 			}),
 		).toThrow(/usdPerMinute/);
 	});
 
+	it("counts a larger runner on custom labels as GitHub-hosted, not kept", () => {
+		const larger = usageReport(
+			[
+				run(3, [
+					job(31, ["ubuntu-24.04-16core"], DAY_ONE + 1_000, 2 * MIN, {
+						runnerGroup: "GitHub Actions",
+						billed: true,
+					}),
+					// Same labels, public repository: not billed, still GitHub's runner.
+					job(32, ["ubuntu-24.04-16core"], DAY_ONE + 2_000, 2 * MIN, {
+						runnerGroup: "GitHub Actions",
+					}),
+				]),
+			],
+			{ githubRate: RATE, included: undefined, publicRepositories: NONE },
+		);
+		expect(larger.keptMinutes).toBe(0);
+		expect(larger.billedMinutes).toBe(2);
+		expect(larger.runners.map((row) => [row.runner, row.hosted])).toEqual([
+			["ubuntu-24.04-16core", true],
+		]);
+	});
+
 	it("counts a job under a custom short-job threshold", () => {
 		const strict = usageReport(runs, {
 			githubRate: RATE,
+			publicRepositories: NONE,
 			included: undefined,
 			shortJobMs: 2 * MIN,
 		});
