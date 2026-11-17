@@ -151,8 +151,9 @@ guarantee; new hosting controls use versioned identities.
 
 Replay the complete target stream, including event metadata, before appending
 signals to it. A recorded signal suppresses emission only if its scope and
-payload match the reconstructed transition. A conflicting signal or occupied
-idempotency key requires journal reconciliation. Explicitly foreign facts are
+payload match the reconstructed transition. A recorded signal that cannot be
+reconstructed, a conflicting signal, or an occupied idempotency key requires
+journal reconciliation. Explicitly foreign facts are
 ignored, but missing scope or invalid amounts on relevant financial facts now
 stop the fold; reconcile older unscoped or incomplete records before upgrade.
 The journal and its evidence are trusted, and replay alone cannot authenticate
@@ -161,7 +162,7 @@ read; callers must inspect deduplicated append results and reconcile mismatches.
 decimal places and needs separate review for sub-nanodollar amounts.
 
 The [budget signal replay skill](../../.agents/skills/verify-budget-signal-replay/SKILL.md)
-checks 54 model states. This projection hides 24 transitions between states
+checks 60 model states. This projection hides 27 transitions between states
 with the same label. It assumes the target stream does not change between
 replay and append.
 
@@ -171,19 +172,22 @@ stateDiagram-v2
   s1: Matching signal already recorded
   s2: No matching signal recorded
   s3: Financial facts are incomplete
-  s4: Replay refused for reconciliation
-  s5: Matching signal suppressed
-  s6: Signal ready to append
-  s7: Signal appended
+  s4: Recorded signal has no matching transition
+  s5: Replay refused for reconciliation
+  s6: Matching signal suppressed
+  s7: Signal ready to append
+  s8: Signal appended
   [*] --> s0
   [*] --> s1
   [*] --> s2
   [*] --> s3
-  s0 --> s4: require reconciliation
-  s1 --> s5: reuse recorded signal
-  s2 --> s6: prepare signal
-  s3 --> s4: require reconciliation
-  s6 --> s7: append signal
+  [*] --> s4
+  s0 --> s5: require reconciliation
+  s1 --> s6: reuse recorded signal
+  s2 --> s7: prepare signal
+  s3 --> s5: require reconciliation
+  s4 --> s5: require reconciliation
+  s7 --> s8: append signal
 ```
 
 Zero USD budget or per-resolution cap means zero, never unlimited. Unlimited

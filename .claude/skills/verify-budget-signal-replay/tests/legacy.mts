@@ -8,7 +8,7 @@ if (!jar) throw new Error('TLA2TOOLS must point to the checked TLC jar');
 const scratch=mkdtempSync(path.join(os.tmpdir(),'hobo-budget-signal-legacy-'));
 try {
   copyFileSync(fileURLToPath(new URL('../models/BudgetSignalReplay.tla',import.meta.url)),path.join(scratch,'BudgetSignalReplay.tla'));
-  for (const invariant of ['OnlyIdenticalSuppresses','IncompleteDoesNotReturn','NoSilentJournalDedup']) {
+  for (const invariant of ['OnlyIdenticalSuppresses','IncompleteDoesNotReturn','NoSilentJournalDedup','NoOrphanReturn']) {
     writeFileSync(path.join(scratch,'Legacy.cfg'),`CONSTANT Current = FALSE\nSPECIFICATION Spec\nINVARIANT ${invariant}\n`);
     const result=spawnSync('java',['-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-workers','1','-config','Legacy.cfg','BudgetSignalReplay.tla'],{cwd:scratch,encoding:'utf8'});
     if (result.error) throw result.error;
