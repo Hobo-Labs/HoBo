@@ -24,8 +24,13 @@ mise_ensure_installed() {
 }
 
 mise_ensure_on_path() {
+	# mise's installer accepts a full MISE_INSTALL_PATH; make that location
+	# discoverable both before and after installation.
+	local install_path="${MISE_INSTALL_PATH:-${HOME}/.local/bin/mise}"
+	local bin_dir
+	bin_dir="$(dirname "$install_path")"
+	export PATH="${bin_dir}:${PATH}"
 	mise_ensure_installed
-	export PATH="${HOME}/.local/bin:${PATH}"
 }
 
 mise_trust_hobo_root() {
