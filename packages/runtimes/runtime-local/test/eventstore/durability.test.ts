@@ -77,26 +77,22 @@ describe("runtime-local EventStore durability", () => {
 			appendOptions(0),
 		);
 		const live = await store.fold("durability:fold", {
-			// SAFETY: assertion to `[] as string[]` is required at this boundary.
 			initialState: { items: [] as string[] },
 			handlers: {
 				"cart.ItemAdded": (state, event) => ({
 					items: [
 						...state.items,
-						// SAFETY: assertion to `event.data as { sku?: string }` is required at this boundary.
 						String((event.data as { sku?: string }).sku ?? ""),
 					],
 				}),
 			},
 		});
 		const replay = await store.fold("durability:fold", {
-			// SAFETY: assertion to `[] as string[]` is required at this boundary.
 			initialState: { items: [] as string[] },
 			handlers: {
 				"cart.ItemAdded": (state, event) => ({
 					items: [
 						...state.items,
-						// SAFETY: assertion to `event.data as { sku?: string }` is required at this boundary.
 						String((event.data as { sku?: string }).sku ?? ""),
 					],
 				}),
@@ -109,7 +105,9 @@ describe("runtime-local EventStore durability", () => {
 
 	it("crashMidAppendAtomicity survives SIGKILL with whole batches only", async () => {
 		const dataDir = mkdtempSync(join(tmpdir(), "hobo-es-crash-"));
-		const acked = await runCrasher(crasherScript, dataDir);
+		const { acked, signal } = await runCrasher(crasherScript, dataDir);
+		expect(acked.length).toBeGreaterThanOrEqual(3);
+		expect(signal).toBe("SIGKILL");
 		const store = createRuntimeLocalEventStore({
 			dataDir,
 			clock: createManualClock(),
@@ -161,7 +159,10 @@ function appendOptions(expectedSeq: number) {
 	};
 }
 
-async function runCrasher(script: string, dataDir: string): Promise<number[]> {
+async function runCrasher(
+	script: string,
+	dataDir: string,
+): Promise<{ acked: number[]; signal: NodeJS.Signals | null }> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(
 			process.execPath,
@@ -189,6 +190,6 @@ async function runCrasher(script: string, dataDir: string): Promise<number[]> {
 		});
 
 		child.on("error", reject);
-		child.on("close", () => resolve(acked));
+		child.on("close", (_code, signal) => resolve({ acked, signal }));
 	});
 }

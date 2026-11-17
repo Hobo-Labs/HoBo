@@ -27,8 +27,9 @@ import {
 } from "@hobo/core";
 import { createNodeSqliteDriver, SqliteJournal } from "@hobo/storage-sqlite";
 import {
+	isJsonNumber,
 	isJsonObject,
-	type JsonObject,
+	isJsonString,
 	type JsonValue,
 	parseJsonValue,
 } from "../json.js";
@@ -43,7 +44,6 @@ import {
 	parseStreamId,
 } from "./parse.js";
 import { defaultDbPath } from "./sqlite-store.js";
-import { createUlidGenerator } from "./ulid.js";
 
 export { OptimisticSequenceConflictError } from "@hobo/core";
 
@@ -76,7 +76,6 @@ export function createManualClock(
 export interface RuntimeLocalEventStoreOptions {
 	dataDir: string;
 	clock?: Clock;
-	/** Override db path (tests). */
 	dbPath?: string;
 	partitionId?: string;
 }
@@ -105,8 +104,6 @@ export function createRuntimeLocalEventStore(
 		nativePragmas: true,
 		partitionId: options.partitionId ?? "default",
 	});
-	const nextUlid = createUlidGenerator(clock);
-	const quarantinedSeqs = new Set<string>();
 
 	return Object.freeze({
 		async append(
@@ -114,7 +111,6 @@ export function createRuntimeLocalEventStore(
 			events: EventInput[],
 			appendOptions: AppendOptions,
 		): Promise<AppendResult> {
-			// Parse boundary for back-compat validation
 			parseAppendContext(streamId, appendOptions);
 			parseEventInputs(events);
 			return storage.append(streamId, events, appendOptions);
@@ -215,10 +211,32 @@ export function createRuntimeLocalEventStore(
 			for await (const event of storage.read(parsedStreamId)) {
 				events.push(event);
 			}
+			const eventsBySeq = new Map(events.map((event) => [event.seq, event]));
+			const quarantines = new Map<
+				number,
+				FoldResult<S>["quarantined"][number]
+			>();
+			for (const event of events) {
+				if (!isQuarantineEvent(event)) continue;
+				const record = quarantineRecord(event);
+				const offending = eventsBySeq.get(record.offendingSeq);
+				if (
+					!offending ||
+					offending.seq >= event.seq ||
+					isQuarantineEvent(offending) ||
+					offending.tenant !== event.tenant ||
+					(event.meta?.quarantines !== undefined &&
+						event.meta.quarantines !== offending.id)
+				) {
+					throw new TypeError("invalid quarantine target");
+				}
+				if (!quarantines.has(record.offendingSeq))
+					quarantines.set(record.offendingSeq, record);
+			}
+			for (const record of quarantines.values()) quarantined.push(record);
 
 			for (const event of events) {
-				const quarantineKey = `${parsedStreamId}:${event.seq}`;
-				if (isQuarantineEvent(event) || quarantinedSeqs.has(quarantineKey)) {
+				if (isQuarantineEvent(event) || quarantines.has(event.seq)) {
 					continue;
 				}
 				const handler = handlers.get(event.type);
@@ -236,19 +254,10 @@ export function createRuntimeLocalEventStore(
 						streamId: parsedStreamId,
 						event,
 						cause,
-						clock,
-						nextUlid,
-						quarantinedSeqs,
 					});
-					quarantined.push({
-						offendingSeq: event.seq,
-						quarantineSeq: quarantine.seq,
-						type: quarantine.type,
-						reason: String(
-							// SAFETY: assertion to `quarantine.data as { reason?: string }` is required at this boundary.
-							(quarantine.data as { reason?: string }).reason ?? "",
-						),
-					});
+					const record = quarantineRecord(quarantine);
+					quarantines.set(record.offendingSeq, record);
+					quarantined.push(record);
 				}
 			}
 
@@ -275,40 +284,26 @@ async function appendQuarantine({
 	streamId,
 	event,
 	cause,
-	clock,
-	nextUlid,
-	quarantinedSeqs,
 }: {
 	storage: SqliteJournal;
 	streamId: string;
 	event: EventEnvelope;
 	cause: Error;
-	clock: Clock;
-	nextUlid: () => string;
-	quarantinedSeqs: Set<string>;
 }): Promise<EventEnvelope> {
-	const quarantineKey = `${streamId}:${event.seq}`;
-	// The stream, not `quarantinedSeqs`, decides whether this event has already
-	// been quarantined. The set lives in one store instance, so it is empty
-	// after a restart — and a fold is not read-only, so re-folding a stream
-	// that contains a poison event is the ordinary case (a projection rebuild,
-	// a replica catching up). Gating this scan on the set meant the second
-	// fold *after a restart* appended a second marker for the same event:
-	// unbounded stream growth on a real clock, and a hard
-	// `UNIQUE constraint failed: events.id` on a manual one. The set is still
-	// the fast path inside a single instance; this is the durable one.
 	for await (const candidate of storage.read(streamId)) {
+		if (!isQuarantineEvent(candidate)) continue;
+		if (quarantineRecord(candidate).offendingSeq !== event.seq) continue;
 		if (
-			isQuarantineEvent(candidate) &&
-			// SAFETY: assertion to `candidate.data as { offendingSeq?: number }` is required at this boundary.
-			(candidate.data as { offendingSeq?: number }).offendingSeq === event.seq
+			candidate.seq <= event.seq ||
+			candidate.tenant !== event.tenant ||
+			(candidate.meta?.quarantines !== undefined &&
+				candidate.meta.quarantines !== event.id)
 		) {
-			quarantinedSeqs.add(quarantineKey);
-			return candidate;
+			throw new TypeError("invalid quarantine target");
 		}
+		return candidate;
 	}
 
-	quarantinedSeqs.add(quarantineKey);
 	const reason = cause instanceof Error ? cause.message : String(cause);
 	const aggregate = event.type.split(".")[0] ?? "event";
 	const input = parseEventInput({
@@ -320,11 +315,9 @@ async function appendQuarantine({
 		},
 		meta: {
 			quarantines: event.id,
+			idempotencyKey: `quarantine:${event.id}`,
 		},
 	});
-	void nextUlid;
-	void clock;
-	// Quarantine must not bypass fencing: use current owner_epoch when fenced.
 	const head = storage.getStreamHead(streamId);
 	const appendOpts: AppendOptions = {
 		expectedSeq: storage.getStreamLength(streamId),
@@ -345,14 +338,35 @@ async function appendQuarantine({
 				type: input.type,
 				v: input.v,
 				data: input.data,
-				// SAFETY: assertion to `input.meta as JsonObject` is required at this boundary.
-				meta: input.meta as JsonObject,
+				meta: input.meta,
 			},
 		],
 		appendOpts,
 	);
-	// SAFETY: assertion to `result.appended[0] as EventEnvelope` is required at this boundary.
-	return result.appended[0] as EventEnvelope;
+	const quarantine = result.appended[0] ?? result.deduped[0];
+	if (!quarantine) throw new Error("quarantine append returned no event");
+	return quarantine;
+}
+
+function quarantineRecord(
+	event: EventEnvelope,
+): FoldResult<null>["quarantined"][number] {
+	const data = event.data;
+	if (
+		!isJsonObject(data) ||
+		!isJsonNumber(data.offendingSeq) ||
+		!Number.isSafeInteger(data.offendingSeq) ||
+		data.offendingSeq < 1 ||
+		(data.reason !== undefined && !isJsonString(data.reason))
+	) {
+		throw new TypeError("invalid quarantine record");
+	}
+	return {
+		offendingSeq: data.offendingSeq,
+		quarantineSeq: event.seq,
+		type: event.type,
+		reason: data.reason ?? "",
+	};
 }
 
 function normalizeHandlers<S>(
@@ -382,7 +396,6 @@ function cloneJson<T>(value: T): T {
 		return structuredClone(value);
 	}
 	const cloned = parseJsonValue(JSON.stringify(value));
-	// SAFETY: JSON round-trip preserves the caller-owned event snapshot type.
 	return cloned as T;
 }
 
@@ -405,7 +418,6 @@ export async function collectStream(
 	return events;
 }
 
-// keep parse imports used for side-effect validation paths
 export type { ParsedAppendContext, ParsedEventInput };
 
 void parseEventEnvelope;
