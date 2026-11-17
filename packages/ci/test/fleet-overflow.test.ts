@@ -282,6 +282,30 @@ describe("fleet verification selection", () => {
 				localSignoffEnabled: true,
 			}),
 		).toEqual(unknown);
+		// JSON is the boundary here: these represent malformed untyped callers.
+		for (const input of [
+			{ members: [null], unknownMembers: [], localSignoffEnabled: true },
+			{
+				members: [{ ...hobo(0), enabled: null }],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			},
+			{
+				members: [{ ...hobo(0), id: null }],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			},
+			{
+				members: [{ ...hobo(1), runsOn: null }],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			},
+			{ members: [], unknownMembers: [], localSignoffEnabled: "false" },
+			{ members: null, unknownMembers: [], localSignoffEnabled: true },
+		])
+			expect(
+				selectFleetVerification(JSON.parse(JSON.stringify(input))),
+			).toEqual(unknown);
 	});
 
 	it("keeps the normal runner order when local signoff is enabled", () => {
