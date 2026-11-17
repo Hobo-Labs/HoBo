@@ -13,14 +13,15 @@
  *    never silently becomes `in-process`.
  * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
  *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, `secret`, or
- *    `data`, or `untilReady` marks it asserted-against; if any is `mocked`, this run
+ *    `data`, `schedule`, `scheduleClock`, or `untilReady` marks it asserted-against;
+ *    if any is `mocked`, this run
  *    cannot claim prod-readiness and the report says so.
  */
 
-import type { Messaging, Queue, VirtualClock } from "@hobo/core";
+import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
 import type { SecretsPort } from "@hobo/identity";
-import type { QueueEmulator } from "./emulators.js";
+import type { QueueEmulator, ScheduleEmulator } from "./emulators.js";
 import { TestHarnessError } from "./errors.js";
 import { emptyFidelityCounts } from "./fidelity.js";
 import {
@@ -150,6 +151,20 @@ function buildGraph(
 		}
 		return emulator;
 	}
+	function scheduleEmulator(alias: string): ScheduleEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.schedules.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no schedule emulator`,
+				"use the alias of a schedule resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
 	return Object.freeze({
 		stage,
 		lane,
@@ -229,6 +244,12 @@ function buildGraph(
 				);
 			}
 			return emulator.port;
+		},
+		schedule(alias: string): SchedulerPort {
+			return scheduleEmulator(alias).port;
+		},
+		scheduleClock(alias: string): VirtualClock | undefined {
+			return scheduleEmulator(alias).clock;
 		},
 		fidelity(): FidelityReport {
 			return buildFidelityReport(handles, asserted);

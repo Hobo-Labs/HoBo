@@ -9,6 +9,7 @@ import {
 	parseConsumerGroupId,
 	parseIdempotencyKey,
 	parseQueueName,
+	parseScheduleId,
 	parseTopicName,
 } from "@hobo/core";
 import {
@@ -45,6 +46,7 @@ it("verifies the service emulator consumer pact against the running harness", as
 			events: { kind: "topic" },
 			credentials: { kind: "secret" },
 			orders: { kind: "data" },
+			nightly: { kind: "schedule" },
 		},
 		handlers: {},
 	});
@@ -65,6 +67,28 @@ it("verifies the service emulator consumer pact against the running harness", as
 					return { status: 200 };
 				}
 				const body = request.body;
+				if (
+					request.method === "POST" &&
+					request.path === "/schedule/nightly" &&
+					typeof body === "object" &&
+					body !== null &&
+					"interval" in body &&
+					typeof body.interval === "number"
+				) {
+					graph
+						.schedule("nightly")
+						.every(parseScheduleId("nightly"), { everyMs: body.interval });
+					return {
+						status: 200,
+						body: {
+							fidelity: graph.resource("nightly").fidelity,
+							occurrences: graph
+								.scheduleClock("nightly")
+								?.advance(body.interval * 2)
+								.map((fire) => fire.occurrence ?? 0),
+						},
+					};
+				}
 				if (
 					request.method === "POST" &&
 					request.path === "/data/orders" &&
