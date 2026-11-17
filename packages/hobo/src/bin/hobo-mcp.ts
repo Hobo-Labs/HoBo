@@ -41,6 +41,7 @@ async function serve(): Promise<number> {
 async function serveWithAudit(
 	audit: ReturnType<typeof openMcpAuditJournal>,
 ): Promise<number> {
+	const auth = localOperatorAuth();
 	const server = createHoboMcpServer({
 		cli: createComposedHoboCli(),
 		auditSink: audit.record,
@@ -48,6 +49,7 @@ async function serveWithAudit(
 	});
 	const capture = createSecretCaptureApp({
 		specs: RELAY_SECRET_CAPTURE_SPECS,
+		onEvent: (event) => audit.recordCapture(event, auth),
 		connector: createInfisicalCaptureConnector({
 			projectDir: secretCaptureProjectDir(process.cwd(), process.env),
 		}),
@@ -60,7 +62,7 @@ async function serveWithAudit(
 	try {
 		await serveMcpStdio({
 			server,
-			auth: localOperatorAuth(),
+			auth,
 			input: process.stdin,
 			output: process.stdout,
 			session: createMcpStdioSession(capture),

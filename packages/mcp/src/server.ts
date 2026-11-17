@@ -220,7 +220,8 @@ export function createHoboMcpServer(
 		async callTool(name, input, auth, callOptions) {
 			const tool = findTool(name, surface);
 			const authorization = await authorize(name, auth, tool, callOptions);
-			if (!authorization.ok || !tool) return authorization;
+			if (!authorization.ok || !tool || !authorization.decision)
+				return authorization;
 
 			const argv = buildArgv(tool.verb, input);
 			const runOptions = input.cwd !== undefined ? { cwd: input.cwd } : {};
