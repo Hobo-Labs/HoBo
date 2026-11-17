@@ -15,9 +15,9 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). A `pas
 | 1 | Enroll trusted-local and isolated-container workers | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
 | 1 | Join Kubernetes via Station/Yard Connections | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
 | 1 | Multi-engine Offers without oversubscription | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
-| 1 | Strict v2 at-most-once start authorization | not-implemented | Store enforces single start_authorized and a scoped GitHub lookup exists, but the controller and hook endpoint are not wired |
+| 1 | Strict v2 at-most-once start authorization | not-implemented | Store, scoped GitHub lookup, and start handler exist, but the production controller does not connect them |
 | 1 | RunnerSlots separate from ExecutionClaims | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
-| 1 | Official pre-job hook start fence | not-implemented | Hook template ships in packages/ci-gh-actions/templates but no controller endpoint installs or serves it |
+| 1 | Official pre-job hook start fence | not-implemented | Hook and optional start route exist, but the production controller does not install or configure them |
 | 1 | Deterministic names + transactional outbox + fencing | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
 | 1 | Preserve v1 policy/Offer/Lease semantics | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
 | 1 | Dagger actor boundary preserved | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
@@ -27,7 +27,7 @@ Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). A `pas
 | 6 | User-facing semantics in operator doc + status contracts | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
 | 7 | Logical records in fleet_v2.proto + CUE | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
 | 8 | Transactional admission + effect delivery store | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |
-| 9 | GitHub RunnerSlot + pre-job protocol | not-implemented | The scoped GitHub lookup and fail-closed hook exist; live controller integration and its endpoint are not implemented |
+| 9 | GitHub RunnerSlot + pre-job protocol | not-implemented | The scoped lookup, hook, and optional start handler exist; live controller integration is not implemented |
 | 10 | Kubernetes realization assets + tests | not-implemented | Pure planner functions + YAML assets only; no client execution path against a cluster |
 | 11 | Dagger strict actor integration path | not-implemented | Boundary shapes only; no strict actor execution wired through Dagger |
 | 12 | Security model controls | not-verified | No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md |

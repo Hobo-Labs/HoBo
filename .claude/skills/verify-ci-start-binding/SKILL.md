@@ -9,7 +9,7 @@ description: Check transactional CI fleet start-binding, GitHub assignment evide
 
 **Why:** Two different runner slots must not receive start authorization for the same actual job, and a changed request must not be treated as the original committed authorization.
 
-**Store result at sync commit `1fcfc3bdcc0701b69c5f22a91db0053b4f9fbded`:** PASS for the stated SQLite and PostgreSQL contract cases, generated retry cases, the bounded model, and the mathematical induction below. **Hook result at sync commit `afc5877e3655a2ffb22a817c1cf161ce823111ab`:** PASS for the local HTTP tests and bounded receipt model below. **Lookup result at sync commit `b353fb8d0b30e86870068e2420b8dfd13c938a49`:** PASS for the generated and mocked GitHub checks and bounded assignment model below.
+**Store result at sync commit `1fcfc3bdcc0701b69c5f22a91db0053b4f9fbded`:** PASS for the stated SQLite and PostgreSQL contract cases, generated retry cases, the bounded model, and the mathematical induction below. **Hook result at sync commit `afc5877e3655a2ffb22a817c1cf161ce823111ab`:** PASS for the local HTTP tests and bounded receipt model below. **Lookup result at sync commit `b353fb8d0b30e86870068e2420b8dfd13c938a49`:** PASS for the generated and mocked GitHub checks and bounded assignment model below. **Handler result at sync commit `0063e6547378e392e14f023c453da7c32522ff6e`:** PASS for the handler, SQLite integration, and bounded endpoint model below.
 
 ## Covered code
 
@@ -17,7 +17,8 @@ description: Check transactional CI fleet start-binding, GitHub assignment evide
 - `packages/ci/test/fleet-v2-store-conformance.test.ts`.
 - `packages/ci-gh-actions/templates/fleet-pre-job-hook.sh` and `packages/ci-gh-actions/test/fleet-start-hook-receipt.test.ts`: context and receipt validation at the hook boundary.
 - `packages/ci-gh-actions/src/fleet-v2/github-assignment.ts`, `src/github.ts`, `src/fleet-v2/start-fence.ts`, and `test/strict-github-assignment.test.ts`: scoped assignment evidence and its comparison with a hook claim.
-- The lookup and hook are not wired into the production controller. The live endpoint and GitHub behavior are not proved here.
+- `packages/ci-gh-actions/src/fleet-v2/start-handler.ts`, `src/http-handler.ts`, `src/service.ts`, and their handler, integration, route, and readiness tests.
+- The lookup, handler, and hook are not wired into the production controller. Live GitHub behavior and end-to-end production execution are not proved here.
 
 ## Run
 
@@ -25,7 +26,7 @@ description: Check transactional CI fleet start-binding, GitHub assignment evide
 bash scripts/verify-state-machine.sh .agents/skills/verify-ci-start-binding
 ```
 
-The command runs the shared conformance suite on SQLite, the hook tests against a local HTTP server, mocked GitHub lookup tests, bounded TLC 1.7.4 models, and an abstract unbounded uniqueness induction with Z3 4.15.4. It checks PostgreSQL too when `TESTCONTAINERS=1`, `HOBO_FLEET_ENROLLMENT_CI=1`, or `HOBO_CI_TEST_POSTGRES` supplies a test database. The container route requires Docker and the test's pinned PostgreSQL image. Java 11+, Python, Node, Bash, curl, Vitest, fast-check, and installed workspace dependencies are required. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to pinned installations for an offline run. Use `/statechart` with the `models/*view.mts` projections to regenerate the charts.
+The command runs the shared conformance suite on SQLite, the hook tests against a local HTTP server, mocked GitHub lookup and handler tests, bounded TLC 1.7.4 models, expected race counterexamples, and an abstract unbounded uniqueness induction with Z3 4.15.4. It checks PostgreSQL too when `TESTCONTAINERS=1`, `HOBO_FLEET_ENROLLMENT_CI=1`, or `HOBO_CI_TEST_POSTGRES` supplies a test database. The container route requires Docker and the test's pinned PostgreSQL image. Java 11+, Python, Node, Bash, curl, Vitest, fast-check, and installed workspace dependencies are required. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to pinned installations for an offline run. Use `/statechart` with the `models/*view.mts` projections to regenerate the charts.
 
 ## Scope and evidence
 
@@ -41,7 +42,11 @@ StrictGithubAssignment explores 128 states for abstract trusted scope, runner id
 
 The lookup assumes its scope and GitHub transport come from trusted controller configuration. It scans one repository and fails closed when required runner-group, label, attempt, or complete-listing evidence is unavailable. Required labels alone do not establish the full execution profile. GitHub's paginated responses are not an atomic snapshot, and an assignment can change after the final read. The model abstracts these observations as fixed booleans and does not establish live GitHub behavior, TypeScript refinement, or fencing across that race.
 
-Z3 proves that an abstract atomic assignment preserves unique slot ownership for unbounded integer job and slot identifiers, assuming the initial mapping is unique, the job has no prior owner, and the slot is unused. `START_BINDING_PROOF_MUTATION=omit-slot-guard` produces a counterexample. The proof does not establish that TypeScript refines this model, that a database transaction or GitHub's assignment evidence works as assumed, or that runner code executes exactly once. The store trusts the caller's verified-assignment assertion. See the operator guide for the unwired production lookup and hook endpoint.
+StartFenceHandler explores 142 states for slot-secret authentication, initial and final assignment evidence, successful, refused, or ambiguous store outcomes, and the final observed claim state. It checks authentication before binding, and requires both assignment observations, a committed binding, and a live final claim observation before issuing a receipt. Its projection hides 52 same-state transitions. Five model mutations that bypass these checks yield counterexamples; seven code mutations that bypass authentication, initial lookup, binding, claim validation, final lookup, final claim read, or request size fail the handler tests. The real handler tests include 100 generated wrong secrets (seed 614478). A separate integration test exercises the relay route, real scoped GitHub adapter with mocked transport, and SQLite store, including a matching retry, conflicting claim, and terminal retry. The CI Actions suite passed 1,954 tests with 10 skipped, and 310 root tests passed.
+
+The endpoint model treats each observation as trustworthy and fixed. `StartFenceRace` explicitly permits assignment change or settlement after the relevant read; its two intentionally violated properties yield expected counterexamples showing that a receipt can be emitted after either change. Those counterexamples are executable checks, not guarantees. PostgreSQL, live GitHub, receipt transport authentication, concurrent requests, and a production controller are not covered by the endpoint integration test. The lookup resolver must be built from trusted slot and profile configuration.
+
+Z3 proves that an abstract atomic assignment preserves unique slot ownership for unbounded integer job and slot identifiers, assuming the initial mapping is unique, the job has no prior owner, and the slot is unused. `START_BINDING_PROOF_MUTATION=omit-slot-guard` produces a counterexample. The proof does not establish that TypeScript refines this model, that a database transaction or GitHub's assignment evidence works as assumed, or that runner code executes exactly once. The store trusts the caller's verified-assignment assertion. See the operator guide for the unwired production lookup, hook installation, and endpoint configuration.
 
 ## Keep in sync
 

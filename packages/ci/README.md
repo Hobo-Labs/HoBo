@@ -643,7 +643,7 @@ still authorized or running. Terminal and uncertain claims cannot authorize a
 new start. Eligibility is checked on the original authorization; a matching
 lost-response retry is a receipt for that committed authorization.
 
-The GitHub assignment lookup and hook endpoint are not yet wired into the
+The GitHub assignment lookup, optional start handler, and hook are not yet wired into the
 production controller, so these store guarantees alone do not make strict CI
 runner starts available. See the [fleet operator guide](../../docs/design/fleet-enrollment-operator.md).
 

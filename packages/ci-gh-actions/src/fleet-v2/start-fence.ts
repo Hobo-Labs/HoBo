@@ -32,10 +32,10 @@ const githubJobKeySchema = z.strictObject({
 /** Wire body from the pre-job hook. Every field is an unverified claim until the
  * GitHub assignment lookup confirms it; nothing here is coerced — a missing or
  * mistyped field is a rejection, never `"undefined"`. */
-const startFenceRequestSchema = z.strictObject({
+export const startFenceRequestSchema = z.strictObject({
 	slotId: z.string().min(1),
 	claimId: z.string().min(1),
-	bindingSecret: z.string().min(32),
+	bindingSecret: z.string().min(32).max(1024),
 	accountId: z.string().min(1),
 	runnerName: z.string().min(1),
 	profileId: z.string().min(1),
