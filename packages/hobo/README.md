@@ -759,8 +759,21 @@ If the configured Yard cannot collect a manifest, `hobo up` and its preview
 refuse to fall back to the embedded local lane when a hosting budget is required.
 The fallback cannot reserve or enforce that budget. The command also checks
 runtime and flag requirements again while preparing local placement and before
-startup. Changes to project artifacts during placement still require a separate
-execution handoff fence.
+startup. The local fallback snapshots project inputs before loading the Bindle,
+binds their digest into placement, and refuses observed changes before startup.
+The persistent worker checks the same fingerprint before serving.
+
+The fingerprint covers the project files selected by
+`fingerprintLocalDeployment`; it excludes `node_modules`, local control state,
+temporary files and the configured HoBo home. Before placement, HoBo copies the
+selected bytes and their read/execute mode into a read-only, content-addressed
+execution tree and verifies that the copy has the approved digest. Placement
+and local execution load that tree, so a later working-tree edit and Node's
+module cache cannot substitute a different Bindle. Dependencies in
+`node_modules`, absolute or dynamic file
+reads, same-user tampering with `.hobo`, and the configured HoBo home remain
+outside the snapshot. Direct callers that supply a digest are responsible for
+its provenance.
 
 The bounded fallback model projects the following flow. It hides 22 internal
 steps and treats the Yard's own result as an external decision.
@@ -798,4 +811,52 @@ stateDiagram-v2
   s8 --> s12: a budget becomes required
   s10 --> s3: require budget authority
   s12 --> s3: require budget authority
+```
+
+### Approved local execution copy
+
+The local execution-copy model includes both the in-process path and the
+persistent worker. TLC explores 48 states. The projection hides 27 steps that
+stay in one visible state and suppresses 15 repeated edit steps. A separate
+mutant that starts from the working tree reaches a counterexample after the
+final source check; the execution-copy path below keeps the launched digest
+equal to the digest placement approved.
+
+```mermaid
+stateDiagram-v2
+  s0: Local deployment is requested
+  s1: Changed or unavailable inputs are refused
+  s2: Project inputs are under review
+  s3: Approved execution copy is being created
+  s4: Placement is authorizing the copied work
+  s5: Placement approved the copied work
+  s6: Local startup is being prepared
+  s7: Startup inputs were checked
+  s8: Working files changed after the final check
+  s9: Approved copied work starts locally
+  s10: Worker is checking the execution copy
+  s11: Worker verified the execution copy
+  s12: Worker received a corrupted execution copy
+  [*] --> s0
+  s0 --> s1: refuse unavailable inputs
+  s0 --> s2: capture input digest
+  s2 --> s3: review the inputs
+  s3 --> s4: copy exact input bytes
+  s2 --> s1: refuse changed inputs
+  s4 --> s5: approve the copied work
+  s3 --> s1: refuse a changed copy source
+  s5 --> s6: prepare local startup
+  s5 --> s1: refuse changed inputs
+  s6 --> s7: check startup inputs
+  s7 --> s8: working files change
+  s7 --> s9: start from the execution copy
+  s7 --> s10: start from the execution copy
+  s6 --> s1: refuse changed inputs
+  s8 --> s9: start from the execution copy
+  s8 --> s10: start from the execution copy
+  s10 --> s11: verify the worker copy
+  s10 --> s12: execution copy is corrupted
+  s11 --> s9: start from the worker copy
+  s12 --> s10: execution copy is corrupted
+  s12 --> s1: refuse a corrupted execution copy
 ```

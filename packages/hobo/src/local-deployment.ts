@@ -16,7 +16,10 @@ import {
 	LocalDeploymentReceiptSchema,
 } from "./_generated/composition_pb.js";
 import { isJsonObject, isJsonString } from "./json.js";
-import { fingerprintLocalDeployment } from "./local-deployment-fingerprint.js";
+import {
+	fingerprintLocalDeployment,
+	materializeLocalDeploymentSnapshot,
+} from "./local-deployment-fingerprint.js";
 import { acquireLocalDeploymentLock } from "./local-deployment-lock.js";
 
 const RECEIPT_FILE = "local-deployment.json";
@@ -152,16 +155,28 @@ export async function startLocalDeployment(
 	input: Omit<
 		LocalDeploymentLaunch,
 		"$typeName" | "$unknown" | "leaseId" | "contentFingerprint"
-	>,
+	> & { readonly expectedContentFingerprint?: string },
 ): Promise<{ receipt: LocalDeploymentReceipt; reused: boolean }> {
-	const projectDir = resolve(input.projectDir);
+	const { expectedContentFingerprint, ...launch } = input;
+	const projectDir = resolve(launch.projectDir);
+	const hoboHome = resolve(launch.hoboHome);
 	const dir = directory(projectDir);
 	await mkdir(dir, { recursive: true });
 	const releaseLock = acquireLocalDeploymentLock(dir);
 	try {
 		const contentFingerprint = await fingerprintLocalDeployment(
 			projectDir,
-			input.hoboHome,
+			hoboHome,
+		);
+		if (
+			expectedContentFingerprint !== undefined &&
+			expectedContentFingerprint !== contentFingerprint
+		)
+			throw new Error("Local project inputs changed before worker startup");
+		const executionProjectDir = await materializeLocalDeploymentSnapshot(
+			projectDir,
+			hoboHome,
+			contentFingerprint,
 		);
 		const existing = await readLocalDeployment(projectDir);
 		if (existing) {
@@ -181,25 +196,40 @@ export async function startLocalDeployment(
 					"brokerId",
 					"bindleName",
 				] as const;
-				const changed = bindings.filter((key) => existing[key] !== input[key]);
-				if (changed.length > 0 || existing.hoboHome !== resolve(input.hoboHome))
+				const changed = bindings.filter((key) => existing[key] !== launch[key]);
+				if (changed.length > 0 || existing.hoboHome !== hoboHome)
 					throw new Error(
 						`An existing deployment uses different placement bindings (${changed.length > 0 ? changed.join(", ") : "hoboHome"}); run hobo down before changing targets`,
 					);
-				if (input.ttlSeconds > 0 && !existing.expiresAt)
+				if (launch.ttlSeconds > 0 && !existing.expiresAt)
 					throw new Error(
 						"An existing permanent deployment must be stopped before requesting a temporary lease",
 					);
-				if (existing.contentFingerprint === contentFingerprint)
+				if (existing.contentFingerprint === contentFingerprint) {
+					if (
+						expectedContentFingerprint !== undefined &&
+						(await fingerprintLocalDeployment(projectDir, hoboHome)) !==
+							expectedContentFingerprint
+					)
+						throw new Error("Local project inputs changed before worker reuse");
 					return { receipt: existing, reused: true };
+				}
+				if (
+					expectedContentFingerprint !== undefined &&
+					(await fingerprintLocalDeployment(projectDir, hoboHome)) !==
+						expectedContentFingerprint
+				)
+					throw new Error(
+						"Local project inputs changed before worker replacement",
+					);
 				await controlRequest(existing, true);
 			}
 		}
 		const token = randomBytes(32).toString("base64url");
 		const config = create(LocalDeploymentLaunchSchema, {
-			...input,
+			...launch,
 			projectDir,
-			hoboHome: resolve(input.hoboHome),
+			hoboHome,
 			leaseId: randomUUID(),
 			contentFingerprint,
 		});
@@ -208,7 +238,7 @@ export async function startLocalDeployment(
 			? js
 			: new URL("./local-deployment-worker.ts", import.meta.url);
 		const child = fork(worker, [], {
-			cwd: projectDir,
+			cwd: executionProjectDir,
 			detached: true,
 			stdio: ["ignore", "ignore", "ignore", "ipc"],
 			execArgv: ["--import", import.meta.resolve("tsx")],

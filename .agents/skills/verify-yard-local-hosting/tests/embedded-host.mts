@@ -7,6 +7,6 @@ if(build.status !== 0) process.exit(build.status ?? 1);
 const root=process.env.HOBO_YARD_LOCAL_VERIFY_PACKAGE_ROOT ?? path.resolve('packages/hobo');
 const config=fileURLToPath(new URL('../models/vitest.config.mts',import.meta.url));
 const vitest=path.resolve('node_modules/vitest/vitest.mjs');
-const result=spawnSync(process.execPath,[vitest,'run','test/broker-runtime.test.ts','test/broker-runtime-catalog.test.ts','test/runtime-requirements.test.ts','test/declared-runtime-binding.test.ts','--root',root,'--config',config,'--maxWorkers=1','--no-file-parallelism'],{stdio:'inherit'});
+const result=spawnSync(process.execPath,[vitest,'run','test/broker-runtime.test.ts','test/broker-runtime-catalog.test.ts','test/runtime-requirements.test.ts','test/declared-runtime-binding.test.ts','test/local-work-binding.test.ts','--root',root,'--config',config,'--maxWorkers=1','--no-file-parallelism'],{stdio:'inherit'});
 if(result.error) throw result.error;
 if(result.status !== 0) process.exit(result.status ?? 1);

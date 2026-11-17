@@ -11,22 +11,31 @@ def replace(s,a,b,n=1):
 def early(s):
  return replace(s,'\t\t\t\tif (budgetRequiredNow() && (target.kind !== "local" || !yardUp))\n\t\t\t\t\treturn refuseBudgetFallback();\n','')
 def fallback(s):
- s=replace(s,'if (budgetRequiredNow()) return refuseBudgetFallback();','',4)
+ s=replace(s,'if (budgetRequiredNow()) return refuseBudgetFallback();','',5)
  return replace(s,'if (input.budgetRequired()) return refuseBudgetFallback();','',4)
 def start(s):
  a='''\temitProgress(`hobo up: ${placement.message}`);
+\tif (!(await input.inputsCurrent()))
+\t\treturn refuseChangedInputs("source-after-placement");
 \tif (input.budgetRequired()) return refuseBudgetFallback();
 
-\tconst port = await freePort();
+\tconst port = await input.allocatePort();
+\tif (!(await input.inputsCurrent()))
+\t\treturn refuseChangedInputs("source-after-port");
 \tif (input.budgetRequired()) return refuseBudgetFallback();'''
  b='''\temitProgress(`hobo up: ${placement.message}`);
+\tif (!(await input.inputsCurrent()))
+\t\treturn refuseChangedInputs("source-after-placement");
 
-\tconst port = await freePort();'''
+\tconst port = await input.allocatePort();
+\tif (!(await input.inputsCurrent()))
+\t\treturn refuseChangedInputs("source-after-port");'''
  return replace(s,a,b)
 def preview(s):
- a='const definition = await loadBindleDefinition(projectDir);\n\t\t\t\t\tif (budgetRequiredNow()) return refuseBudgetFallback();'
+ a='const definition = await loadBindleDefinition(projectDir);\n\t\t\t\t\tif (!(await localInputsCurrent())) return refuseChangedInputs();\n\t\t\t\t\tif (budgetRequiredNow()) return refuseBudgetFallback();'
+ b='const definition = await loadBindleDefinition(projectDir);\n\t\t\t\t\tif (!(await localInputsCurrent())) return refuseChangedInputs();'
  if s.count(a)!=2:raise Exception('expected preview and execution definition guards')
- return s.replace(a,'const definition = await loadBindleDefinition(projectDir);',1)
+ return s.replace(a,b,1)
 cases=[('early',early,'test/hosting-remote-admission.test.ts','cannot bypass a production runtime'),('fallback',fallback,'test/local-budget-fallback.test.ts','refuses budget-required local fallback'),('start',start,'test/local-budget-fallback.test.ts','appears during local placement'),('preview',preview,'test/local-budget-fallback.test.ts','introduced while the local preview loads')]
 def run(file,pattern):
  return subprocess.run(['node',str(repo/'node_modules/vitest/vitest.mjs'),'run',file,'--root',str(scratch),'--config',str(config),'--maxWorkers=1','--no-file-parallelism','-t',pattern],cwd=repo,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=240)
