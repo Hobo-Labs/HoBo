@@ -31,6 +31,7 @@
 		"zod": "4.3.6"
 	},
 	"devDependencies": {
+		"@hobo/backend-fleet": "workspace:*",
 		"@hobo/identity": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"

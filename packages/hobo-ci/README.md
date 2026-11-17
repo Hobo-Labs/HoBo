@@ -27,9 +27,10 @@ credentials are in the owner's secret store.
    connection is refused instead of being replaced. This check does not prove
    that the stored webhook or OAuth secrets work end to end. `--what-if`
    opens nothing either.
-2. **A generative connect page** (`@hobo/connect-ui`, json-render on
-   shadcn/ui) opens in the browser. The owner chooses the store (Infisical
-   Cloud with OIDC by default, or 1Password) and confirms GitHub's App screen,
+2. **A generative connect page** (`@hobo/connect-ui`, on vercel-labs/ui)
+   opens in the browser. The owner chooses the store (Infisical Cloud with
+   OIDC by default, 1Password, or Bitwarden Secrets Manager) and confirms
+   GitHub's App screen,
    which receives HoBo's reviewed manifest.
 3. GitHub sends the browser back with a one-time code. HoBo converts it,
    verifies the App with the reviewed `verifyConvertedGithubApp` (owner,
@@ -43,7 +44,13 @@ credentials are in the owner's secret store.
 **Secretless and passwordless for the owner.** Infisical uses your own session
 (`INFISICAL_TOKEN` from `infisical login`). 1Password uses the desktop app's
 integration (`OP_ACCOUNT`, unlocked with your biometrics), or a service
-account token where no desktop app runs. HoBo writes none of these anywhere.
+account token where no desktop app runs. Bitwarden Secrets Manager takes a
+machine account's access token (`BWS_ACCESS_TOKEN`, entered on the page and
+used for that run only) for the project `BWS_PROJECT_ID` in organization
+`BWS_ORGANIZATION_ID`. HoBo writes none of these anywhere. Bitwarden has no
+workload OIDC sign-in, so a relay on Bitwarden reads back with its own machine
+account token, kept by the platform; Infisical stays the default for that
+reason.
 The relay reads the credentials back with its own workload identity (OIDC),
 so no secret is put in the repository, a CI variable or the page.
 When updating an existing 1Password item, HoBo preserves its other metadata and
@@ -68,6 +75,14 @@ that would then be refused. Unpinned, resolution takes the first host that
 satisfies every criterion. The implemented `manifest` host supports both
 owner kinds. An unknown host or the not-yet-wired `hosted-relay` option is
 refused rather than silently starting the local manifest flow.
+
+## Continuity
+
+The relay this project deploys declares a `continuity` policy on every
+stateful resource (`RELAY_CONTINUITY`, `packages/ci-vercel`). Everything it
+keeps is rebuilt from GitHub, so every policy is `rebuildable` and nothing is
+copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
+(`packages/hobo-cd` README, "Continuity").
 
 ## Architecture rules (AGENTS.md)
 

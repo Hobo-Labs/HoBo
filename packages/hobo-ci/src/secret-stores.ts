@@ -5,6 +5,12 @@ import {
 	onePasswordBinding,
 } from "@hobo/adapter-1password";
 import {
+	type BitwardenSdkClient,
+	bitwardenBinding,
+	bitwardenSecretRef,
+	createBitwardenSecretsPort,
+} from "@hobo/adapter-bitwarden";
+import {
 	createInfisicalClient,
 	createInfisicalSecretsPort,
 	infisicalBindingFromEnv,
@@ -24,6 +30,13 @@ import type { SecretsPort } from "@hobo/identity";
 // - **1Password**: the desktop app's integration (`OP_ACCOUNT`, unlocked with
 //   the owner's biometrics — no token), or a service account token where no
 //   desktop app exists (`OP_SERVICE_ACCOUNT_TOKEN`), into `OP_VAULT_ID`.
+// - **Bitwarden Secrets Manager**: a machine account's access token
+//   (`BWS_ACCESS_TOKEN`, asked for on the setup page and used for this run
+//   only), into the project `BWS_PROJECT_ID` of organization
+//   `BWS_ORGANIZATION_ID` (`BWS_API_URL`/`BWS_IDENTITY_URL` for EU or
+//   self-hosted). Bitwarden has no workload OIDC sign-in, so a workload
+//   reads the values back with its own machine account token, which the
+//   platform keeps; prefer Infisical where that matters.
 //
 // HoBo never writes these to a file, never prints them, and never asks for
 // them in a page: they are the owner's own sign-in, read from the
@@ -51,6 +64,8 @@ export type Env = Readonly<Record<string, string | undefined>>;
 export interface SecretStoreDeps {
 	/** Tests inject a client; otherwise `@1password/sdk` is loaded on demand. */
 	readonly onePasswordClient?: (env: Env) => Promise<OnePasswordSdkClient>;
+	/** Tests inject a client; otherwise `@bitwarden/sdk-napi` is loaded on demand. */
+	readonly bitwardenClient?: (env: Env) => Promise<BitwardenSdkClient>;
 	readonly fetch?: typeof fetch;
 }
 
@@ -183,6 +198,22 @@ async function onePasswordSdkClient(env: Env): Promise<OnePasswordSdkClient> {
 	return sdkPort(sdk, client);
 }
 
+async function bitwardenSdkClient(env: Env): Promise<BitwardenSdkClient> {
+	const token = env.BWS_ACCESS_TOKEN;
+	if (token === undefined || token === "")
+		throw new Error("no Bitwarden access token in the environment");
+	const sdk = await import("@bitwarden/sdk-napi");
+	const client = new sdk.BitwardenClient({
+		...(env.BWS_API_URL ? { apiUrl: env.BWS_API_URL } : undefined),
+		...(env.BWS_IDENTITY_URL
+			? { identityUrl: env.BWS_IDENTITY_URL }
+			: undefined),
+		userAgent: "HoBo",
+	});
+	await client.auth().loginAccessToken(token);
+	return client;
+}
+
 /** Open the chosen store with the owner's own sign-in, or say how to sign in. */
 export async function openSecretStore(
 	id: SecretStoreId,
@@ -266,11 +297,42 @@ export async function openSecretStore(
 				};
 			}
 		}
-		case "bitwarden":
-			return {
-				ok: false,
-				message: "Bitwarden is not offered for connections yet.",
-				remediation: ["Choose Infisical or 1Password."],
-			};
+		case "bitwarden": {
+			let binding: ReturnType<typeof bitwardenBinding>;
+			try {
+				binding = bitwardenBinding({
+					organizationId: env.BWS_ORGANIZATION_ID ?? "",
+					projectId: env.BWS_PROJECT_ID ?? "",
+					apiUrl: env.BWS_API_URL ?? "",
+				});
+			} catch {
+				return {
+					ok: false,
+					message: "Bitwarden's project for these credentials is not set.",
+					remediation: [
+						"Set BWS_ORGANIZATION_ID and BWS_PROJECT_ID (both UUIDs, from the Secrets Manager web app), and BWS_API_URL off Bitwarden's US cloud.",
+					],
+				};
+			}
+			try {
+				const client = await (deps.bitwardenClient ?? bitwardenSdkClient)(env);
+				return {
+					ok: true,
+					store: {
+						id,
+						port: createBitwardenSecretsPort({ client, binding }),
+						reference: (name) => bitwardenSecretRef(binding, name),
+					},
+				};
+			} catch {
+				return {
+					ok: false,
+					message: "Could not sign in to Bitwarden Secrets Manager.",
+					remediation: [
+						"Create a machine account with write access to the project, generate an access token, and enter it as BWS_ACCESS_TOKEN (used for this run only).",
+					],
+				};
+			}
+		}
 	}
 }
