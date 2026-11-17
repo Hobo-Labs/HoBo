@@ -36,6 +36,19 @@ describe("metered budget integrity", () => {
 		);
 	});
 
+	it("rounds public folded totals up and fails closed on overflow", () => {
+		expect(foldMeteredUsage([fact(0.1), fact(0.2)]).spentUsd).toBe(0.3);
+		const huge = [fact(Number.MAX_VALUE), fact(Number.MAX_VALUE)];
+		expect(foldMeteredUsage(huge).spentUsd).toBe(Number.POSITIVE_INFINITY);
+		expect(
+			createMeteredBillingPlane(huge).authorize({
+				requestId: "a",
+				spendEstimateUsd: 0,
+				billing: { ...policy, budgetUnlimited: true },
+			}).reasons[0]?.code,
+		).toBe("metering-evidence-incomplete");
+	});
+
 	it("counts outstanding decimal holds exactly", () => {
 		const plane = createMeteredBillingPlane([]);
 		expect(
@@ -78,6 +91,21 @@ describe("metered budget integrity", () => {
 					expect(result.reasons[0]?.code).toBe("billing-policy-invalid");
 				}
 			}
+		}
+	});
+
+	it("ignores a numeric bound only when its unlimited flag is explicit", () => {
+		const billing = {
+			...policy,
+			budgetUsd: Number.NaN,
+			spendCapUsd: Number.NaN,
+			budgetUnlimited: true,
+			spendCapUnlimited: true,
+		};
+		for (const plane of [createBillingPlane(), createMeteredBillingPlane([])]) {
+			expect(
+				plane.authorize({ requestId: "a", spendEstimateUsd: 10, billing }).ok,
+			).toBe(true);
 		}
 	});
 
