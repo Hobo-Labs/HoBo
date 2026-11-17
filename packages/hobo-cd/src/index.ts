@@ -33,6 +33,7 @@ export {
 export {
 	CD_SETTINGS,
 	DEFAULT_VERCEL_REDIRECT_URI,
+	CD_VERCEL_PROJECT,
 	type PrepareVercelDeps,
 	prepareVercelConnection,
 } from "./prepare.js";
@@ -59,3 +60,11 @@ export {
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "./vercel-device.js";
+export {
+	CD_DEPLOY_SETTINGS,
+	CD_WORKLOAD_IDENTITY_ENTRY,
+	type CdDeployEnvironment,
+	type CdWorkloadDeps,
+	ensureCdWorkloadIdentity,
+	vercelProjectTrust,
+} from "./workload-identity.js";

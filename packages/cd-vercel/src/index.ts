@@ -9,6 +9,8 @@ export {
 	CD_STORE_BINDING_URL,
 	CdStoreBindingError,
 	type CdStoreCoordinates,
+	cdStoreCoordinates,
+	cdStoreCoordinatesFromEnv,
 	openCdStore,
 	parseCdStoreCoordinates,
 	readCdStoreCoordinates,

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
 	CdStoreBindingError,
+	cdStoreCoordinates,
 	composeVercelCdHost,
 	createCdHttpEntry,
 	memoizedCdHost,
@@ -124,6 +125,30 @@ describe("the owner's store, and the journal fleet in it", () => {
 		expect(() =>
 			readCdStoreCoordinates(new URL("file:///nowhere/binding.json")),
 		).toThrow(expect.objectContaining({ code: "cd-store-binding-missing" }));
+	});
+
+	it("reads the coordinates hobo cd up configured when no binding is committed", () => {
+		const nowhere = new URL("file:///nowhere/binding.json");
+		const coordinates = cdStoreCoordinates(
+			{
+				INFISICAL_PROJECT_ID: binding.projectId,
+				INFISICAL_ENVIRONMENT: "prod",
+				INFISICAL_SECRET_PATH: "/hobo-cd",
+				INFISICAL_IDENTITY_ID: binding.relayIdentityId,
+			},
+			nowhere,
+		);
+		expect(coordinates.identityId).toBe(binding.relayIdentityId);
+		expect(coordinates.binding.secretPath).toBe("/hobo-cd");
+		expect(() => cdStoreCoordinates({}, nowhere)).toThrow(
+			expect.objectContaining({ code: "cd-store-binding-missing" }),
+		);
+		expect(() =>
+			cdStoreCoordinates(
+				{ INFISICAL_PROJECT_ID: "p", INFISICAL_IDENTITY_ID: "not an id!" },
+				nowhere,
+			),
+		).toThrow(expect.objectContaining({ code: "cd-store-binding-invalid" }));
 	});
 
 	it("refuses to start on a store with no journal fleet, never on SQLite", async () => {

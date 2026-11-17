@@ -73,6 +73,29 @@ starts. `hobo cd up` applies both by recording that `prepare` made them in the
 same run; nothing is deployed for them, and `hobo cd down` never drops the
 journal's databases or the owner's store.
 
+### The CD workload identity
+
+HoBo.CD on Vercel (`packages/cd-vercel`) reads its journal from the owner's
+store with its own Vercel OIDC token. `hobo cd up` makes what that needs, with
+the owner's own sign-ins and the providers' APIs. Nobody creates it by hand
+(`src/workload-identity.ts`):
+
+1. It turns on team-mode OIDC tokens for the Vercel project `hobo-cd`, when
+   the project exists. A new project gets them by default.
+2. It creates an Infisical identity `hobo-cd` with Viewer access to the
+   owner's project. Its OIDC Auth trusts that project's preview tokens:
+   issuer `https://oidc.vercel.com/<team>`, subject
+   `owner:<team>:project:hobo-cd:environment:preview`, and claim `owner_id`.
+   The identity's id is kept in the store (`HOBO_CD_WORKLOAD_IDENTITY_ID`).
+   A re-run reuses the identity and re-applies its trust. When two runs race,
+   the identity saved first is kept and the other is deleted.
+3. It gives the deployment the store's coordinates as its configuration:
+   project, environment, folder and identity. These are ids only.
+
+The step is skipped, with the reason, in three cases: on 1Password or
+Bitwarden (only Infisical signs a workload in with OIDC), when the run holds
+no Infisical sign-in, and when the Vercel connection names no team.
+
 Configuration is a **ceremony**, not a list of environment variables, and it
 survives the machine: the store is found through a locator of ids in
 the owner's HoBo settings (`~/.config/hobo/projects/<project>/secret-store.json`,
@@ -167,6 +190,6 @@ whatever this machine has registered:
 
 `hobo cd up` then delivers `packages/cd-vercel` as one git deployment of the
 current commit to CD's preview on Vercel, and records the journal and config as
-made by prepare. Production stays an explicit promotion. Until the CD workload
-identity exists and its store binding is committed, the deployment answers
-`/readyz` with `cd-store-binding-missing`.
+made by prepare. Production stays an explicit promotion. The deployment signs
+in with the CD workload identity `hobo cd up` makes (see
+[The CD workload identity](#the-cd-workload-identity)).

@@ -17,6 +17,8 @@ export function fakeVercel() {
 	>();
 	const tokens = new Set<string>();
 	const deployments: string[] = [];
+	/** Projects by name, with their environment variables. */
+	const projects = new Map<string, Array<Record<string, unknown>>>();
 	const handle: ProviderHandler = async (request, response) => {
 		const url = new URL(request.url ?? "/", "https://api.vercel.com");
 		const method = request.method ?? "GET";
@@ -62,6 +64,44 @@ export function fakeVercel() {
 				teams: [{ id: "team_owner", slug: "owner" }],
 				pagination: { next: null },
 			});
+		// Projects and their environment, as `setProjectEnv` and a git
+		// deployment's missing-project path use them.
+		if (method === "POST" && url.pathname === "/v9/projects") {
+			const made = JSON.parse(body || "{}");
+			const name = typeof made.name === "string" ? made.name : "";
+			if (projects.has(name))
+				return json(response, 409, { error: { code: "conflict" } });
+			projects.set(name, []);
+			return json(response, 200, { id: `prj_${name}`, name });
+		}
+		const env = /^\/v10\/projects\/([^/]+)\/env$/u.exec(url.pathname);
+		if (env !== null) {
+			const name = decodeURIComponent(env[1] ?? "");
+			const envs = projects.get(name);
+			if (envs === undefined)
+				return json(response, 404, {
+					error: { code: "not_found", message: "Project not found" },
+				});
+			if (method === "GET") return json(response, 200, { envs });
+			if (method === "POST") {
+				const made = JSON.parse(body || "{}");
+				envs.push({ id: `env_${envs.length}`, ...made });
+				return json(response, 200, { created: made, failed: [] });
+			}
+		}
+		const team = /^\/v2\/teams\/([^/]+)$/u.exec(url.pathname);
+		if (method === "GET" && team !== null)
+			return team[1] === "team_owner"
+				? json(response, 200, { id: "team_owner", slug: "owner" })
+				: json(response, 404, { error: { code: "not_found" } });
+		// Turning on a project's OIDC tokens: it exists once deployed.
+		const patched = /^\/v9\/projects\/([^/]+)$/u.exec(url.pathname);
+		if (method === "PATCH" && patched !== null)
+			return projects.has(decodeURIComponent(patched[1] ?? ""))
+				? json(response, 200, {
+						oidcTokenConfig: { enabled: true, issuerMode: "team" },
+					})
+				: json(response, 404, { error: { code: "not_found" } });
 		if (method === "POST" && /^\/v1[03]\/deployments$/u.test(url.pathname)) {
 			const id = `dpl_${randomUUID().replace(/-/gu, "")}`;
 			deployments.push(id);

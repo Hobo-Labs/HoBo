@@ -6,8 +6,8 @@ import type { CdHost } from "@hobo/hobo/cd-platform";
 import { composeVercelCdHost, memoizedCdHost } from "./compose.js";
 import {
 	CdStoreBindingError,
+	cdStoreCoordinates,
 	openCdStore,
-	readCdStoreCoordinates,
 } from "./store.js";
 
 // The Vercel entries (`api/cd.ts`, `api/tick.ts`). `/healthz` answers 200
@@ -150,7 +150,7 @@ export const loadCdHost = memoizedCdHost(() =>
 	composeVercelCdHost({
 		env: process.env,
 		cwd: process.cwd(),
-		open: () => openCdStore(readCdStoreCoordinates()),
+		open: () => openCdStore(cdStoreCoordinates(process.env)),
 	}),
 );
 

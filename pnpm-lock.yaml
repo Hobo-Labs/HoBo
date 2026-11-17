@@ -2077,6 +2077,9 @@ importers:
 
   packages/hobo-cd:
     dependencies:
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles

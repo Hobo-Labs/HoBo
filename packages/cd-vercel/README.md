@@ -49,19 +49,22 @@ non-secret declarations.
 
 ## Status
 
-The deployable and its tests (`test/`) exist. One piece is done and one is not:
+`hobo cd up` delivers this directory as a git deployment of the current
+commit to the `hobo-cd` project's preview (`createCdVercelUpCommand`). It
+first makes the CD workload identity (`@hobo/hobo-cd` `workload-identity.ts`),
+an Infisical identity that trusts this project's OIDC tokens. It then sets the
+store's coordinates, ids only, as the deployment's configuration
+(`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`,
+`INFISICAL_IDENTITY_ID`, `INFISICAL_SITE_URL`). A committed
+`deploy/secret-store.binding.json` takes precedence when there is one.
 
-- `hobo cd up` delivers it as a git deployment of this directory at the
-  current commit to the `hobo-cd` project's preview, the way `hobo ci up`
-  delivers the relay (`createCdVercelUpCommand`). It does not yet verify the
-  delivery by its probes: a preview URL is protected.
-- No store binding is committed, because the CD workload identity (an
-  Infisical identity that trusts this Vercel project's OIDC tokens) is not
-  created yet.
+Not yet done:
 
-Until the binding is committed, a deployment answers `/readyz` with
-`cd-store-binding-missing`. The journal fleet's copy timer runs only while an
-instance is alive. Driving it from the scheduled pass is not done yet.
+- `hobo cd up` does not verify the delivery by its probes, because a preview
+  URL is protected.
+- The journal fleet's copy timer runs only while an instance is alive. Driving
+  it from the scheduled pass is a follow-up.
+- None of this has been observed against live Vercel and Infisical yet.
 
 ## Architecture rules (AGENTS.md)
 

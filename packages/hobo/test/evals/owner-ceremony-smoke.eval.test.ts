@@ -237,6 +237,20 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
 				),
 			).toHaveLength(1);
+			// The CD workload identity was made through Infisical's API, and the
+			// deployment was given its store's coordinates: five ids, no secret.
+			expect(world.requests).toContainEqual(
+				expect.stringMatching(
+					/^app\.infisical\.com POST \/api\/v1\/projects\/proj-1\/identities$/u,
+				),
+			);
+			expect(
+				world.requests.filter((request) =>
+					/^api\.vercel\.com POST \/v10\/projects\/hobo-cd\/env\b/u.test(
+						request,
+					),
+				),
+			).toHaveLength(5);
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);

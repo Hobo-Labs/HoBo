@@ -8,6 +8,7 @@ import {
 	oidcAuth,
 	type ParsedInfisicalBinding,
 	parseInfisicalBinding,
+	parseInfisicalIdentityId,
 } from "@hobo/adapter-infisical";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { getVercelOidcToken } from "@vercel/oidc";
@@ -83,8 +84,7 @@ export function parseCdStoreCoordinates(text: string): CdStoreCoordinates {
 			environment: record.data.environment,
 			secretPath: record.data.secretPath,
 		});
-		const identityId = record.data.relayIdentityId;
-		// Validated by the parser OIDC Auth itself uses; throws on a bad id.
+		const identityId = parseInfisicalIdentityId(record.data.relayIdentityId);
 		oidcAuth({ identityId, jwt: vercelOidcJwtSource });
 		return Object.freeze({ binding, identityId });
 	} catch {
@@ -105,10 +105,57 @@ export function readCdStoreCoordinates(
 	} catch {
 		throw new CdStoreBindingError(
 			"cd-store-binding-missing",
-			"No store binding is committed for HoBo.CD (deploy/secret-store.binding.json). hobo cd up writes it once the CD workload identity exists.",
+			"No store binding is committed for HoBo.CD (deploy/secret-store.binding.json), and no store coordinates are configured. Run hobo cd up, which makes the CD workload identity and configures them.",
 		);
 	}
 	return parseCdStoreCoordinates(text);
+}
+
+type Env = Readonly<Record<string, string | undefined>>;
+
+/**
+ * The coordinates `hobo cd up` gives the deployment as its configuration
+ * (ids only): the owner's Infisical project, environment and folder, and the
+ * CD workload identity it made. Undefined when none are set.
+ */
+export function cdStoreCoordinatesFromEnv(
+	env: Env,
+): CdStoreCoordinates | undefined {
+	const identityId = env.INFISICAL_IDENTITY_ID;
+	const projectId = env.INFISICAL_PROJECT_ID;
+	if (identityId === undefined || projectId === undefined) return undefined;
+	return parseCdStoreCoordinates(
+		JSON.stringify({
+			kind: "infisical-cloud-attach",
+			endpoint: env.INFISICAL_SITE_URL ?? "https://app.infisical.com",
+			projectId,
+			environment: env.INFISICAL_ENVIRONMENT ?? "prod",
+			secretPath: env.INFISICAL_SECRET_PATH ?? "/hobo-cd",
+			relayIdentityId: identityId,
+		}),
+	);
+}
+
+/**
+ * Where this deployment signs in: the committed binding when there is one,
+ * else the configuration `hobo cd up` set. Refused by name when neither is.
+ */
+export function cdStoreCoordinates(
+	env: Env,
+	url: URL = CD_STORE_BINDING_URL,
+): CdStoreCoordinates {
+	try {
+		return readCdStoreCoordinates(url);
+	} catch (error) {
+		if (
+			!(error instanceof CdStoreBindingError) ||
+			error.code !== "cd-store-binding-missing"
+		)
+			throw error;
+		const configured = cdStoreCoordinatesFromEnv(env);
+		if (configured === undefined) throw error;
+		return configured;
+	}
 }
 
 /** Open the owner's store with the deployment's own OIDC token. */

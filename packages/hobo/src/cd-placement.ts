@@ -11,7 +11,7 @@ import {
 	type PlannerRegistry,
 } from "@hobo/cloud";
 import type { TrustedVault } from "@hobo/core";
-import { CD_PLACEMENT_YARDS } from "@hobo/hobo-cd";
+import { CD_DEPLOY_SETTINGS, CD_PLACEMENT_YARDS } from "@hobo/hobo-cd";
 import type { Yard } from "@hobo/yards";
 
 import { relayYardRegistryProvider } from "./ci-relay-delivery.js";
@@ -269,12 +269,23 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 					],
 				);
 			const teamId = team();
+			// The store coordinates prepare put in the vault with the CD workload
+			// identity (ids only): the deployment signs in with them.
+			const configuration = Object.fromEntries(
+				Object.entries(CD_DEPLOY_SETTINGS).flatMap(([setting, held]) => {
+					const value = deps.credentials.reveal(held);
+					return value === undefined ? [] : [[setting, value]];
+				}),
+			);
 			const provider = (deps.deployProvider ?? createVercelDeployProvider)({
 				token: token(),
 				...(teamId !== undefined ? { teamId } : undefined),
 				projectName: placement.project,
 				target: "preview",
 				createMissingProject: true,
+				...(Object.keys(configuration).length > 0
+					? { configuration }
+					: undefined),
 				gitArtifact: {
 					org,
 					repo,
