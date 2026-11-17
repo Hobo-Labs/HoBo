@@ -115,7 +115,6 @@ export async function scaffoldHoboProject(input: {
 export async function validateScaffoldProject(projectDir: string) {
 	let template: ReturnType<typeof parseTemplateId>;
 	try {
-		// SAFETY: `const bindleRaw = JSON.parse(` is required at this I/O or test boundary.
 		const bindleRaw = JSON.parse(
 			await readFile(path.join(projectDir, "hobo.bindle.json"), "utf8"),
 		) as { template?: unknown };
@@ -152,7 +151,6 @@ export async function validateScaffoldProject(projectDir: string) {
 		};
 	}
 
-	// SAFETY: `const packageJson = JSON.parse(` is required at this I/O or test boundary.
 	const packageJson = JSON.parse(
 		await readFile(path.join(projectDir, "package.json"), "utf8"),
 	) as {
@@ -202,8 +200,52 @@ export async function validateScaffoldProject(projectDir: string) {
 	if (!appTest.includes("createTestRuntime")) {
 		violations.push("app.test.ts must exercise the generated test runtime");
 	}
-	if (!generated.includes("generated hobo new bindings seed")) {
-		violations.push("generated seed must be checked in");
+	const { default: ts } = await import("typescript");
+	const generatedFile = ts.createSourceFile(
+		"index.ts",
+		generated,
+		ts.ScriptTarget.Latest,
+		true,
+		ts.ScriptKind.TS,
+	);
+	const generatedExports = new Set(
+		generatedFile.statements.flatMap((statement) => {
+			const modifiers = ts.canHaveModifiers(statement)
+				? ts.getModifiers(statement)
+				: undefined;
+			if (
+				!modifiers?.some(
+					(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+				) ||
+				modifiers.some(
+					(modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword,
+				)
+			)
+				return [];
+			if (
+				ts.isFunctionDeclaration(statement) &&
+				statement.name &&
+				statement.body
+			)
+				return [statement.name.text];
+			if (ts.isVariableStatement(statement)) {
+				return statement.declarationList.declarations.flatMap((declaration) =>
+					ts.isIdentifier(declaration.name) &&
+					declaration.initializer &&
+					(ts.isArrowFunction(declaration.initializer) ||
+						ts.isFunctionExpression(declaration.initializer))
+						? [declaration.name.text]
+						: [],
+				);
+			}
+			return [];
+		}),
+	);
+	const storeFactory = `create${template.charAt(0).toUpperCase()}${template.slice(1)}Store`;
+	for (const name of ["createHobo", "createTestRuntime", storeFactory]) {
+		if (!generatedExports.has(name)) {
+			violations.push(`generated bindings must export ${name}`);
+		}
 	}
 	if (!declarations.includes('declare module "@hobo/sdk"')) {
 		violations.push("declarations must seed SDK module types");
@@ -238,19 +280,6 @@ export async function validateScaffoldProject(projectDir: string) {
 	};
 }
 
-/**
- * Is this caught value a filesystem "no such file or directory"?
- *
- * Not `isJsonObject(error)`: that guard requires `[object Object]`, and a real
- * `Error` tags as `[object Error]` -- so the check was false for every error
- * Node actually throws, and the ENOENT branches it guarded were dead. The
- * visible consequence was that `hobo new` crashed with "Internal CLI error" on
- * the ordinary case of the target directory not existing yet, which is the case
- * scaffolding exists for. Nor `instanceof Error`, which an Error from another
- * realm fails: any object whose `code` is ENOENT counts. `Object(cause)` is
- * every object as itself and boxes a primitive (or null) into one with no
- * `code`, so the comparison needs no guess about what was thrown.
- */
 export function isNotFound(cause: unknown): boolean {
 	const boxed: { readonly code?: unknown } = Object(cause);
 	return boxed.code === "ENOENT";
@@ -266,7 +295,6 @@ async function existingDirectory(projectDir: string) {
 		};
 	} catch (error) {
 		if (isNotFound(error)) {
-			// SAFETY: `return { exists: false, isDirectory: false, entries: [] as string[] };` is required at this I/O or test boundary.
 			return { exists: false, isDirectory: false, entries: [] as string[] };
 		}
 		throw error;
