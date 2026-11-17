@@ -5,6 +5,9 @@ host supplies an Alchemy stack, runtime layer, runtime directory, target scope
 and an injected financial port to `createAlchemyIacProvider`. It implements the
 `IacProvider` preview, apply, destroy and refresh port; no core package imports
 this adapter or the Alchemy library.
+Each configured stack supplies its own provider layers; `runtimeLayer` supplies
+the Alchemist services. A conditional choice between stacks with different
+provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
 `rivetkit` 3.0.0 peers; install both when using Rivet components.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
