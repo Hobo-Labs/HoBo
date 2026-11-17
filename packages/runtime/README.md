@@ -89,6 +89,23 @@ const imports = createDurableMessagingWitImports(authorizedMessagingPort, {
 // A JS component host supplies `imports` for the authenticated binding.
 ```
 
+Ports with an accessor-backed `limits` field are rejected by default without
+running the accessor. A trusted embedding host can instead create a
+`createDurableMessagingPortMetadataGrant` for one exact port and a detached
+limits snapshot, with a synchronous verifier that independently authenticates
+the port, the entire snapshot and the current metadata authority. Pass that
+grant as `portMetadataGrant` when constructing the WIT host. The verifier is
+checked before metadata disclosure, before dispatch, and after provider work
+and disclosure authorization. Revoking the grant permanently closes that
+binding; a false or throwing verifier fails closed. Revocation must also be
+propagated to the provider's own metadata capability and other processes.
+The verifier is trusted host code, not proof of its own source, and cannot
+replace a held cross-process ownership fence, bounded stream disclosure or an
+independent watchdog for blocked synchronous callbacks.
+The host must isolate the JavaScript realm and its globals before loading the
+bridge and throughout its lifetime; the bridge captures selected intrinsics,
+but does not make an adversarial shared realm safe.
+
 Timeouts do not cancel provider work. An in-flight slot remains occupied until
 that work actually settles, even if the guest has already received `unknown`.
 Retry only the same operation against the same independently authenticated

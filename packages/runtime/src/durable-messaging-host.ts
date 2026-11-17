@@ -14,6 +14,22 @@ import {
 } from "@hobo/core";
 import type * as Wit from "@hobo/wit/durable-messaging";
 
+// These references are captured before component code is invoked. The host
+// must isolate its globals before initialization and for the binding lifetime.
+const intrinsicApply = Reflect.apply;
+const intrinsicBind = Function.prototype.bind;
+const intrinsicPromiseThen = Promise.prototype.then;
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const intrinsicByteLength = Object.getOwnPropertyDescriptor(
+	typedArrayPrototype,
+	"byteLength",
+)?.get;
+const intrinsicBuffer = Object.getOwnPropertyDescriptor(
+	typedArrayPrototype,
+	"buffer",
+)?.get;
+const intrinsicUint8Set = Uint8Array.prototype.set;
+
 /** The JCO-generated host interface for hobo:durable-messaging/messaging. */
 export type DurableMessagingWitHost = Pick<
 	typeof Wit,
@@ -140,20 +156,12 @@ function fromU64(
 
 function bytes(value: unknown, max: number): Uint8Array {
 	if (types.isProxy(value) || !types.isUint8Array(value)) return invalid();
-	const prototype = Object.getPrototypeOf(Uint8Array.prototype);
-	const lengthGetter = Object.getOwnPropertyDescriptor(
-		prototype,
-		"byteLength",
-	)?.get;
-	const bufferGetter = Object.getOwnPropertyDescriptor(
-		prototype,
-		"buffer",
-	)?.get;
-	if (lengthGetter === undefined || bufferGetter === undefined)
+	if (intrinsicByteLength === undefined || intrinsicBuffer === undefined)
 		return invalid();
-	const length = lengthGetter.call(value);
-	const buffer = bufferGetter.call(value);
+	const length: unknown = intrinsicApply(intrinsicByteLength, value, []);
+	const buffer: unknown = intrinsicApply(intrinsicBuffer, value, []);
 	if (
+		typeof length !== "number" ||
 		!Number.isSafeInteger(length) ||
 		length < 0 ||
 		length > max ||
@@ -168,7 +176,7 @@ function bytes(value: unknown, max: number): Uint8Array {
 		return invalid();
 	if (Reflect.ownKeys(value).length !== length) return invalid();
 	const copy = new Uint8Array(length);
-	Uint8Array.prototype.set.call(copy, value);
+	intrinsicApply(intrinsicUint8Set, copy, [value]);
 	return copy;
 }
 
@@ -198,10 +206,13 @@ function requestOperation(value: unknown): DurableMessagingOperation {
 async function mutation<T>(
 	value: unknown,
 	run: (op: DurableMessagingOperation) => Promise<WitOutcome<T>>,
+	metadataCurrent: () => boolean,
 ): Promise<WitOutcome<T>> {
 	const op = requestOperation(value);
 	try {
-		return await run(op);
+		const result = await run(op);
+		if (!metadataCurrent()) return invalid();
+		return result;
 	} catch {
 		return { tag: "unknown", val: witOperation(op) };
 	}
@@ -396,9 +407,11 @@ async function outcome<T>(
 	op: DurableMessagingOperation,
 	run: () => Promise<unknown>,
 	committed: (value: unknown) => T,
+	metadataCurrent: () => boolean,
 ): Promise<WitOutcome<T>> {
 	try {
 		const value = await run();
+		if (!metadataCurrent()) return invalid();
 		const base = record(value, ["status"], ["value", "code", "operation"]);
 		if (base.status === "committed") {
 			const result = record(value, ["status", "value"]);
@@ -658,7 +671,7 @@ function portMethod<K extends PortMethod>(
 	const value = portField(port, key);
 	if (typeof value !== "function" || types.isProxy(value)) return invalid();
 	// SAFETY: key names a port method and the host supplied a concrete data function; binding retains the receiver.
-	return Function.prototype.bind.call(value, port) as DurableMessaging[K];
+	return intrinsicApply(intrinsicBind, value, [port]) as DurableMessaging[K];
 }
 
 /**
@@ -706,6 +719,76 @@ export function createDurableMessagingLimitsGrant(): DurableMessagingLimitsGrant
 	return grant;
 }
 
+/** Exact port and detached limits presented to the independently trusted verifier. */
+export interface DurableMessagingPortMetadataClaim {
+	readonly port: DurableMessaging;
+	readonly limits: DurableMessagingLimits;
+}
+/** A permanently revocable capability for an accessor-backed port's metadata. */
+export interface DurableMessagingPortMetadataGrant {
+	readonly revoke: () => void;
+}
+interface PortMetadataState {
+	active: boolean;
+	readonly claim: DurableMessagingPortMetadataClaim;
+	readonly verify: (claim: DurableMessagingPortMetadataClaim) => boolean;
+}
+const portMetadataGrants = new WeakMap<object, PortMetadataState>();
+/**
+ * Bind a detached limits snapshot to one exact port. The trusted host must
+ * independently verify the binding, metadata revocation and source/ownership
+ * authority; this capability does not establish cross-process fencing.
+ */
+export function createDurableMessagingPortMetadataGrant(input: {
+	readonly port: DurableMessaging;
+	readonly limits: DurableMessagingLimits;
+	readonly verify: (claim: DurableMessagingPortMetadataClaim) => boolean;
+}): DurableMessagingPortMetadataGrant {
+	const data = record(input, ["port", "limits", "verify"]);
+	if (
+		typeof data.port !== "object" ||
+		data.port === null ||
+		types.isProxy(data.port) ||
+		typeof data.verify !== "function" ||
+		types.isProxy(data.verify)
+	)
+		return invalid();
+	// SAFETY: this value is an opaque identity; methods are validated when the host binds it.
+	const port = data.port as DurableMessaging;
+	// SAFETY: the trusted host supplies a synchronous data function checked above.
+	const verify = data.verify as PortMetadataState["verify"];
+	const claim = Object.freeze({ port, limits: limits(data.limits) });
+	const state: PortMetadataState = { active: true, claim, verify };
+	if (!portMetadataVerified(state)) return invalid();
+	const grant = Object.freeze({
+		revoke: () => {
+			state.active = false;
+		},
+	});
+	portMetadataGrants.set(grant, state);
+	return grant;
+}
+function portMetadataVerified(state: PortMetadataState): boolean {
+	try {
+		if (!state.active) return false;
+		const result: unknown = intrinsicApply(state.verify, undefined, [
+			state.claim,
+		]);
+		if (types.isPromise(result)) {
+			// Synchronous metadata disclosure cannot wait for a promise. Observe a
+			// rejected native promise so a mistaken async verifier cannot escape.
+			void intrinsicApply(intrinsicPromiseThen, result, [
+				undefined,
+				() => undefined,
+			]);
+			return false;
+		}
+		return result === true && state.active;
+	} catch {
+		return false;
+	}
+}
+
 /** Per-instance coordination shared by every host binding in this JS process. */
 export interface DurableMessagingLifecycle {
 	readonly kind: "durable-messaging-lifecycle";
@@ -746,6 +829,8 @@ export interface DurableMessagingWitHostOptions {
 	readonly limitsGrant: DurableMessagingLimitsGrant;
 	/** Share one lifecycle across every binding to the authenticated instance. */
 	readonly lifecycle: DurableMessagingLifecycle;
+	/** Required only when the port's limits are accessor-backed. */
+	readonly portMetadataGrant?: DurableMessagingPortMetadataGrant;
 	/** Independently authenticate the bound principal, tenant, instance and scope. */
 	readonly authorize: (
 		request: DurableMessagingAuthorization,
@@ -761,7 +846,7 @@ export function createDurableMessagingWitHost(
 	const config = record(
 		options,
 		["authorize", "limitsGrant", "lifecycle"],
-		["timeoutMs"],
+		["timeoutMs", "portMetadataGrant"],
 	);
 	if (
 		typeof config.authorize !== "function" ||
@@ -786,7 +871,37 @@ export function createDurableMessagingWitHost(
 			: integer(config.timeoutMs, 300_000, 1);
 	if (typeof port !== "object" || port === null || types.isProxy(port))
 		return invalid();
-	const bounds = limits(portField(port, "limits"));
+	let metadata: PortMetadataState | undefined;
+	if (config.portMetadataGrant !== undefined) {
+		if (
+			typeof config.portMetadataGrant !== "object" ||
+			config.portMetadataGrant === null ||
+			types.isProxy(config.portMetadataGrant)
+		)
+			return invalid();
+		metadata = portMetadataGrants.get(config.portMetadataGrant);
+		if (
+			metadata === undefined ||
+			metadata.claim.port !== port ||
+			!portMetadataVerified(metadata)
+		)
+			return invalid();
+	}
+	const bounds =
+		metadata === undefined
+			? limits(portField(port, "limits"))
+			: metadata.claim.limits;
+	const metadataCurrent = () =>
+		metadata === undefined || portMetadataVerified(metadata);
+	const guardedOutcome = <T>(
+		op: DurableMessagingOperation,
+		run: () => Promise<unknown>,
+		committed: (value: unknown) => T,
+	) => outcome(op, run, committed, metadataCurrent);
+	const guardedMutation = <T>(
+		value: unknown,
+		run: (op: DurableMessagingOperation) => Promise<WitOutcome<T>>,
+	) => mutation(value, run, metadataCurrent);
 	const bounded = <T>(
 		run: (alive: () => boolean) => Promise<T>,
 	): Promise<T> => {
@@ -840,15 +955,25 @@ export function createDurableMessagingWitHost(
 	): Promise<T> =>
 		bounded(async (alive) => {
 			const request = Object.freeze({ ...scope, phase: "dispatch" as const });
-			if ((await authorize(request)) !== true || !alive())
+			if (
+				!metadataCurrent() ||
+				(await authorize(request)) !== true ||
+				!alive() ||
+				!metadataCurrent()
+			)
 				throw new Error("durable_messaging.unauthorized");
 			const value = await run();
-			if (!alive()) throw new Error("durable_messaging.host_timeout");
+			if (!alive() || !metadataCurrent())
+				throw new Error("durable_messaging.host_timeout");
 			const disclosure = Object.freeze({
 				...scope,
 				phase: "disclose" as const,
 			});
-			if ((await authorize(disclosure)) !== true || !alive())
+			if (
+				(await authorize(disclosure)) !== true ||
+				!alive() ||
+				!metadataCurrent()
+			)
 				throw new Error("durable_messaging.unauthorized");
 			return value;
 		});
@@ -953,6 +1078,7 @@ export function createDurableMessagingWitHost(
 		limits: () => {
 			if (
 				!grant.active ||
+				!metadataCurrent() ||
 				lifecycle.unresolved ||
 				(lifecycle.startPending && performance.now() >= lifecycle.startDeadline)
 			)
@@ -964,10 +1090,10 @@ export function createDurableMessagingWitHost(
 			};
 		},
 		ensureTopic: (input) =>
-			mutation(input, async (op) => {
+			guardedMutation(input, async (op) => {
 				const data = record(input, ["operation", "topic"]);
 				const topic = text(data.topic, bounds.nameBytes);
-				return outcome(
+				return guardedOutcome(
 					op,
 					() => calls.ensureTopic({ operation: op, topic }),
 					(value) => {
@@ -978,10 +1104,10 @@ export function createDurableMessagingWitHost(
 				);
 			}),
 		ensureSubscription: (input) =>
-			mutation(input, async (op) => {
+			guardedMutation(input, async (op) => {
 				const data = record(input, ["operation", "subscription"]);
 				const expected = subscription(data.subscription, bounds);
-				return outcome(
+				return guardedOutcome(
 					op,
 					() =>
 						calls.ensureSubscription({ operation: op, subscription: expected }),
@@ -1016,11 +1142,11 @@ export function createDurableMessagingWitHost(
 				);
 			}),
 		publish: (input) =>
-			mutation(input, async (op) => {
+			guardedMutation(input, async (op) => {
 				const data = record(input, ["operation", "topic", "message"]);
 				const topic = text(data.topic, bounds.nameBytes);
 				const captured = message(data.message, bounds);
-				return outcome(
+				return guardedOutcome(
 					op,
 					() => calls.publish({ operation: op, topic, message: captured }),
 					(value) => {
@@ -1036,7 +1162,7 @@ export function createDurableMessagingWitHost(
 				);
 			}),
 		consume: (input) =>
-			mutation(input, async (op) => {
+			guardedMutation(input, async (op) => {
 				const data = record(input, [
 					"operation",
 					"topic",
@@ -1052,7 +1178,7 @@ export function createDurableMessagingWitHost(
 					bounds.leaseMs,
 					1,
 				);
-				return outcome(
+				return guardedOutcome(
 					op,
 					() =>
 						calls.consume({
@@ -1067,7 +1193,7 @@ export function createDurableMessagingWitHost(
 				);
 			}),
 		ack: (input) =>
-			mutation(input, async (op) => {
+			guardedMutation(input, async (op) => {
 				const data = record(input, [
 					"operation",
 					"topic",
@@ -1081,7 +1207,7 @@ export function createDurableMessagingWitHost(
 				const messageId = text(data.messageId, bounds.nameBytes);
 				const sequence = fromU64(data.sequence, Number.MAX_SAFE_INTEGER, 1);
 				const leaseId = text(data.leaseId, bounds.nameBytes);
-				return outcome(
+				return guardedOutcome(
 					op,
 					() =>
 						calls.ack({
@@ -1104,7 +1230,7 @@ export function createDurableMessagingWitHost(
 				);
 			}),
 		nack: (input) =>
-			mutation(input, async (op) => {
+			guardedMutation(input, async (op) => {
 				const data = record(input, [
 					"operation",
 					"topic",
@@ -1120,7 +1246,7 @@ export function createDurableMessagingWitHost(
 				const sequence = fromU64(data.sequence, Number.MAX_SAFE_INTEGER, 1);
 				const leaseId = text(data.leaseId, bounds.nameBytes);
 				const reason = text(data.reason, bounds.reasonBytes, true, true);
-				return outcome(
+				return guardedOutcome(
 					op,
 					() =>
 						calls.nack({
@@ -1177,11 +1303,11 @@ export function createDurableMessagingWitHost(
 				);
 			}),
 		compact: (input) =>
-			mutation(input, async (op) => {
+			guardedMutation(input, async (op) => {
 				const data = record(input, ["operation", "topic", "throughSequence"]);
 				const topic = text(data.topic, bounds.nameBytes);
 				const throughSequence = fromU64(data.throughSequence);
-				return outcome(
+				return guardedOutcome(
 					op,
 					() => calls.compact({ operation: op, topic, throughSequence }),
 					(value) => {
@@ -1224,6 +1350,7 @@ export function createDurableMessagingWitHost(
 			}
 			try {
 				const result = await calls.events({ afterSequence, limit });
+				if (!metadataCurrent()) return invalid();
 				if (result === privateLimit)
 					return { tag: "rejected", val: "invalid-argument" };
 				return eventsResult(result, afterSequence, limit, bounds);

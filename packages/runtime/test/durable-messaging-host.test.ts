@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createDurableMessagingLifecycle,
 	createDurableMessagingLimitsGrant,
+	createDurableMessagingPortMetadataGrant,
 	createDurableMessagingWitHost,
 	DURABLE_MESSAGING_JSPI_INTERFACE,
 	type DurableMessagingJspiComponent,
@@ -97,6 +98,357 @@ function fixture(overrides: Partial<DurableMessaging> = {}) {
 }
 
 describe("durable messaging WIT host boundary", () => {
+	it("binds accessor-backed metadata to an independently verified port snapshot", async () => {
+		const { port } = fixture();
+		let reads = 0;
+		Object.defineProperty(port, "limits", {
+			configurable: true,
+			get() {
+				reads++;
+				throw new Error("untrusted getter");
+			},
+		});
+		const options = {
+			authorize: () => true,
+			limitsGrant: createDurableMessagingLimitsGrant(),
+			lifecycle: createDurableMessagingLifecycle(),
+		};
+		expect(() => createDurableMessagingWitHost(port, options)).toThrow();
+		expect(reads).toBe(0);
+		let active = true;
+		const input = { ...DURABLE_MESSAGING_LIMITS };
+		const grant = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: input,
+			verify: (claim) =>
+				active &&
+				claim.port === port &&
+				Object.isFrozen(claim) &&
+				Object.isFrozen(claim.limits) &&
+				claim.limits.nameBytes === DURABLE_MESSAGING_LIMITS.nameBytes,
+		});
+		Object.defineProperty(input, "nameBytes", { value: 1 });
+		const host = createDurableMessagingWitHost(port, {
+			...options,
+			portMetadataGrant: grant,
+		});
+		expect(host.limits().nameBytes).toBe(DURABLE_MESSAGING_LIMITS.nameBytes);
+		expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
+			tag: "committed",
+			val: { topic: "orders" },
+		});
+		expect(reads).toBe(0);
+		active = false;
+		expect(() => host.limits()).toThrow();
+		expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
+			tag: "unknown",
+			val: operation,
+		});
+		active = true;
+		grant.revoke();
+		expect(() => host.limits()).toThrow();
+		expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
+			tag: "unknown",
+			val: operation,
+		});
+	});
+
+	it("refuses forged or mismatched metadata bindings before running a getter", async () => {
+		const { port } = fixture();
+		const other = fixture().port;
+		const options = {
+			authorize: () => true,
+			limitsGrant: createDurableMessagingLimitsGrant(),
+			lifecycle: createDurableMessagingLifecycle(),
+		};
+		expect(() =>
+			createDurableMessagingPortMetadataGrant({
+				port,
+				limits: { ...DURABLE_MESSAGING_LIMITS, nameBytes: 1 },
+				verify: (claim) =>
+					claim.port === port &&
+					claim.limits.nameBytes === DURABLE_MESSAGING_LIMITS.nameBytes,
+			}),
+		).toThrow();
+		const grant = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: (claim) => claim.port === port,
+		});
+		expect(() =>
+			createDurableMessagingWitHost(other, {
+				...options,
+				portMetadataGrant: grant,
+			}),
+		).toThrow();
+		// SAFETY: the forged object intentionally verifies private capability identity.
+		const forged = { revoke() {} } as typeof grant;
+		expect(() =>
+			createDurableMessagingWitHost(port, {
+				...options,
+				portMetadataGrant: forged,
+			}),
+		).toThrow();
+		let getters = 0;
+		const accessor = Object.defineProperty(
+			{ port, limits: DURABLE_MESSAGING_LIMITS },
+			"verify",
+			{
+				enumerable: true,
+				get() {
+					getters++;
+					return () => true;
+				},
+			},
+		);
+		// SAFETY: this intentionally malformed object probes the runtime boundary.
+		expect(() =>
+			createDurableMessagingPortMetadataGrant(
+				accessor as Parameters<
+					typeof createDurableMessagingPortMetadataGrant
+				>[0],
+			),
+		).toThrow();
+		expect(getters).toBe(0);
+		// SAFETY: this deliberately async callback probes the JavaScript boundary.
+		// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: the invalid callback is intentionally passed across the JS boundary.
+		const asynchronous = (() =>
+			Promise.reject(new Error("async refusal"))) as unknown as Parameters<
+			typeof createDurableMessagingPortMetadataGrant
+		>[0]["verify"];
+		let poisoned = 0;
+		Object.defineProperty(Promise.prototype.then, "call", {
+			configurable: true,
+			value: () => {
+				poisoned++;
+				throw new Error("poisoned call");
+			},
+		});
+		try {
+			expect(() =>
+				createDurableMessagingPortMetadataGrant({
+					port,
+					limits: DURABLE_MESSAGING_LIMITS,
+					verify: asynchronous,
+				}),
+			).toThrow();
+		} finally {
+			Reflect.deleteProperty(Promise.prototype.then, "call");
+		}
+		expect(poisoned).toBe(0);
+		await Promise.resolve();
+	});
+
+	it("never exposes its mutable metadata state as a verifier receiver", () => {
+		const { port } = fixture();
+		let receivedUnexpectedReceiver = false;
+		const grant = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: function (this: void) {
+				receivedUnexpectedReceiver ||= this !== undefined;
+				return true;
+			},
+		});
+		const host = createDurableMessagingWitHost(port, {
+			portMetadataGrant: grant,
+			limitsGrant: createDurableMessagingLimitsGrant(),
+			lifecycle: createDurableMessagingLifecycle(),
+			authorize: () => true,
+		});
+		expect(receivedUnexpectedReceiver).toBe(false);
+		grant.revoke();
+		expect(() => host.limits()).toThrow();
+	});
+
+	it("uses captured intrinsics for provider binding and typed-array copying", async () => {
+		const { port } = fixture();
+		const options = {
+			limitsGrant: createDurableMessagingLimitsGrant(),
+			lifecycle: createDurableMessagingLifecycle(),
+			authorize: () => true,
+		};
+		let poisonCalls = 0;
+		let host: ReturnType<typeof createDurableMessagingWitHost> | undefined;
+		Object.defineProperty(Function.prototype.bind, "call", {
+			configurable: true,
+			value: () => {
+				poisonCalls++;
+				return async () => ({
+					status: "committed",
+					value: { topic: "forged" },
+				});
+			},
+		});
+		try {
+			host = createDurableMessagingWitHost(port, options);
+		} finally {
+			Reflect.deleteProperty(Function.prototype.bind, "call");
+		}
+		if (host === undefined) throw new Error("host was not constructed");
+		expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
+			tag: "committed",
+			val: { topic: "orders" },
+		});
+		expect(poisonCalls).toBe(0);
+		const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+		const bufferGetter = Object.getOwnPropertyDescriptor(
+			typedArrayPrototype,
+			"buffer",
+		)?.get;
+		const lengthGetter = Object.getOwnPropertyDescriptor(
+			typedArrayPrototype,
+			"byteLength",
+		)?.get;
+		if (bufferGetter === undefined || lengthGetter === undefined)
+			throw new Error("missing intrinsic getter");
+		Object.defineProperty(bufferGetter, "call", {
+			configurable: true,
+			value: () => {
+				poisonCalls++;
+				return new ArrayBuffer(1);
+			},
+		});
+		let blocked: ReturnType<typeof host.publish>;
+		try {
+			blocked = host.publish({
+				operation,
+				topic: "orders",
+				message: {
+					...message,
+					payload: new Uint8Array(new SharedArrayBuffer(1)),
+				},
+			});
+		} finally {
+			Reflect.deleteProperty(bufferGetter, "call");
+		}
+		expect(await blocked).toEqual({ tag: "unknown", val: operation });
+		expect(vi.mocked(port.publish)).not.toHaveBeenCalled();
+		Object.defineProperty(Uint8Array.prototype.set, "call", {
+			configurable: true,
+			value: () => {
+				poisonCalls++;
+			},
+		});
+		Object.defineProperty(lengthGetter, "call", {
+			configurable: true,
+			value: () => {
+				poisonCalls++;
+				return 100_000;
+			},
+		});
+		let delivered: ReturnType<typeof host.publish>;
+		try {
+			delivered = host.publish({ operation, topic: "orders", message });
+		} finally {
+			Reflect.deleteProperty(Uint8Array.prototype.set, "call");
+			Reflect.deleteProperty(lengthGetter, "call");
+		}
+		expect((await delivered).tag).toBe("committed");
+		expect(vi.mocked(port.publish).mock.calls[0]?.[0].message.payload).toEqual(
+			new Uint8Array([1, 2]),
+		);
+		expect(poisonCalls).toBe(0);
+	});
+
+	it("does not disclose a provider result after metadata is revoked in flight", async () => {
+		let started = () => {};
+		let release = () => {};
+		const entered = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const { port } = fixture({
+			ensureTopic: vi.fn<DurableMessaging["ensureTopic"]>(async ({ topic }) => {
+				started();
+				await pending;
+				return { status: "committed", value: { topic } };
+			}),
+		});
+		const grant = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: (claim) => claim.port === port,
+		});
+		const host = createDurableMessagingWitHost(port, {
+			portMetadataGrant: grant,
+			limitsGrant: createDurableMessagingLimitsGrant(),
+			lifecycle: createDurableMessagingLifecycle(),
+			authorize: () => true,
+		});
+		const result = host.ensureTopic({ operation, topic: "orders" });
+		await entered;
+		grant.revoke();
+		release();
+		expect(await result).toEqual({ tag: "unknown", val: operation });
+		expect(() => host.limits()).toThrow();
+	});
+
+	it("rechecks permanent revocation performed inside a verifier", () => {
+		const { port } = fixture();
+		let trigger = false;
+		let grant:
+			| ReturnType<typeof createDurableMessagingPortMetadataGrant>
+			| undefined;
+		grant = createDurableMessagingPortMetadataGrant({
+			port,
+			limits: DURABLE_MESSAGING_LIMITS,
+			verify: () => {
+				if (trigger) grant?.revoke();
+				return true;
+			},
+		});
+		const host = createDurableMessagingWitHost(port, {
+			portMetadataGrant: grant,
+			limitsGrant: createDurableMessagingLimitsGrant(),
+			lifecycle: createDurableMessagingLifecycle(),
+			authorize: () => true,
+		});
+		trigger = true;
+		expect(() => host.limits()).toThrow();
+		expect(() => host.limits()).toThrow();
+	});
+
+	it("rechecks metadata after the final asynchronous provider continuation", async () => {
+		for (const [method, revokeAt] of [
+			["mutation", 6],
+			["mutation", 7],
+			["events", 6],
+		] as const) {
+			const { port } = fixture();
+			let checks = 0;
+			let grant:
+				| ReturnType<typeof createDurableMessagingPortMetadataGrant>
+				| undefined;
+			grant = createDurableMessagingPortMetadataGrant({
+				port,
+				limits: DURABLE_MESSAGING_LIMITS,
+				verify: () => {
+					checks++;
+					if (checks === revokeAt) queueMicrotask(() => grant?.revoke());
+					return true;
+				},
+			});
+			const host = createDurableMessagingWitHost(port, {
+				portMetadataGrant: grant,
+				limitsGrant: createDurableMessagingLimitsGrant(),
+				lifecycle: createDurableMessagingLifecycle(),
+				authorize: () => true,
+			});
+			if (method === "mutation")
+				expect(await host.ensureTopic({ operation, topic: "orders" })).toEqual({
+					tag: "unknown",
+					val: operation,
+				});
+			else
+				expect(await host.events({ afterSequence: 0n, limit: 1 })).toEqual({
+					tag: "rejected",
+					val: "unavailable",
+				});
+		}
+	});
 	it("gates JSPI and aliases by independently verified exact component identity", async () => {
 		const { host } = fixture();
 		vi.stubGlobal("WebAssembly", {});
