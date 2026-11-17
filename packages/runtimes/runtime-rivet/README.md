@@ -122,9 +122,15 @@ topic; the host must independently resolve and authorize that destination,
 including any later expiry transfer. Audit reads disclose metadata for the whole
 instance and need whole-instance authorization. A replayed consume receipt may
 contain an expired or superseded lease: independently verify current lease and
-authority before external effects. Invalid mutation data after a valid operation
-envelope, timeouts, lost replies and contradictory responses return `unknown`
-for that exact operation. Retry only the same operation against the same verified
+authority before external effects. Bounded, safely serializable invalid mutations with valid operation envelopes
+reach the actor in a reserved invalid envelope with a type-tagged fingerprint,
+so it can durably record a rejection without applying the request. The host must
+attest that the bound actor checks existing receipts first and rejects the
+reserved marker before effects; its semantic digest must cover that rule. The
+fallback envelope has no ordinary top-level topic or group: the host authorizer
+must decode and authorize the type-tagged snapshot or deny it, never treat
+missing scope fields as a wildcard. Unsafe or oversized input, timeouts, lost
+replies and contradictory responses return `unknown` for the exact operation. Retry only the same operation against the same verified
 journal, or use independently authenticated reconciliation evidence. A missing
 receipt or audit event alone does not prove noncommit.
 
@@ -140,6 +146,11 @@ A same-thread timer cannot interrupt a synchronous or non-yielding callback, so
 untrusted work needs an independent worker or process watchdog. Revoking a
 metadata grant is irreversible; each regrant needs a fresh grant and binding,
 and revocation must be propagated and fenced across the host fleet.
+
+The partial-topic live smoke test exercises real Rivet calls and receipt replay.
+It does not establish process restart, fault placement, ingress limits,
+transaction contention or rollback, or fencing of old owners; those require
+independent host and runner evidence.
 
 ## Retained topic log
 
