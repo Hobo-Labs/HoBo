@@ -6,7 +6,7 @@ relay's read API ([ADR-0183](../../docs/design/adr/runner-order.md)).
 | View | Shows | Read API paths |
 | --- | --- | --- |
 | **Runners** | What needs attention first (offline, paused, full, running jobs on the host), then connected machines, adopted self-hosted runners and the HoBo fleet as the route journal saw it | `/machines`, `/routes` |
-| **Router** | The committed runner order with each step's limit and health, the recent decisions with every step passed over, and a what-if panel | `/runner-order`, `/routes`, `/machines` |
+| **Router** | The committed runner order with each step's limit and health, the recent decisions with every step passed over, and a what-if panel. With no repository picked it shows the newest decision's repository, and only that repository's decisions | `/runner-order`, `/routes`, `/machines` |
 | **History** | Stored runs; an opened run attempt (looked up among its own repository's newest 50 runs, or a line saying it is not there) shows its jobs, step timings and the diagnosis of each failed job | `/runs`, `/runs/{id}/{attempt}/jobs` |
 | **Performance** | Times by workflow, by job and runner (each against `ubuntu-latest`), and by runner | `/job-times` |
 | **Signals** | The nine signals with their offenders, a breakdown by person, repository, workflow, branch and event, and a per-day trend | `/signals` |

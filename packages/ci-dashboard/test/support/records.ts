@@ -51,58 +51,62 @@ export function machine(
 	);
 }
 
-export function decided(
-	fields: Readonly<{
-		minutesAgo: number;
-		step: string;
-		runner: string;
-		outcome?: "routed" | "waiting" | "none";
-		reason?: string;
-		skipped?: readonly Readonly<{
-			key: string;
-			reason: string;
-			detail?: string;
-		}>[];
-		inputs?: readonly Readonly<{ key: string; labels: readonly string[] }>[];
-		unhealthyFallback?: boolean;
-	}>,
-): RunnerRouteEvent {
-	return parseRunnerRouteEvent(
-		JSON.stringify({
-			type: "runner.route.Decided",
-			accountId: "acct-a",
-			atMs: NOW - fields.minutesAgo * MINUTE,
-			request: {
-				repository: REPOSITORY,
-				private: true,
-				event: "push",
-				runId: 9000 + fields.minutesAgo,
-				runAttempt: 1,
-				job: "route",
-				actorId: "42",
-				triggeringActorId: "42",
-				inputs: fields.inputs ?? [
-					{ key: "machine", labels: ["self-hosted"] },
-					{ key: "github", labels: ["ubuntu-24.04"] },
-				],
-			},
-			decision: {
-				outcome: fields.outcome ?? "routed",
-				runner: fields.runner,
-				step: fields.step,
-				reason: fields.reason ?? "",
-				skipped: (fields.skipped ?? []).map((entry) => ({
-					key: entry.key,
-					reason: entry.reason,
-					detail: entry.detail ?? "",
-				})),
-				unhealthyFallback: fields.unhealthyFallback ?? false,
-			},
-			mode: "relay",
-			node: "relay-1",
-			jobId: `job-${fields.minutesAgo}`,
-		}),
-	);
+export type DecidedFields = Readonly<{
+	minutesAgo: number;
+	repository?: string;
+	step: string;
+	runner: string;
+	outcome?: "routed" | "waiting" | "none";
+	reason?: string;
+	skipped?: readonly Readonly<{
+		key: string;
+		reason: string;
+		detail?: string;
+	}>[];
+	inputs?: readonly Readonly<{ key: string; labels: readonly string[] }>[];
+	unhealthyFallback?: boolean;
+}>;
+
+/** A route decision's protobuf JSON object, as `/routes` answers it. */
+export function decidedJson(fields: DecidedFields) {
+	return {
+		type: "runner.route.Decided",
+		accountId: "acct-a",
+		atMs: NOW - fields.minutesAgo * MINUTE,
+		request: {
+			repository: fields.repository ?? REPOSITORY,
+			private: true,
+			event: "push",
+			runId: 9000 + fields.minutesAgo,
+			runAttempt: 1,
+			job: "route",
+			actorId: "42",
+			triggeringActorId: "42",
+			inputs: fields.inputs ?? [
+				{ key: "machine", labels: ["self-hosted"] },
+				{ key: "github", labels: ["ubuntu-24.04"] },
+			],
+		},
+		decision: {
+			outcome: fields.outcome ?? "routed",
+			runner: fields.runner,
+			step: fields.step,
+			reason: fields.reason ?? "",
+			skipped: (fields.skipped ?? []).map((entry) => ({
+				key: entry.key,
+				reason: entry.reason,
+				detail: entry.detail ?? "",
+			})),
+			unhealthyFallback: fields.unhealthyFallback ?? false,
+		},
+		mode: "relay",
+		node: "relay-1",
+		jobId: `job-${fields.minutesAgo}`,
+	};
+}
+
+export function decided(fields: DecidedFields): RunnerRouteEvent {
+	return parseRunnerRouteEvent(JSON.stringify(decidedJson(fields)));
 }
 
 export function order(json: string, problem = ""): OrderReply {

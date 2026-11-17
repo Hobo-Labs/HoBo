@@ -84,16 +84,23 @@ export async function loadView(
 			};
 		}
 		case "router": {
-			const routes = await api.routes(repository);
+			const journaled = await api.routes(repository);
 			const name =
 				repository ??
-				routes.find((event) => event.request)?.request?.repository;
+				journaled.find((event) => event.request)?.request?.repository;
 			if (name === undefined)
 				return {
-					html: `<section aria-labelledby="order-heading"><h2 id="order-heading">Runner order</h2><p class="empty">No route decision is journaled yet, so no repository is known. Pick one with <code>?repository=owner/name</code>.</p></section>`,
+					html: `<section aria-labelledby="order-heading"><h2 id="order-heading">Runner order</h2><p class="empty">No route decision is journaled yet, so no repository is known. Pick one with the Repository field above.</p></section>`,
 					repositories: [],
 					router: undefined,
 				};
+			// With no repository picked the read is account-wide: keep only the
+			// shown repository's decisions, so its lamps and recent decisions
+			// never speak for another repository's runs.
+			const routes = journaled.filter(
+				(event) =>
+					event.request?.repository.toLowerCase() === name.toLowerCase(),
+			);
 			const [order, machines] = await Promise.all([
 				api.runnerOrder(name),
 				api.machines(),
@@ -108,7 +115,7 @@ export async function loadView(
 					question,
 					answer: undefined,
 				}),
-				repositories: seen(routes, []),
+				repositories: seen(journaled, []),
 				router,
 			};
 		}

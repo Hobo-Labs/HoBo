@@ -5,8 +5,11 @@
 import { describe, expect, it } from "vitest";
 import {
 	blankQuestion,
+	DashboardReadApi,
 	editOrderUrl,
 	type JobTimesReport,
+	loadView,
+	parseDashboardLocation,
 	renderHistory,
 	renderPerformance,
 	renderRouter,
@@ -17,6 +20,7 @@ import {
 } from "../src/index.js";
 import {
 	decided,
+	decidedJson,
 	failedRun,
 	machine,
 	NOW,
@@ -225,6 +229,82 @@ describe("Router", () => {
 		expect(shown).toContain('role="alert"');
 		expect(shown).toContain("unknown runner step &quot;gpu&quot;");
 		expect(shown).toContain("<fieldset disabled>");
+	});
+});
+
+describe("Router with no repository picked", () => {
+	/** A read API whose account-wide `/routes` holds two repositories' decisions. */
+	function twoRepositories(): DashboardReadApi {
+		const bodies = new Map<string, unknown>([
+			[
+				"/v1/accounts/self/routes",
+				{
+					routes: [
+						decidedJson({
+							minutesAgo: 1,
+							step: "github",
+							runner: "ubuntu-24.04",
+						}),
+						decidedJson({
+							minutesAgo: 2,
+							repository: "octo/other",
+							step: "github",
+							runner: "ubuntu-24.04",
+							skipped: [
+								{ key: "machine", reason: "machine_full", detail: "studio" },
+							],
+						}),
+					],
+				},
+			],
+			[
+				"/v1/accounts/self/runner-order",
+				{
+					repository: REPOSITORY,
+					order: { steps: [{ key: "machine" }, { key: "github" }] },
+				},
+			],
+			["/v1/accounts/self/machines", { machines: [] }],
+		]);
+		return new DashboardReadApi(
+			"https://relay.example.test",
+			"token-a",
+			async (url) =>
+				new Response(JSON.stringify(bodies.get(new URL(url).pathname) ?? {}), {
+					status: bodies.has(new URL(url).pathname) ? 200 : 404,
+				}),
+		);
+	}
+
+	it("shows one repository's decisions, never another's under its name", async () => {
+		const loaded = await loadView(
+			twoRepositories(),
+			parseDashboardLocation("#/router", undefined),
+			NOW,
+		);
+		expect(loaded.html).toContain("Runner order · octo/app");
+		expect(loaded.html).not.toContain("studio");
+		expect(loaded.html).not.toContain("9002");
+		expect(loaded.html).toContain("9001");
+		expect(
+			loaded.router?.routes.map((event) => event.request?.repository),
+		).toEqual([REPOSITORY]);
+		expect(loaded.repositories).toEqual(["octo/app", "octo/other"]);
+	});
+
+	it("points to the Repository field when nothing is journaled", async () => {
+		const empty = new DashboardReadApi(
+			"https://relay.example.test",
+			"token-a",
+			async () => new Response(JSON.stringify({ routes: [] })),
+		);
+		const loaded = await loadView(
+			empty,
+			parseDashboardLocation("#/router", undefined),
+			NOW,
+		);
+		expect(loaded.html).toContain("Pick one with the Repository field above.");
+		expect(loaded.html).not.toContain("?repository=");
 	});
 });
 
