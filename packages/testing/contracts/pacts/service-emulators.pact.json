@@ -27,6 +27,26 @@
 			}
 		},
 		{
+			"description": "a secret resource supports versioned access without publishing material in outputs",
+			"request": {
+				"method": "POST",
+				"path": "/secret/credentials",
+				"body": { "name": "API_KEY", "value": "fixture-only" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "fidelity": "simulated", "access": "ok", "versioned": true, "materialInOutputs": false }
+			}
+		},
+		{
+			"description": "a data resource stores and reads an isolated tenant record through the engine SPI",
+			"request": { "method": "POST", "path": "/data/orders", "body": { "id": "one" } },
+			"response": {
+				"status": 200,
+				"body": { "fidelity": "simulated", "stored": true, "otherTenantAbsent": true }
+			}
+		},
+		{
 			"description": "a resource of the wrong kind cannot be used as a queue",
 			"request": { "method": "GET", "path": "/queue/events" },
 			"response": {

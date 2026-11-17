@@ -6,6 +6,9 @@ import {
 	type Queue,
 	type VirtualClock,
 } from "@hobo/core";
+import type { EngineBinding } from "@hobo/data-core";
+import { createSqliteEngine } from "@hobo/data-sqlite";
+import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
 import { createRuntimeLocalQueueClock } from "@hobo/runtime-local";
 
 /** A factory owns an isolated resource and may release it when the graph closes. */
@@ -21,6 +24,11 @@ export interface QueueEmulator extends ServiceEmulator<Queue> {
 	readonly clock?: VirtualClock;
 }
 
+/** The data emulator must release its engine, even after an interrupted deploy. */
+export interface DataEmulator extends ServiceEmulator<EngineBinding> {
+	close(): void | Promise<void>;
+}
+
 export interface EmulatorContext {
 	readonly alias: string;
 	readonly stage: string;
@@ -32,6 +40,8 @@ export type EmulatorFactory<T> = (context: EmulatorContext) => T | Promise<T>;
 export interface ServiceEmulatorFactories {
 	readonly queue?: EmulatorFactory<QueueEmulator>;
 	readonly topic?: EmulatorFactory<ServiceEmulator<Messaging>>;
+	readonly secret?: EmulatorFactory<ServiceEmulator<SecretsPort>>;
+	readonly data?: EmulatorFactory<DataEmulator>;
 }
 
 export function createQueueEmulator(): QueueEmulator {
@@ -43,4 +53,20 @@ export function createTopicEmulator(
 	options: InMemoryMessagingOptions = {},
 ): ServiceEmulator<Messaging> {
 	return { port: createInMemoryMessaging(options), fidelity: "simulated" };
+}
+
+export function createSecretEmulator(): ServiceEmulator<SecretsPort> {
+	return { port: createMemorySecretsPort(), fidelity: "simulated" };
+}
+
+/** An isolated SQLite engine exposing the data engine SPI, not a remote SQL server. */
+export function createDataEmulator(): DataEmulator {
+	const engine = createSqliteEngine({ path: ":memory:" });
+	let closed = false;
+	const close = () => {
+		if (closed) return;
+		engine.close();
+		closed = true;
+	};
+	return { port: { ...engine, close }, fidelity: "simulated", close };
 }
