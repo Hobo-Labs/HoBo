@@ -666,3 +666,20 @@ the `RouteJournal` port on SQLite (ADR-0135):
   against a clock passed in as `nowMs`. Older entries are hidden from reads at
   once and deleted on the next write or `prune()`.
 - It passes `routeJournalConformance` from `@hobo/ci/runner-order/testing`.
+
+`activityFeed(events, filter)`, exported from `@hobo/ci`, reads journal
+entries back as one entry per relay job: where it went (`runner`, `step`,
+`machineId`), the outcome (`routed`, `waiting`, `none`, or `pending` when it
+was asked and has no answer yet), one sentence saying why, and every step the
+walk passed over in words, including steps the relay named that the order
+leaves out. It is a pure projection, so a feed rebuilt from the stored journal
+equals the one built from the same events as they happened.
+
+- Filters: `repository` (case ignored), `outcome`, `step` (the order step that
+  took the job), `machineId` and `sinceMs`.
+- Pages run newest first, 50 entries by default and at most 500. A page's
+  `next` cursor is passed back as `after`; it holds its place when newer jobs
+  arrive.
+- `journalActivity(journal, accountId, filter)` reads one account's entries
+  through the `RouteJournal` port, narrowed by repository and start time, and
+  builds the page from at most `ACTIVITY_JOURNAL_READ_LIMIT` (20,000) of them.
