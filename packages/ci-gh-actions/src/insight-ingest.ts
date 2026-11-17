@@ -17,7 +17,9 @@
  *   delivers late or twice changes nothing.
  * - A job ran on GitHub's own runners when every label is a hosted label or
  *   its runner group is `GitHub Actions` (larger runners on custom labels).
- *   It is billed when, in addition, the repository is private.
+ *   It is billed when, in addition, the repository is private or the runner
+ *   is a larger runner, which GitHub bills in public repositories too
+ *   (`githubBillsJob`).
  * - The stored run has no place for the repository's visibility, so each
  *   parsed fact carries it as `repositoryPrivate` for a consumer that keeps
  *   the public repositories a usage report needs.
@@ -30,7 +32,6 @@
 import {
 	type InsightStore,
 	insightRunOf,
-	isGithubHostedLabel,
 	RELAY_LABEL,
 	runFactOf,
 } from "@hobo/ci";
@@ -40,7 +41,7 @@ import type {
 	InsightRun,
 	InsightStep,
 } from "@hobo/ci/insights";
-import { GITHUB_HOSTED_RUNNER_GROUP } from "@hobo/ci/insights/usage";
+import { githubBillsJob } from "@hobo/ci/insights/usage";
 import { z } from "zod";
 
 // public-contract: the event a run started from a job webhook has until its run webhook arrives.
@@ -122,7 +123,7 @@ const WorkflowRunPayload = z.looseObject({
 export type JobWebhookFact = Readonly<{
 	kind: "job";
 	repository: string;
-	/** GitHub bills this repository's hosted minutes (it is private). */
+	/** The repository is private: GitHub bills its standard hosted minutes too. */
 	repositoryPrivate: boolean;
 	runId: number;
 	attempt: number;
@@ -134,7 +135,7 @@ export type JobWebhookFact = Readonly<{
 /** A `workflow_run` webhook: one run attempt's own fields, without jobs. */
 export type RunWebhookFact = Readonly<{
 	kind: "run";
-	/** GitHub bills this repository's hosted minutes (it is private). */
+	/** The repository is private: GitHub bills its standard hosted minutes too. */
 	repositoryPrivate: boolean;
 	run: InsightRun;
 }>;
@@ -204,11 +205,15 @@ function jobFact(payload: z.infer<typeof WorkflowJobPayload>): JobWebhookFact {
 		...(startedAtMs === undefined ? undefined : { startedAtMs }),
 		...(completedAtMs === undefined ? undefined : { completedAtMs }),
 		steps: (job.steps ?? []).map(insightStep),
-		billed:
-			payload.repository.private &&
-			(job.runner_group_name === GITHUB_HOSTED_RUNNER_GROUP ||
-				(labels.length > 0 &&
-					labels.every((label) => isGithubHostedLabel(label)))),
+		billed: githubBillsJob(
+			{
+				labels,
+				...(job.runner_group_name
+					? { runnerGroup: job.runner_group_name }
+					: undefined),
+			},
+			payload.repository.private,
+		),
 		...(relay ? { relay: true } : undefined),
 	};
 	const repository = payload.repository.full_name;

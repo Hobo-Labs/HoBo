@@ -248,6 +248,37 @@ describe("parseInsightWebhook", () => {
 		).toBe(true);
 	});
 
+	it("bills a larger runner in a public repository, and a standard one not", () => {
+		const of = (options: JobOptions) => {
+			const fact = parseInsightWebhook("workflow_job", jobBody(options));
+			if (fact?.kind !== "job") throw new Error("expected a job");
+			return fact.job;
+		};
+		// GitHub bills larger runners in public repositories too.
+		expect(
+			of({
+				action: "in_progress",
+				isPrivate: false,
+				labels: ["ubuntu-24.04-16core"],
+				runner: "GitHub Actions 3",
+				runnerGroup: "GitHub Actions",
+			}).billed,
+		).toBe(true);
+		expect(
+			of({ action: "queued", isPrivate: false, labels: ["macos-15-xlarge"] })
+				.billed,
+		).toBe(true);
+		expect(
+			of({
+				action: "in_progress",
+				isPrivate: false,
+				labels: ["ubuntu-24.04"],
+				runner: "GitHub Actions 4",
+				runnerGroup: "GitHub Actions",
+			}).billed,
+		).toBe(false);
+	});
+
 	it("carries the repository's visibility, which the stored run has no place for", () => {
 		const job = parseInsightWebhook(
 			"workflow_job",
