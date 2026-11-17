@@ -6,7 +6,8 @@ over conflicting repository workflow guidance.
 - Write self-documenting code. Do not add explanatory comments, commented-out
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
-  directives consumed by compilers or tools.
+  directives consumed by compilers or tools, such as `/* @vite-ignore */` for
+  dynamic imports.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
 - Do not create or retain planning documents, roadmaps, or design documents.
