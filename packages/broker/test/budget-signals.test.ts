@@ -178,10 +178,8 @@ test("milestone: replaying the journal twice emits each threshold signal exactly
 	);
 
 	async function runPipelineOnce() {
-		const events: { type: string; data?: unknown }[] = [];
-		for await (const positioned of journal.readAll()) {
-			events.push({ type: positioned.event.type, data: positioned.event.data });
-		}
+		const events: { type: string; data?: unknown; meta?: unknown }[] = [];
+		for await (const event of journal.read(stream)) events.push(event);
 		const fold = foldBudgetSignals(events, POLICY);
 		const inputs = budgetSignalEventInputs(fold.signals);
 		let appended = 0;

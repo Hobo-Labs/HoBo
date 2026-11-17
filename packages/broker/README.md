@@ -149,6 +149,16 @@ Changing a cap or threshold set requires a new revision. Unscoped legacy policie
 retain tenant/lifetime semantics for existing consumers and have no period rollover
 guarantee; new hosting controls use versioned identities.
 
+Replay the complete target stream, including event metadata, before appending
+signals to it. A recorded signal suppresses emission only if its scope and
+payload match the reconstructed transition. A conflicting signal or occupied
+idempotency key requires journal reconciliation. Explicitly foreign facts are
+ignored, but missing scope or invalid amounts on relevant financial facts now
+stop the fold; reconcile older unscoped or incomplete records before upgrade.
+The journal and its evidence are trusted, and replay alone cannot authenticate
+an otherwise matching signal. Signal threshold arithmetic still rounds to nine
+decimal places and needs separate review for sub-nanodollar amounts.
+
 Zero USD budget or per-resolution cap means zero, never unlimited. Unlimited
 preflight behavior requires `budgetUnlimited` or `spendCapUnlimited` explicitly.
 The default billing plane retains successful estimates as in-memory holds, so
