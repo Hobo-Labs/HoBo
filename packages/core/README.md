@@ -62,6 +62,12 @@ Offering ids cover topology (`replica.multi-region`, `write.multi-writer`,
 facts (`pool.transaction`, `auth.password`, `auth.identity-token`,
 `tls.public-ca`).
 
+For offering requests, `require` accepts only stable, real native capabilities.
+`prefer` may select a fallback or a preview, experimental, simulated, mocked,
+or Camp-only offering; the result is partial and names any degraded offerings.
+When no single provider meets a strict request, remediation lists the providers
+that actually supply each requested capability.
+
 `ports/data-store-catalog.ts` adds evidence: `parseDataStoreCatalogEntry`
 refuses an asserted claim that names no dated vendor source, `unknown` is the
 only unsourced realization, and `dataStoreProfileOf` derives the resolver

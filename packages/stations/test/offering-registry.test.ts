@@ -1,6 +1,3 @@
-// Phase-6 milestone: traffic-routing negotiation re-expressed through the
-// generic resolver (its own tests unmodified elsewhere), and one data-store
-// offering resolved against a station registration.
 import assert from "node:assert/strict";
 import {
 	CLOUDFLARE_TRAFFIC_ROUTING_PROFILE,
@@ -42,18 +39,26 @@ test("milestone: a data-store intent resolves against a station registration", (
 	assert.equal(resolved.match.kind, "partial");
 });
 
-test("traffic-routing profiles negotiate through the same registry unchanged", () => {
+test("traffic-routing profiles report preview health as degraded", () => {
 	const registry = createStationOfferingRegistry({ stationId: "station:prod" });
 	registry.register("traffic-routing", CLOUDFLARE_TRAFFIC_ROUTING_PROFILE);
 	registry.register("traffic-routing", SIMPLE_TRAFFIC_ROUTING_PROFILE);
 
-	const resolved = registry.resolve("traffic-routing", {
+	const strict = registry.resolve("traffic-routing", {
 		features: ["lb.weighted", "lb.health"],
 		negotiation: "require",
+	});
+	assert.equal(strict.kind, "unresolved");
+	const resolved = registry.resolve("traffic-routing", {
+		features: ["lb.weighted", "lb.health"],
+		negotiation: "prefer",
 	});
 	assert.equal(resolved.kind, "resolved");
 	if (resolved.kind !== "resolved") return;
 	assert.equal(resolved.provider, "cloudflare");
+	assert.equal(resolved.match.kind, "partial");
+	if (resolved.match.kind === "partial")
+		assert.deepEqual(resolved.match.degraded, ["lb.health"]);
 
 	assert.deepEqual(registry.resourceClasses(), ["traffic-routing"]);
 });

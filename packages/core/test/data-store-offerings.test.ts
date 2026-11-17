@@ -1,7 +1,7 @@
-// First non-routing vocabulary bound to the generic per-resource-class
-// resolver: data-store offerings negotiate exactly like traffic routing.
 import assert from "node:assert/strict";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { test } from "vitest";
+import { ResourceOfferingMatchRecordSchema } from "../src/_generated/offering_resolution_pb.js";
 
 import {
 	DATA_STORE_ENGINES,
@@ -77,6 +77,79 @@ test("require negotiation fails closed on an offering outside native + fallbacks
 	assert.match(match.remediation, /data-store offerings: replica\.read/u);
 });
 
+test("require rejects fallback, preview and non-real offerings", () => {
+	const fallback = matchDataStoreOfferings(sqliteProfile(), {
+		features: ["cdc.stream"],
+		negotiation: "require",
+	});
+	assert.equal(fallback.kind, "none");
+	for (const quality of [
+		{ stability: "preview", fidelity: "real" },
+		{ stability: "experimental", fidelity: "real" },
+		{ stability: "stable", fidelity: "simulated" },
+		{ stability: "stable", fidelity: "mocked" },
+		{ stability: "stable", fidelity: "camp-only" },
+	]) {
+		const profile = parseDataStoreProviderProfile({
+			provider: "sqlite-local",
+			offerings: [{ id: "sql.relational", ...quality }],
+			fallbacks: [],
+		});
+		const required = matchDataStoreOfferings(profile, {
+			features: ["sql.relational"],
+			negotiation: "require",
+		});
+		assert.equal(required.kind, "none");
+		const preferred = matchDataStoreOfferings(profile, {
+			features: ["sql.relational"],
+			negotiation: "prefer",
+		});
+		assert.equal(preferred.kind, "partial");
+		if (preferred.kind === "partial")
+			assert.deepEqual(preferred.degraded, ["sql.relational"]);
+		assert.equal(
+			matchDataStoreOfferings(profile, { negotiation: "require" }).kind,
+			"none",
+		);
+		assert.equal(matchDataStoreOfferings(profile).kind, "partial");
+	}
+});
+
+test("unresolved requirements identify providers that actually offer each feature", () => {
+	const sql = parseDataStoreProviderProfile({
+		provider: "sqlite-local",
+		offerings: [{ id: "sql.relational" }],
+		fallbacks: [],
+	});
+	const replicas = parseDataStoreProviderProfile({
+		provider: "supabase-postgres",
+		offerings: [{ id: "replica.read" }],
+		fallbacks: [],
+	});
+	const result = resolveDataStore([sql, replicas], {
+		features: ["sql.relational", "replica.read"],
+		negotiation: "require",
+	});
+	assert.equal(result.kind, "unresolved");
+	if (result.kind !== "unresolved") return;
+	assert.deepEqual(result.missing, []);
+	assert.match(result.remediation, /sql\.relational \(sqlite-local\)/u);
+	assert.match(result.remediation, /replica\.read \(supabase-postgres\)/u);
+});
+
+test("degraded offerings survive the protobuf wire format", () => {
+	const record = create(ResourceOfferingMatchRecordSchema, {
+		kind: "partial",
+		offerings: ["sql.relational"],
+		degraded: ["sql.relational"],
+	});
+	const decoded = fromBinary(
+		ResourceOfferingMatchRecordSchema,
+		toBinary(ResourceOfferingMatchRecordSchema, record),
+	);
+	assert.deepEqual(decoded.degraded, ["sql.relational"]);
+});
+
 test("resolve picks the first profile that satisfies the request", () => {
 	const supabase = parseDataStoreProviderProfile({
 		provider: "supabase-postgres",
@@ -113,7 +186,6 @@ test("dataStoreOffering helper defaults to stable + real", () => {
 
 test("an engine is a different fact from a product (ADR-0177)", () => {
 	assert.equal(engineOfDataStoreProvider("sqlite-local"), "sqlite");
-	// D1 speaks SQLite: it must never be mistaken for a Postgres.
 	assert.equal(engineOfDataStoreProvider("cloudflare-d1"), "sqlite");
 	assert.equal(engineOfDataStoreProvider("supabase-postgres"), "postgres");
 	assert.equal(engineOfDataStoreProvider("azure-sql"), "sqlserver");
@@ -136,7 +208,6 @@ test("every product-level PostgreSQL id is the postgres engine; a family id stay
 		if (family) assert.equal(engineOfDataStoreProvider(provider), "other");
 		if (product) assert.equal(engineOfDataStoreProvider(provider), "postgres");
 	}
-	// A product refines its family; the engine is known for the product only.
 	assert.equal(engineOfDataStoreProvider("aws-rds-postgres"), "postgres");
 	assert.equal(engineOfDataStoreProvider("aws-rds"), "other");
 });
@@ -147,7 +218,6 @@ test("the engine vocabulary is closed", () => {
 		["sqlite", "postgres", "sqlserver", "mysql", "mongodb", "other"],
 	);
 });
-// --- vocabulary extension: product-level PostgreSQL ids + connection facts ---
 
 const ORIGINAL_PROVIDERS = [
 	"sqlite-local",
@@ -179,8 +249,6 @@ test("every original provider and offering id still parses unchanged", () => {
 	for (const id of ORIGINAL_OFFERINGS) {
 		assert.equal(parseDataStoreOfferingId(id), id);
 	}
-	// The original ids keep their position: a consumer that indexed the
-	// vocabulary by order sees the same prefix it always did.
 	assert.deepEqual(
 		DATA_STORE_OFFERING_IDS.slice(0, ORIGINAL_OFFERINGS.length),
 		ORIGINAL_OFFERINGS,
