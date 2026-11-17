@@ -198,7 +198,11 @@ const financial = createIacFinancialServices({
 });
 const route = createDirectRoutePort({
   authority: routeAuthority,
-  hashInventory: (plan: IacFinancialPlan) => financial.assess(plan).inventoryHash,
+  hashInventory: (plan: IacFinancialPlan) => {
+    const hash = financial.assess(plan).inventoryHash;
+    if (!hash) throw new Error("invalid target inventory");
+    return hash;
+  },
 });
 // The trusted host authenticates these facts against its durable operation journal.
 const resolveRoute = async (context: IacRouteContext) =>
