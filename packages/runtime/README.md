@@ -23,6 +23,10 @@ deterministic-replay library that backs them.
 Generated trainable modules carry a `// @generated` marker. Existing projects
 should run `hobo codegen` before checking generated-file freshness after upgrading.
 
+A function with a `"use training"` directive can set its `trainingIntent`
+property before registration. An explicit `intent` passed to `training.infer`
+takes precedence over that property.
+
 ## Naming: `runtime` vs `runtimes/`
 
 These are different concerns that share a word:

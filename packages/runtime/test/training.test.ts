@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 import { afterEach, test } from "vitest";
 import {
 	applyTrainingArtifact,
@@ -32,7 +33,6 @@ interface DecoratorBag {
 }
 
 function decoratorContext<T>(bag: DecoratorBag): T {
-	// SAFETY: TC39 decorator context bag at this test boundary.
 	return bag as never;
 }
 
@@ -126,7 +126,7 @@ test("training.define serves the contract-derived stub baseline", async () => {
 	assert.equal(matched.category, "access");
 
 	const canned = await classify({ subject: "something unseen" });
-	assert.equal(canned.category, "access"); // first example = canned response
+	assert.equal(canned.category, "access");
 
 	const recorded = getTrainable("defineClassify");
 	assert.ok(recorded);
@@ -166,15 +166,14 @@ test("applyTrainingArtifact attaches demos the stub serves (apply-at-load)", asy
 	});
 
 	const before = await classify({ subject: "billing question" });
-	assert.equal(before.category, "access"); // canned fallback pre-artifact
+	assert.equal(before.category, "access");
 
 	applyTrainingArtifact(classify, artifactFor("artifactClassify"));
 	assert.ok(getAppliedArtifact("artifactClassify"));
 
 	const after = await classify({ subject: "billing question" });
-	assert.equal(after.category, "billing"); // artifact demo now served
+	assert.equal(after.category, "billing");
 
-	// Reversible by dropping the artifact (ADR-0125).
 	applyTrainingArtifact(classify, null);
 	const reverted = await classify({ subject: "billing question" });
 	assert.equal(reverted.category, "access");
@@ -207,16 +206,12 @@ test("@trainable decorator lowers to identical manifest facts (ADR-0125 equivale
 	const wrapperFact = getTrainable("equivalent")?.fact;
 	resetTrainables();
 
-	// Applied as `@trainable(...) classify(...)` in app code; invoked here as
-	// a plain stage-3 decorator because this vitest execution path cannot
-	// parse decorator syntax yet (Node-native transform). Same code path.
 	class Support {
 		async classify(t: Ticket): Promise<Classification> {
 			return { category: t.subject };
 		}
 	}
 	const metadata: Record<PropertyKey, JsonValue> = {};
-	// SAFETY: assertion to `{ kind: "method", name: "classify", static: false, private: false, metadata, access: { get: (instance: Support) => insta` is required at this boundary.
 	const context = {
 		kind: "method",
 		name: "classify",
@@ -263,8 +258,6 @@ test("listTrainables exposes manifest facts for collection", () => {
 });
 
 test("lintUseTrainingSource reports bare markers as inferred, not errors", () => {
-	// The bare-marker form (ADR-0125): a lone "use training" is valid — the
-	// bindings are inferred/generated, and the lint reports that as info.
 	const bare = lintUseTrainingSource(
 		'export async function f() { "use training"; return 1; }',
 	);
@@ -312,17 +305,13 @@ test("DI form: @trainable registers eagerly at construction and resolves by toke
 		token: ClassifyToken,
 	})(Desk.prototype.classify, context);
 
-	// Simulate construction: stage-3 initializers run with the instance.
 	const desk = new Desk();
 	for (const init of initializers) init.call(desk);
 
-	// Registered with ZERO calls — DI-container semantics.
 	const fact = getTrainable("token-classify")?.fact;
 	assert.equal(fact?.methodRef, "token-classify");
 	assert.equal(getTrainable(ClassifyToken)?.calls.length, 0);
 
-	// A test/eval suite resolves the SAME instance by token and reuses its
-	// example table as the live-training eval suite.
 	const resolved = resolveTrainable<Ticket, Classification>(ClassifyToken);
 	for (const example of CONTRACT.examples) {
 		const output = await resolved(example.input);
@@ -330,7 +319,6 @@ test("DI form: @trainable registers eagerly at construction and resolves by toke
 	}
 	assert.equal(getTrainable(ClassifyToken)?.calls.length, 2);
 
-	// The optimization loop binds by the same token.
 	applyTrainingArtifact(ClassifyToken, artifactFor("token-classify"));
 	assert.ok(getAppliedArtifact(ClassifyToken));
 	applyTrainingArtifact(ClassifyToken, null);
@@ -393,7 +381,6 @@ test("marker form: training.infer grounds a bare use-training function", async (
 	assert.deepEqual(record?.fact.rubric, { exactMatch: 1 });
 	assert.match(record?.fact.intent ?? "", /rankFeed/);
 
-	// The body is the initial implementation, and the loop still applies.
 	assert.deepEqual(await ranked({ subject: "abc" }), { category: "ABC" });
 	applyTrainingArtifact("rankFeed", {
 		...artifactFor("rankFeed"),
@@ -420,23 +407,50 @@ test("marker form: infer requires the directive and honors overrides", () => {
 	assert.deepEqual(fact?.rubric, { categoryCorrect: 0.9 });
 });
 
-test("marker form: a leading comment after the directive becomes the intent", () => {
+test("marker form: structured intent and explicit overrides take precedence", async () => {
 	async function summarize(input: Ticket): Promise<Classification> {
 		"use training";
-		// One-paragraph summary; no blame, no internal names.
 		return { category: input.subject };
 	}
+	summarize.trainingIntent = "Summarize the ticket subject.";
+	const summarized = training.infer(summarize);
+	assert.equal(
+		getTrainable("summarize")?.fact.intent,
+		summarize.trainingIntent,
+	);
+	assert.deepEqual(await summarized({ subject: "access" }), {
+		category: "access",
+	});
+
+	async function classify(input: Ticket): Promise<Classification> {
+		"use training";
+		return { category: input.subject };
+	}
+	classify.trainingIntent = "Use the structured intent.";
+	training.infer(classify, { intent: "Use the explicit override." });
+	assert.equal(
+		getTrainable("classify")?.fact.intent,
+		"Use the explicit override.",
+	);
+});
+
+test("marker form: legacy leading comments remain valid intent", () => {
+	const source = [
+		"async function summarize(input) {",
+		'  "use training";',
+		"  // One-paragraph summary; no blame, no internal names.",
+		"  return { category: input.subject };",
+		"}",
+	].join("\n");
+	const summarize: (input: Ticket) => Promise<Classification> = runInNewContext(
+		`(${source})`,
+	);
 	training.infer(summarize);
 	assert.equal(
 		getTrainable("summarize")?.fact.intent,
 		"One-paragraph summary; no blame, no internal names.",
 	);
 });
-
-// ---------------------------------------------------------------------------
-// Declarative surface (Plan 2 Syntax 0): shaped contracts, optional rubric,
-// @component/@operation decorators, param() annotation.
-// ---------------------------------------------------------------------------
 
 test("rubric is optional: declaration grounds with intent + shape alone", () => {
 	const declared = training.define<Ticket, Classification>({
@@ -450,7 +464,6 @@ test("rubric is optional: declaration grounds with intent + shape alone", () => 
 	assert.equal(isTrainable(declared), true);
 	const fact = getTrainable("storefront.classify")?.fact;
 	assert.deepEqual(fact?.rubric, {});
-	// No ref given: the shape synthesizes a decl:// contract ref.
 	assert.equal(fact?.contractRef, "decl://storefront.classify");
 });
 
@@ -460,7 +473,7 @@ test("shape is not optional: a contract needs a ref or input + output", () => {
 			training.define<Ticket, Classification>({
 				methodRef: "storefront.unshaped",
 				intent: "Route tickets.",
-				contract: { input: { subject: "string" } }, // no output, no ref
+				contract: { input: { subject: "string" } },
 			}),
 		TrainingGroundingError,
 	);
@@ -484,8 +497,6 @@ test("@component + @operation declare a component; param() annotates", async () 
 			return { category: "unset" };
 		}
 	}
-	// Applied as decorators in app code; invoked programmatically here, in
-	// TC39 evaluation order: method decorators first, then the class.
 	const context = decoratorContext<
 		ClassMethodDecoratorContext<
 			Storefront,
@@ -507,7 +518,6 @@ test("@component + @operation declare a component; param() annotates", async () 
 			},
 			params: { ticket: param("Support ticket, PII-redacted") },
 			output: { category: param("Known category", "outage") },
-			// no rubric — optional on the declarative surface
 		},
 	)(Storefront.prototype.classify, context);
 	component({ intent: "Support desk operations." })(
@@ -519,8 +529,6 @@ test("@component + @operation declare a component; param() annotates", async () 
 		}),
 	);
 
-	// Class-level metadata aggregates the operations declared by methods.
-	// SAFETY: assertion to `t.metadata as Record<symbol, JsonValue>)[ C` is required at this boundary.
 	const componentMeta = (context.metadata as Record<symbol, JsonValue>)[
 		COMPONENT_METADATA
 	] as {
@@ -530,7 +538,6 @@ test("@component + @operation declare a component; param() annotates", async () 
 	assert.equal(componentMeta.intent, "Support desk operations.");
 	assert.deepEqual(componentMeta.operations, ["storefront.operation.classify"]);
 
-	// Operation registered + callable through the trainable machinery.
 	const desk = new Storefront();
 	const out = await desk.classify({ subject: "site is down" });
 	assert.equal(out.category, "unset");
@@ -574,17 +581,13 @@ test("@operation field form: a stub() initializer declares code to generate", as
 		}),
 	);
 
-	// TC39 field semantics: the transformer maps the initializer (here a
-	// stub marker) to the field's actual value — the registered trainable.
 	const desk = new Storefront();
-	desk.rankFeed =
-		// SAFETY: assertion to `m as ( this: Storefront, initial: ((input: Ticket) => Promise<Classification>) | undefined, ) => (input: Ticket) => Prom` is required at this boundary.
-		(
-			transform as (
-				this: Storefront,
-				initial: ((input: Ticket) => Promise<Classification>) | undefined,
-			) => (input: Ticket) => Promise<Classification>
-		).call(desk, stub<Ticket, Classification>());
+	desk.rankFeed = (
+		transform as (
+			this: Storefront,
+			initial: ((input: Ticket) => Promise<Classification>) | undefined,
+		) => (input: Ticket) => Promise<Classification>
+	).call(desk, stub<Ticket, Classification>());
 
 	const record = getTrainable("storefront.field.rankFeed");
 	assert.equal(record?.fact.baseline, "stub");

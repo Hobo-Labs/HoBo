@@ -115,6 +115,11 @@ describe("trainable codegen", () => {
 	});
 
 	it("generates inferred bindings for bare use-training markers (syntax 3)", async () => {
+		const fixture = await readFile(join(projectRoot, "src/rank.ts"), "utf8");
+		expect(fixture).toContain("rankFeed.trainingIntent = ");
+		expect(
+			fixture.split("\n").filter((line) => line.trimStart().startsWith("//")),
+		).toEqual([]);
 		const mod = await importTrainables(projectRoot);
 
 		expect(isTrainable(mod.rankFeedTraining)).toBe(true);

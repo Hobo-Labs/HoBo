@@ -4,9 +4,12 @@ import type { JsonValue } from "../json.js";
 import { stableStringify } from "./text.js";
 import { type CodegenLayout, defaultCodegenLayout } from "./types.js";
 
-// The canonical ticket/incident fixture project used by build/codegen tests
-// and CI timing gates. `reverse` shuffles source ordering to prove the
-// engine's output is order-insensitive (deterministic normalization).
+type FixtureValue =
+	| JsonValue
+	| readonly FixtureValue[]
+	| { readonly [key: string]: FixtureValue }
+	| ReadonlyMap<string, FixtureValue>
+	| ReadonlySet<FixtureValue>;
 
 export interface CodegenFixtureOptions {
 	readonly reverse?: boolean;
@@ -23,33 +26,28 @@ export async function writeFixtureProject(
 	await writeJson(join(projectRoot, layout.sources.zod), sources.zod);
 	await writeJson(join(projectRoot, layout.sources.allow), sources.allow);
 	await writeJson(join(projectRoot, layout.sources.bindle), sources.bindle);
-	// A bare "use training" marker (ADR-0125 syntax 3): codegen scans the
-	// layout's scanDir and generates its inferred bindings.
 	await writeText(
 		join(projectRoot, layout.sources.scanDir, "rank.ts"),
 		`export async function rankFeed(input: { items: string[] }): Promise<{ ranked: string[] }> {\n` +
 			`  "use training";\n` +
-			`  // Rank feed items; stable sort as the initial implementation.\n` +
 			`  return { ranked: [...input.items].sort() };\n` +
-			`}\n`,
+			`}\n` +
+			`rankFeed.trainingIntent = "Rank feed items; stable sort as the initial implementation.";\n`,
 	);
 }
 
 export interface FixtureSources {
 	readonly wit: string;
-	// Written out through `writeJson` -> `stableStringify` and never read back
-	// as JSON here. These carry `Map`s and `Set`s, which the serializer's
-	// replacer handles and `JsonValue` cannot describe.
-	readonly zod: unknown;
-	readonly allow: unknown;
-	readonly bindle: unknown;
+	readonly zod: FixtureValue;
+	readonly allow: FixtureValue;
+	readonly bindle: FixtureValue;
 }
 
 export function fixtureSources(
 	options: CodegenFixtureOptions = {},
 ): FixtureSources {
 	const reverse = options.reverse === true;
-	const resourceEntries: readonly (readonly [string, unknown])[] = [
+	const resourceEntries: readonly (readonly [string, FixtureValue])[] = [
 		[
 			"ticket",
 			{
@@ -137,7 +135,7 @@ export function fixtureSources(
 	};
 }
 
-async function writeJson(path: string, value: unknown): Promise<void> {
+async function writeJson(path: string, value: FixtureValue): Promise<void> {
 	await writeText(path, stableStringify(value));
 }
 
@@ -147,9 +145,9 @@ async function writeText(path: string, value: string): Promise<void> {
 }
 
 function mapFromEntries(
-	entries: readonly (readonly [string, unknown])[],
+	entries: readonly (readonly [string, FixtureValue])[],
 	reverse = false,
-): Map<string, unknown> {
+): Map<string, FixtureValue> {
 	return new Map(reverse ? [...entries].reverse() : entries);
 }
 
