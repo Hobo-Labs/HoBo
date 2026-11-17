@@ -163,6 +163,37 @@ stateDiagram-v2
   s0 --> s2: evaluate grace period
 ```
 
+## Strict-start hook receipt
+
+The fleet v2 pre-job hook template requires HTTP 200 and a JSON receipt with
+`ok: true`, `slotId`, `claimId`, `accountId`, `profileId`, `runnerName`, and
+the exact `executionKey` from its request. It checks the run ID and attempt
+against the runner context before sending the request. Redirects, empty or
+malformed responses, mismatched identities, oversized receipts, and transport
+failures block the job. The binding secret is sent in the request body.
+
+The endpoint and GitHub assignment lookup are not yet wired into the production
+controller. A future trusted endpoint must issue the receipt only after the
+matching authorization commits and while it remains nonterminal. The hook
+cannot independently prove that state or authenticate the assigned job from
+this receipt alone; it also relies on an authenticated, fresh response.
+
+The receipt model explores 285 states with trusted receipt issuance. Its
+projection hides 114 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Hook invoked
+  s1: Workflow blocked
+  s2: Waiting for receipt
+  s3: Workflow may start
+  [*] --> s0
+  s0 --> s1: check runner context
+  s0 --> s2: check runner context
+  s2 --> s1: validate status and receipt
+  s2 --> s3: validate status and receipt
+```
+
 ## Test this branch
 
 Run from the monorepo root with Node 24, Linux x64, bash and git:
