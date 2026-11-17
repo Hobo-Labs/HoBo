@@ -5,6 +5,40 @@ scenario corpus, publishes generated integration contracts, verifies HoBo's
 provider and enforces version compatibility. Unverified GitHub provider results
 block its deployment gate.
 
+## Local signoff in fleet routing
+
+HoBo's fleet can offer local verification with
+[basecamp/gh-signoff](https://github.com/basecamp/gh-signoff) when no runner
+tier is available. From an up-to-date branch:
+
+```sh
+gh extension install basecamp/gh-signoff
+git fetch origin
+git merge origin/main
+git push
+pnpm ci:attest fleet --local-signoff
+```
+
+Run these from the HoBo checkout, with `gh` authenticated for the target
+repository, permission to write commit statuses, and `git user.name` set. The
+last command reads the fleet routing slip and GitHub's queue. It prefers the
+normal fleet, local runner and GitHub-hosted routes. Only when all enabled
+runner tiers are known unavailable does it run local checks and call
+`gh signoff`; unknown availability means wait. If hosted jobs fail before
+queueing, an operator who observed that outage can pass `--github-unavailable`
+alongside `--local-signoff`; a recently observed hosted pickup still wins.
+The command reports a runner choice but does not dispatch, relabel, cancel, or
+complete an Actions job. A missing container engine leaves container-dependent
+jobs and the PR impact group out of the local signoff.
+
+These are `signoff/hobo-ci/local/<event>/<job>` commit statuses, not GitHub
+Actions job results. They need GitHub API access and a pushed commit, but no
+Actions runner or relay. They do not satisfy HoBo's existing required Actions
+checks or a merge queue's generated commit by themselves; an administrator
+would need to configure the intended status requirements. See the
+[signed local runs runbook](../ci/RUNNER-QUEUE.md#signed-local-runs-ci-on-your-own-machine)
+for the exact scope, prerequisites, and limitations.
+
 HoBo can dispatch its existing companion workflow to an owned Linux x64 dev
 machine. The machine hosts one job at a time. The persistent service registers
 disposable official GitHub runners with **`hobo-local-host`**; the companion

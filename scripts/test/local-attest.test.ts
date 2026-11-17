@@ -439,6 +439,7 @@ async function runIn(
 	machine: { engine?: string; env?: NodeJS.ProcessEnv } = {
 		engine: "29.0.0-test",
 	},
+	initialFiles: Readonly<Record<string, string>> = {},
 ) {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const entry = trustEntryFor(privateKey, {
@@ -450,6 +451,7 @@ async function runIn(
 		"mise.toml": "[tools]\n",
 		"mise.lock": "\n",
 		[ATTESTORS_PATH]: JSON.stringify([entry]),
+		...initialFiles,
 	});
 	git(repo, ["branch", "base"]);
 	const head = commit(repo, { "change.txt": "changed\n" });
@@ -798,6 +800,34 @@ describe("a local run", () => {
 		assert.equal(git(run.repo, ["rev-parse", "HEAD"]), run.head);
 	});
 
+	it("removes an earlier record when a retry of the same tree fails", async () => {
+		const run = await runIn(
+			planOf([{ id: "ci-guard", steps: [{ run: "true", local: "run" }] }]),
+			["pull_request"],
+		);
+		const { file } = await run.outcome;
+		assert.equal(existsSync(file), true);
+		await assert.rejects(
+			runAttestedJobs({
+				target: run.target,
+				plan: buildPlan(
+					planOf([
+						{ id: "ci-guard", steps: [{ run: "exit 1", local: "run" }] },
+					]),
+					join(directory("retry"), "record"),
+				),
+				events: ["pull_request"],
+				skipJobs: [],
+				privateKey: run.privateKey,
+				fresh: false,
+				engineVersion: () => "29.0.0-test",
+				toolVersions: () => ({ ...TEST_TOOLS }),
+			}),
+			/failed/u,
+		);
+		assert.equal(existsSync(file), false);
+	});
+
 	it("signs nothing when a command rewrites a tracked file", async () => {
 		// A formatter that fixes a file in place would pass on content that is
 		// not the committed tree.
@@ -1042,6 +1072,210 @@ describe("the secret scan and histories that end in the same tree", () => {
 			jobs: ["ci-guard"],
 			attestor: run.keyId,
 		});
+	});
+});
+
+describe("local gh-signoff", () => {
+	async function fixture(hasEngine = true, drift = false) {
+		const jobs = [
+			"pr_gate_validation",
+			"workspace_tests",
+			"pr_affected",
+			"ci-guard",
+			"secret-scan",
+		].map((id) => ({
+			id,
+			if: ["pr_affected", "ci-guard", "secret-scan"].includes(id)
+				? "github.event_name == 'pull_request'"
+				: undefined,
+			steps: [{ name: id, run: `echo ${id} >/dev/null`, local: "run" }],
+		}));
+		const sourceRoot = fileURLToPath(new URL("../..", import.meta.url));
+		const sourcePaths = [
+			"scripts/ci/attested-jobs.json",
+			".github/workflows/hobo-ci.yml",
+			".github/workflows/release-hobo.yml",
+		];
+		const files = Object.fromEntries(
+			sourcePaths.map((path) => [
+				path,
+				readFileSync(join(sourceRoot, path), "utf8"),
+			]),
+		);
+		if (drift) {
+			const path = ".github/workflows/hobo-ci.yml";
+			files[path] = (files[path] ?? "").replace(
+				"  ci-guard:\n",
+				"  ci-guard:\n    env:\n      HOBO_SIGNOFF_DRIFT: test\n",
+			);
+		}
+		const run = await runIn(
+			jobs,
+			["pull_request", "merge_group"],
+			[],
+			false,
+			hasEngine ? { engine: "29.0.0-test" } : {},
+			files,
+		);
+		const outcome = await run.outcome;
+		const remote = directory("signoff-remote");
+		git(remote, ["init", "--bare", "--quiet"]);
+		git(run.repo, ["remote", "add", "origin", remote]);
+		git(run.repo, [
+			"push",
+			"--quiet",
+			"origin",
+			"base:refs/heads/main",
+			"HEAD:refs/heads/topic",
+		]);
+		git(run.repo, ["fetch", "--quiet", "origin", "main"]);
+		const key = join(directory("signoff-key"), "key.pem");
+		writeFileSync(
+			key,
+			run.privateKey.export({ type: "pkcs8", format: "pem" }),
+			{
+				mode: 0o600,
+			},
+		);
+		const bin = directory("signoff-bin");
+		writeFileSync(
+			join(bin, "gh"),
+			'#!/bin/sh\nprintf "%s\\n" "$@" > "$HOBO_SIGNOFF_TEST_CALLS"\nexit "${HOBO_SIGNOFF_TEST_EXIT:-0}"\n',
+			{ mode: 0o755 },
+		);
+		const calls = join(directory("signoff-calls"), "calls");
+		const command = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) =>
+			spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					script,
+					"signoff",
+					...args,
+				],
+				{
+					cwd: run.repo,
+					encoding: "utf8",
+					env: {
+						...process.env,
+						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						HOBO_CI_ATTESTOR_KEY: key,
+						HOBO_SIGNOFF_TEST_CALLS: calls,
+						...extra,
+					},
+				},
+			);
+		return { ...run, ...outcome, calls, command };
+	}
+
+	it("posts only the passed pull-request jobs for the exact pushed head", async () => {
+		const run = await fixture();
+		const result = run.command();
+		assert.equal(result.status, 0, result.stderr);
+		assert.deepEqual(readFileSync(run.calls, "utf8").trim().split("\n"), [
+			"signoff",
+			"create",
+			"--commit",
+			run.head,
+			...[
+				"pr_gate_validation",
+				"workspace_tests",
+				"pr_affected",
+				"ci-guard",
+				"secret-scan",
+			].map((job) => `hobo-ci/local/pull_request/${job}`),
+		]);
+		assert.match(result.stdout, /posted 5 local signoff/u);
+	});
+
+	it("reports only jobs a machine without Docker could actually cover", async () => {
+		const run = await fixture(false);
+		assert.equal(run.envelope.statement.environment.dockerEngine, false);
+		const result = run.command();
+		assert.equal(result.status, 0, result.stderr);
+		assert.deepEqual(readFileSync(run.calls, "utf8").trim().split("\n"), [
+			"signoff",
+			"create",
+			"--commit",
+			run.head,
+			"hobo-ci/local/pull_request/ci-guard",
+			"hobo-ci/local/pull_request/secret-scan",
+		]);
+	});
+
+	it("uses separate contexts for the simulated merge-group event", async () => {
+		const run = await fixture();
+		const result = run.command(["--event=merge_group"]);
+		assert.equal(result.status, 0, result.stderr);
+		const calls = readFileSync(run.calls, "utf8");
+		assert.match(calls, /hobo-ci\/local\/merge_group\/workspace_tests/u);
+		assert.doesNotMatch(calls, /pr_affected|pull_request/u);
+	});
+
+	it("refuses dirty, tampered, stale-base, and wrong-head records before calling gh", async () => {
+		const run = await fixture();
+		writeFileSync(join(run.repo, "untracked.txt"), "dirty");
+		assert.match(run.command().stderr, /working tree is not clean/u);
+		rmSync(join(run.repo, "untracked.txt"));
+		const original = readFileSync(run.file, "utf8");
+		const tampered = JSON.parse(original);
+		tampered.statement.finishedAt = "2020-01-01T00:00:00Z";
+		writeFileSync(run.file, JSON.stringify(tampered));
+		assert.match(run.command().stderr, /signature does not verify/u);
+		writeFileSync(run.file, original);
+		const otherHead = git(run.repo, [
+			...IDENTITY,
+			"commit-tree",
+			"HEAD^{tree}",
+			"-p",
+			run.head,
+			"-m",
+			"same tree",
+		]);
+		git(run.repo, ["checkout", "--quiet", "--detach", otherHead]);
+		assert.match(run.command().stderr, /different HEAD/u);
+		git(run.repo, ["checkout", "--quiet", "main"]);
+		git(run.repo, ["push", "--quiet", "origin", "HEAD:refs/heads/main"]);
+		assert.match(run.command().stderr, /base origin\/main changed/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses another key, an unknown event, or an unreachable base", async () => {
+		const run = await fixture();
+		const other = generateKeyPairSync("ed25519").privateKey;
+		const key = join(directory("other-signoff-key"), "key.pem");
+		writeFileSync(key, other.export({ type: "pkcs8", format: "pem" }), {
+			mode: 0o600,
+		});
+		assert.match(
+			run.command([], { HOBO_CI_ATTESTOR_KEY: key }).stderr,
+			/not a trusted attestor/u,
+		);
+		assert.match(run.command(["--event=push"]).stderr, /unknown event/u);
+		git(run.repo, [
+			"remote",
+			"set-url",
+			"origin",
+			join(directory("absent"), "remote"),
+		]);
+		assert.match(run.command().stderr, /could not read origin\/main/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("refuses a covered job whose workflow has drifted from its local description", async () => {
+		const run = await fixture(true, true);
+		const result = run.command();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /workflow job ci-guard differs/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("surfaces gh-signoff failures without pretending publication was atomic", async () => {
+		const run = await fixture();
+		const result = run.command([], { HOBO_SIGNOFF_TEST_EXIT: "1" });
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Some statuses may already have been posted/u);
 	});
 });
 

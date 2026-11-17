@@ -262,6 +262,8 @@ local box, then GitHub-hosted; see "Runner routing" in
 local signoff only after all enabled runner tiers are known unavailable. It
 waits for unknown, malformed, or contradictory capacity. This is a separate
 verification path, not a `runs-on` label or an Actions job completion.
+In the HoBo checkout, `pnpm ci:attest fleet --local-signoff` applies that
+choice to a local run and publishes its covered statuses with `gh-signoff`.
 
 An account can offer its own development machine with `provider: "local"`,
 `backend: "gh-actions"`, `runsOn: "hobo-local-host"`, and `concurrency: 1`.
