@@ -180,6 +180,8 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			environmentSnapshot: string;
 			pricing?: {
 				authority: BrokerPricingAuthority;
+				quoteMethod: BrokerPricingAuthority["quote"];
+				attestMethod: BrokerPricingAuthority["attest"];
 				quote: QuoteVector;
 				context: BrokerQuoteContext;
 				amount: number;
@@ -494,7 +496,12 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					events,
 				);
 			const pricing = deps.pricingAuthority;
-			const pricingChanged = () => deps.pricingAuthority !== pricing;
+			const quoteMethod = pricing?.quote;
+			const attestMethod = pricing?.attest;
+			const pricingChanged = () =>
+				deps.pricingAuthority !== pricing ||
+				(pricing !== undefined &&
+					(pricing.quote !== quoteMethod || pricing.attest !== attestMethod));
 			const rejectPricing = () =>
 				reject(
 					request,
@@ -1001,6 +1008,8 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 						? {
 								pricing: {
 									authority: pricing,
+									quoteMethod: pricing.quote,
+									attestMethod: pricing.attest,
 									quote: selectedQuote,
 									context: selectedContext,
 									amount: authorizedEstimate,
@@ -1063,8 +1072,19 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					);
 				}
 				if (issued.pricing) {
-					const { authority, quote, context, amount } = issued.pricing;
-					if (deps.pricingAuthority !== authority)
+					const {
+						authority,
+						quoteMethod,
+						attestMethod,
+						quote,
+						context,
+						amount,
+					} = issued.pricing;
+					const authorityChanged = () =>
+						deps.pricingAuthority !== authority ||
+						authority.quote !== quoteMethod ||
+						authority.attest !== attestMethod;
+					if (authorityChanged())
 						throw new BrokerParseError(
 							"delivery-quote-stale",
 							"delivery-quote-stale: pricing authority changed",
@@ -1079,7 +1099,7 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 							"delivery-quote-stale",
 							"delivery-quote-stale: quote or liability is no longer current",
 						);
-					if (deps.pricingAuthority !== authority)
+					if (authorityChanged())
 						throw new BrokerParseError(
 							"delivery-quote-stale",
 							"delivery-quote-stale: pricing authority changed during quote check",

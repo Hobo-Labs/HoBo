@@ -70,6 +70,34 @@ function quote(amount: string) {
 }
 
 describe("broker delivery authorization", () => {
+	it("refuses dispatch when an authority callback changes during final attestation", async () => {
+		let dispatching = false;
+		const submit = vi.fn(async () => ({
+			engine: "in-proc",
+			reconcilerMode: "conductor" as const,
+			target: "local",
+			document: {},
+		}));
+		const authority = {
+			quote: () => quote("1"),
+			attest: () => {
+				if (dispatching) authority.attest = () => ({ liabilityBoundUsd: "5" });
+				return { liabilityBoundUsd: "5" };
+			},
+		};
+		const broker = createBroker({
+			...common,
+			pricingAuthority: authority,
+			deliveryPlane: { submit },
+		});
+		const receipt = (await broker.resolve(request)).receipt;
+		if (!receipt) throw new Error("expected a receipt");
+		dispatching = true;
+		await expect(broker.deliver(receipt)).rejects.toThrow(
+			/delivery-quote-stale/u,
+		);
+		expect(submit).not.toHaveBeenCalled();
+	});
 	it("refuses dispatch when the authority changes inside its final attestation", async () => {
 		let dispatching = false;
 		const submit = vi.fn(async () => ({

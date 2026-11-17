@@ -764,6 +764,59 @@ describe("whole-request quote routing", () => {
 		expect(billing).not.toHaveBeenCalled();
 	});
 
+	it("refuses a changed authority callback while the policy gate waits", async () => {
+		const billing = vi.fn(() => ({
+			ok: true,
+			reasons: [],
+			reservationCreated: true,
+		}));
+		const authority = {
+			quote: () => quote("1"),
+			attest: () => ({ liabilityBoundUsd: "1" }),
+		};
+		const broker = createBroker({
+			...common,
+			pricingAuthority: authority,
+			gatePlane: {
+				evaluate: async () => {
+					authority.attest = () => ({ liabilityBoundUsd: "1" });
+					return { effect: "allow", reasons: [], events: [] };
+				},
+			},
+			billingPlane: { authorize: billing },
+		});
+		const result = await broker.resolve(request);
+		expect(result.outcome).toBe("rejected");
+		expect(result.rejection?.reasons[0]?.code).toBe("quote-authority-stale");
+		expect(billing).not.toHaveBeenCalled();
+	});
+
+	it("releases a new hold when the final attestation replaces its callback", async () => {
+		let attestations = 0;
+		const release = vi.fn();
+		const authority = {
+			quote: () => quote("1"),
+			attest: () => {
+				attestations++;
+				if (attestations === 3)
+					authority.attest = () => ({ liabilityBoundUsd: "1" });
+				return { liabilityBoundUsd: "1" };
+			},
+		};
+		const broker = createBroker({
+			...common,
+			pricingAuthority: authority,
+			billingPlane: {
+				authorize: () => ({ ok: true, reasons: [], reservationCreated: true }),
+				release,
+			},
+		});
+		const result = await broker.resolve(request);
+		expect(result.outcome).toBe("rejected");
+		expect(result.rejection?.reasons[0]?.code).toBe("quote-authority-stale");
+		expect(release).toHaveBeenCalledWith(request.requestId, true);
+	});
+
 	it.each([
 		"quote",
 		"search attestation",
