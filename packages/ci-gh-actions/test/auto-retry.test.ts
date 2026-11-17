@@ -3,6 +3,7 @@
  * the rules against in-memory ports, the ledger on SQLite, and the whole
  * loop against the GitHub simulator, including a redelivered webhook.
  */
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -24,13 +25,17 @@ import { describe, expect, it } from "vitest";
 import {
 	type AutoRetryDeps,
 	autoRetryRun,
+	DECISION_READ_LIMIT,
 	githubCheckRunAnnotations,
 	githubRerunJob,
 	InMemoryRetryLedger,
 	isRelayJobOf,
+	jobRetriedJson,
 	machineEventDisconnects,
+	parseJobRetried,
 	type RerunJob,
 	RetryRouteFacts,
+	RetryRowRejection,
 	retryLedgerConformance,
 	routeRetryFor,
 	SqliteRetryLedger,
@@ -386,19 +391,126 @@ describe("autoRetryRun", () => {
 		});
 	});
 
-	it("keeps the row when GitHub refuses the re-run, so a redelivery does not try again", async () => {
+	it("keeps the row when GitHub refuses the re-run, so a redelivery does not try again, and counts it against no limit", async () => {
 		const { deps, journal, ledger } = setup({ rerunStatus: 403 });
 		await journal.record(decided());
 		expect(await autoRetryRun(run(), deps)).toMatchObject({
 			retried: false,
 			reason: "rerun_refused",
 			status: 403,
+			row: { rerun: "refused", rerunStatus: 403 },
 		});
 		expect(ledger.rows).toHaveLength(1);
 		expect(await autoRetryRun(run(), deps)).toEqual({
 			retried: false,
 			reason: "already_retried",
 		});
+		expect(await ledger.countSince(ACCOUNT, 0)).toBe(0);
+	});
+
+	it("asks again on a redelivery when GitHub gave no answer or a server error, once", async () => {
+		const journal = new InMemoryRouteJournal();
+		await journal.record(decided());
+		const ledger = new InMemoryRetryLedger();
+		const replies = [0, 502, 201];
+		const asked: number[] = [];
+		const { deps } = setup();
+		const flaky: AutoRetryDeps = {
+			...deps,
+			journal,
+			ledger,
+			rerun: async (_repository, jobId) => {
+				asked.push(jobId);
+				const status = replies.shift() ?? 201;
+				return { ok: status === 201, status };
+			},
+		};
+		expect(await autoRetryRun(run(), flaky)).toMatchObject({
+			retried: false,
+			reason: "rerun_failed",
+			status: 0,
+			row: { rerun: "failed" },
+		});
+		expect(await autoRetryRun(run(), flaky)).toMatchObject({
+			retried: false,
+			reason: "rerun_failed",
+			status: 502,
+		});
+		const [third, fourth] = await Promise.all([
+			autoRetryRun(run(), flaky),
+			autoRetryRun(run(), flaky),
+		]);
+		expect([third, fourth].filter((outcome) => outcome.retried)).toHaveLength(
+			1,
+		);
+		expect(asked).toEqual([1, 1, 1]);
+		expect(ledger.rows).toEqual([
+			expect.objectContaining({ rerun: "started", rerunStatus: 201 }),
+		]);
+		expect(await autoRetryRun(run(), flaky)).toEqual({
+			retried: false,
+			reason: "already_retried",
+		});
+	});
+
+	it("finds a run's decision below the first page of a busy repository's journal", async () => {
+		const { deps, journal, reruns } = setup();
+		await journal.record(decided({ jobId: "relay-1" }));
+		for (let index = 0; index < DECISION_READ_LIMIT + 50; index += 1)
+			await journal.record(
+				create(RunnerRouteEventSchema, {
+					...decided({ jobId: `other-${index}` }),
+					atMs: T0 + MINUTE + index,
+					request: create(RunnerRouteRequestSchema, {
+						repository: REPO,
+						runId: 7000 + index,
+						runAttempt: 1,
+						job: "route",
+					}),
+				}),
+			);
+		expect(await autoRetryRun(run(), deps)).toMatchObject({ retried: true });
+		expect(reruns).toHaveLength(1);
+	});
+});
+
+describe("job.retried record", () => {
+	const fixtures = new URL(
+		"../../ci/data-models/fixtures/job_retried/",
+		import.meta.url,
+	);
+
+	it("parses every valid fixture and rejects every invalid one", () => {
+		const valid = readdirSync(new URL("valid/", fixtures));
+		const invalid = readdirSync(new URL("invalid/", fixtures));
+		expect(valid.length).toBeGreaterThan(3);
+		for (const name of valid) {
+			const row = parseJobRetried(
+				readFileSync(new URL(`valid/${name}`, fixtures), "utf8"),
+			);
+			expect(Object.isFrozen(row), name).toBe(true);
+			expect(parseJobRetried(jobRetriedJson(row)), name).toEqual(row);
+		}
+		for (const name of invalid)
+			expect(
+				() =>
+					parseJobRetried(
+						readFileSync(new URL(`invalid/${name}`, fixtures), "utf8"),
+					),
+				name,
+			).toThrow();
+	});
+
+	it("is the generated protobuf record", () => {
+		const row = testJobRetried();
+		expect(row.$typeName).toBe("hobo.ci.v1.JobRetried");
+		expect(JSON.parse(jobRetriedJson(row))).toMatchObject({
+			type: "job.retried",
+			rerun: "pending",
+		});
+		expect(() =>
+			testJobRetried({ rerun: "started", rerunStatus: 403 }),
+		).toThrow(RetryRowRejection);
 	});
 });
 

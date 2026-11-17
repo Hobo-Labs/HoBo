@@ -2078,19 +2078,31 @@ with a failure:
   failed in its own steps is left alone. A run with more than one relay is
   left alone too.
 - The `job.retried` row is written to the retry ledger before GitHub is
-  asked. The ledger keeps one row per repository, run and attempt, so a
-  redelivered `workflow_run` webhook, or two deliveries racing, retries
+  asked. The row is the protobuf record `JobRetried` from `@hobo/ci`
+  (`data-models/job_retried.proto`, constrained by `job_retried.cue`, with
+  fixtures under `fixtures/job_retried/`); `parseJobRetried` and
+  `defineJobRetried` return it checked and frozen, and the ledger stores its
+  protobuf JSON. The ledger keeps one row per repository, run and attempt,
+  so a redelivered `workflow_run` webhook, or two deliveries racing, retries
   once. `SqliteRetryLedger` takes the store's database handle (ADR-0135);
   `retryLedgerConformance` is the ledger's rules.
+- The row then records GitHub's answer: `started` on 201, `refused` on any
+  other answer (final, and counted against neither the per-run maximum nor
+  the daily cap), or `failed` when there was no answer or a server error. A
+  `failed` row is taken back by exactly one later delivery of the webhook,
+  which asks GitHub again for the same relay job.
+- The run's decision is read from the route journal newest first, in pages
+  that grow from `DECISION_READ_LIMIT` until they hold every entry since the
+  run began (at most `DECISION_READ_MAX`), so a busy repository's decision
+  is not missed.
 - The retry re-runs the relay job (`POST .../actions/jobs/{id}/rerun`, which
   re-runs a job and every job that needs it), not the failed job. The relay
   then decides again: `RetryRouteFacts` wraps the relay's facts source and
   gives the next attempt the row's failed step, machine and target, so
   `retryOrder` tries the failed step first (`same`) or last (`other`).
 - The policy's maximum (1 or 2 per run) and `RUNNER_RETRY_DAILY_CAP` per
-  account count the ledger's rows. A failed annotation read is no
-  annotations, and a re-run GitHub refuses keeps its row and is reported,
-  never repeated.
+  account count the ledger's rows that were not refused. A failed
+  annotation read is no annotations.
 
 `hobo ci rerun <run> --reroute` (`packages/hobo/src/ci-rerun-reroute.ts`)
 makes the same re-run by hand: it finds the finished run's relay job (one

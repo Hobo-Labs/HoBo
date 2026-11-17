@@ -13,7 +13,14 @@
  *    deliveries racing, finds the row already there and retries nothing;
  * 2. re-runs the relay job through GitHub (`POST .../actions/jobs/{id}/rerun`,
  *    which re-runs a job and every job that needs it), so the relay decides
- *    afresh and the job behind it runs again on whatever it picks.
+ *    afresh and the job behind it runs again on whatever it picks;
+ * 3. records GitHub's answer on the row: `started`, `refused` (final, and
+ *    counted against no limit) or `failed` (no answer or a server error),
+ *    which one later delivery takes back and asks again.
+ *
+ * The row is the protobuf record `JobRetried` (`@hobo/ci`,
+ * `data-models/job_retried.proto` and `job_retried.cue`), stored as its
+ * protobuf JSON.
  *
  * The fresh decision knows it is a retry: `RetryRouteFacts` wraps the relay's
  * facts source and, for the attempt after a retried one, adds the ledger
@@ -32,8 +39,11 @@
  * 2026-11-17). A job's check run id is its job id.
  */
 import type { DatabaseSync } from "node:sqlite";
+import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import {
 	type FailedJob,
+	type JobRetried as JobRetriedRecord,
+	JobRetriedSchema,
 	MACHINE_DISCONNECT_SLACK_MS,
 	type MachineEvent,
 	orderRetryPolicy,
@@ -62,8 +72,38 @@ import { type GithubTransport, rerunWorkflowJob } from "./github.js";
 // public-contract: the event type a retry row is sent as.
 export const JOB_RETRIED_EVENT = "job.retried";
 
-/** One automatic retry, as the ledger keeps it and the event sink sends it. */
-export type JobRetried = Readonly<{
+/**
+ * What became of a retry's re-run. `pending`: the row is written and GitHub
+ * not yet answered. `started`: GitHub accepted it. `failed`: no answer, or a
+ * server error, so a redelivered webhook may ask again. `refused`: GitHub said
+ * no, which is final and counts against no limit.
+ */
+export const RETRY_RERUN_STATES = [
+	"pending",
+	"started",
+	"failed",
+	"refused",
+] as const;
+export type RetryRerun = (typeof RETRY_RERUN_STATES)[number];
+
+declare const parsedJobRetried: unique symbol;
+
+/**
+ * One automatic retry, as the ledger keeps it and the event sink sends it:
+ * the generated `JobRetried` record (`@hobo/ci` `data-models/job_retried.proto`)
+ * after every rule in `job_retried.cue` held, frozen.
+ */
+export type JobRetried = Readonly<
+	Omit<JobRetriedRecord, "kind" | "target" | "rerun">
+> &
+	Readonly<{
+		kind: RunnerRetryKind;
+		target: RunnerRetryTarget;
+		rerun: RetryRerun;
+	}> & { readonly [parsedJobRetried]: true };
+
+/** A retry row's fields as a caller writes them; the re-run starts `pending`. */
+export type JobRetriedFields = Readonly<{
 	type: typeof JOB_RETRIED_EVENT;
 	accountId: string;
 	repository: string;
@@ -84,66 +124,200 @@ export type JobRetried = Readonly<{
 	/** The machine it ran on; empty when it was not a machine. */
 	failedMachineId: string;
 	atMs: number;
+	rerun?: RetryRerun;
+	/** GitHub's HTTP status for the last ask; zero when there was no answer. */
+	rerunStatus?: number;
 }>;
 
-/**
- * Where retries are written before they happen. One row per repository, run
- * and attempt: `claim` writes it and answers true, or finds one already there
- * and answers false without changing it.
- */
-export interface RetryLedger {
-	claim(row: JobRetried): Promise<boolean>;
-	/** The run's rows, oldest attempt first. Repository case is ignored. */
-	forRun(repository: string, runId: number): Promise<readonly JobRetried[]>;
-	/** How many rows the account has at or after `sinceMs`. */
-	countSince(accountId: string, sinceMs: number): Promise<number>;
+/** A retry row broke one of its rules. The message names the rule. */
+export class RetryRowRejection extends Error {
+	override readonly name = "RetryRowRejection";
 }
 
-const JobRetriedSchema = z
-	.object({
-		type: z.literal(JOB_RETRIED_EVENT),
-		accountId: z.string().min(1),
-		repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/u),
-		runId: z.number().int().positive(),
-		attempt: z.number().int().positive(),
-		relayJobId: z.number().int().positive(),
-		relayJob: z.string().min(1),
-		jobId: z.number().int().positive(),
-		jobName: z.string().min(1),
-		kind: z.enum(RUNNER_RETRY_KINDS),
-		target: z.enum(RUNNER_RETRY_TARGETS),
-		failedStep: z.string(),
-		failedMachineId: z.string(),
-		atMs: z.number().int().positive(),
-	})
-	.strict()
-	.readonly();
+const REPOSITORY = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/u;
+const RELAY_JOB_ID = /^[A-Za-z_][A-Za-z0-9_-]{0,99}$/u;
 
-/** A retry row, checked and frozen. Throws a `ZodError` naming the broken field. */
-export function defineJobRetried(row: JobRetried): JobRetried {
-	return Object.freeze(JobRetriedSchema.parse(row));
+function need(ok: boolean, problem: string): void {
+	if (!ok) throw new RetryRowRejection(problem);
+}
+
+function positiveInteger(value: number): boolean {
+	return Number.isSafeInteger(value) && value > 0;
+}
+
+function oneOf<T extends string>(
+	values: readonly T[],
+	value: string,
+): value is T {
+	return values.some((entry) => entry === value);
+}
+
+/** The re-run state GitHub's answer puts a row in. */
+export function rerunStateOf(status: number): RetryRerun {
+	if (status === 201) return "started";
+	return status === 0 || status >= 500 ? "failed" : "refused";
+}
+
+function rerunStatusFits(rerun: RetryRerun, status: number): boolean {
+	switch (rerun) {
+		case "pending":
+			return status === 0;
+		case "started":
+			return status === 201;
+		case "failed":
+			return status === 0 || (status >= 500 && status <= 599);
+		case "refused":
+			return status >= 200 && status <= 499 && status !== 201;
+	}
+}
+
+function checked(record: JobRetriedRecord): JobRetried {
+	need(record.type === JOB_RETRIED_EVENT, `type must be ${JOB_RETRIED_EVENT}`);
+	need(record.accountId !== "", "accountId is empty");
+	need(REPOSITORY.test(record.repository), "repository is not owner/name");
+	need(positiveInteger(record.runId), "runId is not a positive integer");
+	need(
+		Number.isSafeInteger(record.attempt) &&
+			record.attempt >= 1 &&
+			record.attempt <= 1000,
+		"attempt is not between 1 and 1000",
+	);
+	need(
+		positiveInteger(record.relayJobId),
+		"relayJobId is not a positive integer",
+	);
+	need(RELAY_JOB_ID.test(record.relayJob), "relayJob is not a job id");
+	need(positiveInteger(record.jobId), "jobId is not a positive integer");
+	need(record.jobName !== "", "jobName is empty");
+	need(positiveInteger(record.atMs), "atMs is not a positive integer");
+	const { kind, target, rerun } = record;
+	need(oneOf(RUNNER_RETRY_KINDS, kind), `kind ${kind} is not a retry kind`);
+	need(
+		oneOf(RUNNER_RETRY_TARGETS, target),
+		`target ${target} is not a retry target`,
+	);
+	need(oneOf(RETRY_RERUN_STATES, rerun), `rerun ${rerun} is not a state`);
+	need(
+		oneOf(RETRY_RERUN_STATES, rerun) &&
+			rerunStatusFits(rerun, record.rerunStatus),
+		`rerun ${rerun} does not go with status ${record.rerunStatus}`,
+	);
+	Object.freeze(record);
+	// SAFETY: every rule of job_retried.cue held just above, kind, target and
+	// rerun among them, and the record is frozen.
+	return record as JobRetried;
+}
+
+/** A retry row, checked and frozen. Throws `RetryRowRejection` naming the broken rule. */
+export function defineJobRetried(
+	fields: JobRetriedFields | JobRetried,
+): JobRetried {
+	return checked(
+		create(JobRetriedSchema, {
+			...fields,
+			rerun: fields.rerun ?? "pending",
+			rerunStatus: fields.rerunStatus ?? 0,
+		}),
+	);
+}
+
+/** A retry row from its protobuf JSON, as the ledger stores and the sink sends it. */
+export function parseJobRetried(json: string): JobRetried {
+	return checked(fromJsonString(JobRetriedSchema, json));
+}
+
+/** The row's canonical encoding: protobuf JSON. */
+export function jobRetriedJson(row: JobRetried): string {
+	return toJsonString(JobRetriedSchema, row);
+}
+
+function settled(row: JobRetried, status: number): JobRetried {
+	return defineJobRetried({
+		...row,
+		rerun: rerunStateOf(status),
+		rerunStatus: status,
+	});
 }
 
 function runKey(repository: string, runId: number): string {
 	return `${repository.toLowerCase()}#${runId}`;
 }
 
+/**
+ * Where retries are written before they happen. One row per repository, run
+ * and attempt: `claim` writes it and answers true, or finds one already there
+ * and answers false without changing it. Repository case is ignored.
+ */
+export interface RetryLedger {
+	claim(row: JobRetried): Promise<boolean>;
+	/**
+	 * Record GitHub's answer on a `pending` row and return the row as kept. A
+	 * row in any other state is returned unchanged; a missing one is undefined.
+	 */
+	settle(
+		repository: string,
+		runId: number,
+		attempt: number,
+		status: number,
+	): Promise<JobRetried | undefined>;
+	/**
+	 * Take a `failed` row back to `pending`, so exactly one delivery asks GitHub
+	 * again. False when the row is in any other state or missing.
+	 */
+	reclaim(repository: string, runId: number, attempt: number): Promise<boolean>;
+	/** The run's rows, oldest attempt first. */
+	forRun(repository: string, runId: number): Promise<readonly JobRetried[]>;
+	/** How many rows the account has at or after `sinceMs`, refused ones left out. */
+	countSince(accountId: string, sinceMs: number): Promise<number>;
+}
+
 /** Rows in memory; for tests and a relay with no database. */
 export class InMemoryRetryLedger implements RetryLedger {
 	readonly rows: JobRetried[] = [];
 
+	private index(repository: string, runId: number, attempt: number): number {
+		const key = runKey(repository, runId);
+		return this.rows.findIndex(
+			(kept) =>
+				runKey(kept.repository, kept.runId) === key && kept.attempt === attempt,
+		);
+	}
+
 	async claim(row: JobRetried): Promise<boolean> {
 		const parsed = defineJobRetried(row);
-		const key = runKey(parsed.repository, parsed.runId);
-		if (
-			this.rows.some(
-				(kept) =>
-					runKey(kept.repository, kept.runId) === key &&
-					kept.attempt === parsed.attempt,
-			)
-		)
+		if (this.index(parsed.repository, parsed.runId, parsed.attempt) !== -1)
 			return false;
 		this.rows.push(parsed);
+		return true;
+	}
+
+	async settle(
+		repository: string,
+		runId: number,
+		attempt: number,
+		status: number,
+	): Promise<JobRetried | undefined> {
+		const at = this.index(repository, runId, attempt);
+		const kept = this.rows[at];
+		if (!kept || kept.rerun !== "pending") return kept;
+		const next = settled(kept, status);
+		this.rows[at] = next;
+		return next;
+	}
+
+	async reclaim(
+		repository: string,
+		runId: number,
+		attempt: number,
+	): Promise<boolean> {
+		const at = this.index(repository, runId, attempt);
+		const kept = this.rows[at];
+		if (!kept || kept.rerun !== "failed") return false;
+		this.rows[at] = defineJobRetried({
+			...kept,
+			rerun: "pending",
+			rerunStatus: 0,
+		});
 		return true;
 	}
 
@@ -159,7 +333,10 @@ export class InMemoryRetryLedger implements RetryLedger {
 
 	async countSince(accountId: string, sinceMs: number): Promise<number> {
 		return this.rows.filter(
-			(row) => row.accountId === accountId && row.atMs >= sinceMs,
+			(row) =>
+				row.accountId === accountId &&
+				row.atMs >= sinceMs &&
+				row.rerun !== "refused",
 		).length;
 	}
 }
@@ -170,6 +347,7 @@ const LEDGER_SCHEMA = `CREATE TABLE IF NOT EXISTS job_retried (
   attempt INTEGER NOT NULL,
   account_id TEXT NOT NULL,
   at_ms INTEGER NOT NULL,
+  rerun TEXT NOT NULL,
   body TEXT NOT NULL,
   PRIMARY KEY (repository, run_id, attempt)
 );
@@ -184,8 +362,9 @@ const ChangeCount = z.union([z.number(), z.bigint()]).transform(Number);
 /**
  * The ledger on SQLite (ADR-0135). It takes the store's existing database
  * handle, so the rows live in the relay's one partition with its one writer.
- * A claim is one `INSERT ... ON CONFLICT DO NOTHING`, so two deliveries
- * racing through one handle still write one row and only one sees true.
+ * A row's body is its protobuf JSON. A claim is one `INSERT ... ON CONFLICT DO
+ * NOTHING` and a state change one `UPDATE ... WHERE rerun = <expected>`, so two
+ * deliveries racing through one handle still see one winner.
  */
 export class SqliteRetryLedger implements RetryLedger {
 	constructor(private readonly db: DatabaseSync) {
@@ -196,8 +375,8 @@ export class SqliteRetryLedger implements RetryLedger {
 		const parsed = defineJobRetried(row);
 		const result = this.db
 			.prepare(
-				`INSERT INTO job_retried (repository, run_id, attempt, account_id, at_ms, body)
-         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(repository, run_id, attempt) DO NOTHING`,
+				`INSERT INTO job_retried (repository, run_id, attempt, account_id, at_ms, rerun, body)
+         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repository, run_id, attempt) DO NOTHING`,
 			)
 			.run(
 				parsed.repository.toLowerCase(),
@@ -205,9 +384,69 @@ export class SqliteRetryLedger implements RetryLedger {
 				parsed.attempt,
 				parsed.accountId,
 				parsed.atMs,
-				JSON.stringify(parsed),
+				parsed.rerun,
+				jobRetriedJson(parsed),
 			);
 		return ChangeCount.parse(result.changes) === 1;
+	}
+
+	private row(
+		repository: string,
+		runId: number,
+		attempt: number,
+	): JobRetried | undefined {
+		const found = this.db
+			.prepare(
+				"SELECT body FROM job_retried WHERE repository = ? AND run_id = ? AND attempt = ?",
+			)
+			.get(repository.toLowerCase(), runId, attempt);
+		return found === undefined
+			? undefined
+			: parseJobRetried(BodyRow.parse(found).body);
+	}
+
+	private replace(row: JobRetried, expected: RetryRerun): boolean {
+		const result = this.db
+			.prepare(
+				`UPDATE job_retried SET rerun = ?, body = ?
+         WHERE repository = ? AND run_id = ? AND attempt = ? AND rerun = ?`,
+			)
+			.run(
+				row.rerun,
+				jobRetriedJson(row),
+				row.repository.toLowerCase(),
+				row.runId,
+				row.attempt,
+				expected,
+			);
+		return ChangeCount.parse(result.changes) === 1;
+	}
+
+	async settle(
+		repository: string,
+		runId: number,
+		attempt: number,
+		status: number,
+	): Promise<JobRetried | undefined> {
+		const kept = this.row(repository, runId, attempt);
+		if (!kept || kept.rerun !== "pending") return kept;
+		const next = settled(kept, status);
+		return this.replace(next, "pending")
+			? next
+			: this.row(repository, runId, attempt);
+	}
+
+	async reclaim(
+		repository: string,
+		runId: number,
+		attempt: number,
+	): Promise<boolean> {
+		const kept = this.row(repository, runId, attempt);
+		if (!kept || kept.rerun !== "failed") return false;
+		return this.replace(
+			defineJobRetried({ ...kept, rerun: "pending", rerunStatus: 0 }),
+			"failed",
+		);
 	}
 
 	async forRun(
@@ -219,17 +458,13 @@ export class SqliteRetryLedger implements RetryLedger {
 				"SELECT body FROM job_retried WHERE repository = ? AND run_id = ? ORDER BY attempt",
 			)
 			.all(repository.toLowerCase(), runId)
-			.map((row) =>
-				defineJobRetried(
-					JobRetriedSchema.parse(JSON.parse(BodyRow.parse(row).body)),
-				),
-			);
+			.map((row) => parseJobRetried(BodyRow.parse(row).body));
 	}
 
 	async countSince(accountId: string, sinceMs: number): Promise<number> {
 		const row = this.db
 			.prepare(
-				"SELECT COUNT(*) AS count FROM job_retried WHERE account_id = ? AND at_ms >= ?",
+				"SELECT COUNT(*) AS count FROM job_retried WHERE account_id = ? AND at_ms >= ? AND rerun <> 'refused'",
 			)
 			.get(accountId, sinceMs);
 		return CountRow.parse(row).count;
@@ -246,7 +481,9 @@ function rule(ok: boolean, text: string): void {
 }
 
 /** A retry row for tests: attempt 1 of run 9001 in `octo/app`, overridable field by field. */
-export function testJobRetried(init: Partial<JobRetried> = {}): JobRetried {
+export function testJobRetried(
+	init: Partial<JobRetriedFields> = {},
+): JobRetried {
 	return defineJobRetried({
 		type: JOB_RETRIED_EVENT,
 		accountId: "acct-1",
@@ -266,7 +503,11 @@ export function testJobRetried(init: Partial<JobRetried> = {}): JobRetried {
 	});
 }
 
-/** A retry ledger keeps its rules: one row per attempt, scoped reads, counted by account and time. */
+/**
+ * A retry ledger keeps its rules: one row per attempt, scoped reads, the
+ * re-run's state moving only forward from `pending` (and from `failed` back to
+ * `pending` once), counted by account and time with refused rows left out.
+ */
 export async function retryLedgerConformance(
 	make: () => RetryLedger | Promise<RetryLedger>,
 ): Promise<void> {
@@ -295,6 +536,7 @@ export async function retryLedgerConformance(
 		"a run's rows come back oldest attempt first, the first claim kept",
 	);
 	rule(rows[0]?.atMs === 1_000, "a refused claim changes nothing");
+	rule(rows[0]?.rerun === "pending", "a claimed row starts pending");
 	rule(Object.isFrozen(rows[0]), "rows come back frozen");
 	rule(
 		(await ledger.countSince("acct-1", 0)) === 3,
@@ -303,6 +545,42 @@ export async function retryLedgerConformance(
 	rule(
 		(await ledger.countSince("acct-1", 2_000)) === 2,
 		"the count starts at sinceMs",
+	);
+	rule(
+		!(await ledger.reclaim("octo/app", 9001, 1)),
+		"a pending row cannot be reclaimed",
+	);
+	const failed = await ledger.settle("Octo/App", 9001, 1, 503);
+	rule(
+		failed?.rerun === "failed" && failed.rerunStatus === 503,
+		"a server error leaves the row failed",
+	);
+	rule(
+		await ledger.reclaim("octo/app", 9001, 1),
+		"a failed row is reclaimed once",
+	);
+	rule(
+		!(await ledger.reclaim("octo/app", 9001, 1)),
+		"a reclaimed row is not reclaimed again",
+	);
+	const started = await ledger.settle("octo/app", 9001, 1, 201);
+	rule(started?.rerun === "started", "a 201 starts the row");
+	rule(
+		(await ledger.settle("octo/app", 9001, 1, 403))?.rerun === "started",
+		"a settled row keeps its state",
+	);
+	rule(
+		(await ledger.settle("octo/app", 9001, 7, 201)) === undefined,
+		"settling a missing row finds nothing",
+	);
+	await ledger.settle("octo/app", 9002, 1, 403);
+	rule(
+		(await ledger.forRun("octo/app", 9002))[0]?.rerun === "refused",
+		"a 4xx refuses the row",
+	);
+	rule(
+		(await ledger.countSince("acct-1", 0)) === 2,
+		"refused rows are left out of the count",
 	);
 }
 
@@ -411,9 +689,15 @@ const FAILED = new Set(["failure", "timed_out"]);
 /** How far back from a run's creation its relay's decision is looked for. */
 // public-contract: clock slack between GitHub's run time and the relay's journal time.
 export const DECISION_LOOKBACK_MS = 10 * 60_000;
-/** Journal entries read to find one run's decisions. */
-// public-contract: the most route journal entries one retry reads.
+/** Journal entries read first to find one run's decisions. */
+// public-contract: the first page of route journal entries one retry reads.
 export const DECISION_READ_LIMIT = 500;
+/**
+ * The most entries one retry reads: the read grows from `DECISION_READ_LIMIT`
+ * until it holds every entry since the run began, or reaches this.
+ */
+// public-contract: the most route journal entries one retry reads.
+export const DECISION_READ_MAX = 32_000;
 
 export type AutoRetryDeps = Readonly<{
 	/** The HoBo account whose journal and ledger these are. */
@@ -439,8 +723,12 @@ export type AutoRetryOutcome =
 	| Readonly<{ retried: true; row: JobRetried; status: number }>
 	| Readonly<{
 			retried: false;
-			/** GitHub refused the re-run after the row was written. */
-			reason: "rerun_refused";
+			/**
+			 * After the row was written, GitHub refused the re-run (final; the row
+			 * counts against no limit), or gave no answer or a server error (the
+			 * row is `failed`, and a redelivered webhook asks again once).
+			 */
+			reason: "rerun_refused" | "rerun_failed";
 			row: JobRetried;
 			status: number;
 	  }>
@@ -459,20 +747,33 @@ async function runDecisions(
 	run: InsightRun,
 	deps: AutoRetryDeps,
 ): Promise<readonly RunnerRouteEvent[]> {
-	const events = await deps.journal.decisions({
-		accountId: deps.accountId,
-		repository: run.repository,
-		sinceMs: run.createdAtMs - DECISION_LOOKBACK_MS,
-		limit: DECISION_READ_LIMIT,
-	});
+	// The journal reads newest first and has no cursor, so in a busy repository
+	// the run's decision can sit below the first page: read a larger page until
+	// it holds every entry since the run began.
+	let limit = DECISION_READ_LIMIT;
+	let events: readonly RunnerRouteEvent[];
+	for (;;) {
+		events = await deps.journal.decisions({
+			accountId: deps.accountId,
+			repository: run.repository,
+			sinceMs: run.createdAtMs - DECISION_LOOKBACK_MS,
+			limit,
+		});
+		if (events.length < limit || limit >= DECISION_READ_MAX) break;
+		limit = Math.min(limit * 4, DECISION_READ_MAX);
+	}
 	const byJob = new Map<string, RunnerRouteEvent>();
-	for (const event of events)
+	for (const event of events) {
 		if (
-			event.type === "runner.route.Decided" &&
-			event.request?.runId === run.id &&
-			event.request.runAttempt === run.attempt
+			event.type !== "runner.route.Decided" ||
+			event.request?.runId !== run.id ||
+			event.request.runAttempt !== run.attempt
 		)
-			byJob.set(event.jobId === "" ? `#${byJob.size}` : event.jobId, event);
+			continue;
+		const key = event.jobId === "" ? `#${byJob.size}` : event.jobId;
+		// Newest first: the first entry for a relay job is its latest decision.
+		if (!byJob.has(key)) byJob.set(key, event);
+	}
 	return [...byJob.values()];
 }
 
@@ -551,12 +852,21 @@ export async function autoRetryRun(
 		facts.find(({ failed }) => retryKind(failed) === undefined) ?? facts[0];
 	if (!chosen) return { retried: false, reason: "no_routed_failure" };
 	const rows = await deps.ledger.forRun(run.repository, run.id);
-	if (rows.some((row) => row.attempt === run.attempt))
+	const kept = rows.find((row) => row.attempt === run.attempt);
+	if (kept) {
+		// GitHub never answered, or failed: the policy already allowed this
+		// retry, so the one delivery that takes the row back asks again.
+		if (
+			kept.rerun === "failed" &&
+			(await deps.ledger.reclaim(run.repository, run.id, run.attempt))
+		)
+			return rerunRelay(kept, deps);
 		return { retried: false, reason: "already_retried" };
+	}
 	const verdict = retryVerdict(orderRetryPolicy(lookup.order), {
 		job: chosen.failed,
 		relaysInRun: Math.max(relays.length, decisions.length),
-		retriesThisRun: rows.length,
+		retriesThisRun: rows.filter((row) => row.rerun !== "refused").length,
 		retriesToday: await deps.ledger.countSince(
 			deps.accountId,
 			utcDayStartMs(deps.nowMs),
@@ -581,10 +891,31 @@ export async function autoRetryRun(
 	});
 	if (!(await deps.ledger.claim(row)))
 		return { retried: false, reason: "already_retried" };
-	const reply = await deps.rerun(run.repository, relay.id);
-	return reply.ok
-		? { retried: true, row, status: reply.status }
-		: { retried: false, reason: "rerun_refused", row, status: reply.status };
+	return rerunRelay(row, deps);
+}
+
+/** Ask GitHub to re-run a claimed row's relay job and record its answer on the row. */
+async function rerunRelay(
+	row: JobRetried,
+	deps: AutoRetryDeps,
+): Promise<AutoRetryOutcome> {
+	const reply = await deps.rerun(row.repository, row.relayJobId);
+	const status = reply.ok ? 201 : reply.status === 201 ? 0 : reply.status;
+	const kept =
+		(await deps.ledger.settle(
+			row.repository,
+			row.runId,
+			row.attempt,
+			status,
+		)) ?? row;
+	if (kept.rerun === "started")
+		return { retried: true, row: kept, status: reply.status };
+	return {
+		retried: false,
+		reason: kept.rerun === "refused" ? "rerun_refused" : "rerun_failed",
+		row: kept,
+		status: reply.status,
+	};
 }
 
 // --- The retry in the fresh decision ------------------------------------
@@ -601,7 +932,10 @@ export async function routeRetryFor(
 	if (request.runAttempt <= 1) return undefined;
 	const row = (await ledger.forRun(request.repository, request.runId)).find(
 		(kept) =>
-			kept.attempt === request.runAttempt - 1 && kept.relayJob === request.job,
+			kept.attempt === request.runAttempt - 1 &&
+			kept.relayJob === request.job &&
+			// A refused re-run started nothing; a later attempt is someone's own.
+			kept.rerun !== "refused",
 	);
 	if (!row) return undefined;
 	return {
