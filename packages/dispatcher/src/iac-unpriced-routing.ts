@@ -1,4 +1,6 @@
+import { types as utilTypes } from "node:util";
 import {
+	areBoundedPricingInputs,
 	hashTargetPricingInventory,
 	isBoundedPricingInput,
 	quoteTargetPricing,
@@ -10,6 +12,11 @@ import {
 	type IacRoutePermit,
 	runIacRoute,
 } from "./iac-route.js";
+import {
+	applyHostCallback,
+	ownDataField,
+	ownDataFields,
+} from "./iac-untrusted.js";
 
 export interface UnpricedIacExpectation {
 	readonly kind: "unpriced";
@@ -115,12 +122,87 @@ function name(value: string, limit = 200): boolean {
 function snapshotAdmission(value: unknown): Admission | undefined {
 	try {
 		if (
+			!areBoundedPricingInputs([value]) ||
 			!isBoundedPricingInput(value) ||
 			typeof value !== "object" ||
 			value === null ||
 			Array.isArray(value)
 		)
 			return undefined;
+		const fields = ownDataFields(value, [
+			"requestId",
+			"targetId",
+			"status",
+			"code",
+			"message",
+			"requestDigest",
+			"inventoryHash",
+			"modelHash",
+			"quoteHash",
+			"quote",
+			"budget",
+			"reservation",
+			"unpricedPolicyProof",
+		]);
+		if (
+			fields === undefined ||
+			ownDataFields(fields.budget, ["evaluation", "reservation"]) === undefined
+		)
+			return undefined;
+		if (fields.reservation !== undefined) {
+			const reservation = ownDataFields(fields.reservation, [
+				"reservationId",
+				"unboundedExposure",
+				"unpricedScopeProof",
+			]);
+			if (reservation === undefined) return undefined;
+			if (reservation.unpricedScopeProof !== undefined) {
+				const scope = ownDataFields(reservation.unpricedScopeProof, [
+					"identity",
+					"providerAccountIds",
+					"authorityRef",
+					"evidenceRef",
+					"ownershipEpoch",
+					"observedAt",
+					"signature",
+					"exclusiveUntilSettled",
+					"noSharedEntitlements",
+				]);
+				if (
+					scope === undefined ||
+					ownDataFields(scope.identity, [
+						"tenantId",
+						"budgetId",
+						"periodId",
+						"policyRevision",
+					]) === undefined
+				)
+					return undefined;
+			}
+		}
+		if (fields.unpricedPolicyProof !== undefined) {
+			const policy = ownDataFields(fields.unpricedPolicyProof, [
+				"requestDigest",
+				"inventoryHash",
+				"identity",
+				"policyHash",
+				"evidenceRef",
+				"effect",
+				"obligationsSatisfied",
+				"observedAt",
+				"validUntil",
+			]);
+			if (
+				policy === undefined ||
+				ownDataFields(policy.identity, [
+					"tenantId",
+					"budgetId",
+					"periodId",
+					"policyRevision",
+				]) === undefined
+			)
+				return undefined;
+		}
 		// SAFETY: every field used from the detached bounded snapshot is validated before use.
 		const row = structuredClone(value) as Admission;
 		if (
@@ -150,7 +232,12 @@ function snapshotAdmission(value: unknown): Admission | undefined {
 
 function snapshotOutputs(value: unknown): Record<string, string> | undefined {
 	try {
-		if (typeof value !== "object" || value === null || Array.isArray(value))
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			utilTypes.isProxy(value) ||
+			Array.isArray(value)
+		)
 			return undefined;
 		const prototype = Object.getPrototypeOf(value);
 		if (
@@ -194,41 +281,18 @@ interface ProviderFailure {
 /* oxlint-disable anti-slop/no-unknown-returns -- SAFETY: the local descriptor reader passes opaque values directly to boundary validation. */
 function readFailure(error: unknown): ProviderFailure {
 	try {
-		if (typeof error !== "object" || error === null)
-			return { admission: undefined, requiresReconciliation: true };
-		const data = Object.getOwnPropertyDescriptors(error);
-		const read = (key: string): unknown => {
-			const field = data[key];
-			if (field === undefined) return undefined;
-			if (!("value" in field)) throw new Error("provider error accessor");
-			return field.value;
-		};
-		const admission = snapshotAdmission(read("admission"));
-		const reconciliation = read("requiresReconciliation");
-		const id = read("reservationId");
-		const executionOutcome = read("executionOutcome");
-		if (
-			executionOutcome !== undefined &&
-			executionOutcome !== "not-started" &&
-			executionOutcome !== "completed" &&
-			executionOutcome !== "unknown"
-		)
-			return { admission: undefined, requiresReconciliation: true };
-		if (
-			id !== undefined &&
-			(typeof id !== "string" ||
-				id.length > 204 ||
-				id.length === 0 ||
-				id.trim() !== id ||
-				/[\p{Cc}]/u.test(id))
-		)
-			return { admission: undefined, requiresReconciliation: true };
+		const admission = snapshotAdmission(ownDataField(error, "admission"));
+		const reconciliation = ownDataField(error, "requiresReconciliation");
+		const id = ownDataField(error, "reservationId");
+		const executionOutcome = ownDataField(error, "executionOutcome");
 		const result: ProviderFailure = {
 			admission,
 			requiresReconciliation:
-				reconciliation !== false || executionOutcome !== "not-started",
+				reconciliation !== false ||
+				executionOutcome !== "not-started" ||
+				id !== undefined,
 		};
-		if (typeof id === "string") result.reservationId = id;
+		if (typeof id === "string" && name(id, 204)) result.reservationId = id;
 		if (
 			executionOutcome === "not-started" ||
 			executionOutcome === "completed" ||
@@ -306,8 +370,7 @@ function validHeld(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-/** An explicit policy-directed single-target route: no cost rank or implicit fallback. */
-export async function executeUnpricedIacTarget(input: {
+export interface UnpricedIacExecutionInput {
 	readonly authority: IacRouteAuthority;
 	readonly tenantId: string;
 	readonly requestId: string;
@@ -323,7 +386,61 @@ export async function executeUnpricedIacTarget(input: {
 		expected: UnpricedIacExpectation,
 		permit: IacRoutePermit,
 	) => Promise<{ outputs: Record<string, string>; admission: Admission }>;
-}): Promise<UnpricedIacRoutingResult> {
+}
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: caller-owned routing inputs are inspected before a route is claimed. */
+function snapshotUnpricedExecutionInput(
+	input: UnpricedIacExecutionInput,
+): UnpricedIacExecutionInput | undefined {
+	try {
+		const fields = ownDataFields(input, [
+			"authority",
+			"tenantId",
+			"requestId",
+			"operation",
+			"inventory",
+			"pricing",
+			"run",
+		]);
+		if (
+			fields === undefined ||
+			typeof fields.tenantId !== "string" ||
+			!name(fields.tenantId) ||
+			typeof fields.requestId !== "string" ||
+			!name(fields.requestId) ||
+			typeof fields.run !== "function" ||
+			!areBoundedPricingInputs([
+				fields.operation,
+				fields.inventory,
+				fields.pricing,
+			]) ||
+			!isBoundedPricingInput(fields.operation) ||
+			!isBoundedPricingInput(fields.inventory) ||
+			!isBoundedPricingInput(fields.pricing)
+		)
+			return undefined;
+		// SAFETY: the route and pricing layers validate the detached values; the authority and callback are trusted host capabilities.
+		return {
+			authority: fields.authority as IacRouteAuthority,
+			tenantId: fields.tenantId,
+			requestId: fields.requestId,
+			operation: structuredClone(
+				fields.operation,
+			) as UnpricedIacExecutionInput["operation"],
+			inventory: structuredClone(fields.inventory) as TargetPricingInventory,
+			pricing: structuredClone(fields.pricing) as TargetPricingAvailability,
+			run: fields.run as UnpricedIacExecutionInput["run"],
+		};
+	} catch {
+		return undefined;
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
+
+/** An explicit policy-directed single-target route: no cost rank or implicit fallback. */
+export async function executeUnpricedIacTarget(
+	raw: UnpricedIacExecutionInput,
+): Promise<UnpricedIacRoutingResult> {
 	const pricing = { status: "not-assessed" as const };
 	const notEvaluated = {
 		evaluation: "not-evaluated",
@@ -333,6 +450,14 @@ export async function executeUnpricedIacTarget(input: {
 		evaluation: "unavailable",
 		reservation: "unknown",
 	} as const;
+	const input = snapshotUnpricedExecutionInput(raw);
+	if (input === undefined)
+		return {
+			status: "uncertain",
+			code: "ROUTING_INPUT_UNINSPECTABLE",
+			pricing,
+			budget: unknown,
+		};
 	const routed = await runIacRoute({
 		authority: input.authority,
 		tenantId: input.tenantId,
@@ -375,14 +500,14 @@ export async function executeUnpricedIacTarget(input: {
 			let returned = false;
 			let failure: ReturnType<typeof readFailure> | undefined;
 			try {
-				const result = await input.run(
+				const result = await applyHostCallback(input.run, raw, [
 					input.requestId,
 					{ kind: "unpriced", targetId, inventoryHash },
 					permit,
-				);
+				]);
 				returned = true;
-				admission = snapshotAdmission(result.admission);
-				outputs = snapshotOutputs(result.outputs);
+				admission = snapshotAdmission(ownDataField(result, "admission"));
+				outputs = snapshotOutputs(ownDataField(result, "outputs"));
 			} catch (error) {
 				failure = readFailure(error);
 				admission = failure.admission;

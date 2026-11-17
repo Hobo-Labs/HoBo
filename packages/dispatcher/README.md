@@ -80,7 +80,8 @@ for one logical request must use the same route authority, even when they use
 different financial authorities. The host must also establish any shared
 provider-account or entitlement ownership required by its budget authorities.
 
-Priced execution snapshots caller data before the route claim. Denial evidence must
+Priced and explicit unpriced execution snapshot caller data before the route
+claim. Denial evidence must
 be own data fields; accessors, proxies, and inherited or uninspectable
 reservation fields keep the result uncertain and stop fallback. A safely
 identified held reservation remains visible if outputs are uninspectable.
