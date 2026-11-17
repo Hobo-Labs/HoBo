@@ -25,13 +25,30 @@ export type JsonObject = Record<string, JsonValue>;
 /** Bound work before traversing caller-supplied pricing trees or decoding them. */
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this is the untrusted input boundary; primitive type checks precede bounded traversal and protobuf parsing. */
 export function isBoundedPricingInput<T>(input: T): boolean {
-	let remaining = 25_000;
+	return inspectPricingInput(input, 25_000, Number.POSITIVE_INFINITY);
+}
+
+/** Bound a group together, counting repeated references each time they occur. */
+export function areBoundedPricingInputs<T>(inputs: readonly T[]): boolean {
+	return inspectPricingInput(inputs, 100_000, 4_000_000);
+}
+
+function inspectPricingInput<T>(
+	input: T,
+	nodeLimit: number,
+	textUnitLimit: number,
+): boolean {
+	let remaining = nodeLimit;
+	let textUnits = textUnitLimit;
 	const ancestors = new Set<object>();
 	function visit<V>(value: V, depth: number): boolean {
 		if (--remaining < 0 || depth > 48) return false;
 		if (value === null || value === undefined || typeof value === "boolean")
 			return true;
-		if (typeof value === "string") return value.length <= 4096;
+		if (typeof value === "string") {
+			textUnits -= value.length;
+			return value.length <= 4096 && textUnits >= 0;
+		}
 		if (typeof value === "number") return Number.isFinite(value);
 		if (typeof value === "bigint") return value.toString().length <= 128;
 		if (
@@ -56,8 +73,10 @@ export function isBoundedPricingInput<T>(input: T): boolean {
 			}
 			for (const [key, descriptor] of Object.entries(properties)) {
 				if (Array.isArray(value) && key === "length") continue;
+				textUnits -= key.length;
 				if (
 					key.length > 200 ||
+					textUnits < 0 ||
 					!("value" in descriptor) ||
 					!descriptor.enumerable ||
 					!visit(descriptor.value, depth + 1)
