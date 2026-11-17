@@ -49,7 +49,14 @@ import {
 	subtractDecimal,
 } from "./decimal.js";
 import { compareCodeUnits, type TextComparison } from "./order.js";
-import { PricingFault, scopeMatches, workingState } from "./state.js";
+import {
+	compareUtcExact,
+	EXACT_TIME,
+	PricingFault,
+	scopeMatches,
+	type TemporalPolicy,
+	workingState,
+} from "./state.js";
 import { convertQuantity } from "./units.js";
 
 export type RatedSnapshot = {
@@ -191,7 +198,9 @@ function roundQuantity(
 function aggregateMeasurements(
 	meter: MeterDefinition,
 	entries: readonly { delta: WorkloadDelta; measurement: UsageMeasurement }[],
-	compareStrings: TextComparison,
+	compareTimes: TextComparison,
+	time: TemporalPolicy,
+	strictTimes: boolean,
 ): Quantity {
 	if (meter.aggregation === "unique-count") {
 		const values = new Set<string>();
@@ -241,8 +250,14 @@ function aggregateMeasurements(
 	});
 	let aggregate: Quantity;
 	if (meter.aggregation === "latest") {
+		if (strictTimes)
+			for (const entry of roundedEntries)
+				time.parse(
+					entry.entry.measurement.observedAt,
+					"measurement.observedAt",
+				);
 		const latest = [...roundedEntries].sort((left, right) =>
-			compareStrings(
+			compareTimes(
 				right.entry.measurement.observedAt,
 				left.entry.measurement.observedAt,
 			),
@@ -749,6 +764,9 @@ export function rateSnapshot(
 	scenario: QuoteScenario,
 	workloads: readonly WorkloadDelta[],
 	compareStrings: TextComparison = compareCodeUnits,
+	compareTimes: TextComparison = compareUtcExact,
+	time: TemporalPolicy = EXACT_TIME,
+	strictTimes = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -758,7 +776,11 @@ export function rateSnapshot(
 			"state and catalog are required",
 		);
 	}
-	const state = workingState(stateView, compareStrings);
+	const state = workingState(
+		stateView,
+		compareStrings,
+		strictTimes ? compareTimes : null,
+	);
 	const lines: MutableLine[] = [];
 	const consumption: Consumption[] = [];
 	let nominal = DECIMAL_ZERO;
@@ -777,7 +799,8 @@ export function rateSnapshot(
 			agreement,
 			scenario.at,
 			scenario.horizon,
-			compareStrings,
+			compareTimes,
+			time,
 		);
 		if (currency === "") currency = rateCard.currency;
 		if (currency !== rateCard.currency)
@@ -852,7 +875,13 @@ export function rateSnapshot(
 					`no charge for ${meter.dimension}`,
 				);
 			}
-			const measured = aggregateMeasurements(meter, entries, compareStrings);
+			const measured = aggregateMeasurements(
+				meter,
+				entries,
+				compareTimes,
+				time,
+				strictTimes,
+			);
 			for (const charge of charges) {
 				if (charge.variant.case !== "usage" || charge.base === undefined)
 					continue;

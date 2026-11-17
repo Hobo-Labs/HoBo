@@ -9,15 +9,17 @@ import {
 import { quoteScenario } from "../src/quote.js";
 import { isQuoteVector } from "../src/types.js";
 
-const baseline = JSON.parse(
-	readFileSync(
-		join(import.meta.dirname, "../corpus/golden-replay-baseline.json"),
-		"utf8",
-	),
+const baselines = ["golden-replay-baseline.json", "golden-replay-v2.json"].map(
+	(name) =>
+		JSON.parse(
+			readFileSync(join(import.meta.dirname, "../corpus", name), "utf8"),
+		),
 );
 
 describe("pricing golden replay corpus", () => {
-	it("replays every pinned scenario to its exact quote and hash", () => {
+	it.each(
+		baselines,
+	)("replays every pinned scenario to its exact quote and hash", (baseline) => {
 		expect(baseline.schema).toBe("hobo.pricing.golden-replay-corpus/v1");
 		expect(baseline.entries.length).toBeGreaterThan(0);
 
