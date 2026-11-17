@@ -163,6 +163,63 @@ describe("metered billing plane", () => {
 		expect(over.outcome).toBe("rejected");
 		expect(over.rejection?.reasons[0]?.code).toBe("budget-exceeded");
 	});
+
+	it("does not release a prior successful reservation when a replay cannot place", async () => {
+		let available = true;
+		const plane = createMeteredBillingPlane([]);
+		const broker = createBroker({
+			policies: {
+				...basePolicies,
+				billing: { ...basePolicies.billing, budgetUsd: 10, spendCapUsd: 10 },
+			},
+			catalog: {
+				...catalog,
+				definitions: () => (available ? catalog.definitions() : []),
+			},
+			stationId: "station:test",
+			railHash:
+				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			billingPlane: plane,
+		});
+		expect((await broker.resolve(baseRequest)).outcome).toBe("resolved");
+		available = false;
+		const replay = await broker.resolve(baseRequest);
+		expect(replay.outcome).toBe("rejected");
+		expect(replay.rejection?.reasons[0]?.code).toBe(
+			"reservation-replay-requires-reconciliation",
+		);
+		available = true;
+		const next = await broker.resolve({
+			...baseRequest,
+			requestId: "req-2",
+			spendEstimateUsd: 1,
+		});
+		expect(next.outcome).toBe("rejected");
+		expect(next.rejection?.reasons[0]?.code).toBe("budget-exceeded");
+	});
+
+	it("releases a newly created hold if placement fails before any receipt", async () => {
+		let available = false;
+		const broker = createBroker({
+			policies: {
+				...basePolicies,
+				billing: { ...basePolicies.billing, budgetUsd: 10, spendCapUsd: 10 },
+			},
+			catalog: {
+				...catalog,
+				definitions: () => (available ? catalog.definitions() : []),
+			},
+			stationId: "station:test",
+			railHash:
+				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			billingPlane: createMeteredBillingPlane([]),
+		});
+		expect((await broker.resolve(baseRequest)).outcome).toBe("rejected");
+		available = true;
+		expect(
+			(await broker.resolve({ ...baseRequest, requestId: "req-2" })).outcome,
+		).toBe("resolved");
+	});
 });
 
 describe("rejection matrix", () => {

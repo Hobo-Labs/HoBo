@@ -8,6 +8,11 @@ import {
 	RATING_ALGORITHM_VERSION,
 } from "@hobo/pricing";
 
+import {
+	billingBounds,
+	decimalFromNumber,
+	upperNumber,
+} from "./billing-decimal.js";
 import type { BillingPolicy, RejectionReason } from "./types.js";
 
 export interface BillingAuthorizationInput {
@@ -31,33 +36,6 @@ function reject(code: string, message: string): BillingAuthorizationResult {
 		reasons: [{ plane: "billing", code, message }],
 		authorizedUsd: 0,
 	};
-}
-
-// Number-valued policy fields use their serialized decimal value, including
-// exponent notation, as their public contract.
-function decimalFromNumber(value: number): Decimal | undefined {
-	if (!Number.isFinite(value) || value < 0) return undefined;
-	const [mantissa = "0", exponentText = "0"] = value.toString().split("e");
-	const [integer = "0", fraction = ""] = mantissa.split(".");
-	const scale = fraction.length - Number(exponentText);
-	let coefficient = BigInt(integer + fraction);
-	if (scale < 0) coefficient *= 10n ** BigInt(-scale);
-	return { coefficient, scale: Math.max(scale, 0) };
-}
-
-function upperNumber(value: Decimal): number | undefined {
-	const candidate = Number(formatDecimal(value));
-	if (!Number.isFinite(candidate)) return undefined;
-	const represented = decimalFromNumber(candidate);
-	if (represented === undefined) return undefined;
-	if (compareDecimal(represented, value) >= 0) return candidate;
-	if (candidate === 0) return Number.MIN_VALUE;
-	const buffer = new ArrayBuffer(8);
-	const view = new DataView(buffer);
-	view.setFloat64(0, candidate);
-	view.setBigUint64(0, view.getBigUint64(0) + 1n);
-	const upper = view.getFloat64(0);
-	return Number.isFinite(upper) ? upper : undefined;
 }
 
 /**
@@ -118,22 +96,13 @@ export function authorizeBillingSpend(
 			"spend-estimate-invalid",
 			"estimated spend cannot be represented safely",
 		);
-	const cap =
-		input.billing.spendCapUnlimited === true
-			? undefined
-			: decimalFromNumber(input.billing.spendCapUsd);
-	const budget =
-		input.billing.budgetUnlimited === true
-			? undefined
-			: decimalFromNumber(input.billing.budgetUsd);
-	if (
-		(input.billing.spendCapUnlimited !== true && cap === undefined) ||
-		(input.billing.budgetUnlimited !== true && budget === undefined)
-	)
+	const bounds = billingBounds(input.billing);
+	if (bounds === undefined)
 		return reject(
 			"billing-policy-invalid",
 			"bounded budget and spend cap must be finite and non-negative",
 		);
+	const { cap, budget } = bounds;
 	const reasons: RejectionReason[] = [];
 	if (cap !== undefined && compareDecimal(estimate, cap) > 0)
 		reasons.push({

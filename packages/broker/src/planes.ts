@@ -14,6 +14,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 import { normalizeDeliveryPolicy } from "./policies.js";
+import { authorizeBillingSpend } from "./pricing-authorization.js";
 
 import type {
 	BillingPolicy,
@@ -64,6 +65,8 @@ export interface BillingPlane {
 	}): {
 		ok: boolean;
 		reasons: RejectionReason[];
+		/** True only when this call created a new hold; false means a replay. */
+		reservationCreated?: boolean;
 	};
 	/** Only before a side effect has begun; uncertain effects retain funds. */
 	release?(requestId: string, confirmedUnused: true): void;
@@ -146,36 +149,15 @@ export function createGatekeeperGatePlane(
 export function createBillingPlane(): BillingPlane {
 	return {
 		authorize({ spendEstimateUsd, billing }) {
-			const reasons: RejectionReason[] = [];
-			if (!Number.isFinite(spendEstimateUsd) || spendEstimateUsd < 0)
-				return {
-					ok: false,
-					reasons: [
-						{
-							plane: "billing",
-							code: "invalid-spend-estimate",
-							message: "estimated spend must be finite and nonnegative",
-						},
-					],
-				};
-			if (
-				!billing.spendCapUnlimited &&
-				spendEstimateUsd > billing.spendCapUsd
-			) {
-				reasons.push({
-					plane: "billing",
-					code: "spend-cap-exceeded",
-					message: `estimated spend ${spendEstimateUsd} USD exceeds per-resolution cap ${billing.spendCapUsd} USD`,
-				});
-			}
-			if (!billing.budgetUnlimited && spendEstimateUsd > billing.budgetUsd) {
-				reasons.push({
-					plane: "billing",
-					code: "budget-exceeded",
-					message: `estimated spend ${spendEstimateUsd} USD exceeds remaining budget ${billing.budgetUsd} USD`,
-				});
-			}
-			return { ok: reasons.length === 0, reasons };
+			const result = authorizeBillingSpend({ spendEstimateUsd, billing });
+			return {
+				ok: result.ok,
+				reasons: result.reasons.map((reason) =>
+					reason.code === "spend-estimate-invalid"
+						? { ...reason, code: "invalid-spend-estimate" }
+						: reason,
+				),
+			};
 		},
 	};
 }
