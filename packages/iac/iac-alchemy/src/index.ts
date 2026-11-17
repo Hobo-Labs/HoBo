@@ -73,6 +73,7 @@ export type {
 	AlchemyCompositeEnvironment,
 	AlchemyCompositeGuard,
 	AlchemyCompositeObservation,
+	AlchemyHistoricalResource,
 	AlchemyHistoricalSource,
 } from "./plan.js";
 export { AlchemyIacError, hashAlchemyPriorState } from "./plan.js";

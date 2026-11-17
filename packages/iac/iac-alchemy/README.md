@@ -270,6 +270,22 @@ evaluation cannot mutate infrastructure or incur unaccounted charges. During
 apply it must enforce that only admitted, scoped effects can execute. Its
 `verifyPlan` callback must authorize the exact structural digest, operation,
 scope, source classification and effect fingerprints against independently issued evidence.
+The immutable `historicalResources` observation lists every resource whose plan
+node has prior state, including unchanged resources, updates, replacements,
+deletes, resumed creates and provider-adopted state. Each entry names the
+resource FQN, current and prior types, planned action, `renamedFrom` identities
+and the SHA-256 digest of the exact prior state captured in that plan. Before
+allowing an effect, the host must independently authenticate the physical
+resource, ownership and complete state, calculate `hashAlchemyPriorState` over
+its trusted record, and compare it to the observation. A digest presented by
+the plan is not independent evidence. For adoption, the host must authenticate
+the observed remote resource; for a rename, Alchemy can project the old state
+to the new FQN in memory, so the host must independently verify that exact
+projection and all former identities or reject it. A changed prior type is
+accepted only when declared as a provider alias and separately authorized by
+the host. Unhashable, cyclic, oversized, incomplete or inconsistent prior state
+fails closed. Existing `historicalSources` remains available for source-specific
+checks and reports the same prior-state digest for a source deletion.
 The host must independently classify every provider resource and verify that
 the source requirements are complete, including for raw Alchemy resources;
 absence of a registered source claim is not evidence that a resource has no

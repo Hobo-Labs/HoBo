@@ -4,6 +4,7 @@ import { alchemyTarget, ResourceScopeSchema } from "../src/index.js";
 import {
 	type AlchemyCompositeGuard,
 	digestData,
+	hashAlchemyPriorState,
 	inspectAlchemyPlan,
 } from "../src/plan.js";
 import { registerAlchemySource } from "../src/source-fence.js";
@@ -19,6 +20,7 @@ function fixture() {
 		},
 		action: "create",
 		provider: { version: "1" },
+		state: undefined,
 		bindings: [],
 		downstream: [],
 		props: {},
@@ -228,6 +230,386 @@ describe("native Alchemy plan inspection", () => {
 		);
 	});
 
+	it.each([
+		"delete",
+		"replace",
+		"update",
+		"noop",
+	] as const)("exposes the exact prior non-source resource state for %s", (action) => {
+		const f = fixture();
+		const state = {
+			fqn: "store",
+			resourceType: "Spec.Store",
+			logicalId: "store",
+			instanceId: "instance-1",
+			status: "created",
+			downstream: [],
+			bindings: [],
+			props: {},
+			attr: { physicalId: "bucket-a" },
+		};
+		const digest = hashAlchemyPriorState(state);
+		Object.assign(f.node, { action, state });
+		if (action === "replace") Object.assign(f.node, { deleteFirst: false });
+		Object.assign(f.plan.resources[0] ?? {}, { action });
+		if (action === "delete")
+			Object.assign(f.native, {
+				resources: {},
+				deletions: { store: f.node },
+				destroy: true,
+			});
+		let observations = 0;
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ historicalResources, historicalSources }) => {
+				observations++;
+				expect(Object.isFrozen(historicalResources)).toBe(true);
+				expect(Object.isFrozen(historicalResources[0])).toBe(true);
+				expect(historicalSources).toEqual([]);
+				expect(historicalResources).toEqual([
+					{
+						resourceId: "store",
+						resourceType: "Spec.Store",
+						priorResourceType: "Spec.Store",
+						action,
+						priorStateDigest: digest,
+						renamedFrom: [],
+					},
+				]);
+				return true;
+			},
+		};
+		// SAFETY: deliberately constructed plans isolate observation semantics.
+		expect(() =>
+			inspectAlchemyPlan(f.plan as never, f.target, guard),
+		).not.toThrow();
+		expect(observations).toBe(1);
+	});
+
+	it("lets the host reject a bucket whose exact prior state differs from its trusted record", () => {
+		const f = fixture();
+		const state = {
+			fqn: "store",
+			resourceType: "Spec.Store",
+			logicalId: "store",
+			instanceId: "instance-1",
+			status: "created",
+			downstream: [],
+			bindings: [],
+			props: {},
+			attr: { physicalId: "bucket-a" },
+		};
+		const trustedDigest = hashAlchemyPriorState(state);
+		Object.assign(f.node, { action: "delete", state });
+		Object.assign(f.plan.resources[0] ?? {}, { action: "delete" });
+		Object.assign(f.native, {
+			resources: {},
+			deletions: { store: f.node },
+			destroy: true,
+		});
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ historicalResources }) =>
+				historicalResources.length === 1 &&
+				historicalResources[0]?.priorStateDigest === trustedDigest,
+		};
+		// SAFETY: deliberately constructed plans isolate host authorization.
+		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
+		expect(inspect).not.toThrow();
+		state.attr.physicalId = "bucket-b";
+		expect(inspect).toThrow("COMPOSITE_PLAN_UNVERIFIED");
+	});
+
+	it("reports an empty prior inventory for a fresh resource and exposes explicit rename provenance", () => {
+		const f = fixture();
+		let expected: object[] = [];
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ historicalResources }) => {
+				expect(historicalResources).toEqual(expected);
+				return true;
+			},
+		};
+		// SAFETY: deliberately constructed plans isolate prior-state observations.
+		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
+		expect(inspect).not.toThrow();
+		const state = {
+			fqn: "store",
+			resourceType: "Spec.Store",
+			logicalId: "store",
+			instanceId: "instance-1",
+			status: "created",
+			downstream: [],
+			bindings: [],
+			props: {},
+			attr: {},
+		};
+		Object.assign(f.node, {
+			action: "update",
+			state,
+			renamedFrom: ["old-store"],
+		});
+		Object.assign(f.plan.resources[0] ?? {}, { action: "update" });
+		expected = [
+			{
+				resourceId: "store",
+				resourceType: "Spec.Store",
+				priorResourceType: "Spec.Store",
+				action: "update",
+				priorStateDigest: hashAlchemyPriorState(state),
+				renamedFrom: ["old-store"],
+			},
+		];
+		expect(inspect).not.toThrow();
+	});
+
+	it("rejects malformed, mismatched, or unhashable prior state before asking the host", () => {
+		for (const invalid of [
+			{
+				fqn: "store",
+				resourceType: "",
+				logicalId: "store",
+				instanceId: "id",
+				status: "created",
+				downstream: [],
+			},
+			{
+				fqn: "store",
+				resourceType: "Spec.Store",
+				logicalId: "wrong",
+				instanceId: "id",
+				status: "created",
+				downstream: [],
+			},
+			{
+				fqn: "store",
+				resourceType: "Spec.Store",
+				logicalId: "store",
+				instanceId: "id",
+				status: "invalid",
+				downstream: [],
+			},
+			{
+				fqn: "store",
+				resourceType: "Spec.Store",
+				logicalId: "store",
+				instanceId: "id",
+				status: "created",
+				downstream: [],
+				attr: {
+					get value() {
+						throw new Error("not data");
+					},
+				},
+			},
+		]) {
+			const f = fixture();
+			Object.assign(f.node, { action: "replace", state: invalid });
+			Object.assign(f.plan.resources[0] ?? {}, { action: "replace" });
+			let invoked = false;
+			const guard: AlchemyCompositeGuard = {
+				proofRef: "host:proof",
+				environmentDigest: `sha256:${"b".repeat(64)}`,
+				sourceRequirements: [],
+				verifyEnvironment: () => true,
+				verifyPlan: () => {
+					invoked = true;
+					return true;
+				},
+			};
+			// SAFETY: deliberately malformed plans must fail before host authorization.
+			expect(() =>
+				inspectAlchemyPlan(f.plan as never, f.target, guard),
+			).toThrow();
+			expect(invoked).toBe(false);
+		}
+	});
+
+	it("exhaustively accepts only Alchemy's bounded resource action and prior-status combinations", () => {
+		const actions = [
+			"create",
+			"update",
+			"adopted",
+			"replace",
+			"noop",
+			"delete",
+			"orphaned",
+		] as const;
+		const statuses = [
+			"creating",
+			"created",
+			"updating",
+			"updated",
+			"deleting",
+			"replacing",
+			"replaced",
+		] as const;
+		const allowed = {
+			create: ["creating"],
+			update: ["created", "updated", "updating", "replaced"],
+			adopted: ["created", "updated", "updating", "replaced"],
+			replace: [
+				"creating",
+				"created",
+				"updating",
+				"updated",
+				"replacing",
+				"replaced",
+			],
+			noop: ["created", "updated"],
+			delete: statuses,
+			orphaned: statuses,
+		} satisfies Readonly<Record<string, readonly string[]>>;
+		for (const action of actions)
+			for (const status of statuses) {
+				const f = fixture();
+				const state = {
+					fqn: "store",
+					resourceType: "Spec.Store",
+					logicalId: "store",
+					instanceId: "instance",
+					status,
+					downstream: [],
+					bindings: [],
+					props: {},
+					attr: {},
+				};
+				Object.assign(f.node, { action, state });
+				Object.assign(f.plan.resources[0] ?? {}, { action });
+				if (action === "delete" || action === "orphaned")
+					Object.assign(f.native, {
+						resources: {},
+						deletions: { store: f.node },
+						destroy: true,
+					});
+				const guard: AlchemyCompositeGuard = {
+					proofRef: "host:proof",
+					environmentDigest: `sha256:${"b".repeat(64)}`,
+					sourceRequirements: [],
+					verifyEnvironment: () => true,
+					verifyPlan: () => true,
+				};
+				// SAFETY: the finite matrix deliberately constructs native plan variants.
+				const inspect = () =>
+					inspectAlchemyPlan(f.plan as never, f.target, guard);
+				if (allowed[action]?.includes(status)) expect(inspect).not.toThrow();
+				else expect(inspect).toThrow("STATE_IDENTITY_UNVERIFIED");
+			}
+	});
+
+	it("exposes and requires independent approval of a provider-declared prior type alias", () => {
+		const f = fixture();
+		const state = {
+			fqn: "store",
+			resourceType: "Spec.LegacyStore",
+			logicalId: "store",
+			instanceId: "instance",
+			status: "created",
+			downstream: [],
+			bindings: [],
+			props: {},
+			attr: {},
+		};
+		Object.assign(f.node, { action: "update", state });
+		Object.assign(f.plan.resources[0] ?? {}, { action: "update" });
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => true,
+			verifyPlan: ({ historicalResources }) =>
+				historicalResources[0]?.priorResourceType === "Spec.LegacyStore",
+		};
+		// SAFETY: a deliberately constructed native plan tests provider alias authorization.
+		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
+		expect(inspect).toThrow("STATE_IDENTITY_UNVERIFIED");
+		Object.assign(f.node.provider, { aliases: ["Spec.LegacyStore"] });
+		expect(inspect).not.toThrow();
+		const refusing = { ...guard, verifyPlan: () => false };
+		// SAFETY: the same alias is rejected when the host independently refuses it.
+		expect(() =>
+			inspectAlchemyPlan(f.plan as never, f.target, refusing),
+		).toThrow("COMPOSITE_PLAN_UNVERIFIED");
+	});
+
+	it("rejects state or rename accessors without invoking them", () => {
+		for (const key of ["state", "renamedFrom"] as const) {
+			const f = fixture();
+			let invoked = 0;
+			Object.defineProperty(f.node, key, {
+				configurable: true,
+				get() {
+					invoked++;
+					throw new Error("must not read");
+				},
+			});
+			expect(f.inspect).toThrow("PLAN_UNINSPECTABLE");
+			expect(invoked).toBe(0);
+		}
+	});
+
+	it("rejects prior state changed by a source verifier during inspection", () => {
+		const f = fixture();
+		const state = {
+			fqn: "store",
+			resourceType: "Spec.Store",
+			logicalId: "store",
+			instanceId: "id",
+			status: "created",
+			downstream: [],
+			bindings: [],
+			props: {},
+			attr: { physicalId: "bucket-a" },
+		};
+		Object.assign(f.node, { action: "update", state });
+		Object.assign(f.plan.resources[0] ?? {}, { action: "update" });
+		const requirement = {
+			resourceId: "store",
+			resourceType: "Spec.Store",
+			bindleName: "app",
+			applicationName: "store",
+			sourceKind: "test",
+			sourcePath: "/source/store",
+		};
+		registerAlchemySource(f.node.resource, {
+			claim: {
+				...requirement,
+				sourceDigest: `sha256:${"a".repeat(64)}`,
+				environmentDigest: `sha256:${"b".repeat(64)}`,
+				proofRef: "host:proof",
+			},
+			verify: () => {
+				state.attr.physicalId = "bucket-b";
+				return true;
+			},
+		});
+		let invoked = false;
+		const guard: AlchemyCompositeGuard = {
+			proofRef: "host:proof",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [requirement],
+			verifyEnvironment: () => true,
+			verifyPlan: () => {
+				invoked = true;
+				return true;
+			},
+		};
+		// SAFETY: this plan isolates source-verifier mutation during inspection.
+		expect(() => inspectAlchemyPlan(f.plan as never, f.target, guard)).toThrow(
+			"PLAN_UNINSPECTABLE",
+		);
+		expect(invoked).toBe(false);
+	});
+
 	it("requires an independently authorized exact prior state for reconstructed source deletion", () => {
 		const f = fixture();
 		const state = {
@@ -266,8 +648,15 @@ describe("native Alchemy plan inspection", () => {
 				},
 			],
 			verifyEnvironment: () => true,
-			verifyPlan: ({ historicalSources, sourceClaims }) => {
+			verifyPlan: ({
+				historicalSources,
+				historicalResources,
+				sourceClaims,
+			}) => {
 				expect(sourceClaims).toHaveLength(1);
+				expect(historicalResources[0]?.priorStateDigest).toBe(
+					historicalSources[0]?.priorStateDigest,
+				);
 				observed = historicalSources[0]?.priorStateDigest ?? "";
 				return historicalSources.length === 1 && observed === approvedState;
 			},

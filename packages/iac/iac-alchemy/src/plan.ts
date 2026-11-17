@@ -64,6 +64,8 @@ export interface AlchemyCompositeObservation
 	readonly effects: readonly AlchemyCompositeEffect[];
 	readonly sourceClaims: readonly AlchemySourceClaim[];
 	readonly historicalSources: readonly AlchemyHistoricalSource[];
+	/** Exact plan state for every prior resource; this may include a provider-adopted state. */
+	readonly historicalResources: readonly AlchemyHistoricalResource[];
 }
 
 export interface AlchemyHistoricalSource {
@@ -72,8 +74,57 @@ export interface AlchemyHistoricalSource {
 	readonly priorStateDigest: string;
 }
 
+/** Prior plan state for independent authorization of physical-resource effects. */
+export interface AlchemyHistoricalResource {
+	readonly resourceId: string;
+	readonly resourceType: string;
+	/** The persisted type, which can differ only for a provider-declared alias. */
+	readonly priorResourceType: string;
+	readonly action:
+		| "create"
+		| "update"
+		| "adopted"
+		| "replace"
+		| "noop"
+		| "delete"
+		| "orphaned";
+	readonly priorStateDigest: string;
+	/** Former state keys Alchemy will migrate into this plan node. */
+	readonly renamedFrom: readonly string[];
+}
+
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
 const MAX_EFFECTS = 1024;
+
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- SAFETY: native rename lists are inspected as bounded external data. */
+function captureRenamedFrom(value: unknown): readonly string[] | undefined {
+	if (value === undefined) return Object.freeze([]);
+	if (
+		!Array.isArray(value) ||
+		value.length > 256 ||
+		Object.getOwnPropertySymbols(value).length !== 0
+	)
+		return undefined;
+	const properties = Object.getOwnPropertyDescriptors(value);
+	if (Object.keys(properties).length !== value.length + 1) return undefined;
+	const result: string[] = [];
+	for (let index = 0; index < value.length; index++) {
+		const item = properties[String(index)];
+		if (
+			item === undefined ||
+			!("value" in item) ||
+			!item.enumerable ||
+			typeof item.value !== "string" ||
+			!safeAlchemyFqn(item.value)
+		)
+			return undefined;
+		result.push(item.value);
+	}
+	return new Set(result).size === result.length
+		? Object.freeze(result)
+		: undefined;
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
 function fingerprintFunction(value: (...args: never[]) => void): string {
 	const source = Function.prototype.toString.call(value);
@@ -459,6 +510,7 @@ function inspectUnverified(
 	effects: AlchemyCompositeEffect[];
 	sourceClaims: AlchemySourceClaim[];
 	historicalSources: AlchemyHistoricalSource[];
+	historicalResources: AlchemyHistoricalResource[];
 } {
 	const allowEffects = guard !== undefined;
 	if (plan.stack.name !== target.stackName || plan.stack.stage !== target.stage)
@@ -544,6 +596,8 @@ function inspectUnverified(
 	const effects: AlchemyCompositeEffect[] = [];
 	const sourceClaims: AlchemySourceClaim[] = [];
 	const sourceBindings: AlchemySourceBinding[] = [];
+	const historicalResources: AlchemyHistoricalResource[] = [];
+	const priorStateChecks: Array<() => boolean> = [];
 	const historicalStates: {
 		resourceId: string;
 		resourceType: string;
@@ -627,19 +681,194 @@ function inspectUnverified(
 				"PLAN_UNINSPECTABLE",
 				"plan description does not match the native plan",
 			);
+		const stateDescriptor = Object.getOwnPropertyDescriptor(node, "state");
+		const renameDescriptor = Object.getOwnPropertyDescriptor(
+			node,
+			"renamedFrom",
+		);
+		if (
+			stateDescriptor === undefined ||
+			!("value" in stateDescriptor) ||
+			(renameDescriptor !== undefined && !("value" in renameDescriptor))
+		)
+			throw new AlchemyIacError(
+				"PLAN_UNINSPECTABLE",
+				"resource state and rename fields must be own data properties",
+			);
+		// SAFETY: the checked own data value is validated and canonically hashed before use.
+		const previous = stateDescriptor.value as
+			| import("alchemy/State").ResourceState
+			| undefined;
+		const renamedFrom = captureRenamedFrom(renameDescriptor?.value);
+		const formerFqns = captureRenamedFrom(node.resource.FormerFqns);
 		if (
 			!safeAlchemyFqn(row.fqn) ||
-			(node.state !== undefined && !safeAlchemyState(node.state, row.fqn)) ||
-			node.resource.FormerFqns?.some(
-				(former: string) => !safeAlchemyFqn(former),
-			) ||
-			("renamedFrom" in node &&
-				node.renamedFrom?.some((former: string) => !safeAlchemyFqn(former)))
+			(previous !== undefined && !safeAlchemyState(previous, row.fqn)) ||
+			formerFqns === undefined ||
+			renamedFrom === undefined
 		)
 			throw new AlchemyIacError(
 				"STATE_IDENTITY_UNVERIFIED",
 				"the resource and its persisted or former state have unsafe identities",
 			);
+		if (
+			![
+				"create",
+				"update",
+				"adopted",
+				"replace",
+				"noop",
+				"delete",
+				"orphaned",
+			].includes(row.action)
+		)
+			throw new AlchemyIacError(
+				"PLAN_UNINSPECTABLE",
+				"the resource action is unsupported",
+			);
+		if (
+			previous === undefined &&
+			(node.action !== "create" || renamedFrom.length !== 0)
+		)
+			throw new AlchemyIacError(
+				"PLAN_UNINSPECTABLE",
+				"a historical resource action requires prior state",
+			);
+		let expectedStateDigest: string | undefined;
+		if (previous !== undefined) {
+			const properties = Object.getOwnPropertyDescriptors(previous);
+			const type = properties.resourceType;
+			const logicalId = properties.logicalId;
+			const instanceId = properties.instanceId;
+			const status = properties.status;
+			if (
+				type === undefined ||
+				!("value" in type) ||
+				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: provider state is a persisted external boundary. */
+				typeof type.value !== "string" ||
+				type.value.length === 0 ||
+				type.value.length > 200 ||
+				type.value.trim() !== type.value ||
+				/[\p{Cc}]/u.test(type.value) ||
+				(type.value !== row.resourceType &&
+					!node.provider.aliases?.includes(type.value)) ||
+				logicalId === undefined ||
+				!("value" in logicalId) ||
+				logicalId.value !== node.resource.LogicalId ||
+				instanceId === undefined ||
+				!("value" in instanceId) ||
+				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: provider state is a persisted external boundary. */
+				typeof instanceId.value !== "string" ||
+				instanceId.value.length === 0 ||
+				instanceId.value.length > 200 ||
+				instanceId.value.trim() !== instanceId.value ||
+				/[\p{Cc}]/u.test(instanceId.value) ||
+				status === undefined ||
+				!("value" in status) ||
+				![
+					"creating",
+					"created",
+					"updating",
+					"updated",
+					"deleting",
+					"replacing",
+					"replaced",
+				].includes(status.value)
+			)
+				throw new AlchemyIacError(
+					"STATE_IDENTITY_UNVERIFIED",
+					"the prior resource state has an invalid type, identity, or status",
+				);
+
+			const allowedStatuses = {
+				create: ["creating"],
+				update: ["created", "updated", "updating", "replaced"],
+				adopted: ["created", "updated", "updating", "replaced"],
+				replace: [
+					"creating",
+					"created",
+					"updating",
+					"updated",
+					"replacing",
+					"replaced",
+				],
+				noop: ["created", "updated"],
+				delete: [
+					"creating",
+					"created",
+					"updating",
+					"updated",
+					"deleting",
+					"replacing",
+					"replaced",
+				],
+				orphaned: [
+					"creating",
+					"created",
+					"updating",
+					"updated",
+					"deleting",
+					"replacing",
+					"replaced",
+				],
+			} satisfies Readonly<Record<string, readonly string[]>>;
+			if (!allowedStatuses[row.action]?.includes(status.value))
+				throw new AlchemyIacError(
+					"STATE_IDENTITY_UNVERIFIED",
+					"the prior state does not match the planned resource action",
+				);
+			expectedStateDigest = hashAlchemyPriorState(previous);
+			historicalResources.push({
+				resourceId: row.fqn,
+				resourceType: row.resourceType,
+				priorResourceType: type.value,
+				action: row.action,
+				priorStateDigest: expectedStateDigest,
+				renamedFrom,
+			});
+		}
+		const expectedAction = row.action;
+		const expectedResourceId = row.fqn;
+		const expectedResourceType = row.resourceType;
+		const expectedLogicalId = node.resource.LogicalId;
+		priorStateChecks.push(() => {
+			try {
+				const current = Object.getOwnPropertyDescriptor(node, "state");
+				const rename = Object.getOwnPropertyDescriptor(node, "renamedFrom");
+				if (
+					current === undefined ||
+					!("value" in current) ||
+					(rename !== undefined && !("value" in rename)) ||
+					node.action !== expectedAction ||
+					row.action !== expectedAction ||
+					row.fqn !== expectedResourceId ||
+					row.resourceType !== expectedResourceType ||
+					node.resource.FQN !== expectedResourceId ||
+					node.resource.Type !== expectedResourceType ||
+					node.resource.LogicalId !== expectedLogicalId
+				)
+					return false;
+				const currentRename = captureRenamedFrom(rename?.value);
+				const currentFormerFqns = captureRenamedFrom(node.resource.FormerFqns);
+				if (
+					currentFormerFqns === undefined ||
+					currentFormerFqns.length !== formerFqns.length ||
+					currentFormerFqns.some(
+						(value, index) => value !== formerFqns[index],
+					) ||
+					currentRename === undefined ||
+					currentRename.length !== renamedFrom.length ||
+					currentRename.some((value, index) => value !== renamedFrom[index])
+				)
+					return false;
+				return expectedStateDigest === undefined
+					? current.value === undefined
+					: current.value !== undefined &&
+							hashAlchemyPriorState(current.value) === expectedStateDigest;
+			} catch {
+				return false;
+			}
+		});
 		const source = alchemySourceFor(node.resource);
 		const required = guard?.sourceRequirements?.find(
 			(entry) => entry.resourceId === row.fqn,
@@ -793,6 +1022,11 @@ function inspectUnverified(
 				"deferredAdoption" in node ? node.deferredAdoption : undefined,
 		};
 	});
+	if (!priorStateChecks.every((check) => check()))
+		throw new AlchemyIacError(
+			"PLAN_UNINSPECTABLE",
+			"prior resource state changed during inspection",
+		);
 	const requirements = guard?.sourceRequirements;
 	if (
 		(sourceClaims.length > 0 && requirements === undefined) ||
@@ -833,6 +1067,7 @@ function inspectUnverified(
 		actions,
 		sourceClaims,
 		historicalSources,
+		historicalResources,
 		cycles: [...plan.native.cycleMembers].sort(),
 		defaultMode: plan.native.defaultMode,
 		output: plan.native.output,
@@ -852,6 +1087,7 @@ function inspectUnverified(
 		effects,
 		sourceClaims,
 		historicalSources,
+		historicalResources,
 		hasSourceClaims: sourceClaims.length > 0,
 		revalidateSources: () =>
 			sourceBindings.every((binding) => {
@@ -965,6 +1201,14 @@ export function inspectAlchemyPlan(
 		historicalSources: Object.freeze(
 			inspection.historicalSources.map((source) =>
 				Object.freeze({ ...source }),
+			),
+		),
+		historicalResources: Object.freeze(
+			inspection.historicalResources.map((resource) =>
+				Object.freeze({
+					...resource,
+					renamedFrom: Object.freeze([...resource.renamedFrom]),
+				}),
 			),
 		),
 	});
