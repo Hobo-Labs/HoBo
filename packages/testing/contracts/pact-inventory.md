@@ -9,7 +9,7 @@ this package refuses to be.
 | Boundary | Consumer | Provider | Protocol | Pact file/test | Provider verification | Mock used | Status |
 |----------|----------|----------|----------|----------------|----------------------|-----------|--------|
 | App test harness (deploy / fidelity / readiness) | hobo-bindle-test-suite | hobo-app-test-harness | in-process HTTP-shaped | `pacts/app-test-harness.pact.json` | `test/harness.test.ts`, `test/lanes.test.ts`, `test/readiness.test.ts` | none — the real harness runs | active |
-| Queue, topic, secret, data, schedule, key-value and bucket emulator access | HoboApplicationTestSuite | HoboServiceEmulators | in-process HTTP-shaped | `pacts/service-emulators.pact.json` | `test/service-emulators.pact.test.ts` executes the actual harness | none | provider_verified |
+| Queue, topic, secret, data, schedule, key-value, bucket and flag emulator access | HoboApplicationTestSuite | HoboServiceEmulators | in-process HTTP-shaped | `pacts/service-emulators.pact.json` | `test/service-emulators.pact.test.ts` executes the actual harness | none | provider_verified |
 
 ## Refusal interactions
 
