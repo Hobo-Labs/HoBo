@@ -115,8 +115,11 @@ on GitHub's generated merge-group commit. No branch-protection rule is changed.
   exhausts all 512 combinations of four tiers in up, down, unknown, or disabled
   states and both opt-in settings, and checks malformed observations.
 - [`fleet-signoff.test.ts`](../../scripts/test/fleet-signoff.test.ts) covers
-  preference, pins, provider identity and ordering, shared labels, outage and
-  policy assertions, stale or contradictory slips, malformed inventory, queue
+  all 162 combinations of available, unavailable, and unknown fleet, ARC,
+  local, and hosted observations with both opt-in settings, including which
+  decisions actually run and sign. It also covers pins, provider identity and
+  ordering, shared labels, outage and policy assertions, stale or contradictory
+  slips, malformed inventory, queue
   errors, base changes, and an end-to-end temporary checkout. That case executes a real local
   command, records the signoff invocation through a fake `gh`, and proves that
   a failing local command does not invoke signoff.
