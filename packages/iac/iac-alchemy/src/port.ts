@@ -145,9 +145,15 @@ export type FinancialExpectation =
 	  };
 
 /** An opaque capability for one active target attempt, issued by a shared route authority. */
+export interface IacRouteOperation {
+	readonly operationId: string;
+	readonly authorization: string;
+}
+
 export interface IacRoutePermit {
 	readonly tenantId: string;
 	readonly requestId: string;
+	readonly operationId: string;
 	readonly targetId: string;
 	readonly inventoryHash: string;
 	readonly attemptId: string;
@@ -182,6 +188,7 @@ export interface IacRoutePort {
 		input: {
 			readonly tenantId: string;
 			readonly requestId: string;
+			readonly operation: IacRouteOperation;
 			readonly targetId: string;
 			readonly plan: FinancialPlan;
 		},

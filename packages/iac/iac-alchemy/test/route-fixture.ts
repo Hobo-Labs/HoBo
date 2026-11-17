@@ -1,5 +1,10 @@
 import type { IacRoutePort } from "../src/port.js";
 
+export const testOperation = {
+	operationId: `sha256:${"f".repeat(64)}`,
+	authorization: "host:proof",
+};
+
 export function routeFixture(
 	options: {
 		readonly inventoryHash?: string;
@@ -24,6 +29,7 @@ export function routeFixture(
 			const permit = {
 				tenantId: input.tenantId,
 				requestId: input.requestId,
+				operationId: input.operation.operationId,
 				targetId: input.targetId,
 				inventoryHash: options.inventoryHash ?? `sha256:${"c".repeat(64)}`,
 				attemptId: "A".repeat(43),

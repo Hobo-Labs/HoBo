@@ -28,6 +28,7 @@ import type {
 	IacDriftReport,
 	IacProgram,
 	IacProvider,
+	IacRouteOperation,
 	IacRoutePermit,
 	IacRoutePort,
 	UnpricedPolicyProof,
@@ -83,6 +84,7 @@ export type {
 	IacDriftReport,
 	IacProgram,
 	IacProvider,
+	IacRouteOperation,
 	IacRouteOutcome,
 	IacRoutePermit,
 	IacRoutePort,
@@ -118,6 +120,8 @@ export interface AlchemyIacProviderOptions<
 	readonly financial: FinancialPort<Assessment>;
 	/** The host supplies one durable route authority shared by all candidate targets. */
 	readonly route?: IacRoutePort | undefined;
+	/** Host-authenticated logical operation identity, shared across candidate targets. */
+	readonly routeOperation?: IacRouteOperation | undefined;
 	/** Host-issued stable ID for one logical attempt when using the standard IaC port. */
 	readonly defaultRequestId?: string | undefined;
 	/** Host-owned authorization for executable plan effects in an immutable sandbox. */
@@ -231,6 +235,7 @@ function readRoutePermit(input: unknown): IacRoutePermit | undefined {
 		};
 		const tenantId = read("tenantId");
 		const requestId = read("requestId");
+		const operationId = read("operationId");
 		const targetId = read("targetId");
 		const inventoryHash = read("inventoryHash");
 		const attemptId = read("attemptId");
@@ -239,6 +244,8 @@ function readRoutePermit(input: unknown): IacRoutePermit | undefined {
 			!name(tenantId) ||
 			typeof requestId !== "string" ||
 			!name(requestId) ||
+			typeof operationId !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(operationId) ||
 			typeof targetId !== "string" ||
 			!name(targetId) ||
 			typeof inventoryHash !== "string" ||
@@ -250,10 +257,38 @@ function readRoutePermit(input: unknown): IacRoutePermit | undefined {
 		return Object.freeze({
 			tenantId,
 			requestId,
+			operationId,
 			targetId,
 			inventoryHash,
 			attemptId,
 		});
+	} catch {
+		return undefined;
+	}
+}
+
+function readRouteOperation(input: unknown): IacRouteOperation | undefined {
+	try {
+		if (typeof input !== "object" || input === null || Array.isArray(input))
+			return undefined;
+		const properties = Object.getOwnPropertyDescriptors(input);
+		const id = properties.operationId;
+		const proof = properties.authorization;
+		if (
+			id === undefined ||
+			!("value" in id) ||
+			typeof id.value !== "string" ||
+			!/^sha256:[a-f0-9]{64}$/u.test(id.value) ||
+			proof === undefined ||
+			!("value" in proof) ||
+			typeof proof.value !== "string" ||
+			proof.value.length === 0 ||
+			proof.value.length > 4096 ||
+			proof.value.trim() !== proof.value ||
+			/[\p{Cc}]/u.test(proof.value)
+		)
+			return undefined;
+		return Object.freeze({ operationId: id.value, authorization: proof.value });
 	} catch {
 		return undefined;
 	}
@@ -726,6 +761,7 @@ export function createAlchemyIacProvider<
 	const target = captureAlchemyTargetOption(options);
 	const composite = captureCompositeGuard(options.composite);
 	const route = options.route;
+	const routeOperation = readRouteOperation(options.routeOperation);
 	const defaultRequestId = options.defaultRequestId;
 	if (
 		!safeAlchemyStateSegment(target.stackName) ||
@@ -874,9 +910,11 @@ export function createAlchemyIacProvider<
 		const permit = readRoutePermit(input);
 		if (
 			route?.persistence !== "durable-cas" ||
+			routeOperation === undefined ||
 			permit === undefined ||
 			permit.tenantId !== target.tenantId ||
 			permit.requestId !== requestId ||
+			permit.operationId !== routeOperation.operationId ||
 			permit.targetId !== target.targetId ||
 			(expected !== undefined &&
 				permit.inventoryHash !== expected.inventoryHash)
@@ -1392,6 +1430,11 @@ export function createAlchemyIacProvider<
 				"ROUTE_AUTHORITY_UNAVAILABLE",
 				"a shared durable route authority is required",
 			);
+		if (routeOperation === undefined)
+			throw new AlchemyIacError(
+				"ROUTE_OPERATION_REQUIRED",
+				"a bounded host-authorized logical operation is required",
+			);
 		if (unresolved.has(key)) {
 			const reservationId = claimed.get(key);
 			throw new AlchemyIacError(
@@ -1429,6 +1472,7 @@ export function createAlchemyIacProvider<
 					{
 						tenantId: target.tenantId,
 						requestId: resolvedRequestId,
+						operation: routeOperation,
 						targetId: target.targetId,
 						plan: financialInputs(previewDigest, stableProgram),
 					},

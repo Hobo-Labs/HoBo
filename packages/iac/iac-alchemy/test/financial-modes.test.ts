@@ -10,10 +10,11 @@ import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import type {
 	FinancialDecision,
 	FinancialPlan,
+	IacRouteOperation,
 	IacRoutePort,
 	UnpricedScopeProof,
 } from "../src/port.js";
-import { routeFixture } from "./route-fixture.js";
+import { routeFixture, testOperation } from "./route-fixture.js";
 
 type Widget = Resource<"Spec.Widget", object, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
@@ -41,6 +42,7 @@ function fixture(
 	targetId = "target",
 	defaultRequestId: string | null = "logical-attempt",
 	route: IacRoutePort | undefined = routeFixture().port,
+	routeOperation: IacRouteOperation | null = testOperation,
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-alchemy-financial-"));
 	dirs.push(dir);
@@ -72,6 +74,7 @@ function fixture(
 		runtimeDirectory: join(dir, "runtime"),
 		defaultRequestId: defaultRequestId ?? undefined,
 		route,
+		routeOperation: routeOperation ?? undefined,
 		target: alchemyTarget({
 			targetId,
 			tenantId: "tenant",
@@ -252,6 +255,52 @@ describe("financial admission modes", () => {
 		expect(f.applies()).toBe(0);
 	});
 
+	it("requires a host-authorized operation before claiming a route", async () => {
+		const route = routeFixture();
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+			null,
+		);
+		await f.provider.preview(f.program);
+		await expect(f.provider.apply(f.program)).rejects.toMatchObject({
+			code: "ROUTE_OPERATION_REQUIRED",
+			requiresReconciliation: false,
+		});
+		expect(route.calls.direct).toBe(0);
+		expect(f.admissions()).toBe(0);
+	});
+
+	it("does not consume a permit for a different logical operation", async () => {
+		const route = routeFixture();
+		const f = fixture(
+			(id) => admitted(id, "allowed", false),
+			undefined,
+			undefined,
+			undefined,
+			route.port,
+		);
+		await f.provider.preview(f.program);
+		await expect(
+			f.provider.applyWithAdmission(f.program, "attempt", undefined, {
+				tenantId: "tenant",
+				requestId: "attempt",
+				operationId: `sha256:${"a".repeat(64)}`,
+				targetId: "target",
+				inventoryHash: `sha256:${"c".repeat(64)}`,
+				attemptId: "A".repeat(43),
+			}),
+		).rejects.toMatchObject({
+			code: "ROUTE_PERMIT_UNVERIFIED",
+			requiresReconciliation: true,
+		});
+		expect(route.calls.consumed).toBe(0);
+		expect(f.admissions()).toBe(0);
+	});
+
 	it.each([
 		"reused",
 		"lost acknowledgment",
@@ -325,6 +374,7 @@ describe("financial admission modes", () => {
 			{
 				tenantId: "tenant",
 				requestId: "attempt",
+				operationId: testOperation.operationId,
 				targetId: "target",
 				inventoryHash: `sha256:${"c".repeat(64)}`,
 				attemptId,
@@ -335,6 +385,7 @@ describe("financial admission modes", () => {
 		expect(route.calls.verified).toBe(2);
 		expect(f.applies()).toBe(1);
 		expect(JSON.stringify(result)).not.toContain(attemptId);
+		expect(JSON.stringify(result)).not.toContain(testOperation.authorization);
 	});
 
 	it("only admits one of two adapters racing the same dispatched permit", async () => {
@@ -367,6 +418,7 @@ describe("financial admission modes", () => {
 		const permit = {
 			tenantId: "tenant",
 			requestId: "attempt",
+			operationId: testOperation.operationId,
 			targetId: "target",
 			inventoryHash: `sha256:${"c".repeat(64)}`,
 			attemptId: "A".repeat(43),

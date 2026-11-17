@@ -146,8 +146,9 @@ const route = createDirectRoutePort({
   authority: routeAuthority,
   hashInventory: (plan: IacFinancialPlan) => financial.assess(plan).inventoryHash,
 });
+const routeOperation = { operationId, authorization };
 const provider = createAlchemyIacProvider({
-  stack, target, runtimeLayer, runtimeDirectory, financial, route,
+  stack, target, runtimeLayer, runtimeDirectory, financial, route, routeOperation,
 });
 const assessment = await provider.assessPricing(program);
 const ranking = rankIacTargets({
@@ -156,7 +157,8 @@ const ranking = rankIacTargets({
   candidates: [{ workloadRef, inventory: assessment.inventory, pricing: assessment.pricing }],
 });
 const result = await executeRankedIacTargets({
-  authority: routeAuthority, tenantId, requestId: "deployment-attempt-1", ranking,
+  authority: routeAuthority, tenantId, operation: routeOperation,
+  requestId: "deployment-attempt-1", ranking,
   candidates: [{ targetId: target.targetId, run: (id, expected, permit) => provider.applyWithAdmission(program, id, expected, permit) }],
 });
 ```
@@ -201,6 +203,12 @@ and atomically consumes that permit before financial admission, then verifies
 the still-active attempt again immediately before provider start. Denial,
 success and uncertainty are durably recorded by the route owner. A lost or
 ambiguous acknowledgment requires reconciliation, not a second attempt.
+The route authority independently verifies the host-issued `routeOperation`
+authorization and pins its target-independent SHA-256 operation ID across
+request IDs. The same operation proof must be configured for every candidate;
+the adapter refuses a permit for another operation. The trusted host derives
+the ID from the tenant, deployment, workload and operation and verifies proof
+expiry and revocation. It must not expose the authorization to stack code.
 
 One adapter instance refuses concurrent execution of the same program. Use
 the same explicit request ID for the same logical attempt across all targets,
