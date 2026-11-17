@@ -145,9 +145,9 @@ page is written by `scripts/ci/parity-scorecard.mts` from the case catalog and t
 scenarios under [`features/hobo-ci-parity`](../../features/hobo-ci-parity/README.md), and
 `--check` fails when it is stale.
 
-On 2026-11-17 the scorecard shows 25 `pass`, 2 `built-not-proven`, 21 `partial`, 9
+On 2026-11-17 the scorecard shows 26 `pass`, 3 `built-not-proven`, 19 `partial`, 9
 `not-built` and 1 `met-differently` (S08: no human roles; access is GitHub membership plus
-scoped tokens). The 32 cases that are neither `pass` nor `met-differently` are owed. Each
+scoped tokens). The 31 cases that are neither `pass` nor `met-differently` are owed. Each
 is listed below with the run that would prove it.
 
 ### Owed production runs (T3)
@@ -159,7 +159,7 @@ because each changes production state or needs a workflow on the default branch.
 | ---- | ----- | --------------------------- |
 | R01 | Relay mode answers in the simulator | Turn `relayJobs.answer` on for this repository alone on the deployed relay, push a workflow whose relay job asks for `hobo-relay`, and link the run: the relay job completed, no billed minute, the job behind it on the named runner |
 | C01 | The `pr-title` check step in relay mode | The same relay-mode setup, with a pull request whose title breaks the rule: the check job fails with the annotation and no runner ran it |
-| R04 | Job mode fails the relay job with the reason (simulator) | A `workflow_dispatch` of `.github/workflows/parity-probe.yml` with `expect-failure: true`, once that file is on the default branch |
+| R04 | The relay job fails with the reason as an annotation and the job behind it is skipped, in job mode (package test) and relay mode (its scenario), against the simulator | A `workflow_dispatch` of `.github/workflows/parity-probe.yml` with `expect-failure: true`, once that file is on the default branch |
 | R14 | Job mode feeds a three-leg matrix (simulator) | The scheduled or dispatched `parity-probe.yml` run, once on the default branch |
 | R15 | Job mode routes with no relay deployed (simulator) | The same `parity-probe.yml` run |
 
@@ -177,7 +177,7 @@ The run that proves each is its scenario, written over the test named here and t
 
 | Case | Package test that covers it today | Note |
 | ---- | --------------------------------- | ---- |
-| R04, R05, R11, C03 | `packages/ci-gh-actions/test/relay-job-main.test.ts` | Job mode against the simulator; R04 also owes T3 |
+| R11, C03 | `packages/ci-gh-actions/test/relay-job-main.test.ts` | Job mode against the simulator |
 | R07 | `packages/ci-gh-actions/test/billing-usage.test.ts` | |
 | R08, P04 | `packages/ci/test/runner-order-spend.test.ts` | RunsOn has a reason, not a price |
 | R09 | `packages/ci/test/runner-order-provider-health-sqlite.test.ts`, `packages/hobo/test/ci-provider-health.test.ts` | |
@@ -271,7 +271,9 @@ state does not allow the claim yet. Each is claimed only once it reaches `pass`.
 2. **Onboarding is a feature.** One command on a laptop is the bar. `hobo ci machine
    connect` meets it in the simulator; the relay-mode path is still longer.
 3. **Reasons beat status.** "No runner available: the machine is paused" is what makes
-   fail-fast acceptable. HoBo's relay job now fails with that sentence as an annotation.
+   fail-fast acceptable. HoBo's relay job fails with that sentence as an annotation in
+   the simulator, in job mode and relay mode; R04 stays built, not proven, until a
+   production run shows it.
 4. **Parity is a scorecard, not a list.** A capability counts when its scenario passes at its
    tier; the [scorecard](../ci/parity-scorecard.md) is regenerated, not edited.
 
