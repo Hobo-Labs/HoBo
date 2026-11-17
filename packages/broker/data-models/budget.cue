@@ -43,6 +43,7 @@ import "list"
   providerAccounts?: [...#ProviderAccountExposure]
   entitlementClaims?: [...#EntitlementClaim]
   financialPlanHash?: string
+  workDigest?: string & =~"^sha256:[a-f0-9]{64}$"
 }
 #BudgetReservation: {
   reservationId: string & !=""

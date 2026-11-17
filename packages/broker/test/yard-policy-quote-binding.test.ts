@@ -27,6 +27,7 @@ import {
 	YARD_EVENTS,
 	yardEvent,
 } from "../src/index.js";
+import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 
 const independentDigest = (quote: ReturnType<typeof makeQuote>) =>
 	createHash("sha256")
@@ -60,6 +61,7 @@ const changes = [
 	"account",
 	"entitlement",
 	"plan",
+	"work",
 	"request",
 ] as const;
 type Change = (typeof changes)[number];
@@ -101,6 +103,7 @@ async function evaluate(
 			providerId: LOCAL_HOST_PROVIDER_ID,
 		});
 		const quote = makeQuote(contentHashOf(request), total);
+		bindTestYardWork(quote, request, "broker:test", createLocalHostCatalog());
 		const old = clone(HostingQuoteSchema, quote);
 		switch (change) {
 			case "liability":
@@ -144,6 +147,9 @@ async function evaluate(
 				break;
 			case "plan":
 				old.financialPlanHash = "prior-plan";
+				break;
+			case "work":
+				old.workDigest = contentHashOf("other-work");
 				break;
 			case "request":
 				old.requestDigest = "other-request";

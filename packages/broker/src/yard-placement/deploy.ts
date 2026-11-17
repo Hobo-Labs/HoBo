@@ -79,6 +79,75 @@ export interface LocalHostingAuthorizationContext {
 	readonly bindingDigest: ContentHash;
 }
 
+/** Inputs a host uses to quote the exact resource work a Yard will execute. */
+export interface YardHostingWorkInput {
+	readonly request: BindleDeploymentRequest;
+	readonly brokerId: string;
+	readonly ownerTenantId: string;
+	readonly catalog: BrokerCatalog;
+	readonly yardId: string;
+	readonly providerId: string;
+	readonly generationPlanHash?: ContentHash | undefined;
+}
+
+function hostingWorkDigest(input: {
+	readonly requestDigest: ContentHash;
+	readonly brokerId: string;
+	readonly ownerTenantId: string;
+	readonly catalogHash: string;
+	readonly yardId: string;
+	readonly providerId: string;
+	readonly placements: readonly Readonly<PlacementDecision>[];
+	readonly generationPlanHash: ContentHash | undefined;
+}): ContentHash {
+	return contentHashOf({
+		schemaVersion: "hobo.yard-hosting-work/v1",
+		...input,
+		generationPlanHash: input.generationPlanHash ?? "",
+	});
+}
+
+/** Plan quoteable Yard work using the same selection and binding as admission. */
+export function prepareYardHostingWork(input: YardHostingWorkInput):
+	| {
+			readonly workDigest: ContentHash;
+			readonly placements: readonly Readonly<PlacementDecision>[];
+	  }
+	| { readonly error: string; readonly code: string } {
+	const request = parseBindleDeploymentRequest(cloneAsJson(input.request));
+	if (request.ownerTenantId && request.ownerTenantId !== input.ownerTenantId)
+		return {
+			code: "owner-tenant-mismatch",
+			error: "work owner differs from request owner",
+		};
+	const catalogHash = input.catalog.catalogHash;
+	const selected = placeResourcesUnderYard(
+		request,
+		input.providerId,
+		input.catalog,
+	);
+	if ("error" in selected) return selected;
+	if (input.catalog.catalogHash !== catalogHash)
+		return {
+			code: "catalog-definition-invalid",
+			error: "catalog changed while planning quote work",
+		};
+	const placements = Object.freeze(
+		selected.decisions.map((placement) => Object.freeze({ ...placement })),
+	);
+	const workDigest = hostingWorkDigest({
+		requestDigest: contentHashOf(request),
+		brokerId: input.brokerId,
+		ownerTenantId: input.ownerTenantId,
+		catalogHash,
+		yardId: input.yardId,
+		providerId: input.providerId,
+		placements,
+		generationPlanHash: input.generationPlanHash,
+	});
+	return { workDigest, placements };
+}
+
 export interface YardFirstPlacementDeps {
 	readonly brokerId: string;
 	readonly catalog: BrokerCatalog;
@@ -99,6 +168,9 @@ export interface YardFirstPlacementDeps {
 		requestDigest: string;
 		quote: HostingQuote;
 		quoteDigest: string;
+		workDigest: ContentHash;
+		placements: readonly Readonly<PlacementDecision>[];
+		generationPlanHash: ContentHash | undefined;
 		identity: BudgetIdentity;
 		now: string;
 	}) =>
@@ -386,10 +458,15 @@ export async function resolveBindleDeployment(
 		yardId: string,
 		providerId: string,
 		placements?: readonly PlacementDecision[],
+		generationPlanHash?: ContentHash,
 	): Promise<void> {
 		const context = deps.hostingBudget;
 		if (context !== hostingBudget)
 			throw new Error("hosting budget changed during placement");
+		if (generationPlanHash && !context)
+			throw new Error(
+				"durable shared hosting budget authority required for generation",
+			);
 		if (
 			!context &&
 			isLocalProvider(providerId) &&
@@ -459,6 +536,24 @@ export async function resolveBindleDeployment(
 				row.requestDigest === requestDigest,
 		);
 		if (!quote) throw new Error("complete hosting quote missing");
+		if (!placements) throw new Error("selected quote work missing");
+		const work = Object.freeze(
+			placements.map((placement) => Object.freeze({ ...placement })),
+		);
+		const workDigest = hostingWorkDigest({
+			requestDigest,
+			brokerId,
+			ownerTenantId,
+			catalogHash,
+			yardId,
+			providerId,
+			placements: work,
+			generationPlanHash,
+		});
+		if (quote.workDigest !== workDigest)
+			throw new Error(
+				"hosting quote does not bind selected work and generation plan",
+			);
 		const ledger = context.authority.read(context.now());
 		if (!ledger.identity) throw new Error("budget identity missing");
 		const authorize = paidAuthority;
@@ -474,11 +569,15 @@ export async function resolveBindleDeployment(
 			requestDigest,
 			quote: policyQuote,
 			quoteDigest,
+			workDigest,
+			placements: work,
+			generationPlanHash,
 			identity: policyIdentity,
 			now: context.now(),
 		});
 		if (
 			!paidContextCurrent() ||
+			contentHashOf(placements) !== contentHashOf(work) ||
 			toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||
 			toJsonString(BudgetIdentitySchema, policyIdentity) !== expectedIdentity
 		)
@@ -601,6 +700,7 @@ export async function resolveBindleDeployment(
 
 	let selectedYardId = match.winnerYardId;
 	let generationAttemptId: string | undefined;
+	let generationPlanHash: ContentHash | undefined;
 	const rejectAfterGeneration = (
 		plane: string,
 		code: string,
@@ -643,15 +743,43 @@ export async function resolveBindleDeployment(
 				genDecision.reason,
 			);
 		}
+		const generationPlanCurrent = () => {
+			try {
+				const { planHash, ...planBody } = genDecision.plan;
+				return contentHashOf(planBody) === planHash;
+			} catch {
+				return false;
+			}
+		};
 		let inspectGenerationOnly = false;
+		generationPlanHash = genDecision.plan.planHash;
+		const planned = placeResourcesUnderYard(
+			request,
+			genDecision.plan.providerId,
+			deps.catalog,
+		);
+		if ("error" in planned)
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				planned.code,
+				planned.error,
+			);
 		try {
 			await admitHosting(
 				genDecision.plan.expectedYardId,
 				genDecision.plan.providerId,
+				planned.decisions,
+				generationPlanHash,
 			);
+			if (!generationPlanCurrent())
+				throw new Error(
+					"generation plan changed after quote approval; reconcile reservation",
+				);
 			const financial = deps.hostingBudget;
 			if (financial && budgetReservation && hostingQuote) {
-				if (!paidContextCurrent())
+				if (!paidContextCurrent() || !generationPlanCurrent())
 					throw new Error(
 						"hosting context changed before generation claim; reconcile reservation",
 					);
@@ -660,7 +788,7 @@ export async function resolveBindleDeployment(
 				const head = financial.authority.read(now);
 				const previous = financial.authority.lookup(reservationId);
 				inspectGenerationOnly = Boolean(previous?.executionDigest);
-				if (!paidContextCurrent())
+				if (!paidContextCurrent() || !generationPlanCurrent())
 					throw new Error(
 						"hosting context changed before generation claim; reconcile reservation",
 					);
@@ -726,6 +854,8 @@ export async function resolveBindleDeployment(
 
 		let genResult: Awaited<ReturnType<typeof saga.run>>;
 		try {
+			if (!generationPlanCurrent())
+				throw new Error("generation plan changed before provider operation");
 			if (inspectGenerationOnly) {
 				const connector = connectors.get(genDecision.plan.generatorConnectorId);
 				if (!connector) throw new Error("claimed generation connector missing");
@@ -979,7 +1109,12 @@ export async function resolveBindleDeployment(
 		);
 	}
 	try {
-		await admitHosting(yard.yardId, yard.providerId, placements.decisions);
+		await admitHosting(
+			yard.yardId,
+			yard.providerId,
+			placements.decisions,
+			generationPlanHash,
+		);
 		if (hostingQuote && hostingBudget) {
 			if (!paidContextCurrent())
 				throw new Error(

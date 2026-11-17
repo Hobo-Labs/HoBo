@@ -65,10 +65,15 @@ that write fails, the broker reports the failure and retains the hold. The
 policy callback receives the quote's SHA-256 digest as `quoteDigest` and must
 include it in `HostingPolicyProof`. The digest is the lowercase hexadecimal
 SHA-256 of the protobuf JSON quote, matching the durable reservation digest.
-Approvals lacking a digest, including legacy proofs, are refused. This binds the
-approval to the quote contents but does not establish that the quote covers the
-selected resource definitions; the host remains responsible for its policy and
-provider assertions.
+Approvals lacking a digest, including legacy proofs, are refused. Yard quotes
+also carry a `workDigest` binding the selected definitions, request, catalog,
+Yard, broker and (when generating a Yard) generation plan. Use
+`prepareYardHostingWork` with the request, Yard and catalog to compute the work
+and digest before obtaining a quote; generated Yards also supply the planned
+`generationPlanHash`. The policy callback receives the bound placements and
+both digests. Legacy Yard quotes without a work digest are refused. If selected
+work changes after a provider effect, the hold is retained for reconciliation.
+The host remains responsible for its policy and provider assertions.
 
 The [funded Yard admission skill](../../.agents/skills/verify-yard-funded-admission/SKILL.md)
 checks finite abstractions of quote approval, the reservation handoff and

@@ -18,6 +18,7 @@ import {
 	YARD_EVENTS,
 	yardEvent,
 } from "../src/index.js";
+import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 
 describe("funded Yard quote and policy context", () => {
 	it.each([
@@ -81,6 +82,7 @@ describe("funded Yard quote and policy context", () => {
 				observedAt: "2026-10-29T00:00:00Z",
 				validUntil: "2026-11-01T00:00:00Z",
 			});
+			bindTestYardWork(quote, request, "broker:test", createLocalHostCatalog());
 			const deps = {
 				brokerId: "broker:test",
 				ownerTenantId: "tenant",
@@ -202,6 +204,7 @@ describe("funded Yard hold races", () => {
 				observedAt: "2026-10-29T00:00:00Z",
 				validUntil: "2026-11-01T00:00:00Z",
 			});
+			bindTestYardWork(quote, request, "broker:test", createLocalHostCatalog());
 			const catalog = createLocalHostCatalog();
 			const wrapped = {
 				...authority,
@@ -308,6 +311,12 @@ it("admits only unchanged, policy-approved funded quotes across generated cases"
 						observedAt: "2026-10-29T00:00:00Z",
 						validUntil: "2026-11-01T00:00:00Z",
 					});
+					bindTestYardWork(
+						quote,
+						request,
+						"broker:test",
+						createLocalHostCatalog(),
+					);
 					const deps = {
 						brokerId: "broker:test",
 						ownerTenantId: "tenant",
@@ -400,6 +409,7 @@ it("retains the hold if the final freshness clock changes hosting context", asyn
 			observedAt: "2026-10-29T00:00:00Z",
 			validUntil: "2026-11-01T00:00:00Z",
 		});
+		bindTestYardWork(quote, request, "broker:test", createLocalHostCatalog());
 		const catalog = createLocalHostCatalog();
 		const clock = () => {
 			if (authority.lookup(`hosting:broker:test:${request.requestId}`))
@@ -489,6 +499,7 @@ it("retains the hold if context changes after funded admission and before the re
 			observedAt: "2026-10-29T00:00:00Z",
 			validUntil: "2026-11-01T00:00:00Z",
 		});
+		bindTestYardWork(quote, request, "broker:test", createLocalHostCatalog());
 		const catalog = createLocalHostCatalog();
 		const result = await resolveBindleDeployment(request, {
 			brokerId: "broker:test",
@@ -622,6 +633,10 @@ it("refuses a quote for a different Yard or provider before reservation", async 
 			requestDigest: contentHashOf(request),
 			observedAt: "2026-10-29T00:00:00Z",
 			validUntil: "2026-11-01T00:00:00Z",
+		});
+		bindTestYardWork(quote, request, "broker:test", createLocalHostCatalog(), {
+			yardId: "yard:a",
+			providerId: LOCAL_HOST_PROVIDER_ID,
 		});
 		const result = await resolveBindleDeployment(request, {
 			brokerId: "broker:test",

@@ -27,6 +27,7 @@ import {
 	type YardFirstPlacementDeps,
 	yardEvent,
 } from "../src/index.js";
+import { bindTestYardWork } from "./yard-hosting-fixtures.js";
 
 const NOW = "2026-10-29T12:00:00Z";
 const allowHosting: NonNullable<YardFirstPlacementDeps["authorizeHosting"]> = (
@@ -475,6 +476,7 @@ describe("Yard-first economic gate", () => {
 				q.yardId = index === 0 ? "yard:a" : "yard:b";
 				q.providerId = LOCAL_HOST_PROVIDER_ID;
 				q.requestDigest = contentHashOf(request);
+				bindTestYardWork(q, request, "broker", createLocalHostCatalog());
 			}
 			const deps = {
 				brokerId: "broker",
