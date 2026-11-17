@@ -533,7 +533,7 @@ describe("Rivet durable topic HTTP client", () => {
 		let entered = false;
 		const block = () => {
 			entered = true;
-				const until = performance.now() + 600;
+			const until = performance.now() + 600;
 			while (performance.now() < until) {
 				// Intentionally delay the event loop so its timeout cannot fire first.
 			}
@@ -554,7 +554,7 @@ describe("Rivet durable topic HTTP client", () => {
 			},
 			revalidate: () => true,
 			fetch,
-				timeoutMs: 500,
+			timeoutMs: 500,
 		});
 		expect(await client.ensureTopic({ operation, topic: "orders" })).toEqual({
 			status: "unknown",
