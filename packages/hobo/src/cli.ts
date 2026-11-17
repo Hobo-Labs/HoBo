@@ -27,7 +27,11 @@ import { createBlacksmithCatalogEntry } from "@hobo/runner-blacksmith";
 import { createDepotCatalogEntry } from "@hobo/runner-depot";
 import { createGithubRunnerCatalogEntry } from "@hobo/runner-github";
 import { createAccessCommand } from "./access-command.js";
-import { createAddCommand, registerInstallable } from "./add-command.js";
+import {
+	createAddCommand,
+	installableProvidersFor,
+	registerInstallable,
+} from "./add-command.js";
 import { createAttestCommand } from "./attest-command.js";
 import { createAuthMdIdentityCommand } from "./auth-md-command.js";
 import { createBrokerCommand } from "./broker-command.js";
@@ -63,6 +67,7 @@ import { createBrokerAwareLoginCommand } from "./login-command.js";
 import { createLogsCommand } from "./logs-command.js";
 import { createMessagingCommand } from "./messaging-command.js";
 import { createOfferCommand } from "./offer-command.js";
+import { createProviderCeremonyUp } from "./provider-ceremony.js";
 import { createRecipesCommand } from "./recipes-command.js";
 import { createRegistryCommand } from "./registry-command.js";
 import { createReplayCommand } from "./replay-command.js";
@@ -203,11 +208,18 @@ export function createComposedHoboCli(
 	// yards). Remote --broker / --anonymous paths use discovery + credential
 	// presenter. The cloud mock `createUpCommand` remains for tests that wire
 	// it directly.
-	const up = createBrokerAwareUpCommand({
-		...(deployRuntime ? { runtime: deployRuntime } : undefined),
-		persistentLocal: !explicitFixture,
-		authMdFetch: options.authMdFetch ?? fetch,
-	});
+	const add = createAddCommand({ runtime });
+	// Every infra `up` holds a ceremony for what it is missing: a resource no
+	// connected provider serves opens the setup page, offers the installable
+	// providers for its port, connects the chosen ones and runs up again.
+	const up = createProviderCeremonyUp(
+		createBrokerAwareUpCommand({
+			...(deployRuntime ? { runtime: deployRuntime } : undefined),
+			persistentLocal: !explicitFixture,
+			authMdFetch: options.authMdFetch ?? fetch,
+		}),
+		{ add, candidates: installableProvidersFor },
+	);
 	const down = createLocalDeploymentDownCommand(
 		deployRuntime ? createDownCommand({ runtime: deployRuntime }) : undefined,
 	);
@@ -245,16 +257,17 @@ export function createComposedHoboCli(
 				// executor whose IaC provider deploys with the junction's token,
 				// resolved from the owner's secret store for this run only.
 				prepare: (input) => prepareVercelConnection(input),
-				upWith: (junctionEnv) =>
+				upWith: (credentials) =>
 					createBrokerAwareUpCommand({
 						runtime: {
 							...runtime,
 							executor: createInProcessExecutor({
 								iac: createVercelDeployProvider({
-									token: junctionEnv.VERCEL_TOKEN ?? "",
-									...(junctionEnv.VERCEL_TEAM_ID !== undefined
-										? { teamId: junctionEnv.VERCEL_TEAM_ID }
-										: undefined),
+									token: credentials.reveal("VERCEL_TOKEN") ?? "",
+									...((team) =>
+										team !== undefined ? { teamId: team } : undefined)(
+										credentials.reveal("VERCEL_TEAM_ID"),
+									),
 									projectName: "hobo-cd",
 								}),
 							}),
@@ -375,7 +388,7 @@ export function createComposedHoboCli(
 			recipes: createRecipesCommand(),
 			offer: createOfferCommand({ runtime }),
 			registry: createRegistryCommand({ runtime }),
-			add: createAddCommand({ runtime }),
+			add,
 			import: createImportCommand({ runtime }),
 			generate: createGenerateCommand({ runtime }),
 			derivative: createDerivativeCommand({ runtime }),

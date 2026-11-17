@@ -96,6 +96,9 @@ describe("chooseMachine", () => {
 	it("lets an only-me machine run only what its owner started and triggered", () => {
 		const mine = machine({ sharing: "only_me" });
 		expect(admits(mine, want())).toBe(true);
+		expect(
+			admits(machine({ sharing: "only_me", ownerCanRead: false }), want()),
+		).toBe(false);
 		expect(admits(mine, want({ triggeredById: "7" }))).toBe(false);
 		expect(admits(mine, want({ starterId: "7" }))).toBe(false);
 		expect(admits(mine, want({ starterId: undefined }))).toBe(false);
@@ -107,8 +110,10 @@ describe("chooseMachine", () => {
 		expect(
 			admits(machine({ ownerCanRead: false }), want({ starterId: "7" })),
 		).toBe(false);
-		// The owner's own job needs no second check.
-		expect(admits(machine({ ownerCanRead: false }), want())).toBe(true);
+		expect(admits(machine({ ownerCanRead: false }), want())).toBe(false);
+		expect(chosen([machine({ ownerCanRead: false })])).toBe(
+			"machine_not_shared",
+		);
 	});
 
 	it("names the last gate anything reached", () => {

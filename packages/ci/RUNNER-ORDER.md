@@ -117,11 +117,11 @@ before they are about speed (`chooseMachine`):
 
 - It must be online, hold every label the relay asked for (case ignored),
   and, when it was registered on one repository, be asked by that repository.
+  Its owner must still be able to read the repository on GitHub.
 - Shared with `only_me`, it takes a job only when its owner both started and
   triggered the run. That leaves out bots, schedules and someone else's
   re-run.
-- Shared with `anyone`, it still refuses a repository its owner cannot read
-  on GitHub.
+- Shared with `anyone`, it may run another person's job.
 - It must be unpaused and have a free slot.
 
 Among the machines left, the starter's own come first, then whichever was

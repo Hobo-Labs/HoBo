@@ -12,6 +12,7 @@ import {
 } from "@hobo/cloud";
 import type { CloudProvider, EventInput, PrincipalRef } from "@hobo/core";
 import { must } from "@hobo/core/total-access";
+import { PULUMI_STATE_PASSPHRASE_MISSING } from "@hobo/iac-pulumi";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import type { CloudflareFetch } from "./cloudflare-client.js";
 import {
@@ -159,9 +160,14 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 						status: "backend_unavailable",
 						code: "HOBO_PULUMI_UNAVAILABLE",
 						message: `hobo drift: the live Pulumi backend is unavailable — ${error.message}`,
-						remediation: [
-							"Install the pinned pulumi CLI (or unset HOBO_PULUMI_LIVE to use the in-memory lane).",
-						],
+						remediation:
+							error.code === PULUMI_STATE_PASSPHRASE_MISSING
+								? [
+										"Supply the original PULUMI_CONFIG_PASSPHRASE for this retained workspace.",
+									]
+								: [
+										"Install the pinned pulumi CLI (or unset HOBO_PULUMI_LIVE to use the in-memory lane).",
+									],
 						data: {
 							command: "drift",
 							backend,

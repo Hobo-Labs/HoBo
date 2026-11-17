@@ -26,6 +26,7 @@ import {
 	DRIFT_CHECKED_EVENT,
 	DRIFT_DETECTED_EVENT,
 	type PulumiAutomationAdapter,
+	selectPulumiEstateAdapter,
 } from "../src/index.js";
 import { isJsonObject } from "../src/json.js";
 
@@ -418,6 +419,31 @@ describe("createDriftCommand", () => {
 			expect((result.data as DriftData).backend).toBe("pulumi-live");
 			// SAFETY: assertion required at this I/O or test boundary.
 			expect((result.data as DriftData).engineCode).toBe("pulumi-cli-missing");
+		});
+	});
+
+	it("refuses a retained Pulumi workspace when no recoverable state key was supplied", async () => {
+		await withProject(async (cwd) => {
+			const runtime = createDefaultYardRuntime();
+			// SAFETY: this runtime's concrete event store is closed after the test.
+			openStores.push(runtime.store as RuntimeLocalEventStore);
+			const env = {
+				HOBO_PULUMI_LIVE: "1",
+				HOBO_PULUMI_BIN: "definitely-not-pulumi-xyz",
+				HOBO_PULUMI_WORKDIR: path.join(cwd, "retained-pulumi"),
+			};
+			const adapter = selectPulumiEstateAdapter({ store: runtime.store, env });
+			expect(adapter?.snapshotState).toBeInstanceOf(Function);
+			expect(() => adapter?.snapshotState?.()).toThrow(/passphrase/iu);
+			const result = await createDriftCommand({ runtime, env }).run(
+				runInput(cwd),
+			);
+			expect(result).toMatchObject({
+				ok: false,
+				code: "HOBO_PULUMI_UNAVAILABLE",
+				data: { engineCode: "pulumi-state-passphrase-missing" },
+				remediation: [expect.stringContaining("PULUMI_CONFIG_PASSPHRASE")],
+			});
 		});
 	});
 

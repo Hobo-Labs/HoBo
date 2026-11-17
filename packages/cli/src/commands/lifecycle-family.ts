@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import type { TrustedVault } from "@hobo/core";
+
 import type { CommandModule, CommandRunInput } from "../shell/registry.js";
 import type { CommandData, CommandResult } from "../types/envelope.js";
 
@@ -79,10 +81,10 @@ export type PrepareOutcome =
 			readonly steps: readonly PreparedStep[];
 			/**
 			 * Credentials a provider junction resolved from the owner's secret
-			 * store for this run only, handed to `upWith`. Held in memory; never
-			 * written, printed or put in a result.
+			 * store for this run only, handed to `upWith`: a trusted vault, in
+			 * memory, never an environment variable, a file or a result.
 			 */
-			readonly runtimeEnv?: Readonly<Record<string, string>>;
+			readonly credentials?: TrustedVault;
 	  }
 	| { readonly kind: "refused"; readonly result: CommandResult };
 
@@ -108,12 +110,10 @@ export interface LifecycleFamilySpec {
 	readonly prepare?: (input: PrepareInput) => Promise<PrepareOutcome>;
 	/**
 	 * Build the `up` that converges with a junction's credentials (the
-	 * prepare step's `runtimeEnv`). Absent, or with no `runtimeEnv`, `up` is
+	 * prepare step's `credentials`). Absent, or with no credentials, `up` is
 	 * used as is.
 	 */
-	readonly upWith?: (
-		runtimeEnv: Readonly<Record<string, string>>,
-	) => CommandModule;
+	readonly upWith?: (credentials: TrustedVault) => CommandModule;
 	/**
 	 * The family's observed status (`hobo ci status` inspects the relay
 	 * connection). Receives the raw args. Default: the read-only what-if.
@@ -331,43 +331,48 @@ export function createLifecycleFamilyCommand(
 			};
 
 			let prepared: readonly PreparedStep[] = [];
-			let runtimeEnv: Readonly<Record<string, string>> | undefined;
-			if (action === "up" && spec.prepare) {
-				const outcome = await spec.prepare({
-					action: "up",
-					projectDir: project.projectDir,
-					whatIf: flags.whatIf,
-					yes: flags.yes,
-					run: delegated,
-				});
-				if (outcome.kind === "refused")
-					return withFamily(outcome.result, spec.family, action, project);
-				prepared = outcome.steps;
-				runtimeEnv = outcome.runtimeEnv;
-				for (const step of prepared)
-					input.emitProgress(
-						`prepare ${step.id}: ${step.outcome} (${step.detail})`,
-					);
-			}
+			let credentials: TrustedVault | undefined;
+			try {
+				if (action === "up" && spec.prepare) {
+					const outcome = await spec.prepare({
+						action: "up",
+						projectDir: project.projectDir,
+						whatIf: flags.whatIf,
+						yes: flags.yes,
+						run: delegated,
+					});
+					if (outcome.kind === "refused")
+						return withFamily(outcome.result, spec.family, action, project);
+					credentials = outcome.credentials;
+					prepared = outcome.steps;
+					for (const step of prepared)
+						input.emitProgress(
+							`prepare ${step.id}: ${step.outcome} (${step.detail})`,
+						);
+				}
 
-			// `status` and every `--what-if` are the read-only plan: the change set,
-			// computed, printed, never applied.
-			const module =
-				action === "status" || (action === "up" && flags.whatIf)
-					? spec.plan
-					: action === "up"
-						? runtimeEnv !== undefined && spec.upWith !== undefined
-							? spec.upWith(runtimeEnv)
-							: spec.up
-						: action === "down"
-							? spec.down
-							: spec.plan;
-			const result = await module.run(delegated);
-			return withFamily(result, spec.family, action, project, {
-				whatIf: flags.whatIf || action === "status" || action === "plan",
-				...(flags.mode !== null ? { mode: flags.mode } : undefined),
-				...(prepared.length > 0 ? { prepared } : undefined),
-			});
+				// `status` and every `--what-if` are the read-only plan: the change set,
+				// computed, printed, never applied.
+				const module =
+					action === "status" || (action === "up" && flags.whatIf)
+						? spec.plan
+						: action === "up"
+							? credentials !== undefined && spec.upWith !== undefined
+								? spec.upWith(credentials)
+								: spec.up
+							: action === "down"
+								? spec.down
+								: spec.plan;
+				const result = await module.run(delegated);
+				return withFamily(result, spec.family, action, project, {
+					whatIf: flags.whatIf || action === "status" || action === "plan",
+					...(flags.mode !== null ? { mode: flags.mode } : undefined),
+					...(prepared.length > 0 ? { prepared } : undefined),
+				});
+			} finally {
+				// The run's credentials end with the run.
+				credentials?.clear();
+			}
 		},
 	};
 }

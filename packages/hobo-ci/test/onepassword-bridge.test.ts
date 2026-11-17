@@ -3,6 +3,7 @@ import {
 	createOnePasswordSecretsPort,
 	onePasswordBinding,
 } from "@hobo/adapter-1password";
+import { createTrustedVault } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { openSecretStore, sdkPort } from "../src/secret-stores.js";
 
@@ -136,17 +137,34 @@ describe("1Password SDK bridge", () => {
 
 	it("returns a reference to the actual 1Password password field", async () => {
 		const fx = sdkFixture();
-		for (const env of [
-			{ OP_VAULT_ID: VAULT, OP_SERVICE_ACCOUNT_TOKEN: "fixture" },
-			{ OP_VAULT_ID: VAULT, OP_ACCOUNT: "owner@example.test" },
+		for (const entry of [
+			{ coordinates: { OP_VAULT_ID: VAULT }, token: "fixture" },
+			{
+				coordinates: { OP_VAULT_ID: VAULT, OP_ACCOUNT: "owner@example.test" },
+				token: undefined,
+			},
 		]) {
-			const opened = await openSecretStore("1password", env, {
-				onePasswordClient: async () => fx.client,
-			});
+			const signIn = createTrustedVault();
+			if (entry.token) signIn.put("OP_SERVICE_ACCOUNT_TOKEN", entry.token);
+			const opened = await openSecretStore(
+				"1password",
+				entry.coordinates,
+				signIn,
+				{
+					onePasswordClient: async (coordinates, credentialHolder) => {
+						expect(coordinates).toEqual(entry.coordinates);
+						expect(credentialHolder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(
+							entry.token,
+						);
+						return fx.client;
+					},
+				},
+			);
 			if (!opened.ok) throw new Error("store not opened");
 			expect(opened.store.reference(NAME)).toBe(
 				`op://${VAULT}/${NAME}/password`,
 			);
+			signIn.clear();
 		}
 	});
 });

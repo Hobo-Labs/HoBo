@@ -1,7 +1,7 @@
 /**
  * The Vercel provider's capability surface.
  *
- * Four equivalence classes — compute, object store, database, KV — each mapped
+ * Native equivalence classes, including deployment-owned queues, each mapped
  * to a headline Vercel product. The surface is small, and every method on it
  * feeds a decision made elsewhere: `satisfies` feeds placement, `estimateCost`
  * feeds ranking, `realize` feeds the driver, `client` feeds whatever binds to
@@ -15,6 +15,7 @@ import {
 	equivalenceForPort,
 	INITIAL_CAPABILITY_PORTS,
 } from "../src/equivalence.js";
+import { vercelImpedanceFindings } from "../src/impedance.js";
 import { PROVIDER_TARGET } from "../src/options.js";
 import { createVercelProvider } from "../src/provider.js";
 
@@ -42,13 +43,26 @@ describe("identity", () => {
 		);
 	});
 
-	it("serves the four ports its authoring options target", () => {
+	it("serves only provider-owned ports", () => {
 		// The option builders and the capability list have to agree, or a block a
 		// caller can write would name a port this provider does not serve — and
 		// placement would drop it silently rather than refusing it.
-		for (const port of ["compute", "objectStore", "database", "kv"]) {
+		for (const port of ["compute", "project", "objectStore", "kv"]) {
 			expect(provider.capabilities.some((c) => c.port === port)).toBe(true);
 		}
+		expect(provider.capabilities.some((c) => c.port === "database")).toBe(
+			false,
+		);
+		expect(() =>
+			provider.realize({ name: "database", port: "database" }),
+		).toThrow(/cannot realize port database/u);
+		expect(vercelImpedanceFindings({ paradigm: "postgres" })).toEqual([
+			expect.objectContaining({
+				code: "no-native-postgres",
+				severity: "block",
+				message: expect.stringContaining("Junction"),
+			}),
+		]);
 	});
 
 	it("resolves each class key to its mapping", () => {
@@ -167,6 +181,49 @@ describe("capabilityManifest", () => {
 		).toEqual(provider.capabilities.map((c) => c.port).sort());
 	});
 
+	it("identifies the native Blob product and leaves its price unknown", () => {
+		const entry = provider
+			.capabilityManifest()
+			.capabilities.capabilities.find((c) => c.port === "objectStore");
+		expect(entry).toMatchObject({
+			productId: "vercel.blob/v1",
+			profiles: ["bucket.object/v1"],
+			features: ["durable", "read", "write", "delete"],
+		});
+		expect(
+			capabilityFor("objectStore").satisfies({
+				port: "objectStore",
+				features: ["read", "write", "delete"],
+			}),
+		).toEqual({ kind: "full" });
+		expect(
+			capabilityFor("objectStore").estimateCost({ port: "objectStore" })
+				.pricingStatus,
+		).toBe("unknown");
+	});
+
+	it("advertises projects separately from HTTP deployments", () => {
+		const entry = provider
+			.capabilityManifest()
+			.capabilities.capabilities.find((c) => c.port === "project");
+		expect(entry).toMatchObject({
+			productId: "vercel.project/v1",
+			profiles: ["web.project/v1"],
+		});
+		expect(
+			capabilityFor("project").satisfies({
+				port: "project",
+				features: ["http"],
+			}),
+		).toEqual({
+			kind: "partial",
+			missing: ["http"],
+		});
+		expect(
+			capabilityFor("project").estimateCost({ port: "project" }).pricingStatus,
+		).toBe("unknown");
+	});
+
 	it("is stable across calls", () => {
 		// Two manifests from one provider must describe the same thing, or a
 		// dispatcher re-reading one mid-run would see the provider change under
@@ -194,19 +251,20 @@ describe("realize", () => {
 	it("realizes each port to its own resource class", () => {
 		// The mapping is the whole point of the equivalence table; realizing two
 		// ports to one class would deploy the wrong product for one of them.
-		const classes = provider.capabilities.map(
-			(c) =>
-				provider.realize({ name: "r", port: c.port }).driver.resources[0]?.type,
-		);
+		const classes = provider.capabilities
+			.filter((c) => c.port !== "project")
+			.map(
+				(c) =>
+					provider.realize({ name: "r", port: c.port }).driver.resources[0]
+						?.type,
+			);
 		expect(new Set(classes).size).toBe(classes.length);
 	});
 
-	it("refuses a port it cannot realize, naming the port", () => {
-		// Named because a placement that reached here picked the wrong provider,
-		// and the reader needs to know which port did it.
-		expect(() => provider.realize({ name: "q", port: "queue" })).toThrow(
-			/cannot realize port queue/u,
-		);
+	it("requires supervised reconciliation for projects", () => {
+		expect(() =>
+			provider.realize({ name: "project", port: "project" }),
+		).toThrow(/hosting supervisor/u);
 	});
 });
 
@@ -228,8 +286,8 @@ describe("client", () => {
 	});
 
 	it("refuses a client for a port it has none for", () => {
-		expect(() => provider.client("queue", {})).toThrow(
-			/no client for port queue/u,
+		expect(() => provider.client("database", {})).toThrow(
+			/no client for port database/u,
 		);
 	});
 });
