@@ -64,5 +64,5 @@ import "list"
   fenceSettlementGuard?: #BudgetFenceSettlementGuard
 }
 #BudgetSettlementEvidence: {usageEvidenceRef: string & !="", sourceStoppedEvidenceRef: string & !="", providerAccounts?: [...#ProviderAccountExposure], entitlementClaims?: [...#EntitlementClaim], fenceOperationReceiptJson?: string, financeSignature?: string}
-#HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
+#HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", quoteDigest: string & =~"^[a-f0-9]{64}$", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
 #BudgetAuthorityEvent: {type: string & !="", snapshot: #BudgetLedgerSnapshot, reservations: [...#BudgetReservation], reconciliationEvidenceRef?: string}

@@ -405,6 +405,7 @@ describe("yard event-store folds + provider resolvers", () => {
 						proof: create(HostingPolicyProofSchema, {
 							requestDigest: input.requestDigest,
 							quoteId: input.quote.quoteId,
+							quoteDigest: input.quoteDigest,
 							identity: input.identity,
 							policyHash: "approved-azure-policy",
 							effect: "allow",

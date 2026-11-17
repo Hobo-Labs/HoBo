@@ -8,6 +8,8 @@ scratch_parent = Path(tempfile.mkdtemp(prefix='hobo-yard-funded-mutants-'))
 scratch = scratch_parent / 'broker'
 shutil.copytree(repo / 'packages/broker', scratch, ignore=shutil.ignore_patterns('node_modules', 'dist', '.turbo', 'coverage'))
 (scratch / 'node_modules').symlink_to(repo / 'packages/broker/node_modules', target_is_directory=True)
+# The package tsconfig extends the repository root and is invalid outside the repo.
+(scratch / 'tsconfig.json').unlink()
 target = scratch / 'src/yard-placement/deploy.ts'
 config = skill / 'models/vitest.config.mts'
 def replace(s,a,b):
@@ -47,6 +49,8 @@ def signal(s):
 cases=[
  ('selection',selection,'yard-funded-quote-race.test.ts','different Yard or provider'),
  ('policy-quote',lambda s:replace(s,'toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||',''),'yard-funded-quote-race.test.ts','changed provider while policy'),
+ ('quote-id',lambda s:replace(s,'proof.quoteId !== quote.quoteId ||',''),'yard-policy-quote-binding.test.ts','complete quote content'),
+ ('quote-digest',lambda s:replace(s,'proof.quoteDigest !== quoteDigest ||',''),'yard-policy-quote-binding.test.ts','complete quote content'),
  ('source-quote',lambda s:replace(s,'quoteKey(hostingBudget.quotes) === quotesDigest','true'),'yard-funded-quote-race.test.ts','changed source quote while policy'),
  ('policy-authority',lambda s:replace(s,'deps.authorizeHosting === paidAuthority &&','true &&'),'yard-funded-quote-race.test.ts','changed authority while policy'),
  ('budget',lambda s:first(s,'deps.hostingBudget === hostingBudget &&','true &&'),'yard-funded-quote-race.test.ts','changed budget while policy'),
@@ -68,11 +72,16 @@ cases=[
  ('claim-fence',claim,'yard-event-store-folds.test.ts','context-before-claim'),
  ('signals',signal,'yard-event-store-folds.test.ts','signals-unavailable'),
 ]
+def run(test, pattern):
+ args=['node',str(repo/'node_modules/vitest/vitest.mjs'),'run',f'test/{test}','--root',str(scratch),'--config',str(config),'--maxWorkers=1','--no-file-parallelism','-t',pattern]
+ return subprocess.run(args,cwd=repo,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=90)
 try:
+ control=run('yard-funded-quote-race.test.ts','changed provider while policy')
+ if control.returncode != 0 or 'Test Files  1 passed' not in control.stdout:raise Exception(f'unmodified control failed:\n{control.stdout[-2200:]}')
+ print('Unmodified control passed',flush=True)
  for name,mutate,test,pattern in cases:
   target.write_text(mutate(original.read_text()))
-  args=['node',str(repo/'node_modules/vitest/vitest.mjs'),'run',f'test/{test}','--root',str(scratch),'--config',str(config),'--maxWorkers=1','--no-file-parallelism','-t',pattern]
-  r=subprocess.run(args,cwd=repo,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=90)
-  if r.returncode==0 or f'FAIL  test/{test}' not in r.stdout:raise Exception(f'{name} did not fail expected test ({r.returncode}):\n{r.stdout[-2200:]}')
+  r=run(test,pattern)
+  if r.returncode==0 or f'FAIL  test/{test} >' not in r.stdout or 'Failed Suites' in r.stdout:raise Exception(f'{name} did not fail the expected running test ({r.returncode}):\n{r.stdout[-2200:]}')
   print(f'Expected real-code failure: {name}',flush=True)
 finally:shutil.rmtree(scratch_parent)

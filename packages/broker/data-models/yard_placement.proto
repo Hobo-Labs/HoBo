@@ -242,4 +242,6 @@ message HostingPolicyProof {
   string effect = 5;
   string evidence_ref = 6;
   bool obligations_satisfied = 7;
+  // SHA-256 of the protobuf JSON serialization of HostingQuote, in lowercase hex.
+  string quote_digest = 8;
 }

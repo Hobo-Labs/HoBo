@@ -25,4 +25,14 @@ try {
     if (mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`proof mutation ${mutation} was not detected`);
     process.stdout.write(`Expected proof counterexample: ${mutation}\n`);
   }
+  const quoteProof=fileURLToPath(new URL('../proof/policy_quote.py',import.meta.url));
+  const quoteResult=spawnSync('python3',[quoteProof],{env,stdio:'inherit'});
+  if (quoteResult.error) throw quoteResult.error;
+  if (quoteResult.status !== 0) throw new Error('funded Yard quote binding proof failed');
+  for (const mutation of ['presence','identifier','digest','proof_binding','collision']) {
+    const mutant=spawnSync('python3',[quoteProof],{env:{...env,YARD_POLICY_PROOF_MUTATION:mutation},encoding:'utf8'});
+    if (mutant.error) throw mutant.error;
+    if (mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`quote proof mutation ${mutation} was not detected`);
+    process.stdout.write(`Expected quote proof counterexample: ${mutation}\n`);
+  }
 } finally { rmSync(scratch,{recursive:true,force:true}); }

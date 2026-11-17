@@ -131,6 +131,7 @@ describe("funded Yard quote and policy context", () => {
 						proof: create(HostingPolicyProofSchema, {
 							requestDigest: input.requestDigest,
 							quoteId: input.quote.quoteId,
+							quoteDigest: input.quoteDigest,
 							identity: input.identity,
 							effect: "allow",
 							policyHash: "approved",
@@ -228,6 +229,7 @@ describe("funded Yard hold races", () => {
 						proof: create(HostingPolicyProofSchema, {
 							requestDigest: input.requestDigest,
 							quoteId: input.quote.quoteId,
+							quoteDigest: input.quoteDigest,
 							identity: input.identity,
 							effect: "allow",
 							policyHash: "approved",
@@ -329,6 +331,7 @@ it("admits only unchanged, policy-approved funded quotes across generated cases"
 								proof: create(HostingPolicyProofSchema, {
 									requestDigest: input.requestDigest,
 									quoteId: input.quote.quoteId,
+									quoteDigest: input.quoteDigest,
 									identity: input.identity,
 									effect,
 									policyHash: "approved",
@@ -419,6 +422,7 @@ it("retains the hold if the final freshness clock changes hosting context", asyn
 					proof: create(HostingPolicyProofSchema, {
 						requestDigest: input.requestDigest,
 						quoteId: input.quote.quoteId,
+						quoteDigest: input.quoteDigest,
 						identity: input.identity,
 						effect: "allow",
 						policyHash: "approved",
@@ -507,6 +511,7 @@ it("retains the hold if context changes after funded admission and before the re
 					proof: create(HostingPolicyProofSchema, {
 						requestDigest: input.requestDigest,
 						quoteId: input.quote.quoteId,
+						quoteDigest: input.quoteDigest,
 						identity: input.identity,
 						effect: "allow",
 						policyHash: "approved",
@@ -634,6 +639,7 @@ it("refuses a quote for a different Yard or provider before reservation", async 
 					proof: create(HostingPolicyProofSchema, {
 						requestDigest: input.requestDigest,
 						quoteId: input.quote.quoteId,
+						quoteDigest: input.quoteDigest,
 						identity: input.identity,
 						effect: "allow",
 						policyHash: "approved",

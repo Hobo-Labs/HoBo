@@ -11,6 +11,7 @@ import {
 	type HostingPolicyProof,
 	HostingPolicyProofSchema,
 	type HostingQuote,
+	hostingQuoteDigest,
 	HostingQuoteSchema,
 	validateHostingQuote,
 } from "../budget-authority.js";
@@ -97,6 +98,7 @@ export interface YardFirstPlacementDeps {
 		request: BindleDeploymentRequest;
 		requestDigest: string;
 		quote: HostingQuote;
+		quoteDigest: string;
 		identity: BudgetIdentity;
 		now: string;
 	}) =>
@@ -463,6 +465,7 @@ export async function resolveBindleDeployment(
 		if (!authorize)
 			throw new Error("bound hosting policy authorization required");
 		const expectedQuote = toJsonString(HostingQuoteSchema, quote);
+		const quoteDigest = hostingQuoteDigest(quote);
 		const policyQuote = clone(HostingQuoteSchema, quote);
 		const policyIdentity = clone(BudgetIdentitySchema, ledger.identity);
 		const expectedIdentity = toJsonString(BudgetIdentitySchema, policyIdentity);
@@ -470,6 +473,7 @@ export async function resolveBindleDeployment(
 			request,
 			requestDigest,
 			quote: policyQuote,
+			quoteDigest,
 			identity: policyIdentity,
 			now: context.now(),
 		});
@@ -487,6 +491,7 @@ export async function resolveBindleDeployment(
 			!proof.policyHash ||
 			proof.requestDigest !== requestDigest ||
 			proof.quoteId !== quote.quoteId ||
+			proof.quoteDigest !== quoteDigest ||
 			!proof.identity ||
 			budgetIdentityKey(proof.identity) !== budgetIdentityKey(ledger.identity)
 		)

@@ -50,6 +50,13 @@ export type {
 	BudgetReservation,
 	HostingQuote,
 };
+/** SHA-256 of the protobuf JSON representation used by durable reservations. */
+export function hostingQuoteDigest(quote: HostingQuote): string {
+	return createHash("sha256")
+		.update(toJsonString(HostingQuoteSchema, quote))
+		.digest("hex");
+}
+
 export type BudgetSettlementEvidence = Pick<
 	GeneratedSettlementEvidence,
 	"usageEvidenceRef" | "sourceStoppedEvidenceRef"
@@ -831,9 +838,7 @@ export function createBudgetAdmissionAuthority(options: {
 			)
 				throw new Error("budget reservation scope mismatch");
 			const previous = reservations.get(input.reservationId);
-			const quoteDigest = createHash("sha256")
-				.update(toJsonString(HostingQuoteSchema, input.quote))
-				.digest("hex");
+			const quoteDigest = hostingQuoteDigest(input.quote);
 			if (previous) {
 				if (
 					!previous.identity ||
