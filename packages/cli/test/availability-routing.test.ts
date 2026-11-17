@@ -1,8 +1,15 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { create } from "@bufbuild/protobuf";
 import { parseManifest } from "@hobo/bindles";
 import {
+	BudgetLedgerSnapshotSchema,
+	createSqliteBudgetAdmissionAuthority,
+	HostingQuoteSchema,
+} from "@hobo/broker";
+import {
+	collectStream,
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
 	type IacProgram,
@@ -59,10 +66,13 @@ const registry: PlannerRegistry = {
 };
 
 let stores: RuntimeLocalEventStore[] = [];
+let budgets: ReturnType<typeof createSqliteBudgetAdmissionAuthority>[] = [];
 const dirs: string[] = [];
 afterEach(async () => {
 	for (const store of stores) store.close();
 	stores = [];
+	for (const budget of budgets) budget.close();
+	budgets = [];
 	for (const dir of dirs.splice(0))
 		await rm(dir, { recursive: true, force: true });
 });
@@ -71,22 +81,30 @@ function runtimeWith(
 	down: ReadonlySet<string>,
 	applied: string[],
 	failAfterEffect = false,
+	beforeFailedEffect?: (program: IacProgram) => void,
+	attempts?: string[],
 ): YardRuntime {
 	const iac: IacProvider = {
 		id: "mock",
 		async preview(program: IacProgram) {
+			attempts?.push(`preview:${program.resourceId}@${program.provider}`);
 			return { summary: `preview ${program.resourceId}`, changes: 1 };
 		},
 		async apply(program: IacProgram) {
+			attempts?.push(`apply:${program.resourceId}@${program.provider}`);
 			if (down.has(program.provider)) {
-				if (failAfterEffect)
+				if (failAfterEffect) {
+					beforeFailedEffect?.(program);
 					applied.push(`${program.resourceId}@${program.provider}`);
+				}
 				throw new Error(`${program.provider} is not answering`);
 			}
 			applied.push(`${program.resourceId}@${program.provider}`);
 			return { endpoint: `${program.resourceId}.${program.provider}` };
 		},
-		async destroy() {},
+		async destroy(program: IacProgram) {
+			attempts?.push(`destroy:${program.resourceId}@${program.provider}`);
+		},
 		async refresh() {
 			return { drift: false, observed: {} };
 		},
@@ -130,22 +148,133 @@ describe("availability-aware up", () => {
 
 	it("does not route an uncertain apply to another provider", async () => {
 		const applied: string[] = [];
-		const client = createYardClient(
-			runtimeWith(new Set(["neon"]), applied, true),
+		const attempts: string[] = [];
+		const now = "2026-10-29T12:00:00Z";
+		const directory = await mkdtemp(
+			path.join(tmpdir(), "hobo-uncertain-budget-"),
 		);
+		dirs.push(directory);
+		const budgetPath = path.join(directory, "budget.sqlite");
+		const snapshot = create(BudgetLedgerSnapshotSchema, {
+			identity: {
+				tenantId: "tenant",
+				budgetId: "hosting",
+				periodId: "2026-10",
+				policyRevision: "r1",
+			},
+			limitMicros: 100,
+			observedAt: "2026-10-29T00:00:00Z",
+			validUntil: "2026-11-01T00:00:00Z",
+		});
+		const authority = createSqliteBudgetAdmissionAuthority({
+			path: budgetPath,
+			snapshot,
+			now: () => now,
+		});
+		budgets.push(authority);
+		const runtime = runtimeWith(
+			new Set(["neon"]),
+			applied,
+			true,
+			(program) => {
+				const current = authority.read(now);
+				if (!current.identity) throw new Error("missing budget identity");
+				const quote = create(HostingQuoteSchema, {
+					quoteId: "quote-neon",
+					yardId: "yard",
+					providerId: program.provider,
+					ownerTenantId: current.identity.tenantId,
+					currency: "USD",
+					totalMicros: 40,
+					liabilityBoundMicros: 60,
+					components: [{ name: "db", costMicros: 40 }],
+					requestDigest: "request-neon",
+					observedAt: "2026-10-29T00:00:00Z",
+					validUntil: "2026-11-01T00:00:00Z",
+				});
+				authority.reserve({
+					reservationId: "hold-neon",
+					requestDigest: quote.requestDigest,
+					quote,
+					identity: current.identity,
+					expectedSeq: current.seq,
+					now,
+				});
+				authority.claimExecution({
+					reservationId: "hold-neon",
+					requestDigest: quote.requestDigest,
+					executionDigest: "execute-neon",
+				});
+			},
+			attempts,
+		);
+		const client = createYardClient(runtime);
 		const bindle = parseManifest(DB_ONLY);
 		const options = {
 			deploymentId: "uncertain",
-			session: createFixtureSession(),
+			session: createFixtureSession({ tenant: "tenant" }),
 		};
-		expect((await client.up(bindle, options)).status).toBe("waiting");
+		expect((await client.up(bindle, options)).status).toBe("needs-human");
 		expect(applied).toEqual(["db@neon"]);
+		expect(attempts).toEqual(["preview:db@neon", "apply:db@neon"]);
+		const firstHistory = await collectStream(
+			runtime.store,
+			"deployment:uncertain",
+		);
+		const failures = firstHistory.filter(
+			(event) => event.type === "resource.Failed",
+		);
+		expect(failures).toHaveLength(1);
+		expect(failures[0]?.data).toMatchObject({
+			resourceId: "db",
+			classification: "fatal",
+			requiresReconciliation: true,
+			reconciliationOperation: "apply",
+		});
+		expect(authority.lookup("hold-neon")).toMatchObject({
+			status: "held",
+			executionDigest: "execute-neon",
+		});
+		expect(authority.read(now).reservedMicros).toBe(60);
+		// Independently reopen the durable budget journal before the retry.
+		const reopened = createSqliteBudgetAdmissionAuthority({
+			path: budgetPath,
+			snapshot,
+			now: () => now,
+		});
+		budgets.push(reopened);
+		expect(reopened.lookup("hold-neon")).toMatchObject({
+			status: "held",
+			executionDigest: "execute-neon",
+		});
+		expect((await client.up(bindle, options)).status).toBe("needs-human");
+		expect(attempts).toEqual(["preview:db@neon", "apply:db@neon"]);
+		expect(reopened.read(now).reservedMicros).toBe(60);
 		const rerun = await client.up(bindle, {
 			...options,
 			config: { unavailableProviders: ["neon"] },
 		});
 		expect(rerun.status).toBe("needs-human");
 		expect(applied).toEqual(["db@neon"]);
+		expect(attempts).toEqual(["preview:db@neon", "apply:db@neon"]);
+		const history = await collectStream(runtime.store, "deployment:uncertain");
+		expect(
+			history
+				.filter((event) => event.type === "resource.Failed")
+				.map((event) => event.id),
+		).toEqual(failures.map((event) => event.id));
+		expect(
+			history.some(
+				(event) =>
+					event.type === "resource.Reconciled" ||
+					event.type === "resource.Provisioned",
+			),
+		).toBe(false);
+		expect(reopened.lookup("hold-neon")).toMatchObject({
+			status: "held",
+			executionDigest: "execute-neon",
+		});
+		expect(reopened.read(now).reservedMicros).toBe(60);
 	});
 
 	it("uses an excluded provider set on a fresh deployment and replays it safely", async () => {
