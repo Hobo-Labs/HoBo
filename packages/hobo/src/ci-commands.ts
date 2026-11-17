@@ -9,6 +9,7 @@
  * A name already handled in `ci-command.ts` is never looked up in the table.
  */
 import type { CommandResult, CommandRunInput } from "@hobo/cli";
+import { CI_MACHINE_COMMAND } from "./ci-machine.js";
 
 /** The checkout a command runs in, and its GitHub repository when one is known. */
 export type CiLocalRepository = Readonly<{
@@ -40,7 +41,7 @@ export type CiCommand = Readonly<{
 }>;
 
 /** Every table-dispatched `hobo ci` command, one entry each. */
-export const CI_COMMANDS: readonly CiCommand[] = [];
+export const CI_COMMANDS: readonly CiCommand[] = [CI_MACHINE_COMMAND];
 
 /** The command named `name` in `table`, or undefined. */
 export function findCiCommand(
