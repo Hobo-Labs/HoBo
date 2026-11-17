@@ -13,6 +13,7 @@ const baselines = [
 	"golden-replay-baseline.json",
 	"golden-replay-v2.json",
 	"golden-replay-v3.json",
+	"golden-replay-v4.json",
 ].map((name) =>
 	JSON.parse(
 		readFileSync(join(import.meta.dirname, "../corpus", name), "utf8"),

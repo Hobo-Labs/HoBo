@@ -1,5 +1,7 @@
 import { clone, toJson } from "@bufbuild/protobuf";
 import {
+	type CommitmentAmount,
+	type CreditValue,
 	type EffectiveInterval,
 	type Evidence,
 	type FinancialStateView,
@@ -7,9 +9,17 @@ import {
 	type GrantScope,
 	type QuoteScenario,
 } from "./_generated/pricing_pb.js";
+import {
+	addDecimal,
+	compareDecimal,
+	DECIMAL_ZERO,
+	type Decimal,
+	parseDecimal,
+} from "./decimal.js";
 import { stableHash } from "./json.js";
 import { compareCodeUnits, type TextComparison } from "./order.js";
 import type { PricingRejectionCode } from "./types.js";
+import { convertQuantity } from "./units.js";
 
 const UTC_PATTERN =
 	/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$/;
@@ -207,10 +217,239 @@ function validateFinancialSourceIds(state: FinancialStateView): void {
 	);
 }
 
+function nonnegativeAmount(
+	value: { decimal: string } | undefined,
+	path: string,
+): Decimal {
+	const amount = value === undefined ? undefined : parseDecimal(value.decimal);
+	if (amount === undefined || compareDecimal(amount, DECIMAL_ZERO) < 0) {
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			`${path} must be nonnegative`,
+		);
+	}
+	return amount;
+}
+
+function nonnegativeSourceValue(
+	value: CreditValue | CommitmentAmount | undefined,
+	path: string,
+): Decimal {
+	if (value?.value.case !== "money" && value?.value.case !== "quantity") {
+		throw new PricingFault("INVALID_PRICING_INPUT", `${path} is missing`);
+	}
+	return nonnegativeAmount(value.value.value, path);
+}
+
+function sourceUnit(value: CreditValue | CommitmentAmount | undefined): string {
+	if (value?.value.case === "money" && value.value.value.currency)
+		return `money:${value.value.value.currency}`;
+	if (value?.value.case === "quantity" && value.value.value.unit)
+		return `quantity:${value.value.value.unit}`;
+	throw new PricingFault(
+		"INVALID_PRICING_INPUT",
+		"financial source unit is missing",
+	);
+}
+
+function validateFinancialSourceValues(state: FinancialStateView): void {
+	for (const allowance of state.allowances) {
+		const grant = allowance.grant;
+		const included = nonnegativeAmount(grant?.included, "allowance included");
+		nonnegativeAmount(allowance.remaining, "allowance remaining");
+		nonnegativeAmount(allowance.used, "allowance used");
+		const unit = grant?.included?.unit;
+		const converted = unit
+			? convertQuantity(allowance.remaining, unit)
+			: undefined;
+		const convertedUsed = unit
+			? convertQuantity(allowance.used, unit)
+			: undefined;
+		if (!unit || !converted || !convertedUsed)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"allowance units are inconsistent",
+			);
+		const remaining = nonnegativeAmount(converted, "allowance remaining");
+		const used = nonnegativeAmount(convertedUsed, "allowance used");
+		const rollover = nonnegativeAmount(
+			grant?.rollover === undefined
+				? undefined
+				: { decimal: grant.rollover.max },
+			"allowance rollover",
+		);
+		if (
+			compareDecimal(
+				addDecimal(remaining, used),
+				addDecimal(included, rollover),
+			) > 0
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"allowance used and remaining exceed its declared capacity",
+			);
+	}
+	for (const credit of state.credits) {
+		const grant = credit.grant;
+		const face = nonnegativeSourceValue(grant?.faceValue, "credit face value");
+		const remaining = nonnegativeSourceValue(
+			credit.remaining,
+			"credit remaining",
+		);
+		const used = nonnegativeSourceValue(credit.used, "credit used");
+		const remainingBasis = nonnegativeAmount(
+			credit.remainingBasis,
+			"credit remaining basis",
+		);
+		const usedBasis = nonnegativeAmount(credit.usedBasis, "credit used basis");
+		const unit = sourceUnit(grant?.faceValue);
+		if (
+			sourceUnit(credit.remaining) !== unit ||
+			sourceUnit(credit.used) !== unit
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"credit values use different units",
+			);
+		}
+		if (
+			!credit.remainingBasis?.currency ||
+			credit.remainingBasis.currency !== credit.usedBasis?.currency ||
+			(unit.startsWith("money:") &&
+				unit !== `money:${credit.remainingBasis.currency}`)
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"credit basis currency is inconsistent",
+			);
+		}
+		const rollover = nonnegativeAmount(
+			grant?.rollover === undefined
+				? undefined
+				: { decimal: grant.rollover.max },
+			"credit rollover",
+		);
+		if (
+			compareDecimal(addDecimal(remaining, used), addDecimal(face, rollover)) >
+			0
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"credit used and remaining exceed its declared capacity",
+			);
+		const basis = grant?.economicBasis;
+		if (basis?.kind === "acquisition") {
+			const acquired = nonnegativeAmount(
+				basis.acquisitionAmount,
+				"credit acquisition basis",
+			);
+			if (basis.acquisitionAmount?.currency !== credit.remainingBasis.currency)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"credit acquisition currency is inconsistent",
+				);
+			if (
+				grant?.derivedFrom !== undefined &&
+				compareDecimal(acquired, DECIMAL_ZERO) !== 0
+			) {
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"derived credit cannot have acquisition basis",
+				);
+			}
+			if (
+				compareDecimal(acquired, DECIMAL_ZERO) > 0 &&
+				compareDecimal(rollover, DECIMAL_ZERO) > 0
+			)
+				throw new PricingFault(
+					"PRICING_MODEL_UNSUPPORTED",
+					"paid credit rollover has no attributable acquisition basis",
+				);
+			if (compareDecimal(addDecimal(remainingBasis, usedBasis), acquired) > 0)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"credit recorded basis exceeds its acquisition basis",
+				);
+		} else if (basis?.kind !== "zero" && basis?.kind !== "face-value") {
+			throw new PricingFault(
+				"PRICING_MODEL_UNSUPPORTED",
+				"credit basis is unsupported",
+			);
+		} else if (
+			basis.kind === "face-value" &&
+			grant?.derivedFrom !== undefined
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"derived credit cannot have face-value basis",
+			);
+		}
+		if (basis.kind === "face-value") {
+			if (!unit.startsWith("money:"))
+				throw new PricingFault(
+					"PRICING_MODEL_UNSUPPORTED",
+					"face-value basis requires a monetary credit",
+				);
+			if (
+				compareDecimal(
+					addDecimal(remainingBasis, usedBasis),
+					addDecimal(face, rollover),
+				) > 0
+			)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"credit recorded basis exceeds its face value and rollover",
+				);
+		}
+		if (
+			(basis.kind === "zero" || grant?.derivedFrom !== undefined) &&
+			(compareDecimal(remainingBasis, DECIMAL_ZERO) !== 0 ||
+				compareDecimal(usedBasis, DECIMAL_ZERO) !== 0)
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"zero-basis credit has recorded basis",
+			);
+		}
+	}
+	for (const commitment of state.commitments) {
+		const declared = nonnegativeSourceValue(
+			commitment.commitment?.amount,
+			"commitment amount",
+		);
+		const remaining = nonnegativeSourceValue(
+			commitment.remaining,
+			"commitment remaining",
+		);
+		const used = nonnegativeSourceValue(commitment.used, "commitment used");
+		const unit = sourceUnit(commitment.commitment?.amount);
+		if (
+			sourceUnit(commitment.remaining) !== unit ||
+			sourceUnit(commitment.used) !== unit
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"commitment values use different units",
+			);
+		}
+		if (commitment.commitment?.underuse !== "forfeit")
+			throw new PricingFault(
+				"PRICING_MODEL_UNSUPPORTED",
+				"commitment rollover and true-up are unsupported",
+			);
+		if (compareDecimal(addDecimal(remaining, used), declared) > 0)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"commitment used and remaining exceed its declared capacity",
+			);
+	}
+}
+
 export function validateScenarioState(
 	scenario: QuoteScenario,
 	time: TemporalPolicy = EXACT_TIME,
 	strictSourceIdentity = true,
+	strictSourceValues = true,
 ): void {
 	const catalog = scenario.catalog;
 	const state = scenario.state;
@@ -257,6 +496,7 @@ export function validateScenarioState(
 		);
 	}
 	if (strictSourceIdentity) validateFinancialSourceIds(state);
+	if (strictSourceValues) validateFinancialSourceValues(state);
 	const allowPartial = scenario.options?.allowPartialFinancialState === true;
 	if (state.completeness !== "complete" && !allowPartial) {
 		throw new PricingFault(

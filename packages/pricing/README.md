@@ -15,7 +15,7 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
-New quotes use `pricing-rating/v4`. It orders ties by string code units,
+New quotes use `pricing-rating/v5`. It orders ties by string code units,
 compares UTC instants without truncating fractional seconds, rejects impossible
 calendar dates, and requires each allowance, credit, and commitment to have a
 unique nonempty identity within its kind and the financial state's tenant. This
@@ -30,9 +30,20 @@ or latest-observation choices. To rerate an old record, pass its stored version,
 Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
 requires its original locale. Versions 1 and 2 also retain their previous
 timestamp comparison and millisecond validation behavior. Versions 1–3 do not
-enforce the new source identity checks. Preserve the original quote as evidence
-rather than treating a new v4 quote as the old one, and reconcile affected old
+enforce the new source identity checks. Versions 1–4 also retain earlier source
+amount, basis and commitment-unit behavior. Preserve the original quote as evidence
+rather than treating a new v5 quote as the old one, and reconcile affected old
 expiry, evidence, observation, and financial-source decisions before use.
+
+V5 requires nonnegative source amounts and rate-card prices and compatible units.
+For allowances and credits it bounds used plus remaining by the declared amount plus rollover; for
+forfeiting commitments it bounds them by the declared amount. These checks treat
+used and remaining as belonging to the same grant and bucket. Derived credits
+must have no additional basis, and consumed credit basis cannot exceed recorded
+remaining basis. Paid-credit rollover and commitment rollover or true-up fail
+closed because their carried basis or bucket semantics are not represented.
+Commitment consumption is recorded in its currency. These checks do not verify
+that the provider's reported capacity, prior usage, or basis is authentic.
 
 - Exact decimal strings and scaled-integer arithmetic; no floating-point money.
 - Explicit unit identities/conversions; GB and GiB are never treated as aliases.
@@ -92,7 +103,7 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-The replay corpus pins complete v1, v2, and v3 quote outputs. The replay test parses
+The replay corpus pins complete v1, v2, v3, and v4 quote outputs. The replay test parses
 each scenario through protobuf JSON, rerates it with the recorded version, and
 compares the stable JSON result, including the quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
@@ -102,7 +113,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 32 states and hides eight
+bounded TLA+ models, and abstract balance proofs. The credit model explores 40 states and hides ten
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -119,7 +130,7 @@ stateDiagram-v2
 ```
 
 The source-admission projection covers one abstract financial source. Its
-model explores 243 states and hides 96 same-state transitions; it assumes the
+model explores 342 states and hides 144 same-state transitions; it assumes the
 source identity, tenant, and account classifications reflect the provider's
 actual records.
 
@@ -133,6 +144,24 @@ stateDiagram-v2
   s0 --> s1: check tenant, identity and account
   s0 --> s2: check tenant, identity and account
   s1 --> s3: apply source once
+```
+
+The source-value model checks debit bounds, credit basis and commitment units
+over 2,004 states. This projection constrains inputs to 254 states and hides 96
+same-state transitions. The model treats remaining capacity after prior use as
+an input and assumes the source amounts and unit conversions are correct.
+
+```mermaid
+stateDiagram-v2
+  s0: Financial source received
+  s1: Source and charge accepted
+  s2: Quote rejected
+  s3: Source debited
+  [*] --> s0
+  s0 --> s1: check amount and basis
+  s0 --> s2: check amount and basis
+  s1 --> s3: debit or reject
+  s1 --> s2: debit or reject
 ```
 
 ## UTC verification
