@@ -342,6 +342,8 @@ function stateFromJson(encoded: string | undefined): State {
 	const messages: Message[] = [];
 	const ids = new Set<string>();
 	const sequences = new Set<string>();
+	const generatedIds = new Set<number>();
+	const transferredOrigins = new Set<string>();
 	for (const item of value.messages) {
 		if (
 			!record(item) ||
@@ -388,12 +390,31 @@ function stateFromJson(encoded: string | undefined): State {
 					sub.topic === provenance.sourceTopic &&
 					sub.consumerGroup === provenance.consumerGroup,
 			);
+			const sourceTopic = topics.get(provenance.sourceTopic);
+			const generated = /^dlq-([1-9][0-9]{0,15})$/u.exec(item.id);
+			const counter = generated === null ? 0 : Number(generated[1]);
+			const originKey = JSON.stringify([
+				provenance.sourceTopic,
+				provenance.consumerGroup,
+				provenance.originalSequence,
+			]);
 			if (
 				origin === undefined ||
+				sourceTopic === undefined ||
 				origin.deadLetterTopic !== topicName ||
-				provenance.deliveryAttempt !== origin.maxDeliveryAttempts
+				provenance.deliveryAttempt !== origin.maxDeliveryAttempts ||
+				provenance.originalSequence < origin.startSequence ||
+				provenance.originalSequence > sourceTopic.tail ||
+				generated === null ||
+				!integer(counter, 1) ||
+				String(counter) !== generated[1] ||
+				counter > value.deadLetterCounter ||
+				generatedIds.has(counter) ||
+				transferredOrigins.has(originKey)
 			)
 				throw new Error("invalid dead letter provenance");
+			generatedIds.add(counter);
+			transferredOrigins.add(originKey);
 		}
 		ids.add(id);
 		sequences.add(seq);
@@ -504,6 +525,40 @@ function stateFromJson(encoded: string | undefined): State {
 			)
 				throw new Error("missing group obligation");
 		}
+	for (const item of messages) {
+		const provenance = item.deadLetter;
+		if (provenance === undefined) continue;
+		const source = messages.find(
+			(entry) =>
+				entry.topic === provenance.sourceTopic &&
+				entry.sequence === provenance.originalSequence,
+		);
+		if (source === undefined) continue;
+		const subscription = subscriptions.findIndex(
+			(entry) =>
+				entry.topic === provenance.sourceTopic &&
+				entry.consumerGroup === provenance.consumerGroup,
+		);
+		const delivery = deliveries.find(
+			(entry) =>
+				entry.subscription === subscription &&
+				entry.sequence === source.sequence,
+		);
+		if (
+			source.id !== provenance.originalMessageId ||
+			source.subject !== item.subject ||
+			source.payload !== item.payload ||
+			source.attributes.length !== item.attributes.length ||
+			!source.attributes.every(
+				(attribute, index) =>
+					attribute.key === item.attributes[index]?.key &&
+					attribute.value === item.attributes[index]?.value,
+			) ||
+			delivery?.status !== "settled" ||
+			delivery.attempt !== provenance.deliveryAttempt
+		)
+			throw new Error("dead letter does not match retained source");
+	}
 	const events: Event[] = [];
 	if (
 		value.events.length !==

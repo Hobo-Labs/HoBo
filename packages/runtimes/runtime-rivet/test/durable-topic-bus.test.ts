@@ -673,6 +673,102 @@ describe("Rivet durable topic bus using a SQLite actor fixture", () => {
 		}
 	});
 
+	it("rejects forged or duplicated retained dead-letter provenance", async () => {
+		for (const corrupt of [
+			"generated-id",
+			"counter",
+			"payload",
+			"source-lease",
+			"origin-sequence",
+			"duplicate-transfer",
+		] as const) {
+			const f = await fixture();
+			await setup(f, 1);
+			await f.mutate("publish", { topic: "orders", message: message() });
+			const leased = (await f.mutate("consume", consume())).value[0];
+			await f.mutate("nack", { ...settle(leased), reason: "fatal" });
+			const raw = f.sql.prepare("SELECT value FROM hobo_dm_topic_state").get();
+			if (raw === undefined || typeof raw.value !== "string")
+				throw new Error("missing fixture state");
+			const state = JSON.parse(raw.value);
+			const dead = state.messages.find(
+				(item: { topic: string }) => item.topic === "dlq",
+			);
+			if (dead === undefined) throw new Error("missing fixture dead letter");
+			if (corrupt === "generated-id") dead.id = "not-generated";
+			else if (corrupt === "counter") state.deadLetterCounter = 0;
+			else if (corrupt === "payload") dead.payload = "AQ==";
+			else if (corrupt === "source-lease") {
+				const source = state.deliveries.find(
+					(item: { subscription: number }) => item.subscription === 0,
+				);
+				Object.assign(source, {
+					status: "leased",
+					lease: 1,
+					deadline: 1100,
+					reserved: true,
+				});
+			} else if (corrupt === "origin-sequence")
+				dead.deadLetter.originalSequence = 2;
+			else {
+				const duplicate = structuredClone(dead);
+				duplicate.id = "dlq-2";
+				duplicate.sequence = 2;
+				state.deadLetterCounter = 2;
+				state.messages.push(duplicate);
+				state.topics.find(
+					(item: { name: string }) => item.name === "dlq",
+				).tail = 2;
+				const existing = state.deliveries.find(
+					(item: { subscription: number }) => item.subscription === 1,
+				);
+				state.deliveries.push({ ...existing, sequence: 2 });
+			}
+			const encoded = JSON.stringify(state);
+			f.sql.prepare("UPDATE hobo_dm_topic_state SET value=?").run(encoded);
+			expect((await f.mutate("consume", consume("dlq", "reader"))).status).toBe(
+				"unknown",
+			);
+			expect(
+				(await f.send("events", { afterSequence: 0, limit: 10 })).status,
+			).toBe(503);
+			expect(
+				f.sql.prepare("SELECT value FROM hobo_dm_topic_state").get()?.value,
+			).toBe(encoded);
+		}
+	});
+
+	it("retains legitimate dead-letter provenance after source compaction and ID reuse", async () => {
+		const f = await fixture();
+		await setup(f, 1);
+		await f.mutate("publish", { topic: "orders", message: message() });
+		const first = (await f.mutate("consume", consume())).value[0];
+		const transfer = await f.mutate("nack", {
+			...settle(first),
+			reason: "fatal",
+		});
+		expect(
+			(await f.mutate("compact", { topic: "orders", throughSequence: 1 }))
+				.status,
+		).toBe("committed");
+		expect(
+			(await f.mutate("publish", { topic: "orders", message: message() }))
+				.value,
+		).toEqual({ messageId: "m", sequence: 2 });
+		f.restart();
+		const old = (await f.mutate("consume", consume("dlq", "reader"))).value[0];
+		expect(old.message.id).toBe(transfer.value.deadLetterMessageId);
+		expect(old.deadLetter).toMatchObject({
+			originalMessageId: "m",
+			originalSequence: 1,
+			cause: { kind: "nack", reason: "fatal" },
+		});
+		const current = (await f.mutate("consume", consume())).value[0];
+		expect(current.message.id).toBe("m");
+		expect(current.sequence).toBe(2);
+		expect(current.leaseId).not.toBe(first.leaseId);
+	});
+
 	it("bounds the combined worst-case retained state and wire pages", async () => {
 		const f = await fixture();
 		const limits = f.actor.limits;
