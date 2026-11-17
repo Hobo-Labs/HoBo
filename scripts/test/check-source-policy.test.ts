@@ -316,6 +316,43 @@ e: ##"raw \##(2 + // raw interpolation
 		assert.match(result.stderr, /\.impeccable\/critique\/example\.md/u);
 	});
 
+	it("rejects ignored planning artifacts in nested agent workspaces", () => {
+		const repo = fixture();
+		write(repo, ".gitignore", "**/.optimizexp/\n**/.impeccable/\n**/.sdlc/\n");
+		const artifacts = [
+			".optimizexp/backlog/experiments.json",
+			"packages/demo/.optimizexp/features/example/SEED.md",
+			"packages/demo/.optimizexp/experience-catalog.json",
+			"site/.impeccable/critique/example.md",
+			"packages/demo/.sdlc/example/state.md",
+		];
+		for (const artifact of artifacts) write(repo, artifact, "{}\n");
+		const result = guard(repo, "--worktree");
+		assert.equal(result.status, 1, result.stderr);
+		for (const artifact of artifacts)
+			assert.ok(result.stderr.includes(artifact), artifact);
+	});
+
+	it("preserves experience evidence while rejecting synthetic planning files", () => {
+		for (const file of [
+			".optimizexp/INIT.md",
+			".optimizexp/init-report.json",
+			".optimizexp/personas/generated.md",
+			".optimizexp/features/example/EXPERIENCE.md",
+			".optimizexp/features/example/README.md",
+			".optimizexp/runs/run/backlog.json",
+			".optimizexp/runs/run/INCOMPLETE.md",
+		])
+			assert.ok(documentViolation(file, "{}"), file);
+		assert.equal(
+			documentViolation(
+				".optimizexp/features/example/evidence/manifest.json",
+				"{}",
+			),
+			undefined,
+		);
+	});
+
 	it("checks generated source templates and their underlying syntax", () => {
 		for (const [file, text] of [
 			["snippet.ts.tpl", "const value = {{name}}; // explanation"],
