@@ -22,7 +22,7 @@ it("runs the actual bounded object client and proxy over workerd R2 and service 
 		try {
 			if(path==='/write') {const body=new Uint8Array([0,255,7]); await store.write({name:'雪',contentType:'text/plain; charset=utf-8',size:body.byteLength,digest:await cloudflareR2Digest(body.buffer),body});return new Response(null,{status:204});}
 			if(path==='/read') {const value=await store.read('雪');return Response.json(value&&{...value,body:[...value.body]});}
-			if(path==='/missing-type') {await store.read('missing-type');return new Response('unexpected');}
+			if(path==='/without-content-type') {await store.read('missing-type');return new Response('unexpected');}
 			if(path==='/external') {const value=await store.read('external');return Response.json(value&&{...value,body:[...value.body]});}
 			if(path==='/empty') {const value=await store.read('empty');return Response.json(value&&{...value,body:[...value.body]});}
 			if(path==='/large') {await store.read('large');return new Response('unexpected');}
@@ -90,7 +90,7 @@ it("runs the actual bounded object client and proxy over workerd R2 and service 
 			size: 3,
 			body: [0, 255, 7],
 		});
-		expect(await (await get("/missing-type")).json()).toEqual({
+		expect(await (await get("/without-content-type")).json()).toEqual({
 			code: "R2_METADATA_UNSUPPORTED",
 		});
 		expect(await (await get("/external")).json()).toMatchObject({
