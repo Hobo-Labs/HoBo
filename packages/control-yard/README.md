@@ -50,6 +50,10 @@ incomplete until a successful rerun. Captures take an exclusive lock at
 interrupted, confirm no capture is still running before removing that directory
 and retrying.
 
+The evidence checker refuses symlinks at an evidence directory, between the
+checkout and an in-checkout evidence directory, or in a manifested path. This
+keeps checked files within the selected evidence tree.
+
 The visual report records Bo's `animationId`, `facing`, `facingSource`, and
 `projectedFacing`. For a walk, `facing` follows the rendered directional sheet.
 For other animations it follows the projection, or a default when no projection

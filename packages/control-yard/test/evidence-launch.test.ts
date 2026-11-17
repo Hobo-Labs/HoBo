@@ -7,11 +7,13 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { runInNewContext } from "node:vm";
 import {
 	connectionCreate,
@@ -398,6 +400,189 @@ it("invalidates both old evidence copies when browser launch fails", () => {
 		rmSync(scratch, { recursive: true, force: true });
 	}
 }, 25_000);
+
+it("refuses symlinks in evidence paths before reading or probing", () => {
+	const packageRoot = resolve(import.meta.dirname, "..");
+	const scratch = mkdtempSync(join(tmpdir(), "yard-evidence-boundary-"));
+	const shots = join(scratch, "shots");
+	const lock = join(shots, ".capture-lock");
+	const probes: string[] = [];
+	const probe = (path: string) => {
+		probes.push(path);
+		return {
+			status: 0,
+			stdout: JSON.stringify({
+				streams: [
+					{ codec_type: "video", width: 100, height: 100, duration: "2.5" },
+				],
+				format: { duration: "2.5" },
+			}),
+			stderr: "",
+		};
+	};
+	try {
+		cpSync(join(packageRoot, "public/shots"), shots, { recursive: true });
+		// A symlink cannot redirect the selected evidence root.
+		const rootAlias = join(scratch, "evidence-root");
+		symlinkSync("shots", rootAlias, "dir");
+		probes.length = 0;
+		expect(validateEvidence(rootAlias, lock, probe)).toBeGreaterThan(0);
+		expect(probes).toHaveLength(0);
+		for (const name of [
+			"evidence-manifest.json",
+			"visual-report.json",
+			"01-boot-live.png",
+		]) {
+			const evidence = join(shots, name);
+			const external = join(scratch, `external-${name}`);
+			renameSync(evidence, external);
+			symlinkSync(external, evidence);
+			probes.length = 0;
+			expect(validateEvidence(shots, lock, probe), name).toBeGreaterThan(0);
+			if (name === "evidence-manifest.json") expect(probes).toHaveLength(0);
+			rmSync(evidence);
+			renameSync(external, evidence);
+		}
+
+		const recordings = join(shots, "recordings");
+		const video = join(recordings, "01-yard-loop.mp4");
+		const externalVideo = join(scratch, "external-video.mp4");
+		renameSync(video, externalVideo);
+		symlinkSync(externalVideo, video);
+		probes.length = 0;
+		expect(validateEvidence(shots, lock, probe)).toBeGreaterThan(0);
+		expect(probes).toHaveLength(3);
+		expect(probes).not.toContain(externalVideo);
+		rmSync(video);
+		renameSync(externalVideo, video);
+
+		const manifestPath = join(shots, "evidence-manifest.json");
+		const manifestBytes = readFileSync(manifestPath);
+		const manifest: {
+			files: Record<string, { bytes: number; sha256: string }>;
+		} = JSON.parse(manifestBytes.toString("utf8"));
+		const externalExtra = join(scratch, "external-extra.txt");
+		const extraBytes = Buffer.from("outside evidence\n");
+		writeFileSync(externalExtra, extraBytes);
+		symlinkSync(externalExtra, join(shots, "extra.txt"));
+		manifest.files["extra.txt"] = {
+			bytes: extraBytes.length,
+			sha256: createHash("sha256").update(extraBytes).digest("hex"),
+		};
+		writeFileSync(manifestPath, JSON.stringify(manifest));
+		expect(validateEvidence(shots, lock, probe)).toBeGreaterThan(0);
+		rmSync(join(shots, "extra.txt"));
+		writeFileSync(manifestPath, manifestBytes);
+
+		const externalRecordings = join(scratch, "external-recordings");
+		renameSync(recordings, externalRecordings);
+		symlinkSync(externalRecordings, recordings, "dir");
+		probes.length = 0;
+		expect(validateEvidence(shots, lock, probe)).toBeGreaterThan(0);
+		expect(probes).toHaveLength(0);
+		rmSync(recordings);
+		renameSync(externalRecordings, recordings);
+
+		// Even in-root links are refused, so no component is followed implicitly.
+		const shot = join(shots, "01-boot-live.png");
+		const internalShot = join(shots, "internal-boot.png");
+		renameSync(shot, internalShot);
+		symlinkSync("internal-boot.png", shot);
+		probes.length = 0;
+		expect(validateEvidence(shots, lock, probe)).toBeGreaterThan(0);
+		rmSync(shot);
+		renameSync(internalShot, shot);
+		const internalRecordings = join(shots, "internal-recordings");
+		renameSync(recordings, internalRecordings);
+		symlinkSync("internal-recordings", recordings, "dir");
+		probes.length = 0;
+		expect(validateEvidence(shots, lock, probe)).toBeGreaterThan(0);
+		expect(probes).toHaveLength(0);
+		rmSync(recordings);
+		renameSync(internalRecordings, recordings);
+
+		// Resolve the chosen root once, so a symlink followed by `..` cannot
+		// make the root check inspect a different directory from later reads.
+		const outside = join(scratch, "outside-normalization");
+		mkdirSync(join(outside, "nested"), { recursive: true });
+		cpSync(shots, join(outside, "shots"), { recursive: true });
+		cpSync(shots, join(outside, "target"), { recursive: true });
+		const alias = join(scratch, "normalization-alias");
+		symlinkSync(join(outside, "nested"), alias, "dir");
+		const unnormalized = `${alias}${sep}..${sep}shots`;
+		renameSync(shots, join(scratch, "saved-shots"));
+		symlinkSync(join(outside, "target"), shots, "dir");
+		probes.length = 0;
+		expect(validateEvidence(unnormalized, lock, probe)).toBeGreaterThan(0);
+		expect(probes).toHaveLength(0);
+	} finally {
+		rmSync(scratch, { recursive: true, force: true });
+	}
+});
+
+it("refuses symlinked evidence roots and checkout path components", () => {
+	const packageRoot = resolve(import.meta.dirname, "..");
+	const tempRoot = join(packageRoot, "tmp");
+	mkdirSync(tempRoot, { recursive: true });
+	const scratch = mkdtempSync(join(tempRoot, "yard-evidence-root-test-"));
+	const checkout = join(scratch, "checkout");
+	const fixturePackage = join(checkout, "packages/control-yard");
+	const scripts = join(fixturePackage, "scripts");
+	const publicDir = join(fixturePackage, "public");
+	const outsidePublic = join(scratch, "outside-public");
+	try {
+		mkdirSync(scripts, { recursive: true });
+		for (const script of [
+			"evidence-check.mts",
+			"evidence-validator.mts",
+			"capture-failures.mts",
+		]) {
+			cpSync(join(packageRoot, "scripts", script), join(scripts, script));
+		}
+		cpSync(join(packageRoot, "public/shots"), join(outsidePublic, "shots"), {
+			recursive: true,
+		});
+		mkdirSync(publicDir);
+		symlinkSync(join(outsidePublic, "shots"), join(publicDir, "shots"), "dir");
+		const runCheck = (directory?: string) =>
+			spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					join(scripts, "evidence-check.mts"),
+					...(directory ? [directory] : []),
+				],
+				{ encoding: "utf8", timeout: 20_000 },
+			);
+		const rootLink = runCheck();
+		expect(rootLink.status).not.toBe(0);
+		expect(rootLink.stderr).toContain("evidence directory is a symlink");
+
+		rmSync(join(publicDir, "shots"));
+		rmSync(publicDir, { recursive: true });
+		symlinkSync(outsidePublic, publicDir, "dir");
+		const parentLink = runCheck();
+		expect(parentLink.status).not.toBe(0);
+		expect(parentLink.stderr).toContain(
+			"evidence directory traverses a symlink",
+		);
+
+		const proofParent = join(checkout, "src/draft/exp-proofs/ux/control-yard");
+		const outsideAssets = join(scratch, "outside-assets");
+		mkdirSync(proofParent, { recursive: true });
+		cpSync(join(outsidePublic, "shots"), join(outsideAssets, "evidence"), {
+			recursive: true,
+		});
+		symlinkSync(outsideAssets, join(proofParent, "assets"), "dir");
+		const proofLink = runCheck(join(proofParent, "assets/evidence"));
+		expect(proofLink.status).not.toBe(0);
+		expect(proofLink.stderr).toContain(
+			"evidence directory traverses a symlink",
+		);
+	} finally {
+		rmSync(scratch, { recursive: true, force: true });
+	}
+});
 
 it("refuses failures in the manifest or its report even when files match", () => {
 	const packageRoot = resolve(import.meta.dirname, "..");

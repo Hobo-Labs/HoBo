@@ -4,8 +4,14 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+	existsSync,
+	lstatSync,
+	readFileSync,
+	realpathSync,
+	statSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import {
 	captureChecksSchema,
@@ -80,8 +86,10 @@ export function validateEvidence(
 	shots: string,
 	lock: string,
 	probe: VideoProbe = probeVideo,
+	trustedRoot?: string,
 ): number {
-	const manifestPath = join(shots, "evidence-manifest.json");
+	const evidenceDir = resolve(shots);
+	const manifestPath = join(evidenceDir, "evidence-manifest.json");
 	let errors = 0;
 	function fail(msg: string) {
 		console.error(`FAIL: ${msg}`);
@@ -92,7 +100,7 @@ export function validateEvidence(
 		fail(`capture in progress or interrupted; check the lock at ${lock}`);
 	}
 	if (
-		existsSync(join(shots, ".capture-incomplete")) ||
+		existsSync(join(evidenceDir, ".capture-incomplete")) ||
 		existsSync(join(dirname(lock), ".capture-incomplete"))
 	) {
 		fail(
@@ -100,12 +108,86 @@ export function validateEvidence(
 		);
 	}
 
+	let evidenceRoot: string;
+	let canonicalTrustedRoot: string | undefined;
+	try {
+		if (lstatSync(evidenceDir).isSymbolicLink()) {
+			fail(`evidence directory is a symlink: ${shots}`);
+			return errors;
+		}
+		if (trustedRoot) {
+			const root = resolve(trustedRoot);
+			const rel = relative(root, evidenceDir);
+			if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+				fail(`evidence directory is outside its trusted root: ${shots}`);
+				return errors;
+			}
+			canonicalTrustedRoot = realpathSync(root);
+			let current = canonicalTrustedRoot;
+			for (const component of rel.split(sep).filter(Boolean)) {
+				current = join(current, component);
+				if (lstatSync(current).isSymbolicLink()) {
+					fail(`evidence directory traverses a symlink: ${current}`);
+					return errors;
+				}
+			}
+		}
+		evidenceRoot = realpathSync(evidenceDir);
+		if (canonicalTrustedRoot) {
+			const actual = relative(canonicalTrustedRoot, evidenceRoot);
+			if (
+				actual === ".." ||
+				actual.startsWith(`..${sep}`) ||
+				isAbsolute(actual)
+			) {
+				fail(`evidence directory resolves outside its trusted root: ${shots}`);
+				return errors;
+			}
+		}
+	} catch {
+		fail(`cannot resolve evidence directory: ${shots}`);
+		return errors;
+	}
 	if (!existsSync(manifestPath)) {
 		fail(
 			`missing ${manifestPath} — run: pnpm --filter @hobo/control-yard run evidence`,
 		);
 		return errors;
 	}
+	const invalidPaths = new Set<string>();
+	const evidencePath = (path: string, label: string): string | undefined => {
+		const reject = (reason: string): undefined => {
+			if (!invalidPaths.has(label)) {
+				fail(`${reason}: ${label}`);
+				invalidPaths.add(label);
+			}
+			return undefined;
+		};
+		const rel = relative(evidenceDir, resolve(path));
+		if (
+			rel === "" ||
+			rel === ".." ||
+			rel.startsWith(`..${sep}`) ||
+			isAbsolute(rel)
+		)
+			return reject("evidence path escapes the evidence directory");
+		try {
+			let current = evidenceRoot;
+			for (const component of rel.split(sep)) {
+				current = join(current, component);
+				if (lstatSync(current).isSymbolicLink())
+					return reject("evidence path traverses a symlink");
+			}
+			return current;
+		} catch {
+			return reject("cannot resolve evidence path");
+		}
+	};
+	const containedManifest = evidencePath(
+		manifestPath,
+		"evidence-manifest.json",
+	);
+	if (!containedManifest) return errors;
 
 	const manifestSchema = z.object({
 		errors: z.unknown().optional(),
@@ -114,7 +196,7 @@ export function validateEvidence(
 			.record(z.string(), z.object({ bytes: z.number(), sha256: z.string() }))
 			.optional(),
 	});
-	const manifestSource = readFileSync(manifestPath, "utf8");
+	const manifestSource = readFileSync(containedManifest, "utf8");
 	const parsedManifest = (() => {
 		try {
 			return manifestSchema.safeParse(JSON.parse(manifestSource));
@@ -138,23 +220,26 @@ export function validateEvidence(
 	// or its hashed visual report does record failures, neither may be ignored.
 	let reportErrors = captureErrorsSchema.safeParse(undefined);
 	let reportChecks = captureChecksSchema.safeParse(undefined);
-	const reportPath = join(shots, "visual-report.json");
+	const reportPath = join(evidenceDir, "visual-report.json");
 	if (existsSync(reportPath)) {
-		try {
-			const report = z
-				.object({
-					errors: z.unknown().optional(),
-					checks: z.unknown().optional(),
-				})
-				.safeParse(JSON.parse(readFileSync(reportPath, "utf8")));
-			if (!report.success) {
-				fail("visual-report.json is not an object");
-			} else {
-				reportErrors = captureErrorsSchema.safeParse(report.data.errors);
-				reportChecks = captureChecksSchema.safeParse(report.data.checks);
+		const containedReport = evidencePath(reportPath, "visual-report.json");
+		if (containedReport) {
+			try {
+				const report = z
+					.object({
+						errors: z.unknown().optional(),
+						checks: z.unknown().optional(),
+					})
+					.safeParse(JSON.parse(readFileSync(containedReport, "utf8")));
+				if (!report.success) {
+					fail("visual-report.json is not an object");
+				} else {
+					reportErrors = captureErrorsSchema.safeParse(report.data.errors);
+					reportChecks = captureChecksSchema.safeParse(report.data.checks);
+				}
+			} catch {
+				fail("visual-report.json is not valid JSON");
 			}
-		} catch {
-			fail("visual-report.json is not valid JSON");
 		}
 	}
 	for (const error of captureFailureMessages(
@@ -171,12 +256,14 @@ export function validateEvidence(
 	}
 
 	for (const req of REQUIRED) {
-		const abs = join(shots, req.path);
+		const abs = join(evidenceDir, req.path);
 		if (!existsSync(abs)) {
 			fail(`missing required evidence: ${req.path}`);
 			continue;
 		}
-		const st = statSync(abs);
+		const contained = evidencePath(abs, req.path);
+		if (!contained) continue;
+		const st = statSync(contained);
 		if (st.size < req.minBytes) {
 			fail(
 				`${req.path} too small (${st.size} < ${req.minBytes} bytes) — likely empty/stub`,
@@ -197,8 +284,8 @@ export function validateEvidence(
 	// manifest and is deliberately ignored for compatibility.
 	for (const [path, entry] of Object.entries(manifest.files ?? {})) {
 		if (path === "evidence-manifest.json") continue;
-		const abs = resolve(shots, path);
-		const rel = relative(shots, abs);
+		const abs = resolve(evidenceDir, path);
+		const rel = relative(evidenceDir, abs);
 		if (
 			isAbsolute(path) ||
 			path.includes("\\") ||
@@ -214,12 +301,14 @@ export function validateEvidence(
 			fail(`missing manifested evidence: ${path}`);
 			continue;
 		}
-		const st = statSync(abs);
+		const contained = evidencePath(abs, path);
+		if (!contained) continue;
+		const st = statSync(contained);
 		if (!st.isFile()) {
 			fail(`manifested evidence is not a file: ${path}`);
 			continue;
 		}
-		const dig = sha256(abs);
+		const dig = sha256(contained);
 		if (entry.sha256 !== dig) {
 			fail(
 				`digest mismatch ${path}: manifest=${entry.sha256.slice(0, 12)}… disk=${dig.slice(0, 12)}…`,
@@ -243,9 +332,11 @@ export function validateEvidence(
 		format: z.object({ duration: duration.optional() }),
 	});
 	for (const req of REQUIRED.filter((r) => r.kind === "mp4")) {
-		const abs = join(shots, req.path);
+		const abs = join(evidenceDir, req.path);
 		if (!existsSync(abs)) continue;
-		const r = probe(abs);
+		const contained = evidencePath(abs, req.path);
+		if (!contained) continue;
+		const r = probe(contained);
 		if (r.status !== 0) {
 			fail(`ffprobe failed for ${req.path}: ${r.stderr || r.stdout}`);
 			continue;
