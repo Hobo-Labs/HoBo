@@ -43,6 +43,8 @@ type TopicClaim = Readonly<
 >;
 export interface RivetDurableTopicBinding {
 	readonly actorName: string;
+	/** Source and configuration digest captured when this actor was constructed. */
+	readonly semanticDigest: string;
 	readonly actor: AnyActorDefinition;
 	readonly handle: (
 		context: RivetDurableTopicContext,
@@ -77,7 +79,10 @@ export interface RivetDurableTopicOptions {
 		readonly maxHeaderBytes: number;
 	}) => boolean;
 }
-const registered = new WeakMap<object, object>();
+const registered = new WeakMap<
+	object,
+	Readonly<{ database: object; semanticDigest: string }>
+>();
 const MAX_CHUNK_BYTES = 65_536;
 const MAX_CHUNKS = 4_096;
 const MAX_HEADER_BYTES = 16_384;
@@ -506,23 +511,26 @@ export function createRivetDurableTopicActor(
 	Object.freeze(definition);
 	const binding = Object.freeze({
 		actorName,
+		semanticDigest,
 		actor: definition,
 		handle,
 		limits: RIVET_DURABLE_TOPIC_LOG_LIMITS,
 		capabilities: RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
 	});
-	registered.set(binding, database);
+	registered.set(binding, Object.freeze({ database, semanticDigest }));
 	return binding;
 }
 /** Check the exact actor, database and handler retained at construction. */
 export function isRivetDurableTopicBinding(
 	binding: RivetDurableTopicBinding,
 ): boolean {
+	const identity = registered.get(binding);
 	return (
-		registered.has(binding) &&
+		identity !== undefined &&
+		binding.semanticDigest === identity.semanticDigest &&
 		isStaticActorDefinition(binding.actor) &&
 		"db" in binding.actor.config &&
-		binding.actor.config.db === registered.get(binding) &&
+		binding.actor.config.db === identity.database &&
 		binding.actor.config.onRequest === binding.handle
 	);
 }

@@ -140,3 +140,8 @@ A same-thread timer cannot interrupt a synchronous or non-yielding callback, so
 untrusted work needs an independent worker or process watchdog. Revoking a
 metadata grant is irreversible; each regrant needs a fresh grant and binding,
 and revocation must be propagated and fenced across the host fleet.
+
+## Retained topic log
+
+The [Rivet topic-log actor guide](./DURABLE-TOPIC-ACTOR.md) describes its
+partial capabilities, setup, limits and host obligations.

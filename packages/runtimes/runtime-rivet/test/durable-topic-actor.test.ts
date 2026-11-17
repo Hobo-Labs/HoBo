@@ -162,6 +162,14 @@ describe("Rivet durable topic log actor", () => {
 		expect(isStaticActorDefinition(f.actor.actor)).toBe(true);
 		expect(isRivetDurableTopicBinding(f.actor)).toBe(true);
 		expect(isRivetDurableTopicBinding({ ...f.actor })).toBe(false);
+		expect(f.actor.semanticDigest).toBe(`sha256:${"a".repeat(64)}`);
+		expect(Object.isFrozen(f.actor)).toBe(true);
+		expect(
+			isRivetDurableTopicBinding({
+				...f.actor,
+				semanticDigest: `sha256:${"b".repeat(64)}`,
+			}),
+		).toBe(false);
 		expect(f.actor.capabilities).toMatchObject({
 			publish: true,
 			readRetainedLog: true,
