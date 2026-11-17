@@ -9,11 +9,15 @@ on:
       - "packages/broker/model/**"
       - "packages/cloud/model/**"
       - "packages/iac/iac-alchemy/**"
+      - "packages/runtimes/runtime-rivet/model/**"
+      - "packages/runtimes/runtime-rivet/src/durable-topic-*.ts"
+      - "packages/runtimes/runtime-rivet/test/durable-topic-*.ts"
       - "packages/events/src/pricing-event-contracts.ts"
       - "packages/events/test/pricing-upcaster-gate.test.ts"
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
       - "scripts/check-iac-models.ts"
+      - "scripts/check-durable-topic-model.ts"
       - "docs/design/provider-pricing-commercial-terms.md"
       - "docs/design/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
@@ -25,10 +29,14 @@ on:
       - "packages/broker/model/**"
       - "packages/cloud/model/**"
       - "packages/iac/iac-alchemy/**"
+      - "packages/runtimes/runtime-rivet/model/**"
+      - "packages/runtimes/runtime-rivet/src/durable-topic-*.ts"
+      - "packages/runtimes/runtime-rivet/test/durable-topic-*.ts"
       - "packages/events/src/pricing-event-contracts.ts"
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
       - "scripts/check-iac-models.ts"
+      - "scripts/check-durable-topic-model.ts"
       - "docs/design/provider-pricing-commercial-terms.md"
       - "docs/design/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
@@ -120,7 +128,7 @@ jobs:
           mode: save
 
   iac-models:
-    name: Check bounded IaC budget, routing and grant models
+    name: Check bounded IaC and durable messaging models
     needs: route
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
@@ -144,4 +152,6 @@ jobs:
       - name: Verify tool digest and check models
         env:
           HOBO_TLA_TOOLS: ${{ runner.temp }}/tla2tools.jar
-        run: node --experimental-strip-types scripts/check-iac-models.ts
+        run: |
+          node --experimental-strip-types scripts/check-iac-models.ts
+          node --experimental-strip-types scripts/check-durable-topic-model.ts

@@ -161,3 +161,13 @@ partial capabilities, setup, limits and host obligations.
 
 The separate [durable topic bus guide](./DURABLE-TOPIC-BUS.md) explains group
 leases, DLQ capacity reservations and its instance-wide host authorization.
+
+The finite `DurableTopic` model checks reservation, lease, dead-letter and
+compaction transitions for two messages, one group and capacities three and
+four. Its mutation checks require counterexamples for omitted reservations,
+blocked final transfers, stale leases and premature or out-of-order compaction; witness checks
+show full-capacity final leases and two dead-letter transfers are reachable.
+This is an abstraction, not a refinement proof of the actor. It does not model
+cyclic dead-letter chains, multiple groups, audit or sequence exhaustion,
+receipt and state-size exhaustion, batch rollback, clocks, authorization,
+storage isolation, host fencing or progress under persistent saturation.
