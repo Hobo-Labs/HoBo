@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createRivetDurableTopicClient,
 	createRivetDurableTopicMetadataGrant,
+	isRivetDurableTopicClientBoundTo,
+	isRivetDurableTopicClientFor,
 	type RivetDurableTopicClientOptions,
 } from "../src/durable-topic-client.js";
 
@@ -1313,5 +1315,123 @@ describe("Rivet durable topic HTTP client", () => {
 		expect(bodies[0]).not.toBe(bodies[1]);
 		expect(bodies[0]).toContain('["string","AA=="]');
 		expect(bodies[1]).toContain('["bytes","AA=="]');
+	});
+	it("matches only a real construction-bound client and its exact host options", () => {
+		let traps = 0;
+		const metadataGrant = createRivetDurableTopicMetadataGrant();
+		const fetch = async () => new Response();
+		const verifyTransport = () => true;
+		const authorize = () => ({ "x-hobo-proof": "signed" });
+		const revalidate = () => true;
+		const configured: RivetDurableTopicClientOptions = {
+			binding,
+			metadataGrant,
+			verifyTransport,
+			authorize,
+			revalidate,
+			fetch,
+			timeoutMs: 123,
+			maxInFlight: 4,
+		};
+		const client = createRivetDurableTopicClient(configured);
+		const identity = {
+			actorName: binding.actorName,
+			semanticDigest: binding.semanticDigest,
+		};
+		expect(isRivetDurableTopicClientFor(client, identity)).toBe(true);
+		expect(isRivetDurableTopicClientBoundTo(client, configured)).toBe(true);
+		expect(isRivetDurableTopicClientFor({ ...client }, identity)).toBe(false);
+		expect(
+			isRivetDurableTopicClientFor(
+				new Proxy(client, {
+					get() {
+						traps++;
+						throw new Error("trap");
+					},
+				}),
+				identity,
+			),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientFor(client, { ...identity, actorName: "other" }),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientFor(client, {
+				...identity,
+				semanticDigest: `sha256:${"b".repeat(64)}`,
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, tenant: "other" },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, actorKey: ["other"] },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, limits: { ...profile, batchSize: 3 } },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				binding: { ...binding, actorCapabilities: fullCapabilities },
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				fetch: async () => new Response(),
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				metadataGrant: createRivetDurableTopicMetadataGrant(),
+			}),
+		).toBe(false);
+		expect(
+			isRivetDurableTopicClientBoundTo(client, {
+				...configured,
+				timeoutMs: 124,
+			}),
+		).toBe(false);
+		for (const altered of [
+			{ ...configured, authorize: () => ({ "x-hobo-proof": "different" }) },
+			{ ...configured, revalidate: () => true },
+			{ ...configured, verifyTransport: () => true },
+			{ ...configured, maxInFlight: 5 },
+		])
+			expect(isRivetDurableTopicClientBoundTo(client, altered)).toBe(false);
+		const hostile = new Proxy(configured, {
+			ownKeys() {
+				traps++;
+				throw new Error("trap");
+			},
+		});
+		expect(isRivetDurableTopicClientBoundTo(client, hostile)).toBe(false);
+		const mutableKey = ["tenant", "orders"];
+		const mutableOptions = {
+			...configured,
+			binding: { ...binding, actorKey: mutableKey },
+		};
+		const stable = createRivetDurableTopicClient(mutableOptions);
+		expect(isRivetDurableTopicClientBoundTo(stable, mutableOptions)).toBe(true);
+		mutableKey[0] = "other";
+		expect(isRivetDurableTopicClientBoundTo(stable, mutableOptions)).toBe(
+			false,
+		);
+		expect(isRivetDurableTopicClientFor(stable, identity)).toBe(true);
+		metadataGrant.revoke();
+		expect(isRivetDurableTopicClientFor(client, identity)).toBe(false);
+		expect(isRivetDurableTopicClientBoundTo(client, configured)).toBe(false);
+		expect(traps).toBe(0);
 	});
 });

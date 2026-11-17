@@ -41,6 +41,8 @@ export {
 export {
 	createRivetDurableTopicClient,
 	createRivetDurableTopicMetadataGrant,
+	isRivetDurableTopicClientBoundTo,
+	isRivetDurableTopicClientFor,
 	type RivetDurableTopicCapabilities,
 	type RivetDurableTopicClient,
 	type RivetDurableTopicClientBinding,

@@ -156,6 +156,19 @@ export interface RivetDurableTopicClientOptions {
 	readonly maxInFlight?: number;
 }
 
+interface ClientConstruction {
+	readonly binding: RivetDurableTopicClientBinding;
+	readonly metadataGrant: RivetDurableTopicMetadataGrant;
+	readonly metadata: { readonly active: boolean };
+	readonly verifyTransport: RivetDurableTopicClientOptions["verifyTransport"];
+	readonly authorize: RivetDurableTopicClientOptions["authorize"];
+	readonly revalidate: RivetDurableTopicClientOptions["revalidate"];
+	readonly fetch: RivetDurableTopicClientOptions["fetch"];
+	readonly timeoutMs: number;
+	readonly maxInFlight: number;
+}
+const clientConstructions = new WeakMap<object, ClientConstruction>();
+
 // This boundary receives untrusted application and actor data.
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: each input is validated and bounded before use or disclosure. */
 function invalid(): never {
@@ -1082,6 +1095,71 @@ async function responseBytes(
 	return result;
 }
 
+/** Compare the private factory binding; this check is not host authorization. */
+export function isRivetDurableTopicClientFor(
+	client: unknown,
+	expected: { readonly actorName: string; readonly semanticDigest: string },
+): boolean {
+	try {
+		if (typeof client !== "object" || client === null || types.isProxy(client))
+			return false;
+		const captured = clientConstructions.get(client);
+		const identity = record(expected, ["actorName", "semanticDigest"]);
+		if (captured === undefined || !captured.metadata.active) return false;
+		return (
+			identity.actorName === captured.binding.actorName &&
+			identity.semanticDigest === captured.binding.semanticDigest
+		);
+	} catch {
+		return false;
+	}
+}
+
+/** Compare complete captured options with values independently held by the host. */
+export function isRivetDurableTopicClientBoundTo(
+	client: unknown,
+	expected: RivetDurableTopicClientOptions,
+): boolean {
+	try {
+		if (typeof client !== "object" || client === null || types.isProxy(client))
+			return false;
+		const captured = clientConstructions.get(client);
+		if (captured === undefined || !captured.metadata.active) return false;
+		const settings = record(
+			expected,
+			[
+				"binding",
+				"metadataGrant",
+				"verifyTransport",
+				"authorize",
+				"revalidate",
+				"fetch",
+			],
+			["timeoutMs", "maxInFlight"],
+		);
+		const timeoutMs =
+			settings.timeoutMs === undefined
+				? 30_000
+				: integer(settings.timeoutMs, 300_000, 1);
+		const maxInFlight =
+			settings.maxInFlight === undefined
+				? 128
+				: integer(settings.maxInFlight, 128, 1);
+		return (
+			settings.metadataGrant === captured.metadataGrant &&
+			settings.verifyTransport === captured.verifyTransport &&
+			settings.authorize === captured.authorize &&
+			settings.revalidate === captured.revalidate &&
+			settings.fetch === captured.fetch &&
+			timeoutMs === captured.timeoutMs &&
+			maxInFlight === captured.maxInFlight &&
+			canonical(binding(settings.binding)) === canonical(captured.binding)
+		);
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Build a client for one host-attested Rivet HTTP actor binding. The host must
  * authenticate the exact actor key, principal, semantic digest and raw bytes on
@@ -1668,6 +1746,24 @@ export function createRivetDurableTopicClient(
 			}
 		},
 	};
-	return Object.freeze(client);
+	Object.freeze(client);
+	// SAFETY: the constructor checked the metadata grant against the private grant registry.
+	const metadataGrant =
+		settings.metadataGrant as RivetDurableTopicMetadataGrant;
+	clientConstructions.set(
+		client,
+		Object.freeze({
+			binding: scope,
+			metadataGrant,
+			metadata,
+			verifyTransport,
+			authorize,
+			revalidate,
+			fetch,
+			timeoutMs,
+			maxInFlight,
+		}),
+	);
+	return client;
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
