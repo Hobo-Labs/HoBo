@@ -34,6 +34,8 @@ an executing job before a queued or finished reservation, including when the
 jobs belong to different observed runs. A matching job with an unknown status
 also retains the runner, but does not by itself transfer custody or withdraw the
 reserved job. Confirmed execution still takes priority over an unknown status.
+When both runner IDs are present, the IDs must match; runner names are a fallback
+only when an ID is missing. A name-only match can still be ambiguous.
 If a later lookup fails after a queued or unknown match, the result is marked
 incomplete and cannot transfer custody. Fail-closed teardown retains the runner
 on an incomplete or failed lookup; the force-stop path can continue after the
@@ -128,6 +130,20 @@ stateDiagram-v2
   s3 --> s6: apply custody and teardown policy
   s4 --> s5: apply custody and teardown policy
   s4 --> s6: apply custody and teardown policy
+```
+
+The runner-identity model checks matching and custody permission in 36 states,
+including missing, equal, and conflicting IDs. Its projection hides 18 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Runner and job observed
+  s1: Runner does not match
+  s2: Runner matches
+  [*] --> s0
+  s0 --> s1: compare IDs or available names
+  s0 --> s2: compare IDs or available names
 ```
 
 ## Test this branch
