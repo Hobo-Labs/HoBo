@@ -42,7 +42,9 @@ Actions runner or relay. They do not satisfy HoBo's existing required Actions
 checks or a merge queue's generated commit by themselves; an administrator
 would need to configure the intended status requirements. See the
 [signed local runs runbook](../ci/RUNNER-QUEUE.md#signed-local-runs-ci-on-your-own-machine)
-for the exact scope, prerequisites, and limitations.
+for the exact scope, prerequisites, and limitations, and the
+[selection contract](../../docs/ci/local-signoff-contract.md) for edge cases
+and validation evidence.
 
 HoBo can dispatch its existing companion workflow to an owned Linux x64 dev
 machine. The machine hosts one job at a time. The persistent service registers
