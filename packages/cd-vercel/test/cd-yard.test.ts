@@ -73,8 +73,11 @@ describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 	});
 
 	it("keeps the declaration out of what the functions import", () => {
-		for (const dir of ["api", "src"])
-			for (const file of readdirSync(new URL(`${dir}/`, packageUrl)))
-				expect(text(`${dir}/${file}`)).not.toMatch(/deploy\/yard/u);
+		for (const dir of ["api", "src", "src/_generated"])
+			for (const entry of readdirSync(new URL(`${dir}/`, packageUrl), {
+				withFileTypes: true,
+			}))
+				if (entry.isFile())
+					expect(text(`${dir}/${entry.name}`)).not.toMatch(/deploy\/yard/u);
 	});
 });
