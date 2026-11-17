@@ -242,8 +242,7 @@ export const projectScopedVerbs = new Set(
 				"new",
 				"doctor",
 				"login",
-				// Lifecycle families resolve their own project (--project,
-				// HOBO_<FAMILY>_PROJECT, the bundled project), never cwd's Bindle.
+
 				"ci",
 				"cd",
 				"claim",
@@ -259,8 +258,7 @@ export const projectScopedVerbs = new Set(
 				"yard",
 				"station",
 				"replay",
-				// CD runs against the Station's journal and declared topology
-				// (`--yard`), never the Bindle in cwd (packages/hobo/CD.md).
+
 				"deploy",
 				"incident",
 				"serve",
@@ -299,9 +297,6 @@ ${verbRows}
 }
 
 export interface VerbHelpOptions {
-	// Whether the current composition wires a real handler for this verb
-	// (registry.isImplemented). Omitted: the status line is left out — help
-	// rendered without registry knowledge must not claim either way.
 	readonly implemented?: boolean;
 }
 

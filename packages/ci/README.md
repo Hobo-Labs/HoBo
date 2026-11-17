@@ -662,6 +662,6 @@ Native Dagger checks use [`.hobo/dagger.json`](../../.hobo/dagger.json); see [`@
 
 The records, frozen names and ports a relay job is answered through, and
 `answerRelayJob`, the one function job mode and relay mode both call
-(ADR-0183), are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
+are described in [RELAY-JOB.md](RELAY-JOB.md). In-memory fakes of
 every port and their conformance functions are exported as
 `@hobo/ci/runner-order/testing`.
