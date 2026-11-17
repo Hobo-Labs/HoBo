@@ -671,6 +671,32 @@ describe("relay mode recovers from GitHub's errors and a node that died", () => 
 		);
 		await session.close();
 	});
+
+	it("keeps another node's online organization runner for a repository this node does not serve", async () => {
+		const sim = new GithubSimulator();
+		sim.addRepository("octo/other", true);
+		turnOn(sim);
+		const node = relayNode(sim);
+		// A peer serving octo/other created this runner and waits for its offer.
+		const waiting = sim.queueJob({
+			repository: "octo/other",
+			name: "route",
+			labels: ["hobo-relay"],
+		});
+		const name = `hobo-relay-${waiting.runId}-${waiting.id}-1`;
+		sim.registerRunner({
+			name,
+			labels: ["hobo-relay"],
+			org: "octo",
+			ephemeral: true,
+		});
+		for (let round = 0; round < 3; round += 1) {
+			expect((await node.answerer.sweep(CONNECTIONS)).deleted).toEqual([]);
+			sim.advance(RELAY_STALE_RUNNER_MS);
+		}
+		expect(sim.runners().map((runner) => runner.name)).toEqual([name]);
+		expect(job(sim, "route", waiting.runId).status).toBe("queued");
+	});
 });
 
 describe("relay mode answers each repository only as it asks", () => {

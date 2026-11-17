@@ -77,7 +77,10 @@ when the last one has returned; a job already being answered is skipped as
 `sweep(connections)` deletes `hobo-relay-*` runners, on the repository or its
 organization, that are not busy and either belong to a run that has ended or
 have been seen offline by two sweeps at least `RELAY_STALE_RUNNER_MS` (one
-minute) apart. A live node's runner is online while it waits for an offer, and
+minute) apart. A run has ended only on proof: GitHub reads it as `completed`,
+or a runner registered on one repository names a run that repository does not
+have. An organization runner whose run is in none of the repositories this
+node serves may be a peer node's, so only the offline path can remove it. A live node's runner is online while it waits for an offer, and
 the node's own runners are never swept, so this removes only runners a node
 left when it died or when its delete failed. Their fixed names would
 otherwise fence their jobs for good.
@@ -117,7 +120,8 @@ takes a public repository's job only when it isolates), R13 (a lost webhook
 is rescued), R16 (with the first node down, the second answers exactly once)
 and X01. It also covers a failed read of the job (answered on the next
 rescue), a leftover runner from a node that died (swept, then the job is
-answered), an organization runner offered another repository's job (failed
+answered), a peer's online organization runner for a repository this node
+does not serve (kept), an organization runner offered another repository's job (failed
 when that repository left relay mode off, answered with its own account when
 it turned it on) and an original job whose display name is not its id. `test/relay-answer-facts.test.ts` covers the facts and the file.
 The parity scenarios for R01, R13, R16, X01 and X03

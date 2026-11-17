@@ -238,8 +238,10 @@ export type RelayAnswerer = Readonly<{
 	 */
 	rescue(connections: readonly RelayConnection[]): Promise<RelayRescueSummary>;
 	/**
-	 * Delete leftover relay runners: those whose run has ended, and those seen
-	 * offline and idle for `RELAY_STALE_RUNNER_MS` across two sweeps.
+	 * Delete leftover relay runners: those whose run has provably ended, and
+	 * those seen offline and idle for `RELAY_STALE_RUNNER_MS` across two
+	 * sweeps. An organization runner whose run no served repository has may be
+	 * a peer's, so only the offline path removes it.
 	 */
 	sweep(connections: readonly RelayConnection[]): Promise<RelaySweepSummary>;
 }>;
@@ -882,7 +884,7 @@ class Answerer {
 					this.offlineSince.delete(key);
 				if (runner.busy) continue;
 				if (
-					!(await this.runEnded(served, runId)) &&
+					!(await this.runEnded(served, runId, scope.startsWith("/repos/"))) &&
 					!this.staleOffline(key, runner)
 				)
 					continue;
@@ -920,10 +922,17 @@ class Answerer {
 		return now - since >= RELAY_STALE_RUNNER_MS;
 	}
 
-	/** Whether the run has ended in every repository it could belong to. */
+	/**
+	 * Whether the run has provably ended: GitHub reads it as `completed`, or,
+	 * for a runner registered on one repository, that repository has no such
+	 * run. An organization runner's run this node cannot find in any
+	 * repository it serves may be a peer's, still waiting for its offer, so it
+	 * is not ended here; only the `staleOffline` path may remove it.
+	 */
 	private async runEnded(
 		served: readonly RelayConnection[],
 		runId: number,
+		repositoryScope: boolean,
 	): Promise<boolean> {
 		for (const connection of served) {
 			const response = await this.options.github.request(
@@ -941,7 +950,7 @@ class Answerer {
 			const run = RunStatus.safeParse(await response.json());
 			return run.success && run.data.status === "completed";
 		}
-		return true;
+		return repositoryScope;
 	}
 }
 
