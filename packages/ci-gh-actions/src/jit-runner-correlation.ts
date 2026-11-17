@@ -1,6 +1,7 @@
 import type { GithubRunWorkflowJob, GithubTransport } from "./github.js";
 import {
 	getJob,
+	IncompleteGithubRunListing,
 	listInProgressWorkflowRunIds,
 	listRunWorkflowJobs,
 } from "./github.js";
@@ -265,12 +266,20 @@ export async function resolveRunnerAssignedJob(
 			if (hit && RUNNER_EXECUTING_JOB_STATUSES.has(hit.status)) return hit;
 			if (hit?.status === "queued") queued ??= hit;
 		}
-		const runIds = await listInProgressWorkflowRunIds(
-			api,
-			installationId,
-			repository,
-			options?.inProgressRunLimit ?? 25,
-		);
+		let runIds: readonly number[];
+		let incomplete = false;
+		try {
+			runIds = await listInProgressWorkflowRunIds(
+				api,
+				installationId,
+				repository,
+				options?.inProgressRunLimit ?? 25,
+			);
+		} catch (error) {
+			if (!(error instanceof IncompleteGithubRunListing)) throw error;
+			runIds = error.runIds;
+			incomplete = true;
+		}
 		for (const runId of runIds) {
 			const hit = await scanRun(runId);
 			if (!hit) continue;
@@ -278,6 +287,7 @@ export async function resolveRunnerAssignedJob(
 			if (hit.status === "queued") queued ??= hit;
 			else inactive ??= hit;
 		}
+		if (incomplete) throw new Error("GitHub runner assignment scan incomplete");
 	} catch (error) {
 		// Preserve an already observed queued binding, but tell the guard that
 		// later runs could not be checked before it makes a fail-closed decision.
