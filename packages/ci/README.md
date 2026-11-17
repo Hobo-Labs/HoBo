@@ -625,6 +625,14 @@ The GitHub assignment lookup and hook endpoint are not yet wired into the
 production controller, so these store guarantees alone do not make strict CI
 runner starts available. See the [fleet operator guide](../../docs/design/fleet-enrollment-operator.md).
 
+An unclaimed runner slot that becomes uncertain retains its reservation.
+After a trusted controller confirms teardown, it can retry the
+`uncertain` → `released` transition with `{ teardownConfirmed: true }`; an
+identical retry does not release capacity twice. A claimed uncertain slot is
+released through execution settlement instead. The store records the release,
+but trusts the controller's assertion and does not itself verify provider
+teardown evidence.
+
 Fleet capacity values use the unsigned 32-bit wire range. PostgreSQL startup
 widens legacy signed capacity columns under its schema lock; the database user
 must have permission to alter those tables. Capacity revisions never wrap: at
