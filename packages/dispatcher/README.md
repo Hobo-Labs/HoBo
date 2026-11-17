@@ -43,7 +43,19 @@ all-in total; it cannot lower the modelled exposure. A caller must supply the
 appropriate account and authoritative quote, including the unit price when it differs from the account list price: missing accounts retain the
 legacy unconstrained selection behavior and do not establish a budget guarantee.
 The combined selection-and-reservation helper uses the account price for both
-steps when present, falling back to the registry price.
+steps when present, falling back to the registry price. It selects the provider
+registration for the requested category, including that registration's dimension.
+
+An older helper could reserve a different category when a provider had multiple
+registrations, leaving the intended account without its hold or settlement. The
+helper now checks recorded replay inputs for pending, running, and confirmed
+reservations and returns `ledger-reconciliation-required` when it detects an
+inconsistent category, cost, or binding. It replays those records on each call,
+so the check adds work proportional to retained history. Before admitting work
+after upgrade, reconcile affected holds and provider usage against trusted
+records; the helper cannot reconstruct missing history or authenticate a
+plausible snapshot. Direct ledger calls and records without replay inputs do not
+receive this check, so quarantine them at the admission authority until reviewed.
 
 Pending reservations debit free allowance and rate headroom, occupy one
 concurrency slot, and hold paid exposure. `release` restores those quantities
@@ -102,6 +114,23 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-routing/SKILL.md) describes generated reservation histories, the bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. The legacy number contract is interpreted as decimal values; liabilities round upward and available balances downward when conversion back to numbers requires it. This protects the budget conservatively but can leave tiny residual holds or reject an edge-case request that is exactly affordable in decimal arithmetic. Provider overruns are recorded, and callers remain responsible for authoritative quotes and fencing.
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. The abstract proof does not establish that the TypeScript implementation refines it.
+
+The category-scope model checks 54 bounded states and hides 27 same-state
+transitions. It assumes a mismatched imported record has already been detected.
+
+```mermaid
+stateDiagram-v2
+  s0: Ready to dispatch
+  s1: Inconsistent snapshot
+  s2: One funded start
+  s3: Admission quarantined
+  s4: Second start blocked by budget
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: check history and reserve
+  s1 --> s3: check history and reserve
+  s2 --> s4: check history and reserve
+```
 
 The sequence model explores 88 states with a maximum revision of three and up
 to two pending reservations. Its projection hides 46 same-state transitions.

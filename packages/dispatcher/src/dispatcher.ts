@@ -887,6 +887,21 @@ export function decideAndReserveDispatch(request) {
 		providers: registry.records.map((record) => record.source),
 	});
 	const existingSnapshot = reservationLedger.snapshot();
+	// Older helpers could reserve a different category's account. Do not issue
+	// any further dispatch from a ledger that still records such exposure.
+	if (
+		(existingSnapshot.reservations ?? []).some(
+			(reservation) =>
+				reservation.status !== "released" &&
+				reservation.status !== "expired" &&
+				reservation.decisionInputJson !== undefined &&
+				!reservationMatchesReplay(reservation),
+		)
+	)
+		return failedDecision({
+			objective: request.objective ?? "maximize-credits",
+			reason: "ledger-reconciliation-required",
+		});
 	const existing = findReservation(
 		existingSnapshot,
 		request.reservationId ?? `reserve-${request.dispatchId}`,
@@ -913,6 +928,16 @@ export function decideAndReserveDispatch(request) {
 		const decision = replayDispatchDecision(
 			JSON.parse(existing.decisionInputJson),
 		);
+		if (
+			!decision.ok ||
+			!optionalNonNegativeNumber(existing.reservedCost) ||
+			existing.reservedCost <
+				nonNegativeNumber(request.estimatedCost, "request.estimatedCost", 0)
+		)
+			return failedDecision({
+				objective: request.objective ?? "maximize-credits",
+				reason: "reservation-replay-scope-or-cost-conflict",
+			});
 		return {
 			...decision,
 			reservation: {
@@ -952,15 +977,29 @@ export function decideAndReserveDispatch(request) {
 			};
 		}
 
-		const selectedRecord = registry.records.find(
-			(record) => record.providerId === decision.selectedProvider,
-		);
+		// A provider may have separate registrations and budgets for several
+		// categories. Reserve the exact category used by the decision.
+		const selectedCategory = decision.dispatchEvent.data.category;
+		const selectedRecord = registry.byCategory
+			.get(selectedCategory)
+			?.find(
+				(record) =>
+					record.category === selectedCategory &&
+					record.providerId === decision.selectedProvider &&
+					record.registered,
+			);
+		if (!selectedRecord)
+			return {
+				...failedDecision({
+					objective: decision.objective,
+					reason: "selected provider missing from dispatch category",
+				}),
+				attempts,
+			};
 		const selectedCost = decision.ranking.find(
 			(candidate) => candidate.providerId === decision.selectedProvider,
 		);
-		const dimension =
-			selectedRecord?.dimension ??
-			CATEGORY_DIMENSIONS[decision.dispatchEvent.data.category];
+		const dimension = selectedRecord.dimension;
 		// Selection prefers the account's price over the registry fallback. Pass
 		// that same price to reserve so the two stages price the same exposure.
 		const accountPrice = findLedgerAccount(
@@ -977,7 +1016,7 @@ export function decideAndReserveDispatch(request) {
 			expiresAt: request.reservationExpiresAt,
 			unitCost: optionalNonNegativeNumber(accountPrice)
 				? accountPrice
-				: selectedRecord?.listUnitCost,
+				: selectedRecord.listUnitCost,
 			switchingCost: selectedCost?.switchingCost ?? 0,
 			estimatedCost: request.estimatedCost,
 			dispatchRequestHash: requestHash,
@@ -1027,6 +1066,34 @@ export function replayDispatchDecision(replayInput) {
 		...clone(replayInput),
 		registry: createDispatcherRegistry(replayInput.candidates ?? []),
 	});
+}
+
+function reservationMatchesReplay(reservation: DispatchReservation): boolean {
+	try {
+		const decision = replayDispatchDecision(
+			JSON.parse(reservation.decisionInputJson ?? ""),
+		);
+		if (!decision.ok) return false;
+		const selected = decision.ranking.find(
+			(candidate) => candidate.providerId === decision.selectedProvider,
+		);
+		const estimate = reservation.estimatedCost ?? 0;
+		return (
+			selected !== undefined &&
+			decision.selectedProvider === reservation.providerId &&
+			selected.dimension === reservation.dimension &&
+			decision.replayInput.units === reservation.units &&
+			decision.dispatchEvent.data.ledgerInput.reservationId ===
+				reservation.reservationId &&
+			decision.dispatchEvent.data.ledgerInput.seq === reservation.expectedSeq &&
+			optionalNonNegativeNumber(reservation.reservedCost) &&
+			optionalNonNegativeNumber(estimate) &&
+			reservation.reservedCost >= selected.totalCost &&
+			reservation.reservedCost >= estimate
+		);
+	} catch {
+		return false;
+	}
 }
 
 export function decidePlacement(request) {
