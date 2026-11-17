@@ -1,6 +1,13 @@
 # @hobo/wit
 
-Production WIT toolchain package for HoBo. Vendors and pins reused `wasi:*` interfaces, publishes first-party `hobo:runtime` primitives plus async capability ports (`hobo:queue`, `hobo:scheduler`, `hobo:blob-events`), and ships the import-only `hobo:sdk@0.1.0` aggregate world with deterministic jco bindings.
+Production WIT toolchain package for HoBo. Vendors and pins reused `wasi:*` interfaces, publishes first-party `hobo:runtime` primitives plus capability ports (`hobo:queue`, `hobo:durable-messaging`, `hobo:scheduler`, `hobo:blob-events`), and ships the import-only `hobo:sdk@0.1.0` aggregate world with deterministic jco bindings.
+
+`hobo:durable-messaging/messaging@0.1.0` declares asynchronous operations with
+explicit committed, rejected, unknown and expired outcomes. Its generated jco
+types return Promises. A component host must implement asynchronous suspension,
+authorization, durable receipts and the port's semantics before advertising it;
+these declarations do not provide a runtime or a bridge from the legacy
+`wasi:messaging` interface.
 
 ## Layout
 

@@ -30,6 +30,7 @@ const JCO_PATH = join(
 const HOBO_DEP_DIRS = [
 	"hobo-runtime",
 	"hobo-queue",
+	"hobo-durable-messaging",
 	"hobo-scheduler",
 	"hobo-blob-events",
 	"hobo-evidence",
@@ -51,6 +52,16 @@ export const GENERATION_TARGETS = [
 		witPath: "wit/deps/hobo-queue/hobo-queue.wit",
 		worldName: "queue-provider",
 		outSubdir: "queue-provider",
+	},
+	{
+		witPath: "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
+		worldName: "durable-messaging-guest",
+		outSubdir: "durable-messaging-guest",
+	},
+	{
+		witPath: "wit/deps/hobo-durable-messaging/hobo-durable-messaging.wit",
+		worldName: "durable-messaging-provider",
+		outSubdir: "durable-messaging-provider",
 	},
 	{
 		witPath: "wit/deps/hobo-scheduler/hobo-scheduler.wit",
@@ -101,6 +112,7 @@ export const GENERATION_TARGETS = [
 
 export function digestSource(source: string | Buffer): string {
 	const bytes =
+		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the digest API accepts either text requiring newline normalization or raw bytes. */
 		typeof source === "string"
 			? Buffer.from(source.replace(/\r\n/g, "\n"), "utf8")
 			: source;
