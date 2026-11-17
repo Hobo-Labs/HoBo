@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { RawAccess } from "rivetkit/db";
 import { afterEach, describe, expect, it } from "vitest";
+import { createRivetAsyncQueueClient } from "../src/rivet-queue.js";
 import {
 	createRivetQueueActor,
 	isRivetQueueBinding,
@@ -320,6 +321,43 @@ it("retains deduplication and leases after a SQLite actor restart", async () => 
 	}
 });
 
+it("exposes the separate async client with explicit lost-ack handling", async () => {
+	const f = fixture();
+	let loseAcknowledgement = true;
+	const client = createRivetAsyncQueueClient({
+		fetch: async (path, init) => {
+			const headers = new Headers(init.headers);
+			headers.set("authorization", "test");
+			const result = await f.binding.handle(
+				{ name: "jobs", key: ["tenant-a"], db: f.database },
+				new Request(`https://queue.test${path}`, { ...init, headers }),
+			);
+			if (path === "/enqueue" && loseAcknowledgement) {
+				loseAcknowledgement = false;
+				throw new Error("response lost");
+			}
+			return result;
+		},
+	});
+	await expect(client.enqueue("key", { hello: "world" })).rejects.toMatchObject(
+		{ code: "outcome-unknown" },
+	);
+	const retry = await client.enqueue("key", { hello: "world" });
+	expect(retry.deduped).toBe(true);
+	const [leased] = await client.dequeue(1, 100);
+	if (!leased) throw new Error("lease missing");
+	expect(leased.messageId).toBe(retry.messageId);
+	await expect(
+		client.complete(leased.messageId, "wrong"),
+	).rejects.toMatchObject({ code: "lease-lost" });
+	expect(
+		(await client.complete(leased.messageId, leased.leaseId)).deduped,
+	).toBe(false);
+	expect(
+		(await client.complete(leased.messageId, leased.leaseId)).deduped,
+	).toBe(true);
+});
+
 /* oxlint-enable anti-slop/no-object-parameters */
 
 it("rejects changed payloads and schedules under an existing idempotency key", async () => {
@@ -371,4 +409,26 @@ it("returns an explicit unavailable result when the trusted clock throws", async
 	);
 	expect(result.status).toBe(503);
 	expect(await result.json()).toEqual({ error: "clock-unavailable" });
+});
+
+it("rejects accessor-bearing client payloads before sending", async () => {
+	let calls = 0;
+	let reads = 0;
+	const queue = createRivetAsyncQueueClient({
+		fetch: async () => {
+			calls++;
+			return Response.json({});
+		},
+	});
+	const body = {
+		get value() {
+			reads++;
+			return 1;
+		},
+	};
+	await expect(queue.enqueue("key", body)).rejects.toMatchObject({
+		code: "invalid-argument",
+	});
+	expect(reads).toBe(0);
+	expect(calls).toBe(0);
 });

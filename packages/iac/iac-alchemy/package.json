@@ -7,14 +7,38 @@
 	"engines": {
 		"node": ">=22.19.0"
 	},
-	"files": ["dist"],
+	"files": [
+		"dist"
+	],
 	"exports": {
-		".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-		"./cloudflare": { "types": "./dist/cloudflare.d.ts", "default": "./dist/cloudflare.js" },
-		"./cloudflare/runtime": { "types": "./dist/cloudflare-runtime.d.ts", "default": "./dist/cloudflare-runtime.js" },
-		"./rivet": { "types": "./dist/rivet.d.ts", "default": "./dist/rivet.js" },
-		"./rivet/runtime": { "types": "./dist/rivet-runtime.d.ts", "default": "./dist/rivet-runtime.js" },
-		"./rivet/multi": { "types": "./dist/rivet-multi.d.ts", "default": "./dist/rivet-multi.js" }
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./cloudflare": {
+			"types": "./dist/cloudflare.d.ts",
+			"default": "./dist/cloudflare.js"
+		},
+		"./cloudflare/runtime": {
+			"types": "./dist/cloudflare-runtime.d.ts",
+			"default": "./dist/cloudflare-runtime.js"
+		},
+		"./rivet": {
+			"types": "./dist/rivet.d.ts",
+			"default": "./dist/rivet.js"
+		},
+		"./rivet/runtime": {
+			"types": "./dist/rivet-runtime.d.ts",
+			"default": "./dist/rivet-runtime.js"
+		},
+		"./rivet/multi": {
+			"types": "./dist/rivet-multi.d.ts",
+			"default": "./dist/rivet-multi.js"
+		},
+		"./rivet/queue": {
+			"types": "./dist/rivet-queue.d.ts",
+			"default": "./dist/rivet-queue.js"
+		}
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1"
@@ -29,9 +53,15 @@
 		"ws": "^8.21.0"
 	},
 	"peerDependenciesMeta": {
-		"@alchemy.run/cloudflare": { "optional": true },
-		"@alchemy.run/rivet": { "optional": true },
-		"rivetkit": { "optional": true }
+		"@alchemy.run/cloudflare": {
+			"optional": true
+		},
+		"@alchemy.run/rivet": {
+			"optional": true
+		},
+		"rivetkit": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",

@@ -511,3 +511,90 @@ and plans exceeding 256 nodes remain refused. Action state is not included in
 Alchemy's resource drift scan, so refresh of an action-bearing target reports
 incomplete drift rather than claiming it is in sync. The caller owns final
 usage reconciliation and can use the budget authority's settlement APIs.
+
+### Standalone Rivet asynchronous queue
+
+`@hobo/iac-alchemy/rivet/queue` provides a separate, asynchronous JSON queue
+capability built on a real RivetKit actor and Alchemy `Rivet.DurableObject`.
+It is not an implementation of HoBo's synchronous core `Queue` interface or
+the byte-and-attribute WIT queue port, and does not change Bindle queue support
+reporting. Applications must explicitly use the async client. It is also not a
+publish/subscribe topic.
+
+The host supplies an independently authenticated authorizer for each actor
+key and operation, and a trusted clock that remains monotonic across actor
+migrations and does not jump ahead of real time. The actor stores messages,
+idempotency keys, delivery attempts and lease state in one transactional Rivet
+SQLite database per actor key. Identical enqueue retries return the original
+message ID; a changed canonical JSON body or availability schedule under the
+same key returns `idempotency-conflict`. HoBo's local queue currently deduplicates
+by key even when a payload differs, so this opt-in capability is stricter.
+Leases expire and receive a new fenced lease ID; complete, release and extend
+check that ID. Completed deduplication records are retained. Each actor is
+bounded to 10,000 retained messages, 100 messages per dequeue, a 24-hour lease,
+and a 64-KiB JSON request. Once capacity is reached, enqueue fails explicitly;
+records are never silently discarded to make space.
+
+A lost or malformed response is `RivetAsyncQueueError` with
+`code: "outcome-unknown"`. Retrying enqueue with the same key and completion
+with the same message/lease are idempotent. A lost dequeue, release, or extend
+response does not prove whether it committed: wait for or reconcile the lease
+before issuing conflicting work. The queue only controls message delivery;
+consumers must make their own external side effects idempotent or fenced.
+
+```ts
+import { setup } from "rivetkit";
+import {
+  createRivetQueueActor,
+  createRivetAsyncQueueClient,
+  rivetAsyncQueueResource,
+} from "@hobo/iac-alchemy/rivet/queue";
+
+const jobs = createRivetQueueActor({
+  actorName: "jobs",
+  now: () => host.trustedClock.nowMs(),
+  authorize: (request) => host.queuePolicy.authorize(request),
+});
+export const registry = setup({ use: { jobs: jobs.actor } });
+
+// The host verifies the reviewed source, exact single-actor registry, physical
+// pool and runner isolation domain; these identities are not app assertions.
+const jobsResource = rivetAsyncQueueResource({
+  main: absoluteProgramPath,
+  resourceName: "jobs",
+  bindleName: "queue-app",
+  sourceDigest,
+  sourceFence: host.immutableSourceFence,
+  poolDigest,
+  isolationDigest,
+  poolHost,
+  registry,
+  binding: jobs,
+  verifySource: (source) => host.verifyQueueSourceAndExclusivePool(source),
+});
+
+// An authorized application supplies a transport bound to its exact actor key.
+const actor = rivetClient.jobs.getOrCreate([tenantId, "jobs"]);
+const queue = createRivetAsyncQueueClient({
+  fetch: (path, init) => actor.fetch(path, host.attachQueueCredential(init)),
+});
+const accepted = await queue.enqueue("order-123", { orderId: "123" });
+const [message] = await queue.dequeue(1, 30_000);
+if (message) {
+  await processIdempotently(message.body, message.idempotencyKey);
+  await queue.complete(message.messageId, message.leaseId);
+}
+```
+
+The adapter's composite plan guard must include the exact source requirement
+`{ resourceId: "jobs", resourceType: "Rivet.DurableObject", bindleName:
+"queue-app", applicationName: "jobs", sourceKind: "rivet-async-queue",
+sourcePath: absoluteProgramPath }` and independently verify that inventory.
+The source fence must cover the complete program, transitive dependencies,
+build environment and upload through provider completion. The external program
+is restricted to one queue actor and requires a host-verified exclusive pool. This capability does not yet wire queue dependencies
+into a Bindle application. A host must fence old writers and consumers, drain
+or otherwise reconcile messages, and authorize destruction before deleting or
+recreating the actor: destroying its database destroys messages and deduplication
+history. Provider credentials, pool isolation, source identity, durable storage,
+and clock correctness remain independently verified host responsibilities.
