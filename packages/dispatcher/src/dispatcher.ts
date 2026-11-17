@@ -339,7 +339,7 @@ export function createReservationLedger(initialLedgerView) {
 				reservation.units,
 			);
 		}
-		const committedSeq = next.seq + 1;
+		const committedSeq = advanceLedgerSequence(next.seq);
 		reservation.status =
 			eventType === DISPATCH_EVENTS.ReservationExpired ? "expired" : "released";
 		reservation.releaseReason = reason;
@@ -558,7 +558,7 @@ export function createReservationLedger(initialLedgerView) {
 				account.reservedCost = totalHeld;
 				account.reservedUnits = addUpper(account.reservedUnits ?? 0, units);
 			}
-			const committedSeq = next.seq + 1;
+			const committedSeq = advanceLedgerSequence(next.seq);
 			const reservation: DispatchReservation = {
 				reservationId,
 				providerId,
@@ -659,8 +659,8 @@ export function createReservationLedger(initialLedgerView) {
 			const next = clone(current);
 			const started = findReservation(next, reservationId);
 			started.status = "running";
-			started.startedSeq = next.seq + 1;
-			next.seq += 1;
+			started.startedSeq = advanceLedgerSequence(next.seq);
+			next.seq = started.startedSeq;
 			current = next;
 			eventLog.push(
 				reservationFact(DISPATCH_EVENTS.ReservationStarted, started, {
@@ -719,7 +719,7 @@ export function createReservationLedger(initialLedgerView) {
 					ledgerView: clone(current),
 				};
 
-			const committedSeq = next.seq + 1;
+			const committedSeq = advanceLedgerSequence(next.seq);
 			const actualCost = nonNegativeNumber(
 				request.actualCost,
 				"request.actualCost",
@@ -804,13 +804,8 @@ export function createReservationLedger(initialLedgerView) {
 			const now = requireInstant(request.now, "request.now");
 			if (current.asOf && Date.parse(now) < Date.parse(current.asOf))
 				throw new TypeError("request.now must not precede ledger.asOf");
-			if (!current.asOf || Date.parse(now) > Date.parse(current.asOf)) {
-				current = { ...current, asOf: now, seq: current.seq + 1 };
-				eventLog.push({
-					type: DISPATCH_EVENTS.LedgerTimeAdvanced,
-					data: { asOf: now, ledgerSeq: current.seq },
-				});
-			}
+			const advancesTime =
+				!current.asOf || Date.parse(now) > Date.parse(current.asOf);
 			const expiredIds = (current.reservations ?? [])
 				.filter((reservation) => reservation.status === "pending")
 				.filter(
@@ -819,6 +814,23 @@ export function createReservationLedger(initialLedgerView) {
 						Date.parse(reservation.expiresAt) <= Date.parse(now),
 				)
 				.map((reservation) => reservation.reservationId);
+			// Preflight the whole expiry batch so exhaustion cannot advance time or
+			// release only some reservations before the operation fails.
+			advanceLedgerSequence(
+				current.seq,
+				expiredIds.length + (advancesTime ? 1 : 0),
+			);
+			if (advancesTime) {
+				current = {
+					...current,
+					asOf: now,
+					seq: advanceLedgerSequence(current.seq),
+				};
+				eventLog.push({
+					type: DISPATCH_EVENTS.LedgerTimeAdvanced,
+					data: { asOf: now, ledgerSeq: current.seq },
+				});
+			}
 			const releases = expiredIds.map((reservationId) =>
 				releaseReservation({
 					reservationId,
@@ -1704,9 +1716,7 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 	if (ledgerView.view !== "CreditLedgerView") {
 		throw new TypeError("ledgerView.view must be CreditLedgerView");
 	}
-	if (!Number.isInteger(ledgerView.seq) || ledgerView.seq < 0) {
-		throw new TypeError("ledgerView.seq must be a non-negative integer");
-	}
+	requireNonNegativeInteger(ledgerView.seq, "ledgerView.seq");
 	if (!Array.isArray(ledgerView.accounts)) {
 		throw new TypeError("ledgerView.accounts must be an array");
 	}
@@ -1753,6 +1763,15 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			reservation.committedSeq,
 			"reservation.committedSeq",
 		);
+		for (const key of [
+			"startedSeq",
+			"confirmedSeq",
+			"releasedSeq",
+			"providerUsageSeq",
+		]) {
+			if (reservation[key] !== undefined)
+				requireNonNegativeInteger(reservation[key], `reservation.${key}`);
+		}
 		if (
 			!["pending", "running", "confirmed", "released", "expired"].includes(
 				reservation.status,
@@ -2041,10 +2060,23 @@ function requirePositiveInteger(value, fieldName: string): number {
 }
 
 function requireNonNegativeInteger(value, fieldName: string): number {
-	if (!Number.isInteger(value) || value < 0) {
+	if (!Number.isInteger(value) || value < 0)
 		throw new TypeError(`${fieldName} must be a non-negative integer`);
-	}
+	if (!Number.isSafeInteger(value))
+		throw new TypeError(`${fieldName} must be a safe integer`);
 	return value;
+}
+
+function advanceLedgerSequence(seq: number, steps = 1): number {
+	if (
+		!Number.isSafeInteger(seq) ||
+		seq < 0 ||
+		!Number.isSafeInteger(steps) ||
+		steps < 0 ||
+		steps > Number.MAX_SAFE_INTEGER - seq
+	)
+		throw new RangeError("ledger sequence exhausted");
+	return seq + steps;
 }
 
 function nonNegativeNumber(value, fieldName: string, fallback: number): number {
