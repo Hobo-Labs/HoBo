@@ -1362,8 +1362,6 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			const key = executionKeyId(input.key);
 			const existing = await this.claimInside(client, key, true);
 			if (existing) {
-				// One success shape only (see the SQLite store): same claim,
-				// same slot, still start-authorized or running.
 				if (
 					existing.id !== input.claimId ||
 					existing.runnerSlotId !== slot.id ||
@@ -1374,24 +1372,10 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
 						"actual job is already claimed",
 					);
-				const current = await this.currentIncarnationInside(client);
-				if (!current || slot.incarnationId !== current.id)
-					rejectFleet(
-						FleetRejectionCode.INCARNATION_STALE,
-						"start binding belongs to a stale controller incarnation",
-					);
-				const expectedSecret = Buffer.from(slot.bindingSecretHash, "hex");
-				const actualSecret = createHash("sha256")
-					.update(input.bindingSecret)
-					.digest();
-				if (
-					expectedSecret.length !== actualSecret.length ||
-					!timingSafeEqual(expectedSecret, actualSecret)
-				)
-					rejectFleet(
-						FleetRejectionCode.BINDING_SECRET_MISMATCH,
-						"binding secret does not match slot",
-					);
+				const demand = await this.demandInside(client, key, true);
+				if (!demand)
+					rejectFleet(FleetRejectionCode.NOT_FOUND, "actual demand not found");
+				await this.verifyStart(client, slot, demand, input);
 				return { claim: existing, idempotent: true };
 			}
 			if (await this.claimByIdInside(client, input.claimId))

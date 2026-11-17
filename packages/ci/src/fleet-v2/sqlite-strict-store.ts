@@ -1184,12 +1184,6 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			const key = executionKeyId(input.key);
 			const existing = this.claimInside(key);
 			if (existing) {
-				// One success shape only: the same claim, on the same slot, still
-				// start-authorized or running (the lost-response retry). It is
-				// answered before mutable eligibility checks, but the binding
-				// secret and incarnation are still verified. A terminal claim —
-				// including uncertain, which must never re-authorize a start —
-				// and any identity mismatch are EXECUTION_ALREADY_CLAIMED.
 				if (
 					existing.id !== input.claimId ||
 					existing.runnerSlotId !== slot.id ||
@@ -1200,24 +1194,10 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 						FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
 						"actual job is already claimed",
 					);
-				const current = this.currentIncarnationSync();
-				if (!current || slot.incarnationId !== current.id)
-					rejectFleet(
-						FleetRejectionCode.INCARNATION_STALE,
-						"start binding belongs to a stale controller incarnation",
-					);
-				const expected = Buffer.from(slot.bindingSecretHash, "hex");
-				const actual = createHash("sha256")
-					.update(input.bindingSecret)
-					.digest();
-				if (
-					expected.length !== actual.length ||
-					!timingSafeEqual(expected, actual)
-				)
-					rejectFleet(
-						FleetRejectionCode.BINDING_SECRET_MISMATCH,
-						"binding secret does not match runner slot",
-					);
+				const demand = this.demandInside(key);
+				if (!demand)
+					rejectFleet(FleetRejectionCode.NOT_FOUND, "actual demand not found");
+				this.verifyStart(slot, demand, input);
 				return { claim: existing, idempotent: true };
 			}
 			if (this.claimByIdInside(input.claimId))

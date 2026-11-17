@@ -232,6 +232,94 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			return handle.store;
 		}
 
+		async function authorizedBinding(store: StrictFleetStore) {
+			await store.intake(demand("1", "webhook", "webhook-1"));
+			const reserved = reservation(parsedKey("1"), "retry", 0);
+			await store.reserveCapacity(reserved.input);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"reserved",
+				"provisioning",
+			);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"provisioning",
+				"registered",
+				"runner-1",
+			);
+			const binding = parseStartBindingInput({
+				slotId: reserved.input.slot.id,
+				claimId: "claim-1",
+				key: githubKey("1"),
+				bindingSecret: reserved.bindingSecret,
+				assignment: {
+					verified: true,
+					accountId: "hobo-labs",
+					runnerName: reserved.input.slot.runnerName,
+					profileId: "trusted-linux-x64",
+				},
+			});
+			await store.bindStart(binding);
+			return { binding, reserved };
+		}
+
+		it("rechecks the verified runner and revoked offer before returning a retry", async () => {
+			const store = current();
+			const { binding, reserved } = await authorizedBinding(store);
+			expect((await store.bindStart(binding)).idempotent).toBe(true);
+			const forged = parseStartBindingInput({
+				slotId: reserved.input.slot.id,
+				claimId: "claim-1",
+				key: githubKey("1"),
+				bindingSecret: reserved.bindingSecret,
+				assignment: {
+					verified: true,
+					accountId: "hobo-labs",
+					runnerName: "hobo-foreign",
+					profileId: "trusted-linux-x64",
+				},
+			});
+			await expect(store.bindStart(forged)).rejects.toMatchObject({
+				code: FleetRejectionCode.ASSIGNMENT_MISMATCH,
+			});
+			await store.putOfferAdmission(
+				parseOfferAdmission(
+					JSON.stringify({
+						offerId: "local-offer",
+						accountId: "hobo-labs",
+						observationHash: OFFER_HASH,
+						policyRevision: 1,
+						state: "revoked",
+					}),
+				),
+			);
+			await expect(store.bindStart(binding)).rejects.toMatchObject({
+				code: FleetRejectionCode.OFFER_REVOKED,
+			});
+		});
+
+		it("rejects a retry after its worker capacity is revoked", async () => {
+			const store = current();
+			const { binding } = await authorizedBinding(store);
+			const group = await store.capacityGroup("device-1");
+			if (!group) throw new Error("capacity group missing");
+			await store.putCapacityGroup(
+				parseCapacityGroup(
+					JSON.stringify({
+						id: group.id,
+						accountId: group.accountId,
+						approvedUnits: group.approvedUnits,
+						reservedUnits: group.reservedUnits,
+						seq: group.seq,
+						state: "revoked",
+					}),
+				),
+			);
+			await expect(store.bindStart(binding)).rejects.toMatchObject({
+				code: FleetRejectionCode.CAPACITY_INELIGIBLE,
+			});
+		});
+
 		it("allows exactly one admission to race for one capacity unit", async () => {
 			const store = current();
 			await store.intake(demand("1", "webhook", "webhook-1"));
