@@ -1,24 +1,8 @@
-/**
- * OpenTelemetry provider: drives office characters from OTLP trace spans.
- *
- * This is the first push-based provider (see core/src/provider.ts — provider
- * types beyond HookProvider were deferred until a real one shipped). It does
- * NOT implement HookProvider: there are no hook scripts to install and no
- * transcripts to poll. Instead, POST /v1/traces delivers OTLP/JSON exports,
- * spans are translated into the canonical AgentEvent model (otelSpan.ts), and
- * this class applies them directly to the AgentStateStore with the same
- * broadcast messages the hook path emits (agentToolStart / agentToolDone /
- * agentToolsClear / agentStatus / agentToolPermission).
- *
- * Mappings (docs/otel-provider.md):
- *   - camp   (resource attr hobo.camp)   → office Area (auto-materialized)
- *   - bindle (hobo.bindle / service.name) → one agent character, seated in
- *     its camp's Area via the standard folderName → areaMappings seating.
- */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
+import type { StreamProvider } from '../../../../core/src/streamProvider.js';
 import type { AgentStateStore } from '../../agentStateStore.js';
 import type { FurnitureAsset } from '../../assetLoader.js';
 import type { AgentState } from '../../types.js';
@@ -27,21 +11,15 @@ import { analyzeCampRoom, ensureCampArea, hasOtelFurniture, slugify } from './ar
 import type { OtelSpan } from './otelSpan.js';
 import { formatSpanStatus, parseOtlpTraces, spanToAgentEvents } from './otelSpan.js';
 
-/** Persistence seams injected by the CLI so this class stays unit-testable. */
 export interface OtelProviderDeps {
   store: AgentStateStore;
-  /** Furniture catalog (for desk/chair footprints). Null → area paint only. */
   catalog: FurnitureAsset[] | null;
-  /** Directory for synthetic per-bindle transcript placeholders. */
   stateDir: string;
   readLayout: () => Record<string, unknown> | null;
   writeLayout: (layout: Record<string, unknown>) => void;
   readAreaMappings: () => Record<string, string[]>;
   writeAreaMappings: (mappings: Record<string, string[]>) => void;
-  /** Bundled default layout, used when no layout file exists yet. */
   defaultLayout?: Record<string, unknown> | null;
-  /** Called once when the first camp area is materialized (CLI wires this to
-   *  persist `pixel-agents.showAreas` so camp zones render tinted). */
   setShowAreas?: (enabled: boolean) => void;
 }
 
@@ -56,11 +34,11 @@ export interface OtelIngestResult {
 interface BindleState {
   agentId: number;
   camp?: string;
-  /** spanId → { toolId } for spans currently animating. */
   activeSpans: Map<string, { toolId: string; isError: boolean }>;
 }
 
-export class OtelProvider {
+export class OtelProvider implements StreamProvider<unknown, OtelIngestResult> {
+  readonly kind = 'stream';
   readonly id = 'otel';
   readonly displayName = 'OpenTelemetry';
   private readonly bindles = new Map<string, BindleState>();
@@ -68,18 +46,10 @@ export class OtelProvider {
 
   constructor(private readonly deps: OtelProviderDeps) {}
 
-  /** Number of bindle agents currently known (for diagnostics). */
   get agentCount(): number {
     return this.bindles.size;
   }
 
-  /**
-   * Boot-time migration: rebuild any auto-materialized camp room that is
-   * fragmented (same label in disjoint regions) or unenclosed (no wall ring).
-   * Only camps with OTel-placed furniture are touched — hand-painted user
-   * areas without our marker are left alone even when they look "invalid".
-   * Returns the camp labels that were rebuilt.
-   */
   validatePersistedAreas(): string[] {
     if (!this.deps.catalog) return [];
     let current = this.deps.readLayout() as OfficeLayoutLike | null;
@@ -109,10 +79,6 @@ export class OtelProvider {
     return rebuilt;
   }
 
-  /**
-   * Ingest one OTLP/JSON traces body. Never throws on malformed input —
-   * unparseable bodies simply yield zero spans.
-   */
   ingest(body: unknown): OtelIngestResult {
     const spans = parseOtlpTraces(body);
     const result: OtelIngestResult = {
@@ -140,13 +106,10 @@ export class OtelProvider {
     return result;
   }
 
-  // ── Bindle → agent ─────────────────────────────────────────
 
   private ensureBindle(bindleName: string, camp: string | undefined, result: OtelIngestResult): BindleState {
     const existing = this.bindles.get(bindleName);
     if (existing) {
-      // Late-arriving camp attribution: update mapping so future restarts and
-      // rebuilds seat the character in its camp's Area.
       if (camp && existing.camp !== camp) {
         existing.camp = camp;
         const agent = this.deps.store.get(existing.agentId);
@@ -185,14 +148,12 @@ export class OtelProvider {
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
-      hookDelivered: true, // suppress heuristic timers — all state comes from spans
+      hookDelivered: true,
       hooksOnly: true,
       providerId: this.id,
       inputTokens: 0,
       outputTokens: 0,
     };
-    // store.set fires agentAdded → httpServer broadcasts agentCreated (with
-    // folderName) → webview seats the character in the camp's Area.
     this.deps.store.set(agentId, agent);
     this.deps.store.persist();
 
@@ -205,14 +166,7 @@ export class OtelProvider {
     return state;
   }
 
-  /**
-   * Camp → Area: materialize the Area (definition + painted tiles + one
-   * workstation per bindle in the camp), point the folder mapping at it, and
-   * broadcast the updates so connected webviews rebuild before the character
-   * is created.
-   */
   private materializeCamp(camp: string): void {
-    // Count bindles already attributed to this camp (+1 for the new one).
     let bindleCount = 1;
     for (const b of this.bindles.values()) {
       if (b.camp === camp) bindleCount += 1;
@@ -223,9 +177,6 @@ export class OtelProvider {
       (this.deps.defaultLayout as OfficeLayoutLike | null) ??
       null;
 
-    // Mappings first, then layoutLoaded: the rebuild triggered by layoutLoaded
-    // reseats characters using the folder→Area mappings, so they must already
-    // be in place when it arrives.
     const mappings = { ...this.deps.readAreaMappings() };
     const labels = mappings[camp] ?? [];
     if (!labels.includes(camp)) {
@@ -250,13 +201,6 @@ export class OtelProvider {
     }
   }
 
-  /**
-   * The runtime's external-agent tracking keys on transcript files. OTel
-   * bindles have none, so each gets an empty placeholder file: it keeps the
-   * stale-check (which removes external agents whose file vanished) and the
-   * restore path (which skips missing files) from ever touching span-driven
-   * agents.
-   */
   private touchPlaceholder(bindleName: string): string {
     const file = path.join(this.deps.stateDir, `${slugify(bindleName)}.jsonl`);
     try {
@@ -268,12 +212,11 @@ export class OtelProvider {
     return file;
   }
 
-  // ── Span activity → agent activity ─────────────────────────
 
   private handleSpanStart(agentId: number, span: OtelSpan, toolId: string): void {
     const bindle = this.bindles.get(span.bindle);
     if (!bindle) return;
-    if (bindle.activeSpans.has(span.spanId)) return; // duplicate start
+    if (bindle.activeSpans.has(span.spanId)) return;
     bindle.activeSpans.set(span.spanId, { toolId, isError: span.isError });
 
     this.deps.store.broadcast({
@@ -285,7 +228,6 @@ export class OtelProvider {
     });
     this.deps.store.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
     if (span.isError) {
-      // Error status → the office's attention state (permission bubble).
       this.deps.store.broadcast({ type: 'agentToolPermission', id: agentId });
     }
   }
@@ -301,7 +243,6 @@ export class OtelProvider {
       this.deps.store.broadcast({ type: 'agentToolPermissionClear', id: agentId });
     }
     if (bindle.activeSpans.size === 0) {
-      // No active spans → turn over: clear tools, character goes idle/waiting.
       this.deps.store.broadcast({ type: 'agentToolsClear', id: agentId });
       this.deps.store.broadcast({ type: 'agentStatus', id: agentId, status: 'waiting' });
     }

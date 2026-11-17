@@ -1,5 +1,3 @@
-// Core package: shared types, interfaces, and protocol definitions
-// Everything in this package is types-only (no runtime behavior)
 
 export type { StateAdapter } from './adapter.js';
 export {
@@ -12,6 +10,7 @@ export {
 } from './constants.js';
 export type { ClientMessage, FurnitureAssetMessage, ServerMessage } from './messages.js';
 export type { AgentEvent, HookProvider } from './provider.js';
+export type { StreamProvider } from './streamProvider.js';
 export type {
   AgentMeta,
   ColorValue,
