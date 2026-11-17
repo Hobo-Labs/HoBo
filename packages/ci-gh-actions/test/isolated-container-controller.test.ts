@@ -21,7 +21,10 @@ import type { DockerDriver } from "../src/isolated-worker/docker-driver.js";
 import type { MemoryPeaks } from "../src/isolated-worker/memory-peaks.js";
 import type { WorkerStorageFileSystem } from "../src/isolated-worker/storage-admission.js";
 import { NOW } from "./fixtures.js";
-import { jitRunnerDeregisterGithub } from "./github-deregister-mock.js";
+import {
+	jitRunnerDeregisterGithub,
+	jitRunnerGithubWithoutAssignments,
+} from "./github-deregister-mock.js";
 
 function workDirectory() {
 	const retireJobDirectory = vi.fn(async (path: string) => `${path}-retired`);
@@ -907,8 +910,8 @@ describe("isolated container controller reconcile", () => {
 			exitState: vi.fn(async () => ({ exitCode: 137, oomKilled: true })),
 		};
 		if (memory?.peak) docker.memoryPeak = memory.peak;
-		// SAFETY: settle after a stop uses the mocked getJob() seam.
-		const github = jitRunnerDeregisterGithub();
+		// The scan sees no other assignment; settlement uses the mocked getJob seam.
+		const github = jitRunnerGithubWithoutAssignments();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "queued"),
 		);

@@ -21,3 +21,21 @@ export function jitRunnerDeregisterGithub(
 		},
 	};
 }
+
+/** A complete empty assignment scan for tests that exercise unrelated cleanup. */
+export function jitRunnerGithubWithoutAssignments(): GithubTransport {
+	return jitRunnerDeregisterGithub({
+		async request(_installationId, path) {
+			if (path.includes("/actions/runs?status=in_progress&")) {
+				return Response.json({ workflow_runs: [] });
+			}
+			if (
+				path.includes("/actions/runs/") &&
+				path.includes("/jobs?filter=latest&")
+			) {
+				return Response.json({ jobs: [] });
+			}
+			throw new Error(`unexpected GitHub request ${path}`);
+		},
+	});
+}
