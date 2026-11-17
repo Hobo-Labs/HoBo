@@ -85,7 +85,7 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 		const receipt = result.receipt as ResolutionReceipt;
 		const signature = result.signature;
 		if (signature === undefined) throw new Error("expected a signature");
-		expect(verifyResolution(receipt, signature)).toBe(true);
+		expect(verifyResolution(receipt, signature, key.publicKeyPem)).toBe(true);
 
 		// Tampering with a single placement field fails verification.
 		const tampered: ResolutionReceipt = {
@@ -95,7 +95,7 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 				marginalPrice: "0.00",
 			})),
 		};
-		expect(verifyResolution(tampered, signature)).toBe(false);
+		expect(verifyResolution(tampered, signature, key.publicKeyPem)).toBe(false);
 	});
 
 	it("signs rejections too, and a foreign key does not verify", async () => {
@@ -119,12 +119,16 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 		if (rejection === undefined || signature === undefined) {
 			throw new Error("expected a signed rejection");
 		}
-		expect(verifyResolution(rejection, signature)).toBe(true);
+		expect(verifyResolution(rejection, signature, key.publicKeyPem)).toBe(true);
 
 		const foreign = signResolution(rejection, generateResolutionSigningKey());
-		expect(verifyResolution(rejection, signature)).toBe(true);
+		expect(verifyResolution(rejection, signature, key.publicKeyPem)).toBe(true);
 		expect(
-			verifyResolution({ ...rejection, requestId: "req-forged" }, foreign),
+			verifyResolution(
+				{ ...rejection, requestId: "req-forged" },
+				foreign,
+				key.publicKeyPem,
+			),
 		).toBe(false);
 	});
 });

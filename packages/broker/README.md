@@ -445,9 +445,16 @@ be swapped without touching the brokering pipeline:
 
 Beyond M0, this package also ships:
 
-- **Receipt integrity** — Ed25519 detached signatures over canonical JSON for
-  every receipt and rejection (`signResolution`/`verifyResolution`,
-  `broker.ResolutionSigned` facts).
+- **Receipt integrity** — optional Ed25519 detached signatures over canonical
+  JSON (`signResolution`/`verifyResolution`, `broker.ResolutionSigned` facts).
+  Verification requires `verifyResolution(receipt, signature, trustedPublicKeyPem)`
+  with the expected broker's independently enrolled public key and checks the
+  payload digest. Signing rejects private key material in the public key field;
+  only a normalized public key is emitted. The signature's embedded key does not
+  establish trust. Object keys sort by UTF-16 code units, independent of locale.
+  Callers must map the enrolled key to the correct broker and scope.
+  Signatures produced with the earlier locale-dependent key order may need
+  reissuance if their canonical ordering differs.
 - **The closed rejection matrix** (`REJECTION_MATRIX`) — every broker-owned
   rejection code pinned to its plane and an agent-actionable remediation,
   test-enforced against the pipeline.

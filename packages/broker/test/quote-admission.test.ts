@@ -156,17 +156,21 @@ describe("broker quote-backed admission", () => {
 		expect(result.receipt.quoteHash).toBe(offered.quoteHash);
 		expect(result.receipt.pricingBindingDigest).toMatch(/^sha256:/u);
 		expect(result.receipt.authorizedUsd).toBe(5);
-		expect(verifyResolution(result.receipt, result.signature)).toBe(true);
+		expect(
+			verifyResolution(result.receipt, result.signature, key.publicKeyPem),
+		).toBe(true);
 		expect(
 			verifyResolution(
 				{ ...result.receipt, authorizedUsd: 0 },
 				result.signature,
+				key.publicKeyPem,
 			),
 		).toBe(false);
 		expect(
 			verifyResolution(
 				{ ...result.receipt, quoteHash: "sha256:forged" },
 				result.signature,
+				key.publicKeyPem,
 			),
 		).toBe(false);
 	});
