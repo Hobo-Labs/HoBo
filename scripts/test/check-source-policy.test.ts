@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-	mkdtempSync,
 	mkdirSync,
+	mkdtempSync,
 	rmSync,
 	unlinkSync,
 	writeFileSync,
@@ -12,8 +12,8 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import {
 	addedLineNumbers,
-	commentViolations,
 	commentsIn,
+	commentViolations,
 	documentViolation,
 } from "../check-source-policy.mts";
 
@@ -191,6 +191,23 @@ describe("source policy", () => {
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /docs\/design\/new\.md/u);
+	});
+
+	it("allows unchanged comments in renamed files but rejects new ones", () => {
+		const repo = fixture();
+		git(repo, "mv", "existing.ts", "renamed.ts");
+		const moved = guard(repo, "--staged");
+		assert.equal(moved.status, 0, moved.stderr);
+		write(
+			repo,
+			"renamed.ts",
+			"// existing comment\nexport const value = 1;\n// new comment\n",
+		);
+		git(repo, "add", "renamed.ts");
+		const changed = guard(repo, "--staged");
+		assert.equal(changed.status, 1, changed.stderr);
+		assert.match(changed.stderr, /renamed\.ts:3/u);
+		assert.doesNotMatch(changed.stderr, /renamed\.ts:1/u);
 	});
 
 	it("checks filenames containing Git pathspec metacharacters literally", () => {

@@ -67,7 +67,7 @@ function diffArgs(mode: Mode): string[] {
 function names(args: string[], filter: string): string[] {
 	return git([
 		...args,
-		"--no-renames",
+		"--find-renames",
 		"--name-only",
 		`--diff-filter=${filter}`,
 		"-z",
@@ -75,6 +75,25 @@ function names(args: string[], filter: string): string[] {
 	])
 		.split("\0")
 		.filter(Boolean);
+}
+
+function renameSources(args: string[]): Map<string, string> {
+	const entries = git([
+		...args,
+		"--find-renames",
+		"--name-status",
+		"--diff-filter=R",
+		"-z",
+		"--",
+	]).split("\0");
+	const sources = new Map<string, string>();
+	for (let index = 0; index + 2 < entries.length; index += 3) {
+		const source = entries[index + 1];
+		const destination = entries[index + 2];
+		if (source !== undefined && destination !== undefined)
+			sources.set(destination, source);
+	}
+	return sources;
 }
 
 function untrackedFiles(mode: Mode): string[] {
@@ -245,6 +264,7 @@ export function documentViolation(
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
+	const renamed = renameSources(args);
 	const files = [...new Set([...names(args, "ACMRT"), ...untracked])];
 	const violations: Violation[] = [];
 	for (const file of files) {
@@ -261,17 +281,18 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		)
 			continue;
 		const text = contents(mode, file);
+		const source = renamed.get(file);
 		const added = untracked.includes(file)
 			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
 			: addedLineNumbers(
 					git([
 						...args,
-						"--no-renames",
+						"--find-renames",
 						"--no-color",
 						"--no-ext-diff",
 						"--unified=0",
 						"--",
-						file,
+						...(source === undefined ? [file] : [source, file]),
 					]),
 				);
 		violations.push(...commentViolations(file, text, added));
