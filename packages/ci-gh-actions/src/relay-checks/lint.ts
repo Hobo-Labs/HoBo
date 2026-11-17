@@ -211,10 +211,12 @@ export function lintSummary(results: readonly LintToolResult[]): string {
 
 /**
  * The annotations for a lint check: one result per tool, then findings, then
- * a line saying how many were left out, `LINT_MAX_ANNOTATIONS` at most.
+ * a line saying how many were left out, `max` at most (`LINT_MAX_ANNOTATIONS`
+ * when absent). The result lines are always kept.
  */
 export function lintAnnotations(
 	results: readonly LintToolResult[],
+	max: number = LINT_MAX_ANNOTATIONS,
 ): readonly Pick<RelayJobAnnotation, "level" | "message">[] {
 	const annotations: Pick<RelayJobAnnotation, "level" | "message">[] =
 		results.map((result) => ({
@@ -222,9 +224,11 @@ export function lintAnnotations(
 			message: `${result.tool}: ${result.summary}`,
 		}));
 	const findings = results.flatMap((result) => result.findings);
-	const room = LINT_MAX_ANNOTATIONS - annotations.length;
+	const room = Math.max(0, max - annotations.length);
 	const shown =
-		findings.length <= room ? findings : findings.slice(0, room - 1);
+		findings.length <= room
+			? findings
+			: findings.slice(0, Math.max(0, room - 1));
 	for (const finding of shown)
 		annotations.push({
 			level: "error",

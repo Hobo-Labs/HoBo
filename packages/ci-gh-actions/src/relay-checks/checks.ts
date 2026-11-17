@@ -8,7 +8,7 @@
  * is billed. A job with no check step is left to be routed.
  *
  * Every step of a check job must be a check step whose `with:` inputs are
- * literal text. A job that mixes check steps with anything else, or passes a
+ * literal text, and no check may appear twice. A job that mixes check steps with anything else, or passes a
  * check an expression, fails with the reason: a relay never runs job code.
  *
  * - The title check needs a pull request event. It checks the pull request's
@@ -35,6 +35,7 @@ import {
 import { checkPullRequestTitle, parseTitleTypes } from "@hobo/ci/insights";
 import { parseRelayChecksConfig, type RelayChecksConfig } from "./config.js";
 import {
+	LINT_MAX_ANNOTATIONS,
 	LINT_TOOL_COMMANDS,
 	LINT_TOOL_TIMEOUT_MS,
 	type LintSandbox,
@@ -137,6 +138,11 @@ export function checkStepsOf(
 				ok: false,
 				problem: `Step ${index + 1} (${step.uses === "" ? "a script" : step.uses}) is not a HoBo check step. A relay answers a job made only of check steps and never runs a job's other steps; move the other steps to a job with a runner.`,
 			};
+		if (read.some((earlier) => earlier.name === name))
+			return {
+				ok: false,
+				problem: `Step ${index + 1} repeats the ${name} check. A job runs each check once; put its inputs on one step.`,
+			};
 		const allowed = CHECK_INPUTS.get(name) ?? [];
 		const inputs = new Map<string, string>();
 		for (const input of step.inputs) {
@@ -223,12 +229,17 @@ class Checks {
 			await this.report(message, [], done);
 			return done;
 		}
+		// Each check runs once (see `checkStepsOf`). The title check carries one
+		// annotation, so the lint check gets the rest of the job's 50.
+		const lintRoom =
+			LINT_MAX_ANNOTATIONS -
+			steps.steps.filter((step) => step.name === "pr-title").length;
 		const results: CheckResult[] = [];
 		for (const step of steps.steps)
 			results.push(
 				step.name === "pr-title"
 					? await this.title(message, step, config)
-					: await this.lint(message, step, config),
+					: await this.lint(message, step, config, lintRoom),
 			);
 		const passed = results.every((result) => result.passed);
 		const done = answer(
@@ -287,6 +298,7 @@ class Checks {
 		message: RelayJobMessage,
 		step: CheckStep,
 		config: RelayChecksConfig,
+		room: number,
 	): Promise<CheckResult> {
 		if (!config.lint)
 			return failed(
@@ -335,7 +347,7 @@ class Checks {
 		return {
 			name: "lint",
 			passed: results.every((result) => result.passed),
-			notes: lintAnnotations(results),
+			notes: lintAnnotations(results, room),
 			summary: lintSummary(results),
 		};
 	}
