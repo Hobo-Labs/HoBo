@@ -91,6 +91,7 @@ export interface StrictFleetStore {
 	startDagger(
 		input: ParsedDaggerStartInput,
 	): Promise<{ claim: ExecutionClaim; created: boolean }>;
+	assertDaggerStartAllowed(input: ParsedDaggerStartInput): Promise<void>;
 	completeExecution(input: CompleteExecutionInput): Promise<{
 		claim: ExecutionClaim;
 		settled: boolean;
