@@ -130,6 +130,8 @@ it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
 generations reach the Rivet adapter's trusted route resolver unchanged. The
 fixture supplies explicit financial settlement trust and a host classification.
+It also verifies that explicit unpriced policy approval holds unbounded exposure
+for a Rivet target, while policy denial creates no hold or provider effect.
 Its stub RunnerPool provider does not read, build or upload `main`, so the
 fixture's empty source classification applies only to that stub. A production
 RunnerPool that builds source must list its complete source requirements and
@@ -448,8 +450,80 @@ must match the resolver's result. The trusted host issues a successor only
 after verified recovery of any prior unresolved attempt. A malformed or
 unreadable admission receipt requires reconciliation:
 the authority may already have reserved funds even if the receipt is unusable.
+When the exact request-scoped reservation can still be identified safely, the
+adapter reports its ID, marks the hold uncertain, and retains an uncertain route.
 An instance also blocks subsequent attempts after any outcome requiring
 reconciliation; the host must resolve the previous attempt before replacing it.
+
+Receipt inspection covers nested quote, reservation and proof data, including
+account and entitlement claims. Unknown fields, conflicting financial evidence,
+accessors, proxies and unknown protobuf wire fields make the outcome uncertain.
+The IaC financial port cannot authenticate fence-settlement guards, their
+placement claims, or settlement evidence. When such a field is directly
+inspectable and its reservation can be scoped safely, the receipt reports
+`ADMISSION_UNSUPPORTED_EVIDENCE`; uninspectable fields report a generic invalid
+receipt. Both cases require reconciliation before execution or fallback. A
+`not-started` outcome describes this adapter invocation; a previous attempt may
+have run, so the hold and route remain uncertain.
+The root integration suite verifies that both unsupported evidence forms leave
+the real budget hold and route uncertain without invoking the provider.
+An optional proof explicitly set to `undefined` is treated as absent; a bypassed
+admission still requires its policy and scope proofs. The bounded receipt graph
+allows at most 16,384 values, 32 nesting levels, 1,024 array entries, 256 object
+fields, 4,096 characters per string and 1 MiB of text. JavaScript cannot bound
+own-key enumeration of an already oversized object, so the trusted host must
+limit serialized receipt size and property counts before materialization.
+Promise resolution itself may read a returned object's `then` property before
+the adapter can inspect it; host callbacks must return plain non-thenable data,
+and the separate executor watchdog must handle synchronous blocking.
+
+Every preview, assessment, apply, destroy and refresh has an
+`operationTimeoutMs` deadline, defaulting to 300,000 ms and configurable from
+1 through 3,600,000 ms. Each public call captures an absolute monotonic deadline
+before input snapshotting and checks it at continuations, before provider start,
+and before returning success; this remains effective when the timer callback is
+delayed. The trusted runtime must provide the genuine Node monotonic clock when
+the adapter module initializes. A preview or refresh timeout reports
+`PREVIEW_DEADLINE_EXCEEDED` or `REFRESH_DEADLINE_EXCEEDED`; a late preview does
+not become eligible for apply. Apply and destroy snapshot routing expectations
+and route permits before deferred work, rejecting Proxy objects without invoking
+their traps. Execution timeout results always require reconciliation and
+distinguish these stages:
+
+- `EXECUTION_DEADLINE_BEFORE_ROUTE`: the provider has not started and the local
+  continuation is latched. No durable route claim is implied. To exclude retry
+  across processes, the host must establish and maintain a durable logical
+  operation fence before invoking the adapter.
+- `ROUTE_DEADLINE_UNKNOWN`: a route claim or one-use permit consumption may have
+  committed. Inspect and recover the shared route before any retry or fallback.
+- `ADMISSION_DEADLINE_UNKNOWN`: admission may have established a budget hold,
+  even if its receipt or reservation ID is unavailable. Reconcile against the
+  financial authority using the stable request ID.
+- `EXECUTION_DEADLINE_AFTER_ADMISSION`: provider execution has not started and
+  the known reservation remains held for reconciliation.
+- `PROVIDER_DEADLINE_UNKNOWN`: the provider may have changed infrastructure or
+  may still do so; the known hold remains in place.
+- `ROUTE_COMPLETION_DEADLINE_UNKNOWN`: the provider completed, but its durable
+  route completion was not confirmed; retain and reconcile the hold and route.
+
+A timeout is a bounded response, not cancellation: an outstanding callback,
+state-store operation or provider request can complete later. The latch prevents
+late authorization callbacks from starting a new Alchemy apply. Once apply has
+started, later internal provider effects may still occur. The host must enforce
+its durable operation fence, isolate and watchdog the executor process, retain
+credentials and state/source fences as appropriate, and independently prove
+permanent executor/provider fencing and the disposition of all possible
+reservations and external effects before authorizing recovery or a successor.
+A synchronous infinite loop can block JavaScript timers and requires that external
+watchdog. Marking a known hold uncertain is best effort; the host must still
+reconcile the authority if that callback fails or hangs. A timed-out adapter
+instance retains its local resource fence until it is replaced after recovery.
+An instance accepts at most 128 concurrent preview/refresh operations and at
+most 128 pending or unresolved executions. It reserves execution capacity
+before allocating a timer or scheduling deferred work. A timed-out operation
+still counts as pending until its underlying work settles, so repeated timeouts
+cannot create an unbounded number of pending operations. When the read limit is reached,
+`READ_OPERATION_LIMIT` is returned before starting another read.
 
 Plan fingerprints are bounded and include inspectable resource inputs,
 bindings, state and source identity. Pure Alchemy literal, property, named and

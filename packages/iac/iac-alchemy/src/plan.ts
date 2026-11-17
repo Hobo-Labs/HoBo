@@ -150,6 +150,13 @@ export class AlchemyIacError extends Error {
 		this.name = "AlchemyIacError";
 		this.requiresReconciliation =
 			reservationId !== undefined ||
+			code === "ADMISSION_UNSUPPORTED_EVIDENCE" ||
+			code === "EXECUTION_DEADLINE_BEFORE_ROUTE" ||
+			code === "ROUTE_DEADLINE_UNKNOWN" ||
+			code === "ADMISSION_DEADLINE_UNKNOWN" ||
+			code === "EXECUTION_DEADLINE_AFTER_ADMISSION" ||
+			code === "PROVIDER_DEADLINE_UNKNOWN" ||
+			code === "ROUTE_COMPLETION_DEADLINE_UNKNOWN" ||
 			code === "ADMISSION_OUTCOME_UNKNOWN" ||
 			code === "ADMISSION_RECEIPT_INVALID" ||
 			code === "EXECUTION_IN_PROGRESS" ||
@@ -164,12 +171,20 @@ export class AlchemyIacError extends Error {
 			admission?.budget?.reservation === "held" ||
 			admission?.budget?.reservation === "uncertain";
 		this.executionOutcome =
+			code === "PREVIEW_DEADLINE_EXCEEDED" ||
+			code === "REFRESH_DEADLINE_EXCEEDED" ||
+			code === "ADMISSION_UNSUPPORTED_EVIDENCE" ||
+			code === "EXECUTION_DEADLINE_BEFORE_ROUTE" ||
+			code === "ROUTE_DEADLINE_UNKNOWN" ||
+			code === "ADMISSION_DEADLINE_UNKNOWN" ||
+			code === "EXECUTION_DEADLINE_AFTER_ADMISSION" ||
 			code === "STATE_IDENTITY_UNVERIFIED" ||
 			code === "STATE_SCOPE_UNVERIFIED" ||
 			code === "PLAN_CHANGED_AFTER_ADMISSION" ||
 			code === "PLAN_UNINSPECTABLE_AFTER_ADMISSION"
 				? "not-started"
-				: code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
+				: code === "ROUTE_COMPLETION_DEADLINE_UNKNOWN" ||
+						code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
 						code === "STATE_SCOPE_UNCERTAIN" ||
 						code === "SOURCE_FENCE_UNCERTAIN" ||
 						code === "COMPOSITE_AUTHORIZATION_UNCERTAIN"
