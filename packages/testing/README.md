@@ -48,8 +48,8 @@ Read this section before you believe a green suite.
 
 What it does **not** do:
 
-- run the deployed artifact on the deployed host — hence handles are labelled
-  `simulated`, never `real`;
+- run the deployed artifact on the deployed host; handles in this lane are
+  never labelled `real`;
 - provide an engine behind unsupported kinds such as `auth`, `crypto`,
   `flag`, `job`, and `websocket`. Those get a handle and a `hobo-test://`
   binding locator and nothing behind them; they are labelled `mocked`. The
