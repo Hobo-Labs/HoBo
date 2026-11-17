@@ -446,6 +446,65 @@ e: ##"raw \##(2 + // raw interpolation
 		}
 	});
 
+	it("checks tracked external code and planning documents", () => {
+		const repo = fixture();
+		write(repo, "external/pixel-agents/agent.ts", "// TODO implement\n");
+		write(repo, "external/other/agent.ts", "// explanation\n");
+		write(repo, "external/pixel-agents/docs/design/agent.md", "# Design\n");
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		for (const file of [
+			"external/pixel-agents/agent.ts",
+			"external/other/agent.ts",
+			"external/pixel-agents/docs/design/agent.md",
+		]) {
+			assert.ok(result.stderr.includes(file), file);
+		}
+	});
+
+	it("skips gitlinks without exempting their parent directories", () => {
+		const repo = fixture();
+		const commit = git(repo, "rev-parse", "HEAD");
+		git(
+			repo,
+			"update-index",
+			"--add",
+			"--cacheinfo",
+			`160000,${commit},external/nested`,
+		);
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(repo, "external/adjacent.ts", "// explanation\n");
+		git(repo, "add", "external/adjacent.ts");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /external\/adjacent\.ts:1/u);
+	});
+
+	it("skips committed gitlinks when comparing a branch with its base", () => {
+		const repo = fixture();
+		const base = git(repo, "rev-parse", "HEAD");
+		git(
+			repo,
+			"update-index",
+			"--add",
+			"--cacheinfo",
+			`160000,${base},external/nested`,
+		);
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"add submodule",
+		);
+		assert.equal(guard(repo, `--base=${base}`).status, 0);
+	});
+
 	it("checks the staged snapshot rather than the working tree", () => {
 		const repo = fixture();
 		write(
