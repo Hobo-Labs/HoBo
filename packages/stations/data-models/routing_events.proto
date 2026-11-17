@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package hobo.stations.v1;
+
+import "google/protobuf/struct.proto";
+
+message RoutingEventReason {
+  string code = 1;
+  string message = 2;
+}
+
+message RoutingReplanProposedEventData {
+  string service = 1;
+  string plan_id = 2;
+  string from_backend_id = 3;
+  string to_backend_id = 4;
+  uint32 revision = 5;
+}
+
+message RoutingReplanHeldEventData {
+  string service = 1;
+  string reason = 2;
+  string selected_backend_id = 3;
+}
+
+message RoutingReplanDeniedEventData {
+  string service = 1;
+  repeated RoutingEventReason reasons = 2;
+}
+
+message RoutingReappliedEventData {
+  string service = 1;
+  string plan_id = 2;
+  string to_backend_id = 3;
+  uint32 revision = 4;
+  optional string realized = 5;
+}
+
+message RoutingReconciliationRequiredEventData {
+  string service = 1;
+  repeated RoutingEventReason reasons = 2;
+  optional string pending_plan_id = 3;
+  optional string plan_id = 4;
+  optional uint32 percent = 5;
+  optional string observed_at = 6;
+}
+
+message RoutingApplyRequestedEventData {
+  string service = 1;
+  string plan_id = 2;
+  string phase = 3;
+  optional string restoration_of_plan_id = 4;
+  optional string restoration_plan_hash = 5;
+  google.protobuf.Struct effects = 6;
+  string requested_at = 7;
+}
+
+message RoutingObservedEventData {
+  string service = 1;
+  string plan_id = 2;
+  string phase = 3;
+  string observed_at = 4;
+}
