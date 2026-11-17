@@ -1,21 +1,3 @@
-/**
- * The capability membrane (`ctx`), actor placement resolution, and the typed
- * authoring errors.
- *
- * `createRuntimeContext` is the deny-by-default boundary described in
- * sdk-api.md §Layer 4: durability primitives always pass through, but reaching
- * another actor, minting a broker token, or invoking an agent tool works only
- * when the handler's own definition declared it. The failure mode that matters
- * is not a crash — it is a *silent grant*: a membrane that let an undeclared
- * reach through would give a handler an effect nobody audited, and the
- * capability set in the definition would become documentation rather than a
- * control.
- *
- * Placement resolution has the mirror-image property: an explicit pin must fail
- * closed. Falling back to the native host when a Camp asked for Dapr would run
- * the workload on a placement its operator did not choose, and nothing about
- * the run would say so.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -53,15 +35,20 @@ function contextWith(
 	});
 }
 
-function hostNamed(name: string): ActorHost {
-	return { name } as unknown as ActorHost;
+function hostNamed(name: string): ActorHost & { name: string } {
+	return {
+		name,
+		acquire() {
+			throw new Error("placement fixture cannot acquire a lease");
+		},
+		state() {
+			throw new Error("placement fixture cannot open state");
+		},
+	};
 }
 
 describe("capability namespacing helpers", () => {
 	it("namespaces tool and token capabilities", () => {
-		// The namespace is what stops `tool:deploy` and `token:deploy` from being
-		// the same grant. A flat namespace would let a handler granted one tool
-		// mint a broker token for a same-named provider.
 		expect(toolCapability("search")).toBe("tool:search");
 		expect(tokenCapability("aws")).toBe("token:aws");
 		expect(toolCapability("aws")).not.toBe(tokenCapability("aws"));
@@ -70,9 +57,6 @@ describe("capability namespacing helpers", () => {
 
 describe("createRuntimeContext durability primitives", () => {
 	it("passes step, sleep, emit, now and random through ungated", () => {
-		// Deliberately ungated: these are the durability substrate, not effects.
-		// Requiring a capability for `step` would make every handler declare a
-		// grant that conveys nothing.
 		const ctx = contextWith([]);
 		expect(ctx.now()).toBe("2026-08-08T00:00:00.000Z");
 		expect(ctx.random()).toBe(0.5);
@@ -84,9 +68,6 @@ describe("createRuntimeContext durability primitives", () => {
 	});
 
 	it("delegates to the injected effect rather than reimplementing it", () => {
-		// The engine owns journalling; the context is a membrane, not a runtime.
-		// A context that implemented `step` itself would produce a step the
-		// replay journal never saw.
 		const seen: string[] = [];
 		const ctx = contextWith([], {
 			step: async (name, fn) => {
@@ -103,17 +84,12 @@ describe("createRuntimeContext durability primitives", () => {
 	});
 
 	it("freezes the context and exposes the granted set", () => {
-		// Frozen because the capability set is the audit record. A handler that
-		// could add to `ctx.capabilities` at runtime would grant itself effects
-		// after the definition was reviewed.
 		const ctx = contextWith(["actor"]);
 		expect(Object.isFrozen(ctx)).toBe(true);
 		expect([...ctx.capabilities]).toEqual(["actor"]);
 	});
 
 	it("copies the capability iterable rather than aliasing it", () => {
-		// `new Set(input.capabilities)`. Aliasing a caller's mutable array would
-		// let the grant widen after the context was built.
 		const granted = ["actor"];
 		const ctx = contextWith(granted);
 		granted.push("tool:anything");
@@ -137,9 +113,6 @@ describe("requireCapability", () => {
 	});
 
 	it("names the denied capability and the whole granted set", () => {
-		// Both halves are actionable: the denied name says what to add, and the
-		// granted list says what the handler *did* declare — which is usually
-		// where the typo is.
 		try {
 			contextWith(["actor", "token:aws"]).requireCapability("tool:search");
 			expect.unreachable("an undeclared capability must be denied");
@@ -153,9 +126,6 @@ describe("requireCapability", () => {
 	});
 
 	it("is an exact match, never a prefix match", () => {
-		// `tool:deploy-prod` must not be satisfied by a grant of `tool:deploy`.
-		// A prefix or `startsWith` check here would be a privilege escalation
-		// that looks like a convenience.
 		const ctx = contextWith(["tool:deploy"]);
 		expect(() => ctx.requireCapability("tool:deploy-prod")).toThrow(
 			CapabilityDeniedError,
@@ -165,7 +135,13 @@ describe("requireCapability", () => {
 });
 
 describe("ctx.actor", () => {
-	const stub = { key: "k", signal: async () => 1, state: async () => ({}) };
+	const stub = {
+		key: "k",
+		signal: async () => 1,
+		state: async () => {
+			throw new Error("actor fixture has no state");
+		},
+	};
 
 	it("delegates once the actor capability is declared", () => {
 		const ctx = contextWith(["actor"], { actor: () => stub });
@@ -173,8 +149,6 @@ describe("ctx.actor", () => {
 	});
 
 	it("denies an undeclared reach", () => {
-		// The silent-grant case this membrane exists to prevent: a handler that
-		// never declared `actor` must not be able to signal another grain.
 		const ctx = contextWith([], { actor: () => stub });
 		expect(() => ctx.actor({ typeName: "Cart", key: "k" })).toThrow(
 			CapabilityDeniedError,
@@ -182,10 +156,6 @@ describe("ctx.actor", () => {
 	});
 
 	it("denies when granted but the engine wired no implementation", () => {
-		// A declared-but-unwired capability throws rather than returning
-		// undefined. Returning undefined would surface three frames later as
-		// "cannot read property signal of undefined", pointing at the handler
-		// rather than at the engine wiring.
 		const ctx = contextWith(["actor"]);
 		expect(() => ctx.actor({ typeName: "Cart", key: "k" })).toThrow(
 			CapabilityDeniedError,
@@ -197,8 +167,6 @@ describe("ctx.token", () => {
 	const handle = { token: "t" } as never;
 
 	it("requires the capability for the specific provider", () => {
-		// Per-provider, not a blanket `token`. A handler granted an AWS token
-		// must not be able to mint one for GCP.
 		const ctx = contextWith(["token:aws"], { token: () => handle });
 		expect(ctx.token({ provider: "aws" } as never)).toBe(handle);
 		expect(() => ctx.token({ provider: "gcp" } as never)).toThrow(
@@ -248,8 +216,6 @@ describe("ctx.tool", () => {
 	});
 
 	it("rejects rather than throwing synchronously when denied", async () => {
-		// `tool` is async, so a caller awaits it. A synchronous throw would
-		// escape a `.catch()` and land somewhere the handler did not expect.
 		const ctx = contextWith([]);
 		await expect(ctx.tool("search", {})).rejects.toThrow(CapabilityDeniedError);
 	});
@@ -263,9 +229,6 @@ describe("ctx.tool", () => {
 
 describe("typed authoring errors", () => {
 	it("all descend from RuntimeAuthoringError with their own name and code", () => {
-		// One typed error channel, so replay and the membrane observe the same
-		// hierarchy. A bare `Error` from a handler would be indistinguishable
-		// from an engine bug.
 		const errors = [
 			new CapabilityDeniedError("tool:x", []),
 			new FatalError("stop"),
@@ -286,17 +249,12 @@ describe("typed authoring errors", () => {
 	});
 
 	it("RetryableError carries an optional retry budget", () => {
-		// Undefined means "use the step's own budget", which is different from
-		// zero. A `?? 0` here would turn every unbudgeted retryable into a
-		// non-retryable.
 		expect(new RetryableError("again").retries).toBeUndefined();
 		expect(new RetryableError("again", { retries: 3 }).retries).toBe(3);
 		expect(new RetryableError("again", { retries: 0 }).retries).toBe(0);
 	});
 
 	it("WorkflowFailure names the step and keeps the cause", () => {
-		// The cause is the original failure; the step is where it happened. A
-		// failure record with neither is unactionable in a durable run's history.
 		const cause = new Error("timeout");
 		const failure = new WorkflowFailure("failed", { step: "charge", cause });
 		expect(failure.step).toBe("charge");
@@ -307,8 +265,6 @@ describe("typed authoring errors", () => {
 	});
 
 	it("CapabilityDeniedError copies the granted list", () => {
-		// A live reference would let the error's record of what was granted
-		// change after the fact — the one thing an audit trail must not do.
 		const granted = ["actor"];
 		const error = new CapabilityDeniedError("tool:x", granted);
 		granted.push("tool:x");
@@ -330,9 +286,6 @@ describe("resolveActorPlacement", () => {
 		const resolved = resolveActorPlacement({ nativeHost });
 		expect(resolved.mode).toBe("native");
 		expect(resolved.host).toBe(nativeHost);
-		// The source is part of the answer: "native because nobody asked" and
-		// "native because someone pinned it" are different facts for an operator
-		// debugging where their actors ended up.
 		expect(resolved.source).toBe("default");
 	});
 
@@ -357,9 +310,6 @@ describe("resolveActorPlacement", () => {
 	});
 
 	it("fails closed when an explicit pin has no matching host", () => {
-		// The important direction. Falling back to native would run the workload
-		// on a placement its operator did not choose, and the run would look
-		// entirely normal.
 		for (const explicit of ["dapr", "rivet", "celld"] as const) {
 			expect(() => resolveActorPlacement({ explicit, nativeHost })).toThrow(
 				new RegExp(`'${explicit}' requires a`, "u"),
@@ -368,9 +318,6 @@ describe("resolveActorPlacement", () => {
 	});
 
 	it("refuses an unparseable explicit mode", () => {
-		// Parsed through `@hobo/core`, so an unknown string is refused rather
-		// than falling through to the native branch — which is what the `if`
-		// chain would otherwise do.
 		expect(() =>
 			resolveActorPlacement({ explicit: "kubernetes", nativeHost }),
 		).toThrow();
@@ -378,8 +325,6 @@ describe("resolveActorPlacement", () => {
 	});
 
 	it("treats an explicit undefined as absent rather than as a pin", () => {
-		// `!== undefined`, so omitting the field falls through to the Camp
-		// requirements rather than being parsed as a mode.
 		expect(
 			resolveActorPlacement({ explicit: undefined, nativeHost }).source,
 		).toBe("default");
@@ -415,8 +360,6 @@ describe("resolveActorPlacement", () => {
 	});
 
 	it("checks celld before rivet before dapr when a Camp asks for several", () => {
-		// A fixed precedence, so a Camp listing more than one gets a
-		// deterministic answer rather than one that depends on array order.
 		const resolved = resolveActorPlacement({
 			campRuntimeRequirements: ["dapr", "rivet", "celld"],
 			nativeHost,
@@ -443,8 +386,6 @@ describe("resolveActorPlacement", () => {
 	});
 
 	it("ignores requirements that name something else entirely", () => {
-		// A `postgres` requirement is not a placement request. Matching it would
-		// move actors off native for a reason unrelated to actors.
 		const resolved = resolveActorPlacement({
 			campRuntimeRequirements: ["postgres", "redis", "daprless"],
 			nativeHost,
@@ -463,8 +404,6 @@ describe("resolveActorPlacement", () => {
 	});
 
 	it("lets an explicit native pin override a Camp's dapr requirement", () => {
-		// Explicit wins, and says so. An operator pinning native for an
-		// investigation must not be silently overridden by the Camp manifest.
 		const resolved = resolveActorPlacement({
 			explicit: "native",
 			campRuntimeRequirements: ["dapr"],
@@ -478,15 +417,12 @@ describe("resolveActorPlacement", () => {
 
 describe("signalActor", () => {
 	it("publishes to the actor type's topic keyed by the actor key", async () => {
-		// The key is the partition key: without it, two messages for the same
-		// grain could land on different partitions and be delivered out of order
-		// to a single-writer actor.
 		const published: Array<{ topic: string; body: unknown; key?: string }> = [];
 		await signalActor(
 			{
 				publish: async (topic, body, options) => {
 					published.push({ topic, body, key: options?.key });
-					return undefined;
+					return null;
 				},
 			},
 			"Cart",
@@ -499,15 +435,13 @@ describe("signalActor", () => {
 	});
 
 	it("awaits the publish rather than firing and forgetting", async () => {
-		// A caller that returns before the publish settled would report a signal
-		// as delivered when the broker had not accepted it.
 		let settled = false;
 		await signalActor(
 			{
 				publish: async () => {
 					await Promise.resolve();
 					settled = true;
-					return undefined;
+					return null;
 				},
 			},
 			"Cart",
@@ -518,8 +452,6 @@ describe("signalActor", () => {
 	});
 
 	it("propagates a publish failure", async () => {
-		// Not swallowed: a dropped signal to a durable actor is lost work, and
-		// the caller is the only one who can retry it.
 		await expect(
 			signalActor(
 				{

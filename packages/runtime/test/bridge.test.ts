@@ -8,12 +8,6 @@ import {
 	isSubsetMatch,
 } from "../src/index.js";
 
-// The Bridge: Bridge-to-Kubernetes-style local/remote dev,
-// generalized to every provider. These tests double as the executable
-// example for site docs /guide/bridge/ — a storefront calling a deployed
-// payments boundary, with a developer bridging just their own traffic to
-// the process on their laptop.
-
 interface Charge {
 	readonly orderId: string;
 	readonly amount: number;
@@ -30,7 +24,6 @@ const deployedPayments = async (charge: Charge): Promise<Receipt> => ({
 	processor: "prod-v1",
 });
 
-// The boundary's PACT interactions — what any implementation must satisfy.
 const PAYMENTS_CONTRACT = {
 	examples: [
 		{
@@ -46,7 +39,6 @@ test("bridge routes ONLY the tagged dev session; live traffic is untouched", asy
 		.boundary<Charge, Receipt>("payments")
 		.live(deployedPayments);
 
-	// Dev fork: same contract, local behavior under development.
 	await payments.bridge(
 		async (charge) => ({
 			orderId: charge.orderId,
@@ -83,7 +75,6 @@ test("a bridge that fails its PACT contract never activates", async () => {
 		),
 		BridgeContractError,
 	);
-	// Traffic for that session still routes live — the fork never landed.
 	const result = await payments.call(
 		{ orderId: "o-3", amount: 1 },
 		{ session: "tyler/broken" },
@@ -117,16 +108,10 @@ test("mock mode serves PACT examples when no live route exists (offline dev)", a
 	const router = createBoundaryRouter();
 	const payments = router
 		.boundary<Charge, Receipt>("payments")
-		// SAFETY: assertion to `TS_CONTRACT.examples as never); c` is required at this boundary.
-		// SAFETY: assertion to `TS_CONTRACT.examples as never); c` is required at this boundary.
-		.mock(
-			// SAFETY: pact examples are the mock table at this test boundary.
-			PAYMENTS_CONTRACT.examples as never,
-		);
+		.mock(PAYMENTS_CONTRACT.examples as never);
 
 	const matched = await payments.call({ orderId: "o-1", amount: 42 });
 	assert.equal(matched.status, "charged");
-	// Unmatched inputs get the first example as the canned typed response.
 	const canned = await payments.call({ orderId: "o-9", amount: 1 });
 	assert.equal(canned.orderId, "o-1");
 });
@@ -160,9 +145,9 @@ test("shadow duplicates served traffic to a candidate and reports diffs", async 
 		}));
 
 	const served = await payments.call({ orderId: "o-1", amount: 42 });
-	assert.equal(served.processor, "prod-v1"); // candidate output never returned
+	assert.equal(served.processor, "prod-v1");
 	await payments.call({ orderId: "o-2", amount: 3 });
-	await new Promise((resolve) => setImmediate(resolve)); // let shadows settle
+	await new Promise((resolve) => setImmediate(resolve));
 
 	const diffs = payments.shadowDiffs();
 	assert.equal(diffs.length, 2);
@@ -181,7 +166,6 @@ test("fault injection scoped to a session: chaos without blast radius", async ()
 		payments.call({ orderId: "o-1", amount: 1 }, { session: "tyler/chaos" }),
 		/simulated outage/,
 	);
-	// Everyone else is untouched.
 	assert.equal(
 		(await payments.call({ orderId: "o-1", amount: 1 })).status,
 		"charged",

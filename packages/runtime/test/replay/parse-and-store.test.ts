@@ -1,17 +1,7 @@
-/**
- * The replay report/divergence parse boundary and the event-store readers.
- *
- * A `ReplayReport` is the artifact that says "this run replayed to the same
- * state it lived through". Everything downstream treats a parsed report as
- * evidence, so a parser that accepted a malformed one would let a run be
- * certified on a record nobody wrote — the digest could be truncated, the seq
- * vector could name one stream twice, the mode could say `live` for a replay.
- *
- * The divergence record has a sharper requirement still: it exists only to
- * describe a *disagreement*, so a record whose two digests are equal is
- * self-contradictory and is refused rather than stored as a divergence with
- * nothing divergent in it.
- */
+import type {
+	EventEnvelope as CoreEventEnvelope,
+	EventStore,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -45,7 +35,7 @@ const DIVERGENCE = {
 	first_divergent_event_key: "s1:1",
 };
 
-function messageOf(thunk: () => unknown): string {
+function messageOf(thunk: () => void): string {
 	try {
 		thunk();
 	} catch (error) {
@@ -55,7 +45,9 @@ function messageOf(thunk: () => unknown): string {
 	return expect.unreachable("expected a ReplayParseError") as never;
 }
 
-function envelope(overrides: Record<string, unknown> = {}) {
+type FixtureEnvelope = CoreEventEnvelope<{ name: string }> & { extra?: string };
+
+function envelope(overrides: Partial<FixtureEnvelope> = {}): FixtureEnvelope {
 	return {
 		id: "01",
 		streamId: "s1",
@@ -64,6 +56,8 @@ function envelope(overrides: Record<string, unknown> = {}) {
 		v: 1,
 		data: { name: "a" },
 		ts: "2026-01-01T00:00:00.000Z",
+		actor: { kind: "system", id: "fixture" },
+		tenant: "fixture",
 		...overrides,
 	};
 }
@@ -78,9 +72,6 @@ describe("parseReplayReport", () => {
 	});
 
 	it("accepts camelCase for every dual-spelled field", () => {
-		// Both spellings exist because the report crosses a wire boundary in
-		// snake_case but is authored in TypeScript in camelCase. Accepting only
-		// one would make a report round-trip lossy in whichever direction lost.
 		const report = parseReplayReport({
 			runId: "run-1",
 			seed: "seed-1",
@@ -94,17 +85,12 @@ describe("parseReplayReport", () => {
 	});
 
 	it("prefers the snake_case spelling when both are present", () => {
-		// `snake ?? camel`, so the wire form wins. Pinned because the alternative
-		// would silently prefer a locally-constructed value over the one that
-		// actually arrived.
 		expect(parseReplayReport({ ...REPORT, runId: "other" }).runId).toBe(
 			"run-1",
 		);
 	});
 
 	it("copies the seq vector rather than aliasing the input", () => {
-		// `[...seqVector]`. A parsed report is evidence; aliasing would let the
-		// caller's array mutate the record after it was accepted.
 		const input = { ...REPORT, seq_vector: [{ stream_id: "s1", seq: 3 }] };
 		const report = parseReplayReport(input);
 		input.seq_vector.push({ stream_id: "s2", seq: 1 });
@@ -113,28 +99,22 @@ describe("parseReplayReport", () => {
 
 	it("refuses a non-object, an array and a null", () => {
 		for (const bad of [null, undefined, 7, "report", []]) {
-			expect(messageOf(() => parseReplayReport(bad))).toContain(
+			expect(messageOf(() => parseReplayReport(bad as never))).toContain(
 				"ReplayReport must be an object",
 			);
 		}
 	});
 
 	it("accepts only live and replay as the mode", () => {
-		// The mode decides how the report is read. A report labelled `live` that
-		// was actually a replay would be counted as the baseline it was supposed
-		// to be compared against.
 		expect(parseReplayReport({ ...REPORT, mode: "live" }).mode).toBe("live");
 		for (const bad of ["Live", "replaying", "", 7, undefined]) {
-			expect(messageOf(() => parseReplayReport({ ...REPORT, mode: bad }))).toBe(
-				'mode must be "live" or "replay"',
-			);
+			expect(
+				messageOf(() => parseReplayReport({ ...REPORT, mode: bad } as never)),
+			).toBe('mode must be "live" or "replay"');
 		}
 	});
 
 	it("requires each digest to be 64 lowercase hex characters", () => {
-		// Strict on length and case: a truncated digest would let two different
-		// states share a prefix and compare equal, and an uppercase one would
-		// compare unequal to the same digest written the usual way.
 		for (const field of ["read_set_hash", "state_digest"] as const) {
 			for (const bad of [
 				"a".repeat(63),
@@ -152,8 +132,6 @@ describe("parseReplayReport", () => {
 	});
 
 	it("requires a non-empty run id and seed", () => {
-		// The seed is what makes the run reproducible; the run id is what ties
-		// the report to the run. A report missing either is unverifiable.
 		expect(messageOf(() => parseReplayReport({ ...REPORT, run_id: "" }))).toBe(
 			"run_id must be a non-empty string",
 		);
@@ -165,7 +143,9 @@ describe("parseReplayReport", () => {
 	it("requires the seq vector to be an array of objects", () => {
 		for (const bad of [undefined, {}, "s1:1"]) {
 			expect(
-				messageOf(() => parseReplayReport({ ...REPORT, seq_vector: bad })),
+				messageOf(() =>
+					parseReplayReport({ ...REPORT, seq_vector: bad } as never),
+				),
 			).toBe("seq_vector must be an array");
 		}
 		expect(
@@ -174,17 +154,12 @@ describe("parseReplayReport", () => {
 	});
 
 	it("accepts an empty seq vector", () => {
-		// A run that read nothing is a legitimate run, and refusing it would make
-		// the first report of a fresh stream unparseable.
 		expect(parseReplayReport({ ...REPORT, seq_vector: [] }).seqVector).toEqual(
 			[],
 		);
 	});
 
 	it("refuses a duplicated stream id, naming it", () => {
-		// A seq vector is a map from stream to position. Two entries for one
-		// stream means the report cannot say where that stream was read to, and
-		// whichever entry won would be arbitrary.
 		expect(
 			messageOf(() =>
 				parseReplayReport({
@@ -199,9 +174,6 @@ describe("parseReplayReport", () => {
 	});
 
 	it("accepts seq zero but refuses negative, fractional and non-numeric", () => {
-		// Zero is "read nothing from this stream", which is meaningful. A
-		// fractional seq would never match a real event's seq and would make
-		// every comparison against it silently false.
 		expect(
 			parseReplayReport({
 				...REPORT,
@@ -214,7 +186,7 @@ describe("parseReplayReport", () => {
 					parseReplayReport({
 						...REPORT,
 						seq_vector: [{ stream_id: "s1", seq: bad }],
-					}),
+					} as never),
 				),
 			).toBe("seq must be a non-negative integer");
 		}
@@ -248,10 +220,6 @@ describe("parseReplayDivergence", () => {
 	});
 
 	it("refuses a record whose two digests agree", () => {
-		// The self-contradiction check, and the most valuable assertion here: a
-		// divergence record with matching digests describes no divergence. Storing
-		// one would put a phantom failure in the run's history that nobody can
-		// reproduce, because there is nothing to reproduce.
 		expect(
 			messageOf(() =>
 				parseReplayDivergence({
@@ -264,7 +232,7 @@ describe("parseReplayDivergence", () => {
 
 	it("refuses a non-object", () => {
 		for (const bad of [null, undefined, [], "record"]) {
-			expect(messageOf(() => parseReplayDivergence(bad))).toContain(
+			expect(messageOf(() => parseReplayDivergence(bad as never))).toContain(
 				"ReplayDivergence must be an object",
 			);
 		}
@@ -284,8 +252,6 @@ describe("parseReplayDivergence", () => {
 	});
 
 	it("requires both orders to be string arrays", () => {
-		// The orders are the event keys as each side saw them; a non-string entry
-		// would compare unequal to every real key and make the diff useless.
 		for (const field of ["live_order", "replay_order"] as const) {
 			for (const bad of [undefined, "s1:1", [1], [null]]) {
 				expect(
@@ -307,9 +273,6 @@ describe("parseReplayDivergence", () => {
 	});
 
 	it("requires a first divergent event key", () => {
-		// The key is the whole point of the record: it says where to start
-		// looking. A divergence with no starting point is a bug report with no
-		// reproduction.
 		expect(
 			messageOf(() =>
 				parseReplayDivergence({
@@ -338,15 +301,10 @@ describe("createInMemoryEventStore", () => {
 	});
 
 	it("returns an empty array for an unknown stream", async () => {
-		// Not a throw: a projector reading a stream that has not been written yet
-		// is the normal cold-start case.
 		expect(await createInMemoryEventStore().readStream("nope")).toEqual([]);
 	});
 
 	it("refuses a seq that is not exactly one past the head", async () => {
-		// Contiguity is what makes a fold complete. A gap would be folded as
-		// though the missing event never happened, and the resulting state would
-		// differ from a replay that read the full stream.
 		const store = createInMemoryEventStore();
 		await store.append(envelope({ seq: 1 }));
 		for (const seq of [1, 3, 0]) {
@@ -357,9 +315,6 @@ describe("createInMemoryEventStore", () => {
 	});
 
 	it("enforces optimistic concurrency when an expectedSeq is given", async () => {
-		// The OCC check is what stops two writers from both appending seq 2. It
-		// reports both the expected and the actual head so a caller can tell a
-		// lost race from a bug in its own bookkeeping.
 		const store = createInMemoryEventStore();
 		await store.append(envelope({ seq: 1 }));
 		await expect(store.append(envelope({ seq: 2 }), 0)).rejects.toThrow(
@@ -371,9 +326,6 @@ describe("createInMemoryEventStore", () => {
 	});
 
 	it("allows an unchecked append when no expectedSeq is given", async () => {
-		// `expectedSeq !== undefined`, so omitting it opts out of OCC rather than
-		// being read as expecting seq 0 — which would make every unchecked append
-		// after the first one fail.
 		const store = createInMemoryEventStore();
 		await store.append(envelope({ seq: 1 }));
 		await expect(store.append(envelope({ seq: 2 }))).resolves.toBeUndefined();
@@ -387,8 +339,6 @@ describe("createInMemoryEventStore", () => {
 	});
 
 	it("freezes each stored event and hands back a copied list", async () => {
-		// Both halves matter: a caller must not be able to rewrite history in
-		// place, nor to splice the returned list and have the store forget.
 		const store = createInMemoryEventStore();
 		await store.append(envelope({ seq: 1 }));
 		const events = await store.readStream("s1");
@@ -398,8 +348,6 @@ describe("createInMemoryEventStore", () => {
 	});
 
 	it("keeps streams independent", async () => {
-		// Each stream has its own seq space. Sharing one would make the second
-		// stream's first event fail contiguity against the first stream's head.
 		const store = createInMemoryEventStore();
 		await store.append(envelope({ streamId: "a", seq: 1 }));
 		await store.append(envelope({ streamId: "b", seq: 1 }));
@@ -408,8 +356,6 @@ describe("createInMemoryEventStore", () => {
 	});
 
 	it("finds an event by seq and returns null when absent", async () => {
-		// Null rather than undefined, and null rather than a throw: "no event at
-		// that position" is an answer, not a failure.
 		const store = createInMemoryEventStore();
 		await store.append(envelope({ seq: 1 }));
 		expect((await store.readBySeq("s1", 1))?.seq).toBe(1);
@@ -419,13 +365,13 @@ describe("createInMemoryEventStore", () => {
 });
 
 describe("createEventStoreReader", () => {
-	function coreStore(events: Array<Record<string, unknown>>) {
+	function coreStore(events: FixtureEnvelope[]): EventStore {
 		return {
 			read(streamId: string, fromSeq?: number) {
 				const matching = events.filter(
 					(event) =>
 						event.streamId === streamId &&
-						(fromSeq === undefined || (event.seq as number) >= fromSeq),
+						(fromSeq === undefined || event.seq >= fromSeq),
 				);
 				return {
 					async *[Symbol.asyncIterator]() {
@@ -433,13 +379,19 @@ describe("createEventStoreReader", () => {
 					},
 				};
 			},
-		} as never;
+			async append() {
+				throw new Error("replay reader fixture cannot append");
+			},
+			subscribe() {
+				throw new Error("replay reader fixture cannot subscribe");
+			},
+			async snapshot() {
+				throw new Error("replay reader fixture cannot write snapshots");
+			},
+		};
 	}
 
 	it("drains the async iterator into an array", async () => {
-		// The core store exposes an async iterable; the replay engine wants a
-		// list it can order and fold. Collecting here is what keeps the engine
-		// free of transport concerns.
 		const reader = createEventStoreReader(
 			coreStore([envelope({ seq: 1 }), envelope({ seq: 2 })]),
 		);
@@ -455,9 +407,6 @@ describe("createEventStoreReader", () => {
 	});
 
 	it("projects only the replay envelope fields and freezes the result", async () => {
-		// A narrowing projection, not a pass-through. Carrying an extra field
-		// from the core envelope into the replay envelope would make it part of
-		// the state digest and change every recorded digest.
 		const reader = createEventStoreReader(
 			coreStore([envelope({ extra: "should not survive" })]),
 		);
@@ -476,9 +425,6 @@ describe("createEventStoreReader", () => {
 	});
 
 	it("omits meta when the source event has none", async () => {
-		// Conditional, so an absent `meta` stays absent rather than becoming a
-		// present `undefined` — which would serialize differently and perturb the
-		// digest for events that never carried metadata.
 		const reader = createEventStoreReader(coreStore([envelope()]));
 		const [event] = await reader.readStream("s1");
 		expect(Object.hasOwn(event as object, "meta")).toBe(false);
@@ -500,10 +446,6 @@ describe("createEventStoreReader", () => {
 	});
 
 	it("returns null when the requested seq is not in the stream", async () => {
-		// The loop checks `event.seq === seq` rather than taking the first event
-		// the store yields, because `read(streamId, fromSeq)` is a *from* — a
-		// gap at the requested position would otherwise return the next event
-		// under the wrong seq.
 		const reader = createEventStoreReader(
 			coreStore([envelope({ seq: 1 }), envelope({ seq: 3 })]),
 		);
