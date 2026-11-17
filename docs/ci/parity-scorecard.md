@@ -16,10 +16,10 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | State | Cases |
 | --- | --- |
-| pass | 14 |
+| pass | 15 |
 | built-not-proven | 1 |
 | partial | 24 |
-| not-built | 18 |
+| not-built | 17 |
 | met-differently | 1 |
 | Total | 58 |
 
@@ -60,7 +60,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | M09 | Removing a machine revokes it at once ([site/reference/security.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/security.md)) | `hobo ci machine remove`; the next decision excludes it | T2 | not-built | 07 |
 | M10 | Existing self-hosted runners are added with no change on the machine ([docs/github-app.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/github-app.md)) | `hobo ci runners adopt` | T2 | not-built | 09 |
 | M11 | The runner program is downloaded, checksum-verified and kept current ([README.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/README.md)) | Pinned and verified; a version bump is a commit | T1 | pass | done |
-| M12 | macOS machines take jobs ([site/guides/mac-builds.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/guides/mac-builds.md)) | A macOS host runs a job | T2 | not-built | 22 |
+| M12 | macOS machines take jobs ([site/guides/mac-builds.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/guides/mac-builds.md)) | A macOS host runs a job | T2 | pass | 22 |
 | M13 | The one-job credentials are checked before use and the CLI's secrets never reach job steps ([site/runners/self-hosted.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/runners/self-hosted.mdx)) | Same | T1 | partial: the environment allow-list exists | 14 |
 
 ## Providers

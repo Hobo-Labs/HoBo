@@ -88,7 +88,7 @@ Feature: Machine parity with RelayRunner
     When the pinned runner download is read for each architecture
     Then each names one pinned runner version and its own SHA-256 checksum
 
-  @parity @M12 @t2 @pending
+  @parity @M12 @t2
   Scenario: M12 A macOS machine takes a job
     Given a connected macOS machine
     When a relay job naming macOS is answered
