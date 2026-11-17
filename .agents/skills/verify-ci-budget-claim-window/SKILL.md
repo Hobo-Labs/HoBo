@@ -9,7 +9,7 @@ description: Verify CI shared-budget claim timing at fixed-window boundaries.
 
 **Why:** A store lock can consume the remaining window after a valid pre-claim decision, leaving insufficient funded time even though the window itself has not expired.
 
-**Result at sync commit `d3a69f3dfd53dec75b663c20803863a945eaa112`:** PASS for the stated generated and database-backed checks, bounded model, and arithmetic obligation.
+**Result at sync commit `152160590bc0837c42744a4ccc81c4cfa95197d7`:** PASS for the stated generated and database-backed checks, bounded model, and arithmetic obligation.
 
 ## Covered code
 
@@ -27,7 +27,7 @@ The command runs the CI shared-budget tests, TLC 1.7.4, and Z3 4.15.4. To exerci
 
 ## Scope and evidence
 
-Generated checks use seed 614454 and 40 slack/delay examples for each synchronous and asynchronous interface, including exact-fit and one-millisecond-overrun boundaries. They exercise SQLite directly and through an async adapter. A separate test passed against a PostgreSQL 17 container, with the parent claim committed before the clock advances. The post-claim denial preserves the execution claim and reserved money; it is not an automatic unused release.
+Generated checks use seed 614454 and 40 slack/delay examples for each synchronous and asynchronous interface, including exact-fit and one-millisecond-overrun boundaries. They exercise SQLite directly and through an async adapter. A separate test passed against a PostgreSQL 17 container, with the parent claim committed before the clock advances. Both interfaces also reject a claim when trusted allocation coverage is revoked during the claim; removing that recheck makes those tests fail. The time model does not model coverage revocation. The post-claim denial preserves the execution claim and reserved money; it is not an automatic unused release.
 
 TLC explores 16 states of a bounded window, a claim that can wait, the committed hold, and allow/refuse outcomes. It checks the full duration at return and retains the hold after commit. Replacing the return-time duration check with a mere not-yet-expired test violates `AllowedWithinWindow`. Mutating the implementation to use the pre-claim time makes the generated checks fail. Z3 proves the stated return-time arithmetic obligation over unbounded nonnegative integer times and durations; `CI_CLAIM_WINDOW_MUTATION=omit-return-check` yields a counterexample.
 
