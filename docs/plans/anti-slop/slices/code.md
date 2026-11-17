@@ -7,6 +7,9 @@ tags: [hobo, anti-slop, oxlint, code]
 
 # code slice
 
+> Historical slice: `packages/code` has been removed. The check results below
+> describe the former package and are not current validation instructions.
+
 Layer `sdlc/anti-slop-28-code`.
 
 `pnpm exec oxlint -c oxlint.config.ts --deny-warnings --no-error-on-unmatched-pattern packages/code` is clean. `@hobo/code` `tsc --noEmit` is clean.

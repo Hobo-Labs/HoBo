@@ -1,13 +1,17 @@
 ---
 type: Reference
 title: "HoBo Code isolation & cleanup runbook"
-description: "Operational runbook for hobo-code isolation (rift preferred, worktree fallback), promotion, and mandatory cleanup (ADR-0139)."
+description: "Historical record of the removed HoBo Code isolation and cleanup workflow (ADR-0139)."
 tags: [hobo, design, code, isolation]
 ---
 
 # HoBo Code isolation & cleanup runbook
 
-Canonical product surface: **`hobo-code`** binary · package `@hobo/code` · [ADR-0139](./adr/03-data-plane.md#adr-0139).
+> **Historical:** `packages/code`, `@hobo/code`, and the `hobo-code` binary
+> were removed. The commands and package APIs below describe the former
+> implementation and are no longer runnable from this repository. The source
+> remains in [commit `225352177`](https://github.com/Hobo-Labs/HoBo/tree/225352177c2bb83574b5669b82efafec9575a876/packages/code);
+> see also [ADR-0139](./adr/03-data-plane.md#adr-0139).
 
 ## Platform matrix
 

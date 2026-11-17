@@ -52,12 +52,7 @@
       "path": "project/src/bindle.ts",
       "language": "ts",
       "outputFiles": [
-        "src/bindle.ts",
-        "package.json",
-        "public/index.html",
-        "public/styles.css",
-        "features/visual.feature",
-        "README.md"
+        "src/bindle.ts"
       ]
     }
   ],

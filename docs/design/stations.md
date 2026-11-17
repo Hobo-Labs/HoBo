@@ -1,11 +1,11 @@
 ---
 type: Reference
-title: "Stations — occupancy, capabilities & localhost discovery"
-description: "Narrative home for the Station concept: control-plane occupancy (ADR-0131), the typed Station capability manifest, localhost capability discovery via hobo-code init, and dev-scenario dogfooding of station() declarations (ADR-0155)."
+title: "Stations — occupancy and capabilities"
+description: "Station occupancy and typed capability declarations, including matching caller-supplied host observations (ADR-0131/0155)."
 tags: [hobo, design, stations, capabilities]
 ---
 
-# Stations — control-plane occupancy, capabilities & localhost discovery
+# Stations — control-plane occupancy and capabilities
 
 > Capability doc for the **Station** concept ([ADR-0131](./adr/01-architecture-core.md#adr-0131), [ADR-0155](./adr/01-architecture-core.md#adr-0155)). Until now the Station design lived only in the ADR decision list, one glossary row, and a CLI table row — thinner than every sibling concept (Camp/Yard/Bindle each have narrative docs). This doc is the single narrative home; the ADRs stay canonical for the decisions themselves.
 
@@ -75,34 +75,20 @@ The design always spoke of Station capabilities informally — PAM is "an option
 - **Required** capabilities gate explicit occupancy init; optional ones degrade with a remediation line.
 - Declarations attach on the Station via `station(..., { capabilities })` — the capability set is part of the reviewable declaration, not runtime folklore.
 
-## 5. Localhost capability discovery (`hobo-code init`)
+## 5. Matching host observations
 
-`hobo-code init` is the discovery-gated seed for dev-scenario occupancy: it inspects the machine the harness is running on and matches the evidence against the **default localhost capability set** declared on the dev-scenario Station.
+`matchStationCapabilities()` in `@hobo/stations` compares the declared
+capabilities with observations supplied by the caller. Matching is fail-closed:
+a discovered capability without an observation is missing. The resulting
+`hobo.station-capability-manifest/v1` can be persisted beside Station data at
+`HOBO_HOME/stations/<id>/capabilities.json`.
 
-- **Probes are evidence-based and injectable** (same idiom as harness detection and devenv inspection): Node.js version, `git`, the ADR-0139 isolation platform matrix (rift CoW vs classical worktree), the local model server (ollama, the $0 path), the devenv/nix toolchain, and installed coding harnesses. Every claim carries auditable evidence rows (`bin:/usr/bin/git`, `http:127.0.0.1:11434`, `matrix:linux-generic`).
-- **Matching is fail-closed**: a declared `discovered` capability with no observation is missing — discovery never assumes. Kill switches (`HOBO_REPLAY=0`, `HOBO_CODE_SIDECARS=0`) turn `default`-supplied rows explicitly absent.
-- **Required-missing refuses to seed**: consistent with ADR-0131 §7, a machine without the required localhost capabilities gets remediation, not durable Station state. `--dry-run` reports without writing.
-- Artifacts: the matched manifest lands at `HOBO_HOME/stations/<id>/capabilities.json` (discovery parallel of `sidecars.json`); the raw report at `HOBO_HOME/durable/code/machine-discovery.json` (`hobo.code.machine-discovery/v1`).
+## 6. Retired coding-harness integration
 
-Default localhost capability set (declared in `packages/code/src/dev-stations.ts`):
-
-| Capability | Required | Matched from |
-|---|---|---|
-| `runtime:node` | yes | Node.js ≥ 20 |
-| `vcs:git` | yes | `git` on PATH |
-| `isolation-backend:worktree` | yes | git + platform matrix (mandatory fallback backend) |
-| `isolation-backend:rift` | no | CoW-capable platform row (btrfs/XFS reflink, APFS) |
-| `model-server:ollama` | no | live loopback probe (`OLLAMA_HOST` honored) |
-| `toolchain:devenv` | no | `devenv` + `nix` on PATH, or active shell |
-| `harness:coding-agent` | no | same detection as `hobo-code agents` |
-| `sidecar:dashboard` | no | default-supplied (`HOBO_CODE_SIDECARS=0` kills) |
-| `replay:session-replay` | no | default-supplied (`HOBO_REPLAY=0` kills) |
-
-## 6. Dev-scenario dogfooding in hobo-code
-
-hobo-code previously auto-inited its Station from ad-hoc literals inside `bindCodeStation`. Under ADR-0155 it dogfoods the SDK: dev scenarios (`local-dev`, `ephemeral`, `preview`) are authored as `station()` declarations (`codeDevStation(...)`) carrying the isolation class, trust domain, and the localhost capability set; both `hobo-code init` and the long-running session auto-init derive their `initStation` arguments from those declarations. The `local-dev` declaration keeps the historical `station:local` identity so existing occupancy binds unchanged.
-
-Honest scope: session-path auto-init remains ungated for compatibility (it seeds from the declaration but does not run discovery); only the explicit `hobo-code init` is discovery-gated. `hobo station init` (operator path) is unchanged.
+The former `hobo-code init` discovery command and its dev-scenario declarations
+were removed with `packages/code`; they are not a current Station setup path.
+The former implementation is preserved in [commit `225352177`](https://github.com/Hobo-Labs/HoBo/tree/225352177c2bb83574b5669b82efafec9575a876/packages/code).
+Operators still seed a Station explicitly with `hobo station init`.
 
 ## 7. Open items
 

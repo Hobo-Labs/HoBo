@@ -1,7 +1,8 @@
 /**
  * High-value Bindle entry (template).
- * Generated apps inherit budget / OpenFeature / Harness controls.
+ * Budget, OpenFeature, and Harness integrations are supplied by the caller.
  */
+// public-contract: the example Bindle name returned by createBindleManifest.
 export const BINDLE_NAME = "openui-astryx-demo";
 
 export const openFeatureFlags = {

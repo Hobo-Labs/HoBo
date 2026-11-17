@@ -35,9 +35,11 @@ import {
 import { assessNeedsInit } from "./lib/needs-init.mts";
 import {
 	listProjects,
+	projectSelectionProblem,
 	resolveProjects,
 	type ProjectRef,
 } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
 import {
 	defaultProjectConfigDocument,
 	ensureGlobalConfig,
@@ -74,7 +76,8 @@ function parseArgs(argv: string[]) {
 			if (v) projectTokens.push(v);
 		} else if (a === "--all-projects") {
 			projectTokens.push("all");
-		} else if (a === "needs-init" || a === "--needs-init") out.mode = "needs-init";
+		} else if (a === "init") out.mode = "init";
+		else if (a === "needs-init" || a === "--needs-init") out.mode = "needs-init";
 		else if (a === "list-projects" || a === "--list-projects")
 			out.mode = "list-projects";
 		else if (a === "validate-config" || a === "--validate-config")
@@ -104,6 +107,7 @@ Usage:
   init.mts --mode ensure-config    # write missing config.json + refresh managed .gitignore
 
 --projects defaults to all-projects when omitted.
+--dry-run previews init; ensure-config rejects it rather than writing.
 Config: .optimizexp/config.json (global) and <project>/.optimizexp/config.json
 Gitignore: managed .optimizexp/.gitignore from config.gitignore (runs, bus entries, large media)
 
@@ -156,12 +160,38 @@ function writeProjectFlag(projects: string[] | undefined): string {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--experiences", "--max-features", "--max-personas", "--report", "--project", "--projects"],
+		flags: ["--help", "-h", "--dry-run", "--force", "--skip-features", "--skip-personas", "--skip-implement", "--all-projects", "--needs-init", "--list-projects", "--validate-config", "--ensure-config"],
+	});
+	if (input.error) {
+		console.error(input.error);
+		process.exit(2);
+	}
+	const modeOptions = ["--mode", "--needs-init", "--list-projects", "--validate-config", "--ensure-config"];
+	if (
+		input.positionals.length > 1 ||
+		input.positionals.some((value) => !["init", "needs-init", "list-projects", "validate-config", "ensure-config"].includes(value)) ||
+		(input.positionals.length > 0 && modeOptions.some((option) => input.argv.includes(option)))
+	) {
+		console.error("Expected at most one positional init mode");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	if (args.help === "1") {
 		help();
 		return;
 	}
 	const root = repoRoot();
+	const problem = projectSelectionProblem(resolveProjects(args.projects, root));
+	if (problem || !["init", "needs-init", "list-projects", "validate-config", "ensure-config"].includes(args.mode ?? "")) {
+		console.error(problem ?? `Unknown mode: ${args.mode}`);
+		process.exit(2);
+	}
+	if (args.dryRun === "1" && args.mode === "ensure-config") {
+		console.error("--dry-run is not supported for ensure-config; no files were changed");
+		process.exit(2);
+	}
 
 	if (args.mode === "needs-init") {
 		const assessment = assessNeedsInit(root);

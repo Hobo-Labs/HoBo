@@ -12,6 +12,10 @@ tags: [hobo, plans, hobo-code, atuin, terminal-memory, one-shot]
 
 # One-shot: Atuin as optional memory, HoBo as control plane
 
+> Historical plan: `packages/code` and the `hobo-code` product were removed.
+> The instructions and paths below are preserved as a record and are not an
+> active implementation assignment.
+
 Everything below this line is the prompt. Hand it (or this file's path) to a
 coding agent with repo access. It requires no other chat. Do not reopen the
 Atuin-vs-emulate debate. The decision is locked. Implement it.

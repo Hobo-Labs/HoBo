@@ -6,18 +6,22 @@
     {
       "id": "hobo-code-agent-native",
       "title": "Protocol-native coding agent (MCP/ACP, human-free auth)",
-      "status": "shipped",
+      "status": "wontfix",
       "effort": "M",
       "runId": "20260731-code-agent-native",
-      "stopReason": "pareto-equilibrium"
+      "stopReason": "pareto-equilibrium",
+      "historicalStatus": "shipped",
+      "rejectedBecause": "The former @hobo/code package was retired; the historical shipped status is not current availability."
     },
     {
       "id": "hobo-code-config-setup",
       "title": "Multi-persona config/setup inventory (hobo-code config)",
-      "status": "shipped",
+      "status": "wontfix",
       "effort": "M",
       "runId": "20260731-code-config-setup",
-      "stopReason": "pareto-equilibrium"
+      "stopReason": "pareto-equilibrium",
+      "historicalStatus": "shipped",
+      "rejectedBecause": "The former @hobo/code package was retired; the historical shipped status is not current availability."
     },
     {
       "id": "fr-sso",
@@ -40,7 +44,7 @@
     },
     {
       "id": "fr-advanced-cli-native-vim-engineer-one-change",
-      "title": "Add a documented exit-code table for interactive-required and other fail-closed paths.",
+      "title": "[Historical: @hobo/code retired] Add a documented exit-code table for interactive-required and other fail-closed paths.",
       "problem": "A controlled non-zero exit still needs a concise shell-friendly remediation path.",
       "desiredOutcome": "Add a documented exit-code table for interactive-required and other fail-closed paths.",
       "hypothesis": "If we deliver \"Add a documented exit-code table for interactive-required and other fail-closed paths.\", positive metrics rise on target surfaces.",
@@ -68,11 +72,11 @@
       "updatedAt": "2026-08-01T04:21:46.225Z",
       "runId": "20260801-hobo-code-optimizexp",
       "completedAt": "2026-08-01T04:25:02.968Z",
-      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation."
+      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation. This result is historical; @hobo/code has been removed and is not currently available."
     },
     {
       "id": "fr-ai-automation-engineer-pi-flue-one-change",
-      "title": "(agent: derive from q_one_change)",
+      "title": "[Historical: @hobo/code retired] (agent: derive from q_one_change)",
       "problem": "(agent)",
       "desiredOutcome": "(agent)",
       "hypothesis": "If we deliver \"(agent)\", positive metrics rise on target surfaces.",
@@ -100,11 +104,11 @@
       "updatedAt": "2026-08-01T04:21:13.048Z",
       "runId": "20260801-hobo-code-optimizexp",
       "completedAt": "2026-08-01T04:25:02.968Z",
-      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation."
+      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation. This result is historical; @hobo/code has been removed and is not currently available."
     },
     {
       "id": "fr-protocol-native-coding-agent-one-change",
-      "title": "Expose a stable machine-readable remediation code for every non-TTY empty invocation.",
+      "title": "[Historical: @hobo/code retired] Expose a stable machine-readable remediation code for every non-TTY empty invocation.",
       "problem": "The non-TTY guard is clear, but the exit is still a failure that callers must branch on.",
       "desiredOutcome": "Expose a stable machine-readable remediation code for every non-TTY empty invocation.",
       "hypothesis": "If we deliver \"Expose a stable machine-readable remediation code for every non-TTY empty invocation.\", positive metrics rise on target surfaces.",
@@ -132,11 +136,11 @@
       "updatedAt": "2026-08-01T04:21:46.225Z",
       "runId": "20260801-hobo-code-optimizexp",
       "completedAt": "2026-08-01T04:25:02.968Z",
-      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation."
+      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation. This result is historical; @hobo/code has been removed and is not currently available."
     },
     {
       "id": "fr-sota-frontier-ai-native-tui-designer-one-change",
-      "title": "Show the TTY/non-TTY entry contract in the first help line.",
+      "title": "[Historical: @hobo/code retired] Show the TTY/non-TTY entry contract in the first help line.",
       "problem": "The TTY boundary should be visible before the user types a prompt.",
       "desiredOutcome": "Show the TTY/non-TTY entry contract in the first help line.",
       "hypothesis": "If we deliver \"Show the TTY/non-TTY entry contract in the first help line.\", positive metrics rise on target surfaces.",
@@ -164,7 +168,7 @@
       "updatedAt": "2026-08-01T04:21:46.225Z",
       "runId": "20260801-hobo-code-optimizexp",
       "completedAt": "2026-08-01T04:25:02.968Z",
-      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation."
+      "result": "Covered by the non-TTY fail-closed guard, JSON remediation contract, help entry contract, and exit-code documentation. This result is historical; @hobo/code has been removed and is not currently available."
     },
     {
       "id": "fr-role-aware-guided-walkthrough",

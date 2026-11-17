@@ -51,7 +51,9 @@ import {
 import {
 	readSurfaceMap,
 	validateSurfaceMap,
+	validateCurrentSurface,
 	buildSurfaceMap,
+	assessPackageCli,
 	writeSurfaceMap,
 } from "./surface-map.mts";
 import {
@@ -498,6 +500,7 @@ function auditStructure(
 function auditProjectMaps(
 	project: ProjectRef,
 	root: string,
+	confirmedSurfaces?: string[],
 ): DoctorFinding[] {
 	const out: DoctorFinding[] = [];
 	const map = readSurfaceMap(project, root);
@@ -505,14 +508,18 @@ function auditProjectMaps(
 		out.push(
 			find(
 				"surface-map-missing",
-				"warn",
+				"error",
 				project.id,
-				"No surface-map.json — run explore-app or doctor --repair maps",
+				"Surface discovery is unverified: no surface-map.json — run explore-app or doctor --repair maps",
 				{ repairable: true, repairAction: "build-surface-map" },
 			),
 		);
 	} else {
-		const problems = validateSurfaceMap(map);
+		const problems = [...validateSurfaceMap(map), ...validateCurrentSurface(map, root, { confirmedSurfaces })];
+		const currentAssessment = assessPackageCli(path.join(root, project.path || "."), root);
+		if (JSON.stringify(map.cliAssessment) !== JSON.stringify(currentAssessment)) {
+			problems.push("package-bin assessment is stale; re-explore the current manifest");
+		}
 		for (const p of problems) {
 			out.push(
 				find("surface-map-invalid", "error", project.id, p, {
@@ -521,13 +528,13 @@ function auditProjectMaps(
 				}),
 			);
 		}
-		if (map.binaries.length === 0) {
+		if (currentAssessment.status === "not-applicable" && JSON.stringify(map.cliAssessment) === JSON.stringify(currentAssessment)) {
 			out.push(
 				find(
 					"no-binaries",
 					"info",
 					project.id,
-					"No package.json bin (library/site/example) — no CLI default-entry required",
+					`Package-bin CLI coverage is not applicable: ${currentAssessment.evidence}. Other CLI and non-CLI surfaces are not assessed by this package-bin check.`,
 				),
 			);
 		}
@@ -548,20 +555,24 @@ function auditProjectMaps(
 		out.push(
 			find(
 				"catalog-missing",
-				map?.binaries.length ? "warn" : "info",
+				map?.cliAssessment?.status === "not-applicable" ? "info" : "error",
 				project.id,
 				"No experience-catalog.json — feature gen critical path incomplete for CLI products",
 				{ repairable: true, repairAction: "build-catalog" },
 			),
 		);
-	} else if (map?.binaries.length) {
+	} else if (map) {
+		if (JSON.stringify(catalog.cliAssessment) !== JSON.stringify(map.cliAssessment)) {
+			out.push(find("catalog-coverage", "error", project.id, "Catalog and surface-map package-bin assessments differ; rebuild the catalog"));
+		}
 		const personas = [
 			...new Set(catalog.experiences.map((e) => e.personaId)),
 		];
-		for (const p of validateCatalogCoverage(catalog, personas)) {
+		for (const p of validateCatalogCoverage(catalog, personas, map, { root, confirmedSurfaces })) {
 			out.push(find("catalog-coverage", "error", project.id, p));
 		}
 		if (
+			map.cliAssessment?.status === "present" &&
 			!catalog.experiences.some((e) => e.experienceId.startsWith("cold-start"))
 		) {
 			out.push(
@@ -583,6 +594,7 @@ export function runDoctorCheck(input: {
 	selection?: ProjectSelection;
 	/** Include feature quality deep scan */
 	deepFeatures?: boolean;
+	confirmedSurfaces?: string[];
 }): DoctorReport {
 	const root = input.root ?? repoRoot();
 	const selection =
@@ -660,7 +672,7 @@ export function runDoctorCheck(input: {
 		? listProjects(root).filter((p) => p.id !== "root")
 		: selection.projects.filter((p) => p.id !== "root");
 	for (const p of projects) {
-		findings.push(...auditProjectMaps(p, root));
+		findings.push(...auditProjectMaps(p, root, input.confirmedSurfaces));
 	}
 
 	const errors = findings.filter((f) => f.severity === "error").length;

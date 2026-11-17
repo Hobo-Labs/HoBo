@@ -1,60 +1,43 @@
 {
   "schemaVersion": 1,
   "projectId": "hobo",
-  "builtAt": "2026-07-31T23:42:24.557Z",
+  "builtAt": "2026-11-17T18:30:36.536Z",
+  "cliAssessment": {
+    "status": "present",
+    "scope": "package.json bin",
+    "evidence": "packages/hobo/package.json: declares hobo=./dist/bin/hobo.js, hobo-mcp=./dist/bin/hobo-mcp.js"
+  },
+  "surfaceMapDigest": "f1d974d90ef09c5f0538367bbe73f472ffe4e1e7af1baacb0fb8f06093d6ad89",
+  "surfaceProblems": [
+    "binary hobo is unverified; no matching successful help observation",
+    "binary hobo-mcp is unverified; secondary-bin journeys are not assessed",
+    "commands empty despite binaries",
+    "package CLI help is unverified"
+  ],
+  "unverifiedGoals": [
+    {
+      "personaId": "role-finops",
+      "goal": "inspect cost information",
+      "reason": "no observed cost command or cost-specific plan help in the package surface"
+    }
+  ],
   "experiences": [
     {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "agent-operator",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "agent-operator",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "agent-operator",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -76,120 +59,21 @@
       ]
     },
     {
-      "experienceId": "agent-native-inventory",
-      "personaId": "agent-operator",
-      "intent": "Audit human-free auth + MCP/ACP readiness",
-      "entryCommand": "hobo agent",
-      "driver": "cli",
-      "observableSuccess": "Command agent prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-agent",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.agent"
-      ]
-    },
-    {
-      "experienceId": "agent-human-free-auth",
-      "personaId": "agent-operator",
-      "intent": "Login without browser device-code as agent",
-      "entryCommand": "hobo auth",
-      "driver": "cli",
-      "observableSuccess": "Command auth prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-auth",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.auth"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "agent-operator",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "guide-cursor-map",
-      "personaId": "agent-operator",
-      "intent": "Map Cursor features to hobo-code verbs",
-      "entryCommand": "hobo guide --cursor",
-      "driver": "cli",
-      "observableSuccess": "Cursor map with honest residual",
-      "observableFailure": "Claude-only guide with no cursor path",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-guide-cursor",
-      "source": [
-        "persona-goals"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "designer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "designer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "designer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -211,16 +95,16 @@
       ]
     },
     {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "coding-agent",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "experienceId": "cold-start-cli",
+      "personaId": "developer",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
@@ -230,38 +114,38 @@
       ]
     },
     {
-      "experienceId": "in-session-discoverability",
-      "personaId": "coding-agent",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
+      "experienceId": "failure-actionable",
+      "personaId": "developer",
+      "intent": "Mistype or unknown verb yields actionable remediation",
+      "entryCommand": "hobo not-a-real-verb-zz",
+      "driver": "cli",
+      "observableSuccess": "Non-zero exit + suggested next command",
+      "observableFailure": "Silent success or stack dump only",
       "confusionRisks": [
-        "no slash commands for product surfaces"
+        "typo becomes dispatch"
       ],
       "priority": "P0",
-      "featureId": "hobo-default-entry",
+      "featureId": "hobo-failure-actionable",
       "source": [
-        "surface-map.interactiveSurfaces",
         "mandatory-p0"
       ]
     },
     {
-      "experienceId": "help-discoverability",
+      "experienceId": "cold-start-cli",
       "personaId": "coding-agent",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
+      "intent": "Cold-start the product CLI default path and get clear status",
+      "entryCommand": "hobo",
       "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
+      "observableSuccess": "Helpful default or usage without silent hang",
+      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
-      "featureId": "hobo-help-discoverability",
+      "featureId": "hobo-default-entry",
       "source": [
-        "surface-map.nonInteractiveHelp",
+        "surface-map.defaultEntry",
         "mandatory-p0"
       ]
     },
@@ -283,121 +167,21 @@
       ]
     },
     {
-      "experienceId": "agent-native-inventory",
-      "personaId": "coding-agent",
-      "intent": "Audit human-free auth + MCP/ACP readiness",
-      "entryCommand": "hobo agent",
-      "driver": "cli",
-      "observableSuccess": "Command agent prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-agent",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.agent"
-      ]
-    },
-    {
-      "experienceId": "agent-human-free-auth",
-      "personaId": "coding-agent",
-      "intent": "Login without browser device-code as agent",
-      "entryCommand": "hobo auth",
-      "driver": "cli",
-      "observableSuccess": "Command auth prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-auth",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.auth"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "coding-agent",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "tasks-board",
-      "personaId": "coding-agent",
-      "intent": "See background task board",
-      "entryCommand": "hobo tasks",
-      "driver": "cli",
-      "observableSuccess": "Command tasks prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-tasks",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.tasks"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "end-user",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "end-user",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "end-user",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -419,57 +203,21 @@
       ]
     },
     {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "platform-engineer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "platform-engineer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "platform-engineer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -491,104 +239,21 @@
       ]
     },
     {
-      "experienceId": "cost-zero-path",
-      "personaId": "platform-engineer",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "platform-engineer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "guide-cursor-map",
-      "personaId": "platform-engineer",
-      "intent": "Map Cursor features to hobo-code verbs",
-      "entryCommand": "hobo guide --cursor",
-      "driver": "cli",
-      "observableSuccess": "Cursor map with honest residual",
-      "observableFailure": "Claude-only guide with no cursor path",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-guide-cursor",
-      "source": [
-        "persona-goals"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "junior-frontend",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "junior-frontend",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "junior-frontend",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -610,1391 +275,21 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "junior-frontend",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "cost-zero-path",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "sota-frontier-ai-native-tui-designer",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "agent-native-inventory",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "Audit human-free auth + MCP/ACP readiness",
-      "entryCommand": "hobo agent",
-      "driver": "cli",
-      "observableSuccess": "Command agent prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-agent",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.agent"
-      ]
-    },
-    {
-      "experienceId": "agent-human-free-auth",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "Login without browser device-code as agent",
-      "entryCommand": "hobo auth",
-      "driver": "cli",
-      "observableSuccess": "Command auth prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-auth",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.auth"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "remote-attach-dev-terminal",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "Reattach dev-terminal / named endpoint",
-      "entryCommand": "hobo attach",
-      "driver": "cli",
-      "observableSuccess": "Command attach prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-attach",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.attach"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "protocol-native-coding-agent",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "agent-native-inventory",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "Audit human-free auth + MCP/ACP readiness",
-      "entryCommand": "hobo agent",
-      "driver": "cli",
-      "observableSuccess": "Command agent prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-agent",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.agent"
-      ]
-    },
-    {
-      "experienceId": "agent-human-free-auth",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "Login without browser device-code as agent",
-      "entryCommand": "hobo auth",
-      "driver": "cli",
-      "observableSuccess": "Command auth prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-auth",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.auth"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "ai-automation-engineer-pi-flue",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "agent-native-inventory",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "Audit human-free auth + MCP/ACP readiness",
-      "entryCommand": "hobo agent",
-      "driver": "cli",
-      "observableSuccess": "Command agent prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-agent",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.agent"
-      ]
-    },
-    {
-      "experienceId": "agent-human-free-auth",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "Login without browser device-code as agent",
-      "entryCommand": "hobo auth",
-      "driver": "cli",
-      "observableSuccess": "Command auth prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-auth",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.auth"
-      ]
-    },
-    {
-      "experienceId": "cost-zero-path",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "cost-conscious-open-source-dev",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "edit-nvim-bridge",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "Open managed nvim pane / bridge contract",
-      "entryCommand": "hobo edit",
-      "driver": "cli",
-      "observableSuccess": "Command edit prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-edit",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.edit"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "guide-cursor-map",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "Map Cursor features to hobo-code verbs",
-      "entryCommand": "hobo guide --cursor",
-      "driver": "cli",
-      "observableSuccess": "Cursor map with honest residual",
-      "observableFailure": "Claude-only guide with no cursor path",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-guide-cursor",
-      "source": [
-        "persona-goals"
-      ]
-    },
-    {
-      "experienceId": "remote-attach-dev-terminal",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "Reattach dev-terminal / named endpoint",
-      "entryCommand": "hobo attach",
-      "driver": "cli",
-      "observableSuccess": "Command attach prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-attach",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.attach"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "tasks-board",
-      "personaId": "advanced-cli-native-vim-engineer",
-      "intent": "See background task board",
-      "entryCommand": "hobo tasks",
-      "driver": "cli",
-      "observableSuccess": "Command tasks prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-tasks",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.tasks"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "guide-claude-map",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "Map Claude Code habits to product verbs",
-      "entryCommand": "hobo guide",
-      "driver": "cli",
-      "observableSuccess": "Command guide prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-guide",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.guide"
-      ]
-    },
-    {
-      "experienceId": "remote-attach-dev-terminal",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "Reattach dev-terminal / named endpoint",
-      "entryCommand": "hobo attach",
-      "driver": "cli",
-      "observableSuccess": "Command attach prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-attach",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.attach"
-      ]
-    },
-    {
-      "experienceId": "tasks-board",
-      "personaId": "claude-code-advanced-app-builder",
-      "intent": "See background task board",
-      "entryCommand": "hobo tasks",
-      "driver": "cli",
-      "observableSuccess": "Command tasks prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-tasks",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.tasks"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "cursor-power-user",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "cursor-power-user",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "cursor-power-user",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "cursor-power-user",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "cost-zero-path",
-      "personaId": "cursor-power-user",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "cursor-power-user",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "guide-cursor-map",
-      "personaId": "cursor-power-user",
-      "intent": "Map Cursor features to hobo-code verbs",
-      "entryCommand": "hobo guide --cursor",
-      "driver": "cli",
-      "observableSuccess": "Cursor map with honest residual",
-      "observableFailure": "Claude-only guide with no cursor path",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-guide-cursor",
-      "source": [
-        "persona-goals"
-      ]
-    },
-    {
-      "experienceId": "tasks-board",
-      "personaId": "cursor-power-user",
-      "intent": "See background task board",
-      "entryCommand": "hobo tasks",
-      "driver": "cli",
-      "observableSuccess": "Command tasks prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-tasks",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.tasks"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "developer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "developer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "developer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "developer",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "developer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "status-chrome",
-      "personaId": "developer",
-      "intent": "Session/status chrome is scannable",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P1",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "agent-native-inventory",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "Audit human-free auth + MCP/ACP readiness",
-      "entryCommand": "hobo agent",
-      "driver": "cli",
-      "observableSuccess": "Command agent prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-agent",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.agent"
-      ]
-    },
-    {
-      "experienceId": "agent-human-free-auth",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "Login without browser device-code as agent",
-      "entryCommand": "hobo auth",
-      "driver": "cli",
-      "observableSuccess": "Command auth prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-auth",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.auth"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "tasks-board",
-      "personaId": "new-gen-ai-native-grok-build-user",
-      "intent": "See background task board",
-      "entryCommand": "hobo tasks",
-      "driver": "cli",
-      "observableSuccess": "Command tasks prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-tasks",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.tasks"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "product-app-developer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "product-app-developer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "product-app-developer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -2016,32 +311,16 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "product-app-developer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "experienceId": "cold-start-cli",
+      "personaId": "steve-jobs",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
@@ -2051,44 +330,8 @@
       ]
     },
     {
-      "experienceId": "in-session-discoverability",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
       "experienceId": "failure-actionable",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
+      "personaId": "steve-jobs",
       "intent": "Mistype or unknown verb yields actionable remediation",
       "entryCommand": "hobo not-a-real-verb-zz",
       "driver": "cli",
@@ -2104,121 +347,21 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "remote-attach-dev-terminal",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
-      "intent": "Reattach dev-terminal / named endpoint",
-      "entryCommand": "hobo attach",
-      "driver": "cli",
-      "observableSuccess": "Command attach prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-attach",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.attach"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "senior-dev-tmux-mosh-tailscale",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "product-agent-operator",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "product-agent-operator",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "product-agent-operator",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -2240,312 +383,21 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "product-agent-operator",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "experienceId": "cold-start-cli",
+      "personaId": "product-platform-engineer",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "guide-cursor-map",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "Map Cursor features to hobo-code verbs",
-      "entryCommand": "hobo guide --cursor",
-      "driver": "cli",
-      "observableSuccess": "Cursor map with honest residual",
-      "observableFailure": "Claude-only guide with no cursor path",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-guide-cursor",
-      "source": [
-        "persona-goals"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "senior-engineer-advanced-herdr-user",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "github-copilot-cli-advanced-user",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "github-copilot-cli-advanced-user",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "github-copilot-cli-advanced-user",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "failure-actionable",
-      "personaId": "github-copilot-cli-advanced-user",
-      "intent": "Mistype or unknown verb yields actionable remediation",
-      "entryCommand": "hobo not-a-real-verb-zz",
-      "driver": "cli",
-      "observableSuccess": "Non-zero exit + suggested next command",
-      "observableFailure": "Silent success or stack dump only",
-      "confusionRisks": [
-        "typo becomes dispatch"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-failure-actionable",
-      "source": [
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "github-copilot-cli-advanced-user",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "github-copilot-cli-advanced-user",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "product-platform-engineer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
-      "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
-      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
-      "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "product-platform-engineer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "product-platform-engineer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -2567,73 +419,21 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "product-platform-engineer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "product-coding-agent",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "product-coding-agent",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "product-coding-agent",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -2655,80 +455,16 @@
       ]
     },
     {
-      "experienceId": "agent-native-inventory",
-      "personaId": "product-coding-agent",
-      "intent": "Audit human-free auth + MCP/ACP readiness",
-      "entryCommand": "hobo agent",
-      "driver": "cli",
-      "observableSuccess": "Command agent prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-agent",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.agent"
-      ]
-    },
-    {
-      "experienceId": "agent-human-free-auth",
-      "personaId": "product-coding-agent",
-      "intent": "Login without browser device-code as agent",
-      "entryCommand": "hobo auth",
-      "driver": "cli",
-      "observableSuccess": "Command auth prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-auth",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.auth"
-      ]
-    },
-    {
-      "experienceId": "cost-zero-path",
-      "personaId": "product-coding-agent",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "product-coding-agent",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "advanced-nix-devenv-developer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "experienceId": "cold-start-cli",
+      "personaId": "jony-ive",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
@@ -2738,44 +474,8 @@
       ]
     },
     {
-      "experienceId": "in-session-discoverability",
-      "personaId": "advanced-nix-devenv-developer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "advanced-nix-devenv-developer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
-        "mandatory-p0"
-      ]
-    },
-    {
       "experienceId": "failure-actionable",
-      "personaId": "advanced-nix-devenv-developer",
+      "personaId": "jony-ive",
       "intent": "Mistype or unknown verb yields actionable remediation",
       "entryCommand": "hobo not-a-real-verb-zz",
       "driver": "cli",
@@ -2791,105 +491,21 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "advanced-nix-devenv-developer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "harness-dual-surface",
-      "personaId": "advanced-nix-devenv-developer",
-      "intent": "See Pi/Flue dual surface + self-improve",
-      "entryCommand": "hobo harness",
-      "driver": "cli",
-      "observableSuccess": "Command harness prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-harness",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.harness"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "advanced-nix-devenv-developer",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "product-end-user",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "product-end-user",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "product-end-user",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -2911,57 +527,21 @@
       ]
     },
     {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "product-designer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "product-designer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "product-designer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -2983,57 +563,21 @@
       ]
     },
     {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "role-developers",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "role-developers",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "role-developers",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -3055,73 +599,21 @@
       ]
     },
     {
-      "experienceId": "cost-zero-path",
-      "personaId": "role-developers",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "role-platform-engineers",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "role-platform-engineers",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "role-platform-engineers",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -3143,48 +635,16 @@
       ]
     },
     {
-      "experienceId": "cost-zero-path",
-      "personaId": "role-platform-engineers",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "role-platform-engineers",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "role-sre",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "experienceId": "cold-start-cli",
+      "personaId": "walt-disney",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
@@ -3194,38 +654,38 @@
       ]
     },
     {
-      "experienceId": "in-session-discoverability",
-      "personaId": "role-sre",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
+      "experienceId": "failure-actionable",
+      "personaId": "walt-disney",
+      "intent": "Mistype or unknown verb yields actionable remediation",
+      "entryCommand": "hobo not-a-real-verb-zz",
+      "driver": "cli",
+      "observableSuccess": "Non-zero exit + suggested next command",
+      "observableFailure": "Silent success or stack dump only",
       "confusionRisks": [
-        "no slash commands for product surfaces"
+        "typo becomes dispatch"
       ],
       "priority": "P0",
-      "featureId": "hobo-default-entry",
+      "featureId": "hobo-failure-actionable",
       "source": [
-        "surface-map.interactiveSurfaces",
         "mandatory-p0"
       ]
     },
     {
-      "experienceId": "help-discoverability",
+      "experienceId": "cold-start-cli",
       "personaId": "role-sre",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
+      "intent": "Cold-start the product CLI default path and get clear status",
+      "entryCommand": "hobo",
       "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
+      "observableSuccess": "Helpful default or usage without silent hang",
+      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
-      "featureId": "hobo-help-discoverability",
+      "featureId": "hobo-default-entry",
       "source": [
-        "surface-map.nonInteractiveHelp",
+        "surface-map.defaultEntry",
         "mandatory-p0"
       ]
     },
@@ -3247,48 +707,16 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "role-sre",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "herdr-mux-status",
-      "personaId": "role-sre",
-      "intent": "See multi-pane mux chrome + capabilities",
-      "entryCommand": "hobo status",
-      "driver": "cli",
-      "observableSuccess": "Command status prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-status",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.status"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
-      "personaId": "junior-typescript-developer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "experienceId": "cold-start-cli",
+      "personaId": "hayao-miyazaki",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
@@ -3298,38 +726,38 @@
       ]
     },
     {
-      "experienceId": "in-session-discoverability",
-      "personaId": "junior-typescript-developer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
+      "experienceId": "failure-actionable",
+      "personaId": "hayao-miyazaki",
+      "intent": "Mistype or unknown verb yields actionable remediation",
+      "entryCommand": "hobo not-a-real-verb-zz",
+      "driver": "cli",
+      "observableSuccess": "Non-zero exit + suggested next command",
+      "observableFailure": "Silent success or stack dump only",
       "confusionRisks": [
-        "no slash commands for product surfaces"
+        "typo becomes dispatch"
       ],
       "priority": "P0",
-      "featureId": "hobo-default-entry",
+      "featureId": "hobo-failure-actionable",
       "source": [
-        "surface-map.interactiveSurfaces",
         "mandatory-p0"
       ]
     },
     {
-      "experienceId": "help-discoverability",
+      "experienceId": "cold-start-cli",
       "personaId": "junior-typescript-developer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
+      "intent": "Cold-start the product CLI default path and get clear status",
+      "entryCommand": "hobo",
       "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
+      "observableSuccess": "Helpful default or usage without silent hang",
+      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
-      "featureId": "hobo-help-discoverability",
+      "featureId": "hobo-default-entry",
       "source": [
-        "surface-map.nonInteractiveHelp",
+        "surface-map.defaultEntry",
         "mandatory-p0"
       ]
     },
@@ -3351,73 +779,21 @@
       ]
     },
     {
-      "experienceId": "config-setup-inventory",
-      "personaId": "junior-typescript-developer",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "role-devsecops",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "role-devsecops",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "role-devsecops",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -3439,89 +815,21 @@
       ]
     },
     {
-      "experienceId": "cost-zero-path",
-      "personaId": "role-devsecops",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "role-devsecops",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "role-finops",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "role-finops",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "role-finops",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
@@ -3543,95 +851,99 @@
       ]
     },
     {
-      "experienceId": "cost-zero-path",
-      "personaId": "role-finops",
-      "intent": "See $0 path, budget, savings without secrets",
-      "entryCommand": "hobo cost",
-      "driver": "cli",
-      "observableSuccess": "Command cost prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-cost",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.cost"
-      ]
-    },
-    {
-      "experienceId": "config-setup-inventory",
-      "personaId": "role-finops",
-      "intent": "List env/flags by preferred stack",
-      "entryCommand": "hobo config",
-      "driver": "cli",
-      "observableSuccess": "Command config prints clear product chrome",
-      "observableFailure": "Missing verb or opaque error",
-      "confusionRisks": [],
-      "priority": "P0",
-      "featureId": "hobo-config",
-      "source": [
-        "persona-goals",
-        "surface-map.commands.config"
-      ]
-    },
-    {
-      "experienceId": "cold-start-tty-chat",
+      "experienceId": "cold-start-cli",
       "personaId": "junior-mobile-designer",
-      "intent": "Cold-start the product TTY/chat and recognize it is not a stock third-party agent UI",
+      "intent": "Cold-start the product CLI default path and get clear status",
       "entryCommand": "hobo",
-      "driver": "tui",
-      "observableSuccess": "Discoverability strip / HoBo branding; slash commands or help path visible",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
       "observableFailure": "Hang, empty chrome, or wrong-product branding only",
       "confusionRisks": [
-        "stock Pi / third-party agent UI",
-        "wrong binary (control-plane vs coding harness)"
+        "wrong entry point",
+        "unclear default behavior"
       ],
       "priority": "P0",
       "featureId": "hobo-default-entry",
       "source": [
         "surface-map.defaultEntry",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "in-session-discoverability",
-      "personaId": "junior-mobile-designer",
-      "intent": "From inside the interactive session, find product surfaces without leaving",
-      "entryCommand": "hobo  # then /verbs or in-session help",
-      "driver": "tui",
-      "observableSuccess": "Slash commands list product verbs (agent/config/…)",
-      "observableFailure": "Only third-party defaults; no product map",
-      "confusionRisks": [
-        "no slash commands for product surfaces"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-default-entry",
-      "source": [
-        "surface-map.interactiveSurfaces",
-        "mandatory-p0"
-      ]
-    },
-    {
-      "experienceId": "help-discoverability",
-      "personaId": "junior-mobile-designer",
-      "intent": "List verbs and next steps without tribal knowledge",
-      "entryCommand": "hobo help",
-      "driver": "cli",
-      "observableSuccess": "Verb list + First run / examples",
-      "observableFailure": "Empty help or wrong product help",
-      "confusionRisks": [
-        "help dumps unrelated monorepo tooling"
-      ],
-      "priority": "P0",
-      "featureId": "hobo-help-discoverability",
-      "source": [
-        "surface-map.nonInteractiveHelp",
         "mandatory-p0"
       ]
     },
     {
       "experienceId": "failure-actionable",
       "personaId": "junior-mobile-designer",
+      "intent": "Mistype or unknown verb yields actionable remediation",
+      "entryCommand": "hobo not-a-real-verb-zz",
+      "driver": "cli",
+      "observableSuccess": "Non-zero exit + suggested next command",
+      "observableFailure": "Silent success or stack dump only",
+      "confusionRisks": [
+        "typo becomes dispatch"
+      ],
+      "priority": "P0",
+      "featureId": "hobo-failure-actionable",
+      "source": [
+        "mandatory-p0"
+      ]
+    },
+    {
+      "experienceId": "cold-start-cli",
+      "personaId": "naoto-fukasawa",
+      "intent": "Cold-start the product CLI default path and get clear status",
+      "entryCommand": "hobo",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
+      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
+      "confusionRisks": [
+        "wrong entry point",
+        "unclear default behavior"
+      ],
+      "priority": "P0",
+      "featureId": "hobo-default-entry",
+      "source": [
+        "surface-map.defaultEntry",
+        "mandatory-p0"
+      ]
+    },
+    {
+      "experienceId": "failure-actionable",
+      "personaId": "naoto-fukasawa",
+      "intent": "Mistype or unknown verb yields actionable remediation",
+      "entryCommand": "hobo not-a-real-verb-zz",
+      "driver": "cli",
+      "observableSuccess": "Non-zero exit + suggested next command",
+      "observableFailure": "Silent success or stack dump only",
+      "confusionRisks": [
+        "typo becomes dispatch"
+      ],
+      "priority": "P0",
+      "featureId": "hobo-failure-actionable",
+      "source": [
+        "mandatory-p0"
+      ]
+    },
+    {
+      "experienceId": "cold-start-cli",
+      "personaId": "shigeru-miyamoto",
+      "intent": "Cold-start the product CLI default path and get clear status",
+      "entryCommand": "hobo",
+      "driver": "cli",
+      "observableSuccess": "Helpful default or usage without silent hang",
+      "observableFailure": "Hang, empty chrome, or wrong-product branding only",
+      "confusionRisks": [
+        "wrong entry point",
+        "unclear default behavior"
+      ],
+      "priority": "P0",
+      "featureId": "hobo-default-entry",
+      "source": [
+        "surface-map.defaultEntry",
+        "mandatory-p0"
+      ]
+    },
+    {
+      "experienceId": "failure-actionable",
+      "personaId": "shigeru-miyamoto",
       "intent": "Mistype or unknown verb yields actionable remediation",
       "entryCommand": "hobo not-a-real-verb-zz",
       "driver": "cli",

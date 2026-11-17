@@ -27,7 +27,6 @@ import {
 	writeJson,
 } from "./lib/media.mts";
 import {
-	evidenceDir,
 	evidenceDirInScope,
 	featureDir,
 	featuresRoot,
@@ -38,8 +37,9 @@ import {
 	writeScopeFromSelection,
 	type FeatureLocation,
 } from "./lib/paths.mts";
-import { resolveProjects } from "./lib/projects.mts";
-import { scenarioSlug } from "./lib/slug.mts";
+import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { isPathIdentifier, scenarioSlug } from "./lib/slug.mts";
 import { type EvidenceClaim, validateEvidenceReview } from "./lib/evidence-review.mts";
 
 type FeatureMeta = {
@@ -77,7 +77,8 @@ function parseArgs(argv: string[]) {
 		else if (a === "--project" || a === "--projects") {
 			const v = argv[++i] ?? "";
 			out.projects = out.projects ? `${out.projects},${v}` : v;
-		} else if (a === "--strict") out.strict = "1";
+		} else if (a === "--all-projects") out.projects = out.projects ? `${out.projects},all` : "all";
+		else if (a === "--strict") out.strict = "1";
 		else if (!a.startsWith("-") && out.mode === "help") out.mode = a;
 	}
 	return out;
@@ -106,10 +107,12 @@ and overwrites the previous primary artifact for that scenario.
 function resolveFeatureLoc(
 	featureId: string,
 	root: string,
-	preferredProject?: string,
+	projects?: string,
 ): FeatureLocation {
+	const selection = projects ? resolveProjects(projects, root) : undefined;
 	const loc = findFeature(featureId, root, {
-		preferredProjectId: preferredProject,
+		selection,
+		preferredProjectId: selection?.projects[0]?.id,
 	});
 	if (!loc || !existsSync(loc.featureJsonPath)) {
 		throw new Error(
@@ -184,8 +187,8 @@ Feature: ${title}
 	console.log(JSON.stringify({ ok: true, dir, meta }, null, 2));
 }
 
-function parseScenarios(featureId: string, root: string) {
-	const loc = findFeature(featureId, root);
+function parseScenarios(featureId: string, root: string, location?: FeatureLocation) {
+	const loc = location ?? findFeature(featureId, root);
 	const dir = loc?.dir ?? featureDir(featureId, root);
 	if (!existsSync(dir)) return [];
 	const files = readdirSync(dir).filter((f) => f.endsWith(".feature"));
@@ -203,8 +206,8 @@ function parseScenarios(featureId: string, root: string) {
 	return scenarios;
 }
 
-function scenarioClaims(featureId: string, scenario: string, root: string): EvidenceClaim[] {
-	const loc = findFeature(featureId, root);
+function scenarioClaims(featureId: string, scenario: string, root: string, location?: FeatureLocation): EvidenceClaim[] {
+	const loc = location ?? findFeature(featureId, root);
 	if (!loc) return [];
 	const claims: EvidenceClaim[] = [];
 	let active = false;
@@ -224,9 +227,10 @@ function scenarioClaims(featureId: string, scenario: string, root: string): Evid
 	return claims;
 }
 
-function listScenarios(featureId: string) {
+function listScenarios(featureId: string, projects?: string) {
 	const root = repoRoot();
-	const scenarios = parseScenarios(featureId, root);
+	const location = projects ? resolveFeatureLoc(featureId, root, projects) : undefined;
+	const scenarios = parseScenarios(featureId, root, location);
 	console.log(JSON.stringify({ featureId, scenarios }, null, 2));
 }
 
@@ -285,9 +289,10 @@ function resolveScenarioSlug(
 	featureId: string,
 	scenarioArg: string,
 	root: string,
+	location?: FeatureLocation,
 ): string {
 	const slug = scenarioSlug(scenarioArg);
-	const known = parseScenarios(featureId, root);
+	const known = parseScenarios(featureId, root, location);
 	const hit = known.find((s) => s.slug === slug || s.name === scenarioArg);
 	return hit?.slug ?? slug;
 }
@@ -299,7 +304,7 @@ async function capture(args: Record<string, string>) {
 		console.error("--feature required");
 		process.exit(2);
 	}
-	const loc = resolveFeatureLoc(featureId, root, args.projects?.split(/[,\s]+/)[0]);
+	const loc = resolveFeatureLoc(featureId, root, args.projects);
 	const meta = JSON.parse(
 		readFileSync(loc.featureJsonPath, "utf8"),
 	) as FeatureMeta;
@@ -307,7 +312,28 @@ async function capture(args: Record<string, string>) {
 		featureId,
 		args.scenario || "default",
 		root,
+		loc,
 	);
+	const driver = (args.driver || meta.driver || "cli").toLowerCase();
+	const command = args.command || meta.surfaces?.[0];
+	const url = args.url || meta.surfaces?.[0];
+	if ((driver === "cli" || driver === "tui") && !command?.trim()) {
+		console.error(`--command required for ${driver} driver`);
+		process.exit(2);
+	}
+	if (driver === "web") {
+		try {
+			if (!url?.trim()) throw new Error("missing URL");
+			new URL(url);
+		} catch {
+			console.error("--url must be an absolute URL for web driver");
+			process.exit(2);
+		}
+	}
+	if (!["cli", "tui", "web", "native"].includes(driver)) {
+		console.error(`unknown driver: ${driver}`);
+		process.exit(2);
+	}
 	const outDir = evidenceDirInScope(featureId, scenario, loc.scope);
 	mkdirSync(outDir, { recursive: true });
 	const hadPrevious = clearPrimaryArtifacts(outDir);
@@ -316,10 +342,9 @@ async function capture(args: Record<string, string>) {
 		if (f.startsWith("_")) rmSync(path.join(outDir, f), { force: true });
 	}
 
-	const driver = (args.driver || meta.driver || "cli").toLowerCase();
 	const runId = args.runId || "";
 	const personaIds = meta.personas || [];
-	const claims = scenarioClaims(featureId, scenario, root);
+	const claims = scenarioClaims(featureId, scenario, root, loc);
 
 	let primaryFile = "";
 	let kind = "transcript";
@@ -332,12 +357,7 @@ async function capture(args: Record<string, string>) {
 	let frameStats: Record<string, unknown> | undefined;
 
 	if (driver === "cli") {
-		const command = args.command || meta.surfaces?.[0];
-		if (!command) {
-			console.error("--command required for cli driver (or feature.surfaces[0])");
-			process.exit(2);
-		}
-		const r = await captureCli(outDir, { command, cwd: root });
+		const r = await captureCli(outDir, { command: command ?? "", cwd: root });
 		primaryFile = r.primaryFile;
 		kind = r.kind;
 		screen = r.screen;
@@ -345,12 +365,7 @@ async function capture(args: Record<string, string>) {
 		timing = r.timing as unknown as Record<string, unknown>;
 		repro = { command, cwd: "." };
 	} else if (driver === "tui") {
-		const command = args.command || meta.surfaces?.[0];
-		if (!command) {
-			console.error("--command required for tui driver");
-			process.exit(2);
-		}
-		const r = await captureTui(outDir, { command, cwd: root });
+		const r = await captureTui(outDir, { command: command ?? "", cwd: root });
 		primaryFile = r.castFile || r.primaryFile;
 		kind = r.castFile ? "recording" : r.kind;
 		screen = r.screen;
@@ -363,12 +378,7 @@ async function capture(args: Record<string, string>) {
 		}
 		repro = { command, cwd: "." };
 	} else if (driver === "web") {
-		const url = args.url || meta.surfaces?.[0];
-		if (!url) {
-			console.error("--url required for web driver");
-			process.exit(2);
-		}
-		const r = captureWeb(outDir, { url, cwd: root, video: true });
+		const r = captureWeb(outDir, { url: url ?? "", cwd: root, video: true });
 		primaryFile = r.primaryFile;
 		kind = r.kind;
 		screen = r.screen;
@@ -387,9 +397,6 @@ async function capture(args: Record<string, string>) {
 		degraded = r.degraded;
 		notes = r.notes;
 		repro = { nativeCmd: args.nativeCmd || process.env.OPTIMIZEXP_NATIVE_CAPTURE };
-	} else {
-		console.error(`unknown driver: ${driver}`);
-		process.exit(2);
 	}
 
 	const primaryName = path.basename(primaryFile);
@@ -482,8 +489,8 @@ function review(args: Record<string, string>) {
 		console.error("--feature, --scenario, and --reviewer required");
 		process.exit(2);
 	}
-	const loc = resolveFeatureLoc(args.feature, root, args.projects?.split(/[,.\s]+/)[0]);
-	const scenario = resolveScenarioSlug(args.feature, args.scenario, root);
+	const loc = resolveFeatureLoc(args.feature, root, args.projects);
+	const scenario = resolveScenarioSlug(args.feature, args.scenario, root, loc);
 	const dir = evidenceDirInScope(args.feature, scenario, loc.scope);
 	const metaPath = path.join(dir, "meta.json");
 	if (!existsSync(metaPath)) {
@@ -517,19 +524,13 @@ function review(args: Record<string, string>) {
 function stitch(args: Record<string, string>) {
 	const root = repoRoot();
 	const featureId = args.feature;
-	const scenario = resolveScenarioSlug(
-		featureId!,
-		args.scenario || "",
-		root,
-	);
-	if (!featureId || !scenario) {
+	if (!featureId || !args.scenario) {
 		console.error("--feature and --scenario required");
 		process.exit(2);
 	}
-	const loc = findFeature(featureId, root);
-	const outDir = loc
-		? evidenceDirInScope(featureId, scenario, loc.scope)
-		: evidenceDir(featureId, scenario, root);
+	const loc = resolveFeatureLoc(featureId, root, args.projects);
+	const scenario = resolveScenarioSlug(featureId, args.scenario, root, loc);
+	const outDir = evidenceDirInScope(featureId, scenario, loc.scope);
 	const framesDir = path.join(outDir, "frames");
 	const result = tryStitchFrames(framesDir, path.join(outDir, "_stitch"));
 	if (!result) {
@@ -590,7 +591,7 @@ function validate(args: Record<string, string>) {
 	const missing: string[] = [];
 	for (const loc of locations) {
 		const id = loc.id;
-		const scenarios = parseScenarios(id, root);
+		const scenarios = parseScenarios(id, root, loc);
 		for (const s of scenarios) {
 			const dir = evidenceDirInScope(id, s.slug, loc.scope);
 			const man = path.join(dir, "manifest.json");
@@ -658,16 +659,45 @@ function validate(args: Record<string, string>) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--id", "--feature", "--scenario", "--driver", "--command", "--url", "--native-cmd", "--run-id", "--personas", "--experiences", "--title", "--reviewer", "--relevant", "--complete", "--covered-claims", "--notes", "--project", "--projects"],
+		flags: ["--help", "-h", "--all-projects", "--strict"],
+	});
+	if (input.error) {
+		console.error(input.error);
+		process.exit(2);
+	}
+	if (
+		input.positionals.length > 1 ||
+		input.positionals.some((value) => !["init-feature", "list-scenarios", "capture", "review", "stitch", "validate"].includes(value)) ||
+		(input.positionals.length > 0 && input.argv.includes("--mode"))
+	) {
+		console.error("Expected at most one positional capture mode");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	const mode = args.mode || "help";
 	if (mode === "help") return help();
+	if (args.feature && !isPathIdentifier(args.feature)) {
+		console.error(`Invalid feature id: ${args.feature}`);
+		process.exit(2);
+	}
+	if (args.scenario && (/[\\/]/.test(args.scenario) || args.scenario.includes("..") || !scenarioSlug(args.scenario))) {
+		console.error(`Invalid scenario: ${args.scenario}`);
+		process.exit(2);
+	}
+	const problem = projectSelectionProblem(resolveProjects(args.projects, repoRoot()));
+	if (problem) {
+		console.error(problem);
+		process.exit(2);
+	}
 	if (mode === "init-feature") return initFeature(args);
 	if (mode === "list-scenarios") {
 		if (!args.feature) {
 			console.error("--feature required");
 			process.exit(2);
 		}
-		return listScenarios(args.feature);
+		return listScenarios(args.feature, args.projects);
 	}
 	if (mode === "capture") {
 		void capture(args).catch((err) => {

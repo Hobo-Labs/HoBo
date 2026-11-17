@@ -1,3 +1,10 @@
+---
+type: Reference
+title: "CI performance notes"
+description: "Operational notes for self-hosted CI gate performance and diagnosis."
+tags: [hobo, ci, performance]
+---
+
 # CI performance notes
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
@@ -316,9 +323,9 @@ It used to skip any package whose `test` script is not plain `vitest run` before
 (`pnpm run build && vitest run`), whose config merges the root one; `test/setup/*` had the same gap.
 Such a package is now asked like any other and runs whole when it is reached, since its script cannot
 take a file list. The same question is now asked of every package that neither changed nor depends on
-one, not only when a path outside every package changed: `packages/code` imports
+one, not only when a path outside every package changed: the former `packages/code` imported
 `../../cli/src/cloud/loader.js` without depending on `@hobo/cli`, and 3317dcc2 changed `packages/cli`
-without running `packages/code/test/happy-path-run.test.ts`. Only a concrete reach counts there.
+without running its `happy-path-run.test.ts`. That package has since been removed. Only a concrete reach counts there.
 
 A bare `"./"` or `"../"` string literal is an edge to its directory only where it can be a path.
 `entry.startsWith("./")` in `packages/core/src/plugin-manifest.ts` read as reaching every file of

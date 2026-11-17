@@ -1,16 +1,17 @@
 ---
 type: Reference
 title: "Status-page sidecar"
-description: "The default availability surface every deployment gets: three availability slices, the event-driven replay-safe architecture behind them, and the ADR-0145 trait classification that makes it default-on with an opt-out."
+description: "Status-page projections for three availability slices and their event-driven, replay-safe architecture; hosting and observations require a host."
 tags: [hobo, design, status-page, availability, sidecar]
 ---
 
-# Status-page sidecar — default availability surface for every deployment
+# Status-page projections and publishing
 
 > Implementation record for the ADR-0077 / [Plan 49 §C](./developer-experience.md#plan-49)
 > status-page surface. Production code lives in
-> [`packages/status-page`](../../packages/status-page/README.md) with the
-> station sidecar host in `packages/code`. The M0 scope contract is
+> [`packages/status-page`](../../packages/status-page/README.md). The former
+> station sidecar host was removed with `packages/code`; a host must supply
+> observations and serve the page. The M0 scope contract is
 > [`public-status-page-incident-communication.md`](./public-status-page-incident-communication.md)
 > (HOBO-497); this build keeps its exclusions (no hosted publisher, no
 > subscriber management, no SLA promises).
@@ -19,8 +20,8 @@ tags: [hobo, design, status-page, availability, sidecar]
 
 HoBo requires OTel-native observability for every deployment (ADR-0046,
 ADR-0083). A status page is the cheapest trust dividend of that requirement:
-if the signals are already flowing, every scope can have a
-githubstatus.com-style page **out of the box** with no extra authoring.
+if signals are supplied, every scope can have a githubstatus.com-style page
+without extra per-page authoring. A host supplies observations and serving.
 
 Inspiration and interop: githubstatus.com and status.claude.com are Atlassian
 Statuspage instances; instead of adopting a heavyweight OSS status-page stack
@@ -33,7 +34,7 @@ status widgets and clients can consume HoBo pages unchanged.
 
 | Scope | Components | Source |
 | --- | --- | --- |
-| **Station** | Control-plane capability surfaces on one Station (dashboard, Evidence, otlp, evals, rollout, experiment, kms, history sidecars) | Live loopback probes of the sidecar fleet, folded as synthetic `slo.Measured` signals |
+| **Station** | Control-plane capability surfaces on one Station | Host-supplied observations folded as `slo.Measured` signals; the former automatic sidecar fleet was removed |
 | **Primitives** | The closed Bindle-primitive vocabulary (`web`, `api`, `kv`, …) from `@hobo/capability-profiles` (no fourth duplicated list) | `slo.Measured` / `incident.*` events keyed to the primitives scope |
 | **Project / Bindle** | User-centric: one page per Bindle (an app in the app portfolio) plus one page per Project rolling up its Bindles and their configured service dependencies (`b.external`, `b.container`) | Event projection keyed `project:<id>` / explicit `scopeKey` |
 
@@ -72,11 +73,9 @@ Session Replay (ADR-0137), so no new attachment mechanism is introduced:
   `.with(statusPage({ enabled: false }))` excludes a resource's component.
   `status-page` is an allowlisted platform option next to `session-replay`,
   and repeated `.with()` replaces rather than stacks.
-- **Station default**: the status sidecar is a `kind: "sidecar"` Station
-  capability with `provenance: "default"` (present unless observed absent),
-  served by the `packages/code` occupancy fleet next to dashboard/Evidence.
-  It is best-effort — a broken status listener never takes the occupancy
-  down — and `HOBO_CODE_SIDECARS=0` disables the fleet wholesale.
+- **Station host**: the package can project Station capabilities, but the
+  former automatic Code sidecar host was removed. A host must supply its own
+  observations and serve the resulting page.
 
 ## Edge cases handled (tested in `packages/status-page/test/`)
 
@@ -92,5 +91,4 @@ public banners, and slug traversal in the static site writer.
 (`data-models/status_page.*`), a consumer pact
 (`contracts/pacts/status-page-projection.pact.json`), a DESIGN.md bound to
 HoBo Rubberhose (ADR-0149) with a design-lint test over rendered output, and
-92 unit tests; the station sidecar adds fleet-probe tests in
-`packages/code/test/status-sidecar-server.test.ts`.
+unit tests. The former Code fleet-probe tests were removed with their host.

@@ -1,7 +1,7 @@
 name: HoBo CI Fabric
 
 on:
-  # feature/hobo-code is the long-lived hobo-code branch: its pull requests get the PR
+  # The preserved feature/hobo-code branch gets the PR
   # impact gate and its pushes the full gate, judged against that branch, never main.
   # The merge queue, the schedule and every publish stay main-only.
   push:

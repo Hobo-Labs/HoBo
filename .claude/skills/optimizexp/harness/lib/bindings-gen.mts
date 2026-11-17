@@ -397,6 +397,8 @@ node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js \\
 export function buildImplementationsFromDiscovery(input: {
 	featureId: string;
 	report: DiscoveryReport;
+	/** Explicit catalog entry, or null to keep that surface stubbed. */
+	primaryOverride?: DiscoveredBinding | null;
 }): {
 	implementations: string;
 	bindings: string;
@@ -405,7 +407,7 @@ export function buildImplementationsFromDiscovery(input: {
 	stepsReadme: string;
 	primary: DiscoveredBinding | null;
 } {
-	const primary = pickPrimaryCommand(input.report);
+	const primary = input.primaryOverride === undefined ? pickPrimaryCommand(input.report) : input.primaryOverride;
 	return {
 		primary,
 		world: generateWorldTs(input.featureId),
