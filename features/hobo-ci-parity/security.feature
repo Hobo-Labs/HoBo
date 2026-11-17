@@ -3,7 +3,7 @@ Feature: Security parity with RelayRunner
   catalog is cases.json beside this file. A scenario tagged @pending waits
   for the work package that builds it.
 
-  @parity @X01 @t2 @pending
+  @parity @X01 @t2
   Scenario: X01 The answerer requests no log, secret or repository content
     Given relay mode is on for "octo/app"
     When the relay answers a relay job
@@ -15,7 +15,7 @@ Feature: Security parity with RelayRunner
     Then the signature check accepts it
     And it refuses another secret's signature, a changed body and a missing signature
 
-  @parity @X03 @t2 @pending
+  @parity @X03 @t2
   Scenario: X03 The relay never runs code from the job
     Given a relay job with a step that would run a script
     When the relay answers it

@@ -1,0 +1,183 @@
+{
+  "consumer": {
+    "name": "GithubWebhookDelivery"
+  },
+  "provider": {
+    "name": "HoboRelayAnswerer"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    },
+    "evidence": "Hand-authored expectations of the workflow_job deliveries GitHub sends a relay-mode node (docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job, read 2026-11-17). The signature is HMAC-SHA256 of the body as written here, with the fixture secret named in the provider state; it is not a credential. The provider test answers the GitHub REST calls the delivery causes from relay-answer.pact.json.",
+    "webhookSecret": "pact-fixture-not-a-credential"
+  },
+  "interactions": [
+    {
+      "description": "a signed queued delivery of a relay job is answered",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/webhook",
+        "headers": {
+          "x-github-event": "workflow_job",
+          "x-hub-signature-256": "sha256=d4e75b5ab680c0330c0bf8cb7b71f19cb0e5e84f87f64c65d15400e7c68e33c4"
+        },
+        "body": {
+          "action": "queued",
+          "installation": {
+            "id": 1
+          },
+          "repository": {
+            "full_name": "octo/app"
+          },
+          "workflow_job": {
+            "id": 70001,
+            "run_id": 5001,
+            "run_attempt": 1,
+            "name": "route",
+            "labels": [
+              "hobo-relay"
+            ],
+            "created_at": "2026-11-17T09:00:00Z"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "outcome": "answered",
+          "reason": "",
+          "message": ""
+        }
+      }
+    },
+    {
+      "description": "a delivery not signed with the relay's secret is refused",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/webhook",
+        "headers": {
+          "x-github-event": "workflow_job",
+          "x-hub-signature-256": "sha256=0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "body": {
+          "action": "queued",
+          "installation": {
+            "id": 1
+          },
+          "repository": {
+            "full_name": "octo/app"
+          },
+          "workflow_job": {
+            "id": 70001,
+            "run_id": 5001,
+            "run_attempt": 1,
+            "name": "route",
+            "labels": [
+              "hobo-relay"
+            ],
+            "created_at": "2026-11-17T09:00:00Z"
+          }
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "error": "bad signature"
+        }
+      }
+    },
+    {
+      "description": "a signed delivery of another event is ignored",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/webhook",
+        "headers": {
+          "x-github-event": "push",
+          "x-hub-signature-256": "sha256=71fdf60077500fed91214685605b0ee3560afa3e3c177fbe9444a00ed5cd32da"
+        },
+        "body": {
+          "ref": "refs/heads/main",
+          "repository": {
+            "full_name": "octo/app"
+          }
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "ignored": "event"
+        }
+      }
+    },
+    {
+      "description": "a signed queued delivery of a job that asks for more than the relay label is ignored",
+      "providerStates": [
+        {
+          "name": "octo/app turns relay mode on, and its relay job 70001 of run 5001 is queued for a pull request into main"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/webhook",
+        "headers": {
+          "x-github-event": "workflow_job",
+          "x-hub-signature-256": "sha256=e8d40c6652ea0898053a0057f4c0fb0d83025a145fec7bb623bd5ec9f9621d50"
+        },
+        "body": {
+          "action": "queued",
+          "installation": {
+            "id": 1
+          },
+          "repository": {
+            "full_name": "octo/app"
+          },
+          "workflow_job": {
+            "id": 70001,
+            "run_id": 5001,
+            "run_attempt": 1,
+            "name": "route",
+            "labels": [
+              "hobo-relay",
+              "linux"
+            ],
+            "created_at": "2026-11-17T09:00:00Z"
+          }
+        }
+      },
+      "response": {
+        "status": 202,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": {
+          "ignored": "not a queued relay job"
+        }
+      }
+    }
+  ]
+}
