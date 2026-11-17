@@ -22,8 +22,10 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | not-built | 16 |
 
 | pass | 13 |
+
+| pass | 14 |
 | built-not-proven | 2 |
-| partial | 27 |
+| partial | 26 |
 | not-built | 15 |
 | met-differently | 1 |
 | Total | 58 |
@@ -38,7 +40,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | R04 | When nothing fits, the relay fails with the reason and the job does not start ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | The relay job fails with the one-sentence reason as an annotation and the dependent job is skipped | T2, T3 | partial: the reason exists, no job shows it | 11, 12 |
 | R05 | When machines are only busy the job waits in line; a cancelled job leaves it ([site/concepts/routing.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/routing.md)) | A `waiting` decision queues the job on the busy step's label; cancelling frees it | T2 | partial | 11, 12 |
 | R06 | Public repositories never run on machines ([site/reference/security.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/security.md)) | Same, and forks too | T1 | pass | done |
-| R06b **B** | n/a | The fleet takes a public repo or a fork's pull request only when it isolates such jobs | T1, T2 | partial: passes at T1; T2 owed | 12 |
+| R06b **B** | n/a | The fleet takes a public repo or a fork's pull request only when it isolates such jobs | T1, T2 | pass | 12 |
 | R07 | GitHub-hosted is used while under N% of included minutes, with a two-hour runway ([site/concepts/runner-order.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/concepts/runner-order.mdx)) | Same on measured usage; unmeasured usage never blocks | T1, T2 | partial: rule built, no reader | 08 |
 | R08 | A provider is used while under $X this month ([site/guides/spend-controls.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/guides/spend-controls.md)) | Same, from the ledger | T1, T2 | partial: rule built, no sum | 08 |
 | R09 | A provider that misses three jobs in thirty minutes is skipped, retried with back-off, and can be cleared by hand ([docs/github-app.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/docs/github-app.md)) | Same; the record survives a restart; a command clears it | T1, T2 | partial: state machine built, nothing feeds it | 08 |

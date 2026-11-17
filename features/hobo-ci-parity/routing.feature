@@ -72,12 +72,12 @@ Feature: Routing parity with RelayRunner
       | a public repository     | public_repository  |
       | a fork's pull request   | fork_pull_request  |
 
-  @parity @R06b @t1 @t2 @pending
+  @parity @R06b @t1 @t2
   Scenario: R06b The fleet takes a public repository or a fork's pull request only when it isolates such jobs
-    Given the runner order of "octo/app" is "fleet, github"
+    Given relay mode is on for the public repository "octo/public" with the runner order "fleet, github"
     And the fleet is taking jobs but does not isolate them
     When a public repository's relay job is answered in relay mode
-    Then the journaled decision passed over "fleet" because "needs_isolation"
+    Then the relay node's journaled decision passed over "fleet" because "needs_isolation"
     When the fleet isolates each job
     Then the next public relay job routes to the fleet
 

@@ -1,5 +1,5 @@
 /**
- * Steps for the relay-mode parity scenarios (R01, R13, R16, X01, X03): a
+ * Steps for the relay-mode parity scenarios (R01, R06b, R13, R16, X01, X03): a
  * HoBo node answers relay jobs over the runner protocol, run against the
  * GitHub simulator with no network (ADR-0183,
  * `packages/ci-gh-actions/src/relay-answer/RELAY-MODE.md`).
@@ -22,6 +22,7 @@ import {
 } from "../../../packages/ci/src/runner-order/testing.js";
 import {
 	createRelayAnswerer,
+	type FleetRoom,
 	RELAY_CONFIG_PATH,
 	type RelayAnswerer,
 	type RelayTurn,
@@ -35,7 +36,7 @@ import {
 } from "../../../packages/ci-gh-actions/test/support/github-simulator/index.js";
 
 const ACCOUNT = "acct-parity";
-const RELAY_SCENARIOS = "@R01 or @R13 or @R16 or @X01 or @X03";
+const RELAY_SCENARIOS = "@R01 or @R06b or @R13 or @R16 or @X01 or @X03";
 /** How often the rescue poll runs; the bar is two of them. */
 const POLL_INTERVAL_MS = 30_000;
 const MESH_STEP_MS = 20_000;
@@ -60,7 +61,16 @@ type RelayModeState = {
 
 let world: RelayModeState;
 
-function relayNode(name: string, turn: RelayTurn | undefined): RelayNode {
+/** The fleet's room as the node's lease ledger shows it, with no lease active. */
+function fleetRoom(isolated: boolean): FleetRoom {
+	return { slots: 4, isolated, leases: { activeLeases: async () => [] } };
+}
+
+function relayNode(
+	name: string,
+	turn: RelayTurn | undefined,
+	fleet: FleetRoom | undefined = undefined,
+): RelayNode {
 	const { sim } = world;
 	const journal = new InMemoryRouteJournal();
 	const registry = new InMemoryMachineRegistry();
@@ -74,7 +84,7 @@ function relayNode(name: string, turn: RelayTurn | undefined): RelayNode {
 		facts: (accountId) =>
 			new StoreRouteFacts({
 				accountId,
-				fleet: undefined,
+				fleet,
 				machines: registry,
 				readers: undefined,
 				spend: undefined,
@@ -91,27 +101,35 @@ function relayNode(name: string, turn: RelayTurn | undefined): RelayNode {
 	return { name, answerer, journal };
 }
 
-function turnOn(repository: string): void {
+function turnOn(repository: string, order: readonly string[] = ["github"]): void {
 	world.sim.putFile(
 		repository,
 		RELAY_CONFIG_PATH,
 		JSON.stringify({
 			relayJobs: { answer: true },
-			runnerOrder: { steps: [{ key: "github" }] },
+			runnerOrder: { steps: order.map((key) => ({ key })) },
 		}),
 	);
 }
+
+const GITHUB_ONLY: ReadonlyMap<string, string> = new Map([["github", "ubuntu-24.04"]]);
+/** A relay job that names the fleet first and GitHub's runners second. */
+const FLEET_THEN_GITHUB: ReadonlyMap<string, string> = new Map([
+	["fleet", "hobo"],
+	["github", "ubuntu-24.04"],
+]);
 
 function queueRelay(
 	repository: string,
 	label: string,
 	steps: readonly string[] = [],
+	inputs: ReadonlyMap<string, string> = GITHUB_ONLY,
 ): void {
 	const relay = world.sim.queueJob({
 		repository,
 		name: "route",
 		labels: [label],
-		inputs: new Map([["github", "ubuntu-24.04"]]),
+		inputs,
 		steps: steps.map((uses) => ({
 			uses,
 			with: new Map([["run", "curl https://example.invalid/x.sh | sh"]]),
@@ -193,6 +211,24 @@ Given(
 	},
 );
 
+Given(
+	"relay mode is on for the public repository {string} with the runner order {string}",
+	(repository: string, order: string) => {
+		world.sim.addRepository(repository, false);
+		world.repository = repository;
+		turnOn(
+			repository,
+			order.split(",").map((key) => key.trim()),
+		);
+	},
+);
+
+Given("the fleet is taking jobs but does not isolate them", () => {
+	const node = relayNode("hosted", undefined, fleetRoom(false));
+	world.nodes = [node];
+	world.hosted = node;
+});
+
 Given("the next webhook is lost", () => {
 	world.sim.dropNextWebhook();
 });
@@ -223,6 +259,18 @@ Given("two relay nodes and the hosted one is down", async () => {
 
 Given("a relay job with a step that would run a script", () => {
 	queueRelay(world.repository, "hobo-relay", ["./.github/actions/run-script"]);
+});
+
+When("a public repository's relay job is answered in relay mode", async () => {
+	queueRelay(world.repository, "hobo-relay", [], FLEET_THEN_GITHUB);
+	await deliverToHosted();
+	assert.equal(relayJob().outputs.get("runner"), "ubuntu-24.04");
+});
+
+When("the fleet isolates each job", () => {
+	const node = relayNode("isolating", undefined, fleetRoom(true));
+	world.nodes = [node];
+	world.hosted = node;
 });
 
 When("the queued webhook reaches the relay", async () => {
@@ -314,6 +362,36 @@ Then("the relay job ran on no runner and billed no minutes", () => {
 		.jobs()
 		.find((entry) => entry.runId === world.runId && entry.name === "build");
 	assert.deepEqual(build?.labels, ["ubuntu-24.04"]);
+});
+
+Then(
+	"the relay node's journaled decision passed over {string} because {string}",
+	async (key: string, reason: string) => {
+		const node = world.hosted;
+		assert.ok(node, "a relay node answered");
+		const events = await node.journal.decisions({
+			accountId: ACCOUNT,
+			repository: undefined,
+			sinceMs: 0,
+			limit: 100,
+		});
+		const decided = events.find((event) => event.type === "runner.route.Decided");
+		assert.ok(decided?.decision, "the relay node journaled a decision");
+		assert.equal(decided.mode, "relay");
+		assert.ok(
+			decided.decision.skipped.some((skip) => skip.key === key && skip.reason === reason),
+			`expected ${key} skipped as ${reason}, got ${JSON.stringify(decided.decision.skipped.map((skip) => [skip.key, skip.reason]))}`,
+		);
+	},
+);
+
+Then("the next public relay job routes to the fleet", async () => {
+	queueRelay(world.repository, "hobo-relay", [], FLEET_THEN_GITHUB);
+	await deliverToHosted();
+	const job = relayJob();
+	assert.equal(job.conclusion, "success");
+	assert.equal(job.outputs.get("runner"), "hobo");
+	assert.equal(job.outputs.get("step"), "fleet");
 });
 
 Then("the relay job is completed", () => {
