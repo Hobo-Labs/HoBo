@@ -153,7 +153,7 @@ describe("chooseMachine", () => {
 		];
 		expect(chosen(candidates)).toBe("mine-idle");
 		expect(chosen(candidates, want({ starterId: "7" }))).toBe("theirs");
-		// Equal on everything else: the id decides, so the answer is stable.
+
 		expect(chosen([machine({ id: "b" }), machine({ id: "a" })], want())).toBe(
 			"a",
 		);
@@ -166,7 +166,7 @@ describe("chooseMachine", () => {
 		];
 		expect(chosen(candidates, want({ preferMachineId: "b" }))).toBe("b");
 		expect(chosen(candidates, want({ avoidMachineId: "a" }))).toBe("b");
-		// The avoided machine still takes the job when it is the only one.
+
 		expect(chosen([machine({ id: "a" })], want({ avoidMachineId: "a" }))).toBe(
 			"a",
 		);
@@ -246,7 +246,7 @@ describe("provider health", () => {
 	it("does not trip on misses spread wider than the window", () => {
 		const spread = misses([0, 20 * minute, 31 * minute]);
 		expect(spread.trippedAtMs).toBeUndefined();
-		// The window slides: the next miss makes three inside thirty minutes.
+
 		expect(
 			recordProviderOutcome(spread, { atMs: 40 * minute, started: false })
 				.trippedAtMs,
@@ -272,7 +272,7 @@ describe("provider health", () => {
 		expect(providerHealthState(tripped, 2 + 10 * minute)).toBe("trial");
 		const trying = startProviderTrial(tripped, 2 + 10 * minute);
 		expect(providerHealthState(trying, 2 + 11 * minute)).toBe("unhealthy");
-		// A trial nobody reported on expires and another is allowed.
+
 		expect(providerHealthState(trying, 2 + 40 * minute)).toBe("trial");
 	});
 

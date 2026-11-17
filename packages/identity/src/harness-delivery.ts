@@ -15,7 +15,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { first, must } from "@hobo/core/total-access";
-import type { FeatureFlagStore } from "./feature-flag-store.js";
+import type { FeatureFlagPort } from "./feature-flag-store.js";
 import { asJsonObject, type JsonObject } from "./json.js";
 
 // public-contract: OpenDelivery port id.
@@ -370,10 +370,10 @@ export class OpenDeliveryEngine {
 	private seq = 0;
 	private readonly rollouts = new Map<string, RolloutState>();
 	private readonly now: () => string;
-	private readonly store: FeatureFlagStore;
+	private readonly store: FeatureFlagPort;
 
 	constructor(options: {
-		readonly store: FeatureFlagStore;
+		readonly store: FeatureFlagPort;
 		readonly now?: () => string;
 	}) {
 		this.store = options.store;

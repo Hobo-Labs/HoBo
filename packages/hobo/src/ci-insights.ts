@@ -1,13 +1,3 @@
-/**
- * `hobo ci signals` and `hobo ci diagnose`: what a repository's recent runs
- * say about its CI, read from GitHub with the authenticated GitHub CLI.
- *
- * Nothing is stored and no relay is asked. GitHub already holds every run,
- * job, step time and log; these commands read a bounded number of them, parse
- * them into the insight types of `@hobo/ci/insights` and print what those
- * pure reports compute. The same reports can be fed from a relay's journal
- * later without changing them.
- */
 import { isGithubHostedLabel } from "@hobo/ci";
 import {
 	type CiSignal,
@@ -34,12 +24,15 @@ export type CiInsightOptions = Readonly<
 export const DEFAULT_SIGNAL_RUNS = 50;
 // public-contract: failed jobs `hobo ci diagnose` reads from one run.
 export const MAX_DIAGNOSED_JOBS = 5;
-/** How much of the end of a job's log is read. */
+
 const LOG_TAIL_BYTES = 256 * 1024;
-/** Log lines printed per job; the whole excerpt is in the JSON data. */
+
 const PRINTED_EXCERPT_LINES = 12;
+const JOBS_PER_PAGE = 100;
+const MAX_JOBS_PER_ATTEMPT = 1_000;
 
 class InsightUsage extends Error {}
+class InsightJobsLimit extends Error {}
 
 const time = z.string().min(1).nullish();
 
@@ -64,7 +57,10 @@ const JobSchema = z.looseObject({
 	steps: z.array(StepSchema).nullish(),
 });
 
-const JobsPageSchema = z.looseObject({ jobs: z.array(JobSchema) });
+const JobsPageSchema = z.looseObject({
+	total_count: z.number().int().nonnegative().optional(),
+	jobs: z.array(JobSchema),
+});
 
 const RunSchema = z.looseObject({
 	id: z.number().int().positive(),
@@ -118,7 +114,6 @@ function at(value: string | null | undefined): number | undefined {
 	return Number.isNaN(ms) ? undefined : ms;
 }
 
-/** A routing job hands the real work to another runner: it is left out of waits. */
 function isRelayJob(name: string): boolean {
 	return /^(?:relay|route)(?:$|[\s\-_/(])/iu.test(name);
 }
@@ -141,8 +136,7 @@ function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 	const labels = job.labels ?? [];
 	const steps = (job.steps ?? []).map(insightStep);
 	const queuedAtMs = at(job.created_at) ?? 0;
-	// GitHub stamps `started_at` on a job no runner ever took; a runner name is
-	// what shows one did.
+
 	const started = job.runner_name ? at(job.started_at) : undefined;
 	const completed = at(job.completed_at);
 	const base = {
@@ -191,7 +185,7 @@ function insightRun(
 		defaultBranch: repository.defaultBranch,
 		headSha: run.head_sha,
 		actor: run.actor?.login ?? "",
-		// An earlier attempt's own result is not on the run; its jobs carry it.
+
 		conclusion: latest
 			? conclusion(run.conclusion)
 			: jobs.some(
@@ -283,6 +277,13 @@ function count(
 }
 
 function failure(error: Error): CommandResult {
+	if (error instanceof InsightJobsLimit)
+		return {
+			ok: false,
+			status: "unconfirmed",
+			code: "HOBO_CI_JOB_LIMIT",
+			message: error.message,
+		};
 	if (error instanceof InsightUsage)
 		return {
 			ok: false,
@@ -350,14 +351,45 @@ export async function runCiInsights(input: {
 		run: GithubRun,
 		attempt: number,
 		privateRepository: boolean,
-	): Promise<InsightJob[]> =>
-		JobsPageSchema.parse(
-			JSON.parse(
-				await api(
-					`${repo}/actions/runs/${run.id}/attempts/${attempt}/jobs?per_page=100`,
-				),
-			),
-		).jobs.map((job) => insightJob(job, privateRepository));
+	): Promise<InsightJob[]> => {
+		const jobs: InsightJob[] = [];
+		const path = `${repo}/actions/runs/${run.id}/attempts/${attempt}/jobs?per_page=${JOBS_PER_PAGE}`;
+		for (let page = 1; page <= MAX_JOBS_PER_ATTEMPT / JOBS_PER_PAGE; page++) {
+			const suffix = page === 1 ? "" : `&page=${page}`;
+			const response = JobsPageSchema.parse(
+				JSON.parse(await api(`${path}${suffix}`)),
+			);
+			if (
+				response.jobs.length > JOBS_PER_PAGE ||
+				(response.total_count !== undefined &&
+					response.total_count > MAX_JOBS_PER_ATTEMPT)
+			)
+				throw new InsightJobsLimit(
+					`A run attempt has more than ${MAX_JOBS_PER_ATTEMPT} jobs.`,
+				);
+			jobs.push(
+				...response.jobs.map((job) => insightJob(job, privateRepository)),
+			);
+			if (
+				response.total_count !== undefined &&
+				jobs.length > response.total_count
+			)
+				throw new Error("GitHub returned an inconsistent job count");
+			if (
+				response.total_count !== undefined &&
+				jobs.length === response.total_count
+			)
+				return jobs;
+			if (response.jobs.length < JOBS_PER_PAGE) {
+				if (response.total_count !== undefined)
+					throw new Error("GitHub returned an incomplete job list");
+				return jobs;
+			}
+		}
+		throw new InsightJobsLimit(
+			`A run attempt may have more than ${MAX_JOBS_PER_ATTEMPT} jobs.`,
+		);
+	};
 
 	try {
 		const repository = RepositorySchema.parse(JSON.parse(await api(repo)));
@@ -381,8 +413,7 @@ export async function runCiInsights(input: {
 			const runs: InsightRun[] = [];
 			for (const run of listed) {
 				const latest = run.run_attempt ?? 1;
-				// The attempt before the latest is what shows a job failed and then
-				// passed; older attempts are not read.
+
 				for (const attempt of latest > 1 ? [latest - 1, latest] : [latest])
 					runs.push(
 						insightRun(
@@ -461,8 +492,6 @@ export async function runCiInsights(input: {
 			summary: string;
 		}[] = [];
 		for (const job of failed.slice(0, MAX_DIAGNOSED_JOBS)) {
-			// A job whose log or annotations cannot be read is still diagnosed
-			// from its steps; the missing text only makes the answer less sure.
 			const logTail = await api(`${repo}/actions/jobs/${job.id}/logs`)
 				.then((log) => log.slice(-LOG_TAIL_BYTES))
 				.catch(() => "");

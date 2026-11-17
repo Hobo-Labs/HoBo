@@ -20,7 +20,7 @@ const example = z
 			),
 		),
 	);
-/** The example project, with `runnerOrder` set to the given JSON text. */
+
 const project = (runnerOrder: string | undefined): string =>
 	JSON.stringify(
 		runnerOrder === undefined
@@ -75,6 +75,17 @@ describe("committed runner order", () => {
 			problem: "the project file is not JSON",
 		});
 		expect(parseCiRunnerOrder("[]").source).toBe("default");
+	});
+
+	it.each([
+		"[]",
+		"null",
+		"42",
+		'"project"',
+	])("refuses a project document that is not an object: %s", (json) => {
+		expect(parseCiRunnerOrder(json).problem).toBe(
+			"the project file is not a JSON object",
+		);
 	});
 
 	it("is part of the project document: a valid order parses, a broken one fails the file", () => {

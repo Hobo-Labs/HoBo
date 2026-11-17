@@ -1,14 +1,3 @@
-/**
- * The runner order: the ordered list of runner types an account or a
- * repository prefers, and the two rearrangements a single job can ask of it.
- *
- * The order is authored data (`RunnerOrder` in `data-models/runner_route.proto`)
- * and crosses one parser, `parseRunnerOrder`. What comes out is the generated
- * record, checked and frozen, so the walk in `./decide.ts` never re-checks a
- * step.
- *
- * Pure functions: no clock, network or store.
- */
 import { create, fromJsonString } from "@bufbuild/protobuf";
 import {
 	type RunnerOrder,
@@ -28,7 +17,7 @@ import {
 } from "./providers.js";
 
 declare const parsedRunnerOrder: unique symbol;
-/** A runner order that passed `parseRunnerOrder`: every step is one the walk knows. */
+
 export type ParsedRunnerOrder = RunnerOrder & {
 	readonly [parsedRunnerOrder]: true;
 };
@@ -43,16 +32,10 @@ export const DEFAULT_SPEND_LIMIT_USD = 100;
 export const RUNNER_RETRY_TARGETS = ["any", "same", "other"] as const;
 export type RunnerRetryTarget = (typeof RUNNER_RETRY_TARGETS)[number];
 
-/** A step's key. Total on a parsed order; `machine` stands in for a key no parser admitted. */
 export function stepKey(step: RunnerOrderStep): RunnerStepKey {
 	return runnerStepKey(step.key) ?? "machine";
 }
 
-/**
- * Where a step sits for uniqueness: its key, with a limited and an unlimited
- * `github` step counted apart, so "GitHub while under 80%, then machines,
- * then GitHub regardless" is one order.
- */
 function stepSlot(step: RunnerOrderStep): string {
 	return step.key === "github" && step.minutesLimitPercent > 0
 		? "github:limited"
@@ -107,39 +90,35 @@ function orderProblem(order: RunnerOrder): string | undefined {
 	return retryProblem(order.retry);
 }
 
-function frozen(order: RunnerOrder): ParsedRunnerOrder {
+function frozen(order: ParsedRunnerOrder): ParsedRunnerOrder {
 	for (const step of order.steps) Object.freeze(step);
 	Object.freeze(order.steps);
 	if (order.retry) Object.freeze(order.retry);
-	// SAFETY: `orderProblem` found nothing wrong, which is exactly what the brand states.
-	return Object.freeze(order) as ParsedRunnerOrder;
+	return Object.freeze(order);
 }
 
-/** The order, checked and frozen. Throws with the first thing wrong with it. */
-export function defineRunnerOrder(order: RunnerOrder): ParsedRunnerOrder {
+function assertRunnerOrderValid(
+	order: RunnerOrder,
+): asserts order is ParsedRunnerOrder {
 	const problem = orderProblem(order);
 	if (problem) throw new Error(`invalid runner order: ${problem}`);
+}
+
+export function defineRunnerOrder(order: RunnerOrder): ParsedRunnerOrder {
+	assertRunnerOrderValid(order);
 	return frozen(order);
 }
 
-/** Parse protobuf JSON for a `RunnerOrder`. Throws on an unknown field or a broken rule. */
 export function parseRunnerOrder(json: string): ParsedRunnerOrder {
 	return defineRunnerOrder(fromJsonString(RunnerOrderSchema, json));
 }
 
-/**
- * The order a repository gets when it has written none: the fleet it runs
- * itself, then machines people have connected, then GitHub-hosted, which is
- * always there. A job only ever takes a step its relay named, so this order
- * costs nothing a workflow did not ask for.
- */
 export const DEFAULT_RUNNER_ORDER: ParsedRunnerOrder = defineRunnerOrder(
 	create(RunnerOrderSchema, {
 		steps: [{ key: "fleet" }, { key: "machine" }, { key: "github" }],
 	}),
 );
 
-/** The stored order when it parses, the default when there is none or it does not. */
 export function runnerOrderOrDefault(
 	json: string | undefined,
 ): ParsedRunnerOrder {
@@ -152,17 +131,14 @@ export function runnerOrderOrDefault(
 	}
 }
 
-/** Whether an unhealthy hosted runner type is skipped. On unless the order says otherwise. */
 export function skipsUnhealthy(order: ParsedRunnerOrder): boolean {
 	return order.skipUnhealthy ?? true;
 }
 
-/** The size an `auto` input asks for under this order. */
 export function orderAutoSize(order: ParsedRunnerOrder): RunnerAutoSize {
 	return runnerAutoSize(order.autoSizeVcpus) ?? DEFAULT_RUNNER_AUTO_SIZE;
 }
 
-/** The retry policy, off when the order holds none. */
 export function orderRetryPolicy(order: ParsedRunnerOrder): RunnerRetryPolicy {
 	return (
 		order.retry ??
@@ -174,7 +150,7 @@ function reordered(
 	order: ParsedRunnerOrder,
 	steps: readonly RunnerOrderStep[],
 ): ParsedRunnerOrder {
-	return frozen(
+	return defineRunnerOrder(
 		create(RunnerOrderSchema, {
 			...order,
 			steps: steps.map((step) => create(RunnerOrderStepSchema, step)),
@@ -182,10 +158,6 @@ function reordered(
 	);
 }
 
-/**
- * The same order with every step of `first` moved to the top, the rest in
- * their written order. Used when one job is told to try a runner type first.
- */
 export function preferFirst(
 	order: ParsedRunnerOrder,
 	first: RunnerStepKey | undefined,
@@ -197,11 +169,6 @@ export function preferFirst(
 	]);
 }
 
-/**
- * The order a retried job walks. `same` puts the step it failed on first,
- * `other` puts it last, `any` leaves the order as written. A failed step the
- * order no longer holds changes nothing.
- */
 export function retryOrder(
 	order: ParsedRunnerOrder,
 	failed: RunnerStepKey | undefined,

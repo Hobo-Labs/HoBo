@@ -15,7 +15,13 @@ export {
 	runChaosConformance,
 } from "./chaos-conformance.js";
 export {
+	type BlobStorePort,
+	type BucketEmulator,
+	type BucketInspector,
+	createBucketEmulator,
 	createDataEmulator,
+	createFlagEmulator,
+	createKeyValueEmulator,
 	createQueueEmulator,
 	createScheduleEmulator,
 	createSecretEmulator,
@@ -23,6 +29,9 @@ export {
 	type DataEmulator,
 	type EmulatorContext,
 	type EmulatorFactory,
+	type FlagEmulator,
+	type FlagInspector,
+	type KeyValuePort,
 	type QueueEmulator,
 	type ScheduleEmulator,
 	type ServiceEmulator,

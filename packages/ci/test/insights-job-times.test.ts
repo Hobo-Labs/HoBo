@@ -15,7 +15,6 @@ import type { InsightJob, InsightRun } from "../src/insights/types.js";
 
 const MIN = 60_000;
 
-/** A job that waited `waitMs` from time 0 and then ran for `runMs`. */
 function ran(
 	name: string,
 	waitMs: number,
@@ -36,7 +35,6 @@ function ran(
 	};
 }
 
-/** A job no runner has taken. */
 function queued(name: string, extra: Partial<InsightJob> = {}): InsightJob {
 	return {
 		id: 1,
@@ -69,7 +67,6 @@ function run(partial: Partial<InsightRun> = {}): InsightRun {
 	};
 }
 
-/** `count` successful runs of one job on one runner, each taking `runMs`. */
 function samples(
 	count: number,
 	runMs: number,

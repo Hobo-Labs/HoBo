@@ -74,7 +74,6 @@ class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
 
-/** The `hobo ci` commands handled here; any other name is looked up in `CI_COMMANDS`. */
 export const BUILT_IN_CI_COMMANDS = [
 	"enable",
 	"connect",
@@ -394,12 +393,6 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 	return options;
 }
 
-/**
- * Where a command that only reads the working tree runs: the repository root
- * when git knows one, else the working directory, and the GitHub repository
- * when `--repo` or the `origin` remote names it. Never fails: a command that
- * contacts nothing must still work outside a repository.
- */
 async function localRepository(
 	deps: { env?: NodeJS.ProcessEnv; git?: CiGit },
 	cwd: string,
@@ -419,9 +412,7 @@ async function localRepository(
 	let root = cwd;
 	try {
 		root = await git(["rev-parse", "--show-toplevel"], cwd);
-	} catch {
-		/* Not a git repository: the working directory stands in. */
-	}
+	} catch {}
 	if (values.repo !== undefined && validRepository(String(values.repo)))
 		return { root, repository: String(values.repo) };
 	try {
@@ -460,7 +451,7 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
-		/** The table-dispatched commands; `CI_COMMANDS` when absent. */
+
 		commands?: readonly CiCommand[];
 	} = {},
 ): CommandModule {

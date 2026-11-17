@@ -31,6 +31,10 @@ pnpm --filter @hobo/control-yard run evidence:check
 # Syncs key files into src/draft/exp-proofs/ux/control-yard/assets/evidence/
 ```
 
+The engine, test seam, and asset index unit tests use management snapshots and
+typed sheet fixtures. They do not replace the retired pixel-village browser or
+experience-review acceptance gates.
+
 **Self-report is not acceptance.** See `AGENTS.md` for required PNG/MP4 evidence rules.
 
 
