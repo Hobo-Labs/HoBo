@@ -33,7 +33,9 @@ Core types: `TrafficRoutingProviderProfile`, `matchTrafficRoutingOfferings`,
 5. mesh.optional only if explicitly registered
 ```
 
-Negotiation: `prefer` → partial with `missing`/`fallbacks`; `require` → none + remediation.
+Negotiation: `prefer` reports partial results with `missing`, `fallbacks`, or
+`degraded` offerings. `require` accepts only stable, real native offerings and
+reports unmet requirements with provider-specific remediation.
 
 ## Per-cloud matrix (v1)
 

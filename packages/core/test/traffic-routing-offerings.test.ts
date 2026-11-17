@@ -65,6 +65,22 @@ test("resolve picks first non-none profile", () => {
 	assert.ok(resolved.strategy.includes("inprocess.weighted"));
 });
 
+test("require skips fallback-only providers for a stable native offering", () => {
+	const simple: TrafficRoutingProviderProfile = {
+		provider: "simple",
+		offerings: [offering("inprocess.weighted")],
+		fallbacks: [],
+	};
+	const resolved = resolveTrafficRouting([cloudflareProfile(), simple], {
+		features: ["inprocess.weighted"],
+		negotiation: "require",
+	});
+	assert.equal(resolved.kind, "resolved");
+	if (resolved.kind !== "resolved") return;
+	assert.equal(resolved.provider, "simple");
+	assert.equal(resolved.match.kind, "full");
+});
+
 test("require mesh.optional never auto-selects when only native LB profiles exist", () => {
 	const resolved = resolveTrafficRouting([cloudflareProfile()], {
 		features: ["mesh.optional"],

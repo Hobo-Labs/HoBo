@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file offering_resolution.proto.
  */
 export const file_offering_resolution: GenFile = /*@__PURE__*/
-  fileDesc("ChlvZmZlcmluZ19yZXNvbHV0aW9uLnByb3RvEgxob2JvLmNvcmUudjEiWwoWUmVzb3VyY2VPZmZlcmluZ1JlY29yZBIKCgJpZBgBIAEoCRIRCglzdGFiaWxpdHkYAiABKAkSEAoIZmlkZWxpdHkYAyABKAkSEAoIZmVhdHVyZXMYBCADKAkifQodUmVzb3VyY2VPZmZlcmluZ1Byb2ZpbGVSZWNvcmQSEAoIcHJvdmlkZXIYASABKAkSNwoJb2ZmZXJpbmdzGAIgAygLMiQuaG9iby5jb3JlLnYxLlJlc291cmNlT2ZmZXJpbmdSZWNvcmQSEQoJZmFsbGJhY2tzGAMgAygJIkYKHVJlc291cmNlT2ZmZXJpbmdSZXF1ZXN0UmVjb3JkEhAKCGZlYXR1cmVzGAEgAygJEhMKC25lZ290aWF0aW9uGAIgASgJIncKG1Jlc291cmNlT2ZmZXJpbmdNYXRjaFJlY29yZBIMCgRraW5kGAEgASgJEhEKCW9mZmVyaW5ncxgCIAMoCRIPCgdtaXNzaW5nGAMgAygJEhEKCWZhbGxiYWNrcxgEIAMoCRITCgtyZW1lZGlhdGlvbhgFIAEoCSK3AQojUmVzb3VyY2VPZmZlcmluZ1Jlc29sdmVSZXN1bHRSZWNvcmQSDAoEa2luZBgBIAEoCRIQCghwcm92aWRlchgCIAEoCRIQCghzdHJhdGVneRgDIAMoCRI4CgVtYXRjaBgEIAEoCzIpLmhvYm8uY29yZS52MS5SZXNvdXJjZU9mZmVyaW5nTWF0Y2hSZWNvcmQSDwoHbWlzc2luZxgFIAMoCRITCgtyZW1lZGlhdGlvbhgGIAEoCSKkAQohU3RhdGlvbk9mZmVyaW5nUmVnaXN0cmF0aW9uUmVjb3JkEhIKCnN0YXRpb25faWQYASABKAkSFgoOcmVzb3VyY2VfY2xhc3MYAiABKAkSPAoHcHJvZmlsZRgDIAEoCzIrLmhvYm8uY29yZS52MS5SZXNvdXJjZU9mZmVyaW5nUHJvZmlsZVJlY29yZBIVCg1yZWdpc3RlcmVkX2F0GAQgASgJYgZwcm90bzM");
+  fileDesc("ChlvZmZlcmluZ19yZXNvbHV0aW9uLnByb3RvEgxob2JvLmNvcmUudjEiWwoWUmVzb3VyY2VPZmZlcmluZ1JlY29yZBIKCgJpZBgBIAEoCRIRCglzdGFiaWxpdHkYAiABKAkSEAoIZmlkZWxpdHkYAyABKAkSEAoIZmVhdHVyZXMYBCADKAkifQodUmVzb3VyY2VPZmZlcmluZ1Byb2ZpbGVSZWNvcmQSEAoIcHJvdmlkZXIYASABKAkSNwoJb2ZmZXJpbmdzGAIgAygLMiQuaG9iby5jb3JlLnYxLlJlc291cmNlT2ZmZXJpbmdSZWNvcmQSEQoJZmFsbGJhY2tzGAMgAygJIkYKHVJlc291cmNlT2ZmZXJpbmdSZXF1ZXN0UmVjb3JkEhAKCGZlYXR1cmVzGAEgAygJEhMKC25lZ290aWF0aW9uGAIgASgJIokBChtSZXNvdXJjZU9mZmVyaW5nTWF0Y2hSZWNvcmQSDAoEa2luZBgBIAEoCRIRCglvZmZlcmluZ3MYAiADKAkSDwoHbWlzc2luZxgDIAMoCRIRCglmYWxsYmFja3MYBCADKAkSEwoLcmVtZWRpYXRpb24YBSABKAkSEAoIZGVncmFkZWQYBiADKAkitwEKI1Jlc291cmNlT2ZmZXJpbmdSZXNvbHZlUmVzdWx0UmVjb3JkEgwKBGtpbmQYASABKAkSEAoIcHJvdmlkZXIYAiABKAkSEAoIc3RyYXRlZ3kYAyADKAkSOAoFbWF0Y2gYBCABKAsyKS5ob2JvLmNvcmUudjEuUmVzb3VyY2VPZmZlcmluZ01hdGNoUmVjb3JkEg8KB21pc3NpbmcYBSADKAkSEwoLcmVtZWRpYXRpb24YBiABKAkipAEKIVN0YXRpb25PZmZlcmluZ1JlZ2lzdHJhdGlvblJlY29yZBISCgpzdGF0aW9uX2lkGAEgASgJEhYKDnJlc291cmNlX2NsYXNzGAIgASgJEjwKB3Byb2ZpbGUYAyABKAsyKy5ob2JvLmNvcmUudjEuUmVzb3VyY2VPZmZlcmluZ1Byb2ZpbGVSZWNvcmQSFQoNcmVnaXN0ZXJlZF9hdBgEIAEoCWIGcHJvdG8z");
 
 /**
  * @generated from message hobo.core.v1.ResourceOfferingRecord
@@ -22,15 +22,11 @@ export type ResourceOfferingRecord = Message<"hobo.core.v1.ResourceOfferingRecor
   id: string;
 
   /**
-   * stable | preview | experimental
-   *
    * @generated from field: string stability = 2;
    */
   stability: string;
 
   /**
-   * real | simulated | mocked | camp-only
-   *
    * @generated from field: string fidelity = 3;
    */
   fidelity: string;
@@ -63,8 +59,6 @@ export type ResourceOfferingProfileRecord = Message<"hobo.core.v1.ResourceOfferi
   offerings: ResourceOfferingRecord[];
 
   /**
-   * Ordered fallback offering ids when native realization cannot cover the request.
-   *
    * @generated from field: repeated string fallbacks = 3;
    */
   fallbacks: string[];
@@ -87,8 +81,6 @@ export type ResourceOfferingRequestRecord = Message<"hobo.core.v1.ResourceOfferi
   features: string[];
 
   /**
-   * prefer | require
-   *
    * @generated from field: string negotiation = 2;
    */
   negotiation: string;
@@ -106,8 +98,6 @@ export const ResourceOfferingRequestRecordSchema: GenMessage<ResourceOfferingReq
  */
 export type ResourceOfferingMatchRecord = Message<"hobo.core.v1.ResourceOfferingMatchRecord"> & {
   /**
-   * full | partial | none
-   *
    * @generated from field: string kind = 1;
    */
   kind: string;
@@ -131,6 +121,11 @@ export type ResourceOfferingMatchRecord = Message<"hobo.core.v1.ResourceOffering
    * @generated from field: string remediation = 5;
    */
   remediation: string;
+
+  /**
+   * @generated from field: repeated string degraded = 6;
+   */
+  degraded: string[];
 };
 
 /**
@@ -145,8 +140,6 @@ export const ResourceOfferingMatchRecordSchema: GenMessage<ResourceOfferingMatch
  */
 export type ResourceOfferingResolveResultRecord = Message<"hobo.core.v1.ResourceOfferingResolveResultRecord"> & {
   /**
-   * resolved | unresolved
-   *
    * @generated from field: string kind = 1;
    */
   kind: string;
@@ -185,8 +178,6 @@ export const ResourceOfferingResolveResultRecordSchema: GenMessage<ResourceOffer
   messageDesc(file_offering_resolution, 4);
 
 /**
- * Station-side registration of a provider profile for a resource class.
- *
  * @generated from message hobo.core.v1.StationOfferingRegistrationRecord
  */
 export type StationOfferingRegistrationRecord = Message<"hobo.core.v1.StationOfferingRegistrationRecord"> & {
@@ -196,8 +187,6 @@ export type StationOfferingRegistrationRecord = Message<"hobo.core.v1.StationOff
   stationId: string;
 
   /**
-   * e.g. traffic-routing | data-store
-   *
    * @generated from field: string resource_class = 2;
    */
   resourceClass: string;
