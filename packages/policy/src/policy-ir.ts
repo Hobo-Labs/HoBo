@@ -631,7 +631,12 @@ function canonicalJsonValue<T>(input: T, path = "$"): JsonValue {
 					`${path}.${key}`,
 				);
 			}
-			output[key] = canonicalJsonValue(input[key], `${path}.${key}`);
+			Object.defineProperty(output, key, {
+				value: canonicalJsonValue(input[key], `${path}.${key}`),
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
 		}
 		return output;
 	}

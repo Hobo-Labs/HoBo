@@ -9,7 +9,7 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
-// public-contract: the closed slot vocabulary provider packages bind against.
+// public-contract:
 export const CAPABILITY_SLOTS = Object.freeze([
 	"web",
 	"api",
@@ -24,7 +24,7 @@ export const CAPABILITY_SLOTS = Object.freeze([
 ] as const);
 export type CapabilitySlot = (typeof CAPABILITY_SLOTS)[number];
 
-// public-contract: versioned identity stamped on every parsed slot binding.
+// public-contract:
 export const SLOT_BINDING_CONTRACT = "hobo.slot-binding/v1";
 
 const PROFILE_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*\/v[1-9][0-9]*$/u;
@@ -107,17 +107,15 @@ export function slotBinding(input: SlotBindingInput): SlotBinding {
 }
 
 function parseSlot(value: JsonValue | undefined): CapabilitySlot {
-	if (
-		!isJsonString(value) ||
-		!(CAPABILITY_SLOTS as readonly string[]).includes(value)
-	) {
+	const slot = CAPABILITY_SLOTS.find((candidate) => candidate === value);
+	if (slot === undefined) {
 		throw new SlotBindingError(
 			"SLOT_BINDING_SLOT_INVALID",
 			`slot: expected ${CAPABILITY_SLOTS.join(" | ")}; a slot is never inferred because the wrong slot binds a capability the app never asked for`,
 			value,
 		);
 	}
-	return value as CapabilitySlot;
+	return slot;
 }
 
 function parseProfile(
@@ -164,7 +162,7 @@ function canonicalizeProperties(
 		);
 	}
 	return canonicalizeRecord(
-		value as JsonObject,
+		value,
 		"properties",
 		slot,
 		new Set<JsonObject | JsonValue[]>(),
@@ -187,7 +185,12 @@ function canonicalizeRecord(
 				slot,
 			);
 		}
-		out[key] = canonicalizeValue(record[key], `${path}.${key}`, slot, seen);
+		Object.defineProperty(out, key, {
+			value: canonicalizeValue(record[key], `${path}.${key}`, slot, seen),
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
 	}
 	seen.delete(record);
 	return out;

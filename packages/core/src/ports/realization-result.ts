@@ -9,7 +9,7 @@ import {
 } from "../json.js";
 import { deepFreeze } from "../parse-utils.js";
 
-// public-contract: the schema id every realization engine reports back under.
+// public-contract:
 export const REALIZATION_RESULT_SCHEMA = "hobo.realization-result/v1";
 
 export type RealizationResultRejection =
@@ -45,7 +45,7 @@ export class RealizationResultParseError extends CoreParseError {
 	}
 }
 
-// domain-view: parsed derived type; wire form is RealizedResourceRecord in data-models/realization_result.proto (outputs JSON-encoded on the wire).
+// domain-view:
 export interface RealizedResourceRecord {
 	readonly name: string;
 	readonly resourceClass: string;
@@ -53,18 +53,18 @@ export interface RealizedResourceRecord {
 	readonly outputs: JsonObject;
 }
 
-// domain-view: parsed derived type; wire form is SecretRefRecord in data-models/realization_result.proto.
+// domain-view:
 export interface SecretRefRecord {
 	readonly secretRef: string;
 }
 
-// domain-view: parsed derived type; wire form is RealizationBindingRecord in data-models/realization_result.proto (value JSON-encoded on the wire).
+// domain-view:
 export interface RealizationBindingRecord {
 	readonly key: string;
 	readonly value: JsonValue;
 }
 
-// domain-view: parsed derived type; wire form is RealizationResultRecord in data-models/realization_result.proto.
+// domain-view:
 export interface RealizationResult {
 	readonly schema: typeof REALIZATION_RESULT_SCHEMA;
 	readonly resources: readonly RealizedResourceRecord[];
@@ -116,7 +116,7 @@ function plainObject(
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		throw new RealizationResultParseError(rejection, path, "object", value);
 	}
-	return value as JsonObject;
+	return value;
 }
 
 function requireString(
@@ -139,7 +139,12 @@ function sortedRecord<T>(entries: readonly (readonly [string, T])[]) {
 	const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 	const record: { [key: string]: T } = {};
 	for (const [key, value] of sorted) {
-		record[key] = value;
+		Object.defineProperty(record, key, {
+			value,
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
 	}
 	return record;
 }
