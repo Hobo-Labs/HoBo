@@ -81,6 +81,29 @@ describe("queue evidence from a recorded job list", () => {
 		expect(refusingJobs(fleet)).toBe(true);
 	});
 
+	it("counts a re-queued job as waiting though it still names a runner", () => {
+		const page = queueJobsOf({
+			jobs: [
+				{
+					run_id: 7,
+					status: "queued",
+					labels: ["hobo"],
+					created_at: new Date(NOW - 2 * MINUTE).toISOString(),
+					started_at: new Date(NOW - MINUTE).toISOString(),
+					runner_name: "runner-1",
+				},
+			],
+		});
+		expect(page?.jobs).toEqual([
+			{
+				runId: 7,
+				labels: ["hobo"],
+				createdAtMs: NOW - 2 * MINUTE,
+				startedAtMs: undefined,
+			},
+		]);
+	});
+
 	it("shows nothing for the held fleet label and the trunk label taking", () => {
 		const jobs = recordedJobs();
 		const fleet = queueEvidence(jobs, "hobo", readAtMs);

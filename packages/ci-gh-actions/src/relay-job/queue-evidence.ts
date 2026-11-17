@@ -222,13 +222,15 @@ export function queueJobsOf(body: JsonInput): QueueJobsPage | undefined {
 		const createdAtMs = timeMs(job.created_at);
 		if (Number.isNaN(createdAtMs)) return [];
 		const labels = job.labels ?? [];
-		const startedAtMs = timeMs(job.started_at);
-		if (job.runner_name && !Number.isNaN(startedAtMs))
-			return [{ runId: job.run_id, labels, createdAtMs, startedAtMs }];
+		// Status first, as the route job reads it: a re-queued job may still
+		// name the runner that last had it.
 		if (WAITING_STATUSES.has(job.status ?? ""))
 			return [
 				{ runId: job.run_id, labels, createdAtMs, startedAtMs: undefined },
 			];
+		const startedAtMs = timeMs(job.started_at);
+		if (job.runner_name && !Number.isNaN(startedAtMs))
+			return [{ runId: job.run_id, labels, createdAtMs, startedAtMs }];
 		return [];
 	});
 	return {
