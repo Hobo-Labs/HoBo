@@ -222,9 +222,11 @@ another operation. The host verifies proof expiry and revocation and must not
 expose the authorization to stack code. An absent generation or failed resolver
 blocks execution before route or financial admission.
 
-One adapter instance refuses concurrent execution of the same operation. The
-resolver must return the same request and operation IDs for the same generation
-across targets, instances and restarts, and distinct IDs for each new operation.
+One adapter instance refuses concurrent execution of the same operation and
+keeps the resource fenced across later generations while its outcome is
+unknown. The resolver must return the same request and operation IDs for the
+same generation across targets, instances and restarts, and distinct IDs for
+each new operation.
 An explicit request ID passed to `applyWithAdmission` or `destroyWithAdmission`
 must match the resolver's result. The trusted host issues a successor only
 after verified recovery of any prior unresolved attempt. A malformed or

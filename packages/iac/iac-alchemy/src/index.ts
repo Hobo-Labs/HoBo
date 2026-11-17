@@ -1427,6 +1427,22 @@ export function createAlchemyIacProvider<
 			deploymentId: stableProgram.deploymentId,
 			resourceId: stableProgram.resourceId,
 		});
+		if (unresolved.has(fenceKey)) {
+			const reservationId = unresolved.get(fenceKey);
+			throw new AlchemyIacError(
+				reservationId === undefined
+					? "EXECUTION_OUTCOME_UNRESOLVED"
+					: "EXECUTION_ALREADY_CLAIMED",
+				"the previous execution must be reconciled before another attempt",
+				undefined,
+				reservationId,
+			);
+		}
+		if (running.has(fenceKey))
+			throw new AlchemyIacError(
+				"EXECUTION_IN_PROGRESS",
+				"another execution of this program must finish before retry",
+			);
 		if (stableProgram.action === "preview")
 			throw new AlchemyIacError(
 				"PREVIEW_ONLY",
@@ -1468,22 +1484,6 @@ export function createAlchemyIacProvider<
 			throw new AlchemyIacError(
 				"ROUTE_OPERATION_REQUIRED",
 				"a trusted operation resolver is required",
-			);
-		if (unresolved.has(fenceKey)) {
-			const reservationId = unresolved.get(fenceKey);
-			throw new AlchemyIacError(
-				reservationId === undefined
-					? "EXECUTION_OUTCOME_UNRESOLVED"
-					: "EXECUTION_ALREADY_CLAIMED",
-				"the previous execution must be reconciled before another attempt",
-				undefined,
-				reservationId,
-			);
-		}
-		if (running.has(fenceKey))
-			throw new AlchemyIacError(
-				"EXECUTION_IN_PROGRESS",
-				"another execution of this program must finish before retry",
 			);
 		if (running.size >= 128)
 			throw new AlchemyIacError(

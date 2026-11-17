@@ -371,7 +371,6 @@ describe("financial admission modes", () => {
 			f.provider.applyWithAdmission(f.program, "first"),
 		).rejects.toMatchObject({ code: "ADMISSION_REVALIDATION_FAILED" });
 		const next = { ...f.program, operationGeneration: "generation-2" };
-		await f.provider.preview(next);
 		await expect(
 			f.provider.applyWithAdmission(next, "second"),
 		).rejects.toMatchObject({
@@ -379,6 +378,10 @@ describe("financial admission modes", () => {
 			reservationId: "iac:first",
 			requiresReconciliation: true,
 		});
+		await f.provider.preview(next);
+		await expect(
+			f.provider.applyWithAdmission(next, "second"),
+		).rejects.toMatchObject({ code: "EXECUTION_ALREADY_CLAIMED" });
 		expect(f.admissions()).toBe(1);
 	});
 
