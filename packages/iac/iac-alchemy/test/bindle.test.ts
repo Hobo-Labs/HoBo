@@ -244,6 +244,73 @@ describe("explicit Alchemy primitive mapping", () => {
 		}
 		expect(assessed).toBe(false);
 	});
+
+	it("classifies malformed structural identities and edges without leaking TypeError", () => {
+		const invalidBindles = [
+			{ ...declaration, name: null },
+			{ ...declaration, resources: null },
+			{ ...declaration, resources: { broken: null } },
+			{
+				...declaration,
+				resources: { broken: { ...declaration.resources.store, kind: null } },
+			},
+			{
+				...declaration,
+				resources: {
+					store: { ...declaration.resources.store, declaredAllow: [null] },
+				},
+			},
+			{
+				...declaration,
+				resources: {
+					store: { ...declaration.resources.store, annotations: [null] },
+				},
+			},
+			{
+				...declaration,
+				resources: {
+					store: {
+						...declaration.resources.store,
+						annotations: [{ provider: null, option: "feature", config: {} }],
+					},
+				},
+			},
+			{ ...declaration, connectors: [] },
+			{ ...declaration, entrypoint: null },
+		];
+		for (const input of invalidBindles) {
+			// SAFETY: malformed inputs exercise the runtime boundary.
+			expect(() =>
+				mapBindleToAlchemy(input as never, mappers([]), supportedRequirements),
+			).toThrow("BINDLE_INVALID");
+		}
+		for (const edge of [
+			null,
+			{ from: null, to: "store" },
+			{ from: "web", to: null },
+		]) {
+			// SAFETY: malformed edges exercise the runtime boundary.
+			expect(() =>
+				mapBindleToAlchemy(
+					{ ...declaration, edges: [edge] } as never,
+					mappers([]),
+					supportedRequirements,
+				),
+			).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+		}
+		for (const catalog of [
+			null,
+			[null],
+			[{ factory: null, allowVerbs: [] }],
+			[{ factory: "bucket", allowVerbs: null }],
+			[{ factory: "bucket", allowVerbs: ["read", "read"] }],
+		]) {
+			// SAFETY: malformed catalogs exercise the runtime boundary.
+			expect(() =>
+				describeAlchemyPrimitiveSupport(catalog as never, mappers([])),
+			).toThrow("BINDLE_INVALID");
+		}
+	});
 	it("validates dependency declarations before any Alchemy resource is built", () => {
 		const observed: string[] = [];
 		const registry = mappers(observed);
