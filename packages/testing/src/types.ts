@@ -9,6 +9,7 @@
  */
 
 import type { Messaging, Queue, VirtualClock } from "@hobo/core";
+import type { EngineBinding } from "@hobo/data-core";
 import type { SecretsPort } from "@hobo/identity";
 import type { ServiceEmulatorFactories } from "./emulators.js";
 import type { RunnerAdapter } from "./runner.js";
@@ -62,6 +63,8 @@ export interface DeployedGraph {
 	queueClock(alias: string): VirtualClock | undefined;
 	topic(alias: string): Messaging;
 	secret(alias: string): SecretsPort;
+	/** The data engine SPI, not a remote database connection or SQL client. */
+	data(alias: string): EngineBinding;
 	fidelity(): FidelityReport;
 }
 

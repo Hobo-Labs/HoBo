@@ -13,11 +13,12 @@
  *    never silently becomes `in-process`.
  * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
  *    handle through `resource`, `http`, `queue`, `queueClock`, `topic`, `secret`, or
- *    `untilReady` marks it asserted-against; if any is `mocked`, this run
+ *    `data`, or `untilReady` marks it asserted-against; if any is `mocked`, this run
  *    cannot claim prod-readiness and the report says so.
  */
 
 import type { Messaging, Queue, VirtualClock } from "@hobo/core";
+import type { EngineBinding } from "@hobo/data-core";
 import type { SecretsPort } from "@hobo/identity";
 import type { QueueEmulator } from "./emulators.js";
 import { TestHarnessError } from "./errors.js";
@@ -211,6 +212,20 @@ function buildGraph(
 					"HARNESS_EMULATOR_UNAVAILABLE",
 					`"${alias}" (kind ${handle.kind}) has no secret emulator`,
 					"use the alias of a secret resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		data(alias: string): EngineBinding {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.data.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no data emulator`,
+					"use the alias of a data resource in the in-process graph",
 				);
 			}
 			return emulator.port;
