@@ -16,6 +16,7 @@ import {
 	createRivetPrimitiveMappers,
 } from "../src/rivet.js";
 import { createRivetHttpActor } from "../src/rivet-runtime.js";
+import { testStateOwnership } from "./route-fixture.js";
 
 const handler = () => (request: Request) =>
 	new Response(`served:${new URL(request.url).pathname}`);
@@ -108,6 +109,7 @@ describe("Rivet native application binding", () => {
 		process.env.ALCHEMY_HOME = join(directory, "auth");
 		try {
 			const provider = createAlchemyIacProvider({
+				stateOwnership: testStateOwnership,
 				stack,
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: directory,

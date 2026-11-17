@@ -23,6 +23,7 @@ import {
 	type FinancialPlan,
 	registerAlchemySource,
 } from "../src/index.js";
+import { testStateOwnership } from "./route-fixture.js";
 
 function fixture(
 	kind: "worker" | "rivet",
@@ -125,6 +126,7 @@ function fixture(
 		verifyPlan,
 	};
 	const options = {
+		stateOwnership: testStateOwnership,
 		stack,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: directory,

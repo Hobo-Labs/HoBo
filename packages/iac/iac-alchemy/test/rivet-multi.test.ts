@@ -14,6 +14,7 @@ import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import { bindRivetHttpSource } from "../src/rivet.js";
 import { createRivetMultiPoolPrimitiveMappers } from "../src/rivet-multi.js";
 import { createRivetHttpActor } from "../src/rivet-runtime.js";
+import { testStateOwnership } from "./route-fixture.js";
 
 function app(name: string, kind: "web" | "api", digest: string) {
 	const entrypoint = () => () => new Response(name);
@@ -113,6 +114,7 @@ describe("Rivet multiple pool mapping", () => {
 		process.env.ALCHEMY_HOME = join(directory, "auth");
 		try {
 			const provider = createAlchemyIacProvider({
+				stateOwnership: testStateOwnership,
 				stack,
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: directory,

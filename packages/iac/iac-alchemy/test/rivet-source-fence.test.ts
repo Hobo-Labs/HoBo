@@ -25,7 +25,11 @@ import {
 import { createRivetPrimitiveMappers } from "../src/rivet.js";
 import { createRivetMultiPoolPrimitiveMappers } from "../src/rivet-multi.js";
 import { createRivetHttpActor } from "../src/rivet-runtime.js";
-import { routeFixture, testOperation } from "./route-fixture.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
 function fixture(directory: string) {
 	const main = join(directory, "app.js");
@@ -262,6 +266,7 @@ describe("Rivet source and dependency closure fence", () => {
 			});
 			const uncertain = vi.fn();
 			const provider = createAlchemyIacProvider({
+				stateOwnership: testStateOwnership,
 				stack,
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: directory,
