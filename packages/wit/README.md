@@ -7,7 +7,9 @@ explicit committed, rejected, unknown and expired outcomes. Its generated jco
 types return Promises. A component host must implement asynchronous suspension,
 authorization, durable receipts and the port's semantics before advertising it;
 these declarations do not provide a runtime or a bridge from the legacy
-`wasi:messaging` interface.
+`wasi:messaging` interface. The provider's advertised `name-bytes` limit also
+bounds lease identifiers, which must be nonempty control-free Unicode scalar
+strings. Operation IDs use their separately bounded format.
 
 ## Layout
 
