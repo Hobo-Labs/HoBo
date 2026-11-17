@@ -4,6 +4,7 @@ import {
 	isJsonString,
 	type JsonValue,
 } from "../json.js";
+import { readReplayCommandTree } from "./command-tree.js";
 import { createDeterministicContext } from "./context.js";
 import { digest } from "./divergence.js";
 import { hashReadSet, seqVector, stableStringify } from "./equivalence.js";
@@ -49,6 +50,14 @@ export async function replayRun<S, A>(
 	if (!started) {
 		throw new Error(`missing run.Started for ${runId}`);
 	}
+	const version = isJsonObject(started.data)
+		? started.data.commandTreeVersion
+		: undefined;
+	if (version !== undefined && version !== 1) {
+		throw new Error("unsupported workflow command tree version");
+	}
+	const tree = version === 1 ? readReplayCommandTree(events) : undefined;
+	let treeCursor = 0;
 
 	let state = workflow.initialState(args);
 	const stepResults = new Map<string, JsonValue>();
@@ -79,6 +88,22 @@ export async function replayRun<S, A>(
 				eventKey: `${streamId}:orchestration:${label}`,
 			}).random(label),
 		async step<T>(name: string, _fn: () => Promise<T> | T): Promise<T> {
+			if (tree) {
+				const command = tree[treeCursor];
+				if (command?.kind !== "step" || command.name !== name) {
+					throw new Error(
+						`workflow command history diverged at index ${treeCursor}`,
+					);
+				}
+				if (command.terminal?.kind !== "completed") {
+					throw new Error(
+						`missing memoized step ${name} at index ${command.index}`,
+					);
+				}
+				treeCursor += 1;
+				// SAFETY: the recorded JSON result has the workflow step's result type.
+				return command.terminal.result as T;
+			}
 			const stepId = `${name}:${stepCounter}`;
 			const completed = events.find(
 				(event) =>
@@ -96,6 +121,16 @@ export async function replayRun<S, A>(
 			throw new Error(`missing memoized step ${name} at index ${stepCounter}`);
 		},
 		async sleep(delayMs) {
+			if (tree) {
+				const command = tree[treeCursor];
+				if (!command)
+					throw new Error(`missing run.SleepScheduled at index ${treeCursor}`);
+				if (command.kind !== "sleep" || command.delayMs !== delayMs) {
+					throw new Error("sleep schedule diverged");
+				}
+				treeCursor += 1;
+				return;
+			}
 			const scheduled = scheduledSleeps[sleepCounter];
 			if (!scheduled) {
 				throw new Error(`missing run.SleepScheduled at index ${sleepCounter}`);
@@ -124,11 +159,20 @@ export async function replayRun<S, A>(
 	};
 
 	state = await workflow.execute(ctx, state, args);
-	if (stepCounter !== completedSteps.length) {
-		throw new Error(`unconsumed run.StepCompleted at index ${stepCounter}`);
-	}
-	if (sleepCounter !== scheduledSleeps.length) {
-		throw new Error(`unconsumed run.SleepScheduled at index ${sleepCounter}`);
+	if (tree) {
+		const remaining = tree[treeCursor];
+		if (remaining) {
+			const type =
+				remaining.kind === "step" ? "run.StepCompleted" : "run.SleepScheduled";
+			throw new Error(`unconsumed ${type} at index ${treeCursor}`);
+		}
+	} else {
+		if (stepCounter !== completedSteps.length) {
+			throw new Error(`unconsumed run.StepCompleted at index ${stepCounter}`);
+		}
+		if (sleepCounter !== scheduledSleeps.length) {
+			throw new Error(`unconsumed run.SleepScheduled at index ${sleepCounter}`);
+		}
 	}
 
 	const report: ReplayReport = {

@@ -67,11 +67,12 @@ history instead of recording a new terminal result.
 
 Keep `ctx.step` and `ctx.sleep` calls at the workflow orchestration level. The
 journal for new runs records a command-tree version and the parent step of
-each step or sleep, including across concurrent step bodies. Replay and resume
-do not yet consume that parent information and can conservatively reject nested
-histories when a completed parent is reused. Older journals may lack parent
-information. The check covers these two command types, not arbitrary effects
-performed directly by workflow code.
+each step or sleep, including across concurrent step bodies. Replay can use a
+completed parent when its nested steps have recorded outcomes; it refuses a
+child that is unfinished when the parent ends or a nested sleep with no recorded
+completion fact. Resume still treats the history as flat and can reject nested
+commands. Older journals may lack parent information. The check covers these
+two command types, not arbitrary effects performed directly by workflow code.
 
 `ctx.sleep` records its deadline before waiting and rechecks the clock after
 each wake-up. If a host stops, an explicit `resume` uses that same deadline;
