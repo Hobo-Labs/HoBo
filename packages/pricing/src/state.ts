@@ -149,9 +149,68 @@ export function stateHashOf(state: FinancialStateView): string {
 	);
 }
 
+function validateFinancialSourceIds(state: FinancialStateView): void {
+	if (!state.tenantId)
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"financial state tenant is missing",
+		);
+	const accounts = new Set<string>();
+	for (const agreement of state.agreements) {
+		if (!agreement.providerAccountRef)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"agreement provider account is missing",
+			);
+		accounts.add(agreement.providerAccountRef);
+	}
+	if (
+		accounts.size > 1 &&
+		(state.allowances.length > 0 ||
+			state.credits.length > 0 ||
+			state.commitments.length > 0)
+	)
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"financial sources cannot be scoped to multiple provider accounts",
+		);
+	const check = (
+		kind: string,
+		entries: readonly ({ id: string; tenantId: string } | undefined)[],
+	) => {
+		const seen = new Set<string>();
+		for (const entry of entries) {
+			if (!entry?.id || entry.tenantId !== state.tenantId)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					`${kind} identity or tenant is invalid`,
+				);
+			if (seen.has(entry.id))
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					`duplicate ${kind} identity`,
+				);
+			seen.add(entry.id);
+		}
+	};
+	check(
+		"allowance",
+		state.allowances.map((entry) => entry.grant),
+	);
+	check(
+		"credit",
+		state.credits.map((entry) => entry.grant),
+	);
+	check(
+		"commitment",
+		state.commitments.map((entry) => entry.commitment),
+	);
+}
+
 export function validateScenarioState(
 	scenario: QuoteScenario,
 	time: TemporalPolicy = EXACT_TIME,
+	strictSourceIdentity = true,
 ): void {
 	const catalog = scenario.catalog;
 	const state = scenario.state;
@@ -197,6 +256,7 @@ export function validateScenarioState(
 			"unknown financial state schema",
 		);
 	}
+	if (strictSourceIdentity) validateFinancialSourceIds(state);
 	const allowPartial = scenario.options?.allowPartialFinancialState === true;
 	if (state.completeness !== "complete" && !allowPartial) {
 		throw new PricingFault(

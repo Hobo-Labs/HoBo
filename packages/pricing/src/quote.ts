@@ -39,9 +39,10 @@ import type { PricingRejectionCode, QuoteResult } from "./types.js";
 export type RatingAlgorithmVersion =
 	| "pricing-rating/v1"
 	| "pricing-rating/v2"
-	| "pricing-rating/v3";
+	| "pricing-rating/v3"
+	| "pricing-rating/v4";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v3";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v4";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function rejection(
@@ -180,7 +181,8 @@ export function quoteScenario(
 	if (
 		version !== "pricing-rating/v1" &&
 		version !== "pricing-rating/v2" &&
-		version !== "pricing-rating/v3"
+		version !== "pricing-rating/v3" &&
+		version !== "pricing-rating/v4"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -188,11 +190,12 @@ export function quoteScenario(
 		);
 	const compareStrings =
 		version === "pricing-rating/v1" ? compareLegacyLocale : compareCodeUnits;
-	const strictTimes = version === "pricing-rating/v3";
+	const strictTimes =
+		version === "pricing-rating/v3" || version === "pricing-rating/v4";
 	const time = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	const compareTimes = strictTimes ? compareUtcExact : compareStrings;
 	try {
-		validateScenarioState(scenario, time);
+		validateScenarioState(scenario, time, version === "pricing-rating/v4");
 		validateQuoteOptions(scenario);
 		const catalog = scenario.catalog;
 		const state = scenario.state;
