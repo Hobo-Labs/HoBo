@@ -58,6 +58,10 @@
       "types": "./dist/insights/usage.d.ts",
       "default": "./dist/insights/usage.js"
     },
+    "./runner-order": {
+      "types": "./dist/runner-order/index.d.ts",
+      "default": "./dist/runner-order/index.js"
+    },
     "./insights/breakdown": {
       "types": "./dist/insights/breakdown.d.ts",
       "default": "./dist/insights/breakdown.js"

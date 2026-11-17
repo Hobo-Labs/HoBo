@@ -20,6 +20,11 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | built-not-proven | 3 |
 | partial | 22 |
 | not-built | 10 |
+
+| pass | 16 |
+| built-not-proven | 1 |
+| partial | 23 |
+| not-built | 17 |
 | met-differently | 1 |
 | Total | 58 |
 
@@ -96,7 +101,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 
 | Case | RelayRunner's claim | HoBo's bar | Tier | State | Package |
 | --- | --- | --- | --- | --- | --- |
-| S01 | A dashboard with Runners, Router, History, Performance and Signals ([README.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/README.md)) | Five read-only views | T2 | not-built | 21 |
+| S01 | A dashboard with Runners, Router, History, Performance and Signals ([README.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/README.md)) | Five read-only views | T2 | pass | 21 |
 | S02 | The CLI reads well for people, has `--json` for agents and is safe to retry ([site/reference/cli.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/cli.md)) | Every command | T1 | pass | done |
 | S03 | `init` plans and applies workflow changes and never commits ([site/get-started/quickstart.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/get-started/quickstart.md)) | Same, and `--relay` writes relay jobs | T1 | partial: writes the fleet label only | 13 |
 | S04 | A read-only MCP server ([site/reference/mcp.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/mcp.md)) | Tools for the order, a route explanation, activity, signals, job times and failures | T2 | partial: leases and events only | 18 |
@@ -105,7 +110,7 @@ Each row is one thing RelayRunner says it does, read at commit `43b7c4c`, with t
 | S07 | An error catalog with stable codes ([site/reference/errors.mdx](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/reference/errors.mdx)) | One generated page | T1 | partial: codes exist, no page | 10 |
 | S08 | Workspaces, roles and membership from GitHub ([site/dashboard/workspaces.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/workspaces.md)) | Accounts and scoped tokens | n/a | met-differently: no human roles: access is GitHub membership plus scoped tokens | done |
 | S09 | A clean way to remove it ([site/dashboard/remove.md](https://github.com/relayrunner/relayrunner/blob/43b7c4c/apps/site/src/content/docs/docs/dashboard/remove.md)) | `hobo ci init --undo` and a removal page | T1 | not-built | 13 |
-| S10 **B** | n/a | A routing change is a reviewed commit; the dashboard's edit opens a pull request | T2 | partial: the order is committed | 21 |
+| S10 **B** | n/a | A routing change is a reviewed commit; the dashboard's edit opens a pull request | T2 | pass | 21 |
 
 ## Security
 
