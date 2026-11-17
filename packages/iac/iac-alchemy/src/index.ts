@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { types } from "node:util";
 import { AlchemyContext } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import type * as Stack from "alchemy/Stack";
@@ -489,7 +490,12 @@ function captureRoutePort(
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: admission receipts cross a provider boundary; inspect own data properties before returning an independent domain value. */
 function readRoutePermit(input: unknown): IacRoutePermit | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
 		const read = (key: string): unknown => {
@@ -611,7 +617,12 @@ function readFinancialExpectation(
 	input: unknown,
 ): FinancialExpectation | undefined {
 	try {
-		if (typeof input !== "object" || input === null || Array.isArray(input))
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			types.isProxy(input) ||
+			Array.isArray(input)
+		)
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(input);
 		const read = (key: string): unknown => {

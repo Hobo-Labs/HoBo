@@ -455,8 +455,10 @@ Every preview, assessment, apply, destroy and refresh has an
 `operationTimeoutMs` deadline, defaulting to 300,000 ms and configurable from
 1 through 3,600,000 ms. A preview or refresh timeout reports
 `PREVIEW_DEADLINE_EXCEEDED` or `REFRESH_DEADLINE_EXCEEDED`; a late preview does
-not become eligible for apply. Execution timeout results always require
-reconciliation and distinguish these stages:
+not become eligible for apply. Apply and destroy snapshot routing expectations
+and route permits before deferred work, rejecting Proxy objects without invoking
+their traps. Execution timeout results always require reconciliation and
+distinguish these stages:
 
 - `EXECUTION_DEADLINE_BEFORE_ROUTE`: the provider has not started and the local
   continuation is latched. No durable route claim is implied. To exclude retry

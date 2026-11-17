@@ -288,6 +288,85 @@ async function expire() {
 }
 
 describe("bounded Alchemy execution deadlines", () => {
+	it("rejects proxied and revoked expectations and permits without running traps", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
+		const old = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(dir, "home");
+		try {
+			const f = fixture(dir, 5_000);
+			await f.provider.preview(program);
+			const expected = {
+				targetId: "t",
+				inventoryHash: `sha256:${"c".repeat(64)}`,
+				modelHash: `sha256:${"d".repeat(64)}`,
+				quoteHash: `sha256:${"e".repeat(64)}`,
+			};
+			const permit = {
+				tenantId: "tenant",
+				requestId: "request",
+				operationId: testOperation.operationId,
+				targetId: "t",
+				inventoryHash: expected.inventoryHash,
+				attemptId: "A".repeat(43),
+			};
+			type RouteInput = typeof expected | typeof permit;
+			for (const mode of [
+				"ownKeys",
+				"descriptor",
+				"transparent",
+				"revoked",
+			] as const) {
+				let traps = 0;
+				const handler = {
+					ownKeys: (target: RouteInput) => {
+						traps++;
+						if (mode === "ownKeys") throw new Error("ownKeys trap");
+						return Reflect.ownKeys(target);
+					},
+					getOwnPropertyDescriptor: (
+						target: RouteInput,
+						key: string | symbol,
+					) => {
+						traps++;
+						if (mode === "descriptor") throw new Error("descriptor trap");
+						return Reflect.getOwnPropertyDescriptor(target, key);
+					},
+				};
+				const expectationProxy = Proxy.revocable(expected, handler);
+				const permitProxy = Proxy.revocable(permit, handler);
+				if (mode === "revoked") {
+					expectationProxy.revoke();
+					permitProxy.revoke();
+				}
+				await expect(
+					f.provider.applyWithAdmission(
+						program,
+						"request",
+						expectationProxy.proxy,
+					),
+				).rejects.toMatchObject({ code: "EXPECTATION_INVALID" });
+				await expect(
+					f.provider.applyWithAdmission(
+						program,
+						"request",
+						undefined,
+						permitProxy.proxy,
+					),
+				).rejects.toMatchObject({ code: "ROUTE_PERMIT_UNVERIFIED" });
+				expect(traps).toBe(0);
+			}
+			expect(f.observed()).toMatchObject({
+				routeCalls: 0,
+				admissions: 0,
+				effects: 0,
+			});
+		} finally {
+			if (old === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = old;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("captures program, expectation, and route permit before deferred work", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-iac-deadline-"));
 		const old = process.env.ALCHEMY_HOME;
