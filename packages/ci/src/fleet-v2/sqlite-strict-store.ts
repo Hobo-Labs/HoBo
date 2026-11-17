@@ -134,6 +134,9 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			CREATE UNIQUE INDEX IF NOT EXISTS fleet_v2_one_open_slot_per_demand
 				ON fleet_v2_runner_slots(demand_key)
 				WHERE state IN ('reserved','provisioning','registered','bound');
+			CREATE INDEX IF NOT EXISTS fleet_v2_unresolved_slot_per_demand
+				ON fleet_v2_runner_slots(demand_key)
+				WHERE state IN ('draining','uncertain');
 			CREATE TABLE IF NOT EXISTS fleet_v2_execution_claims (
 				id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE,
 				runner_slot_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL,
@@ -676,13 +679,13 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 					FleetRejectionCode.CAPACITY_INELIGIBLE,
 					"capacity group account does not match demand account",
 				);
-			const openSlot = this.db
+			const unresolvedSlot = this.db
 				.prepare(
 					`SELECT id FROM fleet_v2_runner_slots
-					 WHERE demand_key=? AND state IN ('reserved','provisioning','registered','bound')`,
+					 WHERE demand_key=? AND state IN ('reserved','provisioning','registered','bound','draining','uncertain')`,
 				)
 				.get(key);
-			if (openSlot)
+			if (unresolvedSlot)
 				rejectFleet(
 					FleetRejectionCode.DEMAND_CONFLICT,
 					"demand already has an open capacity reservation",
@@ -830,35 +833,40 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 			transitionRunnerSlot(expected, next);
 			if (
 				next === "released" &&
-				["reserved", "provisioning", "registered"].includes(expected)
+				["reserved", "provisioning", "registered", "draining"].includes(
+					expected,
+				)
 			) {
 				const claim = this.db
 					.prepare(
 						"SELECT key FROM fleet_v2_execution_claims WHERE runner_slot_id=?",
 					)
 					.get(slot.id);
-				if (!claim) {
-					const changed = this.db
-						.prepare(
-							"UPDATE fleet_v2_capacity_groups SET reserved_units=reserved_units-?,seq=seq+1 WHERE id=? AND reserved_units>=?",
-						)
-						.run(
-							slot.capacityCostUnits,
-							slot.capacityGroupId,
-							slot.capacityCostUnits,
-						).changes;
-					if (changed !== 1)
-						rejectFleet(
-							FleetRejectionCode.CAPACITY_CONFLICT,
-							"capacity release would make reserved units negative",
-						);
-					const currentGroup = this.capacityInside(slot.capacityGroupId);
-					if (currentGroup) {
-						const group = clone(CapacityGroupSchema, currentGroup);
-						group.reservedUnits -= slot.capacityCostUnits;
-						group.seq += 1;
-						this.saveCapacity(group);
-					}
+				if (claim)
+					rejectFleet(
+						FleetRejectionCode.INVALID_TRANSITION,
+						"claimed runner release requires execution settlement",
+					);
+				const changed = this.db
+					.prepare(
+						"UPDATE fleet_v2_capacity_groups SET reserved_units=reserved_units-?,seq=seq+1 WHERE id=? AND reserved_units>=?",
+					)
+					.run(
+						slot.capacityCostUnits,
+						slot.capacityGroupId,
+						slot.capacityCostUnits,
+					).changes;
+				if (changed !== 1)
+					rejectFleet(
+						FleetRejectionCode.CAPACITY_CONFLICT,
+						"capacity release would make reserved units negative",
+					);
+				const currentGroup = this.capacityInside(slot.capacityGroupId);
+				if (currentGroup) {
+					const group = clone(CapacityGroupSchema, currentGroup);
+					group.reservedUnits -= slot.capacityCostUnits;
+					group.seq += 1;
+					this.saveCapacity(group);
 				}
 			}
 			slot.state = next;

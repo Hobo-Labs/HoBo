@@ -174,6 +174,11 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				 WHERE state IN ('reserved','provisioning','registered','bound')`,
 			);
 			await client.query(
+				`CREATE INDEX IF NOT EXISTS hobo_ci_fleet_v2_unresolved_slot_per_demand
+				 ON hobo_ci_fleet_v2_runner_slots(partition_id,demand_key)
+				 WHERE state IN ('draining','uncertain')`,
+			);
+			await client.query(
 				`CREATE TABLE IF NOT EXISTS hobo_ci_fleet_v2_execution_claims(
 				 partition_id text NOT NULL,id text NOT NULL,key text NOT NULL,runner_slot_id text NOT NULL,
 				 state text NOT NULL,start_authorized_at text NOT NULL,body text NOT NULL,PRIMARY KEY(partition_id,id),
@@ -855,12 +860,12 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 					FleetRejectionCode.CAPACITY_INELIGIBLE,
 					"capacity group account does not match demand account",
 				);
-			const openSlot = await client.query(
+			const unresolvedSlot = await client.query(
 				`SELECT id FROM hobo_ci_fleet_v2_runner_slots
-				 WHERE partition_id=$1 AND demand_key=$2 AND state IN ('reserved','provisioning','registered','bound') FOR UPDATE`,
+				 WHERE partition_id=$1 AND demand_key=$2 AND state IN ('reserved','provisioning','registered','bound','draining','uncertain') FOR UPDATE`,
 				[this.partition, key],
 			);
-			if ((openSlot.rowCount ?? 0) > 0)
+			if ((unresolvedSlot.rowCount ?? 0) > 0)
 				rejectFleet(
 					FleetRejectionCode.DEMAND_CONFLICT,
 					"demand already has an open capacity reservation",
@@ -997,33 +1002,38 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 			transitionRunnerSlot(expected, next);
 			if (
 				next === "released" &&
-				["reserved", "provisioning", "registered"].includes(expected)
+				["reserved", "provisioning", "registered", "draining"].includes(
+					expected,
+				)
 			) {
 				const claim = await client.query(
 					"SELECT key FROM hobo_ci_fleet_v2_execution_claims WHERE partition_id=$1 AND runner_slot_id=$2",
 					[this.partition, slot.id],
 				);
-				if ((claim.rowCount ?? 0) === 0) {
-					const changed = await client.query(
-						`UPDATE hobo_ci_fleet_v2_capacity_groups SET reserved_units=reserved_units-$3,seq=seq+1
-						 WHERE partition_id=$1 AND id=$2 AND reserved_units>=$3`,
-						[this.partition, slot.capacityGroupId, slot.capacityCostUnits],
+				if ((claim.rowCount ?? 0) > 0)
+					rejectFleet(
+						FleetRejectionCode.INVALID_TRANSITION,
+						"claimed runner release requires execution settlement",
 					);
-					if (changed.rowCount !== 1)
-						rejectFleet(
-							FleetRejectionCode.CAPACITY_CONFLICT,
-							"capacity release would make reserved units negative",
-						);
-					const currentGroup = await this.capacityInside(
-						client,
-						slot.capacityGroupId,
+				const changed = await client.query(
+					`UPDATE hobo_ci_fleet_v2_capacity_groups SET reserved_units=reserved_units-$3,seq=seq+1
+					 WHERE partition_id=$1 AND id=$2 AND reserved_units>=$3`,
+					[this.partition, slot.capacityGroupId, slot.capacityCostUnits],
+				);
+				if (changed.rowCount !== 1)
+					rejectFleet(
+						FleetRejectionCode.CAPACITY_CONFLICT,
+						"capacity release would make reserved units negative",
 					);
-					if (currentGroup) {
-						const group = clone(CapacityGroupSchema, currentGroup);
-						group.reservedUnits -= slot.capacityCostUnits;
-						group.seq += 1;
-						await this.saveCapacity(client, group);
-					}
+				const currentGroup = await this.capacityInside(
+					client,
+					slot.capacityGroupId,
+				);
+				if (currentGroup) {
+					const group = clone(CapacityGroupSchema, currentGroup);
+					group.reservedUnits -= slot.capacityCostUnits;
+					group.seq += 1;
+					await this.saveCapacity(client, group);
 				}
 			}
 			slot.state = next;

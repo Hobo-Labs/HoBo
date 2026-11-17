@@ -150,6 +150,7 @@ function reservation(
 	key: ParsedExecutionKey,
 	suffix: string,
 	expectedCapacitySeq: number,
+	capacityGroupId = "device-1",
 ) {
 	const bindingSecret = randomBytes(32).toString("hex");
 	const bindingSecretHash = createHash("sha256")
@@ -164,7 +165,7 @@ function reservation(
 			profileId: "trusted-linux-x64",
 			runnerName: `hobo-slot-${suffix}`,
 			state: "reserved",
-			capacityGroupId: "device-1",
+			capacityGroupId,
 			capacityCostUnits: 1,
 			policyHash: POLICY_HASH,
 			offerObservationHash: OFFER_HASH,
@@ -653,6 +654,119 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(0);
 		});
 
+		it.each([
+			"draining",
+			"uncertain",
+		] as const)("does not readmit a demand with a %s slot on another capacity group", async (phase) => {
+			const store = current();
+			await store.putCapacityGroup(
+				parseCapacityGroup(
+					JSON.stringify({
+						id: "device-2",
+						accountId: "hobo-labs",
+						approvedUnits: 1,
+						reservedUnits: 0,
+						seq: 0,
+						state: "active",
+					}),
+				),
+			);
+			await store.intake(demand("1", "webhook", "webhook-1"));
+			const first = reservation(parsedKey("1"), "first", 0);
+			await store.reserveCapacity(first.input);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"reserved",
+				"provisioning",
+			);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"provisioning",
+				"registered",
+				"runner-1",
+			);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"registered",
+				phase,
+			);
+			await expect(
+				store.reserveCapacity(
+					reservation(parsedKey("1"), "second", 0, "device-2").input,
+				),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.DEMAND_CONFLICT,
+			});
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
+			expect((await store.capacityGroup("device-2"))?.reservedUnits).toBe(0);
+		});
+
+		it("releases an unclaimed slot after draining and permits a fresh reservation", async () => {
+			const store = current();
+			await store.intake(demand("1", "webhook", "webhook-1"));
+			const first = reservation(parsedKey("1"), "first", 0);
+			await store.reserveCapacity(first.input);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"reserved",
+				"provisioning",
+			);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"provisioning",
+				"registered",
+				"runner-1",
+			);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"registered",
+				"draining",
+			);
+			await store.transitionRunnerSlot(
+				first.input.slot.id,
+				"draining",
+				"released",
+			);
+			const group = await store.capacityGroup("device-1");
+			expect(group?.reservedUnits).toBe(0);
+			if (!group) throw new Error("capacity group missing");
+			await expect(
+				store.reserveCapacity(
+					reservation(parsedKey("1"), "second", group.seq).input,
+				),
+			).resolves.toMatchObject({ state: "reserved" });
+		});
+
+		it("requires execution settlement to release a claimed runner", async () => {
+			const store = current();
+			const { reserved } = await authorizedBinding(store);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"bound",
+				"draining",
+			);
+			await expect(
+				store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"draining",
+					"released",
+				),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.INVALID_TRANSITION,
+			});
+			expect((await store.capacityGroup("device-1"))?.reservedUnits).toBe(1);
+			await expect(
+				store.completeExecution({
+					claimId: "claim-1",
+					state: "completed",
+					teardownConfirmed: true,
+				}),
+			).resolves.toMatchObject({ capacityReleased: true });
+			expect((await store.runnerSlot(reserved.input.slot.id))?.state).toBe(
+				"released",
+			);
+		});
+
 		it("rejects an assigned job from a different policy revision", async () => {
 			const store = current();
 			const { reserved } = await registeredBinding(store);
@@ -965,6 +1079,55 @@ it("adds Dagger allocations to an existing SQLite fleet without losing demand", 
 		);
 		await migrated.intake(daggerDemand());
 		expect((await migrated.startDagger(daggerStart())).created).toBe(true);
+	} finally {
+		migrated.close();
+	}
+});
+
+it("indexes legacy unresolved duplicate slots without deleting them", async () => {
+	const path = join(sqliteRoot, `${randomUUID()}.sqlite`);
+	const original = new SqliteStrictFleetStore(path);
+	await seed(original);
+	await original.intake(demand("legacy", "webhook", "legacy-delivery"));
+	const first = reservation(parsedKey("legacy"), "legacy", 0);
+	await original.reserveCapacity(first.input);
+	await original.transitionRunnerSlot(
+		first.input.slot.id,
+		"reserved",
+		"uncertain",
+	);
+	original.close();
+	const previousSchema = new DatabaseSync(path);
+	previousSchema.exec("DROP INDEX fleet_v2_unresolved_slot_per_demand");
+	previousSchema
+		.prepare(`
+		INSERT INTO fleet_v2_runner_slots(
+			id, account_id, offer_id, profile_id, runner_name, state, capacity_group_id,
+			capacity_cost_units, offer_observation_hash, binding_secret_hash, incarnation_id, demand_key, body
+		)
+		SELECT 'slot-legacy-duplicate', account_id, offer_id, profile_id, 'hobo-slot-legacy-duplicate',
+			'reserved', capacity_group_id, capacity_cost_units, offer_observation_hash,
+			binding_secret_hash, incarnation_id, demand_key,
+			json_set(body, '$.id', 'slot-legacy-duplicate', '$.state', 'reserved', '$.runnerName', 'hobo-slot-legacy-duplicate')
+		FROM fleet_v2_runner_slots WHERE id = ?
+	`)
+		.run(first.input.slot.id);
+	previousSchema.close();
+	const migrated = new SqliteStrictFleetStore(path);
+	try {
+		expect((await migrated.runnerSlot(first.input.slot.id))?.state).toBe(
+			"uncertain",
+		);
+		expect((await migrated.runnerSlot("slot-legacy-duplicate"))?.state).toBe(
+			"reserved",
+		);
+		await expect(
+			migrated.reserveCapacity(
+				reservation(parsedKey("legacy"), "another", 1).input,
+			),
+		).rejects.toMatchObject({
+			code: FleetRejectionCode.DEMAND_CONFLICT,
+		});
 	} finally {
 		migrated.close();
 	}
