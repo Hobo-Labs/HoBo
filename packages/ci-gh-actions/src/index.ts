@@ -155,6 +155,16 @@ export {
 } from "./http-handler.js";
 export { signIngressForward, verifyIngressForward } from "./ingress-forward.js";
 export {
+	foldInsightWebhook,
+	type InsightAttemptStore,
+	InsightIngest,
+	type InsightWebhookFact,
+	type JobWebhookFact,
+	parseInsightWebhook,
+	type RunWebhookFact,
+	UNKNOWN_EVENT,
+} from "./insight-ingest.js";
+export {
 	isIsolatedContainerOffer,
 	isIsolatedHostOffer,
 	isSandboxOffer,
@@ -798,13 +808,3 @@ export {
 	type GithubWorkflowClaims,
 	type GithubWorkflowVerifier,
 } from "./workflow-oidc.js";
-export {
-	foldInsightWebhook,
-	type InsightAttemptStore,
-	InsightIngest,
-	type InsightWebhookFact,
-	type JobWebhookFact,
-	parseInsightWebhook,
-	type RunWebhookFact,
-	UNKNOWN_EVENT,
-} from "./insight-ingest.js";
