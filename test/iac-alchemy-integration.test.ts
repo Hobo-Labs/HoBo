@@ -43,6 +43,7 @@ import {
 	type FinancialPort,
 	type IacProgram,
 	type IacRouteContext,
+	type IacRouteResolver,
 	mapBindleToAlchemy,
 } from "../packages/iac/iac-alchemy/src/index.js";
 import {
@@ -142,6 +143,7 @@ function setup(
 		loseAdmissionResponse?: boolean;
 		beforeAdmission?: () => Promise<void>;
 		beforeRevalidate?: () => void | Promise<void>;
+		resolveRoute?: IacRouteResolver;
 		onReceipt?: (receipt: IacTargetAdmissionDecision) => void;
 		targetId?: string;
 		stackName?: string;
@@ -470,7 +472,7 @@ function setup(
 		route,
 		resolveRoute: (context) => {
 			options.onRoute?.(context);
-			return resolveRoute(context);
+			return (options.resolveRoute ?? resolveRoute)(context);
 		},
 		composite: {
 			proofRef: "host:fixture-attestation",
@@ -1041,6 +1043,91 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("retains the real unbounded hold when operation authorization is revoked before Rivet starts", async () => {
+		let revoked = false;
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+			resolveRoute: (context) => {
+				if (revoked) throw new Error("operation authorization revoked");
+				return resolveRoute(context);
+			},
+			beforeRevalidate: () => {
+				revoked = true;
+			},
+		});
+		try {
+			const assessment = await fixture.provider.assessPricing(program);
+			if (assessment.inventoryHash === undefined)
+				throw new Error("inventory hash missing");
+			await expect(
+				fixture.provider.applyWithAdmission(program, "revoked-operation", {
+					kind: "unpriced",
+					targetId: "yard-a",
+					inventoryHash: assessment.inventoryHash,
+				}),
+			).rejects.toMatchObject({
+				code: "ROUTE_OPERATION_REVALIDATION_FAILED",
+				reservationId: "iac:revoked-operation",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("retains the unbounded hold when a broker receipt's policy identity is changed", async () => {
+		const fixture = setup({
+			rivet: true,
+			withPricing: false,
+			authorizeUnpriced: true,
+			onReceipt: (receipt) => {
+				const identity = receipt.unpricedPolicyProof?.identity;
+				if (identity === undefined) throw new Error("policy identity missing");
+				identity.policyRevision = "other";
+			},
+		});
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "identity-changed"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_RECEIPT_INVALID",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).unboundedExposureCount).toBe(1);
+		} finally {
+			fixture.authority.close();
+		}
+	});
+
+	it("retains the priced hold when the broker receipt's model hash is changed", async () => {
+		const fixture = setup({
+			rivet: true,
+			onReceipt: (receipt) => {
+				receipt.modelHash = `sha256:${"f".repeat(64)}`;
+			},
+		});
+		try {
+			await fixture.provider.preview(program);
+			await expect(
+				fixture.provider.applyWithAdmission(program, "model-changed"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_REVALIDATION_FAILED",
+				reservationId: "iac:model-changed",
+				requiresReconciliation: true,
+			});
+			expect(fixture.applied()).toBe(0);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
 			fixture.authority.close();
 		}

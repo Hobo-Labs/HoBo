@@ -268,7 +268,8 @@ exclusively owned until settlement and has no shared entitlements. The trusted
 host must fence policy, scope and credential revocation through provider start:
 the authority's check and an external provider call cannot be one transaction.
 Priced admissions cannot carry unpriced policy or scope evidence; contradictory
-receipts retain their hold and require reconciliation.
+receipts retain their hold and require reconciliation. Changed model hashes or
+unpriced policy identities are likewise rejected before provider execution.
 
 All attempts use a shared durable route authority, including direct `apply` and
 `destroy` calls. Configure `route` using `createDirectRoutePort` from
