@@ -81,10 +81,12 @@ export function memoizedCdHost(
 ): () => Promise<CdHost> {
 	let pending: Promise<CdHost> | undefined;
 	return () => {
-		pending ??= compose().catch((error: unknown) => {
-			pending = undefined;
-			throw error;
+		const attempt = pending ?? compose();
+		pending = attempt;
+		// Forget a failed attempt; the caller still sees its rejection.
+		attempt.then(undefined, () => {
+			if (pending === attempt) pending = undefined;
 		});
-		return pending;
+		return attempt;
 	};
 }

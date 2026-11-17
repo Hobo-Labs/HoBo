@@ -69,7 +69,7 @@ describe("the CD function's HTTP entry", () => {
 	it("hands every other request to the CD mount", async () => {
 		const seen: string[] = [];
 		// SAFETY: the entry reads only handle() from the host.
-		const host = {
+		const host: CdHost = {
 			handle: async (request: { path: string }) => {
 				seen.push(request.path);
 				return {
@@ -78,7 +78,7 @@ describe("the CD function's HTTP entry", () => {
 					body: new TextEncoder().encode("ok"),
 				};
 			},
-		} as unknown as CdHost;
+		} as never;
 		const origin = await serve(createCdHttpEntry(async () => host));
 		const res = await fetch(`${origin}/v1/cd/freight?x=1`);
 		expect(res.status).toBe(202);

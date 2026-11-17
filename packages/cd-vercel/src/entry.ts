@@ -4,7 +4,11 @@ import type { FeedRequest, FeedResponse } from "@hobo/cd";
 import type { CdHost } from "@hobo/hobo/cd-platform";
 
 import { composeVercelCdHost, memoizedCdHost } from "./compose.js";
-import { openCdStore, readCdStoreCoordinates } from "./store.js";
+import {
+	CdStoreBindingError,
+	openCdStore,
+	readCdStoreCoordinates,
+} from "./store.js";
 
 // The Vercel entries (`api/cd.ts`, `api/tick.ts`). `/healthz` answers 200
 // whatever CD's state (the function is up) and names the build's commit;
@@ -25,8 +29,8 @@ async function readBody(request: IncomingMessage): Promise<Uint8Array> {
 	return new Uint8Array(Buffer.concat(chunks));
 }
 
-function headersOf(request: IncomingMessage): Record<string, string> {
-	const headers: Record<string, string> = {};
+function headersOf(request: IncomingMessage): FeedRequest["headers"] {
+	const headers: { [name: string]: string } = {};
 	for (const [key, value] of Object.entries(request.headers))
 		if (value !== undefined)
 			headers[key.toLowerCase()] = Array.isArray(value)
@@ -51,21 +55,22 @@ async function send(
 	response.end();
 }
 
-function sendJson(response: ServerResponse, status: number, value: object) {
+/** What the function answers itself, before or around the CD mount. */
+type CdOwnAnswer =
+	| Readonly<{ ok: true; commit: string | null }>
+	| Readonly<{ ready: false; started: false; code: string }>
+	| Readonly<{ ok: false; code: string; message: string }>;
+
+function sendJson(
+	response: ServerResponse,
+	status: number,
+	value: CdOwnAnswer,
+) {
 	response.writeHead(status, {
 		"Content-Type": "application/json",
 		"Cache-Control": "no-store",
 	});
 	response.end(JSON.stringify(value));
-}
-
-/** The code a composition failure carries, or a generic one. */
-function startCode(error: unknown): string {
-	return error instanceof Error &&
-		"code" in error &&
-		typeof error.code === "string"
-		? error.code
-		: "cd-start-failed";
 }
 
 /** The Node function handler for the CD mount. */
@@ -91,7 +96,11 @@ export function createCdHttpEntry(
 				sendJson(response, 503, {
 					ready: false,
 					started: false,
-					code: startCode(error),
+					// Each known refusal is a CdStoreBindingError with a code.
+					code:
+						error instanceof CdStoreBindingError
+							? error.code
+							: "cd-start-failed",
 				});
 				return;
 			}
