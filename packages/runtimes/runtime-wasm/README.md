@@ -2,9 +2,14 @@
 
 Camp **component host** backend for `componentHost=wasm` (alias: `isolated-wasm`).
 
-Private bindle components are componentized to wasi:http/proxy `.wasm` and run in
-real **Wasmtime OS-process sandboxes**. Public web stays process-local (wired by
-`@hobo/hobo`).
+Private bindle components are componentized to the HoBo HTTP world and run in
+real **Wasmtime OS-process sandboxes**. The world exports the standard WASI HTTP
+incoming handler and imports the outgoing handler without requiring standard
+input. The vendored standard `wasi:http/proxy` world remains available with its
+original imports. Public web stays process-local (wired by `@hobo/hobo`).
+
+The WASI HTTP interface semantics are defined by the
+[upstream 0.2.3 specification](https://github.com/WebAssembly/wasi-http/tree/v0.2.3/wit).
 
 ```ts
 import { createWasmRuntimeHost, ensureWasmRuntime } from "@hobo/runtime-wasm";

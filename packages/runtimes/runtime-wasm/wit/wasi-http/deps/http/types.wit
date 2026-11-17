@@ -1,0 +1,322 @@
+@since(version = 0.2.0)
+interface types {
+  @since(version = 0.2.0)
+  use wasi:clocks/monotonic-clock@0.2.3.{duration};
+  @since(version = 0.2.0)
+  use wasi:io/streams@0.2.3.{input-stream, output-stream};
+  @since(version = 0.2.0)
+  use wasi:io/error@0.2.3.{error as io-error};
+  @since(version = 0.2.0)
+  use wasi:io/poll@0.2.3.{pollable};
+
+  @since(version = 0.2.0)
+  variant method {
+    get,
+    head,
+    post,
+    put,
+    delete,
+    connect,
+    options,
+    trace,
+    patch,
+    other(string)
+  }
+
+  @since(version = 0.2.0)
+  variant scheme {
+    HTTP,
+    HTTPS,
+    other(string)
+  }
+
+  @since(version = 0.2.0)
+  variant error-code {
+    DNS-timeout,
+    DNS-error(DNS-error-payload),
+    destination-not-found,
+    destination-unavailable,
+    destination-IP-prohibited,
+    destination-IP-unroutable,
+    connection-refused,
+    connection-terminated,
+    connection-timeout,
+    connection-read-timeout,
+    connection-write-timeout,
+    connection-limit-reached,
+    TLS-protocol-error,
+    TLS-certificate-error,
+    TLS-alert-received(TLS-alert-received-payload),
+    HTTP-request-denied,
+    HTTP-request-length-required,
+    HTTP-request-body-size(option<u64>),
+    HTTP-request-method-invalid,
+    HTTP-request-URI-invalid,
+    HTTP-request-URI-too-long,
+    HTTP-request-header-section-size(option<u32>),
+    HTTP-request-header-size(option<field-size-payload>),
+    HTTP-request-trailer-section-size(option<u32>),
+    HTTP-request-trailer-size(field-size-payload),
+    HTTP-response-incomplete,
+    HTTP-response-header-section-size(option<u32>),
+    HTTP-response-header-size(field-size-payload),
+    HTTP-response-body-size(option<u64>),
+    HTTP-response-trailer-section-size(option<u32>),
+    HTTP-response-trailer-size(field-size-payload),
+    HTTP-response-transfer-coding(option<string>),
+    HTTP-response-content-coding(option<string>),
+    HTTP-response-timeout,
+    HTTP-upgrade-failed,
+    HTTP-protocol-error,
+    loop-detected,
+    configuration-error,
+    internal-error(option<string>)
+  }
+
+  @since(version = 0.2.0)
+  record DNS-error-payload {
+    rcode: option<string>,
+    info-code: option<u16>
+  }
+
+  @since(version = 0.2.0)
+  record TLS-alert-received-payload {
+    alert-id: option<u8>,
+    alert-message: option<string>
+  }
+
+  @since(version = 0.2.0)
+  record field-size-payload {
+    field-name: option<string>,
+    field-size: option<u32>
+  }
+
+  @since(version = 0.2.0)
+  http-error-code: func(err: borrow<io-error>) -> option<error-code>;
+
+  @since(version = 0.2.0)
+  variant header-error {
+    invalid-syntax,
+
+    forbidden,
+
+    immutable,
+  }
+
+  @since(version = 0.2.1)
+  type field-name = field-key;
+
+  @since(version = 0.2.0)
+  @deprecated(version = 0.2.2)
+  type field-key = string;
+
+  @since(version = 0.2.0)
+  type field-value = list<u8>;
+
+  @since(version = 0.2.0)
+  resource fields {
+
+    @since(version = 0.2.0)
+    constructor();
+
+    @since(version = 0.2.0)
+    from-list: static func(
+      entries: list<tuple<field-name,field-value>>
+    ) -> result<fields, header-error>;
+
+    @since(version = 0.2.0)
+    get: func(name: field-name) -> list<field-value>;
+
+    @since(version = 0.2.0)
+    has: func(name: field-name) -> bool;
+
+    @since(version = 0.2.0)
+    set: func(name: field-name, value: list<field-value>) -> result<_, header-error>;
+
+    @since(version = 0.2.0)
+    delete: func(name: field-name) -> result<_, header-error>;
+
+    @since(version = 0.2.0)
+    append: func(name: field-name, value: field-value) -> result<_, header-error>;
+
+    @since(version = 0.2.0)
+    entries: func() -> list<tuple<field-name,field-value>>;
+
+    @since(version = 0.2.0)
+    clone: func() -> fields;
+  }
+
+  @since(version = 0.2.0)
+  type headers = fields;
+
+  @since(version = 0.2.0)
+  type trailers = fields;
+
+  @since(version = 0.2.0)
+  resource incoming-request {
+
+    @since(version = 0.2.0)
+    method: func() -> method;
+
+    @since(version = 0.2.0)
+    path-with-query: func() -> option<string>;
+
+    @since(version = 0.2.0)
+    scheme: func() -> option<scheme>;
+
+    @since(version = 0.2.0)
+    authority: func() -> option<string>;
+
+    @since(version = 0.2.0)
+    headers: func() -> headers;
+
+    @since(version = 0.2.0)
+    consume: func() -> result<incoming-body>;
+  }
+
+  @since(version = 0.2.0)
+  resource outgoing-request {
+
+    @since(version = 0.2.0)
+    constructor(
+      headers: headers
+    );
+
+    @since(version = 0.2.0)
+    body: func() -> result<outgoing-body>;
+
+    @since(version = 0.2.0)
+    method: func() -> method;
+    @since(version = 0.2.0)
+    set-method: func(method: method) -> result;
+
+    @since(version = 0.2.0)
+    path-with-query: func() -> option<string>;
+    @since(version = 0.2.0)
+    set-path-with-query: func(path-with-query: option<string>) -> result;
+
+    @since(version = 0.2.0)
+    scheme: func() -> option<scheme>;
+    @since(version = 0.2.0)
+    set-scheme: func(scheme: option<scheme>) -> result;
+
+    @since(version = 0.2.0)
+    authority: func() -> option<string>;
+    @since(version = 0.2.0)
+    set-authority: func(authority: option<string>) -> result;
+
+    @since(version = 0.2.0)
+    headers: func() -> headers;
+  }
+
+  @since(version = 0.2.0)
+  resource request-options {
+    @since(version = 0.2.0)
+    constructor();
+
+    @since(version = 0.2.0)
+    connect-timeout: func() -> option<duration>;
+
+    @since(version = 0.2.0)
+    set-connect-timeout: func(duration: option<duration>) -> result;
+
+    @since(version = 0.2.0)
+    first-byte-timeout: func() -> option<duration>;
+
+    @since(version = 0.2.0)
+    set-first-byte-timeout: func(duration: option<duration>) -> result;
+
+    @since(version = 0.2.0)
+    between-bytes-timeout: func() -> option<duration>;
+
+    @since(version = 0.2.0)
+    set-between-bytes-timeout: func(duration: option<duration>) -> result;
+  }
+
+  @since(version = 0.2.0)
+  resource response-outparam {
+
+    @since(version = 0.2.0)
+    set: static func(
+      param: response-outparam,
+      response: result<outgoing-response, error-code>,
+    );
+  }
+
+  @since(version = 0.2.0)
+  type status-code = u16;
+
+  @since(version = 0.2.0)
+  resource incoming-response {
+
+    @since(version = 0.2.0)
+    status: func() -> status-code;
+
+    @since(version = 0.2.0)
+    headers: func() -> headers;
+
+    @since(version = 0.2.0)
+    consume: func() -> result<incoming-body>;
+  }
+
+  @since(version = 0.2.0)
+  resource incoming-body {
+
+    @since(version = 0.2.0)
+    %stream: func() -> result<input-stream>;
+
+    @since(version = 0.2.0)
+    finish: static func(this: incoming-body) -> future-trailers;
+  }
+
+  @since(version = 0.2.0)
+  resource future-trailers {
+
+    @since(version = 0.2.0)
+    subscribe: func() -> pollable;
+
+    @since(version = 0.2.0)
+    get: func() -> option<result<result<option<trailers>, error-code>>>;
+  }
+
+  @since(version = 0.2.0)
+  resource outgoing-response {
+
+    @since(version = 0.2.0)
+    constructor(headers: headers);
+
+    @since(version = 0.2.0)
+    status-code: func() -> status-code;
+
+    @since(version = 0.2.0)
+    set-status-code: func(status-code: status-code) -> result;
+
+    @since(version = 0.2.0)
+    headers: func() -> headers;
+
+    @since(version = 0.2.0)
+    body: func() -> result<outgoing-body>;
+  }
+
+  @since(version = 0.2.0)
+  resource outgoing-body {
+
+    @since(version = 0.2.0)
+    write: func() -> result<output-stream>;
+
+    @since(version = 0.2.0)
+    finish: static func(
+      this: outgoing-body,
+      trailers: option<trailers>
+    ) -> result<_, error-code>;
+  }
+
+  @since(version = 0.2.0)
+  resource future-incoming-response {
+    @since(version = 0.2.0)
+    subscribe: func() -> pollable;
+
+    @since(version = 0.2.0)
+    get: func() -> option<result<result<incoming-response, error-code>>>;
+  }
+}
