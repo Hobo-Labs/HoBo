@@ -75,9 +75,9 @@ describe("authoring-surface journal consumer boundary", () => {
 		});
 
 		// First attempt crashes after the first step is journaled.
-		await expect(engine.start(checkout, { id: "order-1" })).rejects.toThrow(
-			"SIMULATED_HOST_CRASH",
-		);
+		await expect(
+			engine.start(checkout, { id: "order-1" }, { runId: "run-1" }),
+		).rejects.toThrow("SIMULATED_HOST_CRASH");
 
 		// A new engine over the same journal resumes and completes.
 		const resumeEngine = createWorkflowEngine({ store: engine.store });
