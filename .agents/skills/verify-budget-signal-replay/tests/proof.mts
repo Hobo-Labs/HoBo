@@ -19,7 +19,7 @@ try {
   const result=spawnSync('python3',[proof],{env,stdio:'inherit'});
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error('budget signal decision proof failed');
-  for (const mutation of ['type','scope','payload','metadata','incomplete']) {
+  for (const mutation of ['type','scope','payload','metadata','incomplete','orphan']) {
     const mutant=spawnSync('python3',[proof],{env:{...env,BUDGET_SIGNAL_PROOF_MUTATION:mutation},encoding:'utf8'});
     if (mutant.error) throw mutant.error;
     if (mutant.status === 0 || !mutant.stdout.includes('FAIL ')) throw new Error(`proof mutation ${mutation} was not detected`);
