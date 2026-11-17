@@ -86,7 +86,6 @@ describe("fleet offers", () => {
 		expect(fleetRoleOfOffer(arc)).toBe("overflow");
 		expect(fleetRoleOfOffer(blacksmith)).toBe("overflow");
 		expect(fleetRoleOfOffer(github)).toBe("last-resort");
-		// No model prices a Sandbox as a runner host.
 		expect(fleetRoleOfOffer(sandbox)).toBeUndefined();
 		expect(runnerModelForOffer(blacksmith)?.id).toBe("blacksmith-4vcpu");
 	});
@@ -219,7 +218,6 @@ describe("fleet offers", () => {
 		expect(spill(0, 0)).toEqual(["box", "arc", "blacksmith", "github"]);
 		expect(spill(3, 0)).toEqual(["arc", "blacksmith", "github"]);
 		expect(spill(3, 3)).toEqual(["blacksmith", "github"]);
-		// A job that needs its own machine never lands on the shared cluster.
 		expect(spill(3, 0, true)).toEqual(["blacksmith", "github"]);
 	});
 
@@ -272,7 +270,6 @@ describe("fleet offers", () => {
 		expect(members.map((member) => member.payerExposureMicros)).toEqual([
 			1_200_000, 1_200_000,
 		]);
-		// Both offers answer to the one account's ceiling, as in admission.
 		expect(members.map((member) => member.activeJobs)).toEqual([2, 2]);
 	});
 

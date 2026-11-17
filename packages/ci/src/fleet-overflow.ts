@@ -1,9 +1,3 @@
-/**
- * Pure fleet admission: prefer the hobo fleet, spill to ARC, then a local box,
- * then GitHub-hosted, only when those overflow members are enabled and have
- * free slots. No I/O. Callers pass already-resolved member capacity.
- */
-
 export type FleetBackend = "hobo" | "arc" | "local" | "github";
 
 export type FleetMember = Readonly<{
@@ -21,20 +15,14 @@ export type FleetSelection = Readonly<{
 	spilled: boolean;
 }>;
 
-/** Concrete GitHub-hosted default. Never ubuntu-latest. */
 // public-contract: the GitHub-hosted machine type overflow uses instead of ubuntu-latest.
 export const DEFAULT_GITHUB_MACHINE_TYPE = "ubuntu-24.04";
 
 const HOBO_JIT_LABELS = new Set(["hobo", "hobo-trunk"]);
 
-/** The label a local box registers with (the `local` provider kind's `runsOn`). */
 // public-contract: the `runs-on` label a routed job asks a local box for.
 export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
 
-/**
- * Nearest first: capacity the operator already runs, then a workstation that
- * may or may not be connected, then GitHub's own machines, which always are.
- */
 const OVERFLOW_BACKEND_ORDER: readonly FleetBackend[] = [
 	"arc",
 	"local",
@@ -45,11 +33,6 @@ export function isGithubLatestLabel(runsOn: string): boolean {
 	return runsOn.trim().toLowerCase() === "ubuntu-latest";
 }
 
-/**
- * Overflow labels never enter hobo JIT admission.
- * True when the sole label is a concrete ARC scale-set name or GitHub-hosted
- * machine type (anything other than the hobo / hobo-trunk admission labels).
- */
 export function isOverflowRunnerLabel(labels: readonly string[]): boolean {
 	if (labels.length !== 1) return false;
 	const label = labels[0]?.trim().toLowerCase() ?? "";
@@ -70,12 +53,6 @@ function isOverflowBackend(backend: FleetBackend): boolean {
 	return backend !== "hobo";
 }
 
-/**
- * Prefer hobo when it has free slots; else the first enabled overflow member
- * with freeSlots > 0: ARC, then a local box, then GitHub-hosted.
- * Config off (no enabled overflow) → hobo, or undefined when hobo is also empty.
- * Already-bound overflow labels stay on that member (no re-relay back to hobo).
- */
 export function selectFleetBackend(input: {
 	members: readonly FleetMember[];
 	currentLabels: readonly string[];
@@ -116,20 +93,12 @@ export function selectFleetBackend(input: {
 	return undefined;
 }
 
-/**
- * Labels stamped onto queued demand for a relayed job.
- * GitHub-hosted and ARC (kubernetes + gh-actions, not the isolated worker label)
- * keep the concrete runs-on label so a later hobo pass cannot re-relay them.
- * Everything else stays on hobo / hobo-trunk.
- */
 export function queuedDemandLabels(
 	leaseProvider: string,
 	offerBackend: string,
 	offerRunsOn: string,
 	originalLabels: readonly string[],
 ): string[] {
-	// GitHub-hosted offers often omit backend (empty means gh-actions). ARC must
-	// be an explicit gh-actions backend so an isolated worker label is not stamped.
 	const hostedGithub =
 		leaseProvider === "github" &&
 		(offerBackend === "gh-actions" || offerBackend === "") &&
@@ -146,11 +115,6 @@ export function queuedDemandLabels(
 	return [hoboLabel ?? "hobo"];
 }
 
-/**
- * Isolated abort covers Vercel Sandbox and the box worker always.
- * Kubernetes is aborted only when the offer proves isolated-container.
- * An unknown kubernetes backend is left alone so ARC cannot requeue-loop.
- */
 export function shouldAbortIsolatedFleetLease(
 	provider: string,
 	offer?: { backend: string; runsOn: string },
@@ -160,11 +124,6 @@ export function shouldAbortIsolatedFleetLease(
 	return isIsolatedFleetProvider(provider, offer.backend, offer.runsOn);
 }
 
-/**
- * Isolated fleet hosts are the box worker and the kubernetes isolated-container
- * offer pinned to hobo-isolated-worker. Kubernetes + gh-actions (ARC) is shared
- * overflow capacity and must not be treated as isolated.
- */
 export function isIsolatedFleetProvider(
 	provider: string,
 	backend: string,

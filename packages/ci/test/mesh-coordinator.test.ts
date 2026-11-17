@@ -16,7 +16,6 @@ const node = (id: string, freeSlots = 2): MeshNode => ({
 	freeSlots,
 	healthy: true,
 	labels: ["hobo"],
-	// As long as any advertisement may ask to be believed.
 	validUntilMs: START + 300_000,
 });
 
@@ -50,10 +49,6 @@ function mesh(
 	return { coordinators, events };
 }
 
-/**
- * Each tick, every live node walks the queue in order, one job at a time, as
- * the worker's poller does; the nodes themselves run side by side.
- */
 async function run(
 	coordinators: ReadonlyMap<string, ReturnType<typeof createMeshCoordinator>>,
 	clock: { now: number },
@@ -104,7 +99,6 @@ describe("mesh coordinator", () => {
 		const { coordinators } = mesh(nodes, ports, clock);
 		for (const coordinator of coordinators.values())
 			await coordinator.advertise();
-		// "b" advertised and then died: it never polls.
 		const first = await run(coordinators, clock, 1, (id) => id !== "b");
 		expect(first.size).toBeLessThan(JOBS.length);
 		const all = await run(coordinators, clock, 5, (id) => id !== "b");
@@ -138,10 +132,8 @@ describe("mesh coordinator", () => {
 		for (const coordinator of coordinators.values())
 			await coordinator.advertise();
 		const started = await run(coordinators, clock, 1);
-		// Complete views and no store: the ranking alone still picks one node.
 		expect(started.size).toBe(JOBS.length);
 		expect([...started.values()].every((ids) => ids.length === 1)).toBe(true);
-		// One failed attempt per node, then the store is left alone for a while.
 		expect(attempts).toBe(3);
 		expect(events.map((entry) => entry.event)).toEqual([
 			"hobo_ci_mesh_claims_unreachable",
@@ -174,7 +166,6 @@ describe("mesh coordinator", () => {
 		const before = await Promise.all(
 			JOBS.slice(0, 50).map((each) => coordinator.shouldStart(each)),
 		);
-		// "b" has far more capacity, so most jobs are its turn first.
 		expect(before.filter((decision) => !decision.start).length).toBeGreaterThan(
 			40,
 		);
@@ -183,7 +174,6 @@ describe("mesh coordinator", () => {
 		const during = await Promise.all(
 			JOBS.slice(50, 100).map((each) => coordinator.shouldStart(each)),
 		);
-		// The last view still holds "b": this node keeps deferring to it.
 		expect(during.filter((decision) => !decision.start).length).toBeGreaterThan(
 			40,
 		);
@@ -247,7 +237,6 @@ describe("mesh coordinator", () => {
 			now: () => START,
 		});
 		expect(await coordinator.advertise()).toBe(false);
-		// Knowing no one, it ranks alone and starts.
 		expect(await coordinator.shouldStart(job(3))).toMatchObject({
 			start: true,
 			reason: "claimed",

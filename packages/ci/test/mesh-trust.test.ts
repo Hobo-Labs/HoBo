@@ -66,7 +66,6 @@ describe("a node's identity", () => {
 	it("is the same identity when read back from its stored key", () => {
 		const restored = meshIdentityFromPem(a.privateKeyPem);
 		expect(restored.publicKey).toBe(a.identity.publicKey);
-		// Ed25519 is deterministic: the same key signs the same bytes the same way.
 		expect(restored.sign("payload")).toBe(a.identity.sign("payload"));
 	});
 
@@ -122,7 +121,6 @@ describe("signing an advertisement", () => {
 			null,
 			"KEY",
 		]);
-		// An absent figure is null, which a zero is not.
 		expect(
 			JSON.parse(
 				meshAdvertSigningPayload(
@@ -155,7 +153,6 @@ describe("signing an advertisement", () => {
 			null,
 			"KEY",
 		]);
-		// The repository a local runner serves is signed too.
 		expect(
 			JSON.parse(
 				meshAdvertSigningPayload(node("local-a", { repository: "o/r" }), "K"),
@@ -170,7 +167,6 @@ describe("signing an advertisement", () => {
 		);
 		expect(signed.trust).toBeUndefined();
 		expect(signed.seenAtMs).toBeUndefined();
-		// A reader annotating the advertisement does not break its signature.
 		expect(verifyMeshAdvert({ ...signed, trust: "invalid", seenAtMs: 5 })).toBe(
 			"valid",
 		);
@@ -206,15 +202,12 @@ describe("verifying an advertisement", () => {
 	});
 
 	it("cannot be given a later expiry, so a replay ends when the original did", () => {
-		// Replayed unchanged, the signature still holds, and the expiry it
-		// signed is the one a reader goes by: past it the node is stale.
 		expect(verifyMeshAdvert(signed)).toBe("valid");
 		expect(fitJob(job(1), signed, signed.validUntilMs - 1).copies).toBe(2);
 		expect(fitJob(job(1), signed, signed.validUntilMs)).toEqual({
 			copies: 0,
 			lacking: "stale",
 		});
-		// Extending it is the only way to keep it alive, and that breaks the signature.
 		expect(
 			verifyMeshAdvert({
 				...signed,
@@ -296,7 +289,6 @@ describe("how far a reader trusts a node", () => {
 
 	it("lets only an id's bound keys trust it, and calls any other key on it invalid", () => {
 		const policy: MeshTrustPolicy = {
-			// box-a is bound to a; b is listed for any id no entry binds.
 			trustedKeys: [
 				{ publicKey: a.identity.publicKey, nodeId: "box-a" },
 				{ publicKey: b.identity.publicKey },
@@ -304,22 +296,17 @@ describe("how far a reader trusts a node", () => {
 			requireTrusted: false,
 		};
 		expect(assessMeshTrust(signed, policy)).toBe("trusted");
-		// b's key is trusted for unbound ids, but box-a is bound: it may not
-		// claim box-a, and the claim is invalid, not merely unknown.
 		const impostor = signMeshAdvert(node("box-a"), b.identity);
 		expect(assessMeshTrust(impostor, policy)).toBe("invalid");
 		expect(fitJob(job(1), { ...impostor, trust: "invalid" }, NOW)).toEqual({
 			copies: 0,
 			lacking: "trust",
 		});
-		// An unsigned advertisement under a bound id cannot be that node either.
 		const { identity: _identity, ...unsigned } = signed;
 		expect(assessMeshTrust(unsigned, policy)).toBe("invalid");
-		// Under an id nobody binds, the unbound entry applies as before.
 		expect(
 			assessMeshTrust(signMeshAdvert(node("box-z"), b.identity), policy),
 		).toBe("trusted");
-		// And a key bound elsewhere is only unknown there.
 		expect(
 			assessMeshTrust(signMeshAdvert(node("box-z"), a.identity), policy),
 		).toBe("unverified");
@@ -331,7 +318,6 @@ describe("how far a reader trusts a node", () => {
 			requireTrusted: false,
 		};
 		expect(assessMeshTrust(signed, bound)).toBe("trusted");
-		// The same key, validly signing as another node: unknown there, not forged.
 		expect(
 			assessMeshTrust(signMeshAdvert(node("box-z"), a.identity), bound),
 		).toBe("unverified");
@@ -342,7 +328,6 @@ describe("how far a reader trusts a node", () => {
 			trustedKeys: [{ publicKey: a.identity.publicKey }],
 			requireTrusted: false,
 		});
-		// A list with no keys is no list, but its requirement still stands.
 		expect(
 			effectiveMeshTrust(
 				{ trustedKeys: [], requireTrusted: true },
@@ -383,7 +368,6 @@ describe("ranking by trust", () => {
 			nodes: 1,
 			freeSlots: 2,
 		});
-		// The bound is the longest advertisement plus a minute of skew.
 		const edge = NOW + MESH_MAX_ADVERT_TTL_MS + MESH_MAX_CLOCK_SKEW_MS;
 		expect(meshAdvertRejected(node("edge", { validUntilMs: edge }), NOW)).toBe(
 			false,
@@ -429,7 +413,6 @@ describe("ranking by trust", () => {
 				requireTrusted: true,
 			}),
 		).toEqual({ start: true, rank: 0, reason: "alone" });
-		// A forged advertisement under this node's own id does not unseat it.
 		expect(
 			claimTurn({
 				job: job(7),
@@ -466,7 +449,6 @@ describe("a board that signs and assesses", () => {
 		await boardOf(a.identity).advertise(node("box-a"));
 		await boardOf(b.identity).advertise(node("box-b"));
 		await boardOf().advertise(node("box-old"));
-		// A forged advertisement: box-a's figures changed after it signed.
 		const [stored] = (await memory.board.nodes()).filter(
 			(each) => each.id === "box-a",
 		);
@@ -510,7 +492,6 @@ describe("a board that signs and assesses", () => {
 			now: () => NOW,
 		});
 		await coordinator.advertise();
-		// A forgery claiming far more room than box-a has.
 		await memory.board.advertise({
 			...signMeshAdvert(node("box-big", { freeSlots: 1 }), b.identity),
 			freeSlots: 64,
@@ -549,7 +530,6 @@ describe("a board that signs and assesses", () => {
 			viewMaxAgeMs: 0,
 			now: () => NOW,
 		});
-		// An unlisted peer with far more room is first for most jobs.
 		await boardOf(b.identity).advertise(node("box-b", { freeSlots: 40 }));
 		const first = async () => {
 			let count = 0;

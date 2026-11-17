@@ -151,7 +151,6 @@ describe("selectFleetBackend", () => {
 			selectFleetBackend({ members, currentLabels: ["hobo"] })?.backend;
 		expect(pick([hobo(0), github(4), local(1)])).toBe("local");
 		expect(pick([hobo(0), github(4), local(1), arc(1)])).toBe("arc");
-		// Enrolled but busy, or not enrolled at all: GitHub-hosted is next.
 		expect(pick([hobo(0), github(4), local(0)])).toBe("github");
 		expect(pick([hobo(0), github(4), local(3, false)])).toBe("github");
 		expect(pick([hobo(1), github(4), local(1)])).toBe("hobo");

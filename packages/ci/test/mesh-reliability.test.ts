@@ -35,20 +35,16 @@ function after(
 describe("mesh reliability score", () => {
 	it("trusts a node with no history", () => {
 		expect(meshReliabilityScore(newMeshReliability(NOW), NOW, OPTIONS)).toBe(1);
-		// Deliveries alone never move it off 1.
 		const busy = after(newMeshReliability(NOW), "delivered", 50, NOW);
 		expect(meshReliabilityScore(busy, NOW, OPTIONS)).toBe(1);
 	});
 
 	it("is the share of recent jobs delivered, with the prior behind it", () => {
-		// One drop on a new node: 4 imagined deliveries against 1 drop.
 		const one = after(newMeshReliability(NOW), "dropped", 1, NOW);
 		expect(meshReliabilityScore(one, NOW, OPTIONS)).toBeCloseTo(4 / 5, 10);
-		// Half of twenty jobs dropped: (10 + 4) / (20 + 4).
 		let half = after(newMeshReliability(NOW), "delivered", 10, NOW);
 		half = after(half, "dropped", 10, NOW);
 		expect(meshReliabilityScore(half, NOW, OPTIONS)).toBeCloseTo(14 / 24, 10);
-		// Dropping many drives it down, and never to zero or below.
 		const many = after(newMeshReliability(NOW), "dropped", 200, NOW);
 		const score = meshReliabilityScore(many, NOW, OPTIONS);
 		expect(score).toBeCloseTo(4 / 204, 10);
@@ -56,18 +52,15 @@ describe("mesh reliability score", () => {
 	});
 
 	it("recovers on its own once the drops stop", () => {
-		// A disk fills and ten jobs are lost.
 		const broken = after(newMeshReliability(NOW), "dropped", 10, NOW);
 		const at = (minutes: number) =>
 			meshReliabilityScore(broken, NOW + minutes * MINUTE, OPTIONS);
 		expect(at(0)).toBeCloseTo(4 / 14, 10);
-		// Each half-life halves what those drops count for.
 		expect(at(30)).toBeCloseTo(4 / 9, 10);
 		expect(at(60)).toBeCloseTo(4 / 6.5, 10);
 		expect(at(120)).toBeCloseTo(4 / 4.625, 10);
 		expect(at(180)).toBeCloseTo(4 / 4.15625, 10);
 		expect(at(360)).toBeGreaterThan(0.99);
-		// It only ever rises while nothing is dropped.
 		let previous = at(0);
 		for (let minutes = 5; minutes <= 600; minutes += 5) {
 			expect(at(minutes)).toBeGreaterThan(previous);
@@ -83,14 +76,13 @@ describe("mesh reliability score", () => {
 			NOW + 30 * MINUTE,
 			OPTIONS,
 		);
-		// (10 + 4) / (10 + 5 + 4) against 4 / (5 + 4).
 		expect(worked).toBeCloseTo(14 / 19, 10);
 		expect(worked).toBeGreaterThan(waited + 0.25);
 	});
 
 	it("fades old deliveries too, so a long good record does not hide new drops", () => {
 		const veteran = after(newMeshReliability(NOW), "delivered", 100, NOW);
-		const later = NOW + 240 * MINUTE; // eight half-lives: 100 counts for 0.39
+		const later = NOW + 240 * MINUTE;
 		const failing = after(veteran, "dropped", 6, later);
 		expect(meshReliabilityScore(failing, later, OPTIONS)).toBeLessThan(0.45);
 	});
@@ -108,7 +100,6 @@ describe("mesh reliability score", () => {
 
 	it("takes a delivery back when the runner is lost afterwards", () => {
 		const picked = after(newMeshReliability(NOW), "delivered", 1, NOW);
-		// Ten minutes on the runner disappears: that job was dropped, not delivered.
 		const lost = retractMeshDelivery(picked, NOW, NOW + 10 * MINUTE, OPTIONS);
 		expect(lost.delivered).toBeCloseTo(0, 10);
 		expect(lost.dropped).toBe(1);
@@ -116,7 +107,6 @@ describe("mesh reliability score", () => {
 			4 / 5,
 			10,
 		);
-		// Exactly what recording a drop in the first place would have given.
 		const direct = recordMeshOutcome(
 			newMeshReliability(NOW),
 			"dropped",
@@ -153,9 +143,7 @@ describe("ranking by reliability", () => {
 	};
 
 	it("gives a node that drops half its jobs half the share of first places", () => {
-		// Equal capacity; one delivers half of what it takes.
 		const mesh = [node("steady"), node("flaky", { reliability: 0.5 })];
-		// Weights 2 and 1: a third of first places, not a half.
 		expect(share(mesh, "flaky")).toBeGreaterThan(0.31);
 		expect(share(mesh, "flaky")).toBeLessThan(0.36);
 		expect(share(mesh, "steady")).toBeGreaterThan(0.64);
@@ -170,7 +158,6 @@ describe("ranking by reliability", () => {
 	it("keeps a small share for a node with a ruined record, so it can earn it back", () => {
 		const mesh = [node("steady"), node("ruined", { reliability: 0.001 })];
 		const ruined = share(mesh, "ruined");
-		// The floor, 0.05, against 1: about one job in twenty-one.
 		expect(ruined).toBeGreaterThan(0.03);
 		expect(ruined).toBeLessThan(0.07);
 		expect(meshReliabilityWeight(0)).toBe(MESH_MIN_RELIABILITY);
@@ -189,7 +176,6 @@ describe("ranking by reliability", () => {
 	});
 
 	it("combines with capacity: more room can outweigh a worse record", () => {
-		// Eight copies at 0.5 is a weight of 4, against 2 at full trust.
 		const mesh = [
 			node("small"),
 			node("large", { freeSlots: 8, reliability: 0.5 }),

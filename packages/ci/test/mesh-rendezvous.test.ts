@@ -53,7 +53,6 @@ describe("rankNodes", () => {
 				node("full", { freeSlots: 0 }),
 				node("stale", { validUntilMs: NOW }),
 				node("other", { labels: ["hobo-trunk"] }),
-				// A second advertisement for the same node counts once.
 				node("ok", { freeSlots: 64 }),
 			],
 			NOW,
@@ -73,7 +72,6 @@ describe("rankNodes", () => {
 			first.set(winner, (first.get(winner) ?? 0) + 1);
 		}
 		const share = (id: string) => (first.get(id) ?? 0) / JOBS.length;
-		// 1 : 2 : 5 of 8, within two points over 6000 jobs.
 		expect(share("small")).toBeCloseTo(1 / 8, 1);
 		expect(share("medium")).toBeCloseTo(2 / 8, 1);
 		expect(share("large")).toBeCloseTo(5 / 8, 1);
@@ -86,14 +84,12 @@ describe("rankNodes", () => {
 		for (const each of JOBS) {
 			const before = ids(rankNodes(each, mesh, NOW));
 			const after = ids(rankNodes(each, without, NOW));
-			// The survivors keep their relative order for every job.
 			expect(after).toEqual(before.filter((id) => id !== "box-b"));
 			if (before[0] !== after[0]) {
 				moved += 1;
 				expect(before[0]).toBe("box-b");
 			}
 		}
-		// About a quarter of the jobs had box-b first; nothing else moved.
 		expect(moved / JOBS.length).toBeGreaterThan(0.2);
 		expect(moved / JOBS.length).toBeLessThan(0.3);
 	});
@@ -165,7 +161,6 @@ describe("claimTurn", () => {
 			rank: 0,
 			reason: "alone",
 		});
-		// Every advertisement it holds has expired: the same as knowing no one.
 		const stale = peers.map((entry) => ({ ...entry, validUntilMs: NOW - 1 }));
 		expect(
 			claimTurn({
@@ -221,7 +216,6 @@ describe("claimTurn", () => {
 	});
 
 	it("fails over within one step whichever node is lost, even when views disagree", () => {
-		// Each node knows only itself and one neighbour.
 		const views = new Map([
 			["box-a", [node("box-a"), node("box-b")]],
 			["box-b", [node("box-b"), node("laptop")]],
@@ -232,12 +226,8 @@ describe("claimTurn", () => {
 				.filter(([id]) => id !== lost)
 				.filter(([id, view]) => turn(id, each, nowMs, view).start).length;
 		for (const each of JOBS.slice(0, 1000)) {
-			// Nobody lost: someone starts at once. Scores are one total order,
-			// so the views cannot all defer to each other in a circle.
 			expect(starting(each, "", NOW)).toBeGreaterThanOrEqual(1);
 			for (const lost of ["box-a", "box-b", "laptop"]) {
-				// The survivors may each be waiting on the node that is gone.
-				// One step later at least one of them has started.
 				expect(starting(each, lost, NOW + 20_000)).toBeGreaterThanOrEqual(1);
 			}
 		}
@@ -259,7 +249,6 @@ describe("fitting a job to a node", () => {
 			copies: 1,
 			limitedBy: "memory",
 		});
-		// The same tight node has room for four of a smaller job.
 		expect(fitJob(light(1), tight, NOW)).toEqual({
 			copies: 4,
 			limitedBy: "slots",
@@ -292,17 +281,14 @@ describe("fitting a job to a node", () => {
 	});
 
 	it("treats what is not reported as unknown, not as zero", () => {
-		// A node on an older version reports no memory: slots alone decide.
 		expect(fitJob(heavy(1), node("old", { freeSlots: 2 }), NOW)).toEqual({
 			copies: 2,
 			limitedBy: "slots",
 		});
-		// A job with no stated needs fits any node with a slot.
 		expect(fitJob(job(1), node("n", { free: { memoryMb: 1 } }), NOW)).toEqual({
 			copies: 2,
 			limitedBy: "slots",
 		});
-		// A node that does not say its platform is not ruled out by it.
 		expect(
 			fitJob(job(1, { needs: { arch: "x64" } }), node("n"), NOW).copies,
 		).toBe(2);
@@ -317,7 +303,6 @@ describe("fitting a job to a node", () => {
 					rankNodes({ ...each, needs: { memoryMb: 6_144 } }, [full, fits], NOW),
 				),
 			).toEqual(["fits"]);
-			// For a job that fits both, the node with more room for it leads more often.
 			expect(
 				ids(
 					rankNodes({ ...each, needs: { memoryMb: 1_024 } }, [full, fits], NOW),
@@ -327,8 +312,6 @@ describe("fitting a job to a node", () => {
 	});
 
 	it("shares jobs by how many of that job each node could start", () => {
-		// Eight slots but memory for one heavy job, against two slots with
-		// memory for two: the second node should lead about twice as often.
 		const wide = node("wide", { freeSlots: 8, free: { memoryMb: 7_000 } });
 		const deep = node("deep", { freeSlots: 2, free: { memoryMb: 16_000 } });
 		let deepFirst = 0;
@@ -346,8 +329,6 @@ describe("fitting a job to a node", () => {
 	});
 
 	it("does not wait for a node that cannot fit the job", () => {
-		// `self` would rank behind `big` on slots, but `big` has no memory for
-		// this job, so `self` is alone in the order and starts at once.
 		const self = node("self", { freeSlots: 1, free: { memoryMb: 8_000 } });
 		const big = node("big", { freeSlots: 16, free: { memoryMb: 1_000 } });
 		expect(

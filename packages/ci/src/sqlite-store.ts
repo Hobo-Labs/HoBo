@@ -63,7 +63,6 @@ import {
 	webhookRetryDelayMs,
 } from "./webhook-inbox.js";
 
-/** Acknowledged tombstones only need to outlive the replay window and any queued/in-progress run. */
 const INBOX_TOMBSTONE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const INTENT_EVENT_TYPES = [
 	"ci.DispatchRequested",
@@ -100,16 +99,6 @@ function jobKey(job: Job): string {
 	return `${job.repositoryId}:${job.id}:${job.runAttempt}`;
 }
 
-/**
- * Durable single-host CI store over node:sqlite (ADR-0135): the same
- * `HostedInboxStore` contract as `PostgresCiStore`, one file, one writer.
- * The lease journal tables are `LeaseStore`'s, so policy validation and job
- * observation semantics are shared rather than re-implemented. Vercel Sandbox
- * egress/proxy accounting stays Postgres-only. Shared-budget policies require
- * trusted hooks and fail closed without them. A SQLite budget authority must
- * use a separate database file because its synchronous transaction commits
- * independently while the lease journal holds its own writer lock.
- */
 export class SqliteCiStore {
 	private readonly db: DatabaseSync;
 	private readonly leases: LeaseStore;
@@ -280,10 +269,6 @@ export class SqliteCiStore {
 			this.leases.putControlRecord(key, accountId, bodyJson, at),
 		);
 	}
-	/**
-	 * Write a record whose `status` never leaves `terminalStatus` once it is
-	 * there: a late writer carrying an earlier status gets the stored record back.
-	 */
 	putControlRecordMonotonic(
 		key: string,
 		accountId: string,
@@ -324,23 +309,12 @@ export class SqliteCiStore {
 	events(): Promise<CiEvent[]> {
 		return this.read(() => this.leases.events());
 	}
-	/** The journal's newest position: where "from now on" starts. */
 	journalHead(): Promise<number> {
 		return this.read(() => this.leases.journalHead());
 	}
-	/** An account's events after a journal position, or its newest ones. */
 	eventsSince(cursor: EventCursor): Promise<CiEventPage> {
 		return this.read(() => this.leases.eventsSince(cursor));
 	}
-	/**
-	 * The newest events of one of an account's leases, in journal order.
-	 *
-	 * The statement names the lease index it reads through. Left to choose,
-	 * SQLite walks the whole journal backwards to satisfy the ordering, which
-	 * stops this single-threaded store, and its host, for as long as the
-	 * journal is long. Through the index it touches the lease's own events and
-	 * sorts those; without the index it fails, and does not fall back to the walk.
-	 */
 	leaseEvents(query: LeaseEventsQuery): Promise<SequencedCiEvent[]> {
 		return this.read(() => {
 			const { accountId, leaseId, limit } = leaseEventsBounds(query);
@@ -359,7 +333,6 @@ export class SqliteCiStore {
 				});
 		});
 	}
-	/** Latest dispatch/claim intent for each lease, without scanning history. */
 	latestLeaseIntents(ids: readonly string[]): Promise<CiEvent[]> {
 		if (ids.length === 0) return Promise.resolve([]);
 		return this.read(() =>
@@ -408,7 +381,6 @@ export class SqliteCiStore {
 			this.leases.observe(job, at);
 		});
 	}
-	/** Reconstruct the earliest queue receipt and pin its policy deadline across retries. */
 	private queueHistory(job: Job, at: string, account: Account) {
 		const prior = this.leases
 			.events()
@@ -445,7 +417,6 @@ export class SqliteCiStore {
 			leases,
 		};
 	}
-	/** Reserve through the common financial authority before any isolated or bridge effect. */
 	reserve(
 		account: Account,
 		job: Job,
@@ -695,7 +666,6 @@ export class SqliteCiStore {
 		});
 	}
 
-	/** Expire only untouched queued demand; claimed work retains its financial hold. */
 	expireQueued(
 		job: Job,
 		at: string,
@@ -703,7 +673,6 @@ export class SqliteCiStore {
 	): Promise<boolean> {
 		return this.tx(() => this.leases.expireQueued(job, at, expectedRevision));
 	}
-	/** Apply independently verified native finality to a previously retained hold. */
 	reconcileSharedBudget(
 		id: string,
 		paidMicros: number,
@@ -714,7 +683,6 @@ export class SqliteCiStore {
 			this.leases.reconcileSharedBudget(id, paidMicros, evidence, at),
 		);
 	}
-	/** Release only a cancelled hold with trusted proof it was never claimed. */
 	releaseUnusedSharedBudget(
 		id: string,
 		evidenceRef: string,
@@ -725,7 +693,6 @@ export class SqliteCiStore {
 		);
 	}
 
-	/** A fingerprint tombstone remains after acknowledgement for delivery deduplication. */
 	hasWebhook(deliveryId: string): Promise<boolean> {
 		if (!isWebhookDeliveryId(deliveryId)) return Promise.resolve(false);
 		return this.read(
@@ -738,7 +705,6 @@ export class SqliteCiStore {
 	acceptWebhook(input: WebhookInput): Promise<{ duplicate: boolean }> {
 		return this.acceptDelivery(input, false);
 	}
-	/** Remember authenticated deliveries for installations without a current connection. */
 	acceptIgnoredWebhook(input: WebhookInput): Promise<{ duplicate: boolean }> {
 		return this.acceptDelivery(input, true);
 	}
