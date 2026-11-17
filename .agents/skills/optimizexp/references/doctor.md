@@ -77,10 +77,13 @@ fail with the flag. See [app exploration](app-exploration.md#saved-observations-
 | `persona-v2-sections` / `segmentIds` | Append stub KYC sections (agent should flesh out) |
 | `feature-experience-skeleton` | Write `EXPERIENCE.md` draft (`Verdict: revise`) |
 | `feature-json-id` | Align feature.json id to folder name |
-| `build-surface-map` | `explore` with `--skip-probes` |
-| `build-catalog` | Rebuild experience-catalog from map + personas |
+| `build-surface-map` | Create a missing map without running project binaries |
+| `build-catalog` | Create a missing experience catalog from map + personas |
 
 **Not repaired automatically:** template-only Gherkin rewrite (requires agent judgment), product code, secrets, force-push.
+Existing maps and catalogs, including invalid ones, are preserved. Inspect them
+and explicitly re-explore or rebuild when replacement is appropriate. A saved
+observation that only needs confirmation is not replaced by an unprobed map.
 
 Use `--only ensure-config,build-catalog` to limit actions.
 

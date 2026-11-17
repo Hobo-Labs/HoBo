@@ -166,6 +166,7 @@ function main() {
 			root,
 			selection,
 			only: args.only ? args.only.split(/[,\s]+/).filter(Boolean) : undefined,
+			confirmedSurfaces: (args.confirmedSurfaces || "").split(",").filter(Boolean),
 		});
 	} else if (mode === "snapshot") {
 		report = runDoctorSnapshot({

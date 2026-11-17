@@ -30,6 +30,7 @@ export type ExperienceCatalog = {
 	schemaVersion: 1;
 	projectId: string;
 	builtAt: string;
+	coverageScope?: "primary-bin";
 	cliAssessment?: CliAssessment;
 	surfaceMapDigest?: string;
 	surfaceProblems?: string[];
@@ -53,7 +54,6 @@ function wantsCostGoal(personaId: string, body: string): boolean {
 	return /\b(?:finops|cost[- ]controller|cost information|cost estimate|estimated? costs?|budget information)\b/i.test(`${personaId} ${body}`);
 }
 
-/** Help must identify a cost surface; a generic `plan` verb alone is insufficient. */
 function costCommand(map: SurfaceMap): SurfaceMap["commands"][number] | undefined {
 	return map.commands.find((command) => {
 		if (command.id !== "cost" && command.id !== "plan") return false;
@@ -157,7 +157,6 @@ export function buildExperienceCatalog(input: {
 			}
 		}
 
-		// Only a discovered help entry is an executable journey.
 		if (map.nonInteractiveHelp) add({
 			experienceId: "help-discoverability",
 			personaId,
@@ -216,6 +215,7 @@ export function buildExperienceCatalog(input: {
 		schemaVersion: 1,
 		projectId: map.projectId,
 		builtAt: new Date().toISOString(),
+		...(map.coverageScope ? { coverageScope: map.coverageScope } : {}),
 		cliAssessment: map.cliAssessment ?? {
 			status: "unverified",
 			scope: "package.json bin",
@@ -299,12 +299,10 @@ function inferPersonaSurfaces(
 	}
 	if (wantsCostGoal(personaId, body)) {
 		const command = costCommand(map);
-		const success = "The output reports cost or budget information";
-		const failure = "Cost or budget information is missing or unavailable, or the command errors";
 		if (command?.id === "cost") {
-			pushVerb("cost", "cost-zero-path", "Inspect cost and budget information", "P0", success, failure);
+			pushVerb("cost", "cost-zero-path", "Inspect cost and budget information", "P0", "The output reports cost or budget information", "Cost or budget information is missing or unavailable, or the command errors");
 		} else if (command?.id === "plan") {
-			pushVerb("plan", "plan-cost", "Inspect the deployment plan for cost information", "P0", success, failure);
+			pushVerb("plan", "plan-cost", "Inspect the deployment plan for cost information", "P0", "The output reports cost or budget information", "Cost or budget information is missing or unavailable, or the command errors");
 		}
 	}
 	if (/vim|neovim|editor-vim|cli-native/i.test(personaId + body)) {
@@ -376,7 +374,9 @@ export function writeExperienceCatalog(
 		`Built: ${catalog.builtAt}`,
 		"",
 		`Package-bin CLI: ${catalog.cliAssessment?.status ?? "unverified"} — ${catalog.cliAssessment?.evidence ?? "no manifest assessment"}.`,
-		"This covers the package.json bin field only; other CLI and non-CLI surfaces are not assessed here.",
+		catalog.coverageScope === "primary-bin"
+			? "Coverage is limited to the primary package binary; secondary binaries and other surfaces are not assessed here."
+			: "This covers the package.json bin field only; other CLI and non-CLI surfaces are not assessed here.",
 		`Surface validation: ${catalog.surfaceProblems?.length ? `unverified — ${catalog.surfaceProblems.join("; ")}` : catalog.surfaceProblems ? "no map problems" : "unverified — no validation result"}.`,
 		"Map validation checks the recorded shape; it is not runtime evidence or complete experience coverage.",
 		`Unverified persona goals: ${catalog.unverifiedGoals?.length ? catalog.unverifiedGoals.map((goal) => `${goal.personaId}: ${goal.goal} (${goal.reason})`).join("; ") : catalog.unverifiedGoals ? "none recorded" : "unknown"}.`,
@@ -421,6 +421,9 @@ export function validateCatalogCoverage(
 	if (!map || !catalog.surfaceMapDigest || catalog.surfaceMapDigest !== surfaceMapDigest(map)) {
 		return ["catalog is unverified or stale: surface map changed; rebuild the catalog"];
 	}
+	if (catalog.coverageScope !== map.coverageScope) return ["catalog coverage scope differs from surface map"];
+	const mapProblems = validateSurfaceMap(map);
+	if (mapProblems.length) return mapProblems.map((problem) => `surface discovery is unverified: ${problem}`);
 	const assessment = catalog.cliAssessment;
 	if (!assessment || assessment.scope !== "package.json bin" || typeof assessment.evidence !== "string" || !assessment.evidence.trim() || !["present", "not-applicable", "unverified"].includes(assessment.status)) {
 		return ["package-bin CLI coverage is unverified: no manifest assessment"];
@@ -438,6 +441,21 @@ export function validateCatalogCoverage(
 		if (!options) return ["surface observation is unverified: current executable and environment have not been checked"];
 		const current = validateCurrentSurface(map, options.root, options);
 		if (current.length) return current;
+	}
+	if (map.coverageScope === "primary-bin") {
+		const bin = map.binaries[0]?.name;
+		const entries = new Set([
+			map.defaultEntry?.command,
+			map.nonInteractiveHelp?.command,
+			...map.commands.map((command) => `${bin} ${command.argv.join(" ")}`),
+			...(map.requiredJourneys.includes("failure-actionable") ? [`${bin} not-a-real-verb-zz`] : []),
+			...(map.defaultEntry?.interactive && map.interactiveSurfaces.length ? [`${bin}  # use the documented in-session help`] : []),
+		]);
+		for (const row of catalog.experiences) {
+			if ((row.driver !== "cli" && row.driver !== "tui") || !entries.has(row.entryCommand)) {
+				problems.push(`experience ${row.experienceId} is outside primary-bin scope`);
+			}
+		}
 	}
 	if (assessment.status === "not-applicable" && catalog.experiences.length === 0) {
 		return [];

@@ -23,7 +23,6 @@ export type SurfaceCommand = {
 	summary?: string;
 };
 
-/** Applicability is limited to the package.json bin field, not other surfaces. */
 export type CliAssessment = {
 	status: "present" | "not-applicable" | "unverified";
 	scope: "package.json bin";
@@ -36,6 +35,7 @@ export type SurfaceMap = {
 	scannedAt: string;
 	productName: string;
 	packageDir: string;
+	coverageScope?: "primary-bin";
 	cliAssessment?: CliAssessment;
 	binaries: {
 		name: string;
@@ -74,7 +74,6 @@ function digestText(s: string): string {
 	return createHash("sha256").update(s.slice(0, 8000)).digest("hex").slice(0, 16);
 }
 
-/** Bind generated catalogs to the complete saved map, including observations. */
 export function surfaceMapDigest(map: SurfaceMap): string {
 	return createHash("sha256").update(JSON.stringify(map)).digest("hex");
 }
@@ -87,7 +86,6 @@ function executableDigest(file: string): string | null {
 	}
 }
 
-/** Validate saved executable bytes and the operator's scoped freshness assertion. */
 export function validateCurrentSurface(map: SurfaceMap, root: string, options?: {
 	confirmedSurfaces?: string[];
 	freshProbe?: boolean;
@@ -193,7 +191,6 @@ export function assessPackageCli(
 	return inspectPackageBins(packageDir, root).assessment;
 }
 
-/** Prefer the project's declared package binaries over the monorepo root. */
 export function discoverPackageBins(
 	packageDir: string,
 	root: string,
@@ -293,10 +290,9 @@ function detectInteractiveFromSources(packageDir: string, primaryBin: string): {
 export function buildSurfaceMap(input: {
 	project: ProjectRef;
 	root?: string;
-	/** Execute the primary binary with --help; runs trusted project code with inherited environment. */
 	probeBinary?: boolean;
-	/** Explicitly disable probing, including when requested. */
 	skipProbes?: boolean;
+	primaryBinOnly?: boolean;
 }): SurfaceMap {
 	const root = input.root ?? repoRoot();
 	const packageDir = path.join(root, input.project.path || ".");
@@ -374,6 +370,7 @@ export function buildSurfaceMap(input: {
 		scannedAt: new Date().toISOString(),
 		productName: primaryBin?.name ?? pkg?.name ?? input.project.id,
 		packageDir: input.project.path || ".",
+		...(input.primaryBinOnly ? { coverageScope: "primary-bin" as const } : {}),
 		cliAssessment,
 		binaries,
 		binAssessments,
@@ -417,6 +414,11 @@ export function validateSurfaceMap(map: SurfaceMap): string[] {
 	const problems: string[] = [];
 	if (map.schemaVersion !== 1) problems.push("schemaVersion must be 1");
 	if (!map.projectId) problems.push("projectId required");
+	if (map.coverageScope !== undefined && map.coverageScope !== "primary-bin") problems.push("unknown coverage scope");
+	if (map.coverageScope === "primary-bin" && !map.binaries.length) problems.push("primary-bin scope requires a declared binary");
+	if (map.coverageScope === "primary-bin" && map.defaultEntry && map.defaultEntry.command !== map.binaries[0]?.name) problems.push("default entry must name the primary binary");
+	if (map.coverageScope === "primary-bin" && map.nonInteractiveHelp && map.nonInteractiveHelp.command !== `${map.binaries[0]?.name} --help`) problems.push("help entry must name the primary binary");
+	if (map.coverageScope === "primary-bin" && map.commands.some((command) => command.argv.length !== 1 || command.argv[0] !== command.id || !/^[a-z][a-z0-9-]{1,24}$/.test(command.id))) problems.push("primary-bin commands must be single observed verbs");
 	if (
 		!map.cliAssessment ||
 		map.cliAssessment.scope !== "package.json bin" ||
@@ -442,6 +444,13 @@ export function validateSurfaceMap(map: SurfaceMap): string[] {
 	const assessments = Array.isArray(map.binAssessments) ? map.binAssessments : [];
 	for (const [index, bin] of map.binaries.entries()) {
 		if (index > 0) {
+			if (map.coverageScope === "primary-bin") {
+				const matches = assessments.filter((assessment) => assessment.name === bin.name);
+				if (matches.length !== 1 || matches[0]?.status !== "unverified" || map.probes.some((probe) => probe.binName === bin.name)) {
+					problems.push(`binary ${bin.name} must remain unverified outside primary-bin scope`);
+				}
+				continue;
+			}
 			problems.push(`binary ${bin.name} is unverified; secondary-bin journeys are not assessed`);
 			continue;
 		}

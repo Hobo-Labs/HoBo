@@ -17,7 +17,7 @@ import {
 	writeSurfaceMap,
 	type SurfaceMap,
 } from "../lib/surface-map.mts";
-import { runDoctorCheck } from "../lib/doctor.mts";
+import { runDoctorCheck, runDoctorRepair } from "../lib/doctor.mts";
 
 const project = {
 	id: "sample",
@@ -513,6 +513,121 @@ describe("discovery evidence boundaries", () => {
 				probes: [...map.probes, { binName: "sample-mcp", kind: "help", command: "sample-mcp --help", exitCode: 0, stdoutDigest: "fixture", capturedAt: "fixture" }],
 			};
 			assert.match(validateSurfaceMap(claimedSecondary).join("; "), /secondary-bin journeys are not assessed/);
+		});
+	});
+
+	it("allows an explicitly primary-only catalog without claiming secondary experiences", () => {
+		fixture((root, dir) => {
+			writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "sample", bin: { sample: "bin/sample.mjs", "sample-mcp": "bin/mcp.mjs" } }));
+			writeFileSync(path.join(dir, "bin/sample.mjs"), 'console.log("  up       Start app");\n');
+			const marker = path.join(root, "mcp-ran");
+			writeFileSync(path.join(dir, "bin/mcp.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran");\n`);
+			const unprobed = buildSurfaceMap({ project, root, primaryBinOnly: true });
+			assert.match(validateSurfaceMap(unprobed).join("; "), /binary sample is unverified/);
+			const map = buildSurfaceMap({ project, root, probeBinary: true, primaryBinOnly: true });
+			assert.equal(existsSync(marker), false);
+			assert.equal(map.coverageScope, "primary-bin");
+			assert.equal(map.binAssessments?.[1]?.status, "unverified");
+			assert.deepEqual(validateSurfaceMap(map), []);
+			const catalog = buildExperienceCatalog({ project, root, personaIds: ["developer"], surfaceMap: map });
+			assert.deepEqual(validateCatalogCoverage(catalog, ["developer"], map, { root, freshProbe: true }), []);
+			assert.match(validateCatalogCoverage(catalog, ["developer"], map, { root }).join("; "), /confirm-surface-current/);
+			const secondary = { ...catalog.experiences[0]!, experienceId: "secondary", entryCommand: "sample-mcp --help" };
+			catalog.experiences.push(secondary);
+			assert.match(validateCatalogCoverage(catalog, ["developer"], map, { root, freshProbe: true }).join("; "), /outside primary-bin scope/);
+			secondary.entryCommand = "sh -c sample-mcp";
+			assert.match(validateCatalogCoverage(catalog, ["developer"], map, { root, freshProbe: true }).join("; "), /outside primary-bin scope/);
+			const badDefault = { ...map, defaultEntry: { ...map.defaultEntry!, command: "sample-mcp" } };
+			assert.match(validateSurfaceMap(badDefault).join("; "), /primary binary/);
+			const badVerb = { ...map, commands: [{ id: "up", argv: ["up;sample-mcp"], kind: "verb" }] };
+			assert.match(validateSurfaceMap(badVerb).join("; "), /single observed verbs/);
+			const badAssessment: SurfaceMap = { ...map, binAssessments: map.binAssessments?.map((item) => item.name === "sample-mcp" ? { ...item, status: "observed-help" } : item) };
+			assert.match(validateSurfaceMap(badAssessment).join("; "), /must remain unverified/);
+		});
+	});
+
+	it("exposes the primary-only scope through exploration, doctor and feature generation", () => {
+		fixture((root) => {
+			mkdirSync(path.join(root, ".git"));
+			const dir = path.join(root, "packages/hobo");
+			mkdirSync(path.join(dir, "bin"), { recursive: true });
+			mkdirSync(path.join(root, ".optimizexp/personas"), { recursive: true });
+			writeFileSync(path.join(root, ".optimizexp/personas/developer.md"), '---\nid: developer\nexperiences: [dx]\ninterfaces: [cli]\n---\nInspect the CLI.\n');
+			writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "hobo", bin: { hobo: "bin/hobo.mjs", "hobo-mcp": "bin/mcp.mjs" } }));
+			writeFileSync(path.join(dir, "bin/hobo.mjs"), 'console.log("  up       Start app");\n');
+			const marker = path.join(root, "mcp-ran");
+			writeFileSync(path.join(dir, "bin/mcp.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran");\n`);
+			const explorer = fileURLToPath(new URL("../explore-app.mts", import.meta.url));
+			const run = (args: string[]) => spawnSync(process.execPath, [explorer, "--project", "hobo", ...args], { cwd: root, encoding: "utf8" });
+			const result = run(["--probe-bin", "--primary-bin-only", "--personas", "developer"]);
+			assert.equal(result.status, 0, result.stdout + result.stderr);
+			assert.match(JSON.parse(result.stdout).coverageScope, /secondary binaries.*not assessed/);
+			assert.equal(existsSync(marker), false);
+			const output = path.join(dir, ".optimizexp");
+			const map = JSON.parse(readFileSync(path.join(output, "surface-map.json"), "utf8")) as SurfaceMap;
+			const confirmation = `hobo:${surfaceMapDigest(map)}`;
+			assert.equal(run(["--mode", "validate"]).status, 1);
+			assert.equal(run(["--mode", "validate", `--confirm-surface-current=${confirmation}`]).status, 0);
+			assert.equal(run(["--mode", "validate", "--primary-bin-only"]).status, 2);
+			const hobo = { id: "hobo", path: "packages/hobo", kind: "package" as const, label: "hobo" };
+			const report = runDoctorCheck({ root, selection: { allProjects: false, projects: [hobo], requested: ["hobo"], unknown: [] }, confirmedSurfaces: [confirmation] });
+			assert.ok(report.findings.some((finding) => finding.id === "surface-scope" && finding.severity === "warn" && /secondary binaries/.test(finding.message)));
+			const doctor = fileURLToPath(new URL("../doctor.mts", import.meta.url));
+			const repaired = spawnSync(process.execPath, [doctor, "repair", "--project", "hobo", "--only", "build-surface-map,build-catalog", "--json", `--confirm-surface-current=${confirmation}`], { cwd: root, encoding: "utf8" });
+			assert.ok(!JSON.parse(repaired.stdout).findings.some((finding: { message: string }) => /confirm-surface-current/.test(finding.message)));
+			const generate = fileURLToPath(new URL("../generate-feature.mts", import.meta.url));
+			const args = [generate, "--mode", "from-catalog", "--project", "hobo", "--personas", "developer", "--force-low-quality", `--confirm-surface-current=${confirmation}`];
+			const generated = spawnSync(process.execPath, args, { cwd: root, encoding: "utf8" });
+			assert.equal(generated.status, 0, generated.stdout + generated.stderr);
+			const catalogPath = path.join(output, "experience-catalog.json");
+			const catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
+			catalog.experiences[0].entryCommand = "hobo-mcp";
+			writeFileSync(catalogPath, JSON.stringify(catalog));
+			const refused = spawnSync(process.execPath, args, { cwd: root, encoding: "utf8" });
+			assert.equal(refused.status, 2);
+			assert.match(refused.stderr, /outside primary-bin scope/);
+		});
+	});
+
+	it("preserves saved observations and catalogs during repair and creates only missing files", () => {
+		fixture((root, dir) => {
+			packageWithBin(dir);
+			const marker = path.join(root, "ran");
+			writeFileSync(path.join(dir, "bin/sample.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran"); console.log("  up       Start app");\n`);
+			const map = buildSurfaceMap({ project, root, probeBinary: true });
+			const catalog = buildExperienceCatalog({ project, root, personaIds: ["developer"], surfaceMap: map });
+			writeSurfaceMap(map, project, root);
+			writeExperienceCatalog(catalog, project, root);
+			const mapPath = path.join(dir, ".optimizexp/surface-map.json");
+			const catalogPath = path.join(dir, ".optimizexp/experience-catalog.json");
+			const originalMap = readFileSync(mapPath, "utf8");
+			const originalCatalog = readFileSync(catalogPath, "utf8");
+			const selection = { allProjects: false, projects: [project], requested: ["sample"], unknown: [] };
+			const only = ["build-surface-map", "build-catalog"];
+			runDoctorRepair({ root, selection });
+			assert.equal(readFileSync(mapPath, "utf8"), originalMap);
+			assert.equal(readFileSync(catalogPath, "utf8"), originalCatalog);
+			const unconfirmed = runDoctorRepair({ root, selection, only });
+			assert.ok(unconfirmed.findings.some((finding) => /confirm-surface-current/.test(finding.message)));
+			assert.equal(readFileSync(mapPath, "utf8"), originalMap);
+			assert.equal(readFileSync(catalogPath, "utf8"), originalCatalog);
+			const confirmed = runDoctorRepair({ root, selection, only, confirmedSurfaces: [`sample:${surfaceMapDigest(map)}`] });
+			assert.ok(!confirmed.findings.some((finding) => /confirm-surface-current/.test(finding.message)));
+			writeFileSync(mapPath, "invalid json");
+			writeFileSync(catalogPath, "invalid json");
+			const invalid = runDoctorRepair({ root, selection, only });
+			assert.equal(readFileSync(mapPath, "utf8"), "invalid json");
+			assert.equal(readFileSync(catalogPath, "utf8"), "invalid json");
+			assert.ok(invalid.findings.some((finding) => /invalid or unreadable/.test(finding.message) && !finding.repairable));
+			rmSync(mapPath);
+			rmSync(catalogPath);
+			rmSync(marker);
+			const created = runDoctorRepair({ root, selection, only });
+			assert.ok(created.repairsApplied.includes("build-surface-map:sample"));
+			assert.ok(created.repairsApplied.includes("build-catalog:sample"));
+			assert.equal(existsSync(marker), false);
+			assert.equal(existsSync(mapPath), true);
+			assert.equal(existsSync(catalogPath), true);
 		});
 	});
 
