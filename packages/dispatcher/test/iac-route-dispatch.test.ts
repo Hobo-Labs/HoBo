@@ -74,6 +74,7 @@ describe("ranked routes share durable execution ownership", () => {
 		"nested-ranking-proxy",
 		"candidates-proxy",
 		"candidate-accessor",
+		"candidate-callback-proxy",
 		"revoked-candidate",
 		"sparse-candidates",
 	] as const)("rejects %s before claiming or invoking an effect", async (kind) => {
@@ -122,6 +123,8 @@ describe("ranked routes share durable execution ownership", () => {
 			input.candidates = new Proxy(input.candidates, handler);
 		if (kind === "candidate-accessor")
 			Object.defineProperty(item, "run", { get: fail });
+		if (kind === "candidate-callback-proxy")
+			item.run = new Proxy(item.run, { apply: fail });
 		if (kind === "revoked-candidate") {
 			const revoked = Proxy.revocable(item, handler);
 			revoked.revoke();

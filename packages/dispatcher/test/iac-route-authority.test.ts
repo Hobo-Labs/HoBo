@@ -54,6 +54,8 @@ describe("durable shared IaC route claims", () => {
 		"identity-accessor",
 		"plan-accessor",
 		"nested-plan-proxy",
+		"callback-proxy",
+		"hasher-proxy",
 	] as const)("rejects direct route %s before claim", async (kind) => {
 		const { authority } = connect();
 		let traps = 0;
@@ -62,12 +64,14 @@ describe("durable shared IaC route claims", () => {
 			traps++;
 			throw new Error("untrusted direct input");
 		};
+		const hasher = (_plan: { config: object }) => {
+			calls++;
+			return hash;
+		};
 		const direct = createDirectRoutePort({
 			authority,
-			hashInventory: (_plan: { config: object }) => {
-				calls++;
-				return hash;
-			},
+			hashInventory:
+				kind === "hasher-proxy" ? new Proxy(hasher, { apply: fail }) : hasher,
 		});
 		const input = {
 			tenantId: "tenant",
@@ -85,10 +89,16 @@ describe("durable shared IaC route claims", () => {
 				{},
 				{ ownKeys: fail, getPrototypeOf: fail },
 			);
-		const result = await direct.runDirect(input, async () => {
+		const callback = async () => {
 			calls++;
 			throw new Error("must not run");
-		});
+		};
+		const result = await direct.runDirect(
+			input,
+			kind === "callback-proxy"
+				? new Proxy(callback, { apply: fail })
+				: callback,
+		);
 		expect(result).toMatchObject({
 			status: "uncertain",
 			code: "ROUTE_INPUT_INVALID",
@@ -97,6 +107,35 @@ describe("durable shared IaC route claims", () => {
 			await authority.inspect({ tenantId: "tenant", requestId: "request" }),
 		).toBeUndefined();
 		expect({ calls, traps }).toEqual({ calls: 0, traps: 0 });
+	});
+
+	it("rejects a proxied route callback without invoking its apply trap", async () => {
+		const { authority } = connect();
+		let traps = 0;
+		const callback = new Proxy(
+			async () => ({ value: "bad", outcome: { status: "denied" as const } }),
+			{
+				apply: () => {
+					traps++;
+					throw new Error("untrusted apply");
+				},
+			},
+		);
+		const result = await runAuthorizedRoute({
+			authority,
+			tenantId: "tenant",
+			requestId: "request",
+			operation: operationFor("request"),
+			run: callback,
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			code: "ROUTE_INPUT_UNINSPECTABLE",
+		});
+		expect(
+			await authority.inspect({ tenantId: "tenant", requestId: "request" }),
+		).toBeUndefined();
+		expect(traps).toBe(0);
 	});
 	it("does not accept a durable outcome changed by the authority after validation", async () => {
 		const { authority, path } = connect();

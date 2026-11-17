@@ -1,3 +1,4 @@
+import { types as utilTypes } from "node:util";
 import {
 	applyHostCallback,
 	isBoundedRouteValue,
@@ -264,7 +265,8 @@ export async function runIacRoute<T>(input: {
 		fields === undefined ||
 		typeof fields.tenantId !== "string" ||
 		typeof fields.requestId !== "string" ||
-		typeof fields.run !== "function"
+		typeof fields.run !== "function" ||
+		utilTypes.isProxy(fields.run)
 	)
 		return { status: "uncertain", code: "ROUTE_INPUT_UNINSPECTABLE" };
 	const identity = Object.freeze({
@@ -465,7 +467,11 @@ export function createDirectRoutePort<Plan>(options: {
 				typeof fields.tenantId !== "string" ||
 				typeof fields.requestId !== "string" ||
 				typeof fields.targetId !== "string" ||
-				!isBoundedRouteValue(fields.plan)
+				!isBoundedRouteValue(fields.plan) ||
+				typeof run !== "function" ||
+				utilTypes.isProxy(run) ||
+				typeof hashInventory !== "function" ||
+				utilTypes.isProxy(hashInventory)
 			)
 				return { status: "uncertain", code: "ROUTE_INPUT_INVALID" };
 			const { tenantId, requestId, targetId } = fields;

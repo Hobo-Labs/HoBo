@@ -95,6 +95,8 @@ Authorities and callbacks, including a method callback's original receiver,
 are host-owned capabilities. The host must keep their methods, backend identity,
 credentials and receiver state stable and exclusively fenced throughout a
 route; snapshotting data does not freeze those capabilities or their closures.
+Proxied callback and direct-route inventory hasher functions are rejected
+before a route is claimed.
 
 `runIacRoute` requires a host-issued operation identity and authorization. The
 identity is a SHA-256 digest of the tenant, deployment, resource, action, and a

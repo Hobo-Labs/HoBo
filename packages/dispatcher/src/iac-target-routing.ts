@@ -173,7 +173,8 @@ function snapshotRankedExecutionInput(
 				candidate === undefined ||
 				typeof candidate.targetId !== "string" ||
 				!name(candidate.targetId) ||
-				typeof candidate.run !== "function"
+				typeof candidate.run !== "function" ||
+				utilTypes.isProxy(candidate.run)
 			)
 				return undefined;
 			// SAFETY: callable host-owned callbacks are captured once and invoked only after the route claim.
