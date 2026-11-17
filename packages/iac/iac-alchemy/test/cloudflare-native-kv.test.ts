@@ -927,6 +927,11 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			);
 			expect(created).toEqual([]);
 			presentedProxyDigest = approvedProxyDigest;
+			// Failed reinspection invalidates the earlier preview even after the source
+			// becomes authorized again; a fresh assessment is required before apply.
+			await expect(
+				provider.applyWithAdmission(program, "stale-preview"),
+			).rejects.toMatchObject({ code: "PREVIEW_REQUIRED" });
 			const revokedProvider = makeProvider();
 			await revokedProvider.preview(program);
 			revokeOnFinancialRevalidation = true;
@@ -960,6 +965,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			expect(created).toEqual([]);
 			revokeGrantOnFinancialRevalidation = false;
 			grantAuthorized = true;
+			await provider.preview(program);
 			await provider.applyWithAdmission(program, "request");
 			expect(
 				created.filter((entry) => entry.type === Namespace.Type),
