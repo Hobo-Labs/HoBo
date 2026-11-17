@@ -1006,18 +1006,12 @@ function help(): Json {
 	return {
 		ok: true,
 		usage: [
-			"--mode init --run ID --review ID --base-sha SHA --head-sha SHA --proposal FILE [--max-turns N]",
-			"--mode append --run ID --review ID --entry FILE",
-			"--mode advance --run ID --review ID --persona ID",
 			"--mode status --run ID --review ID",
-			"--mode decide --run ID --review ID",
 			"--mode validate [--run ID --review ID]",
 			"--mode assert-yay --run ID --review ID --base-sha SHA --head-sha SHA --proposal FILE [--proposal-digest SHA256] [--base-ref REF]",
-			"--mode block --run ID --review ID --reason TEXT",
-			"--mode close --run ID --review ID --result approved|blocked|user|safety [--base-sha SHA --head-sha SHA --proposal FILE] [--reason TEXT]",
 			"--mode relevance --input FILE",
 		],
-		note: "Synthetic investment is an auditable orchestration variable, not emotion or sentience. Maximum-turn protection must terminate blocked, never approved.",
+		note: "Historical records are read-only. Implement and verify new improvements directly.",
 	};
 }
 
@@ -1048,7 +1042,11 @@ export function runConsensusCommand(argv: string[]): { exitCode: number; output:
 }
 
 if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
-	const result = runConsensusCommand(process.argv.slice(2));
+	const argv = process.argv.slice(2);
+	const mode = parseArgs(argv).mode ?? "help";
+	const result = ["init", "append", "advance", "decide", "block", "close"].includes(mode)
+		? { exitCode: 2, output: { ok: false, error: "Synthetic review creation is retired; implement improvements directly." } }
+		: runConsensusCommand(argv);
 	console.log(JSON.stringify(result.output, null, 2));
 	process.exitCode = result.exitCode;
 }

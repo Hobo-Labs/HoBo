@@ -41,6 +41,7 @@ for (const harness of [".agents", ".claude"]) {
 				["explore-app.mts", "--mode", "catalog", "--project", "example"],
 				["explore-app.mts", "--with-catalog", "--project", "example"],
 				["survey.mts", "--mode", "template", "--run", "example"],
+				["survey.mts", "--mode", "aggregate", "--run", "example"],
 				[
 					"survey.mts",
 					"--mode",
@@ -48,6 +49,48 @@ for (const harness of [".agents", ".claude"]) {
 					"--run",
 					"example",
 					"--global",
+				],
+				[
+					"../workflows/cross-agent/review-loop.mts",
+					"--mode",
+					"init",
+					"--run",
+					"example",
+				],
+				[
+					"../workflows/cross-agent/review-loop.mts",
+					"--mode",
+					"should-stop",
+					"--run",
+					"example",
+				],
+				[
+					"../workflows/cross-agent/review-loop.mts",
+					"--mode",
+					"equilibrium",
+					"--run",
+					"example",
+				],
+				[
+					"../workflows/cross-agent/review-loop.mts",
+					"--mode",
+					"mark-complete",
+					"--run",
+					"example",
+				],
+				[
+					"../workflows/cross-agent/consensus-loop.mts",
+					"--mode",
+					"init",
+					"--run",
+					"example",
+				],
+				[
+					"../workflows/cross-agent/consensus-loop.mts",
+					"--mode",
+					"append",
+					"--run",
+					"example",
 				],
 			]) {
 				assert(script);
@@ -58,6 +101,45 @@ for (const harness of [".agents", ".claude"]) {
 				assert.notEqual(result.status, 0, `${script} ${args.join(" ")}`);
 				assert.equal(existsSync(join(directory, ".optimizexp")), false);
 			}
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test(`${harness} reports malformed historical bus records without crashing`, () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-oxp-bus-"));
+		try {
+			const entries = join(directory, ".optimizexp/bus/entries");
+			mkdirSync(entries, { recursive: true });
+			writeFileSync(join(entries, "broken.json"), "{\n");
+			writeFileSync(join(entries, "null.json"), "null\n");
+			const result = spawnSync(
+				tsx,
+				[
+					join(scripts, "../workflows/cross-agent/review-loop.mts"),
+					"--mode",
+					"validate-bus",
+					"--root",
+					directory,
+				],
+				{ cwd: directory, encoding: "utf8" },
+			);
+			assert.equal(result.status, 1, result.stderr);
+			const report = JSON.parse(result.stdout) as {
+				ok: boolean;
+				problems: string[];
+			};
+			assert.equal(report.ok, false);
+			assert(
+				report.problems.some((problem) =>
+					problem.includes("broken.json: invalid JSON"),
+				),
+			);
+			assert(
+				report.problems.some((problem) =>
+					problem.includes("null.json: expected a JSON object"),
+				),
+			);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
