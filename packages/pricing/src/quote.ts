@@ -42,9 +42,10 @@ export type RatingAlgorithmVersion =
 	| "pricing-rating/v3"
 	| "pricing-rating/v4"
 	| "pricing-rating/v5"
-	| "pricing-rating/v6";
+	| "pricing-rating/v6"
+	| "pricing-rating/v7";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v6";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v7";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function rejection(
@@ -186,7 +187,8 @@ export function quoteScenario(
 		version !== "pricing-rating/v3" &&
 		version !== "pricing-rating/v4" &&
 		version !== "pricing-rating/v5" &&
-		version !== "pricing-rating/v6"
+		version !== "pricing-rating/v6" &&
+		version !== "pricing-rating/v7"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -195,20 +197,21 @@ export function quoteScenario(
 	const compareStrings =
 		version === "pricing-rating/v1" ? compareLegacyLocale : compareCodeUnits;
 	const strictTimes =
-		version === "pricing-rating/v3" ||
-		version === "pricing-rating/v4" ||
-		version === "pricing-rating/v5" ||
-		version === "pricing-rating/v6";
+		version !== "pricing-rating/v1" && version !== "pricing-rating/v2";
+	const strictSourceIdentity = strictTimes && version !== "pricing-rating/v3";
+	const strictSourceValues =
+		strictSourceIdentity && version !== "pricing-rating/v4";
+	const selectorPerWorkload =
+		strictSourceValues && version !== "pricing-rating/v5";
+	const rejectAmbiguousLatest = version === "pricing-rating/v7";
 	const time = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	const compareTimes = strictTimes ? compareUtcExact : compareStrings;
 	try {
 		validateScenarioState(
 			scenario,
 			time,
-			version === "pricing-rating/v4" ||
-				version === "pricing-rating/v5" ||
-				version === "pricing-rating/v6",
-			version === "pricing-rating/v5" || version === "pricing-rating/v6",
+			strictSourceIdentity,
+			strictSourceValues,
 		);
 		validateQuoteOptions(scenario);
 		const catalog = scenario.catalog;
@@ -239,8 +242,9 @@ export function quoteScenario(
 			compareTimes,
 			time,
 			strictTimes,
-			version === "pricing-rating/v5" || version === "pricing-rating/v6",
-			version === "pricing-rating/v6",
+			strictSourceValues,
+			selectorPerWorkload,
+			rejectAmbiguousLatest,
 		);
 		const candidate = rateSnapshot(
 			scenario,
@@ -249,8 +253,9 @@ export function quoteScenario(
 			compareTimes,
 			time,
 			strictTimes,
-			version === "pricing-rating/v5" || version === "pricing-rating/v6",
-			version === "pricing-rating/v6",
+			strictSourceValues,
+			selectorPerWorkload,
+			rejectAmbiguousLatest,
 		);
 		if (
 			candidate.currency.length === 0 ||

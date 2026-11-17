@@ -242,6 +242,7 @@ function aggregateMeasurements(
 	compareTimes: TextComparison,
 	time: TemporalPolicy,
 	strictTimes: boolean,
+	rejectAmbiguousLatest: boolean,
 ): Quantity {
 	if (meter.aggregation === "unique-count") {
 		const values = new Set<string>();
@@ -303,6 +304,25 @@ function aggregateMeasurements(
 				left.entry.measurement.observedAt,
 			),
 		)[0];
+		if (rejectAmbiguousLatest && latest !== undefined) {
+			const latestValue = quantityDecimal(latest.quantity, "latest quantity");
+			for (const candidate of roundedEntries) {
+				if (
+					compareTimes(
+						candidate.entry.measurement.observedAt,
+						latest.entry.measurement.observedAt,
+					) === 0 &&
+					compareDecimal(
+						quantityDecimal(candidate.quantity, "latest quantity"),
+						latestValue,
+					) !== 0
+				)
+					throw new PricingFault(
+						"INVALID_PRICING_INPUT",
+						`conflicting latest measurements for ${meter.dimension}`,
+					);
+			}
+		}
 		aggregate = latest?.quantity ?? quantityOf(DECIMAL_ZERO, meter.unit);
 	} else if (meter.aggregation === "max") {
 		aggregate =
@@ -833,6 +853,7 @@ export function rateSnapshot(
 	strictTimes = true,
 	strictSourceValues = true,
 	selectorPerWorkload = true,
+	rejectAmbiguousLatest = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -1027,6 +1048,7 @@ export function rateSnapshot(
 					compareTimes,
 					time,
 					strictTimes,
+					rejectAmbiguousLatest,
 				);
 				usageEntries = charges.map((charge) => [charge, entries]);
 			}
@@ -1041,6 +1063,7 @@ export function rateSnapshot(
 						compareTimes,
 						time,
 						strictTimes,
+						rejectAmbiguousLatest,
 					);
 				const allowance = consumeAllowances(
 					state,
