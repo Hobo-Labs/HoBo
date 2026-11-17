@@ -11,6 +11,42 @@ provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
 `rivetkit` 3.0.0 peers; install both when using Rivet components.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
+Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
+runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
+The Cloudflare worker runtime binds a module-exported HoBo HTTP entrypoint to
+declared Worker service dependencies. HoBo bucket, KV and queue runtime contracts,
+topics, and enabled session replay are not yet supported; the adapter refuses
+those uses.
+`cloudflareBindleMappers` can provision native R2, KV and queue infrastructure;
+it rejects their HoBo runtime operations until blob metadata and events, WASI KV
+semantics, and queue deduplication and leases are implemented.
+It also rejects `continuity` annotations on these resources: provisioning the
+native component alone does not establish failover, backup or spending guarantees.
+`describeCloudflarePrimitiveSupport` reports partial or unsupported coverage
+for each supplied HoBo catalog entry with the reason.
+Alchemy namespaces can separate multiple mapped Cloudflare Bindles in one
+stack. Include their resulting FQNs in the admitted target and source
+requirements, and migrate existing durable state before changing a namespace.
+The host must also verify the actual Cloudflare account and physical namespace,
+bucket and queue identities: generated names or different stack names alone do
+not establish that a resource cannot be shared or adopted.
+For a Vite web application, `b.web(cloudflareViteApp("apps/site"))` uses
+Alchemy's Cloudflare Website.Vite component with that project-relative root.
+Disable session replay explicitly; Vite resource dependencies and other web
+frameworks are not currently supported. Every executable mapping requires a
+host-owned `sourceFence`; its digest must match the target's source digest, and
+its proof and environment digest must match the composite guard. The guard's
+`sourceRequirements` must name every executable resource and source path.
+The host must authenticate the complete transitive source graph, module cache,
+build toolchain and exact upload, and keep them fenced from planning until the
+provider completes. The callbacks attest a host-enforced guarantee; they do not
+make a mutable filesystem or module cache immutable. The fence object must use
+own data properties; accessor-backed or malformed authorities are rejected.
+For source deletion, the host must compute `hashAlchemyPriorState` from its
+independently authenticated durable record and compare it with the reported
+prior-state digest. The state must be complete, stable, and inspectable without
+unresolved references. Revocation after a provider effect retains the budget
+hold as uncertain.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
@@ -42,6 +78,11 @@ mapped FQN: Alchemy can silently return the registered object outside the
 mapping scope. Across stacks the host must independently verify state ownership
 and actual physical provider-resource isolation; distinct stack names alone do
 not establish that resources cannot be shared or adopted.
+
+Requirements, declarations, annotations and edges must be bounded, acyclic data;
+the mapper copies and freezes them before invoking provider callbacks. Invalid,
+accessor-backed or oversized data is rejected. The host remains responsible for
+attesting callback code and captured state.
 Only explicit registry entries count as mappings. Connector declarations are
 rejected until their authorization and runtime bindings can be mapped.
 `describeAlchemyPrimitiveSupport` reports supported, partial and

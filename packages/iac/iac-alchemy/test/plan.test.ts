@@ -174,6 +174,9 @@ describe("native Alchemy plan inspection", () => {
 		expect(() => inspect(unclassified)).toThrow(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 		);
+		expect(() => inspect({ ...guard, sourceRequirements: [] })).toThrow(
+			"SOURCE_FENCE_INCOMPLETE",
+		);
 		const before = inspect(guard).digest;
 		const other = fixture();
 		registerAlchemySource(other.node.resource, {

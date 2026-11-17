@@ -115,6 +115,237 @@ function mappers(observed: string[]) {
 }
 
 describe("explicit Alchemy primitive mapping", () => {
+	it("snapshots requirements, annotations, dependency declarations and mapper callbacks before effects execute", async () => {
+		const source = {
+			name: "snapshot",
+			resources: {
+				data: {
+					kind: "bucket",
+					name: "data",
+					stableId: "bucket:data",
+					declaredAllow: ["read"],
+					dependsOn: [],
+					annotations: [],
+				},
+				web: {
+					kind: "web",
+					name: "web",
+					stableId: "web:web",
+					declaredAllow: [],
+					dependsOn: ["bucket"],
+					annotations: [
+						{
+							provider: "test",
+							option: "feature",
+							config: { setting: { value: "before" } },
+						},
+					],
+				},
+			},
+			edges: [{ from: "web", to: "data" }],
+			requirements: { labels: { team: "before" } },
+			entrypoint: (name: string) => (name === "web" ? entrypoint : undefined),
+		};
+		let seen: object | undefined;
+		const registry = {
+			bucket: {
+				resourceTypes: ["Spec.Store"],
+				operations: ["read"],
+				annotations: [],
+				bindsEntrypoint: false,
+				build: () =>
+					Effect.gen(function* () {
+						const primary = yield* Store("data", {});
+						return { primary, resources: [primary], boundDependencies: [] };
+					}),
+			},
+			web: {
+				resourceTypes: ["Spec.Web"],
+				operations: [],
+				annotations: ["test:feature"],
+				bindsEntrypoint: true,
+				validate: ({ requirements, declaration, dependencyDeclarations }) => {
+					expect(Object.isFrozen(requirements.labels)).toBe(true);
+					expect(Object.getPrototypeOf(requirements.labels)).toBe(
+						Object.prototype,
+					);
+					expect(Object.isFrozen(declaration.annotations[0]?.config)).toBe(
+						true,
+					);
+					expect(
+						Object.isFrozen(dependencyDeclarations.data?.declaredAllow),
+					).toBe(true);
+				},
+				build: (input) =>
+					Effect.sync(() => {
+						seen = {
+							name: input.bindleName,
+							requirements: input.requirements,
+							declaration: input.declaration,
+							dependency: input.dependencyDeclarations.data,
+						};
+						throw new Error("observed snapshot");
+					}),
+			},
+		};
+		const program = mapBindleToAlchemy(source, registry, supportedRequirements);
+		source.name = "changed";
+		source.requirements.labels.team = "changed";
+		source.resources.web.annotations[0].config.setting.value = "changed";
+		source.resources.data.declaredAllow.push("write");
+		source.edges[0].to = "missing";
+		registry.web.annotations.push("test:other");
+		registry.web.build = () =>
+			Effect.sync(() => {
+				throw new Error("replaced callback");
+			});
+		await expect(
+			Effect.runPromise(
+				program.pipe(
+					Effect.provideService(StackContext, {
+						name: "Snapshot",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+				),
+			),
+		).rejects.toThrow("observed snapshot");
+		expect(seen).toMatchObject({
+			name: "snapshot",
+			requirements: { labels: { team: "before" } },
+			declaration: {
+				annotations: [{ config: { setting: { value: "before" } } }],
+			},
+			dependency: { declaredAllow: ["read"] },
+		});
+	});
+
+	it("rejects cyclic, accessor-bearing and oversized requirement data before callbacks run", () => {
+		let assessed = false;
+		interface CyclicFixture {
+			self?: object;
+		}
+		const cyclic: CyclicFixture = {};
+		cyclic.self = cyclic;
+		const inputs = [
+			cyclic,
+			{
+				get label() {
+					throw new Error("accessor ran");
+				},
+			},
+			{ label: "x".repeat(65_537) },
+		];
+		for (const requirements of inputs) {
+			expect(() =>
+				mapBindleToAlchemy({ ...declaration, requirements }, mappers([]), {
+					assessRequirements: () => {
+						assessed = true;
+						return { status: "supported" };
+					},
+				}),
+			).toThrow("BINDLE_INVALID");
+		}
+		expect(assessed).toBe(false);
+	});
+
+	it("classifies malformed structural identities and edges without leaking TypeError", () => {
+		const invalidBindles = [
+			{ ...declaration, name: null },
+			{ ...declaration, resources: null },
+			{ ...declaration, resources: { broken: null } },
+			{
+				...declaration,
+				resources: { broken: { ...declaration.resources.store, kind: null } },
+			},
+			{
+				...declaration,
+				resources: {
+					store: { ...declaration.resources.store, declaredAllow: [null] },
+				},
+			},
+			{
+				...declaration,
+				resources: {
+					store: { ...declaration.resources.store, annotations: [null] },
+				},
+			},
+			{
+				...declaration,
+				resources: {
+					store: {
+						...declaration.resources.store,
+						annotations: [{ provider: null, option: "feature", config: {} }],
+					},
+				},
+			},
+			{ ...declaration, connectors: [] },
+			{ ...declaration, entrypoint: null },
+		];
+		for (const input of invalidBindles) {
+			// SAFETY: malformed inputs exercise the runtime boundary.
+			expect(() =>
+				mapBindleToAlchemy(input as never, mappers([]), supportedRequirements),
+			).toThrow("BINDLE_INVALID");
+		}
+		for (const edge of [
+			null,
+			{ from: null, to: "store" },
+			{ from: "web", to: null },
+		]) {
+			// SAFETY: malformed edges exercise the runtime boundary.
+			expect(() =>
+				mapBindleToAlchemy(
+					{ ...declaration, edges: [edge] } as never,
+					mappers([]),
+					supportedRequirements,
+				),
+			).toThrow("BINDLE_GRAPH_UNSUPPORTED");
+		}
+		for (const catalog of [
+			null,
+			[null],
+			[{ factory: null, allowVerbs: [] }],
+			[{ factory: "bucket", allowVerbs: null }],
+			[{ factory: "bucket", allowVerbs: ["read", "read"] }],
+		]) {
+			// SAFETY: malformed catalogs exercise the runtime boundary.
+			expect(() =>
+				describeAlchemyPrimitiveSupport(catalog as never, mappers([])),
+			).toThrow("BINDLE_INVALID");
+		}
+	});
+	it("validates dependency declarations before any Alchemy resource is built", () => {
+		const observed: string[] = [];
+		const registry = mappers(observed);
+		expect(() =>
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...registry,
+					web: {
+						...registry.web,
+						validate: ({ dependencyDeclarations }) => {
+							expect(Object.keys(dependencyDeclarations).sort()).toEqual([
+								"queue",
+								"store",
+							]);
+							expect(dependencyDeclarations.store?.declaredAllow).toEqual([
+								"read",
+								"write",
+							]);
+							throw new Error("unhandled annotation");
+						},
+					},
+				},
+				supportedRequirements,
+			),
+		).toThrow("unhandled annotation");
+		expect(observed).toEqual([]);
+	});
+
 	it("rejects connector declarations until their authorization and runtime bindings can be mapped", () => {
 		const observed: string[] = [];
 		const input = {
@@ -284,6 +515,57 @@ describe("explicit Alchemy primitive mapping", () => {
 			{ kind: "bucket", status: "partial", unsupportedOperations: ["delete"] },
 			{ kind: "web", status: "supported", bindsEntrypoint: true },
 			{ kind: "topic", status: "unsupported" },
+		]);
+	});
+
+	it("identifies the rejected operation or annotation and the provider limitation", () => {
+		const registry = mappers([]);
+		const input = {
+			...declaration,
+			resources: {
+				...declaration.resources,
+				store: { ...declaration.resources.store, declaredAllow: ["delete"] },
+			},
+		};
+		const limited = {
+			...registry,
+			bucket: {
+				...registry.bucket,
+				limitations: ["blob events are unavailable"],
+			},
+		};
+		expect(() =>
+			mapBindleToAlchemy(input, limited, supportedRequirements),
+		).toThrow("operation delete: blob events are unavailable");
+		const withAnnotation = {
+			...input,
+			resources: {
+				...input.resources,
+				store: {
+					...declaration.resources.store,
+					annotations: [{ provider: "custom", option: "feature", config: {} }],
+				},
+			},
+		};
+		expect(() =>
+			mapBindleToAlchemy(withAnnotation, limited, supportedRequirements),
+		).toThrow("annotation custom:feature: blob events are unavailable");
+	});
+
+	it("reports partial coverage even when all operations are present but runtime behavior is limited", () => {
+		const registry = mappers([]);
+		const support = describeAlchemyPrimitiveSupport(
+			[{ factory: "web", allowVerbs: [] }],
+			{
+				...registry,
+				web: {
+					...registry.web,
+					limitations: ["session replay is unavailable"],
+				},
+			},
+		);
+		expect(support).toMatchObject([
+			{ status: "partial", limitations: ["session replay is unavailable"] },
 		]);
 	});
 
