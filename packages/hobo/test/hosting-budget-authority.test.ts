@@ -295,6 +295,34 @@ const actorContext = {
 };
 
 describe("durable core hosting financial authority composition", () => {
+	it("rejects an entitlement observed later within the current millisecond", async () => {
+		const initial = snapshot();
+		initial.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "credit",
+				unit: "request",
+				periodId: "period",
+				remainingUnits: 10,
+				observedAt: "2026-10-29T12:00:00.000000900Z",
+				validUntil: new Date(VALID).toISOString(),
+			}),
+		];
+		const fx = fixture(initial);
+		const resolve = fx.bridge().resolve;
+		if (!resolve) throw new Error("fixture bridge missing resolver");
+		const request = {
+			budgetId: "hosting",
+			tenantId: "tenant",
+			bindle: deployment("time-boundary").bindle,
+			objective: "maximize-credits",
+		};
+		await expect(resolve(request)).rejects.toThrow(/entitlement exposure/u);
+		fx.setClock(NOW + 1);
+		await expect(resolve(request)).resolves.toMatchObject({
+			budget: { budgetId: "hosting" },
+		});
+	});
+
 	it("adopts the gateway's hold once and forbids another transition from spending that authorization", async () => {
 		const fx = fixture(),
 			deps = deploymentDeps(fx),
