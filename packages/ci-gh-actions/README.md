@@ -2060,3 +2060,48 @@ the GitHub simulator and the hand-authored pacts
 [`contracts/relay-answer-webhook.pact.json`](contracts/relay-answer-webhook.pact.json),
 and no run against GitHub's runner service is linked yet. See
 [`src/relay-answer/RELAY-MODE.md`](src/relay-answer/RELAY-MODE.md).
+
+## Automatic retry and rerun --reroute
+
+A routed job that failed for a reason outside its own steps is run again
+without anyone asking, under the retry policy in the runner order
+(ADR-0183, [`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+[`src/auto-retry.ts`](src/auto-retry.ts) does it when a run attempt completes
+with a failure:
+
+- `autoRetryRun(run, deps)` takes the attempt as the relay stores it, the
+  route journal's decision for it, the machine events and the job's
+  check-run annotations, and builds the failed job's facts for
+  `retryVerdict` in `@hobo/ci`. A job that never reached its own steps, ran
+  on a machine that disconnected meanwhile, or that GitHub says lost its
+  runner is retried; a failing test is not, and a run where any routed job
+  failed in its own steps is left alone. A run with more than one relay is
+  left alone too.
+- The `job.retried` row is written to the retry ledger before GitHub is
+  asked. The ledger keeps one row per repository, run and attempt, so a
+  redelivered `workflow_run` webhook, or two deliveries racing, retries
+  once. `SqliteRetryLedger` takes the store's database handle (ADR-0135);
+  `retryLedgerConformance` is the ledger's rules.
+- The retry re-runs the relay job (`POST .../actions/jobs/{id}/rerun`, which
+  re-runs a job and every job that needs it), not the failed job. The relay
+  then decides again: `RetryRouteFacts` wraps the relay's facts source and
+  gives the next attempt the row's failed step, machine and target, so
+  `retryOrder` tries the failed step first (`same`) or last (`other`).
+- The policy's maximum (1 or 2 per run) and `RUNNER_RETRY_DAILY_CAP` per
+  account count the ledger's rows. A failed annotation read is no
+  annotations, and a re-run GitHub refuses keeps its row and is reported,
+  never repeated.
+
+`hobo ci rerun <run> --reroute` (`packages/hobo/src/ci-rerun-reroute.ts`)
+makes the same re-run by hand: it finds the finished run's relay job (one
+asking `hobo-relay`, or named `relay` or `route`; `--job` picks one of
+several) and re-runs it with the token in `GH_TOKEN` or `GITHUB_TOKEN`. A
+plain re-run of failed jobs keeps the relay's old answer and lands the job on
+the label it had.
+
+The loop is tested against the GitHub simulator: a job that failed before its
+steps, a `workflow_run` webhook delivered twice, one re-run, and a fresh
+decision that moves the job to the other runner type. The simulator has no
+"re-run a job" route, so the test adapts it to a whole-run re-run where every
+job needs the relay. No relay runs this in production yet, so the channel is
+built, not proven.

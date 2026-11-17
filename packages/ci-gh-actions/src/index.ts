@@ -15,6 +15,33 @@ export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
 export { relayInstallAssets } from "./assets.js";
 export {
+	type AutoRetryDeps,
+	type AutoRetryOutcome,
+	type AutoRetrySkip,
+	autoRetryRun,
+	type CheckRunAnnotations,
+	DECISION_LOOKBACK_MS,
+	DECISION_READ_LIMIT,
+	defineJobRetried,
+	githubCheckRunAnnotations,
+	githubRerunJob,
+	InMemoryRetryLedger,
+	isRelayJobOf,
+	JOB_RETRIED_EVENT,
+	type JobRetried,
+	type MachineDisconnects,
+	machineEventDisconnects,
+	type RerunJob,
+	type RerunReply,
+	type RetryLedger,
+	RetryLedgerConformanceError,
+	RetryRouteFacts,
+	retryLedgerConformance,
+	routeRetryFor,
+	SqliteRetryLedger,
+	testJobRetried,
+} from "./auto-retry.js";
+export {
 	actionsMinutesUsed,
 	GITHUB_BURN_WINDOW_HOURS,
 	GITHUB_INCLUDED_COMPUTE_OBSERVED_AT,
