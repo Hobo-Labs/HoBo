@@ -10,7 +10,7 @@
  * *observable through this package's surface*, not to what could in principle
  * be simulated:
  *
- * - `simulated` — a served HTTP entrypoint or an accessible queue/topic/secret/data port
+ * - `simulated` — a served HTTP entrypoint or an accessible queue/topic/secret/data/schedule port
  *   backed by the in-memory implementation. Neither is a deployed provider.
  * - `camp-only` — kinds this lane structurally cannot exercise (`container`,
  *   `wasm-component`): they need a container engine or wasm execution.
