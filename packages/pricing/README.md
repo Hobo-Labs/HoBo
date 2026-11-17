@@ -15,7 +15,7 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
-New quotes use `pricing-rating/v7`. It orders ties by string code units,
+New quotes use `pricing-rating/v8`. It orders ties by string code units,
 compares UTC instants without truncating fractional seconds, rejects impossible
 calendar dates, and requires each allowance, credit, and commitment to have a
 unique nonempty identity within its kind and the financial state's tenant. This
@@ -34,8 +34,14 @@ enforce the new source identity checks. Versions 1–4 also retain earlier sourc
 amount, basis and commitment-unit behavior. Versions 1–5 retain earlier
 workload-selector and meter behavior. Versions 1–6 also retain the earlier
 handling of conflicting latest measurements. Preserve the original quote as evidence
-rather than treating a new v7 quote as the old one, and reconcile affected old
+rather than treating a new v8 quote as the old one, and reconcile affected old
 expiry, evidence, observation, and financial-source decisions before use.
+
+V8 requires graduated and volume tier schedules to begin at zero, increase,
+and have neither gaps nor overlaps. A missing intermediate end is inferred
+from the next tier's start. A finite final graduated tier cannot rate usage
+beyond its end; a finite volume tier excludes its upper endpoint. Versions 1–7
+retain the previous tier behavior for historical replay.
 
 V6 selects charges for each workload and groups matching measurements for each
 charge before applying its pricing model. A workload's product must match its
@@ -117,7 +123,7 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-The replay corpus pins complete v1 through v6 quote outputs. The replay test parses
+The replay corpus pins complete v1 through v7 quote outputs. The replay test parses
 each scenario through protobuf JSON, rerates it with the recorded version, and
 compares the stable JSON result, including the quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is

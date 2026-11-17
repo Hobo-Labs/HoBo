@@ -43,9 +43,10 @@ export type RatingAlgorithmVersion =
 	| "pricing-rating/v4"
 	| "pricing-rating/v5"
 	| "pricing-rating/v6"
-	| "pricing-rating/v7";
+	| "pricing-rating/v7"
+	| "pricing-rating/v8";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v7";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v8";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function rejection(
@@ -188,7 +189,8 @@ export function quoteScenario(
 		version !== "pricing-rating/v4" &&
 		version !== "pricing-rating/v5" &&
 		version !== "pricing-rating/v6" &&
-		version !== "pricing-rating/v7"
+		version !== "pricing-rating/v7" &&
+		version !== "pricing-rating/v8"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -203,7 +205,9 @@ export function quoteScenario(
 		strictSourceIdentity && version !== "pricing-rating/v4";
 	const selectorPerWorkload =
 		strictSourceValues && version !== "pricing-rating/v5";
-	const rejectAmbiguousLatest = version === "pricing-rating/v7";
+	const rejectAmbiguousLatest =
+		version === "pricing-rating/v7" || version === "pricing-rating/v8";
+	const strictTiers = version === "pricing-rating/v8";
 	const time = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	const compareTimes = strictTimes ? compareUtcExact : compareStrings;
 	try {
@@ -245,6 +249,7 @@ export function quoteScenario(
 			strictSourceValues,
 			selectorPerWorkload,
 			rejectAmbiguousLatest,
+			strictTiers,
 		);
 		const candidate = rateSnapshot(
 			scenario,
@@ -256,6 +261,7 @@ export function quoteScenario(
 			strictSourceValues,
 			selectorPerWorkload,
 			rejectAmbiguousLatest,
+			strictTiers,
 		);
 		if (
 			candidate.currency.length === 0 ||
