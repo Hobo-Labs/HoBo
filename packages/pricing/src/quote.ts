@@ -44,9 +44,10 @@ export type RatingAlgorithmVersion =
 	| "pricing-rating/v5"
 	| "pricing-rating/v6"
 	| "pricing-rating/v7"
-	| "pricing-rating/v8";
+	| "pricing-rating/v8"
+	| "pricing-rating/v9";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v8";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v9";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function rejection(
@@ -190,7 +191,8 @@ export function quoteScenario(
 		version !== "pricing-rating/v5" &&
 		version !== "pricing-rating/v6" &&
 		version !== "pricing-rating/v7" &&
-		version !== "pricing-rating/v8"
+		version !== "pricing-rating/v8" &&
+		version !== "pricing-rating/v9"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -206,8 +208,12 @@ export function quoteScenario(
 	const selectorPerWorkload =
 		strictSourceValues && version !== "pricing-rating/v5";
 	const rejectAmbiguousLatest =
-		version === "pricing-rating/v7" || version === "pricing-rating/v8";
-	const strictTiers = version === "pricing-rating/v8";
+		version === "pricing-rating/v7" ||
+		version === "pricing-rating/v8" ||
+		version === "pricing-rating/v9";
+	const strictTiers =
+		version === "pricing-rating/v8" || version === "pricing-rating/v9";
+	const strictCompleteness = version === "pricing-rating/v9";
 	const time = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	const compareTimes = strictTimes ? compareUtcExact : compareStrings;
 	try {
@@ -216,6 +222,7 @@ export function quoteScenario(
 			time,
 			strictSourceIdentity,
 			strictSourceValues,
+			strictCompleteness,
 		);
 		validateQuoteOptions(scenario);
 		const catalog = scenario.catalog;
@@ -290,6 +297,16 @@ export function quoteScenario(
 				candidate.currency,
 			),
 		});
+		const informationalPartial =
+			strictCompleteness && state.completeness === "partial";
+		const assumptions = [
+			"allocatedEffective is advisory and is not a dispatcher v1 input",
+			"external provider quotes are evidence only; no live provider call was made",
+		];
+		if (informationalPartial)
+			assumptions.push(
+				"financial state is partial; quote is informational only",
+			);
 		const initial = create(QuoteVectorSchema, {
 			schema: "hobo.pricing.quote/v1",
 			ratingAlgorithmVersion: version,
@@ -320,12 +337,19 @@ export function quoteScenario(
 			consumption: [...candidate.consumption],
 			remainingHeadroom: [...candidate.remainingHeadroom],
 			projectedWaste: [...candidate.projectedWaste],
-			assumptions: [
-				"allocatedEffective is advisory and is not a dispatcher v1 input",
-				"external provider quotes are evidence only; no live provider call was made",
-			],
+			assumptions,
 			unpriced: [],
-			eligibility: { eligible: true, rejectedCandidates: [] },
+			eligibility: {
+				eligible: !informationalPartial,
+				rejectedCandidates: informationalPartial
+					? scenario.candidate.map((candidate) => ({
+							candidateRef: candidate.agreementRef,
+							code: "INCOMPLETE_FINANCIAL_STATE",
+							reason:
+								"partial financial state cannot authorize automatic selection",
+						}))
+					: [],
+			},
 		});
 		return create(QuoteVectorSchema, {
 			...initial,
