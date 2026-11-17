@@ -18,7 +18,7 @@ import {
 import type { HttpTransport } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
-	createNodeSqliteDriver,
+	createMemoryNodeSqliteDriver,
 	SqliteJournal,
 } from "../../../storage-sqlite/src/index.js";
 import {
@@ -271,13 +271,10 @@ async function station(
 	rail: Readonly<{ maxFanoutCamps: number }> = { maxFanoutCamps: 10 },
 ): Promise<Station> {
 	const c = clock(T0);
-	// The durable SQLite journal (subscription leases, stream-head CAS).
-	const store = new SqliteJournal(
-		createNodeSqliteDriver({ path: ":memory:" }),
-		{
-			clock: { now: () => new Date(c.now()).toISOString() },
-		},
-	);
+	// An in-memory SQLite journal exercises subscription leases and stream-head CAS.
+	const store = new SqliteJournal(createMemoryNodeSqliteDriver(), {
+		clock: { now: () => new Date(c.now()).toISOString() },
+	});
 	const base = { store, tenant: TENANT, now: c.now };
 	const hosts = new FakeHosts();
 	const gateAsked: string[] = [];
