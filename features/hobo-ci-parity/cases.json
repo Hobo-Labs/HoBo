@@ -437,7 +437,7 @@
 			"bar": "Same, with no model and the evidence printed",
 			"tiers": ["t1", "t3"],
 			"packages": ["24"],
-			"today": { "state": "built-not-proven", "note": "never run against GitHub" },
+			"today": { "state": "built-not-proven", "note": "state before package 24; the scenario now passes and the T3 run is linked" },
 			"t3Run": "https://github.com/Hobo-Labs/HoBo/actions/runs/44044299552"
 		},
 		{

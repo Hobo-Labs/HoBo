@@ -42,7 +42,8 @@ Each capability is one case on the generated [parity scorecard](https://github.c
 | Run in production | Built, not yet run in production |
 |---|---|
 | `hobo ci diagnose` on a real failed run of the HoBo repository | Relay mode (off by default until one live run shows a relay job answered with no billed minute) |
-| `route`, `init` and `signals` against the HoBo repository | Job mode's relay workflow, machine connect, runner-less checks, the billing reader |
+| | Job mode's relay workflow, machine connect, runner-less checks, the billing reader |
+| | `route`, `init` and `signals` against the HoBo repository (no run linked yet) |
 
 ## Related
 
