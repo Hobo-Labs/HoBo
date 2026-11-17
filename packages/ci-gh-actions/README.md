@@ -34,8 +34,11 @@ an executing job before a queued or finished reservation, including when the
 jobs belong to different observed runs. If a later lookup fails after a queued
 match, the result is marked incomplete. Fail-closed teardown retains the runner
 on an incomplete or failed lookup; the force-stop path can continue after the
-queued grace period. Bounded or truncated GitHub listings can still omit an
-assignment. The maintained
+queued grace period. Job listings are paginated up to 100 pages. Run listings
+are bounded, and reaching a limit while more work exists is treated as an
+incomplete scan. Duplicate or malformed pages fail the lookup. GitHub can
+change its listings between requests, so pagination is not an atomic snapshot
+and a changing listing can still omit an assignment. The maintained
 [runner-correlation verification skill](../../.agents/skills/verify-ci-runner-correlation/SKILL.md)
 records the checks and assumptions.
 
@@ -75,6 +78,28 @@ stateDiagram-v2
   s3 --> s4: apply teardown policy
   s3 --> s5: apply teardown policy
   s2 --> s5: apply teardown policy
+```
+
+The pagination model explores 170 distinct states, including exhausted and
+truncated scans in both teardown modes. Its projection hides 90 same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Scanning jobs
+  s1: Listing exhausted
+  s2: Executing job observed
+  s3: Teardown allowed
+  s4: Scan limit reached
+  s5: Runner retained
+  [*] --> s0
+  s0 --> s1: confirm listing exhausted
+  s0 --> s2: read next job
+  s1 --> s3: apply teardown policy
+  s0 --> s4: detect more work beyond limit
+  s2 --> s5: apply teardown policy
+  s4 --> s3: apply teardown policy
+  s4 --> s5: apply teardown policy
 ```
 
 ## Test this branch
