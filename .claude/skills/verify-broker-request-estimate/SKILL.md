@@ -7,7 +7,7 @@ description: Verify explicit broker spend estimates across JSON, protobuf and th
 
 **Properties:** A request document must provide a finite nonnegative estimate, even when it is zero. Both JSON field spellings must agree. Protobuf round trips preserve the difference between an absent estimate and explicit zero. The CLI derives zero only for the built-in local-host catalog; registry-backed requests need an explicit request document.
 
-**Review baseline:** commit `3f0140e6b8fc1b1aeb4fe4b0b73368b16a1869e8`. PASS for the checks and abstraction below.
+**Review baseline:** commit `7e6f4d1bc8be723f45d3425a26ec34eabf158315`. PASS for the checks and abstraction below.
 
 ## Covered code
 

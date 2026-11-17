@@ -301,6 +301,28 @@ reissued by that instance without reconciliation. This process-local registry
 is lost on restart; it does not authenticate the caller, provide cross-process
 coordination, or verify that a remote receiver honors the quote at execution.
 
+The [catalog ordering skill](../../.agents/skills/verify-broker-catalog-ordering/SKILL.md)
+checks 256 abstract two-candidate states. This view hides 128 same-label steps;
+it does not compare complete plan quotes or establish currency completeness.
+
+```mermaid
+stateDiagram-v2
+  s0: A catalog price is invalid
+  s1: Catalog price units differ
+  s2: Catalog identities conflict
+  s3: Comparable catalog prices are ready
+  s4: Catalog evidence refused
+  s5: Lowest comparable catalog price selected
+  [*] --> s0
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  s0 --> s4: refuse incomplete evidence
+  s1 --> s4: refuse incomplete evidence
+  s2 --> s4: refuse incomplete evidence
+  s3 --> s5: compare exact prices
+```
+
 The [resolution signature skill](../../.agents/skills/verify-broker-resolution-signature/SKILL.md)
 checks 256 abstract evidence states. This view hides 128 same-label steps and
 assumes the host has enrolled the correct broker key.
