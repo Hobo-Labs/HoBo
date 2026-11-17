@@ -264,7 +264,8 @@ export function createComposedHoboCli(
 							executor: createInProcessExecutor({
 								iac: createVercelDeployProvider({
 									token: credentials.reveal("VERCEL_TOKEN") ?? "",
-									...((team) => (team !== undefined ? { teamId: team } : undefined))(
+									...((team) =>
+										team !== undefined ? { teamId: team } : undefined)(
 										credentials.reveal("VERCEL_TEAM_ID"),
 									),
 									projectName: "hobo-cd",

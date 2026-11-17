@@ -141,7 +141,10 @@ function fleetMembers(
 
 /** A connection string with a password in it. */
 function carriesPassword(url: string): boolean {
-	return /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^@/\s]+@/iu.test(url) || /[?&]password=/iu.test(url);
+	return (
+		/^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^@/\s]+@/iu.test(url) ||
+		/[?&]password=/iu.test(url)
+	);
 }
 
 function joinPath(home: string, ...parts: readonly string[]): string {
