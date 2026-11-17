@@ -106,6 +106,11 @@ guarantee; new hosting controls use versioned identities.
 
 Zero USD budget or per-resolution cap means zero, never unlimited. Unlimited
 preflight behavior requires `budgetUnlimited` or `spendCapUnlimited` explicitly.
+The default billing plane retains successful estimates as in-memory holds, so
+later requests cannot spend them again. It requires a stable request ID and has
+no meter feed: confirmed-unused holds can be released, while successful holds
+remain for the lifetime of the plane. Repeated resolutions require
+reconciliation rather than receiving another receipt.
 `createMeteredBillingPlane` rereads a live event reader on each authorization and
 holds outstanding request identities atomically within that one plane. Consumable
 snapshot iterators are rejected. A finalized usage fact may retire a hold only by
@@ -222,7 +227,7 @@ be swapped without touching the brokering pipeline:
 |---|---|---|---|
 | Policy | `GatePlane` (OPA-shaped request/decision documents) | `@hobo/contracts` policy pack (imported and **run**, not reinvented) | **Rego** via `createOpaGatePlane` — OPA Data API decision at `hobo/broker/decision`, fail-closed (`policy-engine-unavailable`), pinned by `broker_policy_opa.pact.json` |
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
-| Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` checks a complete eligible pricing quote when supplied |
+| Billing | `BillingPlane` | in-process budget holds, spend-cap and quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` checks a complete eligible pricing quote when supplied |
 | Delivery | `DeliveryPlane` | `createDeliveryPlane` — in-process conductor only; agent/publisher policies fail closed with `delivery-plane-unwired` | `createReconcilerDeliveryPlane({ requestPromotion })` — every receipt is delivered through `@hobo/cd` (ADR-0182: D14), fail-closed, pinned by `broker_delivery_cd.pact.json`. GitOps rendering (Argo CD `Application`, Flux `Kustomization`) moved to `@hobo/cd-gitops` |
 | Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `custom` configs | an external connector catalog |
 
