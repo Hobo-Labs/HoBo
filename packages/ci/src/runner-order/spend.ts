@@ -113,8 +113,10 @@ export class LedgerSpendReader implements SpendReader {
 			const at = settledAtMs(lease);
 			if (!provider || at === undefined || at < monthStartMs) continue;
 			add(provider, lease.paidMicros / 1_000_000);
-			if (lease.actualJobId > 0) covered.add(lease.actualJobId);
-			if (lease.jobId > 0) covered.add(lease.jobId);
+			// A lease covers the job it ran: the one it was made for only
+			// when it records no other.
+			const ran = lease.actualJobId > 0 ? lease.actualJobId : lease.jobId;
+			if (ran > 0) covered.add(ran);
 		}
 		const source = this.deps.finishedJobs;
 		const jobs = source

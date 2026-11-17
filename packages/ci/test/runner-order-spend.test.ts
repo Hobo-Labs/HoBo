@@ -167,6 +167,15 @@ describe("LedgerSpendReader (R08)", () => {
 		expect(spent.has("runs-on")).toBe(false);
 	});
 
+	it("covers only the job a lease ran when it ran another than it was made for", async () => {
+		const spent = await reader(
+			[lease({ jobId: 7, actualJobId: 8, paidMicros: 500_000 })],
+			[job({ id: 7 }), job({ id: 8 })],
+		).spentUsd("acct-1", MONTH);
+		// Job 7 later ran on a hosted label without a lease: priced at list.
+		expect(spent.get("depot")).toBeCloseTo(0.5 + 10 * 0.012, 10);
+	});
+
 	it("never throws when a source fails", async () => {
 		const failing = new LedgerSpendReader({
 			ledger: { accountLeases: async () => Promise.reject(new Error("down")) },
