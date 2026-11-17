@@ -1,7 +1,3 @@
-// M2 Private Beta: live expand → backfill → contract over a REAL SQLite
-// store. The contract phase is compat-gated (blocked ≠ failed: the dual
-// window stays open); verification failure restores the pre-migration
-// snapshot (forward-only rollback, no .down scripts).
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,7 +32,6 @@ function seededStore(): string {
 	return storePath;
 }
 
-// Rename email → requester_ref via expand/backfill/contract.
 const PLAN = {
 	migrationId: "mig-checkout-ref",
 	expand: ["ALTER TABLE checkout ADD COLUMN requester_ref TEXT"],
@@ -55,7 +50,7 @@ function gate(consumers: readonly string[]): () => CompatGateEvidence {
 	return () => ({
 		gateId: "compat:checkout-readers",
 		consumersOnLegacySchema: consumers,
-		verifiedAt: "2026-08-03T00:00:00.000Z",
+		verifiedAt: new Date().toISOString(),
 	});
 }
 
@@ -77,7 +72,6 @@ test("milestone: full expand→backfill→contract completes with the migration.
 		[
 			MIGRATION_EVENTS.Planned,
 			MIGRATION_EVENTS.SnapshotTaken,
-			// Every phase is write-ahead: its intent, then its fact.
 			MIGRATION_EVENTS.PhaseIntended,
 			MIGRATION_EVENTS.PhaseApplied,
 			MIGRATION_EVENTS.PhaseIntended,
@@ -90,10 +84,8 @@ test("milestone: full expand→backfill→contract completes with the migration.
 		],
 	);
 
-	// The store REALLY changed: old column gone, new shape backfilled.
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
-	// SAFETY: the SELECT fixes the returned row columns.
 	const rows = (
 		db.prepare("SELECT id, requester_ref FROM checkout ORDER BY id").all() as {
 			id: string;
@@ -121,7 +113,6 @@ test("milestone: a consumer still on the old shape BLOCKS contract; the dual win
 	assert.equal(result.status, "contract-blocked");
 	assert.equal(result.dualWindowOpen, true);
 	assert.match(result.blockedReasons[0] ?? "", /billing-projector@1\.2/u);
-	// No RolledBack/Failed fact — blocked is a held dual window, not a failure.
 	assert.ok(
 		!result.facts.some(
 			(fact) =>
@@ -130,10 +121,8 @@ test("milestone: a consumer still on the old shape BLOCKS contract; the dual win
 		),
 	);
 
-	// Expand + backfill retained; old column STILL present.
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
-	// SAFETY: the SELECT fixes the returned row columns.
 	const rows = db
 		.prepare("SELECT id, email, requester_ref FROM checkout ORDER BY id")
 		.all() as { id: string; email: string; requester_ref: string }[];
@@ -151,13 +140,11 @@ test("milestone: failed verification restores the pre-migration snapshot", async
 		plan: {
 			...PLAN,
 			migrationId: "mig-checkout-broken",
-			// Backfill "forgets" one row → verification finds a violation.
 			backfill: [
 				"UPDATE checkout SET requester_ref = 'email:' || email WHERE id = 'c1'",
 			],
 		},
 		compatGate: gate([]),
-		// A restore needs the erasure replay; nothing was erased here.
 		replayErasures: () => 0,
 	});
 
@@ -168,12 +155,64 @@ test("milestone: failed verification restores the pre-migration snapshot", async
 	);
 	assert.equal(result.violations.length, 1);
 
-	// Restored: the new column is GONE again (pre-migration snapshot state).
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
 	assert.throws(() => db.prepare("SELECT requester_ref FROM checkout").all());
 	const rows = db.prepare("SELECT id, email FROM checkout ORDER BY id").all();
 	assert.equal(rows.length, 2);
+});
+
+test("a SQLite verification error after contract restores the original schema", async () => {
+	const storePath = seededStore();
+	const port = createSqliteSchemaApplyPort({ path: storePath });
+	cleanups.push(() => port.close());
+	const result = await executeDataMigration({
+		port,
+		plan: {
+			...PLAN,
+			migrationId: "mig-contract-verification-error",
+			verify: {
+				...PLAN.verify,
+				afterContract: "SELECT private_missing_column FROM checkout",
+			},
+		},
+		compatGate: gate([]),
+		replayErasures: () => 0,
+	});
+	assert.equal(result.status, "rolled-back");
+	assert.doesNotMatch(JSON.stringify(result), /private_missing_column/u);
+	const db = new DatabaseSync(storePath);
+	cleanups.push(() => db.close());
+	assert.equal(db.prepare("SELECT id, email FROM checkout").all().length, 2);
+	assert.throws(() => db.prepare("SELECT requester_ref FROM checkout").all());
+});
+
+test("stale compatibility evidence holds the old schema until fresh evidence arrives", async () => {
+	const storePath = seededStore();
+	const port = createSqliteSchemaApplyPort({ path: storePath });
+	cleanups.push(() => port.close());
+	const journal = createMemoryMigrationJournal();
+	const now = "2026-11-17T12:00:00.000Z";
+	let verifiedAt = "2026-11-17T11:54:59.999Z";
+	const run = () =>
+		executeDataMigration({
+			port,
+			plan: { ...PLAN, migrationId: "mig-stale-gate" },
+			clock: () => now,
+			compatGate: () => ({
+				gateId: "g",
+				consumersOnLegacySchema: [],
+				verifiedAt,
+			}),
+			journal,
+		});
+	const blocked = await run();
+	assert.equal(blocked.status, "contract-blocked");
+	const db = new DatabaseSync(storePath);
+	assert.equal(db.prepare("SELECT id, email FROM checkout").all().length, 2);
+	db.close();
+	verifiedAt = now;
+	assert.equal((await run()).status, "completed");
 });
 
 test("a failing contract statement rolls back to the snapshot", async () => {
@@ -189,21 +228,15 @@ test("a failing contract statement rolls back to the snapshot", async () => {
 			contract: ["ALTER TABLE checkout DROP COLUMN does_not_exist"],
 		},
 		compatGate: gate([]),
-		// A restore needs the erasure replay; nothing was erased here.
 		replayErasures: () => 0,
 	});
 
 	assert.equal(result.status, "rolled-back");
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
-	// Snapshot state: no requester_ref, email intact.
 	assert.throws(() => db.prepare("SELECT requester_ref FROM checkout").all());
 });
 
-// M6: a held migration is resumable. Before the journal was threaded through,
-// running the same plan again re-applied `expand` ("duplicate column"), took a
-// second snapshot after that first expand, "restored" it, and reported
-// rolled-back over a store that was still expanded.
 test("a migration held before backfill resumes from its journal: expand runs once and the first snapshot is the one kept", async () => {
 	const storePath = seededStore();
 	const port = createSqliteSchemaApplyPort({ path: storePath });
@@ -261,7 +294,6 @@ test("a migration held before backfill resumes from its journal: expand runs onc
 		[MIGRATION_EVENTS.Held, MIGRATION_EVENTS.Resumed],
 	);
 
-	// The store really is migrated: the new column is filled, the old is gone.
 	const db = new DatabaseSync(storePath);
 	cleanups.push(() => db.close());
 	const rows = db
@@ -276,7 +308,6 @@ test("a migration held before backfill resumes from its journal: expand runs onc
 	);
 	assert.throws(() => db.prepare("SELECT email FROM checkout").all());
 
-	// And a third run is a no-op.
 	const again = await run();
 	assert.equal(again.status, "completed");
 	assert.equal(again.facts.length, done.facts.length);
@@ -303,11 +334,9 @@ test("without an erasure replay a failed phase holds instead of restoring; no fa
 		held.blockedReasons.join("; "),
 		/no erasure replay was supplied/u,
 	);
-	// M10: SQLite's message names the column; none of it is recorded.
 	assert.doesNotMatch(JSON.stringify(held), /does_not_exist|no such column/u);
 	assert.match(held.blockedReasons[0] ?? "", /^contract phase failed: \w+$/u);
 	{
-		// Not restored: the new column is still there.
 		const db = new DatabaseSync(storePath);
 		assert.equal(
 			db.prepare("SELECT requester_ref FROM checkout").all().length,
@@ -315,7 +344,6 @@ test("without an erasure replay a failed phase holds instead of restoring; no fa
 		);
 		db.close();
 	}
-	// Supplied with one, the next run restores the first snapshot.
 	const rolled = await executeDataMigration({
 		port,
 		plan,
@@ -330,15 +358,6 @@ test("without an erasure replay a failed phase holds instead of restoring; no fa
 	assert.throws(() => db.prepare("SELECT requester_ref FROM checkout").all());
 });
 
-// ── a crash between a phase and its fact ─────────────────────────────────────
-//
-// The phase commits, the process dies before `PhaseApplied` is journaled, and
-// the application keeps writing. The resumed run finds the phase's intent
-// with no answer. It must not run the statements again on a guess, and it
-// must never answer them with a restore: the snapshot predates every write
-// the application has made since.
-
-/** A journal that dies on the `PhaseApplied` of one phase, once. */
 function dyingAfter(phase: string) {
 	const inner = createMemoryMigrationJournal();
 	let armed = true;
@@ -362,14 +381,12 @@ function dyingAfter(phase: string) {
 	};
 }
 
-/** What the application writes while the migration's process is down. */
 function applicationWrites(storePath: string): void {
 	const db = new DatabaseSync(storePath);
 	const columns = db
 		.prepare("SELECT name FROM pragma_table_info('checkout')")
 		.all()
 		.map((row) => String(row.name));
-	// The application writes whichever columns the store has now.
 	db.exec(
 		columns.includes("email")
 			? "INSERT INTO checkout (id, email) VALUES ('c3', 'c@example.test')"
@@ -388,7 +405,6 @@ function idsOf(storePath: string): string[] {
 	return ids;
 }
 
-/** No rows exactly when the phase's statements are in effect. */
 const PROBES = {
 	expand:
 		"SELECT 'requester_ref' AS missing WHERE NOT EXISTS (SELECT 1 FROM pragma_table_info('checkout') WHERE name = 'requester_ref')",
@@ -423,7 +439,6 @@ for (const crashed of ["expand", "contract"] as const) {
 					},
 					compatGate: gate([]),
 					journal,
-					// Wired: before the fix this is what let the restore happen.
 					replayErasures: () => 0,
 				});
 			} finally {
@@ -434,7 +449,6 @@ for (const crashed of ["expand", "contract"] as const) {
 		applicationWrites(storePath);
 		assert.deepEqual(idsOf(storePath), ["c1", "c2", "c3"]);
 
-		// No probe: nothing says whether the phase committed. Hold.
 		const held = await run();
 		assert.equal(held.status, "held");
 		assert.match(held.blockedReasons[0] ?? "", /^PHASE_OUTCOME_UNKNOWN: /u);
@@ -453,8 +467,6 @@ for (const crashed of ["expand", "contract"] as const) {
 			[],
 		);
 
-		// With the probe the run finds the phase in effect, records it without
-		// running it again, and carries on to the end.
 		const done = await run(PROBES);
 		assert.equal(done.status, "completed", done.blockedReasons.join("; "));
 		assert.equal(restores, 0);

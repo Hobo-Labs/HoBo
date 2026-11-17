@@ -115,6 +115,10 @@ Trails composes data migrations; it does not implement a storage engine.
   callback — recomputed before every phase, a negative verdict holds the
   migration at its last safe state — and a `replayErasures` callback, called
   after every restore so a rollback cannot resurrect an erased subject.
+- **Fresh compatibility evidence.** A contract phase requires gate evidence
+  no older than `compatGateMaxAgeMs`, which defaults to five minutes. Missing,
+  invalid, future, or stale evidence blocks the destructive phase. Backfill is
+  verified again after a hold before the contract phase can resume.
 - **Every phase is write-ahead.** The fact ladder is `Planned`,
   `SnapshotTaken`, then for each of expand, backfill and contract a
   `PhaseIntended` followed by its `PhaseApplied`, with `Verified` after
