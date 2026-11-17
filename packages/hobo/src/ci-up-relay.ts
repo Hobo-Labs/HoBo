@@ -101,7 +101,7 @@ export function createCiRelayPlanCommand(
 }
 
 /** The current branch and commit of the repository holding `dir`. */
-function gitHead(
+export function gitHead(
 	dir: string,
 ): Promise<{ ref: string; sha: string } | undefined> {
 	const git = (args: readonly string[]) =>
