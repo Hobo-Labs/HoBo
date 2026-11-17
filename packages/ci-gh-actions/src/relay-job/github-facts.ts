@@ -14,9 +14,10 @@
  *   full young queue alone does not refuse, and a run just ahead does not
  *   hold it back), as the route job confirms a slip. It isolates public and
  *   fork jobs when the slip sends forks to it.
- * - Each machine label the relay names is one machine. It is online when a
- *   runner took a job for that label in the last fifteen minutes, and full
- *   while a job is waiting for it.
+ * - Each machine label the relay names is one machine, and several labels
+ *   are alternatives checked one by one. It is online when a runner took a
+ *   job for that label in the last fifteen minutes, and full while a job is
+ *   waiting for it.
  * - A hosted runner type is unhealthy when the same job list holds three jobs
  *   that waited for its label past the miss threshold within thirty minutes,
  *   and no later job started (`@hobo/ci`'s provider-health rules, replayed).
@@ -173,6 +174,11 @@ function fleetFacts(
 	};
 }
 
+/**
+ * One candidate per machine label. Each carries every named label, because
+ * the machine step wants a machine holding all of them; the label it is
+ * routed to is its own `runsOn`, and only that label's queue is read for it.
+ */
 function machineFacts(
 	read: GithubQueueRead,
 	request: RunnerRouteRequest,

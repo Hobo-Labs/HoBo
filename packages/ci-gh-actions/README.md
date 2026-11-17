@@ -1660,19 +1660,22 @@ the runner-order walk needs:
   without importing the script. As there, only a `queued` job counts as
   waiting: a `pending` one is held by a concurrency group, not waiting for a
   runner, so it never makes a machine full or counts as a hosted-provider
-  miss. `runsToRead` picks whose job lists
+  miss; a `queued` job counts as waiting even if it still names a runner. `runsToRead` picks whose job lists
   to read in the route job's order: probe runs, the slowest finished runs, the
   runs just ahead, then the rest.
 - [`src/relay-job/github-facts.ts`](src/relay-job/github-facts.ts):
   `GithubRouteFacts` is the `RouteFactsSource` for job mode. The fleet is on
-  when a usable slip routes some class to it or its label was seen taking a
-  job. It takes the job when the slip says it is open for the run's class and
-  the queue does not show it refusing jobs, or when the queue shows it taking
-  jobs (with a busy slip, a full young queue alone does not refuse it), as the
-  route job confirms a slip. It isolates public and fork jobs when the slip
-  sends forks to it. Each machine label the relay names is one
-  machine, online after a pickup in the last fifteen minutes and full while a
-  job waits for it. A hosted label with three misses within thirty minutes in
+  when a usable slip routes the run's class to the fleet label the relay
+  names, or that label was seen taking a job; a slip naming another label
+  (the trunk class's own label, or a pin) says nothing about it. It takes the
+  job when that slip says it is open and the queue does not show it refusing
+  jobs, or when the queue shows it taking jobs (with a busy slip, a full
+  young queue alone does not refuse it and a run just ahead does not hold it
+  back), as the route job confirms a slip. It isolates public and fork jobs
+  when the slip sends forks to it. A slip whose commit is gone by the time it
+  is read is no slip. Each machine label the relay names is one machine, and
+  several are alternatives: online after a pickup in the last fifteen minutes
+  and full while a job waits for it. A hosted label with three misses within thirty minutes in
   the job list, and no start since, is unhealthy by `@hobo/ci`'s
   provider-health rules. A run that started in the minute before and has not
   chosen yet holds the free fleet or machine. Minutes and spend are never
