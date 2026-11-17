@@ -1,5 +1,28 @@
 # @hobo/broker
 
+The finite TLA+ models in `model/IacBudget.tla`,
+`../dispatcher/model/IacRouting.tla`, and `../cloud/model/IacTransitions.tla`
+check admission, fencing, recovery, transition ordering and disclosure
+invariants under their stated host-trust assumptions. The budget model also
+checks enrollment or an authenticated guard at both reservation and execution
+claim, including a reopen with changed enrollment. It checks that each priced
+reservation fit the available budget when admitted, and demonstrates that
+actual charges can later exceed the modeled bound. The budget abstraction has
+two operations, unit-sized reservations, one aggregate currency budget, no
+initial or external commitments, and atomic reserve transitions. It checks the
+same invariants at limits of one and two. It does not
+model provider-account or entitlement limits, unresolved or recovery reserves,
+external commitments, the concrete journal or CAS implementation, or unreported
+charges before settlement. Run them with
+`HOBO_TLA_TOOLS=/path/to/tla2tools-1.8.0.jar node --experimental-strip-types scripts/check-iac-models.ts`
+from the repository root. The tool is available from the
+[TLA+ 1.8.0 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.8.0);
+the runner verifies the pinned jar digest. These abstractions complement the implementation's
+bounded tests; they do not prove the external host or provider implementation.
+The runner also removes representative guards in temporary model copies and
+requires the checker to find counterexamples. The pricing CI workflow runs the
+same checks when either model or its runner changes.
+
 ## Hosting budget admission
 
 `admitIacTarget` applies the same durable authority to a provider-neutral IaC
@@ -126,8 +149,10 @@ authority's journal-derived holds; external commitments use their separate field
 
 `settle` requires confirmed source retirement and authoritative usage evidence,
 including complete actual account charges and entitlement consumption when those
-dimensions were reserved. Actual overruns are recorded and consume remaining
-headroom. Unknown outcomes retain all holds. `release` requires positive evidence
+dimensions were reserved. A reservation is an admission-time bound, not a
+provider spending cap: actual charges can exceed it and the overall budget.
+Actual overruns are recorded and consume remaining headroom. Unknown outcomes
+retain all holds. `release` requires positive evidence
 that the reservation was unused. Policy revisions cannot erase commitments, and
 period rollover refuses while journal-owned work remains outstanding. Reducing
 external unresolved/committed exposure requires reconciliation evidence.

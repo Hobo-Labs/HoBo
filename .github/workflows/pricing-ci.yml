@@ -6,10 +6,14 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/test/pricing-authorization.test.ts"
+      - "packages/broker/model/**"
+      - "packages/cloud/model/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/events/src/pricing-event-contracts.ts"
       - "packages/events/test/pricing-upcaster-gate.test.ts"
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
+      - "scripts/check-iac-models.ts"
       - "docs/design/provider-pricing-commercial-terms.md"
       - "docs/design/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
@@ -18,9 +22,13 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/test/pricing-authorization.test.ts"
+      - "packages/broker/model/**"
+      - "packages/cloud/model/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/events/src/pricing-event-contracts.ts"
       - "packages/events/corpus/golden-replay-baseline.json"
       - "packages/dispatcher/**"
+      - "scripts/check-iac-models.ts"
       - "docs/design/provider-pricing-commercial-terms.md"
       - "docs/design/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
@@ -110,3 +118,30 @@ jobs:
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
+
+  iac-models:
+    name: Check bounded IaC budget, routing and grant models
+    needs: route
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Download TLA+ tools
+        run: |
+          curl --fail --location --silent --show-error --retry 3 --max-time 60 \
+            --output "$RUNNER_TEMP/tla2tools.jar" \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+      - name: Verify tool digest and check models
+        env:
+          HOBO_TLA_TOOLS: ${{ runner.temp }}/tla2tools.jar
+        run: node --experimental-strip-types scripts/check-iac-models.ts

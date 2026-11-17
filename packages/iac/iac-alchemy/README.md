@@ -65,6 +65,26 @@ ownership and maintain its fencing until deletion completes.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
+The finite `model/IacGrant.tla` model checks grant epoch non-reuse, ownership,
+route revocation and delayed provider effects across retirement, including
+A→B→A permissions. It assumes a trusted host authenticates exclusive scope,
+fences routes and any still-running provider effects, and verifies migration;
+the model does not prove that the host, platform or provider enforces these
+guarantees. It assumes a single durable atomic registry shared across processes
+and credentials, with no resource aliases or alternate access paths; it does
+not model registry crash or replay. Retirement intent alone does not close a
+proxy route: old requests remain possible until its route is fenced. The
+abstraction covers one resource, two
+permission choices and two ownership incarnations. It checks three grant
+epochs with one request for A→B→A and, separately, two epochs with two
+concurrent requests for draining; it makes no liveness claim. From the
+repository root, run the pinned model runner with `HOBO_TLA_TOOLS` set to the
+path of the `tla2tools-1.8.0.jar` file:
+
+```sh
+node --experimental-strip-types scripts/check-iac-models.ts
+```
+
 The Cloudflare worker runtime binds a module-exported HoBo HTTP entrypoint to
 declared Worker service dependencies. HoBo bucket, KV and queue runtime contracts,
 topics, and enabled session replay are not yet supported; the adapter refuses
