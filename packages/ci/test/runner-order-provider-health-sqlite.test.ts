@@ -7,8 +7,10 @@ import { type JobFact, JobFactSchema } from "../src/_generated/relay_job_pb.js";
 import {
 	answerRelayJob,
 	NO_ROUTE_FACTS,
+	newProviderHealth,
 	PROVIDER_HEALTH_DEFAULTS,
 	providerHealthKey,
+	recordProviderOutcome,
 } from "../src/runner-order/index.js";
 import {
 	feedProviderHealth,
@@ -213,6 +215,23 @@ describe("feedProviderHealth (R09)", () => {
 		expect((await store.unhealthy(now)).has(KEY)).toBe(true);
 	});
 
+	it("does not count misses reported out of order as three in thirty minutes", async () => {
+		const store = new SqliteProviderHealthStore(":memory:");
+		// A backfill reads the newest job first: misses at T+30m, T-10m, T-5m.
+		for (const [id, at] of [
+			[1, T0 + 20 * MINUTE],
+			[2, T0 - 20 * MINUTE],
+			[3, T0 - 15 * MINUTE],
+		] as const)
+			await feedProviderHealth(store, queued(id, at), T0 + 60 * MINUTE);
+		const health = await store.get(KEY);
+		expect(health.trippedAtMs).toBeUndefined();
+		expect(health.outcomes).toEqual([
+			{ atMs: T0 + 30 * MINUTE, started: false },
+		]);
+		expect((await store.unhealthy(T0 + 60 * MINUTE)).has(KEY)).toBe(false);
+	});
+
 	it("keeps neither the mark nor the record when writing fails", async () => {
 		const store = new SqliteProviderHealthStore(":memory:");
 		const outcome = { atMs: T0, started: false };
@@ -247,5 +266,22 @@ describe("feedProviderHealth (R09)", () => {
 			completedAtMs: T0 + 2 * MINUTE,
 		});
 		expect(providerOutcomeOfJob(cancelled, T0 + 20 * MINUTE)).toBeUndefined();
+	});
+});
+
+describe("recordProviderOutcome window (R09)", () => {
+	it("measures the window from the earliest to the latest miss, whatever their order", () => {
+		const record = (times: readonly number[]) =>
+			times.reduce(
+				(health, atMs) =>
+					recordProviderOutcome(health, { atMs, started: false }),
+				newProviderHealth(),
+			);
+		expect(record([40 * MINUTE, 0, 5 * MINUTE]).trippedAtMs).toBeUndefined();
+		const inside = record([20 * MINUTE, 0, 5 * MINUTE]);
+		expect(inside.trippedAtMs).toBe(20 * MINUTE);
+		expect(inside.nextTrialAtMs).toBe(
+			20 * MINUTE + PROVIDER_HEALTH_DEFAULTS.firstBackoffMs,
+		);
 	});
 });

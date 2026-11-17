@@ -14,9 +14,10 @@
  *
  * While a type is tripped, only the trial job's miss doubles the back-off:
  * a job queued before the trial was let through was routed before the trip
- * (a fan-out still draining), so its miss is not a failed trial. A start
- * older than the record's newest outcome or its trip is a late report of a
- * job from before the outage, and does not clear it.
+ * (a fan-out still draining), so its miss is not a failed trial. A start or
+ * a miss older than the record's newest outcome or its trip is a late report
+ * (a backfill, a job list read newest first): it neither clears the record
+ * nor counts towards a trip.
  *
  * The `provider_health_outcomes` table is a de-duplication index (key, job
  * id, outcome), not a record of its own: nothing reads it back but the claim,
@@ -206,24 +207,25 @@ export function providerOutcomeOfJob(
 }
 
 /**
- * Whether `outcome` of `job` changes a runner type's record. While the type
- * is tripped, a miss counts only for a job queued no earlier than the trial
- * let through (`trialStartedAtMs`, else `nextTrialAtMs`); the rest were routed
- * before the trip. A start older than the newest outcome kept or the trip is
- * a late report from before the outage and does not clear the record.
+ * Whether `outcome` of `job` changes a runner type's record. An outcome, start
+ * or miss, older than the newest outcome kept or the trip is a late report (a
+ * poller backfill, a job list read newest first): a late start does not clear
+ * the record and a late miss does not count towards a trip. While the type is
+ * tripped, a miss counts only for a job queued no earlier than the trial let
+ * through (`trialStartedAtMs`, else `nextTrialAtMs`); the rest were routed
+ * before the trip.
  */
 export function countsForProviderHealth(
 	health: ProviderHealth,
 	job: JobFact,
 	outcome: ProviderOutcome,
 ): boolean {
-	if (outcome.started) {
-		const newest = Math.max(
-			health.trippedAtMs ?? Number.NEGATIVE_INFINITY,
-			...health.outcomes.map((kept) => kept.atMs),
-		);
-		return outcome.atMs >= newest;
-	}
+	const newest = Math.max(
+		health.trippedAtMs ?? Number.NEGATIVE_INFINITY,
+		...health.outcomes.map((kept) => kept.atMs),
+	);
+	if (outcome.atMs < newest) return false;
+	if (outcome.started) return true;
 	if (health.trippedAtMs === undefined) return true;
 	const trialFrom = health.trialStartedAtMs ?? health.nextTrialAtMs;
 	return trialFrom === undefined || job.queuedAtMs >= trialFrom;
