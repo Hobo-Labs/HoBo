@@ -50,6 +50,16 @@ whose budget cannot cover that estimate as well as its calculated cost. New
 decision replay inputs retain the estimate; older inputs without it keep their
 original selection behavior.
 
+New dispatcher tie-breaks use ECMAScript string code-unit order rather than the
+host locale, including equal-expiry credit consumption and v2 provider order.
+When a v1 decision compares distinct strings, its replay input records the
+ordering version. Unversioned historical inputs use the former local collation
+for compatibility and need the original locale to reproduce a tied result. A
+legacy reservation that replays to a different provider is quarantined by the
+history check and needs reconciliation. The v2 pricing engine can still contain
+locale-sensitive ordering inside its quote calculation; this change only fixes
+the dispatcher ordering around the returned quotes.
+
 An older helper could reserve a different category when a provider had multiple
 registrations, leaving the intended account without its hold or settlement. The
 helper now checks recorded replay inputs for pending, running, and confirmed
