@@ -9,6 +9,7 @@ export const step = action => ({
  ScheduleStep:'schedule child step',
  ScheduleSleep:'schedule child sleep',
  FinishChild:'record child outcome',
+ FinishSleep:'record sleep completion',
  CloseParent:'record parent outcome',
  Replay:'check child evidence',
  Done:'finish',

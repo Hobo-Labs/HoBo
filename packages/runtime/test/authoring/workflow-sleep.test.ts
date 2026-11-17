@@ -5,6 +5,7 @@ import type { EventInput } from "@hobo/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createRuntimeLocalEventStore } from "../../../runtimes/runtime-local/dist/eventstore/eventstore.js";
+import { isJsonNumber, isJsonObject } from "../../src/json.js";
 import { nextEnvelope } from "../../src/replay/recorder.js";
 import {
 	createEventStoreReader,
@@ -115,6 +116,21 @@ describe("workflow sleep deadlines", () => {
 					expect(
 						journal.filter((event) => event.type === "run.SleepScheduled"),
 					).toHaveLength(1);
+					const completions = journal.filter(
+						(event) => event.type === "run.SleepCompleted",
+					);
+					expect(completions).toHaveLength(1);
+					const completion = completions[0];
+					if (
+						!completion ||
+						!isJsonObject(completion.data) ||
+						!isJsonNumber(completion.data.completedAtMs)
+					) {
+						throw new Error("missing sleep completion timestamp");
+					}
+					expect(completion.data.completedAtMs).toBeGreaterThanOrEqual(
+						1_000 + delay,
+					);
 				},
 			),
 			{ seed: 614458, numRuns: 150 },
