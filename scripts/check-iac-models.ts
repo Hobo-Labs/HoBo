@@ -51,6 +51,45 @@ try {
 		if (result.error) throw result.error;
 		if (result.status !== 0) throw new Error(`${name} model checking failed`);
 	}
+	// Check the same safety invariants with less headroom, not just the default
+	// limit of two. This makes competing unit reservations exceed the budget.
+	const narrowBudget = join(scratch, "budget-limit-one");
+	mkdirSync(narrowBudget);
+	const budgetModelDirectory = join(root, "packages/broker/model");
+	writeFileSync(
+		join(narrowBudget, "IacBudget.tla"),
+		readFileSync(join(budgetModelDirectory, "IacBudget.tla")),
+	);
+	const budgetConfig = readFileSync(
+		join(budgetModelDirectory, "IacBudget.cfg"),
+		"utf8",
+	);
+	if (budgetConfig.split("CONSTANT Limit = 2").length !== 2)
+		throw new Error("IacBudget limit configuration changed");
+	writeFileSync(
+		join(narrowBudget, "IacBudget.cfg"),
+		`${budgetConfig.replace("CONSTANT Limit = 2", "CONSTANT Limit = 1")}\nINVARIANT AtMostOnePricedHold\n`,
+	);
+	const narrowResult = spawnSync(
+		"java",
+		[
+			"-XX:+UseParallelGC",
+			"-cp",
+			jar,
+			"tlc2.TLC",
+			"-workers",
+			"2",
+			"-metadir",
+			join(narrowBudget, "states"),
+			"-config",
+			"IacBudget.cfg",
+			"IacBudget.tla",
+		],
+		{ cwd: narrowBudget, stdio: "inherit" },
+	);
+	if (narrowResult.error) throw narrowResult.error;
+	if (narrowResult.status !== 0)
+		throw new Error("IacBudget limit-one model checking failed");
 	// Check that representative removals of safety guards produce counterexamples.
 	const mutations = [
 		[
@@ -134,6 +173,86 @@ try {
 			`${name} mutation ${index + 1}: counterexample found\n`,
 		);
 	}
+
+	// Check both the reserve-time budget guarantee and its limit: actual
+	// provider charges can exceed an estimate, even after a valid reservation.
+	const budgetDirectory = join(root, "packages/broker/model");
+	const budgetSource = readFileSync(
+		join(budgetDirectory, "IacBudget.tla"),
+		"utf8",
+	);
+	const expectBudgetViolation = (
+		label: string,
+		source: string,
+		invariant: string,
+		limit = 2,
+	) => {
+		const isolated = join(scratch, `budget-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, "IacBudget.tla"), source);
+		writeFileSync(
+			join(isolated, "IacBudget.cfg"),
+			`SPECIFICATION Spec\nCONSTANT Limit = ${limit}\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
+		);
+		const result = spawnSync(
+			"java",
+			[
+				"-XX:+UseParallelGC",
+				"-cp",
+				jar,
+				"tlc2.TLC",
+				"-workers",
+				"2",
+				"-metadir",
+				join(isolated, "states"),
+				"-config",
+				"IacBudget.cfg",
+				"IacBudget.tla",
+			],
+			{ cwd: isolated, encoding: "utf8" },
+		);
+		if (result.error) throw result.error;
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`IacBudget ${label} did not violate ${invariant}`);
+		process.stdout.write(
+			`IacBudget ${label}: ${invariant} counterexample found\n`,
+		);
+	};
+	const budgetGuard = "/\\ spent + Cardinality(ActivePriced) + 1 <= Limit";
+	if (budgetSource.split(budgetGuard).length !== 2)
+		throw new Error("IacBudget reserve-limit mutation target changed");
+	expectBudgetViolation(
+		"missing-reserve-limit",
+		budgetSource.replace(budgetGuard, "/\\ TRUE"),
+		"PricedReservationWithinBudget",
+	);
+	expectBudgetViolation(
+		"missing-outstanding-holds",
+		budgetSource.replace(budgetGuard, "/\\ spent + 1 <= Limit"),
+		"PricedReservationWithinBudget",
+		1,
+	);
+	expectBudgetViolation(
+		"missing-settled-spend",
+		budgetSource.replace(
+			budgetGuard,
+			"/\\ Cardinality(ActivePriced) + 1 <= Limit",
+		),
+		"PricedReservationWithinBudget",
+	);
+	expectBudgetViolation(
+		"two-concurrent-priced-holds",
+		budgetSource,
+		"AtMostOnePricedHold",
+	);
+	expectBudgetViolation(
+		"actual-cost-overrun",
+		budgetSource,
+		"PricedActualNeverExceedsBudget",
+	);
 
 	// The normal safety check cannot prove that an interesting history was
 	// reachable. Find an A -> B -> A witness and then require a real stale

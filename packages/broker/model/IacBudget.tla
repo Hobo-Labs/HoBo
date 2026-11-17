@@ -9,15 +9,17 @@ EXTENDS Naturals, FiniteSets
 \* provider start are abstracted as one step under the host's fencing lease.
 \* No liveness is assumed if those authorities remain unavailable.
 Ops == {"one", "two"}
-Limit == 2
+CONSTANT Limit
 States == {"idle", "held", "claimed", "uncertain", "settled", "released"}
 Modes == {"none", "priced", "unpriced"}
 Active == {"held", "claimed", "uncertain"}
 
 VARIABLES status, mode, live, fenced, verified, spent, disclosure,
-          settlementTrust, guarded, admissionAuthorized, startAuthorized
+          settlementTrust, guarded, admissionAuthorized, startAuthorized,
+          admissionWithinBudget, pricedActualExceededLimit
 vars == <<status, mode, live, fenced, verified, spent, disclosure,
-          settlementTrust, guarded, admissionAuthorized, startAuthorized>>
+          settlementTrust, guarded, admissionAuthorized, startAuthorized,
+          admissionWithinBudget, pricedActualExceededLimit>>
 
 Init ==
   /\ status = [o \in Ops |-> "idle"]
@@ -31,6 +33,8 @@ Init ==
   /\ guarded = [o \in Ops |-> FALSE]
   /\ admissionAuthorized = [o \in Ops |-> FALSE]
   /\ startAuthorized = [o \in Ops |-> FALSE]
+  /\ admissionWithinBudget = [o \in Ops |-> FALSE]
+  /\ pricedActualExceededLimit = [o \in Ops |-> FALSE]
 
 ActivePriced == {o \in Ops : status[o] \in Active /\ mode[o] = "priced"}
 ActiveUnpriced == {o \in Ops : status[o] \in Active /\ mode[o] = "unpriced"}
@@ -44,7 +48,10 @@ ReservePriced(o, guard) ==
   /\ disclosure' = [disclosure EXCEPT ![o] = "evaluated"]
   /\ guarded' = [guarded EXCEPT ![o] = guard]
   /\ admissionAuthorized' = [admissionAuthorized EXCEPT ![o] = settlementTrust \/ guard]
-  /\ UNCHANGED <<live, fenced, verified, spent, settlementTrust, startAuthorized>>
+  /\ admissionWithinBudget' = [admissionWithinBudget EXCEPT ![o] =
+                               spent + Cardinality(ActivePriced) + 1 <= Limit]
+  /\ UNCHANGED <<live, fenced, verified, spent, settlementTrust, startAuthorized,
+                 pricedActualExceededLimit>>
 
 ReserveUnpriced(o) ==
   /\ status[o] = "idle" /\ ActivePriced = {} /\ ActiveUnpriced = {}
@@ -52,7 +59,8 @@ ReserveUnpriced(o) ==
   /\ mode' = [mode EXCEPT ![o] = "unpriced"]
   /\ disclosure' = [disclosure EXCEPT ![o] = "bypassed"]
   /\ UNCHANGED <<live, fenced, verified, spent, settlementTrust, guarded,
-                 admissionAuthorized, startAuthorized>>
+                 admissionAuthorized, startAuthorized, admissionWithinBudget,
+                 pricedActualExceededLimit>>
 
 Claim(o) ==
   /\ status[o] = "held"
@@ -62,45 +70,53 @@ Claim(o) ==
   /\ startAuthorized' = [startAuthorized EXCEPT ![o] =
                           mode[o] # "priced" \/ settlementTrust \/ guarded[o]]
   /\ UNCHANGED <<mode, fenced, verified, spent, disclosure, settlementTrust,
-                 guarded, admissionAuthorized>>
+                 guarded, admissionAuthorized, admissionWithinBudget,
+                 pricedActualExceededLimit>>
 
 LoseAcknowledgement(o) ==
   /\ status[o] = "claimed"
   /\ status' = [status EXCEPT ![o] = "uncertain"]
   /\ UNCHANGED <<mode, live, fenced, verified, spent, disclosure, settlementTrust,
-                 guarded, admissionAuthorized, startAuthorized>>
+                 guarded, admissionAuthorized, startAuthorized, admissionWithinBudget,
+                 pricedActualExceededLimit>>
 
 Fence(o) ==
   /\ status[o] \in {"claimed", "uncertain"} /\ live[o]
   /\ live' = [live EXCEPT ![o] = FALSE]
   /\ fenced' = [fenced EXCEPT ![o] = TRUE]
   /\ UNCHANGED <<status, mode, verified, spent, disclosure, settlementTrust,
-                 guarded, admissionAuthorized, startAuthorized>>
+                 guarded, admissionAuthorized, startAuthorized, admissionWithinBudget,
+                 pricedActualExceededLimit>>
 
 VerifyRetirement(o) ==
   /\ status[o] \in {"claimed", "uncertain"} /\ fenced[o] /\ ~live[o]
   /\ verified' = [verified EXCEPT ![o] = TRUE]
   /\ UNCHANGED <<status, mode, live, fenced, spent, disclosure, settlementTrust,
-                 guarded, admissionAuthorized, startAuthorized>>
+                 guarded, admissionAuthorized, startAuthorized, admissionWithinBudget,
+                 pricedActualExceededLimit>>
 
 Settle(o, actual) ==
   /\ status[o] \in {"claimed", "uncertain"}
   /\ fenced[o] /\ verified[o] /\ ~live[o] /\ actual \in 0..3
   /\ status' = [status EXCEPT ![o] = "settled"]
   /\ spent' = spent + actual
+  /\ pricedActualExceededLimit' = [pricedActualExceededLimit EXCEPT ![o] =
+                                   mode[o] = "priced" /\ actual > Limit]
   /\ UNCHANGED <<mode, live, fenced, verified, disclosure, settlementTrust,
-                 guarded, admissionAuthorized, startAuthorized>>
+                 guarded, admissionAuthorized, startAuthorized, admissionWithinBudget>>
 
 ReleaseUnused(o) ==
   /\ status[o] = "held" /\ ~live[o]
   /\ status' = [status EXCEPT ![o] = "released"]
   /\ UNCHANGED <<mode, live, fenced, verified, spent, disclosure, settlementTrust,
-                 guarded, admissionAuthorized, startAuthorized>>
+                 guarded, admissionAuthorized, startAuthorized, admissionWithinBudget,
+                 pricedActualExceededLimit>>
 
 ReopenTrust ==
   /\ settlementTrust' = ~settlementTrust
   /\ UNCHANGED <<status, mode, live, fenced, verified, spent, disclosure,
-                 guarded, admissionAuthorized, startAuthorized>>
+                 guarded, admissionAuthorized, startAuthorized, admissionWithinBudget,
+                 pricedActualExceededLimit>>
 
 Next == \E o \in Ops :
   \/ (\E guard \in BOOLEAN : ReservePriced(o, guard)) \/ ReserveUnpriced(o) \/ Claim(o)
@@ -111,12 +127,15 @@ Next == \E o \in Ops :
 Spec == Init /\ [][Next]_vars
 
 TypeOK ==
+  /\ Limit \in 1..2
   /\ status \in [Ops -> States] /\ mode \in [Ops -> Modes]
   /\ live \in [Ops -> BOOLEAN] /\ fenced \in [Ops -> BOOLEAN]
   /\ verified \in [Ops -> BOOLEAN] /\ spent \in Nat
   /\ disclosure \in [Ops -> {"not-evaluated", "evaluated", "bypassed"}]
   /\ settlementTrust \in BOOLEAN /\ guarded \in [Ops -> BOOLEAN]
   /\ admissionAuthorized \in [Ops -> BOOLEAN] /\ startAuthorized \in [Ops -> BOOLEAN]
+  /\ admissionWithinBudget \in [Ops -> BOOLEAN]
+  /\ pricedActualExceededLimit \in [Ops -> BOOLEAN]
 NoMixedExposure == ActivePriced = {} \/ ActiveUnpriced = {}
 LiveHasHold == \A o \in Ops : live[o] => status[o] \in {"claimed", "uncertain"}
 NoLiveTerminal == \A o \in Ops : status[o] \in {"settled", "released"} => ~live[o]
@@ -127,5 +146,12 @@ PricedReservationHasSettlementPath ==
 PricedStartHasSettlementPath ==
   \A o \in Ops : mode[o] = "priced" /\ status[o] \in {"claimed", "uncertain", "settled"}
                  => startAuthorized[o]
+\* This records the budget test at the reservation's linearization point.
+\* Later settlement may reveal charges that exceed the estimated bound.
+PricedReservationWithinBudget ==
+  \A o \in Ops : mode[o] = "priced" => admissionWithinBudget[o]
+PricedActualNeverExceedsBudget ==
+  \A o \in Ops : ~pricedActualExceededLimit[o]
+AtMostOnePricedHold == Cardinality(ActivePriced) <= 1
 
 =============================================================================
