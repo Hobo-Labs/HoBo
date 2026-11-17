@@ -11,7 +11,7 @@ Make the experience memorable at moments that earn it. Delight is not a layer of
 
 ## Find the opportunity
 
-Inspect the target, DESIGN.md, product voice, repeated-use frequency, and emotional context. Look for:
+Inspect the target, source styles, product voice, repeated-use frequency, and emotional context. Look for:
 
 - effort worth acknowledging;
 - waiting that can become informative;

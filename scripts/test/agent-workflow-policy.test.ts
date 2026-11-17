@@ -90,6 +90,31 @@ test("agent setup preserves existing harness instructions and checked-in skills"
 
 test("draft and agent guidance requires implementation instead of planning artifacts", () => {
 	for (const harness of [".agents", ".claude"]) {
+		for (const reference of ["SKILL.md", "LOGIC.md", "UI.md"]) {
+			const prototype = readFileSync(
+				resolve(harness, "skills/prototype", reference),
+				"utf8",
+			);
+			assert.match(prototype, /AGENTS\.md/u);
+			assert.doesNotMatch(
+				prototype,
+				/leave a `NOTES\.md`|placeholder so they/iu,
+			);
+		}
+		const triage = readFileSync(
+			resolve(harness, "skills/triage/SKILL.md"),
+			"utf8",
+		);
+		assert.match(
+			triage,
+			/Only change tracker state or send comments when the user explicitly requests/u,
+		);
+		for (const retired of ["AGENT-BRIEF.md", "OUT-OF-SCOPE.md"]) {
+			assert.equal(
+				existsSync(resolve(harness, "skills/triage", retired)),
+				false,
+			);
+		}
 		const draft = readFileSync(
 			resolve(harness, "skills/draft/SKILL.md"),
 			"utf8",
