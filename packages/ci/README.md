@@ -625,6 +625,14 @@ The GitHub assignment lookup and hook endpoint are not yet wired into the
 production controller, so these store guarantees alone do not make strict CI
 runner starts available. See the [fleet operator guide](../../docs/design/fleet-enrollment-operator.md).
 
+Fleet capacity values use the unsigned 32-bit wire range. PostgreSQL startup
+widens legacy signed capacity columns under its schema lock; the database user
+must have permission to alter those tables. Capacity revisions never wrap: at
+the wire limit, further changes, including capacity releases, fail atomically.
+Do not reset a revision, because a stale reservation could become valid again.
+Recovering an exhausted group requires a future revision-format migration and
+operator reconciliation.
+
 The [start-binding verification skill](../../.agents/skills/verify-ci-start-binding/SKILL.md)
 checks the store boundary and records its assumptions. This projection of its
 bounded model hides 824 same-label steps from 1,844 explored steps; a rejection

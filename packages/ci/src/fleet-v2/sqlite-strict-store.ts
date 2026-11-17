@@ -35,6 +35,7 @@ import {
 	type WorkerDelivery,
 	WorkerDeliverySchema,
 } from "../_generated/fleet_v2_pb.js";
+import { nextCapacitySequence } from "./capacity-sequence.js";
 import {
 	executionAccountId,
 	executionKeyId,
@@ -456,7 +457,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				group.state as import("./state-machine.js").CapacityGroupState,
 			);
 			const updated = clone(CapacityGroupSchema, group);
-			updated.seq += 1;
+			updated.seq = nextCapacitySequence(updated.seq);
 			const changed = this.db
 				.prepare(
 					"UPDATE fleet_v2_capacity_groups SET approved_units=?,seq=seq+1,state=?,body=? WHERE id=? AND seq=? AND reserved_units=?",
@@ -751,7 +752,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				);
 			const updatedGroup = clone(CapacityGroupSchema, group);
 			updatedGroup.reservedUnits += slot.capacityCostUnits;
-			updatedGroup.seq += 1;
+			updatedGroup.seq = nextCapacitySequence(updatedGroup.seq);
 			this.saveCapacity(updatedGroup);
 			const updatedDemand = clone(CiDemandSchema, demand);
 			transitionCiDemand(
@@ -840,7 +841,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 					if (currentGroup) {
 						const group = clone(CapacityGroupSchema, currentGroup);
 						group.reservedUnits -= slot.capacityCostUnits;
-						group.seq += 1;
+						group.seq = nextCapacitySequence(group.seq);
 						this.saveCapacity(group);
 					}
 				}
@@ -1413,7 +1414,7 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 						);
 					const group = clone(CapacityGroupSchema, currentGroup);
 					group.reservedUnits -= slot.capacityCostUnits;
-					group.seq += 1;
+					group.seq = nextCapacitySequence(group.seq);
 					this.saveCapacity(group);
 					transitionRunnerSlot(slot.state as RunnerSlotState, "released");
 					slot.state = "released";

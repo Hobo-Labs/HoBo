@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import fc from "fast-check";
 import pg from "pg";
 import {
@@ -52,6 +53,7 @@ function dockerAvailable(): boolean {
 type StoreHandle = {
 	store: StrictFleetStore;
 	close: () => Promise<void>;
+	setCapacitySequence: (sequence: number) => Promise<void>;
 };
 
 function githubKey(jobId = "1") {
@@ -96,6 +98,7 @@ function reservation(
 	key: ParsedExecutionKey,
 	suffix: string,
 	expectedCapacitySeq: number,
+	costUnits = 1,
 ) {
 	const bindingSecret = randomBytes(32).toString("hex");
 	const bindingSecretHash = createHash("sha256")
@@ -111,7 +114,7 @@ function reservation(
 			runnerName: `hobo-slot-${suffix}`,
 			state: "reserved",
 			capacityGroupId: "device-1",
-			capacityCostUnits: 1,
+			capacityCostUnits: costUnits,
 			policyHash: POLICY_HASH,
 			offerObservationHash: OFFER_HASH,
 			quoteHash: QUOTE_HASH,
@@ -233,6 +236,11 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			return handle.store;
 		}
 
+		async function exhaustCapacitySequence(): Promise<void> {
+			if (!handle) throw new Error("store not initialized");
+			await handle.setCapacitySequence(0xffffffff);
+		}
+
 		it("allows exactly one admission to race for one capacity unit", async () => {
 			const store = current();
 			await store.intake(demand("1", "webhook", "webhook-1"));
@@ -291,6 +299,164 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 				reservedUnits: 1,
 				seq: 2,
 			});
+		});
+
+		it("supports the unsigned capacity range through reservation and settlement", async () => {
+			const store = current();
+			await store.putCapacityGroup(
+				parseCapacityGroup(
+					JSON.stringify({
+						id: "device-1",
+						accountId: "hobo-labs",
+						approvedUnits: 0xffffffff,
+						reservedUnits: 0,
+						seq: 0,
+						state: "active",
+					}),
+				),
+			);
+			await store.intake(demand("1", "webhook", "large-capacity"));
+			const reserved = reservation(parsedKey("1"), "large", 1, 0x80000000);
+			await store.reserveCapacity(reserved.input);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"reserved",
+				"provisioning",
+			);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"provisioning",
+				"registered",
+				"large-runner",
+			);
+			await store.bindStart(
+				parseStartBindingInput({
+					slotId: reserved.input.slot.id,
+					claimId: "large-claim",
+					key: githubKey("1"),
+					bindingSecret: reserved.bindingSecret,
+					assignment: {
+						verified: true,
+						accountId: "hobo-labs",
+						runnerName: reserved.input.slot.runnerName,
+						profileId: "trusted-linux-x64",
+					},
+				}),
+			);
+			await store.completeExecution({
+				claimId: "large-claim",
+				state: "completed",
+				teardownConfirmed: true,
+			});
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				approvedUnits: 0xffffffff,
+				reservedUnits: 0,
+				seq: 3,
+			});
+		});
+
+		it("refuses an exhausted capacity revision without corrupting the group", async () => {
+			const store = current();
+			await exhaustCapacitySequence();
+			const before = await store.capacityGroup("device-1");
+			await expect(
+				store.putCapacityGroup(
+					parseCapacityGroup(
+						JSON.stringify({
+							id: "device-1",
+							accountId: "hobo-labs",
+							approvedUnits: 1,
+							reservedUnits: 0,
+							seq: 0xffffffff,
+							state: "active",
+						}),
+					),
+				),
+			).rejects.toMatchObject({ code: FleetRejectionCode.CAPACITY_CONFLICT });
+			expect(await store.capacityGroup("device-1")).toEqual(before);
+			await store.intake(demand("1", "webhook", "exhausted"));
+			const reserved = reservation(parsedKey("1"), "exhausted", 0xffffffff);
+			await expect(store.reserveCapacity(reserved.input)).rejects.toMatchObject(
+				{ code: FleetRejectionCode.CAPACITY_CONFLICT },
+			);
+			expect(await store.runnerSlot(reserved.input.slot.id)).toBeUndefined();
+			expect(await store.capacityGroup("device-1")).toEqual(before);
+		});
+
+		it("rolls back a pre-claim release at an exhausted capacity revision", async () => {
+			const store = current();
+			await store.intake(demand("1", "webhook", "exhausted-release"));
+			const reserved = reservation(parsedKey("1"), "exhausted-release", 0);
+			await store.reserveCapacity(reserved.input);
+			await exhaustCapacitySequence();
+			const before = await store.events();
+			await expect(
+				store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"reserved",
+					"released",
+				),
+			).rejects.toMatchObject({ code: FleetRejectionCode.CAPACITY_CONFLICT });
+			expect(await store.runnerSlot(reserved.input.slot.id)).toMatchObject({
+				state: "reserved",
+			});
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				reservedUnits: 1,
+				seq: 0xffffffff,
+			});
+			expect(await store.events()).toEqual(before);
+		});
+
+		it("rolls back settlement at an exhausted capacity revision", async () => {
+			const store = current();
+			await store.intake(demand("1", "webhook", "exhausted-settlement"));
+			const reserved = reservation(parsedKey("1"), "exhausted-settlement", 0);
+			await store.reserveCapacity(reserved.input);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"reserved",
+				"provisioning",
+			);
+			await store.transitionRunnerSlot(
+				reserved.input.slot.id,
+				"provisioning",
+				"registered",
+				"runner",
+			);
+			await store.bindStart(
+				parseStartBindingInput({
+					slotId: reserved.input.slot.id,
+					claimId: "exhausted-claim",
+					key: githubKey("1"),
+					bindingSecret: reserved.bindingSecret,
+					assignment: {
+						verified: true,
+						accountId: "hobo-labs",
+						runnerName: reserved.input.slot.runnerName,
+						profileId: "trusted-linux-x64",
+					},
+				}),
+			);
+			await exhaustCapacitySequence();
+			const before = await store.events();
+			await expect(
+				store.completeExecution({
+					claimId: "exhausted-claim",
+					state: "completed",
+					teardownConfirmed: true,
+				}),
+			).rejects.toMatchObject({ code: FleetRejectionCode.CAPACITY_CONFLICT });
+			expect(await store.executionClaimById("exhausted-claim")).toMatchObject({
+				state: "start-authorized",
+			});
+			expect(await store.runnerSlot(reserved.input.slot.id)).toMatchObject({
+				state: "bound",
+			});
+			expect(await store.capacityGroup("device-1")).toMatchObject({
+				reservedUnits: 1,
+				seq: 0xffffffff,
+			});
+			expect(await store.events()).toEqual(before);
 		});
 
 		it("deduplicates intake across webhook, pull, and repair", async () => {
@@ -626,10 +792,24 @@ afterAll(() => {
 });
 
 storeContract("SQLite", async () => {
-	const store = new SqliteStrictFleetStore(
-		join(sqliteRoot, `${randomUUID()}.sqlite`),
-	);
-	return { store, close: async () => store.close() };
+	const path = join(sqliteRoot, `${randomUUID()}.sqlite`);
+	const store = new SqliteStrictFleetStore(path);
+	return {
+		store,
+		close: async () => store.close(),
+		setCapacitySequence: async (sequence) => {
+			const database = new DatabaseSync(path);
+			try {
+				database
+					.prepare(
+						"UPDATE fleet_v2_capacity_groups SET seq=?,body=json_set(body, '$.seq', ?) WHERE id=?",
+					)
+					.run(sequence, sequence, "device-1");
+			} finally {
+				database.close();
+			}
+		},
+	};
 });
 
 describe("strict fleet v2 state machine", () => {
@@ -648,6 +828,7 @@ describe("strict fleet v2 state machine", () => {
 
 let container: StartedTestContainer | undefined;
 let pool: pg.Pool | undefined;
+let postgresTestUrl: string | undefined;
 const externalPostgres = process.env.HOBO_CI_TEST_POSTGRES;
 const postgresEnabled =
 	!!externalPostgres ||
@@ -682,6 +863,7 @@ describe.runIf(postgresEnabled)(
 					.start();
 				connectionString = `postgresql://contract:${password}@${container.getHost()}:${container.getMappedPort(5432)}/contract`;
 			}
+			postgresTestUrl = connectionString;
 			pool = new pg.Pool({ connectionString, max: 8 });
 		}, 180_000);
 		afterAll(async () => {
@@ -689,11 +871,80 @@ describe.runIf(postgresEnabled)(
 			await container?.stop();
 		});
 
+		it("upgrades legacy signed capacity columns without losing rows", async () => {
+			if (!pool || !postgresTestUrl)
+				throw new Error("postgres pool unavailable");
+			const schema = `fleet_migration_${randomUUID().replaceAll("-", "")}`;
+			// The schema name is generated locally from a UUID, not user input.
+			await pool.query(`CREATE SCHEMA ${schema}`);
+			const isolated = new pg.Pool({
+				connectionString: postgresTestUrl,
+				max: 4,
+				options: `-c search_path=${schema}`,
+			});
+			try {
+				const original = new PostgresStrictFleetStore(isolated, "legacy");
+				await seed(original);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_capacity_groups ALTER COLUMN approved_units TYPE integer, ALTER COLUMN reserved_units TYPE integer, ALTER COLUMN seq TYPE integer",
+				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_runner_slots ALTER COLUMN capacity_cost_units TYPE integer",
+				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_capacity_releases ALTER COLUMN units TYPE integer",
+				);
+				const first = new PostgresStrictFleetStore(isolated, "legacy");
+				const second = new PostgresStrictFleetStore(isolated, "legacy");
+				await Promise.all([first.initialize(), second.initialize()]);
+				const columns = await isolated.query(
+					"SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema=$1 AND ((table_name='hobo_ci_fleet_v2_capacity_groups' AND column_name IN ('approved_units','reserved_units','seq')) OR (table_name='hobo_ci_fleet_v2_runner_slots' AND column_name='capacity_cost_units') OR (table_name='hobo_ci_fleet_v2_capacity_releases' AND column_name='units'))",
+					[schema],
+				);
+				expect(columns.rows).toHaveLength(5);
+				expect(
+					columns.rows.every((column) => column.data_type === "bigint"),
+				).toBe(true);
+				expect(await first.capacityGroup("device-1")).toMatchObject({
+					approvedUnits: 1,
+					reservedUnits: 0,
+					seq: 0,
+				});
+				await first.putCapacityGroup(
+					parseCapacityGroup(
+						JSON.stringify({
+							id: "device-1",
+							accountId: "hobo-labs",
+							approvedUnits: 0xffffffff,
+							reservedUnits: 0,
+							seq: 0,
+							state: "active",
+						}),
+					),
+				);
+				expect(await second.capacityGroup("device-1")).toMatchObject({
+					approvedUnits: 0xffffffff,
+					seq: 1,
+				});
+			} finally {
+				await isolated.end();
+				await pool.query(`DROP SCHEMA ${schema} CASCADE`);
+			}
+		});
+
 		storeContract("PostgreSQL", async () => {
 			if (!pool) throw new Error("postgres pool unavailable");
+			const partition = `contract-${randomUUID()}`;
 			return {
-				store: new PostgresStrictFleetStore(pool, `contract-${randomUUID()}`),
+				store: new PostgresStrictFleetStore(pool, partition),
 				close: async () => undefined,
+				setCapacitySequence: async (sequence) => {
+					if (!pool) throw new Error("postgres pool unavailable");
+					await pool.query(
+						"UPDATE hobo_ci_fleet_v2_capacity_groups SET seq=$3::bigint,body=jsonb_set(body::jsonb, '{seq}', to_jsonb($3::bigint))::text WHERE partition_id=$1 AND id=$2",
+						[partition, "device-1", sequence],
+					);
+				},
 			};
 		});
 	},
