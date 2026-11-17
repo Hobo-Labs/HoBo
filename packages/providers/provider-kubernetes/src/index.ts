@@ -164,6 +164,13 @@ export {
 	statefulSetWorker,
 } from "./slots.js";
 export {
+	createStrictRunnerPodClient,
+	type RunnerPodToleration,
+	type StrictRunnerPodBinding,
+	type StrictRunnerPodReceipt,
+	strictRunnerPodName,
+} from "./strict-runner-pod.js";
+export {
 	provisionTemporaryEnvironmentStation,
 	supportsAnonymousTemporaryDeploy,
 } from "./temporary-station.js";
