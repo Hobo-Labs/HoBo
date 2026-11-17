@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
-/** A tracked regular file read from the Git object database, not the checkout. */
 export interface PinnedGitFile {
 	readonly path: string;
 	readonly mode: "100644" | "100755";
@@ -38,17 +37,15 @@ function git(
 	maxBuffer: number,
 	input?: string,
 ): Buffer {
-	// A caller's GIT_DIR or replace refs must not silently change the repository
-	// or the commit that was approved. No shell interprets the selected paths.
-	const env: NodeJS.ProcessEnv = {
-		...process.env,
-		GIT_NO_REPLACE_OBJECTS: "1",
-		GIT_NO_LAZY_FETCH: "1",
-		GIT_TERMINAL_PROMPT: "0",
-	};
-	delete env.GIT_DIR;
-	delete env.GIT_WORK_TREE;
-	delete env.GIT_INDEX_FILE;
+	const env: NodeJS.ProcessEnv = { ...process.env };
+	for (const name of Object.keys(env)) {
+		if (name.startsWith("GIT_") && name !== "GIT_CEILING_DIRECTORIES")
+			delete env[name];
+	}
+	env.GIT_NO_REPLACE_OBJECTS = "1";
+	env.GIT_NO_LAZY_FETCH = "1";
+	env.GIT_ALLOW_PROTOCOL = "";
+	env.GIT_TERMINAL_PROMPT = "0";
 	const result = spawnSync("git", args, {
 		cwd,
 		env,
@@ -61,12 +58,6 @@ function git(
 	return result.stdout;
 }
 
-/**
- * Materialize selected tracked files from one full commit ID. Paths are literal
- * repository-relative selections. Dirty and untracked checkout files are never
- * included. Symlinks and submodules fail closed rather than changing meaning
- * when the snapshot is unpacked by a remote builder.
- */
 export function readPinnedGitSource(input: {
 	readonly cwd: string;
 	readonly sha: string;
@@ -157,14 +148,16 @@ export function readPinnedGitSource(input: {
 		entries.push({ path, mode, oid, size });
 		offset = end + 1;
 	}
-	if (
-		paths.some(
-			(path) =>
-				!entries.some(
-					(entry) => entry.path === path || entry.path.startsWith(`${path}/`),
-				),
-		)
-	)
+	const unmatched = new Set(paths);
+	for (const entry of entries) {
+		let end = entry.path.length;
+		while (end >= 0 && unmatched.size > 0) {
+			unmatched.delete(entry.path.slice(0, end));
+			end = entry.path.lastIndexOf("/", end - 1);
+		}
+		if (unmatched.size === 0) break;
+	}
+	if (unmatched.size > 0)
 		throw new Error(
 			"A selected Git source path is absent from the pinned commit.",
 		);
