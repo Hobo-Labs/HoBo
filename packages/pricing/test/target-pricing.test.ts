@@ -238,6 +238,46 @@ describe("whole-target pricing contract", () => {
 		});
 	});
 
+	it("exhausts two-resource binding choices without reporting a partial quote", () => {
+		const target = inventory();
+		target.resources.push({
+			...target.resources[0]!,
+			resourceId: "stack/worker",
+		});
+		const joint = makeScenario({
+			charges: [perUnitCharge("runtime", "minute", "0.25")],
+			candidate: [
+				workload("agreement-a", [usage("minute", "4", "minute")]),
+				workload("agreement-a", [usage("minute", "4", "minute")]),
+			],
+		});
+		// -1 means absent; 2 is out of range. The only valid assignments are
+		// the two permutations that bind each resource to a different candidate.
+		for (const first of [-1, 0, 1, 2])
+			for (const second of [-1, 0, 1, 2]) {
+				const bindings: { resourceId: string; candidateIndex: number }[] = [];
+				if (first !== -1)
+					bindings.push({ resourceId: "stack/compute", candidateIndex: first });
+				if (second !== -1)
+					bindings.push({ resourceId: "stack/worker", candidateIndex: second });
+				const model = targetPricingModel({
+					modelId: "joint",
+					revision: "1",
+					planDigest: digest,
+					scenario: joint,
+					bindings,
+				});
+				const result = assessTargetPricing(target, model);
+				const complete =
+					(first === 0 && second === 1) || (first === 1 && second === 0);
+				expect(result.quote.ok, `${first}/${second}`).toBe(complete);
+				expect(
+					result.providerCoverage.providers.map((provider) => provider.status),
+					`${first}/${second}`,
+				).toEqual([complete ? "quoted" : "incomplete"]);
+			}
+	});
+
 	it("does not invoke accessors while discovering target providers", () => {
 		const target = inventory();
 		let invoked = false;
