@@ -471,7 +471,7 @@ describe("durable unbounded liability admission", () => {
 		ledger.close();
 	});
 
-	it("rejects unpriced scope when another budget authority owns the same account", () => {
+	it("rejects competing unpriced scopes when two budget authorities share an account", async () => {
 		const { options, unpriced } = fixture();
 		const owners = new Set(["hosting", "other-budget"]);
 		const sharedTrust = {
@@ -495,9 +495,29 @@ describe("durable unbounded liability admission", () => {
 			unpricedScopeTrust: sharedTrust,
 			snapshot: otherSnapshot,
 		});
-		expect(() => one.reserveUnbounded(unpriced)).toThrow(
-			"exclusive financial scope",
-		);
+		const second = {
+			...unpriced,
+			reservationId: "iac:other",
+			identity: otherSnapshot.identity,
+			policyProof: create(IacUnpricedPolicyProofSchema, {
+				...unpriced.policyProof,
+				identity: otherSnapshot.identity,
+			}),
+			scopeProof: create(IacUnpricedScopeProofSchema, {
+				...unpriced.scopeProof,
+				identity: otherSnapshot.identity,
+			}),
+		};
+		// The shared host registry has already authenticated both budget owners.
+		// It must reject *both* proofs; neither local database can see the other.
+		const attempts = await Promise.allSettled([
+			Promise.resolve().then(() => one.reserveUnbounded(unpriced)),
+			Promise.resolve().then(() => other.reserveUnbounded(second)),
+		]);
+		expect(attempts.map((result) => result.status)).toEqual([
+			"rejected",
+			"rejected",
+		]);
 		expect(one.read(now).unboundedExposureCount).toBe(0);
 		expect(other.read(now).unboundedExposureCount).toBe(0);
 		one.close();
